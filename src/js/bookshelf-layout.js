@@ -122,6 +122,25 @@ export const DEFAULT_SPINE = Object.freeze({
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
 /**
+ * Mezcla opciones sobre sus valores por defecto ignorando las que vienen como
+ * `undefined`. Con el spread a pelo, `{...DEFAULTS, ...{limite: undefined}}`
+ * deja `limite` en undefined y se lleva por delante el valor por defecto:
+ * pasa en cuanto alguien reenvía opciones que no ha rellenado.
+ * @template T
+ * @param {T} defaults
+ * @param {object} [options]
+ * @returns {T}
+ */
+export function withDefaults(defaults, options) {
+  const merged = { ...defaults };
+  if (!options) return merged;
+  for (const [key, value] of Object.entries(options)) {
+    if (value !== undefined) merged[key] = value;
+  }
+  return merged;
+}
+
+/**
  * Interpola en escala raíz: la diferencia entre 40 y 200 páginas se nota más
  * que entre 700 y 900, igual que al mirar una estantería real.
  * @returns {number|null} 0..1, o null si el dato no sirve
@@ -147,7 +166,7 @@ function sqrtScale(value, from, to) {
  *            width:number, heightRatio:number, texture:string}}
  */
 export function spineStyleFor(book, options = {}) {
-  const cfg = { ...DEFAULT_SPINE, ...options };
+  const cfg = withDefaults(DEFAULT_SPINE, options);
   const seed = seedFor(book);
   const palette = pick(SPINE_PALETTE, seed, 'palette');
   const span = cfg.maxWidth - cfg.minWidth;
@@ -187,7 +206,10 @@ export const DEFAULT_LAYOUT = Object.freeze({
   shelfWidth: 360,   // anchura total de la balda, en px
   padding: 16,       // margen interior a cada lado (los topes de la balda)
   gap: 3,            // separación entre lomos
-  plantEvery: 7,     // tras N libros seguidos sin maceta, se cuela una
+  plantEvery: 5,     // tras N libros seguidos sin maceta, se cuela una. Con
+                     // baldas de 6-7 lomos en móvil, 5 deja casi una planta
+                     // por balda: menos y parece un vivero, más y las baldas
+                     // llenas se vuelven un muro de lomos iguales
   plantWidth: 58,    // ancho reservado a una maceta (un tiesto es más ancho
                      // que un lomo: si se queda en 46 parece de juguete)
   maxTailPlants: 2,  // macetas de remate en una balda a medias
@@ -220,7 +242,7 @@ function createShelf(index) {
  * @returns {Array<{index:number, items:object[], usedWidth:number, freeWidth:number, width:number}>}
  */
 export function layoutShelves(books, options = {}) {
-  const cfg = { ...DEFAULT_LAYOUT, ...options };
+  const cfg = withDefaults(DEFAULT_LAYOUT, options);
   const available = cfg.shelfWidth - cfg.padding * 2;
   if (!Array.isArray(books) || books.length === 0) return [];
   if (!(available > 0)) return [];
@@ -356,7 +378,7 @@ export function isInProgress(book) {
  * @returns {Array<{id:string, title:string, books:object[]}>}
  */
 export function buildSections(books, options = {}) {
-  const cfg = { ...DEFAULT_SECTIONS, ...options };
+  const cfg = withDefaults(DEFAULT_SECTIONS, options);
   const list = Array.isArray(books) ? books.filter(Boolean) : [];
   if (list.length === 0) return [];
 

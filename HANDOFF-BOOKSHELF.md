@@ -1,3 +1,11 @@
+> **Estado: completado.** Este documento se escribió como contrato de
+> integración antes de que se implementara la pieza; la estantería animada
+> ya está construida en `src/js/bookshelf.js` + `bookshelf-layout.js` +
+> `plants.js` + `src/css/bookshelf.css`, integrada en `app.js` y con tests
+> en `tests/unit/bookshelf*.test.js`. Se deja el documento tal cual, como
+> referencia de las decisiones de diseño (sección "DECISIONES DE DISEÑO" al
+> inicio de `bookshelf.js` es la versión más actualizada y detallada).
+
 # Handoff: home screen — estantería animada con plantas
 
 Este documento es el contrato para implementar la pieza visual pendiente de
@@ -165,3 +173,64 @@ Si tocas algo fuera de `bookshelf.js`/`bookshelf.css`/`bookshelf-*.js`,
 avisa explícitamente — el resto del árbol se considera estable e integrado
 con CI (`.github/workflows/production-checks.yml` corre `npm test` en cada
 push/PR).
+
+---
+
+# Estado: implementado (sesión del componente)
+
+El placeholder ya está sustituido. Nada de lo de arriba hay que hacerlo de
+nuevo; esta sección es el estado real y qué cambió respecto al contrato.
+
+## Ficheros de esta pieza
+
+| Fichero | Qué es |
+| --- | --- |
+| `src/js/bookshelf.js` | Componente. La cabecera del archivo documenta la API y las decisiones de diseño. |
+| `src/js/bookshelf-layout.js` | Lógica pura: hash → aspecto del lomo, empaquetado en baldas, secciones. Sin DOM. |
+| `src/js/plants.js` | Las cinco macetas, dibujadas en SVG path a path. |
+| `src/css/bookshelf.css` | Estilos (madera, lomos, macetas, giro 3D, estado vacío). |
+| `assets/plants/*.svg` | Las mismas plantas como ficheros sueltos. Derivado: se regenera con `node scripts/export-plants.mjs`. |
+| `demo/bookshelf.html` | Banco de pruebas: estados vacía / 4 / 12 / 60 libros y tema claro-oscuro, sin tocar IndexedDB. `npm run dev` → `/inhouse-read/demo/bookshelf.html`. |
+| `tests/unit/bookshelf-layout.test.js`, `plants.test.js`, `bookshelf.test.js` | 64 tests nuevos (36 + 11 + 17). `npm run test:unit` pasa los 106 del repo. |
+
+Fuera de esos, no se ha tocado nada: ni `app.js`, ni `index.html`, ni
+`tokens.css`, ni los lectores. (`.claude/launch.json` lo creé y lo
+reescribiste después con tu preview; se queda la tuya.)
+
+## Cambio respecto al contrato de arriba
+
+`app.js` ya llama a la firma con los libros como segundo argumento
+(`renderBookshelf(container, books, { onBookOpen, onAddBooks, coverSrcFor })`
++ `shelf.update(books)`), así que el componente **acepta las dos formas**: esa
+y la original de este documento (`renderBookshelf(container, { books,
+onOpenBook, onPickLocalFile, onOpenDrive, driveAvailable })` con
+`refresh`/`destroy`). Los nombres de callback son intercambiables.
+
+Añadidos opcionales, todos con valor por defecto sensato:
+
+- `shelfWidth` — fija el ancho de balda en vez de medirlo (contenedor de ancho
+  conocido, tests).
+- `sections: false` — una estantería continua, sin "Seguir leyendo".
+- `autoOpen: false` — revela la portada y espera a que el usuario pulse
+  "Abrir" en vez de avisar solo.
+- `showActions: true` — barra con "Añadir libro" / "Drive" dentro de la
+  estantería. Apagada por defecto porque esos botones viven hoy en el header
+  de la app; si algún día se quitan de ahí, se enciende esto.
+- `revealDuration` (620 ms), `holdMs`, `returnDuration`, `plantEvery`,
+  `recentLimit`, `sort`, `texts`.
+
+## Dos cosas que conviene saber al integrar
+
+1. **Tras el giro no se bloquea la estantería.** Al disparar `onOpenBook` la
+   portada se queda a la vista mientras el lector carga por detrás, pero
+   tocar fuera o pulsar Escape la repliegan. Esto es lo que salva el caso del
+   libro local que hay que volver a elegir: si el usuario cancela el file
+   picker, no se queda encerrado mirando una portada.
+2. **`refresh()` cierra la portada abierta** sin animación antes de repintar,
+   así que se puede llamar desde donde sea sin dejar restos.
+
+## Pendiente que no depende de esta pieza
+
+El grosor del lomo sale hoy del hash del id. Si algún día el parser rellena
+`pageCount` (o `sizeBytes`) en el `BookRecord`, el lomo pasa solo a tener
+grosor real —ya está implementado y testeado—, sin tocar el componente.

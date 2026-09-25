@@ -103,7 +103,7 @@
  * hay que abrir uno.
  */
 
-import { planBookshelf, progressOf } from './bookshelf-layout.js';
+import { planBookshelf, progressOf, withDefaults } from './bookshelf-layout.js';
 import { plantSvg, plantMeta } from './plants.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
@@ -132,7 +132,7 @@ const DEFAULTS = Object.freeze({
   sections: true,        // false = una sola estantería continua
   shelfPadding: 16,
   gap: 3,
-  plantEvery: 7,
+  plantEvery: 5,
   coverRatio: 0.66,      // ancho/alto de portada: proporción de libro comercial
   texts: DEFAULT_TEXTS
 });
@@ -229,8 +229,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   if (!container) throw new Error('renderBookshelf: falta el contenedor');
   const { books, options } = normalizeArgs(booksOrOptions, maybeOptions);
 
-  const opts = { ...DEFAULTS, ...options };
-  opts.texts = { ...DEFAULT_TEXTS, ...(options.texts || {}) };
+  const opts = withDefaults(DEFAULTS, options);
+  opts.texts = withDefaults(DEFAULT_TEXTS, options.texts);
   // Nombres del handoff y nombres genéricos: valen los dos.
   const onOpen = options.onOpenBook || options.onBookOpen;
   const onPickLocal = options.onPickLocalFile || options.onAddBooks;
@@ -505,7 +505,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       plantEvery: opts.plantEvery,
       sort: opts.sort,
       spine: spineOptionsFor(width),
-      recentLimit: opts.sections ? opts.recentLimit ?? undefined : 0
+      // Sin secciones, 0 recientes: todo cae en una estantería continua.
+      recentLimit: opts.sections ? opts.recentLimit : 0
     });
 
     const fragment = document.createDocumentFragment();
@@ -570,7 +571,22 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     state.busy = true;
 
     const { book, style } = item;
+    /*
+      Se mide sin transform: de un libro inclinado, getBoundingClientRect
+      devuelve la caja del rectángulo girado (más ancha y más alta que el
+      lomo), y con eso el traspaso saldría descuadrado. El precio es un
+      reflow forzado, una vez por toque y con el dedo ya parado.
+      Efecto secundario buscado: al salir de la balda el libro se endereza,
+      que es lo que hace un libro de verdad cuando tiras de él.
+    */
+    const previousTransition = spineEl.style.transition;
+    spineEl.style.transition = 'none'; // si no, la transición del lomo
+    spineEl.style.transform = 'none';  // interpola y se mide el valor viejo
     const rect = spineEl.getBoundingClientRect();
+    spineEl.style.transform = '';
+    void spineEl.offsetWidth;          // devuelve la inclinación sin animarla
+    spineEl.style.transition = previousTransition;
+
     const vw = window.innerWidth || 390;
     const vh = window.innerHeight || 780;
 
@@ -595,22 +611,31 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       style:
         `width:${coverW}px;height:${coverH}px;` +
         `left:${centerX - coverW / 2}px;top:${centerY - coverH / 2}px;` +
-        `--ihr-thickness:${thickness}px`
-    });
-
-    const spineFace = el('div', {
-      class: `ihr-flyout__face ihr-flyout__face--spine ihr-spine--${style.texture}`,
-      style:
+        `--ihr-thickness:${thickness}px;` +
         `--ihr-spine-base:${style.color};` +
         `--ihr-spine-shade:${style.shade};` +
         `--ihr-spine-ink:${style.ink}`
     });
-    spineFace.append(el('span', { class: 'ihr-spine__grain', 'aria-hidden': 'true' }));
-    spineFace.append(
-      el('span', { class: 'ihr-spine__label' }, [
-        el('span', { class: 'ihr-spine__title', text: book.title ?? '' })
-      ])
-    );
+
+    /*
+      La cara del lomo es un clon del lomo real de la balda, ampliado por el
+      inverso de la escala inicial. Así coincide al píxel —tipografía, nervios,
+      cinta de progreso, sombra— sin duplicar ni una regla de CSS, y cualquier
+      acabado que se añada mañana al lomo viaja solo a la animación.
+    */
+    const spineFace = el('div', { class: 'ihr-flyout__face ihr-flyout__face--spine' });
+    const clone = spineEl.cloneNode(true);
+    clone.classList.remove('is-away', 'is-pressed', 'is-tilted');
+    clone.classList.add('ihr-spine--ghost'); // para distinguirlo del lomo real
+    clone.removeAttribute('data-book-id');
+    clone.removeAttribute('aria-label');
+    clone.setAttribute('aria-hidden', 'true');
+    clone.setAttribute('tabindex', '-1');
+    clone.style.cssText +=
+      `;position:absolute;left:0;top:0;pointer-events:none;` +
+      `width:${rect.width}px;height:${rect.height}px;` +
+      `transform-origin:0 0;transform:scale(${1 / startScale});`;
+    spineFace.append(clone);
 
     bookNode.append(buildCoverFace(book, coverUrl, style));
     bookNode.append(spineFace);

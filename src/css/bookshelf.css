@@ -55,6 +55,12 @@
 .ihr-bookshelf__scroll {
   flex: 1 1 auto;
   min-height: 0;
+  /* En escritorio una balda de 1400px parece un andamio. Se topa el ancho
+     (y como el empaquetado mide este mismo elemento, las baldas se calculan
+     ya con el tope, sin desbordar). */
+  width: 100%;
+  max-width: 760px;
+  margin-inline: auto;
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
@@ -354,6 +360,16 @@
   filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.45)) brightness(0.88);
 }
 
+/* Con la pared apagada, una tela crema a pleno brillo deslumbra. Se baja la
+   luz sobre los lomos igual que sobre las plantas, conservando el color. */
+[data-theme='dark'] .ihr-spine {
+  filter: brightness(0.87) saturate(0.96);
+}
+
+[data-theme='dark'] .ihr-spine.is-pressed {
+  filter: brightness(0.97) saturate(0.96);
+}
+
 /* ------------------------------------------------------------------ *
  * Estado vacío
  * ------------------------------------------------------------------ */
@@ -517,28 +533,14 @@
 }
 
 /* Cara lateral izquierda = el lomo. Con rotateY(90deg) en el contenedor es
-   justo lo que mira al usuario, y proyecta exactamente el ancho del lomo. */
+   justo lo que mira al usuario, y proyecta exactamente el ancho del lomo.
+   Dentro va un clon del lomo de la balda, escalado desde bookshelf.js. */
 .ihr-flyout__face--spine {
   left: 0;
   width: var(--ihr-thickness, 20px);
   border-radius: 2px 0 0 2px;
-  background:
-    linear-gradient(
-      90deg,
-      rgba(0, 0, 0, 0.34) 0%,
-      rgba(255, 255, 255, 0.12) 18%,
-      rgba(255, 255, 255, 0.03) 55%,
-      rgba(0, 0, 0, 0.3) 100%
-    ),
-    var(--ihr-spine-base, #4a4a4a);
-  color: var(--ihr-spine-ink, #f2efe6);
+  background: var(--ihr-spine-base, #4a4a4a);
   transform: rotateY(-90deg) translateZ(calc(var(--ihr-thickness, 20px) / 2));
-}
-
-.ihr-flyout__face--spine .ihr-spine__label {
-  inset: 14px 0 16px;
-  line-height: var(--ihr-thickness, 20px);
-  font-size: 0.66rem;
 }
 
 /* Canto derecho: las hojas. Se ve de refilón durante el giro y es lo que

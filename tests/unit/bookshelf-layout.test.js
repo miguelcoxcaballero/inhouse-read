@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  withDefaults,
   hashString,
   unit,
   seedFor,
@@ -36,6 +37,23 @@ function measureShelf(shelf, gap = DEFAULT_LAYOUT.gap) {
     0
   )
 }
+
+describe('withDefaults', () => {
+  it('ignora las opciones sin rellenar en vez de borrar el valor por defecto', () => {
+    expect(withDefaults({ limit: 6, sort: 'author' }, { limit: undefined })).toEqual({
+      limit: 6,
+      sort: 'author'
+    })
+    expect(withDefaults({ limit: 6 }, { limit: 0 })).toEqual({ limit: 0 })
+    expect(withDefaults({ limit: 6 }, null)).toEqual({ limit: 6 })
+  })
+
+  it('un recentLimit sin rellenar no convierte "seguir leyendo" en la biblioteca entera', () => {
+    const books = makeBooks(20, () => ({ progressFraction: 0.5 }))
+    const [recent] = buildSections(books, { recentLimit: undefined })
+    expect(recent.books).toHaveLength(6)
+  })
+})
 
 describe('hashString / unit', () => {
   it('es determinista y estable entre llamadas', () => {
