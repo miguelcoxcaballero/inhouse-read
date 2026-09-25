@@ -162,19 +162,33 @@
   padding: 0;
   border: 0;
   border-radius: 2px 2px 1px 1px;
-  /* Un lomo es plano: sólo los cantos se oscurecen y hay un brillo tenue
-     junto al borde izquierdo. Nada de degradado ancho, que lo vuelve tubo. */
+  /* Curva sutil del lomo: un realce descentrado (~24%) que se apaga hacia
+     el centro y una sombra suave hacia el canto derecho, como luz rasante
+     sobre una superficie ligeramente convexa. Contraste bajo a propósito
+     (realce máx. 0.11, sombra máx. 0.30): sugiere redondez sin llegar al
+     brillo de un tubo/cilindro.
+
+     La primera capa es grano de tela/cuero envejecido: ruido SVG en negro
+     al 5% de alfa, mezclado en "multiply" sobre el resto — evita que el
+     lomo se vea como una pegatina de color plano. Es el mismo ruido en
+     todos los lomos (no depende del libro): la variación libro-a-libro ya
+     la da la paleta y el acabado (bands/panel/ribbed), esto solo añade
+     la superficie física. */
   background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
     linear-gradient(
       90deg,
-      rgba(0, 0, 0, 0.34) 0%,
-      rgba(0, 0, 0, 0.06) 5%,
-      rgba(255, 255, 255, 0.07) 12%,
-      rgba(255, 255, 255, 0) 40%,
-      rgba(0, 0, 0, 0.05) 92%,
-      rgba(0, 0, 0, 0.3) 100%
+      rgba(0, 0, 0, 0.30) 0%,
+      rgba(0, 0, 0, 0.07) 9%,
+      rgba(255, 255, 255, 0.11) 24%,
+      rgba(255, 255, 255, 0.03) 46%,
+      rgba(0, 0, 0, 0.04) 70%,
+      rgba(0, 0, 0, 0.09) 88%,
+      rgba(0, 0, 0, 0.26) 100%
     ),
     var(--ihr-spine-base, #4a4a4a);
+  background-blend-mode: multiply, normal, normal;
+  background-size: 56px 56px, 100% 100%, 100% 100%;
   color: var(--ihr-spine-ink, #f2efe6);
   box-shadow:
     0 2px 5px -2px rgba(0, 0, 0, 0.5),
@@ -246,14 +260,22 @@
 }
 
 /* nowrap es lo que impide que un título largo se derrame en una segunda
-   columna y acabe pisando al libro de al lado. */
+   columna y acabe pisando al libro de al lado. Serif de corte clásico
+   (en vez de la DM Sans del resto de la UI) porque un lomo real no rotula
+   en la misma tipografía que un botón — y una sombra doble (clara arriba-
+   izquierda, oscura abajo-derecha) simula letra grabada/estampada en tela,
+   no texto plano pegado encima. */
 .ihr-spine__title {
   max-height: 74%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-weight: 600;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.28);
+  font-family: var(--f-spine, 'Playfair Display', 'DM Sans', serif);
+  font-weight: 700;
+  letter-spacing: 0.015em;
+  text-shadow:
+    -0.5px -0.5px 0 rgba(255, 255, 255, 0.22),
+    0.5px 0.5px 0.5px rgba(0, 0, 0, 0.4);
 }
 
 .ihr-spine__author {

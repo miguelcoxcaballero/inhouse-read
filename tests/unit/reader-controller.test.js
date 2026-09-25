@@ -45,6 +45,7 @@ describe('ReaderController', () => {
     expect(format.engine).toBe('pdf')
     expect(pdfOpen).toHaveBeenCalledTimes(1)
     expect(foliateOpen).not.toHaveBeenCalled()
+    expect(controller.pageCount).toBe(10)
   })
 
   it('enruta un EPUB al FoliateReader', async () => {
@@ -58,6 +59,8 @@ describe('ReaderController', () => {
     expect(format.engine).toBe('foliate')
     expect(foliateOpen).toHaveBeenCalledTimes(1)
     expect(pdfOpen).not.toHaveBeenCalled()
+    // EPUB es texto reflowable sin un número de página fijo: no se inventa uno.
+    expect(controller.pageCount).toBeNull()
   })
 
   it('enruta un MOBI al FoliateReader', async () => {

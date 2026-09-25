@@ -49,6 +49,17 @@ export class ReaderController {
     return (await this.#reader?.getCoverBlob?.()) ?? null
   }
 
+  /**
+   * Número de páginas reales, solo cuando el formato lo tiene de verdad
+   * (PDF). EPUB/MOBI son texto reflowable sin un "número de página" fijo
+   * independiente del tamaño de pantalla/fuente, así que devuelve null en
+   * vez de inventar un número — el grosor del lomo en la estantería cae
+   * entonces a `sizeBytes` (ver bookshelf-layout.js, sqrtScale).
+   */
+  get pageCount() {
+    return this.#engine === ENGINE.PDF ? (this.#reader?.pageCount ?? null) : null
+  }
+
   async next() {
     await this.#reader?.next()
   }

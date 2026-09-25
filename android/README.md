@@ -17,7 +17,7 @@ Arreglarlo dentro del APK nativo requiere: (1) registrar un segundo cliente OAut
 
 ## Cómo instalar
 
-**Vía APK firmado**: pestaña [Releases](https://github.com/miguelcoxcaballero/inhouse-read/releases) del repo, tag `android-v1.0.0` → descargar `inhouse-read-release-v1.0.0.apk` → instalar (Android pedirá permitir "orígenes desconocidos" la primera vez, es normal para un APK fuera de Play Store).
+**Vía APK firmado**: https://miguelcoxcaballero.github.io/inhouse-read/download-android.html — página real del sitio (no un link suelto a un asset) que consulta en vivo cuál es el último release publicado, así que nunca queda desactualizada. Android pedirá permitir "orígenes desconocidos" la primera vez, es normal para un APK fuera de Play Store.
 
 **Vía PWA (sin instalar nada, recomendado si no necesitas la app nativa)**: abre la URL de GitHub Pages en Chrome/Edge en Android y usa "Añadir a pantalla de inicio" / "Instalar app".
 

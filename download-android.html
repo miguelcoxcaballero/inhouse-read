@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f5f5f0" />
+  <title>Inhouse Read para Android</title>
+  <meta name="description" content="Descarga el APK firmado de Inhouse Read para Android." />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap">
+
+  <link rel="stylesheet" href="/src/css/tokens.css" />
+  <link rel="stylesheet" href="/src/css/base.css" />
+  <link rel="stylesheet" href="/src/css/download.css" />
+</head>
+<body>
+  <div class="dl-page">
+    <header class="dl-header">
+      <a class="logo" href="/inhouse-read/">
+        <svg class="logo-mark" viewBox="0 0 40 28" xmlns="http://www.w3.org/2000/svg" fill="none">
+          <path d="M4 24 L20 8 L36 24" stroke="var(--accent-read)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        inhouse read
+      </a>
+      <a class="dl-header-link" href="/inhouse-read/">Abrir la app web</a>
+    </header>
+
+    <main class="dl-main">
+      <section class="dl-hero">
+        <img class="dl-icon" src="/icons/inhouse-read-logo.png" alt="" width="84" height="84" />
+        <h1>Inhouse Read para Android</h1>
+        <p class="dl-subtitle">
+          El mismo lector de PDF, EPUB y MOBI de la web, empaquetado como app instalable.
+          APK firmado, publicado directamente desde este repositorio.
+        </p>
+      </section>
+
+      <section class="dl-card" id="release-card" aria-live="polite">
+        <p class="dl-status">Buscando la última versión publicada…</p>
+      </section>
+
+      <section class="dl-alt">
+        <h2>¿Prefieres no instalar nada?</h2>
+        <p>
+          Abre <a href="/inhouse-read/">la app web</a> en Chrome o Edge para Android y usa
+          "Añadir a pantalla de inicio" — se instala igual, sin pasar por un APK suelto,
+          y se actualiza sola. Es el camino recomendado si no necesitas nada específico del APK nativo.
+        </p>
+      </section>
+
+      <section class="dl-honest">
+        <h2>Antes de instalar, dos cosas que debes saber</h2>
+        <ul>
+          <li>Android pedirá permitir "instalar apps de origen desconocido" la primera vez — normal para un APK fuera de Play Store, y es esta misma página/repositorio el origen, no un tercero.</li>
+          <li>Google Drive no funciona todavía dentro de esta app nativa (Google bloquea el login OAuth en WebViews embebidos); sí funciona en la versión web/PWA. Más detalle en el <a href="https://github.com/miguelcoxcaballero/inhouse-read/blob/main/android/README.md">README de Android</a>.</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="dl-footer">
+      <a href="https://github.com/miguelcoxcaballero/inhouse-read">Código fuente en GitHub</a>
+    </footer>
+  </div>
+
+  <script type="module" src="/src/js/download-android.js"></script>
+</body>
+</html>

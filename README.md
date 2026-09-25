@@ -58,6 +58,12 @@ npm run test:e2e     # Playwright — build de producción + Chromium real
 npm test             # ambos
 ```
 
+## Carpeta local persistente
+
+En Chrome/Edge de escritorio, al importar un libro por primera vez la app pide elegir una carpeta real del disco (File System Access API) y guarda ahí una copia. La próxima vez que abras ese libro desde la estantería, se lee directamente de esa carpeta — no hace falta volver a seleccionarlo a mano.
+
+**Limitación real, no un descuido**: `showDirectoryPicker` es una API exclusiva de navegadores Chromium de escritorio. No existe en Chrome para Android, en ningún navegador móvil, en Safari, ni en el WebView nativo de la app Android empaquetada (`android/`). En esos entornos la app sigue funcionando exactamente igual que antes: el libro se abre y sus metadatos/progreso/portada se guardan en IndexedDB, pero al reabrirlo hay que volver a elegir el archivo (el sistema operativo no permite a una app web guardar en una carpeta arbitraria sin esa API). La alternativa nativa real para Android sería un plugin de Capacitor a medida sobre Storage Access Framework — no implementado, ver `android/README.md`.
+
 ## Google Drive
 
 La integración con Drive es 100% client-side (Google Identity Services + Drive API v3 por fetch, sin backend), pero **requiere que rellenes tu propio Client ID de Google Cloud** — eso no se puede generar por CLI ni automatizarse, hay que crearlo a mano:
@@ -80,4 +86,4 @@ Igual que inhouse notes: build de Vite, publicado a la rama `gh-pages` vía `pea
 
 ## Android
 
-App-shell WebView (Capacitor) que apunta a la URL en vivo de GitHub Pages, con el mismo pipeline de firma automatizado que inhouse notes (`.github/workflows/build-android.yml`, disparo manual desde la pestaña Actions). APK firmado disponible en [Releases](https://github.com/miguelcoxcaballero/inhouse-read/releases). Google Drive no funciona todavía dentro del APK nativo (limitación de Google con OAuth en WebView, no un bug) — sí funciona en la PWA/navegador. Detalles en `android/README.md`.
+App-shell WebView (Capacitor) que apunta a la URL en vivo de GitHub Pages, con el mismo pipeline de firma automatizado que inhouse notes (`.github/workflows/build-android.yml`, disparo manual desde la pestaña Actions). **Descarga**: https://miguelcoxcaballero.github.io/inhouse-read/download-android.html — página real del sitio que consulta en vivo el último release (no un link fijo que se desactualiza). Google Drive no funciona todavía dentro del APK nativo (limitación de Google con OAuth en WebView, no un bug) — sí funciona en la PWA/navegador. Detalles en `android/README.md`.

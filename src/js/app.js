@@ -4,6 +4,10 @@ import { ReaderController, UnsupportedFormatError } from './readers/reader-contr
 import {
   isDriveConfigured, requestDriveAccess, listDriveBooks, downloadDriveFile, hasDriveSession
 } from './drive-client.js'
+import {
+  isFolderApiSupported, getSavedFolderHandle, getOrChooseFolder, ensureFolderPermission,
+  saveFileIntoFolder, readFileFromFolder
+} from './local-folder-store.js'
 
 const library = new LibraryStore()
 const reader = new ReaderController()
@@ -73,7 +77,28 @@ async function refreshShelf() {
 
 async function openBookRecord(book, ctx) {
   if (book.sourceType === 'local') {
-    // El File original no sobrevive entre sesiones: hay que volver a pedirlo.
+    // Si el libro se guardó en la carpeta elegida por el usuario, léelo
+    // directamente de ahí — no hace falta pedirle que lo vuelva a elegir.
+    // Solo aplica donde existe la File System Access API (Chrome/Edge de
+    // escritorio); en el resto (Android, Safari...) folderFileName nunca se
+    // rellenó al importar, así que esto simplemente no se intenta.
+    if (book.folderFileName && isFolderApiSupported()) {
+      try {
+        const folderHandle = await getSavedFolderHandle()
+        if (folderHandle && await ensureFolderPermission(folderHandle)) {
+          const file = await readFileFromFolder(folderHandle, book.folderFileName)
+          if (file) {
+            await openFile(file, { existingRecord: book, forcedId: book.id })
+            return
+          }
+        }
+      } catch (err) {
+        console.warn('No se pudo leer el libro de la carpeta guardada, se pedirá manualmente:', err)
+      }
+    }
+
+    // Fallback: el File original no sobrevive entre sesiones (o no se pudo
+    // leer de la carpeta) — hay que volver a pedirlo.
     pendingLocalReopenId = book.id
     els.filePicker.click()
     // Si el usuario cancela el picker, no hay evento 'change': replegamos
@@ -117,13 +142,35 @@ els.filePicker.addEventListener('change', async () => {
   const file = els.filePicker.files?.[0]
   els.filePicker.value = ''
   if (!file) return
-  await openFile(file, pendingLocalReopenId ? { forcedId: pendingLocalReopenId } : {})
-  pendingLocalReopenId = null
+
+  // Reabrir un libro ya conocido (el fallback de arriba): no hay que
+  // volver a guardarlo en la carpeta, solo abrirlo con el mismo id.
+  if (pendingLocalReopenId) {
+    const forcedId = pendingLocalReopenId
+    pendingLocalReopenId = null
+    await openFile(file, { forcedId })
+    return
+  }
+
+  // Importación nueva: si el navegador soporta elegir una carpeta real
+  // (Chrome/Edge de escritorio), guarda ahí una copia del libro — pidiendo
+  // que se elija una carpeta la primera vez — para poder reabrirlo después
+  // sin tener que volver a seleccionarlo a mano.
+  let folderFileName
+  if (isFolderApiSupported()) {
+    try {
+      const folderHandle = await getOrChooseFolder()
+      folderFileName = await saveFileIntoFolder(folderHandle, file)
+    } catch (err) {
+      console.warn('No se pudo guardar el libro en la carpeta elegida; se abre igualmente para esta sesión.', err)
+    }
+  }
+  await openFile(file, { folderFileName })
 })
 
 // ---- Apertura y lectura ----
 
-async function openFile(file, { existingRecord, forcedId } = {}) {
+async function openFile(file, { existingRecord, forcedId, folderFileName } = {}) {
   showScreen('reader')
   els.readerViewport.innerHTML = ''
 
@@ -154,6 +201,11 @@ async function openFile(file, { existingRecord, forcedId } = {}) {
     mimeType: existingRecord?.mimeType ?? file.type,
     name: file.name,
     size: file.size,
+    // Para el grosor real del lomo en la estantería (bookshelf-layout.js):
+    // pageCount cuando el formato lo tiene (PDF), si no sizeBytes como proxy.
+    pageCount: reader.pageCount ?? existingRecord?.pageCount,
+    sizeBytes: file.size,
+    folderFileName: folderFileName ?? existingRecord?.folderFileName,
     title: existingRecord?.title ?? meta.title ?? stripExtension(file.name),
     author: existingRecord?.author ?? meta.author,
     format: format.label

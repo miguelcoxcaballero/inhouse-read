@@ -1499,6 +1499,19 @@ class ApkBuilderApp(tk.Tk):
         `openAuthUrl` (Custom Tabs launcher) is kept even though nothing
         calls it yet: it is the one piece actually required to add that
         OAuth flow later, and it's harmless dead code until then.
+
+        Also opts out of edge-to-edge via WindowCompat.setDecorFitsSystemWindows(
+        window, true). Capacitor's template targets a recent enough SDK that,
+        on Android 15+ (API 35), the platform enforces edge-to-edge by
+        default: content draws full-bleed under the status bar and
+        Window.setStatusBarColor()/setNavigationBarColor() silently become
+        no-ops. Net effect on-device: the status bar visually disappears
+        instead of showing our boot color. Disabling edge-to-edge restores
+        the classic behaviour where the system paints the bars we set and
+        insets the WebView below/above them. The status-bar icon color
+        (light vs dark) is set to match whichever boot color (light/dark
+        resource qualifier) is actually active, so icons stay legible in
+        both themes.
         """
         main_src_root = project_dir / "android" / "app" / "src" / "main"
         java_file = main_src_root / "java" / Path(*package_id.split(".")) / "MainActivity.java"
@@ -1509,6 +1522,7 @@ class ApkBuilderApp(tk.Tk):
                 f"""package {package_id};
 
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.CookieManager;
@@ -1518,6 +1532,8 @@ import android.webkit.WebView;
 
 import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -1526,10 +1542,21 @@ public class MainActivity extends BridgeActivity {{
     public void onCreate(Bundle savedInstanceState) {{
         super.onCreate(savedInstanceState);
 
+        // Opt out of edge-to-edge (see class-level note above): keeps the
+        // status/navigation bar backgrounds we set below actually visible
+        // on Android 15+ instead of silently becoming no-ops.
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), true);
+
         WebView webView = getBridge().getWebView();
         int bootColor = ContextCompat.getColor(this, R.color.ihr_boot_background);
         getWindow().setStatusBarColor(bootColor);
         getWindow().setNavigationBarColor(bootColor);
+        boolean isLightMode = (getResources().getConfiguration().uiMode
+            & Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES;
+        WindowInsetsControllerCompat insetsController =
+            new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
+        insetsController.setAppearanceLightStatusBars(isLightMode);
+        insetsController.setAppearanceLightNavigationBars(isLightMode);
         webView.setBackgroundColor(bootColor);
         WebSettings settings = webView.getSettings();
         settings.setDomStorageEnabled(true);
@@ -1589,6 +1616,7 @@ public class MainActivity extends BridgeActivity {{
                 f"""package {package_id}
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.webkit.CookieManager
@@ -1596,16 +1624,28 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.getcapacitor.BridgeActivity
 
 class MainActivity : BridgeActivity() {{
     override fun onCreate(savedInstanceState: Bundle?) {{
         super.onCreate(savedInstanceState)
 
+        // Opt out of edge-to-edge (see class-level note above): keeps the
+        // status/navigation bar backgrounds we set below actually visible
+        // on Android 15+ instead of silently becoming no-ops.
+        WindowCompat.setDecorFitsSystemWindows(window, true)
+
         val webView = bridge.webView
         val bootColor = ContextCompat.getColor(this, R.color.ihr_boot_background)
         window.statusBarColor = bootColor
         window.navigationBarColor = bootColor
+        val isLightMode = (resources.configuration.uiMode
+            and Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES
+        val insetsController = WindowInsetsControllerCompat(window, window.decorView)
+        insetsController.isAppearanceLightStatusBars = isLightMode
+        insetsController.isAppearanceLightNavigationBars = isLightMode
         webView.setBackgroundColor(bootColor)
         webView.settings.domStorageEnabled = true
         webView.settings.databaseEnabled = true
