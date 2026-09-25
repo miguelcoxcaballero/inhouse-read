@@ -1,0 +1,703 @@
+/*
+  bookshelf.css — la estantería del home de Inhouse Read.
+
+  Todo el color sale de los tokens de `tokens.css` (--accent-read, --wood,
+  --cream, --ink...), con fallback literal en cada var() para que el
+  componente siga siendo legible si alguien lo monta suelto (demo, storybook,
+  una página de pruebas).
+
+  Notas de implementación:
+   - La madera es CSS (gradientes repetidos), no imágenes: cero peso y se
+     adapta al tema.
+   - Lo único que se anima es transform/opacity. Nada de width/left/top.
+   - `--ihr-accent-legible` es el verde para TEXTO: en oscuro sube a un verde
+     claro porque #2f6b4f sobre #151515 no llega a contraste AA.
+*/
+
+.ihr-bookshelf {
+  --ihr-wall: #efe9dd;
+  --ihr-wall-deep: #e3dbcb;
+  --ihr-board: var(--wood, #8b5e3c);
+  --ihr-board-light: #a87c53;
+  --ihr-board-dark: var(--wood-dark, #6b4728);
+  --ihr-accent: var(--accent-read, #2f6b4f);
+  --ihr-accent-legible: var(--accent-read, #2f6b4f);
+  --ihr-soil: #4a3a2c;
+  --ihr-bloom: var(--copper, #d97736);
+  --ihr-shelf-height: 172px;
+  --ihr-board-thickness: 13px;
+  --ihr-ease: var(--ease, cubic-bezier(0.4, 0, 0.2, 1));
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  font-family: var(--f-body, 'DM Sans', sans-serif);
+}
+
+[data-theme='dark'] .ihr-bookshelf {
+  --ihr-wall: #1f1c19;
+  --ihr-wall-deep: #17150f;
+  --ihr-board: #6f4b30;
+  --ihr-board-light: #86603f;
+  --ihr-board-dark: #4d3421;
+  --ihr-accent-legible: #8fbf9e;
+  --ihr-soil: #2c231a;
+}
+
+@media (min-width: 600px) {
+  .ihr-bookshelf {
+    --ihr-shelf-height: 200px;
+  }
+}
+
+.ihr-bookshelf__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  padding: 8px 0 max(20px, env(safe-area-inset-bottom));
+}
+
+.ihr-bookshelf--with-actions .ihr-bookshelf__scroll {
+  padding-bottom: calc(76px + env(safe-area-inset-bottom));
+}
+
+/* ------------------------------------------------------------------ *
+ * Secciones
+ * ------------------------------------------------------------------ */
+
+.ihr-section {
+  margin: 0 0 4px;
+}
+
+.ihr-section__title {
+  margin: 18px 16px 8px;
+  font-family: var(--f-logo, 'Comfortaa', cursive);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  color: var(--text-secondary, #555);
+}
+
+/* ------------------------------------------------------------------ *
+ * Balda
+ * ------------------------------------------------------------------ */
+
+.ihr-shelf {
+  position: relative;
+  padding: 0 0 22px;
+  /* Las baldas fuera de pantalla no se pintan: scroll fluido con 200 libros. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 210px;
+}
+
+/* El fondo del hueco: pared cálida con la luz cayendo desde arriba. */
+.ihr-shelf__back {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: calc(var(--ihr-shelf-height) + var(--ihr-board-thickness));
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.12) 0, rgba(0, 0, 0, 0) 38px),
+    linear-gradient(180deg, var(--ihr-wall) 0%, var(--ihr-wall-deep) 100%);
+  border-radius: 2px;
+}
+
+.ihr-shelf__row {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: var(--ihr-shelf-height);
+  padding: 0 16px;
+  /* El scroll vertical manda: los handlers de los lomos no lo bloquean. */
+  touch-action: pan-y;
+}
+
+/* El tablero: veta, canto frontal iluminado y sombra proyectada. */
+.ihr-shelf__board {
+  position: relative;
+  height: var(--ihr-board-thickness);
+  border-radius: 2px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.06) 0 2px,
+      rgba(255, 255, 255, 0.04) 2px 5px,
+      rgba(0, 0, 0, 0) 5px 17px
+    ),
+    linear-gradient(
+      180deg,
+      var(--ihr-board-light) 0 2px,
+      var(--ihr-board) 2px 8px,
+      var(--ihr-board-dark) 8px 100%
+    );
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.18) inset,
+    0 8px 14px -8px rgba(0, 0, 0, 0.45);
+}
+
+/* ------------------------------------------------------------------ *
+ * Lomos
+ * ------------------------------------------------------------------ */
+
+.ihr-spine {
+  --ihr-lift: 0px;
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--ihr-spine-w, 34px);
+  height: var(--ihr-spine-h, 90%);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px 2px 1px 1px;
+  /* Un lomo es plano: sólo los cantos se oscurecen y hay un brillo tenue
+     junto al borde izquierdo. Nada de degradado ancho, que lo vuelve tubo. */
+  background:
+    linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.34) 0%,
+      rgba(0, 0, 0, 0.06) 5%,
+      rgba(255, 255, 255, 0.07) 12%,
+      rgba(255, 255, 255, 0) 40%,
+      rgba(0, 0, 0, 0.05) 92%,
+      rgba(0, 0, 0, 0.3) 100%
+    ),
+    var(--ihr-spine-base, #4a4a4a);
+  color: var(--ihr-spine-ink, #f2efe6);
+  box-shadow:
+    0 2px 5px -2px rgba(0, 0, 0, 0.5),
+    0 0 0 0.5px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  overflow: hidden;
+  transform-origin: bottom right;
+  transform: translateY(var(--ihr-lift)) rotate(var(--ihr-spine-tilt, 0deg));
+  transition:
+    transform 0.18s var(--ihr-ease),
+    filter 0.18s var(--ihr-ease);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Cabezada: el canto superior de las hojas asoma sobre la tela. */
+.ihr-spine::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0));
+}
+
+/* Zona de acierto: 2px extra a cada lado, sin invadir el lomo vecino. */
+.ihr-spine::after {
+  content: '';
+  position: absolute;
+  inset: -8px -2px -4px;
+}
+
+.ihr-spine.is-pressed {
+  --ihr-lift: -7px;
+  filter: brightness(1.07);
+  box-shadow:
+    0 10px 16px -8px rgba(0, 0, 0, 0.55),
+    0 0 0 0.5px rgba(0, 0, 0, 0.12);
+}
+
+.ihr-spine:focus-visible {
+  outline: 2px solid var(--ihr-accent-legible);
+  outline-offset: 3px;
+}
+
+/* El libro ha salido de la balda: deja su hueco mientras gira la portada. */
+.ihr-spine.is-away {
+  visibility: hidden;
+}
+
+/*
+  Texto del lomo. `vertical-rl` gira el latino 90° en el sentido en el que se
+  leen los lomos reales (de arriba abajo). En modo vertical el eje en línea es
+  el vertical: por eso un flex "row" apila título arriba y autor abajo, y
+  `align-items:center` los centra en el grosor del lomo.
+*/
+.ihr-spine__label {
+  position: absolute;
+  inset: 10px 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* nowrap es lo que impide que un título largo se derrame en una segunda
+   columna y acabe pisando al libro de al lado. */
+.ihr-spine__title {
+  max-height: 74%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.28);
+}
+
+.ihr-spine__author {
+  max-height: 22%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.7;
+  font-size: 0.55rem;
+}
+
+/* Lomos finos: sólo cabe el título (la clase la pone bookshelf.js). */
+.ihr-spine--slim .ihr-spine__author {
+  display: none;
+}
+
+/* Marcapáginas: una cinta fina al pie del lomo con lo leído. */
+.ihr-spine__progress {
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  bottom: 6px;
+  height: 2.5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.ihr-spine__progress::after {
+  content: '';
+  display: block;
+  width: var(--ihr-progress, 0%);
+  height: 100%;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.7;
+}
+
+/* --- Acabados del lomo ------------------------------------------------ */
+
+.ihr-spine__grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ihr-spine--bands .ihr-spine__grain {
+  background:
+    linear-gradient(180deg, transparent 0 16px, var(--ihr-spine-shade, #000) 16px 19px, transparent 19px),
+    linear-gradient(0deg, transparent 0 22px, var(--ihr-spine-shade, #000) 22px 25px, transparent 25px);
+  opacity: 0.85;
+}
+
+/* Tejuelo: un filete grabado alrededor del texto, como los tomos con
+   etiqueta. Proporcional, para que no se descoloque con lomos altos. */
+.ihr-spine--panel .ihr-spine__grain {
+  inset: 12% 3px 18%;
+  border: 1px solid currentColor;
+  border-radius: 1px;
+  opacity: 0.32;
+}
+
+.ihr-spine--ribbed .ihr-spine__grain {
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.09) 0 1px,
+    rgba(0, 0, 0, 0.14) 1px 3px,
+    transparent 3px 26px
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Macetas
+ * ------------------------------------------------------------------ */
+
+.ihr-plant {
+  flex: 0 0 auto;
+  display: block;
+  width: var(--ihr-plant-w, 46px);
+  height: var(--ihr-plant-h, 60px);
+  /* El potus cuelga por delante del canto de la balda. */
+  margin-bottom: calc(-1 * var(--ihr-plant-overhang, 0px));
+  pointer-events: none;
+  --ihr-pot: #c97b4e;
+  --ihr-pot-shade: #a45e37;
+  --ihr-soil: #4a3a2c;
+  --ihr-bloom: var(--copper, #d97736);
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.18));
+}
+
+.ihr-plant svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* Las colgantes van por delante del tablero. */
+.ihr-plant--pothos {
+  position: relative;
+  z-index: 2;
+}
+
+[data-theme='dark'] .ihr-plant {
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.45)) brightness(0.88);
+}
+
+/* ------------------------------------------------------------------ *
+ * Estado vacío
+ * ------------------------------------------------------------------ */
+
+.ihr-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 100%;
+  padding: 24px 20px 40px;
+  text-align: center;
+}
+
+.ihr-empty__art {
+  width: min(360px, 100%);
+}
+
+.ihr-empty__row {
+  justify-content: center;
+  gap: 16px;
+  height: 120px;
+}
+
+.ihr-empty__roof {
+  width: 42px;
+  height: auto;
+  margin: 0 auto 10px;
+  stroke: var(--ihr-accent-legible);
+  stroke-width: 3.5;
+}
+
+.ihr-empty__copy {
+  max-width: 320px;
+  margin-top: 22px;
+}
+
+.ihr-empty__title {
+  margin: 0 0 8px;
+  font-family: var(--f-logo, 'Comfortaa', cursive);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+  color: var(--text-primary, #1a1a1a);
+}
+
+.ihr-empty__body {
+  margin: 0 0 20px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--text-secondary, #555);
+}
+
+/* ------------------------------------------------------------------ *
+ * Botones
+ * ------------------------------------------------------------------ */
+
+.ihr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--tap-min, 44px);
+  padding: 0 18px;
+  border: 1px solid var(--border-strong, rgba(0, 0, 0, 0.1));
+  border-radius: var(--r-full, 999px);
+  background: var(--surface, #fff);
+  color: var(--text-primary, #1a1a1a);
+  font-family: inherit;
+  font-size: 0.92rem;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.04));
+  transition:
+    transform 0.15s var(--ihr-ease),
+    background-color 0.15s var(--ihr-ease);
+}
+
+.ihr-btn:active {
+  transform: scale(0.97);
+}
+
+.ihr-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ihr-btn--primary {
+  border-color: transparent;
+  background: var(--ihr-accent);
+  color: #fff;
+}
+
+.ihr-btn .ihr-icon {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+}
+
+.ihr-actions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, transparent, var(--bg-primary, #f5f5f0) 40%);
+}
+
+/* ------------------------------------------------------------------ *
+ * El libro que sale de la balda y gira
+ * ------------------------------------------------------------------ */
+
+.ihr-flyout {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+.ihr-flyout__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(24, 19, 14, 0.58);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+.ihr-flyout__stage {
+  position: absolute;
+  inset: 0;
+  perspective: 1400px;
+  perspective-origin: 50% 44%;
+  pointer-events: none;
+}
+
+/* El tomo: caja 3D real con portada, lomo y canto de hojas. */
+.ihr-flyout__book {
+  position: fixed;
+  transform-style: preserve-3d;
+  transform-origin: 50% 50%;
+}
+
+.ihr-flyout__face {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  backface-visibility: hidden;
+  overflow: hidden;
+}
+
+.ihr-flyout__face--cover {
+  left: 0;
+  width: 100%;
+  border-radius: 2px 7px 7px 2px;
+  background: var(--ihr-spine-base, #4a4a4a);
+  transform: translateZ(calc(var(--ihr-thickness, 20px) / 2));
+  box-shadow: 0 30px 60px -24px rgba(0, 0, 0, 0.75);
+}
+
+/* Cara lateral izquierda = el lomo. Con rotateY(90deg) en el contenedor es
+   justo lo que mira al usuario, y proyecta exactamente el ancho del lomo. */
+.ihr-flyout__face--spine {
+  left: 0;
+  width: var(--ihr-thickness, 20px);
+  border-radius: 2px 0 0 2px;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.34) 0%,
+      rgba(255, 255, 255, 0.12) 18%,
+      rgba(255, 255, 255, 0.03) 55%,
+      rgba(0, 0, 0, 0.3) 100%
+    ),
+    var(--ihr-spine-base, #4a4a4a);
+  color: var(--ihr-spine-ink, #f2efe6);
+  transform: rotateY(-90deg) translateZ(calc(var(--ihr-thickness, 20px) / 2));
+}
+
+.ihr-flyout__face--spine .ihr-spine__label {
+  inset: 14px 0 16px;
+  line-height: var(--ihr-thickness, 20px);
+  font-size: 0.66rem;
+}
+
+/* Canto derecho: las hojas. Se ve de refilón durante el giro y es lo que
+   convierte el rectángulo en un objeto con volumen. */
+.ihr-flyout__pages {
+  position: absolute;
+  top: 2%;
+  right: 0;
+  width: var(--ihr-thickness, 20px);
+  height: 96%;
+  border-radius: 0 2px 2px 0;
+  background:
+    repeating-linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.09) 0 1px,
+      rgba(255, 255, 255, 0) 1px 3px
+    ),
+    linear-gradient(90deg, #efe7d6, #d9cfb9);
+  transform: rotateY(90deg) translateZ(calc(var(--ihr-thickness, 20px) / 2));
+  backface-visibility: hidden;
+}
+
+.ihr-flyout__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Brillo del barniz: una banda diagonal muy sutil sobre la portada. */
+.ihr-flyout__gloss {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0.04) 26%,
+    rgba(255, 255, 255, 0) 48%
+  );
+  pointer-events: none;
+}
+
+.ihr-flyout__book.is-loading .ihr-flyout__face--cover {
+  animation: ihr-breathe 1.6s var(--ihr-ease) infinite;
+}
+
+@keyframes ihr-breathe {
+  0%, 100% { box-shadow: 0 30px 60px -24px rgba(0, 0, 0, 0.75); }
+  50% { box-shadow: 0 30px 74px -22px rgba(0, 0, 0, 0.9); }
+}
+
+/* --- Portada generada cuando el libro no trae ninguna ----------------- */
+
+.ihr-cover-placeholder {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  padding: 28px 22px;
+  text-align: center;
+  color: var(--ihr-spine-ink, #f2efe6);
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.05) 0 2px,
+    rgba(0, 0, 0, 0) 2px 7px
+  );
+}
+
+/* Filete grabado, como una encuadernación de tela. */
+.ihr-cover-placeholder::before {
+  content: '';
+  position: absolute;
+  inset: 12px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  opacity: 0.38;
+}
+
+.ihr-cover-placeholder__roof {
+  width: 40px;
+  height: auto;
+  stroke: currentColor;
+  stroke-width: 3.5;
+  opacity: 0.9;
+}
+
+.ihr-cover-placeholder__title {
+  font-family: var(--f-logo, 'Comfortaa', cursive);
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.3px;
+}
+
+.ihr-cover-placeholder__author {
+  font-size: 0.82rem;
+  opacity: 0.78;
+}
+
+.ihr-cover-placeholder__format {
+  position: absolute;
+  bottom: 26px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+/* --- Título bajo el libro --------------------------------------------- */
+
+.ihr-flyout__meta {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: max(28px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0 24px;
+  text-align: center;
+  color: #f7f3ea;
+  pointer-events: none;
+}
+
+.ihr-flyout__title {
+  margin: 0;
+  font-family: var(--f-logo, 'Comfortaa', cursive);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+
+.ihr-flyout__author {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.72;
+}
+
+.ihr-flyout__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  pointer-events: auto;
+}
+
+/* ------------------------------------------------------------------ *
+ * Accesibilidad
+ * ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .ihr-spine,
+  .ihr-btn {
+    transition: none;
+  }
+  .ihr-flyout__book.is-loading .ihr-flyout__face--cover {
+    animation: none;
+  }
+}

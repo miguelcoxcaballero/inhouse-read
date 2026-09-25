@@ -1,0 +1,59 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Pages solo admite un despliegue de producción a la vez. En vez de cancelar
+# uno que GitHub ya esté procesando, encolamos los siguientes.
+concurrency:
+  group: pages-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build de producción (Vite)
+        run: npm run build
+
+      - name: Comprobar que el sitio generado tiene lo esencial
+        run: |
+          set -euo pipefail
+          test -f dist/index.html
+          test -d dist/assets
+          touch dist/.nojekyll
+          echo "Artefacto de producción: $(find dist -type f | wc -l) archivos, $(du -sh dist | cut -f1)"
+
+      # Publica directamente a la rama gh-pages, que GitHub Pages sirve sin
+      # más procesamiento (Settings -> Pages -> Source = esa rama). Es el
+      # mismo patrón ya validado en el repo hermano inhousenotes: el
+      # deployment nativo de Actions (configure-pages / upload-pages-artifact)
+      # empezó a dar timeouts intermitentes ("still processing after 5
+      # minutes") que tumbaban el sitio en producción. Un push a una rama no
+      # tiene ese paso de procesamiento del que colgarse.
+      - name: Publish to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: gh-pages
+          force_orphan: true

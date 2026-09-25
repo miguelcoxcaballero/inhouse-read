@@ -1,0 +1,9 @@
+node_modules/
+dist/
+config.js
+.DS_Store
+Thumbs.db
+test-results/
+playwright-report/
+playwright/.cache/
+*.local

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Inhouse Read</title>
+  <style>
+    html, body {
+      height: 100%; margin: 0;
+      background: #f5f5f0;
+      display: flex; align-items: center; justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    @media (prefers-color-scheme: dark) { html, body { background: #151515; } }
+    svg { width: 64px; height: 45px; }
+    path { stroke: #2f6b4f; stroke-width: 5; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  </style>
+</head>
+<body>
+  <svg viewBox="0 0 40 28"><path d="M4 24 L20 8 L36 24"/></svg>
+  <script>
+    /*
+     * Igual que .github/android/app-loader.html en inhousenotes: la app
+     * Android no empaqueta la web offline, es un WebView-shell (Capacitor
+     * BridgeActivity) que redirige de inmediato al sitio en vivo de
+     * GitHub Pages. Así una sola fuente de verdad (el sitio publicado)
+     * sirve tanto a la web como a la app instalada, sin tener que
+     * republicar un APK cada vez que cambia el front-end.
+     */
+    var LIVE_URL = 'https://miguelcoxcaballero.github.io/inhouse-read/?inhouse_app=1'
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        window.location.replace(LIVE_URL)
+      })
+    })
+  </script>
+</body>
+</html>

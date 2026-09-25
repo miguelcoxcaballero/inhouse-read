@@ -1,0 +1,224 @@
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-soft);
+  z-index: 5;
+  flex: none;
+}
+
+.header-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.icon-btn {
+  width: var(--header-btn-size);
+  height: var(--header-btn-size);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s var(--ease);
+}
+
+.icon-btn:hover, .icon-btn:active {
+  background: var(--surface-hover);
+}
+
+.icon-btn svg {
+  width: var(--icon-size, 20px);
+  height: var(--icon-size, 20px);
+  stroke: var(--text-primary);
+}
+
+.screen {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.screen[hidden] {
+  display: none;
+}
+
+#bookshelf-root {
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* ---- Visor de lectura ---- */
+
+#reader-screen {
+  background: var(--bg-primary);
+  touch-action: pan-y;
+}
+
+.reader-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.pdf-page-wrap {
+  position: relative;
+  margin: 0 auto;
+}
+
+.pdf-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+}
+
+.pdf-text-layer span {
+  position: absolute;
+  color: transparent;
+  cursor: text;
+  white-space: pre;
+  transform-origin: 0 0;
+}
+
+.pdf-text-layer ::selection {
+  background: var(--accent-read-soft);
+}
+
+.foliate-reader {
+  position: absolute;
+  inset: 0;
+}
+
+.foliate-view-el {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.reader-toolbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px max(10px, env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--bg-secondary) 88%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-medium);
+  transition: transform 0.25s var(--ease);
+}
+
+.reader-toolbar[hidden] {
+  display: flex;
+  transform: translateY(100%);
+}
+
+.reader-progress {
+  flex: 1;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--border-strong);
+  overflow: hidden;
+}
+
+.reader-progress-fill {
+  height: 100%;
+  background: var(--accent-read);
+  transition: width 0.15s var(--ease);
+}
+
+.file-format-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  background: var(--accent-read-soft);
+  color: var(--accent-read);
+  text-transform: uppercase;
+}
+
+.picker-hint {
+  padding: 16px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+/* ---- Modal de Google Drive ---- */
+
+.drive-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.drive-modal[hidden] {
+  display: none;
+}
+
+.drive-modal-card {
+  width: 100%;
+  max-width: 480px;
+  max-height: 80dvh;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: var(--shadow-medium);
+  padding: 16px;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.drive-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.drive-status {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.drive-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.drive-item {
+  min-height: var(--tap-min);
+  text-align: left;
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+
+.drive-item:hover, .drive-item:active {
+  background: var(--surface-hover);
+}

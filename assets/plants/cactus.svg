@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 126" width="100%" height="100%" preserveAspectRatio="xMidYMax meet" aria-hidden="true" focusable="false" style="--ihr-leaf-a:#2F5D3F;--ihr-leaf-b:#3F7A52;--ihr-leaf-c:#6FA97B;--ihr-stem:#4A7C59;--ihr-pot:#A9A093;--ihr-pot-shade:#8A8175"><g transform="rotate(3.2 50 126)">
+    <g fill="var(--ihr-leaf-b, #3F7A52)">
+      <rect x="23" y="62" width="15" height="34" rx="7.5"/>
+      <rect x="62" y="54" width="14" height="32" rx="7"/>
+      <rect x="38" y="44" width="24" height="58" rx="12" fill="var(--ihr-leaf-a, #2F5D3F)"/>
+    </g>
+    <path d="M50 52 L50 96" stroke="var(--ihr-leaf-c, #6FA97B)" stroke-width="1.5"
+          opacity=".35" fill="none"/>
+    <circle cx="44" cy="58" r="1.6" fill="var(--ihr-leaf-c, #6FA97B)" opacity=".75"/><circle cx="56" cy="64" r="1.6" fill="var(--ihr-leaf-c, #6FA97B)" opacity=".75"/><circle cx="43" cy="74" r="1.6" fill="var(--ihr-leaf-c, #6FA97B)" opacity=".75"/><circle cx="57" cy="80" r="1.6" fill="var(--ihr-leaf-c, #6FA97B)" opacity=".75"/><circle cx="45" cy="90" r="1.6" fill="var(--ihr-leaf-c, #6FA97B)" opacity=".75"/><circle cx="55" cy="96" r="1.6" fill="var(--ihr-leaf-c, #6FA97B)" opacity=".75"/><circle cx="29" cy="76" r="1.6" fill="var(--ihr-leaf-c, #6FA97B)" opacity=".75"/><circle cx="33" cy="84" r="1.6" fill="var(--ihr-leaf-c, #6FA97B)" opacity=".75"/><circle cx="68" cy="68" r="1.6" fill="var(--ihr-leaf-c, #6FA97B)" opacity=".75"/><circle cx="71" cy="76" r="1.6" fill="var(--ihr-leaf-c, #6FA97B)" opacity=".75"/>
+    <g transform="translate(50 40)">
+      <circle cx="0" cy="-5" r="4" fill="var(--ihr-bloom, #d97736)"/>
+      <circle cx="5" cy="-1" r="4" fill="var(--ihr-bloom, #d97736)"/>
+      <circle cx="-5" cy="-1" r="4" fill="var(--ihr-bloom, #d97736)"/>
+      <circle cx="3" cy="4" r="4" fill="var(--ihr-bloom, #d97736)"/>
+      <circle cx="-3" cy="4" r="4" fill="var(--ihr-bloom, #d97736)"/>
+      <circle cx="0" cy="0" r="2.6" fill="var(--ihr-pot, #C97B4E)"/>
+    </g>
+    
+    <path d="M28 104 L32 126 H68 L72 104 Z"
+          fill="var(--ihr-pot, #C97B4E)"/>
+    <path d="M50 104 L68 126 H50 Z"
+          fill="var(--ihr-pot-shade, #A45E37)" opacity=".35"/>
+    <rect x="25" y="96" width="50" height="9" rx="3"
+          fill="var(--ihr-pot, #C97B4E)"/>
+    <rect x="25" y="102" width="50" height="3"
+          fill="var(--ihr-pot-shade, #A45E37)" opacity=".45"/>
+    <ellipse cx="50" cy="100" rx="21" ry="3"
+             fill="var(--ihr-soil, #4A3A2C)"/></g></svg>

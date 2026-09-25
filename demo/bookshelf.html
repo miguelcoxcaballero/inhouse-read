@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Estantería · banco de pruebas</title>
+
+  <!--
+    Banco de pruebas aislado del componente de estantería. No forma parte de
+    la app: sirve para revisar los tres estados (vacía, pocos libros, muchos),
+    los dos temas y la animación de giro sin necesidad de tener libros reales
+    en IndexedDB. Arrancar con `npm run dev` y abrir /demo/bookshelf.html
+  -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap">
+
+  <link rel="stylesheet" href="/src/css/tokens.css" />
+  <link rel="stylesheet" href="/src/css/base.css" />
+  <link rel="stylesheet" href="/src/css/bookshelf.css" />
+
+  <style>
+    body { display: flex; flex-direction: column; height: 100vh; }
+    .demo-bar {
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+      background: var(--surface); font-size: 0.82rem;
+    }
+    .demo-bar button {
+      min-height: 34px; padding: 0 12px; border-radius: var(--r-full);
+      border: 1px solid var(--border-strong); background: var(--bg-primary);
+      font-size: 0.82rem; font-weight: 500;
+    }
+    .demo-bar button[aria-pressed="true"] {
+      background: var(--accent-read); color: #fff; border-color: transparent;
+    }
+    .demo-bar strong {
+      font-family: var(--f-logo); font-weight: 600; margin-right: 6px;
+    }
+    #host { flex: 1 1 auto; min-height: 0; }
+    #log {
+      padding: 6px 14px; font-size: 0.78rem; color: var(--text-secondary);
+      border-top: 1px solid var(--border); background: var(--surface);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+  </style>
+</head>
+<body>
+  <div class="demo-bar">
+    <strong>estantería</strong>
+    <button type="button" data-state="empty">vacía</button>
+    <button type="button" data-state="few">4 libros</button>
+    <button type="button" data-state="some" aria-pressed="true">12 libros</button>
+    <button type="button" data-state="many">60 libros</button>
+    <button type="button" id="toggle-theme">tema</button>
+  </div>
+  <div id="host"></div>
+  <p id="log">Toca un lomo: el libro sale de la balda y gira para enseñar la portada.</p>
+
+  <script type="module">
+    import { renderBookshelf } from '/src/js/bookshelf.js'
+
+    const TITULOS = [
+      ['Los detectives salvajes', 'Roberto Bolaño', 609],
+      ['El maestro y Margarita', 'Mijaíl Bulgákov', 448],
+      ['La casa de los espíritus', 'Isabel Allende', 433],
+      ['Cien años de soledad', 'Gabriel García Márquez', 471],
+      ['Ensayo sobre la ceguera', 'José Saramago', 352],
+      ['El nombre de la rosa', 'Umberto Eco', 640],
+      ['Kafka en la orilla', 'Haruki Murakami', 618],
+      ['Nada', 'Carmen Laforet', 296],
+      ['La ciudad y los perros', 'Mario Vargas Llosa', 408],
+      ['El cuaderno gris', 'Josep Pla', 800],
+      ['Rayuela', 'Julio Cortázar', 635],
+      ['Los santos inocentes', 'Miguel Delibes', 144],
+      ['El Aleph', 'Jorge Luis Borges', 180],
+      ['Manual del distraído', 'Alejandro Rossi', 168],
+      ['La península de las casas vacías', 'David Uclés', 688],
+      ['Persépolis', 'Marjane Satrapi', 352],
+      ['Estructuras de datos', 'Varios autores', 92],
+      ['Poesía completa', 'Alejandra Pizarnik', 480]
+    ]
+    const FORMATOS = ['EPUB', 'PDF', 'MOBI', 'AZW3', 'CBZ']
+
+    function biblioteca(count) {
+      return Array.from({ length: count }, (_, i) => {
+        const [title, author, pageCount] = TITULOS[i % TITULOS.length]
+        const vuelta = Math.floor(i / TITULOS.length)
+        return {
+          id: `local:demo-${i}`,
+          title: vuelta ? `${title} (vol. ${vuelta + 1})` : title,
+          author,
+          pageCount,
+          format: FORMATOS[i % FORMATOS.length],
+          sourceType: 'local',
+          addedAt: Date.now() - i * 8.64e7,
+          lastOpenedAt: Date.now() - i * 3.6e6,
+          // Unos cuantos a medias, para ver la sección "Seguir leyendo".
+          progressFraction: i % 5 === 0 ? 0.18 + (i % 4) * 0.19 : 0
+        }
+      })
+    }
+
+    const ESTADOS = { empty: 0, few: 4, some: 12, many: 60 }
+    const host = document.getElementById('host')
+    const log = document.getElementById('log')
+    let shelf = null
+
+    function montar(estado) {
+      shelf?.destroy()
+      shelf = renderBookshelf(host, biblioteca(ESTADOS[estado]), {
+        onBookOpen(book, ctx) {
+          log.textContent = `onBookOpen("${book.title}") — aquí la app montaría el lector. Se cierra en 1,4 s.`
+          setTimeout(() => ctx.close(), 1400)
+        },
+        onAddBooks() {
+          log.textContent = 'onAddBooks() — aquí la app abriría el selector de archivos.'
+        }
+      })
+    }
+
+    for (const button of document.querySelectorAll('[data-state]')) {
+      button.addEventListener('click', () => {
+        for (const other of document.querySelectorAll('[data-state]')) {
+          other.setAttribute('aria-pressed', String(other === button))
+        }
+        montar(button.dataset.state)
+      })
+    }
+
+    document.getElementById('toggle-theme').addEventListener('click', () => {
+      const root = document.documentElement
+      root.setAttribute('data-theme', root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark')
+    })
+
+    montar('some')
+  </script>
+</body>
+</html>

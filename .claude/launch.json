@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "inhouse-read-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "preview", "--", "--port", "4300", "--strictPort"],
+      "port": 4300,
+      "url": "http://localhost:4300/inhouse-read/"
+    }
+  ]
+}

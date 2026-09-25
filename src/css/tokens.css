@@ -1,0 +1,84 @@
+/*
+  Design tokens — heredados literalmente del kit de identidad de Inhouse
+  (inhouse-identity-kit.html, en el repo hermano miguelcoxcaballero/inhousenotes)
+  y de las variables de :root de inhousenotes/index.html.
+
+  Solo se añade un acento de producto propio para Inhouse Read
+  (--accent-read / --wood), ya que cada app hermana tiene el suyo
+  (notes = naranja #E07A3C, learn = verde #22c55e, math playground = azul
+  #2563eb). Read usa un verde bosque + marrón madera: encaja con la
+  estantería con plantas del home y no choca con los acentos ya usados.
+*/
+:root {
+  /* Marca raíz · inhouse-software (idéntico a Notes) */
+  --black: #000000;
+  --copper: #d97736;
+  --cream: #f5f5f0;
+  --white: #ffffff;
+  --ink: #1a1a1a;
+  --ink-soft: #444746;
+  --muted: #999999;
+  --text-secondary: #555555;
+
+  /* Acento de producto · inhouse read */
+  --accent-read: #2f6b4f;
+  --accent-read-soft: rgba(47, 107, 79, 0.08);
+  --accent-read-border: rgba(47, 107, 79, 0.16);
+  --wood: #8b5e3c;
+  --wood-dark: #6b4728;
+
+  /* Superficies y bordes (idéntico a Notes) */
+  --bg-primary: #f5f5f0;
+  --bg-secondary: #ffffff;
+  --text-primary: #1a1a1a;
+  --surface: #ffffff;
+  --surface-hover: #fafaf8;
+  --border: rgba(0, 0, 0, 0.06);
+  --border-strong: rgba(0, 0, 0, 0.10);
+
+  /* Radios (idéntico a Notes) */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --r-xs: 6px;
+  --r-full: 999px;
+  --r-card: 2.5rem;
+
+  /* Sombras (idéntico a Notes) */
+  --shadow-soft: 0 2px 20px rgba(0, 0, 0, 0.08);
+  --shadow-medium: 0 4px 30px rgba(0, 0, 0, 0.12);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.10);
+
+  /* Timing (idéntico a Notes) */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Tipografía (idéntico a Notes) */
+  --f-logo: 'Comfortaa', cursive;
+  --f-body: 'DM Sans', 'Lato', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* Tamaños de zona táctil, pensados mobile-first */
+  --tap-min: 44px;
+  --header-btn-size: 44px;
+}
+
+[data-theme="dark"] {
+  --bg-primary: #151515;
+  --bg-secondary: #1c1c1c;
+  --text-primary: #f5f5f5;
+  --text-secondary: #a2a2a2;
+  --surface: #1c1c1c;
+  --surface-hover: #242424;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --shadow-soft: 0 2px 20px rgba(0, 0, 0, 0.35);
+  --shadow-medium: 0 4px 30px rgba(0, 0, 0, 0.45);
+  --accent-read-soft: rgba(47, 107, 79, 0.18);
+  --accent-read-border: rgba(47, 107, 79, 0.32);
+}
+
+@media (max-width: 720px) {
+  :root {
+    --header-btn-size: 40px;
+  }
+}

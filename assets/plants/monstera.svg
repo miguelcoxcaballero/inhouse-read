@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 126" width="100%" height="100%" preserveAspectRatio="xMidYMax meet" aria-hidden="true" focusable="false" style="--ihr-leaf-a:#54632F;--ihr-leaf-b:#6F8244;--ihr-leaf-c:#A3B16A;--ihr-stem:#66783E;--ihr-pot:#B8865F;--ihr-pot-shade:#966744"><g transform="rotate(-0.2 50 126)">
+    <g fill="none" stroke="var(--ihr-stem, #4A7C59)" stroke-width="2.4" stroke-linecap="round">
+      <path d="M50 96 C 44 86 36 78 30 68"/>
+      <path d="M50 96 C 56 86 64 74 68 62"/>
+      <path d="M50 96 C 48 84 48 72 48 60"/>
+    </g>
+    
+    <g transform="translate(30 67) rotate(-28) scale(0.62)">
+      <path d="M0 0 C -5 -6 -13 -9 -17 -13 L -9 -18 C -14 -21 -21 -24 -23 -29 L -12 -33 C -16 -38 -21 -43 -20 -48 L -9 -47 C -10 -53 -6 -57 0 -59 C 6 -57 10 -53 9 -47 L 20 -48 C 21 -43 16 -38 12 -33 L 23 -29 C 21 -24 14 -21 9 -18 L 17 -13 C 13 -9 5 -6 0 0 Z" fill="var(--ihr-leaf-b, #3F7A52)"/>
+      <path d="M0 -3 L0 -54" stroke="var(--ihr-leaf-a, #2F5D3F)" stroke-width="2"
+            stroke-linecap="round" opacity=".35" fill="none"/>
+    </g>
+    
+    <g transform="translate(68 61) rotate(26) scale(0.58)">
+      <path d="M0 0 C -5 -6 -13 -9 -17 -13 L -9 -18 C -14 -21 -21 -24 -23 -29 L -12 -33 C -16 -38 -21 -43 -20 -48 L -9 -47 C -10 -53 -6 -57 0 -59 C 6 -57 10 -53 9 -47 L 20 -48 C 21 -43 16 -38 12 -33 L 23 -29 C 21 -24 14 -21 9 -18 L 17 -13 C 13 -9 5 -6 0 0 Z" fill="var(--ihr-leaf-c, #6FA97B)"/>
+      <path d="M0 -3 L0 -54" stroke="var(--ihr-leaf-a, #2F5D3F)" stroke-width="2"
+            stroke-linecap="round" opacity=".35" fill="none"/>
+    </g>
+    
+    <g transform="translate(48 59) rotate(-4) scale(0.72)">
+      <path d="M0 0 C -5 -6 -13 -9 -17 -13 L -9 -18 C -14 -21 -21 -24 -23 -29 L -12 -33 C -16 -38 -21 -43 -20 -48 L -9 -47 C -10 -53 -6 -57 0 -59 C 6 -57 10 -53 9 -47 L 20 -48 C 21 -43 16 -38 12 -33 L 23 -29 C 21 -24 14 -21 9 -18 L 17 -13 C 13 -9 5 -6 0 0 Z" fill="var(--ihr-leaf-a, #2F5D3F)"/>
+      <path d="M0 -3 L0 -54" stroke="var(--ihr-leaf-a, #2F5D3F)" stroke-width="2"
+            stroke-linecap="round" opacity=".35" fill="none"/>
+    </g>
+    
+    <path d="M26 98 L31 126 H69 L74 98 Z"
+          fill="var(--ihr-pot, #C97B4E)"/>
+    <path d="M50 98 L69 126 H50 Z"
+          fill="var(--ihr-pot-shade, #A45E37)" opacity=".35"/>
+    <rect x="23" y="90" width="54" height="9" rx="3"
+          fill="var(--ihr-pot, #C97B4E)"/>
+    <rect x="23" y="96" width="54" height="3"
+          fill="var(--ihr-pot-shade, #A45E37)" opacity=".45"/>
+    <ellipse cx="50" cy="94" rx="23" ry="3"
+             fill="var(--ihr-soil, #4A3A2C)"/></g></svg>
