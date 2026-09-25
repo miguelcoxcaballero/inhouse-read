@@ -10,7 +10,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('carga el home con la marca y las acciones de cabecera', async ({ page }) => {
-  await expect(page.locator('.logo')).toContainText('inhouse read')
+  await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   await expect(page.getByRole('button', { name: 'Elegir archivo del dispositivo' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Abrir desde Google Drive' })).toBeVisible()
 })
@@ -43,7 +43,25 @@ test('abre un PDF local y navega al visor de lectura', async ({ page }) => {
 
 test('el libro abierto reaparece en la estantería al volver', async ({ page }) => {
   await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
-  await expect(page.locator('#reader-screen')).toBeVisible()
+
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+
+  // El registro en IndexedDB se guarda de forma asíncrona después de que el
+  // PDF termina de renderizarse. Esperamos a que exista de verdad antes de
+  // pulsar "volver", en vez de asumir un orden de timing concreto.
+  await page.waitForFunction(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open('inhouse-read')
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error)
+    })
+    const count = await new Promise((resolve, reject) => {
+      const req = db.transaction('books', 'readonly').objectStore('books').count()
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error)
+    })
+    return count > 0
+  })
 
   await page.getByRole('button', { name: 'Volver a la estantería' }).click()
 

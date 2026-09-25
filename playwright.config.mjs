@@ -21,7 +21,14 @@ export default defineConfig({
     // El build se hace aparte (ver package.json: "pretest:e2e") — encadenar
     // "npm run build && npm run preview" en un solo comando no arrancaba de
     // forma fiable el proceso hijo de Playwright en todos los shells.
-    command: `npm run preview -- --port ${PORT} --strictPort`,
+    //
+    // "--host 127.0.0.1" es imprescindible: sin él, "vite preview" resuelve
+    // el hostname "localhost" y en systemd-resolved (runners de GitHub
+    // Actions incluidos) eso puede enlazar solo IPv6 (::1). Playwright
+    // comprueba la URL por IPv4 (127.0.0.1) y se queda esperando un socket
+    // que nunca responde -> "Timed out waiting ...ms from config.webServer"
+    // aunque el proceso arrancara bien y sin errores.
+    command: `npm run preview -- --host 127.0.0.1 --port ${PORT} --strictPort`,
     url: BASE_URL,
     timeout: 30_000,
     reuseExistingServer: !process.env.CI
