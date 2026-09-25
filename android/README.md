@@ -1,28 +1,33 @@
 # Android
 
-Mismo patrón que **inhouse notes**: la app Android no empaqueta la web offline, es un **WebView-shell** que redirige de inmediato a la versión en vivo de GitHub Pages (`app-loader.html`, en esta misma carpeta). Así un único sitio publicado sirve tanto al navegador como a la app instalada, sin tener que recompilar un APK cada vez que cambia el front-end.
+Mismo patrón que **inhouse notes**: la app Android es un **WebView-shell** (Capacitor `BridgeActivity`) que redirige de inmediato a la versión en vivo de GitHub Pages (`.github/android/app-loader.html`). Un único sitio publicado sirve tanto al navegador como a la app instalada.
 
-## Por qué no hay aquí un proyecto Android Studio ni una APK ya firmada
+## Pipeline de build y firma (ya automatizado)
 
-inhouse notes genera su APK con una herramienta propia (`android app/html_to_apk_builder.py`, una GUI de Python/Tkinter que crea el proyecto Capacitor, parchea `AndroidManifest.xml`/`MainActivity`, genera los iconos adaptativos y firma el release) y la publica vía un workflow de CI (`build-android.yml`) que lee la clave de firma desde secrets del repo (`INHOUSE_ANDROID_KEYSTORE_BASE64`, etc.).
+- `.github/workflows/build-android.yml` — se dispara manualmente (`workflow_dispatch`, pestaña Actions → "Build and publish signed Android APK" → Run workflow). Compila, firma con el keystore de release guardado en los secrets del repo, y publica el APK como GitHub Release con tag `android-v1.0.0`.
+- `.github/scripts/build_android_apk.py` — orquesta el build en modo headless (sin abrir ninguna ventana), copiado y adaptado de `build_android_apk.py` de inhouse notes.
+- `android/html_to_apk_builder.py` — el builder en sí (Capacitor + parcheo de manifest/gradle/iconos), copiado de `android app/html_to_apk_builder.py` de inhouse notes y adaptado: se le quitó toda la lógica específica de Notes que no aplica aquí (exportar PDF a un bridge nativo, el instalador de auto-actualización, el deep-link de OAuth por esquema de URI propio) para no cargar la nueva app con código muerto o engañoso bajo su nombre.
+- El keystore de firma (`inhouse-read-release.jks`, válido hasta 2054) se generó una vez con `keytool` y vive únicamente como secrets del repo (`INHOUSE_READ_ANDROID_KEYSTORE_BASE64`, `_PASSWORD`, `_KEY_ALIAS`) y en una copia local fuera de este repositorio — nunca en el código ni en este README.
 
-Ese *keystore* de firma no existe para este proyecto nuevo, y generarlo — y decidir dónde y cómo guardar su contraseña — es una decisión de seguridad que te corresponde a ti, no algo que deba crear yo de forma autónoma. Por eso este repo trae la misma arquitectura (loader-splash + WebView) pero **no** un pipeline de firma automatizado. La entrega principal pedida — la URL pública para abrir/instalar la app — funciona igual sin esto: GitHub Pages ya sirve una PWA instalable desde el navegador (ver más abajo).
+## Limitación honesta: Google Drive no funciona (todavía) dentro del APK
 
-## Cómo instalar hoy, sin compilar nada
+La app web usa Google Identity Services (`accounts.google.com`) para el login de Drive, pensado para un navegador normal. Google **bloquea ese flujo de OAuth dentro de un WebView embebido** (política de "disallowed_useragent" desde 2017) — es una restricción de Google, no un bug de esta app. Dentro del navegador normal, o instalada como PWA ("Añadir a pantalla de inicio"), Drive funciona sin problema.
 
-Desde Chrome/Edge en Android, al abrir la URL de GitHub Pages aparece la opción **"Añadir a pantalla de inicio" / "Instalar app"**: al ser una PWA (manifest + service worker no necesarios para esto, basta con el `<meta name="theme-color">` y el diseño responsive ya incluidos), se instala como un icono normal y abre en modo standalone, sin barra de navegador. Es el camino más rápido y no requiere firma ni Play Store.
+Arreglarlo dentro del APK nativo requiere: (1) registrar un segundo cliente OAuth de tipo "Android" en Google Cloud con el SHA-1 de este keystore de firma, y (2) añadir en `MainActivity` el manejo de un deep-link de retorno (`openAuthUrl` ya está en el builder, listo para esto — ver `patch_webview_bridge` en `html_to_apk_builder.py`) más el código JS correspondiente en `drive-client.js` para usar ese puente en vez del popup normal cuando la app detecta que corre dentro del WebView. No implementado todavía porque nadie lo ha pedido explícitamente — es trabajo real de otra sesión, no una casilla que falte marcar.
 
-## Cómo generar tú mismo un APK (manual, con Capacitor)
+## Cómo instalar
+
+**Vía APK firmado**: pestaña [Releases](https://github.com/miguelcoxcaballero/inhouse-read/releases) del repo, tag `android-v1.0.0` → descargar `inhouse-read-release-v1.0.0.apk` → instalar (Android pedirá permitir "orígenes desconocidos" la primera vez, es normal para un APK fuera de Play Store).
+
+**Vía PWA (sin instalar nada, recomendado si no necesitas la app nativa)**: abre la URL de GitHub Pages en Chrome/Edge en Android y usa "Añadir a pantalla de inicio" / "Instalar app".
+
+## Cómo volver a compilar tú mismo (manual, sin CI)
 
 ```bash
 npm install -D @capacitor/core @capacitor/cli @capacitor/android
 npx cap init "Inhouse Read" com.inhousesoftware.read --web-dir android/www
-mkdir -p android/www && cp android/app-loader.html android/www/index.html
+mkdir -p android/www && cp .github/android/app-loader.html android/www/index.html
 npx cap add android
 npx cap sync android
-npx cap open android   # abre Android Studio; Build > Generate Signed Bundle/APK
+npx cap open android   # Android Studio; Build > Generate Signed Bundle/APK
 ```
-
-Antes de compilar, edita `LIVE_URL` en `app-loader.html` si despliegas bajo otra URL, y en Android Studio crea (o reutiliza) tu propio keystore de firma — Capacitor/Android Studio te lo pedirá en el asistente de "Generate Signed Bundle/APK".
-
-Si más adelante quieres el mismo pipeline automatizado que inhouse notes (firma vía CI, publicación como GitHub Release), el patrón a replicar es `.github/workflows/build-android.yml` de ese repo — pero necesita que primero generes y subas tu propio keystore como secret.

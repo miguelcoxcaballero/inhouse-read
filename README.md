@@ -80,4 +80,4 @@ Igual que inhouse notes: build de Vite, publicado a la rama `gh-pages` vía `pea
 
 ## Android
 
-Igual que inhouse notes: no es un proyecto Android Studio versionado, sino una app-shell WebView (vía Capacitor) que apunta a la URL en vivo de GitHub Pages — ver `android/README.md`.
+App-shell WebView (Capacitor) que apunta a la URL en vivo de GitHub Pages, con el mismo pipeline de firma automatizado que inhouse notes (`.github/workflows/build-android.yml`, disparo manual desde la pestaña Actions). APK firmado disponible en [Releases](https://github.com/miguelcoxcaballero/inhouse-read/releases). Google Drive no funciona todavía dentro del APK nativo (limitación de Google con OAuth en WebView, no un bug) — sí funciona en la PWA/navegador. Detalles en `android/README.md`.

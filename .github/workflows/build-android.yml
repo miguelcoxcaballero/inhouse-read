@@ -1,0 +1,64 @@
+name: Build and publish signed Android APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-android-apk
+  cancel-in-progress: false
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main, fetch-depth: 0 }
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+
+      - name: Install builder dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk
+          python -m pip install --disable-pip-version-check pillow
+
+      - name: Restore signing key
+        env: { KEYSTORE_BASE64: ${{ secrets.INHOUSE_READ_ANDROID_KEYSTORE_BASE64 }} }
+        run: |
+          test -n "$KEYSTORE_BASE64"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/inhouse-read-release.jks"
+
+      - name: Build signed APK
+        env:
+          INHOUSE_KEYSTORE_PATH: ${{ runner.temp }}/inhouse-read-release.jks
+          INHOUSE_KEYSTORE_PASSWORD: ${{ secrets.INHOUSE_READ_ANDROID_KEYSTORE_PASSWORD }}
+          INHOUSE_KEY_ALIAS: ${{ secrets.INHOUSE_READ_ANDROID_KEY_ALIAS }}
+        run: python .github/scripts/build_android_apk.py
+
+      - run: test -s inhouse-read-release-v1.0.0.apk
+
+      - uses: actions/upload-artifact@v4
+        with: { name: inhouse-read-android-v1.0.0, path: inhouse-read-release-v1.0.0.apk, if-no-files-found: error }
+
+      - name: Publish versioned APK download
+        env: { GH_TOKEN: ${{ github.token }} }
+        run: |
+          if gh release view android-v1.0.0 >/dev/null 2>&1; then
+            gh release upload android-v1.0.0 inhouse-read-release-v1.0.0.apk --clobber
+          else
+            gh release create android-v1.0.0 inhouse-read-release-v1.0.0.apk \
+              --title "Inhouse Read Android 1.0.0" \
+              --notes "Primera build Android de Inhouse Read: WebView-shell (Capacitor) que abre https://miguelcoxcaballero.github.io/inhouse-read/. Lector de PDF, EPUB y MOBI, home con estantería animada. Drive funciona en la PWA/navegador; dentro de este WebView todavía no (ver android/README.md)." \
+              --latest=false
+          fi
