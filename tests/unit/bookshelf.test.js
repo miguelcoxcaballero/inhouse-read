@@ -185,7 +185,13 @@ describe('renderBookshelf', () => {
     expect(flyout.getAttribute('role')).toBe('dialog')
     expect(spine.classList.contains('is-away')).toBe(true)
 
-    expect(onBookOpen).toHaveBeenCalledOnce()
+    // vi.waitFor en vez de otro settle(): esto depende de una cadena de
+    // varios timers/microtasks internos del propio openBook() (reveal.finished
+    // -> wait(holdMs) -> onOpen), y un settle() de duración fija es frágil bajo
+    // un runner de CI más lento/compartido — se vio fallar en CI aunque pasaba
+    // siempre en local. waitFor reintenta hasta que sea cierto, sin acoplarse
+    // a cuántos ticks exactos hacen falta.
+    await vi.waitFor(() => expect(onBookOpen).toHaveBeenCalledOnce())
     const [book, ctx] = onBookOpen.mock.calls[0]
     expect(book.id).toBe(spine.dataset.bookId)
     expect(books.map((candidate) => candidate.id)).toContain(book.id)
@@ -238,7 +244,9 @@ describe('renderBookshelf', () => {
     container.querySelector('.ihr-spine').click()
     await settle()
     expect(container.querySelector('.ihr-cover-placeholder')).not.toBeNull()
-    expect(onBookOpen).toHaveBeenCalledOnce()
+    // Mismo motivo que en el test de arriba: depende de la cadena interna de
+    // timers de openBook(), no de un número fijo de ms.
+    await vi.waitFor(() => expect(onBookOpen).toHaveBeenCalledOnce())
   })
 
   it('Escape y el fondo repliegan la portada y devuelven el foco', async () => {
