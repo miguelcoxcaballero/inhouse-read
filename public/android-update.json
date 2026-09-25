@@ -1,9 +1,9 @@
 {
-  "version": "1.0.2",
-  "versionCode": 3,
+  "version": "1.0.3",
+  "versionCode": 4,
   "required": true,
   "apkSizeBytes": 3161125,
-  "apkSha256": "0e1ee08bee572d4d2b0f78a9f36ec1874541970cb85136a4d0abcd1da82d6277",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.2/inhouse-read-release-v1.0.2.apk",
-  "releaseNotes": "Auto-actualizacion in-app anadida (mismo mecanismo que inhouse notes/photos), mas los cambios de estanteria y el fix de la barra de estado."
+  "apkSha256": "8859441d279ab7af5513e62698b628f6379245d7d033da6fc5850f10c5dc41dd",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.3/inhouse-read-release-v1.0.3.apk",
+  "releaseNotes": "Arregla que la app se quedara con contenido viejo tras reabrir sin cerrar del todo (deteccion automatica de nuevos despliegues + recarga)."
 }
