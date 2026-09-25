@@ -87,3 +87,15 @@ jobs:
             git commit -m "Actualizar android-update.json a la version publicada (automatico)"
             git push origin HEAD:main
           fi
+
+      # Un push hecho con el GITHUB_TOKEN por defecto NO dispara otros
+      # workflows (proteccion anti-bucle de GitHub Actions) -- sin este paso,
+      # el manifiesto ya estaria actualizado en el repo pero el sitio en vivo
+      # seguiria sirviendo el anterior hasta el proximo push manual. Se
+      # dispara deploy-pages.yml explicitamente via workflow_dispatch (una
+      # invocacion de API explicita si cuenta, a diferencia del push-event
+      # automatico).
+      - name: Redesplegar Pages para servir el manifiesto actualizado
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy-pages.yml --repo miguelcoxcaballero/inhouse-read
