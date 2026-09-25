@@ -52,21 +52,21 @@ jobs:
           INHOUSE_KEY_ALIAS: ${{ secrets.INHOUSE_READ_ANDROID_KEY_ALIAS }}
         run: python .github/scripts/build_android_apk.py
 
-      - run: test -s inhouse-read-release-v1.0.3.apk
+      - run: test -s inhouse-read-release-v1.0.4.apk
 
       - uses: actions/upload-artifact@v4
-        with: { name: inhouse-read-android-v1.0.3, path: inhouse-read-release-v1.0.3.apk, if-no-files-found: error }
+        with: { name: inhouse-read-android-v1.0.4, path: inhouse-read-release-v1.0.4.apk, if-no-files-found: error }
 
       - name: Publish versioned APK download
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view android-v1.0.3 >/dev/null 2>&1; then
-            gh release upload android-v1.0.3 inhouse-read-release-v1.0.3.apk --clobber
+          if gh release view android-v1.0.4 >/dev/null 2>&1; then
+            gh release upload android-v1.0.4 inhouse-read-release-v1.0.4.apk --clobber
           else
-            gh release create android-v1.0.3 inhouse-read-release-v1.0.3.apk \
-              --title "Inhouse Read Android 1.0.3" \
-              --notes "Detecta cuando el sitio se ha desplegado de nuevo mientras la app seguia abierta y recarga sola (arregla la app quedandose con contenido viejo tras reabrir sin cerrar del todo). Sin cambios nativos: se publica esta version sobre todo para que las instalaciones existentes reciban el aviso de actualizacion y, al instalarlo, un reinicio limpio del proceso." \
+            gh release create android-v1.0.4 inhouse-read-release-v1.0.4.apk \
+              --title "Inhouse Read Android 1.0.4" \
+              --notes "El app-loader (la pantalla de arranque que redirige al sitio real) anade cache-busting a la URL de destino: sin el, la cache HTTP del propio WebView podia servir un index.html viejo en un arranque en frio tras instalar, aunque el sitio ya estuviera actualizado. No hay cambios de UI en este release; es un arreglo de fontanaria para que las actualizaciones lleguen de verdad." \
               --latest=false
           fi
 
@@ -78,11 +78,11 @@ jobs:
       - name: Actualizar android-update.json con los datos reales de este build
         run: |
           python .github/scripts/update_manifest.py \
-            inhouse-read-release-v1.0.3.apk \
-            1.0.3 \
-            4 \
-            android-v1.0.3 \
-            "Arregla que la app se quedara con contenido viejo tras reabrir sin cerrar del todo (deteccion automatica de nuevos despliegues + recarga)."
+            inhouse-read-release-v1.0.4.apk \
+            1.0.4 \
+            5 \
+            android-v1.0.4 \
+            "Cache-busting en el app-loader: evita que un arranque en frio se quede con un index.html viejo servido por la cache HTTP del WebView."
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/android-update.json
