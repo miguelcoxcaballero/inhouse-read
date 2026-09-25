@@ -1,9 +1,9 @@
 {
-  "version": "1.0.3",
-  "versionCode": 4,
+  "version": "1.0.4",
+  "versionCode": 5,
   "required": true,
-  "apkSizeBytes": 3161125,
-  "apkSha256": "8859441d279ab7af5513e62698b628f6379245d7d033da6fc5850f10c5dc41dd",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.3/inhouse-read-release-v1.0.3.apk",
-  "releaseNotes": "Arregla que la app se quedara con contenido viejo tras reabrir sin cerrar del todo (deteccion automatica de nuevos despliegues + recarga)."
+  "apkSizeBytes": 3161445,
+  "apkSha256": "e0650a4e47c1145dfb4691db1f57b9c0eaf7c778ac549a0840d0cdd45aa19194",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.4/inhouse-read-release-v1.0.4.apk",
+  "releaseNotes": "Cache-busting en el app-loader: evita que un arranque en frio se quede con un index.html viejo servido por la cache HTTP del WebView."
 }
