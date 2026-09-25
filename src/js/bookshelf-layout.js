@@ -84,6 +84,47 @@ export function progressOf(book) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Marcapáginas
+ * ------------------------------------------------------------------ */
+
+/**
+ * Cuánto asoma el marcapáginas por encima del lomo, en px. Es una convención
+ * de UI, no realismo físico: la LONGITUD visible es el progreso, para que se
+ * lea de un vistazo sin abrir el libro. `minPeek` garantiza que un libro
+ * recién empezado (1%) ya enseñe algo que se vea y se distinga de "sin
+ * empezar"; `maxPeek` debe caber en el hueco que la balda reserva encima de
+ * los lomos (`--ihr-bookmark-room` en bookshelf.css), si no un libro de altura
+ * máxima terminado se recortaría contra el techo de la balda.
+ */
+export const DEFAULT_BOOKMARK = Object.freeze({
+  minPeek: 5,
+  maxPeek: 20
+});
+
+/**
+ * Marcapáginas de un libro, o `null` si no hay nada que marcar (progreso 0:
+ * añadido pero nunca abierto).
+ *
+ * @param {object} book
+ * @param {object} [options] sobrescribe DEFAULT_BOOKMARK
+ * @returns {{progress:number, percent:number, peek:number, finished:boolean}|null}
+ */
+export function bookmarkFor(book, options = {}) {
+  const cfg = withDefaults(DEFAULT_BOOKMARK, options);
+  const progress = progressOf(book);
+  if (progress <= 0) return null;
+  const peek = cfg.minPeek + (cfg.maxPeek - cfg.minPeek) * progress;
+  // Redondeo hacia abajo: 99,6% no es "terminado" y no debe decir 100 %.
+  const percent = progress >= 1 ? 100 : Math.max(1, Math.floor(progress * 100));
+  return {
+    progress,
+    percent,
+    peek: Math.round(peek * 10) / 10,
+    finished: progress >= 1
+  };
+}
+
+/* ------------------------------------------------------------------ *
  * Paleta de lomos
  * ------------------------------------------------------------------ */
 

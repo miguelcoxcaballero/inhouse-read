@@ -10,6 +10,8 @@ import {
   planBookshelf,
   progressOf,
   isInProgress,
+  bookmarkFor,
+  DEFAULT_BOOKMARK,
   SPINE_PALETTE,
   SPINE_TEXTURES,
   DEFAULT_LAYOUT
@@ -281,6 +283,47 @@ describe('progressOf / isInProgress', () => {
     expect(isInProgress({ progressFraction: 0.3 })).toBe(true)
     expect(isInProgress({ progressFraction: 0 })).toBe(false)
     expect(isInProgress({ progressFraction: 1 })).toBe(false)
+  })
+})
+
+describe('bookmarkFor', () => {
+  it('no marca nada en un libro sin empezar (o sin dato de progreso)', () => {
+    expect(bookmarkFor({ progressFraction: 0 })).toBeNull()
+    expect(bookmarkFor({})).toBeNull()
+    expect(bookmarkFor({ progressFraction: 'basura' })).toBeNull()
+    expect(bookmarkFor(null)).toBeNull()
+  })
+
+  it('lo que asoma crece con el progreso, entre minPeek y maxPeek', () => {
+    const peeks = [0.01, 0.25, 0.5, 0.75, 0.99, 1].map(
+      (p) => bookmarkFor({ progressFraction: p }).peek
+    )
+    for (let i = 1; i < peeks.length; i += 1) expect(peeks[i]).toBeGreaterThan(peeks[i - 1])
+    expect(peeks[0]).toBeGreaterThanOrEqual(DEFAULT_BOOKMARK.minPeek)
+    expect(peeks.at(-1)).toBe(DEFAULT_BOOKMARK.maxPeek)
+    expect(bookmarkFor({ progressFraction: 0.5 }).peek).toBeCloseTo(
+      (DEFAULT_BOOKMARK.minPeek + DEFAULT_BOOKMARK.maxPeek) / 2,
+      1
+    )
+  })
+
+  it('porcentaje legible: nunca 0 si hay progreso, nunca 100 si no ha terminado', () => {
+    expect(bookmarkFor({ progressFraction: 0.001 }).percent).toBe(1)
+    expect(bookmarkFor({ progressFraction: 0.996 }).percent).toBe(99)
+    expect(bookmarkFor({ progressFraction: 0.996 }).finished).toBe(false)
+    const done = bookmarkFor({ progressFraction: 1 })
+    expect(done.percent).toBe(100)
+    expect(done.finished).toBe(true)
+  })
+
+  it('acepta el alias `progress` y satura fuera de rango', () => {
+    expect(bookmarkFor({ progress: 0.4 }).progress).toBe(0.4)
+    expect(bookmarkFor({ progressFraction: 7 }).peek).toBe(DEFAULT_BOOKMARK.maxPeek)
+  })
+
+  it('admite rangos propios', () => {
+    const mark = bookmarkFor({ progressFraction: 1 }, { minPeek: 2, maxPeek: 12 })
+    expect(mark.peek).toBe(12)
   })
 })
 

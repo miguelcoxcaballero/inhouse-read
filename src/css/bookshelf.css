@@ -26,6 +26,12 @@
   --ihr-bloom: var(--copper, #d97736);
   --ihr-shelf-height: 172px;
   --ihr-board-thickness: 13px;
+  /* Hueco sobre los lomos para que asome el marcapáginas. Tiene que ser >=
+     DEFAULT_BOOKMARK.maxPeek (bookshelf-layout.js): `content-visibility`
+     en .ihr-shelf recorta todo lo que se salga de la caja de la balda. */
+  --ihr-bookmark-room: 20px;
+  --ihr-ribbon: #b3342d;
+  --ihr-ribbon-done: #c79a3e;
   --ihr-ease: var(--ease, cubic-bezier(0.4, 0, 0.2, 1));
 
   position: relative;
@@ -44,6 +50,8 @@
   --ihr-board-dark: #4d3421;
   --ihr-accent-legible: #8fbf9e;
   --ihr-soil: #2c231a;
+  --ihr-ribbon: #a3403a;
+  --ihr-ribbon-done: #b08a3c;
 }
 
 @media (min-width: 600px) {
@@ -95,7 +103,7 @@
 
 .ihr-shelf {
   position: relative;
-  padding: 0 0 22px;
+  padding: var(--ihr-bookmark-room) 0 16px;
   /* Las baldas fuera de pantalla no se pintan: scroll fluido con 200 libros. */
   content-visibility: auto;
   contain-intrinsic-size: auto 210px;
@@ -107,7 +115,7 @@
   left: 0;
   right: 0;
   top: 0;
-  height: calc(var(--ihr-shelf-height) + var(--ihr-board-thickness));
+  height: calc(var(--ihr-bookmark-room) + var(--ihr-shelf-height) + var(--ihr-board-thickness));
   background:
     linear-gradient(180deg, rgba(0, 0, 0, 0.12) 0, rgba(0, 0, 0, 0) 38px),
     linear-gradient(180deg, var(--ihr-wall) 0%, var(--ihr-wall-deep) 100%);
@@ -194,7 +202,12 @@
     0 2px 5px -2px rgba(0, 0, 0, 0.5),
     0 0 0 0.5px rgba(0, 0, 0, 0.12);
   cursor: pointer;
-  overflow: hidden;
+  /* SIN overflow:hidden: el marcapáginas tiene que asomar por encima. El
+     fondo no lo necesita (los fondos ya se recortan al border-radius por
+     sí solos); lo que podría sacar esquinas cuadradas son los hijos a
+     sangre (cabezada y acabado), y esos heredan el radio. El título se
+     recorta en su propia caja (.ihr-spine__label). */
+  overflow: visible;
   transform-origin: bottom right;
   transform: translateY(var(--ihr-lift)) rotate(var(--ihr-spine-tilt, 0deg));
   transition:
@@ -209,6 +222,7 @@
   position: absolute;
   inset: 0 0 auto 0;
   height: 3px;
+  border-radius: inherit;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0));
 }
 
@@ -292,26 +306,50 @@
   display: none;
 }
 
-/* Marcapáginas: una cinta fina al pie del lomo con lo leído. */
-.ihr-spine__progress {
+/*
+  Marcapáginas: una cinta de raso que asoma por el canto de arriba. Lo que
+  asoma (--ihr-bookmark-peek, calculado en bookmarkFor) ES el progreso: poco
+  asomo = recién empezado, mucho = casi terminado. Terminado cambia a dorado.
+  Se pinta encima del lomo (bottom:100%), nunca a un lado: no ocupa balda.
+  Al montar "brota" del libro creciendo desde el canto (sólo transform).
+*/
+.ihr-spine__bookmark {
   position: absolute;
-  left: 5px;
-  right: 5px;
-  bottom: 6px;
-  height: 2.5px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.22);
-  overflow: hidden;
+  bottom: 100%;
+  right: 22%;
+  width: max(5px, min(8px, 24%));
+  height: var(--ihr-bookmark-peek, 8px);
+  background:
+    linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.22) 0%,
+      rgba(255, 255, 255, 0.2) 38%,
+      rgba(255, 255, 255, 0.04) 60%,
+      rgba(0, 0, 0, 0.24) 100%
+    ),
+    var(--ihr-ribbon);
+  /* Cola de golondrina en el extremo libre, como las cintas de verdad. */
+  clip-path: polygon(0 0, 50% min(4px, 40%), 100% 0, 100% 100%, 0 100%);
+  transform-origin: 50% 100%;
+  animation: ihr-bookmark-rise 520ms var(--ihr-ease) 140ms both;
+  pointer-events: none;
 }
 
-.ihr-spine__progress::after {
-  content: '';
-  display: block;
-  width: var(--ihr-progress, 0%);
-  height: 100%;
-  border-radius: 999px;
-  background: currentColor;
-  opacity: 0.7;
+.ihr-spine.is-finished .ihr-spine__bookmark {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.2) 0%,
+      rgba(255, 255, 255, 0.28) 38%,
+      rgba(255, 255, 255, 0.06) 60%,
+      rgba(0, 0, 0, 0.22) 100%
+    ),
+    var(--ihr-ribbon-done);
+}
+
+@keyframes ihr-bookmark-rise {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
 }
 
 /* --- Acabados del lomo ------------------------------------------------ */
@@ -319,6 +357,7 @@
 .ihr-spine__grain {
   position: absolute;
   inset: 0;
+  border-radius: inherit;
   pointer-events: none;
 }
 
@@ -721,7 +760,8 @@
   .ihr-btn {
     transition: none;
   }
-  .ihr-flyout__book.is-loading .ihr-flyout__face--cover {
+  .ihr-flyout__book.is-loading .ihr-flyout__face--cover,
+  .ihr-spine__bookmark {
     animation: none;
   }
 }

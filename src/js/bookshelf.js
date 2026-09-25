@@ -98,12 +98,20 @@
  *    que salva el caso "libro local que hay que volver a elegir": si el
  *    usuario cancela el file picker, no se queda encerrado.
  *
+ * 9. Marcapáginas. Cada libro empezado lleva una cinta de raso que asoma por
+ *    arriba del lomo; lo que asoma es proporcional al progreso (5 px al 1%,
+ *    20 px terminado: `bookmarkFor` en bookshelf-layout.js). Sustituye a la
+ *    antigua barrita de progreso al pie del lomo. Vive dentro del propio
+ *    `<button>` (que por eso ya no recorta con overflow:hidden), así que la
+ *    caja medida para el giro no cambia. La balda reserva encima de los lomos
+ *    `--ihr-bookmark-room` para que no lo corte el `content-visibility`.
+ *
  * Este fichero sólo depende de `bookshelf-layout.js` y `plants.js`. No sabe
  * nada de PDF.js, foliate, Drive ni IndexedDB: recibe libros y avisa cuando
  * hay que abrir uno.
  */
 
-import { planBookshelf, progressOf, withDefaults } from './bookshelf-layout.js';
+import { planBookshelf, bookmarkFor, withDefaults } from './bookshelf-layout.js';
 import { plantSvg, plantMeta } from './plants.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
@@ -121,7 +129,8 @@ export const DEFAULT_TEXTS = Object.freeze({
   closeAction: 'Cerrar',
   noCover: 'Sin portada',
   openAria: (book) =>
-    book.author ? `Abrir ${book.title}, de ${book.author}` : `Abrir ${book.title}`
+    book.author ? `Abrir ${book.title}, de ${book.author}` : `Abrir ${book.title}`,
+  progressAria: (percent) => (percent >= 100 ? 'terminado' : `leído al ${percent} %`)
 });
 
 const DEFAULTS = Object.freeze({
@@ -336,12 +345,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   function buildSpine(item) {
     const { book, style } = item;
-    const progress = progressOf(book);
+    const bookmark = bookmarkFor(book);
     const node = el('button', {
       type: 'button',
       class: `ihr-spine ihr-spine--${style.texture}`,
       'data-book-id': book.id ?? '',
-      'aria-label': opts.texts.openAria(book),
+      'aria-label': bookmark
+        ? `${opts.texts.openAria(book)}, ${opts.texts.progressAria(bookmark.percent)}`
+        : opts.texts.openAria(book),
       style:
         `--ihr-spine-w:${style.width}px;` +
         `--ihr-spine-h:${Math.round(style.heightRatio * 100)}%;` +
@@ -361,12 +372,25 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         book.author ? el('span', { class: 'ihr-spine__author', text: book.author }) : null
       ])
     );
-    if (progress > 0 && progress < 1) {
+    /*
+      Marcapáginas que asoma por arriba: su longitud visible es el progreso.
+      Va DENTRO del botón a propósito (no en un envoltorio): así hereda la
+      inclinación, el levantamiento al pulsar y el `is-away`, y el nodo que
+      mide la animación de apertura sigue siendo exactamente el mismo botón
+      con la misma caja — getBoundingClientRect() no cuenta lo que desborda.
+      Para poder asomar, `.ihr-spine` ya no lleva overflow:hidden (ver
+      bookshelf.css). En la cara del lomo del libro que gira no se ve: esa
+      cara recorta su contenido, y el marcapáginas se esconde al salir el
+      libro de la balda, como si se hubiera metido entre las hojas.
+    */
+    if (bookmark) {
+      node.classList.add('has-bookmark');
+      if (bookmark.finished) node.classList.add('is-finished');
       node.append(
         el('span', {
-          class: 'ihr-spine__progress',
+          class: 'ihr-spine__bookmark',
           'aria-hidden': 'true',
-          style: `--ihr-progress:${Math.round(progress * 100)}%`
+          style: `--ihr-bookmark-peek:${bookmark.peek}px`
         })
       );
     }
@@ -627,6 +651,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const clone = spineEl.cloneNode(true);
     clone.classList.remove('is-away', 'is-pressed', 'is-tilted');
     clone.classList.add('ihr-spine--ghost'); // para distinguirlo del lomo real
+    // El marcapáginas asoma FUERA de la caja del lomo; en el tomo que gira no
+    // tiene sitio (la cara recorta) y se entiende como metido entre las hojas.
+    clone.querySelector('.ihr-spine__bookmark')?.remove();
     clone.removeAttribute('data-book-id');
     clone.removeAttribute('aria-label');
     clone.setAttribute('aria-hidden', 'true');

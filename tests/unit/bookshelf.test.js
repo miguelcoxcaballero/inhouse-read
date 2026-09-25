@@ -75,7 +75,73 @@ describe('renderBookshelf', () => {
     )
     expect(titles).toContain('Seguir leyendo')
     expect(titles).toContain('Biblioteca')
-    expect(container.querySelector('.ihr-spine__progress')).not.toBeNull()
+    expect(container.querySelector('.ihr-spine__bookmark')).not.toBeNull()
+  })
+
+  it('marcapáginas: sólo en libros empezados, con lo que asoma según el progreso', () => {
+    const books = makeBooks(4).map((book, i) => ({
+      ...book,
+      progressFraction: [0, 0.2, 0.8, 1][i]
+    }))
+    shelf = renderBookshelf(container, books, { shelfWidth: SHELF_WIDTH, sections: false })
+    const byId = (id) => container.querySelector(`.ihr-spine[data-book-id="${id}"]`)
+    const peekOf = (spine) =>
+      parseFloat(
+        spine.querySelector('.ihr-spine__bookmark').style.getPropertyValue('--ihr-bookmark-peek')
+      )
+
+    const [unread, started, advanced, finished] = books.map((book) => byId(book.id))
+    expect(unread.querySelector('.ihr-spine__bookmark')).toBeNull()
+    expect(unread.classList.contains('has-bookmark')).toBe(false)
+    expect(peekOf(started)).toBeLessThan(peekOf(advanced))
+    expect(peekOf(advanced)).toBeLessThan(peekOf(finished))
+    expect(finished.classList.contains('is-finished')).toBe(true)
+    expect(started.classList.contains('is-finished')).toBe(false)
+    // El marcapáginas va dentro del propio botón: no hay envoltorio que
+    // cambie el nodo medido ni el ancho que ocupa el libro en la balda.
+    expect(started.querySelector('.ihr-spine__bookmark').parentElement).toBe(started)
+    expect(started.parentElement.classList.contains('ihr-shelf__row')).toBe(true)
+    // Ya no convive con la barrita antigua.
+    expect(container.querySelector('.ihr-spine__progress')).toBeNull()
+    // El progreso también se anuncia al lector de pantalla.
+    expect(started.getAttribute('aria-label')).toMatch(/leído al 20 %$/)
+    expect(finished.getAttribute('aria-label')).toMatch(/terminado$/)
+    expect(unread.getAttribute('aria-label')).toBe('Abrir Libro 0, de Autor 0')
+  })
+
+  it('el marcapáginas no altera el ancho del lomo en la balda', () => {
+    const plain = makeBooks(3).map((book) => ({ ...book, progressFraction: 0 }))
+    const marked = plain.map((book) => ({ ...book, progressFraction: 0.6 }))
+    shelf = renderBookshelf(container, plain, { shelfWidth: SHELF_WIDTH, sections: false })
+    const widths = () =>
+      [...container.querySelectorAll('.ihr-spine')].map((node) =>
+        node.style.getPropertyValue('--ihr-spine-w')
+      )
+    const before = widths()
+    shelf.update(marked)
+    expect(container.querySelectorAll('.ihr-spine__bookmark')).toHaveLength(3)
+    expect(widths()).toEqual(before)
+  })
+
+  it('al abrir, el giro nace del mismo botón y su clon no arrastra el marcapáginas', async () => {
+    const books = makeBooks(2).map((book) => ({ ...book, progressFraction: 0.5 }))
+    shelf = renderBookshelf(container, books, {
+      shelfWidth: SHELF_WIDTH,
+      sections: false,
+      revealDuration: 0,
+      holdMs: 0
+    })
+    const spine = container.querySelector('.ihr-spine')
+    const measured = vi.spyOn(spine, 'getBoundingClientRect')
+    spine.click()
+    await settle()
+    expect(measured).toHaveBeenCalled()
+    expect(spine.classList.contains('is-away')).toBe(true)
+    const ghost = container.querySelector('.ihr-flyout__face--spine .ihr-spine--ghost')
+    expect(ghost).not.toBeNull()
+    expect(ghost.querySelector('.ihr-spine__bookmark')).toBeNull()
+    // El lomo real conserva el suyo para cuando vuelva a la balda.
+    expect(spine.querySelector('.ihr-spine__bookmark')).not.toBeNull()
   })
 
   it('con sections:false monta una sola estantería continua', () => {

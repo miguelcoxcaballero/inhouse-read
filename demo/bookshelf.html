@@ -81,6 +81,7 @@
       ['Poesía completa', 'Alejandra Pizarnik', 480]
     ]
     const FORMATOS = ['EPUB', 'PDF', 'MOBI', 'AZW3', 'CBZ']
+    const PROGRESOS = [0.62, 0, 0.04, 1, 0, 0.35, 0.93, 0, 0.18, 0, 1, 0.77, 0]
 
     function biblioteca(count) {
       return Array.from({ length: count }, (_, i) => {
@@ -95,8 +96,9 @@
           sourceType: 'local',
           addedAt: Date.now() - i * 8.64e7,
           lastOpenedAt: Date.now() - i * 3.6e6,
-          // Unos cuantos a medias, para ver la sección "Seguir leyendo".
-          progressFraction: i % 5 === 0 ? 0.18 + (i % 4) * 0.19 : 0
+          // Todo el abanico de marcapáginas: sin empezar (sin cinta), recién
+          // empezado, a medias, casi terminado y terminado (cinta dorada).
+          progressFraction: PROGRESOS[i % PROGRESOS.length]
         }
       })
     }
