@@ -52,21 +52,21 @@ jobs:
           INHOUSE_KEY_ALIAS: ${{ secrets.INHOUSE_READ_ANDROID_KEY_ALIAS }}
         run: python .github/scripts/build_android_apk.py
 
-      - run: test -s inhouse-read-release-v1.0.5.apk
+      - run: test -s inhouse-read-release-v1.0.6.apk
 
       - uses: actions/upload-artifact@v4
-        with: { name: inhouse-read-android-v1.0.5, path: inhouse-read-release-v1.0.5.apk, if-no-files-found: error }
+        with: { name: inhouse-read-android-v1.0.6, path: inhouse-read-release-v1.0.6.apk, if-no-files-found: error }
 
       - name: Publish versioned APK download
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view android-v1.0.5 >/dev/null 2>&1; then
-            gh release upload android-v1.0.5 inhouse-read-release-v1.0.5.apk --clobber
+          if gh release view android-v1.0.6 >/dev/null 2>&1; then
+            gh release upload android-v1.0.6 inhouse-read-release-v1.0.6.apk --clobber
           else
-            gh release create android-v1.0.5 inhouse-read-release-v1.0.5.apk \
-              --title "Inhouse Read Android 1.0.5" \
-              --notes "Canto del lomo con arco de verdad (no esquinas redondeadas): perfil curvado con clip-path, mas visible que el simple degradado de luz anterior. Arreglado un bug real: tocar un libro ya importado abria el selector de archivos del sistema en vez del lector, porque solo se guardaban los metadatos del libro y nunca sus bytes -- ahora el propio contenido se guarda en IndexedDB al importarlo y se reabre directamente desde ahi, en cualquier plataforma." \
+            gh release create android-v1.0.6 inhouse-read-release-v1.0.6.apk \
+              --title "Inhouse Read Android 1.0.6" \
+              --notes "Arco de los lomos mas visible en la estanteria. Endurecidos con pruebas de regresion la reapertura de libros desde IndexedDB y la entrega segura del APK al instalador Android." \
               --latest=false
           fi
 
@@ -78,11 +78,11 @@ jobs:
       - name: Actualizar android-update.json con los datos reales de este build
         run: |
           python .github/scripts/update_manifest.py \
-            inhouse-read-release-v1.0.5.apk \
-            1.0.5 \
-            6 \
-            android-v1.0.5 \
-            "Canto del lomo con arco de verdad (no esquinas redondeadas) y arreglado el bug de abrir el selector de archivos del sistema al tocar un libro ya importado."
+            inhouse-read-release-v1.0.6.apk \
+            1.0.6 \
+            7 \
+            android-v1.0.6 \
+            "Arco de los lomos mas visible en la estanteria. Endurecidos con pruebas de regresion la reapertura de libros desde IndexedDB y la entrega segura del APK al instalador Android."
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/android-update.json

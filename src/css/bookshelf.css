@@ -194,10 +194,11 @@
   muchos puntos en % (escalan solos con el ancho/alto de cada lomo, que varía
   libro a libro) trazando una parábola simétrica por cada lado en vez de dos
   líneas rectas. `--ihr-arch` es cuánto entra el contorno en cabezada/pie,
-  en % del ANCHO del lomo — 6% es sutil ("ligeramente curvado"), no un tubo.
+  en % del ANCHO del lomo — 10% da una curva legible incluso en lomos finos
+  sin deformarlos hasta parecer tubos.
 */
 .ihr-spine__body {
-  --ihr-arch: 6%;
+  --ihr-arch: 10%;
   position: absolute;
   inset: 0;
   clip-path: polygon(
