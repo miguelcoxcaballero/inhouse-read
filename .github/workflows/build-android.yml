@@ -47,20 +47,43 @@ jobs:
           INHOUSE_KEY_ALIAS: ${{ secrets.INHOUSE_READ_ANDROID_KEY_ALIAS }}
         run: python .github/scripts/build_android_apk.py
 
-      - run: test -s inhouse-read-release-v1.0.1.apk
+      - run: test -s inhouse-read-release-v1.0.2.apk
 
       - uses: actions/upload-artifact@v4
-        with: { name: inhouse-read-android-v1.0.1, path: inhouse-read-release-v1.0.1.apk, if-no-files-found: error }
+        with: { name: inhouse-read-android-v1.0.2, path: inhouse-read-release-v1.0.2.apk, if-no-files-found: error }
 
       - name: Publish versioned APK download
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view android-v1.0.1 >/dev/null 2>&1; then
-            gh release upload android-v1.0.1 inhouse-read-release-v1.0.1.apk --clobber
+          if gh release view android-v1.0.2 >/dev/null 2>&1; then
+            gh release upload android-v1.0.2 inhouse-read-release-v1.0.2.apk --clobber
           else
-            gh release create android-v1.0.1 inhouse-read-release-v1.0.1.apk \
-              --title "Inhouse Read Android 1.0.1" \
-              --notes "Corrige la barra de estado (edge-to-edge la dejaba invisible en Android 15+) e incluye todos los cambios de estantería (curva/textura/tipografía de lomo, grosor real por páginas, marcapáginas de progreso) y la página de descarga. WebView-shell (Capacitor) que abre https://miguelcoxcaballero.github.io/inhouse-read/. Drive funciona en la PWA/navegador; dentro de este WebView todavía no (ver android/README.md)." \
+            gh release create android-v1.0.2 inhouse-read-release-v1.0.2.apk \
+              --title "Inhouse Read Android 1.0.2" \
+              --notes "Anade auto-actualizacion dentro de la app (mismo mecanismo que inhouse notes/photos): la app comprueba android-update.json y ofrece descargar e instalar la version nueva sin salir de la app, con verificacion de integridad SHA-256 antes de instalar." \
               --latest=false
+          fi
+
+      # Fuente unica de verdad para src/js/android-update.js: tamano y
+      # sha256 calculados sobre el APK real que se acaba de firmar y
+      # publicar, nunca copiados a mano. El push a main dispara el deploy
+      # de Pages normal, así que el sitio en vivo pasa a servir el
+      # manifiesto actualizado en su siguiente despliegue automático.
+      - name: Actualizar android-update.json con los datos reales de este build
+        run: |
+          python .github/scripts/update_manifest.py \
+            inhouse-read-release-v1.0.2.apk \
+            1.0.2 \
+            3 \
+            android-v1.0.2 \
+            "Auto-actualizacion in-app anadida (mismo mecanismo que inhouse notes/photos), mas los cambios de estanteria y el fix de la barra de estado."
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/android-update.json
+          if git diff --cached --quiet; then
+            echo "android-update.json ya estaba al dia, nada que comitear"
+          else
+            git commit -m "Actualizar android-update.json a la version publicada (automatico)"
+            git push origin HEAD:main
           fi

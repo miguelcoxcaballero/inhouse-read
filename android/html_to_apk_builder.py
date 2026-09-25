@@ -1447,6 +1447,11 @@ class ApkBuilderApp(tk.Tk):
         wanted = []
         if self.permission_internet.get():
             wanted.append("android.permission.INTERNET")
+        # Necesario para el instalador de auto-actualizacion in-app
+        # (installAppUpdate en patch_webview_bridge): sin este permiso,
+        # Android 8+ bloquea instalar el APK descargado aunque venga de
+        # dentro de la propia app.
+        wanted.append("android.permission.REQUEST_INSTALL_PACKAGES")
         if self.permission_location.get():
             wanted.extend(
                 [
@@ -1464,11 +1469,25 @@ class ApkBuilderApp(tk.Tk):
         application = root.find("application")
         if application is not None:
             application.set(f"{ns}label", app_name)
-            # Inhouse Notes registers a FileProvider + custom-URI-scheme
-            # intent-filters here (for its PDF export and OAuth deep-link
-            # bridge). Inhouse Read's WebView shell doesn't do either of
-            # those yet (see patch_webview_bridge), so there's nothing for
-            # them to point at — skipped rather than shipped unused.
+            # FileProvider: instalar un APK descargado por la propia app exige
+            # entregarlo al instalador del sistema como content:// URI, no
+            # file:// (bloqueado desde Android 7 por StrictMode). Ver
+            # installAppUpdate() en patch_webview_bridge.
+            provider_authority = f"{package_id}.fileprovider"
+            provider_exists = any(
+                provider.attrib.get(f"{ns}authorities") == provider_authority
+                for provider in application.findall("provider")
+            )
+            if not provider_exists:
+                provider = ET.Element("provider")
+                provider.set(f"{ns}name", "androidx.core.content.FileProvider")
+                provider.set(f"{ns}authorities", provider_authority)
+                provider.set(f"{ns}exported", "false")
+                provider.set(f"{ns}grantUriPermissions", "true")
+                meta = ET.SubElement(provider, "meta-data")
+                meta.set(f"{ns}name", "android.support.FILE_PROVIDER_PATHS")
+                meta.set(f"{ns}resource", "@xml/file_paths")
+                application.append(provider)
             activity = None
             for candidate in application.findall("activity"):
                 name = candidate.attrib.get(f"{ns}name", "")
@@ -1480,15 +1499,28 @@ class ApkBuilderApp(tk.Tk):
 
         tree.write(manifest, encoding="utf-8", xml_declaration=True)
 
+        xml_dir = manifest.parent / "res" / "xml"
+        xml_dir.mkdir(parents=True, exist_ok=True)
+        (xml_dir / "file_paths.xml").write_text(
+            """<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="updates" path="updates/" />
+</paths>
+""",
+            encoding="utf-8"
+        )
+
     def patch_webview_bridge(self, project_dir: Path, package_id: str):
         """Set up the WebView (cookies/local-storage persistence, boot color)
         and a minimal native bridge.
 
         Trimmed down from the Inhouse Notes version of this method on purpose:
-        Inhouse Read has no PDF-export-to-native-storage feature and no
-        in-app auto-updater, so this drops that Notes-specific logic instead
-        of shipping dead/misleading code under this app's name. It also drops
-        Notes' custom-URI-scheme OAuth deep-link handling — that requires a
+        Inhouse Read has no PDF-export-to-native-storage feature, so that part
+        of Notes' bridge is dropped instead of shipping dead/misleading code
+        under this app's name. The in-app auto-updater (installAppUpdate),
+        on the other hand, IS ported over — see src/js/android-update.js on
+        the web side, which calls it. It also drops Notes' custom-URI-scheme
+        OAuth deep-link handling — that requires a
         second "Android" OAuth client (with the APK's signing SHA-1)
         registered in Google Cloud, which is a separate manual step nobody
         has asked for yet. Practical effect: Google Drive works fine in the
@@ -1524,7 +1556,9 @@ class ApkBuilderApp(tk.Tk):
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
@@ -1532,10 +1566,21 @@ import android.webkit.WebView;
 
 import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.getcapacitor.BridgeActivity;
+
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.security.MessageDigest;
+import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {{
     @Override
@@ -1577,6 +1622,8 @@ public class MainActivity extends BridgeActivity {{
     }}
 
     public class InhouseNativeBridge {{
+        private volatile boolean updateDownloadRunning = false;
+
         @JavascriptInterface
         public String getAppVersion() {{
             return "{self.version_name.get().strip()}";
@@ -1590,6 +1637,152 @@ public class MainActivity extends BridgeActivity {{
                 .build();
             customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY);
             customTabsIntent.launchUrl(MainActivity.this, uri);
+        }}
+
+        // Descarga el APK indicado (validado por src/js/android-update.js
+        // contra una lista blanca de hosts antes de llegar aqui) y lanza el
+        // instalador del sistema. Puerto de installAppUpdate() de
+        // inhousenotes/MainActivity.java, sin el resto de su bridge de PDF.
+        // expectedSha256Hex: vacio/nulo para saltarse la verificacion
+        // (compatibilidad hacia atras); si viene relleno, un hash que no
+        // coincide aborta la instalacion en vez de arriesgarse a instalar un
+        // APK corrupto o manipulado en transito.
+        @JavascriptInterface
+        public void installAppUpdate(String url, String expectedSha256Hex) {{
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                    && !getPackageManager().canRequestPackageInstalls()) {{
+                notifyAppUpdateResult("permission_required", "Allow Inhouse Read to install updates");
+                runOnUiThread(() -> startActivity(new Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:" + getPackageName())
+                )));
+                return;
+            }}
+            if (updateDownloadRunning) {{
+                notifyAppUpdateResult("downloading", "The update is already downloading");
+                return;
+            }}
+            updateDownloadRunning = true;
+            notifyAppUpdateResult("downloading", "Downloading update");
+            new Thread(() -> {{
+                HttpURLConnection connection = null;
+                try {{
+                    Uri parsed = Uri.parse(url);
+                    String host = parsed.getHost();
+                    boolean allowedHost = "github.com".equalsIgnoreCase(host)
+                        || "raw.githubusercontent.com".equalsIgnoreCase(host)
+                        || "miguelcoxcaballero.github.io".equalsIgnoreCase(host);
+                    if (!"https".equalsIgnoreCase(parsed.getScheme()) || !allowedHost) {{
+                        throw new Exception("Update URL is not allowed");
+                    }}
+                    connection = (HttpURLConnection) new URL(url).openConnection();
+                    connection.setInstanceFollowRedirects(true);
+                    connection.setConnectTimeout(15000);
+                    connection.setReadTimeout(45000);
+                    connection.setRequestProperty("Accept", "application/vnd.android.package-archive");
+                    int responseCode = connection.getResponseCode();
+                    if (responseCode < 200 || responseCode >= 300) {{
+                        throw new Exception("Update download failed (" + responseCode + ")");
+                    }}
+                    long expectedBytes = connection.getContentLengthLong();
+                    notifyAppUpdateProgress(0, expectedBytes);
+                    File updateDir = new File(getCacheDir(), "updates");
+                    if (!updateDir.exists() && !updateDir.mkdirs()) {{
+                        throw new Exception("Could not prepare update storage");
+                    }}
+                    File apkFile = new File(updateDir, "inhouse-read-update.apk");
+                    long totalBytes = 0;
+                    long lastProgressAt = 0;
+                    int lastProgressPercent = -1;
+                    try (InputStream input = new BufferedInputStream(connection.getInputStream());
+                         FileOutputStream output = new FileOutputStream(apkFile)) {{
+                        byte[] buffer = new byte[32768];
+                        int read;
+                        while ((read = input.read(buffer)) != -1) {{
+                            output.write(buffer, 0, read);
+                            totalBytes += read;
+                            long now = System.currentTimeMillis();
+                            int progressPercent = expectedBytes > 0
+                                ? (int) Math.min(99, (totalBytes * 100L) / expectedBytes)
+                                : 0;
+                            if ((expectedBytes <= 0 && now - lastProgressAt >= 120)
+                                    || (progressPercent != lastProgressPercent && now - lastProgressAt >= 120)
+                                    || (expectedBytes > 0 && totalBytes >= expectedBytes)) {{
+                                notifyAppUpdateProgress(totalBytes, expectedBytes);
+                                lastProgressAt = now;
+                                lastProgressPercent = progressPercent;
+                            }}
+                        }}
+                    }}
+                    if (totalBytes < 100000) throw new Exception("Downloaded update is incomplete");
+                    if (expectedSha256Hex != null && !expectedSha256Hex.isEmpty()) {{
+                        String actualSha256Hex = sha256Hex(apkFile);
+                        if (!actualSha256Hex.equalsIgnoreCase(expectedSha256Hex)) {{
+                            apkFile.delete();
+                            throw new Exception("Downloaded update failed integrity check");
+                        }}
+                    }}
+                    Uri apkUri = FileProvider.getUriForFile(
+                        MainActivity.this,
+                        getPackageName() + ".fileprovider",
+                        apkFile
+                    );
+                    notifyAppUpdateResult("ready", "Update downloaded", totalBytes,
+                        expectedBytes > 0 ? expectedBytes : totalBytes, 100);
+                    runOnUiThread(() -> {{
+                        Intent installIntent = new Intent(Intent.ACTION_VIEW);
+                        installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+                        installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(installIntent);
+                    }});
+                }} catch (Exception error) {{
+                    error.printStackTrace();
+                    notifyAppUpdateResult("error", error.getMessage());
+                }} finally {{
+                    updateDownloadRunning = false;
+                    if (connection != null) connection.disconnect();
+                }}
+            }}, "InhouseReadUpdate").start();
+        }}
+
+        private String sha256Hex(File file) throws Exception {{
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (InputStream in = new FileInputStream(file)) {{
+                byte[] buffer = new byte[32768];
+                int read;
+                while ((read = in.read(buffer)) != -1) digest.update(buffer, 0, read);
+            }}
+            StringBuilder hex = new StringBuilder();
+            for (byte b : digest.digest()) hex.append(String.format("%02x", b));
+            return hex.toString();
+        }}
+
+        private void notifyAppUpdateResult(String status, String message) {{
+            notifyAppUpdateResult(status, message, -1, -1, -1);
+        }}
+
+        private void notifyAppUpdateProgress(long downloadedBytes, long totalBytes) {{
+            int percent = totalBytes > 0
+                ? (int) Math.min(100, (downloadedBytes * 100L) / totalBytes)
+                : -1;
+            notifyAppUpdateResult("downloading", "Downloading update", downloadedBytes, totalBytes, percent);
+        }}
+
+        private void notifyAppUpdateResult(String status, String message,
+                long downloadedBytes, long totalBytes, int percent) {{
+            JSONObject payload = new JSONObject();
+            try {{
+                payload.put("status", status);
+                payload.put("message", message == null ? "" : message);
+                if (downloadedBytes >= 0) payload.put("downloadedBytes", downloadedBytes);
+                if (totalBytes > 0) payload.put("totalBytes", totalBytes);
+                if (percent >= 0) payload.put("percent", percent);
+            }} catch (Exception ignored) {{}}
+            WebView webView = getBridge().getWebView();
+            webView.post(() -> webView.evaluateJavascript(
+                "window.handleInhouseUpdateResult && window.handleInhouseUpdateResult(" + payload.toString() + ");",
+                null
+            ));
         }}
     }}
 
@@ -1618,15 +1811,23 @@ public class MainActivity extends BridgeActivity {{
 import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.getcapacitor.BridgeActivity
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
+import org.json.JSONObject
 
 class MainActivity : BridgeActivity() {{
     override fun onCreate(savedInstanceState: Bundle?) {{
@@ -1666,6 +1867,9 @@ class MainActivity : BridgeActivity() {{
     }}
 
     inner class InhouseNativeBridge {{
+        @Volatile
+        private var updateDownloadRunning = false
+
         @JavascriptInterface
         fun getAppVersion(): String = "{self.version_name.get().strip()}"
 
@@ -1676,6 +1880,138 @@ class MainActivity : BridgeActivity() {{
                 .build()
             customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
             customTabsIntent.launchUrl(this@MainActivity, Uri.parse(url))
+        }}
+
+        // Puerto de installAppUpdate() de inhousenotes/MainActivity.kt, sin
+        // el resto de su bridge de PDF. La URL ya viene validada contra una
+        // lista blanca de hosts desde src/js/android-update.js.
+        // expectedSha256Hex vacio/nulo se salta la verificacion (compatibilidad).
+        @JavascriptInterface
+        fun installAppUpdate(url: String, expectedSha256Hex: String?) {{
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {{
+                notifyAppUpdateResult("permission_required", "Allow Inhouse Read to install updates")
+                runOnUiThread {{
+                    startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                }}
+                return
+            }}
+            if (updateDownloadRunning) {{
+                notifyAppUpdateResult("downloading", "The update is already downloading")
+                return
+            }}
+            updateDownloadRunning = true
+            notifyAppUpdateResult("downloading", "Downloading update")
+            Thread({{
+                var connection: HttpURLConnection? = null
+                try {{
+                    val parsed = Uri.parse(url)
+                    val host = parsed.host
+                    val allowedHost = host.equals("github.com", ignoreCase = true)
+                        || host.equals("raw.githubusercontent.com", ignoreCase = true)
+                        || host.equals("miguelcoxcaballero.github.io", ignoreCase = true)
+                    if (!parsed.scheme.equals("https", ignoreCase = true) || !allowedHost) {{
+                        error("Update URL is not allowed")
+                    }}
+                    connection = (URL(url).openConnection() as HttpURLConnection).apply {{
+                        instanceFollowRedirects = true
+                        connectTimeout = 15000
+                        readTimeout = 45000
+                        setRequestProperty("Accept", "application/vnd.android.package-archive")
+                    }}
+                    val responseCode = connection.responseCode
+                    if (responseCode !in 200..299) error("Update download failed ($responseCode)")
+                    val expectedBytes = connection.contentLengthLong
+                    notifyAppUpdateProgress(0, expectedBytes)
+                    val updateDir = File(cacheDir, "updates").apply {{ mkdirs() }}
+                    val apkFile = File(updateDir, "inhouse-read-update.apk")
+                    var totalBytes = 0L
+                    var lastProgressAt = 0L
+                    var lastProgressPercent = -1
+                    connection.inputStream.buffered().use {{ input ->
+                        apkFile.outputStream().use {{ output ->
+                            val buffer = ByteArray(32768)
+                            var read: Int
+                            while (input.read(buffer).also {{ read = it }} != -1) {{
+                                output.write(buffer, 0, read)
+                                totalBytes += read
+                                val now = System.currentTimeMillis()
+                                val progressPercent = if (expectedBytes > 0)
+                                    ((totalBytes * 100L) / expectedBytes).coerceAtMost(99).toInt() else 0
+                                if ((expectedBytes <= 0 && now - lastProgressAt >= 120)
+                                    || (progressPercent != lastProgressPercent && now - lastProgressAt >= 120)
+                                    || (expectedBytes > 0 && totalBytes >= expectedBytes)
+                                ) {{
+                                    notifyAppUpdateProgress(totalBytes, expectedBytes)
+                                    lastProgressAt = now
+                                    lastProgressPercent = progressPercent
+                                }}
+                            }}
+                        }}
+                    }}
+                    if (totalBytes < 100000) error("Downloaded update is incomplete")
+                    if (!expectedSha256Hex.isNullOrEmpty()) {{
+                        val actualSha256Hex = sha256Hex(apkFile)
+                        if (!actualSha256Hex.equals(expectedSha256Hex, ignoreCase = true)) {{
+                            apkFile.delete()
+                            error("Downloaded update failed integrity check")
+                        }}
+                    }}
+                    val apkUri = FileProvider.getUriForFile(this@MainActivity, "$packageName.fileprovider", apkFile)
+                    notifyAppUpdateResult(
+                        "ready", "Update downloaded", totalBytes,
+                        if (expectedBytes > 0) expectedBytes else totalBytes, 100
+                    )
+                    runOnUiThread {{
+                        val installIntent = Intent(Intent.ACTION_VIEW).apply {{
+                            setDataAndType(apkUri, "application/vnd.android.package-archive")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }}
+                        startActivity(installIntent)
+                    }}
+                }} catch (error: Exception) {{
+                    error.printStackTrace()
+                    notifyAppUpdateResult("error", error.message)
+                }} finally {{
+                    updateDownloadRunning = false
+                    connection?.disconnect()
+                }}
+            }}, "InhouseReadUpdate").start()
+        }}
+
+        private fun sha256Hex(file: File): String {{
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use {{ input ->
+                val buffer = ByteArray(32768)
+                var read: Int
+                while (input.read(buffer).also {{ read = it }} != -1) digest.update(buffer, 0, read)
+            }}
+            return digest.digest().joinToString("") {{ "%02x".format(it) }}
+        }}
+
+        private fun notifyAppUpdateResult(status: String, message: String?) {{
+            notifyAppUpdateResult(status, message, -1, -1, -1)
+        }}
+
+        private fun notifyAppUpdateProgress(downloadedBytes: Long, totalBytes: Long) {{
+            val percent = if (totalBytes > 0) ((downloadedBytes * 100L) / totalBytes).coerceAtMost(100).toInt() else -1
+            notifyAppUpdateResult("downloading", "Downloading update", downloadedBytes, totalBytes, percent)
+        }}
+
+        private fun notifyAppUpdateResult(
+            status: String, message: String?, downloadedBytes: Long, totalBytes: Long, percent: Int
+        ) {{
+            val payload = JSONObject().apply {{
+                put("status", status)
+                put("message", message ?: "")
+                if (downloadedBytes >= 0) put("downloadedBytes", downloadedBytes)
+                if (totalBytes > 0) put("totalBytes", totalBytes)
+                if (percent >= 0) put("percent", percent)
+            }}
+            bridge.webView.post {{
+                bridge.webView.evaluateJavascript(
+                    "window.handleInhouseUpdateResult && window.handleInhouseUpdateResult($payload);", null
+                )
+            }}
         }}
     }}
 

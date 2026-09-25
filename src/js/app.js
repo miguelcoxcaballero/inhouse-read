@@ -8,6 +8,7 @@ import {
   isFolderApiSupported, getSavedFolderHandle, getOrChooseFolder, ensureFolderPermission,
   saveFileIntoFolder, readFileFromFolder
 } from './local-folder-store.js'
+import { initAndroidUpdateChecks } from './android-update.js'
 
 const library = new LibraryStore()
 const reader = new ReaderController()
@@ -287,3 +288,4 @@ els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Configura googleClientId en config.js para activar Drive'
 showScreen('home')
 refreshShelf()
+initAndroidUpdateChecks()

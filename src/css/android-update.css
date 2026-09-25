@@ -1,0 +1,120 @@
+/* Aviso de actualización dentro del WebView de Android — ver android-update.js.
+   Bloqueante a propósito (igual que en inhouse notes): mientras hay una
+   versión más nueva disponible, no tiene sentido dejar usar una app que ya
+   sabemos que tiene un fix pendiente. */
+
+.android-update-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(10, 10, 12, 0.82);
+}
+
+.android-update-card {
+  width: min(420px, 100%);
+  padding: 28px 24px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-medium);
+}
+
+.android-update-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.android-update-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: var(--accent-read-soft);
+  color: var(--accent-read);
+  flex: none;
+}
+
+.android-update-eyebrow {
+  font: 600 11px/1.2 var(--f-body);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.android-update-title {
+  margin: 4px 0 0;
+  font: 700 20px/1.2 var(--f-logo);
+  color: var(--text-primary);
+}
+
+.android-update-message {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.android-update-progress {
+  margin-top: 20px;
+}
+
+.android-update-progress-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.android-update-progress-row strong {
+  font: 700 20px var(--f-logo);
+}
+
+.android-update-progressbar {
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--border-strong);
+  overflow: hidden;
+}
+
+.android-update-progressfill {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: var(--accent-read);
+  transition: width 0.18s var(--ease);
+}
+
+.android-update-install {
+  display: block;
+  width: 100%;
+  min-height: var(--tap-min);
+  margin-top: 20px;
+  border: none;
+  border-radius: var(--r-full);
+  background: var(--accent-read);
+  color: #fff;
+  font: 700 15px var(--f-body);
+  cursor: pointer;
+  transition: opacity 0.15s var(--ease);
+}
+
+.android-update-install:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.android-update-status {
+  min-height: 18px;
+  margin: 12px 0 0;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
