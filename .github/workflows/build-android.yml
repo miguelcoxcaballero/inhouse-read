@@ -34,7 +34,8 @@ jobs:
           python -m pip install --disable-pip-version-check pillow
 
       - name: Restore signing key
-        env: { KEYSTORE_BASE64: ${{ secrets.INHOUSE_READ_ANDROID_KEYSTORE_BASE64 }} }
+        env:
+          KEYSTORE_BASE64: ${{ secrets.INHOUSE_READ_ANDROID_KEYSTORE_BASE64 }}
         run: |
           test -n "$KEYSTORE_BASE64"
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/inhouse-read-release.jks"
@@ -52,7 +53,8 @@ jobs:
         with: { name: inhouse-read-android-v1.0.0, path: inhouse-read-release-v1.0.0.apk, if-no-files-found: error }
 
       - name: Publish versioned APK download
-        env: { GH_TOKEN: ${{ github.token }} }
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view android-v1.0.0 >/dev/null 2>&1; then
             gh release upload android-v1.0.0 inhouse-read-release-v1.0.0.apk --clobber
