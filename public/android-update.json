@@ -1,9 +1,9 @@
 {
-  "version": "1.0.5",
-  "versionCode": 6,
+  "version": "1.0.6",
+  "versionCode": 7,
   "required": true,
-  "apkSizeBytes": 3161441,
-  "apkSha256": "6d61801757d8c9d8ec09fde722afaf5f9eee48afc9538ff5fc6db5b84df5581b",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.5/inhouse-read-release-v1.0.5.apk",
-  "releaseNotes": "Canto del lomo con arco de verdad (no esquinas redondeadas) y arreglado el bug de abrir el selector de archivos del sistema al tocar un libro ya importado."
+  "apkSizeBytes": 3161445,
+  "apkSha256": "e9c125117cc97edcf9f8777f8520da09549cc1f64430e3ed7315be0da60e5a27",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.6/inhouse-read-release-v1.0.6.apk",
+  "releaseNotes": "Arco de los lomos mas visible en la estanteria. Endurecidos con pruebas de regresion la reapertura de libros desde IndexedDB y la entrega segura del APK al instalador Android."
 }
