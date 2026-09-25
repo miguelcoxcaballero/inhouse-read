@@ -5,6 +5,11 @@ on:
 
 permissions:
   contents: write
+  # Necesario para poder disparar deploy-pages.yml via workflow_dispatch al
+  # final (ver mas abajo) -- sin esto, gh workflow run devuelve 403
+  # "Resource not accessible by integration" aunque contents:write ya deje
+  # comitear/empujar el propio manifiesto sin problema.
+  actions: write
 
 concurrency:
   group: publish-android-apk
