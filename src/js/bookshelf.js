@@ -365,13 +365,19 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // En un lomo estrecho el autor no cabe sin pisar al título.
     if (style.width < 32) node.classList.add('ihr-spine--slim');
 
-    node.append(el('span', { class: 'ihr-spine__grain', 'aria-hidden': 'true' }));
-    node.append(
+    // La superficie visible (color, textura, canto arqueado) vive en un hijo
+    // aparte de `node`: así el clip-path que dibuja el arco (bookshelf.css)
+    // sólo recorta esto, y el marcapáginas de abajo —hermano suyo, no hijo—
+    // puede seguir asomando por encima sin que ese recorte se lo lleve.
+    const body = el('span', { class: 'ihr-spine__body', 'aria-hidden': 'true' });
+    body.append(el('span', { class: 'ihr-spine__grain', 'aria-hidden': 'true' }));
+    body.append(
       el('span', { class: 'ihr-spine__label' }, [
         el('span', { class: 'ihr-spine__title', text: book.title ?? 'Sin título' }),
         book.author ? el('span', { class: 'ihr-spine__author', text: book.author }) : null
       ])
     );
+    node.append(body);
     /*
       Marcapáginas que asoma por arriba: su longitud visible es el progreso.
       Va DENTRO del botón a propósito (no en un envoltorio): así hereda la

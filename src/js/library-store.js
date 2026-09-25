@@ -16,6 +16,11 @@ const STORE = 'books'
  * @property {string} format        - etiqueta legible: 'PDF' | 'EPUB' | 'MOBI' | ...
  * @property {'local'|'drive'} sourceType
  * @property {string} [driveFileId] - solo si sourceType === 'drive'
+ * @property {Blob}   [content]     - bytes del propio libro (solo local): permite
+ *                                    reabrirlo sin volver a pedirle el archivo al
+ *                                    usuario, sin depender de ninguna API de
+ *                                    carpetas (funciona igual en Android que en
+ *                                    escritorio)
  * @property {Blob}   [cover]       - portada renderizada, si se pudo extraer
  * @property {number} addedAt
  * @property {number} lastOpenedAt

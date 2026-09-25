@@ -93,6 +93,16 @@ describe('LibraryStore', () => {
     expect(await store.setCover('local:no-existe:1', new Blob())).toBeNull()
   })
 
+  it('guarda los bytes del propio libro (content), no solo sus metadatos', async () => {
+    // Sin esto, reabrir un libro local no tiene de dónde sacar el fichero:
+    // app.js cae al selector de archivos del sistema en cada toque.
+    const content = new Blob(['contenido-del-libro'], { type: 'application/epub+zip' })
+    const record = await store.addOrTouch({
+      sourceType: 'local', name: 'dune.epub', size: 100, title: 'Dune', format: 'EPUB', content
+    })
+    expect(record.content).toBe(content)
+  })
+
   it('updateProgress no crea un registro si el id no existe', async () => {
     const result = await store.updateProgress('local:no-existe:1', 0.5)
     expect(result).toBeNull()

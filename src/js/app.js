@@ -79,11 +79,29 @@ async function refreshShelf() {
 
 async function openBookRecord(book, ctx) {
   if (book.sourceType === 'local') {
-    // Si el libro se guardó en la carpeta elegida por el usuario, léelo
-    // directamente de ahí — no hace falta pedirle que lo vuelva a elegir.
-    // Solo aplica donde existe la File System Access API (Chrome/Edge de
-    // escritorio); en el resto (Android, Safari...) folderFileName nunca se
-    // rellenó al importar, así que esto simplemente no se intenta.
+    // Vía principal: el propio libro se guardó en IndexedDB al importarlo
+    // (ver openFile), así que reabrirlo no depende de ninguna API de
+    // carpetas ni de volver a pedir el archivo — funciona igual en Android
+    // que en escritorio. Sin esto, CADA toque en un libro local acababa
+    // abriendo el selector de archivos del sistema, porque nunca se guardaba
+    // más que el título/tamaño: no había bytes de los que reabrir nada.
+    if (book.content) {
+      try {
+        const file = new File([book.content], book.name || book.title || 'libro', {
+          type: book.mimeType || book.content.type || ''
+        })
+        await openFile(file, { existingRecord: book, forcedId: book.id })
+        return
+      } catch (err) {
+        console.warn('No se pudo abrir el libro desde la copia guardada, se intentará otra vía:', err)
+      }
+    }
+
+    // Compatibilidad con libros importados antes de este cambio (sin
+    // `content` guardado): si se guardó en la carpeta elegida por el
+    // usuario, léelo de ahí. Solo aplica donde existe la File System Access
+    // API (Chrome/Edge de escritorio); en el resto (Android, Safari...)
+    // folderFileName nunca se rellenó al importar.
     if (book.folderFileName && isFolderApiSupported()) {
       try {
         const folderHandle = await getSavedFolderHandle()
@@ -196,9 +214,17 @@ async function openFile(file, { existingRecord, forcedId, folderFileName } = {})
   els.readerFormatBadge.textContent = format.label ?? ''
 
   const meta = reader.metadata
-  const record = await library.addOrTouch({
+  const sourceType = existingRecord?.sourceType ?? 'local'
+  // Solo se cachean bytes de libros locales (los de Drive se vuelven a
+  // descargar de Drive cada vez, ver openDriveModal/openBookRecord más
+  // abajo) y solo la primera vez: en cada reapertura posterior `file` es la
+  // MISMA copia reconstruida a partir de ese `content` ya guardado, así que
+  // regrabar bytes idénticos en cada "reanudar lectura" sería trabajo e E/S
+  // de IndexedDB de balde.
+  const shouldCacheContent = sourceType === 'local' && !existingRecord?.content
+  const baseFields = {
     id: forcedId,
-    sourceType: existingRecord?.sourceType ?? 'local',
+    sourceType,
     driveFileId: existingRecord?.driveFileId,
     mimeType: existingRecord?.mimeType ?? file.type,
     name: file.name,
@@ -211,7 +237,22 @@ async function openFile(file, { existingRecord, forcedId, folderFileName } = {})
     title: existingRecord?.title ?? meta.title ?? stripExtension(file.name),
     author: existingRecord?.author ?? meta.author,
     format: format.label
-  })
+  }
+  let record
+  try {
+    record = await library.addOrTouch({
+      ...baseFields,
+      content: shouldCacheContent ? new Blob([file], { type: file.type }) : existingRecord?.content
+    })
+  } catch (err) {
+    // Un libro muy grande puede agotar la cuota de IndexedDB del dispositivo.
+    // Que eso falle no puede tirar abajo la lectura (el lector ya tiene el
+    // fichero en memoria y sigue funcionando): se reintenta sin `content`,
+    // igual que antes de este cambio — como mucho, la próxima vez habrá que
+    // volver a elegir el archivo.
+    console.warn('No se pudo guardar la copia del libro (¿cuota de almacenamiento?); se seguirá pidiendo el archivo al reabrir:', err)
+    record = await library.addOrTouch({ ...baseFields, content: existingRecord?.content })
+  }
   currentBookId = record.id
 
   if (existingRecord?.progressFraction) {
