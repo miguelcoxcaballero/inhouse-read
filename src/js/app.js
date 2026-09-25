@@ -9,6 +9,7 @@ import {
   saveFileIntoFolder, readFileFromFolder
 } from './local-folder-store.js'
 import { initAndroidUpdateChecks } from './android-update.js'
+import { initContentFreshnessChecks } from './content-freshness.js'
 
 const library = new LibraryStore()
 const reader = new ReaderController()
@@ -289,3 +290,4 @@ els.addDriveBtn.title = isDriveConfigured() ? '' : 'Configura googleClientId en 
 showScreen('home')
 refreshShelf()
 initAndroidUpdateChecks()
+initContentFreshnessChecks()
