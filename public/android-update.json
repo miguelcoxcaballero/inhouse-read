@@ -1,9 +1,9 @@
 {
-  "version": "1.0.4",
-  "versionCode": 5,
+  "version": "1.0.5",
+  "versionCode": 6,
   "required": true,
-  "apkSizeBytes": 3161445,
-  "apkSha256": "e0650a4e47c1145dfb4691db1f57b9c0eaf7c778ac549a0840d0cdd45aa19194",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.4/inhouse-read-release-v1.0.4.apk",
-  "releaseNotes": "Cache-busting en el app-loader: evita que un arranque en frio se quede con un index.html viejo servido por la cache HTTP del WebView."
+  "apkSizeBytes": 3161441,
+  "apkSha256": "6d61801757d8c9d8ec09fde722afaf5f9eee48afc9538ff5fc6db5b84df5581b",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.5/inhouse-read-release-v1.0.5.apk",
+  "releaseNotes": "Canto del lomo con arco de verdad (no esquinas redondeadas) y arreglado el bug de abrir el selector de archivos del sistema al tocar un libro ya importado."
 }
