@@ -38,6 +38,27 @@
             <path d="M7.5 3h9l6 10.5-3 5.5h-15l-3-5.5L7.5 3z"/><path d="M7.5 3l6 10.5M16.5 13.5h6.5"/>
           </svg>
         </button>
+        <div id="drive-profile" class="drive-profile" hidden>
+          <button id="drive-profile-btn" class="drive-profile-btn" type="button" aria-label="Cuenta de Google" aria-haspopup="true" aria-expanded="false">
+            <span id="drive-profile-initial" class="drive-profile-initial" aria-hidden="true">G</span>
+            <img id="drive-profile-avatar" class="drive-profile-avatar" alt="" hidden />
+          </button>
+          <div id="drive-profile-menu" class="drive-profile-menu" role="menu" hidden>
+            <div class="drive-profile-meta">
+              <span id="drive-profile-initial-menu" class="drive-profile-avatar-fallback" aria-hidden="true">G</span>
+              <img id="drive-profile-avatar-menu" class="drive-profile-avatar" alt="" hidden />
+              <div class="drive-profile-copy">
+                <div id="drive-profile-name" class="drive-profile-name">Cuenta de Google</div>
+                <div id="drive-profile-email" class="drive-profile-email"></div>
+              </div>
+            </div>
+            <p id="drive-sync-status" class="drive-sync-status" role="status">Conectado con Google Drive</p>
+            <div class="drive-profile-actions">
+              <button id="drive-sync-btn" class="drive-menu-btn" type="button" role="menuitem">Sincronizar ahora</button>
+              <button id="drive-signout-btn" class="drive-menu-btn" type="button" role="menuitem">Cerrar sesión</button>
+            </div>
+          </div>
+        </div>
         <button id="theme-toggle" class="icon-btn" type="button" aria-label="Cambiar tema">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>

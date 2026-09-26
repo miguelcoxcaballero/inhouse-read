@@ -15,6 +15,28 @@ test('carga el home con la marca y las acciones de cabecera', async ({ page }) =
   await expect(page.getByRole('button', { name: 'Abrir desde Google Drive' })).toBeVisible()
 })
 
+test('muestra la cuenta de Google con su perfil y acciones de sincronización', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('ihn_drive_tokens', JSON.stringify({
+      accessToken: 'test-access-token', refreshToken: 'test-refresh-token', expiresAt: Date.now() + 3600_000
+    }))
+  })
+  await page.route('https://www.googleapis.com/drive/v3/about?**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ user: { displayName: 'Miguel Caballero', emailAddress: 'miguel@example.com', photoLink: '' } })
+  }))
+  await page.reload()
+  const accountButton = page.getByRole('button', { name: 'Cuenta de Google: miguel@example.com' })
+  await expect(accountButton).toBeVisible()
+  await accountButton.click()
+  await expect(page.locator('#drive-profile-menu')).toBeVisible()
+  await expect(page.locator('#drive-profile-name')).toHaveText('Miguel Caballero')
+  await expect(page.locator('#drive-profile-email')).toHaveText('miguel@example.com')
+  await expect(page.getByRole('menuitem', { name: 'Sincronizar ahora' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Cerrar sesión' })).toBeVisible()
+})
+
 test('muestra el estado vacío cuando no hay libros recientes', async ({ page }) => {
   await expect(page.getByText('Tu estantería está vacía')).toBeVisible()
 })

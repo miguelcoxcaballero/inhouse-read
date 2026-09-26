@@ -2,7 +2,8 @@ import { LibraryStore } from './library-store.js'
 import { renderBookshelf } from './bookshelf.js'
 import { ReaderController, UnsupportedFormatError } from './readers/reader-controller.js'
 import {
-  isDriveConfigured, requestDriveAccess, listDriveBooks, downloadDriveFile, hasDriveSession, uploadDriveFile
+  isDriveConfigured, requestDriveAccess, listDriveBooks, downloadDriveFile, hasDriveSession,
+  uploadDriveFile, getDriveProfile, signOutDrive
 } from './drive-client.js'
 import {
   isFolderApiSupported, getSavedFolderHandle, getOrChooseFolder, ensureFolderPermission,
@@ -32,7 +33,19 @@ const els = {
   driveModal: document.getElementById('drive-modal'),
   driveList: document.getElementById('drive-list'),
   driveClose: document.getElementById('drive-close'),
-  driveStatus: document.getElementById('drive-status')
+  driveStatus: document.getElementById('drive-status'),
+  driveProfile: document.getElementById('drive-profile'),
+  driveProfileBtn: document.getElementById('drive-profile-btn'),
+  driveProfileMenu: document.getElementById('drive-profile-menu'),
+  driveProfileAvatar: document.getElementById('drive-profile-avatar'),
+  driveProfileAvatarMenu: document.getElementById('drive-profile-avatar-menu'),
+  driveProfileInitial: document.getElementById('drive-profile-initial'),
+  driveProfileInitialMenu: document.getElementById('drive-profile-initial-menu'),
+  driveProfileName: document.getElementById('drive-profile-name'),
+  driveProfileEmail: document.getElementById('drive-profile-email'),
+  driveSyncStatus: document.getElementById('drive-sync-status'),
+  driveSyncBtn: document.getElementById('drive-sync-btn'),
+  driveSignOutBtn: document.getElementById('drive-signout-btn')
 }
 
 let shelf = null
@@ -40,6 +53,8 @@ let currentBookId = null
 let pendingLocalReopenId = null
 let pendingReaderTransition = null
 const preparedBooks = new Map()
+const uploadingBooks = new Map()
+let driveProfile = null
 
 // ---- Tema (idéntico al patrón de Inhouse Notes: data-theme + persistido) ----
 
@@ -302,9 +317,10 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
   if (!preparing) extractCoverInBackground(record)
   if (!preparing) await transition?.onReaderReady?.()
   if (sourceType === 'local' && hasDriveSession() && !record.driveFileId) {
-    uploadDriveFile(file, { name: file.name }).then(uploaded =>
-      library.addOrTouch({ ...record, driveFileId: uploaded.id, driveFileName: uploaded.name })
-    ).then(() => refreshShelf()).catch(error => console.warn('No se pudo sincronizar el libro con Drive:', error))
+    uploadBookToDrive(record).catch(error => {
+      setDriveSyncStatus(`No se pudo sincronizar: ${error.message}`)
+      console.warn('No se pudo sincronizar el libro con Drive:', error)
+    })
   }
   return true
 }
@@ -359,13 +375,128 @@ async function handleCoverAction(action, book, button) {
 }
 
 async function uploadBookToDrive(book) {
+  if (uploadingBooks.has(book.id)) return uploadingBooks.get(book.id)
+  const task = (async () => {
   const record = await library.get(book.id) || book
+  if (record.driveFileId) return record
   if (!record.content) throw new Error('No se encontró una copia local del libro para subir.')
   const file = new File([record.content], record.name || record.title || 'libro', { type: record.mimeType || record.content.type || 'application/octet-stream' })
   const uploaded = await uploadDriveFile(file, { driveFileId: record.driveFileId, name: file.name })
   const updated = await library.addOrTouch({ ...record, sourceType: 'local', driveFileId: uploaded.id, driveFileName: uploaded.name })
   refreshShelf()
+  setDriveSyncStatus('Sincronizado con Google Drive')
   return updated
+  })()
+  uploadingBooks.set(book.id, task)
+  try { return await task } finally { uploadingBooks.delete(book.id) }
+}
+
+function setDriveSyncStatus(message, syncing = false) {
+  els.driveSyncStatus.textContent = message
+  els.driveSyncStatus.classList.toggle('is-syncing', syncing)
+}
+
+function setProfileAvatar(profile) {
+  const initial = (profile.name || profile.email || 'G').trim().charAt(0).toUpperCase() || 'G'
+  for (const node of [els.driveProfileInitial, els.driveProfileInitialMenu]) node.textContent = initial
+  for (const image of [els.driveProfileAvatar, els.driveProfileAvatarMenu]) {
+    if (profile.photo) {
+      image.src = profile.photo
+      image.hidden = false
+      image.previousElementSibling.hidden = true
+    } else {
+      image.removeAttribute('src')
+      image.hidden = true
+      image.previousElementSibling.hidden = false
+    }
+  }
+}
+
+async function loadDriveAccountProfile() {
+  if (!hasDriveSession()) {
+    driveProfile = null
+    els.driveProfile.hidden = true
+    els.driveProfileMenu.hidden = true
+    els.driveProfileBtn.setAttribute('aria-expanded', 'false')
+    return null
+  }
+  els.driveProfile.hidden = false
+  try {
+    driveProfile = await getDriveProfile()
+  } catch (error) {
+    console.warn('No se pudo cargar el perfil de Google:', error)
+    driveProfile = { name: 'Cuenta de Google', email: '', photo: '' }
+  }
+  els.driveProfileName.textContent = driveProfile.name
+  els.driveProfileEmail.textContent = driveProfile.email
+  els.driveProfileBtn.setAttribute('aria-label', driveProfile.email ? `Cuenta de Google: ${driveProfile.email}` : 'Cuenta de Google')
+  els.driveProfileBtn.title = driveProfile.name
+  setProfileAvatar(driveProfile)
+  return driveProfile
+}
+
+async function syncLibraryToDrive({ silent = false } = {}) {
+  if (!hasDriveSession()) {
+    if (silent) return
+    await requestDriveAccess()
+  }
+  await loadDriveAccountProfile()
+  const books = await library.listRecents(500)
+  const pending = books.filter(book => book.sourceType !== 'drive' && !book.driveFileId && book.content)
+  if (!pending.length) {
+    setDriveSyncStatus('Todo está sincronizado con Google Drive')
+    return
+  }
+  let completed = 0
+  setDriveSyncStatus(`Sincronizando 0 de ${pending.length} libros…`, true)
+  for (const book of pending) {
+    try {
+      await uploadBookToDrive(book)
+      completed += 1
+      setDriveSyncStatus(`Sincronizando ${completed} de ${pending.length} libros…`, true)
+    } catch (error) {
+      setDriveSyncStatus(`Error al sincronizar ${book.title || book.name}: ${error.message}`)
+      throw error
+    }
+  }
+  setDriveSyncStatus(`Sincronización completa · ${completed} ${completed === 1 ? 'libro' : 'libros'}`)
+}
+
+els.driveProfileBtn.addEventListener('click', () => {
+  const open = els.driveProfileMenu.hidden
+  els.driveProfileMenu.hidden = !open
+  els.driveProfileBtn.setAttribute('aria-expanded', String(open))
+})
+document.addEventListener('click', event => {
+  if (!els.driveProfile.contains(event.target)) {
+    els.driveProfileMenu.hidden = true
+    els.driveProfileBtn.setAttribute('aria-expanded', 'false')
+  }
+})
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') {
+    els.driveProfileMenu.hidden = true
+    els.driveProfileBtn.setAttribute('aria-expanded', 'false')
+  }
+})
+els.driveSyncBtn.addEventListener('click', async () => {
+  els.driveSyncBtn.disabled = true
+  try { await syncLibraryToDrive() }
+  catch (error) { setDriveSyncStatus(`No se pudo sincronizar: ${error.message}`) }
+  finally { els.driveSyncBtn.disabled = false }
+})
+els.driveSignOutBtn.addEventListener('click', () => {
+  signOutDrive()
+  driveProfile = null
+  els.driveProfileMenu.hidden = true
+  els.driveProfile.hidden = true
+  els.driveProfileBtn.setAttribute('aria-expanded', 'false')
+})
+for (const image of [els.driveProfileAvatar, els.driveProfileAvatarMenu]) {
+  image.addEventListener('error', () => {
+    image.hidden = true
+    image.previousElementSibling.hidden = false
+  })
 }
 
 /** No bloquea la apertura del libro: la portada se guarda para la próxima visita a la estantería. */
@@ -409,6 +540,7 @@ async function loadDriveFiles() {
   els.driveList.innerHTML = ''
   try {
     if (!hasDriveSession()) await requestDriveAccess()
+    await loadDriveAccountProfile()
     const { files } = await listDriveBooks()
     els.driveStatus.textContent = files.length ? '' : 'No se encontraron libros en tu Drive.'
     for (const f of files) {
@@ -423,6 +555,10 @@ async function loadDriveFiles() {
       })
       els.driveList.append(item)
     }
+    syncLibraryToDrive({ silent: true }).catch(error => {
+      setDriveSyncStatus(`No se pudo sincronizar: ${error.message}`)
+      console.warn('No se pudieron sincronizar los libros pendientes:', error)
+    })
   } catch (err) {
     els.driveStatus.textContent = `No se pudo conectar con Drive: ${err.message}`
   }
@@ -437,3 +573,8 @@ showScreen('home')
 refreshShelf()
 initAndroidUpdateChecks()
 initContentFreshnessChecks()
+if (hasDriveSession()) {
+  loadDriveAccountProfile()
+    .then(() => syncLibraryToDrive({ silent: true }))
+    .catch(error => console.warn('No se pudo restaurar la sincronización de Drive:', error))
+}

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { isDriveConfigured, requestDriveAccess, listDriveBooks, getOrCreateReadFolder, uploadDriveFile } from '../../src/js/drive-client.js'
+import { isDriveConfigured, requestDriveAccess, listDriveBooks, getOrCreateReadFolder, uploadDriveFile, getDriveProfile } from '../../src/js/drive-client.js'
 
 describe('drive-client — configuración', () => {
   afterEach(() => {
@@ -47,6 +47,15 @@ describe('drive-client — carpeta y subida', () => {
     expect(await uploadDriveFile(file)).toMatchObject({ id: 'book-1' })
     expect(globalThis.fetch.mock.calls.at(-1)[0]).toContain('uploadType=multipart')
     expect(globalThis.fetch.mock.calls.at(-1)[1].method).toBe('POST')
+  })
+
+  it('lee nombre, correo y foto de la cuenta Google', async () => {
+    globalThis.fetch = vi.fn(async url => {
+      if (String(url).includes('/about?')) return new Response(JSON.stringify({ user: { displayName: 'Miguel', emailAddress: 'miguel@example.com', photoLink: 'https://example.com/avatar.jpg' } }), { status: 200 })
+      return new Response(JSON.stringify({ files: [{ id: 'folder-1', name: 'inhouse read' }] }), { status: 200 })
+    })
+    await expect(getDriveProfile()).resolves.toEqual({ name: 'Miguel', email: 'miguel@example.com', photo: 'https://example.com/avatar.jpg' })
+    expect(globalThis.fetch.mock.calls[0][0]).toContain('/drive/v3/about?fields=')
   })
 })
 

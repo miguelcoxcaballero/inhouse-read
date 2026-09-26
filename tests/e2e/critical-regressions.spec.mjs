@@ -75,7 +75,7 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   await expect(page.locator('.pdf-page-canvas')).toBeAttached()
   await expect(page.locator('#reader-screen')).toHaveClass(/is-preparing/)
   await expect(page.locator('.reader-toolbar')).toBeHidden()
-  await expect(page.getByRole('button', { name: 'Disponible sin conexión' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Guardar en Drive' })).toBeVisible()
   await expect(page.getByRole('button', { name: /Toca para leer/ })).toBeVisible()
   await page.getByRole('button', { name: /Toca para leer/ }).click()
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)

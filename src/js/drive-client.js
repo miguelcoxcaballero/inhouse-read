@@ -137,6 +137,15 @@ export async function listDriveBooks({ pageToken, pageSize = 100 } = {}) {
   return (await driveFetch(`${DRIVE_FILES_URL}?${params}`)).json()
 }
 
+/** Google account details used by the same avatar/account menu as Notes. */
+export async function getDriveProfile() {
+  const params = new URLSearchParams({ fields: 'user(displayName,emailAddress,photoLink)' })
+  const data = await (await driveFetch(`https://www.googleapis.com/drive/v3/about?${params}`)).json()
+  const user = data.user
+  if (!user) throw new Error('Google no devolvió los datos de la cuenta.')
+  return { name: user.displayName || 'Cuenta de Google', email: user.emailAddress || '', photo: user.photoLink || '' }
+}
+
 export async function downloadDriveFile(fileId, { name, mimeType } = {}) {
   const blob = await (await driveFetch(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}?alt=media`)).blob()
   return new File([blob], name ?? fileId, { type: mimeType || blob.type || 'application/octet-stream' })

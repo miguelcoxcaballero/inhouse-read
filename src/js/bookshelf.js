@@ -712,7 +712,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     const actionButtons = [
       el('button', { type: 'button', class: 'ihr-btn ihr-btn--primary', text: opts.texts.openAction, onClick: () => expandCover() }),
-      el('button', { type: 'button', class: 'ihr-btn', text: book.content ? 'Disponible sin conexión' : (book.sourceType === 'drive' ? 'Descargar para usar sin conexión' : 'Guardar en Drive'), onClick: event => options.onBookAction?.(book.content ? 'offline' : (book.sourceType === 'drive' ? 'offline' : 'drive'), book, event.currentTarget) }),
+      el('button', { type: 'button', class: 'ihr-btn', text: book.sourceType === 'drive' ? (book.content ? 'Disponible sin conexión' : 'Descargar para usar sin conexión') : (book.driveFileId ? 'Sincronizado en Drive' : 'Guardar en Drive'), onClick: event => options.onBookAction?.(book.sourceType === 'drive' ? 'offline' : 'drive', book, event.currentTarget) }),
       el('button', { type: 'button', class: 'ihr-btn', text: opts.texts.closeAction, onClick: () => close() })
     ];
     meta.append(el('div', { class: 'ihr-flyout__actions' }, actionButtons));

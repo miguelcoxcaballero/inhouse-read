@@ -18,8 +18,38 @@
 
 .header-actions {
   display: flex;
+  align-items: center;
   gap: 6px;
 }
+
+.drive-profile[hidden], .drive-profile-menu[hidden], .drive-profile-avatar[hidden] { display:none; }
+.drive-profile { position:relative; display:flex; align-items:center; }
+.drive-profile-btn {
+  width:var(--header-btn-size); height:var(--header-btn-size); padding:0; border:1px solid var(--border-strong);
+  border-radius:50%; overflow:hidden; background:var(--bg-secondary); cursor:pointer; display:grid; place-items:center;
+}
+.drive-profile-btn:hover { box-shadow:var(--shadow-soft); }
+.drive-profile-initial, .drive-profile-avatar-fallback {
+  display:grid; place-items:center; width:100%; height:100%; border-radius:50%;
+  color:#fff; background:var(--accent-read); font-weight:700; font-size:1rem;
+}
+.drive-profile-avatar { width:100%; height:100%; object-fit:cover; border-radius:50%; }
+.drive-profile-menu {
+  position:absolute; z-index:30; top:calc(100% + 10px); right:0; width:min(300px, calc(100vw - 24px));
+  padding:14px; display:flex; flex-direction:column; gap:12px; color:var(--text-primary);
+  background:var(--bg-secondary); border:1px solid var(--border-strong); border-radius:var(--radius-lg); box-shadow:var(--shadow-medium);
+}
+.drive-profile-meta { display:flex; align-items:center; gap:12px; min-width:0; }
+.drive-profile-meta .drive-profile-avatar, .drive-profile-avatar-fallback { width:44px; height:44px; flex:none; }
+.drive-profile-copy { min-width:0; }
+.drive-profile-name { font-size:.9rem; font-weight:600; }
+.drive-profile-email { color:var(--text-secondary); font-size:.75rem; overflow-wrap:anywhere; }
+.drive-sync-status { margin:0; color:var(--text-secondary); font-size:.82rem; }
+.drive-sync-status.is-syncing::before { content:''; display:inline-block; width:8px; height:8px; margin-right:7px; border-radius:50%; background:var(--accent-read); animation:drive-sync-pulse 1s ease-in-out infinite alternate; }
+.drive-profile-actions { display:flex; gap:8px; }
+.drive-menu-btn { flex:1; min-height:40px; padding:8px 10px; border:1px solid var(--border-strong); border-radius:var(--radius-md); color:var(--text-primary); background:var(--bg-secondary); cursor:pointer; }
+.drive-menu-btn:hover { background:var(--surface-hover); }
+@keyframes drive-sync-pulse { to { opacity:.3; } }
 
 .icon-btn {
   width: var(--header-btn-size);
