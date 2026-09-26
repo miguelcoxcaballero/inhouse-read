@@ -52,23 +52,56 @@ jobs:
           INHOUSE_KEY_ALIAS: ${{ secrets.INHOUSE_READ_ANDROID_KEY_ALIAS }}
         run: python .github/scripts/build_android_apk.py
 
-      - run: test -s inhouse-read-release-v1.0.7.apk
+      - run: test -s inhouse-read-release-v1.0.8.apk
+
+      # El solapamiento de la cabecera sólo se ve dentro de una ventana Android;
+      # el build y Playwright de escritorio no pueden detectarlo.
+      - name: Enable KVM for Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Capture the installed APK on Android 15
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7_pro
+          script: |
+            adb install -r inhouse-read-release-v1.0.8.apk
+            adb shell am start -n com.inhousesoftware.read/.MainActivity
+            sleep 15
+            adb shell screencap -p /sdcard/inhouse-read-status-bar.png
+            adb pull /sdcard/inhouse-read-status-bar.png android-status-bar.png
+            adb shell uiautomator dump /sdcard/inhouse-read-ui.xml
+            adb pull /sdcard/inhouse-read-ui.xml android-ui.xml
 
       - uses: actions/upload-artifact@v4
-        with: { name: inhouse-read-android-v1.0.7, path: inhouse-read-release-v1.0.7.apk, if-no-files-found: error }
+        if: always()
+        with:
+          name: inhouse-read-android-status-bar
+          path: |
+            android-status-bar.png
+            android-ui.xml
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        with: { name: inhouse-read-android-v1.0.8, path: inhouse-read-release-v1.0.8.apk, if-no-files-found: error }
 
       - name: Publish versioned APK download
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view android-v1.0.7 >/dev/null 2>&1; then
-            gh release upload android-v1.0.7 inhouse-read-release-v1.0.7.apk --clobber
+          if gh release view android-v1.0.8 >/dev/null 2>&1; then
+            gh release upload android-v1.0.8 inhouse-read-release-v1.0.8.apk --clobber
           else
-            gh release create android-v1.0.7 inhouse-read-release-v1.0.7.apk \
-              --title "Inhouse Read Android 1.0.7" \
-              --notes "Restaurada la barra superior de Android: las barras del sistema se mantienen visibles y el WebView respeta sus insets en Android 15 y posteriores."
+            gh release create android-v1.0.8 inhouse-read-release-v1.0.8.apk \
+              --title "Inhouse Read Android 1.0.8" \
+              --notes "Corregido el solapamiento de la barra de estado: la ventana reserva el espacio de las barras del sistema antes de mostrar el lector."
           fi
-          gh release edit android-v1.0.7 --latest
+          gh release edit android-v1.0.8 --latest
 
       # Fuente unica de verdad para src/js/android-update.js: tamano y
       # sha256 calculados sobre el APK real que se acaba de firmar y
@@ -78,11 +111,11 @@ jobs:
       - name: Actualizar android-update.json con los datos reales de este build
         run: |
           python .github/scripts/update_manifest.py \
-            inhouse-read-release-v1.0.7.apk \
-            1.0.7 \
-            8 \
-            android-v1.0.7 \
-            "Restaurada la barra superior de Android: las barras del sistema se mantienen visibles y el WebView respeta sus insets en Android 15 y posteriores."
+            inhouse-read-release-v1.0.8.apk \
+            1.0.8 \
+            9 \
+            android-v1.0.8 \
+            "Corregido el solapamiento de la barra de estado: la ventana reserva el espacio de las barras del sistema antes de mostrar el lector."
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/android-update.json

@@ -1532,15 +1532,11 @@ class ApkBuilderApp(tk.Tk):
         calls it yet: it is the one piece actually required to add that
         OAuth flow later, and it's harmless dead code until then.
 
-        Keeps Android's system bars explicitly visible and applies the
-        status/navigation/cutout insets as WebView padding. Android 15+ forces
-        edge-to-edge for current target SDKs, so setDecorFitsSystemWindows(true)
-        and statusBarColor alone are not enough: the WebView can draw over the
-        clock and icons, making the status bar appear to be missing. We now
-        show the bars through WindowInsetsControllerCompat and keep the page
-        content inside the safe area on both enforced and legacy edge-to-edge
-        devices. The inset padding is based on the WebView's original padding,
-        so repeated inset dispatches do not accumulate offsets.
+        Keeps Android's system bars visible and moves the whole WebView inside
+        the system-bar/cutout safe area by padding its native parent container.
+        WebView padding does not reliably move its HTML layout viewport away
+        from the status bar. The handled insets are zeroed before dispatch to
+        WebView so it cannot apply the same spacing a second time.
         """
         main_src_root = project_dir / "android" / "app" / "src" / "main"
         java_file = main_src_root / "java" / Path(*package_id.split(".")) / "MainActivity.java"
@@ -1602,7 +1598,9 @@ public class MainActivity extends BridgeActivity {{
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
 
         WebView webView = getBridge().getWebView();
+        View rootView = findViewById(android.R.id.content);
         int bootColor = ContextCompat.getColor(this, R.color.ihr_boot_background);
+        rootView.setBackgroundColor(bootColor);
         getWindow().setStatusBarColor(bootColor);
         getWindow().setNavigationBarColor(bootColor);
         boolean isLightMode = (getResources().getConfiguration().uiMode
@@ -1613,21 +1611,23 @@ public class MainActivity extends BridgeActivity {{
         insetsController.setAppearanceLightStatusBars(isLightMode);
         insetsController.setAppearanceLightNavigationBars(isLightMode);
         insetsController.show(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.navigationBars());
-        int initialLeft = webView.getPaddingLeft();
-        int initialTop = webView.getPaddingTop();
-        int initialRight = webView.getPaddingRight();
-        int initialBottom = webView.getPaddingBottom();
-        ViewCompat.setOnApplyWindowInsetsListener(webView, (view, windowInsets) -> {{
-            Insets safeInsets = windowInsets.getInsets(
-                WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+        int initialLeft = rootView.getPaddingLeft();
+        int initialTop = rootView.getPaddingTop();
+        int initialRight = rootView.getPaddingRight();
+        int initialBottom = rootView.getPaddingBottom();
+        int safeTypes = WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout();
+        ViewCompat.setOnApplyWindowInsetsListener(rootView, (view, windowInsets) -> {{
+            Insets safeInsets = windowInsets.getInsets(safeTypes);
             view.setPadding(
                 initialLeft + safeInsets.left,
                 initialTop + safeInsets.top,
                 initialRight + safeInsets.right,
                 initialBottom + safeInsets.bottom);
-            return windowInsets;
+            return new WindowInsetsCompat.Builder(windowInsets)
+                .setInsets(safeTypes, Insets.NONE)
+                .build();
         }});
-        ViewCompat.requestApplyInsets(webView);
+        ViewCompat.requestApplyInsets(rootView);
         webView.setBackgroundColor(bootColor);
         WebSettings settings = webView.getSettings();
         settings.setDomStorageEnabled(true);
@@ -1876,7 +1876,9 @@ class MainActivity : BridgeActivity() {{
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
         val webView = bridge.webView
+        val rootView = findViewById<View>(android.R.id.content)
         val bootColor = ContextCompat.getColor(this, R.color.ihr_boot_background)
+        rootView.setBackgroundColor(bootColor)
         window.statusBarColor = bootColor
         window.navigationBarColor = bootColor
         val isLightMode = (resources.configuration.uiMode
@@ -1887,18 +1889,20 @@ class MainActivity : BridgeActivity() {{
         insetsController.isAppearanceLightNavigationBars = isLightMode
         insetsController.show(WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars())
         val initialPadding = Insets.of(
-            webView.paddingLeft, webView.paddingTop, webView.paddingRight, webView.paddingBottom)
-        ViewCompat.setOnApplyWindowInsetsListener(webView) {{ view, windowInsets ->
-            val safeInsets = windowInsets.getInsets(
-                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            rootView.paddingLeft, rootView.paddingTop, rootView.paddingRight, rootView.paddingBottom)
+        val safeTypes = WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+        ViewCompat.setOnApplyWindowInsetsListener(rootView) {{ view, windowInsets ->
+            val safeInsets = windowInsets.getInsets(safeTypes)
             view.setPadding(
                 initialPadding.left + safeInsets.left,
                 initialPadding.top + safeInsets.top,
                 initialPadding.right + safeInsets.right,
                 initialPadding.bottom + safeInsets.bottom)
-            windowInsets
+            WindowInsetsCompat.Builder(windowInsets)
+                .setInsets(safeTypes, Insets.NONE)
+                .build()
         }}
-        ViewCompat.requestApplyInsets(webView)
+        ViewCompat.requestApplyInsets(rootView)
         webView.setBackgroundColor(bootColor)
         webView.settings.domStorageEnabled = true
         webView.settings.databaseEnabled = true
