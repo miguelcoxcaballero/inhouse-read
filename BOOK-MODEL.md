@@ -6,7 +6,7 @@ or model service are required.
 
 - The binding is an extruded half ellipse with 96 subdivisions, shared vertices,
   analytical smooth normals, continuous UVs, and matching end caps.
-- Binding depth is 55% of book thickness. It protrudes beyond the front cover
+- Binding depth is 38% of book thickness. It protrudes beyond the front cover
   in the actual mesh, including when viewed head-on.
 - Separate cover boards enclose a recessed paper block. The cover image and
   binding title are textures on those meshes.

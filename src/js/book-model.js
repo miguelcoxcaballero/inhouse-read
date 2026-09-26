@@ -4,7 +4,7 @@ import * as THREE from 'three';
 // binding continuous normals, including the silhouette seen beside the cover.
 export function bindingGeometry(width, height, thickness, segments = 96) {
   const positions = [], normals = [], uv = [], indices = [];
-  const bulge = thickness * 0.55;
+  const bulge = thickness * 0.38;
   for (let i = 0; i <= segments; i++) {
     const a = i / segments * Math.PI;
     const nx = -Math.sin(a) / bulge, nz = -Math.cos(a) / (thickness / 2);
@@ -71,7 +71,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl)
   box(width - 3, height - 5, thickness - board * 2, new THREE.MeshStandardMaterial({ map: paperMap, roughness: 1 }), 1);
   group.add(new THREE.Mesh(bindingGeometry(width, height, thickness), binding));
   const cap = new THREE.Shape(); cap.moveTo(-width / 2, -thickness / 2);
-  for (let i = 0; i <= 96; i++) { const a = i / 96 * Math.PI; cap.lineTo(-width / 2 - thickness * .55 * Math.sin(a), -thickness / 2 * Math.cos(a)); }
+  for (let i = 0; i <= 96; i++) { const a = i / 96 * Math.PI; cap.lineTo(-width / 2 - thickness * .38 * Math.sin(a), -thickness / 2 * Math.cos(a)); }
   cap.closePath();
   for (const y of [-height / 2, height / 2]) {
     const mesh = new THREE.Mesh(new THREE.ShapeGeometry(cap), new THREE.MeshStandardMaterial({ color: style.color, roughness: .86, side: THREE.DoubleSide }));
@@ -130,12 +130,27 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     let raf, resolve; const finished = new Promise(r => resolve = r);
     cancel = () => { cancelAnimationFrame(raf); resolve(); };
     const start = performance.now();
+    const times = frames.map((frame, i) => frame.offset ?? (i === 0 ? 0 : 1));
+    const channels = ['x', 'y', 'scale', 'angle', 'pitch'];
+    const tangent = (i, key) => {
+      if (i === 0 || i === frames.length - 1) return 0;
+      const before = (frames[i].transform[key] ?? 0) - (frames[i - 1].transform[key] ?? 0);
+      const after = (frames[i + 1].transform[key] ?? 0) - (frames[i].transform[key] ?? 0);
+      const dt0 = times[i] - times[i - 1], dt1 = times[i + 1] - times[i];
+      return (before / dt0 * dt1 + after / dt1 * dt0) / (dt0 + dt1);
+    };
     const tick = now => {
       const t = Math.min(1, (now - start) / duration);
       let index = 0; while (index < frames.length - 2 && t > (frames[index + 1].offset ?? 1)) index++;
-      const a = frames[index], b = frames[index + 1], low = a.offset ?? 0, high = b.offset ?? 1;
-      const raw = Math.max(0, Math.min(1, (t - low) / (high - low))), k = raw * raw * (3 - 2 * raw);
-      const pose = {}; for (const key of ['x', 'y', 'scale', 'angle', 'pitch']) pose[key] = (a.transform[key] ?? 0) + ((b.transform[key] ?? 0) - (a.transform[key] ?? 0)) * k;
+      const a = frames[index], b = frames[index + 1], low = times[index], high = times[index + 1], span = high - low;
+      const k = Math.max(0, Math.min(1, (t - low) / span)), k2 = k * k, k3 = k2 * k;
+      const h00 = 2 * k3 - 3 * k2 + 1, h10 = k3 - 2 * k2 + k;
+      const h01 = -2 * k3 + 3 * k2, h11 = k3 - k2;
+      const pose = {};
+      for (const key of channels) {
+        const v0 = a.transform[key] ?? 0, v1 = b.transform[key] ?? 0;
+        pose[key] = h00 * v0 + h10 * span * tangent(index, key) + h01 * v1 + h11 * span * tangent(index + 1, key);
+      }
       draw(pose); if (t < 1) raf = requestAnimationFrame(tick); else resolve();
     };
     raf = requestAnimationFrame(tick); return { finished, cancel };

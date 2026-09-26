@@ -10,7 +10,7 @@ describe('purpose-built rounded binding mesh', () => {
     expect(p.getZ(0)).toBe(-26);
     expect(p.getX(192)).toBeCloseTo(-100);
     expect(p.getZ(192)).toBe(26);
-    expect(p.getX(96)).toBeCloseTo(-128.6);
+    expect(p.getX(96)).toBeCloseTo(-119.76);
     expect(p.getY(96)).toBe(-150);
     expect(p.getY(97)).toBe(150);
     g.dispose();
@@ -19,7 +19,7 @@ describe('purpose-built rounded binding mesh', () => {
     const g = bindingGeometry(200, 300, 52);
     const p = g.getAttribute('position'), n = g.getAttribute('normal');
     for (let i = 0; i < p.count; i += 2) {
-      expect(((p.getX(i) + 100) / 28.6) ** 2 + (p.getZ(i) / 26) ** 2).toBeCloseTo(1, 5);
+      expect(((p.getX(i) + 100) / 19.76) ** 2 + (p.getZ(i) / 26) ** 2).toBeCloseTo(1, 5);
       expect(Math.hypot(n.getX(i), n.getY(i), n.getZ(i))).toBeCloseTo(1, 5);
       expect(n.getX(i)).toBeLessThanOrEqual(0);
       if (i) expect(n.getX(i) * n.getX(i - 2) + n.getZ(i) * n.getZ(i - 2)).toBeGreaterThan(.998);

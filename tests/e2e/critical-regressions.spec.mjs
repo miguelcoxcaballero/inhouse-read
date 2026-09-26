@@ -50,23 +50,28 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   await page.reload()
   const reopenedSpine = page.locator('.ihr-spine').first()
   await expect(reopenedSpine).toBeVisible()
+  const spineSize = await reopenedSpine.evaluate(element => ({ width: element.offsetWidth, height: element.offsetHeight }))
   let fileChooserOpened = false
   page.on('filechooser', () => { fileChooserOpened = true })
   await reopenedSpine.click()
   const animatedCanvas = page.locator('.ihr-flyout__book--webgl canvas')
   await expect(animatedCanvas).toBeVisible()
   await expect(animatedCanvas).toHaveAttribute('data-angle', '0')
-  const silhouette = await animatedCanvas.evaluate(canvas => {
+  const silhouette = await animatedCanvas.evaluate((canvas, spineSize) => {
     const ratio = canvas.width / window.innerWidth
     const y = Math.floor(window.innerHeight * .44 * ratio)
     const pixels = canvas.getContext('2d').getImageData(0, y, canvas.width, 1).data
     let left = canvas.width
     for (let x = 0; x < canvas.width; x++) if (pixels[x * 4 + 3] > 200) { left = x / ratio; break }
-    const coverH = Math.min(innerHeight * .54, 440, innerWidth * .78 / .66)
-    return { bulge: innerWidth / 2 - coverH * .66 / 2 - left }
-  })
+    const coverH = Math.min(innerHeight * .54, 440, innerWidth * .78 / .66,
+      innerWidth * .86 / (.66 + spineSize.width / spineSize.height * .55))
+    const thickness = spineSize.width * coverH / spineSize.height
+    const coverLeft = innerWidth / 2 + thickness * .19 - coverH * .66 / 2
+    return { bulge: coverLeft - left }
+  }, spineSize)
   // Actual rendered pixels must extend past the front cover, not a DOM box.
-  expect(silhouette.bulge).toBeGreaterThan(10)
+  expect(silhouette.bulge).toBeGreaterThan(8)
+  expect(silhouette.bulge).toBeLessThan(40)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   expect(fileChooserOpened).toBe(false)
 })

@@ -128,8 +128,8 @@ export const DEFAULT_TEXTS = Object.freeze({
 const DEFAULTS = Object.freeze({
   autoOpen: true,        // tras revelar la portada, avisar a la app
   holdMs: 320,           // pausa para que la portada se vea antes de abrir
-  revealDuration: 620,   // dentro del rango pedido (400-700 ms)
-  returnDuration: 420,
+  revealDuration: 680,
+  returnDuration: 460,
   sections: true,        // false = una sola estantería continua
   shelfPadding: 16,
   gap: 3,
@@ -621,7 +621,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // Grosor tal que, girado 90°, el tomo proyecte exactamente el lomo de origen.
     const thickness = Math.max(6, (rect.width || 32) / startScale);
 
-    const centerX = vw / 2 + thickness * 0.55 / 2;
+    const centerX = vw / 2 + thickness * 0.38 / 2;
     const centerY = vh * 0.44;
     const dx = rect.left + rect.width / 2 - centerX;
     const dy = rect.top + rect.height / 2 - centerY;
