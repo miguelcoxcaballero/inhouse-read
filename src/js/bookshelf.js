@@ -365,10 +365,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // En un lomo estrecho el autor no cabe sin pisar al título.
     if (style.width < 32) node.classList.add('ihr-spine--slim');
 
-    // La superficie visible (color, textura, canto arqueado) vive en un hijo
-    // aparte de `node`: así el clip-path que dibuja el arco (bookshelf.css)
-    // sólo recorta esto, y el marcapáginas de abajo —hermano suyo, no hijo—
-    // puede seguir asomando por encima sin que ese recorte se lo lleve.
+    // La superficie visible (color y textura) y el canto superior en U viven
+    // en un hijo aparte de `node`. El marcapáginas es hermano suyo, no hijo,
+    // así puede seguir asomando por encima sin quedar recortado.
     const body = el('span', { class: 'ihr-spine__body', 'aria-hidden': 'true' });
     body.append(el('span', { class: 'ihr-spine__grain', 'aria-hidden': 'true' }));
     body.append(

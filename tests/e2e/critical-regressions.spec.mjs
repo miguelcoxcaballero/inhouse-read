@@ -12,7 +12,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/')
 })
 
-test('el lomo muestra un arco visible y un libro local se reabre tras recargar', async ({ page }) => {
+test('el lomo curva el canto superior en U y un libro local se reabre tras recargar', async ({ page }) => {
   await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
 
@@ -37,9 +37,13 @@ test('el lomo muestra un arco visible y un libro local se reabre tras recargar',
   await page.getByRole('button', { name: 'Volver a la estantería' }).click()
   const spine = page.locator('.ihr-spine').first()
   await expect(spine).toBeVisible()
-  const clipPath = await spine.locator('.ihr-spine__body').evaluate(element => getComputedStyle(element).clipPath)
-  expect(clipPath).toContain('polygon(10% 0%')
-  expect(clipPath).toContain('0% 50%')
+  const curvature = await spine.locator('.ihr-spine__body').evaluate(element => ({
+    front: getComputedStyle(element).clipPath,
+    top: getComputedStyle(element, '::before').clipPath
+  }))
+  expect(curvature.front).toBe('none')
+  expect(curvature.top).toContain('polygon(0% 0%')
+  expect(curvature.top).toContain('50% 100%')
 
   // Reopening must use the stored Blob, not silently fall back to a native picker.
   await page.reload()

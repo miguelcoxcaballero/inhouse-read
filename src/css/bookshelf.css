@@ -173,9 +173,8 @@
   color: var(--ihr-spine-ink, #f2efe6);
   cursor: pointer;
   /* SIN overflow:hidden en el botón: el marcapáginas tiene que asomar por
-     encima. La superficie visible (con su propio recorte en arco) vive en
-     .ihr-spine__body, un hijo aparte — así el marcapáginas, hermano suyo,
-     nunca queda dentro de esa región recortada. */
+     encima. La superficie visible vive en .ihr-spine__body, un hijo aparte —
+     así el marcapáginas, hermano suyo, nunca queda recortado. */
   overflow: visible;
   transform-origin: bottom right;
   transform: translateY(var(--ihr-lift)) rotate(var(--ihr-spine-tilt, 0deg));
@@ -185,48 +184,13 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-/*
-  El canto real del libro: NO son esquinas redondeadas (un border-radius deja
-  los dos lados rectos de arriba abajo), es un contorno arqueado de verdad —
-  los lados izquierdo y derecho abombados hacia fuera en el centro del lomo y
-  entrando hacia dentro cerca de la cabezada/pie, como el perfil de un lomo
-  cosido redondeado visto de frente. Se consigue con un clip-path poligonal:
-  muchos puntos en % (escalan solos con el ancho/alto de cada lomo, que varía
-  libro a libro) trazando una parábola simétrica por cada lado en vez de dos
-  líneas rectas. `--ihr-arch` es cuánto entra el contorno en cabezada/pie,
-  en % del ANCHO del lomo — 10% da una curva legible incluso en lomos finos
-  sin deformarlos hasta parecer tubos.
-*/
+/* La cara frontal del lomo permanece recta. La curva va en el canto superior
+   (planta del libro): la pieza fina ::before dibuja una U entre los extremos,
+   sin abombar los laterales vistos de frente ni ensanchar el libro. */
 .ihr-spine__body {
-  --ihr-arch: 10%;
   position: absolute;
   inset: 0;
-  clip-path: polygon(
-    var(--ihr-arch) 0%,
-    calc(var(--ihr-arch) * 0.563) 12.5%,
-    calc(var(--ihr-arch) * 0.25) 25%,
-    calc(var(--ihr-arch) * 0.063) 37.5%,
-    0% 50%,
-    calc(var(--ihr-arch) * 0.063) 62.5%,
-    calc(var(--ihr-arch) * 0.25) 75%,
-    calc(var(--ihr-arch) * 0.563) 87.5%,
-    var(--ihr-arch) 100%,
-    calc(100% - var(--ihr-arch)) 100%,
-    calc(100% - var(--ihr-arch) * 0.563) 87.5%,
-    calc(100% - var(--ihr-arch) * 0.25) 75%,
-    calc(100% - var(--ihr-arch) * 0.063) 62.5%,
-    100% 50%,
-    calc(100% - var(--ihr-arch) * 0.063) 37.5%,
-    calc(100% - var(--ihr-arch) * 0.25) 25%,
-    calc(100% - var(--ihr-arch) * 0.563) 12.5%,
-    calc(100% - var(--ihr-arch)) 0%
-  );
-  /* Curva sutil de luz: un realce descentrado (~24%) que se apaga hacia
-     el centro y una sombra suave hacia el canto derecho, como luz rasante
-     sobre una superficie ligeramente convexa — se suma al arco de verdad
-     del clip-path de arriba, no lo sustituye.
-
-     La primera capa es grano de tela/cuero envejecido: ruido SVG en negro
+  /* La primera capa es grano de tela/cuero envejecido: ruido SVG en negro
      al 5% de alfa, mezclado en "multiply" sobre el resto — evita que el
      lomo se vea como una pegatina de color plano. Es el mismo ruido en
      todos los lomos (no depende del libro): la variación libro-a-libro ya
@@ -252,14 +216,30 @@
     0 0 0 0.5px rgba(0, 0, 0, 0.12);
 }
 
-/* Cabezada: el canto superior de las hojas asoma sobre la tela. Sigue el
-   mismo contorno arqueado que el resto del cuerpo (hereda su clip-path). */
+/* Canto superior visto en planta. La curva cóncava baja al centro y vuelve
+   a subir en los extremos: dibuja la U pedida en la profundidad del libro.
+   Sólo ocupa una tira sobre la cabezada; los laterales del lomo quedan rectos. */
 .ihr-spine__body::before {
   content: '';
   position: absolute;
-  inset: 0 0 auto 0;
-  height: 3px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0));
+  z-index: 2;
+  inset: -6px 0 auto;
+  height: 7px;
+  background: linear-gradient(180deg, #f2ead9 0%, #cfc2a8 100%);
+  clip-path: polygon(
+    0 0,
+    12.5% 18%,
+    25% 48%,
+    37.5% 78%,
+    50% 100%,
+    62.5% 78%,
+    75% 48%,
+    87.5% 18%,
+    100% 0,
+    100% 100%,
+    0 100%
+  );
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.28));
 }
 
 /* Zona de acierto: 2px extra a cada lado, sin invadir el lomo vecino. */
@@ -396,8 +376,6 @@
 .ihr-spine__grain {
   position: absolute;
   inset: 0;
-  /* Sin border-radius propio: el recorte en arco ya lo pone el clip-path de
-     .ihr-spine__body (su padre), que se hereda automáticamente al pintar. */
   pointer-events: none;
 }
 
