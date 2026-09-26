@@ -66,9 +66,9 @@ jobs:
           else
             gh release create android-v1.0.7 inhouse-read-release-v1.0.7.apk \
               --title "Inhouse Read Android 1.0.7" \
-              --notes "Restaurada la barra superior de Android: las barras del sistema se mantienen visibles y el WebView respeta sus insets en Android 15 y posteriores." \
-              --latest=false
+              --notes "Restaurada la barra superior de Android: las barras del sistema se mantienen visibles y el WebView respeta sus insets en Android 15 y posteriores."
           fi
+          gh release edit android-v1.0.7 --latest
 
       # Fuente unica de verdad para src/js/android-update.js: tamano y
       # sha256 calculados sobre el APK real que se acaba de firmar y
