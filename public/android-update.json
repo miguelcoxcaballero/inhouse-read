@@ -1,9 +1,9 @@
 {
-  "version": "1.0.6",
-  "versionCode": 7,
+  "version": "1.0.7",
+  "versionCode": 8,
   "required": true,
-  "apkSizeBytes": 3161445,
-  "apkSha256": "e9c125117cc97edcf9f8777f8520da09549cc1f64430e3ed7315be0da60e5a27",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.6/inhouse-read-release-v1.0.6.apk",
-  "releaseNotes": "Arco de los lomos mas visible en la estanteria. Endurecidos con pruebas de regresion la reapertura de libros desde IndexedDB y la entrega segura del APK al instalador Android."
+  "apkSizeBytes": 3162133,
+  "apkSha256": "a810b84d03666edcec9283378a35d1837e1e610c2f87d3c7b3248ec10a803165",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.7/inhouse-read-release-v1.0.7.apk",
+  "releaseNotes": "Restaurada la barra superior de Android: las barras del sistema se mantienen visibles y el WebView respeta sus insets en Android 15 y posteriores."
 }
