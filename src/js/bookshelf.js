@@ -69,9 +69,9 @@
  *    libros y de remate cuando sobra balda (ver `layoutShelves`).
  *
  * 5. La animación del giro. Es un libro en 3D de verdad, no un flip de
- *    tarjeta: un contenedor con `transform-style: preserve-3d` y dos caras,
- *    la portada en z=+grosor/2 y el lomo como cara lateral
- *    (`rotateY(-90deg) translateZ(ancho/2)`). El libro arranca en
+ *    tarjeta: un contenedor con `transform-style: preserve-3d`, la portada
+ *    en z=+grosor/2 y un lomo lateral curvado en profundidad con segmentos
+ *    tangentes (`rotateY(-90deg) translateZ(grosor/2)`). El libro arranca en
  *    `rotateY(90deg)`, que proyecta exactamente el grosor del lomo: por eso
  *    empieza encajado sobre el lomo de la balda, píxel a píxel (técnica FLIP,
  *    medido con `getBoundingClientRect`). De ahí sale hacia arriba, se acerca
@@ -118,6 +118,7 @@ const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
 const TAP_SLOP = 12;
 const SPINE_CURVE_SEGMENTS = 21;
+const FLYOUT_SPINE_SEGMENTS = 48;
 const SPINE_CURVE_HALF_ANGLE = (26 * Math.PI) / 180;
 
 export const DEFAULT_TEXTS = Object.freeze({
@@ -176,12 +177,11 @@ function el(tag, props = {}, children = []) {
  * face is tangent to the same circle and sits at that circle's real depth, so
  * the curve exists in 3D space instead of being painted as a 2D outline.
  */
-function curvedSpineSurface(width) {
+function curvedSpineSurface(width, count = SPINE_CURVE_SEGMENTS) {
   const surface = el('span', {
     class: 'ihr-spine__surface',
     'aria-hidden': 'true'
   });
-  const count = SPINE_CURVE_SEGMENTS;
   const halfAngle = SPINE_CURVE_HALF_ANGLE;
   const radius = width / (2 * Math.sin(halfAngle));
   const projectedStep = width / count;
@@ -191,6 +191,7 @@ function curvedSpineSurface(width) {
     const t = (centerX / width) * 2 - 1;
     const angle = Math.asin(t * Math.sin(halfAngle));
     const depth = radius * (Math.cos(angle) - Math.cos(halfAngle));
+    const light = 1.08 - 0.27 * Math.abs(angle / halfAngle);
     // Small overlap hides subpixel seams between tangent faces at DPR 1-3.
     const faceWidth = projectedStep / Math.cos(angle) + 0.75;
     const segment = el('span', {
@@ -200,6 +201,7 @@ function curvedSpineSurface(width) {
         `left:${centerX - faceWidth / 2}px;` +
         `width:${faceWidth}px;` +
         `--ihr-curve-z:${depth.toFixed(3)}px;` +
+        `--ihr-curve-light:${light.toFixed(3)};` +
         `--ihr-curve-angle:${((angle * 180) / Math.PI).toFixed(3)}deg`
     });
     surface.append(segment);
@@ -687,17 +689,21 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     });
 
     /*
-      La cara del lomo es un clon del lomo real de la balda, ampliado por el
-      inverso de la escala inicial. Así coincide al píxel —tipografía, nervios,
-      cinta de progreso, sombra— sin duplicar ni una regla de CSS, y cualquier
-      acabado que se añada mañana al lomo viaja solo a la animación.
+      El lomo lateral es un clon del lomo real de la balda, ampliado por el
+      inverso de la escala inicial. Sus segmentos curvos conservan su propia
+      profundidad al girar con el tomo; la envoltura no puede aplanarlos ni
+      recortarlos. Así coinciden geometría y acabado al salir de la balda.
     */
-    const spineFace = el('div', { class: 'ihr-flyout__face ihr-flyout__face--spine' });
+    const spineSurface = el('div', { class: 'ihr-flyout__spine' });
     const clone = spineEl.cloneNode(true);
     clone.classList.remove('is-away', 'is-pressed', 'is-tilted');
     clone.classList.add('ihr-spine--ghost'); // para distinguirlo del lomo real
-    // El marcapáginas asoma FUERA de la caja del lomo; en el tomo que gira no
-    // tiene sitio (la cara recorta) y se entiende como metido entre las hojas.
+    // Más tiras sólo durante el giro: el arco se ve liso de cerca sin cargar
+    // cada libro de la estantería con la geometría de primer plano.
+    clone.querySelector('.ihr-spine__surface')?.replaceWith(
+      curvedSpineSurface(rect.width || style.width, FLYOUT_SPINE_SEGMENTS)
+    );
+    // El marcapáginas queda metido entre las hojas mientras gira el tomo.
     clone.querySelector('.ihr-spine__bookmark')?.remove();
     clone.removeAttribute('data-book-id');
     clone.removeAttribute('aria-label');
@@ -707,10 +713,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       `;position:absolute;left:0;top:0;pointer-events:none;` +
       `width:${rect.width}px;height:${rect.height}px;` +
       `transform-origin:0 0;transform:scale(${1 / startScale});`;
-    spineFace.append(clone);
+    spineSurface.append(clone);
 
     bookNode.append(buildCoverFace(book, coverUrl, style));
-    bookNode.append(spineFace);
+    bookNode.append(spineSurface);
     bookNode.append(el('div', { class: 'ihr-flyout__pages', 'aria-hidden': 'true' }));
 
     const meta = el('div', { class: 'ihr-flyout__meta' }, [

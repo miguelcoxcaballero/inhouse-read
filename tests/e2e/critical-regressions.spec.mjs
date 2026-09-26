@@ -66,6 +66,35 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   let fileChooserOpened = false
   page.on('filechooser', () => { fileChooserOpened = true })
   await reopenedSpine.click()
+  const animatedSpine = page.locator('.ihr-flyout__spine')
+  await expect(animatedSpine).toBeAttached()
+  const curvedFlyout = await animatedSpine.evaluate(element => {
+    const ghost = element.querySelector('.ihr-spine--ghost')
+    const body = ghost?.querySelector('.ihr-spine__body')
+    const surface = body?.querySelector('.ihr-spine__surface')
+    const segments = [...(surface?.querySelectorAll('.ihr-spine__segment') ?? [])]
+    return {
+      noFlatSideFace: !element.classList.contains('ihr-flyout__face'),
+      spine3d: getComputedStyle(element).transformStyle,
+      ghost3d: getComputedStyle(ghost).transformStyle,
+      body3d: getComputedStyle(body).transformStyle,
+      surface3d: getComputedStyle(surface).transformStyle,
+      perspective: getComputedStyle(body).perspective,
+      segmentCount: segments.length,
+      centerDepth: Number.parseFloat(getComputedStyle(segments[24]).getPropertyValue('--ihr-curve-z')),
+      edgeDepth: Number.parseFloat(getComputedStyle(segments[0]).getPropertyValue('--ihr-curve-z'))
+    }
+  })
+  expect(curvedFlyout).toMatchObject({
+    noFlatSideFace: true,
+    spine3d: 'preserve-3d',
+    ghost3d: 'preserve-3d',
+    body3d: 'preserve-3d',
+    surface3d: 'preserve-3d',
+    perspective: 'none',
+    segmentCount: 48
+  })
+  expect(curvedFlyout.centerDepth).toBeGreaterThan(curvedFlyout.edgeDepth)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   expect(fileChooserOpened).toBe(false)
 })
