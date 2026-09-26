@@ -1,9 +1,9 @@
 {
-  "version": "1.0.7",
-  "versionCode": 8,
+  "version": "1.0.8",
+  "versionCode": 9,
   "required": true,
-  "apkSizeBytes": 3162133,
-  "apkSha256": "a810b84d03666edcec9283378a35d1837e1e610c2f87d3c7b3248ec10a803165",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.7/inhouse-read-release-v1.0.7.apk",
-  "releaseNotes": "Restaurada la barra superior de Android: las barras del sistema se mantienen visibles y el WebView respeta sus insets en Android 15 y posteriores."
+  "apkSizeBytes": 3162301,
+  "apkSha256": "92cc5f4d64cdfadd196dbcf9f96a00ae4b512239747af02de9d498126e2bd2b6",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.8/inhouse-read-release-v1.0.8.apk",
+  "releaseNotes": "Corregido el solapamiento de la barra de estado: la ventana reserva el espacio de las barras del sistema antes de mostrar el lector."
 }
