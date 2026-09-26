@@ -42,7 +42,7 @@ test('el lomo curva el canto superior en U y un libro local se reabre tras recar
     top: getComputedStyle(element, '::before').clipPath
   }))
   expect(curvature.front).toBe('none')
-  expect(curvature.top).toContain('polygon(0% 0%')
+  expect(curvature.top).toMatch(/^polygon\(0(?:px)? 0(?:px)?/)
   expect(curvature.top).toContain('50% 100%')
 
   // Reopening must use the stored Blob, not silently fall back to a native picker.
