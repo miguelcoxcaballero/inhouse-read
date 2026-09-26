@@ -66,7 +66,7 @@ En Chrome/Edge de escritorio, al importar un libro por primera vez la app pide e
 
 ## Google Drive
 
-La integración con Google Drive usa el mismo cliente OAuth, flujo PKCE y API Drive v3 que Inhouse Notes. El primer inicio de sesión abre Notes para completar el retorno OAuth validado; el navegador conserva tokens por origen, por lo que puede pedir acceso la primera vez que uses cada app. Los libros se guardan en la carpeta `inhouse read`. Desde la portada puedes subir un libro local a Drive o descargar uno de Drive para leerlo sin conexión; Drive se sincroniza en segundo plano si ya hay sesión al abrir un libro.
+La integración con Google Drive usa el mismo cliente OAuth, flujo PKCE y API Drive v3 que Inhouse Notes. El inicio de sesión abre el retorno OAuth de Notes, que completa el intercambio PKCE y devuelve tokens por un canal validado; cada app guarda su sesión por separado en el navegador. Los libros se guardan en la carpeta `inhouse read`. Desde la portada puedes subir un libro local a Drive o descargar uno de Drive para leerlo sin conexión; los libros locales se sincronizan en segundo plano si ya hay sesión.
 
 ## Despliegue (GitHub Pages)
 

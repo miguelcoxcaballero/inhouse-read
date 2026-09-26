@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { isDriveConfigured, requestDriveAccess, listDriveBooks, getOrCreateReadFolder, uploadDriveFile } from '../../src/js/drive-client.js'
 
 describe('drive-client — configuración', () => {
@@ -46,5 +47,15 @@ describe('drive-client — carpeta y subida', () => {
     expect(await uploadDriveFile(file)).toMatchObject({ id: 'book-1' })
     expect(globalThis.fetch.mock.calls.at(-1)[0]).toContain('uploadType=multipart')
     expect(globalThis.fetch.mock.calls.at(-1)[1].method).toBe('POST')
+  })
+})
+
+describe('drive-client — retorno OAuth compartido', () => {
+  it('envía el verificador PKCE al callback de Notes y valida origen, ventana y estado', () => {
+    const source = readFileSync('src/js/drive-client.js', 'utf8')
+    expect(source).toContain("const redirectUri = 'https://inhousenotes.com/oauth-callback'")
+    expect(source).toContain("event.origin !== 'https://inhousenotes.com' || event.source !== popup")
+    expect(source).toContain("type: 'ihr-oauth-exchange', code: event.data.code, verifier, redirectUri, state")
+    expect(source).toContain("event.data.type === 'ihr-oauth-token'")
   })
 })

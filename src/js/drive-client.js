@@ -5,7 +5,6 @@ const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files'
 const UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files'
 const TOKEN_KEY = 'ihn_drive_tokens'
 const CLIENT_ID_KEY = 'ihn_drive_client_id'
-const VERIFIER_KEY = 'ihn_pkce_verifier'
 const DEFAULT_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com'
 const FOLDER_NAME = 'inhouse read'
 const APP_ORIGIN = 'https://miguelcoxcaballero.github.io'
@@ -50,9 +49,6 @@ export async function requestDriveAccess() {
     const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)))
     const state = `${b64url(new TextEncoder().encode(JSON.stringify({ origin: APP_ORIGIN, nonce: crypto.randomUUID() })))}.${crypto.randomUUID()}`
     const redirectUri = 'https://inhousenotes.com/oauth-callback'
-    sessionStorage.setItem(VERIFIER_KEY, verifier)
-    sessionStorage.setItem('ihr_oauth_state', state)
-    sessionStorage.setItem('ihr_oauth_redirect_uri', redirectUri)
     const params = new URLSearchParams({
       client_id: clientId(), redirect_uri: redirectUri, response_type: 'code',
       scope: DRIVE_SCOPE, code_challenge_method: 'S256', code_challenge: challenge,
@@ -61,32 +57,25 @@ export async function requestDriveAccess() {
     const popup = window.open(`https://accounts.google.com/o/oauth2/v2/auth?${params}`, 'oauth', 'width=600,height=700,left=100,top=100')
     if (!popup) throw new Error('Google bloqueó la ventana de inicio de sesión.')
     try {
-      const code = await new Promise((resolve, reject) => {
+      const tokens = await new Promise((resolve, reject) => {
         let done = false
         const finish = (fn, value) => { if (done) return; done = true; clearInterval(timer); removeEventListener('message', onMessage); fn(value) }
         const onMessage = event => {
-        if (event.origin !== 'https://inhousenotes.com' || event.source !== popup || event.data?.state !== state) return
-          if (event.data.error) finish(reject, new Error(event.data.error))
-          else if (event.data.code) finish(resolve, event.data.code)
+          if (event.origin !== 'https://inhousenotes.com' || event.source !== popup || event.data?.state !== state) return
+          if (event.data.type === 'ihr-oauth-code' && event.data.code) {
+            popup.postMessage({ type: 'ihr-oauth-exchange', code: event.data.code, verifier, redirectUri, state }, 'https://inhousenotes.com')
+          } else if (event.data.type === 'ihr-oauth-token' && event.data.tokens) finish(resolve, event.data.tokens)
+          else if (event.data.error) finish(reject, new Error(event.data.error))
         }
         addEventListener('message', onMessage)
         const timer = setInterval(() => { if (popup.closed) finish(reject, new Error('Inicio de sesión cancelado.')) }, 500)
       })
-      const response = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ client_id: clientId(), code, code_verifier: verifier, grant_type: 'authorization_code', redirect_uri: redirectUri })
-      })
-      if (!response.ok) throw new Error(`No se pudo completar el inicio de sesión (${response.status}).`)
-      const data = await response.json()
-      if (!data.refresh_token) throw new Error('Google no devolvió un token renovable. Vuelve a iniciar sesión.')
-      currentToken = data.access_token
-      localStorage.setItem(TOKEN_KEY, JSON.stringify({ accessToken: data.access_token, refreshToken: data.refresh_token, expiresAt: Date.now() + data.expires_in * 1000 }))
+      if (!tokens.refreshToken) throw new Error('Google no devolvió un token renovable. Vuelve a iniciar sesión.')
+      currentToken = tokens.accessToken
+      localStorage.setItem(TOKEN_KEY, JSON.stringify(tokens))
       return currentToken
     } finally {
       if (!popup.closed) popup.close()
-      sessionStorage.removeItem(VERIFIER_KEY)
-      sessionStorage.removeItem('ihr_oauth_state')
-      sessionStorage.removeItem('ihr_oauth_redirect_uri')
     }
   })()
   try { return await authPromise } finally { authPromise = null }
