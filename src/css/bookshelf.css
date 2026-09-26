@@ -190,6 +190,8 @@
 .ihr-spine__body {
   position: absolute;
   inset: 0;
+  /* Backing color closes subpixel seams between the curved 3D faces. */
+  background: var(--ihr-spine-base, #4a4a4a);
   perspective: 360px;
   transform-style: preserve-3d;
 }
