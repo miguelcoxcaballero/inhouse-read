@@ -117,6 +117,8 @@ import { plantSvg, plantMeta } from './plants.js';
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
 const TAP_SLOP = 12;
+const SPINE_CURVE_SEGMENTS = 21;
+const SPINE_CURVE_HALF_ANGLE = (26 * Math.PI) / 180;
 
 export const DEFAULT_TEXTS = Object.freeze({
   shelfLabel: 'Tu estantería',
@@ -167,6 +169,43 @@ function el(tag, props = {}, children = []) {
     node.append(child);
   }
   return node;
+}
+
+/**
+ * Builds a faceted cylindrical surface for a book spine. Each narrow vertical
+ * face is tangent to the same circle and sits at that circle's real depth, so
+ * the curve exists in 3D space instead of being painted as a 2D outline.
+ */
+function curvedSpineSurface(width) {
+  const surface = el('span', {
+    class: 'ihr-spine__surface',
+    'aria-hidden': 'true'
+  });
+  const count = SPINE_CURVE_SEGMENTS;
+  const halfAngle = SPINE_CURVE_HALF_ANGLE;
+  const radius = width / (2 * Math.sin(halfAngle));
+  const projectedStep = width / count;
+
+  for (let index = 0; index < count; index += 1) {
+    const centerX = (index + 0.5) * projectedStep;
+    const t = (centerX / width) * 2 - 1;
+    const angle = Math.asin(t * Math.sin(halfAngle));
+    const depth = radius * (Math.cos(angle) - Math.cos(halfAngle));
+    // Small overlap hides subpixel seams between tangent faces at DPR 1-3.
+    const faceWidth = projectedStep / Math.cos(angle) + 0.75;
+    const segment = el('span', {
+      class: 'ihr-spine__segment',
+      'aria-hidden': 'true',
+      style:
+        `left:${centerX - faceWidth / 2}px;` +
+        `width:${faceWidth}px;` +
+        `--ihr-curve-z:${depth.toFixed(3)}px;` +
+        `--ihr-curve-angle:${((angle * 180) / Math.PI).toFixed(3)}deg`
+    });
+    surface.append(segment);
+  }
+
+  return surface;
 }
 
 function svgIcon(paths, { viewBox = '0 0 24 24', className = 'ihr-icon' } = {}) {
@@ -365,10 +404,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // En un lomo estrecho el autor no cabe sin pisar al título.
     if (style.width < 32) node.classList.add('ihr-spine--slim');
 
-    // La superficie visible (color y textura) y el canto superior en U viven
-    // en un hijo aparte de `node`. El marcapáginas es hermano suyo, no hijo,
-    // así puede seguir asomando por encima sin quedar recortado.
+    // El cuerpo redondo del lomo se construye con caras 3D tangentes al mismo
+    // arco. El marcapáginas se mantiene como hermano de este cuerpo, así que
+    // puede seguir asomando por encima sin quedar recortado.
     const body = el('span', { class: 'ihr-spine__body', 'aria-hidden': 'true' });
+    body.append(curvedSpineSurface(style.width));
     body.append(el('span', { class: 'ihr-spine__grain', 'aria-hidden': 'true' }));
     body.append(
       el('span', { class: 'ihr-spine__label' }, [

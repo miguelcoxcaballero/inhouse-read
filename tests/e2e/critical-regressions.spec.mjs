@@ -12,7 +12,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/')
 })
 
-test('el lomo curva el canto superior en U y un libro local se reabre tras recargar', async ({ page }) => {
+test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recargar', async ({ page }) => {
   await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
 
@@ -37,13 +37,27 @@ test('el lomo curva el canto superior en U y un libro local se reabre tras recar
   await page.getByRole('button', { name: 'Volver a la estantería' }).click()
   const spine = page.locator('.ihr-spine').first()
   await expect(spine).toBeVisible()
-  const curvature = await spine.locator('.ihr-spine__body').evaluate(element => ({
-    front: getComputedStyle(element).clipPath,
-    top: getComputedStyle(element, '::before').clipPath
-  }))
-  expect(curvature.front).toBe('none')
-  expect(curvature.top).toMatch(/^polygon\(0(?:px)? 0(?:px)?/)
-  expect(curvature.top).toContain('50% 100%')
+  const curvature = await spine.locator('.ihr-spine__body').evaluate(element => {
+    const segments = [...element.querySelectorAll('.ihr-spine__segment')]
+    return {
+      frontClip: getComputedStyle(element).clipPath,
+      preserve3d: getComputedStyle(element).transformStyle,
+      depths: segments.map(segment => Number.parseFloat(
+        getComputedStyle(segment).getPropertyValue('--ihr-curve-z')
+      )),
+      angles: segments.map(segment => Number.parseFloat(
+        getComputedStyle(segment).getPropertyValue('--ihr-curve-angle')
+      ))
+    }
+  })
+  expect(curvature.frontClip).toBe('none')
+  expect(curvature.preserve3d).toBe('preserve-3d')
+  expect(curvature.depths).toHaveLength(21)
+  expect(curvature.depths[0]).toBeGreaterThan(0)
+  expect(curvature.depths[10]).toBeGreaterThan(curvature.depths[0])
+  expect(curvature.depths[20]).toBeCloseTo(curvature.depths[0], 2)
+  expect(curvature.angles[0]).toBeLessThan(0)
+  expect(curvature.angles[20]).toBeGreaterThan(0)
 
   // Reopening must use the stored Blob, not silently fall back to a native picker.
   await page.reload()
