@@ -72,7 +72,13 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   // Actual rendered pixels must extend past the front cover, not a DOM box.
   expect(silhouette.bulge).toBeGreaterThan(8)
   expect(silhouette.bulge).toBeLessThan(40)
+  await expect(page.locator('.pdf-page-canvas')).toHaveCount(0)
+  await expect(page.locator('.reader-toolbar')).toBeHidden()
+  await expect(page.getByRole('button', { name: /Toca para leer/ })).toBeVisible()
+  await page.getByRole('button', { name: /Toca para leer/ }).click()
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+  await expect(page.locator('.reader-toolbar')).toBeVisible()
   expect(fileChooserOpened).toBe(false)
 })
 
@@ -114,6 +120,9 @@ test('móvil: el modelo se dibuja, se cancela durante el giro y vuelve a abrir',
   await expect(spine).toBeVisible()
   await spine.click()
   await expect(page.locator('.ihr-flyout__book--webgl canvas')).toHaveAttribute('data-angle', '0')
+  await expect(page.locator('.pdf-page-canvas')).toHaveCount(0)
+  await page.getByRole('button', { name: /Toca para leer/ }).click()
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
 })
 
@@ -128,5 +137,7 @@ test('sin WebGL se mantiene la apertura del libro con una portada de reserva', a
   await page.getByRole('button', { name: 'Volver a la estantería' }).click()
   await page.locator('.ihr-spine').first().click()
   await expect(page.locator('.ihr-flyout__book--fallback')).toBeVisible()
+  await expect(page.locator('.pdf-page-canvas')).toHaveCount(0)
+  await page.getByRole('button', { name: /Toca para leer/ }).click()
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
 })

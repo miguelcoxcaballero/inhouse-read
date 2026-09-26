@@ -16,6 +16,9 @@ or model service are required.
 - The opening rotation includes a 10-degree pitch so the rounded cross-section
   is visible. The entire model, including the binding, is fitted and centered
   within the viewport. Reduced motion skips the movement.
+- The first motion stops at a cover that waits for a tap. That tap scales the
+  same model to fill the screen; the reader renders behind it. Once the first
+  page is ready, the cover fades and the reader controls slide up from below.
 - Devices without WebGL retain accessible shelf titles and a cover fallback.
 
 Verification: geometry unit tests check the ellipse, outward normals and UVs;

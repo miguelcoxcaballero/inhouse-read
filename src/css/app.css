@@ -131,6 +131,16 @@
   transform: translateY(100%);
 }
 
+.reader-toolbar.is-rising {
+  transform: translateY(100%);
+  opacity: 0;
+}
+
+.reader-toolbar.is-rising.is-visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+
 .reader-progress {
   flex: 1;
   height: 4px;

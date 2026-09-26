@@ -84,11 +84,9 @@
  *    esto cada scroll abriría un libro. Ancho mínimo de lomo 28px (26px en
  *    pantallas < 360px) con zona de acierto extra a cada lado.
  *
- * 8. Tras el giro no se bloquea nada. Al disparar `onOpenBook` la portada se
- *    queda a la vista mientras el lector carga por detrás, pero la estantería
- *    ya acepta interacción: tocar fuera o pulsar Escape la repliega. Es lo
- *    que salva el caso "libro local que hay que volver a elegir": si el
- *    usuario cancela el file picker, no se queda encerrado.
+ * 8. El giro inicial termina en una portada interactiva. Un toque en ella
+ *    amplía el libro hasta cubrir la pantalla; el lector se prepara detrás
+ *    de esa cubierta y se revela cuando ya tiene la primera página lista.
  *
  * 9. Marcapáginas. Cada libro empezado lleva una cinta de raso que asoma por
  *    arriba del lomo; lo que asoma es proporcional al progreso (5 px al 1%,
@@ -118,6 +116,7 @@ export const DEFAULT_TEXTS = Object.freeze({
   addDrive: 'Drive',
   emptyAction: 'Añadir tu primer libro',
   openAction: 'Abrir',
+  tapCover: (book) => `Toca para leer ${book.title ?? 'este libro'}`,
   closeAction: 'Cerrar',
   noCover: 'Sin portada',
   openAria: (book) =>
@@ -660,6 +659,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       el('p', { class: 'ihr-flyout__title', text: book.title ?? '' }),
       book.author ? el('p', { class: 'ihr-flyout__author', text: book.author }) : null
     ]);
+    const coverTarget = el('button', {
+      type: 'button', class: 'ihr-flyout__cover-target',
+      'aria-label': opts.texts.tapCover(book), hidden: true,
+      style: `left:${centerX - coverW / 2}px;top:${centerY - coverH / 2}px;width:${coverW}px;height:${coverH}px`
+    });
 
     const flyout = el('div', {
       class: 'ihr-flyout',
@@ -668,7 +672,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       'aria-label': book.title ?? opts.texts.openAction,
       tabindex: '-1'
     });
-    flyout.append(scrim, el('div', { class: 'ihr-flyout__stage' }, [bookNode]), meta);
+    flyout.append(scrim, el('div', { class: 'ihr-flyout__stage' }, [bookNode]), meta, coverTarget);
 
     const previousFocus = document.activeElement;
     const session = { book, cancelled: false };
@@ -692,11 +696,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     function onKeydown(event) {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        close();
+        if (session.phase !== 'reading') close();
       }
     }
 
-    scrim.addEventListener('click', () => close());
+    scrim.addEventListener('click', () => {
+      if (session.phase !== 'reading') close();
+    });
     document.addEventListener('keydown', onKeydown, true);
     state.session = session;
 
@@ -707,7 +713,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
             type: 'button',
             class: 'ihr-btn ihr-btn--primary',
             text: opts.texts.openAction,
-            onClick: () => onOpen?.(book, { close: () => close({ silent: true }), coverUrl })
+            onClick: () => expandCover()
           }),
           el('button', {
             type: 'button',
@@ -719,7 +725,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       );
     }
 
-    root.append(flyout);
+    document.body.append(flyout);
     spineEl.classList.add('is-away');
     flyout.focus?.();
 
@@ -806,15 +812,56 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     if (session.cancelled || state.destroyed) return;
 
-    if (opts.autoOpen) {
-      await wait(opts.holdMs);
-      if (session.cancelled || state.destroyed) return;
-      // La portada se queda a la vista mientras el lector carga por detrás,
-      // pero se libera el bloqueo: tocar fuera o Escape siempre sacan de aquí.
-      bookNode.classList.add('is-loading');
-      state.busy = false;
-      onOpen?.(book, { close: () => close({ silent: true }), coverUrl });
+    coverTarget.hidden = !opts.autoOpen;
+    coverTarget.classList.add('is-ready');
+
+    async function finishReaderTransition() {
+      const fadeDuration = prefersReducedMotion() ? 1 : 180;
+      const fade = animate(bookNode, [{ opacity: 1 }, { opacity: 0 }], {
+        duration: fadeDuration, easing: 'linear', fill: 'both'
+      });
+      animate(scrim, [{ opacity: 1 }, { opacity: 0 }], {
+        duration: fadeDuration, easing: 'linear', fill: 'both'
+      });
+      await fade.finished?.catch(() => {});
+      if (state.session === session) {
+        session.phase = 'complete';
+        state.session = null;
+        state.busy = false;
+        session.cancelled = true;
+        document.removeEventListener('keydown', onKeydown, true);
+        view?.dispose();
+        flyout.remove();
+      }
     }
+
+    async function expandCover() {
+      if (session.cancelled || session.expanding || state.destroyed) return;
+      session.expanding = true;
+      coverTarget.disabled = true;
+      meta.classList.add('is-fading');
+      const zoom = Math.max(vw / coverW, vh / coverH) * 1.025;
+      const zoomDuration = prefersReducedMotion() ? 1 : 520;
+      const expansion = animateBook([
+        { transform: tf(0, 0, 0, 1, 0), offset: 0 },
+        { transform: tf(vw / 2 - centerX, vh / 2 - centerY, 0, zoom, 0), offset: 1 }
+      ], { duration: zoomDuration, easing: 'linear', fill: 'both' });
+      await expansion.finished?.catch(() => {});
+      if (session.cancelled || state.destroyed) return;
+      session.phase = 'reading';
+      coverTarget.hidden = true;
+      try {
+        await onOpen?.(book, {
+          coverUrl,
+          close: ({ instant = false } = {}) => close({ silent: true, instant }),
+          finish: finishReaderTransition
+        });
+      } catch (error) {
+        console.error('No se pudo abrir el lector:', error);
+        await close({ silent: true });
+      }
+    }
+    coverTarget.addEventListener('click', expandCover);
   }
 
   /* --------------------------- ciclo de vida --------------------------- */

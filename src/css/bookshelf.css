@@ -675,6 +675,27 @@
   pointer-events: none;
 }
 
+.ihr-flyout__meta.is-fading {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.ihr-flyout__cover-target {
+  position: absolute;
+  z-index: 4;
+  border: 0;
+  padding: 0;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ihr-flyout__cover-target[hidden] { display:none; }
+.ihr-flyout__cover-target.is-ready { animation: ihr-cover-ready 0.24s ease-out both; }
+.ihr-flyout__cover-target:focus-visible { outline:3px solid #fff; outline-offset:4px; }
+@keyframes ihr-cover-ready { from { opacity:0; } to { opacity:1; } }
+
 .ihr-flyout__title {
   margin: 0;
   font-family: var(--f-logo, 'Comfortaa', cursive);

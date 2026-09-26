@@ -137,11 +137,12 @@ describe('renderBookshelf', () => {
     await settle()
     expect(measured).toHaveBeenCalled()
     expect(spine.classList.contains('is-away')).toBe(true)
-    const fallback = container.querySelector('.ihr-flyout__book--fallback')
+    const fallback = document.querySelector('.ihr-flyout__book--fallback')
     expect(fallback).not.toBeNull()
     expect(fallback.querySelector('.ihr-spine__bookmark')).toBeNull()
     // jsdom has no GPU: the accessible cover fallback must still open.
     expect(spine.querySelector('.ihr-spine__bookmark')).not.toBeNull()
+    expect(document.querySelector('.ihr-flyout__cover-target').hidden).toBe(false)
   })
 
   it('con sections:false monta una sola estantería continua', () => {
@@ -178,24 +179,23 @@ describe('renderBookshelf', () => {
     spine.click()
     // El flyout aparece con las dos caras del libro: lomo y portada.
     await settle()
-    const flyout = container.querySelector('.ihr-flyout')
+    const flyout = document.querySelector('.ihr-flyout')
     expect(flyout).not.toBeNull()
     expect(flyout.querySelector('.ihr-flyout__book--fallback')).not.toBeNull()
     expect(flyout.querySelector('.ihr-flyout__face--cover')).not.toBeNull()
     expect(flyout.getAttribute('role')).toBe('dialog')
     expect(spine.classList.contains('is-away')).toBe(true)
 
-    // vi.waitFor en vez de otro settle(): esto depende de una cadena de
-    // varios timers/microtasks internos del propio openBook() (reveal.finished
-    // -> wait(holdMs) -> onOpen), y un settle() de duración fija es frágil bajo
-    // un runner de CI más lento/compartido — se vio fallar en CI aunque pasaba
-    // siempre en local. waitFor reintenta hasta que sea cierto, sin acoplarse
-    // a cuántos ticks exactos hacen falta.
+    expect(onBookOpen).not.toHaveBeenCalled()
+    document.querySelector('.ihr-flyout__cover-target').click()
     await vi.waitFor(() => expect(onBookOpen).toHaveBeenCalledOnce())
     const [book, ctx] = onBookOpen.mock.calls[0]
     expect(book.id).toBe(spine.dataset.bookId)
     expect(books.map((candidate) => candidate.id)).toContain(book.id)
     expect(typeof ctx.close).toBe('function')
+    expect(typeof ctx.finish).toBe('function')
+    await ctx.finish()
+    expect(document.querySelector('.ihr-flyout')).toBeNull()
   })
 
   it('sin portada usa un placeholder con el título, no un icono roto', async () => {
@@ -206,11 +206,11 @@ describe('renderBookshelf', () => {
     })
     container.querySelector('.ihr-spine').click()
     await settle()
-    const placeholder = container.querySelector('.ihr-cover-placeholder')
+    const placeholder = document.querySelector('.ihr-cover-placeholder')
     expect(placeholder).not.toBeNull()
     expect(placeholder.textContent).toMatch(/Libro \d/)
     expect(placeholder.textContent).toContain('EPUB')
-    expect(container.querySelector('.ihr-flyout__img')).toBeNull()
+    expect(document.querySelector('.ihr-flyout__img')).toBeNull()
   })
 
   it('usa coverSrcFor cuando hay portada', async () => {
@@ -224,10 +224,10 @@ describe('renderBookshelf', () => {
     container.querySelector('.ihr-spine').click()
     await settle()
     expect(coverSrcFor).toHaveBeenCalled()
-    expect(container.querySelector('.ihr-flyout__img').getAttribute('src')).toBe(
+    expect(document.querySelector('.ihr-flyout__img').getAttribute('src')).toBe(
       'blob:portada-falsa'
     )
-    expect(container.querySelector('.ihr-cover-placeholder')).toBeNull()
+    expect(document.querySelector('.ihr-cover-placeholder')).toBeNull()
   })
 
   it('una portada que falla no impide abrir el libro', async () => {
@@ -243,9 +243,9 @@ describe('renderBookshelf', () => {
     })
     container.querySelector('.ihr-spine').click()
     await settle()
-    expect(container.querySelector('.ihr-cover-placeholder')).not.toBeNull()
-    // Mismo motivo que en el test de arriba: depende de la cadena interna de
-    // timers de openBook(), no de un número fijo de ms.
+    expect(document.querySelector('.ihr-cover-placeholder')).not.toBeNull()
+    expect(onBookOpen).not.toHaveBeenCalled()
+    document.querySelector('.ihr-flyout__cover-target').click()
     await vi.waitFor(() => expect(onBookOpen).toHaveBeenCalledOnce())
   })
 
@@ -261,21 +261,21 @@ describe('renderBookshelf', () => {
     spine.focus()
     spine.click()
     await settle()
-    expect(container.querySelector('.ihr-flyout')).not.toBeNull()
+    expect(document.querySelector('.ihr-flyout')).not.toBeNull()
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await settle()
-    expect(container.querySelector('.ihr-flyout')).toBeNull()
+    expect(document.querySelector('.ihr-flyout')).toBeNull()
     expect(spine.classList.contains('is-away')).toBe(false)
     expect(document.activeElement).toBe(spine)
 
     // Y se puede volver a abrir: el componente no se queda bloqueado.
     spine.click()
     await settle()
-    expect(container.querySelector('.ihr-flyout')).not.toBeNull()
-    container.querySelector('.ihr-flyout__scrim').click()
+    expect(document.querySelector('.ihr-flyout')).not.toBeNull()
+    document.querySelector('.ihr-flyout__scrim').click()
     await settle()
-    expect(container.querySelector('.ihr-flyout')).toBeNull()
+    expect(document.querySelector('.ihr-flyout')).toBeNull()
   })
 
   it('con autoOpen:false ofrece botones y no abre por su cuenta', async () => {
@@ -290,8 +290,9 @@ describe('renderBookshelf', () => {
     container.querySelector('.ihr-spine').click()
     await settle()
     expect(onBookOpen).not.toHaveBeenCalled()
-    const [open] = container.querySelectorAll('.ihr-flyout__actions .ihr-btn')
+    const [open] = document.querySelectorAll('.ihr-flyout__actions .ihr-btn')
     open.click()
+    await vi.waitFor(() => expect(onBookOpen).toHaveBeenCalledOnce())
     expect(onBookOpen).toHaveBeenCalledOnce()
   })
 
@@ -324,10 +325,10 @@ describe('renderBookshelf', () => {
     })
     container.querySelector('.ihr-spine').click()
     await settle()
-    expect(container.querySelector('.ihr-flyout')).not.toBeNull()
+    expect(document.querySelector('.ihr-flyout')).not.toBeNull()
     shelf.refresh(makeBooks(5))
     await settle()
-    expect(container.querySelector('.ihr-flyout')).toBeNull()
+    expect(document.querySelector('.ihr-flyout')).toBeNull()
   })
 
   it('destroy desmonta todo y revoca los object URLs de las portadas', async () => {

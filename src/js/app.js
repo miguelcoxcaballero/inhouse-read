@@ -38,6 +38,7 @@ const els = {
 let shelf = null
 let currentBookId = null
 let pendingLocalReopenId = null
+let pendingReaderTransition = null
 
 // ---- Tema (idéntico al patrón de Inhouse Notes: data-theme + persistido) ----
 
@@ -78,6 +79,17 @@ async function refreshShelf() {
 }
 
 async function openBookRecord(book, ctx) {
+  const transition = {
+    onReaderReady: async () => {
+      await ctx.finish?.()
+      els.readerToolbar.hidden = false
+      els.readerToolbar.classList.add('is-rising')
+      void els.readerToolbar.offsetWidth
+      requestAnimationFrame(() => els.readerToolbar.classList.add('is-visible'))
+      setTimeout(() => els.readerToolbar.classList.remove('is-rising', 'is-visible'), 500)
+    },
+    onReaderError: () => ctx.close({ instant: true })
+  }
   if (book.sourceType === 'local') {
     // Vía principal: el propio libro se guardó en IndexedDB al importarlo
     // (ver openFile), así que reabrirlo no depende de ninguna API de
@@ -90,7 +102,7 @@ async function openBookRecord(book, ctx) {
         const file = new File([book.content], book.name || book.title || 'libro', {
           type: book.mimeType || book.content.type || ''
         })
-        await openFile(file, { existingRecord: book, forcedId: book.id })
+        await openFile(file, { existingRecord: book, forcedId: book.id, transition })
         return
       } catch (err) {
         console.warn('No se pudo abrir el libro desde la copia guardada, se intentará otra vía:', err)
@@ -108,7 +120,7 @@ async function openBookRecord(book, ctx) {
         if (folderHandle && await ensureFolderPermission(folderHandle)) {
           const file = await readFileFromFolder(folderHandle, book.folderFileName)
           if (file) {
-            await openFile(file, { existingRecord: book, forcedId: book.id })
+            await openFile(file, { existingRecord: book, forcedId: book.id, transition })
             return
           }
         }
@@ -120,6 +132,7 @@ async function openBookRecord(book, ctx) {
     // Fallback: el File original no sobrevive entre sesiones (o no se pudo
     // leer de la carpeta) — hay que volver a pedirlo.
     pendingLocalReopenId = book.id
+    pendingReaderTransition = transition
     els.filePicker.click()
     // Si el usuario cancela el picker, no hay evento 'change': replegamos
     // la portada para no dejar al usuario mirando un libro que no se abre.
@@ -133,7 +146,8 @@ async function openBookRecord(book, ctx) {
         // error este id y pisaría este registro en la biblioteca.
         if (pendingLocalReopenId === book.id) {
           pendingLocalReopenId = null
-          ctx.close()
+          pendingReaderTransition = null
+          ctx.close({ instant: true })
         }
       }, 400)
     }, { once: true })
@@ -142,9 +156,9 @@ async function openBookRecord(book, ctx) {
   if (book.sourceType === 'drive') {
     try {
       const file = await downloadDriveFile(book.driveFileId, { name: book.title, mimeType: book.mimeType })
-      await openFile(file, { existingRecord: book })
+      await openFile(file, { existingRecord: book, transition })
     } catch (err) {
-      ctx.close()
+      ctx.close({ instant: true })
       alert(`No se pudo descargar "${book.title}" de Drive: ${err.message}`)
     }
   }
@@ -168,7 +182,9 @@ els.filePicker.addEventListener('change', async () => {
   if (pendingLocalReopenId) {
     const forcedId = pendingLocalReopenId
     pendingLocalReopenId = null
-    await openFile(file, { forcedId })
+    const transition = pendingReaderTransition
+    pendingReaderTransition = null
+    await openFile(file, { forcedId, transition })
     return
   }
 
@@ -190,7 +206,8 @@ els.filePicker.addEventListener('change', async () => {
 
 // ---- Apertura y lectura ----
 
-async function openFile(file, { existingRecord, forcedId, folderFileName } = {}) {
+async function openFile(file, { existingRecord, forcedId, folderFileName, transition } = {}) {
+  els.readerToolbar.hidden = Boolean(transition)
   showScreen('reader')
   els.readerViewport.innerHTML = ''
 
@@ -201,6 +218,7 @@ async function openFile(file, { existingRecord, forcedId, folderFileName } = {})
       onToggleChrome: () => { els.readerToolbar.hidden = !els.readerToolbar.hidden }
     })
   } catch (err) {
+    if (transition) await transition.onReaderError?.()
     showScreen('home')
     if (err instanceof UnsupportedFormatError) {
       alert(`"${file.name}" no es un formato soportado. Formatos válidos: PDF, EPUB, MOBI, AZW3, FB2, CBZ.`)
@@ -261,6 +279,7 @@ async function openFile(file, { existingRecord, forcedId, folderFileName } = {})
 
   refreshShelf()
   extractCoverInBackground(record)
+  await transition?.onReaderReady?.()
 }
 
 /** No bloquea la apertura del libro: la portada se guarda para la próxima visita a la estantería. */
