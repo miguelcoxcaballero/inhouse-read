@@ -710,11 +710,15 @@
   opacity: 0.72;
 }
 
+.ihr-flyout__readiness { margin: 5px 0 0; font-size: 0.78rem; opacity: 0.72; }
+
 .ihr-flyout__actions {
   display: flex;
   gap: 10px;
   margin-top: 14px;
   pointer-events: auto;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 /* ------------------------------------------------------------------ *

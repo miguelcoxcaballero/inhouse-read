@@ -1,123 +1,171 @@
-// Integración con Google Drive: 100% client-side, usando Google Identity
-// Services (GIS) para OAuth y la API REST de Drive v3 directamente por
-// fetch — sin backend propio, tal y como pide el resto de la arquitectura.
-//
-// LIMITACIÓN REAL (léase antes de usar en producción): esto requiere un
-// OAuth Client ID de un proyecto de Google Cloud. Ese Client ID no se puede
-// generar por CLI ni por un agente automatizado: hay que crearlo a mano en
-// https://console.cloud.google.com (crear proyecto → configurar pantalla de
-// consentimiento OAuth → crear credencial "ID de cliente de OAuth" tipo
-// "Aplicación web" → añadir el origen de GitHub Pages, p.ej.
-// https://miguelcoxcaballero.github.io, como "Authorized JavaScript
-// origin"). Es una limitación de plataforma (Google exige verificación de
-// propietario del proyecto), no del código: todo el flujo de abajo es
-// funcional en cuanto se rellena `window.INHOUSE_READ_CONFIG.googleClientId`
-// en config.js (ver config.example.js).
-
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly'
+// Google Drive API client using the same PKCE login, OAuth client and Drive
+// scope as Inhouse Notes. Tokens are stored per web origin by the browser.
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files'
-const BOOK_MIME_QUERY = [
-  "mimeType='application/pdf'",
-  "mimeType='application/epub+zip'",
-  "mimeType='application/x-mobipocket-ebook'",
-  "mimeType='application/vnd.amazon.ebook'",
-  "name contains '.mobi'",
-  "name contains '.azw3'",
-  "name contains '.fb2'",
-  "name contains '.cbz'"
-].join(' or ')
+const UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files'
+const TOKEN_KEY = 'ihn_drive_tokens'
+const CLIENT_ID_KEY = 'ihn_drive_client_id'
+const VERIFIER_KEY = 'ihn_pkce_verifier'
+const DEFAULT_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com'
+const FOLDER_NAME = 'inhouse read'
+const APP_ORIGIN = 'https://miguelcoxcaballero.github.io'
 
-export class DriveNotConfiguredError extends Error {}
-
-function getClientId() {
-  return globalThis.INHOUSE_READ_CONFIG?.googleClientId ?? null
-}
-
-export function isDriveConfigured() {
-  return Boolean(getClientId())
-}
-
-let tokenClient
 let currentToken = null
+let authPromise = null
+let folderIdPromise = null
 
-/** Carga perezosa del script de Google Identity Services. */
-function loadGisScript() {
-  if (globalThis.google?.accounts?.oauth2) return Promise.resolve()
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script')
-    script.src = 'https://accounts.google.com/gsi/client'
-    script.async = true
-    script.onload = () => resolve()
-    script.onerror = () => reject(new Error('No se pudo cargar Google Identity Services'))
-    document.head.append(script)
-  })
+function clientId() { return localStorage.getItem(CLIENT_ID_KEY) || DEFAULT_CLIENT_ID }
+export function isDriveConfigured() { return Boolean(clientId()) }
+
+function b64url(bytes) {
+  let binary = ''
+  for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte)
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-/**
- * Pide un access token al usuario (abre el consentimiento de Google si
- * hace falta) y lo cachea en memoria para la sesión actual.
- */
-export async function requestDriveAccess() {
-  const clientId = getClientId()
-  if (!clientId) {
-    throw new DriveNotConfiguredError(
-      'Falta googleClientId en config.js — ver el comentario de cabecera de drive-client.js'
-    )
-  }
-  await loadGisScript()
-
-  return new Promise((resolve, reject) => {
-    tokenClient = globalThis.google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: DRIVE_SCOPE,
-      callback: response => {
-        if (response.error) return reject(new Error(response.error))
-        currentToken = response.access_token
-        resolve(currentToken)
-      }
-    })
-    tokenClient.requestAccessToken()
-  })
+async function createVerifier() {
+  const bytes = crypto.getRandomValues(new Uint8Array(64))
+  return Array.from(bytes, n => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~'[n % 66]).join('')
 }
+
+function loadStoredToken() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null')
+    if (saved?.accessToken && saved?.expiresAt > Date.now() + 30000) currentToken = saved.accessToken
+  } catch { /* expired or malformed token; sign in again */ }
+}
+loadStoredToken()
 
 export function hasDriveSession() {
-  return Boolean(currentToken)
+  try { return Boolean(currentToken || JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null')?.refreshToken) }
+  catch { return Boolean(currentToken) }
+}
+
+export async function requestDriveAccess() {
+  if (authPromise) return authPromise
+  loadStoredToken()
+  if (currentToken) return currentToken
+  authPromise = (async () => {
+    const verifier = await createVerifier()
+    const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)))
+    const state = `${b64url(new TextEncoder().encode(JSON.stringify({ origin: APP_ORIGIN, nonce: crypto.randomUUID() })))}.${crypto.randomUUID()}`
+    const redirectUri = 'https://inhousenotes.com/oauth-callback'
+    sessionStorage.setItem(VERIFIER_KEY, verifier)
+    sessionStorage.setItem('ihr_oauth_state', state)
+    sessionStorage.setItem('ihr_oauth_redirect_uri', redirectUri)
+    const params = new URLSearchParams({
+      client_id: clientId(), redirect_uri: redirectUri, response_type: 'code',
+      scope: DRIVE_SCOPE, code_challenge_method: 'S256', code_challenge: challenge,
+      access_type: 'offline', prompt: 'consent', state
+    })
+    const popup = window.open(`https://accounts.google.com/o/oauth2/v2/auth?${params}`, 'oauth', 'width=600,height=700,left=100,top=100')
+    if (!popup) throw new Error('Google bloqueó la ventana de inicio de sesión.')
+    try {
+      const code = await new Promise((resolve, reject) => {
+        let done = false
+        const finish = (fn, value) => { if (done) return; done = true; clearInterval(timer); removeEventListener('message', onMessage); fn(value) }
+        const onMessage = event => {
+        if (event.origin !== 'https://inhousenotes.com' || event.source !== popup || event.data?.state !== state) return
+          if (event.data.error) finish(reject, new Error(event.data.error))
+          else if (event.data.code) finish(resolve, event.data.code)
+        }
+        addEventListener('message', onMessage)
+        const timer = setInterval(() => { if (popup.closed) finish(reject, new Error('Inicio de sesión cancelado.')) }, 500)
+      })
+      const response = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ client_id: clientId(), code, code_verifier: verifier, grant_type: 'authorization_code', redirect_uri: redirectUri })
+      })
+      if (!response.ok) throw new Error(`No se pudo completar el inicio de sesión (${response.status}).`)
+      const data = await response.json()
+      if (!data.refresh_token) throw new Error('Google no devolvió un token renovable. Vuelve a iniciar sesión.')
+      currentToken = data.access_token
+      localStorage.setItem(TOKEN_KEY, JSON.stringify({ accessToken: data.access_token, refreshToken: data.refresh_token, expiresAt: Date.now() + data.expires_in * 1000 }))
+      return currentToken
+    } finally {
+      if (!popup.closed) popup.close()
+      sessionStorage.removeItem(VERIFIER_KEY)
+      sessionStorage.removeItem('ihr_oauth_state')
+      sessionStorage.removeItem('ihr_oauth_redirect_uri')
+    }
+  })()
+  try { return await authPromise } finally { authPromise = null }
 }
 
 export function signOutDrive() {
-  if (currentToken) {
-    globalThis.google?.accounts?.oauth2?.revoke?.(currentToken, () => {})
-  }
   currentToken = null
+  localStorage.removeItem(TOKEN_KEY)
+  folderIdPromise = null
 }
 
-async function driveFetch(url) {
-  if (!currentToken) throw new Error('No hay sesión de Drive activa: llama a requestDriveAccess() primero')
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${currentToken}` } })
-  if (!res.ok) throw new Error(`Drive API ${res.status}: ${await res.text()}`)
-  return res
-}
-
-/**
- * Lista los archivos de Drive que parecen libros (por mimeType o extensión
- * conocida), con paginación vía pageToken.
- */
-export async function listDriveBooks({ pageToken, pageSize = 50 } = {}) {
-  const params = new URLSearchParams({
-    q: `(${BOOK_MIME_QUERY}) and trashed=false`,
-    fields: 'nextPageToken, files(id, name, mimeType, size, thumbnailLink, modifiedTime)',
-    pageSize: String(pageSize),
-    spaces: 'drive'
+async function accessToken() {
+  loadStoredToken()
+  let stored
+  try { stored = JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null') } catch { stored = null }
+  if (!stored?.refreshToken) return requestDriveAccess()
+  if (stored.expiresAt > Date.now() + 5 * 60 * 1000 && currentToken) return currentToken
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: clientId(), refresh_token: stored.refreshToken, grant_type: 'refresh_token' })
   })
-  if (pageToken) params.set('pageToken', pageToken)
-
-  const res = await driveFetch(`${DRIVE_FILES_URL}?${params.toString()}`)
-  return res.json()
+  if (!response.ok) { signOutDrive(); throw new Error('La sesión de Google ha caducado. Vuelve a iniciar sesión.') }
+  const data = await response.json()
+  currentToken = data.access_token
+  localStorage.setItem(TOKEN_KEY, JSON.stringify({ ...stored, accessToken: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 }))
+  return currentToken
 }
 
-/** Descarga el contenido binario de un archivo de Drive como Blob. */
+async function driveFetch(url, options = {}) {
+  const token = await accessToken()
+  const response = await fetch(url, { ...options, headers: { Authorization: `Bearer ${token}`, ...options.headers } })
+  if (!response.ok) {
+    let message = `Drive API ${response.status}`
+    try { message = (await response.json()).error?.message || message } catch { /* no JSON response */ }
+    throw new Error(message)
+  }
+  return response
+}
+
+export async function getOrCreateReadFolder() {
+  if (folderIdPromise) return folderIdPromise
+  folderIdPromise = (async () => {
+    const query = new URLSearchParams({
+      q: `name = '${FOLDER_NAME}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      spaces: 'drive', fields: 'files(id,name)', pageSize: '10'
+    })
+    const found = await (await driveFetch(`${DRIVE_FILES_URL}?${query}`)).json()
+    if (found.files?.length) return found.files[0].id
+    const created = await (await driveFetch(DRIVE_FILES_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' }) })).json()
+    return created.id
+  })()
+  try { return await folderIdPromise } catch (error) { folderIdPromise = null; throw error }
+}
+
+export async function listDriveBooks({ pageToken, pageSize = 100 } = {}) {
+  const folderId = await getOrCreateReadFolder()
+  const params = new URLSearchParams({ q: `'${folderId}' in parents and trashed = false`, fields: 'nextPageToken,files(id,name,mimeType,size,modifiedTime)', pageSize: String(pageSize), spaces: 'drive' })
+  if (pageToken) params.set('pageToken', pageToken)
+  return (await driveFetch(`${DRIVE_FILES_URL}?${params}`)).json()
+}
+
 export async function downloadDriveFile(fileId, { name, mimeType } = {}) {
-  const res = await driveFetch(`${DRIVE_FILES_URL}/${fileId}?alt=media`)
-  const blob = await res.blob()
-  return new File([blob], name ?? fileId, { type: mimeType })
+  const blob = await (await driveFetch(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}?alt=media`)).blob()
+  return new File([blob], name ?? fileId, { type: mimeType || blob.type || 'application/octet-stream' })
+}
+
+export async function uploadDriveFile(file, { driveFileId, name = file.name } = {}) {
+  const folderId = await getOrCreateReadFolder()
+  const token = await accessToken()
+  const metadata = { name, ...(driveFileId ? {} : { parents: [folderId] }) }
+  const boundary = `ihr_${crypto.randomUUID()}`
+  const body = new Blob([`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${file.type || 'application/octet-stream'}\r\n\r\n`, file, `\r\n--${boundary}--`], { type: `multipart/related; boundary=${boundary}` })
+  if (file.size <= 5 * 1024 * 1024) {
+    const url = `${UPLOAD_URL}${driveFileId ? `/${encodeURIComponent(driveFileId)}` : ''}?uploadType=multipart&fields=id,name,mimeType,size`
+    return (await driveFetch(url, { method: driveFileId ? 'PATCH' : 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body })).json()
+  }
+    const startUrl = `${UPLOAD_URL}${driveFileId ? `/${encodeURIComponent(driveFileId)}` : ''}?uploadType=resumable&fields=id,name,mimeType,size`
+  const start = await driveFetch(startUrl, { method: driveFileId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': file.type || 'application/octet-stream', 'X-Upload-Content-Length': String(file.size) }, body: JSON.stringify(metadata) })
+  const location = start.headers.get('Location')
+  if (!location) throw new Error('Drive no devolvió la dirección para subir el libro.')
+  return (await driveFetch(location, { method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file })).json()
 }

@@ -66,19 +66,7 @@ En Chrome/Edge de escritorio, al importar un libro por primera vez la app pide e
 
 ## Google Drive
 
-La integración con Drive es 100% client-side (Google Identity Services + Drive API v3 por fetch, sin backend), pero **requiere que rellenes tu propio Client ID de Google Cloud** — eso no se puede generar por CLI ni automatizarse, hay que crearlo a mano:
-
-1. Ve a [console.cloud.google.com](https://console.cloud.google.com), crea (o reusa) un proyecto.
-2. "APIs y servicios" → "Pantalla de consentimiento OAuth" → configúrala (tipo "Externo" si es tu proyecto personal).
-3. "Credenciales" → "Crear credenciales" → "ID de cliente de OAuth" → tipo **Aplicación web**.
-4. En "Orígenes de JavaScript autorizados" añade el origen exacto donde sirvas la app (p. ej. `https://miguelcoxcaballero.github.io` para la versión de GitHub Pages, y `http://localhost:5173` para desarrollo).
-5. Habilita la **Google Drive API** en "APIs y servicios" → "Biblioteca".
-6. Copia `config.example.js` a `config.js` (no se sube al repo) y pega tu Client ID:
-   ```js
-   window.INHOUSE_READ_CONFIG = { googleClientId: 'TU_ID.apps.googleusercontent.com' }
-   ```
-
-Sin `config.js`, el botón de Drive queda deshabilitado (no roto): el resto de la app funciona con normalidad usando el selector de archivos local y los recientes.
+La integración con Google Drive usa el mismo cliente OAuth, flujo PKCE y API Drive v3 que Inhouse Notes. El primer inicio de sesión abre Notes para completar el retorno OAuth validado; el navegador conserva tokens por origen, por lo que puede pedir acceso la primera vez que uses cada app. Los libros se guardan en la carpeta `inhouse read`. Desde la portada puedes subir un libro local a Drive o descargar uno de Drive para leerlo sin conexión; Drive se sincroniza en segundo plano si ya hay sesión al abrir un libro.
 
 ## Despliegue (GitHub Pages)
 
@@ -86,4 +74,4 @@ Igual que inhouse notes: build de Vite, publicado a la rama `gh-pages` vía `pea
 
 ## Android
 
-App-shell WebView (Capacitor) que apunta a la URL en vivo de GitHub Pages, con el mismo pipeline de firma automatizado que inhouse notes (`.github/workflows/build-android.yml`, disparo manual desde la pestaña Actions). **Descarga**: https://miguelcoxcaballero.github.io/inhouse-read/download-android.html — página real del sitio que consulta en vivo el último release (no un link fijo que se desactualiza). Google Drive no funciona todavía dentro del APK nativo (limitación de Google con OAuth en WebView, no un bug) — sí funciona en la PWA/navegador. Detalles en `android/README.md`.
+App-shell WebView (Capacitor) que apunta a la URL en vivo de GitHub Pages, con el mismo pipeline de firma automatizado que Inhouse Notes (`.github/workflows/build-android.yml`, disparo manual desde la pestaña Actions). **Descarga**: https://miguelcoxcaballero.github.io/inhouse-read/download-android.html — página real del sitio que consulta en vivo el último release (no un link fijo que se desactualiza). Detalles en `android/README.md`.

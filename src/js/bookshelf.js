@@ -592,6 +592,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     state.busy = true;
 
     const { book, style } = item;
+    options.onPrepareBook?.(book);
     /*
       Se mide sin transform: de un libro inclinado, getBoundingClientRect
       devuelve la caja del rectángulo girado (más ancha y más alta que el
@@ -659,6 +660,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       el('p', { class: 'ihr-flyout__title', text: book.title ?? '' }),
       book.author ? el('p', { class: 'ihr-flyout__author', text: book.author }) : null
     ]);
+    const readiness = el('p', { class: 'ihr-flyout__readiness', text: 'Preparando el libro…', 'aria-live': 'polite' });
+    meta.append(readiness);
     const coverTarget = el('button', {
       type: 'button', class: 'ihr-flyout__cover-target',
       'aria-label': opts.texts.tapCover(book), hidden: true,
@@ -679,6 +682,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     async function close({ silent = false, instant = false } = {}) {
       if (state.session !== session) return;
+      clearInterval(readyCheck);
       session.cancelled = true;
       state.session = null;
       state.busy = false;
@@ -706,24 +710,19 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     document.addEventListener('keydown', onKeydown, true);
     state.session = session;
 
-    if (!opts.autoOpen) {
-      meta.append(
-        el('div', { class: 'ihr-flyout__actions' }, [
-          el('button', {
-            type: 'button',
-            class: 'ihr-btn ihr-btn--primary',
-            text: opts.texts.openAction,
-            onClick: () => expandCover()
-          }),
-          el('button', {
-            type: 'button',
-            class: 'ihr-btn',
-            text: opts.texts.closeAction,
-            onClick: () => close()
-          })
-        ])
-      );
-    }
+    const actionButtons = [
+      el('button', { type: 'button', class: 'ihr-btn ihr-btn--primary', text: opts.texts.openAction, onClick: () => expandCover() }),
+      el('button', { type: 'button', class: 'ihr-btn', text: book.content ? 'Disponible sin conexión' : (book.sourceType === 'drive' ? 'Descargar para usar sin conexión' : 'Guardar en Drive'), onClick: event => options.onBookAction?.(book.content ? 'offline' : (book.sourceType === 'drive' ? 'offline' : 'drive'), book, event.currentTarget) }),
+      el('button', { type: 'button', class: 'ihr-btn', text: opts.texts.closeAction, onClick: () => close() })
+    ];
+    meta.append(el('div', { class: 'ihr-flyout__actions' }, actionButtons));
+    const readyCheck = setInterval(() => {
+      const task = options.getBookPreparation?.(book)
+      if (!task) return
+      task.then(ok => {
+        if (state.session === session) readiness.textContent = ok ? 'Listo para leer' : 'No se pudo preparar. Toca para reintentar.'
+      }).catch(() => { if (state.session === session) readiness.textContent = 'No se pudo preparar. Toca para reintentar.' })
+    }, 250)
 
     document.body.append(flyout);
     spineEl.classList.add('is-away');
@@ -829,6 +828,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         state.session = null;
         state.busy = false;
         session.cancelled = true;
+        clearInterval(readyCheck);
         document.removeEventListener('keydown', onKeydown, true);
         view?.dispose();
         flyout.remove();
@@ -850,6 +850,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (session.cancelled || state.destroyed) return;
       session.phase = 'reading';
       coverTarget.hidden = true;
+      readiness.textContent = 'Abriendo el libro…';
       try {
         await onOpen?.(book, {
           coverUrl,

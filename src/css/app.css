@@ -66,6 +66,15 @@
   touch-action: pan-y;
 }
 
+#reader-screen.is-preparing {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .reader-viewport {
   position: absolute;
   inset: 0;

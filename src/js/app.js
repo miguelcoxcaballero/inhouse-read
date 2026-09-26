@@ -2,7 +2,7 @@ import { LibraryStore } from './library-store.js'
 import { renderBookshelf } from './bookshelf.js'
 import { ReaderController, UnsupportedFormatError } from './readers/reader-controller.js'
 import {
-  isDriveConfigured, requestDriveAccess, listDriveBooks, downloadDriveFile, hasDriveSession
+  isDriveConfigured, requestDriveAccess, listDriveBooks, downloadDriveFile, hasDriveSession, uploadDriveFile
 } from './drive-client.js'
 import {
   isFolderApiSupported, getSavedFolderHandle, getOrChooseFolder, ensureFolderPermission,
@@ -39,6 +39,7 @@ let shelf = null
 let currentBookId = null
 let pendingLocalReopenId = null
 let pendingReaderTransition = null
+const preparedBooks = new Map()
 
 // ---- Tema (idéntico al patrón de Inhouse Notes: data-theme + persistido) ----
 
@@ -70,6 +71,9 @@ async function refreshShelf() {
   if (!shelf) {
     shelf = renderBookshelf(els.bookshelfRoot, books, {
       onBookOpen: openBookRecord,
+      onPrepareBook: prepareBookOpen,
+      getBookPreparation: book => preparedBooks.get(book.id),
+      onBookAction: handleCoverAction,
       onAddBooks: pickLocalFile,
       coverSrcFor: book => book.cover ?? null
     })
@@ -89,6 +93,22 @@ async function openBookRecord(book, ctx) {
       setTimeout(() => els.readerToolbar.classList.remove('is-rising', 'is-visible'), 500)
     },
     onReaderError: () => ctx.close({ instant: true })
+  }
+  const prepared = preparedBooks.get(book.id)
+  if (prepared) {
+    try {
+      if (await prepared) {
+        preparedBooks.delete(book.id)
+        await transition.onReaderReady()
+        revealPreparedReader()
+        const record = await library.get(book.id)
+        if (record) extractCoverInBackground(record)
+        return
+      }
+    } catch (err) {
+      preparedBooks.delete(book.id)
+      console.warn('La preparación anticipada falló; se abrirá el libro ahora:', err)
+    }
   }
   if (book.sourceType === 'local') {
     // Vía principal: el propio libro se guardó en IndexedDB al importarlo
@@ -206,9 +226,12 @@ els.filePicker.addEventListener('change', async () => {
 
 // ---- Apertura y lectura ----
 
-async function openFile(file, { existingRecord, forcedId, folderFileName, transition } = {}) {
+async function openFile(file, { existingRecord, forcedId, folderFileName, transition, preparing = false } = {}) {
   els.readerToolbar.hidden = Boolean(transition)
-  showScreen('reader')
+  if (preparing) {
+    els.readerScreen.hidden = false
+    els.readerScreen.classList.add('is-preparing')
+  } else showScreen('reader')
   els.readerViewport.innerHTML = ''
 
   let format
@@ -219,27 +242,25 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
     })
   } catch (err) {
     if (transition) await transition.onReaderError?.()
-    showScreen('home')
+    if (preparing) {
+      els.readerScreen.classList.remove('is-preparing')
+      els.readerScreen.hidden = true
+    } else showScreen('home')
     if (err instanceof UnsupportedFormatError) {
       alert(`"${file.name}" no es un formato soportado. Formatos válidos: PDF, EPUB, MOBI, AZW3, FB2, CBZ.`)
     } else {
       alert(`No se pudo abrir "${file.name}": ${err.message}`)
       console.error(err)
     }
-    return
+    return false
   }
 
   els.readerFormatBadge.textContent = format.label ?? ''
 
   const meta = reader.metadata
   const sourceType = existingRecord?.sourceType ?? 'local'
-  // Solo se cachean bytes de libros locales (los de Drive se vuelven a
-  // descargar de Drive cada vez, ver openDriveModal/openBookRecord más
-  // abajo) y solo la primera vez: en cada reapertura posterior `file` es la
-  // MISMA copia reconstruida a partir de ese `content` ya guardado, así que
-  // regrabar bytes idénticos en cada "reanudar lectura" sería trabajo e E/S
-  // de IndexedDB de balde.
-  const shouldCacheContent = sourceType === 'local' && !existingRecord?.content
+  // Cachea una copia de Drive para que la próxima apertura funcione sin red.
+  const shouldCacheContent = !existingRecord?.content
   const baseFields = {
     id: forcedId,
     sourceType,
@@ -277,9 +298,74 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
     await reader.goToFraction(existingRecord.progressFraction)
   }
 
+  if (!preparing) refreshShelf()
+  if (!preparing) extractCoverInBackground(record)
+  if (!preparing) await transition?.onReaderReady?.()
+  if (sourceType === 'local' && hasDriveSession() && !record.driveFileId) {
+    uploadDriveFile(file, { name: file.name }).then(uploaded =>
+      library.addOrTouch({ ...record, driveFileId: uploaded.id, driveFileName: uploaded.name })
+    ).then(() => refreshShelf()).catch(error => console.warn('No se pudo sincronizar el libro con Drive:', error))
+  }
+  return true
+}
+
+function prepareBookOpen(book) {
+  if (preparedBooks.has(book.id)) return
+  let task
+  if (book.content && (book.sourceType === 'local' || book.sourceType === 'drive')) {
+    const file = new File([book.content], book.name || book.title || 'libro', { type: book.mimeType || book.content.type || '' })
+    task = openFile(file, { existingRecord: book, forcedId: book.id, preparing: true })
+  } else if (book.sourceType === 'drive' && hasDriveSession()) {
+    task = downloadDriveFile(book.driveFileId, { name: book.name || book.title, mimeType: book.mimeType })
+      .then(file => openFile(file, { existingRecord: book, forcedId: book.id, preparing: true }))
+  }
+  if (task) preparedBooks.set(book.id, Promise.resolve(task))
+}
+
+async function revealPreparedReader() {
+  showScreen('reader')
+  els.readerScreen.classList.remove('is-preparing')
+}
+
+async function handleCoverAction(action, book, button) {
+  button.disabled = true
+  const original = button.textContent
+  button.textContent = action === 'offline' ? 'Descargando…' : 'Guardando…'
+  try {
+    if (action === 'offline') {
+      if (book.content) {
+        button.textContent = 'Disponible sin conexión'
+        return
+      }
+      if (!hasDriveSession()) await requestDriveAccess()
+      if (book.sourceType === 'drive') {
+        const file = await downloadDriveFile(book.driveFileId, { name: book.name || book.title, mimeType: book.mimeType })
+        await library.addOrTouch({ ...book, content: new Blob([file], { type: file.type }) })
+      } else {
+        await uploadBookToDrive(book)
+      }
+      button.textContent = 'Disponible sin conexión'
+    } else if (action === 'drive') {
+      if (!hasDriveSession()) await requestDriveAccess()
+      await uploadBookToDrive(book)
+      button.textContent = 'Guardado en Drive'
+    }
+  } catch (error) {
+    button.textContent = original
+    alert(`No se pudo completar la acción: ${error.message}`)
+  } finally {
+    button.disabled = false
+  }
+}
+
+async function uploadBookToDrive(book) {
+  const record = await library.get(book.id) || book
+  if (!record.content) throw new Error('No se encontró una copia local del libro para subir.')
+  const file = new File([record.content], record.name || record.title || 'libro', { type: record.mimeType || record.content.type || 'application/octet-stream' })
+  const uploaded = await uploadDriveFile(file, { driveFileId: record.driveFileId, name: file.name })
+  const updated = await library.addOrTouch({ ...record, sourceType: 'local', driveFileId: uploaded.id, driveFileName: uploaded.name })
   refreshShelf()
-  extractCoverInBackground(record)
-  await transition?.onReaderReady?.()
+  return updated
 }
 
 /** No bloquea la apertura del libro: la portada se guarda para la próxima visita a la estantería. */
@@ -346,7 +432,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.addDriveBtn.disabled = !isDriveConfigured()
-els.addDriveBtn.title = isDriveConfigured() ? '' : 'Configura googleClientId en config.js para activar Drive'
+els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')
 refreshShelf()
 initAndroidUpdateChecks()
