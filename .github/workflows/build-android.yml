@@ -52,21 +52,21 @@ jobs:
           INHOUSE_KEY_ALIAS: ${{ secrets.INHOUSE_READ_ANDROID_KEY_ALIAS }}
         run: python .github/scripts/build_android_apk.py
 
-      - run: test -s inhouse-read-release-v1.0.6.apk
+      - run: test -s inhouse-read-release-v1.0.7.apk
 
       - uses: actions/upload-artifact@v4
-        with: { name: inhouse-read-android-v1.0.6, path: inhouse-read-release-v1.0.6.apk, if-no-files-found: error }
+        with: { name: inhouse-read-android-v1.0.7, path: inhouse-read-release-v1.0.7.apk, if-no-files-found: error }
 
       - name: Publish versioned APK download
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view android-v1.0.6 >/dev/null 2>&1; then
-            gh release upload android-v1.0.6 inhouse-read-release-v1.0.6.apk --clobber
+          if gh release view android-v1.0.7 >/dev/null 2>&1; then
+            gh release upload android-v1.0.7 inhouse-read-release-v1.0.7.apk --clobber
           else
-            gh release create android-v1.0.6 inhouse-read-release-v1.0.6.apk \
-              --title "Inhouse Read Android 1.0.6" \
-              --notes "Arco de los lomos mas visible en la estanteria. Endurecidos con pruebas de regresion la reapertura de libros desde IndexedDB y la entrega segura del APK al instalador Android." \
+            gh release create android-v1.0.7 inhouse-read-release-v1.0.7.apk \
+              --title "Inhouse Read Android 1.0.7" \
+              --notes "Restaurada la barra superior de Android: las barras del sistema se mantienen visibles y el WebView respeta sus insets en Android 15 y posteriores." \
               --latest=false
           fi
 
@@ -78,11 +78,11 @@ jobs:
       - name: Actualizar android-update.json con los datos reales de este build
         run: |
           python .github/scripts/update_manifest.py \
-            inhouse-read-release-v1.0.6.apk \
-            1.0.6 \
-            7 \
-            android-v1.0.6 \
-            "Arco de los lomos mas visible en la estanteria. Endurecidos con pruebas de regresion la reapertura de libros desde IndexedDB y la entrega segura del APK al instalador Android."
+            inhouse-read-release-v1.0.7.apk \
+            1.0.7 \
+            8 \
+            android-v1.0.7 \
+            "Restaurada la barra superior de Android: las barras del sistema se mantienen visibles y el WebView respeta sus insets en Android 15 y posteriores."
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/android-update.json

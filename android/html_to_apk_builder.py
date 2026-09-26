@@ -1532,18 +1532,15 @@ class ApkBuilderApp(tk.Tk):
         calls it yet: it is the one piece actually required to add that
         OAuth flow later, and it's harmless dead code until then.
 
-        Also opts out of edge-to-edge via WindowCompat.setDecorFitsSystemWindows(
-        window, true). Capacitor's template targets a recent enough SDK that,
-        on Android 15+ (API 35), the platform enforces edge-to-edge by
-        default: content draws full-bleed under the status bar and
-        Window.setStatusBarColor()/setNavigationBarColor() silently become
-        no-ops. Net effect on-device: the status bar visually disappears
-        instead of showing our boot color. Disabling edge-to-edge restores
-        the classic behaviour where the system paints the bars we set and
-        insets the WebView below/above them. The status-bar icon color
-        (light vs dark) is set to match whichever boot color (light/dark
-        resource qualifier) is actually active, so icons stay legible in
-        both themes.
+        Keeps Android's system bars explicitly visible and applies the
+        status/navigation/cutout insets as WebView padding. Android 15+ forces
+        edge-to-edge for current target SDKs, so setDecorFitsSystemWindows(true)
+        and statusBarColor alone are not enough: the WebView can draw over the
+        clock and icons, making the status bar appear to be missing. We now
+        show the bars through WindowInsetsControllerCompat and keep the page
+        content inside the safe area on both enforced and legacy edge-to-edge
+        devices. The inset padding is based on the WebView's original padding,
+        so repeated inset dispatches do not accumulate offsets.
         """
         main_src_root = project_dir / "android" / "app" / "src" / "main"
         java_file = main_src_root / "java" / Path(*package_id.split(".")) / "MainActivity.java"
@@ -1559,6 +1556,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.view.View;
+import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
@@ -1567,7 +1566,10 @@ import android.webkit.WebView;
 import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.getcapacitor.BridgeActivity;
@@ -1587,10 +1589,17 @@ public class MainActivity extends BridgeActivity {{
     public void onCreate(Bundle savedInstanceState) {{
         super.onCreate(savedInstanceState);
 
-        // Opt out of edge-to-edge (see class-level note above): keeps the
-        // status/navigation bar backgrounds we set below actually visible
-        // on Android 15+ instead of silently becoming no-ops.
-        WindowCompat.setDecorFitsSystemWindows(getWindow(), true);
+        // Android 15+ forces edge-to-edge for this target SDK. Explicitly
+        // show system bars and inset the WebView so its page cannot cover the
+        // clock/icons or draw beneath the status/navigation controls.
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        View decorView = getWindow().getDecorView();
+        int hideFlags = View.SYSTEM_UI_FLAG_FULLSCREEN
+            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            | View.SYSTEM_UI_FLAG_IMMERSIVE
+            | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
+        decorView.setSystemUiVisibility(decorView.getSystemUiVisibility() & ~hideFlags);
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
 
         WebView webView = getBridge().getWebView();
         int bootColor = ContextCompat.getColor(this, R.color.ihr_boot_background);
@@ -1600,8 +1609,25 @@ public class MainActivity extends BridgeActivity {{
             & Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES;
         WindowInsetsControllerCompat insetsController =
             new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
+        insetsController.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_DEFAULT);
         insetsController.setAppearanceLightStatusBars(isLightMode);
         insetsController.setAppearanceLightNavigationBars(isLightMode);
+        insetsController.show(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.navigationBars());
+        int initialLeft = webView.getPaddingLeft();
+        int initialTop = webView.getPaddingTop();
+        int initialRight = webView.getPaddingRight();
+        int initialBottom = webView.getPaddingBottom();
+        ViewCompat.setOnApplyWindowInsetsListener(webView, (view, windowInsets) -> {{
+            Insets safeInsets = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+            view.setPadding(
+                initialLeft + safeInsets.left,
+                initialTop + safeInsets.top,
+                initialRight + safeInsets.right,
+                initialBottom + safeInsets.bottom);
+            return windowInsets;
+        }});
+        ViewCompat.requestApplyInsets(webView);
         webView.setBackgroundColor(bootColor);
         WebSettings settings = webView.getSettings();
         settings.setDomStorageEnabled(true);
@@ -1814,13 +1840,18 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.View
+import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.getcapacitor.BridgeActivity
 import java.io.File
@@ -1833,10 +1864,16 @@ class MainActivity : BridgeActivity() {{
     override fun onCreate(savedInstanceState: Bundle?) {{
         super.onCreate(savedInstanceState)
 
-        // Opt out of edge-to-edge (see class-level note above): keeps the
-        // status/navigation bar backgrounds we set below actually visible
-        // on Android 15+ instead of silently becoming no-ops.
-        WindowCompat.setDecorFitsSystemWindows(window, true)
+        // Android 15+ forces edge-to-edge for this target SDK. Explicitly
+        // show system bars and inset the WebView so its page cannot cover the
+        // clock/icons or draw beneath the status/navigation controls.
+        window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        val hideFlags = (View.SYSTEM_UI_FLAG_FULLSCREEN
+            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            or View.SYSTEM_UI_FLAG_IMMERSIVE
+            or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+        window.decorView.systemUiVisibility = window.decorView.systemUiVisibility and hideFlags.inv()
+        WindowCompat.setDecorFitsSystemWindows(window, false)
 
         val webView = bridge.webView
         val bootColor = ContextCompat.getColor(this, R.color.ihr_boot_background)
@@ -1845,8 +1882,23 @@ class MainActivity : BridgeActivity() {{
         val isLightMode = (resources.configuration.uiMode
             and Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES
         val insetsController = WindowInsetsControllerCompat(window, window.decorView)
+        insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
         insetsController.isAppearanceLightStatusBars = isLightMode
         insetsController.isAppearanceLightNavigationBars = isLightMode
+        insetsController.show(WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars())
+        val initialPadding = Insets.of(
+            webView.paddingLeft, webView.paddingTop, webView.paddingRight, webView.paddingBottom)
+        ViewCompat.setOnApplyWindowInsetsListener(webView) {{ view, windowInsets ->
+            val safeInsets = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            view.setPadding(
+                initialPadding.left + safeInsets.left,
+                initialPadding.top + safeInsets.top,
+                initialPadding.right + safeInsets.right,
+                initialPadding.bottom + safeInsets.bottom)
+            windowInsets
+        }}
+        ViewCompat.requestApplyInsets(webView)
         webView.setBackgroundColor(bootColor)
         webView.settings.domStorageEnabled = true
         webView.settings.databaseEnabled = true
@@ -2073,6 +2125,8 @@ class MainActivity : BridgeActivity() {{
                 "android:statusBarColor": "@color/ihr_boot_background",
                 "android:navigationBarColor": "@color/ihr_boot_background",
                 "android:windowSplashScreenBackground": "@color/ihr_boot_background",
+                "android:windowFullscreen": "false",
+                "android:windowDrawsSystemBarBackgrounds": "true",
             }
             existing = {item.get("name"): item for item in style.findall("item")}
             for item_name, item_value in desired.items():
