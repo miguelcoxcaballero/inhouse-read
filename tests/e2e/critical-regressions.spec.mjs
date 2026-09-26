@@ -42,6 +42,7 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
     return {
       frontClip: getComputedStyle(element).clipPath,
       preserve3d: getComputedStyle(element).transformStyle,
+      width: Number.parseFloat(getComputedStyle(element).width),
       depths: segments.map(segment => Number.parseFloat(
         getComputedStyle(segment).getPropertyValue('--ihr-curve-z')
       )),
@@ -56,6 +57,7 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   expect(curvature.depths[0]).toBeGreaterThan(0)
   expect(curvature.depths[10]).toBeGreaterThan(curvature.depths[0])
   expect(curvature.depths[20]).toBeCloseTo(curvature.depths[0], 2)
+  expect(curvature.depths[10] / curvature.width).toBeGreaterThan(0.25)
   expect(curvature.angles[0]).toBeLessThan(0)
   expect(curvature.angles[20]).toBeGreaterThan(0)
 
@@ -73,6 +75,13 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
     const body = ghost?.querySelector('.ihr-spine__body')
     const surface = body?.querySelector('.ihr-spine__surface')
     const segments = [...(surface?.querySelectorAll('.ihr-spine__segment') ?? [])]
+    const book = element.closest('.ihr-flyout__book')
+    const reveal = book.getAnimations()[0]
+    reveal.pause()
+    reveal.currentTime = reveal.effect.getTiming().duration - 2
+    const coverLeft = book.querySelector('.ihr-flyout__face--cover').getBoundingClientRect().left
+    const curvedLeft = Math.min(...segments.map(segment => segment.getBoundingClientRect().left))
+    reveal.play()
     return {
       noFlatSideFace: !element.classList.contains('ihr-flyout__face'),
       spine3d: getComputedStyle(element).transformStyle,
@@ -81,6 +90,7 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
       surface3d: getComputedStyle(surface).transformStyle,
       perspective: getComputedStyle(body).perspective,
       segmentCount: segments.length,
+      frontBulgePx: coverLeft - curvedLeft,
       centerDepth: Number.parseFloat(getComputedStyle(segments[24]).getPropertyValue('--ihr-curve-z')),
       edgeDepth: Number.parseFloat(getComputedStyle(segments[0]).getPropertyValue('--ihr-curve-z'))
     }
@@ -95,6 +105,7 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
     segmentCount: 48
   })
   expect(curvedFlyout.centerDepth).toBeGreaterThan(curvedFlyout.edgeDepth)
+  expect(curvedFlyout.frontBulgePx).toBeGreaterThan(8)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   expect(fileChooserOpened).toBe(false)
 })

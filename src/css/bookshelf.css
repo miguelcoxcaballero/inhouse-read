@@ -203,23 +203,6 @@
   pointer-events: none;
 }
 
-.ihr-spine__surface::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  transform: translateZ(calc(var(--ihr-spine-w, 34px) * 0.14));
-  background: linear-gradient(
-    90deg,
-    rgba(0, 0, 0, 0.22) 0%,
-    rgba(0, 0, 0, 0.04) 16%,
-    rgba(255, 255, 255, 0.12) 42%,
-    rgba(255, 255, 255, 0.06) 55%,
-    rgba(0, 0, 0, 0.04) 82%,
-    rgba(0, 0, 0, 0.20) 100%
-  );
-  pointer-events: none;
-}
-
 .ihr-spine__segment {
   position: absolute;
   top: 0;
@@ -281,7 +264,7 @@
   line-height: 1.2;
   overflow: hidden;
   pointer-events: none;
-  transform: translateZ(calc(var(--ihr-spine-w, 34px) * 0.12 + 1px));
+  transform: translateZ(calc(var(--ihr-spine-bulge, 10px) + 0.15px));
 }
 
 /* nowrap es lo que impide que un título largo se derrame en una segunda
@@ -370,7 +353,7 @@
   z-index: 2;
   inset: 0;
   pointer-events: none;
-  transform: translateZ(calc(var(--ihr-spine-w, 34px) * 0.12 + 0.5px));
+  transform: translateZ(calc(var(--ihr-spine-bulge, 10px) * 0.5));
 }
 
 .ihr-spine__grain::before {
@@ -638,7 +621,6 @@
   perspective: none;
 }
 
-.ihr-flyout__spine .ihr-spine__surface::after,
 .ihr-flyout__spine .ihr-spine__grain {
   /* Las capas decorativas planas taparían la curvatura durante el giro. */
   display: none;

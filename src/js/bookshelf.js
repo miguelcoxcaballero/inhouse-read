@@ -119,7 +119,9 @@ const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
 const TAP_SLOP = 12;
 const SPINE_CURVE_SEGMENTS = 21;
 const FLYOUT_SPINE_SEGMENTS = 48;
-const SPINE_CURVE_HALF_ANGLE = (26 * Math.PI) / 180;
+const SPINE_CURVE_HALF_ANGLE = (60 * Math.PI) / 180;
+const SPINE_CURVE_BULGE_RATIO =
+  (1 - Math.cos(SPINE_CURVE_HALF_ANGLE)) / (2 * Math.sin(SPINE_CURVE_HALF_ANGLE));
 
 export const DEFAULT_TEXTS = Object.freeze({
   shelfLabel: 'Tu estantería',
@@ -191,7 +193,8 @@ function curvedSpineSurface(width, count = SPINE_CURVE_SEGMENTS) {
     const t = (centerX / width) * 2 - 1;
     const angle = Math.asin(t * Math.sin(halfAngle));
     const depth = radius * (Math.cos(angle) - Math.cos(halfAngle));
-    const light = 1.08 - 0.27 * Math.abs(angle / halfAngle);
+    const normalizedAngle = angle / halfAngle;
+    const light = 1.18 - 0.42 * Math.abs(normalizedAngle) + 0.06 * normalizedAngle;
     // Small overlap hides subpixel seams between tangent faces at DPR 1-3.
     const faceWidth = projectedStep / Math.cos(angle) + 0.75;
     const segment = el('span', {
@@ -396,6 +399,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         : opts.texts.openAria(book),
       style:
         `--ihr-spine-w:${style.width}px;` +
+        `--ihr-spine-bulge:${(style.width * SPINE_CURVE_BULGE_RATIO).toFixed(3)}px;` +
         `--ihr-spine-h:${Math.round(style.heightRatio * 100)}%;` +
         `--ihr-spine-base:${style.color};` +
         `--ihr-spine-shade:${style.shade};` +
@@ -705,14 +709,18 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     );
     // El marcapáginas queda metido entre las hojas mientras gira el tomo.
     clone.querySelector('.ihr-spine__bookmark')?.remove();
+    const spineLabel = clone.querySelector('.ihr-spine__label');
     clone.removeAttribute('data-book-id');
     clone.removeAttribute('aria-label');
     clone.setAttribute('aria-hidden', 'true');
     clone.setAttribute('tabindex', '-1');
+    // scale3d is essential: scale() left the curved face's depth at shelf
+    // size, so its bulge disappeared behind the cover when viewed head-on.
     clone.style.cssText +=
       `;position:absolute;left:0;top:0;pointer-events:none;` +
       `width:${rect.width}px;height:${rect.height}px;` +
-      `transform-origin:0 0;transform:scale(${1 / startScale});`;
+      `transform-origin:0 0;` +
+      `transform:scale3d(${1 / startScale},${1 / startScale},${1 / startScale});`;
     spineSurface.append(clone);
 
     bookNode.append(buildCoverFace(book, coverUrl, style));
@@ -832,6 +840,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // además se pone uno global, se componen y la coreografía se come el
     // último tercio de la animación (queda quieta mientras corre el reloj).
     const reveal = animate(bookNode, frames, { duration, easing: 'linear', fill: 'both' });
+    // El título está estampado en el frente del lomo. De canto se lee; al
+    // enseñar la portada desaparece para no quedar flotando fuera del arco.
+    animate(spineLabel, [
+      { opacity: 1, offset: 0 },
+      { opacity: 1, offset: 0.34 },
+      { opacity: 0, offset: 0.62 },
+      { opacity: 0, offset: 1 }
+    ], { duration, easing: 'linear', fill: 'both' });
     animate(scrim, [{ opacity: 0 }, { opacity: 1 }], {
       duration: Math.min(280, duration),
       easing: EASE,
@@ -847,6 +863,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     );
 
     async function playReturn() {
+      const returnDuration = prefersReducedMotion() ? 1 : opts.returnDuration;
       const back = animate(
         bookNode,
         [
@@ -858,13 +875,18 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           { transform: tf(dx, dy, zStart, startScale, 90) }
         ],
         {
-          duration: prefersReducedMotion() ? 1 : opts.returnDuration,
+          duration: returnDuration,
           easing: EASE,
           fill: 'both'
         }
       );
+      animate(spineLabel, [
+        { opacity: 0, offset: 0 },
+        { opacity: 0, offset: 0.45 },
+        { opacity: 1, offset: 1 }
+      ], { duration: returnDuration, easing: 'linear', fill: 'both' });
       animate(scrim, [{ opacity: 1 }, { opacity: 0 }], {
-        duration: prefersReducedMotion() ? 1 : opts.returnDuration,
+        duration: returnDuration,
         easing: EASE,
         fill: 'both'
       });
