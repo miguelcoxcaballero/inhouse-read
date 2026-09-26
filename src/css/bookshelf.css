@@ -9,7 +9,7 @@
   Notas de implementación:
    - La madera es CSS (gradientes repetidos), no imágenes: cero peso y se
      adapta al tema.
-   - Lo único que se anima es transform/opacity. Nada de width/left/top.
+   - El libro se anima como malla WebGL; el fondo y los controles usan opacity.
    - `--ihr-accent-legible` es el verde para TEXTO: en oscuro sube a un verde
      claro porque #2f6b4f sobre #151515 no llega a contraste AA.
 */
@@ -184,36 +184,7 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Superficie del lomo modelada como un arco cilíndrico en 3D. Los segmentos
-   verticales se orientan y separan en profundidad desde bookshelf.js: vistos
-   desde arriba forman un lomo redondo de verdad, no un recorte del contorno. */
-.ihr-spine__body {
-  position: absolute;
-  inset: 0;
-  /* Backing color closes subpixel seams between the curved 3D faces. */
-  background: var(--ihr-spine-base, #4a4a4a);
-  perspective: 360px;
-  transform-style: preserve-3d;
-}
-
-.ihr-spine__surface {
-  position: absolute;
-  inset: 0;
-  transform-style: preserve-3d;
-  pointer-events: none;
-}
-
-.ihr-spine__segment {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  display: block;
-  background: var(--ihr-spine-base, #4a4a4a);
-  filter: brightness(var(--ihr-curve-light, 1));
-  transform-origin: 50% 50%;
-  transform: translateZ(var(--ihr-curve-z, 0px)) rotateY(var(--ihr-curve-angle, 0deg));
-  backface-visibility: hidden;
-}
+.ihr-spine__body { position:absolute; inset:0; }
 
 /* Zona de acierto: 2px extra a cada lado, sin invadir el lomo vecino. */
 .ihr-spine::after {
@@ -264,7 +235,7 @@
   line-height: 1.2;
   overflow: hidden;
   pointer-events: none;
-  transform: translateZ(calc(var(--ihr-spine-bulge, 10px) + 0.15px));
+
 }
 
 /* nowrap es lo que impide que un título largo se derrame en una segunda
@@ -577,7 +548,7 @@
 /* El tomo comparte un contexto 3D entre portada, lomo curvo y hojas. */
 .ihr-flyout__book {
   position: fixed;
-  transform-style: preserve-3d;
+
   transform-origin: 50% 50%;
 }
 
@@ -596,54 +567,6 @@
   background: var(--ihr-spine-base, #4a4a4a);
   transform: translateZ(calc(var(--ihr-thickness, 20px) / 2));
   box-shadow: 0 30px 60px -24px rgba(0, 0, 0, 0.75);
-}
-
-/* La superficie lateral izquierda se curva hacia fuera del tomo. Cada tira
-   del clon mantiene su transform 3D al pasar del lomo frontal de la balda al
-   lateral del libro; ninguna envoltura aplica overflow o una cara opaca. */
-.ihr-flyout__spine {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: var(--ihr-thickness, 20px);
-  height: 100%;
-  transform-style: preserve-3d;
-  transform: rotateY(-90deg) translateZ(calc(var(--ihr-thickness, 20px) / 2));
-}
-
-.ihr-flyout__spine .ihr-spine--ghost {
-  transform-style: preserve-3d;
-}
-
-.ihr-flyout__spine .ihr-spine__body {
-  /* La perspectiva vive en el escenario. El fondo cierra las uniones entre
-     las tiras, por detrás de la cara curva visible. */
-  perspective: none;
-}
-
-.ihr-flyout__spine .ihr-spine__grain {
-  /* Las capas decorativas planas taparían la curvatura durante el giro. */
-  display: none;
-}
-
-/* Canto derecho: las hojas. Se ve de refilón durante el giro y es lo que
-   convierte el rectángulo en un objeto con volumen. */
-.ihr-flyout__pages {
-  position: absolute;
-  top: 2%;
-  right: 0;
-  width: var(--ihr-thickness, 20px);
-  height: 96%;
-  border-radius: 0 2px 2px 0;
-  background:
-    repeating-linear-gradient(
-      180deg,
-      rgba(0, 0, 0, 0.09) 0 1px,
-      rgba(255, 255, 255, 0) 1px 3px
-    ),
-    linear-gradient(90deg, #efe7d6, #d9cfb9);
-  transform: rotateY(90deg) translateZ(calc(var(--ihr-thickness, 20px) / 2));
-  backface-visibility: hidden;
 }
 
 .ihr-flyout__img {
@@ -787,3 +710,12 @@
     animation: none;
   }
 }
+
+/* WebGL meshes supply all book geometry and lighting. */
+.ihr-book-canvas { display:block; width:100%; height:100%; pointer-events:none; }
+.ihr-spine__body { perspective:none; transform:none; border-radius:0; box-shadow:none; overflow:visible; background:transparent; }
+.ihr-flyout__stage { perspective:none; }
+.ihr-flyout__book--webgl { transform:none !important; filter:none; box-shadow:none; }
+.ihr-flyout__book--fallback .ihr-flyout__face--cover { transform:none; }
+
+.ihr-spine__body:not(:has(canvas)) { background:var(--ihr-spine-base); }

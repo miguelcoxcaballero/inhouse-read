@@ -123,7 +123,7 @@ describe('renderBookshelf', () => {
     expect(widths()).toEqual(before)
   })
 
-  it('al abrir, el giro nace del mismo botón y su clon no arrastra el marcapáginas', async () => {
+  it('sin WebGL, abre la portada accesible y conserva el marcapáginas en la balda', async () => {
     const books = makeBooks(2).map((book) => ({ ...book, progressFraction: 0.5 }))
     shelf = renderBookshelf(container, books, {
       shelfWidth: SHELF_WIDTH,
@@ -137,11 +137,10 @@ describe('renderBookshelf', () => {
     await settle()
     expect(measured).toHaveBeenCalled()
     expect(spine.classList.contains('is-away')).toBe(true)
-    const ghost = container.querySelector('.ihr-flyout__spine .ihr-spine--ghost')
-    expect(ghost).not.toBeNull()
-    expect(ghost.querySelector('.ihr-spine__bookmark')).toBeNull()
-    expect(ghost.querySelectorAll('.ihr-spine__segment')).toHaveLength(48)
-    // El lomo real conserva el suyo para cuando vuelva a la balda.
+    const fallback = container.querySelector('.ihr-flyout__book--fallback')
+    expect(fallback).not.toBeNull()
+    expect(fallback.querySelector('.ihr-spine__bookmark')).toBeNull()
+    // jsdom has no GPU: the accessible cover fallback must still open.
     expect(spine.querySelector('.ihr-spine__bookmark')).not.toBeNull()
   })
 
@@ -181,7 +180,7 @@ describe('renderBookshelf', () => {
     await settle()
     const flyout = container.querySelector('.ihr-flyout')
     expect(flyout).not.toBeNull()
-    expect(flyout.querySelector('.ihr-flyout__spine')).not.toBeNull()
+    expect(flyout.querySelector('.ihr-flyout__book--fallback')).not.toBeNull()
     expect(flyout.querySelector('.ihr-flyout__face--cover')).not.toBeNull()
     expect(flyout.getAttribute('role')).toBe('dialog')
     expect(spine.classList.contains('is-away')).toBe(true)

@@ -68,22 +68,14 @@
  *    de Inhouse. Se colocan por reglas de empaquetado, no al azar: cada N
  *    libros y de remate cuando sobra balda (ver `layoutShelves`).
  *
- * 5. La animación del giro. Es un libro en 3D de verdad, no un flip de
- *    tarjeta: un contenedor con `transform-style: preserve-3d`, la portada
- *    en z=+grosor/2 y un lomo lateral curvado en profundidad con segmentos
- *    tangentes (`rotateY(-90deg) translateZ(grosor/2)`). El libro arranca en
- *    `rotateY(90deg)`, que proyecta exactamente el grosor del lomo: por eso
- *    empieza encajado sobre el lomo de la balda, píxel a píxel (técnica FLIP,
- *    medido con `getBoundingClientRect`). De ahí sale hacia arriba, se acerca
- *    y gira hasta 0° con un rebote corto de -6°. 620 ms con el easing del
- *    sistema; con `prefers-reduced-motion` se resuelve en un fundido.
+ * 5. Modelo propio en book-model.js: malla elíptica continua, tapas y hojas.
+ *    Three.js dibuja la misma geometría en la balda y durante el giro.
+ *    La textura del título sigue los UV del lomo. La apertura añade 10° de
+ *    inclinación para mostrar su sección superior y el volumen de la encuadernación.
  *
- * 6. Rendimiento. Todo lo animado son `transform`/`opacity` (nunca
- *    width/left/top), `will-change` se pone y se quita alrededor de la
- *    animación para no dejar capas colgando, las baldas fuera de pantalla
- *    usan `content-visibility: auto`, y el re-empaquetado al redimensionar va
- *    con rAF y umbral de 8px. La portada se precarga en `pointerdown`, así
- *    que cuando el giro enseña la cara ya está pintada.
+ * 6. Un único contexto WebGL compartido dibuja instantáneas para las baldas.
+ *    Sólo el libro abierto se redibuja con requestAnimationFrame. Cada vista
+ *    libera geometrías y texturas; sin WebGL se conserva una portada accesible.
  *
  * 7. Táctil. Activación por `click` (funciona con teclado y lector de
  *    pantalla), feedback de presión en `pointerdown` para ver qué lomo se va
@@ -106,23 +98,18 @@
  *    caja medida para el giro no cambia. La balda reserva encima de los lomos
  *    `--ihr-bookmark-room` para que no lo corte el `content-visibility`.
  *
- * Este fichero sólo depende de `bookshelf-layout.js` y `plants.js`. No sabe
+ * La geometría vive en `book-model.js`; la distribución, en `bookshelf-layout.js`. No sabe
  * nada de PDF.js, foliate, Drive ni IndexedDB: recibe libros y avisa cuando
  * hay que abrir uno.
  */
 
 import { planBookshelf, bookmarkFor, withDefaults } from './bookshelf-layout.js';
 import { plantSvg, plantMeta } from './plants.js';
+import { bookView } from './book-model.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
 const TAP_SLOP = 12;
-const SPINE_CURVE_SEGMENTS = 21;
-const FLYOUT_SPINE_SEGMENTS = 48;
-const SPINE_CURVE_HALF_ANGLE = (60 * Math.PI) / 180;
-const SPINE_CURVE_BULGE_RATIO =
-  (1 - Math.cos(SPINE_CURVE_HALF_ANGLE)) / (2 * Math.sin(SPINE_CURVE_HALF_ANGLE));
-
 export const DEFAULT_TEXTS = Object.freeze({
   shelfLabel: 'Tu estantería',
   emptyTitle: 'Tu estantería está vacía',
@@ -172,45 +159,6 @@ function el(tag, props = {}, children = []) {
     node.append(child);
   }
   return node;
-}
-
-/**
- * Builds a faceted cylindrical surface for a book spine. Each narrow vertical
- * face is tangent to the same circle and sits at that circle's real depth, so
- * the curve exists in 3D space instead of being painted as a 2D outline.
- */
-function curvedSpineSurface(width, count = SPINE_CURVE_SEGMENTS) {
-  const surface = el('span', {
-    class: 'ihr-spine__surface',
-    'aria-hidden': 'true'
-  });
-  const halfAngle = SPINE_CURVE_HALF_ANGLE;
-  const radius = width / (2 * Math.sin(halfAngle));
-  const projectedStep = width / count;
-
-  for (let index = 0; index < count; index += 1) {
-    const centerX = (index + 0.5) * projectedStep;
-    const t = (centerX / width) * 2 - 1;
-    const angle = Math.asin(t * Math.sin(halfAngle));
-    const depth = radius * (Math.cos(angle) - Math.cos(halfAngle));
-    const normalizedAngle = angle / halfAngle;
-    const light = 1.18 - 0.42 * Math.abs(normalizedAngle) + 0.06 * normalizedAngle;
-    // Small overlap hides subpixel seams between tangent faces at DPR 1-3.
-    const faceWidth = projectedStep / Math.cos(angle) + 0.75;
-    const segment = el('span', {
-      class: 'ihr-spine__segment',
-      'aria-hidden': 'true',
-      style:
-        `left:${centerX - faceWidth / 2}px;` +
-        `width:${faceWidth}px;` +
-        `--ihr-curve-z:${depth.toFixed(3)}px;` +
-        `--ihr-curve-light:${light.toFixed(3)};` +
-        `--ihr-curve-angle:${((angle * 180) / Math.PI).toFixed(3)}deg`
-    });
-    surface.append(segment);
-  }
-
-  return surface;
 }
 
 function svgIcon(paths, { viewBox = '0 0 24 24', className = 'ihr-icon' } = {}) {
@@ -399,7 +347,6 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         : opts.texts.openAria(book),
       style:
         `--ihr-spine-w:${style.width}px;` +
-        `--ihr-spine-bulge:${(style.width * SPINE_CURVE_BULGE_RATIO).toFixed(3)}px;` +
         `--ihr-spine-h:${Math.round(style.heightRatio * 100)}%;` +
         `--ihr-spine-base:${style.color};` +
         `--ihr-spine-shade:${style.shade};` +
@@ -410,18 +357,18 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // En un lomo estrecho el autor no cabe sin pisar al título.
     if (style.width < 32) node.classList.add('ihr-spine--slim');
 
-    // El cuerpo redondo del lomo se construye con caras 3D tangentes al mismo
-    // arco. El marcapáginas se mantiene como hermano de este cuerpo, así que
-    // puede seguir asomando por encima sin quedar recortado.
     const body = el('span', { class: 'ihr-spine__body', 'aria-hidden': 'true' });
-    body.append(curvedSpineSurface(style.width));
-    body.append(el('span', { class: 'ihr-spine__grain', 'aria-hidden': 'true' }));
-    body.append(
-      el('span', { class: 'ihr-spine__label' }, [
-        el('span', { class: 'ihr-spine__title', text: book.title ?? 'Sin título' }),
-        book.author ? el('span', { class: 'ihr-spine__author', text: book.author }) : null
-      ])
-    );
+    const height = (window.innerWidth >= 600 ? 200 : 172) * style.heightRatio;
+    const view = bookView(body, book, style, {
+      width: height * opts.coverRatio, height, thickness: style.width,
+      viewportWidth: style.width, viewportHeight: height,
+      centerX: style.width / 2, centerY: height / 2, shelf: true
+    });
+    if (view) view.dispose(false); // retain the rendered snapshot, free mesh/textures
+    else body.append(el('span', { class: 'ihr-spine__label' }, [
+      el('span', { class: 'ihr-spine__title', text: book.title ?? 'Sin título' }),
+      book.author ? el('span', { class: 'ihr-spine__author', text: book.author }) : null
+    ]));
     node.append(body);
     /*
       Marcapáginas que asoma por arriba: su longitud visible es el progreso.
@@ -666,13 +613,15 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const vh = window.innerHeight || 780;
 
     // Geometría de destino: portada centrada, sin comerse la pantalla entera.
-    const coverH = Math.min(vh * 0.54, 440, (vw * 0.78) / opts.coverRatio);
+    const shelfAspect = (rect.width || 32) / (rect.height || 150);
+    const coverH = Math.min(vh * 0.54, 440, (vw * 0.78) / opts.coverRatio,
+      (vw * 0.86) / (opts.coverRatio + shelfAspect * 0.55));
     const coverW = coverH * opts.coverRatio;
     const startScale = rect.height > 0 ? rect.height / coverH : 0.3;
     // Grosor tal que, girado 90°, el tomo proyecte exactamente el lomo de origen.
     const thickness = Math.max(6, (rect.width || 32) / startScale);
 
-    const centerX = vw / 2;
+    const centerX = vw / 2 + thickness * 0.55 / 2;
     const centerY = vh * 0.44;
     const dx = rect.left + rect.width / 2 - centerX;
     const dy = rect.top + rect.height / 2 - centerY;
@@ -692,41 +641,21 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         `--ihr-spine-ink:${style.ink}`
     });
 
-    /*
-      El lomo lateral es un clon del lomo real de la balda, ampliado por el
-      inverso de la escala inicial. Sus segmentos curvos conservan su propia
-      profundidad al girar con el tomo; la envoltura no puede aplanarlos ni
-      recortarlos. Así coinciden geometría y acabado al salir de la balda.
-    */
-    const spineSurface = el('div', { class: 'ihr-flyout__spine' });
-    const clone = spineEl.cloneNode(true);
-    clone.classList.remove('is-away', 'is-pressed', 'is-tilted');
-    clone.classList.add('ihr-spine--ghost'); // para distinguirlo del lomo real
-    // Más tiras sólo durante el giro: el arco se ve liso de cerca sin cargar
-    // cada libro de la estantería con la geometría de primer plano.
-    clone.querySelector('.ihr-spine__surface')?.replaceWith(
-      curvedSpineSurface(rect.width || style.width, FLYOUT_SPINE_SEGMENTS)
-    );
-    // El marcapáginas queda metido entre las hojas mientras gira el tomo.
-    clone.querySelector('.ihr-spine__bookmark')?.remove();
-    const spineLabel = clone.querySelector('.ihr-spine__label');
-    clone.removeAttribute('data-book-id');
-    clone.removeAttribute('aria-label');
-    clone.setAttribute('aria-hidden', 'true');
-    clone.setAttribute('tabindex', '-1');
-    // scale3d is essential: scale() left the curved face's depth at shelf
-    // size, so its bulge disappeared behind the cover when viewed head-on.
-    clone.style.cssText +=
-      `;position:absolute;left:0;top:0;pointer-events:none;` +
-      `width:${rect.width}px;height:${rect.height}px;` +
-      `transform-origin:0 0;` +
-      `transform:scale3d(${1 / startScale},${1 / startScale},${1 / startScale});`;
-    spineSurface.append(clone);
-
-    bookNode.append(buildCoverFace(book, coverUrl, style));
-    bookNode.append(spineSurface);
-    bookNode.append(el('div', { class: 'ihr-flyout__pages', 'aria-hidden': 'true' }));
-
+    const view = bookView(bookNode, book, style, {
+      width: coverW, height: coverH, thickness,
+      viewportWidth: vw, viewportHeight: vh, centerX, centerY, coverUrl
+    });
+    if (view) {
+      view.draw({ x: dx, y: dy, scale: startScale, angle: 90, pitch: 0 });
+      bookNode.classList.add('ihr-flyout__book--webgl');
+      bookNode.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
+    } else {
+      bookNode.classList.add('ihr-flyout__book--fallback');
+      bookNode.append(buildCoverFace(book, coverUrl, style));
+    }
+    const animateBook = (frames, timing) => view
+      ? view.animate(frames, timing)
+      : animate(bookNode, [{ opacity: 1 }], timing);
     const meta = el('div', { class: 'ihr-flyout__meta' }, [
       el('p', { class: 'ihr-flyout__title', text: book.title ?? '' }),
       book.author ? el('p', { class: 'ihr-flyout__author', text: book.author }) : null
@@ -751,6 +680,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       state.busy = false;
       document.removeEventListener('keydown', onKeydown, true);
       if (!instant) await playReturn();
+      view?.dispose();
       flyout.remove();
       spineEl.classList.remove('is-away');
       if (!silent && !instant && typeof previousFocus?.focus === 'function') {
@@ -797,20 +727,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const duration = reduce ? 1 : opts.revealDuration;
     const lift = Math.min(64, rect.height * 0.35);
 
-    /*
-      Dos detalles para que el arranque encaje con el lomo al píxel:
-
-      - `scale3d` y no `scale`: el 2D no toca la profundidad, así que las caras
-        se quedaban a su z original y la perspectiva las agrandaba un 11%.
-      - `zStart`: girado 90°, la cara del lomo queda medio ancho de portada por
-        delante del centro del tomo. Retrasando el libro esa misma distancia,
-        la cara cae justo en el plano z=0, donde la perspectiva no aumenta ni
-        desplaza nada. Luego vuelve a 0 mientras el libro gira y se acerca.
-    */
-    const zStart = -(coverW / 2) * startScale;
+    const zStart = 0;
     const scaleAt = (t) => startScale + (1 - startScale) * t;
-    const tf = (x, y, z, s, deg) =>
-      `translate3d(${x}px, ${y}px, ${z}px) scale3d(${s}, ${s}, ${s}) rotateY(${deg}deg)`;
+    const tf = (x, y, z, scale, angle) => ({ x, y, scale, angle, pitch: Math.max(0, (90 - angle) / 90) * 10 });
 
     const frames = [
       {
@@ -839,15 +758,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // Timing lineal a propósito: cada keyframe trae su propio easing y, si
     // además se pone uno global, se componen y la coreografía se come el
     // último tercio de la animación (queda quieta mientras corre el reloj).
-    const reveal = animate(bookNode, frames, { duration, easing: 'linear', fill: 'both' });
-    // El título está estampado en el frente del lomo. De canto se lee; al
-    // enseñar la portada desaparece para no quedar flotando fuera del arco.
-    animate(spineLabel, [
-      { opacity: 1, offset: 0 },
-      { opacity: 1, offset: 0.34 },
-      { opacity: 0, offset: 0.62 },
-      { opacity: 0, offset: 1 }
-    ], { duration, easing: 'linear', fill: 'both' });
+    const reveal = animateBook(frames, { duration, easing: 'linear', fill: 'both' });
     animate(scrim, [{ opacity: 0 }, { opacity: 1 }], {
       duration: Math.min(280, duration),
       easing: EASE,
@@ -864,8 +775,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     async function playReturn() {
       const returnDuration = prefersReducedMotion() ? 1 : opts.returnDuration;
-      const back = animate(
-        bookNode,
+      const back = animateBook(
         [
           { transform: tf(0, 0, 0, 1, 0) },
           {
@@ -880,11 +790,6 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           fill: 'both'
         }
       );
-      animate(spineLabel, [
-        { opacity: 0, offset: 0 },
-        { opacity: 0, offset: 0.45 },
-        { opacity: 1, offset: 1 }
-      ], { duration: returnDuration, easing: 'linear', fill: 'both' });
       animate(scrim, [{ opacity: 1 }, { opacity: 0 }], {
         duration: returnDuration,
         easing: EASE,

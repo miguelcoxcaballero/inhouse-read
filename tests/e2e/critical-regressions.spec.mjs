@@ -37,29 +37,14 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   await page.getByRole('button', { name: 'Volver a la estantería' }).click()
   const spine = page.locator('.ihr-spine').first()
   await expect(spine).toBeVisible()
-  const curvature = await spine.locator('.ihr-spine__body').evaluate(element => {
-    const segments = [...element.querySelectorAll('.ihr-spine__segment')]
-    return {
-      frontClip: getComputedStyle(element).clipPath,
-      preserve3d: getComputedStyle(element).transformStyle,
-      width: Number.parseFloat(getComputedStyle(element).width),
-      depths: segments.map(segment => Number.parseFloat(
-        getComputedStyle(segment).getPropertyValue('--ihr-curve-z')
-      )),
-      angles: segments.map(segment => Number.parseFloat(
-        getComputedStyle(segment).getPropertyValue('--ihr-curve-angle')
-      ))
-    }
+  const shelfCanvas = spine.locator('canvas[data-renderer="three-mesh"]')
+  await expect(shelfCanvas).toBeVisible()
+  const paintedPixels = await shelfCanvas.evaluate(canvas => {
+    const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data
+    return pixels.filter((value, i) => i % 4 === 3 && value > 200).length
   })
-  expect(curvature.frontClip).toBe('none')
-  expect(curvature.preserve3d).toBe('preserve-3d')
-  expect(curvature.depths).toHaveLength(21)
-  expect(curvature.depths[0]).toBeGreaterThan(0)
-  expect(curvature.depths[10]).toBeGreaterThan(curvature.depths[0])
-  expect(curvature.depths[20]).toBeCloseTo(curvature.depths[0], 2)
-  expect(curvature.depths[10] / curvature.width).toBeGreaterThan(0.25)
-  expect(curvature.angles[0]).toBeLessThan(0)
-  expect(curvature.angles[20]).toBeGreaterThan(0)
+  expect(paintedPixels).toBeGreaterThan(1000)
+  await expect(spine.locator('.ihr-spine__segment')).toHaveCount(0)
 
   // Reopening must use the stored Blob, not silently fall back to a native picker.
   await page.reload()
@@ -68,44 +53,20 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   let fileChooserOpened = false
   page.on('filechooser', () => { fileChooserOpened = true })
   await reopenedSpine.click()
-  const animatedSpine = page.locator('.ihr-flyout__spine')
-  await expect(animatedSpine).toBeAttached()
-  const curvedFlyout = await animatedSpine.evaluate(element => {
-    const ghost = element.querySelector('.ihr-spine--ghost')
-    const body = ghost?.querySelector('.ihr-spine__body')
-    const surface = body?.querySelector('.ihr-spine__surface')
-    const segments = [...(surface?.querySelectorAll('.ihr-spine__segment') ?? [])]
-    const book = element.closest('.ihr-flyout__book')
-    const reveal = book.getAnimations()[0]
-    reveal.pause()
-    reveal.currentTime = reveal.effect.getTiming().duration - 2
-    const coverLeft = book.querySelector('.ihr-flyout__face--cover').getBoundingClientRect().left
-    const curvedLeft = Math.min(...segments.map(segment => segment.getBoundingClientRect().left))
-    reveal.play()
-    return {
-      noFlatSideFace: !element.classList.contains('ihr-flyout__face'),
-      spine3d: getComputedStyle(element).transformStyle,
-      ghost3d: getComputedStyle(ghost).transformStyle,
-      body3d: getComputedStyle(body).transformStyle,
-      surface3d: getComputedStyle(surface).transformStyle,
-      perspective: getComputedStyle(body).perspective,
-      segmentCount: segments.length,
-      frontBulgePx: coverLeft - curvedLeft,
-      centerDepth: Number.parseFloat(getComputedStyle(segments[24]).getPropertyValue('--ihr-curve-z')),
-      edgeDepth: Number.parseFloat(getComputedStyle(segments[0]).getPropertyValue('--ihr-curve-z'))
-    }
+  const animatedCanvas = page.locator('.ihr-flyout__book--webgl canvas')
+  await expect(animatedCanvas).toBeVisible()
+  await expect(animatedCanvas).toHaveAttribute('data-angle', '0')
+  const silhouette = await animatedCanvas.evaluate(canvas => {
+    const ratio = canvas.width / window.innerWidth
+    const y = Math.floor(window.innerHeight * .44 * ratio)
+    const pixels = canvas.getContext('2d').getImageData(0, y, canvas.width, 1).data
+    let left = canvas.width
+    for (let x = 0; x < canvas.width; x++) if (pixels[x * 4 + 3] > 200) { left = x / ratio; break }
+    const coverH = Math.min(innerHeight * .54, 440, innerWidth * .78 / .66)
+    return { bulge: innerWidth / 2 - coverH * .66 / 2 - left }
   })
-  expect(curvedFlyout).toMatchObject({
-    noFlatSideFace: true,
-    spine3d: 'preserve-3d',
-    ghost3d: 'preserve-3d',
-    body3d: 'preserve-3d',
-    surface3d: 'preserve-3d',
-    perspective: 'none',
-    segmentCount: 48
-  })
-  expect(curvedFlyout.centerDepth).toBeGreaterThan(curvedFlyout.edgeDepth)
-  expect(curvedFlyout.frontBulgePx).toBeGreaterThan(8)
+  // Actual rendered pixels must extend past the front cover, not a DOM box.
+  expect(silhouette.bulge).toBeGreaterThan(10)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   expect(fileChooserOpened).toBe(false)
 })
@@ -132,4 +93,35 @@ test('el actualizador usa el manifiesto y entrega URL y hash al puente Android',
     url: manifest.apkUrl,
     sha256: manifest.apkSha256
   })
+})
+
+
+test('móvil: el modelo se dibuja, se cancela durante el giro y vuelve a abrir', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+  await page.getByRole('button', { name: 'Volver a la estantería' }).click()
+  const spine = page.locator('.ihr-spine').first()
+  await spine.click()
+  await expect(page.locator('.ihr-flyout__book--webgl canvas')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0)
+  await expect(spine).toBeVisible()
+  await spine.click()
+  await expect(page.locator('.ihr-flyout__book--webgl canvas')).toHaveAttribute('data-angle', '0')
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+})
+
+test('sin WebGL se mantiene la apertura del libro con una portada de reserva', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'WebGLRenderingContext', { value: undefined })
+    Object.defineProperty(window, 'WebGL2RenderingContext', { value: undefined })
+  })
+  await page.reload()
+  await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+  await page.getByRole('button', { name: 'Volver a la estantería' }).click()
+  await page.locator('.ihr-spine').first().click()
+  await expect(page.locator('.ihr-flyout__book--fallback')).toBeVisible()
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible()
 })
