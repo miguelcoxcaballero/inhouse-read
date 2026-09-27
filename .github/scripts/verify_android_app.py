@@ -61,20 +61,30 @@ def main():
     run("adb", "install", "-r", sys.argv[1])
     run("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read/.MainActivity")
     time.sleep(18)
-    root = capture()
-    for _ in range(3):
-        if not dismiss_emulator_launcher_anr(root):
-            break
+    for attempt in range(3):
         root = capture()
-    verify_webview_bounds(root)
+        for _ in range(3):
+            if not dismiss_emulator_launcher_anr(root):
+                break
+            root = capture()
+        verify_webview_bounds(root)
 
-    ocr = run("tesseract", str(SCREENSHOT), "stdout").stdout
-    OCR_TEXT.write_text(ocr, encoding="utf-8")
-    print("Android screen OCR:", ocr.strip())
-    if re.search(r"Webpage not available|ERR_[A-Z_]+|isn't responding", ocr, re.IGNORECASE):
-        raise AssertionError("Android displayed an error instead of the app")
-    if not re.search(r"inhouse\s+read", ocr, re.IGNORECASE):
-        raise AssertionError("Android did not render the Inhouse Read header")
+        ocr = run("tesseract", str(SCREENSHOT), "stdout").stdout
+        OCR_TEXT.write_text(ocr, encoding="utf-8")
+        print(f"Android screen OCR (attempt {attempt + 1}):", ocr.strip())
+        network_error = re.search(r"Webpage not available|ERR_NAME_NOT_RESOLVED|ERR_INTERNET_DISCONNECTED", ocr, re.IGNORECASE)
+        if network_error and attempt < 2:
+            print("Android network was not ready; retrying the production URL")
+            time.sleep(15)
+            run("adb", "shell", "am", "force-stop", "com.inhousesoftware.read")
+            run("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read/.MainActivity")
+            time.sleep(8)
+            continue
+        if re.search(r"Webpage not available|ERR_[A-Z_]+|isn't responding", ocr, re.IGNORECASE):
+            raise AssertionError("Android displayed an error instead of the app")
+        if not re.search(r"inhouse\s+read", ocr, re.IGNORECASE):
+            raise AssertionError("Android did not render the Inhouse Read header")
+        return
 
 
 if __name__ == "__main__":

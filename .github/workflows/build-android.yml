@@ -74,6 +74,13 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Select Android emulator DNS
+        id: runner-dns
+        shell: bash
+        run: |
+          servers=$(awk '$1 == "nameserver" && $2 ~ /^[0-9]+\./ && $2 !~ /^127\./ { print $2 }' /etc/resolv.conf | head -n 3 | paste -sd, -)
+          echo "servers=${servers:+$servers,}1.1.1.1" >> "$GITHUB_OUTPUT"
+
       - name: Capture the installed APK on Android 15
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -82,7 +89,7 @@ jobs:
           arch: x86_64
           profile: pixel_4
           # El emulador de GitHub Actions no siempre hereda un DNS funcional.
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server 8.8.8.8,8.8.4.4
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server ${{ steps.runner-dns.outputs.servers }}
           script: python .github/scripts/verify_android_app.py inhouse-read-release-v1.0.12.apk
 
       - uses: actions/upload-artifact@v4
