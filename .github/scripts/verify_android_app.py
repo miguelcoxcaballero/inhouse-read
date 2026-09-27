@@ -82,7 +82,7 @@ def main():
             continue
         if re.search(r"Webpage not available|ERR_[A-Z_]+|isn't responding", ocr, re.IGNORECASE):
             raise AssertionError("Android displayed an error instead of the app")
-        if not re.search(r"inhouse\s+read", ocr, re.IGNORECASE):
+        if not re.search(r"inhouse\s*read", ocr, re.IGNORECASE):
             raise AssertionError("Android did not render the Inhouse Read header")
         return
 
