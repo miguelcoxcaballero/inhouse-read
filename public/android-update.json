@@ -1,9 +1,9 @@
 {
-  "version": "1.0.8",
-  "versionCode": 9,
+  "version": "1.0.12",
+  "versionCode": 10,
   "required": true,
-  "apkSizeBytes": 3162301,
-  "apkSha256": "92cc5f4d64cdfadd196dbcf9f96a00ae4b512239747af02de9d498126e2bd2b6",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.8/inhouse-read-release-v1.0.8.apk",
-  "releaseNotes": "Corregido el solapamiento de la barra de estado: la ventana reserva el espacio de las barras del sistema antes de mostrar el lector."
+  "apkSizeBytes": 3649141,
+  "apkSha256": "58f0ae908e5fa6acd9838acfb66c529d42adab71471cc255b43e6d6086da67f0",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.12/inhouse-read-release-v1.0.12.apk",
+  "releaseNotes": "Acceso nativo a Google Drive, sincronización de libros y progreso, y mejoras de la biblioteca."
 }
