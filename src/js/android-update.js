@@ -14,6 +14,7 @@ const UPDATE_MANIFEST_PATH = 'android-update.json'
 const INHOUSE_APP_STORAGE_KEY = 'inhouseReadAppMode'
 const LEGACY_ANDROID_APP_VERSION = '1.0.0'
 const CHECK_INTERVAL_MS = 15 * 60 * 1000
+const LATEST_RELEASE_URL = 'https://api.github.com/repos/miguelcoxcaballero/inhouse-read/releases/latest'
 const ALLOWED_APK_HOSTS = ['github.com', 'raw.githubusercontent.com', 'miguelcoxcaballero.github.io']
 
 // ---- Detección de "corriendo dentro de la app Android" ----
@@ -85,6 +86,24 @@ export function validateManifest(manifest) {
 /** ¿Hace falta actualizar? `required !== false` (por defecto sí, como en Notes) + versión más nueva. */
 export function shouldOfferUpdate(manifest, installedVersion) {
   return manifest.required !== false && compareSemanticVersions(manifest.version, installedVersion) > 0
+}
+
+/** Recuperación cuando el Release ya existe pero GitHub Pages aún sirve un manifiesto antiguo. */
+export function manifestFromLatestRelease(release) {
+  const version = /^android-v(\d+\.\d+\.\d+)$/.exec(release?.tag_name || '')?.[1]
+  if (!version) throw new Error('El último release no es una versión Android.')
+  const filename = `inhouse-read-release-v${version}.apk`
+  const asset = release.assets?.find(item => item.name === filename)
+  const expectedUrl = `https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v${version}/${filename}`
+  if (!asset || asset.browser_download_url !== expectedUrl || !/^sha256:[a-f0-9]{64}$/i.test(asset.digest || '')) {
+    throw new Error('El último APK no tiene una firma SHA-256 verificable.')
+  }
+  return validateManifest({
+    version, versionCode: 0, required: true,
+    apkUrl: expectedUrl, apkSha256: asset.digest.slice(7).toLowerCase(),
+    apkSizeBytes: asset.size,
+    releaseNotes: release.name || ''
+  })
 }
 
 // ---- UI del aviso de actualización ----
@@ -215,28 +234,46 @@ function showUpdateGate(manifest, installedVersion) {
 
 let checkPromise = null
 
+async function fetchFreshJson(url) {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 12000)
+  try {
+    const response = await fetch(url, { cache: 'no-store', signal: controller.signal })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    return await response.json()
+  } finally { clearTimeout(timeoutId) }
+}
+
 async function checkForUpdate() {
   if (checkPromise) return checkPromise
   checkPromise = (async () => {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 12000)
+    const installedVersion = getInstalledAndroidAppVersion()
     try {
       const url = new URL(UPDATE_MANIFEST_PATH, window.location.href)
       url.searchParams.set('check', String(Date.now()))
-      const res = await fetch(url, { cache: 'no-store', signal: controller.signal })
-      if (!res.ok) throw new Error(`Update check failed (${res.status})`)
-      const manifest = validateManifest(await res.json())
-      const installedVersion = getInstalledAndroidAppVersion()
+      const manifest = validateManifest(await fetchFreshJson(url))
       if (shouldOfferUpdate(manifest, installedVersion)) {
         showUpdateGate(manifest, installedVersion)
+        return true
       }
     } catch (err) {
-      console.warn('Comprobación de actualización de Android fallida:', err)
-    } finally {
-      clearTimeout(timeoutId)
+      console.warn('Manifiesto de actualización no disponible:', err)
     }
+    try {
+      const manifest = manifestFromLatestRelease(await fetchFreshJson(LATEST_RELEASE_URL))
+      if (shouldOfferUpdate(manifest, installedVersion)) {
+        showUpdateGate(manifest, installedVersion)
+        return true
+      }
+    } catch (err) { console.warn('Release Android no disponible:', err) }
+    return false
   })().finally(() => { checkPromise = null })
   return checkPromise
+}
+
+/** Usado al pulsar Conectar en un APK antiguo: ofrece una descarga real o explica que aún no existe. */
+export function offerAvailableAndroidUpdate() {
+  return detectInhouseApp() ? checkForUpdate() : Promise.resolve(false)
 }
 
 /** Punto de entrada único, llamado desde app.js al arrancar. No-op fuera de la app nativa. */

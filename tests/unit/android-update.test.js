@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   compareSemanticVersions, detectInhouseApp, getInstalledAndroidAppVersion,
-  validateManifest, shouldOfferUpdate
+  validateManifest, shouldOfferUpdate, manifestFromLatestRelease
 } from '../../src/js/android-update.js'
 
 describe('compareSemanticVersions', () => {
@@ -83,6 +83,26 @@ describe('validateManifest', () => {
 
   it('rechaza un manifiesto vacío', () => {
     expect(() => validateManifest(null)).toThrow()
+  })
+})
+
+describe('manifestFromLatestRelease', () => {
+  it('recupera un APK firmado cuando GitHub Pages aún sirve un manifiesto antiguo', () => {
+    const sha = 'a'.repeat(64)
+    expect(manifestFromLatestRelease({
+      tag_name: 'android-v1.0.12', assets: [{
+        name: 'inhouse-read-release-v1.0.12.apk', size: 3300000,
+        digest: `sha256:${sha}`,
+        browser_download_url: 'https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.12/inhouse-read-release-v1.0.12.apk'
+      }]
+    })).toMatchObject({ version: '1.0.12', apkSha256: sha, apkSizeBytes: 3300000 })
+  })
+
+  it('rechaza un release sin hash o con URL de otro repositorio', () => {
+    expect(() => manifestFromLatestRelease({ tag_name: 'android-v1.0.12', assets: [{
+      name: 'inhouse-read-release-v1.0.12.apk', digest: 'sha256:' + 'a'.repeat(64),
+      browser_download_url: 'https://github.com/other/repo/releases/download/android-v1.0.12/inhouse-read-release-v1.0.12.apk'
+    }] })).toThrow(/SHA-256/)
   })
 })
 

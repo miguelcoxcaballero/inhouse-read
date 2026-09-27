@@ -136,7 +136,9 @@ export function requestDriveAccess({ interactive = true } = {}) {
   if (restoreToken()) return Promise.resolve(currentToken)
   if (authPromise) return authPromise
   if (isNativeShell() && !hasNativeAuthBridge()) {
-    return Promise.reject(new Error('Actualiza Inhouse Read para conectar Google Drive.'))
+    const error = new Error('Esta versión de Android no incluye el acceso nativo a Google Drive.')
+    error.code = 'ANDROID_SHELL_OUTDATED'
+    return Promise.reject(error)
   }
   if (!interactive && !hasNativeAuthBridge()) {
     return Promise.reject(new Error('La sesión de Google ha caducado. Pulsa Conectar para continuar.'))

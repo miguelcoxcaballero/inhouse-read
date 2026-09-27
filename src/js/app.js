@@ -10,7 +10,7 @@ import {
   isFolderApiSupported, getSavedFolderHandle, getOrChooseFolder, ensureFolderPermission,
   saveFileIntoFolder, readFileFromFolder
 } from './local-folder-store.js'
-import { initAndroidUpdateChecks } from './android-update.js'
+import { initAndroidUpdateChecks, offerAvailableAndroidUpdate } from './android-update.js'
 import { initContentFreshnessChecks } from './content-freshness.js'
 
 const library = new LibraryStore()
@@ -405,7 +405,7 @@ async function handleCoverAction(action, book, button) {
     }
   } catch (error) {
     button.textContent = original
-    alert(`No se pudo completar la acción: ${error.message}`)
+    await reportDriveConnectionError(error)
   } finally {
     button.disabled = false
   }
@@ -484,9 +484,18 @@ async function syncLibraryToDrive({ silent = false } = {}) {
 els.driveConnectBtn.addEventListener('click', async () => {
   els.driveConnectBtn.disabled = true
   try { await requestDriveAccess(); await syncLibraryToDrive() }
-  catch (error) { alert(`No se pudo conectar con Google Drive: ${error.message}`) }
+  catch (error) { await reportDriveConnectionError(error) }
   finally { els.driveConnectBtn.disabled = false }
 })
+
+async function reportDriveConnectionError(error) {
+  if (error?.code === 'ANDROID_SHELL_OUTDATED') {
+    if (await offerAvailableAndroidUpdate()) return
+    alert('La versión de Android con acceso a Google Drive aún no aparece para descargar. Mientras tanto, puedes usar Inhouse Read en el navegador.')
+    return
+  }
+  alert(`No se pudo conectar con Google Drive: ${error.message}`)
+}
 els.driveThemeToggle.addEventListener('change', () => {
   const theme = els.driveThemeToggle.checked ? 'dark' : 'light'
   document.documentElement.setAttribute('data-theme', theme)
@@ -606,7 +615,13 @@ async function loadDriveFiles() {
       console.warn('No se pudieron sincronizar los libros pendientes:', error)
     })
   } catch (err) {
-    els.driveStatus.textContent = `No se pudo conectar con Drive: ${err.message}`
+    if (err?.code === 'ANDROID_SHELL_OUTDATED' && await offerAvailableAndroidUpdate()) {
+      els.driveModal.hidden = true
+    } else {
+      els.driveStatus.textContent = err?.code === 'ANDROID_SHELL_OUTDATED'
+        ? 'La actualización de Android para Google Drive aún no está publicada. Usa la versión web por ahora.'
+        : `No se pudo conectar con Drive: ${err.message}`
+    }
   }
 }
 

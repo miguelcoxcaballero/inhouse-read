@@ -55,7 +55,7 @@ describe('autorización de Google Drive', () => {
 
   it('indica que hay que actualizar el APK antiguo antes de conectar', async () => {
     vi.stubGlobal('navigator', { userAgent: 'InhouseReadApp/1.0.8', onLine: true })
-    await expect(drive.requestDriveAccess()).rejects.toThrow(/Actualiza Inhouse Read/)
+    await expect(drive.requestDriveAccess()).rejects.toMatchObject({ code: 'ANDROID_SHELL_OUTDATED' })
   })
 })
 

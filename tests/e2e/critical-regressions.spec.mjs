@@ -108,6 +108,33 @@ test('el actualizador usa el manifiesto y entrega URL y hash al puente Android',
   })
 })
 
+test('si Pages conserva el manifiesto viejo, ofrece la APK nueva desde GitHub Releases', async ({ page }) => {
+  const sha = 'a'.repeat(64)
+  const apkUrl = 'https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.12/inhouse-read-release-v1.0.12.apk'
+  await page.addInitScript(() => {
+    window.InhouseNative = {
+      getAppVersion: () => '1.0.8',
+      installAppUpdate: (url, digest) => { window.__capturedUpdate = { url, digest } }
+    }
+  })
+  await page.route('**/android-update.json?**', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ version: '1.0.8', apkUrl: 'https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.8/inhouse-read-release-v1.0.8.apk' })
+  }))
+  await page.route('https://api.github.com/repos/miguelcoxcaballero/inhouse-read/releases/latest', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ tag_name: 'android-v1.0.12', assets: [{
+      name: 'inhouse-read-release-v1.0.12.apk', browser_download_url: apkUrl,
+      digest: `sha256:${sha}`, size: 3500000
+    }] })
+  }))
+  await page.goto('/?inhouse_app=1')
+  await expect(page.locator('#android-update-gate')).toBeVisible()
+  await expect(page.locator('[data-update-message]')).toContainText('1.0.12')
+  await page.locator('[data-update-install]').click()
+  await expect.poll(() => page.evaluate(() => window.__capturedUpdate)).toEqual({ url: apkUrl, digest: sha })
+})
+
 
 test('móvil: el modelo se dibuja, se cancela durante el giro y vuelve a abrir', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
