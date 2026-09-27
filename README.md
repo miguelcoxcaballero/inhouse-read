@@ -66,7 +66,7 @@ Los bytes de los libros importados se guardan en IndexedDB para reabrirlos sin t
 
 ## Google Drive
 
-La versión web utiliza Google Identity Services con el mismo cliente web de Inhouse Notes. Android usa la autorización nativa de Google Play Services; Google no permite abrir la pantalla de consentimiento dentro del WebView. Cada app conserva su propia sesión. Los libros se guardan en la carpeta `inhouse read` y la posición de lectura en archivos JSON de la subcarpeta `.inhouse-read-state`. La biblioteca descubre libros de otros dispositivos, sube los libros locales pendientes y permite descargar una copia para leer sin conexión. La foto de la cuenta aparece arriba a la derecha y su menú permite sincronizar, cambiar el tema y cerrar sesión.
+La versión web utiliza Google Identity Services con el mismo cliente web de Inhouse Notes. A partir del APK v1.0.12, Android usa la autorización nativa de Google Play Services; Google no permite abrir la pantalla de consentimiento dentro del WebView. Cada app conserva su propia sesión. Los libros se guardan en la carpeta `inhouse read` y la posición de lectura en archivos JSON de la subcarpeta `.inhouse-read-state`. La biblioteca descubre libros de otros dispositivos, sube los libros locales pendientes y permite descargar una copia para leer sin conexión. La foto de la cuenta aparece arriba a la derecha y su menú permite sincronizar, cambiar el tema y cerrar sesión.
 
 ## Despliegue (GitHub Pages)
 
