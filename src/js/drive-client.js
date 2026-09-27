@@ -173,7 +173,17 @@ async function startAndroidPkceSignIn() {
   authUrl.searchParams.set('code_challenge_method', 'S256')
   authUrl.searchParams.set('state', 'inhouse_read_pkce')
   if (!localStorage.getItem(REFRESH_TOKEN_KEY)) authUrl.searchParams.set('prompt', 'consent')
-  globalThis.InhouseNative.openAuthUrl(authUrl.toString())
+  const url = authUrl.toString()
+  // Como en Notes: si el puente nativo no responde de verdad a la llamada
+  // (comprobado antes por hasNativeAuthBridge(), pero eso solo mira que la
+  // función exista), no te quedas sin hacer nada — se cae a navegar la
+  // propia pestaña a la URL de Google.
+  if (typeof globalThis.InhouseNative?.openAuthUrl !== 'function') {
+    console.warn('PKCE sign-in: puente Android no disponible, se usa el flujo web como respaldo.')
+    globalThis.location.assign(url)
+    return
+  }
+  globalThis.InhouseNative.openAuthUrl(url)
 }
 
 async function requestNativeDriveAccess(interactive) {
