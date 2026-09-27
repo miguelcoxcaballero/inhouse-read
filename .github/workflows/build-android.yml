@@ -80,28 +80,10 @@ jobs:
           api-level: 35
           target: google_apis
           arch: x86_64
-          profile: pixel_7_pro
+          profile: pixel_4
           # El emulador de GitHub Actions no siempre hereda un DNS funcional.
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server 8.8.8.8,8.8.4.4
-          script: |
-            adb install -r inhouse-read-release-v1.0.12.apk
-            adb shell am start -n com.inhousesoftware.read/.MainActivity
-            sleep 15
-            adb shell screencap -p /sdcard/inhouse-read-status-bar.png
-            adb pull /sdcard/inhouse-read-status-bar.png android-status-bar.png
-            adb shell uiautomator dump /sdcard/inhouse-read-ui.xml
-            adb pull /sdcard/inhouse-read-ui.xml android-ui.xml
-            # Un screenshot con la pagina de error de WebView no valida la app.
-            tesseract android-status-bar.png stdout 2>/dev/null > android-screen-text.txt
-            if grep -Eiq 'Webpage not available|ERR_NAME_NOT_RESOLVED|ERR_INTERNET_DISCONNECTED' android-screen-text.txt; then
-              cat android-screen-text.txt
-              exit 1
-            fi
-            if ! grep -Eiq 'inhouse[[:space:]]+read' android-screen-text.txt; then
-              cat android-screen-text.txt
-              echo 'La app no llego a dibujar su cabecera en Android.' >&2
-              exit 1
-            fi
+          script: python .github/scripts/verify_android_app.py inhouse-read-release-v1.0.12.apk
 
       - uses: actions/upload-artifact@v4
         if: always()
