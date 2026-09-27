@@ -3,7 +3,7 @@
   "versionCode": 10,
   "required": true,
   "apkSizeBytes": 3649141,
-  "apkSha256": "58f0ae908e5fa6acd9838acfb66c529d42adab71471cc255b43e6d6086da67f0",
+  "apkSha256": "26a0af23afbd02d00d488810d3e605fea2235738c72458f1fa7321719cdc560f",
   "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.12/inhouse-read-release-v1.0.12.apk",
   "releaseNotes": "Acceso nativo a Google Drive, sincronización de libros y progreso, y mejoras de la biblioteca."
 }
