@@ -73,6 +73,18 @@ test('muestra la cuenta de Google con su perfil y acciones de sincronización', 
   await expect(page.getByRole('menuitem', { name: 'Cerrar sesión' })).toBeVisible()
 })
 
+test('una sesión caducada vuelve a mostrar Conectar y oculta el perfil', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('ihr_drive_session_v2', JSON.stringify({
+    accessToken: 'expired-server-token', expiresAt: Date.now() + 3600_000
+  })))
+  await page.route('https://www.googleapis.com/drive/v3/about?**', route => route.fulfill({
+    status: 401, contentType: 'application/json', body: JSON.stringify({ error: { message: 'Invalid Credentials' } })
+  }))
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Conectar cuenta de Google' })).toBeVisible()
+  await expect(page.locator('#drive-profile')).toBeHidden()
+})
+
 test('muestra el estado vacío cuando no hay libros recientes', async ({ page }) => {
   await expect(page.getByText('Tu estantería está vacía')).toBeVisible()
 })

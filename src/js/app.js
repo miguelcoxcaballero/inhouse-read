@@ -454,7 +454,10 @@ async function loadDriveAccountProfile() {
     driveProfile = await getDriveProfile()
   } catch (error) {
     console.warn('No se pudo cargar el perfil de Google:', error)
-    driveProfile = getRememberedDriveProfile() || { name: 'Cuenta de Google', email: '', photo: '' }
+    if (!hasDriveSession()) return loadDriveAccountProfile()
+    driveProfile = getRememberedDriveProfile()
+    if (!driveProfile?.id) throw new Error('No se pudo identificar la cuenta de Google. Vuelve a conectar.')
+    setDriveSyncStatus(`Perfil guardado · ${error.message}`)
   }
   cloudSync.setProfile(driveProfile)
   els.driveProfileName.textContent = driveProfile.name
@@ -470,7 +473,11 @@ async function syncLibraryToDrive({ silent = false } = {}) {
     if (silent) return
     await requestDriveAccess()
   }
-  await loadDriveAccountProfile()
+  const profile = await loadDriveAccountProfile()
+  if (!profile) {
+    if (silent) return
+    throw new Error('La sesión de Google ha caducado. Pulsa Conectar.')
+  }
   return cloudSync.sync()
 }
 
