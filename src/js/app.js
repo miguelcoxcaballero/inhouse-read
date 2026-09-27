@@ -2,9 +2,10 @@ import { LibraryStore } from './library-store.js'
 import { renderBookshelf } from './bookshelf.js'
 import { ReaderController, UnsupportedFormatError } from './readers/reader-controller.js'
 import {
-  isDriveConfigured, requestDriveAccess, listDriveBooks, downloadDriveFile, hasDriveSession,
-  uploadDriveFile, getDriveProfile, signOutDrive
+  isDriveConfigured, requestDriveAccess, listAllDriveBooks, hasDriveSession,
+  getDriveProfile, getRememberedDriveProfile, signOutDrive
 } from './drive-client.js'
+import { CloudSync } from './cloud-sync.js'
 import {
   isFolderApiSupported, getSavedFolderHandle, getOrChooseFolder, ensureFolderPermission,
   saveFileIntoFolder, readFileFromFolder
@@ -45,7 +46,10 @@ const els = {
   driveProfileEmail: document.getElementById('drive-profile-email'),
   driveSyncStatus: document.getElementById('drive-sync-status'),
   driveSyncBtn: document.getElementById('drive-sync-btn'),
-  driveSignOutBtn: document.getElementById('drive-signout-btn')
+  driveSignOutBtn: document.getElementById('drive-signout-btn'),
+  driveConnectBtn: document.getElementById('drive-connect-btn'),
+  driveThemeToggle: document.getElementById('drive-theme-toggle'),
+  appVersion: document.getElementById('app-version')
 }
 
 let shelf = null
@@ -53,8 +57,13 @@ let currentBookId = null
 let pendingLocalReopenId = null
 let pendingReaderTransition = null
 const preparedBooks = new Map()
-const uploadingBooks = new Map()
 let driveProfile = null
+let restoringProgress = false
+let shelfRefreshQueued = false
+const cloudSync = new CloudSync(library, {
+  onStatus: setDriveSyncStatus,
+  onChange: refreshShelf
+})
 
 // ---- Tema (idéntico al patrón de Inhouse Notes: data-theme + persistido) ----
 
@@ -68,6 +77,7 @@ els.themeToggle.addEventListener('click', () => {
   const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'
   document.documentElement.setAttribute('data-theme', next)
   localStorage.setItem('inhouse-read-theme', next)
+  if (els.driveThemeToggle) els.driveThemeToggle.checked = next === 'dark'
 })
 
 // ---- Navegación entre pantallas ----
@@ -82,7 +92,25 @@ function showScreen(name) {
 // propio src/js/bookshelf.js (cabecera del archivo).
 
 async function refreshShelf() {
-  const books = await library.listRecents()
+  // Re-rendering a shelf closes its current 3D cover. Defer background
+  // changes until the reader transition or close has finished.
+  if (document.querySelector('.ihr-flyout')) {
+    if (!shelfRefreshQueued) {
+      shelfRefreshQueued = true
+      const observer = new MutationObserver(() => {
+        if (document.querySelector('.ihr-flyout')) return
+        observer.disconnect()
+        shelfRefreshQueued = false
+        refreshShelf()
+      })
+      observer.observe(document.body, { childList: true, subtree: true })
+    }
+    return
+  }
+  const accountId = (driveProfile || getRememberedDriveProfile())?.id
+  const books = (await library.listAll()).filter(book =>
+    book.sourceType !== 'drive' || (accountId && (!book.cloudAccountId || book.cloudAccountId === accountId))
+  )
   if (!shelf) {
     shelf = renderBookshelf(els.bookshelfRoot, books, {
       onBookOpen: openBookRecord,
@@ -190,7 +218,7 @@ async function openBookRecord(book, ctx) {
   }
   if (book.sourceType === 'drive') {
     try {
-      const file = await downloadDriveFile(book.driveFileId, { name: book.title, mimeType: book.mimeType })
+      const file = await cloudSync.downloadForOffline(book)
       await openFile(file, { existingRecord: book, transition })
     } catch (err) {
       ctx.close({ instant: true })
@@ -242,6 +270,7 @@ els.filePicker.addEventListener('change', async () => {
 // ---- Apertura y lectura ----
 
 async function openFile(file, { existingRecord, forcedId, folderFileName, transition, preparing = false } = {}) {
+  currentBookId = null
   els.readerToolbar.hidden = Boolean(transition)
   if (preparing) {
     els.readerScreen.hidden = false
@@ -280,6 +309,7 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
     id: forcedId,
     sourceType,
     driveFileId: existingRecord?.driveFileId,
+    cloudAccountId: existingRecord?.cloudAccountId,
     mimeType: existingRecord?.mimeType ?? file.type,
     name: file.name,
     size: file.size,
@@ -309,8 +339,10 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
   }
   currentBookId = record.id
 
-  if (existingRecord?.progressFraction) {
-    await reader.goToFraction(existingRecord.progressFraction)
+  if (existingRecord?.locator || existingRecord?.progressFraction) {
+    restoringProgress = true
+    try { await reader.goToLocator(existingRecord.locator, existingRecord.progressFraction) }
+    finally { restoringProgress = false }
   }
 
   if (!preparing) refreshShelf()
@@ -327,15 +359,21 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
 
 function prepareBookOpen(book) {
   if (preparedBooks.has(book.id)) return
-  let task
-  if (book.content && (book.sourceType === 'local' || book.sourceType === 'drive')) {
-    const file = new File([book.content], book.name || book.title || 'libro', { type: book.mimeType || book.content.type || '' })
-    task = openFile(file, { existingRecord: book, forcedId: book.id, preparing: true })
-  } else if (book.sourceType === 'drive' && hasDriveSession()) {
-    task = downloadDriveFile(book.driveFileId, { name: book.name || book.title, mimeType: book.mimeType })
-      .then(file => openFile(file, { existingRecord: book, forcedId: book.id, preparing: true }))
-  }
-  if (task) preparedBooks.set(book.id, Promise.resolve(task))
+  const fileTask = book.content && (book.sourceType === 'local' || book.sourceType === 'drive')
+    ? Promise.resolve(new File([book.content], book.name || book.title || 'libro', {
+      type: book.mimeType || book.content.type || ''
+    }))
+    : book.sourceType === 'drive' && hasDriveSession()
+      ? cloudSync.downloadForOffline(book) : null
+  if (!fileTask) return
+  const progressTask = book.driveFileId && hasDriveSession()
+    ? cloudSync.syncBookProgress(book.id).catch(error => console.warn('Progreso remoto no disponible:', error))
+    : Promise.resolve()
+  const task = Promise.all([fileTask, progressTask]).then(async ([file]) => {
+    const updated = await library.get(book.id) || book
+    return openFile(file, { existingRecord: updated, forcedId: book.id, preparing: true })
+  })
+  preparedBooks.set(book.id, task)
 }
 
 async function revealPreparedReader() {
@@ -355,8 +393,7 @@ async function handleCoverAction(action, book, button) {
       }
       if (!hasDriveSession()) await requestDriveAccess()
       if (book.sourceType === 'drive') {
-        const file = await downloadDriveFile(book.driveFileId, { name: book.name || book.title, mimeType: book.mimeType })
-        await library.addOrTouch({ ...book, content: new Blob([file], { type: file.type }) })
+        await cloudSync.downloadForOffline(book)
       } else {
         await uploadBookToDrive(book)
       }
@@ -375,20 +412,9 @@ async function handleCoverAction(action, book, button) {
 }
 
 async function uploadBookToDrive(book) {
-  if (uploadingBooks.has(book.id)) return uploadingBooks.get(book.id)
-  const task = (async () => {
-  const record = await library.get(book.id) || book
-  if (record.driveFileId) return record
-  if (!record.content) throw new Error('No se encontró una copia local del libro para subir.')
-  const file = new File([record.content], record.name || record.title || 'libro', { type: record.mimeType || record.content.type || 'application/octet-stream' })
-  const uploaded = await uploadDriveFile(file, { driveFileId: record.driveFileId, name: file.name })
-  const updated = await library.addOrTouch({ ...record, sourceType: 'local', driveFileId: uploaded.id, driveFileName: uploaded.name })
-  refreshShelf()
+  const updated = await cloudSync.uploadBook(book)
   setDriveSyncStatus('Sincronizado con Google Drive')
   return updated
-  })()
-  uploadingBooks.set(book.id, task)
-  try { return await task } finally { uploadingBooks.delete(book.id) }
 }
 
 function setDriveSyncStatus(message, syncing = false) {
@@ -415,18 +441,22 @@ function setProfileAvatar(profile) {
 async function loadDriveAccountProfile() {
   if (!hasDriveSession()) {
     driveProfile = null
+    cloudSync.reset()
     els.driveProfile.hidden = true
+    els.driveConnectBtn.hidden = false
     els.driveProfileMenu.hidden = true
     els.driveProfileBtn.setAttribute('aria-expanded', 'false')
     return null
   }
   els.driveProfile.hidden = false
+  els.driveConnectBtn.hidden = true
   try {
     driveProfile = await getDriveProfile()
   } catch (error) {
     console.warn('No se pudo cargar el perfil de Google:', error)
-    driveProfile = { name: 'Cuenta de Google', email: '', photo: '' }
+    driveProfile = getRememberedDriveProfile() || { name: 'Cuenta de Google', email: '', photo: '' }
   }
+  cloudSync.setProfile(driveProfile)
   els.driveProfileName.textContent = driveProfile.name
   els.driveProfileEmail.textContent = driveProfile.email
   els.driveProfileBtn.setAttribute('aria-label', driveProfile.email ? `Cuenta de Google: ${driveProfile.email}` : 'Cuenta de Google')
@@ -441,26 +471,20 @@ async function syncLibraryToDrive({ silent = false } = {}) {
     await requestDriveAccess()
   }
   await loadDriveAccountProfile()
-  const books = await library.listRecents(500)
-  const pending = books.filter(book => book.sourceType !== 'drive' && !book.driveFileId && book.content)
-  if (!pending.length) {
-    setDriveSyncStatus('Todo está sincronizado con Google Drive')
-    return
-  }
-  let completed = 0
-  setDriveSyncStatus(`Sincronizando 0 de ${pending.length} libros…`, true)
-  for (const book of pending) {
-    try {
-      await uploadBookToDrive(book)
-      completed += 1
-      setDriveSyncStatus(`Sincronizando ${completed} de ${pending.length} libros…`, true)
-    } catch (error) {
-      setDriveSyncStatus(`Error al sincronizar ${book.title || book.name}: ${error.message}`)
-      throw error
-    }
-  }
-  setDriveSyncStatus(`Sincronización completa · ${completed} ${completed === 1 ? 'libro' : 'libros'}`)
+  return cloudSync.sync()
 }
+
+els.driveConnectBtn.addEventListener('click', async () => {
+  els.driveConnectBtn.disabled = true
+  try { await requestDriveAccess(); await syncLibraryToDrive() }
+  catch (error) { alert(`No se pudo conectar con Google Drive: ${error.message}`) }
+  finally { els.driveConnectBtn.disabled = false }
+})
+els.driveThemeToggle.addEventListener('change', () => {
+  const theme = els.driveThemeToggle.checked ? 'dark' : 'light'
+  document.documentElement.setAttribute('data-theme', theme)
+  localStorage.setItem('inhouse-read-theme', theme)
+})
 
 els.driveProfileBtn.addEventListener('click', () => {
   const open = els.driveProfileMenu.hidden
@@ -487,10 +511,13 @@ els.driveSyncBtn.addEventListener('click', async () => {
 })
 els.driveSignOutBtn.addEventListener('click', () => {
   signOutDrive()
+  cloudSync.reset()
   driveProfile = null
   els.driveProfileMenu.hidden = true
   els.driveProfile.hidden = true
+  els.driveConnectBtn.hidden = false
   els.driveProfileBtn.setAttribute('aria-expanded', 'false')
+  refreshShelf()
 })
 for (const image of [els.driveProfileAvatar, els.driveProfileAvatarMenu]) {
   image.addEventListener('error', () => {
@@ -512,9 +539,16 @@ function stripExtension(name) {
   return name.replace(/\.[a-z0-9]+$/i, '')
 }
 
-function onReaderRelocate({ fraction }) {
+function onReaderRelocate({ fraction, cfi, index }) {
   els.readerProgressFill.style.width = `${Math.round((fraction ?? 0) * 100)}%`
-  if (currentBookId) library.updateProgress(currentBookId, fraction ?? 0)
+  if (!currentBookId || restoringProgress) return
+  const locator = cfi ? { kind: 'cfi', value: cfi }
+    : Number.isInteger(index) && reader.format?.engine === 'pdf' ? { kind: 'pdf-page', value: index + 1 }
+      : null
+  const bookId = currentBookId
+  library.updateProgress(bookId, fraction ?? 0, locator)
+    .then(() => { if (hasDriveSession()) cloudSync.scheduleProgress(bookId) })
+    .catch(error => console.warn('No se pudo guardar el progreso:', error))
 }
 
 els.readerBack.addEventListener('click', () => {
@@ -541,7 +575,7 @@ async function loadDriveFiles() {
   try {
     if (!hasDriveSession()) await requestDriveAccess()
     await loadDriveAccountProfile()
-    const { files } = await listDriveBooks()
+    const files = await listAllDriveBooks()
     els.driveStatus.textContent = files.length ? '' : 'No se encontraron libros en tu Drive.'
     for (const f of files) {
       const item = document.createElement('button')
@@ -550,8 +584,13 @@ async function loadDriveFiles() {
       item.textContent = f.name
       item.addEventListener('click', async () => {
         els.driveModal.hidden = true
-        const file = await downloadDriveFile(f.id, { name: f.name, mimeType: f.mimeType })
-        await openFile(file, { existingRecord: { sourceType: 'drive', driveFileId: f.id, mimeType: f.mimeType, title: f.name } })
+        try {
+          const record = (await library.listAll()).find(book => book.driveFileId === f.id)
+            || await library.addOrTouch({ sourceType: 'drive', driveFileId: f.id, cloudAccountId: driveProfile?.id,
+              name: f.name, title: stripExtension(f.name), mimeType: f.mimeType, size: Number(f.size) || 0 })
+          const file = await cloudSync.downloadForOffline(record)
+          await openFile(file, { existingRecord: record, forcedId: record.id })
+        } catch (error) { alert(`No se pudo abrir el libro: ${error.message}`) }
       })
       els.driveList.append(item)
     }
@@ -567,14 +606,18 @@ async function loadDriveFiles() {
 // ---- Arranque ----
 
 initTheme()
+els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
+els.appVersion.textContent = 'Inhouse Read · v1.0.12'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')
 refreshShelf()
+loadDriveAccountProfile().catch(error => console.warn('No se pudo restaurar la cuenta:', error))
 initAndroidUpdateChecks()
 initContentFreshnessChecks()
-if (hasDriveSession()) {
-  loadDriveAccountProfile()
+if (hasDriveSession()) syncLibraryToDrive({ silent: true }).catch(error => setDriveSyncStatus(`No se pudo sincronizar: ${error.message}`))
+else if (getRememberedDriveProfile() && /\bInhouseReadApp\/\d/i.test(navigator.userAgent)) {
+  requestDriveAccess({ interactive: false })
     .then(() => syncLibraryToDrive({ silent: true }))
-    .catch(error => console.warn('No se pudo restaurar la sincronización de Drive:', error))
+    .catch(error => console.warn('Conecta Google Drive para continuar la sincronización:', error))
 }

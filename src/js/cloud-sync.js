@@ -1,0 +1,210 @@
+import {
+  getDriveProfile, listAllDriveBooks, uploadDriveFile, downloadDriveFile,
+  readDriveProgress, writeDriveProgress
+} from './drive-client.js'
+
+const EXTENSIONS = /\.(pdf|epub|mobi|azw|azw3|fb2|cbz)$/i
+
+/** Reconciles IndexedDB with the user's "inhouse read" Drive folder. */
+export class CloudSync {
+  #library
+  #onStatus
+  #onChange
+  #profile = null
+  #syncTask = null
+  #uploads = new Map()
+  #downloads = new Map()
+  #progressTimers = new Map()
+  #generation = 0
+
+  constructor(library, { onStatus = () => {}, onChange = () => {} } = {}) {
+    this.#library = library
+    this.#onStatus = onStatus
+    this.#onChange = onChange
+  }
+
+  setProfile(profile) { this.#profile = profile }
+
+  reset() {
+    this.#generation += 1
+    this.#profile = null
+    for (const timer of this.#progressTimers.values()) clearTimeout(timer)
+    this.#progressTimers.clear()
+  }
+
+  async #account() {
+    if (!this.#profile) this.#profile = await getDriveProfile()
+    if (!this.#profile?.id) throw new Error('No se pudo identificar la cuenta de Google.')
+    return this.#profile.id
+  }
+
+  async uploadBook(book) {
+    if (this.#uploads.has(book.id)) return this.#uploads.get(book.id)
+    const generation = this.#generation
+    const task = (async () => {
+      const accountId = await this.#account()
+      const record = await this.#library.get(book.id) || book
+      if (record.cloudAccountId && record.cloudAccountId !== accountId) {
+        throw new Error('Este libro está vinculado a otra cuenta de Google.')
+      }
+      if (record.driveFileId) return record
+      if (!record.content) throw new Error('Falta la copia local del libro. Vuelve a importarlo.')
+      const file = new File([record.content], record.name || record.title || 'libro', {
+        type: record.mimeType || record.content.type || 'application/octet-stream'
+      })
+      const uploaded = await uploadDriveFile(file)
+      if (generation !== this.#generation) return record
+      const updated = await this.#library.patch(record.id, {
+        driveFileId: uploaded.id, driveFileName: uploaded.name,
+        cloudAccountId: accountId, sourceType: 'local'
+      })
+      this.#onChange()
+      return updated
+    })()
+    this.#uploads.set(book.id, task)
+    try { return await task } finally { this.#uploads.delete(book.id) }
+  }
+
+  async downloadForOffline(book) {
+    if (this.#downloads.has(book.id)) return this.#downloads.get(book.id)
+    const generation = this.#generation
+    const task = (async () => {
+      const record = await this.#library.get(book.id) || book
+      if (record.content) return new File([record.content], record.name || record.title || 'libro', { type: record.mimeType || record.content.type })
+      const accountId = await this.#account()
+      if (record.cloudAccountId && record.cloudAccountId !== accountId) {
+        throw new Error('Conecta la cuenta de Google de este libro.')
+      }
+      const file = await downloadDriveFile(record.driveFileId, { name: record.name || record.title, mimeType: record.mimeType })
+      if (generation === this.#generation) {
+        await this.#library.patch(record.id, { content: new Blob([file], { type: file.type }), cloudAccountId: accountId })
+        this.#onChange()
+      }
+      return file
+    })()
+    this.#downloads.set(book.id, task)
+    try { return await task } finally { this.#downloads.delete(book.id) }
+  }
+
+  scheduleProgress(bookId) {
+    if (!bookId) return
+    clearTimeout(this.#progressTimers.get(bookId))
+    this.#progressTimers.set(bookId, setTimeout(() => {
+      this.#progressTimers.delete(bookId)
+      this.syncBookProgress(bookId).catch(error => this.#onStatus(`Progreso pendiente: ${error.message}`))
+    }, 1800))
+  }
+
+  async syncBookProgress(bookOrId) {
+    const record = typeof bookOrId === 'string' ? await this.#library.get(bookOrId) : bookOrId
+    if (!record?.driveFileId) return
+    const accountId = await this.#account()
+    if (record.cloudAccountId && record.cloudAccountId !== accountId) return
+    const remote = await readDriveProgress(record.driveFileId)
+    const localUpdatedAt = Number(record.progressUpdatedAt) || 0
+    const remoteUpdatedAt = Number(remote?.updatedAt) || 0
+    const localHasProgress = record.progressDirty || record.progressFraction > 0 || record.locator != null
+
+    if (remote && (remoteUpdatedAt >= localUpdatedAt || !localHasProgress)) {
+      await this.#library.patch(record.id, {
+        progressFraction: remote.fraction, locator: remote.locator,
+        progressUpdatedAt: remoteUpdatedAt, progressDirty: false,
+        progressStateFileId: remote.stateFileId
+      })
+      this.#onChange()
+      return
+    }
+    if (!localHasProgress) return
+    const uploaded = await writeDriveProgress(record.driveFileId, {
+      fraction: record.progressFraction, locator: record.locator,
+      updatedAt: localUpdatedAt || Date.now()
+    }, remote?.stateFileId || record.progressStateFileId)
+    await this.#library.patch(record.id, {
+      progressDirty: false, progressUpdatedAt: localUpdatedAt || Date.now(),
+      progressStateFileId: uploaded.id
+    })
+  }
+
+  sync() {
+    if (this.#syncTask) return this.#syncTask
+    this.#syncTask = this.#doSync().finally(() => { this.#syncTask = null })
+    return this.#syncTask
+  }
+
+  async #doSync() {
+    const generation = this.#generation
+    const accountId = await this.#account()
+    this.#onStatus('Buscando libros en Google Drive…', true)
+    const remoteBooks = await listAllDriveBooks()
+    const localBooks = await this.#library.listAll()
+    const byDriveId = new Map(localBooks.filter(book =>
+      book.driveFileId && (!book.cloudAccountId || book.cloudAccountId === accountId)
+    ).map(book => [book.driveFileId, book]))
+    const usedLocalIds = new Set()
+    const linked = []
+
+    for (const remote of remoteBooks) {
+      if (generation !== this.#generation) return
+      let record = byDriveId.get(remote.id)
+      if (!record) {
+        const matches = localBooks.filter(book =>
+          !book.driveFileId && !usedLocalIds.has(book.id) &&
+          (!book.cloudAccountId || book.cloudAccountId === accountId) &&
+          book.name === remote.name && Number(book.size) === Number(remote.size)
+        )
+        if (matches.length === 1) {
+          record = await this.#library.patch(matches[0].id, {
+            driveFileId: remote.id, driveFileName: remote.name, cloudAccountId: accountId
+          })
+          usedLocalIds.add(record.id)
+        } else {
+          record = await this.#library.addOrTouch({
+            sourceType: 'drive', driveFileId: remote.id, driveFileName: remote.name,
+            cloudAccountId: accountId, name: remote.name,
+            title: remote.name.replace(EXTENSIONS, ''), mimeType: remote.mimeType,
+            size: Number(remote.size) || 0, sizeBytes: Number(remote.size) || 0,
+            format: remote.name.match(EXTENSIONS)?.[1].toUpperCase() || ''
+          })
+        }
+        this.#onChange()
+      } else if (!record.cloudAccountId) {
+        record = await this.#library.patch(record.id, { cloudAccountId: accountId })
+      }
+      linked.push(record)
+    }
+
+    const remoteIds = new Set(remoteBooks.map(book => book.id))
+    const pending = localBooks.filter(book =>
+      book.sourceType === 'local' && book.content && !book.driveFileId &&
+      !usedLocalIds.has(book.id) &&
+      (!book.cloudAccountId || book.cloudAccountId === accountId)
+    )
+    let uploaded = 0
+    const errors = []
+    for (const book of pending) {
+      if (generation !== this.#generation) return
+      this.#onStatus(`Subiendo ${uploaded + 1} de ${pending.length} libros…`, true)
+      try {
+        const record = await this.uploadBook(book)
+        if (record?.driveFileId) {
+          linked.push(record)
+          remoteIds.add(record.driveFileId)
+          uploaded += 1
+        }
+      } catch (error) {
+        errors.push(`${book.title || book.name}: ${error.message}`)
+      }
+    }
+
+    for (const record of linked) {
+      if (generation !== this.#generation) return
+      try { await this.syncBookProgress(record.id) }
+      catch (error) { errors.push(`${record.title || record.name}: ${error.message}`) }
+    }
+    this.#onStatus(errors.length
+      ? `Sincronización incompleta: ${errors[0]}`
+      : `Sincronizado con Drive · ${remoteIds.size} ${remoteIds.size === 1 ? 'libro' : 'libros'}`)
+    this.#onChange()
+    return { books: remoteIds.size, uploaded, errors }
+  }
+}

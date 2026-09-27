@@ -1,149 +1,256 @@
-// Google Drive API client using the same PKCE login, OAuth client and Drive
-// scope as Inhouse Notes. Tokens are stored per web origin by the browser.
+// The web app uses the Google Identity Services token client, like Inhouse
+// Notes. The Android shell uses Google Play services AuthorizationClient.
+// Both clients only request access to files created/opened by this app.
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files'
 const UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files'
-const TOKEN_KEY = 'ihn_drive_tokens'
-const CLIENT_ID_KEY = 'ihn_drive_client_id'
+const ABOUT_URL = 'https://www.googleapis.com/drive/v3/about'
+const TOKEN_KEY = 'ihr_drive_session_v2'
+const LEGACY_TOKEN_KEY = 'ihn_drive_tokens'
+const PROFILE_KEY = 'ihr_drive_profile_v2'
 const DEFAULT_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com'
 const FOLDER_NAME = 'inhouse read'
-const APP_ORIGIN = 'https://miguelcoxcaballero.github.io'
+const STATE_FOLDER_NAME = '.inhouse-read-state'
 
-let currentToken = null
+let currentToken = ''
+let expiresAt = 0
 let authPromise = null
 let folderIdPromise = null
+let stateFolderIdPromise = null
+let authGeneration = 0
+const nativeRequests = new Map()
+const pendingWebRequests = new Set()
 
-function clientId() { return localStorage.getItem(CLIENT_ID_KEY) || DEFAULT_CLIENT_ID }
-export function isDriveConfigured() { return Boolean(clientId()) }
+function clientId() { return DEFAULT_CLIENT_ID }
+function isNativeShell() { return /\bInhouseReadApp\/\d/i.test(navigator.userAgent || '') }
+function hasNativeAuthBridge() { return typeof globalThis.InhouseNative?.requestDriveAccess === 'function' }
 
-function b64url(bytes) {
-  let binary = ''
-  for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte)
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
+export function isDriveConfigured() { return true }
 
-async function createVerifier() {
-  const bytes = crypto.getRandomValues(new Uint8Array(64))
-  return Array.from(bytes, n => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~'[n % 66]).join('')
-}
-
-function loadStoredToken() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null')
-    if (saved?.accessToken && saved?.expiresAt > Date.now() + 30000) currentToken = saved.accessToken
-  } catch { /* expired or malformed token; sign in again */ }
-}
-loadStoredToken()
-
-export function hasDriveSession() {
-  try { return Boolean(currentToken || JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null')?.refreshToken) }
-  catch { return Boolean(currentToken) }
-}
-
-export async function requestDriveAccess() {
-  if (authPromise) return authPromise
-  loadStoredToken()
-  if (currentToken) return currentToken
-  authPromise = (async () => {
-    const verifier = await createVerifier()
-    const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)))
-    const state = `${b64url(new TextEncoder().encode(JSON.stringify({ origin: APP_ORIGIN, nonce: crypto.randomUUID() })))}.${crypto.randomUUID()}`
-    const redirectUri = 'https://inhousenotes.com/oauth-callback'
-    const params = new URLSearchParams({
-      client_id: clientId(), redirect_uri: redirectUri, response_type: 'code',
-      scope: DRIVE_SCOPE, code_challenge_method: 'S256', code_challenge: challenge,
-      access_type: 'offline', prompt: 'consent', state
-    })
-    const popup = window.open(`https://accounts.google.com/o/oauth2/v2/auth?${params}`, 'oauth', 'width=600,height=700,left=100,top=100')
-    if (!popup) throw new Error('Google bloqueó la ventana de inicio de sesión.')
+function storedSession() {
+  for (const key of [TOKEN_KEY, LEGACY_TOKEN_KEY]) {
     try {
-      const tokens = await new Promise((resolve, reject) => {
-        let done = false
-        const finish = (fn, value) => { if (done) return; done = true; clearInterval(timer); removeEventListener('message', onMessage); fn(value) }
-        const onMessage = event => {
-          if (event.origin !== 'https://inhousenotes.com' || event.source !== popup || event.data?.state !== state) return
-          if (event.data.type === 'ihr-oauth-code' && event.data.code) {
-            popup.postMessage({ type: 'ihr-oauth-exchange', code: event.data.code, verifier, redirectUri, state }, 'https://inhousenotes.com')
-          } else if (event.data.type === 'ihr-oauth-token' && event.data.tokens) finish(resolve, event.data.tokens)
-          else if (event.data.error) finish(reject, new Error(event.data.error))
-        }
-        addEventListener('message', onMessage)
-        const timer = setInterval(() => { if (popup.closed) finish(reject, new Error('Inicio de sesión cancelado.')) }, 500)
-      })
-      if (!tokens.refreshToken) throw new Error('Google no devolvió un token renovable. Vuelve a iniciar sesión.')
-      currentToken = tokens.accessToken
-      localStorage.setItem(TOKEN_KEY, JSON.stringify(tokens))
-      return currentToken
-    } finally {
-      if (!popup.closed) popup.close()
+      const saved = JSON.parse(localStorage.getItem(key) || 'null')
+      if (saved?.accessToken && Number(saved.expiresAt) > Date.now() + 60_000) return saved
+    } catch { /* damaged storage */ }
+  }
+  return null
+}
+
+function restoreToken() {
+  if (currentToken && expiresAt > Date.now() + 60_000) return currentToken
+  const stored = storedSession()
+  currentToken = stored?.accessToken || ''
+  expiresAt = Number(stored?.expiresAt) || 0
+  return currentToken
+}
+
+export function hasDriveSession() { return Boolean(restoreToken()) }
+
+export function getRememberedDriveProfile() {
+  try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null') }
+  catch { return null }
+}
+
+function saveToken(token, lifetimeSeconds) {
+  if (!token) throw new Error('Google no devolvió un token de acceso.')
+  currentToken = token
+  expiresAt = Date.now() + Math.max(60, Number(lifetimeSeconds) || 3600) * 1000
+  localStorage.setItem(TOKEN_KEY, JSON.stringify({ accessToken: token, expiresAt }))
+  localStorage.removeItem(LEGACY_TOKEN_KEY)
+  return token
+}
+
+function clearToken() {
+  currentToken = ''
+  expiresAt = 0
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(LEGACY_TOKEN_KEY)
+}
+
+function requestWebDriveAccess() {
+  const oauth = globalThis.google?.accounts?.oauth2
+  if (!oauth?.initTokenClient) {
+    throw new Error(navigator.onLine === false
+      ? 'Conéctate a Internet para acceder a Google Drive.'
+      : 'Google aún está cargando. Vuelve a pulsar Conectar.')
+  }
+  return new Promise((resolve, reject) => {
+    const generation = authGeneration
+    const finish = (value, error) => {
+      pendingWebRequests.delete(cancel)
+      if (error) reject(error)
+      else resolve(value)
     }
-  })()
-  try { return await authPromise } finally { authPromise = null }
+    const cancel = () => finish(null, new Error('Sesión cerrada.'))
+    pendingWebRequests.add(cancel)
+    try {
+    const client = oauth.initTokenClient({
+      client_id: clientId(),
+      scope: DRIVE_SCOPE,
+      include_granted_scopes: true,
+      callback: response => {
+        if (generation !== authGeneration) return cancel()
+        if (response.error) return finish(null, new Error(response.error_description || response.error))
+        if (response.scope && !response.scope.split(/\s+/).includes(DRIVE_SCOPE)) {
+          return finish(null, new Error('No se concedió acceso a los libros de Drive.'))
+        }
+        try { finish(saveToken(response.access_token, response.expires_in)) }
+        catch (error) { finish(null, error) }
+      },
+      error_callback: error => finish(null, new Error(error?.message || error?.type || 'No se pudo abrir el acceso a Google.'))
+    })
+    // This runs in the original button click, before an await can lose the
+    // browser's user gesture and cause the Google popup to be blocked.
+    client.requestAccessToken({ prompt: getRememberedDriveProfile() ? '' : 'consent' })
+    } catch (error) { finish(null, error) }
+  })
+}
+
+function requestNativeDriveAccess(interactive) {
+  return new Promise((resolve, reject) => {
+    const requestId = crypto.randomUUID()
+    nativeRequests.set(requestId, { resolve, reject, generation: authGeneration })
+    try { globalThis.InhouseNative.requestDriveAccess(requestId, Boolean(interactive)) }
+    catch (error) {
+      nativeRequests.delete(requestId)
+      reject(error)
+    }
+  })
+}
+
+// MainActivity calls this after AuthorizationClient completes or needs a tap.
+globalThis.handleInhouseNativeDriveAuth = payload => {
+  let result
+  try { result = typeof payload === 'string' ? JSON.parse(payload) : payload } catch { return }
+  const pending = nativeRequests.get(result?.requestId)
+  if (!pending) return
+  nativeRequests.delete(result.requestId)
+  if (pending.generation !== authGeneration) return
+  if (result.error) return pending.reject(new Error(result.error))
+  try { pending.resolve(saveToken(result.accessToken, result.expiresIn)) }
+  catch (error) { pending.reject(error) }
+}
+
+export function requestDriveAccess({ interactive = true } = {}) {
+  if (restoreToken()) return Promise.resolve(currentToken)
+  if (authPromise) return authPromise
+  if (isNativeShell() && !hasNativeAuthBridge()) {
+    return Promise.reject(new Error('Actualiza Inhouse Read para conectar Google Drive.'))
+  }
+  if (!interactive && !hasNativeAuthBridge()) {
+    return Promise.reject(new Error('La sesión de Google ha caducado. Pulsa Conectar para continuar.'))
+  }
+  try {
+    authPromise = Promise.resolve(hasNativeAuthBridge()
+      ? requestNativeDriveAccess(interactive)
+      : requestWebDriveAccess())
+  } catch (error) {
+    return Promise.reject(error)
+  }
+  return authPromise.finally(() => { authPromise = null })
 }
 
 export function signOutDrive() {
-  currentToken = null
-  localStorage.removeItem(TOKEN_KEY)
+  const email = getRememberedDriveProfile()?.email || ''
+  authGeneration += 1
+  for (const cancel of pendingWebRequests) cancel()
+  for (const { reject } of nativeRequests.values()) reject(new Error('Sesión cerrada.'))
+  nativeRequests.clear()
+  clearToken()
+  localStorage.removeItem(PROFILE_KEY)
   folderIdPromise = null
+  stateFolderIdPromise = null
+  try { globalThis.InhouseNative?.clearDriveAccess?.(email) } catch { /* older shell */ }
 }
 
 async function accessToken() {
-  loadStoredToken()
-  let stored
-  try { stored = JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null') } catch { stored = null }
-  if (!stored?.refreshToken) return requestDriveAccess()
-  if (stored.expiresAt > Date.now() + 5 * 60 * 1000 && currentToken) return currentToken
-  const response = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: clientId(), refresh_token: stored.refreshToken, grant_type: 'refresh_token' })
-  })
-  if (!response.ok) { signOutDrive(); throw new Error('La sesión de Google ha caducado. Vuelve a iniciar sesión.') }
-  const data = await response.json()
-  currentToken = data.access_token
-  localStorage.setItem(TOKEN_KEY, JSON.stringify({ ...stored, accessToken: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 }))
-  return currentToken
+  if (restoreToken()) return currentToken
+  return requestDriveAccess({ interactive: false })
 }
 
 async function driveFetch(url, options = {}) {
   const token = await accessToken()
-  const response = await fetch(url, { ...options, headers: { Authorization: `Bearer ${token}`, ...options.headers } })
+  const response = await fetch(url, {
+    ...options,
+    headers: { Authorization: `Bearer ${token}`, ...options.headers }
+  })
   if (!response.ok) {
-    let message = `Drive API ${response.status}`
-    try { message = (await response.json()).error?.message || message } catch { /* no JSON response */ }
+    if (response.status === 401) clearToken()
+    let message = `Google Drive: error ${response.status}`
+    try { message = (await response.json()).error?.message || message } catch { /* non-JSON error */ }
     throw new Error(message)
   }
   return response
 }
 
-export async function getOrCreateReadFolder() {
-  if (folderIdPromise) return folderIdPromise
-  folderIdPromise = (async () => {
-    const query = new URLSearchParams({
-      q: `name = '${FOLDER_NAME}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-      spaces: 'drive', fields: 'files(id,name)', pageSize: '10'
-    })
-    const found = await (await driveFetch(`${DRIVE_FILES_URL}?${query}`)).json()
-    if (found.files?.length) return found.files[0].id
-    const created = await (await driveFetch(DRIVE_FILES_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' }) })).json()
-    return created.id
-  })()
-  try { return await folderIdPromise } catch (error) { folderIdPromise = null; throw error }
+function escapeDriveQuery(value) { return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'") }
+
+async function findOrCreateFolder(name, parentId) {
+  const where = [`name = '${escapeDriveQuery(name)}'`, "mimeType = 'application/vnd.google-apps.folder'", 'trashed = false']
+  if (parentId) where.push(`'${parentId}' in parents`)
+  const params = new URLSearchParams({
+    q: where.join(' and '), spaces: 'drive', fields: 'files(id,name)', pageSize: '100'
+  })
+  const found = await (await driveFetch(`${DRIVE_FILES_URL}?${params}`)).json()
+  if (found.files?.length) return found.files[0].id
+  const created = await (await driveFetch(DRIVE_FILES_URL, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', ...(parentId ? { parents: [parentId] } : {}) })
+  })).json()
+  return created.id
 }
 
-export async function listDriveBooks({ pageToken, pageSize = 100 } = {}) {
-  const folderId = await getOrCreateReadFolder()
-  const params = new URLSearchParams({ q: `'${folderId}' in parents and trashed = false`, fields: 'nextPageToken,files(id,name,mimeType,size,modifiedTime)', pageSize: String(pageSize), spaces: 'drive' })
+export async function getOrCreateReadFolder() {
+  if (!folderIdPromise) folderIdPromise = findOrCreateFolder(FOLDER_NAME).catch(error => { folderIdPromise = null; throw error })
+  return folderIdPromise
+}
+
+async function getOrCreateStateFolder() {
+  if (!stateFolderIdPromise) {
+    stateFolderIdPromise = getOrCreateReadFolder()
+      .then(parentId => findOrCreateFolder(STATE_FOLDER_NAME, parentId))
+      .catch(error => { stateFolderIdPromise = null; throw error })
+  }
+  return stateFolderIdPromise
+}
+
+async function listFolder(folderId, { pageToken, pageSize = 100, fields = 'id,name,mimeType,size,modifiedTime' } = {}) {
+  const params = new URLSearchParams({
+    q: `'${folderId}' in parents and trashed = false`,
+    fields: `nextPageToken,files(${fields})`, pageSize: String(pageSize), spaces: 'drive'
+  })
   if (pageToken) params.set('pageToken', pageToken)
   return (await driveFetch(`${DRIVE_FILES_URL}?${params}`)).json()
 }
 
-/** Google account details used by the same avatar/account menu as Notes. */
+export async function listDriveBooks(options = {}) {
+  return listFolder(await getOrCreateReadFolder(), options)
+}
+
+export async function listAllDriveBooks() {
+  const files = []
+  let pageToken
+  do {
+    const page = await listDriveBooks({ pageToken })
+    files.push(...(page.files || []).filter(file => /\.(pdf|epub|mobi|azw|azw3|fb2|cbz)$/i.test(file.name || '')))
+    pageToken = page.nextPageToken
+  } while (pageToken)
+  return files
+}
+
 export async function getDriveProfile() {
-  const params = new URLSearchParams({ fields: 'user(displayName,emailAddress,photoLink)' })
-  const data = await (await driveFetch(`https://www.googleapis.com/drive/v3/about?${params}`)).json()
-  const user = data.user
+  const params = new URLSearchParams({ fields: 'user(displayName,emailAddress,photoLink,permissionId)' })
+  const user = (await (await driveFetch(`${ABOUT_URL}?${params}`)).json()).user
   if (!user) throw new Error('Google no devolvió los datos de la cuenta.')
-  return { name: user.displayName || 'Cuenta de Google', email: user.emailAddress || '', photo: user.photoLink || '' }
+  const profile = {
+    id: user.permissionId || user.emailAddress || '',
+    name: user.displayName || 'Cuenta de Google',
+    email: user.emailAddress || '',
+    photo: user.photoLink || ''
+  }
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
+  return profile
 }
 
 export async function downloadDriveFile(fileId, { name, mimeType } = {}) {
@@ -151,19 +258,63 @@ export async function downloadDriveFile(fileId, { name, mimeType } = {}) {
   return new File([blob], name ?? fileId, { type: mimeType || blob.type || 'application/octet-stream' })
 }
 
-export async function uploadDriveFile(file, { driveFileId, name = file.name } = {}) {
-  const folderId = await getOrCreateReadFolder()
-  const token = await accessToken()
-  const metadata = { name, ...(driveFileId ? {} : { parents: [folderId] }) }
-  const boundary = `ihr_${crypto.randomUUID()}`
-  const body = new Blob([`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: ${file.type || 'application/octet-stream'}\r\n\r\n`, file, `\r\n--${boundary}--`], { type: `multipart/related; boundary=${boundary}` })
+export async function uploadDriveFile(file, { driveFileId, name = file.name, parentId } = {}) {
+  const folderId = driveFileId ? null : (parentId || await getOrCreateReadFolder())
+  const metadata = { name, ...(folderId ? { parents: [folderId] } : {}) }
+  const mime = file.type || 'application/octet-stream'
+  const endpoint = `${UPLOAD_URL}${driveFileId ? `/${encodeURIComponent(driveFileId)}` : ''}`
+  const method = driveFileId ? 'PATCH' : 'POST'
   if (file.size <= 5 * 1024 * 1024) {
-    const url = `${UPLOAD_URL}${driveFileId ? `/${encodeURIComponent(driveFileId)}` : ''}?uploadType=multipart&fields=id,name,mimeType,size`
-    return (await driveFetch(url, { method: driveFileId ? 'PATCH' : 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body })).json()
+    const boundary = `ihr_${crypto.randomUUID()}`
+    const body = new Blob([
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`,
+      `--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`,
+      file, `\r\n--${boundary}--`
+    ], { type: `multipart/related; boundary=${boundary}` })
+    return (await driveFetch(`${endpoint}?uploadType=multipart&fields=id,name,mimeType,size`, {
+      method, headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body
+    })).json()
   }
-    const startUrl = `${UPLOAD_URL}${driveFileId ? `/${encodeURIComponent(driveFileId)}` : ''}?uploadType=resumable&fields=id,name,mimeType,size`
-  const start = await driveFetch(startUrl, { method: driveFileId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': file.type || 'application/octet-stream', 'X-Upload-Content-Length': String(file.size) }, body: JSON.stringify(metadata) })
+  const start = await driveFetch(`${endpoint}?uploadType=resumable&fields=id,name,mimeType,size`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json; charset=UTF-8',
+      'X-Upload-Content-Type': mime,
+      'X-Upload-Content-Length': String(file.size)
+    },
+    body: JSON.stringify(metadata)
+  })
   const location = start.headers.get('Location')
   if (!location) throw new Error('Drive no devolvió la dirección para subir el libro.')
-  return (await driveFetch(location, { method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file })).json()
+  return (await driveFetch(location, {
+    method: 'PUT', headers: { 'Content-Type': mime }, body: file
+  })).json()
+}
+
+function stateName(driveFileId) { return `progress-${driveFileId}.json` }
+
+export async function readDriveProgress(driveFileId) {
+  const folderId = await getOrCreateStateFolder()
+  const params = new URLSearchParams({
+    q: `'${folderId}' in parents and name = '${escapeDriveQuery(stateName(driveFileId))}' and trashed = false`,
+    fields: 'files(id,name,modifiedTime)', spaces: 'drive', pageSize: '100'
+  })
+  const files = (await (await driveFetch(`${DRIVE_FILES_URL}?${params}`)).json()).files || []
+  if (!files.length) return null
+  const latest = files.sort((a, b) => Date.parse(b.modifiedTime) - Date.parse(a.modifiedTime))[0]
+  const data = await (await driveFetch(`${DRIVE_FILES_URL}/${encodeURIComponent(latest.id)}?alt=media`)).json()
+  if (data?.schemaVersion !== 1 || data.driveFileId !== driveFileId) return null
+  return { ...data, stateFileId: latest.id, cloudModifiedAt: Date.parse(latest.modifiedTime) || 0 }
+}
+
+export async function writeDriveProgress(driveFileId, progress, stateFileId) {
+  const parentId = stateFileId ? undefined : await getOrCreateStateFolder()
+  const body = JSON.stringify({
+    schemaVersion: 1, driveFileId,
+    fraction: Math.min(1, Math.max(0, Number(progress.fraction) || 0)),
+    locator: progress.locator ?? null,
+    updatedAt: Number(progress.updatedAt) || Date.now()
+  })
+  const file = new File([body], stateName(driveFileId), { type: 'application/json' })
+  return uploadDriveFile(file, { driveFileId: stateFileId, parentId })
 }

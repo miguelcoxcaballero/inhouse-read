@@ -60,13 +60,13 @@ npm test             # ambos
 
 ## Carpeta local persistente
 
-En Chrome/Edge de escritorio, al importar un libro por primera vez la app pide elegir una carpeta real del disco (File System Access API) y guarda ahí una copia. La próxima vez que abras ese libro desde la estantería, se lee directamente de esa carpeta — no hace falta volver a seleccionarlo a mano.
+Los bytes de los libros importados se guardan en IndexedDB para reabrirlos sin tener que volver a elegir el archivo. Los libros importados antes de v1.0.5 necesitan una nueva importación para disponer de esa copia. En Chrome/Edge de escritorio también se puede guardar una copia en una carpeta elegida mediante File System Access API.
 
-**Limitación real, no un descuido**: `showDirectoryPicker` es una API exclusiva de navegadores Chromium de escritorio. No existe en Chrome para Android, en ningún navegador móvil, en Safari, ni en el WebView nativo de la app Android empaquetada (`android/`). En esos entornos la app sigue funcionando exactamente igual que antes: el libro se abre y sus metadatos/progreso/portada se guardan en IndexedDB, pero al reabrirlo hay que volver a elegir el archivo (el sistema operativo no permite a una app web guardar en una carpeta arbitraria sin esa API). La alternativa nativa real para Android sería un plugin de Capacitor a medida sobre Storage Access Framework — no implementado, ver `android/README.md`.
+**Limitación real**: `showDirectoryPicker` solo está disponible en navegadores Chromium de escritorio. En móvil, Safari y el APK, la copia de IndexedDB permite reabrir el libro mientras el almacenamiento del navegador no se borre y haya cuota suficiente.
 
 ## Google Drive
 
-La integración con Google Drive usa el mismo cliente OAuth, flujo PKCE y API Drive v3 que Inhouse Notes. El inicio de sesión abre el retorno OAuth de Notes, que completa el intercambio PKCE y devuelve tokens por un canal validado; cada app guarda su sesión por separado en el navegador. Los libros se guardan en la carpeta `inhouse read`. Desde la portada puedes subir un libro local a Drive o descargar uno de Drive para leerlo sin conexión; los libros locales se sincronizan en segundo plano si ya hay sesión.
+La versión web utiliza Google Identity Services con el mismo cliente web de Inhouse Notes. Android usa la autorización nativa de Google Play Services; Google no permite abrir la pantalla de consentimiento dentro del WebView. Cada app conserva su propia sesión. Los libros se guardan en la carpeta `inhouse read` y la posición de lectura en archivos JSON de la subcarpeta `.inhouse-read-state`. La biblioteca descubre libros de otros dispositivos, sube los libros locales pendientes y permite descargar una copia para leer sin conexión. La foto de la cuenta aparece arriba a la derecha y su menú permite sincronizar, cambiar el tema y cerrar sesión.
 
 ## Despliegue (GitHub Pages)
 

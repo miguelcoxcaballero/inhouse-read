@@ -13,6 +13,42 @@ test('carga el home con la marca y las acciones de cabecera', async ({ page }) =
   await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   await expect(page.getByRole('button', { name: 'Elegir archivo del dispositivo' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Abrir desde Google Drive' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Conectar cuenta de Google' })).toBeVisible()
+})
+
+test('conecta Google sin redirección y muestra la foto en la esquina derecha', async ({ page }) => {
+  await page.route('https://accounts.google.com/gsi/client', route => route.fulfill({
+    status: 200, contentType: 'text/javascript', body: ''
+  }))
+  await page.addInitScript(() => {
+    window.google = { accounts: { oauth2: { initTokenClient: options => {
+      window.__oauthOptions = options
+      return { requestAccessToken: () => options.callback({
+        access_token: 'web-token', expires_in: 3600,
+        scope: 'https://www.googleapis.com/auth/drive.file'
+      }) }
+    } } } }
+  })
+  await page.route('https://www.googleapis.com/drive/v3/about?**', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify({ user: { permissionId: 'account-1', displayName: 'Miguel Caballero',
+      emailAddress: 'miguel@example.com', photoLink: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLytQAAAABJRU5ErkJggg==' } })
+  }))
+  await page.route('https://www.googleapis.com/drive/v3/files?**', route => route.fulfill({
+    status: 200, contentType: 'application/json',
+    body: JSON.stringify(route.request().url().includes('name+%3D+%27inhouse+read%27')
+      ? { files: [{ id: 'root', name: 'inhouse read' }] } : { files: [] })
+  }))
+  await page.reload()
+  await page.getByRole('button', { name: 'Conectar cuenta de Google' }).click()
+  const button = page.getByRole('button', { name: 'Cuenta de Google: miguel@example.com' })
+  await expect(button).toBeVisible()
+  await expect(button.locator('img')).toBeVisible()
+  await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
+  expect(await page.evaluate(() => window.__oauthOptions.redirect_uri)).toBeUndefined()
+  await button.click()
+  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.0.12')
+  await expect(page.locator('#drive-theme-toggle')).toBeVisible()
 })
 
 test('muestra la cuenta de Google con su perfil y acciones de sincronización', async ({ page }) => {

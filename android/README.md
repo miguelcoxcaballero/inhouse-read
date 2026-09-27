@@ -6,7 +6,7 @@ Mismo patrón que **inhouse notes**: la app Android es un **WebView-shell** (Cap
 
 - `.github/workflows/build-android.yml` — se dispara manualmente (`workflow_dispatch`, pestaña Actions → "Build and publish signed Android APK" → Run workflow). Compila, firma con el keystore de release guardado en los secrets del repo, y publica el APK como GitHub Release con tag `android-vX.Y.Z` (sube `ANDROID_VERSION_NAME`/`ANDROID_VERSION_CODE` en `.github/scripts/build_android_apk.py` en cada cambio nativo real — el workflow no se dispara solo con cada push, así que un cambio en `android/html_to_apk_builder.py` no llega al APK hasta que se vuelve a ejecutar a mano).
 - `.github/scripts/build_android_apk.py` — orquesta el build en modo headless (sin abrir ninguna ventana), copiado y adaptado de `build_android_apk.py` de inhouse notes.
-- `android/html_to_apk_builder.py` — el builder en sí (Capacitor + parcheo de manifest/gradle/iconos), copiado de `android app/html_to_apk_builder.py` de inhouse notes y adaptado: se le quitó lo específico de Notes que no aplica aquí (exportar PDF a un bridge nativo, el deep-link de OAuth por esquema de URI propio) para no cargar la nueva app con código muerto o engañoso bajo su nombre. El instalador de auto-actualización SÍ se portó (ver siguiente sección).
+- `android/html_to_apk_builder.py` — el builder (Capacitor + manifest/gradle/iconos), con autorización nativa de Drive por Google Play Services y el instalador de auto-actualización.
 - El keystore de firma (`inhouse-read-release.jks`, válido hasta 2054) se generó una vez con `keytool` y vive únicamente como secrets del repo (`INHOUSE_READ_ANDROID_KEYSTORE_BASE64`, `_PASSWORD`, `_KEY_ALIAS`) y en una copia local fuera de este repositorio — nunca en el código ni en este README.
 
 ## Auto-actualización dentro de la app
@@ -15,11 +15,9 @@ Mismo mecanismo que inhouse notes/photos (revisado en `app-v5.js::checkForRequir
 
 `public/android-update.json` se actualiza solo: el último paso de `build-android.yml` calcula el tamaño y el sha256 reales del APK recién firmado (`update_manifest.py`) y comitea/empuja el cambio a `main` — nunca hay que editarlo a mano ni acordarse de hacerlo en el próximo release. Si algún día se compila el APK por otra vía (fuera de este workflow), hay que correr ese script a mano antes de publicar, o el checker in-app seguirá ofreciendo la versión anterior.
 
-## Limitación honesta: Google Drive no funciona (todavía) dentro del APK
+## Google Drive en Android
 
-La app web usa Google Identity Services (`accounts.google.com`) para el login de Drive, pensado para un navegador normal. Google **bloquea ese flujo de OAuth dentro de un WebView embebido** (política de "disallowed_useragent" desde 2017) — es una restricción de Google, no un bug de esta app. Dentro del navegador normal, o instalada como PWA ("Añadir a pantalla de inicio"), Drive funciona sin problema.
-
-Arreglarlo dentro del APK nativo requiere: (1) registrar un segundo cliente OAuth de tipo "Android" en Google Cloud con el SHA-1 de este keystore de firma, y (2) añadir en `MainActivity` el manejo de un deep-link de retorno (`openAuthUrl` ya está en el builder, listo para esto — ver `patch_webview_bridge` en `html_to_apk_builder.py`) más el código JS correspondiente en `drive-client.js` para usar ese puente en vez del popup normal cuando la app detecta que corre dentro del WebView. No implementado todavía porque nadie lo ha pedido explícitamente — es trabajo real de otra sesión, no una casilla que falte marcar.
+El APK usa `AuthorizationClient` de Google Play Services para solicitar `drive.file` y entregar el token a la web de producción mediante el puente nativo. El cliente OAuth Android del proyecto Google `inhouse-notes` está registrado para `com.inhousesoftware.read` y el SHA-1 del certificado de firma de release. El WebView nunca muestra la pantalla de consentimiento. Si se cambia el keystore hay que registrar también el nuevo SHA-1 antes de publicar otro APK.
 
 ## Cómo instalar
 

@@ -97,6 +97,10 @@ export class LibraryStore {
       .slice(0, limit)
   }
 
+  async listAll() {
+    return this.listRecents(Infinity)
+  }
+
   async get(id) {
     const store = await this.#store('readonly')
     return wrap(store.get(id)) ?? null
@@ -128,7 +132,21 @@ export class LibraryStore {
     const store = await this.#store('readwrite')
     const existing = await wrap(store.get(id))
     if (!existing) return null
-    const record = { ...existing, progressFraction, locator, lastOpenedAt: Date.now() }
+    const now = Date.now()
+    const record = {
+      ...existing, progressFraction, locator,
+      progressUpdatedAt: now, progressDirty: true, lastOpenedAt: now
+    }
+    await wrap(store.put(record))
+    return record
+  }
+
+  /** Actualiza metadatos de Drive sin cambiar el orden de la estantería. */
+  async patch(id, fields) {
+    const store = await this.#store('readwrite')
+    const existing = await wrap(store.get(id))
+    if (!existing) return null
+    const record = { ...existing, ...fields, id }
     await wrap(store.put(record))
     return record
   }

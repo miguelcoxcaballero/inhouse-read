@@ -1,70 +1,112 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { isDriveConfigured, requestDriveAccess, listDriveBooks, getOrCreateReadFolder, uploadDriveFile, getDriveProfile } from '../../src/js/drive-client.js'
 
-describe('drive-client — configuración', () => {
-  afterEach(() => {
-    delete globalThis.INHOUSE_READ_CONFIG
+let drive
+const token = 'test-access-token'
+const session = () => localStorage.setItem('ihr_drive_session_v2', JSON.stringify({ accessToken: token, expiresAt: Date.now() + 3600_000 }))
+const json = value => new Response(JSON.stringify(value), { status: 200 })
+
+beforeEach(async () => {
+  vi.resetModules()
+  localStorage.clear()
+  delete globalThis.google
+  delete globalThis.InhouseNative
+  drive = await import('../../src/js/drive-client.js')
+})
+afterEach(() => {
+  vi.unstubAllGlobals()
+  delete globalThis.google
+  delete globalThis.InhouseNative
+  delete globalThis.handleInhouseNativeDriveAuth
+})
+
+describe('autorización de Google Drive', () => {
+  it('usa el cliente web compartido, sin URI de redirección', async () => {
+    expect(drive.isDriveConfigured()).toBe(true)
+    let configuration
+    globalThis.google = { accounts: { oauth2: { initTokenClient: vi.fn(options => {
+      configuration = options
+      return { requestAccessToken: vi.fn(() => options.callback({
+        access_token: token, expires_in: 3600, scope: 'https://www.googleapis.com/auth/drive.file'
+      })) }
+    }) } } }
+    await expect(drive.requestDriveAccess()).resolves.toBe(token)
+    expect(configuration.client_id).toBe('435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com')
+    expect(configuration.scope).toBe('https://www.googleapis.com/auth/drive.file')
+    expect(configuration).not.toHaveProperty('redirect_uri')
+    expect(drive.hasDriveSession()).toBe(true)
+    drive.signOutDrive()
+    expect(drive.hasDriveSession()).toBe(false)
   })
 
-  it('usa las credenciales compartidas de Inhouse Notes sin config.js', () => {
-    expect(isDriveConfigured()).toBe(true)
+  it('pide conexión explícita cuando falta la sesión', async () => {
+    await expect(drive.listDriveBooks()).rejects.toThrow(/Pulsa Conectar/)
+    await expect(drive.requestDriveAccess()).rejects.toThrow(/Google aún está cargando/)
   })
 
-  it('permite Drive con el cliente compartido de Inhouse Notes', () => {
-    expect(isDriveConfigured()).toBe(true)
+  it('usa el puente de Google Play Services en Android', async () => {
+    vi.stubGlobal('navigator', { userAgent: 'InhouseReadApp/1.0.12', onLine: true })
+    globalThis.InhouseNative = { requestDriveAccess: vi.fn() }
+    const pending = drive.requestDriveAccess()
+    const [requestId, interactive] = globalThis.InhouseNative.requestDriveAccess.mock.calls[0]
+    expect(interactive).toBe(true)
+    globalThis.handleInhouseNativeDriveAuth(JSON.stringify({ requestId, accessToken: token, expiresIn: 3000 }))
+    await expect(pending).resolves.toBe(token)
   })
 
-  it('la API de Drive informa del popup bloqueado al no poder iniciar OAuth', async () => {
-    await expect(requestDriveAccess()).rejects.toThrow(/bloqueó la ventana/)
+  it('indica que hay que actualizar el APK antiguo antes de conectar', async () => {
+    vi.stubGlobal('navigator', { userAgent: 'InhouseReadApp/1.0.8', onLine: true })
+    await expect(drive.requestDriveAccess()).rejects.toThrow(/Actualiza Inhouse Read/)
   })
 })
 
-describe('drive-client — llamadas sin sesión', () => {
-  it('pide inicio de sesión cuando no hay una sesión persistida', async () => {
-    await expect(listDriveBooks()).rejects.toThrow(/bloqueó la ventana/)
-  })
-})
+describe('biblioteca y progreso de Drive', () => {
+  beforeEach(() => { session() })
 
-describe('drive-client — carpeta y subida', () => {
-  beforeEach(() => {
-    localStorage.clear()
-    localStorage.setItem('ihn_drive_tokens', JSON.stringify({ accessToken: 'access-token-valid-123456789012345', refreshToken: 'refresh-token-valid-123456789012345', expiresAt: Date.now() + 3600_000 }))
+  it('encuentra la carpeta inhouse read y sube un libro', async () => {
     globalThis.fetch = vi.fn(async url => {
-      if (String(url).includes('uploadType=multipart')) return new Response(JSON.stringify({ id: 'book-1', name: 'book.pdf' }), { status: 200 })
-      if (String(url).includes('/files?')) return new Response(JSON.stringify({ files: [{ id: 'folder-1', name: 'inhouse read' }] }), { status: 200 })
-      return new Response(JSON.stringify({ id: 'book-1', name: 'book.pdf' }), { status: 200 })
+      if (String(url).includes('uploadType=multipart')) return json({ id: 'book-1', name: 'book.pdf' })
+      if (String(url).includes('/files?')) return json({ files: [{ id: 'folder-1', name: 'inhouse read' }] })
+      return json({})
     })
-  })
-
-  it('encuentra la carpeta inhouse read y la reutiliza', async () => {
-    expect(await getOrCreateReadFolder()).toBe('folder-1')
-    expect(globalThis.fetch.mock.calls[0][0]).toContain("name+%3D+%27inhouse+read%27")
-  })
-
-  it('sube el archivo como multipart a la API de Drive', async () => {
-    const file = new File(['pdf'], 'book.pdf', { type: 'application/pdf' })
-    expect(await uploadDriveFile(file)).toMatchObject({ id: 'book-1' })
+    expect(await drive.getOrCreateReadFolder()).toBe('folder-1')
+    expect(await drive.uploadDriveFile(new File(['pdf'], 'book.pdf', { type: 'application/pdf' }))).toMatchObject({ id: 'book-1' })
     expect(globalThis.fetch.mock.calls.at(-1)[0]).toContain('uploadType=multipart')
-    expect(globalThis.fetch.mock.calls.at(-1)[1].method).toBe('POST')
   })
 
-  it('lee nombre, correo y foto de la cuenta Google', async () => {
+  it('pagina todos los libros de la carpeta', async () => {
     globalThis.fetch = vi.fn(async url => {
-      if (String(url).includes('/about?')) return new Response(JSON.stringify({ user: { displayName: 'Miguel', emailAddress: 'miguel@example.com', photoLink: 'https://example.com/avatar.jpg' } }), { status: 200 })
-      return new Response(JSON.stringify({ files: [{ id: 'folder-1', name: 'inhouse read' }] }), { status: 200 })
+      const text = String(url)
+      if (text.includes('name+%3D+%27inhouse+read%27')) return json({ files: [{ id: 'folder-1' }] })
+      if (text.includes('pageToken=next')) return json({ files: [{ id: 'two', name: 'second.epub' }] })
+      return json({ files: [{ id: 'one', name: 'first.pdf' }, { id: 'not-book', name: 'info.txt' }], nextPageToken: 'next' })
     })
-    await expect(getDriveProfile()).resolves.toEqual({ name: 'Miguel', email: 'miguel@example.com', photo: 'https://example.com/avatar.jpg' })
-    expect(globalThis.fetch.mock.calls[0][0]).toContain('/drive/v3/about?fields=')
+    await expect(drive.listAllDriveBooks()).resolves.toEqual([
+      { id: 'one', name: 'first.pdf' }, { id: 'two', name: 'second.epub' }
+    ])
   })
-})
 
-describe('drive-client — retorno OAuth compartido', () => {
-  it('envía el verificador PKCE al callback de Notes y valida origen, ventana y estado', () => {
-    const source = readFileSync('src/js/drive-client.js', 'utf8')
-    expect(source).toContain("const redirectUri = 'https://inhousenotes.com/oauth-callback'")
-    expect(source).toContain("event.origin !== 'https://inhousenotes.com' || event.source !== popup")
-    expect(source).toContain("type: 'ihr-oauth-exchange', code: event.data.code, verifier, redirectUri, state")
-    expect(source).toContain("event.data.type === 'ihr-oauth-token'")
+  it('guarda nombre, correo y foto de la cuenta', async () => {
+    globalThis.fetch = vi.fn(async () => json({ user: {
+      permissionId: 'account-1', displayName: 'Miguel',
+      emailAddress: 'miguel@example.com', photoLink: 'https://example.com/avatar.jpg'
+    } }))
+    await expect(drive.getDriveProfile()).resolves.toEqual({
+      id: 'account-1', name: 'Miguel', email: 'miguel@example.com', photo: 'https://example.com/avatar.jpg'
+    })
+    expect(drive.getRememberedDriveProfile()?.photo).toBe('https://example.com/avatar.jpg')
+  })
+
+  it('lee el progreso remoto de la subcarpeta de estado', async () => {
+    globalThis.fetch = vi.fn(async url => {
+      const text = String(url)
+      if (text.includes('name+%3D+%27inhouse+read%27')) return json({ files: [{ id: 'root' }] })
+      if (text.includes('name+%3D+%27.inhouse-read-state%27')) return json({ files: [{ id: 'state-folder' }] })
+      if (text.includes('name+%3D+%27progress-book-1.json%27')) return json({ files: [{ id: 'state-1', modifiedTime: '2026-09-27T00:00:00Z' }] })
+      if (text.includes('state-1?alt=media')) return json({ schemaVersion: 1, driveFileId: 'book-1', fraction: .5, locator: { kind: 'pdf-page', value: 5 }, updatedAt: 123 })
+      return json({ files: [] })
+    })
+    await expect(drive.readDriveProgress('book-1')).resolves.toMatchObject({
+      fraction: .5, stateFileId: 'state-1', locator: { kind: 'pdf-page', value: 5 }
+    })
   })
 })

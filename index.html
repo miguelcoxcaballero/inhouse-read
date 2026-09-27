@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="/src/css/app.css" />
   <link rel="stylesheet" href="/src/css/bookshelf.css" />
   <link rel="stylesheet" href="/src/css/android-update.css" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 
 </head>
 <body>
@@ -38,6 +39,7 @@
             <path d="M7.5 3h9l6 10.5-3 5.5h-15l-3-5.5L7.5 3z"/><path d="M7.5 3l6 10.5M16.5 13.5h6.5"/>
           </svg>
         </button>
+        <button id="drive-connect-btn" class="drive-connect-btn" type="button" aria-label="Conectar cuenta de Google" title="Conectar cuenta de Google">G</button>
         <div id="drive-profile" class="drive-profile" hidden>
           <button id="drive-profile-btn" class="drive-profile-btn" type="button" aria-label="Cuenta de Google" aria-haspopup="true" aria-expanded="false">
             <span id="drive-profile-initial" class="drive-profile-initial" aria-hidden="true">G</span>
@@ -57,6 +59,8 @@
               <button id="drive-sync-btn" class="drive-menu-btn" type="button" role="menuitem">Sincronizar ahora</button>
               <button id="drive-signout-btn" class="drive-menu-btn" type="button" role="menuitem">Cerrar sesión</button>
             </div>
+            <label class="drive-theme-row" for="drive-theme-toggle">Tema oscuro <input id="drive-theme-toggle" type="checkbox" /></label>
+            <small id="app-version" class="drive-app-version"></small>
           </div>
         </div>
         <button id="theme-toggle" class="icon-btn" type="button" aria-label="Cambiar tema">

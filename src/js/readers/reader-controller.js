@@ -76,6 +76,17 @@ export class ReaderController {
     }
   }
 
+  async goToLocator(locator, fallbackFraction = 0) {
+    if (locator?.kind === 'cfi' && this.#engine === ENGINE.FOLIATE) {
+      try { await this.#reader?.goToCfi(locator.value); return } catch { /* changed edition */ }
+    }
+    if (locator?.kind === 'pdf-page' && this.#engine === ENGINE.PDF) {
+      await this.#reader?.goToPage(locator.value)
+      return
+    }
+    await this.goToFraction(fallbackFraction)
+  }
+
   close() {
     this.#reader?.close()
     this.#reader = null
