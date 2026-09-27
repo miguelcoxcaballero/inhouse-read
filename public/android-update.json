@@ -1,9 +1,9 @@
 {
-  "version": "1.0.12",
-  "versionCode": 10,
+  "version": "1.0.13",
+  "versionCode": 11,
   "required": true,
-  "apkSizeBytes": 3649141,
-  "apkSha256": "26a0af23afbd02d00d488810d3e605fea2235738c72458f1fa7321719cdc560f",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.12/inhouse-read-release-v1.0.12.apk",
-  "releaseNotes": "Acceso nativo a Google Drive, sincronización de libros y progreso, y mejoras de la biblioteca."
+  "apkSizeBytes": 3162961,
+  "apkSha256": "8026d5e2efa234ede107c262d8c96b75262c387fdbc48413153c286c29586537",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.13/inhouse-read-release-v1.0.13.apk",
+  "releaseNotes": "Inicio de sesión de Google Drive con el mismo flujo Custom Tab y PKCE de Inhouse Notes; corrige el fallo de conexión del APK anterior."
 }
