@@ -127,7 +127,12 @@ globalThis.handleInhouseNativeDriveAuth = payload => {
   if (!pending) return
   nativeRequests.delete(result.requestId)
   if (pending.generation !== authGeneration) return
-  if (result.error) return pending.reject(new Error(result.error))
+  if (result.error) {
+    const message = result.error === 'Acceso a Google cancelado.'
+      ? 'Google no completó la conexión. Vuelve a intentarlo.'
+      : result.error
+    return pending.reject(new Error(message))
+  }
   try { pending.resolve(saveToken(result.accessToken, result.expiresIn)) }
   catch (error) { pending.reject(error) }
 }

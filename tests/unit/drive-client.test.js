@@ -53,6 +53,15 @@ describe('autorización de Google Drive', () => {
     await expect(pending).resolves.toBe(token)
   })
 
+  it('no atribuye al usuario un cierre fallido de Google Play Services', async () => {
+    vi.stubGlobal('navigator', { userAgent: 'InhouseReadApp/1.0.12', onLine: true })
+    globalThis.InhouseNative = { requestDriveAccess: vi.fn() }
+    const pending = drive.requestDriveAccess()
+    const [requestId] = globalThis.InhouseNative.requestDriveAccess.mock.calls[0]
+    globalThis.handleInhouseNativeDriveAuth(JSON.stringify({ requestId, error: 'Acceso a Google cancelado.' }))
+    await expect(pending).rejects.toThrow('Google no completó la conexión. Vuelve a intentarlo.')
+  })
+
   it('indica que hay que actualizar el APK antiguo antes de conectar', async () => {
     vi.stubGlobal('navigator', { userAgent: 'InhouseReadApp/1.0.8', onLine: true })
     await expect(drive.requestDriveAccess()).rejects.toMatchObject({ code: 'ANDROID_SHELL_OUTDATED' })
