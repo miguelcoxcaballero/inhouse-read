@@ -17,7 +17,7 @@ Mismo mecanismo que inhouse notes/photos (revisado en `app-v5.js::checkForRequir
 
 ## Google Drive en Android
 
-A partir de v1.0.12, el APK usa `AuthorizationClient` de Google Play Services para solicitar `drive.file` y entregar el token a la web de producción mediante el puente nativo. Para publicar esa versión es necesario registrar un cliente OAuth Android en el proyecto Google `inhouse-notes` con el paquete `com.inhousesoftware.read` y el SHA-1 del certificado de firma de release. El WebView no muestra la pantalla de consentimiento. Si se cambia el keystore hay que registrar también el nuevo SHA-1 antes de publicar otro APK. Los APK anteriores a v1.0.12 no tienen este puente.
+A partir de v1.0.13, el APK usa el mismo sistema de Inhouse Notes: abre Google en una Custom Tab, recibe el código en `com.inhousesoftware.read:/oauth2redirect`, lo intercambia con PKCE y guarda el token de renovación. El cliente OAuth Android está registrado en el proyecto Google `inhouse-notes` para el paquete `com.inhousesoftware.read` y el SHA-1 del certificado de release; su ID público figura en `src/js/drive-client.js`. Si cambia el keystore, hay que registrar también el SHA-1 nuevo. v1.0.12 usaba `AuthorizationClient` y produjo el fallo de conexión que corrige esta versión.
 
 ## Cómo instalar
 

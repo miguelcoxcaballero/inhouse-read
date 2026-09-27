@@ -1496,6 +1496,18 @@ class ApkBuilderApp(tk.Tk):
                     break
             if activity is not None:
                 activity.set(f"{ns}exported", "true")
+                # Same reverse-DNS OAuth callback intent used by Inhouse Notes.
+                callback_exists = any(
+                    node.attrib.get(f"{ns}scheme") == package_id
+                    for intent_filter in activity.findall("intent-filter")
+                    for node in intent_filter.findall("data")
+                )
+                if not callback_exists:
+                    intent_filter = ET.SubElement(activity, "intent-filter")
+                    ET.SubElement(intent_filter, "action", {f"{ns}name": "android.intent.action.VIEW"})
+                    ET.SubElement(intent_filter, "category", {f"{ns}name": "android.intent.category.DEFAULT"})
+                    ET.SubElement(intent_filter, "category", {f"{ns}name": "android.intent.category.BROWSABLE"})
+                    ET.SubElement(intent_filter, "data", {f"{ns}scheme": package_id})
 
         tree.write(manifest, encoding="utf-8", xml_declaration=True)
 
@@ -1514,10 +1526,9 @@ class ApkBuilderApp(tk.Tk):
         """Set up the WebView (cookies/local-storage persistence, boot color)
         and a minimal native bridge.
 
-        Google Drive authorization runs through Google Play services, not a
-        consent screen embedded in WebView. The bridge only returns tokens to
-        the trusted production page. The updater and status-bar insets are
-        also managed here.
+        Google Drive authorization follows the Inhouse Notes Custom Tab and
+        PKCE callback flow. The updater and status-bar insets are also managed
+        here.
 
         Keeps Android's system bars visible and moves the whole WebView inside
         the system-bar/cutout safe area by padding its native parent container.
@@ -1534,7 +1545,6 @@ class ApkBuilderApp(tk.Tk):
                 f"""package {package_id};
 
 import android.content.Intent;
-import android.accounts.Account;
 import android.content.res.Configuration;
 import android.net.Uri;
 import android.os.Build;
@@ -1547,9 +1557,6 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.activity.result.IntentSenderRequest;
-import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.core.graphics.Insets;
@@ -1559,12 +1566,7 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.getcapacitor.BridgeActivity;
-import com.google.android.gms.auth.api.identity.AuthorizationRequest;
-import com.google.android.gms.auth.api.identity.AuthorizationResult;
-import com.google.android.gms.auth.api.identity.ClearTokenRequest;
-import com.google.android.gms.auth.api.identity.Identity;
-import com.google.android.gms.auth.api.identity.RevokeAccessRequest;
-import com.google.android.gms.common.api.Scope;
+import androidx.browser.customtabs.CustomTabsIntent;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -1574,29 +1576,28 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
-import java.util.Collections;
 import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {{
-    private static final String DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
-    private String pendingDriveRequestId;
-    private String lastDriveToken;
-    private final ActivityResultLauncher<IntentSenderRequest> driveAuthLauncher =
-        registerForActivityResult(new ActivityResultContracts.StartIntentSenderForResult(), result -> {{
-            String requestId = pendingDriveRequestId;
-            pendingDriveRequestId = null;
-            if (requestId == null) return;
-            if (result.getResultCode() != RESULT_OK || result.getData() == null) {{
-                notifyDriveAuth(requestId, null, "Acceso a Google cancelado.");
-                return;
-            }}
-            try {{
-                finishDriveAuth(requestId, Identity.getAuthorizationClient(this)
-                    .getAuthorizationResultFromIntent(result.getData()));
-            }} catch (Exception error) {{
-                notifyDriveAuth(requestId, null, error.getLocalizedMessage());
-            }}
-        }});
+    // OAuth callback handling follows Inhouse Notes MainActivity.java.
+    @Override
+    public void onNewIntent(Intent intent) {{
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleAppCallback(intent);
+    }}
+
+    private void handleAppCallback(Intent intent) {{
+        if (intent == null || intent.getData() == null) return;
+        Uri data = intent.getData();
+        if (!"{package_id}".equals(data.getScheme())) return;
+        String query = data.getEncodedQuery();
+        if (query == null || query.isEmpty()) return;
+        WebView webView = getBridge().getWebView();
+        webView.post(() -> webView.evaluateJavascript(
+            "window.handleInhouseNativeOAuth && window.handleInhouseNativeOAuth("
+                + JSONObject.quote(query) + ");", null));
+    }}
 
     private boolean isTrustedReadPage() {{
         WebView webView = getBridge().getWebView();
@@ -1604,32 +1605,6 @@ public class MainActivity extends BridgeActivity {{
         return "https".equals(page.getScheme())
             && "miguelcoxcaballero.github.io".equals(page.getHost())
             && (page.getPath() == null ? "" : page.getPath()).startsWith("/inhouse-read/");
-    }}
-
-    private void notifyDriveAuth(String requestId, String token, String error) {{
-        WebView webView = getBridge().getWebView();
-        if (!isTrustedReadPage()) return;
-        JSONObject payload = new JSONObject();
-        try {{
-            payload.put("requestId", requestId);
-            if (token != null) {{
-                payload.put("accessToken", token);
-                payload.put("expiresIn", 3000);
-            }} else payload.put("error", error == null ? "No se pudo conectar con Google." : error);
-        }} catch (Exception ignored) {{ return; }}
-        webView.evaluateJavascript(
-            "window.handleInhouseNativeDriveAuth && window.handleInhouseNativeDriveAuth("
-            + JSONObject.quote(payload.toString()) + ");", null);
-    }}
-
-    private void finishDriveAuth(String requestId, AuthorizationResult result) {{
-        String token = result.getAccessToken();
-        if (token == null || !result.getGrantedScopes().contains(DRIVE_SCOPE)) {{
-            notifyDriveAuth(requestId, null, "Google no concedió acceso a Drive.");
-            return;
-        }}
-        lastDriveToken = token;
-        notifyDriveAuth(requestId, token, null);
     }}
 
     @Override
@@ -1696,6 +1671,7 @@ public class MainActivity extends BridgeActivity {{
         cookieManager.flush();
 
         webView.addJavascriptInterface(new InhouseNativeBridge(), "InhouseNative");
+        handleAppCallback(getIntent());
     }}
 
     public class InhouseNativeBridge {{
@@ -1707,45 +1683,17 @@ public class MainActivity extends BridgeActivity {{
         }}
 
         @JavascriptInterface
-        public void requestDriveAccess(String requestId, boolean interactive) {{
+        public void openAuthUrl(String url) {{
             runOnUiThread(() -> {{
                 if (!isTrustedReadPage()) return;
-                AuthorizationRequest request = AuthorizationRequest.builder()
-                    .setRequestedScopes(Collections.singletonList(new Scope(DRIVE_SCOPE)))
+                Uri uri = Uri.parse(url);
+                if (!"https".equals(uri.getScheme())
+                        || !"accounts.google.com".equals(uri.getHost())) return;
+                CustomTabsIntent customTabsIntent = new CustomTabsIntent.Builder()
+                    .setShowTitle(true)
                     .build();
-                Identity.getAuthorizationClient(MainActivity.this).authorize(request)
-                    .addOnSuccessListener(result -> {{
-                        if (result.hasResolution()) {{
-                            if (!interactive) {{
-                                notifyDriveAuth(requestId, null, "Pulsa Conectar para elegir tu cuenta de Google.");
-                                return;
-                            }}
-                            pendingDriveRequestId = requestId;
-                            driveAuthLauncher.launch(new IntentSenderRequest.Builder(
-                                result.getPendingIntent().getIntentSender()).build());
-                        }} else finishDriveAuth(requestId, result);
-                    }})
-                    .addOnFailureListener(error -> notifyDriveAuth(requestId, null, error.getLocalizedMessage()));
-            }});
-        }}
-
-        @JavascriptInterface
-        public void clearDriveAccess(String email) {{
-            runOnUiThread(() -> {{
-                if (!isTrustedReadPage()) return;
-                pendingDriveRequestId = null;
-                if (lastDriveToken != null) {{
-                    Identity.getAuthorizationClient(MainActivity.this).clearToken(
-                        ClearTokenRequest.builder().setToken(lastDriveToken).build());
-                    lastDriveToken = null;
-                }}
-                if (email != null && !email.isEmpty()) {{
-                    Identity.getAuthorizationClient(MainActivity.this).revokeAccess(
-                        RevokeAccessRequest.builder()
-                            .setAccount(new Account(email, "com.google"))
-                            .setScopes(Collections.singletonList(new Scope(DRIVE_SCOPE)))
-                            .build());
-                }}
+                customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY);
+                customTabsIntent.launchUrl(MainActivity.this, uri);
             }});
         }}
 
@@ -1919,7 +1867,6 @@ public class MainActivity extends BridgeActivity {{
                 f"""package {package_id}
 
 import android.content.Intent
-import android.accounts.Account
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
@@ -1930,8 +1877,6 @@ import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
-import androidx.activity.result.IntentSenderRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.graphics.Insets
@@ -1940,12 +1885,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.getcapacitor.BridgeActivity
-import com.google.android.gms.auth.api.identity.AuthorizationRequest
-import com.google.android.gms.auth.api.identity.AuthorizationResult
-import com.google.android.gms.auth.api.identity.ClearTokenRequest
-import com.google.android.gms.auth.api.identity.Identity
-import com.google.android.gms.auth.api.identity.RevokeAccessRequest
-import com.google.android.gms.common.api.Scope
+import androidx.browser.customtabs.CustomTabsIntent
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -1953,21 +1893,21 @@ import java.security.MessageDigest
 import org.json.JSONObject
 
 class MainActivity : BridgeActivity() {{
-    private val driveScope = "https://www.googleapis.com/auth/drive.file"
-    private var pendingDriveRequestId: String? = null
-    private var lastDriveToken: String? = null
-    private val driveAuthLauncher = registerForActivityResult(
-        ActivityResultContracts.StartIntentSenderForResult()
-    ) {{ result ->
-        val requestId = pendingDriveRequestId ?: return@registerForActivityResult
-        pendingDriveRequestId = null
-        if (result.resultCode != RESULT_OK || result.data == null) {{
-            notifyDriveAuth(requestId, null, "Acceso a Google cancelado.")
-        }} else try {{
-            finishDriveAuth(requestId, Identity.getAuthorizationClient(this)
-                .getAuthorizationResultFromIntent(result.data))
-        }} catch (error: Exception) {{
-            notifyDriveAuth(requestId, null, error.localizedMessage)
+    // OAuth callback handling follows Inhouse Notes MainActivity.kt.
+    override fun onNewIntent(intent: Intent) {{
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAppCallback(intent)
+    }}
+
+    private fun handleAppCallback(intent: Intent?) {{
+        val data = intent?.data ?: return
+        if (data.scheme != "{package_id}") return
+        val query = data.encodedQuery ?: return
+        bridge.webView.post {{
+            bridge.webView.evaluateJavascript(
+                "window.handleInhouseNativeOAuth && window.handleInhouseNativeOAuth("
+                    + JSONObject.quote(query) + ");", null)
         }}
     }}
 
@@ -1975,28 +1915,6 @@ class MainActivity : BridgeActivity() {{
         val page = Uri.parse(bridge.webView.url ?: "")
         return page.scheme == "https" && page.host == "miguelcoxcaballero.github.io"
             && (page.path ?: "").startsWith("/inhouse-read/")
-    }}
-
-    private fun notifyDriveAuth(requestId: String, token: String?, error: String?) {{
-        if (!isTrustedReadPage()) return
-        val payload = JSONObject().apply {{
-            put("requestId", requestId)
-            if (token != null) {{ put("accessToken", token); put("expiresIn", 3000) }}
-            else put("error", error ?: "No se pudo conectar con Google.")
-        }}
-        bridge.webView.evaluateJavascript(
-            "window.handleInhouseNativeDriveAuth && window.handleInhouseNativeDriveAuth("
-                + JSONObject.quote(payload.toString()) + ");", null)
-    }}
-
-    private fun finishDriveAuth(requestId: String, result: AuthorizationResult) {{
-        val token = result.accessToken
-        if (token == null || !result.grantedScopes.contains(driveScope)) {{
-            notifyDriveAuth(requestId, null, "Google no concedió acceso a Drive.")
-            return
-        }}
-        lastDriveToken = token
-        notifyDriveAuth(requestId, token, null)
     }}
 
     override fun onCreate(savedInstanceState: Bundle?) {{
@@ -2058,6 +1976,7 @@ class MainActivity : BridgeActivity() {{
         }}
 
         webView.addJavascriptInterface(InhouseNativeBridge(), "InhouseNative")
+        handleAppCallback(intent)
     }}
 
     inner class InhouseNativeBridge {{
@@ -2068,43 +1987,14 @@ class MainActivity : BridgeActivity() {{
         fun getAppVersion(): String = "{self.version_name.get().strip()}"
 
         @JavascriptInterface
-        fun requestDriveAccess(requestId: String, interactive: Boolean) {{
+        fun openAuthUrl(url: String) {{
             runOnUiThread {{
                 if (!isTrustedReadPage()) return@runOnUiThread
-                val request = AuthorizationRequest.builder()
-                    .setRequestedScopes(listOf(Scope(driveScope))).build()
-                Identity.getAuthorizationClient(this@MainActivity).authorize(request)
-                    .addOnSuccessListener {{ result ->
-                        if (result.hasResolution()) {{
-                            if (!interactive) {{
-                                notifyDriveAuth(requestId, null, "Pulsa Conectar para elegir tu cuenta de Google.")
-                                return@addOnSuccessListener
-                            }}
-                            pendingDriveRequestId = requestId
-                            driveAuthLauncher.launch(IntentSenderRequest.Builder(
-                                result.pendingIntent.intentSender).build())
-                        }} else finishDriveAuth(requestId, result)
-                    }}
-                    .addOnFailureListener {{ error -> notifyDriveAuth(requestId, null, error.localizedMessage) }}
-            }}
-        }}
-
-        @JavascriptInterface
-        fun clearDriveAccess(email: String) {{
-            runOnUiThread {{
-                if (!isTrustedReadPage()) return@runOnUiThread
-                pendingDriveRequestId = null
-                lastDriveToken?.let {{ token ->
-                    Identity.getAuthorizationClient(this@MainActivity).clearToken(
-                        ClearTokenRequest.builder().setToken(token).build())
-                    lastDriveToken = null
-                }}
-                if (email.isNotEmpty()) {{
-                    Identity.getAuthorizationClient(this@MainActivity).revokeAccess(
-                        RevokeAccessRequest.builder()
-                            .setAccount(Account(email, "com.google"))
-                            .setScopes(listOf(Scope(driveScope))).build())
-                }}
+                val uri = Uri.parse(url)
+                if (uri.scheme != "https" || uri.host != "accounts.google.com") return@runOnUiThread
+                val customTabsIntent = CustomTabsIntent.Builder().setShowTitle(true).build()
+                customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY)
+                customTabsIntent.launchUrl(this@MainActivity, uri)
             }}
         }}
 
@@ -2328,7 +2218,7 @@ class MainActivity : BridgeActivity() {{
         dependencies = [
             'implementation "androidx.core:core:1.13.1"',
             'implementation "androidx.activity:activity:1.9.3"',
-            'implementation "com.google.android.gms:play-services-auth:22.0.0"',
+            'implementation "androidx.browser:browser:1.8.0"',
         ]
         if "dependencies {" not in text:
             text += "\n\ndependencies {\n" + "\n".join(f"    {dep}" for dep in dependencies) + "\n}\n"

@@ -1,6 +1,5 @@
-// The web app uses the Google Identity Services token client, like Inhouse
-// Notes. The Android shell uses Google Play services AuthorizationClient.
-// Both clients only request access to files created/opened by this app.
+// The web app uses Google Identity Services. Android uses the same Custom Tab
+// + authorization-code/PKCE flow as Inhouse Notes.
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files'
 const UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files'
@@ -9,6 +8,12 @@ const TOKEN_KEY = 'ihr_drive_session_v2'
 const LEGACY_TOKEN_KEY = 'ihn_drive_tokens'
 const PROFILE_KEY = 'ihr_drive_profile_v2'
 const DEFAULT_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com'
+// Android OAuth clients are bound to both package name and signing certificate.
+// Populate this with the Read client in the same Google Cloud project as Notes.
+const ANDROID_OAUTH_CLIENT_ID = import.meta.env.VITE_ANDROID_OAUTH_CLIENT_ID || '435784295430-tjdos7pgbpr07q9gjpshc6gqd2cvcg43.apps.googleusercontent.com'
+const ANDROID_PKCE_REDIRECT_URI = 'com.inhousesoftware.read:/oauth2redirect'
+const REFRESH_TOKEN_KEY = 'ihr_drive_refresh_token_v1'
+const PKCE_VERIFIER_KEY = 'ihr_drive_pkce_verifier_v1'
 const FOLDER_NAME = 'inhouse read'
 const STATE_FOLDER_NAME = '.inhouse-read-state'
 
@@ -18,12 +23,12 @@ let authPromise = null
 let folderIdPromise = null
 let stateFolderIdPromise = null
 let authGeneration = 0
-const nativeRequests = new Map()
+let nativeRequest = null
 const pendingWebRequests = new Set()
 
 function clientId() { return DEFAULT_CLIENT_ID }
 function isNativeShell() { return /\bInhouseReadApp\/\d/i.test(navigator.userAgent || '') }
-function hasNativeAuthBridge() { return typeof globalThis.InhouseNative?.requestDriveAccess === 'function' }
+function hasNativeAuthBridge() { return typeof globalThis.InhouseNative?.openAuthUrl === 'function' }
 
 export function isDriveConfigured() { return true }
 
@@ -107,34 +112,116 @@ function requestWebDriveAccess() {
   })
 }
 
-function requestNativeDriveAccess(interactive) {
+// Ported from Notes app-v5.js: generatePkceVerifier, pkceChallengeFromVerifier,
+// startAndroidPkceSignIn, exchangeAuthCodeForTokens and refresh-token grant.
+function base64UrlEncodeBytes(bytes) {
+  let bin = ''
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function generatePkceVerifier() {
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  return base64UrlEncodeBytes(bytes)
+}
+
+async function pkceChallengeFromVerifier(verifier) {
+  const data = new TextEncoder().encode(verifier)
+  const digest = await crypto.subtle.digest('SHA-256', data)
+  return base64UrlEncodeBytes(new Uint8Array(digest))
+}
+
+async function tokenRequest(body) {
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString()
+  })
+  const data = await response.json()
+  if (!response.ok || !data?.access_token) {
+    const error = new Error(data?.error_description || data?.error || 'Google no devolvió un token de acceso.')
+    error.status = response.status
+    throw error
+  }
+  if (data.scope && !data.scope.split(/\s+/).includes(DRIVE_SCOPE)) throw new Error('No se concedió acceso a los libros de Drive.')
+  if (data.refresh_token) localStorage.setItem(REFRESH_TOKEN_KEY, data.refresh_token)
+  return saveToken(data.access_token, data.expires_in)
+}
+
+async function refreshDriveAccessToken() {
+  const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)
+  if (!refreshToken) throw new Error('La sesión de Google ha caducado. Pulsa Conectar para continuar.')
+  const body = new URLSearchParams({ client_id: ANDROID_OAUTH_CLIENT_ID, grant_type: 'refresh_token', refresh_token: refreshToken })
+  try { return await tokenRequest(body) }
+  catch (error) {
+    if (error.status === 400 || error.status === 401) localStorage.removeItem(REFRESH_TOKEN_KEY)
+    throw error
+  }
+}
+
+async function startAndroidPkceSignIn() {
+  const verifier = generatePkceVerifier()
+  localStorage.setItem(PKCE_VERIFIER_KEY, verifier)
+  const challenge = await pkceChallengeFromVerifier(verifier)
+  const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth')
+  authUrl.searchParams.set('client_id', ANDROID_OAUTH_CLIENT_ID)
+  authUrl.searchParams.set('redirect_uri', ANDROID_PKCE_REDIRECT_URI)
+  authUrl.searchParams.set('response_type', 'code')
+  authUrl.searchParams.set('scope', DRIVE_SCOPE)
+  authUrl.searchParams.set('access_type', 'offline')
+  authUrl.searchParams.set('include_granted_scopes', 'true')
+  authUrl.searchParams.set('code_challenge', challenge)
+  authUrl.searchParams.set('code_challenge_method', 'S256')
+  authUrl.searchParams.set('state', 'inhouse_read_pkce')
+  if (!localStorage.getItem(REFRESH_TOKEN_KEY)) authUrl.searchParams.set('prompt', 'consent')
+  globalThis.InhouseNative.openAuthUrl(authUrl.toString())
+}
+
+async function requestNativeDriveAccess(interactive) {
+  if (!ANDROID_OAUTH_CLIENT_ID) throw new Error('Falta configurar el cliente OAuth Android de Inhouse Read.')
+  if (localStorage.getItem(REFRESH_TOKEN_KEY)) {
+    try { return await refreshDriveAccessToken() }
+    catch (error) { if (!interactive) throw error }
+  }
+  if (!interactive) throw new Error('La sesión de Google ha caducado. Pulsa Conectar para continuar.')
   return new Promise((resolve, reject) => {
-    const requestId = crypto.randomUUID()
-    nativeRequests.set(requestId, { resolve, reject, generation: authGeneration })
-    try { globalThis.InhouseNative.requestDriveAccess(requestId, Boolean(interactive)) }
-    catch (error) {
-      nativeRequests.delete(requestId)
+    nativeRequest = { resolve, reject, generation: authGeneration }
+    startAndroidPkceSignIn().catch(error => {
+      nativeRequest = null
       reject(error)
-    }
+    })
   })
 }
 
-// MainActivity calls this after AuthorizationClient completes or needs a tap.
-globalThis.handleInhouseNativeDriveAuth = payload => {
-  let result
-  try { result = typeof payload === 'string' ? JSON.parse(payload) : payload } catch { return }
-  const pending = nativeRequests.get(result?.requestId)
-  if (!pending) return
-  nativeRequests.delete(result.requestId)
-  if (pending.generation !== authGeneration) return
-  if (result.error) {
-    const message = result.error === 'Acceso a Google cancelado.'
-      ? 'Google no completó la conexión. Vuelve a intentarlo.'
-      : result.error
-    return pending.reject(new Error(message))
+// MainActivity relays the custom-scheme callback exactly as Notes does.
+globalThis.handleInhouseNativeOAuth = payload => {
+  const pending = nativeRequest
+  if (!pending || pending.generation !== authGeneration) return false
+  nativeRequest = null
+  const params = new URLSearchParams(String(payload || '').replace(/^[#?]/, ''))
+  if (params.get('state') !== 'inhouse_read_pkce') {
+    pending.reject(new Error('La respuesta de Google no corresponde a esta conexión.'))
+    return false
   }
-  try { pending.resolve(saveToken(result.accessToken, result.expiresIn)) }
-  catch (error) { pending.reject(error) }
+  if (params.get('error')) {
+    pending.reject(new Error(params.get('error_description') || params.get('error')))
+    return false
+  }
+  const code = params.get('code')
+  const verifier = localStorage.getItem(PKCE_VERIFIER_KEY)
+  if (!code || !verifier) {
+    pending.reject(new Error('Google no devolvió un código de autorización válido.'))
+    return false
+  }
+  const body = new URLSearchParams({
+    client_id: ANDROID_OAUTH_CLIENT_ID, code, code_verifier: verifier,
+    grant_type: 'authorization_code', redirect_uri: ANDROID_PKCE_REDIRECT_URI
+  })
+  tokenRequest(body).then(token => {
+    localStorage.removeItem(PKCE_VERIFIER_KEY)
+    if (pending.generation === authGeneration) pending.resolve(token)
+    else pending.reject(new Error('Sesión cerrada.'))
+  }).catch(error => pending.reject(error))
+  return true
 }
 
 export function requestDriveAccess({ interactive = true } = {}) {
@@ -159,16 +246,16 @@ export function requestDriveAccess({ interactive = true } = {}) {
 }
 
 export function signOutDrive() {
-  const email = getRememberedDriveProfile()?.email || ''
   authGeneration += 1
   for (const cancel of pendingWebRequests) cancel()
-  for (const { reject } of nativeRequests.values()) reject(new Error('Sesión cerrada.'))
-  nativeRequests.clear()
+  if (nativeRequest) nativeRequest.reject(new Error('Sesión cerrada.'))
+  nativeRequest = null
   clearToken()
+  localStorage.removeItem(REFRESH_TOKEN_KEY)
+  localStorage.removeItem(PKCE_VERIFIER_KEY)
   localStorage.removeItem(PROFILE_KEY)
   folderIdPromise = null
   stateFolderIdPromise = null
-  try { globalThis.InhouseNative?.clearDriveAccess?.(email) } catch { /* older shell */ }
 }
 
 async function accessToken() {

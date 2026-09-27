@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { webcrypto } from 'node:crypto'
 
 let drive
 const token = 'test-access-token'
@@ -7,6 +8,8 @@ const json = value => new Response(JSON.stringify(value), { status: 200 })
 
 beforeEach(async () => {
   vi.resetModules()
+  vi.stubEnv('VITE_ANDROID_OAUTH_CLIENT_ID', 'read-android-client.apps.googleusercontent.com')
+  vi.stubGlobal('crypto', webcrypto)
   localStorage.clear()
   delete globalThis.google
   delete globalThis.InhouseNative
@@ -14,9 +17,10 @@ beforeEach(async () => {
 })
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
   delete globalThis.google
   delete globalThis.InhouseNative
-  delete globalThis.handleInhouseNativeDriveAuth
+  delete globalThis.handleInhouseNativeOAuth
 })
 
 describe('autorización de Google Drive', () => {
@@ -43,23 +47,31 @@ describe('autorización de Google Drive', () => {
     await expect(drive.requestDriveAccess()).rejects.toThrow(/Google aún está cargando/)
   })
 
-  it('usa el puente de Google Play Services en Android', async () => {
-    vi.stubGlobal('navigator', { userAgent: 'InhouseReadApp/1.0.12', onLine: true })
-    globalThis.InhouseNative = { requestDriveAccess: vi.fn() }
+  it('usa el mismo Custom Tab y PKCE de Notes en Android', async () => {
+    vi.stubGlobal('navigator', { userAgent: 'InhouseReadApp/1.0.13', onLine: true })
+    globalThis.InhouseNative = { openAuthUrl: vi.fn() }
+    globalThis.fetch = vi.fn(async () => json({ access_token: token, expires_in: 3600, refresh_token: 'refresh-test', scope: 'https://www.googleapis.com/auth/drive.file' }))
     const pending = drive.requestDriveAccess()
-    const [requestId, interactive] = globalThis.InhouseNative.requestDriveAccess.mock.calls[0]
-    expect(interactive).toBe(true)
-    globalThis.handleInhouseNativeDriveAuth(JSON.stringify({ requestId, accessToken: token, expiresIn: 3000 }))
+    await vi.waitFor(() => expect(globalThis.InhouseNative.openAuthUrl).toHaveBeenCalledOnce())
+    const authUrl = new URL(globalThis.InhouseNative.openAuthUrl.mock.calls[0][0])
+    expect(authUrl.origin).toBe('https://accounts.google.com')
+    expect(authUrl.searchParams.get('client_id')).toBe('read-android-client.apps.googleusercontent.com')
+    expect(authUrl.searchParams.get('redirect_uri')).toBe('com.inhousesoftware.read:/oauth2redirect')
+    expect(authUrl.searchParams.get('code_challenge_method')).toBe('S256')
+    globalThis.handleInhouseNativeOAuth('code=auth-test&state=inhouse_read_pkce')
     await expect(pending).resolves.toBe(token)
+    expect(new URLSearchParams(globalThis.fetch.mock.calls[0][1].body).get('code_verifier')).toBeTruthy()
+    expect(localStorage.getItem('ihr_drive_refresh_token_v1')).toBe('refresh-test')
   })
 
-  it('no atribuye al usuario un cierre fallido de Google Play Services', async () => {
-    vi.stubGlobal('navigator', { userAgent: 'InhouseReadApp/1.0.12', onLine: true })
-    globalThis.InhouseNative = { requestDriveAccess: vi.fn() }
-    const pending = drive.requestDriveAccess()
-    const [requestId] = globalThis.InhouseNative.requestDriveAccess.mock.calls[0]
-    globalThis.handleInhouseNativeDriveAuth(JSON.stringify({ requestId, error: 'Acceso a Google cancelado.' }))
-    await expect(pending).rejects.toThrow('Google no completó la conexión. Vuelve a intentarlo.')
+  it('renueva la sesión Android sin abrir Google otra vez', async () => {
+    vi.stubGlobal('navigator', { userAgent: 'InhouseReadApp/1.0.13', onLine: true })
+    globalThis.InhouseNative = { openAuthUrl: vi.fn() }
+    localStorage.setItem('ihr_drive_refresh_token_v1', 'refresh-test')
+    globalThis.fetch = vi.fn(async () => json({ access_token: token, expires_in: 3600 }))
+    await expect(drive.requestDriveAccess({ interactive: false })).resolves.toBe(token)
+    expect(globalThis.InhouseNative.openAuthUrl).not.toHaveBeenCalled()
+    expect(new URLSearchParams(globalThis.fetch.mock.calls[0][1].body).get('grant_type')).toBe('refresh_token')
   })
 
   it('indica que hay que actualizar el APK antiguo antes de conectar', async () => {
