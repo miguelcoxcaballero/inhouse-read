@@ -1736,7 +1736,7 @@ public class MainActivity extends BridgeActivity {{
                 pendingDriveRequestId = null;
                 if (lastDriveToken != null) {{
                     Identity.getAuthorizationClient(MainActivity.this).clearToken(
-                        new ClearTokenRequest.Builder().setToken(lastDriveToken).build());
+                        ClearTokenRequest.builder().setToken(lastDriveToken).build());
                     lastDriveToken = null;
                 }}
                 if (email != null && !email.isEmpty()) {{
@@ -2096,7 +2096,7 @@ class MainActivity : BridgeActivity() {{
                 pendingDriveRequestId = null
                 lastDriveToken?.let {{ token ->
                     Identity.getAuthorizationClient(this@MainActivity).clearToken(
-                        ClearTokenRequest.Builder().setToken(token).build())
+                        ClearTokenRequest.builder().setToken(token).build())
                     lastDriveToken = null
                 }}
                 if (email.isNotEmpty()) {{
