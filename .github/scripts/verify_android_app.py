@@ -39,6 +39,22 @@ def node_text(root):
                     for node in root.iter("node"))
 
 
+def google_signin_visible(root):
+    text = node_text(root)
+    if "accounts.google.com" not in text:
+        return False
+    if re.search(r"invalid_request|redirect_uri_mismatch|Access blocked|Acceso bloqueado", text, re.I):
+        return False
+    if re.search(r"Email or phone|Correo electr.nico|Choose an account|Elige una cuenta", text, re.I):
+        return True
+    # Chrome sometimes omits the floating Email/phone label from Android's
+    # accessibility tree. The real account page still exposes the input,
+    # Google heading and Forgot email link (confirmed against the release APK).
+    has_input = any(node.attrib.get("class") == "android.widget.EditText"
+                    and node.attrib.get("enabled") == "true" for node in root.iter("node"))
+    return has_input and bool(re.search(r"Forgot email|Has olvidado.*correo", text, re.I))
+
+
 def verify_google_login(root):
     for node in root.iter("node"):
         label = node.attrib.get("content-desc", "") + " " + node.attrib.get("text", "")
@@ -60,7 +76,7 @@ def verify_google_login(root):
         Path("android-google-login.txt").write_text(text, encoding="utf-8")
         if re.search(r"invalid_request|redirect_uri_mismatch|Access blocked|Acceso bloqueado", text, re.I):
             raise AssertionError("Google rejected the published APK's OAuth request: " + text[:2000])
-        if re.search(r"Email or phone|Correo electr.nico|Choose an account|Elige una cuenta", text, re.I):
+        if google_signin_visible(auth_root):
             print("Published APK opened the real Google account sign-in page successfully")
             return
         # Chrome's first launch may require choosing whether to sign into the

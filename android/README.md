@@ -34,6 +34,12 @@ En v1.0.14 el callback nativo espera a que la página de producción esté lista
 
 No sustituir el cliente Android por el de Notes: cada paquete tiene su propio cliente y certificado, dentro del mismo proyecto/API. No se necesita una API key ni un client secret en el frontend.
 
+### Comprobación del APK publicado 1.0.14
+
+Se descargó el APK de Releases y se comprobó `versionCode=12`, paquete, certificado SHA-1 y cargador de producción de 2089 bytes. Su SHA-256 coincide con el manifiesto publicado: `171940d751ac566e4438da6e1f9c2df69b66e0618bb52c01bae745512912878f`.
+
+En Android 15 el APK descargado carga la estantería y, al pulsar Iniciar sesión, abre una Custom Tab en `accounts.google.com` con el formulario real de Google «to continue to Inhouse Notes». La captura y el árbol de interfaz del [run de verificación](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/36487575225) demuestran ambas pantallas. Ese run quedó rojo por un falso negativo del comprobador: Chrome omitió el label del correo en el árbol accesible. La detección se corrigió y se validó directamente contra ese XML. El emulador no tiene una cuenta de Google y no se completó el consentimiento con credenciales reales; el intercambio, la renovación y la recuperación del callback están cubiertos por pruebas automatizadas con respuestas simuladas.
+
 ## Cómo instalar
 
 **Vía APK firmado**: https://miguelcoxcaballero.github.io/inhouse-read/download-android.html — página real del sitio (no un link suelto a un asset) que consulta en vivo cuál es el último release publicado, así que nunca queda desactualizada. Android pedirá permitir "orígenes desconocidos" la primera vez, es normal para un APK fuera de Play Store.
