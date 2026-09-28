@@ -18,12 +18,54 @@ def run(*args):
     return subprocess.run(args, check=True, capture_output=True, text=True)
 
 
-def capture():
+def capture(screenshot=SCREENSHOT, ui_dump=UI_DUMP):
     run("adb", "shell", "screencap", "-p", "/sdcard/inhouse-read-status-bar.png")
-    run("adb", "pull", "/sdcard/inhouse-read-status-bar.png", str(SCREENSHOT))
+    run("adb", "pull", "/sdcard/inhouse-read-status-bar.png", str(screenshot))
     run("adb", "shell", "uiautomator", "dump", "/sdcard/inhouse-read-ui.xml")
-    run("adb", "pull", "/sdcard/inhouse-read-ui.xml", str(UI_DUMP))
-    return ElementTree.parse(UI_DUMP).getroot()
+    run("adb", "pull", "/sdcard/inhouse-read-ui.xml", str(ui_dump))
+    return ElementTree.parse(ui_dump).getroot()
+
+
+def node_text(root):
+    return " ".join(node.attrib.get("text", "") + " " + node.attrib.get("content-desc", "")
+                    for node in root.iter("node"))
+
+
+def verify_google_login(root):
+    for node in root.iter("node"):
+        label = node.attrib.get("content-desc", "") + " " + node.attrib.get("text", "")
+        if not re.search(r"Conectar cuenta de Google|Iniciar sesi.n", label):
+            continue
+        bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if not bounds:
+            continue
+        left, top, right, bottom = map(int, bounds.groups())
+        run("adb", "shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+        break
+    else:
+        raise AssertionError("No Google sign-in button in the installed app")
+
+    for attempt in range(12):
+        time.sleep(5)
+        auth_root = capture(Path("android-google-login.png"), Path("android-google-login.xml"))
+        text = node_text(auth_root)
+        Path("android-google-login.txt").write_text(text, encoding="utf-8")
+        if re.search(r"invalid_request|redirect_uri_mismatch|Access blocked|Acceso bloqueado", text, re.I):
+            raise AssertionError("Google rejected the published APK's OAuth request: " + text[:2000])
+        if re.search(r"Email or phone|Correo electr.nico|Choose an account|Elige una cuenta", text, re.I):
+            print("Published APK opened the real Google account sign-in page successfully")
+            return
+        # Chrome's first launch may require choosing whether to sign into the
+        # browser itself. This is unrelated to the app's Google consent.
+        for node in auth_root.iter("node"):
+            if node.attrib.get("text", "") not in ("Use without an account", "No thanks", "Got it"):
+                continue
+            bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+            if bounds:
+                left, top, right, bottom = map(int, bounds.groups())
+                run("adb", "shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+                break
+    raise AssertionError("Google account chooser did not appear: " + text[:2000])
 
 
 def dismiss_emulator_launcher_anr(root):
@@ -56,12 +98,12 @@ def verify_webview_bounds(root):
 
 
 def main():
-    if len(sys.argv) != 2:
-        raise SystemExit("Usage: verify_android_app.py <signed-apk>")
+    if len(sys.argv) not in (2, 3):
+        raise SystemExit("Usage: verify_android_app.py <signed-apk> [--google-login]")
     run("adb", "install", "-r", sys.argv[1])
     run("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read/.MainActivity")
-    time.sleep(18)
-    for attempt in range(3):
+    time.sleep(10)
+    for attempt in range(15):
         root = capture()
         for _ in range(3):
             if not dismiss_emulator_launcher_anr(root):
@@ -82,9 +124,16 @@ def main():
             continue
         if re.search(r"Webpage not available|ERR_[A-Z_]+|isn't responding", ocr, re.IGNORECASE):
             raise AssertionError("Android displayed an error instead of the app")
-        if not re.search(r"inhouse\s*read", ocr, re.IGNORECASE):
-            raise AssertionError("Android did not render the Inhouse Read header")
-        return
+        # HTML/CSS can paint a header before the JS bundle has executed. The
+        # empty shelf is created by JS and proves the app is actually ready.
+        if re.search(r"Tu estanter.a|A.ade tu primer libro|A.adir tu primer libro", node_text(root), re.I):
+            print("Published APK loaded the interactive bookshelf")
+            if "--google-login" in sys.argv:
+                verify_google_login(root)
+            return
+        time.sleep(5)
+    Path("android-logcat.txt").write_text(run("adb", "logcat", "-d").stdout, encoding="utf-8")
+    raise AssertionError("Android painted the header but never loaded the interactive bookshelf")
 
 
 if __name__ == "__main__":
