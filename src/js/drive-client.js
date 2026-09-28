@@ -107,7 +107,13 @@ function requestWebDriveAccess() {
         try { finish(saveToken(response.access_token, response.expires_in)) }
         catch (error) { finish(null, error) }
       },
-      error_callback: error => finish(null, new Error(error?.message || error?.type || 'No se pudo abrir el acceso a Google.'))
+      error_callback: error => {
+        const messages = {
+          popup_closed: 'Se cerró la ventana de Google. Puedes volver a conectar.',
+          popup_failed_to_open: 'El navegador bloqueó la ventana de Google. Permite las ventanas emergentes y vuelve a conectar.'
+        }
+        finish(null, new Error(messages[error?.type] || 'No se pudo abrir el acceso a Google. Vuelve a intentarlo.'))
+      }
     })
     // This runs in the original button click, before an await can lose the
     // browser's user gesture and cause the Google popup to be blocked.
