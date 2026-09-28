@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bindingGeometry, boardGeometry, sampleBookMotion } from '../../src/js/book-model.js';
+import { bindingGeometry, boardGeometry, sampleBookMotion, fitCoverImage } from '../../src/js/book-model.js';
 
 describe('purpose-built rounded binding mesh', () => {
   it('joins both cover boards and protrudes beyond the left edge head-on', () => {
@@ -39,6 +39,15 @@ describe('purpose-built rounded binding mesh', () => {
 });
 
 describe('beveled hardcover boards', () => {
+  it('fits landscape and portrait covers without cropping or stretching', () => {
+    for (const [width, height] of [[600, 300], [600, 900], [300, 1200]]) {
+      const fit = fitCoverImage(width, height, 676, 1024);
+      expect(fit.width / fit.height).toBeCloseTo(width / height);
+      expect(fit.x).toBeGreaterThanOrEqual(0); expect(fit.y).toBeGreaterThanOrEqual(0);
+      expect(fit.x + fit.width).toBeLessThanOrEqual(676);
+      expect(fit.y + fit.height).toBeLessThanOrEqual(1024);
+    }
+  });
   it('keeps every bevel inside the shared book dimensions', () => {
     const g = boardGeometry(200, 300, 2.1);
     g.computeBoundingBox();

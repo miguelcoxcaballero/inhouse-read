@@ -50,6 +50,12 @@ export function boardGeometry(width, height, depth) {
   return g;
 }
 
+export function fitCoverImage(imageWidth, imageHeight, width, height) {
+  const scale = Math.min(width / imageWidth, height / imageHeight);
+  const w = imageWidth * scale, h = imageHeight * scale;
+  return { x:(width - w) / 2, y:(height - h) / 2, width:w, height:h };
+}
+
 function texture(book, style, spine) {
   const canvas = document.createElement('canvas');
   canvas.width = spine ? 256 : 676; canvas.height = 1024;
@@ -146,7 +152,14 @@ export function createBookModel(book, style, width, height, thickness, coverUrl)
   let disposed = false;
   if (coverUrl) new THREE.TextureLoader().load(coverUrl, map => {
     if (disposed) { map.dispose(); return; }
-    map.colorSpace = THREE.SRGBColorSpace; cover.map.dispose(); cover.map = map; cover.needsUpdate = true;
+    // PDFs and illustrated books can have landscape covers. Preserve their
+    // full image and aspect ratio, with cloth around any uncovered area.
+    const canvas = document.createElement('canvas'); canvas.width = 676; canvas.height = 1024;
+    const c = canvas.getContext('2d'); c.fillStyle = style.color; c.fillRect(0, 0, canvas.width, canvas.height);
+    const fit = fitCoverImage(map.image.width, map.image.height, canvas.width, canvas.height);
+    c.drawImage(map.image, fit.x, fit.y, fit.width, fit.height);
+    const fittedMap = new THREE.CanvasTexture(canvas); fittedMap.colorSpace = THREE.SRGBColorSpace;
+    map.dispose(); cover.map.dispose(); cover.map = fittedMap; cover.needsUpdate = true;
     group.userData.invalidate?.();
   });
   group.userData.dispose = () => {
