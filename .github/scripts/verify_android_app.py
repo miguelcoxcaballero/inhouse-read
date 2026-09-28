@@ -21,7 +21,15 @@ def run(*args):
 def capture(screenshot=SCREENSHOT, ui_dump=UI_DUMP):
     run("adb", "shell", "screencap", "-p", "/sdcard/inhouse-read-status-bar.png")
     run("adb", "pull", "/sdcard/inhouse-read-status-bar.png", str(screenshot))
-    run("adb", "shell", "uiautomator", "dump", "/sdcard/inhouse-read-ui.xml")
+    for attempt in range(4):
+        try:
+            run("adb", "shell", "uiautomator", "dump", "--compressed", "/sdcard/inhouse-read-ui.xml")
+            break
+        except subprocess.CalledProcessError as error:
+            if attempt == 3:
+                raise
+            print(f"Android UI service not ready ({error.returncode}); retrying capture", flush=True)
+            time.sleep(4)
     run("adb", "pull", "/sdcard/inhouse-read-ui.xml", str(ui_dump))
     return ElementTree.parse(ui_dump).getroot()
 
@@ -102,7 +110,7 @@ def main():
         raise SystemExit("Usage: verify_android_app.py <signed-apk> [--google-login]")
     run("adb", "install", "-r", sys.argv[1])
     run("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read/.MainActivity")
-    time.sleep(10)
+    time.sleep(25)
     for attempt in range(15):
         root = capture()
         for _ in range(3):
