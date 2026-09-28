@@ -15,17 +15,17 @@
 */
 
 .ihr-bookshelf {
-  --ihr-wall: #efe9dd;
-  --ihr-wall-deep: #e3dbcb;
-  --ihr-board: var(--wood, #8b5e3c);
-  --ihr-board-light: #a87c53;
-  --ihr-board-dark: var(--wood-dark, #6b4728);
+  --ihr-wall: #f4f2eb;
+  --ihr-wall-deep: #e9e4d8;
+  --ihr-board: #b4916e;
+  --ihr-board-light: #d3b694;
+  --ihr-board-dark: #947455;
   --ihr-accent: var(--accent-read, #2f6b4f);
   --ihr-accent-legible: var(--accent-read, #2f6b4f);
   --ihr-soil: #4a3a2c;
   --ihr-bloom: var(--copper, #d97736);
   --ihr-shelf-height: 172px;
-  --ihr-board-thickness: 13px;
+  --ihr-board-thickness: 11px;
   /* Hueco sobre los lomos para que asome el marcapáginas. Tiene que ser >=
      DEFAULT_BOOKMARK.maxPeek (bookshelf-layout.js): `content-visibility`
      en .ihr-shelf recorta todo lo que se salga de la caja de la balda. */
@@ -43,11 +43,11 @@
 }
 
 [data-theme='dark'] .ihr-bookshelf {
-  --ihr-wall: #1f1c19;
-  --ihr-wall-deep: #17150f;
-  --ihr-board: #6f4b30;
-  --ihr-board-light: #86603f;
-  --ihr-board-dark: #4d3421;
+  --ihr-wall: #191a18;
+  --ihr-wall-deep: #24241f;
+  --ihr-board: #705c46;
+  --ihr-board-light: #927959;
+  --ihr-board-dark: #4c3f30;
   --ihr-accent-legible: #8fbf9e;
   --ihr-soil: #2c231a;
   --ihr-ribbon: #a3403a;
@@ -66,14 +66,16 @@
   /* En escritorio una balda de 1400px parece un andamio. Se topa el ancho
      (y como el empaquetado mide este mismo elemento, las baldas se calculan
      ya con el tope, sin desbordar). */
-  width: 100%;
-  max-width: 760px;
+  width: calc(100% - 32px);
+  max-width: 860px;
   margin-inline: auto;
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
-  padding: 8px 0 max(20px, env(safe-area-inset-bottom));
+  padding: 24px 0 max(28px, env(safe-area-inset-bottom));
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 .ihr-bookshelf--with-actions .ihr-bookshelf__scroll {
@@ -85,17 +87,20 @@
  * ------------------------------------------------------------------ */
 
 .ihr-section {
-  margin: 0 0 4px;
+  margin: 0 0 22px;
 }
 
 .ihr-section__title {
-  margin: 18px 16px 8px;
-  font-family: var(--f-logo, 'Comfortaa', cursive);
-  font-size: 0.9rem;
-  font-weight: 600;
-  letter-spacing: -0.2px;
+  margin: 0;
+  font: 500 .875rem var(--f-body, sans-serif);
   color: var(--text-secondary, #555);
 }
+
+.ihr-section__header { display:flex; align-items:center; gap:9px; margin:0 4px 8px; }
+.ihr-section__count { display:grid; place-items:center; min-width:22px; height:22px; padding:0 6px; border-radius:7px; background:var(--border); color:var(--text-secondary); font-size:.7rem; }
+.ihr-library-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin:4px 4px 28px; }
+.ihr-library-heading h1 { margin:0; font:600 1.25rem var(--f-logo); letter-spacing:-.6px; }
+.ihr-library-heading p { margin:0; color:var(--text-secondary); font-size:.8rem; white-space:nowrap; }
 
 /* ------------------------------------------------------------------ *
  * Balda
@@ -103,7 +108,7 @@
 
 .ihr-shelf {
   position: relative;
-  padding: var(--ihr-bookmark-room) 0 16px;
+  padding: var(--ihr-bookmark-room) 0 24px;
   /* Las baldas fuera de pantalla no se pintan: scroll fluido con 200 libros. */
   content-visibility: auto;
   contain-intrinsic-size: auto 210px;
@@ -116,10 +121,8 @@
   right: 0;
   top: 0;
   height: calc(var(--ihr-bookmark-room) + var(--ihr-shelf-height) + var(--ihr-board-thickness));
-  background:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.12) 0, rgba(0, 0, 0, 0) 38px),
-    linear-gradient(180deg, var(--ihr-wall) 0%, var(--ihr-wall-deep) 100%);
-  border-radius: 2px;
+  background: linear-gradient(180deg, transparent 16%, var(--ihr-wall) 62%, var(--ihr-wall-deep));
+  border-radius: 12px 12px 2px 2px;
 }
 
 .ihr-shelf__row {
@@ -137,24 +140,18 @@
 .ihr-shelf__board {
   position: relative;
   height: var(--ihr-board-thickness);
-  border-radius: 2px;
+  border-radius: 2px 2px 3px 3px;
   background:
-    repeating-linear-gradient(
-      90deg,
-      rgba(0, 0, 0, 0.06) 0 2px,
-      rgba(255, 255, 255, 0.04) 2px 5px,
-      rgba(0, 0, 0, 0) 5px 17px
-    ),
-    linear-gradient(
-      180deg,
-      var(--ihr-board-light) 0 2px,
-      var(--ihr-board) 2px 8px,
-      var(--ihr-board-dark) 8px 100%
-    );
+    repeating-linear-gradient(1deg, transparent 0 3px, rgba(58, 38, 16, .12) 3.5px, transparent 4px 7px),
+    linear-gradient(90deg, transparent, rgba(255, 244, 216, .14) 35%, transparent 75%),
+    linear-gradient(180deg, var(--ihr-board-light) 0 2px, var(--ihr-board) 3px 8px, var(--ihr-board-dark));
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.18) inset,
-    0 8px 14px -8px rgba(0, 0, 0, 0.45);
+    0 1px 0 rgba(255, 255, 255, 0.24) inset,
+    0 3px 3px -2px rgba(44, 31, 18, .2),
+    0 12px 18px -10px rgba(44, 31, 18, .28);
 }
+
+.ihr-shelf__board::before { content:''; position:absolute; inset:-4px 0 auto; height:4px; background:linear-gradient(180deg, transparent, rgba(40,30,20,.13)); pointer-events:none; }
 
 /* ------------------------------------------------------------------ *
  * Lomos
@@ -184,7 +181,7 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.ihr-spine__body { position:absolute; inset:0; }
+.ihr-spine__body { position:absolute; inset:0; filter:drop-shadow(2px 1px 2px rgba(30,24,18,.18)); }
 
 /* Zona de acierto: 2px extra a cada lado, sin invadir el lomo vecino. */
 .ihr-spine::after {
@@ -471,16 +468,16 @@
   justify-content: center;
   gap: 8px;
   min-height: var(--tap-min, 44px);
-  padding: 0 18px;
-  border: 1px solid var(--border-strong, rgba(0, 0, 0, 0.1));
-  border-radius: var(--r-full, 999px);
-  background: var(--surface, #fff);
+  padding: 10px 16px;
+  border: 0;
+  border-radius: var(--radius-md, 12px);
+  background: var(--border, rgba(0, 0, 0, 0.05));
   color: var(--text-primary, #1a1a1a);
   font-family: inherit;
-  font-size: 0.92rem;
+  font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
-  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.04));
+  box-shadow: none;
   transition:
     transform 0.15s var(--ihr-ease),
     background-color 0.15s var(--ihr-ease);
@@ -497,9 +494,13 @@
 
 .ihr-btn--primary {
   border-color: transparent;
-  background: var(--ihr-accent);
-  color: #fff;
+  background: var(--text-primary, #1a1a1a);
+  color: var(--bg-secondary, #fff);
 }
+.ihr-shelf--empty { --ihr-shelf-height:120px; }
+
+.ihr-btn:focus-visible { outline:2px solid var(--accent-read); outline-offset:3px; }
+@media (hover:hover) { .ihr-btn:hover { filter:brightness(.94); } .ihr-spine:hover { --ihr-lift:-5px; } }
 
 .ihr-btn .ihr-icon {
   width: 18px;
@@ -532,10 +533,16 @@
 .ihr-flyout__scrim {
   position: absolute;
   inset: 0;
-  background: rgba(24, 19, 14, 0.58);
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
+  background: rgba(245, 245, 240, .92);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
 }
+
+[data-theme='dark'] .ihr-flyout__scrim { background:rgba(21,21,21,.94); }
+.ihr-flyout__close { position:absolute; top:max(16px, env(safe-area-inset-top)); right:max(16px, env(safe-area-inset-right)); z-index:5; width:44px; padding:0; }
+.ihr-flyout__shadow { position:absolute; left:50%; top:calc(var(--ihr-cover-bottom) + 12px); width:min(55vw, 250px); height:20px; border-radius:50%; background:rgba(30,24,18,.16); filter:blur(12px); transform:translateX(-50%); opacity:0; transition:opacity .3s var(--ease); }
+.ihr-flyout.is-ready .ihr-flyout__shadow { opacity:1; }
+.ihr-flyout.is-expanding .ihr-flyout__shadow { opacity:0; }
 
 .ihr-flyout__stage {
   position: absolute;
@@ -664,14 +671,16 @@
   position: absolute;
   left: 0;
   right: 0;
-  bottom: max(28px, env(safe-area-inset-bottom));
+  bottom: max(24px, env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: 0 24px;
+  max-width: 540px;
+  margin-inline: auto;
+  padding: 0 20px;
   text-align: center;
-  color: #f7f3ea;
+  color: var(--text-primary);
   pointer-events: none;
 }
 
@@ -693,33 +702,51 @@
 
 .ihr-flyout__cover-target[hidden] { display:none; }
 .ihr-flyout__cover-target.is-ready { animation: ihr-cover-ready 0.24s ease-out both; }
-.ihr-flyout__cover-target:focus-visible { outline:3px solid #fff; outline-offset:4px; }
+.ihr-flyout__cover-target:focus-visible { outline:2px solid var(--accent-read); outline-offset:6px; }
 @keyframes ihr-cover-ready { from { opacity:0; } to { opacity:1; } }
 
 .ihr-flyout__title {
   margin: 0;
-  font-family: var(--f-logo, 'Comfortaa', cursive);
+  font-family: var(--f-body, sans-serif);
   font-size: 1.05rem;
   font-weight: 600;
   letter-spacing: -0.3px;
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+  overflow:hidden;
+  line-height:1.4;
 }
 
 .ihr-flyout__author {
   margin: 0;
   font-size: 0.85rem;
   opacity: 0.72;
+  max-width:100%;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
 }
 
 .ihr-flyout__readiness { margin: 5px 0 0; font-size: 0.78rem; opacity: 0.72; }
 
 .ihr-flyout__actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   margin-top: 14px;
   pointer-events: auto;
-  flex-wrap: wrap;
+  width:100%;
   justify-content: center;
 }
+
+.ihr-flyout__actions .ihr-btn { flex:1; min-width:0; max-width:220px; }
+.ihr-flyout__details { color:var(--text-secondary); font-size:.72rem; margin:0 0 7px; letter-spacing:.035em; text-transform:uppercase; }
+@media (max-height:560px) and (min-width:560px) {
+  .ihr-flyout__meta { left:50%; right:16px; top:60px; bottom:20px; justify-content:center; }
+  .ihr-flyout__actions { flex-direction:column; align-items:stretch; }
+  .ihr-flyout__actions .ihr-btn { max-width:none; }
+}
+@media (max-width:359px) { .ihr-library-heading h1 { font-size:1.1rem; } .ihr-flyout__actions .ihr-btn { padding:10px; gap:6px; font-size:.8rem; } }
 
 /* ------------------------------------------------------------------ *
  * Accesibilidad
@@ -734,6 +761,7 @@
   .ihr-spine__bookmark {
     animation: none;
   }
+  .ihr-flyout__shadow { transition:none; }
 }
 
 /* WebGL meshes supply all book geometry and lighting. */

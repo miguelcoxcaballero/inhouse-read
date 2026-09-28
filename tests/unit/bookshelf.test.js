@@ -296,6 +296,34 @@ describe('renderBookshelf', () => {
     expect(onBookOpen).toHaveBeenCalledOnce()
   })
 
+  it('permite descargar un libro de Drive que todavía no está guardado offline', async () => {
+    const onBookAction = vi.fn()
+    shelf = renderBookshelf(container, [{ ...makeBooks(1)[0], sourceType:'drive', driveFileId:'remote-1' }], {
+      shelfWidth:SHELF_WIDTH, revealDuration:0, onBookAction
+    })
+    container.querySelector('.ihr-spine').click()
+    await settle()
+    const download = document.querySelector('[aria-label="Descargar para usar sin conexión"]')
+    expect(download.disabled).toBe(false)
+    expect(download.querySelector('svg')).not.toBeNull()
+    download.click()
+    expect(onBookAction).toHaveBeenCalledWith('offline', expect.objectContaining({ driveFileId:'remote-1' }), download)
+  })
+
+  it('mantiene el foco dentro de la portada y muestra un cierre accesible', async () => {
+    shelf = renderBookshelf(container, makeBooks(1), { shelfWidth:SHELF_WIDTH, revealDuration:0 })
+    container.querySelector('.ihr-spine').click()
+    await settle()
+    const flyout = document.querySelector('.ihr-flyout')
+    const close = flyout.querySelector('.ihr-flyout__close')
+    expect(close.getAttribute('aria-label')).toBe('Cerrar')
+    close.focus()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key:'Tab', cancelable:true }))
+    expect(document.activeElement).toBe(flyout.querySelector('.ihr-flyout__actions button'))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key:'Tab', shiftKey:true, cancelable:true }))
+    expect(document.activeElement).toBe(close)
+  })
+
   it('un arrastre (scroll) cancela la presión y no abre nada', () => {
     const onBookOpen = vi.fn()
     shelf = renderBookshelf(container, makeBooks(4), { shelfWidth: SHELF_WIDTH, onBookOpen })

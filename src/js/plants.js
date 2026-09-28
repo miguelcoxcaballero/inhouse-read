@@ -48,9 +48,9 @@ export const PLANT_TONES = Object.freeze([
 
 /** Barros de las macetas, también por semilla. */
 export const POT_TONES = Object.freeze([
-  Object.freeze({ '--ihr-pot': '#C97B4E', '--ihr-pot-shade': '#A45E37' }),
-  Object.freeze({ '--ihr-pot': '#B8865F', '--ihr-pot-shade': '#966744' }),
-  Object.freeze({ '--ihr-pot': '#A9A093', '--ihr-pot-shade': '#8A8175' })
+  Object.freeze({ '--ihr-pot': '#BA8165', '--ihr-pot-shade': '#915C44' }),
+  Object.freeze({ '--ihr-pot': '#D6C8AD', '--ihr-pot-shade': '#B0A083' }),
+  Object.freeze({ '--ihr-pot': '#A4B0A3', '--ihr-pot-shade': '#7E8C7D' })
 ]);
 
 export const PLANT_VARIANTS = Object.freeze([
@@ -72,10 +72,12 @@ function pot(top, { halfTop = 25, halfBottom = 20 } = {}) {
   const bl = 50 - halfBottom;
   const br = 50 + halfBottom;
   return `
-    <path d="M${left} ${top + 6} L${bl} ${BASELINE} H${br} L${right} ${top + 6} Z"
+    <ellipse cx="50" cy="${BASELINE - 1}" rx="${halfBottom + 3}" ry="2.5" fill="#30251A" opacity=".12"/>
+    <path d="M${left} ${top + 6} L${bl - 1} ${BASELINE - 5} Q${bl} ${BASELINE} ${bl + 5} ${BASELINE} H${br - 5} Q${br} ${BASELINE} ${br + 1} ${BASELINE - 5} L${right} ${top + 6} Z"
           fill="var(--ihr-pot, #C97B4E)"/>
-    <path d="M${50} ${top + 6} L${br} ${BASELINE} H${50} Z"
-          fill="var(--ihr-pot-shade, #A45E37)" opacity=".35"/>
+    <path d="M${right - 8} ${top + 6} L${br - 6} ${BASELINE} H${br - 3} Q${br} ${BASELINE} ${br + 1} ${BASELINE - 5} L${right} ${top + 6} Z"
+          fill="var(--ihr-pot-shade, #A45E37)" opacity=".4"/>
+    <path d="M${left + 5} ${top + 10} L${bl + 4} ${BASELINE - 5}" fill="none" stroke="#FFF" stroke-width="2" opacity=".16"/>
     <rect x="${left - 3}" y="${top - 2}" width="${halfTop * 2 + 6}" height="9" rx="3"
           fill="var(--ihr-pot, #C97B4E)"/>
     <rect x="${left - 3}" y="${top + 4}" width="${halfTop * 2 + 6}" height="3"

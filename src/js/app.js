@@ -142,8 +142,8 @@ async function openBookRecord(book, ctx) {
     try {
       if (await prepared) {
         preparedBooks.delete(book.id)
+        await revealPreparedReader()
         await transition.onReaderReady()
-        revealPreparedReader()
         const record = await library.get(book.id)
         if (record) extractCoverInBackground(record)
         return
@@ -271,7 +271,7 @@ els.filePicker.addEventListener('change', async () => {
 
 async function openFile(file, { existingRecord, forcedId, folderFileName, transition, preparing = false } = {}) {
   currentBookId = null
-  els.readerToolbar.hidden = Boolean(transition)
+  els.readerToolbar.hidden = Boolean(transition) || preparing
   if (preparing) {
     els.readerScreen.hidden = false
     els.readerScreen.classList.add('is-preparing')
@@ -383,12 +383,17 @@ async function revealPreparedReader() {
 
 async function handleCoverAction(action, book, button) {
   button.disabled = true
-  const original = button.textContent
-  button.textContent = action === 'offline' ? 'Descargando…' : 'Guardando…'
+  const label = button.querySelector('span') || button
+  const original = label.textContent
+  const setLabel = text => { label.textContent = text; button.setAttribute('aria-label', text) }
+  let saved = false
+  setLabel(action === 'offline' ? 'Descargando…' : 'Guardando…')
+  button.setAttribute('aria-busy', 'true')
   try {
     if (action === 'offline') {
       if (book.content) {
-        button.textContent = 'Disponible sin conexión'
+        setLabel('Disponible offline')
+        saved = true
         return
       }
       if (!hasDriveSession()) await requestDriveAccess()
@@ -397,17 +402,20 @@ async function handleCoverAction(action, book, button) {
       } else {
         await uploadBookToDrive(book)
       }
-      button.textContent = 'Disponible sin conexión'
+      setLabel('Disponible offline')
+      saved = true
     } else if (action === 'drive') {
       if (!hasDriveSession()) await requestDriveAccess()
       await uploadBookToDrive(book)
-      button.textContent = 'Guardado en Drive'
+      setLabel('En Drive')
+      saved = true
     }
   } catch (error) {
-    button.textContent = original
+    setLabel(original)
     await reportDriveConnectionError(error)
   } finally {
-    button.disabled = false
+    button.disabled = saved
+    button.removeAttribute('aria-busy')
   }
 }
 
@@ -662,7 +670,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.0.14'
+els.appVersion.textContent = 'Inhouse Read · v1.0.15'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')

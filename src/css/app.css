@@ -11,7 +11,7 @@
   justify-content: space-between;
   padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
   background: var(--bg-secondary);
-  box-shadow: var(--shadow-soft);
+  border-bottom: 1px solid var(--border);
   z-index: 5;
   flex: none;
 }
@@ -76,10 +76,11 @@
 .drive-auth-notice .icon-btn { flex:none; font-size:1.4rem; }
 .drive-connect-btn:focus-visible, .drive-menu-btn:focus-visible, .drive-profile-btn:focus-visible, .drive-theme-row input:focus-visible { outline:2px solid var(--accent-read); outline-offset:3px; }
 @media (max-width:540px) {
-  .app-header { flex-wrap:wrap; gap:8px; }
+  .app-header { flex-wrap:wrap; gap:8px; padding-left:12px; padding-right:12px; }
   .app-header .logo { font-size:1rem; gap:5px; }
   .app-header .logo-mark { width:22px; }
-  .header-actions { margin-left:auto; gap:2px; }
+  .header-actions { margin-left:auto; gap:0; }
+  .header-actions .icon-btn { width:36px; }
   .drive-connect-btn { padding:9px 11px; font-size:.8rem; }
   .drive-profile-btn { width:32px; height:32px; }
   .drive-auth-notice { flex-wrap:wrap; }
@@ -106,6 +107,13 @@
   width: var(--icon-size, 20px);
   height: var(--icon-size, 20px);
   stroke: var(--text-primary);
+}
+
+.icon-btn:focus-visible { outline:2px solid var(--accent-read); outline-offset:2px; }
+.icon-btn svg, .ihr-icon { flex-shrink:0; }
+.drive-modal-header strong { font-weight:600; font-size:1rem; }
+@media (prefers-reduced-motion:reduce) {
+  .reader-toolbar, .reader-progress-fill, .drive-profile-btn { transition:none; }
 }
 
 .screen {

@@ -4,6 +4,15 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 El home no es un grid de tarjetas: es una estantería ilustrada con plantas donde los libros se ven de canto. Al tocar uno, sale de la balda y gira en 3D hasta enseñar la portada antes de abrirse.
 
+### Actualización visual web · 1.0.15
+
+- Baldas de roble con veta fina, sombras de apoyo, macetas de cerámica y recuentos de libros.
+- Modelo compartido entre balda y portada: lomo elíptico continuo, tapas biseladas, bisagras de tela y cantos de papel estratificados.
+- Giro sin rebotes, zoom de portada y aparición del lector ya preparado debajo de la transición. La portada sigue esperando un segundo toque para abrir el documento.
+- Botones, radios, iconos y colores de superficie acordes con Notes; modo oscuro, teclado, movimiento reducido y composición horizontal en móviles.
+
+Esta actualización se entrega desde la web al abrir la app Android. La APK sigue siendo la **1.0.14**, con su cargador remoto; no se modifica el manifiesto Android para anunciar una APK inexistente.
+
 ## Formatos soportados — con honestidad
 
 | Formato | Motor | Estado |

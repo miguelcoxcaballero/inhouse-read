@@ -108,6 +108,13 @@ import { bookView } from './book-model.js';
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
 const TAP_SLOP = 12;
+const ICONS = Object.freeze({
+  drive: ['M9 3h6l7 12-3 5H5l-3-5L9 3Z', 'm9 3 7 12H2', 'm15 3-7 12 3 5'],
+  read: ['M3 5.5c3-1 6-.5 9 1.5 3-2 6-2.5 9-1.5v14c-3-1-6-.5-9 1.5-3-2-6-2.5-9-1.5v-14Z', 'M12 7v14'],
+  download: ['M12 3v12', 'm7 10 5 5 5-5', 'M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4'],
+  check: ['m5 12 4 4L19 6'],
+  close: ['m6 6 12 12', 'M18 6 6 18']
+});
 export const DEFAULT_TEXTS = Object.freeze({
   shelfLabel: 'Tu estantería',
   emptyTitle: 'Tu estantería está vacía',
@@ -324,7 +331,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         onClick: () => onDrive()
       });
       button.append(
-        svgIcon(['M7 18a4 4 0 0 1-.4-8A6 6 0 0 1 18 9.5a3.75 3.75 0 0 1-.6 8.5Z'], {
+        svgIcon(ICONS.drive, {
           className: 'ihr-icon'
         }),
         el('span', { text: opts.texts.addDrive })
@@ -531,13 +538,21 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     });
 
     const fragment = document.createDocumentFragment();
+    fragment.append(el('div', { class: 'ihr-library-heading' }, [
+      el('h1', { text: 'Tu biblioteca' }),
+      el('p', { text: `${state.books.length} ${state.books.length === 1 ? 'libro' : 'libros'}` })
+    ]));
     for (const section of plan) {
       const wrapper = el('section', {
         class: `ihr-section ihr-section--${section.id}`,
         'aria-label': section.title || opts.texts.shelfLabel
       });
       if (section.title) {
-        wrapper.append(el('h2', { class: 'ihr-section__title', text: section.title }));
+        const count = section.shelves.reduce((sum, shelf) => sum + shelf.items.filter(item => item.kind === 'book').length, 0);
+        wrapper.append(el('div', { class: 'ihr-section__header' }, [
+          el('h2', { class: 'ihr-section__title', text: section.title }),
+          el('span', { class: 'ihr-section__count', text: String(count), 'aria-label': `${count} libros` })
+        ]));
       }
       for (const shelf of section.shelves) wrapper.append(buildShelf(shelf));
       fragment.append(wrapper);
@@ -614,15 +629,16 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     // Geometría de destino: portada centrada, sin comerse la pantalla entera.
     const shelfAspect = (rect.width || 32) / (rect.height || 150);
-    const coverH = Math.min(vh * 0.54, 440, (vw * 0.78) / opts.coverRatio,
+    const landscape = vh <= 560 && vw >= 560;
+    const coverH = Math.min(vh * (landscape ? .72 : .54), landscape ? 350 : Math.max(110, vh - 330), 440, (vw * (landscape ? .35 : .78)) / opts.coverRatio,
       (vw * 0.86) / (opts.coverRatio + shelfAspect * 0.55));
     const coverW = coverH * opts.coverRatio;
     const startScale = rect.height > 0 ? rect.height / coverH : 0.3;
     // Grosor tal que, girado 90°, el tomo proyecte exactamente el lomo de origen.
     const thickness = Math.max(6, (rect.width || 32) / startScale);
 
-    const centerX = vw / 2 + thickness * 0.38 / 2;
-    const centerY = vh * 0.44;
+    const centerX = vw * (landscape ? .26 : .5) + thickness * 0.38 / 2;
+    const centerY = vh * (landscape ? .5 : .42);
     const dx = rect.left + rect.width / 2 - centerX;
     const dy = rect.top + rect.height / 2 - centerY;
 
@@ -657,10 +673,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       ? view.animate(frames, timing)
       : animate(bookNode, [{ opacity: 1 }], timing);
     const meta = el('div', { class: 'ihr-flyout__meta' }, [
+      el('p', { class: 'ihr-flyout__details', text: [book.format, book.progressFraction > 0 ? `${Math.round(book.progressFraction * 100)} % leído` : 'Por empezar'].filter(Boolean).join(' · ') }),
       el('p', { class: 'ihr-flyout__title', text: book.title ?? '' }),
       book.author ? el('p', { class: 'ihr-flyout__author', text: book.author }) : null
     ]);
-    const readiness = el('p', { class: 'ihr-flyout__readiness', text: 'Preparando el libro…', 'aria-live': 'polite' });
+    const readiness = el('p', { class: 'ihr-flyout__readiness', text: options.getBookPreparation ? 'Preparando el libro…' : 'Toca la portada para leer', 'aria-live': 'polite' });
     meta.append(readiness);
     const coverTarget = el('button', {
       type: 'button', class: 'ihr-flyout__cover-target',
@@ -675,21 +692,24 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       'aria-label': book.title ?? opts.texts.openAction,
       tabindex: '-1'
     });
-    flyout.append(scrim, el('div', { class: 'ihr-flyout__stage' }, [bookNode]), meta, coverTarget);
+    const closeButton = el('button', { type:'button', class:'ihr-btn ihr-flyout__close', 'aria-label':opts.texts.closeAction, title:opts.texts.closeAction, onClick:() => close() }, [svgIcon(ICONS.close, { className:'ihr-icon' })]);
+    const shadow = el('div', { class:'ihr-flyout__shadow', 'aria-hidden':'true', style:`--ihr-cover-bottom:${centerY + coverH / 2}px;left:${vw * (landscape ? .26 : .5)}px` });
+    flyout.append(scrim, shadow, el('div', { class: 'ihr-flyout__stage' }, [bookNode]), meta, coverTarget, closeButton);
 
     const previousFocus = document.activeElement;
-    const session = { book, cancelled: false };
+    const session = { book, cancelled: false, phase: 'revealing' };
 
     async function close({ silent = false, instant = false } = {}) {
-      if (state.session !== session) return;
+      if (state.session !== session || session.cancelled) return;
       clearInterval(readyCheck);
       session.cancelled = true;
-      state.session = null;
-      state.busy = false;
       document.removeEventListener('keydown', onKeydown, true);
+      fadeMeta();
+      flyout.classList.remove('is-ready');
       if (!instant) await playReturn();
       view?.dispose();
       flyout.remove();
+      if (state.session === session) { state.session = null; state.busy = false; }
       spineEl.classList.remove('is-away');
       if (!silent && !instant && typeof previousFocus?.focus === 'function') {
         previousFocus.focus();
@@ -698,6 +718,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     session.close = close;
 
     function onKeydown(event) {
+      if (event.key === 'Tab') {
+        const buttons = [...flyout.querySelectorAll('button:not([disabled]):not([hidden])')];
+        const first = buttons[0], last = buttons.at(-1);
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === flyout)) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && (document.activeElement === last || document.activeElement === flyout)) { event.preventDefault(); first?.focus(); }
+      }
       if (event.key === 'Escape') {
         event.stopPropagation();
         if (session.phase !== 'reading') close();
@@ -710,19 +736,24 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     document.addEventListener('keydown', onKeydown, true);
     state.session = session;
 
+    const isDownloaded = book.sourceType === 'drive' && Boolean(book.content);
+    const alreadySaved = book.sourceType === 'drive' ? isDownloaded : Boolean(book.driveFileId);
+    const actionLabel = book.sourceType === 'drive' ? (isDownloaded ? 'Disponible offline' : 'Descargar') : (book.driveFileId ? 'En Drive' : 'Guardar en Drive');
+    const actionTitle = book.sourceType === 'drive' ? (isDownloaded ? 'Disponible sin conexión' : 'Descargar para usar sin conexión') : actionLabel;
     const actionButtons = [
-      el('button', { type: 'button', class: 'ihr-btn ihr-btn--primary', text: opts.texts.openAction, onClick: () => expandCover() }),
-      el('button', { type: 'button', class: 'ihr-btn', text: book.sourceType === 'drive' ? (book.content ? 'Disponible sin conexión' : 'Descargar para usar sin conexión') : (book.driveFileId ? 'Sincronizado en Drive' : 'Guardar en Drive'), onClick: event => options.onBookAction?.(book.sourceType === 'drive' ? 'offline' : 'drive', book, event.currentTarget) }),
-      el('button', { type: 'button', class: 'ihr-btn', text: opts.texts.closeAction, onClick: () => close() })
+      el('button', { type: 'button', class: 'ihr-btn ihr-btn--primary', disabled:true, onClick: () => expandCover() }, [svgIcon(ICONS.read, { className:'ihr-icon' }), el('span', { text: opts.texts.openAction })]),
+      el('button', { type: 'button', class: 'ihr-btn', title:actionTitle, 'aria-label':actionTitle, disabled:!options.onBookAction || alreadySaved, onClick: event => options.onBookAction?.(book.sourceType === 'drive' ? 'offline' : 'drive', book, event.currentTarget) }, [svgIcon(alreadySaved ? ICONS.check : book.sourceType === 'drive' ? ICONS.download : ICONS.drive, { className:'ihr-icon' }), el('span', { text:actionLabel })])
     ];
     meta.append(el('div', { class: 'ihr-flyout__actions' }, actionButtons));
     const readyCheck = setInterval(() => {
       const task = options.getBookPreparation?.(book)
-      if (!task) return
+      clearInterval(readyCheck)
+      if (!task) { readiness.textContent = 'Toca la portada para leer'; return }
       task.then(ok => {
         if (state.session === session) readiness.textContent = ok ? 'Listo para leer' : 'No se pudo preparar. Toca para reintentar.'
       }).catch(() => { if (state.session === session) readiness.textContent = 'No se pudo preparar. Toca para reintentar.' })
     }, 250)
+    if (!options.getBookPreparation) clearInterval(readyCheck)
 
     document.body.append(flyout);
     spineEl.classList.add('is-away');
@@ -734,7 +765,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     const zStart = 0;
     const scaleAt = (t) => startScale + (1 - startScale) * t;
-    const tf = (x, y, z, scale, angle) => ({ x, y, scale, angle, pitch: Math.max(0, (90 - angle) / 90) * 10 });
+    const tf = (x, y, z, scale, angle) => ({ x, y, scale, angle, pitch: Math.max(0, (90 - angle) / 90) * 7 });
 
     const frames = [
       {
@@ -742,19 +773,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         easing: 'cubic-bezier(0.34, 0, 0.26, 1)'
       },
       {
-        offset: 0.34,
-        transform: tf(dx * 0.92, dy * 0.86 - lift, zStart * 0.55, scaleAt(0.18), 87),
+        offset: 0.26,
+        transform: tf(dx * 0.9, dy * 0.86 - lift, zStart * 0.55, scaleAt(0.15), 80),
         easing: EASE
       },
       {
-        offset: 0.72,
-        transform: tf(dx * 0.22, dy * 0.2, 0, scaleAt(0.86), 22),
+        offset: 0.7,
+        transform: tf(dx * 0.18, dy * 0.16, 0, scaleAt(0.85), 16),
         easing: 'cubic-bezier(0.3, 0, 0.2, 1)'
-      },
-      {
-        offset: 0.88,
-        transform: tf(dx * 0.04, dy * 0.03, 0, 1.012, -6),
-        easing: EASE
       },
       { transform: tf(0, 0, 0, 1, 0) }
     ];
@@ -769,7 +795,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       easing: EASE,
       fill: 'both'
     });
-    animate(
+    const metaEntrance = animate(
       meta,
       [
         { opacity: 0, transform: 'translateY(12px)' },
@@ -777,6 +803,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       ],
       { duration: Math.min(260, duration), delay: duration * 0.62, easing: EASE, fill: 'both' }
     );
+
+    function fadeMeta() {
+      const opacity = getComputedStyle(meta).opacity;
+      metaEntrance.cancel?.();
+      animate(meta, [{ opacity }, { opacity:0 }], { duration:prefersReducedMotion() ? 1 : 160, fill:'both' });
+      meta.style.pointerEvents = 'none';
+      actionButtons.forEach(button => { button.disabled = true; });
+    }
 
     async function playReturn() {
       const returnDuration = prefersReducedMotion() ? 1 : opts.returnDuration;
@@ -811,6 +845,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     if (session.cancelled || state.destroyed) return;
 
+    session.phase = 'ready';
+    flyout.classList.add('is-ready');
+    actionButtons[0].disabled = false;
     coverTarget.hidden = !opts.autoOpen;
     coverTarget.classList.add('is-ready');
 
@@ -836,15 +873,17 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
 
     async function expandCover() {
-      if (session.cancelled || session.expanding || state.destroyed) return;
+      if (session.cancelled || session.expanding || session.phase !== 'ready' || state.destroyed) return;
       session.expanding = true;
       coverTarget.disabled = true;
-      meta.classList.add('is-fading');
+      flyout.classList.add('is-expanding');
+      closeButton.hidden = true;
+      fadeMeta();
       const zoom = Math.max(vw / coverW, vh / coverH) * 1.025;
       const zoomDuration = prefersReducedMotion() ? 1 : 520;
       const expansion = animateBook([
         { transform: tf(0, 0, 0, 1, 0), offset: 0 },
-        { transform: tf(vw / 2 - centerX, vh / 2 - centerY, 0, zoom, 0), offset: 1 }
+        { transform: { ...tf(vw / 2 - centerX, vh / 2 - centerY, 0, zoom, 0), pitch:0 }, offset: 1 }
       ], { duration: zoomDuration, easing: 'linear', fill: 'both' });
       await expansion.finished?.catch(() => {});
       if (session.cancelled || state.destroyed) return;
@@ -868,6 +907,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   /* --------------------------- ciclo de vida --------------------------- */
 
   let observer = null;
+  const onViewportResize = () => {
+    state.session?.close({ instant:true, silent:true });
+    scheduleRender();
+  };
+  window.addEventListener('resize', onViewportResize);
   if (typeof ResizeObserver === 'function') {
     observer = new ResizeObserver(() => {
       const width = measure();
@@ -875,11 +919,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (Math.abs(width - state.shelfWidth) >= 8) scheduleRender();
     });
     observer.observe(scroller);
-  } else if (typeof window !== 'undefined') {
-    window.addEventListener('resize', scheduleRender);
   }
 
   render();
+  // Canvas text does not repaint when a web font arrives, unlike DOM text.
+  document.fonts?.ready.then(() => {
+    if (!state.destroyed && !state.session) scheduleRender();
+  });
 
   /** Sustituye la biblioteca y vuelve a pintar, conservando el scroll. */
   function refresh(nextBooks) {
@@ -907,9 +953,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       state.session?.close({ instant: true, silent: true });
       if (state.frame) cancelAnimationFrame(state.frame);
       observer?.disconnect();
-      if (!observer && typeof window !== 'undefined') {
-        window.removeEventListener('resize', scheduleRender);
-      }
+      window.removeEventListener('resize', onViewportResize);
       if (typeof URL?.revokeObjectURL === 'function') {
         for (const url of state.objectUrls) URL.revokeObjectURL(url);
       }
