@@ -1579,6 +1579,7 @@ import java.security.MessageDigest;
 import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {{
+    private String pendingOAuthQuery = null;
     // OAuth callback handling follows Inhouse Notes MainActivity.java.
     @Override
     public void onNewIntent(Intent intent) {{
@@ -1590,13 +1591,34 @@ public class MainActivity extends BridgeActivity {{
     private void handleAppCallback(Intent intent) {{
         if (intent == null || intent.getData() == null) return;
         Uri data = intent.getData();
-        if (!"{package_id}".equals(data.getScheme())) return;
+        if (!"{package_id}".equals(data.getScheme()) || !"/oauth2redirect".equals(data.getPath())) return;
         String query = data.getEncodedQuery();
         if (query == null || query.isEmpty()) return;
+        pendingOAuthQuery = query;
+        deliverOAuthCallback(query, 0);
+    }}
+
+    private void deliverOAuthCallback(String query, int attempt) {{
+        if (!query.equals(pendingOAuthQuery) || isFinishing() || attempt >= 120) return;
         WebView webView = getBridge().getWebView();
-        webView.post(() -> webView.evaluateJavascript(
-            "window.handleInhouseNativeOAuth && window.handleInhouseNativeOAuth("
-                + JSONObject.quote(query) + ");", null));
+        webView.post(() -> {{
+            if (!isTrustedReadPage()) {{
+                webView.postDelayed(() -> deliverOAuthCallback(query, attempt + 1), 500);
+                return;
+            }}
+            webView.evaluateJavascript(
+                "typeof window.handleInhouseNativeOAuth === 'function' && window.handleInhouseNativeOAuth("
+                    + JSONObject.quote(query) + ");", accepted -> {{
+                    if ("true".equals(accepted)) {{
+                        if (query.equals(pendingOAuthQuery)) {{
+                            pendingOAuthQuery = null;
+                            getIntent().setData(null);
+                        }}
+                    }} else {{
+                        webView.postDelayed(() -> deliverOAuthCallback(query, attempt + 1), 500);
+                    }}
+                }});
+        }});
     }}
 
     private boolean isTrustedReadPage() {{
@@ -1893,6 +1915,7 @@ import java.security.MessageDigest
 import org.json.JSONObject
 
 class MainActivity : BridgeActivity() {{
+    private var pendingOAuthQuery: String? = null
     // OAuth callback handling follows Inhouse Notes MainActivity.kt.
     override fun onNewIntent(intent: Intent) {{
         super.onNewIntent(intent)
@@ -1902,12 +1925,31 @@ class MainActivity : BridgeActivity() {{
 
     private fun handleAppCallback(intent: Intent?) {{
         val data = intent?.data ?: return
-        if (data.scheme != "{package_id}") return
+        if (data.scheme != "{package_id}" || data.path != "/oauth2redirect") return
         val query = data.encodedQuery ?: return
+        pendingOAuthQuery = query
+        deliverOAuthCallback(query, 0)
+    }}
+
+    private fun deliverOAuthCallback(query: String, attempt: Int) {{
+        if (query != pendingOAuthQuery || isFinishing || attempt >= 120) return
         bridge.webView.post {{
+            if (!isTrustedReadPage()) {{
+                bridge.webView.postDelayed({{ deliverOAuthCallback(query, attempt + 1) }}, 500)
+                return@post
+            }}
             bridge.webView.evaluateJavascript(
-                "window.handleInhouseNativeOAuth && window.handleInhouseNativeOAuth("
-                    + JSONObject.quote(query) + ");", null)
+                "typeof window.handleInhouseNativeOAuth === 'function' && window.handleInhouseNativeOAuth("
+                    + JSONObject.quote(query) + ");") {{ accepted ->
+                if (accepted == "true") {{
+                    if (query == pendingOAuthQuery) {{
+                        pendingOAuthQuery = null
+                        intent.data = null
+                    }}
+                }} else {{
+                    bridge.webView.postDelayed({{ deliverOAuthCallback(query, attempt + 1) }}, 500)
+                }}
+            }}
         }}
     }}
 

@@ -39,9 +39,9 @@
             <path d="M7.5 3h9l6 10.5-3 5.5h-15l-3-5.5L7.5 3z"/><path d="M7.5 3l6 10.5M16.5 13.5h6.5"/>
           </svg>
         </button>
-        <button id="drive-connect-btn" class="drive-connect-btn" type="button" aria-label="Conectar cuenta de Google" title="Conectar cuenta de Google">G</button>
+        <button id="drive-connect-btn" class="drive-connect-btn" type="button" aria-label="Conectar cuenta de Google" title="Conectar cuenta de Google">Iniciar sesión</button>
         <div id="drive-profile" class="drive-profile" hidden>
-          <button id="drive-profile-btn" class="drive-profile-btn" type="button" aria-label="Cuenta de Google" aria-haspopup="true" aria-expanded="false">
+          <button id="drive-profile-btn" class="drive-profile-btn" type="button" aria-label="Cuenta de Google" aria-haspopup="menu" aria-controls="drive-profile-menu" aria-expanded="false">
             <span id="drive-profile-initial" class="drive-profile-initial" aria-hidden="true">G</span>
             <img id="drive-profile-avatar" class="drive-profile-avatar" alt="" hidden />
           </button>
@@ -54,12 +54,12 @@
                 <div id="drive-profile-email" class="drive-profile-email"></div>
               </div>
             </div>
-            <p id="drive-sync-status" class="drive-sync-status" role="status">Conectado con Google Drive</p>
+            <label class="drive-theme-row" for="drive-theme-toggle"><span>Modo oscuro</span><input id="drive-theme-toggle" type="checkbox" aria-label="Modo oscuro" /></label>
+            <p id="drive-sync-status" class="drive-sync-status" role="status" aria-live="polite">Conectado con Google Drive</p>
             <div class="drive-profile-actions">
               <button id="drive-sync-btn" class="drive-menu-btn" type="button" role="menuitem">Sincronizar ahora</button>
               <button id="drive-signout-btn" class="drive-menu-btn" type="button" role="menuitem">Cerrar sesión</button>
             </div>
-            <label class="drive-theme-row" for="drive-theme-toggle">Tema oscuro <input id="drive-theme-toggle" type="checkbox" /></label>
             <small id="app-version" class="drive-app-version"></small>
           </div>
         </div>
@@ -70,6 +70,12 @@
         </button>
       </div>
     </header>
+    <div id="drive-auth-notice" class="drive-auth-notice" role="status" aria-live="polite" hidden>
+      <span id="drive-auth-message"></span>
+      <button id="drive-auth-retry" class="drive-menu-btn" type="button" hidden>Reintentar</button>
+      <button id="drive-auth-cancel" class="drive-menu-btn" type="button" hidden>Cancelar</button>
+      <button id="drive-auth-dismiss" class="icon-btn" type="button" aria-label="Cerrar aviso">×</button>
+    </div>
 
     <section id="home-screen" class="screen" data-screen="home">
       <div id="bookshelf-root"></div>

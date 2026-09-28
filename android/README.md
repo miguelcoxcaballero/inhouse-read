@@ -17,19 +17,22 @@ Mismo mecanismo que inhouse notes/photos (revisado en `app-v5.js::checkForRequir
 
 ## Google Drive en Android
 
-A partir de v1.0.13, el APK usa (en código) el mismo sistema de Inhouse Notes: abre Google en una Custom Tab, recibe el código en `com.inhousesoftware.read:/oauth2redirect`, lo intercambia con PKCE y guarda el token de renovación.
+Desde v1.0.13 el APK usa el mismo flujo de Inhouse Notes: Custom Tab, código de autorización con PKCE, callback `com.inhousesoftware.read:/oauth2redirect` y renovación de sesión.
 
-**Pendiente real, confirmado 2026-09-27 (no es solo teoría — se reprodujo pegando exactamente los mismos parámetros contra el endpoint real de Google):** el `ANDROID_OAUTH_CLIENT_ID` que hoy figura en `src/js/drive-client.js` (`435784295430-tjdos7pgbpr07q9gjpshc6gqd2cvcg43.apps.googleusercontent.com`) devuelve `Error 400: invalid_request` para el redirect `com.inhousesoftware.read:/oauth2redirect` — no existe como cliente Android válido para ese paquete, o está mal registrado. La misma prueba contra el cliente Android real de Notes (`com.local.inhousenotes:/oauth2redirect`) sí abre la pantalla de login real, así que el mecanismo en sí funciona: falta crear el cliente correcto en la consola.
+### Configuración real corregida el 2026-09-28
 
-**Para arreglarlo (requiere entrar con el navegador a la cuenta de Google del proyecto — no se puede hacer desde una sesión de código):**
-1. Google Cloud Console → proyecto donde vive el cliente Android real de Notes (el que muestra "Inhouse Notes" en la pantalla de consentimiento) → APIs & Services → Credentials → Create Credentials → OAuth client ID.
-2. Application type: **Android**.
-3. Package name: `com.inhousesoftware.read`.
-4. SHA-1 del certificado de release actual: `C8:3A:3B:38:B7:9E:0E:4A:44:A0:69:22:2A:85:24:E6:01:15:CE:76` (huella pública, no es secreta; calculada del keystore real de este repo el 2026-09-27 — si el keystore cambia алgún día, hay que recalcularla y volver a registrarla).
-5. Crear, copiar el Client ID resultante y sustituirlo en `ANDROID_OAUTH_CLIENT_ID` (`src/js/drive-client.js`).
-6. Publicar un nuevo build de Android (sube versión en `build_android_apk.py` y dispara `build-android.yml`) — hasta entonces, el botón de Drive dentro de la app Android abrirá la pantalla de error de Google, no un login real.
+El cliente Android **sí estaba registrado**. El error `400: invalid_request` se debía a que **Enable custom URI scheme estaba desactivado** en Google Auth Platform → Clients → Inhouse Read Android → Advanced settings. Se ha activado y guardado en el proyecto `inhouse-notes`.
 
-El flujo web (pestaña de navegador normal, no la app instalada) usa Google Identity Services con el cliente web de Notes y, a diferencia del Android, todo indica que ya está bien configurado (se comprobó que el popup de Google se intenta abrir con los parámetros correctos, sin ningún error previo de origen no autorizado).
+- Cliente Android: `435784295430-tjdos7pgbpr07q9gjpshc6gqd2cvcg43.apps.googleusercontent.com`.
+- Paquete: `com.inhousesoftware.read`.
+- SHA-1 de release: `C8:3A:3B:38:B7:9E:0E:4A:44:A0:69:22:2A:85:24:E6:01:15:CE:76`.
+- Cliente web compartido con Notes: `435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com`.
+
+Comprobación real: la petición Android con ese cliente, redirect y desafío PKCE abre ahora el selector de cuenta de Google. Tras elegir la cuenta, Google muestra el aviso de proyecto no verificado. El proyecto compartido se presenta como «Inhouse Notes» en Google. Esta comprobación no equivale a completar el consentimiento y el retorno en un teléfono físico.
+
+En v1.0.14 el callback nativo espera a que la página de producción esté lista. La transacción PKCE persistida permite terminar el acceso incluso si Android recrea la WebView. El estado aleatorio, la caducidad de la transacción, el límite de 20 segundos para intercambio/renovación y el control de cierre de sesión evitan aceptar respuestas ajenas o guardar una sesión después de desconectar. La UI permite cancelar y reintentar.
+
+No sustituir el cliente Android por el de Notes: cada paquete tiene su propio cliente y certificado, dentro del mismo proyecto/API. No se necesita una API key ni un client secret en el frontend.
 
 ## Cómo instalar
 

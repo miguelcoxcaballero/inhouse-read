@@ -58,7 +58,8 @@ describe('autorización de Google Drive', () => {
     expect(authUrl.searchParams.get('client_id')).toBe('read-android-client.apps.googleusercontent.com')
     expect(authUrl.searchParams.get('redirect_uri')).toBe('com.inhousesoftware.read:/oauth2redirect')
     expect(authUrl.searchParams.get('code_challenge_method')).toBe('S256')
-    globalThis.handleInhouseNativeOAuth('code=auth-test&state=inhouse_read_pkce')
+    expect(authUrl.searchParams.get('state')).toHaveLength(43)
+    globalThis.handleInhouseNativeOAuth(`code=auth-test&state=${authUrl.searchParams.get('state')}`)
     await expect(pending).resolves.toBe(token)
     expect(new URLSearchParams(globalThis.fetch.mock.calls[0][1].body).get('code_verifier')).toBeTruthy()
     expect(localStorage.getItem('ihr_drive_refresh_token_v1')).toBe('refresh-test')
@@ -72,6 +73,60 @@ describe('autorización de Google Drive', () => {
     await expect(drive.requestDriveAccess({ interactive: false })).resolves.toBe(token)
     expect(globalThis.InhouseNative.openAuthUrl).not.toHaveBeenCalled()
     expect(new URLSearchParams(globalThis.fetch.mock.calls[0][1].body).get('grant_type')).toBe('refresh_token')
+  })
+
+  it('recupera el callback aunque Android haya recreado la WebView', async () => {
+    globalThis.InhouseNative = { openAuthUrl: vi.fn() }
+    localStorage.setItem('ihr_drive_pkce_verifier_v1', 'saved-verifier')
+    localStorage.setItem('ihr_drive_pkce_transaction_v1', JSON.stringify({ state: 'saved-state', createdAt: Date.now() }))
+    globalThis.fetch = vi.fn(async () => json({ access_token: token, expires_in: 3600, refresh_token: 'renew' }))
+    const restored = vi.fn()
+    globalThis.addEventListener('inhouse-drive-auth', restored)
+    expect(globalThis.handleInhouseNativeOAuth('state=saved-state&code=restored-code')).toBe(true)
+    await vi.waitFor(() => expect(drive.hasDriveSession()).toBe(true))
+    expect(restored.mock.calls[0][0].detail.connected).toBe(true)
+    expect(localStorage.getItem('ihr_drive_pkce_transaction_v1')).toBeNull()
+    expect(localStorage.getItem('ihr_drive_pkce_verifier_v1')).toBeNull()
+    globalThis.removeEventListener('inhouse-drive-auth', restored)
+  })
+
+  it('ignora callbacks ajenos sin perder la conexión pendiente', async () => {
+    globalThis.InhouseNative = { openAuthUrl: vi.fn() }
+    globalThis.fetch = vi.fn(async () => json({ access_token: token }))
+    const pending = drive.requestDriveAccess()
+    await vi.waitFor(() => expect(globalThis.InhouseNative.openAuthUrl).toHaveBeenCalledOnce())
+    const state = new URL(globalThis.InhouseNative.openAuthUrl.mock.calls[0][0]).searchParams.get('state')
+    globalThis.handleInhouseNativeOAuth('state=wrong&code=foreign')
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+    globalThis.handleInhouseNativeOAuth(`state=${state}&code=correct`)
+    await expect(pending).resolves.toBe(token)
+  })
+
+  it('cerrar sesión durante la renovación no vuelve a guardar credenciales', async () => {
+    globalThis.InhouseNative = { openAuthUrl: vi.fn() }
+    localStorage.setItem('ihr_drive_refresh_token_v1', 'old-refresh')
+    let complete
+    globalThis.fetch = vi.fn(() => new Promise(resolve => { complete = resolve }))
+    const pending = drive.requestDriveAccess({ interactive: false })
+    drive.signOutDrive()
+    complete(json({ access_token: token, refresh_token: 'late-refresh' }))
+    await expect(pending).rejects.toThrow('Sesión cerrada')
+    expect(drive.hasDriveSession()).toBe(false)
+    expect(localStorage.getItem('ihr_drive_refresh_token_v1')).toBeNull()
+  })
+
+  it('permite cancelar y volver a abrir Google sin reiniciar la app', async () => {
+    globalThis.InhouseNative = { openAuthUrl: vi.fn() }
+    const first = drive.requestDriveAccess()
+    await vi.waitFor(() => expect(globalThis.InhouseNative.openAuthUrl).toHaveBeenCalledOnce())
+    const rejected = expect(first).rejects.toThrow('Conexión cancelada')
+    drive.cancelDriveConnection()
+    await rejected
+    const second = drive.requestDriveAccess()
+    await vi.waitFor(() => expect(globalThis.InhouseNative.openAuthUrl).toHaveBeenCalledTimes(2))
+    const rejectedAgain = expect(second).rejects.toThrow('Conexión cancelada')
+    drive.cancelDriveConnection()
+    await rejectedAgain
   })
 
   it('indica que hay que actualizar el APK antiguo antes de conectar', async () => {

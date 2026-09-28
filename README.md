@@ -70,6 +70,8 @@ La versión web utiliza Google Identity Services con el mismo cliente web de Inh
 
 ## Despliegue (GitHub Pages)
 
+La configuración Android incluye **Enable custom URI scheme** en las opciones avanzadas del cliente de Read. El 2026-09-28 se corrigió este ajuste, que provocaba `invalid_request` incluso con el paquete y certificado correctos. Ver [configuración y comprobaciones OAuth](android/README.md#google-drive-en-android). La versión 1.0.14 también recupera el callback tras recargar Android y corrige la foto oculta por la inicial en el menú de cuenta.
+
 Igual que inhouse notes: build de Vite, publicado a la rama `gh-pages` vía `peaceiris/actions-gh-pages`, sirviendo la rama directamente desde Settings → Pages (no el deployment nativo de Actions, que en el repo hermano dio timeouts). Se dispara en cada push a `main` — ver `.github/workflows/deploy-pages.yml`.
 
 ## Android

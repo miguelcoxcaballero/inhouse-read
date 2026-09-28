@@ -44,11 +44,39 @@ test('conecta Google sin redirección y muestra la foto en la esquina derecha', 
   const button = page.getByRole('button', { name: 'Cuenta de Google: miguel@example.com' })
   await expect(button).toBeVisible()
   await expect(button.locator('img')).toBeVisible()
+  // A display:grid fallback used to ignore hidden and push the photo below
+  // the clipped avatar button, so the letter G remained visible after login.
+  await expect(page.locator('#drive-profile-initial')).toBeHidden()
+  const avatarBox = await button.locator('img').boundingBox()
+  const buttonBox = await button.boundingBox()
+  expect(Math.abs(avatarBox.y - buttonBox.y)).toBeLessThan(2)
+  await expect(page.locator('#theme-toggle')).toBeHidden()
   await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   expect(await page.evaluate(() => window.__oauthOptions.redirect_uri)).toBeUndefined()
   await button.click()
-  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.0.13')
+  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.0.14')
   await expect(page.locator('#drive-theme-toggle')).toBeVisible()
+  await expect(page.locator('#drive-profile-initial-menu')).toBeHidden()
+  await page.locator('#drive-theme-toggle').check()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await page.keyboard.press('Escape')
+  await expect(page.locator('#drive-profile-menu')).toBeHidden()
+  await expect(button).toBeFocused()
+})
+
+test('un error de Google permite reintentar sin alertas nativas', async ({ page }) => {
+  await page.route('https://accounts.google.com/gsi/client', route => route.fulfill({ status:200, contentType:'text/javascript', body:'' }))
+  await page.addInitScript(() => {
+    window.google = { accounts: { oauth2: { initTokenClient: options => ({
+      requestAccessToken: () => options.error_callback({ type:'popup_closed', message:'Se cerró la ventana de Google.' })
+    }) } } }
+  })
+  await page.reload()
+  await page.getByRole('button', { name:'Conectar cuenta de Google' }).click()
+  await expect(page.locator('#drive-auth-notice')).toContainText('Se cerró la ventana de Google')
+  await expect(page.getByRole('button', { name:'Reintentar' })).toBeVisible()
+  await page.getByRole('button', { name:'Reintentar' }).click()
+  await expect(page.getByRole('button', { name:'Conectar cuenta de Google' })).toBeEnabled()
 })
 
 test('muestra la cuenta de Google con su perfil y acciones de sincronización', async ({ page }) => {

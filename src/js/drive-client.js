@@ -9,11 +9,14 @@ const LEGACY_TOKEN_KEY = 'ihn_drive_tokens'
 const PROFILE_KEY = 'ihr_drive_profile_v2'
 const DEFAULT_CLIENT_ID = '435784295430-cmug30o42f1vu4ijgor9sjb0ro4oo37o.apps.googleusercontent.com'
 // Android OAuth clients are bound to both package name and signing certificate.
-// Populate this with the Read client in the same Google Cloud project as Notes.
+// Read's registered client in Notes' Google Cloud project. Custom URI scheme
+// must be enabled in Google Auth Platform > Clients > Advanced settings.
 const ANDROID_OAUTH_CLIENT_ID = import.meta.env.VITE_ANDROID_OAUTH_CLIENT_ID || '435784295430-tjdos7pgbpr07q9gjpshc6gqd2cvcg43.apps.googleusercontent.com'
 const ANDROID_PKCE_REDIRECT_URI = 'com.inhousesoftware.read:/oauth2redirect'
 const REFRESH_TOKEN_KEY = 'ihr_drive_refresh_token_v1'
 const PKCE_VERIFIER_KEY = 'ihr_drive_pkce_verifier_v1'
+const PKCE_TRANSACTION_KEY = 'ihr_drive_pkce_transaction_v1'
+const AUTH_TIMEOUT_MS = 10 * 60_000
 const FOLDER_NAME = 'inhouse read'
 const STATE_FOLDER_NAME = '.inhouse-read-state'
 
@@ -24,6 +27,7 @@ let folderIdPromise = null
 let stateFolderIdPromise = null
 let authGeneration = 0
 let nativeRequest = null
+let callbackExchange = null
 const pendingWebRequests = new Set()
 
 function clientId() { return DEFAULT_CLIENT_ID }
@@ -87,7 +91,7 @@ function requestWebDriveAccess() {
       if (error) reject(error)
       else resolve(value)
     }
-    const cancel = () => finish(null, new Error('Sesión cerrada.'))
+    const cancel = (message = 'Sesión cerrada.') => finish(null, new Error(message))
     pendingWebRequests.add(cancel)
     try {
     const client = oauth.initTokenClient({
@@ -132,11 +136,22 @@ async function pkceChallengeFromVerifier(verifier) {
   return base64UrlEncodeBytes(new Uint8Array(digest))
 }
 
-async function tokenRequest(body) {
-  const response = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString()
-  })
-  const data = await response.json()
+async function tokenRequest(body, generation = authGeneration) {
+  // Same deadline and sign-out guard as Notes' refresh-token request.
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 20_000)
+  let response, data
+  try {
+    response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(), signal: controller.signal
+    })
+    data = await response.json()
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('Google tardó demasiado en responder. Vuelve a intentarlo.')
+    throw error
+  } finally { clearTimeout(timeout) }
+  if (generation !== authGeneration) throw new Error('Sesión cerrada.')
   if (!response.ok || !data?.access_token) {
     const error = new Error(data?.error_description || data?.error || 'Google no devolvió un token de acceso.')
     error.status = response.status
@@ -158,10 +173,13 @@ async function refreshDriveAccessToken() {
   }
 }
 
-async function startAndroidPkceSignIn() {
+async function startAndroidPkceSignIn(generation) {
   const verifier = generatePkceVerifier()
-  localStorage.setItem(PKCE_VERIFIER_KEY, verifier)
   const challenge = await pkceChallengeFromVerifier(verifier)
+  if (generation !== authGeneration) throw new Error('Conexión cancelada.')
+  const state = generatePkceVerifier()
+  localStorage.setItem(PKCE_VERIFIER_KEY, verifier)
+  localStorage.setItem(PKCE_TRANSACTION_KEY, JSON.stringify({ state, createdAt: Date.now() }))
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth')
   authUrl.searchParams.set('client_id', ANDROID_OAUTH_CLIENT_ID)
   authUrl.searchParams.set('redirect_uri', ANDROID_PKCE_REDIRECT_URI)
@@ -171,7 +189,7 @@ async function startAndroidPkceSignIn() {
   authUrl.searchParams.set('include_granted_scopes', 'true')
   authUrl.searchParams.set('code_challenge', challenge)
   authUrl.searchParams.set('code_challenge_method', 'S256')
-  authUrl.searchParams.set('state', 'inhouse_read_pkce')
+  authUrl.searchParams.set('state', state)
   if (!localStorage.getItem(REFRESH_TOKEN_KEY)) authUrl.searchParams.set('prompt', 'consent')
   const url = authUrl.toString()
   // Como en Notes: si el puente nativo no responde de verdad a la llamada
@@ -187,16 +205,24 @@ async function startAndroidPkceSignIn() {
 }
 
 async function requestNativeDriveAccess(interactive) {
+  const generation = authGeneration
   if (!ANDROID_OAUTH_CLIENT_ID) throw new Error('Falta configurar el cliente OAuth Android de Inhouse Read.')
   if (localStorage.getItem(REFRESH_TOKEN_KEY)) {
     try { return await refreshDriveAccessToken() }
-    catch (error) { if (!interactive) throw error }
+    catch (error) { if (!interactive || generation !== authGeneration) throw error }
   }
   if (!interactive) throw new Error('La sesión de Google ha caducado. Pulsa Conectar para continuar.')
   return new Promise((resolve, reject) => {
-    nativeRequest = { resolve, reject, generation: authGeneration }
-    startAndroidPkceSignIn().catch(error => {
-      nativeRequest = null
+    const timer = setTimeout(() => {
+      if (nativeRequest?.generation !== generation) return
+      cancelDriveConnection('La conexión con Google ha caducado. Vuelve a intentarlo.')
+    }, AUTH_TIMEOUT_MS)
+    const finish = fn => value => { clearTimeout(timer); fn(value) }
+    const pending = { resolve: finish(resolve), reject: finish(reject), generation }
+    nativeRequest = pending
+    startAndroidPkceSignIn(generation).catch(error => {
+      if (nativeRequest === pending) nativeRequest = null
+      clearTimeout(timer)
       reject(error)
     })
   })
@@ -204,34 +230,61 @@ async function requestNativeDriveAccess(interactive) {
 
 // MainActivity relays the custom-scheme callback exactly as Notes does.
 globalThis.handleInhouseNativeOAuth = payload => {
+  if (callbackExchange) return true // Native delivery can be retried after a reload.
   const pending = nativeRequest
-  if (!pending || pending.generation !== authGeneration) return false
-  nativeRequest = null
+  const generation = authGeneration
+  let transaction
+  try { transaction = JSON.parse(localStorage.getItem(PKCE_TRANSACTION_KEY) || 'null') } catch { /* damaged storage */ }
   const params = new URLSearchParams(String(payload || '').replace(/^[#?]/, ''))
-  if (params.get('state') !== 'inhouse_read_pkce') {
-    pending.reject(new Error('La respuesta de Google no corresponde a esta conexión.'))
-    return false
+  // Persisted transaction, as with Notes' verifier, survives Android destroying
+  // the WebView while the account chooser is in front. No in-memory promise required.
+  if (!transaction || transaction.state !== params.get('state')) return true
+  const finishError = error => {
+    pending?.reject(error)
+    if (!pending && generation === authGeneration) globalThis.dispatchEvent(new CustomEvent('inhouse-drive-auth', { detail: { error: error.message } }))
+  }
+  nativeRequest = null
+  localStorage.removeItem(PKCE_TRANSACTION_KEY)
+  const verifier = localStorage.getItem(PKCE_VERIFIER_KEY)
+  localStorage.removeItem(PKCE_VERIFIER_KEY)
+  if (Date.now() - transaction.createdAt > AUTH_TIMEOUT_MS) {
+    finishError(new Error('La conexión con Google ha caducado. Vuelve a intentarlo.'))
+    return true
   }
   if (params.get('error')) {
-    pending.reject(new Error(params.get('error_description') || params.get('error')))
-    return false
+    finishError(new Error(params.get('error') === 'access_denied'
+      ? 'No se ha autorizado la conexión con Google.' : 'Google no pudo completar la conexión. Vuelve a intentarlo.'))
+    return true
   }
   const code = params.get('code')
-  const verifier = localStorage.getItem(PKCE_VERIFIER_KEY)
   if (!code || !verifier) {
-    pending.reject(new Error('Google no devolvió un código de autorización válido.'))
-    return false
+    finishError(new Error('Google no devolvió un código de autorización válido.'))
+    return true
   }
   const body = new URLSearchParams({
     client_id: ANDROID_OAUTH_CLIENT_ID, code, code_verifier: verifier,
     grant_type: 'authorization_code', redirect_uri: ANDROID_PKCE_REDIRECT_URI
   })
-  tokenRequest(body).then(token => {
-    localStorage.removeItem(PKCE_VERIFIER_KEY)
-    if (pending.generation === authGeneration) pending.resolve(token)
-    else pending.reject(new Error('Sesión cerrada.'))
-  }).catch(error => pending.reject(error))
+  const exchange = tokenRequest(body, generation).then(token => {
+    pending?.resolve(token)
+    if (!pending) globalThis.dispatchEvent(new CustomEvent('inhouse-drive-auth', { detail: { connected: true } }))
+    return token
+  }).catch(error => {
+    finishError(error)
+  }).finally(() => { if (callbackExchange === exchange) callbackExchange = null })
+  callbackExchange = exchange
   return true
+}
+
+export function cancelDriveConnection(message = 'Conexión cancelada.') {
+  authGeneration += 1
+  for (const cancel of pendingWebRequests) cancel(message)
+  if (nativeRequest) nativeRequest.reject(new Error(message))
+  nativeRequest = null
+  localStorage.removeItem(PKCE_TRANSACTION_KEY)
+  localStorage.removeItem(PKCE_VERIFIER_KEY)
+  authPromise = null
+  callbackExchange = null
 }
 
 export function requestDriveAccess({ interactive = true } = {}) {
@@ -252,14 +305,12 @@ export function requestDriveAccess({ interactive = true } = {}) {
   } catch (error) {
     return Promise.reject(error)
   }
-  return authPromise.finally(() => { authPromise = null })
+  const request = authPromise
+  return request.finally(() => { if (authPromise === request) authPromise = null })
 }
 
 export function signOutDrive() {
-  authGeneration += 1
-  for (const cancel of pendingWebRequests) cancel()
-  if (nativeRequest) nativeRequest.reject(new Error('Sesión cerrada.'))
-  nativeRequest = null
+  cancelDriveConnection('Sesión cerrada.')
   clearToken()
   localStorage.removeItem(REFRESH_TOKEN_KEY)
   localStorage.removeItem(PKCE_VERIFIER_KEY)

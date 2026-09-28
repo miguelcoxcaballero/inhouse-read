@@ -3,7 +3,7 @@ import { renderBookshelf } from './bookshelf.js'
 import { ReaderController, UnsupportedFormatError } from './readers/reader-controller.js'
 import {
   isDriveConfigured, requestDriveAccess, listAllDriveBooks, hasDriveSession,
-  getDriveProfile, getRememberedDriveProfile, signOutDrive
+  getDriveProfile, getRememberedDriveProfile, signOutDrive, cancelDriveConnection
 } from './drive-client.js'
 import { CloudSync } from './cloud-sync.js'
 import {
@@ -444,12 +444,14 @@ async function loadDriveAccountProfile() {
     cloudSync.reset()
     els.driveProfile.hidden = true
     els.driveConnectBtn.hidden = false
+    els.themeToggle.hidden = false
     els.driveProfileMenu.hidden = true
     els.driveProfileBtn.setAttribute('aria-expanded', 'false')
     return null
   }
   els.driveProfile.hidden = false
   els.driveConnectBtn.hidden = true
+  els.themeToggle.hidden = true
   try {
     driveProfile = await getDriveProfile()
   } catch (error) {
@@ -481,20 +483,46 @@ async function syncLibraryToDrive({ silent = false } = {}) {
   return cloudSync.sync()
 }
 
-els.driveConnectBtn.addEventListener('click', async () => {
+const authNotice = document.getElementById('drive-auth-notice')
+const authMessage = document.getElementById('drive-auth-message')
+const authRetry = document.getElementById('drive-auth-retry')
+const authCancel = document.getElementById('drive-auth-cancel')
+function showAuthNotice(message, { retry = false, pending = false } = {}) {
+  authMessage.textContent = message
+  authNotice.hidden = !message
+  authRetry.hidden = !retry
+  authCancel.hidden = !pending
+}
+
+async function connectGoogleAccount() {
   els.driveConnectBtn.disabled = true
-  try { await requestDriveAccess(); await syncLibraryToDrive() }
+  showAuthNotice('Completa el acceso en Google. Tu biblioteca aparecerá al volver.', { pending: true })
+  try {
+    await requestDriveAccess()
+    showAuthNotice('')
+    await syncLibraryToDrive()
+  }
   catch (error) { await reportDriveConnectionError(error) }
   finally { els.driveConnectBtn.disabled = false }
+}
+els.driveConnectBtn.addEventListener('click', connectGoogleAccount)
+authRetry.addEventListener('click', connectGoogleAccount)
+authCancel.addEventListener('click', () => { cancelDriveConnection(); showAuthNotice('') })
+document.getElementById('drive-auth-dismiss').addEventListener('click', () => { authNotice.hidden = true })
+globalThis.addEventListener('inhouse-drive-auth', event => {
+  if (event.detail.connected) {
+    showAuthNotice('')
+    syncLibraryToDrive().catch(reportDriveConnectionError)
+  } else if (event.detail.error) showAuthNotice(event.detail.error, { retry: true })
 })
 
 async function reportDriveConnectionError(error) {
   if (error?.code === 'ANDROID_SHELL_OUTDATED') {
     if (await offerAvailableAndroidUpdate()) return
-    alert('La versión de Android con acceso a Google Drive aún no aparece para descargar. Mientras tanto, puedes usar Inhouse Read en el navegador.')
+    showAuthNotice('Actualiza la app Android para conectar con Google Drive.', { retry: true })
     return
   }
-  alert(`No se pudo conectar con Google Drive: ${error.message}`)
+  showAuthNotice(error.message === 'Conexión cancelada.' ? '' : `No se pudo conectar con Google Drive. ${error.message}`, { retry: true })
 }
 els.driveThemeToggle.addEventListener('change', () => {
   const theme = els.driveThemeToggle.checked ? 'dark' : 'light'
@@ -506,6 +534,7 @@ els.driveProfileBtn.addEventListener('click', () => {
   const open = els.driveProfileMenu.hidden
   els.driveProfileMenu.hidden = !open
   els.driveProfileBtn.setAttribute('aria-expanded', String(open))
+  if (open) els.driveThemeToggle.focus()
 })
 document.addEventListener('click', event => {
   if (!els.driveProfile.contains(event.target)) {
@@ -515,8 +544,10 @@ document.addEventListener('click', event => {
 })
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
+    const wasOpen = !els.driveProfileMenu.hidden
     els.driveProfileMenu.hidden = true
     els.driveProfileBtn.setAttribute('aria-expanded', 'false')
+    if (wasOpen) els.driveProfileBtn.focus()
   }
 })
 els.driveSyncBtn.addEventListener('click', async () => {
@@ -532,6 +563,8 @@ els.driveSignOutBtn.addEventListener('click', () => {
   els.driveProfileMenu.hidden = true
   els.driveProfile.hidden = true
   els.driveConnectBtn.hidden = false
+  els.themeToggle.hidden = false
+  showAuthNotice('')
   els.driveProfileBtn.setAttribute('aria-expanded', 'false')
   refreshShelf()
 })
@@ -629,7 +662,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.0.13'
+els.appVersion.textContent = 'Inhouse Read · v1.0.14'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')
