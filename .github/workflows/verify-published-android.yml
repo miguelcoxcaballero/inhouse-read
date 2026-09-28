@@ -35,6 +35,12 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Use the runner's working DNS servers
+        id: runner-dns
+        shell: bash
+        run: |
+          servers=$(awk '$1 == "nameserver" && $2 ~ /^[0-9]+\./ && $2 !~ /^127\./ { print $2 }' /etc/resolv.conf | head -n 3 | paste -sd, -)
+          echo "servers=${servers:+$servers,}1.1.1.1" >> "$GITHUB_OUTPUT"
       - name: Open the actual APK and Google sign-in
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -42,7 +48,7 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_4
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server 1.1.1.1,8.8.8.8
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server ${{ steps.runner-dns.outputs.servers }}
           script: python .github/scripts/verify_android_app.py published.apk --google-login
       - uses: actions/upload-artifact@v4
         if: always()
