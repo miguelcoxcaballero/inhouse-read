@@ -385,6 +385,14 @@ export const DEFAULT_SECTIONS = Object.freeze({
 const collator = new Intl.Collator('es', { sensitivity: 'base', numeric: true });
 
 function sortBooks(books, mode) {
+  const hasManualOrder = book => Number.isFinite(book?.shelfOrder);
+  if (books.some(hasManualOrder)) {
+    return books.map((book, index) => ({ book, index })).sort((a, b) => {
+      const aOrder = hasManualOrder(a.book) ? a.book.shelfOrder : Infinity;
+      const bOrder = hasManualOrder(b.book) ? b.book.shelfOrder : Infinity;
+      return aOrder - bOrder || a.index - b.index;
+    }).map(entry => entry.book);
+  }
   if (mode === 'none') return books;
   const keyed = books.map((book, index) => ({ book, index }));
   keyed.sort((a, b) => {
@@ -427,6 +435,9 @@ export function buildSections(books, options = {}) {
     .filter(isInProgress)
     .map((book, index) => ({ book, index }))
     .sort((a, b) => {
+      const aOrder = Number.isFinite(a.book?.shelfOrder) ? a.book.shelfOrder : Infinity;
+      const bOrder = Number.isFinite(b.book?.shelfOrder) ? b.book.shelfOrder : Infinity;
+      if (aOrder !== bOrder) return aOrder - bOrder;
       const diff = (Number(b.book.lastOpenedAt) || 0) - (Number(a.book.lastOpenedAt) || 0);
       return diff !== 0 ? diff : a.index - b.index;
     })

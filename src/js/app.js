@@ -140,7 +140,8 @@ async function refreshShelf() {
         coverAppearance: appearance,
         coverAppearanceKey: key
       }),
-      onBookColorChange: (book, spineColorOverride) => library.patch(book.id, { spineColorOverride })
+      onBookCustomizationChange: (book, fields) => library.patch(book.id, fields),
+      onBookOrderChange: order => Promise.all(order.map(({ id, shelfOrder }) => library.patch(id, { shelfOrder })))
     })
   } else {
     shelf.update(books)
@@ -746,7 +747,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.0.23'
+els.appVersion.textContent = 'Inhouse Read · v1.0.24'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')

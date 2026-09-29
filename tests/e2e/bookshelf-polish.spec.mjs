@@ -87,7 +87,7 @@ test('movimiento reducido conserva los dos pasos y el foco del diálogo', async 
   const close = page.getByRole('button', { name:'Cerrar', exact:true })
   await close.focus()
   await page.keyboard.press('Tab')
-  await expect(page.getByRole('button', { name:'Color de la portada', exact:true })).toBeFocused()
+  await expect(page.getByRole('button', { name:'Abrir', exact:true })).toBeFocused()
   await page.keyboard.press('Shift+Tab')
   await expect(close).toBeFocused()
   await page.keyboard.press('Escape')

@@ -353,6 +353,16 @@ describe('buildSections', () => {
     expect(library.books.map((book) => book.author)).toEqual(['Alas', 'borges'])
   })
 
+  it('conserva el orden manual de los libros dentro de cada sección', () => {
+    const ordered = books.map(book => ({
+      ...book,
+      shelfOrder: ({ a: 5, b: 4, c: 1, d: 2 })[book.id]
+    }))
+    const sections = buildSections(ordered)
+    expect(sections.find(section => section.id === 'recent').books.map(book => book.id)).toEqual(['c', 'a'])
+    expect(sections.find(section => section.id === 'library').books.map(book => book.id)).toEqual(['d', 'b'])
+  })
+
   it('respeta el límite de recientes', () => {
     const many = makeBooks(12, (i) => ({ progressFraction: 0.5, lastOpenedAt: i }))
     const [recent] = buildSections(many, { recentLimit: 4 })

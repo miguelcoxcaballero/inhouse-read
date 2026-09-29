@@ -54,7 +54,7 @@ test('conecta Google sin redirección y muestra la foto en la esquina derecha', 
   await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   expect(await page.evaluate(() => window.__oauthOptions.redirect_uri)).toBeUndefined()
   await button.click()
-  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.0.23')
+  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.0.24')
   await expect(page.locator('#drive-theme-toggle')).toBeVisible()
   await expect(page.locator('#drive-profile-initial-menu')).toBeHidden()
   await page.locator('#drive-theme-toggle').check()
@@ -139,7 +139,7 @@ test('abre un PDF local y navega al visor de lectura', async ({ page }) => {
   expect(canvasSize.h).toBeGreaterThan(0)
 })
 
-test('permite elegir un tono o un color libre y conservarlo', async ({ page }) => {
+test('edita y conserva el color, fuente, tamaño y texto del lomo', async ({ page }) => {
   await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
@@ -150,6 +150,7 @@ test('permite elegir un tono o un color libre y conservarlo', async ({ page }) =
   await spine.click()
   const dialog = page.locator('.ihr-flyout')
   await expect(dialog).toHaveClass(/is-ready/)
+  await dialog.getByRole('button', { name:'Editar' }).click()
   const swatches = dialog.locator('.ihr-flyout__swatch')
   await expect(swatches).toHaveCount(3)
   const chosen = await swatches.nth(1).getAttribute('data-color')
@@ -172,11 +173,36 @@ test('permite elegir un tono o un color libre y conservarlo', async ({ page }) =
     })
     return new Promise((resolve, reject) => {
       const request = db.transaction('books', 'readonly').objectStore('books').getAll()
-      request.onsuccess = () => resolve(request.result[0]?.spineColorOverride)
+      request.onsuccess = () => resolve(request.result[0])
       request.onerror = () => reject(request.error)
     })
-  })).toBe(custom)
+  })).toMatchObject({ spineColorOverride: custom })
 
+  await dialog.getByLabel('Fuente del lomo', { exact:true }).selectOption('Lora')
+  await dialog.getByLabel('Tamaño de fuente del lomo').evaluate(input => {
+    input.value = '14'
+    input.dispatchEvent(new Event('input', { bubbles:true }))
+  })
+  await dialog.getByLabel('Texto del lomo').fill('Mi título personalizado')
+  await expect.poll(() => page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('inhouse-read')
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    return new Promise((resolve, reject) => {
+      const request = db.transaction('books', 'readonly').objectStore('books').getAll()
+      request.onsuccess = () => resolve(request.result[0])
+      request.onerror = () => reject(request.error)
+    })
+  })).toMatchObject({
+    spineColorOverride: custom,
+    spineFontFamily: 'Lora',
+    spineFontSize: 14,
+    spineTitleOverride: 'Mi título personalizado'
+  })
+
+  await dialog.getByRole('button', { name:'Listo' }).click()
   await dialog.locator('.ihr-flyout__close').click()
   await expect(dialog).toBeHidden()
   await page.reload()
@@ -186,8 +212,68 @@ test('permite elegir un tono o un color libre y conservarlo', async ({ page }) =
   await reopenedSpine.click()
   const reopenedDialog = page.locator('.ihr-flyout')
   await expect(reopenedDialog).toHaveClass(/is-ready/)
+  await reopenedDialog.getByRole('button', { name:'Editar' }).click()
   await expect(reopenedDialog.locator('.ihr-flyout__custom-color')).toHaveClass(/is-selected/)
   await expect(reopenedDialog.locator('input[type="color"]')).toHaveValue(custom)
+  await expect(reopenedDialog.getByLabel('Fuente del lomo', { exact:true })).toHaveValue('Lora')
+  await expect(reopenedDialog.getByLabel('Tamaño de fuente del lomo')).toHaveValue('14')
+  await expect(reopenedDialog.getByLabel('Texto del lomo')).toHaveValue('Mi título personalizado')
+})
+
+test('organiza los libros con teclado, animación 3D y orden persistente', async ({ page }) => {
+  await page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('inhouse-read')
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    const transaction = db.transaction('books', 'readwrite')
+    const store = transaction.objectStore('books')
+    const now = Date.now()
+    store.put({ id:'shelf:alpha', title:'Alpha', author:'Autor', format:'PDF', sourceType:'local', addedAt:now, lastOpenedAt:now, progressFraction:0 })
+    store.put({ id:'shelf:bravo', title:'Bravo', author:'Autor', format:'PDF', sourceType:'local', addedAt:now, lastOpenedAt:now - 1, progressFraction:0 })
+    await new Promise((resolve, reject) => {
+      transaction.oncomplete = resolve
+      transaction.onerror = () => reject(transaction.error)
+    })
+  })
+  await page.reload()
+  await expect(page.locator('.ihr-spine')).toHaveCount(2)
+  const original = await page.locator('.ihr-spine').evaluateAll(nodes => nodes.map(node => node.dataset.bookId))
+  await page.getByRole('button', { name:'Organizar' }).click()
+  const firstSpine = page.locator('.ihr-spine').first()
+  await firstSpine.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect.poll(() => page.locator('.ihr-spine').evaluateAll(nodes => nodes.map(node => node.dataset.bookId)))
+    .toEqual([...original].reverse())
+  await page.waitForTimeout(560)
+  const from = await page.locator('.ihr-spine[data-book-id="shelf:bravo"]').boundingBox()
+  const to = await page.locator('.ihr-spine[data-book-id="shelf:alpha"]').boundingBox()
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(to.x + to.width * .82, to.y + to.height / 2, { steps:8 })
+  await page.mouse.up()
+  await expect.poll(() => page.locator('.ihr-spine').evaluateAll(nodes => nodes.map(node => node.dataset.bookId)))
+    .toEqual(original)
+  const animated = await page.locator('.ihr-spine').first().evaluate(node =>
+    node.getAnimations().some(animation => animation.effect?.getKeyframes().some(frame => /rotateY/.test(frame.transform || '')))
+  )
+  expect(animated).toBe(true)
+  await expect.poll(() => page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('inhouse-read')
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    return new Promise((resolve, reject) => {
+      const request = db.transaction('books', 'readonly').objectStore('books').getAll()
+      request.onsuccess = () => resolve(request.result.sort((a, b) => a.shelfOrder - b.shelfOrder).map(book => book.id))
+      request.onerror = () => reject(request.error)
+    })
+  })).toEqual(original)
+  await page.reload()
+  await expect.poll(() => page.locator('.ihr-spine').evaluateAll(nodes => nodes.map(node => node.dataset.bookId)))
+    .toEqual(original)
 })
 
 test('el libro abierto reaparece en la estantería al volver', async ({ page }) => {

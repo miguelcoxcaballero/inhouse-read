@@ -84,8 +84,9 @@ function texture(book, style, spine) {
     }
     c.globalAlpha = 1;
     c.translate(128, 512); c.rotate(Math.PI / 2);
-    c.font = `${style.fontWeight || 700} 44px "${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`;
-    c.fillText(book.title || 'Sin título', 0, book.author ? -13 : 0, 780);
+    const spineFontSize = Math.max(8, Math.min(18, Number(style.spineFontSize) || 10));
+    c.font = `${style.fontWeight || 700} ${44 * spineFontSize / 10}px "${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`;
+    c.fillText(book.spineTitleOverride || book.title || 'Sin título', 0, book.author ? -13 : 0, 780);
     c.globalAlpha = .8; c.font = '26px "DM Sans", sans-serif';
     c.fillText(book.author || '', 0, 41, 730);
   } else {

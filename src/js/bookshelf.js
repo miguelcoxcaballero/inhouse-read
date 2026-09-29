@@ -147,6 +147,15 @@ const DEFAULTS = Object.freeze({
   texts: DEFAULT_TEXTS
 });
 
+const SPINE_FONTS = Object.freeze([
+  { family: 'Playfair Display', label: 'Playfair Display', weight: 700, fallback: 'Georgia, serif' },
+  { family: 'Lora', label: 'Lora', weight: 700, fallback: 'Georgia, serif' },
+  { family: 'Cormorant Garamond', label: 'Cormorant Garamond', weight: 700, fallback: 'Georgia, serif' },
+  { family: 'DM Sans', label: 'DM Sans', weight: 600, fallback: 'Arial, sans-serif' },
+  { family: 'Montserrat', label: 'Montserrat', weight: 700, fallback: 'Arial, sans-serif' },
+  { family: 'Oswald', label: 'Oswald', weight: 600, fallback: 'Arial Narrow, sans-serif' }
+]);
+
 /* ------------------------------------------------------------------ *
  * Utilidades DOM
  * ------------------------------------------------------------------ */
@@ -261,6 +270,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     pressedBookId: null,
     lastOpened: null,
     returnMotion: null,
+    arranging: false,
+    dragSession: null,
     queuedBooks: null,
     renderQueued: false,
     appearancesReady: true,
@@ -321,9 +332,21 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function applyCoverAppearance(item, appearance) {
-    if (appearance) item.style = withCoverAppearance(item.baseStyle || item.style, appearance);
+    item.style = appearance
+      ? withCoverAppearance(item.baseStyle || item.style, appearance)
+      : { ...(item.baseStyle || item.style) };
     if (item.book.spineColorOverride) {
       item.style = { ...item.style, ...spineColorStyle(item.book.spineColorOverride) };
+    }
+    if (item.book.spineFontFamily) {
+      const font = SPINE_FONTS.find(candidate => candidate.family === item.book.spineFontFamily);
+      if (font) item.style = {
+        ...item.style, fontFamily: font.family, fontCanvasFamily: font.family,
+        fontFallback: font.fallback, fontWeight: font.weight
+      };
+    }
+    if (Number.isFinite(Number(item.book.spineFontSize))) {
+      item.style = { ...item.style, spineFontSize: Math.max(8, Math.min(18, Number(item.book.spineFontSize))) };
     }
     return Boolean(appearance);
   }
@@ -403,7 +426,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       `--ihr-spine-shade:${style.shade};` +
       `--ihr-spine-ink:${style.ink};` +
       `--ihr-spine-font:"${family}", ${fallback};` +
-      `--ihr-spine-font-weight:${style.fontWeight || 700};`;
+      `--ihr-spine-font-weight:${style.fontWeight || 700};` +
+      `--ihr-spine-font-size:${Math.max(8, Math.min(18, Number(style.spineFontSize) || 10))}px;`;
   }
 
   function coverRatioFor(style, fallback = opts.coverRatio) {
@@ -417,6 +441,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     node.style.setProperty('--ihr-spine-ink', style.ink);
     node.style.setProperty('--ihr-spine-font', `"${style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`);
     node.style.setProperty('--ihr-spine-font-weight', String(style.fontWeight || 700));
+    node.style.setProperty('--ihr-spine-font-size', `${Math.max(8, Math.min(18, Number(style.spineFontSize) || 10))}px`);
   }
 
   // El retorno desde el lector necesita su primer fotograma antes de que el
@@ -497,6 +522,96 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     ]);
   }
 
+  function shelfSpineNodes(section = null) {
+    return [...(section || scroller).querySelectorAll('.ihr-spine')];
+  }
+
+  function persistShelfDomOrder(oldRects = null) {
+    const orderedIds = shelfSpineNodes().map(node => node.dataset.bookId).filter(Boolean);
+    const rank = new Map(orderedIds.map((id, index) => [String(id), index]));
+    state.books = state.books.map(book => ({ ...book, shelfOrder: rank.get(String(book.id)) ?? Number.MAX_SAFE_INTEGER }));
+    Promise.resolve(options.onBookOrderChange?.(state.books.map(book => ({ id: book.id, shelfOrder: book.shelfOrder }))))
+      .catch(error => console.warn('No se pudo guardar el orden de la estantería:', error));
+    render();
+    if (!oldRects || prefersReducedMotion()) return;
+    for (const node of shelfSpineNodes()) {
+      const old = oldRects.get(node.dataset.bookId);
+      if (!old) continue;
+      const rect = node.getBoundingClientRect();
+      const dx = old.left - rect.left, dy = old.top - rect.top;
+      if (Math.abs(dx) + Math.abs(dy) < 1) continue;
+      node.animate([
+        { transform: `translate3d(${dx}px,${dy}px,64px) rotateY(${dx < 0 ? -13 : 13}deg) rotateX(-5deg)` },
+        { transform: 'translate3d(0,0,0) rotateY(0) rotateX(0)' }
+      ], { duration: 520, easing: 'cubic-bezier(.2,.75,.22,1)' });
+    }
+  }
+
+  function reorderSpine(source, target, after = false) {
+    if (!source || !target || source === target || source.closest('.ihr-section') !== target.closest('.ihr-section')) return;
+    const oldRects = new Map(shelfSpineNodes().map(node => [node.dataset.bookId, node.getBoundingClientRect()]));
+    const reference = after ? target.nextSibling : target;
+    target.parentElement.insertBefore(source, reference);
+    persistShelfDomOrder(oldRects);
+  }
+
+  function startSpineDrag(event, node) {
+    if (!state.arranging || event.button !== 0 || state.dragSession) return;
+    event.preventDefault();
+    state.dragSession = {
+      node, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+      x: event.clientX, y: event.clientY, target: null, after: false, moved: false
+    };
+    node.setPointerCapture?.(event.pointerId);
+  }
+
+  function moveSpineDrag(event, node) {
+    const drag = state.dragSession;
+    if (!drag || drag.node !== node || drag.pointerId !== event.pointerId) return;
+    drag.x = event.clientX; drag.y = event.clientY;
+    const dx = drag.x - drag.startX, dy = drag.y - drag.startY;
+    if (!drag.moved && Math.hypot(dx, dy) < 6) return;
+    drag.moved = true;
+    node.classList.add('is-dragging');
+    node.style.setProperty('--ihr-drag-x', `${dx}px`);
+    node.style.setProperty('--ihr-drag-y', `${dy}px`);
+    node.style.pointerEvents = 'none';
+    const hit = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('.ihr-spine');
+    node.style.pointerEvents = '';
+    const target = hit && hit !== node && hit.closest('.ihr-section') === node.closest('.ihr-section') ? hit : null;
+    drag.target?.classList.remove('is-drop-target');
+    drag.target = target;
+    drag.after = Boolean(target && event.clientX > target.getBoundingClientRect().left + target.getBoundingClientRect().width / 2);
+    target?.classList.add('is-drop-target');
+  }
+
+  function finishSpineDrag(event, node, cancelled = false) {
+    const drag = state.dragSession;
+    if (!drag || drag.node !== node || drag.pointerId !== event.pointerId) return;
+    state.dragSession = null;
+    drag.target?.classList.remove('is-drop-target');
+    node.classList.remove('is-dragging');
+    node.style.removeProperty('--ihr-drag-x');
+    node.style.removeProperty('--ihr-drag-y');
+    node.style.pointerEvents = '';
+    try { node.releasePointerCapture?.(event.pointerId); } catch { /* captura ya liberada */ }
+    if (drag.moved && !cancelled && drag.target) reorderSpine(node, drag.target, drag.after);
+  }
+
+  function setArranging(value) {
+    state.arranging = Boolean(value);
+    root.classList.toggle('is-arranging', state.arranging);
+    if (!state.arranging && state.dragSession) {
+      const drag = state.dragSession;
+      state.dragSession = null;
+      drag.target?.classList.remove('is-drop-target');
+      drag.node.classList.remove('is-dragging');
+      drag.node.style.pointerEvents = '';
+    }
+    render();
+    scroller.querySelector('.ihr-library-heading__arrange')?.focus({ preventScroll: true });
+  }
+
   function buildSpine(item) {
     const { book, style } = item;
     state.itemsById.set(String(book.id ?? book.path ?? book.title ?? 'book'), item);
@@ -508,6 +623,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       'aria-label': bookmark
         ? `${opts.texts.openAria(book)}, ${opts.texts.progressAria(bookmark.percent)}`
         : opts.texts.openAria(book),
+      'aria-keyshortcuts': state.arranging ? 'ArrowLeft ArrowRight' : null,
+      'aria-description': state.arranging ? 'Usa las flechas izquierda y derecha para cambiar el orden' : null,
       style:
         `--ihr-spine-w:${style.width}px;` +
         `--ihr-spine-h:${Math.round(style.heightRatio * 100)}%;` +
@@ -528,7 +645,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     });
     if (view) view.dispose(false); // retain the rendered snapshot, free mesh/textures
     else body.append(el('span', { class: 'ihr-spine__label' }, [
-      el('span', { class: 'ihr-spine__title', text: book.title ?? 'Sin título' }),
+      el('span', { class: 'ihr-spine__title', text: book.spineTitleOverride || book.title || 'Sin título' }),
       book.author ? el('span', { class: 'ihr-spine__author', text: book.author }) : null
     ]));
     node.append(body);
@@ -581,7 +698,23 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         release(); // el dedo se ha ido a hacer scroll: esto no era un tap
       }
     });
-    node.addEventListener('click', () => openBook(node, item));
+    node.addEventListener('click', () => {
+      if (state.arranging) return;
+      openBook(node, item);
+    });
+    node.addEventListener('keydown', event => {
+      if (!state.arranging || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      event.preventDefault();
+      const section = node.closest('.ihr-section');
+      const siblings = [...section.querySelectorAll('.ihr-spine')];
+      const current = siblings.indexOf(node);
+      const target = siblings[current + (event.key === 'ArrowLeft' ? -1 : 1)];
+      if (target) reorderSpine(node, target, event.key === 'ArrowRight');
+    });
+    node.addEventListener('pointerdown', event => startSpineDrag(event, node));
+    node.addEventListener('pointermove', event => moveSpineDrag(event, node));
+    node.addEventListener('pointerup', event => finishSpineDrag(event, node));
+    node.addEventListener('pointercancel', event => finishSpineDrag(event, node, true));
     return node;
   }
 
@@ -715,7 +848,17 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const fragment = document.createDocumentFragment();
     fragment.append(el('div', { class: 'ihr-library-heading' }, [
       el('h1', { text: 'Tu biblioteca' }),
-      el('p', { text: `${state.books.length} ${state.books.length === 1 ? 'libro' : 'libros'}` })
+      el('div', { class: 'ihr-library-heading__tools' }, [
+        el('p', { 'aria-live': 'polite', text: state.arranging
+          ? 'Arrastra los libros o usa ← → para ordenarlos'
+          : `${state.books.length} ${state.books.length === 1 ? 'libro' : 'libros'}` }),
+        el('button', {
+          type: 'button', class: 'ihr-library-heading__arrange',
+          'aria-pressed': state.arranging,
+          text: state.arranging ? 'Guardar orden' : 'Organizar',
+          onClick: () => setArranging(!state.arranging)
+        })
+      ])
     ]));
     for (const section of plan) {
       for (const shelf of section.shelves) {
@@ -926,8 +1069,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       book.author ? el('p', { class: 'ihr-flyout__author', text: book.author }) : null
     ]);
     const readiness = el('p', { class: 'ihr-flyout__readiness', text: options.getBookPreparation ? 'Preparando el libro…' : 'Toca la portada para leer', 'aria-live': 'polite' });
-    const colorControls = el('div', { class: 'ihr-flyout__colors', role: 'group', 'aria-label': 'Color del lomo' });
-    meta.append(readiness, colorControls);
+    meta.append(readiness);
     const coverTarget = el('button', {
       type: 'button', class: 'ihr-flyout__cover-target',
       'aria-label': opts.texts.tapCover(book), hidden: true,
@@ -969,14 +1111,16 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     function onKeydown(event) {
       if (event.key === 'Tab') {
-        const buttons = [...flyout.querySelectorAll('button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden])')];
+        const buttons = [...flyout.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled])')]
+          .filter(control => !control.closest('[hidden]'));
         const first = buttons[0], last = buttons.at(-1);
         if (event.shiftKey && (document.activeElement === first || document.activeElement === flyout)) { event.preventDefault(); last?.focus(); }
         else if (!event.shiftKey && (document.activeElement === last || document.activeElement === flyout)) { event.preventDefault(); first?.focus(); }
       }
       if (event.key === 'Escape') {
         event.stopPropagation();
-        if (session.phase !== 'reading') close();
+        if (!editorPanel.hidden) closeEditor();
+        else if (session.phase !== 'reading') close();
       }
     }
 
@@ -992,20 +1136,113 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const actionTitle = book.sourceType === 'drive' ? (isDownloaded ? 'Disponible sin conexión' : 'Descargar para usar sin conexión') : actionLabel;
     const actionButtons = [
       el('button', { type: 'button', class: 'ihr-btn ihr-btn--primary', disabled:true, onClick: () => expandCover() }, [svgIcon(ICONS.read, { className:'ihr-icon' }), el('span', { text: opts.texts.openAction })]),
-      el('button', { type: 'button', class: 'ihr-btn', title:actionTitle, 'aria-label':actionTitle, disabled:!options.onBookAction || alreadySaved, onClick: event => options.onBookAction?.(book.sourceType === 'drive' ? 'offline' : 'drive', book, event.currentTarget) }, [svgIcon(alreadySaved ? ICONS.check : book.sourceType === 'drive' ? ICONS.download : ICONS.drive, { className:'ihr-icon' }), el('span', { text:actionLabel })])
+      el('button', { type: 'button', class: 'ihr-btn', title:actionTitle, 'aria-label':actionTitle, disabled:!options.onBookAction || alreadySaved, onClick: event => options.onBookAction?.(book.sourceType === 'drive' ? 'offline' : 'drive', book, event.currentTarget) }, [svgIcon(alreadySaved ? ICONS.check : book.sourceType === 'drive' ? ICONS.download : ICONS.drive, { className:'ihr-icon' }), el('span', { text:actionLabel })]),
+      el('button', { type: 'button', class: 'ihr-btn ihr-flyout__edit-button', disabled:true, 'aria-expanded': 'false', onClick: () => editorPanel.hidden ? openEditor() : closeEditor() }, [el('span', { text:'Editar' })])
     ];
 
-    const cachedAppearance = state.coverAppearances.get(String(book.id ?? book.path ?? book.title ?? 'book'));
-    const coverColor = cachedAppearance?.key === item.coverKey && cachedAppearance.appearance?.color
-      ? cachedAppearance.appearance.color
+    const appearanceId = String(book.id ?? book.path ?? book.title ?? 'book');
+    const getCachedAppearance = () => {
+      const cached = state.coverAppearances.get(appearanceId);
+      return cached?.key === item.coverKey ? cached.appearance : null;
+    };
+    const cachedAppearance = getCachedAppearance();
+    const coverColor = cachedAppearance?.color
+      ? cachedAppearance.color
       : item.baseStyle.color;
     const suggestedColors = bookColorOptions(coverColor);
     let selectedColor = book.spineColorOverride || style.color;
     const colorButtons = [];
+    const customizationFields = {};
+    let customizationSaveTimer = 0;
+    const editorPanel = el('section', {
+      class: 'ihr-spine-editor', hidden: true, role: 'region', 'aria-label': 'Editar el lomo'
+    });
+    function saveCustomizationNow() {
+      if (customizationSaveTimer) clearTimeout(customizationSaveTimer);
+      customizationSaveTimer = 0;
+      if (Object.keys(customizationFields).length) {
+        Promise.resolve(options.onBookCustomizationChange?.(book, { ...customizationFields })).catch(error => {
+          console.warn('No se pudo guardar el aspecto del lomo:', error);
+        });
+      }
+    }
+    function queueCustomizationSave() {
+      if (customizationSaveTimer) clearTimeout(customizationSaveTimer);
+      customizationSaveTimer = setTimeout(saveCustomizationNow, 180);
+    }
+    function replaceShelfSpine() {
+      const existingSpine = shelfSpineNodes().find(node => node.dataset.bookId === String(book.id));
+      if (!existingSpine) return;
+      const hadFocus = document.activeElement === existingSpine;
+      const wasAway = existingSpine.classList.contains('is-away');
+      const replacement = buildSpine(item);
+      if (wasAway) replacement.classList.add('is-away');
+      existingSpine.replaceWith(replacement);
+      spineEl = replacement;
+      if (previousFocus === existingSpine) previousFocus = replacement;
+      if (hadFocus) replacement.focus({ preventScroll: true });
+      if (state.lastOpened?.book?.id === book.id) state.lastOpened.spineEl = replacement;
+    }
+    function updateCustomization(fields) {
+      Object.assign(book, fields);
+      Object.assign(customizationFields, fields);
+      applyCoverAppearance(item, getCachedAppearance());
+      style = item.style;
+      view?.updateAppearance(item.style);
+      updateBookStyleVars(bookNode, item.style);
+      updateBookStyleVars(bookNode.querySelector('.ihr-flyout__face--cover'), item.style);
+      replaceShelfSpine();
+      if (state.lastOpened?.book?.id === book.id) state.lastOpened.style = item.style;
+      state.appearanceRefreshPending = true;
+      updateColorSelection();
+      queueCustomizationSave();
+    }
+    function openEditor() {
+      if (session.phase !== 'ready') return;
+      editorPanel.hidden = false;
+      meta.classList.add('is-editing');
+      actionButtons[2].setAttribute('aria-expanded', 'true');
+      fontSelect.focus({ preventScroll: true });
+    }
+    function closeEditor() {
+      editorPanel.hidden = true;
+      meta.classList.remove('is-editing');
+      actionButtons[2].setAttribute('aria-expanded', 'false');
+      saveCustomizationNow();
+      if (session.phase === 'ready') actionButtons[2].focus({ preventScroll: true });
+    }
     const pickerInput = el('input', {
       type: 'color', value: spineColorStyle(selectedColor).color,
       'aria-label': 'Elegir otro color para el lomo',
       onChange: event => selectSpineColor(event.currentTarget.value)
+    });
+    const colorControls = el('div', { class: 'ihr-flyout__colors', role: 'group', 'aria-label': 'Color del lomo' });
+    const fontSelect = el('select', {
+      class: 'ihr-spine-editor__select', 'aria-label': 'Fuente del lomo',
+      onChange: event => {
+        const font = SPINE_FONTS.find(candidate => candidate.family === event.currentTarget.value);
+        if (!font) return;
+        updateCustomization({ spineFontFamily: font.family });
+      }
+    });
+    for (const font of SPINE_FONTS) fontSelect.append(el('option', { value: font.family, text: font.label }));
+    fontSelect.value = book.spineFontFamily || style.fontFamily || SPINE_FONTS[0].family;
+    const fontSizeInput = el('input', {
+      type: 'range', min: '8', max: '18', step: '1',
+      value: String(Math.max(8, Math.min(18, Number(book.spineFontSize) || Number(style.spineFontSize) || 10))),
+      'aria-label': 'Tamaño de fuente del lomo',
+      onInput: event => {
+        const size = Number(event.currentTarget.value);
+        sizeOutput.textContent = `${size} px`;
+        updateCustomization({ spineFontSize: size });
+      }
+    });
+    const sizeOutput = el('output', { class: 'ihr-spine-editor__size', text: `${fontSizeInput.value} px` });
+    const titleInput = el('input', {
+      type: 'text', maxlength: '120', value: book.spineTitleOverride ?? '',
+      placeholder: book.title || 'Título del libro',
+      'aria-label': 'Texto del lomo',
+      onInput: event => updateCustomization({ spineTitleOverride: event.currentTarget.value })
     });
     function updateColorSelection() {
       colorButtons.forEach(button => {
@@ -1019,35 +1256,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     function selectSpineColor(color) {
       selectedColor = spineColorStyle(color).color;
       book.spineColorOverride = selectedColor;
-      const baseStyle = item.baseStyle || item.style;
-      const appearance = cachedAppearance?.key === item.coverKey ? cachedAppearance.appearance : null;
-      item.style = {
-        ...(appearance ? withCoverAppearance(baseStyle, appearance) : baseStyle),
-        ...spineColorStyle(selectedColor)
-      };
-      style = item.style;
-      view?.updateAppearance(item.style);
-      updateBookStyleVars(bookNode, item.style);
-      updateBookStyleVars(bookNode.querySelector('.ihr-flyout__face--cover'), item.style);
-      const existingSpine = [...root.querySelectorAll('.ihr-spine')]
-        .find(node => node.dataset.bookId === String(book.id));
-      if (existingSpine) {
-        const hadFocus = document.activeElement === existingSpine;
-        const wasAway = existingSpine.classList.contains('is-away');
-        const replacement = buildSpine(item);
-        if (wasAway) replacement.classList.add('is-away');
-        existingSpine.replaceWith(replacement);
-        spineEl = replacement;
-        if (previousFocus === existingSpine) previousFocus = replacement;
-        if (hadFocus) replacement.focus({ preventScroll: true });
-        if (state.lastOpened?.book?.id === book.id) state.lastOpened.spineEl = replacement;
-      }
-      if (state.lastOpened?.book?.id === book.id) state.lastOpened.style = item.style;
-      state.appearanceRefreshPending = true;
-      updateColorSelection();
-      Promise.resolve(options.onBookColorChange?.(book, selectedColor)).catch(error => {
-        console.warn('No se pudo guardar el color del lomo:', error);
-      });
+      updateCustomization({ spineColorOverride: selectedColor });
     }
     suggestedColors.forEach((color, index) => {
       const names = ['Color de la portada', 'Tono cercano 1', 'Tono cercano 2'];
@@ -1069,7 +1278,24 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       ])
     );
     updateColorSelection();
+    editorPanel.append(
+      el('div', { class: 'ihr-spine-editor__row' }, [
+        el('label', { class: 'ihr-spine-editor__field' }, [
+          el('span', { text: 'Fuente' }), fontSelect
+        ]),
+        el('label', { class: 'ihr-spine-editor__field ihr-spine-editor__field--size' }, [
+          el('span', { text: 'Tamaño' }),
+          el('span', { class: 'ihr-spine-editor__range' }, [fontSizeInput, sizeOutput])
+        ])
+      ]),
+      el('label', { class: 'ihr-spine-editor__field ihr-spine-editor__field--title' }, [
+        el('span', { text: 'Texto del lomo' }), titleInput
+      ]),
+      colorControls,
+      el('button', { type: 'button', class: 'ihr-btn ihr-btn--primary ihr-spine-editor__done', text: 'Listo', onClick: closeEditor })
+    );
     meta.append(el('div', { class: 'ihr-flyout__actions' }, actionButtons));
+    meta.append(editorPanel);
     const readyCheck = setInterval(() => {
       const task = options.getBookPreparation?.(book)
       clearInterval(readyCheck)
@@ -1130,13 +1356,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     );
 
     function fadeMeta() {
+      if (!editorPanel.hidden) closeEditor();
       const opacity = getComputedStyle(meta).opacity;
       metaEntrance.cancel?.();
       animate(meta, [{ opacity }, { opacity:0 }], { duration:prefersReducedMotion() ? 1 : 160, fill:'both' });
       meta.style.pointerEvents = 'none';
       actionButtons.forEach(button => { button.disabled = true; });
-      colorButtons.forEach(button => { button.disabled = true; });
-      pickerInput.disabled = true;
+      editorPanel.querySelectorAll('button, input, select').forEach(control => { control.disabled = true; });
     }
 
     async function playReturn() {
@@ -1175,6 +1401,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     session.phase = 'ready';
     flyout.classList.add('is-ready');
     actionButtons[0].disabled = false;
+    actionButtons[2].disabled = false;
     coverTarget.hidden = !opts.autoOpen;
     coverTarget.classList.add('is-ready');
 
