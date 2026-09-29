@@ -98,7 +98,7 @@
 
 import { planBookshelf, bookmarkFor, withDefaults } from './bookshelf-layout.js';
 import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from './cover-appearance.js';
-import { bookColorOptions, spineColorStyle, spineFinish, METAL_COLORS } from './book-colors.js';
+import { bookColorOptions, spineColorStyle, spineFinish, surfaceFinish, METAL_COLORS } from './book-colors.js';
 import { normalizeBookAuthor } from './book-title.js';
 const PLANT_PHOTOS = {
   leafy: new URL('../assets/library/pothos.webp', import.meta.url).href,
@@ -1267,6 +1267,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       updateBookStyleVars(bookNode, item.style);
       const shelfNode = shelfSpineNodes().find(node => node.dataset.bookId === String(book.id));
       updateBookStyleVars(shelfNode, item.style);
+      view?.updateCoverAppearance(book);
+      view?.updateEdgeAppearance(book);
       if (state.lastOpened?.book?.id === book.id) state.lastOpened.style = item.style;
       state.appearanceRefreshPending = true;
       updateColorSelection();
@@ -1562,6 +1564,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       pickerInput.value = spineColorStyle(selectedColor).color;
       bindingFinish.value = spineFinish(book.spineFinish);
       inkFinish.value = spineFinish(book.spineTextFinish);
+      coverSurfaceFinish.value = surfaceFinish(book.coverFinish);
+      pageEdgeSurfaceFinish.value = surfaceFinish(book.pageEdgeFinish);
+      spineSurfaceFinish.value = surfaceFinish(book.spineSurfaceFinish, 'matte');
       inkPicker.value = item.style.ink;
       engravedInput.checked = book.spineEngraved === true;
       pickerInput.parentElement?.classList.toggle('is-selected', !suggestedColors.includes(selectedColor));
@@ -1601,6 +1606,26 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
     const bindingFinish = finishSelect('Acabado del lomo', 'spineFinish');
     colorControls.append(bindingFinish);
+    function surfaceFinishSelect(label, field, fallback) {
+      const select = el('select', {
+        class:'ihr-spine-editor__select ihr-spine-editor__finish',
+        'aria-label':label,
+        onChange:event => updateCustomization({ [field]:surfaceFinish(event.currentTarget.value, fallback) })
+      });
+      for (const [value,text] of [['glossy','Brillante'],['satin','Satinado'],['matte','Mate']]) {
+        select.append(el('option',{value,text}));
+      }
+      select.value = surfaceFinish(book[field], fallback);
+      return select;
+    }
+    const coverSurfaceFinish = surfaceFinishSelect('Brillo de la portada', 'coverFinish', 'satin');
+    const pageEdgeSurfaceFinish = surfaceFinishSelect('Brillo del canto', 'pageEdgeFinish', 'satin');
+    const spineSurfaceFinish = surfaceFinishSelect('Brillo del lomo', 'spineSurfaceFinish', 'matte');
+    const surfaceFinishControls = el('div', { class:'ihr-spine-editor__surface-row', 'aria-label':'Acabados de superficie' }, [
+      el('label', { class:'ihr-spine-editor__field' }, [el('span',{text:'Portada'}),coverSurfaceFinish]),
+      el('label', { class:'ihr-spine-editor__field' }, [el('span',{text:'Canto'}),pageEdgeSurfaceFinish]),
+      el('label', { class:'ihr-spine-editor__field' }, [el('span',{text:'Lomo'}),spineSurfaceFinish])
+    ]);
     const inkFinish = finishSelect('Acabado del texto', 'spineTextFinish');
     const inkPicker = el('input', {type:'color', value:item.style.ink, 'aria-label':'Color del texto',
       onChange:event => updateCustomization({spineTextColor:event.currentTarget.value, spineTextFinish:'matte'})});
@@ -1634,6 +1659,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         el('span', { text: 'Autor' }), authorInput
       ]),
       colorControls,
+      surfaceFinishControls,
       inkControls,
       el('label', {class:'ihr-spine-editor__engraving'}, [el('span',{text:'Texto grabado'}), engravedInput])
     );

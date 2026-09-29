@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bookColorOptions, spineColorStyle, spineCustomization } from '../../src/js/book-colors.js'
+import { bookColorOptions, spineColorStyle, spineCustomization, surfaceFinish } from '../../src/js/book-colors.js'
 
 describe('book spine colors', () => {
   it('derives three distinct choices from the cover color', () => {
@@ -21,6 +21,12 @@ describe('book spine colors', () => {
     expect(spineColorStyle('#abc')).toEqual({ color: '#aabbcc', shade: '#818e9b', ink: '#171512' })
     expect(spineColorStyle('#102030').ink).toBe('#fffaf0')
   })
+
+  it('limits editable surface finishes to glossy, satin and matte', () => {
+    expect(surfaceFinish('glossy')).toBe('glossy')
+    expect(surfaceFinish('unknown')).toBe('satin')
+    expect(surfaceFinish('unknown','matte')).toBe('matte')
+  })
 })
 
 
@@ -33,8 +39,8 @@ describe('distinct palette and saved finishes', () => {
     }
   })
   it('keeps valid colors, finishes, engraving and explicit automatic reset', () => {
-    expect(spineCustomization({spineTextColor:null,spineColorOverride:'#abc',spineFinish:'gold',spineTextFinish:'silver',spineEngraved:true,author:{name:'Ursula Le Guin'},evil:'ignored'})).toEqual({
-      spineTextColor:null,spineColorOverride:'#aabbcc',spineFinish:'gold',spineTextFinish:'silver',spineEngraved:true,author:'Ursula Le Guin'
+    expect(spineCustomization({spineTextColor:null,spineColorOverride:'#abc',spineFinish:'gold',spineTextFinish:'silver',coverFinish:'glossy',pageEdgeFinish:'matte',spineSurfaceFinish:'satin',spineEngraved:true,author:{name:'Ursula Le Guin'},evil:'ignored'})).toEqual({
+      spineTextColor:null,spineColorOverride:'#aabbcc',spineFinish:'gold',spineTextFinish:'silver',coverFinish:'glossy',pageEdgeFinish:'matte',spineSurfaceFinish:'satin',spineEngraved:true,author:'Ursula Le Guin'
     })
     expect(spineCustomization({spineTextColor:'url(bad)',spineFinish:'bad',spineEngraved:'true'})).toEqual({spineFinish:'matte'})
   })

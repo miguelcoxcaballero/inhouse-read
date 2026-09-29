@@ -953,6 +953,15 @@
 .ihr-spine-editor__preview-author[hidden] { display:none; }
 .ihr-spine-editor__row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; }
 .ihr-spine-editor__field { display:flex; flex-direction:column; gap:6px; min-width:0; color:var(--text-secondary); font-size:.72rem; text-align:left; }
+.ihr-spine-editor__surface-row {
+  display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px;
+  margin-top:13px; padding-top:12px; border-top:1px solid var(--border);
+}
+.ihr-spine-editor__surface-row .ihr-spine-editor__finish {
+  width:100%; min-height:40px; margin:0; padding:0 2px;
+  border:0; border-bottom:1px solid var(--border); border-radius:0;
+  background:transparent; color:var(--text-primary); font:500 .84rem var(--f-body,sans-serif);
+}
 .ihr-spine-editor__select,
 .ihr-spine-editor__field--title input,
 .ihr-spine-editor__field--author input {
@@ -997,6 +1006,7 @@
 }
 @media (max-width:360px) {
   .ihr-spine-editor__row { grid-template-columns:minmax(0,1fr); gap:9px; }
+  .ihr-spine-editor__surface-row { gap:9px; }
   .ihr-spine-editor__field--title { margin-top:9px; }
   .ihr-spine-editor { padding-left:14px; padding-right:14px; }
 }

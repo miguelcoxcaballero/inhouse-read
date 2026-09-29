@@ -1,6 +1,16 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { spineSurface, releaseSurface } from './spine-surface.js';
+import { SURFACE_FINISHES, surfaceFinish } from './book-colors.js';
+
+function applySurfaceFinish(material, value, fallback = 'satin') {
+  const finish = SURFACE_FINISHES[surfaceFinish(value, fallback)];
+  material.roughness = finish.roughness;
+  material.clearcoat = finish.clearcoat;
+  material.clearcoatRoughness = finish.clearcoatRoughness;
+  material.envMapIntensity = finish.envMapIntensity;
+  material.needsUpdate = true;
+}
 
 // A half-ellipse extruded along the binding. Shared vertices give the entire
 // binding continuous normals, including the silhouette seen beside the cover.
@@ -103,7 +113,8 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   const cloth = new THREE.MeshStandardMaterial({ color: style.color, roughness: .86 });
   let surface = spineSurface(book, style, height, thickness);
   const binding = new THREE.MeshPhysicalMaterial({ ...surface.material, side: THREE.DoubleSide });
-  const cover = shelf ? cloth : new THREE.MeshStandardMaterial({ map: coverTexture(book, style), roughness: .78 });
+  const cover = shelf ? cloth : new THREE.MeshPhysicalMaterial({ map: coverTexture(book, style) });
+  if (!shelf) applySurfaceFinish(cover, book.coverFinish, 'satin');
   const box = (w, h, d, material, x = 0, y = 0, z = 0) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
     mesh.position.set(x, y, z); group.add(mesh); return mesh;
@@ -121,9 +132,13 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
       c.fillRect(vertical ? i : 0, vertical ? 0 : i, vertical ? 1 : 512, vertical ? 512 : 1);
     }
     const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
-    return new THREE.MeshStandardMaterial({ map, roughness: 1 });
+    return new THREE.MeshPhysicalMaterial({ map, roughness: 1 });
   };
   const foreEdge = shelf ? cloth : paper(true), topEdge = shelf ? cloth : paper(false);
+  if (!shelf) {
+    applySurfaceFinish(foreEdge, book.pageEdgeFinish, 'satin');
+    applySurfaceFinish(topEdge, book.pageEdgeFinish, 'satin');
+  }
   const inset = height * .009;
   box(width - inset * 2, height - inset * 2, thickness - board * 2.4,
     [foreEdge, foreEdge, topEdge, topEdge, topEdge, topEdge], inset * .3);
@@ -186,6 +201,15 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
       material.clearcoatRoughness = material.metalness ? .16 : .4;
     }
   };
+  group.userData.updateCoverAppearance = nextBook => {
+    if (!shelf) applySurfaceFinish(cover, nextBook.coverFinish, 'satin');
+  };
+  group.userData.updateEdgeAppearance = nextBook => {
+    if (!shelf) {
+      applySurfaceFinish(foreEdge, nextBook.pageEdgeFinish, 'satin');
+      applySurfaceFinish(topEdge, nextBook.pageEdgeFinish, 'satin');
+    }
+  };
   return group;
 }
 
@@ -213,10 +237,15 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   const canvas = document.createElement('canvas'); canvas.className = 'ihr-book-canvas'; canvas.setAttribute('aria-hidden', 'true');
   canvas.width = Math.ceil(viewportWidth * pixelRatio); canvas.height = Math.ceil(viewportHeight * pixelRatio);
   host.append(canvas); const context = canvas.getContext('2d');
-  const scene = new THREE.Scene(); scene.environment = studioEnvironment; scene.environmentIntensity = 1.25;
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x7b7469, 1.8));
-  const keyLight = new THREE.DirectionalLight(0xfff2d6, 1.25); keyLight.position.set(-2, 3, 4); scene.add(keyLight);
-  const stripLight = new THREE.DirectionalLight(0xffffff, 1.7); stripLight.position.set(3, 1, 2); scene.add(stripLight);
+  const scene = new THREE.Scene(); scene.environment = studioEnvironment; scene.environmentIntensity = 1.65;
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x655d52, .72));
+  // A bright frontal source sits just above the camera axis, so glossy cloth
+  // and jacket lamination catch a visible highlight from the reader's point
+  // of view as the curved binding turns.
+  const readerLight = new THREE.DirectionalLight(0xfffbf3, 3.15);
+  readerLight.position.set(0, .45, 4); scene.add(readerLight);
+  const keyLight = new THREE.DirectionalLight(0xffe9c5, .62); keyLight.position.set(-2, 3, 4); scene.add(keyLight);
+  const stripLight = new THREE.DirectionalLight(0xffffff, .9); stripLight.position.set(3, 1, 2); scene.add(stripLight);
   let model = createBookModel(book, style, width, height, thickness, coverUrl, { shelf }); scene.add(model);
   const camera = new THREE.OrthographicCamera(-viewportWidth / 2, viewportWidth / 2, viewportHeight / 2, -viewportHeight / 2, .1, 10000); camera.position.z = 3000;
   let disposed = false, current, cancel = () => {};
@@ -258,7 +287,19 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (current) draw(current);
     return true;
   }
-  return { canvas, draw, updateAppearance, updateSpineAppearance, animate(frames, { duration }) {
+  function updateCoverAppearance(nextBook) {
+    if (disposed) return false;
+    model.userData.updateCoverAppearance?.(nextBook);
+    if (current) draw(current);
+    return true;
+  }
+  function updateEdgeAppearance(nextBook) {
+    if (disposed) return false;
+    model.userData.updateEdgeAppearance?.(nextBook);
+    if (current) draw(current);
+    return true;
+  }
+  return { canvas, draw, updateAppearance, updateSpineAppearance, updateCoverAppearance, updateEdgeAppearance, animate(frames, { duration }) {
     cancel();
     if (current) frames = [{ ...frames[0], transform: current }, ...frames.slice(1)];
     let raf, resolve; const finished = new Promise(r => resolve = r);

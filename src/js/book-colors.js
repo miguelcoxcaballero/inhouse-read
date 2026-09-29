@@ -52,6 +52,16 @@ export function bookColorOptions(coverColor) {
 export const METAL_COLORS = { gold:'#d6ad55', silver:'#d5dce3' }
 export function spineFinish(value) { return ['gold','silver'].includes(value) ? value : 'matte' }
 
+export const SURFACE_FINISHES = Object.freeze({
+  glossy: Object.freeze({ roughness:.16, clearcoat:1, clearcoatRoughness:.035, envMapIntensity:2.1 }),
+  satin: Object.freeze({ roughness:.4, clearcoat:.58, clearcoatRoughness:.2, envMapIntensity:1.55 }),
+  matte: Object.freeze({ roughness:.88, clearcoat:.05, clearcoatRoughness:.42, envMapIntensity:1.15 })
+})
+export function surfaceFinish(value, fallback = 'satin') {
+  if (typeof value === 'string' && Object.hasOwn(SURFACE_FINISHES, value)) return value
+  return typeof fallback === 'string' && Object.hasOwn(SURFACE_FINISHES, fallback) ? fallback : 'satin'
+}
+
 /** Derive spine shading and legible title ink for any user-selected color. */
 export function spineColorStyle(color) {
   const rgb = parseHex(color) ?? [139, 94, 60]
@@ -75,6 +85,9 @@ export function spineCustomization(book) {
     else if (parseHex(book?.[key])) result[key] = toHex(parseHex(book[key]))
   }
   for (const key of ['spineFinish','spineTextFinish']) if (key in (book || {})) result[key] = spineFinish(book[key])
+  if ('coverFinish' in (book || {})) result.coverFinish = surfaceFinish(book.coverFinish)
+  if ('pageEdgeFinish' in (book || {})) result.pageEdgeFinish = surfaceFinish(book.pageEdgeFinish)
+  if ('spineSurfaceFinish' in (book || {})) result.spineSurfaceFinish = surfaceFinish(book.spineSurfaceFinish, 'matte')
   if (typeof book?.spineEngraved === 'boolean') result.spineEngraved = book.spineEngraved
   if (typeof book?.spineTitleOverride === 'string') result.spineTitleOverride = book.spineTitleOverride.slice(0,120)
   if ('author' in (book || {})) result.author = normalizeBookAuthor(book.author)

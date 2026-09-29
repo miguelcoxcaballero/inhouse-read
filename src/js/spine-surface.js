@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { spineFinish } from './book-colors.js'
+import { spineFinish, surfaceFinish, SURFACE_FINISHES } from './book-colors.js'
 import { normalizeBookAuthor } from './book-title.js'
 
 // Colour and PBR channels share exactly the same glyph raster. Text never
@@ -61,7 +61,8 @@ export function spineSurface(book, style, physicalHeight = 200, thickness = 32) 
 
   // R = surface height, G = roughness, B = metalness. Linear, never sRGB.
   const packed = canvas(), pc = packed.getContext('2d')
-  const bindingRoughness = metalBinding ? 76 : 220
+  const surface = SURFACE_FINISHES[surfaceFinish(book.spineSurfaceFinish, 'matte')]
+  const bindingRoughness = Math.round(surface.roughness * 255)
   pc.fillStyle = `rgb(255,${bindingRoughness},${metalBinding ? 255 : 0})`
   pc.fillRect(0, 0, width, height)
   ic.clearRect(0, 0, width, height); ic.globalCompositeOperation = 'source-over'
@@ -81,10 +82,10 @@ export function spineSurface(book, style, physicalHeight = 200, thickness = 32) 
   return { map, channels, relief, material:{
     map, roughness:1, metalness:1, roughnessMap:channels, metalnessMap:channels,
     bumpMap:engraved ? channels : null, bumpScale:engraved ? .035 : 0,
-    envMapIntensity:metallic ? 1.8 : 1,
+    envMapIntensity:surface.envMapIntensity * (metallic ? 1.2 : .9),
     anisotropy:metallic ? .35 : 0,
-    clearcoat:metallic ? .42 : 0,
-    clearcoatRoughness:metallic ? .16 : .4
+    clearcoat:surface.clearcoat,
+    clearcoatRoughness:surface.clearcoatRoughness
   } }
 }
 
