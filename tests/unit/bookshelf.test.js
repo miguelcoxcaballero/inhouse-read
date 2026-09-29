@@ -233,9 +233,7 @@ describe('renderBookshelf', () => {
     container.querySelector('.ihr-spine').click()
     await settle()
     expect(coverSrcFor).toHaveBeenCalled()
-    expect(document.querySelector('.ihr-flyout__img').getAttribute('src')).toBe(
-      'blob:portada-falsa'
-    )
+    await vi.waitFor(() => expect(document.querySelector('.ihr-flyout__img')?.getAttribute('src')).toBe('blob:portada-falsa'))
     expect(document.querySelector('.ihr-cover-placeholder')).toBeNull()
   })
 

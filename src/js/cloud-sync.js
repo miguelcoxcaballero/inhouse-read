@@ -1,3 +1,4 @@
+import { spineCustomization } from './book-colors.js'
 import {
   getDriveProfile, listAllDriveBooks, uploadDriveFile, downloadDriveFile,
   readDriveProgress, writeDriveProgress
@@ -134,6 +135,7 @@ export class CloudSync {
       (remoteUpdatedAt === localUpdatedAt && !record.progressDirty))) {
       await this.#library.patch(record.id, {
         progressFraction: remote.fraction, locator: remote.locator,
+        ...spineCustomization(remote.appearance),
         ...(Array.isArray(remote.readingHistory) ? { readingHistory:cleanPlaces(remote.readingHistory) } : {}),
         ...(Array.isArray(remote.bookmarks) ? { bookmarks:cleanPlaces(remote.bookmarks,100) } : {}),
         progressUpdatedAt: remoteUpdatedAt, progressDirty: false,
@@ -145,6 +147,7 @@ export class CloudSync {
     if (!localHasProgress) return
     const snapshot = {
       fraction: record.progressFraction, locator: record.locator,
+      appearance:spineCustomization(record),
       readingHistory:cleanPlaces(record.readingHistory), bookmarks:cleanPlaces(record.bookmarks,100),
       updatedAt: localUpdatedAt || Date.now()
     }
@@ -157,7 +160,8 @@ export class CloudSync {
       Number(latest.progressFraction) === Number(snapshot.fraction) &&
       JSON.stringify(latest.locator ?? null) === JSON.stringify(snapshot.locator ?? null) &&
       JSON.stringify(cleanPlaces(latest.readingHistory)) === JSON.stringify(snapshot.readingHistory) &&
-      JSON.stringify(cleanPlaces(latest.bookmarks,100)) === JSON.stringify(snapshot.bookmarks)
+      JSON.stringify(cleanPlaces(latest.bookmarks,100)) === JSON.stringify(snapshot.bookmarks) &&
+      JSON.stringify(spineCustomization(latest)) === JSON.stringify(snapshot.appearance)
     await this.#library.patch(record.id, {
       ...(unchanged ? { progressDirty: false, progressUpdatedAt: snapshot.updatedAt } : {}),
       progressStateFileId: uploaded.id

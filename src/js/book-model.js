@@ -1,26 +1,35 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { spineSurface, releaseSurface } from './spine-surface.js';
 
 // A half-ellipse extruded along the binding. Shared vertices give the entire
 // binding continuous normals, including the silhouette seen beside the cover.
-export function bindingGeometry(width, height, thickness, segments = 96) {
+export function bindingGeometry(width, height, thickness, segments = 96, relief = null) {
   const positions = [], normals = [], uv = [], indices = [];
   const bulge = thickness * 0.38;
+  const rows = relief ? 384 : 1;
   for (let i = 0; i <= segments; i++) {
     const a = i / segments * Math.PI;
     const nx = -Math.sin(a) / bulge, nz = -Math.cos(a) / (thickness / 2);
     const length = Math.hypot(nx, nz);
-    for (let j = 0; j < 2; j++) {
-      positions.push(-width / 2 - bulge * Math.sin(a), (j - .5) * height, -thickness / 2 * Math.cos(a));
-      normals.push(nx / length, 0, nz / length);
-      uv.push(i / segments, j);
+    for (let j = 0; j <= rows; j++) {
+      const u = i / segments, v = j / rows;
+      const depth = relief ? relief(u, v) * height * .0007 : 0;
+      positions.push(-width / 2 - bulge * Math.sin(a) - nx / length * depth,
+        (v - .5) * height, -thickness / 2 * Math.cos(a) - nz / length * depth);
+      normals.push(nx / length, 0, nz / length); uv.push(u, v);
+      if (i < segments && j < rows) {
+        const k = i * (rows + 1) + j;
+        indices.push(k, k + rows + 1, k + 1, k + 1, k + rows + 1, k + rows + 2);
+      }
     }
-    if (i < segments) { const k = i * 2; indices.push(k, k + 2, k + 1, k + 1, k + 2, k + 3); }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setIndex(indices);
+  if (relief) g.computeVertexNormals();
   return g;
 }
 
@@ -56,76 +65,45 @@ export function fitCoverImage(imageWidth, imageHeight, width, height) {
   return { x:(width - w) / 2, y:(height - h) / 2, width:w, height:h };
 }
 
-function texture(book, style, spine, { scale = 2, simplified = false } = {}) {
+function coverTexture(book, style) {
   const canvas = document.createElement('canvas');
-  // Keep the cover map sharp on high-density phone displays while preserving
-  // the original drawing coordinates used by the ornament and typography.
-  const designWidth = spine ? 256 : Math.round(1024 * (Number(style.coverRatio) || 0.66));
-  const textureScale = scale;
-  canvas.width = designWidth * textureScale; canvas.height = 1024 * textureScale;
-  const c = canvas.getContext('2d');
-  c.scale(textureScale, textureScale);
+  const designWidth = Math.round(1024 * (Number(style.coverRatio) || .66));
+  canvas.width = designWidth * 2; canvas.height = 2048;
+  const c = canvas.getContext('2d'); c.scale(2, 2);
   c.fillStyle = style.color; c.fillRect(0, 0, designWidth, 1024);
-  // Fine woven cloth, rather than thick horizontal stripes. While editing,
-  // use a smaller map without the decorative weave so a phone only uploads a
-  // light spine texture to WebGL on each frame.
-  if (!simplified) {
-    c.globalAlpha = .035; c.fillStyle = '#fff';
-    for (let y = 0; y < 1024; y += 4) c.fillRect(0, y, canvas.width, 1);
-    c.globalAlpha = .035; c.fillStyle = '#000';
-    for (let x = 0; x < canvas.width; x += 4) c.fillRect(x, 0, 1, 1024);
+  c.fillStyle = style.ink; c.textAlign = 'center'; c.textBaseline = 'middle';
+  // Design in physical cover proportions so lettering is never stretched.
+  const center = designWidth / 2;
+  const coverScale = designWidth / 676;
+  const titleSize = Math.max(36, Math.min(82, 54 * coverScale));
+  const titleWidth = Math.min(500 * coverScale, designWidth - 72);
+  c.strokeStyle = style.ink; c.globalAlpha = .3; c.lineWidth = 1.5;
+  c.strokeRect(42, 42, designWidth - 84, 940); c.strokeRect(48, 48, designWidth - 96, 928);
+  c.globalAlpha = .8; c.lineWidth = 3; c.beginPath();
+  c.moveTo(center - 21, 185); c.lineTo(center, 164); c.lineTo(center + 21, 185); c.stroke();
+  c.font = '500 17px "DM Sans", sans-serif'; c.fillText('INHOUSE READ', center, 218);
+  c.globalAlpha = 1; c.font = `${style.fontWeight || 700} ${titleSize}px "${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`;
+  const words = (book.title || 'Sin título').split(' '); let line = ''; const lines = [];
+  for (const word of words) {
+    if (c.measureText(line + word).width > titleWidth && line) { lines.push(line.trim()); line = ''; }
+    line += word + ' ';
   }
-  c.globalAlpha = 1; c.fillStyle = style.ink;
-  c.textAlign = 'center'; c.textBaseline = 'middle';
-  if (spine) {
-    c.strokeStyle = style.ink; c.lineWidth = 2;
-    c.globalAlpha = .45;
-    for (const y of [55, 65, 959, 969]) { c.beginPath(); c.moveTo(36, y); c.lineTo(220, y); c.stroke(); }
-    if (style.texture === 'panel') { c.globalAlpha = .1; c.fillRect(40, 88, 176, 848); }
-    if (style.texture === 'bands' || style.texture === 'ribbed') {
-      c.globalAlpha = .16;
-      for (const y of [100, 924]) c.fillRect(0, y, 256, style.texture === 'bands' ? 20 : 6);
-    }
-    c.globalAlpha = 1;
-    c.translate(128, 512); c.rotate(Math.PI / 2);
-    const spineFontSize = Math.max(8, Math.min(18, Number(style.spineFontSize) || 10));
-    c.font = `${style.fontWeight || 700} ${44 * spineFontSize / 10}px "${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`;
-    c.fillText(book.spineTitleOverride || book.title || 'Sin título', 0, book.author ? -13 : 0, 780);
-    c.globalAlpha = .8; c.font = '26px "DM Sans", sans-serif';
-    c.fillText(book.author || '', 0, 41, 730);
-  } else {
-    // Design in physical cover proportions so lettering is never stretched.
-    const center = canvas.width / 2;
-    const coverScale = designWidth / 676;
-    const titleSize = Math.max(36, Math.min(82, 54 * coverScale));
-    const titleWidth = Math.min(500 * coverScale, designWidth - 72);
-    c.strokeStyle = style.ink; c.globalAlpha = .3; c.lineWidth = 1.5;
-    c.strokeRect(42, 42, canvas.width - 84, 940); c.strokeRect(48, 48, canvas.width - 96, 928);
-    c.globalAlpha = .8; c.lineWidth = 3; c.beginPath();
-    c.moveTo(center - 21, 185); c.lineTo(center, 164); c.lineTo(center + 21, 185); c.stroke();
-    c.font = '500 17px "DM Sans", sans-serif'; c.fillText('INHOUSE READ', center, 218);
-    c.globalAlpha = 1; c.font = `${style.fontWeight || 700} ${titleSize}px "${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`;
-    const words = (book.title || 'Sin título').split(' '); let line = ''; const lines = [];
-    for (const word of words) {
-      if (c.measureText(line + word).width > titleWidth && line) { lines.push(line.trim()); line = ''; }
-      line += word + ' ';
-    }
-    lines.push(line.trim());
-    const visible = lines.slice(0, 6), spacing = 66;
-    visible.forEach((text, i) => c.fillText(text + (i === 5 && lines.length > 6 ? '…' : ''), center, 460 + (i - (visible.length - 1) / 2) * spacing, titleWidth));
-    c.globalAlpha = .65; c.fillRect(center - 27, 735, 54, 1);
-    c.globalAlpha = .9; c.font = '28px "DM Sans", sans-serif'; c.fillText(book.author || '', center, 790, 500);
-    c.globalAlpha = .6; c.font = '500 18px "DM Sans", sans-serif'; c.fillText(book.format || '', center, 911);
-  }
+  lines.push(line.trim());
+  const visible = lines.slice(0, 6), spacing = 66;
+  visible.forEach((text, i) => c.fillText(text + (i === 5 && lines.length > 6 ? '…' : ''), center, 460 + (i - (visible.length - 1) / 2) * spacing, titleWidth));
+  c.globalAlpha = .65; c.fillRect(center - 27, 735, 54, 1);
+  c.globalAlpha = .9; c.font = '28px "DM Sans", sans-serif'; c.fillText(book.author || '', center, 790, 500);
+  c.globalAlpha = .6; c.font = '500 18px "DM Sans", sans-serif'; c.fillText(book.format || '', center, 911);
   const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
   return map;
 }
 
-export function createBookModel(book, style, width, height, thickness, coverUrl) {
+export function createBookModel(book, style, width, height, thickness, coverUrl, { shelf = false } = {}) {
   const group = new THREE.Group();
   const cloth = new THREE.MeshStandardMaterial({ color: style.color, roughness: .86 });
-  const binding = new THREE.MeshStandardMaterial({ map: texture(book, style, true), roughness: .86, side: THREE.DoubleSide });
-  const cover = new THREE.MeshStandardMaterial({ map: texture(book, style, false), roughness: .78 });
+  let surface = spineSurface(book, style, height, thickness);
+  const binding = new THREE.MeshStandardMaterial({ ...surface.material, side: THREE.DoubleSide });
+  const cover = shelf ? cloth : new THREE.MeshStandardMaterial({ map: coverTexture(book, style), roughness: .78 });
   const box = (w, h, d, material, x = 0, y = 0, z = 0) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
     mesh.position.set(x, y, z); group.add(mesh); return mesh;
@@ -145,7 +123,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl)
     const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
     return new THREE.MeshStandardMaterial({ map, roughness: 1 });
   };
-  const foreEdge = paper(true), topEdge = paper(false);
+  const foreEdge = shelf ? cloth : paper(true), topEdge = shelf ? cloth : paper(false);
   const inset = height * .009;
   box(width - inset * 2, height - inset * 2, thickness - board * 2.4,
     [foreEdge, foreEdge, topEdge, topEdge, topEdge, topEdge], inset * .3);
@@ -154,13 +132,14 @@ export function createBookModel(book, style, width, height, thickness, coverUrl)
   for (const z of [-1, 1]) {
     box(height * .0025, height * .966, height * .0007, hinge, -width / 2 + height * .017, 0, z * thickness / 2);
   }
-  group.add(new THREE.Mesh(bindingGeometry(width, height, thickness), binding));
+  const bindingMesh = new THREE.Mesh(bindingGeometry(width, height, thickness, 96, surface.relief), binding);
+  group.add(bindingMesh);
   const cap = new THREE.Shape(); cap.moveTo(-width / 2, -thickness / 2);
   for (let i = 0; i <= 96; i++) { const a = i / 96 * Math.PI; cap.lineTo(-width / 2 - thickness * .38 * Math.sin(a), -thickness / 2 * Math.cos(a)); }
   cap.closePath();
   const capMaterials = [];
   for (const y of [-height / 2, height / 2]) {
-    const mesh = new THREE.Mesh(new THREE.ShapeGeometry(cap), new THREE.MeshStandardMaterial({ color: style.color, roughness: .86, side: THREE.DoubleSide }));
+    const mesh = new THREE.Mesh(new THREE.ShapeGeometry(cap), new THREE.MeshStandardMaterial({ color: style.color, roughness: ['gold','silver'].includes(book.spineFinish) ? .33 : .86, metalness: ['gold','silver'].includes(book.spineFinish) ? 1 : 0, envMapIntensity:1.15, side: THREE.DoubleSide }));
     capMaterials.push(mesh.material);
     mesh.rotation.x = Math.PI / 2; mesh.position.y = y; group.add(mesh);
   }
@@ -182,29 +161,40 @@ export function createBookModel(book, style, width, height, thickness, coverUrl)
   group.userData.dispose = () => {
     disposed = true; const materials = new Set();
     group.traverse(obj => { obj.geometry?.dispose(); if (obj.material) for (const m of [].concat(obj.material)) materials.add(m); });
+    releaseSurface(surface);
     for (const m of materials) { m.map?.dispose(); m.dispose(); }
   };
   group.userData.updateSpineAppearance = (nextBook, nextStyle) => {
-    const nextMap = texture(nextBook, nextStyle, true, { scale: 1, simplified: true });
-    const oldMap = binding.map;
-    binding.map = nextMap;
+    const previous = surface;
+    surface = spineSurface(nextBook, nextStyle, height, thickness);
+    Object.assign(binding, surface.material);
     binding.needsUpdate = true;
-    oldMap?.dispose();
+    releaseSurface(previous);
+    bindingMesh.geometry.dispose();
+    bindingMesh.geometry = bindingGeometry(width, height, thickness, 96, surface.relief);
     cloth.color.set(nextStyle.color);
     hinge.color.set(nextStyle.shade || nextStyle.color);
-    for (const material of capMaterials) material.color.set(nextStyle.color);
+    for (const material of capMaterials) {
+      material.color.set(nextStyle.color);
+      material.metalness = ['gold','silver'].includes(nextBook.spineFinish) ? 1 : 0;
+      material.roughness = material.metalness ? .33 : .86;
+    }
   };
   return group;
 }
 
-let renderer;
+let renderer, studioEnvironment;
 const rendererSize = new THREE.Vector2();
 function getRenderer() {
   if (!globalThis.WebGLRenderingContext && !globalThis.WebGL2RenderingContext) return null;
   if (!renderer) try {
     renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(Math.min(Math.max(devicePixelRatio || 1, 2), 3));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    const studio = new RoomEnvironment();
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    studioEnvironment = pmrem.fromScene(studio, .04).texture;
+    studio.dispose(); pmrem.dispose();
   } catch { return null; }
   return renderer;
 }
@@ -213,20 +203,30 @@ function getRenderer() {
 // contexts, and the flyout uses exactly the same mesh builder as the shelf.
 export function bookView(host, book, style, { width, height, thickness, viewportWidth, viewportHeight, centerX, centerY, coverUrl, shelf = false }) {
   const gpu = getRenderer(); if (!gpu) return null;
+  const pixelRatio = Math.min(Math.max(devicePixelRatio || 1, 2), shelf ? 3 : 2);
   const canvas = document.createElement('canvas'); canvas.className = 'ihr-book-canvas'; canvas.setAttribute('aria-hidden', 'true');
-  canvas.width = Math.ceil(viewportWidth * gpu.getPixelRatio()); canvas.height = Math.ceil(viewportHeight * gpu.getPixelRatio());
+  canvas.width = Math.ceil(viewportWidth * pixelRatio); canvas.height = Math.ceil(viewportHeight * pixelRatio);
   host.append(canvas); const context = canvas.getContext('2d');
-  const scene = new THREE.Scene(); scene.add(new THREE.HemisphereLight(0xffffff, 0x7b7469, 2));
+  const scene = new THREE.Scene(); scene.environment = studioEnvironment; scene.environmentIntensity = .45; scene.add(new THREE.HemisphereLight(0xffffff, 0x7b7469, 2));
   const light = new THREE.DirectionalLight(0xfff4e6, 2.2); light.position.set(-500, 700, 900); scene.add(light);
-  let model = createBookModel(book, style, width, height, thickness, coverUrl); scene.add(model);
+  let model = createBookModel(book, style, width, height, thickness, coverUrl, { shelf }); scene.add(model);
   const camera = new THREE.OrthographicCamera(-viewportWidth / 2, viewportWidth / 2, viewportHeight / 2, -viewportHeight / 2, .1, 10000); camera.position.z = 3000;
   let disposed = false, current, cancel = () => {};
   function draw(pose) {
     if (disposed) return; current = pose;
     model.position.set(centerX - viewportWidth / 2 + pose.x, viewportHeight / 2 - centerY - pose.y, 0);
     model.rotation.set((pose.pitch ?? 0) * Math.PI / 180, pose.angle * Math.PI / 180, 0); model.scale.setScalar(pose.scale);
+    if (gpu.getPixelRatio() !== pixelRatio) gpu.setPixelRatio(pixelRatio);
     gpu.getSize(rendererSize);
     if (rendererSize.x !== viewportWidth || rendererSize.y !== viewportHeight) gpu.setSize(viewportWidth, viewportHeight, false);
+    model.traverse(object => {
+      for (const material of [].concat(object.material || [])) {
+        for (const key of ['map', 'roughnessMap', 'metalnessMap', 'bumpMap']) {
+          const map = material[key];
+          if (map) map.anisotropy = Math.min(16, gpu.capabilities.getMaxAnisotropy());
+        }
+      }
+    });
     gpu.render(scene, camera);
     context.clearRect(0, 0, canvas.width, canvas.height); context.drawImage(gpu.domElement, 0, 0, canvas.width, canvas.height);
     canvas.dataset.angle = String(pose.angle); canvas.dataset.renderer = 'three-mesh';
@@ -238,7 +238,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     const pose = current;
     scene.remove(model);
     model.userData.dispose();
-    model = createBookModel(book, nextStyle, width, height, thickness, coverUrl);
+    model = createBookModel(book, nextStyle, width, height, thickness, coverUrl, { shelf });
     model.userData.invalidate = () => current && draw(current);
     scene.add(model);
     if (pose) draw(pose);

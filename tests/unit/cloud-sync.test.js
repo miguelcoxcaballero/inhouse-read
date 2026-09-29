@@ -38,6 +38,17 @@ describe('CloudSync', () => {
     await sync.syncBookProgress(book.id)
     expect(await library.get(book.id)).toMatchObject({readingHistory,bookmarks,locator:{kind:'pdf-page',value:5}})
   })
+  it('syncs custom ink, metallic finishes and engraved text, including automatic reset', async () => {
+    const book=await library.addOrTouch({sourceType:'local',name:'gold.pdf',size:5,driveFileId:'gold-drive',cloudAccountId:'account-1'})
+    const appearance={spineColorOverride:'#245536',spineTextColor:null,spineTextFinish:'gold',spineEngraved:true}
+    await library.patch(book.id,{...appearance,progressDirty:true,progressUpdatedAt:100})
+    drive.writeDriveProgress.mockResolvedValue({id:'gold-state'})
+    await sync.syncBookProgress(book.id)
+    expect(drive.writeDriveProgress.mock.calls[0][1]).toMatchObject({appearance})
+    drive.readDriveProgress.mockResolvedValue({fraction:0,locator:null,appearance:{...appearance,spineTextFinish:'silver'},updatedAt:200,stateFileId:'gold-state'})
+    await sync.syncBookProgress(book.id)
+    expect(await library.get(book.id)).toMatchObject({...appearance,spineTextFinish:'silver'})
+  })
   it('vincula el libro local al de Drive sin duplicarlo y recupera su posición', async () => {
     const local = await library.addOrTouch({ sourceType: 'local', name: 'book.pdf', title: 'book', size: 123,
       content: new Blob(['pdf'], { type: 'application/pdf' }) })

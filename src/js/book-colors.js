@@ -39,21 +39,17 @@ function fromHsl(hue, saturation, lightness) {
   return toHex(rgb.map(value => (value + m) * 255))
 }
 
-/** Three harmonious lomo choices derived from the dominant cover color. */
+/** Distinct cover-inspired choices; neutral covers get warm/cool accents. */
 export function bookColorOptions(coverColor) {
   const rgb = parseHex(coverColor) ?? [139, 94, 60]
   const base = toHex(rgb)
-  const { hue, saturation, lightness } = toHsl(rgb)
-  if (saturation < 0.035) {
-    return [base, fromHsl(hue, 0, clamp(lightness - 0.14, 0.08, 0.92)), fromHsl(hue, 0, clamp(lightness + 0.14, 0.08, 0.92))]
-  }
-  const variedSaturation = clamp(saturation * 0.9, 0.2, 0.82)
-  return [
-    base,
-    fromHsl(hue + 22, variedSaturation, clamp(lightness - 0.035, 0.24, 0.78)),
-    fromHsl(hue - 22, variedSaturation, clamp(lightness + 0.035, 0.24, 0.78))
-  ]
+  const { hue, saturation } = toHsl(rgb)
+  if (saturation < .16) return [base, '#87613f', '#315e58']
+  return [base, fromHsl(hue + 135, .42, .32), fromHsl(hue + 245, .48, .54)]
 }
+
+export const METAL_COLORS = { gold:'#d6ad55', silver:'#d5dce3' }
+export function spineFinish(value) { return ['gold','silver'].includes(value) ? value : 'matte' }
 
 /** Derive spine shading and legible title ink for any user-selected color. */
 export function spineColorStyle(color) {
@@ -62,10 +58,25 @@ export function spineColorStyle(color) {
   const linear = channels.map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
   const luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
   const whiteContrast = 1.05 / (luminance + 0.05)
-  const darkContrast = (luminance + 0.05) / 0.075
+  const darkContrast = (luminance + 0.05) / 0.057
   return {
     color: toHex(rgb),
     shade: toHex(rgb.map(value => value * 0.76)),
     ink: whiteContrast >= darkContrast ? '#fffaf0' : '#171512'
   }
+}
+
+/** Explicit allow-list for saved appearance, including resets to automatic. */
+export function spineCustomization(book) {
+  const result = {}
+  for (const key of ['spineColorOverride','spineTextColor']) {
+    if (book?.[key] === null) result[key] = null
+    else if (parseHex(book?.[key])) result[key] = toHex(parseHex(book[key]))
+  }
+  for (const key of ['spineFinish','spineTextFinish']) if (key in (book || {})) result[key] = spineFinish(book[key])
+  if (typeof book?.spineEngraved === 'boolean') result.spineEngraved = book.spineEngraved
+  if (typeof book?.spineTitleOverride === 'string') result.spineTitleOverride = book.spineTitleOverride.slice(0,120)
+  if (['Playfair Display','Lora','Cormorant Garamond','DM Sans','Montserrat','Oswald'].includes(book?.spineFontFamily)) result.spineFontFamily = book.spineFontFamily
+  if (Number.isFinite(book?.spineFontSize)) result.spineFontSize = clamp(book.spineFontSize,8,18)
+  return result
 }

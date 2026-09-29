@@ -911,18 +911,18 @@
 .ihr-spine-editor__field { display:flex; flex-direction:column; gap:6px; min-width:0; color:var(--text-secondary); font-size:.72rem; text-align:left; }
 .ihr-spine-editor__select,
 .ihr-spine-editor__field--title input {
-  min-width:0; width:100%; min-height:40px; padding:0 11px; border:1px solid var(--border);
-  border-radius:var(--radius-sm,8px); background:var(--bg-secondary); color:var(--text-primary);
+  min-width:0; width:100%; min-height:40px; padding:0 2px; border:0; border-bottom:1px solid var(--border);
+  border-radius:0; background:transparent; color:var(--text-primary);
   font:500 .84rem var(--f-body, sans-serif); outline:none;
 }
 .ihr-spine-editor__field--title input { scroll-margin-block:14px; }
 .ihr-spine-editor__select:focus-visible,
-.ihr-spine-editor__field--title input:focus-visible { border-color:var(--accent-read); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent-read) 22%, transparent); }
+.ihr-spine-editor__field--title input:focus-visible { border-color:var(--accent-read); box-shadow:0 1px var(--accent-read); }
 .ihr-spine-editor__range { display:flex; align-items:center; gap:8px; height:40px; }
 .ihr-spine-editor__range input { min-width:0; width:100%; accent-color:var(--accent-read); }
 .ihr-spine-editor__size { min-width:34px; color:var(--text-primary); font-size:.72rem; text-align:right; }
 .ihr-spine-editor__field--title { margin-top:11px; }
-.ihr-spine-editor > .ihr-flyout__colors { justify-content:space-between; margin-top:12px; padding-top:10px; border-top:1px solid var(--border); }
+.ihr-spine-editor > .ihr-flyout__colors { justify-content:flex-start; gap:10px; margin-top:12px; padding-top:10px; border-top:1px solid var(--border); }
 .ihr-spine-editor .ihr-flyout__color-label { color:var(--text-primary); font-size:.75rem; }
 .ihr-spine-editor__done { flex:none; min-height:38px; margin:0; padding:7px 16px; border-radius:var(--radius-sm,8px); background:var(--accent-read); color:#fff; font-weight:600; }
 .ihr-spine-editor .ihr-flyout__swatch,
@@ -980,3 +980,18 @@
 .ihr-flyout__book--fallback .ihr-flyout__face--cover { transform:none; }
 
 .ihr-spine__body:not(:has(canvas)) { background:var(--ihr-spine-base); }
+
+/* One quiet editing sheet: no nested cards, only controls and separators. */
+.ihr-spine-editor__ink { display:flex; align-items:center; gap:10px; margin-top:12px; color:var(--text-primary); font-size:.8rem; }
+.ihr-spine-editor__ink > span, .ihr-spine-editor .ihr-flyout__color-label { width:44px; flex:none; }
+.ihr-spine-editor__ink input[type=color] { width:34px; height:34px; padding:0; border:0; background:none; cursor:pointer; }
+.ihr-spine-editor__ink input::-webkit-color-swatch-wrapper { padding:0; }
+.ihr-spine-editor__ink input::-webkit-color-swatch { border-radius:50%; border:1px solid var(--border-strong); }
+.ihr-spine-editor__finish { margin-left:auto; width:94px; min-height:40px; border:0; border-bottom:1px solid var(--border); border-radius:0; background:var(--bg-primary); color:var(--text-primary); font:inherit; font-size:.8rem; }
+.ihr-spine-editor__auto { min-height:38px; padding:4px 8px; background:transparent; border:0; color:var(--text-secondary); font:inherit; cursor:pointer; }
+.ihr-spine-editor__engraving { display:flex; align-items:center; justify-content:space-between; min-height:44px; margin-top:10px; font-size:.82rem; color:var(--text-primary); }
+.ihr-spine-editor__engraving input { appearance:none; width:38px; height:22px; border-radius:20px; background:var(--border-strong); position:relative; cursor:pointer; }
+.ihr-spine-editor__engraving input::after { content:''; position:absolute; width:16px; height:16px; left:3px; top:3px; border-radius:50%; background:#fff; transition:transform .15s ease; box-shadow:0 1px 3px #0003; }
+.ihr-spine-editor__engraving input:checked { background:var(--accent-read); }
+.ihr-spine-editor__engraving input:checked::after { transform:translateX(16px); }
+.ihr-spine-editor :focus-visible { outline:2px solid var(--accent-read); outline-offset:3px; }

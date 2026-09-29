@@ -102,3 +102,18 @@ describe('book motion with continuous velocity', () => {
     }
   });
 });
+
+
+describe('engraved binding geometry', () => {
+  it('recesses the real surface while keeping the cover joins untouched', () => {
+    const g=bindingGeometry(200,300,52,96,(u,v)=>u>.4&&u<.6&&v>.4&&v<.6?1:0)
+    const p=g.getAttribute('position'), n=g.getAttribute('normal')
+    const center=48*385+192
+    expect(p.count).toBe(97*385)
+    expect(p.getX(center)).toBeCloseTo(-119.76+300*.0007,4)
+    expect(p.getX(48*385)).toBeCloseTo(-119.76,4)
+    expect(p.getX(0)).toBe(-100)
+    for(let i=0;i<n.count;i+=317) expect(Math.hypot(n.getX(i),n.getY(i),n.getZ(i))).toBeCloseTo(1,4)
+    g.dispose()
+  })
+})

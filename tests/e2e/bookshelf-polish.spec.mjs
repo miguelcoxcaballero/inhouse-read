@@ -136,7 +136,7 @@ test('editar el lomo en móvil muestra su modelo de canto y mantiene el editor e
   await title.fill('Edición en móvil')
   await expect.poll(() => canvas.getAttribute('data-angle')).toBe('90')
   await dialog.getByRole('slider', { name:'Tamaño de fuente del lomo' }).fill('16')
-  await dialog.getByRole('button', { name:'Tono cercano 1' }).click()
+  await dialog.getByRole('button', { name:'Color complementario 1' }).click()
   await expect(title).toHaveValue('Edición en móvil')
   await expect.poll(() => canvas.getAttribute('data-angle')).toBe('90')
   await dialog.getByRole('button', { name:'Listo' }).click()

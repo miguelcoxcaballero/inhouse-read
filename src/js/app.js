@@ -72,16 +72,15 @@ const cloudSync = new CloudSync(library, {
   onStatus: setDriveSyncStatus,
   onChange: refreshShelf
 })
-const readingExperience = new ReaderExperience(reader, {
-  persist: async (bookId, fields) => {
-    const previous = progressWrites.get(bookId) || Promise.resolve()
-    const write = previous.catch(() => {}).then(() => library.patch(bookId, {
-      ...fields, progressUpdatedAt:Date.now(), progressDirty:true
-    })).then(() => { if (hasDriveSession()) cloudSync.scheduleProgress(bookId) })
-    progressWrites.set(bookId, write)
-    try { await write } finally { if (progressWrites.get(bookId) === write) progressWrites.delete(bookId) }
-  }
-})
+async function persistBookState(bookId, fields) {
+  const previous = progressWrites.get(bookId) || Promise.resolve()
+  const write = previous.catch(() => {}).then(() => library.patch(bookId, {
+    ...fields, progressUpdatedAt:Date.now(), progressDirty:true
+  })).then(() => { if (hasDriveSession()) cloudSync.scheduleProgress(bookId) })
+  progressWrites.set(bookId, write)
+  try { await write } finally { if (progressWrites.get(bookId) === write) progressWrites.delete(bookId) }
+}
+const readingExperience = new ReaderExperience(reader, { persist:persistBookState })
 
 // ---- Tema (idéntico al patrón de Inhouse Notes: data-theme + persistido) ----
 
@@ -151,7 +150,7 @@ async function refreshShelf() {
         coverAppearance: appearance,
         coverAppearanceKey: key
       }),
-      onBookCustomizationChange: (book, fields) => library.patch(book.id, fields),
+      onBookCustomizationChange: (book, fields) => persistBookState(book.id, fields),
       onBookOrderChange: order => Promise.all(order.map(({ id, shelfOrder }) => library.patch(id, { shelfOrder })))
     })
   } else {
@@ -764,7 +763,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.1.0'
+els.appVersion.textContent = 'Inhouse Read · v1.1.1'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')

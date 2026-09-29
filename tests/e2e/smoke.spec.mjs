@@ -54,7 +54,7 @@ test('conecta Google sin redirección y muestra la foto en la esquina derecha', 
   await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   expect(await page.evaluate(() => window.__oauthOptions.redirect_uri)).toBeUndefined()
   await button.click()
-  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.1.0')
+  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.1.1')
   await expect(page.locator('#drive-theme-toggle')).toBeVisible()
   await expect(page.locator('#drive-profile-initial-menu')).toBeHidden()
   await page.locator('#drive-theme-toggle').check()
@@ -159,7 +159,7 @@ test('edita y conserva el color, fuente, tamaño y texto del lomo', async ({ pag
   await expect.poll(() => spine.evaluate(node => getComputedStyle(node).getPropertyValue('--ihr-spine-base').trim()))
     .not.toBe(original)
   const custom = '#3b72a5'
-  await dialog.locator('input[type="color"]').evaluate((input, value) => {
+  await dialog.getByLabel('Elegir otro color para el lomo').evaluate((input, value) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value)
     input.dispatchEvent(new Event('change', { bubbles: true }))
   }, custom)
@@ -214,7 +214,7 @@ test('edita y conserva el color, fuente, tamaño y texto del lomo', async ({ pag
   await expect(reopenedDialog).toHaveClass(/is-ready/)
   await reopenedDialog.getByRole('button', { name:'Editar' }).click()
   await expect(reopenedDialog.locator('.ihr-flyout__custom-color')).toHaveClass(/is-selected/)
-  await expect(reopenedDialog.locator('input[type="color"]')).toHaveValue(custom)
+  await expect(reopenedDialog.getByLabel('Elegir otro color para el lomo')).toHaveValue(custom)
   await expect(reopenedDialog.getByLabel('Fuente del lomo', { exact:true })).toHaveValue('Lora')
   await expect(reopenedDialog.getByLabel('Tamaño de fuente del lomo')).toHaveValue('14')
   await expect(reopenedDialog.getByLabel('Texto del lomo')).toHaveValue('Mi título personalizado')

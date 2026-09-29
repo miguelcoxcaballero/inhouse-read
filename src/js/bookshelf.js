@@ -98,7 +98,7 @@
 
 import { planBookshelf, bookmarkFor, withDefaults } from './bookshelf-layout.js';
 import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from './cover-appearance.js';
-import { bookColorOptions, spineColorStyle } from './book-colors.js';
+import { bookColorOptions, spineColorStyle, spineFinish, METAL_COLORS } from './book-colors.js';
 const PLANT_PHOTOS = {
   leafy: new URL('../assets/library/pothos.webp', import.meta.url).href,
   succulent: new URL('../assets/library/succulent.webp', import.meta.url).href,
@@ -336,6 +336,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (item.book.spineColorOverride) {
       item.style = { ...item.style, ...spineColorStyle(item.book.spineColorOverride) };
     }
+    const finish = spineFinish(item.book.spineFinish);
+    if (finish !== 'matte') item.style = { ...item.style, ...spineColorStyle(METAL_COLORS[finish]) };
+    else item.style.ink = spineColorStyle(item.style.color).ink;
+    const textFinish = spineFinish(item.book.spineTextFinish);
+    if (textFinish !== 'matte') item.style.ink = METAL_COLORS[textFinish];
+    else if (/^#[0-9a-f]{6}$/i.test(item.book.spineTextColor || '')) item.style.ink = item.book.spineTextColor;
     if (item.book.spineFontFamily) {
       const font = SPINE_FONTS.find(candidate => candidate.family === item.book.spineFontFamily);
       if (font) item.style = {
@@ -1225,13 +1231,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (state.lastOpened?.book?.id === book.id) state.lastOpened.style = item.style;
       state.appearanceRefreshPending = true;
       updateColorSelection();
-      if (spinePreviewFrame) cancelAnimationFrame(spinePreviewFrame);
-      spinePreviewFrame = requestAnimationFrame(() => {
+      if (spinePreviewFrame) clearTimeout(spinePreviewFrame);
+      spinePreviewFrame = setTimeout(() => {
         spinePreviewFrame = 0;
         if (!editorPanel.hidden && session.phase === 'ready') {
           view?.updateSpineAppearance(book, item.style);
         }
-      });
+      }, 90);
       queueCustomizationSave();
     }
     function openEditor() {
@@ -1259,7 +1265,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       meta.classList.remove('is-editing');
       coverTarget.hidden = !opts.autoOpen;
       actionButtons[2].setAttribute('aria-expanded', 'false');
-      if (spinePreviewFrame) cancelAnimationFrame(spinePreviewFrame);
+      if (spinePreviewFrame) clearTimeout(spinePreviewFrame);
       spinePreviewFrame = 0;
       const changed = appearanceDirty;
       if (changed && session.phase === 'ready') {
@@ -1363,20 +1369,24 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     });
     function updateColorSelection() {
       colorButtons.forEach(button => {
-        const selected = button.dataset.color === selectedColor;
+        const selected = spineFinish(book.spineFinish) === 'matte' && button.dataset.color === selectedColor;
         button.setAttribute('aria-pressed', String(selected));
         button.classList.toggle('is-selected', selected);
       });
       pickerInput.value = spineColorStyle(selectedColor).color;
+      bindingFinish.value = spineFinish(book.spineFinish);
+      inkFinish.value = spineFinish(book.spineTextFinish);
+      inkPicker.value = item.style.ink;
+      engravedInput.checked = book.spineEngraved === true;
       pickerInput.parentElement?.classList.toggle('is-selected', !suggestedColors.includes(selectedColor));
     }
     function selectSpineColor(color) {
       selectedColor = spineColorStyle(color).color;
       book.spineColorOverride = selectedColor;
-      updateCustomization({ spineColorOverride: selectedColor });
+      updateCustomization({ spineColorOverride: selectedColor, spineFinish:'matte' });
     }
     suggestedColors.forEach((color, index) => {
-      const names = ['Color de la portada', 'Tono cercano 1', 'Tono cercano 2'];
+      const names = ['Color de la portada', 'Color complementario 1', 'Color complementario 2'];
       const button = el('button', {
         type: 'button', class: 'ihr-flyout__swatch',
         'aria-label': names[index], 'aria-pressed': false,
@@ -1387,13 +1397,32 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       colorButtons.push(button);
     });
     colorControls.append(
-      el('span', { class: 'ihr-flyout__color-label', text: 'Color del lomo' }),
+      el('span', { class: 'ihr-flyout__color-label', text: 'Lomo' }),
       el('div', { class: 'ihr-flyout__swatches' }, colorButtons),
       el('label', { class: 'ihr-flyout__custom-color', title: 'Elegir otro color' }, [
         pickerInput,
         el('span', { class: 'ihr-flyout__custom-mark', 'aria-hidden': 'true', text: '+' })
       ])
     );
+    function finishSelect(label, field) {
+      const select = el('select', { class:'ihr-spine-editor__finish', 'aria-label':label,
+        onChange:event => updateCustomization({ [field]:event.currentTarget.value }) });
+      for (const [value,text] of [['matte','Color'],['gold','Dorado'],['silver','Plata']]) select.append(el('option',{value,text}));
+      select.value = spineFinish(book[field]);
+      return select;
+    }
+    const bindingFinish = finishSelect('Acabado del lomo', 'spineFinish');
+    colorControls.append(bindingFinish);
+    const inkFinish = finishSelect('Acabado del texto', 'spineTextFinish');
+    const inkPicker = el('input', {type:'color', value:item.style.ink, 'aria-label':'Color del texto',
+      onChange:event => updateCustomization({spineTextColor:event.currentTarget.value, spineTextFinish:'matte'})});
+    const engravedInput = el('input', {type:'checkbox', role:'switch', 'aria-label':'Texto grabado',
+      onChange:event => updateCustomization({spineEngraved:event.currentTarget.checked})});
+    const inkControls = el('div', {class:'ihr-spine-editor__ink'}, [
+      el('span', {text:'Letras'}), inkPicker,
+      el('button', {type:'button', class:'ihr-spine-editor__auto', text:'Auto', title:'Contraste automático',
+        onClick:() => updateCustomization({spineTextColor:null, spineTextFinish:'matte'})}), inkFinish
+    ]);
     updateColorSelection();
     editorPanel.append(
       el('header', { class:'ihr-spine-editor__header' }, [
@@ -1413,7 +1442,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       el('label', { class: 'ihr-spine-editor__field ihr-spine-editor__field--title' }, [
         el('span', { text: 'Texto del lomo' }), titleInput
       ]),
-      colorControls
+      colorControls,
+      inkControls,
+      el('label', {class:'ihr-spine-editor__engraving'}, [el('span',{text:'Texto grabado'}), engravedInput])
     );
     meta.append(el('div', { class: 'ihr-flyout__actions' }, actionButtons));
     meta.append(editorPanel);

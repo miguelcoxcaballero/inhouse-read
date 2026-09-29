@@ -4,6 +4,14 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca es una estantería con madera y plantas fotográficas, donde los libros se ven de canto. Al tocar uno, sale de la balda y gira en 3D hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.1.1
+
+- Letras del lomo a 2048 px, filtrado anisotrópico y vistas de alta densidad. Su proporción depende del grosor del libro; los títulos largos reducen su tamaño o terminan en puntos suspensivos, sin aplastar las letras.
+- Editor en una sola hoja, con color independiente para el lomo y las letras, contraste automático y acabados dorado y plata. Materiales PBR con un entorno de reflexión compartido por estantería, edición y animaciones.
+- Interruptor de texto grabado: geometría hundida y mapa de relieve fino sobre el lomo curvo. Las actualizaciones se agrupan mientras se escribe para evitar reconstrucciones por cada pulsación.
+- Tres propuestas cromáticas distintas inspiradas en la portada; las portadas neutras incluyen una alternativa cálida y otra verde. Los colores, acabados, grabado y tipografía se sincronizan junto al estado del libro en Drive.
+- Actualización web compatible con la APK 1.1.0; no requiere reinstalar Android.
+
 ### Actualización web y Android · 1.1.0
 
 - Madera de nogal texturizada, profundidad y sombras de contacto; plantas fotográficas propias en cerámica y terracota. Recursos optimizados en `src/assets/library/`, con los prompts de creación en `docs/library-assets.json` y `docs/succulent-asset.txt`.
