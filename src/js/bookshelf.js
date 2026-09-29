@@ -261,7 +261,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     lastOpened: null,
     returnMotion: null,
     queuedBooks: null,
-    renderQueued: false
+    renderQueued: false,
+    appearancesReady: true,
+    appearanceGeneration: 0
   };
 
   const root = el('div', { class: 'ihr-bookshelf', 'data-ihr-bookshelf': '' });
@@ -311,10 +313,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const id = String(book?.id ?? book?.path ?? book?.title ?? 'book');
     const cover = book?.cover ?? book?.coverBlob ?? book?.coverUrl;
     if (typeof Blob !== 'undefined' && cover instanceof Blob) {
-      return `${id}|${cover.type}|${cover.size}|${cover.lastModified ?? ''}`;
+      return `${id}|${book?.title ?? ''}|${cover.type}|${cover.size}|${cover.lastModified ?? ''}`;
     }
-    if (typeof cover === 'string') return `${id}|${cover}`;
-    return `${id}|${book?.title ?? ''}`;
+    if (typeof cover === 'string') return `${id}|${book?.title ?? ''}|${cover}`;
+    return `${id}|${book?.title ?? ''}|`;
   }
 
   function applyCoverAppearance(item, appearance) {
@@ -333,19 +335,24 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const key = coverKeyFor(book);
     const id = String(book?.id ?? book?.path ?? book?.title ?? 'book');
     const cached = state.coverAppearances.get(id);
-    if (cached?.key === key) return Promise.resolve(cached.appearance);
+    if (cached?.key === key && cached.complete !== false) return Promise.resolve(cached.appearance);
     if (state.appearanceTasks.has(key)) return state.appearanceTasks.get(key);
 
     const task = (async () => {
       const url = knownUrl || await resolveCover(book);
       if (!url) {
-        state.coverAppearances.set(id, { key, appearance: null });
+      state.coverAppearances.set(id, { key, appearance: null, complete: true });
         return null;
       }
       const appearance = await analyzeCoverAppearance(url, book?.title ?? '');
       if (state.destroyed) return null;
-      state.coverAppearances.set(id, { key, appearance });
+      state.coverAppearances.set(id, { key, appearance, complete: true });
       if (!appearance) return null;
+      try {
+        await options.onCoverAppearance?.(book, appearance, key);
+      } catch (error) {
+        console.warn('No se pudo guardar el aspecto de la portada:', error);
+      }
       const item = state.itemsById.get(id);
       if (item && item.coverKey === key && applyCoverAppearance(item, appearance)) {
         if (String(state.session?.book?.id ?? '') === id) {
@@ -473,6 +480,18 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       bar.append(button);
     }
     return bar;
+  }
+
+  function buildPreparingState() {
+    return el('div', {
+      class: 'ihr-library-loading',
+      role: 'status',
+      'aria-live': 'polite',
+      'aria-label': 'Preparando tu estantería'
+    }, [
+      el('span', { class: 'ihr-library-loading__spinner', 'aria-hidden': 'true' }),
+      el('span', { text: 'Preparando tu estantería…' })
+    ]);
   }
 
   function buildSpine(item) {
@@ -657,6 +676,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function render() {
     if (state.destroyed) return;
     if (state.returnMotion) { state.renderQueued = true; return; }
+    if (!state.appearancesReady && state.books.length > 0) {
+      scroller.textContent = '';
+      scroller.append(buildPreparingState());
+      return;
+    }
     const focusedBookId = document.activeElement?.closest?.('.ihr-spine')?.dataset.bookId;
     const width = measure();
     state.shelfWidth = width;
@@ -730,6 +754,48 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       state.frame = 0;
       render();
     });
+  }
+
+  function prepareInitialAppearances() {
+    if (!options.waitForCoverAppearance || state.books.length === 0) return;
+    const pending = [];
+    for (const book of state.books) {
+      const id = String(book?.id ?? book?.path ?? book?.title ?? 'book');
+      const key = coverKeyFor(book);
+      const saved = book.coverAppearance && book.coverAppearanceKey === key
+        ? book.coverAppearance
+        : null;
+      if (saved) {
+        state.coverAppearances.set(id, { key, appearance: saved, complete: true });
+        continue;
+      }
+      if (book.cover ?? book.coverBlob ?? book.coverUrl) pending.push(book);
+    }
+    if (pending.length === 0) return;
+    state.appearancesReady = false;
+    const generation = ++state.appearanceGeneration;
+    Promise.allSettled(pending.map(async book => {
+      const id = String(book?.id ?? book?.path ?? book?.title ?? 'book');
+      const key = coverKeyFor(book);
+      const url = await resolveCover(book);
+      if (!url) {
+        state.coverAppearances.set(id, { key, appearance: null, complete: true });
+        return;
+      }
+      const appearance = await analyzeCoverAppearance(url, book?.title ?? '', { matchFont: false });
+      if (!state.destroyed) {
+        // Color and physical proportions are enough for a stable first frame.
+        // Full title-font matching continues after that frame is visible.
+        state.coverAppearances.set(id, {
+          key, appearance, complete: appearance == null
+        });
+      }
+    }))
+      .then(() => {
+        if (state.destroyed || generation !== state.appearanceGeneration) return;
+        state.appearancesReady = true;
+        scheduleRender();
+      });
   }
 
   /* --------------------------- apertura --------------------------- */
@@ -1103,6 +1169,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     observer.observe(scroller);
   }
 
+  prepareInitialAppearances();
   render();
   // Canvas text does not repaint when a web font arrives, unlike DOM text.
   document.fonts?.ready.then(() => {
@@ -1119,6 +1186,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     state.session?.close({ instant: true, silent: true });
     const top = scroller.scrollTop;
     state.books = Array.isArray(nextBooks) ? nextBooks.slice() : state.books;
+    if (!state.appearancesReady && options.waitForCoverAppearance) {
+      state.appearanceGeneration += 1;
+      state.appearancesReady = true;
+      prepareInitialAppearances();
+    }
     state.shelfWidth = 0; // fuerza el re-empaquetado
     render();
     scroller.scrollTop = top;

@@ -371,15 +371,16 @@ function loadCandidateFonts() {
 }
 
 /** Analyze an already-decodable image URL. Returns null for missing/unsafe images. */
-export async function analyzeCoverAppearance(url, title = '') {
+export async function analyzeCoverAppearance(url, title = '', { matchFont = true } = {}) {
   if (!url || typeof Image === 'undefined' || typeof document === 'undefined') return null;
   const image = new Image();
   image.decoding = 'async';
   image.src = url;
+  const decodeTimeout = matchFont ? 3000 : 1200;
   try {
     if (typeof image.decode === 'function') {
       await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('La portada tardó demasiado')), 3000);
+        const timer = setTimeout(() => reject(new Error('La portada tardó demasiado')), decodeTimeout);
         Promise.resolve().then(() => image.decode()).then(value => {
           clearTimeout(timer);
           resolve(value);
@@ -411,6 +412,7 @@ export async function analyzeCoverAppearance(url, title = '') {
       return { aspectRatio, source: 'cover' };
     }
     const color = coverColorFromPixels(pixels, width, height);
+    if (!matchFont) return { ...color, aspectRatio, source: 'cover' };
     const gray = new Uint8Array(width * height);
     for (let index = 0; index < gray.length; index += 1) {
       const at = index * 4;

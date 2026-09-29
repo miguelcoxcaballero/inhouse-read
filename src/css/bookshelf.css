@@ -102,6 +102,31 @@
 .ihr-library-heading h1 { margin:0; font:600 1.25rem var(--f-logo); letter-spacing:-.6px; }
 .ihr-library-heading p { margin:0; color:var(--text-secondary); font-size:.8rem; white-space:nowrap; }
 
+.ihr-library-loading {
+  min-height: min(48vh, 360px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-secondary, #68645d);
+  font: 500 .9rem var(--f-body, 'DM Sans', sans-serif);
+}
+
+.ihr-library-loading__spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(47, 107, 79, .22);
+  border-top-color: var(--accent-read, #2f6b4f);
+  border-radius: 50%;
+  animation: ihr-library-spin 800ms linear infinite;
+}
+
+@keyframes ihr-library-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ihr-library-loading__spinner { animation: none; }
+}
+
 /* ------------------------------------------------------------------ *
  * Balda
  * ------------------------------------------------------------------ */
