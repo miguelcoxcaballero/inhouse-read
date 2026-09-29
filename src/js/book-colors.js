@@ -1,3 +1,4 @@
+import { normalizeBookAuthor } from './book-title.js'
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 
 function parseHex(value) {
@@ -76,6 +77,7 @@ export function spineCustomization(book) {
   for (const key of ['spineFinish','spineTextFinish']) if (key in (book || {})) result[key] = spineFinish(book[key])
   if (typeof book?.spineEngraved === 'boolean') result.spineEngraved = book.spineEngraved
   if (typeof book?.spineTitleOverride === 'string') result.spineTitleOverride = book.spineTitleOverride.slice(0,120)
+  if ('author' in (book || {})) result.author = normalizeBookAuthor(book.author)
   if (['Playfair Display','Lora','Cormorant Garamond','DM Sans','Montserrat','Oswald'].includes(book?.spineFontFamily)) result.spineFontFamily = book.spineFontFamily
   if (Number.isFinite(book?.spineFontSize)) result.spineFontSize = clamp(book.spineFontSize,8,18)
   return result

@@ -2,6 +2,7 @@ import { readerPanelMarkup, readerIcon } from './reader-interface.js'
 import { normalizeReadingPreferences, READING_THEMES } from './reading-preferences.js'
 import { ReadingVoice } from './reading-voice.js'
 import { clonePlace, cleanPlaces, cleanQuotes } from './reading-state.js'
+import { normalizeBookAuthor } from '../book-title.js'
 
 const STORAGE_KEY = 'inhouse-read-reading-preferences'
 
@@ -154,8 +155,9 @@ export class ReaderExperience {
     this.quotes = cleanQuotes(record.quotes)
     this.panel.querySelector('#reading-book-title').textContent = record.title
     document.getElementById('reader-top-title').textContent = record.title
-    document.getElementById('reader-top-byline').textContent = record.author || record.metadata?.creator || ''
-    this.panel.querySelector('#reading-document-about').textContent = `${record.title}${record.author || record.metadata?.creator ? ` · ${record.author || record.metadata.creator}` : ''}\n${record.format || 'Documento'} · ${this.formatSize(record.sizeBytes)}`
+    const author = normalizeBookAuthor(record.author) || normalizeBookAuthor(record.metadata?.creator)
+    document.getElementById('reader-top-byline').textContent = author
+    this.panel.querySelector('#reading-document-about').textContent = `${record.title}${author ? ` · ${author}` : ''}\n${record.format || 'Documento'} · ${this.formatSize(record.sizeBytes)}`
     const pdf = this.reader.format?.engine === 'pdf'
     for (const element of this.panel.querySelectorAll('[data-pdf]')) element.hidden = !pdf
     this.panel.querySelector('[data-epub]').hidden = pdf

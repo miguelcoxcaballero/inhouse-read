@@ -13,7 +13,7 @@ import {
 } from './local-folder-store.js'
 import { initAndroidUpdateChecks, offerAvailableAndroidUpdate } from './android-update.js'
 import { initContentFreshnessChecks } from './content-freshness.js'
-import { normalizeBookTitle } from './book-title.js'
+import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
 import { ReaderExperience } from './readers/reader-experience.js'
 
 const library = new LibraryStore()
@@ -133,7 +133,11 @@ async function refreshShelf() {
   const storedBooks = await library.listAll()
   const normalizedBooks = await Promise.all(storedBooks.map(book => {
     const title = normalizeBookTitle(book.title || book.name)
-    return title === book.title ? book : library.patch(book.id, { title })
+    const author = normalizeBookAuthor(book.author)
+    const patch = {}
+    if (title !== book.title) patch.title = title
+    if (author !== (book.author || '')) patch.author = author || null
+    return Object.keys(patch).length ? library.patch(book.id, patch) : book
   }))
   const books = normalizedBooks.filter(book =>
     book.sourceType !== 'drive' || (accountId && (!book.cloudAccountId || book.cloudAccountId === accountId))
@@ -356,7 +360,7 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
     sizeBytes: file.size,
     folderFileName: folderFileName ?? existingRecord?.folderFileName,
     title: normalizeBookTitle(meta.title || existingRecord?.title || file.name, file.name),
-    author: existingRecord?.author ?? meta.author,
+    author: normalizeBookAuthor(existingRecord?.author) || normalizeBookAuthor(meta.author ?? meta.creator),
     format: format.label
   }
   let record
@@ -764,7 +768,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.1.4'
+els.appVersion.textContent = 'Inhouse Read · v1.1.5'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')

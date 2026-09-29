@@ -54,7 +54,7 @@ test('conecta Google sin redirección y muestra la foto en la esquina derecha', 
   await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   expect(await page.evaluate(() => window.__oauthOptions.redirect_uri)).toBeUndefined()
   await button.click()
-  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.1.3')
+  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.1.5')
   await expect(page.locator('#drive-theme-toggle')).toBeVisible()
   await expect(page.locator('#drive-profile-initial-menu')).toBeHidden()
   await page.locator('#drive-theme-toggle').check()
@@ -184,6 +184,7 @@ test('edita y conserva el color, fuente, tamaño y texto del lomo', async ({ pag
     input.dispatchEvent(new Event('input', { bubbles:true }))
   })
   await dialog.getByLabel('Texto del lomo').fill('Mi título personalizado')
+  await dialog.getByLabel('Autor del libro').fill('Ursula Le Guin')
   await expect.poll(() => page.evaluate(async () => {
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open('inhouse-read')
@@ -199,7 +200,8 @@ test('edita y conserva el color, fuente, tamaño y texto del lomo', async ({ pag
     spineColorOverride: custom,
     spineFontFamily: 'Lora',
     spineFontSize: 14,
-    spineTitleOverride: 'Mi título personalizado'
+    spineTitleOverride: 'Mi título personalizado',
+    author: 'Ursula Le Guin'
   })
 
   await dialog.getByRole('button', { name:'Listo' }).click()
@@ -218,6 +220,7 @@ test('edita y conserva el color, fuente, tamaño y texto del lomo', async ({ pag
   await expect(reopenedDialog.getByLabel('Fuente del lomo', { exact:true })).toHaveValue('Lora')
   await expect(reopenedDialog.getByLabel('Tamaño de fuente del lomo')).toHaveValue('14')
   await expect(reopenedDialog.getByLabel('Texto del lomo')).toHaveValue('Mi título personalizado')
+  await expect(reopenedDialog.getByLabel('Autor del libro')).toHaveValue('Ursula Le Guin')
 })
 
 test('organiza los libros con teclado, animación 3D y orden persistente', async ({ page }) => {

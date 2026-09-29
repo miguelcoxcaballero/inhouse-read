@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeBookTitle } from '../../src/js/book-title.js'
+import { normalizeBookAuthor, normalizeBookTitle } from '../../src/js/book-title.js'
 
 describe('normalizeBookTitle', () => {
   it('turns filename underscores into readable title case and removes its extension', () => {
@@ -31,5 +31,20 @@ describe('normalizeBookTitle', () => {
 
   it('uses the fallback when metadata is blank', () => {
     expect(normalizeBookTitle('', 'my_book.cbz')).toBe('My Book')
+  })
+})
+
+describe('normalizeBookAuthor', () => {
+  it('accepts plain text, author objects and name arrays', () => {
+    expect(normalizeBookAuthor(' Ursula Le Guin ')).toBe('Ursula Le Guin')
+    expect(normalizeBookAuthor({ name: 'Octavia Butler' })).toBe('Octavia Butler')
+    expect(normalizeBookAuthor({ givenName: 'Terry', familyName: 'Pratchett' })).toBe('Terry Pratchett')
+    expect(normalizeBookAuthor([{ name: 'Terry Pratchett' }, 'Neil Gaiman'])).toBe('Terry Pratchett, Neil Gaiman')
+  })
+
+  it('never displays object coercion or unknown metadata objects', () => {
+    expect(normalizeBookAuthor({})).toBe('')
+    expect(normalizeBookAuthor({ id: 123, role: 'author' })).toBe('')
+    expect(normalizeBookAuthor('[object Object]')).toBe('')
   })
 })

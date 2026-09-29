@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { spineFinish } from './book-colors.js'
+import { normalizeBookAuthor } from './book-title.js'
 
 // Colour and PBR channels share exactly the same glyph raster. Text never
 // becomes a floating decal: it follows the continuous curved binding UVs.
@@ -21,11 +22,11 @@ export function spineSurface(book, style, physicalHeight = 200, thickness = 32) 
     while (title.length > 1 && c.measureText(title + '…').width > 820) title = title.slice(0, -1)
     title = title.trimEnd() + '…'
   }
-  const author = Number(style.width) >= 32 && book.author
+  const author = Number(style.width) >= 32 && normalizeBookAuthor(book.author)
   c.fillText(title, 0, author ? -17 : 0)
   if (author) {
     c.font = '500 28px "DM Sans", sans-serif'
-    let name = String(book.author)
+    let name = author
     while (name.length > 1 && c.measureText(name).width > 760) name = name.slice(0, -1)
     c.fillText(name, 0, 43)
   }
@@ -44,8 +45,8 @@ export function spineSurface(book, style, physicalHeight = 200, thickness = 32) 
   const foil = finish => {
     const gradient = ctx.createLinearGradient(0, 0, width, 0)
     const stops = finish === 'gold'
-      ? [[0,'#92733c'],[.16,'#a58a50'],[.31,'#c2a663'],[.45,'#dfcb91'],[.56,'#d8c285'],[.7,'#c0a668'],[.84,'#aa8e53'],[1,'#92733c']]
-      : [[0,'#898e94'],[.16,'#9ba1a8'],[.31,'#b3b8be'],[.45,'#d8dce0'],[.56,'#cdd1d6'],[.7,'#b4b9bf'],[.84,'#9ea3aa'],[1,'#898e94']]
+      ? [[0,'#b58b35'],[.12,'#e0bd62'],[.25,'#fff1b0'],[.34,'#c79838'],[.43,'#fff7cf'],[.51,'#f5d77a'],[.61,'#ba8c35'],[.72,'#ffedaa'],[.86,'#d6ad4d'],[1,'#a77a2b']]
+      : [[0,'#9ca4ad'],[.12,'#d7dce0'],[.25,'#ffffff'],[.34,'#aeb5bd'],[.43,'#f9fbff'],[.51,'#dfe4ea'],[.61,'#9ba3ac'],[.72,'#ffffff'],[.86,'#c7cdd4'],[1,'#939ba5']]
     for (const [at, value] of stops) gradient.addColorStop(at, value)
     return gradient
   }
@@ -60,12 +61,12 @@ export function spineSurface(book, style, physicalHeight = 200, thickness = 32) 
 
   // R = surface height, G = roughness, B = metalness. Linear, never sRGB.
   const packed = canvas(), pc = packed.getContext('2d')
-  const bindingRoughness = metalBinding ? 150 : 220
+  const bindingRoughness = metalBinding ? 76 : 220
   pc.fillStyle = `rgb(255,${bindingRoughness},${metalBinding ? 255 : 0})`
   pc.fillRect(0, 0, width, height)
   ic.clearRect(0, 0, width, height); ic.globalCompositeOperation = 'source-over'
   ic.drawImage(mask, 0, 0); ic.globalCompositeOperation = 'source-in'
-  ic.fillStyle = `rgb(${engraved ? 0 : 255},${metalText ? 140 : 230},${metalText ? 255 : 0})`
+  ic.fillStyle = `rgb(${engraved ? 0 : 255},${metalText ? 66 : 230},${metalText ? 255 : 0})`
   ic.fillRect(0, 0, width, height); pc.drawImage(ink, 0, 0)
   const map = new THREE.CanvasTexture(color); map.colorSpace = THREE.SRGBColorSpace
   const channels = new THREE.CanvasTexture(packed)
@@ -80,10 +81,10 @@ export function spineSurface(book, style, physicalHeight = 200, thickness = 32) 
   return { map, channels, relief, material:{
     map, roughness:1, metalness:1, roughnessMap:channels, metalnessMap:channels,
     bumpMap:engraved ? channels : null, bumpScale:engraved ? .035 : 0,
-    envMapIntensity:metallic ? .9 : 1,
-    anisotropy:metallic ? .2 : 0,
-    clearcoat:0,
-    clearcoatRoughness:.4
+    envMapIntensity:metallic ? 1.8 : 1,
+    anisotropy:metallic ? .35 : 0,
+    clearcoat:metallic ? .42 : 0,
+    clearcoatRoughness:metallic ? .16 : .4
   } }
 }
 

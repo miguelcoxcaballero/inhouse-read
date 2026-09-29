@@ -41,7 +41,7 @@ describe('CloudSync', () => {
   })
   it('syncs custom ink, metallic finishes and engraved text, including automatic reset', async () => {
     const book=await library.addOrTouch({sourceType:'local',name:'gold.pdf',size:5,driveFileId:'gold-drive',cloudAccountId:'account-1'})
-    const appearance={spineColorOverride:'#245536',spineTextColor:null,spineTextFinish:'gold',spineEngraved:true}
+    const appearance={spineColorOverride:'#245536',spineTextColor:null,spineTextFinish:'gold',spineEngraved:true,author:'Ursula Le Guin'}
     await library.patch(book.id,{...appearance,progressDirty:true,progressUpdatedAt:100})
     drive.writeDriveProgress.mockResolvedValue({id:'gold-state'})
     await sync.syncBookProgress(book.id)

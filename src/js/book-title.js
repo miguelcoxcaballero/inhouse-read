@@ -8,6 +8,26 @@ const SMALL_WORDS = new Set([
   'entre', 'al', 'lo'
 ])
 
+/** Read author metadata without ever coercing a metadata object to "[object Object]". */
+export function normalizeBookAuthor(value) {
+  if (Array.isArray(value)) {
+    const names = value.map(normalizeBookAuthor).filter(Boolean)
+    return [...new Set(names)].join(', ').slice(0, 120)
+  }
+  if (typeof value === 'string' || typeof value === 'number') {
+    const name = String(value).normalize('NFKC').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim()
+    return /^\[object\s+object\]$/i.test(name) ? '' : name.slice(0, 120)
+  }
+  if (!value || typeof value !== 'object') return ''
+  for (const key of ['name', 'displayName', 'value', 'text', 'creator', 'author']) {
+    const name = normalizeBookAuthor(value[key])
+    if (name) return name
+  }
+  const first = normalizeBookAuthor(value.givenName ?? value.firstName)
+  const last = normalizeBookAuthor(value.familyName ?? value.lastName)
+  return [first, last].filter(Boolean).join(' ').slice(0, 120)
+}
+
 /** Produce a readable, consistent title from ebook metadata or its filename. */
 export function normalizeBookTitle(value, fallback = '') {
   let title = String(value ?? '').trim() || String(fallback ?? '').trim()

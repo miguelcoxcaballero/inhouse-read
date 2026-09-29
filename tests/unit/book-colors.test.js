@@ -33,8 +33,8 @@ describe('distinct palette and saved finishes', () => {
     }
   })
   it('keeps valid colors, finishes, engraving and explicit automatic reset', () => {
-    expect(spineCustomization({spineTextColor:null,spineColorOverride:'#abc',spineFinish:'gold',spineTextFinish:'silver',spineEngraved:true,evil:'ignored'})).toEqual({
-      spineTextColor:null,spineColorOverride:'#aabbcc',spineFinish:'gold',spineTextFinish:'silver',spineEngraved:true
+    expect(spineCustomization({spineTextColor:null,spineColorOverride:'#abc',spineFinish:'gold',spineTextFinish:'silver',spineEngraved:true,author:{name:'Ursula Le Guin'},evil:'ignored'})).toEqual({
+      spineTextColor:null,spineColorOverride:'#aabbcc',spineFinish:'gold',spineTextFinish:'silver',spineEngraved:true,author:'Ursula Le Guin'
     })
     expect(spineCustomization({spineTextColor:'url(bad)',spineFinish:'bad',spineEngraved:'true'})).toEqual({spineFinish:'matte'})
   })

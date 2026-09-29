@@ -99,6 +99,7 @@
 import { planBookshelf, bookmarkFor, withDefaults } from './bookshelf-layout.js';
 import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from './cover-appearance.js';
 import { bookColorOptions, spineColorStyle, spineFinish, METAL_COLORS } from './book-colors.js';
+import { normalizeBookAuthor } from './book-title.js';
 const PLANT_PHOTOS = {
   leafy: new URL('../assets/library/pothos.webp', import.meta.url).href,
   succulent: new URL('../assets/library/succulent.webp', import.meta.url).href,
@@ -128,7 +129,7 @@ export const DEFAULT_TEXTS = Object.freeze({
   closeAction: 'Cerrar',
   noCover: 'Sin portada',
   openAria: (book) =>
-    book.author ? `Abrir ${book.title}, de ${book.author}` : `Abrir ${book.title}`,
+      book.author ? `Abrir ${book.title}, de ${normalizeBookAuthor(book.author)}` : `Abrir ${book.title}`,
   progressAria: (percent) => (percent >= 100 ? 'terminado' : `leído al ${percent} %`)
 });
 
@@ -650,7 +651,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (view) view.dispose(false); // retain the rendered snapshot, free mesh/textures
     else body.append(el('span', { class: 'ihr-spine__label' }, [
       el('span', { class: 'ihr-spine__title', text: book.spineTitleOverride || book.title || 'Sin título' }),
-      book.author ? el('span', { class: 'ihr-spine__author', text: book.author }) : null
+      normalizeBookAuthor(book.author) ? el('span', { class: 'ihr-spine__author', text: normalizeBookAuthor(book.author) }) : null
     ]));
     node.append(body);
     /*
@@ -957,8 +958,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         el('div', { class: 'ihr-cover-placeholder' }, [
           roofMark('ihr-roof ihr-cover-placeholder__roof'),
           el('span', { class: 'ihr-cover-placeholder__title', text: book.title ?? '' }),
-          book.author
-            ? el('span', { class: 'ihr-cover-placeholder__author', text: book.author })
+          normalizeBookAuthor(book.author)
+            ? el('span', { class: 'ihr-cover-placeholder__author', text: normalizeBookAuthor(book.author) })
             : null,
           el('span', {
             class: 'ihr-cover-placeholder__format',
@@ -1059,7 +1060,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const meta = el('div', { class: 'ihr-flyout__meta' }, [
       el('p', { class: 'ihr-flyout__details', text: [book.format, book.progressFraction > 0 ? `${Math.round(book.progressFraction * 100)} % leído` : 'Por empezar'].filter(Boolean).join(' · ') }),
       el('p', { class: 'ihr-flyout__title', text: book.title ?? '' }),
-      book.author ? el('p', { class: 'ihr-flyout__author', text: book.author }) : null
+      normalizeBookAuthor(book.author) ? el('p', { class: 'ihr-flyout__author', text: normalizeBookAuthor(book.author) }) : null
     ]);
     const readiness = el('p', { class: 'ihr-flyout__readiness', text: options.getBookPreparation ? 'Preparando el libro…' : 'Toca la portada para leer', 'aria-live': 'polite' });
     meta.append(readiness);
@@ -1157,8 +1158,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       class: 'ihr-spine-editor__preview-title',
       text: book.spineTitleOverride || book.title || 'Sin título'
     });
+    book.author = normalizeBookAuthor(book.author)
     const editorPreviewAuthor = el('span', {
-      class: 'ihr-spine-editor__preview-author', text: book.author || ''
+      class: 'ihr-spine-editor__preview-author', text: book.author
     });
     const editorPreview = el('div', {
       class: 'ihr-spine-editor__preview',
@@ -1175,7 +1177,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     function refreshEditorPreview() {
       updateBookStyleVars(editorPreview, item.style);
       editorPreviewTitle.textContent = book.spineTitleOverride || book.title || 'Sin título';
-      editorPreviewAuthor.textContent = book.author || '';
+      book.author = normalizeBookAuthor(book.author)
+      editorPreviewAuthor.textContent = book.author;
       editorPreviewAuthor.hidden = !book.author;
     }
     const editorPose = {
@@ -1323,6 +1326,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       'aria-label': 'Texto del lomo',
       onInput: event => updateCustomization({ spineTitleOverride: event.currentTarget.value })
     });
+    const authorInput = el('input', {
+      type: 'text', maxlength: '120', value: normalizeBookAuthor(book.author),
+      placeholder: 'Autor', 'aria-label': 'Autor del libro', autocomplete: 'name',
+      onInput: event => updateCustomization({ author: normalizeBookAuthor(event.currentTarget.value) })
+    });
     function visibleViewport() {
       const vv = window.visualViewport;
       return {
@@ -1365,7 +1373,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       return true;
     };
     editorPanel.addEventListener('focusin', event => {
-      if (event.target === titleInput) requestAnimationFrame(keepTitleVisible);
+      if (event.target === titleInput || event.target === authorInput) requestAnimationFrame(keepTitleVisible);
     });
     function updateColorSelection() {
       colorButtons.forEach(button => {
@@ -1441,6 +1449,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       ]),
       el('label', { class: 'ihr-spine-editor__field ihr-spine-editor__field--title' }, [
         el('span', { text: 'Texto del lomo' }), titleInput
+      ]),
+      el('label', { class: 'ihr-spine-editor__field ihr-spine-editor__field--author' }, [
+        el('span', { text: 'Autor' }), authorInput
       ]),
       colorControls,
       inkControls,
