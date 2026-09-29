@@ -321,7 +321,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   opacity: 0.7;
-  font-size: 0.55rem;
+  font-size: var(--ihr-spine-author-font-size, 0.55rem);
 }
 
 /* Lomos finos: sólo cabe el título (la clase la pone bookshelf.js). */
@@ -948,7 +948,7 @@
 }
 .ihr-spine-editor__preview-author {
   position:absolute; bottom:16px; max-width:104px; overflow:hidden; writing-mode:vertical-rl;
-  font:500 6px var(--f-body,'DM Sans',sans-serif); opacity:.76; white-space:nowrap;
+  font:500 var(--ihr-spine-author-font-size,12px) var(--f-body,'DM Sans',sans-serif); opacity:.88; white-space:nowrap;
 }
 .ihr-spine-editor__preview-author[hidden] { display:none; }
 .ihr-spine-editor__row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; }

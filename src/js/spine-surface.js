@@ -12,7 +12,7 @@ export function spineSurface(book, style, physicalHeight = 200, thickness = 32) 
   c.scale(width / designWidth, 2); c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle'
   c.save(); c.translate(designWidth / 2, 512); c.rotate(Math.PI / 2)
   const family = `"${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`
-  let size = Math.min(designWidth * .64, 64 * (Number(style.spineFontSize) || 10) / 10)
+  let size = Math.min(designWidth * .9, 64 * (Number(style.spineFontSize) || 10) / 10)
   let title = String(book.spineTitleOverride || book.title || 'Sin título')
   const setFont = () => { c.font = `${style.fontWeight || 700} ${size}px ${family}` }
   setFont()
@@ -23,12 +23,13 @@ export function spineSurface(book, style, physicalHeight = 200, thickness = 32) 
     title = title.trimEnd() + '…'
   }
   const author = Number(style.width) >= 32 && normalizeBookAuthor(book.author)
-  c.fillText(title, 0, author ? -17 : 0)
+  c.fillText(title, 0, author ? -Math.max(18, size * .55) : 0)
   if (author) {
-    c.font = '500 28px "DM Sans", sans-serif'
+    const authorSize = Math.min(designWidth * .82, 28 * (Number(style.spineAuthorFontSize) || 12) / 12)
+    c.font = `500 ${authorSize}px "DM Sans", sans-serif`
     let name = author
     while (name.length > 1 && c.measureText(name).width > 760) name = name.slice(0, -1)
-    c.fillText(name, 0, 43)
+    c.fillText(name, 0, Math.max(20, size * .55) + authorSize * .65)
   }
   c.restore()
   c.strokeStyle = '#fff'; c.lineWidth = 1.5

@@ -54,7 +54,7 @@ test('conecta Google sin redirección y muestra la foto en la esquina derecha', 
   await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   expect(await page.evaluate(() => window.__oauthOptions.redirect_uri)).toBeUndefined()
   await button.click()
-  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.1.8')
+  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.1.9')
   await expect(page.locator('#drive-theme-toggle')).toBeVisible()
   await expect(page.locator('#drive-profile-initial-menu')).toBeHidden()
   await page.locator('#drive-theme-toggle').check()
@@ -208,8 +208,12 @@ test('edita y conserva el color, fuente, tamaño y texto del lomo', async ({ pag
   })).toMatchObject({ spineColorOverride: custom })
 
   await dialog.getByLabel('Fuente del lomo', { exact:true }).selectOption('Lora')
-  await dialog.getByLabel('Tamaño de fuente del lomo').evaluate(input => {
-    input.value = '14'
+  await dialog.getByLabel('Tamaño del título del lomo').evaluate(input => {
+    input.value = '42'
+    input.dispatchEvent(new Event('input', { bubbles:true }))
+  })
+  await dialog.getByLabel('Tamaño del autor del lomo').evaluate(input => {
+    input.value = '30'
     input.dispatchEvent(new Event('input', { bubbles:true }))
   })
   await dialog.getByLabel('Texto del lomo').fill('Mi título personalizado')
@@ -228,7 +232,8 @@ test('edita y conserva el color, fuente, tamaño y texto del lomo', async ({ pag
   })).toMatchObject({
     spineColorOverride: custom,
     spineFontFamily: 'Lora',
-    spineFontSize: 14,
+    spineFontSize: 42,
+    spineAuthorFontSize: 30,
     spineTitleOverride: 'Mi título personalizado',
     author: 'Ursula Le Guin'
   })
@@ -247,7 +252,8 @@ test('edita y conserva el color, fuente, tamaño y texto del lomo', async ({ pag
   await expect(reopenedDialog.locator('.ihr-flyout__custom-color')).toHaveClass(/is-selected/)
   await expect(reopenedDialog.getByLabel('Elegir otro color para el lomo')).toHaveValue(custom)
   await expect(reopenedDialog.getByLabel('Fuente del lomo', { exact:true })).toHaveValue('Lora')
-  await expect(reopenedDialog.getByLabel('Tamaño de fuente del lomo')).toHaveValue('14')
+  await expect(reopenedDialog.getByLabel('Tamaño del título del lomo')).toHaveValue('42')
+  await expect(reopenedDialog.getByLabel('Tamaño del autor del lomo')).toHaveValue('30')
   await expect(reopenedDialog.getByLabel('Texto del lomo')).toHaveValue('Mi título personalizado')
   await expect(reopenedDialog.getByLabel('Autor del libro')).toHaveValue('Ursula Le Guin')
 })

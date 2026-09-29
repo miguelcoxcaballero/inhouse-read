@@ -92,6 +92,7 @@ export function spineCustomization(book) {
   if (typeof book?.spineTitleOverride === 'string') result.spineTitleOverride = book.spineTitleOverride.slice(0,120)
   if ('author' in (book || {})) result.author = normalizeBookAuthor(book.author)
   if (['Playfair Display','Lora','Cormorant Garamond','DM Sans','Montserrat','Oswald'].includes(book?.spineFontFamily)) result.spineFontFamily = book.spineFontFamily
-  if (Number.isFinite(book?.spineFontSize)) result.spineFontSize = clamp(book.spineFontSize,8,18)
+  if (Number.isFinite(book?.spineFontSize)) result.spineFontSize = clamp(book.spineFontSize,8,48)
+  if (Number.isFinite(book?.spineAuthorFontSize)) result.spineAuthorFontSize = clamp(book.spineAuthorFontSize,6,36)
   return result
 }

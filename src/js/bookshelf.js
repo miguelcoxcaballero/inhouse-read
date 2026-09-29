@@ -354,7 +354,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       };
     }
     if (Number.isFinite(Number(item.book.spineFontSize))) {
-      item.style = { ...item.style, spineFontSize: Math.max(8, Math.min(18, Number(item.book.spineFontSize))) };
+      item.style = { ...item.style, spineFontSize: Math.max(8, Math.min(48, Number(item.book.spineFontSize))) };
+    }
+    if (Number.isFinite(Number(item.book.spineAuthorFontSize))) {
+      item.style = { ...item.style, spineAuthorFontSize: Math.max(6, Math.min(36, Number(item.book.spineAuthorFontSize))) };
     }
     return Boolean(appearance);
   }
@@ -435,7 +438,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       `--ihr-spine-ink:${style.ink};` +
       `--ihr-spine-font:"${family}", ${fallback};` +
       `--ihr-spine-font-weight:${style.fontWeight || 700};` +
-      `--ihr-spine-font-size:${Math.max(8, Math.min(18, Number(style.spineFontSize) || 10))}px;`;
+      `--ihr-spine-font-size:${Math.max(8, Math.min(48, Number(style.spineFontSize) || 10))}px;` +
+      `--ihr-spine-author-font-size:${Math.max(6, Math.min(36, Number(style.spineAuthorFontSize) || 12))}px;`;
   }
 
   function coverRatioFor(style, fallback = opts.coverRatio) {
@@ -449,7 +453,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     node.style.setProperty('--ihr-spine-ink', style.ink);
     node.style.setProperty('--ihr-spine-font', `"${style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`);
     node.style.setProperty('--ihr-spine-font-weight', String(style.fontWeight || 700));
-    node.style.setProperty('--ihr-spine-font-size', `${Math.max(8, Math.min(18, Number(style.spineFontSize) || 10))}px`);
+    node.style.setProperty('--ihr-spine-font-size', `${Math.max(8, Math.min(48, Number(style.spineFontSize) || 10))}px`);
+    node.style.setProperty('--ihr-spine-author-font-size', `${Math.max(6, Math.min(36, Number(style.spineAuthorFontSize) || 12))}px`);
   }
 
   // El retorno desde el lector necesita su primer fotograma antes de que el
@@ -1490,9 +1495,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     for (const font of SPINE_FONTS) fontSelect.append(el('option', { value: font.family, text: font.label }));
     fontSelect.value = book.spineFontFamily || style.fontFamily || SPINE_FONTS[0].family;
     const fontSizeInput = el('input', {
-      type: 'range', min: '8', max: '18', step: '1',
-      value: String(Math.max(8, Math.min(18, Number(book.spineFontSize) || Number(style.spineFontSize) || 10))),
-      'aria-label': 'Tamaño de fuente del lomo',
+      type: 'range', min: '8', max: '48', step: '1',
+      value: String(Math.max(8, Math.min(48, Number(book.spineFontSize) || Number(style.spineFontSize) || 10))),
+      'aria-label': 'Tamaño del título del lomo',
       onInput: event => {
         const size = Number(event.currentTarget.value);
         sizeOutput.textContent = `${size} px`;
@@ -1500,6 +1505,17 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       }
     });
     const sizeOutput = el('output', { class: 'ihr-spine-editor__size', text: `${fontSizeInput.value} px` });
+    const authorSizeInput = el('input', {
+      type: 'range', min: '6', max: '36', step: '1',
+      value: String(Math.max(6, Math.min(36, Number(book.spineAuthorFontSize) || Number(style.spineAuthorFontSize) || 12))),
+      'aria-label': 'Tamaño del autor del lomo',
+      onInput: event => {
+        const size = Number(event.currentTarget.value);
+        authorSizeOutput.textContent = `${size} px`;
+        updateCustomization({ spineAuthorFontSize: size });
+      }
+    });
+    const authorSizeOutput = el('output', { class: 'ihr-spine-editor__size', text: `${authorSizeInput.value} px` });
     const titleInput = el('input', {
       type: 'text', maxlength: '120', value: book.spineTitleOverride ?? '',
       placeholder: book.title || 'Título del libro',
@@ -1648,9 +1664,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           el('span', { text: 'Fuente' }), fontSelect
         ]),
         el('label', { class: 'ihr-spine-editor__field ihr-spine-editor__field--size' }, [
-          el('span', { text: 'Tamaño' }),
+          el('span', { text: 'Tamaño del título' }),
           el('span', { class: 'ihr-spine-editor__range' }, [fontSizeInput, sizeOutput])
         ])
+      ]),
+      el('label', { class: 'ihr-spine-editor__field ihr-spine-editor__field--size' }, [
+        el('span', { text: 'Tamaño del autor' }),
+        el('span', { class: 'ihr-spine-editor__range' }, [authorSizeInput, authorSizeOutput])
       ]),
       el('label', { class: 'ihr-spine-editor__field ihr-spine-editor__field--title' }, [
         el('span', { text: 'Texto del lomo' }), titleInput
