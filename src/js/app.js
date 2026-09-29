@@ -13,6 +13,7 @@ import {
 } from './local-folder-store.js'
 import { initAndroidUpdateChecks, offerAvailableAndroidUpdate } from './android-update.js'
 import { initContentFreshnessChecks } from './content-freshness.js'
+import { normalizeBookTitle } from './book-title.js'
 
 const library = new LibraryStore()
 const reader = new ReaderController()
@@ -118,7 +119,12 @@ async function refreshShelf() {
     return
   }
   const accountId = (driveProfile || getRememberedDriveProfile())?.id
-  const books = (await library.listAll()).filter(book =>
+  const storedBooks = await library.listAll()
+  const normalizedBooks = await Promise.all(storedBooks.map(book => {
+    const title = normalizeBookTitle(book.title || book.name)
+    return title === book.title ? book : library.patch(book.id, { title })
+  }))
+  const books = normalizedBooks.filter(book =>
     book.sourceType !== 'drive' || (accountId && (!book.cloudAccountId || book.cloudAccountId === accountId))
   )
   if (!shelf) {
@@ -333,7 +339,7 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
     pageCount: reader.pageCount ?? existingRecord?.pageCount,
     sizeBytes: file.size,
     folderFileName: folderFileName ?? existingRecord?.folderFileName,
-    title: existingRecord?.title ?? meta.title ?? stripExtension(file.name),
+    title: normalizeBookTitle(meta.title || existingRecord?.title || file.name, file.name),
     author: existingRecord?.author ?? meta.author,
     format: format.label
   }
@@ -648,10 +654,6 @@ function extractCoverInBackground(record) {
   return task
 }
 
-function stripExtension(name) {
-  return name.replace(/\.[a-z0-9]+$/i, '')
-}
-
 function onReaderRelocate({ fraction, cfi, index }) {
   els.readerProgressFill.style.width = `${Math.round((fraction ?? 0) * 100)}%`
   if (!currentBookId || restoringProgress) return
@@ -717,7 +719,7 @@ async function loadDriveFiles() {
         try {
           const record = (await library.listAll()).find(book => book.driveFileId === f.id)
             || await library.addOrTouch({ sourceType: 'drive', driveFileId: f.id, cloudAccountId: driveProfile?.id,
-              name: f.name, title: stripExtension(f.name), mimeType: f.mimeType, size: Number(f.size) || 0 })
+              name: f.name, title: normalizeBookTitle(f.name), mimeType: f.mimeType, size: Number(f.size) || 0 })
           const file = await cloudSync.downloadForOffline(record)
           await openFile(file, { existingRecord: record, forcedId: record.id })
         } catch (error) { alert(`No se pudo abrir el libro: ${error.message}`) }
@@ -743,7 +745,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.0.21'
+els.appVersion.textContent = 'Inhouse Read · v1.0.22'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')

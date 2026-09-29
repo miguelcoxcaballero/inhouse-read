@@ -2,6 +2,7 @@ import {
   getDriveProfile, listAllDriveBooks, uploadDriveFile, downloadDriveFile,
   readDriveProgress, writeDriveProgress
 } from './drive-client.js'
+import { normalizeBookTitle } from './book-title.js'
 
 const EXTENSIONS = /\.(pdf|epub|mobi|azw|azw3|fb2|cbz)$/i
 
@@ -193,7 +194,7 @@ export class CloudSync {
           record = await this.#library.addOrTouch({
             sourceType: 'drive', driveFileId: remote.id, driveFileName: remote.name,
             cloudAccountId: accountId, name: remote.name,
-            title: remote.name.replace(EXTENSIONS, ''), mimeType: remote.mimeType,
+            title: normalizeBookTitle(remote.name), mimeType: remote.mimeType,
             size: Number(remote.size) || 0, sizeBytes: Number(remote.size) || 0,
             format: remote.name.match(EXTENSIONS)?.[1].toUpperCase() || ''
           })

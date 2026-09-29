@@ -62,7 +62,7 @@ test('Android: mantiene una pantalla de carga hasta que Drive guarda el libro y 
   const uploadScreen = page.locator('#drive-upload-screen')
   await expect(uploadScreen).toBeVisible()
   await expect(uploadScreen).toHaveAttribute('aria-busy', 'true')
-  await expect(page.locator('#drive-upload-book')).toHaveText('tiny')
+  await expect(page.locator('#drive-upload-book')).toHaveText('Tiny')
 
   finishBookUpload()
   await expect(uploadScreen).toBeHidden()
