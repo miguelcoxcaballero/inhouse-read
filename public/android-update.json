@@ -1,9 +1,9 @@
 {
-  "version": "1.0.14",
-  "versionCode": 12,
+  "version": "1.1.0",
+  "versionCode": 13,
   "required": true,
-  "apkSizeBytes": 3164277,
-  "apkSha256": "171940d751ac566e4438da6e1f9c2df69b66e0618bb52c01bae745512912878f",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.14/inhouse-read-release-v1.0.14.apk",
-  "releaseNotes": "Configuración OAuth de Android corregida en Google Cloud. Recuperación de la conexión al volver de Google, foto de cuenta visible y menú con los estilos de Inhouse Notes."
+  "apkSizeBytes": 3168409,
+  "apkSha256": "24459c2c5ab8a6cb6ce0d464d39c8cbd4fa43575170ff30220fe94fb1615ac66",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.0/inhouse-read-release-v1.1.0.apk",
+  "releaseNotes": "Lectura en voz alta con el motor de Android, temas y tipografía, marcadores, progreso y regreso al punto anterior. Estantería con madera y plantas fotográficas."
 }
