@@ -4,7 +4,7 @@ test('lomo nítido: tintas, metales y grabado persistentes en móvil', async ({ 
   await page.setViewportSize({width:390,height:844})
   await page.emulateMedia({reducedMotion:'reduce'})
   const errors=[]; page.on('pageerror', e=>errors.push(e.message))
-  await page.goto('/')
+  await page.goto('./')
   await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/reading-journey.pdf')
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   await expect(page.locator('#reader-location')).toContainText('Página 1')
