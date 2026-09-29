@@ -239,6 +239,19 @@ function animate(node, frames, timing) {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// A WebView can suspend RAF while changing surfaces. Always release an
+// interrupted movement instead of leaving its slot hidden indefinitely.
+async function waitForMotion(motion, duration) {
+  let watchdog;
+  try {
+    const completed = await Promise.race([
+      motion.finished?.then(() => true, () => true) ?? Promise.resolve(true),
+      new Promise(resolve => { watchdog = setTimeout(() => resolve(false), duration + 1500); })
+    ]);
+    if (!completed) motion.cancel?.();
+  } finally { clearTimeout(watchdog); }
+}
+
 /** Admite `renderBookshelf(c, {books, ...})` y `renderBookshelf(c, books, {...})`. */
 function normalizeArgs(second, third) {
   if (Array.isArray(second)) return { books: second, options: third || {} };
@@ -1176,7 +1189,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   async function openBook(spineEl, item) {
-    if (state.busy || state.session || state.destroyed) return;
+    if (state.busy || state.session || state.returnMotion || state.destroyed) return;
     state.busy = true;
     const finishPendingSelection = () => {
       document.removeEventListener('keydown', onPendingKeydown, true);
@@ -1262,6 +1275,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     let dy = (sourcePose?.centerY ?? rect.top + rect.height / 2) - centerY;
     let sourceAngle = sourcePose?.angle ?? 90;
     let sourcePitch = sourcePose?.pitch ?? 0;
+    let sourceRoll = sourcePose?.roll ?? 0;
 
     const scrim = el('div', { class: 'ihr-flyout__scrim' });
     const bookNode = el('div', {
@@ -1276,13 +1290,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const view = bookView(bookNode, book, style, {
       width: coverW, height: coverH, thickness,
       viewportWidth: vw, viewportHeight: vh, centerX, centerY, coverUrl,
-      initialPose:{ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch }
+      initialPose:{ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch, roll:sourceRoll }
     });
     if (view) {
       // Keep an inspectable cue on the lifted canvas too; the ribbon itself
       // is geometry inside the model, so no DOM ribbon needs to be re-created.
       view.canvas.dataset.bookmark3d = String(Boolean(bookmarkFor(book)));
-      view.draw({ x: dx, y: dy, scale: startScale, angle: sourceAngle, pitch: sourcePitch });
+      view.draw({ x: dx, y: dy, scale: startScale, angle: sourceAngle, pitch: sourcePitch, roll:sourceRoll });
       bookNode.classList.add('ihr-flyout__book--webgl');
       bookNode.style.position = 'absolute';
       bookNode.style.inset = '0';
@@ -1334,17 +1348,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     let previousFocus = document.activeElement;
     const session = { book, item, cancelled: false, phase: 'revealing', view, bookNode };
 
-    async function close({ silent = false, instant = false } = {}) {
-      if (state.session !== session || session.cancelled) return;
-      clearInterval(readyCheck);
-      session.cancelled = true;
-      document.removeEventListener('keydown', onKeydown, true);
-      // A slow image may still be loading before the flyout's first frame.
-      // Cancel that selection without running an entrance/return not yet set up.
-      if (!flyout.isConnected) instant = true;
-      else fadeMeta();
-      flyout.classList.remove('is-ready');
-      if (!instant) await playReturn();
+    function finishClose({ silent = false, instant = false } = {}) {
       spineEl.classList.remove('is-away');
       state.shelfScene?.flush();
       view?.dispose();
@@ -1356,6 +1360,27 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       }
       maybeRefreshAppearanceStyles();
       applyDeferredShelfUpdates();
+    }
+    async function close({ silent = false, instant = false } = {}) {
+      if (state.session !== session) return;
+      if (session.cancelled) {
+        if (instant) {
+          session.returnAnimation?.cancel();
+          session.insertion?.cancel();
+          finishClose({ silent, instant });
+        }
+        return;
+      }
+      clearInterval(readyCheck);
+      session.cancelled = true;
+      document.removeEventListener('keydown', onKeydown, true);
+      // A slow image may still be loading before the flyout's first frame.
+      // Cancel that selection without running an entrance/return not yet set up.
+      if (!flyout.isConnected) instant = true;
+      else fadeMeta();
+      flyout.classList.remove('is-ready');
+      if (!instant) await playReturn();
+      if (state.session === session) finishClose({ silent, instant });
     }
     session.close = close;
 
@@ -1927,7 +1952,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       startScale = handoffPose.scale * handoffPose.height / coverH;
       sourceAngle = handoffPose.angle;
       sourcePitch = handoffPose.pitch;
-      view.draw({ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch });
+      sourceRoll = handoffPose.roll ?? 0;
+      view.draw({ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch, roll:sourceRoll });
     }
     document.body.append(flyout);
     spineEl.classList.add('is-away');
@@ -1944,7 +1970,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     const frames = [
       {
-        transform: { x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch },
+        transform: { x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch, roll:sourceRoll },
         easing: 'cubic-bezier(0.34, 0, 0.26, 1)'
       },
       {
@@ -1991,31 +2017,44 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     async function playReturn() {
       const returnDuration = prefersReducedMotion() ? 1 : opts.returnDuration;
-      const target = state.shelfScene?.getBookPose(spineEl);
+      state.shelfScene?.flush();
+      const dockingPose = view && state.shelfScene?.getReturnPose(spineEl);
+      const target = dockingPose || state.shelfScene?.getBookPose(spineEl);
       const end = target
-        ? { x:target.centerX-centerX, y:target.centerY-centerY, scale:target.scale*target.height/coverH, angle:target.angle, pitch:target.pitch }
+        ? { x:target.centerX-centerX, y:target.centerY-centerY, scale:target.scale*target.height/coverH, angle:target.angle, pitch:target.pitch, roll:target.roll ?? 0 }
         : tf(dx, dy, zStart, startScale, 90);
+      const approachDuration = dockingPose ? returnDuration * .66 : returnDuration;
       const back = animateBook(
         [
           { transform: tf(0, 0, 0, 1, 0) },
           {
             offset: 0.45,
-            transform: tf(dx * 0.45, dy * 0.35 - lift * 0.6, zStart * 0.4, scaleAt(0.55), 62)
+            transform: tf(end.x * 0.45, end.y * 0.35 - lift * 0.6, zStart * 0.4, scaleAt(0.55), end.angle * .7)
           },
           { transform: end }
         ],
         {
-          duration: returnDuration,
+          duration: approachDuration,
           easing: EASE,
           fill: 'both'
         }
       );
+      session.returnAnimation = back;
       animate(scrim, [{ opacity: 1 }, { opacity: 0 }], {
-        duration: returnDuration,
+        duration: approachDuration,
         easing: EASE,
         fill: 'both'
       });
-      await back.finished?.catch(() => {});
+      await waitForMotion(back, approachDuration);
+      if (dockingPose && !state.destroyed && state.session === session) {
+        const insertion = state.shelfScene?.returnBook(spineEl, { duration:returnDuration - approachDuration, overlayCanvas:view.canvas });
+        session.insertion = insertion;
+        if (insertion) {
+          // The shelf scene owns the mesh and depth buffer for insertion. Its
+          // full-screen output keeps edge books clear of the scroller's clip.
+          await waitForMotion(insertion, returnDuration - approachDuration);
+        }
+      }
     }
 
     try {
@@ -2198,7 +2237,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const dx = (sourcePose?.centerX ?? rect.left + rect.width / 2) - centerX;
     const dy = (sourcePose?.centerY ?? rect.top + rect.height / 2) - centerY;
     const lift = Math.min(40, rect.height * .2);
-    const end = { x:dx, y:dy, scale:startScale, angle:sourcePose?.angle ?? 90, pitch:sourcePose?.pitch ?? 0 };
+    const dockingPose = state.shelfScene?.getReturnPose(spine);
+    const target = dockingPose || sourcePose;
+    const end = { x:(target?.centerX ?? centerX+dx)-centerX, y:(target?.centerY ?? centerY+dy)-centerY,
+      scale:target ? target.scale*target.height/coverH : startScale,
+      angle:target?.angle ?? 90, pitch:target?.pitch ?? 0, roll:target?.roll ?? 0 };
     const stage = el('div', { class:'ihr-flyout__stage' });
     const bookNode = el('div', { class:'ihr-flyout__book', style:
       `left:${(vw-coverW)/2}px;top:${centerY-coverH/2}px;width:${coverW}px;height:${coverH}px` });
@@ -2221,13 +2264,15 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const pose = (x, y, scale, angle, pitch=0) => ({ x,y,scale,angle,pitch });
     document.body.append(flyout);
     spine.classList.add('is-away');
+    state.shelfScene?.flush();
     const duration = prefersReducedMotion() ? 1 : 560;
+    const approachDuration = view && dockingPose ? duration * .66 : duration;
     const animation = view ? view.animate([
       { transform:pose(0,0,1,0,0), offset:0 },
       { transform:pose(-dx*.12,-lift*.5,.94,12,3), offset:.22 },
-      { transform:pose(dx*.38,dy*.38-lift,startScale+(1-startScale)*.38,62,4), offset:.68 },
+      { transform:pose(end.x*.38,end.y*.38-lift,startScale+(1-startScale)*.38,end.angle*.7,4), offset:.68 },
       { transform:end, offset:1 }
-    ], { duration }) : animate(bookNode, [
+    ], { duration:approachDuration }) : animate(bookNode, [
       { opacity:1, transform:'translate(0,0) scale(1)' },
       { opacity:.85, transform:`translate(${dx}px, ${dy}px) scale(${startScale})` }
     ], { duration, easing:EASE, fill:'both' });
@@ -2238,21 +2283,20 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       state.shelfScene?.flush();
       return current
     }
+    let insertion = null;
     const motion = { cancel() {
-      animation.cancel?.(); restoreShelfSpine(); view?.dispose(); flyout.remove();
+      animation.cancel?.(); insertion?.cancel(); restoreShelfSpine(); view?.dispose(); flyout.remove();
       state.returnMotion = null;
       applyDeferredShelfUpdates()
     } };
     state.returnMotion = motion;
-    // Some WebViews pause requestAnimationFrame as the reader surface closes.
-    // Bound the transition so a paused GPU frame cannot leave an invisible
-    // overlay in the DOM or keep the original book hidden on its shelf.
-    let watchdog;
-    await Promise.race([
-      animation.finished?.then(() => true, () => true) ?? Promise.resolve(true),
-      new Promise(resolve => { watchdog = setTimeout(() => resolve(false), duration + 1500); })
-    ]);
-    clearTimeout(watchdog);
+    await waitForMotion(animation, approachDuration);
+    if (state.returnMotion === motion && view && dockingPose && !state.destroyed) {
+      insertion = state.shelfScene?.returnBook(spine, { duration:duration - approachDuration, overlayCanvas:view.canvas });
+      if (insertion) {
+        await waitForMotion(insertion, duration - approachDuration);
+      }
+    }
     if (state.returnMotion === motion) {
       state.returnMotion = null;
       animation.cancel?.();

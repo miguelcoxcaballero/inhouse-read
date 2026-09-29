@@ -91,6 +91,94 @@ async function observePrintedCoverFrames(page) {
   })
 }
 
+async function observeShelfInsertion(page, bookId) {
+  await page.evaluate(id => {
+    const originalCanvas = document.querySelector('.ihr-bookshelf-scene')
+    const result = { samples:0, progress:[], failures:[], retainedShelf:true,
+      insertionImage:null, usesOverlay:false, overlayAlphaPixels:0 }
+    const painted = node => {
+      if (!node?.isConnected || !node.getBoundingClientRect().width) return false
+      for (let current = node; current instanceof Element; current = current.parentElement) {
+        const style = getComputedStyle(current)
+        if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false
+      }
+      return true
+    }
+    let frame
+    const sample = () => {
+      const canvas = document.querySelector('.ihr-bookshelf-scene')
+      result.retainedShelf &&= canvas === originalCanvas
+      if (canvas?.dataset.returningBookId !== id) return
+      result.samples++
+      const progress = Number(canvas.dataset.returnProgress)
+      if (!result.progress.includes(progress)) result.progress.push(progress)
+      const spine = document.querySelector(`.ihr-spine[data-book-id="${id}"]`)
+      const overlays = [...document.querySelectorAll('.ihr-flyout__book canvas')].filter(painted)
+      const renderer = canvas.dataset.returnRenderer
+      result.usesOverlay ||= renderer === 'shared-depth-overlay'
+      // A full-screen output is allowed for books protruding past the cabinet
+      // bounds, but only when masked by the same furniture depth buffer. A
+      // separately lit flyout would paint over its neighboring book meshes.
+      if (overlays.length > 1 || (overlays.length && renderer !== 'shared-depth-overlay') ||
+          overlays.some(overlay => overlay.dataset.insertionDepth !== 'shared-shelf' ||
+            Number(overlay.dataset.returnProgress) !== progress) ||
+          !spine?.classList.contains('is-away')) result.failures.push({
+        progress, renderer, visibleOverlays:overlays.length,
+        overlayDepth:overlays.map(overlay => overlay.dataset.insertionDepth),
+        originalHidden:spine?.classList.contains('is-away') || false
+      })
+      if (!result.insertionImage && progress > .15 && progress < .85) {
+        const image = document.createElement('canvas')
+        image.width = innerWidth; image.height = innerHeight
+        const context = image.getContext('2d')
+        context.fillStyle = '#141614'; context.fillRect(0, 0, image.width, image.height)
+        const paint = source => {
+          const bounds = source.getBoundingClientRect()
+          context.drawImage(source, bounds.left, bounds.top, bounds.width, bounds.height)
+        }
+        const clip = document.querySelector('.ihr-bookshelf__scroll').getBoundingClientRect()
+        context.save(); context.beginPath(); context.rect(clip.left, clip.top, clip.width, clip.height); context.clip()
+        paint(canvas); context.restore()
+        for (const overlay of overlays) paint(overlay)
+        result.insertionImage = image.toDataURL('image/png')
+        const sample = document.createElement('canvas')
+        sample.width = 80; sample.height = 172
+        const sampleContext = sample.getContext('2d', { willReadFrequently:true })
+        for (const overlay of overlays) sampleContext.drawImage(overlay, 0, 0, sample.width, sample.height)
+        const pixels = sampleContext.getImageData(0, 0, sample.width, sample.height).data
+        for (let index = 3; index < pixels.length; index += 4) if (pixels[index] > 0) result.overlayAlphaPixels++
+      }
+    }
+    const observer = new MutationObserver(sample)
+    observer.observe(document.body, { subtree:true, childList:true, attributes:true,
+      attributeFilter:['data-returning-book-id', 'data-return-progress', 'data-return-renderer', 'class', 'style'] })
+    const tick = () => { sample(); frame = requestAnimationFrame(tick) }
+    frame = requestAnimationFrame(tick)
+    window.__finishShelfInsertion = () => {
+      sample(); observer.disconnect(); cancelAnimationFrame(frame)
+      return result
+    }
+  }, bookId)
+}
+
+async function expectDepthTestedInsertion(page, trigger, bookId = 'continuity:2') {
+  await observeShelfInsertion(page, bookId)
+  await trigger()
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0)
+  await expect(page.locator(`.ihr-spine[data-book-id="${bookId}"]`)).not.toHaveClass(/is-away/)
+  const result = await page.evaluate(() => window.__finishShelfInsertion())
+  if (result.insertionImage) await test.info().attach(`book-insertion-${bookId}`, {
+    body:Buffer.from(result.insertionImage.split(',')[1], 'base64'), contentType:'image/png'
+  })
+  expect(result.retainedShelf).toBe(true)
+  expect(result.samples).toBeGreaterThan(0)
+  expect(result.progress.some(progress => progress > 0 && progress < 1)).toBe(true)
+  expect(result.progress.at(-1)).toBeGreaterThan(result.progress[0])
+  expect(result.failures).toEqual([])
+  if (result.usesOverlay) expect(result.overlayAlphaPixels).toBeGreaterThan(0)
+  await expect(page.locator('.ihr-bookshelf-scene')).not.toHaveAttribute('data-returning-book-id', bookId)
+}
+
 test('varias portadas reales salen y regresan sin mostrar portadas provisionales ni reconstruir la estantería', async ({ page }) => {
   test.setTimeout(90_000)
   await page.setViewportSize({ width:390, height:844 })
@@ -204,4 +292,91 @@ test('seleccionar otro libro y volver al primero abre su documento y conserva la
   })
   expect(frames.count).toBeGreaterThan(1)
   expect(frames.failures).toEqual([])
+})
+
+test('el libro vuelve entre sus vecinos con profundidad real en vistas frontal e isométrica y desde el lector', async ({ page }) => {
+  test.setTimeout(90_000)
+  await page.setViewportSize({ width:390, height:844 })
+  await page.emulateMedia({ reducedMotion:'no-preference' })
+  await page.goto(process.env.IHR_TEST_URL || '/')
+  await seedCoveredBooks(page)
+  const selectBook = async (index = 2) => {
+    const book = page.locator(`.ihr-spine[data-book-id="continuity:${index}"]`)
+    const bounds = await book.boundingBox()
+    await book.click({ position:{ x:Math.min(8, bounds.width * .12), y:bounds.height * .65 } })
+    await expect(page.locator('.ihr-flyout__cover-target')).toBeVisible()
+  }
+
+  for (const mode of ['frontal', 'isometric']) {
+    if (mode === 'isometric') {
+      await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
+      await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1')
+      await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
+    }
+    await test.step(`${mode}: cerrar la portada`, async () => {
+      await selectBook()
+      await expectDepthTestedInsertion(page, () => page.getByRole('button', { name:'Cerrar', exact:true }).click())
+    })
+    await test.step(`${mode}: regresar desde el documento`, async () => {
+      await selectBook()
+      await page.locator('.ihr-flyout__cover-target').click()
+      await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+      await expect(page.locator('#reader-location')).toHaveText(/Página \d de 4/)
+      await expectDepthTestedInsertion(page, () => page.getByRole('button', { name:'Volver a la estantería' }).click())
+    })
+  }
+  // The isometric drawer can protrude past the cabinet's left clipping edge.
+  // Its shared-depth full-screen output must preserve that last insertion too.
+  await test.step('isométrica: devolver el libro del extremo izquierdo', async () => {
+    await selectBook(0)
+    await expectDepthTestedInsertion(page, () => page.getByRole('button', { name:'Cerrar', exact:true }).click(), 'continuity:0')
+  })
+  await page.screenshot({ path:'test-results/depth-tested-book-return.png' })
+})
+
+test('cancelar una devolución al cambiar el viewport restaura el libro y permite volver a seleccionarlo', async ({ page }) => {
+  test.setTimeout(90_000)
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.setViewportSize({ width:390, height:844 })
+  await page.emulateMedia({ reducedMotion:'no-preference' })
+  await page.goto(process.env.IHR_TEST_URL || '/')
+  await seedCoveredBooks(page)
+  const bookId = 'continuity:2'
+  const book = page.locator(`.ihr-spine[data-book-id="${bookId}"]`)
+  const selectBook = async () => {
+    await book.click()
+    await expect(page.locator('.ihr-flyout__cover-target')).toBeVisible()
+  }
+  const cancelAtInsertion = async trigger => {
+    await page.evaluate(id => {
+      const scene = document.querySelector('.ihr-bookshelf-scene')
+      window.__resizeCancellation = { triggered:false, originalCanvas:scene }
+      const observer = new MutationObserver(() => {
+        if (scene.dataset.returningBookId !== id) return
+        // Dispatch exactly when the return changes renderer ownership, rather
+        // than relying on a wall-clock timeout on a slow mobile GPU.
+        observer.disconnect()
+        window.__resizeCancellation.triggered = true
+        window.dispatchEvent(new Event('resize'))
+      })
+      observer.observe(scene, { attributes:true, attributeFilter:['data-returning-book-id'] })
+    }, bookId)
+    await trigger()
+    await expect.poll(() => page.evaluate(() => window.__resizeCancellation.triggered)).toBe(true)
+    await expect(page.locator('.ihr-flyout')).toHaveCount(0)
+    await expect(book).not.toHaveClass(/is-away/)
+    await expect(page.locator('.ihr-bookshelf-scene')).not.toHaveAttribute('data-returning-book-id', bookId)
+    expect(await page.evaluate(() => window.__resizeCancellation.originalCanvas ===
+      document.querySelector('.ihr-bookshelf-scene'))).toBe(true)
+  }
+  await selectBook()
+  await cancelAtInsertion(() => page.getByRole('button', { name:'Cerrar', exact:true }).click())
+  await selectBook()
+  await page.locator('.ihr-flyout__cover-target').click()
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+  await cancelAtInsertion(() => page.getByRole('button', { name:'Volver a la estantería' }).click())
+  await selectBook()
+  await expectDepthTestedInsertion(page, () => page.getByRole('button', { name:'Cerrar', exact:true }).click(), bookId)
+  expect(errors).toEqual([])
 })

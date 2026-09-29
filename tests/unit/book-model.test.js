@@ -117,7 +117,7 @@ describe('book motion with continuous velocity', () => {
     }
   });
   it('closes a cancelled opening continuously before the book rejoins the shelf', () => {
-    const cancelledPose = { x:24, y:0, angle:0, pitch:0, scale:1, coverOpen:.68 };
+    const cancelledPose = { x:24, y:0, angle:0, pitch:0, roll:0, scale:1, coverOpen:.68 };
     const returning = [
       { transform:cancelledPose },
       { offset:.45, transform:{ x:48, y:18, angle:62, pitch:0, scale:.6 } },
@@ -134,6 +134,14 @@ describe('book motion with continuous velocity', () => {
     expect(sampleBookMotion(returning, .2).coverOpen).toBeGreaterThan(0);
     expect(sampleBookMotion(returning, .45).coverOpen).toBe(0);
     expect(sampleBookMotion(returning, 1)).toMatchObject({ angle:90, coverOpen:0 });
+  });
+  it('retains the shelf world rotation through a docking handoff', () => {
+    const dock = { x:-38, y:86, angle:60, pitch:14, roll:-3, scale:.42 };
+    const moving = [{ transform:{ x:0, y:0, angle:0, pitch:0, roll:0, scale:1 } }, { transform:dock }];
+    expect(sampleBookMotion(moving, 1)).toMatchObject(dock);
+    const mid = sampleBookMotion(moving, .5);
+    expect(mid.roll).toBeCloseTo(-1.5);
+    expect(mid.pitch).toBeCloseTo(7);
   });
 });
 

@@ -441,7 +441,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     current = { ...pose, coverOpen:Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0)) };
     model.userData.setCoverOpen?.(current.coverOpen);
     model.position.set(centerX - viewportWidth / 2 + pose.x, viewportHeight / 2 - centerY - pose.y, 0);
-    model.rotation.set((pose.pitch ?? 0) * Math.PI / 180, pose.angle * Math.PI / 180, 0); model.scale.setScalar(pose.scale);
+    model.rotation.set((pose.pitch ?? 0) * Math.PI / 180, pose.angle * Math.PI / 180, (pose.roll ?? 0) * Math.PI / 180); model.scale.setScalar(pose.scale);
     if (gpu.getPixelRatio() !== pixelRatio) gpu.setPixelRatio(pixelRatio);
     gpu.getSize(rendererSize);
     if (rendererSize.x !== viewportWidth || rendererSize.y !== viewportHeight) gpu.setSize(viewportWidth, viewportHeight, false);
@@ -552,7 +552,7 @@ export function sampleBookMotion(frames, progress) {
   while (index < frames.length - 2 && t > times[index + 1]) index++;
   const span = times[index + 1] - times[index], k = (t - times[index]) / span;
   const k2 = k * k, k3 = k2 * k, pose = {};
-  for (const key of ['x', 'y', 'scale', 'angle', 'pitch', 'coverOpen']) {
+  for (const key of ['x', 'y', 'scale', 'angle', 'pitch', 'roll', 'coverOpen']) {
     const value = i => frames[i].transform[key] ?? 0;
     const tangent = i => {
       if (i === 0 || i === frames.length - 1) return 0;

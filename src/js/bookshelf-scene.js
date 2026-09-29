@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createBookModel, getBookRenderer, lightBookScene } from './book-model.js';
 import { bookmarkFor } from './bookshelf-layout.js';
+import { shelfBookSlot, shelfBookInsertion, projectShelfBookPose } from './bookshelf-return.js';
 
 const WALNUT = new URL('../assets/library/walnut.webp', import.meta.url).href;
 const DURATION = 700;
@@ -70,6 +71,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   scene.add(furniture);
   const camera = new THREE.OrthographicCamera(0, width, 0, -1, .1, 20000);
   camera.position.z = 8000;
+  const insertionCamera = new THREE.OrthographicCamera(0, 1, 0, -1, .1, 20000);
+  insertionCamera.position.z = 8000;
   const texture = new THREE.TextureLoader().load(WALNUT, () => invalidate());
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
@@ -80,7 +83,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let depth = Math.max(155, ...entries.filter(e => e.kind !== 'plant').map(e => e.width + 12));
   const entryKey = (entry, index) => entry.kind === 'plant' ? `plant:${entry.key ?? index}` : `book:${String(entry.book?.id ?? entry.book?.path ?? entry.book?.title ?? index)}`;
   const freshEntry = (entry, index) => ({ ...entry, key:entryKey(entry, index), model:null, replacement:null, pose:new THREE.Object3D(),
-    lift:{ value:0, from:0, target:0, started:0 }, offset:{ x:0, y:0 }, state:'', rect:null });
+    lift:{ value:0, from:0, target:0, started:0 }, offset:{ x:0, y:0 }, state:'', rect:null, insertion:null });
   let bookEntries = entries.map(freshEntry);
   const byNode = new Map(bookEntries.filter(entry => entry.node).map(entry => [entry.node, entry]));
   const beam = (w, h, d, x, y, z, material = wood) => {
@@ -113,6 +116,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   rebuildFurniture();
 
   let disposed = false, raf = 0, renderCount = 0, modelCreations = 0, viewportHeight = 1, progress = mode === 'isometric' ? 1 : 0;
+  let shelfSnapshotDirty = true, shelfSnapshotRenders = 0;
   let transition = null, reorderTransition = null;
   let desiredMode = mode === 'isometric' ? 'isometric' : 'spine';
   const vector = new THREE.Vector3(), inverseRotation = new THREE.Quaternion();
@@ -166,8 +170,15 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function releaseEntry(entry) {
+    cancelInsertion(entry);
     cancelReplacement(entry);
     if (entry.model) { furniture.remove(entry.model); entry.model.userData.dispose?.(); entry.model = null; }
+  }
+
+  function cancelInsertion(entry) {
+    const insertion = entry.insertion;
+    entry.insertion = null;
+    insertion?.resolve();
   }
 
   function replaceWhenReady(entry) {
@@ -263,7 +274,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     viewportHeight = Math.max(1, Math.ceil(Math.min(scroller.clientHeight || window.innerHeight, window.innerHeight)));
     const ratio = Math.min(window.devicePixelRatio || 1, width < 600 ? 1.5 : 2);
     const pixelWidth = Math.ceil(width * ratio), pixelHeight = Math.ceil(viewportHeight * ratio);
-    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) { canvas.width = pixelWidth; canvas.height = pixelHeight; }
+    if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+      canvas.width = pixelWidth; canvas.height = pixelHeight; shelfSnapshotDirty = true;
+    }
     canvas.style.width = `${width}px`; canvas.style.height = `${viewportHeight}px`;
     canvas.style.marginBottom = `${-viewportHeight}px`;
     // Read the actual sticky position: near the last shelf its bottom is
@@ -298,20 +311,27 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     return zoom;
   }
 
-  function updateEntries(scroll, zoom, now) {
-    let activeBooks = 0, moving = false;
+  function updateEntries(scroll, zoom, now, finishedInsertions) {
+    let activeBooks = 0, moving = false, shelfMoving = false;
     for (const entry of bookEntries) {
       const node = entry.node, plant = entry.kind === 'plant';
       const dragging = node?.classList.contains('is-dragging');
       const lifted = dragging || node?.classList.contains('is-lifted');
       const away = node?.classList.contains('is-away');
+      // A completed insertion remains painted until its owner restores the
+      // semantic shelf book. This avoids an empty frame at the final handoff.
+      if (entry.insertion?.complete && !away) entry.insertion = null;
+      const insertion = entry.insertion;
       const targetLift = plant ? 0 : lifted ? 1 : node?.classList.contains('is-pressed') ? .22 : 0;
       if (entry.lift.target !== targetLift) {
         entry.lift.from = entry.lift.value; entry.lift.target = targetLift; entry.lift.started = now;
       }
       const liftTime = reducedMotion.matches ? 1 : clamp((now - entry.lift.started) / 160, 0, 1);
+      const previousLift = entry.lift.value;
       entry.lift.value = entry.lift.from + (entry.lift.target - entry.lift.from) * ease(liftTime);
-      moving ||= liftTime < 1 && entry.lift.from !== entry.lift.target;
+      const changingLift = liftTime < 1 && entry.lift.from !== entry.lift.target;
+      moving ||= changingLift;
+      shelfMoving ||= !away && (changingLift || previousLift !== entry.lift.value);
       const lift = entry.lift.value;
       const screenX = (dragging ? parseFloat(node.style.getPropertyValue('--ihr-drag-x')) || 0 : 0) + entry.offset.x;
       const screenY = (dragging ? parseFloat(node.style.getPropertyValue('--ihr-drag-y')) || 0 : 0) + entry.offset.y - 18 * lift;
@@ -323,7 +343,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       projectedMatrix.multiplyMatrices(furniture.matrixWorld, entry.pose.matrix);
       const rect = corners(entry.box, projectedMatrix);
       entry.rect = rect;
-      const visible = !away && rect.bottom > scroll - 220 && rect.top < scroll + viewportHeight + 220;
+      const visible = (!away || insertion) && rect.bottom > scroll - 220 && rect.top < scroll + viewportHeight + 220;
       if (visible && !entry.model) {
         entry.model = makeModel(entry);
         furniture.add(entry.model);
@@ -331,11 +351,29 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         releaseEntry(entry);
       }
       if (entry.model) {
-        entry.model.visible = !away;
-        entry.model.position.copy(entry.pose.position);
-        entry.model.rotation.copy(entry.pose.rotation);
-        entry.model.scale.copy(entry.pose.scale);
-        if (!plant && !away) activeBooks++;
+        entry.model.visible = !away || Boolean(insertion && !insertion.overlayCanvas);
+        if (insertion) {
+          // The first depth pass can take longer while a mobile GPU warms up.
+          // Advance in bounded frame steps instead of skipping the whole
+          // insertion after one delayed frame.
+          insertion.elapsed += Math.min(50, Math.max(0, now - insertion.lastFrame));
+          insertion.lastFrame = now;
+          const t = insertion.duration > 0 ? clamp(insertion.elapsed / insertion.duration, 0, 1) : 1;
+          shelfBookInsertion(insertion.slot, entry.width, ease(t))
+            .decompose(entry.model.position, entry.model.quaternion, entry.model.scale);
+          canvas.dataset.returnProgress = t.toFixed(4);
+          moving ||= t < 1;
+          shelfMoving ||= t < 1 && !insertion.overlayCanvas;
+          if (t === 1 && !insertion.complete) {
+            insertion.complete = true;
+            finishedInsertions.push(insertion.resolve);
+          }
+        } else {
+          entry.model.position.copy(entry.pose.position);
+          entry.model.rotation.copy(entry.pose.rotation);
+          entry.model.scale.copy(entry.pose.scale);
+        }
+        if (!plant && (!away || insertion)) activeBooks++;
       }
       if (node && !plant) {
         node.style.position = 'absolute'; node.style.left = `${rect.left}px`; node.style.top = `${rect.top}px`;
@@ -346,12 +384,77 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       entry.state = stateFor(entry);
     }
     canvas.dataset.activeBooks = String(activeBooks);
-    return moving;
+    const inserting = bookEntries.filter(entry => entry.insertion);
+    canvas.dataset.returningBooks = inserting.map(entry => String(entry.book?.id ?? '')).join(',');
+    canvas.dataset.returningBookId = inserting.length === 1 ? String(inserting[0].book?.id ?? '') : '';
+    canvas.dataset.returnRenderer = inserting.some(entry => entry.insertion.overlayCanvas) ? 'shared-depth-overlay' : 'shelf';
+    if (!inserting.length) delete canvas.dataset.returnProgress;
+    return { moving, shelfMoving };
+  }
+
+  function paintInsertionOverlay(entry) {
+    const insertion = entry.insertion, overlay = insertion?.overlayCanvas, model = entry.model;
+    if (!overlay || !model) return;
+    const overlayContext = overlay.getContext('2d');
+    if (!overlayContext) return;
+    const vw = window.innerWidth || overlay.clientWidth, vh = window.innerHeight || overlay.clientHeight;
+    if (!vw || !vh) return;
+    const origin = stage.getBoundingClientRect();
+    // Use the same world axes as the cabinet, but show the entire viewport.
+    // The moving book therefore stays visible beyond the scroller's edges.
+    insertionCamera.left = -origin.left; insertionCamera.right = vw - origin.left;
+    insertionCamera.top = origin.top; insertionCamera.bottom = origin.top - vh;
+    insertionCamera.updateProjectionMatrix();
+    const ratio = overlay.width / vw;
+    if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
+    renderer.getSize(rendererSize);
+    if (rendererSize.x !== vw || rendererSize.y !== vh) renderer.setSize(vw, vh, false);
+    const autoClear = renderer.autoClear, scissorTest = renderer.getScissorTest();
+    const previousScissor = renderer.getScissor(new THREE.Vector4());
+    const writes = new Map(), visibility = new Map();
+    scene.traverse(object => {
+      for (const material of [].concat(object.material || [])) if (!writes.has(material)) {
+        writes.set(material, material.colorWrite);
+      }
+    });
+    for (const object of furniture.children) visibility.set(object, object.visible);
+    const canvasRect = canvas.getBoundingClientRect(), clip = scroller.getBoundingClientRect();
+    const left = Math.max(0, canvasRect.left, clip.left), right = Math.min(vw, canvasRect.right, clip.right);
+    const top = Math.max(0, canvasRect.top, clip.top), bottom = Math.min(vh, canvasRect.bottom, clip.bottom);
+    try {
+      renderer.autoClear = false;
+      renderer.setScissorTest(false); renderer.clear(true, true, true);
+      // First draw only the cabinet's depth, clipped exactly like the painted
+      // shelf. Invisible wood outside its viewport must not hide the book.
+      for (const material of writes.keys()) material.colorWrite = false;
+      model.visible = false;
+      if (right > left && bottom > top) {
+        renderer.setScissor(left, vh - bottom, right - left, bottom - top);
+        renderer.setScissorTest(true);
+        renderer.render(scene, insertionCamera);
+      }
+      // Keep that depth buffer while drawing just the moving book in color.
+      // Its neighbors now hide the portions actually behind their surfaces.
+      for (const [material, value] of writes) material.colorWrite = value;
+      for (const object of furniture.children) object.visible = object === model;
+      renderer.setScissorTest(false);
+      renderer.render(scene, insertionCamera);
+      overlayContext.clearRect(0, 0, overlay.width, overlay.height);
+      overlayContext.drawImage(renderer.domElement, 0, 0, overlay.width, overlay.height);
+      overlay.dataset.insertionDepth = 'shared-shelf';
+      overlay.dataset.returnProgress = canvas.dataset.returnProgress;
+    } finally {
+      for (const [material, value] of writes) material.colorWrite = value;
+      for (const [object, value] of visibility) object.visible = value;
+      renderer.autoClear = autoClear;
+      renderer.setScissor(previousScissor); renderer.setScissorTest(scissorTest);
+    }
   }
 
   function draw(now = performance.now()) {
     raf = 0;
     if (disposed) return;
+    const furnitureMoving = Boolean(transition || reorderTransition);
     if (transition) {
       const t = clamp((now - transition.started) / DURATION, 0, 1);
       progress = transition.from + (transition.to - transition.from) * ease(t);
@@ -364,19 +467,31 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
     const zoom = updateTransform();
     const { scroll, ratio } = viewport();
-    const lifting = updateEntries(scroll, zoom, now);
-    if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
-    renderer.getSize(rendererSize);
-    if (rendererSize.x !== width || rendererSize.y !== viewportHeight) renderer.setSize(width, viewportHeight, false);
-    renderer.render(scene, camera);
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(renderer.domElement, 0, 0, canvas.width, canvas.height);
+    const finishedInsertions = [];
+    const { moving, shelfMoving } = updateEntries(scroll, zoom, now, finishedInsertions);
+    const overlayInsertion = bookEntries.some(entry => entry.insertion?.overlayCanvas);
+    // Its hidden slot and neighbors are already painted. Reuse that snapshot
+    // during a stationary insertion instead of reallocating the shared GPU
+    // buffer between the smaller shelf and full-screen output every frame.
+    if (!overlayInsertion || shelfSnapshotDirty || furnitureMoving || shelfMoving) {
+      if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
+      renderer.getSize(rendererSize);
+      if (rendererSize.x !== width || rendererSize.y !== viewportHeight) renderer.setSize(width, viewportHeight, false);
+      renderer.render(scene, camera);
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(renderer.domElement, 0, 0, canvas.width, canvas.height);
+      canvas.dataset.snapshotRenderCount = String(++shelfSnapshotRenders);
+      shelfSnapshotDirty = false;
+    }
+    for (const entry of bookEntries) if (entry.insertion?.overlayCanvas) paintInsertionOverlay(entry);
     canvas.dataset.renderCount = String(++renderCount);
-    canvas.dataset.animating = String(Boolean(transition || reorderTransition || lifting));
-    if (transition || reorderTransition || lifting) invalidate();
+    canvas.dataset.animating = String(Boolean(transition || reorderTransition || moving));
+    for (const resolve of finishedInsertions) resolve();
+    if (transition || reorderTransition || moving) invalidate(false);
   }
 
-  function invalidate() {
+  function invalidate(dirty = true) {
+    if (dirty) shelfSnapshotDirty = true;
     if (!disposed && !raf) raf = requestAnimationFrame(draw);
   }
   const mutations = new MutationObserver(records => {
@@ -397,7 +512,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   return {
     canvas,
     invalidate,
-    flush() { cancelAnimationFrame(raf); raf = 0; draw(); },
+    flush() { shelfSnapshotDirty = true; cancelAnimationFrame(raf); raf = 0; draw(); },
     setMode(next, { animate = true } = {}) {
       desiredMode = next === 'isometric' ? 'isometric' : 'spine';
       const target = desiredMode === 'isometric' ? 1 : 0;
@@ -408,13 +523,41 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     getBookPose(node) {
       const entry = byNode.get(node);
       if (!entry) return null;
-      vector.copy(entry.pose.position).applyMatrix4(furniture.matrixWorld);
       const stageRect = stage.getBoundingClientRect();
-      return { width:entry.width, height:entry.height, thickness:entry.thickness,
-        angle:90 - 30 * progress - 7 * entry.lift.value, pitch:14 * progress, scale:furniture.scale.x * entry.pose.scale.x,
-        centerX:stageRect.left + vector.x, centerY:stageRect.top - vector.y,
+      return { ...projectShelfBookPose(furniture.matrixWorld, entry.pose.matrix, entry, stageRect),
         rect:entry.rect && { ...entry.rect, left:stageRect.left + entry.rect.left, top:stageRect.top + entry.rect.top,
           right:stageRect.left + entry.rect.right, bottom:stageRect.top + entry.rect.bottom } };
+    },
+    getReturnPose(node) {
+      const entry = byNode.get(node);
+      if (!entry || entry.kind === 'plant' || disposed) return null;
+      cancelAnimationFrame(raf); raf = 0; draw();
+      const dock = shelfBookInsertion(shelfBookSlot(entry, width), entry.width);
+      return projectShelfBookPose(furniture.matrixWorld, dock, entry, stage.getBoundingClientRect());
+    },
+    returnBook(node, { duration = 180, overlayCanvas = null } = {}) {
+      const entry = byNode.get(node);
+      if (!entry || entry.kind === 'plant' || disposed) return null;
+      cancelInsertion(entry);
+      let resolve;
+      const finished = new Promise(done => { resolve = done; });
+      const insertion = { slot:shelfBookSlot(entry, width), started:performance.now(),
+        duration:reducedMotion.matches ? 0 : Math.max(0, Number(duration) || 0), resolve, complete:false, overlayCanvas,
+        elapsed:0, lastFrame:performance.now() };
+      entry.insertion = insertion;
+      Object.assign(entry.lift, { value:0, from:0, target:0, started:insertion.started });
+      // Paint the same dock position before the caller hides its overlay.
+      // Neighbors and wood now occlude the moving book in one depth buffer.
+      shelfSnapshotDirty = true;
+      cancelAnimationFrame(raf); raf = 0; draw(insertion.started);
+      insertion.lastFrame = performance.now();
+      return { finished, cancel() {
+        if (entry.insertion !== insertion) return;
+        cancelInsertion(entry);
+        overlayCanvas?.getContext('2d')?.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        shelfSnapshotDirty = true;
+        if (!disposed) { cancelAnimationFrame(raf); raf = 0; draw(); }
+      } };
     },
     getBookAtPoint(clientX, clientY) {
       // Metadata can replace a mesh between two frames; scrolling also updates
@@ -441,6 +584,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     updateLayout(next) {
       if (disposed) return false;
+      shelfSnapshotDirty = true;
       cancelAnimationFrame(raf); raf = 0; mutations.disconnect();
       const oldEntries = new Map(bookEntries.map(entry => [entry.key, entry]));
       const oldWidth = width, oldHeight = height, oldRows = JSON.stringify(rows), oldDepth = depth;
