@@ -104,6 +104,7 @@
 
 import { planBookshelf, bookmarkFor, withDefaults } from './bookshelf-layout.js';
 import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from './cover-appearance.js';
+import { bookColorOptions, spineColorStyle } from './book-colors.js';
 import { plantSvg, plantMeta } from './plants.js';
 import { bookView } from './book-model.js';
 
@@ -320,9 +321,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function applyCoverAppearance(item, appearance) {
-    if (!appearance) return false;
-    item.style = withCoverAppearance(item.baseStyle || item.style, appearance);
-    return true;
+    if (appearance) item.style = withCoverAppearance(item.baseStyle || item.style, appearance);
+    if (item.book.spineColorOverride) {
+      item.style = { ...item.style, ...spineColorStyle(item.book.spineColorOverride) };
+    }
+    return Boolean(appearance);
   }
 
   function maybeRefreshAppearanceStyles() {
@@ -721,7 +724,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           item.baseStyle = item.style;
           item.coverKey = coverKeyFor(item.book);
           const appearance = state.coverAppearances.get(String(item.book.id ?? item.book.path ?? item.book.title ?? 'book'));
-          if (appearance?.key === item.coverKey) applyCoverAppearance(item, appearance.appearance);
+          applyCoverAppearance(item, appearance?.key === item.coverKey ? appearance.appearance : null);
         }
       }
       const wrapper = el('section', {
@@ -923,7 +926,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       book.author ? el('p', { class: 'ihr-flyout__author', text: book.author }) : null
     ]);
     const readiness = el('p', { class: 'ihr-flyout__readiness', text: options.getBookPreparation ? 'Preparando el libro…' : 'Toca la portada para leer', 'aria-live': 'polite' });
-    meta.append(readiness);
+    const colorControls = el('div', { class: 'ihr-flyout__colors', role: 'group', 'aria-label': 'Color del lomo' });
+    meta.append(readiness, colorControls);
     const coverTarget = el('button', {
       type: 'button', class: 'ihr-flyout__cover-target',
       'aria-label': opts.texts.tapCover(book), hidden: true,
@@ -941,8 +945,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const shadow = el('div', { class:'ihr-flyout__shadow', 'aria-hidden':'true', style:`--ihr-cover-bottom:${centerY + coverH / 2}px;left:${vw * (landscape ? .26 : .5)}px` });
     flyout.append(scrim, shadow, el('div', { class: 'ihr-flyout__stage' }, [bookNode]), meta, coverTarget, closeButton);
 
-    const previousFocus = document.activeElement;
-    const session = { book, cancelled: false, phase: 'revealing', view, bookNode };
+    let previousFocus = document.activeElement;
+    const session = { book, item, cancelled: false, phase: 'revealing', view, bookNode };
 
     async function close({ silent = false, instant = false } = {}) {
       if (state.session !== session || session.cancelled) return;
@@ -965,7 +969,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     function onKeydown(event) {
       if (event.key === 'Tab') {
-        const buttons = [...flyout.querySelectorAll('button:not([disabled]):not([hidden])')];
+        const buttons = [...flyout.querySelectorAll('button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden])')];
         const first = buttons[0], last = buttons.at(-1);
         if (event.shiftKey && (document.activeElement === first || document.activeElement === flyout)) { event.preventDefault(); last?.focus(); }
         else if (!event.shiftKey && (document.activeElement === last || document.activeElement === flyout)) { event.preventDefault(); first?.focus(); }
@@ -990,6 +994,81 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       el('button', { type: 'button', class: 'ihr-btn ihr-btn--primary', disabled:true, onClick: () => expandCover() }, [svgIcon(ICONS.read, { className:'ihr-icon' }), el('span', { text: opts.texts.openAction })]),
       el('button', { type: 'button', class: 'ihr-btn', title:actionTitle, 'aria-label':actionTitle, disabled:!options.onBookAction || alreadySaved, onClick: event => options.onBookAction?.(book.sourceType === 'drive' ? 'offline' : 'drive', book, event.currentTarget) }, [svgIcon(alreadySaved ? ICONS.check : book.sourceType === 'drive' ? ICONS.download : ICONS.drive, { className:'ihr-icon' }), el('span', { text:actionLabel })])
     ];
+
+    const cachedAppearance = state.coverAppearances.get(String(book.id ?? book.path ?? book.title ?? 'book'));
+    const coverColor = cachedAppearance?.key === item.coverKey && cachedAppearance.appearance?.color
+      ? cachedAppearance.appearance.color
+      : item.baseStyle.color;
+    const suggestedColors = bookColorOptions(coverColor);
+    let selectedColor = book.spineColorOverride || style.color;
+    const colorButtons = [];
+    const pickerInput = el('input', {
+      type: 'color', value: spineColorStyle(selectedColor).color,
+      'aria-label': 'Elegir otro color para el lomo',
+      onChange: event => selectSpineColor(event.currentTarget.value)
+    });
+    function updateColorSelection() {
+      colorButtons.forEach(button => {
+        const selected = button.dataset.color === selectedColor;
+        button.setAttribute('aria-pressed', String(selected));
+        button.classList.toggle('is-selected', selected);
+      });
+      pickerInput.value = spineColorStyle(selectedColor).color;
+      pickerInput.parentElement?.classList.toggle('is-selected', !suggestedColors.includes(selectedColor));
+    }
+    function selectSpineColor(color) {
+      selectedColor = spineColorStyle(color).color;
+      book.spineColorOverride = selectedColor;
+      const baseStyle = item.baseStyle || item.style;
+      const appearance = cachedAppearance?.key === item.coverKey ? cachedAppearance.appearance : null;
+      item.style = {
+        ...(appearance ? withCoverAppearance(baseStyle, appearance) : baseStyle),
+        ...spineColorStyle(selectedColor)
+      };
+      style = item.style;
+      view?.updateAppearance(item.style);
+      updateBookStyleVars(bookNode, item.style);
+      updateBookStyleVars(bookNode.querySelector('.ihr-flyout__face--cover'), item.style);
+      const existingSpine = [...root.querySelectorAll('.ihr-spine')]
+        .find(node => node.dataset.bookId === String(book.id));
+      if (existingSpine) {
+        const hadFocus = document.activeElement === existingSpine;
+        const wasAway = existingSpine.classList.contains('is-away');
+        const replacement = buildSpine(item);
+        if (wasAway) replacement.classList.add('is-away');
+        existingSpine.replaceWith(replacement);
+        spineEl = replacement;
+        if (previousFocus === existingSpine) previousFocus = replacement;
+        if (hadFocus) replacement.focus({ preventScroll: true });
+        if (state.lastOpened?.book?.id === book.id) state.lastOpened.spineEl = replacement;
+      }
+      if (state.lastOpened?.book?.id === book.id) state.lastOpened.style = item.style;
+      state.appearanceRefreshPending = true;
+      updateColorSelection();
+      Promise.resolve(options.onBookColorChange?.(book, selectedColor)).catch(error => {
+        console.warn('No se pudo guardar el color del lomo:', error);
+      });
+    }
+    suggestedColors.forEach((color, index) => {
+      const names = ['Color de la portada', 'Tono cercano 1', 'Tono cercano 2'];
+      const button = el('button', {
+        type: 'button', class: 'ihr-flyout__swatch',
+        'aria-label': names[index], 'aria-pressed': false,
+        title: names[index], 'data-color': color,
+        style: `--ihr-swatch-color:${color}`,
+        onClick: () => selectSpineColor(color)
+      });
+      colorButtons.push(button);
+    });
+    colorControls.append(
+      el('span', { class: 'ihr-flyout__color-label', text: 'Color del lomo' }),
+      el('div', { class: 'ihr-flyout__swatches' }, colorButtons),
+      el('label', { class: 'ihr-flyout__custom-color', title: 'Elegir otro color' }, [
+        pickerInput,
+        el('span', { class: 'ihr-flyout__custom-mark', 'aria-hidden': 'true', text: '+' })
+      ])
+    );
+    updateColorSelection();
     meta.append(el('div', { class: 'ihr-flyout__actions' }, actionButtons));
     const readyCheck = setInterval(() => {
       const task = options.getBookPreparation?.(book)
@@ -1056,6 +1135,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       animate(meta, [{ opacity }, { opacity:0 }], { duration:prefersReducedMotion() ? 1 : 160, fill:'both' });
       meta.style.pointerEvents = 'none';
       actionButtons.forEach(button => { button.disabled = true; });
+      colorButtons.forEach(button => { button.disabled = true; });
+      pickerInput.disabled = true;
     }
 
     async function playReturn() {

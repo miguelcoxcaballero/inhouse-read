@@ -4,6 +4,10 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 El home no es un grid de tarjetas: es una estantería ilustrada con plantas donde los libros se ven de canto. Al tocar uno, sale de la balda y gira en 3D hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.0.23
+
+- Antes de leer un libro puedes elegir el color del lomo entre tres tonos de su portada o definir uno propio; la elección queda guardada para las siguientes visitas.
+
 ### Actualización web · 1.0.22
 
 - Los títulos importados desde archivos y Drive sustituyen guiones bajos, recuperan mayúsculas legibles, eliminan extensiones y colas truncadas, y conservan el título principal cuando hay subtítulos largos.

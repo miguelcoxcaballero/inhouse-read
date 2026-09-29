@@ -328,7 +328,7 @@ describe('renderBookshelf', () => {
     expect(close.getAttribute('aria-label')).toBe('Cerrar')
     close.focus()
     document.dispatchEvent(new KeyboardEvent('keydown', { key:'Tab', cancelable:true }))
-    expect(document.activeElement).toBe(flyout.querySelector('.ihr-flyout__actions button'))
+    expect(document.activeElement).toBe(flyout.querySelector('.ihr-flyout__swatch'))
     document.dispatchEvent(new KeyboardEvent('keydown', { key:'Tab', shiftKey:true, cancelable:true }))
     expect(document.activeElement).toBe(close)
   })

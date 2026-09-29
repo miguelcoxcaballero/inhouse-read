@@ -54,7 +54,7 @@ test('conecta Google sin redirección y muestra la foto en la esquina derecha', 
   await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   expect(await page.evaluate(() => window.__oauthOptions.redirect_uri)).toBeUndefined()
   await button.click()
-  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.0.22')
+  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.0.23')
   await expect(page.locator('#drive-theme-toggle')).toBeVisible()
   await expect(page.locator('#drive-profile-initial-menu')).toBeHidden()
   await page.locator('#drive-theme-toggle').check()
@@ -137,6 +137,57 @@ test('abre un PDF local y navega al visor de lectura', async ({ page }) => {
   const canvasSize = await canvas.evaluate(el => ({ w: el.width, h: el.height }))
   expect(canvasSize.w).toBeGreaterThan(0)
   expect(canvasSize.h).toBeGreaterThan(0)
+})
+
+test('permite elegir un tono o un color libre y conservarlo', async ({ page }) => {
+  await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+  await page.getByRole('button', { name:'Volver a la estantería' }).click()
+
+  const spine = page.locator('.ihr-spine').first()
+  await expect(spine).toBeVisible()
+  const original = await spine.evaluate(node => getComputedStyle(node).getPropertyValue('--ihr-spine-base').trim())
+  await spine.click()
+  const dialog = page.locator('.ihr-flyout')
+  await expect(dialog).toHaveClass(/is-ready/)
+  const swatches = dialog.locator('.ihr-flyout__swatch')
+  await expect(swatches).toHaveCount(3)
+  const chosen = await swatches.nth(1).getAttribute('data-color')
+  await swatches.nth(1).click()
+  await expect(swatches.nth(1)).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(() => spine.evaluate(node => getComputedStyle(node).getPropertyValue('--ihr-spine-base').trim()))
+    .not.toBe(original)
+  const custom = '#3b72a5'
+  await dialog.locator('input[type="color"]').evaluate((input, value) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value)
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  }, custom)
+  await expect.poll(() => spine.evaluate(node => getComputedStyle(node).getPropertyValue('--ihr-spine-base').trim())).toBe(custom)
+  await expect(dialog.locator('.ihr-flyout__custom-color')).toHaveClass(/is-selected/)
+  await expect.poll(() => page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('inhouse-read')
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    return new Promise((resolve, reject) => {
+      const request = db.transaction('books', 'readonly').objectStore('books').getAll()
+      request.onsuccess = () => resolve(request.result[0]?.spineColorOverride)
+      request.onerror = () => reject(request.error)
+    })
+  })).toBe(custom)
+
+  await dialog.locator('.ihr-flyout__close').click()
+  await expect(dialog).toBeHidden()
+  await page.reload()
+  const reopenedSpine = page.locator('.ihr-spine').first()
+  await expect(reopenedSpine).toBeVisible()
+  await expect.poll(() => reopenedSpine.evaluate(node => getComputedStyle(node).getPropertyValue('--ihr-spine-base').trim())).toBe(custom)
+  await reopenedSpine.click()
+  const reopenedDialog = page.locator('.ihr-flyout')
+  await expect(reopenedDialog).toHaveClass(/is-ready/)
+  await expect(reopenedDialog.locator('.ihr-flyout__custom-color')).toHaveClass(/is-selected/)
+  await expect(reopenedDialog.locator('input[type="color"]')).toHaveValue(custom)
 })
 
 test('el libro abierto reaparece en la estantería al volver', async ({ page }) => {
