@@ -1466,6 +1466,13 @@ class ApkBuilderApp(tk.Tk):
                 node.set(f"{ns}name", permission)
                 root.insert(0, node)
 
+        queries = root.find("queries")
+        if queries is None:
+            queries = ET.SubElement(root, "queries")
+        if not any(action.get(f"{ns}name") == "android.intent.action.TTS_SERVICE" for action in queries.findall("intent/action")):
+            tts_intent = ET.SubElement(queries, "intent")
+            ET.SubElement(tts_intent, "action", {f"{ns}name": "android.intent.action.TTS_SERVICE"})
+
         application = root.find("application")
         if application is not None:
             application.set(f"{ns}label", app_name)
@@ -1539,6 +1546,9 @@ class ApkBuilderApp(tk.Tk):
         main_src_root = project_dir / "android" / "app" / "src" / "main"
         java_file = main_src_root / "java" / Path(*package_id.split(".")) / "MainActivity.java"
         kotlin_file = main_src_root / "kotlin" / Path(*package_id.split(".")) / "MainActivity.kt"
+        speech_file = main_src_root / "java" / Path(*package_id.split(".")) / "ReadAloudBridge.java"
+        speech_file.parent.mkdir(parents=True, exist_ok=True)
+        speech_file.write_text(Path(__file__).with_name("ReadAloudBridge.java").read_text(encoding="utf-8").replace("__PACKAGE__", package_id), encoding="utf-8")
 
         if java_file.exists():
             java_file.write_text(
@@ -1579,6 +1589,11 @@ import java.security.MessageDigest;
 import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {{
+    private ReadAloudBridge speechBridge;
+    @Override public void onDestroy() {{
+        if (speechBridge != null) speechBridge.close();
+        super.onDestroy();
+    }}
     private String pendingOAuthQuery = null;
     // OAuth callback handling follows Inhouse Notes MainActivity.java.
     @Override
@@ -1692,6 +1707,8 @@ public class MainActivity extends BridgeActivity {{
         cookieManager.setAcceptThirdPartyCookies(webView, true);
         cookieManager.flush();
 
+        speechBridge = new ReadAloudBridge(this, webView);
+        webView.addJavascriptInterface(speechBridge, "InhouseSpeech");
         webView.addJavascriptInterface(new InhouseNativeBridge(), "InhouseNative");
         handleAppCallback(getIntent());
     }}
@@ -1915,6 +1932,11 @@ import java.security.MessageDigest
 import org.json.JSONObject
 
 class MainActivity : BridgeActivity() {{
+    private var speechBridge: ReadAloudBridge? = null
+    override fun onDestroy() {{
+        speechBridge?.close()
+        super.onDestroy()
+    }}
     private var pendingOAuthQuery: String? = null
     // OAuth callback handling follows Inhouse Notes MainActivity.kt.
     override fun onNewIntent(intent: Intent) {{
@@ -2017,6 +2039,8 @@ class MainActivity : BridgeActivity() {{
             flush()
         }}
 
+        speechBridge = ReadAloudBridge(this, webView)
+        webView.addJavascriptInterface(speechBridge!!, "InhouseSpeech")
         webView.addJavascriptInterface(InhouseNativeBridge(), "InhouseNative")
         handleAppCallback(intent)
     }}

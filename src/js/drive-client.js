@@ -474,6 +474,8 @@ export async function writeDriveProgress(driveFileId, progress, stateFileId) {
     schemaVersion: 1, driveFileId,
     fraction: Math.min(1, Math.max(0, Number(progress.fraction) || 0)),
     locator: progress.locator ?? null,
+    readingHistory: Array.isArray(progress.readingHistory) ? progress.readingHistory.slice(0,20) : [],
+    bookmarks: Array.isArray(progress.bookmarks) ? progress.bookmarks.slice(0,100) : [],
     updatedAt: Number(progress.updatedAt) || Date.now()
   })
   const file = new File([body], stateName(driveFileId), { type: 'application/json' })

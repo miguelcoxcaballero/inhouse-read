@@ -24,6 +24,20 @@ beforeEach(() => {
 afterEach(async () => { sync.reset(); await library.close() })
 
 describe('CloudSync', () => {
+  it('carries bookmarks and the pre-jump reading position between devices', async () => {
+    const book = await library.addOrTouch({ sourceType:'local', name:'places.pdf', size:5, driveFileId:'places-drive', cloudAccountId:'account-1' })
+    const readingHistory = [{fraction:.25,locator:{kind:'pdf-page',value:2},label:'Página 2',createdAt:50}]
+    const bookmarks = [{fraction:.5,locator:{kind:'pdf-page',value:3},label:'Página 3',createdAt:60}]
+    await library.updateProgress(book.id,.75,{kind:'pdf-page',value:4})
+    await library.patch(book.id,{readingHistory,bookmarks})
+    drive.writeDriveProgress.mockResolvedValue({id:'places-state'})
+    await sync.syncBookProgress(book.id)
+    expect(drive.writeDriveProgress.mock.calls[0][1]).toMatchObject({readingHistory,bookmarks})
+    drive.readDriveProgress.mockResolvedValue({fraction:.9,locator:{kind:'pdf-page',value:5},readingHistory,bookmarks,updatedAt:Date.now()+10000,stateFileId:'places-state'})
+    await library.patch(book.id,{readingHistory:[],bookmarks:[]})
+    await sync.syncBookProgress(book.id)
+    expect(await library.get(book.id)).toMatchObject({readingHistory,bookmarks,locator:{kind:'pdf-page',value:5}})
+  })
   it('vincula el libro local al de Drive sin duplicarlo y recupera su posición', async () => {
     const local = await library.addOrTouch({ sourceType: 'local', name: 'book.pdf', title: 'book', size: 123,
       content: new Blob(['pdf'], { type: 'application/pdf' }) })

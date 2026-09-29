@@ -48,6 +48,7 @@ export function attachSwipeNavigation(el, { onNext, onPrev, onToggleZoom, onTogg
   }
 
   const onPointerUp = e => {
+    if (e.target?.closest?.('a,button,input,select,textarea') || el.ownerDocument?.getSelection()?.toString()) return
     const dx = e.clientX - startX
     const dy = e.clientY - startY
     const durationMs = performance.now() - startTime

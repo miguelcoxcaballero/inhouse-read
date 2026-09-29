@@ -7,8 +7,8 @@
   una página de pruebas).
 
   Notas de implementación:
-   - La madera es CSS (gradientes repetidos), no imágenes: cero peso y se
-     adapta al tema.
+   - Madera y plantas usan fotografías propias optimizadas en WebP. Las
+     sombras y la iluminación se adaptan al tema mediante CSS.
    - El libro se anima como malla WebGL; el fondo y los controles usan opacity.
    - `--ihr-accent-legible` es el verde para TEXTO: en oscuro sube a un verde
      claro porque #2f6b4f sobre #151515 no llega a contraste AA.
@@ -25,7 +25,7 @@
   --ihr-soil: #4a3a2c;
   --ihr-bloom: var(--copper, #d97736);
   --ihr-shelf-height: 172px;
-  --ihr-board-thickness: 11px;
+  --ihr-board-thickness: 16px;
   /* Hueco sobre los lomos para que asome el marcapáginas. Tiene que ser >=
      DEFAULT_BOOKMARK.maxPeek (bookshelf-layout.js): `content-visibility`
      en .ihr-shelf recorta todo lo que se salga de la caja de la balda. */
@@ -154,12 +154,17 @@
   right: 0;
   top: 0;
   height: calc(var(--ihr-bookmark-room) + var(--ihr-shelf-height) + var(--ihr-board-thickness));
-  background: linear-gradient(180deg, transparent 16%, var(--ihr-wall) 62%, var(--ihr-wall-deep));
-  border-radius: 12px 12px 2px 2px;
+  background:
+    linear-gradient(110deg, rgba(247,241,227,.91), rgba(232,218,197,.88)),
+    url('../assets/library/walnut.webp') center / 760px auto;
+  box-shadow:inset 0 12px 25px -18px #37271755, inset 8px 0 14px -14px #37271788, inset -8px 0 14px -14px #37271788;
+  border-radius: 4px 4px 0 0;
 }
+[data-theme='dark'] .ihr-shelf__back { background:linear-gradient(110deg,#23251fea,#171b17e8),url('../assets/library/walnut.webp') center / 760px auto; box-shadow:inset 0 12px 24px -12px #0009; }
 
 .ihr-shelf__row {
   position: relative;
+  z-index:2;
   display: flex;
   align-items: flex-end;
   gap: 3px;
@@ -182,19 +187,23 @@
 /* El tablero: veta, canto frontal iluminado y sombra proyectada. */
 .ihr-shelf__board {
   position: relative;
+  z-index:1;
   height: var(--ihr-board-thickness);
   border-radius: 2px 2px 3px 3px;
   background:
-    repeating-linear-gradient(1deg, transparent 0 3px, rgba(58, 38, 16, .12) 3.5px, transparent 4px 7px),
-    linear-gradient(90deg, transparent, rgba(255, 244, 216, .14) 35%, transparent 75%),
-    linear-gradient(180deg, var(--ihr-board-light) 0 2px, var(--ihr-board) 3px 8px, var(--ihr-board-dark));
+    linear-gradient(180deg, #fce6c14d, transparent 18%, #2a170d44 92%, #2a170d88),
+    url('../assets/library/walnut.webp') 40% 48% / 780px auto;
   box-shadow:
     0 1px 0 rgba(255, 255, 255, 0.24) inset,
     0 3px 3px -2px rgba(44, 31, 18, .2),
-    0 12px 18px -10px rgba(44, 31, 18, .28);
+    0 14px 16px -8px rgba(44, 31, 18, .35),
+    0 28px 32px -14px rgba(44, 31, 18, .18);
 }
 
-.ihr-shelf__board::before { content:''; position:absolute; inset:-4px 0 auto; height:4px; background:linear-gradient(180deg, transparent, rgba(40,30,20,.13)); pointer-events:none; }
+.ihr-shelf__board::before { content:''; position:absolute; inset:-13px 0 auto; height:13px; background:linear-gradient(180deg,#40291466,#fce5bf22),url('../assets/library/walnut.webp') 50% 12% / 780px auto; clip-path:polygon(1% 0,99% 0,100% 100%,0 100%); box-shadow:inset 0 -1px #fbe8c866; pointer-events:none; }
+[data-theme='dark'] .ihr-shelf__board { filter:brightness(.65) saturate(.8); }
+.ihr-plant--photo img { display:block; width:100%; height:100%; object-fit:contain; object-position:center bottom; }
+.ihr-plant--photo { filter:drop-shadow(5px 3px 3px #3323192e); transform:translateY(1px); }
 
 /* ------------------------------------------------------------------ *
  * Lomos

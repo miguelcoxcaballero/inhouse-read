@@ -1,0 +1,22 @@
+{
+  "tool": "Built-in image_gen",
+  "assets": "src/assets/library/*.webp",
+  "processing": "WebP encoding and proportional resizing for delivery, preserving alpha.",
+  "prompts": [
+    {
+      "key": "wood",
+      "transparent_background": false,
+      "prompt": "Use case: photorealistic-natural. Asset type: photographic wood texture for an ebook library's actual wooden shelf boards, NOT a UI mockup. Generate a landscape close-up photograph filling the entire image edge to edge of warm medium walnut wood. Straight horizontal natural grain running left to right, refined gently aged oiled finish, small authentic pores, subtle uneven warm brown grain, no strong knots, no planks, no objects, no borders, no text. Flat orthographic macro capture, even soft diffuse daylight, realistic tactile material, restrained contrast. The entire image is only walnut wood surface, designed to be used as a background texture across a narrow shelf edge."
+    },
+    {
+      "key": "pothos",
+      "transparent_background": true,
+      "prompt": "Use case: product-mockup. Asset type: transparent PNG cutout to place on a photorealistic bookshelf. A real small lush pothos houseplant in a handmade cream ceramic pot with fine speckles and slightly irregular rim. Heart-shaped green leaves with delicate natural variegation, some leaves drooping around the pot but none below its base. Full entire plant and pot visible, centered, pot base close to the bottom edge, generous tiny margin, portrait composition. Real photographic botanical product photography, camera straight on with slightly visible soil, soft natural window light from upper left, fine organic leaf veins, believable imperfect leaves, realistic glaze, no illustration, no CGI look. Isolated on genuinely transparent background, no floor, no backdrop, no text or props. Soft contact shadow only just beneath the pot."
+    },
+    {
+      "key": "snake",
+      "transparent_background": true,
+      "prompt": "Use case: product-mockup. Asset type: transparent botanical cutout for a photographic bookshelf. A real small sansevieria houseplant with 7 varied upright spear shaped leaves, dark sage green bands and restrained pale green edges, planted in a short warm weathered terracotta pot. Full entire plant and pot visible, centered, pot base close to bottom edge, portrait composition with small margin. Photographic realism with tactile clay pores, natural leaf imperfections, real soft daylight from upper left, camera straight on slightly above pot rim. No illustration, no CGI, no text or extra objects. Genuinely transparent background, no floor or backdrop, tiny soft contact shadow under the pot."
+    }
+  ]
+}

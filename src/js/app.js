@@ -14,6 +14,7 @@ import {
 import { initAndroidUpdateChecks, offerAvailableAndroidUpdate } from './android-update.js'
 import { initContentFreshnessChecks } from './content-freshness.js'
 import { normalizeBookTitle } from './book-title.js'
+import { ReaderExperience } from './readers/reader-experience.js'
 
 const library = new LibraryStore()
 const reader = new ReaderController()
@@ -70,6 +71,16 @@ let driveUploadsInFlight = 0
 const cloudSync = new CloudSync(library, {
   onStatus: setDriveSyncStatus,
   onChange: refreshShelf
+})
+const readingExperience = new ReaderExperience(reader, {
+  persist: async (bookId, fields) => {
+    const previous = progressWrites.get(bookId) || Promise.resolve()
+    const write = previous.catch(() => {}).then(() => library.patch(bookId, {
+      ...fields, progressUpdatedAt:Date.now(), progressDirty:true
+    })).then(() => { if (hasDriveSession()) cloudSync.scheduleProgress(bookId) })
+    progressWrites.set(bookId, write)
+    try { await write } finally { if (progressWrites.get(bookId) === write) progressWrites.delete(bookId) }
+  }
 })
 
 // ---- Tema (idéntico al patrón de Inhouse Notes: data-theme + persistido) ----
@@ -293,6 +304,7 @@ els.filePicker.addEventListener('change', async () => {
 // ---- Apertura y lectura ----
 
 async function openFile(file, { existingRecord, forcedId, folderFileName, transition, preparing = false } = {}) {
+  readingExperience.reset()
   currentBookId = null
   els.readerToolbar.hidden = Boolean(transition) || preparing
   if (preparing) {
@@ -305,6 +317,8 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
   try {
     format = await reader.open(els.readerViewport, file, {
       onRelocate: onReaderRelocate,
+      onUserNavigation: () => readingExperience.voice.stop(),
+      onFollowLink: href => readingExperience.jump(null, href),
       onToggleChrome: () => { els.readerToolbar.hidden = !els.readerToolbar.hidden }
     })
   } catch (err) {
@@ -367,6 +381,7 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
     try { await reader.goToLocator(existingRecord.locator, existingRecord.progressFraction) }
     finally { restoringProgress = false }
   }
+  await readingExperience.open(record)
 
   if (!preparing) refreshShelf()
   if (!preparing) extractCoverInBackground(record)
@@ -658,6 +673,7 @@ function extractCoverInBackground(record) {
 
 function onReaderRelocate({ fraction, cfi, index }) {
   els.readerProgressFill.style.width = `${Math.round((fraction ?? 0) * 100)}%`
+  readingExperience.relocate()
   if (!currentBookId || restoringProgress) return
   const locator = cfi ? { kind: 'cfi', value: cfi }
     : Number.isInteger(index) && reader.format?.engine === 'pdf' ? { kind: 'pdf-page', value: index + 1 }
@@ -672,6 +688,7 @@ function onReaderRelocate({ fraction, cfi, index }) {
 }
 
 els.readerBack.addEventListener('click', () => {
+  readingExperience.reset()
   const bookId = currentBookId
   const pendingProgress = progressWrites.get(bookId)
   reader.close()
@@ -691,8 +708,8 @@ els.readerBack.addEventListener('click', () => {
   refreshShelf()
   returnFlight?.catch(error => console.warn('No se pudo devolver el libro a la estantería:', error))
 })
-els.readerPrev.addEventListener('click', () => reader.prev())
-els.readerNext.addEventListener('click', () => reader.next())
+els.readerPrev.addEventListener('click', () => readingExperience.step(-1))
+els.readerNext.addEventListener('click', () => readingExperience.step(1))
 
 // ---- Google Drive ----
 
@@ -747,7 +764,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.0.27'
+els.appVersion.textContent = 'Inhouse Read · v1.1.0'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')

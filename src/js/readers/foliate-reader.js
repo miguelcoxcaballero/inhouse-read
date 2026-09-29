@@ -11,19 +11,23 @@
 
 import 'foliate-js/view.js'
 import { attachSwipeNavigation } from '../gestures.js'
+import { DEFAULT_READING_PREFERENCES, readingCSS, normalizeReadingPreferences } from './reading-preferences.js'
 
 export class FoliateReader {
   #view
   #container
   #onRelocate = () => {}
   #detachGestures = () => {}
+  #preferences = { ...DEFAULT_READING_PREFERENCES }
+  #documentGestures = []
 
-  async open(container, file, { onRelocate, onToggleChrome } = {}) {
+  async open(container, file, { onRelocate, onToggleChrome, onUserNavigation, onFollowLink } = {}) {
     this.#container = container
     this.#onRelocate = onRelocate ?? (() => {})
 
     container.innerHTML = ''
     container.classList.add('foliate-reader')
+    container.classList.remove('pdf-reader')
 
     this.#view = document.createElement('foliate-view')
     this.#view.classList.add('foliate-view-el')
@@ -33,10 +37,18 @@ export class FoliateReader {
     // propios (ver HANDOFF-FORMATOS.md): reusamos el mismo detector de
     // swipe/tap que el lector de PDF para que la sensación táctil sea
     // idéntica entre formatos.
-    this.#detachGestures = attachSwipeNavigation(container, {
-      onNext: () => this.next(),
-      onPrev: () => this.prev(),
+    const gestures = {
+      onNext: () => { onUserNavigation?.(); return this.next() },
+      onPrev: () => { onUserNavigation?.(); return this.prev() },
       onToggleChrome
+    }
+    this.#detachGestures = attachSwipeNavigation(container, gestures)
+    this.#view.addEventListener('load', event => {
+      // Events inside the book iframe do not bubble to the outer viewport.
+      this.#documentGestures.push(attachSwipeNavigation(event.detail.doc.documentElement, gestures))
+    })
+    this.#view.addEventListener('link', event => {
+      if (onFollowLink) { event.preventDefault(); onFollowLink(event.detail.href) }
     })
 
     this.#view.addEventListener('relocate', e => {
@@ -84,28 +96,33 @@ export class FoliateReader {
   async goToCfi(cfi) {
     if (cfi) await this.#view?.goTo(cfi)
   }
+  async goToTarget(target) { await this.#view?.goTo(target) }
+  async getSpeechText() {
+    return this.#view?.lastLocation?.range?.toString() || ''
+  }
+  async applyPreferences(preferences) {
+    this.#preferences = normalizeReadingPreferences(preferences)
+    this.#view?.renderer?.setAttribute('flow', this.#preferences.flow)
+    this.#view?.renderer?.setAttribute('margin', String(this.#preferences.margin))
+    this.#applyReaderStyles()
+  }
 
   #applyReaderStyles() {
     // foliate-js permite inyectar CSS propio dentro de cada documento
     // renderizado vía renderer.setStyles(), para que la tipografía del
     // texto del libro use nuestra misma fuente base y las columnas
     // respiren igual que el resto de la UI.
-    const css = `
-      @namespace epub "http://www.idpf.org/2007/ops";
-      html, body { color-scheme: light dark; }
-      body {
-        font-family: var(--f-body, 'DM Sans', sans-serif);
-        line-height: 1.6;
-      }
-    `
+    const css = readingCSS(this.#preferences)
     this.#view?.renderer?.setStyles?.(css)
   }
 
   close() {
     this.#detachGestures()
+    for (const detach of this.#documentGestures) detach()
+    this.#documentGestures = []
     this.#view?.close()
     this.#view?.remove()
     this.#view = null
-    if (this.#container) this.#container.innerHTML = ''
+    if (this.#container) { this.#container.innerHTML = ''; this.#container.classList.remove('foliate-reader') }
   }
 }

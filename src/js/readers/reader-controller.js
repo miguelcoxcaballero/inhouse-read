@@ -11,8 +11,10 @@ export class ReaderController {
   #engine
   #reader
   #format
+  #location = { fraction:0, locator:null }
 
-  async open(container, file, { onRelocate, onToggleChrome } = {}) {
+  async open(container, file, { onRelocate, onToggleChrome, onUserNavigation, onFollowLink } = {}) {
+    this.close()
     this.#format = await detectFormat(file)
     if (!isSupported(this.#format)) {
       throw new UnsupportedFormatError(
@@ -20,15 +22,24 @@ export class ReaderController {
       )
     }
 
+    this.#engine = this.#format.engine
+    const relocate = data => {
+      this.#location = {
+        fraction: Math.min(1, Math.max(0, Number(data.fraction) || 0)),
+        locator: data.cfi ? { kind:'cfi', value:data.cfi }
+          : this.#engine === ENGINE.PDF ? { kind:'pdf-page', value:(data.index || 0) + 1 } : null
+      }
+      onRelocate?.(data)
+    }
     if (this.#format.engine === ENGINE.PDF) {
       const { PdfReader } = await import('./pdf-reader.js')
       this.#reader = new PdfReader()
       const buffer = await file.arrayBuffer()
-      await this.#reader.open(container, buffer, { onRelocate, onToggleChrome })
+      await this.#reader.open(container, buffer, { onRelocate:relocate, onToggleChrome, onUserNavigation })
     } else {
       const { FoliateReader } = await import('./foliate-reader.js')
       this.#reader = new FoliateReader()
-      await this.#reader.open(container, file, { onRelocate, onToggleChrome })
+      await this.#reader.open(container, file, { onRelocate:relocate, onToggleChrome, onUserNavigation, onFollowLink })
     }
 
     this.#engine = this.#format.engine
@@ -43,6 +54,12 @@ export class ReaderController {
   get metadata() {
     return this.#reader?.metadata ?? {}
   }
+  get location() { return this.#location }
+  get language() { const lang = this.metadata.language; return (Array.isArray(lang) ? lang[0] : lang) || navigator.language }
+  get toc() { return this.#reader?.toc ?? [] }
+  async goToTarget(target) { await this.#reader?.goToTarget?.(target) }
+  async applyPreferences(preferences) { await this.#reader?.applyPreferences?.(preferences) }
+  async getSpeechText() { return await this.#reader?.getSpeechText?.() || '' }
 
   /** Portada como Blob: miniatura de la página 1 en PDF, embebida en EPUB/MOBI. */
   async getCoverBlob() {
@@ -90,5 +107,6 @@ export class ReaderController {
   close() {
     this.#reader?.close()
     this.#reader = null
+    this.#location = { fraction:0, locator:null }
   }
 }

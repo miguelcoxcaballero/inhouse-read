@@ -10,6 +10,7 @@ import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { TextLayer } from 'pdfjs-dist'
 import { attachSwipeNavigation } from '../gestures.js'
+import { DEFAULT_READING_PREFERENCES, READING_FONTS, normalizeReadingPreferences } from './reading-preferences.js'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -30,8 +31,12 @@ export class PdfReader {
   #renderToken = 0
   #onRelocate = () => {}
   #detachGestures = () => {}
+  #preferences = { ...DEFAULT_READING_PREFERENCES }
+  #reflow
+  #renderTask
+  #textTask
 
-  async open(container, arrayBuffer, { onRelocate, onToggleChrome } = {}) {
+  async open(container, arrayBuffer, { onRelocate, onToggleChrome, onUserNavigation } = {}) {
     this.#container = container
     this.#onRelocate = onRelocate ?? (() => {})
 
@@ -40,6 +45,7 @@ export class PdfReader {
 
     container.innerHTML = ''
     container.classList.add('pdf-reader')
+    container.classList.remove('foliate-reader')
 
     this.#pageWrap = document.createElement('div')
     this.#pageWrap.className = 'pdf-page-wrap'
@@ -50,10 +56,14 @@ export class PdfReader {
 
     this.#pageWrap.append(this.#canvas, this.#textLayerEl)
     container.append(this.#pageWrap)
+    this.#reflow = document.createElement('article')
+    this.#reflow.className = 'pdf-reflow-page'
+    this.#reflow.hidden = true
+    container.append(this.#reflow)
 
     this.#detachGestures = attachSwipeNavigation(container, {
-      onNext: () => this.next(),
-      onPrev: () => this.prev(),
+      onNext: () => { onUserNavigation?.(); return this.next() },
+      onPrev: () => { onUserNavigation?.(); return this.prev() },
       onToggleZoom: (x, y) => this.toggleZoom(x, y),
       onToggleChrome
     })
@@ -71,9 +81,11 @@ export class PdfReader {
 
   async goToPage(n) {
     if (!this.#doc) return
-    const clamped = Math.min(Math.max(1, n), this.#doc.numPages)
+    const clamped = Math.min(Math.max(1, Math.round(Number(n) || 1)), this.#doc.numPages)
     this.#pageNum = clamped
-    await this.#render()
+    const rendered = await this.#render()
+    if (!rendered || this.#pageNum !== clamped) return
+    this.#container.scrollTop = 0
     this.#onRelocate({
       index: this.#pageNum - 1,
       fraction: (this.#pageNum - 1) / Math.max(1, this.#doc.numPages - 1 || 1)
@@ -103,13 +115,24 @@ export class PdfReader {
 
   async #render() {
     const token = ++this.#renderToken
+    this.#renderTask?.cancel()
+    this.#textTask?.cancel()
     const page = await this.#doc.getPage(this.#pageNum)
-    if (token !== this.#renderToken) return
+    if (token !== this.#renderToken) return false
+    const textMode = this.#preferences.pdfMode === 'text'
+    this.#pageWrap.hidden = textMode
+    this.#reflow.hidden = !textMode
+    if (textMode) {
+      const content = await page.getTextContent()
+      if (token !== this.#renderToken) return false
+      this.#reflow.textContent = content.items.map(item => item.str + (item.hasEOL ? '\n' : ' ')).join('') || 'Esta página es una imagen. Cambia a Página original para verla.'
+      return true
+    }
 
     const containerWidth = this.#container.clientWidth || 360
     const unscaledViewport = page.getViewport({ scale: 1 })
     this.#baseScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, containerWidth / unscaledViewport.width))
-    const scale = this.#baseScale * (this.#zoomed ? ZOOM_STEP_SCALE : 1)
+    const scale = this.#baseScale * (this.#zoomed ? ZOOM_STEP_SCALE : this.#preferences.zoom / 100)
 
     const dpr = window.devicePixelRatio || 1
     const viewport = page.getViewport({ scale: scale * dpr })
@@ -120,8 +143,12 @@ export class PdfReader {
     this.#canvas.style.height = `${viewport.height / dpr}px`
 
     const ctx = this.#canvas.getContext('2d')
-    await page.render({ canvasContext: ctx, viewport }).promise
-    if (token !== this.#renderToken) return
+    this.#renderTask = page.render({ canvasContext: ctx, viewport })
+    try { await this.#renderTask.promise } catch (error) {
+      if (error.name === 'RenderingCancelledException') return false
+      throw error
+    }
+    if (token !== this.#renderToken) return false
 
     // Capa de texto seleccionable, alineada 1:1 con el canvas ya renderizado.
     this.#textLayerEl.replaceChildren()
@@ -129,12 +156,32 @@ export class PdfReader {
     this.#textLayerEl.style.height = `${viewport.height / dpr}px`
     const cssViewport = page.getViewport({ scale })
     const textContent = await page.getTextContent()
+    if (token !== this.#renderToken) return false
     const textLayer = new TextLayer({
       textContentSource: textContent,
       container: this.#textLayerEl,
       viewport: cssViewport
     })
-    await textLayer.render()
+    this.#textTask = textLayer
+    try { await textLayer.render() } catch (error) { if (token !== this.#renderToken) return false; throw error }
+    return token === this.#renderToken
+  }
+
+  async getSpeechText() {
+    if (!this.#doc) return ''
+    const page = await this.#doc.getPage(this.#pageNum)
+    const text = await page.getTextContent()
+    return text.items.map(item => item.str + (item.hasEOL ? '\n' : ' ')).join('')
+  }
+  async applyPreferences(preferences) {
+    const previous = this.#preferences
+    this.#preferences = normalizeReadingPreferences(preferences)
+    const p = this.#preferences
+    Object.assign(this.#reflow.style, {
+      fontFamily:READING_FONTS[p.font], fontSize:`${p.fontSize}px`, lineHeight:String(p.lineHeight),
+      padding:`32px ${p.margin}px 80px`, textAlign:p.align
+    })
+    if (this.#doc && (previous.pdfMode !== p.pdfMode || previous.zoom !== p.zoom)) await this.#render()
   }
 
   /** Miniatura de la página 1 como Blob, para la portada de la estantería. */
@@ -157,12 +204,15 @@ export class PdfReader {
   }
 
   close() {
+    ++this.#renderToken
+    this.#renderTask?.cancel()
+    this.#textTask?.cancel()
     this.#detachGestures()
     // PDFDocumentProxy no expone destroy(): la limpieza vive en el
     // loadingTask (ver pdfjs-dist/build/pdf.mjs, PDFDocumentLoadingTask).
     this.#loadingTask?.destroy()
     this.#loadingTask = null
     this.#doc = null
-    if (this.#container) this.#container.innerHTML = ''
+    if (this.#container) { this.#container.innerHTML = ''; this.#container.classList.remove('pdf-reader') }
   }
 }

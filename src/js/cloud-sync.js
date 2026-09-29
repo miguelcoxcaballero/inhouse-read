@@ -3,6 +3,7 @@ import {
   readDriveProgress, writeDriveProgress
 } from './drive-client.js'
 import { normalizeBookTitle } from './book-title.js'
+import { cleanPlaces } from './readers/reading-state.js'
 
 const EXTENSIONS = /\.(pdf|epub|mobi|azw|azw3|fb2|cbz)$/i
 
@@ -133,6 +134,8 @@ export class CloudSync {
       (remoteUpdatedAt === localUpdatedAt && !record.progressDirty))) {
       await this.#library.patch(record.id, {
         progressFraction: remote.fraction, locator: remote.locator,
+        ...(Array.isArray(remote.readingHistory) ? { readingHistory:cleanPlaces(remote.readingHistory) } : {}),
+        ...(Array.isArray(remote.bookmarks) ? { bookmarks:cleanPlaces(remote.bookmarks,100) } : {}),
         progressUpdatedAt: remoteUpdatedAt, progressDirty: false,
         progressStateFileId: remote.stateFileId
       })
@@ -142,6 +145,7 @@ export class CloudSync {
     if (!localHasProgress) return
     const snapshot = {
       fraction: record.progressFraction, locator: record.locator,
+      readingHistory:cleanPlaces(record.readingHistory), bookmarks:cleanPlaces(record.bookmarks,100),
       updatedAt: localUpdatedAt || Date.now()
     }
     const uploaded = await writeDriveProgress(record.driveFileId, snapshot,
@@ -151,7 +155,9 @@ export class CloudSync {
     if (!latest) return
     const unchanged = (Number(latest.progressUpdatedAt) || 0) === localUpdatedAt &&
       Number(latest.progressFraction) === Number(snapshot.fraction) &&
-      JSON.stringify(latest.locator ?? null) === JSON.stringify(snapshot.locator ?? null)
+      JSON.stringify(latest.locator ?? null) === JSON.stringify(snapshot.locator ?? null) &&
+      JSON.stringify(cleanPlaces(latest.readingHistory)) === JSON.stringify(snapshot.readingHistory) &&
+      JSON.stringify(cleanPlaces(latest.bookmarks,100)) === JSON.stringify(snapshot.bookmarks)
     await this.#library.patch(record.id, {
       ...(unchanged ? { progressDirty: false, progressUpdatedAt: snapshot.updatedAt } : {}),
       progressStateFileId: uploaded.id

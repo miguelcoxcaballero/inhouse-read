@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="/src/css/app.css" />
   <link rel="stylesheet" href="/src/css/bookshelf.css" />
   <link rel="stylesheet" href="/src/css/android-update.css" />
+  <link rel="stylesheet" href="/src/css/reading.css" />
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 
 </head>
@@ -94,13 +95,15 @@
             <path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/>
           </svg>
         </button>
-        <div class="reader-progress"><div id="reader-progress-fill" class="reader-progress-fill"></div></div>
+        <button id="reader-location" class="reader-location" type="button" aria-label="Progreso y capítulos"><span class="reader-location-label">Página 1</span><span class="reader-progress"><span id="reader-progress-fill" class="reader-progress-fill"></span></span></button>
         <span id="reader-format-badge" class="file-format-badge"></span>
         <button id="reader-next" class="icon-btn" type="button" aria-label="Página siguiente">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M13 17l5-5-5-5M6 17l5-5-5-5"/>
           </svg>
         </button>
+        <button id="reader-settings" class="icon-btn" type="button" aria-label="Aspecto de lectura"><span class="reader-type-icon" aria-hidden="true">Aa</span></button>
+        <button id="reader-audio" class="icon-btn" type="button" aria-label="Escuchar el libro"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-3a8 8 0 0 1 16 0v3M4 13H3v7h4v-7H4Zm16 0h1v7h-4v-7h3Z"/></svg></button>
       </div>
     </section>
   </div>

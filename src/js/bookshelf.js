@@ -50,10 +50,8 @@
  *    `--ihr-accent-legible`, que en oscuro sube a un verde claro (#8FBF9E) y
  *    se usa SÓLO para texto e iconos, nunca para superficies.
  *
- * 2. Madera y baldas. La balda es CSS puro (gradientes repetidos con veta y
- *    canto frontal), no una imagen: pesa cero, escala a cualquier ancho y
- *    responde al tema. Los lomos apoyan sobre el canto con una sombra de
- *    contacto corta, que es lo que vende el "están de pie ahí".
+ * 2. Madera y baldas. Textura fotográfica de nogal con iluminación y
+ *    sombras de contacto en CSS. Recursos propios en src/assets/library.
  *
  * 3. Los lomos conservan geometría y acabado deterministas. El color y la
  *    familia tipográfica se ajustan a la portada rasterizada: se muestrea su
@@ -62,12 +60,8 @@
  *    se conserva el aspecto de reserva. Con `pageCount`/`sizeBytes` el grosor
  *    es real, no inventado.
  *
- * 4. Plantas. Dibujadas a mano en SVG en `plants.js` (monstera, sansevieria,
- *    potus colgante, cactus y suculenta), con los colores en custom
- *    properties para que se apaguen en modo oscuro. Sin assets externos ni
- *    emojis: licencia limpia y coherencia con la iconografía dibujada a mano
- *    de Inhouse. Se colocan por reglas de empaquetado, no al azar: cada N
- *    libros y de remate cuando sobra balda (ver `layoutShelves`).
+ * 4. Plantas. Recortes fotográficos con transparencia, distribuidos por
+ *    las reglas de empaquetado. Su luz se adapta al modo oscuro.
  *
  * 5. Modelo propio en book-model.js: malla elíptica continua, tapas y hojas.
  *    Three.js dibuja la misma geometría en la balda y durante el giro.
@@ -105,7 +99,11 @@
 import { planBookshelf, bookmarkFor, withDefaults } from './bookshelf-layout.js';
 import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from './cover-appearance.js';
 import { bookColorOptions, spineColorStyle } from './book-colors.js';
-import { plantSvg, plantMeta } from './plants.js';
+const PLANT_PHOTOS = {
+  leafy: new URL('../assets/library/pothos.webp', import.meta.url).href,
+  succulent: new URL('../assets/library/succulent.webp', import.meta.url).href,
+  upright: new URL('../assets/library/sansevieria.webp', import.meta.url).href
+};
 import { bookView } from './book-model.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
@@ -719,17 +717,17 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function buildPlant(item) {
-    const meta = plantMeta(item.variant);
-    const height = Math.round(item.width / meta.aspect);
+    const upright = ['sansevieria', 'cactus'].includes(item.variant);
+    const succulent = item.variant === 'suculenta';
+    const height = Math.round(item.width * (upright ? 1.5 : succulent ? 1.057 : 1.094));
     return el('span', {
-      class: `ihr-plant ihr-plant--${meta.variant}`,
+      class: `ihr-plant ihr-plant--photo ihr-plant--${item.variant}`,
       'aria-hidden': 'true',
       style:
         `--ihr-plant-w:${item.width}px;` +
         `--ihr-plant-h:${height}px;` +
-        `--ihr-plant-overhang:${Math.round(height * meta.overhangRatio)}px`,
-      html: plantSvg(meta.variant, { seed: item.seed })
-    });
+        '--ihr-plant-overhang:0px'
+    }, [el('img', { src:PLANT_PHOTOS[upright ? 'upright' : succulent ? 'succulent' : 'leafy'], alt:'', width:item.width, height, decoding:'async', draggable:'false' })]);
   }
 
   function buildShelf(shelf) {
@@ -749,20 +747,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     for (const [variant, seed, width] of [
       ['sansevieria', 'empty-a', 52],
       ['monstera', 'empty-b', 64],
-      ['pothos', 'empty-c', 50]
+      ['suculenta', 'empty-c', 50]
     ]) {
-      const meta = plantMeta(variant);
-      const height = Math.round(width / meta.aspect);
-      row.append(
-        el('span', {
-          class: `ihr-plant ihr-plant--${variant}`,
-          'aria-hidden': 'true',
-          style:
-            `--ihr-plant-w:${width}px;--ihr-plant-h:${height}px;` +
-            `--ihr-plant-overhang:${Math.round(height * meta.overhangRatio)}px`,
-          html: plantSvg(variant, { seed })
-        })
-      );
+      row.append(buildPlant({ variant, seed, width }));
     }
     const shelf = el('div', { class: 'ihr-shelf ihr-shelf--empty' }, [
       el('div', { class: 'ihr-shelf__back', 'aria-hidden': 'true' }),

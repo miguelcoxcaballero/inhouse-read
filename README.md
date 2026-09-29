@@ -2,7 +2,14 @@
 
 Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguelcoxcaballero/inhousenotes): misma paleta, misma tipografía (Comfortaa + DM Sans), mismo patrón de despliegue a GitHub Pages.
 
-El home no es un grid de tarjetas: es una estantería ilustrada con plantas donde los libros se ven de canto. Al tocar uno, sale de la balda y gira en 3D hasta enseñar la portada antes de abrirse.
+La biblioteca es una estantería con madera y plantas fotográficas, donde los libros se ven de canto. Al tocar uno, sale de la balda y gira en 3D hasta enseñar la portada antes de abrirse.
+
+### Actualización web y Android · 1.1.0
+
+- Madera de nogal texturizada, profundidad y sombras de contacto; plantas fotográficas propias en cerámica y terracota. Recursos optimizados en `src/assets/library/`, con los prompts de creación en `docs/library-assets.json` y `docs/succulent-asset.txt`.
+- Lector con temas Papel, Sepia, Noche y Salvia; fuentes, tamaño, interlineado, márgenes, alineación y desplazamiento continuo para EPUB. Los PDF añaden zoom y un modo de texto adaptable para personalizar su texto extraíble.
+- Navegación por porcentaje, página PDF e índice de capítulos. Los marcadores, la última página y las posiciones anteriores a un salto se guardan en el dispositivo y se sincronizan con el progreso en Drive. El botón «Volver a…» recupera el punto anterior incluso después de cerrar el libro.
+- Lectura en voz alta con pausa, continuación, selección de voz, velocidad y temporizador; avance automático entre páginas. En Android 1.1.0 se utiliza TextToSpeech del sistema y en navegadores compatibles, Web Speech. Los documentos escaneados sin texto necesitan OCR; la función no genera ni descarga archivos de audiolibro. La disponibilidad de voces offline depende de las voces instaladas.
 
 ### Actualización web · 1.0.27
 
