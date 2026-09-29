@@ -98,7 +98,8 @@ test('movimiento reducido conserva los dos pasos y el foco del diálogo', async 
 test('editar el lomo en móvil muestra su modelo de canto y mantiene el editor estable', async ({ page }) => {
   const pageErrors = []
   page.on('pageerror', error => pageErrors.push(error.message))
-  await page.setViewportSize({ width:320, height:568 })
+  await page.setViewportSize({ width:390, height:844 })
+  await page.addInitScript(() => localStorage.setItem('inhouse-read-theme', 'dark'))
   await page.goto('/')
   await page.locator('#file-picker').setInputFiles(PDF)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
@@ -109,16 +110,35 @@ test('editar el lomo en móvil muestra su modelo de canto y mantiene el editor e
   await dialog.getByRole('button', { name:'Editar' }).click()
   await expect(dialog).toHaveClass(/is-editing-spine/)
   await expect(dialog.locator('.ihr-spine-editor')).toBeVisible()
+  await expect(dialog.getByRole('heading', { name:'Editar el lomo' })).toBeVisible()
   await expect(dialog.locator('.ihr-flyout__cover-target')).toBeHidden()
-  await expect.poll(() => dialog.locator('.ihr-flyout__book canvas').getAttribute('data-angle')).toBe('90')
+  const canvas = dialog.locator('.ihr-flyout__book canvas')
+  await expect.poll(() => canvas.getAttribute('data-angle')).toBe('90')
+  const centered = await canvas.evaluate(element => {
+    const ratio = element.width / innerWidth
+    const pixels = element.getContext('2d').getImageData(0, 0, element.width, element.height).data
+    let left=element.width, right=0, top=element.height, bottom=0
+    for (let y=0; y<element.height; y++) for (let x=0; x<element.width; x++) {
+      if (pixels[(y * element.width + x) * 4 + 3] < 24) continue
+      left=Math.min(left,x); right=Math.max(right,x); top=Math.min(top,y); bottom=Math.max(bottom,y)
+    }
+    return { centerX:(left+right)/2/ratio, bottom:bottom/ratio, panelTop:document.querySelector('.ihr-spine-editor').getBoundingClientRect().top }
+  })
+  expect(Math.abs(centered.centerX - 195)).toBeLessThan(18)
+  expect(centered.bottom).toBeLessThan(centered.panelTop + 8)
+  const lightMatch = await canvas.evaluate(element => ({
+    book:getComputedStyle(element.parentElement).filter,
+    shelf:getComputedStyle(document.querySelector('.ihr-spine')).filter
+  }))
+  expect(lightMatch.book).toBe(lightMatch.shelf)
 
   const title = dialog.getByRole('textbox', { name:'Texto del lomo' })
   await title.fill('Edición en móvil')
-  await expect.poll(() => dialog.locator('.ihr-flyout__book canvas').getAttribute('data-angle')).toBe('90')
+  await expect.poll(() => canvas.getAttribute('data-angle')).toBe('90')
   await dialog.getByRole('slider', { name:'Tamaño de fuente del lomo' }).fill('16')
   await dialog.getByRole('button', { name:'Tono cercano 1' }).click()
   await expect(title).toHaveValue('Edición en móvil')
-  await expect.poll(() => dialog.locator('.ihr-flyout__book canvas').getAttribute('data-angle')).toBe('90')
+  await expect.poll(() => canvas.getAttribute('data-angle')).toBe('90')
   await dialog.getByRole('button', { name:'Listo' }).click()
   await expect(dialog).not.toHaveClass(/is-editing-spine/)
   await expect(dialog.locator('.ihr-flyout__cover-target')).toBeVisible()

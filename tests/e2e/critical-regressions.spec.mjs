@@ -123,7 +123,6 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   await expect(reopenedSpine).toBeVisible()
   await reopenedSpine.evaluate(element => element.scrollIntoView({ block:'center' }))
   await expect.poll(() => reopenedSpine.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThan(0)
-  const spineSize = await reopenedSpine.evaluate(element => ({ width: element.offsetWidth, height: element.offsetHeight }))
   let fileChooserOpened = false
   page.on('filechooser', () => { fileChooserOpened = true })
   await reopenedSpine.click()
@@ -133,27 +132,21 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   await expect.poll(() => animatedCanvas.evaluate(canvas => {
     const ratio = canvas.width / window.innerWidth
     if (!ratio) return 0
-    const y = Math.floor(window.innerHeight * .44 * ratio)
-    const pixels = canvas.getContext('2d')?.getImageData(0, y, canvas.width, 1).data
+    const pixels = canvas.getContext('2d')?.getImageData(0, 0, canvas.width, canvas.height).data
     if (!pixels) return 0
-    let painted = 0
-    for (let x = 0; x < canvas.width; x++) if (pixels[x * 4 + 3] > 200) painted += 1
-    return painted
+    for (let i=3; i<pixels.length; i+=4) if (pixels[i] > 200) return 1
+    return 0
   })).toBeGreaterThan(0)
-  const silhouette = await animatedCanvas.evaluate((canvas, spineSize) => {
+  const silhouette = await animatedCanvas.evaluate(canvas => {
     const ratio = canvas.width / window.innerWidth
-    const y = Math.floor(window.innerHeight * .44 * ratio)
-    const pixels = canvas.getContext('2d').getImageData(0, y, canvas.width, 1).data
+    const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data
     let left = canvas.width
-    for (let x = 0; x < canvas.width; x++) if (pixels[x * 4 + 3] > 200) { left = x / ratio; break }
+    for (let y=0; y<canvas.height; y++) for (let x=0; x<canvas.width; x++) {
+      if (pixels[(y * canvas.width + x) * 4 + 3] > 200) left = Math.min(left, x)
+    }
     const cover = document.querySelector('.ihr-flyout__cover-target').getBoundingClientRect()
-    const coverRatio = cover.width / cover.height
-    const coverH = Math.min(innerHeight * .54, 440, innerWidth * .78 / coverRatio,
-      innerWidth * .86 / (coverRatio + spineSize.width / spineSize.height * .55))
-    const thickness = spineSize.width * coverH / spineSize.height
-    const coverLeft = innerWidth / 2 + thickness * .19 - cover.width / 2
-    return { bulge: coverLeft - left }
-  }, spineSize)
+    return { bulge: cover.left - left / ratio }
+  })
   // Actual rendered pixels must extend past the front cover, not a DOM box.
   expect(silhouette.bulge).toBeGreaterThan(8)
   expect(silhouette.bulge).toBeLessThan(40)

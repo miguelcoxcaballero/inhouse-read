@@ -1186,9 +1186,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       editorPreviewAuthor.hidden = !book.author;
     }
     const editorPose = {
-      x: 0,
-      y: landscape ? 0 : vh * .20,
-      scale: landscape ? .7 : .64,
+      // centerX already includes the binding's depth compensation so a book
+      // viewed from the cover sits correctly in flight. Cancel that offset
+      // here, where the side-on spine itself is the visual center.
+      x: -thickness * .19,
+      // Positive pose.y moves the model down in camera space. Place the spine
+      // in the clear area above the mobile edit sheet instead of behind it.
+      y: landscape ? 0 : -vh * .15,
+      scale: landscape ? .7 : .58,
       angle: 90,
       pitch: 0
     };
@@ -1356,7 +1361,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     );
     updateColorSelection();
     editorPanel.append(
-      el('p', { class:'ihr-spine-editor__heading', text:'Personaliza el lomo' }),
+      el('header', { class:'ihr-spine-editor__header' }, [
+        el('h2', { class:'ihr-spine-editor__heading', text:'Editar el lomo' }),
+        el('button', { type:'button', class:'ihr-btn ihr-spine-editor__done', text:'Listo', onClick:closeEditor })
+      ]),
       editorPreview,
       el('div', { class: 'ihr-spine-editor__row' }, [
         el('label', { class: 'ihr-spine-editor__field' }, [
@@ -1370,8 +1378,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       el('label', { class: 'ihr-spine-editor__field ihr-spine-editor__field--title' }, [
         el('span', { text: 'Texto del lomo' }), titleInput
       ]),
-      colorControls,
-      el('button', { type: 'button', class: 'ihr-btn ihr-btn--primary ihr-spine-editor__done', text: 'Listo', onClick: closeEditor })
+      colorControls
     );
     meta.append(el('div', { class: 'ihr-flyout__actions' }, actionButtons));
     meta.append(editorPanel);
