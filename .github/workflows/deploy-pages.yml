@@ -56,4 +56,6 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
           publish_branch: gh-pages
+          # Los módulos con hash que Android aún tiene en caché siguen disponibles.
+          keep_files: true
           force_orphan: true

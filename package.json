@@ -1,12 +1,12 @@
 {
   "name": "inhouse-read",
   "private": true,
-  "version": "1.4.0",
+  "version": "1.4.1",
   "type": "module",
   "description": "Inhouse Read - lector de PDF, ePub y MOBI, hermano de Inhouse Notes.",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/restore-legacy-pdf-chunk.mjs",
     "preview": "vite preview",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
