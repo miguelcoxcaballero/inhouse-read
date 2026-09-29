@@ -296,7 +296,8 @@
   inset: 10px 0 12px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  gap: 3px;
   writing-mode: vertical-rl;
   text-orientation: mixed;
   font-size: 0.62rem;

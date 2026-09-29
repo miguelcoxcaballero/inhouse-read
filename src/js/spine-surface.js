@@ -14,6 +14,11 @@ export function spineSurface(book, style, physicalHeight = 200, thickness = 32) 
   const family = `"${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`
   let size = Math.min(designWidth * .9, 64 * (Number(style.spineFontSize) || 10) / 10)
   let title = String(book.spineTitleOverride || book.title || 'Sin título')
+  const author = Number(style.width) >= 32 && normalizeBookAuthor(book.author)
+  const authorSize = author
+    ? Math.min(designWidth * .82, 28 * (Number(style.spineAuthorFontSize) || 12) / 12)
+    : 0
+  const labelGap = author ? Math.max(1.5, Math.min(3, size * .045)) : 0
   const setFont = () => { c.font = `${style.fontWeight || 700} ${size}px ${family}` }
   setFont()
   // Fit by font size, never by non-uniform fillText(maxWidth) compression.
@@ -22,14 +27,15 @@ export function spineSurface(book, style, physicalHeight = 200, thickness = 32) 
     while (title.length > 1 && c.measureText(title + '…').width > 820) title = title.slice(0, -1)
     title = title.trimEnd() + '…'
   }
-  const author = Number(style.width) >= 32 && normalizeBookAuthor(book.author)
-  c.fillText(title, 0, author ? -Math.max(18, size * .55) : 0)
+  // Title and author are parallel on the curved spine. Position them as one
+  // compact group, centered across its width, instead of pinning them to
+  // opposite edges and leaving a large empty band between the two.
+  c.fillText(title, 0, author ? -(authorSize + labelGap) / 2 : 0)
   if (author) {
-    const authorSize = Math.min(designWidth * .82, 28 * (Number(style.spineAuthorFontSize) || 12) / 12)
     c.font = `500 ${authorSize}px "DM Sans", sans-serif`
     let name = author
     while (name.length > 1 && c.measureText(name).width > 760) name = name.slice(0, -1)
-    c.fillText(name, 0, Math.max(20, size * .55) + authorSize * .65)
+    c.fillText(name, 0, (size + labelGap) / 2)
   }
   c.restore()
   c.strokeStyle = '#fff'; c.lineWidth = 1.5
