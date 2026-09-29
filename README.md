@@ -4,6 +4,11 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 El home no es un grid de tarjetas: es una estantería ilustrada con plantas donde los libros se ven de canto. Al tocar uno, sale de la balda y gira en 3D hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.0.19
+
+- Cada lomo toma el color dominante de la portada, ajusta automáticamente el contraste y reutiliza ese acabado en el modelo 3D y la animación de apertura.
+- Si la portada es una imagen, compara los trazos del título con las familias tipográficas de la app y elige la más parecida; si no puede leerlo, ajusta la elección al aspecto general de la portada.
+
 ### Actualización web · 1.0.18
 
 - La importación en Android espera a que Google Drive confirme la subida y muestra una pantalla de carga con el nombre del libro; si hace falta, abre el acceso a Google antes de subirlo.

@@ -84,7 +84,7 @@ function texture(book, style, spine) {
     }
     c.globalAlpha = 1;
     c.translate(128, 512); c.rotate(Math.PI / 2);
-    c.font = '700 44px "Playfair Display", Georgia, serif';
+    c.font = `${style.fontWeight || 700} 44px "${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`;
     c.fillText(book.title || 'Sin título', 0, book.author ? -13 : 0, 780);
     c.globalAlpha = .8; c.font = '26px "DM Sans", sans-serif';
     c.fillText(book.author || '', 0, 41, 730);
@@ -96,7 +96,7 @@ function texture(book, style, spine) {
     c.globalAlpha = .8; c.lineWidth = 3; c.beginPath();
     c.moveTo(center - 21, 185); c.lineTo(center, 164); c.lineTo(center + 21, 185); c.stroke();
     c.font = '500 17px "DM Sans", sans-serif'; c.fillText('INHOUSE READ', center, 218);
-    c.globalAlpha = 1; c.font = '700 54px "Playfair Display", Georgia, serif';
+    c.globalAlpha = 1; c.font = `${style.fontWeight || 700} 54px "${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`;
     const words = (book.title || 'Sin título').split(' '); let line = ''; const lines = [];
     for (const word of words) {
       if (c.measureText(line + word).width > 500 && line) { lines.push(line.trim()); line = ''; }
@@ -196,7 +196,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   host.append(canvas); const context = canvas.getContext('2d');
   const scene = new THREE.Scene(); scene.add(new THREE.HemisphereLight(0xffffff, 0x7b7469, 2));
   const light = new THREE.DirectionalLight(0xfff4e6, 2.2); light.position.set(-500, 700, 900); scene.add(light);
-  const model = createBookModel(book, style, width, height, thickness, coverUrl); scene.add(model);
+  let model = createBookModel(book, style, width, height, thickness, coverUrl); scene.add(model);
   const camera = new THREE.OrthographicCamera(-viewportWidth / 2, viewportWidth / 2, viewportHeight / 2, -viewportHeight / 2, .1, 10000); camera.position.z = 3000;
   let disposed = false, current, cancel = () => {};
   function draw(pose) {
@@ -211,7 +211,18 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   }
   model.userData.invalidate = () => current && draw(current);
   draw({ x: 0, y: 0, scale: 1, angle: shelf ? 90 : 0 });
-  return { canvas, draw, animate(frames, { duration }) {
+  function updateAppearance(nextStyle) {
+    if (disposed) return false;
+    const pose = current;
+    scene.remove(model);
+    model.userData.dispose();
+    model = createBookModel(book, nextStyle, width, height, thickness, coverUrl);
+    model.userData.invalidate = () => current && draw(current);
+    scene.add(model);
+    if (pose) draw(pose);
+    return true;
+  }
+  return { canvas, draw, updateAppearance, animate(frames, { duration }) {
     cancel();
     if (current) frames = [{ ...frames[0], transform: current }, ...frames.slice(1)];
     let raf, resolve; const finished = new Promise(r => resolve = r);

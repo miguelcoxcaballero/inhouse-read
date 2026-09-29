@@ -6,9 +6,9 @@
  * navegador.
  *
  * Responsabilidades:
- *   1. Hash determinista de un libro -> aspecto de su lomo (color, grosor,
- *      altura, textura). Mismo libro = mismo lomo siempre, en cualquier
- *      dispositivo y entre sesiones, sin persistir nada extra en el store.
+ *   1. Hash determinista de un libro -> geometría y acabado del lomo (grosor,
+ *      altura, textura) y un color de reserva si no hay portada. El color y
+ *      la tipografía visibles se ajustan después a la imagen de portada.
  *   2. Empaquetado de lomos en baldas de anchura fija, intercalando macetas.
  *   3. Agrupación de la biblioteca en secciones (seguir leyendo / biblioteca).
  *

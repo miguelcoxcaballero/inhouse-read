@@ -121,6 +121,8 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   await page.reload()
   const reopenedSpine = page.locator('.ihr-spine').first()
   await expect(reopenedSpine).toBeVisible()
+  await reopenedSpine.evaluate(element => element.scrollIntoView({ block:'center' }))
+  await expect.poll(() => reopenedSpine.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThan(0)
   const spineSize = await reopenedSpine.evaluate(element => ({ width: element.offsetWidth, height: element.offsetHeight }))
   let fileChooserOpened = false
   page.on('filechooser', () => { fileChooserOpened = true })

@@ -55,11 +55,12 @@
  *    responde al tema. Los lomos apoyan sobre el canto con una sombra de
  *    contacto corta, que es lo que vende el "están de pie ahí".
  *
- * 3. Lomos deterministas. Color, grosor, altura y acabado salen de un hash
- *    FNV-1a del id del libro (`bookshelf-layout.js`). Nada que persistir y
- *    nada que se mueva: el libro rojo gordo sigue siendo el libro rojo gordo
- *    en el móvil, en el portátil y tras reinstalar. Con `pageCount`/
- *    `sizeBytes` el grosor es real, no inventado.
+ * 3. Los lomos conservan geometría y acabado deterministas. El color y la
+ *    familia tipográfica se ajustan a la portada rasterizada: se muestrea su
+ *    tono dominante y se compara el título visible con varias familias
+ *    tipográficas disponibles en la app. Sin portada legible,
+ *    se conserva el aspecto de reserva. Con `pageCount`/`sizeBytes` el grosor
+ *    es real, no inventado.
  *
  * 4. Plantas. Dibujadas a mano en SVG en `plants.js` (monstera, sansevieria,
  *    potus colgante, cactus y suculenta), con los colores en custom
@@ -102,6 +103,7 @@
  */
 
 import { planBookshelf, bookmarkFor, withDefaults } from './bookshelf-layout.js';
+import { analyzeCoverAppearance, withCoverAppearance } from './cover-appearance.js';
 import { plantSvg, plantMeta } from './plants.js';
 import { bookView } from './book-model.js';
 
@@ -251,6 +253,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     objectUrls: new Set(),
     destroyed: false,
     frame: 0,
+    coverAppearances: new Map(),
+    appearanceTasks: new Map(),
+    itemsById: new Map(),
+    appearanceRefreshPending: false,
+    pressedBookId: null,
     lastOpened: null,
     returnMotion: null,
     queuedBooks: null,
@@ -300,6 +307,104 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     return url;
   }
 
+  function coverKeyFor(book) {
+    const id = String(book?.id ?? book?.path ?? book?.title ?? 'book');
+    const cover = book?.cover ?? book?.coverBlob ?? book?.coverUrl;
+    if (typeof Blob !== 'undefined' && cover instanceof Blob) {
+      return `${id}|${cover.type}|${cover.size}|${cover.lastModified ?? ''}`;
+    }
+    if (typeof cover === 'string') return `${id}|${cover}`;
+    return `${id}|${book?.title ?? ''}`;
+  }
+
+  function applyCoverAppearance(item, appearance) {
+    if (!appearance) return false;
+    item.style = withCoverAppearance(item.baseStyle || item.style, appearance);
+    return true;
+  }
+
+  function maybeRefreshAppearanceStyles() {
+    if (!state.appearanceRefreshPending || state.busy || state.session || state.returnMotion || state.destroyed) return;
+    state.appearanceRefreshPending = false;
+    scheduleRender();
+  }
+
+  function resolveCoverAppearance(book, knownUrl) {
+    const key = coverKeyFor(book);
+    const id = String(book?.id ?? book?.path ?? book?.title ?? 'book');
+    const cached = state.coverAppearances.get(id);
+    if (cached?.key === key) return Promise.resolve(cached.appearance);
+    if (state.appearanceTasks.has(key)) return state.appearanceTasks.get(key);
+
+    const task = (async () => {
+      const url = knownUrl || await resolveCover(book);
+      if (!url) {
+        state.coverAppearances.set(id, { key, appearance: null });
+        return null;
+      }
+      const appearance = await analyzeCoverAppearance(url, book?.title ?? '');
+      if (state.destroyed) return null;
+      state.coverAppearances.set(id, { key, appearance });
+      if (!appearance) return null;
+      const item = state.itemsById.get(id);
+      if (item && item.coverKey === key && applyCoverAppearance(item, appearance)) {
+        if (String(state.session?.book?.id ?? '') === id) {
+          state.session.view?.updateAppearance(item.style);
+          updateBookStyleVars(state.session.bookNode, item.style);
+          updateBookStyleVars(state.session.bookNode?.querySelector('.ihr-flyout__face--cover'), item.style);
+        }
+        if (String(state.lastOpened?.book?.id ?? '') === id) state.lastOpened.style = item.style;
+        const existing = [...root.querySelectorAll('.ihr-spine')]
+          .find(node => node.dataset.bookId === id);
+        if (existing?.isConnected && !state.busy && !state.session && !state.returnMotion && state.pressedBookId !== id) {
+          const hadFocus = document.activeElement === existing;
+          const replacement = buildSpine(item);
+          existing.replaceWith(replacement);
+          if (String(state.lastOpened?.book?.id ?? '') === id) state.lastOpened.spineEl = replacement;
+          if (hadFocus) replacement.focus({ preventScroll: true });
+        } else {
+          state.appearanceRefreshPending = true;
+        }
+      }
+      return appearance;
+    })().finally(() => state.appearanceTasks.delete(key));
+    state.appearanceTasks.set(key, task);
+    return task;
+  }
+
+  function quickCoverAppearance(book, url) {
+    if (!url) return Promise.resolve(null);
+    return new Promise(resolve => {
+      const timer = setTimeout(() => resolve(null), 20);
+      resolveCoverAppearance(book, url).then(appearance => {
+        clearTimeout(timer);
+        resolve(appearance);
+      }, () => {
+        clearTimeout(timer);
+        resolve(null);
+      });
+    });
+  }
+
+  function spineStyleVars(style) {
+    const family = style.fontFamily || 'Playfair Display';
+    const fallback = style.fontFallback || 'Georgia, serif';
+    return `--ihr-spine-base:${style.color};` +
+      `--ihr-spine-shade:${style.shade};` +
+      `--ihr-spine-ink:${style.ink};` +
+      `--ihr-spine-font:"${family}", ${fallback};` +
+      `--ihr-spine-font-weight:${style.fontWeight || 700};`;
+  }
+
+  function updateBookStyleVars(node, style) {
+    if (!node || !style) return;
+    node.style.setProperty('--ihr-spine-base', style.color);
+    node.style.setProperty('--ihr-spine-shade', style.shade);
+    node.style.setProperty('--ihr-spine-ink', style.ink);
+    node.style.setProperty('--ihr-spine-font', `"${style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`);
+    node.style.setProperty('--ihr-spine-font-weight', String(style.fontWeight || 700));
+  }
+
   // El retorno desde el lector necesita su primer fotograma antes de que el
   // navegador pinte la estantería. La resolución normal usa `await` incluso
   // cuando la portada ya está en IndexedDB como Blob y deja un fotograma vacío.
@@ -321,10 +426,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   /** Precarga en pointerdown: cuando el giro enseña la cara, ya está pintada. */
   function warmCover(book) {
     resolveCover(book).then((url) => {
-      if (!url || typeof Image === 'undefined') return;
-      const img = new Image();
-      img.decoding = 'async';
-      img.src = url;
+      if (!url) return;
+      resolveCoverAppearance(book, url);
+      if (typeof Image !== 'undefined') {
+        const img = new Image();
+        img.decoding = 'async';
+        img.src = url;
+      }
     });
   }
 
@@ -365,6 +473,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   function buildSpine(item) {
     const { book, style } = item;
+    state.itemsById.set(String(book.id ?? book.path ?? book.title ?? 'book'), item);
     const bookmark = bookmarkFor(book);
     const node = el('button', {
       type: 'button',
@@ -376,9 +485,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       style:
         `--ihr-spine-w:${style.width}px;` +
         `--ihr-spine-h:${Math.round(style.heightRatio * 100)}%;` +
-        `--ihr-spine-base:${style.color};` +
-        `--ihr-spine-shade:${style.shade};` +
-        `--ihr-spine-ink:${style.ink};` +
+        spineStyleVars(style) +
         (item.tilt ? `--ihr-spine-tilt:${item.tilt}deg;` : '')
     });
     if (item.tilt) node.classList.add('is-tilted');
@@ -425,12 +532,18 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     let start = null;
     node.addEventListener('pointerdown', (event) => {
       start = { x: event.clientX, y: event.clientY };
+      state.pressedBookId = String(book.id ?? book.path ?? book.title ?? 'book');
       node.classList.add('is-pressed');
       warmCover(book);
     });
     const release = () => {
       start = null;
       node.classList.remove('is-pressed');
+      const id = String(book.id ?? book.path ?? book.title ?? 'book');
+      if (state.pressedBookId === id) {
+        state.pressedBookId = null;
+        setTimeout(maybeRefreshAppearanceStyles, 0);
+      }
     };
     node.addEventListener('pointerup', release);
     node.addEventListener('pointercancel', release);
@@ -539,6 +652,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function render() {
     if (state.destroyed) return;
     if (state.returnMotion) { state.renderQueued = true; return; }
+    const focusedBookId = document.activeElement?.closest?.('.ihr-spine')?.dataset.bookId;
     const width = measure();
     state.shelfWidth = width;
     // A refresh can complete while home is hidden behind the reader. Keep the
@@ -565,12 +679,22 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       recentLimit: opts.sections ? opts.recentLimit : 0
     });
 
+    state.itemsById.clear();
     const fragment = document.createDocumentFragment();
     fragment.append(el('div', { class: 'ihr-library-heading' }, [
       el('h1', { text: 'Tu biblioteca' }),
       el('p', { text: `${state.books.length} ${state.books.length === 1 ? 'libro' : 'libros'}` })
     ]));
     for (const section of plan) {
+      for (const shelf of section.shelves) {
+        for (const item of shelf.items) {
+          if (item.kind !== 'book') continue;
+          item.baseStyle = item.style;
+          item.coverKey = coverKeyFor(item.book);
+          const appearance = state.coverAppearances.get(String(item.book.id ?? item.book.path ?? item.book.title ?? 'book'));
+          if (appearance?.key === item.coverKey) applyCoverAppearance(item, appearance.appearance);
+        }
+      }
       const wrapper = el('section', {
         class: `ihr-section ihr-section--${section.id}`,
         'aria-label': section.title || opts.texts.shelfLabel
@@ -586,6 +710,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       fragment.append(wrapper);
     }
     scroller.append(fragment);
+    if (focusedBookId) {
+      [...scroller.querySelectorAll('.ihr-spine')]
+        .find(node => node.dataset.bookId === focusedBookId)
+        ?.focus({ preventScroll: true });
+    }
+    for (const book of state.books) resolveCoverAppearance(book);
   }
 
   function scheduleRender() {
@@ -635,7 +765,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (state.busy || state.session || state.destroyed) return;
     state.busy = true;
 
-    const { book, style } = item;
+    const { book } = item;
+    let style = item.style;
     options.onPrepareBook?.(book);
     /*
       Se mide sin transform: de un libro inclinado, getBoundingClientRect
@@ -672,6 +803,18 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const dy = rect.top + rect.height / 2 - centerY;
 
     const coverUrl = await resolveCover(book);
+    const appearance = await quickCoverAppearance(book, coverUrl);
+    if (appearance) {
+      applyCoverAppearance(item, appearance);
+      if (spineEl.isConnected) {
+        const hadFocus = document.activeElement === spineEl;
+        const replacement = buildSpine(item);
+        spineEl.replaceWith(replacement);
+        spineEl = replacement;
+        if (hadFocus) replacement.focus({ preventScroll: true });
+      }
+    }
+    style = item.style;
     if (state.destroyed) return;
 
     const scrim = el('div', { class: 'ihr-flyout__scrim' });
@@ -681,9 +824,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         `width:${coverW}px;height:${coverH}px;` +
         `left:${centerX - coverW / 2}px;top:${centerY - coverH / 2}px;` +
         `--ihr-thickness:${thickness}px;` +
-        `--ihr-spine-base:${style.color};` +
-        `--ihr-spine-shade:${style.shade};` +
-        `--ihr-spine-ink:${style.ink}`
+        spineStyleVars(style)
     });
 
     const view = bookView(bookNode, book, style, {
@@ -726,7 +867,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     flyout.append(scrim, shadow, el('div', { class: 'ihr-flyout__stage' }, [bookNode]), meta, coverTarget, closeButton);
 
     const previousFocus = document.activeElement;
-    const session = { book, cancelled: false, phase: 'revealing' };
+    const session = { book, cancelled: false, phase: 'revealing', view, bookNode };
 
     async function close({ silent = false, instant = false } = {}) {
       if (state.session !== session || session.cancelled) return;
@@ -743,6 +884,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (!silent && !instant && typeof previousFocus?.focus === 'function') {
         previousFocus.focus();
       }
+      maybeRefreshAppearanceStyles();
     }
     session.close = close;
 
@@ -891,7 +1033,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       await fade.finished?.catch(() => {});
       if (state.session === session) {
         session.phase = 'complete';
-        state.lastOpened = { book, style, spineEl };
+        state.lastOpened = { book, style: item.style, spineEl };
         state.session = null;
         state.busy = false;
         session.cancelled = true;
@@ -1072,6 +1214,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       state.lastOpened = null;
       currentSpine.focus?.({ preventScroll:true });
       applyDeferredShelfUpdates()
+      maybeRefreshAppearanceStyles();
       return true;
     }
     return false;
