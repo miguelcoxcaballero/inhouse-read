@@ -130,6 +130,16 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   const animatedCanvas = page.locator('.ihr-flyout__book--webgl canvas')
   await expect(animatedCanvas).toBeVisible()
   await expect(animatedCanvas).toHaveAttribute('data-angle', '0')
+  await expect.poll(() => animatedCanvas.evaluate(canvas => {
+    const ratio = canvas.width / window.innerWidth
+    if (!ratio) return 0
+    const y = Math.floor(window.innerHeight * .44 * ratio)
+    const pixels = canvas.getContext('2d')?.getImageData(0, y, canvas.width, 1).data
+    if (!pixels) return 0
+    let painted = 0
+    for (let x = 0; x < canvas.width; x++) if (pixels[x * 4 + 3] > 200) painted += 1
+    return painted
+  })).toBeGreaterThan(0)
   const silhouette = await animatedCanvas.evaluate((canvas, spineSize) => {
     const ratio = canvas.width / window.innerWidth
     const y = Math.floor(window.innerHeight * .44 * ratio)
