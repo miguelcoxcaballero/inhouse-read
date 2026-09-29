@@ -834,7 +834,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (view) {
       view.draw({ x: dx, y: dy, scale: startScale, angle: 90, pitch: 0 });
       bookNode.classList.add('ihr-flyout__book--webgl');
-      bookNode.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
+      bookNode.style.position = 'absolute';
+      bookNode.style.inset = '0';
+      bookNode.style.width = '100%';
+      bookNode.style.height = '100%';
     } else {
       bookNode.classList.add('ihr-flyout__book--fallback');
       bookNode.append(buildCoverFace(book, coverUrl, style));

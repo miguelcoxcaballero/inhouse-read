@@ -1,6 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderBookshelf } from '../../src/js/bookshelf.js'
 
+vi.mock('../../src/js/book-model.js', () => ({
+  bookView(host) {
+    const canvas = document.createElement('canvas')
+    canvas.dataset.renderer = 'three-mesh'
+    host.append(canvas)
+    return {
+      canvas,
+      draw() {},
+      updateAppearance() {},
+      animate() { return { finished: Promise.resolve() } },
+      dispose() {}
+    }
+  }
+}))
+
 vi.mock('../../src/js/cover-appearance.js', async importOriginal => {
   const original = await importOriginal()
   return {
