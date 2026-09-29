@@ -711,7 +711,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (bookmark) {
       node.classList.add('has-bookmark');
       if (bookmark.finished) node.classList.add('is-finished');
-      node.append(
+      if (!view) node.append(
         el('span', {
           class: 'ihr-spine__bookmark',
           'aria-hidden': 'true',
@@ -1092,6 +1092,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       viewportWidth: vw, viewportHeight: vh, centerX, centerY, coverUrl
     });
     if (view) {
+      // Keep an inspectable cue on the lifted canvas too; the ribbon itself
+      // is geometry inside the model, so no DOM ribbon needs to be re-created.
+      view.canvas.dataset.bookmark3d = String(Boolean(bookmarkFor(book)));
       view.draw({ x: dx, y: dy, scale: startScale, angle: 90, pitch: 0 });
       bookNode.classList.add('ihr-flyout__book--webgl');
       bookNode.style.position = 'absolute';
@@ -1100,7 +1103,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       bookNode.style.height = '100%';
     } else {
       bookNode.classList.add('ihr-flyout__book--fallback');
-      bookNode.append(buildCoverFace(book, coverUrl, style));
+      const pages = el('div', { class:'ihr-flyout__fallback-pages', 'aria-hidden':'true' });
+      const inside = el('div', { class:'ihr-flyout__face ihr-flyout__face--inside', 'aria-hidden':'true' });
+      const leaf = el('div', { class:'ihr-flyout__fallback-leaf' }, [buildCoverFace(book, coverUrl, style), inside]);
+      bookNode.append(pages, leaf);
     }
     const animateBook = (frames, timing) => view
       ? view.animate(frames, timing)
@@ -1810,15 +1816,38 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     coverTarget.hidden = !opts.autoOpen;
     coverTarget.classList.add('is-ready');
 
-    async function finishReaderTransition() {
-      const fadeDuration = prefersReducedMotion() ? 1 : 180;
-      const fade = animate(bookNode, [{ opacity: 1 }, { opacity: 0 }], {
-        duration: fadeDuration, easing: 'linear', fill: 'both'
-      });
-      animate(scrim, [{ opacity: 1 }, { opacity: 0 }], {
-        duration: fadeDuration, easing: 'linear', fill: 'both'
-      });
-      await fade.finished?.catch(() => {});
+    async function finishReaderTransition({ animatePage } = {}) {
+      await Promise.race([
+        session.coverOpening?.finished?.catch(() => {}) ?? Promise.resolve(),
+        new Promise(resolve => setTimeout(resolve, (session.coverOpeningDuration || 520) + 240))
+      ]);
+      if (session.cancelled || state.destroyed) return;
+      if (typeof animatePage === 'function') {
+        const duration = prefersReducedMotion() ? 1 : 620;
+        try {
+          await Promise.race([
+            animatePage({
+              left:centerX + (session.openingOffsetX || 0) - coverW / 2,
+              top:centerY - coverH / 2,
+              width:coverW,
+              height:coverH,
+              duration
+            }),
+            new Promise(resolve => setTimeout(resolve, duration + 700))
+          ]);
+        } catch (error) {
+          console.warn('La animación de apertura terminó con un error; se cerrará el libro flotante.', error);
+        }
+      } else {
+        const fadeDuration = prefersReducedMotion() ? 1 : 180;
+        const fade = animate(bookNode, [{ opacity: 1 }, { opacity: 0 }], {
+          duration: fadeDuration, easing: 'linear', fill: 'both'
+        });
+        animate(scrim, [{ opacity: 1 }, { opacity: 0 }], {
+          duration: fadeDuration, easing: 'linear', fill: 'both'
+        });
+        await fade.finished?.catch(() => {});
+      }
       if (state.session === session) {
         session.phase = 'complete';
         state.lastOpened = { book, style: item.style, spineEl };
@@ -1835,21 +1864,21 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     async function expandCover() {
       if (session.cancelled || session.expanding || session.phase !== 'ready' || state.destroyed) return;
       session.expanding = true;
+      session.phase = 'reading';
       coverTarget.disabled = true;
-      flyout.classList.add('is-expanding');
+      flyout.classList.add('is-expanding', 'is-opening-book');
       closeButton.hidden = true;
       fadeMeta();
-      const zoom = Math.max(vw / coverW, vh / coverH) * 1.025;
-      const zoomDuration = prefersReducedMotion() ? 1 : 520;
-      const expansion = animateBook([
-        { transform: tf(0, 0, 0, 1, 0), offset: 0 },
-        { transform: { ...tf(vw / 2 - centerX, vh / 2 - centerY, 0, zoom, 0), pitch:0 }, offset: 1 }
-      ], { duration: zoomDuration, easing: 'linear', fill: 'both' });
-      await expansion.finished?.catch(() => {});
-      if (session.cancelled || state.destroyed) return;
-      session.phase = 'reading';
       coverTarget.hidden = true;
       readiness.textContent = 'Abriendo el libro…';
+      session.openingOffsetX = coverW * .14;
+      session.coverOpeningDuration = prefersReducedMotion() ? 1 : 520;
+      session.coverOpening = view
+        ? view.animateCoverOpen({ duration:session.coverOpeningDuration, offsetX:session.openingOffsetX })
+        : animate(bookNode.querySelector('.ihr-flyout__fallback-leaf'), [
+            { transform:'rotateY(0deg)' },
+            { transform:'rotateY(-148deg)' }
+          ], { duration:session.coverOpeningDuration, easing:'cubic-bezier(.2,.7,.2,1)', fill:'both' });
       try {
         await onOpen?.(book, {
           coverUrl,

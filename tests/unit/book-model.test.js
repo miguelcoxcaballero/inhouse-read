@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bindingGeometry, boardGeometry, sampleBookMotion, fitCoverImage } from '../../src/js/book-model.js';
+import { bindingGeometry, boardGeometry, bookmarkGeometry, sampleBookMotion, fitCoverImage } from '../../src/js/book-model.js';
 
 describe('purpose-built rounded binding mesh', () => {
   it('joins both cover boards and protrudes beyond the left edge head-on', () => {
@@ -37,6 +37,20 @@ describe('purpose-built rounded binding mesh', () => {
     g.dispose();
   });
 });
+
+describe('3D reading ribbon', () => {
+  it('reaches from the current page depth through the head edge', () => {
+    const geometry = bookmarkGeometry(200, 300, 48, .7, 16)
+    const positions = geometry.getAttribute('position')
+    const ys = Array.from({ length:positions.count }, (_, i) => positions.getY(i))
+    const zs = Array.from({ length:positions.count }, (_, i) => positions.getZ(i))
+    expect(Math.max(...ys)).toBeGreaterThan(150)
+    expect(Math.min(...ys)).toBeLessThan(150)
+    expect(Math.min(...zs)).toBeCloseTo(-9.6, 1)
+    expect(geometry.index.count).toBeGreaterThan(0)
+    geometry.dispose()
+  })
+})
 
 describe('beveled hardcover boards', () => {
   it('fits landscape and portrait covers without cropping or stretching', () => {

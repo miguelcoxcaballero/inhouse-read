@@ -166,10 +166,77 @@ async function refreshShelf() {
   }
 }
 
+async function animateReaderPageFromBook(bounds, book) {
+  const screen = els.readerScreen
+  if (!screen || screen.hidden) return
+  const screenRect = screen.getBoundingClientRect()
+  const screenWidth = Math.max(1, screenRect.width || screen.clientWidth)
+  const screenHeight = Math.max(1, screenRect.height || screen.clientHeight)
+  const page = screen.querySelector('.pdf-page-wrap, .foliate-view-el, .foliate-reader')
+  const pageRect = page?.getBoundingClientRect()
+  const left = bounds.left - screenRect.left
+  const top = bounds.top - screenRect.top
+  const scaleX = Math.max(.08, bounds.width / screenWidth)
+  const scaleY = Math.max(.08, bounds.height / screenHeight)
+  const progress = Number(book.progressFraction ?? book.progress) || 0
+  let ribbon
+
+  if (progress > 0) {
+    ribbon = document.createElement('span')
+    ribbon.className = 'ihr-reader-page-ribbon'
+    ribbon.setAttribute('aria-hidden', 'true')
+    ribbon.style.left = `${Math.max(8, (pageRect?.left ?? screenRect.left) - screenRect.left + Math.min(34, (pageRect?.width ?? screenWidth) * .09))}px`
+    ribbon.style.top = `${Math.max(8, (pageRect?.top ?? screenRect.top) - screenRect.top + 10)}px`
+    ribbon.classList.toggle('is-finished', progress >= 1)
+    ribbon.dataset.progress = String(Math.min(1, progress))
+    screen.append(ribbon)
+  }
+
+  screen.style.setProperty('--ihr-reader-open-left', `${screenRect.left}px`)
+  screen.style.setProperty('--ihr-reader-open-top', `${screenRect.top}px`)
+  screen.style.setProperty('--ihr-reader-open-width', `${screenWidth}px`)
+  screen.style.setProperty('--ihr-reader-open-height', `${screenHeight}px`)
+  screen.classList.add('is-opening-from-book')
+  const from = `translate(${left}px,${top}px) scale(${scaleX},${scaleY})`
+  let pageMotion = null
+  let ribbonMotion = null
+  try {
+    if (typeof screen.animate === 'function') {
+      pageMotion = screen.animate([
+        { transform:from, borderRadius:'4px 7px 7px 4px', boxShadow:'0 16px 34px rgba(0,0,0,.3)' },
+        { transform:'translate(0,0) scale(1,1)', borderRadius:'0px', boxShadow:'none' }
+      ], { duration:bounds.duration, easing:'cubic-bezier(.2,.74,.2,1)', fill:'both' })
+    }
+    ribbonMotion = ribbon?.animate?.([
+      { transform:'translate3d(0,0,18px) rotate(-2deg)', opacity:1, offset:0 },
+      { transform:'translate3d(0,-28px,26px) rotate(4deg)', opacity:1, offset:.32 },
+      { transform:`translate3d(0,-${Math.max(110, screenHeight * .22)}px,40px) rotate(12deg)`, opacity:0, offset:1 }
+    ], { duration:Math.max(1, bounds.duration - 40), delay:80, easing:'cubic-bezier(.3,.65,.2,1)', fill:'both' })
+
+    if (pageMotion) {
+      // Some WebViews leave `finished` pending if the page is backgrounded or
+      // its compositor drops the animation. Let the transition complete and
+      // release the flyout even in that case.
+      await Promise.race([
+        pageMotion.finished.catch(() => {}),
+        new Promise(resolve => setTimeout(resolve, bounds.duration + 240))
+      ])
+    } else await new Promise(resolve => setTimeout(resolve, bounds.duration))
+  } finally {
+    pageMotion?.cancel()
+    ribbonMotion?.cancel()
+    ribbon?.remove()
+    screen.classList.remove('is-opening-from-book')
+    for (const property of ['--ihr-reader-open-left','--ihr-reader-open-top','--ihr-reader-open-width','--ihr-reader-open-height']) {
+      screen.style.removeProperty(property)
+    }
+  }
+}
+
 async function openBookRecord(book, ctx) {
   const transition = {
     onReaderReady: async () => {
-      await ctx.finish?.()
+      await ctx.finish?.({ animatePage:bounds => animateReaderPageFromBook(bounds, book) })
       els.readerToolbar.hidden = false
       els.readerToolbar.classList.add('is-rising')
       void els.readerToolbar.offsetWidth
@@ -771,7 +838,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.2.0'
+els.appVersion.textContent = 'Inhouse Read · v1.3.0'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')

@@ -330,11 +330,10 @@
 }
 
 /*
-  Marcapáginas: una cinta de raso que asoma por el canto de arriba. Lo que
-  asoma (--ihr-bookmark-peek, calculado en bookmarkFor) ES el progreso: poco
-  asomo = recién empezado, mucho = casi terminado. Terminado cambia a dorado.
-  Se pinta encima del lomo (bottom:100%), nunca a un lado: no ocupa balda.
-  Al montar "brota" del libro creciendo desde el canto (sólo transform).
+  Marcapáginas de reserva cuando no hay WebGL: una cinta que asoma por el
+  canto superior. En WebGL, la cinta vive como malla 3D dentro del libro.
+  Su longitud visible (--ihr-bookmark-peek) indica el progreso y se vuelve
+  dorada al terminar. Este respaldo nace desde el canto con una escala suave.
 */
 .ihr-spine__bookmark {
   position: absolute;
@@ -627,6 +626,29 @@
   position: fixed;
 
   transform-origin: 50% 50%;
+}
+.ihr-flyout__book--fallback { transform-style:preserve-3d; }
+.ihr-flyout__fallback-pages {
+  position:absolute; inset:1.5% 1% 1% 7%;
+  border:1px solid #bdb19b;
+  border-radius:1px 6px 6px 1px;
+  background:repeating-linear-gradient(180deg,#f3ecdc 0 3px,#ddd2bd 3px 4px);
+  box-shadow:5px 6px 13px #0004;
+  transform:translateZ(1px);
+}
+.ihr-flyout__fallback-leaf {
+  position:absolute; inset:0;
+  transform-origin:left center;
+  transform-style:preserve-3d;
+  backface-visibility:visible;
+}
+.ihr-flyout__fallback-leaf > .ihr-flyout__face--cover { transform:none; }
+.ihr-flyout__face--inside {
+  left:0; width:100%;
+  border-radius:2px 7px 7px 2px;
+  background:linear-gradient(90deg,#d3c7b1,#f2ead9 16%,#f8f2e5 74%,#cbbda5);
+  transform:rotateY(180deg) translateZ(1px);
+  backface-visibility:hidden;
 }
 
 .ihr-flyout__face {

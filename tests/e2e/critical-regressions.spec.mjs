@@ -126,17 +126,43 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   expect(paintedPixels).toBeGreaterThan(1000)
   await expect(spine.locator('.ihr-spine__segment')).toHaveCount(0)
 
+  // Start mid-book so the ribbon is present in both the shelf and the lifted
+  // 3D model, then verify it lands over the restored page during the opening.
+  await page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('inhouse-read')
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    const books = await new Promise((resolve, reject) => {
+      const request = db.transaction('books', 'readonly').objectStore('books').getAll()
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    const book = books.find(item => item.name === 'tiny.pdf')
+    book.progressFraction = .42
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('books', 'readwrite')
+      tx.objectStore('books').put(book)
+      tx.oncomplete = resolve
+      tx.onerror = () => reject(tx.error)
+    })
+    db.close()
+  })
+
   // Reopening must use the stored Blob, not silently fall back to a native picker.
   await page.reload()
   const reopenedSpine = page.locator('.ihr-spine').first()
   await expect(reopenedSpine).toBeVisible()
   await reopenedSpine.evaluate(element => element.scrollIntoView({ block:'center' }))
   await expect.poll(() => reopenedSpine.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThan(0)
+  await expect(reopenedSpine).toHaveClass(/has-bookmark/)
   let fileChooserOpened = false
   page.on('filechooser', () => { fileChooserOpened = true })
   await reopenedSpine.click()
   const animatedCanvas = page.locator('.ihr-flyout__book--webgl canvas')
   await expect(animatedCanvas).toBeVisible()
+  await expect(animatedCanvas).toHaveAttribute('data-bookmark3d', 'true')
   await expect(animatedCanvas).toHaveAttribute('data-angle', '0')
   await expect.poll(() => animatedCanvas.evaluate(canvas => {
     const ratio = canvas.width / window.innerWidth
@@ -165,9 +191,13 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   await expect(page.getByRole('button', { name: 'Guardar en Drive' })).toBeVisible()
   await expect(page.getByRole('button', { name: /Toca para leer/ })).toBeVisible()
   await page.getByRole('button', { name: /Toca para leer/ }).click()
+  await expect(page.locator('#reader-screen')).toHaveClass(/is-opening-from-book/)
+  await expect(page.locator('.ihr-reader-page-ribbon')).toBeVisible()
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   await expect(page.locator('.reader-toolbar')).toBeVisible()
+  await expect(page.locator('#reader-screen')).not.toHaveClass(/is-opening-from-book/)
+  await expect(page.locator('.ihr-reader-page-ribbon')).toHaveCount(0)
   expect(fileChooserOpened).toBe(false)
 
   await page.emulateMedia({ reducedMotion: 'no-preference' })

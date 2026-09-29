@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { spineSurface, releaseSurface } from './spine-surface.js';
 import { SURFACE_FINISHES, surfaceFinish } from './book-colors.js';
+import { bookmarkFor } from './bookshelf-layout.js';
 
 function applySurfaceFinish(material, value, fallback = 'satin') {
   const finish = SURFACE_FINISHES[surfaceFinish(value, fallback)];
@@ -69,6 +70,36 @@ export function boardGeometry(width, height, depth) {
   return g;
 }
 
+/** A real ribbon mesh emerging from the top edge at the saved reading depth. */
+export function bookmarkGeometry(width, height, thickness, progress, peek = 10) {
+  const ribbonWidth = Math.max(3, Math.min(9, thickness * .22));
+  const x = -width / 2 + Math.max(thickness * .75, ribbonWidth * 1.5);
+  const depth = thickness / 2 - thickness * Math.max(0, Math.min(1, progress));
+  const points = [
+    [height / 2 - height * .15, depth],
+    [height / 2 - 2, depth],
+    [height / 2 + 2, depth + thickness * .12],
+    [height / 2 + Math.max(4, peek * .55), thickness * .2],
+    [height / 2 + peek, 0]
+  ];
+  const positions = [], uvs = [], indices = [];
+  for (let i = 0; i < points.length; i++) {
+    const [y, z] = points[i];
+    positions.push(x - ribbonWidth / 2, y, z, x + ribbonWidth / 2, y, z);
+    uvs.push(0, i / (points.length - 1), 1, i / (points.length - 1));
+    if (i < points.length - 1) {
+      const start = i * 2;
+      indices.push(start, start + 1, start + 2, start + 1, start + 3, start + 2);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 export function fitCoverImage(imageWidth, imageHeight, width, height) {
   const scale = Math.min(width / imageWidth, height / imageHeight);
   const w = imageWidth * scale, h = imageHeight * scale;
@@ -120,10 +151,15 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     mesh.position.set(x, y, z); group.add(mesh); return mesh;
   };
   const board = height * .007;
-  for (const front of [true, false]) {
-    const mesh = new THREE.Mesh(boardGeometry(width, height, board), [front ? cover : cloth, cloth]);
-    mesh.position.z = (front ? 1 : -1) * (thickness / 2 - board / 2); group.add(mesh);
-  }
+  const frontCover = new THREE.Group();
+  frontCover.position.x = -width / 2;
+  group.add(frontCover);
+  const frontBoard = new THREE.Mesh(boardGeometry(width, height, board), [cover, cloth]);
+  frontBoard.position.set(width / 2, 0, thickness / 2 - board / 2);
+  frontCover.add(frontBoard);
+  const backBoard = new THREE.Mesh(boardGeometry(width, height, board), [cloth, cloth]);
+  backBoard.position.z = -thickness / 2 + board / 2;
+  group.add(backBoard);
   const paper = vertical => {
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 512;
     const c = canvas.getContext('2d'); c.fillStyle = '#e6dfd0'; c.fillRect(0, 0, 512, 512);
@@ -142,6 +178,22 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   const inset = height * .009;
   box(width - inset * 2, height - inset * 2, thickness - board * 2.4,
     [foreEdge, foreEdge, topEdge, topEdge, topEdge, topEdge], inset * .3);
+  const bookmark = bookmarkFor(book);
+  let ribbonMaterial = null, ribbonMesh = null;
+  if (bookmark) {
+    ribbonMaterial = new THREE.MeshPhysicalMaterial({
+      color: bookmark.finished ? '#c79a3e' : '#b3342d',
+      roughness: .34, metalness: bookmark.finished ? .28 : .02,
+      clearcoat: .72, clearcoatRoughness: .2,
+      side: THREE.DoubleSide
+    });
+    ribbonMesh = new THREE.Mesh(
+      bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek),
+      ribbonMaterial
+    );
+    ribbonMesh.renderOrder = 4;
+    group.add(ribbonMesh);
+  }
   // Recessed cloth hinges run beside the curved binding on both boards.
   const hinge = new THREE.MeshStandardMaterial({ color: style.shade || style.color, roughness: 1 });
   for (const z of [-1, 1]) {
@@ -204,6 +256,10 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   group.userData.updateCoverAppearance = nextBook => {
     if (!shelf) applySurfaceFinish(cover, nextBook.coverFinish, 'satin');
   };
+  group.userData.setCoverOpen = amount => {
+    frontCover.rotation.y = -Math.PI * .82 * Math.max(0, Math.min(1, amount));
+  };
+  group.userData.hasBookmark = Boolean(bookmark);
   group.userData.updateEdgeAppearance = nextBook => {
     if (!shelf) {
       applySurfaceFinish(foreEdge, nextBook.pageEdgeFinish, 'satin');
@@ -247,6 +303,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   const keyLight = new THREE.DirectionalLight(0xffe9c5, .62); keyLight.position.set(-2, 3, 4); scene.add(keyLight);
   const stripLight = new THREE.DirectionalLight(0xffffff, .9); stripLight.position.set(3, 1, 2); scene.add(stripLight);
   let model = createBookModel(book, style, width, height, thickness, coverUrl, { shelf }); scene.add(model);
+  canvas.dataset.bookmark3d = String(Boolean(model.userData.hasBookmark));
   const camera = new THREE.OrthographicCamera(-viewportWidth / 2, viewportWidth / 2, viewportHeight / 2, -viewportHeight / 2, .1, 10000); camera.position.z = 3000;
   let disposed = false, current, cancel = () => {};
   function draw(pose) {
@@ -276,6 +333,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     scene.remove(model);
     model.userData.dispose();
     model = createBookModel(book, nextStyle, width, height, thickness, coverUrl, { shelf });
+    canvas.dataset.bookmark3d = String(Boolean(model.userData.hasBookmark));
     model.userData.invalidate = () => current && draw(current);
     scene.add(model);
     if (pose) draw(pose);
@@ -299,7 +357,25 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (current) draw(current);
     return true;
   }
-  return { canvas, draw, updateAppearance, updateSpineAppearance, updateCoverAppearance, updateEdgeAppearance, animate(frames, { duration }) {
+  function animateCoverOpen({ duration = 520, offsetX = 0 } = {}) {
+    let raf, resolve;
+    const finished = new Promise(done => { resolve = done; });
+    const start = performance.now(), origin = current || { x:0, y:0, scale:1, angle:0, pitch:0 };
+    let cancelled = false;
+    const animation = { finished, cancel() { cancelled = true; cancelAnimationFrame(raf); resolve(); } };
+    const tick = now => {
+      if (cancelled || disposed) return resolve();
+      const raw = duration > 0 ? Math.min(1, (now - start) / duration) : 1;
+      const amount = raw * raw * (3 - 2 * raw);
+      model.userData.setCoverOpen?.(amount);
+      draw({ ...origin, x:origin.x + offsetX * amount });
+      if (raw < 1) raf = requestAnimationFrame(tick);
+      else resolve();
+    };
+    raf = requestAnimationFrame(tick);
+    return animation;
+  }
+  return { canvas, draw, updateAppearance, updateSpineAppearance, updateCoverAppearance, updateEdgeAppearance, animateCoverOpen, animate(frames, { duration }) {
     cancel();
     if (current) frames = [{ ...frames[0], transform: current }, ...frames.slice(1)];
     let raf, resolve; const finished = new Promise(r => resolve = r);
