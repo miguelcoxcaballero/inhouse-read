@@ -1249,6 +1249,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
     function openEditor() {
       if (session.phase !== 'ready') return;
+      const viewport = visibleViewport();
+      session.editorViewportWidth = viewport.width;
+      session.editorViewportHeight = viewport.height;
+      session.keyboardOpen = false;
       editorPanel.hidden = false;
       flyout.classList.add('is-editing-spine');
       meta.classList.add('is-editing');
@@ -1325,6 +1329,50 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       placeholder: book.title || 'Título del libro',
       'aria-label': 'Texto del lomo',
       onInput: event => updateCustomization({ spineTitleOverride: event.currentTarget.value })
+    });
+    function visibleViewport() {
+      const vv = window.visualViewport;
+      return {
+        width: window.innerWidth || 0,
+        height: Math.min(window.innerHeight || 0, vv?.height || window.innerHeight || 0),
+        top: vv?.offsetTop || 0
+      };
+    }
+    function syncFlyoutViewport() {
+      if (!session.keyboardOpen) {
+        flyout.classList.remove('uses-visual-viewport');
+        flyout.style.removeProperty('--ihr-visible-top');
+        flyout.style.removeProperty('--ihr-visible-height');
+        return;
+      }
+      const viewport = visibleViewport();
+      flyout.style.setProperty('--ihr-visible-top', `${viewport.top}px`);
+      flyout.style.setProperty('--ihr-visible-height', `${viewport.height}px`);
+      flyout.classList.add('uses-visual-viewport');
+    }
+    function keepTitleVisible() {
+      if (editorPanel.hidden || document.activeElement !== titleInput) return;
+      const panelRect = editorPanel.getBoundingClientRect();
+      const fieldRect = titleInput.getBoundingClientRect();
+      const margin = 14;
+      if (fieldRect.bottom > panelRect.bottom - margin) {
+        editorPanel.scrollTop += fieldRect.bottom - panelRect.bottom + margin;
+      } else if (fieldRect.top < panelRect.top + margin) {
+        editorPanel.scrollTop -= panelRect.top + margin - fieldRect.top;
+      }
+    }
+    session.handleViewportResize = () => {
+      if (editorPanel.hidden || !session.editorViewportHeight) return false;
+      const viewport = visibleViewport();
+      if (Math.abs(viewport.width - session.editorViewportWidth) >= 40) return false;
+      const keyboardVisible = viewport.height < session.editorViewportHeight - 100;
+      session.keyboardOpen = keyboardVisible;
+      syncFlyoutViewport();
+      if (keyboardVisible) requestAnimationFrame(() => requestAnimationFrame(keepTitleVisible));
+      return true;
+    };
+    editorPanel.addEventListener('focusin', event => {
+      if (event.target === titleInput) requestAnimationFrame(keepTitleVisible);
     });
     function updateColorSelection() {
       colorButtons.forEach(button => {
@@ -1549,11 +1597,15 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   let observer = null;
   const onViewportResize = () => {
+    if (state.session?.handleViewportResize?.()) return;
     state.session?.close({ instant:true, silent:true });
     state.returnMotion?.cancel();
     scheduleRender();
   };
+  const onVisualViewportChange = () => { state.session?.handleViewportResize?.(); };
   window.addEventListener('resize', onViewportResize);
+  window.visualViewport?.addEventListener('resize', onVisualViewportChange);
+  window.visualViewport?.addEventListener('scroll', onVisualViewportChange);
   if (typeof ResizeObserver === 'function') {
     observer = new ResizeObserver(() => {
       const width = measure();
@@ -1713,6 +1765,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (state.frame) cancelAnimationFrame(state.frame);
       observer?.disconnect();
       window.removeEventListener('resize', onViewportResize);
+      window.visualViewport?.removeEventListener('resize', onVisualViewportChange);
+      window.visualViewport?.removeEventListener('scroll', onVisualViewportChange);
       if (typeof URL?.revokeObjectURL === 'function') {
         for (const url of state.objectUrls) URL.revokeObjectURL(url);
       }

@@ -150,6 +150,52 @@ test('editar el lomo en móvil muestra su modelo de canto y mantiene el editor e
   expect(pageErrors).toEqual([])
 })
 
+test('el teclado móvil no cierra el editor y mantiene visible el campo del lomo', async ({ page }) => {
+  await page.setViewportSize({ width:390, height:844 })
+  await page.emulateMedia({ reducedMotion:'reduce' })
+  await page.addInitScript(() => {
+    const viewport = new EventTarget()
+    Object.assign(viewport, { width:innerWidth, height:innerHeight, offsetTop:0 })
+    Object.defineProperty(window, 'visualViewport', { configurable:true, value:viewport })
+    window.__testVisualViewport = viewport
+  })
+  await page.goto('/')
+  await page.locator('#file-picker').setInputFiles(PDF)
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+  await page.getByRole('button', { name:'Volver a la estantería' }).click()
+  await page.locator('.ihr-spine').first().click()
+  const dialog = page.locator('.ihr-flyout')
+  await dialog.getByRole('button', { name:'Editar' }).click()
+  const title = dialog.getByRole('textbox', { name:'Texto del lomo' })
+  await title.focus()
+  await page.evaluate(() => {
+    window.__testVisualViewport.height = 340
+    window.__testVisualViewport.dispatchEvent(new Event('resize'))
+    window.dispatchEvent(new Event('resize'))
+  })
+
+  await expect(dialog).toHaveCount(1)
+  await expect(dialog).toHaveClass(/is-editing-spine/)
+  await expect(dialog).toHaveClass(/uses-visual-viewport/)
+  await expect(title).toBeFocused()
+  const editorBounds = await dialog.locator('.ihr-spine-editor').boundingBox()
+  const titleBounds = await title.boundingBox()
+  expect(editorBounds.y + editorBounds.height).toBeLessThanOrEqual(340)
+  expect(titleBounds.y + titleBounds.height).toBeLessThanOrEqual(340)
+  await title.fill('Escribiendo con teclado')
+  await expect(title).toHaveValue('Escribiendo con teclado')
+  await expect(dialog).toHaveCount(1)
+
+  await page.evaluate(() => {
+    window.__testVisualViewport.height = 844
+    window.__testVisualViewport.dispatchEvent(new Event('resize'))
+    window.dispatchEvent(new Event('resize'))
+  })
+  await expect(dialog).toHaveCount(1)
+  await expect(dialog).not.toHaveClass(/uses-visual-viewport/)
+  await expect(title).toHaveValue('Escribiendo con teclado')
+})
+
 test('las portadas PDF se guardan nítidas y se regeneran las miniaturas antiguas', async ({ page }) => {
   await page.goto('/')
   await page.locator('#file-picker').setInputFiles(PDF)
