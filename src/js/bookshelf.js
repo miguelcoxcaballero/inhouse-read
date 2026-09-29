@@ -274,6 +274,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     shelfWidth: 0,
     busy: false,
     session: null,
+    pendingSelection: null,
     objectUrls: new Set(),
     destroyed: false,
     frame: 0,
@@ -326,9 +327,26 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   const coverCache = new WeakMap();
+  // IndexedDB returns fresh record/Blob objects after every progress write.
+  // Keep one URL for the same saved cover so decoded pixels survive refreshes.
+  const savedCoverUrls = new Map();
+
+  function cachedCover(book) {
+    const saved = savedCoverUrls.get(coverKeyFor(book));
+    if (saved) coverCache.set(book, saved);
+    return saved;
+  }
+
+  function rememberCover(book, url) {
+    coverCache.set(book, url);
+    if (url && (book.cover || book.coverBlob || book.coverUrl)) savedCoverUrls.set(coverKeyFor(book), url);
+    return url;
+  }
 
   async function resolveCover(book) {
     if (coverCache.has(book)) return coverCache.get(book);
+    const saved = cachedCover(book);
+    if (saved) return saved;
     let url = null;
     try {
       if (typeof options.coverSrcFor === 'function') {
@@ -338,15 +356,15 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     } catch {
       url = null; // una portada que falla no puede impedir abrir el libro
     }
-    coverCache.set(book, url);
-    return url;
+    return rememberCover(book, url);
   }
 
   function coverKeyFor(book) {
     const id = String(book?.id ?? book?.path ?? book?.title ?? 'book');
     const cover = book?.cover ?? book?.coverBlob ?? book?.coverUrl;
     if (typeof Blob !== 'undefined' && cover instanceof Blob) {
-      return `${id}|${book?.title ?? ''}|${cover.type}|${cover.size}|${cover.lastModified ?? ''}`;
+      return `${id}|${book?.title ?? ''}|${cover.type}|${cover.size}|${cover.lastModified ?? ''}` +
+        (book.coverUpdatedAt ? `|${book.coverUpdatedAt}` : '');
     }
     if (typeof cover === 'string') return `${id}|${book?.title ?? ''}|${cover}`;
     return `${id}|${book?.title ?? ''}|`;
@@ -485,14 +503,15 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   // cuando la portada ya está en IndexedDB como Blob y deja un fotograma vacío.
   function resolveCoverImmediately(book) {
     if (coverCache.has(book)) return coverCache.get(book);
+    const saved = cachedCover(book);
+    if (saved) return saved;
     try {
       const source = typeof options.coverSrcFor === 'function'
         ? options.coverSrcFor(book)
         : book.cover ?? book.coverUrl ?? book.coverBlob;
       if (source && typeof source.then === 'function') return null;
       const url = toUrl(source) || toUrl(book.cover ?? book.coverUrl ?? book.coverBlob);
-      coverCache.set(book, url);
-      return url;
+      return rememberCover(book, url);
     } catch {
       return null;
     }
@@ -930,7 +949,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function render() {
     if (state.destroyed) return;
     root.dataset.viewMode = state.viewMode;
-    if (state.returnMotion) { state.renderQueued = true; return; }
+    if (state.returnMotion || state.busy || state.session) { state.renderQueued = true; return; }
     if (!state.appearancesReady && state.books.length > 0) {
       state.shelfScene?.dispose();
       state.shelfScene = null;
@@ -946,15 +965,17 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // spine as the target of the return animation. ResizeObserver re-renders
     // the updated records when the shelf becomes visible again.
     if (width <= 0 && state.books.length > 0) return;
-    state.shelfScene?.dispose();
-    state.shelfScene = null;
-    scroller.textContent = '';
-
     if (state.books.length === 0) {
+      state.shelfScene?.dispose();
+      state.shelfScene = null;
+      scroller.textContent = '';
       scroller.append(buildEmptyState());
       return;
     }
     if (width <= 0) return; // aún sin layout: el ResizeObserver volverá a llamar
+    const retainedScene = state.shelfScene;
+    const previousChildren = retainedScene ? [...scroller.children] : [];
+    if (!retainedScene) scroller.textContent = '';
 
     const plan = planBookshelf(state.books, {
       shelfWidth: width,
@@ -983,13 +1004,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     state.itemsById.clear();
     const fragment = document.createDocumentFragment();
-    fragment.append(el('div', { class: 'ihr-library-heading' }, [
+    const heading = el('div', { class: 'ihr-library-heading' }, [
       el('h1', { text: 'Tu biblioteca' }),
       el('div', { class:'ihr-library-heading__tools' }, [
         el('p', { 'aria-live': 'polite', text: `${state.books.length} ${state.books.length === 1 ? 'libro' : 'libros'}` }),
         buildViewControls()
       ])
-    ]));
+    ]);
+    fragment.append(heading);
     const stage = el('div', { class:'ihr-shelf-stage' });
     for (const section of plan) {
       for (const shelf of section.shelves) {
@@ -1016,8 +1038,20 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       stage.append(wrapper);
     }
     fragment.append(stage);
+    if (retainedScene) {
+      // Measure the new semantic layout without moving the painted cabinet.
+      stage.style.cssText = `position:absolute;left:0;top:0;width:${width}px;visibility:hidden`;
+      heading.style.cssText = 'position:absolute;visibility:hidden';
+    }
     scroller.append(fragment);
-    if (state.useScene) mountShelfScene(stage, width);
+    if (state.useScene) {
+      const layout = readShelfLayout(stage, width);
+      stage.style.cssText = '';
+      heading.style.cssText = '';
+      for (const previous of previousChildren) previous.remove();
+      if (retainedScene) retainedScene.updateLayout(layout);
+      else state.shelfScene = createBookshelfScene(layout);
+    }
     if (focusedBookId) {
       [...scroller.querySelectorAll('.ihr-spine')]
         .find(node => node.dataset.bookId === focusedBookId)
@@ -1026,7 +1060,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     for (const book of state.books) resolveCoverAppearance(book);
   }
 
-  function mountShelfScene(stage, width) {
+  function readShelfLayout(stage, width) {
     const origin = stage.getBoundingClientRect();
     const entries = [];
     const rows = [];
@@ -1052,12 +1086,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           coverUrl:resolveCoverImmediately(item.book) });
       }
     }
-    state.shelfScene = createBookshelfScene({ stage, scroller, entries, rows, width,
-      height:stage.getBoundingClientRect().height, mode:state.viewMode });
+    return { stage, scroller, entries, rows, width,
+      height:stage.getBoundingClientRect().height, mode:state.viewMode };
   }
 
   function scheduleRender() {
-    if (state.returnMotion || state.reorderTimer) { state.renderQueued = true; return; }
+    if (state.returnMotion || state.reorderTimer || state.busy || state.session) { state.renderQueued = true; return; }
     if (state.frame) return;
     state.frame = requestAnimationFrame(() => {
       state.frame = 0;
@@ -1144,6 +1178,24 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   async function openBook(spineEl, item) {
     if (state.busy || state.session || state.destroyed) return;
     state.busy = true;
+    const finishPendingSelection = () => {
+      document.removeEventListener('keydown', onPendingKeydown, true);
+      if (state.pendingSelection === pendingSelection) state.pendingSelection = null;
+    };
+    const pendingSelection = { cancelled:false, cancel() {
+      if (state.pendingSelection !== pendingSelection) return;
+      pendingSelection.cancelled = true;
+      finishPendingSelection();
+      state.busy = false;
+      applyDeferredShelfUpdates();
+    } };
+    const onPendingKeydown = event => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      pendingSelection.cancel();
+    };
+    state.pendingSelection = pendingSelection;
+    document.addEventListener('keydown', onPendingKeydown, true);
 
     const { book } = item;
     let style = item.style;
@@ -1167,9 +1219,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     spineEl.style.transition = previousTransition;
 
     const coverUrl = await resolveCover(book);
+    if (pendingSelection.cancelled || state.destroyed) { finishPendingSelection(); return; }
     const imageRatio = await readCoverAspectRatio(coverUrl);
+    if (pendingSelection.cancelled || state.destroyed) { finishPendingSelection(); return; }
     if (imageRatio) item.style = { ...item.style, coverRatio: imageRatio };
     const appearance = await quickCoverAppearance(book, coverUrl);
+    if (pendingSelection.cancelled || state.destroyed) { finishPendingSelection(); return; }
     if (appearance) applyCoverAppearance(item, appearance);
     if (item.style !== initialStyle && spineEl.isConnected) {
       if (state.shelfScene) state.shelfScene.updateEntry(spineEl, book, item.style, coverUrl);
@@ -1199,14 +1254,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       (vw * (landscape ? .35 : .78)) / ratio,
       (vw * 0.86) / (ratio + shelfAspect * 0.55));
     const coverW = coverH * ratio;
-    const startScale = sourcePose ? sourcePose.scale * sourcePose.height / coverH : rect.height > 0 ? rect.height / coverH : 0.3;
+    let startScale = sourcePose ? sourcePose.scale * sourcePose.height / coverH : rect.height > 0 ? rect.height / coverH : 0.3;
     const thickness = sourcePose ? sourcePose.thickness * coverH / sourcePose.height : Math.max(6, (rect.width || 32) / startScale);
     const centerX = vw * (landscape ? .26 : .5) + thickness * 0.38 / 2;
     const centerY = vh * (landscape ? .5 : .42);
-    const dx = (sourcePose?.centerX ?? rect.left + rect.width / 2) - centerX;
-    const dy = (sourcePose?.centerY ?? rect.top + rect.height / 2) - centerY;
-    const sourceAngle = sourcePose?.angle ?? 90;
-    const sourcePitch = sourcePose?.pitch ?? 0;
+    let dx = (sourcePose?.centerX ?? rect.left + rect.width / 2) - centerX;
+    let dy = (sourcePose?.centerY ?? rect.top + rect.height / 2) - centerY;
+    let sourceAngle = sourcePose?.angle ?? 90;
+    let sourcePitch = sourcePose?.pitch ?? 0;
 
     const scrim = el('div', { class: 'ihr-flyout__scrim' });
     const bookNode = el('div', {
@@ -1220,7 +1275,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     const view = bookView(bookNode, book, style, {
       width: coverW, height: coverH, thickness,
-      viewportWidth: vw, viewportHeight: vh, centerX, centerY, coverUrl
+      viewportWidth: vw, viewportHeight: vh, centerX, centerY, coverUrl,
+      initialPose:{ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch }
     });
     if (view) {
       // Keep an inspectable cue on the lifted canvas too; the ribbon itself
@@ -1283,7 +1339,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       clearInterval(readyCheck);
       session.cancelled = true;
       document.removeEventListener('keydown', onKeydown, true);
-      fadeMeta();
+      // A slow image may still be loading before the flyout's first frame.
+      // Cancel that selection without running an entrance/return not yet set up.
+      if (!flyout.isConnected) instant = true;
+      else fadeMeta();
       flyout.classList.remove('is-ready');
       if (!instant) await playReturn();
       spineEl.classList.remove('is-away');
@@ -1293,9 +1352,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (state.session === session) { state.session = null; state.busy = false; }
       spineEl.classList.remove('is-away');
       if (!silent && !instant && typeof previousFocus?.focus === 'function') {
-        previousFocus.focus();
+        previousFocus.focus({ preventScroll:true });
       }
       maybeRefreshAppearanceStyles();
+      applyDeferredShelfUpdates();
     }
     session.close = close;
 
@@ -1320,6 +1380,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     });
     document.addEventListener('keydown', onKeydown, true);
     state.session = session;
+    finishPendingSelection();
 
     const isDownloaded = book.sourceType === 'drive' && Boolean(book.content);
     const alreadySaved = book.sourceType === 'drive' ? isDownloaded : Boolean(book.driveFileId);
@@ -1854,6 +1915,20 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }, 250)
     if (!options.getBookPreparation) clearInterval(readyCheck)
 
+    // The real cover and its initial pose must be ready before replacing the
+    // shelf mesh; a generated jacket must never flash during this handoff.
+    if (view) await view.ready;
+    if (session.cancelled || state.destroyed) { view?.dispose(); return; }
+    state.shelfScene?.flush();
+    const handoffPose = state.shelfScene?.getBookPose(spineEl);
+    if (view && handoffPose) {
+      dx = handoffPose.centerX - centerX;
+      dy = handoffPose.centerY - centerY;
+      startScale = handoffPose.scale * handoffPose.height / coverH;
+      sourceAngle = handoffPose.angle;
+      sourcePitch = handoffPose.pitch;
+      view.draw({ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch });
+    }
     document.body.append(flyout);
     spineEl.classList.add('is-away');
     state.shelfScene?.flush();
@@ -2040,6 +2115,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   let observer = null;
   const onViewportResize = () => {
     if (state.session?.handleViewportResize?.()) return;
+    state.pendingSelection?.cancel();
     state.session?.close({ instant:true, silent:true });
     state.returnMotion?.cancel();
     scheduleRender();
@@ -2067,11 +2143,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   /** Sustituye la biblioteca y vuelve a pintar, conservando el scroll. */
   function refresh(nextBooks) {
     if (state.destroyed) return;
-    if (state.returnMotion || state.reorderTimer) {
+    if (state.returnMotion || state.reorderTimer || state.busy || state.session) {
       if (Array.isArray(nextBooks)) state.queuedBooks = nextBooks.slice();
       return;
     }
-    state.session?.close({ instant: true, silent: true });
     const top = scroller.scrollTop;
     state.books = Array.isArray(nextBooks) ? nextBooks.slice() : state.books;
     if (!state.appearancesReady && options.waitForCoverAppearance) {
@@ -2085,7 +2160,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function applyDeferredShelfUpdates() {
-    if (state.destroyed || state.returnMotion || state.reorderTimer) return;
+    if (state.destroyed || state.returnMotion || state.reorderTimer || state.busy || state.session) return;
     if (state.queuedBooks) {
       const nextBooks = state.queuedBooks;
       state.queuedBooks = null;
@@ -2200,11 +2275,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     /** Repliega la portada abierta, si la hay. */
     close() {
+      state.pendingSelection?.cancel();
       return state.session?.close() ?? Promise.resolve();
     },
 
     destroy() {
       state.destroyed = true;
+      state.pendingSelection?.cancel();
       state.returnMotion?.cancel();
       state.session?.close({ instant: true, silent: true });
       if (state.frame) cancelAnimationFrame(state.frame);

@@ -9,6 +9,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { renderBookshelf } from '../../src/js/bookshelf.js'
+import { readCoverAspectRatio } from '../../src/js/cover-appearance.js'
 
 vi.mock('../../src/js/cover-appearance.js', async importOriginal => ({
   ...await importOriginal(),
@@ -296,6 +297,23 @@ describe('renderBookshelf', () => {
     expect(document.querySelector('.ihr-flyout')).toBeNull()
   })
 
+  it('Escape cancela la selección mientras los datos de portada siguen pendientes', async () => {
+    let resolveDimensions
+    vi.mocked(readCoverAspectRatio).mockImplementationOnce(() => new Promise(resolve => { resolveDimensions = resolve }))
+    shelf = renderBookshelf(container, makeBooks(2), {
+      shelfWidth:SHELF_WIDTH, revealDuration:0, returnDuration:0
+    })
+    container.querySelector('.ihr-spine').click()
+    await vi.waitFor(() => expect(resolveDimensions).toBeTypeOf('function'))
+    document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape' }))
+    resolveDimensions(null)
+    await settle()
+    expect(document.querySelector('.ihr-flyout')).toBeNull()
+    container.querySelector('.ihr-spine').click()
+    await settle()
+    expect(document.querySelector('.ihr-flyout')).not.toBeNull()
+  })
+
   it('con autoOpen:false ofrece botones y no abre por su cuenta', async () => {
     const onBookOpen = vi.fn()
     shelf = renderBookshelf(container, makeBooks(2), {
@@ -363,10 +381,11 @@ describe('renderBookshelf', () => {
     expect(container.querySelector('.ihr-empty')).not.toBeNull()
   })
 
-  it('refresh cierra la portada que hubiera abierta', async () => {
+  it('refresh mantiene la portada abierta y aplica los cambios al cerrarla', async () => {
     shelf = renderBookshelf(container, makeBooks(4), {
       shelfWidth: SHELF_WIDTH,
       revealDuration: 0,
+      returnDuration: 0,
       holdMs: 0
     })
     container.querySelector('.ihr-spine').click()
@@ -374,7 +393,11 @@ describe('renderBookshelf', () => {
     expect(document.querySelector('.ihr-flyout')).not.toBeNull()
     shelf.refresh(makeBooks(5))
     await settle()
+    expect(document.querySelector('.ihr-flyout')).not.toBeNull()
+    expect(container.querySelectorAll('.ihr-spine')).toHaveLength(4)
+    await shelf.close()
     expect(document.querySelector('.ihr-flyout')).toBeNull()
+    await vi.waitFor(() => expect(container.querySelectorAll('.ihr-spine')).toHaveLength(5))
   })
 
   it('destroy desmonta todo y revoca los object URLs de las portadas', async () => {

@@ -159,6 +159,51 @@ function shelfSpineSurface(book, style, height, thickness, shelf) {
   return surface;
 }
 
+// Shelf and lifted copies of a book overlap during a transition. Keep the
+// decoded image alive for exactly that overlap, so neither copy has to flash
+// its generated cover while loading the same blob URL again.
+const activeCoverImages = new Map();
+function acquireCoverImage(url, onImage, onError) {
+  let entry = activeCoverImages.get(url);
+  const startLoad = !entry;
+  if (!entry) {
+    entry = { image:null, failed:false, users:0, listeners:new Set(), timer:0 };
+    activeCoverImages.set(url, entry);
+  }
+  const listener = { onImage, onError };
+  entry.users++;
+  if (entry.image) onImage(entry.image);
+  else if (entry.failed) onError();
+  else entry.listeners.add(listener);
+  const fail = () => {
+    clearTimeout(entry.timer); entry.failed = true;
+    if (activeCoverImages.get(url) === entry) activeCoverImages.delete(url);
+    for (const waiting of entry.listeners) waiting.onError();
+    entry.listeners.clear();
+  };
+  if (startLoad) {
+    // A stalled external image must not hold the opening transition forever.
+    // The failed entry is evicted so a later opening may retry the URL.
+    if (!/^(blob:|data:)/i.test(url)) entry.timer = setTimeout(fail, 6000);
+    new THREE.TextureLoader().load(url, map => {
+    clearTimeout(entry.timer);
+    if (entry.failed || !entry.users) { map.dispose(); return; }
+    entry.image = map.image;
+    for (const waiting of entry.listeners) waiting.onImage(entry.image);
+    entry.listeners.clear(); map.dispose();
+    }, undefined, fail);
+  }
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true; entry.listeners.delete(listener); entry.users--;
+    if (!entry.users) {
+      clearTimeout(entry.timer);
+      if (activeCoverImages.get(url) === entry) activeCoverImages.delete(url);
+    }
+  };
+}
+
 export function createBookModel(book, style, width, height, thickness, coverUrl, { shelf = false } = {}) {
   const group = new THREE.Group();
   const textureHeight = shelf ? 512 : 2048;
@@ -201,7 +246,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   const pageBlock = box(width - inset * 2, height - inset * 2, thickness - board * 2.4,
     [foreEdge, foreEdge, topEdge, topEdge, topEdge, topEdge], inset * .3);
   pageBlock.name = 'page-block';
-  const bookmark = bookmarkFor(book);
+  let bookmark = bookmarkFor(book);
   let ribbonMaterial = null, ribbonMesh = null;
   if (bookmark) {
     ribbonMaterial = new THREE.MeshPhysicalMaterial({
@@ -237,26 +282,47 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     capMaterials.push(mesh.material);
     mesh.rotation.x = Math.PI / 2; mesh.position.y = y; group.add(mesh);
   }
-  let disposed = false;
-  if (coverUrl) new THREE.TextureLoader().load(coverUrl, map => {
-    if (disposed) { map.dispose(); return; }
-    // The physical cover follows the decoded aspect ratio, so the image fills
-    // the face without cropping or letterboxing for normal book covers.
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.height = textureHeight;
-      canvas.width = Math.round(canvas.height * (Number(style.coverRatio) || 0.66));
-      const c = canvas.getContext('2d'); c.fillStyle = style.color; c.fillRect(0, 0, canvas.width, canvas.height);
-      const fit = fitCoverImage(map.image.width, map.image.height, canvas.width, canvas.height);
-      c.drawImage(map.image, fit.x, fit.y, fit.width, fit.height);
-      const fittedMap = new THREE.CanvasTexture(canvas); fittedMap.colorSpace = THREE.SRGBColorSpace;
-      cover.map?.dispose(); cover.map = fittedMap; cover.needsUpdate = true;
-    } catch { /* Keep the generated cover if the decoded image cannot be drawn. */ }
-    finally { map.dispose(); }
-    group.userData.invalidate?.();
-  }, undefined, () => { /* Retain the generated cover if the image is unavailable. */ });
+  let disposed = false, coverRevision = 0, currentCoverUrl, releaseImage = () => {}, resolveCoverReady = () => {};
+  function updateCoverSource(url, nextBook = book, nextStyle = style) {
+    if (disposed) return Promise.resolve(false);
+    if (url && url === currentCoverUrl) return group.userData.ready;
+    resolveCoverReady(false);
+    const revision = ++coverRevision, releasePrevious = releaseImage;
+    currentCoverUrl = url;
+    group.userData.ready = new Promise(resolve => { resolveCoverReady = resolve; });
+    const settle = loaded => {
+      if (revision !== coverRevision || disposed) return;
+      group.userData.coverLoaded = loaded;
+      resolveCoverReady(loaded);
+      group.userData.invalidate?.();
+    };
+    const replaceMap = map => { cover.map?.dispose(); cover.map = map; cover.needsUpdate = true; };
+    if (!url) {
+      releaseImage = () => {};
+      replaceMap(coverTexture(nextBook, nextStyle, textureHeight));
+      settle(true);
+    } else releaseImage = acquireCoverImage(url, image => {
+      if (revision !== coverRevision || disposed) return;
+      // The previous cover remains on the mesh until every new pixel is ready.
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.height = textureHeight;
+        canvas.width = Math.round(canvas.height * (Number(nextStyle.coverRatio) || 0.66));
+        const c = canvas.getContext('2d'); c.fillStyle = nextStyle.color; c.fillRect(0, 0, canvas.width, canvas.height);
+        const fit = fitCoverImage(image.width, image.height, canvas.width, canvas.height);
+        c.drawImage(image, fit.x, fit.y, fit.width, fit.height);
+        const fittedMap = new THREE.CanvasTexture(canvas); fittedMap.colorSpace = THREE.SRGBColorSpace;
+        replaceMap(fittedMap); settle(true);
+      } catch { settle(false); }
+    }, () => settle(false));
+    releasePrevious();
+    return group.userData.ready;
+  }
+  group.userData.updateCoverSource = updateCoverSource;
+  updateCoverSource(coverUrl);
   group.userData.dispose = () => {
     if (disposed) return;
+    releaseImage(); resolveCoverReady(false);
     disposed = true; const materials = new Set(), textures = new Set([surface.map, surface.channels]);
     group.traverse(obj => { obj.geometry?.dispose(); if (obj.material) for (const m of [].concat(obj.material)) materials.add(m); });
     for (const m of materials) {
@@ -291,6 +357,23 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     frontCover.rotation.y = -Math.PI * .82 * Math.max(0, Math.min(1, amount));
   };
   group.userData.hasBookmark = Boolean(bookmark);
+  group.userData.updateBookmark = nextBook => {
+    if (disposed) return;
+    bookmark = bookmarkFor(nextBook);
+    if (ribbonMesh) { group.remove(ribbonMesh); ribbonMesh.geometry.dispose(); ribbonMaterial.dispose(); }
+    ribbonMesh = null; ribbonMaterial = null;
+    if (bookmark) {
+      ribbonMaterial = new THREE.MeshPhysicalMaterial({
+        color:bookmark.finished ? '#c79a3e' : '#b3342d', roughness:.34,
+        metalness:bookmark.finished ? .28 : .02, clearcoat:.72,
+        clearcoatRoughness:.2, side:THREE.DoubleSide
+      });
+      ribbonMesh = new THREE.Mesh(bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek), ribbonMaterial);
+      ribbonMesh.renderOrder = 4; group.add(ribbonMesh);
+    }
+    group.userData.hasBookmark = Boolean(bookmark);
+    group.userData.invalidate?.();
+  };
   group.userData.updateEdgeAppearance = nextBook => {
     applySurfaceFinish(foreEdge, nextBook.pageEdgeFinish, 'satin');
     applySurfaceFinish(topEdge, nextBook.pageEdgeFinish, 'satin');
@@ -335,7 +418,7 @@ export function lightBookScene(scene) {
 
 // One shared GPU context; individual canvases receive snapshots. No per-book
 // contexts, and the flyout uses exactly the same mesh builder as the shelf.
-export function bookView(host, book, style, { width, height, thickness, viewportWidth, viewportHeight, centerX, centerY, coverUrl, shelf = false, shelfView = 'spine' }) {
+export function bookView(host, book, style, { width, height, thickness, viewportWidth, viewportHeight, centerX, centerY, coverUrl, shelf = false, shelfView = 'spine', initialPose }) {
   const gpu = getBookRenderer(); if (!gpu) return null;
   // Shelf books are static snapshots. Keep their framebuffer modest on phones
   // so a long library does not retain a pile of high-DPI canvases in memory.
@@ -351,9 +434,12 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   canvas.dataset.bookmark3d = String(Boolean(model.userData.hasBookmark));
   if (shelf) canvas.dataset.shelfView = shelfView;
   const camera = new THREE.OrthographicCamera(-viewportWidth / 2, viewportWidth / 2, viewportHeight / 2, -viewportHeight / 2, .1, 10000); camera.position.z = 3000;
-  let disposed = false, current, cancel = () => {};
+  let disposed = false, current, cancel = () => {}, pendingModel = null, appearanceRevision = 0;
+  let currentBook = book;
   function draw(pose) {
-    if (disposed) return; current = pose;
+    if (disposed) return;
+    current = { ...pose, coverOpen:Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0)) };
+    model.userData.setCoverOpen?.(current.coverOpen);
     model.position.set(centerX - viewportWidth / 2 + pose.x, viewportHeight / 2 - centerY - pose.y, 0);
     model.rotation.set((pose.pitch ?? 0) * Math.PI / 180, pose.angle * Math.PI / 180, 0); model.scale.setScalar(pose.scale);
     if (gpu.getPixelRatio() !== pixelRatio) gpu.setPixelRatio(pixelRatio);
@@ -370,73 +456,91 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     gpu.render(scene, camera);
     context.clearRect(0, 0, canvas.width, canvas.height); context.drawImage(gpu.domElement, 0, 0, canvas.width, canvas.height);
     canvas.dataset.angle = String(pose.angle); canvas.dataset.renderer = 'three-mesh';
+    canvas.dataset.coverOpen = String(current.coverOpen);
   }
   model.userData.invalidate = () => current && draw(current);
-  draw({
+  draw(initialPose ?? {
     x:0, y:0, scale:1,
     angle:shelf ? (shelfView === 'isometric' ? 76 : 90) : 0,
     pitch:shelf && shelfView === 'isometric' ? 9 : 0
   });
   function updateAppearance(nextStyle) {
     if (disposed) return false;
-    const pose = current;
-    scene.remove(model);
-    model.userData.dispose();
-    model = createBookModel(book, nextStyle, width, height, thickness, coverUrl, { shelf });
-    canvas.dataset.bookmark3d = String(Boolean(model.userData.hasBookmark));
-    model.userData.invalidate = () => current && draw(current);
-    scene.add(model);
-    if (pose) draw(pose);
+    const revision = ++appearanceRevision;
+    pendingModel?.userData.dispose();
+    const replacement = createBookModel(currentBook, nextStyle, width, height, thickness, coverUrl, { shelf });
+    pendingModel = replacement;
+    const replace = () => {
+      if (disposed || revision !== appearanceRevision) { replacement.userData.dispose(); return; }
+      const previous = model;
+      scene.remove(previous); model = replacement; pendingModel = null;
+      canvas.dataset.bookmark3d = String(Boolean(model.userData.hasBookmark));
+      model.userData.invalidate = () => current && draw(current);
+      scene.add(model);
+      if (current) draw(current);
+      previous.userData.dispose();
+    };
+    if (replacement.userData.coverLoaded) replace();
+    else replacement.userData.ready.then(replace);
     return true;
   }
   function updateSpineAppearance(nextBook, nextStyle) {
     if (disposed) return false;
+    currentBook = { ...currentBook, ...nextBook };
+    pendingModel?.userData.updateSpineAppearance?.(nextBook, nextStyle);
     model.userData.updateSpineAppearance?.(nextBook, nextStyle);
     if (current) draw(current);
     return true;
   }
   function updateCoverAppearance(nextBook) {
     if (disposed) return false;
+    currentBook = { ...currentBook, ...nextBook };
+    pendingModel?.userData.updateCoverAppearance?.(nextBook);
     model.userData.updateCoverAppearance?.(nextBook);
     if (current) draw(current);
     return true;
   }
   function updateEdgeAppearance(nextBook) {
     if (disposed) return false;
+    currentBook = { ...currentBook, ...nextBook };
+    pendingModel?.userData.updateEdgeAppearance?.(nextBook);
     model.userData.updateEdgeAppearance?.(nextBook);
     if (current) draw(current);
     return true;
   }
   function animateCoverOpen({ duration = 520, offsetX = 0 } = {}) {
+    cancel();
     let raf, resolve;
     const finished = new Promise(done => { resolve = done; });
     const start = performance.now(), origin = current || { x:0, y:0, scale:1, angle:0, pitch:0 };
     let cancelled = false;
-    const animation = { finished, cancel() { cancelled = true; cancelAnimationFrame(raf); resolve(); } };
+    cancel = () => { cancelled = true; cancelAnimationFrame(raf); resolve(); };
+    const animation = { finished, cancel };
     const tick = now => {
       if (cancelled || disposed) return resolve();
       const raw = duration > 0 ? Math.min(1, (now - start) / duration) : 1;
       const amount = raw * raw * (3 - 2 * raw);
-      model.userData.setCoverOpen?.(amount);
-      draw({ ...origin, x:origin.x + offsetX * amount });
+      draw({ ...origin, x:origin.x + offsetX * amount,
+        coverOpen:(origin.coverOpen || 0) + (1 - (origin.coverOpen || 0)) * amount });
       if (raw < 1) raf = requestAnimationFrame(tick);
       else resolve();
     };
     raf = requestAnimationFrame(tick);
     return animation;
   }
-  return { canvas, draw, updateAppearance, updateSpineAppearance, updateCoverAppearance, updateEdgeAppearance, animateCoverOpen, animate(frames, { duration }) {
+  return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw, updateAppearance, updateSpineAppearance, updateCoverAppearance, updateEdgeAppearance, animateCoverOpen, animate(frames, { duration }) {
     cancel();
     if (current) frames = [{ ...frames[0], transform: current }, ...frames.slice(1)];
     let raf, resolve; const finished = new Promise(r => resolve = r);
     cancel = () => { cancelAnimationFrame(raf); resolve(); };
     const start = performance.now();
     const tick = now => {
+      if (disposed) return resolve();
       const t = duration > 0 ? Math.min(1, (now - start) / duration) : 1;
       draw(sampleBookMotion(frames, t)); if (t < 1) raf = requestAnimationFrame(tick); else resolve();
     };
     raf = requestAnimationFrame(tick); return { finished, cancel };
-  }, dispose(removeCanvas = true) { cancel(); disposed = true; model.userData.dispose(); if (removeCanvas) canvas.remove(); } };
+  }, dispose(removeCanvas = true) { cancel(); disposed = true; pendingModel?.userData.dispose(); model.userData.dispose(); if (removeCanvas) canvas.remove(); } };
 }
 
 // Monotone Hermite interpolation: continuous velocity, no unwanted overshoot
@@ -448,7 +552,7 @@ export function sampleBookMotion(frames, progress) {
   while (index < frames.length - 2 && t > times[index + 1]) index++;
   const span = times[index + 1] - times[index], k = (t - times[index]) / span;
   const k2 = k * k, k3 = k2 * k, pose = {};
-  for (const key of ['x', 'y', 'scale', 'angle', 'pitch']) {
+  for (const key of ['x', 'y', 'scale', 'angle', 'pitch', 'coverOpen']) {
     const value = i => frames[i].transform[key] ?? 0;
     const tangent = i => {
       if (i === 0 || i === frames.length - 1) return 0;

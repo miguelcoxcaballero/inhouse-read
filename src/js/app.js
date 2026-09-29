@@ -62,6 +62,10 @@ let currentBookId = null
 let pendingLocalReopenId = null
 let pendingReaderTransition = null
 const preparedBooks = new Map()
+let preparationGeneration = 0
+let requestedPreparationId = null
+let activePreparedBookId = null
+let readerPreparationQueue = Promise.resolve()
 const coverUpgrades = new Map()
 const progressWrites = new Map()
 let driveProfile = null
@@ -142,6 +146,8 @@ async function refreshShelf() {
   const books = normalizedBooks.filter(book =>
     book.sourceType !== 'drive' || (accountId && (!book.cloudAccountId || book.cloudAccountId === accountId))
   )
+  // A selection can begin while the IndexedDB read is pending. Let the shelf
+  // queue this record set instead of replacing a book already in flight.
   if (!shelf) {
     shelf = renderBookshelf(els.bookshelfRoot, books, {
       onBookOpen: openBookRecord,
@@ -243,12 +249,12 @@ async function openBookRecord(book, ctx) {
       requestAnimationFrame(() => els.readerToolbar.classList.add('is-visible'))
       setTimeout(() => els.readerToolbar.classList.remove('is-rising', 'is-visible'), 500)
     },
-    onReaderError: () => ctx.close({ instant: true })
+    onReaderError: () => ctx.close()
   }
   const prepared = preparedBooks.get(book.id)
   if (prepared) {
     try {
-      if (await prepared) {
+      if (await prepared && activePreparedBookId === book.id && currentBookId === book.id) {
         preparedBooks.delete(book.id)
         await revealPreparedReader()
         await transition.onReaderReady()
@@ -378,13 +384,23 @@ els.filePicker.addEventListener('change', async () => {
 // ---- Apertura y lectura ----
 
 async function openFile(file, { existingRecord, forcedId, folderFileName, transition, preparing = false } = {}) {
+  if (!preparing) {
+    preparationGeneration++
+    requestedPreparationId = null
+    activePreparedBookId = null
+    preparedBooks.clear()
+    await readerPreparationQueue.catch(() => {})
+  }
   readingExperience.reset()
   currentBookId = null
   els.readerToolbar.hidden = Boolean(transition) || preparing
   if (preparing) {
     els.readerScreen.hidden = false
     els.readerScreen.classList.add('is-preparing')
-  } else showScreen('reader')
+  } else {
+    els.readerScreen.classList.remove('is-preparing')
+    showScreen('reader')
+  }
   els.readerViewport.innerHTML = ''
 
   let format
@@ -396,11 +412,13 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
       onToggleChrome: () => { els.readerToolbar.hidden = !els.readerToolbar.hidden }
     })
   } catch (err) {
-    if (transition) await transition.onReaderError?.()
     if (preparing) {
       els.readerScreen.classList.remove('is-preparing')
       els.readerScreen.hidden = true
-    } else showScreen('home')
+    } else {
+      showScreen('home')
+      if (transition) await transition.onReaderError?.()
+    }
     if (err instanceof UnsupportedFormatError) {
       alert(`"${file.name}" no es un formato soportado. Formatos válidos: PDF, EPUB, MOBI, AZW3, FB2, CBZ.`)
     } else {
@@ -476,7 +494,10 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
 }
 
 function prepareBookOpen(book) {
-  if (preparedBooks.has(book.id)) return
+  if (requestedPreparationId === book.id && preparedBooks.has(book.id)) return preparedBooks.get(book.id)
+  const generation = ++preparationGeneration
+  requestedPreparationId = book.id
+  preparedBooks.clear()
   const fileTask = book.content && (book.sourceType === 'local' || book.sourceType === 'drive')
     ? Promise.resolve(new File([book.content], book.name || book.title || 'libro', {
       type: book.mimeType || book.content.type || ''
@@ -487,13 +508,23 @@ function prepareBookOpen(book) {
   const progressTask = book.driveFileId && hasDriveSession()
     ? cloudSync.syncBookProgress(book.id).catch(error => console.warn('Progreso remoto no disponible:', error))
     : Promise.resolve()
-  const task = Promise.all([fileTask, progressTask]).then(async ([file]) => {
+  const filesReady = Promise.all([fileTask, progressTask])
+  filesReady.catch(() => {})
+  // All preparations share one reader. A newer selection supersedes queued
+  // work, and an already loading engine settles before another replaces it.
+  const task = readerPreparationQueue.catch(() => {}).then(async () => {
+    const [file] = await filesReady
+    if (generation !== preparationGeneration) return false
     const updated = await library.get(book.id) || book
     const opened = await openFile(file, { existingRecord: updated, forcedId: book.id, preparing: true })
-    if (opened) extractCoverInBackground(await library.get(book.id) || updated)
+    if (generation !== preparationGeneration) return false
+    activePreparedBookId = opened ? book.id : null
+    if (opened) await extractCoverInBackground(await library.get(book.id) || updated)
     return opened
   })
+  readerPreparationQueue = task.catch(() => {})
   preparedBooks.set(book.id, task)
+  return task
 }
 
 async function revealPreparedReader() {
@@ -762,6 +793,10 @@ function onReaderRelocate({ fraction, cfi, index }) {
 }
 
 els.readerBack.addEventListener('click', () => {
+  preparationGeneration++
+  requestedPreparationId = null
+  activePreparedBookId = null
+  preparedBooks.clear()
   readingExperience.reset()
   const bookId = currentBookId
   const pendingProgress = progressWrites.get(bookId)
@@ -838,7 +873,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.5.0'
+els.appVersion.textContent = 'Inhouse Read · v1.5.1'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')

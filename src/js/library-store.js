@@ -156,7 +156,7 @@ export class LibraryStore {
     const store = await this.#store('readwrite')
     const existing = await wrap(store.get(id))
     if (!existing) return null
-    const record = { ...existing, cover: coverBlob }
+    const record = { ...existing, cover: coverBlob, coverUpdatedAt: Date.now() }
     await wrap(store.put(record))
     return record
   }

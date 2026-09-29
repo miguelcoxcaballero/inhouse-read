@@ -54,7 +54,7 @@ test('conecta Google sin redirección y muestra la foto en la esquina derecha', 
   await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   expect(await page.evaluate(() => window.__oauthOptions.redirect_uri)).toBeUndefined()
   await button.click()
-  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.5.0')
+  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.5.1')
   await expect(page.locator('#drive-theme-toggle')).toBeVisible()
   await expect(page.locator('#drive-profile-initial-menu')).toBeHidden()
   await page.locator('#drive-theme-toggle').check()
@@ -390,11 +390,20 @@ test('aleja y gira toda la estantería en 3D, permite abrir libros y recuerda la
   await expect(canvas).toHaveCount(1)
   await expect(canvas).toHaveAttribute('data-shelf-view', 'spine')
   const initialZoom = Number(await canvas.getAttribute('data-zoom'))
+  await canvas.evaluate(element => {
+    window.__shelfViewFrames = []
+    window.__shelfViewObserver = new MutationObserver(() => {
+      if (element.dataset.animating === 'true') window.__shelfViewFrames.push(Number(element.dataset.viewProgress))
+    })
+    window.__shelfViewObserver.observe(element, {
+      attributes:true, attributeFilter:['data-view-progress', 'data-animating']
+    })
+  })
 
   await isometric.click()
   await expect(shelf).toHaveAttribute('data-view-mode', 'isometric')
   await expect(isometric).toHaveAttribute('aria-pressed', 'true')
-  await expect(canvas).toHaveAttribute('data-animating', 'true')
+  await expect.poll(() => page.evaluate(() => window.__shelfViewFrames.some(value => value > 0 && value < 1))).toBe(true)
   await expect(canvas).toHaveAttribute('data-view-progress', '1')
   expect(Math.abs(Number(await canvas.getAttribute('data-yaw')))).toBeGreaterThan(15)
   expect(Math.abs(Number(await canvas.getAttribute('data-pitch')))).toBeGreaterThan(5)
@@ -404,11 +413,13 @@ test('aleja y gira toda la estantería en 3D, permite abrir libros y recuerda la
   await page.screenshot({ path:'test-results/whole-shelf-isometric-mobile.png' })
 
   // Interrupted transitions finish in the last requested view without rebuilding the layout.
+  await page.evaluate(() => { window.__shelfViewFrames = [] })
   await frontal.click()
-  await expect(canvas).toHaveAttribute('data-animating', 'true')
+  await expect.poll(() => page.evaluate(() => window.__shelfViewFrames.some(value => value > 0 && value < 1))).toBe(true)
   await isometric.click()
   await expect(canvas).toHaveAttribute('data-view-progress', '1')
   await expect(canvas).toHaveAttribute('data-animating', 'false')
+  await page.evaluate(() => window.__shelfViewObserver.disconnect())
   expect(await bookOrder()).toEqual(initialOrder)
 
   // A settled shelf must stop consuming animation frames once textures have arrived.
@@ -474,5 +485,10 @@ test('la estantería isométrica larga limita los modelos activos y deja alcanza
   await expect.poll(async () => Number(await canvas.getAttribute('data-active-books'))).toBeGreaterThan(0)
   expect(Number(await canvas.getAttribute('data-active-books'))).toBeLessThan(80)
   await expect(canvas).toHaveCount(1)
+  await page.evaluate(() => { window.__longShelfCanvas = document.querySelector('.ihr-bookshelf-scene') })
+  await page.setViewportSize({ width:414, height:844 })
+  await expect(page.locator('.ihr-spine[data-book-id="long-shelf:79"]')).toBeInViewport()
+  expect(await page.evaluate(() => window.__longShelfCanvas === document.querySelector('.ihr-bookshelf-scene'))).toBe(true)
+  await expect(canvas).toHaveAttribute('data-view-progress', '1')
   await page.screenshot({ path:'test-results/whole-shelf-isometric-last-row.png' })
 })

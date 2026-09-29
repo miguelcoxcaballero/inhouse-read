@@ -116,6 +116,25 @@ describe('book motion with continuous velocity', () => {
       expect(Math.abs(left - right)).toBeLessThan(.02);
     }
   });
+  it('closes a cancelled opening continuously before the book rejoins the shelf', () => {
+    const cancelledPose = { x:24, y:0, angle:0, pitch:0, scale:1, coverOpen:.68 };
+    const returning = [
+      { transform:cancelledPose },
+      { offset:.45, transform:{ x:48, y:18, angle:62, pitch:0, scale:.6 } },
+      { transform:{ x:100, y:60, angle:90, pitch:0, scale:.3 } }
+    ];
+    expect(sampleBookMotion(returning, 0)).toEqual(cancelledPose);
+    let previous = cancelledPose.coverOpen;
+    for (let step = 1; step <= 100; step++) {
+      const pose = sampleBookMotion(returning, step / 100);
+      expect(pose.coverOpen).toBeLessThanOrEqual(previous);
+      expect(pose.coverOpen).toBeGreaterThanOrEqual(0);
+      previous = pose.coverOpen;
+    }
+    expect(sampleBookMotion(returning, .2).coverOpen).toBeGreaterThan(0);
+    expect(sampleBookMotion(returning, .45).coverOpen).toBe(0);
+    expect(sampleBookMotion(returning, 1)).toMatchObject({ angle:90, coverOpen:0 });
+  });
 });
 
 
@@ -136,7 +155,7 @@ describe('engraved binding geometry', () => {
 describe('real shelf book materials', () => {
   const book = { title:'A printed cover', author:'An author', format:'EPUB' };
   const style = { color:'#42604b', shade:'#324c3a', ink:'#ffffff', coverRatio:.66, width:40 };
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
   function canvasContext() {
     const context = new Proxy({
@@ -201,5 +220,66 @@ describe('real shelf book materials', () => {
     expect(shelfBinding.material.map.image.width * shelfBinding.material.map.image.height)
       .toBeLessThan(detailBinding.material.map.image.width * detailBinding.material.map.image.height);
     shelf.userData.dispose(); detail.userData.dispose();
+  });
+
+  it('starts a lifted copy with the already decoded shelf cover and releases the cache after both copies close', async () => {
+    canvasContext();
+    let completeLoad;
+    const loader = vi.spyOn(THREE.TextureLoader.prototype, 'load').mockImplementation((_url, ready) => { completeLoad = ready; });
+    const shelf = createBookModel(book, style, 132, 200, 40, 'blob:shared-cover', { shelf:true });
+    completeLoad(new THREE.Texture({ width:660, height:1000 }));
+    await expect(shelf.userData.ready).resolves.toBe(true);
+    const lifted = createBookModel(book, style, 264, 400, 80, 'blob:shared-cover');
+    expect(lifted.userData.coverLoaded).toBe(true);
+    expect(lifted.getObjectByName('front-cover').material[0].map.image.height).toBe(2048);
+    expect(loader).toHaveBeenCalledOnce();
+    shelf.userData.dispose();
+    const replacement = createBookModel(book, style, 264, 400, 80, 'blob:shared-cover');
+    expect(replacement.userData.coverLoaded).toBe(true);
+    expect(loader).toHaveBeenCalledOnce();
+    lifted.userData.dispose(); replacement.userData.dispose();
+    const later = createBookModel(book, style, 132, 200, 40, 'blob:shared-cover', { shelf:true });
+    expect(loader).toHaveBeenCalledTimes(2);
+    later.userData.dispose();
+    await expect(later.userData.ready).resolves.toBe(false);
+  });
+
+  it('keeps the real cover visible during source replacement and rejects a stale decode', async () => {
+    canvasContext();
+    const callbacks = new Map();
+    vi.spyOn(THREE.TextureLoader.prototype, 'load').mockImplementation((url, ready) => { callbacks.set(url, ready); });
+    const model = createBookModel(book, style, 132, 200, 40, 'blob:first-cover', { shelf:true });
+    callbacks.get('blob:first-cover')(new THREE.Texture({ width:660, height:1000 }));
+    const material = model.getObjectByName('front-cover').material[0];
+    const firstMap = material.map;
+    const waiting = model.userData.updateCoverSource('blob:slow-cover');
+    expect(material.map).toBe(firstMap);
+    const newest = model.userData.updateCoverSource('blob:latest-cover');
+    await expect(waiting).resolves.toBe(false);
+    callbacks.get('blob:slow-cover')(new THREE.Texture({ width:660, height:1000 }));
+    expect(material.map).toBe(firstMap);
+    callbacks.get('blob:latest-cover')(new THREE.Texture({ width:660, height:1000 }));
+    await expect(newest).resolves.toBe(true);
+    expect(material.map).not.toBe(firstMap);
+    model.userData.dispose();
+  });
+
+  it('times out an external cover, ignores its late image and allows a fresh retry', async () => {
+    canvasContext(); vi.useFakeTimers();
+    const callbacks = [];
+    const loader = vi.spyOn(THREE.TextureLoader.prototype, 'load').mockImplementation((_url, ready) => callbacks.push(ready));
+    const model = createBookModel(book, style, 132, 200, 40, 'https://example.test/slow-cover.jpg');
+    const material = model.getObjectByName('front-cover').material[0], fallback = material.map;
+    await vi.advanceTimersByTimeAsync(6000);
+    await expect(model.userData.ready).resolves.toBe(false);
+    const late = new THREE.Texture({ width:660, height:1000 }), dispose = vi.spyOn(late, 'dispose');
+    callbacks[0](late);
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(material.map).toBe(fallback);
+    const retry = createBookModel(book, style, 132, 200, 40, 'https://example.test/slow-cover.jpg');
+    expect(loader).toHaveBeenCalledTimes(2);
+    model.userData.dispose(); retry.userData.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    await expect(retry.userData.ready).resolves.toBe(false);
   });
 });

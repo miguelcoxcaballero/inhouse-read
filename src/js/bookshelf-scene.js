@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createBookModel, getBookRenderer, lightBookScene } from './book-model.js';
+import { bookmarkFor } from './bookshelf-layout.js';
 
 const WALNUT = new URL('../assets/library/walnut.webp', import.meta.url).href;
 const DURATION = 700;
@@ -58,8 +59,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   canvas.className = 'ihr-bookshelf-scene';
   canvas.setAttribute('aria-hidden', 'true');
   Object.assign(canvas.style, { position:'sticky', top:'0', left:'0', display:'block', pointerEvents:'none', zIndex:'0' });
-  const originalHeight = stage.style.height;
-  const alreadyScene = stage.classList.contains('has-scene');
+  let originalHeight = stage.style.height;
+  let alreadyScene = stage.classList.contains('has-scene');
   const originalStyles = new Map(entries.filter(entry => entry.node).map(entry => [entry.node, entry.node.getAttribute('style')]));
   stage.classList.add('has-scene');
   stage.prepend(canvas);
@@ -77,8 +78,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const backWood = new THREE.MeshStandardMaterial({ map:texture, color:'#78614d', roughness:1 });
   const darkWood = new THREE.MeshStandardMaterial({ map:texture, color:'#9c7758', roughness:.9 });
   let depth = Math.max(155, ...entries.filter(e => e.kind !== 'plant').map(e => e.width + 12));
-  const bookEntries = entries.map(entry => ({ ...entry, model:null, pose:new THREE.Object3D(),
-    lift:{ value:0, from:0, target:0, started:0 }, offset:{ x:0, y:0 }, state:'', rect:null }));
+  const entryKey = (entry, index) => entry.kind === 'plant' ? `plant:${entry.key ?? index}` : `book:${String(entry.book?.id ?? entry.book?.path ?? entry.book?.title ?? index)}`;
+  const freshEntry = (entry, index) => ({ ...entry, key:entryKey(entry, index), model:null, replacement:null, pose:new THREE.Object3D(),
+    lift:{ value:0, from:0, target:0, started:0 }, offset:{ x:0, y:0 }, state:'', rect:null });
+  let bookEntries = entries.map(freshEntry);
   const byNode = new Map(bookEntries.filter(entry => entry.node).map(entry => [entry.node, entry]));
   const beam = (w, h, d, x, y, z, material = wood) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
@@ -91,21 +94,25 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     mesh.position.set(x, y, z); furniture.add(mesh); return mesh;
   };
   const boardHeight = 15;
-  // A cabinet has one continuous back: the spacing between shelf rows must
-  // not reveal strips of the page background through the furniture.
-  beam(width - 24, height - 12, 5, 0, -height / 2, -depth, backWood);
-  for (const row of rows) {
-    const bottom = row.bottom;
-    beam(width - 12, boardHeight, depth + 10, 0, -bottom - boardHeight / 2, -depth / 2 + 3);
-    // A slim lip and recessed rail catch different amounts of the same light.
-    beam(width - 10, 4, 4, 0, -bottom - 2, 9, wood);
-    beam(width - 24, 5, 8, 0, -bottom + 2.5, -depth + 4, darkWood);
+  function rebuildFurniture() {
+    for (const object of [...furniture.children]) if (object.userData.furniture) {
+      furniture.remove(object); object.geometry.dispose();
+    }
+    // One continuous back avoids strips of page background between the rows.
+    beam(width - 24, height - 12, 5, 0, -height / 2, -depth, backWood);
+    for (const row of rows) {
+      const bottom = row.bottom;
+      beam(width - 12, boardHeight, depth + 10, 0, -bottom - boardHeight / 2, -depth / 2 + 3);
+      beam(width - 10, 4, 4, 0, -bottom - 2, 9, wood);
+      beam(width - 24, 5, 8, 0, -bottom + 2.5, -depth + 4, darkWood);
+    }
+    beam(12, height, depth + 6, -width / 2 + 6, -height / 2, -depth / 2, darkWood);
+    beam(12, height, depth + 6, width / 2 - 6, -height / 2, -depth / 2, wood);
+    beam(width, 12, depth + 10, 0, -6, -depth / 2 + 3);
   }
-  beam(12, height, depth + 6, -width / 2 + 6, -height / 2, -depth / 2, darkWood);
-  beam(12, height, depth + 6, width / 2 - 6, -height / 2, -depth / 2, wood);
-  beam(width, 12, depth + 10, 0, -6, -depth / 2 + 3);
+  rebuildFurniture();
 
-  let disposed = false, raf = 0, renderCount = 0, viewportHeight = 1, progress = mode === 'isometric' ? 1 : 0;
+  let disposed = false, raf = 0, renderCount = 0, modelCreations = 0, viewportHeight = 1, progress = mode === 'isometric' ? 1 : 0;
   let transition = null, reorderTransition = null;
   let desiredMode = mode === 'isometric' ? 'isometric' : 'spine';
   const vector = new THREE.Vector3(), inverseRotation = new THREE.Quaternion();
@@ -130,6 +137,98 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     );
   };
   for (const entry of bookEntries) entry.box = slotBox(entry);
+
+  function materialKeys(entry) {
+    const { book, style, coverUrl } = entry;
+    return {
+      spine:JSON.stringify([style, book.spineTitleOverride, book.title, book.author, book.spineFontSize,
+        book.spineAuthorFontSize, book.spineFinish, book.spineTextFinish, book.spineTextColor, book.spineEngraved]),
+      cover:JSON.stringify([coverUrl, style.coverRatio, style.color, !coverUrl && [book.title, book.author, book.format, style.fontFamily]]),
+      coverFinish:book.coverFinish,
+      edgeFinish:book.pageEdgeFinish,
+      bookmark:JSON.stringify(bookmarkFor(book))
+    };
+  }
+
+  function makeModel(entry) {
+    const model = entry.kind === 'plant' ? plantModel(entry)
+      : createBookModel(entry.book, entry.style, entry.width, entry.height, entry.thickness, entry.coverUrl, { shelf:true });
+    model.userData.invalidate = invalidate;
+    model.userData.entry = entry;
+    if (entry.kind !== 'plant') model.userData.shelfKeys = materialKeys(entry);
+    canvas.dataset.modelCreations = String(++modelCreations);
+    return model;
+  }
+
+  function cancelReplacement(entry) {
+    entry.replacement?.userData.dispose?.();
+    entry.replacement = null;
+  }
+
+  function releaseEntry(entry) {
+    cancelReplacement(entry);
+    if (entry.model) { furniture.remove(entry.model); entry.model.userData.dispose?.(); entry.model = null; }
+  }
+
+  function replaceWhenReady(entry) {
+    cancelReplacement(entry);
+    const previous = entry.model, replacement = makeModel(entry);
+    entry.replacement = replacement;
+    Promise.resolve(replacement.userData.ready).then(loaded => {
+      if (disposed || entry.replacement !== replacement || entry.model !== previous) {
+        replacement.userData.dispose?.(); return;
+      }
+      entry.replacement = null;
+      if (loaded === false && previous && entry.coverUrl) {
+        // A transient image failure must not replace a visible real cover
+        // with a generated placeholder on the user's existing book.
+        replacement.userData.dispose?.(); updateMaterials(entry); invalidate(); return;
+      }
+      entry.model = replacement;
+      furniture.add(replacement);
+      if (previous) { furniture.remove(previous); previous.userData.dispose?.(); }
+      invalidate();
+    }, () => {
+      if (entry.replacement === replacement) entry.replacement = null;
+      replacement.userData.dispose?.();
+    });
+  }
+
+  function updateMaterials(entry) {
+    const model = entry.model;
+    if (!model || entry.kind === 'plant') return;
+    const previous = model.userData.shelfKeys || {}, next = materialKeys(entry);
+    if (previous.spine !== next.spine) model.userData.updateSpineAppearance?.(entry.book, entry.style);
+    if (previous.cover !== next.cover) model.userData.updateCoverSource?.(entry.coverUrl, entry.book, entry.style);
+    if (previous.coverFinish !== next.coverFinish) model.userData.updateCoverAppearance?.(entry.book);
+    if (previous.edgeFinish !== next.edgeFinish) model.userData.updateEdgeAppearance?.(entry.book);
+    if (previous.bookmark !== next.bookmark) {
+      if (model.userData.updateBookmark) model.userData.updateBookmark(entry.book);
+      else { replaceWhenReady(entry); return; }
+    }
+    model.userData.shelfKeys = next;
+  }
+
+  function updateRecord(entry, book, style, coverUrl, dimensions = null) {
+    const oldDimensions = [entry.width, entry.height, entry.thickness];
+    const baseline = entry.y + entry.height / 2;
+    const previousRatio = entry.width / entry.height;
+    const baseHeight = entry.height / (Number(entry.style.heightRatio) || 1);
+    entry.height = baseHeight * (Number(style.heightRatio) || Number(entry.style.heightRatio) || 1);
+    const ratio = Number(style.coverRatio);
+    entry.width = entry.height * (ratio > 0 && Number.isFinite(ratio) ? clamp(ratio, .25, 2.5) : previousRatio);
+    entry.thickness = Number(style.width) || entry.thickness;
+    entry.y = baseline - entry.height / 2;
+    if (dimensions) for (const field of ['width', 'height', 'thickness', 'x', 'y']) if (dimensions[field] !== undefined) entry[field] = dimensions[field];
+    entry.book = book; entry.style = style; entry.coverUrl = coverUrl;
+    entry.box = slotBox(entry);
+    fitDepth(entry.width + 12);
+    if (entry.model) {
+      const changedShape = oldDimensions.some((value, i) => Math.abs(value - [entry.width, entry.height, entry.thickness][i]) > .01);
+      if (changedShape || entry.replacement) replaceWhenReady(entry);
+      else updateMaterials(entry);
+    }
+  }
 
   function fitDepth(nextDepth) {
     if (nextDepth <= depth) return;
@@ -226,12 +325,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       entry.rect = rect;
       const visible = !away && rect.bottom > scroll - 220 && rect.top < scroll + viewportHeight + 220;
       if (visible && !entry.model) {
-        entry.model = plant ? plantModel(entry) : createBookModel(entry.book, entry.style, entry.width, entry.height, entry.thickness, entry.coverUrl, { shelf:true });
-        entry.model.userData.invalidate = invalidate;
-        entry.model.userData.entry = entry;
+        entry.model = makeModel(entry);
         furniture.add(entry.model);
       } else if (!visible && entry.model && !away) {
-        furniture.remove(entry.model); entry.model.userData.dispose?.(); entry.model = null;
+        releaseEntry(entry);
       }
       if (entry.model) {
         entry.model.visible = !away;
@@ -339,19 +436,62 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     updateEntry(node, book, style, coverUrl) {
       const entry = byNode.get(node);
       if (!entry) return;
-      if (entry.model) { furniture.remove(entry.model); entry.model.userData.dispose?.(); entry.model = null; }
-      const baseline = entry.y + entry.height / 2;
-      const previousRatio = entry.width / entry.height;
-      const baseHeight = entry.height / (Number(entry.style.heightRatio) || 1);
-      entry.height = baseHeight * (Number(style.heightRatio) || Number(entry.style.heightRatio) || 1);
-      const ratio = Number(style.coverRatio);
-      entry.width = entry.height * (ratio > 0 && Number.isFinite(ratio) ? clamp(ratio, .25, 2.5) : previousRatio);
-      entry.thickness = Number(style.width) || entry.thickness;
-      entry.y = baseline - entry.height / 2;
-      entry.box = slotBox(entry);
-      fitDepth(entry.width + 12);
-      entry.book = book; entry.style = style; entry.coverUrl = coverUrl;
+      updateRecord(entry, book, style, coverUrl);
       invalidate();
+    },
+    updateLayout(next) {
+      if (disposed) return false;
+      cancelAnimationFrame(raf); raf = 0; mutations.disconnect();
+      const oldEntries = new Map(bookEntries.map(entry => [entry.key, entry]));
+      const oldWidth = width, oldHeight = height, oldRows = JSON.stringify(rows), oldDepth = depth;
+      // Restore only the outgoing DOM. The already painted canvas and GPU
+      // resources remain alive while the replacement semantic tree is bound.
+      if (next.stage !== stage) {
+        stage.style.height = originalHeight;
+        if (!alreadyScene) stage.classList.remove('has-scene');
+        for (const [node, style] of originalStyles) {
+          if (style === null) node.removeAttribute('style'); else node.setAttribute('style', style);
+          delete node.dataset.sceneProjected;
+        }
+        originalStyles.clear();
+        stage = next.stage;
+        originalHeight = stage.style.height;
+        alreadyScene = stage.classList.contains('has-scene');
+        stage.classList.add('has-scene');
+        stage.prepend(canvas);
+      }
+      width = next.width; height = next.height; rows = next.rows;
+      const retained = [];
+      for (let index = 0; index < next.entries.length; index++) {
+        const data = next.entries[index], key = entryKey(data, index);
+        let entry = oldEntries.get(key);
+        if (entry) {
+          oldEntries.delete(key);
+          if (entry.node !== data.node && entry.node?.classList.contains('is-away')) data.node?.classList.add('is-away');
+          entry.node = data.node;
+          if (data.kind === 'plant') {
+            if (entry.width !== data.width || entry.height !== data.height) releaseEntry(entry);
+            Object.assign(entry, data); entry.box = slotBox(entry);
+          } else updateRecord(entry, data.book, data.style, data.coverUrl, data);
+        } else { entry = freshEntry(data, index); entry.box = slotBox(entry); }
+        entry.key = key;
+        retained.push(entry);
+        if (entry.node && !originalStyles.has(entry.node)) originalStyles.set(entry.node, entry.node.getAttribute('style'));
+      }
+      for (const entry of oldEntries.values()) releaseEntry(entry);
+      bookEntries = retained; byNode.clear();
+      fitDepth(Math.max(155, ...bookEntries.filter(entry => entry.kind !== 'plant').map(entry => entry.width + 12)));
+      for (const entry of bookEntries) if (entry.node) {
+        byNode.set(entry.node, entry);
+        mutations.observe(entry.node, { attributes:true, attributeFilter:['class', 'style'] });
+      }
+      if (reorderTransition) reorderTransition.entries = reorderTransition.entries.filter(item => retained.includes(item.entry));
+      if (width !== oldWidth || height !== oldHeight || depth !== oldDepth || JSON.stringify(rows) !== oldRows) rebuildFurniture();
+      fullBounds.min.set(-width / 2, -height - boardHeight, -depth - 4);
+      fullBounds.max.set(width / 2, 2, 12);
+      canvas.dataset.layoutUpdates = String(Number(canvas.dataset.layoutUpdates || 0) + 1);
+      draw();
+      return true;
     },
     animateFromRects(oldRects) {
       if (reducedMotion.matches) return;
@@ -362,12 +502,15 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         const x = old.left - (entry.rect.left + stageRect.left), y = old.top - (entry.rect.top + stageRect.top);
         if (Math.abs(x) + Math.abs(y) > 1) items.push({ entry, x, y });
       }
-      reorderTransition = { started:performance.now(), entries:items }; invalidate();
+      reorderTransition = { started:performance.now(), entries:items };
+      // Paint the old positions before yielding. Otherwise a synchronous
+      // layout replacement can flash its final positions for one frame.
+      cancelAnimationFrame(raf); raf = 0; draw(reorderTransition.started);
     },
     dispose() {
       disposed = true; cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       scroller.removeEventListener('scroll', invalidate); window.removeEventListener('resize', invalidate);
-      for (const entry of bookEntries) if (entry.model) { furniture.remove(entry.model); entry.model.userData.dispose?.(); }
+      for (const entry of bookEntries) releaseEntry(entry);
       releaseObject(furniture); texture.dispose(); canvas.remove(); stage.style.height = originalHeight;
       if (!alreadyScene) stage.classList.remove('has-scene');
       for (const [node, style] of originalStyles) {
