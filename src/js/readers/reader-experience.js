@@ -7,6 +7,9 @@ import { normalizeBookAuthor } from '../book-title.js'
 const STORAGE_KEY = 'inhouse-read-reading-preferences'
 
 export class ReaderExperience {
+  navigationGeneration = 0
+  navigationQueue = Promise.resolve()
+
   constructor(reader, { persist = async () => {} } = {}) {
     this.reader = reader
     this.persist = persist
@@ -149,6 +152,7 @@ export class ReaderExperience {
     this.resizePanel = resize
   }
   async open(record) {
+    this.cancelNavigation()
     this.book = record
     this.history = cleanPlaces(record.readingHistory)
     this.bookmarks = cleanPlaces(record.bookmarks, 100)
@@ -165,7 +169,7 @@ export class ReaderExperience {
     this.renderPlaces(); this.renderToc(); await this.applyPreferences(); this.relocate()
     for (const quote of this.quotes) this.reader.addQuoteAnnotation(quote)
   }
-  reset() { this.voice.stop(); this.panel.close(); this.book = null; this.returnButton.hidden = true; this.screen.classList.remove('reader-kids-mode'); this.panel.querySelector('[data-kids]').setAttribute('aria-pressed','false') }
+  reset() { this.cancelNavigation(); this.voice.stop(); this.panel.close(); this.book = null; this.returnButton.hidden = true; this.screen.classList.remove('reader-kids-mode'); this.panel.querySelector('[data-kids]').setAttribute('aria-pressed','false') }
   relocate() {
     this.location = {...clonePlace(this.reader.location),section:this.reader.location.section || '',page:this.reader.location.page || ''}
     const label = this.label(this.location)
@@ -267,28 +271,57 @@ export class ReaderExperience {
     try { await this.persist(this.book.id, { readingHistory:cleanPlaces(this.history), bookmarks:cleanPlaces(this.bookmarks, 100), quotes:cleanQuotes(this.quotes) }) }
     catch { this.error('No se pudieron guardar los marcadores. Comprueba el espacio del dispositivo.') }
   }
-  async jump(place, target) {
-    if (!this.book || this.navigating) return
-    this.navigating = true; this.voice.stop(); this.error('')
-    const origin = { ...clonePlace(this.location), label:this.label(this.location), createdAt:Date.now() }
-    this.history = [origin, ...this.history].slice(0,20)
-    await this.savePlaces(); this.renderPlaces()
-    try {
-      if (target !== undefined) await this.reader.goToTarget(target)
-      else await this.reader.goToLocator(place.locator, place.fraction)
-      this.relocate(); this.panel.close()
-    } catch { this.error('No se pudo abrir esa posición del libro.') }
-    finally { this.navigating = false }
+  cancelNavigation() {
+    this.navigationGeneration++
+    this.navigationQueue = Promise.resolve()
+    this.navigating = false
   }
-  async returnToReading(index = 0) {
-    if (this.navigating || !this.history[index]) return
-    this.navigating = true; this.voice.stop()
-    try {
-      const place = this.history[index]
-      await this.reader.goToLocator(place.locator, place.fraction)
-      this.history.splice(index,1); await this.savePlaces(); this.relocate(); this.renderPlaces(); this.panel.close()
-    } catch { this.error('No se pudo volver a ese punto de lectura.') }
-    finally { this.navigating = false }
+  queueNavigation(action) {
+    if (!this.book) return Promise.resolve()
+    const book = this.book, generation = this.navigationGeneration
+    const isCurrent = () => this.book === book && this.navigationGeneration === generation
+    // A section becomes visible before its history write finishes. Preserve
+    // links tapped in that interval instead of silently dropping the request.
+    const task = this.navigationQueue.catch(() => {}).then(async () => {
+      if (!isCurrent()) return
+      this.navigating = true
+      try { return await action(isCurrent) }
+      finally { if (isCurrent()) this.navigating = false }
+    })
+    this.navigationQueue = task
+    return task
+  }
+  jump(place, target) {
+    return this.queueNavigation(async isCurrent => {
+      this.voice.stop(); this.error('')
+      const origin = { ...clonePlace(this.location), label:this.label(this.location), createdAt:Date.now() }
+      this.history = [origin, ...this.history].slice(0,20)
+      await this.savePlaces()
+      if (!isCurrent()) return
+      this.renderPlaces()
+      try {
+        if (target !== undefined) await this.reader.goToTarget(target)
+        else await this.reader.goToLocator(place.locator, place.fraction)
+        if (!isCurrent()) return
+        this.relocate(); this.panel.close()
+      } catch { if (isCurrent()) this.error('No se pudo abrir esa posición del libro.') }
+    })
+  }
+  returnToReading(index = 0) {
+    const place = this.history[index]
+    if (!place) return Promise.resolve()
+    return this.queueNavigation(async isCurrent => {
+      if (!this.history.includes(place)) return
+      this.voice.stop()
+      try {
+        await this.reader.goToLocator(place.locator, place.fraction)
+        if (!isCurrent()) return
+        this.history.splice(this.history.indexOf(place),1)
+        await this.savePlaces()
+        if (!isCurrent()) return
+        this.relocate(); this.renderPlaces(); this.panel.close()
+      } catch { if (isCurrent()) this.error('No se pudo volver a ese punto de lectura.') }
+    })
   }
   async addBookmark() {
     const duplicate = this.bookmarks.some(x => JSON.stringify(x.locator) === JSON.stringify(this.location.locator) && Math.abs(x.fraction - this.location.fraction) < .0001)
@@ -361,5 +394,10 @@ export class ReaderExperience {
     this.panel.querySelector('[data-place-tab="toc"]').hidden = !list.childElementCount
     this.showPlaceTab(list.childElementCount ? 'toc' : 'bookmarks')
   }
-  step(direction) { this.voice.stop(); return direction > 0 ? this.reader.next() : this.reader.prev() }
+  step(direction) {
+    return this.queueNavigation(() => {
+      this.voice.stop()
+      return direction > 0 ? this.reader.next() : this.reader.prev()
+    })
+  }
 }

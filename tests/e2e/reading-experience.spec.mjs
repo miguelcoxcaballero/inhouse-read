@@ -103,7 +103,7 @@ test('EPUB: tipografía real, capítulos, enlaces internos y voz desde el texto 
     window.__epubSpeech = []
     window.InhouseSpeech = {getVoices:() => '[]',stop:() => {},speak:text => window.__epubSpeech.push(text)}
   })
-  await page.goto('/')
+  await page.goto(process.env.IHR_TEST_URL || '/')
   await page.locator('#file-picker').setInputFiles(EPUB)
   await expect(page.locator('foliate-view')).toBeVisible()
   await page.getByRole('button', { name:'Aspecto de lectura' }).click()
