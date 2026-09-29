@@ -105,7 +105,7 @@ const PLANT_PHOTOS = {
   succulent: new URL('../assets/library/succulent.webp', import.meta.url).href,
   upright: new URL('../assets/library/sansevieria.webp', import.meta.url).href
 };
-import { bookView } from './book-model.js';
+import { bookView, fitCoverImage } from './book-model.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
@@ -115,7 +115,8 @@ const ICONS = Object.freeze({
   read: ['M3 5.5c3-1 6-.5 9 1.5 3-2 6-2.5 9-1.5v14c-3-1-6-.5-9 1.5-3-2-6-2.5-9-1.5v-14Z', 'M12 7v14'],
   download: ['M12 3v12', 'm7 10 5 5 5-5', 'M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4'],
   check: ['m5 12 4 4L19 6'],
-  close: ['m6 6 12 12', 'M18 6 6 18']
+  close: ['m6 6 12 12', 'M18 6 6 18'],
+  pipette: ['m19 5-2-2a2.12 2.12 0 0 0-3 0l-1 1 5 5 1-1a2.12 2.12 0 0 0 0-3Z', 'm14 5 5 5', 'm3 21 3-1 11-11-3-3L3 17l-1 3Z']
 });
 export const DEFAULT_TEXTS = Object.freeze({
   shelfLabel: 'Tu estantería',
@@ -1069,6 +1070,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       'aria-label': opts.texts.tapCover(book), hidden: true,
       style: `left:${centerX - coverW / 2}px;top:${centerY - coverH / 2}px;width:${coverW}px;height:${coverH}px`
     });
+    const colorPickLayer = el('div', { class:'ihr-color-pick', hidden:true, 'aria-label':'Elegir un color de la portada' });
+    const colorPickMessage = el('p', { class:'ihr-color-pick__message', text:'Arrastra la muestra hasta el color de la portada' });
+    const colorPickCancel = el('button', { type:'button', class:'ihr-color-pick__cancel', text:'Cancelar', onClick:() => finishColorPick(false) });
+    const colorPickHandle = el('button', {
+      type:'button', class:'ihr-color-pick__handle', 'aria-label':'Muestra de color: arrastra sobre la portada',
+      style:`--ihr-picked-color:${style.color}`
+    }, [el('span', { class:'ihr-color-pick__handle-color', 'aria-hidden':'true' }), el('span', { class:'ihr-color-pick__handle-cross', 'aria-hidden':'true', text:'+' })]);
+    colorPickLayer.append(colorPickMessage, colorPickCancel, colorPickHandle);
 
     const flyout = el('div', {
       class: 'ihr-flyout',
@@ -1080,7 +1089,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     flyout.classList.add(view ? 'has-webgl' : 'no-webgl');
     const closeButton = el('button', { type:'button', class:'ihr-btn ihr-flyout__close', 'aria-label':opts.texts.closeAction, title:opts.texts.closeAction, onClick:() => close() }, [svgIcon(ICONS.close, { className:'ihr-icon' })]);
     const shadow = el('div', { class:'ihr-flyout__shadow', 'aria-hidden':'true', style:`--ihr-cover-bottom:${centerY + coverH / 2}px;left:${vw * (landscape ? .26 : .5)}px` });
-    flyout.append(scrim, shadow, el('div', { class: 'ihr-flyout__stage' }, [bookNode]), meta, coverTarget, closeButton);
+    flyout.append(scrim, shadow, el('div', { class: 'ihr-flyout__stage' }, [bookNode]), meta, coverTarget, colorPickLayer, closeButton);
 
     let previousFocus = document.activeElement;
     const session = { book, item, cancelled: false, phase: 'revealing', view, bookNode };
@@ -1114,7 +1123,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       }
       if (event.key === 'Escape') {
         event.stopPropagation();
-        if (!editorPanel.hidden) closeEditor();
+        if (session.colorPicking) finishColorPick(false);
+        else if (!editorPanel.hidden) closeEditor();
         else if (session.phase !== 'reading') close();
       }
     }
@@ -1293,11 +1303,153 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       saveCustomizationNow();
       if (restoreFocus && session.phase === 'ready') actionButtons[2].focus({ preventScroll: true });
     }
+    let coverSampleCanvas = null;
+    let sampledCoverColor = '';
+    let colorHandleDragging = false;
+    async function prepareCoverSampler() {
+      if (coverSampleCanvas) return coverSampleCanvas;
+      if (!coverUrl) throw new Error('Este libro no tiene portada para muestrear.');
+      const image = new Image();
+      image.decoding = 'async';
+      image.src = coverUrl;
+      if (image.decode) await image.decode();
+      else await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; });
+      const scale = Math.min(1, 1200 / Math.max(image.naturalWidth, image.naturalHeight));
+      const width = Math.max(1, Math.round(image.naturalWidth * scale));
+      const height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      const context = canvas.getContext('2d', { willReadFrequently:true });
+      context.fillStyle = style.color; context.fillRect(0, 0, width, height);
+      const fit = fitCoverImage(image.naturalWidth, image.naturalHeight, width, height);
+      context.drawImage(image, fit.x * scale, fit.y * scale, fit.width * scale, fit.height * scale);
+      // Force a read now so tainted/cross-origin covers fail before the user starts dragging.
+      context.getImageData(0, 0, 1, 1);
+      coverSampleCanvas = canvas;
+      return canvas;
+    }
+    function sampleCoverAt(clientX, clientY) {
+      const rect = { left:centerX-coverW/2, top:centerY-coverH/2, right:centerX+coverW/2, bottom:centerY+coverH/2 };
+      if (!coverSampleCanvas || clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
+        sampledCoverColor = '';
+        colorPickMessage.textContent = 'Arrastra la muestra hasta la portada';
+        colorPickHandle.style.removeProperty('--ihr-picked-color');
+        colorPickHandle.removeAttribute('data-color');
+        return false;
+      }
+      const x = Math.min(coverSampleCanvas.width - 1, Math.floor((clientX - rect.left) / coverW * coverSampleCanvas.width));
+      const y = Math.min(coverSampleCanvas.height - 1, Math.floor((clientY - rect.top) / coverH * coverSampleCanvas.height));
+      const [r, g, b] = coverSampleCanvas.getContext('2d', { willReadFrequently:true }).getImageData(x, y, 1, 1).data;
+      sampledCoverColor = `#${[r,g,b].map(value => value.toString(16).padStart(2,'0')).join('')}`;
+      colorPickHandle.style.setProperty('--ihr-picked-color', sampledCoverColor);
+      colorPickHandle.dataset.color = sampledCoverColor;
+      colorPickMessage.textContent = `${sampledCoverColor.toUpperCase()} · Suelta para aplicar`;
+      return true;
+    }
+    async function beginColorPick() {
+      if (session.phase !== 'ready' || session.colorPicking) return;
+      const button = colorControls.querySelector('.ihr-spine-editor__pipette');
+      button.disabled = true;
+      try {
+        await prepareCoverSampler();
+      } catch (error) {
+        console.warn('No se pudo leer la portada para elegir un color:', error);
+        colorPickMessage.textContent = 'No se pudo leer esta portada';
+        colorPickLayer.hidden = false;
+        flyout.classList.add('is-picking-color');
+        colorPickCancel.textContent = 'Cerrar';
+        button.disabled = false;
+        return;
+      }
+      button.disabled = false;
+      session.colorPicking = true;
+      session.pickingButton = button;
+      editorPanel.hidden = true;
+      flyout.classList.remove('is-editing-spine');
+      meta.classList.remove('is-editing');
+      actionButtons[2].setAttribute('aria-expanded', 'false');
+      colorPickLayer.hidden = false;
+      colorPickCancel.textContent = 'Cancelar';
+      colorPickMessage.textContent = 'Arrastra la muestra hasta el color de la portada';
+      colorPickHandle.style.setProperty('--ihr-picked-color', selectedColor);
+      colorPickHandle.style.left = `${centerX}px`;
+      colorPickHandle.style.top = `${Math.min(vh - 76, centerY + coverH / 2 + 44)}px`;
+      flyout.classList.add('is-picking-color');
+      const motion = view
+        ? view.animate([
+          { transform:editorPose },
+          { transform:{ x:0, y:0, scale:1, angle:0, pitch:0 } }
+        ], { duration:prefersReducedMotion() ? 1 : 360 })
+        : animate(bookNode, [{ transform:'scale(.92)' }, { transform:'scale(1)' }], { duration:prefersReducedMotion() ? 1 : 260, easing:EASE });
+      await motion.finished;
+      colorPickHandle.focus({ preventScroll:true });
+    }
+    async function finishColorPick(apply) {
+      if (!session.colorPicking && colorPickLayer.hidden) return;
+      const wasPicking = session.colorPicking;
+      session.colorPicking = false;
+      colorHandleDragging = false;
+      colorPickLayer.hidden = true;
+      colorPickHandle.classList.remove('is-dragging');
+      flyout.classList.remove('is-picking-color');
+      if (apply && sampledCoverColor) selectSpineColor(sampledCoverColor);
+      sampledCoverColor = '';
+      if (session.phase === 'ready' && !editorPanel.hidden) return;
+      editorPanel.hidden = false;
+      flyout.classList.add('is-editing-spine');
+      meta.classList.add('is-editing');
+      actionButtons[2].setAttribute('aria-expanded', 'true');
+      refreshEditorPreview();
+      if (wasPicking && session.phase === 'ready') {
+        const motion = view
+          ? view.animate([
+            { transform:{ x:0, y:0, scale:1, angle:0, pitch:0 } },
+            { transform:editorPose }
+          ], { duration:prefersReducedMotion() ? 1 : 320 })
+          : animate(bookNode, [{ transform:'scale(1)' }, { transform:'scale(.92)' }], { duration:prefersReducedMotion() ? 1 : 260, easing:EASE });
+        await motion.finished;
+      }
+      if (session.pickingButton?.isConnected) session.pickingButton.focus({ preventScroll:true });
+      session.pickingButton = null;
+    }
+    colorPickHandle.addEventListener('pointerdown', event => {
+      if (!session.colorPicking) return;
+      event.preventDefault();
+      colorHandleDragging = true;
+      colorPickHandle.classList.add('is-dragging');
+      colorPickHandle.setPointerCapture?.(event.pointerId);
+    });
+    colorPickHandle.addEventListener('pointermove', event => {
+      if (!colorHandleDragging || !session.colorPicking) return;
+      const bounds = flyout.getBoundingClientRect();
+      const x = event.clientX - bounds.left, y = event.clientY - bounds.top;
+      colorPickHandle.style.left = `${x}px`; colorPickHandle.style.top = `${y}px`;
+      sampleCoverAt(x, y);
+    });
+    colorPickHandle.addEventListener('pointerup', event => {
+      if (!colorHandleDragging) return;
+      colorHandleDragging = false;
+      colorPickHandle.classList.remove('is-dragging');
+      const bounds = flyout.getBoundingClientRect();
+      const x = event.clientX - bounds.left, y = event.clientY - bounds.top;
+      colorPickHandle.style.left = `${x}px`; colorPickHandle.style.top = `${y}px`;
+      sampleCoverAt(x, y);
+      if (sampledCoverColor) finishColorPick(true);
+      else colorPickMessage.textContent = 'Suelta la muestra sobre la portada';
+    });
+    colorPickHandle.addEventListener('pointercancel', () => {
+      colorHandleDragging = false;
+      colorPickHandle.classList.remove('is-dragging');
+    });
     const pickerInput = el('input', {
       type: 'color', value: spineColorStyle(selectedColor).color,
       'aria-label': 'Elegir otro color para el lomo',
       onChange: event => selectSpineColor(event.currentTarget.value)
     });
+    const pipetteButton = el('button', {
+      type:'button', class:'ihr-spine-editor__pipette', 'aria-label':'Elegir color de la portada',
+      title:'Tomar un color de la portada', onClick:beginColorPick
+    }, [svgIcon(ICONS.pipette, { className:'ihr-icon' })]);
     const colorControls = el('div', { class: 'ihr-flyout__colors', role: 'group', 'aria-label': 'Color del lomo' });
     const fontSelect = el('select', {
       class: 'ihr-spine-editor__select', 'aria-label': 'Fuente del lomo',
@@ -1387,6 +1539,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       inkPicker.value = item.style.ink;
       engravedInput.checked = book.spineEngraved === true;
       pickerInput.parentElement?.classList.toggle('is-selected', !suggestedColors.includes(selectedColor));
+      pipetteButton.style.setProperty('--ihr-pipette-color', selectedColor);
     }
     function selectSpineColor(color) {
       selectedColor = spineColorStyle(color).color;
@@ -1407,6 +1560,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     colorControls.append(
       el('span', { class: 'ihr-flyout__color-label', text: 'Lomo' }),
       el('div', { class: 'ihr-flyout__swatches' }, colorButtons),
+      pipetteButton,
       el('label', { class: 'ihr-flyout__custom-color', title: 'Elegir otro color' }, [
         pickerInput,
         el('span', { class: 'ihr-flyout__custom-mark', 'aria-hidden': 'true', text: '+' })
