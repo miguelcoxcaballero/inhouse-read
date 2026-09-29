@@ -23,6 +23,15 @@ test('Android: mantiene una pantalla de carga hasta que Drive guarda el libro y 
       accessToken:'test-drive-token', expiresAt:Date.now() + 3600_000
     }))
   })
+  // This test exercises Drive upload, not the public release feed. A newly
+  // published APK must not put an unrelated upgrade modal over this fixture.
+  await page.route('**/android-update.json?**', route => route.fulfill({
+    status:200, contentType:'application/json', body:JSON.stringify({
+      version:'1.0.17', required:false, apkUrl:'https://github.com/miguelcoxcaballero/inhouse-read/releases/download/test/app.apk'
+    })
+  }))
+  await page.route('https://api.github.com/repos/miguelcoxcaballero/inhouse-read/releases/latest',
+    route => route.fulfill({status:404,body:'No update in this fixture'}))
   let finishBookUpload
   let startedBookUpload
   const bookUploadStarted = new Promise(resolve => { startedBookUpload = resolve })
