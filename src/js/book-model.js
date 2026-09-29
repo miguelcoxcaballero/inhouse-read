@@ -102,7 +102,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   const group = new THREE.Group();
   const cloth = new THREE.MeshStandardMaterial({ color: style.color, roughness: .86 });
   let surface = spineSurface(book, style, height, thickness);
-  const binding = new THREE.MeshStandardMaterial({ ...surface.material, side: THREE.DoubleSide });
+  const binding = new THREE.MeshPhysicalMaterial({ ...surface.material, side: THREE.DoubleSide });
   const cover = shelf ? cloth : new THREE.MeshStandardMaterial({ map: coverTexture(book, style), roughness: .78 });
   const box = (w, h, d, material, x = 0, y = 0, z = 0) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
@@ -139,7 +139,10 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   cap.closePath();
   const capMaterials = [];
   for (const y of [-height / 2, height / 2]) {
-    const mesh = new THREE.Mesh(new THREE.ShapeGeometry(cap), new THREE.MeshStandardMaterial({ color: style.color, roughness: ['gold','silver'].includes(book.spineFinish) ? .33 : .86, metalness: ['gold','silver'].includes(book.spineFinish) ? 1 : 0, envMapIntensity:1.15, side: THREE.DoubleSide }));
+    const metallic = ['gold','silver'].includes(book.spineFinish);
+    const mesh = new THREE.Mesh(new THREE.ShapeGeometry(cap), new THREE.MeshPhysicalMaterial({ color: style.color,
+      roughness: metallic ? .5 : .86, metalness: metallic ? 1 : 0, envMapIntensity:metallic ? .9 : 1,
+      clearcoat:0, clearcoatRoughness:.4, side: THREE.DoubleSide }));
     capMaterials.push(mesh.material);
     mesh.rotation.x = Math.PI / 2; mesh.position.y = y; group.add(mesh);
   }
@@ -177,7 +180,9 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     for (const material of capMaterials) {
       material.color.set(nextStyle.color);
       material.metalness = ['gold','silver'].includes(nextBook.spineFinish) ? 1 : 0;
-      material.roughness = material.metalness ? .33 : .86;
+      material.roughness = material.metalness ? .5 : .86;
+      material.envMapIntensity = material.metalness ? .9 : 1;
+      material.clearcoat = 0;
     }
   };
   return group;
@@ -207,8 +212,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   const canvas = document.createElement('canvas'); canvas.className = 'ihr-book-canvas'; canvas.setAttribute('aria-hidden', 'true');
   canvas.width = Math.ceil(viewportWidth * pixelRatio); canvas.height = Math.ceil(viewportHeight * pixelRatio);
   host.append(canvas); const context = canvas.getContext('2d');
-  const scene = new THREE.Scene(); scene.environment = studioEnvironment; scene.environmentIntensity = .45; scene.add(new THREE.HemisphereLight(0xffffff, 0x7b7469, 2));
-  const light = new THREE.DirectionalLight(0xfff4e6, 2.2); light.position.set(-500, 700, 900); scene.add(light);
+  const scene = new THREE.Scene(); scene.environment = studioEnvironment; scene.environmentIntensity = .82; scene.add(new THREE.HemisphereLight(0xffffff, 0x7b7469, 1.8));
   let model = createBookModel(book, style, width, height, thickness, coverUrl, { shelf }); scene.add(model);
   const camera = new THREE.OrthographicCamera(-viewportWidth / 2, viewportWidth / 2, viewportHeight / 2, -viewportHeight / 2, .1, 10000); camera.position.z = 3000;
   let disposed = false, current, cancel = () => {};

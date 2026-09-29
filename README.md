@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca es una estantería con madera y plantas fotográficas, donde los libros se ven de canto. Al tocar uno, sale de la balda y gira en 3D hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.1.3
+
+- Acabados dorado y plata rehechos como foil satinado: bandas de reflejo amplias y suaves, gradación metálica controlada y menos brillo duro. El material y la luz siguen siendo los mismos en la balda, el editor y las animaciones.
+- Ajustes del metal aplicados también a los remates curvos del lomo; la vista de prueba cubre letras y encuadernación en ambos acabados.
+- Actualización web compatible con la APK 1.1.0; no requiere reinstalar Android.
+
 ### Actualización web · 1.1.2
 
 - Interfaz del lector reorganizada en tres accesos directos: Texto, Contenido y Audio. Cada uno abre una hoja sencilla; las tarjetas y formularios anidados se sustituyen por filas, listas y controles sin fondos añadidos.

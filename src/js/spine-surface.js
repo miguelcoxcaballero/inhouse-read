@@ -38,20 +38,34 @@ export function spineSurface(book, style, physicalHeight = 200, thickness = 32) 
   ctx.globalAlpha = .025
   for (let y = 0; y < height; y += 6) { ctx.fillStyle = '#fff'; ctx.fillRect(0, y, width, 1) }
   ctx.globalAlpha = 1
-  const ink = canvas(), ic = ink.getContext('2d')
-  ic.drawImage(mask, 0, 0); ic.globalCompositeOperation = 'source-in'; ic.fillStyle = style.ink; ic.fillRect(0, 0, width, height)
-  ctx.drawImage(ink, 0, 0)
-
   const metalBinding = spineFinish(book.spineFinish) !== 'matte'
   const metalText = spineFinish(book.spineTextFinish) !== 'matte'
   const engraved = book.spineEngraved === true
+  const foil = finish => {
+    const gradient = ctx.createLinearGradient(0, 0, width, 0)
+    const stops = finish === 'gold'
+      ? [[0,'#92733c'],[.16,'#a58a50'],[.31,'#c2a663'],[.45,'#dfcb91'],[.56,'#d8c285'],[.7,'#c0a668'],[.84,'#aa8e53'],[1,'#92733c']]
+      : [[0,'#898e94'],[.16,'#9ba1a8'],[.31,'#b3b8be'],[.45,'#d8dce0'],[.56,'#cdd1d6'],[.7,'#b4b9bf'],[.84,'#9ea3aa'],[1,'#898e94']]
+    for (const [at, value] of stops) gradient.addColorStop(at, value)
+    return gradient
+  }
+  // Foil is given a broad, studio-like reflection band across the curved
+  // surface. The environment map then moves the real specular highlight as
+  // the 3D spine turns, instead of reading as a flat yellow/grey ink.
+  if (metalBinding) { ctx.fillStyle = foil(spineFinish(book.spineFinish)); ctx.fillRect(0, 0, width, height) }
+  const ink = canvas(), ic = ink.getContext('2d')
+  ic.drawImage(mask, 0, 0); ic.globalCompositeOperation = 'source-in'
+  ic.fillStyle = metalText ? foil(spineFinish(book.spineTextFinish)) : style.ink
+  ic.fillRect(0, 0, width, height); ctx.drawImage(ink, 0, 0)
+
   // R = surface height, G = roughness, B = metalness. Linear, never sRGB.
   const packed = canvas(), pc = packed.getContext('2d')
-  pc.fillStyle = `rgb(255,${metalBinding ? 85 : 220},${metalBinding ? 255 : 0})`
+  const bindingRoughness = metalBinding ? 150 : 220
+  pc.fillStyle = `rgb(255,${bindingRoughness},${metalBinding ? 255 : 0})`
   pc.fillRect(0, 0, width, height)
   ic.clearRect(0, 0, width, height); ic.globalCompositeOperation = 'source-over'
   ic.drawImage(mask, 0, 0); ic.globalCompositeOperation = 'source-in'
-  ic.fillStyle = `rgb(${engraved ? 0 : 255},${metalText ? 62 : 230},${metalText ? 255 : 0})`
+  ic.fillStyle = `rgb(${engraved ? 0 : 255},${metalText ? 140 : 230},${metalText ? 255 : 0})`
   ic.fillRect(0, 0, width, height); pc.drawImage(ink, 0, 0)
   const map = new THREE.CanvasTexture(color); map.colorSpace = THREE.SRGBColorSpace
   const channels = new THREE.CanvasTexture(packed)
@@ -62,10 +76,14 @@ export function spineSurface(book, style, physicalHeight = 200, thickness = 32) 
     const pixels = sc.getImageData(0, 0, 256, 1024).data
     relief = (u,v) => pixels[(Math.min(1023, Math.floor((1-v)*1024))*256 + Math.min(255, Math.floor(u*256)))*4+3]/255
   }
+  const metallic = metalBinding || metalText
   return { map, channels, relief, material:{
     map, roughness:1, metalness:1, roughnessMap:channels, metalnessMap:channels,
     bumpMap:engraved ? channels : null, bumpScale:engraved ? .035 : 0,
-    envMapIntensity:1.15
+    envMapIntensity:metallic ? .9 : 1,
+    anisotropy:metallic ? .2 : 0,
+    clearcoat:0,
+    clearcoatRoughness:.4
   } }
 }
 
