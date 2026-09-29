@@ -12,6 +12,77 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/')
 })
 
+test('Android: mantiene una pantalla de carga hasta que Drive guarda el libro y lo muestra en la estantería', async ({ page }) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width:390, height:844 })
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'userAgent', {
+      value: `${navigator.userAgent} InhouseReadApp/1.0.17`, configurable: true
+    })
+    localStorage.setItem('ihr_drive_session_v2', JSON.stringify({
+      accessToken:'test-drive-token', expiresAt:Date.now() + 3600_000
+    }))
+  })
+  let finishBookUpload
+  let startedBookUpload
+  const bookUploadStarted = new Promise(resolve => { startedBookUpload = resolve })
+  const holdBookUpload = new Promise(resolve => { finishBookUpload = resolve })
+  let uploadCount = 0
+
+  await page.route('https://www.googleapis.com/drive/v3/about?**', route => route.fulfill({
+    status:200, contentType:'application/json',
+    body:JSON.stringify({ user:{ permissionId:'account-1', displayName:'Miguel', emailAddress:'miguel@example.com' } })
+  }))
+  await page.route('https://www.googleapis.com/drive/v3/files**', async route => {
+    if (route.request().method() === 'GET') {
+      return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ files:[] }) })
+    }
+    const body = JSON.parse(route.request().postData() || '{}')
+    return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({
+      id:body.name === '.inhouse-read-state' ? 'state-folder' : 'read-folder', name:body.name
+    }) })
+  })
+  await page.route('https://www.googleapis.com/upload/drive/v3/files?**', async route => {
+    uploadCount += 1
+    if (uploadCount === 1) {
+      startedBookUpload()
+      await holdBookUpload
+      return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({
+        id:'drive-book', name:'tiny.pdf', mimeType:'application/pdf', size:'445'
+      }) })
+    }
+    return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({
+      id:'drive-progress', name:'progress-drive-book.json', mimeType:'application/json', size:'100'
+    }) })
+  })
+
+  await page.reload()
+  await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
+  await bookUploadStarted
+  const uploadScreen = page.locator('#drive-upload-screen')
+  await expect(uploadScreen).toBeVisible()
+  await expect(uploadScreen).toHaveAttribute('aria-busy', 'true')
+  await expect(page.locator('#drive-upload-book')).toHaveText('tiny')
+
+  finishBookUpload()
+  await expect(uploadScreen).toBeHidden()
+  await page.waitForFunction(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('inhouse-read')
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    const books = await new Promise((resolve, reject) => {
+      const request = db.transaction('books', 'readonly').objectStore('books').getAll()
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    return books.some(book => book.name === 'tiny.pdf' && book.driveFileId === 'drive-book')
+  })
+  await page.getByRole('button', { name:'Volver a la estantería' }).click()
+  await expect(page.getByRole('button', { name:/Abrir tiny/i })).toBeVisible()
+})
+
 test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recargar', async ({ page }) => {
   await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()

@@ -4,6 +4,11 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 El home no es un grid de tarjetas: es una estantería ilustrada con plantas donde los libros se ven de canto. Al tocar uno, sale de la balda y gira en 3D hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.0.18
+
+- La importación en Android espera a que Google Drive confirme la subida y muestra una pantalla de carga con el nombre del libro; si hace falta, abre el acceso a Google antes de subirlo.
+- Al terminar la subida, el libro queda vinculado a Drive y aparece en la estantería al volver desde el lector.
+
 ### Actualización web · 1.0.17
 
 - Al volver del lector, el modelo 3D empieza en el primer fotograma de la estantería. Las actualizaciones de biblioteca completadas mientras el home está oculto conservan el lomo como destino hasta que termina el regreso.

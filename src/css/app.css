@@ -302,6 +302,94 @@
   gap: 4px;
 }
 
+.drive-upload-screen {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.drive-upload-screen[hidden] { display: none; }
+
+.drive-upload-card {
+  width: min(100%, 360px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-medium);
+  text-align: center;
+}
+
+.drive-upload-spinner {
+  width: 42px;
+  aspect-ratio: 1;
+  border: 3px solid var(--accent-read-border);
+  border-top-color: var(--accent-read);
+  border-radius: 50%;
+  animation: drive-upload-spin .8s linear infinite;
+}
+
+.drive-upload-brand {
+  margin: 4px 0 0;
+  color: var(--accent-read);
+  font: 600 .86rem var(--f-logo);
+}
+
+.drive-upload-card h1 {
+  margin: 0;
+  font: 600 1.2rem var(--f-body);
+}
+
+.drive-upload-book,
+.drive-upload-caption {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: .9rem;
+}
+
+.drive-upload-book {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.drive-upload-track {
+  width: min(100%, 260px);
+  height: 4px;
+  margin: 8px 0 2px;
+  overflow: hidden;
+  border-radius: var(--r-full);
+  background: var(--accent-read-soft);
+}
+
+.drive-upload-track span {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-read);
+  animation: drive-upload-progress 1.4s var(--ease) infinite;
+}
+
+@keyframes drive-upload-spin { to { transform: rotate(1turn); } }
+@keyframes drive-upload-progress {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(360%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drive-upload-spinner { animation: none; }
+  .drive-upload-track span { animation: none; width: 100%; opacity: .6; }
+}
+
 .drive-item {
   min-height: var(--tap-min);
   text-align: left;

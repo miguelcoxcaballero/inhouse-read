@@ -46,6 +46,8 @@ const els = {
   driveProfileName: document.getElementById('drive-profile-name'),
   driveProfileEmail: document.getElementById('drive-profile-email'),
   driveSyncStatus: document.getElementById('drive-sync-status'),
+  driveUploadScreen: document.getElementById('drive-upload-screen'),
+  driveUploadBook: document.getElementById('drive-upload-book'),
   driveSyncBtn: document.getElementById('drive-sync-btn'),
   driveSignOutBtn: document.getElementById('drive-signout-btn'),
   driveConnectBtn: document.getElementById('drive-connect-btn'),
@@ -63,6 +65,7 @@ const progressWrites = new Map()
 let driveProfile = null
 let restoringProgress = false
 let shelfRefreshQueued = false
+let driveUploadsInFlight = 0
 const cloudSync = new CloudSync(library, {
   onStatus: setDriveSyncStatus,
   onChange: refreshShelf
@@ -88,6 +91,10 @@ els.themeToggle.addEventListener('click', () => {
 function showScreen(name) {
   els.homeScreen.hidden = name !== 'home'
   els.readerScreen.hidden = name !== 'reader'
+}
+
+function isAndroidShell() {
+  return /\bInhouseReadApp\/\d/i.test(navigator.userAgent || '')
 }
 
 // ---- Home / estantería ----
@@ -351,11 +358,17 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
   if (!preparing) refreshShelf()
   if (!preparing) extractCoverInBackground(record)
   if (!preparing) await transition?.onReaderReady?.()
-  if (sourceType === 'local' && hasDriveSession() && !record.driveFileId) {
-    uploadBookToDrive(record).catch(error => {
+  if (sourceType === 'local' && !record.driveFileId) {
+    try {
+      // En Android, añadir un libro significa guardarlo en la cuenta de Drive.
+      // Si aún no hay sesión, se completa el acceso antes de empezar la subida.
+      if (isAndroidShell() && !hasDriveSession()) await requestDriveAccess()
+      if (hasDriveSession()) await uploadBookToDrive(record)
+    } catch (error) {
       setDriveSyncStatus(`No se pudo sincronizar: ${error.message}`)
       console.warn('No se pudo sincronizar el libro con Drive:', error)
-    })
+      await reportDriveConnectionError(error)
+    }
   }
   return true
 }
@@ -425,10 +438,22 @@ async function handleCoverAction(action, book, button) {
 }
 
 async function uploadBookToDrive(book) {
-  const updated = await cloudSync.uploadBook(book)
-  await cloudSync.flushProgress(updated.id)
-  setDriveSyncStatus('Sincronizado con Google Drive')
-  return updated
+  driveUploadsInFlight += 1
+  els.driveUploadBook.textContent = book.title || book.name || 'Libro'
+  els.driveUploadScreen.hidden = false
+  els.driveUploadScreen.setAttribute('aria-busy', 'true')
+  try {
+    const updated = await cloudSync.uploadBook(book)
+    await cloudSync.flushProgress(updated.id)
+    setDriveSyncStatus('Sincronizado con Google Drive')
+    return updated
+  } finally {
+    driveUploadsInFlight = Math.max(0, driveUploadsInFlight - 1)
+    if (!driveUploadsInFlight) {
+      els.driveUploadScreen.hidden = true
+      els.driveUploadScreen.setAttribute('aria-busy', 'false')
+    }
+  }
 }
 
 function setDriveSyncStatus(message, syncing = false) {
@@ -488,7 +513,7 @@ async function syncLibraryToDrive({ silent = false } = {}) {
   if (!hasDriveSession()) {
     if (silent) {
       // Android uses the same PKCE refresh-token flow as Inhouse Notes.
-      const nativeShell = /\bInhouseReadApp\/\d/i.test(navigator.userAgent || '')
+      const nativeShell = isAndroidShell()
       if (!nativeShell || !getRememberedDriveProfile()) return
       try { await requestDriveAccess({ interactive: false }) } catch { return }
     } else await requestDriveAccess()
@@ -713,7 +738,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.0.17'
+els.appVersion.textContent = 'Inhouse Read · v1.0.18'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')
@@ -721,7 +746,7 @@ refreshShelf()
 loadDriveAccountProfile().catch(error => console.warn('No se pudo restaurar la cuenta:', error))
 initAndroidUpdateChecks()
 initContentFreshnessChecks()
-if (hasDriveSession() || (getRememberedDriveProfile() && /\bInhouseReadApp\/\d/i.test(navigator.userAgent))) {
+if (hasDriveSession() || (getRememberedDriveProfile() && isAndroidShell())) {
   syncLibraryToDrive({ silent: true }).catch(error => setDriveSyncStatus(`No se pudo sincronizar: ${error.message}`))
 }
 function resumeDriveSync() {
