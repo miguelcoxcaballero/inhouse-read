@@ -300,6 +300,24 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     return url;
   }
 
+  // El retorno desde el lector necesita su primer fotograma antes de que el
+  // navegador pinte la estantería. La resolución normal usa `await` incluso
+  // cuando la portada ya está en IndexedDB como Blob y deja un fotograma vacío.
+  function resolveCoverImmediately(book) {
+    if (coverCache.has(book)) return coverCache.get(book);
+    try {
+      const source = typeof options.coverSrcFor === 'function'
+        ? options.coverSrcFor(book)
+        : book.cover ?? book.coverUrl ?? book.coverBlob;
+      if (source && typeof source.then === 'function') return null;
+      const url = toUrl(source) || toUrl(book.cover ?? book.coverUrl ?? book.coverBlob);
+      coverCache.set(book, url);
+      return url;
+    } catch {
+      return null;
+    }
+  }
+
   /** Precarga en pointerdown: cuando el giro enseña la cara, ya está pintada. */
   function warmCover(book) {
     resolveCover(book).then((url) => {
@@ -523,6 +541,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (state.returnMotion) { state.renderQueued = true; return; }
     const width = measure();
     state.shelfWidth = width;
+    // A refresh can complete while home is hidden behind the reader. Keep the
+    // currently painted DOM in that case: the open book still needs its shelf
+    // spine as the target of the return animation. ResizeObserver re-renders
+    // the updated records when the shelf becomes visible again.
+    if (width <= 0 && state.books.length > 0) return;
     scroller.textContent = '';
 
     if (state.books.length === 0) {
@@ -993,7 +1016,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       `left:${(vw-coverW)/2}px;top:${centerY-coverH/2}px;width:${coverW}px;height:${coverH}px` });
     stage.append(bookNode);
     const flyout = el('div', { class:'ihr-flyout ihr-flyout--return', 'aria-hidden':'true' }, [stage]);
-    const coverUrl = await resolveCover(book);
+    const coverUrl = resolveCoverImmediately(book);
     if (state.destroyed || state.lastOpened !== previous || window.innerWidth !== vw || window.innerHeight !== vh) return false;
     const view = bookView(bookNode, book, previous.style, {
       width:coverW, height:coverH, thickness, viewportWidth:vw, viewportHeight:vh,

@@ -83,28 +83,26 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   await expect(page.locator('.reader-toolbar')).toBeVisible()
   expect(fileChooserOpened).toBe(false)
 
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await page.evaluate(() => {
+    window.__firstReturnHandoffFrame = new Promise(resolve => {
+      document.querySelector('#reader-back').addEventListener('click', () => {
+        requestAnimationFrame(() => resolve({
+          homeVisible: !document.querySelector('#home-screen').hidden,
+          readerHidden: document.querySelector('#reader-screen').hidden,
+          returnOverlayPresent: Boolean(document.querySelector('.ihr-flyout--return')),
+          returnModelPresent: Boolean(document.querySelector(
+            '.ihr-flyout--return .ihr-flyout__book canvas, .ihr-flyout--return .ihr-flyout__book--fallback'
+          ))
+        }))
+      }, { once: true })
+    })
+  })
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
+  const firstReturnFrame = await page.evaluate(() => window.__firstReturnHandoffFrame)
+  expect(firstReturnFrame).toEqual({ homeVisible:true, readerHidden:true, returnOverlayPresent:true, returnModelPresent:true })
   const returnFlight = page.locator('.ihr-flyout--return')
-  const reducedMotion = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)
-  if (reducedMotion) {
-    // Reduced motion uses a near-instant return, so it may finish before the
-    // first Playwright poll observes the overlay.
-    await expect(returnFlight).toHaveCount(0, { timeout:3000 })
-  } else {
-    await expect(returnFlight).toBeVisible()
-    const returnCanvas = returnFlight.locator('canvas[data-renderer="three-mesh"]')
-    if (await returnCanvas.count()) {
-      await expect(returnCanvas).toBeVisible()
-    } else {
-      // If Chromium temporarily denies another WebGL context, the same return
-      // motion must still run through the lightweight CSS cover.
-      const fallback = returnFlight.locator('.ihr-flyout__book--fallback')
-      await expect(fallback).toBeVisible()
-      await expect.poll(() => fallback.evaluate(node => getComputedStyle(node).transform))
-        .not.toBe('none')
-    }
-    await expect(returnFlight).toHaveCount(0, { timeout:5000 })
-  }
+  await expect(returnFlight).toHaveCount(0, { timeout:5000 })
   await expect(page.locator('.ihr-spine').first()).not.toHaveClass(/is-away/)
 })
 

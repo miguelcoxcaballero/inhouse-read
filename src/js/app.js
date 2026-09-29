@@ -650,7 +650,12 @@ els.readerBack.addEventListener('click', () => {
   }
   showScreen('home')
   els.readerToolbar.hidden = true
-  refreshShelf().then(() => shelf?.returnToShelf(bookId))
+  // Monta el primer fotograma del vuelo antes de que el navegador pinte el
+  // home. La actualización de IndexedDB puede esperar y se aplica al acabar
+  // la animación, sin mostrar el lomo original entre medias.
+  const returnFlight = shelf?.returnToShelf(bookId)
+  refreshShelf()
+  returnFlight?.catch(error => console.warn('No se pudo devolver el libro a la estantería:', error))
 })
 els.readerPrev.addEventListener('click', () => reader.prev())
 els.readerNext.addEventListener('click', () => reader.next())
@@ -708,7 +713,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.0.16'
+els.appVersion.textContent = 'Inhouse Read · v1.0.17'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')
