@@ -179,6 +179,16 @@ describe('layoutShelves', () => {
     expect(placed).toEqual(books.map((book) => book.id))
   })
 
+  it('permite reservar el ancho proyectado sin cambiar el grosor físico del lomo', () => {
+    const [book] = layoutShelves(makeBooks(1), {
+      shelfWidth:390,
+      displayWidthFor:(_book, style) => style.width + 32
+    }).flatMap(shelf => shelf.items).filter(item => item.kind === 'book')
+    expect(book.width).toBe(book.style.width + 32)
+    expect(book.displayWidth).toBe(book.width)
+    expect(book.style.width).toBeLessThan(book.width)
+  })
+
   it('ninguna balda se desborda', () => {
     for (const width of [320, 360, 414, 600, 900]) {
       const shelves = layoutShelves(makeBooks(60), { shelfWidth: width })

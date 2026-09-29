@@ -111,6 +111,8 @@ const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
 const TAP_SLOP = 12;
 const REORDER_HOLD_MS = 440;
+const SHELF_VIEW_STORAGE_KEY = 'inhouse-read-shelf-view';
+const SHELF_VIEW_MODES = Object.freeze({ SPINE:'spine', ISOMETRIC:'isometric' });
 const ICONS = Object.freeze({
   drive: ['M9 3h6l7 12-3 5H5l-3-5L9 3Z', 'm9 3 7 12H2', 'm15 3-7 12 3 5'],
   read: ['M3 5.5c3-1 6-.5 9 1.5 3-2 6-2.5 9-1.5v14c-3-1-6-.5-9 1.5-3-2-6-2.5-9-1.5v-14Z', 'M12 7v14'],
@@ -212,6 +214,13 @@ function prefersReducedMotion() {
   );
 }
 
+function storedShelfViewMode(fallback = SHELF_VIEW_MODES.SPINE) {
+  try {
+    const value = localStorage.getItem(SHELF_VIEW_STORAGE_KEY);
+    return Object.values(SHELF_VIEW_MODES).includes(value) ? value : fallback;
+  } catch { return fallback; }
+}
+
 /**
  * WAAPI con red de seguridad: en entornos sin `Element.animate` (jsdom en los
  * tests, navegadores antiguos) aplica el fotograma final y resuelve.
@@ -279,7 +288,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     queuedBooks: null,
     renderQueued: false,
     appearancesReady: true,
-    appearanceGeneration: 0
+    appearanceGeneration: 0,
+    viewMode: Object.values(SHELF_VIEW_MODES).includes(options.viewMode)
+      ? options.viewMode
+      : storedShelfViewMode()
   };
 
   const root = el('div', { class: 'ihr-bookshelf', 'data-ihr-bookshelf': '' });
@@ -674,7 +686,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       'aria-keyshortcuts': 'Shift+ArrowLeft Shift+ArrowRight',
       'aria-description': 'Mantén pulsado para sacar el libro y moverlo. Usa Mayús y las flechas izquierda o derecha para cambiar su posición.',
       style:
-        `--ihr-spine-w:${style.width}px;` +
+        `--ihr-spine-w:${item.displayWidth ?? style.width}px;` +
         `--ihr-spine-h:${Math.round(style.heightRatio * 100)}%;` +
         spineStyleVars(style) +
         (item.tilt ? `--ihr-spine-tilt:${item.tilt}deg;` : '')
@@ -688,8 +700,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const coverRatio = coverRatioFor(style);
     const view = bookView(body, book, style, {
       width: height * coverRatio, height, thickness: style.width,
-      viewportWidth: style.width, viewportHeight: height,
-      centerX: style.width / 2, centerY: height / 2, shelf: true
+      viewportWidth: item.displayWidth ?? style.width, viewportHeight: height,
+      centerX: (item.displayWidth ?? style.width) / 2, centerY: height / 2,
+      shelf: true,
+      shelfView: state.viewMode
     });
     if (view) view.dispose(false); // retain the rendered snapshot, free mesh/textures
     else body.append(el('span', { class: 'ihr-spine__label' }, [
@@ -847,8 +861,37 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     return { minWidth: 30, maxWidth: 56 };
   }
 
+  function setViewMode(mode) {
+    if (!Object.values(SHELF_VIEW_MODES).includes(mode) || state.viewMode === mode) return;
+    state.viewMode = mode;
+    try { localStorage.setItem(SHELF_VIEW_STORAGE_KEY, mode); } catch { /* Preferencias no bloquean la biblioteca. */ }
+    render();
+    root.querySelector(`[data-view-mode="${mode}"]`)?.focus({ preventScroll:true });
+  }
+
+  function buildViewControls() {
+    const controls = el('div', { class:'ihr-view-switch', role:'group', 'aria-label':'Vista de la estantería' });
+    const modes = [
+      { id:SHELF_VIEW_MODES.SPINE, label:'Lomos', title:'Vista de canto', icon:['M5 5v14','M10 3v18','M15 6v15','M20 4v16'] },
+      { id:SHELF_VIEW_MODES.ISOMETRIC, label:'Isométrica', title:'Vista isométrica, libros de lado', icon:['M12 3 21 8v8l-9 5-9-5V8l9-5Z','m3.5 8.5 8.5 5 8.5-5','M12 13.5V21','m7.5 5.5 9 5'] }
+    ];
+    for (const mode of modes) {
+      controls.append(el('button', {
+        type:'button',
+        class:'ihr-view-switch__button',
+        'data-view-mode':mode.id,
+        'aria-label':mode.title,
+        'aria-pressed':state.viewMode === mode.id ? 'true' : 'false',
+        title:mode.title,
+        onClick:() => setViewMode(mode.id)
+      }, [svgIcon(mode.icon, { className:'ihr-view-switch__icon' }), el('span', { text:mode.label })]));
+    }
+    return controls;
+  }
+
   function render() {
     if (state.destroyed) return;
+    root.dataset.viewMode = state.viewMode;
     if (state.returnMotion) { state.renderQueued = true; return; }
     if (!state.appearancesReady && state.books.length > 0) {
       scroller.textContent = '';
@@ -878,6 +921,15 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       plantEvery: opts.plantEvery,
       sort: opts.sort,
       spine: spineOptionsFor(width),
+      displayWidthFor: state.viewMode === SHELF_VIEW_MODES.ISOMETRIC
+        ? (_book, style) => {
+            const modelHeight = (window.innerWidth >= 600 ? 200 : 172) * style.heightRatio;
+            const modelWidth = modelHeight * coverRatioFor(style);
+            const yaw = 76 * Math.PI / 180;
+            const projected = Math.abs(Math.cos(yaw)) * modelWidth + Math.abs(Math.sin(yaw)) * style.width + 6;
+            return Math.min(window.innerWidth < 520 ? 92 : 128, Math.max(style.width, projected));
+          }
+        : undefined,
       // Sin secciones, 0 recientes: todo cae en una estantería continua.
       recentLimit: opts.sections ? opts.recentLimit : 0
     });
@@ -900,7 +952,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const fragment = document.createDocumentFragment();
     fragment.append(el('div', { class: 'ihr-library-heading' }, [
       el('h1', { text: 'Tu biblioteca' }),
-      el('p', { 'aria-live': 'polite', text: `${state.books.length} ${state.books.length === 1 ? 'libro' : 'libros'}` })
+      el('div', { class:'ihr-library-heading__tools' }, [
+        el('p', { 'aria-live': 'polite', text: `${state.books.length} ${state.books.length === 1 ? 'libro' : 'libros'}` }),
+        buildViewControls()
+      ])
     ]));
     for (const section of plan) {
       for (const shelf of section.shelves) {

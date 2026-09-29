@@ -54,7 +54,7 @@ test('conecta Google sin redirección y muestra la foto en la esquina derecha', 
   await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   expect(await page.evaluate(() => window.__oauthOptions.redirect_uri)).toBeUndefined()
   await button.click()
-  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.3.0')
+  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.4.0')
   await expect(page.locator('#drive-theme-toggle')).toBeVisible()
   await expect(page.locator('#drive-profile-initial-menu')).toBeHidden()
   await page.locator('#drive-theme-toggle').check()
@@ -344,4 +344,28 @@ test('el libro abierto reaparece en la estantería al volver', async ({ page }) 
 
   await expect(page.locator('#home-screen')).toBeVisible()
   await expect(page.getByRole('button', { name: /Abrir tiny/i })).toBeVisible()
+})
+
+test('alterna entre canto e isométrica con modelos 3D y recuerda la vista', async ({ page }) => {
+  await page.setViewportSize({ width:390, height:844 })
+  await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/tiny.pdf')
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+  await page.getByRole('button', { name:'Volver a la estantería' }).click()
+
+  const shelf = page.locator('[data-ihr-bookshelf]')
+  const canvas = () => page.locator('.ihr-spine canvas[data-renderer="three-mesh"]').first()
+  await expect(page.getByRole('button', { name:'Vista isométrica, libros de lado' })).toBeVisible()
+  await expect(canvas()).toHaveAttribute('data-shelf-view', 'spine')
+  const spineWidth = await canvas().evaluate(element => element.width)
+
+  await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
+  await expect(shelf).toHaveAttribute('data-view-mode', 'isometric')
+  await expect(page.getByRole('button', { name:'Vista isométrica, libros de lado' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(canvas()).toHaveAttribute('data-shelf-view', 'isometric')
+  await expect(canvas()).toHaveAttribute('data-angle', '76')
+  expect(await canvas().evaluate(element => element.width)).toBeGreaterThan(spineWidth)
+
+  await page.reload()
+  await expect(page.locator('[data-ihr-bookshelf]')).toHaveAttribute('data-view-mode', 'isometric')
+  await expect(page.locator('.ihr-spine canvas[data-renderer="three-mesh"]').first()).toHaveAttribute('data-shelf-view', 'isometric')
 })

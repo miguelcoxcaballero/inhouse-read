@@ -257,7 +257,8 @@ export const DEFAULT_LAYOUT = Object.freeze({
   plantVariants: ['monstera', 'sansevieria', 'pothos', 'cactus', 'suculenta'],
   tiltThreshold: 16, // px de hueco libre necesarios para que un libro se incline
   maxTilt: 8,        // grados
-  spine: undefined   // opciones para spineStyleFor
+  spine: undefined,  // opciones para spineStyleFor
+  displayWidthFor: null // ancho de celda distinto del grosor físico, si hace falta
 });
 
 function createShelf(index) {
@@ -346,7 +347,13 @@ export function layoutShelves(books, options = {}) {
 
   for (const book of books) {
     const style = spineStyleFor(book, cfg.spine);
-    const item = { kind: 'book', book, style, width: style.width, tilt: 0 };
+    const requestedWidth = typeof cfg.displayWidthFor === 'function'
+      ? Number(cfg.displayWidthFor(book, style))
+      : NaN;
+    const displayWidth = Number.isFinite(requestedWidth)
+      ? Math.max(style.width, Math.round(requestedWidth))
+      : style.width;
+    const item = { kind: 'book', book, style, width: displayWidth, displayWidth, tilt: 0 };
 
     // ¿Toca maceta intercalada? Sólo si caben la maceta y el libro siguiente.
     if (

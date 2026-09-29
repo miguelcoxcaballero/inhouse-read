@@ -287,9 +287,14 @@ function getRenderer() {
 
 // One shared GPU context; individual canvases receive snapshots. No per-book
 // contexts, and the flyout uses exactly the same mesh builder as the shelf.
-export function bookView(host, book, style, { width, height, thickness, viewportWidth, viewportHeight, centerX, centerY, coverUrl, shelf = false }) {
+export function bookView(host, book, style, { width, height, thickness, viewportWidth, viewportHeight, centerX, centerY, coverUrl, shelf = false, shelfView = 'spine' }) {
   const gpu = getRenderer(); if (!gpu) return null;
-  const pixelRatio = Math.min(Math.max(devicePixelRatio || 1, 2), shelf ? 3 : 2);
+  // Shelf books are static snapshots. Keep their framebuffer modest on phones
+  // so a long library does not retain a pile of high-DPI canvases in memory.
+  const requestedPixelRatio = typeof devicePixelRatio === 'number' ? devicePixelRatio : 1;
+  const pixelRatio = shelf
+    ? Math.min(requestedPixelRatio, window.innerWidth < 600 ? 1.5 : 2)
+    : Math.min(requestedPixelRatio, 2);
   const canvas = document.createElement('canvas'); canvas.className = 'ihr-book-canvas'; canvas.setAttribute('aria-hidden', 'true');
   canvas.width = Math.ceil(viewportWidth * pixelRatio); canvas.height = Math.ceil(viewportHeight * pixelRatio);
   host.append(canvas); const context = canvas.getContext('2d');
@@ -304,6 +309,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   const stripLight = new THREE.DirectionalLight(0xffffff, .9); stripLight.position.set(3, 1, 2); scene.add(stripLight);
   let model = createBookModel(book, style, width, height, thickness, coverUrl, { shelf }); scene.add(model);
   canvas.dataset.bookmark3d = String(Boolean(model.userData.hasBookmark));
+  if (shelf) canvas.dataset.shelfView = shelfView;
   const camera = new THREE.OrthographicCamera(-viewportWidth / 2, viewportWidth / 2, viewportHeight / 2, -viewportHeight / 2, .1, 10000); camera.position.z = 3000;
   let disposed = false, current, cancel = () => {};
   function draw(pose) {
@@ -326,7 +332,11 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     canvas.dataset.angle = String(pose.angle); canvas.dataset.renderer = 'three-mesh';
   }
   model.userData.invalidate = () => current && draw(current);
-  draw({ x: 0, y: 0, scale: 1, angle: shelf ? 90 : 0 });
+  draw({
+    x:0, y:0, scale:1,
+    angle:shelf ? (shelfView === 'isometric' ? 76 : 90) : 0,
+    pitch:shelf && shelfView === 'isometric' ? 9 : 0
+  });
   function updateAppearance(nextStyle) {
     if (disposed) return false;
     const pose = current;
