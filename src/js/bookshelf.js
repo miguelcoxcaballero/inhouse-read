@@ -1083,6 +1083,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       'aria-label': book.title ?? opts.texts.openAction,
       tabindex: '-1'
     });
+    flyout.classList.add(view ? 'has-webgl' : 'no-webgl');
     const closeButton = el('button', { type:'button', class:'ihr-btn ihr-flyout__close', 'aria-label':opts.texts.closeAction, title:opts.texts.closeAction, onClick:() => close() }, [svgIcon(ICONS.close, { className:'ihr-icon' })]);
     const shadow = el('div', { class:'ihr-flyout__shadow', 'aria-hidden':'true', style:`--ihr-cover-bottom:${centerY + coverH / 2}px;left:${vw * (landscape ? .26 : .5)}px` });
     flyout.append(scrim, shadow, el('div', { class: 'ihr-flyout__stage' }, [bookNode]), meta, coverTarget, closeButton);
@@ -1154,14 +1155,50 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const colorButtons = [];
     const customizationFields = {};
     let customizationSaveTimer = 0;
+    let spinePreviewFrame = 0;
+    let appearanceDirty = false;
     const editorPanel = el('section', {
       class: 'ihr-spine-editor', hidden: true, role: 'region', 'aria-label': 'Editar el lomo'
     });
+    const editorPreviewTitle = el('span', {
+      class: 'ihr-spine-editor__preview-title',
+      text: book.spineTitleOverride || book.title || 'Sin título'
+    });
+    const editorPreviewAuthor = el('span', {
+      class: 'ihr-spine-editor__preview-author', text: book.author || ''
+    });
+    const editorPreview = el('div', {
+      class: 'ihr-spine-editor__preview',
+      role: 'img', 'aria-label': 'Vista previa del lomo',
+      style: spineStyleVars(style)
+    }, [
+      el('span', { class: 'ihr-spine-editor__preview-pages', 'aria-hidden': 'true' }),
+      el('div', { class: 'ihr-spine-editor__preview-binding' }, [
+        el('span', { class: 'ihr-spine-editor__preview-ornament', 'aria-hidden': 'true' }),
+        editorPreviewTitle,
+        editorPreviewAuthor
+      ])
+    ]);
+    function refreshEditorPreview() {
+      updateBookStyleVars(editorPreview, item.style);
+      editorPreviewTitle.textContent = book.spineTitleOverride || book.title || 'Sin título';
+      editorPreviewAuthor.textContent = book.author || '';
+      editorPreviewAuthor.hidden = !book.author;
+    }
+    const editorPose = {
+      x: 0,
+      y: landscape ? 0 : vh * .20,
+      scale: landscape ? .7 : .64,
+      angle: 90,
+      pitch: 0
+    };
     function saveCustomizationNow() {
       if (customizationSaveTimer) clearTimeout(customizationSaveTimer);
       customizationSaveTimer = 0;
       if (Object.keys(customizationFields).length) {
-        Promise.resolve(options.onBookCustomizationChange?.(book, { ...customizationFields })).catch(error => {
+        const changedFields = { ...customizationFields };
+        for (const key of Object.keys(customizationFields)) delete customizationFields[key];
+        Promise.resolve(options.onBookCustomizationChange?.(book, changedFields)).catch(error => {
           console.warn('No se pudo guardar el aspecto del lomo:', error);
         });
       }
@@ -1186,30 +1223,70 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     function updateCustomization(fields) {
       Object.assign(book, fields);
       Object.assign(customizationFields, fields);
+      appearanceDirty = true;
       applyCoverAppearance(item, getCachedAppearance());
       style = item.style;
-      view?.updateAppearance(item.style);
+      refreshEditorPreview();
       updateBookStyleVars(bookNode, item.style);
-      updateBookStyleVars(bookNode.querySelector('.ihr-flyout__face--cover'), item.style);
-      replaceShelfSpine();
+      const shelfNode = shelfSpineNodes().find(node => node.dataset.bookId === String(book.id));
+      updateBookStyleVars(shelfNode, item.style);
       if (state.lastOpened?.book?.id === book.id) state.lastOpened.style = item.style;
       state.appearanceRefreshPending = true;
       updateColorSelection();
+      if (spinePreviewFrame) cancelAnimationFrame(spinePreviewFrame);
+      spinePreviewFrame = requestAnimationFrame(() => {
+        spinePreviewFrame = 0;
+        if (!editorPanel.hidden && session.phase === 'ready') {
+          view?.updateSpineAppearance(book, item.style);
+        }
+      });
       queueCustomizationSave();
     }
     function openEditor() {
       if (session.phase !== 'ready') return;
       editorPanel.hidden = false;
+      flyout.classList.add('is-editing-spine');
       meta.classList.add('is-editing');
+      coverTarget.hidden = true;
       actionButtons[2].setAttribute('aria-expanded', 'true');
+      refreshEditorPreview();
+      if (view) view.animate([
+        { transform: { x: 0, y: 0, scale: 1, angle: 0, pitch: 0 } },
+        { transform: editorPose }
+      ], { duration: prefersReducedMotion() ? 1 : 230 });
       fontSelect.focus({ preventScroll: true });
     }
-    function closeEditor() {
+    function closeEditor({ commit = true, restoreFocus = true } = {}) {
+      if (editorPanel.hidden) return;
       editorPanel.hidden = true;
+      flyout.classList.remove('is-editing-spine');
       meta.classList.remove('is-editing');
+      coverTarget.hidden = !opts.autoOpen;
       actionButtons[2].setAttribute('aria-expanded', 'false');
+      if (spinePreviewFrame) cancelAnimationFrame(spinePreviewFrame);
+      spinePreviewFrame = 0;
+      const changed = appearanceDirty;
+      if (changed && session.phase === 'ready') {
+        if (commit) view?.updateAppearance(item.style);
+        updateBookStyleVars(bookNode, item.style);
+        replaceShelfSpine();
+        appearanceDirty = false;
+      }
+      if (commit && session.phase === 'ready' && view) {
+        coverTarget.disabled = true;
+        const returnToCover = view.animate([
+          { transform: editorPose },
+          { transform: { x: 0, y: 0, scale: 1, angle: 0, pitch: 0 } }
+        ], {
+          duration: prefersReducedMotion() ? 1 : 220
+        });
+        returnToCover.finished.then(() => {
+          if (state.session === session && session.phase === 'ready' && !editorPanel.hidden) return;
+          if (state.session === session && session.phase === 'ready') coverTarget.disabled = false;
+        });
+      }
       saveCustomizationNow();
-      if (session.phase === 'ready') actionButtons[2].focus({ preventScroll: true });
+      if (restoreFocus && session.phase === 'ready') actionButtons[2].focus({ preventScroll: true });
     }
     const pickerInput = el('input', {
       type: 'color', value: spineColorStyle(selectedColor).color,
@@ -1279,6 +1356,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     );
     updateColorSelection();
     editorPanel.append(
+      el('p', { class:'ihr-spine-editor__heading', text:'Personaliza el lomo' }),
+      editorPreview,
       el('div', { class: 'ihr-spine-editor__row' }, [
         el('label', { class: 'ihr-spine-editor__field' }, [
           el('span', { text: 'Fuente' }), fontSelect
@@ -1356,7 +1435,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     );
 
     function fadeMeta() {
-      if (!editorPanel.hidden) closeEditor();
+      if (!editorPanel.hidden) closeEditor({ commit: false, restoreFocus: false });
       const opacity = getComputedStyle(meta).opacity;
       metaEntrance.cancel?.();
       animate(meta, [{ opacity }, { opacity:0 }], { duration:prefersReducedMotion() ? 1 : 160, fill:'both' });

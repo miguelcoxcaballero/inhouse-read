@@ -56,21 +56,25 @@ export function fitCoverImage(imageWidth, imageHeight, width, height) {
   return { x:(width - w) / 2, y:(height - h) / 2, width:w, height:h };
 }
 
-function texture(book, style, spine) {
+function texture(book, style, spine, { scale = 2, simplified = false } = {}) {
   const canvas = document.createElement('canvas');
   // Keep the cover map sharp on high-density phone displays while preserving
   // the original drawing coordinates used by the ornament and typography.
   const designWidth = spine ? 256 : Math.round(1024 * (Number(style.coverRatio) || 0.66));
-  const textureScale = 2;
+  const textureScale = scale;
   canvas.width = designWidth * textureScale; canvas.height = 1024 * textureScale;
   const c = canvas.getContext('2d');
   c.scale(textureScale, textureScale);
   c.fillStyle = style.color; c.fillRect(0, 0, designWidth, 1024);
-  // Fine woven cloth, rather than thick horizontal stripes.
-  c.globalAlpha = .035; c.fillStyle = '#fff';
-  for (let y = 0; y < 1024; y += 4) c.fillRect(0, y, canvas.width, 1);
-  c.globalAlpha = .035; c.fillStyle = '#000';
-  for (let x = 0; x < canvas.width; x += 4) c.fillRect(x, 0, 1, 1024);
+  // Fine woven cloth, rather than thick horizontal stripes. While editing,
+  // use a smaller map without the decorative weave so a phone only uploads a
+  // light spine texture to WebGL on each frame.
+  if (!simplified) {
+    c.globalAlpha = .035; c.fillStyle = '#fff';
+    for (let y = 0; y < 1024; y += 4) c.fillRect(0, y, canvas.width, 1);
+    c.globalAlpha = .035; c.fillStyle = '#000';
+    for (let x = 0; x < canvas.width; x += 4) c.fillRect(x, 0, 1, 1024);
+  }
   c.globalAlpha = 1; c.fillStyle = style.ink;
   c.textAlign = 'center'; c.textBaseline = 'middle';
   if (spine) {
@@ -154,8 +158,10 @@ export function createBookModel(book, style, width, height, thickness, coverUrl)
   const cap = new THREE.Shape(); cap.moveTo(-width / 2, -thickness / 2);
   for (let i = 0; i <= 96; i++) { const a = i / 96 * Math.PI; cap.lineTo(-width / 2 - thickness * .38 * Math.sin(a), -thickness / 2 * Math.cos(a)); }
   cap.closePath();
+  const capMaterials = [];
   for (const y of [-height / 2, height / 2]) {
     const mesh = new THREE.Mesh(new THREE.ShapeGeometry(cap), new THREE.MeshStandardMaterial({ color: style.color, roughness: .86, side: THREE.DoubleSide }));
+    capMaterials.push(mesh.material);
     mesh.rotation.x = Math.PI / 2; mesh.position.y = y; group.add(mesh);
   }
   let disposed = false;
@@ -177,6 +183,16 @@ export function createBookModel(book, style, width, height, thickness, coverUrl)
     disposed = true; const materials = new Set();
     group.traverse(obj => { obj.geometry?.dispose(); if (obj.material) for (const m of [].concat(obj.material)) materials.add(m); });
     for (const m of materials) { m.map?.dispose(); m.dispose(); }
+  };
+  group.userData.updateSpineAppearance = (nextBook, nextStyle) => {
+    const nextMap = texture(nextBook, nextStyle, true, { scale: 1, simplified: true });
+    const oldMap = binding.map;
+    binding.map = nextMap;
+    binding.needsUpdate = true;
+    oldMap?.dispose();
+    cloth.color.set(nextStyle.color);
+    hinge.color.set(nextStyle.shade || nextStyle.color);
+    for (const material of capMaterials) material.color.set(nextStyle.color);
   };
   return group;
 }
@@ -228,7 +244,13 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (pose) draw(pose);
     return true;
   }
-  return { canvas, draw, updateAppearance, animate(frames, { duration }) {
+  function updateSpineAppearance(nextBook, nextStyle) {
+    if (disposed) return false;
+    model.userData.updateSpineAppearance?.(nextBook, nextStyle);
+    if (current) draw(current);
+    return true;
+  }
+  return { canvas, draw, updateAppearance, updateSpineAppearance, animate(frames, { duration }) {
     cancel();
     if (current) frames = [{ ...frames[0], transform: current }, ...frames.slice(1)];
     let raf, resolve; const finished = new Promise(r => resolve = r);

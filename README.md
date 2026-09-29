@@ -4,6 +4,11 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 El home no es un grid de tarjetas: es una estantería ilustrada con plantas donde los libros se ven de canto. Al tocar uno, sale de la balda y gira en 3D hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.0.25
+
+- Al editar un libro en el móvil, el editor gira y muestra el lomo curvo en 3D, y actualiza su textura ligera sin reconstruir el modelo entero al tocar cada control.
+- El modelo completo y el lomo de la estantería solo se actualizan al terminar de editar; la portada queda fuera de la vista mientras se personaliza el lomo.
+
 ### Actualización web · 1.0.24
 
 - El botón «Editar» de cada libro reúne el color, la familia y el tamaño de letra y el texto del lomo; los cambios se conservan al volver a abrir la app.
