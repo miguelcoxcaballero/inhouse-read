@@ -196,6 +196,10 @@ describe('renderBookshelf', () => {
     expect(typeof ctx.finish).toBe('function')
     await ctx.finish()
     expect(document.querySelector('.ihr-flyout')).toBeNull()
+    vi.spyOn(spine, 'getBoundingClientRect').mockReturnValue({ left:40, top:100, width:34, height:150 })
+    expect(await shelf.returnToShelf(book.id)).toBe(true)
+    expect(document.querySelector('.ihr-flyout--return')).toBeNull()
+    expect(spine.classList.contains('is-away')).toBe(false)
   })
 
   it('sin portada usa un placeholder con el título, no un icono roto', async () => {

@@ -94,3 +94,38 @@ test('movimiento reducido conserva los dos pasos y el foco del diálogo', async 
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
   await expect(spine).toBeFocused()
 })
+
+test('las portadas PDF se guardan nítidas y se regeneran las miniaturas antiguas', async ({ page }) => {
+  await page.goto('/')
+  await page.locator('#file-picker').setInputFiles(PDF)
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+  await expect.poll(() => page.evaluate(async () => {
+    const db = await new Promise(resolve => { const req=indexedDB.open('inhouse-read'); req.onsuccess=()=>resolve(req.result) })
+    const record = await new Promise(resolve => { const req=db.transaction('books').objectStore('books').getAll(); req.onsuccess=()=>resolve(req.result[0]) })
+    if (!record?.cover) return 0
+    const image = await createImageBitmap(record.cover)
+    const width = image.width; image.close(); db.close(); return width
+  })).toBeGreaterThanOrEqual(800)
+
+  // Simulate a v1.0.15 thumbnail saved at 300 px; opening the book upgrades it.
+  await page.evaluate(async () => {
+    const db=await new Promise(resolve=>{const req=indexedDB.open('inhouse-read');req.onsuccess=()=>resolve(req.result)})
+    const record=await new Promise(resolve=>{const req=db.transaction('books').objectStore('books').getAll();req.onsuccess=()=>resolve(req.result[0])})
+    const canvas=document.createElement('canvas');canvas.width=300;canvas.height=200
+    const ctx=canvas.getContext('2d');ctx.fillStyle='#eeeeee';ctx.fillRect(0,0,300,200)
+    const oldCover=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',.8))
+    record.cover=oldCover
+    await new Promise(resolve=>{const tx=db.transaction('books','readwrite');tx.objectStore('books').put(record);tx.oncomplete=resolve})
+    db.close()
+  })
+  await page.reload()
+  await page.locator('.ihr-spine').first().click()
+  await expect(page.locator('.ihr-flyout__cover-target')).toBeVisible()
+  await page.locator('.ihr-flyout__cover-target').click()
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+  await expect.poll(() => page.evaluate(async () => {
+    const db=await new Promise(resolve=>{const req=indexedDB.open('inhouse-read');req.onsuccess=()=>resolve(req.result)})
+    const record=await new Promise(resolve=>{const req=db.transaction('books').objectStore('books').getAll();req.onsuccess=()=>resolve(req.result[0])})
+    const image=await createImageBitmap(record.cover);const width=image.width;image.close();db.close();return width
+  })).toBeGreaterThanOrEqual(800)
+})

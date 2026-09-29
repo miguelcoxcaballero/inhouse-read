@@ -15,6 +15,7 @@ export class CloudSync {
   #uploads = new Map()
   #downloads = new Map()
   #progressTimers = new Map()
+  #progressSyncs = new Map()
   #generation = 0
 
   constructor(library, { onStatus = () => {}, onChange = () => {} } = {}) {
@@ -95,17 +96,40 @@ export class CloudSync {
     }, 1800))
   }
 
+  flushProgress(bookId) {
+    clearTimeout(this.#progressTimers.get(bookId))
+    this.#progressTimers.delete(bookId)
+    return this.syncBookProgress(bookId)
+  }
+
   async syncBookProgress(bookOrId) {
-    const record = typeof bookOrId === 'string' ? await this.#library.get(bookOrId) : bookOrId
+    const id = typeof bookOrId === 'string' ? bookOrId : bookOrId?.id
+    if (!id) return
+    const previous = this.#progressSyncs.get(id)
+    const generation = this.#generation
+    const task = (previous || Promise.resolve()).catch(() => {}).then(() => this.#syncBookProgressOnce(id, generation))
+    this.#progressSyncs.set(id, task)
+    try { return await task } finally {
+      if (this.#progressSyncs.get(id) === task) this.#progressSyncs.delete(id)
+    }
+  }
+
+  async #syncBookProgressOnce(id, generation) {
+    const record = await this.#library.get(id)
     if (!record?.driveFileId) return
     const accountId = await this.#account()
     if (record.cloudAccountId && record.cloudAccountId !== accountId) return
     const remote = await readDriveProgress(record.driveFileId)
+    if (generation !== this.#generation) return
     const localUpdatedAt = Number(record.progressUpdatedAt) || 0
     const remoteUpdatedAt = Number(remote?.updatedAt) || 0
     const localHasProgress = record.progressDirty || record.progressFraction > 0 || record.locator != null
 
-    if (remote && (remoteUpdatedAt >= localUpdatedAt || !localHasProgress)) {
+    // Equal millisecond timestamps are possible when two reading updates land
+    // in the same frame. Keep a dirty local locator on a tie; otherwise a
+    // stale remote value can erase the newest page the reader just saved.
+    if (remote && (!localHasProgress || remoteUpdatedAt > localUpdatedAt ||
+      (remoteUpdatedAt === localUpdatedAt && !record.progressDirty))) {
       await this.#library.patch(record.id, {
         progressFraction: remote.fraction, locator: remote.locator,
         progressUpdatedAt: remoteUpdatedAt, progressDirty: false,
@@ -115,12 +139,20 @@ export class CloudSync {
       return
     }
     if (!localHasProgress) return
-    const uploaded = await writeDriveProgress(record.driveFileId, {
+    const snapshot = {
       fraction: record.progressFraction, locator: record.locator,
       updatedAt: localUpdatedAt || Date.now()
-    }, remote?.stateFileId || record.progressStateFileId)
+    }
+    const uploaded = await writeDriveProgress(record.driveFileId, snapshot,
+      remote?.stateFileId || record.progressStateFileId)
+    if (generation !== this.#generation) return
+    const latest = await this.#library.get(record.id)
+    if (!latest) return
+    const unchanged = (Number(latest.progressUpdatedAt) || 0) === localUpdatedAt &&
+      Number(latest.progressFraction) === Number(snapshot.fraction) &&
+      JSON.stringify(latest.locator ?? null) === JSON.stringify(snapshot.locator ?? null)
     await this.#library.patch(record.id, {
-      progressDirty: false, progressUpdatedAt: localUpdatedAt || Date.now(),
+      ...(unchanged ? { progressDirty: false, progressUpdatedAt: snapshot.updatedAt } : {}),
       progressStateFileId: uploaded.id
     })
   }

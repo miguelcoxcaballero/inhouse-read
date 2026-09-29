@@ -60,4 +60,46 @@ describe('CloudSync', () => {
     }), 'state-1')
     expect((await library.get(book.id)).progressDirty).toBe(false)
   })
+
+  it('prefiere el avance local cuando el reloj y el avance remoto coinciden en el mismo milisegundo', async () => {
+    const book = await library.addOrTouch({ sourceType: 'local', name: 'tie.pdf', size: 3,
+      driveFileId: 'drive-tie', cloudAccountId: 'account-1' })
+    await library.updateProgress(book.id, .8, { kind: 'pdf-page', value: 8 })
+    const local = await library.get(book.id)
+    drive.readDriveProgress.mockResolvedValue({ fraction: .6, locator: { kind: 'pdf-page', value: 6 },
+      updatedAt: local.progressUpdatedAt, stateFileId: 'state-1' })
+    drive.writeDriveProgress.mockResolvedValue({ id: 'state-1' })
+
+    await sync.syncBookProgress(book.id)
+
+    expect(drive.writeDriveProgress).toHaveBeenCalledWith('drive-tie', expect.objectContaining({
+      fraction: .8, locator: { kind: 'pdf-page', value: 8 }
+    }), 'state-1')
+    expect((await library.get(book.id)).locator).toEqual({ kind: 'pdf-page', value: 8 })
+  })
+
+  it('no borra un avance nuevo que llega mientras se sube el avance anterior', async () => {
+    const book = await library.addOrTouch({ sourceType: 'local', name: 'race.pdf', size: 3,
+      driveFileId: 'drive-race', cloudAccountId: 'account-1' })
+    await library.updateProgress(book.id, .2, { kind: 'pdf-page', value: 2 })
+    let finishUpload
+    drive.writeDriveProgress.mockImplementation(() => new Promise(resolve => { finishUpload = resolve }))
+    const firstSync = sync.syncBookProgress(book.id)
+    await vi.waitFor(() => expect(drive.writeDriveProgress).toHaveBeenCalledTimes(1))
+
+    await library.updateProgress(book.id, .8, { kind: 'pdf-page', value: 8 })
+    finishUpload({ id: 'state-race' })
+    await firstSync
+
+    expect(await library.get(book.id)).toMatchObject({ progressFraction: .8,
+      locator: { kind: 'pdf-page', value: 8 }, progressDirty: true })
+
+    drive.writeDriveProgress.mockResolvedValue({ id: 'state-race' })
+    await sync.flushProgress(book.id)
+    expect(drive.writeDriveProgress).toHaveBeenCalledTimes(2)
+    expect(drive.writeDriveProgress.mock.calls[1][1]).toMatchObject({
+      fraction: .8, locator: { kind: 'pdf-page', value: 8 }
+    })
+    expect((await library.get(book.id)).progressDirty).toBe(false)
+  })
 })

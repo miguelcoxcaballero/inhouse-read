@@ -82,6 +82,30 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   await expect(page.locator('.reader-toolbar')).toBeVisible()
   expect(fileChooserOpened).toBe(false)
+
+  await page.getByRole('button', { name:'Volver a la estantería' }).click()
+  const returnFlight = page.locator('.ihr-flyout--return')
+  const reducedMotion = await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)
+  if (reducedMotion) {
+    // Reduced motion uses a near-instant return, so it may finish before the
+    // first Playwright poll observes the overlay.
+    await expect(returnFlight).toHaveCount(0, { timeout:3000 })
+  } else {
+    await expect(returnFlight).toBeVisible()
+    const returnCanvas = returnFlight.locator('canvas[data-renderer="three-mesh"]')
+    if (await returnCanvas.count()) {
+      await expect(returnCanvas).toBeVisible()
+    } else {
+      // If Chromium temporarily denies another WebGL context, the same return
+      // motion must still run through the lightweight CSS cover.
+      const fallback = returnFlight.locator('.ihr-flyout__book--fallback')
+      await expect(fallback).toBeVisible()
+      await expect.poll(() => fallback.evaluate(node => getComputedStyle(node).transform))
+        .not.toBe('none')
+    }
+    await expect(returnFlight).toHaveCount(0, { timeout:5000 })
+  }
+  await expect(page.locator('.ihr-spine').first()).not.toHaveClass(/is-away/)
 })
 
 test('el actualizador usa el manifiesto y entrega URL y hash al puente Android', async ({ page }) => {

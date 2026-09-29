@@ -250,7 +250,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     session: null,
     objectUrls: new Set(),
     destroyed: false,
-    frame: 0
+    frame: 0,
+    lastOpened: null,
+    returnMotion: null,
+    queuedBooks: null,
+    renderQueued: false
   };
 
   const root = el('div', { class: 'ihr-bookshelf', 'data-ihr-bookshelf': '' });
@@ -516,6 +520,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   function render() {
     if (state.destroyed) return;
+    if (state.returnMotion) { state.renderQueued = true; return; }
     const width = measure();
     state.shelfWidth = width;
     scroller.textContent = '';
@@ -561,6 +566,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function scheduleRender() {
+    if (state.returnMotion) { state.renderQueued = true; return; }
     if (state.frame) return;
     state.frame = requestAnimationFrame(() => {
       state.frame = 0;
@@ -862,6 +868,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       await fade.finished?.catch(() => {});
       if (state.session === session) {
         session.phase = 'complete';
+        state.lastOpened = { book, style, spineEl };
         state.session = null;
         state.busy = false;
         session.cancelled = true;
@@ -909,6 +916,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   let observer = null;
   const onViewportResize = () => {
     state.session?.close({ instant:true, silent:true });
+    state.returnMotion?.cancel();
     scheduleRender();
   };
   window.addEventListener('resize', onViewportResize);
@@ -930,6 +938,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   /** Sustituye la biblioteca y vuelve a pintar, conservando el scroll. */
   function refresh(nextBooks) {
     if (state.destroyed) return;
+    if (state.returnMotion) {
+      if (Array.isArray(nextBooks)) state.queuedBooks = nextBooks.slice();
+      return;
+    }
     state.session?.close({ instant: true, silent: true });
     const top = scroller.scrollTop;
     state.books = Array.isArray(nextBooks) ? nextBooks.slice() : state.books;
@@ -938,10 +950,115 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     scroller.scrollTop = top;
   }
 
+  function applyDeferredShelfUpdates() {
+    if (state.destroyed || state.returnMotion) return;
+    if (state.queuedBooks) {
+      const nextBooks = state.queuedBooks;
+      state.queuedBooks = null;
+      refresh(nextBooks);
+    } else if (state.renderQueued) {
+      state.renderQueued = false;
+      scheduleRender();
+    }
+  }
+
+  /** Cierra el tomo 3D desde el lector y lo devuelve a su hueco. */
+  async function returnToShelf(bookId) {
+    const previous = state.lastOpened;
+    if (!previous || previous.book.id !== bookId || state.destroyed) return false;
+    state.returnMotion?.cancel();
+    const book = state.books.find(candidate => candidate.id === bookId) || previous.book;
+    const spine = [...root.querySelectorAll('.ihr-spine')].find(node => node.dataset.bookId === String(bookId)) || previous.spineEl;
+    if (!spine?.isConnected) { state.lastOpened = null; return false; }
+
+    spine.scrollIntoView?.({ block:'nearest', behavior:'instant' });
+    const rect = spine.getBoundingClientRect();
+    if (!rect.width || !rect.height) { state.lastOpened = null; return false; }
+    const vw = window.innerWidth || 390, vh = window.innerHeight || 780;
+    const landscape = vh <= 560 && vw >= 560;
+    const ratio = opts.coverRatio;
+    const coverH = Math.min(vh * (landscape ? .72 : .54), landscape ? 350 : Math.max(110, vh - 330), 440,
+      (vw * (landscape ? .35 : .78)) / ratio, (vw * .86) / (ratio + rect.width / rect.height * .55));
+    const coverW = coverH * ratio;
+    const startScale = rect.height / coverH;
+    const thickness = Math.max(6, rect.width / startScale);
+    const centerX = vw / 2 + thickness * .19;
+    const centerY = vh * (landscape ? .5 : .42);
+    const dx = rect.left + rect.width / 2 - centerX;
+    const dy = rect.top + rect.height / 2 - centerY;
+    const lift = Math.min(40, rect.height * .2);
+    const end = { x:dx, y:dy, scale:startScale, angle:90, pitch:0 };
+    const stage = el('div', { class:'ihr-flyout__stage' });
+    const bookNode = el('div', { class:'ihr-flyout__book', style:
+      `left:${(vw-coverW)/2}px;top:${centerY-coverH/2}px;width:${coverW}px;height:${coverH}px` });
+    stage.append(bookNode);
+    const flyout = el('div', { class:'ihr-flyout ihr-flyout--return', 'aria-hidden':'true' }, [stage]);
+    const coverUrl = await resolveCover(book);
+    if (state.destroyed || state.lastOpened !== previous || window.innerWidth !== vw || window.innerHeight !== vh) return false;
+    const view = bookView(bookNode, book, previous.style, {
+      width:coverW, height:coverH, thickness, viewportWidth:vw, viewportHeight:vh,
+      centerX:vw/2, centerY:vh*.42, coverUrl
+    });
+    if (view) {
+      bookNode.classList.add('ihr-flyout__book--webgl');
+      bookNode.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
+    } else {
+      bookNode.classList.add('ihr-flyout__book--fallback');
+      bookNode.style.cssText = `position:absolute;width:${coverW}px;height:${coverH}px;left:${(vw-coverW)/2}px;top:${centerY-coverH/2}px`;
+      bookNode.append(buildCoverFace(book, coverUrl, previous.style));
+    }
+    const pose = (x, y, scale, angle, pitch=0) => ({ x,y,scale,angle,pitch });
+    document.body.append(flyout);
+    spine.classList.add('is-away');
+    const duration = prefersReducedMotion() ? 1 : 560;
+    const animation = view ? view.animate([
+      { transform:pose(0,0,1,0,0), offset:0 },
+      { transform:pose(-dx*.12,-lift*.5,.94,12,3), offset:.22 },
+      { transform:pose(dx*.38,dy*.38-lift,startScale+(1-startScale)*.38,62,4), offset:.68 },
+      { transform:end, offset:1 }
+    ], { duration }) : animate(bookNode, [
+      { opacity:1, transform:'translate(0,0) scale(1)' },
+      { opacity:.85, transform:`translate(${dx}px, ${dy}px) scale(${startScale})` }
+    ], { duration, easing:EASE, fill:'both' });
+    const restoreShelfSpine = () => {
+      const current = [...root.querySelectorAll('.ihr-spine')]
+        .find(node => node.dataset.bookId === String(bookId)) || spine
+      current.classList.remove('is-away')
+      return current
+    }
+    const motion = { cancel() {
+      animation.cancel?.(); view?.dispose(); flyout.remove(); restoreShelfSpine()
+      state.returnMotion = null;
+      applyDeferredShelfUpdates()
+    } };
+    state.returnMotion = motion;
+    // Some WebViews pause requestAnimationFrame as the reader surface closes.
+    // Bound the transition so a paused GPU frame cannot leave an invisible
+    // overlay in the DOM or keep the original book hidden on its shelf.
+    let watchdog;
+    await Promise.race([
+      animation.finished?.then(() => true, () => true) ?? Promise.resolve(true),
+      new Promise(resolve => { watchdog = setTimeout(() => resolve(false), duration + 1500); })
+    ]);
+    clearTimeout(watchdog);
+    if (state.returnMotion === motion) {
+      state.returnMotion = null;
+      animation.cancel?.();
+      view?.dispose(); flyout.remove();
+      const currentSpine = restoreShelfSpine()
+      state.lastOpened = null;
+      currentSpine.focus?.({ preventScroll:true });
+      applyDeferredShelfUpdates()
+      return true;
+    }
+    return false;
+  }
+
   return {
     element: root,
     refresh,
     update: refresh,
+    returnToShelf,
 
     /** Repliega la portada abierta, si la hay. */
     close() {
@@ -950,6 +1067,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     destroy() {
       state.destroyed = true;
+      state.returnMotion?.cancel();
       state.session?.close({ instant: true, silent: true });
       if (state.frame) cancelAnimationFrame(state.frame);
       observer?.disconnect();

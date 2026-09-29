@@ -4,12 +4,15 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 El home no es un grid de tarjetas: es una estantería ilustrada con plantas donde los libros se ven de canto. Al tocar uno, sale de la balda y gira en 3D hasta enseñar la portada antes de abrirse.
 
-### Actualización visual web · 1.0.15
+### Actualización web · 1.0.16
 
 - Baldas de roble con veta fina, sombras de apoyo, macetas de cerámica y recuentos de libros.
 - Modelo compartido entre balda y portada: lomo elíptico continuo, tapas biseladas, bisagras de tela y cantos de papel estratificados.
 - Giro sin rebotes, zoom de portada y aparición del lector ya preparado debajo de la transición. La portada sigue esperando un segundo toque para abrir el documento.
 - Botones, radios, iconos y colores de superficie acordes con Notes; modo oscuro, teclado, movimiento reducido y composición horizontal en móviles.
+- Regreso animado desde el lector hasta el hueco original, incluso si la balda se redibuja durante el cierre. Las portadas PDF se generan a mayor resolución, las texturas 3D usan el doble de píxeles y las miniaturas antiguas se regeneran al volver a abrir el libro.
+- Drive sincroniza libros y posiciones de lectura al iniciar sesión, al volver a abrir la app y al recuperar la conexión. Los avances se guardan en una carpeta de estado de Inhouse Read y se conservan si llega una subida anterior más tarde.
+- Los libros antiguos que aún tengan copia en la carpeta local autorizada se recuperan automáticamente antes de subirlos a Drive.
 
 Esta actualización se entrega desde la web al abrir la app Android. La APK sigue siendo la **1.0.14**, con su cargador remoto; no se modifica el manifiesto Android para anunciar una APK inexistente.
 

@@ -58,9 +58,14 @@ export function fitCoverImage(imageWidth, imageHeight, width, height) {
 
 function texture(book, style, spine) {
   const canvas = document.createElement('canvas');
-  canvas.width = spine ? 256 : 676; canvas.height = 1024;
+  // Keep the cover map sharp on high-density phone displays while preserving
+  // the original drawing coordinates used by the ornament and typography.
+  const designWidth = spine ? 256 : 676;
+  const textureScale = 2;
+  canvas.width = designWidth * textureScale; canvas.height = 1024 * textureScale;
   const c = canvas.getContext('2d');
-  c.fillStyle = style.color; c.fillRect(0, 0, canvas.width, canvas.height);
+  c.scale(textureScale, textureScale);
+  c.fillStyle = style.color; c.fillRect(0, 0, designWidth, 1024);
   // Fine woven cloth, rather than thick horizontal stripes.
   c.globalAlpha = .035; c.fillStyle = '#fff';
   for (let y = 0; y < 1024; y += 4) c.fillRect(0, y, canvas.width, 1);
@@ -154,7 +159,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl)
     if (disposed) { map.dispose(); return; }
     // PDFs and illustrated books can have landscape covers. Preserve their
     // full image and aspect ratio, with cloth around any uncovered area.
-    const canvas = document.createElement('canvas'); canvas.width = 676; canvas.height = 1024;
+    const canvas = document.createElement('canvas'); canvas.width = 1352; canvas.height = 2048;
     const c = canvas.getContext('2d'); c.fillStyle = style.color; c.fillRect(0, 0, canvas.width, canvas.height);
     const fit = fitCoverImage(map.image.width, map.image.height, canvas.width, canvas.height);
     c.drawImage(map.image, fit.x, fit.y, fit.width, fit.height);

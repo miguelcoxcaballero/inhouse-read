@@ -538,6 +538,9 @@
   backdrop-filter: blur(10px);
 }
 
+.ihr-flyout--return { z-index:61; background:transparent; pointer-events:none; }
+.ihr-flyout--return .ihr-flyout__stage { pointer-events:none; }
+
 [data-theme='dark'] .ihr-flyout__scrim { background:rgba(21,21,21,.94); }
 .ihr-flyout__close { position:absolute; top:max(16px, env(safe-area-inset-top)); right:max(16px, env(safe-area-inset-right)); z-index:5; width:44px; padding:0; }
 .ihr-flyout__shadow { position:absolute; left:50%; top:calc(var(--ihr-cover-bottom) + 12px); width:min(55vw, 250px); height:20px; border-radius:50%; background:rgba(30,24,18,.16); filter:blur(12px); transform:translateX(-50%); opacity:0; transition:opacity .3s var(--ease); }
