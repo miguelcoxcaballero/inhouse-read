@@ -146,6 +146,9 @@ async function refreshShelf() {
     shelf = renderBookshelf(els.bookshelfRoot, books, {
       onBookOpen: openBookRecord,
       onPrepareBook: prepareBookOpen,
+      sections: false,
+      sort: 'none',
+      minimumShelves: 3,
       getBookPreparation: book => preparedBooks.get(book.id),
       onBookAction: handleCoverAction,
       onAddBooks: pickLocalFile,
@@ -768,7 +771,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.1.9'
+els.appVersion.textContent = 'Inhouse Read · v1.2.0'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')

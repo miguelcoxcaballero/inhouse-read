@@ -74,7 +74,7 @@ describe('renderBookshelf', () => {
   })
 
   it('separa "seguir leyendo" cuando hay libros a medias', () => {
-    shelf = renderBookshelf(container, makeBooks(8), { shelfWidth: SHELF_WIDTH })
+    shelf = renderBookshelf(container, makeBooks(8), { shelfWidth: SHELF_WIDTH, sections: true })
     const titles = [...container.querySelectorAll('.ihr-section__title')].map(
       (node) => node.textContent
     )
@@ -159,6 +159,16 @@ describe('renderBookshelf', () => {
     expect(container.querySelectorAll('.ihr-section__title')).toHaveLength(0)
   })
 
+  it('mantiene una estantería única y tres baldas iniciales con orden manual', () => {
+    const books = [makeBooks(3)[2], makeBooks(3)[0], makeBooks(3)[1]]
+    shelf = renderBookshelf(container, books, { shelfWidth: SHELF_WIDTH, sections: false, sort: 'none' })
+    expect(container.querySelectorAll('.ihr-section')).toHaveLength(1)
+    expect(container.querySelectorAll('.ihr-section__title')).toHaveLength(0)
+    expect(container.querySelectorAll('.ihr-shelf')).toHaveLength(3)
+    expect([...container.querySelectorAll('.ihr-spine')].map(node => node.dataset.bookId))
+      .toEqual(books.map(book => book.id))
+  })
+
   it('estado vacío: mensaje acogedor, plantas y CTA (nunca una pantalla en blanco)', () => {
     const onAddBooks = vi.fn()
     shelf = renderBookshelf(container, [], { shelfWidth: SHELF_WIDTH, onAddBooks })
@@ -166,6 +176,7 @@ describe('renderBookshelf', () => {
     expect(empty).not.toBeNull()
     expect(empty.textContent).toContain('Tu estantería está vacía')
     expect(empty.querySelectorAll('.ihr-plant').length).toBe(3)
+    expect(empty.querySelectorAll('.ihr-shelf')).toHaveLength(3)
     empty.querySelector('.ihr-empty__action').click()
     expect(onAddBooks).toHaveBeenCalledOnce()
   })

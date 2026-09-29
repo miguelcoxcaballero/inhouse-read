@@ -164,7 +164,10 @@ test('la estantería carga madera y plantas fotográficas sin recursos rotos', a
   await page.goto('/')
   await expect(page.locator('.ihr-plant img').first()).toBeVisible()
   expect(await page.locator('.ihr-plant img').evaluateAll(images => images.every(image => image.complete && image.naturalWidth > 0))).toBe(true)
-  await expect(page.locator('.ihr-shelf__board')).toHaveCSS('background-image', /walnut-/)
+  await expect(page.locator('.ihr-shelf__board')).toHaveCount(3)
+  expect(await page.locator('.ihr-shelf__board').evaluateAll(boards =>
+    boards.every(board => getComputedStyle(board).backgroundImage.includes('walnut-'))
+  )).toBe(true)
   await page.screenshot({ path:'test-results/library-photo-mobile.png' })
   await page.evaluate(async () => {
     const db = await new Promise(resolve => {const request=indexedDB.open('inhouse-read');request.onsuccess=()=>resolve(request.result)})

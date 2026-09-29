@@ -140,7 +140,9 @@ const DEFAULTS = Object.freeze({
   holdMs: 320,           // pausa para que la portada se vea antes de abrir
   revealDuration: 680,
   returnDuration: 460,
-  sections: true,        // false = una sola estantería continua
+  sections: false,      // la biblioteca es una estantería continua
+  sort: 'none',         // conserva el orden guardado y permite organizarlo a mano
+  minimumShelves: 3,
   shelfPadding: 16,
   gap: 3,
   plantEvery: 5,
@@ -792,22 +794,22 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function buildEmptyState() {
-    const row = el('div', { class: 'ihr-shelf__row ihr-empty__row' });
-    for (const [variant, seed, width] of [
+    const emptyShelves = [
       ['sansevieria', 'empty-a', 52],
       ['monstera', 'empty-b', 64],
       ['suculenta', 'empty-c', 50]
-    ]) {
+    ].map(([variant, seed, width]) => {
+      const row = el('div', { class: 'ihr-shelf__row ihr-empty__row' });
       row.append(buildPlant({ variant, seed, width }));
-    }
-    const shelf = el('div', { class: 'ihr-shelf ihr-shelf--empty' }, [
-      el('div', { class: 'ihr-shelf__back', 'aria-hidden': 'true' }),
-      row,
-      el('div', { class: 'ihr-shelf__board', 'aria-hidden': 'true' })
-    ]);
+      return el('div', { class: 'ihr-shelf ihr-shelf--empty' }, [
+        el('div', { class: 'ihr-shelf__back', 'aria-hidden': 'true' }),
+        row,
+        el('div', { class: 'ihr-shelf__board', 'aria-hidden': 'true' })
+      ]);
+    });
 
     return el('div', { class: 'ihr-empty' }, [
-      el('div', { class: 'ihr-empty__art' }, [shelf]),
+      el('div', { class: 'ihr-empty__art' }, emptyShelves),
       el('div', { class: 'ihr-empty__copy' }, [
         roofMark('ihr-roof ihr-empty__roof'),
         el('h2', { class: 'ihr-empty__title', text: opts.texts.emptyTitle }),
@@ -879,6 +881,20 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       // Sin secciones, 0 recientes: todo cae en una estantería continua.
       recentLimit: opts.sections ? opts.recentLimit : 0
     });
+    if (!opts.sections && plan.length === 1) {
+      const minimum = Math.max(1, Math.floor(Number(opts.minimumShelves) || 1));
+      const plants = ['sansevieria', 'pothos', 'suculenta', 'monstera'];
+      while (plan[0].shelves.length < minimum) {
+        const index = plan[0].shelves.length;
+        plan[0].shelves.push({
+          index,
+          items: [{
+            kind: 'plant', variant: plants[index % plants.length],
+            seed: `empty-shelf-${index}`, width: 42 + (index % 3) * 6
+          }]
+        });
+      }
+    }
 
     state.itemsById.clear();
     const fragment = document.createDocumentFragment();

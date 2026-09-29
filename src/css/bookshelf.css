@@ -483,6 +483,7 @@
 .ihr-empty__art {
   width: min(360px, 100%);
 }
+.ihr-empty__art > .ihr-shelf + .ihr-shelf { margin-top: 14px; }
 
 .ihr-empty__row {
   justify-content: center;

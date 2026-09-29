@@ -54,7 +54,7 @@ test('conecta Google sin redirección y muestra la foto en la esquina derecha', 
   await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   expect(await page.evaluate(() => window.__oauthOptions.redirect_uri)).toBeUndefined()
   await button.click()
-  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.1.9')
+  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.2.0')
   await expect(page.locator('#drive-theme-toggle')).toBeVisible()
   await expect(page.locator('#drive-profile-initial-menu')).toBeHidden()
   await page.locator('#drive-theme-toggle').check()
@@ -115,6 +115,8 @@ test('una sesión caducada vuelve a mostrar Conectar y oculta el perfil', async 
 
 test('muestra el estado vacío cuando no hay libros recientes', async ({ page }) => {
   await expect(page.getByText('Tu estantería está vacía')).toBeVisible()
+  await expect(page.locator('.ihr-empty .ihr-shelf')).toHaveCount(3)
+  await expect(page.locator('.ihr-section__title')).toHaveCount(0)
 })
 
 test('el botón de tema alterna data-theme en <html>', async ({ page }) => {
