@@ -101,14 +101,6 @@
 .ihr-library-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin:4px 4px 28px; }
 .ihr-library-heading h1 { margin:0; font:600 1.25rem var(--f-logo); letter-spacing:-.6px; }
 .ihr-library-heading p { margin:0; color:var(--text-secondary); font-size:.8rem; white-space:nowrap; }
-.ihr-library-heading__tools { display:flex; align-items:center; justify-content:flex-end; gap:10px; }
-.ihr-library-heading__arrange {
-  flex:none; border:1px solid var(--border); border-radius:999px; padding:7px 12px;
-  color:var(--text-primary); background:var(--bg-secondary); font:500 .76rem var(--f-body, sans-serif);
-  cursor:pointer; transition:background .18s ease, border-color .18s ease, transform .18s ease;
-}
-.ihr-library-heading__arrange:hover { border-color:var(--accent-read); transform:translateY(-1px); }
-.ihr-library-heading__arrange[aria-pressed="true"] { color:#fff; border-color:var(--accent-read); background:var(--accent-read); }
 
 .ihr-library-loading {
   min-height: min(48vh, 360px);
@@ -174,15 +166,28 @@
   touch-action: pan-y;
 }
 
-.ihr-bookshelf.is-arranging .ihr-shelf__row { perspective:900px; touch-action:none; }
-.ihr-bookshelf.is-arranging .ihr-spine { cursor:grab; transition:transform .22s cubic-bezier(.2,.75,.22,1), filter .18s ease; }
-.ihr-bookshelf.is-arranging .ihr-spine:not(.is-dragging):hover { transform:translateY(-5px) rotateY(-3deg) rotate(var(--ihr-spine-tilt, 0deg)); }
+.ihr-bookshelf.is-arranging .ihr-shelf__row { perspective:1000px; }
+.ihr-bookshelf.is-arranging .ihr-spine { cursor:grab; }
+.ihr-bookshelf.is-arranging .ihr-spine.is-lifted {
+  z-index:8; cursor:grabbing;
+  transform:translate3d(0,-32px,54px) rotateY(-9deg) rotateX(5deg) scale(1.055);
+  filter:drop-shadow(0 18px 12px rgba(24,18,12,.3));
+}
 .ihr-bookshelf.is-arranging .ihr-spine.is-dragging {
-  z-index:8; cursor:grabbing; pointer-events:none; filter:drop-shadow(0 18px 12px rgba(24,18,12,.32));
-  transform:translate3d(var(--ihr-drag-x,0),var(--ihr-drag-y,0),90px) rotateY(-13deg) rotateX(6deg) scale(1.06);
+  z-index:9; cursor:grabbing; pointer-events:none; filter:drop-shadow(0 20px 14px rgba(24,18,12,.36));
+  transform:translate3d(var(--ihr-drag-x,0),calc(var(--ihr-drag-y,0px) - 34px),110px) rotateY(-11deg) rotateX(5deg) scale(1.07);
   transition:none;
 }
-.ihr-bookshelf.is-arranging .ihr-spine.is-drop-target { filter:brightness(1.16) drop-shadow(0 0 7px rgba(47,107,79,.55)); }
+.ihr-bookshelf.is-arranging .ihr-spine.is-drop-target { filter:brightness(1.08); }
+.ihr-bookshelf.is-arranging .ihr-spine.is-drop-before::before,
+.ihr-bookshelf.is-arranging .ihr-spine.is-drop-after::before {
+  content:''; position:absolute; z-index:12; top:4px; bottom:0; width:3px;
+  border-radius:4px; background:var(--accent-read,#2f6b4f);
+  box-shadow:0 0 0 2px rgba(255,255,255,.8),0 0 12px rgba(47,107,79,.65);
+  pointer-events:none;
+}
+.ihr-bookshelf.is-arranging .ihr-spine.is-drop-before::before { left:-5px; }
+.ihr-bookshelf.is-arranging .ihr-spine.is-drop-after::before { right:-5px; }
 
 /* El tablero: veta, canto frontal iluminado y sombra proyectada. */
 .ihr-shelf__board {
@@ -221,6 +226,9 @@
   background: none;
   color: var(--ihr-spine-ink, #f2efe6);
   cursor: pointer;
+  /* Reservamos el gesto sobre el lomo para el toque largo. El JS conserva
+     el desplazamiento vertical cuando el dedo se mueve antes de levantarlo. */
+  touch-action: none;
   /* SIN overflow:hidden en el botón: el marcapáginas tiene que asomar por
      encima. La superficie visible vive en .ihr-spine__body, un hijo aparte —
      así el marcapáginas, hermano suyo, nunca queda recortado. */
@@ -983,9 +991,7 @@
 @media (max-width:359px) { .ihr-library-heading h1 { font-size:1.1rem; } .ihr-flyout__actions .ihr-btn { padding:10px; gap:6px; font-size:.8rem; } }
 @media (max-width:420px) {
   .ihr-library-heading { align-items:center; gap:6px; }
-  .ihr-library-heading__tools { gap:6px; }
   .ihr-library-heading p { font-size:.7rem; }
-  .ihr-library-heading__arrange { padding:7px 10px; }
   .ihr-spine-editor { padding:14px 18px calc(14px + env(safe-area-inset-bottom)); }
   .ihr-spine-editor__field--title input { font-size:16px; }
 }

@@ -110,6 +110,7 @@ import { bookView, fitCoverImage } from './book-model.js';
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
 const TAP_SLOP = 12;
+const REORDER_HOLD_MS = 440;
 const ICONS = Object.freeze({
   drive: ['M9 3h6l7 12-3 5H5l-3-5L9 3Z', 'm9 3 7 12H2', 'm15 3-7 12 3 5'],
   read: ['M3 5.5c3-1 6-.5 9 1.5 3-2 6-2.5 9-1.5v14c-3-1-6-.5-9 1.5-3-2-6-2.5-9-1.5v-14Z', 'M12 7v14'],
@@ -272,6 +273,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     returnMotion: null,
     arranging: false,
     dragSession: null,
+    suppressOpenBookId: null,
     queuedBooks: null,
     renderQueued: false,
     appearancesReady: true,
@@ -562,60 +564,92 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function startSpineDrag(event, node) {
-    if (!state.arranging || event.button !== 0 || state.dragSession) return;
-    event.preventDefault();
-    state.dragSession = {
+    if ((event.button !== undefined && event.button !== 0) || state.dragSession) return;
+    const drag = state.dragSession = {
       node, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
-      x: event.clientX, y: event.clientY, target: null, after: false, moved: false
+      x: event.clientX, y: event.clientY, scrollTop: scroller.scrollTop,
+      pointerType: event.pointerType, target: null, after: false, moved: false,
+      active: false, scrolling: false, cancelled: false, timer: 0
     };
-    node.setPointerCapture?.(event.pointerId);
+    try { node.setPointerCapture?.(event.pointerId); } catch { /* el navegador pudo cancelar el puntero */ }
+    drag.timer = setTimeout(() => {
+      if (state.dragSession !== drag) return;
+      drag.active = true;
+      state.arranging = true;
+      root.classList.add('is-arranging');
+      node.classList.remove('is-pressed');
+      node.classList.add('is-lifted');
+    }, REORDER_HOLD_MS);
   }
 
   function moveSpineDrag(event, node) {
     const drag = state.dragSession;
     if (!drag || drag.node !== node || drag.pointerId !== event.pointerId) return;
+    if (!drag.active) {
+      if (drag.cancelled) return;
+      if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > TAP_SLOP) {
+        clearTimeout(drag.timer);
+        if (drag.pointerType === 'touch' && Math.abs(event.clientY - drag.startY) > Math.abs(event.clientX - drag.startX)) {
+          drag.scrolling = true;
+        } else {
+          drag.cancelled = true;
+        }
+      }
+      if (drag.scrolling) {
+        event.preventDefault();
+        scroller.scrollTop = drag.scrollTop + drag.startY - event.clientY;
+      }
+      return;
+    }
+    event.preventDefault();
     drag.x = event.clientX; drag.y = event.clientY;
     const dx = drag.x - drag.startX, dy = drag.y - drag.startY;
-    if (!drag.moved && Math.hypot(dx, dy) < 6) return;
     drag.moved = true;
+    node.classList.remove('is-lifted');
     node.classList.add('is-dragging');
     node.style.setProperty('--ihr-drag-x', `${dx}px`);
     node.style.setProperty('--ihr-drag-y', `${dy}px`);
     node.style.pointerEvents = 'none';
     const hit = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('.ihr-spine');
     node.style.pointerEvents = '';
-    const target = hit && hit !== node && hit.closest('.ihr-section') === node.closest('.ihr-section') ? hit : null;
-    drag.target?.classList.remove('is-drop-target');
+    const section = node.closest('.ihr-section');
+    const candidates = [...(section?.querySelectorAll('.ihr-spine') || [])].filter(candidate => candidate !== node);
+    const target = hit && hit !== node && hit.closest('.ihr-section') === section
+      ? hit
+      : candidates.map(candidate => {
+        const rect = candidate.getBoundingClientRect();
+        const dx = Math.max(rect.left - event.clientX, 0, event.clientX - rect.right);
+        const dy = Math.max(rect.top - event.clientY, 0, event.clientY - rect.bottom);
+        return { candidate, distance:Math.hypot(dx, dy) };
+      }).sort((a,b) => a.distance - b.distance)[0]?.candidate;
+    drag.target?.classList.remove('is-drop-target', 'is-drop-before', 'is-drop-after');
     drag.target = target;
     drag.after = Boolean(target && event.clientX > target.getBoundingClientRect().left + target.getBoundingClientRect().width / 2);
-    target?.classList.add('is-drop-target');
+    target?.classList.add('is-drop-target', drag.after ? 'is-drop-after' : 'is-drop-before');
   }
 
   function finishSpineDrag(event, node, cancelled = false) {
     const drag = state.dragSession;
     if (!drag || drag.node !== node || drag.pointerId !== event.pointerId) return;
+    clearTimeout(drag.timer);
     state.dragSession = null;
-    drag.target?.classList.remove('is-drop-target');
-    node.classList.remove('is-dragging');
+    drag.target?.classList.remove('is-drop-target', 'is-drop-before', 'is-drop-after');
+    node.classList.remove('is-dragging', 'is-lifted');
     node.style.removeProperty('--ihr-drag-x');
     node.style.removeProperty('--ihr-drag-y');
     node.style.pointerEvents = '';
     try { node.releasePointerCapture?.(event.pointerId); } catch { /* captura ya liberada */ }
-    if (drag.moved && !cancelled && drag.target) reorderSpine(node, drag.target, drag.after);
-  }
-
-  function setArranging(value) {
-    state.arranging = Boolean(value);
-    root.classList.toggle('is-arranging', state.arranging);
-    if (!state.arranging && state.dragSession) {
-      const drag = state.dragSession;
-      state.dragSession = null;
-      drag.target?.classList.remove('is-drop-target');
-      drag.node.classList.remove('is-dragging');
-      drag.node.style.pointerEvents = '';
+    if (drag.scrolling || drag.cancelled) {
+      state.suppressOpenBookId = String(node.dataset.bookId || '');
+      setTimeout(() => { state.suppressOpenBookId = null; }, 0);
+      return;
     }
-    render();
-    scroller.querySelector('.ihr-library-heading__arrange')?.focus({ preventScroll: true });
+    if (!drag.active) return;
+    state.arranging = false;
+    root.classList.remove('is-arranging');
+    state.suppressOpenBookId = String(node.dataset.bookId || '');
+    setTimeout(() => { state.suppressOpenBookId = null; }, 0);
+    if (drag.moved && !cancelled && drag.target) reorderSpine(node, drag.target, drag.after);
   }
 
   function buildSpine(item) {
@@ -629,8 +663,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       'aria-label': bookmark
         ? `${opts.texts.openAria(book)}, ${opts.texts.progressAria(bookmark.percent)}`
         : opts.texts.openAria(book),
-      'aria-keyshortcuts': state.arranging ? 'ArrowLeft ArrowRight' : null,
-      'aria-description': state.arranging ? 'Usa las flechas izquierda y derecha para cambiar el orden' : null,
+      title: 'Mantén pulsado para mover el libro',
+      'aria-keyshortcuts': 'Shift+ArrowLeft Shift+ArrowRight',
+      'aria-description': 'Mantén pulsado para sacar el libro y moverlo. Usa Mayús y las flechas izquierda o derecha para cambiar su posición.',
       style:
         `--ihr-spine-w:${style.width}px;` +
         `--ihr-spine-h:${Math.round(style.heightRatio * 100)}%;` +
@@ -705,11 +740,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       }
     });
     node.addEventListener('click', () => {
-      if (state.arranging) return;
+      const id = String(book.id ?? book.path ?? book.title ?? 'book');
+      if (state.arranging || state.suppressOpenBookId === id) { state.suppressOpenBookId = null; return; }
       openBook(node, item);
     });
     node.addEventListener('keydown', event => {
-      if (!state.arranging || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      if (!event.shiftKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
       event.preventDefault();
       const section = node.closest('.ihr-section');
       const siblings = [...section.querySelectorAll('.ihr-spine')];
@@ -843,17 +879,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const fragment = document.createDocumentFragment();
     fragment.append(el('div', { class: 'ihr-library-heading' }, [
       el('h1', { text: 'Tu biblioteca' }),
-      el('div', { class: 'ihr-library-heading__tools' }, [
-        el('p', { 'aria-live': 'polite', text: state.arranging
-          ? 'Arrastra los libros o usa ← → para ordenarlos'
-          : `${state.books.length} ${state.books.length === 1 ? 'libro' : 'libros'}` }),
-        el('button', {
-          type: 'button', class: 'ihr-library-heading__arrange',
-          'aria-pressed': state.arranging,
-          text: state.arranging ? 'Guardar orden' : 'Organizar',
-          onClick: () => setArranging(!state.arranging)
-        })
-      ])
+      el('p', { 'aria-live': 'polite', text: `${state.books.length} ${state.books.length === 1 ? 'libro' : 'libros'}` })
     ]));
     for (const section of plan) {
       for (const shelf of section.shelves) {

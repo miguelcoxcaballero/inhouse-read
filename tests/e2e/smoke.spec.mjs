@@ -54,7 +54,7 @@ test('conecta Google sin redirección y muestra la foto en la esquina derecha', 
   await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   expect(await page.evaluate(() => window.__oauthOptions.redirect_uri)).toBeUndefined()
   await button.click()
-  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.1.6')
+  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.1.7')
   await expect(page.locator('#drive-theme-toggle')).toBeVisible()
   await expect(page.locator('#drive-profile-initial-menu')).toBeHidden()
   await page.locator('#drive-theme-toggle').check()
@@ -252,7 +252,7 @@ test('edita y conserva el color, fuente, tamaño y texto del lomo', async ({ pag
   await expect(reopenedDialog.getByLabel('Autor del libro')).toHaveValue('Ursula Le Guin')
 })
 
-test('organiza los libros con teclado, animación 3D y orden persistente', async ({ page }) => {
+test('mueve un libro al mantenerlo pulsado con animación 3D y conserva el orden', async ({ page }) => {
   await page.evaluate(async () => {
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open('inhouse-read')
@@ -271,11 +271,11 @@ test('organiza los libros con teclado, animación 3D y orden persistente', async
   })
   await page.reload()
   await expect(page.locator('.ihr-spine')).toHaveCount(2)
+  await expect(page.getByRole('button', { name:'Organizar' })).toHaveCount(0)
   const original = await page.locator('.ihr-spine').evaluateAll(nodes => nodes.map(node => node.dataset.bookId))
-  await page.getByRole('button', { name:'Organizar' }).click()
   const firstSpine = page.locator('.ihr-spine').first()
   await firstSpine.focus()
-  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('Shift+ArrowRight')
   await expect.poll(() => page.locator('.ihr-spine').evaluateAll(nodes => nodes.map(node => node.dataset.bookId)))
     .toEqual([...original].reverse())
   await page.waitForTimeout(560)
@@ -283,6 +283,8 @@ test('organiza los libros con teclado, animación 3D y orden persistente', async
   const to = await page.locator('.ihr-spine[data-book-id="shelf:alpha"]').boundingBox()
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
   await page.mouse.down()
+  await page.waitForTimeout(500)
+  await expect(page.locator('.ihr-spine[data-book-id="shelf:bravo"]')).toHaveClass(/is-lifted/)
   await page.mouse.move(to.x + to.width * .82, to.y + to.height / 2, { steps:8 })
   await page.mouse.up()
   await expect.poll(() => page.locator('.ihr-spine').evaluateAll(nodes => nodes.map(node => node.dataset.bookId)))
