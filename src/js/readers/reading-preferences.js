@@ -12,7 +12,8 @@ export const READING_FONTS = {
 }
 export const DEFAULT_READING_PREFERENCES = Object.freeze({
   theme:'paper', font:'book', fontSize:20, lineHeight:1.7, margin:24,
-  align:'start', flow:'paginated', pdfMode:'original', zoom:100, rate:1, voice:''
+  align:'start', flow:'paginated', pdfMode:'original', zoom:100, rate:1, voice:'',
+  brightness:100, fontWeight:400, footnotes:false, multilingual:false, skipHeaders:false
 })
 export function normalizeReadingPreferences(input = {}) {
   const number = (key, min, max) => Math.min(max, Math.max(min, Number(input[key]) || DEFAULT_READING_PREFERENCES[key]))
@@ -24,7 +25,9 @@ export function normalizeReadingPreferences(input = {}) {
     align:input.align === 'justify' ? 'justify' : 'start',
     flow:input.flow === 'scrolled' ? 'scrolled' : 'paginated',
     pdfMode:input.pdfMode === 'text' ? 'text' : 'original',
-    zoom:number('zoom',70,200), rate:number('rate',0.5,2), voice:String(input.voice || '')
+    zoom:number('zoom',70,200), rate:number('rate',0.5,2), voice:String(input.voice || ''),
+    brightness:number('brightness',50,120), fontWeight:[400,500,600].includes(Number(input.fontWeight)) ? Number(input.fontWeight) : 400,
+    footnotes:Boolean(input.footnotes), multilingual:Boolean(input.multilingual), skipHeaders:Boolean(input.skipHeaders)
   }
 }
 export function readingCSS(preferences) {
@@ -32,7 +35,7 @@ export function readingCSS(preferences) {
   const theme = READING_THEMES[p.theme]
   return `html { color-scheme:${p.theme === 'night' ? 'dark' : 'light'}; background:${theme.background} !important; }
     body { background:${theme.background} !important; color:${theme.color} !important; }
-    body, p, li, blockquote, div { font-family:${READING_FONTS[p.font]} !important; font-size:${p.fontSize}px !important; line-height:${p.lineHeight} !important; text-align:${p.align} !important; }
+    body, p, li, blockquote, div { font-family:${READING_FONTS[p.font]} !important; font-size:${p.fontSize}px !important; font-weight:${p.fontWeight} !important; line-height:${p.lineHeight} !important; text-align:${p.align} !important; }
     p, li, span, a, h1, h2, h3, h4 { color:inherit !important; }
     a { text-decoration:underline; } img, svg { max-width:100%; height:auto; }`
 }

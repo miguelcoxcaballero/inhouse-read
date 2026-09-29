@@ -28,15 +28,16 @@ describe('CloudSync', () => {
     const book = await library.addOrTouch({ sourceType:'local', name:'places.pdf', size:5, driveFileId:'places-drive', cloudAccountId:'account-1' })
     const readingHistory = [{fraction:.25,locator:{kind:'pdf-page',value:2},label:'Página 2',createdAt:50}]
     const bookmarks = [{fraction:.5,locator:{kind:'pdf-page',value:3},label:'Página 3',createdAt:60}]
+    const quotes = [{id:'q1',text:'A saved passage',fraction:.75,locator:{kind:'pdf-page',value:4},label:'Página 4',color:'gold',createdAt:70}]
     await library.updateProgress(book.id,.75,{kind:'pdf-page',value:4})
-    await library.patch(book.id,{readingHistory,bookmarks})
+    await library.patch(book.id,{readingHistory,bookmarks,quotes})
     drive.writeDriveProgress.mockResolvedValue({id:'places-state'})
     await sync.syncBookProgress(book.id)
-    expect(drive.writeDriveProgress.mock.calls[0][1]).toMatchObject({readingHistory,bookmarks})
-    drive.readDriveProgress.mockResolvedValue({fraction:.9,locator:{kind:'pdf-page',value:5},readingHistory,bookmarks,updatedAt:Date.now()+10000,stateFileId:'places-state'})
-    await library.patch(book.id,{readingHistory:[],bookmarks:[]})
+    expect(drive.writeDriveProgress.mock.calls[0][1]).toMatchObject({readingHistory,bookmarks,quotes:[{...quotes[0],color:'yellow'}]})
+    drive.readDriveProgress.mockResolvedValue({fraction:.9,locator:{kind:'pdf-page',value:5},readingHistory,bookmarks,quotes,updatedAt:Date.now()+10000,stateFileId:'places-state'})
+    await library.patch(book.id,{readingHistory:[],bookmarks:[],quotes:[]})
     await sync.syncBookProgress(book.id)
-    expect(await library.get(book.id)).toMatchObject({readingHistory,bookmarks,locator:{kind:'pdf-page',value:5}})
+    expect(await library.get(book.id)).toMatchObject({readingHistory,bookmarks,quotes:[{...quotes[0],color:'yellow'}],locator:{kind:'pdf-page',value:5}})
   })
   it('syncs custom ink, metallic finishes and engraved text, including automatic reset', async () => {
     const book=await library.addOrTouch({sourceType:'local',name:'gold.pdf',size:5,driveFileId:'gold-drive',cloudAccountId:'account-1'})

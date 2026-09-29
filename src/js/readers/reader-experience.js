@@ -1,7 +1,7 @@
 import { readerPanelMarkup, readerIcon } from './reader-interface.js'
 import { normalizeReadingPreferences, READING_THEMES } from './reading-preferences.js'
 import { ReadingVoice } from './reading-voice.js'
-import { clonePlace, cleanPlaces } from './reading-state.js'
+import { clonePlace, cleanPlaces, cleanQuotes } from './reading-state.js'
 
 const STORAGE_KEY = 'inhouse-read-reading-preferences'
 
@@ -9,7 +9,7 @@ export class ReaderExperience {
   constructor(reader, { persist = async () => {} } = {}) {
     this.reader = reader
     this.persist = persist
-    this.history = []; this.bookmarks = []; this.location = { fraction:0, locator:null }
+    this.history = []; this.bookmarks = []; this.quotes = []; this.location = { fraction:0, locator:null }
     try { this.preferences = normalizeReadingPreferences(JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')) }
     catch { this.preferences = normalizeReadingPreferences() }
     this.screen = document.getElementById('reader-screen')
@@ -35,6 +35,15 @@ export class ReaderExperience {
     this.miniPlayer.innerHTML = `<button type="button" data-mini-open><span data-mini-title></span><small data-mini-status></small></button><button type="button" class="reading-icon-button" data-mini-play aria-label="Pausar lectura">${readerIcon('pause')}</button><button type="button" class="reading-icon-button" data-mini-stop aria-label="Detener lectura">${readerIcon('stop')}</button>`
     this.screen.append(this.miniPlayer)
     document.body.append(this.panel)
+    this.selectedQuoteSelection = null
+    this.quoteColor = 'yellow'
+    const rememberSelection = selection => { if (selection?.text) this.selectedQuoteSelection = selection }
+    document.addEventListener('selectionchange', () => {
+      if (!this.screen.contains(document.activeElement) && !this.screen.contains(window.getSelection()?.anchorNode?.parentElement)) return
+      const selection = this.reader.getSelection()
+      rememberSelection(typeof selection === 'string' ? {text:selection,locator:this.reader.location.locator} : selection)
+    })
+    window.addEventListener('inhouse-reader-selection',event => rememberSelection(event.detail))
     this.voice = new ReadingVoice(reader, (state, message) => {
       const label = state === 'playing' ? 'Pausar' : state === 'paused' ? 'Continuar' : state === 'loading' ? 'Preparando…' : 'Reproducir'
       this.panel.querySelector('[data-play]').setAttribute('aria-label', label)
@@ -84,12 +93,38 @@ export class ReaderExperience {
       this.jump({ fraction:(page - 1) / Math.max(1, reader.pageCount - 1), locator:{ kind:'pdf-page', value:page } })
     }
     this.panel.querySelector('[data-bookmark]').onclick = () => this.addBookmark()
+    document.getElementById('reader-save-bookmark').onclick = () => this.addBookmark()
+    document.getElementById('reader-rotate').onclick = async () => {
+      try {
+        if (screen.orientation?.lock) { await screen.orientation.lock(screen.orientation.type.startsWith('portrait') ? 'landscape' : 'portrait'); this.error('') }
+        else this.error('Este dispositivo no permite cambiar la orientación desde la app.')
+      } catch { this.error('Gira el dispositivo para cambiar la orientación.') }
+    }
     this.panel.querySelector('[data-play]').onclick = () => this.voice.state === 'playing' ? this.voice.pause() : this.voice.play()
+    this.panel.querySelector('[data-audio-prev]').onclick = () => this.step(-1)
+    this.panel.querySelector('[data-audio-next]').onclick = () => this.step(1)
     this.panel.querySelector('[data-stop]').onclick = () => this.voice.stop()
     this.panel.querySelector('[data-sleep]').onchange = event => this.voice.setSleep(Number(event.target.value))
     document.getElementById('reader-settings').onclick = () => this.show('appearance')
     document.getElementById('reader-audio').onclick = () => this.show('audio')
     this.locationButton.onclick = () => this.show('navigation')
+    document.getElementById('reader-search-shortcut').onclick = () => this.show('search')
+    document.getElementById('reader-toc-shortcut').onclick = () => { this.show('navigation'); this.showPlaceTab('toc') }
+    document.getElementById('reader-more-shortcut').onclick = () => this.show('more')
+    this.panel.querySelector('[data-search-form]').onsubmit = event => { event.preventDefault(); this.search(this.panel.querySelector('[data-search-query]').value) }
+    this.panel.querySelector('[data-save-quote]').onclick = () => this.addQuote()
+    this.panel.querySelectorAll('[data-quote-color]').forEach(button => button.onclick = () => {
+      this.quoteColor = button.dataset.quoteColor
+      this.panel.querySelectorAll('[data-quote-color]').forEach(item => item.setAttribute('aria-pressed',String(item === button)))
+    })
+    this.panel.querySelector('[data-about]').onclick = () => this.show('about')
+    this.panel.querySelector('[data-share]').onclick = () => this.shareBook()
+    this.panel.querySelector('[data-kids]').onclick = event => {
+      const enabled = event.currentTarget.getAttribute('aria-pressed') !== 'true'
+      event.currentTarget.setAttribute('aria-pressed',String(enabled)); this.screen.classList.toggle('reader-kids-mode',enabled)
+      event.currentTarget.setAttribute('aria-label',enabled ? 'Salir del modo infantil' : 'Activar modo infantil')
+    }
+    this.panel.querySelectorAll('[data-voice-option]').forEach(control => control.addEventListener('change', () => this.setPreference(control.dataset.voiceOption,control.checked)))
     window.speechSynthesis?.addEventListener('voiceschanged', () => this.populateVoices())
     window.addEventListener('inhouse-tts', event => { if (event.detail?.type === 'voiceschanged') this.populateVoices() })
     this.populateVoices()
@@ -116,17 +151,21 @@ export class ReaderExperience {
     this.book = record
     this.history = cleanPlaces(record.readingHistory)
     this.bookmarks = cleanPlaces(record.bookmarks, 100)
+    this.quotes = cleanQuotes(record.quotes)
     this.panel.querySelector('#reading-book-title').textContent = record.title
     document.getElementById('reader-top-title').textContent = record.title
+    document.getElementById('reader-top-byline').textContent = record.author || record.metadata?.creator || ''
+    this.panel.querySelector('#reading-document-about').textContent = `${record.title}${record.author || record.metadata?.creator ? ` · ${record.author || record.metadata.creator}` : ''}\n${record.format || 'Documento'} · ${this.formatSize(record.sizeBytes)}`
     const pdf = this.reader.format?.engine === 'pdf'
     for (const element of this.panel.querySelectorAll('[data-pdf]')) element.hidden = !pdf
     this.panel.querySelector('[data-epub]').hidden = pdf
     this.panel.querySelector('input[type="number"]').max = String(this.reader.pageCount || 1)
     this.renderPlaces(); this.renderToc(); await this.applyPreferences(); this.relocate()
+    for (const quote of this.quotes) this.reader.addQuoteAnnotation(quote)
   }
-  reset() { this.voice.stop(); this.panel.close(); this.book = null; this.returnButton.hidden = true }
+  reset() { this.voice.stop(); this.panel.close(); this.book = null; this.returnButton.hidden = true; this.screen.classList.remove('reader-kids-mode'); this.panel.querySelector('[data-kids]').setAttribute('aria-pressed','false') }
   relocate() {
-    this.location = clonePlace(this.reader.location)
+    this.location = {...clonePlace(this.reader.location),section:this.reader.location.section || '',page:this.reader.location.page || ''}
     const label = this.label(this.location)
     this.locationButton.querySelector('.reader-location-label').textContent = label
     this.locationButton.setAttribute('aria-label', `Progreso y capítulos, ${label}`)
@@ -137,7 +176,7 @@ export class ReaderExperience {
     if (document.activeElement !== page && this.location.locator?.kind === 'pdf-page') page.value = String(this.location.locator.value)
     this.updateBookmarkButton()
   }
-  label(place) { return place.locator?.kind === 'pdf-page' ? `Página ${place.locator.value}${this.reader.pageCount ? ` de ${this.reader.pageCount}` : ''}` : `${Math.round(place.fraction * 100)} % del libro` }
+  label(place) { return place.locator?.kind === 'pdf-page' ? `Página ${place.locator.value}${this.reader.pageCount ? ` de ${this.reader.pageCount}` : ''}` : place.section ? `${place.section}${place.page ? ` · Página ${place.page}` : ''}` : `${Math.round(place.fraction * 100)} % del libro` }
   show(tab) {
     this.showTab(tab)
     if (!this.panel.open) this.panel.showModal()
@@ -145,8 +184,9 @@ export class ReaderExperience {
     this.panel.querySelector('[data-close]').focus({preventScroll:true})
   }
   showTab(name) {
-    for (const section of ['appearance','navigation','audio']) this.panel.querySelector(`#reading-${section}`).hidden = section !== name
-    const title = {appearance:'Texto',navigation:'Contenido',audio:'Escuchar'}[name]
+    for (const section of ['appearance','navigation','audio','search','more']) this.panel.querySelector(`#reading-${section}`).hidden = section !== name
+    this.panel.querySelector('#reading-about').hidden = name !== 'about'
+    const title = {appearance:'Texto',navigation:'Contenido',audio:'Escuchar',search:'Buscar',more:'Más opciones',about:'Documento'}[name]
     this.panel.querySelector('#reading-panel-title').textContent = title
     this.panel.dataset.view = name
     this.panel.scrollTop = 0
@@ -155,6 +195,7 @@ export class ReaderExperience {
   showPlaceTab(name) {
     this.placeTab = name
     for (const button of this.panel.querySelectorAll('[data-place-tab]')) {
+      if (button.hidden) continue
       const selected = button.dataset.placeTab === name
       button.setAttribute('aria-selected',String(selected)); button.tabIndex = selected ? 0 : -1
       this.panel.querySelector(`[data-places="${button.dataset.placeTab}"]`).hidden = !selected
@@ -177,16 +218,20 @@ export class ReaderExperience {
     button.setAttribute('aria-pressed',String(marked))
     button.setAttribute('aria-label',marked ? 'Quitar marcador de esta página' : 'Marcar esta página')
     button.title = button.getAttribute('aria-label')
+    const quick = document.getElementById('reader-save-bookmark')
+    quick.setAttribute('aria-pressed',String(marked)); quick.setAttribute('aria-label',marked ? 'Quitar marcador rápido' : 'Guardar marcador rápido')
   }
   setPreference(key, value) {
-    const audio = ['rate','voice'].includes(key)
+    const audio = ['rate','voice','footnotes','multilingual','skipHeaders'].includes(key)
     if (!audio) this.voice.stop()
     this.preferences = normalizeReadingPreferences({ ...this.preferences, [key]:value }); this.applyPreferences(!audio)
+    this.voice.options = {footnotes:this.preferences.footnotes,multilingual:this.preferences.multilingual,skipHeaders:this.preferences.skipHeaders}
   }
   async applyPreferences(updateBook = true) {
     const p = this.preferences
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(p)) } catch { /* reading still works without storage */ }
     this.screen.dataset.readingTheme = p.theme
+    this.screen.style.setProperty('--reader-brightness',`${p.brightness}%`)
     for (const surface of [this.screen,this.screen.parentElement,this.panel]) {
       surface.style.setProperty('--reading-paper', READING_THEMES[p.theme].background)
       surface.style.setProperty('--reading-ink', READING_THEMES[p.theme].color)
@@ -194,13 +239,15 @@ export class ReaderExperience {
     this.panel.querySelector('[data-size-step="-1"]').disabled = p.fontSize <= 14
     this.panel.querySelector('[data-size-step="1"]').disabled = p.fontSize >= 36
     for (const field of this.panel.querySelectorAll('[data-pref]')) field.value = String(p[field.dataset.pref])
-    for (const output of this.panel.querySelectorAll('[data-output]')) output.textContent = `${p[output.dataset.output]}${output.dataset.output === 'rate' ? '×' : output.dataset.output === 'zoom' ? '%' : ['fontSize','margin'].includes(output.dataset.output) ? ' px' : ''}`
+    for (const field of this.panel.querySelectorAll('[data-voice-option]')) field.checked = Boolean(p[field.dataset.voiceOption])
+    for (const output of this.panel.querySelectorAll('[data-output]')) output.textContent = `${p[output.dataset.output]}${output.dataset.output === 'rate' ? '×' : ['zoom','brightness'].includes(output.dataset.output) ? '%' : ['fontSize','margin'].includes(output.dataset.output) ? ' px' : ''}`
     for (const button of this.panel.querySelectorAll('[data-theme]')) button.setAttribute('aria-pressed', String(button.dataset.theme === p.theme))
     const originalPdf = this.reader.format?.engine === 'pdf' && p.pdfMode === 'original'
     this.panel.querySelector('[data-typography]').hidden = originalPdf
     this.panel.querySelector('[data-pdf-hint]').hidden = !originalPdf
     this.panel.querySelector('[data-pdf-zoom]').hidden = !originalPdf
     this.voice.rate = p.rate; this.voice.voice = p.voice
+    this.voice.options = {footnotes:p.footnotes,multilingual:p.multilingual,skipHeaders:p.skipHeaders}
     this.updateMiniPlayer()
     try { if (updateBook) await this.reader.applyPreferences(p) } catch { this.error('No se pudo aplicar este ajuste. Inténtalo de nuevo.') }
   }
@@ -215,7 +262,7 @@ export class ReaderExperience {
   error(message) { this.panel.querySelector('.reading-error').textContent = message }
   async savePlaces() {
     if (!this.book) return
-    try { await this.persist(this.book.id, { readingHistory:cleanPlaces(this.history), bookmarks:cleanPlaces(this.bookmarks, 100) }) }
+    try { await this.persist(this.book.id, { readingHistory:cleanPlaces(this.history), bookmarks:cleanPlaces(this.bookmarks, 100), quotes:cleanQuotes(this.quotes) }) }
     catch { this.error('No se pudieron guardar los marcadores. Comprueba el espacio del dispositivo.') }
   }
   async jump(place, target) {
@@ -248,20 +295,54 @@ export class ReaderExperience {
     this.bookmarks = this.bookmarks.slice(0,100)
     await this.savePlaces(); this.renderPlaces(); this.showPlaceTab('bookmarks')
   }
+  async addQuote() {
+    const selection = this.reader.getSelection() || this.selectedQuoteSelection
+    const text = typeof selection === 'string' ? selection : selection?.text
+    if (!text) { this.error('Selecciona primero un fragmento del texto del libro.'); return }
+    const locator = typeof selection === 'string' ? this.location.locator : selection.locator
+    const quote = {id:globalThis.crypto?.randomUUID?.() || `${Date.now()}`,text,locator,fraction:this.location.fraction,label:this.label(this.location),color:this.quoteColor,createdAt:Date.now()}
+    this.quotes = cleanQuotes([quote,...this.quotes]); this.reader.addQuoteAnnotation(quote)
+    this.selectedQuoteSelection = null
+    await this.savePlaces(); this.renderPlaces(); this.showPlaceTab('quotes')
+  }
+  async search(query) {
+    const status = this.panel.querySelector('[data-search-status]'), list = this.panel.querySelector('[data-search-results]')
+    list.replaceChildren(); status.textContent = 'Buscando…'
+    try {
+      const results = await this.reader.search(query)
+      status.textContent = results.length ? `${results.length} resultados` : 'No se encontraron coincidencias.'
+      for (const result of results) {
+        const button = document.createElement('button'); button.type = 'button'; button.textContent = `${result.label}${result.excerpt ? ` · ${result.excerpt}` : ''}`
+        button.onclick = () => this.jump({fraction:result.fraction ?? this.location.fraction,locator:result.locator})
+        list.append(button)
+      }
+    } catch { status.textContent = 'No se pudo buscar en este documento.' }
+  }
+  async shareBook() {
+    const content = this.book?.content
+    if (!content) { this.error('El archivo original no está disponible en este dispositivo.'); return }
+    const file = new File([content],this.book.fileName || `${this.book.title}.${String(this.book.format||'pdf').toLowerCase()}`,{type:this.book.mimeType || content.type || 'application/octet-stream'})
+    try {
+      if (navigator.canShare?.({files:[file]}) && navigator.share) await navigator.share({title:this.book.title,files:[file]})
+      else { const url = URL.createObjectURL(file), link = document.createElement('a'); link.href=url; link.download=file.name; link.click(); setTimeout(()=>URL.revokeObjectURL(url),30000) }
+      this.panel.close()
+    } catch (error) { if (error.name !== 'AbortError') this.error('No se pudo compartir el archivo.') }
+  }
+  formatSize(bytes = 0) { return bytes >= 1048576 ? `${(bytes/1048576).toFixed(1)} MB` : `${Math.max(1,Math.round(bytes/1024))} KB` }
   renderPlaces() {
     this.updateBookmarkButton()
     this.returnButton.hidden = !this.history.length
     this.returnButton.textContent = this.history.length ? `↶ Volver a ${this.history[0].label || this.label(this.history[0])}` : ''
-    for (const [name, places] of [['history',this.history],['bookmarks',this.bookmarks]]) {
+    for (const [name, places] of [['history',this.history],['bookmarks',this.bookmarks],['quotes',this.quotes]]) {
       const list = this.panel.querySelector(`[data-${name}]`)
       list.replaceChildren()
-      if (!places.length) { const empty = document.createElement('p'); empty.className = 'reading-hint'; empty.textContent = name === 'history' ? 'Todavía no has saltado a otra parte.' : 'Guarda aquí las páginas que quieras recuperar.'; list.append(empty) }
+      if (!places.length) { const empty = document.createElement('p'); empty.className = 'reading-hint'; empty.textContent = name === 'history' ? 'Todavía no has saltado a otra parte.' : name === 'quotes' ? 'Aún no has guardado citas.' : 'Guarda aquí las páginas que quieras recuperar.'; list.append(empty) }
       places.forEach((place,index) => {
         const row = document.createElement('div'); row.className = 'reading-place'
-        const button = document.createElement('button'); button.type = 'button'; button.textContent = place.label || this.label(place)
+        const button = document.createElement('button'); button.type = 'button'; button.textContent = name === 'quotes' ? `“${place.text}” · ${place.label || this.label(place)}` : place.label || this.label(place)
         button.onclick = () => name === 'history' ? this.returnToReading(index) : this.jump(place)
         const remove = document.createElement('button'); remove.type = 'button'; remove.innerHTML = readerIcon('close'); remove.setAttribute('aria-label', `Eliminar ${place.label || this.label(place)}`)
-        remove.onclick = async () => { places.splice(index,1); await this.savePlaces(); this.renderPlaces() }
+        remove.onclick = async () => { const [removed] = places.splice(index,1); if (name === 'quotes') this.reader.removeQuoteAnnotation(removed); await this.savePlaces(); this.renderPlaces() }
         row.append(button,remove); list.append(row)
       })
     }

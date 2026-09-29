@@ -173,13 +173,33 @@ export class PdfReader {
     const text = await page.getTextContent()
     return text.items.map(item => item.str + (item.hasEOL ? '\n' : ' ')).join('')
   }
+  async search(query) {
+    const term = String(query || '').trim().toLocaleLowerCase()
+    if (!term || !this.#doc) return []
+    const results = []
+    for (let pageNumber = 1; pageNumber <= this.pageCount; pageNumber++) {
+      const page = await this.#doc.getPage(pageNumber)
+      const content = await page.getTextContent()
+      const text = content.items.map(item => item.str).join(' ').replace(/\s+/g,' ').trim()
+      const haystack = text.toLocaleLowerCase()
+      let at = 0
+      while ((at = haystack.indexOf(term,at)) >= 0 && results.length < 500) {
+        const start = Math.max(0,at-75), end = Math.min(text.length,at+term.length+95)
+        results.push({label:`Página ${pageNumber}`,excerpt:`…${text.slice(start,end)}…`,locator:{kind:'pdf-page',value:pageNumber},fraction:(pageNumber-1)/Math.max(1,this.pageCount-1)})
+        at += Math.max(1,term.length)
+      }
+      if (results.length >= 500) break
+    }
+    return results
+  }
+  getSelection() { return window.getSelection()?.toString()?.trim() || '' }
   async applyPreferences(preferences) {
     const previous = this.#preferences
     this.#preferences = normalizeReadingPreferences(preferences)
     const p = this.#preferences
     Object.assign(this.#reflow.style, {
       fontFamily:READING_FONTS[p.font], fontSize:`${p.fontSize}px`, lineHeight:String(p.lineHeight),
-      padding:`32px ${p.margin}px 80px`, textAlign:p.align
+      fontWeight:String(p.fontWeight), padding:`32px ${p.margin}px 80px`, textAlign:p.align
     })
     if (this.#doc && (previous.pdfMode !== p.pdfMode || previous.zoom !== p.zoom)) await this.#render()
   }

@@ -65,6 +65,38 @@ test('PDF: temas y texto adaptable aplican tipografía, tamaño e interlineado p
   expect(errors).toEqual([])
 })
 
+test('PDF: búsqueda completa el libro y los resultados llevan a la página correcta', async ({ page }) => {
+  await openPdf(page)
+  await page.getByRole('button',{name:'Buscar en el libro'}).click()
+  await page.getByRole('searchbox',{name:'Buscar en el libro'}).fill('Page 3')
+  await page.getByRole('button',{name:'Buscar',exact:true}).click()
+  await expect(page.locator('[data-search-status]')).toContainText('resultados')
+  await page.locator('[data-search-results] button').first().click()
+  await expect(page.locator('#reader-location')).toContainText('Página 3 de 4')
+})
+
+test('PDF: guarda una cita seleccionada y la conserva al reabrir el libro', async ({ page }) => {
+  await openPdf(page)
+  const quote = await page.evaluate(() => {
+    const span = [...document.querySelectorAll('.pdf-text-layer span')].find(item => item.textContent?.trim())
+    if (!span) return ''
+    const range = document.createRange(); range.selectNodeContents(span)
+    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range)
+    return selection.toString()
+  })
+  expect(quote).toBeTruthy()
+  await page.locator('#reader-location').click()
+  await page.getByRole('tab',{name:'Citas'}).click()
+  await page.getByRole('button',{name:'Guardar selección como cita'}).click()
+  await expect(page.locator('[data-quotes]')).toContainText(quote.trim())
+  await page.getByRole('button',{name:'Cerrar opciones de lectura'}).click()
+  await page.getByRole('button',{name:'Volver a la estantería'}).click()
+  await page.reload(); await reopen(page)
+  await page.locator('#reader-location').click()
+  await page.getByRole('tab',{name:'Citas'}).click()
+  await expect(page.locator('[data-quotes]')).toContainText(quote.trim())
+})
+
 test('EPUB: tipografía real, capítulos, enlaces internos y voz desde el texto visible', async ({ page }) => {
   const errors = []; page.on('pageerror', error => errors.push(error.message))
   await page.addInitScript(() => {

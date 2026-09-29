@@ -10,6 +10,7 @@
 // la librería). Ver también la investigación en el propio HANDOFF.
 
 import 'foliate-js/view.js'
+import { Overlayer } from 'foliate-js/overlayer.js'
 import { attachSwipeNavigation } from '../gestures.js'
 import { DEFAULT_READING_PREFERENCES, readingCSS, normalizeReadingPreferences } from './reading-preferences.js'
 
@@ -46,16 +47,29 @@ export class FoliateReader {
     this.#view.addEventListener('load', event => {
       // Events inside the book iframe do not bubble to the outer viewport.
       this.#documentGestures.push(attachSwipeNavigation(event.detail.doc.documentElement, gestures))
+      event.detail.doc.addEventListener('selectionchange', () => {
+        const selection = event.detail.doc.defaultView.getSelection()
+        if (!selection?.toString().trim() || !selection.rangeCount) return
+        window.dispatchEvent(new CustomEvent('inhouse-reader-selection',{detail:{
+          text:selection.toString().trim(),locator:{kind:'cfi',value:this.#view.getCFI(event.detail.index,selection.getRangeAt(0))}
+        }}))
+      })
     })
     this.#view.addEventListener('link', event => {
       if (onFollowLink) { event.preventDefault(); onFollowLink(event.detail.href) }
+    })
+    this.#view.addEventListener('draw-annotation', event => {
+      const { draw, annotation } = event.detail
+      const colors = {green:'#75ad6b66',blue:'#74a6d866',pink:'#df8dad66',yellow:'#f2d35d77'}
+      draw(Overlayer.highlight, {color:colors[annotation.color] || colors.yellow})
     })
 
     this.#view.addEventListener('relocate', e => {
       this.#onRelocate({
         index: e.detail.index,
         fraction: e.detail.fraction ?? 0,
-        cfi: e.detail.cfi
+        cfi: e.detail.cfi,
+        section:e.detail.tocItem?.label || '', page:e.detail.pageItem?.label || ''
       })
     })
 
@@ -100,6 +114,25 @@ export class FoliateReader {
   async getSpeechText() {
     return this.#view?.lastLocation?.range?.toString() || ''
   }
+  async search(query) {
+    if (!this.#view || !String(query || '').trim()) return []
+    const results = []
+    for await (const item of this.#view.search({query:String(query).trim()})) {
+      if (item?.cfi) results.push({label:item.excerpt || 'Coincidencia',excerpt:item.excerpt || '',locator:{kind:'cfi',value:item.cfi}})
+      for (const sub of item?.subitems || []) results.push({label:item.label || 'Coincidencia',excerpt:sub.excerpt || item.label || '',locator:{kind:'cfi',value:sub.cfi}})
+      if (results.length >= 200) break
+    }
+    return results
+  }
+  getSelection() {
+    for (const item of this.#view?.renderer?.getContents?.() || []) {
+      const text = item.doc?.defaultView?.getSelection?.().toString().trim()
+      if (text) return { text, locator:{kind:'cfi',value:this.#view.getCFI(item.index,item.doc.defaultView.getSelection().getRangeAt(0))} }
+    }
+    return null
+  }
+  addQuoteAnnotation(quote) { if (quote?.locator?.kind === 'cfi') this.#view?.addAnnotation?.({value:quote.locator.value,color:quote.color}) }
+  removeQuoteAnnotation(quote) { if (quote?.locator?.kind === 'cfi') this.#view?.deleteAnnotation?.({value:quote.locator.value}) }
   async applyPreferences(preferences) {
     this.#preferences = normalizeReadingPreferences(preferences)
     this.#view?.renderer?.setAttribute('flow', this.#preferences.flow)

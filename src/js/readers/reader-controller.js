@@ -27,7 +27,8 @@ export class ReaderController {
       this.#location = {
         fraction: Math.min(1, Math.max(0, Number(data.fraction) || 0)),
         locator: data.cfi ? { kind:'cfi', value:data.cfi }
-          : this.#engine === ENGINE.PDF ? { kind:'pdf-page', value:(data.index || 0) + 1 } : null
+          : this.#engine === ENGINE.PDF ? { kind:'pdf-page', value:(data.index || 0) + 1 } : null,
+        section:data.section || '', page:data.page || ''
       }
       onRelocate?.(data)
     }
@@ -60,6 +61,10 @@ export class ReaderController {
   async goToTarget(target) { await this.#reader?.goToTarget?.(target) }
   async applyPreferences(preferences) { await this.#reader?.applyPreferences?.(preferences) }
   async getSpeechText() { return await this.#reader?.getSpeechText?.() || '' }
+  async search(query) { return await this.#reader?.search?.(query) || [] }
+  getSelection() { return this.#reader?.getSelection?.() || null }
+  addQuoteAnnotation(quote) { this.#reader?.addQuoteAnnotation?.(quote) }
+  removeQuoteAnnotation(quote) { this.#reader?.removeQuoteAnnotation?.(quote) }
 
   /** Portada como Blob: miniatura de la página 1 en PDF, embebida en EPUB/MOBI. */
   async getCoverBlob() {

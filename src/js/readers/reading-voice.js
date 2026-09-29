@@ -14,6 +14,7 @@ export class ReadingVoice {
     this.chunks = []
     this.rate = 1
     this.voice = ''
+    this.options = {footnotes:false,multilingual:false,skipHeaders:false}
     window.addEventListener('inhouse-tts', event => {
       if (event.detail?.id !== this.utteranceId || this.state !== 'playing') return
       if (event.detail.type === 'done') this.advance()
@@ -33,7 +34,7 @@ export class ReadingVoice {
     const generation = ++this.generation
     this.state = 'loading'; this.notify('Preparando la voz…')
     try {
-      this.chunks = speechChunks(await this.reader.getSpeechText())
+      this.chunks = speechChunks(this.prepareText(await this.reader.getSpeechText()))
       if (generation !== this.generation) return
       this.index = 0
       if (!this.chunks.length) return this.fail('Esta página no contiene texto legible. Los PDF escaneados necesitan reconocimiento de texto para escucharlos.')
@@ -45,14 +46,14 @@ export class ReadingVoice {
     const id = `${this.generation}-${this.index}-${Date.now()}`
     this.utteranceId = id
     const text = this.chunks[this.index]
-    const language = this.reader.language || navigator.language || 'es-ES'
-    if (this.native) { window.InhouseSpeech.speak(text, language, this.rate, this.voice, id); return }
+    const language = this.options.multilingual ? this.detectLanguage(text) : this.reader.language || navigator.language || 'es-ES'
+    if (this.native) { window.InhouseSpeech.speak(text, language, this.rate, this.options.multilingual ? '' : this.voice, id); return }
     const utterance = new SpeechSynthesisUtterance(text)
     this.utterance = utterance
     utterance.lang = language
     utterance.rate = this.rate
     const voices = speechSynthesis.getVoices()
-    utterance.voice = voices.find(v => v.voiceURI === this.voice) || voices.find(v => v.lang.startsWith(language.split('-')[0])) || null
+    utterance.voice = (!this.options.multilingual && voices.find(v => v.voiceURI === this.voice)) || voices.find(v => v.lang.startsWith(language.split('-')[0])) || null
     utterance.onend = () => { if (id === this.utteranceId && this.state === 'playing') this.advance() }
     utterance.onerror = event => { if (id === this.utteranceId && !['canceled','interrupted'].includes(event.error)) this.fail('No se pudo reproducir la voz. Prueba otra voz instalada.') }
     speechSynthesis.speak(utterance)
@@ -66,7 +67,7 @@ export class ReadingVoice {
       await this.reader.next()
       if (generation !== this.generation || this.state !== 'playing') return
       if (JSON.stringify(this.reader.location) === previous) { this.stop(); this.notify('Has llegado al final.'); return }
-      this.chunks = speechChunks(await this.reader.getSpeechText())
+      this.chunks = speechChunks(this.prepareText(await this.reader.getSpeechText()))
       if (generation !== this.generation || this.state !== 'playing') return
       this.index = 0
       if (!this.chunks.length) return this.fail('La siguiente página no tiene texto legible. Puedes avanzar y volver a escuchar.')
@@ -77,6 +78,25 @@ export class ReadingVoice {
     this.utteranceId = null
     if (this.native) window.InhouseSpeech.stop()
     else window.speechSynthesis?.cancel()
+  }
+  prepareText(text) {
+    let value = String(text || '')
+    if (!this.options.footnotes) value = value.replace(/\[(?:\d{1,3}|[*†‡])\]/g,'').replace(/\(\s*(?:note|nota)\s+\d+\s*\)/gi,'')
+    if (this.options.skipHeaders) {
+      const lines = value.split(/\n+/)
+      const counts = new Map()
+      for (const line of lines) { const key=line.trim().toLocaleLowerCase(); if (key.length && key.length<90) counts.set(key,(counts.get(key)||0)+1) }
+      value = lines.filter(line => { const key=line.trim().toLocaleLowerCase(); return !(key.length<90 && counts.get(key)>1) }).join(' ')
+    }
+    return value
+  }
+  detectLanguage(text) {
+    const sample = String(text || '').toLocaleLowerCase()
+    if (/[ñ¿¡]|\b(el|la|los|las|que|para|con|una|del)\b/.test(sample)) return 'es-ES'
+    if (/[àâçéèêëîïôûùüÿœ]/.test(sample)) return 'fr-FR'
+    if (/[äöüß]/.test(sample)) return 'de-DE'
+    if (/[ãõ]/.test(sample)) return 'pt-PT'
+    return this.reader.language || navigator.language || 'en-US'
   }
   pause() {
     if (this.state !== 'playing') return

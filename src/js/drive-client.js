@@ -1,4 +1,5 @@
 import { spineCustomization } from './book-colors.js'
+import { cleanQuotes } from './readers/reading-state.js'
 // The web app uses Google Identity Services. Android uses the same Custom Tab
 // + authorization-code/PKCE flow as Inhouse Notes.
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
@@ -478,6 +479,7 @@ export async function writeDriveProgress(driveFileId, progress, stateFileId) {
     appearance: spineCustomization(progress.appearance),
     readingHistory: Array.isArray(progress.readingHistory) ? progress.readingHistory.slice(0,20) : [],
     bookmarks: Array.isArray(progress.bookmarks) ? progress.bookmarks.slice(0,100) : [],
+    quotes: cleanQuotes(progress.quotes),
     updatedAt: Number(progress.updatedAt) || Date.now()
   })
   const file = new File([body], stateName(driveFileId), { type: 'application/json' })
