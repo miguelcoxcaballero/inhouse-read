@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { bindingGeometry, boardGeometry, bookmarkGeometry, sampleBookMotion, fitCoverImage } from '../../src/js/book-model.js';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import * as THREE from 'three';
+import { bindingGeometry, boardGeometry, bookmarkGeometry, sampleBookMotion, fitCoverImage, createBookModel } from '../../src/js/book-model.js';
 
 describe('purpose-built rounded binding mesh', () => {
   it('joins both cover boards and protrudes beyond the left edge head-on', () => {
@@ -131,3 +132,74 @@ describe('engraved binding geometry', () => {
     g.dispose()
   })
 })
+
+describe('real shelf book materials', () => {
+  const book = { title:'A printed cover', author:'An author', format:'EPUB' };
+  const style = { color:'#42604b', shade:'#324c3a', ink:'#ffffff', coverRatio:.66, width:40 };
+  afterEach(() => vi.restoreAllMocks());
+
+  function canvasContext() {
+    const context = new Proxy({
+      measureText: text => ({ width:String(text).length * 16 }),
+      createLinearGradient: () => ({ addColorStop() {} }),
+      getImageData: (_x, _y, width, height) => ({ data:new Uint8ClampedArray(width * height * 4) })
+    }, { get: (target, key) => target[key] ?? (() => {}) });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context);
+  }
+
+  it('keeps the loaded cover separate from cloth and gives the shelf visible paper edges', () => {
+    canvasContext();
+    let completeLoad;
+    vi.spyOn(THREE.TextureLoader.prototype, 'load').mockImplementation((_url, ready) => { completeLoad = ready; });
+    const model = createBookModel(book, style, 132, 200, 40, 'blob:cover', { shelf:true });
+    const cover = model.getObjectByName('front-cover').material[0];
+    const cloth = model.getObjectByName('front-cover').material[1];
+    const page = model.getObjectByName('page-block').material[0];
+    const fallback = cover.map, releaseFallback = vi.spyOn(fallback, 'dispose');
+    model.userData.invalidate = vi.fn();
+    expect(cover).not.toBe(cloth);
+    expect(page).not.toBe(cloth);
+    expect(page.map).toBeInstanceOf(THREE.CanvasTexture);
+    const downloaded = new THREE.Texture({ width:660, height:1000 });
+    const releaseDownloaded = vi.spyOn(downloaded, 'dispose');
+    expect(() => completeLoad(downloaded)).not.toThrow();
+    expect(cover.map).not.toBe(fallback);
+    expect(cover.map.colorSpace).toBe(THREE.SRGBColorSpace);
+    expect(cover.map.image.height).toBe(512);
+    expect(cloth.map).toBeNull();
+    expect(releaseFallback).toHaveBeenCalledOnce();
+    expect(releaseDownloaded).toHaveBeenCalledOnce();
+    expect(model.userData.invalidate).toHaveBeenCalledOnce();
+    const satinRoughness = cover.roughness;
+    model.userData.updateCoverAppearance({ coverFinish:'glossy' });
+    expect(cover.roughness).toBeLessThan(satinRoughness);
+    model.userData.dispose();
+  });
+
+  it('releases a late image without resurrecting a disposed shelf book', () => {
+    canvasContext();
+    let completeLoad;
+    vi.spyOn(THREE.TextureLoader.prototype, 'load').mockImplementation((_url, ready) => { completeLoad = ready; });
+    const model = createBookModel(book, style, 132, 200, 40, 'blob:cover', { shelf:true });
+    model.userData.invalidate = vi.fn();
+    model.userData.dispose();
+    const downloaded = new THREE.Texture({ width:660, height:1000 });
+    const releaseDownloaded = vi.spyOn(downloaded, 'dispose');
+    completeLoad(downloaded);
+    expect(releaseDownloaded).toHaveBeenCalledOnce();
+    expect(model.userData.invalidate).not.toHaveBeenCalled();
+  });
+
+  it('retains the same curved silhouette with fewer shelf vertices and texture pixels', () => {
+    canvasContext();
+    const shelf = createBookModel({ ...book, spineEngraved:true }, style, 132, 200, 40, null, { shelf:true });
+    const detail = createBookModel({ ...book, spineEngraved:true }, style, 132, 200, 40, null);
+    const shelfBinding = shelf.getObjectByName('binding'), detailBinding = detail.getObjectByName('binding');
+    shelfBinding.geometry.computeBoundingBox(); detailBinding.geometry.computeBoundingBox();
+    expect(shelfBinding.geometry.boundingBox).toEqual(detailBinding.geometry.boundingBox);
+    expect(shelfBinding.geometry.attributes.position.count).toBeLessThan(detailBinding.geometry.attributes.position.count / 8);
+    expect(shelfBinding.material.map.image.width * shelfBinding.material.map.image.height)
+      .toBeLessThan(detailBinding.material.map.image.width * detailBinding.material.map.image.height);
+    shelf.userData.dispose(); detail.userData.dispose();
+  });
+});

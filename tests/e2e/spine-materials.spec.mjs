@@ -44,7 +44,7 @@ test('lomo nítido: tintas, metales y grabado persistentes en móvil', async ({ 
   await page.reload()
   const spine=page.locator('.ihr-spine').first()
   await expect(spine).toBeVisible()
-  const shelfPixelRatio=await spine.locator('canvas').evaluate(c=>c.width/c.getBoundingClientRect().width)
+  const shelfPixelRatio=await page.locator('.ihr-bookshelf-scene').evaluate(c=>c.width/c.getBoundingClientRect().width)
   expect(shelfPixelRatio).toBeGreaterThanOrEqual(1)
   expect(shelfPixelRatio).toBeLessThanOrEqual(1.5)
   await page.screenshot({path:'test-results/spine-shelf-sharp.png'})

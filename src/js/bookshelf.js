@@ -50,8 +50,8 @@
  *    `--ihr-accent-legible`, que en oscuro sube a un verde claro (#8FBF9E) y
  *    se usa SÓLO para texto e iconos, nunca para superficies.
  *
- * 2. Madera y baldas. Textura fotográfica de nogal con iluminación y
- *    sombras de contacto en CSS. Recursos propios en src/assets/library.
+ * 2. Madera y baldas. Mueble completo en una escena 3D, con textura de nogal
+ *    de src/assets/library. Una transformación común gira y aleja el conjunto.
  *
  * 3. Los lomos conservan geometría y acabado deterministas. El color y la
  *    familia tipográfica se ajustan a la portada rasterizada: se muestrea su
@@ -60,17 +60,18 @@
  *    se conserva el aspecto de reserva. Con `pageCount`/`sizeBytes` el grosor
  *    es real, no inventado.
  *
- * 4. Plantas. Recortes fotográficos con transparencia, distribuidos por
- *    las reglas de empaquetado. Su luz se adapta al modo oscuro.
+ * 4. Plantas. Macetas y hojas con volumen dentro de la misma escena.
+ *    Los recortes fotográficos se conservan para la vista sin WebGL.
  *
  * 5. Modelo propio en book-model.js: malla elíptica continua, tapas y hojas.
  *    Three.js dibuja la misma geometría en la balda y durante el giro.
  *    La textura del título sigue los UV del lomo. La apertura añade 10° de
  *    inclinación para mostrar su sección superior y el volumen de la encuadernación.
  *
- * 6. Un único contexto WebGL compartido dibuja instantáneas para las baldas.
- *    Sólo el libro abierto se redibuja con requestAnimationFrame. Cada vista
- *    libera geometrías y texturas; sin WebGL se conserva una portada accesible.
+ * 6. Un contexto WebGL compartido dibuja la estantería y el libro abierto.
+ *    Sólo se redibuja al cambiar algo o durante una animación. Los libros
+ *    alejados del área visible liberan sus modelos; los botones DOM mantienen
+ *    foco y accesibilidad en las posiciones proyectadas de los libros.
  *
  * 7. Táctil. Activación por `click` (funciona con teclado y lector de
  *    pantalla), feedback de presión en `pointerdown` para ver qué lomo se va
@@ -105,7 +106,8 @@ const PLANT_PHOTOS = {
   succulent: new URL('../assets/library/succulent.webp', import.meta.url).href,
   upright: new URL('../assets/library/sansevieria.webp', import.meta.url).href
 };
-import { bookView, fitCoverImage } from './book-model.js';
+import { bookView, fitCoverImage, getBookRenderer } from './book-model.js';
+import { createBookshelfScene } from './bookshelf-scene.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
@@ -287,8 +289,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     suppressOpenBookId: null,
     queuedBooks: null,
     renderQueued: false,
+    reorderTimer: 0,
     appearancesReady: true,
     appearanceGeneration: 0,
+    shelfScene: null,
+    useScene: Boolean((globalThis.WebGLRenderingContext || globalThis.WebGL2RenderingContext) && getBookRenderer()),
     viewMode: Object.values(SHELF_VIEW_MODES).includes(options.viewMode)
       ? options.viewMode
       : storedShelfViewMode()
@@ -415,6 +420,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         const existing = [...root.querySelectorAll('.ihr-spine')]
           .find(node => node.dataset.bookId === id);
         if (existing?.isConnected && !state.busy && !state.session && !state.returnMotion && state.pressedBookId !== id) {
+          if (state.shelfScene) {
+            state.shelfScene.updateEntry(existing, item.book, item.style, resolveCoverImmediately(item.book));
+            return appearance;
+          }
           const hadFocus = document.activeElement === existing;
           const replacement = buildSpine(item);
           existing.replaceWith(replacement);
@@ -557,10 +566,23 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const orderedIds = shelfSpineNodes().map(node => node.dataset.bookId).filter(Boolean);
     const rank = new Map(orderedIds.map((id, index) => [String(id), index]));
     state.books = state.books.map(book => ({ ...book, shelfOrder: rank.get(String(book.id)) ?? Number.MAX_SAFE_INTEGER }));
+    // Storage notifies once per updated book. Keep the animated scene alive
+    // until its meshes have settled before applying those refreshed records.
+    clearTimeout(state.reorderTimer);
+    state.reorderTimer = -1;
+    cancelAnimationFrame(state.frame);
+    state.frame = 0;
     Promise.resolve(options.onBookOrderChange?.(state.books.map(book => ({ id: book.id, shelfOrder: book.shelfOrder }))))
       .catch(error => console.warn('No se pudo guardar el orden de la estantería:', error));
     render();
+    // Start the quiet period after constructing the scene: on slower phones
+    // its first frame can take a significant part of the animation duration.
+    state.reorderTimer = setTimeout(() => {
+      state.reorderTimer = 0;
+      applyDeferredShelfUpdates();
+    }, prefersReducedMotion() ? 0 : 560);
     if (!oldRects || prefersReducedMotion()) return;
+    if (state.shelfScene) { state.shelfScene.animateFromRects(oldRects); return; }
     for (const node of shelfSpineNodes()) {
       const old = oldRects.get(node.dataset.bookId);
       if (!old) continue;
@@ -584,6 +606,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   function startSpineDrag(event, node) {
     if ((event.button !== undefined && event.button !== 0) || state.dragSession) return;
+    let backgroundOnly = false;
+    if (state.shelfScene) {
+      const hit = state.shelfScene.getBookAtPoint(event.clientX, event.clientY);
+      backgroundOnly = !hit;
+      node = hit || node;
+    }
     const drag = state.dragSession = {
       node, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
       x: event.clientX, y: event.clientY, scrollTop: scroller.scrollTop,
@@ -591,6 +619,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       active: false, scrolling: false, cancelled: false, timer: 0
     };
     try { node.setPointerCapture?.(event.pointerId); } catch { /* el navegador pudo cancelar el puntero */ }
+    // Rotated hit rectangles contain some empty space. It must still scroll
+    // naturally on touch, without starting a hold on an occluded book.
+    if (backgroundOnly) { node.classList.remove('is-pressed'); return; }
     drag.timer = setTimeout(() => {
       if (state.dragSession !== drag) return;
       drag.active = true;
@@ -698,7 +729,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const body = el('span', { class: 'ihr-spine__body', 'aria-hidden': 'true' });
     const height = (window.innerWidth >= 600 ? 200 : 172) * style.heightRatio;
     const coverRatio = coverRatioFor(style);
-    const view = bookView(body, book, style, {
+    const view = state.useScene ? null : bookView(body, book, style, {
       width: height * coverRatio, height, thickness: style.width,
       viewportWidth: item.displayWidth ?? style.width, viewportHeight: height,
       centerX: (item.displayWidth ?? style.width) / 2, centerY: height / 2,
@@ -706,7 +737,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       shelfView: state.viewMode
     });
     if (view) view.dispose(false); // retain the rendered snapshot, free mesh/textures
-    else body.append(el('span', { class: 'ihr-spine__label' }, [
+    else if (!state.useScene) body.append(el('span', { class: 'ihr-spine__label' }, [
       el('span', { class: 'ihr-spine__title', text: book.spineTitleOverride || book.title || 'Sin título' }),
       normalizeBookAuthor(book.author) ? el('span', { class: 'ihr-spine__author', text: normalizeBookAuthor(book.author) }) : null
     ]));
@@ -725,7 +756,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (bookmark) {
       node.classList.add('has-bookmark');
       if (bookmark.finished) node.classList.add('is-finished');
-      if (!view) node.append(
+      if (!view && !state.useScene) node.append(
         el('span', {
           class: 'ihr-spine__bookmark',
           'aria-hidden': 'true',
@@ -760,10 +791,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         release(); // el dedo se ha ido a hacer scroll: esto no era un tap
       }
     });
-    node.addEventListener('click', () => {
-      const id = String(book.id ?? book.path ?? book.title ?? 'book');
-      if (state.arranging || state.suppressOpenBookId === id) { state.suppressOpenBookId = null; return; }
-      openBook(node, item);
+    node.addEventListener('click', event => {
+      if (state.arranging || state.suppressOpenBookId) { state.suppressOpenBookId = null; return; }
+      const hit = event.detail ? state.shelfScene?.getBookAtPoint(event.clientX, event.clientY) : null;
+      if (event.detail && state.shelfScene && !hit) return;
+      openBook(hit || node, hit ? state.itemsById.get(hit.dataset.bookId) || item : item);
     });
     node.addEventListener('keydown', event => {
       if (!event.shiftKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
@@ -775,9 +807,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (target) reorderSpine(node, target, event.key === 'ArrowRight');
     });
     node.addEventListener('pointerdown', event => startSpineDrag(event, node));
-    node.addEventListener('pointermove', event => moveSpineDrag(event, node));
-    node.addEventListener('pointerup', event => finishSpineDrag(event, node));
-    node.addEventListener('pointercancel', event => finishSpineDrag(event, node, true));
+    node.addEventListener('pointermove', event => moveSpineDrag(event, state.dragSession?.node || node));
+    node.addEventListener('pointerup', event => finishSpineDrag(event, state.dragSession?.node || node));
+    node.addEventListener('pointercancel', event => finishSpineDrag(event, state.dragSession?.node || node, true));
     return node;
   }
 
@@ -865,7 +897,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (!Object.values(SHELF_VIEW_MODES).includes(mode) || state.viewMode === mode) return;
     state.viewMode = mode;
     try { localStorage.setItem(SHELF_VIEW_STORAGE_KEY, mode); } catch { /* Preferencias no bloquean la biblioteca. */ }
-    render();
+    if (state.shelfScene) {
+      root.dataset.viewMode = mode;
+      for (const button of root.querySelectorAll('.ihr-view-switch__button')) {
+        button.setAttribute('aria-pressed', String(button.dataset.viewMode === mode));
+      }
+      state.shelfScene.setMode(mode);
+    } else render();
     root.querySelector(`[data-view-mode="${mode}"]`)?.focus({ preventScroll:true });
   }
 
@@ -894,6 +932,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     root.dataset.viewMode = state.viewMode;
     if (state.returnMotion) { state.renderQueued = true; return; }
     if (!state.appearancesReady && state.books.length > 0) {
+      state.shelfScene?.dispose();
+      state.shelfScene = null;
       scroller.textContent = '';
       scroller.append(buildPreparingState());
       return;
@@ -906,6 +946,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // spine as the target of the return animation. ResizeObserver re-renders
     // the updated records when the shelf becomes visible again.
     if (width <= 0 && state.books.length > 0) return;
+    state.shelfScene?.dispose();
+    state.shelfScene = null;
     scroller.textContent = '';
 
     if (state.books.length === 0) {
@@ -921,15 +963,6 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       plantEvery: opts.plantEvery,
       sort: opts.sort,
       spine: spineOptionsFor(width),
-      displayWidthFor: state.viewMode === SHELF_VIEW_MODES.ISOMETRIC
-        ? (_book, style) => {
-            const modelHeight = (window.innerWidth >= 600 ? 200 : 172) * style.heightRatio;
-            const modelWidth = modelHeight * coverRatioFor(style);
-            const yaw = 76 * Math.PI / 180;
-            const projected = Math.abs(Math.cos(yaw)) * modelWidth + Math.abs(Math.sin(yaw)) * style.width + 6;
-            return Math.min(window.innerWidth < 520 ? 92 : 128, Math.max(style.width, projected));
-          }
-        : undefined,
       // Sin secciones, 0 recientes: todo cae en una estantería continua.
       recentLimit: opts.sections ? opts.recentLimit : 0
     });
@@ -957,6 +990,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         buildViewControls()
       ])
     ]));
+    const stage = el('div', { class:'ihr-shelf-stage' });
     for (const section of plan) {
       for (const shelf of section.shelves) {
         for (const item of shelf.items) {
@@ -979,9 +1013,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         ]));
       }
       for (const shelf of section.shelves) wrapper.append(buildShelf(shelf));
-      fragment.append(wrapper);
+      stage.append(wrapper);
     }
+    fragment.append(stage);
     scroller.append(fragment);
+    if (state.useScene) mountShelfScene(stage, width);
     if (focusedBookId) {
       [...scroller.querySelectorAll('.ihr-spine')]
         .find(node => node.dataset.bookId === focusedBookId)
@@ -990,8 +1026,38 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     for (const book of state.books) resolveCoverAppearance(book);
   }
 
+  function mountShelfScene(stage, width) {
+    const origin = stage.getBoundingClientRect();
+    const entries = [];
+    const rows = [];
+    for (const shelf of stage.querySelectorAll('.ihr-shelf')) {
+      // Measure before replacing the DOM drawing with the shared 3D scene.
+      shelf.style.contentVisibility = 'visible';
+      const row = shelf.querySelector('.ihr-shelf__row').getBoundingClientRect();
+      rows.push({ top:row.top - origin.top, bottom:row.bottom - origin.top });
+      for (const node of shelf.querySelectorAll('.ihr-spine, .ihr-plant')) {
+        const rect = node.getBoundingClientRect();
+        const x = rect.left + rect.width / 2 - origin.left;
+        const y = rect.top + rect.height / 2 - origin.top;
+        if (node.classList.contains('ihr-plant')) {
+          entries.push({ kind:'plant', node, x, y, width:rect.width, height:rect.height,
+            variant:node.classList.contains('ihr-plant--sansevieria') ? 'upright' : 'leafy' });
+          continue;
+        }
+        const item = state.itemsById.get(node.dataset.bookId);
+        if (!item) continue;
+        const height = (window.innerWidth >= 600 ? 200 : 172) * item.style.heightRatio;
+        entries.push({ node, book:item.book, style:item.style, x, y, height,
+          width:height * coverRatioFor(item.style), thickness:item.style.width,
+          coverUrl:resolveCoverImmediately(item.book) });
+      }
+    }
+    state.shelfScene = createBookshelfScene({ stage, scroller, entries, rows, width,
+      height:stage.getBoundingClientRect().height, mode:state.viewMode });
+  }
+
   function scheduleRender() {
-    if (state.returnMotion) { state.renderQueued = true; return; }
+    if (state.returnMotion || state.reorderTimer) { state.renderQueued = true; return; }
     if (state.frame) return;
     state.frame = requestAnimationFrame(() => {
       state.frame = 0;
@@ -1095,6 +1161,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     spineEl.style.transition = 'none'; // si no, la transición del lomo
     spineEl.style.transform = 'none';  // interpola y se mide el valor viejo
     const rect = spineEl.getBoundingClientRect();
+    let sourcePose = state.shelfScene?.getBookPose(spineEl);
     spineEl.style.transform = '';
     void spineEl.offsetWidth;          // devuelve la inclinación sin animarla
     spineEl.style.transition = previousTransition;
@@ -1105,14 +1172,21 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const appearance = await quickCoverAppearance(book, coverUrl);
     if (appearance) applyCoverAppearance(item, appearance);
     if (item.style !== initialStyle && spineEl.isConnected) {
+      if (state.shelfScene) state.shelfScene.updateEntry(spineEl, book, item.style, coverUrl);
+      else {
       const hadFocus = document.activeElement === spineEl;
       const replacement = buildSpine(item);
       spineEl.replaceWith(replacement);
       spineEl = replacement;
       if (hadFocus) replacement.focus({ preventScroll: true });
+      }
     }
     style = item.style;
     if (state.destroyed) return;
+    if (state.shelfScene) {
+      state.shelfScene.flush();
+      sourcePose = state.shelfScene.getBookPose(spineEl);
+    }
 
     const vw = window.innerWidth || 390;
     const vh = window.innerHeight || 780;
@@ -1120,17 +1194,19 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const ratio = coverRatioFor(style);
     // Match the model's physical front board to the image ratio before sizing
     // its reveal. This keeps the same silhouette on the shelf and in flight.
-    const shelfAspect = (rect.width || 32) / (rect.height || 150);
+    const shelfAspect = sourcePose ? sourcePose.thickness / sourcePose.height : (rect.width || 32) / (rect.height || 150);
     const coverH = Math.min(vh * (landscape ? .72 : .54), landscape ? 350 : Math.max(110, vh - 330), 440,
       (vw * (landscape ? .35 : .78)) / ratio,
       (vw * 0.86) / (ratio + shelfAspect * 0.55));
     const coverW = coverH * ratio;
-    const startScale = rect.height > 0 ? rect.height / coverH : 0.3;
-    const thickness = Math.max(6, (rect.width || 32) / startScale);
+    const startScale = sourcePose ? sourcePose.scale * sourcePose.height / coverH : rect.height > 0 ? rect.height / coverH : 0.3;
+    const thickness = sourcePose ? sourcePose.thickness * coverH / sourcePose.height : Math.max(6, (rect.width || 32) / startScale);
     const centerX = vw * (landscape ? .26 : .5) + thickness * 0.38 / 2;
     const centerY = vh * (landscape ? .5 : .42);
-    const dx = rect.left + rect.width / 2 - centerX;
-    const dy = rect.top + rect.height / 2 - centerY;
+    const dx = (sourcePose?.centerX ?? rect.left + rect.width / 2) - centerX;
+    const dy = (sourcePose?.centerY ?? rect.top + rect.height / 2) - centerY;
+    const sourceAngle = sourcePose?.angle ?? 90;
+    const sourcePitch = sourcePose?.pitch ?? 0;
 
     const scrim = el('div', { class: 'ihr-flyout__scrim' });
     const bookNode = el('div', {
@@ -1150,7 +1226,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       // Keep an inspectable cue on the lifted canvas too; the ribbon itself
       // is geometry inside the model, so no DOM ribbon needs to be re-created.
       view.canvas.dataset.bookmark3d = String(Boolean(bookmarkFor(book)));
-      view.draw({ x: dx, y: dy, scale: startScale, angle: 90, pitch: 0 });
+      view.draw({ x: dx, y: dy, scale: startScale, angle: sourceAngle, pitch: sourcePitch });
       bookNode.classList.add('ihr-flyout__book--webgl');
       bookNode.style.position = 'absolute';
       bookNode.style.inset = '0';
@@ -1210,6 +1286,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       fadeMeta();
       flyout.classList.remove('is-ready');
       if (!instant) await playReturn();
+      spineEl.classList.remove('is-away');
+      state.shelfScene?.flush();
       view?.dispose();
       flyout.remove();
       if (state.session === session) { state.session = null; state.busy = false; }
@@ -1329,6 +1407,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     function replaceShelfSpine() {
       const existingSpine = shelfSpineNodes().find(node => node.dataset.bookId === String(book.id));
       if (!existingSpine) return;
+      if (state.shelfScene) {
+        state.shelfScene.updateEntry(existingSpine, book, item.style, coverUrl);
+        return;
+      }
       const hadFocus = document.activeElement === existingSpine;
       const wasAway = existingSpine.classList.contains('is-away');
       const replacement = buildSpine(item);
@@ -1774,6 +1856,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     document.body.append(flyout);
     spineEl.classList.add('is-away');
+    state.shelfScene?.flush();
     flyout.focus?.();
 
     const reduce = prefersReducedMotion();
@@ -1786,12 +1869,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     const frames = [
       {
-        transform: tf(dx, dy, zStart, startScale, 90),
+        transform: { x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch },
         easing: 'cubic-bezier(0.34, 0, 0.26, 1)'
       },
       {
         offset: 0.26,
-        transform: tf(dx * 0.9, dy * 0.86 - lift, zStart * 0.55, scaleAt(0.15), 80),
+        transform: tf(dx * 0.9, dy * 0.86 - lift, zStart * 0.55, scaleAt(0.15), sourceAngle * .89),
         easing: EASE
       },
       {
@@ -1833,6 +1916,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     async function playReturn() {
       const returnDuration = prefersReducedMotion() ? 1 : opts.returnDuration;
+      const target = state.shelfScene?.getBookPose(spineEl);
+      const end = target
+        ? { x:target.centerX-centerX, y:target.centerY-centerY, scale:target.scale*target.height/coverH, angle:target.angle, pitch:target.pitch }
+        : tf(dx, dy, zStart, startScale, 90);
       const back = animateBook(
         [
           { transform: tf(0, 0, 0, 1, 0) },
@@ -1840,7 +1927,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
             offset: 0.45,
             transform: tf(dx * 0.45, dy * 0.35 - lift * 0.6, zStart * 0.4, scaleAt(0.55), 62)
           },
-          { transform: tf(dx, dy, zStart, startScale, 90) }
+          { transform: end }
         ],
         {
           duration: returnDuration,
@@ -1980,7 +2067,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   /** Sustituye la biblioteca y vuelve a pintar, conservando el scroll. */
   function refresh(nextBooks) {
     if (state.destroyed) return;
-    if (state.returnMotion) {
+    if (state.returnMotion || state.reorderTimer) {
       if (Array.isArray(nextBooks)) state.queuedBooks = nextBooks.slice();
       return;
     }
@@ -1998,7 +2085,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function applyDeferredShelfUpdates() {
-    if (state.destroyed || state.returnMotion) return;
+    if (state.destroyed || state.returnMotion || state.reorderTimer) return;
     if (state.queuedBooks) {
       const nextBooks = state.queuedBooks;
       state.queuedBooks = null;
@@ -2019,22 +2106,24 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (!spine?.isConnected) { state.lastOpened = null; return false; }
 
     spine.scrollIntoView?.({ block:'nearest', behavior:'instant' });
+    state.shelfScene?.flush();
     const rect = spine.getBoundingClientRect();
+    const sourcePose = state.shelfScene?.getBookPose(spine);
     if (!rect.width || !rect.height) { state.lastOpened = null; return false; }
     const vw = window.innerWidth || 390, vh = window.innerHeight || 780;
     const landscape = vh <= 560 && vw >= 560;
     const ratio = coverRatioFor(previous.style);
     const coverH = Math.min(vh * (landscape ? .72 : .54), landscape ? 350 : Math.max(110, vh - 330), 440,
-      (vw * (landscape ? .35 : .78)) / ratio, (vw * .86) / (ratio + rect.width / rect.height * .55));
+      (vw * (landscape ? .35 : .78)) / ratio, (vw * .86) / (ratio + (sourcePose ? sourcePose.thickness/sourcePose.height : rect.width/rect.height) * .55));
     const coverW = coverH * ratio;
-    const startScale = rect.height / coverH;
-    const thickness = Math.max(6, rect.width / startScale);
+    const startScale = sourcePose ? sourcePose.scale * sourcePose.height / coverH : rect.height / coverH;
+    const thickness = sourcePose ? sourcePose.thickness * coverH / sourcePose.height : Math.max(6, rect.width / startScale);
     const centerX = vw / 2 + thickness * .19;
     const centerY = vh * (landscape ? .5 : .42);
-    const dx = rect.left + rect.width / 2 - centerX;
-    const dy = rect.top + rect.height / 2 - centerY;
+    const dx = (sourcePose?.centerX ?? rect.left + rect.width / 2) - centerX;
+    const dy = (sourcePose?.centerY ?? rect.top + rect.height / 2) - centerY;
     const lift = Math.min(40, rect.height * .2);
-    const end = { x:dx, y:dy, scale:startScale, angle:90, pitch:0 };
+    const end = { x:dx, y:dy, scale:startScale, angle:sourcePose?.angle ?? 90, pitch:sourcePose?.pitch ?? 0 };
     const stage = el('div', { class:'ihr-flyout__stage' });
     const bookNode = el('div', { class:'ihr-flyout__book', style:
       `left:${(vw-coverW)/2}px;top:${centerY-coverH/2}px;width:${coverW}px;height:${coverH}px` });
@@ -2044,7 +2133,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (state.destroyed || state.lastOpened !== previous || window.innerWidth !== vw || window.innerHeight !== vh) return false;
     const view = bookView(bookNode, book, previous.style, {
       width:coverW, height:coverH, thickness, viewportWidth:vw, viewportHeight:vh,
-      centerX:vw/2, centerY:vh*.42, coverUrl
+      centerX, centerY, coverUrl
     });
     if (view) {
       bookNode.classList.add('ihr-flyout__book--webgl');
@@ -2071,10 +2160,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       const current = [...root.querySelectorAll('.ihr-spine')]
         .find(node => node.dataset.bookId === String(bookId)) || spine
       current.classList.remove('is-away')
+      state.shelfScene?.flush();
       return current
     }
     const motion = { cancel() {
-      animation.cancel?.(); view?.dispose(); flyout.remove(); restoreShelfSpine()
+      animation.cancel?.(); restoreShelfSpine(); view?.dispose(); flyout.remove();
       state.returnMotion = null;
       applyDeferredShelfUpdates()
     } };
@@ -2091,8 +2181,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (state.returnMotion === motion) {
       state.returnMotion = null;
       animation.cancel?.();
-      view?.dispose(); flyout.remove();
       const currentSpine = restoreShelfSpine()
+      view?.dispose(); flyout.remove();
       state.lastOpened = null;
       currentSpine.focus?.({ preventScroll:true });
       applyDeferredShelfUpdates()
@@ -2118,7 +2208,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       state.returnMotion?.cancel();
       state.session?.close({ instant: true, silent: true });
       if (state.frame) cancelAnimationFrame(state.frame);
+      clearTimeout(state.reorderTimer);
       observer?.disconnect();
+      state.shelfScene?.dispose();
       window.removeEventListener('resize', onViewportResize);
       window.visualViewport?.removeEventListener('resize', onVisualViewportChange);
       window.visualViewport?.removeEventListener('scroll', onVisualViewportChange);

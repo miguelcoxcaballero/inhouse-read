@@ -117,8 +117,10 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   await page.getByRole('button', { name: 'Volver a la estantería' }).click()
   const spine = page.locator('.ihr-spine').first()
   await expect(spine).toBeVisible()
-  const shelfCanvas = spine.locator('canvas[data-renderer="three-mesh"]')
+  const shelfCanvas = page.locator('.ihr-bookshelf-scene')
   await expect(shelfCanvas).toBeVisible()
+  await expect(shelfCanvas).toHaveCount(1)
+  await expect.poll(() => shelfCanvas.getAttribute('data-active-books')).toBe('1')
   const paintedPixels = await shelfCanvas.evaluate(canvas => {
     const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data
     return pixels.filter((value, i) => i % 4 === 3 && value > 200).length
