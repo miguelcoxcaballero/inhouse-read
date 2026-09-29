@@ -77,9 +77,20 @@ export function spineColorStyle(color) {
   }
 }
 
+/** Portable shelf coordinates: shelf index and horizontal fraction of a row. */
+export function normalizeShelfPosition(value) {
+  if (!value || !Number.isSafeInteger(value.shelf) || value.shelf < 0 || !Number.isFinite(value.x)) return null
+  return { shelf:value.shelf, x:clamp(value.x,0,1) }
+}
+
 /** Explicit allow-list for saved appearance, including resets to automatic. */
 export function spineCustomization(book) {
   const result = {}
+  if (book?.shelfPosition === null) result.shelfPosition = null
+  else {
+    const position = normalizeShelfPosition(book?.shelfPosition)
+    if (position) result.shelfPosition = position
+  }
   for (const key of ['spineColorOverride','spineTextColor']) {
     if (book?.[key] === null) result[key] = null
     else if (parseHex(book?.[key])) result[key] = toHex(parseHex(book[key]))

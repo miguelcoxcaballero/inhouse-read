@@ -14,6 +14,7 @@ import {
 import { initAndroidUpdateChecks, offerAvailableAndroidUpdate } from './android-update.js'
 import { initContentFreshnessChecks } from './content-freshness.js'
 import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
+import { normalizeShelfPosition } from './book-colors.js'
 import { ReaderExperience } from './readers/reader-experience.js'
 
 const library = new LibraryStore()
@@ -165,6 +166,11 @@ async function refreshShelf() {
         coverAppearanceKey: key
       }),
       onBookCustomizationChange: (book, fields) => persistBookState(book.id, fields),
+      onShelfPlacementChange: ({ books = [] }) => Promise.all(books.map(({ id, shelfPosition }) => {
+        const position = normalizeShelfPosition(shelfPosition)
+        return id && (position || shelfPosition === null)
+          ? persistBookState(id, { shelfPosition:position }) : Promise.resolve()
+      })),
       onBookOrderChange: order => Promise.all(order.map(({ id, shelfOrder }) => library.patch(id, { shelfOrder })))
     })
   } else {
@@ -873,7 +879,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.5.3'
+els.appVersion.textContent = 'Inhouse Read · v1.6.0'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')

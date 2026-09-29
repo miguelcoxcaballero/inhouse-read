@@ -17,13 +17,15 @@ describe('idForSource', () => {
 
 describe('LibraryStore', () => {
   let store
+  let dbName
   let dbCounter = 0
 
   beforeEach(() => {
     // Cada test recibe su propia base de datos IndexedDB (nombre único) para
     // quedar completamente aislado del resto, sin depender de borrar y
     // esperar el cierre de conexiones previas.
-    store = new LibraryStore(`inhouse-read-test-${dbCounter++}`)
+    dbName = `inhouse-read-test-${dbCounter++}`
+    store = new LibraryStore(dbName)
   })
 
   it('empieza vacía', async () => {
@@ -56,6 +58,18 @@ describe('LibraryStore', () => {
     expect(recents).toHaveLength(1)
     expect(second.addedAt).toBe(first.addedAt)
     expect(second.lastOpenedAt).toBeGreaterThanOrEqual(first.lastOpenedAt)
+  })
+
+  it('conserva la posición libre en la estantería al reabrir y actualizar el progreso', async () => {
+    const book = await store.addOrTouch({ sourceType:'local', name:'placed.pdf', size:100, title:'Placed' })
+    const shelfPosition = { shelf:2, x:.65 }
+    await store.patch(book.id, { shelfPosition, progressDirty:true, progressUpdatedAt:100 })
+    await store.addOrTouch({ id:book.id, sourceType:'local', name:'placed.pdf', size:100 })
+    await store.updateProgress(book.id, .5, { kind:'pdf-page', value:2 })
+    await store.close()
+    const reopened = new LibraryStore(dbName)
+    expect((await reopened.get(book.id)).shelfPosition).toEqual(shelfPosition)
+    await reopened.close()
   })
 
   it('ordena listRecents por apertura más reciente primero', async () => {

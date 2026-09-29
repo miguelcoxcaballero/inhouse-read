@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca es una estantería con madera y plantas fotográficas, donde los libros se ven de canto. Al tocar uno, sale de la balda y gira en 3D hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.0
+
+- Mantén pulsado cualquier libro o planta para sacarlo y colocarlo en otro punto o balda. Se conservan los huecos que dejes; los vecinos se apartan durante el arrastre y el objeto se inserta en 3D al soltar, también en vista isométrica.
+- La posición de los libros se guarda con su estado y se sincroniza con Drive. La posición de las plantas se conserva en ese dispositivo. En teclado, Mayús y las flechas mueven el objeto horizontalmente o entre baldas.
+- Las actualizaciones de biblioteca, portadas y fuentes esperan a que termine el arrastre. La devolución del libro utiliza la profundidad de la estantería para que los vecinos lo oculten correctamente durante la inserción.
+
 ### Actualización web · 1.1.3
 
 - Acabados dorado y plata rehechos como foil satinado: bandas de reflejo amplias y suaves, gradación metálica controlada y menos brillo duro. El material y la luz siguen siendo los mismos en la balda, el editor y las animaciones.

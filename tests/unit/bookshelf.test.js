@@ -35,6 +35,7 @@ let container
 let shelf
 
 beforeEach(() => {
+  localStorage.removeItem('inhouse-read-shelf-plants')
   container = document.createElement('div')
   document.body.append(container)
 })
@@ -176,8 +177,8 @@ describe('renderBookshelf', () => {
     const empty = container.querySelector('.ihr-empty')
     expect(empty).not.toBeNull()
     expect(empty.textContent).toContain('Tu estantería está vacía')
-    expect(empty.querySelectorAll('.ihr-plant').length).toBe(3)
-    expect(empty.querySelectorAll('.ihr-shelf')).toHaveLength(3)
+    expect(container.querySelectorAll('.ihr-plant').length).toBe(3)
+    expect(container.querySelectorAll('.ihr-shelf')).toHaveLength(3)
     empty.querySelector('.ihr-empty__action').click()
     expect(onAddBooks).toHaveBeenCalledOnce()
   })

@@ -24,6 +24,42 @@ beforeEach(() => {
 afterEach(async () => { sync.reset(); await library.close() })
 
 describe('CloudSync', () => {
+  it('syncs free shelf placement with appearance and restores it on another device', async () => {
+    const book = await library.addOrTouch({ sourceType:'local', name:'placed.pdf', size:5,
+      driveFileId:'placed-drive', cloudAccountId:'account-1' })
+    await library.patch(book.id, { shelfPosition:{ shelf:2, x:.72 }, progressDirty:true, progressUpdatedAt:100 })
+    drive.writeDriveProgress.mockResolvedValue({ id:'placed-state' })
+    await sync.syncBookProgress(book.id)
+    expect(drive.writeDriveProgress.mock.calls[0][1]).toMatchObject({
+      appearance:{ shelfPosition:{ shelf:2, x:.72 } }, updatedAt:100
+    })
+    expect((await library.get(book.id)).progressDirty).toBe(false)
+    drive.readDriveProgress.mockResolvedValue({ fraction:0, locator:null,
+      appearance:{ shelfPosition:{ shelf:1, x:.25 } }, updatedAt:200, stateFileId:'placed-state' })
+    await sync.syncBookProgress(book.id)
+    expect((await library.get(book.id)).shelfPosition).toEqual({ shelf:1, x:.25 })
+    drive.readDriveProgress.mockResolvedValue({ fraction:0, locator:null,
+      appearance:{ shelfPosition:null }, updatedAt:300, stateFileId:'placed-state' })
+    await sync.syncBookProgress(book.id)
+    expect((await library.get(book.id)).shelfPosition).toBeNull()
+  })
+  it('keeps a shelf move dirty when another move occurs during its Drive upload', async () => {
+    const book = await library.addOrTouch({ sourceType:'local', name:'moving.pdf', size:5,
+      driveFileId:'moving-drive', cloudAccountId:'account-1' })
+    await library.patch(book.id, { shelfPosition:{ shelf:0, x:.1 }, progressDirty:true, progressUpdatedAt:100 })
+    let finishUpload
+    drive.writeDriveProgress.mockImplementation(() => new Promise(resolve => { finishUpload = resolve }))
+    const firstSync = sync.syncBookProgress(book.id)
+    await vi.waitFor(() => expect(drive.writeDriveProgress).toHaveBeenCalledTimes(1))
+    await library.patch(book.id, { shelfPosition:{ shelf:2, x:.9 }, progressDirty:true, progressUpdatedAt:100 })
+    finishUpload({ id:'moving-state' })
+    await firstSync
+    expect(await library.get(book.id)).toMatchObject({ shelfPosition:{ shelf:2, x:.9 }, progressDirty:true })
+    drive.writeDriveProgress.mockResolvedValue({ id:'moving-state' })
+    await sync.flushProgress(book.id)
+    expect(drive.writeDriveProgress.mock.calls[1][1].appearance.shelfPosition).toEqual({ shelf:2, x:.9 })
+    expect((await library.get(book.id)).progressDirty).toBe(false)
+  })
   it('carries bookmarks and the pre-jump reading position between devices', async () => {
     const book = await library.addOrTouch({ sourceType:'local', name:'places.pdf', size:5, driveFileId:'places-drive', cloudAccountId:'account-1' })
     const readingHistory = [{fraction:.25,locator:{kind:'pdf-page',value:2},label:'Página 2',createdAt:50}]

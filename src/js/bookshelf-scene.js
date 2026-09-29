@@ -8,6 +8,22 @@ const DURATION = 700;
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 const ease = t => t * t * t * (t * (t * 6 - 15) + 10);
 
+/** Project a pointer ray onto the cabinet's front, independent of its view. */
+export function projectShelfDropPosition(worldRay, furnitureMatrix, rows, width, padding = 16) {
+  if (!rows.length || !Number.isFinite(width) || width <= padding * 2) return null;
+  const localRay = worldRay.clone().applyMatrix4(furnitureMatrix.clone().invert());
+  const point = localRay.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3());
+  if (!point) return null;
+  const y = -point.y;
+  let shelf = 0, nearest = Infinity;
+  for (let index = 0; index < rows.length; index++) {
+    const { top, bottom } = rows[index];
+    const distance = y < top ? top - y : y > bottom ? y - bottom : 0;
+    if (distance < nearest) { nearest = distance; shelf = index; }
+  }
+  return { shelf, x:clamp((point.x + width / 2 - padding) / (width - padding * 2), 0, 1) };
+}
+
 function releaseObject(object) {
   const materials = new Set();
   object.traverse(child => {
@@ -81,9 +97,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const backWood = new THREE.MeshStandardMaterial({ map:texture, color:'#78614d', roughness:1 });
   const darkWood = new THREE.MeshStandardMaterial({ map:texture, color:'#9c7758', roughness:.9 });
   let depth = Math.max(155, ...entries.filter(e => e.kind !== 'plant').map(e => e.width + 12));
-  const entryKey = (entry, index) => entry.kind === 'plant' ? `plant:${entry.key ?? index}` : `book:${String(entry.book?.id ?? entry.book?.path ?? entry.book?.title ?? index)}`;
+  const entryKey = (entry, index) => entry.kind === 'plant'
+    ? `plant:${entry.node?.dataset.objectId ?? entry.key ?? index}`
+    : `book:${String(entry.book?.id ?? entry.node?.dataset.bookId ?? entry.book?.path ?? entry.book?.title ?? index)}`;
+  const freshPreview = () => ({ x:0, y:0, fromX:0, fromY:0, targetX:0, targetY:0, started:0, active:false });
   const freshEntry = (entry, index) => ({ ...entry, key:entryKey(entry, index), model:null, replacement:null, pose:new THREE.Object3D(),
-    lift:{ value:0, from:0, target:0, started:0 }, offset:{ x:0, y:0 }, state:'', rect:null, insertion:null });
+    lift:{ value:0, from:0, target:0, started:0 }, landing:null, offset:{ x:0, y:0 }, preview:freshPreview(), state:'', rect:null, insertion:null });
   let bookEntries = entries.map(freshEntry);
   const byNode = new Map(bookEntries.filter(entry => entry.node).map(entry => [entry.node, entry]));
   const beam = (w, h, d, x, y, z, material = wood) => {
@@ -118,6 +137,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let disposed = false, raf = 0, renderCount = 0, modelCreations = 0, viewportHeight = 1, progress = mode === 'isometric' ? 1 : 0;
   let shelfSnapshotDirty = true, shelfSnapshotRenders = 0;
   let transition = null, reorderTransition = null;
+  let dropMarker = null, dropPosition = null;
   let desiredMode = mode === 'isometric' ? 'isometric' : 'spine';
   const vector = new THREE.Vector3(), inverseRotation = new THREE.Quaternion();
   const projectedMatrix = new THREE.Matrix4();
@@ -289,6 +309,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function updateTransform() {
+    updateDropMarker();
     const yaw = -Math.PI / 6 * progress, pitch = 14 * Math.PI / 180 * progress;
     // The complete object turns around one axis. A modest additional pullback
     // leaves room around the diagonal furniture instead of cropping its edges.
@@ -318,26 +339,42 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const dragging = node?.classList.contains('is-dragging');
       const lifted = dragging || node?.classList.contains('is-lifted');
       const away = node?.classList.contains('is-away');
+      const previewChanged = advancePreview(entry, now);
+      moving ||= entry.preview.active;
+      shelfMoving ||= !away && (previewChanged || entry.preview.active);
       // A completed insertion remains painted until its owner restores the
       // semantic shelf book. This avoids an empty frame at the final handoff.
       if (entry.insertion?.complete && !away) entry.insertion = null;
       const insertion = entry.insertion;
-      const targetLift = plant ? 0 : lifted ? 1 : node?.classList.contains('is-pressed') ? .22 : 0;
-      if (entry.lift.target !== targetLift) {
-        entry.lift.from = entry.lift.value; entry.lift.target = targetLift; entry.lift.started = now;
-      }
-      const liftTime = reducedMotion.matches ? 1 : clamp((now - entry.lift.started) / 160, 0, 1);
+      const targetLift = lifted ? 1 : node?.classList.contains('is-pressed') ? .22 : 0;
       const previousLift = entry.lift.value;
-      entry.lift.value = entry.lift.from + (entry.lift.target - entry.lift.from) * ease(liftTime);
-      const changingLift = liftTime < 1 && entry.lift.from !== entry.lift.target;
+      let changingLift;
+      if (entry.landing && targetLift === 0) {
+        const t = reducedMotion.matches ? 1 : clamp((now - entry.landing.started) / entry.landing.duration, 0, 1);
+        entry.lift.value = entry.landing.from * (1 - ease(clamp((t - .7) / .3, 0, 1)));
+        Object.assign(entry.lift, { from:entry.lift.value, target:0, started:now });
+        changingLift = t < 1 && entry.landing.from > 0;
+        if (t === 1) entry.landing = null;
+      } else {
+        entry.landing = null;
+        if (entry.lift.target !== targetLift) {
+          entry.lift.from = entry.lift.value; entry.lift.target = targetLift; entry.lift.started = now;
+        }
+        const liftTime = reducedMotion.matches ? 1 : clamp((now - entry.lift.started) / 160, 0, 1);
+        entry.lift.value = entry.lift.from + (entry.lift.target - entry.lift.from) * ease(liftTime);
+        changingLift = liftTime < 1 && entry.lift.from !== entry.lift.target;
+      }
       moving ||= changingLift;
       shelfMoving ||= !away && (changingLift || previousLift !== entry.lift.value);
       const lift = entry.lift.value;
       const screenX = (dragging ? parseFloat(node.style.getPropertyValue('--ihr-drag-x')) || 0 : 0) + entry.offset.x;
       const screenY = (dragging ? parseFloat(node.style.getPropertyValue('--ihr-drag-y')) || 0 : 0) + entry.offset.y - 18 * lift;
       vector.set(screenX / zoom, -screenY / zoom, 30 * lift / zoom).applyQuaternion(inverseRotation);
-      entry.pose.position.set(entry.x - width / 2 + vector.x, -entry.y + vector.y, (plant ? -entry.width * .35 : -entry.width / 2) + vector.z);
-      entry.pose.rotation.y = plant ? 0 : Math.PI / 2 - 7 * Math.PI / 180 * lift;
+      entry.pose.position.set(entry.x - width / 2 + vector.x + entry.preview.x, -entry.y + vector.y + entry.preview.y,
+        (plant ? -entry.width * .35 : -entry.width / 2) + vector.z);
+      entry.pose.rotation.set(plant ? 4 * Math.PI / 180 * lift : 0,
+        plant ? -7 * Math.PI / 180 * lift : Math.PI / 2 - 7 * Math.PI / 180 * lift,
+        plant ? -3 * Math.PI / 180 * lift : 0);
       entry.pose.scale.setScalar(1 + .04 * lift);
       entry.pose.updateMatrix();
       projectedMatrix.multiplyMatrices(furniture.matrixWorld, entry.pose.matrix);
@@ -375,7 +412,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         }
         if (!plant && (!away || insertion)) activeBooks++;
       }
-      if (node && !plant) {
+      if (node) {
         node.style.position = 'absolute'; node.style.left = `${rect.left}px`; node.style.top = `${rect.top}px`;
         node.style.width = `${rect.width}px`; node.style.height = `${rect.height}px`;
         node.style.margin = '0'; node.style.zIndex = String(100 + Math.round(rect.closest + height));
@@ -384,12 +421,69 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       entry.state = stateFor(entry);
     }
     canvas.dataset.activeBooks = String(activeBooks);
+    canvas.dataset.previewAnimating = String(bookEntries.some(entry => entry.preview.active));
+    canvas.dataset.previewObjects = String(bookEntries.filter(entry => Math.abs(entry.preview.x) + Math.abs(entry.preview.y) > .01).length);
     const inserting = bookEntries.filter(entry => entry.insertion);
     canvas.dataset.returningBooks = inserting.map(entry => String(entry.book?.id ?? '')).join(',');
     canvas.dataset.returningBookId = inserting.length === 1 ? String(inserting[0].book?.id ?? '') : '';
     canvas.dataset.returnRenderer = inserting.some(entry => entry.insertion.overlayCanvas) ? 'shared-depth-overlay' : 'shelf';
     if (!inserting.length) delete canvas.dataset.returnProgress;
     return { moving, shelfMoving };
+  }
+
+  function advancePreview(entry, now) {
+    const preview = entry.preview;
+    if (!preview.active) return false;
+    const t = reducedMotion.matches ? 1 : clamp((now - preview.started) / 130, 0, 1);
+    const x = preview.fromX + (preview.targetX - preview.fromX) * ease(t);
+    const y = preview.fromY + (preview.targetY - preview.fromY) * ease(t);
+    const changed = x !== preview.x || y !== preview.y;
+    preview.x = x; preview.y = y;
+    if (t === 1) preview.active = false;
+    return changed;
+  }
+
+  function previewOffset(entry, x, y, now) {
+    const changed = advancePreview(entry, now), preview = entry.preview;
+    if (Math.abs(x - preview.targetX) + Math.abs(y - preview.targetY) < .01) return changed;
+    Object.assign(preview, { fromX:preview.x, fromY:preview.y, targetX:x, targetY:y, started:now, active:true });
+    return true;
+  }
+
+  function updateDropMarker() {
+    if (!dropMarker) return;
+    const row = dropPosition && rows[dropPosition.shelf];
+    dropMarker.visible = Boolean(row);
+    if (!row) return;
+    const markerHeight = clamp((row.bottom - row.top) * .82, 60, 180);
+    dropMarker.position.set(-width / 2 + 16 + dropPosition.x * (width - 32), -row.bottom, 13);
+    dropMarker.children[0].position.y = markerHeight / 2;
+    dropMarker.children[0].scale.y = markerHeight;
+  }
+
+  function pointerRay(clientX, clientY) {
+    // Scroll/view/metadata changes may be waiting for the next demand frame.
+    // Pick the actual meshes and camera being shown, including their depth.
+    if (raf) { cancelAnimationFrame(raf); raf = 0; draw(); }
+    camera.updateMatrixWorld();
+    const bounds = canvas.getBoundingClientRect();
+    const pointer = new THREE.Vector2((clientX - bounds.left) / width * 2 - 1, 1 - (clientY - bounds.top) / viewportHeight * 2);
+    const ray = new THREE.Raycaster(); ray.setFromCamera(pointer, camera);
+    return ray;
+  }
+
+  function objectAtPoint(clientX, clientY) {
+    const ray = pointerRay(clientX, clientY);
+    const pickable = furniture.children.filter(object => object.visible && !object.userData.dropMarker &&
+      !object.userData.entry?.node?.classList.contains('is-away'));
+    for (const hit of ray.intersectObjects(pickable, true)) {
+      let object = hit.object;
+      while (object && !object.userData.entry) object = object.parent;
+      if (object?.userData.entry?.node && object.visible) return object.userData.entry.node;
+      // Solid wood in front blocks the object behind it.
+      if (!object?.userData.entry) return null;
+    }
+    return null;
   }
 
   function paintInsertionOverlay(entry) {
@@ -560,21 +654,46 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       } };
     },
     getBookAtPoint(clientX, clientY) {
-      // Metadata can replace a mesh between two frames; scrolling also updates
-      // the camera on demand. Pick the scene that is actually ready to display.
-      if (raf) { cancelAnimationFrame(raf); raf = 0; draw(); }
-      const bounds = canvas.getBoundingClientRect();
-      const pointer = new THREE.Vector2((clientX - bounds.left) / width * 2 - 1, 1 - (clientY - bounds.top) / viewportHeight * 2);
-      const ray = new THREE.Raycaster(); ray.setFromCamera(pointer, camera);
-      const pickable = furniture.children.filter(object => object.visible && !object.userData.entry?.node?.classList.contains('is-away'));
-      for (const hit of ray.intersectObjects(pickable, true)) {
-        let object = hit.object;
-        while (object && !object.userData.entry) object = object.parent;
-        if (object?.userData.entry?.kind !== 'plant' && object?.userData.entry?.node && object.visible) return object.userData.entry.node;
-        // Solid wood or a plant in front blocks the book behind it.
-        if (!object?.userData.entry || object.userData.entry.kind === 'plant') return null;
+      const node = objectAtPoint(clientX, clientY);
+      return node && byNode.get(node)?.kind !== 'plant' ? node : null;
+    },
+    getObjectAtPoint(clientX, clientY) {
+      return objectAtPoint(clientX, clientY);
+    },
+    getDropPosition(clientX, clientY) {
+      return projectShelfDropPosition(pointerRay(clientX, clientY).ray, furniture.matrixWorld, rows, width);
+    },
+    setDropPosition(position) {
+      if (disposed) return;
+      const shelf = Number(position?.shelf), x = Number(position?.x);
+      dropPosition = position && Number.isInteger(shelf) && rows[shelf] && Number.isFinite(x)
+        ? { shelf, x:clamp(x, 0, 1) } : null;
+      if (dropPosition && !dropMarker) {
+        dropMarker = new THREE.Group(); dropMarker.userData.dropMarker = true;
+        const material = new THREE.MeshBasicMaterial({ color:'#709980', transparent:true, opacity:.9, depthTest:false, depthWrite:false });
+        const guide = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 2), material);
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(12, 2, 4), material); foot.position.y = 1;
+        dropMarker.add(guide, foot); furniture.add(dropMarker);
       }
-      return null;
+      canvas.dataset.dropShelf = dropPosition ? String(dropPosition.shelf) : '';
+      canvas.dataset.dropX = dropPosition ? dropPosition.x.toFixed(4) : '';
+      invalidate();
+    },
+    previewPlacements(objects, draggedKey) {
+      if (disposed) return;
+      const placements = new Map((Array.isArray(objects) ? objects : []).map(object => [String(object.key), object]));
+      const now = performance.now();
+      let changed = false;
+      for (const entry of bookEntries) {
+        const objectKey = String(entry.node?.dataset.objectId ?? entry.key);
+        const placement = objectKey !== String(draggedKey) ? placements.get(objectKey) : null;
+        const row = placement && rows[placement.shelf];
+        const center = Number(placement?.center);
+        const x = row && Number.isFinite(center) ? center - entry.x : 0;
+        const y = row && Number.isFinite(center) ? entry.y - (row.bottom - entry.height / 2) : 0;
+        changed = previewOffset(entry, x, y, now) || changed;
+      }
+      if (changed) invalidate();
     },
     updateEntry(node, book, style, coverUrl) {
       const entry = byNode.get(node);
@@ -618,6 +737,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
             Object.assign(entry, data); entry.box = slotBox(entry);
           } else updateRecord(entry, data.book, data.style, data.coverUrl, data);
         } else { entry = freshEntry(data, index); entry.box = slotBox(entry); }
+        // The new layout has already committed the preview's destination.
+        // Retaining that offset would apply it twice; captured projected rects
+        // are handed to animateFromRects for the remaining release movement.
+        entry.preview = freshPreview();
+        entry.landing = null;
         entry.key = key;
         retained.push(entry);
         if (entry.node && !originalStyles.has(entry.node)) originalStyles.set(entry.node, entry.node.getAttribute('style'));
@@ -637,16 +761,22 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       draw();
       return true;
     },
-    animateFromRects(oldRects) {
+    animateFromRects(oldRects, { draggedKey } = {}) {
       if (reducedMotion.matches) return;
       const stageRect = stage.getBoundingClientRect(), items = [];
       for (const entry of bookEntries) {
-        const old = oldRects.get(entry.book?.id);
+        const old = oldRects.get(entry.node?.dataset.objectId) || oldRects.get(entry.book?.id) ||
+          oldRects.get(entry.node?.dataset.bookId) || oldRects.get(entry.key);
         if (!old || !entry.rect) continue;
         const x = old.left - (entry.rect.left + stageRect.left), y = old.top - (entry.rect.top + stageRect.top);
         if (Math.abs(x) + Math.abs(y) > 1) items.push({ entry, x, y });
       }
       reorderTransition = { started:performance.now(), entries:items };
+      const dragged = draggedKey == null ? null : items.find(item =>
+        String(item.entry.node?.dataset.objectId ?? item.entry.key) === String(draggedKey))?.entry;
+      if (dragged && dragged.lift.value > 0) {
+        dragged.landing = { from:dragged.lift.value, started:reorderTransition.started, duration:520 };
+      }
       // Paint the old positions before yielding. Otherwise a synchronous
       // layout replacement can flash its final positions for one frame.
       cancelAnimationFrame(raf); raf = 0; draw(reorderTransition.started);

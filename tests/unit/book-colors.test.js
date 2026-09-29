@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bookColorOptions, spineColorStyle, spineCustomization, surfaceFinish } from '../../src/js/book-colors.js'
+import { bookColorOptions, spineColorStyle, spineCustomization, surfaceFinish, normalizeShelfPosition } from '../../src/js/book-colors.js'
 
 describe('book spine colors', () => {
   it('derives three distinct choices from the cover color', () => {
@@ -31,6 +31,20 @@ describe('book spine colors', () => {
 
 
 describe('distinct palette and saved finishes', () => {
+  it('serializes portable shelf coordinates and an explicit placement reset', () => {
+    expect(spineCustomization({ shelfPosition:{ shelf:2, x:.375, extra:'ignored' } })).toEqual({
+      shelfPosition:{ shelf:2, x:.375 }
+    })
+    expect(spineCustomization({ shelfPosition:null })).toEqual({ shelfPosition:null })
+    expect(normalizeShelfPosition({ shelf:0, x:1.4 })).toEqual({ shelf:0, x:1 })
+    expect(normalizeShelfPosition({ shelf:3, x:-.2 })).toEqual({ shelf:3, x:0 })
+  })
+  it('ignores malformed cloud shelf coordinates', () => {
+    for (const shelfPosition of [undefined, {}, { shelf:-1, x:.5 }, { shelf:1.5, x:.5 },
+      { shelf:1, x:Infinity }, { shelf:1, x:'0.5' }, { shelf:'2', x:.5 }]) {
+      expect(spineCustomization({ shelfPosition })).toEqual({})
+    }
+  })
   it('never offers three greys or nearly identical hues', () => {
     for (const cover of ['#808080','#000000','#ffffff','#f3eeed','#8a2626','#0a7cff']) {
       const colors = bookColorOptions(cover).map(hex => [1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)))

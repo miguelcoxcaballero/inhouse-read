@@ -108,12 +108,22 @@ const PLANT_PHOTOS = {
 };
 import { bookView, fitCoverImage, getBookRenderer } from './book-model.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
+import { layoutShelvedObjects, moveShelfObject } from './shelf-placement.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
 const TAP_SLOP = 12;
 const REORDER_HOLD_MS = 440;
 const SHELF_VIEW_STORAGE_KEY = 'inhouse-read-shelf-view';
+const SHELF_PLANTS_STORAGE_KEY = 'inhouse-read-shelf-plants';
+
+function savedShelfPlants() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SHELF_PLANTS_STORAGE_KEY) || 'null');
+    return Array.isArray(saved) ? saved.filter(item => item && typeof item.key === 'string' &&
+      typeof item.variant === 'string' && Number.isFinite(item.width)) : [];
+  } catch { return []; }
+}
 const SHELF_VIEW_MODES = Object.freeze({ SPINE:'spine', ISOMETRIC:'isometric' });
 const ICONS = Object.freeze({
   drive: ['M9 3h6l7 12-3 5H5l-3-5L9 3Z', 'm9 3 7 12H2', 'm15 3-7 12 3 5'],
@@ -294,6 +304,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     coverAppearances: new Map(),
     appearanceTasks: new Map(),
     itemsById: new Map(),
+    placementObjects: [],
+    plants: savedShelfPlants(),
     appearanceRefreshPending: false,
     pressedBookId: null,
     lastOpened: null,
@@ -413,7 +425,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function maybeRefreshAppearanceStyles() {
-    if (!state.appearanceRefreshPending || state.busy || state.session || state.returnMotion || state.destroyed) return;
+    if (!state.appearanceRefreshPending || state.busy || state.session || state.returnMotion || state.dragSession || state.destroyed) return;
     state.appearanceRefreshPending = false;
     scheduleRender();
   }
@@ -450,7 +462,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         if (String(state.lastOpened?.book?.id ?? '') === id) state.lastOpened.style = item.style;
         const existing = [...root.querySelectorAll('.ihr-spine')]
           .find(node => node.dataset.bookId === id);
-        if (existing?.isConnected && !state.busy && !state.session && !state.returnMotion && state.pressedBookId !== id) {
+        if (existing?.isConnected && !state.busy && !state.session && !state.returnMotion && !state.dragSession && state.pressedBookId !== id) {
           if (state.shelfScene) {
             state.shelfScene.updateEntry(existing, item.book, item.style, resolveCoverImmediately(item.book));
             return appearance;
@@ -594,6 +606,87 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     return [...(section || scroller).querySelectorAll('.ihr-spine')];
   }
 
+  const objectKey = node => node.dataset.objectId || `book:${node.dataset.bookId}`;
+  const objectRects = () => new Map([...scroller.querySelectorAll('.ihr-spine, .ihr-plant')]
+    .map(node => [objectKey(node), node.getBoundingClientRect()]));
+
+  function persistObjectPlacement(node, destination, oldRects = objectRects()) {
+    if (!destination || !state.placementObjects.length) return;
+    const result = moveShelfObject(state.placementObjects, objectKey(node), destination, placementConfig());
+    const changed = [];
+    state.books = state.books.map(book => {
+      const shelfPosition = result.placements[`book:${book.id}`];
+      if (!shelfPosition) return book;
+      if (JSON.stringify(book.shelfPosition) !== JSON.stringify(shelfPosition)) changed.push({ id:book.id, shelfPosition });
+      return { ...book, shelfPosition };
+    });
+    state.plants = state.plants.map(plant => ({ ...plant, ...result.placements[plant.key] }));
+    try { localStorage.setItem(SHELF_PLANTS_STORAGE_KEY, JSON.stringify(state.plants)); } catch { /* keep session placement */ }
+    Promise.resolve(options.onShelfPlacementChange?.({ books:changed,
+      plants:Object.fromEntries(state.plants.map(plant => [plant.key, { shelf:plant.shelf, x:plant.x }])) }))
+      .catch(error => console.warn('No se pudo guardar la posición en la estantería:', error));
+    clearTimeout(state.reorderTimer);
+    state.reorderTimer = -1;
+    render();
+    state.shelfScene?.animateFromRects(oldRects, { draggedKey:objectKey(node) });
+    state.reorderTimer = setTimeout(() => {
+      state.reorderTimer = 0; applyDeferredShelfUpdates();
+    }, prefersReducedMotion() ? 0 : 560);
+  }
+
+  function moveObjectWithKeyboard(event, node) {
+    if (!event.shiftKey || !['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) return;
+    event.preventDefault();
+    const item = state.placementObjects.find(item => item.key === objectKey(node));
+    if (!item) return;
+    const direction = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
+    const vertical = event.key === 'ArrowUp' || event.key === 'ArrowDown';
+    persistObjectPlacement(node, { shelf:Math.max(0, item.shelf + (vertical ? direction : 0)),
+      x:Math.max(0, Math.min(1, item.x + (vertical ? 0 : direction * .08))) });
+    [...scroller.querySelectorAll('[data-object-id]')].find(candidate => objectKey(candidate) === item.key)?.focus({ preventScroll:true });
+  }
+
+  function dropPositionAt(x, y) {
+    if (state.shelfScene) return state.shelfScene.getDropPosition(x, y);
+    const rows = [...scroller.querySelectorAll('.ihr-shelf__row')];
+    const nearest = rows.map((row, shelf) => {
+      const bounds = row.getBoundingClientRect();
+      return { shelf, bounds, distance:Math.max(bounds.top-y, 0, y-bounds.bottom) };
+    }).sort((a,b) => a.distance-b.distance)[0];
+    if (!nearest) return null;
+    return { shelf:nearest.shelf, x:Math.max(0, Math.min(1,
+      (x-nearest.bounds.left-opts.shelfPadding)/(state.shelfWidth-opts.shelfPadding*2))) };
+  }
+
+  function updateDropPreview(drag, node) {
+    drag.destination = dropPositionAt(drag.x, drag.y);
+    state.shelfScene?.setDropPosition(drag.destination);
+    if (drag.destination && !drag.previewFrame) drag.previewFrame = requestAnimationFrame(() => {
+      drag.previewFrame = 0;
+      if (state.dragSession !== drag || !drag.destination) return;
+      const preview = moveShelfObject(state.placementObjects, objectKey(node), drag.destination, placementConfig());
+      state.shelfScene?.previewPlacements(preview.objects, objectKey(node));
+    });
+  }
+
+  function continueDragScroll(drag, node) {
+    if (drag.scrollFrame) return;
+    const tick = () => {
+      drag.scrollFrame = 0;
+      if (state.dragSession !== drag || !drag.active) return;
+      const bounds = scroller.getBoundingClientRect();
+      const delta = drag.y < bounds.top + 40 ? -12 : drag.y > bounds.bottom - 40 ? 12 : 0;
+      if (!delta) return;
+      const previous = scroller.scrollTop;
+      scroller.scrollTop += delta;
+      if (scroller.scrollTop === previous) return;
+      node.style.setProperty('--ihr-drag-y', `${drag.y-drag.startY+scroller.scrollTop-drag.scrollTop}px`);
+      updateDropPreview(drag, node);
+      drag.scrollFrame = requestAnimationFrame(tick);
+    };
+    drag.scrollFrame = requestAnimationFrame(tick);
+  }
+
   function persistShelfDomOrder(oldRects = null) {
     const orderedIds = shelfSpineNodes().map(node => node.dataset.bookId).filter(Boolean);
     const rank = new Map(orderedIds.map((id, index) => [String(id), index]));
@@ -637,11 +730,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function startSpineDrag(event, node) {
-    if ((event.button !== undefined && event.button !== 0) || state.dragSession) return;
+    if ((event.button !== undefined && event.button !== 0) || state.dragSession || state.busy || state.session || state.returnMotion) return;
     let backgroundOnly = false;
     if (state.shelfScene) {
-      const hit = state.shelfScene.getBookAtPoint(event.clientX, event.clientY);
+      const hit = state.shelfScene.getObjectAtPoint(event.clientX, event.clientY);
       backgroundOnly = !hit;
+      if (hit && hit !== node) { node.classList.remove('is-pressed'); state.pressedBookId = null; }
       node = hit || node;
     }
     const drag = state.dragSession = {
@@ -655,12 +749,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // naturally on touch, without starting a hold on an occluded book.
     if (backgroundOnly) { node.classList.remove('is-pressed'); return; }
     drag.timer = setTimeout(() => {
-      if (state.dragSession !== drag) return;
+      if (state.dragSession !== drag || state.destroyed) return;
       drag.active = true;
       state.arranging = true;
       root.classList.add('is-arranging');
       node.classList.remove('is-pressed');
       node.classList.add('is-lifted');
+      state.shelfScene?.flush();
     }, REORDER_HOLD_MS);
   }
 
@@ -685,12 +780,17 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
     event.preventDefault();
     drag.x = event.clientX; drag.y = event.clientY;
-    const dx = drag.x - drag.startX, dy = drag.y - drag.startY;
+    const dx = drag.x - drag.startX, dy = drag.y - drag.startY + scroller.scrollTop - drag.scrollTop;
     drag.moved = true;
     node.classList.remove('is-lifted');
     node.classList.add('is-dragging');
     node.style.setProperty('--ihr-drag-x', `${dx}px`);
     node.style.setProperty('--ihr-drag-y', `${dy}px`);
+    if (!opts.sections) {
+      updateDropPreview(drag, node);
+      continueDragScroll(drag, node);
+      return;
+    }
     node.style.pointerEvents = 'none';
     const hit = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('.ihr-spine');
     node.style.pointerEvents = '';
@@ -714,7 +814,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const drag = state.dragSession;
     if (!drag || drag.node !== node || drag.pointerId !== event.pointerId) return;
     clearTimeout(drag.timer);
+    cancelAnimationFrame(drag.previewFrame);
+    cancelAnimationFrame(drag.scrollFrame);
+    const oldRects = drag.active && drag.moved ? objectRects() : null;
     state.dragSession = null;
+    state.shelfScene?.setDropPosition(null);
+    state.shelfScene?.previewPlacements(null);
     drag.target?.classList.remove('is-drop-target', 'is-drop-before', 'is-drop-after');
     node.classList.remove('is-dragging', 'is-lifted');
     node.style.removeProperty('--ihr-drag-x');
@@ -724,14 +829,17 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (drag.scrolling || drag.cancelled) {
       state.suppressOpenBookId = String(node.dataset.bookId || '');
       setTimeout(() => { state.suppressOpenBookId = null; }, 0);
+      applyDeferredShelfUpdates();
       return;
     }
-    if (!drag.active) return;
+    if (!drag.active) { applyDeferredShelfUpdates(); return; }
     state.arranging = false;
     root.classList.remove('is-arranging');
     state.suppressOpenBookId = String(node.dataset.bookId || '');
     setTimeout(() => { state.suppressOpenBookId = null; }, 0);
-    if (drag.moved && !cancelled && drag.target) reorderSpine(node, drag.target, drag.after);
+    if (drag.moved && !cancelled && !opts.sections && drag.destination) persistObjectPlacement(node, drag.destination, oldRects);
+    else if (drag.moved && !cancelled && drag.target) reorderSpine(node, drag.target, drag.after);
+    else { state.shelfScene?.flush(); applyDeferredShelfUpdates(); }
   }
 
   function buildSpine(item) {
@@ -746,8 +854,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         ? `${opts.texts.openAria(book)}, ${opts.texts.progressAria(bookmark.percent)}`
         : opts.texts.openAria(book),
       title: 'Mantén pulsado para mover el libro',
-      'aria-keyshortcuts': 'Shift+ArrowLeft Shift+ArrowRight',
-      'aria-description': 'Mantén pulsado para sacar el libro y moverlo. Usa Mayús y las flechas izquierda o derecha para cambiar su posición.',
+      'aria-keyshortcuts': 'Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown',
+      'aria-description': 'Mantén pulsado para sacar el libro y moverlo. Usa Mayús y las flechas para cambiar su posición o balda.',
       style:
         `--ihr-spine-w:${item.displayWidth ?? style.width}px;` +
         `--ihr-spine-h:${Math.round(style.heightRatio * 100)}%;` +
@@ -830,6 +938,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       openBook(hit || node, hit ? state.itemsById.get(hit.dataset.bookId) || item : item);
     });
     node.addEventListener('keydown', event => {
+      if (!opts.sections) { moveObjectWithKeyboard(event, node); return; }
       if (!event.shiftKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
       event.preventDefault();
       const section = node.closest('.ihr-section');
@@ -849,26 +958,80 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const upright = ['sansevieria', 'cactus'].includes(item.variant);
     const succulent = item.variant === 'suculenta';
     const height = Math.round(item.width * (upright ? 1.5 : succulent ? 1.057 : 1.094));
-    return el('span', {
+    const node = el('button', {
+      type:'button',
       class: `ihr-plant ihr-plant--photo ihr-plant--${item.variant}`,
-      'aria-hidden': 'true',
+      'data-object-id':item.key || `plant:${item.seed}`,
+      'aria-label':`Mover planta ${item.variant}`,
+      'aria-keyshortcuts':'Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown',
+      'aria-description':'Mantén pulsado para mover la planta. Usa Mayús y las flechas para cambiar su posición o balda.',
+      title:'Mantén pulsado para mover la planta',
       style:
         `--ihr-plant-w:${item.width}px;` +
         `--ihr-plant-h:${height}px;` +
         '--ihr-plant-overhang:0px'
     }, [el('img', { src:PLANT_PHOTOS[upright ? 'upright' : succulent ? 'succulent' : 'leafy'], alt:'', width:item.width, height, decoding:'async', draggable:'false' })]);
+    node.addEventListener('pointerdown', event => startSpineDrag(event, node));
+    node.addEventListener('pointermove', event => moveSpineDrag(event, state.dragSession?.node || node));
+    node.addEventListener('pointerup', event => finishSpineDrag(event, state.dragSession?.node || node));
+    node.addEventListener('pointercancel', event => finishSpineDrag(event, state.dragSession?.node || node, true));
+    node.addEventListener('keydown', event => moveObjectWithKeyboard(event, node));
+    return node;
   }
 
   function buildShelf(shelf) {
-    const unit = el('div', { class: 'ihr-shelf' });
+    const unit = el('div', { class: 'ihr-shelf', 'data-shelf-index':shelf.index });
     const row = el('div', { class: 'ihr-shelf__row' });
     for (const item of shelf.items) {
-      row.append(item.kind === 'plant' ? buildPlant(item) : buildSpine(item));
+      const node = item.kind === 'plant' ? buildPlant(item) : buildSpine(item);
+      if (Number.isFinite(item.left)) {
+        row.classList.add('has-placements');
+        node.style.position = 'absolute';
+        node.style.left = `${item.left}px`;
+        node.style.bottom = '0';
+        node.dataset.objectId = item.key;
+        node.dataset.shelfIndex = String(shelf.index);
+        node.dataset.shelfX = String(item.x);
+      }
+      row.append(node);
     }
     unit.append(el('div', { class: 'ihr-shelf__back', 'aria-hidden': 'true' }));
     unit.append(row);
     unit.append(el('div', { class: 'ihr-shelf__board', 'aria-hidden': 'true' }));
     return unit;
+  }
+
+  function placementConfig() {
+    return { shelfWidth:state.shelfWidth, padding:opts.shelfPadding, gap:opts.gap,
+      minShelves:Math.max(3, Number(opts.minimumShelves) || 3) };
+  }
+
+  function freelyPlacedShelves(shelves) {
+    const cfg = placementConfig(), innerWidth = cfg.shelfWidth - cfg.padding * 2;
+    const objects = [], initialPlants = [];
+    for (const shelf of shelves) {
+      let cursor = cfg.padding;
+      for (const item of shelf.items) {
+        const key = item.kind === 'book' ? `book:${item.book.id}` : `plant:${item.seed}`;
+        const x = (cursor + item.width / 2 - cfg.padding) / innerWidth;
+        const newBookInPlacedLibrary = item.kind === 'book' && !item.book.shelfPosition &&
+          state.books.some(book => book.shelfPosition);
+        const object = { ...item, key, shelf:shelf.index, x:newBookInPlacedLibrary ? undefined : x, tilt:0 };
+        if (item.kind === 'book') objects.push(object);
+        else initialPlants.push(object);
+        cursor += item.width + cfg.gap;
+      }
+    }
+    if (!state.plants.length) {
+      state.plants = initialPlants.map(({ key, seed, variant, width, shelf, x }) => ({ key, seed, variant, width, shelf, x }));
+      try { localStorage.setItem(SHELF_PLANTS_STORAGE_KEY, JSON.stringify(state.plants)); } catch { /* memory layout still works */ }
+    }
+    objects.push(...state.plants.map(plant => ({ ...plant, kind:'plant' })));
+    const placements = Object.fromEntries(objects.filter(item => item.kind === 'book' && item.book.shelfPosition)
+      .map(item => [item.key, item.book.shelfPosition]));
+    const result = layoutShelvedObjects(objects, { ...cfg, placements });
+    state.placementObjects = result.flatMap(shelf => shelf.items);
+    return result;
   }
 
   function buildEmptyState() {
@@ -962,7 +1125,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function render() {
     if (state.destroyed) return;
     root.dataset.viewMode = state.viewMode;
-    if (state.returnMotion || state.busy || state.session) { state.renderQueued = true; return; }
+    if (state.returnMotion || state.busy || state.session || state.dragSession) { state.renderQueued = true; return; }
     if (!state.appearancesReady && state.books.length > 0) {
       state.shelfScene?.dispose();
       state.shelfScene = null;
@@ -971,6 +1134,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       return;
     }
     const focusedBookId = document.activeElement?.closest?.('.ihr-spine')?.dataset.bookId;
+    const focusedObjectId = document.activeElement?.closest?.('[data-object-id]')?.dataset.objectId;
     const width = measure();
     state.shelfWidth = width;
     // A refresh can complete while home is hidden behind the reader. Keep the
@@ -978,7 +1142,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // spine as the target of the return animation. ResizeObserver re-renders
     // the updated records when the shelf becomes visible again.
     if (width <= 0 && state.books.length > 0) return;
-    if (state.books.length === 0) {
+    if (state.books.length === 0 && opts.sections) {
       state.shelfScene?.dispose();
       state.shelfScene = null;
       scroller.textContent = '';
@@ -1000,6 +1164,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       // Sin secciones, 0 recientes: todo cae en una estantería continua.
       recentLimit: opts.sections ? opts.recentLimit : 0
     });
+    if (!opts.sections && !plan.length) plan.push({ id:'library', title:'', count:0, shelves:[] });
     if (!opts.sections && plan.length === 1) {
       const minimum = Math.max(1, Math.floor(Number(opts.minimumShelves) || 1));
       const plants = ['sansevieria', 'pothos', 'suculenta', 'monstera'];
@@ -1015,6 +1180,15 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       }
     }
 
+    for (const section of plan) for (const shelf of section.shelves) for (const item of shelf.items) {
+      if (item.kind !== 'book') continue;
+      item.baseStyle = item.style;
+      item.coverKey = coverKeyFor(item.book);
+      const appearance = state.coverAppearances.get(String(item.book.id ?? item.book.path ?? item.book.title ?? 'book'));
+      applyCoverAppearance(item, appearance?.key === item.coverKey ? appearance.appearance : null);
+    }
+    if (!opts.sections && plan.length === 1) plan[0].shelves = freelyPlacedShelves(plan[0].shelves);
+
     state.itemsById.clear();
     const fragment = document.createDocumentFragment();
     const heading = el('div', { class: 'ihr-library-heading' }, [
@@ -1025,17 +1199,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       ])
     ]);
     fragment.append(heading);
+    if (!state.books.length) fragment.append(el('div', { class:'ihr-empty' }, [
+      el('h2', { class:'ihr-empty__title', text:opts.texts.emptyTitle }),
+      el('p', { class:'ihr-empty__text', text:opts.texts.emptyText }),
+      onPickLocal ? el('button', { type:'button', class:'ihr-btn ihr-btn--primary ihr-empty__action',
+        text:opts.texts.emptyAction, onClick:() => onPickLocal() }) : null
+    ]));
     const stage = el('div', { class:'ihr-shelf-stage' });
     for (const section of plan) {
-      for (const shelf of section.shelves) {
-        for (const item of shelf.items) {
-          if (item.kind !== 'book') continue;
-          item.baseStyle = item.style;
-          item.coverKey = coverKeyFor(item.book);
-          const appearance = state.coverAppearances.get(String(item.book.id ?? item.book.path ?? item.book.title ?? 'book'));
-          applyCoverAppearance(item, appearance?.key === item.coverKey ? appearance.appearance : null);
-        }
-      }
       const wrapper = el('section', {
         class: `ihr-section ihr-section--${section.id}`,
         'aria-label': section.title || opts.texts.shelfLabel
@@ -1065,7 +1236,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (retainedScene) retainedScene.updateLayout(layout);
       else state.shelfScene = createBookshelfScene(layout);
     }
-    if (focusedBookId) {
+    if (focusedObjectId) {
+      [...scroller.querySelectorAll('[data-object-id]')]
+        .find(node => node.dataset.objectId === focusedObjectId)?.focus({ preventScroll:true });
+    } else if (focusedBookId) {
       [...scroller.querySelectorAll('.ihr-spine')]
         .find(node => node.dataset.bookId === focusedBookId)
         ?.focus({ preventScroll: true });
@@ -1087,7 +1261,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         const x = rect.left + rect.width / 2 - origin.left;
         const y = rect.top + rect.height / 2 - origin.top;
         if (node.classList.contains('ihr-plant')) {
-          entries.push({ kind:'plant', node, x, y, width:rect.width, height:rect.height,
+          entries.push({ kind:'plant', key:node.dataset.objectId, node, x, y, width:rect.width, height:rect.height,
             variant:node.classList.contains('ihr-plant--sansevieria') ? 'upright' : 'leafy' });
           continue;
         }
@@ -1104,7 +1278,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function scheduleRender() {
-    if (state.returnMotion || state.reorderTimer || state.busy || state.session) { state.renderQueued = true; return; }
+    if (state.returnMotion || state.reorderTimer || state.busy || state.session || state.dragSession) { state.renderQueued = true; return; }
     if (state.frame) return;
     state.frame = requestAnimationFrame(() => {
       state.frame = 0;
@@ -2154,6 +2328,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   let observer = null;
   const onViewportResize = () => {
     if (state.session?.handleViewportResize?.()) return;
+    if (state.dragSession) finishSpineDrag({ pointerId:state.dragSession.pointerId }, state.dragSession.node, true);
     state.pendingSelection?.cancel();
     state.session?.close({ instant:true, silent:true });
     state.returnMotion?.cancel();
@@ -2182,7 +2357,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   /** Sustituye la biblioteca y vuelve a pintar, conservando el scroll. */
   function refresh(nextBooks) {
     if (state.destroyed) return;
-    if (state.returnMotion || state.reorderTimer || state.busy || state.session) {
+    if (state.returnMotion || state.reorderTimer || state.busy || state.session || state.dragSession) {
       if (Array.isArray(nextBooks)) state.queuedBooks = nextBooks.slice();
       return;
     }
@@ -2199,7 +2374,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function applyDeferredShelfUpdates() {
-    if (state.destroyed || state.returnMotion || state.reorderTimer || state.busy || state.session) return;
+    if (state.destroyed || state.returnMotion || state.reorderTimer || state.busy || state.session || state.dragSession) return;
+    maybeRefreshAppearanceStyles();
     if (state.queuedBooks) {
       const nextBooks = state.queuedBooks;
       state.queuedBooks = null;
@@ -2325,6 +2501,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     destroy() {
       state.destroyed = true;
+      if (state.dragSession) finishSpineDrag({ pointerId:state.dragSession.pointerId }, state.dragSession.node, true);
       state.pendingSelection?.cancel();
       state.returnMotion?.cancel();
       state.session?.close({ instant: true, silent: true });
