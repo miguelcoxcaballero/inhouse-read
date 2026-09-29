@@ -103,7 +103,7 @@
  */
 
 import { planBookshelf, bookmarkFor, withDefaults } from './bookshelf-layout.js';
-import { analyzeCoverAppearance, withCoverAppearance } from './cover-appearance.js';
+import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from './cover-appearance.js';
 import { plantSvg, plantMeta } from './plants.js';
 import { bookView } from './book-model.js';
 
@@ -396,6 +396,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       `--ihr-spine-font-weight:${style.fontWeight || 700};`;
   }
 
+  function coverRatioFor(style, fallback = opts.coverRatio) {
+    return coverAspectRatio(style?.coverRatio, 1) || fallback;
+  }
+
   function updateBookStyleVars(node, style) {
     if (!node || !style) return;
     node.style.setProperty('--ihr-spine-base', style.color);
@@ -494,8 +498,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     const body = el('span', { class: 'ihr-spine__body', 'aria-hidden': 'true' });
     const height = (window.innerWidth >= 600 ? 200 : 172) * style.heightRatio;
+    const coverRatio = coverRatioFor(style);
     const view = bookView(body, book, style, {
-      width: height * opts.coverRatio, height, thickness: style.width,
+      width: height * coverRatio, height, thickness: style.width,
       viewportWidth: style.width, viewportHeight: height,
       centerX: style.width / 2, centerY: height / 2, shelf: true
     });
@@ -767,6 +772,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     const { book } = item;
     let style = item.style;
+    const initialStyle = item.style;
     options.onPrepareBook?.(book);
     /*
       Se mide sin transform: de un libro inclinado, getBoundingClientRect
@@ -784,38 +790,38 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     void spineEl.offsetWidth;          // devuelve la inclinación sin animarla
     spineEl.style.transition = previousTransition;
 
+    const coverUrl = await resolveCover(book);
+    const imageRatio = await readCoverAspectRatio(coverUrl);
+    if (imageRatio) item.style = { ...item.style, coverRatio: imageRatio };
+    const appearance = await quickCoverAppearance(book, coverUrl);
+    if (appearance) applyCoverAppearance(item, appearance);
+    if (item.style !== initialStyle && spineEl.isConnected) {
+      const hadFocus = document.activeElement === spineEl;
+      const replacement = buildSpine(item);
+      spineEl.replaceWith(replacement);
+      spineEl = replacement;
+      if (hadFocus) replacement.focus({ preventScroll: true });
+    }
+    style = item.style;
+    if (state.destroyed) return;
+
     const vw = window.innerWidth || 390;
     const vh = window.innerHeight || 780;
-
-    // Geometría de destino: portada centrada, sin comerse la pantalla entera.
-    const shelfAspect = (rect.width || 32) / (rect.height || 150);
     const landscape = vh <= 560 && vw >= 560;
-    const coverH = Math.min(vh * (landscape ? .72 : .54), landscape ? 350 : Math.max(110, vh - 330), 440, (vw * (landscape ? .35 : .78)) / opts.coverRatio,
-      (vw * 0.86) / (opts.coverRatio + shelfAspect * 0.55));
-    const coverW = coverH * opts.coverRatio;
+    const ratio = coverRatioFor(style);
+    // Match the model's physical front board to the image ratio before sizing
+    // its reveal. This keeps the same silhouette on the shelf and in flight.
+    const shelfAspect = (rect.width || 32) / (rect.height || 150);
+    const coverH = Math.min(vh * (landscape ? .72 : .54), landscape ? 350 : Math.max(110, vh - 330), 440,
+      (vw * (landscape ? .35 : .78)) / ratio,
+      (vw * 0.86) / (ratio + shelfAspect * 0.55));
+    const coverW = coverH * ratio;
     const startScale = rect.height > 0 ? rect.height / coverH : 0.3;
-    // Grosor tal que, girado 90°, el tomo proyecte exactamente el lomo de origen.
     const thickness = Math.max(6, (rect.width || 32) / startScale);
-
     const centerX = vw * (landscape ? .26 : .5) + thickness * 0.38 / 2;
     const centerY = vh * (landscape ? .5 : .42);
     const dx = rect.left + rect.width / 2 - centerX;
     const dy = rect.top + rect.height / 2 - centerY;
-
-    const coverUrl = await resolveCover(book);
-    const appearance = await quickCoverAppearance(book, coverUrl);
-    if (appearance) {
-      applyCoverAppearance(item, appearance);
-      if (spineEl.isConnected) {
-        const hadFocus = document.activeElement === spineEl;
-        const replacement = buildSpine(item);
-        spineEl.replaceWith(replacement);
-        spineEl = replacement;
-        if (hadFocus) replacement.focus({ preventScroll: true });
-      }
-    }
-    style = item.style;
-    if (state.destroyed) return;
 
     const scrim = el('div', { class: 'ihr-flyout__scrim' });
     const bookNode = el('div', {
@@ -1144,7 +1150,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (!rect.width || !rect.height) { state.lastOpened = null; return false; }
     const vw = window.innerWidth || 390, vh = window.innerHeight || 780;
     const landscape = vh <= 560 && vw >= 560;
-    const ratio = opts.coverRatio;
+    const ratio = coverRatioFor(previous.style);
     const coverH = Math.min(vh * (landscape ? .72 : .54), landscape ? 350 : Math.max(110, vh - 330), 440,
       (vw * (landscape ? .35 : .78)) / ratio, (vw * .86) / (ratio + rect.width / rect.height * .55));
     const coverW = coverH * ratio;

@@ -19,6 +19,42 @@ let candidateFontsTask;
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
+/** Return a safe physical cover width/height ratio from decoded image dimensions. */
+export function coverAspectRatio(width, height) {
+  const ratio = Number(width) / Number(height);
+  if (!Number.isFinite(ratio) || ratio <= 0) return null;
+  // Keep normal portrait, square, and landscape covers exact while bounding
+  // malformed thumbnails that would make the 3D book unusably wide or thin.
+  return clamp(ratio, 0.25, 2.5);
+}
+
+/** Decode only the dimensions when a caller needs the correct model shape fast. */
+export async function readCoverAspectRatio(url) {
+  if (!url || typeof Image === 'undefined') return null;
+  const image = new Image();
+  image.decoding = 'async';
+  image.src = url;
+  let timeout;
+  try {
+    await Promise.race([
+      typeof image.decode === 'function'
+        ? image.decode()
+        : new Promise((resolve, reject) => {
+          image.onload = resolve;
+          image.onerror = reject;
+        }),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error('La portada tardó demasiado')), 1500);
+      })
+    ]);
+    return coverAspectRatio(image.naturalWidth, image.naturalHeight);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function rgbHex(r, g, b) {
   return `#${[r, g, b].map(value => Math.round(value).toString(16).padStart(2, '0')).join('')}`;
 }
@@ -357,15 +393,23 @@ export async function analyzeCoverAppearance(url, title = '') {
       image.onload = resolve; image.onerror = reject;
     });
     if (!image.naturalWidth || !image.naturalHeight) return null;
+    const aspectRatio = coverAspectRatio(image.naturalWidth, image.naturalHeight);
     const scale = Math.min(1, 192 / image.naturalWidth, 288 / image.naturalHeight);
     const width = Math.max(1, Math.round(image.naturalWidth * scale));
     const height = Math.max(1, Math.round(image.naturalHeight * scale));
     const canvas = document.createElement('canvas');
     canvas.width = width; canvas.height = height;
     const context = canvas.getContext('2d', { willReadFrequently: true });
-    if (!context) return null;
+    if (!context) return { aspectRatio, source: 'cover' };
     context.drawImage(image, 0, 0, width, height);
-    const pixels = context.getImageData(0, 0, width, height).data;
+    let pixels;
+    try {
+      pixels = context.getImageData(0, 0, width, height).data;
+    } catch {
+      // Cross-origin images can still supply their decoded dimensions even
+      // when browser security prevents sampling their pixels.
+      return { aspectRatio, source: 'cover' };
+    }
     const color = coverColorFromPixels(pixels, width, height);
     const gray = new Uint8Array(width * height);
     for (let index = 0; index < gray.length; index += 1) {
@@ -380,6 +424,7 @@ export async function analyzeCoverAppearance(url, title = '') {
       fontCanvasFamily: font.family,
       fontFallback: font.fallback,
       fontWeight: font.weight,
+      aspectRatio,
       source: 'cover'
     };
   } catch {
@@ -395,10 +440,11 @@ export function withCoverAppearance(style, appearance) {
     color: appearance.color || style.color,
     shade: appearance.shade || style.shade,
     ink: appearance.ink || style.ink,
-    fontFamily: appearance.fontFamily || 'Playfair Display',
-    fontCanvasFamily: appearance.fontCanvasFamily || appearance.fontFamily || 'Playfair Display',
-    fontFallback: appearance.fontFallback || 'Georgia, serif',
-    fontWeight: clamp(Number(appearance.fontWeight) || 700, 400, 800),
+    fontFamily: appearance.fontFamily || style.fontFamily || 'Playfair Display',
+    fontCanvasFamily: appearance.fontCanvasFamily || appearance.fontFamily || style.fontCanvasFamily || style.fontFamily || 'Playfair Display',
+    fontFallback: appearance.fontFallback || style.fontFallback || 'Georgia, serif',
+    fontWeight: clamp(Number(appearance.fontWeight) || Number(style.fontWeight) || 700, 400, 800),
+    coverRatio: coverAspectRatio(appearance.aspectRatio, 1) || style.coverRatio || 0.66,
     appearanceSource: appearance.source || 'cover'
   };
 }

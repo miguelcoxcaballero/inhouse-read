@@ -10,6 +10,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { renderBookshelf } from '../../src/js/bookshelf.js'
 
+vi.mock('../../src/js/cover-appearance.js', async importOriginal => ({
+  ...await importOriginal(),
+  readCoverAspectRatio: vi.fn(async () => null)
+}))
+
 const SHELF_WIDTH = 390
 
 function makeBooks(count) {

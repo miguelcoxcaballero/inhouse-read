@@ -60,7 +60,7 @@ function texture(book, style, spine) {
   const canvas = document.createElement('canvas');
   // Keep the cover map sharp on high-density phone displays while preserving
   // the original drawing coordinates used by the ornament and typography.
-  const designWidth = spine ? 256 : 676;
+  const designWidth = spine ? 256 : Math.round(1024 * (Number(style.coverRatio) || 0.66));
   const textureScale = 2;
   canvas.width = designWidth * textureScale; canvas.height = 1024 * textureScale;
   const c = canvas.getContext('2d');
@@ -91,20 +91,23 @@ function texture(book, style, spine) {
   } else {
     // Design in physical cover proportions so lettering is never stretched.
     const center = canvas.width / 2;
+    const coverScale = designWidth / 676;
+    const titleSize = Math.max(36, Math.min(82, 54 * coverScale));
+    const titleWidth = Math.min(500 * coverScale, designWidth - 72);
     c.strokeStyle = style.ink; c.globalAlpha = .3; c.lineWidth = 1.5;
     c.strokeRect(42, 42, canvas.width - 84, 940); c.strokeRect(48, 48, canvas.width - 96, 928);
     c.globalAlpha = .8; c.lineWidth = 3; c.beginPath();
     c.moveTo(center - 21, 185); c.lineTo(center, 164); c.lineTo(center + 21, 185); c.stroke();
     c.font = '500 17px "DM Sans", sans-serif'; c.fillText('INHOUSE READ', center, 218);
-    c.globalAlpha = 1; c.font = `${style.fontWeight || 700} 54px "${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`;
+    c.globalAlpha = 1; c.font = `${style.fontWeight || 700} ${titleSize}px "${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`;
     const words = (book.title || 'Sin título').split(' '); let line = ''; const lines = [];
     for (const word of words) {
-      if (c.measureText(line + word).width > 500 && line) { lines.push(line.trim()); line = ''; }
+      if (c.measureText(line + word).width > titleWidth && line) { lines.push(line.trim()); line = ''; }
       line += word + ' ';
     }
     lines.push(line.trim());
     const visible = lines.slice(0, 6), spacing = 66;
-    visible.forEach((text, i) => c.fillText(text + (i === 5 && lines.length > 6 ? '…' : ''), center, 460 + (i - (visible.length - 1) / 2) * spacing, 500));
+    visible.forEach((text, i) => c.fillText(text + (i === 5 && lines.length > 6 ? '…' : ''), center, 460 + (i - (visible.length - 1) / 2) * spacing, titleWidth));
     c.globalAlpha = .65; c.fillRect(center - 27, 735, 54, 1);
     c.globalAlpha = .9; c.font = '28px "DM Sans", sans-serif'; c.fillText(book.author || '', center, 790, 500);
     c.globalAlpha = .6; c.font = '500 18px "DM Sans", sans-serif'; c.fillText(book.format || '', center, 911);
@@ -157,9 +160,11 @@ export function createBookModel(book, style, width, height, thickness, coverUrl)
   let disposed = false;
   if (coverUrl) new THREE.TextureLoader().load(coverUrl, map => {
     if (disposed) { map.dispose(); return; }
-    // PDFs and illustrated books can have landscape covers. Preserve their
-    // full image and aspect ratio, with cloth around any uncovered area.
-    const canvas = document.createElement('canvas'); canvas.width = 1352; canvas.height = 2048;
+    // The physical cover follows the decoded aspect ratio, so the image fills
+    // the face without cropping or letterboxing for normal book covers.
+    const canvas = document.createElement('canvas');
+    canvas.height = 2048;
+    canvas.width = Math.round(canvas.height * (Number(style.coverRatio) || 0.66));
     const c = canvas.getContext('2d'); c.fillStyle = style.color; c.fillRect(0, 0, canvas.width, canvas.height);
     const fit = fitCoverImage(map.image.width, map.image.height, canvas.width, canvas.height);
     c.drawImage(map.image, fit.x, fit.y, fit.width, fit.height);

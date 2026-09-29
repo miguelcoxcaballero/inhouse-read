@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { coverColorFromPixels, withCoverAppearance } from '../../src/js/cover-appearance.js'
+import { coverAspectRatio, coverColorFromPixels, withCoverAppearance } from '../../src/js/cover-appearance.js'
 
 function splitCover(width, height, first, second, firstRatio = 0.8) {
   const data = new Uint8ClampedArray(width * height * 4)
@@ -15,6 +15,14 @@ function splitCover(width, height, first, second, firstRatio = 0.8) {
 }
 
 describe('cover appearance', () => {
+  it('uses the decoded image proportions for the physical front cover', () => {
+    expect(coverAspectRatio(900, 1200)).toBe(0.75)
+    expect(coverAspectRatio(1600, 900)).toBeCloseTo(1600 / 900)
+    expect(coverAspectRatio(9000, 900)).toBe(2.5)
+    expect(coverAspectRatio(0, 900)).toBeNull()
+    expect(withCoverAppearance({ coverRatio: 0.66 }, { aspectRatio: 0.82 }).coverRatio).toBe(0.82)
+  })
+
   it('uses the largest colour area as the binding colour', () => {
     const appearance = coverColorFromPixels(
       splitCover(40, 48, [47, 107, 79], [238, 228, 211]), 40, 48
@@ -31,12 +39,13 @@ describe('cover appearance', () => {
     expect(dark.ink).toBe('#fffaf0')
   })
 
-  it('adds cover styling without changing the deterministic book geometry', () => {
+  it('matches cover styling and the front board to the analyzed image', () => {
     const fallback = { color: '#7a2e38', shade: '#5b1f28', ink: '#f2e6d8', width: 42, texture: 'ribbed' }
     const matched = withCoverAppearance(fallback, {
-      color: '#2f6b4f', shade: '#244f3c', ink: '#fffaf0', fontFamily: 'Lora', fontWeight: 700
+      color: '#2f6b4f', shade: '#244f3c', ink: '#fffaf0', fontFamily: 'Lora', fontWeight: 700,
+      aspectRatio: 0.82
     })
-    expect(matched).toMatchObject({ color: '#2f6b4f', fontFamily: 'Lora', fontWeight: 700, width: 42, texture: 'ribbed' })
+    expect(matched).toMatchObject({ color: '#2f6b4f', fontFamily: 'Lora', fontWeight: 700, width: 42, texture: 'ribbed', coverRatio: 0.82 })
     expect(fallback.color).toBe('#7a2e38')
   })
 

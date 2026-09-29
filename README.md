@@ -4,6 +4,10 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 El home no es un grid de tarjetas: es una estantería ilustrada con plantas donde los libros se ven de canto. Al tocar uno, sale de la balda y gira en 3D hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.0.20
+
+- La portada del modelo 3D adopta la proporción real de su imagen, también en la estantería, la animación de apertura y el regreso al hueco. La imagen y la tipografía de la cubierta conservan sus proporciones.
+
 ### Actualización web · 1.0.19
 
 - Cada lomo toma el color dominante de la portada, ajusta automáticamente el contraste y reutiliza ese acabado en el modelo 3D y la animación de apertura.

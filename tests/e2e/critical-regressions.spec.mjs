@@ -136,10 +136,12 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
     const pixels = canvas.getContext('2d').getImageData(0, y, canvas.width, 1).data
     let left = canvas.width
     for (let x = 0; x < canvas.width; x++) if (pixels[x * 4 + 3] > 200) { left = x / ratio; break }
-    const coverH = Math.min(innerHeight * .54, 440, innerWidth * .78 / .66,
-      innerWidth * .86 / (.66 + spineSize.width / spineSize.height * .55))
+    const cover = document.querySelector('.ihr-flyout__cover-target').getBoundingClientRect()
+    const coverRatio = cover.width / cover.height
+    const coverH = Math.min(innerHeight * .54, 440, innerWidth * .78 / coverRatio,
+      innerWidth * .86 / (coverRatio + spineSize.width / spineSize.height * .55))
     const thickness = spineSize.width * coverH / spineSize.height
-    const coverLeft = innerWidth / 2 + thickness * .19 - coverH * .66 / 2
+    const coverLeft = innerWidth / 2 + thickness * .19 - cover.width / 2
     return { bulge: coverLeft - left }
   }, spineSize)
   // Actual rendered pixels must extend past the front cover, not a DOM box.

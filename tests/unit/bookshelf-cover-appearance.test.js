@@ -23,8 +23,9 @@ vi.mock('../../src/js/cover-appearance.js', async importOriginal => {
     analyzeCoverAppearance: vi.fn(async () => ({
       color: '#2f6b4f', shade: '#244f3c', ink: '#fffaf0',
       fontFamily: 'Oswald', fontCanvasFamily: 'Oswald',
-      fontFallback: 'Arial Narrow, sans-serif', fontWeight: 600, source: 'cover'
-    }))
+      fontFallback: 'Arial Narrow, sans-serif', fontWeight: 600, aspectRatio: 0.82, source: 'cover'
+    })),
+    readCoverAspectRatio: vi.fn(async () => 0.82)
   }
 })
 
@@ -61,5 +62,7 @@ describe('cover matched shelf styling', () => {
     await vi.waitFor(() => expect(document.querySelector('.ihr-flyout__book')).not.toBeNull())
     expect(document.querySelector('.ihr-flyout__book').style.getPropertyValue('--ihr-spine-base')).toBe('#2f6b4f')
     expect(document.querySelector('.ihr-flyout__book').style.getPropertyValue('--ihr-spine-font')).toContain('Oswald')
+    const coverTarget = document.querySelector('.ihr-flyout__cover-target')
+    expect(parseFloat(coverTarget.style.width) / parseFloat(coverTarget.style.height)).toBeCloseTo(0.82, 1)
   })
 })
