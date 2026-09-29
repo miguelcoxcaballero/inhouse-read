@@ -100,6 +100,7 @@ els.themeToggle.addEventListener('click', () => {
 // ---- Navegación entre pantallas ----
 
 function showScreen(name) {
+  document.body.classList.toggle('is-reading', name === 'reader')
   els.homeScreen.hidden = name !== 'home'
   els.readerScreen.hidden = name !== 'reader'
 }
@@ -763,7 +764,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.1.1'
+els.appVersion.textContent = 'Inhouse Read · v1.1.2'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')

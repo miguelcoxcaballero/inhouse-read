@@ -48,6 +48,7 @@ test('PDF: temas y texto adaptable aplican tipografía, tamaño e interlineado p
   await page.getByRole('combobox', { name:'Vista del PDF' }).selectOption('text')
   await page.getByRole('combobox', { name:'Tipografía de lectura' }).selectOption('sans')
   await page.getByRole('slider', { name:'Tamaño de letra', exact:true }).fill('26')
+  await page.locator('.reading-details summary').click()
   await page.getByRole('slider', { name:'Interlineado', exact:true }).fill('2')
   await page.screenshot({ path:'test-results/reading-appearance-mobile.png' })
   await page.getByRole('button', { name:'Cerrar opciones de lectura' }).click()
@@ -81,7 +82,8 @@ test('EPUB: tipografía real, capítulos, enlaces internos y voz desde el texto 
     const doc = document.querySelector('foliate-view')?.renderer?.getContents()?.[0]?.doc
     return doc ? { size:doc.defaultView.getComputedStyle(doc.body).fontSize, color:doc.defaultView.getComputedStyle(doc.body).color } : null
   })).toEqual({ size:'24px',color:'rgb(212, 216, 204)' })
-  await page.getByRole('tab', { name:'Navegar' }).click()
+  await page.getByRole('button', { name:'Cerrar opciones de lectura' }).click()
+  await page.locator('#reader-location').click()
   await page.getByRole('button', { name:'Beyond the window', exact:true }).click()
   await expect(page.locator('.reader-return')).toBeVisible()
   await expect.poll(() => page.evaluate(() => document.querySelector('foliate-view').renderer.getContents()[0]?.doc.querySelector('h1')?.textContent)).toBe('Beyond the window')

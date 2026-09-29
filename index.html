@@ -29,6 +29,14 @@
         </svg>
         inhouse read
       </span>
+      <div class="reader-heading">
+        <button id="reader-back" class="icon-btn" type="button" aria-label="Volver a la estantería">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+        </button>
+        <span id="reader-top-title">Abriendo libro…</span>
+      </div>
       <div class="header-actions">
         <button id="add-local-btn" class="icon-btn" type="button" aria-label="Elegir archivo del dispositivo" title="Añadir libro del dispositivo">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -85,25 +93,20 @@
     <section id="reader-screen" class="screen" data-screen="reader" hidden>
       <div id="reader-viewport" class="reader-viewport"></div>
       <div id="reader-toolbar" class="reader-toolbar">
-        <button id="reader-back" class="icon-btn" type="button" aria-label="Volver a la estantería">
-          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M15 18l-6-6 6-6"/>
-          </svg>
-        </button>
         <button id="reader-prev" class="icon-btn" type="button" aria-label="Página anterior">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/>
+            <path d="M14 6l-6 6 6 6"/>
           </svg>
         </button>
         <button id="reader-location" class="reader-location" type="button" aria-label="Progreso y capítulos"><span class="reader-location-label">Página 1</span><span class="reader-progress"><span id="reader-progress-fill" class="reader-progress-fill"></span></span></button>
         <span id="reader-format-badge" class="file-format-badge"></span>
         <button id="reader-next" class="icon-btn" type="button" aria-label="Página siguiente">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M13 17l5-5-5-5M6 17l5-5-5-5"/>
+            <path d="m10 6 6 6-6 6"/>
           </svg>
         </button>
-        <button id="reader-settings" class="icon-btn" type="button" aria-label="Aspecto de lectura"><span class="reader-type-icon" aria-hidden="true">Aa</span></button>
-        <button id="reader-audio" class="icon-btn" type="button" aria-label="Escuchar el libro"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-3a8 8 0 0 1 16 0v3M4 13H3v7h4v-7H4Zm16 0h1v7h-4v-7h3Z"/></svg></button>
+        <button id="reader-settings" class="icon-btn" type="button" aria-label="Aspecto de lectura"><span class="reader-type-icon" aria-hidden="true">Aa</span><small aria-hidden="true">Texto</small></button>
+        <button id="reader-audio" class="icon-btn" type="button" aria-label="Escuchar el libro"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-3a8 8 0 0 1 16 0v3M4 13H3v7h4v-7H4Zm16 0h1v7h-4v-7h3Z"/></svg><small aria-hidden="true">Audio</small></button>
       </div>
     </section>
   </div>

@@ -1,3 +1,4 @@
+import { readerPanelMarkup, readerIcon } from './reader-interface.js'
 import { normalizeReadingPreferences, READING_THEMES } from './reading-preferences.js'
 import { ReadingVoice } from './reading-voice.js'
 import { clonePlace, cleanPlaces } from './reading-state.js'
@@ -22,67 +23,51 @@ export class ReaderExperience {
     this.screen.append(this.returnButton)
     this.panel = document.createElement('dialog')
     this.panel.className = 'reading-panel'
-    this.panel.setAttribute('aria-label', 'Opciones de lectura')
-    this.panel.innerHTML = `
-      <header class="reading-panel__header"><div><p id="reading-book-title"></p><h2>Tu lectura</h2></div><button type="button" class="icon-btn" data-close aria-label="Cerrar opciones de lectura">×</button></header>
-      <nav class="reading-tabs" role="tablist" aria-label="Opciones del lector">
-        <button type="button" id="reading-tab-appearance" role="tab" aria-controls="reading-appearance" data-tab="appearance">Aspecto</button>
-        <button type="button" id="reading-tab-navigation" role="tab" aria-controls="reading-navigation" data-tab="navigation">Navegar</button>
-        <button type="button" id="reading-tab-audio" role="tab" aria-controls="reading-audio" data-tab="audio">Escuchar</button>
-      </nav>
-      <section id="reading-appearance" role="tabpanel" aria-labelledby="reading-tab-appearance">
-        <fieldset class="reading-themes"><legend>Color de lectura</legend>
-          <button type="button" data-theme="paper">Papel</button><button type="button" data-theme="sepia">Sepia</button><button type="button" data-theme="night">Noche</button><button type="button" data-theme="sage">Salvia</button>
-        </fieldset>
-        <label class="reading-field" data-pdf>Vista del PDF<select data-pref="pdfMode" aria-label="Vista del PDF"><option value="original">Página original</option><option value="text">Texto adaptable</option></select></label>
-        <p class="reading-hint" data-pdf-hint>Para cambiar la letra de un PDF, elige Texto adaptable. Las imágenes y la maquetación se conservan en Página original.</p>
-        <label class="reading-field" data-pdf-zoom>Zoom del PDF <span><input type="range" data-pref="zoom" min="70" max="200" step="10" aria-label="Zoom del PDF"><output data-output="zoom"></output></span></label>
-        <div data-typography>
-          <label class="reading-field">Tipografía<select data-pref="font" aria-label="Tipografía de lectura"><option value="book">Literaria · Georgia</option><option value="classic">Clásica · Palatino</option><option value="sans">Sencilla · Sans serif</option><option value="mono">Monoespaciada</option></select></label>
-          <label class="reading-field">Tamaño de letra<span><input type="range" data-pref="fontSize" min="14" max="36" step="1" aria-label="Tamaño de letra"><output data-output="fontSize"></output></span></label>
-          <label class="reading-field">Interlineado<span><input type="range" data-pref="lineHeight" min="1.2" max="2.4" step="0.1" aria-label="Interlineado"><output data-output="lineHeight"></output></span></label>
-          <label class="reading-field">Márgenes<span><input type="range" data-pref="margin" min="8" max="64" step="4" aria-label="Márgenes"><output data-output="margin"></output></span></label>
-          <label class="reading-field">Alineación<select data-pref="align" aria-label="Alineación"><option value="start">Natural</option><option value="justify">Justificada</option></select></label>
-        </div>
-        <label class="reading-field" data-epub>Pasar el texto<select data-pref="flow" aria-label="Modo de desplazamiento"><option value="paginated">Por páginas</option><option value="scrolled">Desplazamiento continuo</option></select></label>
-        <button type="button" class="reading-text-button" data-reset>Restablecer aspecto</button>
-      </section>
-      <section id="reading-navigation" role="tabpanel" aria-labelledby="reading-tab-navigation" hidden>
-        <p class="reading-position" aria-live="polite"></p>
-        <label class="reading-field">Progreso del libro<input type="range" min="0" max="100" step="0.1" data-progress aria-label="Progreso del libro"></label>
-        <form class="reading-page-form" data-pdf><label>Ir a la página<input type="number" min="1" step="1" inputmode="numeric" aria-label="Ir a la página" required></label><button type="submit" class="reading-primary">Ir</button></form>
-        <div class="reading-section" data-toc-section><h3>Capítulos</h3><div data-toc class="reading-list"></div></div>
-        <div class="reading-section"><div class="reading-section__heading"><h3>Marcadores</h3><button type="button" class="reading-text-button" data-bookmark>Marcar esta página</button></div><div data-bookmarks class="reading-list"></div></div>
-        <div class="reading-section"><h3>Antes de saltar</h3><p class="reading-hint">Tu punto de lectura se guarda aquí cuando saltas a otra parte del libro.</p><div data-history class="reading-list"></div></div>
-      </section>
-      <section id="reading-audio" role="tabpanel" aria-labelledby="reading-tab-audio" hidden>
-        <h3 class="reading-audio-title">Escucha tu libro</h3><p class="reading-hint">Lectura en voz alta desde la página actual. Continúa a la siguiente página automáticamente.</p>
-        <div class="reading-audio-controls"><button type="button" class="reading-primary" data-play>Reproducir</button><button type="button" class="reading-secondary" data-stop>Detener</button></div>
-        <p class="reading-audio-status" role="status"></p>
-        <label class="reading-field">Velocidad<span><input type="range" data-pref="rate" min="0.5" max="2" step="0.1" aria-label="Velocidad de voz"><output data-output="rate"></output></span></label>
-        <label class="reading-field">Voz<select data-pref="voice" aria-label="Voz de lectura"><option value="">Automática · idioma del libro</option></select></label>
-        <label class="reading-field">Temporizador<select data-sleep aria-label="Temporizador de voz"><option value="0">Sin temporizador</option><option value="15">15 minutos</option><option value="30">30 minutos</option><option value="60">1 hora</option></select></label>
-      </section>
-      <p class="reading-error" role="status"></p>`
+    this.panel.id = 'reading-controls'
+    for (const id of ['reader-settings','reader-location','reader-audio']) {
+      const button = document.getElementById(id)
+      button.setAttribute('aria-haspopup','dialog'); button.setAttribute('aria-controls','reading-controls'); button.setAttribute('aria-expanded','false')
+    }
+    this.panel.innerHTML = readerPanelMarkup
+    this.panel.setAttribute('aria-labelledby', 'reading-panel-title')
+    this.miniPlayer = document.createElement('div')
+    this.miniPlayer.className = 'reading-mini-player'; this.miniPlayer.hidden = true
+    this.miniPlayer.innerHTML = `<button type="button" data-mini-open><span data-mini-title></span><small data-mini-status></small></button><button type="button" class="reading-icon-button" data-mini-play aria-label="Pausar lectura">${readerIcon('pause')}</button><button type="button" class="reading-icon-button" data-mini-stop aria-label="Detener lectura">${readerIcon('stop')}</button>`
+    this.screen.append(this.miniPlayer)
     document.body.append(this.panel)
     this.voice = new ReadingVoice(reader, (state, message) => {
-      this.panel.querySelector('[data-play]').textContent = state === 'playing' ? 'Pausar' : state === 'paused' ? 'Continuar' : state === 'loading' ? 'Preparando…' : 'Reproducir'
+      const label = state === 'playing' ? 'Pausar' : state === 'paused' ? 'Continuar' : state === 'loading' ? 'Preparando…' : 'Reproducir'
+      this.panel.querySelector('[data-play]').setAttribute('aria-label', label)
+      this.panel.querySelector('[data-play]').innerHTML = readerIcon(state === 'playing' ? 'pause' : 'play')
       this.panel.querySelector('[data-play]').disabled = state === 'loading'
       this.panel.querySelector('.reading-audio-status').textContent = message || (state === 'playing' ? 'Leyendo en voz alta' : state === 'paused' ? 'En pausa' : 'Lista para escuchar')
       document.getElementById('reader-audio').classList.toggle('is-playing', state === 'playing')
       if (state === 'stopped') this.panel.querySelector('[data-sleep]').value = '0'
+      this.updateMiniPlayer(state, message)
     })
     this.panel.querySelector('[data-close]').onclick = () => this.panel.close()
-    this.panel.addEventListener('click', event => { if (event.target === this.panel && event.offsetY < 0) this.panel.close() })
-    for (const tab of this.panel.querySelectorAll('[data-tab]')) {
-      tab.onclick = () => this.showTab(tab.dataset.tab)
+    this.panel.addEventListener('click', event => {
+      const r = this.panel.getBoundingClientRect()
+      if (event.target === this.panel && (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom)) this.panel.close()
+    })
+    this.panel.addEventListener('close', () => {
+      if (this.panel.open) return
+      for (const id of ['reader-settings','reader-location','reader-audio']) document.getElementById(id).setAttribute('aria-expanded','false')
+      this.updateMiniPlayer()
+    })
+    for (const tab of this.panel.querySelectorAll('[data-place-tab]')) {
+      tab.onclick = () => this.showPlaceTab(tab.dataset.placeTab)
       tab.onkeydown = event => {
-        if (!['ArrowLeft','ArrowRight'].includes(event.key)) return
-        const tabs = [...this.panel.querySelectorAll('[data-tab]')]
-        const next = tabs[(tabs.indexOf(tab) + (event.key === 'ArrowRight' ? 1 : 2)) % 3]
-        next.click(); next.focus(); event.preventDefault()
+        if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return
+        const tabs = [...this.panel.querySelectorAll('[data-place-tab]')].filter(t => !t.hidden)
+        const index = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length-1 : (tabs.indexOf(tab) + (event.key === 'ArrowRight' ? 1 : tabs.length-1)) % tabs.length
+        tabs[index].click(); tabs[index].focus(); event.preventDefault()
       }
     }
+    for (const button of this.panel.querySelectorAll('[data-size-step]')) button.onclick = () => this.setPreference('fontSize', this.preferences.fontSize + Number(button.dataset.sizeStep))
+    this.miniPlayer.querySelector('[data-mini-open]').onclick = () => this.show('audio')
+    this.miniPlayer.querySelector('[data-mini-play]').onclick = () => this.voice.state === 'playing' ? this.voice.pause() : this.voice.play()
+    this.miniPlayer.querySelector('[data-mini-stop]').onclick = () => this.voice.stop()
     for (const button of this.panel.querySelectorAll('[data-theme]')) button.onclick = () => this.setPreference('theme', button.dataset.theme)
     for (const control of this.panel.querySelectorAll('[data-pref]')) control.addEventListener('change', () => this.setPreference(control.dataset.pref, control.value))
     this.panel.querySelector('[data-reset]').onclick = () => {
@@ -111,8 +96,17 @@ export class ReaderExperience {
     const resize = () => {
       if (!this.panel.open) return
       const viewport = window.visualViewport
-      this.panel.style.maxHeight = `${(viewport?.height || innerHeight) - 16}px`
-      this.panel.style.bottom = `${Math.max(0, innerHeight - (viewport?.height || innerHeight) - (viewport?.offsetTop || 0))}px`
+      const visibleHeight = viewport?.height || innerHeight
+      const keyboardInset = Math.max(0, innerHeight - visibleHeight - (viewport?.offsetTop || 0))
+      this.panel.style.maxHeight = `${Math.min(visibleHeight - 16, innerHeight * .82)}px`
+      this.panel.style.bottom = `${keyboardInset || (innerWidth >= 760 ? 82 : 0)}px`
+      requestAnimationFrame(() => {
+        const active = document.activeElement
+        if (!this.panel.open || !this.panel.contains(active) || !active.matches('input,select')) return
+        const field = active.getBoundingClientRect(), panel = this.panel.getBoundingClientRect()
+        if (field.bottom > panel.bottom-16) this.panel.scrollTop += field.bottom-panel.bottom+16
+        else if (field.top < panel.top+60) this.panel.scrollTop -= panel.top+60-field.top
+      })
     }
     window.visualViewport?.addEventListener('resize', resize)
     window.visualViewport?.addEventListener('scroll', resize)
@@ -123,6 +117,7 @@ export class ReaderExperience {
     this.history = cleanPlaces(record.readingHistory)
     this.bookmarks = cleanPlaces(record.bookmarks, 100)
     this.panel.querySelector('#reading-book-title').textContent = record.title
+    document.getElementById('reader-top-title').textContent = record.title
     const pdf = this.reader.format?.engine === 'pdf'
     for (const element of this.panel.querySelectorAll('[data-pdf]')) element.hidden = !pdf
     this.panel.querySelector('[data-epub]').hidden = pdf
@@ -139,16 +134,49 @@ export class ReaderExperience {
     const range = this.panel.querySelector('[data-progress]')
     if (document.activeElement !== range) range.value = String(this.location.fraction * 100)
     const page = this.panel.querySelector('input[type="number"]')
-    if (document.activeElement !== page) page.value = String(this.location.locator?.value || 1)
+    if (document.activeElement !== page && this.location.locator?.kind === 'pdf-page') page.value = String(this.location.locator.value)
+    this.updateBookmarkButton()
   }
   label(place) { return place.locator?.kind === 'pdf-page' ? `Página ${place.locator.value}${this.reader.pageCount ? ` de ${this.reader.pageCount}` : ''}` : `${Math.round(place.fraction * 100)} % del libro` }
-  show(tab) { this.showTab(tab); if (!this.panel.open) this.panel.showModal(); this.resizePanel() }
+  show(tab) {
+    this.showTab(tab)
+    if (!this.panel.open) this.panel.showModal()
+    this.updateMiniPlayer(); this.resizePanel()
+    this.panel.querySelector('[data-close]').focus({preventScroll:true})
+  }
   showTab(name) {
-    for (const button of this.panel.querySelectorAll('[data-tab]')) {
-      const selected = button.dataset.tab === name
-      button.setAttribute('aria-selected', String(selected)); button.tabIndex = selected ? 0 : -1
-      this.panel.querySelector(`#reading-${button.dataset.tab}`).hidden = !selected
+    for (const section of ['appearance','navigation','audio']) this.panel.querySelector(`#reading-${section}`).hidden = section !== name
+    const title = {appearance:'Texto',navigation:'Contenido',audio:'Escuchar'}[name]
+    this.panel.querySelector('#reading-panel-title').textContent = title
+    this.panel.dataset.view = name
+    this.panel.scrollTop = 0
+    for (const [id,tab] of [['reader-settings','appearance'],['reader-location','navigation'],['reader-audio','audio']]) document.getElementById(id).setAttribute('aria-expanded',String(tab === name))
+  }
+  showPlaceTab(name) {
+    this.placeTab = name
+    for (const button of this.panel.querySelectorAll('[data-place-tab]')) {
+      const selected = button.dataset.placeTab === name
+      button.setAttribute('aria-selected',String(selected)); button.tabIndex = selected ? 0 : -1
+      this.panel.querySelector(`[data-places="${button.dataset.placeTab}"]`).hidden = !selected
     }
+  }
+  updateMiniPlayer(state = this.voice?.state, message = '') {
+    const active = Boolean(this.book) && ['playing','paused','loading'].includes(state)
+    this.screen.classList.toggle('has-reading-audio', active)
+    this.miniPlayer.hidden = !active || this.panel.open
+    this.miniPlayer.querySelector('[data-mini-title]').textContent = this.book?.title || ''
+    this.miniPlayer.querySelector('[data-mini-status]').textContent = message || `${state === 'paused' ? 'En pausa' : state === 'loading' ? 'Preparando…' : 'Escuchando'} · ${this.preferences.rate}×`
+    const play = this.miniPlayer.querySelector('[data-mini-play]')
+    play.innerHTML = readerIcon(state === 'playing' ? 'pause' : 'play')
+    play.setAttribute('aria-label',state === 'playing' ? 'Pausar lectura' : 'Continuar lectura')
+    play.disabled = state === 'loading'
+  }
+  updateBookmarkButton() {
+    const marked = this.bookmarks.some(x => JSON.stringify(x.locator) === JSON.stringify(this.location.locator) && Math.abs(x.fraction-this.location.fraction)<.0001)
+    const button = this.panel.querySelector('[data-bookmark]')
+    button.setAttribute('aria-pressed',String(marked))
+    button.setAttribute('aria-label',marked ? 'Quitar marcador de esta página' : 'Marcar esta página')
+    button.title = button.getAttribute('aria-label')
   }
   setPreference(key, value) {
     const audio = ['rate','voice'].includes(key)
@@ -159,8 +187,12 @@ export class ReaderExperience {
     const p = this.preferences
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(p)) } catch { /* reading still works without storage */ }
     this.screen.dataset.readingTheme = p.theme
-    this.screen.style.setProperty('--reading-paper', READING_THEMES[p.theme].background)
-    this.screen.style.setProperty('--reading-ink', READING_THEMES[p.theme].color)
+    for (const surface of [this.screen,this.screen.parentElement,this.panel]) {
+      surface.style.setProperty('--reading-paper', READING_THEMES[p.theme].background)
+      surface.style.setProperty('--reading-ink', READING_THEMES[p.theme].color)
+    }
+    this.panel.querySelector('[data-size-step="-1"]').disabled = p.fontSize <= 14
+    this.panel.querySelector('[data-size-step="1"]').disabled = p.fontSize >= 36
     for (const field of this.panel.querySelectorAll('[data-pref]')) field.value = String(p[field.dataset.pref])
     for (const output of this.panel.querySelectorAll('[data-output]')) output.textContent = `${p[output.dataset.output]}${output.dataset.output === 'rate' ? '×' : output.dataset.output === 'zoom' ? '%' : ['fontSize','margin'].includes(output.dataset.output) ? ' px' : ''}`
     for (const button of this.panel.querySelectorAll('[data-theme]')) button.setAttribute('aria-pressed', String(button.dataset.theme === p.theme))
@@ -169,11 +201,12 @@ export class ReaderExperience {
     this.panel.querySelector('[data-pdf-hint]').hidden = !originalPdf
     this.panel.querySelector('[data-pdf-zoom]').hidden = !originalPdf
     this.voice.rate = p.rate; this.voice.voice = p.voice
+    this.updateMiniPlayer()
     try { if (updateBook) await this.reader.applyPreferences(p) } catch { this.error('No se pudo aplicar este ajuste. Inténtalo de nuevo.') }
   }
   populateVoices() {
     const select = this.panel.querySelector('[data-pref="voice"]')
-    select.replaceChildren(new Option('Automática · idioma del libro', ''))
+    select.replaceChildren(new Option('Automática', ''))
     let voices = window.speechSynthesis?.getVoices() || []
     try { if (this.voice.native) voices = JSON.parse(window.InhouseSpeech.getVoices()) } catch { /* default system voice */ }
     for (const voice of voices) select.add(new Option(`${voice.name} · ${voice.lang}`, voice.voiceURI))
@@ -210,11 +243,13 @@ export class ReaderExperience {
   }
   async addBookmark() {
     const duplicate = this.bookmarks.some(x => JSON.stringify(x.locator) === JSON.stringify(this.location.locator) && Math.abs(x.fraction - this.location.fraction) < .0001)
-    if (!duplicate) this.bookmarks.unshift({ ...clonePlace(this.location), label:this.label(this.location), createdAt:Date.now() })
+    if (duplicate) this.bookmarks = this.bookmarks.filter(x => !(JSON.stringify(x.locator) === JSON.stringify(this.location.locator) && Math.abs(x.fraction-this.location.fraction)<.0001))
+    else this.bookmarks.unshift({ ...clonePlace(this.location), label:this.label(this.location), createdAt:Date.now() })
     this.bookmarks = this.bookmarks.slice(0,100)
-    await this.savePlaces(); this.renderPlaces()
+    await this.savePlaces(); this.renderPlaces(); this.showPlaceTab('bookmarks')
   }
   renderPlaces() {
+    this.updateBookmarkButton()
     this.returnButton.hidden = !this.history.length
     this.returnButton.textContent = this.history.length ? `↶ Volver a ${this.history[0].label || this.label(this.history[0])}` : ''
     for (const [name, places] of [['history',this.history],['bookmarks',this.bookmarks]]) {
@@ -225,7 +260,7 @@ export class ReaderExperience {
         const row = document.createElement('div'); row.className = 'reading-place'
         const button = document.createElement('button'); button.type = 'button'; button.textContent = place.label || this.label(place)
         button.onclick = () => name === 'history' ? this.returnToReading(index) : this.jump(place)
-        const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '×'; remove.setAttribute('aria-label', `Eliminar ${place.label || this.label(place)}`)
+        const remove = document.createElement('button'); remove.type = 'button'; remove.innerHTML = readerIcon('close'); remove.setAttribute('aria-label', `Eliminar ${place.label || this.label(place)}`)
         remove.onclick = async () => { places.splice(index,1); await this.savePlaces(); this.renderPlaces() }
         row.append(button,remove); list.append(row)
       })
@@ -240,7 +275,8 @@ export class ReaderExperience {
       }
     }
     add(this.reader.toc)
-    this.panel.querySelector('[data-toc-section]').hidden = !list.childElementCount
+    this.panel.querySelector('[data-place-tab="toc"]').hidden = !list.childElementCount
+    this.showPlaceTab(list.childElementCount ? 'toc' : 'bookmarks')
   }
   step(direction) { this.voice.stop(); return direction > 0 ? this.reader.next() : this.reader.prev() }
 }
