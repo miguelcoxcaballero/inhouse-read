@@ -93,8 +93,10 @@ def verify_google_login(root):
 
 
 def dismiss_emulator_launcher_anr(root):
+    if not re.search(r"Pixel Launcher", node_text(root), re.I):
+        return False
     for node in root.iter("node"):
-        if node.attrib.get("resource-id") != "android:id/aerr_wait":
+        if node.attrib.get("resource-id") not in ("android:id/aerr_close", "android:id/aerr_wait"):
             continue
         bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
         if not bounds:
@@ -180,6 +182,12 @@ def main():
         ocr = run("tesseract", str(SCREENSHOT), "stdout").stdout
         OCR_TEXT.write_text(ocr, encoding="utf-8")
         print(f"Android screen OCR (attempt {attempt + 1}):", ocr.strip())
+        if re.search(r"Pixel Launcher isn.t responding", ocr, re.I):
+            # A system-launcher ANR can disappear between screencap and the
+            # accessibility dump. Retry a fresh capture; never exempt Read ANRs.
+            dismiss_emulator_launcher_anr(root)
+            time.sleep(4)
+            continue
         network_error = re.search(r"Webpage not available|ERR_NAME_NOT_RESOLVED|ERR_INTERNET_DISCONNECTED", ocr, re.IGNORECASE)
         if network_error and attempt < 2:
             print("Android network was not ready; retrying the production URL")
