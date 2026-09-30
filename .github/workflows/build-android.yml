@@ -106,6 +106,7 @@ jobs:
             android-open-with.*
             android-import-*.png
             android-import-*.xml
+            android-logcat.txt
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4

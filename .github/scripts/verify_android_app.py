@@ -162,6 +162,10 @@ def verify_book_imports():
                 print(f"Actual content URI imported successfully: {mode}")
                 break
         else:
+            log = run("adb", "logcat", "-d").stdout
+            Path("android-logcat.txt").write_text(log, encoding="utf-8")
+            print(run("adb", "shell", "dumpsys", "webviewupdate").stdout, flush=True)
+            print("\n".join(line for line in log.splitlines() if re.search(r"chromium|Capacitor/Console|BookImport|Uncaught|SyntaxError", line))[-16000:], flush=True)
             raise AssertionError(f"{mode} import failed: {text[:2000]}")
 
 
