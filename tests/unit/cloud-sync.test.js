@@ -24,6 +24,139 @@ beforeEach(() => {
 afterEach(async () => { sync.reset(); await library.close() })
 
 describe('CloudSync', () => {
+  it('retira el libro sin borrar Drive y no lo redescubre en siguientes sincronizaciones', async () => {
+    const book = await library.addOrTouch({ sourceType:'local', name:'keep-drive.pdf', size:4,
+      content:new Blob(['file']), cover:new Blob(['cover']), driveFileId:'keep-drive', cloudAccountId:'account-1' })
+    drive.listAllDriveBooks.mockResolvedValue([{ id:'keep-drive', name:'keep-drive.pdf', size:'4', mimeType:'application/pdf' }])
+    await sync.removeFromShelf(book)
+    await sync.sync()
+    sync = new CloudSync(library)
+    sync.setProfile({ id:'account-1' })
+    await sync.sync()
+    expect(await library.listAll()).toEqual([])
+    expect(await library.get(book.id)).toBeNull()
+    expect(drive.uploadDriveFile).not.toHaveBeenCalled()
+    expect(drive.downloadDriveFile).not.toHaveBeenCalled()
+    expect(drive.readDriveProgress).not.toHaveBeenCalled()
+    expect(drive.writeDriveProgress).not.toHaveBeenCalled()
+  })
+
+  it('no restaura un libro si su subida termina después de soltarlo en la papelera', async () => {
+    const book = await library.addOrTouch({ sourceType:'local', name:'late-upload.pdf', size:4, content:new Blob(['file']) })
+    let finishUpload
+    drive.uploadDriveFile.mockImplementation(() => new Promise(resolve => { finishUpload = resolve }))
+    const uploading = sync.uploadBook(book)
+    await vi.waitFor(() => expect(drive.uploadDriveFile).toHaveBeenCalledTimes(1))
+    await sync.removeFromShelf(book)
+    finishUpload({ id:'late-drive', name:'late-upload.pdf' })
+    expect(await uploading).toBeNull()
+    drive.listAllDriveBooks.mockResolvedValue([{ id:'late-drive', name:'renamed.pdf', size:'4', mimeType:'application/pdf' }])
+    await sync.sync()
+    expect(await library.listAll()).toEqual([])
+    expect(await library.isRemovedFromShelf({ driveFileId:'late-drive', cloudAccountId:'account-1' })).toBe(true)
+  })
+
+  it('descarta la descarga pendiente y no vuelve a guardar los bytes de un libro retirado', async () => {
+    const book = await library.addOrTouch({ sourceType:'drive', name:'late-download.pdf', size:4,
+      driveFileId:'download-drive', cloudAccountId:'account-1' })
+    let finishDownload
+    drive.downloadDriveFile.mockImplementation(() => new Promise(resolve => { finishDownload = resolve }))
+    const downloading = sync.downloadForOffline(book)
+    await vi.waitFor(() => expect(drive.downloadDriveFile).toHaveBeenCalledTimes(1))
+    await sync.removeFromShelf(book)
+    finishDownload(new File(['file'], 'late-download.pdf', { type:'application/pdf' }))
+    expect(await downloading).toBeNull()
+    expect(await library.listAll()).toEqual([])
+    expect(await library.get(book.id)).toBeNull()
+  })
+
+  it('no sincroniza progreso pendiente cuando el libro ya ha sido retirado', async () => {
+    const book = await library.addOrTouch({ sourceType:'local', name:'late-progress.pdf', size:4,
+      driveFileId:'progress-drive', cloudAccountId:'account-1' })
+    await library.updateProgress(book.id, .8, { kind:'pdf-page', value:8 })
+    let finishRead
+    drive.readDriveProgress.mockImplementation(() => new Promise(resolve => { finishRead = resolve }))
+    const progress = sync.syncBookProgress(book.id)
+    await vi.waitFor(() => expect(drive.readDriveProgress).toHaveBeenCalledTimes(1))
+    await sync.removeFromShelf(book)
+    finishRead(null)
+    await progress
+    await sync.flushProgress(book.id)
+    expect(drive.writeDriveProgress).not.toHaveBeenCalled()
+    expect(await library.listAll()).toEqual([])
+  })
+
+  it('una escritura antigua de progreso no modifica una reimportación explícita', async () => {
+    const book = await library.addOrTouch({ sourceType:'local', name:'new-copy.pdf', size:4,
+      driveFileId:'same-drive', cloudAccountId:'account-1' })
+    await library.updateProgress(book.id, .2, { kind:'pdf-page', value:2 })
+    let finishWrite
+    drive.writeDriveProgress.mockImplementation(() => new Promise(resolve => { finishWrite = resolve }))
+    const progress = sync.syncBookProgress(book.id)
+    await vi.waitFor(() => expect(drive.writeDriveProgress).toHaveBeenCalledTimes(1))
+    await sync.removeFromShelf(book)
+    await library.addOrTouch({ ...book, content:new Blob(['new']), progressDirty:true,
+      progressFraction:.9, locator:{ kind:'pdf-page', value:9 }, progressUpdatedAt:900 }, { restoreRemoved:true })
+    finishWrite({ id:'stale-progress-state' })
+    await progress
+    expect(await library.get(book.id)).toMatchObject({ progressFraction:.9,
+      locator:{ kind:'pdf-page', value:9 }, progressDirty:true, progressUpdatedAt:900 })
+    expect((await library.get(book.id)).progressStateFileId).toBeUndefined()
+  })
+
+  it('no resucita el libro si una búsqueda de Drive que ya estaba en curso lo devuelve', async () => {
+    const book = await library.addOrTouch({ sourceType:'drive', name:'listed.pdf', size:4,
+      driveFileId:'listed-drive', cloudAccountId:'account-1' })
+    let finishList
+    drive.listAllDriveBooks.mockImplementation(() => new Promise(resolve => { finishList = resolve }))
+    const syncing = sync.sync()
+    await vi.waitFor(() => expect(drive.listAllDriveBooks).toHaveBeenCalledTimes(1))
+    await sync.removeFromShelf(book)
+    finishList([{ id:'listed-drive', name:'listed.pdf', size:'4', mimeType:'application/pdf' }])
+    await syncing
+    expect(await library.listAll()).toEqual([])
+    expect(drive.readDriveProgress).not.toHaveBeenCalled()
+  })
+
+  it('omite un libro retirado cuando llega su turno en una cola de subidas', async () => {
+    const first = await library.addOrTouch({ sourceType:'local', name:'first.pdf', size:4, content:new Blob(['file']) })
+    await new Promise(resolve => setTimeout(resolve, 2))
+    const queued = await library.addOrTouch({ sourceType:'local', name:'queued.pdf', size:4, content:new Blob(['file']) })
+    // Sync uses most-recent first, so the queued record is deliberately older.
+    await library.patch(first.id, { lastOpenedAt:Date.now() + 1000 })
+    let finishUpload
+    drive.uploadDriveFile.mockImplementation(() => new Promise(resolve => { finishUpload = resolve }))
+    const syncing = sync.sync()
+    await vi.waitFor(() => expect(drive.uploadDriveFile).toHaveBeenCalledTimes(1))
+    await sync.removeFromShelf(queued)
+    finishUpload({ id:'first-drive', name:'first.pdf' })
+    await syncing
+    expect(drive.uploadDriveFile).toHaveBeenCalledTimes(1)
+    expect(await library.get(queued.id)).toBeNull()
+    expect((await library.listAll()).map(book => book.id)).toEqual([first.id])
+  })
+
+  it('permite otra subida tras reimportar sin reutilizar ni aplicar el trabajo cancelado', async () => {
+    const book = await library.addOrTouch({ sourceType:'local', name:'again.pdf', size:4, content:new Blob(['file']) })
+    const resolvers = []
+    drive.uploadDriveFile.mockImplementation(() => new Promise(resolve => resolvers.push(resolve)))
+    const oldUpload = sync.uploadBook(book)
+    await vi.waitFor(() => expect(resolvers).toHaveLength(1))
+    await sync.removeFromShelf(book)
+    const restored = await library.addOrTouch(book, { restoreRemoved:true })
+    const newUpload = sync.uploadBook(restored)
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2))
+    resolvers[0]({ id:'old-drive', name:'again.pdf' })
+    expect(await oldUpload).toBeNull()
+    const deduplicated = sync.uploadBook(restored)
+    resolvers[1]({ id:'new-drive', name:'again.pdf' })
+    expect(await newUpload).toMatchObject({ driveFileId:'new-drive' })
+    expect(await deduplicated).toMatchObject({ driveFileId:'new-drive' })
+    expect(drive.uploadDriveFile).toHaveBeenCalledTimes(2)
+    expect(await library.isRemovedFromShelf(restored)).toBe(false)
+    expect(await library.get(book.id)).toMatchObject({ driveFileId:'new-drive' })
+  })
+
   it('syncs free shelf placement with appearance and restores it on another device', async () => {
     const book = await library.addOrTouch({ sourceType:'local', name:'placed.pdf', size:5,
       driveFileId:'placed-drive', cloudAccountId:'account-1' })

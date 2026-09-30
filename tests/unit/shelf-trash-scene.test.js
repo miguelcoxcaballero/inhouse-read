@@ -1,0 +1,189 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as THREE from 'three';
+import { createBookshelfScene } from '../../src/js/bookshelf-scene.js';
+
+const gpu = vi.hoisted(() => ({ renders:0, scene:null, models:[], disposed:0 }));
+vi.mock('../../src/js/book-model.js', async () => {
+  const Three = await import('three');
+  let ratio = 1, size = new Three.Vector2();
+  const renderer = { domElement:document.createElement('canvas'), shadowMap:{},
+    capabilities:{ getMaxAnisotropy:() => 1 }, getPixelRatio:() => ratio,
+    setPixelRatio:value => { ratio = value; }, getSize:target => target.copy(size),
+    setSize:(width, height) => { size.set(width, height); },
+    render:scene => { gpu.renders++; gpu.scene = scene; } };
+  return { getBookRenderer:() => renderer, lightBookScene() {},
+    createBookModel(book, style, width, height, thickness) {
+      const model = new Three.Group(); model.name = `book:${book.id}`;
+      model.add(new Three.Mesh(new Three.BoxGeometry(width, height, thickness), new Three.MeshStandardMaterial()));
+      model.userData.dispose = () => { gpu.disposed++; }; gpu.models.push(model);
+      return model;
+    } };
+});
+
+let clock, frames, shelf, stage, scroller, trashNode, bookNode, scroll;
+function flushFrames(duration = 1100) {
+  const end = clock + duration;
+  while (frames.size && clock < end) {
+    clock += 16;
+    const callbacks = [...frames.values()]; frames.clear();
+    for (const callback of callbacks) callback(clock);
+  }
+}
+function rect(left, top, width, height) { return { left, top, width, height, right:left + width, bottom:top + height }; }
+
+beforeEach(() => {
+  clock = 0; frames = new Map(); scroll = 0;
+  gpu.renders = 0; gpu.scene = null; gpu.models = []; gpu.disposed = 0;
+  let serial = 0;
+  vi.stubGlobal('requestAnimationFrame', callback => { const id = ++serial; frames.set(id, callback); return id; });
+  vi.stubGlobal('cancelAnimationFrame', id => frames.delete(id));
+  vi.spyOn(performance, 'now').mockImplementation(() => clock);
+  vi.spyOn(THREE.TextureLoader.prototype, 'load').mockImplementation(() => new THREE.Texture());
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({
+    createImageData:(width, height) => ({ data:new Uint8ClampedArray(width * height * 4) }),
+    putImageData() {}, drawImage() {}, clearRect() {}
+  }));
+  window.matchMedia = () => ({ matches:false });
+  scroller = document.createElement('div'); stage = document.createElement('div');
+  scroller.append(stage); document.body.append(scroller);
+  Object.defineProperty(scroller, 'clientHeight', { value:700 });
+  scroller.getBoundingClientRect = () => rect(20, 60, 390, 700);
+  stage.getBoundingClientRect = () => rect(20, 60 - scroll, 390, 750);
+  trashNode = document.createElement('button'); bookNode = document.createElement('button');
+  trashNode.getBoundingClientRect = () => rect(20 + parseFloat(trashNode.style.left),
+    60 - scroll + parseFloat(trashNode.style.top), parseFloat(trashNode.style.width), parseFloat(trashNode.style.height));
+  stage.append(bookNode, trashNode);
+  shelf = createBookshelfScene({ stage, scroller, width:310, sceneWidth:390, height:750,
+    rows:[{ top:20, bottom:220 }, { top:260, bottom:460 }, { top:500, bottom:700 }], trashNode,
+    entries:[{ node:bookNode, book:{ id:'a', title:'Book', author:'Author' }, style:{ color:'#3c6548', width:28 },
+      x:60, y:130, width:100, height:180, thickness:28 }] });
+  shelf.canvas.getBoundingClientRect = () => rect(20, 60, 390, 700);
+  shelf.flush(); flushFrames();
+});
+
+afterEach(() => {
+  shelf?.dispose(); shelf = null; document.body.innerHTML = '';
+  vi.restoreAllMocks(); vi.unstubAllGlobals();
+});
+
+describe('wastebasket in the shared 3D shelf scene', () => {
+  it('projects a reachable right-side target and stays visible when the cabinet scrolls', () => {
+    const before = trashNode.getBoundingClientRect();
+    expect(before.left).toBeGreaterThanOrEqual(320);
+    expect(before.right).toBeLessThanOrEqual(417);
+    expect(before.bottom).toBeLessThan(780);
+    expect(shelf.hitTrash(before.left + before.width / 2, before.top + before.height / 2)).toBe(true);
+    expect(shelf.hitTrash(80, 120)).toBe(false);
+    scroll = 240; shelf.flush();
+    const after = trashNode.getBoundingClientRect();
+    expect(after.top).toBeCloseTo(before.top); expect(after.left).toBeCloseTo(before.left);
+    expect(trashNode.dataset.trash3d).toBe('true');
+    expect(shelf.canvas.style.width).toBe('390px');
+  });
+
+  it('animates its real lid on hover and does no rendering while stationary', () => {
+    const stationary = gpu.renders; flushFrames(); expect(gpu.renders).toBe(stationary);
+    shelf.setTrashHover(true); flushFrames(300);
+    const bin = gpu.scene.children.find(child => child.userData.trash);
+    expect(bin.userData.lid.rotation.x).toBeLessThan(-1.4);
+    expect(trashNode.dataset.trashHover).toBe('true');
+    expect(shelf.canvas.dataset.animating).toBe('false');
+    const hovered = gpu.renders; flushFrames(); expect(gpu.renders).toBe(hovered);
+    shelf.setTrashHover(false); flushFrames(300);
+    expect(bin.userData.lid.rotation.x).toBeCloseTo(0);
+  });
+
+  it('keeps the bin in the right gutter throughout the diagonal shelf view', () => {
+    shelf.setMode('isometric', { animate:false });
+    shelf.setTrashHover(true); flushFrames(350);
+    const bin = gpu.scene.children.find(child => child.userData.trash);
+    const target = trashNode.getBoundingClientRect();
+    expect(bin.rotation.y).toBeCloseTo(-Math.PI / 6);
+    expect(target.left).toBeGreaterThan(320);
+    expect(target.right).toBeLessThan(420);
+    expect(target.bottom).toBeLessThan(780);
+    expect(shelf.hitTrash(target.left + target.width / 2, target.top + target.height / 2)).toBe(true);
+  });
+
+  it('anchors the whole bin above the visible floor below a tall mobile heading', () => {
+    const originalHeight = window.innerHeight;
+    Object.defineProperty(window, 'innerHeight', { configurable:true, value:844 });
+    scroller.getBoundingClientRect = () => rect(0, 100, 320, 744);
+    stage.getBoundingClientRect = () => rect(0, 185 - scroll, 320, 750);
+    shelf.canvas.getBoundingClientRect = () => rect(0, 185, 320, 744);
+    trashNode.getBoundingClientRect = () => rect(parseFloat(trashNode.style.left),
+      185 - scroll + parseFloat(trashNode.style.top), parseFloat(trashNode.style.width), parseFloat(trashNode.style.height));
+    shelf.flush();
+    const normal = trashNode.getBoundingClientRect();
+    expect(normal.bottom).toBeLessThanOrEqual(scroller.getBoundingClientRect().bottom);
+    expect(normal.top).toBeGreaterThan(600);
+    shelf.setMode('isometric', { animate:false }); shelf.setTrashHover(true); flushFrames(350);
+    const diagonal = trashNode.getBoundingClientRect();
+    expect(diagonal.bottom).toBeLessThanOrEqual(scroller.getBoundingClientRect().bottom);
+    expect(shelf.hitTrash(diagonal.left + diagonal.width / 2, diagonal.top + diagonal.height / 2)).toBe(true);
+    Object.defineProperty(window, 'innerHeight', { configurable:true, value:originalHeight });
+  });
+
+  it('moves the same mesh into the bin, hides it only after landing, and can restore it', async () => {
+    const model = gpu.models[0], originalParent = model.parent;
+    bookNode.classList.add('is-dragging'); bookNode.style.setProperty('--ihr-drag-x', '75px');
+    shelf.flush();
+    const originalWorld = model.getWorldPosition(new THREE.Vector3());
+    const motion = shelf.animateBookToTrash(bookNode, { duration:850 });
+    expect(model.parent).toBe(gpu.scene);
+    expect(model.position.distanceTo(originalWorld)).toBeLessThan(1e-8);
+    bookNode.classList.remove('is-dragging'); bookNode.classList.add('is-away');
+    flushFrames(450);
+    expect(model.visible).toBe(true);
+    expect(Number(trashNode.dataset.trashDropProgress)).toBeGreaterThan(.4);
+    expect(Number(trashNode.dataset.trashDropProgress)).toBeLessThan(.8);
+    flushFrames(700);
+    await expect(motion.finished).resolves.toBe(true);
+    expect(model.visible).toBe(false);
+    expect(shelf.canvas.dataset.trashDropProgress).toBe('1.0000');
+    expect(shelf.canvas.dataset.animating).toBe('false');
+    motion.cancel(); bookNode.classList.remove('is-away'); shelf.flush();
+    expect(model.parent).toBe(originalParent); expect(model.visible).toBe(true);
+    expect(model.scale.x).toBe(1);
+    expect(shelf.canvas.dataset.trashingBookId).toBeUndefined();
+  });
+
+  it('cancels a pending animation on dispose and disposes the existing book once', async () => {
+    const motion = shelf.animateBookToTrash(bookNode);
+    shelf.dispose(); shelf = null;
+    await expect(motion.finished).resolves.toBe(false);
+    expect(gpu.disposed).toBe(1);
+    expect(frames.size).toBe(0);
+    expect(trashNode.dataset.trash3d).toBeUndefined();
+  });
+
+  it('reports live frame activity when a slow GPU stretches the bounded-step drop', async () => {
+    const motion = shelf.animateBookToTrash(bookNode, { duration:850 });
+    const started = clock;
+    for (let index = 0; index < 13; index++) {
+      clock += 200;
+      const callbacks = [...frames.values()]; frames.clear();
+      for (const callback of callbacks) callback(clock);
+      expect(motion.lastFrameTime).toBe(clock);
+    }
+    expect(clock - started).toBeGreaterThan(850 + 1500);
+    expect(shelf.canvas.dataset.animating).toBe('true');
+    expect(Number(shelf.canvas.dataset.trashDropProgress)).toBeLessThan(1);
+    flushFrames(350);
+    await expect(motion.finished).resolves.toBe(true);
+    expect(shelf.canvas.dataset.trashDropProgress).toBe('1.0000');
+    expect(shelf.canvas.dataset.animating).toBe('false');
+  });
+
+  it('brings a wide cover inside the canvas as it turns into the right gutter', () => {
+    const model = gpu.models[0];
+    bookNode.classList.add('is-dragging'); bookNode.style.setProperty('--ihr-drag-x', '300px');
+    shelf.flush();
+    const before = model.getWorldPosition(new THREE.Vector3());
+    const motion = shelf.animateBookToTrash(bookNode, { duration:850 });
+    expect(model.position.distanceTo(before)).toBeLessThan(1e-8);
+    flushFrames(180);
+    expect(new THREE.Box3().setFromObject(model).max.x).toBeLessThanOrEqual(390);
+    motion.cancel();
+  });
+});

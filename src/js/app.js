@@ -145,9 +145,9 @@ async function refreshShelf() {
     if (author !== (book.author || '')) patch.author = author || null
     return Object.keys(patch).length ? library.patch(book.id, patch) : book
   }))
-  const books = normalizedBooks.filter(book =>
+  const books = normalizedBooks.filter(book => book && (
     book.sourceType !== 'drive' || (accountId && (!book.cloudAccountId || book.cloudAccountId === accountId))
-  )
+  ))
   // A selection can begin while the IndexedDB read is pending. Let the shelf
   // queue this record set instead of replacing a book already in flight.
   if (!shelf) {
@@ -159,6 +159,7 @@ async function refreshShelf() {
       minimumShelves: 3,
       getBookPreparation: book => preparedBooks.get(book.id),
       onBookAction: handleCoverAction,
+      onBookRemove: removeBookFromShelf,
       onAddBooks: pickLocalFile,
       coverSrcFor: book => book.cover ?? null,
       waitForCoverAppearance: true,
@@ -177,6 +178,38 @@ async function refreshShelf() {
   } else {
     shelf.update(books)
   }
+}
+
+async function removeBookFromShelf(book) {
+  const ownsPreparation = requestedPreparationId === book.id || activePreparedBookId === book.id
+  if (requestedPreparationId === book.id) {
+    preparationGeneration += 1
+    requestedPreparationId = null
+  }
+  const cancelledGeneration = preparationGeneration
+  preparedBooks.delete(book.id)
+  coverUpgrades.delete(book.id)
+  const preparingTask = readerPreparationQueue
+  const removal = await cloudSync.removeFromShelf(book)
+  // A selected book may already have a reader engine preloaded in memory.
+  // Release it once it settles, without keeping the shelf drop waiting for
+  // a file download. A newer selection owns its own reader generation.
+  if (ownsPreparation) {
+    preparingTask.catch(() => {}).then(() => {
+      if (preparationGeneration !== cancelledGeneration || requestedPreparationId ||
+          (currentBookId && currentBookId !== book.id) || !els.readerScreen.classList.contains('is-preparing')) return
+      reader.close()
+      readingExperience.reset()
+      currentBookId = null
+      activePreparedBookId = null
+      els.readerScreen.hidden = true
+      els.readerScreen.classList.remove('is-preparing')
+      els.readerViewport.innerHTML = ''
+    }).catch(error => console.warn('No se pudo liberar la preparación del libro retirado:', error))
+  }
+  // The shelf removes its model after the drop animation has finished.
+  // Refreshing here would interrupt that animation and dispose its scene.
+  return removal
 }
 
 async function animateReaderPageFromBook({ duration, animateBookToPage, pageSnapshot, isActive }) {
@@ -388,12 +421,12 @@ els.filePicker.addEventListener('change', async () => {
       console.warn('No se pudo guardar el libro en la carpeta elegida; se abre igualmente para esta sesión.', err)
     }
   }
-  await openFile(file, { folderFileName })
+  await openFile(file, { folderFileName, restoreRemoved:true })
 })
 
 // ---- Apertura y lectura ----
 
-async function openFile(file, { existingRecord, forcedId, folderFileName, transition, preparing = false } = {}) {
+async function openFile(file, { existingRecord, forcedId, folderFileName, transition, preparing = false, restoreRemoved = false } = {}) {
   if (transition?.isActive && !transition.isActive()) return false
   if (!preparing) {
     preparationGeneration++
@@ -470,7 +503,7 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
     record = await library.addOrTouch({
       ...baseFields,
       content: shouldCacheContent ? new Blob([file], { type: file.type }) : existingRecord?.content
-    })
+    }, { restoreRemoved })
   } catch (err) {
     // Un libro muy grande puede agotar la cuota de IndexedDB del dispositivo.
     // Que eso falle no puede tirar abajo la lectura (el lector ya tiene el
@@ -478,8 +511,9 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
     // igual que antes de este cambio — como mucho, la próxima vez habrá que
     // volver a elegir el archivo.
     console.warn('No se pudo guardar la copia del libro (¿cuota de almacenamiento?); se seguirá pidiendo el archivo al reabrir:', err)
-    record = await library.addOrTouch({ ...baseFields, content: existingRecord?.content })
+    record = await library.addOrTouch({ ...baseFields, content: existingRecord?.content }, { restoreRemoved })
   }
+  if (!record) return false
   if (transition?.isActive && !transition.isActive()) return false
   currentBookId = record.id
 
@@ -533,7 +567,8 @@ function prepareBookOpen(book) {
     const [file] = await filesReady
     if (generation !== preparationGeneration) return false
     await progressWrites.get(book.id)?.catch(() => {})
-    const updated = await library.get(book.id) || book
+    const updated = await library.get(book.id)
+    if (!updated) return false
     if (generation !== preparationGeneration) return false
     const opened = await openFile(file, { existingRecord: updated, forcedId: book.id, preparing: true })
     if (generation !== preparationGeneration) return false
@@ -596,6 +631,7 @@ async function uploadBookToDrive(book) {
   els.driveUploadScreen.setAttribute('aria-busy', 'true')
   try {
     const updated = await cloudSync.uploadBook(book)
+    if (!updated) return null
     await cloudSync.flushProgress(updated.id)
     setDriveSyncStatus('Sincronizado con Google Drive')
     return updated
@@ -866,7 +902,7 @@ async function loadDriveFiles() {
         try {
           const record = (await library.listAll()).find(book => book.driveFileId === f.id)
             || await library.addOrTouch({ sourceType: 'drive', driveFileId: f.id, cloudAccountId: driveProfile?.id,
-              name: f.name, title: normalizeBookTitle(f.name), mimeType: f.mimeType, size: Number(f.size) || 0 })
+              name: f.name, title: normalizeBookTitle(f.name), mimeType: f.mimeType, size: Number(f.size) || 0 }, { restoreRemoved:true })
           const file = await cloudSync.downloadForOffline(record)
           await openFile(file, { existingRecord: record, forcedId: record.id })
         } catch (error) { alert(`No se pudo abrir el libro: ${error.message}`) }
@@ -892,7 +928,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.6.2'
+els.appVersion.textContent = 'Inhouse Read · v1.6.3'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')

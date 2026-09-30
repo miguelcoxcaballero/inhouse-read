@@ -20,6 +20,7 @@ export class CloudSync {
   #progressTimers = new Map()
   #progressSyncs = new Map()
   #generation = 0
+  #bookGenerations = new Map()
 
   constructor(library, { onStatus = () => {}, onChange = () => {} } = {}) {
     this.#library = library
@@ -28,6 +29,24 @@ export class CloudSync {
   }
 
   setProfile(profile) { this.#profile = profile }
+
+  #bookGeneration(id) { return this.#bookGenerations.get(id) || 0 }
+
+  #isCurrent(id, bookGeneration, generation) {
+    return generation === this.#generation && bookGeneration === this.#bookGeneration(id)
+  }
+
+  /** Forget the app's copy, without deleting or trashing the Drive file. */
+  async removeFromShelf(book) {
+    if (!book?.id) return null
+    this.#bookGenerations.set(book.id, this.#bookGeneration(book.id) + 1)
+    clearTimeout(this.#progressTimers.get(book.id))
+    this.#progressTimers.delete(book.id)
+    this.#uploads.delete(book.id)
+    this.#downloads.delete(book.id)
+    this.#progressSyncs.delete(book.id)
+    return this.#library.removeFromShelf(book)
+  }
 
   reset() {
     this.#generation += 1
@@ -45,9 +64,12 @@ export class CloudSync {
   async uploadBook(book) {
     if (this.#uploads.has(book.id)) return this.#uploads.get(book.id)
     const generation = this.#generation
+    const bookGeneration = this.#bookGeneration(book.id)
     const task = (async () => {
       const accountId = await this.#account()
+      if (!this.#isCurrent(book.id, bookGeneration, generation) || await this.#library.isRemovedFromShelf(book)) return null
       const record = await this.#library.get(book.id) || book
+      if (!this.#isCurrent(book.id, bookGeneration, generation)) return null
       if (record.cloudAccountId && record.cloudAccountId !== accountId) {
         throw new Error('Este libro está vinculado a otra cuenta de Google.')
       }
@@ -57,37 +79,48 @@ export class CloudSync {
         type: record.mimeType || record.content.type || 'application/octet-stream'
       })
       const uploaded = await uploadDriveFile(file)
-      if (generation !== this.#generation) return record
+      if (!this.#isCurrent(book.id, bookGeneration, generation)) {
+        await this.#library.rememberRemovedDriveLink(record, uploaded.id, accountId)
+        return null
+      }
       const updated = await this.#library.patch(record.id, {
         driveFileId: uploaded.id, driveFileName: uploaded.name,
         cloudAccountId: accountId, sourceType: 'local'
       })
-      this.#onChange()
+      if (updated) this.#onChange()
       return updated
     })()
     this.#uploads.set(book.id, task)
-    try { return await task } finally { this.#uploads.delete(book.id) }
+    try { return await task } finally {
+      if (this.#uploads.get(book.id) === task) this.#uploads.delete(book.id)
+    }
   }
 
   async downloadForOffline(book) {
     if (this.#downloads.has(book.id)) return this.#downloads.get(book.id)
     const generation = this.#generation
+    const bookGeneration = this.#bookGeneration(book.id)
     const task = (async () => {
+      if (await this.#library.isRemovedFromShelf(book)) return null
       const record = await this.#library.get(book.id) || book
+      if (!this.#isCurrent(book.id, bookGeneration, generation)) return null
       if (record.content) return new File([record.content], record.name || record.title || 'libro', { type: record.mimeType || record.content.type })
       const accountId = await this.#account()
+      if (!this.#isCurrent(book.id, bookGeneration, generation)) return null
       if (record.cloudAccountId && record.cloudAccountId !== accountId) {
         throw new Error('Conecta la cuenta de Google de este libro.')
       }
       const file = await downloadDriveFile(record.driveFileId, { name: record.name || record.title, mimeType: record.mimeType })
-      if (generation === this.#generation) {
+      if (this.#isCurrent(book.id, bookGeneration, generation)) {
         await this.#library.patch(record.id, { content: new Blob([file], { type: file.type }), cloudAccountId: accountId })
         this.#onChange()
-      }
+      } else return null
       return file
     })()
     this.#downloads.set(book.id, task)
-    try { return await task } finally { this.#downloads.delete(book.id) }
+    try { return await task } finally {
+      if (this.#downloads.get(book.id) === task) this.#downloads.delete(book.id)
+    }
   }
 
   scheduleProgress(bookId) {
@@ -110,20 +143,23 @@ export class CloudSync {
     if (!id) return
     const previous = this.#progressSyncs.get(id)
     const generation = this.#generation
-    const task = (previous || Promise.resolve()).catch(() => {}).then(() => this.#syncBookProgressOnce(id, generation))
+    const bookGeneration = this.#bookGeneration(id)
+    const task = (previous || Promise.resolve()).catch(() => {}).then(() => this.#syncBookProgressOnce(id, generation, bookGeneration))
     this.#progressSyncs.set(id, task)
     try { return await task } finally {
       if (this.#progressSyncs.get(id) === task) this.#progressSyncs.delete(id)
     }
   }
 
-  async #syncBookProgressOnce(id, generation) {
+  async #syncBookProgressOnce(id, generation, bookGeneration) {
+    if (!this.#isCurrent(id, bookGeneration, generation)) return
     const record = await this.#library.get(id)
     if (!record?.driveFileId) return
     const accountId = await this.#account()
+    if (!this.#isCurrent(id, bookGeneration, generation)) return
     if (record.cloudAccountId && record.cloudAccountId !== accountId) return
     const remote = await readDriveProgress(record.driveFileId)
-    if (generation !== this.#generation) return
+    if (!this.#isCurrent(id, bookGeneration, generation)) return
     const localUpdatedAt = Number(record.progressUpdatedAt) || 0
     const remoteUpdatedAt = Number(remote?.updatedAt) || 0
     const localHasProgress = record.progressDirty || record.progressFraction > 0 || record.locator != null
@@ -155,9 +191,9 @@ export class CloudSync {
     }
     const uploaded = await writeDriveProgress(record.driveFileId, snapshot,
       remote?.stateFileId || record.progressStateFileId)
-    if (generation !== this.#generation) return
+    if (!this.#isCurrent(id, bookGeneration, generation)) return
     const latest = await this.#library.get(record.id)
-    if (!latest) return
+    if (!latest || !this.#isCurrent(id, bookGeneration, generation)) return
     const unchanged = (Number(latest.progressUpdatedAt) || 0) === localUpdatedAt &&
       Number(latest.progressFraction) === Number(snapshot.fraction) &&
       JSON.stringify(latest.locator ?? null) === JSON.stringify(snapshot.locator ?? null) &&
@@ -191,6 +227,8 @@ export class CloudSync {
 
     for (const remote of remoteBooks) {
       if (generation !== this.#generation) return
+      const remoteSource = { driveFileId:remote.id, cloudAccountId:accountId, name:remote.name, size:Number(remote.size) || 0 }
+      if (await this.#library.isRemovedFromShelf(remoteSource)) continue
       let record = byDriveId.get(remote.id)
       if (!record) {
         const matches = localBooks.filter(book =>
@@ -202,6 +240,7 @@ export class CloudSync {
           record = await this.#library.patch(matches[0].id, {
             driveFileId: remote.id, driveFileName: remote.name, cloudAccountId: accountId
           })
+          if (!record) continue
           usedLocalIds.add(record.id)
         } else {
           record = await this.#library.addOrTouch({
@@ -211,12 +250,13 @@ export class CloudSync {
             size: Number(remote.size) || 0, sizeBytes: Number(remote.size) || 0,
             format: remote.name.match(EXTENSIONS)?.[1].toUpperCase() || ''
           })
+          if (!record) continue
         }
         this.#onChange()
       } else if (!record.cloudAccountId) {
         record = await this.#library.patch(record.id, { cloudAccountId: accountId })
       }
-      linked.push(record)
+      if (record) linked.push(record)
     }
 
     const remoteIds = new Set(remoteBooks.map(book => book.id))

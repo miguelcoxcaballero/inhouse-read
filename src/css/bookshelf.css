@@ -193,6 +193,80 @@
 .ihr-shelf-stage.has-scene .ihr-spine::after { inset:0; }
 .ihr-bookshelf-scene { display:block; pointer-events:none; }
 
+/* The narrow floor beside the cabinet belongs to the 3D scene. The same
+   projected target stays reachable as the shelves scroll past it. */
+.ihr-bookshelf.has-trash .ihr-shelf-stage > .ihr-section {
+  width:var(--ihr-cabinet-width,100%);
+}
+.ihr-shelf-trash {
+  position:absolute;
+  right:8px;
+  bottom:22px;
+  width:64px;
+  height:106px;
+  z-index:20;
+  touch-action:none;
+  pointer-events:none;
+}
+.ihr-shelf-trash__body {
+  position:absolute; inset:22px 7px 3px;
+  border-radius:6px 6px 17px 17px;
+  background:linear-gradient(90deg,#193729,#43644e 32%,#38583f 56%,#1c382a);
+  box-shadow:inset 2px 0 2px #c0d5bb33,inset -4px 0 6px #06140a66,4px 8px 9px #1b1d172b;
+  border:1px solid #27382a;
+}
+.ihr-shelf-trash__body::before {
+  content:''; position:absolute; left:-1px; right:-1px; top:-7px; height:12px;
+  border:3px solid #668568; border-bottom-color:#304332;
+  border-radius:50%; background:#132017;
+}
+.ihr-shelf-trash__body::after {
+  content:''; position:absolute; left:11px; right:11px; bottom:7px; height:5px;
+  border-radius:4px; background:linear-gradient(#d8c1a0,#8b7257);
+}
+.ihr-shelf-trash__lid {
+  position:absolute; left:3px; right:3px; top:12px; height:13px;
+  border-radius:50%; background:linear-gradient(#6f8c72,#2e4b34);
+  border:1px solid #3d5540; transform-origin:50% 20%;
+  transition:transform .24s var(--ihr-ease);
+}
+.ihr-shelf-trash__lid::after {
+  content:''; position:absolute; left:23px; top:-5px; width:13px; height:6px;
+  border-radius:5px 5px 0 0; background:#b49d77;
+}
+.ihr-shelf-trash.is-over .ihr-shelf-trash__lid { transform:translateY(-10px) rotateX(65deg); }
+.ihr-shelf-trash[data-trash3d="true"] .ihr-shelf-trash__body,
+.ihr-shelf-trash[data-trash3d="true"] .ihr-shelf-trash__lid { display:none; }
+.ihr-shelf-trash:not([data-trash3d="true"]) {
+  position:fixed;
+  right:max(20px,calc((100vw - 860px) / 2 + 8px));
+  bottom:calc(28px + env(safe-area-inset-bottom));
+}
+.ihr-shelf-trash__label {
+  position:absolute; left:50%; bottom:calc(100% + 12px); transform:translateX(-50%);
+  padding:5px 8px; white-space:nowrap;
+  color:var(--text-primary); background:var(--bg-primary);
+  border-radius:6px; font:500 .72rem var(--f-body);
+  opacity:0; transition:opacity .16s var(--ihr-ease);
+}
+.ihr-shelf-trash.is-over .ihr-shelf-trash__label { opacity:1; }
+.ihr-trash-flight { transform-origin:50% 50%; }
+.ihr-trash-status {
+  position:absolute; left:20px; right:100px; bottom:max(20px,env(safe-area-inset-bottom));
+  z-index:30; pointer-events:none; font:500 .8rem/1.4 var(--f-body);
+  color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.ihr-trash-status:not(:empty) { padding:8px 12px; background:var(--bg-primary); border-radius:8px; box-shadow:var(--shadow-sm); }
+.ihr-trash-status.is-error { color:var(--danger,#ba4b40); }
+@media (max-width:420px) {
+  .ihr-library-heading h1 { font-size:1.05rem; }
+  .ihr-library-heading__tools { gap:6px; }
+  .ihr-library-heading__tools > p { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+}
+@media (prefers-reduced-motion:reduce) {
+  .ihr-shelf-trash__lid,.ihr-shelf-trash__label { transition:none; }
+}
+
 .ihr-bookshelf.is-arranging .ihr-shelf__row { perspective:1000px; }
 .ihr-bookshelf.is-arranging .ihr-spine,
 .ihr-bookshelf.is-arranging .ihr-plant { cursor:grab; }

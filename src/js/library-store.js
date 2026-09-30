@@ -5,8 +5,9 @@
 // Blob, algo que localStorage no soporta bien.
 
 const DB_NAME = 'inhouse-read'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const STORE = 'books'
+const REMOVED_STORE = 'removed-books'
 
 /**
  * @typedef {Object} BookRecord
@@ -37,8 +38,15 @@ function openDB(dbName) {
         const store = db.createObjectStore(STORE, { keyPath: 'id' })
         store.createIndex('lastOpenedAt', 'lastOpenedAt')
       }
+      if (!db.objectStoreNames.contains(REMOVED_STORE)) {
+        db.createObjectStore(REMOVED_STORE, { keyPath: 'id' })
+      }
     }
-    req.onsuccess = () => resolve(req.result)
+    req.onsuccess = () => {
+      // An older tab must not keep a future schema migration blocked.
+      req.result.onversionchange = () => req.result.close()
+      resolve(req.result)
+    }
     req.onerror = () => reject(req.error)
   })
 }
@@ -53,6 +61,40 @@ function wrap(request) {
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error)
   })
+}
+
+function committed(transaction) {
+  const completion = new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve()
+    transaction.onabort = () => reject(transaction.error || new Error('No se pudo guardar la biblioteca.'))
+    transaction.onerror = () => reject(transaction.error)
+  })
+  // A failed request can reject before its abort event. The caller still
+  // receives that failure, without a second unhandled rejection here.
+  completion.catch(() => {})
+  return completion
+}
+
+function sourceMatches(removal, source) {
+  if (removal.id === source.id) return true
+  if (removal.cloudAccountId && source.cloudAccountId && removal.cloudAccountId !== source.cloudAccountId) return false
+  if (removal.driveFileId && source.driveFileId) return removal.driveFileId === source.driveFileId
+  return Boolean(removal.name && source.name && removal.name === source.name &&
+    Number(removal.size) === Number(source.size))
+}
+
+function removalIdentity(source, previous = {}) {
+  // Deliberately retain no book bytes, image, text, reading state or handle.
+  return {
+    id: source.id,
+    name: source.name || previous.name || '',
+    size: Number(source.size ?? previous.size) || 0,
+    ...(source.driveFileId || previous.driveFileId
+      ? { driveFileId: source.driveFileId || previous.driveFileId } : {}),
+    ...(source.cloudAccountId || previous.cloudAccountId
+      ? { cloudAccountId: source.cloudAccountId || previous.cloudAccountId } : {}),
+    removedAt: previous.removedAt || Date.now()
+  }
 }
 
 /**
@@ -103,7 +145,16 @@ export class LibraryStore {
 
   async get(id) {
     const store = await this.#store('readonly')
-    return wrap(store.get(id)) ?? null
+    return (await wrap(store.get(id))) ?? null
+  }
+
+  /** Keeps automatic Drive discovery from putting a removed book back. */
+  async isRemovedFromShelf(source) {
+    if (typeof source === 'string') source = { id: source }
+    if (!source) return false
+    const db = await this.#dbPromise
+    const removals = await wrap(db.transaction(REMOVED_STORE, 'readonly').objectStore(REMOVED_STORE).getAll())
+    return removals.some(removal => sourceMatches(removal, source))
   }
 
   /**
@@ -111,9 +162,20 @@ export class LibraryStore {
    * adicional que se pase) si ya existía. Es la operación central: se llama
    * cada vez que el usuario abre un libro, desde cualquier fuente.
    */
-  async addOrTouch(partial) {
+  async addOrTouch(partial, { restoreRemoved = false } = {}) {
     const id = partial.id ?? idForSource(partial)
-    const store = await this.#store('readwrite')
+    const db = await this.#dbPromise
+    const transaction = db.transaction([STORE, REMOVED_STORE], 'readwrite')
+    const completion = committed(transaction)
+    const store = transaction.objectStore(STORE)
+    const removedStore = transaction.objectStore(REMOVED_STORE)
+    const removals = await wrap(removedStore.getAll())
+    const matching = removals.filter(removal => sourceMatches(removal, { ...partial, id }))
+    if (matching.length && !restoreRemoved) {
+      await completion
+      return null
+    }
+    if (restoreRemoved) for (const removal of matching) removedStore.delete(removal.id)
     const existing = await wrap(store.get(id))
     const now = Date.now()
     const record = {
@@ -125,6 +187,7 @@ export class LibraryStore {
       lastOpenedAt: now
     }
     await wrap(store.put(record))
+    await completion
     return record
   }
 
@@ -139,6 +202,42 @@ export class LibraryStore {
     }
     await wrap(store.put(record))
     return record
+  }
+
+  /**
+   * Removes the app's record, cached file and cover, leaving the source file
+   * in Drive / the user's device untouched. A tiny identity marker prevents
+   * subsequent background syncs from silently importing it again.
+   */
+  async removeFromShelf(bookOrId) {
+    const id = typeof bookOrId === 'string' ? bookOrId : bookOrId?.id
+    if (!id) return null
+    const db = await this.#dbPromise
+    const transaction = db.transaction([STORE, REMOVED_STORE], 'readwrite')
+    const completion = committed(transaction)
+    const store = transaction.objectStore(STORE)
+    const removedStore = transaction.objectStore(REMOVED_STORE)
+    const record = await wrap(store.get(id))
+    const previous = await wrap(removedStore.get(id))
+    const source = { ...(typeof bookOrId === 'object' ? bookOrId : {}), ...record, id }
+    const removal = removalIdentity(source, previous)
+    removedStore.put(removal)
+    store.delete(id)
+    await completion
+    return removal
+  }
+
+  /** Adds a Drive identity discovered by an upload that completed too late. */
+  async rememberRemovedDriveLink(book, driveFileId, cloudAccountId) {
+    const db = await this.#dbPromise
+    const transaction = db.transaction(REMOVED_STORE, 'readwrite')
+    const completion = committed(transaction)
+    const store = transaction.objectStore(REMOVED_STORE)
+    const previous = await wrap(store.get(book.id))
+    // An explicit reimport may have already restored this book; do not
+    // re-hide that import when an old network request finally completes.
+    if (previous) store.put(removalIdentity({ ...book, driveFileId, cloudAccountId }, previous))
+    await completion
   }
 
   /** Actualiza metadatos de Drive sin cambiar el orden de la estantería. */
@@ -167,7 +266,11 @@ export class LibraryStore {
   }
 
   async clear() {
-    const store = await this.#store('readwrite')
-    await wrap(store.clear())
+    const db = await this.#dbPromise
+    const transaction = db.transaction([STORE, REMOVED_STORE], 'readwrite')
+    const completion = committed(transaction)
+    transaction.objectStore(STORE).clear()
+    transaction.objectStore(REMOVED_STORE).clear()
+    await completion
   }
 }

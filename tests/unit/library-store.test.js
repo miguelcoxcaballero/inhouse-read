@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import 'fake-indexeddb/auto'
+import { Blob as NativeBlob } from 'node:buffer'
 import { LibraryStore, idForSource } from '../../src/js/library-store.js'
 
 describe('idForSource', () => {
@@ -128,6 +129,120 @@ describe('LibraryStore', () => {
     })
     await store.remove(record.id)
     expect(await store.listRecents()).toEqual([])
+  })
+
+  it('retira el libro, sus bytes y portada, dejando solo su identidad persistente', async () => {
+    const original = new Blob(['original-file'], { type:'application/pdf' })
+    const book = await store.addOrTouch({ sourceType:'local', name:'removed.pdf', size:original.size,
+      title:'Removed', author:'Someone', content:original, cover:new Blob(['cover']),
+      locator:{ kind:'pdf-page', value:3 }, driveFileId:'drive-removed', cloudAccountId:'account-1' })
+    await store.removeFromShelf(book)
+    expect(await store.listAll()).toEqual([])
+    expect(await store.get(book.id)).toBeNull()
+    expect(original.size).toBe(13)
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open(dbName)
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    const removals = await new Promise(resolve => {
+      const request = db.transaction('removed-books').objectStore('removed-books').getAll()
+      request.onsuccess = () => resolve(request.result)
+    })
+    db.close()
+    expect(removals).toEqual([{ id:book.id, name:'removed.pdf', size:13,
+      driveFileId:'drive-removed', cloudAccountId:'account-1', removedAt:expect.any(Number) }])
+    await store.close()
+    store = new LibraryStore(dbName)
+    expect(await store.isRemovedFromShelf(book)).toBe(true)
+    expect(await store.listAll()).toEqual([])
+  })
+
+  it('no permite que un guardado o una importación automática resucite un libro retirado', async () => {
+    const book = await store.addOrTouch({ sourceType:'local', name:'late.pdf', size:10, content:new Blob(['pdf']) })
+    await store.removeFromShelf(book.id)
+    expect(await store.addOrTouch(book)).toBeNull()
+    expect(await store.patch(book.id, { content:new Blob(['late-bytes']) })).toBeNull()
+    expect(await store.setCover(book.id, new Blob(['late-cover']))).toBeNull()
+    expect(await store.updateProgress(book.id, .8, { kind:'pdf-page', value:8 })).toBeNull()
+    expect(await store.listAll()).toEqual([])
+  })
+
+  it('permite reimportar explícitamente el archivo local después de retirarlo', async () => {
+    const book = await store.addOrTouch({ sourceType:'local', name:'again.pdf', size:10 })
+    await store.removeFromShelf(book)
+    const imported = await store.addOrTouch({ ...book, content:new Blob(['new-copy']) }, { restoreRemoved:true })
+    expect(imported.id).toBe(book.id)
+    expect(imported.content.size).toBe(8)
+    expect(await store.isRemovedFromShelf(book)).toBe(false)
+    expect(await store.listAll()).toHaveLength(1)
+  })
+
+  it('bloquea el alias de Drive del libro local y lo restaura desde el selector de Drive', async () => {
+    const local = await store.addOrTouch({ sourceType:'local', name:'linked.epub', size:12,
+      driveFileId:'linked-drive', cloudAccountId:'account-1' })
+    await store.removeFromShelf(local)
+    const remote = { sourceType:'drive', name:'linked.epub', size:12, driveFileId:'linked-drive', cloudAccountId:'account-1' }
+    expect(await store.isRemovedFromShelf(remote)).toBe(true)
+    expect(await store.addOrTouch(remote)).toBeNull()
+    expect(await store.addOrTouch(remote, { restoreRemoved:true })).toMatchObject({ id:'drive:linked-drive' })
+    expect(await store.isRemovedFromShelf(remote)).toBe(false)
+    expect(await store.isRemovedFromShelf(local.id)).toBe(false)
+  })
+
+  it('no oculta otro archivo de nombre idéntico en una cuenta de Drive distinta', async () => {
+    const book = await store.addOrTouch({ sourceType:'drive', name:'same.pdf', size:12,
+      driveFileId:'drive-a', cloudAccountId:'account-a' })
+    await store.removeFromShelf(book)
+    const other = { sourceType:'drive', name:'same.pdf', size:12, driveFileId:'drive-b', cloudAccountId:'account-b' }
+    expect(await store.isRemovedFromShelf(other)).toBe(false)
+    expect(await store.addOrTouch(other)).toMatchObject({ id:'drive:drive-b' })
+  })
+
+  it('recuerda el ID de una subida tardía sin volver a guardar el archivo', async () => {
+    const book = await store.addOrTouch({ sourceType:'local', name:'upload.pdf', size:5, content:new Blob(['bytes']) })
+    await store.removeFromShelf(book)
+    await store.rememberRemovedDriveLink(book, 'late-drive', 'account-1')
+    expect(await store.isRemovedFromShelf({ driveFileId:'late-drive', cloudAccountId:'account-1' })).toBe(true)
+    expect(await store.get(book.id)).toBeNull()
+    await store.addOrTouch(book, { restoreRemoved:true })
+    await store.rememberRemovedDriveLink(book, 'even-later-drive', 'account-1')
+    expect(await store.isRemovedFromShelf(book)).toBe(false)
+    expect(await store.get(book.id)).not.toBeNull()
+  })
+
+  it('clear limpia también los marcadores de retirada', async () => {
+    const book = await store.addOrTouch({ sourceType:'local', name:'clear.pdf', size:1 })
+    await store.removeFromShelf(book)
+    await store.clear()
+    expect(await store.isRemovedFromShelf(book)).toBe(false)
+    expect(await store.addOrTouch(book)).not.toBeNull()
+  })
+
+  it('migra la biblioteca anterior conservando los archivos y el progreso', async () => {
+    const previousName = `${dbName}-schema-1`
+    const db = await new Promise(resolve => {
+      const request = indexedDB.open(previousName, 1)
+      request.onupgradeneeded = () => {
+        const books = request.result.createObjectStore('books', { keyPath:'id' })
+        books.createIndex('lastOpenedAt', 'lastOpenedAt')
+      }
+      request.onsuccess = () => resolve(request.result)
+    })
+    const oldBook = { id:'local:old.pdf:3', name:'old.pdf', content:new NativeBlob(['pdf']),
+      progressFraction:.7, locator:{ kind:'pdf-page', value:7 }, lastOpenedAt:100 }
+    await new Promise(resolve => {
+      const transaction = db.transaction('books', 'readwrite')
+      transaction.objectStore('books').put(oldBook)
+      transaction.oncomplete = resolve
+    })
+    db.close()
+    const migrated = new LibraryStore(previousName)
+    expect(await migrated.get(oldBook.id)).toMatchObject({ progressFraction:.7, locator:oldBook.locator })
+    expect((await migrated.get(oldBook.id)).content.size).toBe(3)
+    await migrated.removeFromShelf(oldBook.id)
+    expect(await migrated.get(oldBook.id)).toBeNull()
+    await migrated.close()
   })
 
   it('respeta el límite pasado a listRecents', async () => {

@@ -253,10 +253,21 @@ async function waitForMotion(motion, duration) {
   let watchdog;
   try {
     const completed = await Promise.race([
-      motion.finished?.then(() => true, () => true) ?? Promise.resolve(true),
-      new Promise(resolve => { watchdog = setTimeout(() => resolve(false), duration + 1500); })
+      motion.finished?.then(value => value !== false, () => true) ?? Promise.resolve(true),
+      new Promise(resolve => {
+        const check = () => {
+          // A capped RAF step keeps the 3D path smooth on slower phones. It
+          // can take longer than its nominal duration, so only time out when
+          // frames have actually stopped instead of cancelling a live fall.
+          if (Number.isFinite(motion.lastFrameTime) && performance.now() - motion.lastFrameTime < 1500) {
+            watchdog = setTimeout(check, 1500);
+          } else resolve(false);
+        };
+        watchdog = setTimeout(check, duration + 1500);
+      })
     ]);
     if (!completed) motion.cancel?.();
+    return completed;
   } finally { clearTimeout(watchdog); }
 }
 
@@ -310,6 +321,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     returnMotion: null,
     arranging: false,
     dragSession: null,
+    trashRemoval: null,
+    trashStatusTimer: 0,
     suppressOpenBookId: null,
     queuedBooks: null,
     renderQueued: false,
@@ -325,7 +338,21 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   const root = el('div', { class: 'ihr-bookshelf', 'data-ihr-bookshelf': '' });
   const scroller = el('div', { class: 'ihr-bookshelf__scroll' });
+  const hasTrash = typeof options.onBookRemove === 'function';
+  const trashNode = hasTrash ? el('div', {
+    class:'ihr-shelf-trash', role:'img',
+    'aria-label':'Papelera: arrastra un libro para retirarlo de la estantería',
+    title:'Retirar de la estantería. El archivo original se conserva en Drive o en tu dispositivo.'
+  }, [
+    el('span', { class:'ihr-shelf-trash__body', 'aria-hidden':'true' }),
+    el('span', { class:'ihr-shelf-trash__lid', 'aria-hidden':'true' }),
+    el('span', { class:'ihr-shelf-trash__label', text:'Retirar libro', 'aria-hidden':'true' })
+  ]) : null;
+  const trashStatus = hasTrash ? el('div', { class:'ihr-trash-status', role:'status', 'aria-live':'polite' }) : null;
+  const trashGutter = () => hasTrash ? (window.innerWidth >= 600 ? 96 : 80) : 0;
+  root.classList.toggle('has-trash', hasTrash);
   root.append(scroller);
+  if (trashStatus) root.append(trashStatus);
   // La app monta hoy "añadir libro" y "Drive" en su propio header, así que la
   // barra de acciones de la estantería está apagada por defecto para no
   // duplicar controles. Se enciende con `showActions: true` (o sola, si se
@@ -657,6 +684,16 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function updateDropPreview(drag, node) {
+    drag.overTrash = hitTrash(drag.x, drag.y, node);
+    trashNode?.classList.toggle('is-over', drag.overTrash);
+    state.shelfScene?.setTrashHover(drag.overTrash);
+    if (drag.overTrash) {
+      drag.destination = null;
+      cancelAnimationFrame(drag.previewFrame); drag.previewFrame = 0;
+      state.shelfScene?.setDropPosition(null);
+      state.shelfScene?.previewPlacements(null);
+      return;
+    }
     drag.destination = dropPositionAt(drag.x, drag.y);
     state.shelfScene?.setDropPosition(drag.destination);
     if (drag.destination && !drag.previewFrame) drag.previewFrame = requestAnimationFrame(() => {
@@ -672,6 +709,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const tick = () => {
       drag.scrollFrame = 0;
       if (state.dragSession !== drag || !drag.active) return;
+      if (drag.overTrash) return;
       const bounds = scroller.getBoundingClientRect();
       const delta = drag.y < bounds.top + 40 ? -12 : drag.y > bounds.bottom - 40 ? 12 : 0;
       if (!delta) return;
@@ -814,10 +852,22 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     clearTimeout(drag.timer);
     cancelAnimationFrame(drag.previewFrame);
     cancelAnimationFrame(drag.scrollFrame);
+    const discard = drag.active && drag.moved && !cancelled && !drag.cancelled &&
+      hitTrash(event.clientX ?? drag.x, event.clientY ?? drag.y, node);
+    const discardDuration = prefersReducedMotion() ? 1 : 820;
+    let discardMotion = null, discardRect = null;
+    if (discard) {
+      // Capture the moving model before resetting its drag offset. The drop
+      // starts at the pointer, with no jump back to its old slot.
+      state.shelfScene?.flush();
+      discardRect = node.getBoundingClientRect();
+      discardMotion = state.shelfScene?.animateBookToTrash(node, { duration:discardDuration });
+    }
     const oldRects = drag.active && drag.moved ? objectRects() : null;
     state.dragSession = null;
     state.shelfScene?.setDropPosition(null);
     state.shelfScene?.previewPlacements(null);
+    if (!discard) { trashNode?.classList.remove('is-over'); state.shelfScene?.setTrashHover(false); }
     drag.target?.classList.remove('is-drop-target', 'is-drop-before', 'is-drop-after');
     node.classList.remove('is-dragging', 'is-lifted');
     node.style.removeProperty('--ihr-drag-x');
@@ -835,9 +885,96 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     root.classList.remove('is-arranging');
     state.suppressOpenBookId = String(node.dataset.bookId || '');
     setTimeout(() => { state.suppressOpenBookId = null; }, 0);
+    if (discard) { void removeBookInTrash(node, { motion:discardMotion, rect:discardRect, duration:discardDuration }); return; }
     if (drag.moved && !cancelled && !opts.sections && drag.destination) persistObjectPlacement(node, drag.destination, oldRects);
     else if (drag.moved && !cancelled && drag.target) reorderSpine(node, drag.target, drag.after);
     else { state.shelfScene?.flush(); applyDeferredShelfUpdates(); }
+  }
+
+  function hitTrash(x, y, node) {
+    if (!trashNode || !node?.classList.contains('ihr-spine')) return false;
+    if (state.shelfScene) return state.shelfScene.hitTrash(x, y);
+    const bounds = trashNode.getBoundingClientRect();
+    return bounds.width > 0 && bounds.height > 0 && x >= bounds.left - 8 && x <= bounds.right + 8 &&
+      y >= bounds.top - 12 && y <= bounds.bottom + 8;
+  }
+
+  function cancelTrashRemoval() {
+    const operation = state.trashRemoval;
+    if (!operation || operation.persisting) return;
+    operation.cancelled = true;
+    operation.motion?.cancel?.(); operation.clone?.remove();
+    operation.node.classList.remove('is-away');
+    trashNode?.classList.remove('is-over'); state.shelfScene?.setTrashHover(false);
+    state.trashRemoval = null; state.busy = false;
+    root.classList.remove('is-discarding');
+    state.shelfScene?.flush();
+    applyDeferredShelfUpdates();
+  }
+
+  async function removeBookInTrash(node, { motion, rect, duration = prefersReducedMotion() ? 1 : 820 } = {}) {
+    const item = state.itemsById.get(node.dataset.bookId);
+    if (!hasTrash || !item || state.busy || state.destroyed) { motion?.cancel?.(); return; }
+    const operation = { node, motion, cancelled:false, persisting:false, clone:null };
+    state.trashRemoval = operation; state.busy = true;
+    root.classList.add('is-discarding');
+    clearTimeout(state.trashStatusTimer); trashStatus.textContent = '';
+    node.classList.add('is-away');
+    trashNode.classList.add('is-over');
+    try {
+      if (!motion) {
+        const start = rect || node.getBoundingClientRect(), target = trashNode.getBoundingClientRect();
+        const clone = operation.clone = node.cloneNode(true);
+        clone.classList.remove('is-away','is-dragging','is-lifted');
+        clone.classList.add('ihr-trash-flight');
+        clone.removeAttribute('data-book-id'); clone.setAttribute('aria-hidden','true'); clone.tabIndex = -1;
+        Object.assign(clone.style, { position:'fixed', left:`${start.left}px`, top:`${start.top}px`,
+          width:`${start.width}px`, height:`${start.height}px`, margin:'0', zIndex:'90', pointerEvents:'none' });
+        document.body.append(clone);
+        const dx = target.left + target.width/2 - start.left - start.width/2;
+        const dy = target.top + target.height*.6 - start.top - start.height/2;
+        operation.motion = animate(clone, [
+          { transform:'translate3d(0,0,0) rotateY(0deg) scale(1)', opacity:1 },
+          { transform:`translate3d(${dx*.65}px,${dy*.45-30}px,80px) rotateY(45deg) rotateZ(-18deg) scale(.65)`, opacity:1, offset:.55 },
+          { transform:`translate3d(${dx}px,${dy}px,-10px) rotateY(82deg) rotateZ(-32deg) scale(.12)`, opacity:0 }
+        ], { duration, easing:EASE, fill:'both' });
+      }
+      const landed = await waitForMotion(operation.motion, duration);
+      if (!landed) { operation.cancelled = true; node.classList.remove('is-away'); return; }
+      if (operation.cancelled || state.trashRemoval !== operation || state.destroyed) return;
+      // Delete the app's record only after the model has landed. External
+      // originals are managed by the application callback and stay intact.
+      operation.persisting = true;
+      await options.onBookRemove(item.book);
+      if (state.destroyed) return;
+      const id = String(item.book.id);
+      state.books = state.books.filter(book => String(book.id) !== id);
+      if (state.queuedBooks) state.queuedBooks = state.queuedBooks.filter(book => String(book.id) !== id);
+      if (String(state.lastOpened?.book.id) === id) state.lastOpened = null;
+      state.coverAppearances.delete(id); coverCache.delete(item.book);
+      for (const [key,url] of savedCoverUrls) if (key.startsWith(`${id}|`)) {
+        savedCoverUrls.delete(key);
+        if (state.objectUrls.delete(url)) URL.revokeObjectURL?.(url);
+      }
+      trashStatus.textContent = `${item.book.title || 'Libro'} retirado de la estantería`;
+      trashStatus.classList.remove('is-error');
+      state.trashStatusTimer = setTimeout(() => { trashStatus.textContent = ''; }, 4500);
+      root.dataset.lastRemovedBook = id;
+    } catch (error) {
+      operation.motion?.cancel?.(); node.classList.remove('is-away');
+      trashStatus.textContent = 'No se pudo retirar el libro. Vuelve a intentarlo.';
+      trashStatus.classList.add('is-error');
+      state.trashStatusTimer = setTimeout(() => { trashStatus.textContent = ''; }, 6500);
+      console.warn('No se pudo retirar el libro de la estantería:', error);
+    } finally {
+      operation.clone?.remove();
+      if (state.trashRemoval === operation) {
+        state.trashRemoval = null; state.busy = false;
+        root.classList.remove('is-discarding'); trashNode.classList.remove('is-over');
+        state.shelfScene?.setTrashHover(false);
+        if (!state.destroyed) { render(); applyDeferredShelfUpdates(); }
+      }
+    }
   }
 
   function buildSpine(item) {
@@ -936,6 +1073,15 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       openBook(hit || node, hit ? state.itemsById.get(hit.dataset.bookId) || item : item);
     });
     node.addEventListener('keydown', event => {
+      if (hasTrash && event.key === 'Delete' && !event.repeat) {
+        event.preventDefault();
+        if (state.busy || state.session || state.dragSession || state.returnMotion) return;
+        state.shelfScene?.flush();
+        const duration = prefersReducedMotion() ? 1 : 820;
+        const motion = state.shelfScene?.animateBookToTrash(node, { duration });
+        void removeBookInTrash(node, { motion, duration });
+        return;
+      }
       if (!opts.sections) { moveObjectWithKeyboard(event, node); return; }
       if (!event.shiftKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
       event.preventDefault();
@@ -1076,7 +1222,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       return Math.round(options.shelfWidth);
     }
     const width = scroller.clientWidth || container.clientWidth || 0;
-    return Math.max(0, Math.round(width));
+    return Math.max(0, Math.round(width - trashGutter()));
   }
 
   /** En pantallas estrechas los lomos adelgazan para que quepan más por balda. */
@@ -1087,6 +1233,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function setViewMode(mode) {
+    if (state.trashRemoval) return;
     if (!Object.values(SHELF_VIEW_MODES).includes(mode) || state.viewMode === mode) return;
     state.viewMode = mode;
     try { localStorage.setItem(SHELF_VIEW_STORAGE_KEY, mode); } catch { /* Preferencias no bloquean la biblioteca. */ }
@@ -1204,6 +1351,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         text:opts.texts.emptyAction, onClick:() => onPickLocal() }) : null
     ]));
     const stage = el('div', { class:'ihr-shelf-stage' });
+    stage.style.setProperty('--ihr-cabinet-width', `${width}px`);
+    if (trashNode) stage.append(trashNode);
     for (const section of plan) {
       const wrapper = el('section', {
         class: `ihr-section ihr-section--${section.id}`,
@@ -1222,13 +1371,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     fragment.append(stage);
     if (retainedScene) {
       // Measure the new semantic layout without moving the painted cabinet.
-      stage.style.cssText = `position:absolute;left:0;top:0;width:${width}px;visibility:hidden`;
+      stage.style.cssText = `position:absolute;left:0;top:0;width:${width + trashGutter()}px;visibility:hidden;--ihr-cabinet-width:${width}px`;
       heading.style.cssText = 'position:absolute;visibility:hidden';
     }
     scroller.append(fragment);
     if (state.useScene) {
       const layout = readShelfLayout(stage, width);
-      stage.style.cssText = '';
+      stage.style.cssText = `--ihr-cabinet-width:${width}px`;
       heading.style.cssText = '';
       for (const previous of previousChildren) previous.remove();
       if (retainedScene) retainedScene.updateLayout(layout);
@@ -1271,7 +1420,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           coverUrl:resolveCoverImmediately(item.book) });
       }
     }
-    return { stage, scroller, entries, rows, width,
+    return { stage, scroller, entries, rows, width, sceneWidth:width + trashGutter(), trashNode,
       height:stage.getBoundingClientRect().height, mode:state.viewMode };
   }
 
@@ -2360,6 +2509,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   let observer = null;
   const onViewportResize = () => {
+    cancelTrashRemoval();
     if (state.session?.handleViewportResize?.()) return;
     if (state.dragSession) finishSpineDrag({ pointerId:state.dragSession.pointerId }, state.dragSession.node, true);
     state.pendingSelection?.cancel();
@@ -2534,12 +2684,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     destroy() {
       state.destroyed = true;
+      cancelTrashRemoval();
       if (state.dragSession) finishSpineDrag({ pointerId:state.dragSession.pointerId }, state.dragSession.node, true);
       state.pendingSelection?.cancel();
       state.returnMotion?.cancel();
       state.session?.close({ instant: true, silent: true });
       if (state.frame) cancelAnimationFrame(state.frame);
       clearTimeout(state.reorderTimer);
+      clearTimeout(state.trashStatusTimer);
       observer?.disconnect();
       state.shelfScene?.dispose();
       window.removeEventListener('resize', onViewportResize);
