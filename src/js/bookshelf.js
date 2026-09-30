@@ -2546,6 +2546,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           ], { duration:session.coverOpeningDuration, easing:EASE, fill:'both' });
       await waitForMotion(session.coverOpening, session.coverOpeningDuration);
       if (session.cancelled || state.destroyed) return false;
+      // Withdraw the fabric while the saved page is still readable, before
+      // moving the camera. Closing performs these same steps in reverse.
+      flyout.dataset.openingPhase = 'bookmark';
+      if (view) {
+        session.bookmarkMotion = view.animateBookmark({ withdraw:1, duration:prefersReducedMotion() ? 1 : 320 });
+        await waitForMotion(session.bookmarkMotion, prefersReducedMotion() ? 1 : 320);
+      }
+      if (session.cancelled || state.destroyed) return false;
       if (typeof animatePage === 'function') {
         flyout.dataset.openingPhase = 'zooming';
         await animatePage({ duration:prefersReducedMotion() ? 1 : 720, pageSnapshot, animateBookToPage,
@@ -2664,11 +2672,16 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   /** Cierra el tomo 3D desde el lector y lo devuelve a su hueco. */
-  async function returnToShelf(bookId) {
-    const previous = state.lastOpened;
+  async function returnToShelf(bookId, { pageSnapshot, book:latestBook, onPageReady } = {}) {
+    const item = state.itemsById.get(String(bookId));
+    const previous = state.lastOpened?.book.id === bookId ? state.lastOpened
+      : item ? { book:item.book, style:item.style } : null;
     if (!previous || previous.book.id !== bookId || state.destroyed) return false;
     state.returnMotion?.cancel();
-    const book = state.books.find(candidate => candidate.id === bookId) || previous.book;
+    state.lastOpened = previous;
+    const book = latestBook || state.books.find(candidate => candidate.id === bookId) || previous.book;
+    state.books = state.books.map(record => record.id === bookId ? book : record);
+    if (item) item.book = book;
     const spine = [...root.querySelectorAll('.ihr-spine')].find(node => node.dataset.bookId === String(bookId)) || previous.spineEl;
     if (!spine?.isConnected) { state.lastOpened = null; return false; }
 
@@ -2699,12 +2712,15 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const bookNode = el('div', { class:'ihr-flyout__book', style:
       `left:${(vw-coverW)/2}px;top:${centerY-coverH/2}px;width:${coverW}px;height:${coverH}px` });
     stage.append(bookNode);
-    const flyout = el('div', { class:'ihr-flyout ihr-flyout--return', 'aria-hidden':'true' }, [stage]);
+    const scrim = el('div', { class:'ihr-flyout__scrim', style:'opacity:0' });
+    const flyout = el('div', { class:'ihr-flyout ihr-flyout--return', 'aria-hidden':'true', style:'visibility:hidden' }, [scrim, stage]);
+    flyout.dataset.returnPhase = 'preparing';
     const coverUrl = resolveCoverImmediately(book);
     if (state.destroyed || state.lastOpened !== previous || window.innerWidth !== vw || window.innerHeight !== vh) return false;
     const view = bookView(bookNode, book, previous.style, {
       width:coverW, height:coverH, thickness, viewportWidth:vw, viewportHeight:vh,
-      centerX, centerY, coverUrl
+      centerX, centerY, coverUrl,
+      initialPose:{ x:0, y:0, scale:1, angle:0, pitch:0, coverOpen:pageSnapshot ? 1 : 0, bookmarkWithdraw:pageSnapshot ? 1 : 0 }
     });
     if (view) {
       bookNode.classList.add('ihr-flyout__book--webgl');
@@ -2712,15 +2728,19 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     } else {
       bookNode.classList.add('ihr-flyout__book--fallback');
       bookNode.style.cssText = `position:absolute;width:${coverW}px;height:${coverH}px;left:${(vw-coverW)/2}px;top:${centerY-coverH/2}px`;
-      bookNode.append(buildCoverFace(book, coverUrl, previous.style));
+      const pages = el('div', { class:'ihr-flyout__fallback-pages' });
+      const leaf = el('div', { class:'ihr-flyout__fallback-leaf' }, [buildCoverFace(book, coverUrl, previous.style),
+        el('div', { class:'ihr-flyout__face ihr-flyout__face--inside' })]);
+      bookNode.append(pages, leaf);
     }
     const pose = (x, y, scale, angle, pitch=0) => ({ x,y,scale,angle,pitch });
     document.body.append(flyout);
     spine.classList.add('is-away');
+    state.shelfScene?.updateEntry?.(spine, book, previous.style, coverUrl);
     state.shelfScene?.flush();
     const duration = prefersReducedMotion() ? 1 : 560;
     const approachDuration = view && dockingPose ? duration * .66 : duration;
-    const animation = view ? view.animate([
+    const startFlight = () => view ? view.animate([
       { transform:pose(0,0,1,0,0), offset:0 },
       { transform:pose(-dx*.12,-lift*.5,.94,12,3), offset:.22 },
       { transform:pose(end.x*.38,end.y*.38-lift,startScale+(1-startScale)*.38,end.angle*.7,4), offset:.68 },
@@ -2736,32 +2756,105 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       state.shelfScene?.flush();
       return current
     }
-    let insertion = null;
+    let animation = null, insertion = null;
+    const fallbackAnimations = [];
     const motion = { cancel() {
-      animation.cancel?.(); insertion?.cancel(); restoreShelfSpine(); view?.dispose(); flyout.remove();
-      state.returnMotion = null;
+      animation?.cancel?.(); insertion?.cancel();
+      for (const fallback of fallbackAnimations) fallback.cancel?.();
+      restoreShelfSpine(); view?.dispose(); flyout.remove();
+      if (state.returnMotion === motion) state.returnMotion = null;
       applyDeferredShelfUpdates()
     } };
     state.returnMotion = motion;
-    await waitForMotion(animation, approachDuration);
-    if (state.returnMotion === motion && view && dockingPose && !state.destroyed) {
-      insertion = state.shelfScene?.returnBook(spine, { duration:duration - approachDuration, overlayCanvas:view.canvas });
-      if (insertion) {
-        await waitForMotion(insertion, duration - approachDuration);
+    const active = () => state.returnMotion === motion && !state.destroyed;
+    try {
+      if (view) await view.ready;
+      if (!active()) return false;
+      if (pageSnapshot?.source && view && view.setPageSnapshot(pageSnapshot)) {
+        view.draw({ x:coverW*.14, y:0, scale:1, angle:0, pitch:0, coverOpen:1, bookmarkWithdraw:1 });
+        if (!view.alignToPage(pageSnapshot.displayBounds)) throw new Error('No se pudo alinear la página al cerrar el libro.');
+        flyout.style.visibility = '';
+        onPageReady?.();
+        flyout.dataset.returnPhase = 'zooming';
+        animate(scrim, [{ opacity:0 }, { opacity:1 }], { duration:prefersReducedMotion() ? 1 : 320, fill:'both' });
+        animation = view.animate([{ transform:view.getPose() }, { transform:{ x:coverW*.14, y:0, scale:1,
+          angle:0, pitch:0, roll:0, coverOpen:1, bookmarkWithdraw:1 } }], { duration:prefersReducedMotion() ? 1 : 620 });
+        await waitForMotion(animation, prefersReducedMotion() ? 1 : 620);
+        if (!active()) return false;
+        flyout.dataset.returnPhase = 'bookmark';
+        animation = view.animateBookmark({ withdraw:0, duration:prefersReducedMotion() ? 1 : 360 });
+        await waitForMotion(animation, prefersReducedMotion() ? 1 : 360);
+        if (!active()) return false;
+        flyout.dataset.returnPhase = 'closing';
+        animation = view.animateCoverClose({ duration:prefersReducedMotion() ? 1 : 580, offsetX:coverW*.14 });
+        await waitForMotion(animation, prefersReducedMotion() ? 1 : 580);
+        if (!active()) return false;
+      } else if (pageSnapshot?.source && !view) {
+        const pages = bookNode.querySelector('.ihr-flyout__fallback-pages');
+        const leaf = bookNode.querySelector('.ihr-flyout__fallback-leaf');
+        const image = pageSnapshot.source;
+        image.dataset.pageSource = pageSnapshot.sourceType || pageSnapshot.engine;
+        image.dataset.pageLocator = JSON.stringify(pageSnapshot.location?.locator ?? null);
+        const pageW = coverW*.92, pageH = coverH*.975;
+        const fit = Math.min(pageW/pageSnapshot.width,pageH/pageSnapshot.height);
+        image.className = 'ihr-flyout__saved-page';
+        image.style.cssText = `position:absolute;width:${pageSnapshot.width*fit}px;height:${pageSnapshot.height*fit}px;left:${(pageW-pageSnapshot.width*fit)/2}px;top:${(pageH-pageSnapshot.height*fit)/2}px`;
+        pages.replaceChildren(image); leaf.style.transform = 'rotateY(-169deg)';
+        const bounds = pageSnapshot.displayBounds;
+        const local = image.getBoundingClientRect(), scale = bounds.width/local.width;
+        const bookBounds = bookNode.getBoundingClientRect();
+        const x = bounds.left + bounds.width/2 - local.left-local.width/2 + (1-scale)*(local.left+local.width/2-bookBounds.left-bookBounds.width/2);
+        const y = bounds.top + bounds.height/2 - local.top-local.height/2 + (1-scale)*(local.top+local.height/2-bookBounds.top-bookBounds.height/2);
+        bookNode.style.transform = `translate(${x}px,${y}px) scale(${scale})`;
+        flyout.style.visibility = ''; onPageReady?.();
+        flyout.dataset.returnPhase = 'zooming';
+        animation = animate(bookNode,[{ transform:bookNode.style.transform },{ transform:'translate(0,0) scale(1)' }],
+          { duration:prefersReducedMotion() ? 1 : 620, easing:EASE, fill:'both' });
+        fallbackAnimations.push(animation);
+        await waitForMotion(animation, prefersReducedMotion() ? 1 : 620);
+        if (!active()) return false;
+        bookNode.style.transform = 'translate(0,0) scale(1)'; animation.cancel?.();
+        flyout.dataset.returnPhase = 'bookmark';
+        const ribbon = el('div', { class:'ihr-flyout__return-ribbon' }); pages.append(ribbon);
+        animation = animate(ribbon,[{ transform:'translateY(-130%)' },{ transform:'translateY(0)' }],
+          { duration:prefersReducedMotion() ? 1 : 360, fill:'both', easing:EASE });
+        fallbackAnimations.push(animation); await waitForMotion(animation, prefersReducedMotion() ? 1 : 360);
+        if (!active()) return false;
+        flyout.dataset.returnPhase = 'closing';
+        animation = animate(leaf,[{ transform:'rotateY(-169deg)' },{ transform:'rotateY(0deg)' }],
+          { duration:prefersReducedMotion() ? 1 : 580, fill:'both', easing:EASE });
+        fallbackAnimations.push(animation); await waitForMotion(animation, prefersReducedMotion() ? 1 : 580);
+        if (!active()) return false;
       }
+      flyout.style.visibility = ''; onPageReady?.();
+      flyout.dataset.returnPhase = 'returning';
+      animate(scrim,[{ opacity:pageSnapshot ? 1 : 0 },{ opacity:0 }],{ duration:approachDuration, fill:'both' });
+      animation = startFlight();
+      await waitForMotion(animation, approachDuration);
+      if (state.returnMotion === motion && view && dockingPose && !state.destroyed) {
+        flyout.dataset.returnPhase = 'inserting';
+        insertion = state.shelfScene?.returnBook(spine, { duration:duration - approachDuration, overlayCanvas:view.canvas });
+        if (insertion) {
+          await waitForMotion(insertion, duration - approachDuration);
+        }
+      }
+      if (state.returnMotion === motion) {
+        state.returnMotion = null;
+        animation.cancel?.();
+        for (const fallback of fallbackAnimations) fallback.cancel?.();
+        const currentSpine = restoreShelfSpine()
+        view?.dispose(); flyout.remove();
+        state.lastOpened = null;
+        currentSpine.focus?.({ preventScroll:true });
+        applyDeferredShelfUpdates()
+        maybeRefreshAppearanceStyles();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      motion.cancel();
+      throw error;
     }
-    if (state.returnMotion === motion) {
-      state.returnMotion = null;
-      animation.cancel?.();
-      const currentSpine = restoreShelfSpine()
-      view?.dispose(); flyout.remove();
-      state.lastOpened = null;
-      currentSpine.focus?.({ preventScroll:true });
-      applyDeferredShelfUpdates()
-      maybeRefreshAppearanceStyles();
-      return true;
-    }
-    return false;
   }
 
   return {
@@ -2769,6 +2862,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     refresh,
     update: refresh,
     returnToShelf,
+    hasReaderOrigin:bookId => state.lastOpened?.book.id === bookId,
 
     /** Repliega la portada abierta, si la hay. */
     close() {

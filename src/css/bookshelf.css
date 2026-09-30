@@ -747,6 +747,15 @@
 
 .ihr-flyout--return { z-index:61; background:transparent; pointer-events:none; }
 .ihr-flyout--return .ihr-flyout__stage { pointer-events:none; }
+.ihr-reader-return-page { position:fixed; inset:0; z-index:60; pointer-events:none; }
+body.is-closing-reader .app-header,
+body.is-closing-reader .screen { pointer-events:none; }
+.ihr-flyout__return-ribbon {
+  position:absolute; left:8%; top:-12%; width:7%; height:74%;
+  background:linear-gradient(90deg,#7e211c,#c74737 40%,#a52e24);
+  clip-path:polygon(0 0,100% 0,100% 100%,50% 96%,0 100%);
+  box-shadow:1px 2px 2px #0005;
+}
 
 [data-theme='dark'] .ihr-flyout__scrim { background:rgba(21,21,21,.94); }
 .ihr-flyout__close { position:absolute; top:max(16px, env(safe-area-inset-top)); right:max(16px, env(safe-area-inset-right)); z-index:5; width:44px; padding:0; }

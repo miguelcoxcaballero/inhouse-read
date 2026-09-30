@@ -168,6 +168,21 @@ describe('book motion with continuous velocity', () => {
     expect(sampleBookMotion(returning, .45).coverOpen).toBe(0);
     expect(sampleBookMotion(returning, 1)).toMatchObject({ angle:90, coverOpen:0 });
   });
+  it('inserts the ribbon before closing, with continuous poses and no scale or hinge overshoot', () => {
+    const opened={x:24,y:0,angle:0,pitch:0,roll:0,scale:1,coverOpen:1,bookmarkWithdraw:1};
+    const marked={...opened,bookmarkWithdraw:0},closed={...marked,x:0,coverOpen:0};
+    const marking=[{transform:opened},{transform:marked}],closing=[{transform:marked},{transform:closed}];
+    for (let step=0;step<=100;step++) {
+      const ribbon=sampleBookMotion(marking,step/100),cover=sampleBookMotion(closing,step/100);
+      expect(ribbon.coverOpen).toBe(1); expect(ribbon.scale).toBe(1);
+      expect(ribbon.bookmarkWithdraw).toBeGreaterThanOrEqual(0);
+      expect(ribbon.bookmarkWithdraw).toBeLessThanOrEqual(1);
+      expect(cover.bookmarkWithdraw).toBe(0); expect(cover.scale).toBe(1);
+      expect(cover.coverOpen).toBeGreaterThanOrEqual(0); expect(cover.coverOpen).toBeLessThanOrEqual(1);
+    }
+    expect(sampleBookMotion(marking,1)).toEqual(sampleBookMotion(closing,0));
+    expect(sampleBookMotion(closing,1)).toEqual(closed);
+  });
   it('retains the shelf world rotation through a docking handoff', () => {
     const dock = { x:-38, y:86, angle:60, pitch:14, roll:-3, scale:.42 };
     const moving = [{ transform:{ x:0, y:0, angle:0, pitch:0, roll:0, scale:1 } }, { transform:dock }];

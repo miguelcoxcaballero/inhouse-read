@@ -102,8 +102,8 @@ export const DEFAULT_BOOKMARK = Object.freeze({
 });
 
 /**
- * Marcapáginas de un libro, o `null` si no hay nada que marcar (progreso 0:
- * añadido pero nunca abierto).
+ * Marcapáginas de un libro, o `null` si no hay nada que marcar. Una posición
+ * guardada en la primera página también necesita su cinta, aunque avance 0%.
  *
  * @param {object} book
  * @param {object} [options] sobrescribe DEFAULT_BOOKMARK
@@ -112,7 +112,7 @@ export const DEFAULT_BOOKMARK = Object.freeze({
 export function bookmarkFor(book, options = {}) {
   const cfg = withDefaults(DEFAULT_BOOKMARK, options);
   const progress = progressOf(book);
-  if (progress <= 0) return null;
+  if (progress <= 0 && !book?.locator) return null;
   const peek = cfg.minPeek + (cfg.maxPeek - cfg.minPeek) * progress;
   // Redondeo hacia abajo: 99,6% no es "terminado" y no debe decir 100 %.
   const percent = progress >= 1 ? 100 : Math.max(1, Math.floor(progress * 100));

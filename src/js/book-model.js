@@ -680,21 +680,33 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     cancel();
     let raf, resolve;
     const finished = new Promise(done => { resolve = done; });
-    const start = performance.now(), origin = current || { x:0, y:0, scale:1, angle:0, pitch:0 };
+    let lastFrame = performance.now(), elapsed = 0;
+    const origin = current || { x:0, y:0, scale:1, angle:0, pitch:0 };
     let cancelled = false;
     cancel = () => { cancelled = true; cancelAnimationFrame(raf); resolve(); };
-    const animation = { finished, cancel };
+    const animation = { finished, cancel, lastFrameTime:lastFrame };
     const tick = now => {
       if (cancelled || disposed) return resolve();
-      const raw = duration > 0 ? Math.min(1, (now - start) / duration) : 1;
+      elapsed += Math.min(48,Math.max(0,now-lastFrame)); lastFrame = now;
+      const raw = duration > 0 ? Math.min(1, elapsed / duration) : 1;
       const amount = raw * raw * (3 - 2 * raw);
       draw({ ...origin, x:origin.x + offsetX * amount,
         coverOpen:(origin.coverOpen || 0) + (1 - (origin.coverOpen || 0)) * amount });
+      animation.lastFrameTime = performance.now();
       if (raw < 1) raf = requestAnimationFrame(tick);
       else resolve();
     };
     raf = requestAnimationFrame(tick);
     return animation;
+  }
+  function animateCoverClose({ duration = 580, offsetX = 0 } = {}) {
+    const origin = { ...current };
+    return animateMotion([{ transform:origin }, { transform:{ ...origin,
+      x:origin.x - offsetX, coverOpen:0, bookmarkWithdraw:0 } }], { duration });
+  }
+  function animateBookmark({ withdraw = 1, duration = 360 } = {}) {
+    const origin = { ...current };
+    return animateMotion([{ transform:origin }, { transform:{ ...origin, bookmarkWithdraw:withdraw } }], { duration });
   }
   function setPageSnapshot(snapshot) {
     if (disposed || !model.userData.setPageSnapshot(snapshot)) return false;
@@ -713,17 +725,24 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     return projectBookPageBounds(model.userData.pageSurface, camera, viewportWidth, viewportHeight,
       { left:rect.left, top:rect.top });
   }
-  function animateToPage({ left, top, width:targetWidth, height:targetHeight, duration = 620 }) {
-    if (!current) return { finished:Promise.resolve(), cancel:() => {} };
+  function pagePose({ left, top, width:targetWidth, height:targetHeight }) {
+    if (!current) return null;
     const origin = { ...current }, rect = canvas.getBoundingClientRect();
-    const destination = planBookPageZoom(model, camera, {
+    return planBookPageZoom(model, camera, {
       viewportWidth, viewportHeight, centerX, centerY, origin, offset:{ left:rect.left, top:rect.top },
       target:{ left, top, width:targetWidth, height:targetHeight }
     });
-    if (!destination) {
-      return { finished:Promise.resolve(), cancel:() => {} };
-    }
-    return animateMotion([{ transform:origin }, { transform:destination }], { duration });
+  }
+  function alignToPage(target) {
+    const destination = pagePose(target);
+    if (!destination) return false;
+    draw(destination);
+    return true;
+  }
+  function animateToPage(target) {
+    const origin = { ...current }, destination = pagePose(target);
+    if (!destination) return { finished:Promise.resolve(), cancel:() => {} };
+    return animateMotion([{ transform:origin }, { transform:destination }], { duration:target.duration ?? 620 });
   }
   function setBookmarkWithdraw(amount) {
     if (current) draw({ ...current, bookmarkWithdraw:amount });
@@ -733,17 +752,23 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (current) frames = [{ ...frames[0], transform: current }, ...frames.slice(1)];
     let raf, resolve; const finished = new Promise(r => resolve = r);
     cancel = () => { cancelAnimationFrame(raf); resolve(); };
-    const start = performance.now();
+    let lastFrame = performance.now(), elapsed = 0;
+    const animation = { finished, cancel, lastFrameTime:lastFrame };
     const tick = now => {
       if (disposed) return resolve();
-      const t = duration > 0 ? Math.min(1, (now - start) / duration) : 1;
-      draw(sampleBookMotion(frames, t)); if (t < 1) raf = requestAnimationFrame(tick); else resolve();
+      // Don't skip a hinge/ribbon step after a slow GPU frame on a phone.
+      // Keep the camera and geometry moving together through the same poses.
+      elapsed += Math.min(48,Math.max(0,now-lastFrame)); lastFrame = now;
+      const t = duration > 0 ? Math.min(1, elapsed / duration) : 1;
+      draw(sampleBookMotion(frames, t)); animation.lastFrameTime = performance.now();
+      if (t < 1) raf = requestAnimationFrame(tick); else resolve();
     };
-    raf = requestAnimationFrame(tick); return { finished, cancel };
+    raf = requestAnimationFrame(tick); return animation;
   }
   return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
     updateAppearance, updateSpineAppearance, updateCoverAppearance, updateEdgeAppearance,
-    setPageSnapshot, getPageBounds, setBookmarkWithdraw, animateCoverOpen, animateToPage,
+    setPageSnapshot, getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,
+    animateCoverOpen, animateCoverClose, animateBookmark, alignToPage, animateToPage,
     animate:animateMotion,
     dispose(removeCanvas = true) { cancel(); disposed = true; pendingModel?.userData.dispose(); model.userData.dispose(); if (removeCanvas) canvas.remove(); } };
 }

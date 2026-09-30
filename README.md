@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca es una estantería 3D con madera texturizada, libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.12
+
+- Al salir del lector, la página actual se aleja en el modelo 3D, recibe el marcapáginas, se cierra la portada y el libro vuelve a su hueco mediante la escena de la estantería. La página y la portada permanecen visibles durante el cambio entre lector y modelo.
+- La apertura retira primero el marcapáginas de la página guardada y después acerca la página al lector. El cierre conserva la posición actual, incluida la primera página y la primera salida tras importar un libro.
+- La secuencia admite PDF, EPUB, movimiento reducido y cancelación al girar el móvil, con una alternativa para dispositivos sin WebGL.
+
 ### Actualización web · 1.6.11
 
 - El toque largo sobre macetas y hojas no activa la selección de texto ni el menú nativo del móvil. Los objetos de la estantería conservan su arrastre 3D.

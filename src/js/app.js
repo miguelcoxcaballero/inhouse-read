@@ -68,6 +68,7 @@ let preparationGeneration = 0
 let requestedPreparationId = null
 let activePreparedBookId = null
 let activeOpeningContext = null
+let closingReader = false
 let readerPreparationQueue = Promise.resolve()
 const coverUpgrades = new Map()
 const progressWrites = new Map()
@@ -879,30 +880,80 @@ function onReaderRelocate({ fraction, cfi, index }) {
     .finally(() => { if (progressWrites.get(bookId) === write) progressWrites.delete(bookId) })
 }
 
-els.readerBack.addEventListener('click', () => {
-  preparationGeneration++
-  requestedPreparationId = null
-  activePreparedBookId = null
-  preparedBooks.clear()
-  readingExperience.reset()
+els.readerBack.addEventListener('click', async () => {
+  if (closingReader || !currentBookId) return
+  closingReader = true
+  document.body.classList.add('is-closing-reader')
   const bookId = currentBookId
-  const pendingProgress = progressWrites.get(bookId)
-  reader.close()
-  currentBookId = null
-  // Persist the final reader position as soon as its IndexedDB write settles;
-  // the shelf animation never waits for Drive's network request.
-  if (bookId && hasDriveSession()) {
-    Promise.resolve(pendingProgress).then(() => cloudSync.flushProgress(bookId))
-      .catch(error => setDriveSyncStatus(`Progreso pendiente: ${error.message}`))
+  let stillPage = null, stillFade = null, handedOff = false
+  const handoff = () => {
+    if (handedOff) return
+    handedOff = true
+    if (stillPage) {
+      stillFade = stillPage.animate([{ opacity:1 },{ opacity:0 }], {
+        duration:matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 220, fill:'both'
+      })
+      stillFade.finished.then(() => stillPage?.remove()).catch(() => {})
+    }
   }
-  showScreen('home')
-  els.readerToolbar.hidden = true
-  // Monta el primer fotograma del vuelo antes de que el navegador pinte el
-  // home. La actualización de IndexedDB puede esperar y se aplica al acabar
-  // la animación, sin mostrar el lomo original entre medias.
-  const returnFlight = shelf?.returnToShelf(bookId)
-  refreshShelf()
-  returnFlight?.catch(error => console.warn('No se pudo devolver el libro a la estantería:', error))
+  try {
+    readingExperience.voice.stop()
+    readingExperience.panel.close()
+    // Copy the CURRENT page before destroying the reader. Keep it on screen
+    // until the textured 3D leaf has rendered at exactly the same bounds.
+    const pageSnapshot = await reader.getPageSnapshot().catch(error => {
+      console.warn('No se pudo preparar la página de cierre:', error)
+      return null
+    })
+    await progressWrites.get(bookId)?.catch(() => {})
+    if (pageSnapshot?.location) {
+      await library.updateProgress(bookId,pageSnapshot.location.fraction ?? 0,pageSnapshot.location.locator ?? null)
+      if (hasDriveSession()) cloudSync.scheduleProgress(bookId)
+    }
+    const book = await library.get(bookId)
+    if (pageSnapshot?.source && pageSnapshot.displayBounds?.width) {
+      stillPage = document.createElement('div')
+      stillPage.className = 'ihr-reader-return-page'
+      stillPage.setAttribute('aria-hidden','true')
+      stillPage.style.background = getComputedStyle(els.readerScreen).backgroundColor
+      const image = document.createElement('canvas'), bounds = pageSnapshot.displayBounds
+      image.width = pageSnapshot.source.width; image.height = pageSnapshot.source.height
+      image.getContext('2d').drawImage(pageSnapshot.source,0,0)
+      image.style.cssText = `position:absolute;left:${bounds.left}px;top:${bounds.top}px;width:${bounds.width}px;height:${bounds.height}px`
+      stillPage.append(image); document.body.append(stillPage)
+    }
+    preparationGeneration++
+    requestedPreparationId = null
+    activePreparedBookId = null
+    preparedBooks.clear()
+    readingExperience.reset()
+    const pendingProgress = progressWrites.get(bookId)
+    reader.close()
+    currentBookId = null
+    // Persist the final reader position as soon as its IndexedDB write settles;
+    // the shelf animation never waits for Drive's network request.
+    if (bookId && hasDriveSession()) {
+      Promise.resolve(pendingProgress).then(() => cloudSync.flushProgress(bookId))
+        .catch(error => setDriveSyncStatus(`Progreso pendiente: ${error.message}`))
+    }
+    showScreen('home')
+    els.readerToolbar.hidden = true
+    // Newly imported books have never had a shelf selection. Populate their
+    // slot while the current-page overlay masks the home layout.
+    if (!shelf?.hasReaderOrigin(bookId)) await refreshShelf()
+    // The overlay masks shelf layout and cover decoding until the same page
+    // is ready on the 3D mesh. Drive sync continues independently of the flight.
+    const returnFlight = shelf?.returnToShelf(bookId, { pageSnapshot, book, onPageReady:handoff })
+    await returnFlight
+  } catch (error) {
+    console.warn('No se pudo devolver el libro a la estantería:', error)
+    reader.close(); currentBookId = null
+    readingExperience.reset(); showScreen('home'); els.readerToolbar.hidden = true
+  } finally {
+    stillFade?.cancel(); stillPage?.remove()
+    document.body.classList.remove('is-closing-reader')
+    closingReader = false
+  }
 })
 els.readerPrev.addEventListener('click', () => readingExperience.step(-1))
 els.readerNext.addEventListener('click', () => readingExperience.step(1))
@@ -965,7 +1016,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.6.11'
+els.appVersion.textContent = 'Inhouse Read · v1.6.12'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')

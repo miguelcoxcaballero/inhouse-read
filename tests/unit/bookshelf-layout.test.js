@@ -297,6 +297,10 @@ describe('progressOf / isInProgress', () => {
 })
 
 describe('bookmarkFor', () => {
+  it('marca también la primera página cuando existe una posición de lectura guardada', () => {
+    expect(bookmarkFor({ progressFraction:0, locator:{ kind:'pdf-page',value:1 } }))
+      .toMatchObject({ progress:0, percent:1, peek:DEFAULT_BOOKMARK.minPeek, finished:false });
+  })
   it('no marca nada en un libro sin empezar (o sin dato de progreso)', () => {
     expect(bookmarkFor({ progressFraction: 0 })).toBeNull()
     expect(bookmarkFor({})).toBeNull()

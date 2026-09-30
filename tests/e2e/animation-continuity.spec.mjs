@@ -60,6 +60,10 @@ async function observePrintedCoverFrames(page) {
     const sampleFrame = canvas => {
       const flyout = canvas.closest('.ihr-flyout')
       if (!flyout || flyout.classList.contains('is-opening-book')) return
+      if (getComputedStyle(flyout).visibility === 'hidden') return
+      // Closing deliberately shows the current reading page first. Validate
+      // the printed jacket once its hinge has actually closed.
+      if (flyout.classList.contains('ihr-flyout--return') && Number(canvas.dataset.coverOpen) > .001) return
       const angle = Number(canvas.dataset.angle)
       if (!Number.isFinite(angle) || Math.abs(angle) > 35) return
       context.clearRect(0, 0, sample.width, sample.height)
@@ -167,6 +171,7 @@ async function observeShelfInsertion(page, bookId) {
 async function expectDepthTestedInsertion(page, trigger, bookId = 'continuity:2') {
   await observeShelfInsertion(page, bookId)
   await trigger()
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:20000})
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
   await expect(page.locator(`.ihr-spine[data-book-id="${bookId}"]`)).not.toHaveClass(/is-away/)
   const result = await page.evaluate(() => window.__finishShelfInsertion())
@@ -289,6 +294,7 @@ test('seleccionar otro libro y volver al primero abre su documento y conserva la
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 1 de 1/)
   await observePrintedCoverFrames(page)
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:20000})
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
   const frames = await page.evaluate(() => {
     window.__printedCoverObserver.disconnect()

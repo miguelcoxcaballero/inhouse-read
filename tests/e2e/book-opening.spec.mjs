@@ -206,6 +206,154 @@ async function assertOpening(page, testInfo) {
   await expect(page.locator('#reader-screen')).not.toHaveClass(/is-preparing|is-opening-from-book/)
 }
 
+async function observeClosing(page, expected) {
+  await page.evaluate(expected => {
+    const state = window.__bookClosing = { phases:[],frames:[],failures:[],image:null,done:false };
+    const canvas = document.createElement('canvas'); canvas.width=100; canvas.height=216;
+    const context = canvas.getContext('2d',{willReadFrequently:true});
+    const tick = () => {
+      if (state.done) return;
+      const flyout=document.querySelector('.ihr-flyout--return'), phase=flyout?.dataset.returnPhase;
+      if (phase && !state.phases.includes(phase)) state.phases.push(phase);
+      const book=flyout?.querySelector('.ihr-book-canvas');
+      if (book && phase !== 'preparing' && phase !== 'inserting') {
+        const opened=Number(book.dataset.coverOpen),withdraw=Number(book.dataset.bookmarkWithdraw);
+        state.frames.push({phase,opened,withdraw,locator:book.dataset.pageLocator});
+        if (book.dataset.pageSource !== expected.source || !book.dataset.pageText.includes(expected.text))
+          state.failures.push({type:'wrong-page',phase,source:book.dataset.pageSource,text:book.dataset.pageText});
+        if (expected.locator && book.dataset.pageLocator !== JSON.stringify(expected.locator))
+          state.failures.push({type:'wrong-location',phase,locator:book.dataset.pageLocator});
+        if (phase === 'bookmark' && opened < .999) state.failures.push({type:'cover-closed-before-bookmark',opened});
+        if ((phase === 'closing' || phase === 'returning') && withdraw > .001)
+          state.failures.push({type:'bookmark-not-inserted',phase,withdraw});
+        if (phase === 'returning' && opened > .001) state.failures.push({type:'returned-open',opened});
+        context.clearRect(0,0,100,216); context.drawImage(book,0,0,100,216);
+        const pixels=context.getImageData(0,0,100,216).data;
+        let opaque=0,blue=0;
+        for (let i=0;i<pixels.length;i+=4) {
+          if (pixels[i+3] < 180) continue; opaque++;
+          if (pixels[i+2] > pixels[i]*1.65 && pixels[i+2] > pixels[i+1]*1.25 && pixels[i+2]>65) blue++;
+        }
+        if (!opaque) state.failures.push({type:'empty-frame',phase});
+        if (expected.blue && phase === 'bookmark' && blue < 40) state.failures.push({type:'current-blue-page-missing',blue});
+        if (!state.image && phase === 'bookmark' && withdraw < .5) state.image=book.toDataURL('image/png');
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  },expected);
+}
+async function assertClosing(page,testInfo) {
+  await expect(page.locator('.ihr-flyout--return')).toHaveCount(0,{timeout:20000});
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/,{timeout:20000});
+  const result=await page.evaluate(() => { const state=window.__bookClosing; state.done=true;return state; });
+  await testInfo.attach('reverse-book-animation',{body:JSON.stringify({...result,image:undefined}),contentType:'application/json'});
+  if (result.image) await testInfo.attach('current-page-with-3d-bookmark',{
+    body:Buffer.from(result.image.split(',')[1],'base64'),contentType:'image/png'});
+  expect(result.failures).toEqual([]);
+  expect(result.phases.filter(phase=>phase !== 'preparing')).toEqual(['zooming','bookmark','closing','returning','inserting']);
+  const marking=result.frames.filter(frame=>frame.phase === 'bookmark');
+  expect(marking.some(frame=>frame.withdraw > .8)).toBe(true);
+  expect(marking.some(frame=>frame.withdraw < .2)).toBe(true);
+  const closing=result.frames.filter(frame=>frame.phase === 'closing');
+  expect(closing.some(frame=>frame.opened > .8)).toBe(true);
+  expect(closing.some(frame=>frame.opened < .2)).toBe(true);
+  await expect(page.locator('.ihr-reader-return-page')).toHaveCount(0);
+  await expect(page.locator('.ihr-spine')).not.toHaveClass(/is-away/);
+}
+
+test('móvil: salir coloca el marcapáginas, cierra la página actual y vuelve a la balda en 3D incluso tras importar',async ({page},testInfo) => {
+  test.setTimeout(90000);
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.locator('#file-picker').setInputFiles({name:'reverse-current-page.pdf',mimeType:'application/pdf',buffer:colouredPdf()});
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 1 de 4/);
+  await observeClosing(page,{source:'pdf-canvas',locator:{kind:'pdf-page',value:1},text:'Printed page 1.',blue:false});
+  await page.getByRole('button',{name:'Volver a la estantería'}).click();
+  await assertClosing(page,testInfo);
+  await expect.poll(async()=> (await savedBook(page,'reverse-current-page.pdf'))?.locator).toEqual({kind:'pdf-page',value:1});
+  await page.locator('.ihr-spine').click();
+  await page.getByRole('button',{name:/Toca para leer/}).click();
+  await expect(page.locator('#reader-toolbar')).toBeVisible();
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0);
+  await page.getByRole('button',{name:'Página siguiente',exact:true}).click();
+  await page.getByRole('button',{name:'Página siguiente',exact:true}).click();
+  await expect(page.locator('.pdf-text-layer')).toContainText('Saved blue page. Page 3.');
+  await observeClosing(page,{source:'pdf-canvas',locator:{kind:'pdf-page',value:3},text:'Saved blue page. Page 3.',blue:true});
+  await page.getByRole('button',{name:'Volver a la estantería'}).click();
+  await assertClosing(page,testInfo);
+  expect(errors).toEqual([]);
+});
+
+test('móvil EPUB: la vuelta usa el capítulo actual y cancela limpiamente al girar durante el marcapáginas',async ({page},testInfo) => {
+  test.setTimeout(90000);
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/reading-journey.epub');
+  await expect(page.locator('foliate-view')).toBeVisible();
+  await page.locator('#reader-location').click();
+  await page.getByRole('button',{name:'Beyond the window',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>document.querySelector('foliate-view')?.renderer?.getContents()?.[0]?.doc.querySelector('h1')?.textContent)).toBe('Beyond the window');
+  await observeClosing(page,{source:'epub-page',text:'Beyond the window',blue:false});
+  await page.getByRole('button',{name:'Volver a la estantería'}).click();
+  await assertClosing(page,testInfo);
+  await page.locator('.ihr-spine').click();
+  await page.getByRole('button',{name:/Toca para leer/}).click();
+  await expect(page.locator('#reader-toolbar')).toBeVisible();
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0);
+  await page.evaluate(() => {
+    window.__cancelAtBookmark=false;
+    const observer=new MutationObserver(() => {
+      if (document.querySelector('.ihr-flyout--return')?.dataset.returnPhase !== 'bookmark') return;
+      observer.disconnect(); window.__cancelAtBookmark=true;
+      window.dispatchEvent(new Event('resize'));
+    });
+    observer.observe(document.body,{subtree:true,attributes:true,attributeFilter:['data-return-phase']});
+  });
+  await page.getByRole('button',{name:'Volver a la estantería'}).click();
+  await expect.poll(()=>page.evaluate(()=>window.__cancelAtBookmark)).toBe(true);
+  await page.setViewportSize({width:844,height:390});
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0);
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/);
+  await expect(page.locator('.ihr-reader-return-page')).toHaveCount(0);
+  await expect(page.locator('.ihr-spine')).not.toHaveClass(/is-away/);
+  await page.locator('.ihr-spine').click();
+  await expect(page.getByRole('button',{name:/Toca para leer/})).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('móvil sin WebGL: la salida conserva la página real durante el cierre y libera la portada',async ({page}) => {
+  await page.addInitScript(() => {
+    window.WebGLRenderingContext=undefined; window.WebGL2RenderingContext=undefined;
+  });
+  await page.reload();
+  await page.locator('#file-picker').setInputFiles({name:'reverse-fallback.pdf',mimeType:'application/pdf',buffer:colouredPdf()});
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 1 de 4/);
+  await page.getByRole('button',{name:'Página siguiente',exact:true}).click();
+  await page.getByRole('button',{name:'Página siguiente',exact:true}).click();
+  await expect(page.locator('.pdf-text-layer')).toContainText('Saved blue page. Page 3.');
+  await page.getByRole('button',{name:'Volver a la estantería'}).click();
+  await expect(page.locator('.ihr-flyout--return')).toHaveAttribute('data-return-phase','bookmark');
+  const saved=page.locator('.ihr-flyout__saved-page');
+  await expect(saved).toHaveAttribute('data-page-locator',JSON.stringify({kind:'pdf-page',value:3}));
+  expect(await saved.evaluate(canvas=>canvas.getContext('2d').getImageData(canvas.width/2,canvas.height/2,1,1).data[2])).toBeGreaterThan(100);
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0);
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/);
+  await expect(page.locator('.ihr-reader-return-page')).toHaveCount(0);
+});
+
+test('movimiento reducido: salir conserva la última página y no deja bloqueos ni capas de transición',async ({page}) => {
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.locator('#file-picker').setInputFiles({name:'reverse-reduced.pdf',mimeType:'application/pdf',buffer:colouredPdf()});
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 1 de 4/);
+  await page.getByRole('button',{name:'Página siguiente',exact:true}).click();
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 2 de 4/);
+  await page.getByRole('button',{name:'Volver a la estantería'}).click();
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/);
+  await expect(page.locator('.ihr-flyout,.ihr-reader-return-page')).toHaveCount(0);
+  await expect.poll(async()=> (await savedBook(page,'reverse-reduced.pdf'))?.locator).toEqual({kind:'pdf-page',value:2});
+  await page.locator('.ihr-spine').click();
+  await expect(page.getByRole('button',{name:/Toca para leer/})).toBeVisible();
+});
+
 test('móvil: abre la página PDF guardada en el modelo 3D antes del zoom y conserva sus píxeles', async ({ page }, testInfo) => {
   test.setTimeout(90_000)
   const errors = []; page.on('pageerror', error => errors.push(error.message))
