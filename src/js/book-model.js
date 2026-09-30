@@ -81,27 +81,52 @@ export function boardGeometry(width, height, depth, { shelf = false } = {}) {
 }
 
 /** A real ribbon mesh emerging from the top edge at the saved reading depth. */
-export function bookmarkGeometry(width, height, thickness, progress, peek = 10) {
-  const ribbonWidth = Math.max(3, Math.min(9, thickness * .22));
+export function bookmarkGeometry(width, height, thickness, progress, peek = 10, { open = 0, withdraw = 0 } = {}) {
+  // Peek values belong to the 200 px shelf book, not the much larger lifted
+  // copy. Keep the ribbon's physical proportions identical in both models.
+  const ribbonWidth = Math.min(width * .09, Math.max(height * .035, Math.min(height * .055, thickness * .42)));
+  const visibleLength = height * Math.max(.09, Math.min(.17, (Number(peek) || 10) / 200 * 1.6));
   const x = -width / 2 + Math.max(thickness * .75, ribbonWidth * 1.5);
-  const depth = thickness / 2 - thickness * Math.max(0, Math.min(1, progress));
-  const points = [
-    [height / 2 - height * .15, depth],
-    [height / 2 - 2, depth],
-    [height / 2 + 2, depth + thickness * .12],
-    [height / 2 + Math.max(4, peek * .55), thickness * .2],
-    [height / 2 + peek, 0]
-  ];
+  const opening = Math.max(0, Math.min(1, open));
+  const insideDepth = thickness / 2 - thickness * Math.max(0, Math.min(1, progress));
+  const pageDepth = thickness / 2 - height * .0083 + height * .002;
+  const depth = THREE.MathUtils.lerp(insideDepth, pageDepth, opening);
+  const lift = height * 1.25 * Math.max(0, Math.min(1, withdraw));
   const positions = [], uvs = [], indices = [];
-  for (let i = 0; i < points.length; i++) {
-    const [y, z] = points[i];
-    positions.push(x - ribbonWidth / 2, y, z, x + ribbonWidth / 2, y, z);
-    uvs.push(0, i / (points.length - 1), 1, i / (points.length - 1));
-    if (i < points.length - 1) {
-      const start = i * 2;
-      indices.push(start, start + 1, start + 2, start + 1, start + 3, start + 2);
+  const head = height / 2 - height * .012 + lift;
+  const curve = new THREE.CubicBezierCurve3(new THREE.Vector3(x, head, depth),
+    new THREE.Vector3(x, height / 2 + height * .016 + lift, depth + thickness * .12),
+    new THREE.Vector3(x, height / 2 + visibleLength * .55 + lift,
+      THREE.MathUtils.lerp(thickness * .2, pageDepth + height * .015, opening)),
+    new THREE.Vector3(x, height / 2 + visibleLength + lift,
+      THREE.MathUtils.lerp(0, pageDepth - height * .04, opening)));
+  const steps = 32, fabricDepth = height * .0018;
+  for (let i = 0; i <= steps; i++) {
+    const bend = Math.max(0, (i - steps / 2) / (steps / 2));
+    const point = i <= steps / 2
+      ? new THREE.Vector3(x, THREE.MathUtils.lerp(height / 2 - height * .64 + lift, head, i / (steps / 2)), depth)
+      : curve.getPoint(bend);
+    // A gentle twist turns the visible tip toward someone looking at the
+    // binding; a flat page-aligned ribbon disappeared edge-on on the shelf.
+    const twist = Math.PI / 2 * bend * bend * (3 - 2 * bend) * (1 - opening * .65);
+    const dx = Math.cos(twist) * ribbonWidth / 2, dz = Math.sin(twist) * ribbonWidth / 2;
+    const nx = -Math.sin(twist) * fabricDepth / 2, nz = Math.cos(twist) * fabricDepth / 2;
+    positions.push(point.x - dx + nx, point.y, point.z - dz + nz,
+      point.x + dx + nx, point.y, point.z + dz + nz,
+      point.x - dx - nx, point.y, point.z - dz - nz,
+      point.x + dx - nx, point.y, point.z + dz - nz);
+    uvs.push(0, i / steps, 1, i / steps, 0, i / steps, 1, i / steps);
+    if (i < steps) {
+      const k = i * 4, n = k + 4;
+      indices.push(k, k + 1, n, k + 1, n + 1, n,
+        k + 2, n + 2, k + 3, k + 3, n + 2, n + 3,
+        k, n, k + 2, k + 2, n, n + 2,
+        k + 1, k + 3, n + 1, k + 3, n + 3, n + 1);
     }
   }
+  indices.push(0, 2, 1, 1, 2, 3);
+  const end = steps * 4;
+  indices.push(end, end + 1, end + 2, end + 1, end + 3, end + 2);
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
@@ -219,11 +244,31 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   };
   const board = height * .007;
   const frontCover = new THREE.Group();
-  frontCover.position.x = -width / 2;
+  frontCover.name = 'front-cover-hinge';
+  // Rotate around the board's binding edge. A hinge at the centre of the
+  // page block made the board cut through the pages instead of opening out.
+  frontCover.position.set(-width / 2, 0, thickness / 2 - board / 2);
   group.add(frontCover);
-  const frontBoard = new THREE.Mesh(boardGeometry(width, height, board, { shelf }), [cover, cloth]);
+  const frontGeometry = boardGeometry(width, height, board, { shelf });
+  const insideCover = new THREE.MeshStandardMaterial({ color:'#e6dfd0', roughness:1 });
+  insideCover.visible = false;
+  const frontGroups = [...frontGeometry.groups];
+  frontGeometry.clearGroups();
+  for (const face of frontGroups) {
+    if (face.materialIndex !== 0) { frontGeometry.addGroup(face.start, face.count, face.materialIndex); continue; }
+    const normal = frontGeometry.getAttribute('normal');
+    let start = face.start, material = normal.getZ(start) < 0 ? 2 : 0;
+    for (let index = face.start + 3; index < face.start + face.count; index += 3) {
+      const nextMaterial = normal.getZ(index) < 0 ? 2 : 0;
+      if (nextMaterial !== material) {
+        frontGeometry.addGroup(start, index - start, material); start = index; material = nextMaterial;
+      }
+    }
+    frontGeometry.addGroup(start, face.start + face.count - start, material);
+  }
+  const frontBoard = new THREE.Mesh(frontGeometry, [cover, cloth, insideCover]);
   frontBoard.name = 'front-cover';
-  frontBoard.position.set(width / 2, 0, thickness / 2 - board / 2);
+  frontBoard.position.set(width / 2, 0, 0);
   frontCover.add(frontBoard);
   const backBoard = new THREE.Mesh(boardGeometry(width, height, board, { shelf }), [cloth, cloth]);
   backBoard.position.z = -thickness / 2 + board / 2;
@@ -246,8 +291,38 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   const pageBlock = box(width - inset * 2, height - inset * 2, thickness - board * 2.4,
     [foreEdge, foreEdge, topEdge, topEdge, topEdge, topEdge], inset * .3);
   pageBlock.name = 'page-block';
+  const pageWidth = width - inset * 2, pageHeight = height - inset * 2;
+  const pageFront = thickness / 2 - board * 1.2 + board * .03;
+  const pagePaper = new THREE.Mesh(new THREE.PlaneGeometry(pageWidth, pageHeight),
+    new THREE.MeshBasicMaterial({ color:'#e6dfd0', toneMapped:false }));
+  pagePaper.position.set(inset * .3, 0, pageFront);
+  pagePaper.visible = false;
+  pagePaper.name = 'reading-page-paper'; group.add(pagePaper);
+  const pageMaterial = new THREE.MeshBasicMaterial({ color:0xffffff, toneMapped:false });
+  const pageImage = new THREE.Mesh(new THREE.PlaneGeometry(pageWidth, pageHeight), pageMaterial);
+  pageImage.name = 'reading-page';
+  pageImage.position.set(inset * .3, 0, pageFront + board * .02);
+  pageImage.visible = false; group.add(pageImage);
+  group.userData.pageSurface = pageImage;
+  group.userData.setPageSnapshot = snapshot => {
+    if (disposed || !snapshot?.source) return false;
+    const imageWidth = Number(snapshot.width || snapshot.source.width || snapshot.source.naturalWidth);
+    const imageHeight = Number(snapshot.height || snapshot.source.height || snapshot.source.naturalHeight);
+    if (!(imageWidth > 0 && imageHeight > 0)) return false;
+    const fit = fitCoverImage(imageWidth, imageHeight, pageWidth, pageHeight);
+    pageImage.geometry.dispose();
+    pageImage.geometry = new THREE.PlaneGeometry(fit.width, fit.height);
+    const map = new THREE.CanvasTexture(snapshot.source);
+    map.colorSpace = THREE.SRGBColorSpace;
+    map.minFilter = THREE.LinearFilter; map.generateMipmaps = false;
+    pageMaterial.map?.dispose(); pageMaterial.map = map; pageMaterial.needsUpdate = true;
+    pageImage.visible = true;
+    group.userData.pageSnapshot = snapshot;
+    group.userData.invalidate?.();
+    return true;
+  };
   let bookmark = bookmarkFor(book);
-  let ribbonMaterial = null, ribbonMesh = null;
+  let ribbonMaterial = null, ribbonMesh = null, coverOpening = 0, bookmarkWithdraw = 0;
   if (bookmark) {
     ribbonMaterial = new THREE.MeshPhysicalMaterial({
       color: bookmark.finished ? '#c79a3e' : '#b3342d',
@@ -260,13 +335,15 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
       ribbonMaterial
     );
     ribbonMesh.renderOrder = 4;
+    ribbonMesh.name = 'reading-bookmark';
     group.add(ribbonMesh);
   }
   // Recessed cloth hinges run beside the curved binding on both boards.
   const hinge = new THREE.MeshStandardMaterial({ color: style.shade || style.color, roughness: 1 });
-  for (const z of [-1, 1]) {
-    box(height * .0025, height * .966, height * .0007, hinge, -width / 2 + height * .017, 0, z * thickness / 2);
-  }
+  box(height * .0025, height * .966, height * .0007, hinge, -width / 2 + height * .017, 0, -thickness / 2);
+  const frontHinge = new THREE.Mesh(new THREE.BoxGeometry(height * .0025, height * .966, height * .0007), hinge);
+  frontHinge.position.set(height * .017, 0, board / 2);
+  frontCover.add(frontHinge);
   const bindingMesh = new THREE.Mesh(bindingGeometry(width, height, thickness, bindingSegments, surface.relief, reliefRows), binding);
   bindingMesh.name = 'binding';
   group.add(bindingMesh);
@@ -354,7 +431,24 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     applyCoverFinish(cover, nextBook.coverFinish);
   };
   group.userData.setCoverOpen = amount => {
-    frontCover.rotation.y = -Math.PI * .82 * Math.max(0, Math.min(1, amount));
+    const next = Math.max(0, Math.min(1, amount));
+    frontCover.rotation.y = -Math.PI * .94 * next;
+    // Closed shelf books need neither the occluded paper plane nor the
+    // cover's inner material submitted to the GPU on every shelf repaint.
+    pagePaper.visible = next > 0;
+    insideCover.visible = next > 0;
+    if (Math.abs(next - coverOpening) > .00001) { coverOpening = next; updateRibbonGeometry(); }
+  };
+  function updateRibbonGeometry() {
+    if (!ribbonMesh || !bookmark) return;
+    ribbonMesh.geometry.dispose();
+    ribbonMesh.geometry = bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek,
+      { open:Math.max(0, Math.min(1, (coverOpening - .1) / .9)), withdraw:bookmarkWithdraw });
+    ribbonMesh.visible = bookmarkWithdraw < .999;
+  }
+  group.userData.setBookmarkWithdraw = amount => {
+    const next = Math.max(0, Math.min(1, Number(amount) || 0));
+    if (Math.abs(next - bookmarkWithdraw) > .00001) { bookmarkWithdraw = next; updateRibbonGeometry(); }
   };
   group.userData.hasBookmark = Boolean(bookmark);
   group.userData.updateBookmark = nextBook => {
@@ -369,7 +463,8 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
         clearcoatRoughness:.2, side:THREE.DoubleSide
       });
       ribbonMesh = new THREE.Mesh(bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek), ribbonMaterial);
-      ribbonMesh.renderOrder = 4; group.add(ribbonMesh);
+      ribbonMesh.renderOrder = 4; ribbonMesh.name = 'reading-bookmark'; group.add(ribbonMesh);
+      updateRibbonGeometry();
     }
     group.userData.hasBookmark = Boolean(bookmark);
     group.userData.invalidate?.();
@@ -421,6 +516,48 @@ export function lightBookScene(scene) {
   return scene;
 }
 
+/** Project the actual fitted page image, rather than the book's outer board. */
+export function projectBookPageBounds(page, camera, viewportWidth, viewportHeight, offset = { left:0, top:0 }) {
+  if (!page?.visible || !page.geometry?.parameters) return null;
+  page.updateWorldMatrix(true, false); camera.updateMatrixWorld();
+  const { width, height } = page.geometry.parameters;
+  const points = [[-width / 2, -height / 2], [width / 2, -height / 2],
+    [-width / 2, height / 2], [width / 2, height / 2]].map(([x, y]) => {
+    const projected = new THREE.Vector3(x, y, 0).applyMatrix4(page.matrixWorld).project(camera);
+    return { x:(projected.x + 1) * viewportWidth / 2 + offset.left,
+      y:(1 - projected.y) * viewportHeight / 2 + offset.top };
+  });
+  const left = Math.min(...points.map(point => point.x)), top = Math.min(...points.map(point => point.y));
+  return { left, top, width:Math.max(...points.map(point => point.x)) - left,
+    height:Math.max(...points.map(point => point.y)) - top };
+}
+
+/** Plan the handoff in the reader's flat plane without repainting the book. */
+export function planBookPageZoom(model, camera, {
+  viewportWidth, viewportHeight, centerX, centerY, origin,
+  offset = { left:0, top:0 }, target
+}) {
+  const rotation = model.rotation.clone();
+  let bounds;
+  try {
+    // Measuring the tilted preview leaves a small vertical compression in
+    // the final frame. Measure its final orientation, then restore the pose
+    // before the animation starts so the flattening itself stays continuous.
+    model.rotation.set(0, 0, 0);
+    bounds = projectBookPageBounds(model.userData.pageSurface, camera, viewportWidth, viewportHeight, offset);
+  } finally {
+    model.rotation.copy(rotation); model.updateMatrixWorld(true);
+  }
+  if (!bounds || !(bounds.width > 0 && bounds.height > 0 && target?.width > 0 && target?.height > 0)) return null;
+  const factor = Math.min(target.width / bounds.width, target.height / bounds.height);
+  const imageX = bounds.left + bounds.width / 2, imageY = bounds.top + bounds.height / 2;
+  const modelX = offset.left + centerX + origin.x, modelY = offset.top + centerY + origin.y;
+  return { ...origin,
+    x:origin.x + target.left + target.width / 2 - imageX + (1 - factor) * (imageX - modelX),
+    y:origin.y + target.top + target.height / 2 - imageY + (1 - factor) * (imageY - modelY),
+    scale:origin.scale * factor, angle:0, pitch:0, roll:0, coverOpen:1, bookmarkWithdraw:1 };
+}
+
 // One shared GPU context; individual canvases receive snapshots. No per-book
 // contexts, and the flyout uses exactly the same mesh builder as the shelf.
 export function bookView(host, book, style, { width, height, thickness, viewportWidth, viewportHeight, centerX, centerY, coverUrl, shelf = false, shelfView = 'spine', initialPose }) {
@@ -440,11 +577,13 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   if (shelf) canvas.dataset.shelfView = shelfView;
   const camera = new THREE.OrthographicCamera(-viewportWidth / 2, viewportWidth / 2, viewportHeight / 2, -viewportHeight / 2, .1, 10000); camera.position.z = 3000;
   let disposed = false, current, cancel = () => {}, pendingModel = null, appearanceRevision = 0;
-  let currentBook = book;
+  let currentBook = book, currentSnapshot = null;
   function draw(pose) {
     if (disposed) return;
-    current = { ...pose, coverOpen:Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0)) };
+    current = { ...pose, coverOpen:Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0)),
+      bookmarkWithdraw:Math.max(0, Math.min(1, pose.bookmarkWithdraw ?? current?.bookmarkWithdraw ?? 0)) };
     model.userData.setCoverOpen?.(current.coverOpen);
+    model.userData.setBookmarkWithdraw?.(current.bookmarkWithdraw);
     model.position.set(centerX - viewportWidth / 2 + pose.x, viewportHeight / 2 - centerY - pose.y, 0);
     model.rotation.set((pose.pitch ?? 0) * Math.PI / 180, pose.angle * Math.PI / 180, (pose.roll ?? 0) * Math.PI / 180); model.scale.setScalar(pose.scale);
     if (gpu.getPixelRatio() !== pixelRatio) gpu.setPixelRatio(pixelRatio);
@@ -462,6 +601,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     context.clearRect(0, 0, canvas.width, canvas.height); context.drawImage(gpu.domElement, 0, 0, canvas.width, canvas.height);
     canvas.dataset.angle = String(pose.angle); canvas.dataset.renderer = 'three-mesh';
     canvas.dataset.coverOpen = String(current.coverOpen);
+    canvas.dataset.bookmarkWithdraw = String(current.bookmarkWithdraw);
   }
   model.userData.invalidate = () => current && draw(current);
   draw(initialPose ?? {
@@ -480,8 +620,9 @@ export function bookView(host, book, style, { width, height, thickness, viewport
       const previous = model;
       scene.remove(previous); model = replacement; pendingModel = null;
       canvas.dataset.bookmark3d = String(Boolean(model.userData.hasBookmark));
-      model.userData.invalidate = () => current && draw(current);
       scene.add(model);
+      model.userData.invalidate = () => current && draw(current);
+      if (currentSnapshot) model.userData.setPageSnapshot(currentSnapshot);
       if (current) draw(current);
       previous.userData.dispose();
     };
@@ -533,7 +674,39 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     raf = requestAnimationFrame(tick);
     return animation;
   }
-  return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw, updateAppearance, updateSpineAppearance, updateCoverAppearance, updateEdgeAppearance, animateCoverOpen, animate(frames, { duration }) {
+  function setPageSnapshot(snapshot) {
+    if (disposed || !model.userData.setPageSnapshot(snapshot)) return false;
+    currentSnapshot = snapshot;
+    pendingModel?.userData.setPageSnapshot(snapshot);
+    canvas.dataset.pageSource = snapshot.sourceType || snapshot.engine || 'reader-page';
+    canvas.dataset.pageLocator = JSON.stringify(snapshot.location?.locator ?? snapshot.location ?? null);
+    canvas.dataset.pageText = String(snapshot.text || '').slice(0, 500);
+    canvas.dataset.pageWidth = String(snapshot.width || snapshot.source.width);
+    canvas.dataset.pageHeight = String(snapshot.height || snapshot.source.height);
+    if (current) draw(current);
+    return true;
+  }
+  function getPageBounds() {
+    const rect = canvas.getBoundingClientRect();
+    return projectBookPageBounds(model.userData.pageSurface, camera, viewportWidth, viewportHeight,
+      { left:rect.left, top:rect.top });
+  }
+  function animateToPage({ left, top, width:targetWidth, height:targetHeight, duration = 620 }) {
+    if (!current) return { finished:Promise.resolve(), cancel:() => {} };
+    const origin = { ...current }, rect = canvas.getBoundingClientRect();
+    const destination = planBookPageZoom(model, camera, {
+      viewportWidth, viewportHeight, centerX, centerY, origin, offset:{ left:rect.left, top:rect.top },
+      target:{ left, top, width:targetWidth, height:targetHeight }
+    });
+    if (!destination) {
+      return { finished:Promise.resolve(), cancel:() => {} };
+    }
+    return animateMotion([{ transform:origin }, { transform:destination }], { duration });
+  }
+  function setBookmarkWithdraw(amount) {
+    if (current) draw({ ...current, bookmarkWithdraw:amount });
+  }
+  function animateMotion(frames, { duration }) {
     cancel();
     if (current) frames = [{ ...frames[0], transform: current }, ...frames.slice(1)];
     let raf, resolve; const finished = new Promise(r => resolve = r);
@@ -545,7 +718,12 @@ export function bookView(host, book, style, { width, height, thickness, viewport
       draw(sampleBookMotion(frames, t)); if (t < 1) raf = requestAnimationFrame(tick); else resolve();
     };
     raf = requestAnimationFrame(tick); return { finished, cancel };
-  }, dispose(removeCanvas = true) { cancel(); disposed = true; pendingModel?.userData.dispose(); model.userData.dispose(); if (removeCanvas) canvas.remove(); } };
+  }
+  return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
+    updateAppearance, updateSpineAppearance, updateCoverAppearance, updateEdgeAppearance,
+    setPageSnapshot, getPageBounds, setBookmarkWithdraw, animateCoverOpen, animateToPage,
+    animate:animateMotion,
+    dispose(removeCanvas = true) { cancel(); disposed = true; pendingModel?.userData.dispose(); model.userData.dispose(); if (removeCanvas) canvas.remove(); } };
 }
 
 // Monotone Hermite interpolation: continuous velocity, no unwanted overshoot
@@ -557,7 +735,7 @@ export function sampleBookMotion(frames, progress) {
   while (index < frames.length - 2 && t > times[index + 1]) index++;
   const span = times[index + 1] - times[index], k = (t - times[index]) / span;
   const k2 = k * k, k3 = k2 * k, pose = {};
-  for (const key of ['x', 'y', 'scale', 'angle', 'pitch', 'roll', 'coverOpen']) {
+  for (const key of ['x', 'y', 'scale', 'angle', 'pitch', 'roll', 'coverOpen', 'bookmarkWithdraw']) {
     const value = i => frames[i].transform[key] ?? 0;
     const tangent = i => {
       if (i === 0 || i === frames.length - 1) return 0;

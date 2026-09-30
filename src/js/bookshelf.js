@@ -81,16 +81,14 @@
  *    pantallas < 360px) con zona de acierto extra a cada lado.
  *
  * 8. El giro inicial termina en una portada interactiva. Un toque en ella
- *    amplía el libro hasta cubrir la pantalla; el lector se prepara detrás
- *    de esa cubierta y se revela cuando ya tiene la primera página lista.
+ *    abre la portada y acerca la página guardada hasta el lector. Este se
+ *    prepara detrás de la cubierta; los controles aparecen tras el traspaso.
  *
  * 9. Marcapáginas. Cada libro empezado lleva una cinta de raso que asoma por
- *    arriba del lomo; lo que asoma es proporcional al progreso (5 px al 1%,
- *    20 px terminado: `bookmarkFor` en bookshelf-layout.js). Sustituye a la
- *    antigua barrita de progreso al pie del lomo. Vive dentro del propio
- *    `<button>` (que por eso ya no recorta con overflow:hidden), así que la
- *    caja medida para el giro no cambia. La balda reserva encima de los lomos
- *    `--ihr-bookmark-room` para que no lo corte el `content-visibility`.
+ *    arriba del lomo. La cinta 3D ocupa entre el 9 y el 17 % de la altura del
+ *    libro y comparte proporciones en la balda y al sacarlo. El respaldo DOM
+ *    vive dentro del botón sin recortar su parte superior. La balda reserva
+ *    `--ihr-bookmark-room` para dejar espacio al tejido y su curvatura.
  *
  * La geometría vive en `book-model.js`; la distribución, en `bookshelf-layout.js`. No sabe
  * nada de PDF.js, foliate, Drive ni IndexedDB: recibe libros y avisa cuando
@@ -1547,6 +1545,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       }
       clearInterval(readyCheck);
       session.cancelled = true;
+      session.onCancel?.();
       document.removeEventListener('keydown', onKeydown, true);
       // A slow image may still be loading before the flyout's first frame.
       // Cancel that selection without running an entrance/return not yet set up.
@@ -2246,39 +2245,77 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     coverTarget.hidden = !opts.autoOpen;
     coverTarget.classList.add('is-ready');
 
-    async function finishReaderTransition({ animatePage } = {}) {
-      await Promise.race([
-        session.coverOpening?.finished?.catch(() => {}) ?? Promise.resolve(),
-        new Promise(resolve => setTimeout(resolve, (session.coverOpeningDuration || 520) + 240))
-      ]);
+    function installOpeningPage(snapshot) {
+      if (!snapshot?.source) return false;
+      if (view) return view.setPageSnapshot(snapshot);
+      const pages = bookNode.querySelector('.ihr-flyout__fallback-pages');
+      if (!pages) return false;
+      const canvas = snapshot.source;
+      const pageW = coverW * .92, pageH = coverH * .975;
+      const scale = Math.min(pageW / snapshot.width, pageH / snapshot.height);
+      canvas.className = 'ihr-flyout__saved-page';
+      canvas.style.cssText = `position:absolute;width:${snapshot.width*scale}px;height:${snapshot.height*scale}px;left:${(pageW-snapshot.width*scale)/2}px;top:${(pageH-snapshot.height*scale)/2}px`;
+      canvas.dataset.pageSource = snapshot.sourceType || snapshot.engine;
+      canvas.dataset.pageLocator = JSON.stringify(snapshot.location?.locator ?? null);
+      canvas.dataset.pageText = (snapshot.text || '').slice(0, 3000);
+      pages.replaceChildren(canvas);
+      return true;
+    }
+
+    async function animateBookToPage(target) {
       if (session.cancelled || state.destroyed) return;
-      if (typeof animatePage === 'function') {
-        const duration = prefersReducedMotion() ? 1 : 620;
-        try {
-          await Promise.race([
-            animatePage({
-              left:centerX + (session.openingOffsetX || 0) - coverW / 2,
-              top:centerY - coverH / 2,
-              width:coverW,
-              height:coverH,
-              duration
-            }),
-            new Promise(resolve => setTimeout(resolve, duration + 700))
-          ]);
-        } catch (error) {
-          console.warn('La animación de apertura terminó con un error; se cerrará el libro flotante.', error);
-        }
-      } else {
-        const fadeDuration = prefersReducedMotion() ? 1 : 180;
-        const fade = animate(bookNode, [{ opacity: 1 }, { opacity: 0 }], {
-          duration: fadeDuration, easing: 'linear', fill: 'both'
-        });
-        animate(scrim, [{ opacity: 1 }, { opacity: 0 }], {
-          duration: fadeDuration, easing: 'linear', fill: 'both'
-        });
-        await fade.finished?.catch(() => {});
+      if (view) {
+        session.pageZoom = view.animateToPage(target);
+        await waitForMotion(session.pageZoom, target.duration);
+        return;
       }
+      const page = bookNode.querySelector('.ihr-flyout__saved-page');
+      const bounds = page?.getBoundingClientRect();
+      if (!bounds?.width || !bounds.height) return;
+      const scale = target.width / bounds.width;
+      const bookBounds = bookNode.getBoundingClientRect();
+      const imageX = bounds.left + bounds.width/2, imageY = bounds.top + bounds.height/2;
+      const dx = target.left + target.width/2 - imageX + (1-scale)*(imageX-bookBounds.left-bookBounds.width/2);
+      const dy = target.top + target.height/2 - imageY + (1-scale)*(imageY-bookBounds.top-bookBounds.height/2);
+      session.pageZoom = animate(bookNode, [
+        { transform:'translate(0,0) scale(1)' },
+        { transform:`translate(${dx}px,${dy}px) scale(${scale})` }
+      ], { duration:target.duration, easing:'cubic-bezier(.2,.74,.2,1)', fill:'both' });
+      await waitForMotion(session.pageZoom, target.duration);
+    }
+
+    async function finishReaderTransition({ pageSnapshot, animatePage } = {}) {
+      if (session.cancelled || state.destroyed) return false;
+      if (pageSnapshot && !installOpeningPage(pageSnapshot)) throw new Error('No se pudo preparar la página del modelo 3D.');
+      session.phase = 'reading';
+      flyout.dataset.openingPhase = 'opening';
+      flyout.classList.add('is-opening-book');
+      closeButton.hidden = true;
+      fadeMeta();
+      session.openingOffsetX = coverW * .14;
+      session.coverOpeningDuration = prefersReducedMotion() ? 1 : 640;
+      // The restored page is uploaded BEFORE its cover moves. Starting the
+      // hinge while the renderer loaded exposed a blank, generic page block.
+      session.coverOpening = view
+        ? view.animateCoverOpen({ duration:session.coverOpeningDuration, offsetX:session.openingOffsetX })
+        : animate(bookNode.querySelector('.ihr-flyout__fallback-leaf'), [
+            { transform:'rotateY(0deg)' }, { transform:'rotateY(-169deg)' }
+          ], { duration:session.coverOpeningDuration, easing:EASE, fill:'both' });
+      await waitForMotion(session.coverOpening, session.coverOpeningDuration);
+      if (session.cancelled || state.destroyed) return false;
+      if (typeof animatePage === 'function') {
+        flyout.dataset.openingPhase = 'zooming';
+        await animatePage({ duration:prefersReducedMotion() ? 1 : 720, pageSnapshot, animateBookToPage,
+          isActive:() => !session.cancelled && !state.destroyed && state.session === session });
+      }
+      if (session.cancelled || state.destroyed) return false;
+      flyout.dataset.openingPhase = 'handoff';
+      const fadeDuration = prefersReducedMotion() ? 1 : 140;
+      const fade = animate(bookNode, [{ opacity:1 }, { opacity:0 }], { duration:fadeDuration, easing:'linear', fill:'both' });
+      animate(scrim, [{ opacity:1 }, { opacity:0 }], { duration:fadeDuration, easing:'linear', fill:'both' });
+      await waitForMotion(fade, fadeDuration);
       if (state.session === session) {
+        flyout.dataset.openingPhase = 'complete';
         session.phase = 'complete';
         state.lastOpened = { book, style: item.style, spineEl };
         state.session = null;
@@ -2288,30 +2325,26 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         document.removeEventListener('keydown', onKeydown, true);
         view?.dispose();
         flyout.remove();
+        return true;
       }
+      return false;
     }
 
     async function expandCover() {
       if (session.cancelled || session.expanding || session.phase !== 'ready' || state.destroyed) return;
       session.expanding = true;
-      session.phase = 'reading';
+      session.phase = 'preparing';
+      flyout.dataset.openingPhase = 'preparing';
       coverTarget.disabled = true;
-      flyout.classList.add('is-expanding', 'is-opening-book');
-      closeButton.hidden = true;
-      fadeMeta();
+      flyout.classList.add('is-expanding');
       coverTarget.hidden = true;
-      readiness.textContent = 'Abriendo el libro…';
-      session.openingOffsetX = coverW * .14;
-      session.coverOpeningDuration = prefersReducedMotion() ? 1 : 520;
-      session.coverOpening = view
-        ? view.animateCoverOpen({ duration:session.coverOpeningDuration, offsetX:session.openingOffsetX })
-        : animate(bookNode.querySelector('.ihr-flyout__fallback-leaf'), [
-            { transform:'rotateY(0deg)' },
-            { transform:'rotateY(-148deg)' }
-          ], { duration:session.coverOpeningDuration, easing:'cubic-bezier(.2,.7,.2,1)', fill:'both' });
+      actionButtons.forEach(button => { button.disabled = true; });
+      readiness.textContent = 'Preparando tu última página…';
       try {
         await onOpen?.(book, {
           coverUrl,
+          isActive: () => !session.cancelled && !state.destroyed && state.session === session,
+          onCancel: listener => { session.onCancel = listener; },
           close: ({ instant = false } = {}) => close({ silent: true, instant }),
           finish: finishReaderTransition
         });

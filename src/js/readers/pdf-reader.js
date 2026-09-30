@@ -11,6 +11,7 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { TextLayer } from 'pdfjs-dist'
 import { attachSwipeNavigation } from '../gestures.js'
 import { DEFAULT_READING_PREFERENCES, READING_FONTS, normalizeReadingPreferences } from './reading-preferences.js'
+import { renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from './page-snapshot.js'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -35,6 +36,8 @@ export class PdfReader {
   #reflow
   #renderTask
   #textTask
+  #renderReady = Promise.resolve()
+  #pageText = ''
 
   async open(container, arrayBuffer, { onRelocate, onToggleChrome, onUserNavigation } = {}) {
     this.#container = container
@@ -113,7 +116,12 @@ export class PdfReader {
     }
   }
 
-  async #render() {
+  #render() {
+    this.#renderReady = this.#renderPage()
+    return this.#renderReady
+  }
+
+  async #renderPage() {
     const token = ++this.#renderToken
     this.#renderTask?.cancel()
     this.#textTask?.cancel()
@@ -125,7 +133,8 @@ export class PdfReader {
     if (textMode) {
       const content = await page.getTextContent()
       if (token !== this.#renderToken) return false
-      this.#reflow.textContent = content.items.map(item => item.str + (item.hasEOL ? '\n' : ' ')).join('') || 'Esta página es una imagen. Cambia a Página original para verla.'
+      this.#pageText = content.items.map(item => item.str + (item.hasEOL ? '\n' : ' ')).join('')
+      this.#reflow.textContent = this.#pageText || 'Esta página es una imagen. Cambia a Página original para verla.'
       return true
     }
 
@@ -157,6 +166,7 @@ export class PdfReader {
     const cssViewport = page.getViewport({ scale })
     const textContent = await page.getTextContent()
     if (token !== this.#renderToken) return false
+    this.#pageText = textContent.items.map(item => item.str + (item.hasEOL ? '\n' : ' ')).join('')
     const textLayer = new TextLayer({
       textContentSource: textContent,
       container: this.#textLayerEl,
@@ -172,6 +182,36 @@ export class PdfReader {
     const page = await this.#doc.getPage(this.#pageNum)
     const text = await page.getTextContent()
     return text.items.map(item => item.str + (item.hasEOL ? '\n' : ' ')).join('')
+  }
+
+  /** The restored reading page, copied only after its latest render settles. */
+  async getPageSnapshot() {
+    if (!this.#doc) return null
+    let pending
+    do {
+      pending = this.#renderReady
+      await pending
+    } while (this.#doc && pending !== this.#renderReady)
+    if (!this.#doc) return null
+    await settlePageLayout(this.#container.ownerDocument)
+    if (!this.#doc || pending !== this.#renderReady) return this.getPageSnapshot()
+    const page = this.#pageNum
+    const textMode = this.#preferences.pdfMode === 'text'
+    const snapshot = textMode
+      ? await snapshotDOMPage(this.#reflow, {
+        viewport:this.#container.getBoundingClientRect(),
+        offsetX:this.#container.getBoundingClientRect().left,
+        offsetY:this.#container.getBoundingClientRect().top,
+        background:getComputedStyle(this.#reflow).backgroundColor,
+        filter:renderedPageFilter(this.#reflow)
+      })
+      : snapshotCanvas(this.#canvas, {
+        filter:renderedPageFilter(this.#canvas), displayBounds:this.#canvas.getBoundingClientRect()
+      })
+    if (!snapshot || !this.#doc || page !== this.#pageNum) return null
+    return { ...snapshot, engine:'pdf', sourceType:textMode ? 'pdf-text' : 'pdf-canvas',
+      text:snapshot.text || this.#pageText, label:`Página ${page} de ${this.pageCount}`,
+      location:{ fraction:(page - 1) / Math.max(1, this.pageCount - 1), locator:{ kind:'pdf-page', value:page } } }
   }
   async search(query) {
     const term = String(query || '').trim().toLocaleLowerCase()
@@ -233,6 +273,7 @@ export class PdfReader {
     this.#loadingTask?.destroy()
     this.#loadingTask = null
     this.#doc = null
+    this.#pageText = ''
     if (this.#container) { this.#container.innerHTML = ''; this.#container.classList.remove('pdf-reader') }
   }
 }

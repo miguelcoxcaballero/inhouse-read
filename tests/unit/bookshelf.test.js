@@ -235,6 +235,26 @@ describe('renderBookshelf', () => {
     expect(document.querySelector('.ihr-flyout__img')).toBeNull()
   })
 
+  it('cancela la apertura pendiente antes de devolver el libro y descarta un lector que termina tarde', async () => {
+    const onBookOpen = vi.fn()
+    shelf = renderBookshelf(container, makeBooks(1), { shelfWidth:SHELF_WIDTH, revealDuration:0, returnDuration:0, onBookOpen })
+    const spine = container.querySelector('.ihr-spine')
+    spine.click()
+    await settle()
+    document.querySelector('.ihr-flyout__cover-target').click()
+    await vi.waitFor(() => expect(onBookOpen).toHaveBeenCalledOnce())
+    const context = onBookOpen.mock.calls[0][1]
+    const cancelled = vi.fn()
+    context.onCancel(cancelled)
+    expect(context.isActive()).toBe(true)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key:'Escape', bubbles:true }))
+    await vi.waitFor(() => expect(document.querySelector('.ihr-flyout')).toBeNull())
+    expect(cancelled).toHaveBeenCalledOnce()
+    expect(context.isActive()).toBe(false)
+    expect(await context.finish()).toBe(false)
+    expect(spine.classList.contains('is-away')).toBe(false)
+  })
+
   it('usa coverSrcFor cuando hay portada', async () => {
     const coverSrcFor = vi.fn(() => 'blob:portada-falsa')
     shelf = renderBookshelf(container, makeBooks(2), {

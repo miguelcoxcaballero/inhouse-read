@@ -13,6 +13,8 @@ import 'foliate-js/view.js'
 import { Overlayer } from 'foliate-js/overlayer.js'
 import { attachSwipeNavigation } from '../gestures.js'
 import { DEFAULT_READING_PREFERENCES, readingCSS, normalizeReadingPreferences } from './reading-preferences.js'
+import { READING_THEMES } from './reading-preferences.js'
+import { compositePageSnapshots, renderedPageFilter, settlePageLayout, snapshotDOMPage } from './page-snapshot.js'
 
 export class FoliateReader {
   #view
@@ -113,6 +115,51 @@ export class FoliateReader {
   async goToTarget(target) { await this.#view?.goTo(target) }
   async getSpeechText() {
     return this.#view?.lastLocation?.range?.toString() || ''
+  }
+  /** Snapshot the current paginated column/scroll viewport after CFI restore. */
+  async getPageSnapshot() {
+    const view = this.#view
+    const initial = view?.renderer?.getContents?.() || []
+    if (!initial.some(item => item.doc?.body || item.doc?.documentElement?.localName === 'svg')) return null
+    await Promise.all(initial.filter(item => item.doc).map(item => settlePageLayout(item.doc)))
+    if (view !== this.#view) return null
+    const viewport = view.getBoundingClientRect()
+    if (!viewport.width || !viewport.height) return null
+    // Fixed-layout renderers expose both spread frames, including the hidden
+    // side on portrait phones. Select actual visible frames, not array[0].
+    const contents = (view.renderer?.getContents?.() || []).map(item => {
+      const frame = item.doc?.defaultView?.frameElement
+      const rect = frame?.getBoundingClientRect()
+      if (!rect?.width || !rect.height) return null
+      const left = Math.max(viewport.left,rect.left), top = Math.max(viewport.top,rect.top)
+      const right = Math.min(viewport.right,rect.right), bottom = Math.min(viewport.bottom,rect.bottom)
+      if (right <= left || bottom <= top) return null
+      const width = frame.clientWidth || Number.parseFloat(frame.ownerDocument.defaultView.getComputedStyle(frame).width) || rect.width
+      const height = frame.clientHeight || Number.parseFloat(frame.ownerDocument.defaultView.getComputedStyle(frame).height) || rect.height
+      return { ...item, rect, scaleX:rect.width / width, scaleY:rect.height / height,
+        clipBounds:{left,top,width:right-left,height:bottom-top} }
+    }).filter(Boolean)
+    if (!contents.length) return null
+    const location = view.lastLocation
+    const background = READING_THEMES[this.#preferences.theme].background
+    const filter = renderedPageFilter(this.#container)
+    const deadline = performance.now() + 1500
+    const pages = []
+    for (const {doc,rect,scaleX,scaleY,clipBounds} of contents) {
+      const root = doc.body || (doc.documentElement.localName === 'svg' ? doc.documentElement : null)
+      const page = await snapshotDOMPage(root, {
+        viewport, offsetX:(viewport.left - rect.left) / scaleX, offsetY:(viewport.top - rect.top) / scaleY,
+        coordinateScaleX:scaleX,coordinateScaleY:scaleY,clipBounds,background,filter,deadline,
+        range:location?.range?.startContainer?.ownerDocument === doc ? location.range : undefined
+      })
+      if (page) pages.push(page)
+    }
+    const snapshot = compositePageSnapshots(pages,{viewport,background,filter})
+    if (!snapshot || view !== this.#view || location !== view.lastLocation) return null
+    return { ...snapshot, engine:'foliate', sourceType:'epub-page',
+      label:location?.pageItem?.label || location?.tocItem?.label || '',
+      location:{ fraction:Math.min(1, Math.max(0, Number(location?.fraction) || 0)),
+        locator:location?.cfi ? { kind:'cfi', value:location.cfi } : null } }
   }
   async search(query) {
     if (!this.#view || !String(query || '').trim()) return []

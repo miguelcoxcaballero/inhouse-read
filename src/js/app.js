@@ -66,6 +66,7 @@ const preparedBooks = new Map()
 let preparationGeneration = 0
 let requestedPreparationId = null
 let activePreparedBookId = null
+let activeOpeningContext = null
 let readerPreparationQueue = Promise.resolve()
 const coverUpgrades = new Map()
 const progressWrites = new Map()
@@ -178,101 +179,98 @@ async function refreshShelf() {
   }
 }
 
-async function animateReaderPageFromBook(bounds, book) {
+async function animateReaderPageFromBook({ duration, animateBookToPage, pageSnapshot, isActive }) {
   const screen = els.readerScreen
-  if (!screen || screen.hidden) return
-  const screenRect = screen.getBoundingClientRect()
-  const screenWidth = Math.max(1, screenRect.width || screen.clientWidth)
-  const screenHeight = Math.max(1, screenRect.height || screen.clientHeight)
-  const page = screen.querySelector('.pdf-page-wrap, .foliate-view-el, .foliate-reader')
-  const pageRect = page?.getBoundingClientRect()
-  const left = bounds.left - screenRect.left
-  const top = bounds.top - screenRect.top
-  const scaleX = Math.max(.08, bounds.width / screenWidth)
-  const scaleY = Math.max(.08, bounds.height / screenHeight)
-  const progress = Number(book.progressFraction ?? book.progress) || 0
-  let ribbon
-
-  if (progress > 0) {
-    ribbon = document.createElement('span')
-    ribbon.className = 'ihr-reader-page-ribbon'
-    ribbon.setAttribute('aria-hidden', 'true')
-    ribbon.style.left = `${Math.max(8, (pageRect?.left ?? screenRect.left) - screenRect.left + Math.min(34, (pageRect?.width ?? screenWidth) * .09))}px`
-    ribbon.style.top = `${Math.max(8, (pageRect?.top ?? screenRect.top) - screenRect.top + 10)}px`
-    ribbon.classList.toggle('is-finished', progress >= 1)
-    ribbon.dataset.progress = String(Math.min(1, progress))
-    screen.append(ribbon)
-  }
-
-  screen.style.setProperty('--ihr-reader-open-left', `${screenRect.left}px`)
-  screen.style.setProperty('--ihr-reader-open-top', `${screenRect.top}px`)
-  screen.style.setProperty('--ihr-reader-open-width', `${screenWidth}px`)
-  screen.style.setProperty('--ihr-reader-open-height', `${screenHeight}px`)
-  screen.classList.add('is-opening-from-book')
-  const from = `translate(${left}px,${top}px) scale(${scaleX},${scaleY})`
-  let pageMotion = null
-  let ribbonMotion = null
-  try {
-    if (typeof screen.animate === 'function') {
-      pageMotion = screen.animate([
-        { transform:from, borderRadius:'4px 7px 7px 4px', boxShadow:'0 16px 34px rgba(0,0,0,.3)' },
-        { transform:'translate(0,0) scale(1,1)', borderRadius:'0px', boxShadow:'none' }
-      ], { duration:bounds.duration, easing:'cubic-bezier(.2,.74,.2,1)', fill:'both' })
-    }
-    ribbonMotion = ribbon?.animate?.([
-      { transform:'translate3d(0,0,18px) rotate(-2deg)', opacity:1, offset:0 },
-      { transform:'translate3d(0,-28px,26px) rotate(4deg)', opacity:1, offset:.32 },
-      { transform:`translate3d(0,-${Math.max(110, screenHeight * .22)}px,40px) rotate(12deg)`, opacity:0, offset:1 }
-    ], { duration:Math.max(1, bounds.duration - 40), delay:80, easing:'cubic-bezier(.3,.65,.2,1)', fill:'both' })
-
-    if (pageMotion) {
-      // Some WebViews leave `finished` pending if the page is backgrounded or
-      // its compositor drops the animation. Let the transition complete and
-      // release the flyout even in that case.
-      await Promise.race([
-        pageMotion.finished.catch(() => {}),
-        new Promise(resolve => setTimeout(resolve, bounds.duration + 240))
-      ])
-    } else await new Promise(resolve => setTimeout(resolve, bounds.duration))
-  } finally {
-    pageMotion?.cancel()
-    ribbonMotion?.cancel()
-    ribbon?.remove()
-    screen.classList.remove('is-opening-from-book')
-    for (const property of ['--ihr-reader-open-left','--ihr-reader-open-top','--ihr-reader-open-width','--ihr-reader-open-height']) {
-      screen.style.removeProperty(property)
-    }
-  }
+  if (!screen || screen.hidden || (isActive && !isActive())) return
+  const page = pageSnapshot.sourceType === 'pdf-canvas'
+    ? screen.querySelector('.pdf-page-wrap:not([hidden]) .pdf-page-canvas') : null
+  const measured = page?.getBoundingClientRect()
+  const target = measured?.width && measured?.height ? measured : pageSnapshot.displayBounds
+  if (!target?.width || !target?.height) throw new Error('La página del lector todavía no está preparada.')
+  // Move the SAME textured leaf into its final position. Scaling the whole
+  // reader used to stretch its contents and hide the real page behind paper.
+  await animateBookToPage({ left:target.left, top:target.top, width:target.width, height:target.height, duration })
+  if (isActive && !isActive()) return
+  screen.classList.add('is-reader-page-ready')
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
 }
 
 async function openBookRecord(book, ctx) {
+  const isActive = () => !ctx.isActive || ctx.isActive()
+  const markOpening = () => {
+    activeOpeningContext = ctx
+    els.readerScreen.classList.add('is-opening-from-book')
+    els.readerScreen.classList.remove('is-reader-page-ready')
+    els.readerScreen.dataset.openingBook = book.id
+    document.body.classList.add('is-opening-reader')
+  }
+  markOpening()
+  const ownsOpening = () => activeOpeningContext === ctx
+  const clearOpening = () => {
+    if (!ownsOpening()) return
+    activeOpeningContext = null
+    els.readerScreen.classList.remove('is-opening-from-book', 'is-reader-page-ready')
+    delete els.readerScreen.dataset.openingBook
+    document.body.classList.remove('is-opening-reader')
+  }
+  const cancelOpening = () => {
+    if (!ownsOpening()) return
+    if (pendingLocalReopenId === book.id) {
+      pendingLocalReopenId = null
+      pendingReaderTransition = null
+    }
+    clearOpening()
+    showScreen('home')
+    els.readerToolbar.hidden = true
+  }
+  ctx.onCancel?.(cancelOpening)
+  const closeOpening = options => { cancelOpening(); return ctx.close(options) }
   const transition = {
+    isActive,
     onReaderReady: async () => {
-      await ctx.finish?.({ animatePage:bounds => animateReaderPageFromBook(bounds, book) })
-      els.readerToolbar.hidden = false
-      els.readerToolbar.classList.add('is-rising')
-      void els.readerToolbar.offsetWidth
-      requestAnimationFrame(() => els.readerToolbar.classList.add('is-visible'))
-      setTimeout(() => els.readerToolbar.classList.remove('is-rising', 'is-visible'), 500)
+      if (ctx.isActive && !ctx.isActive()) { cancelOpening(); return }
+      markOpening()
+      try {
+        await revealPreparedReader()
+        const record = await library.get(book.id) || book
+        if ((ctx.isActive && !ctx.isActive()) || currentBookId !== book.id) { cancelOpening(); return }
+        // Restore after both type settings and final viewport dimensions.
+        restoringProgress = true
+        try { await reader.goToLocator(record.locator, record.progressFraction || 0) }
+        finally { restoringProgress = false }
+        const pageSnapshot = await reader.getPageSnapshot()
+        if (ctx.isActive && !ctx.isActive()) { cancelOpening(); return }
+        if (!pageSnapshot) throw new Error('No se pudo preparar la página guardada del libro.')
+        const completed = await ctx.finish?.({ pageSnapshot, animatePage:animateReaderPageFromBook })
+        if (completed === false) { cancelOpening(); return }
+        els.readerToolbar.hidden = false
+        els.readerToolbar.classList.add('is-rising')
+        void els.readerToolbar.offsetWidth
+        requestAnimationFrame(() => els.readerToolbar.classList.add('is-visible'))
+        setTimeout(() => els.readerToolbar.classList.remove('is-rising', 'is-visible'), 500)
+      } finally { clearOpening() }
     },
-    onReaderError: () => ctx.close()
+    onReaderError: () => closeOpening()
   }
   const prepared = preparedBooks.get(book.id)
   if (prepared) {
     try {
-      if (await prepared && activePreparedBookId === book.id && currentBookId === book.id) {
+      const ready = await prepared
+      if (!isActive()) return
+      if (ready && activePreparedBookId === book.id && currentBookId === book.id) {
         preparedBooks.delete(book.id)
-        await revealPreparedReader()
         await transition.onReaderReady()
         const record = await library.get(book.id)
         if (record) extractCoverInBackground(record)
         return
       }
     } catch (err) {
+      if (!isActive()) return
       preparedBooks.delete(book.id)
       console.warn('La preparación anticipada falló; se abrirá el libro ahora:', err)
     }
   }
+  if (!isActive()) return
   if (book.sourceType === 'local') {
     // Vía principal: el propio libro se guardó en IndexedDB al importarlo
     // (ver openFile), así que reabrirlo no depende de ninguna API de
@@ -288,6 +286,7 @@ async function openBookRecord(book, ctx) {
         await openFile(file, { existingRecord: book, forcedId: book.id, transition })
         return
       } catch (err) {
+        if (!isActive()) return
         console.warn('No se pudo abrir el libro desde la copia guardada, se intentará otra vía:', err)
       }
     }
@@ -302,18 +301,21 @@ async function openBookRecord(book, ctx) {
         const folderHandle = await getSavedFolderHandle()
         if (folderHandle && await ensureFolderPermission(folderHandle)) {
           const file = await readFileFromFolder(folderHandle, book.folderFileName)
+          if (!isActive()) return
           if (file) {
             await openFile(file, { existingRecord: book, forcedId: book.id, transition })
             return
           }
         }
       } catch (err) {
+        if (!isActive()) return
         console.warn('No se pudo leer el libro de la carpeta guardada, se pedirá manualmente:', err)
       }
     }
 
     // Fallback: el File original no sobrevive entre sesiones (o no se pudo
     // leer de la carpeta) — hay que volver a pedirlo.
+    if (!isActive()) return
     pendingLocalReopenId = book.id
     pendingReaderTransition = transition
     els.filePicker.click()
@@ -327,10 +329,10 @@ async function openBookRecord(book, ctx) {
         // limpiar el id pendiente además de replegar la portada, o el
         // próximo archivo que se abra (por cualquier vía) heredaría por
         // error este id y pisaría este registro en la biblioteca.
-        if (pendingLocalReopenId === book.id) {
+        if (pendingReaderTransition === transition && isActive() && pendingLocalReopenId === book.id) {
           pendingLocalReopenId = null
           pendingReaderTransition = null
-          ctx.close({ instant: true })
+          closeOpening({ instant: true })
         }
       }, 400)
     }, { once: true })
@@ -339,9 +341,11 @@ async function openBookRecord(book, ctx) {
   if (book.sourceType === 'drive') {
     try {
       const file = await cloudSync.downloadForOffline(book)
+      if (!isActive()) return
       await openFile(file, { existingRecord: book, transition })
     } catch (err) {
-      ctx.close({ instant: true })
+      if (!isActive()) return
+      closeOpening({ instant: true })
       alert(`No se pudo descargar "${book.title}" de Drive: ${err.message}`)
     }
   }
@@ -390,6 +394,7 @@ els.filePicker.addEventListener('change', async () => {
 // ---- Apertura y lectura ----
 
 async function openFile(file, { existingRecord, forcedId, folderFileName, transition, preparing = false } = {}) {
+  if (transition?.isActive && !transition.isActive()) return false
   if (!preparing) {
     preparationGeneration++
     requestedPreparationId = null
@@ -397,6 +402,7 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
     preparedBooks.clear()
     await readerPreparationQueue.catch(() => {})
   }
+  if (transition?.isActive && !transition.isActive()) return false
   readingExperience.reset()
   currentBookId = null
   els.readerToolbar.hidden = Boolean(transition) || preparing
@@ -418,6 +424,7 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
       onToggleChrome: () => { els.readerToolbar.hidden = !els.readerToolbar.hidden }
     })
   } catch (err) {
+    if (transition?.isActive && !transition.isActive()) return false
     if (preparing) {
       els.readerScreen.classList.remove('is-preparing')
       els.readerScreen.hidden = true
@@ -433,6 +440,7 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
     }
     return false
   }
+  if (transition?.isActive && !transition.isActive()) return false
 
   els.readerFormatBadge.textContent = format.label ?? ''
 
@@ -472,14 +480,17 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
     console.warn('No se pudo guardar la copia del libro (¿cuota de almacenamiento?); se seguirá pidiendo el archivo al reabrir:', err)
     record = await library.addOrTouch({ ...baseFields, content: existingRecord?.content })
   }
+  if (transition?.isActive && !transition.isActive()) return false
   currentBookId = record.id
 
-  if (existingRecord?.locator || existingRecord?.progressFraction) {
-    restoringProgress = true
-    try { await reader.goToLocator(existingRecord.locator, existingRecord.progressFraction) }
-    finally { restoringProgress = false }
-  }
-  await readingExperience.open(record)
+  restoringProgress = true
+  try {
+    await readingExperience.open(record)
+    if (transition?.isActive && !transition.isActive()) return false
+    if (existingRecord?.locator || existingRecord?.progressFraction) {
+      await reader.goToLocator(existingRecord.locator, existingRecord.progressFraction)
+    }
+  } finally { restoringProgress = false }
 
   if (!preparing) refreshShelf()
   if (!preparing) extractCoverInBackground(record)
@@ -521,7 +532,9 @@ function prepareBookOpen(book) {
   const task = readerPreparationQueue.catch(() => {}).then(async () => {
     const [file] = await filesReady
     if (generation !== preparationGeneration) return false
+    await progressWrites.get(book.id)?.catch(() => {})
     const updated = await library.get(book.id) || book
+    if (generation !== preparationGeneration) return false
     const opened = await openFile(file, { existingRecord: updated, forcedId: book.id, preparing: true })
     if (generation !== preparationGeneration) return false
     activePreparedBookId = opened ? book.id : null
@@ -879,7 +892,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.6.1'
+els.appVersion.textContent = 'Inhouse Read · v1.6.2'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')

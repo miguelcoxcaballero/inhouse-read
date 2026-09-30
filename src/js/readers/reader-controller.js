@@ -61,6 +61,14 @@ export class ReaderController {
   async goToTarget(target) { await this.#reader?.goToTarget?.(target) }
   async applyPreferences(preferences) { await this.#reader?.applyPreferences?.(preferences) }
   async getSpeechText() { return await this.#reader?.getSpeechText?.() || '' }
+  async getPageSnapshot() {
+    const reader = this.#reader
+    const snapshot = await reader?.getPageSnapshot?.()
+    // A selection can replace this shared reader while an ebook layout awaits
+    // its fonts. Never give the newly selected book a previous book's bitmap.
+    if (!snapshot || reader !== this.#reader) return null
+    return { ...snapshot, location:{ ...this.#location, ...(snapshot.location || {}) } }
+  }
   async search(query) { return await this.#reader?.search?.(query) || [] }
   getSelection() { return this.#reader?.getSelection?.() || null }
   addQuoteAnnotation(quote) { this.#reader?.addQuoteAnnotation?.(quote) }

@@ -4,6 +4,13 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca es una estantería con madera y plantas fotográficas, donde los libros se ven de canto. Al tocar uno, sale de la balda y gira en 3D hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.2
+
+- Marcapáginas de tela con volumen, más ancho y alto, y las mismas proporciones en la balda y al sacar el libro. Se retira hacia arriba al acercar la página.
+- Apertura con bisagra en el borde de la portada. La página que aparece en el modelo es la última página PDF o el texto visible del CFI guardado en EPUB, con los ajustes del lector aplicados.
+- El zoom utiliza esa misma página 3D hasta alinearla con el lector; los controles aparecen después. Se reserva su espacio para evitar que EPUB cambie de página al mostrarlos.
+- Actualización web compatible con la APK actual; no requiere reinstalar Android.
+
 ### Actualización web · 1.6.1
 
 - Plantas con hojas curvas texturizadas, tallos, nervaduras y macetas torneadas; modelos distintos por especie. Atlas botánico propio de alta resolución, con transparencia conservada y optimizado en WebP.

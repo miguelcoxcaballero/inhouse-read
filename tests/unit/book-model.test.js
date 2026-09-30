@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as THREE from 'three';
-import { bindingGeometry, boardGeometry, bookmarkGeometry, sampleBookMotion, fitCoverImage, createBookModel } from '../../src/js/book-model.js';
+import { bindingGeometry, boardGeometry, bookmarkGeometry, sampleBookMotion, fitCoverImage, createBookModel, projectBookPageBounds, planBookPageZoom } from '../../src/js/book-model.js';
 
 describe('purpose-built rounded binding mesh', () => {
   it('joins both cover boards and protrudes beyond the left edge head-on', () => {
@@ -47,10 +47,43 @@ describe('3D reading ribbon', () => {
     const zs = Array.from({ length:positions.count }, (_, i) => positions.getZ(i))
     expect(Math.max(...ys)).toBeGreaterThan(150)
     expect(Math.min(...ys)).toBeLessThan(150)
-    expect(Math.min(...zs)).toBeCloseTo(-9.6, 1)
+    expect((positions.getZ(0) + positions.getZ(2)) / 2).toBeCloseTo(-9.6, 1)
     expect(geometry.index.count).toBeGreaterThan(0)
     geometry.dispose()
   })
+  it('has fabric thickness and a broad upward tip visible from the spine', () => {
+    const geometry = bookmarkGeometry(132, 200, 40, .8, 17);
+    const positions = geometry.getAttribute('position');
+    const tip = positions.count - 4;
+    expect(positions.getY(tip) - 100).toBeGreaterThan(25);
+    expect(Math.abs(positions.getZ(tip + 1) - positions.getZ(tip))).toBeGreaterThan(10);
+    expect(positions.getZ(0) - positions.getZ(2)).toBeCloseTo(.36);
+    expect(geometry.index.count).toBeGreaterThan(500);
+    geometry.dispose();
+  });
+  it('keeps the same physical silhouette when the lifted book is enlarged', () => {
+    const shelf = bookmarkGeometry(132, 200, 40, .8, 17);
+    const lifted = bookmarkGeometry(264, 400, 80, .8, 17);
+    const a = shelf.getAttribute('position'), b = lifted.getAttribute('position');
+    for (let i = 0; i < a.count; i++) {
+      expect(b.getX(i)).toBeCloseTo(a.getX(i) * 2, 4);
+      expect(b.getY(i)).toBeCloseTo(a.getY(i) * 2, 4);
+      expect(b.getZ(i)).toBeCloseTo(a.getZ(i) * 2, 4);
+    }
+    shelf.dispose(); lifted.dispose();
+  });
+  it('lies above the exposed reading page and withdraws upward without scaling', () => {
+    const open = bookmarkGeometry(132, 200, 40, .8, 17, { open:1 });
+    const removed = bookmarkGeometry(132, 200, 40, .8, 17, { open:1, withdraw:1 });
+    const a = open.getAttribute('position'), b = removed.getAttribute('position');
+    for (let i = 0; i < a.count / 2; i++) expect(a.getZ(i)).toBeGreaterThan(20 - 200 * .0083);
+    for (let i = 0; i < a.count; i++) {
+      expect(b.getY(i) - a.getY(i)).toBeCloseTo(250);
+      expect(b.getX(i)).toBeCloseTo(a.getX(i));
+      expect(b.getZ(i)).toBeCloseTo(a.getZ(i));
+    }
+    open.dispose(); removed.dispose();
+  });
 })
 
 describe('beveled hardcover boards', () => {
@@ -117,7 +150,7 @@ describe('book motion with continuous velocity', () => {
     }
   });
   it('closes a cancelled opening continuously before the book rejoins the shelf', () => {
-    const cancelledPose = { x:24, y:0, angle:0, pitch:0, roll:0, scale:1, coverOpen:.68 };
+    const cancelledPose = { x:24, y:0, angle:0, pitch:0, roll:0, scale:1, coverOpen:.68, bookmarkWithdraw:0 };
     const returning = [
       { transform:cancelledPose },
       { offset:.45, transform:{ x:48, y:18, angle:62, pitch:0, scale:.6 } },
@@ -173,6 +206,107 @@ describe('real shelf book materials', () => {
     }, { get: (target, key) => target[key] ?? (() => {}) });
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context);
   }
+
+  it('opens the front board about its binding edge without cutting through the saved page', () => {
+    canvasContext();
+    const model = createBookModel(book, style, 132, 200, 40, null);
+    const front = model.getObjectByName('front-cover'), hinge = model.getObjectByName('front-cover-hinge');
+    const page = model.getObjectByName('reading-page-paper');
+    expect(page.visible).toBe(false);
+    expect(front.material[2].visible).toBe(false);
+    expect(hinge.position.z).toBeCloseTo(40 / 2 - 200 * .007 / 2);
+    expect(front.position.z).toBe(0);
+    const p = front.geometry.getAttribute('position');
+    for (let step = 0; step <= 20; step++) {
+      model.userData.setCoverOpen(step / 20); model.updateMatrixWorld(true);
+      expect(page.visible).toBe(step > 0);
+      expect(front.material[2].visible).toBe(step > 0);
+      for (let i = 0; i < p.count; i++) {
+        const vertex = new THREE.Vector3().fromBufferAttribute(p, i).applyMatrix4(front.matrixWorld);
+        expect(vertex.z).toBeGreaterThan(page.position.z);
+      }
+    }
+    expect(front.material[2].map).toBeNull();
+    expect(front.geometry.groups.some(face => face.materialIndex === 2)).toBe(true);
+    model.userData.setCoverOpen(0);
+    expect(page.visible).toBe(false);
+    expect(front.material[2].visible).toBe(false);
+    model.userData.dispose();
+  });
+
+  it('uses the real saved page without text fabrication, colour lighting or image stretching', () => {
+    canvasContext();
+    const model = createBookModel(book, style, 132, 200, 40, null);
+    const source = document.createElement('canvas'); source.width = 800; source.height = 600;
+    const snapshot = { source, width:800, height:600, sourceType:'pdf-canvas',
+      location:{ locator:{ page:31 } }, text:'Exact text from the saved page' };
+    const page = model.getObjectByName('reading-page');
+    expect(page.visible).toBe(false);
+    expect(model.userData.setPageSnapshot(snapshot)).toBe(true);
+    expect(page.visible).toBe(true);
+    expect(page.material).toBeInstanceOf(THREE.MeshBasicMaterial);
+    expect(page.material.toneMapped).toBe(false);
+    expect(page.material.color.getHex()).toBe(0xffffff);
+    expect(page.material.map.image).toBe(source);
+    expect(page.material.map.colorSpace).toBe(THREE.SRGBColorSpace);
+    expect(page.geometry.parameters.width / page.geometry.parameters.height).toBeCloseTo(800 / 600);
+    expect(model.userData.pageSnapshot.location.locator.page).toBe(31);
+    const previous = page.material.map, release = vi.spyOn(previous, 'dispose');
+    model.userData.setPageSnapshot({ ...snapshot, location:{ locator:{ page:32 } } });
+    expect(release).toHaveBeenCalledOnce();
+    const current = page.material.map, releaseCurrent = vi.spyOn(current, 'dispose');
+    model.userData.dispose();
+    expect(releaseCurrent).toHaveBeenCalledOnce();
+    expect(model.userData.setPageSnapshot(snapshot)).toBe(false);
+  });
+
+  it('projects the fitted saved image bounds instead of the outer cover with its paper margins', () => {
+    canvasContext();
+    const model = createBookModel(book, style, 132, 200, 40, null);
+    const source = document.createElement('canvas'); source.width = 400; source.height = 400;
+    model.userData.setPageSnapshot({ source, width:400, height:400 });
+    model.position.set(40, -60, 0); model.scale.setScalar(2);
+    const camera = new THREE.OrthographicCamera(-200, 200, 400, -400, .1, 1000); camera.position.z = 800;
+    const result = projectBookPageBounds(model.userData.pageSurface, camera, 400, 800, { left:10, top:20 });
+    expect(result.width).toBeCloseTo(256.8);
+    expect(result.height).toBeCloseTo(256.8);
+    expect(result.left + result.width / 2).toBeCloseTo(251.08);
+    expect(result.top + result.height / 2).toBeCloseTo(480);
+    expect(result.height).toBeLessThan(400);
+    model.userData.dispose();
+  });
+
+  it('ends the zoom flat and exactly aligned with the reader without changing the starting pose', () => {
+    canvasContext();
+    const model = createBookModel(book, style, 132, 200, 40, null);
+    const source = document.createElement('canvas'); source.width = 400; source.height = 600;
+    model.userData.setPageSnapshot({ source, width:400, height:600 });
+    const viewportWidth = 400, viewportHeight = 800, centerX = 206, centerY = 360;
+    const origin = { x:40, y:60, scale:2, angle:0, pitch:7, roll:-3, coverOpen:1, bookmarkWithdraw:0 };
+    const applyPose = pose => {
+      model.position.set(centerX - viewportWidth / 2 + pose.x, viewportHeight / 2 - centerY - pose.y, 0);
+      model.rotation.set(pose.pitch * Math.PI / 180, pose.angle * Math.PI / 180, pose.roll * Math.PI / 180);
+      model.scale.setScalar(pose.scale); model.updateMatrixWorld(true);
+    };
+    applyPose(origin);
+    const startingRotation = model.rotation.clone(), startingPosition = model.position.clone(), startingScale = model.scale.clone();
+    const camera = new THREE.OrthographicCamera(-200, 200, 400, -400, .1, 1000); camera.position.z = 800;
+    const target = { left:8, top:24, width:360, height:540 }, offset = { left:10, top:20 };
+    const destination = planBookPageZoom(model, camera, {
+      viewportWidth, viewportHeight, centerX, centerY, origin, offset, target
+    });
+    expect(model.rotation.toArray()).toEqual(startingRotation.toArray());
+    expect(model.position).toEqual(startingPosition);
+    expect(model.scale).toEqual(startingScale);
+    expect(destination).toMatchObject({ pitch:0, roll:0, angle:0, coverOpen:1, bookmarkWithdraw:1 });
+    applyPose(destination);
+    const actual = projectBookPageBounds(model.userData.pageSurface, camera, viewportWidth, viewportHeight, offset);
+    for (const key of ['left', 'top', 'width', 'height']) expect(actual[key]).toBeCloseTo(target[key], 4);
+    const mid = sampleBookMotion([{ transform:origin }, { transform:destination }], .5);
+    expect(mid.pitch).toBeCloseTo(3.5);
+    expect(mid.roll).toBeCloseTo(-1.5);
+    model.userData.dispose();
+  });
 
   it('keeps the loaded cover separate from cloth and gives the shelf visible paper edges', () => {
     canvasContext();

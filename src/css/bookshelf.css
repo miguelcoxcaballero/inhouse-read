@@ -26,10 +26,9 @@
   --ihr-bloom: var(--copper, #d97736);
   --ihr-shelf-height: 172px;
   --ihr-board-thickness: 16px;
-  /* Hueco sobre los lomos para que asome el marcapáginas. Tiene que ser >=
-     DEFAULT_BOOKMARK.maxPeek (bookshelf-layout.js): `content-visibility`
-     en .ihr-shelf recorta todo lo que se salga de la caja de la balda. */
-  --ihr-bookmark-room: 20px;
+  /* La cinta 3D asoma hasta el 17 % de la altura del libro; este espacio
+     también impide recortar el respaldo DOM contra el techo de la balda. */
+  --ihr-bookmark-room: 48px;
   --ihr-ribbon: #b3342d;
   --ihr-ribbon-done: #c79a3e;
   --ihr-ease: var(--ease, cubic-bezier(0.4, 0, 0.2, 1));
@@ -371,8 +370,8 @@
   position: absolute;
   bottom: 100%;
   right: 22%;
-  width: max(5px, min(8px, 24%));
-  height: var(--ihr-bookmark-peek, 8px);
+  width: max(7px, min(12px, 36%));
+  height: max(16px, calc(var(--ihr-bookmark-peek, 10px) * 1.6));
   background:
     linear-gradient(
       90deg,

@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const pdfOpen = vi.fn(async () => {})
 const foliateOpen = vi.fn(async () => {})
+const pdfSnapshot = vi.fn(async () => null)
+const foliateSnapshot = vi.fn(async () => null)
 
 vi.mock('../../src/js/readers/pdf-reader.js', () => ({
   PdfReader: class {
@@ -10,6 +12,7 @@ vi.mock('../../src/js/readers/pdf-reader.js', () => ({
     prev = vi.fn()
     close = vi.fn()
     pageCount = 10
+    getPageSnapshot = pdfSnapshot
   }
 }))
 
@@ -20,6 +23,7 @@ vi.mock('../../src/js/readers/foliate-reader.js', () => ({
     prev = vi.fn()
     goToFraction = vi.fn()
     close = vi.fn()
+    getPageSnapshot = foliateSnapshot
   }
 }))
 
@@ -33,6 +37,8 @@ describe('ReaderController', () => {
   beforeEach(() => {
     pdfOpen.mockClear()
     foliateOpen.mockClear()
+    pdfSnapshot.mockReset()
+    foliateSnapshot.mockReset()
   })
 
   it('enruta un PDF al PdfReader', async () => {
@@ -82,5 +88,27 @@ describe('ReaderController', () => {
     const container = document.createElement('div')
 
     await expect(controller.open(container, file)).rejects.toBeInstanceOf(UnsupportedFormatError)
+  })
+
+  it('exposes the rendered saved page and its engine locator', async () => {
+    const controller = new ReaderController()
+    await controller.open(document.createElement('div'), makeFile('libro.pdf', new TextEncoder().encode('%PDF-1.4')))
+    const source = document.createElement('canvas')
+    pdfSnapshot.mockResolvedValue({ source, width:200, height:300, sourceType:'pdf-canvas',
+      text:'The actual third page', location:{ fraction:2/9, locator:{kind:'pdf-page',value:3} } })
+    expect(await controller.getPageSnapshot()).toMatchObject({ source, sourceType:'pdf-canvas',
+      text:'The actual third page', location:{ locator:{kind:'pdf-page',value:3} } })
+  })
+
+  it('discards a page snapshot if another book takes over while it is being drawn', async () => {
+    const controller = new ReaderController()
+    await controller.open(document.createElement('div'), makeFile('libro.pdf', new TextEncoder().encode('%PDF-1.4')))
+    let resolve
+    pdfSnapshot.mockImplementation(() => new Promise(done => { resolve = done }))
+    const pending = controller.getPageSnapshot()
+    controller.close()
+    resolve({ source:document.createElement('canvas'), width:200, height:300 })
+    expect(await pending).toBeNull()
+    expect(await controller.getPageSnapshot()).toBeNull()
   })
 })
