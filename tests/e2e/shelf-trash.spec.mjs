@@ -5,6 +5,30 @@ const PDF_FIXTURE = 'tests/e2e/fixtures/tiny.pdf'
 const PLANTS_KEY = 'inhouse-read-shelf-plants'
 const DRIVE_ID = 'keep-on-drive'
 
+function savedDrivePdf() {
+  const colours = ['.72 .08 .15', '.08 .22 .78', '.1 .52 .23']
+  const objects = ['<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [4 0 R 6 0 R 8 0 R] /Count 3 >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']
+  for (let index=0; index<3; index++) {
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 600] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + index * 2} 0 R >>`)
+    const text = index === 1 ? 'Saved Drive reading page 2.' : `Drive document page ${index + 1}.`
+    const stream = `${colours[index]} rg 0 0 400 600 re f\n1 1 1 rg BT /F1 23 Tf 30 540 Td (${text}) Tj ET`
+    objects.push(`<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`)
+  }
+  let output = '%PDF-1.4\n'
+  const offsets = [0]
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(output))
+    output += `${index + 1} 0 obj\n${object}\nendobj\n`
+  })
+  const xref = Buffer.byteLength(output)
+  output += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+  output += offsets.slice(1).map(offset => `${String(offset).padStart(10,'0')} 00000 n \n`).join('')
+  output += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`
+  return Buffer.from(output)
+}
+
 test.use({ viewport:{ width:390, height:844 }, hasTouch:true, isMobile:true, deviceScaleFactor:1 })
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion:'no-preference' })
@@ -32,13 +56,14 @@ async function storedLibrary(page) {
     db.close()
     return {
       books:books.map(book => ({ id:book.id, name:book.name, driveFileId:book.driveFileId,
-        bytes:book.content?.size, shelfPosition:book.shelfPosition })),
+        bytes:book.content?.size, shelfPosition:book.shelfPosition, locator:book.locator,
+        progressFraction:book.progressFraction, author:book.author, spineTitleOverride:book.spineTitleOverride })),
       removed:removed.map(book => ({ ...book, keys:Object.keys(book) }))
     }
   })
 }
 
-async function seedShelf(page, { long = false, linked = false } = {}) {
+async function seedShelf(page, { long = false, linked = false, driveBytes = null } = {}) {
   // Import through the real file picker first, including PDF.js and its real
   // extracted cover. Extra records share those valid bytes; no mocked mesh,
   // flyout or renderer replaces the feature under test.
@@ -47,7 +72,7 @@ async function seedShelf(page, { long = false, linked = false } = {}) {
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
   await expect(page.locator('#home-screen')).toBeVisible()
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
-  const seed = await page.evaluate(async ({ long, linked, plantsKey, driveId }) => {
+  const seed = await page.evaluate(async ({ long, linked, driveBytes, plantsKey, driveId }) => {
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open('inhouse-read')
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
@@ -66,6 +91,10 @@ async function seedShelf(page, { long = false, linked = false } = {}) {
       { ...clean, id:'trash:survivor', title:'Libro que permanece', name:'survivor.pdf',
         driveFileId:linked ? 'survivor-on-drive' : undefined, shelfPosition:{ shelf:0, x:.66 }, shelfOrder:2 }
     ]
+    if (driveBytes) Object.assign(records[1], {
+      content:new Blob([new Uint8Array(driveBytes)], { type:'application/pdf' }),
+      size:driveBytes.length, sizeBytes:driveBytes.length, pageCount:3
+    })
     if (long) for (let index=0; index<14; index++) records.push({ ...clean,
       id:`trash:long:${index}`, name:`long-${index}.pdf`, title:`Libro ${index + 4}`,
       driveFileId:`long-on-drive-${index}`, shelfPosition:{ shelf:1 + Math.floor(index / 2), x:index % 2 ? .57 : .18 },
@@ -85,7 +114,7 @@ async function seedShelf(page, { long = false, linked = false } = {}) {
     localStorage.setItem('inhouse-read-shelf-view', 'spine')
     return { originalId:original.id, ids:records.map(book => book.id), plants,
       remote:records.filter(book => book.driveFileId).map(book => ({ id:book.driveFileId, name:book.name, size:String(book.size || book.content.size), mimeType:'application/pdf' })) }
-  }, { long, linked, plantsKey:PLANTS_KEY, driveId:DRIVE_ID })
+  }, { long, linked, driveBytes, plantsKey:PLANTS_KEY, driveId:DRIVE_ID })
   await page.reload()
   await expect(page.locator('.ihr-spine')).toHaveCount(seed.ids.length)
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-trash3d', 'true')
@@ -243,19 +272,36 @@ test('papelera 3D: retira la copia de la app con animación en un móvil de 320 
 })
 
 test('un libro retirado sigue en Drive y la sincronización automática no lo vuelve a añadir', async ({ page }, testInfo) => {
-  test.setTimeout(90_000)
-  const seed = await seedShelf(page, { linked:true })
-  const requests = []; let remoteLists = 0
+  test.setTimeout(120_000)
+  const drivePdf = savedDrivePdf()
+  const seed = await seedShelf(page, { linked:true, driveBytes:[...drivePdf] })
+  const savedProgress = {
+    schemaVersion:1, driveFileId:DRIVE_ID, fraction:.5, locator:{ kind:'pdf-page', value:2 },
+    appearance:{ author:'Ursula Le Guin', spineTitleOverride:'Mi libro en Drive' },
+    updatedAt:Date.now() + 60_000
+  }
+  const requests = []; let remoteLists = 0, stateReads = 0, fileDownloads = 0
   await page.route('https://www.googleapis.com/drive/v3/about?**', route => route.fulfill({
     status:200, contentType:'application/json', body:JSON.stringify({ user:{ permissionId:'trash-account', displayName:'Miguel', emailAddress:'trash@example.com' } })
   }))
   await page.route('https://www.googleapis.com/drive/v3/files**', route => {
     const request = route.request(), url = new URL(request.url()), query = url.searchParams.get('q') || ''
     requests.push({ method:request.method(), url:request.url(), body:request.postData() })
+    if (url.pathname.endsWith('/saved-state') && url.searchParams.get('alt') === 'media') {
+      stateReads++
+      return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(savedProgress) })
+    }
+    if (url.pathname.endsWith(`/${DRIVE_ID}`) && url.searchParams.get('alt') === 'media') {
+      fileDownloads++
+      return route.fulfill({ status:200, contentType:'application/pdf', body:drivePdf })
+    }
     let files = []
     if (query.includes("name = '.inhouse-read-state'")) files = [{ id:'state-folder', name:'.inhouse-read-state' }]
     else if (query.includes("name = 'inhouse read'")) files = [{ id:'read-folder', name:'inhouse read' }]
     else if (query.includes("'read-folder' in parents")) { files = seed.remote; remoteLists++ }
+    else if (query.includes(`name = 'progress-${DRIVE_ID}.json'`)) files = [{
+      id:'saved-state', name:`progress-${DRIVE_ID}.json`, modifiedTime:new Date(savedProgress.updatedAt).toISOString()
+    }]
     return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ files }) })
   })
   await page.evaluate(() => localStorage.setItem('ihr_drive_session_v2', JSON.stringify({ accessToken:'shelf-trash-test', expiresAt:Date.now() + 3600_000 })))
@@ -263,6 +309,8 @@ test('un libro retirado sigue en Drive y la sincronización automática no lo vu
   await expect.poll(() => remoteLists).toBeGreaterThan(0)
   await expect(page.locator('#drive-profile')).toBeVisible()
   await expect(page.locator('.ihr-spine')).toHaveCount(3)
+  await expect.poll(async () => (await storedLibrary(page)).books.find(book => book.id === 'trash:drive'))
+    .toMatchObject({ locator:savedProgress.locator, progressFraction:.5, author:'Ursula Le Guin' })
   await dropIntoBin(page, 'trash:drive', testInfo)
   expect((await storedLibrary(page)).removed.find(book => book.id === 'trash:drive')).toMatchObject({ driveFileId:DRIVE_ID })
   const listsBefore = remoteLists
@@ -272,9 +320,43 @@ test('un libro retirado sigue en Drive y la sincronización automática no lo vu
   await expect(page.locator('.ihr-spine[data-book-id="trash:drive"]')).toHaveCount(0)
   expect((await storedLibrary(page)).books.some(book => book.driveFileId === DRIVE_ID)).toBe(false)
   expect(seed.remote.some(book => book.id === DRIVE_ID)).toBe(true)
+  await expect(page.locator('.ihr-plant')).toHaveCount(3)
+
+  // Merely opening the Drive list still must not restore a removed entry.
+  // Only the user's explicit click clears the identity marker and imports
+  // the unchanged remote file together with its last saved reading place.
+  await page.getByRole('button', { name:'Abrir desde Google Drive', exact:true }).click()
+  await expect(page.locator('#drive-modal')).toBeVisible()
+  const remoteBook = page.locator('.drive-item').filter({ hasText:'drive-copy.pdf' })
+  await expect(remoteBook).toBeVisible()
+  expect((await storedLibrary(page)).books.some(book => book.driveFileId === DRIVE_ID)).toBe(false)
+  const readsBeforeImport = stateReads
+  await remoteBook.click()
+  await expect(page.locator('#reader-screen')).toBeVisible()
+  await expect(page.locator('#reader-location')).toContainText('Página 2 de 3')
+  await expect(page.locator('#reader-top-byline')).toHaveText('Ursula Le Guin')
+  const restored = await storedLibrary(page)
+  expect(restored.books.find(book => book.driveFileId === DRIVE_ID)).toMatchObject({
+    id:`drive:${DRIVE_ID}`, bytes:drivePdf.length, locator:savedProgress.locator,
+    progressFraction:.5, author:'Ursula Le Guin', spineTitleOverride:'Mi libro en Drive'
+  })
+  expect(restored.removed.some(book => book.driveFileId === DRIVE_ID)).toBe(false)
+  expect(fileDownloads).toBe(1)
+  expect(stateReads).toBeGreaterThan(readsBeforeImport)
+  const pixel = await page.locator('.pdf-page-canvas').evaluate(canvas =>
+    [...canvas.getContext('2d').getImageData(canvas.width / 2,canvas.height / 2,1,1).data])
+  expect(pixel[2]).toBeGreaterThan(120)
+  expect(pixel[2]).toBeGreaterThan(pixel[0] * 3)
+  expect(pixel[2]).toBeGreaterThan(pixel[1] * 2)
+  await testInfo.attach('explicit-drive-reimport-restored-blue-page-2', {
+    body:await page.locator('.pdf-page-canvas').screenshot(), contentType:'image/png'
+  })
+  await page.getByRole('button', { name:'Volver a la estantería' }).click()
+  await expect(page.locator('.ihr-spine')).toHaveCount(3)
+  await expect(page.locator(`.ihr-spine[data-book-id="drive:${DRIVE_ID}"]`)).toBeVisible()
+  await expect(page.locator('.ihr-plant')).toHaveCount(3)
   expect(requests.some(request => request.method === 'DELETE')).toBe(false)
   expect(requests.some(request => request.body?.includes('"trashed":true'))).toBe(false)
-  await expect(page.locator('.ihr-plant')).toHaveCount(3)
 })
 
 test('entrar en la papelera y soltar fuera cancela la eliminación y mantiene los archivos', async ({ page }) => {

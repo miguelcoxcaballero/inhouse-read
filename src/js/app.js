@@ -904,7 +904,12 @@ async function loadDriveFiles() {
             || await library.addOrTouch({ sourceType: 'drive', driveFileId: f.id, cloudAccountId: driveProfile?.id,
               name: f.name, title: normalizeBookTitle(f.name), mimeType: f.mimeType, size: Number(f.size) || 0 }, { restoreRemoved:true })
           const file = await cloudSync.downloadForOffline(record)
-          await openFile(file, { existingRecord: record, forcedId: record.id })
+          if (!file) return
+          try { await cloudSync.syncBookProgress(record.id) }
+          catch (error) { console.warn('No se pudo recuperar el progreso de Drive; se abrirá la copia descargada:', error) }
+          const latest = await library.get(record.id)
+          if (!latest) return
+          await openFile(file, { existingRecord: latest, forcedId: latest.id })
         } catch (error) { alert(`No se pudo abrir el libro: ${error.message}`) }
       })
       els.driveList.append(item)

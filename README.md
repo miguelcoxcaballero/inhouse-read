@@ -8,7 +8,7 @@ La biblioteca es una estantería con madera y plantas fotográficas, donde los l
 
 - Papelera 3D a la derecha del mueble, accesible con scroll y en vista isométrica. Mantén pulsado un libro y arrástralo hasta ella: abre la tapa, recibe el libro y se cierra.
 - Retirar un libro elimina el registro, el archivo guardado y la portada de la app. El original de Drive o del dispositivo se conserva; la sincronización automática respeta la retirada.
-- Puedes volver a añadirlo desde el selector de archivos o la lista de Drive. En teclado, Supr sobre un libro realiza la misma retirada.
+- Puedes volver a añadirlo desde el selector de archivos o la lista de Drive; al recuperarlo de Drive se carga su página guardada y la personalización antes de abrirlo. En teclado, Supr sobre un libro realiza la misma retirada.
 - Actualización web compatible con la APK actual; no requiere reinstalar Android.
 
 ### Actualización web · 1.6.2
