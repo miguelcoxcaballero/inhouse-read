@@ -56,3 +56,17 @@ test('Android: un acceso a Google pendiente no bloquea el siguiente Abrir con', 
   await expect(page.locator('#reader-top-title')).toHaveText('Second Android Book')
   await page.waitForFunction(() => window.testImportAcks.length === 2)
 })
+
+test('Android: abre el PDF con un WebView sin las APIs recientes de Promise y Math', async ({ page }) => {
+  await installInbox(page, true)
+  await page.addInitScript(() => { Promise.try = undefined; Math.sumPrecise = undefined })
+  await page.route('**/pdf.worker*.mjs', async route => {
+    const response = await route.fetch()
+    await route.fulfill({ response, body:'Promise.try = undefined; Math.sumPrecise = undefined;\n' + await response.text() })
+  })
+  await page.goto(process.env.IHR_TEST_URL || '/')
+  await expect(page.locator('#reader-format-badge')).toHaveText('PDF')
+  await expect(page.locator('#reader-top-title')).toHaveText('Android Open With')
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+  await page.waitForFunction(() => window.testImportAcks.length === 1)
+})

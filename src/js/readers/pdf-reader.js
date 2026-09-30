@@ -6,9 +6,11 @@
 // por página" es lo que permite igualar el look & feel del resto de la app
 // (misma UI de progreso, mismos gestos que en el lector de EPUB/MOBI).
 
-import * as pdfjsLib from 'pdfjs-dist'
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-import { TextLayer } from 'pdfjs-dist'
+// Android WebViews may lag behind Chrome. Use Mozilla's official compatibility
+// build in BOTH contexts so a missing Promise.try cannot strand the worker.
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
+import { TextLayer } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { attachSwipeNavigation } from '../gestures.js'
 import { DEFAULT_READING_PREFERENCES, READING_FONTS, normalizeReadingPreferences } from './reading-preferences.js'
 import { renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from './page-snapshot.js'

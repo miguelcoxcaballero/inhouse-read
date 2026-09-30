@@ -8,6 +8,7 @@ La biblioteca es una estantería 3D con madera texturizada, libros y plantas con
 
 - Android aparece en «Abrir con» y «Compartir» para PDF, EPUB, MOBI, AZW, AZW3, KF8, FB2 y CBZ. Los archivos se copian inmediatamente con el permiso temporal del proveedor y se importan por el mismo flujo que el selector local, incluyendo la sincronización con Drive.
 - Funciona con la app cerrada o abierta. Transferencia por bloques para evitar duplicar libros grandes como una sola cadena base64. Requiere instalar la APK 1.1.1 (versionCode 14).
+- PDF usa el [build de compatibilidad oficial de Mozilla](https://github.com/mozilla/pdf.js/wiki/Frequently-Asked-Questions) en el lector y su worker: evita quedarse en «Abriendo libro…» cuando el WebView Android no tiene APIs recientes como `Promise.try`.
 - Registro de tipos MIME y extensiones según las [reglas de intents de Android](https://developer.android.com/training/basics/intents/filters).
 
 ### Actualización web · 1.6.12

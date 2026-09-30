@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { getPage, destroy } = vi.hoisted(() => ({getPage:vi.fn(),destroy:vi.fn()}))
-vi.mock('pdfjs-dist', () => ({
+vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
   GlobalWorkerOptions:{}, getDocument:() => ({promise:Promise.resolve({numPages:4,getPage}),destroy}),
   TextLayer:class { render = vi.fn(async () => {}); cancel = vi.fn() }
 }))
-vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({default:'worker.mjs'}))
+vi.mock('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url', () => ({default:'worker.mjs'}))
 vi.mock('../../src/js/gestures.js', () => ({attachSwipeNavigation:() => () => {}}))
 import { PdfReader } from '../../src/js/readers/pdf-reader.js'
 
