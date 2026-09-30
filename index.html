@@ -38,7 +38,7 @@
         <span class="reader-heading-copy"><span id="reader-top-title">Abriendo libro…</span><small id="reader-top-byline"></small></span>
         <div class="reader-heading-actions" aria-label="Herramientas del libro">
           <button id="reader-search-shortcut" class="icon-btn" type="button" aria-label="Buscar en el libro" title="Buscar en el libro"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg></button>
-          <button id="reader-toc-shortcut" class="icon-btn" type="button" aria-label="Índice, marcadores y citas" title="Índice, marcadores y citas"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round"><path d="M5 5h15M5 10h15M5 15h10M5 20h10"/><path d="M2 5h.01M2 10h.01M2 15h.01M2 20h.01"/></svg></button>
+          <button id="reader-focus" class="icon-btn" type="button" aria-label="Ocultar controles" title="Leer a pantalla completa" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5"/></svg></button>
           <button id="reader-more-shortcut" class="icon-btn" type="button" aria-label="Más opciones del libro" title="Más opciones"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r=".8"/><circle cx="12" cy="12" r=".8"/><circle cx="19" cy="12" r=".8"/></svg></button>
         </div>
       </div>
@@ -96,7 +96,7 @@
     </section>
 
     <section id="reader-screen" class="screen" data-screen="reader" hidden>
-      <div id="reader-viewport" class="reader-viewport"></div>
+      <div id="reader-viewport" class="reader-viewport" tabindex="-1"></div>
       <div id="reader-toolbar" class="reader-toolbar">
         <button id="reader-prev" class="icon-btn" type="button" aria-label="Página anterior">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -111,9 +111,8 @@
           </svg>
         </button>
         <button id="reader-save-bookmark" class="icon-btn" type="button" aria-label="Guardar marcador" title="Guardar marcador"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h12v17l-6-4-6 4V4Z"/></svg></button>
-        <button id="reader-rotate" class="icon-btn reader-rotate" type="button" aria-label="Girar pantalla" title="Girar pantalla"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V4m0 0h4M4 4l5 5m11 7v4m0 0h-4m4 0-5-5M7 19a8 8 0 0 1-2-11m12-3a8 8 0 0 1 2 11"/></svg></button>
-        <button id="reader-settings" class="icon-btn" type="button" aria-label="Aspecto de lectura"><span class="reader-type-icon" aria-hidden="true">Aa</span><small aria-hidden="true">Texto</small></button>
-        <button id="reader-audio" class="icon-btn" type="button" aria-label="Escuchar el libro"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-3a8 8 0 0 1 16 0v3M4 13H3v7h4v-7H4Zm16 0h1v7h-4v-7h3Z"/></svg><small aria-hidden="true">Audio</small></button>
+        <button id="reader-settings" class="icon-btn" type="button" aria-label="Aspecto de lectura" title="Texto y aspecto"><span class="reader-type-icon" aria-hidden="true">Aa</span></button>
+        <button id="reader-audio" class="icon-btn" type="button" aria-label="Escuchar el libro" title="Escuchar el libro"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-3a8 8 0 0 1 16 0v3M4 13H3v7h4v-7H4Zm16 0h1v7h-4v-7h3Z"/></svg></button>
       </div>
     </section>
   </div>

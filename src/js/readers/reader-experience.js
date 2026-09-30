@@ -38,6 +38,12 @@ export class ReaderExperience {
     this.miniPlayer.className = 'reading-mini-player'; this.miniPlayer.hidden = true
     this.miniPlayer.innerHTML = `<button type="button" data-mini-open><span data-mini-title></span><small data-mini-status></small></button><button type="button" class="reading-icon-button" data-mini-play aria-label="Pausar lectura">${readerIcon('pause')}</button><button type="button" class="reading-icon-button" data-mini-stop aria-label="Detener lectura">${readerIcon('stop')}</button>`
     this.screen.append(this.miniPlayer)
+    if (typeof ResizeObserver === 'function') {
+      this.miniPlayerResizeObserver = new ResizeObserver(() => this.syncMiniPlayerLayout())
+      this.miniPlayerResizeObserver.observe(this.miniPlayer)
+      this.returnResizeObserver = new ResizeObserver(() => this.syncReturnLayout())
+      this.returnResizeObserver.observe(this.returnButton)
+    }
     document.body.append(this.panel)
     this.selectedQuoteSelection = null
     this.quoteColor = 'yellow'
@@ -113,7 +119,10 @@ export class ReaderExperience {
     document.getElementById('reader-audio').onclick = () => this.show('audio')
     this.locationButton.onclick = () => this.show('navigation')
     document.getElementById('reader-search-shortcut').onclick = () => this.show('search')
-    document.getElementById('reader-toc-shortcut').onclick = () => { this.show('navigation'); this.showPlaceTab('toc') }
+    document.getElementById('reader-toc-shortcut').onclick = () => {
+      this.show('navigation')
+      this.showPlaceTab(this.panel.querySelector('[data-place-tab="toc"]').hidden ? 'bookmarks' : 'toc')
+    }
     document.getElementById('reader-more-shortcut').onclick = () => this.show('more')
     this.panel.querySelector('[data-search-form]').onsubmit = event => { event.preventDefault(); this.search(this.panel.querySelector('[data-search-query]').value) }
     this.panel.querySelector('[data-save-quote]').onclick = () => this.addQuote()
@@ -137,8 +146,9 @@ export class ReaderExperience {
       const viewport = window.visualViewport
       const visibleHeight = viewport?.height || innerHeight
       const keyboardInset = Math.max(0, innerHeight - visibleHeight - (viewport?.offsetTop || 0))
-      this.panel.style.maxHeight = `${Math.min(visibleHeight - 16, innerHeight * .82)}px`
-      this.panel.style.bottom = `${keyboardInset || (innerWidth >= 760 ? 82 : 0)}px`
+      const anchor = !keyboardInset && innerWidth >= 760 ? this.toolbar.getBoundingClientRect().height + 12 : 0
+      this.panel.style.maxHeight = `${Math.max(0, Math.min(visibleHeight - anchor - 16, innerHeight * .82))}px`
+      this.panel.style.bottom = `${keyboardInset + anchor}px`
       requestAnimationFrame(() => {
         const active = document.activeElement
         if (!this.panel.open || !this.panel.contains(active) || !active.matches('input,select')) return
@@ -149,6 +159,7 @@ export class ReaderExperience {
     }
     window.visualViewport?.addEventListener('resize', resize)
     window.visualViewport?.addEventListener('scroll', resize)
+    window.addEventListener('resize', resize)
     this.resizePanel = resize
   }
   async open(record) {
@@ -169,12 +180,21 @@ export class ReaderExperience {
     this.renderPlaces(); this.renderToc(); await this.applyPreferences(); this.relocate()
     for (const quote of this.quotes) this.reader.addQuoteAnnotation(quote)
   }
-  reset() { this.cancelNavigation(); this.voice.stop(); this.panel.close(); this.book = null; this.returnButton.hidden = true; this.screen.classList.remove('reader-kids-mode'); this.panel.querySelector('[data-kids]').setAttribute('aria-pressed','false') }
+  reset() {
+    this.cancelNavigation(); this.voice.stop(); this.panel.close(); this.book = null
+    this.returnButton.hidden = true; this.syncReturnLayout(); this.screen.classList.remove('reader-kids-mode')
+    const kids = this.panel.querySelector('[data-kids]')
+    kids.setAttribute('aria-pressed','false'); kids.setAttribute('aria-label','Activar modo infantil')
+  }
   relocate() {
     this.location = {...clonePlace(this.reader.location),section:this.reader.location.section || '',page:this.reader.location.page || ''}
     const label = this.label(this.location)
-    this.locationButton.querySelector('.reader-location-label').textContent = label
+    const compactLabel = this.location.locator?.kind === 'pdf-page'
+      ? `${this.location.locator.value}${this.reader.pageCount ? ` / ${this.reader.pageCount}` : ''}`
+      : `${Math.round(this.location.fraction * 100)} %`
+    this.locationButton.querySelector('.reader-location-label').textContent = compactLabel
     this.locationButton.setAttribute('aria-label', `Progreso y capítulos, ${label}`)
+    this.locationButton.title = label
     this.panel.querySelector('.reading-position').textContent = label
     const range = this.panel.querySelector('[data-progress]')
     if (document.activeElement !== range) range.value = String(this.location.fraction * 100)
@@ -211,12 +231,22 @@ export class ReaderExperience {
     const active = Boolean(this.book) && ['playing','paused','loading'].includes(state)
     this.screen.classList.toggle('has-reading-audio', active)
     this.miniPlayer.hidden = !active || this.panel.open
+    this.screen.classList.toggle('has-reading-mini-player', !this.miniPlayer.hidden)
     this.miniPlayer.querySelector('[data-mini-title]').textContent = this.book?.title || ''
     this.miniPlayer.querySelector('[data-mini-status]').textContent = message || `${state === 'paused' ? 'En pausa' : state === 'loading' ? 'Preparando…' : 'Escuchando'} · ${this.preferences.rate}×`
     const play = this.miniPlayer.querySelector('[data-mini-play]')
     play.innerHTML = readerIcon(state === 'playing' ? 'pause' : 'play')
     play.setAttribute('aria-label',state === 'playing' ? 'Pausar lectura' : 'Continuar lectura')
     play.disabled = state === 'loading'
+    this.syncMiniPlayerLayout()
+  }
+  syncMiniPlayerLayout() {
+    const height = this.miniPlayer.hidden ? 0 : Math.ceil(this.miniPlayer.getBoundingClientRect().height)
+    this.screen.style.setProperty('--reader-audio-height', `${height}px`)
+  }
+  syncReturnLayout() {
+    const height = this.returnButton.hidden ? 0 : Math.ceil(this.returnButton.getBoundingClientRect().height)
+    this.screen.style.setProperty('--reader-return-height', `${height}px`)
   }
   updateBookmarkButton() {
     const marked = this.bookmarks.some(x => JSON.stringify(x.locator) === JSON.stringify(this.location.locator) && Math.abs(x.fraction-this.location.fraction)<.0001)
@@ -236,11 +266,15 @@ export class ReaderExperience {
   async applyPreferences(updateBook = true) {
     const p = this.preferences
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(p)) } catch { /* reading still works without storage */ }
-    this.screen.dataset.readingTheme = p.theme
+    const theme = READING_THEMES[p.theme]
+    for (const surface of [this.screen,this.panel,document.querySelector('.app-header')].filter(Boolean)) {
+      surface.dataset.readingTheme = p.theme
+      surface.style.colorScheme = theme.scheme
+    }
     this.screen.style.setProperty('--reader-brightness',`${p.brightness}%`)
     for (const surface of [this.screen,this.screen.parentElement,this.panel]) {
-      surface.style.setProperty('--reading-paper', READING_THEMES[p.theme].background)
-      surface.style.setProperty('--reading-ink', READING_THEMES[p.theme].color)
+      surface.style.setProperty('--reading-paper', theme.background)
+      surface.style.setProperty('--reading-ink', theme.color)
     }
     this.panel.querySelector('[data-size-step="-1"]').disabled = p.fontSize <= 14
     this.panel.querySelector('[data-size-step="1"]').disabled = p.fontSize >= 36
@@ -368,6 +402,7 @@ export class ReaderExperience {
     this.updateBookmarkButton()
     this.returnButton.hidden = !this.history.length
     this.returnButton.textContent = this.history.length ? `↶ Volver a ${this.history[0].label || this.label(this.history[0])}` : ''
+    this.syncReturnLayout()
     for (const [name, places] of [['history',this.history],['bookmarks',this.bookmarks],['quotes',this.quotes]]) {
       const list = this.panel.querySelector(`[data-${name}]`)
       list.replaceChildren()

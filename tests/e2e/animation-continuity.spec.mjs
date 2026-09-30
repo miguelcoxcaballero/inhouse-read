@@ -286,7 +286,7 @@ test('seleccionar otro libro y volver al primero abre su documento y conserva la
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   // The first PDF has one page; the second has four. A resolved preparation
   // promise for A must never reveal B from the single shared reader instance.
-  await expect(page.locator('#reader-location')).toHaveText('Página 1 de 1')
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 1 de 1/)
   await observePrintedCoverFrames(page)
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
@@ -325,7 +325,7 @@ test('el libro vuelve entre sus vecinos con profundidad real en vistas frontal e
       await selectBook()
       await page.locator('.ihr-flyout__cover-target').click()
       await expect(page.locator('.pdf-page-canvas')).toBeVisible()
-      await expect(page.locator('#reader-location')).toHaveText(/Página \d de 4/)
+      await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página \d de 4/)
       await expectDepthTestedInsertion(page, () => page.getByRole('button', { name:'Volver a la estantería' }).click())
     })
   }

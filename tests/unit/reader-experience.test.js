@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ReaderExperience } from '../../src/js/readers/reader-experience.js'
+import { DEFAULT_READING_PREFERENCES, READING_THEMES, normalizeReadingPreferences, readingCSS } from '../../src/js/readers/reading-preferences.js'
 
 vi.mock('../../src/js/readers/reading-voice.js', () => ({
   ReadingVoice:class { state = 'stopped'; stop = vi.fn() }
@@ -16,9 +17,9 @@ function deferred() {
 
 beforeEach(() => {
   localStorage.clear()
-  document.body.innerHTML = '<section id="reader-screen"><div id="reader-toolbar"></div></section>'
+  document.body.innerHTML = '<header class="app-header"></header><section id="reader-screen"><div id="reader-toolbar"></div></section>'
   for (const id of ['reader-location', 'reader-settings', 'reader-audio', 'reader-save-bookmark',
-    'reader-rotate', 'reader-search-shortcut', 'reader-toc-shortcut', 'reader-more-shortcut',
+    'reader-search-shortcut', 'reader-more-shortcut',
     'reader-top-title', 'reader-top-byline']) {
     const button = document.createElement('button')
     button.id = id
@@ -26,7 +27,7 @@ beforeEach(() => {
     document.getElementById('reader-screen').append(button)
   }
 })
-afterEach(() => { document.body.innerHTML = '' })
+afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = '' })
 
 async function setup(persist = vi.fn(async () => {})) {
   const reader = {
@@ -95,5 +96,180 @@ describe('reader navigation during asynchronous history writes', () => {
     await jump
     expect(reader.goToTarget).toHaveBeenCalledWith('next-section.xhtml')
     expect(experience.navigating).toBe(false)
+  })
+})
+
+describe('reader appearance and compact location', () => {
+  it('keeps AMOLED as a persistent reading theme across all reader surfaces', async () => {
+    const { experience, reader } = await setup()
+    experience.panel.querySelector('[data-theme="amoled"]').click()
+    await vi.waitFor(() => expect(reader.applyPreferences).toHaveBeenLastCalledWith(expect.objectContaining({ theme:'amoled' })))
+    expect(JSON.parse(localStorage.getItem('inhouse-read-reading-preferences')).theme).toBe('amoled')
+    for (const surface of [experience.screen, experience.panel, document.querySelector('.app-header')]) {
+      expect(surface.dataset.readingTheme).toBe('amoled')
+      expect(surface.style.colorScheme).toBe('dark')
+    }
+    for (const surface of [experience.screen, experience.screen.parentElement, experience.panel]) {
+      expect(surface.style.getPropertyValue('--reading-paper')).toBe('#000000')
+      expect(surface.style.getPropertyValue('--reading-ink')).toBe('#c6c6c6')
+    }
+    expect(experience.panel.querySelector('[data-theme="amoled"]').getAttribute('aria-pressed')).toBe('true')
+    experience.reset()
+    await experience.open({ id:'book-b', title:'Another book' })
+    expect(experience.preferences.theme).toBe('amoled')
+    expect(reader.applyPreferences).toHaveBeenLastCalledWith(expect.objectContaining({ theme:'amoled' }))
+  })
+
+  it('restores the saved AMOLED preference when constructing a reader', async () => {
+    localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({ theme:'amoled', margin:0 }))
+    const { experience } = await setup()
+    expect(experience.preferences).toMatchObject({ theme:'amoled', margin:0 })
+    expect(experience.panel.querySelector('[data-pref="margin"]').value).toBe('0')
+    expect(experience.screen.dataset.readingTheme).toBe('amoled')
+  })
+
+  it('uses black instead of dark gray and light gray instead of white for EPUB content', () => {
+    expect(READING_THEMES.amoled).toEqual({ background:'#000000', color:'#c6c6c6', scheme:'dark' })
+    const css = readingCSS({theme:'amoled'})
+    expect(css).toContain('color-scheme:dark')
+    expect(css).toContain('background:#000000 !important')
+    expect(css).toContain('color:#c6c6c6 !important')
+    // EPUBs with a white content wrapper must not put a white rectangle on OLED.
+    expect(css).toContain('background-color:transparent !important')
+    expect(css).not.toContain('#ffffff')
+  })
+
+  it('offers reduced defaults without rewriting a reader’s explicit spacing choices', () => {
+    expect(normalizeReadingPreferences()).toMatchObject({ margin:16, lineHeight:1.6 })
+    expect(normalizeReadingPreferences({ margin:0 })).toMatchObject({ margin:0 })
+    expect(normalizeReadingPreferences({ margin:24, lineHeight:1.7 })).toMatchObject({ margin:24, lineHeight:1.7 })
+    expect(normalizeReadingPreferences({ margin:Infinity, lineHeight:NaN })).toMatchObject({ margin:16, lineHeight:1.6 })
+    expect(normalizeReadingPreferences(null)).toEqual(DEFAULT_READING_PREFERENCES)
+    expect(normalizeReadingPreferences({theme:'toString',font:'constructor'})).toMatchObject({theme:'paper',font:'book'})
+  })
+
+  it('keeps EPUB chapter titles out of the toolbar while preserving accessible location', async () => {
+    const { experience, reader } = await setup()
+    reader.location = { ...beyond, section:'An unusually long chapter title that must not push the toolbar buttons', page:12 }
+    experience.relocate()
+    expect(experience.locationButton.querySelector('.reader-location-label').textContent).toBe('60 %')
+    expect(experience.locationButton.getAttribute('aria-label')).toContain(reader.location.section)
+    expect(experience.locationButton.title).toContain('Página 12')
+    expect(experience.panel.querySelector('.reading-position').textContent).toContain(reader.location.section)
+  })
+
+  it('uses a short PDF page counter while retaining the full page name for navigation', async () => {
+    const { experience, reader } = await setup()
+    reader.pageCount = 1352
+    reader.location = { fraction:.7, locator:{kind:'pdf-page',value:947} }
+    experience.relocate()
+    expect(experience.locationButton.querySelector('.reader-location-label').textContent).toBe('947 / 1352')
+    expect(experience.locationButton.getAttribute('aria-label')).toBe('Progreso y capítulos, Página 947 de 1352')
+    expect(experience.panel.querySelector('.reading-position').textContent).toBe('Página 947 de 1352')
+  })
+
+  it('puts screen rotation in the plain More options menu', async () => {
+    const { experience } = await setup()
+    const rotate = experience.panel.querySelector('#reading-more #reader-rotate')
+    expect(rotate?.textContent).toBe('Girar pantalla')
+    expect(document.querySelectorAll('#reader-rotate')).toHaveLength(1)
+    expect(rotate.onclick).toBeTypeOf('function')
+    const contents = experience.panel.querySelector('#reading-more #reader-toc-shortcut')
+    expect(contents?.textContent).toBe('Índice, marcadores y citas')
+    expect(document.querySelectorAll('#reader-toc-shortcut')).toHaveLength(1)
+    expect(contents.onclick).toBeTypeOf('function')
+  })
+
+  it('reserves only the actual visible audio player height, releasing it behind an open panel', async () => {
+    const { experience } = await setup()
+    experience.miniPlayer.getBoundingClientRect = () => ({ height:58 })
+    experience.voice.state = 'playing'
+    experience.updateMiniPlayer()
+    expect(experience.screen.classList.contains('has-reading-audio')).toBe(true)
+    expect(experience.screen.classList.contains('has-reading-mini-player')).toBe(true)
+    expect(experience.screen.style.getPropertyValue('--reader-audio-height')).toBe('58px')
+    experience.panel.setAttribute('open', '')
+    experience.updateMiniPlayer()
+    expect(experience.screen.classList.contains('has-reading-audio')).toBe(true)
+    expect(experience.screen.classList.contains('has-reading-mini-player')).toBe(false)
+    expect(experience.screen.style.getPropertyValue('--reader-audio-height')).toBe('0px')
+    experience.panel.removeAttribute('open')
+    experience.updateMiniPlayer()
+    expect(experience.screen.classList.contains('has-reading-mini-player')).toBe(true)
+    expect(experience.screen.style.getPropertyValue('--reader-audio-height')).toBe('58px')
+    experience.voice.state = 'stopped'
+    experience.updateMiniPlayer()
+    expect(experience.screen.classList.contains('has-reading-audio')).toBe(false)
+    expect(experience.screen.classList.contains('has-reading-mini-player')).toBe(false)
+    expect(experience.screen.style.getPropertyValue('--reader-audio-height')).toBe('0px')
+  })
+
+  it('keeps a landscape panel above the toolbar without sending its top off screen', async () => {
+    vi.stubGlobal('innerWidth', 844)
+    vi.stubGlobal('innerHeight', 390)
+    vi.stubGlobal('visualViewport', undefined)
+    const { experience } = await setup()
+    experience.toolbar.getBoundingClientRect = () => ({ height:48 })
+    experience.panel.setAttribute('open', '')
+    experience.resizePanel()
+    expect(experience.panel.style.bottom).toBe('60px')
+    expect(experience.panel.style.maxHeight).toBe('314px')
+    expect(parseFloat(experience.panel.style.bottom) + parseFloat(experience.panel.style.maxHeight)).toBeLessThan(390)
+  })
+
+  it('keeps the panel inside the visible mobile viewport while its keyboard is open', async () => {
+    vi.stubGlobal('innerWidth', 390)
+    vi.stubGlobal('innerHeight', 844)
+    const viewport = new EventTarget()
+    Object.assign(viewport, { height:300, offsetTop:0 })
+    vi.stubGlobal('visualViewport', viewport)
+    const { experience } = await setup()
+    experience.panel.setAttribute('open', '')
+    viewport.dispatchEvent(new Event('resize'))
+    expect(experience.panel.style.bottom).toBe('544px')
+    expect(experience.panel.style.maxHeight).toBe('284px')
+    expect(parseFloat(experience.panel.style.bottom) + parseFloat(experience.panel.style.maxHeight)).toBeLessThan(844)
+  })
+
+  it('reserves the return row outside the page and removes the reservation with its history', async () => {
+    const { experience } = await setup()
+    experience.returnButton.getBoundingClientRect = () => ({ height:44 })
+    experience.renderPlaces()
+    expect(experience.returnButton.hidden).toBe(false)
+    expect(experience.screen.style.getPropertyValue('--reader-return-height')).toBe('44px')
+    experience.history = []
+    experience.renderPlaces()
+    expect(experience.returnButton.hidden).toBe(true)
+    expect(experience.screen.style.getPropertyValue('--reader-return-height')).toBe('0px')
+    experience.history = [quiet]
+    experience.renderPlaces()
+    expect(experience.screen.style.getPropertyValue('--reader-return-height')).toBe('44px')
+    experience.reset()
+    expect(experience.screen.style.getPropertyValue('--reader-return-height')).toBe('0px')
+  })
+
+  it.each([false, true])('opens a useful content tab from More with an index present: %s', async hasIndex => {
+    const { experience, reader } = await setup()
+    reader.toc = hasIndex ? [{label:'First chapter',href:'first.xhtml'}] : []
+    experience.renderToc()
+    experience.panel.showModal = () => experience.panel.setAttribute('open', '')
+    experience.panel.querySelector('#reader-toc-shortcut').click()
+    const selected = hasIndex ? 'toc' : 'bookmarks'
+    expect(experience.panel.dataset.view).toBe('navigation')
+    expect(experience.panel.querySelector(`[data-place-tab="${selected}"]`).getAttribute('aria-selected')).toBe('true')
+    expect(experience.panel.querySelector(`[data-places="${selected}"]`).hidden).toBe(false)
+    expect(experience.panel.querySelectorAll('[data-place-tab][aria-selected="true"]')).toHaveLength(1)
+  })
+
+  it('restores the child mode control label when leaving a book', async () => {
+    const { experience } = await setup()
+    const control = experience.panel.querySelector('[data-kids]')
+    control.click()
+    expect(control.getAttribute('aria-label')).toBe('Salir del modo infantil')
+    expect(experience.screen.classList.contains('reader-kids-mode')).toBe(true)
+    experience.reset()
+    expect(experience.screen.classList.contains('reader-kids-mode')).toBe(false)
+    expect(control.getAttribute('aria-pressed')).toBe('false')
+    expect(control.getAttribute('aria-label')).toBe('Activar modo infantil')
   })
 })

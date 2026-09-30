@@ -9,7 +9,7 @@ test.beforeEach(async ({ page }) => {
 async function openPdf(page) {
   await page.goto('/')
   await page.locator('#file-picker').setInputFiles(PDF)
-  await expect(page.locator('#reader-location')).toContainText('Página 1 de 4')
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 1 de 4/)
 }
 async function reopen(page) {
   await page.locator('.ihr-spine').first().click()
@@ -20,24 +20,24 @@ async function reopen(page) {
 test('PDF: saltos, regreso, marcadores y última página sobreviven al cierre', async ({ page }) => {
   await openPdf(page)
   await page.getByRole('button', { name:'Página siguiente', exact:true }).click()
-  await expect(page.locator('#reader-location')).toContainText('Página 2 de 4')
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 2 de 4/)
   await page.locator('#reader-location').click()
   await page.getByRole('button', { name:'Marcar esta página' }).click()
   await expect(page.locator('[data-bookmarks]')).toContainText('Página 2 de 4')
   await page.getByRole('spinbutton', { name:'Ir a la página' }).fill('4')
   await page.getByRole('button', { name:'Ir', exact:true }).click()
-  await expect(page.locator('#reader-location')).toContainText('Página 4 de 4')
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 4 de 4/)
   await expect(page.locator('.reader-return')).toContainText('Página 2 de 4')
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
   await page.reload()
   await reopen(page)
-  await expect(page.locator('#reader-location')).toContainText('Página 4 de 4')
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 4 de 4/)
   await page.locator('.reader-return').click()
-  await expect(page.locator('#reader-location')).toContainText('Página 2 de 4')
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 2 de 4/)
   await page.locator('#reader-location').click()
   await expect(page.locator('[data-bookmarks]')).toContainText('Página 2 de 4')
   await page.getByRole('slider', { name:'Progreso del libro', exact:true }).fill('0')
-  await expect(page.locator('#reader-location')).toContainText('Página 1 de 4')
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 1 de 4/)
 })
 
 test('PDF: temas y texto adaptable aplican tipografía, tamaño e interlineado persistentes', async ({ page }) => {
@@ -72,7 +72,7 @@ test('PDF: búsqueda completa el libro y los resultados llevan a la página corr
   await page.getByRole('button',{name:'Buscar',exact:true}).click()
   await expect(page.locator('[data-search-status]')).toContainText('resultados')
   await page.locator('[data-search-results] button').first().click()
-  await expect(page.locator('#reader-location')).toContainText('Página 3 de 4')
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 3 de 4/)
 })
 
 test('PDF: guarda una cita seleccionada y la conserva al reabrir el libro', async ({ page }) => {
@@ -155,7 +155,7 @@ test('voz Android: reproduce texto, pausa, continúa y pasa a la siguiente pági
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('inhouse-tts',{detail:{type:'done',id:window.__spoken.at(-1).id}})))
     await expect.poll(() => page.evaluate(() => window.__spoken.length)).toBeGreaterThan(count)
   }
-  await expect(page.locator('#reader-location')).toContainText('Página 2 de 4')
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 2 de 4/)
   await page.getByRole('button', { name:'Detener',exact:true }).click()
   await expect(page.getByRole('button', { name:'Reproducir',exact:true })).toBeVisible()
 })

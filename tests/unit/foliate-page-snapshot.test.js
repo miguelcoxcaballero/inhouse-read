@@ -93,3 +93,51 @@ describe('restored EPUB visible page', () => {
     reader.close()
   })
 })
+
+describe('EPUB usable viewport', () => {
+  it('applies valid compact vertical gutters and real horizontal margins before the first page', async () => {
+    const reader = new FoliateReader()
+    view.init.mockImplementation(async () => {
+      expect(view.renderer.setAttribute).toHaveBeenCalledWith('margin', '12px')
+      expect(view.renderer.setAttribute).toHaveBeenCalledWith('gap', `${(16 / 390 * 100).toFixed(4)}%`)
+      expect(view.renderer.setStyles).toHaveBeenCalled()
+    })
+    await reader.open(container, new File(['epub'], 'book.epub'))
+    await reader.applyPreferences({ margin:32 })
+    expect(view.renderer.setAttribute).toHaveBeenCalledWith('gap', `${(32 / 390 * 100).toFixed(4)}%`)
+    await reader.applyPreferences({ margin:32, flow:'scrolled' })
+    expect(view.renderer.setAttribute).toHaveBeenCalledWith('gap', `${(32 / (390 + 32) * 100).toFixed(4)}%`)
+    reader.close()
+  })
+
+  it('adapts to the actual resized container without calling navigation or replacing the current CFI', async () => {
+    vi.useFakeTimers()
+    let width = 390, height = 720, resize
+    const disconnect = vi.fn()
+    Object.defineProperties(container, {
+      clientWidth:{ configurable:true, get:() => width },
+      clientHeight:{ configurable:true, get:() => height }
+    })
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback) { resize = callback }
+      observe() {}
+      disconnect = disconnect
+    })
+    const reader = new FoliateReader()
+    try {
+      await reader.open(container, new File(['epub'], 'book.epub'))
+      const location = view.lastLocation
+      width = 640; height = 1800
+      resize()
+      await vi.advanceTimersByTimeAsync(80)
+      expect(view.renderer.setAttribute).toHaveBeenCalledWith('gap', `${(16 / 640 * 100).toFixed(4)}%`)
+      expect(view.renderer.setAttribute).toHaveBeenCalledWith('max-block-size', '1800px')
+      expect(view.lastLocation).toBe(location)
+      expect(view.init).toHaveBeenCalledOnce()
+    } finally {
+      reader.close()
+      vi.useRealTimers()
+    }
+    expect(disconnect).toHaveBeenCalledOnce()
+  })
+})

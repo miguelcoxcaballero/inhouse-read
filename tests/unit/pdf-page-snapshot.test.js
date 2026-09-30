@@ -63,3 +63,92 @@ describe('PDF restored-page preview', () => {
     reader.close()
   })
 })
+
+describe('PDF usable viewport', () => {
+  it('fits a wide original page to a narrow phone instead of enforcing an overflowing minimum scale', async () => {
+    Object.defineProperty(container, 'clientWidth', { configurable:true, value:320 })
+    getPage.mockImplementation(async number => ({ ...fakePage(number),
+      getViewport:({scale}) => ({width:595 * scale, height:842 * scale}) }))
+    const reader = new PdfReader()
+    await reader.open(container, new ArrayBuffer(0))
+    const canvas = container.querySelector('canvas')
+    expect(parseFloat(canvas.style.width)).toBeCloseTo(320)
+    expect(parseFloat(canvas.style.height)).toBeCloseTo(842 * 320 / 595)
+    await reader.applyPreferences({ zoom:150 })
+    expect(parseFloat(canvas.style.width)).toBeCloseTo(480)
+    reader.close()
+  })
+
+  it('uses measured viewport bounds when clientWidth is unavailable', async () => {
+    container.getBoundingClientRect = () => ({ ...rect, width:412 })
+    const reader = new PdfReader()
+    await reader.open(container, new ArrayBuffer(0))
+    expect(parseFloat(container.querySelector('canvas').style.width)).toBeCloseTo(412)
+    reader.close()
+  })
+
+  it('keeps text padding compact and symmetric without an extra toolbar-sized bottom gutter', async () => {
+    const reader = new PdfReader()
+    await reader.open(container, new ArrayBuffer(0))
+    await reader.applyPreferences({ pdfMode:'text', margin:16 })
+    const reflow = container.querySelector('.pdf-reflow-page')
+    expect(reflow.style.padding).toBe('12px 16px')
+    expect(reflow.hidden).toBe(false)
+    expect(container.querySelector('.pdf-page-wrap').hidden).toBe(true)
+    reader.close()
+  })
+
+  it('refits pixels and selection after rotation without navigating away from the restored page', async () => {
+    vi.useFakeTimers()
+    let width = 320, resize
+    const disconnect = vi.fn()
+    Object.defineProperty(container, 'clientWidth', { configurable:true, get:() => width })
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback) { resize = callback }
+      observe() {}
+      disconnect = disconnect
+    })
+    const onRelocate = vi.fn()
+    const reader = new PdfReader()
+    try {
+      await reader.open(container, new ArrayBuffer(0), { onRelocate })
+      await reader.goToPage(3)
+      const navigations = onRelocate.mock.calls.length
+      width = 640
+      resize()
+      await vi.advanceTimersByTimeAsync(80)
+      expect(parseFloat(container.querySelector('canvas').style.width)).toBeCloseTo(640)
+      expect(parseFloat(container.querySelector('.pdf-text-layer').style.width)).toBeCloseTo(640)
+      expect(reader.currentPage).toBe(3)
+      expect(onRelocate).toHaveBeenCalledTimes(navigations)
+    } finally {
+      reader.close()
+      vi.useRealTimers()
+    }
+    expect(disconnect).toHaveBeenCalledOnce()
+  })
+
+  it('cancels a queued viewport refit when the book closes', async () => {
+    vi.useFakeTimers()
+    let width = 320, resize
+    Object.defineProperty(container, 'clientWidth', { configurable:true, get:() => width })
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback) { resize = callback }
+      observe() {}
+      disconnect() {}
+    })
+    const reader = new PdfReader()
+    try {
+      await reader.open(container, new ArrayBuffer(0))
+      const renders = getPage.mock.calls.length
+      width = 640
+      resize()
+      reader.close()
+      await vi.advanceTimersByTimeAsync(80)
+      expect(getPage).toHaveBeenCalledTimes(renders)
+    } finally {
+      reader.close()
+      vi.useRealTimers()
+    }
+  })
+})

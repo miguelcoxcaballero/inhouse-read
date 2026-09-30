@@ -15,8 +15,6 @@ import { renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage }
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
-const MIN_SCALE = 0.6
-const MAX_SCALE = 3
 const ZOOM_STEP_SCALE = 2.2
 
 export class PdfReader {
@@ -38,6 +36,9 @@ export class PdfReader {
   #textTask
   #renderReady = Promise.resolve()
   #pageText = ''
+  #resizeObserver
+  #resizeTimer
+  #layoutWidth = 0
 
   async open(container, arrayBuffer, { onRelocate, onToggleChrome, onUserNavigation } = {}) {
     this.#container = container
@@ -72,6 +73,13 @@ export class PdfReader {
     })
 
     await this.goToPage(1)
+    // The reader lives inside the actual usable viewport. A phone rotation,
+    // split view or browser resize must refit both pixels and selection, without
+    // treating that layout change as navigation or losing the saved page.
+    if (typeof ResizeObserver !== 'undefined') {
+      this.#resizeObserver = new ResizeObserver(() => this.#onResize())
+      this.#resizeObserver.observe(container)
+    }
   }
 
   get pageCount() {
@@ -121,6 +129,22 @@ export class PdfReader {
     return this.#renderReady
   }
 
+  #containerWidth() {
+    return this.#container.clientWidth || this.#container.getBoundingClientRect().width || 360
+  }
+
+  #onResize() {
+    if (!this.#doc || this.#preferences.pdfMode === 'text') return
+    if (Math.abs(this.#containerWidth() - this.#layoutWidth) < 1) return
+    clearTimeout(this.#resizeTimer)
+    this.#resizeTimer = setTimeout(() => {
+      if (!this.#doc) return
+      this.#render().catch(error => {
+        if (this.#doc) console.warn('No se pudo adaptar la página al nuevo tamaño.', error)
+      })
+    }, 80)
+  }
+
   async #renderPage() {
     const token = ++this.#renderToken
     this.#renderTask?.cancel()
@@ -138,9 +162,12 @@ export class PdfReader {
       return true
     }
 
-    const containerWidth = this.#container.clientWidth || 360
+    const containerWidth = this.#containerWidth()
     const unscaledViewport = page.getViewport({ scale: 1 })
-    this.#baseScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, containerWidth / unscaledViewport.width))
+    // Fit the entire original page width. A minimum scale of .6 overflowed
+    // ordinary A4 PDFs on narrow phones and made text/selection disagree.
+    this.#baseScale = containerWidth / unscaledViewport.width
+    this.#layoutWidth = containerWidth
     const scale = this.#baseScale * (this.#zoomed ? ZOOM_STEP_SCALE : this.#preferences.zoom / 100)
 
     const dpr = window.devicePixelRatio || 1
@@ -239,7 +266,7 @@ export class PdfReader {
     const p = this.#preferences
     Object.assign(this.#reflow.style, {
       fontFamily:READING_FONTS[p.font], fontSize:`${p.fontSize}px`, lineHeight:String(p.lineHeight),
-      fontWeight:String(p.fontWeight), padding:`32px ${p.margin}px 80px`, textAlign:p.align
+      fontWeight:String(p.fontWeight), padding:`12px ${p.margin}px`, textAlign:p.align
     })
     if (this.#doc && (previous.pdfMode !== p.pdfMode || previous.zoom !== p.zoom)) await this.#render()
   }
@@ -264,6 +291,11 @@ export class PdfReader {
   }
 
   close() {
+    this.#resizeObserver?.disconnect()
+    this.#resizeObserver = null
+    clearTimeout(this.#resizeTimer)
+    this.#resizeTimer = null
+    this.#layoutWidth = 0
     ++this.#renderToken
     this.#renderTask?.cancel()
     this.#textTask?.cancel()

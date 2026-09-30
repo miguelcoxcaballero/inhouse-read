@@ -15,6 +15,7 @@ export const readerPanelMarkup = `
       <button type="button" data-theme="paper" aria-label="Papel"><i aria-hidden="true">Aa</i><span>Papel</span></button>
       <button type="button" data-theme="sepia" aria-label="Sepia"><i aria-hidden="true">Aa</i><span>Sepia</span></button>
       <button type="button" data-theme="night" aria-label="Noche"><i aria-hidden="true">Aa</i><span>Noche</span></button>
+      <button type="button" data-theme="amoled" aria-label="AMOLED"><i aria-hidden="true">Aa</i><span>AMOLED</span></button>
       <button type="button" data-theme="sage" aria-label="Salvia"><i aria-hidden="true">Aa</i><span>Salvia</span></button>
     </div>
     <label class="reading-row reading-range-row" data-pdf-zoom><span>Zoom</span><input type="range" data-pref="zoom" min="70" max="200" step="10" aria-label="Zoom del PDF"><output data-output="zoom"></output></label>
@@ -30,7 +31,7 @@ export const readerPanelMarkup = `
       <details class="reading-details"><summary>Espaciado y alineación</summary>
         <label class="reading-row"><span>Peso de la fuente</span><select data-pref="fontWeight" aria-label="Grosor de la fuente"><option value="400">Normal</option><option value="500">Medio</option><option value="600">Grueso</option></select></label>
         <label class="reading-row reading-range-row"><span>Interlineado</span><input type="range" data-pref="lineHeight" min="1.2" max="2.4" step="0.1" aria-label="Interlineado"><output data-output="lineHeight"></output></label>
-        <label class="reading-row reading-range-row"><span>Márgenes</span><input type="range" data-pref="margin" min="8" max="64" step="4" aria-label="Márgenes"><output data-output="margin"></output></label>
+        <label class="reading-row reading-range-row"><span>Márgenes</span><input type="range" data-pref="margin" min="0" max="64" step="4" aria-label="Márgenes"><output data-output="margin"></output></label>
         <label class="reading-row"><span>Alineación</span><select data-pref="align" aria-label="Alineación"><option value="start">A la izquierda</option><option value="justify">Justificada</option></select></label>
       </details>
     </div>
@@ -58,6 +59,8 @@ export const readerPanelMarkup = `
     <p class="reading-hint" data-search-status></p><div class="reading-list" data-search-results></div>
   </section>
   <section id="reading-more" aria-label="Más opciones" hidden>
+    <button type="button" class="reading-menu-row" id="reader-toc-shortcut" aria-label="Índice, marcadores y citas">Índice, marcadores y citas</button>
+    <button type="button" class="reading-menu-row" id="reader-rotate">Girar pantalla</button>
     <button type="button" class="reading-menu-row" data-about>Acerca del documento</button>
     <button type="button" class="reading-menu-row" data-share>Compartir archivo</button>
     <button type="button" class="reading-menu-row" data-kids aria-pressed="false">Modo infantil <span>Oculta controles y enlaces del libro</span></button>

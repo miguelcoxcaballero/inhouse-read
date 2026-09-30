@@ -8,7 +8,7 @@ test('lomo nítido: tintas, metales y grabado persistentes en móvil', async ({ 
   await page.goto('./')
   await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/reading-journey.pdf')
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
-  await expect(page.locator('#reader-location')).toContainText('Página 1')
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 1/)
   await page.getByRole('button',{name:'Volver a la estantería'}).click()
   await page.locator('.ihr-spine').first().click()
   await page.getByRole('button',{name:'Editar',exact:true}).click()

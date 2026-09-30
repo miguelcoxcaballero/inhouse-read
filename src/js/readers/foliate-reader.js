@@ -23,6 +23,8 @@ export class FoliateReader {
   #detachGestures = () => {}
   #preferences = { ...DEFAULT_READING_PREFERENCES }
   #documentGestures = []
+  #resizeObserver
+  #resizeTimer
 
   async open(container, file, { onRelocate, onToggleChrome, onUserNavigation, onFollowLink } = {}) {
     this.#container = container
@@ -76,8 +78,19 @@ export class FoliateReader {
     })
 
     await this.#view.open(file)
-    await this.#view.init({ showTextStart: true })
+    // Configure the paginator before the first page is laid out. Its defaults
+    // reserve 48 px above/below the text even though our chrome has its own
+    // space. The first visible page must use the same geometry as later pages.
+    this.#applyReaderLayout()
     this.#applyReaderStyles()
+    await this.#view.init({ showTextStart: true })
+    if (typeof ResizeObserver !== 'undefined') {
+      this.#resizeObserver = new ResizeObserver(() => {
+        clearTimeout(this.#resizeTimer)
+        this.#resizeTimer = setTimeout(() => this.#applyReaderLayout(), 80)
+      })
+      this.#resizeObserver.observe(container)
+    }
   }
 
   get metadata() {
@@ -182,9 +195,32 @@ export class FoliateReader {
   removeQuoteAnnotation(quote) { if (quote?.locator?.kind === 'cfi') this.#view?.deleteAnnotation?.({value:quote.locator.value}) }
   async applyPreferences(preferences) {
     this.#preferences = normalizeReadingPreferences(preferences)
-    this.#view?.renderer?.setAttribute('flow', this.#preferences.flow)
-    this.#view?.renderer?.setAttribute('margin', String(this.#preferences.margin))
+    this.#applyReaderLayout()
     this.#applyReaderStyles()
+  }
+
+  #applyReaderLayout() {
+    const renderer = this.#view?.renderer
+    if (!renderer) return
+    const bounds = this.#container.getBoundingClientRect()
+    const width = this.#container.clientWidth || bounds.width || this.#view.getBoundingClientRect().width || 360
+    const height = this.#container.clientHeight || bounds.height || this.#view.getBoundingClientRect().height || 720
+    const p = this.#preferences
+    // Foliate's margin is the vertical gutter, in CSS lengths; its horizontal
+    // gutter is a percentage named gap. Passing a unitless "24" for margin was
+    // invalid CSS and the horizontal setting did not affect the page at all.
+    // Scrolled mode has a different grid, so convert pixels using that mode's
+    // gap formula instead of introducing wider margins when switching flow.
+    const gap = p.margin / (width + (p.flow === 'scrolled' ? p.margin : 0)) * 100
+    const attributes = {
+      flow:p.flow,
+      margin:'12px',
+      gap:`${gap.toFixed(4)}%`,
+      'max-block-size':`${Math.max(width, height, 1440)}px`
+    }
+    for (const [name, value] of Object.entries(attributes)) {
+      if (renderer.getAttribute?.(name) !== value) renderer.setAttribute(name, value)
+    }
   }
 
   #applyReaderStyles() {
@@ -197,6 +233,10 @@ export class FoliateReader {
   }
 
   close() {
+    this.#resizeObserver?.disconnect()
+    this.#resizeObserver = null
+    clearTimeout(this.#resizeTimer)
+    this.#resizeTimer = null
     this.#detachGestures()
     for (const detach of this.#documentGestures) detach()
     this.#documentGestures = []

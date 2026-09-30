@@ -338,7 +338,7 @@ test('un libro retirado sigue en Drive y la sincronización automática no lo vu
   const readsBeforeImport = stateReads
   await remoteBook.click()
   await expect(page.locator('#reader-screen')).toBeVisible()
-  await expect(page.locator('#reader-location')).toContainText('Página 2 de 3')
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 2 de 3/)
   await expect(page.locator('#reader-top-byline')).toHaveText('Ursula Le Guin')
   const restored = await storedLibrary(page)
   expect(restored.books.find(book => book.driveFileId === DRIVE_ID)).toMatchObject({

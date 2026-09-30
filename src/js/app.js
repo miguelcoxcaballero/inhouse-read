@@ -27,6 +27,7 @@ const els = {
   readerViewport: document.getElementById('reader-viewport'),
   readerToolbar: document.getElementById('reader-toolbar'),
   readerBack: document.getElementById('reader-back'),
+  readerFocus: document.getElementById('reader-focus'),
   readerPrev: document.getElementById('reader-prev'),
   readerNext: document.getElementById('reader-next'),
   readerProgressFill: document.getElementById('reader-progress-fill'),
@@ -106,6 +107,12 @@ els.themeToggle.addEventListener('click', () => {
 // ---- Navegación entre pantallas ----
 
 function showScreen(name) {
+  if (name !== 'reader') {
+    document.body.classList.remove('is-reader-focus')
+    const header = document.querySelector('.app-header')
+    header.style.removeProperty('color-scheme')
+    delete header.dataset.readingTheme
+  }
   document.body.classList.toggle('is-reading', name === 'reader')
   els.homeScreen.hidden = name !== 'home'
   els.readerScreen.hidden = name !== 'reader'
@@ -179,6 +186,26 @@ async function refreshShelf() {
     shelf.update(books)
   }
 }
+
+function setReaderChromeHidden(hidden) {
+  if (els.readerScreen.hidden || els.readerScreen.classList.contains('is-preparing') ||
+      els.readerScreen.classList.contains('is-opening-from-book')) return
+  const focus = Boolean(hidden)
+  document.body.classList.toggle('is-reader-focus', focus)
+  els.readerToolbar.hidden = focus
+  els.readerFocus.setAttribute('aria-pressed', String(focus))
+  els.readerFocus.setAttribute('aria-label', focus ? 'Mostrar controles' : 'Ocultar controles')
+  if (focus) els.readerViewport.focus({ preventScroll:true })
+}
+
+els.readerFocus.addEventListener('click', () => setReaderChromeHidden(true))
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && document.body.classList.contains('is-reader-focus') && !readingExperience.panel.open) {
+    setReaderChromeHidden(false)
+    els.readerFocus.focus({ preventScroll:true })
+    event.preventDefault()
+  }
+})
 
 async function removeBookFromShelf(book) {
   const ownsPreparation = requestedPreparationId === book.id || activePreparedBookId === book.id
@@ -437,6 +464,9 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
   }
   if (transition?.isActive && !transition.isActive()) return false
   readingExperience.reset()
+  document.body.classList.remove('is-reader-focus')
+  els.readerFocus.setAttribute('aria-pressed', 'false')
+  els.readerFocus.setAttribute('aria-label', 'Ocultar controles')
   currentBookId = null
   els.readerToolbar.hidden = Boolean(transition) || preparing
   if (preparing) {
@@ -453,8 +483,10 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
     format = await reader.open(els.readerViewport, file, {
       onRelocate: onReaderRelocate,
       onUserNavigation: () => readingExperience.voice.stop(),
-      onFollowLink: href => readingExperience.jump(null, href),
-      onToggleChrome: () => { els.readerToolbar.hidden = !els.readerToolbar.hidden }
+      onFollowLink: href => {
+        if (!els.readerScreen.classList.contains('reader-kids-mode')) return readingExperience.jump(null, href)
+      },
+      onToggleChrome: () => setReaderChromeHidden(!document.body.classList.contains('is-reader-focus'))
     })
   } catch (err) {
     if (transition?.isActive && !transition.isActive()) return false
@@ -933,7 +965,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.6.3'
+els.appVersion.textContent = 'Inhouse Read · v1.6.4'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')
