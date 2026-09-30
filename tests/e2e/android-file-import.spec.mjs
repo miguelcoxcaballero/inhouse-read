@@ -8,7 +8,7 @@ async function installInbox(page, cold) {
     const entries = []
     const entry = { id:'11111111-1111-1111-1111-111111111111', name:'Android_Open_With.pdf', mimeType:'application/pdf', size:bytes.length }
     window.testImportAcks = []
-    window.testDeliverBook = () => entries.push(entry)
+    window.testDeliverBook = (name = entry.name) => entries.push({ ...entry, name })
     window.InhouseBookImports = {
       pending:() => JSON.stringify(entries),
       readChunk:(id, offset) => btoa(String.fromCharCode(...bytes.slice(offset, offset + 64))),
@@ -39,4 +39,20 @@ for (const cold of [true, false]) test(`Android Abrir con: importa los bytes exa
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
   await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/, {timeout:20_000})
   await expect(page.getByRole('button', { name:/Abrir Android Open With/i })).toBeVisible()
+})
+
+test('Android: un acceso a Google pendiente no bloquea el siguiente Abrir con', async ({ page }) => {
+  await installInbox(page, true)
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'userAgent', {value:`${navigator.userAgent} InhouseReadApp/1.1.1`,configurable:true})
+    window.testAuthOpened = false
+    window.InhouseNative = { getAppVersion:() => '1.1.1', openAuthUrl:() => { window.testAuthOpened = true } }
+  })
+  await page.route('**/android-update.json?**', route => route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({version:'1.1.1',required:false})}))
+  await page.route('https://api.github.com/repos/miguelcoxcaballero/inhouse-read/releases/latest', route => route.fulfill({status:404,body:'No update'}))
+  await page.goto(process.env.IHR_TEST_URL || '/')
+  await page.waitForFunction(() => window.testAuthOpened && window.testImportAcks.length === 1)
+  await page.evaluate(() => window.testDeliverBook('Second_Android_Book.pdf'))
+  await expect(page.locator('#reader-top-title')).toHaveText('Second Android Book')
+  await page.waitForFunction(() => window.testImportAcks.length === 2)
 })

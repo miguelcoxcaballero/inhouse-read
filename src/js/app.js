@@ -455,7 +455,7 @@ els.filePicker.addEventListener('change', async () => {
 
 // ---- Apertura y lectura ----
 
-async function openFile(file, { existingRecord, forcedId, folderFileName, transition, preparing = false, restoreRemoved = false } = {}) {
+async function openFile(file, { existingRecord, forcedId, folderFileName, transition, preparing = false, restoreRemoved = false, onImportReady } = {}) {
   if (transition?.isActive && !transition.isActive()) return false
   if (!preparing) {
     preparationGeneration++
@@ -563,6 +563,9 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
   if (!preparing) refreshShelf()
   if (!preparing) extractCoverInBackground(record)
   if (!preparing) await transition?.onReaderReady?.()
+  // The Android inbox can release its temporary copy once IndexedDB and the
+  // reader are ready; Google consent may remain pending for several minutes.
+  if (!preparing) onImportReady?.()
   if (sourceType === 'local' && !record.driveFileId) {
     try {
       // En Android, añadir un libro significa guardarlo en la cuenta de Drive.
@@ -1026,11 +1029,13 @@ loadDriveAccountProfile().catch(error => console.warn('No se pudo restaurar la c
 initAndroidUpdateChecks()
 initContentFreshnessChecks()
 initAndroidFileImports({
-  canImport: () => !closingReader && !els.readerScreen.classList.contains('is-preparing'),
+  canImport: () => !closingReader && !driveUploadsInFlight && !els.readerScreen.classList.contains('is-preparing'),
   onFile: async file => {
     await shelf?.close()
     await progressWrites.get(currentBookId)?.catch(() => {})
-    return openFile(file, { restoreRemoved:true })
+    return new Promise((resolve, reject) => {
+      openFile(file, { restoreRemoved:true, onImportReady:resolve }).then(resolve, reject)
+    })
   },
   onError: error => alert(`No se pudo importar el libro: ${error.message}`)
 })
