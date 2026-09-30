@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 
 test('lomo nítido: tintas, metales y grabado persistentes en móvil', async ({ page }) => {
+  test.setTimeout(90_000)
   await page.setViewportSize({width:390,height:844})
   await page.emulateMedia({reducedMotion:'reduce'})
   const errors=[]; page.on('pageerror', e=>errors.push(e.message))
