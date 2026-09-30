@@ -33,12 +33,12 @@ jobs:
       - name: E2E (Playwright, contra el build de producción)
         # "pretest:e2e" (ver package.json) hace "vite build" antes de correr
         # Playwright, así que esto ya prueba el bundle real de producción.
-        # Dos contextos aislados, igual que en la suite completa local.
-        # La escena 3D en Chromium sin GPU tarda más; deja margen también
-        # para los traces y el reporte si alguna comprobación falla.
+        # Keep one software WebGL context active on this runner. Parallel
+        # rendering competes for its graphics process and stalls unrelated
+        # animation, screenshot and even pointer commands.
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
-        run: npm run test:e2e -- --workers=2 --reporter=list,json
+        run: npm run test:e2e -- --workers=1 --reporter=list,json
 
       - if: failure()
         uses: actions/upload-artifact@v4
