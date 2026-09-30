@@ -342,6 +342,22 @@ test('móvil sin WebGL: la hoja de apertura también contiene los píxeles de la
 test('móvil CBZ: abre la imagen azul guardada y descarta el iframe oculto de la portada roja', async ({ page }, testInfo) => {
   test.setTimeout(90_000)
   const errors = []; page.on('pageerror', error => errors.push(error.message))
+  // Fixed-layout pages load asynchronously. Force the same resize notification
+  // that a returning-page row can deliver while the old spread has been cleared
+  // and the new iframe is still loading, instead of relying on network timing.
+  await page.evaluate(() => {
+    const native = window.ResizeObserver
+    const race = window.__fixedLayoutResizeRace = {native,callbacks:new Map(),forced:0,mutations:null}
+    window.ResizeObserver = class extends native {
+      constructor(callback) { super(callback); this.fixtureCallback = callback }
+      observe(target,options) {
+        super.observe(target,options)
+        if (target.localName === 'foliate-fxl') {
+          race.callbacks.set(target,() => this.fixtureCallback([{target,contentRect:target.getBoundingClientRect()}],this))
+        }
+      }
+    }
+  })
   await page.locator('#file-picker').setInputFiles({ name:'opening-comic.cbz', mimeType:'application/vnd.comicbook+zip',buffer:colouredComic() })
   await expect(page.locator('foliate-view')).toBeVisible()
   const visiblePage = () => page.evaluate(() => {
@@ -363,9 +379,28 @@ test('móvil CBZ: abre la imagen azul guardada y descarta el iframe oculto de la
     return null
   })
   await expect.poll(visiblePage).toEqual({ width:400,height:600,colour:[184,20,40] })
+  await page.evaluate(() => {
+    const frame = document.querySelector('foliate-view').renderer.getContents()[0].doc.defaultView.frameElement
+    const root = frame.getRootNode(), race = window.__fixedLayoutResizeRace
+    const resize = race.callbacks.get(root.host)
+    if (!resize) throw new Error('Fixed-layout ResizeObserver was not captured')
+    race.mutations = new MutationObserver(records => {
+      if (!records.some(record => record.type === 'childList')) return
+      race.forced++
+      resize()
+    })
+    race.mutations.observe(root,{childList:true})
+  })
   await page.locator('#reader-location').click()
   await page.getByRole('button', { name:'03.png',exact:true }).click()
   await expect.poll(visiblePage).toEqual({ width:400,height:600,colour:[20,56,199] })
+  const forcedResizes = await page.evaluate(() => {
+    const race = window.__fixedLayoutResizeRace
+    race.mutations.disconnect()
+    window.ResizeObserver = race.native
+    return race.forced
+  })
+  expect(forcedResizes).toBeGreaterThan(0)
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
   await expect.poll(async () => (await savedBook(page,'opening-comic.cbz'))?.locator?.kind).toBe('cfi')
   const record = await savedBook(page,'opening-comic.cbz')

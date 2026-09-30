@@ -10,6 +10,7 @@ La biblioteca es una estantería con madera y plantas fotográficas, donde los l
 - EPUB aprovecha la altura disponible con márgenes verticales de 12 px. PDF se adapta al ancho real, incluso en móviles estrechos; sus modos de texto y original se reajustan al girar o mostrar controles.
 - Tema AMOLED con fondo negro puro y texto gris claro (#c6c6c6), guardado entre sesiones y aplicado al documento y sus controles.
 - Paneles ajustados al espacio visible en horizontal y sobre el teclado. El reproductor de voz y el acceso para volver a la posición anterior reservan su altura real sin tapar el texto.
+- El visor de cómics y páginas fijas espera a que termine de cargar la nueva página antes de recalcular su tamaño, evitando errores durante los cambios de capítulo o de espacio disponible.
 - Actualización web compatible con la APK actual; no requiere reinstalar Android.
 
 ### Actualización web · 1.6.3
