@@ -21,9 +21,9 @@ export function sampleTrashDrop(start, mouth, progress, { height = 200, scale = 
 
 /** A powder-coated metal wastebasket with a real open wall, inner well and lid.
  * No texture downloads, canvas generation or idle animation are needed. */
-export function createShelfTrash({ radius = 28, height = 88 } = {}) {
-  radius = Math.max(12, Number(radius) || 28);
-  height = Math.max(30, Number(height) || 88);
+export function createShelfTrash({ radius = 44, height = 140 } = {}) {
+  radius = Math.max(12, Number(radius) || 44);
+  height = Math.max(30, Number(height) || 140);
   const basket = new THREE.Group();
   basket.name = 'Shelf wastebasket';
   const coating = new THREE.MeshPhysicalMaterial({ color:'#305e48', metalness:.52, roughness:.36,

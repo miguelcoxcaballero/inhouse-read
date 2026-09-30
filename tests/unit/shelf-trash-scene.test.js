@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createBookshelfScene, projectPlantFoliage } from '../../src/js/bookshelf-scene.js';
 
-const gpu = vi.hoisted(() => ({ renders:0, scene:null, models:[], disposed:0 }));
+const gpu = vi.hoisted(() => ({ renders:0, scene:null, models:[], disposed:0, readyFor:null }));
 vi.mock('../../src/js/book-model.js', async () => {
   const Three = await import('three');
   let ratio = 1, size = new Three.Vector2();
@@ -12,11 +12,13 @@ vi.mock('../../src/js/book-model.js', async () => {
     setSize:(width, height) => { size.set(width, height); },
     render:scene => { gpu.renders++; gpu.scene = scene; } };
   return { getBookRenderer:() => renderer, lightBookScene() {},
-    createBookModel(book, style, width, height, thickness) {
+    createBookModel(book, style, width, height, thickness, coverUrl, { overview = false } = {}) {
       const model = new Three.Group(); model.name = `book:${book.id}`;
       model.add(new Three.Mesh(new Three.BoxGeometry(width, height, thickness), new Three.MeshStandardMaterial()));
       const binding = new Three.Mesh(new Three.BoxGeometry(thickness * .38, height, thickness), new Three.MeshStandardMaterial());
       binding.name = 'binding'; binding.position.x = -width / 2 - thickness * .19; model.add(binding);
+      model.userData.overview = overview; model.userData.isOverview = overview;
+      model.userData.ready = gpu.readyFor?.(book, overview);
       model.userData.dispose = () => { gpu.disposed++; }; gpu.models.push(model);
       return model;
     } };
@@ -37,6 +39,7 @@ const binModel = () => gpu.scene.getObjectByName('Shelf wastebasket');
 const floorModel = () => gpu.scene.getObjectByName('Library floor');
 function assertGroundedBin() {
   const bin = binModel(), floor = floorModel();
+  expect(floor.visible).toBe(false); expect(shelf.canvas.dataset.floorVisible).toBe('false');
   expect(bin.parent).toBe(floor.parent); expect(bin.scale.toArray()).toEqual([1, 1, 1]);
   expect(bin.rotation.toArray().slice(0, 3)).toEqual([0, 0, 0]);
   const foot = bin.getObjectByName('Rubber foot'); foot.geometry.computeBoundingBox(); foot.updateMatrix();
@@ -75,10 +78,20 @@ function nativePlantLayout({ node = document.createElement('button'), entries, v
     rows:[{ top:20, bottom:220 }, { top:260, bottom:460 }, { top:500, bottom:700 }], entries:entries || [data] };
   shelf.updateLayout(layout); return { node, data, layout };
 }
+function manyBookLayout(count = 80) {
+  const rows = Array.from({ length:Math.ceil(count / 5) }, (_, index) => ({ top:20 + index * 220, bottom:220 + index * 220 }));
+  const entries = Array.from({ length:count }, (_, index) => {
+    const node = document.createElement('button'); node.classList.add('ihr-spine'); node.dataset.bookId = String(index); stage.append(node);
+    return { node, book:{ id:String(index),title:`Book ${index}`,author:'Author' }, style:{ color:'#41694f',width:28 },
+      x:44 + index % 5 * 72, y:rows[Math.floor(index / 5)].bottom - 90, width:100,height:180,thickness:28 };
+  });
+  const layout = { stage, width:390, sceneWidth:390,height:rows.at(-1).bottom + 35,trashNode,rows,entries };
+  shelf.updateLayout(layout); return { entries, layout };
+}
 
 beforeEach(() => {
   clock = 0; frames = new Map(); scroll = 0;
-  gpu.renders = 0; gpu.scene = null; gpu.models = []; gpu.disposed = 0;
+  gpu.renders = 0; gpu.scene = null; gpu.models = []; gpu.disposed = 0; gpu.readyFor = null;
   let serial = 0;
   vi.stubGlobal('requestAnimationFrame', callback => { const id = ++serial; frames.set(id, callback); return id; });
   vi.stubGlobal('cancelAnimationFrame', id => frames.delete(id));
@@ -92,6 +105,7 @@ beforeEach(() => {
   scroller = document.createElement('div'); stage = document.createElement('div');
   scroller.append(stage); document.body.append(scroller);
   Object.defineProperty(scroller, 'clientHeight', { value:700 });
+  Object.defineProperty(scroller, 'scrollTop', { configurable:true, get:() => scroll, set:value => { scroll = Math.max(0, Number(value) || 0); } });
   scroller.getBoundingClientRect = () => rect(20, 60, 390, 700);
   stage.getBoundingClientRect = () => rect(20, 60 - scroll, 390, 750);
   trashNode = document.createElement('button'); bookNode = document.createElement('button');
@@ -182,30 +196,169 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     const stationary = gpu.renders; flushFrames(); expect(gpu.renders).toBe(stationary);
   });
 
-  it('places the bin at the physical bottom of a long cabinet and reaches it by scrolling rather than pinning it to the screen', () => {
+  it('fits a long cabinet and its larger grounded bin together without any isometric scrolling', () => {
     const rows = Array.from({ length:10 }, (_, index) => ({ top:20 + index * 240, bottom:220 + index * 240 }));
     shelf.updateLayout({ stage, width:390, sceneWidth:390, height:2450, trashNode, rows, entries:[] });
-    showTrash();
+    scroll = 900; shelf.flush(); showTrash();
     const bin = binModel(), localPosition = bin.position.clone(), worldPosition = bin.getWorldPosition(new THREE.Vector3());
     assertGroundedBin();
     expect(Number(shelf.canvas.dataset.cabinetFloorY)).toBe(-2450);
-    expect(trashNode.hidden).toBe(true); expect(shelf.canvas.dataset.trashCameraInFrame).toBe('false');
+    expect(trashNode.hidden).toBe(false); expect(shelf.canvas.dataset.trashCameraInFrame).toBe('true');
+    expect(scroll).toBe(0); expect(shelf.canvas.dataset.fullCabinetInFrame).toBe('true');
+    expect(parseFloat(stage.style.height)).toBeLessThanOrEqual(Number(shelf.canvas.dataset.sceneFitHeight));
+    expect(bin.userData.radius).toBe(44); expect(bin.userData.height).toBe(140);
+    expect(trashNode.dataset.trashRadius).toBe('44'); expect(trashNode.dataset.trashHeight).toBe('140');
     expect(shelf.hitTrash(350, 650)).toBe(false);
-    scroll = Math.max(0, parseFloat(stage.style.height) - 700); shelf.flush();
+    scroll = 500; shelf.flush();
     const bottom = trashNode.getBoundingClientRect();
-    expect(scroll).toBeGreaterThan(500);
+    expect(scroll).toBe(0);
     expect(trashNode.hidden).toBe(false); expect(shelf.canvas.dataset.trashCameraInFrame).toBe('true');
     expect(bottom.top).toBeGreaterThanOrEqual(scroller.getBoundingClientRect().top);
     expect(bottom.bottom).toBeLessThanOrEqual(scroller.getBoundingClientRect().bottom);
     expect(shelf.hitTrash(bottom.left + bottom.width / 2, bottom.top + bottom.height / 2)).toBe(true);
     expect(bin.position.equals(localPosition)).toBe(true);
     expect(bin.getWorldPosition(new THREE.Vector3()).equals(worldPosition)).toBe(true);
-    scroll -= 100; shelf.flush();
-    expect(trashNode.getBoundingClientRect().top).toBeCloseTo(bottom.top + 100);
+    scroll = 100; shelf.flush();
+    expect(trashNode.getBoundingClientRect().top).toBeCloseTo(bottom.top);
     assertGroundedBin();
-    scroll = 0; shelf.flush();
+    shelf.setMode('spine', { animate:false }); shelf.flush();
+    expect(scroll).toBe(900);
     expect(trashNode.hidden).toBe(true); expect(shelf.canvas.dataset.trashCameraInFrame).toBe('false');
     expect(bin.position.equals(localPosition)).toBe(true);
+  });
+
+  it('fits every shelf below the actual mobile heading and action padding while keeping the floor invisible and physical', () => {
+    const previousHeight = window.innerHeight;
+    Object.defineProperty(window, 'innerHeight', { configurable:true,value:844 });
+    scroller.style.paddingBottom = '76px';
+    scroller.getBoundingClientRect = () => rect(0,100,390,744);
+    stage.getBoundingClientRect = () => rect(0,185 - scroll,390,750);
+    shelf.canvas.getBoundingClientRect = () => rect(0,185,390,744);
+    try {
+      const { layout } = manyBookLayout(); showTrash();
+      expect(Number(shelf.canvas.dataset.sceneFitHeight)).toBe(581);
+      expect(shelf.canvas.dataset.fullCabinetInFrame).toBe('true');
+      expect(parseFloat(stage.style.height)).toBeLessThanOrEqual(581);
+      expect(floorModel().visible).toBe(false); assertGroundedBin();
+      const bin = trashNode.getBoundingClientRect();
+      expect(bin.width).toBeGreaterThanOrEqual(44); expect(bin.height).toBeGreaterThanOrEqual(44);
+      // Read the native target's local bounds against the stage origin used
+      // above, rather than the fixture's ordinary 20/60 client offset.
+      expect(parseFloat(trashNode.style.top) + parseFloat(trashNode.style.height)).toBeLessThanOrEqual(581);
+      expect(Number(shelf.canvas.dataset.cabinetFloorY)).toBe(-layout.height);
+    } finally { Object.defineProperty(window, 'innerHeight', { configurable:true,value:previousHeight }); }
+  });
+
+  it('pans smoothly from a lower frontal shelf into the full overview and restores its exact scroll after the final expansion frame', () => {
+    manyBookLayout(); scroll = 1300; shelf.flush();
+    shelf.setMode('isometric');
+    expect(scroll).toBe(1300);
+    const samples = [scroll];
+    for (let index = 0; index < 6; index++) { flushFrames(80); samples.push(scroll); }
+    expect(samples[1]).toBeLessThan(samples[0]); expect(samples[1]).toBeGreaterThan(1200);
+    expect(samples.every((value,index) => !index || value <= samples[index-1])).toBe(true);
+    expect(scroll).toBeGreaterThan(0); flushFrames(300);
+    expect(scroll).toBe(0); expect(shelf.canvas.dataset.fullCabinetInFrame).toBe('true');
+    shelf.setMode('spine'); flushFrames(80); expect(scroll).toBeGreaterThan(0); expect(scroll).toBeLessThan(100);
+    flushFrames(750); expect(scroll).toBe(1300); expect(shelf.canvas.dataset.zoom).toBe('1.0000');
+  });
+
+  it('keeps the full overview framed after resize and an interrupted turn while preserving the saved frontal scroll', () => {
+    const { layout } = manyBookLayout(); scroll = 1000; shelf.flush(); shelf.setMode('isometric'); flushFrames(220);
+    const halfway = scroll; shelf.setMode('spine');
+    expect(scroll).toBe(halfway); flushFrames(800); expect(scroll).toBe(1000);
+    shelf.setMode('isometric'); flushFrames(170);
+    shelf.updateLayout({ ...layout,width:320,sceneWidth:320 }); flushFrames(800);
+    expect(scroll).toBe(0); expect(shelf.canvas.dataset.fullCabinetInFrame).toBe('true');
+    expect(parseFloat(stage.style.height)).toBeLessThanOrEqual(Number(shelf.canvas.dataset.sceneFitHeight));
+    shelf.setMode('spine', { animate:false }); shelf.flush(); expect(scroll).toBe(1000);
+  });
+
+  it('keeps all eighty books as 3D overview models and promotes only a held book without changing captured flights', async () => {
+    const { entries } = manyBookLayout(); showTrash(); await Promise.resolve(); shelf.flush();
+    expect(shelf.canvas.dataset.activeBooks).toBe('80'); expect(shelf.canvas.dataset.overviewBooks).toBe('80');
+    expect(shelf.canvas.dataset.detailedBooks).toBe('0'); expect(shelf.canvas.dataset.bookQualityPending).toBe('0');
+    const furniture = binModel().parent, node = entries[0].node;
+    const model = () => furniture.children.find(object => object.userData.entry?.node === node);
+    expect(model().userData.overview).toBe(true); expect(model().getObjectByName('binding').isMesh).toBe(true);
+    const before = model(); node.classList.add('is-lifted'); shelf.flush(); await Promise.resolve(); shelf.flush();
+    expect(model()).not.toBe(before); expect(model().userData.overview).toBe(false);
+    expect(shelf.canvas.dataset.detailedBooks).toBe('1'); expect(shelf.canvas.dataset.overviewBooks).toBe('79');
+    node.classList.remove('is-lifted'); node.classList.add('is-dragging'); shelf.flush();
+    const captured = model(), motion = shelf.animateObjectToTrash(node);
+    node.classList.add('is-away'); node.classList.remove('is-dragging'); flushFrames(400); await Promise.resolve(); shelf.flush();
+    expect(captured.parent).toBe(gpu.scene); expect(captured.visible).toBe(true);
+    expect(shelf.canvas.dataset.trashingObjectId).toBe('book:0');
+    expect(furniture.children.some(object => object.userData.entry?.node === node)).toBe(false);
+    motion.cancel(); node.classList.remove('is-away'); shelf.flush(); await Promise.resolve(); shelf.flush();
+    expect(model().userData.overview).toBe(true);
+    expect(shelf.canvas.dataset.activeBooks).toBe('80'); expect(shelf.canvas.dataset.overviewBooks).toBe('80');
+  });
+
+  it('creates newly visible small books in overview quality during zoom-out without rebuilding existing models at every threshold crossing', async () => {
+    const { entries } = manyBookLayout(); scroll = 1300; shelf.flush();
+    const oldModels = new Set(gpu.models); shelf.setMode('isometric');
+    for (let index = 0; index < 9; index++) {
+      flushFrames(64);
+      const progress = Number(shelf.canvas.dataset.viewProgress);
+      if (progress < 1) expect(shelf.canvas.dataset.bookQualityPending).toBe('0');
+      for (const model of gpu.models.filter(model => !oldModels.has(model) && model.userData.overview)) {
+        const entry = entries.find(entry => `book:${entry.book.id}` === model.name);
+        expect(entry).toBeTruthy(); expect(model.getObjectByName('binding')).toBeTruthy();
+      }
+    }
+    expect(gpu.models.some(model => !oldModels.has(model) && model.userData.overview)).toBe(true);
+    flushFrames(200); await Promise.resolve(); shelf.flush();
+    expect(shelf.canvas.dataset.overviewBooks).toBe('80'); expect(shelf.canvas.dataset.bookQualityPending).toBe('0');
+    const creations = Number(shelf.canvas.dataset.modelCreations); shelf.flush(); flushFrames(100);
+    expect(Number(shelf.canvas.dataset.modelCreations)).toBe(creations);
+  });
+
+  it.each(['lift','reversed view'])('discards a late overview candidate when a quick %s keeps the existing detailed book', async change => {
+    const rows = Array.from({ length:16 }, (_, index) => ({ top:20 + index * 220,bottom:220 + index * 220 }));
+    shelf.updateLayout({ stage,width:390,sceneWidth:390,height:3555,trashNode,rows,
+      entries:[{ node:bookNode,book:{ id:'a',title:'Book',author:'Author' },style:{ color:'#3c6548',width:28 },
+        x:60,y:130,width:100,height:180,thickness:28 }] });
+    const model = gpu.scene.getObjectByName('book:a');
+    let resolveOverview;
+    gpu.readyFor = (book,overview) => overview ? new Promise(resolve => { resolveOverview = resolve; }) : undefined;
+    showTrash();
+    const candidate = gpu.models.at(-1), released = vi.spyOn(candidate.userData,'dispose');
+    expect(candidate.userData.overview).toBe(true); expect(shelf.canvas.dataset.bookQualityPending).toBe('1');
+    const creations = Number(shelf.canvas.dataset.modelCreations);
+    if (change === 'lift') bookNode.classList.add('is-lifted');
+    else shelf.setMode('spine', { animate:false });
+    shelf.flush();
+    expect(shelf.canvas.dataset.bookQualityPending).toBe('0'); expect(released).toHaveBeenCalledTimes(1);
+    expect(gpu.scene.getObjectByName('book:a')).toBe(model);
+    expect(model.userData.overview).toBe(false);
+    resolveOverview(true); await Promise.resolve(); shelf.flush();
+    expect(gpu.scene.getObjectByName('book:a')).toBe(model); expect(released).toHaveBeenCalledTimes(1);
+    expect(Number(shelf.canvas.dataset.modelCreations)).toBe(creations);
+    shelf.setMode('spine', { animate:false }); bookNode.classList.remove('is-lifted'); shelf.flush();
+    expect(gpu.scene.getObjectByName('book:a')).toBe(model);
+    expect(shelf.canvas.dataset.bookQualityPending).toBe('0');
+  });
+
+  it('discards a late detailed promotion after a quick release without painting it or rebuilding the current overview', async () => {
+    const rows = Array.from({ length:16 }, (_, index) => ({ top:20 + index * 220,bottom:220 + index * 220 }));
+    shelf.updateLayout({ stage,width:390,sceneWidth:390,height:3555,trashNode,rows,
+      entries:[{ node:bookNode,book:{ id:'a',title:'Book',author:'Author' },style:{ color:'#3c6548',width:28 },
+        x:60,y:130,width:100,height:180,thickness:28 }] });
+    showTrash(); await Promise.resolve(); shelf.flush();
+    const model = gpu.scene.getObjectByName('book:a'); expect(model.userData.overview).toBe(true);
+    let resolveDetailed;
+    gpu.readyFor = (book,overview) => !overview ? new Promise(resolve => { resolveDetailed = resolve; }) : undefined;
+    bookNode.classList.add('is-lifted'); shelf.flush();
+    const candidate = gpu.models.at(-1), released = vi.spyOn(candidate.userData,'dispose');
+    expect(candidate.userData.overview).toBe(false); expect(shelf.canvas.dataset.bookQualityPending).toBe('1');
+    const creations = Number(shelf.canvas.dataset.modelCreations);
+    bookNode.classList.remove('is-lifted'); shelf.flush();
+    expect(shelf.canvas.dataset.bookQualityPending).toBe('0'); expect(released).toHaveBeenCalledTimes(1);
+    resolveDetailed(true); await Promise.resolve(); shelf.flush();
+    expect(gpu.scene.getObjectByName('book:a')).toBe(model); expect(model.userData.overview).toBe(true);
+    expect(Number(shelf.canvas.dataset.modelCreations)).toBe(creations); expect(released).toHaveBeenCalledTimes(1);
+    shelf.dispose(); shelf = null; expect(released).toHaveBeenCalledTimes(1);
   });
 
   it('uses the bin world scale and orientation for a falling book while its local pose stays fixed', async () => {
@@ -231,7 +384,7 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     expect([...counts.values()]).toEqual([...counts.values()].map(() => 1));
   });
 
-  it.each([320, 390, 860])('fits the actual bin and open lid beside a full-width %i px cabinet after scrolling and toggling', viewportWidth => {
+  it.each([320, 390, 860])('fits the actual larger bin and open lid beside a full-width %i px cabinet without ISO scroll', viewportWidth => {
     const previousWidth = window.innerWidth;
     Object.defineProperty(window, 'innerWidth', { configurable:true, value:viewportWidth });
     scroller.getBoundingClientRect = () => rect(0, 60, viewportWidth, 700);
@@ -259,7 +412,8 @@ describe('wastebasket in the shared 3D shelf scene', () => {
       expect(trashNode.hidden).toBe(false);
       scroll = 100; shelf.flush();
       const after = trashNode.getBoundingClientRect();
-      expect(after.left).toBeCloseTo(before.left); expect(after.top).toBeCloseTo(before.top - 100);
+      expect(scroll).toBe(0); expect(shelf.canvas.dataset.fullCabinetInFrame).toBe('true');
+      expect(after.left).toBeCloseTo(before.left); expect(after.top).toBeCloseTo(before.top);
       assertGroundedBin();
       expect(shelf.hitTrash(after.left + after.width / 2, after.top + after.height / 2)).toBe(true);
       shelf.setMode('spine', { animate:false }); shelf.flush();
@@ -485,7 +639,7 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     expect(nodes.every(node => node.querySelectorAll('.ihr-plant-foliage').length === 1)).toBe(true);
   });
 
-  it('shows the attached catalogue only in the diagonal view and projects a scrolling semantic target', () => {
+  it('shows the attached catalogue only in the fitted diagonal view and ignores attempted ISO scroll', () => {
     const catalogNode = document.createElement('button'); catalogNode.hidden = true;
     catalogNode.tabIndex = -1; stage.append(catalogNode);
     const layout = { stage, width:310, sceneWidth:390, height:750, trashNode, catalogNode,
@@ -515,7 +669,7 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     scroll = 30; shelf.flush();
     expect(parseFloat(catalogNode.style.top)).toBeCloseTo(top);
     scroll = 500; shelf.flush();
-    expect(catalogNode.hidden).toBe(true); expect(catalogNode.tabIndex).toBe(-1);
+    expect(scroll).toBe(0); expect(catalogNode.hidden).toBe(false); expect(catalogNode.tabIndex).toBe(0);
     scroll = 0; shelf.setMode('spine', { animate:false }); shelf.flush();
     expect(catalog.visible).toBe(false); expect(catalogNode.hidden).toBe(true);
     shelf.dispose(); shelf = null;
@@ -539,7 +693,7 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     expect(Number(shelf.canvas.dataset.modelCreations)).toBe(count + 2);
   });
 
-  it('projects the grounded bin in the right-side room and scrolls its target together with the cabinet', () => {
+  it('projects the grounded bin in the fitted right-side room and keeps its target fixed during attempted ISO scroll', () => {
     showTrash();
     const before = trashNode.getBoundingClientRect();
     expect(binModel().position.x - binModel().userData.radius).toBeGreaterThan(390 / 2);
@@ -549,7 +703,7 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     expect(shelf.hitTrash(80, 120)).toBe(false);
     scroll = 240; shelf.flush();
     const after = trashNode.getBoundingClientRect();
-    expect(after.top).toBeCloseTo(before.top - 240); expect(after.left).toBeCloseTo(before.left);
+    expect(scroll).toBe(0); expect(after.top).toBeCloseTo(before.top); expect(after.left).toBeCloseTo(before.left);
     assertGroundedBin();
     expect(trashNode.dataset.trash3d).toBe('true');
     expect(shelf.canvas.style.width).toBe('390px');

@@ -7,8 +7,8 @@
   una página de pruebas).
 
   Notas de implementación:
-   - Madera y plantas usan fotografías propias optimizadas en WebP. Las
-     sombras y la iluminación se adaptan al tema mediante CSS.
+   - El mueble usa madera texturizada; las plantas son geometría 3D con
+     texturas procedimentales. Comparten iluminación y sombras en WebGL.
    - El libro se anima como malla WebGL; el fondo y los controles usan opacity.
    - `--ihr-accent-legible` es el verde para TEXTO: en oscuro sube a un verde
      claro porque #2f6b4f sobre #151515 no llega a contraste AA.
@@ -79,6 +79,15 @@
 
 .ihr-bookshelf--with-actions .ihr-bookshelf__scroll {
   padding-bottom: calc(76px + env(safe-area-inset-bottom));
+}
+
+/* El encuadre 3D ajusta toda la escena al espacio libre bajo el encabezado.
+   El scroll frontal sigue disponible al volver a mirar los lomos. */
+.ihr-bookshelf[data-view-mode='isometric'] .ihr-bookshelf__scroll {
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+  scrollbar-width: none;
 }
 
 /* ------------------------------------------------------------------ *

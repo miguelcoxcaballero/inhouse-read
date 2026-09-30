@@ -202,10 +202,165 @@ describe('real shelf book materials', () => {
     const context = new Proxy({
       measureText: text => ({ width:String(text).length * 16 }),
       createLinearGradient: () => ({ addColorStop() {} }),
-      getImageData: (_x, _y, width, height) => ({ data:new Uint8ClampedArray(width * height * 4) })
+      fillText:vi.fn(), drawImage:vi.fn(),
+      getImageData:vi.fn((_x, _y, width, height) => ({ data:new Uint8ClampedArray(width * height * 4) }))
     }, { get: (target, key) => target[key] ?? (() => {}) });
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context);
+    return context;
   }
+
+  it('builds a small overview directly without allocating full text or relief canvases', () => {
+    const context = canvasContext(), canvases = [];
+    const createElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag, ...args) => {
+      const node = createElement(tag, ...args); if (tag === 'canvas') canvases.push(node); return node;
+    });
+    const overview = createBookModel({ ...book, spineEngraved:true }, style, 132, 200, 40, null,
+      { shelf:true, overview:true });
+    expect(overview.userData).toMatchObject({ overview:true, isOverview:true, detailLevel:'overview' });
+    expect(canvases.length).toBeGreaterThan(4);
+    for (const canvas of canvases) {
+      expect(canvas.width).toBeLessThanOrEqual(256); expect(canvas.height).toBeLessThanOrEqual(256);
+    }
+    const binding = overview.getObjectByName('binding');
+    expect(binding.geometry.attributes.position.count).toBe(34);
+    expect(binding.material.map.image.width).toBe(64); expect(binding.material.map.image.height).toBe(256);
+    expect(binding.material.roughnessMap.image.width).toBe(64);
+    expect(binding.material.roughnessMap.image.height).toBe(256);
+    expect(binding.material.bumpMap).toBeNull(); expect(context.getImageData).not.toHaveBeenCalled();
+    overview.userData.dispose();
+  });
+
+  it('retains the physical curve, boards, pages, bookmark and finishes in the overview', async () => {
+    canvasContext();
+    const nextBook = { ...book, progressFraction:.4, spineFinish:'gold', spineTextFinish:'silver',
+      spineSurfaceFinish:'glossy', coverFinish:'glossy', pageEdgeFinish:'glossy' };
+    const overview = createBookModel(nextBook, style, 132, 200, 40, null, { shelf:true, overview:true });
+    const detail = createBookModel(nextBook, style, 132, 200, 40, null, { shelf:true });
+    await expect(overview.userData.ready).resolves.toBe(true);
+    const binding = overview.getObjectByName('binding'), detailedBinding = detail.getObjectByName('binding');
+    binding.geometry.computeBoundingBox(); detailedBinding.geometry.computeBoundingBox();
+    expect(binding.geometry.boundingBox).toEqual(detailedBinding.geometry.boundingBox);
+    const positions = binding.geometry.attributes.position;
+    expect(positions.getX(16)).toBeCloseTo(-66 - 40 * .38);
+    expect(positions.getZ(0)).toBe(-20); expect(positions.getZ(32)).toBe(20);
+    expect(overview.getObjectByName('front-cover').geometry.type).toBe('ExtrudeGeometry');
+    expect(overview.getObjectByName('back-cover').geometry.type).toBe('ExtrudeGeometry');
+    expect(overview.getObjectByName('page-block').geometry.parameters.depth).toBeGreaterThan(30);
+    expect(overview.getObjectByName('reading-bookmark').geometry.attributes.position.count).toBe(36);
+    expect(overview.getObjectByName('reading-bookmark').geometry.attributes.position.count)
+      .toBeLessThan(detail.getObjectByName('reading-bookmark').geometry.attributes.position.count);
+    let drawCalls = 0;
+    overview.traverseVisible(object => {
+      if (!object.isMesh) return;
+      drawCalls += Array.isArray(object.material)
+        ? object.geometry.groups.filter(group => object.material[group.materialIndex]?.visible).length
+        : Number(object.material.visible);
+    });
+    expect(drawCalls).toBe(7);
+    expect(binding.material.roughnessMap).toBe(binding.material.metalnessMap);
+    for (const property of ['roughness','clearcoat','clearcoatRoughness','envMapIntensity']) {
+      expect(binding.material[property]).toBe(detailedBinding.material[property]);
+      expect(overview.getObjectByName('front-cover').material[property])
+        .toBe(detail.getObjectByName('front-cover').material[0][property]);
+    }
+    overview.userData.dispose(); detail.userData.dispose();
+  });
+
+  it('shares one owned paper material across overview edges and releases it exactly once', () => {
+    canvasContext();
+    const canvases = [], createElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag, ...args) => {
+      const node = createElement(tag, ...args); if (tag === 'canvas') canvases.push(node); return node;
+    });
+    const overview = createBookModel(book, style, 132, 200, 40, null, { shelf:true, overview:true });
+    // There is no unmounted second fore-edge texture to leak: both edges use
+    // this one page-block material and one 32 px raster from construction.
+    expect(canvases.filter(canvas => canvas.width === 32 && canvas.height === 32)).toHaveLength(1);
+    const material = overview.getObjectByName('page-block').material, map = material.map;
+    const releaseMaterial = vi.spyOn(material, 'dispose'), releaseMap = vi.spyOn(map, 'dispose');
+    const originalRoughness = material.roughness;
+    overview.userData.updateEdgeAppearance({ pageEdgeFinish:'glossy' });
+    expect(overview.getObjectByName('page-block').material).toBe(material); expect(material.map).toBe(map);
+    expect(material.roughness).toBeLessThan(originalRoughness);
+    overview.userData.dispose(); overview.userData.dispose();
+    expect(releaseMaterial).toHaveBeenCalledOnce(); expect(releaseMap).toHaveBeenCalledOnce();
+  });
+
+  it('keeps overview titles and authors correct after live appearance updates', () => {
+    const context = canvasContext();
+    const overview = createBookModel({ ...book, spineTitleOverride:'Correct title', author:'Correct author' },
+      style, 132, 200, 40, null, { shelf:true, overview:true });
+    expect(context.fillText.mock.calls.some(([text]) => text === 'Correct title')).toBe(true);
+    expect(context.fillText.mock.calls.some(([text]) => text === 'Correct author')).toBe(true);
+    const original = overview.getObjectByName('binding').material.map, release = vi.spyOn(original, 'dispose');
+    overview.userData.updateSpineAppearance({ ...book, spineTitleOverride:'Updated title', author:'Updated author',
+      spineEngraved:true, spineTextFinish:'gold' }, { ...style, color:'#936536' });
+    expect(release).toHaveBeenCalledOnce();
+    expect(context.fillText.mock.calls.some(([text]) => text === 'Updated title')).toBe(true);
+    expect(context.fillText.mock.calls.some(([text]) => text === 'Updated author')).toBe(true);
+    const binding = overview.getObjectByName('binding');
+    expect(binding.material.map.image.height).toBe(256); expect(binding.material.bumpMap).toBeNull();
+    expect(binding.geometry.attributes.position.count).toBe(34);
+    expect(overview.getObjectByName('back-cover').material.color.getHexString()).toBe('936536');
+    overview.userData.dispose();
+  });
+
+  it('caps landscape covers and promotes using the same decoded image without a second download', async () => {
+    canvasContext();
+    let completeLoad;
+    const loader = vi.spyOn(THREE.TextureLoader.prototype, 'load').mockImplementation((_url, ready) => { completeLoad = ready; });
+    const landscape = { ...style, coverRatio:2.5 };
+    const overview = createBookModel(book, landscape, 500, 200, 40, 'blob:overview-promotion',
+      { shelf:true, overview:true });
+    const cover = overview.getObjectByName('front-cover').material;
+    expect(cover.map.image.width).toBe(256); expect(cover.map.image.height).toBe(102);
+    completeLoad(new THREE.Texture({ width:1500, height:600 }));
+    await expect(overview.userData.ready).resolves.toBe(true);
+    expect(cover.map.image.width).toBe(256); expect(cover.map.image.height).toBe(102);
+    const detail = createBookModel(book, landscape, 500, 200, 40, 'blob:overview-promotion', { shelf:true });
+    await expect(detail.userData.ready).resolves.toBe(true);
+    expect(detail.userData.overview).toBe(false);
+    expect(detail.getObjectByName('front-cover').material[0].map.image.height).toBe(512);
+    expect(loader).toHaveBeenCalledOnce();
+    overview.userData.dispose(); detail.userData.dispose();
+  });
+
+  it('preserves bookmark updates, opening, page handoff and single resource disposal in overview', () => {
+    canvasContext();
+    const overview = createBookModel(book, style, 132, 200, 40, null, { shelf:true, overview:true });
+    for (const name of ['updateCoverSource','updateSpineAppearance','updateCoverAppearance','updateEdgeAppearance',
+      'updateBookmark','setCoverOpen','setBookmarkWithdraw','setPageSnapshot','dispose']) {
+      expect(overview.userData[name]).toBeTypeOf('function');
+    }
+    expect(overview.userData.hasBookmark).toBe(false);
+    overview.userData.updateBookmark({ ...book, progressFraction:.8 });
+    expect(overview.userData.hasBookmark).toBe(true);
+    expect(overview.getObjectByName('reading-bookmark').geometry.attributes.position.count).toBe(36);
+    overview.userData.setCoverOpen(1);
+    expect(overview.getObjectByName('front-cover-hinge').rotation.y).toBeCloseTo(-Math.PI * .94);
+    expect(overview.getObjectByName('reading-page-paper').visible).toBe(true);
+    const interior = overview.getObjectByName('front-cover').material[2];
+    const releaseInterior = vi.spyOn(interior, 'dispose');
+    overview.userData.setCoverOpen(0);
+    expect(Array.isArray(overview.getObjectByName('front-cover').material)).toBe(false);
+    const source = document.createElement('canvas'); source.width = 256; source.height = 256;
+    expect(overview.userData.setPageSnapshot({ source, width:256, height:256 })).toBe(true);
+    overview.userData.setBookmarkWithdraw(1);
+    expect(overview.getObjectByName('reading-bookmark').visible).toBe(false);
+    const materials = new Set(), textures = new Set(), geometries = new Set();
+    overview.traverse(object => {
+      if (object.geometry) geometries.add(object.geometry);
+      for (const material of [].concat(object.material || [])) materials.add(material);
+    });
+    for (const material of materials) for (const key of ['map','roughnessMap','metalnessMap','bumpMap']) {
+      if (material[key]) textures.add(material[key]);
+    }
+    const disposals = [...geometries, ...materials, ...textures].map(resource => vi.spyOn(resource, 'dispose'));
+    overview.userData.dispose(); overview.userData.dispose();
+    for (const release of disposals) expect(release).toHaveBeenCalledOnce();
+    expect(releaseInterior).toHaveBeenCalledOnce();
+  });
 
   it('opens the front board about its binding edge without cutting through the saved page', () => {
     canvasContext();

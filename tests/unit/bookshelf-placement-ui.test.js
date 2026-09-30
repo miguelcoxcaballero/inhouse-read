@@ -127,4 +127,20 @@ describe('free shelf placement controls', () => {
     expect(container.querySelector('.ihr-bookshelf').classList.contains('is-arranging')).toBe(false)
     expect(document.querySelector('.ihr-flyout')).toBeNull()
   })
+
+  it('never scrolls the isometric overview with a vertical touch gesture', () => {
+    const changed = vi.fn()
+    shelf = renderBookshelf(container, books(), { shelfWidth:WIDTH, sections:false, viewMode:'isometric', onShelfPlacementChange:changed })
+    const scroller = container.querySelector('.ihr-bookshelf__scroll'), book = find('book:placement:0')
+    const pointer = (type, y) => {
+      const event = new MouseEvent(type, { clientX:90, clientY:y, button:0, bubbles:true, cancelable:true })
+      Object.defineProperties(event, { pointerId:{ value:1 }, pointerType:{ value:'touch' } })
+      book.dispatchEvent(event)
+    }
+    pointer('pointerdown', 400); pointer('pointermove', 320); pointer('pointerup', 320)
+    expect(scroller.scrollTop).toBe(0)
+    expect(changed).not.toHaveBeenCalled()
+    expect(container.querySelector('.ihr-bookshelf').classList.contains('is-arranging')).toBe(false)
+    expect(document.querySelector('.ihr-flyout')).toBeNull()
+  })
 })

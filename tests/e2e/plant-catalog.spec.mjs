@@ -20,9 +20,17 @@ async function openCatalog(page) {
   await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress','1');
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating','false');
+  await assertIsometricOverview(page);
   const catalog = page.getByRole('button',{ name:CATALOG_NAME });
   await expect(catalog).toBeVisible();
   await expect(catalog).toHaveAttribute('data-catalog3d','true');
+  const bounds = await catalog.boundingBox(), viewport = page.viewportSize();
+  expect(bounds.width).toBeGreaterThanOrEqual(44);
+  expect(bounds.height).toBeGreaterThanOrEqual(44);
+  expect(bounds.x).toBeGreaterThanOrEqual(0);
+  expect(bounds.y).toBeGreaterThanOrEqual(0);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width + 1);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height + 1);
   await catalog.click();
   await expect(page.getByTestId('plant-catalog')).toBeVisible();
   await page.getByTestId('plant-catalog').evaluate(node => Promise.all(
@@ -31,6 +39,21 @@ async function openCatalog(page) {
   return page.getByTestId('plant-catalog');
 }
 const savedPlants = page => page.evaluate(key => JSON.parse(localStorage.getItem(key)),PLANTS_KEY);
+
+async function assertIsometricOverview(page) {
+  const canvas = page.locator('.ihr-bookshelf-scene');
+  await expect(canvas).toHaveAttribute('data-animating','false');
+  await expect(canvas).toHaveAttribute('data-full-cabinet-in-frame','true');
+  await expect(canvas).toHaveAttribute('data-floor-visible','false');
+  await expect(page.locator('.ihr-shelf-trash')).toBeVisible();
+  await expect(canvas).toHaveAttribute('data-trash-radius','44');
+  await expect(canvas).toHaveAttribute('data-trash-height','140');
+  const scroll = await page.locator('.ihr-bookshelf__scroll').evaluate(node => ({
+    top:node.scrollTop,height:node.scrollHeight,available:node.clientHeight
+  }));
+  expect(scroll.top).toBe(0);
+  expect(scroll.height).toBeLessThanOrEqual(scroll.available + 1);
+}
 
 test('una planta junto a un libro fino no tapa su zona táctil al girar o recargar la estantería',async ({ page }) => {
   test.setTimeout(90_000);
@@ -103,10 +126,12 @@ test('el catálogo está pegado al lateral 3D, sólo aparece en isométrica y a�
   expect(Number.isFinite(plants[0].x)).toBe(true);
   expect(Number.isFinite(plants[0].shelf)).toBe(true);
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating','false');
+  await assertIsometricOverview(page);
   await page.reload();
   await expect(page.locator('.ihr-plant')).toHaveCount(1);
   await expect(page.locator('.ihr-plant')).toHaveAttribute('data-object-id',plants[0].key);
   expect(await savedPlants(page)).toEqual(plants);
+  await assertIsometricOverview(page);
   await page.getByRole('button',{ name:'Vista de canto' }).click();
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress','0');
   await expect(page.locator('.ihr-shelf-catalog')).toBeHidden();
@@ -158,8 +183,7 @@ test('una planta cae como modelo 3D en la papelera y la última planta retirada 
   await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
   await expect(canvas).toHaveAttribute('data-view-progress','1');
   await expect(canvas).toHaveAttribute('data-animating','false');
-  await page.locator('.ihr-bookshelf__scroll').evaluate(node => { node.scrollTop = node.scrollHeight });
-  await expect(canvas).toHaveAttribute('data-animating','false');
+  await assertIsometricOverview(page);
   await expect(page.locator('.ihr-shelf-trash')).toBeVisible();
   await expect(canvas).toHaveAttribute('data-trash-visible','true');
   const bounds = await plant.boundingBox();
@@ -196,15 +220,17 @@ test('una planta cae como modelo 3D en la papelera y la última planta retirada 
   await testInfo.attach('planta-cayendo-en-papelera-3d',{ body:Buffer.from(motion.image.split(',')[1],'base64'),contentType:'image/png' });
   await testInfo.attach('plant-trash-frames',{ body:JSON.stringify(motion.frames,null,2),contentType:'application/json' });
   expect(await savedPlants(page)).toEqual([]);
+  await assertIsometricOverview(page);
   await expect(page.locator('.ihr-spine')).toHaveCount(0);
   await page.reload();
   await expect(page.locator('.ihr-plant')).toHaveCount(0);
   await expect(canvas).toBeVisible();
   expect(await savedPlants(page)).toEqual([]);
+  await assertIsometricOverview(page);
   expect(errors).toEqual([]);
 });
 
-test('un gesto táctil desde las hojas mueve una planta de la balda superior hasta la papelera del suelo con autoscroll',async ({ page },testInfo) => {
+test('un gesto táctil desde las hojas mueve una planta superior directamente a la papelera con toda la estantería visible y sin scroll',async ({ page },testInfo) => {
   test.setTimeout(180_000);
   const errors = []; page.on('pageerror',error => errors.push(error.message));
   const key = 'plant:touch-foliage-trash';
@@ -224,13 +250,25 @@ test('un gesto táctil desde las hojas mueve una planta de la balda superior has
   await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
   await expect(canvas).toHaveAttribute('data-view-progress','1');
   await expect(canvas).toHaveAttribute('data-animating','false');
-  // The records start on the first and tenth shelves. Do not move the plant
-  // near the basket, or scroll to the floor before beginning the gesture.
-  await scroller.evaluate(node => { node.scrollTop = 0; });
-  await expect(canvas).toHaveAttribute('data-animating','false');
-  expect(await scroller.evaluate(node => node.scrollHeight / node.clientHeight)).toBeGreaterThan(1.3);
-  await expect(bin).toBeHidden();
-  await expect(canvas).toHaveAttribute('data-trash-visible','false');
+  // The first and tenth shelves and grounded basket must fit simultaneously.
+  // Neither wheel nor a native touch swipe may scroll the isometric overview.
+  await assertIsometricOverview(page);
+  await expect(plant).toBeInViewport();
+  await expect(page.locator(`.ihr-plant[data-object-id="${survivor.key}"]`)).toBeInViewport();
+  const scrollBounds = await scroller.boundingBox();
+  await page.mouse.move(scrollBounds.x + 8,scrollBounds.y + scrollBounds.height * .5);
+  await page.mouse.wheel(0,700);
+  const swipe = await page.context().newCDPSession(page);
+  try {
+    const x = scrollBounds.x + 8,startY = scrollBounds.y + scrollBounds.height * .7;
+    await swipe.send('Input.dispatchTouchEvent',{ type:'touchStart',touchPoints:[{ x,y:startY,id:17,radiusX:4,radiusY:4,force:1 }] });
+    for (let index = 1; index <= 6; index++) await swipe.send('Input.dispatchTouchEvent',{
+      type:'touchMove',touchPoints:[{ x,y:startY - scrollBounds.height * .4 * index / 6,id:17,radiusX:4,radiusY:4,force:1 }]
+    });
+    await swipe.send('Input.dispatchTouchEvent',{ type:'touchEnd',touchPoints:[] });
+  } finally { await swipe.detach(); }
+  await page.waitForTimeout(150);
+  await assertIsometricOverview(page);
   const fixedPose = await canvas.getAttribute('data-trash-local-position');
   const pot = await plant.boundingBox();
   expect(pot).toBeTruthy();
@@ -280,26 +318,20 @@ test('un gesto táctil desde las hojas mueve una planta de la balda superior has
     pressed = true;
     await page.waitForTimeout(550);
     await expect(plant).toHaveClass(/is-lifted/);
-    const bounds = await scroller.boundingBox();
-    const edge = { x:bounds.x + bounds.width * .25,
-      y:Math.min(bounds.y + bounds.height - 12,page.viewportSize().height - 12) };
-    await move(leaf,edge);
-    await expect(plant).toHaveClass(/is-dragging/);
-    await expect.poll(() => scroller.evaluate(node => node.scrollTop),{ timeout:60_000 }).toBeGreaterThan(400);
-    await expect.poll(() => scroller.evaluate(node => node.scrollHeight - node.clientHeight - node.scrollTop),{
-      timeout:60_000
-    }).toBeLessThan(2);
     await expect(bin).toBeVisible();
     await expect(canvas).toHaveAttribute('data-trash-visible','true');
     expect(await canvas.getAttribute('data-trash-local-position')).toBe(fixedPose);
     const basket = await bin.boundingBox();
     const target = { x:basket.x + basket.width / 2,y:basket.y + basket.height * .45 };
-    await move(edge,target,14);
+    await move(leaf,target,14);
+    await expect(plant).toHaveClass(/is-dragging/);
+    expect(await scroller.evaluate(node => node.scrollTop)).toBe(0);
     await expect(canvas).toHaveAttribute('data-trash-hover','true');
     await touch.send('Input.dispatchTouchEvent',{ type:'touchEnd',touchPoints:[] });
     pressed = false;
     await expect(plant).toHaveCount(0,{ timeout:30_000 });
     await expect(page.locator('.ihr-bookshelf')).not.toHaveClass(/is-arranging|is-discarding/);
+    await assertIsometricOverview(page);
     const motion = await page.evaluate(() => {
       const motion = window.__plantFoliageTouch; motion.stop();
       return { events:motion.events,frames:motion.frames,image:motion.image };
@@ -318,11 +350,13 @@ test('un gesto táctil desde las hojas mueve una planta de la balda superior has
     await testInfo.attach('native-foliage-touch-events',{ body:JSON.stringify(motion.events,null,2),contentType:'application/json' });
     await testInfo.attach('native-foliage-trash-frames',{ body:JSON.stringify(motion.frames,null,2),contentType:'application/json' });
     expect(await savedPlants(page)).toEqual([survivor]);
+    await assertIsometricOverview(page);
     await expect(page.locator('.ihr-plant')).toHaveCount(1);
     await page.reload();
     await expect(page.locator('.ihr-plant')).toHaveCount(1);
     await expect(plant).toHaveCount(0);
     expect(await savedPlants(page)).toEqual([survivor]);
+    await assertIsometricOverview(page);
     expect(errors).toEqual([]);
   } catch (error) {
     const diagnostics = await page.evaluate(() => ({
@@ -420,8 +454,7 @@ test('las plantas de una instalación antigua migran a los modelos actuales sin 
   // Move one upgraded decoration using its real physical pot. Do not replace
   // the saved fixture with modern records to make the interaction pass.
   const movedKey = legacy[2].key, movedPlant = nodeFor(movedKey);
-  await scroller.evaluate(node => { node.scrollTop = node.scrollHeight; });
-  await expect(canvas).toHaveAttribute('data-animating','false');
+  await assertIsometricOverview(page);
   const pot = await movedPlant.boundingBox();
   const scrollBounds = await scroller.boundingBox();
   const start = { x:pot.x + pot.width * .5,y:pot.y + pot.height * .85 };
@@ -445,10 +478,10 @@ test('las plantas de una instalación antigua migran a los modelos actuales sin 
   expect(moved.slice(0,2)).toEqual(migrated.slice(0,2));
   await page.reload();
   await assertModels();
+  await assertIsometricOverview(page);
   expect(await savedPlants(page)).toEqual(moved);
 
-  await scroller.evaluate(node => { node.scrollTop = node.scrollHeight; });
-  await expect(canvas).toHaveAttribute('data-animating','false');
+  await assertIsometricOverview(page);
   await movedPlant.press('Delete');
   await expect(movedPlant).toHaveCount(0,{ timeout:30_000 });
   expect(await savedPlants(page)).toEqual(moved.slice(0,2));
@@ -462,6 +495,7 @@ test('las plantas de una instalación antigua migran a los modelos actuales sin 
   await page.reload();
   await expect(page.locator('.ihr-plant')).toHaveCount(0);
   await expect(canvas).toHaveAttribute('data-active-plants','0');
+  await assertIsometricOverview(page);
   expect(await savedPlants(page)).toEqual([]);
   expect(errors).toEqual([]);
   expect(brokenAssets).toEqual([]);

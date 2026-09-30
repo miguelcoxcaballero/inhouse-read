@@ -55,7 +55,7 @@ test('conecta Google sin redirección y muestra la foto en la esquina derecha', 
   await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   expect(await page.evaluate(() => window.__oauthOptions.redirect_uri)).toBeUndefined()
   await button.click()
-  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.6.9')
+  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.6.10')
   await expect(page.locator('#drive-theme-toggle')).toBeVisible()
   await expect(page.locator('#drive-profile-initial-menu')).toBeHidden()
   await page.locator('#drive-theme-toggle').check()
@@ -448,6 +448,14 @@ test('aleja y gira toda la estantería en 3D, permite abrir libros y recuerda la
   await expect(isometric).toHaveAttribute('aria-pressed', 'true')
   await expect.poll(() => page.evaluate(() => window.__shelfViewFrames.some(value => value > 0 && value < 1))).toBe(true)
   await expect(canvas).toHaveAttribute('data-view-progress', '1')
+  await expect(canvas).toHaveAttribute('data-animating','false')
+  await expect(canvas).toHaveAttribute('data-floor-visible','false')
+  await expect(canvas).toHaveAttribute('data-full-cabinet-in-frame','true')
+  const shortOverview = await page.locator('.ihr-bookshelf__scroll').evaluate(node => ({
+    top:node.scrollTop,height:node.scrollHeight,available:node.clientHeight
+  }))
+  expect(shortOverview.top).toBe(0)
+  expect(shortOverview.height).toBeLessThanOrEqual(shortOverview.available + 1)
   expect(Math.abs(Number(await canvas.getAttribute('data-yaw')))).toBeGreaterThan(15)
   expect(Math.abs(Number(await canvas.getAttribute('data-pitch')))).toBeGreaterThan(5)
   expect(Number(await canvas.getAttribute('data-zoom'))).toBeLessThan(initialZoom)
@@ -492,7 +500,9 @@ test('aleja y gira toda la estantería en 3D, permite abrir libros y recuerda la
   expect(await bookOrder()).toEqual(initialOrder)
 })
 
-test('la estantería isométrica larga limita los modelos activos y deja alcanzar la última balda', async ({ page }) => {
+test('la vista isométrica muestra los 80 libros en 3D dentro de la pantalla sin scroll y conserva el encuadre al redimensionar', async ({ page }) => {
+  test.setTimeout(90_000)
+  const errors = []; page.on('pageerror',error => errors.push(error.message))
   await page.setViewportSize({ width:390, height:844 })
   await page.emulateMedia({ reducedMotion:'reduce' })
   await page.evaluate(async () => {
@@ -518,20 +528,65 @@ test('la estantería isométrica larga limita los modelos activos y deja alcanza
   await page.reload()
   await expect(page.locator('.ihr-spine')).toHaveCount(80)
   const canvas = page.locator('.ihr-bookshelf-scene')
+  const scroller = page.locator('.ihr-bookshelf__scroll')
   await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
   await expect(canvas).toHaveAttribute('data-view-progress', '1')
-  await expect.poll(async () => Number(await canvas.getAttribute('data-active-books'))).toBeGreaterThan(0)
-  expect(Number(await canvas.getAttribute('data-active-books'))).toBeLessThan(80)
-  const scroller = page.locator('.ihr-bookshelf__scroll')
-  await scroller.evaluate(element => { element.scrollTop = element.scrollHeight })
-  await expect(page.locator('.ihr-spine[data-book-id="long-shelf:79"]')).toBeInViewport()
-  await expect.poll(async () => Number(await canvas.getAttribute('data-active-books'))).toBeGreaterThan(0)
-  expect(Number(await canvas.getAttribute('data-active-books'))).toBeLessThan(80)
+  const assertOverview = async () => {
+    await expect(canvas).toHaveAttribute('data-animating','false')
+    await expect(canvas).toHaveAttribute('data-full-cabinet-in-frame','true')
+    await expect(canvas).toHaveAttribute('data-floor-visible','false')
+    await expect(canvas).toHaveAttribute('data-active-books','80')
+    // At this viewport all eighty books project below the 90px detail
+    // threshold. Keep them as real lightweight meshes, instead of hiding
+    // distant rows to fit a full-model budget.
+    await expect(canvas).toHaveAttribute('data-detailed-books','0')
+    await expect(canvas).toHaveAttribute('data-overview-books','80')
+    const fit = await scroller.evaluate(element => ({ top:element.scrollTop,
+      height:element.scrollHeight,available:element.clientHeight,
+      sceneFit:Number(document.querySelector('.ihr-bookshelf-scene').dataset.sceneFitHeight) }))
+    expect(fit.top).toBe(0)
+    expect(fit.height).toBeLessThanOrEqual(fit.available + 1)
+    expect(fit.sceneFit).toBeGreaterThan(0)
+    expect(fit.sceneFit).toBeLessThanOrEqual(fit.available + 1)
+    const clipped = await page.locator('.ihr-spine').evaluateAll(nodes => {
+      const canvas = document.querySelector('.ihr-bookshelf-scene').getBoundingClientRect()
+      return nodes.filter(node => {
+        const box = node.getBoundingClientRect()
+        return box.width <= 0 || box.height <= 0 || box.left < canvas.left - 1 || box.right > canvas.right + 1 ||
+          box.top < canvas.top - 1 || box.bottom > canvas.bottom + 1
+      }).map(node => ({ id:node.dataset.bookId,rect:node.getBoundingClientRect().toJSON() }))
+    })
+    expect(clipped).toEqual([])
+    await expect(page.locator('.ihr-spine[data-book-id="long-shelf:0"]')).toBeInViewport()
+    await expect(page.locator('.ihr-spine[data-book-id="long-shelf:79"]')).toBeInViewport()
+    const bin = page.locator('.ihr-shelf-trash')
+    await expect(bin).toBeVisible()
+    await expect(canvas).toHaveAttribute('data-trash-radius','44')
+    await expect(canvas).toHaveAttribute('data-trash-height','140')
+    const bounds = await bin.boundingBox(), viewport = page.viewportSize()
+    expect(bounds.width).toBeGreaterThanOrEqual(44)
+    expect(bounds.height).toBeGreaterThanOrEqual(44)
+    expect(bounds.x).toBeGreaterThanOrEqual(0)
+    expect(bounds.y).toBeGreaterThanOrEqual(0)
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width + 1)
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height + 1)
+  }
+  await assertOverview()
+  const bounds = await scroller.boundingBox()
+  await page.mouse.move(bounds.x + 8,bounds.y + bounds.height * .5)
+  await page.mouse.wheel(0,800)
+  await page.waitForTimeout(150)
+  await assertOverview()
+  await page.screenshot({ path:'test-results/whole-shelf-isometric-80-books-mobile.png' })
   await expect(canvas).toHaveCount(1)
   await page.evaluate(() => { window.__longShelfCanvas = document.querySelector('.ihr-bookshelf-scene') })
   await page.setViewportSize({ width:414, height:844 })
-  await expect(page.locator('.ihr-spine[data-book-id="long-shelf:79"]')).toBeInViewport()
+  await assertOverview()
   expect(await page.evaluate(() => window.__longShelfCanvas === document.querySelector('.ihr-bookshelf-scene'))).toBe(true)
   await expect(canvas).toHaveAttribute('data-view-progress', '1')
   await page.screenshot({ path:'test-results/whole-shelf-isometric-last-row.png' })
+  await page.reload()
+  await expect(canvas).toHaveAttribute('data-view-progress','1')
+  await assertOverview()
+  expect(errors).toEqual([])
 })

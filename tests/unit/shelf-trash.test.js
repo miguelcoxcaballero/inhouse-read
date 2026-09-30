@@ -6,10 +6,12 @@ describe('3D shelf wastebasket', () => {
   it('has a real open shell, inside base, raised rim and separate hinged lid', () => {
     const bin = createShelfTrash();
     expect(bin.userData.trash).toBe(true);
+    expect(bin.userData.radius).toBe(44);
+    expect(bin.userData.height).toBe(140);
     const wall = bin.getObjectByName('Open metal body');
     expect(wall.geometry.type).toBe('LatheGeometry');
     const points = wall.geometry.parameters.points;
-    expect(points.filter(point => point.y >= 84 && point.x < 27)).not.toHaveLength(0);
+    expect(points.filter(point => point.y >= bin.userData.height * .95 && point.x < bin.userData.radius * .97)).not.toHaveLength(0);
     expect(bin.getObjectByName('Dark interior base')).toBeTruthy();
     expect(bin.getObjectByName('Rolled metal lip')).toBeTruthy();
     expect(bin.getObjectByName('Solid lid').parent).toBe(bin.userData.lid);
@@ -54,7 +56,7 @@ describe('3D shelf wastebasket', () => {
     bin.updateMatrixWorld(true);
     const mouth = bin.userData.getMouth();
     expect(mouth.x).toBe(310); expect(mouth.z).toBe(24);
-    expect(mouth.y).toBeCloseTo(-600 + (88 + 28 * .30) * .75);
+    expect(mouth.y).toBeCloseTo(-600 + (bin.userData.height + bin.userData.radius * .30) * .75);
     bin.userData.dispose();
   });
 

@@ -56,7 +56,7 @@ export function bindingGeometry(width, height, thickness, segments = 96, relief 
 
 // Rounded board edges, with front/back UVs in the same coordinates as a cover.
 // The bevel stays inside the book dimensions so the shelf and flyout match.
-export function boardGeometry(width, height, depth, { shelf = false } = {}) {
+export function boardGeometry(width, height, depth, { shelf = false, overview = false } = {}) {
   const bevel = Math.min(depth * .22, height * .0018);
   const x = -width / 2 + bevel, y = -height / 2 + bevel;
   const w = width - bevel * 2, h = height - bevel * 2, r = height * .006;
@@ -68,7 +68,7 @@ export function boardGeometry(width, height, depth, { shelf = false } = {}) {
   shape.lineTo(x, y + r); shape.quadraticCurveTo(x, y, x + r, y);
   const g = new THREE.ExtrudeGeometry(shape, {
     depth: depth - bevel * 2, bevelEnabled: true, bevelThickness: bevel,
-    bevelSize: bevel, bevelSegments: shelf ? 1 : 3, steps: 1, curveSegments: shelf ? 2 : 5
+    bevelSize: bevel, bevelSegments: shelf || overview ? 1 : 3, steps: 1, curveSegments: overview ? 1 : shelf ? 2 : 5
   });
   g.translate(0, 0, -depth / 2 + bevel);
   const positions = g.getAttribute('position'), uv = g.getAttribute('uv');
@@ -81,7 +81,8 @@ export function boardGeometry(width, height, depth, { shelf = false } = {}) {
 }
 
 /** A real ribbon mesh emerging from the top edge at the saved reading depth. */
-export function bookmarkGeometry(width, height, thickness, progress, peek = 10, { open = 0, withdraw = 0 } = {}) {
+export function bookmarkGeometry(width, height, thickness, progress, peek = 10,
+  { open = 0, withdraw = 0, segments = 32 } = {}) {
   // Peek values belong to the 200 px shelf book, not the much larger lifted
   // copy. Keep the ribbon's physical proportions identical in both models.
   const ribbonWidth = Math.min(width * .09, Math.max(height * .035, Math.min(height * .055, thickness * .42)));
@@ -100,7 +101,7 @@ export function bookmarkGeometry(width, height, thickness, progress, peek = 10, 
       THREE.MathUtils.lerp(thickness * .2, pageDepth + height * .015, opening)),
     new THREE.Vector3(x, height / 2 + visibleLength + lift,
       THREE.MathUtils.lerp(0, pageDepth - height * .04, opening)));
-  const steps = 32, fabricDepth = height * .0018;
+  const steps = Math.max(4, Math.round((Number(segments) || 32) / 2) * 2), fabricDepth = height * .0018;
   for (let i = 0; i <= steps; i++) {
     const bend = Math.max(0, (i - steps / 2) / (steps / 2));
     const point = i <= steps / 2
@@ -141,11 +142,18 @@ export function fitCoverImage(imageWidth, imageHeight, width, height) {
   return { x:(width - w) / 2, y:(height - h) / 2, width:w, height:h };
 }
 
-function coverTexture(book, style, textureHeight = 2048) {
+function coverRasterDimensions(ratio, textureHeight, maxDimension = Infinity) {
+  const height = textureHeight, width = Math.max(1, Math.round(height * (Number(ratio) || .66)));
+  const scale = Math.min(1, maxDimension / Math.max(width, height));
+  return { width:Math.max(1, Math.round(width * scale)), height:Math.max(1, Math.round(height * scale)) };
+}
+
+function coverTexture(book, style, textureHeight = 2048, maxDimension = Infinity) {
   const canvas = document.createElement('canvas');
   const designWidth = Math.round(1024 * (Number(style.coverRatio) || .66));
-  canvas.width = Math.round(designWidth * textureHeight / 1024); canvas.height = textureHeight;
-  const c = canvas.getContext('2d'); c.scale(textureHeight / 1024, textureHeight / 1024);
+  const dimensions = coverRasterDimensions(designWidth / 1024, textureHeight, maxDimension);
+  canvas.width = dimensions.width; canvas.height = dimensions.height;
+  const c = canvas.getContext('2d'); c.scale(canvas.width / designWidth, canvas.height / 1024);
   c.fillStyle = style.color; c.fillRect(0, 0, designWidth, 1024);
   c.fillStyle = style.ink; c.textAlign = 'center'; c.textBaseline = 'middle';
   // Design in physical cover proportions so lettering is never stretched.
@@ -174,7 +182,9 @@ function coverTexture(book, style, textureHeight = 2048) {
   return map;
 }
 
-function shelfSpineSurface(book, style, height, thickness, shelf) {
+function shelfSpineSurface(book, style, height, thickness, shelf, overview) {
+  if (overview) return spineSurface(book, style, height, thickness,
+    { textureWidth:64, textureHeight:256, engraving:false });
   const surface = spineSurface(book, style, height, thickness);
   if (shelf) for (const texture of [surface.map, surface.channels]) {
     const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 1024;
@@ -229,14 +239,19 @@ function acquireCoverImage(url, onImage, onError) {
   };
 }
 
-export function createBookModel(book, style, width, height, thickness, coverUrl, { shelf = false } = {}) {
+export function createBookModel(book, style, width, height, thickness, coverUrl,
+  { shelf = false, overview = false } = {}) {
   const group = new THREE.Group();
-  const textureHeight = shelf ? 512 : 2048;
-  const bindingSegments = shelf ? 32 : 96, reliefRows = shelf ? 96 : 384;
+  group.userData.overview = group.userData.isOverview = Boolean(overview);
+  group.userData.detailLevel = overview ? 'overview' : shelf ? 'shelf' : 'detail';
+  const textureHeight = overview ? 256 : shelf ? 512 : 2048;
+  const maxTextureDimension = overview ? 256 : Infinity;
+  const bindingSegments = overview ? 16 : shelf ? 32 : 96, reliefRows = shelf ? 96 : 384;
+  const ribbonSegments = overview ? 8 : 32;
   const cloth = new THREE.MeshStandardMaterial({ color: style.color, roughness: .86 });
-  let surface = shelfSpineSurface(book, style, height, thickness, shelf);
+  let surface = shelfSpineSurface(book, style, height, thickness, shelf, overview);
   const binding = new THREE.MeshPhysicalMaterial({ ...surface.material, side: THREE.DoubleSide });
-  const cover = new THREE.MeshPhysicalMaterial({ map: coverTexture(book, style, textureHeight) });
+  const cover = new THREE.MeshPhysicalMaterial({ map: coverTexture(book, style, textureHeight, maxTextureDimension) });
   applyCoverFinish(cover, book.coverFinish);
   const box = (w, h, d, material, x = 0, y = 0, z = 0) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
@@ -249,7 +264,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   // page block made the board cut through the pages instead of opening out.
   frontCover.position.set(-width / 2, 0, thickness / 2 - board / 2);
   group.add(frontCover);
-  const frontGeometry = boardGeometry(width, height, board, { shelf });
+  const frontGeometry = boardGeometry(width, height, board, { shelf, overview });
   const insideCover = new THREE.MeshStandardMaterial({ color:'#e6dfd0', roughness:1 });
   insideCover.visible = false;
   const frontGroups = [...frontGeometry.groups];
@@ -266,30 +281,33 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     }
     frontGeometry.addGroup(start, face.start + face.count - start, material);
   }
-  const frontBoard = new THREE.Mesh(frontGeometry, [cover, cloth, insideCover]);
+  const frontMaterials = [cover, cloth, insideCover];
+  const frontBoard = new THREE.Mesh(frontGeometry, overview ? cover : frontMaterials);
   frontBoard.name = 'front-cover';
   frontBoard.position.set(width / 2, 0, 0);
   frontCover.add(frontBoard);
-  const backBoard = new THREE.Mesh(boardGeometry(width, height, board, { shelf }), [cloth, cloth]);
+  const backBoard = new THREE.Mesh(boardGeometry(width, height, board, { shelf, overview }), overview ? cloth : [cloth, cloth]);
+  backBoard.name = 'back-cover';
   backBoard.position.z = -thickness / 2 + board / 2;
   group.add(backBoard);
   const paper = vertical => {
     const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = shelf ? 128 : 512;
-    const c = canvas.getContext('2d'); c.fillStyle = '#e6dfd0'; c.fillRect(0, 0, 512, 512);
-    for (let i = 2; i < 512; i += 4) {
+    const size = overview ? 32 : shelf ? 128 : 512;
+    canvas.width = canvas.height = size;
+    const c = canvas.getContext('2d'); c.fillStyle = '#e6dfd0'; c.fillRect(0, 0, size, size);
+    for (let i = 2; i < size; i += 4) {
       c.fillStyle = i % 12 === 2 ? 'rgba(92,77,57,.2)' : 'rgba(255,255,255,.32)';
-      c.fillRect(vertical ? i : 0, vertical ? 0 : i, vertical ? 1 : 512, vertical ? 512 : 1);
+      c.fillRect(vertical ? i : 0, vertical ? 0 : i, vertical ? 1 : size, vertical ? size : 1);
     }
     const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
     return new THREE.MeshPhysicalMaterial({ map, roughness: 1 });
   };
-  const foreEdge = paper(true), topEdge = paper(false);
+  const topEdge = paper(false), foreEdge = overview ? topEdge : paper(true);
   applySurfaceFinish(foreEdge, book.pageEdgeFinish, 'satin');
   applySurfaceFinish(topEdge, book.pageEdgeFinish, 'satin');
   const inset = height * .009;
   const pageBlock = box(width - inset * 2, height - inset * 2, thickness - board * 2.4,
-    [foreEdge, foreEdge, topEdge, topEdge, topEdge, topEdge], inset * .3);
+    overview ? topEdge : [foreEdge, foreEdge, topEdge, topEdge, topEdge, topEdge], inset * .3);
   pageBlock.name = 'page-block';
   const pageWidth = width - inset * 2, pageHeight = height - inset * 2;
   const pageFront = thickness / 2 - board * 1.2 + board * .03;
@@ -331,7 +349,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
       side: THREE.DoubleSide
     });
     ribbonMesh = new THREE.Mesh(
-      bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek),
+      bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek, { segments:ribbonSegments }),
       ribbonMaterial
     );
     ribbonMesh.renderOrder = 4;
@@ -340,10 +358,12 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   }
   // Recessed cloth hinges run beside the curved binding on both boards.
   const hinge = new THREE.MeshStandardMaterial({ color: style.shade || style.color, roughness: 1 });
-  box(height * .0025, height * .966, height * .0007, hinge, -width / 2 + height * .017, 0, -thickness / 2);
-  const frontHinge = new THREE.Mesh(new THREE.BoxGeometry(height * .0025, height * .966, height * .0007), hinge);
-  frontHinge.position.set(height * .017, 0, board / 2);
-  frontCover.add(frontHinge);
+  if (!overview) {
+    box(height * .0025, height * .966, height * .0007, hinge, -width / 2 + height * .017, 0, -thickness / 2);
+    const frontHinge = new THREE.Mesh(new THREE.BoxGeometry(height * .0025, height * .966, height * .0007), hinge);
+    frontHinge.position.set(height * .017, 0, board / 2);
+    frontCover.add(frontHinge);
+  }
   const bindingMesh = new THREE.Mesh(bindingGeometry(width, height, thickness, bindingSegments, surface.relief, reliefRows), binding);
   bindingMesh.name = 'binding';
   group.add(bindingMesh);
@@ -376,15 +396,15 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     const replaceMap = map => { cover.map?.dispose(); cover.map = map; cover.needsUpdate = true; };
     if (!url) {
       releaseImage = () => {};
-      replaceMap(coverTexture(nextBook, nextStyle, textureHeight));
+      replaceMap(coverTexture(nextBook, nextStyle, textureHeight, maxTextureDimension));
       settle(true);
     } else releaseImage = acquireCoverImage(url, image => {
       if (revision !== coverRevision || disposed) return;
       // The previous cover remains on the mesh until every new pixel is ready.
       try {
         const canvas = document.createElement('canvas');
-        canvas.height = textureHeight;
-        canvas.width = Math.round(canvas.height * (Number(nextStyle.coverRatio) || 0.66));
+        const dimensions = coverRasterDimensions(nextStyle.coverRatio, textureHeight, maxTextureDimension);
+        canvas.height = dimensions.height; canvas.width = dimensions.width;
         const c = canvas.getContext('2d'); c.fillStyle = nextStyle.color; c.fillRect(0, 0, canvas.width, canvas.height);
         const fit = fitCoverImage(image.width, image.height, canvas.width, canvas.height);
         c.drawImage(image, fit.x, fit.y, fit.width, fit.height);
@@ -400,7 +420,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   group.userData.dispose = () => {
     if (disposed) return;
     releaseImage(); resolveCoverReady(false);
-    disposed = true; const materials = new Set(), textures = new Set([surface.map, surface.channels]);
+    disposed = true; const materials = new Set([insideCover, hinge]), textures = new Set([surface.map, surface.channels]);
     group.traverse(obj => { obj.geometry?.dispose(); if (obj.material) for (const m of [].concat(obj.material)) materials.add(m); });
     for (const m of materials) {
       for (const key of ['map', 'roughnessMap', 'metalnessMap', 'bumpMap']) if (m[key]) textures.add(m[key]);
@@ -410,7 +430,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   };
   group.userData.updateSpineAppearance = (nextBook, nextStyle) => {
     const previous = surface;
-    surface = shelfSpineSurface(nextBook, nextStyle, height, thickness, shelf);
+    surface = shelfSpineSurface(nextBook, nextStyle, height, thickness, shelf, overview);
     Object.assign(binding, surface.material);
     binding.needsUpdate = true;
     releaseSurface(previous);
@@ -433,6 +453,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   group.userData.setCoverOpen = amount => {
     const next = Math.max(0, Math.min(1, amount));
     frontCover.rotation.y = -Math.PI * .94 * next;
+    if (overview) frontBoard.material = next > 0 ? frontMaterials : cover;
     // Closed shelf books need neither the occluded paper plane nor the
     // cover's inner material submitted to the GPU on every shelf repaint.
     pagePaper.visible = next > 0;
@@ -443,7 +464,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     if (!ribbonMesh || !bookmark) return;
     ribbonMesh.geometry.dispose();
     ribbonMesh.geometry = bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek,
-      { open:Math.max(0, Math.min(1, (coverOpening - .1) / .9)), withdraw:bookmarkWithdraw });
+      { open:Math.max(0, Math.min(1, (coverOpening - .1) / .9)), withdraw:bookmarkWithdraw, segments:ribbonSegments });
     ribbonMesh.visible = bookmarkWithdraw < .999;
   }
   group.userData.setBookmarkWithdraw = amount => {
@@ -462,7 +483,8 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
         metalness:bookmark.finished ? .28 : .02, clearcoat:.72,
         clearcoatRoughness:.2, side:THREE.DoubleSide
       });
-      ribbonMesh = new THREE.Mesh(bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek), ribbonMaterial);
+      ribbonMesh = new THREE.Mesh(bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek,
+        { segments:ribbonSegments }), ribbonMaterial);
       ribbonMesh.renderOrder = 4; ribbonMesh.name = 'reading-bookmark'; group.add(ribbonMesh);
       updateRibbonGeometry();
     }

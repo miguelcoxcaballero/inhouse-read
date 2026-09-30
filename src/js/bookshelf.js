@@ -685,7 +685,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     state.shelfScene?.animateFromRects(oldRects);
     root.dataset.lastAddedPlant = key;
     const added = [...scroller.querySelectorAll('.ihr-plant')].find(node => objectKey(node) === key);
-    added?.scrollIntoView?.({ block:'nearest', behavior:prefersReducedMotion() ? 'instant' : 'smooth' });
+    if (state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC) {
+      added?.scrollIntoView?.({ block:'nearest', behavior:prefersReducedMotion() ? 'instant' : 'smooth' });
+    }
   }
 
   function persistObjectPlacement(node, destination, oldRects = objectRects()) {
@@ -758,10 +760,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function continueDragScroll(drag, node) {
-    if (drag.scrollFrame) return;
+    if (drag.scrollFrame || state.viewMode === SHELF_VIEW_MODES.ISOMETRIC) return;
     const tick = () => {
       drag.scrollFrame = 0;
-      if (state.dragSession !== drag || !drag.active) return;
+      if (state.dragSession !== drag || !drag.active || state.viewMode === SHELF_VIEW_MODES.ISOMETRIC) return;
       if (drag.overTrash) return;
       const bounds = scroller.getBoundingClientRect();
       const delta = drag.y < bounds.top + 40 ? -12 : drag.y > bounds.bottom - 40 ? 12 : 0;
@@ -855,7 +857,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (drag.cancelled) return;
       if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > TAP_SLOP) {
         clearTimeout(drag.timer);
-        if (drag.pointerType === 'touch' && Math.abs(event.clientY - drag.startY) > Math.abs(event.clientX - drag.startX)) {
+        if (state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC && drag.pointerType === 'touch' && Math.abs(event.clientY - drag.startY) > Math.abs(event.clientX - drag.startX)) {
           drag.scrolling = true;
         } else {
           drag.cancelled = true;
@@ -2662,7 +2664,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const spine = [...root.querySelectorAll('.ihr-spine')].find(node => node.dataset.bookId === String(bookId)) || previous.spineEl;
     if (!spine?.isConnected) { state.lastOpened = null; return false; }
 
-    spine.scrollIntoView?.({ block:'nearest', behavior:'instant' });
+    if (state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC) spine.scrollIntoView?.({ block:'nearest', behavior:'instant' });
     state.shelfScene?.flush();
     const rect = spine.getBoundingClientRect();
     const sourcePose = state.shelfScene?.getBookPose(spine);

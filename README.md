@@ -4,6 +4,14 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca es una estantería 3D con madera texturizada, libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.10
+
+- Suelo físico invisible: la papelera sigue apoyada junto a la base del mueble sin mostrar una plataforma de madera.
+- Papelera con mayor diámetro y altura, conservando su posición real durante el giro de cámara y la animación de retirada.
+- Vista isométrica encuadrada por ancho y altura para mostrar toda la estantería sin scroll. La vista frontal conserva el desplazamiento por baldas.
+- Los libros pequeños en el encuadre general usan menos geometría y texturas, conservando su volumen y lomo curvo; recuperan el detalle al sacarlos.
+- Actualización web compatible con la APK actual; no requiere reinstalar Android.
+
 ### Actualización web · 1.6.9
 
 - Las plantas antiguas se convierten al catálogo 3D conservando sus posiciones, tamaños y macetas elegidas.

@@ -4,12 +4,14 @@ import { normalizeBookAuthor } from './book-title.js'
 
 // Colour and PBR channels share exactly the same glyph raster. Text never
 // becomes a floating decal: it follows the continuous curved binding UVs.
-export function spineSurface(book, style, physicalHeight = 200, thickness = 32) {
-  const width = 512, height = 2048
+export function spineSurface(book, style, physicalHeight = 200, thickness = 32,
+  { textureWidth = 512, textureHeight = 2048, engraving = true } = {}) {
+  const width = Math.max(1, Math.round(Number(textureWidth) || 512))
+  const height = Math.max(1, Math.round(Number(textureHeight) || 2048))
   const canvas = () => Object.assign(document.createElement('canvas'), { width, height })
   const mask = canvas(), c = mask.getContext('2d')
   const designWidth = Math.max(80, thickness / physicalHeight * 1024 * Math.PI / 2)
-  c.scale(width / designWidth, 2); c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle'
+  c.scale(width / designWidth, height / 1024); c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle'
   c.save(); c.translate(designWidth / 2, 512); c.rotate(Math.PI / 2)
   const family = `"${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`
   let size = Math.min(designWidth * .9, 64 * (Number(style.spineFontSize) || 10) / 10)
@@ -48,7 +50,7 @@ export function spineSurface(book, style, physicalHeight = 200, thickness = 32) 
   ctx.globalAlpha = 1
   const metalBinding = spineFinish(book.spineFinish) !== 'matte'
   const metalText = spineFinish(book.spineTextFinish) !== 'matte'
-  const engraved = book.spineEngraved === true
+  const engraved = engraving && book.spineEngraved === true
   const foil = finish => {
     const gradient = ctx.createLinearGradient(0, 0, width, 0)
     const stops = finish === 'gold'
