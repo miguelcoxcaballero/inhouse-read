@@ -118,7 +118,12 @@ async function seedShelf(page, { long = false, linked = false, driveBytes = null
     ]
     localStorage.setItem(plantsKey, JSON.stringify(plants))
     localStorage.setItem('inhouse-read-shelf-view', 'spine')
-    return { originalId:original.id, ids:records.map(book => book.id), plants,
+    const migratedPlants = [
+      { ...plants[0], catalogId:'cactus', potId:'akerbar', height:90 },
+      { ...plants[1], catalogId:'succulent', variant:'succulent', potId:'muskotblomma', height:72 },
+      { ...plants[2], catalogId:'hedera', variant:'hedera', potId:'muskotblomma', height:106 }
+    ]
+    return { originalId:original.id, ids:records.map(book => book.id), plants:migratedPlants,
       remote:records.filter(book => book.driveFileId).map(book => ({ id:book.driveFileId, name:book.name, size:String(book.size || book.content.size), mimeType:'application/pdf' })) }
   }, { long, linked, driveBytes, plantsKey:PLANTS_KEY, driveId:DRIVE_ID })
   await page.reload()
@@ -126,6 +131,7 @@ async function seedShelf(page, { long = false, linked = false, driveBytes = null
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-trash3d', 'true')
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
   await expect(page.locator('.ihr-shelf-trash')).toBeHidden()
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), PLANTS_KEY)).toEqual(seed.plants)
   return seed
 }
 
