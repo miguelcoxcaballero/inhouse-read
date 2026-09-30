@@ -154,6 +154,12 @@ test('una planta cae como modelo 3D en la papelera y la última planta retirada 
   await expect(plant).toBeVisible();
   await expect(canvas).toHaveAttribute('data-animating','false');
   await expect(canvas).toHaveAttribute('data-trash3d','true');
+  await expect(page.locator('.ihr-shelf-trash')).toBeHidden();
+  await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
+  await expect(canvas).toHaveAttribute('data-view-progress','1');
+  await expect(canvas).toHaveAttribute('data-animating','false');
+  await expect(page.locator('.ihr-shelf-trash')).toBeVisible();
+  await expect(canvas).toHaveAttribute('data-trash-visible','true');
   const bounds = await plant.boundingBox();
   expect(bounds.y).toBeGreaterThanOrEqual(0);
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);

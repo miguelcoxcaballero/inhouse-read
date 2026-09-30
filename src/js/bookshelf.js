@@ -354,7 +354,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     el('span', { class:'ihr-shelf-trash__label', text:'Retirar', 'aria-hidden':'true' })
   ]) : null;
   const trashStatus = hasTrash ? el('div', { class:'ihr-trash-status', role:'status', 'aria-live':'polite' }) : null;
-  const trashGutter = () => hasTrash ? (window.innerWidth >= 600 ? 96 : 80) : 0;
+  if (trashNode) {
+    trashNode.hidden = state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC;
+    trashNode.inert = trashNode.hidden;
+  }
   root.classList.toggle('has-trash', hasTrash);
   root.append(scroller);
   if (trashStatus) root.append(trashStatus);
@@ -941,7 +944,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function hitTrash(x, y, node) {
-    if (!trashNode || !(node?.classList.contains('ihr-plant') || hasBookTrash && node?.classList.contains('ihr-spine'))) return false;
+    if (!trashNode || state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC || trashNode.hidden ||
+      !(node?.classList.contains('ihr-plant') || hasBookTrash && node?.classList.contains('ihr-spine'))) return false;
     if (state.shelfScene) return state.shelfScene.hitTrash(x, y);
     const bounds = trashNode.getBoundingClientRect();
     return bounds.width > 0 && bounds.height > 0 && x >= bounds.left - 8 && x <= bounds.right + 8 &&
@@ -972,7 +976,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     node.classList.add('is-away');
     trashNode.classList.add('is-over');
     try {
-      if (!motion) {
+      if (!motion && !trashNode.hidden && state.viewMode === SHELF_VIEW_MODES.ISOMETRIC) {
         const start = rect || node.getBoundingClientRect(), target = trashNode.getBoundingClientRect();
         const clone = operation.clone = node.cloneNode(true);
         clone.classList.remove('is-away','is-dragging','is-lifted');
@@ -989,7 +993,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           { transform:`translate3d(${dx}px,${dy}px,-10px) rotateY(82deg) rotateZ(-32deg) scale(.12)`, opacity:0 }
         ], { duration, easing:EASE, fill:'both' });
       }
-      const landed = await waitForMotion(operation.motion, duration);
+      // Keyboard removal still works in the frontal view without flying to
+      // a hidden bin. Dragging to the visible isometric bin retains its flight.
+      const landed = operation.motion ? await waitForMotion(operation.motion, duration) : true;
       if (!landed) { operation.cancelled = true; node.classList.remove('is-away'); return; }
       if (operation.cancelled || state.trashRemoval !== operation || state.destroyed) return;
       // Delete the app's record only after the model has landed. External
@@ -1298,7 +1304,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       return Math.round(options.shelfWidth);
     }
     const width = scroller.clientWidth || container.clientWidth || 0;
-    return Math.max(0, Math.round(width - trashGutter()));
+    return Math.max(0, Math.round(width));
   }
 
   /** En pantallas estrechas los lomos adelgazan para que quepan más por balda. */
@@ -1428,7 +1434,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     ]));
     const stage = el('div', { class:'ihr-shelf-stage' });
     stage.style.setProperty('--ihr-cabinet-width', `${width}px`);
-    if (trashNode) stage.append(trashNode);
+    if (trashNode) {
+      if (!state.useScene) {
+        trashNode.hidden = state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC;
+        trashNode.inert = trashNode.hidden;
+      }
+      stage.append(trashNode);
+    }
     if (catalogNode) {
       if (!state.useScene) {
         catalogNode.hidden = state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC;
@@ -1454,7 +1466,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     fragment.append(stage);
     if (retainedScene) {
       // Measure the new semantic layout without moving the painted cabinet.
-      stage.style.cssText = `position:absolute;left:0;top:0;width:${width + trashGutter()}px;visibility:hidden;--ihr-cabinet-width:${width}px`;
+      stage.style.cssText = `position:absolute;left:0;top:0;width:${width}px;visibility:hidden;--ihr-cabinet-width:${width}px`;
       heading.style.cssText = 'position:absolute;visibility:hidden';
     }
     scroller.append(fragment);
@@ -1504,7 +1516,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           coverUrl:resolveCoverImmediately(item.book) });
       }
     }
-    return { stage, scroller, entries, rows, width, sceneWidth:width + trashGutter(), trashNode, catalogNode,
+    return { stage, scroller, entries, rows, width, sceneWidth:width, trashNode, catalogNode,
       height:stage.getBoundingClientRect().height, mode:state.viewMode };
   }
 

@@ -120,12 +120,24 @@ async function seedShelf(page, { long = false, linked = false, driveBytes = null
   await expect(page.locator('.ihr-spine')).toHaveCount(seed.ids.length)
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-trash3d', 'true')
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
+  await expect(page.locator('.ihr-shelf-trash')).toBeHidden()
   return seed
+}
+
+async function useIsometricShelf(page) {
+  if (await page.locator('.ihr-bookshelf').getAttribute('data-view-mode') !== 'isometric')
+    await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1')
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
+  await expect(page.locator('.ihr-shelf-trash')).toBeVisible()
 }
 
 async function assertBinMesh(page) {
   const bin = page.locator('.ihr-shelf-trash')
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-shelf-view', 'isometric')
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-trash-visible', 'true')
   await expect(bin).toBeVisible()
+  await expect(bin).toHaveAttribute('aria-hidden', 'false')
   const bounds = await bin.boundingBox(), viewport = page.viewportSize()
   expect(bounds).not.toBeNull()
   expect(bounds.width).toBeGreaterThan(25)
@@ -206,6 +218,7 @@ async function observeDrop(page) {
 }
 
 async function dropIntoBin(page, id, testInfo) {
+  await useIsometricShelf(page)
   await beginDrag(page, id)
   const bin = await assertBinMesh(page)
   await observeDrop(page)
@@ -369,6 +382,7 @@ test('un libro retirado sigue en Drive y la sincronización automática no lo vu
 test('entrar en la papelera y soltar fuera cancela la eliminación y mantiene los archivos', async ({ page }) => {
   test.setTimeout(90_000)
   const seed = await seedShelf(page)
+  await useIsometricShelf(page)
   const source = await beginDrag(page, seed.originalId)
   const bin = await assertBinMesh(page)
   await page.mouse.move(bin.x, bin.y, { steps:14 })

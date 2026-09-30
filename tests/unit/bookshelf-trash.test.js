@@ -14,6 +14,7 @@ function pointer(node,type,x=80,y=160) {
 }
 beforeEach(() => {
   vi.useFakeTimers()
+  localStorage.clear()
   Object.defineProperty(Element.prototype,'animate',{configurable:true,value(_frames,timing) {
     let finish
     const finished = new Promise(resolve => { finish=resolve })
@@ -39,7 +40,7 @@ describe('bookshelf wastebasket',() => {
   it('waits for the landing and storage result, then filters queued updates of the removed book',async () => {
     let finishStorage
     const removed=vi.fn(() => new Promise(resolve => { finishStorage=resolve }))
-    shelf=renderBookshelf(container,records(),{shelfWidth:390,onBookRemove:removed})
+    shelf=renderBookshelf(container,records(),{shelfWidth:390,viewMode:'isometric',onBookRemove:removed})
     expect(container.querySelector('.ihr-shelf-trash')).not.toBeNull()
     removeKey('trash:a')
     shelf.update(records())
@@ -59,7 +60,7 @@ describe('bookshelf wastebasket',() => {
   it('restores the book when IndexedDB rejects removal',async () => {
     vi.spyOn(console,'warn').mockImplementation(() => {})
     const removed=vi.fn().mockRejectedValue(new Error('Storage unavailable'))
-    shelf=renderBookshelf(container,records(),{shelfWidth:390,onBookRemove:removed})
+    shelf=renderBookshelf(container,records(),{shelfWidth:390,viewMode:'isometric',onBookRemove:removed})
     removeKey('trash:a')
     await vi.advanceTimersByTimeAsync(1000)
     expect(spine('trash:a')).not.toBeNull()
@@ -79,7 +80,7 @@ describe('bookshelf wastebasket',() => {
         cancelled(); clearInterval(frames); clearTimeout(end); finish(false)
       }}
     }})
-    shelf=renderBookshelf(container,records(),{shelfWidth:390,onBookRemove:removed})
+    shelf=renderBookshelf(container,records(),{shelfWidth:390,viewMode:'isometric',onBookRemove:removed})
     removeKey('trash:a')
     await vi.advanceTimersByTimeAsync(3000)
     expect(removed).not.toHaveBeenCalled()
@@ -97,7 +98,7 @@ describe('bookshelf wastebasket',() => {
       const finished=new Promise(resolve => { finish=resolve })
       return {finished,lastFrameTime:performance.now(),cancel() {cancelled();finish(false)}}
     }})
-    shelf=renderBookshelf(container,records(),{shelfWidth:390,onBookRemove:removed})
+    shelf=renderBookshelf(container,records(),{shelfWidth:390,viewMode:'isometric',onBookRemove:removed})
     removeKey('trash:a')
     await vi.advanceTimersByTimeAsync(2400)
     expect(cancelled).toHaveBeenCalledOnce()
@@ -107,7 +108,7 @@ describe('bookshelf wastebasket',() => {
   })
   it('a cancelled pointer over the basket never removes the book',async () => {
     const removed=vi.fn()
-    shelf=renderBookshelf(container,records(),{shelfWidth:390,onBookRemove:removed})
+    shelf=renderBookshelf(container,records(),{shelfWidth:390,viewMode:'isometric',onBookRemove:removed})
     const bin=container.querySelector('.ihr-shelf-trash'), book=spine('trash:a')
     bin.getBoundingClientRect=() => ({left:300,right:370,top:600,bottom:720,width:70,height:120})
     pointer(book,'pointerdown')
@@ -122,13 +123,42 @@ describe('bookshelf wastebasket',() => {
   })
   it('destroying an unfinished fall releases its clone without deleting storage',async () => {
     const removed=vi.fn()
-    shelf=renderBookshelf(container,records(),{shelfWidth:390,onBookRemove:removed})
+    shelf=renderBookshelf(container,records(),{shelfWidth:390,viewMode:'isometric',onBookRemove:removed})
     removeKey('trash:a')
     await vi.advanceTimersByTimeAsync(100)
     expect(document.querySelector('.ihr-trash-flight')).not.toBeNull()
     shelf.destroy(); shelf=null
     await vi.advanceTimersByTimeAsync(1000)
     expect(removed).not.toHaveBeenCalled()
+    expect(document.querySelector('.ihr-trash-flight')).toBeNull()
+  })
+  it('uses the full measured shelf width and reveals the basket only in isometric view',() => {
+    Object.defineProperty(container,'clientWidth',{configurable:true,value:390})
+    shelf=renderBookshelf(container,records(),{viewMode:'spine',onBookRemove:vi.fn()})
+    const stage=() => container.querySelector('.ihr-shelf-stage')
+    const bin=container.querySelector('.ihr-shelf-trash')
+    expect(stage().style.getPropertyValue('--ihr-cabinet-width')).toBe('390px')
+    expect(bin.hidden).toBe(true)
+    expect(bin.inert).toBe(true)
+    container.querySelector('[data-view-mode="isometric"]').click()
+    expect(stage().style.getPropertyValue('--ihr-cabinet-width')).toBe('390px')
+    expect(bin.hidden).toBe(false)
+    expect(bin.inert).toBe(false)
+    container.querySelector('[data-view-mode="spine"]').click()
+    expect(stage().style.getPropertyValue('--ihr-cabinet-width')).toBe('390px')
+    expect(bin.hidden).toBe(true)
+    expect(spine('trash:a')).not.toBeNull()
+    expect(spine('trash:b')).not.toBeNull()
+  })
+  it('keeps keyboard removal working in front view without an invisible basket flight',async () => {
+    const removed=vi.fn()
+    shelf=renderBookshelf(container,records(),{shelfWidth:390,viewMode:'spine',onBookRemove:removed})
+    removeKey('trash:a')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(removed).toHaveBeenCalledOnce()
+    expect(spine('trash:a')).toBeNull()
+    expect(spine('trash:b')).not.toBeNull()
+    expect(container.querySelector('.ihr-shelf-trash').hidden).toBe(true)
     expect(document.querySelector('.ihr-trash-flight')).toBeNull()
   })
 })

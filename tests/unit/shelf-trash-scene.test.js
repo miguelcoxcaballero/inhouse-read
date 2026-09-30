@@ -32,6 +32,12 @@ function flushFrames(duration = 1100) {
   }
 }
 function rect(left, top, width, height) { return { left, top, width, height, right:left + width, bottom:top + height }; }
+function showTrash() { shelf.setMode('isometric', { animate:false }); shelf.flush(); }
+function cabinetRight() {
+  const parent = gpu.scene.children.find(child => child.children.some(object => object.userData.furniture));
+  const cabinet = parent.children.find(child => child.userData.furniture);
+  return stage.getBoundingClientRect().left + new THREE.Box3().setFromObject(cabinet).max.x;
+}
 
 beforeEach(() => {
   clock = 0; frames = new Map(); scroll = 0;
@@ -55,7 +61,7 @@ beforeEach(() => {
   trashNode.getBoundingClientRect = () => rect(20 + parseFloat(trashNode.style.left),
     60 - scroll + parseFloat(trashNode.style.top), parseFloat(trashNode.style.width), parseFloat(trashNode.style.height));
   stage.append(bookNode, trashNode);
-  shelf = createBookshelfScene({ stage, scroller, width:310, sceneWidth:390, height:750,
+  shelf = createBookshelfScene({ stage, scroller, width:390, sceneWidth:390, height:750,
     rows:[{ top:20, bottom:220 }, { top:260, bottom:460 }, { top:500, bottom:700 }], trashNode,
     entries:[{ node:bookNode, book:{ id:'a', title:'Book', author:'Author' }, style:{ color:'#3c6548', width:28 },
       x:60, y:130, width:100, height:180, thickness:28 }] });
@@ -69,6 +75,105 @@ afterEach(() => {
 });
 
 describe('wastebasket in the shared 3D shelf scene', () => {
+  it('uses the entire physical cabinet width frontally and hides all trash interaction until the diagonal view', () => {
+    const bin = gpu.scene.children.find(child => child.userData.trash);
+    expect(shelf.canvas.dataset.cabinetWidth).toBe('390');
+    expect(shelf.canvas.dataset.trashReserve).toBe('0.000');
+    expect(shelf.canvas.dataset.zoom).toBe('1.0000');
+    expect(bin.visible).toBe(false);
+    expect(trashNode.hidden).toBe(true); expect(trashNode.inert).toBe(true);
+    expect(trashNode.getAttribute('aria-hidden')).toBe('true');
+    expect(trashNode.style.pointerEvents).toBe('none'); expect(trashNode.tabIndex).toBe(-1);
+    expect(shelf.canvas.dataset.trashVisible).toBe('false');
+    const target = trashNode.getBoundingClientRect();
+    expect(shelf.hitTrash(target.left + target.width / 2, target.top + target.height / 2)).toBe(false);
+    const stationary = gpu.renders;
+    shelf.setTrashHover(true); flushFrames();
+    expect(bin.userData.openness).toBe(0); expect(gpu.renders).toBe(stationary);
+    expect(shelf.animateBookToTrash(bookNode)).toBeNull();
+    expect(shelf.canvas.dataset.trashingObjectId).toBeUndefined();
+    showTrash();
+    expect(bin.visible).toBe(true); expect(trashNode.hidden).toBe(false); expect(trashNode.inert).toBe(false);
+    expect(trashNode.getAttribute('aria-hidden')).toBe('false'); expect(trashNode.style.pointerEvents).toBe('auto');
+    expect(shelf.canvas.dataset.trashVisible).toBe('true');
+    shelf.setMode('spine', { animate:false }); shelf.flush();
+    expect(bin.visible).toBe(false); expect(trashNode.hidden).toBe(true);
+    expect(shelf.canvas.dataset.trashReserve).toBe('0.000');
+    shelf.dispose(); shelf = null;
+    expect(trashNode.hidden).toBe(false); expect(trashNode.inert).toBe(false);
+    expect(trashNode.getAttribute('aria-hidden')).toBeNull(); expect(trashNode.getAttribute('tabindex')).toBeNull();
+  });
+
+  it('reveals the bin during the turn only after there is space and keeps the target inactive until isometric', () => {
+    const bin = gpu.scene.children.find(child => child.userData.trash);
+    shelf.setMode('isometric'); flushFrames(280);
+    expect(bin.visible).toBe(false); expect(trashNode.hidden).toBe(true);
+    expect(shelf.canvas.dataset.trashVisible).toBe('false');
+    flushFrames(500);
+    expect(bin.visible).toBe(true); expect(trashNode.hidden).toBe(false);
+    const target = trashNode.getBoundingClientRect();
+    expect(target.left).toBeGreaterThan(cabinetRight() + 8);
+    expect(target.right).toBeLessThanOrEqual(scroller.getBoundingClientRect().right);
+    shelf.setMode('spine');
+    expect(trashNode.hidden).toBe(true); expect(trashNode.style.pointerEvents).toBe('none');
+    expect(shelf.hitTrash(target.left + target.width / 2, target.top + target.height / 2)).toBe(false);
+    flushFrames();
+    expect(bin.visible).toBe(false); expect(shelf.canvas.dataset.trashReserve).toBe('0.000');
+  });
+
+  it('cancels an active drop when returning to the frontal view without leaving a dormant flight', async () => {
+    showTrash();
+    const model = gpu.models[0], parent = model.parent;
+    const motion = shelf.animateBookToTrash(bookNode);
+    flushFrames(160);
+    shelf.setMode('spine', { animate:false }); shelf.flush();
+    await expect(motion.finished).resolves.toBe(false);
+    expect(model.parent).toBe(parent); expect(model.visible).toBe(true);
+    expect(trashNode.hidden).toBe(true); expect(shelf.canvas.dataset.trashingObjectId).toBeUndefined();
+    expect(shelf.canvas.dataset.trashDropProgress).toBeUndefined();
+    expect(shelf.animateBookToTrash(bookNode)).toBeNull();
+    const stationary = gpu.renders; flushFrames(); expect(gpu.renders).toBe(stationary);
+  });
+
+  it.each([320, 390, 860])('fits the actual bin and open lid beside a full-width %i px cabinet after scrolling and toggling', viewportWidth => {
+    const previousWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { configurable:true, value:viewportWidth });
+    scroller.getBoundingClientRect = () => rect(0, 60, viewportWidth, 700);
+    stage.getBoundingClientRect = () => rect(0, 60 - scroll, viewportWidth, 750);
+    shelf.canvas.getBoundingClientRect = () => rect(0, 60, viewportWidth, 700);
+    trashNode.getBoundingClientRect = () => rect(parseFloat(trashNode.style.left),
+      60 - scroll + parseFloat(trashNode.style.top), parseFloat(trashNode.style.width), parseFloat(trashNode.style.height));
+    try {
+      shelf.updateLayout({ stage, width:viewportWidth, sceneWidth:viewportWidth, height:750, trashNode,
+        rows:[{ top:20,bottom:220 },{ top:260,bottom:460 },{ top:500,bottom:700 }], entries:[] });
+      expect(shelf.canvas.dataset.zoom).toBe('1.0000');
+      expect(shelf.canvas.dataset.cabinetWidth).toBe(String(viewportWidth));
+      expect(shelf.canvas.style.width).toBe(`${viewportWidth}px`);
+      expect(cabinetRight()).toBeCloseTo(viewportWidth);
+      expect(trashNode.hidden).toBe(true);
+      showTrash(); shelf.setTrashHover(true); flushFrames(300);
+      const bin = gpu.scene.children.find(child => child.userData.trash);
+      expect(bin.userData.openness).toBe(1);
+      const before = trashNode.getBoundingClientRect();
+      expect(before.left).toBeGreaterThan(cabinetRight() + 8);
+      expect(before.right).toBeLessThanOrEqual(viewportWidth);
+      expect(before.top).toBeGreaterThanOrEqual(scroller.getBoundingClientRect().top);
+      expect(before.bottom).toBeLessThanOrEqual(scroller.getBoundingClientRect().bottom);
+      expect(before.width).toBeGreaterThanOrEqual(44); expect(before.height).toBeGreaterThanOrEqual(44);
+      expect(trashNode.hidden).toBe(false);
+      scroll = 300; shelf.flush();
+      const after = trashNode.getBoundingClientRect();
+      expect(after.left).toBeCloseTo(before.left); expect(after.top).toBeCloseTo(before.top);
+      expect(shelf.hitTrash(after.left + after.width / 2, after.top + after.height / 2)).toBe(true);
+      shelf.setMode('spine', { animate:false }); shelf.flush();
+      expect(bin.visible).toBe(false); expect(trashNode.hidden).toBe(true);
+      expect(shelf.hitTrash(after.left + after.width / 2, after.top + after.height / 2)).toBe(false);
+      expect(shelf.canvas.dataset.trashReserve).toBe('0.000');
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable:true, value:previousWidth });
+    }
+  });
+
   it('anchors an isometric book to its visible spine and a neighboring plant to its solid pot', async () => {
     const plantNode = document.createElement('button'); plantNode.dataset.objectId = 'plant:thin-neighbor'; stage.append(plantNode);
     shelf.updateLayout({ stage, width:310, sceneWidth:390, height:750, trashNode,
@@ -139,6 +244,7 @@ describe('wastebasket in the shared 3D shelf scene', () => {
       rows:[{ top:20, bottom:220 }, { top:260, bottom:460 }, { top:500, bottom:700 }], trashNode,
       entries:[{ kind:'plant', node:plantNode, key:'plant:fixture', variant:'monstera', seed:'fixture',
         x:100, y:180, width:46, height:72 }] });
+    showTrash();
     const furniture = gpu.scene.children.find(child => child.children.some(object => object.userData.furniture));
     const model = furniture.children.find(child => child.userData.entry?.kind === 'plant');
     const before = model.getWorldPosition(new THREE.Vector3());
@@ -212,9 +318,10 @@ describe('wastebasket in the shared 3D shelf scene', () => {
   });
 
   it('projects a reachable right-side target and stays visible when the cabinet scrolls', () => {
+    showTrash();
     const before = trashNode.getBoundingClientRect();
-    expect(before.left).toBeGreaterThanOrEqual(320);
-    expect(before.right).toBeLessThanOrEqual(417);
+    expect(before.left).toBeGreaterThan(cabinetRight() + 8);
+    expect(before.right).toBeLessThanOrEqual(scroller.getBoundingClientRect().right);
     expect(before.bottom).toBeLessThan(780);
     expect(shelf.hitTrash(before.left + before.width / 2, before.top + before.height / 2)).toBe(true);
     expect(shelf.hitTrash(80, 120)).toBe(false);
@@ -226,6 +333,7 @@ describe('wastebasket in the shared 3D shelf scene', () => {
   });
 
   it('animates its real lid on hover and does no rendering while stationary', () => {
+    showTrash();
     const stationary = gpu.renders; flushFrames(); expect(gpu.renders).toBe(stationary);
     shelf.setTrashHover(true); flushFrames(300);
     const bin = gpu.scene.children.find(child => child.userData.trash);
@@ -237,14 +345,14 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     expect(bin.userData.lid.rotation.x).toBeCloseTo(0);
   });
 
-  it('keeps the bin in the right gutter throughout the diagonal shelf view', () => {
-    shelf.setMode('isometric', { animate:false });
+  it('keeps the bin in the projected right-side free area throughout the diagonal shelf view', () => {
+    showTrash();
     shelf.setTrashHover(true); flushFrames(350);
     const bin = gpu.scene.children.find(child => child.userData.trash);
     const target = trashNode.getBoundingClientRect();
     expect(bin.rotation.y).toBeCloseTo(-Math.PI / 6);
-    expect(target.left).toBeGreaterThan(320);
-    expect(target.right).toBeLessThan(420);
+    expect(target.left).toBeGreaterThan(cabinetRight() + 8);
+    expect(target.right).toBeLessThanOrEqual(scroller.getBoundingClientRect().right);
     expect(target.bottom).toBeLessThan(780);
     expect(shelf.hitTrash(target.left + target.width / 2, target.top + target.height / 2)).toBe(true);
   });
@@ -257,18 +365,23 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     shelf.canvas.getBoundingClientRect = () => rect(0, 185, 320, 744);
     trashNode.getBoundingClientRect = () => rect(parseFloat(trashNode.style.left),
       185 - scroll + parseFloat(trashNode.style.top), parseFloat(trashNode.style.width), parseFloat(trashNode.style.height));
-    shelf.flush();
+    shelf.updateLayout({ stage, width:320, sceneWidth:320, height:750, trashNode,
+      rows:[{ top:20,bottom:220 },{ top:260,bottom:460 },{ top:500,bottom:700 }], entries:[] });
+    showTrash();
     const normal = trashNode.getBoundingClientRect();
     expect(normal.bottom).toBeLessThanOrEqual(scroller.getBoundingClientRect().bottom);
+    expect(normal.left).toBeGreaterThanOrEqual(0); expect(normal.right).toBeLessThanOrEqual(320);
     expect(normal.top).toBeGreaterThan(600);
     shelf.setMode('isometric', { animate:false }); shelf.setTrashHover(true); flushFrames(350);
     const diagonal = trashNode.getBoundingClientRect();
     expect(diagonal.bottom).toBeLessThanOrEqual(scroller.getBoundingClientRect().bottom);
+    expect(diagonal.left).toBeGreaterThanOrEqual(0); expect(diagonal.right).toBeLessThanOrEqual(320);
     expect(shelf.hitTrash(diagonal.left + diagonal.width / 2, diagonal.top + diagonal.height / 2)).toBe(true);
     Object.defineProperty(window, 'innerHeight', { configurable:true, value:originalHeight });
   });
 
   it('moves the same mesh into the bin, hides it only after landing, and can restore it', async () => {
+    showTrash();
     const model = gpu.models[0], originalParent = model.parent;
     bookNode.classList.add('is-dragging'); bookNode.style.setProperty('--ihr-drag-x', '75px');
     shelf.flush();
@@ -293,6 +406,7 @@ describe('wastebasket in the shared 3D shelf scene', () => {
   });
 
   it('cancels a pending animation on dispose and disposes the existing book once', async () => {
+    showTrash();
     const motion = shelf.animateBookToTrash(bookNode);
     shelf.dispose(); shelf = null;
     await expect(motion.finished).resolves.toBe(false);
@@ -302,6 +416,7 @@ describe('wastebasket in the shared 3D shelf scene', () => {
   });
 
   it('reports live frame activity when a slow GPU stretches the bounded-step drop', async () => {
+    showTrash();
     const motion = shelf.animateBookToTrash(bookNode, { duration:850 });
     const started = clock;
     for (let index = 0; index < 13; index++) {
@@ -320,6 +435,7 @@ describe('wastebasket in the shared 3D shelf scene', () => {
   });
 
   it('brings a wide cover inside the canvas as it turns into the right gutter', () => {
+    showTrash();
     const model = gpu.models[0];
     bookNode.classList.add('is-dragging'); bookNode.style.setProperty('--ihr-drag-x', '300px');
     shelf.flush();

@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca es una estantería 3D con madera texturizada, libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.6
+
+- Las baldas recuperan todo el ancho disponible, sin reservar una franja permanente para la papelera.
+- La papelera aparece sólo en la vista isométrica, junto al mueble girado, y sigue accesible al desplazarse por una estantería larga.
+- El cambio de vista conserva la colocación de libros y plantas, el catálogo lateral y las animaciones 3D de retirada.
+
 ### Actualización web · 1.6.5
 
 - Ocho plantas modeladas a partir de referencias de IKEA: SANSEVIERIA, MONSTERA DELICIOSA, CHAMAEDOREA ELEGANS, NEPHROLEPIS, HEDERA HELIX, ZAMIOCULCAS, SUCCULENT y FEJKA. Hojas curvas, tallos, nervaduras y detalles propios de cada especie.

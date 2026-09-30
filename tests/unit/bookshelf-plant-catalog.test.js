@@ -45,7 +45,7 @@ describe('persistent catalog plants', () => {
   it('removes every plant after its landing without deleting any books or recreating decorations', async () => {
     const onBookRemove=vi.fn()
     localStorage.setItem(KEY, JSON.stringify(plants()))
-    shelf=renderBookshelf(container, books(), { shelfWidth:390, onBookRemove })
+    shelf=renderBookshelf(container, books(), { shelfWidth:390, viewMode:'isometric', onBookRemove })
     remove(container.querySelector('.ihr-plant'))
     await vi.advanceTimersByTimeAsync(500)
     expect(JSON.parse(localStorage.getItem(KEY))).toHaveLength(1)
