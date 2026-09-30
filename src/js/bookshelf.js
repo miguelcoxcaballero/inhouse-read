@@ -829,6 +829,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (hit && hit !== node) { node.classList.remove('is-pressed'); state.pressedBookId = null; }
       node = hit || node;
     }
+    if (!backgroundOnly && event.pointerType === 'touch' && node.classList.contains('ihr-plant')) {
+      event.preventDefault();
+      const stage = node.closest('.ihr-shelf-stage'), selection = window.getSelection?.();
+      if (stage && selection && (stage.contains(selection.anchorNode) || stage.contains(selection.focusNode)))
+        selection.removeAllRanges();
+    }
     const drag = state.dragSession = {
       node, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
       x: event.clientX, y: event.clientY, scrollTop: scroller.scrollTop,
@@ -1423,6 +1429,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         text:opts.texts.emptyAction, onClick:() => onPickLocal() }) : null
     ]));
     const stage = el('div', { class:'ihr-shelf-stage' });
+    for (const type of ['selectstart', 'contextmenu', 'dragstart'])
+      stage.addEventListener(type, event => event.preventDefault(), { capture:true });
     stage.style.setProperty('--ihr-cabinet-width', `${width}px`);
     if (trashNode) {
       if (!state.useScene) {

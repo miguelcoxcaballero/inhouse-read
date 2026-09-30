@@ -4,6 +4,11 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca es una estantería 3D con madera texturizada, libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.11
+
+- El toque largo sobre macetas y hojas no activa la selección de texto ni el menú nativo del móvil. Los objetos de la estantería conservan su arrastre 3D.
+- La protección se limita a la estantería: el texto del lector y los campos de edición siguen siendo seleccionables.
+
 ### Actualización web · 1.6.10
 
 - Suelo físico invisible: la papelera sigue apoyada junto a la base del mueble sin mostrar una plataforma de madera.

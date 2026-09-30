@@ -181,6 +181,14 @@
 }
 
 .ihr-shelf-stage { position:relative; isolation:isolate; }
+/* Los textos accesibles y las superficies SVG sirven para coger objetos,
+   nunca para la selección nativa que interrumpe el toque largo en móvil. */
+.ihr-shelf-stage,
+.ihr-shelf-stage * {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
 /* Projected drag targets must never enlarge the physical room's scroll area.
    clip keeps the canvas sticky in the outer scroller and prevents an endless
    chase after the held book's invisible absolute hit rectangle. */

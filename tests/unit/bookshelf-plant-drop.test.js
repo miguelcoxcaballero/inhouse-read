@@ -17,6 +17,7 @@ function pointer(node,type,x=330,y=720) {
   const event=new MouseEvent(type,{clientX:x,clientY:y,button:0,bubbles:true,cancelable:true});
   Object.defineProperties(event,{pointerId:{value:1},pointerType:{value:'touch'}});
   node.dispatchEvent(event);
+  return event;
 }
 beforeEach(() => {
   vi.useFakeTimers(); vi.clearAllMocks(); localStorage.clear();
@@ -34,6 +35,40 @@ afterEach(() => {
 });
 
 describe('plant release at the physical floor',() => {
+  it('blocks native touch selection without interrupting the long press',async () => {
+    const plant=container.querySelector('.ihr-plant');
+    expect(pointer(plant,'pointerdown').defaultPrevented).toBe(true);
+    await vi.advanceTimersByTimeAsync(450);
+    expect(plant.classList.contains('is-lifted')).toBe(true);
+    pointer(plant,'pointercancel');
+    expect(container.querySelector('.ihr-plant')).toBe(plant);
+  });
+  it('cancels selection, callouts and native dragging on shelf descendants only',() => {
+    const leaf=document.createElementNS('http://www.w3.org/2000/svg','path');
+    container.querySelector('.ihr-plant').append(leaf);
+    for (const type of ['selectstart','contextmenu','dragstart']) {
+      const event=new Event(type,{bubbles:true,cancelable:true});
+      leaf.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+      const outside=new Event(type,{bubbles:true,cancelable:true});
+      document.body.dispatchEvent(outside);
+      expect(outside.defaultPrevented).toBe(false);
+    }
+  });
+  it('clears an existing shelf selection and preserves text selected outside it',() => {
+    const plant=container.querySelector('.ihr-plant'),selection=window.getSelection();
+    plant.append(document.createTextNode('Hidden shelf text'));
+    const range=document.createRange(); range.selectNodeContents(plant);
+    selection.removeAllRanges(); selection.addRange(range);
+    pointer(plant,'pointerdown');
+    expect(selection.rangeCount).toBe(0);
+    pointer(plant,'pointercancel');
+    const paragraph=document.createElement('p'); paragraph.textContent='Reader text';
+    container.append(paragraph); range.selectNodeContents(paragraph); selection.addRange(range);
+    pointer(plant,'pointerdown');
+    expect(selection.toString()).toBe('Reader text');
+    selection.removeAllRanges(); pointer(plant,'pointercancel');
+  });
   it('lets the scene refresh a stale hidden bin before testing the touch release',async () => {
     const plant=container.querySelector('.ihr-plant'),bin=container.querySelector('.ihr-shelf-trash');
     scene.hitTrash.mockImplementation(() => {bin.hidden=false;return true});

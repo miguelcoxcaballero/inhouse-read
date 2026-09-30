@@ -55,7 +55,7 @@ test('conecta Google sin redirección y muestra la foto en la esquina derecha', 
   await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   expect(await page.evaluate(() => window.__oauthOptions.redirect_uri)).toBeUndefined()
   await button.click()
-  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.6.10')
+  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.6.11')
   await expect(page.locator('#drive-theme-toggle')).toBeVisible()
   await expect(page.locator('#drive-profile-initial-menu')).toBeHidden()
   await page.locator('#drive-theme-toggle').check()

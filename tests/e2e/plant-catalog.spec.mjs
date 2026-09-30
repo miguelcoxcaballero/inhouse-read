@@ -316,7 +316,12 @@ test('un gesto táctil desde las hojas mueve una planta superior directamente a 
   try {
     await touch.send('Input.dispatchTouchEvent',{ type:'touchStart',touchPoints:[contact(leaf)] });
     pressed = true;
-    await page.waitForTimeout(550);
+    await page.waitForTimeout(1500);
+    expect(await plant.evaluate(node => {
+      const surfaces=[node,...node.querySelectorAll('svg,path')];
+      return surfaces.every(surface => getComputedStyle(surface).userSelect === 'none');
+    })).toBe(true);
+    expect(await page.evaluate(() => window.getSelection().toString())).toBe('');
     await expect(plant).toHaveClass(/is-lifted/);
     await expect(bin).toBeVisible();
     await expect(canvas).toHaveAttribute('data-trash-visible','true');
@@ -325,6 +330,7 @@ test('un gesto táctil desde las hojas mueve una planta superior directamente a 
     const target = { x:basket.x + basket.width / 2,y:basket.y + basket.height * .45 };
     await move(leaf,target,14);
     await expect(plant).toHaveClass(/is-dragging/);
+    expect(await page.evaluate(() => window.getSelection().toString())).toBe('');
     expect(await scroller.evaluate(node => node.scrollTop)).toBe(0);
     await expect(canvas).toHaveAttribute('data-trash-hover','true');
     await touch.send('Input.dispatchTouchEvent',{ type:'touchEnd',touchPoints:[] });
