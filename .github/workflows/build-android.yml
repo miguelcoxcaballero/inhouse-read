@@ -103,6 +103,9 @@ jobs:
             android-status-bar.png
             android-ui.xml
             android-screen-text.txt
+            android-open-with.*
+            android-import-*.png
+            android-import-*.xml
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4
@@ -141,6 +144,7 @@ jobs:
             echo "android-update.json ya estaba al dia, nada que comitear"
           else
             git commit -m "Actualizar android-update.json a la version publicada (automatico)"
+            git pull --rebase origin main
             git push origin HEAD:main
           fi
 
