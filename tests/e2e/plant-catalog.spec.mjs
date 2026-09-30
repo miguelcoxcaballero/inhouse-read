@@ -203,3 +203,147 @@ test('una planta cae como modelo 3D en la papelera y la última planta retirada 
   expect(await savedPlants(page)).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+test('un gesto táctil desde las hojas mueve una planta de la balda superior hasta la papelera del suelo con autoscroll',async ({ page },testInfo) => {
+  test.setTimeout(180_000);
+  const errors = []; page.on('pageerror',error => errors.push(error.message));
+  const key = 'plant:touch-foliage-trash';
+  const survivor = { key:'plant:touch-floor-survivor',seed:'touch-floor-survivor',catalogId:'cactus',variant:'cactus',
+    potId:'akerbar',width:56,height:90,shelf:9,x:.6 };
+  await page.evaluate(({ plantsKey,key,survivor }) => localStorage.setItem(plantsKey,JSON.stringify([
+    { key,seed:key,catalogId:'monstera',variant:'monstera',potId:'muskot',width:86,height:110,shelf:0,x:.45 },
+    survivor
+  ])),{ plantsKey:PLANTS_KEY,key,survivor });
+  await page.reload();
+  const plant = page.locator(`.ihr-plant[data-object-id="${key}"]`);
+  const canvas = page.locator('.ihr-bookshelf-scene'), scroller = page.locator('.ihr-bookshelf__scroll');
+  const bin = page.locator('.ihr-shelf-trash');
+  await expect(page.locator('.ihr-plant')).toHaveCount(2);
+  await expect(plant).toHaveAttribute('data-shelf-index','0');
+  await expect(canvas).toHaveAttribute('data-animating','false');
+  await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
+  await expect(canvas).toHaveAttribute('data-view-progress','1');
+  await expect(canvas).toHaveAttribute('data-animating','false');
+  // The records start on the first and tenth shelves. Do not move the plant
+  // near the basket, or scroll to the floor before beginning the gesture.
+  await scroller.evaluate(node => { node.scrollTop = 0; });
+  await expect(canvas).toHaveAttribute('data-animating','false');
+  expect(await scroller.evaluate(node => node.scrollHeight / node.clientHeight)).toBeGreaterThan(1.3);
+  await expect(bin).toBeHidden();
+  await expect(canvas).toHaveAttribute('data-trash-visible','false');
+  const fixedPose = await canvas.getAttribute('data-trash-local-position');
+  const pot = await plant.boundingBox();
+  expect(pot).toBeTruthy();
+  // This point was reproduced on the actual Monstera mesh in production:
+  // the leaf above the ceramic pot, outside its semantic button rectangle.
+  const leaf = { x:pot.x + pot.width * .5,y:pot.y - pot.height * .75 };
+  expect(leaf.y).toBeLessThan(pot.y);
+  expect(leaf.x).toBeGreaterThan(0);
+  expect(leaf.x).toBeLessThan(page.viewportSize().width);
+  expect(leaf.y).toBeGreaterThan(0);
+  expect(leaf.y).toBeLessThan(page.viewportSize().height);
+  await page.evaluate(() => {
+    const canvas = document.querySelector('.ihr-bookshelf-scene');
+    const motion = window.__plantFoliageTouch = { events:[],frames:[],image:null };
+    const record = event => motion.events.push({ type:event.type,trusted:event.isTrusted,
+      pointerType:event.pointerType,pointerId:event.pointerId,x:event.clientX,y:event.clientY,
+      objectId:event.target.closest?.('[data-object-id]')?.dataset.objectId || '',
+      target:event.target.tagName,touchAction:getComputedStyle(event.target).touchAction });
+    for (const type of ['pointerdown','pointermove','pointerup','pointercancel']) document.addEventListener(type,record,true);
+    motion.stop = () => {
+      for (const type of ['pointerdown','pointermove','pointerup','pointercancel']) document.removeEventListener(type,record,true);
+      motion.observer.disconnect();
+    };
+    motion.observer = new MutationObserver(() => {
+      const progress = Number(canvas.dataset.trashDropProgress);
+      if (!(progress > 0 && progress < 1)) return;
+      motion.frames.push({ progress,kind:canvas.dataset.trashingObjectKind,key:canvas.dataset.trashingObjectId });
+      if (!motion.image && progress > .2 && progress < .85) motion.image = canvas.toDataURL('image/png');
+    });
+    motion.observer.observe(canvas,{ attributes:true,attributeFilter:['data-trash-drop-progress','data-trashing-object-id'] });
+  });
+  // hasTouch/isMobile alone still leaves page.mouse as a mouse. Use Chromium's
+  // native touch input, so browser pan arbitration and pointercancel are real.
+  const touch = await page.context().newCDPSession(page);
+  let pressed = false;
+  const contact = point => ({ x:point.x,y:point.y,id:31,radiusX:4,radiusY:4,force:1 });
+  const move = async (from,to,steps = 12) => {
+    for (let index = 1; index <= steps; index++) {
+      const fraction = index / steps;
+      await touch.send('Input.dispatchTouchEvent',{ type:'touchMove',touchPoints:[contact({
+        x:from.x + (to.x - from.x) * fraction,y:from.y + (to.y - from.y) * fraction
+      })] });
+    }
+  };
+  try {
+    await touch.send('Input.dispatchTouchEvent',{ type:'touchStart',touchPoints:[contact(leaf)] });
+    pressed = true;
+    await page.waitForTimeout(550);
+    await expect(plant).toHaveClass(/is-lifted/);
+    const bounds = await scroller.boundingBox();
+    const edge = { x:bounds.x + bounds.width * .25,
+      y:Math.min(bounds.y + bounds.height - 12,page.viewportSize().height - 12) };
+    await move(leaf,edge);
+    await expect(plant).toHaveClass(/is-dragging/);
+    await expect.poll(() => scroller.evaluate(node => node.scrollTop),{ timeout:60_000 }).toBeGreaterThan(400);
+    await expect.poll(() => scroller.evaluate(node => node.scrollHeight - node.clientHeight - node.scrollTop),{
+      timeout:60_000
+    }).toBeLessThan(2);
+    await expect(bin).toBeVisible();
+    await expect(canvas).toHaveAttribute('data-trash-visible','true');
+    expect(await canvas.getAttribute('data-trash-local-position')).toBe(fixedPose);
+    const basket = await bin.boundingBox();
+    const target = { x:basket.x + basket.width / 2,y:basket.y + basket.height * .45 };
+    await move(edge,target,14);
+    await expect(canvas).toHaveAttribute('data-trash-hover','true');
+    await touch.send('Input.dispatchTouchEvent',{ type:'touchEnd',touchPoints:[] });
+    pressed = false;
+    await expect(plant).toHaveCount(0,{ timeout:30_000 });
+    await expect(page.locator('.ihr-bookshelf')).not.toHaveClass(/is-arranging|is-discarding/);
+    const motion = await page.evaluate(() => {
+      const motion = window.__plantFoliageTouch; motion.stop();
+      return { events:motion.events,frames:motion.frames,image:motion.image };
+    });
+    const down = motion.events.find(event => event.type === 'pointerdown' && event.trusted);
+    expect(down).toMatchObject({ pointerType:'touch',objectId:key,touchAction:'none' });
+    expect(motion.events.some(event => event.type === 'pointermove' && event.trusted && event.pointerType === 'touch')).toBe(true);
+    expect(motion.events.some(event => event.type === 'pointerup' && event.trusted && event.pointerType === 'touch')).toBe(true);
+    expect(motion.events.filter(event => event.type === 'pointercancel')).toEqual([]);
+    expect(motion.events.filter(event => event.type === 'pointerdown')).toHaveLength(1);
+    expect(motion.frames.length).toBeGreaterThan(2);
+    expect(motion.frames.every(frame => frame.kind === 'plant' && frame.key === key)).toBe(true);
+    expect(motion.frames.at(-1).progress).toBeGreaterThan(motion.frames[0].progress);
+    expect(motion.image).toBeTruthy();
+    await testInfo.attach('hojas-touch-a-papelera-3d',{ body:Buffer.from(motion.image.split(',')[1],'base64'),contentType:'image/png' });
+    await testInfo.attach('native-foliage-touch-events',{ body:JSON.stringify(motion.events,null,2),contentType:'application/json' });
+    await testInfo.attach('native-foliage-trash-frames',{ body:JSON.stringify(motion.frames,null,2),contentType:'application/json' });
+    expect(await savedPlants(page)).toEqual([survivor]);
+    await expect(page.locator('.ihr-plant')).toHaveCount(1);
+    await page.reload();
+    await expect(page.locator('.ihr-plant')).toHaveCount(1);
+    await expect(plant).toHaveCount(0);
+    expect(await savedPlants(page)).toEqual([survivor]);
+    expect(errors).toEqual([]);
+  } catch (error) {
+    const diagnostics = await page.evaluate(() => ({
+      events:window.__plantFoliageTouch?.events,frames:window.__plantFoliageTouch?.frames,
+      scene:{ ...document.querySelector('.ihr-bookshelf-scene')?.dataset },
+      shelfClass:document.querySelector('.ihr-bookshelf')?.className,
+      scroller:(() => {
+        const node = document.querySelector('.ihr-bookshelf__scroll');
+        return { top:node.scrollTop,height:node.scrollHeight,available:node.clientHeight };
+      })(),
+      plants:[...document.querySelectorAll('.ihr-plant')].map(node => ({
+        key:node.dataset.objectId,className:node.className,rect:node.getBoundingClientRect().toJSON(),
+        dataset:{ ...node.dataset }
+      }))
+    }));
+    await testInfo.attach('native-foliage-touch-failure',{ body:JSON.stringify({ leaf,pot,...diagnostics },null,2),contentType:'application/json' });
+    await testInfo.attach('native-foliage-touch-failure-viewport',{ body:await page.screenshot(),contentType:'image/png' });
+    throw error;
+  } finally {
+    if (pressed) await touch.send('Input.dispatchTouchEvent',{ type:'touchCancel',touchPoints:[] }).catch(() => {});
+    await page.evaluate(() => window.__plantFoliageTouch?.stop()).catch(() => {});
+    await touch.detach();
+  }
+});

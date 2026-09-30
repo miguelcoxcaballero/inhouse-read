@@ -14,6 +14,60 @@ const DURATION = 700;
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 const ease = t => t * t * t * (t * (t * 6 - 15) + 10);
 const TRASH_PADDING = 7, TRASH_GAP = 12;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+let foliageSerial = 0;
+
+/** The native touch surface follows solid leaves, including fenestrations.
+ * Project their actual front-facing triangles rather than a rectangular hull.
+ * The resulting path is cached by the caller until the model's pose changes.
+ */
+export function projectPlantFoliage(model) {
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const paths = [];
+  let triangles = 0;
+  const coordinate = point => `${point.x.toFixed(2)},${(-point.y).toFixed(2)}`;
+  model.traverse(mesh => {
+    if (!mesh.isMesh || !/^(leaf(?:-\d+|-batch)|cactus(?:-column-\d+|-batch))$/.test(mesh.name)) return;
+    const positions = mesh.geometry.attributes.position, indices = mesh.geometry.index;
+    const count = indices ? indices.count : positions.count;
+    const projected = new Float64Array(positions.count * 2);
+    for (let i = 0; i < positions.count; i++) {
+      a.fromBufferAttribute(positions, i).applyMatrix4(mesh.matrixWorld);
+      projected[i * 2] = a.x; projected[i * 2 + 1] = a.y;
+    }
+    for (let i = 0; i < count; i += 3) {
+      const ia = (indices ? indices.getX(i) : i) * 2, ib = (indices ? indices.getX(i + 1) : i + 1) * 2,
+        ic = (indices ? indices.getX(i + 2) : i + 2) * 2;
+      a.set(projected[ia], projected[ia + 1], 0); b.set(projected[ib], projected[ib + 1], 0);
+      c.set(projected[ic], projected[ic + 1], 0);
+      // All models have a closed lamina/body. Back faces add no visible hit
+      // surface and would double both the path size and native hit-test work.
+      const facing = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+      if (facing <= .0001) continue;
+      paths.push(`M${coordinate(a)}L${coordinate(b)}L${coordinate(c)}Z`); triangles++;
+    }
+  });
+  return { path:paths.join(''), triangles };
+}
+
+// Disjoint strips give an even-odd clip a true union of excluded book areas.
+// Overlapping holes otherwise cancel each other and re-enable foliage hits.
+function disjointRectangles(rectangles, outer) {
+  const clipped = rectangles.map(rect => ({ left:Math.max(rect.left, outer.left), right:Math.min(rect.right, outer.right),
+    top:Math.max(rect.top, outer.top), bottom:Math.min(rect.bottom, outer.bottom) }))
+    .filter(rect => rect.right > rect.left && rect.bottom > rect.top);
+  const edges = [...new Set(clipped.flatMap(rect => [rect.left, rect.right]))].sort((a, b) => a - b), strips = [];
+  for (let i = 0; i < edges.length - 1; i++) {
+    const left = edges[i], right = edges[i + 1], intervals = clipped.filter(rect => rect.left < right && rect.right > left)
+      .sort((a, b) => a.top - b.top);
+    let merged = null;
+    for (const interval of intervals) {
+      if (merged && interval.top <= merged.bottom) merged.bottom = Math.max(merged.bottom, interval.bottom);
+      else { merged = { left, right, top:interval.top, bottom:interval.bottom }; strips.push(merged); }
+    }
+  }
+  return strips;
+}
 
 function trashFootprint(bin) {
   const position = bin.position.clone(), rotation = bin.rotation.clone(), scale = bin.scale.clone();
@@ -90,6 +144,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let alreadyScene = stage.classList.contains('has-scene');
   const originalStyles = new Map(entries.filter(entry => entry.node).map(entry => [entry.node, entry.node.getAttribute('style')]));
   const semanticCovers = new Map();
+  const semanticFoliage = new Map();
   stage.classList.add('has-scene');
   stage.prepend(canvas);
   const scene = new THREE.Scene();
@@ -273,6 +328,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     cancelTrashDrop(entry, false);
     cancelReplacement(entry);
     if (entry.model) { entry.model.removeFromParent(); entry.model.userData.dispose?.(); entry.model = null; }
+    semanticFoliage.get(entry.node)?.svg.remove(); semanticFoliage.delete(entry.node);
   }
 
   function cancelTrashDrop(entry, restore = true) {
@@ -717,6 +773,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       entry.state = stateFor(entry);
     }
+    // Bind native hit surfaces only after all semantic book rectangles are
+    // projected, so an overlapping leaf cannot steal a neighboring spine tap.
+    for (const entry of bookEntries) if (entry.kind === 'plant' && entry.node) updatePlantFoliage(entry);
     canvas.dataset.activeBooks = String(activeBooks);
     canvas.dataset.previewAnimating = String(bookEntries.some(entry => entry.preview.active));
     canvas.dataset.previewObjects = String(bookEntries.filter(entry => Math.abs(entry.preview.x) + Math.abs(entry.preview.y) > .01).length);
@@ -726,6 +785,55 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     canvas.dataset.returnRenderer = inserting.some(entry => entry.insertion.overlayCanvas) ? 'shared-depth-overlay' : 'shelf';
     if (!inserting.length) delete canvas.dataset.returnProgress;
     return { moving, shelfMoving };
+  }
+
+  function updatePlantFoliage(entry) {
+    const { node, model, rect, hitRect } = entry;
+    let native = semanticFoliage.get(node);
+    if (!model?.visible || !rect || !hitRect || node.classList.contains('is-away') || node.classList.contains('is-dragging') || entry.trashDrop) {
+      if (native) native.svg.style.display = 'none';
+      return;
+    }
+    if (!native) {
+      const svg = document.createElementNS(SVG_NS, 'svg');
+      const definitions = document.createElementNS(SVG_NS, 'defs');
+      const clip = document.createElementNS(SVG_NS, 'clipPath');
+      const exclusions = document.createElementNS(SVG_NS, 'path');
+      const path = document.createElementNS(SVG_NS, 'path');
+      const id = `ihr-foliage-${++foliageSerial}`;
+      svg.classList.add('ihr-plant-foliage'); svg.setAttribute('aria-hidden', 'true');
+      svg.setAttribute('focusable', 'false'); svg.dataset.plantFoliageKey = node.dataset.objectId || entry.key;
+      clip.id = id; clip.setAttribute('clipPathUnits', 'userSpaceOnUse');
+      exclusions.setAttribute('clip-rule', 'evenodd'); clip.append(exclusions); definitions.append(clip);
+      path.setAttribute('clip-path', `url(#${id})`); path.setAttribute('fill', 'transparent');
+      Object.assign(svg.style, { position:'absolute', pointerEvents:'none', touchAction:'none', overflow:'visible',
+        maxWidth:'none', maxHeight:'none' });
+      path.style.touchAction = 'none'; svg.append(definitions, path); node.append(svg);
+      native = { svg, path, exclusions, pose:'', model:null, clip:'' }; semanticFoliage.set(node, native);
+    }
+    // The pot keeps its own accessible focus/drag centre. Its child extends
+    // over the leaves, but only painted triangles participate in hit testing.
+    Object.assign(native.svg.style, { display:'block', left:`${rect.left - hitRect.left}px`,
+      top:`${rect.top - hitRect.top}px`, width:`${rect.width}px`, height:`${rect.height}px` });
+    native.svg.setAttribute('viewBox', `${rect.left} ${rect.top} ${rect.width} ${rect.height}`);
+    native.path.style.pointerEvents = node.disabled || node.inert || node.style.pointerEvents === 'none' ? 'none' : 'fill';
+    const pose = model.matrixWorld.elements.join(',');
+    if (native.model !== model || native.pose !== pose) {
+      const projected = projectPlantFoliage(model);
+      native.path.setAttribute('d', projected.path); native.svg.dataset.triangles = String(projected.triangles);
+      native.model = model; native.pose = pose;
+    }
+    const rectanglePath = bounds => `M${bounds.left},${bounds.top}H${bounds.right}V${bounds.bottom}H${bounds.left}Z`;
+    const excluded = bookEntries.filter(other => other.kind !== 'plant' && other.model?.visible &&
+      !other.node?.classList.contains('is-away') && !other.node?.classList.contains('is-dragging'))
+      .map(other => progress > .04 ? other.rect : other.hitRect).filter(Boolean);
+    // Inside these rectangles the existing native book surface already has
+    // touch-action:none and resolves true mesh occlusion in its drag handler.
+    // Clipping keeps book clicks native even if foliage is behind its cover.
+    const clipping = rectanglePath(rect) + disjointRectangles(excluded, rect).map(rectanglePath).join('');
+    if (native.clip !== clipping) {
+      native.exclusions.setAttribute('d', clipping); native.clip = clipping;
+    }
   }
 
   function advancePreview(entry, now) {
@@ -781,21 +889,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (!object?.userData.entry) return null;
     }
     return null;
-  }
-
-  function onPlantFoliagePointerDown(event) {
-    if (disposed || event.target?.closest?.('.ihr-spine, .ihr-plant, .ihr-shelf-catalog, .ihr-shelf-trash') ||
-      typeof PointerEvent === 'undefined') return;
-    const node = objectAtPoint(event.clientX, event.clientY);
-    if (!node || byNode.get(node)?.kind !== 'plant') return;
-    // Real foliage remains draggable even outside the small pot button. No
-    // rectangular leaf envelope is placed over a neighboring visible book.
-    node.dispatchEvent(new PointerEvent('pointerdown', { bubbles:true, cancelable:true,
-      clientX:event.clientX, clientY:event.clientY, button:event.button, buttons:event.buttons,
-      pointerId:event.pointerId, pointerType:event.pointerType, isPrimary:event.isPrimary,
-      pressure:event.pressure, width:event.width, height:event.height,
-      ctrlKey:event.ctrlKey, altKey:event.altKey, shiftKey:event.shiftKey, metaKey:event.metaKey }));
-    event.preventDefault(); event.stopPropagation();
   }
 
   function paintInsertionOverlay(entry) {
@@ -953,7 +1046,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   themeChanges.observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
   for (const node of byNode.keys()) mutations.observe(node, { attributes:true, attributeFilter:['class', 'style'] });
   scroller.addEventListener('scroll', invalidate, { passive:true });
-  stage.addEventListener('pointerdown', onPlantFoliagePointerDown, true);
   window.addEventListener('resize', invalidate, { passive:true });
   document.fonts?.ready.then(invalidate);
   updateWoodTheme();
@@ -1084,7 +1176,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // Restore only the outgoing DOM. The already painted canvas and GPU
       // resources remain alive while the replacement semantic tree is bound.
       if (next.stage !== stage) {
-        stage.removeEventListener('pointerdown', onPlantFoliagePointerDown, true);
         stage.style.height = originalHeight;
         if (!alreadyScene) stage.classList.remove('has-scene');
         for (const [node, style] of originalStyles) {
@@ -1092,6 +1183,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           delete node.dataset.sceneProjected;
           delete node.dataset.sceneHitSurface;
           semanticCovers.get(node)?.remove(); semanticCovers.delete(node);
+          semanticFoliage.get(node)?.svg.remove(); semanticFoliage.delete(node);
         }
         originalStyles.clear();
         stage = next.stage;
@@ -1099,7 +1191,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         alreadyScene = stage.classList.contains('has-scene');
         stage.classList.add('has-scene');
         stage.prepend(canvas);
-        stage.addEventListener('pointerdown', onPlantFoliagePointerDown, true);
       }
       width = next.width; height = next.height; rows = next.rows;
       sceneWidth = Math.max(width, Number(next.sceneWidth) || width);
@@ -1131,6 +1222,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         if (entry) {
           oldEntries.delete(key);
           if (entry.node !== data.node && entry.node?.classList.contains('is-away')) data.node?.classList.add('is-away');
+          if (entry.node !== data.node) {
+            semanticFoliage.get(entry.node)?.svg.remove(); semanticFoliage.delete(entry.node);
+          }
           entry.node = data.node;
           if (data.kind === 'plant') {
             if (plantKeys(entry) !== plantKeys(data)) releaseEntry(entry);
@@ -1185,7 +1279,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     dispose() {
       disposed = true; cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       scroller.removeEventListener('scroll', invalidate); window.removeEventListener('resize', invalidate);
-      stage.removeEventListener('pointerdown', onPlantFoliagePointerDown, true);
       for (const entry of bookEntries) releaseEntry(entry);
       if (catalog) { catalog.removeFromParent(); catalog.userData.dispose(); }
       trash?.removeFromParent();
@@ -1200,6 +1293,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       for (const node of semanticCovers.values()) node.remove();
       semanticCovers.clear();
+      for (const native of semanticFoliage.values()) native.svg.remove();
+      semanticFoliage.clear();
       for (const node of trashOriginalStates.keys()) restoreTrashNode(node);
       for (const node of catalogOriginalStates.keys()) restoreCatalogNode(node);
     }

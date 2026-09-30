@@ -944,9 +944,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function hitTrash(x, y, node) {
-    if (!trashNode || state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC || trashNode.hidden ||
+    if (!trashNode || state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC ||
       !(node?.classList.contains('ihr-plant') || hasBookTrash && node?.classList.contains('ihr-spine'))) return false;
+    // The scene flushes its pending scroll frame before testing the bin. Its
+    // DOM target can still be hidden just as a held object reaches the floor.
     if (state.shelfScene) return state.shelfScene.hitTrash(x, y);
+    if (trashNode.hidden) return false;
     const bounds = trashNode.getBoundingClientRect();
     return bounds.width > 0 && bounds.height > 0 && x >= bounds.left - 8 && x <= bounds.right + 8 &&
       y >= bounds.top - 12 && y <= bounds.bottom + 8;

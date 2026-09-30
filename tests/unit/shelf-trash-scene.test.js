@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { createBookshelfScene } from '../../src/js/bookshelf-scene.js';
+import { createBookshelfScene, projectPlantFoliage } from '../../src/js/bookshelf-scene.js';
 
 const gpu = vi.hoisted(() => ({ renders:0, scene:null, models:[], disposed:0 }));
 vi.mock('../../src/js/book-model.js', async () => {
@@ -53,6 +53,27 @@ function cabinetRight() {
   const parent = gpu.scene.children.find(child => child.children.some(object => object.userData.furniture));
   const cabinet = parent.children.find(child => child.userData.furniture);
   return stage.getBoundingClientRect().left + new THREE.Box3().setFromObject(cabinet).max.x;
+}
+function containsTriangle(path, x, y) {
+  return [...path.matchAll(/M(-?[\d.]+),(-?[\d.]+)L(-?[\d.]+),(-?[\d.]+)L(-?[\d.]+),(-?[\d.]+)Z/g)].some(match => {
+    const [ax, ay, bx, by, cx, cy] = match.slice(1).map(Number);
+    const cross = (px, py, qx, qy) => (x - qx) * (py - qy) - (px - qx) * (y - qy);
+    const signs = [cross(ax, ay, bx, by), cross(bx, by, cx, cy), cross(cx, cy, ax, ay)];
+    return !signs.some(value => value < -1e-5) || !signs.some(value => value > 1e-5);
+  });
+}
+function insideRectangles(path, x, y) {
+  return [...path.matchAll(/M(-?[\d.]+),(-?[\d.]+)H(-?[\d.]+)V(-?[\d.]+)H(-?[\d.]+)Z/g)]
+    .filter(match => { const [left, top, right, bottom] = match.slice(1, 5).map(Number);
+      return x > left && x < right && y > top && y < bottom; }).length;
+}
+function nativePlantLayout({ node = document.createElement('button'), entries, variant = 'monstera', catalogId = variant } = {}) {
+  node.classList.add('ihr-plant'); node.dataset.objectId = 'plant:touch-foliage-trash'; node.style.touchAction = 'none'; stage.append(node);
+  const data = { kind:'plant', node, key:node.dataset.objectId, seed:node.dataset.objectId, variant, catalogId,
+    potId:'muskot', x:180, y:165, width:86, height:110 };
+  const layout = { stage, width:390, sceneWidth:390, height:750, trashNode,
+    rows:[{ top:20, bottom:220 }, { top:260, bottom:460 }, { top:500, bottom:700 }], entries:entries || [data] };
+  shelf.updateLayout(layout); return { node, data, layout };
 }
 
 beforeEach(() => {
@@ -337,6 +358,102 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     expect(model.parent).toBe(furniture); expect(model.visible).toBe(true);
     expect(model.scale.x).toBe(1);
     expect(shelf.canvas.dataset.trashingObjectId).toBeUndefined();
+  });
+
+  it('starts foliage gestures natively inside the same touch-action:none plant button without a synthetic replay', () => {
+    const { node } = nativePlantLayout(); showTrash();
+    const svg = node.querySelector('.ihr-plant-foliage'), path = svg.querySelector(':scope > path');
+    expect(svg.parentNode).toBe(node); expect(svg.getAttribute('aria-hidden')).toBe('true');
+    expect(svg.getAttribute('focusable')).toBe('false'); expect(svg.hasAttribute('data-object-id')).toBe(false);
+    expect(svg.dataset.plantFoliageKey).toBe(node.dataset.objectId);
+    expect(svg.style.touchAction).toBe('none'); expect(path.style.touchAction).toBe('none');
+    // The leaf envelope exceeds the pot's width; the global SVG max-width
+    // rule must not shrink it and move its native hit surface off the mesh.
+    expect(svg.style.maxWidth).toBe('none'); expect(svg.style.maxHeight).toBe('none');
+    expect(svg.style.pointerEvents).toBe('none'); expect(path.style.pointerEvents).toBe('fill');
+    expect(node.dataset.sceneHitSurface).toBe('pot'); expect(Number(svg.dataset.triangles)).toBeGreaterThan(50);
+    const event = new MouseEvent('pointerdown', { bubbles:true, clientX:130, clientY:200 });
+    const received = []; node.addEventListener('pointerdown', event => received.push(event));
+    path.dispatchEvent(event); expect(received).toEqual([event]);
+    expect(path.closest('[data-object-id]')).toBe(node);
+    const leafX = parseFloat(node.style.left) + parseFloat(node.style.width) * .5;
+    const leafY = parseFloat(node.style.top) - parseFloat(node.style.height) * .75;
+    expect(containsTriangle(path.getAttribute('d'), leafX, leafY)).toBe(true);
+    expect(shelf.getObjectAtPoint(20 + leafX, 60 + leafY)).toBe(node);
+  });
+
+  it('preserves empty gaps in the foliage rather than catching its rectangular envelope', () => {
+    const { node } = nativePlantLayout();
+    const svg = node.querySelector('.ihr-plant-foliage'), path = svg.querySelector(':scope > path').getAttribute('d');
+    const [left, top, width, height] = svg.getAttribute('viewBox').split(' ').map(Number);
+    const cells = Array.from({ length:20 }, (_, row) => Array.from({ length:20 }, (_, col) =>
+      containsTriangle(path, left + width * (col + .5) / 20, top + height * (row + .5) / 20))).flat();
+    expect(cells.filter(Boolean).length).toBeGreaterThan(10);
+    expect(cells.filter(value => !value).length).toBeGreaterThan(180);
+    expect(containsTriangle(path, left + .05 * width, top + .05 * height)).toBe(false);
+    const group = new THREE.Group(), shape = new THREE.Shape();
+    shape.moveTo(-5, -5); shape.lineTo(5, -5); shape.lineTo(5, 5); shape.lineTo(-5, 5); shape.closePath();
+    const hole = new THREE.Path(); hole.moveTo(-1,-1); hole.lineTo(-1,1); hole.lineTo(1,1); hole.lineTo(1,-1); hole.closePath();
+    shape.holes.push(hole);
+    const leaf = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial()); leaf.name = 'leaf-0'; group.add(leaf);
+    group.updateMatrixWorld(true); const projected = projectPlantFoliage(group);
+    expect(containsTriangle(projected.path, 0, 0)).toBe(false);
+    expect(containsTriangle(projected.path, 3, 3)).toBe(true);
+    leaf.geometry.dispose(); leaf.material.dispose();
+  });
+
+  it('caches idle and scrolling foliage, updates its native surface on camera rotation and disables it during captured dragging', () => {
+    const { node } = nativePlantLayout();
+    const svg = node.querySelector('.ihr-plant-foliage'), path = svg.querySelector(':scope > path');
+    const setPath = vi.spyOn(path, 'setAttribute');
+    const originalPath = path.getAttribute('d'), originalBox = svg.getAttribute('viewBox');
+    shelf.flush(); scroll = 40; shelf.flush();
+    expect(path.getAttribute('d')).toBe(originalPath); expect(svg.getAttribute('viewBox')).toBe(originalBox);
+    expect(setPath).not.toHaveBeenCalled();
+    showTrash(); expect(path.getAttribute('d')).not.toBe(originalPath);
+    node.classList.add('is-dragging'); node.style.setProperty('--ihr-drag-x', '100px'); shelf.flush();
+    const draggingPath = path.getAttribute('d'); setPath.mockClear();
+    expect(svg.style.display).toBe('none');
+    node.style.setProperty('--ihr-drag-x', '120px'); shelf.flush();
+    expect(path.getAttribute('d')).toBe(draggingPath); expect(setPath).not.toHaveBeenCalled();
+    node.classList.remove('is-dragging'); shelf.flush(); expect(svg.style.display).toBe('block');
+    node.disabled = true; shelf.flush(); expect(path.style.pointerEvents).toBe('none');
+    node.disabled = false; node.style.pointerEvents = 'none'; shelf.flush(); expect(path.style.pointerEvents).toBe('none');
+    node.style.pointerEvents = ''; shelf.flush(); expect(path.style.pointerEvents).toBe('fill');
+  });
+
+  it('clips overlapping book hit areas as a union without reopening intersections over a visible neighboring spine', () => {
+    const second = document.createElement('button'); stage.append(second);
+    const { node, data, layout } = nativePlantLayout();
+    shelf.updateLayout({ ...layout, entries:[data,
+      { node:bookNode, book:{ id:'a', title:'First' }, style:{ color:'#35634a' }, x:151, y:165, width:100,height:110,thickness:24 },
+      { node:second, book:{ id:'b', title:'Second' }, style:{ color:'#35634a' }, x:170, y:165,width:100,height:110,thickness:24 }] });
+    showTrash();
+    const svg = node.querySelector('.ihr-plant-foliage'), clip = svg.querySelector('clipPath path').getAttribute('d');
+    const rectangles = [bookNode, second].map(book => ({ left:parseFloat(book.style.left), top:parseFloat(book.style.top),
+      width:parseFloat(book.style.width), height:parseFloat(book.style.height) }));
+    const [left, top, width, height] = svg.getAttribute('viewBox').split(' ').map(Number);
+    let excluded = 0;
+    for (let row = 0; row < 20; row++) for (let col = 0; col < 20; col++) {
+      const x = left + (col + .5) * width / 20, y = top + (row + .5) * height / 20;
+      if (rectangles.some(rect => x > rect.left && x < rect.left + rect.width && y > rect.top && y < rect.top + rect.height)) {
+        expect(insideRectangles(clip, x, y) % 2).toBe(0); excluded++;
+      }
+    }
+    expect(excluded).toBeGreaterThan(10);
+  });
+
+  it('cleans native foliage targets when models are culled, nodes are rebound and the shared scene is disposed', () => {
+    const { node, data, layout } = nativePlantLayout();
+    const original = node.querySelector('.ihr-plant-foliage');
+    const next = document.createElement('button'); next.dataset.objectId = node.dataset.objectId; stage.append(next);
+    shelf.updateLayout({ ...layout, entries:[{ ...data, node:next }] });
+    expect(original.isConnected).toBe(false); expect(node.querySelector('.ihr-plant-foliage')).toBeNull();
+    expect(next.querySelector('.ihr-plant-foliage')).not.toBeNull();
+    scroll = 2000; shelf.flush(); expect(next.querySelector('.ihr-plant-foliage')).toBeNull();
+    scroll = 0; shelf.flush(); const restored = next.querySelector('.ihr-plant-foliage'); expect(restored).not.toBeNull();
+    shelf.dispose(); shelf = null; expect(restored.isConnected).toBe(false);
+    expect(next.querySelector('.ihr-plant-foliage')).toBeNull();
   });
 
   it('shows the attached catalogue only in the diagonal view and projects a scrolling semantic target', () => {

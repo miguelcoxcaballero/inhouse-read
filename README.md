@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca es una estantería 3D con madera texturizada, libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.8
+
+- Corregido el arrastre táctil de plantas cogidas por las hojas: el gesto permanece activo al mover el dedo y al bajar por las baldas hasta la papelera.
+- La papelera comprueba su posición actual al soltar, incluso si el último cambio de scroll todavía no se ha dibujado.
+- Pruebas con gestos táctiles reales desde el follaje hasta el suelo, además de la retirada y persistencia de plantas.
+
 ### Actualización web · 1.6.7
 
 - Papelera apoyada en el suelo junto a la base de la estantería, con posición y tamaño fijos dentro de la escena 3D.
