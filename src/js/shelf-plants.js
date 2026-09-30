@@ -29,27 +29,43 @@ function variantFor(value) {
   return 'leafy';
 }
 
-function botanicalTexture(random, variant) {
-  const size = 128, bytes = new Uint8Array(size * size * 4);
+function botanicalTextures(random, variant) {
+  // A single surface field drives pigment, relief and wax roughness together.
+  // Keep data maps linear: only the pigment map contains sRGB colour.
+  const size = 128, pigment = new Uint8Array(size * size * 4);
+  const relief = new Uint8Array(pigment.length), roughness = new Uint8Array(pigment.length);
   const base = new THREE.Color(variant === 'zz' ? '#315525' : variant === 'fern' ? '#4d792e' : variant === 'succulent' ? '#63816c' : '#36672c').convertLinearToSRGB();
+  const phase = random() * Math.PI * 2;
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const u = Math.abs(x / (size - 1) * 2 - 1), v = y / (size - 1);
-    const midrib = Math.exp(-u * 38) * (variant === 'succulent' ? .012 : .075);
-    const lateral = Math.pow(Math.max(0,Math.cos((v * 9 - u * .85) * Math.PI * 2)),28) * (variant === 'succulent' ? .006 : .035) * (1 - u);
-    const margin = variant === 'ivy' ? Math.pow(u,5) * .12 : 0;
-    const snakeBand = variant === 'upright' ? (Math.sin(v * 74 + Math.sin(u * 7) * 2) * .045 + Math.cos(v * 33 - u * 4) * .025) * (1 - u*.3) : 0;
-    const snakeMargin = variant === 'upright' ? Math.max(0,(u-.82)/.18) : 0;
-    const noise = (random() - .5) * .035;
+    const signed = x / (size - 1) * 2 - 1, u = Math.abs(signed), v = y / (size - 1);
+    const midrib = Math.exp(-u * 48);
+    // Branch veins sweep toward the tip, with finer tertiary venation.
+    const veinPhase = (v * 9 - u * .95 + .06 * Math.sin(u * 5) + signed * .09) * Math.PI * 2;
+    const lateral = Math.pow(Math.max(0, Math.cos(veinPhase)), 24) * (1 - u);
+    const fine = Math.pow(Math.max(0, Math.cos((v * 37 + u * 12) * Math.PI * 2)), 18) * u * (1 - u);
+    const cells = (random() - .5) * .025;
+    const mottling = Math.sin(v * 19 + Math.sin(signed * 11 + phase)) * Math.cos(signed * 17 - v * 7) * .027;
+    const snakeBand = variant === 'upright' ? Math.sin(v * 74 + Math.sin(u * 7) * 2) * .045 + Math.cos(v * 33 - u * 4) * .025 : 0;
+    const snakeMargin = variant === 'upright' ? Math.max(0, (u - .82) / .18) : 0;
+    const margin = variant === 'ivy' ? Math.pow(u, 5) * .10 : 0;
+    const veins = (midrib * .055 + lateral * .035 + fine * .012) * (variant === 'succulent' ? .12 : 1);
+    const variation = cells + mottling + snakeBand + margin + veins;
     const i = (y * size + x) * 4;
-    bytes[i] = Math.min(255,Math.round((base.r + midrib + lateral + margin + noise + snakeBand + snakeMargin*.22) * 255));
-    bytes[i+1] = Math.min(255,Math.round((base.g + midrib + lateral + margin + noise + snakeBand + snakeMargin*.16) * 255));
-    bytes[i+2] = Math.min(255,Math.round((base.b + midrib * .5 + lateral * .6 + margin + noise + snakeBand*.7 - snakeMargin*.055) * 255));
-    bytes[i+3] = 255;
+    const channels = [base.r + variation + snakeMargin * .22, base.g + variation + snakeMargin * .16, base.b + variation * .65 - snakeMargin * .055];
+    for (let c = 0; c < 3; c++) {
+      pigment[i + c] = Math.round(255 * THREE.MathUtils.clamp(channels[c], 0, 1));
+      relief[i + c] = Math.round(255 * THREE.MathUtils.clamp(.38 + midrib * .30 + lateral * .16 + fine * .06 + cells, 0, 1));
+      roughness[i + c] = Math.round(255 * THREE.MathUtils.clamp(.62 + veins * 2 + mottling * 3 + cells, 0, 1));
+    }
+    pigment[i + 3] = relief[i + 3] = roughness[i + 3] = 255;
   }
-  const texture = new THREE.DataTexture(bytes,size,size,THREE.RGBAFormat);
-  texture.colorSpace = THREE.SRGBColorSpace; texture.generateMipmaps = true;
-  texture.minFilter = THREE.LinearMipmapLinearFilter; texture.magFilter = THREE.LinearFilter;
-  texture.needsUpdate = true; return texture;
+  const map = (bytes, colorSpace) => {
+    const texture = new THREE.DataTexture(bytes, size, size, THREE.RGBAFormat);
+    texture.colorSpace = colorSpace; texture.generateMipmaps = true;
+    texture.minFilter = THREE.LinearMipmapLinearFilter; texture.magFilter = THREE.LinearFilter;
+    texture.needsUpdate = true; return texture;
+  };
+  return { map:map(pigment, THREE.SRGBColorSpace), bumpMap:map(relief, THREE.NoColorSpace), roughnessMap:map(roughness, THREE.NoColorSpace) };
 }
 
 function detailedPotGeometry(radius, height, potId) {
@@ -135,10 +151,12 @@ function bladePoint(f, u, length, width, variant, curve, twist) {
   const lobes = variant === 'monstera' ? 1 - .54 * Math.pow(Math.sin(f * Math.PI * 5), 8)
     : variant === 'ivy' ? .53 + .47 * Math.pow(Math.cos(f * Math.PI * 3.3 - .2),2)
     : variant === 'fern' ? .92 + .08 * Math.cos(f * Math.PI * 14) : 1;
-  const x = width * .5 * profile * lobes * u;
+  const asymmetry = 1 + .055 * Math.sin(f * 7 + twist * 4) * Math.sign(u);
+  const x = width * .5 * profile * lobes * u * asymmetry;
   const bow = Math.sin(f * Math.PI * .85) * length * curve;
   const ridge = width * (variant === 'succulent' ? .13 : .065) * Math.pow(Math.abs(u), 1.5);
-  const z = bow + ridge, angle = twist * f;
+  const edgeCurl = width * .022 * Math.pow(Math.abs(u), 3) * Math.sin(f * 19 + twist * 9) * Math.sin(f * Math.PI);
+  const z = bow + ridge + edgeCurl, angle = twist * f;
   return new THREE.Vector3(x * Math.cos(angle) + z * Math.sin(angle), f * length, z * Math.cos(angle) - x * Math.sin(angle));
 }
 
@@ -152,10 +170,11 @@ function leafGeometry({ length, width, variant, curve, twist, random, detailed =
   for (let side = 0; side <= Number(thick); side++) for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
     const f = row / rows, u = col / columns * 2 - 1;
     const point = bladePoint(f, u, length, width, variant, curve, twist);
-    positions.push(point.x, point.y, point.z - side * thickness);
+    const flesh = variant === 'succulent' ? thickness * Math.pow(Math.sin(f * Math.PI), .65) * Math.sqrt(Math.max(0, 1 - u*u)) : thickness;
+    positions.push(point.x, point.y, point.z + (variant === 'succulent' ? (side ? -1 : 1) * flesh : -side * flesh));
     uv.push(inset + col / columns * (1 - inset * 2), inset + f * (1 - inset * 2));
     const edge = Math.pow(Math.abs(u), 2), ridge = 1 - Math.abs(u);
-    if (detailed) colors.push(.78 + ridge * .12 + tint, .85 + ridge * .10 + tint, .73 + ridge * .12 + tint);
+    if (detailed) colors.push(.78 + ridge * .12 + tint + side * .04, .85 + ridge * .10 + tint + side * .025, .73 + ridge * .12 + tint + side * .055);
     else colors.push(.23 + ridge * .11 + tint + edge * .04, .36 + ridge * .15 + tint, .16 + ridge * .075 + tint * .5);
   }
   const count = (rows + 1) * (columns + 1);
@@ -186,14 +205,14 @@ function ivyLeafGeometry(length,width,curve,random) {
   // a rectangular alpha card. Concentric folds cup the entire leaf in 3D.
   const outline = [[0,0],[-.22,.14],[-.49,.28],[-.28,.43],[-.47,.68],[-.22,.64],[0,1],[.22,.64],[.47,.68],[.28,.43],[.49,.28],[.22,.14]];
   const positions = [], uv = [], colors = [], indices = [], rings = 3, segments = outline.length, thickness = width*.007;
-  const center = new THREE.Vector3(0,length*.44,length*curve*.75), tint = random()*.045;
+  const center = new THREE.Vector3(0,length*.44,length*curve*.75), tint = random()*.045, asymmetry = (random()-.5)*.12;
   for (let side = 0; side < 2; side++) {
     for (let ring = 0; ring <= rings; ring++) for (const [x,y] of outline) {
       const f = ring / rings;
-      const px = x*width*f, py = center.y + (y*length-center.y)*f;
+      const px = x*width*f*(1+asymmetry*Math.sign(x)), py = center.y + (y*length-center.y)*f;
       const pz = center.z + Math.abs(x)*width*.055*f + Math.sin(y*Math.PI)*length*curve*.2*f - side*thickness;
       positions.push(px,py,pz); uv.push(.5+px/width,py/length);
-      colors.push(.86+tint,.92+tint,.83+tint);
+      colors.push(.86+tint+side*.04,.92+tint+side*.025,.83+tint+side*.055);
     }
   }
   const count = (rings+1)*segments;
@@ -210,6 +229,28 @@ function ivyLeafGeometry(length,width,curve,random) {
   geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
   geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
   geometry.setIndex(indices); geometry.computeVertexNormals(); return geometry;
+}
+
+function subdivideSurface(surface) {
+  // Add shared interior vertices before bending: silhouette-only triangulation
+  // otherwise leaves large flat facets across the broad Monstera blade.
+  const positions = [...surface.attributes.position.array], indices = [], midpoints = new Map();
+  const midpoint = (a,b) => {
+    const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+    if (!midpoints.has(key)) {
+      midpoints.set(key,positions.length/3);
+      for (let axis = 0; axis < 3; axis++) positions.push((positions[a*3+axis]+positions[b*3+axis])/2);
+    }
+    return midpoints.get(key);
+  };
+  const source = surface.index.array;
+  for (let i = 0; i < source.length; i += 3) {
+    const a = source[i], b = source[i+1], c = source[i+2];
+    const ab = midpoint(a,b), bc = midpoint(b,c), ca = midpoint(c,a);
+    indices.push(a,ab,ca,ab,b,bc,ca,bc,c,ab,bc,ca);
+  }
+  surface.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  surface.setIndex(indices); return surface;
 }
 
 function monsteraLeafGeometry(length,width,curve,random) {
@@ -242,12 +283,12 @@ function monsteraLeafGeometry(length,width,curve,random) {
   for (const side of [-1,1]) for (const [x,y,rx,ry] of [[.19,.24,.042,.065],[.095,.43,.030,.062]]) {
     const hole = new THREE.Path(); hole.absellipse(side*x,y,rx,ry,0,Math.PI*2,true,side*-.30); shape.holes.push(hole);
   }
-  const surface = new THREE.ShapeGeometry(shape,5), source = surface.attributes.position, count = source.count;
-  const positions = [], uv = [], colors = [], indices = [], edges = new Map(), tint = random()*.035;
+  const surface = subdivideSurface(new THREE.ShapeGeometry(shape,5)), source = surface.attributes.position, count = source.count;
+  const positions = [], uv = [], colors = [], indices = [], edges = new Map(), tint = random()*.035, twist = (random()-.5)*.16;
   for (let side = 0; side < 2; side++) for (let i = 0; i < count; i++) {
     const x = source.getX(i), y = source.getY(i);
-    positions.push(x*width,(y-.12)*length,Math.sin(y*Math.PI)*length*curve + x*x*width*.15 - side*width*.009);
-    uv.push(.5+x,y); colors.push(.85+tint,.93+tint,.81+tint);
+    positions.push(x*width*(1+twist*Math.sign(x)),(y-.12)*length,Math.sin(y*Math.PI)*length*curve + x*x*width*.15 + x*width*twist*y - side*width*.009);
+    uv.push(.5+x,y); colors.push(.85+tint+side*.04,.93+tint+side*.025,.81+tint+side*.055);
   }
   const edge = (a,b) => {
     const key = a < b ? `${a}:${b}` : `${b}:${a}`;
@@ -274,7 +315,7 @@ function cactusCap(f) {
 }
 
 function cactusGeometry(length, radius, bend, random) {
-  const positions = [], colors = [], uv = [], indices = [], rows = 12, columns = 24;
+  const positions = [], colors = [], uv = [], indices = [], rows = 18, columns = 32;
   for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
     const f = row / rows, angle = col / columns * Math.PI * 2;
     const cap = cactusCap(f);
@@ -372,12 +413,14 @@ export function createShelfPlant(entry) {
   }
   const stemMaterial = new THREE.MeshStandardMaterial({ color:'#596a39', roughness:.83 });
   const veinMaterial = new THREE.MeshStandardMaterial({ color:'#a0ad70', roughness:.83 });
-  const leafMap = detailed ? botanicalTexture(random,variant) : null;
-  if (leafMap) textures.add(leafMap);
-  const leafMaterial = new THREE.MeshPhysicalMaterial({ map:leafMap, color:0xffffff, vertexColors:true,
+  const leafMaps = detailed ? botanicalTextures(random,variant) : {};
+  for (const texture of Object.values(leafMaps)) textures.add(texture);
+  const leafMaterial = new THREE.MeshPhysicalMaterial({ ...leafMaps, color:0xffffff, vertexColors:true,
+    bumpScale:width * (variant === 'succulent' ? .00035 : .0012),
+    sheen:variant === 'succulent' ? .25 : .08, sheenColor:'#acc394', sheenRoughness:.85,
     side:THREE.DoubleSide, alphaTest:0, alphaToCoverage:false,
-    roughness:variant === 'zz' ? .38 : variant === 'succulent' ? .57 : .70, metalness:0,
-    clearcoat:variant === 'zz' ? .28 : variant === 'succulent' ? .18 : .075, clearcoatRoughness:.48 });
+    roughness:variant === 'zz' ? .55 : variant === 'succulent' ? .88 : .85, metalness:0,
+    clearcoat:variant === 'zz' ? .32 : variant === 'succulent' ? .035 : .12, clearcoatRoughness:.48 });
   const tube = (points, r, material, name, segments = 6) => mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), segments, r, 4, false), material, name);
   const blade = (position, direction, length, leafWidth, angle, curve, twist, index) => {
     const parameters = { length, width:leafWidth, variant, curve, twist, random, detailed };
@@ -403,7 +446,11 @@ export function createShelfPlant(entry) {
       for (let row = 1; row < 7; row++) for (let ridge = 0; ridge < 8; ridge++) {
         const f = row / 8, angle = ridge / 8 * Math.PI * 2, radiusAt = column.radius * cactusCap(f);
         const p = new THREE.Vector3(column.x + Math.cos(angle) * radiusAt + bend * f * f, soilY + column.length * f, column.z + Math.sin(angle) * radiusAt);
-        for (const tilt of [-.45,.45]) {
+        const areoleGeometry = new THREE.SphereGeometry(width*.0065,4,3);
+        const areole = mesh(areoleGeometry.toNonIndexed(),mineral,`cactus-areole-${index}-${row}-${ridge}`);
+        areoleGeometry.dispose();
+        areole.position.copy(p); areole.scale.set(1,.8,1);
+        for (const tilt of [-1,-.45,0,.45,1]) {
           const tip = p.clone().add(new THREE.Vector3(Math.cos(angle) * width * .023, width * .018 * tilt, Math.sin(angle) * width * .023));
           spikes.push(...p.toArray(), ...tip.toArray());
         }
