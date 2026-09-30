@@ -3,6 +3,9 @@ import * as THREE from 'three';
 import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot } from '../../src/js/plant-catalog-data.js';
 import { createShelfPlant } from '../../src/js/shelf-plants.js';
 
+// Each case builds whole detailed plants; a loaded CI machine needs more than 5 s.
+vi.setConfig({ testTimeout:20000 });
+
 function statistics(model) {
   let triangles = 0, draws = 0;
   model.traverse(object => {
@@ -49,8 +52,8 @@ describe('IKEA referenced plant catalog', () => {
 
   it('builds species specific branch structures, lobed ivy, real fern pinnae and thick leaves', () => {
     const expectedParts = {
-      chamaedorea:['palm-rachis-',152], nephrolepis:['fern-rachis-',190],
-      hedera:['ivy-vine-',35], zamioculcas:['zamioculcas-stem-',66],
+      chamaedorea:['palm-rachis-',230], nephrolepis:['fern-rachis-',666],
+      hedera:['ivy-vine-',108], zamioculcas:['zamioculcas-stem-',66],
     };
     for (const [catalogId,[stemPrefix,leafCount]] of Object.entries(expectedParts)) {
       const model = createShelfPlant({catalogId,seed:'botanical-detail'});

@@ -27,26 +27,27 @@ function toHsl([r8, g8, b8]) {
   return { hue: (hue + 360) % 360, saturation, lightness }
 }
 
-function fromHsl(hue, saturation, lightness) {
-  const h = ((hue % 360) + 360) % 360
-  const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation
-  const x = chroma * (1 - Math.abs((h / 60) % 2 - 1))
-  const m = lightness - chroma / 2
-  const rgb = h < 60 ? [chroma, x, 0]
-    : h < 120 ? [x, chroma, 0]
-      : h < 180 ? [0, chroma, x]
-        : h < 240 ? [0, x, chroma]
-          : h < 300 ? [x, 0, chroma] : [chroma, 0, x]
-  return toHex(rgb.map(value => (value + m) * 255))
+// Book cloth, not a UI palette: deep, dyed tones a binder would stock.
+const BOOKCLOTH = [
+  '#6e2a2a', '#9a4a2c', '#9a7432', '#5e6130', '#4f6a2e', '#245439', // oxblood, rust, ochre, olive, moss, bottle green
+  '#1f5359', '#3a5470', '#1f2f52', '#3b3368', '#5a2a50', '#7a2e3e' // peacock, slate, navy, indigo, aubergine, claret
+].map(hex => ({ hex, rgb:parseHex(hex), hue:toHsl(parseHex(hex)).hue }))
+const hueDistance = (a, b) => { const d = Math.abs(((a - b) % 360 + 360) % 360); return Math.min(d, 360 - d) }
+
+/** Cloth nearest a target hue that stays clearly apart from the colours already offered. */
+function clothNear(hue, taken) {
+  const ranked = [...BOOKCLOTH].sort((a, b) => hueDistance(a.hue, hue) - hueDistance(b.hue, hue))
+  return (ranked.find(cloth => taken.every(rgb => Math.hypot(...cloth.rgb.map((v, i) => v - rgb[i])) > 80)) ?? ranked[0]).hex
 }
 
-/** Distinct cover-inspired choices; neutral covers get warm/cool accents. */
+/** The cover colour plus two split-complementary cloths; neutral covers get oxblood and navy. */
 export function bookColorOptions(coverColor) {
   const rgb = parseHex(coverColor) ?? [139, 94, 60]
   const base = toHex(rgb)
   const { hue, saturation } = toHsl(rgb)
-  if (saturation < .16) return [base, '#87613f', '#315e58']
-  return [base, fromHsl(hue + 135, .42, .32), fromHsl(hue + 245, .48, .54)]
+  if (saturation < .16) return [base, '#6e2a2a', '#1f2f52']
+  const second = clothNear(hue + 135, [rgb])
+  return [base, second, clothNear(hue + 245, [rgb, parseHex(second)])]
 }
 
 export const METAL_COLORS = { gold:'#d6ad55', silver:'#d5dce3' }

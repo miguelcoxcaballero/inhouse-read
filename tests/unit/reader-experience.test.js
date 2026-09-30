@@ -273,3 +273,53 @@ describe('reader appearance and compact location', () => {
     expect(control.getAttribute('aria-label')).toBe('Activar modo infantil')
   })
 })
+
+describe('search results', () => {
+  const hits = [
+    { label:'The quiet room', parts:{ pre:'…a book waited beside ', match:'the', post:' plant' }, excerpt:'…a book waited beside the plant', locator:quiet.locator },
+    { label:'', excerpt:'Plain excerpt', locator:beyond.locator }
+  ]
+
+  it('shows where each hit is and marks the match instead of printing an object', async () => {
+    const { experience, reader } = await setup()
+    reader.search = vi.fn(async () => hits)
+    await experience.search('the')
+    const buttons = experience.panel.querySelectorAll('[data-search-results] button')
+    expect(buttons).toHaveLength(2)
+    expect(buttons[0].querySelector('small').textContent).toBe('The quiet room')
+    expect(buttons[0].querySelector('mark').textContent).toBe('the')
+    expect(buttons[0].textContent).toContain('…a book waited beside the plant')
+    expect(buttons[1].querySelector('small')).toBeNull()
+    expect(buttons[1].textContent).toBe('Plain excerpt')
+    expect(experience.panel.textContent).not.toContain('[object Object]')
+  })
+
+  it('clears the on-page marks when the panel closes without a jump, and keeps them after one', async () => {
+    const { experience, reader } = await setup()
+    reader.search = vi.fn(async () => hits)
+    reader.clearSearch = vi.fn()
+    await experience.search('the')
+    experience.panel.querySelector('[data-search-results] button').click()
+    await vi.waitFor(() => expect(reader.goToLocator).toHaveBeenCalled())
+    experience.panel.dispatchEvent(new Event('close'))
+    expect(reader.clearSearch).not.toHaveBeenCalled()
+    expect(experience.panel.querySelectorAll('[data-search-results] button')).toHaveLength(2)
+    experience.panel.dispatchEvent(new Event('close'))
+    expect(reader.clearSearch).toHaveBeenCalledOnce()
+    expect(experience.panel.querySelectorAll('[data-search-results] button')).toHaveLength(0)
+    expect(experience.panel.querySelector('[data-search-status]').textContent).toBe('')
+  })
+
+  it('ends the search when the query is emptied or the book is left', async () => {
+    const { experience, reader } = await setup()
+    reader.search = vi.fn(async () => hits)
+    reader.clearSearch = vi.fn()
+    await experience.search('the')
+    const query = experience.panel.querySelector('[data-search-query]')
+    query.value = ''; query.dispatchEvent(new Event('input'))
+    expect(reader.clearSearch).toHaveBeenCalledOnce()
+    await experience.search('the')
+    experience.reset()
+    expect(reader.clearSearch).toHaveBeenCalledTimes(2)
+  })
+})

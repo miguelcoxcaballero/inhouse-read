@@ -71,6 +71,9 @@ export class ReaderExperience {
     })
     this.panel.addEventListener('close', () => {
       if (this.panel.open) return
+      // Hit marks stay on the page only after jumping to a result; any other close ends the search.
+      if (!this.keepSearchHits) this.endSearch()
+      this.keepSearchHits = false
       for (const id of ['reader-settings','reader-location','reader-audio']) document.getElementById(id).setAttribute('aria-expanded','false')
       this.updateMiniPlayer()
     })
@@ -125,6 +128,7 @@ export class ReaderExperience {
     }
     document.getElementById('reader-more-shortcut').onclick = () => this.show('more')
     this.panel.querySelector('[data-search-form]').onsubmit = event => { event.preventDefault(); this.search(this.panel.querySelector('[data-search-query]').value) }
+    this.panel.querySelector('[data-search-query]').addEventListener('input', event => { if (!event.target.value.trim()) this.endSearch() })
     this.panel.querySelector('[data-save-quote]').onclick = () => this.addQuote()
     this.panel.querySelectorAll('[data-quote-color]').forEach(button => button.onclick = () => {
       this.quoteColor = button.dataset.quoteColor
@@ -181,7 +185,7 @@ export class ReaderExperience {
     for (const quote of this.quotes) this.reader.addQuoteAnnotation(quote)
   }
   reset() {
-    this.cancelNavigation(); this.voice.stop(); this.panel.close(); this.book = null
+    this.cancelNavigation(); this.voice.stop(); this.keepSearchHits = false; this.endSearch(); this.panel.close(); this.book = null
     this.returnButton.hidden = true; this.syncReturnLayout(); this.screen.classList.remove('reader-kids-mode')
     const kids = this.panel.querySelector('[data-kids]')
     kids.setAttribute('aria-pressed','false'); kids.setAttribute('aria-label','Activar modo infantil')
@@ -210,6 +214,7 @@ export class ReaderExperience {
     this.panel.querySelector('[data-close]').focus({preventScroll:true})
   }
   showTab(name) {
+    if (name !== 'search') this.endSearch()
     for (const section of ['appearance','navigation','audio','search','more']) this.panel.querySelector(`#reading-${section}`).hidden = section !== name
     this.panel.querySelector('#reading-about').hidden = name !== 'about'
     const title = {appearance:'Texto',navigation:'Contenido',audio:'Escuchar',search:'Buscar',more:'Más opciones',about:'Documento'}[name]
@@ -379,13 +384,28 @@ export class ReaderExperience {
     list.replaceChildren(); status.textContent = 'Buscando…'
     try {
       const results = await this.reader.search(query)
+      this.searchActive = results.length > 0
       status.textContent = results.length ? `${results.length} resultados` : 'No se encontraron coincidencias.'
       for (const result of results) {
-        const button = document.createElement('button'); button.type = 'button'; button.textContent = `${result.label}${result.excerpt ? ` · ${result.excerpt}` : ''}`
-        button.onclick = () => this.jump({fraction:result.fraction ?? this.location.fraction,locator:result.locator})
+        // Where (chapter/page) above, the excerpt below with the match marked.
+        const button = document.createElement('button'); button.type = 'button'; button.className = 'reading-search-hit'
+        if (result.label) { const where = document.createElement('small'); where.textContent = result.label; button.append(where) }
+        const line = document.createElement('span'), { pre = result.excerpt || '', match = '', post = '' } = result.parts || {}
+        if (match) { const mark = document.createElement('mark'); mark.textContent = match; line.append(pre, mark, post) }
+        else line.textContent = pre
+        button.append(line)
+        button.onclick = () => { this.keepSearchHits = true; this.jump({fraction:result.fraction ?? this.location.fraction,locator:result.locator}) }
         list.append(button)
       }
     } catch { status.textContent = 'No se pudo buscar en este documento.' }
+  }
+  // Clears the on-page hit marks together with the result list they belong to.
+  endSearch() {
+    if (!this.searchActive) return
+    this.searchActive = false; this.keepSearchHits = false
+    this.reader.clearSearch?.()
+    this.panel.querySelector('[data-search-results]').replaceChildren()
+    this.panel.querySelector('[data-search-status]').textContent = ''
   }
   async shareBook() {
     const content = this.book?.content

@@ -57,11 +57,20 @@
 .ihr-plant-catalog__step { display: grid; place-items: center; width: 25px; height: 25px; border: 1.5px solid currentColor; border-radius: 50%; font-size: 15px; flex: none; }
 .ihr-plant-catalog__plants { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; clear: both; }
 .ihr-plant-catalog__plant, .ihr-plant-catalog__pot { display: flex; flex-direction: column; align-items: center; gap: 7px; min-width: 0; padding: 8px 3px; border: 1px solid transparent; border-radius: 0; background: none; position: relative; }
+.ihr-plant-catalog__plant, .ihr-plant-catalog__pot { transition: background-color .15s ease, border-color .15s ease; }
+@media (hover: hover) {
+  .ihr-plant-catalog__plant:not([aria-pressed='true']):hover, .ihr-plant-catalog__pot:not([aria-pressed='true']):hover { border-color: #d6d6d6; background: #fbfbfa; }
+}
 .ihr-plant-catalog__plant[aria-pressed='true'], .ihr-plant-catalog__pot[aria-pressed='true'] { border-color: #111; background: #fafafa; }
 .ihr-plant-catalog__plant[aria-pressed='true']::after, .ihr-plant-catalog__pot[aria-pressed='true']::after { content: ''; position: absolute; right: 5px; top: 5px; width: 10px; height: 5px; border-left: 1.5px solid #111; border-bottom: 1.5px solid #111; transform: rotate(-45deg); }
 .ihr-plant-catalog__thumbnail { display: block; width: 64px; max-width: 100%; height: 80px; }
 .ihr-plant-catalog__thumbnail svg, .ihr-plant-catalog__pot-thumbnail svg { display: block; width: 100%; height: 100%; }
-.ihr-plant-catalog__option-name { width: 100%; font-size: 10px; font-weight: 700; line-height: 1.25; text-align: center; overflow-wrap: anywhere; }
+/* One size for every name in both grids, so they read as one printed row. The
+   size follows the grid width (both grids share it) but never drops below a
+   legible 9px: on narrow phones the longest names wrap at their compound
+   seam (MUSKOT-/BLOMMA, soft hyphens from plant-catalog.js) instead. */
+.ihr-plant-catalog__plants, .ihr-plant-catalog__pots { container-type: inline-size; }
+.ihr-plant-catalog__option-name { width: 100%; font-size: 9px; font-size: clamp(9px, calc((25cqi - var(--name-inset, 14px)) / 9), 10px); font-weight: 700; line-height: 1.25; letter-spacing: 0; text-align: center; -webkit-hyphens: manual; hyphens: manual; overflow-wrap: anywhere; text-wrap: balance; }
 .ihr-plant-catalog__section--pots { margin-top: 24px; padding-top: 22px; border-top: 1px solid #ddd; }
 .ihr-plant-catalog__pots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; clear: both; }
 .ihr-plant-catalog__pot-thumbnail { display: block; width: 60px; max-width: 100%; height: 50px; }
@@ -89,10 +98,9 @@
   .ihr-plant-catalog__caption p { font-size: 12px; }
   .ihr-plant-catalog__choices { padding: 16px 18px 18px; }
   .ihr-plant-catalog__section legend { margin-bottom: 10px; font-size: 15px; }
-  .ihr-plant-catalog__plants, .ihr-plant-catalog__pots { gap: 6px; }
-  .ihr-plant-catalog__plant { padding: 7px 2px; gap: 5px; }
+  .ihr-plant-catalog__plants, .ihr-plant-catalog__pots { gap: 6px 4px; --name-inset: 7px; }
+  .ihr-plant-catalog__plant, .ihr-plant-catalog__pot { padding: 7px 1px; gap: 5px; }
   .ihr-plant-catalog__thumbnail { width: 54px; height: 67px; }
-  .ihr-plant-catalog__option-name { font-size: 9px; }
   .ihr-plant-catalog__section--pots { margin-top: 16px; padding-top: 14px; }
   .ihr-plant-catalog__pot-thumbnail { height: 43px; }
   .ihr-plant-catalog__footer { padding: 12px 18px 14px; }

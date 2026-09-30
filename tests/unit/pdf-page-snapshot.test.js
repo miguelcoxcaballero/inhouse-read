@@ -152,3 +152,21 @@ describe('PDF usable viewport', () => {
     }
   })
 })
+
+describe('PDF search excerpts', () => {
+  it('cuts the context at word boundaries and returns the match separately', async () => {
+    const long = 'Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore quiet room another chapter et dolore magna aliqua ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo'
+    getPage.mockImplementation(async number => ({ ...fakePage(number), getTextContent:async () => ({items:[{str:number === 2 ? long : 'Nothing here.'}]}) }))
+    const reader = new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    const [hit, ...rest] = await reader.search('another')
+    expect(rest).toEqual([])
+    expect(hit).toMatchObject({label:'Página 2',locator:{kind:'pdf-page',value:2},parts:{match:'another'}})
+    expect(hit.parts.pre).toMatch(/^…[A-Za-z]/)
+    expect(long).toContain(`${hit.parts.pre.slice(1)}another`)
+    expect(long.split(' ')).toContain(hit.parts.pre.slice(1).split(' ')[0])
+    expect(long.split(' ')).toContain(hit.parts.post.replace(/…$/,'').trim().split(' ').at(-1))
+    expect(hit.excerpt).toBe(`${hit.parts.pre}${hit.parts.match}${hit.parts.post}`)
+    reader.close?.()
+  })
+})

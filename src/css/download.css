@@ -1,16 +1,20 @@
 .dl-page {
+  --dl-link: var(--accent-read);
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
 
+/* Sigue el tema elegido en la app (o el del sistema). */
+[data-theme="dark"] .dl-page { --dl-link: #8fbf9e; }
+
 .dl-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 20px;
+  padding: max(14px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 14px max(20px, env(safe-area-inset-left));
   background: var(--bg-secondary);
-  box-shadow: var(--shadow-soft);
+  border-bottom: 1px solid var(--border);
 }
 
 .dl-header .logo {
@@ -19,14 +23,20 @@
 }
 
 .dl-header-link {
-  font-size: 0.85rem;
-  color: var(--accent-read);
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  font-size: 0.84rem;
+  color: var(--text-primary);
   text-decoration: none;
   font-weight: 500;
 }
 
 .dl-header-link:hover {
-  text-decoration: underline;
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
 }
 
 .dl-main {
@@ -43,30 +53,34 @@
 }
 
 .dl-icon {
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-medium);
-  margin-bottom: 16px;
+  margin: 0 auto 18px;
+  border-radius: 20px;
+  box-shadow: 0 14px 34px -14px rgba(0, 0, 0, .35), 0 0 0 1px var(--border);
 }
 
 .dl-hero h1 {
   font-family: var(--f-logo);
-  font-size: 1.6rem;
+  font-size: clamp(1.45rem, 5.4vw, 1.75rem);
   font-weight: 600;
-  margin: 0 0 10px;
+  letter-spacing: -.03em;
+  line-height: 1.2;
+  margin: 0 0 12px;
+  text-wrap: balance;
 }
 
 .dl-subtitle {
   color: var(--text-secondary);
-  line-height: 1.5;
+  line-height: 1.55;
   margin: 0 auto;
   max-width: 420px;
+  text-wrap: pretty;
 }
 
 .dl-card {
   background: var(--bg-secondary);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-medium);
-  padding: 24px 20px;
+  border-radius: 18px;
+  box-shadow: 0 18px 44px -24px rgba(0, 0, 0, .28), 0 0 0 1px var(--border);
+  padding: 26px 20px 22px;
   text-align: center;
   margin-bottom: 32px;
 }
@@ -91,13 +105,16 @@
 }
 
 .dl-version-tag {
-  font-family: var(--f-logo);
+  font-family: var(--f-body);
   font-weight: 600;
-  font-size: 0.95rem;
-  padding: 3px 12px;
-  border-radius: var(--r-full);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .01em;
+  padding: 4px 10px;
+  border-radius: 8px;
   background: var(--accent-read-soft);
-  color: var(--accent-read);
+  box-shadow: inset 0 0 0 1px var(--accent-read-border);
+  color: var(--dl-link);
 }
 
 .dl-version-date {
@@ -109,9 +126,9 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  min-height: var(--tap-min);
-  padding: 0 24px;
-  border-radius: var(--r-full);
+  min-height: 50px;
+  padding: 0 26px;
+  border-radius: 12px;
   background: var(--accent-read);
   color: #fff;
   font-weight: 600;
@@ -123,6 +140,13 @@
 
 .dl-button:hover {
   filter: brightness(1.08);
+}
+
+.dl-button:focus-visible,
+.dl-header-link:focus-visible,
+.dl-secondary-link:focus-visible {
+  outline: 2px solid var(--dl-link);
+  outline-offset: 3px;
 }
 
 .dl-button:active {
@@ -138,7 +162,8 @@
 
 .dl-filename {
   color: var(--text-secondary);
-  font-size: 0.78rem;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
   margin: 12px 0 0;
   word-break: break-all;
 }
@@ -147,7 +172,7 @@
   display: inline-block;
   margin-top: 14px;
   font-size: 0.85rem;
-  color: var(--accent-read);
+  color: var(--dl-link);
   text-decoration: none;
 }
 
@@ -157,6 +182,8 @@
 
 .dl-alt, .dl-honest {
   margin-bottom: 28px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
 }
 
 .dl-alt h2, .dl-honest h2 {
@@ -180,7 +207,7 @@
 }
 
 .dl-alt a, .dl-honest a {
-  color: var(--accent-read);
+  color: var(--dl-link);
 }
 
 .dl-footer {

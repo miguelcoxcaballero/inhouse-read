@@ -93,15 +93,22 @@ const readingExperience = new ReaderExperience(reader, { persist:persistBookStat
 
 // ---- Tema (idéntico al patrón de Inhouse Notes: data-theme + persistido) ----
 
+// The browser chrome (PWA/Chrome toolbar) takes the header's surface colour.
+function syncThemeColor(theme) {
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#1c1c1c' : '#ffffff')
+}
+
 function initTheme() {
   const saved = localStorage.getItem('inhouse-read-theme')
   const preferred = saved ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
   document.documentElement.setAttribute('data-theme', preferred)
+  syncThemeColor(preferred)
 }
 
 els.themeToggle.addEventListener('click', () => {
   const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'
   document.documentElement.setAttribute('data-theme', next)
+  syncThemeColor(next)
   localStorage.setItem('inhouse-read-theme', next)
   if (els.driveThemeToggle) els.driveThemeToggle.checked = next === 'dark'
 })
@@ -625,16 +632,27 @@ async function revealPreparedReader() {
 
 async function handleCoverAction(action, book, button) {
   button.disabled = true
-  const label = button.querySelector('span') || button
-  const original = label.textContent
-  const setLabel = text => { label.textContent = text; button.setAttribute('aria-label', text) }
+  // The shelf renders a long and a short (narrow screens) label; keep both in
+  // step, each with its own wording so the short one never truncates.
+  const labels = button.querySelectorAll('span').length ? [...button.querySelectorAll('span')] : [button]
+  const originals = labels.map(label => label.textContent)
+  const originalAria = button.getAttribute('aria-label')
+  const setLabel = (text, short = text) => {
+    labels.forEach(label => { label.textContent = label.classList.contains('ihr-btn__label--short') ? short : text })
+    button.setAttribute('aria-label', text)
+  }
+  const restoreLabel = () => {
+    labels.forEach((label, index) => { label.textContent = originals[index] })
+    if (originalAria) button.setAttribute('aria-label', originalAria)
+    else button.removeAttribute('aria-label')
+  }
   let saved = false
-  setLabel(action === 'offline' ? 'Descargando…' : 'Guardando…')
+  setLabel(action === 'offline' ? 'Descargando…' : 'Guardando…', action === 'offline' ? 'Offline…' : 'Drive…')
   button.setAttribute('aria-busy', 'true')
   try {
     if (action === 'offline') {
       if (book.content) {
-        setLabel('Disponible offline')
+        setLabel('Disponible offline', 'Offline')
         saved = true
         return
       }
@@ -644,7 +662,7 @@ async function handleCoverAction(action, book, button) {
       } else {
         await uploadBookToDrive(book)
       }
-      setLabel('Disponible offline')
+      setLabel('Disponible offline', 'Offline')
       saved = true
     } else if (action === 'drive') {
       if (!hasDriveSession()) await requestDriveAccess()
@@ -653,7 +671,7 @@ async function handleCoverAction(action, book, button) {
       saved = true
     }
   } catch (error) {
-    setLabel(original)
+    restoreLabel()
     await reportDriveConnectionError(error)
   } finally {
     button.disabled = saved
@@ -797,6 +815,7 @@ async function reportDriveConnectionError(error) {
 els.driveThemeToggle.addEventListener('change', () => {
   const theme = els.driveThemeToggle.checked ? 'dark' : 'light'
   document.documentElement.setAttribute('data-theme', theme)
+  syncThemeColor(theme)
   localStorage.setItem('inhouse-read-theme', theme)
 })
 
@@ -919,7 +938,10 @@ els.readerBack.addEventListener('click', async () => {
       stillPage = document.createElement('div')
       stillPage.className = 'ihr-reader-return-page'
       stillPage.setAttribute('aria-hidden','true')
-      stillPage.style.background = getComputedStyle(els.readerScreen).backgroundColor
+      // Paper colour plus the PDF desk tone (a translucent image layer).
+      const screenStyle = getComputedStyle(els.readerScreen)
+      stillPage.style.backgroundColor = screenStyle.backgroundColor
+      stillPage.style.backgroundImage = screenStyle.backgroundImage
       const image = document.createElement('canvas'), bounds = pageSnapshot.displayBounds
       image.width = pageSnapshot.source.width; image.height = pageSnapshot.source.height
       image.getContext('2d').drawImage(pageSnapshot.source,0,0)

@@ -70,6 +70,13 @@ export function plantCatalogIllustration(catalogId, potId = 'muskot', { potOnly 
   return `<svg xmlns="${SVG_NS}" viewBox="${viewBox}" aria-hidden="true" focusable="false" fill="white" stroke="currentColor" stroke-width="${compact ? 1.9 : 1.3}" stroke-linecap="round" stroke-linejoin="round">${potOnly ? '' : `<g fill="none">${plantDrawing(catalogId)}</g>`}<g>${potDrawing(potId,{ compact })}</g></svg>`;
 }
 
+// Soft hyphens at the compound seams of the longest names: on a narrow phone
+// MUSKOTBLOMMA wraps as MUSKOT-/BLOMMA instead of shrinking or splitting at
+// an arbitrary letter.
+const NAME_SEAMS = { SANSEVIERIA:5, CHAMAEDOREA:6, NEPHROLEPIS:6, ZAMIOCULCAS:5, MUSKOTBLOMMA:6 };
+const optionName = name => name.replace(/\S+/g, word =>
+  NAME_SEAMS[word] ? `${word.slice(0, NAME_SEAMS[word])}\u00ad${word.slice(NAME_SEAMS[word])}` : word);
+
 function element(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -152,8 +159,7 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
     button.setAttribute('aria-label',`${plant.name}, ${plant.subtitle}`);
     const thumbnail = element('span','ihr-plant-catalog__thumbnail');
     thumbnail.innerHTML = plantCatalogIllustration(plant.id,plant.defaultPotId,{ compact:true });
-    const name = element('span','ihr-plant-catalog__option-name',plant.name);
-    button.append(thumbnail,name);
+    button.append(thumbnail,element('span','ihr-plant-catalog__option-name',optionName(plant.name)));
     button.addEventListener('click',() => {
       if (busy) return;
       selectedPlant = plant.id;
@@ -167,7 +173,7 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
     button.setAttribute('aria-label',`${pot.name}, ${pot.subtitle}`);
     const thumbnail = element('span','ihr-plant-catalog__pot-thumbnail');
     thumbnail.innerHTML = plantCatalogIllustration(selectedPlant,pot.id,{ potOnly:true,compact:true });
-    button.append(thumbnail,element('span','ihr-plant-catalog__option-name',pot.name));
+    button.append(thumbnail,element('span','ihr-plant-catalog__option-name',optionName(pot.name)));
     button.addEventListener('click',() => {
       if (busy) return;
       selectedPot = pot.id;

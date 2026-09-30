@@ -3,6 +3,7 @@ vi.mock('foliate-js/view.js', () => ({}))
 vi.mock('foliate-js/overlayer.js', () => ({Overlayer:{highlight:vi.fn()}}))
 vi.mock('../../src/js/gestures.js', () => ({attachSwipeNavigation:() => () => {}}))
 import { FoliateReader } from '../../src/js/readers/foliate-reader.js'
+import { Overlayer } from 'foliate-js/overlayer.js'
 
 const rect = (left,top,width,height) => ({left,top,width,height,right:left+width,bottom:top+height})
 let container, view, doc, contexts, rangePrototype
@@ -95,6 +96,19 @@ describe('restored EPUB visible page', () => {
 })
 
 describe('EPUB usable viewport', () => {
+  it('caps the two-page spread to a book measure on wide windows and keeps phones full width', async () => {
+    let width = 1280
+    Object.defineProperties(container, { clientWidth:{ configurable:true, get:() => width }, clientHeight:{ configurable:true, get:() => 780 } })
+    const reader = new FoliateReader()
+    await reader.open(container, new File(['epub'], 'book.epub'))
+    expect(view.renderer.setAttribute).toHaveBeenCalledWith('max-inline-size', '580px')
+    expect(view.renderer.setAttribute).toHaveBeenCalledWith('gap', `${((48 + 16) / 1280 * 100).toFixed(4)}%`)
+    width = 390
+    await reader.applyPreferences({})
+    expect(view.renderer.setAttribute).toHaveBeenLastCalledWith('max-block-size', '1440px')
+    expect(view.renderer.setAttribute).toHaveBeenCalledWith('max-inline-size', '720px')
+    reader.close()
+  })
   it('applies valid compact vertical gutters and real horizontal margins before the first page', async () => {
     const reader = new FoliateReader()
     view.init.mockImplementation(async () => {
@@ -139,5 +153,31 @@ describe('EPUB usable viewport', () => {
       vi.useRealTimers()
     }
     expect(disconnect).toHaveBeenCalledOnce()
+  })
+})
+
+describe('EPUB search', () => {
+  it('flattens foliate excerpts into text plus a separate match and clears hits on request', async () => {
+    view.search = async function * () {
+      yield { progress:.5 }
+      yield { label:'The quiet room', subitems:[{ cfi:'epubcfi(/6/2!/4/2,/1:0,/1:3)', excerpt:{ pre:'…a book waited beside ', match:'the', post:' plant' } }] }
+      yield 'done'
+    }
+    view.clearSearch = vi.fn()
+    const reader = new FoliateReader()
+    await reader.open(container,new File(['epub'],'book.epub'))
+    const results = await reader.search('the')
+    expect(results).toEqual([{ label:'The quiet room', excerpt:'…a book waited beside the plant',
+      parts:{ pre:'…a book waited beside ', match:'the', post:' plant' }, locator:{ kind:'cfi', value:'epubcfi(/6/2!/4/2,/1:0,/1:3)' } }])
+    reader.clearSearch()
+    expect(view.clearSearch).toHaveBeenCalledOnce()
+    reader.close()
+  })
+
+  it('marks search hits with a soft amber fill instead of the red debug outline', () => {
+    const g = Overlayer.outline([{ left:10, top:20, width:30, height:18 }])
+    expect(g.getAttribute('fill')).toBe('#d9a23a')
+    expect(g.getAttribute('stroke')).toBeNull()
+    expect(g.querySelectorAll('rect')).toHaveLength(1)
   })
 })

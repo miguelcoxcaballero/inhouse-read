@@ -38,7 +38,10 @@ export function normalizeReadingPreferences(input = {}) {
 export function readingCSS(preferences) {
   const p = normalizeReadingPreferences(preferences)
   const theme = READING_THEMES[p.theme]
-  return `html { color-scheme:${theme.scheme}; background:${theme.background} !important; }
+  // --theme-bg-color lets foliate repaint its page backdrop when the theme
+  // changes; otherwise it kept the first section's colour (a paper frame
+  // around a night page on first open).
+  return `html { color-scheme:${theme.scheme}; --theme-bg-color:${theme.background}; background:${theme.background} !important; }
     body { background:${theme.background} !important; color:${theme.color} !important; }
     body, p, li, blockquote, div { font-family:${READING_FONTS[p.font]} !important; font-size:${p.fontSize}px !important; font-weight:${p.fontWeight} !important; line-height:${p.lineHeight} !important; text-align:${p.align} !important; }
     p, li, span, a, h1, h2, h3, h4, h5, h6, blockquote, div, section, article, main, table, td, th, em, strong, small, pre, code { color:inherit !important; }

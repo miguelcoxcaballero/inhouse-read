@@ -2,8 +2,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderBookshelf } from '../../src/js/bookshelf.js'
 import { analyzeCoverAppearance } from '../../src/js/cover-appearance.js'
 
+const viewColors = vi.hoisted(() => [])
+
 vi.mock('../../src/js/book-model.js', () => ({
+  getBookRenderer: () => null,
+  planReadingBookPose: () => ({ x: 0, y: 0, scale: 1, angle: 0, pitch: 0 }),
   bookView(host, book, style, dimensions) {
+    viewColors.push(style.color)
     const canvas = document.createElement('canvas')
     canvas.dataset.renderer = 'three-mesh'
     canvas.dataset.coverRatio = String(style.coverRatio ?? 0.66)
@@ -126,5 +131,65 @@ describe('cover matched shelf styling', () => {
     expect(container.querySelector('.ihr-spine').style.getPropertyValue('--ihr-spine-base')).toBe('#3b5268')
     expect(container.querySelector('.ihr-spine canvas').dataset.coverRatio).toBe('0.74')
     expect(onCoverAppearance).toHaveBeenCalledWith(book, expect.objectContaining({ aspectRatio: 0.74 }), expect.stringContaining('drive:cold'))
+  })
+
+  it('analyzes a book imported while the shelf is hidden, so its first visible frame is final', async () => {
+    container = document.createElement('div')
+    document.body.append(container)
+    const appearance = {
+      color: '#e9e4d8', shade: '#cfc8b8', ink: '#2b2622', aspectRatio: 0.7,
+      fontFamily: 'Lora', fontCanvasFamily: 'Lora', source: 'cover'
+    }
+    vi.mocked(analyzeCoverAppearance).mockImplementation(async () => appearance)
+    const onCoverAppearance = vi.fn(async () => {})
+    shelf = renderBookshelf(container, [], {
+      sections: false, waitForCoverAppearance: true,
+      coverSrcFor: () => 'blob:imported', onCoverAppearance
+    })
+    const book = {
+      id: 'local:imported', title: 'Imported', format: 'PDF',
+      cover: new Blob(['cover'], { type: 'image/png' })
+    }
+    // Home is hidden behind the reader: no layout, but the cover is analysed.
+    shelf.update([book])
+    expect(container.querySelector('.ihr-spine')).toBeNull()
+    await vi.waitFor(() => expect(onCoverAppearance).toHaveBeenCalled())
+
+    Object.defineProperty(container, 'clientWidth', { value: 390, configurable: true })
+    shelf.update([book])
+    expect(container.querySelector('.ihr-spine').style.getPropertyValue('--ihr-spine-base')).toBe('#e9e4d8')
+  })
+
+  it('flies a book home in its analysed cloth when the analysis lands just after closing', async () => {
+    container = document.createElement('div')
+    document.body.append(container)
+    const appearance = {
+      color: '#e9e4d8', shade: '#cfc8b8', ink: '#2b2622', aspectRatio: 0.7,
+      fontFamily: 'Lora', fontCanvasFamily: 'Lora', source: 'cover'
+    }
+    let finishAnalysis
+    vi.mocked(analyzeCoverAppearance).mockImplementation(() => new Promise(resolve => { finishAnalysis = resolve }))
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ left: 40, top: 100, right: 74, bottom: 250, width: 34, height: 150, x: 40, y: 100 })
+    const book = {
+      id: 'local:just-read', title: 'Just read', format: 'PDF',
+      cover: new Blob(['cover'], { type: 'image/png' })
+    }
+    try {
+      shelf = renderBookshelf(container, [book], { shelfWidth: 390, sections: false, coverSrcFor: () => 'blob:just-read' })
+      const provisional = container.querySelector('.ihr-spine').style.getPropertyValue('--ihr-spine-base')
+      expect(provisional).not.toBe('#e9e4d8')
+      await vi.waitFor(() => expect(finishAnalysis).toBeTypeOf('function'))
+      viewColors.length = 0
+      const returning = shelf.returnToShelf(book.id, { book })
+      setTimeout(() => finishAnalysis(appearance), 40)
+      expect(await returning).toBe(true)
+      // The flight (and the rebuilt DOM spine) never start from the provisional colour.
+      expect(viewColors.length).toBeGreaterThan(0)
+      expect(new Set(viewColors)).toEqual(new Set(['#e9e4d8']))
+      expect(container.querySelector('.ihr-spine').style.getPropertyValue('--ihr-spine-base')).toBe('#e9e4d8')
+    } finally {
+      rect.mockRestore()
+    }
   })
 })

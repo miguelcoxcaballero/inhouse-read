@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as THREE from 'three';
-import { bindingGeometry, boardGeometry, bookmarkGeometry, sampleBookMotion, fitCoverImage, createBookModel, projectBookPageBounds, planBookPageZoom, planReadingBookPose } from '../../src/js/book-model.js';
+import { bindingGeometry, boardGeometry, bookmarkGeometry, pageBlockGeometry, leafStackGeometry, ribbonSilk, sampleBookMotion, fitCoverImage, createBookModel, projectBookPageBounds, planBookPageZoom, planReadingBookPose } from '../../src/js/book-model.js';
+import { spineLayout } from '../../src/js/spine-surface.js';
 
 describe('whole reading spread framing',() => {
   for (const viewport of [{width:320,height:568},{width:390,height:844},{width:844,height:390},{width:1280,height:800}]) {
@@ -88,19 +89,151 @@ describe('3D reading ribbon', () => {
     }
     shelf.dispose(); lifted.dispose();
   });
-  it('lies above the exposed reading page and withdraws upward without scaling', () => {
-    const open = bookmarkGeometry(132, 200, 40, .8, 17, { open:1 });
-    const removed = bookmarkGeometry(132, 200, 40, .8, 17, { open:1, withdraw:1 });
-    const a = open.getAttribute('position'), b = removed.getAttribute('position');
-    for (let i = 0; i < a.count / 2; i++) expect(a.getZ(i)).toBeGreaterThan(20 - 200 * .0083);
-    for (let i = 0; i < a.count; i++) {
-      expect(b.getY(i) - a.getY(i)).toBeCloseTo(250);
-      expect(b.getX(i)).toBeCloseTo(a.getX(i));
-      expect(b.getZ(i)).toBeCloseTo(a.getZ(i));
+  // Centre of every cross-section (four vertices each), tail to tip.
+  const sections = geometry => {
+    const p = geometry.getAttribute('position'), out = [];
+    for (let i = 0; i < p.count; i += 4) {
+      const c = new THREE.Vector3();
+      for (let k = 0; k < 4; k++) c.add(new THREE.Vector3().fromBufferAttribute(p, i + k));
+      out.push(c.multiplyScalar(.25));
     }
-    open.dispose(); removed.dispose();
+    return out;
+  };
+  const ribbonWidth = (width, height, thickness) => Math.min(width * .09, Math.max(height * .035, Math.min(height * .055, thickness * .42)));
+  it('lies above the exposed reading page, folds over the head and never stands past it', () => {
+    const open = bookmarkGeometry(132, 200, 40, .8, 17, { open:1 }), a = open.getAttribute('position');
+    for (let i = 0; i < a.count / 2; i++) expect(a.getZ(i)).toBeGreaterThan(20 - 200 * .0083);
+    const ys = Array.from({ length:a.count }, (_, i) => a.getY(i));
+    // It runs the full leaf, then goes over the head instead of up into the air.
+    expect(Math.min(...ys)).toBeLessThan(-100 + 200 * .05);
+    expect(Math.max(...ys)).toBeLessThanOrEqual(100 + 200 * .04);
+    // Past the fold the end runs back along the head, behind the page.
+    const tip = sections(open).at(-1);
+    expect(tip.z).toBeLessThan(20 - 200 * .03);
+    open.dispose();
+  });
+  it('is one continuous strip on the page, over the head and while closing', () => {
+    for (const seed of [0, 4242, 91813]) for (const open of [.6, .8, 1]) {
+      const geometry = bookmarkGeometry(264, 400, 80, .45, 16, { open, seed }), c = sections(geometry);
+      // Adjacent cross-sections never jump sideways: no pasted-on tip piece.
+      for (let i = 1; i < c.length; i++) expect(Math.abs(c[i].x - c[i - 1].x)).toBeLessThanOrEqual(ribbonWidth(264, 400, 80) * .1);
+      geometry.dispose();
+    }
+  });
+  it('withdraws along its own path, up the page and over the head, without scaling', () => {
+    let previous = -Infinity;
+    for (const withdraw of [0, .15, .3, .5, .75, 1]) {
+      const geometry = bookmarkGeometry(132, 200, 40, .8, 17, { open:1, withdraw, seed:4242 }), p = geometry.getAttribute('position');
+      const ys = Array.from({ length:p.count }, (_, i) => p.getY(i)), low = Math.min(...ys);
+      expect(Math.max(...ys)).toBeLessThanOrEqual(100 + 200 * .04);
+      expect(low).toBeGreaterThan(previous); previous = low;
+      // The width never changes while it slides.
+      const q = new THREE.Vector3(), r = new THREE.Vector3();
+      for (let i = 0; i < p.count; i += 4) expect(q.fromBufferAttribute(p, i).distanceTo(r.fromBufferAttribute(p, i + 1))).toBeCloseTo(ribbonWidth(132, 200, 40), 4);
+      // Wherever it is over the page, no segment of the sliding strip cuts under the paper.
+      const c = sections(geometry);
+      for (let i = 1; i < c.length; i++) {
+        const mid = c[i].clone().add(c[i - 1]).multiplyScalar(.5);
+        if (mid.y < 100 - 200 * .009) expect(mid.z).toBeGreaterThan(20 - 200 * .0083);
+      }
+      geometry.dispose();
+    }
+    // Fully withdrawn, nothing is left lying on the page.
+    expect(previous).toBeGreaterThan(100 - 200 * .03);
+  });
+  it('keeps an unread ribbon between the leaves instead of over the front board', () => {
+    for (const progress of [0, .001, 1]) {
+      const geometry = bookmarkGeometry(132, 200, 40, progress, 10), p = geometry.getAttribute('position');
+      // Everything below the head lies inside the text block, behind both boards.
+      for (let i = 0; i < p.count; i++) if (p.getY(i) < 100) {
+        expect(p.getZ(i)).toBeLessThan(20 - 200 * .007);
+        expect(p.getZ(i)).toBeGreaterThan(-20 + 200 * .007);
+      }
+      geometry.dispose();
+    }
+  });
+  it('gives each book its own fall, identical for its shelf and lifted copies', () => {
+    const shelf = bookmarkGeometry(132, 200, 40, .6, 14, { seed:12345 }).getAttribute('position');
+    const lifted = bookmarkGeometry(264, 400, 80, .6, 14, { seed:12345 }).getAttribute('position');
+    const other = bookmarkGeometry(132, 200, 40, .6, 14, { seed:67890 }).getAttribute('position');
+    const tip = shelf.count - 4;
+    for (let i = 0; i < shelf.count; i++) expect(lifted.getX(i)).toBeCloseTo(shelf.getX(i) * 2, 4);
+    expect(Math.abs(other.getX(tip) - shelf.getX(tip)) + Math.abs(other.getZ(tip) - shelf.getZ(tip))).toBeGreaterThan(.5);
+    // Whatever the fall, the cut end still stands clear of the head.
+    for (const p of [shelf, other]) expect(p.getY(p.count - 4) - 100).toBeGreaterThan(20);
+  });
+  it('draws a silk per book that stands clear of its cloth, and old gold once finished', () => {
+    const silks = new Set();
+    const rgb = hex => [hex >> 16 & 255, hex >> 8 & 255, hex & 255];
+    const apart = (a, b) => {
+      const x = rgb(new THREE.Color(a).getHex()), y = rgb(new THREE.Color(b).getHex()), d = x.map((v, i) => (v - y[i]) / 255);
+      return Math.sqrt(2 * d[0] ** 2 + 4 * d[1] ** 2 + 3 * d[2] ** 2);
+    };
+    for (const cloth of ['#7a1f2b', '#2c5f3f', '#1f2f52', '#e3d7bd', '#5d6f35', '#5a2a50', '#8a2233', '#111111']) {
+      for (let seed = 1; seed < 60; seed++) {
+        const silk = ribbonSilk(seed * 7919, cloth);
+        expect(ribbonSilk(seed * 7919, cloth)).toBe(silk);
+        // Never a ribbon that disappears against its own cloth.
+        expect(apart(silk, cloth)).toBeGreaterThan(.45);
+        silks.add(silk);
+      }
+    }
+    expect(silks.size).toBeGreaterThan(3);
+    expect(ribbonSilk(5, '#7a1f2b', true)).toBe('#c29a4c');
+  });
+  it('measures ribbon uv from the cut tip so the swallowtail keeps its shape', () => {
+    const geometry = bookmarkGeometry(132, 200, 40, .5, 17), uv = geometry.getAttribute('uv');
+    expect(uv.getY(uv.count - 1)).toBe(0);
+    for (let i = 4; i < uv.count; i += 4) expect(uv.getY(i)).toBeLessThan(uv.getY(i - 4));
+    geometry.dispose();
   });
 })
+
+describe('rounded-and-backed text block', () => {
+  it('winds every face outward and stays inside the case with a concave fore-edge', () => {
+    for (const detail of [false, true]) {
+      const g = pageBlockGeometry(132, 200, 40, { detail }), p = g.getAttribute('position'), n = g.getAttribute('normal');
+      const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), index = g.index.array;
+      for (let i = 0; i < index.length; i += 3) {
+        a.fromBufferAttribute(p, index[i]); b.fromBufferAttribute(p, index[i + 1]); c.fromBufferAttribute(p, index[i + 2]);
+        const face = b.sub(a).cross(c.sub(a));
+        if (face.length() < 1e-9) continue;
+        expect(face.normalize().dot(new THREE.Vector3().fromBufferAttribute(n, index[i]))).toBeGreaterThan(.5);
+      }
+      g.computeBoundingBox();
+      expect(g.boundingBox.min.x).toBeGreaterThan(-66 - 40 * .38);
+      expect(g.boundingBox.max.x).toBeLessThan(66);
+      expect(g.boundingBox.max.y).toBeLessThan(100); expect(g.boundingBox.max.z).toBeLessThan(20 - 200 * .007);
+      expect(g.groups).toEqual([{ start:0, count:index.length, materialIndex:0 }]);
+      g.dispose();
+    }
+  });
+});
+
+describe('leaves turned over with the front board', () => {
+  it('winds every face outward, sits on the board and curls into the gutter', () => {
+    const board = 200 * .007, g = leafStackGeometry(132, 200, 8, { board }), p = g.getAttribute('position'), n = g.getAttribute('normal');
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), index = g.index.array;
+    for (let i = 0; i < index.length; i += 3) {
+      a.fromBufferAttribute(p, index[i]); b.fromBufferAttribute(p, index[i + 1]); c.fromBufferAttribute(p, index[i + 2]);
+      const face = b.sub(a).cross(c.sub(a));
+      if (face.length() < 1e-9) continue;
+      expect(face.normalize().dot(new THREE.Vector3().fromBufferAttribute(n, index[i]))).toBeGreaterThan(.5);
+    }
+    g.computeBoundingBox();
+    // Never inside the board, never past the text block it came from.
+    expect(g.boundingBox.max.z).toBeLessThan(-board / 2);
+    expect(g.boundingBox.min.z).toBeCloseTo(-board / 2 - 200 * .0003 - 8, 4);
+    expect(g.boundingBox.min.x).toBeGreaterThanOrEqual(0); expect(g.boundingBox.max.x).toBeLessThan(132);
+    expect(g.boundingBox.max.y).toBeLessThan(100 - 200 * .009);
+    // The open face dips toward the joint: shallow at the gutter, full depth beyond it.
+    const face = Array.from({ length:p.count }, (_, i) => i).filter(i => n.getZ(i) < -.5);
+    const atGutter = face.filter(i => p.getX(i) === 0).map(i => p.getZ(i));
+    expect(Math.min(...atGutter)).toBeGreaterThan(g.boundingBox.min.z + 8 * .8);
+    expect(g.groups.map(group => group.materialIndex)).toEqual([0, 1]);
+    g.dispose();
+  });
+});
 
 describe('beveled hardcover boards', () => {
   it('fits landscape and portrait covers without cropping or stretching', () => {
@@ -559,7 +692,8 @@ describe('real shelf book materials', () => {
     await expect(shelf.userData.ready).resolves.toBe(true);
     const lifted = createBookModel(book, style, 264, 400, 80, 'blob:shared-cover');
     expect(lifted.userData.coverLoaded).toBe(true);
-    expect(lifted.getObjectByName('front-cover').material[0].map.image.height).toBe(2048);
+    // Lifted copies re-raster above the shelf's 512: 1024 covers a 440 px board at 2x.
+    expect(lifted.getObjectByName('front-cover').material[0].map.image.height).toBe(1024);
     expect(loader).toHaveBeenCalledOnce();
     shelf.userData.dispose();
     const replacement = createBookModel(book, style, 264, 400, 80, 'blob:shared-cover');
@@ -609,5 +743,160 @@ describe('real shelf book materials', () => {
     model.userData.dispose(); retry.userData.dispose();
     expect(vi.getTimerCount()).toBe(0);
     await expect(retry.userData.ready).resolves.toBe(false);
+  });
+
+  it('draws a closed shelf book with a bookmark in at most eight calls', () => {
+    canvasContext();
+    const model = createBookModel({ ...book, progressFraction:.4 }, style, 132, 200, 40, null, { shelf:true });
+    let drawCalls = 0;
+    model.traverseVisible(object => {
+      if (!object.isMesh) return;
+      drawCalls += Array.isArray(object.material)
+        ? object.geometry.groups.filter(group => object.material[group.materialIndex]?.visible).length
+        : Number(object.material.visible);
+    });
+    expect(drawCalls).toBeLessThanOrEqual(8);
+    expect(model.getObjectByName('page-block').material[0].vertexColors).toBe(true);
+    model.userData.dispose();
+  });
+
+  it('reuses the uploaded pixels of shared detail when another book is built', () => {
+    canvasContext();
+    const first = createBookModel({ ...book, progressFraction:.5 }, style, 132, 200, 40, null);
+    const maps = model => [model.getObjectByName('page-block').material[0].map,
+      model.getObjectByName('reading-bookmark').material.alphaMap, model.getObjectByName('back-cover').material.normalMap];
+    const versions = maps(first).map(texture => texture.source.version);
+    const second = createBookModel({ ...book, progressFraction:.5 }, style, 132, 200, 40, null);
+    expect(maps(second).map(texture => texture.source.version)).toEqual(versions);
+    first.userData.dispose(); second.userData.dispose();
+  });
+
+  it('paints a generated or placeholder cover once per book, and none when the image is decoded', async () => {
+    canvasContext();
+    let completeLoad;
+    vi.spyOn(THREE.TextureLoader.prototype, 'load').mockImplementation((_url, ready) => { completeLoad = ready; });
+    const canvases = [], createElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag, ...args) => {
+      const node = createElement(tag, ...args); if (tag === 'canvas') canvases.push(node); return node;
+    });
+    const covers = () => canvases.filter(canvas => canvas.height === 512).length;
+    const generated = createBookModel(book, style, 132, 200, 40, null, { shelf:true });
+    expect(covers()).toBe(1);
+    const pending = createBookModel(book, style, 132, 200, 40, 'blob:paint-once', { shelf:true });
+    expect(covers()).toBe(2);
+    completeLoad(new THREE.Texture({ width:660, height:1000 }));
+    await pending.userData.ready;
+    expect(covers()).toBe(3);
+    // A second copy of the same decoded image draws it straight away.
+    const decoded = createBookModel(book, style, 132, 200, 40, 'blob:paint-once', { shelf:true });
+    expect(covers()).toBe(4);
+    for (const model of [generated, pending, decoded]) model.userData.dispose();
+  });
+
+  it('shows a pasted-down endpaper inside the cloth turn-ins only while the board is open', () => {
+    canvasContext();
+    const model = createBookModel(book, style, 132, 200, 40, null);
+    const endpaper = model.getObjectByName('endpaper'), front = model.getObjectByName('front-cover');
+    expect(endpaper.visible).toBe(false);
+    expect(front.material[2].color.getHexString()).toBe(new THREE.Color(style.color).getHexString());
+    model.userData.setCoverOpen(1); model.updateMatrixWorld(true);
+    expect(endpaper.visible).toBe(true);
+    endpaper.geometry.computeBoundingBox(); front.geometry.computeBoundingBox();
+    const paper = endpaper.geometry.boundingBox.clone().applyMatrix4(endpaper.matrixWorld);
+    const board = front.geometry.boundingBox.clone().applyMatrix4(front.matrixWorld);
+    expect(paper.min.y).toBeGreaterThan(board.min.y); expect(paper.max.y).toBeLessThan(board.max.y);
+    expect(paper.min.x).toBeGreaterThan(board.min.x - 1e-6); expect(paper.max.x).toBeLessThan(board.max.x + 1e-6);
+    model.userData.setCoverOpen(0);
+    expect(endpaper.visible).toBe(false);
+    model.userData.dispose();
+  });
+
+  it('turns the read leaves over with the board of a lifted book only, and rebuilds them with the bookmark', () => {
+    canvasContext();
+    const shelf = createBookModel({ ...book, progressFraction:.4 }, style, 132, 200, 40, null, { shelf:true });
+    expect(shelf.getObjectByName('read-leaves')).toBeUndefined();
+    const model = createBookModel({ ...book, progressFraction:.4 }, style, 132, 200, 40, null);
+    const leaves = model.getObjectByName('read-leaves'), hinge = model.getObjectByName('front-cover-hinge');
+    expect(leaves.parent).toBe(hinge); expect(leaves.visible).toBe(false);
+    model.userData.setCoverOpen(.4); expect(leaves.visible).toBe(true);
+    model.userData.setCoverOpen(0); expect(leaves.visible).toBe(false);
+    // Fully open, even the thickest gathering leaves the saved page uncovered.
+    const thick = createBookModel({ ...book, progressFraction:.9 }, style, 132, 200, 40, null);
+    thick.userData.setCoverOpen(1); thick.updateMatrixWorld(true);
+    const turned = thick.getObjectByName('read-leaves'), paper = thick.getObjectByName('reading-page');
+    const points = turned.geometry.getAttribute('position'), vertex = new THREE.Vector3();
+    let right = -Infinity;
+    for (let i = 0; i < points.count; i++) right = Math.max(right, vertex.fromBufferAttribute(points, i).applyMatrix4(turned.matrixWorld).x);
+    expect(right).toBeLessThan(paper.position.x - paper.geometry.parameters.width / 2);
+    thick.userData.dispose();
+    const depth = () => { leaves.geometry.computeBoundingBox(); return leaves.geometry.boundingBox.max.z - leaves.geometry.boundingBox.min.z; };
+    const before = depth(), geometry = leaves.geometry, release = vi.spyOn(geometry, 'dispose');
+    model.userData.updateBookmark({ ...book, progressFraction:.1 });
+    expect(release).toHaveBeenCalledOnce(); expect(depth()).toBeLessThan(before);
+    const disposals = [leaves.geometry, ...leaves.material, leaves.material[0].map].map(resource => vi.spyOn(resource, 'dispose'));
+    model.userData.dispose(); shelf.userData.dispose();
+    for (const spy of disposals) expect(spy).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the grazing sheen and satin anisotropy for the lifted book, never for shelf copies', () => {
+    canvasContext();
+    const shelfCopy = createBookModel({ ...book, progressFraction:.4 }, style, 132, 200, 40, null, { shelf:true });
+    const lifted = createBookModel({ ...book, progressFraction:.4 }, style, 132, 200, 40, null);
+    const ribbon = model => model.getObjectByName('reading-bookmark').material;
+    expect(shelfCopy.getObjectByName('binding').material.sheen).toBe(0);
+    expect(ribbon(shelfCopy).sheen).toBe(0); expect(ribbon(shelfCopy).anisotropy).toBe(0);
+    expect(lifted.getObjectByName('binding').material.sheen).toBeGreaterThan(0);
+    expect(ribbon(lifted).sheen).toBeGreaterThan(0); expect(ribbon(lifted).anisotropy).toBeGreaterThan(0);
+    shelfCopy.userData.dispose(); lifted.userData.dispose();
+  });
+
+  it('gives the turned leaves and the page margin the paper of the saved page', () => {
+    const context = canvasContext();
+    const model = createBookModel({ ...book, progressFraction:.4 }, style, 132, 200, 40, null);
+    const leaves = model.getObjectByName('read-leaves').material[0], margin = model.getObjectByName('reading-page-paper').material;
+    const cream = leaves.color.clone(), creamMargin = margin.color.clone();
+    const ring = rgb => (_x, _y, w, h) => ({ data:Uint8ClampedArray.from({ length:w * h * 4 }, (_, i) => i % 4 === 3 ? 255 : rgb(i >> 2)[i % 4]) });
+    const page = () => Object.assign(document.createElement('canvas'), { width:400, height:600 });
+    // A full-bleed picture has no paper margin: the default paper stays.
+    context.getImageData.mockImplementation(ring(p => p % 2 ? [20, 30, 200] : [240, 220, 40]));
+    model.userData.setPageSnapshot({ source:page(), width:400, height:600 });
+    expect(leaves.color.equals(cream)).toBe(true); expect(margin.color.equals(creamMargin)).toBe(true);
+    // A white PDF page: the margin is exactly white, the lit leaf is lifted to match it.
+    context.getImageData.mockImplementation(ring(() => [255, 255, 255]));
+    model.userData.setPageSnapshot({ source:page(), width:400, height:600 });
+    expect(margin.color.getHexString()).toBe('ffffff');
+    expect(leaves.color.g).toBeGreaterThan(cream.g); expect(leaves.toneMapped).toBe(false);
+    model.userData.dispose();
+  });
+
+  it('lays out each spine per book, never per colour, with every kind of case in a library', () => {
+    const kinds = new Set();
+    for (let i = 0; i < 40; i++) {
+      const layout = spineLayout({ id:`b${i}`, title:`Libro ${i}` });
+      expect(spineLayout({ id:`b${i}`, title:`Libro ${i}` })).toEqual(layout);
+      kinds.add(layout.kind);
+      for (const [y] of layout.rules) { expect(y).toBeGreaterThan(0); expect(y).toBeLessThan(1024); }
+      expect(layout.span[0]).toBeLessThan(layout.span[1]);
+    }
+    expect([...kinds].sort()).toEqual(['banded', 'panel', 'plain', 'ruled']);
+  });
+
+  it('gives each model its own clone of shared procedural detail and releases only that clone', () => {
+    canvasContext();
+    const first = createBookModel({ ...book, progressFraction:.5 }, style, 132, 200, 40, null);
+    const second = createBookModel({ ...book, progressFraction:.5 }, style, 132, 200, 40, null);
+    const pages = model => model.getObjectByName('page-block').material[0].map;
+    const ribbon = model => model.getObjectByName('reading-bookmark').material.alphaMap;
+    const cloth = model => model.getObjectByName('back-cover').material.normalMap;
+    for (const texture of [pages, ribbon, cloth]) {
+      expect(texture(first)).not.toBe(texture(second));
+      expect(texture(first).source).toBe(texture(second).source);
+    }
+    const kept = [pages, ribbon, cloth].map(texture => vi.spyOn(texture(second), 'dispose'));
+    const released = [pages, ribbon, cloth].map(texture => vi.spyOn(texture(first), 'dispose'));
+    first.userData.dispose();
+    for (const spy of released) expect(spy).toHaveBeenCalledOnce();
+    for (const spy of kept) expect(spy).not.toHaveBeenCalled();
+    second.userData.dispose();
   });
 });

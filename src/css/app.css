@@ -31,7 +31,11 @@
 
 .drive-profile [hidden], .drive-profile[hidden], .drive-connect-btn[hidden], .drive-auth-notice[hidden], .drive-auth-notice [hidden], #theme-toggle[hidden] { display:none; }
 /* Account controls ported from Inhouse Notes index.html, sections 2.3d / 2.6. */
-.drive-connect-btn { display:flex; align-items:center; justify-content:center; min-height:38px; padding:10px 16px; border:0; border-radius:var(--radius-md); background:var(--text-primary); color:var(--bg-secondary); font:500 .875rem var(--f-body); white-space:nowrap; cursor:pointer; transition:background .2s ease; }
+/* Quiet account entry: a hairline button with a person glyph. A solid ink
+   pill competed with the library for attention on every screen. */
+.drive-connect-btn { display:flex; align-items:center; justify-content:center; gap:7px; min-height:36px; margin-left:4px; padding:0 14px 0 11px; border:0; border-radius:10px; background:transparent; color:var(--text-primary); box-shadow:inset 0 0 0 1px var(--border-strong); font:500 .84rem var(--f-body); letter-spacing:-.005em; white-space:nowrap; cursor:pointer; transition:background-color .18s var(--ease), box-shadow .18s var(--ease); }
+.drive-connect-btn svg { width:17px; height:17px; flex:none; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; opacity:.8; }
+.drive-connect-btn:hover { background:color-mix(in srgb, var(--text-primary) 5%, transparent); box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 22%, transparent); }
 .drive-connect-btn:disabled { opacity:.6; cursor:wait; }
 .drive-profile { position:relative; display:flex; align-items:center; }
 .drive-profile-btn {
@@ -59,19 +63,22 @@
 .drive-sync-status { margin:0; color:var(--text-secondary); font-size:.82rem; }
 .drive-sync-status.is-syncing::before { content:''; display:inline-block; width:8px; height:8px; margin-right:7px; border-radius:50%; background:var(--accent-read); animation:drive-sync-pulse 1s ease-in-out infinite alternate; }
 .drive-profile-actions { display:flex; gap:8px; }
-.drive-menu-btn { flex:1; min-height:40px; padding:10px 12px; border:0; border-radius:var(--radius-md); color:var(--text-primary); background:rgba(0,0,0,.05); font:500 .875rem var(--f-body); cursor:pointer; transition:background .2s ease; }
-.drive-menu-btn:hover { background:rgba(0,0,0,.1); }
-[data-theme="dark"] .drive-menu-btn { background:rgba(255,255,255,.08); }
+/* Tints derive from the ink, so hover works the same in both themes. */
+.drive-menu-btn { flex:1; min-height:40px; padding:10px 12px; border:0; border-radius:var(--radius-md); color:var(--text-primary); background:color-mix(in srgb, currentColor 6%, transparent); font:500 .875rem var(--f-body); cursor:pointer; transition:background .2s ease; }
+@media (hover:hover) { .drive-menu-btn:hover:not(:disabled) { background:color-mix(in srgb, currentColor 11%, transparent); } }
+.drive-menu-btn:active:not(:disabled) { background:color-mix(in srgb, currentColor 14%, transparent); }
 .drive-menu-btn:disabled { opacity:.6; cursor:wait; }
 .drive-theme-row { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:40px; font-size:.85rem; cursor:pointer; }
-.drive-theme-row input { appearance:none; flex:none; width:38px; height:20px; border-radius:999px; background:rgba(0,0,0,.15); position:relative; transition:background .2s ease; cursor:pointer; }
-.drive-theme-row input::after { content:''; position:absolute; width:14px; height:14px; border-radius:50%; background:white; top:3px; left:3px; box-shadow:0 2px 4px rgba(0,0,0,.2); transition:transform .2s ease; }
-.drive-theme-row input:checked { background:var(--text-primary); }
-.drive-theme-row input:checked::after { transform:translateX(18px); }
-[data-theme="dark"] .drive-theme-row input:checked::after { background:#1f1f1f; }
+.drive-theme-row input { appearance:none; flex:none; width:38px; height:22px; margin:0; border-radius:999px; background:color-mix(in srgb, currentColor 16%, transparent); position:relative; transition:background .2s ease; cursor:pointer; }
+.drive-theme-row input::after { content:''; position:absolute; width:16px; height:16px; border-radius:50%; background:white; top:3px; left:3px; box-shadow:0 1px 2px rgba(0,0,0,.3); transition:transform .2s ease; }
+/* Same switch as the spine editor and reader panels: green when on. */
+.drive-theme-row input:checked { background:var(--accent-read); }
+.drive-theme-row input:checked::after { transform:translateX(16px); }
 .drive-app-version { text-align:center; color:var(--muted); font-size:11px; padding-top:4px; }
-.drive-auth-notice { display:flex; align-items:center; gap:10px; flex:none; padding:10px 16px; border-bottom:1px solid var(--border); background:var(--bg-secondary); font-size:.85rem; }
-.drive-auth-notice > span { flex:1; }
+/* Notice strip aligned with the library column, marked by a copper dot. */
+.drive-auth-notice { display:flex; align-items:center; gap:10px; flex:none; padding:8px max(16px, calc((100vw - 860px) / 2)); border-bottom:1px solid var(--border); background:var(--bg-secondary); font-size:.85rem; line-height:1.45; }
+.drive-auth-notice > span { flex:1; min-width:0; }
+.drive-auth-notice > span::before { content:''; display:inline-block; width:7px; height:7px; margin:0 10px 1px 0; border-radius:50%; background:var(--copper); vertical-align:middle; }
 .drive-auth-notice .drive-menu-btn { flex:none; }
 .drive-auth-notice .icon-btn { flex:none; font-size:1.4rem; }
 .drive-connect-btn:focus-visible, .drive-menu-btn:focus-visible, .drive-profile-btn:focus-visible, .drive-theme-row input:focus-visible { outline:2px solid var(--accent-read); outline-offset:3px; }
@@ -81,7 +88,9 @@
   .app-header .logo-mark { width:22px; }
   .header-actions { margin-left:auto; gap:0; }
   .header-actions .icon-btn { width:36px; }
-  .drive-connect-btn { padding:9px 11px; font-size:.8rem; }
+  .drive-connect-btn { min-height:34px; margin-left:2px; padding:0 11px; font-size:.8rem; }
+  /* The header must stay on one line on phones: the glyph goes first. */
+  .drive-connect-btn svg { display:none; }
   .drive-profile-btn { width:32px; height:32px; }
   .drive-auth-notice { flex-wrap:wrap; }
 }
@@ -96,18 +105,24 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  color: var(--text-primary);
   transition: background-color 0.15s var(--ease);
 }
 
-.icon-btn:hover, .icon-btn:active {
-  background: var(--surface-hover);
+/* The tint derives from the button's own ink, so it reads on any surface
+   (app header, reading paper in any reading theme, dialogs). A fixed theme
+   colour painted a dark square behind the back arrow on light paper. */
+.icon-btn:active { background: color-mix(in srgb, currentColor 10%, transparent); }
+@media (hover: hover) {
+  .icon-btn:hover { background: color-mix(in srgb, currentColor 7%, transparent); }
 }
 
 .icon-btn svg {
   width: var(--icon-size, 20px);
   height: var(--icon-size, 20px);
-  stroke: var(--text-primary);
+  stroke: currentColor;
 }
+.app-header .header-actions .icon-btn svg { stroke-width: 1.75; }
 
 .icon-btn:focus-visible { outline:2px solid var(--accent-read); outline-offset:2px; }
 .icon-btn svg, .ihr-icon { flex-shrink:0; }
@@ -280,7 +295,9 @@ body.is-opening-reader .app-header {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(12, 11, 10, 0.48);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
 }
 
 .drive-modal[hidden] {
@@ -292,10 +309,10 @@ body.is-opening-reader .app-header {
   max-width: 480px;
   max-height: 80dvh;
   background: var(--bg-secondary);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  box-shadow: var(--shadow-medium);
-  padding: 16px;
-  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -20px 60px -24px rgba(0, 0, 0, .45), 0 0 0 1px var(--border);
+  padding: 18px 18px;
+  padding-bottom: max(18px, env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -411,12 +428,15 @@ body.is-opening-reader .app-header {
 .drive-item {
   min-height: var(--tap-min);
   text-align: left;
-  padding: 10px 12px;
+  padding: 11px 12px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 10px;
   background: transparent;
+  color: var(--text-primary);
+  font: 500 .9rem/1.35 var(--f-body);
+  overflow-wrap: anywhere;
 }
 
-.drive-item:hover, .drive-item:active {
-  background: var(--surface-hover);
-}
+.drive-item:active { background: color-mix(in srgb, var(--text-primary) 8%, transparent); }
+@media (hover: hover) { .drive-item:hover { background: color-mix(in srgb, var(--text-primary) 5%, transparent); } }
+.drive-item:focus-visible { outline: 2px solid var(--accent-read); outline-offset: 2px; }

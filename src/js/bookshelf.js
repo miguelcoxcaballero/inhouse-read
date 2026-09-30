@@ -132,7 +132,9 @@ const ICONS = Object.freeze({
   download: ['M12 3v12', 'm7 10 5 5 5-5', 'M4 16v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4'],
   check: ['m5 12 4 4L19 6'],
   close: ['m6 6 12 12', 'M18 6 6 18'],
-  pipette: ['m19 5-2-2a2.12 2.12 0 0 0-3 0l-1 1 5 5 1-1a2.12 2.12 0 0 0 0-3Z', 'm14 5 5 5', 'm3 21 3-1 11-11-3-3L3 17l-1 3Z']
+  pipette: ['m19 5-2-2a2.12 2.12 0 0 0-3 0l-1 1 5 5 1-1a2.12 2.12 0 0 0 0-3Z', 'm14 5 5 5', 'm3 21 3-1 11-11-3-3L3 17l-1 3Z'],
+  // Pincel: el editor cambia el aspecto del lomo (color, letras, acabados).
+  brush: ['m9.06 11.9 8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08', 'M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02Z']
 });
 export const DEFAULT_TEXTS = Object.freeze({
   shelfLabel: 'Tu estantería',
@@ -484,14 +486,21 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (cached?.key === key && cached.complete !== false) return Promise.resolve(cached.appearance);
     if (state.appearanceTasks.has(key)) return state.appearanceTasks.get(key);
 
+    // A cover upgraded mid-analysis (PDF imports) must not let the older,
+    // slower result overwrite the entry for the record now on the shelf.
+    const isStale = () => {
+      const current = state.books.find(candidate => String(candidate?.id ?? candidate?.path ?? candidate?.title ?? 'book') === id);
+      return Boolean(current) && coverKeyFor(current) !== key;
+    };
     const task = (async () => {
       const url = knownUrl || await resolveCover(book);
       if (!url) {
-      state.coverAppearances.set(id, { key, appearance: null, complete: true });
+        if (!isStale()) state.coverAppearances.set(id, { key, appearance: null, complete: true });
         return null;
       }
       const appearance = await analyzeCoverAppearance(url, book?.title ?? '');
       if (state.destroyed) return null;
+      if (isStale()) return appearance;
       state.coverAppearances.set(id, { key, appearance, complete: true });
       if (!appearance) return null;
       try {
@@ -1363,8 +1372,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // A refresh can complete while home is hidden behind the reader. Keep the
     // currently painted DOM in that case: the open book still needs its shelf
     // spine as the target of the return animation. ResizeObserver re-renders
-    // the updated records when the shelf becomes visible again.
-    if (width <= 0 && state.books.length > 0) return;
+    // the updated records when the shelf becomes visible again. Cover analysis
+    // needs no layout: start it now so a book imported straight into the
+    // reader flies home in its final cloth instead of changing after landing.
+    if (width <= 0 && state.books.length > 0) {
+      for (const book of state.books) resolveCoverAppearance(book);
+      return;
+    }
     if (state.books.length === 0 && opts.sections) {
       state.shelfScene?.dispose();
       state.shelfScene = null;
@@ -1417,17 +1431,21 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const heading = el('div', { class: 'ihr-library-heading' }, [
       el('h1', { text: 'Tu biblioteca' }),
       el('div', { class:'ihr-library-heading__tools' }, [
-        el('p', { 'aria-live': 'polite', text: `${state.books.length} ${state.books.length === 1 ? 'libro' : 'libros'}` }),
+        // An empty shelf already says so below; "0 libros" would only repeat it.
+        el('p', { 'aria-live': 'polite', text: state.books.length ? `${state.books.length} ${state.books.length === 1 ? 'libro' : 'libros'}` : '' }),
         buildViewControls()
       ])
     ]);
     fragment.append(heading);
-    if (!state.books.length) fragment.append(el('div', { class:'ihr-empty ihr-empty--library' }, [
-      el('h2', { class:'ihr-empty__title', text:opts.texts.emptyTitle }),
-      opts.texts.emptyText ? el('p', { class:'ihr-empty__body', text:opts.texts.emptyText }) : null,
-      onPickLocal ? el('button', { type:'button', class:'ihr-btn ihr-btn--primary ihr-empty__action',
-        text:opts.texts.emptyAction, onClick:() => onPickLocal() }) : null
-    ]));
+    if (!state.books.length) {
+      const body = opts.texts.emptyText ?? opts.texts.emptyBody;
+      fragment.append(el('div', { class:'ihr-empty ihr-empty--library' }, [
+        el('h2', { class:'ihr-empty__title', text:opts.texts.emptyTitle }),
+        body ? el('p', { class:'ihr-empty__body', text:body }) : null,
+        onPickLocal ? el('button', { type:'button', class:'ihr-btn ihr-btn--primary ihr-empty__action',
+          onClick:() => onPickLocal() }, [svgIcon(['M12 5v14', 'M5 12h14'], { className:'ihr-icon' }), el('span', { text:opts.texts.emptyAction })]) : null
+      ]));
+    }
     const stage = el('div', { class:'ihr-shelf-stage' });
     for (const type of ['selectstart', 'contextmenu', 'dragstart'])
       stage.addEventListener(type, event => event.preventDefault(), { capture:true });
@@ -1805,12 +1823,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         const buttons = [...flyout.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled])')]
           .filter(control => !control.closest('[hidden]'));
         const first = buttons[0], last = buttons.at(-1);
-        if (event.shiftKey && (document.activeElement === first || document.activeElement === flyout)) { event.preventDefault(); last?.focus(); }
+        const container = document.activeElement === flyout || document.activeElement === editorPanel;
+        if (event.shiftKey && (document.activeElement === first || container)) { event.preventDefault(); last?.focus(); }
         else if (!event.shiftKey && (document.activeElement === last || document.activeElement === flyout)) { event.preventDefault(); first?.focus(); }
       }
       if (event.key === 'Escape') {
         event.stopPropagation();
-        if (session.colorPicking) finishColorPick(false);
+        // Also dismisses the "no se pudo leer esta portada" notice.
+        if (session.colorPicking || !colorPickLayer.hidden) finishColorPick(false);
         else if (!editorPanel.hidden) closeEditor();
         else if (session.phase !== 'reading') close();
       }
@@ -1827,10 +1847,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const alreadySaved = book.sourceType === 'drive' ? isDownloaded : Boolean(book.driveFileId);
     const actionLabel = book.sourceType === 'drive' ? (isDownloaded ? 'Disponible offline' : 'Descargar') : (book.driveFileId ? 'En Drive' : 'Guardar en Drive');
     const actionTitle = book.sourceType === 'drive' ? (isDownloaded ? 'Disponible sin conexión' : 'Descargar para usar sin conexión') : actionLabel;
+    // En móvil estrecho la etiqueta larga partía el botón en dos líneas.
+    const actionShort = book.sourceType === 'drive' ? (isDownloaded ? 'Offline' : 'Descargar') : (book.driveFileId ? 'En Drive' : 'Drive');
     const actionButtons = [
       el('button', { type: 'button', class: 'ihr-btn ihr-btn--primary', disabled:true, onClick: () => expandCover() }, [svgIcon(ICONS.read, { className:'ihr-icon' }), el('span', { text: opts.texts.openAction })]),
-      el('button', { type: 'button', class: 'ihr-btn', title:actionTitle, 'aria-label':actionTitle, disabled:!options.onBookAction || alreadySaved, onClick: event => options.onBookAction?.(book.sourceType === 'drive' ? 'offline' : 'drive', book, event.currentTarget) }, [svgIcon(alreadySaved ? ICONS.check : book.sourceType === 'drive' ? ICONS.download : ICONS.drive, { className:'ihr-icon' }), el('span', { text:actionLabel })]),
-      el('button', { type: 'button', class: 'ihr-btn ihr-flyout__edit-button', disabled:true, 'aria-expanded': 'false', onClick: () => editorPanel.hidden ? openEditor() : closeEditor() }, [el('span', { text:'Editar' })])
+      el('button', { type: 'button', class: 'ihr-btn ihr-btn--quiet', title:actionTitle, 'aria-label':actionTitle, disabled:!options.onBookAction || alreadySaved, onClick: event => options.onBookAction?.(book.sourceType === 'drive' ? 'offline' : 'drive', book, event.currentTarget) }, [svgIcon(alreadySaved ? ICONS.check : book.sourceType === 'drive' ? ICONS.download : ICONS.drive, { className:'ihr-icon' }), el('span', { class:'ihr-btn__label', text:actionLabel }), el('span', { class:'ihr-btn__label ihr-btn__label--short', 'aria-hidden':'true', text:actionShort })]),
+      el('button', { type: 'button', class: 'ihr-btn ihr-btn--quiet ihr-flyout__edit-button', disabled:true, 'aria-expanded': 'false', onClick: () => editorPanel.hidden ? openEditor() : closeEditor() }, [svgIcon(ICONS.brush, { className:'ihr-icon' }), el('span', { text:'Editar' })])
     ];
 
     const appearanceId = String(book.id ?? book.path ?? book.title ?? 'book');
@@ -1850,8 +1872,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     let spinePreviewFrame = 0;
     let appearanceDirty = false;
     const editorPanel = el('section', {
-      class: 'ihr-spine-editor', hidden: true, role: 'region', 'aria-label': 'Editar el lomo'
+      class: 'ihr-spine-editor', hidden: true, role: 'region', 'aria-label': 'Editar el lomo', tabindex: '-1',
+      style: `--ihr-ed-cover:${coverColor}`
     });
+    // The subtitle repeats the spine text in its chosen face: a legible
+    // specimen of the font, since the 3D spine renders it quite small.
+    const editorSubtitle = el('p', { class: 'ihr-spine-editor__subtitle', 'aria-hidden': 'true' });
     const editorPreviewTitle = el('span', {
       class: 'ihr-spine-editor__preview-title',
       text: book.spineTitleOverride || book.title || 'Sin título'
@@ -1874,7 +1900,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     ]);
     function refreshEditorPreview() {
       updateBookStyleVars(editorPreview, item.style);
+      updateBookStyleVars(editorPanel, item.style);
       editorPreviewTitle.textContent = book.spineTitleOverride || book.title || 'Sin título';
+      editorSubtitle.textContent = editorPreviewTitle.textContent;
       book.author = normalizeBookAuthor(book.author)
       editorPreviewAuthor.textContent = book.author;
       editorPreviewAuthor.hidden = !book.author;
@@ -1891,6 +1919,17 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       angle: 90,
       pitch: 0
     };
+    // Wide screens float the tray under the spine: grow the preview into the
+    // clear band above it so the cloth and foil read while editing.
+    function fitEditorPose() {
+      if (landscape || vw < 760) return;
+      const top = 28, bottom = editorPanel.getBoundingClientRect().top - 22;
+      // The bookmark ribbon rises about 8 % above the head of the spine.
+      const scale = Math.min(.92, Math.max(.58, (bottom - top) / (coverH * 1.08)));
+      if (!Number.isFinite(scale)) return;
+      editorPose.scale = scale;
+      editorPose.y = bottom - coverH * scale / 2 - centerY;
+    }
     function saveCustomizationNow() {
       if (customizationSaveTimer) clearTimeout(customizationSaveTimer);
       customizationSaveTimer = 0;
@@ -1959,11 +1998,15 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       coverTarget.hidden = true;
       actionButtons[2].setAttribute('aria-expanded', 'true');
       refreshEditorPreview();
+      fitEditorPose();
       if (view) view.animate([
         { transform: { x: 0, y: 0, scale: 1, angle: 0, pitch: 0 } },
         { transform: editorPose }
       ], { duration: prefersReducedMotion() ? 1 : 230 });
-      fontSelect.focus({ preventScroll: true });
+      // Focus the sheet itself: keyboard users start at its top without a
+      // focus ring landing on an arbitrary control.
+      editorPanel.scrollTop = 0;
+      editorPanel.focus({ preventScroll: true });
     }
     function closeEditor({ commit = true, restoreFocus = true } = {}) {
       if (editorPanel.hidden) return;
@@ -2094,6 +2137,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       meta.classList.add('is-editing');
       actionButtons[2].setAttribute('aria-expanded', 'true');
       refreshEditorPreview();
+      fitEditorPose();
       if (wasPicking && session.phase === 'ready') {
         const motion = view
           ? view.animate([
@@ -2153,39 +2197,51 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         updateCustomization({ spineFontFamily: font.family });
       }
     });
-    for (const font of SPINE_FONTS) fontSelect.append(el('option', { value: font.family, text: font.label }));
+    // Each face is listed in its own typeface (desktop pickers honour it).
+    for (const font of SPINE_FONTS) fontSelect.append(el('option', {
+      value: font.family, text: font.label,
+      style: `font-family:"${font.family}", ${font.fallback};font-weight:${font.weight}`
+    }));
     fontSelect.value = book.spineFontFamily || style.fontFamily || SPINE_FONTS[0].family;
+    // The filled part of the track follows the value (CSS reads --ihr-range-fill).
+    const syncRange = input => input.style.setProperty('--ihr-range-fill',
+      `${(Number(input.value) - Number(input.min)) / (Number(input.max) - Number(input.min)) * 100}%`);
     const fontSizeInput = el('input', {
-      type: 'range', min: '8', max: '48', step: '1',
+      type: 'range', min: '8', max: '48', step: '1', class: 'ihr-spine-editor__slider',
       value: String(Math.max(8, Math.min(48, Number(book.spineFontSize) || Number(style.spineFontSize) || 10))),
       'aria-label': 'Tamaño del título del lomo',
       onInput: event => {
         const size = Number(event.currentTarget.value);
         sizeOutput.textContent = `${size} px`;
+        syncRange(event.currentTarget);
         updateCustomization({ spineFontSize: size });
       }
     });
     const sizeOutput = el('output', { class: 'ihr-spine-editor__size', text: `${fontSizeInput.value} px` });
     const authorSizeInput = el('input', {
-      type: 'range', min: '6', max: '36', step: '1',
+      type: 'range', min: '6', max: '36', step: '1', class: 'ihr-spine-editor__slider',
       value: String(Math.max(6, Math.min(36, Number(book.spineAuthorFontSize) || Number(style.spineAuthorFontSize) || 12))),
       'aria-label': 'Tamaño del autor del lomo',
       onInput: event => {
         const size = Number(event.currentTarget.value);
         authorSizeOutput.textContent = `${size} px`;
+        syncRange(event.currentTarget);
         updateCustomization({ spineAuthorFontSize: size });
       }
     });
     const authorSizeOutput = el('output', { class: 'ihr-spine-editor__size', text: `${authorSizeInput.value} px` });
+    syncRange(fontSizeInput);
+    syncRange(authorSizeInput);
     const titleInput = el('input', {
       type: 'text', maxlength: '120', value: book.spineTitleOverride ?? '',
-      placeholder: book.title || 'Título del libro',
-      'aria-label': 'Texto del lomo',
+      placeholder: book.title || 'Título del libro', class: 'ihr-spine-editor__input',
+      'aria-label': 'Texto del lomo', enterkeyhint: 'done',
       onInput: event => updateCustomization({ spineTitleOverride: event.currentTarget.value })
     });
     const authorInput = el('input', {
       type: 'text', maxlength: '120', value: normalizeBookAuthor(book.author),
-      placeholder: 'Autor', 'aria-label': 'Autor del libro', autocomplete: 'name',
+      placeholder: 'Sin autor', 'aria-label': 'Autor del libro', autocomplete: 'name', class: 'ihr-spine-editor__input',
+      enterkeyhint: 'done',
       onInput: event => updateCustomization({ author: normalizeBookAuthor(event.currentTarget.value) })
     });
     function visibleViewport() {
@@ -2212,11 +2268,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (editorPanel.hidden || document.activeElement !== titleInput) return;
       const panelRect = editorPanel.getBoundingClientRect();
       const fieldRect = titleInput.getBoundingClientRect();
+      // The sticky header covers the top of the scrollport.
+      const top = Math.max(panelRect.top, editorHeader.getBoundingClientRect().bottom);
       const margin = 14;
       if (fieldRect.bottom > panelRect.bottom - margin) {
         editorPanel.scrollTop += fieldRect.bottom - panelRect.bottom + margin;
-      } else if (fieldRect.top < panelRect.top + margin) {
-        editorPanel.scrollTop -= panelRect.top + margin - fieldRect.top;
+      } else if (fieldRect.top < top + margin) {
+        editorPanel.scrollTop -= top + margin - fieldRect.top;
       }
     }
     session.handleViewportResize = () => {
@@ -2233,8 +2291,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (event.target === titleInput || event.target === authorInput) requestAnimationFrame(keepTitleVisible);
     });
     function updateColorSelection() {
-      colorButtons.forEach(button => {
-        const selected = spineFinish(book.spineFinish) === 'matte' && button.dataset.color === selectedColor;
+      const cloth = spineFinish(book.spineFinish) === 'matte';
+      // With no saved override the spine follows the cover: that is the first sample.
+      const followsCover = !book.spineColorOverride;
+      colorButtons.forEach((button, index) => {
+        const selected = cloth && (followsCover ? index === 0 : button.dataset.color === selectedColor);
         button.setAttribute('aria-pressed', String(selected));
         button.classList.toggle('is-selected', selected);
       });
@@ -2246,8 +2307,23 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       spineSurfaceFinish.value = surfaceFinish(book.spineSurfaceFinish, 'matte');
       inkPicker.value = item.style.ink;
       engravedInput.checked = book.spineEngraved === true;
-      pickerInput.parentElement?.classList.toggle('is-selected', !suggestedColors.includes(selectedColor));
+      const customSelected = cloth && !followsCover && !suggestedColors.includes(selectedColor);
+      pickerInput.parentElement?.classList.toggle('is-selected', customSelected);
+      // A chosen custom colour fills its chip, so the choice stays visible.
+      if (customSelected) pickerInput.parentElement?.style.setProperty('--ihr-swatch-color', selectedColor);
+      else pickerInput.parentElement?.style.removeProperty('--ihr-swatch-color');
       pipetteButton.style.setProperty('--ihr-pipette-color', selectedColor);
+      const font = SPINE_FONTS.find(candidate => candidate.family === fontSelect.value) || SPINE_FONTS[0];
+      fontSelect.style.fontFamily = `"${font.family}", ${font.fallback}`;
+      fontSelect.style.fontWeight = String(font.weight);
+      // Samples paint the real cloth and ink, even while a foil is chosen.
+      editorPanel.style.setProperty('--ihr-ed-cloth', followsCover ? suggestedColors[0] : selectedColor);
+      editorPanel.style.setProperty('--ihr-ed-ink', /^#[0-9a-f]{6}$/i.test(book.spineTextColor || '')
+        ? book.spineTextColor : spineColorStyle(item.style.color).ink);
+      for (const { select, picker, samples } of finishPickers) {
+        picker.dataset.value = select.value;
+        for (const sample of samples) sample.classList.toggle('is-active', sample.dataset.value === select.value);
+      }
     }
     function selectSpineColor(color) {
       selectedColor = spineColorStyle(color).color;
@@ -2266,84 +2342,152 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       colorButtons.push(button);
     });
     colorControls.append(
-      el('span', { class: 'ihr-flyout__color-label', text: 'Lomo' }),
       el('div', { class: 'ihr-flyout__swatches' }, colorButtons),
+      el('span', { class: 'ihr-flyout__colors-rule', 'aria-hidden': 'true' }),
       pipetteButton,
       el('label', { class: 'ihr-flyout__custom-color', title: 'Elegir otro color' }, [
         pickerInput,
         el('span', { class: 'ihr-flyout__custom-mark', 'aria-hidden': 'true', text: '+' })
       ])
     );
-    function finishSelect(label, field) {
-      const select = el('select', { class:'ihr-spine-editor__finish', 'aria-label':label,
-        onChange:event => updateCustomization({ [field]:event.currentTarget.value }) });
-      for (const [value,text] of [['matte','Color'],['gold','Dorado'],['silver','Plata']]) select.append(el('option',{value,text}));
-      select.value = spineFinish(book[field]);
-      return select;
+    // The font select stays a plain native select; its wrapper draws the chevron.
+    const selectWrap = select => el('span', { class:'ihr-spine-editor__select-wrap' }, [select]);
+    // Finishes are chosen from material samples, like a binder's swatch card.
+    // The native <select> is still the real control (Tab, arrow keys, screen
+    // readers, TalkBack) laid transparently over the samples; the samples
+    // themselves only answer the pointer.
+    const finishPickers = [];
+    function materialPicker(select, part, choices) {
+      const samples = choices.map(([value, text]) => el('span', {
+        class:'ihr-spine-editor__material', 'data-value':value, title:text,
+        onClick:() => {
+          if (select.value === value) return;
+          select.value = value;
+          select.dispatchEvent(new Event('change', { bubbles:true }));
+        }
+      }, [el('span', { class:'ihr-spine-editor__specimen' }), el('span', { class:'ihr-spine-editor__material-name', text })]));
+      const picker = el('span', { class:'ihr-spine-editor__materials', 'data-part':part }, [
+        select, el('span', { class:'ihr-spine-editor__materials-track', 'aria-hidden':'true' }, samples)
+      ]);
+      finishPickers.push({ select, picker, samples });
+      return picker;
     }
-    const bindingFinish = finishSelect('Acabado del lomo', 'spineFinish');
-    colorControls.append(bindingFinish);
-    function surfaceFinishSelect(label, field, fallback) {
+    const FOIL_CHOICES = [['gold','Oro'],['silver','Plata']];
+    const SURFACE_CHOICES = [['matte','Mate'],['satin','Satinado'],['glossy','Brillante']];
+    function finishSelect(label, field) {
+      const select = el('select', { class:'ihr-spine-editor__select ihr-spine-editor__finish', 'aria-label':label,
+        onChange:event => updateCustomization({ [field]:event.currentTarget.value }) });
+      const choices = [['matte', field === 'spineTextFinish' ? 'Tinta' : 'Tela'], ...FOIL_CHOICES];
+      for (const [value,text] of choices) select.append(el('option',{value,text}));
+      select.value = spineFinish(book[field]);
+      return { select, picker:materialPicker(select, field === 'spineTextFinish' ? 'ink' : 'binding', choices) };
+    }
+    const { select:bindingFinish, picker:bindingPicker } = finishSelect('Acabado del lomo', 'spineFinish');
+    function surfaceFinishSelect(label, field, fallback, part) {
       const select = el('select', {
         class:'ihr-spine-editor__select ihr-spine-editor__finish',
         'aria-label':label,
         onChange:event => updateCustomization({ [field]:surfaceFinish(event.currentTarget.value, fallback) })
       });
-      for (const [value,text] of [['glossy','Brillante'],['satin','Satinado'],['matte','Mate']]) {
-        select.append(el('option',{value,text}));
-      }
+      for (const [value,text] of SURFACE_CHOICES) select.append(el('option',{value,text}));
       select.value = surfaceFinish(book[field], fallback);
-      return select;
+      return { select, picker:materialPicker(select, part, SURFACE_CHOICES) };
     }
-    const coverSurfaceFinish = surfaceFinishSelect('Brillo de la portada', 'coverFinish', 'satin');
-    const pageEdgeSurfaceFinish = surfaceFinishSelect('Brillo del canto', 'pageEdgeFinish', 'satin');
-    const spineSurfaceFinish = surfaceFinishSelect('Brillo del lomo', 'spineSurfaceFinish', 'matte');
-    const surfaceFinishControls = el('div', { class:'ihr-spine-editor__surface-row', 'aria-label':'Acabados de superficie' }, [
-      el('label', { class:'ihr-spine-editor__field' }, [el('span',{text:'Portada'}),coverSurfaceFinish]),
-      el('label', { class:'ihr-spine-editor__field' }, [el('span',{text:'Canto'}),pageEdgeSurfaceFinish]),
-      el('label', { class:'ihr-spine-editor__field' }, [el('span',{text:'Lomo'}),spineSurfaceFinish])
+    const { select:coverSurfaceFinish, picker:coverPicker } = surfaceFinishSelect('Brillo de la portada', 'coverFinish', 'satin', 'cover');
+    const { select:pageEdgeSurfaceFinish, picker:pageEdgePicker } = surfaceFinishSelect('Brillo del canto', 'pageEdgeFinish', 'satin', 'edge');
+    const { select:spineSurfaceFinish, picker:spineSurfacePicker } = surfaceFinishSelect('Brillo del lomo', 'spineSurfaceFinish', 'matte', 'spine');
+    const editorLabel = text => el('span', { class:'ihr-spine-editor__label', text });
+    const editorRow = (label, control, extra = '') => el('label', { class:`ihr-spine-editor__row ${extra}`.trim() }, [editorLabel(label), control]);
+    // Rows holding a sample picker are not <label>s: a click on a sample must
+    // not be forwarded to the transparent select.
+    const pickerRow = (label, picker, extra = '') => el('div', { class:`ihr-spine-editor__row ${extra}`.trim() }, [editorLabel(label), picker]);
+    // Gloss reads as a small specimen chart: one row per part, one column per sheen.
+    const surfaceFinishControls = el('div', { class:'ihr-spine-editor__gloss', role:'group', 'aria-label':'Acabados de superficie' }, [
+      el('div', { class:'ihr-spine-editor__row ihr-spine-editor__gloss-head', 'aria-hidden':'true' }, [
+        el('span', { class:'ihr-spine-editor__label' }),
+        el('span', { class:'ihr-spine-editor__gloss-columns' }, SURFACE_CHOICES.map(([, text]) => el('span', { text })))
+      ]),
+      pickerRow('Portada', coverPicker, 'ihr-spine-editor__gloss-row'),
+      pickerRow('Canto', pageEdgePicker, 'ihr-spine-editor__gloss-row'),
+      pickerRow('Lomo', spineSurfacePicker, 'ihr-spine-editor__gloss-row')
     ]);
-    const inkFinish = finishSelect('Acabado del texto', 'spineTextFinish');
+    const { select:inkFinish, picker:inkFinishPicker } = finishSelect('Acabado del texto', 'spineTextFinish');
     const inkPicker = el('input', {type:'color', value:item.style.ink, 'aria-label':'Color del texto',
       onChange:event => updateCustomization({spineTextColor:event.currentTarget.value, spineTextFinish:'matte'})});
     const engravedInput = el('input', {type:'checkbox', role:'switch', 'aria-label':'Texto grabado',
       onChange:event => updateCustomization({spineEngraved:event.currentTarget.checked})});
-    const inkControls = el('div', {class:'ihr-spine-editor__ink'}, [
-      el('span', {text:'Letras'}), inkPicker,
-      el('button', {type:'button', class:'ihr-spine-editor__auto', text:'Auto', title:'Contraste automático',
-        onClick:() => updateCustomization({spineTextColor:null, spineTextFinish:'matte'})}), inkFinish
+    const inkControls = el('div', {class:'ihr-spine-editor__row ihr-spine-editor__ink'}, [
+      editorLabel('Color'),
+      el('span', { class:'ihr-spine-editor__ink-controls' }, [
+        el('span', { class:'ihr-spine-editor__ink-chip' }, [inkPicker]),
+        el('button', {type:'button', class:'ihr-spine-editor__auto', text:'Auto', title:'Contraste automático',
+          onClick:() => updateCustomization({spineTextColor:null, spineTextFinish:'matte'})})
+      ])
     ]);
-    updateColorSelection();
-    editorPanel.append(
-      el('header', { class:'ihr-spine-editor__header' }, [
+    const section = (title, modifier, children) => el('div', {
+      class:`ihr-spine-editor__section ihr-spine-editor__section--${modifier}`
+    }, [el('h3', { class:'ihr-spine-editor__section-title', text:title }), ...children]);
+    const sheetGrip = el('span', { class:'ihr-spine-editor__grip', 'aria-hidden':'true' });
+    const editorHeader = el('header', { class:'ihr-spine-editor__header' }, [
+      sheetGrip,
+      el('div', { class:'ihr-spine-editor__titles' }, [
         el('h2', { class:'ihr-spine-editor__heading', text:'Editar el lomo' }),
-        el('button', { type:'button', class:'ihr-btn ihr-spine-editor__done', text:'Listo', onClick:closeEditor })
+        editorSubtitle
       ]),
+      el('button', { type:'button', class:'ihr-btn ihr-spine-editor__done', text:'Listo', onClick:closeEditor })
+    ]);
+    editorPanel.append(
+      editorHeader,
       editorPreview,
-      el('div', { class: 'ihr-spine-editor__row' }, [
-        el('label', { class: 'ihr-spine-editor__field' }, [
-          el('span', { text: 'Fuente' }), fontSelect
+      el('div', { class:'ihr-spine-editor__body' }, [
+        section('Rótulo', 'text', [
+          el('label', { class:'ihr-spine-editor__field ihr-spine-editor__field--title' }, [editorLabel('Texto del lomo'), titleInput]),
+          el('label', { class:'ihr-spine-editor__field ihr-spine-editor__field--author' }, [editorLabel('Autor'), authorInput])
         ]),
-        el('label', { class: 'ihr-spine-editor__field ihr-spine-editor__field--size' }, [
-          el('span', { text: 'Tamaño del título' }),
-          el('span', { class: 'ihr-spine-editor__range' }, [fontSizeInput, sizeOutput])
-        ])
-      ]),
-      el('label', { class: 'ihr-spine-editor__field ihr-spine-editor__field--size' }, [
-        el('span', { text: 'Tamaño del autor' }),
-        el('span', { class: 'ihr-spine-editor__range' }, [authorSizeInput, authorSizeOutput])
-      ]),
-      el('label', { class: 'ihr-spine-editor__field ihr-spine-editor__field--title' }, [
-        el('span', { text: 'Texto del lomo' }), titleInput
-      ]),
-      el('label', { class: 'ihr-spine-editor__field ihr-spine-editor__field--author' }, [
-        el('span', { text: 'Autor' }), authorInput
-      ]),
-      colorControls,
-      surfaceFinishControls,
-      inkControls,
-      el('label', {class:'ihr-spine-editor__engraving'}, [el('span',{text:'Texto grabado'}), engravedInput])
+        section('Tipografía', 'type', [
+          editorRow('Fuente', selectWrap(fontSelect), 'ihr-spine-editor__row--font'),
+          editorRow('Título', el('span', { class:'ihr-spine-editor__range' }, [fontSizeInput, sizeOutput]), 'ihr-spine-editor__field--size'),
+          editorRow('Autor', el('span', { class:'ihr-spine-editor__range' }, [authorSizeInput, authorSizeOutput]), 'ihr-spine-editor__field--size')
+        ]),
+        section('Letras', 'ink', [
+          inkControls,
+          pickerRow('Acabado', inkFinishPicker),
+          el('label', { class:'ihr-spine-editor__row ihr-spine-editor__engraving' }, [
+            el('span', { class:'ihr-spine-editor__label', text:'Texto grabado' }), engravedInput
+          ])
+        ]),
+        section('Encuadernación', 'binding', [
+          el('div', { class:'ihr-spine-editor__row ihr-spine-editor__row--swatches' }, [editorLabel('Color'), colorControls]),
+          pickerRow('Acabado', bindingPicker)
+        ]),
+        section('Brillo', 'gloss', [surfaceFinishControls])
+      ])
     );
+    updateColorSelection();
+    // Mobile sheet: dragging the header down dismisses it, like its grabber suggests.
+    let sheetDrag = null;
+    editorHeader.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || !sheetGrip.offsetWidth || event.target.closest('button')) return;
+      sheetDrag = { id:event.pointerId, y:event.clientY, time:performance.now(), dy:0 };
+      editorHeader.setPointerCapture?.(event.pointerId);
+      editorPanel.classList.add('is-dragging');
+    });
+    editorHeader.addEventListener('pointermove', event => {
+      if (sheetDrag?.id !== event.pointerId) return;
+      sheetDrag.dy = Math.max(0, event.clientY - sheetDrag.y);
+      editorPanel.style.transform = sheetDrag.dy ? `translateY(${sheetDrag.dy}px)` : '';
+    });
+    const endSheetDrag = event => {
+      if (sheetDrag?.id !== event.pointerId) return;
+      const { dy, time } = sheetDrag;
+      sheetDrag = null;
+      editorPanel.classList.remove('is-dragging');
+      editorPanel.style.transform = '';
+      const flick = dy > 36 && dy / Math.max(1, performance.now() - time) > .55;
+      if (event.type === 'pointerup' && (dy > 110 || flick)) closeEditor();
+    };
+    editorHeader.addEventListener('pointerup', endSheetDrag);
+    editorHeader.addEventListener('pointercancel', endSheetDrag);
     meta.append(el('div', { class: 'ihr-flyout__actions' }, actionButtons));
     meta.append(editorPanel);
     const readyCheck = setInterval(() => {
@@ -2683,6 +2827,18 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const book = latestBook || state.books.find(candidate => candidate.id === bookId) || previous.book;
     state.books = state.books.map(record => record.id === bookId ? book : record);
     if (item) item.book = book;
+    // Normally analysed while the reader was open. If not, wait briefly so
+    // the flight, the landing and the resting spine share one cloth/ribbon.
+    const appearanceKey = coverKeyFor(book);
+    const known = state.coverAppearances.get(String(bookId));
+    if (item && !(known?.key === appearanceKey && known.complete !== false)) {
+      const appearance = await Promise.race([
+        resolveCoverAppearance(book).catch(() => null),
+        new Promise(resolve => setTimeout(resolve, 320, null))
+      ]);
+      if (state.destroyed || state.lastOpened !== previous) return false;
+      if (appearance && applyCoverAppearance(item, appearance)) previous.style = item.style;
+    }
     const spine = [...root.querySelectorAll('.ihr-spine')].find(node => node.dataset.bookId === String(bookId)) || previous.spineEl;
     if (!spine?.isConnected) { state.lastOpened = null; return false; }
 
