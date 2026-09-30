@@ -353,6 +353,43 @@ describe('renderBookshelf', () => {
     expect(onBookOpen).toHaveBeenCalledOnce()
   })
 
+  it('el editor elige acabados con muestras que gobiernan la select nativa accesible', async () => {
+    const onBookCustomizationChange = vi.fn()
+    shelf = renderBookshelf(container, makeBooks(1), {
+      shelfWidth: SHELF_WIDTH, revealDuration: 0, holdMs: 0, autoOpen: false, onBookCustomizationChange
+    })
+    container.querySelector('.ihr-spine').click()
+    const edit = await vi.waitFor(() => {
+      const button = document.querySelector('.ihr-flyout__edit-button')
+      expect(button.disabled).toBe(false)
+      return button
+    })
+    edit.click()
+    const editor = document.querySelector('.ihr-spine-editor')
+    expect(editor.hidden).toBe(false)
+    // Without a saved override the spine follows the cover: first sample, not "+".
+    expect(editor.querySelector('.ihr-flyout__swatch').getAttribute('aria-pressed')).toBe('true')
+    expect(editor.querySelector('.ihr-flyout__custom-color').classList.contains('is-selected')).toBe(false)
+
+    const select = editor.querySelector('select[aria-label="Brillo de la portada"]')
+    const picker = select.closest('.ihr-spine-editor__materials')
+    expect(picker.querySelector('.ihr-spine-editor__materials-track').getAttribute('aria-hidden')).toBe('true')
+    expect([...select.options].map(option => option.value)).toEqual(['matte', 'satin', 'glossy'])
+    picker.querySelector('.ihr-spine-editor__material[data-value="glossy"]').click()
+    expect(select.value).toBe('glossy')
+    expect(picker.dataset.value).toBe('glossy')
+    expect(picker.querySelector('.is-active').dataset.value).toBe('glossy')
+
+    const foil = editor.querySelector('select[aria-label="Acabado del texto"]')
+    foil.value = 'silver'
+    foil.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(foil.closest('.ihr-spine-editor__materials').querySelector('.is-active').dataset.value).toBe('silver')
+    await vi.waitFor(() => expect(onBookCustomizationChange).toHaveBeenCalledWith(
+      expect.objectContaining({ id: makeBooks(1)[0].id }),
+      expect.objectContaining({ coverFinish: 'glossy', spineTextFinish: 'silver' })
+    ))
+  })
+
   it('permite descargar un libro de Drive que todavía no está guardado offline', async () => {
     const onBookAction = vi.fn()
     shelf = renderBookshelf(container, [{ ...makeBooks(1)[0], sourceType:'drive', driveFileId:'remote-1' }], {

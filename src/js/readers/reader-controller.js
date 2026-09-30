@@ -70,6 +70,7 @@ export class ReaderController {
     return { ...snapshot, location:{ ...this.#location, ...(snapshot.location || {}) } }
   }
   async search(query) { return await this.#reader?.search?.(query) || [] }
+  clearSearch() { this.#reader?.clearSearch?.() }
   getSelection() { return this.#reader?.getSelection?.() || null }
   addQuoteAnnotation(quote) { this.#reader?.addQuoteAnnotation?.(quote) }
   removeQuoteAnnotation(quote) { this.#reader?.removeQuoteAnnotation?.(quote) }

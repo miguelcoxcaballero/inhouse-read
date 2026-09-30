@@ -157,6 +157,30 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     expect(trashNode.getAttribute('aria-hidden')).toBeNull(); expect(trashNode.getAttribute('tabindex')).toBeNull();
   });
 
+  it('bakes cabinet occlusion and floor contact into one unpickable draw that follows the bin and is released', () => {
+    const occlusion = () => gpu.scene.getObjectByName('Cabinet occlusion');
+    const mesh = occlusion(), material = mesh.material;
+    expect(mesh.parent).toBe(binModel().parent); expect(mesh.userData.furniture).toBeUndefined();
+    expect(material.transparent).toBe(true); expect(material.depthWrite).toBe(false);
+    expect(mesh.castShadow).toBe(false); expect(mesh.receiveShadow).toBe(false);
+    const hits = []; mesh.raycast(new THREE.Raycaster(), hits); expect(hits).toHaveLength(0);
+    mesh.geometry.computeBoundingBox();
+    expect(mesh.geometry.boundingBox.max.x).toBeGreaterThan(binModel().position.x);
+    const entry = { node:bookNode, book:{ id:'a', title:'Book', author:'Author' }, style:{ color:'#3c6548', width:28 },
+      x:60, y:130, width:100, height:180, thickness:28 };
+    const previous = mesh.geometry; let released = 0;
+    previous.addEventListener('dispose', () => { released++; });
+    shelf.updateLayout({ stage, width:390, sceneWidth:390, height:750, trashNode:null,
+      rows:[{ top:20, bottom:220 }, { top:260, bottom:460 }, { top:500, bottom:700 }], entries:[entry] });
+    expect(released).toBe(1); expect(occlusion()).toBe(mesh);
+    mesh.geometry.computeBoundingBox();
+    expect(mesh.geometry.boundingBox.max.x).toBeLessThan(195 + 60);
+    let disposed = 0;
+    mesh.geometry.addEventListener('dispose', () => { disposed++; }); material.addEventListener('dispose', () => { disposed++; });
+    shelf.dispose(); shelf = null;
+    expect(disposed).toBe(2);
+  });
+
   it('moves the camera framing around one grounded object without revealing, scaling or re-anchoring the bin', () => {
     const bin = binModel(), position = bin.position.clone(), scale = bin.scale.clone(), rotation = bin.quaternion.clone();
     const samples = [shelf.canvas.dataset.trashCameraInFrame];

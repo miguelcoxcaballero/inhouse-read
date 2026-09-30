@@ -2,13 +2,15 @@ import * as THREE from 'three';
 import { createBookModel, getBookRenderer, lightBookScene } from './book-model.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { shelfBookSlot, shelfBookInsertion, projectShelfBookPose } from './bookshelf-return.js';
-import { createShelfFurniture } from './shelf-furniture.js';
+import { createShelfFurniture, createShelfOcclusion } from './shelf-furniture.js';
 import { createShelfPlant } from './shelf-plants.js';
-import { createShelfLighting } from './shelf-lighting.js';
+import { createShelfLighting, widePenumbra } from './shelf-lighting.js';
 import { createShelfTrash, sampleTrashDrop } from './shelf-trash.js';
 import { createShelfCatalog } from './shelf-catalog.js';
 
 const WALNUT = new URL('../assets/library/walnut-pbr.webp', import.meta.url).href;
+// Packed from the same photograph: R = pore/figure height, G = roughness.
+const WALNUT_SURFACE = new URL('../assets/library/walnut-surface.webp', import.meta.url).href;
 const DURATION = 700;
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 const ease = t => t * t * t * (t * (t * 6 - 15) + 10);
@@ -111,21 +113,36 @@ function releaseObject(object) {
   for (const material of materials) material.dispose();
 }
 
-function woodMicrotexture() {
-  const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
-  const context = canvas.getContext('2d'), pixels = context.createImageData(256, 256);
-  for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
-    const grain = Math.sin(y * .8 + Math.sin(x / 256 * Math.PI * 2) * .9) * 12 +
-      Math.sin(y * .24 + Math.sin(x / 256 * Math.PI * 4) * .3) * 9;
-    const pore = ((x * 73856093 ^ y * 19349663) >>> 0) % 17;
-    const value = Math.round(184 + grain + pore - 8), offset = (y * 256 + x) * 4;
-    pixels.data[offset] = pixels.data[offset + 1] = pixels.data[offset + 2] = value;
-    pixels.data[offset + 3] = 255;
-  }
-  context.putImageData(pixels, 0, 0);
-  const map = new THREE.CanvasTexture(canvas); map.wrapS = map.wrapT = THREE.RepeatWrapping;
+function walnutTexture(url, renderer, colour, mean, onLoad) {
+  const map = new THREE.TextureLoader().load(url, onLoad, undefined, () => {
+    // A missing file must not leave its maps sampling an empty (black) unit:
+    // zero roughness would turn the cabinet into a mirror. Flat mean instead.
+    const swatch = document.createElement('canvas'), context = swatch.getContext('2d');
+    swatch.width = swatch.height = 1;
+    if (context) { context.fillStyle = mean; context.fillRect(0, 0, 1, 1); }
+    map.image = swatch; map.needsUpdate = true; onLoad();
+  });
+  if (colour) map.colorSpace = THREE.SRGBColorSpace;
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  // Geometry UVs repeat every 160 shelf pixels. The seamless photograph is a
+  // ~32 cm flitch of veneer, so it spans two repeats and its figure reads true.
+  map.repeat.set(.5, .5);
+  map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   return map;
 }
+
+// Theme tints: the canvas is transparent over the page, so the same walnut is
+// graded slightly deeper on the dark page and a little brighter on the light
+// one. Near-neutral: the warmth comes from the key light, not a colour cast.
+const WOOD_TONES = {
+  light:{ wood:'#ffffff', back:'#ebe8e4', trim:'#f5f2ee' },
+  dark:{ wood:'#ebe8e5', back:'#d2cec9', trim:'#e0dcd7' }
+};
+// The near-black page gets a faint warm pool of lamp light on the floor
+// (linear RGB, peak alpha), so the cabinet's contact shadow has something to
+// darken. The pale page needs none: its shadows already read.
+const DARK_FLOOR_LIGHT = [.5, .4, .29, .11];
+const darkPage = () => document.documentElement.dataset.theme === 'dark';
 
 /** One demand-rendered scene for the entire piece of furniture and its books.
  * Pixel coordinates describe the unrotated shelf. DOM buttons remain semantic
@@ -164,27 +181,33 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   camera.position.z = 8000;
   const insertionCamera = new THREE.OrthographicCamera(0, 1, 0, -1, .1, 20000);
   insertionCamera.position.z = 8000;
-  const texture = new THREE.TextureLoader().load(WALNUT, () => invalidate());
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(1, 1);
-  texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-  const grain = woodMicrotexture();
-  const wood = new THREE.MeshPhysicalMaterial({ map:texture, bumpMap:grain, bumpScale:.18,
-    roughnessMap:grain, color:'#fff3e3', roughness:.62, clearcoat:.18, clearcoatRoughness:.48 });
-  const backWood = new THREE.MeshStandardMaterial({ map:texture, bumpMap:grain, bumpScale:.12,
-    color:'#d5c4af', roughness:.87 });
-  const darkWood = new THREE.MeshPhysicalMaterial({ map:texture, bumpMap:grain, bumpScale:.15,
-    color:'#ead5ba', roughness:.68, clearcoat:.12, clearcoatRoughness:.52 });
-  const floorMaterial = new THREE.MeshStandardMaterial({ map:texture, bumpMap:grain, bumpScale:.06,
-    color:'#b3a68d', roughness:.94 });
+  const texture = walnutTexture(WALNUT, renderer, true, '#71553f', () => invalidate());
+  const grain = walnutTexture(WALNUT_SURFACE, renderer, false, '#759380', () => invalidate());
+  // Oiled walnut under a thin satin lacquer: the pores stay open and matte in
+  // the base layer while a smooth clearcoat carries the room's reflections.
+  // Vertex colours carry each board's own tone, end grain and joint shadow.
+  const wood = new THREE.MeshPhysicalMaterial({ map:texture, bumpMap:grain, bumpScale:.55, roughnessMap:grain,
+    vertexColors:true, color:'#ffffff', roughness:.9, clearcoat:.32, clearcoatRoughness:.36 });
+  const backWood = widePenumbra(new THREE.MeshStandardMaterial({ map:texture, bumpMap:grain, bumpScale:.4, roughnessMap:grain,
+    vertexColors:true, color:'#e6dccf', roughness:1.2, envMapIntensity:.7 }));
+  const darkWood = new THREE.MeshPhysicalMaterial({ map:texture, bumpMap:grain, bumpScale:.5, roughnessMap:grain,
+    vertexColors:true, color:'#f2e6d6', roughness:.95, clearcoat:.26, clearcoatRoughness:.4 });
+  const floorMaterial = new THREE.MeshStandardMaterial({ map:texture, color:'#b3a68d', roughness:.94 });
+  // Baked corner occlusion and floor contact: one unlit, depth-tested draw.
+  const occlusionMaterial = new THREE.MeshBasicMaterial({ vertexColors:true, transparent:true, depthWrite:false,
+    side:THREE.DoubleSide, polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-2 });
+  // Unlit depth writers (indexed by side) for the insertion's depth pass.
+  const depthOnly = [THREE.FrontSide, THREE.BackSide, THREE.DoubleSide]
+    .map(side => new THREE.MeshBasicMaterial({ side, colorWrite:false }));
+  const occlusion = new THREE.Mesh(new THREE.BufferGeometry(), occlusionMaterial);
+  occlusion.name = 'Cabinet occlusion'; occlusion.raycast = () => {};
   const floor = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), floorMaterial);
   floor.name = 'Library floor'; floor.userData.floor = true; floor.receiveShadow = true;
   // Keep the physical support and contact diagnostics without painting a
   // wooden platform around the cabinet or reserving camera space for it.
   floor.visible = false;
-  furniture.add(floor);
-  let floorY = -height;
+  furniture.add(floor, occlusion);
+  let floorY = -height, floorLit = false;
   let depth = Math.max(155, ...entries.filter(e => e.kind !== 'plant').map(e => e.width + 12));
   const entryKey = (entry, index) => entry.kind === 'plant'
     ? `plant:${entry.node?.dataset.objectId ?? entry.key ?? index}`
@@ -213,18 +236,29 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     floor.position.set(55, floorY - 1, -depth / 2 + 45);
     positionTrash();
   }
+  function rebuildOcclusion() {
+    occlusion.geometry.dispose();
+    floorLit = darkPage();
+    occlusion.geometry = createShelfOcclusion({ width, height, depth, rows, floorY, floorLight:floorLit ? DARK_FLOOR_LIGHT : null,
+      footprints:trash ? [{ x:trash.position.x, z:trash.position.z, radius:trash.userData.radius }] : [] });
+  }
   function positionTrash() {
-    if (!trash) return;
-    // Its local placement is a real object on the floor, independent of the
-    // camera, viewport, scroll and the progress of a view transition.
-    trash.position.set(width / 2 + TRASH_GAP + trash.userData.radius,
-      floorY - trashBounds.min.y, -depth);
-    trash.rotation.set(0, 0, 0); trash.scale.setScalar(1); trash.visible = true;
+    if (trash) {
+      // Its local placement is a real object on the floor, independent of the
+      // camera, viewport, scroll and the progress of a view transition.
+      trash.position.set(width / 2 + TRASH_GAP + trash.userData.radius,
+        floorY - trashBounds.min.y, -depth);
+      trash.rotation.set(0, 0, 0); trash.scale.setScalar(1); trash.visible = true;
+    }
+    rebuildOcclusion();
   }
   rebuildFurniture();
 
   let disposed = false, raf = 0, renderCount = 0, modelCreations = 0, viewportHeight = 1, progress = mode === 'isometric' ? 1 : 0;
   let shelfSnapshotDirty = true, shelfSnapshotRenders = 0;
+  // A scroll only moves the camera: world-space shadows stay valid unless
+  // something in the scene changed (or the lighting's fitted window moved).
+  let shadowDirty = true, shadowCasters = 0;
   let transition = null, reorderTransition = null;
   let frontalScroll = mode === 'isometric' ? 0 : scroller.scrollTop;
   let sceneFitHeight = 1;
@@ -269,6 +303,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
   rememberCatalogNode(catalogNode);
   const vector = new THREE.Vector3(), inverseRotation = new THREE.Quaternion();
+  const shadowBounds = new THREE.Box3(), shadowTrash = new THREE.Box3();
   const projectedMatrix = new THREE.Matrix4();
   const rendererSize = new THREE.Vector2();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -601,10 +636,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function updateWoodTheme() {
-    const dark = document.documentElement.dataset.theme === 'dark';
-    wood.color.set(dark ? '#d9c9b3' : '#fff3e3');
-    backWood.color.set(dark ? '#b6a792' : '#d5c4af');
-    darkWood.color.set(dark ? '#c5b397' : '#ead5ba');
+    const tones = WOOD_TONES[darkPage() ? 'dark' : 'light'];
+    wood.color.set(tones.wood); backWood.color.set(tones.back); darkWood.color.set(tones.trim);
+    // Floor contact reads softer on a pale page than on a near-black one.
+    occlusionMaterial.opacity = tones === WOOD_TONES.dark ? 1 : .8;
+    if (floorLit !== darkPage()) rebuildOcclusion();
   }
 
   function stateFor(entry) {
@@ -997,11 +1033,19 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (rendererSize.x !== vw || rendererSize.y !== vh) renderer.setSize(vw, vh, false);
     const autoClear = renderer.autoClear, scissorTest = renderer.getScissorTest();
     const previousScissor = renderer.getScissor(new THREE.Vector4());
-    const writes = new Map(), visibility = new Map();
+    const writes = new Map(), visibility = new Map(), solids = new Map();
     scene.traverse(object => {
-      for (const material of [].concat(object.material || [])) if (!writes.has(material)) {
+      const materials = [].concat(object.material || []);
+      for (const material of materials) if (!writes.has(material)) {
         writes.set(material, material.colorWrite);
       }
+      // Opaque surfaces only contribute depth to the first pass: an unlit
+      // stand-in skips their full wood/cloth shading on every return frame.
+      // Cut-outs, blended and non-depth-writing surfaces keep their own.
+      const side = materials[0]?.side;
+      if (object.isMesh && materials.length && materials.every(material => material.visible && material.depthWrite &&
+        material.depthTest && !material.transparent && !material.alphaTest && !material.alphaMap && material.side === side))
+        solids.set(object, object.material);
     });
     for (const object of furniture.children) visibility.set(object, object.visible);
     if (trash) visibility.set(trash, trash.visible);
@@ -1014,6 +1058,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // First draw only the cabinet's depth, clipped exactly like the painted
       // shelf. Invisible wood outside its viewport must not hide the book.
       for (const material of writes.keys()) material.colorWrite = false;
+      for (const [mesh, material] of solids) mesh.material = depthOnly[[].concat(material)[0].side] || depthOnly[THREE.FrontSide];
       model.visible = false;
       if (right > left && bottom > top) {
         renderer.setScissor(left, vh - bottom, right - left, bottom - top);
@@ -1022,6 +1067,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       // Keep that depth buffer while drawing just the moving book in color.
       // Its neighbors now hide the portions actually behind their surfaces.
+      for (const [mesh, material] of solids) mesh.material = material;
       for (const [material, value] of writes) material.colorWrite = value;
       for (const object of furniture.children) object.visible = object === model;
       if (trash) trash.visible = false;
@@ -1032,6 +1078,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       overlay.dataset.insertionDepth = 'shared-shelf';
       overlay.dataset.returnProgress = canvas.dataset.returnProgress;
     } finally {
+      for (const [mesh, material] of solids) mesh.material = material;
       for (const [material, value] of writes) material.colorWrite = value;
       for (const [object, value] of visibility) object.visible = value;
       renderer.autoClear = autoClear;
@@ -1067,13 +1114,23 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const { moving, shelfMoving } = updateEntries(scroll, zoom, now, finishedInsertions);
     const finishedDrops = [];
     const trashMoving = updateTrash(scroll, now, finishedDrops);
-    lighting.update({ width:sceneWidth, viewportHeight, scroll, depth,
-      dirty:shelfSnapshotDirty || furnitureMoving || shelfMoving || trashMoving });
+    // Fit the key's shadow to the cabinet (and bin) in world space; the
+    // lighting clips it to the camera window, so each texel covers less.
+    shadowBounds.copy(fullBounds);
+    if (trash) shadowBounds.union(shadowTrash.copy(trashBounds).translate(trash.position));
+    shadowBounds.applyMatrix4(furniture.matrixWorld);
+    // Scrolling creates and releases culled models: those change the casters.
+    let casters = trash?.visible ? 1 : 0;
+    for (const entry of bookEntries) if (entry.model?.visible) casters = Math.imul(casters, 31) + entry.model.id | 0;
+    const shadowMotion = furnitureMoving || shelfMoving || trashMoving;
+    const shadowRefresh = lighting.update({ width:sceneWidth, viewportHeight, scroll, depth, bounds:shadowBounds,
+      dirty:shadowDirty || casters !== shadowCasters || shadowMotion, moving:shadowMotion });
+    shadowDirty = false; shadowCasters = casters;
     const overlayInsertion = bookEntries.some(entry => entry.insertion?.overlayCanvas);
     // Its hidden slot and neighbors are already painted. Reuse that snapshot
     // during a stationary insertion instead of reallocating the shared GPU
     // buffer between the smaller shelf and full-screen output every frame.
-    if (!overlayInsertion || shelfSnapshotDirty || furnitureMoving || shelfMoving || trashMoving) {
+    if (!overlayInsertion || shelfSnapshotDirty || shadowRefresh || furnitureMoving || shelfMoving || trashMoving) {
       if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
       renderer.getSize(rendererSize);
       if (rendererSize.x !== sceneWidth || rendererSize.y !== viewportHeight) renderer.setSize(sceneWidth, viewportHeight, false);
@@ -1096,12 +1153,18 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     canvas.dataset.animating = String(Boolean(transition || reorderTransition || moving || trashMoving));
     for (const resolve of finishedInsertions) resolve();
     for (const resolve of finishedDrops) resolve();
-    if (transition || reorderTransition || moving || trashMoving) invalidate(false);
+    // One more frame after any motion redraws its cheaper shadow at full quality.
+    if (transition || reorderTransition || moving || trashMoving || lighting.settling) invalidate(false);
   }
 
   function invalidate(dirty = true) {
-    if (dirty) shelfSnapshotDirty = true;
+    if (dirty) shelfSnapshotDirty = shadowDirty = true;
     if (!disposed && !raf) raf = requestAnimationFrame(draw);
+  }
+  // Repaint the camera's new window; the shadow map is reused.
+  function scrolled() {
+    shelfSnapshotDirty = true;
+    invalidate(false);
   }
 
   function animateObjectToTrash(node, { duration = 850 } = {}) {
@@ -1123,14 +1186,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       bookQuaternion:new THREE.Quaternion().setFromEuler(new THREE.Euler(-.22, .18, -.46)),
       initialOpenness:Number(trash.userData.openness) || 0 };
     entry.trashDrop = drop; entry.model.visible = true;
-    shelfSnapshotDirty = true;
+    shelfSnapshotDirty = shadowDirty = true;
     cancelAnimationFrame(raf); raf = 0; draw(now);
     drop.lastFrame = performance.now();
     return { finished, get lastFrameTime() { return drop.lastFrame; }, cancel() {
       if (entry.trashDrop !== drop) return;
       cancelTrashDrop(entry); trashHover = false;
       trashTransition = { from:Number(trash.userData.openness) || 0, to:0, started:performance.now() };
-      shelfSnapshotDirty = true;
+      shelfSnapshotDirty = shadowDirty = true;
       if (!disposed) { cancelAnimationFrame(raf); raf = 0; draw(); }
     } };
   }
@@ -1143,7 +1206,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const themeChanges = new MutationObserver(() => { updateWoodTheme(); invalidate(); });
   themeChanges.observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
   for (const node of byNode.keys()) mutations.observe(node, { attributes:true, attributeFilter:['class', 'style'] });
-  scroller.addEventListener('scroll', invalidate, { passive:true });
+  scroller.addEventListener('scroll', scrolled, { passive:true });
   window.addEventListener('resize', invalidate, { passive:true });
   document.fonts?.ready.then(invalidate);
   updateWoodTheme();
@@ -1163,7 +1226,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     animateObjectToTrash,
     animateBookToTrash:animateObjectToTrash,
-    flush() { shelfSnapshotDirty = true; cancelAnimationFrame(raf); raf = 0; draw(); },
+    flush() { shelfSnapshotDirty = shadowDirty = true; cancelAnimationFrame(raf); raf = 0; draw(); },
     setMode(next, { animate = true } = {}) {
       const wasIsometric = desiredMode === 'isometric';
       desiredMode = next === 'isometric' ? 'isometric' : 'spine';
@@ -1212,14 +1275,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       Object.assign(entry.lift, { value:0, from:0, target:0, started:insertion.started });
       // Paint the same dock position before the caller hides its overlay.
       // Neighbors and wood now occlude the moving book in one depth buffer.
-      shelfSnapshotDirty = true;
+      shelfSnapshotDirty = shadowDirty = true;
       cancelAnimationFrame(raf); raf = 0; draw(insertion.started);
       insertion.lastFrame = performance.now();
       return { finished, cancel() {
         if (entry.insertion !== insertion) return;
         cancelInsertion(entry);
         overlayCanvas?.getContext('2d')?.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-        shelfSnapshotDirty = true;
+        shelfSnapshotDirty = shadowDirty = true;
         if (!disposed) { cancelAnimationFrame(raf); raf = 0; draw(); }
       } };
     },
@@ -1273,7 +1336,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     updateLayout(next) {
       if (disposed) return false;
-      shelfSnapshotDirty = true;
+      shelfSnapshotDirty = shadowDirty = true;
       cancelAnimationFrame(raf); raf = 0; mutations.disconnect();
       const oldEntries = new Map(bookEntries.map(entry => [entry.key, entry]));
       const oldWidth = width, oldHeight = height, oldRows = JSON.stringify(rows), oldDepth = depth;
@@ -1311,6 +1374,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           for (const entry of bookEntries) cancelTrashDrop(entry);
           trashHover = false; trashOpenness = 0; trashTransition = null;
           trash.removeFromParent(); trash.userData.dispose(); trash = null; trashBounds = null;
+          rebuildOcclusion();
         }
       }
       const nextCatalogNode = next.catalogNode || null;
@@ -1384,11 +1448,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     dispose() {
       disposed = true; cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
-      scroller.removeEventListener('scroll', invalidate); window.removeEventListener('resize', invalidate);
+      scroller.removeEventListener('scroll', scrolled); window.removeEventListener('resize', invalidate);
       for (const entry of bookEntries) releaseEntry(entry);
       if (catalog) { catalog.removeFromParent(); catalog.userData.dispose(); }
       trash?.removeFromParent();
       releaseObject(furniture); texture.dispose(); grain.dispose(); lighting.dispose();
+      for (const material of depthOnly) material.dispose();
       trash?.userData.dispose();
       canvas.remove(); stage.style.height = originalHeight;
       if (!alreadyScene) stage.classList.remove('has-scene');

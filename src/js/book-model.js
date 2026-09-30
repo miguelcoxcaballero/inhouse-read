@@ -1,8 +1,277 @@
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { spineSurface, releaseSurface } from './spine-surface.js';
-import { SURFACE_FINISHES, surfaceFinish } from './book-colors.js';
+import { spineSurface, releaseSurface, seededRandom, textSeed, withStops, paintCloth, paintWeave, spineLayout, drawDevice, lattice } from './spine-surface.js';
+import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from './book-colors.js';
+import { normalizeBookAuthor } from './book-title.js';
 import { bookmarkFor } from './bookshelf-layout.js';
+
+// Procedural micro-detail shared by every book: generated once, uploaded once.
+// Models receive clones (same Source, own repeat); three.js keeps the GPU
+// texture until the last clone is disposed, so every model owns its copy.
+const sharedSources = new Map();
+function sharedTexture(key, build) {
+  if (!sharedSources.has(key)) sharedSources.set(key, build());
+  // Texture.copy() flags the shared Source dirty; keep its version so a new
+  // clone reuses the pixels already on the GPU instead of uploading again.
+  const base = sharedSources.get(key), version = base.source.version, copy = base.clone();
+  copy.source.version = version;
+  return copy;
+}
+function tileNormals(size, heightAt, strength) {
+  const field = new Float32Array(size * size), data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) field[y * size + x] = heightAt(x, y);
+  const at = (x, y) => field[(y + size) % size * size + (x + size) % size];
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const nx = (at(x - 1, y) - at(x + 1, y)) * strength, ny = (at(x, y - 1) - at(x, y + 1)) * strength;
+    const length = Math.hypot(nx, ny, 1), i = (y * size + x) * 4;
+    data[i] = (nx / length + 1) * 127.5; data[i + 1] = (ny / length + 1) * 127.5;
+    data[i + 2] = (1 / length + 1) * 127.5; data[i + 3] = 255;
+  }
+  const texture = new THREE.DataTexture(data, size, size);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.magFilter = THREE.LinearFilter; texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true; texture.needsUpdate = true;
+  return texture;
+}
+// Plain-weave book cloth: 16 × 16 threads per tile, with uneven slubs.
+const clothNormals = () => tileNormals(128, (x, y) => {
+  const i = x >> 3, j = y >> 3, fx = (x % 8 + .5) / 8, fy = (y % 8 + .5) / 8;
+  const warp = Math.sin(Math.PI * fx) * (.7 + .6 * lattice(i, y >> 5, 1));
+  const weft = Math.sin(Math.PI * fy) * (.7 + .6 * lattice(j, x >> 5, 2));
+  return (i + j) % 2 ? warp * .85 + weft * .2 : weft * .85 + warp * .2;
+}, 1.1);
+// Printed paper over board: the soft tooth that survives under a laminate.
+const paperNormals = () => tileNormals(128, (x, y) => {
+  const octave = (cell, salt) => {
+    const n = 128 / cell, gx = x / cell, gy = y / cell, i = Math.floor(gx), j = Math.floor(gy);
+    const sx = (gx - i) ** 2 * (3 - 2 * (gx - i)), sy = (gy - j) ** 2 * (3 - 2 * (gy - j));
+    const v = (a, b) => lattice((i + a) % n, (j + b) % n, salt);
+    return THREE.MathUtils.lerp(THREE.MathUtils.lerp(v(0, 0), v(1, 0), sx), THREE.MathUtils.lerp(v(0, 1), v(1, 1), sx), sy);
+  };
+  return octave(32, 5) * .9 + octave(8, 6) * .45 + lattice(x, y, 7) * .08;
+}, 1.4);
+// Swallowtail cut, measured in ribbon widths from the tip (v = 0 at the tip):
+// a shallow V, a fifth of the width deep, as scissors leave it.
+const ribbonNotch = () => {
+  const w = 16, h = 64, data = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const across = Math.abs((x + .5) / w * 2 - 1), i = (y * w + x) * 4;
+    data.fill((y + .5) / h > .2 * (1 - across) ? 255 : 0, i, i + 4);
+  }
+  const texture = new THREE.DataTexture(data, w, h);
+  texture.magFilter = texture.minFilter = THREE.LinearFilter; texture.needsUpdate = true;
+  return texture;
+};
+
+// Page edges: individual leaves, darker signature folds, a slight cockle and
+// a silk headband. u runs across the leaves (tiled by physical thickness);
+// v .02–.46 is the fore-edge, .54–.98 head and tail (spine side at .98).
+function pageEdgeAtlas(size) {
+  const canvas = Object.assign(document.createElement('canvas'), { width:size, height:size });
+  const c = canvas.getContext('2d'), random = seededRandom(size * 131 + 7), unit = size / 256;
+  c.fillStyle = '#ede4d0'; c.fillRect(0, 0, size, size);
+  const leaf = (x, style, weight) => {
+    const phase = random() * Math.PI * 2, amplitude = (.25 + random() * .55) * unit;
+    c.strokeStyle = style; c.lineWidth = weight;
+    for (const offset of [0, -size]) {
+      c.beginPath();
+      for (let y = 0; y <= size; y += 8 * unit) {
+        const px = x + offset + Math.sin(y / size * Math.PI * 5 + phase) * amplitude;
+        if (y) c.lineTo(px, y); else c.moveTo(px, y);
+      }
+      c.stroke();
+    }
+  };
+  for (let x = 0; x < size; x += (1.1 + random() * 1.5) * unit) {
+    const tone = random();
+    leaf(x, tone > .74 ? `rgba(120,98,68,${.08 + random() * .12})`
+      : tone > .32 ? `rgba(255,253,245,${.22 + random() * .34})` : `rgba(165,142,108,${.05 + random() * .08})`,
+    (.45 + random() * .6) * unit);
+  }
+  for (let x = random() * 18 * unit; x < size; x += (20 + random() * 18) * unit) {
+    leaf(x, `rgba(96,74,48,${.16 + random() * .14})`, 1.15 * unit);
+  }
+  // Head/tail: the gutter falls into shadow where the leaves bend into the spine.
+  c.fillStyle = withStops(c.createLinearGradient(0, size * .02, 0, size * .2),
+    [[0, 'rgba(74,54,32,.34)'], [.45, 'rgba(74,54,32,.1)'], [1, 'rgba(74,54,32,0)']]);
+  c.fillRect(0, 0, size, size * .2);
+  // Dust settles on both ends of the fore-edge first.
+  for (const [from, to] of [[size * .54, size * .6], [size * .98, size * .92]]) {
+    c.fillStyle = withStops(c.createLinearGradient(0, from, 0, to), [[0, 'rgba(110,86,56,.16)'], [1, 'rgba(110,86,56,0)']]);
+    c.fillRect(0, Math.min(from, to), size, Math.abs(to - from));
+  }
+  c.fillStyle = '#ece3cf'; c.fillRect(0, size * .47, size, size * .06);
+  // Headband: two-tone silk wound over a cord, rounded by its own shading.
+  const band = size * .016, stripe = 4 * unit;
+  for (let x = 0, i = 0; x < size; x += stripe, i++) {
+    c.fillStyle = i % 2 ? '#e8dcc0' : '#7b1f28';
+    c.beginPath(); c.moveTo(x, 0); c.lineTo(x + stripe, 0); c.lineTo(x + stripe * 1.6, size * .02 + band);
+    c.lineTo(x + stripe * .6, size * .02 + band); c.closePath(); c.fill();
+  }
+  c.fillStyle = withStops(c.createLinearGradient(0, size * .02, 0, size * .02 + band),
+    [[0, 'rgba(0,0,0,.35)'], [.45, 'rgba(255,255,255,.12)'], [1, 'rgba(0,0,0,.45)']]);
+  c.fillRect(0, size * .02, size, band);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace; texture.wrapS = THREE.RepeatWrapping;
+  return texture;
+}
+
+// Endpaper: a warm wove stock with a faint speckle and a few long fibres.
+// White-based so the material colour tints it; every stroke wraps the tile.
+function endpaperTexture() {
+  const size = 256, canvas = Object.assign(document.createElement('canvas'), { width:size, height:size });
+  const c = canvas.getContext('2d'), random = seededRandom(90127);
+  c.fillStyle = '#fff'; c.fillRect(0, 0, size, size);
+  for (let i = 0; i < 2400; i++) {
+    c.fillStyle = random() > .55 ? `rgba(92,70,44,${.035 + random() * .05})` : `rgba(255,255,255,${.3 + random() * .4})`;
+    c.fillRect(Math.floor(random() * size), Math.floor(random() * size), 1, 1);
+  }
+  c.lineCap = 'round';
+  for (let i = 0; i < 70; i++) {
+    const x = random() * size, y = random() * size, a = random() * Math.PI, length = 6 + random() * 22;
+    const bend = (random() - .5) * length * .5, dx = Math.cos(a) * length, dy = Math.sin(a) * length;
+    c.strokeStyle = `rgba(120,96,64,${.05 + random() * .07})`; c.lineWidth = .5 + random() * .5;
+    for (const ox of [-size, 0, size]) for (const oy of [-size, 0, size]) {
+      c.beginPath(); c.moveTo(x + ox, y + oy);
+      c.quadraticCurveTo(x + ox + dx / 2 - dy / length * bend, y + oy + dy / 2 + dx / length * bend, x + ox + dx, y + oy + dy);
+      c.stroke();
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace; texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  return texture;
+}
+
+/** Text block of a rounded-and-backed binding: its back follows the round
+ * inside the case, the fore-edge is concave, both ends are one crescent. */
+export function pageBlockGeometry(width, height, thickness, { board = height * .007, inset = height * .009, detail = false } = {}) {
+  const half = (thickness - board * 2.4) / 2, top = height / 2 - inset;
+  const rim = board * 1.1, back = Math.max(0, thickness * .38 - rim - board * .15), zBack = thickness / 2 - rim;
+  const bend = Math.min(thickness * .09, width * .025), fore = width / 2 - inset * .7;
+  const columns = detail ? 16 : 8, rows = detail ? 6 : 3, tile = height * .2;
+  const spineX = z => -width / 2 - back * Math.sqrt(Math.max(0, 1 - (z / zBack) ** 2));
+  const foreX = z => fore - bend * (1 - (z / half) ** 2);
+  const positions = [], normals = [], uvs = [], colors = [], indices = [];
+  const vertex = (x, y, z, n, u, v, shade) => {
+    positions.push(x, y, z); normals.push(...n); uvs.push(u, v); colors.push(shade, shade, shade);
+    return positions.length / 3 - 1;
+  };
+  const quad = (a, b, c, d) => indices.push(a, b, d, b, c, d);
+  const across = i => -half + i / columns * half * 2, leafU = z => (z + half) / tile;
+  // Leaves pressed against the boards sit in their shadow.
+  const pressed = z => 1 - .18 * Math.abs(z / half) ** 6;
+  for (const side of [1, -1]) {
+    const start = positions.length / 3;
+    for (let i = 0; i <= columns; i++) for (let k = 0; k <= rows; k++) {
+      const z = across(i), t = (k / rows) ** 1.7;
+      vertex(THREE.MathUtils.lerp(spineX(z), foreX(z), t), side * top, z, [0, side, 0], leafU(z), .98 - .44 * t,
+        pressed(z) * (.82 + .18 * Math.min(1, t * 5)));
+    }
+    for (let i = 0; i < columns; i++) for (let k = 0; k < rows; k++) {
+      const a = start + i * (rows + 1) + k, b = a + rows + 1;
+      if (side > 0) quad(a, b, b + 1, a + 1); else quad(a, a + 1, b + 1, b);
+    }
+  }
+  const start = positions.length / 3;
+  for (let i = 0; i <= columns; i++) {
+    const z = across(i), slope = 2 * bend * z / half ** 2, length = Math.hypot(1, slope);
+    for (const y of [-top, top]) vertex(foreX(z), y, z, [1 / length, 0, -slope / length], leafU(z), .24 + .22 * y / top, pressed(z));
+  }
+  for (let i = 0; i < columns; i++) { const a = start + i * 2; quad(a, a + 1, a + 3, a + 2); }
+  // Thin skins under the boards close the block when the cover opens.
+  for (const side of [1, -1]) {
+    const z = side * half, x0 = spineX(z), x1 = foreX(z), n = [0, 0, side];
+    const p = [[x0, -top], [x1, -top], [x1, top], [x0, top]].map(([x, y]) => vertex(x, y, z, n, .5, .5, 1));
+    if (side > 0) quad(...p); else quad(p[0], p[3], p[2], p[1]);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setIndex(indices); geometry.addGroup(0, indices.length, 0);
+  return geometry;
+}
+
+/** Leaves already read turn over with the front board as one gathering: a
+ * block on the board's inner face whose top leaf curls down into the gutter.
+ * Hinge coordinates (joint at x = 0, board centred on z = 0); the open face
+ * looks toward -z until the board turns over. Only lifted copies build it. */
+export function leafStackGeometry(width, height, depth, { board = height * .007, inset = height * .009, columns = 14 } = {}) {
+  // A hair inside the text block, so closed its ends never fight the head,
+  // tail or fore-edge they came from.
+  const top = height / 2 - inset - height * .0012, fore = width - inset * .7 - height * .0015;
+  const base = -board / 2 - height * .0003, tile = height * .2;
+  const gutter = Math.min(fore * .2, height * .075), dip = .16;
+  // Share of the gathering's depth at x: the leaves bend down into the joint.
+  const rise = x => { const t = Math.min(1, x / gutter); return dip + (1 - dip) * t * (2 - t); };
+  const riseSlope = x => x < gutter ? (1 - dip) * (2 - 2 * x / gutter) / gutter : 0;
+  const positions = [], normals = [], uvs = [], colors = [], indices = [];
+  const vertex = (x, y, z, n, u, v, shade) => {
+    positions.push(x, y, z); normals.push(...n); uvs.push(u, v); colors.push(shade, shade, shade);
+    return positions.length / 3 - 1;
+  };
+  // Columns crowd toward the gutter, where the leaves curl.
+  const xs = Array.from({ length:columns + 1 }, (_, i) => fore * (i / columns) ** 1.7);
+  const faceZ = x => base - depth * rise(x);
+  // Open face: the joint's shadow, then clean paper.
+  const shade = x => 1 - .34 * Math.max(0, 1 - x / (gutter * 1.7)) ** 2;
+  for (const x of xs) {
+    const slope = -depth * riseSlope(x), length = Math.hypot(slope, 1);
+    for (const y of [-top, top]) vertex(x, y, faceZ(x), [slope / length, 0, -1 / length], x / fore, y / top / 2 + .5, shade(x));
+  }
+  for (let i = 0; i < columns; i++) { const a = i * 2; indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  const edge = positions.length / 3;
+  // Fore-edge: u runs across the leaves exactly as on the text block.
+  for (const y of [-top, top]) for (const k of [0, 1]) {
+    vertex(fore, y, k ? faceZ(fore) : base, [1, 0, 0], k * depth * rise(fore) / tile, .24 + .22 * y / top, .94);
+  }
+  indices.push(edge, edge + 1, edge + 3, edge, edge + 3, edge + 2);
+  // Head and tail: every leaf converges into the gutter.
+  for (const side of [1, -1]) {
+    const start = positions.length / 3;
+    for (const x of xs) for (const k of [0, 1]) {
+      vertex(x, side * top, k ? faceZ(x) : base, [0, side, 0], k * depth * rise(x) / tile, .98 - .44 * x / fore, .9 * shade(x));
+    }
+    for (let i = 0; i < columns; i++) {
+      const a = start + i * 2, b = a + 1, c = a + 3, d = a + 2;
+      if (side > 0) indices.push(a, d, c, a, c, b); else indices.push(a, c, d, a, b, c);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setIndex(indices);
+  const faceCount = columns * 6;
+  geometry.addGroup(0, faceCount, 0); geometry.addGroup(faceCount, indices.length - faceCount, 1);
+  return geometry;
+}
+
+/** Half-ellipse end of the case. Close-up copies leave the hollow open so the
+ * headband is visible inside a thin rim of cloth and board. */
+function capGeometry(width, thickness, segments, rim = 0) {
+  const shape = new THREE.Shape(), bulge = thickness * .38;
+  shape.moveTo(-width / 2, -thickness / 2);
+  for (let i = 1; i <= segments; i++) {
+    const a = i / segments * Math.PI;
+    shape.lineTo(-width / 2 - bulge * Math.sin(a), -thickness / 2 * Math.cos(a));
+  }
+  if (rim) for (let i = segments; i >= 0; i--) {
+    const a = i / segments * Math.PI;
+    shape.lineTo(-width / 2 - (bulge - rim) * Math.sin(a), -(thickness / 2 - rim) * Math.cos(a));
+  }
+  shape.closePath();
+  return new THREE.ShapeGeometry(shape);
+}
+
+// Paper edges are fibrous: even "brillante" is a burnished edge, not lacquer.
+function applyPaperFinish(material, value) {
+  applySurfaceFinish(material, value, 'satin');
+  material.roughness = .35 + material.roughness * .6;
+  material.clearcoat *= .3;
+  material.specularIntensity = .7;
+}
 
 function applySurfaceFinish(material, value, fallback = 'satin') {
   const finish = SURFACE_FINISHES[surfaceFinish(value, fallback)];
@@ -11,6 +280,37 @@ function applySurfaceFinish(material, value, fallback = 'satin') {
   material.clearcoatRoughness = finish.clearcoatRoughness;
   material.envMapIntensity = finish.envMapIntensity;
   material.needsUpdate = true;
+}
+
+// Seen almost edge-on (the lifted book's front view), spine lettering shrinks
+// into bright slivers along the rolled edge. Only while the spine as a whole
+// faces away, the surface that turns from the viewer shows plain cloth; the
+// rules near the joint, which still face the viewer, keep their ink.
+function spineGrazingFade(material) {
+  const uniforms = { spineCloth:{ value:new THREE.Color() }, spineClothMetal:{ value:0 }, spineClothRough:{ value:.88 } };
+  material.onBeforeCompile = shader => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader.replace('void main() {', 'varying float vSpineFacing;\nvoid main() {')
+      .replace('#include <project_vertex>',
+        '#include <project_vertex>\n\tvSpineFacing = abs(normalize((modelViewMatrix * vec4(-1., 0., 0., 0.)).xyz).z);');
+    shader.fragmentShader = shader.fragmentShader.replace('void main() {',
+      'varying float vSpineFacing;\nuniform vec3 spineCloth;\nuniform float spineClothMetal, spineClothRough;\nvoid main() {')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+	float spineEdge = .62 * (1. - smoothstep(.35, .6, vSpineFacing));
+	float spineKeep = smoothstep(spineEdge - .16, spineEdge,
+		abs(dot(nonPerturbedNormal, isOrthographic ? vec3(0., 0., 1.) : normalize(vViewPosition))));
+	diffuseColor.rgb = mix(spineCloth, diffuseColor.rgb, spineKeep);
+	metalnessFactor = mix(spineClothMetal, metalnessFactor, spineKeep);
+	roughnessFactor = mix(spineClothRough, roughnessFactor, spineKeep);
+	normal = normalize(mix(nonPerturbedNormal, normal, spineKeep));`);
+  };
+  material.customProgramCacheKey = () => 'spine-grazing-fade';
+  return (book, style) => {
+    const finish = spineFinish(book.spineFinish);
+    uniforms.spineCloth.value.set(finish === 'matte' ? style.color : METAL_COLORS[finish]);
+    uniforms.spineClothMetal.value = finish === 'matte' ? 0 : 1;
+    uniforms.spineClothRough.value = SURFACE_FINISHES[surfaceFinish(book.spineSurfaceFinish, 'matte')].roughness;
+  };
 }
 
 function applyCoverFinish(material, value) {
@@ -57,7 +357,8 @@ export function bindingGeometry(width, height, thickness, segments = 96, relief 
 // Rounded board edges, with front/back UVs in the same coordinates as a cover.
 // The bevel stays inside the book dimensions so the shelf and flyout match.
 export function boardGeometry(width, height, depth, { shelf = false, overview = false } = {}) {
-  const bevel = Math.min(depth * .22, height * .0018);
+  // A visibly rounded, slightly softened board edge, as covered board has.
+  const bevel = Math.min(depth * .4, height * .0035);
   const x = -width / 2 + bevel, y = -height / 2 + bevel;
   const w = width - bevel * 2, h = height - bevel * 2, r = height * .006;
   const shape = new THREE.Shape();
@@ -82,41 +383,118 @@ export function boardGeometry(width, height, depth, { shelf = false, overview = 
 
 /** A real ribbon mesh emerging from the top edge at the saved reading depth. */
 export function bookmarkGeometry(width, height, thickness, progress, peek = 10,
-  { open = 0, withdraw = 0, segments = 32 } = {}) {
+  { open = 0, withdraw = 0, segments = 32, seed = 0 } = {}) {
   // Peek values belong to the 200 px shelf book, not the much larger lifted
   // copy. Keep the ribbon's physical proportions identical in both models.
   const ribbonWidth = Math.min(width * .09, Math.max(height * .035, Math.min(height * .055, thickness * .42)));
-  const visibleLength = height * Math.max(.09, Math.min(.17, (Number(peek) || 10) / 200 * 1.6));
-  const x = -width / 2 + Math.max(thickness * .75, ribbonWidth * 1.5);
-  const opening = Math.max(0, Math.min(1, open));
-  const insideDepth = thickness / 2 - thickness * Math.max(0, Math.min(1, progress));
+  // Each copy of a book falls the same way; different books do not.
+  const vary = k => seed ? lattice(seed % 65521, k, 17) : .5;
+  const visibleLength = height * Math.max(.09, Math.min(.17, (Number(peek) || 10) / 200 * 1.6))
+    * (1 + (seed ? .12 * vary(1) : 0));
+  const opening = Math.max(0, Math.min(1, open)), { lerp, smoothstep, clamp } = THREE.MathUtils;
+  // Always between two leaves, never on a board: an unread book keeps its
+  // ribbon under the first leaf instead of lying across the front cover.
+  const leaves = Math.max(0, thickness / 2 - height * .0125);
+  const insideDepth = clamp(thickness / 2 - thickness * Math.max(0, Math.min(1, progress)), -leaves, leaves);
   const pageDepth = thickness / 2 - height * .0083 + height * .002;
-  const depth = THREE.MathUtils.lerp(insideDepth, pageDepth, opening);
+  // The leaves above the saved page lift with the board, so the ribbon is on
+  // the exposed page early in the opening instead of surfacing through it.
+  const depth = lerp(insideDepth, pageDepth, smoothstep(opening, 0, .3));
+  // Lying down (position, roll) settles while the board still covers most of
+  // the page; the end beyond the head folds over it a little later.
+  const lay = smoothstep(opening, .05, .55), flop = smoothstep(opening, .15, .85);
+  // Closed it rises clear of the spine; open it lies beside the gutter, in
+  // the inner margin, instead of across the first words of every line.
+  const x = lerp(-width / 2 + Math.max(thickness * .75, ribbonWidth * 1.5),
+    -width / 2 + height * .012 + ribbonWidth * .5 + width * .006, lay);
+  // Withdrawing slides the silk along its own path: up the page and over the
+  // head, never straight up through the air above the book.
   const lift = height * 1.25 * Math.max(0, Math.min(1, withdraw));
   const positions = [], uvs = [], indices = [];
-  const head = height / 2 - height * .012 + lift;
-  const curve = new THREE.CubicBezierCurve3(new THREE.Vector3(x, head, depth),
-    new THREE.Vector3(x, height / 2 + height * .016 + lift, depth + thickness * .12),
-    new THREE.Vector3(x, height / 2 + visibleLength * .55 + lift,
-      THREE.MathUtils.lerp(thickness * .2, pageDepth + height * .015, opening)),
-    new THREE.Vector3(x, height / 2 + visibleLength + lift,
-      THREE.MathUtils.lerp(0, pageDepth - height * .04, opening)));
+  const pageTop = height / 2 - height * .009, bend = height * .016;
+  // The fold starts right at the edge of the leaf, so it never curls into it.
+  const head = lerp(height / 2 - height * .012, pageTop - bend * .3, lay);
+  const tail = lerp(height / 2 - height * .64, -height / 2 + height * .03, lay);
+  const upper = visibleLength + height * .012;
+  // Closed: the limp satin leans back over the head (toward the fore-edge)
+  // and drifts a little aside, evenly along its length, never as a hook.
+  const back = visibleLength * (.1 + .16 * vary(2)), drift = visibleLength * (vary(3) - .5) * .36;
+  // Open: past the head it rolls over the edge of the text block (a quarter
+  // turn of radius `bend`) and runs back along the head, out of sight.
+  const arc = bend * Math.PI / 2, reachBack = pageDepth - bend - (-thickness / 2 + height * .0084);
   const steps = Math.max(4, Math.round((Number(segments) || 32) / 2) * 2), fabricDepth = height * .0018;
+  // Closed, the ribbon turns toward someone looking at the binding, so from
+  // the spine it shows its face; from the front it still shows a third of
+  // it, never a bare thread. The turn is complete inside the text block,
+  // just under its head: seen from above (the flyout looks slightly down on
+  // the head) it leaves the leaves as one even strip, with no flared foot.
+  const twistMax = Math.PI / 2 * (.74 + .08 * vary(4));
+  const turn = s => smoothstep(s, -height * .006, height * .0025);
+  // Turning about its middle would push the edge through a board at the very
+  // first or last leaf: the ribbon moves inward by exactly what it gains.
+  const reach = Math.sin(twistMax) * ribbonWidth / 2;
+  const inward = (clamp(depth, -leaves + reach, leaves - reach) - depth) * (1 - lay);
+  const bodyLength = head - tail, wander = ribbonWidth * (.12 + .1 * vary(6)), splay = ribbonWidth * .3 * vary(7);
+  // `s` is the arc length past the head, negative inside the book or on the
+  // page. Samples are laid on the path, not on the sliding silk: half on the
+  // page, the rest from the head on, a fixed share of them crowded over the
+  // turn and the fold, so no chord ever cuts under the paper while it slides.
+  const start = lift - bodyLength, cut = upper + lift, split = Math.min(cut, Math.max(start, 0));
+  const half = steps / 2, fold = Math.max(1, Math.round(steps * .19)), folded = Math.min(cut, split + arc * 1.1);
+  const along = i => i <= half ? lerp(start, split, i / half)
+    : i - half <= fold ? split + (folded - split) * ((i - half) / fold) ** 1.4
+    : lerp(folded, cut, (i - half - fold) / (half - fold));
+  const centre = [], twists = [], onPage = [], tucks = [];
   for (let i = 0; i <= steps; i++) {
-    const bend = Math.max(0, (i - steps / 2) / (steps / 2));
-    const point = i <= steps / 2
-      ? new THREE.Vector3(x, THREE.MathUtils.lerp(height / 2 - height * .64 + lift, head, i / (steps / 2)), depth)
-      : curve.getPoint(bend);
-    // A gentle twist turns the visible tip toward someone looking at the
-    // binding; a flat page-aligned ribbon disappeared edge-on on the shelf.
-    const twist = Math.PI / 2 * bend * bend * (3 - 2 * bend) * (1 - opening * .65);
-    const dx = Math.cos(twist) * ribbonWidth / 2, dz = Math.sin(twist) * ribbonWidth / 2;
-    const nx = -Math.sin(twist) * fabricDepth / 2, nz = Math.cos(twist) * fabricDepth / 2;
-    positions.push(point.x - dx + nx, point.y, point.z - dz + nz,
-      point.x + dx + nx, point.y, point.z + dz + nz,
-      point.x - dx - nx, point.y, point.z - dz - nz,
-      point.x + dx - nx, point.y, point.z + dz - nz);
-    uvs.push(0, i / steps, 1, i / steps, 0, i / steps, 1, i / steps);
+    const s = along(i), point = new THREE.Vector3(x, head, depth), turned = twistMax * turn(s);
+    // A sideways shift, kept out of the direction the cross-sections face.
+    tucks.push(inward * Math.sin(turned) / (Math.sin(twistMax) || 1));
+    let twist = turned * (1 - lay);
+    if (s <= 0) {
+      // On an open page it runs the full leaf and never lies ruler-straight.
+      // The wander belongs to the page, so a sliding ribbon meets the head
+      // edge exactly where it rests.
+      const u = -s / bodyLength;
+      point.x += lay * (wander * Math.sin(Math.PI * 1.3 * u) + splay * u * u);
+      point.y += s;
+      point.z += lay * height * .0012 * (1 - Math.cos(u * Math.PI * 4)) / 2;
+      // Satin never lies dead flat: a slow roll turns the sheen on and off.
+      twist += lay * .22 * Math.sin(u * Math.PI * 2.6 + vary(5) * 6) * (1 - (1 - u) ** 3);
+    } else {
+      const k = flop * Math.PI / 2 / arc, bent = Math.min(s, arc);
+      // Past the gathering's depth the rest is tucked under, out of sight.
+      const run = Math.min(s - bent, reachBack + (1 - flop) * height * 4);
+      // A cantilever's sag: nothing at the root, most of it toward the end.
+      const angle = k * bent, fall = smoothstep(Math.min(1, s / upper), 0, 1) * (1 - flop);
+      point.x += back * fall;
+      point.y += (k > 1e-6 ? Math.sin(angle) / k : bent) + run * Math.cos(angle);
+      point.z += (k > 1e-6 ? (Math.cos(angle) - 1) / k : 0) - run * Math.sin(angle) + drift * fall;
+    }
+    centre.push(point); twists.push(twist); onPage.push(s <= 0);
+  }
+  // v measures ribbon widths back from the cut tip, where the swallowtail is.
+  const fromTip = [0];
+  for (let i = steps; i > 0; i--) fromTip.unshift(fromTip[0] + centre[i].distanceTo(centre[i - 1]));
+  // One strip: every cross-section is square to the ribbon's own direction,
+  // so the fold over the head keeps the full width and fabric thickness.
+  const tangent = new THREE.Vector3(), across = new THREE.Vector3(), face = new THREE.Vector3();
+  const side = new THREE.Vector3(), normal = new THREE.Vector3(), X = new THREE.Vector3(1, 0, 0);
+  for (let i = 0; i <= steps; i++) {
+    const point = centre[i], v = fromTip[i] / ribbonWidth, twist = twists[i];
+    tangent.subVectors(centre[Math.min(steps, i + 1)], centre[Math.max(0, i - 1)]);
+    if (tangent.lengthSq() < 1e-12) tangent.set(0, 0, -1); else tangent.normalize();
+    across.copy(X).addScaledVector(tangent, -tangent.x).normalize();
+    face.crossVectors(across, tangent);
+    side.copy(across).multiplyScalar(Math.cos(twist)).addScaledVector(face, Math.sin(twist)).multiplyScalar(ribbonWidth / 2);
+    normal.copy(across).multiplyScalar(-Math.sin(twist)).addScaledVector(face, Math.cos(twist)).multiplyScalar(fabricDepth / 2);
+    // On the page it is raised by its own roll, so neither edge ever sinks
+    // into the paper; between closed leaves it is only tucked clear of the boards.
+    const z = point.z + tucks[i] + (onPage[i] ? lay * Math.abs(side.z) : 0);
+    positions.push(point.x - side.x + normal.x, point.y - side.y + normal.y, z - side.z + normal.z,
+      point.x + side.x + normal.x, point.y + side.y + normal.y, z + side.z + normal.z,
+      point.x - side.x - normal.x, point.y - side.y - normal.y, z - side.z - normal.z,
+      point.x + side.x - normal.x, point.y + side.y - normal.y, z + side.z - normal.z);
+    uvs.push(0, v, 1, v, 0, v, 1, v);
     if (i < steps) {
       const k = i * 4, n = k + 4;
       indices.push(k, k + 1, n, k + 1, n + 1, n,
@@ -136,6 +514,78 @@ export function bookmarkGeometry(width, height, thickness, progress, peek = 10,
   return geometry;
 }
 
+// Woven satin: a soft sheen that slides along the ribbon, not a lacquered
+// strip. The swallowtail tip is cut by an alpha mask, not by geometry.
+// Binders stock a handful of classic silk dyes. Each book draws one that
+// stands clear of its own cloth (claret most often), so a row of ribbons reads
+// as a collection rather than a row of identical red markers. Finished books
+// keep the old-gold silk; shelf copies are a shade quieter.
+// All dark enough to read on the paper of an open page.
+const RIBBON_SILKS = ['#7c1c26', '#7c1c26', '#7c1c26', '#1d4030', '#22305a', '#4c2244', '#823a1f', '#a8322b'];
+export function ribbonSilk(seed, cloth, finished = false) {
+  if (finished) return '#c29a4c';
+  const hex = new THREE.Color(cloth ?? '#555').getHex(), rgb = [hex >> 16, hex >> 8 & 255, hex & 255];
+  // Weighted sRGB distance: green differences read strongest, then blue.
+  const apart = silk => {
+    const s = parseInt(silk.slice(1), 16), d = [s >> 16, s >> 8 & 255, s & 255].map((v, i) => (v - rgb[i]) / 255);
+    return Math.sqrt(2 * d[0] ** 2 + 4 * d[1] ** 2 + 3 * d[2] ** 2);
+  };
+  const clear = RIBBON_SILKS.filter(silk => apart(silk) > .55);
+  // A cloth close to every dye still gets the one that differs most.
+  if (!clear.length) return RIBBON_SILKS.reduce((best, silk) => apart(silk) > apart(best) ? silk : best);
+  return clear[Math.floor(lattice(seed % 65521, 9, 23) * clear.length)];
+}
+// Satin's sheen is a brighter shade of its own dye, not a white veil: seen
+// edge-on a dark silk must not fade into a grey or pastel strip.
+function tintRibbon(material, silk, shelf) {
+  material.color.set(silk).multiplyScalar(shelf ? .88 : 1);
+  material.sheenColor.set(silk).multiplyScalar(2.2).lerp(new THREE.Color('#fff6ea'), .1);
+}
+function satinRibbon(finished, silk, shelf = false) {
+  // On the shelf the ribbon is a few pixels wide: the sliding anisotropic
+  // sheen cannot show there, so shelf copies skip both shading terms.
+  const material = new THREE.MeshPhysicalMaterial({
+    roughness:shelf ? .42 : .46, metalness:finished ? .16 : 0,
+    sheen:shelf ? 0 : .7, sheenRoughness:.38,
+    anisotropy:shelf ? 0 : .55, specularIntensity:.5,
+    alphaMap:sharedTexture('ribbon-notch', ribbonNotch), alphaTest:.5,
+    side:THREE.DoubleSide
+  });
+  tintRibbon(material, silk, shelf);
+  return material;
+}
+
+// The paper the reader shows: the median of the snapshot's outer ring, so the
+// leaves already read and the margin around the saved page are one stock.
+const paperTones = new WeakMap();
+function paperTone(source) {
+  if (paperTones.has(source)) return paperTones.get(source);
+  let tone = null;
+  try {
+    const n = 12, canvas = Object.assign(document.createElement('canvas'), { width:n, height:n });
+    const c = canvas.getContext('2d', { willReadFrequently:true });
+    c.drawImage(source, 0, 0, n, n);
+    const data = c.getImageData(0, 0, n, n).data, ring = [];
+    for (let i = 0; i < n - 1; i++) for (const [x, y] of [[i, 0], [n - 1, i], [n - 1 - i, n - 1], [0, n - 1 - i]]) {
+      const k = (y * n + x) * 4;
+      if (data[k + 3] > 200) ring.push(k);
+    }
+    const channels = [0, 1, 2].map(o => ring.map(k => data[k + o]).sort((a, b) => a - b));
+    const quartile = (values, q) => values[Math.floor((values.length - 1) * q)];
+    // Only a margin is paper: a full-bleed photo or comic page keeps the default.
+    if (ring.length >= 16 && channels.every(values => quartile(values, .75) - quartile(values, .25) <= 20)) {
+      const [r, g, b] = channels.map(values => quartile(values, .5) / 255);
+      tone = new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace);
+    }
+  } catch { /* a tainted or unreadable source keeps the default paper */ }
+  paperTones.set(source, tone);
+  return tone;
+}
+// The saved page is unlit; under lightBookScene the fully turned leaf shows
+// about 1.03/.96/.895 of its albedo (the warm key). Compensate so both pages
+// read as the same sheet, the left one a shade quieter.
+const LEAF_LIGHT = new THREE.Color(.96 / 1.03, .96 / .96, .96 / .895);
+
 export function fitCoverImage(imageWidth, imageHeight, width, height) {
   const scale = Math.min(width / imageWidth, height / imageHeight);
   const w = imageWidth * scale, h = imageHeight * scale;
@@ -148,50 +598,118 @@ function coverRasterDimensions(ratio, textureHeight, maxDimension = Infinity) {
   return { width:Math.max(1, Math.round(width * scale)), height:Math.max(1, Math.round(height * scale)) };
 }
 
-function coverTexture(book, style, textureHeight = 2048, maxDimension = Infinity) {
+// Joint groove distance from the spine edge, as a fraction of board height.
+const HINGE_GROOVE = .026;
+const coverSeed = (book, style, salt) => seededRandom(textSeed(`${book?.id ?? ''}|${book?.title ?? ''}|${style?.color}|${salt}`));
+
+// Wear that belongs to the board rather than the artwork, drawn in design
+// units (1024 = board height) over printed and cloth covers alike.
+function finishBoard(c, designWidth, random, { wear = true } = {}) {
+  const hinge = HINGE_GROOVE * 1024, edge = 14;
+  c.globalAlpha = 1;
+  // The strip beside the spine flexes at every opening and dulls first.
+  c.fillStyle = 'rgba(0,0,0,.05)'; c.fillRect(0, 0, hinge - 9, 1024);
+  // Pressed joint groove: shadowed spine-side wall, lit far wall.
+  c.fillStyle = withStops(c.createLinearGradient(hinge - 11, 0, hinge + 11, 0), [[0, 'rgba(0,0,0,0)'],
+    [.3, 'rgba(0,0,0,.26)'], [.5, 'rgba(0,0,0,.12)'], [.7, 'rgba(255,248,236,.11)'], [1, 'rgba(255,248,236,0)']]);
+  c.fillRect(hinge - 11, 0, 22, 1024);
+  // The covering turns over the board edges here.
+  for (const [x0, y0, x1, y1] of [[0, 0, 0, edge], [0, 1024, 0, 1024 - edge], [designWidth, 0, designWidth - edge, 0]]) {
+    c.fillStyle = withStops(c.createLinearGradient(x0, y0, x1, y1), [[0, 'rgba(0,0,0,.16)'], [1, 'rgba(0,0,0,0)']]);
+    if (x0 === x1) c.fillRect(0, Math.min(y0, y1), designWidth, edge); else c.fillRect(designWidth - edge, 0, edge, 1024);
+  }
+  // A thumbnail cannot show single fibres or rubbed corners.
+  if (!wear) return;
+  // Rubbed fibres: short paler runs along the edges that meet the shelf.
+  c.fillStyle = '#fff6e6';
+  for (const [length, vertical, at] of [[designWidth, false, 0], [designWidth, false, 1021.6], [1024, true, designWidth - 2.4]]) {
+    for (let p = 0; p < length;) {
+      const run = 6 + random() * 42;
+      c.globalAlpha = random() < .45 ? random() * .24 : 0;
+      if (vertical) c.fillRect(at, p, 2.4, run); else c.fillRect(p, at, run, 2.4);
+      p += run;
+    }
+  }
+  c.globalAlpha = 1;
+  // Corners at the fore-edge take the knocks.
+  for (const y of [0, 1024]) {
+    c.fillStyle = withStops(c.createRadialGradient(designWidth, y, 0, designWidth, y, 30),
+      [[0, 'rgba(255,244,226,.3)'], [1, 'rgba(255,244,226,0)']]);
+    c.fillRect(designWidth - 30, y ? 994 : 0, 30, 30);
+  }
+}
+
+function coverTexture(book, style, textureHeight = 2048, maxDimension = Infinity, level = 'detail') {
   const canvas = document.createElement('canvas');
   const designWidth = Math.round(1024 * (Number(style.coverRatio) || .66));
   const dimensions = coverRasterDimensions(designWidth / 1024, textureHeight, maxDimension);
   canvas.width = dimensions.width; canvas.height = dimensions.height;
   const c = canvas.getContext('2d'); c.scale(canvas.width / designWidth, canvas.height / 1024);
+  const random = coverSeed(book, style, 'case'), thumb = level === 'overview';
   c.fillStyle = style.color; c.fillRect(0, 0, designWidth, 1024);
-  c.fillStyle = style.ink; c.textAlign = 'center'; c.textBaseline = 'middle';
-  // Design in physical cover proportions so lettering is never stretched.
-  const center = designWidth / 2;
+  // A cloth case: dyed mottling, then the weave itself. A 256 px thumbnail
+  // shows neither, so it keeps the flat dyed colour and saves the work.
+  if (!thumb) { paintCloth(c, designWidth, random); paintWeave(c, designWidth); }
+  // Design in physical cover proportions so lettering is never stretched,
+  // centred on the board beyond the joint as a real case is.
+  const hinge = HINGE_GROOVE * 1024, center = (hinge + designWidth) / 2;
   const coverScale = designWidth / 676;
   const titleSize = Math.max(36, Math.min(82, 54 * coverScale));
-  const titleWidth = Math.min(500 * coverScale, designWidth - 72);
-  c.strokeStyle = style.ink; c.globalAlpha = .3; c.lineWidth = 1.5;
-  c.strokeRect(42, 42, designWidth - 84, 940); c.strokeRect(48, 48, designWidth - 96, 928);
-  c.globalAlpha = .8; c.lineWidth = 3; c.beginPath();
-  c.moveTo(center - 21, 185); c.lineTo(center, 164); c.lineTo(center + 21, 185); c.stroke();
-  c.font = '500 17px "DM Sans", sans-serif'; c.fillText('INHOUSE READ', center, 218);
-  c.globalAlpha = 1; c.font = `${style.fontWeight || 700} ${titleSize}px "${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`;
+  const titleWidth = Math.min(480 * coverScale, designWidth - hinge - 110);
+  // Blind-stamped panel: pressed into the cloth, no ink.
+  c.lineWidth = 2.4;
+  c.strokeStyle = 'rgba(0,0,0,.26)'; c.strokeRect(hinge + 34, 42, designWidth - hinge - 76, 940);
+  c.strokeStyle = 'rgba(255,248,236,.1)'; c.strokeRect(hinge + 36, 44, designWidth - hinge - 76, 940);
+  const family = `"${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`;
+  c.fillStyle = c.strokeStyle = style.ink; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.font = `${style.fontWeight || 700} ${titleSize}px ${family}`;
   const words = (book.title || 'Sin título').split(' '); let line = ''; const lines = [];
   for (const word of words) {
     if (c.measureText(line + word).width > titleWidth && line) { lines.push(line.trim()); line = ''; }
     line += word + ' ';
   }
   lines.push(line.trim());
-  const visible = lines.slice(0, 6), spacing = 66;
-  visible.forEach((text, i) => c.fillText(text + (i === 5 && lines.length > 6 ? '…' : ''), center, 460 + (i - (visible.length - 1) / 2) * spacing, titleWidth));
-  c.globalAlpha = .65; c.fillRect(center - 27, 735, 54, 1);
-  c.globalAlpha = .9; c.font = '28px "DM Sans", sans-serif'; c.fillText(book.author || '', center, 790, 500);
-  c.globalAlpha = .6; c.font = '500 18px "DM Sans", sans-serif'; c.fillText(book.format || '', center, 911);
+  const visible = lines.slice(0, 6), spacing = titleSize * 1.2, top = 400 - (visible.length - 1) * spacing / 2;
+  visible.forEach((text, i) => c.fillText(text + (i === 5 && lines.length > 6 ? '…' : ''), center, top + i * spacing, titleWidth));
+  // A small fleuron rule, then the author in the text face's italic.
+  const ornament = top + (visible.length - 1) * spacing + titleSize * .6 + 56;
+  c.globalAlpha = .75; c.fillRect(center - 66, ornament - .75, 50, 1.5); c.fillRect(center + 16, ornament - .75, 50, 1.5);
+  c.save(); c.translate(center, ornament); c.rotate(Math.PI / 4); c.fillRect(-4.5, -4.5, 9, 9); c.restore();
+  const author = normalizeBookAuthor(book.author);
+  if (author) {
+    c.globalAlpha = .92; c.font = `italic 400 ${Math.round(Math.max(24, Math.min(40, 30 * coverScale)))}px ${family}`;
+    c.fillText(author, center, ornament + 56, titleWidth);
+  }
+  // Publisher's device at the foot, blind-stamped like the panel: pressed in,
+  // no ink, so it never reads as a printed arrow. The spine's own mark when
+  // the case has one, otherwise one of the same family, per book.
+  if (!thumb) {
+    const layout = spineLayout(book), kind = layout.device ?? textSeed(`device|${book?.id ?? ''}|${book?.title ?? ''}`) % 3;
+    c.save(); c.globalAlpha = 1; c.translate(center, 904);
+    c.fillStyle = 'rgba(0,0,0,.24)'; drawDevice(c, kind, 24);
+    c.translate(1.8, 1.8); c.fillStyle = 'rgba(255,248,236,.1)'; drawDevice(c, kind, 24);
+    c.restore();
+  }
+  finishBoard(c, designWidth, random, { wear:!thumb });
   const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
   return map;
 }
 
 function shelfSpineSurface(book, style, height, thickness, shelf, overview) {
   if (overview) return spineSurface(book, style, height, thickness,
-    { textureWidth:64, textureHeight:256, engraving:false });
-  const surface = spineSurface(book, style, height, thickness);
-  if (shelf) for (const texture of [surface.map, surface.channels]) {
-    const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 1024;
-    canvas.getContext('2d').drawImage(texture.image, 0, 0, canvas.width, canvas.height);
-    texture.image = canvas; texture.needsUpdate = true;
-  }
-  return surface;
+    { textureWidth:64, textureHeight:256, engraving:false, level:'overview' });
+  // Shelf copies are rastered at their final size, never shrunk from 2048.
+  const lifted = liftedTextureHeight(height);
+  return shelf ? spineSurface(book, style, height, thickness, { textureWidth:256, textureHeight:1024, level:'shelf' })
+    : spineSurface(book, style, height, thickness, { textureWidth:lifted / 2, textureHeight:lifted, level:'detail' });
+}
+
+// A lifted book is at most ~440 CSS px tall at pixel ratio ≤ 2, so 1024
+// texels already exceed the screen. 2048 (four times the memory, painting and
+// upload) only when a caller really draws it larger.
+function liftedTextureHeight(height) {
+  const ratio = Math.min(2, typeof devicePixelRatio === 'number' ? devicePixelRatio : 1);
+  return height * ratio > 1100 ? 2048 : 1024;
 }
 
 // Shelf and lifted copies of a book overlap during a transition. Keep the
@@ -244,15 +762,40 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   const group = new THREE.Group();
   group.userData.overview = group.userData.isOverview = Boolean(overview);
   group.userData.detailLevel = overview ? 'overview' : shelf ? 'shelf' : 'detail';
-  const textureHeight = overview ? 256 : shelf ? 512 : 2048;
+  const textureHeight = overview ? 256 : shelf ? 512 : liftedTextureHeight(height);
   const maxTextureDimension = overview ? 256 : Infinity;
   const bindingSegments = overview ? 16 : shelf ? 32 : 96, reliefRows = shelf ? 96 : 384;
-  const ribbonSegments = overview ? 8 : 32;
+  const ribbonSegments = overview ? 8 : 32, ribbonSeed = textSeed(`ribbon|${book?.id ?? ''}|${book?.title ?? ''}`) || 1;
+  const detail = !shelf && !overview, level = group.userData.detailLevel, ratio = width / height;
   const cloth = new THREE.MeshStandardMaterial({ color: style.color, roughness: .86 });
   let surface = shelfSpineSurface(book, style, height, thickness, shelf, overview);
   const binding = new THREE.MeshPhysicalMaterial({ ...surface.material, side: THREE.DoubleSide });
-  const cover = new THREE.MeshPhysicalMaterial({ map: coverTexture(book, style, textureHeight, maxTextureDimension) });
+  const updateSpineFade = !shelf && !overview ? spineGrazingFade(binding) : null;
+  updateSpineFade?.(book, style);
+  // Painted once, by updateCoverSource below (or as the placeholder while a
+  // download is pending), never twice per book.
+  const cover = new THREE.MeshPhysicalMaterial({ map:null });
   applyCoverFinish(cover, book.coverFinish);
+  // Close-up copies carry woven or paper tooth in the normal channel. On the
+  // shelf it would not survive the mipmaps, so those copies skip the cost.
+  // 224 threads per board height: below ~3 device pixels a thread the weave
+  // aliases into a screen-door grid, so it fades to a quiet tooth instead.
+  // Even at full resolution real bookcloth is a fine grain, never burlap.
+  const threadPixels = height * Math.min(2, typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) / 224;
+  const weaveStrength = THREE.MathUtils.clamp((threadPixels - 1.4) / 2.2, .2, .45);
+  if (detail) {
+    cloth.normalMap = sharedTexture('cloth', clothNormals);
+    cloth.normalMap.repeat.set(14 * ratio, 14); cloth.normalScale.setScalar(.5 * weaveStrength);
+  }
+  let coverGrain = null;
+  const setCoverGrain = kind => {
+    if (!detail || kind === coverGrain) return;
+    coverGrain = kind; cover.normalMap?.dispose();
+    cover.normalMap = sharedTexture(kind, kind === 'cloth' ? clothNormals : paperNormals);
+    const tiles = kind === 'cloth' ? 14 : 5;
+    cover.normalMap.repeat.set(tiles * ratio, tiles);
+    cover.normalScale.setScalar(kind === 'cloth' ? .55 * weaveStrength : .16); cover.needsUpdate = true;
+  };
   const box = (w, h, d, material, x = 0, y = 0, z = 0) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
     mesh.position.set(x, y, z); group.add(mesh); return mesh;
@@ -265,7 +808,9 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   frontCover.position.set(-width / 2, 0, thickness / 2 - board / 2);
   group.add(frontCover);
   const frontGeometry = boardGeometry(width, height, board, { shelf, overview });
-  const insideCover = new THREE.MeshStandardMaterial({ color:'#e6dfd0', roughness:1 });
+  // Inside of the board: the cloth turns in over its edges (this material)
+  // and the endpaper is pasted down over the rest (the 'endpaper' mesh).
+  const insideCover = new THREE.MeshStandardMaterial({ color:style.color, roughness:.9 });
   insideCover.visible = false;
   const frontGroups = [...frontGeometry.groups];
   frontGeometry.clearGroups();
@@ -286,34 +831,67 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   frontBoard.name = 'front-cover';
   frontBoard.position.set(width / 2, 0, 0);
   frontCover.add(frontBoard);
-  const backBoard = new THREE.Mesh(boardGeometry(width, height, board, { shelf, overview }), overview ? cloth : [cloth, cloth]);
+  // Pastedown: wove endpaper inside the cloth turn-ins, darker where it bends
+  // into the joint. Built here, drawn only while the board is open.
+  const turnIn = height * .028, joint = height * .004;
+  const pasteWidth = width - turnIn - joint, pasteHeight = height - turnIn * 2;
+  const pasteGeometry = new THREE.PlaneGeometry(pasteWidth, pasteHeight, overview ? 3 : 10, 1);
+  const pastePositions = pasteGeometry.getAttribute('position'), pasteShade = [];
+  for (let i = 0; i < pastePositions.count; i++) {
+    // Turned to face the pages, the plane's +x edge lies in the joint.
+    const fromJoint = (pasteWidth / 2 - pastePositions.getX(i)) / pasteWidth;
+    const shade = 1 - .3 * Math.max(0, 1 - fromJoint / .14) ** 2 - .06 * Math.max(0, fromJoint - .88) / .12;
+    pasteShade.push(shade, shade, shade);
+  }
+  pasteGeometry.setAttribute('color', new THREE.Float32BufferAttribute(pasteShade, 3));
+  const endpaper = new THREE.MeshStandardMaterial({ color:'#f1e9d8', roughness:1, vertexColors:true,
+    map:overview ? null : sharedTexture('endpaper', endpaperTexture) });
+  endpaper.map?.repeat.set(3 * pasteWidth / pasteHeight, 3);
+  const pastedown = new THREE.Mesh(pasteGeometry, endpaper);
+  pastedown.name = 'endpaper'; pastedown.rotation.y = Math.PI; pastedown.visible = false;
+  pastedown.position.set(-width / 2 + joint + pasteWidth / 2, 0, -board * .54);
+  frontBoard.add(pastedown);
+  // One material for face and edges: a single draw call per back board.
+  const backBoard = new THREE.Mesh(boardGeometry(width, height, board, { shelf, overview }), cloth);
   backBoard.name = 'back-cover';
   backBoard.position.z = -thickness / 2 + board / 2;
   group.add(backBoard);
-  const paper = vertical => {
-    const canvas = document.createElement('canvas');
-    const size = overview ? 32 : shelf ? 128 : 512;
-    canvas.width = canvas.height = size;
-    const c = canvas.getContext('2d'); c.fillStyle = '#e6dfd0'; c.fillRect(0, 0, size, size);
-    for (let i = 2; i < size; i += 4) {
-      c.fillStyle = i % 12 === 2 ? 'rgba(92,77,57,.2)' : 'rgba(255,255,255,.32)';
-      c.fillRect(vertical ? i : 0, vertical ? 0 : i, vertical ? 1 : size, vertical ? size : 1);
+  const inset = height * .009;
+  let edges, pageBlock;
+  if (overview) {
+    // A thumbnail keeps a plain block and one tiny owned raster.
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 32;
+    const c = canvas.getContext('2d'); c.fillStyle = '#ece3cf'; c.fillRect(0, 0, 32, 32);
+    for (let i = 1; i < 32; i += 3) {
+      c.fillStyle = i % 9 === 1 ? 'rgba(112,90,62,.22)' : 'rgba(255,252,242,.4)'; c.fillRect(0, i, 32, 1);
     }
     const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
-    return new THREE.MeshPhysicalMaterial({ map, roughness: 1 });
-  };
-  const topEdge = paper(false), foreEdge = overview ? topEdge : paper(true);
-  applySurfaceFinish(foreEdge, book.pageEdgeFinish, 'satin');
-  applySurfaceFinish(topEdge, book.pageEdgeFinish, 'satin');
-  const inset = height * .009;
-  const pageBlock = box(width - inset * 2, height - inset * 2, thickness - board * 2.4,
-    overview ? topEdge : [foreEdge, foreEdge, topEdge, topEdge, topEdge, topEdge], inset * .3);
+    edges = new THREE.MeshPhysicalMaterial({ map, roughness:1 });
+    pageBlock = box(width - inset * 2, height - inset * 2, thickness - board * 2.4, edges, inset * .3);
+  } else {
+    // One crescent-shaped block and one shared atlas: a single draw call.
+    const size = detail ? 512 : 256, map = sharedTexture(`pages-${size}`, () => pageEdgeAtlas(size));
+    edges = new THREE.MeshPhysicalMaterial({ map, roughness:1, vertexColors:true });
+    pageBlock = new THREE.Mesh(pageBlockGeometry(width, height, thickness, { board, inset, detail }), [edges]);
+    group.add(pageBlock);
+  }
+  applyPaperFinish(edges, book.pageEdgeFinish);
   pageBlock.name = 'page-block';
   const pageWidth = width - inset * 2, pageHeight = height - inset * 2;
   const pageFront = thickness / 2 - board * 1.2 + board * .03;
-  const pagePaper = new THREE.Mesh(new THREE.PlaneGeometry(pageWidth, pageHeight),
-    new THREE.MeshBasicMaterial({ color:'#e6dfd0', toneMapped:false }));
-  pagePaper.position.set(inset * .3, 0, pageFront);
+  // The paper runs on into the joint, where the leaf bends down into shade,
+  // so no strip of bare text block shows between the two pages.
+  const paperGeometry = new THREE.PlaneGeometry(pageWidth + inset, pageHeight, 2, 1);
+  const paperCorners = paperGeometry.getAttribute('position'), paperShade = [];
+  for (let i = 0; i < paperCorners.count; i++) {
+    if (Math.abs(paperCorners.getX(i)) < 1e-6) paperCorners.setX(i, -pageWidth / 2 + inset / 2);
+    const shade = paperCorners.getX(i) < -pageWidth / 2 ? .74 : 1;
+    paperShade.push(shade, shade, shade);
+  }
+  paperGeometry.setAttribute('color', new THREE.Float32BufferAttribute(paperShade, 3));
+  const pagePaper = new THREE.Mesh(paperGeometry,
+    new THREE.MeshBasicMaterial({ color:'#e6dfd0', toneMapped:false, vertexColors:true }));
+  pagePaper.position.set(inset * .3 - inset / 2, 0, pageFront);
   pagePaper.visible = false;
   pagePaper.name = 'reading-page-paper'; group.add(pagePaper);
   const pageMaterial = new THREE.MeshBasicMaterial({ color:0xffffff, toneMapped:false });
@@ -335,45 +913,50 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     map.minFilter = THREE.LinearFilter; map.generateMipmaps = false;
     pageMaterial.map?.dispose(); pageMaterial.map = map; pageMaterial.needsUpdate = true;
     pageImage.visible = true;
+    // White for a PDF, the theme's paper for an EPUB; cream when unreadable.
+    const tone = paperTone(snapshot.source);
+    if (tone) { pagePaper.material.color.copy(tone); leafPaper?.color.copy(tone).multiply(LEAF_LIGHT); }
     group.userData.pageSnapshot = snapshot;
     group.userData.invalidate?.();
     return true;
   };
   let bookmark = bookmarkFor(book);
   let ribbonMaterial = null, ribbonMesh = null, coverOpening = 0, bookmarkWithdraw = 0;
+  // The ribbon's silk follows the cloth it has to stand out from.
+  let clothColor = style.color;
+  const silk = () => ribbonSilk(ribbonSeed, clothColor, bookmark.finished);
   if (bookmark) {
-    ribbonMaterial = new THREE.MeshPhysicalMaterial({
-      color: bookmark.finished ? '#c79a3e' : '#b3342d',
-      roughness: .34, metalness: bookmark.finished ? .28 : .02,
-      clearcoat: .72, clearcoatRoughness: .2,
-      side: THREE.DoubleSide
-    });
+    ribbonMaterial = satinRibbon(bookmark.finished, silk(), !detail);
     ribbonMesh = new THREE.Mesh(
-      bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek, { segments:ribbonSegments }),
+      bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek, { segments:ribbonSegments, seed:ribbonSeed }),
       ribbonMaterial
     );
     ribbonMesh.renderOrder = 4;
     ribbonMesh.name = 'reading-bookmark';
     group.add(ribbonMesh);
   }
-  // Recessed cloth hinges run beside the curved binding on both boards.
-  const hinge = new THREE.MeshStandardMaterial({ color: style.shade || style.color, roughness: 1 });
-  if (!overview) {
-    box(height * .0025, height * .966, height * .0007, hinge, -width / 2 + height * .017, 0, -thickness / 2);
-    const frontHinge = new THREE.Mesh(new THREE.BoxGeometry(height * .0025, height * .966, height * .0007), hinge);
-    frontHinge.position.set(height * .017, 0, board / 2);
-    frontCover.add(frontHinge);
-  }
+  // Lifted copies only: the leaves already read turn over with the board, so
+  // an open book shows paper curling into the gutter, never a bare pastedown.
+  const leafDepth = () => (thickness - board * 2.4) * THREE.MathUtils.clamp(bookmark?.progress ?? 0, .025, .5);
+  // Text paper: cooler and smoother than the endpaper, the tone of the page.
+  // Like the saved page beside it, it skips tone mapping: the two sheets must
+  // not be graded differently. Matte paper has no highlight to compress.
+  const leafPaper = detail ? new THREE.MeshStandardMaterial({ color:'#e5e1d8', roughness:.93, vertexColors:true,
+    map:sharedTexture('endpaper', endpaperTexture), toneMapped:false }) : null;
+  // Finer than the endpaper: the fibres shrink into the grain of a book paper.
+  leafPaper?.map.repeat.set(6 * width / height, 6);
+  const readLeaves = detail
+    ? new THREE.Mesh(leafStackGeometry(width, height, leafDepth(), { board, inset }), [leafPaper, edges]) : null;
+  if (readLeaves) { readLeaves.name = 'read-leaves'; readLeaves.visible = false; frontCover.add(readLeaves); }
+  // The joint grooves are pressed into the board artwork (finishBoard), so
+  // no raised strips sit on top of the covers any more.
   const bindingMesh = new THREE.Mesh(bindingGeometry(width, height, thickness, bindingSegments, surface.relief, reliefRows), binding);
   bindingMesh.name = 'binding';
   group.add(bindingMesh);
-  const cap = new THREE.Shape(); cap.moveTo(-width / 2, -thickness / 2);
-  for (let i = 0; i <= bindingSegments; i++) { const a = i / bindingSegments * Math.PI; cap.lineTo(-width / 2 - thickness * .38 * Math.sin(a), -thickness / 2 * Math.cos(a)); }
-  cap.closePath();
   const capMaterials = [];
   for (const y of [-height / 2, height / 2]) {
     const metallic = ['gold','silver'].includes(book.spineFinish);
-    const mesh = new THREE.Mesh(new THREE.ShapeGeometry(cap), new THREE.MeshPhysicalMaterial({ color: style.color,
+    const mesh = new THREE.Mesh(capGeometry(width, thickness, bindingSegments, overview ? 0 : board * 1.1), new THREE.MeshPhysicalMaterial({ color: style.color,
       roughness: metallic ? .3 : .86, metalness: metallic ? 1 : 0, envMapIntensity:metallic ? 1.8 : 1,
       clearcoat:metallic ? .42 : 0, clearcoatRoughness:metallic ? .16 : .4, side: THREE.DoubleSide }));
     capMaterials.push(mesh.material);
@@ -396,8 +979,8 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     const replaceMap = map => { cover.map?.dispose(); cover.map = map; cover.needsUpdate = true; };
     if (!url) {
       releaseImage = () => {};
-      replaceMap(coverTexture(nextBook, nextStyle, textureHeight, maxTextureDimension));
-      settle(true);
+      replaceMap(coverTexture(nextBook, nextStyle, textureHeight, maxTextureDimension, level));
+      setCoverGrain('cloth'); settle(true);
     } else releaseImage = acquireCoverImage(url, image => {
       if (revision !== coverRevision || disposed) return;
       // The previous cover remains on the mesh until every new pixel is ready.
@@ -408,8 +991,12 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
         const c = canvas.getContext('2d'); c.fillStyle = nextStyle.color; c.fillRect(0, 0, canvas.width, canvas.height);
         const fit = fitCoverImage(image.width, image.height, canvas.width, canvas.height);
         c.drawImage(image, fit.x, fit.y, fit.width, fit.height);
+        // A printed jacket is still paper over board: joint, edges, corners.
+        const unit = canvas.height / 1024;
+        c.setTransform?.(unit, 0, 0, unit, 0, 0);
+        finishBoard(c, canvas.width / unit, coverSeed(nextBook, nextStyle, 'print'), { wear:level !== 'overview' });
         const fittedMap = new THREE.CanvasTexture(canvas); fittedMap.colorSpace = THREE.SRGBColorSpace;
-        replaceMap(fittedMap); settle(true);
+        replaceMap(fittedMap); setCoverGrain('paper'); settle(true);
       } catch { settle(false); }
     }, () => settle(false));
     releasePrevious();
@@ -417,27 +1004,35 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   }
   group.userData.updateCoverSource = updateCoverSource;
   updateCoverSource(coverUrl);
+  // Only a download still in flight (or one that already failed) needs the
+  // generated case meanwhile; a decoded image or a generated cover is on.
+  if (!cover.map) {
+    cover.map = coverTexture(book, style, textureHeight, maxTextureDimension, level); cover.needsUpdate = true;
+  }
   group.userData.dispose = () => {
     if (disposed) return;
     releaseImage(); resolveCoverReady(false);
-    disposed = true; const materials = new Set([insideCover, hinge]), textures = new Set([surface.map, surface.channels]);
+    disposed = true;
+    const materials = new Set([insideCover]), textures = new Set([surface.map, surface.channels]);
     group.traverse(obj => { obj.geometry?.dispose(); if (obj.material) for (const m of [].concat(obj.material)) materials.add(m); });
     for (const m of materials) {
-      for (const key of ['map', 'roughnessMap', 'metalnessMap', 'bumpMap']) if (m[key]) textures.add(m[key]);
+      for (const key of ['map', 'roughnessMap', 'metalnessMap', 'bumpMap', 'normalMap', 'alphaMap']) if (m[key]) textures.add(m[key]);
       m.dispose();
     }
-    for (const texture of textures) texture.dispose();
+    // Shared procedural sources survive: only this model's clones release.
+    for (const texture of textures) texture?.dispose();
   };
   group.userData.updateSpineAppearance = (nextBook, nextStyle) => {
     const previous = surface;
     surface = shelfSpineSurface(nextBook, nextStyle, height, thickness, shelf, overview);
-    Object.assign(binding, surface.material);
+    Object.assign(binding, surface.material); updateSpineFade?.(nextBook, nextStyle);
     binding.needsUpdate = true;
     releaseSurface(previous);
     bindingMesh.geometry.dispose();
     bindingMesh.geometry = bindingGeometry(width, height, thickness, bindingSegments, surface.relief, reliefRows);
-    cloth.color.set(nextStyle.color);
-    hinge.color.set(nextStyle.shade || nextStyle.color);
+    cloth.color.set(nextStyle.color); insideCover.color.set(nextStyle.color);
+    clothColor = nextStyle.color;
+    if (ribbonMaterial) tintRibbon(ribbonMaterial, silk(), !detail);
     for (const material of capMaterials) {
       material.color.set(nextStyle.color);
       material.metalness = ['gold','silver'].includes(nextBook.spineFinish) ? 1 : 0;
@@ -457,14 +1052,15 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     // Closed shelf books need neither the occluded paper plane nor the
     // cover's inner material submitted to the GPU on every shelf repaint.
     pagePaper.visible = next > 0;
-    insideCover.visible = next > 0;
+    insideCover.visible = pastedown.visible = next > 0;
+    if (readLeaves) readLeaves.visible = next > 0;
     if (Math.abs(next - coverOpening) > .00001) { coverOpening = next; updateRibbonGeometry(); }
   };
   function updateRibbonGeometry() {
     if (!ribbonMesh || !bookmark) return;
     ribbonMesh.geometry.dispose();
     ribbonMesh.geometry = bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek,
-      { open:Math.max(0, Math.min(1, (coverOpening - .1) / .9)), withdraw:bookmarkWithdraw, segments:ribbonSegments });
+      { open:Math.max(0, Math.min(1, (coverOpening - .1) / .9)), withdraw:bookmarkWithdraw, segments:ribbonSegments, seed:ribbonSeed });
     ribbonMesh.visible = bookmarkWithdraw < .999;
   }
   group.userData.setBookmarkWithdraw = amount => {
@@ -475,26 +1071,25 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   group.userData.updateBookmark = nextBook => {
     if (disposed) return;
     bookmark = bookmarkFor(nextBook);
-    if (ribbonMesh) { group.remove(ribbonMesh); ribbonMesh.geometry.dispose(); ribbonMaterial.dispose(); }
+    if (ribbonMesh) {
+      group.remove(ribbonMesh); ribbonMesh.geometry.dispose(); ribbonMaterial.alphaMap?.dispose(); ribbonMaterial.dispose();
+    }
     ribbonMesh = null; ribbonMaterial = null;
     if (bookmark) {
-      ribbonMaterial = new THREE.MeshPhysicalMaterial({
-        color:bookmark.finished ? '#c79a3e' : '#b3342d', roughness:.34,
-        metalness:bookmark.finished ? .28 : .02, clearcoat:.72,
-        clearcoatRoughness:.2, side:THREE.DoubleSide
-      });
+      ribbonMaterial = satinRibbon(bookmark.finished, silk(), !detail);
       ribbonMesh = new THREE.Mesh(bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek,
-        { segments:ribbonSegments }), ribbonMaterial);
+        { segments:ribbonSegments, seed:ribbonSeed }), ribbonMaterial);
       ribbonMesh.renderOrder = 4; ribbonMesh.name = 'reading-bookmark'; group.add(ribbonMesh);
       updateRibbonGeometry();
+    }
+    if (readLeaves) {
+      readLeaves.geometry.dispose();
+      readLeaves.geometry = leafStackGeometry(width, height, leafDepth(), { board, inset });
     }
     group.userData.hasBookmark = Boolean(bookmark);
     group.userData.invalidate?.();
   };
-  group.userData.updateEdgeAppearance = nextBook => {
-    applySurfaceFinish(foreEdge, nextBook.pageEdgeFinish, 'satin');
-    applySurfaceFinish(topEdge, nextBook.pageEdgeFinish, 'satin');
-  };
+  group.userData.updateEdgeAppearance = nextBook => applyPaperFinish(edges, nextBook.pageEdgeFinish);
   return group;
 }
 
@@ -509,31 +1104,69 @@ export function getBookRenderer() {
     // Preserve print colours and gently compress real specular highlights.
     // Unmapped studio radiance used to clip RGB channels on bright jackets.
     renderer.toneMapping = THREE.NeutralToneMapping;
-    renderer.toneMappingExposure = .82;
+    renderer.toneMappingExposure = 1;
+    // Its toe pulls the weakest channel of every dark tone to zero, which
+    // turns walnut and deep bookcloth orange and crushes navy. A smoothstep
+    // toe keeps the black point, the join at 0.08 and the highlight curve.
+    // Patched once before any program compiles; a later three skips it.
+    const toe = 'float offset = x < 0.08 ? x - 6.25 * x * x : 0.04;';
+    const tonemap = THREE.ShaderChunk.tonemapping_pars_fragment;
+    if (tonemap?.includes(toe)) THREE.ShaderChunk.tonemapping_pars_fragment = tonemap.replace(toe,
+      'float toe = min( x / 0.08, 1.0 ); float offset = 0.04 * toe * toe * ( 3.0 - 2.0 * toe );');
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    // The scene requests a shadow refresh only while something changes.
+    // Variance shadows: one 1024 map with a wide, smooth interior penumbra.
+    // Its blur runs only when the scene requests a shadow refresh.
+    renderer.shadowMap.type = THREE.VSMShadowMap;
     renderer.shadowMap.autoUpdate = false;
-    const studio = new RoomEnvironment();
+    // A quiet reading room instead of a grey photo studio: plaster walls, a
+    // walnut floor, a tall window high on the left (the key's direction) and a
+    // warm lamp on the right. Satin wood and laminates reflect real shapes.
+    const room = new THREE.Scene(), shell = new THREE.SphereGeometry(10, 48, 24), tint = [];
+    // Near-neutral surfaces: the warmth belongs to the key and the lamp, so
+    // shadows stay natural instead of turning every material orange.
+    const floor = new THREE.Color(.068, .05, .037), wall = new THREE.Color(.34, .315, .288), ceiling = new THREE.Color(.5, .485, .46);
+    for (let i = 0, p = shell.attributes.position, c = new THREE.Color(); i < p.count; i++) {
+      const y = p.getY(i) / 10;
+      c.copy(floor).lerp(wall, THREE.MathUtils.smoothstep(y, -.32, -.02)).lerp(ceiling, THREE.MathUtils.smoothstep(y, .3, .85));
+      tint.push(c.r, c.g, c.b);
+    }
+    shell.setAttribute('color', new THREE.Float32BufferAttribute(tint, 3));
+    room.add(new THREE.Mesh(shell, new THREE.MeshBasicMaterial({ vertexColors:true, side:THREE.BackSide })));
+    const glow = (geometry, rgb, strength, position) => {
+      const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color:new THREE.Color(...rgb).multiplyScalar(strength), side:THREE.DoubleSide }));
+      mesh.position.set(...position); mesh.lookAt(0, 0, 0); room.add(mesh); return mesh;
+    };
+    const pane = glow(new THREE.PlaneGeometry(4.6, 5.8), [1, .98, .95], 6.5, [-3.6, 3.9, 7.8]);
+    // Mullions break the reflection into panes, as a real window would.
+    for (const [w, h, x, y] of [[.16, 5.8, 0, 0], [4.6, .14, 0, .5]]) {
+      const bar = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color:0x2a2119, side:THREE.DoubleSide }));
+      bar.position.set(x, y, .02); pane.add(bar);
+    }
+    glow(new THREE.SphereGeometry(.55, 16, 8), [1, .7, .4], 16, [7.4, 1.2, 3.6]);
+    glow(new THREE.PlaneGeometry(7, 2.2), [1, .96, .92], .9, [0, 9.4, -1]);
     const pmrem = new THREE.PMREMGenerator(renderer);
-    studioEnvironment = pmrem.fromScene(studio, .04).texture;
-    studio.dispose(); pmrem.dispose();
+    studioEnvironment = pmrem.fromScene(room, .035).texture;
+    room.traverse(object => { object.geometry?.dispose(); object.material?.dispose(); });
+    pmrem.dispose();
   } catch { return null; }
   return renderer;
 }
 
-/** One neutral light rig for shelf, editor and opening/closing book meshes. */
+/** One warm reading-room rig for shelf, editor and opening/closing books.
+ * The key matches the environment's window; shelf-lighting gives it shadows. */
 export function lightBookScene(scene) {
   scene.environment = studioEnvironment;
-  scene.environmentIntensity = .62;
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x8b8b8b, .48));
-  const readerLight = new THREE.DirectionalLight(0xfff9f2, 1.25);
-  readerLight.position.set(-.28, .6, 1); scene.add(readerLight);
+  scene.environmentIntensity = .55;
+  // Pale ceiling above, a muted bounce from the wooden floor below.
+  scene.add(new THREE.HemisphereLight(0xf6f3ee, 0x5e5047, .5));
+  const readerLight = new THREE.DirectionalLight(0xfff4e8, 1.9);
+  readerLight.position.set(-.46, .42, 1); scene.add(readerLight);
   scene.userData.readerLight = readerLight;
-  const fillLight = new THREE.DirectionalLight(0xf0f5ff, .32);
-  fillLight.position.set(-3, 2, 4); scene.add(fillLight);
+  // Cooler, dim fill from the other side keeps shaded spines legible.
+  const fillLight = new THREE.DirectionalLight(0xe6edff, .26);
+  fillLight.position.set(3, .8, 2.6); scene.add(fillLight);
   // A modest off-axis strip still travels over metallic foil and clearcoat.
-  const stripLight = new THREE.DirectionalLight(0xffffff, .38);
+  const stripLight = new THREE.DirectionalLight(0xfff8f0, .34);
   stripLight.position.set(3, 1, 2); scene.add(stripLight);
   return scene;
 }
@@ -652,6 +1285,13 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     canvas.dataset.boardBounds = JSON.stringify(projectBookBoardBounds(model,camera,viewportWidth,viewportHeight));
   }
   model.userData.invalidate = () => current && draw(current);
+  // Lifted books reveal hidden materials mid-motion (the inside of the board,
+  // the page). Queue every program now, not in the middle of the opening.
+  // three only issues compile/link here and waits for a program on its first
+  // draw, so hidden ones build in the background (in parallel where
+  // KHR_parallel_shader_compile exists). compileAsync adds nothing to that,
+  // and its polling throws if the flyout is closed before a program is ready.
+  if (!shelf) try { gpu.compile(scene, camera); } catch { /* compiled lazily on first use */ }
   draw(initialPose ?? {
     x:0, y:0, scale:1,
     angle:shelf ? (shelfView === 'isometric' ? 76 : 90) : 0,
@@ -762,11 +1402,16 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     cancel = () => { cancelAnimationFrame(raf); resolve(); };
     let lastFrame = performance.now(), elapsed = 0;
     const animation = { finished, cancel, lastFrameTime:lastFrame };
+    // Real time, so a slow device finishes each phase on schedule instead of
+    // stretching it frame by frame. A stalled frame on a phone GPU may absorb
+    // at most 100 ms (a fifth of a hinge opening), never half a phase, so the
+    // board and ribbon never visibly jump. The first step only covers the
+    // frame that scheduled the motion.
+    const maxStep = Math.max(48, Math.min(100, duration / 2));
+    let started = false;
     const tick = now => {
       if (disposed) return resolve();
-      // Don't skip a hinge/ribbon step after a slow GPU frame on a phone.
-      // Keep the camera and geometry moving together through the same poses.
-      elapsed += Math.min(48,Math.max(0,now-lastFrame)); lastFrame = now;
+      elapsed += Math.min(started ? maxStep : 48, Math.max(0, now - lastFrame)); lastFrame = now; started = true;
       const t = duration > 0 ? Math.min(1, elapsed / duration) : 1;
       draw(sampleBookMotion(frames, t)); animation.lastFrameTime = performance.now();
       if (t < 1) raf = requestAnimationFrame(tick); else resolve();

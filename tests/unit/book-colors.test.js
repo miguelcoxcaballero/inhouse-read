@@ -52,6 +52,12 @@ describe('distinct palette and saved finishes', () => {
       expect(colors.slice(1).every(rgb=>Math.max(...rgb)-Math.min(...rgb)>40)).toBe(true)
     }
   })
+  it('suggests deep book-cloth tones, not bright UI violets or pinks', () => {
+    const lightness = hex => { const c = [1,3,5].map(i => parseInt(hex.slice(i,i+2),16)); return (Math.max(...c) + Math.min(...c)) / 510 }
+    for (const cover of ['#c8742c','#8a8a3a','#a64235','#0a7cff','#2e6b3a','#6b2e8a','#d9c9a0']) {
+      for (const option of bookColorOptions(cover).slice(1)) expect(lightness(option)).toBeLessThan(.42)
+    }
+  })
   it('keeps valid colors, finishes, engraving and explicit automatic reset', () => {
     expect(spineCustomization({spineTextColor:null,spineColorOverride:'#abc',spineFinish:'gold',spineTextFinish:'silver',coverFinish:'glossy',pageEdgeFinish:'matte',spineSurfaceFinish:'satin',spineEngraved:true,author:{name:'Ursula Le Guin'},spineFontSize:44,spineAuthorFontSize:30,evil:'ignored'})).toEqual({
       spineTextColor:null,spineColorOverride:'#aabbcc',spineFinish:'gold',spineTextFinish:'silver',coverFinish:'glossy',pageEdgeFinish:'matte',spineSurfaceFinish:'satin',spineEngraved:true,author:'Ursula Le Guin',spineFontSize:44,spineAuthorFontSize:30

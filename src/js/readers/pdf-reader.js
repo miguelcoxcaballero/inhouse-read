@@ -253,8 +253,13 @@ export class PdfReader {
       const haystack = text.toLocaleLowerCase()
       let at = 0
       while ((at = haystack.indexOf(term,at)) >= 0 && results.length < 500) {
-        const start = Math.max(0,at-75), end = Math.min(text.length,at+term.length+95)
-        results.push({label:`Página ${pageNumber}`,excerpt:`…${text.slice(start,end)}…`,locator:{kind:'pdf-page',value:pageNumber},fraction:(pageNumber-1)/Math.max(1,this.pageCount-1)})
+        // Context cut at word boundaries, so an excerpt never starts mid-word.
+        const stop = at + term.length
+        let start = Math.max(0,at-60), end = Math.min(text.length,stop+80)
+        if (start > 0) { const space = text.indexOf(' ',start); start = space >= 0 && space < at ? space + 1 : at }
+        if (end < text.length) { const space = text.lastIndexOf(' ',end); end = space > stop ? space : stop }
+        const parts = { pre:`${start > 0 ? '…' : ''}${text.slice(start,at)}`, match:text.slice(at,stop), post:`${text.slice(stop,end)}${end < text.length ? '…' : ''}` }
+        results.push({label:`Página ${pageNumber}`,parts,excerpt:`${parts.pre}${parts.match}${parts.post}`,locator:{kind:'pdf-page',value:pageNumber},fraction:(pageNumber-1)/Math.max(1,this.pageCount-1)})
         at += Math.max(1,term.length)
       }
       if (results.length >= 500) break
@@ -289,7 +294,9 @@ export class PdfReader {
     canvas.height = thumbViewport.height
     await page.render({ canvasContext: canvas.getContext('2d'), viewport: thumbViewport }).promise
 
-    return new Promise(resolve => canvas.toBlob(resolve, 'image/webp', 0.92))
+    // JPEG: la portada es opaca y su codificación es mucho más rápida que WebP
+    // en el hilo principal (WebP bloqueaba segundos la vuelta a la estantería).
+    return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9))
   }
 
   close() {

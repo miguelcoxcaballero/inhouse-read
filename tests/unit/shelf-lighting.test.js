@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { createShelfLighting } from '../../src/js/shelf-lighting.js';
+import { createShelfLighting, widePenumbra } from '../../src/js/shelf-lighting.js';
 
 describe('visible shelf lighting', () => {
   it('fits a single bounded soft shadow to the visible rows and stays quiet at rest', () => {
@@ -26,5 +26,118 @@ describe('visible shelf lighting', () => {
     key.shadow.map = { dispose:vi.fn() };
     lighting.dispose();
     expect(key.shadow.map.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the rig direction and tightens the frustum to the cabinet actually in view', () => {
+    const scene = new THREE.Scene(), key = new THREE.DirectionalLight();
+    key.position.set(-.46, .42, 1); scene.userData.readerLight = key; scene.add(key);
+    const direction = key.position.clone().normalize();
+    const renderer = { shadowMap:{ needsUpdate:false } };
+    const lighting = createShelfLighting(scene, renderer);
+    const frame = { width:1280, viewportHeight:860, scroll:300, depth:160 };
+    lighting.update(frame);
+    const wide = key.shadow.camera.right - key.shadow.camera.left;
+    // A narrower cabinet, partly above the viewport: only its visible part counts.
+    const bounds = new THREE.Box3(new THREE.Vector3(210, -2000, -170), new THREE.Vector3(1070, 0, 12));
+    lighting.update({ ...frame, bounds });
+    const camera = key.shadow.camera;
+    expect(camera.right - camera.left).toBeLessThan(wide);
+    expect(key.target.position.x).toBeCloseTo(640, 5);
+    expect(key.target.position.y).toBeCloseTo(-300 - 430, 5);
+    expect(key.position.clone().sub(key.target.position).normalize().distanceTo(direction)).toBeLessThan(1e-9);
+    // The whole visible box sits inside the shadow frustum.
+    key.updateMatrixWorld(); camera.position.copy(key.position); camera.lookAt(key.target.position); camera.updateMatrixWorld();
+    // With room at each edge for the back panel's widest shadow taps.
+    for (const x of [210, 1070]) for (const y of [-300, -1160]) for (const z of [-170, 12]) {
+      const point = new THREE.Vector3(x, y, z).applyMatrix4(camera.matrixWorldInverse);
+      expect(point.x).toBeGreaterThan(camera.left + 40); expect(point.x).toBeLessThan(camera.right - 40);
+      expect(point.y).toBeGreaterThan(camera.bottom + 40); expect(point.y).toBeLessThan(camera.top - 40);
+      expect(-point.z).toBeGreaterThan(camera.near); expect(-point.z).toBeLessThan(camera.far);
+    }
+    lighting.dispose();
+  });
+
+  it('reuses the map for short scrolls and keeps the penumbra width constant on the shelf', () => {
+    const scene = new THREE.Scene(), key = new THREE.DirectionalLight();
+    key.position.set(-.46, .42, 1); scene.userData.readerLight = key; scene.add(key);
+    const renderer = { shadowMap:{ needsUpdate:false } };
+    const lighting = createShelfLighting(scene, renderer);
+    const bounds = new THREE.Box3(new THREE.Vector3(210, -4000, -170), new THREE.Vector3(1070, 0, 12));
+    const frame = { width:1280, viewportHeight:860, scroll:1000, depth:160, bounds, dirty:false };
+    expect(lighting.update(frame)).toBe(true);
+    const texelRadius = camera => key.shadow.radius * Math.max(camera.right - camera.left, camera.top - camera.bottom) / 1024;
+    const penumbra = texelRadius(key.shadow.camera), target = key.target.position.clone();
+    // Scrolling within the fitted slack neither moves the frustum nor redraws.
+    for (const scroll of [1040, 1120, 960, 880]) {
+      renderer.shadowMap.needsUpdate = key.shadow.needsUpdate = false;
+      expect(lighting.update({ ...frame, scroll })).toBe(false);
+      expect(renderer.shadowMap.needsUpdate).toBe(false);
+      expect(key.target.position.equals(target)).toBe(true);
+    }
+    // Leaving it refits once, around the new window.
+    expect(lighting.update({ ...frame, scroll:1300 })).toBe(true);
+    expect(key.target.position.y).toBeCloseTo(-1300 - 430, 5);
+    expect(lighting.update({ ...frame, scroll:1300 })).toBe(false);
+    // Near the cabinet's top the clipped window is smaller, yet the blur
+    // covers the same distance on the shelf.
+    lighting.update({ ...frame, scroll:0 });
+    expect(key.shadow.camera.top - key.shadow.camera.bottom).toBeLessThan(target.y * -2);
+    expect(texelRadius(key.shadow.camera)).toBeCloseTo(penumbra, 5);
+    // A change to the scene still redraws without a refit.
+    expect(lighting.update({ ...frame, scroll:0, dirty:true })).toBe(true);
+    lighting.dispose();
+  });
+
+  it('blurs a moving map with half the taps and redraws it once at full quality when the scene settles', () => {
+    const scene = new THREE.Scene(), key = new THREE.DirectionalLight();
+    scene.userData.readerLight = key; scene.add(key);
+    const renderer = { shadowMap:{ needsUpdate:false } };
+    const lighting = createShelfLighting(scene, renderer);
+    const frame = { width:390, viewportHeight:700, scroll:0, depth:160, dirty:false };
+    expect(lighting.update({ ...frame, dirty:true })).toBe(true);
+    const full = key.shadow.blurSamples;
+    expect(full).toBeGreaterThanOrEqual(8); expect(lighting.settling).toBe(false);
+    for (let frameIndex = 0; frameIndex < 3; frameIndex++) {
+      expect(lighting.update({ ...frame, dirty:true, moving:true })).toBe(true);
+      expect(key.shadow.blurSamples).toBe(full / 2); expect(lighting.settling).toBe(true);
+    }
+    // The first still frame redraws although nothing else changed, then rests.
+    renderer.shadowMap.needsUpdate = key.shadow.needsUpdate = false;
+    expect(lighting.update(frame)).toBe(true);
+    expect(renderer.shadowMap.needsUpdate).toBe(true); expect(key.shadow.needsUpdate).toBe(true);
+    expect(key.shadow.blurSamples).toBe(full); expect(lighting.settling).toBe(false);
+    renderer.shadowMap.needsUpdate = key.shadow.needsUpdate = false;
+    expect(lighting.update(frame)).toBe(false);
+    expect(renderer.shadowMap.needsUpdate).toBe(false);
+    // An ordinary change at rest keeps full quality.
+    expect(lighting.update({ ...frame, dirty:true })).toBe(true);
+    expect(key.shadow.blurSamples).toBe(full); expect(lighting.settling).toBe(false);
+    lighting.dispose();
+  });
+
+  it('widens only the back panel shadow along its own surface and dims its room bounce', () => {
+    const panel = widePenumbra(new THREE.MeshStandardMaterial());
+    const shader = { fragmentShader:THREE.ShaderLib.standard.fragmentShader };
+    panel.onBeforeCompile(shader);
+    const source = shader.fragmentShader;
+    expect(source).toContain('float getPanelShadow(');
+    expect(source).toContain('getPanelShadow( directionalShadowMap[ i ]');
+    expect(source).not.toContain('getShadow( directionalShadowMap[ i ]');
+    expect(source).toContain('dFdx( coord.xyz )');
+    expect(source).toMatch(/indirectDiffuse \*= \.8;/);
+    expect(panel.defines.PANEL_TAPS).toBeGreaterThanOrEqual(8);
+    // Its own program: no other standard material inherits the patch.
+    expect(panel.customProgramCacheKey()).not.toBe(new THREE.MeshStandardMaterial().customProgramCacheKey());
+  });
+
+  it('firms up the variance shadow light-bleed floor once and does nothing without a key light', () => {
+    const empty = createShelfLighting(new THREE.Scene(), { shadowMap:{} });
+    expect(() => { empty.update({ width:1, viewportHeight:1, scroll:0, depth:1 }); empty.dispose(); }).not.toThrow();
+    expect(empty.settling).toBe(false);
+    const scene = new THREE.Scene(); scene.userData.readerLight = new THREE.DirectionalLight();
+    createShelfLighting(scene, { shadowMap:{} }); createShelfLighting(scene, { shadowMap:{} });
+    const chunk = THREE.ShaderChunk.shadowmap_pars_fragment;
+    expect(chunk).not.toContain('( softness_probability - 0.3 )');
+    expect(chunk.match(/softness_probability - 0\.62/g)).toHaveLength(1);
   });
 });

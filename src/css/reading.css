@@ -11,7 +11,7 @@ body.is-reading .reader-heading { display:flex; width:100%; height:48px; gap:4px
 .reader-heading-actions { display:flex; flex:none; align-items:center; gap:0; }
 .reader-heading-actions .icon-btn { width:44px; height:44px; }
 .reader-heading-actions svg { width:21px; height:21px; }
-.reader-heading .icon-btn { flex:none; width:44px; height:44px; color:inherit; border-radius:4px; }
+.reader-heading .icon-btn { flex:none; width:44px; height:44px; color:inherit; border-radius:10px; }
 /* The screen is already below the app header. Only the hidden, fixed preloader
    reserves that header here, so the opening snapshot and final page agree. */
 .reader-viewport { top:0; bottom:calc(var(--reader-bar-height) + var(--reader-audio-height,0px) + var(--reader-return-height,0px)); background:var(--reading-paper,#faf9f5); filter:brightness(var(--reader-brightness,100%)); }
@@ -19,10 +19,15 @@ body.is-reading .reader-heading { display:flex; width:100%; height:48px; gap:4px
 #reader-screen.is-preparing:has(.reader-toolbar[hidden]),
 #reader-screen.is-opening-from-book:has(.reader-toolbar[hidden]) { --reader-bar-height:calc(48px + env(safe-area-inset-bottom,0px)); }
 .reader-toolbar { display:grid; grid-template-columns:44px minmax(0,1fr) repeat(4,44px); gap:0; height:var(--reader-bar-height); min-height:0; padding:0 8px env(safe-area-inset-bottom,0px); z-index:3; border:0; box-shadow:none; backdrop-filter:none; background:var(--reading-paper,#faf9f5); color:var(--reading-ink,#292821); }
-.reader-toolbar .icon-btn { width:44px; height:44px; padding:10px; color:inherit; border-radius:4px; }
+.reader-toolbar .icon-btn { width:44px; height:44px; padding:10px; color:inherit; border-radius:10px; }
 .reader-toolbar .file-format-badge { display:none; }
 #reader-settings,#reader-audio { display:flex; justify-content:center; align-items:center; }
 .reader-toolbar [aria-expanded=true] { background:color-mix(in srgb,currentColor 8%,transparent); border-radius:8px; }
+/* The progress control is too wide for a filled block: open state flips its caret and thickens the bar. */
+.reader-toolbar .reader-location[aria-expanded=true] { background:transparent; }
+.reader-location[aria-expanded=true] .reader-location-label::after { transform:translateY(1px) rotate(-135deg); opacity:1; }
+.reader-location .reader-progress, .reader-progress-fill { transition:height .18s var(--ease); }
+.reader-location[aria-expanded=true] .reader-progress, .reader-location[aria-expanded=true] .reader-progress-fill { height:4px; border-radius:2px; }
 .reader-type-icon { font:500 22px Georgia,serif; letter-spacing:-1.5px; }
 .reader-location { min-width:0; min-height:44px; padding:6px 8px; border:0; background:transparent; color:inherit; cursor:pointer; }
 .reader-location-label { display:block; overflow:hidden; text-overflow:ellipsis; margin-bottom:5px; font:500 12px var(--f-body); font-variant-numeric:tabular-nums; white-space:nowrap; }
@@ -40,6 +45,21 @@ body.is-reading .reader-heading { display:flex; width:100%; height:48px; gap:4px
 .pdf-reflow-page[hidden], .pdf-page-wrap[hidden] { display:none; }
 .pdf-page-wrap { flex:none; }
 .pdf-page-canvas { display:block; }
+/* An original PDF page is a sheet of paper, not a full-bleed slab ending in a
+   hard white step: it rests on a desk a shade deeper than the paper, with a
+   hairline edge and a soft contact shadow, and is centred when it fits. The
+   whole reader takes the desk tone so chrome and desk stay one surface. The
+   tone is a translucent layer over the paper colour, so background-color
+   keeps its theme value (AMOLED stays rgb(0,0,0)). The side borders (not
+   padding) narrow the width pdf-reader fits the page to, so the sheet lines
+   up with the header and toolbar column. */
+.app-shell:has(#reader-viewport > .pdf-page-wrap:not([hidden])) { --reader-desk:linear-gradient(rgb(0 0 0 / .05),rgb(0 0 0 / .05)); }
+.reader-viewport:has(> .pdf-page-wrap:not([hidden])) { padding-block:14px 20px; border:0 solid transparent;
+  border-inline-start-width:max(0px,calc(var(--reader-chrome-inset) - env(safe-area-inset-left,0px)));
+  border-inline-end-width:max(0px,calc(var(--reader-chrome-inset) - env(safe-area-inset-right,0px)));
+  scrollbar-width:thin; scrollbar-color:color-mix(in srgb,currentColor 24%,transparent) transparent; }
+.reader-viewport > .pdf-page-wrap { margin-block:auto;
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--reading-ink,#292821) 7%,transparent), 0 1px 2px rgb(0 0 0 / .07), 0 10px 28px -4px rgb(0 0 0 / .12); }
 .reading-panel { position:fixed; inset:auto 0 0; margin:0 auto; width:min(100%,440px); max-width:100%; max-height:82dvh; overflow-y:auto; overscroll-behavior:contain; padding:8px 20px max(16px,env(safe-area-inset-bottom)); border:0; border-radius:12px 12px 0 0; background:var(--reading-paper,var(--bg-primary)); color:var(--reading-ink,var(--text-primary)); box-shadow:0 -6px 24px #0002; font-family:var(--f-body); }
 .reading-panel::backdrop { background:#12171230; }
 .reading-panel [hidden] { display:none !important; }
@@ -50,8 +70,18 @@ body.is-reading .reader-heading { display:flex; width:100%; height:48px; gap:4px
 .reading-icon-button[aria-pressed=true] svg { fill:currentColor; }
 .reading-row { display:flex; align-items:center; gap:12px; min-height:48px; font-size:13px; }
 .reading-row > span { flex:none; max-width:48%; overflow-wrap:anywhere; }
-.reading-row select { flex:1; min-width:0; width:1px; min-height:44px; padding:8px 22px 8px 0; border:0; border-radius:0; background:transparent; color:inherit; text-align:right; font:400 16px var(--f-body); cursor:pointer; text-overflow:ellipsis; }
+/* Native select, quiet face: right-aligned value and a thin caret drawn in
+   the reading ink (the platform arrow was a heavy black glyph). */
+.reading-row select { -webkit-appearance:none; appearance:none; flex:1; min-width:0; width:1px; min-height:44px; padding:8px 24px 8px 0; border:0; border-radius:0; color:inherit; text-align:right; text-align-last:right; font:400 15px var(--f-body); cursor:pointer; text-overflow:ellipsis;
+  background:linear-gradient(45deg, transparent 49%, currentColor 50% 62%, transparent 63%) calc(100% - 8px) 52% / 6px 6px no-repeat, linear-gradient(-45deg, transparent 49%, currentColor 50% 62%, transparent 63%) calc(100% - 3px) 52% / 6px 6px no-repeat; }
 .reading-row select option { background:var(--reading-paper,var(--bg-primary)); color:var(--reading-ink,var(--text-primary)); }
+/* Checkbox rows become switches aligned to the row's end, like the rest of the app. */
+.reading-row input[type=checkbox] { -webkit-appearance:none; appearance:none; position:relative; flex:none; width:40px; height:24px; margin:0 0 0 auto; border-radius:12px; background:color-mix(in srgb,currentColor 18%,transparent); cursor:pointer; transition:background-color .18s var(--ease); }
+.reading-row input[type=checkbox]::after { content:''; position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:var(--reading-paper,#fff); box-shadow:0 1px 2px #0004; transition:transform .18s var(--ease); }
+.reading-row input[type=checkbox]:checked { background:currentColor; }
+.reading-row input[type=checkbox]:checked::after { transform:translateX(16px); }
+.reading-row:has(input[type=checkbox]) { cursor:pointer; }
+.reading-row:has(input[type=checkbox]) > span { max-width:none; flex:1; }
 .reading-range-row output { flex:none; min-width:38px; text-align:right; font-size:12px; font-variant-numeric:tabular-nums; opacity:.65; }
 .reading-range-row input { flex:1; min-width:40px; }
 .reading-panel input[type=range] { appearance:none; display:block; min-width:0; height:44px; margin:0; padding:0; background:transparent; cursor:pointer; color:inherit; }
@@ -74,9 +104,23 @@ body.is-reading .reader-heading { display:flex; width:100%; height:48px; gap:4px
 .reading-size button span { font:12px var(--f-body); vertical-align:super; }
 .reading-size input { flex:1; }
 .reading-size output { flex:none; width:38px; text-align:right; font-size:12px; opacity:.65; }
+/* Every slider track starts and ends on the same x: a fixed label column and
+   a fixed value column. The size stepper puts A− in the label column and A+
+   in the value column; its value stays announced (aria-live) but is not
+   drawn, since the text behind the panel already shows the change. */
+.reading-panel { --reading-label-col:5.75rem; }
+.reading-range-row, .reading-size { display:grid; grid-template-columns:var(--reading-label-col) minmax(0,1fr) 44px; align-items:center; column-gap:12px; }
+.reading-range-row > span { max-width:none; }
+.reading-size [data-size-step] { width:44px; padding:0; }
+.reading-size [data-size-step="-1"] { justify-self:start; text-align:start; }
+.reading-size [data-size-step="1"] { justify-self:end; text-align:end; }
+.reading-size output { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .reading-panel button:disabled { opacity:.3; cursor:default; }
 .reading-details { border-top:1px solid color-mix(in srgb,currentColor 10%,transparent); }
-.reading-details summary { padding:18px 0; font-size:13px; cursor:pointer; }
+.reading-details summary { display:flex; align-items:center; justify-content:space-between; padding:18px 0; font-size:13px; cursor:pointer; list-style:none; }
+.reading-details summary::-webkit-details-marker { display:none; }
+.reading-details summary::after { content:''; width:6px; height:6px; margin:0 3px 3px 0; border-right:1.5px solid; border-bottom:1.5px solid; opacity:.6; transform:rotate(45deg); transition:transform .18s var(--ease); }
+.reading-details[open] summary::after { transform:translateY(3px) rotate(-135deg); }
 .reading-details .reading-row { min-height:50px; }
 .reading-text-button { min-height:44px; border:0; padding:8px 0; font:500 13px var(--f-body); color:inherit; background:none; cursor:pointer; }
 .reading-reset { font-size:12px; opacity:.65; margin-top:8px; }
@@ -90,13 +134,29 @@ body.is-reading .reader-heading { display:flex; width:100%; height:48px; gap:4px
 .reading-progress-ends { display:flex; justify-content:space-between; margin:-5px 0 10px; font-size:10px; opacity:.55; }
 .reading-page-form { display:flex; align-items:center; gap:16px; }
 .reading-page-form label { display:flex; align-items:center; gap:16px; font-size:13px; }
-.reading-page-form input { width:64px; height:44px; border:0; border-bottom:1px solid color-mix(in srgb,currentColor 20%,transparent); background:transparent; color:inherit; font:400 16px var(--f-body); text-align:center; border-radius:0; }
+.reading-page-form input { width:72px; height:40px; border:1px solid color-mix(in srgb,currentColor 16%,transparent); background:color-mix(in srgb,currentColor 4%,transparent); color:inherit; font:400 16px var(--f-body); font-variant-numeric:tabular-nums; text-align:center; border-radius:10px; }
 .reading-page-form button { padding:8px 12px; }
 .reading-list { display:flex; flex-direction:column;  }
 .reading-list > .reading-hint { padding:20px 0; }
 .reading-search-form { display:flex; align-items:end; gap:12px; }
 .reading-search-form label { flex:1; display:flex; flex-direction:column; gap:8px; font-size:13px; }
-.reading-search-form input { width:100%; min-height:44px; border:0; border-bottom:1px solid color-mix(in srgb,currentColor 22%,transparent); border-radius:0; background:transparent; color:inherit; font:400 16px var(--f-body); }
+.reading-search-form input { -webkit-appearance:none; appearance:none; width:100%; min-height:44px; padding:0 12px 0 14px; border:1px solid color-mix(in srgb,currentColor 16%,transparent); border-radius:10px; background:color-mix(in srgb,currentColor 4%,transparent); color:inherit; font:400 16px var(--f-body); }
+.reading-search-form input::placeholder { color:inherit; opacity:.45; }
+/* Fields get one quiet focus state: a darker border and a faint halo (no outline on top). */
+.reading-panel .reading-search-form input:focus-visible, .reading-panel .reading-page-form input:focus-visible { outline:none; border-color:color-mix(in srgb,currentColor 55%,transparent); box-shadow:0 0 0 3px color-mix(in srgb,currentColor 10%,transparent); }
+/* The platform clear button was a blue "x"; draw it in the reading ink. */
+.reading-search-form input::-webkit-search-cancel-button { -webkit-appearance:none; appearance:none; flex:none; width:16px; height:16px; margin:0 0 0 8px; background:currentColor; opacity:.5; cursor:pointer;
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 3.5l9 9M12.5 3.5l-9 9' stroke='%23000' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E") center / 16px no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 3.5l9 9M12.5 3.5l-9 9' stroke='%23000' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E") center / 16px no-repeat; }
+.reading-search-form input::-webkit-search-cancel-button:hover { opacity:.75; }
+#reading-search [data-search-status] { margin:12px 0 2px; font-size:12px; font-variant-numeric:tabular-nums; }
+#reading-search [data-search-status]:empty { display:none; }
+/* Each hit: where it is (small caps) above the passage, with the match marked in amber. */
+.reading-list .reading-search-hit { display:flex; flex-direction:column; gap:3px; padding:12px 0 13px; }
+.reading-search-hit small { font-size:10.5px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; opacity:.55; }
+.reading-search-hit span { font:400 14px/1.5 Georgia,'Times New Roman',serif; opacity:.88; }
+.reading-search-hit mark { padding:0 1px; border-radius:2px; background:color-mix(in srgb,#d9a23a 38%,transparent); color:inherit; }
+.reading-search-form .reading-text-button, .reading-page-form .reading-text-button { min-height:44px; padding:0 16px; border-radius:10px; background:var(--reading-ink,var(--text-primary)); color:var(--reading-paper,var(--bg-primary)); font-weight:600; }
 .reading-menu-row { display:flex; width:100%; min-height:54px; flex-direction:column; justify-content:center; gap:3px; padding:8px 0; border:0; border-bottom:1px solid color-mix(in srgb,currentColor 9%,transparent); background:none; color:inherit; text-align:left; font:500 14px var(--f-body); }
 .reading-menu-row span { font-size:11px; font-weight:400; opacity:.6; }
 .reading-menu-row[aria-pressed=true] { color:var(--accent-read); }
@@ -123,7 +183,11 @@ body.is-reading:has(#reader-screen.reader-kids-mode) .reader-heading-actions but
 .reading-audio-controls { position:relative; display:flex; justify-content:center; align-items:center; gap:18px; margin:24px 0 12px; }
 .reading-play { display:grid; place-items:center; width:64px; height:64px; border:0; border-radius:50%; background:var(--reading-ink,var(--text-primary)); color:var(--reading-paper,var(--bg-primary)); }
 .reading-play svg { width:26px; height:26px; }
-.reading-audio-controls [data-stop] { position:static; }
+/* prev · play · next are centred under the title; stop is a secondary action
+   hung after them, so it no longer pushes play off the panel's axis. */
+.reading-audio-controls { display:grid; grid-template-columns:minmax(0,1fr) auto auto auto minmax(0,1fr); }
+.reading-audio-controls [data-audio-prev] { grid-column:2; }
+.reading-audio-controls [data-stop] { position:static; grid-column:5; justify-self:start; margin-inline-start:6px; }
 .reading-audio-controls > .reading-icon-button { width:44px; height:44px; opacity:.72; }
 .reading-audio-status { min-height:20px; margin:0 0 16px; text-align:center; font-size:12px; line-height:1.5; opacity:.65; }
 .reading-error { margin:12px 0 0; font-size:13px; line-height:1.6; }
@@ -132,8 +196,8 @@ body.is-reading:has(#reader-screen.reader-kids-mode) .reader-heading-actions but
 .reading-mini-player [data-mini-open] { flex:1; display:flex; flex-direction:column; gap:3px; min-width:0; text-align:left; background:none; border:0; color:inherit; }
 .reading-mini-player [data-mini-title] { max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px; }
 .reading-mini-player small { font-size:10px; opacity:.65; }
-.reading-panel button:focus-visible,.reading-panel input:focus-visible,.reading-panel select:focus-visible,.reading-panel summary:focus-visible,.reading-mini-player button:focus-visible,.reader-location:focus-visible { outline:2px solid currentColor; outline-offset:3px; }
-@media (min-width:760px) { .reading-panel { inset:auto 20px 60px auto; margin:0; border-radius:8px; padding:8px 24px 16px; box-shadow:0 8px 32px #0002; } .reader-toolbar,.reading-mini-player { padding-inline:max(8px,calc((100vw - 800px)/2)); } }
+.reading-panel button:focus-visible,.reading-panel input:not([type=search],[type=number]):focus-visible,.reading-panel select:focus-visible,.reading-panel summary:focus-visible,.reading-mini-player button:focus-visible,.reader-location:focus-visible { outline:2px solid currentColor; outline-offset:3px; }
+@media (min-width:760px) { .reading-panel { inset:auto 20px 60px auto; margin:0; border-radius:8px; padding:8px 24px 16px; box-shadow:0 8px 32px #0002; } }
 @media (max-width:360px) { .reading-panel { padding-inline:16px; } .reading-row { gap:8px; } .reading-tabs { gap:4px; } }
 @media (prefers-reduced-motion:no-preference) { .reading-panel[open] { animation:reading-sheet-in .18s var(--ease); } @keyframes reading-sheet-in { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } } }
 
@@ -147,9 +211,24 @@ body.is-reader-focus .reader-viewport { top:env(safe-area-inset-top,0px); }
 
 .reader-location-label::after { content:""; display:inline-block; width:4px; height:4px; margin-left:7px; border-right:1px solid; border-bottom:1px solid; transform:translateY(-2px) rotate(45deg); opacity:.65; }
 
-body.is-reading .app-header { padding-inline-start:max(8px,env(safe-area-inset-left,0px),calc((100vw - 900px)/2)); padding-inline-end:max(8px,env(safe-area-inset-right,0px),calc((100vw - 900px)/2)); }
-.reader-toolbar,.reading-mini-player { padding-inline-start:max(8px,env(safe-area-inset-left,0px),calc((100vw - 800px)/2)); padding-inline-end:max(8px,env(safe-area-inset-right,0px),calc((100vw - 800px)/2)); }
+/* Header, toolbar and panels share one column, so the back arrow sits over the
+   previous-page arrow and panels open under the buttons that call them. An
+   EPUB two-page spread (foliate-reader: pages up to 580px, wide landscape)
+   widens the column to the spread, so the chrome frames the text. */
+body { --reader-chrome-inset:max(8px,calc((100vw - 860px)/2)); }
+@media (min-width:960px) and (orientation:landscape) {
+  body:has(#reader-viewport foliate-view) { --reader-chrome-inset:calc(max(48px,(100vw - 1160px)/2) + 18px); }
+}
+body.is-reading .app-header { padding-inline-start:max(env(safe-area-inset-left,0px),var(--reader-chrome-inset)); padding-inline-end:max(env(safe-area-inset-right,0px),var(--reader-chrome-inset)); }
+.reader-toolbar,.reading-mini-player { padding-inline-start:max(env(safe-area-inset-left,0px),var(--reader-chrome-inset)); padding-inline-end:max(env(safe-area-inset-right,0px),var(--reader-chrome-inset)); }
 .reader-viewport { left:env(safe-area-inset-left,0px); right:env(safe-area-inset-right,0px); }
-.reader-return { line-height:18px; padding-inline-start:max(16px,env(safe-area-inset-left,0px),calc((100vw - 800px)/2)); padding-inline-end:max(16px,env(safe-area-inset-right,0px),calc((100vw - 800px)/2)); }
+.reader-return { line-height:18px; padding-inline-start:max(16px,env(safe-area-inset-left,0px),calc(var(--reader-chrome-inset) + 8px)); padding-inline-end:max(16px,env(safe-area-inset-right,0px),calc(var(--reader-chrome-inset) + 8px)); }
 .reading-panel { width:min(440px,calc(100% - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px))); }
-@media (min-width:760px) { .reading-panel { right:max(20px,env(safe-area-inset-right,0px)); } }
+body.is-reading .app-header, #reader-screen, .reader-viewport, .reader-toolbar, .reading-mini-player, .reader-return { background-image:var(--reader-desk,none); }
+@media (min-width:760px) {
+  .reading-panel { right:max(20px,env(safe-area-inset-right,0px),var(--reader-chrome-inset)); }
+  /* Places open above their trigger, the progress control. The toolbar is
+     44px | 1fr | 4 × 44px inside symmetric insets, so that column's centre
+     is 50vw − 66px; the 440px sheet is centred there, kept in the column. */
+  .reading-panel:has(> #reading-navigation:not([hidden])) { right:auto; left:max(20px,var(--reader-chrome-inset),calc(50vw - 66px - 220px)); }
+}

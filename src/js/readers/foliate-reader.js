@@ -16,6 +16,24 @@ import { DEFAULT_READING_PREFERENCES, readingCSS, normalizeReadingPreferences } 
 import { READING_THEMES } from './reading-preferences.js'
 import { compositePageSnapshots, renderedPageFilter, settlePageLayout, snapshotDOMPage } from './page-snapshot.js'
 
+// foliate marca las coincidencias de búsqueda con Overlayer.outline (un
+// recuadro rojo de 3px que parecía una capa de depuración). Lo sustituimos una
+// vez por un resaltado ámbar de rotulador, suave en los cinco temas de lectura.
+Overlayer.outline = (rects, { color = '#d9a23a' } = {}) => {
+  const svg = 'http://www.w3.org/2000/svg', g = document.createElementNS(svg, 'g')
+  g.setAttribute('fill', color)
+  g.style.opacity = '.34'
+  for (const { left, top, width, height } of rects) {
+    const rect = document.createElementNS(svg, 'rect')
+    for (const [name, value] of Object.entries({ x:left - 1.5, y:top + height * .08, width:width + 3, height:height * .9, rx:3 })) rect.setAttribute(name, value)
+    g.append(rect)
+  }
+  return g
+}
+// El extracto de foliate llega como { pre, match, post }; se aplana para quien espere texto.
+const excerptParts = excerpt => typeof excerpt === 'string' ? { pre:excerpt, match:'', post:'' }
+  : { pre:String(excerpt?.pre ?? ''), match:String(excerpt?.match ?? ''), post:String(excerpt?.post ?? '') }
+
 export class FoliateReader {
   #view
   #container
@@ -177,13 +195,18 @@ export class FoliateReader {
   async search(query) {
     if (!this.#view || !String(query || '').trim()) return []
     const results = []
+    const hit = (label, excerpt, cfi) => {
+      const parts = excerptParts(excerpt)
+      return { label, parts, excerpt:`${parts.pre}${parts.match}${parts.post}`, locator:{kind:'cfi',value:cfi} }
+    }
     for await (const item of this.#view.search({query:String(query).trim()})) {
-      if (item?.cfi) results.push({label:item.excerpt || 'Coincidencia',excerpt:item.excerpt || '',locator:{kind:'cfi',value:item.cfi}})
-      for (const sub of item?.subitems || []) results.push({label:item.label || 'Coincidencia',excerpt:sub.excerpt || item.label || '',locator:{kind:'cfi',value:sub.cfi}})
+      if (item?.cfi) results.push(hit('', item.excerpt, item.cfi))
+      for (const sub of item?.subitems || []) results.push(hit(item.label || '', sub.excerpt, sub.cfi))
       if (results.length >= 200) break
     }
     return results
   }
+  clearSearch() { this.#view?.clearSearch?.() }
   getSelection() {
     for (const item of this.#view?.renderer?.getContents?.() || []) {
       const text = item.doc?.defaultView?.getSelection?.().toString().trim()
@@ -211,11 +234,19 @@ export class FoliateReader {
     // invalid CSS and the horizontal setting did not affect the page at all.
     // Scrolled mode has a different grid, so convert pixels using that mode's
     // gap formula instead of introducing wider margins when switching flow.
-    const gap = p.margin / (width + (p.flow === 'scrolled' ? p.margin : 0)) * 100
+    // Wide landscape windows show a two-page spread that ran edge to edge
+    // (text 16px from the window, 16px between pages). Cap each page at a
+    // book-like measure so the spread centres under the reader chrome, with a
+    // real gutter plus the user's margin. Phones and portrait are unchanged.
+    const wide = width >= 960 && width > height
+    const gutter = wide ? 48 + p.margin : p.margin
+    const gap = gutter / (width + (p.flow === 'scrolled' ? gutter : 0)) * 100
+    const column = wide ? Math.round(Math.min(580, (width - 96) / 2)) : 720
     const attributes = {
       flow:p.flow,
       margin:'12px',
       gap:`${gap.toFixed(4)}%`,
+      'max-inline-size':`${column}px`,
       'max-block-size':`${Math.max(width, height, 1440)}px`
     }
     for (const [name, value] of Object.entries(attributes)) {

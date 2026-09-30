@@ -4,6 +4,14 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca es una estantería 3D con madera texturizada, libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.14
+
+- Iluminación de sala de lectura: entorno procedural con ventana y lámpara, sombras suaves (VSM) sólo bajo demanda, oclusión en rincones y sombra de contacto del mueble y la papelera.
+- Nogal sin costuras con poro y barniz satinado, cantos redondeados, veta por tablero y zócalo.
+- Libros con tapas en tela, lomo con nervios y estampado, bloque de páginas con capas y cinta de marcapáginas saliendo entre las hojas.
+- Macetas de cerámica, terracota y metal con tierra visible; papelera de pedal y catálogo con grosor de papel y pinza.
+- Editor del lomo rediseñado por secciones, con muestras de tela, controles segmentados y hoja inferior en móvil. Pulido de ficha del libro, cabecera, lector (búsqueda EPUB sin «[object Object]» y resaltado ámbar) y página de descarga.
+
 ### Actualización web y Android · 1.6.13 / APK 1.1.1
 
 - Android aparece en «Abrir con» y «Compartir» para PDF, EPUB, MOBI, AZW, AZW3, KF8, FB2 y CBZ. Los archivos se copian inmediatamente con el permiso temporal del proveedor y se importan por el mismo flujo que el selector local, incluyendo la sincronización con Drive.

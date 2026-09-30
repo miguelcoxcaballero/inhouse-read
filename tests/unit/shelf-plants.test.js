@@ -53,6 +53,29 @@ describe('botanical shelf models', () => {
     }
   });
 
+  it('shares one texture upload between identical pots and refines it once, after the build', async () => {
+    // A fresh module, so no surface has been painted by an earlier test.
+    vi.resetModules();
+    const { createShelfPlant, plantSurfacesReady } = await import('../../src/js/shelf-plants.js');
+    const entry = seed => ({ catalogId:'hedera', potId:'gradvis', width:48, height:106, seed });
+    const a = createShelfPlant(entry('share:a')), redraw = vi.fn(), gone = vi.fn();
+    a.userData.invalidate = redraw;
+    const map = a.getObjectByName('ceramic-pot').material.map, version = map.source.version, texture = map.version;
+    const b = createShelfPlant(entry('share:b')), c = createShelfPlant(entry('share:c'));
+    c.userData.invalidate = gone; c.userData.dispose();
+    const other = b.getObjectByName('ceramic-pot').material.map;
+    // A clone must not raise the shared Source's version, or every plant re-uploads it.
+    expect(other.source).toBe(map.source);
+    expect(map.source.version).toBe(version);
+    await plantSurfacesReady();
+    expect(map.source.version).toBe(version + 1);
+    expect(map.version).toBe(texture + 1);
+    expect(redraw).toHaveBeenCalled(); expect(gone).not.toHaveBeenCalled();
+    const d = createShelfPlant(entry('share:d'));
+    expect(d.getObjectByName('ceramic-pot').material.map.source.version).toBe(version + 1);
+    for (const model of [a,b,d]) model.userData.dispose();
+  });
+
   it('disposes owned geometry, materials and procedural maps exactly once, preserving the shared atlas', () => {
     const atlas = new THREE.Texture(), atlasDispose = vi.spyOn(atlas,'dispose');
     const plant = createShelfPlant({ width:46,height:72,variant:'monstera' }, { leafTexture:atlas });
