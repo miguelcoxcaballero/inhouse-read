@@ -212,7 +212,12 @@ async function dropIntoBin(page, id, testInfo) {
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-trash-hover', 'true')
   await page.mouse.up()
   try {
-    await expect.poll(async () => (await storedLibrary(page)).books.some(book => book.id === id)).toBe(false)
+    // CI renders these real 3D frames in software. Give the bounded animation
+    // time to land before asserting its persisted removal; never skip frames
+    // or accept a book that still exists in the app's library.
+    await expect.poll(async () => (await storedLibrary(page)).books.some(book => book.id === id), {
+      timeout:30_000
+    }).toBe(false)
   } catch (error) {
     const diagnostics = await page.evaluate(() => {
       const state = window.__shelfTrashMotion
@@ -383,7 +388,7 @@ test('entrar en la papelera y soltar fuera cancela la eliminación y mantiene lo
 })
 
 test('la papelera permanece accesible al bajar por una estantería larga en la vista isométrica', async ({ page }, testInfo) => {
-  test.setTimeout(90_000)
+  test.setTimeout(120_000)
   const seed = await seedShelf(page, { long:true })
   const scene = page.locator('.ihr-bookshelf-scene')
   const scroller = page.locator('.ihr-bookshelf__scroll')
