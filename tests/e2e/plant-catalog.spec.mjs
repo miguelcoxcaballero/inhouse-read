@@ -32,6 +32,52 @@ async function openCatalog(page) {
 }
 const savedPlants = page => page.evaluate(key => JSON.parse(localStorage.getItem(key)),PLANTS_KEY);
 
+test('una planta junto a un libro fino no tapa su zona táctil al girar o recargar la estantería',async ({ page }) => {
+  test.setTimeout(90_000);
+  const errors = []; page.on('pageerror',error => errors.push(error.message));
+  // Import the real landscape cover. A portrait placeholder puts the book's
+  // center above the foliage and does not expose this interception regression.
+  await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/tiny.pdf');
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible();
+  await page.getByRole('button',{ name:'Volver a la estantería' }).click();
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0);
+  await page.evaluate(() => {
+    localStorage.setItem('inhouse-read-shelf-plants',JSON.stringify([
+      { key:'plant:narrow-neighbor',seed:'empty-shelf-0',catalogId:'sansevieria',variant:'sansevieria',
+        potId:'muskot',width:42,height:124,shelf:0,x:.2032520325203252 }
+    ]));
+  });
+  await page.reload();
+  const canvas = page.locator('.ihr-bookshelf-scene');
+  const spine = page.locator('.ihr-spine').first();
+  await expect(spine).toBeVisible();
+  await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
+  await expect(canvas).toHaveAttribute('data-view-progress','1');
+  await page.reload();
+  await expect(canvas).toHaveAttribute('data-view-progress','1');
+  await expect(canvas).toHaveAttribute('data-animating','false');
+  expect(await spine.evaluate(node => {
+    const box = node.getBoundingClientRect();
+    return node.contains(document.elementFromPoint(box.x + box.width / 2,box.y + box.height / 2));
+  })).toBe(true);
+  await spine.click();
+  await expect(page.getByRole('button',{ name:/Toca para leer/ })).toBeVisible();
+  await page.getByRole('button',{ name:'Cerrar',exact:true }).click();
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0);
+  await expect(canvas).toHaveAttribute('data-animating','false');
+  const plant = page.locator('.ihr-plant[data-object-id="plant:narrow-neighbor"]');
+  const pot = await plant.boundingBox();
+  await page.mouse.move(pot.x + pot.width / 2,pot.y + pot.height * .88);
+  await page.mouse.down(); await page.waitForTimeout(450);
+  await expect(plant).toHaveClass(/is-lifted/);
+  await page.mouse.up();
+  await expect(page.locator('.ihr-bookshelf')).not.toHaveClass(/is-arranging/);
+  await expect(canvas).toHaveAttribute('data-animating','false');
+  await expect(page.locator('.ihr-plant')).toHaveCount(1);
+  await expect(spine).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
 test('el catálogo está pegado al lateral 3D, sólo aparece en isométrica y añade la combinación elegida de forma persistente',async ({ page },testInfo) => {
   test.setTimeout(90_000);
   const errors = []; page.on('pageerror',error => errors.push(error.message));

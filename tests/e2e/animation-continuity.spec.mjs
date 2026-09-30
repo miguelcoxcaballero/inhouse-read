@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { spinePointerPosition } from './helpers/shelf-pointer.mjs'
 import { readFile } from 'node:fs/promises'
 
 async function seedCoveredBooks(page) {
@@ -217,7 +218,7 @@ test('varias portadas reales salen y regresan sin mostrar portadas provisionales
   // Cancel in the image-metadata phase, before the lifted view exists.
   const pendingSpine = page.locator('.ihr-spine[data-book-id="continuity:0"]')
   const pendingBounds = await pendingSpine.boundingBox()
-  await pendingSpine.click({ position:{ x:Math.min(8, pendingBounds.width * .12), y:pendingBounds.height * .65 } })
+  await pendingSpine.click({ position:await spinePointerPosition(pendingSpine,pendingBounds) })
   await page.keyboard.press('Escape')
   await page.waitForTimeout(1150)
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
@@ -225,9 +226,8 @@ test('varias portadas reales salen y regresan sin mostrar portadas provisionales
   for (const index of [0, 1, 2]) {
     const spine = page.locator(`.ihr-spine[data-book-id="continuity:${index}"]`)
     const bounds = await spine.boundingBox()
-    // Touch the visible binding at the left of the projected box. Its center
-    // includes the book's depth and may be occupied by the next real mesh.
-    await spine.click({ position:{ x:Math.min(8, bounds.width * .12), y:bounds.height * .65 } })
+    // Touch the projected binding's solid centre using normal pointer events.
+    await spine.click({ position:await spinePointerPosition(spine,bounds) })
     await expect(page.locator('.ihr-flyout__cover-target')).toBeVisible()
     await page.getByRole('button', { name:'Cerrar', exact:true }).click()
     await expect(page.locator('.ihr-flyout')).toHaveCount(0)
@@ -307,7 +307,7 @@ test('el libro vuelve entre sus vecinos con profundidad real en vistas frontal e
   const selectBook = async (index = 2) => {
     const book = page.locator(`.ihr-spine[data-book-id="continuity:${index}"]`)
     const bounds = await book.boundingBox()
-    await book.click({ position:{ x:Math.min(8, bounds.width * .12), y:bounds.height * .65 } })
+    await book.click({ position:await spinePointerPosition(book,bounds) })
     await expect(page.locator('.ihr-flyout__cover-target')).toBeVisible()
   }
 

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
+import { spinePointerPosition } from './helpers/shelf-pointer.mjs'
 
 const PLANTS_KEY = 'inhouse-read-shelf-plants'
 async function seedShelf(page) {
@@ -43,8 +44,8 @@ async function positionFor(page, id) {
 async function dragTo(page, key, target, shelf) {
   const source = object(page, key), bounds = await source.boundingBox()
   const plant = key.startsWith('plant:')
-  await page.mouse.move(bounds.x + (plant ? bounds.width / 2 : Math.min(8, bounds.width * .12)),
-    bounds.y + bounds.height * (plant ? .88 : .65))
+  const grab = plant ? { x:bounds.width / 2,y:bounds.height * .88 } : await spinePointerPosition(source,bounds)
+  await page.mouse.move(bounds.x + grab.x,bounds.y + grab.y)
   await page.mouse.down()
   await page.waitForTimeout(440)
   await expect(source).toHaveClass(/is-lifted/)

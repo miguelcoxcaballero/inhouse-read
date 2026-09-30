@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { spinePointerPosition } from './helpers/shelf-pointer.mjs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -300,10 +301,12 @@ test('mueve un libro al mantenerlo pulsado con animación 3D y conserva su posic
   await page.keyboard.press('Shift+ArrowRight')
   await expect.poll(async () => Number(await firstSpine.getAttribute('data-shelf-x'))).toBeCloseTo(initialX + .08, 4)
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
-  const from = await page.locator('.ihr-spine[data-book-id="shelf:bravo"]').boundingBox()
+  const source = page.locator('.ihr-spine[data-book-id="shelf:bravo"]')
+  const from = await source.boundingBox()
   const to = await page.locator('.ihr-spine[data-book-id="shelf:alpha"]').boundingBox()
   const scene = await page.locator('.ihr-bookshelf-scene').boundingBox()
-  await page.mouse.move(from.x + Math.min(8,from.width * .12), from.y + from.height * .65)
+  const grab = await spinePointerPosition(source,from)
+  await page.mouse.move(from.x + grab.x,from.y + grab.y)
   await page.mouse.down()
   await page.waitForTimeout(500)
   await expect(page.locator('.ihr-spine[data-book-id="shelf:bravo"]')).toHaveClass(/is-lifted/)

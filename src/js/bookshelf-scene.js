@@ -72,6 +72,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let originalHeight = stage.style.height;
   let alreadyScene = stage.classList.contains('has-scene');
   const originalStyles = new Map(entries.filter(entry => entry.node).map(entry => [entry.node, entry.node.getAttribute('style')]));
+  const semanticCovers = new Map();
   stage.classList.add('has-scene');
   stage.prepend(canvas);
   const scene = new THREE.Scene();
@@ -166,6 +167,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       new THREE.Vector3(entry.width / 2, entry.height / 2 + (plant ? 0 : 20), plant ? entry.width * .35 : entry.thickness / 2)
     );
   };
+  const spineHitBox = entry => new THREE.Box3(
+    new THREE.Vector3(-entry.width / 2 - entry.thickness * .38, -entry.height / 2, -entry.thickness / 2),
+    new THREE.Vector3(-entry.width / 2, entry.height / 2, entry.thickness / 2)
+  );
   for (const entry of bookEntries) entry.box = slotBox(entry);
 
   function materialKeys(entry) {
@@ -578,10 +583,42 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         if (!plant && (!away || insertion)) activeBooks++;
       }
       if (node) {
-        node.style.position = 'absolute'; node.style.left = `${rect.left}px`; node.style.top = `${rect.top}px`;
-        node.style.width = `${rect.width}px`; node.style.height = `${rect.height}px`;
+        // A whole-model bounding rectangle includes empty space around plants
+        // and most of an isometric book's cover. Give each semantic button a
+        // centre on its visible, solid surface instead: binding or ceramic pot.
+        const surface = entry.model?.getObjectByName(plant ? 'ceramic-pot' : 'binding');
+        let hitRect;
+        if (surface?.geometry) {
+          if (!surface.geometry.boundingBox) surface.geometry.computeBoundingBox();
+          entry.model.updateMatrixWorld(true);
+          hitRect = corners(surface.geometry.boundingBox, surface.matrixWorld);
+        } else {
+          const fallback = plant ? new THREE.Box3(
+            new THREE.Vector3(-entry.width * .285, -entry.height / 2, -entry.width * .285),
+            new THREE.Vector3(entry.width * .285, -entry.height / 2 + entry.height * .32, entry.width * .285)
+          ) : spineHitBox(entry);
+          hitRect = corners(fallback, projectedMatrix);
+        }
+        entry.hitRect = hitRect;
+        node.style.position = 'absolute'; node.style.left = `${hitRect.left}px`; node.style.top = `${hitRect.top}px`;
+        node.style.width = `${hitRect.width}px`; node.style.height = `${hitRect.height}px`;
         node.style.margin = '0'; node.style.zIndex = String(100 + Math.round(rect.closest + height));
         node.dataset.sceneProjected = 'true';
+        node.dataset.sceneHitSurface = plant ? 'pot' : 'spine';
+        if (!plant) {
+          let coverHit = semanticCovers.get(node);
+          if (!coverHit) {
+            coverHit = document.createElement('span'); coverHit.setAttribute('aria-hidden', 'true');
+            coverHit.dataset.shelfCoverHit = 'true'; semanticCovers.set(node, coverHit); node.append(coverHit);
+          }
+          // Keep tapping the exposed cover available without moving the
+          // button's own focus/click centre away from its neighboring spine.
+          // The existing handlers still raycast the true visible geometry.
+          Object.assign(coverHit.style, { position:'absolute', left:`${rect.left - hitRect.left}px`,
+            top:`${rect.top - hitRect.top}px`, width:`${rect.width}px`, height:`${rect.height}px`,
+            display:progress > .04 ? 'block' : 'none', background:'transparent',
+            pointerEvents:dragging || away || node.disabled || node.inert ? 'none' : 'inherit' });
+        }
       }
       entry.state = stateFor(entry);
     }
@@ -649,6 +686,21 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (!object?.userData.entry) return null;
     }
     return null;
+  }
+
+  function onPlantFoliagePointerDown(event) {
+    if (disposed || event.target?.closest?.('.ihr-spine, .ihr-plant, .ihr-shelf-catalog, .ihr-shelf-trash') ||
+      typeof PointerEvent === 'undefined') return;
+    const node = objectAtPoint(event.clientX, event.clientY);
+    if (!node || byNode.get(node)?.kind !== 'plant') return;
+    // Real foliage remains draggable even outside the small pot button. No
+    // rectangular leaf envelope is placed over a neighboring visible book.
+    node.dispatchEvent(new PointerEvent('pointerdown', { bubbles:true, cancelable:true,
+      clientX:event.clientX, clientY:event.clientY, button:event.button, buttons:event.buttons,
+      pointerId:event.pointerId, pointerType:event.pointerType, isPrimary:event.isPrimary,
+      pressure:event.pressure, width:event.width, height:event.height,
+      ctrlKey:event.ctrlKey, altKey:event.altKey, shiftKey:event.shiftKey, metaKey:event.metaKey }));
+    event.preventDefault(); event.stopPropagation();
   }
 
   function paintInsertionOverlay(entry) {
@@ -805,6 +857,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   themeChanges.observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
   for (const node of byNode.keys()) mutations.observe(node, { attributes:true, attributeFilter:['class', 'style'] });
   scroller.addEventListener('scroll', invalidate, { passive:true });
+  stage.addEventListener('pointerdown', onPlantFoliagePointerDown, true);
   window.addEventListener('resize', invalidate, { passive:true });
   document.fonts?.ready.then(invalidate);
   updateWoodTheme();
@@ -928,11 +981,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // Restore only the outgoing DOM. The already painted canvas and GPU
       // resources remain alive while the replacement semantic tree is bound.
       if (next.stage !== stage) {
+        stage.removeEventListener('pointerdown', onPlantFoliagePointerDown, true);
         stage.style.height = originalHeight;
         if (!alreadyScene) stage.classList.remove('has-scene');
         for (const [node, style] of originalStyles) {
           if (style === null) node.removeAttribute('style'); else node.setAttribute('style', style);
           delete node.dataset.sceneProjected;
+          delete node.dataset.sceneHitSurface;
+          semanticCovers.get(node)?.remove(); semanticCovers.delete(node);
         }
         originalStyles.clear();
         stage = next.stage;
@@ -940,6 +996,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         alreadyScene = stage.classList.contains('has-scene');
         stage.classList.add('has-scene');
         stage.prepend(canvas);
+        stage.addEventListener('pointerdown', onPlantFoliagePointerDown, true);
       }
       width = next.width; height = next.height; rows = next.rows;
       sceneWidth = Math.max(width, Number(next.sceneWidth) || width);
@@ -1005,8 +1062,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       for (const entry of bookEntries) {
         const old = oldRects.get(entry.node?.dataset.objectId) || oldRects.get(entry.book?.id) ||
           oldRects.get(entry.node?.dataset.bookId) || oldRects.get(entry.key);
-        if (!old || !entry.rect) continue;
-        const x = old.left - (entry.rect.left + stageRect.left), y = old.top - (entry.rect.top + stageRect.top);
+        const targetRect = entry.hitRect || entry.rect;
+        if (!old || !targetRect) continue;
+        const x = old.left - (targetRect.left + stageRect.left), y = old.top - (targetRect.top + stageRect.top);
         if (Math.abs(x) + Math.abs(y) > 1) items.push({ entry, x, y });
       }
       reorderTransition = { started:performance.now(), entries:items };
@@ -1022,6 +1080,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     dispose() {
       disposed = true; cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       scroller.removeEventListener('scroll', invalidate); window.removeEventListener('resize', invalidate);
+      stage.removeEventListener('pointerdown', onPlantFoliagePointerDown, true);
       for (const entry of bookEntries) releaseEntry(entry);
       if (catalog) { catalog.removeFromParent(); catalog.userData.dispose(); }
       releaseObject(furniture); texture.dispose(); grain.dispose(); leafTexture.dispose(); lighting.dispose();
@@ -1031,7 +1090,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       for (const [node, style] of originalStyles) {
         if (style === null) node.removeAttribute('style'); else node.setAttribute('style', style);
         delete node.dataset.sceneProjected;
+        delete node.dataset.sceneHitSurface;
       }
+      for (const node of semanticCovers.values()) node.remove();
+      semanticCovers.clear();
       for (const [node, style] of trashOriginalStyles) {
         if (style === null) node.removeAttribute('style'); else node.setAttribute('style', style);
         delete node.dataset.trash3d;

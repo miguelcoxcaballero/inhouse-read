@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { spinePointerPosition } from './helpers/shelf-pointer.mjs'
 import { readFile } from 'node:fs/promises'
 
 const PDF_FIXTURE = 'tests/e2e/fixtures/tiny.pdf'
@@ -162,7 +163,8 @@ async function beginDrag(page, id) {
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
   const rect = await source.boundingBox()
   expect(rect).not.toBeNull()
-  await page.mouse.move(rect.x + Math.min(8,rect.width * .12), rect.y + rect.height * .65)
+  const grab = await spinePointerPosition(source,rect)
+  await page.mouse.move(rect.x + grab.x,rect.y + grab.y)
   await page.mouse.down()
   await page.waitForTimeout(450)
   await expect(source).toHaveClass(/is-lifted/)

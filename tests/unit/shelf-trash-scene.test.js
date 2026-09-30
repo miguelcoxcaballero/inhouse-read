@@ -15,6 +15,8 @@ vi.mock('../../src/js/book-model.js', async () => {
     createBookModel(book, style, width, height, thickness) {
       const model = new Three.Group(); model.name = `book:${book.id}`;
       model.add(new Three.Mesh(new Three.BoxGeometry(width, height, thickness), new Three.MeshStandardMaterial()));
+      const binding = new Three.Mesh(new Three.BoxGeometry(thickness * .38, height, thickness), new Three.MeshStandardMaterial());
+      binding.name = 'binding'; binding.position.x = -width / 2 - thickness * .19; model.add(binding);
       model.userData.dispose = () => { gpu.disposed++; }; gpu.models.push(model);
       return model;
     } };
@@ -67,6 +69,70 @@ afterEach(() => {
 });
 
 describe('wastebasket in the shared 3D shelf scene', () => {
+  it('anchors an isometric book to its visible spine and a neighboring plant to its solid pot', async () => {
+    const plantNode = document.createElement('button'); plantNode.dataset.objectId = 'plant:thin-neighbor'; stage.append(plantNode);
+    shelf.updateLayout({ stage, width:310, sceneWidth:390, height:750, trashNode,
+      rows:[{ top:20, bottom:220 }, { top:260, bottom:460 }, { top:500, bottom:700 }],
+      entries:[{ node:bookNode, book:{ id:'a', title:'Thin book', author:'' }, style:{ color:'#3c6548', width:12 },
+        x:30, y:130, width:100, height:180, thickness:12 },
+        { kind:'plant', node:plantNode, key:'plant:thin-neighbor', variant:'sansevieria', catalogId:'sansevieria', potId:'muskot',
+          seed:'neighbor', x:72, y:158, width:42, height:124 }] });
+    await Promise.resolve(); // The replacement model swaps after its ready promise settles.
+    shelf.setMode('isometric', { animate:false }); shelf.flush();
+    const full = shelf.getBookPose(bookNode).rect;
+    const bookHit = { left:20 + parseFloat(bookNode.style.left), top:60 + parseFloat(bookNode.style.top),
+      width:parseFloat(bookNode.style.width), height:parseFloat(bookNode.style.height) };
+    expect(bookHit.width).toBeLessThan(full.width * .4);
+    expect(bookHit.left).toBeLessThan(full.left + full.width * .2);
+    expect(bookNode.dataset.sceneHitSurface).toBe('spine');
+    expect(shelf.getObjectAtPoint(bookHit.left + bookHit.width / 2, bookHit.top + bookHit.height / 2)).toBe(bookNode);
+    const plantHit = { left:20 + parseFloat(plantNode.style.left), top:60 + parseFloat(plantNode.style.top),
+      width:parseFloat(plantNode.style.width), height:parseFloat(plantNode.style.height) };
+    expect(plantNode.dataset.sceneHitSurface).toBe('pot');
+    expect(plantHit.height).toBeLessThan(124 * .5);
+    expect(shelf.getObjectAtPoint(plantHit.left + plantHit.width / 2, plantHit.top + plantHit.height * .75)).toBe(plantNode);
+    expect(bookNode.querySelector('[data-shelf-cover-hit]')).not.toBeNull();
+    expect(bookNode.querySelector('[data-shelf-cover-hit]').style.width).toBe(`${full.width}px`);
+    shelf.setMode('spine', { animate:false }); shelf.flush();
+    expect(bookNode.querySelector('[data-shelf-cover-hit]').style.display).toBe('none');
+    shelf.dispose(); shelf = null;
+    expect(bookNode.querySelector('[data-shelf-cover-hit]')).toBeNull();
+    expect(bookNode.dataset.sceneHitSurface).toBeUndefined();
+  });
+
+  it('keeps complete opening bounds and avoids false reorder motion when semantic targets have not moved', () => {
+    shelf.setMode('isometric', { animate:false }); shelf.flush();
+    const oldRects = new Map([['book:a', { left:20 + parseFloat(bookNode.style.left), top:60 + parseFloat(bookNode.style.top) }]]);
+    const pose = shelf.getBookPose(bookNode);
+    expect(pose.width).toBe(100); expect(pose.height).toBe(180);
+    expect(pose.rect.width).toBeGreaterThan(parseFloat(bookNode.style.width) * 2);
+    shelf.animateFromRects(oldRects);
+    expect(shelf.canvas.dataset.animating).toBe('true');
+    expect(shelf.getBookPose(bookNode).centerX).toBeCloseTo(pose.centerX);
+    expect(shelf.getBookPose(bookNode).centerY).toBeCloseTo(pose.centerY);
+    flushFrames();
+    expect(shelf.getBookPose(bookNode).centerX).toBeCloseTo(pose.centerX);
+    expect(shelf.getBookPose(bookNode).centerY).toBeCloseTo(pose.centerY);
+  });
+
+  it('keeps the supplemental cover hit area disabled with its parent during dragging and return', () => {
+    shelf.setMode('isometric', { animate:false }); shelf.flush();
+    const cover = bookNode.querySelector('[data-shelf-cover-hit]');
+    expect(cover.style.pointerEvents).toBe('inherit');
+    bookNode.classList.add('is-dragging'); shelf.flush();
+    expect(cover.style.pointerEvents).toBe('none');
+    bookNode.classList.remove('is-dragging'); bookNode.classList.add('is-away'); shelf.flush();
+    expect(cover.style.pointerEvents).toBe('none');
+    bookNode.classList.remove('is-away'); bookNode.disabled = true; shelf.flush();
+    expect(cover.style.pointerEvents).toBe('none');
+    bookNode.disabled = false; shelf.flush();
+    // Inherit also respects parent CSS and inline pointer-events without a
+    // computed-style read on every scene frame.
+    expect(cover.style.pointerEvents).toBe('inherit');
+    bookNode.style.pointerEvents = 'none'; shelf.flush();
+    expect(cover.style.pointerEvents).toBe('inherit');
+  });
+
   it('drops the existing 3D plant into the same bin and can cancel without losing its model', async () => {
     const plantNode = document.createElement('button'); plantNode.dataset.objectId = 'plant:fixture'; stage.append(plantNode);
     shelf.updateLayout({ stage, width:310, sceneWidth:390, height:750,
