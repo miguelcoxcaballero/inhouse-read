@@ -67,6 +67,84 @@ afterEach(() => {
 });
 
 describe('wastebasket in the shared 3D shelf scene', () => {
+  it('drops the existing 3D plant into the same bin and can cancel without losing its model', async () => {
+    const plantNode = document.createElement('button'); plantNode.dataset.objectId = 'plant:fixture'; stage.append(plantNode);
+    shelf.updateLayout({ stage, width:310, sceneWidth:390, height:750,
+      rows:[{ top:20, bottom:220 }, { top:260, bottom:460 }, { top:500, bottom:700 }], trashNode,
+      entries:[{ kind:'plant', node:plantNode, key:'plant:fixture', variant:'monstera', seed:'fixture',
+        x:100, y:180, width:46, height:72 }] });
+    const furniture = gpu.scene.children.find(child => child.children.some(object => object.userData.furniture));
+    const model = furniture.children.find(child => child.userData.entry?.kind === 'plant');
+    const before = model.getWorldPosition(new THREE.Vector3());
+    const motion = shelf.animateObjectToTrash(plantNode, { duration:850 });
+    expect(model.parent).toBe(gpu.scene);
+    expect(model.position.distanceTo(before)).toBeLessThan(1e-8);
+    plantNode.classList.add('is-away'); flushFrames(450);
+    expect(model.visible).toBe(true);
+    expect(shelf.canvas.dataset.trashingObjectKind).toBe('plant');
+    expect(shelf.canvas.dataset.trashingObjectId).toBe('plant:fixture');
+    flushFrames(700); await expect(motion.finished).resolves.toBe(true);
+    expect(model.visible).toBe(false);
+    motion.cancel(); plantNode.classList.remove('is-away'); shelf.flush();
+    expect(model.parent).toBe(furniture); expect(model.visible).toBe(true);
+    expect(model.scale.x).toBe(1);
+    expect(shelf.canvas.dataset.trashingObjectId).toBeUndefined();
+  });
+
+  it('shows the attached catalogue only in the diagonal view and projects a scrolling semantic target', () => {
+    const catalogNode = document.createElement('button'); catalogNode.hidden = true;
+    catalogNode.tabIndex = -1; stage.append(catalogNode);
+    const layout = { stage, width:310, sceneWidth:390, height:750, trashNode, catalogNode,
+      rows:[{ top:20, bottom:220 }, { top:260, bottom:460 }, { top:500, bottom:700 }], entries:[] };
+    shelf.updateLayout(layout);
+    expect(catalogNode.hidden).toBe(true); expect(catalogNode.tabIndex).toBe(-1);
+    const furniture = gpu.scene.children.find(child => child.children.some(object => object.userData.furniture));
+    const catalog = furniture.children.find(child => child.userData.catalog);
+    expect(catalog.visible).toBe(false);
+    expect(catalogNode.dataset.catalogViewHidden).toBe('true');
+    shelf.setMode('isometric', { animate:false }); shelf.flush();
+    expect(catalog.visible).toBe(true);
+    expect(catalogNode.hidden).toBe(false); expect(catalogNode.tabIndex).toBe(0);
+    expect(catalogNode.dataset.catalog3d).toBe('true');
+    expect(Number(catalogNode.style.zIndex)).toBeGreaterThan(1500);
+    expect(parseFloat(catalogNode.style.width)).toBeGreaterThanOrEqual(44);
+    expect(parseFloat(catalogNode.style.height)).toBeGreaterThan(60);
+    const top = parseFloat(catalogNode.style.top);
+    const originalStageBounds = stage.getBoundingClientRect;
+    stage.getBoundingClientRect = () => rect(20, 900, 390, 750);
+    shelf.flush();
+    expect(catalogNode.hidden).toBe(true); expect(catalogNode.tabIndex).toBe(-1);
+    expect(catalogNode.dataset.catalogVisible).toBe('false');
+    stage.getBoundingClientRect = originalStageBounds;
+    shelf.flush();
+    expect(catalogNode.hidden).toBe(false); expect(catalogNode.tabIndex).toBe(0);
+    scroll = 30; shelf.flush();
+    expect(parseFloat(catalogNode.style.top)).toBeCloseTo(top);
+    scroll = 500; shelf.flush();
+    expect(catalogNode.hidden).toBe(true); expect(catalogNode.tabIndex).toBe(-1);
+    scroll = 0; shelf.setMode('spine', { animate:false }); shelf.flush();
+    expect(catalog.visible).toBe(false); expect(catalogNode.hidden).toBe(true);
+    shelf.dispose(); shelf = null;
+    expect(catalogNode.hidden).toBe(true); expect(catalogNode.tabIndex).toBe(-1);
+    expect(catalogNode.dataset.catalog3d).toBeUndefined();
+  });
+
+  it('reuses saved plants but rebuilds a model when its selected pot or species changes', () => {
+    const plantNode = document.createElement('button'); plantNode.dataset.objectId = 'plant:fixture'; stage.append(plantNode);
+    const data = { kind:'plant', node:plantNode, key:'plant:fixture', variant:'monstera', seed:'fixture', potId:'muskot',
+      catalogId:'monstera', x:100, y:180, width:46, height:72 };
+    const layout = { stage, width:310, sceneWidth:390, height:750, trashNode,
+      rows:[{ top:20, bottom:220 }, { top:260, bottom:460 }, { top:500, bottom:700 }], entries:[data] };
+    shelf.updateLayout(layout);
+    const count = Number(shelf.canvas.dataset.modelCreations);
+    shelf.updateLayout({ ...layout, entries:[{ ...data, x:120 }] });
+    expect(Number(shelf.canvas.dataset.modelCreations)).toBe(count);
+    shelf.updateLayout({ ...layout, entries:[{ ...data, potId:'akerbar' }] });
+    expect(Number(shelf.canvas.dataset.modelCreations)).toBe(count + 1);
+    shelf.updateLayout({ ...layout, entries:[{ ...data, catalogId:'sansevieria', variant:'upright' }] });
+    expect(Number(shelf.canvas.dataset.modelCreations)).toBe(count + 2);
+  });
+
   it('projects a reachable right-side target and stays visible when the cabinet scrolls', () => {
     const before = trashNode.getBoundingClientRect();
     expect(before.left).toBeGreaterThanOrEqual(320);

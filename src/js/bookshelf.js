@@ -107,6 +107,8 @@ const PLANT_PHOTOS = {
 import { bookView, fitCoverImage, getBookRenderer } from './book-model.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
 import { layoutShelvedObjects, moveShelfObject } from './shelf-placement.js';
+import { createPlantCatalog } from './plant-catalog.js';
+import { getCatalogPlant, getCatalogPot } from './plant-catalog-data.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
@@ -119,8 +121,8 @@ function savedShelfPlants() {
   try {
     const saved = JSON.parse(localStorage.getItem(SHELF_PLANTS_STORAGE_KEY) || 'null');
     return Array.isArray(saved) ? saved.filter(item => item && typeof item.key === 'string' &&
-      typeof item.variant === 'string' && Number.isFinite(item.width)) : [];
-  } catch { return []; }
+      typeof item.variant === 'string' && Number.isFinite(item.width)) : null;
+  } catch { return null; }
 }
 const SHELF_VIEW_MODES = Object.freeze({ SPINE:'spine', ISOMETRIC:'isometric' });
 const ICONS = Object.freeze({
@@ -300,6 +302,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   const onOpen = options.onOpenBook || options.onBookOpen;
   const onPickLocal = options.onPickLocalFile || options.onAddBooks;
   const onDrive = options.onOpenDrive;
+  const savedPlants = savedShelfPlants();
 
   const state = {
     books: Array.isArray(books) ? books.slice() : [],
@@ -314,7 +317,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     appearanceTasks: new Map(),
     itemsById: new Map(),
     placementObjects: [],
-    plants: savedShelfPlants(),
+    plants: savedPlants || [],
+    plantsInitialized: savedPlants !== null,
     appearanceRefreshPending: false,
     pressedBookId: null,
     lastOpened: null,
@@ -338,21 +342,35 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   const root = el('div', { class: 'ihr-bookshelf', 'data-ihr-bookshelf': '' });
   const scroller = el('div', { class: 'ihr-bookshelf__scroll' });
-  const hasTrash = typeof options.onBookRemove === 'function';
+  const hasBookTrash = typeof options.onBookRemove === 'function';
+  const hasTrash = !opts.sections || hasBookTrash;
   const trashNode = hasTrash ? el('div', {
     class:'ihr-shelf-trash', role:'img',
-    'aria-label':'Papelera: arrastra un libro para retirarlo de la estantería',
+    'aria-label':'Papelera: arrastra un libro o una planta para retirarlos de la estantería',
     title:'Retirar de la estantería. El archivo original se conserva en Drive o en tu dispositivo.'
   }, [
     el('span', { class:'ihr-shelf-trash__body', 'aria-hidden':'true' }),
     el('span', { class:'ihr-shelf-trash__lid', 'aria-hidden':'true' }),
-    el('span', { class:'ihr-shelf-trash__label', text:'Retirar libro', 'aria-hidden':'true' })
+    el('span', { class:'ihr-shelf-trash__label', text:'Retirar', 'aria-hidden':'true' })
   ]) : null;
   const trashStatus = hasTrash ? el('div', { class:'ihr-trash-status', role:'status', 'aria-live':'polite' }) : null;
   const trashGutter = () => hasTrash ? (window.innerWidth >= 600 ? 96 : 80) : 0;
   root.classList.toggle('has-trash', hasTrash);
   root.append(scroller);
   if (trashStatus) root.append(trashStatus);
+  const plantCatalog = createPlantCatalog({ onAdd:addCatalogPlant });
+  const catalogNode = !opts.sections ? el('button', {
+    type:'button', class:'ihr-shelf-catalog', hidden:'', tabindex:'-1',
+    'aria-label':'Abrir catálogo IKEA de plantas y macetas', title:'Plantas y macetas · IKEA',
+    onClick:() => {
+      if (!state.busy && !state.session && !state.dragSession && !state.returnMotion && state.viewMode === SHELF_VIEW_MODES.ISOMETRIC)
+        plantCatalog.open(catalogNode);
+    }
+  }, [el('span', { class:'ihr-shelf-catalog__brand', text:'IKEA', 'aria-hidden':'true' }),
+    el('span', { class:'ihr-shelf-catalog__title', text:'PLANTAS', 'aria-hidden':'true' }),
+    svgIcon(['M7 15h10l-1.5 7h-7L7 15Z', 'M12 15V4',
+      'M12 10C5 10 5 3 5 3c6 0 7 7 7 7Z', 'M12 8s0-6 7-7c0 6-7 7-7 7Z'],
+      { className:'ihr-shelf-catalog__drawing' })]) : null;
   // La app monta hoy "añadir libro" y "Drive" en su propio header, así que la
   // barra de acciones de la estantería está apagada por defecto para no
   // duplicar controles. Se enciende con `showActions: true` (o sola, si se
@@ -635,6 +653,37 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   const objectRects = () => new Map([...scroller.querySelectorAll('.ihr-spine, .ihr-plant')]
     .map(node => [objectKey(node), node.getBoundingClientRect()]));
 
+  function savePlants({ strict = false } = {}) {
+    try { localStorage.setItem(SHELF_PLANTS_STORAGE_KEY, JSON.stringify(state.plants)); }
+    catch (error) { if (strict) throw error; }
+  }
+
+  async function addCatalogPlant({ catalogId, potId }) {
+    if (state.destroyed || state.busy || state.session || state.dragSession || state.returnMotion)
+      throw new Error('Espera a que termine la animación y vuelve a intentarlo.');
+    const plant = getCatalogPlant(catalogId), pot = getCatalogPot(potId);
+    if (!plant || !pot) throw new Error('Elige una planta y una maceta del catálogo.');
+    const key = `plant:${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+    const viewport = scroller.getBoundingClientRect();
+    const destination = dropPositionAt(viewport.left + viewport.width * .4,
+      viewport.top + Math.min(viewport.height * .4, 260));
+    const record = { key, seed:key, catalogId:plant.id, variant:plant.variant, potId:pot.id,
+      width:plant.width, height:plant.height, shelf:destination?.shelf ?? 0 };
+    const oldRects = objectRects(), previous = state.plants;
+    const objects = [...state.placementObjects, { ...record, kind:'plant' }];
+    const arranged = layoutShelvedObjects(objects, placementConfig()).flatMap(shelf => shelf.items);
+    const positions = new Map(arranged.map(item => [item.key, { shelf:item.shelf, x:item.x }]));
+    state.plants = [...previous, record].map(item => ({ ...item, ...positions.get(item.key) }));
+    try { savePlants({ strict:true }); }
+    catch (error) { state.plants = previous; throw new Error('No se pudo guardar la planta. Vuelve a intentarlo.', { cause:error }); }
+    state.plantsInitialized = true;
+    render();
+    state.shelfScene?.animateFromRects(oldRects);
+    root.dataset.lastAddedPlant = key;
+    const added = [...scroller.querySelectorAll('.ihr-plant')].find(node => objectKey(node) === key);
+    added?.scrollIntoView?.({ block:'nearest', behavior:prefersReducedMotion() ? 'instant' : 'smooth' });
+  }
+
   function persistObjectPlacement(node, destination, oldRects = objectRects()) {
     if (!destination || !state.placementObjects.length) return;
     const result = moveShelfObject(state.placementObjects, objectKey(node), destination, placementConfig());
@@ -646,7 +695,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       return { ...book, shelfPosition };
     });
     state.plants = state.plants.map(plant => ({ ...plant, ...result.placements[plant.key] }));
-    try { localStorage.setItem(SHELF_PLANTS_STORAGE_KEY, JSON.stringify(state.plants)); } catch { /* keep session placement */ }
+    savePlants();
     Promise.resolve(options.onShelfPlacementChange?.({ books:changed,
       plants:Object.fromEntries(state.plants.map(plant => [plant.key, { shelf:plant.shelf, x:plant.x }])) }))
       .catch(error => console.warn('No se pudo guardar la posición en la estantería:', error));
@@ -861,7 +910,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       // starts at the pointer, with no jump back to its old slot.
       state.shelfScene?.flush();
       discardRect = node.getBoundingClientRect();
-      discardMotion = state.shelfScene?.animateBookToTrash(node, { duration:discardDuration });
+      discardMotion = state.shelfScene?.animateObjectToTrash(node, { duration:discardDuration });
     }
     const oldRects = drag.active && drag.moved ? objectRects() : null;
     state.dragSession = null;
@@ -892,7 +941,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function hitTrash(x, y, node) {
-    if (!trashNode || !node?.classList.contains('ihr-spine')) return false;
+    if (!trashNode || !(node?.classList.contains('ihr-plant') || hasBookTrash && node?.classList.contains('ihr-spine'))) return false;
     if (state.shelfScene) return state.shelfScene.hitTrash(x, y);
     const bounds = trashNode.getBoundingClientRect();
     return bounds.width > 0 && bounds.height > 0 && x >= bounds.left - 8 && x <= bounds.right + 8 &&
@@ -913,8 +962,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   async function removeBookInTrash(node, { motion, rect, duration = prefersReducedMotion() ? 1 : 820 } = {}) {
-    const item = state.itemsById.get(node.dataset.bookId);
-    if (!hasTrash || !item || state.busy || state.destroyed) { motion?.cancel?.(); return; }
+    const plant = node.classList.contains('ihr-plant') ? state.plants.find(item => item.key === objectKey(node)) : null;
+    const item = plant ? null : state.itemsById.get(node.dataset.bookId);
+    if (!hasTrash || !(plant || hasBookTrash && item) || state.busy || state.destroyed) { motion?.cancel?.(); return; }
     const operation = { node, motion, cancelled:false, persisting:false, clone:null };
     state.trashRemoval = operation; state.busy = true;
     root.classList.add('is-discarding');
@@ -945,6 +995,18 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       // Delete the app's record only after the model has landed. External
       // originals are managed by the application callback and stay intact.
       operation.persisting = true;
+      if (plant) {
+        const previous = state.plants;
+        state.plants = state.plants.filter(item => item.key !== plant.key);
+        try { savePlants({ strict:true }); }
+        catch (error) { state.plants = previous; throw error; }
+        state.plantsInitialized = true;
+        trashStatus.textContent = `${getCatalogPlant(plant.catalogId)?.name || 'Planta'} retirada de la estantería`;
+        trashStatus.classList.remove('is-error');
+        state.trashStatusTimer = setTimeout(() => { trashStatus.textContent = ''; }, 4500);
+        root.dataset.lastRemovedPlant = plant.key;
+        return;
+      }
       await options.onBookRemove(item.book);
       if (state.destroyed) return;
       const id = String(item.book.id);
@@ -962,10 +1024,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       root.dataset.lastRemovedBook = id;
     } catch (error) {
       operation.motion?.cancel?.(); node.classList.remove('is-away');
-      trashStatus.textContent = 'No se pudo retirar el libro. Vuelve a intentarlo.';
+      trashStatus.textContent = `No se pudo retirar ${plant ? 'la planta' : 'el libro'}. Vuelve a intentarlo.`;
       trashStatus.classList.add('is-error');
       state.trashStatusTimer = setTimeout(() => { trashStatus.textContent = ''; }, 6500);
-      console.warn('No se pudo retirar el libro de la estantería:', error);
+      console.warn('No se pudo retirar el objeto de la estantería:', error);
     } finally {
       operation.clone?.remove();
       if (state.trashRemoval === operation) {
@@ -1073,7 +1135,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       openBook(hit || node, hit ? state.itemsById.get(hit.dataset.bookId) || item : item);
     });
     node.addEventListener('keydown', event => {
-      if (hasTrash && event.key === 'Delete' && !event.repeat) {
+      if (hasBookTrash && event.key === 'Delete' && !event.repeat) {
         event.preventDefault();
         if (state.busy || state.session || state.dragSession || state.returnMotion) return;
         state.shelfScene?.flush();
@@ -1101,14 +1163,18 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function buildPlant(item) {
     const upright = ['sansevieria', 'cactus'].includes(item.variant);
     const succulent = item.variant === 'suculenta';
-    const height = Math.round(item.width * (upright ? 1.5 : succulent ? 1.057 : 1.094));
+    const catalogId = item.catalogId || ({ sansevieria:'sansevieria', upright:'sansevieria', monstera:'monstera',
+      pothos:'hedera', leafy:'hedera', suculenta:'succulent', succulent:'succulent', cactus:'cactus' })[item.variant];
+    const plant = getCatalogPlant(catalogId);
+    const height = Math.round(item.height || plant?.height || item.width * (upright ? 1.5 : succulent ? 1.057 : 1.094));
     const node = el('button', {
       type:'button',
       class: `ihr-plant ihr-plant--photo ihr-plant--${item.variant}`,
       'data-object-id':item.key || `plant:${item.seed}`,
-      'aria-label':`Mover planta ${item.variant}`,
-      'aria-keyshortcuts':'Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown',
-      'aria-description':'Mantén pulsado para mover la planta. Usa Mayús y las flechas para cambiar su posición o balda.',
+      'data-catalog-id':plant?.id || '', 'data-pot-id':item.potId || plant?.defaultPotId || 'muskot',
+      'aria-label':`Mover planta ${plant?.name || item.variant}`,
+      'aria-keyshortcuts':'Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown Delete',
+      'aria-description':'Mantén pulsado para mover la planta o llevarla a la papelera. Usa Mayús y las flechas para cambiar su posición o balda, y Suprimir para retirarla.',
       title:'Mantén pulsado para mover la planta',
       style:
         `--ihr-plant-w:${item.width}px;` +
@@ -1119,7 +1185,16 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     node.addEventListener('pointermove', event => moveSpineDrag(event, state.dragSession?.node || node));
     node.addEventListener('pointerup', event => finishSpineDrag(event, state.dragSession?.node || node));
     node.addEventListener('pointercancel', event => finishSpineDrag(event, state.dragSession?.node || node, true));
-    node.addEventListener('keydown', event => moveObjectWithKeyboard(event, node));
+    node.addEventListener('keydown', event => {
+      if (hasTrash && event.key === 'Delete' && !event.repeat) {
+        event.preventDefault();
+        if (state.busy || state.session || state.dragSession || state.returnMotion) return;
+        state.shelfScene?.flush();
+        const duration = prefersReducedMotion() ? 1 : 820;
+        const motion = state.shelfScene?.animateObjectToTrash(node, { duration });
+        void removeBookInTrash(node, { motion, duration });
+      } else moveObjectWithKeyboard(event, node);
+    });
     return node;
   }
 
@@ -1166,9 +1241,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         cursor += item.width + cfg.gap;
       }
     }
-    if (!state.plants.length) {
+    if (!state.plantsInitialized) {
       state.plants = initialPlants.map(({ key, seed, variant, width, shelf, x }) => ({ key, seed, variant, width, shelf, x }));
-      try { localStorage.setItem(SHELF_PLANTS_STORAGE_KEY, JSON.stringify(state.plants)); } catch { /* memory layout still works */ }
+      state.plantsInitialized = true;
+      savePlants();
     }
     objects.push(...state.plants.map(plant => ({ ...plant, kind:'plant' })));
     const placements = Object.fromEntries(objects.filter(item => item.kind === 'book' && item.book.shelfPosition)
@@ -1344,15 +1420,22 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       ])
     ]);
     fragment.append(heading);
-    if (!state.books.length) fragment.append(el('div', { class:'ihr-empty' }, [
+    if (!state.books.length) fragment.append(el('div', { class:'ihr-empty ihr-empty--library' }, [
       el('h2', { class:'ihr-empty__title', text:opts.texts.emptyTitle }),
-      el('p', { class:'ihr-empty__text', text:opts.texts.emptyText }),
+      opts.texts.emptyText ? el('p', { class:'ihr-empty__body', text:opts.texts.emptyText }) : null,
       onPickLocal ? el('button', { type:'button', class:'ihr-btn ihr-btn--primary ihr-empty__action',
         text:opts.texts.emptyAction, onClick:() => onPickLocal() }) : null
     ]));
     const stage = el('div', { class:'ihr-shelf-stage' });
     stage.style.setProperty('--ihr-cabinet-width', `${width}px`);
     if (trashNode) stage.append(trashNode);
+    if (catalogNode) {
+      if (!state.useScene) {
+        catalogNode.hidden = state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC;
+        catalogNode.tabIndex = catalogNode.hidden ? -1 : 0;
+      }
+      stage.append(catalogNode);
+    }
     for (const section of plan) {
       const wrapper = el('section', {
         class: `ihr-section ihr-section--${section.id}`,
@@ -1409,6 +1492,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         const y = rect.top + rect.height / 2 - origin.top;
         if (node.classList.contains('ihr-plant')) {
           entries.push({ kind:'plant', key:node.dataset.objectId, node, x, y, width:rect.width, height:rect.height,
+            catalogId:node.dataset.catalogId, potId:node.dataset.potId,
             seed:node.dataset.objectId, variant:[...node.classList].find(name => name.startsWith('ihr-plant--') && name !== 'ihr-plant--photo')?.slice('ihr-plant--'.length) || 'pothos' });
           continue;
         }
@@ -1420,7 +1504,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           coverUrl:resolveCoverImmediately(item.book) });
       }
     }
-    return { stage, scroller, entries, rows, width, sceneWidth:width + trashGutter(), trashNode,
+    return { stage, scroller, entries, rows, width, sceneWidth:width + trashGutter(), trashNode, catalogNode,
       height:stage.getBoundingClientRect().height, mode:state.viewMode };
   }
 
@@ -2684,6 +2768,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     destroy() {
       state.destroyed = true;
+      plantCatalog.destroy();
       cancelTrashRemoval();
       if (state.dragSession) finishSpineDrag({ pointerId:state.dragSession.pointerId }, state.dragSession.node, true);
       state.pendingSelection?.cancel();

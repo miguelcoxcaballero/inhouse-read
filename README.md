@@ -2,7 +2,15 @@
 
 Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguelcoxcaballero/inhousenotes): misma paleta, misma tipografía (Comfortaa + DM Sans), mismo patrón de despliegue a GitHub Pages.
 
-La biblioteca es una estantería con madera y plantas fotográficas, donde los libros se ven de canto. Al tocar uno, sale de la balda y gira en 3D hasta enseñar la portada antes de abrirse.
+La biblioteca es una estantería 3D con madera texturizada, libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
+
+### Actualización web · 1.6.5
+
+- Ocho plantas modeladas a partir de referencias de IKEA: SANSEVIERIA, MONSTERA DELICIOSA, CHAMAEDOREA ELEGANS, NEPHROLEPIS, HEDERA HELIX, ZAMIOCULCAS, SUCCULENT y FEJKA. Hojas curvas, tallos, nervaduras y detalles propios de cada especie.
+- Cuatro macetas intercambiables: MUSKOT, MUSKOTBLOMMA con plato, ÅKERBÄR galvanizada y GRADVIS. Cerámica, terracota y metal comparten la iluminación de la estantería.
+- Un pequeño catálogo 3D está sujeto al lateral derecho del mueble y aparece en vista isométrica. Ábrelo para elegir una planta y una maceta en un manual ilustrado con estética IKEA.
+- Mantén pulsada una planta y arrástrala hasta la papelera para retirarla con la misma animación 3D que los libros. Las plantas elegidas, las macetas y sus posiciones se guardan en ese dispositivo; una colección vacía permanece vacía al reiniciar.
+- Modelos limitados en geometría y dibujados bajo demanda dentro de la escena compartida. Actualización web compatible con la APK actual; no requiere reinstalar Android.
 
 ### Actualización web · 1.6.4
 

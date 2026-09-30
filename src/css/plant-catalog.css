@@ -1,0 +1,109 @@
+/* A paper assembly booklet: restrained IKEA blue/yellow, original line drawings. */
+.ihr-plant-catalog {
+  --catalog-blue: #0058a3;
+  --catalog-yellow: #ffda1a;
+  box-sizing: border-box;
+  width: min(900px, calc(100vw - 32px));
+  max-width: none;
+  max-height: min(840px, calc(100dvh - max(24px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom))));
+  margin: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  overflow: hidden;
+  color: #111;
+  background: #fff;
+  box-shadow: 0 20px 90px #0005, 0 1px 3px #0002;
+  font-family: Arial, Helvetica, sans-serif;
+  color-scheme: light;
+  overscroll-behavior: contain;
+}
+.ihr-plant-catalog::backdrop { background: #0009; }
+.ihr-plant-catalog *, .ihr-plant-catalog *::before, .ihr-plant-catalog *::after { box-sizing: border-box; }
+.ihr-plant-catalog__paper { display: flex; flex-direction: column; max-height: inherit; min-height: 0; }
+.ihr-plant-catalog__header { display: flex; align-items: center; gap: 22px; padding: 24px 30px 8px; flex: none; }
+.ihr-plant-catalog__brand {
+  display: grid;
+  place-items: center;
+  width: 92px;
+  height: 42px;
+  flex: none;
+  color: var(--catalog-blue);
+  background: var(--catalog-yellow);
+  font-size: 30px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -1.5px;
+  font-style: normal;
+}
+.ihr-plant-catalog__title { margin: 0; font-size: 28px; line-height: 1.1; font-weight: 800; letter-spacing: -.8px; }
+.ihr-plant-catalog button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.ihr-plant-catalog button:focus-visible { outline: 3px solid var(--catalog-blue); outline-offset: 3px; }
+.ihr-plant-catalog__close { display: grid; place-items: center; width: 44px; height: 44px; margin-left: auto; padding: 10px; border: 0; background: none; flex: none; }
+.ihr-plant-catalog__close svg { width: 24px; height: 24px; }
+.ihr-plant-catalog__description { margin: 0; padding: 0 30px 20px; color: #515151; font-size: 14px; line-height: 1.4; flex: none; }
+.ihr-plant-catalog__body { display: grid; grid-template-columns: 35% 65%; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.ihr-plant-catalog__preview { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 18px 24px 32px; position: relative; background: linear-gradient(90deg, #fff 96%, #f1f1ef 100%); }
+.ihr-plant-catalog__preview::after { content: ''; position: absolute; right: 0; top: 0; bottom: 0; width: 1px; background: #0001; }
+.ihr-plant-catalog__drawing { width: min(100%, 220px); aspect-ratio: 4 / 5; }
+.ihr-plant-catalog__drawing svg { display: block; width: 100%; height: 100%; }
+.ihr-plant-catalog__caption { margin-top: 20px; width: 100%; text-align: center; }
+.ihr-plant-catalog__caption h3 { margin: 0 0 6px; font-size: 18px; line-height: 1.15; overflow-wrap: anywhere; }
+.ihr-plant-catalog__caption p { margin: 0; color: #515151; font-size: 13px; line-height: 1.45; }
+.ihr-plant-catalog__pot-name { display: block; margin-top: 12px; font-size: 12px; font-weight: 700; }
+.ihr-plant-catalog__choices { padding: 10px 26px 24px; }
+.ihr-plant-catalog__section { padding: 0; margin: 0; border: 0; min-width: 0; }
+.ihr-plant-catalog__section legend { display: flex; align-items: center; gap: 10px; float: left; width: 100%; padding: 0; margin: 0 0 14px; font-size: 17px; font-weight: 700; line-height: 1.3; }
+.ihr-plant-catalog__step { display: grid; place-items: center; width: 25px; height: 25px; border: 1.5px solid currentColor; border-radius: 50%; font-size: 15px; flex: none; }
+.ihr-plant-catalog__plants { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; clear: both; }
+.ihr-plant-catalog__plant, .ihr-plant-catalog__pot { display: flex; flex-direction: column; align-items: center; gap: 7px; min-width: 0; padding: 8px 3px; border: 1px solid transparent; border-radius: 0; background: none; position: relative; }
+.ihr-plant-catalog__plant[aria-pressed='true'], .ihr-plant-catalog__pot[aria-pressed='true'] { border-color: #111; background: #fafafa; }
+.ihr-plant-catalog__plant[aria-pressed='true']::after, .ihr-plant-catalog__pot[aria-pressed='true']::after { content: ''; position: absolute; right: 5px; top: 5px; width: 10px; height: 5px; border-left: 1.5px solid #111; border-bottom: 1.5px solid #111; transform: rotate(-45deg); }
+.ihr-plant-catalog__thumbnail { display: block; width: 64px; max-width: 100%; height: 80px; }
+.ihr-plant-catalog__thumbnail svg, .ihr-plant-catalog__pot-thumbnail svg { display: block; width: 100%; height: 100%; }
+.ihr-plant-catalog__option-name { width: 100%; font-size: 10px; font-weight: 700; line-height: 1.25; text-align: center; overflow-wrap: anywhere; }
+.ihr-plant-catalog__section--pots { margin-top: 24px; padding-top: 22px; border-top: 1px solid #ddd; }
+.ihr-plant-catalog__pots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; clear: both; }
+.ihr-plant-catalog__pot-thumbnail { display: block; width: 60px; max-width: 100%; height: 50px; }
+.ihr-plant-catalog__footer { display: grid; grid-template-columns: 1fr auto; gap: 0 14px; align-items: center; padding: 18px 30px 22px; flex: none; border-top: 1px solid #ddd; background: white; }
+.ihr-plant-catalog__status { grid-column: 1 / -1; margin: 0; font-size: 13px; line-height: 1.4; color: #555; }
+.ihr-plant-catalog__status:not(:empty) { margin-bottom: 12px; }
+.ihr-plant-catalog__status[data-error='true'] { color: #a4281c; }
+.ihr-plant-catalog .ihr-plant-catalog__add { grid-column: 1; min-height: 48px; padding: 12px 24px; background: var(--catalog-blue); color: #fff; border: 0; border-radius: 2px; font-size: 15px; font-weight: 700; line-height: 1.25; }
+.ihr-plant-catalog .ihr-plant-catalog__add:hover { background: #004682; }
+.ihr-plant-catalog button:disabled { opacity: .55; cursor: wait; }
+.ihr-plant-catalog__page-number { font-size: 11px; letter-spacing: .6px; white-space: nowrap; }
+
+@media (max-width: 650px) {
+  .ihr-plant-catalog { width: calc(100vw - 24px); max-height: calc(100dvh - max(12px, env(safe-area-inset-top)) - max(12px, env(safe-area-inset-bottom))); }
+  .ihr-plant-catalog__header { gap: 16px; padding: 16px 18px 5px; }
+  .ihr-plant-catalog__brand { width: 76px; height: 35px; font-size: 26px; }
+  .ihr-plant-catalog__title { font-size: 24px; }
+  .ihr-plant-catalog__description { padding: 0 18px 12px; font-size: 12px; }
+  .ihr-plant-catalog__body { display: block; }
+  .ihr-plant-catalog__preview { min-height: 170px; padding: 8px 24px 14px; display: grid; grid-template-columns: 45% 55%; background: white; border-bottom: 1px solid #ddd; }
+  .ihr-plant-catalog__preview::after { display: none; }
+  .ihr-plant-catalog__drawing { height: 170px; width: 100%; aspect-ratio: auto; }
+  .ihr-plant-catalog__caption { margin: 0; padding: 0 0 0 14px; text-align: left; }
+  .ihr-plant-catalog__caption h3 { font-size: 17px; }
+  .ihr-plant-catalog__caption p { font-size: 12px; }
+  .ihr-plant-catalog__choices { padding: 16px 18px 18px; }
+  .ihr-plant-catalog__section legend { margin-bottom: 10px; font-size: 15px; }
+  .ihr-plant-catalog__plants, .ihr-plant-catalog__pots { gap: 6px; }
+  .ihr-plant-catalog__plant { padding: 7px 2px; gap: 5px; }
+  .ihr-plant-catalog__thumbnail { width: 54px; height: 67px; }
+  .ihr-plant-catalog__option-name { font-size: 9px; }
+  .ihr-plant-catalog__section--pots { margin-top: 16px; padding-top: 14px; }
+  .ihr-plant-catalog__pot-thumbnail { height: 43px; }
+  .ihr-plant-catalog__footer { padding: 12px 18px 14px; }
+  .ihr-plant-catalog .ihr-plant-catalog__add { min-height: 46px; padding: 12px 14px; font-size: 14px; }
+}
+@media (max-width: 360px) {
+  .ihr-plant-catalog__header { padding-inline: 12px; gap: 10px; }
+  .ihr-plant-catalog__description, .ihr-plant-catalog__choices { padding-inline: 12px; }
+  .ihr-plant-catalog__plants, .ihr-plant-catalog__pots { gap: 3px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ihr-plant-catalog[open] { animation: ihr-plant-catalog-open 240ms cubic-bezier(.4,0,.2,1) both; }
+  @keyframes ihr-plant-catalog-open { from { opacity: 0; transform: scale(.975) translateY(6px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+}

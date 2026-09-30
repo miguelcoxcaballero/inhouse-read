@@ -30,9 +30,9 @@ afterEach(() => {
 })
 
 describe('bookshelf wastebasket',() => {
-  it('only enables removal when the application supplies its storage callback',() => {
+  it('allows removing plants but keeps books when no storage callback is supplied',() => {
     shelf=renderBookshelf(container,records(),{shelfWidth:390})
-    expect(container.querySelector('.ihr-shelf-trash')).toBeNull()
+    expect(container.querySelector('.ihr-shelf-trash')).not.toBeNull()
     removeKey('trash:a')
     expect(spine('trash:a')).not.toBeNull()
   })

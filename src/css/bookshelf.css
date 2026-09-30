@@ -193,6 +193,21 @@
 .ihr-shelf-stage.has-scene .ihr-spine::after { inset:0; }
 .ihr-bookshelf-scene { display:block; pointer-events:none; }
 
+/* The semantic hit target follows the booklet on the cabinet's right wall. */
+.ihr-shelf-catalog {
+  position:absolute; z-index:12; right:20px; top:64px; width:48px; height:76px;
+  padding:7px 3px; border:0; border-radius:1px; background:#ffda1a; color:#111;
+  font-family:Arial,sans-serif; cursor:pointer; touch-action:manipulation;
+  box-shadow:2px 3px 4px #0004; transform:skewY(12deg);
+}
+.ihr-shelf-catalog[hidden] { display:none !important; }
+.ihr-shelf-catalog__brand { display:block; background:#0058a3; color:#ffda1a; font-size:12px; font-weight:900; }
+.ihr-shelf-catalog__title { display:block; margin-top:5px; font-size:7px; font-weight:700; }
+.ihr-shelf-catalog__drawing { display:block; width:30px; height:34px; margin:3px auto 0; stroke:currentColor; }
+.ihr-shelf-catalog[data-catalog3d="true"] { padding:0; background:transparent; box-shadow:none; transform:none; }
+.ihr-shelf-catalog[data-catalog3d="true"] > * { display:none; }
+.ihr-shelf-catalog:focus-visible { outline:2px solid #ffda1a; outline-offset:3px; }
+
 /* The narrow floor beside the cabinet belongs to the 3D scene. The same
    projected target stays reachable as the shelves scroll past it. */
 .ihr-bookshelf.has-trash .ihr-shelf-stage > .ihr-section {
@@ -588,6 +603,7 @@
 .ihr-empty__art {
   width: min(360px, 100%);
 }
+.ihr-empty--library { min-height:0; padding:0 20px 22px; }
 .ihr-empty__art > .ihr-shelf + .ihr-shelf { margin-top: 14px; }
 
 .ihr-empty__row {
