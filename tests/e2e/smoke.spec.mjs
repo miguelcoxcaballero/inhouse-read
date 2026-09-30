@@ -152,6 +152,8 @@ test('abre un PDF local y navega al visor de lectura', async ({ page }) => {
 })
 
 test('edita y conserva el color, fuente, tamaño y texto del lomo', async ({ page }) => {
+  // Includes editing, saving, reloading and a second real 3D selection.
+  test.setTimeout(90_000)
   await page.setViewportSize({ width:390, height:844 })
   await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
@@ -271,6 +273,8 @@ test('edita y conserva el color, fuente, tamaño y texto del lomo', async ({ pag
 })
 
 test('mueve un libro al mantenerlo pulsado con animación 3D y conserva su posición libre', async ({ page }) => {
+  // Includes the drag animation and a reload to verify committed positions.
+  test.setTimeout(90_000)
   await page.evaluate(async () => {
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open('inhouse-read')

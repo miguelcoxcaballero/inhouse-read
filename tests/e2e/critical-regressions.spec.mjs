@@ -93,6 +93,9 @@ test('Android: mantiene una pantalla de carga hasta que Drive guarda el libro y 
 })
 
 test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recargar', async ({ page }) => {
+  // Import, return, reload, reopen and return each render real 3D frames.
+  // Give the complete sequence enough time on the software renderer in CI.
+  test.setTimeout(90_000)
   await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
 

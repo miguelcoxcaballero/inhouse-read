@@ -36,11 +36,15 @@ jobs:
         # Dos contextos aislados, igual que en la suite completa local.
         # La escena 3D en Chromium sin GPU tarda más; deja margen también
         # para los traces y el reporte si alguna comprobación falla.
-        run: npm run test:e2e -- --workers=2 --reporter=list
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
+        run: npm run test:e2e -- --workers=2 --reporter=list,json
 
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: playwright-report
+          path: |
+            playwright-report
+            test-results
           if-no-files-found: ignore

@@ -8,6 +8,10 @@ for (const variant of [
   { name:'móvil horizontal', width:844, height:390, theme:'light' },
   { name:'escritorio', width:1280, height:800, theme:'light' }
 ]) test(`portada y controles sin solaparse: ${variant.name}`, async ({ page }) => {
+  // This flow renders the model during two selections and a full opening.
+  // Software WebGL in CI needs more than the default 30 s for the full flow;
+  // individual control, geometry and continuity checks keep their limits.
+  test.setTimeout(90_000)
   await page.setViewportSize({ width:variant.width, height:variant.height })
   await page.addInitScript(theme => localStorage.setItem('inhouse-read-theme', theme), variant.theme)
   await page.goto('/')
