@@ -294,7 +294,9 @@ export class PdfReader {
     canvas.height = thumbViewport.height
     await page.render({ canvasContext: canvas.getContext('2d'), viewport: thumbViewport }).promise
 
-    return new Promise(resolve => canvas.toBlob(resolve, 'image/webp', 0.92))
+    // JPEG: la portada es opaca y su codificación es mucho más rápida que WebP
+    // en el hilo principal (WebP bloqueaba segundos la vuelta a la estantería).
+    return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9))
   }
 
   close() {
