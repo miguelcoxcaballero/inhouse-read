@@ -13,13 +13,13 @@ const BOTANICAL = new URL('../assets/library/botanical-leaves.webp', import.meta
 const DURATION = 700;
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 const ease = t => t * t * t * (t * (t * 6 - 15) + 10);
-const TRASH_PADDING = 7, TRASH_GAP = 12, TRASH_EDGE = 4;
+const TRASH_PADDING = 7, TRASH_GAP = 12;
 
 function trashFootprint(bin) {
   const position = bin.position.clone(), rotation = bin.rotation.clone(), scale = bin.scale.clone();
   const openness = Number(bin.userData.openness) || 0;
   const bounds = new THREE.Box3();
-  bin.position.set(0, 0, 0); bin.rotation.set(14 * Math.PI / 180, -Math.PI / 6, 0); bin.scale.setScalar(1);
+  bin.position.set(0, 0, 0); bin.rotation.set(0, 0, 0); bin.scale.setScalar(1);
   // Reserve the real hinged lid's full movement, rather than a permanently
   // narrow cabinet or an estimate that clips the open bin on small phones.
   for (const open of [0, .5, 1]) {
@@ -99,8 +99,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   scene.add(furniture);
   sceneWidth = Math.max(width, Number(sceneWidth) || width);
   let trash = trashNode ? createShelfTrash() : null;
-  if (trash) scene.add(trash);
   let trashBounds = trash ? trashFootprint(trash) : null;
+  if (trash) furniture.add(trash);
   let catalog = catalogNode ? createShelfCatalog() : null;
   if (catalog) furniture.add(catalog);
   const camera = new THREE.OrthographicCamera(0, width, 0, -1, .1, 20000);
@@ -122,6 +122,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     color:'#d5c4af', roughness:.87 });
   const darkWood = new THREE.MeshPhysicalMaterial({ map:texture, bumpMap:grain, bumpScale:.15,
     color:'#ead5ba', roughness:.68, clearcoat:.12, clearcoatRoughness:.52 });
+  const floorMaterial = new THREE.MeshStandardMaterial({ map:texture, bumpMap:grain, bumpScale:.06,
+    color:'#b3a68d', roughness:.94 });
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(1, 2, 1), floorMaterial);
+  floor.name = 'Library floor'; floor.userData.floor = true; floor.receiveShadow = true;
+  furniture.add(floor);
+  let floorY = -height;
   let depth = Math.max(155, ...entries.filter(e => e.kind !== 'plant').map(e => e.width + 12));
   const entryKey = (entry, index) => entry.kind === 'plant'
     ? `plant:${entry.node?.dataset.objectId ?? entry.key ?? index}`
@@ -136,7 +142,26 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     for (const object of [...furniture.children]) if (object.userData.furniture) {
       furniture.remove(object); object.userData.disposeGeometry?.();
     }
-    furniture.add(createShelfFurniture({ width, height, depth, rows, wood, backWood, darkWood }));
+    const cabinet = createShelfFurniture({ width, height, depth, rows, wood, backWood, darkWood });
+    furniture.add(cabinet);
+    // Geometry determines the shared floor: long upright ends or the last
+    // shelf board can be the cabinet's lowest physical surface.
+    const localBounds = new THREE.Box3();
+    for (const mesh of cabinet.children) localBounds.union(mesh.geometry.boundingBox);
+    floorY = localBounds.min.y;
+    floor.geometry.dispose();
+    floor.geometry = new THREE.BoxGeometry(width + 210, 2, depth + 210);
+    floor.geometry.computeBoundingBox();
+    floor.position.set(55, floorY - 1, -depth / 2 + 45);
+    positionTrash();
+  }
+  function positionTrash() {
+    if (!trash) return;
+    // Its local placement is a real object on the floor, independent of the
+    // camera, viewport, scroll and the progress of a view transition.
+    trash.position.set(width / 2 + TRASH_GAP + trash.userData.radius,
+      floorY - trashBounds.min.y, -depth);
+    trash.rotation.set(0, 0, 0); trash.scale.setScalar(1); trash.visible = true;
   }
   rebuildFurniture();
 
@@ -161,7 +186,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (value === null) node.removeAttribute(attribute); else node.setAttribute(attribute, value);
     }
     node.hidden = original.hidden; node.inert = original.inert;
-    for (const key of ['trash3d', 'trashHover', 'hover', 'trashDropProgress', 'dropProgress', 'trashVisible', 'trashViewHidden'])
+    for (const key of ['trash3d', 'trashHover', 'hover', 'trashDropProgress', 'dropProgress', 'trashVisible', 'trashViewHidden',
+      'trashLocalPosition', 'trashLocalScale', 'trashLocalRotation', 'trashFootY', 'cabinetFloorY', 'trashCameraInFrame',
+      'trashFootWorld', 'floorContactWorld'])
       delete node.dataset[key];
   }
   rememberTrashNode(trashNode);
@@ -272,29 +299,16 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function updateTrash(scroll, now, finishedDrops) {
     if (!trash || !trashNode) {
-      for (const key of ['trash3d', 'trashHover', 'trashVisible', 'trashViewHidden']) delete canvas.dataset[key];
+      for (const key of ['trash3d', 'trashHover', 'trashVisible', 'trashViewHidden', 'trashLocalPosition', 'trashLocalScale',
+        'trashLocalRotation', 'trashFootY', 'cabinetFloorY', 'trashCameraInFrame', 'trashFootWorld', 'floorContactWorld'])
+        delete canvas.dataset[key];
       return false;
     }
-    const canvasBounds = canvas.getBoundingClientRect();
     const scrollerBounds = scroller.getBoundingClientRect();
     const visualBottom = window.visualViewport
       ? window.visualViewport.offsetTop + window.visualViewport.height : window.innerHeight;
     const visibleBottom = Math.min(scrollerBounds.bottom, window.innerHeight || Infinity,
       Number.isFinite(visualBottom) && visualBottom > 0 ? visualBottom : Infinity);
-    const visibleHeight = Math.max(1, Math.min(viewportHeight, visibleBottom - canvasBounds.top));
-    const footprintHeight = trashBounds.max.y - trashBounds.min.y;
-    const fullScale = Math.min(trashScale(), Math.max(.001, visibleHeight - TRASH_PADDING * 2 - 16) / footprintHeight);
-    const reveal = smoothTrash(clamp((progress - .58) / .28, 0, 1));
-    const scale = fullScale * reveal;
-    // The wastebasket shares the shelf's world, camera and light. It remains
-    // beside the visible cabinet while long shelves scroll underneath it.
-    // The cabinet starts below the library heading. The scroller's total
-    // height therefore exceeds the canvas area actually visible on a phone.
-    trash.position.set(sceneWidth - TRASH_EDGE - TRASH_PADDING - trashBounds.max.x * fullScale,
-      -scroll - visibleHeight + TRASH_PADDING + 8 - trashBounds.min.y * fullScale, 36);
-    trash.scale.setScalar(scale);
-    trash.rotation.set(14 * Math.PI / 180 * progress, -Math.PI / 6 * progress, 0);
-    trash.visible = reveal > 0 && visibleHeight > 80;
     const viewHidden = desiredMode !== 'isometric' || progress < .86;
     if (viewHidden) {
       trashHover = false; trashTransition = null; trashOpenness = 0;
@@ -322,13 +336,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       trash.userData.setState({ openness, bounce });
       trash.updateMatrixWorld(true);
       if (dropEntry.model && !drop.complete) {
+        const worldScale = trash.getWorldScale(new THREE.Vector3()).x;
         const tiltedWidth = dropEntry.width * Math.cos(.46) + dropEntry.height * Math.sin(.46);
-        const endScale = Math.min(.19 * scale, trash.userData.radius * 1.45 * scale / Math.max(1, tiltedWidth));
+        const endScale = Math.min(.19 * worldScale, trash.userData.radius * 1.45 * worldScale / Math.max(1, tiltedWidth));
         const motion = sampleTrashDrop(drop.start, trash.userData.getMouth(), t,
           { height:dropEntry.height, scale:drop.startScale, endScale });
         dropEntry.model.position.copy(motion.position);
         dropEntry.model.scale.setScalar(motion.scale);
-        drop.endQuaternion.copy(trash.quaternion).multiply(drop.bookQuaternion);
+        trash.getWorldQuaternion(drop.endQuaternion).multiply(drop.bookQuaternion);
         dropEntry.model.quaternion.copy(drop.startQuaternion).slerp(drop.endQuaternion, motion.turn);
         dropEntry.model.updateMatrixWorld(true);
         const flightBounds = corners(dropEntry.box, dropEntry.model.matrixWorld);
@@ -363,7 +378,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const stageBounds = stage.getBoundingClientRect();
     const screenTop = stageBounds.top + trashRect.top, screenBottom = stageBounds.top + trashRect.bottom;
     const screenLeft = stageBounds.left + trashRect.left, screenRight = stageBounds.left + trashRect.right;
-    const visible = !viewHidden && trash.visible &&
+    const inFrame = trashRect.right > 0 && trashRect.left < sceneWidth &&
+      trashRect.bottom > scroll && trashRect.top < scroll + viewportHeight;
+    const visible = !viewHidden && inFrame &&
       screenBottom > Math.max(0, scrollerBounds.top) && screenTop < visibleBottom &&
       screenRight > Math.max(0, scrollerBounds.left) && screenLeft < Math.min(window.innerWidth, scrollerBounds.right);
     trashNode.hidden = !visible; trashNode.inert = !visible; trashNode.tabIndex = visible ? 0 : -1;
@@ -376,6 +393,15 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     trashNode.dataset.trashHover = trashNode.dataset.hover = String(trashHover);
     canvas.dataset.trash3d = 'true'; canvas.dataset.trashHover = String(trashHover);
     canvas.dataset.trashVisible = String(visible); canvas.dataset.trashViewHidden = String(viewHidden);
+    const footY = trash.position.y + trashBounds.min.y * trash.scale.y;
+    const footWorld = furniture.localToWorld(new THREE.Vector3(trash.position.x, footY, trash.position.z));
+    const floorContact = furniture.localToWorld(new THREE.Vector3(trash.position.x, floorY, trash.position.z));
+    const diagnostic = { trashLocalPosition:trash.position.toArray().map(value => value.toFixed(6)).join(','),
+      trashLocalScale:trash.scale.x.toFixed(6), trashLocalRotation:trash.rotation.toArray().slice(0, 3).join(','),
+      trashFootY:footY.toFixed(6), cabinetFloorY:floorY.toFixed(6), trashCameraInFrame:String(inFrame),
+      trashFootWorld:footWorld.toArray().map(value => value.toFixed(6)).join(','),
+      floorContactWorld:floorContact.toArray().map(value => value.toFixed(6)).join(',') };
+    Object.assign(trashNode.dataset, diagnostic); Object.assign(canvas.dataset, diagnostic);
     return moving;
   }
 
@@ -503,13 +529,21 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     furniture.updateMatrix();
     const unscaled = corners(fullBounds, furniture.matrix);
     const padding = 8 * progress;
-    const reserve = trashBounds ? ((trashBounds.max.x - trashBounds.min.x) * trashScale() +
-      TRASH_PADDING * 2 + TRASH_GAP + TRASH_EDGE) * progress : 0;
-    const availableWidth = Math.max(1, sceneWidth - padding - reserve);
-    const zoom = Math.min((1 - .22 * progress) * Math.min(1, width / unscaled.width), availableWidth / unscaled.width);
+    const framedBounds = fullBounds.clone();
+    if (trash) framedBounds.union(trashBounds.clone().translate(trash.position));
+    const framed = corners(framedBounds, furniture.matrix);
+    // The same camera framing turns and pulls back from the whole room.
+    // At the frontal endpoint the bin is naturally beyond the right crop;
+    // the diagonal endpoint includes it without any object reveal animation.
+    const frameLeft = unscaled.left + (framed.left - unscaled.left) * progress;
+    const frameRight = unscaled.right + (framed.right - unscaled.right) * progress;
+    const zoom = Math.min((1 - .22 * progress) * Math.min(1, width / unscaled.width),
+      (sceneWidth - padding * 2 - TRASH_PADDING * 2 * progress) / (frameRight - frameLeft));
     furniture.scale.setScalar(zoom); furniture.updateMatrix();
-    const bounds = corners(fullBounds, furniture.matrix);
-    furniture.position.set((padding + sceneWidth - reserve) / 2 - (bounds.left + bounds.right) / 2, bounds.top - padding, 0);
+    const roomBounds = framedBounds.clone().union(floor.geometry.boundingBox.clone().translate(floor.position));
+    const bounds = corners(roomBounds, furniture.matrix);
+    const reserve = (frameRight - frameLeft - unscaled.width) * zoom;
+    furniture.position.set(sceneWidth / 2 - (frameLeft + frameRight) * zoom / 2, bounds.top - padding, 0);
     furniture.updateMatrixWorld(true);
     stage.style.height = `${Math.ceil(bounds.height + padding * 2)}px`;
     canvas.dataset.shelfView = desiredMode;
@@ -521,8 +555,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     inverseRotation.copy(furniture.quaternion).invert();
     return zoom;
   }
-
-  function trashScale() { return Math.min(1.08, Math.max(.8, sceneWidth / 390)); }
 
   function updateCatalog(scroll) {
     if (!catalog || !catalogNode) {
@@ -1076,7 +1108,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         restoreTrashNode(trashNode);
         trashNode = nextTrashNode;
         rememberTrashNode(trashNode);
-        if (trashNode && !trash) { trash = createShelfTrash(); scene.add(trash); trashBounds = trashFootprint(trash); }
+        if (trashNode && !trash) {
+          trash = createShelfTrash(); trashBounds = trashFootprint(trash); furniture.add(trash); positionTrash();
+        }
         else if (!trashNode && trash) {
           for (const entry of bookEntries) cancelTrashDrop(entry);
           trashHover = false; trashOpenness = 0; trashTransition = null;
@@ -1154,6 +1188,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       stage.removeEventListener('pointerdown', onPlantFoliagePointerDown, true);
       for (const entry of bookEntries) releaseEntry(entry);
       if (catalog) { catalog.removeFromParent(); catalog.userData.dispose(); }
+      trash?.removeFromParent();
       releaseObject(furniture); texture.dispose(); grain.dispose(); leafTexture.dispose(); lighting.dispose();
       trash?.userData.dispose();
       canvas.remove(); stage.style.height = originalHeight;

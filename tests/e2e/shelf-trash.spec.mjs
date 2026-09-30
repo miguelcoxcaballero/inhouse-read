@@ -83,20 +83,25 @@ async function seedShelf(page, { long = false, linked = false, driveBytes = null
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
     })
     const original = books.find(book => book.name === 'tiny.pdf')
+    // Short fixtures begin on the final shelf so their real source and the
+    // fixed floor basket are visible together. Long fixtures retain top and
+    // bottom records to exercise scrolling, rather than repositioning them
+    // after a drag has started.
+    const fixtureShelf = long ? 0 : 2
     const clean = { ...original, progressFraction:0, locator:null, progressDirty:false,
-      cloudAccountId:'trash-account', shelfPosition:{ shelf:0, x:.16 }, shelfOrder:0 }
+      cloudAccountId:'trash-account', shelfPosition:{ shelf:fixtureShelf, x:.16 }, shelfOrder:0 }
     const records = [
       { ...clean, driveFileId:linked ? 'original-on-drive' : undefined },
       { ...clean, id:'trash:drive', title:'Libro en Drive', name:'drive-copy.pdf',
-        driveFileId:driveId, shelfPosition:{ shelf:0, x:.42 }, shelfOrder:1 },
+        driveFileId:driveId, shelfPosition:{ shelf:fixtureShelf, x:.42 }, shelfOrder:1 },
       { ...clean, id:'trash:survivor', title:'Libro que permanece', name:'survivor.pdf',
-        driveFileId:linked ? 'survivor-on-drive' : undefined, shelfPosition:{ shelf:0, x:.66 }, shelfOrder:2 }
+        driveFileId:linked ? 'survivor-on-drive' : undefined, shelfPosition:{ shelf:fixtureShelf, x:.66 }, shelfOrder:2 }
     ]
     if (driveBytes) Object.assign(records[1], {
       content:new Blob([new Uint8Array(driveBytes)], { type:'application/pdf' }),
       size:driveBytes.length, sizeBytes:driveBytes.length, pageCount:3
     })
-    if (long) for (let index=0; index<14; index++) records.push({ ...clean,
+    if (long) for (let index=0; index<18; index++) records.push({ ...clean,
       id:`trash:long:${index}`, name:`long-${index}.pdf`, title:`Libro ${index + 4}`,
       driveFileId:`long-on-drive-${index}`, shelfPosition:{ shelf:1 + Math.floor(index / 2), x:index % 2 ? .57 : .18 },
       shelfOrder:3 + index })
@@ -109,7 +114,7 @@ async function seedShelf(page, { long = false, linked = false, driveBytes = null
     const plants = [
       { key:'plant:trash-a', seed:'trash-a', variant:'cactus', width:40, shelf:0, x:.87 },
       { key:'plant:trash-b', seed:'trash-b', variant:'suculenta', width:44, shelf:1, x:.84 },
-      { key:'plant:trash-c', seed:'trash-c', variant:'pothos', width:44, shelf:long ? 7 : 2, x:.85 }
+      { key:'plant:trash-c', seed:'trash-c', variant:'pothos', width:44, shelf:long ? 9 : 2, x:.85 }
     ]
     localStorage.setItem(plantsKey, JSON.stringify(plants))
     localStorage.setItem('inhouse-read-shelf-view', 'spine')
@@ -129,7 +134,14 @@ async function useIsometricShelf(page) {
     await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1')
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
+}
+
+async function showCabinetFloor(page) {
+  const scroller = page.locator('.ihr-bookshelf__scroll')
+  await scroller.evaluate(node => { node.scrollTop = node.scrollHeight })
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
   await expect(page.locator('.ihr-shelf-trash')).toBeVisible()
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-trash-visible', 'true')
 }
 
 async function assertBinMesh(page) {
@@ -146,6 +158,15 @@ async function assertBinMesh(page) {
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width + 1)
   expect(bounds.y).toBeGreaterThan(50)
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height + 1)
+  const contact = await page.locator('.ihr-bookshelf-scene').evaluate(node => ({
+    foot:Number(node.dataset.trashFootY), floor:Number(node.dataset.cabinetFloorY),
+    scale:Number(node.dataset.trashLocalScale), rotation:node.dataset.trashLocalRotation
+  }))
+  expect(Number.isFinite(contact.foot)).toBe(true)
+  expect(Number.isFinite(contact.floor)).toBe(true)
+  expect(contact.foot).toBeCloseTo(contact.floor, 5)
+  expect(contact.scale).toBe(1)
+  expect(contact.rotation.split(',').map(Number)).toEqual([0,0,0])
   // Its accessible DOM rectangle is only a hit target. Actual coloured pixels
   // must be present at that projected rectangle in the shelf's single canvas.
   const pixels = await page.locator('.ihr-bookshelf-scene').evaluate((canvas, bounds) => {
@@ -171,7 +192,10 @@ async function assertBinMesh(page) {
 
 async function beginDrag(page, id) {
   const source = page.locator(`.ihr-spine[data-book-id="${id}"]`)
-  await source.evaluate(node => node.scrollIntoView({ block:'center' }))
+  const current = await source.boundingBox(), clip = await page.locator('.ihr-bookshelf__scroll').boundingBox()
+  if (!current || current.y < Math.max(0,clip.y) ||
+    current.y + current.height > Math.min(page.viewportSize().height,clip.y + clip.height))
+    await source.evaluate(node => node.scrollIntoView({ block:'nearest' }))
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
   const rect = await source.boundingBox()
   expect(rect).not.toBeNull()
@@ -217,9 +241,54 @@ async function observeDrop(page) {
   })
 }
 
+async function shelfScrollDiagnostics(page) {
+  return page.evaluate(() => {
+    const scroller = document.querySelector('.ihr-bookshelf__scroll')
+    const stage = document.querySelector('.ihr-shelf-stage')
+    const canvas = document.querySelector('.ihr-bookshelf-scene')
+    const bounds = node => {
+      if (!node) return null
+      const { left,top,right,bottom,width,height } = node.getBoundingClientRect()
+      return { left,top,right,bottom,width,height }
+    }
+    const clip = bounds(scroller), cabinet = bounds(stage)
+    const scrollStyle = getComputedStyle(scroller), stageStyle = getComputedStyle(stage)
+    const physicalContentBottom = cabinet.bottom - clip.top + scroller.scrollTop + parseFloat(scrollStyle.paddingBottom)
+    const object = node => ({
+      key:node.dataset.objectId,bookId:node.dataset.bookId,classes:node.className,
+      rect:bounds(node),style:node.getAttribute('style'),dataset:{ ...node.dataset },
+      dragging:node.classList.contains('is-dragging'),lifted:node.classList.contains('is-lifted'),
+      away:node.classList.contains('is-away')
+    })
+    return {
+      viewport:{ width:innerWidth,height:innerHeight,devicePixelRatio,
+        visual:visualViewport && { top:visualViewport.offsetTop,height:visualViewport.height } },
+      scroll:{ top:scroller.scrollTop,height:scroller.scrollHeight,clientHeight:scroller.clientHeight,
+        width:scroller.clientWidth,max:scroller.scrollHeight - scroller.clientHeight,
+        remaining:scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop,
+        physicalContentBottom,overflowBeyondCabinet:scroller.scrollHeight - Math.ceil(physicalContentBottom),
+        rect:clip,paddingTop:scrollStyle.paddingTop,paddingBottom:scrollStyle.paddingBottom },
+      stage:{ rect:cabinet,offsetHeight:stage.offsetHeight,clientHeight:stage.clientHeight,
+        style:stage.getAttribute('style'),overflowX:stageStyle.overflowX,overflowY:stageStyle.overflowY,
+        contain:stageStyle.contain,position:stageStyle.position },
+      canvas:{ rect:bounds(canvas),width:canvas.width,height:canvas.height,dataset:{ ...canvas.dataset } },
+      shelfClass:document.querySelector('.ihr-bookshelf')?.className,
+      bin:{ rect:bounds(document.querySelector('.ihr-shelf-trash')),
+        hidden:document.querySelector('.ihr-shelf-trash')?.hidden,
+        dataset:{ ...document.querySelector('.ihr-shelf-trash')?.dataset } },
+      objects:[...document.querySelectorAll('.ihr-spine,.ihr-plant')].map(object)
+    }
+  })
+}
+
 async function dropIntoBin(page, id, testInfo) {
   await useIsometricShelf(page)
+  await showCabinetFloor(page)
   await beginDrag(page, id)
+  await finishDropIntoBin(page,id,testInfo)
+}
+
+async function finishDropIntoBin(page, id, testInfo) {
   const bin = await assertBinMesh(page)
   await observeDrop(page)
   await page.mouse.move(bin.x, bin.y, { steps:14 })
@@ -287,6 +356,7 @@ test('papelera 3D: retira la copia de la app con animación en un móvil de 320 
   expect((await storedLibrary(page)).books.map(book => book.id).sort()).toEqual(beforeReload.books.map(book => book.id).sort())
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), PLANTS_KEY)).toEqual(seed.plants)
   expect(await readFile(PDF_FIXTURE)).toEqual(fixtureBefore)
+  await showCabinetFloor(page)
   await assertBinMesh(page)
   expect(errors).toEqual([])
 })
@@ -383,13 +453,14 @@ test('entrar en la papelera y soltar fuera cancela la eliminación y mantiene lo
   test.setTimeout(90_000)
   const seed = await seedShelf(page)
   await useIsometricShelf(page)
+  await showCabinetFloor(page)
+  const original = await page.locator(`.ihr-spine[data-book-id="${seed.originalId}"]`).boundingBox()
   const source = await beginDrag(page, seed.originalId)
   const bin = await assertBinMesh(page)
   await page.mouse.move(bin.x, bin.y, { steps:14 })
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-trash-hover', 'true')
   // Return to the original slot. A hover must never commit the action.
-  const original = await page.locator('.ihr-shelf').first().boundingBox()
-  await page.mouse.move(original.x + original.width * .16, original.y + original.height * .7, { steps:12 })
+  await page.mouse.move(original.x + original.width * .5, original.y + original.height * .7, { steps:12 })
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-trash-hover', 'false')
   await page.mouse.up()
   await expect(source).not.toHaveClass(/is-dragging|is-lifted/)
@@ -403,8 +474,8 @@ test('entrar en la papelera y soltar fuera cancela la eliminación y mantiene lo
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
 })
 
-test('la papelera permanece accesible al bajar por una estantería larga en la vista isométrica', async ({ page }, testInfo) => {
-  test.setTimeout(120_000)
+test('la papelera permanece en el suelo y se alcanza arrastrando con autoscroll por una estantería larga', async ({ page }, testInfo) => {
+  test.setTimeout(180_000)
   const seed = await seedShelf(page, { long:true })
   const scene = page.locator('.ihr-bookshelf-scene')
   const scroller = page.locator('.ihr-bookshelf__scroll')
@@ -412,23 +483,106 @@ test('la papelera permanece accesible al bajar por una estantería larga en la v
   await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
   await expect(scene).toHaveAttribute('data-view-progress', '1')
   await expect(scene).toHaveAttribute('data-animating', 'false')
-  // The isometric camera intentionally zooms the whole tall cabinet out.
-  // It still extends beyond the viewport and must support scrolling to its
-  // bottom without losing the bin hit target.
+  // The floor basket must not follow the viewport while reading upper
+  // shelves. It is reached by scrolling to the cabinet's physical bottom.
   expect(await scroller.evaluate(node => node.scrollHeight / node.clientHeight)).toBeGreaterThan(1.3)
-  await scroller.evaluate(node => { node.scrollTop = node.scrollHeight })
-  await expect.poll(() => scroller.evaluate(node => node.scrollTop)).toBeGreaterThan(400)
+  await scroller.evaluate(node => { node.scrollTop = 0 })
+  await expect(scene).toHaveAttribute('data-animating', 'false')
+  await expect(page.locator('.ihr-shelf-trash')).toBeHidden()
+  await expect(scene).toHaveAttribute('data-trash-visible', 'false')
+  const fixedPose = await scene.getAttribute('data-trash-local-position')
+  // Keep the pointer pressed on an actual first-shelf book. Move to the
+  // lower viewport edge, away from the bin's future position, so the real
+  // drag handler scrolls through the cabinet before the user can drop it.
+  await beginDrag(page,seed.originalId)
+  const scrollBounds = await scroller.boundingBox()
+  await page.mouse.move(scrollBounds.x + scrollBounds.width * .25,
+    Math.min(scrollBounds.y + scrollBounds.height - 12,page.viewportSize().height - 12),{ steps:12 })
+  const initialScrollGeometry = await shelfScrollDiagnostics(page)
+  try {
+    await expect.poll(() => scroller.evaluate(node => node.scrollTop), { timeout:60_000 }).toBeGreaterThan(400)
+    await expect.poll(() => scroller.evaluate(node => node.scrollHeight - node.clientHeight - node.scrollTop), {
+      timeout:60_000
+    }).toBeLessThan(2)
+  } catch (error) {
+    await testInfo.attach('floor-autoscroll-failure-geometry', {
+      body:JSON.stringify({ initial:initialScrollGeometry,failed:await shelfScrollDiagnostics(page) },null,2),
+      contentType:'application/json'
+    })
+    await testInfo.attach('floor-autoscroll-failure-viewport', {
+      body:await page.screenshot(),contentType:'image/png'
+    })
+    throw error
+  }
+  expect(await scene.getAttribute('data-trash-local-position')).toBe(fixedPose)
+  await finishDropIntoBin(page,seed.originalId,testInfo)
+  await expect(page.locator('.ihr-spine')).toHaveCount(seed.ids.length - 1)
   await assertBinMesh(page)
-  const lastId = 'trash:long:13'
+  const lastId = 'trash:long:17'
   await expect(page.locator(`.ihr-spine[data-book-id="${lastId}"]`)).toBeVisible()
   await dropIntoBin(page, lastId, testInfo)
-  await expect(page.locator('.ihr-spine')).toHaveCount(seed.ids.length - 1)
+  await expect(page.locator('.ihr-spine')).toHaveCount(seed.ids.length - 2)
   await expect(scene).toHaveAttribute('data-shelf-view', 'isometric')
   await expect(scene).toHaveAttribute('data-animating', 'false')
+  await showCabinetFloor(page)
   await assertBinMesh(page)
   await page.reload()
-  await expect(page.locator('.ihr-spine')).toHaveCount(seed.ids.length - 1)
+  await expect(page.locator('.ihr-spine')).toHaveCount(seed.ids.length - 2)
+  await expect(page.locator(`.ihr-spine[data-book-id="${seed.originalId}"]`)).toHaveCount(0)
   await expect(page.locator(`.ihr-spine[data-book-id="${lastId}"]`)).toHaveCount(0)
   await expect(page.locator('.ihr-bookshelf')).toHaveAttribute('data-view-mode', 'isometric')
   await expect(page.locator('.ihr-plant')).toHaveCount(3)
+  await expect(page.locator('.ihr-shelf-trash')).toBeHidden()
+  await showCabinetFloor(page)
+  await assertBinMesh(page)
+})
+
+test('el giro de cámara encuadra la papelera del suelo sin hacerla aparecer escalada ni alterar su pose local', async ({ page }, testInfo) => {
+  test.setTimeout(90_000)
+  await page.setViewportSize({ width:320,height:844 })
+  const errors = []; page.on('pageerror',error => errors.push(error.message))
+  await seedShelf(page)
+  const scene = page.locator('.ihr-bookshelf-scene')
+  await page.evaluate(() => {
+    const canvas = document.querySelector('.ihr-bookshelf-scene')
+    const motion = window.__trashCameraMotion = { frames:[] }
+    const capture = () => motion.frames.push({
+      progress:Number(canvas.dataset.viewProgress), position:canvas.dataset.trashLocalPosition,
+      scale:Number(canvas.dataset.trashLocalScale), rotation:canvas.dataset.trashLocalRotation,
+      foot:Number(canvas.dataset.trashFootY),floor:Number(canvas.dataset.cabinetFloorY),
+      inFrame:canvas.dataset.trashCameraInFrame === 'true',targetVisible:canvas.dataset.trashVisible === 'true'
+    })
+    capture()
+    motion.observer = new MutationObserver(capture)
+    motion.observer.observe(canvas,{ attributes:true,attributeFilter:['data-view-progress'] })
+  })
+  await useIsometricShelf(page)
+  const motion = await page.evaluate(() => {
+    const motion = window.__trashCameraMotion
+    motion.observer.disconnect()
+    return motion.frames
+  })
+  expect(motion.length).toBeGreaterThan(3)
+  expect(motion.some(frame => frame.progress > 0 && frame.progress < 1)).toBe(true)
+  expect(motion[0].inFrame).toBe(false)
+  expect(motion.some(frame => frame.inFrame)).toBe(true)
+  expect(new Set(motion.map(frame => frame.position)).size).toBe(1)
+  for (const frame of motion) {
+    expect(frame.position.split(',').map(Number).every(Number.isFinite)).toBe(true)
+    expect(frame.scale).toBe(1)
+    expect(frame.rotation.split(',').map(Number)).toEqual([0,0,0])
+    expect(frame.foot).toBeCloseTo(frame.floor,5)
+    if (frame.targetVisible) expect(frame.inFrame).toBe(true)
+  }
+  await showCabinetFloor(page)
+  await assertBinMesh(page)
+  await testInfo.attach('fixed-floor-bin-camera-entry',{ body:JSON.stringify(motion,null,2),contentType:'application/json' })
+  await testInfo.attach('floor-bin-isometric-320',{ body:await page.screenshot(),contentType:'image/png' })
+  await page.getByRole('button',{ name:'Vista de canto' }).click()
+  await expect(scene).toHaveAttribute('data-view-progress','0')
+  await expect(scene).toHaveAttribute('data-animating','false')
+  expect(await scene.getAttribute('data-trash-local-position')).toBe(motion[0].position)
+  expect(await scene.getAttribute('data-trash-local-scale')).toBe('1.000000')
+  await expect(page.locator('.ihr-shelf-trash')).toBeHidden()
+  expect(errors).toEqual([])
 })

@@ -161,4 +161,18 @@ describe('bookshelf wastebasket',() => {
     expect(container.querySelector('.ihr-shelf-trash').hidden).toBe(true)
     expect(document.querySelector('.ihr-trash-flight')).toBeNull()
   })
+  it('never creates a flight towards an isometric basket outside the current viewport',async () => {
+    let bin, duringRemoval
+    const removed=vi.fn(() => { duringRemoval={ hidden:bin.hidden, flight:document.querySelector('.ihr-trash-flight') } })
+    shelf=renderBookshelf(container,records(),{shelfWidth:390,viewMode:'isometric',onBookRemove:removed})
+    bin=container.querySelector('.ihr-shelf-trash')
+    bin.hidden=true; bin.inert=true
+    removeKey('trash:a')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(removed).toHaveBeenCalledOnce()
+    expect(spine('trash:a')).toBeNull()
+    expect(spine('trash:b')).not.toBeNull()
+    expect(document.querySelector('.ihr-trash-flight')).toBeNull()
+    expect(duringRemoval).toEqual({ hidden:true, flight:null })
+  })
 })

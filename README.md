@@ -4,6 +4,13 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca es una estantería 3D con madera texturizada, libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.7
+
+- Papelera apoyada en el suelo junto a la base de la estantería, con posición y tamaño fijos dentro de la escena 3D.
+- La papelera entra y sale del encuadre con el giro de la vista; desaparece el efecto de aparición por aumento de escala.
+- En bibliotecas largas, la papelera permanece en el suelo al pie del mueble y se alcanza bajando por las baldas.
+- Corregido el scroll fuera del mueble al mantener un libro arrastrado en el borde inferior de la pantalla.
+
 ### Actualización web · 1.6.6
 
 - Las baldas recuperan todo el ancho disponible, sin reservar una franja permanente para la papelera.

@@ -110,11 +110,20 @@ test('la estantería frontal ocupa todo el ancho y la papelera sólo se activa e
     await expect(scene).toHaveAttribute('data-view-progress', '1')
     await expect(scene).toHaveAttribute('data-animating', 'false')
     await assertFullCabinetWidth(page)
+    await expect(page.getByRole('button', { name:'Abrir catálogo IKEA de plantas y macetas' })).toBeVisible()
+    // The basket is on the cabinet's physical floor. On taller screens or
+    // shelves it is reached by scrolling, rather than pinned to the viewport.
+    await page.locator('.ihr-bookshelf__scroll').evaluate(node => { node.scrollTop = node.scrollHeight })
+    await expect(scene).toHaveAttribute('data-animating', 'false')
     await expect(bin).toBeVisible()
     await expect(bin).toHaveAttribute('aria-hidden', 'false')
     await expect(scene).toHaveAttribute('data-trash-visible', 'true')
     expect(await bin.evaluate(node => node.inert)).toBe(false)
-    await expect(page.getByRole('button', { name:'Abrir catálogo IKEA de plantas y macetas' })).toBeVisible()
+    const contact = await scene.evaluate(node => ({ foot:Number(node.dataset.trashFootY),
+      floor:Number(node.dataset.cabinetFloorY),scale:Number(node.dataset.trashLocalScale) }))
+    expect(Number.isFinite(contact.foot)).toBe(true)
+    expect(contact.foot).toBeCloseTo(contact.floor,5)
+    expect(contact.scale).toBe(1)
     const bounds = await bin.boundingBox()
     expect(bounds.width).toBeGreaterThan(25)
     expect(bounds.height).toBeGreaterThan(35)
@@ -125,6 +134,8 @@ test('la estantería frontal ocupa todo el ancho y la papelera sólo se activa e
     await testInfo.attach(`estanteria-isometrica-papelera-${width}px`, {
       body:await page.screenshot(), contentType:'image/png'
     })
+    await page.locator('.ihr-bookshelf__scroll').evaluate(node => { node.scrollTop = 0 })
+    await expect(page.getByRole('button', { name:'Abrir catálogo IKEA de plantas y macetas' })).toBeVisible()
     await page.getByRole('button', { name:'Vista de canto' }).click()
     await expect(scene).toHaveAttribute('data-view-progress', '0')
     await expect(scene).toHaveAttribute('data-animating', 'false')

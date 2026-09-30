@@ -33,6 +33,22 @@ function flushFrames(duration = 1100) {
 }
 function rect(left, top, width, height) { return { left, top, width, height, right:left + width, bottom:top + height }; }
 function showTrash() { shelf.setMode('isometric', { animate:false }); shelf.flush(); }
+const binModel = () => gpu.scene.getObjectByName('Shelf wastebasket');
+const floorModel = () => gpu.scene.getObjectByName('Library floor');
+function assertGroundedBin() {
+  const bin = binModel(), floor = floorModel();
+  expect(bin.parent).toBe(floor.parent); expect(bin.scale.toArray()).toEqual([1, 1, 1]);
+  expect(bin.rotation.toArray().slice(0, 3)).toEqual([0, 0, 0]);
+  const foot = bin.getObjectByName('Rubber foot'); foot.geometry.computeBoundingBox(); foot.updateMatrix();
+  const footY = foot.geometry.boundingBox.clone().applyMatrix4(foot.matrix).min.y + bin.position.y;
+  const groundY = floor.geometry.boundingBox.max.y + floor.position.y;
+  const cabinet = floor.parent.children.find(child => child.userData.furniture);
+  expect(groundY).toBeCloseTo(Math.min(...cabinet.children.map(mesh => mesh.geometry.boundingBox.min.y)), 6);
+  expect(footY).toBeCloseTo(groundY, 6);
+  expect(Number(shelf.canvas.dataset.trashFootY)).toBeCloseTo(groundY, 6);
+  expect(Number(shelf.canvas.dataset.cabinetFloorY)).toBeCloseTo(groundY, 6);
+  expect(shelf.canvas.dataset.trashFootWorld).toBe(shelf.canvas.dataset.floorContactWorld);
+}
 function cabinetRight() {
   const parent = gpu.scene.children.find(child => child.children.some(object => object.userData.furniture));
   const cabinet = parent.children.find(child => child.userData.furniture);
@@ -76,11 +92,12 @@ afterEach(() => {
 
 describe('wastebasket in the shared 3D shelf scene', () => {
   it('uses the entire physical cabinet width frontally and hides all trash interaction until the diagonal view', () => {
-    const bin = gpu.scene.children.find(child => child.userData.trash);
+    const bin = binModel();
     expect(shelf.canvas.dataset.cabinetWidth).toBe('390');
     expect(shelf.canvas.dataset.trashReserve).toBe('0.000');
     expect(shelf.canvas.dataset.zoom).toBe('1.0000');
-    expect(bin.visible).toBe(false);
+    expect(bin.visible).toBe(true); expect(shelf.canvas.dataset.trashCameraInFrame).toBe('false');
+    assertGroundedBin();
     expect(trashNode.hidden).toBe(true); expect(trashNode.inert).toBe(true);
     expect(trashNode.getAttribute('aria-hidden')).toBe('true');
     expect(trashNode.style.pointerEvents).toBe('none'); expect(trashNode.tabIndex).toBe(-1);
@@ -97,28 +114,37 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     expect(trashNode.getAttribute('aria-hidden')).toBe('false'); expect(trashNode.style.pointerEvents).toBe('auto');
     expect(shelf.canvas.dataset.trashVisible).toBe('true');
     shelf.setMode('spine', { animate:false }); shelf.flush();
-    expect(bin.visible).toBe(false); expect(trashNode.hidden).toBe(true);
+    expect(bin.visible).toBe(true); expect(trashNode.hidden).toBe(true);
+    expect(shelf.canvas.dataset.trashCameraInFrame).toBe('false');
     expect(shelf.canvas.dataset.trashReserve).toBe('0.000');
     shelf.dispose(); shelf = null;
     expect(trashNode.hidden).toBe(false); expect(trashNode.inert).toBe(false);
     expect(trashNode.getAttribute('aria-hidden')).toBeNull(); expect(trashNode.getAttribute('tabindex')).toBeNull();
   });
 
-  it('reveals the bin during the turn only after there is space and keeps the target inactive until isometric', () => {
-    const bin = gpu.scene.children.find(child => child.userData.trash);
-    shelf.setMode('isometric'); flushFrames(280);
-    expect(bin.visible).toBe(false); expect(trashNode.hidden).toBe(true);
-    expect(shelf.canvas.dataset.trashVisible).toBe('false');
-    flushFrames(500);
+  it('moves the camera framing around one grounded object without revealing, scaling or re-anchoring the bin', () => {
+    const bin = binModel(), position = bin.position.clone(), scale = bin.scale.clone(), rotation = bin.quaternion.clone();
+    const samples = [shelf.canvas.dataset.trashCameraInFrame];
+    shelf.setMode('isometric');
+    for (const duration of [80, 80, 80, 80, 80, 100, 240]) {
+      flushFrames(duration);
+      expect(bin.visible).toBe(true); expect(bin.position.equals(position)).toBe(true);
+      expect(bin.scale.equals(scale)).toBe(true); expect(bin.quaternion.equals(rotation)).toBe(true);
+      const parentScale = bin.parent.getWorldScale(new THREE.Vector3());
+      expect(bin.getWorldScale(new THREE.Vector3()).toArray()).toEqual(parentScale.toArray());
+      assertGroundedBin(); samples.push(shelf.canvas.dataset.trashCameraInFrame);
+    }
+    expect(samples).toContain('false'); expect(samples).toContain('true');
     expect(bin.visible).toBe(true); expect(trashNode.hidden).toBe(false);
     const target = trashNode.getBoundingClientRect();
-    expect(target.left).toBeGreaterThan(cabinetRight() + 8);
+    expect(target.left).toBeGreaterThan(stage.getBoundingClientRect().left);
     expect(target.right).toBeLessThanOrEqual(scroller.getBoundingClientRect().right);
     shelf.setMode('spine');
     expect(trashNode.hidden).toBe(true); expect(trashNode.style.pointerEvents).toBe('none');
     expect(shelf.hitTrash(target.left + target.width / 2, target.top + target.height / 2)).toBe(false);
     flushFrames();
-    expect(bin.visible).toBe(false); expect(shelf.canvas.dataset.trashReserve).toBe('0.000');
+    expect(bin.visible).toBe(true); expect(shelf.canvas.dataset.trashCameraInFrame).toBe('false');
+    expect(shelf.canvas.dataset.trashReserve).toBe('0.000'); assertGroundedBin();
   });
 
   it('cancels an active drop when returning to the frontal view without leaving a dormant flight', async () => {
@@ -133,6 +159,55 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     expect(shelf.canvas.dataset.trashDropProgress).toBeUndefined();
     expect(shelf.animateBookToTrash(bookNode)).toBeNull();
     const stationary = gpu.renders; flushFrames(); expect(gpu.renders).toBe(stationary);
+  });
+
+  it('places the bin at the physical bottom of a long cabinet and reaches it by scrolling rather than pinning it to the screen', () => {
+    const rows = Array.from({ length:10 }, (_, index) => ({ top:20 + index * 240, bottom:220 + index * 240 }));
+    shelf.updateLayout({ stage, width:390, sceneWidth:390, height:2450, trashNode, rows, entries:[] });
+    showTrash();
+    const bin = binModel(), localPosition = bin.position.clone(), worldPosition = bin.getWorldPosition(new THREE.Vector3());
+    assertGroundedBin();
+    expect(Number(shelf.canvas.dataset.cabinetFloorY)).toBe(-2450);
+    expect(trashNode.hidden).toBe(true); expect(shelf.canvas.dataset.trashCameraInFrame).toBe('false');
+    expect(shelf.hitTrash(350, 650)).toBe(false);
+    scroll = Math.max(0, parseFloat(stage.style.height) - 700); shelf.flush();
+    const bottom = trashNode.getBoundingClientRect();
+    expect(scroll).toBeGreaterThan(500);
+    expect(trashNode.hidden).toBe(false); expect(shelf.canvas.dataset.trashCameraInFrame).toBe('true');
+    expect(bottom.top).toBeGreaterThanOrEqual(scroller.getBoundingClientRect().top);
+    expect(bottom.bottom).toBeLessThanOrEqual(scroller.getBoundingClientRect().bottom);
+    expect(shelf.hitTrash(bottom.left + bottom.width / 2, bottom.top + bottom.height / 2)).toBe(true);
+    expect(bin.position.equals(localPosition)).toBe(true);
+    expect(bin.getWorldPosition(new THREE.Vector3()).equals(worldPosition)).toBe(true);
+    scroll -= 100; shelf.flush();
+    expect(trashNode.getBoundingClientRect().top).toBeCloseTo(bottom.top + 100);
+    assertGroundedBin();
+    scroll = 0; shelf.flush();
+    expect(trashNode.hidden).toBe(true); expect(shelf.canvas.dataset.trashCameraInFrame).toBe('false');
+    expect(bin.position.equals(localPosition)).toBe(true);
+  });
+
+  it('uses the bin world scale and orientation for a falling book while its local pose stays fixed', async () => {
+    showTrash();
+    const bin = binModel(), position = bin.position.clone(), model = gpu.models[0];
+    const worldScale = bin.getWorldScale(new THREE.Vector3()).x;
+    const finalQuaternion = bin.getWorldQuaternion(new THREE.Quaternion()).multiply(
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(-.22, .18, -.46)));
+    const motion = shelf.animateBookToTrash(bookNode, { duration:850 });
+    flushFrames(1000); await expect(motion.finished).resolves.toBe(true);
+    expect(model.scale.x).toBeCloseTo(.19 * worldScale, 8);
+    expect(Math.abs(model.quaternion.dot(finalQuaternion))).toBeCloseTo(1, 8);
+    expect(bin.position.equals(position)).toBe(true); assertGroundedBin();
+    motion.cancel();
+  });
+
+  it('disposes the real floor and each bin geometry/material once when the shared room is removed', () => {
+    const bin = binModel(), floor = floorModel(), resources = new Set([floor.geometry, floor.material]);
+    bin.traverse(mesh => { if (mesh.geometry) resources.add(mesh.geometry); for (const material of [].concat(mesh.material || [])) resources.add(material); });
+    const counts = new Map([...resources].map(resource => [resource, 0]));
+    for (const resource of resources) resource.addEventListener('dispose', () => counts.set(resource, counts.get(resource) + 1));
+    shelf.dispose(); shelf = null;
+    expect([...counts.values()]).toEqual([...counts.values()].map(() => 1));
   });
 
   it.each([320, 390, 860])('fits the actual bin and open lid beside a full-width %i px cabinet after scrolling and toggling', viewportWidth => {
@@ -152,21 +227,22 @@ describe('wastebasket in the shared 3D shelf scene', () => {
       expect(cabinetRight()).toBeCloseTo(viewportWidth);
       expect(trashNode.hidden).toBe(true);
       showTrash(); shelf.setTrashHover(true); flushFrames(300);
-      const bin = gpu.scene.children.find(child => child.userData.trash);
+      const bin = binModel(); assertGroundedBin();
       expect(bin.userData.openness).toBe(1);
       const before = trashNode.getBoundingClientRect();
-      expect(before.left).toBeGreaterThan(cabinetRight() + 8);
+      expect(bin.position.x - bin.userData.radius).toBeGreaterThan(viewportWidth / 2);
       expect(before.right).toBeLessThanOrEqual(viewportWidth);
       expect(before.top).toBeGreaterThanOrEqual(scroller.getBoundingClientRect().top);
       expect(before.bottom).toBeLessThanOrEqual(scroller.getBoundingClientRect().bottom);
       expect(before.width).toBeGreaterThanOrEqual(44); expect(before.height).toBeGreaterThanOrEqual(44);
       expect(trashNode.hidden).toBe(false);
-      scroll = 300; shelf.flush();
+      scroll = 100; shelf.flush();
       const after = trashNode.getBoundingClientRect();
-      expect(after.left).toBeCloseTo(before.left); expect(after.top).toBeCloseTo(before.top);
+      expect(after.left).toBeCloseTo(before.left); expect(after.top).toBeCloseTo(before.top - 100);
+      assertGroundedBin();
       expect(shelf.hitTrash(after.left + after.width / 2, after.top + after.height / 2)).toBe(true);
       shelf.setMode('spine', { animate:false }); shelf.flush();
-      expect(bin.visible).toBe(false); expect(trashNode.hidden).toBe(true);
+      expect(bin.visible).toBe(true); expect(trashNode.hidden).toBe(true);
       expect(shelf.hitTrash(after.left + after.width / 2, after.top + after.height / 2)).toBe(false);
       expect(shelf.canvas.dataset.trashReserve).toBe('0.000');
     } finally {
@@ -317,17 +393,18 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     expect(Number(shelf.canvas.dataset.modelCreations)).toBe(count + 2);
   });
 
-  it('projects a reachable right-side target and stays visible when the cabinet scrolls', () => {
+  it('projects the grounded bin in the right-side room and scrolls its target together with the cabinet', () => {
     showTrash();
     const before = trashNode.getBoundingClientRect();
-    expect(before.left).toBeGreaterThan(cabinetRight() + 8);
+    expect(binModel().position.x - binModel().userData.radius).toBeGreaterThan(390 / 2);
     expect(before.right).toBeLessThanOrEqual(scroller.getBoundingClientRect().right);
     expect(before.bottom).toBeLessThan(780);
     expect(shelf.hitTrash(before.left + before.width / 2, before.top + before.height / 2)).toBe(true);
     expect(shelf.hitTrash(80, 120)).toBe(false);
     scroll = 240; shelf.flush();
     const after = trashNode.getBoundingClientRect();
-    expect(after.top).toBeCloseTo(before.top); expect(after.left).toBeCloseTo(before.left);
+    expect(after.top).toBeCloseTo(before.top - 240); expect(after.left).toBeCloseTo(before.left);
+    assertGroundedBin();
     expect(trashNode.dataset.trash3d).toBe('true');
     expect(shelf.canvas.style.width).toBe('390px');
   });
@@ -336,7 +413,7 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     showTrash();
     const stationary = gpu.renders; flushFrames(); expect(gpu.renders).toBe(stationary);
     shelf.setTrashHover(true); flushFrames(300);
-    const bin = gpu.scene.children.find(child => child.userData.trash);
+    const bin = binModel();
     expect(bin.userData.lid.rotation.x).toBeLessThan(-1.4);
     expect(trashNode.dataset.trashHover).toBe('true');
     expect(shelf.canvas.dataset.animating).toBe('false');
@@ -348,10 +425,10 @@ describe('wastebasket in the shared 3D shelf scene', () => {
   it('keeps the bin in the projected right-side free area throughout the diagonal shelf view', () => {
     showTrash();
     shelf.setTrashHover(true); flushFrames(350);
-    const bin = gpu.scene.children.find(child => child.userData.trash);
+    const bin = binModel();
     const target = trashNode.getBoundingClientRect();
-    expect(bin.rotation.y).toBeCloseTo(-Math.PI / 6);
-    expect(target.left).toBeGreaterThan(cabinetRight() + 8);
+    expect(bin.rotation.y).toBe(0); expect(bin.parent.rotation.y).toBeCloseTo(-Math.PI / 6);
+    expect(bin.position.x - bin.userData.radius).toBeGreaterThan(390 / 2);
     expect(target.right).toBeLessThanOrEqual(scroller.getBoundingClientRect().right);
     expect(target.bottom).toBeLessThan(780);
     expect(shelf.hitTrash(target.left + target.width / 2, target.top + target.height / 2)).toBe(true);
@@ -371,7 +448,7 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     const normal = trashNode.getBoundingClientRect();
     expect(normal.bottom).toBeLessThanOrEqual(scroller.getBoundingClientRect().bottom);
     expect(normal.left).toBeGreaterThanOrEqual(0); expect(normal.right).toBeLessThanOrEqual(320);
-    expect(normal.top).toBeGreaterThan(600);
+    expect(normal.top).toBeGreaterThan(stage.getBoundingClientRect().top); assertGroundedBin();
     shelf.setMode('isometric', { animate:false }); shelf.setTrashHover(true); flushFrames(350);
     const diagonal = trashNode.getBoundingClientRect();
     expect(diagonal.bottom).toBeLessThanOrEqual(scroller.getBoundingClientRect().bottom);

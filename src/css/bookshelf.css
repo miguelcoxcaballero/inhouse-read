@@ -172,6 +172,10 @@
 }
 
 .ihr-shelf-stage { position:relative; isolation:isolate; }
+/* Projected drag targets must never enlarge the physical room's scroll area.
+   clip keeps the canvas sticky in the outer scroller and prevents an endless
+   chase after the held book's invisible absolute hit rectangle. */
+.ihr-shelf-stage.has-scene { overflow:clip; }
 /* One scene supplies the geometry and lighting. The original buttons stay
    available for focus, screen readers and touch, at the projected positions. */
 .ihr-shelf-stage.has-scene .ihr-section,
@@ -208,8 +212,8 @@
 .ihr-shelf-catalog[data-catalog3d="true"] > * { display:none; }
 .ihr-shelf-catalog:focus-visible { outline:2px solid #ffda1a; outline-offset:3px; }
 
-/* The cabinet uses the full layout width. The bin appears in the free space
-   beside the turned cabinet, with no reserved strip in the frontal view. */
+/* The cabinet uses the full layout width. The bin stands on the same floor
+   beyond the frontal crop and enters the frame with the isometric camera view. */
 .ihr-bookshelf.has-trash .ihr-shelf-stage > .ihr-section {
   width:var(--ihr-cabinet-width,100%);
 }

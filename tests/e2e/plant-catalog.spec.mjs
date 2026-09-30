@@ -147,7 +147,7 @@ test('una planta cae como modelo 3D en la papelera y la última planta retirada 
   const errors = []; page.on('pageerror',error => errors.push(error.message));
   const key = 'plant:catalog-trash';
   await page.evaluate(({ plantsKey,key }) => localStorage.setItem(plantsKey,JSON.stringify([
-    { key,seed:key,catalogId:'cactus',variant:'cactus',potId:'akerbar',width:56,height:90,shelf:0,x:.4 }
+    { key,seed:key,catalogId:'cactus',variant:'cactus',potId:'akerbar',width:56,height:90,shelf:2,x:.4 }
   ])),{ plantsKey:PLANTS_KEY,key });
   await page.reload();
   const plant = page.locator(`.ihr-plant[data-object-id="${key}"]`), canvas = page.locator('.ihr-bookshelf-scene');
@@ -157,6 +157,8 @@ test('una planta cae como modelo 3D en la papelera y la última planta retirada 
   await expect(page.locator('.ihr-shelf-trash')).toBeHidden();
   await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
   await expect(canvas).toHaveAttribute('data-view-progress','1');
+  await expect(canvas).toHaveAttribute('data-animating','false');
+  await page.locator('.ihr-bookshelf__scroll').evaluate(node => { node.scrollTop = node.scrollHeight });
   await expect(canvas).toHaveAttribute('data-animating','false');
   await expect(page.locator('.ihr-shelf-trash')).toBeVisible();
   await expect(canvas).toHaveAttribute('data-trash-visible','true');
