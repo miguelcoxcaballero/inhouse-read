@@ -121,9 +121,51 @@ def verify_webview_bounds(root):
     raise AssertionError("The signed APK did not display its WebView")
 
 
+def verify_book_imports():
+    # Verify actual resolver registration for every supported extension/MIME.
+    from register_book_imports import MIME_TYPES, EXTENSIONS
+    for mime in MIME_TYPES:
+        for action in ("VIEW", "SEND", "SEND_MULTIPLE"):
+            arguments = ["adb", "shell", "cmd", "package", "query-activities", "--brief", "-a",
+                         "android.intent.action." + action, "-t", mime]
+            if action == "VIEW": arguments.extend(["-d", "content://test.provider/42"])
+            resolved = run(*arguments).stdout
+            assert "com.inhousesoftware.read/.MainActivity" in resolved, (action, mime, resolved)
+    for extension in EXTENSIONS:
+        resolved = run("adb", "shell", "cmd", "package", "query-activities", "--brief", "-a",
+                       "android.intent.action.VIEW", "-d", "content://test.provider/book." + extension).stdout
+        assert "com.inhousesoftware.read/.MainActivity" in resolved, (extension, resolved)
+    run("adb", "install", "-r", "intent-fixture-debug.apk")
+    run("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read.intentfixture/.MainActivity", "--es", "mode", "chooser")
+    time.sleep(3)
+    chooser = capture(Path("android-open-with.png"), Path("android-open-with.xml"))
+    assert "Inhouse Read" in node_text(chooser), "Read was absent from Android's real Open with chooser"
+    run("adb", "shell", "input", "keyevent", "4")
+    for mode in ("cold", "warm", "share"):
+        if mode == "cold": run("adb", "shell", "am", "force-stop", "com.inhousesoftware.read")
+        run("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read.intentfixture/.MainActivity", "--es", "mode", mode)
+        for attempt in range(24):
+            time.sleep(3)
+            root = capture(Path("android-import-" + mode + ".png"), Path("android-import-" + mode + ".xml"))
+            text = node_text(root)
+            # Offline fixture has no Google account: dismiss external login and
+            # its cancellation notice, while preserving the imported local book.
+            if re.search(r"accounts.google.com|Use without an account|No thanks", text):
+                run("adb", "shell", "input", "keyevent", "4")
+                continue
+            if re.search(r"No se pudo conectar|No se pudo sincronizar", text):
+                run("adb", "shell", "input", "keyevent", "66")
+                continue
+            if re.search(r"Volver a la estanter.a", text) and "PDF" in text and re.search("Intent " + mode, text, re.I):
+                print(f"Actual content URI imported successfully: {mode}")
+                break
+        else:
+            raise AssertionError(f"{mode} import failed: {text[:2000]}")
+
+
 def main():
     if len(sys.argv) not in (2, 3):
-        raise SystemExit("Usage: verify_android_app.py <signed-apk> [--google-login]")
+        raise SystemExit("Usage: verify_android_app.py <signed-apk> [--google-login|--book-imports]")
     run("adb", "install", "-r", sys.argv[1])
     run("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read/.MainActivity")
     time.sleep(25)
@@ -154,6 +196,8 @@ def main():
             print("Published APK loaded the interactive bookshelf")
             if "--google-login" in sys.argv:
                 verify_google_login(root)
+            if "--book-imports" in sys.argv:
+                verify_book_imports()
             return
         time.sleep(5)
     Path("android-logcat.txt").write_text(run("adb", "logcat", "-d").stdout, encoding="utf-8")

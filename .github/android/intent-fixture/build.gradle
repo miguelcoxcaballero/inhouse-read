@@ -1,0 +1,13 @@
+apply plugin: 'com.android.application'
+android {
+    namespace 'com.inhousesoftware.read.intentfixture'
+    compileSdk rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId 'com.inhousesoftware.read.intentfixture'
+        minSdkVersion 23
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName '1'
+    }
+}
+dependencies { implementation 'androidx.core:core:1.15.0' }

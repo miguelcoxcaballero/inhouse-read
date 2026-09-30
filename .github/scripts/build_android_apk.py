@@ -14,6 +14,7 @@ import importlib.util
 import os
 import shutil
 import subprocess
+from register_book_imports import register_book_imports
 from pathlib import Path
 
 
@@ -21,11 +22,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BUILDER_PATH = REPO_ROOT / "android" / "html_to_apk_builder.py"
 SOURCE_HTML = REPO_ROOT / ".github" / "android" / "app-loader.html"
 ICON_PATH = REPO_ROOT / "android" / "inhouse-read-logo.png"
-OUTPUT_APK = REPO_ROOT / "inhouse-read-release-v1.1.0.apk"
+OUTPUT_APK = REPO_ROOT / "inhouse-read-release-v1.1.1.apk"
 APP_NAME = "Inhouse Read"
 PACKAGE_ID = "com.inhousesoftware.read"
-ANDROID_VERSION_NAME = "1.1.0"
-ANDROID_VERSION_CODE = 13
+ANDROID_VERSION_NAME = "1.1.1"
+ANDROID_VERSION_CODE = 14
 
 
 class Value:
@@ -83,6 +84,7 @@ def main() -> None:
 
     builder.patch_manifest(project_dir, APP_NAME, PACKAGE_ID)
     builder.patch_webview_bridge(project_dir, PACKAGE_ID)
+    register_book_imports(project_dir, PACKAGE_ID, REPO_ROOT)
     builder.patch_startup_theme(project_dir)
     builder.patch_gradle_versions(project_dir)
     builder.patch_android_dependencies(project_dir)
@@ -98,6 +100,19 @@ def main() -> None:
     built_apk = builder.find_apk(project_dir, "release")
     shutil.copy2(built_apk, OUTPUT_APK)
     print(f"APK created: {OUTPUT_APK} ({OUTPUT_APK.stat().st_size} bytes)", flush=True)
+
+    # A separate sender APK exercises genuine temporary content:// permissions.
+    # It is never bundled or published as part of Inhouse Read.
+    fixture = project_dir / "android" / "intent-fixture"
+    shutil.copytree(REPO_ROOT / ".github/android/intent-fixture", fixture)
+    assets = fixture / "src/main/assets"
+    assets.mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / "tests/e2e/fixtures/tiny.pdf", assets / "tiny.pdf")
+    settings = project_dir / "android/settings.gradle"
+    with settings.open("a", encoding="utf-8") as output:
+        output.write("\ninclude ':intent-fixture'\n")
+    run([str(gradlew), ":intent-fixture:assembleDebug", "--console=plain", "--warning-mode=none"], project_dir / "android")
+    shutil.copy2(fixture / "build/outputs/apk/debug/intent-fixture-debug.apk", REPO_ROOT / "intent-fixture-debug.apk")
 
 
 if __name__ == "__main__":

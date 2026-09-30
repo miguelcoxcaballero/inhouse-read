@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca es una estantería 3D con madera texturizada, libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web y Android · 1.6.13 / APK 1.1.1
+
+- Android aparece en «Abrir con» y «Compartir» para PDF, EPUB, MOBI, AZW, AZW3, KF8, FB2 y CBZ. Los archivos se copian inmediatamente con el permiso temporal del proveedor y se importan por el mismo flujo que el selector local, incluyendo la sincronización con Drive.
+- Funciona con la app cerrada o abierta. Transferencia por bloques para evitar duplicar libros grandes como una sola cadena base64. Requiere instalar la APK 1.1.1 (versionCode 14).
+- Registro de tipos MIME y extensiones según las [reglas de intents de Android](https://developer.android.com/training/basics/intents/filters).
+
 ### Actualización web · 1.6.12
 
 - Al salir del lector, la página actual se aleja en el modelo 3D, recibe el marcapáginas, se cierra la portada y el libro vuelve a su hueco mediante la escena de la estantería. La página y la portada permanecen visibles durante el cambio entre lector y modelo.

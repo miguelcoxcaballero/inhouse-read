@@ -13,6 +13,7 @@ import {
 } from './local-folder-store.js'
 import { initAndroidUpdateChecks, offerAvailableAndroidUpdate } from './android-update.js'
 import { initContentFreshnessChecks } from './content-freshness.js'
+import { initAndroidFileImports } from './android-file-import.js'
 import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
 import { normalizeShelfPosition } from './book-colors.js'
 import { ReaderExperience } from './readers/reader-experience.js'
@@ -1016,7 +1017,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.6.12'
+els.appVersion.textContent = 'Inhouse Read · v1.6.13'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
 showScreen('home')
@@ -1024,6 +1025,15 @@ refreshShelf()
 loadDriveAccountProfile().catch(error => console.warn('No se pudo restaurar la cuenta:', error))
 initAndroidUpdateChecks()
 initContentFreshnessChecks()
+initAndroidFileImports({
+  canImport: () => !closingReader && !els.readerScreen.classList.contains('is-preparing'),
+  onFile: async file => {
+    await shelf?.close()
+    await progressWrites.get(currentBookId)?.catch(() => {})
+    return openFile(file, { restoreRemoved:true })
+  },
+  onError: error => alert(`No se pudo importar el libro: ${error.message}`)
+})
 if (hasDriveSession() || (getRememberedDriveProfile() && isAndroidShell())) {
   syncLibraryToDrive({ silent: true }).catch(error => setDriveSyncStatus(`No se pudo sincronizar: ${error.message}`))
 }
