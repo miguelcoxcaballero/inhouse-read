@@ -158,7 +158,10 @@ def verify_book_imports():
             if re.search(r"No se pudo conectar|No se pudo sincronizar", text):
                 run("adb", "shell", "input", "keyevent", "66")
                 continue
-            if re.search(r"Volver a la estanter.a", text) and "PDF" in text and re.search("Intent " + mode, text, re.I):
+            # The compact reader deliberately hides its format badge. The
+            # real document title is assigned only after reader.open renders
+            # the page and the imported record is saved to IndexedDB.
+            if re.search(r"Volver a la estanter.a", text) and re.search("Intent " + mode, text, re.I):
                 print(f"Actual content URI imported successfully: {mode}")
                 break
         else:
