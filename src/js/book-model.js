@@ -393,6 +393,10 @@ export function getBookRenderer() {
     // Unmapped studio radiance used to clip RGB channels on bright jackets.
     renderer.toneMapping = THREE.NeutralToneMapping;
     renderer.toneMappingExposure = .82;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // The scene requests a shadow refresh only while something changes.
+    renderer.shadowMap.autoUpdate = false;
     const studio = new RoomEnvironment();
     const pmrem = new THREE.PMREMGenerator(renderer);
     studioEnvironment = pmrem.fromScene(studio, .04).texture;
@@ -406,9 +410,10 @@ export function lightBookScene(scene) {
   scene.environment = studioEnvironment;
   scene.environmentIntensity = .62;
   scene.add(new THREE.HemisphereLight(0xffffff, 0x8b8b8b, .48));
-  const readerLight = new THREE.DirectionalLight(0xffffff, 1.25);
-  readerLight.position.set(0, .45, 4); scene.add(readerLight);
-  const fillLight = new THREE.DirectionalLight(0xffffff, .32);
+  const readerLight = new THREE.DirectionalLight(0xfff9f2, 1.25);
+  readerLight.position.set(-.28, .6, 1); scene.add(readerLight);
+  scene.userData.readerLight = readerLight;
+  const fillLight = new THREE.DirectionalLight(0xf0f5ff, .32);
   fillLight.position.set(-3, 2, 4); scene.add(fillLight);
   // A modest off-axis strip still travels over metallic foil and clearcoat.
   const stripLight = new THREE.DirectionalLight(0xffffff, .38);

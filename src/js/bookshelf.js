@@ -1262,7 +1262,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         const y = rect.top + rect.height / 2 - origin.top;
         if (node.classList.contains('ihr-plant')) {
           entries.push({ kind:'plant', key:node.dataset.objectId, node, x, y, width:rect.width, height:rect.height,
-            variant:node.classList.contains('ihr-plant--sansevieria') ? 'upright' : 'leafy' });
+            seed:node.dataset.objectId, variant:[...node.classList].find(name => name.startsWith('ihr-plant--') && name !== 'ihr-plant--photo')?.slice('ihr-plant--'.length) || 'pothos' });
           continue;
         }
         const item = state.itemsById.get(node.dataset.bookId);

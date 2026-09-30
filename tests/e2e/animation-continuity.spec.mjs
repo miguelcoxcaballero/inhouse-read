@@ -54,7 +54,8 @@ async function observePrintedCoverFrames(page) {
     sample.width = 160; sample.height = 346
     const context = sample.getContext('2d', { willReadFrequently:true })
     const seen = new WeakMap()
-    window.__printedCoverFrames = { count:0, failures:[], firstFailureImage:null }
+    const sampledViews = new WeakSet()
+    window.__printedCoverFrames = { count:0, views:0, failures:[], firstFailureImage:null }
     const sampleFrame = canvas => {
       const flyout = canvas.closest('.ihr-flyout')
       if (!flyout || flyout.classList.contains('is-opening-book')) return
@@ -76,6 +77,7 @@ async function observePrintedCoverFrames(page) {
       seen.set(canvas, hash)
       const samples = window.__printedCoverFrames
       samples.count++
+      if (!sampledViews.has(canvas)) { sampledViews.add(canvas); samples.views++ }
       if (red < 8 || blue < 8) {
         samples.failures.push({ angle, red, blue, opaque, returning:flyout.classList.contains('ihr-flyout--return') })
         samples.firstFailureImage ||= sample.toDataURL('image/png')
@@ -259,7 +261,9 @@ test('varias portadas reales salen y regresan sin mostrar portadas provisionales
   if (result.firstFailureImage) await test.info().attach('unexpected-cover-frame', {
     body:Buffer.from(result.firstFailureImage.split(',')[1], 'base64'), contentType:'image/png'
   })
-  expect(result.count).toBeGreaterThan(12)
+  // Every selected cover is checked, independent of the runner's GPU speed.
+  expect(result.views).toBeGreaterThanOrEqual(4)
+  expect(result.count).toBeGreaterThanOrEqual(result.views)
   expect(result.failures).toEqual([])
   expect(result.retainedShelf).toBe(true)
   await page.screenshot({ path:'test-results/covered-shelf-after-repeated-open-close.png' })

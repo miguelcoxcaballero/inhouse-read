@@ -2,8 +2,12 @@ import * as THREE from 'three';
 import { createBookModel, getBookRenderer, lightBookScene } from './book-model.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { shelfBookSlot, shelfBookInsertion, projectShelfBookPose } from './bookshelf-return.js';
+import { createShelfFurniture } from './shelf-furniture.js';
+import { createShelfPlant } from './shelf-plants.js';
+import { createShelfLighting } from './shelf-lighting.js';
 
-const WALNUT = new URL('../assets/library/walnut.webp', import.meta.url).href;
+const WALNUT = new URL('../assets/library/walnut-pbr.webp', import.meta.url).href;
+const BOTANICAL = new URL('../assets/library/botanical-leaves.webp', import.meta.url).href;
 const DURATION = 700;
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 const ease = t => t * t * t * (t * (t * 6 - 15) + 10);
@@ -33,34 +37,20 @@ function releaseObject(object) {
   for (const material of materials) material.dispose();
 }
 
-// Plants are small meshes in the same scene, so their pots, leaves and shadows
-// turn with the furniture rather than remaining flat in front of it.
-function plantModel(entry) {
-  const group = new THREE.Group();
-  const w = entry.width || 58, h = entry.height || 100;
-  const radius = w * .22, potHeight = h * .26;
-  const pot = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * .72, potHeight, 20),
-    new THREE.MeshStandardMaterial({ color: '#ad8269', roughness: .88 }));
-  pot.position.y = -h / 2 + potHeight / 2; group.add(pot);
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(radius * .96, w * .021, 5, 20), pot.material);
-  rim.rotation.x = Math.PI / 2; rim.position.y = -h / 2 + potHeight; group.add(rim);
-  const soil = new THREE.Mesh(new THREE.CircleGeometry(radius * .9, 20),
-    new THREE.MeshStandardMaterial({ color: '#35271a', roughness: 1 }));
-  soil.rotation.x = -Math.PI / 2; soil.position.y = rim.position.y - .4; group.add(soil);
-  const greens = ['#31573b', '#416b44', '#527e47'];
-  for (let i = 0; i < 9; i++) {
-    const angle = i * 2.399963, tall = .52 + (i % 3) * .15;
-    const length = (h - potHeight) * tall;
-    const leaf = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 10),
-      new THREE.MeshStandardMaterial({ color: greens[i % greens.length], roughness: .7 }));
-    leaf.scale.set(w * .065, length / 2, w * .027);
-    const spread = (i % 3 + 1) * w * .065;
-    leaf.position.set(Math.cos(angle) * spread, rim.position.y + length * .44, Math.sin(angle) * spread);
-    leaf.rotation.set(Math.sin(angle) * .3, angle, -Math.cos(angle) * .3);
-    group.add(leaf);
+function woodMicrotexture() {
+  const canvas = document.createElement('canvas'); canvas.width = canvas.height = 256;
+  const context = canvas.getContext('2d'), pixels = context.createImageData(256, 256);
+  for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
+    const grain = Math.sin(y * .8 + Math.sin(x / 256 * Math.PI * 2) * .9) * 12 +
+      Math.sin(y * .24 + Math.sin(x / 256 * Math.PI * 4) * .3) * 9;
+    const pore = ((x * 73856093 ^ y * 19349663) >>> 0) % 17;
+    const value = Math.round(184 + grain + pore - 8), offset = (y * 256 + x) * 4;
+    pixels.data[offset] = pixels.data[offset + 1] = pixels.data[offset + 2] = value;
+    pixels.data[offset + 3] = 255;
   }
-  group.userData.dispose = () => releaseObject(group);
-  return group;
+  context.putImageData(pixels, 0, 0);
+  const map = new THREE.CanvasTexture(canvas); map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  return map;
 }
 
 /** One demand-rendered scene for the entire piece of furniture and its books.
@@ -83,6 +73,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   stage.prepend(canvas);
   const scene = new THREE.Scene();
   lightBookScene(scene);
+  const lighting = createShelfLighting(scene, renderer);
   const furniture = new THREE.Group();
   scene.add(furniture);
   const camera = new THREE.OrthographicCamera(0, width, 0, -1, .1, 20000);
@@ -92,10 +83,18 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const texture = new THREE.TextureLoader().load(WALNUT, () => invalidate());
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(1.8, 1);
-  const wood = new THREE.MeshStandardMaterial({ map:texture, color:'#b39174', roughness:.84 });
-  const backWood = new THREE.MeshStandardMaterial({ map:texture, color:'#78614d', roughness:1 });
-  const darkWood = new THREE.MeshStandardMaterial({ map:texture, color:'#9c7758', roughness:.9 });
+  texture.repeat.set(1, 1);
+  texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const leafTexture = new THREE.TextureLoader().load(BOTANICAL, () => invalidate());
+  leafTexture.colorSpace = THREE.SRGBColorSpace;
+  leafTexture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const grain = woodMicrotexture();
+  const wood = new THREE.MeshPhysicalMaterial({ map:texture, bumpMap:grain, bumpScale:.18,
+    roughnessMap:grain, color:'#fff3e3', roughness:.62, clearcoat:.18, clearcoatRoughness:.48 });
+  const backWood = new THREE.MeshStandardMaterial({ map:texture, bumpMap:grain, bumpScale:.12,
+    color:'#d5c4af', roughness:.87 });
+  const darkWood = new THREE.MeshPhysicalMaterial({ map:texture, bumpMap:grain, bumpScale:.15,
+    color:'#ead5ba', roughness:.68, clearcoat:.12, clearcoatRoughness:.52 });
   let depth = Math.max(155, ...entries.filter(e => e.kind !== 'plant').map(e => e.width + 12));
   const entryKey = (entry, index) => entry.kind === 'plant'
     ? `plant:${entry.node?.dataset.objectId ?? entry.key ?? index}`
@@ -105,32 +104,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     lift:{ value:0, from:0, target:0, started:0 }, landing:null, offset:{ x:0, y:0 }, preview:freshPreview(), state:'', rect:null, insertion:null });
   let bookEntries = entries.map(freshEntry);
   const byNode = new Map(bookEntries.filter(entry => entry.node).map(entry => [entry.node, entry]));
-  const beam = (w, h, d, x, y, z, material = wood) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
-    // Record how each component relates to cabinet depth. Cover metadata may
-    // arrive later; widening the book must also extend its shelf and back.
-    mesh.userData.furniture = { width:w, height:h,
-      depthExtra:d > depth / 2 ? d - depth : null,
-      centerOffset:d > depth / 2 ? z + depth / 2 : null,
-      backOffset:d <= depth / 2 && z < -depth * .75 ? z + depth : null };
-    mesh.position.set(x, y, z); furniture.add(mesh); return mesh;
-  };
   const boardHeight = 15;
   function rebuildFurniture() {
     for (const object of [...furniture.children]) if (object.userData.furniture) {
-      furniture.remove(object); object.geometry.dispose();
+      furniture.remove(object); object.userData.disposeGeometry?.();
     }
-    // One continuous back avoids strips of page background between the rows.
-    beam(width - 24, height - 12, 5, 0, -height / 2, -depth, backWood);
-    for (const row of rows) {
-      const bottom = row.bottom;
-      beam(width - 12, boardHeight, depth + 10, 0, -bottom - boardHeight / 2, -depth / 2 + 3);
-      beam(width - 10, 4, 4, 0, -bottom - 2, 9, wood);
-      beam(width - 24, 5, 8, 0, -bottom + 2.5, -depth + 4, darkWood);
-    }
-    beam(12, height, depth + 6, -width / 2 + 6, -height / 2, -depth / 2, darkWood);
-    beam(12, height, depth + 6, width / 2 - 6, -height / 2, -depth / 2, wood);
-    beam(width, 12, depth + 10, 0, -6, -depth / 2 + 3);
+    furniture.add(createShelfFurniture({ width, height, depth, rows, wood, backWood, darkWood }));
   }
   rebuildFurniture();
 
@@ -175,10 +154,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function makeModel(entry) {
-    const model = entry.kind === 'plant' ? plantModel(entry)
+    const model = entry.kind === 'plant' ? createShelfPlant(entry, { leafTexture })
       : createBookModel(entry.book, entry.style, entry.width, entry.height, entry.thickness, entry.coverUrl, { shelf:true });
     model.userData.invalidate = invalidate;
     model.userData.entry = entry;
+    model.traverse(object => {
+      if (object.isMesh) { object.castShadow = true; object.receiveShadow = true; }
+    });
     if (entry.kind !== 'plant') model.userData.shelfKeys = materialKeys(entry);
     canvas.dataset.modelCreations = String(++modelCreations);
     return model;
@@ -264,23 +246,15 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function fitDepth(nextDepth) {
     if (nextDepth <= depth) return;
     depth = nextDepth;
-    for (const object of furniture.children) {
-      const part = object.userData.furniture;
-      if (!part) continue;
-      if (part.depthExtra !== null) {
-        object.geometry.dispose();
-        object.geometry = new THREE.BoxGeometry(part.width, part.height, depth + part.depthExtra);
-        object.position.z = -depth / 2 + part.centerOffset;
-      } else if (part.backOffset !== null) object.position.z = -depth + part.backOffset;
-    }
+    rebuildFurniture();
     fullBounds.min.z = -depth - 4;
   }
 
   function updateWoodTheme() {
     const dark = document.documentElement.dataset.theme === 'dark';
-    wood.color.set(dark ? '#88745f' : '#b39174');
-    backWood.color.set(dark ? '#423f37' : '#78614d');
-    darkWood.color.set(dark ? '#725f4d' : '#9c7758');
+    wood.color.set(dark ? '#d9c9b3' : '#fff3e3');
+    backWood.color.set(dark ? '#b6a792' : '#d5c4af');
+    darkWood.color.set(dark ? '#c5b397' : '#ead5ba');
   }
 
   function stateFor(entry) {
@@ -563,6 +537,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const { scroll, ratio } = viewport();
     const finishedInsertions = [];
     const { moving, shelfMoving } = updateEntries(scroll, zoom, now, finishedInsertions);
+    lighting.update({ width, viewportHeight, scroll, depth, dirty:shelfSnapshotDirty || furnitureMoving || shelfMoving });
     const overlayInsertion = bookEntries.some(entry => entry.insertion?.overlayCanvas);
     // Its hidden slot and neighbors are already painted. Reuse that snapshot
     // during a stationary insertion instead of reallocating the shared GPU
@@ -579,6 +554,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
     for (const entry of bookEntries) if (entry.insertion?.overlayCanvas) paintInsertionOverlay(entry);
     canvas.dataset.renderCount = String(++renderCount);
+    canvas.dataset.activePlants = String(bookEntries.filter(entry => entry.kind === 'plant' && entry.model?.visible).length);
+    canvas.dataset.shadowMapSize = '1024';
+    canvas.dataset.furnitureMeshes = String(furniture.children.find(object => object.userData.furniture)?.children.length || 0);
+    canvas.dataset.botanicalAtlasReady = String(Boolean(leafTexture.image));
     canvas.dataset.animating = String(Boolean(transition || reorderTransition || moving));
     for (const resolve of finishedInsertions) resolve();
     if (transition || reorderTransition || moving) invalidate(false);
@@ -785,7 +764,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       disposed = true; cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       scroller.removeEventListener('scroll', invalidate); window.removeEventListener('resize', invalidate);
       for (const entry of bookEntries) releaseEntry(entry);
-      releaseObject(furniture); texture.dispose(); canvas.remove(); stage.style.height = originalHeight;
+      releaseObject(furniture); texture.dispose(); grain.dispose(); leafTexture.dispose(); lighting.dispose();
+      canvas.remove(); stage.style.height = originalHeight;
       if (!alreadyScene) stage.classList.remove('has-scene');
       for (const [node, style] of originalStyles) {
         if (style === null) node.removeAttribute('style'); else node.setAttribute('style', style);

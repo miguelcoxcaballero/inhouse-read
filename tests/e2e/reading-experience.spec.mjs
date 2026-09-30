@@ -160,10 +160,26 @@ test('voz Android: reproduce texto, pausa, continúa y pasa a la siguiente pági
   await expect(page.getByRole('button', { name:'Reproducir',exact:true })).toBeVisible()
 })
 
-test('la estantería carga madera y plantas fotográficas sin recursos rotos', async ({ page }) => {
+test('la estantería dibuja madera y plantas 3D sin recursos rotos', async ({ page }) => {
+  const brokenAssets = []
+  page.on('response', response => { if (response.url().includes('/assets/') && response.status() >= 400) brokenAssets.push(response.url()) })
+  page.on('requestfailed', request => { if (request.url().includes('/assets/')) brokenAssets.push(request.url()) })
   await page.goto('/')
-  await expect(page.locator('.ihr-plant img').first()).toBeVisible()
-  expect(await page.locator('.ihr-plant img').evaluateAll(images => images.every(image => image.complete && image.naturalWidth > 0))).toBe(true)
+  await expect(page.locator('.ihr-plant[data-object-id]')).toHaveCount(3)
+  // Photos are decoded for the DOM fallback; the visible cabinet uses actual
+  // movable plant meshes in the same depth-tested scene as its wood and books.
+  await expect(page.locator('.ihr-plant img')).toHaveCount(3)
+  await expect.poll(() => page.locator('.ihr-plant img').evaluateAll(images => images.every(image => image.complete && image.naturalWidth > 0))).toBe(true)
+  const canvas = page.locator('.ihr-bookshelf-scene')
+  await expect(canvas).toBeVisible()
+  await expect(canvas).toHaveAttribute('data-active-plants', '3')
+  await expect(canvas).toHaveAttribute('data-botanical-atlas-ready', 'true')
+  await expect(canvas).toHaveAttribute('data-shadow-map-size', '1024')
+  await expect(canvas).toHaveAttribute('data-furniture-meshes', '3')
+  await expect.poll(() => canvas.evaluate(node => {
+    const pixels = node.getContext('2d').getImageData(0,0,node.width,node.height).data
+    return pixels.filter((value,index) => index % 4 === 3 && value > 200).length
+  })).toBeGreaterThan(1000)
   await expect(page.locator('.ihr-shelf__board')).toHaveCount(3)
   expect(await page.locator('.ihr-shelf__board').evaluateAll(boards =>
     boards.every(board => getComputedStyle(board).backgroundImage.includes('walnut-'))
@@ -183,4 +199,5 @@ test('la estantería carga madera y plantas fotográficas sin recursos rotos', a
   await page.locator('#theme-toggle').click()
   await expect(page.locator('.ihr-spine').first()).toBeVisible()
   await page.screenshot({ path:'test-results/library-populated-desktop-dark.png' })
+  expect(brokenAssets).toEqual([])
 })

@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca es una estantería con madera y plantas fotográficas, donde los libros se ven de canto. Al tocar uno, sale de la balda y gira en 3D hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.1
+
+- Plantas con hojas curvas texturizadas, tallos, nervaduras y macetas torneadas; modelos distintos por especie. Atlas botánico propio de alta resolución, con transparencia conservada y optimizado en WebP.
+- Estantería con cantos biselados, frentes perfilados, paneles y juntas reales, vetas a escala física y relieve fino de la madera. Sombras suaves de los objetos sobre las baldas mediante una luz compartida y limitada al área visible.
+- Renderizado bajo demanda y un solo mapa de sombras de 1024 px; la escena deja de renderizar cuando termina el movimiento.
+
 ### Actualización web · 1.6.0
 
 - Mantén pulsado cualquier libro o planta para sacarlo y colocarlo en otro punto o balda. Se conservan los huecos que dejes; los vecinos se apartan durante el arrastre y el objeto se inserta en 3D al soltar, también en vista isométrica.

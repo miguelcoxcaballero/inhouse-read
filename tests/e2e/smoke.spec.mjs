@@ -54,7 +54,7 @@ test('conecta Google sin redirección y muestra la foto en la esquina derecha', 
   await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   expect(await page.evaluate(() => window.__oauthOptions.redirect_uri)).toBeUndefined()
   await button.click()
-  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.6.0')
+  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.6.1')
   await expect(page.locator('#drive-theme-toggle')).toBeVisible()
   await expect(page.locator('#drive-profile-initial-menu')).toBeHidden()
   await page.locator('#drive-theme-toggle').check()
@@ -113,9 +113,19 @@ test('una sesión caducada vuelve a mostrar Conectar y oculta el perfil', async 
   await expect(page.locator('#drive-profile')).toBeHidden()
 })
 
-test('muestra el estado vacío cuando no hay libros recientes', async ({ page }) => {
+test('muestra la estantería 3D vacía con tres baldas y plantas que se pueden mover', async ({ page }) => {
   await expect(page.getByText('Tu estantería está vacía')).toBeVisible()
-  await expect(page.locator('.ihr-empty .ihr-shelf')).toHaveCount(3)
+  await expect(page.locator('.ihr-shelf')).toHaveCount(3)
+  await expect(page.locator('.ihr-spine')).toHaveCount(0)
+  await expect(page.locator('.ihr-plant[data-object-id]')).toHaveCount(3)
+  const canvas = page.locator('.ihr-bookshelf-scene')
+  await expect(canvas).toBeVisible()
+  await expect(canvas).toHaveAttribute('data-active-books', '0')
+  await expect(canvas).toHaveAttribute('data-active-plants', '3')
+  await expect.poll(() => canvas.evaluate(node => {
+    const pixels = node.getContext('2d').getImageData(0,0,node.width,node.height).data
+    return pixels.filter((value,index) => index % 4 === 3 && value > 200).length
+  })).toBeGreaterThan(1000)
   await expect(page.locator('.ihr-section__title')).toHaveCount(0)
 })
 
@@ -260,7 +270,7 @@ test('edita y conserva el color, fuente, tamaño y texto del lomo', async ({ pag
   await expect(reopenedDialog.getByLabel('Autor del libro')).toHaveValue('Ursula Le Guin')
 })
 
-test('mueve un libro al mantenerlo pulsado con animación 3D y conserva el orden', async ({ page }) => {
+test('mueve un libro al mantenerlo pulsado con animación 3D y conserva su posición libre', async ({ page }) => {
   await page.evaluate(async () => {
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open('inhouse-read')
@@ -270,8 +280,8 @@ test('mueve un libro al mantenerlo pulsado con animación 3D y conserva el orden
     const transaction = db.transaction('books', 'readwrite')
     const store = transaction.objectStore('books')
     const now = Date.now()
-    store.put({ id:'shelf:alpha', title:'Alpha', author:'Autor', format:'PDF', sourceType:'local', addedAt:now, lastOpenedAt:now, progressFraction:0 })
-    store.put({ id:'shelf:bravo', title:'Bravo', author:'Autor', format:'PDF', sourceType:'local', addedAt:now, lastOpenedAt:now - 1, progressFraction:0 })
+    store.put({ id:'shelf:alpha', title:'Alpha', author:'Autor', format:'PDF', sourceType:'local', addedAt:now, lastOpenedAt:now, progressFraction:0, shelfPosition:{ shelf:0, x:.18 } })
+    store.put({ id:'shelf:bravo', title:'Bravo', author:'Autor', format:'PDF', sourceType:'local', addedAt:now, lastOpenedAt:now - 1, progressFraction:0, shelfPosition:{ shelf:0, x:.38 } })
     await new Promise((resolve, reject) => {
       transaction.oncomplete = resolve
       transaction.onerror = () => reject(transaction.error)
@@ -280,38 +290,41 @@ test('mueve un libro al mantenerlo pulsado con animación 3D y conserva el orden
   await page.reload()
   await expect(page.locator('.ihr-spine')).toHaveCount(2)
   await expect(page.getByRole('button', { name:'Organizar' })).toHaveCount(0)
-  const original = await page.locator('.ihr-spine').evaluateAll(nodes => nodes.map(node => node.dataset.bookId))
-  const firstSpine = page.locator('.ihr-spine').first()
+  const firstSpine = page.locator('.ihr-spine[data-book-id="shelf:alpha"]')
+  const initialX = Number(await firstSpine.getAttribute('data-shelf-x'))
   await firstSpine.focus()
   await page.keyboard.press('Shift+ArrowRight')
-  await expect.poll(() => page.locator('.ihr-spine').evaluateAll(nodes => nodes.map(node => node.dataset.bookId)))
-    .toEqual([...original].reverse())
-  await page.waitForTimeout(560)
+  await expect.poll(async () => Number(await firstSpine.getAttribute('data-shelf-x'))).toBeCloseTo(initialX + .08, 4)
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
   const from = await page.locator('.ihr-spine[data-book-id="shelf:bravo"]').boundingBox()
   const to = await page.locator('.ihr-spine[data-book-id="shelf:alpha"]').boundingBox()
-  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  const scene = await page.locator('.ihr-bookshelf-scene').boundingBox()
+  await page.mouse.move(from.x + Math.min(8,from.width * .12), from.y + from.height * .65)
   await page.mouse.down()
   await page.waitForTimeout(500)
   await expect(page.locator('.ihr-spine[data-book-id="shelf:bravo"]')).toHaveClass(/is-lifted/)
-  await page.mouse.move(to.x + to.width * .82, to.y + to.height / 2, { steps:8 })
+  await page.mouse.move(scene.x + 16 + (scene.width - 32) * .75, to.y + to.height * .65, { steps:8 })
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-drop-shelf', '0')
+  const chosenX = Number(await page.locator('.ihr-bookshelf-scene').getAttribute('data-drop-x'))
   // Observe before release: storage refreshes may replace the canvas after the
   // short return animation, before a later locator assertion reaches it.
   await page.evaluate(() => {
     const sample = document.createElement('canvas')
     sample.width = sample.height = 32
     const context = sample.getContext('2d')
-    window.__reorderFrames = { count:0, first:null, changed:false }
+    window.__reorderFrames = { count:0, first:null, changed:false, seenActive:false }
     window.__reorderObserver = new MutationObserver(records => {
       const canvases = new Set(records.map(record => record.target)
         .filter(node => node.matches?.('.ihr-bookshelf-scene')))
       for (const canvas of canvases) {
-        if (canvas.dataset.animating !== 'true') continue
+        const frames = window.__reorderFrames
+        frames.seenActive ||= canvas.dataset.animating === 'true'
+        if (!frames.seenActive) continue
         context.clearRect(0, 0, 32, 32)
         context.drawImage(canvas, 0, 0, 32, 32)
         const pixels = context.getImageData(0, 0, 32, 32).data
         let hash = 0
         for (let index = 0; index < pixels.length; index++) hash = (hash * 31 + pixels[index]) | 0
-        const frames = window.__reorderFrames
         frames.count++
         if (frames.first === null) frames.first = hash
         else if (hash !== frames.first) frames.changed = true
@@ -322,13 +335,13 @@ test('mueve un libro al mantenerlo pulsado con animación 3D y conserva el orden
     })
   })
   await page.mouse.up()
-  await expect.poll(() => page.locator('.ihr-spine').evaluateAll(nodes => nodes.map(node => node.dataset.bookId)))
-    .toEqual(original)
+  await expect.poll(async () => Number(await page.locator('.ihr-spine[data-book-id="shelf:bravo"]').getAttribute('data-shelf-x'))).toBeCloseTo(chosenX, 3)
   // The visible mesh must move; animating its invisible hit target is insufficient.
   await expect.poll(() => page.evaluate(() => window.__reorderFrames.count)).toBeGreaterThan(1)
   await expect.poll(() => page.evaluate(() => window.__reorderFrames.changed)).toBe(true)
   await page.evaluate(() => window.__reorderObserver.disconnect())
-  await expect.poll(() => page.evaluate(async () => {
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
+  const readPlacements = () => page.evaluate(async () => {
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open('inhouse-read')
       request.onsuccess = () => resolve(request.result)
@@ -336,13 +349,35 @@ test('mueve un libro al mantenerlo pulsado con animación 3D y conserva el orden
     })
     return new Promise((resolve, reject) => {
       const request = db.transaction('books', 'readonly').objectStore('books').getAll()
-      request.onsuccess = () => resolve(request.result.sort((a, b) => a.shelfOrder - b.shelfOrder).map(book => book.id))
+      request.onsuccess = () => { db.close(); resolve(Object.fromEntries(request.result.map(book => [book.id, book.shelfPosition]))) }
       request.onerror = () => reject(request.error)
     })
-  })).toEqual(original)
+  })
+  await expect.poll(async () => (await readPlacements())['shelf:bravo']?.x).toBeCloseTo(chosenX, 3)
+  const persisted = await readPlacements()
+  expect(persisted['shelf:alpha'].shelf).toBe(0)
+  expect(persisted['shelf:alpha'].x).toBeCloseTo(initialX + .08, 4)
+  expect(persisted['shelf:bravo'].shelf).toBe(0)
+  const expected = await page.locator('.ihr-spine').evaluateAll(nodes => nodes.map(node => ({ id:node.dataset.bookId,
+    shelf:node.dataset.shelfIndex, x:node.dataset.shelfX })))
   await page.reload()
-  await expect.poll(() => page.locator('.ihr-spine').evaluateAll(nodes => nodes.map(node => node.dataset.bookId)))
-    .toEqual(original)
+  await expect(page.locator('.ihr-spine')).toHaveCount(2)
+  for (const position of expected) {
+    const node = page.locator(`.ihr-spine[data-book-id="${position.id}"]`)
+    await expect(node).toHaveAttribute('data-shelf-index', position.shelf)
+    expect(Number(await node.getAttribute('data-shelf-x'))).toBeCloseTo(Number(position.x), 4)
+  }
+  const overlapping = await page.locator('.ihr-spine, .ihr-plant').evaluateAll(nodes => {
+    const width = document.querySelector('.ihr-bookshelf-scene').getBoundingClientRect().width
+    const objects = nodes.map(node => {
+      const objectWidth = parseFloat(node.style.getPropertyValue(node.classList.contains('ihr-plant') ? '--ihr-plant-w' : '--ihr-spine-w'))
+      const center = 16 + Number(node.dataset.shelfX) * (width - 32)
+      return { shelf:node.dataset.shelfIndex, left:center - objectWidth / 2, right:center + objectWidth / 2 }
+    })
+    return objects.some((a,i) => objects.slice(i + 1).some(b => a.shelf === b.shelf && Math.min(a.right,b.right) - Math.max(a.left,b.left) > .1))
+  })
+  expect(overlapping).toBe(false)
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0)
 })
 
 test('el libro abierto reaparece en la estantería al volver', async ({ page }) => {
