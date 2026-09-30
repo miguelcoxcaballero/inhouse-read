@@ -164,7 +164,7 @@ test('la estantería dibuja madera y plantas 3D sin recursos rotos', async ({ pa
   const brokenAssets = []
   page.on('response', response => { if (response.url().includes('/assets/') && response.status() >= 400) brokenAssets.push(response.url()) })
   page.on('requestfailed', request => { if (request.url().includes('/assets/')) brokenAssets.push(request.url()) })
-  await page.goto('/')
+  await page.goto(process.env.IHR_TEST_URL || '/')
   await expect(page.locator('.ihr-plant[data-object-id]')).toHaveCount(3)
   // Photos are decoded for the DOM fallback; the visible cabinet uses actual
   // movable plant meshes in the same depth-tested scene as its wood and books.

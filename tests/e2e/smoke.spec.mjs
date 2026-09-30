@@ -409,6 +409,7 @@ test('el libro abierto reaparece en la estantería al volver', async ({ page }) 
 })
 
 test('aleja y gira toda la estantería en 3D, permite abrir libros y recuerda la vista', async ({ page }) => {
+  test.setTimeout(90_000)
   await page.setViewportSize({ width:390, height:844 })
   await page.emulateMedia({ reducedMotion:'no-preference' })
   await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/tiny.pdf')

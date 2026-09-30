@@ -9,7 +9,7 @@ test.beforeEach(async ({ page }) => {
       Object.defineProperty(window, 'showDirectoryPicker', { value: undefined, configurable: true })
     } catch { /* API absent in this browser */ }
   })
-  await page.goto('/')
+  await page.goto(process.env.IHR_TEST_URL || '/')
 })
 
 test('Android: mantiene una pantalla de carga hasta que Drive guarda el libro y lo muestra en la estantería', async ({ page }) => {
