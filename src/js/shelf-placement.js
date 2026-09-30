@@ -45,8 +45,10 @@ function objectsFor(objects, cfg) {
     const saved = placementFor(cfg.placements?.[object.key]);
     const shelf = saved?.shelf ?? shelfNumber(object.shelf ?? object.row);
     const x = saved?.x ?? (finite(object.x) ? clamp(object.x, 0, 1) : null);
-    const center = x == null ? null : clamp(cfg.padding + x * cfg.available, cfg.padding + width / 2, cfg.shelfWidth - cfg.padding - width / 2);
-    return [{ object, key: object.key, width, shelf, desiredLeft: center == null ? null : center - width / 2, order }];
+    const requestedCenter = x == null ? null : cfg.padding + x * cfg.available;
+    const center = x == null ? null : clamp(requestedCenter, cfg.padding + width / 2, cfg.shelfWidth - cfg.padding - width / 2);
+    return [{ object, key: object.key, width, shelf, desiredLeft: center == null ? null : center - width / 2,
+      requestedX:center === requestedCenter ? x : null, order }];
   });
 }
 
@@ -182,7 +184,10 @@ function layout(objects, cfg, movedKey = null) {
         width: item.width,
         shelf: index,
         row: index,
-        x: clamp((center - cfg.padding) / cfg.available, 0, 1),
+        // Unmoved neighbours keep their exact saved value. Converting it to
+        // pixels and back otherwise introduces drift on every placement save.
+        x: item.key !== movedKey && item.requestedX != null && item.left === item.desiredLeft
+          ? item.requestedX : clamp((center - cfg.padding) / cfg.available, 0, 1),
         left: item.left,
         center
       };

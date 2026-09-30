@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { getCatalogPlant, getCatalogPot } from './plant-catalog-data.js';
+import { getCatalogPot } from './plant-catalog-data.js';
+import { resolveCatalogPlant } from './plant-records.js';
 
-const QUADRANTS = { upright:[0, .5], leafy:[.5, .5], succulent:[0, 0], monstera:[.5, 0] };
 const UP = new THREE.Vector3(0, 1, 0);
 
 function randomFor(seed) {
@@ -142,28 +142,26 @@ function bladePoint(f, u, length, width, variant, curve, twist) {
   return new THREE.Vector3(x * Math.cos(angle) + z * Math.sin(angle), f * length, z * Math.cos(angle) - x * Math.sin(angle));
 }
 
-function leafGeometry({ length, width, variant, curve, twist, atlas, random, detailed = false }) {
+function leafGeometry({ length, width, variant, curve, twist, random, detailed = false }) {
   const rows = variant === 'palm' ? 4 : variant === 'fern' ? 3 : variant === 'zz' ? 6 : variant === 'ivy' || (variant === 'succulent' && detailed) ? 8 : variant === 'upright' ? 16 : variant === 'monstera' ? 14 : 12;
   const columns = variant === 'palm' || variant === 'fern' ? 2 : variant === 'monstera' ? 10 : variant === 'leafy' ? 6 : 4;
   const thick = variant === 'succulent' || detailed, thickness = thick ? width * (variant === 'succulent' ? (detailed ? .13 : .07) : .008) : 0;
   const positions = [], colors = [], uv = [], indices = [];
-  const quadrant = QUADRANTS[variant] ?? [0,0], inset = .012, uvSize = atlas ? .5 : 1;
+  const inset = .012;
   const tint = random() * .08;
   for (let side = 0; side <= Number(thick); side++) for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
     const f = row / rows, u = col / columns * 2 - 1;
     const point = bladePoint(f, u, length, width, variant, curve, twist);
     positions.push(point.x, point.y, point.z - side * thickness);
-    uv.push((atlas ? quadrant[0] : 0) + inset + col / columns * (uvSize - inset * 2), (atlas ? quadrant[1] : 0) + inset + f * (uvSize - inset * 2));
+    uv.push(inset + col / columns * (1 - inset * 2), inset + f * (1 - inset * 2));
     const edge = Math.pow(Math.abs(u), 2), ridge = 1 - Math.abs(u);
-    if (atlas) colors.push(.94 + tint - edge * .035, .96 + tint - edge * .02, .92 + tint - edge * .035);
-    else if (detailed) colors.push(.78 + ridge * .12 + tint, .85 + ridge * .10 + tint, .73 + ridge * .12 + tint);
+    if (detailed) colors.push(.78 + ridge * .12 + tint, .85 + ridge * .10 + tint, .73 + ridge * .12 + tint);
     else colors.push(.23 + ridge * .11 + tint + edge * .04, .36 + ridge * .15 + tint, .16 + ridge * .075 + tint * .5);
   }
   const count = (rows + 1) * (columns + 1);
   for (let row = 0; row < rows; row++) for (let col = 0; col < columns; col++) {
     const f = (row + .5) / rows, u = Math.abs((col + .5) / columns * 2 - 1);
-    // Genuine gaps between the rib and lobes supplement the photographed
-    // fenestrations; the leaf's curve and silhouette remain real geometry.
+    // Genuine gaps between the rib and lobes remain part of the geometry.
     if (variant === 'monstera' && u > .15 && u < .48 && [ .32, .54, .74 ].some(center => Math.abs(f - center) < .045)) continue;
     const a = row * (columns + 1) + col, b = a + 1, c = a + columns + 1, d = c + 1;
     indices.push(a, b, d, a, d, c);
@@ -323,9 +321,11 @@ function consolidateParts(content, mesh, geometries) {
   return parts;
 }
 
-/** Stable, bounded botanical meshes; the optional atlas is owned by the scene. */
-export function createShelfPlant(entry, { leafTexture = null } = {}) {
-  const catalogPlant = getCatalogPlant(entry.catalogId);
+/** Every saved plant uses a current catalog mesh, including legacy records.
+ * Its own opaque leaf texture covers real geometry; no photo cutout is used.
+ */
+export function createShelfPlant(entry) {
+  const catalogPlant = resolveCatalogPlant(entry);
   const width = Math.max(1, Number(entry.width) || catalogPlant?.width || 46), height = Math.max(1, Number(entry.height) || catalogPlant?.height || 70);
   const variant = variantFor(catalogPlant?.variant || entry.variant), seed = entry.seed ?? entry.key ?? entry.node?.dataset.objectId ?? variant;
   const potId = getCatalogPot(entry.potId)?.id ?? catalogPlant?.defaultPotId ?? null;
@@ -371,17 +371,16 @@ export function createShelfPlant(entry, { leafTexture = null } = {}) {
     stone.rotation.set(random(), random(), random());
   }
   const stemMaterial = new THREE.MeshStandardMaterial({ color:'#596a39', roughness:.83 });
-  const veinMaterial = new THREE.MeshStandardMaterial({ color:leafTexture ? '#a0ad70' : '#718747', roughness:.83 });
-  const atlas = !catalogPlant && QUADRANTS[variant] ? leafTexture : null;
-  const leafMap = atlas || (detailed ? botanicalTexture(random,variant) : null);
-  if (leafMap && leafMap !== leafTexture) textures.add(leafMap);
+  const veinMaterial = new THREE.MeshStandardMaterial({ color:'#a0ad70', roughness:.83 });
+  const leafMap = detailed ? botanicalTexture(random,variant) : null;
+  if (leafMap) textures.add(leafMap);
   const leafMaterial = new THREE.MeshPhysicalMaterial({ map:leafMap, color:0xffffff, vertexColors:true,
-    side:THREE.DoubleSide, alphaTest:atlas ? .17 : 0, alphaToCoverage:Boolean(atlas),
+    side:THREE.DoubleSide, alphaTest:0, alphaToCoverage:false,
     roughness:variant === 'zz' ? .38 : variant === 'succulent' ? .57 : .70, metalness:0,
     clearcoat:variant === 'zz' ? .28 : variant === 'succulent' ? .18 : .075, clearcoatRoughness:.48 });
   const tube = (points, r, material, name, segments = 6) => mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), segments, r, 4, false), material, name);
   const blade = (position, direction, length, leafWidth, angle, curve, twist, index) => {
-    const parameters = { length, width:leafWidth, variant, curve, twist, atlas:Boolean(atlas), random, detailed };
+    const parameters = { length, width:leafWidth, variant, curve, twist, random, detailed };
     const geometry = variant === 'ivy' ? ivyLeafGeometry(length,leafWidth,curve,random)
       : catalogPlant && variant === 'monstera' ? monsteraLeafGeometry(length,leafWidth,curve,random) : leafGeometry(parameters);
     const leaf = mesh(geometry, leafMaterial, `leaf-${index}`);
@@ -542,7 +541,7 @@ export function createShelfPlant(entry, { leafTexture = null } = {}) {
   const xExtent = Math.max(Math.abs(bounds.min.x), Math.abs(bounds.max.x));
   const zExtent = Math.max(Math.abs(bounds.min.z), Math.abs(bounds.max.z));
   content.scale.set(Math.min(1, width / 2 / xExtent), height / (bounds.max.y + height / 2), Math.min(1, width * .35 / zExtent));
-  group.userData.variant = variant; group.userData.seed = String(seed); group.userData.atlasQuadrant = QUADRANTS[variant] ?? null;
+  group.userData.variant = variant; group.userData.seed = String(seed);
   group.userData.catalogId = catalogPlant?.id ?? null; group.userData.potId = potId;
   group.userData.parts = parts;
   let disposed = false;

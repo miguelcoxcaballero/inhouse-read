@@ -347,3 +347,122 @@ test('un gesto táctil desde las hojas mueve una planta de la balda superior has
     await touch.detach();
   }
 });
+
+test('las plantas de una instalación antigua migran a los modelos actuales sin fotos 2D y conservan posición, movimiento y retirada',async ({ page },testInfo) => {
+  test.setTimeout(180_000);
+  const errors = [], brokenAssets = [];
+  page.on('pageerror',error => errors.push(error.message));
+  page.on('response',response => { if (response.url().includes('/assets/') && response.status() >= 400) brokenAssets.push(response.url()); });
+  page.on('requestfailed',request => { if (request.url().includes('/assets/')) brokenAssets.push(request.url()); });
+  // These are the original persisted decorations, not catalog records. They
+  // have no catalogId, potId or height and must upgrade on application startup.
+  const legacy = [
+    { key:'plant:legacy-upright',seed:'legacy-upright',variant:'sansevieria',width:52,shelf:0,x:.45 },
+    { key:'plant:legacy-pothos',seed:'legacy-pothos',variant:'pothos',width:44,shelf:1,x:.5 },
+    { key:'plant:legacy-suculenta',seed:'legacy-suculenta',variant:'suculenta',width:50,shelf:2,x:.65 }
+  ];
+  const species = [
+    { catalogId:'sansevieria',variant:'sansevieria',potId:'muskot',height:124 },
+    { catalogId:'hedera',variant:'hedera',potId:'muskotblomma',height:106 },
+    { catalogId:'succulent',variant:'succulent',potId:'muskotblomma',height:72 }
+  ];
+  await page.evaluate(({ plantsKey,legacy }) => {
+    localStorage.setItem(plantsKey,JSON.stringify(legacy));
+    localStorage.setItem('inhouse-read-shelf-view','spine');
+  },{ plantsKey:PLANTS_KEY,legacy });
+  await page.reload();
+  const canvas = page.locator('.ihr-bookshelf-scene'), scroller = page.locator('.ihr-bookshelf__scroll');
+  const nodeFor = key => page.locator(`.ihr-plant[data-object-id="${key}"]`);
+  const assertModels = async () => {
+    await expect(canvas).toBeVisible();
+    await expect(canvas).toHaveAttribute('data-animating','false');
+    await expect(canvas).toHaveAttribute('data-active-plants','3');
+    await expect(page.locator('.ihr-plant')).toHaveCount(3);
+    await expect(page.locator('.ihr-plant img, .ihr-plant--photo')).toHaveCount(0);
+    for (let index = 0; index < legacy.length; index++) {
+      const node = nodeFor(legacy[index].key), expected = species[index];
+      await expect(node).toHaveAttribute('data-catalog-id',expected.catalogId);
+      await expect(node).toHaveAttribute('data-pot-id',expected.potId);
+      await expect(node).toHaveAttribute('data-scene-projected','true');
+      // These values come from the actual Three.js model/material, not the
+      // DOM's catalog label. A photo atlas on old leaves must fail this check.
+      await expect(node).toHaveAttribute('data-plant-model-catalog-id',expected.catalogId);
+      await expect(node).toHaveAttribute('data-plant-leaf-texture','procedural');
+      await expect(node).toHaveAttribute('data-plant-leaf-opacity','opaque');
+      expect(Number(await node.getAttribute('data-plant-model-depth'))).toBeGreaterThan(0);
+      const foliage = node.locator('.ihr-plant-foliage');
+      await expect(foliage).toHaveCount(1);
+      expect(Number(await foliage.getAttribute('data-triangles'))).toBeGreaterThan(10);
+      expect((await foliage.locator(':scope > path').getAttribute('d')).length).toBeGreaterThan(20);
+      expect(await node.evaluate(element => getComputedStyle(element).touchAction)).toBe('none');
+    }
+  };
+  await assertModels();
+  const migrated = await savedPlants(page);
+  expect(migrated).toHaveLength(3);
+  for (let index = 0; index < legacy.length; index++) {
+    expect(migrated[index]).toMatchObject({
+      key:legacy[index].key,seed:legacy[index].seed,shelf:legacy[index].shelf,x:legacy[index].x,...species[index]
+    });
+    expect(migrated[index].width).toBe(legacy[index].width);
+  }
+  await testInfo.attach('legacy-plantas-3d-frontal',{ body:await page.screenshot(),contentType:'image/png' });
+  await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
+  await expect(canvas).toHaveAttribute('data-view-progress','1');
+  await assertModels();
+  expect(await savedPlants(page)).toEqual(migrated);
+  await testInfo.attach('legacy-plantas-3d-isometrica',{ body:await page.screenshot(),contentType:'image/png' });
+  await page.reload();
+  await expect(canvas).toHaveAttribute('data-view-progress','1');
+  await assertModels();
+  expect(await savedPlants(page)).toEqual(migrated);
+
+  // Move one upgraded decoration using its real physical pot. Do not replace
+  // the saved fixture with modern records to make the interaction pass.
+  const movedKey = legacy[2].key, movedPlant = nodeFor(movedKey);
+  await scroller.evaluate(node => { node.scrollTop = node.scrollHeight; });
+  await expect(canvas).toHaveAttribute('data-animating','false');
+  const pot = await movedPlant.boundingBox();
+  const scrollBounds = await scroller.boundingBox();
+  const start = { x:pot.x + pot.width * .5,y:pot.y + pot.height * .85 };
+  const destination = { x:start.x - scrollBounds.width * .2,y:start.y };
+  expect(destination.x).toBeGreaterThan(scrollBounds.x);
+  await page.mouse.move(start.x,start.y);
+  await page.mouse.down(); await page.waitForTimeout(550);
+  await expect(movedPlant).toHaveClass(/is-lifted/);
+  await page.mouse.move(destination.x,destination.y,{ steps:14 });
+  await expect(movedPlant).toHaveClass(/is-dragging/);
+  await expect(canvas).toHaveAttribute('data-drop-shelf','2');
+  await expect(canvas).toHaveAttribute('data-trash-hover','false');
+  await page.mouse.up();
+  await expect(page.locator('.ihr-bookshelf')).not.toHaveClass(/is-arranging/);
+  await expect(canvas).toHaveAttribute('data-animating','false');
+  const moved = await savedPlants(page);
+  expect(moved).toHaveLength(3);
+  expect(moved[2].shelf).toBe(2);
+  expect(Math.abs(moved[2].x - migrated[2].x)).toBeGreaterThan(.05);
+  for (const field of ['key','seed','catalogId','variant','potId','width','height']) expect(moved[2][field]).toEqual(migrated[2][field]);
+  expect(moved.slice(0,2)).toEqual(migrated.slice(0,2));
+  await page.reload();
+  await assertModels();
+  expect(await savedPlants(page)).toEqual(moved);
+
+  await scroller.evaluate(node => { node.scrollTop = node.scrollHeight; });
+  await expect(canvas).toHaveAttribute('data-animating','false');
+  await movedPlant.press('Delete');
+  await expect(movedPlant).toHaveCount(0,{ timeout:30_000 });
+  expect(await savedPlants(page)).toEqual(moved.slice(0,2));
+  for (const remaining of legacy.slice(0,2).reverse()) {
+    const node = nodeFor(remaining.key);
+    await node.press('Delete');
+    await expect(node).toHaveCount(0,{ timeout:30_000 });
+    await expect(page.locator('.ihr-bookshelf')).not.toHaveClass(/is-discarding/);
+  }
+  expect(await savedPlants(page)).toEqual([]);
+  await page.reload();
+  await expect(page.locator('.ihr-plant')).toHaveCount(0);
+  await expect(canvas).toHaveAttribute('data-active-plants','0');
+  expect(await savedPlants(page)).toEqual([]);
+  expect(errors).toEqual([]);
+  expect(brokenAssets).toEqual([]);
+});

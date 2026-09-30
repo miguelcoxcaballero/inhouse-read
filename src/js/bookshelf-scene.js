@@ -9,13 +9,14 @@ import { createShelfTrash, sampleTrashDrop } from './shelf-trash.js';
 import { createShelfCatalog } from './shelf-catalog.js';
 
 const WALNUT = new URL('../assets/library/walnut-pbr.webp', import.meta.url).href;
-const BOTANICAL = new URL('../assets/library/botanical-leaves.webp', import.meta.url).href;
 const DURATION = 700;
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 const ease = t => t * t * t * (t * (t * 6 - 15) + 10);
 const TRASH_PADDING = 7, TRASH_GAP = 12;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 let foliageSerial = 0;
+const PLANT_DIAGNOSTICS = ['plantModelCatalogId', 'plantModelDepth', 'plantLeafTexture', 'plantLeafOpacity'];
+function clearPlantDiagnostics(node) { if (node) for (const key of PLANT_DIAGNOSTICS) delete node.dataset[key]; }
 
 /** The native touch surface follows solid leaves, including fenestrations.
  * Project their actual front-facing triangles rather than a rectangular hull.
@@ -167,9 +168,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.repeat.set(1, 1);
   texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-  const leafTexture = new THREE.TextureLoader().load(BOTANICAL, () => invalidate());
-  leafTexture.colorSpace = THREE.SRGBColorSpace;
-  leafTexture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   const grain = woodMicrotexture();
   const wood = new THREE.MeshPhysicalMaterial({ map:texture, bumpMap:grain, bumpScale:.18,
     roughnessMap:grain, color:'#fff3e3', roughness:.62, clearcoat:.18, clearcoatRoughness:.48 });
@@ -305,7 +303,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const plantKeys = entry => JSON.stringify([entry.width, entry.height, entry.variant, entry.catalogId, entry.potId, entry.seed]);
 
   function makeModel(entry) {
-    const model = entry.kind === 'plant' ? createShelfPlant(entry, { leafTexture })
+    const model = entry.kind === 'plant' ? createShelfPlant(entry)
       : createBookModel(entry.book, entry.style, entry.width, entry.height, entry.thickness, entry.coverUrl, { shelf:true });
     model.userData.invalidate = invalidate;
     model.userData.entry = entry;
@@ -313,7 +311,17 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (object.isMesh) { object.castShadow = true; object.receiveShadow = true; }
     });
     if (entry.kind !== 'plant') model.userData.shelfKeys = materialKeys(entry);
-    else model.userData.shelfPlantKeys = plantKeys(entry);
+    else {
+      model.userData.shelfPlantKeys = plantKeys(entry);
+      if (entry.node) {
+        const leaf = model.getObjectByName('leaf-0'), size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
+        model.userData.shelfPlantDiagnostics = { plantModelCatalogId:model.userData.catalogId,
+          plantModelDepth:size.z.toFixed(4),
+          plantLeafTexture:leaf ? leaf.material.map?.isDataTexture ? 'procedural' : leaf.material.map ? 'photo' : 'none' : 'vertex-colors',
+          plantLeafOpacity:!leaf || leaf.material.alphaTest === 0 && !leaf.material.alphaToCoverage ? 'opaque' : 'cutout' };
+        Object.assign(entry.node.dataset, model.userData.shelfPlantDiagnostics);
+      }
+    }
     canvas.dataset.modelCreations = String(++modelCreations);
     return model;
   }
@@ -329,6 +337,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     cancelReplacement(entry);
     if (entry.model) { entry.model.removeFromParent(); entry.model.userData.dispose?.(); entry.model = null; }
     semanticFoliage.get(entry.node)?.svg.remove(); semanticFoliage.delete(entry.node);
+    clearPlantDiagnostics(entry.node);
   }
 
   function cancelTrashDrop(entry, restore = true) {
@@ -789,6 +798,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function updatePlantFoliage(entry) {
     const { node, model, rect, hitRect } = entry;
+    if (model?.userData.shelfPlantDiagnostics && !node.dataset.plantModelDepth)
+      Object.assign(node.dataset, model.userData.shelfPlantDiagnostics);
     let native = semanticFoliage.get(node);
     if (!model?.visible || !rect || !hitRect || node.classList.contains('is-away') || node.classList.contains('is-dragging') || entry.trashDrop) {
       if (native) native.svg.style.display = 'none';
@@ -994,7 +1005,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     canvas.dataset.activePlants = String(bookEntries.filter(entry => entry.kind === 'plant' && entry.model?.visible).length);
     canvas.dataset.shadowMapSize = '1024';
     canvas.dataset.furnitureMeshes = String(furniture.children.find(object => object.userData.furniture)?.children.length || 0);
-    canvas.dataset.botanicalAtlasReady = String(Boolean(leafTexture.image));
+    canvas.dataset.plantGeometry = 'catalog-3d';
     canvas.dataset.animating = String(Boolean(transition || reorderTransition || moving || trashMoving));
     for (const resolve of finishedInsertions) resolve();
     for (const resolve of finishedDrops) resolve();
@@ -1184,6 +1195,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           delete node.dataset.sceneHitSurface;
           semanticCovers.get(node)?.remove(); semanticCovers.delete(node);
           semanticFoliage.get(node)?.svg.remove(); semanticFoliage.delete(node);
+          clearPlantDiagnostics(node);
         }
         originalStyles.clear();
         stage = next.stage;
@@ -1224,6 +1236,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           if (entry.node !== data.node && entry.node?.classList.contains('is-away')) data.node?.classList.add('is-away');
           if (entry.node !== data.node) {
             semanticFoliage.get(entry.node)?.svg.remove(); semanticFoliage.delete(entry.node);
+            clearPlantDiagnostics(entry.node);
           }
           entry.node = data.node;
           if (data.kind === 'plant') {
@@ -1282,7 +1295,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       for (const entry of bookEntries) releaseEntry(entry);
       if (catalog) { catalog.removeFromParent(); catalog.userData.dispose(); }
       trash?.removeFromParent();
-      releaseObject(furniture); texture.dispose(); grain.dispose(); leafTexture.dispose(); lighting.dispose();
+      releaseObject(furniture); texture.dispose(); grain.dispose(); lighting.dispose();
       trash?.userData.dispose();
       canvas.remove(); stage.style.height = originalHeight;
       if (!alreadyScene) stage.classList.remove('has-scene');
@@ -1290,6 +1303,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         if (style === null) node.removeAttribute('style'); else node.setAttribute('style', style);
         delete node.dataset.sceneProjected;
         delete node.dataset.sceneHitSurface;
+        clearPlantDiagnostics(node);
       }
       for (const node of semanticCovers.values()) node.remove();
       semanticCovers.clear();

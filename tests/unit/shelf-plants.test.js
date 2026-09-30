@@ -17,8 +17,8 @@ describe('botanical shelf models', () => {
       expect(bounds.max.y).toBeCloseTo(33.5, 4);
       expect(Math.max(Math.abs(bounds.min.x), Math.abs(bounds.max.x))).toBeLessThanOrEqual(21.0001);
       expect(Math.max(Math.abs(bounds.min.z), Math.abs(bounds.max.z))).toBeLessThanOrEqual(14.7001);
-      expect(triangleCount(plant)).toBeGreaterThan(1700);
-      expect(triangleCount(plant)).toBeLessThan(5000);
+      expect(triangleCount(plant)).toBeGreaterThan(3000);
+      expect(triangleCount(plant)).toBeLessThan(14000);
       expect(plant.getObjectByName('ceramic-pot').geometry.type).toBe('LatheGeometry');
       plant.traverse(object => { if (object.isMesh) { expect(object.castShadow).toBe(true); expect(object.receiveShadow).toBe(true); } });
       plant.userData.dispose();
@@ -34,17 +34,21 @@ describe('botanical shelf models', () => {
     for (const model of [a,b,c]) model.userData.dispose();
   });
 
-  it('samples each leaf from its own inset atlas quadrant', () => {
+  it('upgrades legacy variants to current catalog geometry and rejects the old plant photo atlas', () => {
     const atlas = new THREE.Texture();
-    for (const [variant,u,v] of [['upright',0,.5],['leafy',.5,.5],['succulent',0,0],['monstera',.5,0]]) {
+    for (const [variant,catalogId] of [['upright','sansevieria'],['sansevieria','sansevieria'],['leafy','hedera'],
+      ['pothos','hedera'],['succulent','succulent'],['suculenta','succulent'],['monstera','monstera'],
+      ['palm','chamaedorea'],['fern','nephrolepis'],['ivy','hedera'],['zz','zamioculcas'],['unknown','monstera']]) {
       const plant = createShelfPlant({ width:46,height:72,variant }, { leafTexture:atlas });
       const leaf = plant.getObjectByName('leaf-0');
-      expect(leaf.material.map).toBe(atlas);
-      const values = leaf.geometry.attributes.uv.array;
-      for (let i = 0; i < values.length; i += 2) {
-        expect(values[i]).toBeGreaterThan(u); expect(values[i]).toBeLessThan(u+.5);
-        expect(values[i+1]).toBeGreaterThan(v); expect(values[i+1]).toBeLessThan(v+.5);
-      }
+      expect(plant.userData.catalogId).toBe(catalogId);
+      expect(plant.userData.potId).not.toBeNull();
+      expect(plant.userData.atlasQuadrant).toBeUndefined();
+      expect(leaf.material.map).not.toBe(atlas);
+      expect(leaf.material.map.image.width).toBe(128);
+      expect(leaf.material.alphaTest).toBe(0);
+      expect(leaf.material.alphaToCoverage).toBe(false);
+      expect([...leaf.geometry.attributes.uv.array].every(Number.isFinite)).toBe(true);
       plant.userData.dispose();
     }
   });

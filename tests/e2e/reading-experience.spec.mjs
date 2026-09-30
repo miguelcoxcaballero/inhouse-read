@@ -166,14 +166,15 @@ test('la estantería dibuja madera y plantas 3D sin recursos rotos', async ({ pa
   page.on('requestfailed', request => { if (request.url().includes('/assets/')) brokenAssets.push(request.url()) })
   await page.goto(process.env.IHR_TEST_URL || '/')
   await expect(page.locator('.ihr-plant[data-object-id]')).toHaveCount(3)
-  // Photos are decoded for the DOM fallback; the visible cabinet uses actual
-  // movable plant meshes in the same depth-tested scene as its wood and books.
-  await expect(page.locator('.ihr-plant img')).toHaveCount(3)
-  await expect.poll(() => page.locator('.ihr-plant img').evaluateAll(images => images.every(image => image.complete && image.naturalWidth > 0))).toBe(true)
+  await expect(page.locator('.ihr-plant img, .ihr-plant--photo')).toHaveCount(0)
+  for (const plant of await page.locator('.ihr-plant').all()) {
+    await expect(plant).toHaveAttribute('data-plant-leaf-texture', 'procedural')
+    await expect(plant).toHaveAttribute('data-plant-leaf-opacity', 'opaque')
+    expect(Number(await plant.getAttribute('data-plant-model-depth'))).toBeGreaterThan(0)
+  }
   const canvas = page.locator('.ihr-bookshelf-scene')
   await expect(canvas).toBeVisible()
   await expect(canvas).toHaveAttribute('data-active-plants', '3')
-  await expect(canvas).toHaveAttribute('data-botanical-atlas-ready', 'true')
   await expect(canvas).toHaveAttribute('data-shadow-map-size', '1024')
   await expect(canvas).toHaveAttribute('data-furniture-meshes', '3')
   await expect.poll(() => canvas.evaluate(node => {
@@ -181,6 +182,9 @@ test('la estantería dibuja madera y plantas 3D sin recursos rotos', async ({ pa
     return pixels.filter((value,index) => index % 4 === 3 && value > 200).length
   })).toBeGreaterThan(1000)
   await expect(page.locator('.ihr-shelf__board')).toHaveCount(3)
+  expect(await page.locator('.ihr-shelf__board, .ihr-shelf__back').evaluateAll(nodes =>
+    nodes.every(node => getComputedStyle(node).display === 'none')
+  )).toBe(true)
   expect(await page.locator('.ihr-shelf__board').evaluateAll(boards =>
     boards.every(board => getComputedStyle(board).backgroundImage.includes('walnut-'))
   )).toBe(true)

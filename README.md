@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca es una estantería 3D con madera texturizada, libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.9
+
+- Las plantas antiguas se convierten al catálogo 3D conservando sus posiciones, tamaños y macetas elegidas.
+- Eliminadas las fotos planas y el atlas fotográfico antiguo del renderizado de plantas. Las hojas usan geometría con volumen y texturas procedimentales opacas.
+- La migración se guarda al abrir la biblioteca y respeta las plantas retiradas; no repone decoraciones eliminadas.
+
 ### Actualización web · 1.6.8
 
 - Corregido el arrastre táctil de plantas cogidas por las hojas: el gesto permanece activo al mover el dedo y al bajar por las baldas hasta la papelera.

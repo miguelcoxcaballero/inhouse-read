@@ -449,11 +449,40 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     const next = document.createElement('button'); next.dataset.objectId = node.dataset.objectId; stage.append(next);
     shelf.updateLayout({ ...layout, entries:[{ ...data, node:next }] });
     expect(original.isConnected).toBe(false); expect(node.querySelector('.ihr-plant-foliage')).toBeNull();
+    expect(node.dataset.plantModelCatalogId).toBeUndefined(); expect(next.dataset.plantLeafTexture).toBe('procedural');
     expect(next.querySelector('.ihr-plant-foliage')).not.toBeNull();
     scroll = 2000; shelf.flush(); expect(next.querySelector('.ihr-plant-foliage')).toBeNull();
     scroll = 0; shelf.flush(); const restored = next.querySelector('.ihr-plant-foliage'); expect(restored).not.toBeNull();
     shelf.dispose(); shelf = null; expect(restored.isConnected).toBe(false);
     expect(next.querySelector('.ihr-plant-foliage')).toBeNull();
+    expect(next.dataset.plantModelCatalogId).toBeUndefined();
+  });
+
+  it('renders legacy plants as opaque catalog meshes without loading a photo atlas or duplicating models during view changes and rebinding', () => {
+    const variants = ['sansevieria', 'pothos', 'suculenta'], catalogIds = ['sansevieria', 'hedera', 'succulent'];
+    const nodes = variants.map((variant, i) => {
+      const node = document.createElement('button'); node.classList.add('ihr-plant'); node.dataset.objectId = `plant:legacy-${i}`;
+      stage.append(node); return node;
+    });
+    const entries = variants.map((variant, index) => ({ node:nodes[index], kind:'plant', key:nodes[index].dataset.objectId,
+      variant, seed:`legacy-${index}`, width:48, height:110, x:90 + index * 100, y:165 }));
+    const layout = { stage, width:390, sceneWidth:390, height:750, trashNode,
+      rows:[{ top:20,bottom:220 },{ top:260,bottom:460 },{ top:500,bottom:700 }], entries };
+    shelf.updateLayout(layout);
+    const furniture = gpu.scene.children.find(child => child.children.some(object => object.userData.furniture));
+    const models = furniture.children.filter(child => child.userData.entry?.kind === 'plant');
+    expect(models).toHaveLength(3); expect(shelf.canvas.dataset.plantGeometry).toBe('catalog-3d');
+    for (const [index, node] of nodes.entries()) {
+      expect(node.dataset.plantModelCatalogId).toBe(catalogIds[index]);
+      expect(node.dataset.plantLeafTexture).toBe('procedural'); expect(node.dataset.plantLeafOpacity).toBe('opaque');
+      expect(Number(node.dataset.plantModelDepth)).toBeGreaterThan(1);
+      expect(models[index].getObjectByName('leaf-0').material.map.isDataTexture).toBe(true);
+    }
+    expect(THREE.TextureLoader.prototype.load.mock.calls.some(([url]) => String(url).includes('botanical-leaves'))).toBe(false);
+    showTrash(); shelf.setMode('spine', { animate:false }); shelf.flush();
+    shelf.updateLayout({ ...layout, entries:entries.map(entry => ({ ...entry })) });
+    expect(furniture.children.filter(child => child.userData.entry?.kind === 'plant')).toEqual(models);
+    expect(nodes.every(node => node.querySelectorAll('.ihr-plant-foliage').length === 1)).toBe(true);
   });
 
   it('shows the attached catalogue only in the diagonal view and projects a scrolling semantic target', () => {

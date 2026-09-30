@@ -32,6 +32,35 @@ afterEach(() => {
 const remove = node => node.dispatchEvent(new KeyboardEvent('keydown', { key:'Delete', bubbles:true, cancelable:true }))
 
 describe('persistent catalog plants', () => {
+  it('migrates old plants before rendering and never constructs photo decorations', () => {
+    const legacy = [{ key:'plant:old', seed:'old-seed', variant:'pothos', width:44, shelf:1, x:.4 }];
+    localStorage.setItem(KEY, JSON.stringify(legacy));
+    shelf=renderBookshelf(container, books(), { shelfWidth:390 });
+    const node = container.querySelector('.ihr-plant');
+    expect(node.dataset).toMatchObject({ objectId:'plant:old', catalogId:'hedera', potId:'muskotblomma',
+      plantSeed:'old-seed', plantVariant:'hedera' });
+    expect(node.style.getPropertyValue('--ihr-plant-h')).toBe('106px');
+    expect(container.querySelectorAll('.ihr-plant img, .ihr-plant--photo')).toHaveLength(0);
+    expect(JSON.parse(localStorage.getItem(KEY))).toEqual([
+      { ...legacy[0], catalogId:'hedera', variant:'hedera', potId:'muskotblomma', height:106 }
+    ]);
+  });
+  it('restores catalog-only records before filtering missing legacy fields', () => {
+    localStorage.setItem(KEY, JSON.stringify([{ key:'plant:saved', catalogId:'nephrolepis', shelf:0, x:.6 }]));
+    shelf=renderBookshelf(container, books(), { shelfWidth:390 });
+    expect(container.querySelector('.ihr-plant').dataset.catalogId).toBe('nephrolepis');
+    expect(JSON.parse(localStorage.getItem(KEY))[0]).toMatchObject({ width:94, height:104, potId:'akerbar' });
+  });
+  it('persists complete current models for newly initialized decorations', () => {
+    shelf=renderBookshelf(container, [], { shelfWidth:390 });
+    const saved=JSON.parse(localStorage.getItem(KEY));
+    expect(saved).toHaveLength(3);
+    for (const record of saved) {
+      expect(record.catalogId).toBeTruthy(); expect(record.potId).toBeTruthy();
+      expect(record.height).toBeGreaterThan(0);
+    }
+    expect(container.querySelectorAll('.ihr-plant img, .ihr-plant--photo')).toHaveLength(0);
+  });
   it('keeps a deliberately empty plant collection empty on reopen', () => {
     localStorage.setItem(KEY, '[]')
     shelf=renderBookshelf(container, [], { shelfWidth:390 })

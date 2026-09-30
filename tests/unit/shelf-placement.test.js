@@ -117,6 +117,17 @@ describe('layoutShelvedObjects', () => {
 });
 
 describe('moveShelfObject', () => {
+  it('keeps untouched plant positions exact across repeated layout and moves', () => {
+    const cfg = { shelfWidth:390, padding:16, gap:3, minShelves:3 };
+    const objects = [plant('kept', .45, 0, 52), plant('moved', .65, 2, 50)];
+    let snapshot = objects;
+    for (let index = 0; index < 12; index++) {
+      const result = moveShelfObject(snapshot, 'plant:moved', { shelf:2, x:index % 2 ? .35 : .65 }, cfg);
+      expect(result.placements['plant:kept']).toEqual({ shelf:0, x:.45 });
+      snapshot = result.objects;
+      expectSafe(result.shelves, cfg);
+    }
+  });
   it('pins a book at an arbitrary point and pushes a plant and adjacent book aside', () => {
     const objects = [book('a', 0.15), plant('p', 0.5), book('b', 0.8)];
     const moved = moveShelfObject(objects, 'book:a', { shelf: 0, x: 0.5 }, config);

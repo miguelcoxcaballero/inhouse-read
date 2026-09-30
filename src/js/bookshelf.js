@@ -61,7 +61,7 @@
  *    es real, no inventado.
  *
  * 4. Plantas. Macetas y hojas con volumen dentro de la misma escena.
- *    Los recortes fotográficos se conservan para la vista sin WebGL.
+ *    Las plantas de instalaciones antiguas se migran al catálogo actual.
  *
  * 5. Modelo propio en book-model.js: malla elíptica continua, tapas y hojas.
  *    Three.js dibuja la misma geometría en la balda y durante el giro.
@@ -99,16 +99,12 @@ import { planBookshelf, bookmarkFor, withDefaults } from './bookshelf-layout.js'
 import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from './cover-appearance.js';
 import { bookColorOptions, spineColorStyle, spineFinish, surfaceFinish, METAL_COLORS } from './book-colors.js';
 import { normalizeBookAuthor } from './book-title.js';
-const PLANT_PHOTOS = {
-  leafy: new URL('../assets/library/pothos.webp', import.meta.url).href,
-  succulent: new URL('../assets/library/succulent.webp', import.meta.url).href,
-  upright: new URL('../assets/library/sansevieria.webp', import.meta.url).href
-};
 import { bookView, fitCoverImage, getBookRenderer } from './book-model.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
 import { layoutShelvedObjects, moveShelfObject } from './shelf-placement.js';
 import { createPlantCatalog } from './plant-catalog.js';
 import { getCatalogPlant, getCatalogPot } from './plant-catalog-data.js';
+import { normalizeShelfPlant, resolveCatalogPlant } from './plant-records.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
@@ -120,8 +116,13 @@ const SHELF_PLANTS_STORAGE_KEY = 'inhouse-read-shelf-plants';
 function savedShelfPlants() {
   try {
     const saved = JSON.parse(localStorage.getItem(SHELF_PLANTS_STORAGE_KEY) || 'null');
-    return Array.isArray(saved) ? saved.filter(item => item && typeof item.key === 'string' &&
-      typeof item.variant === 'string' && Number.isFinite(item.width)) : null;
+    if (!Array.isArray(saved)) return null;
+    const plants = saved.map(normalizeShelfPlant).filter(Boolean);
+    if (JSON.stringify(plants) !== JSON.stringify(saved)) {
+      try { localStorage.setItem(SHELF_PLANTS_STORAGE_KEY, JSON.stringify(plants)); }
+      catch { /* The migrated models still work if storage is temporarily unavailable. */ }
+    }
+    return plants;
   } catch { return null; }
 }
 const SHELF_VIEW_MODES = Object.freeze({ SPINE:'spine', ISOMETRIC:'isometric' });
@@ -1170,18 +1171,16 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function buildPlant(item) {
-    const upright = ['sansevieria', 'cactus'].includes(item.variant);
-    const succulent = item.variant === 'suculenta';
-    const catalogId = item.catalogId || ({ sansevieria:'sansevieria', upright:'sansevieria', monstera:'monstera',
-      pothos:'hedera', leafy:'hedera', suculenta:'succulent', succulent:'succulent', cactus:'cactus' })[item.variant];
-    const plant = getCatalogPlant(catalogId);
-    const height = Math.round(item.height || plant?.height || item.width * (upright ? 1.5 : succulent ? 1.057 : 1.094));
+    item = normalizeShelfPlant({ ...item, key:item.key || `plant:${item.seed}` });
+    const plant = resolveCatalogPlant(item);
+    const height = item.height;
     const node = el('button', {
       type:'button',
-      class: `ihr-plant ihr-plant--photo ihr-plant--${item.variant}`,
-      'data-object-id':item.key || `plant:${item.seed}`,
-      'data-catalog-id':plant?.id || '', 'data-pot-id':item.potId || plant?.defaultPotId || 'muskot',
-      'aria-label':`Mover planta ${plant?.name || item.variant}`,
+      class: `ihr-plant ihr-plant--${item.variant}`,
+      'data-object-id':item.key,
+      'data-catalog-id':plant.id, 'data-pot-id':item.potId,
+      'data-plant-seed':item.seed, 'data-plant-variant':item.variant,
+      'aria-label':`Mover planta ${plant.name}`,
       'aria-keyshortcuts':'Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown Delete',
       'aria-description':'Mantén pulsado para mover la planta o llevarla a la papelera. Usa Mayús y las flechas para cambiar su posición o balda, y Suprimir para retirarla.',
       title:'Mantén pulsado para mover la planta',
@@ -1189,7 +1188,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         `--ihr-plant-w:${item.width}px;` +
         `--ihr-plant-h:${height}px;` +
         '--ihr-plant-overhang:0px'
-    }, [el('img', { src:PLANT_PHOTOS[upright ? 'upright' : succulent ? 'succulent' : 'leafy'], alt:'', width:item.width, height, decoding:'async', draggable:'false' })]);
+    });
     node.addEventListener('pointerdown', event => startSpineDrag(event, node));
     node.addEventListener('pointermove', event => moveSpineDrag(event, state.dragSession?.node || node));
     node.addEventListener('pointerup', event => finishSpineDrag(event, state.dragSession?.node || node));
@@ -1251,7 +1250,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       }
     }
     if (!state.plantsInitialized) {
-      state.plants = initialPlants.map(({ key, seed, variant, width, shelf, x }) => ({ key, seed, variant, width, shelf, x }));
+      state.plants = initialPlants.map(({ key, seed, variant, width, shelf, x }) =>
+        normalizeShelfPlant({ key, seed, variant, width, shelf, x }));
       state.plantsInitialized = true;
       savePlants();
     }
@@ -1264,22 +1264,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function buildEmptyState() {
-    const emptyShelves = [
-      ['sansevieria', 'empty-a', 52],
-      ['monstera', 'empty-b', 64],
-      ['suculenta', 'empty-c', 50]
-    ].map(([variant, seed, width]) => {
-      const row = el('div', { class: 'ihr-shelf__row ihr-empty__row' });
-      row.append(buildPlant({ variant, seed, width }));
-      return el('div', { class: 'ihr-shelf ihr-shelf--empty' }, [
-        el('div', { class: 'ihr-shelf__back', 'aria-hidden': 'true' }),
-        row,
-        el('div', { class: 'ihr-shelf__board', 'aria-hidden': 'true' })
-      ]);
-    });
-
     return el('div', { class: 'ihr-empty' }, [
-      el('div', { class: 'ihr-empty__art' }, emptyShelves),
       el('div', { class: 'ihr-empty__copy' }, [
         roofMark('ihr-roof ihr-empty__roof'),
         el('h2', { class: 'ihr-empty__title', text: opts.texts.emptyTitle }),
@@ -1508,7 +1493,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         if (node.classList.contains('ihr-plant')) {
           entries.push({ kind:'plant', key:node.dataset.objectId, node, x, y, width:rect.width, height:rect.height,
             catalogId:node.dataset.catalogId, potId:node.dataset.potId,
-            seed:node.dataset.objectId, variant:[...node.classList].find(name => name.startsWith('ihr-plant--') && name !== 'ihr-plant--photo')?.slice('ihr-plant--'.length) || 'pothos' });
+            seed:node.dataset.plantSeed, variant:node.dataset.plantVariant });
           continue;
         }
         const item = state.itemsById.get(node.dataset.bookId);
