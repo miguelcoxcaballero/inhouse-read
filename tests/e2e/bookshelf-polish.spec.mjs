@@ -59,7 +59,9 @@ for (const variant of [
     requestAnimationFrame(sample)
   })
   await cover.click()
-  await expect(page.locator('.ihr-flyout')).toHaveCount(0)
+  // Bounded animation steps retain the hinge and ribbon on a slow software
+  // GPU; they may outlast the usual selector timeout without skipping poses.
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0,{timeout:20_000})
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   await expect(page.locator('.reader-toolbar')).toBeVisible()
   expect(await page.evaluate(() => window.__readerGaps)).toEqual([])

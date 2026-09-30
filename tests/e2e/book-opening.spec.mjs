@@ -126,6 +126,11 @@ async function observeOpening(page, expected) {
       if (!flyout) { state.done = true; return }
       const canvas = flyout.querySelector('.ihr-flyout__book canvas')
       const opened = Number(canvas?.dataset.coverOpen || 0)
+      if (phase === 'bookmark' && canvas) {
+        const bounds=JSON.parse(canvas.dataset.boardBounds);
+        if (bounds.left < -1 || bounds.top < -1 || bounds.left+bounds.width > innerWidth+1 || bounds.top+bounds.height > innerHeight+1)
+          state.failures.push({type:'open-spread-cropped',bounds});
+      }
       const toolbar = document.querySelector('#reader-toolbar')
       if (toolbar && !toolbar.hidden && getComputedStyle(toolbar).visibility !== 'hidden') {
         state.failures.push({ type:'controls-before-handoff', phase })
@@ -224,6 +229,11 @@ async function observeClosing(page, expected) {
         if (expected.locator && book.dataset.pageLocator !== JSON.stringify(expected.locator))
           state.failures.push({type:'wrong-location',phase,locator:book.dataset.pageLocator});
         if (phase === 'bookmark' && opened < .999) state.failures.push({type:'cover-closed-before-bookmark',opened});
+        if (phase === 'bookmark') {
+          const bounds=JSON.parse(book.dataset.boardBounds);
+          if (bounds.left < -1 || bounds.top < -1 || bounds.left+bounds.width > innerWidth+1 || bounds.top+bounds.height > innerHeight+1)
+            state.failures.push({type:'open-book-cropped',bounds});
+        }
         if ((phase === 'closing' || phase === 'returning') && withdraw > .001)
           state.failures.push({type:'bookmark-not-inserted',phase,withdraw});
         if (phase === 'returning' && opened > .001) state.failures.push({type:'returned-open',opened});

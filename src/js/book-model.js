@@ -580,6 +580,31 @@ export function planBookPageZoom(model, camera, {
     scale:origin.scale * factor, angle:0, pitch:0, roll:0, coverOpen:1, bookmarkWithdraw:1 };
 }
 
+/** Fit the whole open spread, rather than cropping its left board on phones. */
+export function planReadingBookPose({ width, height, thickness = 0,
+  viewportWidth, viewportHeight, centerX, centerY }) {
+  const scale = Math.min(1,viewportWidth*.86/(width*2+thickness*.8),viewportHeight*.66/height);
+  return { x:viewportWidth/2-centerX+width*scale/2, y:viewportHeight*.44-centerY,
+    scale, angle:0, pitch:0, roll:0, coverOpen:1, bookmarkWithdraw:0 };
+}
+
+export function projectBookBoardBounds(model,camera,viewportWidth,viewportHeight) {
+  const points=[];
+  model.updateWorldMatrix(true,true); camera.updateMatrixWorld();
+  for (const name of ['front-cover','back-cover','binding']) {
+    const mesh=model.getObjectByName(name);
+    if (!mesh?.geometry) continue;
+    if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+    const {min,max}=mesh.geometry.boundingBox;
+    for (const x of [min.x,max.x]) for (const y of [min.y,max.y]) for (const z of [min.z,max.z]) {
+      const point=new THREE.Vector3(x,y,z).applyMatrix4(mesh.matrixWorld).project(camera);
+      points.push({x:(point.x+1)*viewportWidth/2,y:(1-point.y)*viewportHeight/2});
+    }
+  }
+  const left=Math.min(...points.map(point=>point.x)),top=Math.min(...points.map(point=>point.y));
+  return {left,top,width:Math.max(...points.map(point=>point.x))-left,height:Math.max(...points.map(point=>point.y))-top};
+}
+
 // One shared GPU context; individual canvases receive snapshots. No per-book
 // contexts, and the flyout uses exactly the same mesh builder as the shelf.
 export function bookView(host, book, style, { width, height, thickness, viewportWidth, viewportHeight, centerX, centerY, coverUrl, shelf = false, shelfView = 'spine', initialPose }) {
@@ -624,6 +649,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     canvas.dataset.angle = String(pose.angle); canvas.dataset.renderer = 'three-mesh';
     canvas.dataset.coverOpen = String(current.coverOpen);
     canvas.dataset.bookmarkWithdraw = String(current.bookmarkWithdraw);
+    canvas.dataset.boardBounds = JSON.stringify(projectBookBoardBounds(model,camera,viewportWidth,viewportHeight));
   }
   model.userData.invalidate = () => current && draw(current);
   draw(initialPose ?? {
@@ -676,33 +702,15 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (current) draw(current);
     return true;
   }
-  function animateCoverOpen({ duration = 520, offsetX = 0 } = {}) {
-    cancel();
-    let raf, resolve;
-    const finished = new Promise(done => { resolve = done; });
-    let lastFrame = performance.now(), elapsed = 0;
-    const origin = current || { x:0, y:0, scale:1, angle:0, pitch:0 };
-    let cancelled = false;
-    cancel = () => { cancelled = true; cancelAnimationFrame(raf); resolve(); };
-    const animation = { finished, cancel, lastFrameTime:lastFrame };
-    const tick = now => {
-      if (cancelled || disposed) return resolve();
-      elapsed += Math.min(48,Math.max(0,now-lastFrame)); lastFrame = now;
-      const raw = duration > 0 ? Math.min(1, elapsed / duration) : 1;
-      const amount = raw * raw * (3 - 2 * raw);
-      draw({ ...origin, x:origin.x + offsetX * amount,
-        coverOpen:(origin.coverOpen || 0) + (1 - (origin.coverOpen || 0)) * amount });
-      animation.lastFrameTime = performance.now();
-      if (raw < 1) raf = requestAnimationFrame(tick);
-      else resolve();
-    };
-    raf = requestAnimationFrame(tick);
-    return animation;
-  }
-  function animateCoverClose({ duration = 580, offsetX = 0 } = {}) {
+  function animateCoverOpen({ duration = 520, offsetX = 0, targetPose } = {}) {
     const origin = { ...current };
-    return animateMotion([{ transform:origin }, { transform:{ ...origin,
-      x:origin.x - offsetX, coverOpen:0, bookmarkWithdraw:0 } }], { duration });
+    return animateMotion([{ transform:origin }, { transform:{ ...origin, ...targetPose,
+      x:targetPose?.x ?? origin.x + offsetX, coverOpen:1 } }], { duration });
+  }
+  function animateCoverClose({ duration = 580, offsetX = 0, targetPose } = {}) {
+    const origin = { ...current };
+    return animateMotion([{ transform:origin }, { transform:{ ...origin, ...targetPose,
+      x:targetPose?.x ?? origin.x - offsetX, coverOpen:0, bookmarkWithdraw:0 } }], { duration });
   }
   function animateBookmark({ withdraw = 1, duration = 360 } = {}) {
     const origin = { ...current };

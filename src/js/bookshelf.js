@@ -99,7 +99,7 @@ import { planBookshelf, bookmarkFor, withDefaults } from './bookshelf-layout.js'
 import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from './cover-appearance.js';
 import { bookColorOptions, spineColorStyle, spineFinish, surfaceFinish, METAL_COLORS } from './book-colors.js';
 import { normalizeBookAuthor } from './book-title.js';
-import { bookView, fitCoverImage, getBookRenderer } from './book-model.js';
+import { bookView, fitCoverImage, getBookRenderer, planReadingBookPose } from './book-model.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
 import { layoutShelvedObjects, moveShelfObject } from './shelf-placement.js';
 import { createPlantCatalog } from './plant-catalog.js';
@@ -2535,12 +2535,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       flyout.classList.add('is-opening-book');
       closeButton.hidden = true;
       fadeMeta();
-      session.openingOffsetX = coverW * .14;
+      session.readingPose = planReadingBookPose({ width:coverW, height:coverH, thickness,
+        viewportWidth:vw, viewportHeight:vh, centerX, centerY });
       session.coverOpeningDuration = prefersReducedMotion() ? 1 : 640;
       // The restored page is uploaded BEFORE its cover moves. Starting the
       // hinge while the renderer loaded exposed a blank, generic page block.
       session.coverOpening = view
-        ? view.animateCoverOpen({ duration:session.coverOpeningDuration, offsetX:session.openingOffsetX })
+        ? view.animateCoverOpen({ duration:session.coverOpeningDuration, targetPose:session.readingPose })
         : animate(bookNode.querySelector('.ihr-flyout__fallback-leaf'), [
             { transform:'rotateY(0deg)' }, { transform:'rotateY(-169deg)' }
           ], { duration:session.coverOpeningDuration, easing:EASE, fill:'both' });
@@ -2698,8 +2699,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const coverW = coverH * ratio;
     const startScale = sourcePose ? sourcePose.scale * sourcePose.height / coverH : rect.height / coverH;
     const thickness = sourcePose ? sourcePose.thickness * coverH / sourcePose.height : Math.max(6, rect.width / startScale);
-    const centerX = vw / 2 + thickness * .19;
+    const centerX = vw * (landscape ? .26 : .5) + thickness * .19;
     const centerY = vh * (landscape ? .5 : .42);
+    const readingPose = planReadingBookPose({ width:coverW, height:coverH, thickness,
+      viewportWidth:vw, viewportHeight:vh, centerX, centerY });
     const dx = (sourcePose?.centerX ?? rect.left + rect.width / 2) - centerX;
     const dy = (sourcePose?.centerY ?? rect.top + rect.height / 2) - centerY;
     const lift = Math.min(40, rect.height * .2);
@@ -2771,14 +2774,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (view) await view.ready;
       if (!active()) return false;
       if (pageSnapshot?.source && view && view.setPageSnapshot(pageSnapshot)) {
-        view.draw({ x:coverW*.14, y:0, scale:1, angle:0, pitch:0, coverOpen:1, bookmarkWithdraw:1 });
+        view.draw({ ...readingPose, bookmarkWithdraw:1 });
         if (!view.alignToPage(pageSnapshot.displayBounds)) throw new Error('No se pudo alinear la página al cerrar el libro.');
         flyout.style.visibility = '';
         onPageReady?.();
         flyout.dataset.returnPhase = 'zooming';
         animate(scrim, [{ opacity:0 }, { opacity:1 }], { duration:prefersReducedMotion() ? 1 : 320, fill:'both' });
-        animation = view.animate([{ transform:view.getPose() }, { transform:{ x:coverW*.14, y:0, scale:1,
-          angle:0, pitch:0, roll:0, coverOpen:1, bookmarkWithdraw:1 } }], { duration:prefersReducedMotion() ? 1 : 620 });
+        animation = view.animate([{ transform:view.getPose() }, { transform:{ ...readingPose, bookmarkWithdraw:1 } }],
+          { duration:prefersReducedMotion() ? 1 : 620 });
         await waitForMotion(animation, prefersReducedMotion() ? 1 : 620);
         if (!active()) return false;
         flyout.dataset.returnPhase = 'bookmark';
@@ -2786,7 +2789,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         await waitForMotion(animation, prefersReducedMotion() ? 1 : 360);
         if (!active()) return false;
         flyout.dataset.returnPhase = 'closing';
-        animation = view.animateCoverClose({ duration:prefersReducedMotion() ? 1 : 580, offsetX:coverW*.14 });
+        animation = view.animateCoverClose({ duration:prefersReducedMotion() ? 1 : 580,
+          targetPose:{ x:0,y:0,scale:1,angle:0,pitch:0,roll:0 } });
         await waitForMotion(animation, prefersReducedMotion() ? 1 : 580);
         if (!active()) return false;
       } else if (pageSnapshot?.source && !view) {

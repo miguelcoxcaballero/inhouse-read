@@ -8,6 +8,7 @@ La biblioteca es una estantería 3D con madera texturizada, libros y plantas con
 
 - Al salir del lector, la página actual se aleja en el modelo 3D, recibe el marcapáginas, se cierra la portada y el libro vuelve a su hueco mediante la escena de la estantería. La página y la portada permanecen visibles durante el cambio entre lector y modelo.
 - La apertura retira primero el marcapáginas de la página guardada y después acerca la página al lector. El cierre conserva la posición actual, incluida la primera página y la primera salida tras importar un libro.
+- Las dos caras del libro abierto se encuadran dentro de la pantalla del móvil antes del zoom, con un desplazamiento y escala continuos durante la bisagra.
 - La secuencia admite PDF, EPUB, movimiento reducido y cancelación al girar el móvil, con una alternativa para dispositivos sin WebGL.
 
 ### Actualización web · 1.6.11

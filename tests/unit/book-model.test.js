@@ -1,6 +1,22 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as THREE from 'three';
-import { bindingGeometry, boardGeometry, bookmarkGeometry, sampleBookMotion, fitCoverImage, createBookModel, projectBookPageBounds, planBookPageZoom } from '../../src/js/book-model.js';
+import { bindingGeometry, boardGeometry, bookmarkGeometry, sampleBookMotion, fitCoverImage, createBookModel, projectBookPageBounds, planBookPageZoom, planReadingBookPose } from '../../src/js/book-model.js';
+
+describe('whole reading spread framing',() => {
+  for (const viewport of [{width:320,height:568},{width:390,height:844},{width:844,height:390},{width:1280,height:800}]) {
+    it(`keeps both boards inside ${viewport.width}×${viewport.height} while matching the same centred spread`,() => {
+      const width=290,height=440,centerX=viewport.width*.26,centerY=viewport.height*.42;
+      const pose=planReadingBookPose({width,height,thickness:48,viewportWidth:viewport.width,
+        viewportHeight:viewport.height,centerX,centerY});
+      const left=centerX+pose.x-width*1.5*pose.scale,right=centerX+pose.x+width*.5*pose.scale;
+      expect(left).toBeGreaterThanOrEqual(0);expect(right).toBeLessThanOrEqual(viewport.width);
+      expect((left+right)/2).toBeCloseTo(viewport.width/2);
+      expect(centerY+pose.y-height*.5*pose.scale).toBeGreaterThanOrEqual(0);
+      expect(centerY+pose.y+height*.5*pose.scale).toBeLessThanOrEqual(viewport.height);
+      expect(pose).toMatchObject({coverOpen:1,bookmarkWithdraw:0,angle:0,pitch:0,roll:0});
+    });
+  }
+});
 
 describe('purpose-built rounded binding mesh', () => {
   it('joins both cover boards and protrudes beyond the left edge head-on', () => {

@@ -161,6 +161,7 @@ test('edita y conserva el color, fuente, tamaño y texto del lomo', async ({ pag
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
 
   const spine = page.locator('.ihr-spine').first()
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:20_000})
   await expect(spine).toBeVisible()
   const original = await spine.evaluate(node => getComputedStyle(node).getPropertyValue('--ihr-spine-base').trim())
   await spine.click()
@@ -411,6 +412,7 @@ test('el libro abierto reaparece en la estantería al volver', async ({ page }) 
 
   await page.getByRole('button', { name: 'Volver a la estantería' }).click()
 
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:20_000})
   await expect(page.locator('#home-screen')).toBeVisible()
   await expect(page.getByRole('button', { name: /Abrir tiny/i })).toBeVisible()
 })
@@ -424,6 +426,7 @@ test('aleja y gira toda la estantería en 3D, permite abrir libros y recuerda la
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
 
   const shelf = page.locator('[data-ihr-bookshelf]')
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:20_000})
   const canvas = page.locator('.ihr-bookshelf-scene')
   const isometric = page.getByRole('button', { name:'Vista isométrica, libros de lado' })
   const frontal = page.getByRole('button', { name:'Vista de canto', exact:true })

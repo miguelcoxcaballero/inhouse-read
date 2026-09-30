@@ -471,6 +471,7 @@ test('un libro retirado sigue en Drive y la sincronización automática no lo vu
     body:await page.locator('.pdf-page-canvas').screenshot(), contentType:'image/png'
   })
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:20_000})
   await expect(page.locator('.ihr-spine')).toHaveCount(3)
   await expect(page.locator(`.ihr-spine[data-book-id="drive:${DRIVE_ID}"]`)).toBeVisible()
   await expect(page.locator('.ihr-plant')).toHaveCount(3)
