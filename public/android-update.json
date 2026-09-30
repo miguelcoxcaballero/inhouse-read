@@ -1,9 +1,9 @@
 {
-  "version": "1.1.0",
-  "versionCode": 13,
+  "version": "1.1.1",
+  "versionCode": 14,
   "required": true,
-  "apkSizeBytes": 3168409,
-  "apkSha256": "24459c2c5ab8a6cb6ce0d464d39c8cbd4fa43575170ff30220fe94fb1615ac66",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.0/inhouse-read-release-v1.1.0.apk",
-  "releaseNotes": "Lectura en voz alta con el motor de Android, temas y tipografía, marcadores, progreso y regreso al punto anterior. Estantería con madera y plantas fotográficas."
+  "apkSizeBytes": 3172541,
+  "apkSha256": "575f8cd826abbc6e3edfae1df2963ee030ca7168c01c57ad484baf8a6aaa96bf",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.1/inhouse-read-release-v1.1.1.apk",
+  "releaseNotes": "Abrir con y compartir libros desde Android: PDF, EPUB, MOBI, AZW, AZW3, KF8, FB2 y CBZ. Importación directa y sincronización con Drive."
 }
