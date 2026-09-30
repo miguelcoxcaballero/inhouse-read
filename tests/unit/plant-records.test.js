@@ -24,6 +24,12 @@ describe('current models for saved plant generations', () => {
     expect(normalizeShelfPlant({ key:'plant:old', catalogId:'succulent', width:0, height:NaN, potId:'removed' }))
       .toMatchObject({ seed:'plant:old', catalogId:'succulent', variant:'succulent', width:66, height:72, potId:'muskotblomma' });
   });
+  it('keeps valid saved finishes and repairs colours from a different material', () => {
+    const record = {key:'plant:colour',catalogId:'monstera',potId:'gradvis',potColorId:'seafoam'};
+    expect(normalizeShelfPlant(record).potColorId).toBe('seafoam');
+    expect(normalizeShelfPlant({...record,potColorId:'copper'}).potColorId).toBe('rose');
+    expect(normalizeShelfPlant({...record,potId:'akerbar',potColorId:'copper'}).potColorId).toBe('copper');
+  });
   it('keeps complete current records identical and is idempotent', () => {
     const current = { key:'plant:kept', seed:'kept', catalogId:'monstera', variant:'monstera',
       potId:'muskot', width:86, height:110, shelf:0, x:.45 };

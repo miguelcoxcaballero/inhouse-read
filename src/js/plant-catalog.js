@@ -1,73 +1,109 @@
-import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot } from './plant-catalog-data.js';
+import { createPlantCatalogPreview } from './plant-catalog-preview.js';
+import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot, getPotColors, getPotColor } from './plant-catalog-data.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 let catalogSequence = 0;
 
-function leaf(x, y, width, height, angle = 0) {
-  return `<path transform="translate(${x} ${y}) rotate(${angle})" d="M0 0C${-width} ${-height * .25} ${-width * .6} ${-height * .8} 0 ${-height}C${width * .6} ${-height * .8} ${width} ${-height * .25} 0 0ZM0 0V${-height * .85}"/>`;
+// Keep closed white silhouettes separate from open detail strokes: filling an
+// open vein or rib makes SVG close it with an unintended diagonal edge.
+const detail = d => `<path fill="none" stroke-width="1" d="${d}"/>`;
+const outline = d => `<path fill="white" d="${d}"/>`;
+
+function leaf(x, y, width, height, angle = 0, veins = true) {
+  return `<g transform="translate(${x} ${y}) rotate(${angle})">${outline(`M0 0C${-width*.85} ${-height*.22} ${-width*.75} ${-height*.73} 0 ${-height}C${width*.66} ${-height*.76} ${width*.8} ${-height*.24} 0 0Z`)}${veins ? detail(`M0 -2Q${width*.06} ${-height*.48} 0 ${-height*.86}`) : ''}</g>`;
 }
 
 function potDrawing(id = 'muskot', { compact = false } = {}) {
-  if (id === 'akerbar') return '<ellipse cx="80" cy="146" rx="25" ry="6"/><ellipse cx="80" cy="145" rx="23" ry="4"/><path d="M55 146L60 180Q80 187 100 180L105 146M60 177Q80 184 100 177M99 146L95 175M80 141V144"/>';
-  if (id === 'muskotblomma') return '<ellipse cx="80" cy="146" rx="26" ry="6"/><path d="M54 145L63 179Q80 185 97 179L106 145M56 151Q80 158 104 151M59 160L64 176M101 160L96 176"/><ellipse cx="80" cy="184" rx="30" ry="5"/><path d="M50 183V187Q80 195 110 187V183"/>';
-  if (id === 'gradvis') return '<ellipse cx="80" cy="146" rx="24" ry="6"/><path d="M56 146Q56 176 65 182Q80 187 95 182Q104 176 104 146M61 151Q61 176 68 181M68 152Q68 177 73 183M76 152V184M84 152V184M92 152Q92 177 87 183M99 151Q99 176 92 181"/>';
-  const ribs = compact ? '<path d="M58 164Q80 173 102 164M59 171Q80 179 101 171"/>' : '<path d="M58 162Q80 171 102 162M59 166Q80 175 101 166M59 170Q80 179 101 170M60 174Q80 182 100 174"/>';
-  return `<ellipse cx="80" cy="146" rx="26" ry="6"/><path d="M54 146L60 177Q80 188 100 177L106 146M60 177Q80 183 100 177"/>${ribs}`;
+  let body, lines;
+  if (id === 'akerbar') {
+    body = 'M55 146L61 177Q80 184 99 177L105 146Z';
+    lines = 'M61 174Q80 181 99 174M99 151L95 173';
+  } else if (id === 'muskotblomma') {
+    body = 'M54 146L63 177Q80 184 97 177L106 146Z';
+    lines = 'M56 152Q80 160 104 152';
+  } else if (id === 'gradvis') {
+    body = 'M56 146C56 160 57 174 64 179Q80 188 96 179C103 174 104 160 104 146Z';
+    lines = 'M61 152Q61 170 67 179M68 154Q68 174 73 182M76 155L77 183M84 155L83 183M92 154Q92 174 87 182M99 152Q99 170 93 179';
+  } else {
+    body = 'M54 146L60 175Q61 181 80 183Q99 181 100 175L106 146Z';
+    lines = compact ? 'M58 163Q80 173 102 163M60 172Q80 182 100 172'
+      : 'M58 161Q80 171 102 161M59 166Q80 176 101 166M60 171Q80 181 100 171M61 176Q80 185 99 176';
+  }
+  const saucer = id === 'muskotblomma' ? `${outline('M50 183Q80 174 110 183L109 187Q80 196 51 187Z')}${detail('M51 183Q80 191 109 183')}` : '';
+  // The front lip uses its own lower arc, never two competing ellipses.
+  return `${saucer}${outline(body)}${detail(lines)}<ellipse fill="white" cx="80" cy="146" rx="${id === 'gradvis' ? 24 : id === 'akerbar' ? 25 : 26}" ry="5"/>${detail('M58 146Q80 152 102 146')}`;
 }
 
-function plantDrawing(id) {
+function plantDrawing(id, { compact = false } = {}) {
   if (id === 'sansevieria') {
-    return Array.from({ length:7 }, (_, index) => {
-      const x = 61 + index * 6, tip = [52,27,43,15,35,49,63][index];
-      const bend = [-13,-8,-5,2,9,12,17][index];
-      return `<path d="M${x - 3} 145Q${x - 9} 98 ${x + bend} ${tip}Q${x + 11} 100 ${x + 4} 145ZM${x} 139Q${x - 1} 87 ${x + bend} ${tip + 12}"/>`;
-    }).join('') + '<path d="M57 90L62 94M65 64L70 68M73 103L77 107M84 67L88 71M94 105L98 109M89 46L93 50"/>';
+    return [[64,66,-18],[93,62,17],[71,37,-10],[87,30,9],[78,18,-2]].map(([x,tip,bend]) => {
+      const contour = `M${x-4} 147C${x-7} 117 ${x+bend-6} ${tip+30} ${x+bend} ${tip}C${x+bend+5} ${tip+26} ${x+5} 116 ${x+4} 147Z`;
+      return `${outline(contour)}${detail(`M${x} 142Q${x+bend-2} 82 ${x+bend} ${tip+13}`)}`;
+    }).join('');
   }
   if (id === 'monstera') {
-    const leaves = [[80,139,33,70,-38],[82,119,32,75,34],[74,105,27,69,-32],[84,91,28,65,39],[80,71,25,62,-7]];
-    return '<path d="M80 147Q80 97 83 51M79 139L50 100M81 119L112 81M77 105L48 64M83 92L118 47"/>' + leaves.map(([x,y,w,h,a]) => `<g transform="translate(${x} ${y}) rotate(${a})"><path d="M0 0C${-w} ${-h * .2} ${-w} ${-h * .6} ${-w * .4} ${-h * .76}L${-w * .16} ${-h * .59}L${-w * .3} ${-h * .87}Q${-w * .14} ${-h} 0 ${-h}Q${w * .15} ${-h} ${w * .33} ${-h * .86}L${w * .15} ${-h * .61}L${w * .47} ${-h * .78}Q${w} ${-h * .57} ${w * .66} ${-h * .31}L${w * .28} ${-h * .35}L${w * .6} ${-h * .18}Q${w * .24} ${-h * .07} 0 0ZM0 0V${-h * .86}"/><ellipse cx="${-w * .16}" cy="${-h * .57}" rx="2.4" ry="5.2"/><ellipse cx="${w * .18}" cy="${-h * .48}" rx="2.4" ry="4.3"/></g>`).join('');
+    const stems = detail('M78 147Q72 123 58 109M80 147Q94 128 106 117M79 146Q74 108 66 78M81 146Q87 107 94 80');
+    const contour = 'M0 0C-9 7-28 0-29-14Q-31-23-26-30C-23-30-15-23-13-27Q-17-33-25-36Q-26-42-21-46C-17-46-12-38-9-40Q-12-49-17-51Q-10-60 0-64Q10-60 17-51Q12-49 9-40C12-38 17-46 21-46Q26-42 25-36Q17-33 13-27C15-23 23-30 26-30Q31-23 29-14C28 0 9 7 0 0Z';
+    return stems + [[58,109,28,58,-33],[106,117,28,62,35],[66,78,24,56,-22],[94,80,27,65,25]].map(([x,y,w,h,a]) =>
+      `<g transform="translate(${x} ${y}) rotate(${a}) scale(${w/30} ${h/64})">${outline(contour)}${detail('M0 0Q-1-29 0-55')}${compact ? '' : '<ellipse fill="none" stroke-width="1" cx="-7" cy="-19" rx="2.5" ry="4.5"/><ellipse fill="none" stroke-width="1" cx="7" cy="-19" rx="2.5" ry="4.5"/>'}</g>`).join('');
   }
   if (id === 'chamaedorea' || id === 'nephrolepis') {
     const fern = id === 'nephrolepis';
-    return Array.from({ length:fern ? 9 : 7 }, (_, index) => {
-      const angle = (index - (fern ? 4 : 3)) * (fern ? 18 : 21), length = fern ? 88 - Math.abs(index - 4) * 5 : 112 - Math.abs(index - 3) * 9;
-      const count = fern ? 13 : 8, end = fern ? 28 : 12;
-      const foliage = Array.from({ length:count }, (_, j) => {
-        const y = -length * (j + .5) / count, size = Math.sin((j + 1) / (count + 1) * Math.PI) * (fern ? 13 : 23);
-        return `<path d="M0 ${y}Q${-size * .6} ${y - 5} ${-size} ${y - end}Q${-size * .2} ${y - 8} 0 ${y}Q${size * .6} ${y - 5} ${size} ${y - end}Q${size * .2} ${y - 8} 0 ${y}"/>`;
+    // Fewer fronds at thumbnail scale, with separated, tapering leaflets.
+    const fronds = fern ? [[-66,77],[-39,95],[-12,107],[17,102],[46,88],[70,71]] : [[-55,86],[-29,111],[0,126],[30,108],[57,83]];
+    return fronds.map(([angle,length]) => {
+      const pairs = fern ? (compact ? 7 : 10) : (compact ? 6 : 8);
+      const foliage = Array.from({length:pairs},(_,j) => {
+        const f = (j+1)/(pairs+1), y = -length*f;
+        const size = Math.sin(f*Math.PI)**.7*(fern ? 15 : 23);
+        return leaf(0,y,size*.23,size, -62,false)+leaf(0,y-2,size*.23,size,62,false);
       }).join('');
-      return `<g transform="translate(80 147) rotate(${angle})"><path d="M0 0Q-2 ${-length * .6} 0 ${-length}"/>${foliage}</g>`;
+      return `<g transform="translate(80 146) rotate(${angle})">${detail(`M0 0Q-3 ${-length*.55} 0 ${-length}`)}${foliage}${leaf(0,-length+10,2.5,13,0,false)}</g>`;
     }).join('');
   }
   if (id === 'hedera') {
-    const vines = [[60,141,-25,-49],[68,141,-17,-86],[80,141,3,-100],[90,141,35,-75],[103,142,27,34],[61,142,-25,33]];
-    return vines.map(([x,y,dx,dy], index) => `<path d="M${x} ${y}Q${x + dx * .7} ${y + dy * .3} ${x + dx} ${y + dy}"/>` + Array.from({ length:4 }, (_, j) => {
-      const f = (j + 1) / 4, lx = x + dx * f, ly = y + dy * f, a = (j % 2 ? 1 : -1) * 35;
-      return `<path transform="translate(${lx} ${ly}) rotate(${a + index * 8})" d="M0 0L-10-3L-7-11L-11-16L-3-15L0-25L4-15L12-17L9-8L12-3ZM0 0V-21M0-11L-7-15M0-10L7-15"/>`;
+    const vines = [[68,142,-28,-56],[78,142,-7,-111],[88,142,36,-69],[99,140,32,22],[60,140,-31,25]];
+    const silhouette = 'M0 0Q-5-3-12-4L-8-12L-13-18L-4-17L0-28L5-17L13-18L9-11L12-4Q5-3 0 0Z';
+    return vines.map(([x,y,dx,dy],index) => detail(`M${x} ${y}Q${x+dx*.55} ${y+dy*.5} ${x+dx} ${y+dy}`) + Array.from({length:compact ? 3 : 4},(_,j) => {
+      const f = (j+1)/(compact ? 3 : 4), lx=x+dx*f, ly=y+dy*f;
+      return `<g transform="translate(${lx} ${ly}) rotate(${(j%2 ? 30 : -28)+index*4})">${outline(silhouette)}${detail(compact ? 'M0-2V-23' : 'M0-2V-23M0-12L-8-17M0-12L8-17')}</g>`;
     }).join('')).join('');
   }
   if (id === 'zamioculcas') {
-    return [[65,141,-30,90],[77,145,-8,117],[87,144,17,109],[99,143,27,77]].map(([x,y,angle,length]) => `<g transform="translate(${x} ${y}) rotate(${angle})"><path d="M0 0Q-3 ${-length * .6} 0 ${-length}"/>${Array.from({ length:5 }, (_, j) => {
-      const yy = -length * (j + 1) / 6;
-      return leaf(0,yy,10,23,-57) + leaf(0,yy - 4,10,23,57);
-    }).join('')}${leaf(0,-length + 10,9,22)}</g>`).join('');
+    return [[64,144,-25,86],[79,145,-7,116],[90,144,17,106],[101,143,32,78]].map(([x,y,angle,length]) => {
+      const pairs = compact ? 4 : 5;
+      return `<g transform="translate(${x} ${y}) rotate(${angle})">${detail(`M0 0Q-2 ${-length*.55} 0 ${-length}`)}${Array.from({length:pairs},(_,j) => {
+        const yy=-length*(j+1)/(pairs+1), size=1-j*.075;
+        return leaf(0,yy,9*size,22*size,-57,!compact)+leaf(0,yy-3,9*size,22*size,57,!compact);
+      }).join('')}${leaf(0,-length+8,6,17,0,!compact)}</g>`;
+    }).join('');
   }
   if (id === 'succulent') {
-    return Array.from({ length:3 }, (_, ring) => Array.from({ length:8 }, (_, index) => {
-      const angle = index * 45 + ring * 22, length = 42 - ring * 11, width = 17 - ring * 3;
-      return `<g transform="translate(80 ${122 - ring * 2}) rotate(${angle})">${leaf(0,0,width,length)}</g>`;
-    }).join('')).join('') + '<path d="M73 139L72 149M88 139L88 149"/>';
+    // A rosette seen from the front: layered fleshy leaves, no wheel of
+    // superimposed radial outlines that turns into a dark knot at icon size.
+    const layers = [[[-48,38,16],[-25,48,16],[0,53,15],[27,48,16],[51,37,16]],
+      [[-65,26,17],[-34,35,17],[0,38,16],[35,34,17],[65,25,17]],
+      [[-52,19,15],[0,24,14],[51,19,15]]];
+    return layers.map((row,tier) => row.map(([a,h,w])=>leaf(80,145-tier*2,w,h,a,!compact)).join('')).join('');
   }
   if (id === 'cactus') {
-    return [[66,147,16,66],[86,147,18,101],[107,148,11,48]].map(([x,y,r,h]) => `<g transform="translate(${x} ${y})"><path d="M${-r} 0V${-h + r}A${r} ${r} 0 0 1 ${r} ${-h + r}V0M${-r * .55} 0Q${-r * .9} ${-h * .5} ${-r * .25} ${-h + 5}M0 0V${-h}M${r * .55} 0Q${r * .9} ${-h * .5} ${r * .25} ${-h + 5}"/>${Array.from({ length:5 }, (_, i) => `<path d="M${-r - 3} ${-12 - i * (h - 16) / 5}l-4-3M${r + 2} ${-16 - i * (h - 16) / 5}l4-3M-2 ${-13 - i * (h - 16) / 5}l4-3"/>`).join('')}</g>`).join('');
+    return [[59,147,11,55],[100,147,11,47],[80,147,14,105]].map(([x,y,r,h]) => {
+      const body = `M${-r} 0V${-h+r}A${r} ${r} 0 0 1 ${r} ${-h+r}V0Z`;
+      const ribs = `M${-r*.45} -3V${-h+r+2}M0 -3V${-h+7}M${r*.45} -3V${-h+r+2}`;
+      const spines = Array.from({length:compact ? 4 : 6},(_,i) => {
+        const yy=-12-i*(h-28)/(compact ? 4 : 6);
+        return detail(`M${-r-1} ${yy}l-3-2M${r+1} ${yy-3}l3-2`);
+      }).join('');
+      return `<g transform="translate(${x} ${y})">${outline(body)}${detail(ribs)}${spines}</g>`;
+    }).join('');
   }
-  return plantDrawing('monstera');
+  return plantDrawing('monstera',{compact});
 }
 
-/** Original black-line botanical diagrams, drawn like an assembly booklet. */
+/** Opaque silhouettes hide rear stems; fine open strokes describe the surface. */
 export function plantCatalogIllustration(catalogId, potId = 'muskot', { potOnly = false, compact = false } = {}) {
   const viewBox = potOnly ? '42 136 76 62' : '0 0 160 200';
-  return `<svg xmlns="${SVG_NS}" viewBox="${viewBox}" aria-hidden="true" focusable="false" fill="white" stroke="currentColor" stroke-width="${compact ? 1.9 : 1.3}" stroke-linecap="round" stroke-linejoin="round">${potOnly ? '' : `<g fill="none">${plantDrawing(catalogId)}</g>`}<g>${potDrawing(potId,{ compact })}</g></svg>`;
+  return `<svg xmlns="${SVG_NS}" viewBox="${viewBox}" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="${compact ? 1.65 : 1.3}" stroke-linecap="round" stroke-linejoin="round">${potOnly ? '' : plantDrawing(catalogId,{compact})}${potDrawing(potId,{compact})}</svg>`;
 }
 
 // Soft hyphens at the compound seams of the longest names: on a narrow phone
@@ -108,7 +144,8 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
   const previewName = element('h3');
   const previewSubtitle = element('p');
   const previewPot = element('span','ihr-plant-catalog__pot-name');
-  previewCaption.append(previewName,previewSubtitle,previewPot);
+  const previewColor = element('span','ihr-plant-catalog__color-caption');
+  previewCaption.append(previewName,previewSubtitle,previewPot,previewColor);
   preview.append(drawing,previewCaption);
   const choices = element('div','ihr-plant-catalog__choices');
   const plants = element('fieldset','ihr-plant-catalog__section');
@@ -119,7 +156,11 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
   const potsLegend = element('legend'); potsLegend.innerHTML = '<span class="ihr-plant-catalog__step">2</span> Elige la maceta';
   const potList = element('div','ihr-plant-catalog__pots');
   pots.append(potsLegend,potList);
-  choices.append(plants,pots);
+  const colors = element('fieldset','ihr-plant-catalog__section ihr-plant-catalog__section--colors');
+  const colorsLegend = element('legend'); colorsLegend.innerHTML = '<span class="ihr-plant-catalog__step">3</span> Elige el color';
+  const colorList = element('div','ihr-plant-catalog__colors');
+  colors.append(colorsLegend,colorList);
+  choices.append(plants,pots,colors);
   body.append(preview,choices);
   const footer = element('footer','ihr-plant-catalog__footer');
   const status = element('p','ihr-plant-catalog__status');
@@ -133,15 +174,22 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
 
   let selectedPlant = PLANT_CATALOG[0]?.id;
   let selectedPot = PLANT_CATALOG[0]?.defaultPotId || POT_CATALOG[0]?.id;
+  let selectedColor = getPotColor(selectedPot).id;
+  const rememberedColors = new Map();
+  let preview3d = null;
   let trigger = null, destroyed = false, busy = false, opening = false;
   const plantButtons = new Map(), potButtons = new Map();
 
   function update() {
     const plant = getCatalogPlant(selectedPlant), pot = getCatalogPot(selectedPot);
-    drawing.innerHTML = plantCatalogIllustration(selectedPlant,selectedPot);
+    preview3d?.update({ catalogId:selectedPlant,potId:selectedPot,potColorId:selectedColor });
+    for (const button of colorList.querySelectorAll('button')) {
+      button.setAttribute('aria-pressed',String(button.dataset.catalogColor === selectedColor)); button.disabled = busy;
+    }
     previewName.textContent = plant?.name || '';
     previewSubtitle.textContent = plant?.subtitle || '';
     previewPot.textContent = pot?.name || '';
+    previewColor.textContent = getPotColor(selectedPot,selectedColor).name;
     for (const [key, button] of plantButtons) {
       button.setAttribute('aria-pressed',String(key === selectedPlant)); button.disabled = busy;
     }
@@ -176,15 +224,37 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
     button.append(thumbnail,element('span','ihr-plant-catalog__option-name',optionName(pot.name)));
     button.addEventListener('click',() => {
       if (busy) return;
+      rememberedColors.set(selectedPot,selectedColor);
       selectedPot = pot.id;
+      selectedColor = getPotColor(selectedPot,rememberedColors.get(selectedPot)).id;
+      buildColors();
       status.textContent = ''; status.removeAttribute('data-error'); update();
     });
     potList.append(button); potButtons.set(pot.id,button);
   }
 
+  function buildColors() {
+    colorList.replaceChildren();
+    for (const color of getPotColors(selectedPot)) {
+      const button = element('button','ihr-plant-catalog__color');
+      button.type = 'button'; button.dataset.catalogColor = color.id;
+      button.setAttribute('aria-label',`Color ${color.name}`);
+      const swatch = element('span','ihr-plant-catalog__swatch');
+      swatch.style.backgroundColor = color.hex; swatch.setAttribute('aria-hidden','true');
+      button.append(swatch,element('span','ihr-plant-catalog__color-name',color.name));
+      button.addEventListener('click',() => {
+        if (busy) return;
+        selectedColor = color.id; rememberedColors.set(selectedPot,color.id);
+        status.textContent = ''; status.removeAttribute('data-error'); update();
+      });
+      colorList.append(button);
+    }
+  }
+
   function finishClose() {
     if (!opening) return;
     opening = false;
+    preview3d?.dispose(); preview3d = null;
     onClose?.();
     if (trigger?.isConnected) trigger.focus({ preventScroll:true });
     trigger = null;
@@ -216,7 +286,7 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
     if (busy || typeof onAdd !== 'function') return;
     busy = true; status.textContent = ''; status.removeAttribute('data-error'); update();
     try {
-      await onAdd({ catalogId:selectedPlant, potId:selectedPot });
+      await onAdd({ catalogId:selectedPlant, potId:selectedPot,potColorId:selectedColor });
       if (!destroyed) close();
     } catch {
       if (!destroyed) {
@@ -228,7 +298,7 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
       if (!destroyed) update();
     }
   });
-  update();
+  buildColors(); update();
   return {
     open(from = document.activeElement) {
       if (destroyed || opening) return;
@@ -236,6 +306,7 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
       opening = true; status.textContent = ''; status.removeAttribute('data-error');
       if (typeof dialog.showModal === 'function') dialog.showModal();
       else { dialog.setAttribute('open',''); dialog.setAttribute('aria-modal','true'); }
+      preview3d = createPlantCatalogPreview(drawing); update();
       body.scrollTop = 0; closeButton.focus({ preventScroll:true });
     },
     close,

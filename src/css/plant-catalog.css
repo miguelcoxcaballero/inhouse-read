@@ -46,7 +46,7 @@
 .ihr-plant-catalog__preview { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 18px 24px 32px; position: relative; background: linear-gradient(90deg, #fff 96%, #f1f1ef 100%); }
 .ihr-plant-catalog__preview::after { content: ''; position: absolute; right: 0; top: 0; bottom: 0; width: 1px; background: #0001; }
 .ihr-plant-catalog__drawing { width: min(100%, 220px); aspect-ratio: 4 / 5; }
-.ihr-plant-catalog__drawing svg { display: block; width: 100%; height: 100%; }
+.ihr-plant-catalog__drawing canvas { display: block; width: 100%; height: 100%; }
 .ihr-plant-catalog__caption { margin-top: 20px; width: 100%; text-align: center; }
 .ihr-plant-catalog__caption h3 { margin: 0 0 6px; font-size: 18px; line-height: 1.15; overflow-wrap: anywhere; }
 .ihr-plant-catalog__caption p { margin: 0; color: #515151; font-size: 13px; line-height: 1.45; }
@@ -115,3 +115,13 @@
   .ihr-plant-catalog[open] { animation: ihr-plant-catalog-open 240ms cubic-bezier(.4,0,.2,1) both; }
   @keyframes ihr-plant-catalog-open { from { opacity: 0; transform: scale(.975) translateY(6px); } to { opacity: 1; transform: scale(1) translateY(0); } }
 }
+
+.ihr-plant-catalog__drawing { display: grid; place-items: center; color: #666; font-size: 12px; }
+.ihr-plant-catalog__section--colors { margin-top: 20px; padding-top: 18px; border-top: 1px solid #ddd; }
+.ihr-plant-catalog__colors { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 6px; clear: both; }
+.ihr-plant-catalog__color { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; min-height: 64px; min-width: 0; padding: 7px 3px; border: 1px solid transparent; background: none; }
+.ihr-plant-catalog__color[aria-pressed='true'] { border-color: #111; background: #fafafa; }
+.ihr-plant-catalog__swatch { display: block; width: 28px; height: 28px; border-radius: 50%; border: 1px solid #0003; }
+.ihr-plant-catalog__color-name { font-size: 11px; line-height: 1.25; text-align: center; overflow-wrap: anywhere; }
+
+.ihr-plant-catalog__color-caption { display: block; margin-top: 4px; color: #515151; font-size: 12px; }

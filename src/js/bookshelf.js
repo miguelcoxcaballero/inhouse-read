@@ -103,7 +103,7 @@ import { bookView, fitCoverImage, getBookRenderer, planReadingBookPose } from '.
 import { createBookshelfScene } from './bookshelf-scene.js';
 import { layoutShelvedObjects, moveShelfObject } from './shelf-placement.js';
 import { createPlantCatalog } from './plant-catalog.js';
-import { getCatalogPlant, getCatalogPot } from './plant-catalog-data.js';
+import { getCatalogPlant, getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { normalizeShelfPlant, resolveCatalogPlant } from './plant-records.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
@@ -671,7 +671,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     catch (error) { if (strict) throw error; }
   }
 
-  async function addCatalogPlant({ catalogId, potId }) {
+  async function addCatalogPlant({ catalogId, potId, potColorId }) {
     if (state.destroyed || state.busy || state.session || state.dragSession || state.returnMotion)
       throw new Error('Espera a que termine la animación y vuelve a intentarlo.');
     const plant = getCatalogPlant(catalogId), pot = getCatalogPot(potId);
@@ -680,7 +680,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const viewport = scroller.getBoundingClientRect();
     const destination = dropPositionAt(viewport.left + viewport.width * .4,
       viewport.top + Math.min(viewport.height * .4, 260));
-    const record = { key, seed:key, catalogId:plant.id, variant:plant.variant, potId:pot.id,
+    const record = { key, seed:key, catalogId:plant.id, variant:plant.variant, potId:pot.id, potColorId:getPotColor(pot.id,potColorId).id,
       width:plant.width, height:plant.height, shelf:destination?.shelf ?? 0 };
     const oldRects = objectRects(), previous = state.plants;
     const objects = [...state.placementObjects, { ...record, kind:'plant' }];
@@ -1195,7 +1195,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       type:'button',
       class: `ihr-plant ihr-plant--${item.variant}`,
       'data-object-id':item.key,
-      'data-catalog-id':plant.id, 'data-pot-id':item.potId,
+      'data-catalog-id':plant.id, 'data-pot-id':item.potId, 'data-pot-color-id':getPotColor(item.potId,item.potColorId).id,
       'data-plant-seed':item.seed, 'data-plant-variant':item.variant,
       'aria-label':`Mover planta ${plant.name}`,
       'aria-keyshortcuts':'Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown Delete',
@@ -1520,7 +1520,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         const y = rect.top + rect.height / 2 - origin.top;
         if (node.classList.contains('ihr-plant')) {
           entries.push({ kind:'plant', key:node.dataset.objectId, node, x, y, width:rect.width, height:rect.height,
-            catalogId:node.dataset.catalogId, potId:node.dataset.potId,
+            catalogId:node.dataset.catalogId, potId:node.dataset.potId, potColorId:node.dataset.potColorId,
             seed:node.dataset.plantSeed, variant:node.dataset.plantVariant });
           continue;
         }

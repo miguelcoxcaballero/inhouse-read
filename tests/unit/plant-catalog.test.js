@@ -43,11 +43,12 @@ describe('IKEA plant instruction booklet',() => {
   });
   it('updates the preview and selected controls when changing plant and pot',() => {
     create({ onAdd:vi.fn() }).open();
-    const first = dialog().querySelector('.ihr-plant-catalog__drawing').innerHTML;
+    const first = dialog().querySelector('.ihr-plant-catalog__drawing').dataset.catalogId;
     pickPlant('nephrolepis'); pickPot('akerbar');
     expect(dialog().querySelector('.ihr-plant-catalog__caption h3').textContent).toBe('NEPHROLEPIS');
     expect(dialog().querySelector('.ihr-plant-catalog__pot-name').textContent).toBe('ÅKERBÄR');
-    expect(dialog().querySelector('.ihr-plant-catalog__drawing').innerHTML).not.toBe(first);
+    expect(dialog().querySelector('.ihr-plant-catalog__drawing').dataset.catalogId).not.toBe(first);
+    expect(dialog().querySelector('.ihr-plant-catalog__drawing svg')).toBeNull();
     expect(dialog().querySelectorAll('[data-catalog-plant][aria-pressed="true"]')).toHaveLength(1);
     expect(dialog().querySelectorAll('[data-catalog-pot][aria-pressed="true"]')).toHaveLength(1);
   });
@@ -57,7 +58,7 @@ describe('IKEA plant instruction booklet',() => {
     const trigger = document.createElement('button'); document.body.append(trigger); trigger.focus();
     const catalog = create({ onAdd,onClose }); catalog.open(trigger);
     pickPlant('monstera'); pickPot('gradvis'); add().click(); add().click();
-    expect(onAdd).toHaveBeenCalledExactlyOnceWith({ catalogId:'monstera',potId:'gradvis' });
+    expect(onAdd).toHaveBeenCalledExactlyOnceWith({ catalogId:'monstera',potId:'gradvis',potColorId:'rose' });
     expect(dialog().getAttribute('aria-busy')).toBe('true');
     expect(add().disabled).toBe(true);
     expect(dialog().hasAttribute('open')).toBe(true);
@@ -65,6 +66,20 @@ describe('IKEA plant instruction booklet',() => {
     expect(dialog().hasAttribute('open')).toBe(false);
     expect(document.activeElement).toBe(trigger);
     expect(onClose).toHaveBeenCalledOnce();
+  });
+  it('offers material palettes, remembers colours per pot and passes the selected finish',async () => {
+    const onAdd = vi.fn().mockResolvedValue();
+    create({ onAdd }).open();
+    pickPot('muskot'); dialog().querySelector('[data-catalog-color="sage"]').click();
+    expect(dialog().querySelector('.ihr-plant-catalog__drawing').dataset.potColorId).toBe('sage');
+    pickPot('akerbar');
+    expect(dialog().querySelector('[data-catalog-color="sage"]')).toBeNull();
+    expect(dialog().querySelector('[data-catalog-color="zinc"]').getAttribute('aria-pressed')).toBe('true');
+    dialog().querySelector('[data-catalog-color="copper"]').click();
+    pickPot('muskot');
+    expect(dialog().querySelector('[data-catalog-color="sage"]').getAttribute('aria-pressed')).toBe('true');
+    add().click(); await settle();
+    expect(onAdd).toHaveBeenCalledExactlyOnceWith({catalogId:'sansevieria',potId:'muskot',potColorId:'sage'});
   });
   it('keeps a failed addition open with a retry and does not show implementation details',async () => {
     const onAdd = vi.fn().mockRejectedValueOnce(new Error('IndexedDB private stack')).mockResolvedValueOnce();
