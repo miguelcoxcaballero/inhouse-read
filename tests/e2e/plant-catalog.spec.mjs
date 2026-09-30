@@ -506,3 +506,32 @@ test('las plantas de una instalación antigua migran a los modelos actuales sin 
   expect(errors).toEqual([]);
   expect(brokenAssets).toEqual([]);
 });
+
+test('la preview frontal usa el modelo 3D y el acabado elegido se conserva al añadir y recargar',async ({ page },testInfo) => {
+  const errors = []; page.on('pageerror',error => errors.push(error.message));
+  const dialog = await openCatalog(page);
+  const preview = dialog.locator('.ihr-plant-catalog__drawing');
+  await expect(preview).toHaveAttribute('data-renderer','three-mesh');
+  await expect(preview.locator('canvas')).toBeVisible();
+  await expect(preview.locator('svg')).toHaveCount(0);
+  await dialog.locator('[data-catalog-plant="monstera"]').click();
+  await dialog.locator('[data-catalog-pot="gradvis"]').click();
+  await dialog.locator('[data-catalog-color="seafoam"]').click();
+  await expect(preview).toHaveAttribute('data-pot-color-id','seafoam');
+  await expect(dialog.locator('[data-catalog-color="seafoam"]')).toHaveAttribute('aria-pressed','true');
+  await testInfo.attach('preview-3d-gres-verde-agua',{body:await dialog.screenshot(),contentType:'image/png'});
+  await dialog.getByRole('button',{name:'Añadir a la estantería'}).click();
+  await expect(dialog).toBeHidden();
+  expect((await savedPlants(page))[0]).toMatchObject({catalogId:'monstera',potId:'gradvis',potColorId:'seafoam'});
+  await expect(page.locator('.ihr-plant')).toHaveAttribute('data-pot-color-id','seafoam');
+  await page.reload();
+  await expect(page.locator('.ihr-plant')).toHaveAttribute('data-pot-color-id','seafoam');
+  expect((await savedPlants(page))[0].potColorId).toBe('seafoam');
+  const reopened = await openCatalog(page);
+  await expect(reopened.locator('.ihr-plant-catalog__drawing')).toHaveAttribute('data-renderer','three-mesh');
+  await reopened.locator('[data-catalog-pot="akerbar"]').click();
+  await expect(reopened.locator('[data-catalog-color="seafoam"]')).toHaveCount(0);
+  await reopened.locator('[data-catalog-color="copper"]').click();
+  await expect(reopened.locator('.ihr-plant-catalog__drawing')).toHaveAttribute('data-pot-color-id','copper');
+  expect(errors).toEqual([]);
+});

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot } from '../../src/js/plant-catalog-data.js';
+import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot, getPotColors } from '../../src/js/plant-catalog-data.js';
 import { createShelfPlant } from '../../src/js/shelf-plants.js';
 
 // Each case builds whole detailed plants; a loaded CI machine needs more than 5 s.
@@ -110,6 +110,21 @@ describe('IKEA referenced plant catalog', () => {
     for (const model of models) model.userData.dispose();
   });
 
+  it('changes pigment per material palette while preserving geometry and finish properties', () => {
+    for (const pot of POT_CATALOG) {
+      const [first,second] = getPotColors(pot.id);
+      const a = createShelfPlant({catalogId:'monstera',potId:pot.id,potColorId:first.id,seed:'colour-fixture'});
+      const b = createShelfPlant({catalogId:'monstera',potId:pot.id,potColorId:second.id,seed:'colour-fixture'});
+      const ceramicA = a.getObjectByName('ceramic-pot'), ceramicB = b.getObjectByName('ceramic-pot');
+      expect([...ceramicA.material.map.image.data]).not.toEqual([...ceramicB.material.map.image.data]);
+      expect(ceramicA.material.metalness).toBe(ceramicB.material.metalness);
+      expect(ceramicA.material.clearcoat).toBe(ceramicB.material.clearcoat);
+      expect([...ceramicA.geometry.attributes.position.array]).toEqual([...ceramicB.geometry.attributes.position.array]);
+      expect(b.userData.potColorId).toBe(second.id);
+      if (pot.id === 'muskotblomma') expect(b.getObjectByName('terracotta-saucer')?.material || b.getObjectByName('terracotta-batch')?.material).toBe(ceramicB.material);
+      a.userData.dispose(); b.userData.dispose();
+    }
+  });
   it('disposes every merged resource exactly once and never disposes the shared atlas', () => {
     const atlas = new THREE.Texture(), sharedDispose = vi.spyOn(atlas,'dispose');
     for (const item of PLANT_CATALOG) {

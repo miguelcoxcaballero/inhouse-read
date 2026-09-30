@@ -342,7 +342,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     };
   }
 
-  const plantKeys = entry => JSON.stringify([entry.width, entry.height, entry.variant, entry.catalogId, entry.potId, entry.seed]);
+  const plantKeys = entry => JSON.stringify([entry.width, entry.height, entry.variant, entry.catalogId, entry.potId, entry.potColorId, entry.seed]);
 
   function makeModel(entry) {
     const model = entry.kind === 'plant' ? createShelfPlant(entry)

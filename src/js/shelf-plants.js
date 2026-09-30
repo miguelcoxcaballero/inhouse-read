@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { getCatalogPot } from './plant-catalog-data.js';
+import { getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { resolveCatalogPlant } from './plant-records.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -282,8 +282,8 @@ function terracottaPainter(hex, seed) {
   };
 }
 
-function galvanizedPainter(seed) {
-  const zinc = srgb('#cfd3d5');
+function galvanizedPainter(seed, hex = '#cfd3d5') {
+  const zinc = srgb(hex);
   return (u, v, x, y, texel) => {
     if (hidden(v, texel)) return;
     // Hot-dip spangle: flakes about a centimetre across, each tilted its own
@@ -302,12 +302,12 @@ function galvanizedPainter(seed) {
 
 const POT_FINISHES = {
   // Glossy white earthenware with faint crazing and iron specks.
-  muskot:{ painter:() => glazedPainter({ glaze:'#efece4', body:'#cfbea3', gloss:.24, speckle:.0022, crackle:.55, seed:17 }),
+  muskot:{ painter:color => glazedPainter({ glaze:color, body:'#cfbea3', gloss:.24, speckle:.0022, crackle:.55, seed:17 }),
     material:{ clearcoat:.42, clearcoatRoughness:.16, bumpScale:.55 } },
   // Satin pink stoneware, freckled by the clay body.
-  gradvis:{ painter:() => glazedPainter({ glaze:'#dcb7b3', body:'#c7a291', gloss:.42, speckle:.004, crackle:0, seed:29 }),
+  gradvis:{ painter:color => glazedPainter({ glaze:color, body:'#c7a291', gloss:.42, speckle:.004, crackle:0, seed:29 }),
     material:{ clearcoat:.2, clearcoatRoughness:.42, bumpScale:.45 } },
-  akerbar:{ painter:() => galvanizedPainter(41), material:{ metalness:.85, bumpScale:.3 } },
+  akerbar:{ painter:color => galvanizedPainter(41,color), material:{ metalness:.85, bumpScale:.3 } },
 };
 
 function potProfile(potId) {
@@ -722,9 +722,10 @@ export function createShelfPlant(entry) {
   const potHeight = Math.min(height * (variant === 'succulent' ? .58 : variant === 'ivy' || variant === 'fern' ? .34 : .29), radius * (potId === 'gradvis' ? 2.1 : variant === 'succulent' ? 2.5 : 2.3));
   const soilFraction = .9, soilY = potHeight * soilFraction, sink = width * .012, above = height - soilY;
   const clays = ['#a97958', '#b18b6c', '#bcad94', '#826d60'];
-  const clayColor = potId ? '#b36a48' : clays[Math.floor(random() * clays.length)];
+  const potColor = getPotColor(potId,entry.potColorId);
+  const clayColor = potId ? potColor.hex : clays[Math.floor(random() * clays.length)];
   const finish = POT_FINISHES[potId] ?? { painter:() => terracottaPainter(clayColor, 53), material:{ bumpScale:.4 } };
-  const potMaps = own(surface(`pot:${POT_FINISHES[potId] ? potId : clayColor}`, [128, 256], true, finish.painter(), refresh));
+  const potMaps = own(surface(`pot:${potId}:${clayColor}`, [128, 256], true, finish.painter(potColor.hex), refresh));
   // Texels stay roughly square on the outer wall, whatever the pot proportions.
   potMaps.map.repeat.x = potMaps.data.repeat.x = Math.max(1, Math.round(Math.PI * 4 * radius * (RIM - FOOT) / potHeight));
   potMaps.map.offset.x = potMaps.data.offset.x = random();
@@ -1049,7 +1050,7 @@ export function createShelfPlant(entry) {
   const bounds = new THREE.Box3().setFromObject(content);
   content.scale.set(1, height / (bounds.max.y + height / 2), 1);
   group.userData.variant = variant; group.userData.seed = String(seed);
-  group.userData.catalogId = catalogPlant?.id ?? null; group.userData.potId = potId;
+  group.userData.catalogId = catalogPlant?.id ?? null; group.userData.potId = potId; group.userData.potColorId = potColor.id;
   group.userData.parts = parts;
   group.userData.dispose = () => {
     if (disposed) return; disposed = true;

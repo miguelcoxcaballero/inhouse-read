@@ -1,4 +1,5 @@
-import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot } from './plant-catalog-data.js';
+import { createPlantCatalogPreview } from './plant-catalog-preview.js';
+import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot, getPotColors, getPotColor } from './plant-catalog-data.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 let catalogSequence = 0;
@@ -108,7 +109,8 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
   const previewName = element('h3');
   const previewSubtitle = element('p');
   const previewPot = element('span','ihr-plant-catalog__pot-name');
-  previewCaption.append(previewName,previewSubtitle,previewPot);
+  const previewColor = element('span','ihr-plant-catalog__color-caption');
+  previewCaption.append(previewName,previewSubtitle,previewPot,previewColor);
   preview.append(drawing,previewCaption);
   const choices = element('div','ihr-plant-catalog__choices');
   const plants = element('fieldset','ihr-plant-catalog__section');
@@ -119,7 +121,11 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
   const potsLegend = element('legend'); potsLegend.innerHTML = '<span class="ihr-plant-catalog__step">2</span> Elige la maceta';
   const potList = element('div','ihr-plant-catalog__pots');
   pots.append(potsLegend,potList);
-  choices.append(plants,pots);
+  const colors = element('fieldset','ihr-plant-catalog__section ihr-plant-catalog__section--colors');
+  const colorsLegend = element('legend'); colorsLegend.innerHTML = '<span class="ihr-plant-catalog__step">3</span> Elige el color';
+  const colorList = element('div','ihr-plant-catalog__colors');
+  colors.append(colorsLegend,colorList);
+  choices.append(plants,pots,colors);
   body.append(preview,choices);
   const footer = element('footer','ihr-plant-catalog__footer');
   const status = element('p','ihr-plant-catalog__status');
@@ -133,15 +139,22 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
 
   let selectedPlant = PLANT_CATALOG[0]?.id;
   let selectedPot = PLANT_CATALOG[0]?.defaultPotId || POT_CATALOG[0]?.id;
+  let selectedColor = getPotColor(selectedPot).id;
+  const rememberedColors = new Map();
+  let preview3d = null;
   let trigger = null, destroyed = false, busy = false, opening = false;
   const plantButtons = new Map(), potButtons = new Map();
 
   function update() {
     const plant = getCatalogPlant(selectedPlant), pot = getCatalogPot(selectedPot);
-    drawing.innerHTML = plantCatalogIllustration(selectedPlant,selectedPot);
+    preview3d?.update({ catalogId:selectedPlant,potId:selectedPot,potColorId:selectedColor });
+    for (const button of colorList.querySelectorAll('button')) {
+      button.setAttribute('aria-pressed',String(button.dataset.catalogColor === selectedColor)); button.disabled = busy;
+    }
     previewName.textContent = plant?.name || '';
     previewSubtitle.textContent = plant?.subtitle || '';
     previewPot.textContent = pot?.name || '';
+    previewColor.textContent = getPotColor(selectedPot,selectedColor).name;
     for (const [key, button] of plantButtons) {
       button.setAttribute('aria-pressed',String(key === selectedPlant)); button.disabled = busy;
     }
@@ -176,15 +189,37 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
     button.append(thumbnail,element('span','ihr-plant-catalog__option-name',optionName(pot.name)));
     button.addEventListener('click',() => {
       if (busy) return;
+      rememberedColors.set(selectedPot,selectedColor);
       selectedPot = pot.id;
+      selectedColor = getPotColor(selectedPot,rememberedColors.get(selectedPot)).id;
+      buildColors();
       status.textContent = ''; status.removeAttribute('data-error'); update();
     });
     potList.append(button); potButtons.set(pot.id,button);
   }
 
+  function buildColors() {
+    colorList.replaceChildren();
+    for (const color of getPotColors(selectedPot)) {
+      const button = element('button','ihr-plant-catalog__color');
+      button.type = 'button'; button.dataset.catalogColor = color.id;
+      button.setAttribute('aria-label',`Color ${color.name}`);
+      const swatch = element('span','ihr-plant-catalog__swatch');
+      swatch.style.backgroundColor = color.hex; swatch.setAttribute('aria-hidden','true');
+      button.append(swatch,element('span','ihr-plant-catalog__color-name',color.name));
+      button.addEventListener('click',() => {
+        if (busy) return;
+        selectedColor = color.id; rememberedColors.set(selectedPot,color.id);
+        status.textContent = ''; status.removeAttribute('data-error'); update();
+      });
+      colorList.append(button);
+    }
+  }
+
   function finishClose() {
     if (!opening) return;
     opening = false;
+    preview3d?.dispose(); preview3d = null;
     onClose?.();
     if (trigger?.isConnected) trigger.focus({ preventScroll:true });
     trigger = null;
@@ -216,7 +251,7 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
     if (busy || typeof onAdd !== 'function') return;
     busy = true; status.textContent = ''; status.removeAttribute('data-error'); update();
     try {
-      await onAdd({ catalogId:selectedPlant, potId:selectedPot });
+      await onAdd({ catalogId:selectedPlant, potId:selectedPot,potColorId:selectedColor });
       if (!destroyed) close();
     } catch {
       if (!destroyed) {
@@ -228,7 +263,7 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
       if (!destroyed) update();
     }
   });
-  update();
+  buildColors(); update();
   return {
     open(from = document.activeElement) {
       if (destroyed || opening) return;
@@ -236,6 +271,7 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
       opening = true; status.textContent = ''; status.removeAttribute('data-error');
       if (typeof dialog.showModal === 'function') dialog.showModal();
       else { dialog.setAttribute('open',''); dialog.setAttribute('aria-modal','true'); }
+      preview3d = createPlantCatalogPreview(drawing); update();
       body.scrollTop = 0; closeButton.focus({ preventScroll:true });
     },
     close,
