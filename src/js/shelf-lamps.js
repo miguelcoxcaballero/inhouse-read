@@ -99,11 +99,14 @@ function puck(group,quality,segments) {
     [28.4,-11],[27.5,-10.1],[27.5,-8.8],[29.2,-8.8],[30,-1.8],[0,-1.8]
   ],segments)}]);
   const opal = new THREE.MeshPhysicalMaterial({color:0xffe7ca,roughness:.72,metalness:0,
-    emissive:0xffd3a0,emissiveIntensity:1.9,clearcoat:.12,side:THREE.DoubleSide});
+    emissive:0xffd3a0,emissiveIntensity:2.3,clearcoat:.12,side:THREE.DoubleSide});
   addBatch(group,'warm-opal-diffuser',opal,[{geometry:lathe([[0,-10.5],[25.8,-10.5],[27.5,-10.1],[27.5,-9.2],[0,-9.2]],segments)}],{castShadow:false});
   const cable = new THREE.MeshStandardMaterial({color:0xd4d0c7,roughness:.85});
   addBatch(group,'puck-power-lead',cable,[{geometry:tube([[0,-2,-30],[0,-2,-33],[0,-1.5,-33.2]],.6,8)}]);
-  return {position:[0,-12,0],colour:0xffd3a0,range:440,
+  // The cut-off must extend beyond the adjacent board: Three's smooth
+  // distance window otherwise nearly extinguishes a 440 mm cone before it
+  // reaches a BAGGEBO shelf, even though the diffuser itself looks bright.
+  return {position:[0,-12,0],colour:0xffd3a0,range:700,intensity:392000,
     direction:[0,-1,0],angle:Math.PI * .38,penumbra:.65};
 }
 
@@ -173,7 +176,7 @@ function lantern(group,quality,segments) {
   }
   addBatch(group,'led-filament-support',support,supportParts,{castShadow:false});
   const filament = new THREE.MeshStandardMaterial({color:0x0c0701,roughness:.9,
-    emissive:0xffb83d,emissiveIntensity:1.7,toneMapped:true});
+    emissive:0xffb83d,emissiveIntensity:2.1,toneMapped:true});
   // The scene's point source approximates the LED as a whole. It must not
   // illuminate its own microscopic emitters a second time at zero distance.
   filament.onBeforeCompile = shader => {
@@ -193,7 +196,10 @@ function lantern(group,quality,segments) {
   const cord = new THREE.MeshStandardMaterial({color:0x242626,roughness:.97});
   addBatch(group,'black-braided-power-cord',cord,[{geometry:tube([[0,10,-68],[0,7,-71],
     [5,3,-73],[12,1.8,-73.1],[20,1.8,-71]],1.4,24)}]);
-  return {position:[0,143,0],colour:0xffc889,range:575,strength:.08};
+  // Real illumination is independent of filament radiance. Keeping this
+  // point source dim to preserve the bulb made nearby books almost unlit;
+  // its microscopic emitters already exclude direct self-illumination above.
+  return {position:[0,143,0],colour:0xffc889,range:700,intensity:196000};
 }
 
 function tripod(group,quality,segments) {
@@ -235,7 +241,7 @@ function tripod(group,quality,segments) {
   }
   addBatch(group,'shade-support-and-rims',fitting,fittingParts);
   const linen = materialWithSurface('linen',quality,{color:0xffffff,roughness:1,metalness:0,
-    side:THREE.DoubleSide,emissive:0xffc982,emissiveIntensity:.72});
+    side:THREE.DoubleSide,emissive:0xffc982,emissiveIntensity:1});
   linen.emissiveMap = linen.map;
   linen.onBeforeCompile = shader => {
     shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>',`
@@ -263,7 +269,11 @@ function tripod(group,quality,segments) {
     [8,91,-27],[13,56,-37],[15,34,-48],[21,13,-55],[32,1.4,-53],[44,1.4,-45]],1.1,48)}]);
   cord.geometry.computeBoundingBox();
   if (cord.geometry.boundingBox.min.y < 0) cord.geometry.translate(0,.2 - cord.geometry.boundingBox.min.y,0);
-  return {position:[0,225,0],colour:0xffd4a5,range:640,
+  // Approximate the shade's lower aperture with a virtual downward emitter
+  // below the opaque central support. Putting it at the physical bulb made
+  // the support shadow extinguish the centre of the entire light pool.
+  // The three legs still cast their proper shadows around the warm pool.
+  return {position:[0,158,0],colour:0xffd4a5,range:750,intensity:281250,
     direction:[0,-1,0],angle:Math.PI * .43,penumbra:.75};
 }
 
@@ -299,7 +309,10 @@ export function createShelfLamp({lampId='tarnaby',width=null,height=null,quality
     lampId:lamp.id,mount:lamp.mount,width:native.width * scale,
     height:native.height * scale,depth:native.depth * scale,warmKelvin:lamp.warmKelvin,
     lightEmitter:{ position:emitter.position.map(value => value * scale),color:emitter.colour,
-      intensity:range * range * (emitter.strength ?? .7),distance:range,decay:2,
+      // World units are millimetres before fitting. Inverse-square lights
+      // need intensity to follow the same squared fit, preserving their
+      // irradiance on books and boards when the screen or zoom changes.
+      intensity:emitter.intensity * scale * scale,distance:range,decay:2,
       ...(emitter.direction ? {direction:emitter.direction,angle:emitter.angle,penumbra:emitter.penumbra} : {}) }
   };
   let disposed = false;

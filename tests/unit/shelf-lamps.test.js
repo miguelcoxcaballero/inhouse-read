@@ -135,4 +135,33 @@ describe('physical shelf lamp models', () => {
     expect(bounds.max.y).toBe(210); expect(bounds.max.x - bounds.min.x).toBe(135);
     model.dispose();
   });
+
+  it('lights a neighbouring shelf well before the smooth distance cutoff', () => {
+    // Three's inverse-square attenuation and smooth cutoff, evaluated at a
+    // 350 mm shelf span. Diffuser emission alone never illuminates a book.
+    const irradiance = (emitter,distance) => emitter.intensity / distance ** emitter.decay *
+      Math.max(0,1 - (distance / emitter.distance) ** 4) ** 2;
+    for (const lamp of LAMP_CATALOG) {
+      const native = createShelfLamp({lampId:lamp.id});
+      const fitted = createShelfLamp({lampId:lamp.id,width:lamp.dimensions.width / 2});
+      expect(irradiance(native.userData.lightEmitter,350)).toBeGreaterThan(1.35);
+      expect(irradiance(fitted.userData.lightEmitter,175))
+        .toBeCloseTo(irradiance(native.userData.lightEmitter,350),6);
+      native.dispose(); fitted.dispose();
+    }
+  });
+
+  it('lets the tripod cone leave its lower aperture without being blocked by its own support', () => {
+    const model = createShelfLamp({lampId:'tripod'});
+    model.updateMatrixWorld(true);
+    const emitter = model.userData.lightEmitter;
+    const ray = new THREE.Raycaster(new THREE.Vector3(...emitter.position),
+      new THREE.Vector3(...emitter.direction),.01,emitter.position[1]);
+    const opaqueCasters = [];
+    model.traverse(object => { if (object.isMesh && object.castShadow) opaqueCasters.push(object); });
+    expect(ray.intersectObjects(opaqueCasters,false)).toEqual([]);
+    const glow = model.getObjectByName('woven-linen-drum-shade').material;
+    expect(glow.emissiveIntensity).toBeLessThanOrEqual(1.2);
+    model.dispose();
+  });
 });

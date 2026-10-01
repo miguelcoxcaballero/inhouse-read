@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.18
+
+- BAGGEBO blanca con rejilla metálica geométrica, agujeros y espesor reales, bordes plegados, pintura fina y tornillos biselados. Mantiene las medidas de 60 × 25 × 116 cm y cuatro lotes de material por unidad.
+- Lámparas con más potencia y alcance; el trípode ilumina por debajo de su soporte. Los haces cálidos se reflejan en baldas, cubiertas y en la pared de la habitación detrás del mueble abierto.
+- Luz de estudio más suave en la preview de la BAGGEBO y ambiente ajustado para distinguir el metal blanco de la iluminación cálida. El zoom sigue usando los dedos y la escena deja de renderizar al descansar.
+
 ### Actualización web · 1.6.17
 
 - Nueva pestaña **Iluminación** en el catálogo IKEA: foco circular bajo balda, farol TÄRNABY con bombilla LED de filamento visible y lámpara compacta de trípode con pantalla de lino.

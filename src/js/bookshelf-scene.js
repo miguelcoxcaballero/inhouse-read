@@ -187,6 +187,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   lightBookScene(scene);
   const lighting = createShelfLighting(scene, renderer);
   const lampLighting = createShelfLampLighting(scene);
+  // Keep the reader's shared renderer unchanged. Shelf fixtures compete with
+  // softer room daylight, rather than the full book-reading studio rig.
+  const daylight = scene.children.filter(child => child.isLight)
+    .map(light => ({ light, intensity:light.intensity }));
+  const daylightEnvironment = scene.environmentIntensity;
+  let daylightFactor = 1;
+  const roomKey = scene.userData.readerLight;
+  const roomKeyColor = roomKey?.color.clone();
   const furniture = new THREE.Group();
   scene.add(furniture);
   sceneWidth = Math.max(1, Number(sceneWidth) || width);
@@ -225,6 +233,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // wooden platform around the cabinet or reserving camera space for it.
   floor.visible = false;
   furniture.add(floor, occlusion);
+  // A room wall, separated from the open steel cabinet, catches real warm
+  // light through its mesh. Its edges stay outside the viewport at any zoom;
+  // it contributes neither furniture bounds nor selectable/drop surfaces.
+  const roomWallMaterial = new THREE.MeshStandardMaterial({ color:'#f0f1ed', roughness:1, envMapIntensity:.7 });
+  const roomWall = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), roomWallMaterial);
+  roomWall.name = 'Library room wall'; roomWall.userData.roomReceiver = true;
+  roomWall.receiveShadow = true; roomWall.raycast = () => {};
+  furniture.add(roomWall);
   let floorY = -height, floorLit = false;
   let depth = shelfType === 'baggebo' ? BAGGEBO_SPEC.depth * unitWidth / BAGGEBO_SPEC.width
     : Math.max(155, ...entries.filter(e => e.kind !== 'plant' && e.kind !== 'lamp').map(e => e.width + 12),
@@ -240,6 +256,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const byNode = new Map(bookEntries.filter(entry => entry.node).map(entry => [entry.node, entry]));
   const boardHeight = 15;
   function rebuildFurniture() {
+    if (roomKey) roomKey.color.copy(shelfType === 'baggebo' ? new THREE.Color('#ffffff') : roomKeyColor);
     for (const object of [...furniture.children]) if (object.userData.furniture) {
       furniture.remove(object); object.userData.disposeGeometry?.();
     }
@@ -273,6 +290,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     floor.geometry = new THREE.BoxGeometry(width + 210, 2, depth + 210);
     floor.geometry.computeBoundingBox();
     floor.position.set(55, floorY - 1, -depth / 2 + 45);
+    const roomSpan = Math.max(width, height, sceneWidth) * 24;
+    roomWall.scale.set(roomSpan, roomSpan, 1);
+    roomWall.position.set(0, -height / 2, -depth - 28 * unitWidth / BAGGEBO_SPEC.width);
     positionTrash();
   }
   function rebuildOcclusion() {
@@ -712,6 +732,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     wood.color.set(tones.wood); backWood.color.set(tones.back); darkWood.color.set(tones.trim);
     // Floor contact reads softer on a pale page than on a near-black one.
     occlusionMaterial.opacity = tones === WOOD_TONES.dark ? 1 : .8;
+    roomWallMaterial.color.set(darkPage() ? '#353434' : '#f0f1ed');
     if (floorLit !== darkPage()) rebuildOcclusion();
   }
 
@@ -1228,6 +1249,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const trashMoving = updateTrash(scroll, now, finishedDrops);
     const lampRefresh = lampLighting.update(bookEntries, { scroll, viewportHeight,
       shadowDirty:shadowDirty || furnitureMoving || shelfMoving });
+    const nextDaylight = lampLighting.activeCount ? shelfType === 'baggebo' ? .82 : .7 : 1;
+    if (nextDaylight !== daylightFactor) {
+      daylightFactor = nextDaylight;
+      for (const { light, intensity } of daylight) light.intensity = intensity * daylightFactor;
+      scene.environmentIntensity = daylightEnvironment * daylightFactor;
+      shelfSnapshotDirty = true;
+    }
     if (lampRefresh && lampLighting.shadowCount) renderer.shadowMap.needsUpdate = true;
     // Fit the key's shadow to the cabinet (and bin) in world space; the
     // lighting clips it to the camera window, so each texel covers less.

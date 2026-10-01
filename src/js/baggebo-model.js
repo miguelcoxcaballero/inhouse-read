@@ -5,55 +5,81 @@ import { BAGGEBO_SPEC } from './shelf-types.js';
 
 const PERIOD_X = BAGGEBO_SPEC.meshPitch.width * 2;
 const PERIOD_Y = BAGGEBO_SPEC.meshPitch.height;
-const MASK_WIDTH = 128, MASK_HEIGHT = 64;
-let meshMaskPixels;
-const positiveModulo = (value, period) => ((value % period) + period) % period;
+const STRAND_WIDTH = .9;
+const SHEET_THICKNESS = .65;
+const panelTemplates = new Map();
 
-function distanceToSegmentSquared(x, y, ax, ay, bx, by) {
-  const dx = bx - ax, dy = by - ay;
-  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)));
-  const px = x - ax - t * dx, py = y - ay - t * dy;
-  return px * px + py * py;
-}
-
-/** Expanded metal has elongated hexagonal apertures, not a printed grid.
- * One small repeating mask serves the four shelves and rear brace. */
-function strandDistance(x, y) {
-  const pitch = BAGGEBO_SPEC.meshPitch.width;
-  const halfHeight = PERIOD_Y / 2;
+/** Actual expanded sheet. Adjacent hexagons share each strand; two shallow
+ * facets give it a pressed ridge and visible thickness without opaque planes
+ * across the apertures. A single batched mesh keeps all four shelves cheap. */
+function expandedMetal(uMin, uMax, vMin, vMax, toPosition) {
+  const pitch = BAGGEBO_SPEC.meshPitch.width, halfHeight = PERIOD_Y / 2;
   const outer = pitch * .6, shoulder = pitch * .4;
-  const vertices = [[-outer, 0], [-shoulder, -halfHeight], [shoulder, -halfHeight],
+  const corners = [[-outer, 0], [-shoulder, -halfHeight], [shoulder, -halfHeight],
     [outer, 0], [shoulder, halfHeight], [-shoulder, halfHeight]];
-  let distance = Infinity;
-  for (const [cx, cy] of [[0, 0], [0, PERIOD_Y], [PERIOD_X, 0], [PERIOD_X, PERIOD_Y], [pitch, halfHeight]]) {
-    const px = x - cx, py = y - cy;
-    for (let index = 0; index < vertices.length; index += 1) {
-      const [ax, ay] = vertices[index], [bx, by] = vertices[(index + 1) % vertices.length];
-      distance = Math.min(distance, distanceToSegmentSquared(px, py, ax, ay, bx, by));
+  const segments = new Map();
+  const key = (u, v) => `${Math.round(u * 1000)},${Math.round(v * 1000)}`;
+  const addSegment = (au, av, bu, bv) => {
+    const a = key(au, av), b = key(bu, bv);
+    segments.set(a < b ? `${a}:${b}` : `${b}:${a}`, [au, av, bu, bv]);
+  };
+  for (let row = Math.floor(vMin / PERIOD_Y) - 1; row <= Math.ceil(vMax / PERIOD_Y) + 1; row += 1) {
+    for (let column = Math.floor(uMin / PERIOD_X) - 1; column <= Math.ceil(uMax / PERIOD_X) + 1; column += 1) {
+      for (const [offsetU, offsetV] of [[0, 0], [pitch, halfHeight]]) {
+        const u = column * PERIOD_X + offsetU, v = row * PERIOD_Y + offsetV;
+        for (let edge = 0; edge < corners.length; edge += 1) {
+          const a = corners[edge], b = corners[(edge + 1) % corners.length];
+          addSegment(u + a[0], v + a[1], u + b[0], v + b[1]);
+        }
+      }
     }
   }
-  return Math.sqrt(distance);
-}
+  // The cut edge sits inside the folded perimeter. Finishing it here also
+  // makes the nominal sheet size independent of where an aperture is cut.
+  addSegment(uMin, vMin, uMax, vMin); addSegment(uMax, vMin, uMax, vMax);
+  addSegment(uMax, vMax, uMin, vMax); addSegment(uMin, vMax, uMin, vMin);
 
-function createMeshMask() {
-  const data = meshMaskPixels || new Uint8Array(MASK_WIDTH * MASK_HEIGHT * 4);
-  if (!meshMaskPixels) for (let y = 0; y < MASK_HEIGHT; y += 1) for (let x = 0; x < MASK_WIDTH; x += 1) {
-    const distance = strandDistance((x + .5) / MASK_WIDTH * PERIOD_X, (y + .5) / MASK_HEIGHT * PERIOD_Y);
-    const coverage = Math.round(255 * Math.max(0, Math.min(1, (.45 - distance) / .13)));
-    const index = (y * MASK_WIDTH + x) * 4;
-    // Three's alphaMap uses green, for the colour and both shadow passes.
-    data[index] = data[index + 1] = data[index + 2] = coverage; data[index + 3] = 255;
+  const positions = [], uvs = [];
+  const point = (u, v, normal) => [Math.max(uMin, Math.min(uMax, u)), Math.max(vMin, Math.min(vMax, v)), normal];
+  const triangle = (a, b, c) => {
+    for (const vertex of [a, b, c]) {
+      positions.push(...toPosition(...vertex));
+      uvs.push(vertex[0] / 8, vertex[1] / 8);
+    }
+  };
+  for (const [au, av, bu, bv] of segments.values()) {
+    const du = bu - au, dv = bv - av;
+    // Liang–Barsky clips strands at the cut sheet boundary, without stretched
+    // triangles or the repeating alpha texture's fuzzy edges at close zoom.
+    let from = 0, to = 1;
+    let clipped = false;
+    for (const [direction, distance] of [[-du, au - uMin], [du, uMax - au], [-dv, av - vMin], [dv, vMax - av]]) {
+      if (Math.abs(direction) < 1e-9) { if (distance < 0) { clipped = true; break; } continue; }
+      const ratio = distance / direction;
+      if (direction < 0) from = Math.max(from, ratio); else to = Math.min(to, ratio);
+      if (from >= to) { clipped = true; break; }
+    }
+    if (clipped) continue;
+    const length = Math.hypot(du, dv), nu = -dv / length * STRAND_WIDTH / 2, nv = du / length * STRAND_WIDTH / 2;
+    const u0 = au + du * from, v0 = av + dv * from, u1 = au + du * to, v1 = av + dv * to;
+    const leftA = point(u0 + nu, v0 + nv, -SHEET_THICKNESS), ridgeA = point(u0, v0, 0), rightA = point(u0 - nu, v0 - nv, -SHEET_THICKNESS);
+    const leftB = point(u1 + nu, v1 + nv, -SHEET_THICKNESS), ridgeB = point(u1, v1, 0), rightB = point(u1 - nu, v1 - nv, -SHEET_THICKNESS);
+    if (Math.abs(dv) < 1e-7) {
+      // The short connecting bonds are flattened by the expanding process;
+      // one inclined face is enough here, while the stretched strands have
+      // two facets. This saves a third of the bond vertices on mobile.
+      leftA[2] = leftB[2] = 0;
+      triangle(leftA, rightA, rightB); triangle(leftA, rightB, leftB);
+    } else {
+      triangle(leftA, ridgeA, ridgeB); triangle(leftA, ridgeB, leftB);
+      triangle(ridgeA, rightA, rightB); triangle(ridgeA, rightB, ridgeB);
+    }
   }
-  // The pixels are immutable; each model still owns its disposable GPU texture.
-  meshMaskPixels = data;
-  const texture = new THREE.DataTexture(data, MASK_WIDTH, MASK_HEIGHT, THREE.RGBAFormat);
-  texture.name = 'BAGGEBO elongated hexagonal metal apertures';
-  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.magFilter = texture.minFilter = THREE.LinearFilter;
-  texture.generateMipmaps = false;
-  texture.anisotropy = 8;
-  texture.needsUpdate = true;
-  return texture;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 function createPaintTexture() {
@@ -70,43 +96,42 @@ function createPaintTexture() {
   return texture;
 }
 
-/** Raycaster does not sample alphaMap itself. Filter its plane intersections
- * against the same aperture mask, so an empty mesh hole is truly empty. */
-function apertureRaycast(mesh, mask) {
-  const original = mesh.raycast;
-  mesh.raycast = function raycastWithApertures(raycaster, intersections) {
-    const candidates = [];
-    original.call(this, raycaster, candidates);
-    const { data, width, height } = mask.image;
-    for (const hit of candidates) {
-      if (!hit.uv) continue;
-      const x = Math.min(width - 1, Math.floor(positiveModulo(hit.uv.x, 1) * width));
-      const y = Math.min(height - 1, Math.floor(positiveModulo(hit.uv.y, 1) * height));
-      if (data[(y * width + x) * 4 + 1] / 255 >= this.material.alphaTest) intersections.push(hit);
-    }
-  };
+function panelGeometry(key, create) {
+  // Cache only immutable CPU arrays. Every furniture unit owns fresh buffers
+  // and GPU resources, so closing the catalogue cannot invalidate the scene.
+  if (!panelTemplates.has(key)) {
+    const template = create();
+    panelTemplates.set(key, Object.fromEntries(['position', 'normal', 'uv'].map(name => [name, template.getAttribute(name).array])));
+    template.dispose();
+  }
+  const geometry = new THREE.BufferGeometry(), template = panelTemplates.get(key);
+  for (const [name, itemSize] of [['position', 3], ['normal', 3], ['uv', 2]]) {
+    geometry.setAttribute(name, new THREE.Float32BufferAttribute(template[name].slice(), itemSize));
+  }
+  return geometry;
 }
 
 function horizontalMesh(width, depth, y, front) {
-  const geometry = new THREE.PlaneGeometry(width, depth);
-  geometry.rotateX(-Math.PI / 2);
-  geometry.translate(0, y, front - depth / 2);
-  const positions = geometry.getAttribute('position'), uv = geometry.getAttribute('uv');
-  for (let index = 0; index < positions.count; index += 1) {
-    uv.setXY(index, positions.getX(index) / PERIOD_X, -positions.getZ(index) / PERIOD_Y);
-  }
-  return geometry.toNonIndexed();
+  return panelGeometry(`shelf:${width}:${depth}:${front}`, () => expandedMetal(-width / 2, width / 2, -front, depth - front,
+    (u, v, normal) => [u, normal, -v])).translate(0, y, 0);
 }
 
 function rearMesh(width, height, top, z) {
-  const geometry = new THREE.PlaneGeometry(width, height);
-  geometry.translate(0, -top - height / 2, z);
-  const positions = geometry.getAttribute('position'), uv = geometry.getAttribute('uv');
+  // The brace is cut from the same expanded sheet, turned a quarter turn.
+  return panelGeometry(`brace:${width}:${height}:${top}:${z}`, () => expandedMetal(top, top + height, -width / 2, width / 2,
+    (u, v, normal) => [v, -u, z + normal]));
+}
+
+/** Powder-coat grain stays sub-millimetre on both short rails and long posts. */
+function physicalPaintUVs(geometry) {
+  const positions = geometry.getAttribute('position'), normals = geometry.getAttribute('normal'), uv = geometry.getAttribute('uv');
   for (let index = 0; index < positions.count; index += 1) {
-    // The brace is cut from the same expanded sheet, turned a quarter turn.
-    uv.setXY(index, -positions.getY(index) / PERIOD_X, positions.getX(index) / PERIOD_Y);
+    const x = positions.getX(index), y = positions.getY(index), z = positions.getZ(index);
+    const nx = Math.abs(normals.getX(index)), ny = Math.abs(normals.getY(index)), nz = Math.abs(normals.getZ(index));
+    if (nx >= ny && nx >= nz) uv.setXY(index, z / 8, y / 8);
+    else if (ny >= nz) uv.setXY(index, x / 8, z / 8);
+    else uv.setXY(index, x / 8, y / 8);
   }
-  return geometry.toNonIndexed();
 }
 
 /** BAGGEBO 504.811.72. Coordinates are millimetres at width=600: x centred,
@@ -127,19 +152,19 @@ export function createBaggebo({ width = 600 } = {}) {
   group.userData.shelfPositions = BAGGEBO_SPEC.shelfBottoms.map(bottom => ({ bottom:bottom * scale, y:-bottom * scale, fromFloor:(height - bottom) * scale }));
   group.userData.parts = [];
 
-  const mask = createMeshMask(), paintTexture = createPaintTexture();
-  const paint = new THREE.MeshStandardMaterial({ color:0xf5f4ee, roughness:.42, metalness:.08,
-    bumpMap:paintTexture, bumpScale:.06 });
+  const paintTexture = createPaintTexture();
+  const paint = new THREE.MeshPhysicalMaterial({ color:0xf7f8f6, roughness:.36, metalness:.08,
+    bumpMap:paintTexture, bumpScale:.024, clearcoat:.16, clearcoatRoughness:.4 });
   paint.name = 'Warm white epoxy polyester powder-coated steel';
-  const meshPaint = new THREE.MeshStandardMaterial({ color:0xf5f4ee, roughness:.44, metalness:.08,
-    alphaMap:mask, alphaTest:.35, alphaToCoverage:true, side:THREE.DoubleSide });
+  const meshPaint = new THREE.MeshStandardMaterial({ color:0xf7f8f6, roughness:.38, metalness:.08,
+    bumpMap:paintTexture, bumpScale:.018, side:THREE.DoubleSide });
   meshPaint.name = 'Open expanded white-painted steel';
   const hardware = new THREE.MeshStandardMaterial({ color:0xd1d2cd, roughness:.32, metalness:.5, vertexColors:true });
   hardware.name = 'Zinc plated recessed fixing heads';
   const footMaterial = new THREE.MeshStandardMaterial({ color:0xe8e8df, roughness:.76, metalness:0 });
   footMaterial.name = 'Polypropylene adjustable feet';
   const batches = new Map(), geometries = [], materials = [paint, meshPaint, hardware, footMaterial];
-  const shadows = [];
+
 
   const add = (geometry, material, name, metadata = {}) => {
     if (material === hardware) {
@@ -147,18 +172,30 @@ export function createBaggebo({ width = 600 } = {}) {
       const colors = new Float32Array(geometry.getAttribute('position').count * 3).fill(shade);
       geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     }
+    if (material === paint) {
+      const positions = geometry.getAttribute('position');
+      // Rounded folded edges can exceed the nominal top by Float32 roundoff.
+      // Keep the shared book baseline and the published footprint exact.
+      for (let index = 0; index < positions.count; index += 1) {
+        const y = positions.getY(index);
+        if (y > 0 && y < 1e-6) positions.setY(index, 0);
+      }
+      physicalPaintUVs(geometry);
+    }
     geometry.computeBoundingBox();
     group.userData.parts.push({ name, bounds:geometry.boundingBox.clone(), ...metadata });
     if (!batches.has(material)) batches.set(material, []);
     batches.get(material).push(geometry);
   };
-  const box = (name, w, h, d, x, y, z, material = paint, radius = .65, metadata) => {
-    const geometry = new RoundedBoxGeometry(w, h, d, 1, Math.min(radius, w / 3, h / 3, d / 3));
+  const box = (name, w, h, d, x, y, z, material = paint, radius = .65, metadata, segments = 1) => {
+    const geometry = name.includes('-slot-')
+      ? new THREE.BoxGeometry(w, h, d).toNonIndexed()
+      : new RoundedBoxGeometry(w, h, d, segments, Math.min(radius, w / 3, h / 3, d / 3));
     geometry.translate(x, y, z);
     add(geometry, material, name, metadata);
   };
   const screw = (name, x, y, z, axis = 'z', radius = 2.55) => {
-    const geometry = new THREE.CylinderGeometry(radius, radius, 1.1, 8).toNonIndexed();
+    const geometry = new THREE.CylinderGeometry(radius * .88, radius, 1.1, 20).toNonIndexed();
     if (axis === 'z') geometry.rotateX(Math.PI / 2);
     else if (axis === 'x') geometry.rotateZ(Math.PI / 2);
     geometry.translate(x, y, z);
@@ -174,8 +211,8 @@ export function createBaggebo({ width = 600 } = {}) {
   for (const side of [-1, 1]) for (const [label, z] of [['front', -post / 2], ['back', -depth + post / 2]]) {
     const x = side * (600 - post) / 2;
     box(`${side < 0 ? 'left' : 'right'}-${label}-upright`, post, height - 7, post,
-      x, -(height - 7) / 2, z, paint, .85, { kind:'upright' });
-    const foot = new THREE.CylinderGeometry(post / 2, post / 2, 4.8, 12).toNonIndexed();
+      x, -(height - 7) / 2, z, paint, .85, { kind:'upright' }, 2);
+    const foot = new THREE.CylinderGeometry(post / 2 - .35, post / 2, 4.8, 24).toNonIndexed();
     foot.translate(x, -height + 2.4, z);
     add(foot, footMaterial, `${side < 0 ? 'left' : 'right'}-${label}-foot`, { kind:'foot' });
     const stem = new THREE.CylinderGeometry(2.8, 2.8, 2.2, 8).toNonIndexed();
@@ -191,6 +228,9 @@ export function createBaggebo({ width = 600 } = {}) {
     // at exactly the source model's surface elevations.
     box(`${name}-front-rim`, 600 - post * 2, rim, 2.1, 0, y - rim / 2, surfaceFront - 1.05);
     box(`${name}-back-rim`, 600 - post * 2, rim, 2.1, 0, y - rim / 2, -235 + 1.05);
+    // Rolled sheet edges catch a narrow highlight and hide the raw cut ends.
+    box(`${name}-front-folded-lip`, 600 - post * 2, .8, 3.2, 0, y - .4, surfaceFront - 1.6, paint, .25, { kind:'folded-lip' });
+    box(`${name}-back-folded-lip`, 600 - post * 2, .8, 3.2, 0, y - .4, -235 + 1.6, paint, .25, { kind:'folded-lip' });
     for (const side of [-1, 1]) {
       box(`${name}-${side < 0 ? 'left' : 'right'}-rim`, 2.1, rim, 220,
         side * (surfaceWidth / 2 - 1.05), y - rim / 2, -depth / 2);
@@ -202,11 +242,11 @@ export function createBaggebo({ width = 600 } = {}) {
     // A genuine central reinforcing strip under each expanded-metal panel.
     box(`${name}-underside-stiffener`, 3.5, 3, 216, 0, y - 2.25, -depth / 2, paint, .3);
     add(horizontalMesh(surfaceWidth, 220, y, surfaceFront), meshPaint, `${name}-mesh`,
-      { kind:index === 0 ? 'mesh-top' : 'mesh-shelf', baseline:y, thickness:.12 });
+      { kind:index === 0 ? 'mesh-top' : 'mesh-shelf', baseline:y, thickness:SHEET_THICKNESS, apertureGeometry:true });
   }
 
   const brace = BAGGEBO_SPEC.rearBrace, braceZ = -249;
-  add(rearMesh(brace.width, brace.height, brace.top, braceZ), meshPaint, 'rear-central-mesh-brace', { kind:'mesh-brace' });
+  add(rearMesh(brace.width, brace.height, brace.top, braceZ), meshPaint, 'rear-central-mesh-brace', { kind:'mesh-brace', thickness:SHEET_THICKNESS, apertureGeometry:true });
   for (const side of [-1, 1]) {
     box(`rear-brace-${side < 0 ? 'left' : 'right'}-fold`, 2.2, brace.height, 2,
       side * (brace.width / 2 - 1.1), -(brace.top + brace.height / 2), braceZ, paint, .3);
@@ -229,15 +269,6 @@ export function createBaggebo({ width = 600 } = {}) {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = material.name;
     mesh.castShadow = true; mesh.receiveShadow = true;
-    if (material === meshPaint) {
-      apertureRaycast(mesh, mask);
-      const depthMaterial = new THREE.MeshDepthMaterial({ depthPacking:THREE.RGBADepthPacking,
-        alphaMap:mask, alphaTest:meshPaint.alphaTest, side:THREE.DoubleSide });
-      const distanceMaterial = new THREE.MeshDistanceMaterial({ alphaMap:mask,
-        alphaTest:meshPaint.alphaTest, side:THREE.DoubleSide });
-      mesh.customDepthMaterial = depthMaterial; mesh.customDistanceMaterial = distanceMaterial;
-      shadows.push(depthMaterial, distanceMaterial);
-    }
     group.add(mesh);
   }
 
@@ -246,8 +277,8 @@ export function createBaggebo({ width = 600 } = {}) {
     if (disposed) return;
     disposed = true;
     for (const geometry of geometries) geometry.dispose();
-    for (const material of [...materials, ...shadows]) material.dispose();
-    mask.dispose(); paintTexture.dispose();
+    for (const material of materials) material.dispose();
+    paintTexture.dispose();
   };
   group.userData.dispose = dispose;
   group.userData.disposeGeometry = dispose;
