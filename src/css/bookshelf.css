@@ -1625,15 +1625,3 @@ body.is-closing-reader .screen { pointer-events:none; }
 .ihr-flyout__book--fallback .ihr-flyout__face--cover { transform:none; }
 
 .ihr-spine__body:not(:has(canvas)) { background:var(--ihr-spine-base); }
-
-
-
-.ihr-shelf-zoom { display: inline-flex; align-items: center; gap: 1px; margin-left: 4px; border-left: 1px solid var(--border-color, #8884); padding-left: 4px; }
-.ihr-shelf-zoom[hidden] { display: none; }
-.ihr-shelf-zoom button { display: grid; place-items: center; width: 32px; min-height: 32px; border: 0; border-radius: 7px; background: transparent; color: var(--text-primary); font: 20px Arial,sans-serif; cursor: pointer; }
-.ihr-shelf-zoom button:hover { background: var(--bg-secondary); }
-.ihr-shelf-zoom button:disabled { opacity: .35; cursor: default; }
-.ihr-shelf-zoom button:focus-visible { outline: 2px solid var(--ihr-accent-legible); outline-offset: -2px; }
-.ihr-shelf-zoom output { min-width: 38px; font: 11px var(--f-body); color: var(--text-secondary); text-align: center; }
-.is-shelf-zoomed .ihr-bookshelf__scroll { cursor: grab; }
-.ihr-view-switch { flex-wrap: wrap; }
