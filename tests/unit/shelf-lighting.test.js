@@ -189,6 +189,49 @@ describe('visible shelf lighting', () => {
     expect(panel.customProgramCacheKey()).not.toBe(new THREE.MeshStandardMaterial().customProgramCacheKey());
   });
 
+  it('hands the panel its disk taps as constants, the same Vogel pattern whatever the screen', () => {
+    for (const [width, taps] of [[390, 9], [1280, 12]]) {
+      vi.stubGlobal('innerWidth', width); vi.stubGlobal('innerHeight', 900);
+      const panel = widePenumbra(new THREE.MeshStandardMaterial());
+      const shader = { fragmentShader:THREE.ShaderLib.standard.fragmentShader };
+      panel.onBeforeCompile(shader);
+      expect(panel.defines.PANEL_TAPS).toBe(taps);
+      const source = shader.fragmentShader, start = source.indexOf('float getPanelShadow('), body = source.slice(start, source.indexOf('#endif', start));
+      expect(body).not.toMatch(/\b(cos|sin|sqrt)\(|for \(/);
+      const offsets = [...body.matchAll(/vec4\( (-?[\d.]+) \* du \+ (-?[\d.]+) \* dv, 0\.0 \)/g)];
+      expect(offsets).toHaveLength(taps);
+      offsets.forEach(([, along, across], k) => {
+        const radius = Math.sqrt((k + .5) / taps), angle = k * 2.39996 + .4;
+        expect(Number(along)).toBeCloseTo(radius * Math.cos(angle), 7);
+        expect(Number(across)).toBeCloseTo(radius * Math.sin(angle), 7);
+      });
+    }
+    vi.unstubAllGlobals();
+  });
+
+  it('notices every layout input that changes and ignores sub-hundredth jitter', () => {
+    const scene = new THREE.Scene(), key = new THREE.DirectionalLight();
+    key.position.set(-.46, .42, 1); scene.userData.readerLight = key; scene.add(key);
+    const lighting = createShelfLighting(scene, { shadowMap:{} });
+    const bounds = new THREE.Box3(new THREE.Vector3(210, -4000, -170), new THREE.Vector3(1070, 0, 12));
+    const frame = { width:1280, viewportHeight:860, scroll:1000, depth:160, bounds, dirty:false };
+    expect(lighting.update(frame)).toBe(true);
+    expect(lighting.update({ ...frame, bounds:bounds.clone() })).toBe(false);
+    // Below the two decimals a layout is compared at: still the same layout.
+    expect(lighting.update({ ...frame, width:1280.001 })).toBe(false);
+    const changes = [{ width:1300 }, { viewportHeight:900 }, { depth:200 },
+      { bounds:bounds.clone().set(bounds.min, bounds.max.clone().setZ(60)) },
+      { bounds:bounds.clone().set(bounds.min.clone().setX(250), bounds.max) },
+      { bounds:null }, { bounds }];
+    for (const change of changes) {
+      const next = { ...frame, ...change };
+      expect(lighting.update(next)).toBe(true);
+      expect(lighting.update({ ...next })).toBe(false);
+      frame.width = next.width; frame.viewportHeight = next.viewportHeight; frame.depth = next.depth; frame.bounds = next.bounds;
+    }
+    lighting.dispose();
+  });
+
   it('firms up the variance shadow light-bleed floor once and does nothing without a key light', () => {
     const empty = createShelfLighting(new THREE.Scene(), { shadowMap:{} });
     expect(() => { empty.update({ width:1, viewportHeight:1, scroll:0, depth:1 }); empty.dispose(); }).not.toThrow();
