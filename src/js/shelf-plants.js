@@ -166,9 +166,9 @@ function surface(key, [width, height], repeat, paint, refresh) {
 // only a few pixels wide still resolves its cross bands along the length.
 const SNAKE_STRIPS = 4, SNAKE_INSET = .04;
 
-function sansevieriaTextures(refresh) {
+function sansevieriaTextures(refresh, quality = 1) {
   const deep = srgb('#1d3621'), leaf = srgb('#2f5230'), sage = srgb('#96a88c'), gold = srgb('#b6a85c');
-  return surface('leaf:upright', [SNAKE_STRIPS * 32, 256], false, (u, v, x, y, texel) => {
+  return surface(`leaf:upright:${quality}`, [SNAKE_STRIPS * 32 * quality, 256 * quality], false, (u, v, x, y, texel) => {
     const strip = Math.min(SNAKE_STRIPS - 1, Math.floor(u * SNAKE_STRIPS)), s = u * SNAKE_STRIPS - strip;
     const a = Math.abs(s * 2 - 1), seed = 71 + strip * 13;
     // Irregular pale cross bands, about a dozen per blade: shallow chevrons
@@ -194,12 +194,12 @@ function sansevieriaTextures(refresh) {
   }, refresh);
 }
 
-function botanicalTextures(variant, refresh) {
-  if (variant === 'upright') return sansevieriaTextures(refresh);
+function botanicalTextures(variant, refresh, quality = 1) {
+  if (variant === 'upright') return sansevieriaTextures(refresh, quality);
   // A single surface field drives pigment, relief and wax roughness together.
   const base = srgb({ zz:'#2f5324', fern:'#4a7a2c', succulent:'#6a8a80', ivy:'#2a4c23', palm:'#3d6c2a', monstera:'#2f6128' }[variant] ?? '#36672c');
   const phase = hash(variant.length, 3, 11) * Math.PI * 2, seed = variant.charCodeAt(0);
-  return surface(`leaf:${variant}`, [128, 128], false, (u, v, x, y, texel) => {
+  return surface(`leaf:${variant}:${quality}`, [128 * quality, 128 * quality], false, (u, v, x, y, texel) => {
     const signed = u * 2 - 1, a = Math.abs(signed);
     const midrib = Math.exp(-a * 48);
     // Branch veins sweep toward the tip, with finer tertiary venation.
@@ -700,6 +700,7 @@ const STEM_TONES = { stem:['#4b5a2f','#6a8a3c'], woody:['#5a4630','#5d7336'], zz
  * Its own opaque leaf texture covers real geometry; no photo cutout is used.
  */
 export function createShelfPlant(entry) {
+  const quality = entry.inspectionResolution ? 2 : 1;
   const catalogPlant = resolveCatalogPlant(entry);
   const width = Math.max(1, Number(entry.width) || catalogPlant?.width || 46), height = Math.max(1, Number(entry.height) || catalogPlant?.height || 70);
   const variant = variantFor(catalogPlant?.variant || entry.variant), seed = entry.seed ?? entry.key ?? entry.node?.dataset.objectId ?? variant;
@@ -725,7 +726,7 @@ export function createShelfPlant(entry) {
   const potColor = getPotColor(potId,entry.potColorId);
   const clayColor = potId ? potColor.hex : clays[Math.floor(random() * clays.length)];
   const finish = POT_FINISHES[potId] ?? { painter:() => terracottaPainter(clayColor, 53), material:{ bumpScale:.4 } };
-  const potMaps = own(surface(`pot:${potId}:${clayColor}`, [128, 256], true, finish.painter(potColor.hex), refresh));
+  const potMaps = own(surface(`pot:${potId}:${clayColor}:${quality}`, [128 * quality, 256 * quality], true, finish.painter(potColor.hex), refresh));
   // Texels stay roughly square on the outer wall, whatever the pot proportions.
   potMaps.map.repeat.x = potMaps.data.repeat.x = Math.max(1, Math.round(Math.PI * 4 * radius * (RIM - FOOT) / potHeight));
   potMaps.map.offset.x = potMaps.data.offset.x = random();
@@ -756,7 +757,7 @@ export function createShelfPlant(entry) {
   }
   const mineral = new THREE.MeshStandardMaterial({ color:'#b7ae9c', roughness:1 });
   const stemMaterial = new THREE.MeshStandardMaterial({ color:0xffffff, vertexColors:true, roughness:.72 });
-  const leafMaps = detailed ? own(botanicalTextures(variant, refresh)) : null;
+  const leafMaps = detailed ? own(botanicalTextures(variant, refresh, quality)) : null;
   const leafMaterial = new THREE.MeshPhysicalMaterial({ map:leafMaps?.map ?? null, bumpMap:leafMaps?.data ?? null, roughnessMap:leafMaps?.data ?? null,
     color:0xffffff, vertexColors:true, bumpScale:width * (variant === 'succulent' ? .00035 : .0012),
     // Ivy is glossy rather than downy: its gloss lives in the thin clearcoat,
@@ -1024,7 +1025,7 @@ export function createShelfPlant(entry) {
     }
   }
   const soilKind = variant === 'cactus' || variant === 'succulent' ? 'grit' : 'peat';
-  const soilMaps = own(surface(`soil:${soilKind}`, [128, 128], false, soilPainter(soilKind), refresh));
+  const soilMaps = own(surface(`soil:${soilKind}:${quality}`, [128 * quality, 128 * quality], false, soilPainter(soilKind), refresh));
   const soil = new THREE.MeshStandardMaterial({ map:soilMaps.map, roughnessMap:soilMaps.data, bumpMap:soilMaps.data,
     bumpScale:soilKind === 'grit' ? 1.4 : 1.1, roughness:1, vertexColors:true });
   mesh(soilGeometry(pot.soilRadius * .995, soilY, random, roots, soilKind), soil, 'potting-soil');
@@ -1052,6 +1053,8 @@ export function createShelfPlant(entry) {
   group.userData.variant = variant; group.userData.seed = String(seed);
   group.userData.catalogId = catalogPlant?.id ?? null; group.userData.potId = potId; group.userData.potColorId = potColor.id;
   group.userData.parts = parts;
+  group.userData.inspectionResolution = entry.inspectionResolution || 0;
+  if (quality > 1) group.userData.ready = plantSurfacesReady().then(() => !disposed);
   group.userData.dispose = () => {
     if (disposed) return; disposed = true;
     for (const geometry of geometries) geometry.dispose();

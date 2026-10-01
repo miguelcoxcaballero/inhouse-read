@@ -6,7 +6,7 @@ vi.mock('../../src/js/book-model.js',async importOriginal => ({
   ...await importOriginal(), getBookRenderer:() => ({})
 }));
 vi.mock('../../src/js/bookshelf-scene.js',() => ({ createBookshelfScene:() => ({
-  ...scene, dispose:vi.fn(), updateLayout:vi.fn(), flush:vi.fn(),
+  ...scene, dispose:vi.fn(), updateLayout:vi.fn(), flush:vi.fn(), getInspectionZoom:()=>1,
   getObjectAtPoint:() => document.querySelector('[data-object-id="plant:held"]'),
   getDropPosition:() => null, setTrashHover:vi.fn(), setDropPosition:vi.fn(), previewPlacements:vi.fn()
 }) }));

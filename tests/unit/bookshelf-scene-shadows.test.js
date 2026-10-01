@@ -187,4 +187,21 @@ describe('shelf shadows while scrolling', () => {
     }
     gpu.passes = null;
   });
+  it('zooms without extending the fitted stage and resets its pan in frontal view', () => {
+    shelf.setMode('isometric',{animate:false}); flushFrames();
+    const canvas = stage.querySelector('canvas'), height = stage.style.height;
+    const scale = Number(canvas.dataset.zoom);
+    expect(shelf.zoomTo(2)).toBe(2); flushFrames();
+    expect(Number(canvas.dataset.zoom)).toBeCloseTo(scale*2,3);
+    expect(stage.style.height).toBe(height);
+    shelf.panBy(100000,-100000); flushFrames();
+    const pan = JSON.parse(canvas.dataset.inspectionPan);
+    expect(Math.abs(pan[0])).toBeLessThanOrEqual(195);
+    expect(Math.abs(pan[1])).toBeLessThanOrEqual(Number(canvas.dataset.sceneFitHeight)/2);
+    expect(shelf.zoomTo(10)).toBe(4); flushFrames();
+    shelf.setMode('spine',{animate:false}); flushFrames();
+    expect(shelf.getInspectionZoom()).toBe(1);
+    expect(JSON.parse(canvas.dataset.inspectionPan)).toEqual([0,0]);
+  });
+
 });

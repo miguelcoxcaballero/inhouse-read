@@ -695,11 +695,12 @@ function coverTexture(book, style, textureHeight = 2048, maxDimension = Infinity
   return map;
 }
 
-function shelfSpineSurface(book, style, height, thickness, shelf, overview) {
+function shelfSpineSurface(book, style, height, thickness, shelf, overview, inspectionResolution = 0) {
   if (overview) return spineSurface(book, style, height, thickness,
     { textureWidth:64, textureHeight:256, engraving:false, level:'overview' });
   // Shelf copies are rastered at their final size, never shrunk from 2048.
-  const lifted = liftedTextureHeight(height);
+  const lifted = inspectionResolution || liftedTextureHeight(height);
+  if (inspectionResolution) return spineSurface(book, style, height, thickness, {textureWidth:512,textureHeight:inspectionResolution,level:'detail'});
   return shelf ? spineSurface(book, style, height, thickness, { textureWidth:256, textureHeight:1024, level:'shelf' })
     : spineSurface(book, style, height, thickness, { textureWidth:lifted / 2, textureHeight:lifted, level:'detail' });
 }
@@ -758,17 +759,19 @@ function acquireCoverImage(url, onImage, onError) {
 }
 
 export function createBookModel(book, style, width, height, thickness, coverUrl,
-  { shelf = false, overview = false } = {}) {
+  { shelf = false, overview = false, inspectionResolution = 0 } = {}) {
   const group = new THREE.Group();
+  inspectionResolution = shelf && !overview ? (inspectionResolution >= 2048 ? 2048 : inspectionResolution >= 1024 ? 1024 : 0) : 0;
+  group.userData.inspectionResolution = inspectionResolution;
   group.userData.overview = group.userData.isOverview = Boolean(overview);
   group.userData.detailLevel = overview ? 'overview' : shelf ? 'shelf' : 'detail';
-  const textureHeight = overview ? 256 : shelf ? 512 : liftedTextureHeight(height);
+  const textureHeight = inspectionResolution || (overview ? 256 : shelf ? 512 : liftedTextureHeight(height));
   const maxTextureDimension = overview ? 256 : Infinity;
   const bindingSegments = overview ? 16 : shelf ? 32 : 96, reliefRows = shelf ? 96 : 384;
   const ribbonSegments = overview ? 8 : 32, ribbonSeed = textSeed(`ribbon|${book?.id ?? ''}|${book?.title ?? ''}`) || 1;
   const detail = !shelf && !overview, level = group.userData.detailLevel, ratio = width / height;
   const cloth = new THREE.MeshStandardMaterial({ color: style.color, roughness: .86 });
-  let surface = shelfSpineSurface(book, style, height, thickness, shelf, overview);
+  let surface = shelfSpineSurface(book, style, height, thickness, shelf, overview, inspectionResolution);
   const binding = new THREE.MeshPhysicalMaterial({ ...surface.material, side: THREE.DoubleSide });
   const updateSpineFade = !shelf && !overview ? spineGrazingFade(binding) : null;
   updateSpineFade?.(book, style);
@@ -783,13 +786,13 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   // Even at full resolution real bookcloth is a fine grain, never burlap.
   const threadPixels = height * Math.min(2, typeof devicePixelRatio === 'number' ? devicePixelRatio : 1) / 224;
   const weaveStrength = THREE.MathUtils.clamp((threadPixels - 1.4) / 2.2, .2, .45);
-  if (detail) {
+  if (detail || inspectionResolution) {
     cloth.normalMap = sharedTexture('cloth', clothNormals);
     cloth.normalMap.repeat.set(14 * ratio, 14); cloth.normalScale.setScalar(.5 * weaveStrength);
   }
   let coverGrain = null;
   const setCoverGrain = kind => {
-    if (!detail || kind === coverGrain) return;
+    if ((!detail && !inspectionResolution) || kind === coverGrain) return;
     coverGrain = kind; cover.normalMap?.dispose();
     cover.normalMap = sharedTexture(kind, kind === 'cloth' ? clothNormals : paperNormals);
     const tiles = kind === 'cloth' ? 14 : 5;
@@ -976,7 +979,10 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
       resolveCoverReady(loaded);
       group.userData.invalidate?.();
     };
-    const replaceMap = map => { cover.map?.dispose(); cover.map = map; cover.needsUpdate = true; };
+    const replaceMap = map => {
+      map.anisotropy = Math.min(16, renderer?.capabilities.getMaxAnisotropy() || 1);
+      cover.map?.dispose(); cover.map = map; cover.needsUpdate = true;
+    };
     if (!url) {
       releaseImage = () => {};
       replaceMap(coverTexture(nextBook, nextStyle, textureHeight, maxTextureDimension, level));
@@ -990,6 +996,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
         canvas.height = dimensions.height; canvas.width = dimensions.width;
         const c = canvas.getContext('2d'); c.fillStyle = nextStyle.color; c.fillRect(0, 0, canvas.width, canvas.height);
         const fit = fitCoverImage(image.width, image.height, canvas.width, canvas.height);
+        c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
         c.drawImage(image, fit.x, fit.y, fit.width, fit.height);
         // A printed jacket is still paper over board: joint, edges, corners.
         const unit = canvas.height / 1024;
@@ -1024,7 +1031,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   };
   group.userData.updateSpineAppearance = (nextBook, nextStyle) => {
     const previous = surface;
-    surface = shelfSpineSurface(nextBook, nextStyle, height, thickness, shelf, overview);
+    surface = shelfSpineSurface(nextBook, nextStyle, height, thickness, shelf, overview, inspectionResolution);
     Object.assign(binding, surface.material); updateSpineFade?.(nextBook, nextStyle);
     binding.needsUpdate = true;
     releaseSurface(previous);
