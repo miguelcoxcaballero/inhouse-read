@@ -1360,7 +1360,6 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         onClick:() => setViewMode(mode.id)
       }, [svgIcon(mode.icon, { className:'ihr-view-switch__icon' }), el('span', { text:mode.label })]));
     }
-    controls.append(shelfZoom.element);
     return controls;
   }
 

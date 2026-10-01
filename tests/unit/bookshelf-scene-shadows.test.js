@@ -27,9 +27,11 @@ vi.mock('../../src/js/book-model.js', async () => {
       const key = new Three.DirectionalLight(0xffffff, 1); key.position.set(-.46, .42, 1);
       scene.add(key); scene.userData.readerLight = key; gpu.key = key;
     },
-    createBookModel(book, style, width, height, thickness) {
+    createBookModel(book, style, width, height, thickness, coverUrl, options={}) {
       const model = new Three.Group(); model.name = `book:${book.id}`;
       model.add(new Three.Mesh(new Three.BoxGeometry(width, height, thickness), new Three.MeshStandardMaterial()));
+      model.userData.overview = Boolean(options.overview);
+      model.userData.inspectionResolution = options.inspectionResolution || 0;
       model.userData.dispose = () => {};
       return model;
     } };
@@ -202,6 +204,24 @@ describe('shelf shadows while scrolling', () => {
     shelf.setMode('spine',{animate:false}); flushFrames();
     expect(shelf.getInspectionZoom()).toBe(1);
     expect(JSON.parse(canvas.dataset.inspectionPan)).toEqual([0,0]);
+  });
+
+  it('renders touch updates in the current frame with cheaper shadows, restoring full quality at rest', async () => {
+    shelf.setMode('isometric',{animate:false}); flushFrames();
+    await Promise.resolve(); flushFrames();
+    gpu.samples=[];
+    const view=shelf.getInspectionView();
+    const zoomed=shelf.setInspectionView({...view,zoom:2,panX:240,panY:0},{moving:true,renderNow:true});
+    const canvas=stage.querySelector('canvas');
+    expect(canvas.dataset.inspectionMoving).toBe('true');
+    expect(canvas.dataset.animating).toBe('true');
+    expect(zoomed.panX).toBe(240); // elastic slack beyond the 195 px resting edge
+    const movingSamples=gpu.samples.at(-1)[0];
+    shelf.setInspectionView(zoomed,{moving:false,renderNow:true});
+    expect(shelf.getInspectionView().panX).toBe(195);
+    expect(canvas.dataset.inspectionMoving).toBe('false');
+    expect(gpu.samples.at(-1)[0]).toBe(movingSamples*2);
+    gpu.samples=null;
   });
 
 });
