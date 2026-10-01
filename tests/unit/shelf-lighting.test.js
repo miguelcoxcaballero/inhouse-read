@@ -115,6 +115,65 @@ describe('visible shelf lighting', () => {
     lighting.dispose();
   });
 
+  it('reuses exact shadow coordinates through finger zoom and pan, and redraws real geometry or daylight turns', () => {
+    const scene = new THREE.Scene(), key = new THREE.DirectionalLight();
+    key.position.set(-.46, .42, 1); scene.userData.readerLight = key; scene.add(key);
+    const renderer = { shadowMap:{ needsUpdate:false } }, lighting = createShelfLighting(scene, renderer);
+    const cabinet = new THREE.Box3(new THREE.Vector3(0, -650, -160), new THREE.Vector3(390, 0, 0));
+    const frame = { width:390, viewportHeight:700, scroll:0, depth:160, dirty:false };
+    const transform = new THREE.Matrix4();
+    expect(lighting.update({ ...frame, bounds:cabinet, transform })).toBe(true);
+    // Simulate the initial map being drawn by three, then follow one receiver.
+    key.shadow.updateMatrices(key); key.shadow.needsUpdate = renderer.shadowMap.needsUpdate = false;
+    const receiver = new THREE.Vector3(150, -220, -80), projected = receiver.clone().applyMatrix4(key.shadow.matrix);
+    const direction = key.position.clone().sub(key.target.position).normalize();
+    let redraws = 0;
+    for (let index = 1; index <= 60; index++) {
+      const zoom = 1 + index / 30;
+      transform.makeScale(zoom, zoom, zoom).setPosition((1 - zoom) * 195 + index / 3, (zoom - 1) * 350, 0);
+      redraws += Number(lighting.update({ ...frame, bounds:cabinet.clone().applyMatrix4(transform), transform, moving:true }));
+      const current = receiver.clone().applyMatrix4(transform).applyMatrix4(key.shadow.matrix);
+      expect(current.distanceTo(projected)).toBeLessThan(1e-7);
+      expect(key.position.clone().sub(key.target.position).normalize().distanceTo(direction)).toBeLessThan(1e-7);
+      expect(key.shadow.needsUpdate).toBe(false);
+    }
+    expect(redraws).toBe(0); expect(renderer.shadowMap.needsUpdate).toBe(false);
+    expect(lighting.update({ ...frame, bounds:cabinet.clone().applyMatrix4(transform), transform })).toBe(false);
+    // At gesture end one fresh visible-window fit restores the original
+    // resolution and screen-space softness, rather than magnifying the map.
+    const finalBounds = cabinet.clone().applyMatrix4(transform);
+    expect(lighting.update({ ...frame, bounds:finalBounds, transform, forceRefit:true })).toBe(true);
+    expect(key.shadow.normalBias).toBe(.45); expect(lighting.settling).toBe(false);
+    const referenceScene = new THREE.Scene(), referenceKey = new THREE.DirectionalLight();
+    referenceKey.position.set(-.46, .42, 1); referenceScene.userData.readerLight = referenceKey; referenceScene.add(referenceKey);
+    const reference = createShelfLighting(referenceScene, { shadowMap:{} });
+    reference.update({ ...frame, bounds:finalBounds, transform });
+    for (const axis of ['left', 'right', 'top', 'bottom', 'near', 'far']) {
+      expect(key.shadow.camera[axis]).toBeCloseTo(referenceKey.shadow.camera[axis], 7);
+    }
+    expect(key.shadow.radius).toBeCloseTo(referenceKey.shadow.radius, 7);
+    expect(key.shadow.blurSamples).toBe(referenceKey.shadow.blurSamples);
+    expect(key.position.distanceTo(referenceKey.position)).toBeLessThan(1e-7);
+    key.shadow.needsUpdate = renderer.shadowMap.needsUpdate = false;
+    expect(lighting.update({ ...frame, bounds:finalBounds, transform })).toBe(false);
+    expect(key.shadow.needsUpdate).toBe(false); reference.dispose();
+    // Books moving inside the room change occlusion and still redraw at full quality.
+    expect(lighting.update({ ...frame, bounds:cabinet.clone().applyMatrix4(transform), transform, dirty:true })).toBe(true);
+    key.shadow.needsUpdate = renderer.shadowMap.needsUpdate = false;
+    const pivot = new THREE.Vector3(195, -325, -80);
+    const turn = angle => transform.makeTranslation(...pivot.toArray()).multiply(new THREE.Matrix4().makeRotationY(angle))
+      .multiply(new THREE.Matrix4().makeTranslation(...pivot.clone().negate().toArray()));
+    turn(-.3);
+    expect(lighting.update({ ...frame, bounds:cabinet.clone().applyMatrix4(transform), transform })).toBe(true);
+    expect(key.shadow.needsUpdate).toBe(true);
+    key.shadow.needsUpdate = false;
+    // Mirrored yaw angles have equal axis-aligned bounds but different occlusion.
+    turn(.3);
+    expect(lighting.update({ ...frame, bounds:cabinet.clone().applyMatrix4(transform), transform })).toBe(true);
+    expect(key.shadow.needsUpdate).toBe(true);
+    lighting.dispose();
+  });
+
   it('widens only the back panel shadow along its own surface and dims its room bounce', () => {
     const panel = widePenumbra(new THREE.MeshStandardMaterial());
     const shader = { fragmentShader:THREE.ShaderLib.standard.fragmentShader };

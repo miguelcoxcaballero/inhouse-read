@@ -27,8 +27,8 @@ visualization geometry, not manufacturing drawings with certified tolerances.
 Mesh pitch, fine bevel radii, coating texture and tiny screw details are visual
 approximations from the source photos and assembly illustrations.
 
-Four material batches keep each unit to four draw calls and approximately
-70,300 triangles. The expanded metal is now geometry: connected hexagonal
+Four material batches keep each unit to four draw calls and 70,226 triangles.
+The expanded metal is geometry: connected hexagonal
 strands with a 0.65 mm pressed profile, two reflecting facets on stretched
 strands and flatter connecting bonds. Apertures remain physically empty from
 above, below and through the back brace; the standard raycaster and shadow
@@ -43,7 +43,18 @@ The neutral white powder coating has a small clear-coat component and a
 sub-millimetre bump texture whose UVs use physical millimetres, so grain has
 the same scale on a long post and a short rail.
 
+Indexed triangle corners preserve the same positions, apertures, physical UVs
+and pressed facets while reducing vertices from 210,678 to 145,432. Normals use
+normalized signed 16-bit storage (maximum component error below 0.000016);
+positions and UVs retain their original Float32 values. Geometry buffers shrink
+from 6.83 to 4.59 MB per unit. No triangles or close-up details are removed.
+
 Each model owns and disposes its GPU geometries, materials and paint texture.
-Immutable panel vertex arrays are cached on the CPU to avoid rebuilding the
-hexagonal pattern when the catalogue reopens; every model receives independent
-buffers so disposing a preview cannot invalidate the bookshelf scene.
+The complete four finished batches are cached as immutable CPU data, including
+their indices and bounds, to avoid reconstructing the sheet, rounded profiles
+and fastenings when the catalogue reopens or another unit is added. The panel
+construction cache is released after preparing those batches. Every model
+receives independent buffers and part bounds, so disposing or updating a
+preview cannot invalidate the bookshelf scene. A local Node benchmark of
+repeated creation measured a median of 1.8 ms versus 37.9 ms before caching;
+this measures construction CPU time, not device frame rate.

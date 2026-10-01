@@ -206,7 +206,7 @@ describe('shelf shadows while scrolling', () => {
     expect(JSON.parse(canvas.dataset.inspectionPan)).toEqual([0,0]);
   });
 
-  it('renders touch updates in the current frame with cheaper shadows, restoring full quality at rest', async () => {
+  it('renders finger zoom and pan immediately while retaining full-quality shadow textures', async () => {
     shelf.setMode('isometric',{animate:false}); flushFrames();
     await Promise.resolve(); flushFrames();
     gpu.samples=[];
@@ -217,10 +217,28 @@ describe('shelf shadows while scrolling', () => {
     expect(canvas.dataset.animating).toBe('true');
     expect(zoomed.panX).toBe(240); // elastic slack beyond the 195 px resting edge
     const movingSamples=gpu.samples.at(-1)[0];
+    shelf.setInspectionView({...zoomed,zoom:2.2,panX:180},{moving:true,renderNow:true});
+    expect(gpu.samples.at(-1)[0]).toBe(movingSamples);
     shelf.setInspectionView(zoomed,{moving:false,renderNow:true});
     expect(shelf.getInspectionView().panX).toBe(195);
     expect(canvas.dataset.inspectionMoving).toBe('false');
-    expect(gpu.samples.at(-1)[0]).toBe(movingSamples*2);
+    expect(gpu.samples.at(-1)[0]).toBe(movingSamples);
+    gpu.samples=null;
+  });
+
+  it('keeps the shadow map through sixty inspection frames with unchanged visible casters', async () => {
+    shelf.setMode('isometric',{animate:false}); flushFrames();
+    await Promise.resolve(); flushFrames();
+    gpu.samples=[]; gpu.renderer.shadowMap.needsUpdate=false;
+    const view=shelf.getInspectionView(), models=shelf.canvas.dataset.modelCreations;
+    for(let index=0;index<60;index++) {
+      shelf.setInspectionView({...view,zoom:1+index/300,panX:index/20,panY:index/30},{moving:true,renderNow:true});
+    }
+    expect(shelf.canvas.dataset.modelCreations).toBe(models);
+    expect(gpu.samples).toHaveLength(60);
+    expect(gpu.samples.every(([,redraw])=>!redraw)).toBe(true);
+    shelf.invalidate(); flushFrames();
+    expect(gpu.samples.some(([,redraw])=>redraw)).toBe(true);
     gpu.samples=null;
   });
 

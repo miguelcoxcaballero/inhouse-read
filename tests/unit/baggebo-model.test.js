@@ -76,7 +76,7 @@ describe('IKEA BAGGEBO model', () => {
   it('batches all parts into four draw calls and keeps geometry finite for mobile rendering', () => {
     const shelf = createBaggebo();
     expect(shelf.children).toHaveLength(4);
-    const triangles = shelf.children.reduce((total, mesh) => total + mesh.geometry.attributes.position.count / 3, 0);
+    const triangles = shelf.children.reduce((total, mesh) => total + (mesh.geometry.index?.count ?? mesh.geometry.attributes.position.count) / 3, 0);
     expect(triangles).toBeLessThan(80000);
     for (const mesh of shelf.children) {
       expect(mesh.castShadow).toBe(true);
@@ -90,6 +90,30 @@ describe('IKEA BAGGEBO model', () => {
     expect(painted.material.bumpScale).toBeLessThan(.04);
     // Long posts repeat the same sub-millimetre paint grain as short rails.
     expect(painted.geometry.attributes.uv.array.some(value => Math.abs(value) > 100)).toBe(true);
+    shelf.userData.dispose();
+  });
+
+  it('keeps the complete pressed mesh while reducing vertex work and GPU storage', () => {
+    const shelf = createBaggebo();
+    let vertices = 0, triangles = 0, bytes = 0, validNormals = true;
+    for (const mesh of shelf.children) {
+      const geometry = mesh.geometry, normal = geometry.getAttribute('normal');
+      expect(geometry.index).not.toBeNull();
+      vertices += geometry.attributes.position.count;
+      triangles += geometry.index.count / 3;
+      bytes += geometry.index.array.byteLength;
+      for (const attribute of Object.values(geometry.attributes)) bytes += attribute.array.byteLength;
+      for (let index = 0; index < normal.count; index += 1) {
+        const length = Math.hypot(normal.getX(index), normal.getY(index), normal.getZ(index));
+        if (length !== 0 && Math.abs(length - 1) > .00003) validNormals = false;
+      }
+    }
+    // The optimization reuses triangle corners, preserving every facet;
+    // the previous non-indexed model needed 210,678 vertices and 6.83 MB.
+    expect(triangles).toBe(70226);
+    expect(vertices).toBeLessThan(147000);
+    expect(bytes).toBeLessThan(4700000);
+    expect(validNormals).toBe(true);
     shelf.userData.dispose();
   });
 
@@ -111,7 +135,11 @@ describe('IKEA BAGGEBO model', () => {
     first.children.forEach((mesh, index) => {
       expect(mesh.geometry).not.toBe(second.children[index].geometry);
       expect(mesh.geometry.attributes.position.array === second.children[index].geometry.attributes.position.array).toBe(false);
+      expect(mesh.geometry.index.array).not.toBe(second.children[index].geometry.index.array);
     });
+    const secondBounds = second.userData.parts[0].bounds.clone();
+    first.userData.parts[0].bounds.min.setScalar(123);
+    expect(second.userData.parts[0].bounds.equals(secondBounds)).toBe(true);
     secondPaint.addEventListener('dispose', () => { secondDisposals += 1; });
     first.userData.dispose(); first.userData.disposeGeometry();
     expect(disposals).toBe(resources.size);

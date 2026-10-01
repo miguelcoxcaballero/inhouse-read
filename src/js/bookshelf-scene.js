@@ -327,6 +327,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let dropMarker = null, dropPosition = null;
   let desiredMode = mode === 'isometric' ? 'isometric' : 'spine';
   let inspectionZoom = 1, panX = 0, panY = 0, inspectionMoving = false;
+  let inspectionShadowRefit = false;
   let trashHover = false, trashOpenness = 0, trashTransition = null;
   let trashRect = null;
   const trashOriginalStates = new Map();
@@ -1060,28 +1061,39 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       Object.assign(svg.style, { position:'absolute', pointerEvents:'none', touchAction:'none', overflow:'visible',
         maxWidth:'none', maxHeight:'none' });
       path.style.touchAction = 'none'; svg.append(definitions, path); node.append(svg);
-      native = { svg, path, exclusions, pose:'', model:null, clip:'' }; semanticFoliage.set(node, native);
+      native = { svg, path, exclusions, pose:'', model:null, clip:'', bounds:null }; semanticFoliage.set(node, native);
     }
     // The pot keeps its own accessible focus/drag centre. Its child extends
     // over the leaves, but only painted triangles participate in hit testing.
     Object.assign(native.svg.style, { display:'block', left:`${rect.left - hitRect.left}px`,
       top:`${rect.top - hitRect.top}px`, width:`${rect.width}px`, height:`${rect.height}px` });
-    native.svg.setAttribute('viewBox', `${rect.left} ${rect.top} ${rect.width} ${rect.height}`);
     native.path.style.pointerEvents = node.disabled || node.inert || node.style.pointerEvents === 'none' ? 'none' : 'fill';
-    const pose = model.matrixWorld.elements.join(',');
+    // Inspection is a uniform scale and translation of the whole room. SVG's
+    // viewBox applies exactly that transform to the cached leaf triangles,
+    // preserving holes without projecting every leaf again on every finger move.
+    const pose = [...model.matrix.elements, ...furniture.quaternion.toArray()].join(',');
     if (native.model !== model || native.pose !== pose) {
       const projected = projectPlantFoliage(model);
       native.path.setAttribute('d', projected.path); native.svg.dataset.triangles = String(projected.triangles);
-      native.model = model; native.pose = pose;
+      native.model = model; native.pose = pose; native.bounds = { ...rect };
+      native.svg.setAttribute('viewBox', `${rect.left} ${rect.top} ${rect.width} ${rect.height}`);
     }
+    const reference = native.bounds;
+    const stableCoordinate = value => Math.round(value * 1000) / 1000;
+    const toReference = bounds => ({
+      left:stableCoordinate(reference.left + (bounds.left - rect.left) * reference.width / rect.width),
+      right:stableCoordinate(reference.left + (bounds.right - rect.left) * reference.width / rect.width),
+      top:stableCoordinate(reference.top + (bounds.top - rect.top) * reference.height / rect.height),
+      bottom:stableCoordinate(reference.top + (bounds.bottom - rect.top) * reference.height / rect.height)
+    });
     const rectanglePath = bounds => `M${bounds.left},${bounds.top}H${bounds.right}V${bounds.bottom}H${bounds.left}Z`;
     const excluded = bookEntries.filter(other => other.kind !== 'plant' && other.model?.visible &&
       !other.node?.classList.contains('is-away') && !other.node?.classList.contains('is-dragging'))
-      .map(other => progress > .04 ? other.rect : other.hitRect).filter(Boolean);
+      .map(other => progress > .04 ? other.rect : other.hitRect).filter(Boolean).map(toReference);
     // Inside these rectangles the existing native book surface already has
     // touch-action:none and resolves true mesh occlusion in its drag handler.
     // Clipping keeps book clicks native even if foliage is behind its cover.
-    const clipping = rectanglePath(rect) + disjointRectangles(excluded, rect).map(rectanglePath).join('');
+    const clipping = rectanglePath(reference) + disjointRectangles(excluded, reference).map(rectanglePath).join('');
     if (native.clip !== clipping) {
       native.exclusions.setAttribute('d', clipping); native.clip = clipping;
     }
@@ -1247,8 +1259,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const { moving, shelfMoving } = updateEntries(scroll, zoom, now, finishedInsertions);
     const finishedDrops = [];
     const trashMoving = updateTrash(scroll, now, finishedDrops);
+    let casters = trash?.visible ? 1 : 0;
+    for (const entry of bookEntries) if (entry.model?.visible) casters = Math.imul(casters, 31) + entry.model.id | 0;
+    const contentDirty = shadowDirty || shelfMoving || trashMoving || casters !== shadowCasters;
     const lampRefresh = lampLighting.update(bookEntries, { scroll, viewportHeight,
-      shadowDirty:shadowDirty || furnitureMoving || shelfMoving });
+      shadowDirty:contentDirty, transform:furniture.matrixWorld });
     const nextDaylight = lampLighting.activeCount ? shelfType === 'baggebo' ? .82 : .7 : 1;
     if (nextDaylight !== daylightFactor) {
       daylightFactor = nextDaylight;
@@ -1263,11 +1278,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (trash) shadowBounds.union(shadowTrash.copy(trashBounds).translate(trash.position));
     shadowBounds.applyMatrix4(furniture.matrixWorld);
     // Scrolling creates and releases culled models: those change the casters.
-    let casters = trash?.visible ? 1 : 0;
-    for (const entry of bookEntries) if (entry.model?.visible) casters = Math.imul(casters, 31) + entry.model.id | 0;
-    const shadowMotion = furnitureMoving || shelfMoving || trashMoving || inspectionMoving;
+    const shadowMotion = furnitureMoving || shelfMoving || trashMoving;
     const shadowRefresh = lighting.update({ width:sceneWidth, viewportHeight, scroll, depth, bounds:shadowBounds,
-      dirty:shadowDirty || casters !== shadowCasters || shadowMotion, moving:shadowMotion });
+      dirty:contentDirty, moving:shadowMotion, transform:furniture.matrixWorld,
+      forceRefit:inspectionShadowRefit && !inspectionMoving });
+    if (!inspectionMoving) inspectionShadowRefit = false;
     shadowDirty = false; shadowCasters = casters;
     const overlayInsertion = bookEntries.some(entry => entry.insertion?.overlayCanvas);
     // Its hidden slot and neighbors are already painted. Reuse that snapshot
@@ -1375,12 +1390,15 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     getInspectionView,
     setInspectionView(view,{moving=false,renderNow=false}={}) {
       if (disposed || desiredMode !== 'isometric' || transition || progress !== 1) return getInspectionView();
+      const previousInspection = [inspectionZoom, panX, panY];
       inspectionZoom=clamp(Number(view.zoom) || 1,1,4); inspectionMoving=Boolean(moving);
       const slack=inspectionMoving ? 80 : 0;
       panX=clamp(Number(view.panX) || 0,-(inspectionZoom-1)*sceneWidth/2-slack,(inspectionZoom-1)*sceneWidth/2+slack);
       panY=clamp(Number(view.panY) || 0,-(inspectionZoom-1)*sceneFitHeight/2-slack,(inspectionZoom-1)*sceneFitHeight/2+slack);
-      if (renderNow) { shelfSnapshotDirty=shadowDirty=true; cancelAnimationFrame(raf); raf=0; draw(); }
-      else invalidate();
+      inspectionShadowRefit ||= previousInspection.some((value,index)=>value!==[inspectionZoom,panX,panY][index]);
+      shelfSnapshotDirty = true;
+      if (renderNow) { cancelAnimationFrame(raf); raf=0; draw(); }
+      else invalidate(false);
       return getInspectionView();
     },
     zoomTo(value,clientX,clientY) {
@@ -1393,11 +1411,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       panY = y-sceneFitHeight/2-(y-sceneFitHeight/2-panY)*relative;
       inspectionZoom = next;
       if (next === 1) panX = panY = 0;
-      invalidate(); return inspectionZoom;
+      inspectionShadowRefit = true;
+      shelfSnapshotDirty = true; invalidate(false); return inspectionZoom;
     },
     panBy(x,y) {
       if (disposed || desiredMode !== 'isometric' || inspectionZoom <= 1) return;
-      panX += Number(x) || 0; panY += Number(y) || 0; invalidate();
+      panX += Number(x) || 0; panY += Number(y) || 0; inspectionShadowRefit = true; shelfSnapshotDirty = true; invalidate(false);
     },
     invalidate,
     hitTrash,

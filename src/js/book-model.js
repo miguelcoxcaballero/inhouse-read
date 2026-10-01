@@ -1105,7 +1105,10 @@ const rendererSize = new THREE.Vector2();
 export function getBookRenderer() {
   if (!globalThis.WebGLRenderingContext && !globalThis.WebGL2RenderingContext) return null;
   if (!renderer) try {
-    renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
+    // Shelf, reader and insertion snapshots copy the frame synchronously
+    // after render. The GPU need not retain a second framebuffer between
+    // frames; their visible 2D canvases already own the captured pixels.
+    renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
     renderer.setPixelRatio(Math.min(Math.max(devicePixelRatio || 1, 2), 3));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     // Preserve print colours and gently compress real specular highlights.

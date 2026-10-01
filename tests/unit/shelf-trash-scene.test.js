@@ -621,6 +621,30 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     expect(excluded).toBeGreaterThan(10);
   });
 
+  it('reuses leaf triangles during finger zoom while their native surface still follows the visible leaf', () => {
+    const { node } = nativePlantLayout(); showTrash();
+    const svg = node.querySelector('.ihr-plant-foliage'), path = svg.querySelector(':scope > path');
+    const originalPath = path.getAttribute('d'), originalBox = svg.getAttribute('viewBox');
+    const writes = vi.spyOn(path, 'setAttribute');
+    const initial = shelf.getInspectionView();
+    for (const zoom of [1.2, 1.4, 1.6]) {
+      shelf.setInspectionView({ ...initial, zoom, panX:12, panY:10 }, { moving:true, renderNow:true });
+      expect(path.getAttribute('d')).toBe(originalPath);
+      expect(svg.getAttribute('viewBox')).toBe(originalBox);
+      const [left, top, width, height] = originalBox.split(' ').map(Number);
+      let hit = false;
+      for (let row = 1; row < 10 && !hit; row++) for (let col = 1; col < 10 && !hit; col++) {
+        const x = left + width * col / 10, y = top + height * row / 10;
+        if (!containsTriangle(originalPath, x, y)) continue;
+        const screenX = parseFloat(node.style.left) + parseFloat(svg.style.left) + (x - left) * parseFloat(svg.style.width) / width;
+        const screenY = parseFloat(node.style.top) + parseFloat(svg.style.top) + (y - top) * parseFloat(svg.style.height) / height;
+        hit = shelf.getObjectAtPoint(20 + screenX, 60 + screenY) === node;
+      }
+      expect(hit).toBe(true);
+    }
+    expect(writes).not.toHaveBeenCalled();
+  });
+
   it('cleans native foliage targets when models are culled, nodes are rebound and the shared scene is disposed', () => {
     const { node, data, layout } = nativePlantLayout();
     const original = node.querySelector('.ihr-plant-foliage');

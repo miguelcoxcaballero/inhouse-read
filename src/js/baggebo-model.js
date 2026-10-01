@@ -8,6 +8,74 @@ const PERIOD_Y = BAGGEBO_SPEC.meshPitch.height;
 const STRAND_WIDTH = .9;
 const SHEET_THICKNESS = .65;
 const panelTemplates = new Map();
+let modelTemplate;
+
+/** Index only vertices whose complete attributes match. The ridge's different
+ * normals stay separate, so this changes storage and vertex work, not facets,
+ * apertures, UVs or triangle coverage. No global vertex hashes are needed. */
+function compactGeometry(source) {
+  const attributes = Object.entries(source.attributes);
+  const words = attributes.map(([name, attribute]) => {
+    if (name === 'normal' || name === 'color') {
+      const factor = name === 'normal' ? 32767 : 255;
+      return Uint32Array.from(attribute.array, value => Math.round(value * factor));
+    }
+    return new Uint32Array(attribute.array.buffer, attribute.array.byteOffset, attribute.array.length);
+  });
+  const count = source.getAttribute('position').count;
+  const original = new Uint32Array(count), index = new Uint32Array(count);
+  let unique = 0, firstInPair = 0;
+  for (let vertex = 0; vertex < count; vertex += 1) {
+    // Every pressed facet is emitted as two adjacent triangles. Comparing
+    // their six corners avoids hashing the entire expanded sheet at startup.
+    if (vertex % 6 === 0) firstInPair = unique;
+    let match = firstInPair;
+    for (; match < unique; match += 1) {
+      let equal = true;
+      for (let attribute = 0; equal && attribute < attributes.length; attribute += 1) {
+        const size = attributes[attribute][1].itemSize;
+        for (let component = 0; component < size; component += 1) {
+          if (words[attribute][vertex * size + component] !== words[attribute][original[match] * size + component]) {
+            equal = false; break;
+          }
+        }
+      }
+      if (equal) break;
+    }
+    if (match === unique) original[unique++] = vertex;
+    index[vertex] = match;
+  }
+  const geometry = new THREE.BufferGeometry();
+  for (const [name, attribute] of attributes) {
+    // Signed normalized 16-bit normals have < 0.000016 component error;
+    // positions and physical paint UVs retain their original Float32 values.
+    const normalized = name === 'normal' || name === 'color';
+    const ArrayType = name === 'normal' ? Int16Array : name === 'color' ? Uint8Array : Float32Array;
+    const array = new ArrayType(unique * attribute.itemSize);
+    const factor = name === 'normal' ? 32767 : name === 'color' ? 255 : 1;
+    for (let vertex = 0; vertex < unique; vertex += 1) {
+      for (let component = 0; component < attribute.itemSize; component += 1) {
+        const value = attribute.array[original[vertex] * attribute.itemSize + component];
+        array[vertex * attribute.itemSize + component] = normalized ? Math.round(value * factor) : value;
+      }
+    }
+    geometry.setAttribute(name, new THREE.BufferAttribute(array, attribute.itemSize, normalized));
+  }
+  geometry.setIndex(new THREE.BufferAttribute(unique > 65535 ? index : new Uint16Array(index), 1));
+  geometry.computeBoundingBox(); geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function cloneTemplateGeometry(template) {
+  const geometry = new THREE.BufferGeometry();
+  for (const [name, attribute] of Object.entries(template.attributes)) {
+    geometry.setAttribute(name, new THREE.BufferAttribute(attribute.array.slice(), attribute.itemSize, attribute.normalized));
+  }
+  geometry.setIndex(new THREE.BufferAttribute(template.index.slice(), 1));
+  geometry.boundingBox = template.boundingBox.clone();
+  geometry.boundingSphere = template.boundingSphere.clone();
+  return geometry;
+}
 
 /** Actual expanded sheet. Adjacent hexagons share each strand; two shallow
  * facets give it a pressed ridge and visible thickness without opaque planes
@@ -97,18 +165,14 @@ function createPaintTexture() {
 }
 
 function panelGeometry(key, create) {
-  // Cache only immutable CPU arrays. Every furniture unit owns fresh buffers
-  // and GPU resources, so closing the catalogue cannot invalidate the scene.
   if (!panelTemplates.has(key)) {
-    const template = create();
-    panelTemplates.set(key, Object.fromEntries(['position', 'normal', 'uv'].map(name => [name, template.getAttribute(name).array])));
-    template.dispose();
+    const source = create(), geometry = compactGeometry(source);
+    source.dispose();
+    panelTemplates.set(key, { attributes:geometry.attributes, index:geometry.index.array,
+      boundingBox:geometry.boundingBox, boundingSphere:geometry.boundingSphere });
+    geometry.dispose();
   }
-  const geometry = new THREE.BufferGeometry(), template = panelTemplates.get(key);
-  for (const [name, itemSize] of [['position', 3], ['normal', 3], ['uv', 2]]) {
-    geometry.setAttribute(name, new THREE.Float32BufferAttribute(template[name].slice(), itemSize));
-  }
-  return geometry;
+  return cloneTemplateGeometry(panelTemplates.get(key));
 }
 
 function horizontalMesh(width, depth, y, front) {
@@ -165,106 +229,124 @@ export function createBaggebo({ width = 600 } = {}) {
   footMaterial.name = 'Polypropylene adjustable feet';
   const batches = new Map(), geometries = [], materials = [paint, meshPaint, hardware, footMaterial];
 
-
-  const add = (geometry, material, name, metadata = {}) => {
-    if (material === hardware) {
-      const shade = name.includes('-slot-') ? .24 : 1;
-      const colors = new Float32Array(geometry.getAttribute('position').count * 3).fill(shade);
-      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    }
-    if (material === paint) {
-      const positions = geometry.getAttribute('position');
-      // Rounded folded edges can exceed the nominal top by Float32 roundoff.
-      // Keep the shared book baseline and the published footprint exact.
-      for (let index = 0; index < positions.count; index += 1) {
-        const y = positions.getY(index);
-        if (y > 0 && y < 1e-6) positions.setY(index, 0);
+  if (!modelTemplate) {
+    const add = (geometry, material, name, metadata = {}) => {
+      if (material === hardware) {
+        const shade = name.includes('-slot-') ? .24 : 1;
+        const colors = new Float32Array(geometry.getAttribute('position').count * 3).fill(shade);
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       }
-      physicalPaintUVs(geometry);
-    }
-    geometry.computeBoundingBox();
-    group.userData.parts.push({ name, bounds:geometry.boundingBox.clone(), ...metadata });
-    if (!batches.has(material)) batches.set(material, []);
-    batches.get(material).push(geometry);
-  };
-  const box = (name, w, h, d, x, y, z, material = paint, radius = .65, metadata, segments = 1) => {
-    const geometry = name.includes('-slot-')
-      ? new THREE.BoxGeometry(w, h, d).toNonIndexed()
-      : new RoundedBoxGeometry(w, h, d, segments, Math.min(radius, w / 3, h / 3, d / 3));
-    geometry.translate(x, y, z);
-    add(geometry, material, name, metadata);
-  };
-  const screw = (name, x, y, z, axis = 'z', radius = 2.55) => {
-    const geometry = new THREE.CylinderGeometry(radius * .88, radius, 1.1, 20).toNonIndexed();
-    if (axis === 'z') geometry.rotateX(Math.PI / 2);
-    else if (axis === 'x') geometry.rotateZ(Math.PI / 2);
-    geometry.translate(x, y, z);
-    add(geometry, hardware, name, { kind:'screw' });
-    // Tiny dark cross grooves remain within the fixing head's footprint.
-    if (axis === 'z') {
-      box(`${name}-slot-horizontal`, 3.05, .5, .08, x, y, z + .555, hardware, .02);
-      box(`${name}-slot-vertical`, .5, 3.05, .08, x, y, z + .555, hardware, .02);
-    }
-  };
+      if (material === paint) {
+        const positions = geometry.getAttribute('position');
+        // Rounded folded edges can exceed the nominal top by Float32 roundoff.
+        // Keep the shared book baseline and the published footprint exact.
+        for (let index = 0; index < positions.count; index += 1) {
+          const y = positions.getY(index);
+          if (y > 0 && y < 1e-6) positions.setY(index, 0);
+        }
+        physicalPaintUVs(geometry);
+      }
+      geometry.computeBoundingBox();
+      group.userData.parts.push({ name, bounds:geometry.boundingBox.clone(), ...metadata });
+      if (!batches.has(material)) batches.set(material, []);
+      batches.get(material).push(geometry);
+    };
+    const box = (name, w, h, d, x, y, z, material = paint, radius = .65, metadata, segments = 1) => {
+      const geometry = name.includes('-slot-')
+        ? new THREE.BoxGeometry(w, h, d).toNonIndexed()
+        : new RoundedBoxGeometry(w, h, d, segments, Math.min(radius, w / 3, h / 3, d / 3));
+      geometry.translate(x, y, z);
+      add(geometry, material, name, metadata);
+    };
+    const screw = (name, x, y, z, axis = 'z', radius = 2.55) => {
+      const geometry = new THREE.CylinderGeometry(radius * .88, radius, 1.1, 20).toNonIndexed();
+      if (axis === 'z') geometry.rotateX(Math.PI / 2);
+      else if (axis === 'x') geometry.rotateZ(Math.PI / 2);
+      geometry.translate(x, y, z);
+      add(geometry, hardware, name, { kind:'screw' });
+      // Tiny dark cross grooves remain within the fixing head's footprint.
+      if (axis === 'z') {
+        box(`${name}-slot-horizontal`, 3.05, .5, .08, x, y, z + .555, hardware, .02);
+        box(`${name}-slot-vertical`, .5, 3.05, .08, x, y, z + .555, hardware, .02);
+      }
+    };
 
-  // Four continuous slender uprights and the manual's small adjustable feet.
-  for (const side of [-1, 1]) for (const [label, z] of [['front', -post / 2], ['back', -depth + post / 2]]) {
-    const x = side * (600 - post) / 2;
-    box(`${side < 0 ? 'left' : 'right'}-${label}-upright`, post, height - 7, post,
-      x, -(height - 7) / 2, z, paint, .85, { kind:'upright' }, 2);
-    const foot = new THREE.CylinderGeometry(post / 2 - .35, post / 2, 4.8, 24).toNonIndexed();
-    foot.translate(x, -height + 2.4, z);
-    add(foot, footMaterial, `${side < 0 ? 'left' : 'right'}-${label}-foot`, { kind:'foot' });
-    const stem = new THREE.CylinderGeometry(2.8, 2.8, 2.2, 8).toNonIndexed();
-    stem.translate(x, -height + 5.9, z);
-    add(stem, hardware, `${side < 0 ? 'left' : 'right'}-${label}-adjustment-stem`, { kind:'foot-stem' });
-  }
+    // Four continuous slender uprights and the manual's small adjustable feet.
+    for (const side of [-1, 1]) for (const [label, z] of [['front', -post / 2], ['back', -depth + post / 2]]) {
+      const x = side * (600 - post) / 2;
+      box(`${side < 0 ? 'left' : 'right'}-${label}-upright`, post, height - 7, post,
+        x, -(height - 7) / 2, z, paint, .85, { kind:'upright' }, 2);
+      const foot = new THREE.CylinderGeometry(post / 2 - .35, post / 2, 4.8, 24).toNonIndexed();
+      foot.translate(x, -height + 2.4, z);
+      add(foot, footMaterial, `${side < 0 ? 'left' : 'right'}-${label}-foot`, { kind:'foot' });
+      const stem = new THREE.CylinderGeometry(2.8, 2.8, 2.2, 8).toNonIndexed();
+      stem.translate(x, -height + 5.9, z);
+      add(stem, hardware, `${side < 0 ? 'left' : 'right'}-${label}-adjustment-stem`, { kind:'foot-stem' });
+    }
 
-  const surfaceWidth = 567.5, surfaceFront = -15;
-  for (const [index, bottom] of [0, ...BAGGEBO_SPEC.shelfBottoms].entries()) {
-    const name = index === 0 ? 'top' : `shelf-${index - 1}`;
-    const y = -bottom;
-    // Folded steel rims are beneath the mesh baseline, leaving books seated
-    // at exactly the source model's surface elevations.
-    box(`${name}-front-rim`, 600 - post * 2, rim, 2.1, 0, y - rim / 2, surfaceFront - 1.05);
-    box(`${name}-back-rim`, 600 - post * 2, rim, 2.1, 0, y - rim / 2, -235 + 1.05);
-    // Rolled sheet edges catch a narrow highlight and hide the raw cut ends.
-    box(`${name}-front-folded-lip`, 600 - post * 2, .8, 3.2, 0, y - .4, surfaceFront - 1.6, paint, .25, { kind:'folded-lip' });
-    box(`${name}-back-folded-lip`, 600 - post * 2, .8, 3.2, 0, y - .4, -235 + 1.6, paint, .25, { kind:'folded-lip' });
+    const surfaceWidth = 567.5, surfaceFront = -15;
+    for (const [index, bottom] of [0, ...BAGGEBO_SPEC.shelfBottoms].entries()) {
+      const name = index === 0 ? 'top' : `shelf-${index - 1}`;
+      const y = -bottom;
+      // Folded steel rims are beneath the mesh baseline, leaving books seated
+      // at exactly the source model's surface elevations.
+      box(`${name}-front-rim`, 600 - post * 2, rim, 2.1, 0, y - rim / 2, surfaceFront - 1.05);
+      box(`${name}-back-rim`, 600 - post * 2, rim, 2.1, 0, y - rim / 2, -235 + 1.05);
+      // Rolled sheet edges catch a narrow highlight and hide the raw cut ends.
+      box(`${name}-front-folded-lip`, 600 - post * 2, .8, 3.2, 0, y - .4, surfaceFront - 1.6, paint, .25, { kind:'folded-lip' });
+      box(`${name}-back-folded-lip`, 600 - post * 2, .8, 3.2, 0, y - .4, -235 + 1.6, paint, .25, { kind:'folded-lip' });
+      for (const side of [-1, 1]) {
+        box(`${name}-${side < 0 ? 'left' : 'right'}-rim`, 2.1, rim, 220,
+          side * (surfaceWidth / 2 - 1.05), y - rim / 2, -depth / 2);
+        box(`${name}-${side < 0 ? 'left' : 'right'}-mount-tab`, 9, 18, 1.2,
+          side * 275, y - 22, -235 + .6, paint, .25);
+        screw(`${name}-${side < 0 ? 'left' : 'right'}-front-fixing`, side * 278, y - 9, surfaceFront + .6);
+        screw(`${name}-${side < 0 ? 'left' : 'right'}-back-fixing`, side * 278, y - 9, -233.3);
+      }
+      // A genuine central reinforcing strip under each expanded-metal panel.
+      box(`${name}-underside-stiffener`, 3.5, 3, 216, 0, y - 2.25, -depth / 2, paint, .3);
+      add(horizontalMesh(surfaceWidth, 220, y, surfaceFront), meshPaint, `${name}-mesh`,
+        { kind:index === 0 ? 'mesh-top' : 'mesh-shelf', baseline:y, thickness:SHEET_THICKNESS, apertureGeometry:true });
+    }
+
+    const brace = BAGGEBO_SPEC.rearBrace, braceZ = -249;
+    add(rearMesh(brace.width, brace.height, brace.top, braceZ), meshPaint, 'rear-central-mesh-brace', { kind:'mesh-brace', thickness:SHEET_THICKNESS, apertureGeometry:true });
     for (const side of [-1, 1]) {
-      box(`${name}-${side < 0 ? 'left' : 'right'}-rim`, 2.1, rim, 220,
-        side * (surfaceWidth / 2 - 1.05), y - rim / 2, -depth / 2);
-      box(`${name}-${side < 0 ? 'left' : 'right'}-mount-tab`, 9, 18, 1.2,
-        side * 275, y - 22, -235 + .6, paint, .25);
-      screw(`${name}-${side < 0 ? 'left' : 'right'}-front-fixing`, side * 278, y - 9, surfaceFront + .6);
-      screw(`${name}-${side < 0 ? 'left' : 'right'}-back-fixing`, side * 278, y - 9, -233.3);
+      box(`rear-brace-${side < 0 ? 'left' : 'right'}-fold`, 2.2, brace.height, 2,
+        side * (brace.width / 2 - 1.1), -(brace.top + brace.height / 2), braceZ, paint, .3);
+      for (const top of [brace.top + 6, brace.bottom - 6]) screw(`rear-brace-${side}-${top}-fixing`, side * 94, -top, -247.3);
     }
-    // A genuine central reinforcing strip under each expanded-metal panel.
-    box(`${name}-underside-stiffener`, 3.5, 3, 216, 0, y - 2.25, -depth / 2, paint, .3);
-    add(horizontalMesh(surfaceWidth, 220, y, surfaceFront), meshPaint, `${name}-mesh`,
-      { kind:index === 0 ? 'mesh-top' : 'mesh-shelf', baseline:y, thickness:SHEET_THICKNESS, apertureGeometry:true });
+    for (const top of [brace.top + 1, brace.bottom - 1]) {
+      box(`rear-brace-${top}-edge`, brace.width, 2, 2, 0, -top, braceZ, paint, .3);
+    }
+    // Pair of small wall attachment tabs shown under the top rear rail.
+    for (const side of [-1, 1]) {
+      box(`wall-tab-${side}`, 10, 20, 1.2, side * 90, -27, -248.9, paint, .35);
+      screw(`wall-tab-${side}-fixing`, side * 90, -33, -247.8, 'z', 1.8);
+    }
+
+    const batchTemplates = [];
+    for (const [material, sources] of batches) {
+      const merged = mergeGeometries(sources, false);
+      for (const source of sources) source.dispose();
+      // Sheet templates are already indexed; the other assembly batches still
+      // need their repeated rounded-box and fixing vertices compacted once.
+      const geometry = merged.index ? merged : compactGeometry(merged);
+      if (geometry !== merged) merged.dispose();
+      geometry.computeBoundingBox(); geometry.computeBoundingSphere();
+      batchTemplates.push({ materialIndex:materials.indexOf(material), attributes:geometry.attributes,
+        index:geometry.index.array, boundingBox:geometry.boundingBox, boundingSphere:geometry.boundingSphere });
+      geometry.dispose();
+    }
+    modelTemplate = { batches:batchTemplates, parts:group.userData.parts };
+    panelTemplates.clear();
   }
 
-  const brace = BAGGEBO_SPEC.rearBrace, braceZ = -249;
-  add(rearMesh(brace.width, brace.height, brace.top, braceZ), meshPaint, 'rear-central-mesh-brace', { kind:'mesh-brace', thickness:SHEET_THICKNESS, apertureGeometry:true });
-  for (const side of [-1, 1]) {
-    box(`rear-brace-${side < 0 ? 'left' : 'right'}-fold`, 2.2, brace.height, 2,
-      side * (brace.width / 2 - 1.1), -(brace.top + brace.height / 2), braceZ, paint, .3);
-    for (const top of [brace.top + 6, brace.bottom - 6]) screw(`rear-brace-${side}-${top}-fixing`, side * 94, -top, -247.3);
-  }
-  for (const top of [brace.top + 1, brace.bottom - 1]) {
-    box(`rear-brace-${top}-edge`, brace.width, 2, 2, 0, -top, braceZ, paint, .3);
-  }
-  // Pair of small wall attachment tabs shown under the top rear rail.
-  for (const side of [-1, 1]) {
-    box(`wall-tab-${side}`, 10, 20, 1.2, side * 90, -27, -248.9, paint, .35);
-    screw(`wall-tab-${side}-fixing`, side * 90, -33, -247.8, 'z', 1.8);
-  }
-
-  for (const [material, sources] of batches) {
-    const geometry = mergeGeometries(sources, false);
-    for (const source of sources) source.dispose();
-    geometry.computeBoundingBox(); geometry.computeBoundingSphere();
+  // Cache the entire finished furniture as immutable CPU data, not live GPU
+  // objects. Reopening a preview or adding another unit only copies buffers.
+  group.userData.parts = modelTemplate.parts.map(part => ({ ...part, bounds:part.bounds.clone() }));
+  for (const template of modelTemplate.batches) {
+    const geometry = cloneTemplateGeometry(template), material = materials[template.materialIndex];
     geometries.push(geometry);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = material.name;
