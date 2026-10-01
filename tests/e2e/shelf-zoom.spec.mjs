@@ -67,13 +67,15 @@ test('a finger flick coasts and a fresh touch stops it without losing the fitted
   await expect.poll(async()=>Number(await canvas.getAttribute('data-inspection-zoom'))).toBeGreaterThan(1.8);
   await expect(canvas).toHaveAttribute('data-inspection-moving','false');
   const px=frame.x+120,py=frame.y+150;
-  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point(1,px,py)]});
+  const startPan=JSON.parse(await canvas.getAttribute('data-inspection-pan'))[0],stamp=Date.now()/1000;
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',timestamp:stamp,touchPoints:[point(1,px,py)]});
   for(let i=1;i<=3;i++) {
     await page.waitForTimeout(16); // input samples from a deliberate short flick
-    await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[point(1,px+20*i,py)]});
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',timestamp:stamp+i*.016,touchPoints:[point(1,px+20*i,py)]});
   }
-  const release=JSON.parse(await canvas.getAttribute('data-inspection-pan'))[0];
-  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  // Hardware timestamps keep the flick's duration independent of GPU/test-driver delays.
+  const release=startPan+60;
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',timestamp:stamp+.064,touchPoints:[]});
   await expect.poll(async()=>JSON.parse(await canvas.getAttribute('data-inspection-pan'))[0],{timeout:3000}).toBeGreaterThan(release+1);
   await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point(1,px,py)]});
   const stopped=JSON.parse(await canvas.getAttribute('data-inspection-pan'))[0];
