@@ -4,6 +4,10 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.23
+
+- La papelera queda delante de la pared, con espacio para el cuerpo, la bisagra y la tapa abierta. La separación se conserva al cambiar de estantería o de tamaño de pantalla.
+
 ### Actualización web · 1.6.22
 
 - Portadas, lomos y tapas tienen pequeñas ondulaciones suaves que se descubren en los reflejos de las lámparas y de la habitación. Cada libro conserva su propio patrón al ampliar la estantería o abrirlo.

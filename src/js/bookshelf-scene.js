@@ -307,8 +307,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (trash) {
       // Its local placement is a real object on the floor, independent of the
       // camera, viewport, scroll and the progress of a view transition.
+      // Clear the actual room wall with the whole body and hinged-lid sweep,
+      // rather than centring a cylinder on the cabinet's rear plane.
+      const z = Math.max(-depth, roomWall.position.z - trashBounds.min.z + TRASH_GAP);
       trash.position.set(width / 2 + TRASH_GAP + trash.userData.radius,
-        floorY - trashBounds.min.y, -depth);
+        floorY - trashBounds.min.y, z);
       trash.rotation.set(0, 0, 0); trash.scale.setScalar(1); trash.visible = true;
     }
     rebuildOcclusion();

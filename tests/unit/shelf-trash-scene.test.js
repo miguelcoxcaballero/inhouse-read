@@ -37,6 +37,22 @@ function rect(left, top, width, height) { return { left, top, width, height, rig
 function showTrash() { shelf.setMode('isometric', { animate:false }); shelf.flush(); }
 const binModel = () => gpu.scene.getObjectByName('Shelf wastebasket');
 const floorModel = () => gpu.scene.getObjectByName('Library floor');
+// Measure the real vertices in the cabinet's local frame. World AABBs would
+// mix the pitched isometric camera/furniture transform with the wall's depth.
+function geometryBoundsInFrame(object, frame) {
+  frame.updateWorldMatrix(true, true);
+  const inverseFrame = frame.matrixWorld.clone().invert(), bounds = new THREE.Box3();
+  const point = new THREE.Vector3();
+  object.traverse(mesh => {
+    const positions = mesh.geometry?.getAttribute('position');
+    if (!positions) return;
+    const matrix = inverseFrame.clone().multiply(mesh.matrixWorld);
+    for (let index = 0; index < positions.count; index++) {
+      bounds.expandByPoint(point.fromBufferAttribute(positions, index).applyMatrix4(matrix));
+    }
+  });
+  return bounds;
+}
 function assertGroundedBin() {
   const bin = binModel(), floor = floorModel();
   expect(floor.visible).toBe(false); expect(shelf.canvas.dataset.floorVisible).toBe('false');
@@ -126,6 +142,42 @@ afterEach(() => {
 });
 
 describe('wastebasket in the shared 3D shelf scene', () => {
+  it.each(['walnut', 'baggebo'].flatMap(type => [320, 390, 720].map(width => [type, width])))
+    ('keeps the whole %s wastebasket clear of the wall throughout its lid movement at %i px and after depth reflow', (shelfType, viewportWidth) => {
+      scroller.getBoundingClientRect = () => rect(0, 60, viewportWidth, 700);
+      stage.getBoundingClientRect = () => rect(0, 60 - scroll, viewportWidth, 750);
+      shelf.canvas.getBoundingClientRect = () => rect(0, 60, viewportWidth, 700);
+      for (const [width, bookWidth] of [[viewportWidth, 100], [viewportWidth * .84, 240]]) {
+        const height = shelfType === 'baggebo' ? width * 1160 / 600 : 750;
+        shelf.updateLayout({ stage, width, sceneWidth:viewportWidth, height, shelfType, trashNode,
+          rows:[{ top:20, bottom:height * .29 }, { top:height * .35, bottom:height * .61 },
+            { top:height * .67, bottom:height - 50 }],
+          entries:[{ node:bookNode, book:{ id:'a', title:'Book', author:'Author' }, style:{ color:'#3c6548', width:28 },
+            x:60, y:130, width:bookWidth, height:180, thickness:28 }] });
+        showTrash();
+        const bin = binModel(), frame = bin.parent;
+        const wall = gpu.scene.getObjectByName('Library room wall');
+        expect(wall.parent).toBe(frame);
+        const wallBounds = geometryBoundsInFrame(wall, frame);
+        const floorBounds = geometryBoundsInFrame(floorModel(), frame);
+        const cabinet = frame.children.find(child => child.userData.furniture);
+        expect(floorBounds.max.y).toBeCloseTo(geometryBoundsInFrame(cabinet, frame).min.y, 6);
+        for (const openness of [0, .25, .5, .75, 1]) {
+          for (const bounce of [0, .15, .45]) {
+            bin.userData.setState({ openness, bounce });
+            const bounds = geometryBoundsInFrame(bin, frame);
+            // Positive z faces the room: every part, including the hinged lid
+            // and rear axle, must stay at least 10 px in front of the wall.
+            expect(bounds.min.z - wallBounds.max.z).toBeGreaterThanOrEqual(10 - 1e-6);
+            expect(bounds.min.y).toBeCloseTo(floorBounds.max.y, 6);
+            expect(bin.scale.toArray()).toEqual([1, 1, 1]);
+            expect(bin.rotation.toArray().slice(0, 3)).toEqual([0, 0, 0]);
+          }
+        }
+        bin.userData.setState({ openness:0 });
+      }
+    });
+
   it('uses the entire physical cabinet width frontally and hides all trash interaction until the diagonal view', () => {
     const bin = binModel();
     expect(shelf.canvas.dataset.cabinetWidth).toBe('390');
