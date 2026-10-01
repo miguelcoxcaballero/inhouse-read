@@ -48,16 +48,21 @@ async function readBook(page) {
 }
 
 async function assertResting(scene) {
+  // Remote font downloads may finish after the flyout closes and invalidate
+  // its shelf copy once. Resolve those finite uploads before judging idle.
+  await scene.page().evaluate(() => document.fonts.ready.then(() => undefined));
   await expect(scene).toHaveAttribute('data-animating', 'false', { timeout:30_000 });
   // Cover/font decodes may finish after an insertion. Allow finite uploads,
   // then require a second quiet interval; a permanent repaint loop fails.
   await expect.poll(async () => {
     const count = await scene.getAttribute('data-snapshot-render-count');
-    await scene.page().waitForTimeout(350);
-    return count === await scene.getAttribute('data-snapshot-render-count');
+    await scene.page().waitForTimeout(500);
+    const middle = await scene.getAttribute('data-snapshot-render-count');
+    await scene.page().waitForTimeout(500);
+    return count === middle && middle === await scene.getAttribute('data-snapshot-render-count');
   }, { timeout:30_000 }).toBe(true);
   const count = await scene.getAttribute('data-snapshot-render-count');
-  await scene.page().waitForTimeout(350);
+  await scene.page().waitForTimeout(500);
   expect(await scene.getAttribute('data-snapshot-render-count')).toBe(count);
 }
 
