@@ -41,6 +41,7 @@ export class FoliateReader {
   #detachGestures = () => {}
   #preferences = { ...DEFAULT_READING_PREFERENCES }
   #documentGestures = []
+  #skipSnapUntil = 0
   #resizeObserver
   #resizeTimer
 
@@ -61,8 +62,8 @@ export class FoliateReader {
     // swipe/tap que el lector de PDF para que la sensación táctil sea
     // idéntica entre formatos.
     const gestures = {
-      onNext: () => { onUserNavigation?.(); return this.next() },
-      onPrev: () => { onUserNavigation?.(); return this.prev() },
+      onNext: () => { onUserNavigation?.(); this.#skipTouchSnap(); return this.next() },
+      onPrev: () => { onUserNavigation?.(); this.#skipTouchSnap(); return this.prev() },
       onToggleChrome,
       // Foliate already tracks touch drag/velocity and snaps to the next page.
       // A second pointerup navigation here used to advance twice per swipe.
@@ -112,6 +113,7 @@ export class FoliateReader {
     })
 
     await this.#view.open(file)
+    this.#guardTapSnap(this.#view.renderer)
     // Configure the paginator before the first page is laid out. Its defaults
     // reserve 48 px above/below the text even though our chrome has its own
     // space. The first visible page must use the same geometry as later pages.
@@ -141,6 +143,22 @@ export class FoliateReader {
       return (await this.#view?.book?.getCover?.()) ?? null
     } catch {
       return null // una portada rota no puede impedir leer el libro
+    }
+  }
+
+  // Foliate answers every touchend with snap(), which settles the paginator on
+  // the page under the finger a frame later. A finger always drifts a few pixels
+  // during a tap, so that snap starts a 300 ms animation back to the OLD page
+  // while our own page turn is already running: the two fight and the page stops
+  // between pages (or stays put). The tap's page turn replaces that snap, so the
+  // single snap that belongs to the tap is skipped; swipes still snap normally.
+  #skipTouchSnap() { this.#skipSnapUntil = performance.now() + 250 }
+  #guardTapSnap(renderer) {
+    const snap = renderer?.snap?.bind(renderer)
+    if (!snap) return
+    renderer.snap = (...args) => {
+      if (performance.now() < this.#skipSnapUntil) { this.#skipSnapUntil = 0; return }
+      return snap(...args)
     }
   }
 

@@ -205,32 +205,47 @@ describe('reader gesture ownership and motion', () => {
     expect(chrome).not.toHaveBeenCalled()
   })
 
-  it('double-taps zoom without the first tap turning the PDF page or hiding chrome', () => {
+  it('double-taps the centre to zoom without the first tap hiding the controls', () => {
     connect({onToggleZoom:zoom})
-    pointer('pointerdown',380,200)
-    pointer('pointerup',380,200,50)
-    pointer('lostpointercapture',380,200,51,1,surface)
-    expect(next).not.toHaveBeenCalled()
-    pointer('pointerdown',380,200,130)
-    pointer('pointerup',380,200,180)
-    pointer('lostpointercapture',380,200,181,1,surface)
+    pointer('pointerdown',200,200)
+    pointer('pointerup',200,200,50)
+    pointer('lostpointercapture',200,200,51,1,surface)
+    expect(chrome).not.toHaveBeenCalled()
+    pointer('pointerdown',200,200,130)
+    pointer('pointerup',200,200,180)
+    pointer('lostpointercapture',200,200,181,1,surface)
     vi.advanceTimersByTime(400)
-    expect(zoom).toHaveBeenCalledExactlyOnceWith(380,200)
+    expect(zoom).toHaveBeenCalledExactlyOnceWith(200,200)
     expect(next).not.toHaveBeenCalled()
     expect(chrome).not.toHaveBeenCalled()
   })
 
-  it('delivers one delayed single tap and cancels pending taps when closing the reader', () => {
+  it('turns the page at once on a side-edge tap even when double-tap zoom is available', () => {
     connect({onToggleZoom:zoom})
     pointer('pointerdown',380,200)
     pointer('pointerup',380,200,50)
-    vi.advanceTimersByTime(300)
     expect(next).toHaveBeenCalledOnce()
+    pointer('pointerdown',20,200,500)
+    pointer('pointerup',20,200,550)
+    expect(prev).toHaveBeenCalledOnce()
+    vi.advanceTimersByTime(600)
+    expect(next).toHaveBeenCalledOnce(); expect(prev).toHaveBeenCalledOnce()
+    expect(zoom).not.toHaveBeenCalled(); expect(chrome).not.toHaveBeenCalled()
+  })
+
+  it('delivers one delayed centre tap and cancels pending taps when closing the reader', () => {
+    connect({onToggleZoom:zoom})
+    pointer('pointerdown',200,200)
+    pointer('pointerup',200,200,50)
+    expect(chrome).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(300)
+    expect(chrome).toHaveBeenCalledOnce()
     pointer('pointerdown',200,200,500)
     pointer('pointerup',200,200,550)
     detach();detach = null
     vi.advanceTimersByTime(300)
-    expect(chrome).not.toHaveBeenCalled()
+    expect(chrome).toHaveBeenCalledOnce()
+    expect(next).not.toHaveBeenCalled()
   })
 
   it('reduced motion removes page displacement and inertia but preserves swipes', () => {

@@ -164,14 +164,16 @@ export function attachSwipeNavigation(el, {
     // tapZone lets a caller judge the tap against what the reader actually shows
     // when this element is much larger than the screen (a paginated EPUB section).
     const zone = tapZone?.(event) ?? classifyTapZone(event.clientX - rect.left, rect.width)
-    if (!onToggleZoom) return navigate(zone)
+    // A page turn on the side edges acts at once. Only the centre waits for a
+    // possible second tap (zoom), because that tap would otherwise hide the controls.
+    if (!onToggleZoom || zone !== ZONE.CENTER) { clearTap(); return navigate(zone) }
     const doubleTap = lastTap && stamp - lastTap.time < DOUBLE_TAP_MAX_DELAY
       && Math.hypot(event.clientX - lastTap.x,event.clientY - lastTap.y) < 30
     if (doubleTap) { clearTap(); return onToggleZoom(event.clientX,event.clientY) }
     clearTap()
     lastTap = {time:stamp,x:event.clientX,y:event.clientY}
     // Wait only when double-tap zoom is supported: its first tap must not
-    // change the PDF page or hide the toolbar before the second finger tap.
+    // hide the toolbar before the second finger tap.
     tapTimer = setTimeout(() => { tapTimer = 0; lastTap = null; if (!detached && !selected()) navigate(zone) }, DOUBLE_TAP_MAX_DELAY)
   }
   const onCancel = event => {

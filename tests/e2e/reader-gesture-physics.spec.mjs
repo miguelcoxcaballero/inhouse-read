@@ -24,7 +24,8 @@ test('PDF: double tap keeps its page, native zoom pan does not navigate, and swi
   await open(page,'pdf')
   const viewport = page.locator('#reader-viewport'), canvas = page.locator('.pdf-page-canvas')
   const initialWidth = await canvas.evaluate(node => parseFloat(node.style.width))
-  const bounds = await viewport.boundingBox(), x = bounds.x+bounds.width*.78, y = bounds.y+bounds.height*.55
+  // Side edges turn pages at once, so the double tap that zooms happens in the centre.
+  const bounds = await viewport.boundingBox(), x = bounds.x+bounds.width*.5, y = bounds.y+bounds.height*.55
   await page.touchscreen.tap(x,y)
   await page.touchscreen.tap(x,y)
   await expect(viewport).toHaveAttribute('data-reader-zoomed','true')
@@ -114,4 +115,40 @@ test('EPUB: tapping the side edges turns pages and the centre toggles the contro
   await tap(.5)
   await expect.poll(chromeHidden).toBe(false)
   expect(await turns()).toBe(before)
+})
+
+test('EPUB: a tap still turns the page when touchend reaches the page after pointerup', async ({page}) => {
+  test.setTimeout(90_000)
+  // Animations on, as on a phone. Foliate answers every touchend with snap(); a late
+  // touchend used to snap the page straight back to the one the tap had just left.
+  await open(page,'epub','no-preference')
+  await page.evaluate(() => {
+    const doc = document.querySelector('foliate-view').renderer.getContents()[0].doc
+    doc.addEventListener('touchend', event => {
+      if (event.__late) return
+      event.stopImmediatePropagation()
+      setTimeout(() => { const late = new Event('touchend'); late.__late = true; doc.dispatchEvent(late) }, 40)
+    }, true)
+  })
+  const position = () => page.evaluate(() => document.querySelector('foliate-view').renderer.containerPosition)
+  const settled = async () => {
+    let last = -1, stable = 0
+    while (stable < 5) { await page.waitForTimeout(150); const now = await position(); stable = now === last ? stable + 1 : 0; last = now }
+    return last
+  }
+  const bounds = await page.locator('#reader-viewport').boundingBox(), cdp = await page.context().newCDPSession(page)
+  const tap = async fraction => {
+    const touch = {id:1,x:bounds.x + bounds.width * fraction,y:bounds.y + bounds.height * .55}, stamp = Date.now() / 1000
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',timestamp:stamp,touchPoints:[touch]})
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',timestamp:stamp + .05,touchPoints:[]})
+  }
+  const first = await settled()
+  await tap(.9)
+  const second = await settled()
+  expect(second).toBeGreaterThan(first + 50)
+  await tap(.9)
+  const third = await settled()
+  expect(third).toBeGreaterThan(second + 50)
+  await tap(.1)
+  expect(await settled()).toBe(second)
 })
