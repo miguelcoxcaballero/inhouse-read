@@ -198,6 +198,69 @@ function physicalPaintUVs(geometry) {
   }
 }
 
+/** The reference's upright is a right triangle, not a square tube. Its flat
+ * diagonal faces the shelf; rounded tips still occupy exactly an 18 mm box. */
+function uprightProfile() {
+  const { outerCornerRadius:outer, tipRadius:tip } = BAGGEBO_SPEC.postProfile;
+  const diagonal = BAGGEBO_SPEC.postSize + Math.SQRT2 * tip;
+  const tangent = tip / Math.tan(Math.PI / 8);
+  const shape = new THREE.Shape();
+  shape.moveTo(0, outer);
+  shape.absarc(outer, outer, outer, Math.PI, Math.PI * 1.5, false);
+  shape.lineTo(diagonal - tangent, 0);
+  shape.absarc(diagonal - tangent, tip, tip, Math.PI * 1.5, Math.PI * 2.25, false);
+  shape.lineTo(tip + tip / Math.SQRT2, diagonal - tangent + tip / Math.SQRT2);
+  shape.absarc(tip, diagonal - tangent, tip, Math.PI / 4, Math.PI, false);
+  shape.closePath();
+  return { points:shape.extractPoints(6).shape, diagonal };
+}
+
+function extrudedSheet(points, holes, thickness, y) {
+  const shape = new THREE.Shape(points.map(point => new THREE.Vector2(...point)));
+  for (const hole of holes) shape.holes.push(new THREE.Path(hole.map(point => new THREE.Vector2(...point))));
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth:thickness, bevelEnabled:false, steps:1, curveSegments:1 });
+  // The shape's two axes become world x/z. Extrusion runs down from the
+  // exact book baseline, so even the top rim cannot raise the published size.
+  return geometry.applyMatrix4(new THREE.Matrix4().set(
+    1, 0, 0, 0,
+    0, 0, -1, y,
+    0, 1, 0, 0,
+    0, 0, 0, 1
+  ));
+}
+
+function triangularUpright(points, side, front, depth, height) {
+  const outerZ = front > 0 ? 0 : -depth;
+  const outline = points.map(point => [side * (300 - point.x), outerZ - front * point.y]);
+  const geometry = extrudedSheet(outline, [], height, 0);
+  // Average only the long wall normals. Caps stay separate and flat while
+  // small rounded corners catch continuous highlights at close zoom.
+  const positions = geometry.getAttribute('position'), normals = geometry.getAttribute('normal');
+  const sums = new Map();
+  for (let index = 0; index < positions.count; index += 1) {
+    if (Math.abs(normals.getY(index)) > .5) continue;
+    const key = `${positions.getX(index)}:${positions.getZ(index)}`;
+    const sum = sums.get(key) ?? new THREE.Vector3();
+    sum.add(new THREE.Vector3(normals.getX(index), 0, normals.getZ(index)));
+    sums.set(key, sum);
+  }
+  for (let index = 0; index < positions.count; index += 1) {
+    if (Math.abs(normals.getY(index)) > .5) continue;
+    const sum = sums.get(`${positions.getX(index)}:${positions.getZ(index)}`).clone().normalize();
+    normals.setXYZ(index, sum.x, 0, sum.z);
+  }
+  return geometry;
+}
+
+/** Folded pans reach the outer rails and have four 45° cut corners, mating
+ * with the posts' inward diagonals. The mesh itself remains 567.5 × 220 mm. */
+function panOutline(width, depth, inset, diagonal) {
+  const x = width / 2 - inset, front = -inset, back = -depth + inset;
+  const cut = diagonal - inset * 2;
+  return [[-x + cut, front], [x - cut, front], [x, front - cut], [x, back + cut],
+    [x - cut, back], [-x + cut, back], [-x, back + cut], [-x, front - cut]];
+}
+
 /** BAGGEBO 504.811.72. Coordinates are millimetres at width=600: x centred,
  * top y=0, feet y=-1160, front z=0 and back z=-250. Uniform scaling preserves
  * the real proportions; the original has three internal shelves and a mesh top. */
@@ -205,7 +268,7 @@ export function createBaggebo({ width = 600 } = {}) {
   const actualWidth = Number.isFinite(width) && width > 0 ? width : 600;
   const scale = actualWidth / BAGGEBO_SPEC.dimensions.width;
   const { height, depth } = BAGGEBO_SPEC.dimensions;
-  const post = BAGGEBO_SPEC.postSize, rim = BAGGEBO_SPEC.shelfRimHeight;
+  const rim = BAGGEBO_SPEC.shelfRimHeight;
   const group = new THREE.Group();
   group.name = 'IKEA BAGGEBO white powder-coated steel';
   group.scale.setScalar(scale);
@@ -259,24 +322,36 @@ export function createBaggebo({ width = 600 } = {}) {
       add(geometry, material, name, metadata);
     };
     const screw = (name, x, y, z, axis = 'z', radius = 2.55) => {
+      const direction = Array.isArray(axis) ? new THREE.Vector3(...axis).normalize()
+        : new THREE.Vector3(axis === 'x' ? 1 : 0, axis === 'y' ? 1 : 0, axis === 'z' ? 1 : 0);
       const geometry = new THREE.CylinderGeometry(radius * .88, radius, 1.1, 20).toNonIndexed();
-      if (axis === 'z') geometry.rotateX(Math.PI / 2);
-      else if (axis === 'x') geometry.rotateZ(Math.PI / 2);
+      geometry.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction));
       geometry.translate(x, y, z);
-      add(geometry, hardware, name, { kind:'screw' });
+      add(geometry, hardware, name, { kind:'screw', axis:direction.toArray() });
+      if (Array.isArray(axis)) {
+        const shank = new THREE.CylinderGeometry(1.15, 1.15, 3, 8).toNonIndexed();
+        shank.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction));
+        shank.translate(x - direction.x * 1.65, y, z - direction.z * 1.65);
+        add(shank, hardware, `${name}-shank`, { kind:'fixing-shank' });
+      }
       // Tiny dark cross grooves remain within the fixing head's footprint.
-      if (axis === 'z') {
-        box(`${name}-slot-horizontal`, 3.05, .5, .08, x, y, z + .555, hardware, .02);
-        box(`${name}-slot-vertical`, .5, 3.05, .08, x, y, z + .555, hardware, .02);
+      for (const [label, w, h] of [['horizontal', 3.05, .5], ['vertical', .5, 3.05]]) {
+        const slot = new THREE.BoxGeometry(w, h, .08).toNonIndexed();
+        slot.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction));
+        slot.translate(x + direction.x * .555, y + direction.y * .555, z + direction.z * .555);
+        add(slot, hardware, `${name}-slot-${label}`);
       }
     };
 
     // Four continuous slender uprights and the manual's small adjustable feet.
-    for (const side of [-1, 1]) for (const [label, z] of [['front', -post / 2], ['back', -depth + post / 2]]) {
-      const x = side * (600 - post) / 2;
-      box(`${side < 0 ? 'left' : 'right'}-${label}-upright`, post, height - 7, post,
-        x, -(height - 7) / 2, z, paint, .85, { kind:'upright' }, 2);
-      const foot = new THREE.CylinderGeometry(post / 2 - .35, post / 2, 4.8, 24).toNonIndexed();
+    const profile = uprightProfile(), footRadius = BAGGEBO_SPEC.footRadius;
+    for (const side of [-1, 1]) for (const [label, front] of [['front', 1], ['back', -1]]) {
+      const x = side * (300 - footRadius), z = (front > 0 ? 0 : -depth) - front * footRadius;
+      add(triangularUpright(profile.points, side, front, depth, height - 7), paint,
+        `${side < 0 ? 'left' : 'right'}-${label}-upright`,
+        { kind:'upright', profile:BAGGEBO_SPEC.postProfile.shape, diagonal:profile.diagonal,
+          inwardNormal:[-side / Math.SQRT2, 0, -front / Math.SQRT2] });
+      const foot = new THREE.CylinderGeometry(footRadius - .25, footRadius, 4.8, 24).toNonIndexed();
       foot.translate(x, -height + 2.4, z);
       add(foot, footMaterial, `${side < 0 ? 'left' : 'right'}-${label}-foot`, { kind:'foot' });
       const stem = new THREE.CylinderGeometry(2.8, 2.8, 2.2, 8).toNonIndexed();
@@ -285,23 +360,30 @@ export function createBaggebo({ width = 600 } = {}) {
     }
 
     const surfaceWidth = 567.5, surfaceFront = -15;
+    const panInset = .65, panWall = 1.1, panDiagonal = profile.diagonal + .75;
+    const outside = panOutline(600, depth, panInset, panDiagonal);
+    const inside = panOutline(600, depth, panInset + panWall, panDiagonal + panWall * Math.SQRT2);
+    const aperture = [[-surfaceWidth / 2, surfaceFront], [-surfaceWidth / 2, -235],
+      [surfaceWidth / 2, -235], [surfaceWidth / 2, surfaceFront]];
     for (const [index, bottom] of [0, ...BAGGEBO_SPEC.shelfBottoms].entries()) {
       const name = index === 0 ? 'top' : `shelf-${index - 1}`;
       const y = -bottom;
       // Folded steel rims are beneath the mesh baseline, leaving books seated
       // at exactly the source model's surface elevations.
-      box(`${name}-front-rim`, 600 - post * 2, rim, 2.1, 0, y - rim / 2, surfaceFront - 1.05);
-      box(`${name}-back-rim`, 600 - post * 2, rim, 2.1, 0, y - rim / 2, -235 + 1.05);
-      // Rolled sheet edges catch a narrow highlight and hide the raw cut ends.
-      box(`${name}-front-folded-lip`, 600 - post * 2, .8, 3.2, 0, y - .4, surfaceFront - 1.6, paint, .25, { kind:'folded-lip' });
-      box(`${name}-back-folded-lip`, 600 - post * 2, .8, 3.2, 0, y - .4, -235 + 1.6, paint, .25, { kind:'folded-lip' });
-      for (const side of [-1, 1]) {
-        box(`${name}-${side < 0 ? 'left' : 'right'}-rim`, 2.1, rim, 220,
-          side * (surfaceWidth / 2 - 1.05), y - rim / 2, -depth / 2);
-        box(`${name}-${side < 0 ? 'left' : 'right'}-mount-tab`, 9, 18, 1.2,
-          side * 275, y - 22, -235 + .6, paint, .25);
-        screw(`${name}-${side < 0 ? 'left' : 'right'}-front-fixing`, side * 278, y - 9, surfaceFront + .6);
-        screw(`${name}-${side < 0 ? 'left' : 'right'}-back-fixing`, side * 278, y - 9, -233.3);
+      add(extrudedSheet(outside, [inside], rim, y), paint, `${name}-folded-perimeter-rim`,
+        { kind:'shelf-rim', cornerCut:panDiagonal, outline:outside });
+      // A continuous folded flange covers the edge of the cut mesh. Its
+      // corner cuts leave the four triangular post sections physically clear.
+      add(extrudedSheet(outside, [aperture], .8, y), paint, `${name}-folded-lip`, { kind:'folded-lip' });
+      for (const side of [-1, 1]) for (const [label, front] of [['front', 1], ['back', -1]]) {
+        const normal = [-side / Math.SQRT2, 0, -front / Math.SQRT2];
+        const fixingInset = (panDiagonal + panWall * Math.SQRT2) / 2 + .4;
+        const x = side * (300 - fixingInset), z = (front > 0 ? 0 : -depth) - front * fixingInset;
+        const tab = new RoundedBoxGeometry(9, 14, 1.2, 1, .25);
+        tab.rotateY(Math.atan2(normal[0], normal[2]));
+        tab.translate(x - normal[0] * 1.65, y - 9, z - normal[2] * 1.65);
+        add(tab, paint, `${name}-${side < 0 ? 'left' : 'right'}-${label}-mount-tab`, { kind:'mount-tab', axis:normal });
+        screw(`${name}-${side < 0 ? 'left' : 'right'}-${label}-fixing`, x, y - 9, z, normal);
       }
       // A genuine central reinforcing strip under each expanded-metal panel.
       box(`${name}-underside-stiffener`, 3.5, 3, 216, 0, y - 2.25, -depth / 2, paint, .3);

@@ -11,6 +11,8 @@ export const BAGGEBO_SPEC = Object.freeze({
   color:'Blanco',
   maxShelfLoadKg:12,
   postSize:18,
+  postProfile:Object.freeze({ shape:'rounded-right-triangle', outerCornerRadius:1.2, tipRadius:.8 }),
+  footRadius:5.6,
   innerWidth:564,
   usableDepth:220,
   shelfRimHeight:16.5,
@@ -25,7 +27,9 @@ export const BAGGEBO_SPEC = Object.freeze({
     structure:'Manual AA-2235400-4, páginas 6–9: cuatro montantes, tres baldas interiores, superficie superior de malla, refuerzo trasero y tacos regulables.',
     shelfPositions:'Geometría oficial IKEA: superficies a 155, 477.49, 799.99 y 1159.99 mm desde el suelo; redondeadas a 155, 477.5, 800 y 1160 mm.',
     rearBrace:'Geometría oficial IKEA: 216 × 320 mm, entre 463.49 y 783.49 mm desde el suelo.',
-    smallDetails:'Perfiles de 18 mm y bordes de 16.5 mm medidos en el modelo oficial. Paso de malla, radios, pintura y detalles de tornillos aproximados a partir de las fotos y el manual.'
+    postProfile:'Cortes de la geometría oficial: cuatro perfiles triangulares rectángulos de unos 18 × 18 mm, con la hipotenusa orientada hacia las baldas; tacos de unos 11.4 mm de diámetro.',
+    shelfCorners:'La geometría y el manual muestran esquinas de balda achaflanadas a 45° que se acoplan a la cara diagonal de los montantes.',
+    smallDetails:'Perfiles de 18 mm y bordes de 16.5 mm medidos en el modelo oficial. Paso de malla, radios, pintura y detalles de tornillos aproximados a partir de las fotos y el manual. Las cotas de 600 × 250 × 1160 mm corresponden al cuerpo: los herrajes de fijación a la pared aumentan la caja del modelo de visualización.'
   }),
   sources:Object.freeze({
     product:'https://www.ikea.com/es/es/p/baggebo-estanteria-metal-blanco-50481172/',

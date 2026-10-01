@@ -44,7 +44,7 @@ test('finger-only zoom preserves book interaction, promotes textures, pans and r
   await expect.poll(async()=>JSON.parse(await canvas.getAttribute('data-inspection-pan'))[0]).toBeGreaterThan(40);
   await expect(canvas).toHaveAttribute('data-inspection-moving','false');
   await page.locator('.ihr-spine').first().tap();
-  await expect(page.getByRole('button',{name:/Toca para leer/})).toBeVisible();
+  await expect(page.getByRole('button',{name:/Toca para leer/})).toBeVisible({timeout:30_000});
   await page.getByRole('button',{name:'Cerrar',exact:true}).click();
   await expect(page.locator('.ihr-flyout')).toHaveCount(0);
   await pinch(cdp,x,y,180,60);

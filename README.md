@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.24
+
+- El movimiento y la inercia de la vista isométrica reutilizan la imagen de la escena. Las portadas y apariencias pendientes se agrupan al terminar el gesto; entonces se actualizan los modelos, texturas, sombras y objetivos táctiles con su calidad de inspección.
+- El arrastre de objetos evita renders síncronos repetidos por cada evento del dedo y actualizaciones innecesarias de las sombras.
+- BAGGEBO conserva las proporciones publicadas de 60 × 25 × 116 cm, con cuatro montantes triangulares orientados hacia las esquinas achaflanadas de las baldas.
+
 ### Actualización web · 1.6.23
 
 - La papelera queda delante de la pared, con espacio para el cuerpo, la bisagra y la tapa abierta. La separación se conserva al cambiar de estantería o de tamaño de pantalla.

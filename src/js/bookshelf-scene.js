@@ -331,6 +331,33 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let desiredMode = mode === 'isometric' ? 'isometric' : 'spine';
   let inspectionZoom = 1, panX = 0, panY = 0, inspectionMoving = false;
   let inspectionShadowRefit = false;
+  // Orthographic inspection is a similarity of a stationary room. Keep an
+  // overscanned, already lit image for the compositor instead of running all
+  // of its shaders, GPU readback and native hit projections for each finger
+  // sample. A full fitted backdrop covers anything beyond the detailed tile;
+  // paint full quality and restore native surfaces when the gesture settles.
+  const inspectionCanvas = document.createElement('canvas');
+  const inspectionContext = inspectionCanvas.getContext('2d');
+  inspectionCanvas.className = 'ihr-bookshelf-inspection-snapshot';
+  inspectionCanvas.setAttribute('aria-hidden', 'true');
+  Object.assign(inspectionCanvas.style, { position:'absolute', left:'0', top:'0', display:'none',
+    pointerEvents:'none', zIndex:'0', transformOrigin:'0 0', willChange:'transform' });
+  stage.append(inspectionCanvas);
+  const inspectionCamera = camera.clone();
+  const inspectionOverviewCanvas = document.createElement('canvas');
+  const inspectionOverviewContext = inspectionOverviewCanvas.getContext('2d');
+  inspectionOverviewCanvas.className = 'ihr-bookshelf-inspection-overview';
+  inspectionOverviewCanvas.setAttribute('aria-hidden', 'true');
+  Object.assign(inspectionOverviewCanvas.style, { position:'absolute', left:'0', top:'0', display:'none', pointerEvents:'none', zIndex:'0',
+    transformOrigin:'0 0', willChange:'transform' });
+  inspectionCanvas.style.zIndex = '1';
+  stage.append(inspectionOverviewCanvas);
+  let inspectionSnapshot = null, inspectionSnapshotVisible = false, lastSceneMoving = false;
+  let inspectionOverview = null;
+  let inspectionQualityDirty = false;
+  const inspectionEntryUpdates = new Map();
+  let inspectionDirtyCount = 0;
+  let compositorFrames = 0;
   let trashHover = false, trashOpenness = 0, trashTransition = null;
   let trashRect = null;
   const trashOriginalStates = new Map();
@@ -422,7 +449,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const model = entry.kind === 'plant' ? createShelfPlant(entry)
       : entry.kind === 'lamp' ? createShelfLamp({ lampId:entry.lampId, width:entry.width, height:entry.height, quality:'high', isOn:entry.isOn !== false })
       : createBookModel(entry.book, entry.style, entry.width, entry.height, entry.thickness, entry.coverUrl, { shelf:true, overview:entry.overview, inspectionResolution:entry.inspectionResolution });
-    model.userData.invalidate = invalidate;
+    // Texture/font decode notifications improve the same artwork. Explicit
+    // record/material changes separately invalidate the retained room below.
+    model.userData.invalidate = () => invalidate(true, true);
     model.traverse(object => {
       for (const material of Array.isArray(object.material) ? object.material : object.material ? [object.material] : [])
         for (const key of ['map','normalMap','bumpMap','roughnessMap'])
@@ -478,6 +507,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function cancelTrashDrop(entry, restore = true) {
     const drop = entry.trashDrop;
     if (!drop) return;
+    inspectionOverview = null;
     entry.trashDrop = null;
     if (!drop.settled) { drop.settled = true; drop.resolve(false); }
     if (entry.model && restore) {
@@ -613,7 +643,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function hitTrash(clientX, clientY) {
     if (!trash || !trashNode || disposed) return false;
-    if (raf) { cancelAnimationFrame(raf); raf = 0; draw(); }
+    if (inspectionSnapshotVisible) { cancelAnimationFrame(raf); raf = 0; draw(); }
     if (desiredMode !== 'isometric' || trashNode.hidden || !trash.visible) return false;
     const rect = trashNode.getBoundingClientRect();
     return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
@@ -621,6 +651,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function cancelInsertion(entry) {
     const insertion = entry.insertion;
+    if (insertion) inspectionOverview = null;
     entry.insertion = null;
     insertion?.resolve();
   }
@@ -662,7 +693,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         releaseCandidate(replacement); return;
       }
       if (loaded === false && previous && entry.coverUrl) { cancelReplacement(entry); return; }
-      entry.replacementReady = true; invalidate();
+      entry.replacementReady = true; invalidate(true, true);
     }, () => { if (entry.replacement === replacement) cancelReplacement(entry); });
   }
 
@@ -1156,9 +1187,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function pointerRay(clientX, clientY) {
-    // Scroll/view/metadata changes may be waiting for the next demand frame.
-    // Pick the actual meshes and camera being shown, including their depth.
-    if (raf) { cancelAnimationFrame(raf); raf = 0; draw(); }
+    // During a drag, pending style/mutation frames must remain coalesced:
+    // casting a ray does not need to shade and read back the whole room.
+    // A compositor inspection does need its native matrices restored first.
+    if (inspectionSnapshotVisible) { cancelAnimationFrame(raf); raf = 0; draw(); }
     camera.updateMatrixWorld();
     const bounds = canvas.getBoundingClientRect();
     const pointer = new THREE.Vector2((clientX - bounds.left) / sceneWidth * 2 - 1, 1 - (clientY - bounds.top) / viewportHeight * 2);
@@ -1252,9 +1284,76 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
   }
 
+  function hideInspectionSnapshot() {
+    if (!inspectionSnapshotVisible) return;
+    inspectionSnapshotVisible = false;
+    inspectionCanvas.style.display = 'none';
+    inspectionOverviewCanvas.style.display = 'none';
+    canvas.style.visibility = '';
+    canvas.dataset.inspectionCacheActive = 'false';
+  }
+
+  function paintInspectionSnapshot() {
+    const snapshot = inspectionSnapshot || inspectionOverview;
+    const miss = !inspectionContext ? 'no-context' : !snapshot ? 'no-snapshot' : shelfSnapshotDirty ? 'content-dirty' :
+      shadowDirty ? 'shadow-dirty' : lastSceneMoving ? 'scene-moving' : lighting.settling && !inspectionShadowRefit ? 'shadow-settling' :
+        transition || reorderTransition || trashTransition || progress !== 1 ? 'transition' : dropPosition ? 'drop-guide' : '';
+    if (miss) {
+      canvas.dataset.inspectionCacheMissReason = miss;
+      canvas.dataset.inspectionCacheMissSource = canvas.dataset.inspectionDirtySource || '';
+      return false;
+    }
+    const project = source => {
+      const scale = inspectionZoom / source.zoom;
+      const dx = sceneWidth / 2 + panX - scale * (sceneWidth / 2 + source.panX);
+      const dy = sceneFitHeight / 2 + panY - scale * (sceneFitHeight / 2 + source.panY);
+      const left = dx - source.margin * scale, top = dy - source.margin * scale;
+      return { scale, left, top, covers:left <= 0 && top <= 0 && left + source.width * scale >= sceneWidth &&
+        top + source.height * scale >= viewportHeight };
+    };
+    const { scale, left, top, covers } = project(snapshot);
+    const overview = inspectionOverview && project(inspectionOverview);
+    if (!covers && !overview?.covers) { canvas.dataset.inspectionCacheMissReason = 'coverage'; return false; }
+    // A retained fitted overview supplies anything revealed beyond the high
+    // resolution tile. Never block an ordinary pan/pinch on a GPU recapture;
+    // its fine tile and full backdrop move together until the settled paint.
+    if (overview?.covers) {
+      inspectionOverviewCanvas.style.transform = `matrix(${overview.scale},0,0,${overview.scale},${overview.left},${overview.top})`;
+      inspectionOverviewCanvas.style.display = 'block';
+    } else inspectionOverviewCanvas.style.display = 'none';
+    if (inspectionSnapshot) {
+      inspectionCanvas.style.transform = `matrix(${scale},0,0,${scale},${left},${top})`;
+      inspectionCanvas.style.display = 'block';
+    } else inspectionCanvas.style.display = 'none';
+    canvas.style.visibility = 'hidden';
+    inspectionSnapshotVisible = true;
+    canvas.dataset.inspectionCacheActive = 'true';
+    canvas.dataset.inspectionCacheMissReason = '';
+    canvas.dataset.inspectionCompositorFrames = String(++compositorFrames);
+    canvas.dataset.inspectionMoving = 'true'; canvas.dataset.animating = 'true';
+    canvas.dataset.inspectionZoom = inspectionZoom.toFixed(4);
+    canvas.dataset.inspectionPan = JSON.stringify([panX, panY]);
+    canvas.dataset.zoom = (snapshot.furnitureZoom * scale).toFixed(4);
+    canvas.dataset.renderCount = String(++renderCount);
+    return true;
+  }
+
   function draw(now = performance.now()) {
     raf = 0;
     if (disposed) return;
+    hideInspectionSnapshot();
+    if (!inspectionMoving && inspectionEntryUpdates.size) {
+      // Cover analysis and metadata can finish independently for many books.
+      // Commit their latest records together before fitting the settled room,
+      // rather than interrupting finger frames for each completed analysis.
+      const pending = [...inspectionEntryUpdates]; inspectionEntryUpdates.clear();
+      for (const [entry, record] of pending) if (byNode.get(entry.node) === entry) {
+        updateRecord(entry, record.book, record.style, record.coverUrl);
+      }
+      inspectionOverview = null;
+      shelfSnapshotDirty = shadowDirty = true;
+      canvas.dataset.inspectionPendingEntries = '0';
+    }
     const furnitureMoving = Boolean(transition || reorderTransition);
     let scrollPan = null;
     if (transition) {
@@ -1311,12 +1410,51 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // during a stationary insertion instead of reallocating the shared GPU
     // buffer between the smaller shelf and full-screen output every frame.
     if (!overlayInsertion || shelfSnapshotDirty || shadowRefresh || lampRefresh || furnitureMoving || shelfMoving || trashMoving) {
+      const cacheInspection = inspectionContext && progress === 1 && !furnitureMoving && !moving && !shelfMoving &&
+        !trashMoving && !overlayInsertion && !dropPosition;
+      // About a finger's width beyond every edge lets an already zoomed view
+      // pan for many frames before rebasing. The complete room is still drawn,
+      // including the wall and every object that can enter that extra area.
+      const margin = cacheInspection ? Math.min(128, Math.floor(viewportHeight / 4)) : 0;
+      const renderWidth = sceneWidth + margin * 2, renderHeight = viewportHeight + margin * 2;
       if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
       renderer.getSize(rendererSize);
-      if (rendererSize.x !== sceneWidth || rendererSize.y !== viewportHeight) renderer.setSize(sceneWidth, viewportHeight, false);
-      renderer.render(scene, camera);
+      if (rendererSize.x !== renderWidth || rendererSize.y !== renderHeight) renderer.setSize(renderWidth, renderHeight, false);
+      if (cacheInspection) {
+        inspectionCamera.copy(camera);
+        inspectionCamera.left -= margin; inspectionCamera.right += margin;
+        inspectionCamera.top += margin; inspectionCamera.bottom -= margin;
+        inspectionCamera.updateProjectionMatrix();
+      }
+      renderer.render(scene, cacheInspection ? inspectionCamera : camera);
       context.clearRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(renderer.domElement, 0, 0, canvas.width, canvas.height);
+      if (cacheInspection) {
+        const snapshotWidth = Math.ceil(renderWidth * ratio), snapshotHeight = Math.ceil(renderHeight * ratio);
+        if (inspectionCanvas.width !== snapshotWidth) inspectionCanvas.width = snapshotWidth;
+        if (inspectionCanvas.height !== snapshotHeight) inspectionCanvas.height = snapshotHeight;
+        inspectionContext.clearRect(0, 0, inspectionCanvas.width, inspectionCanvas.height);
+        inspectionContext.drawImage(renderer.domElement, 0, 0, inspectionCanvas.width, inspectionCanvas.height);
+        context.drawImage(inspectionCanvas, margin * ratio, margin * ratio, canvas.width, canvas.height,
+          0, 0, canvas.width, canvas.height);
+        const logicalBounds = canvas.getBoundingClientRect(), stageBounds = stage.getBoundingClientRect();
+        Object.assign(inspectionCanvas.style, { left:`${logicalBounds.left - stageBounds.left}px`,
+          top:`${logicalBounds.top - stageBounds.top}px`, width:`${renderWidth}px`, height:`${renderHeight}px` });
+        inspectionSnapshot = { zoom:inspectionZoom, panX, panY, furnitureZoom:zoom, margin, width:renderWidth, height:renderHeight };
+        if (inspectionZoom === 1 && panX === 0 && panY === 0 && inspectionOverviewContext &&
+          !bookEntries.some(entry => entry.lift.value || entry.node?.classList.contains('is-pressed'))) {
+          if (inspectionOverviewCanvas.width !== inspectionCanvas.width) inspectionOverviewCanvas.width = inspectionCanvas.width;
+          if (inspectionOverviewCanvas.height !== inspectionCanvas.height) inspectionOverviewCanvas.height = inspectionCanvas.height;
+          inspectionOverviewContext.clearRect(0, 0, inspectionOverviewCanvas.width, inspectionOverviewCanvas.height);
+          inspectionOverviewContext.drawImage(inspectionCanvas, 0, 0);
+          Object.assign(inspectionOverviewCanvas.style, { left:inspectionCanvas.style.left, top:inspectionCanvas.style.top,
+            width:inspectionCanvas.style.width, height:inspectionCanvas.style.height });
+          inspectionOverview = { ...inspectionSnapshot };
+        }
+        canvas.dataset.inspectionSnapshotResolution = JSON.stringify([inspectionCanvas.width, inspectionCanvas.height]);
+      } else {
+        inspectionSnapshot = null;
+        context.drawImage(renderer.domElement, 0, 0, canvas.width, canvas.height);
+      }
       canvas.dataset.snapshotRenderCount = String(++shelfSnapshotRenders);
       canvas.dataset.sceneDrawCalls = String(renderer.info?.render.calls || 0);
       shelfSnapshotDirty = false;
@@ -1333,6 +1471,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const paintedBooks = bookEntries.filter(entry => entry.kind !== 'plant' && entry.kind !== 'lamp' && entry.model?.visible);
     canvas.dataset.overviewBooks = String(paintedBooks.filter(entry => entry.model.userData.overview).length);
     canvas.dataset.highResolutionBooks = String(paintedBooks.filter(entry => entry.model.userData.inspectionResolution).length);
+    canvas.dataset.bookTextureResolutions = JSON.stringify(paintedBooks.map(entry => entry.model.userData.inspectionResolution || 0));
+    canvas.dataset.sceneGeometries = String(renderer.info?.memory?.geometries || 0);
+    canvas.dataset.sceneTextures = String(renderer.info?.memory?.textures || 0);
+    canvas.dataset.scenePrograms = String(renderer.info?.programs?.length || 0);
+    canvas.dataset.inspectionOverviewReady = String(Boolean(inspectionOverview));
     canvas.dataset.pixelRatio = String(ratio);
     canvas.dataset.detailedBooks = String(paintedBooks.filter(entry => !entry.model.userData.overview).length);
     canvas.dataset.bookQualityPending = String(bookEntries.filter(entry => entry.qualityReplacement).length);
@@ -1340,18 +1483,35 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     canvas.dataset.furnitureMeshes = String(furniture.children.find(object => object.userData.furniture)?.children.length || 0);
     canvas.dataset.plantGeometry = 'catalog-3d';
     canvas.dataset.animating = String(Boolean(transition || reorderTransition || moving || trashMoving || inspectionMoving));
+    lastSceneMoving = Boolean(transition || reorderTransition || moving || trashMoving);
     for (const resolve of finishedInsertions) resolve();
     for (const resolve of finishedDrops) resolve();
     // One more frame after any motion redraws its cheaper shadow at full quality.
     if (transition || reorderTransition || moving || trashMoving || (lighting.settling && !inspectionMoving)) invalidate(false);
   }
 
-  function invalidate(dirty = true) {
-    if (dirty) shelfSnapshotDirty = shadowDirty = true;
+  function noteInspectionDirty(source) {
+    canvas.dataset.inspectionDirtySource = source;
+    canvas.dataset.inspectionDirtyCount = String(++inspectionDirtyCount);
+  }
+
+  function invalidate(dirty = true, preserveInspectionOverview = false, source = '') {
+    if (dirty && preserveInspectionOverview && inspectionMoving) {
+      // A decoded quality replacement stays pending while the captured image
+      // follows the fingers. Its ready flag is applied by the settled paint.
+      inspectionQualityDirty = true;
+      return;
+    }
+    if (dirty) {
+      noteInspectionDirty(source || (dirty?.type ? `event:${dirty.type}` : preserveInspectionOverview ? 'quality' : 'invalidate'));
+      shelfSnapshotDirty = shadowDirty = true;
+      if (!preserveInspectionOverview) inspectionOverview = null;
+    }
     if (!disposed && !raf) raf = requestAnimationFrame(draw);
   }
   // Repaint the camera's new window; the shadow map is reused.
   function scrolled() {
+    noteInspectionDirty(`scroll:${scroller.scrollTop}`);
     shelfSnapshotDirty = true;
     invalidate(false);
   }
@@ -1359,6 +1519,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function animateObjectToTrash(node, { duration = 850 } = {}) {
     const entry = byNode.get(node);
     if (!entry || !trash || disposed) return null;
+    inspectionOverview = null;
     cancelAnimationFrame(raf); raf = 0; draw();
     if (desiredMode !== 'isometric' || trashNode.hidden || !trash.visible) return null;
     cancelInsertion(entry); cancelTrashDrop(entry);
@@ -1374,7 +1535,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       startQuaternion:entry.model.quaternion.clone(), endQuaternion:new THREE.Quaternion(),
       bookQuaternion:new THREE.Quaternion().setFromEuler(new THREE.Euler(-.22, .18, -.46)),
       initialOpenness:Number(trash.userData.openness) || 0 };
-    entry.trashDrop = drop; entry.model.visible = true;
+    entry.trashDrop = drop; entry.model.visible = true; inspectionOverview = null;
     shelfSnapshotDirty = shadowDirty = true;
     cancelAnimationFrame(raf); raf = 0; draw(now);
     drop.lastFrame = performance.now();
@@ -1387,17 +1548,25 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     } };
   }
   const mutations = new MutationObserver(records => {
+    let changed = false, pressureOnly = true;
     for (const record of records) {
       const entry = byNode.get(record.target);
-      if (entry && stateFor(entry) !== entry.state) { invalidate(); break; }
+      if (!entry) continue;
+      const next = stateFor(entry);
+      if (next === entry.state) continue;
+      changed = true;
+      const previous = entry.state.split('|'), current = next.split('|');
+      pressureOnly &&= previous.length === current.length &&
+        previous.every((value, index) => index === 3 || value === current[index]);
     }
+    if (changed) invalidate(true, pressureOnly, pressureOnly ? 'state:pressure' : 'state:geometry');
   });
-  const themeChanges = new MutationObserver(() => { updateWoodTheme(); invalidate(); });
+  const themeChanges = new MutationObserver(() => { updateWoodTheme(); invalidate(true, false, 'theme'); });
   themeChanges.observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
   for (const node of byNode.keys()) mutations.observe(node, { attributes:true, attributeFilter:['class', 'style'] });
   scroller.addEventListener('scroll', scrolled, { passive:true });
   window.addEventListener('resize', invalidate, { passive:true });
-  document.fonts?.ready.then(invalidate);
+  document.fonts?.ready.then(() => invalidate(true, false, 'fonts-ready'));
   updateWoodTheme();
   draw();
 
@@ -1410,11 +1579,38 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   return {
     canvas,
     getInspectionZoom:()=>inspectionZoom,
+    beginInspectionGesture() {
+      if (disposed || desiredMode !== 'isometric' || progress !== 1 || transition) return;
+      inspectionMoving = true;
+      if (!inspectionOverview || reorderTransition || trashTransition || dropPosition) return;
+      const now = performance.now();
+      // A second finger changes a tentative book tap into navigation. Cancel
+      // only the tiny pressure feedback; held books, returns, previews and
+      // lamp fades keep their actual physics and demand frames.
+      const stationary = bookEntries.every(entry => !entry.insertion && !entry.trashDrop && !entry.landing &&
+        !entry.preview.active && !entry.node?.matches('.is-pressed, .is-lifted, .is-dragging') &&
+        [entry.lift.value, entry.lift.from, entry.lift.target].every(value => Math.abs(value) <= .220001) &&
+        !(entry.lampPower?.duration && entry.lampPower.from !== entry.lampPower.target &&
+          now < entry.lampPower.started + entry.lampPower.duration));
+      if (!stationary) return;
+      const pressure = bookEntries.some(entry => entry.lift.value || entry.lift.from || entry.lift.target);
+      if (pressure) inspectionSnapshot = null;
+      for (const entry of bookEntries) {
+        Object.assign(entry.lift, { value:0, from:0, target:0, started:now });
+        entry.state = stateFor(entry);
+      }
+      lastSceneMoving = false;
+      shelfSnapshotDirty = shadowDirty = false;
+      inspectionShadowRefit = true;
+      cancelAnimationFrame(raf); raf = 0;
+    },
     setLampPower(node, isOn, { animate = true } = {}) {
       const entry = byNode.get(node);
       if (disposed || entry?.kind !== 'lamp') return;
+      noteInspectionDirty('lamp-power');
       const previous = entry.lampPower?.value ?? entry.model?.userData.lightEmitter?.power ?? (entry.isOn === false ? 0 : 1);
       entry.isOn = isOn !== false;
+      inspectionOverview = null;
       const target = entry.isOn ? 1 : 0;
       entry.lampPower = { value:previous, from:previous, target, started:performance.now(),
         duration:animate && !reducedMotion.matches ? 220 : 0 };
@@ -1426,10 +1622,17 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (disposed || desiredMode !== 'isometric' || transition || progress !== 1) return getInspectionView();
       const previousInspection = [inspectionZoom, panX, panY];
       inspectionZoom=clamp(Number(view.zoom) || 1,1,4); inspectionMoving=Boolean(moving);
+      if (!inspectionMoving && inspectionQualityDirty) {
+        inspectionQualityDirty = false; shadowDirty = true;
+      }
       const slack=inspectionMoving ? 80 : 0;
       panX=clamp(Number(view.panX) || 0,-(inspectionZoom-1)*sceneWidth/2-slack,(inspectionZoom-1)*sceneWidth/2+slack);
       panY=clamp(Number(view.panY) || 0,-(inspectionZoom-1)*sceneFitHeight/2-slack,(inspectionZoom-1)*sceneFitHeight/2+slack);
       inspectionShadowRefit ||= previousInspection.some((value,index)=>value!==[inspectionZoom,panX,panY][index]);
+      if (inspectionMoving && paintInspectionSnapshot()) {
+        cancelAnimationFrame(raf); raf = 0;
+        return getInspectionView();
+      }
       shelfSnapshotDirty = true;
       if (renderNow) { cancelAnimationFrame(raf); raf=0; draw(); }
       else invalidate(false);
@@ -1464,7 +1667,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     animateObjectToTrash,
     animateBookToTrash:animateObjectToTrash,
-    flush() { shelfSnapshotDirty = shadowDirty = true; cancelAnimationFrame(raf); raf = 0; draw(); },
+    flush() { inspectionOverview = null; shelfSnapshotDirty = shadowDirty = true; cancelAnimationFrame(raf); raf = 0; draw(); },
     setMode(next, { animate = true } = {}) {
       const wasIsometric = desiredMode === 'isometric';
       desiredMode = next === 'isometric' ? 'isometric' : 'spine';
@@ -1504,6 +1707,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     returnBook(node, { duration = 180, overlayCanvas = null } = {}) {
       const entry = byNode.get(node);
       if (!entry || entry.kind === 'plant' || entry.kind === 'lamp' || disposed) return null;
+      inspectionOverview = null;
       cancelInsertion(entry);
       let resolve;
       const finished = new Promise(done => { resolve = done; });
@@ -1541,8 +1745,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     setDropPosition(position) {
       if (disposed) return;
       const shelf = Number(position?.shelf), x = Number(position?.x);
-      dropPosition = position && Number.isInteger(shelf) && rows[shelf] && Number.isFinite(x)
+      const next = position && Number.isInteger(shelf) && rows[shelf] && Number.isFinite(x)
         ? { shelf, x:clamp(x, 0, 1), ...(position.mount === 'undershelf' ? { mount:'undershelf' } : {}) } : null;
+      if ((!next && !dropPosition) || (next && dropPosition && next.shelf === dropPosition.shelf &&
+        next.x === dropPosition.x && next.mount === dropPosition.mount)) return;
+      dropPosition = next;
       if (dropPosition && !dropMarker) {
         dropMarker = new THREE.Group(); dropMarker.userData.dropMarker = true;
         const material = new THREE.MeshBasicMaterial({ color:'#709980', transparent:true, opacity:.9, depthTest:false, depthWrite:false });
@@ -1553,7 +1760,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       canvas.dataset.dropShelf = dropPosition ? String(dropPosition.shelf) : '';
       canvas.dataset.dropX = dropPosition ? dropPosition.x.toFixed(4) : '';
       canvas.dataset.dropMount = dropPosition?.mount || '';
-      invalidate();
+      // This unlit, non-shadow-casting guide changes colour pixels only.
+      shelfSnapshotDirty = true; invalidate(false);
     },
     previewPlacements(objects, draggedKey) {
       if (disposed) return;
@@ -1575,11 +1783,20 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     updateEntry(node, book, style, coverUrl) {
       const entry = byNode.get(node);
       if (!entry || entry.kind === 'plant' || entry.kind === 'lamp') return;
+      if (inspectionMoving) {
+        inspectionEntryUpdates.set(entry, { book, style, coverUrl });
+        canvas.dataset.inspectionPendingEntries = String(inspectionEntryUpdates.size);
+        return;
+      }
       updateRecord(entry, book, style, coverUrl);
-      invalidate();
+      invalidate(true, false, 'entry');
     },
     updateLayout(next) {
       if (disposed) return false;
+      noteInspectionDirty('layout');
+      // A fresh semantic layout already contains the current book records.
+      inspectionEntryUpdates.clear(); canvas.dataset.inspectionPendingEntries = '0';
+      inspectionOverview = null;
       shelfSnapshotDirty = shadowDirty = true;
       cancelAnimationFrame(raf); raf = 0; mutations.disconnect();
       const oldEntries = new Map(bookEntries.map(entry => [entry.key, entry]));
@@ -1603,6 +1820,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         alreadyScene = stage.classList.contains('has-scene');
         stage.classList.add('has-scene');
         stage.prepend(canvas);
+        stage.append(inspectionCanvas);
+        stage.append(inspectionOverviewCanvas);
       }
       width = next.width; height = next.height; rows = next.rows;
       shelfType = normalizeShelfType(next.shelfType);
@@ -1699,6 +1918,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     dispose() {
       disposed = true; cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
+      inspectionEntryUpdates.clear();
       scroller.removeEventListener('scroll', scrolled); window.removeEventListener('resize', invalidate);
       for (const entry of bookEntries) releaseEntry(entry);
       if (catalog) { catalog.removeFromParent(); catalog.userData.dispose(); }
@@ -1711,7 +1931,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       wood.dispose(); backWood.dispose(); darkWood.dispose();
       for (const material of depthOnly) material.dispose();
       trash?.userData.dispose();
-      canvas.remove(); stage.style.height = originalHeight;
+      canvas.remove(); inspectionCanvas.remove(); inspectionCanvas.width = inspectionCanvas.height = 1;
+      inspectionOverviewCanvas.remove(); inspectionOverviewCanvas.width = inspectionOverviewCanvas.height = 1;
+      inspectionSnapshot = inspectionOverview = null; stage.style.height = originalHeight;
       if (!alreadyScene) stage.classList.remove('has-scene');
       for (const [node, style] of originalStyles) {
         if (style === null) node.removeAttribute('style'); else node.setAttribute('style', style);
