@@ -205,6 +205,33 @@ describe('physical shelf lamp models', () => {
     model.dispose();
   });
 
+  it('places all emitting strips inside the actual LED tubes and scales their dimensions with the glass', () => {
+    const native = createShelfLamp({lampId:'tarnaby'});
+    const fitted = createShelfLamp({lampId:'tarnaby',width:native.userData.width / 2});
+    const strips = native.userData.lightEmitter.filaments;
+    expect(strips).toHaveLength(4);
+    const vertices = native.getObjectByName('glowing-retro-led-filaments').geometry.attributes.position;
+    for (let index = 0; index < strips.length; index++) {
+      const strip = strips[index];
+      const start = new THREE.Vector3(...strip.start), end = new THREE.Vector3(...strip.end);
+      expect(start.y).toBe(116); expect(end.y).toBe(161);
+      expect(Math.hypot(start.x,start.z)).toBeCloseTo(7);
+      // Each ring surrounds the emitting centreline; the small tube's bow
+      // stays within its 1.05 mm radius of the matching narrow area strip.
+      const line = new THREE.Line3(start,end), closest = new THREE.Vector3();
+      for (let ring = 0; ring <= 16; ring++) {
+        const center = new THREE.Vector3();
+        for (let side = 0; side < 6; side++) center.add(new THREE.Vector3().fromBufferAttribute(vertices,index*17*7+ring*7+side));
+        center.multiplyScalar(1/6); line.closestPointToPoint(center,true,closest);
+        expect(center.distanceTo(closest)).toBeLessThan(1.05);
+      }
+      expect(fitted.userData.lightEmitter.filaments[index].start).toEqual(strip.start.map(value => value / 2));
+      expect(fitted.userData.lightEmitter.filaments[index].end).toEqual(strip.end.map(value => value / 2));
+      expect(fitted.userData.lightEmitter.filaments[index].width).toBe(strip.width / 2);
+    }
+    native.dispose(); fitted.dispose();
+  });
+
   it('retains woven fabric and wood detail at zoom distances with mipmapped maps', () => {
     const model = createShelfLamp({lampId:'tripod'}),low = createShelfLamp({lampId:'tripod',quality:'low'});
     const linen = model.getObjectByName('woven-linen-drum-shade').material;

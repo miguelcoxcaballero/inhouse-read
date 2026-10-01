@@ -4,6 +4,11 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.25
+
+- TÄRNABY ilumina desde cuatro superficies estrechas alineadas con sus filamentos LED, en lugar de una luz puntual en el centro de la bombilla. Los reflejos responden a la longitud y orientación de las fibras.
+- El catálogo usa los mismos emisores. Encendido, apagado y atenuación sincronizan la luz de las fibras con su brillo visible; el zoom mantiene la radiancia y la caché del movimiento.
+
 ### Actualización web · 1.6.24
 
 - El movimiento y la inercia de la vista isométrica reutilizan la imagen de la escena. Las portadas y apariencias pendientes se agrupan al terminar el gesto; entonces se actualizan los modelos, texturas, sombras y objetivos táctiles con su calidad de inspección.

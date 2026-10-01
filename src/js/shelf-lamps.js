@@ -177,7 +177,7 @@ function lantern(group,quality,segments) {
   addBatch(group,'led-filament-support',support,supportParts,{castShadow:false});
   const filament = new THREE.MeshStandardMaterial({color:0x71501f,roughness:.78,
     emissive:0xffd6a2,emissiveIntensity:4.5,toneMapped:true});
-  // The scene's point source approximates the LED as a whole. It must not
+  // The scene's filament surfaces illuminate the room. They must not
   // illuminate its own microscopic emitters a second time at zero distance.
   filament.onBeforeCompile = shader => {
     // A phosphor strand has a bright warm centre and an amber round edge.
@@ -195,20 +195,23 @@ function lantern(group,quality,segments) {
       reflectedLight.directSpecular = vec3(0.0);`);
   };
   filament.customProgramCacheKey = () => 'shelf-phosphor-filament-core';
-  const filaments = [];
+  const filaments = [], emitters = [];
   for (let index = 0; index < 4; index++) {
     const angle = index / 4 * Math.PI * 2 + Math.PI / 8;
-    filaments.push({geometry:tube([[Math.cos(angle) * 7,116,Math.sin(angle) * 7],
-      [Math.cos(angle) * 7.8,140,Math.sin(angle) * 7.8],[Math.cos(angle) * 6.8,161,Math.sin(angle) * 6.8]],1.05,16,6)});
+    const path = [[Math.cos(angle) * 7,116,Math.sin(angle) * 7],
+      [Math.cos(angle) * 7.8,140,Math.sin(angle) * 7.8],[Math.cos(angle) * 6.8,161,Math.sin(angle) * 6.8]];
+    filaments.push({geometry:tube(path,1.05,16,6)});
+    emitters.push({ start:path[0], end:path[2], width:2.1,
+      normal:[Math.cos(angle),0,Math.sin(angle)] });
   }
   addBatch(group,'glowing-retro-led-filaments',filament,filaments,{castShadow:false});
   const cord = new THREE.MeshStandardMaterial({color:0x242626,roughness:.97});
   addBatch(group,'black-braided-power-cord',cord,[{geometry:tube([[0,10,-68],[0,7,-71],
     [5,3,-73],[12,1.8,-73.1],[20,1.8,-71]],1.4,24)}]);
-  // Real illumination is independent of filament radiance. Keeping this
-  // point source dim to preserve the bulb made nearby books almost unlit;
-  // its microscopic emitters already exclude direct self-illumination above.
-  return {position:[0,143,0],colour:0xffc889,range:700,intensity:196000};
+  // These emitting strips occupy the actual phosphor tubes. Their length
+  // supplies continuous illumination and elongated specular reflections,
+  // rather than a bright point floating in the empty centre of the bulb.
+  return {position:[0,143,0],colour:0xffc889,range:700,intensity:196000,filaments:emitters};
 }
 
 function tripod(group,quality,segments) {
@@ -318,6 +321,9 @@ export function createShelfLamp({lampId='tarnaby',width=null,height=null,quality
     lampId:lamp.id,mount:lamp.mount,width:native.width * scale,
     height:native.height * scale,depth:native.depth * scale,warmKelvin:lamp.warmKelvin,
     lightEmitter:{ position:emitter.position.map(value => value * scale),color:emitter.colour,
+      ...(emitter.filaments ? { filaments:emitter.filaments.map(strip => ({
+        start:strip.start.map(value => value * scale), end:strip.end.map(value => value * scale),
+        width:strip.width * scale, normal:strip.normal })) } : {}),
       // World units are millimetres before fitting. Inverse-square lights
       // need intensity to follow the same squared fit, preserving their
       // irradiance on books and boards when the screen or zoom changes.

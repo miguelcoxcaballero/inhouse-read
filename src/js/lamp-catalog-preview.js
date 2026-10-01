@@ -2,10 +2,11 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createShelfLamp } from './shelf-lamps.js';
 import { getCatalogLamp } from './lamp-catalog-data.js';
+import { createShelfLampLighting } from './shelf-lamp-lighting.js';
 
 /** The actual shelf lamp, with its own warm light and reflected studio lighting. */
 export function createLampCatalogPreview(host) {
-  let renderer, environment, model, observer, fixture, target, frame = 0, disposed = false, selected;
+  let renderer, environment, model, observer, fixture, target, filamentLighting, frame = 0, disposed = false, selected;
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-160,160,180,-180,1,5000);
   const display = new THREE.Group(); scene.add(display);
@@ -23,12 +24,14 @@ export function createLampCatalogPreview(host) {
     const half = Math.max(size.y / 2,size.x / (2 * aspect)) * 1.13;
     camera.left = -half * aspect; camera.right = half * aspect;
     camera.top = half; camera.bottom = -half; camera.updateProjectionMatrix();
+    filamentLighting?.update([{ kind:'lamp',key:'catalog-filaments',model,width:size.x }]);
     renderer.setSize(width,height,false); renderer.render(scene,camera);
   }
   function invalidate() {
     if (!disposed && !frame) frame = requestAnimationFrame(render);
   }
   function removeModel() {
+    filamentLighting?.dispose(); filamentLighting = null;
     if (model) {
       display.remove(model);
       (model.dispose || model.userData.dispose)?.(); model = null;
@@ -98,7 +101,10 @@ export function createLampCatalogPreview(host) {
       });
       display.add(model);
       const emitter = model.userData.lightEmitter;
-      if (emitter) {
+      if (emitter?.filaments) {
+        emitter.intensity *= .4; // Same studio exposure as the former bulb light.
+        filamentLighting = createShelfLampLighting(scene, { maxLights:1 });
+      } else if (emitter) {
         fixture = emitter.direction
           ? new THREE.SpotLight(emitter.color,emitter.intensity * .55,emitter.distance,emitter.angle,emitter.penumbra,emitter.decay)
           : new THREE.PointLight(emitter.color,emitter.intensity * .4,emitter.distance,emitter.decay);
