@@ -614,7 +614,7 @@
   flex:0 0 auto; display:block;
   width:var(--ihr-lamp-w, 98px); height:var(--ihr-lamp-h, 163px);
   pointer-events:auto; border:0; padding:0; background:transparent;
-  cursor:grab; touch-action:none;
+  cursor:pointer; touch-action:none;
 }
 .ihr-lamp:focus-visible { outline:2px solid var(--ihr-accent-legible); outline-offset:3px; }
 .ihr-lamp > svg { display:block; width:100%; height:100%; }

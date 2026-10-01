@@ -35,7 +35,7 @@ export function normalizeShelfLamp(candidate) {
   if (!lamp || !key) return null;
   const seed = typeof candidate.seed === 'string' && candidate.seed.trim() ? candidate.seed.trim() : key;
   return {
-    key,seed,lampId:lamp.id,
+    key,seed,lampId:lamp.id,isOn:candidate.isOn !== false,
     ...(Number.isFinite(candidate.shelf) && candidate.shelf >= 0
       ? { shelf:Math.min(999,Math.floor(candidate.shelf)) } : {}),
     ...(Number.isFinite(candidate.x) ? { x:Math.min(1,Math.max(0,candidate.x)) } : {})

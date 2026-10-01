@@ -20,15 +20,22 @@ describe('shelf lighting catalogue', () => {
 
   it('normalizes saved identities and placements without persisting screen-dependent sizes', () => {
     expect(normalizeShelfLamp({key:'lamp:a',lampId:'tripod',width:250,height:390,shelf:2.9,x:.7}))
-      .toEqual({key:'lamp:a',seed:'lamp:a',lampId:'tripod',shelf:2,x:.7});
+      .toEqual({key:'lamp:a',seed:'lamp:a',lampId:'tripod',isOn:true,shelf:2,x:.7});
     expect(normalizeShelfLamp({seed:'lamp:old',lampId:'tarnaby',shelf:-2,x:Infinity}))
-      .toEqual({key:'lamp:old',seed:'lamp:old',lampId:'tarnaby'});
+      .toEqual({key:'lamp:old',seed:'lamp:old',lampId:'tarnaby',isOn:true});
     expect(normalizeShelfLamp({key:'lamp:a',seed:'stable',lampId:'mittled',shelf:9999,x:-.2}))
-      .toEqual({key:'lamp:a',seed:'stable',lampId:'mittled',shelf:999,x:0});
+      .toEqual({key:'lamp:a',seed:'stable',lampId:'mittled',isOn:true,shelf:999,x:0});
     expect(normalizeShelfLamp(null)).toBeNull();
     expect(normalizeShelfLamp({lampId:'tripod'})).toBeNull();
     expect(normalizeShelfLamp({key:' ',seed:'',lampId:'tripod'})).toBeNull();
     expect(normalizeShelfLamp({key:'lamp:a',lampId:'unknown'})).toBeNull();
+  });
+
+  it('preserves an explicitly switched-off lamp and defaults old or malformed power states to on', () => {
+    const identity = {key:'lamp:power',lampId:'tarnaby'};
+    expect(normalizeShelfLamp({...identity,isOn:false}).isOn).toBe(false);
+    for (const isOn of [undefined,null,'false',0,true,{},NaN])
+      expect(normalizeShelfLamp({...identity,isOn}).isOn).toBe(true);
   });
 });
 
@@ -88,6 +95,66 @@ describe('physical shelf lamp models', () => {
       model.userData.dispose(); model.dispose();
       for (const spy of dispose) expect(spy).toHaveBeenCalledTimes(1);
     });
+
+    it(`${lamp.id} switches and dims every emitting surface without changing its fitted geometry or GPU resources`, () => {
+      const model = createShelfLamp({lampId:lamp.id,width:lamp.dimensions.width / 2});
+      const bounds = new THREE.Box3().setFromObject(model),resources = new Set(),meshes = [];
+      model.traverse(object => {
+        if (!object.isMesh) return;
+        meshes.push({mesh:object,geometry:object.geometry,positions:object.geometry.attributes.position.array,
+          material:object.material,version:object.material.version,
+          colour:object.material.color.clone(),emissive:object.material.emissive?.clone(),
+          intensity:object.material.emissiveIntensity});
+        resources.add(object.geometry); resources.add(object.material);
+        for (const value of Object.values(object.material)) if (value?.isTexture) resources.add(value);
+      });
+      const dispose = [...resources].map(resource => vi.spyOn(resource,'dispose'));
+      const emitting = meshes.filter(({emissive}) => emissive?.getHex());
+      expect(emitting.length).toBe(lamp.id === 'tripod' ? 3 : 1);
+      const emitter = model.userData.lightEmitter,intensity = emitter.intensity;
+      expect(emitter.power).toBe(1);
+      for (const power of [0,.25,.8,.3,1,0,1]) {
+        expect(model.userData.setPower(power)).toBe(power);
+        expect(emitter.power).toBe(power); expect(emitter.intensity).toBe(intensity);
+        for (const surface of emitting)
+          expect(surface.material.emissiveIntensity).toBeCloseTo(surface.intensity * power,9);
+        for (const surface of meshes) {
+          expect(surface.mesh.geometry).toBe(surface.geometry);
+          expect(surface.geometry.attributes.position.array).toBe(surface.positions);
+          expect(surface.mesh.material).toBe(surface.material);
+          expect(surface.material.version).toBe(surface.version);
+          expect(surface.material.color.equals(surface.colour)).toBe(true);
+          if (surface.emissive) expect(surface.material.emissive.equals(surface.emissive)).toBe(true);
+        }
+        expect(new THREE.Box3().setFromObject(model).equals(bounds)).toBe(true);
+      }
+      for (const spy of dispose) expect(spy).not.toHaveBeenCalled();
+      expect(model.userData.setPower(-3)).toBe(0);
+      expect(model.userData.setPower(4)).toBe(1);
+      expect(model.userData.setPower(NaN)).toBe(0);
+      model.dispose();
+      for (const spy of dispose) expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it(`${lamp.id} starts off on request and keeps the power of other instances independent`, () => {
+      const off = createShelfLamp({lampId:lamp.id,isOn:false}),on = createShelfLamp({lampId:lamp.id});
+      const litSurfaces = model => {
+        const result = [];
+        model.traverse(object => {
+          if (object.material?.emissive?.getHex()) result.push(object.material);
+        });
+        return result;
+      };
+      expect(off.userData.lightEmitter.power).toBe(0);
+      expect(litSurfaces(off).every(material => material.emissiveIntensity === 0)).toBe(true);
+      expect(on.userData.lightEmitter.power).toBe(1);
+      const onRadiance = litSurfaces(on).map(material => material.emissiveIntensity);
+      off.userData.setPower(.6);
+      expect(litSurfaces(off).every(material => material.emissiveIntensity > 0)).toBe(true);
+      expect(litSurfaces(on).map(material => material.emissiveIntensity)).toEqual(onRadiance);
+      expect(on.userData.lightEmitter.power).toBe(1);
+      off.dispose(); on.dispose();
+    });
   }
 
   it('keeps the retro LED filaments visible through real refractive glass', () => {
@@ -110,6 +177,31 @@ describe('physical shelf lamp models', () => {
     expect(filaments.material.emissive.g).toBeGreaterThan(filaments.material.emissive.b);
     expect(filaments.material.toneMapped).toBe(true);
     expect(model.getObjectByName('brass-collar-and-machined-dimmer').material.metalness).toBe(1);
+    model.dispose();
+  });
+
+  it('batches four phosphor fibres with a bright warm centre and a defined amber edge', () => {
+    const model = createShelfLamp({lampId:'tarnaby'});
+    const filaments = model.getObjectByName('glowing-retro-led-filaments');
+    // Four continuous tubes remain one material/draw, including their cores.
+    expect(filaments.geometry.attributes.position.count).toBe(4 * 17 * 7);
+    expect(filaments.geometry.index.count).toBe(4 * 16 * 6 * 6);
+    const shader = {fragmentShader:THREE.ShaderLib.standard.fragmentShader};
+    filaments.material.onBeforeCompile(shader);
+    const profile = shader.fragmentShader.match(/mix\(vec3\(([^)]+)\),vec3\(([^)]+)\),filamentCore\)/);
+    expect(profile).not.toBeNull();
+    const emission = filaments.material.emissive.toArray();
+    const [edge,core] = profile.slice(1).map(values => values.split(',').map(Number)
+      .map((value,index) => value * emission[index] * filaments.material.emissiveIntensity));
+    const luminance = values => values[0] * .2126 + values[1] * .7152 + values[2] * .0722;
+    expect(luminance(core)).toBeGreaterThan(luminance(edge) * 1.8);
+    expect(core[0]).toBeGreaterThan(core[1]); expect(core[1]).toBeGreaterThan(core[2]);
+    expect(core[2] / core[0]).toBeGreaterThan(edge[2] / edge[0]);
+    expect(shader.fragmentShader).toContain('pow(filamentFacing,4.0)');
+    expect(shader.fragmentShader).toContain('reflectedLight.directDiffuse = vec3(0.0)');
+    model.userData.setPower(0);
+    expect(filaments.material.emissiveIntensity).toBe(0);
+    expect(filaments.material.color.r).toBeGreaterThan(filaments.material.color.b);
     model.dispose();
   });
 

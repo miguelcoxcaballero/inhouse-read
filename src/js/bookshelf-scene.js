@@ -417,7 +417,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function makeModel(entry) {
     const model = entry.kind === 'plant' ? createShelfPlant(entry)
-      : entry.kind === 'lamp' ? createShelfLamp({ lampId:entry.lampId, width:entry.width, height:entry.height, quality:'high' })
+      : entry.kind === 'lamp' ? createShelfLamp({ lampId:entry.lampId, width:entry.width, height:entry.height, quality:'high', isOn:entry.isOn !== false })
       : createBookModel(entry.book, entry.style, entry.width, entry.height, entry.thickness, entry.coverUrl, { shelf:true, overview:entry.overview, inspectionResolution:entry.inspectionResolution });
     model.userData.invalidate = invalidate;
     model.traverse(object => {
@@ -873,6 +873,20 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     canvas.dataset.catalog3d = 'true'; canvas.dataset.catalogVisible = String(visible);
   }
 
+  function advanceLampPower(entry, now) {
+    const target = entry.isOn === false ? 0 : 1;
+    const power = entry.lampPower ||= { value:target, from:target, target, started:now, duration:0 };
+    if (power.target !== target) Object.assign(power, { from:power.value, target, started:now, duration:220 });
+    const previous = power.value;
+    const t = reducedMotion.matches || !power.duration ? 1 : clamp((now - power.started) / power.duration, 0, 1);
+    power.value = power.from + (power.target - power.from) * ease(t);
+    entry.model?.userData.setPower?.(power.value);
+    if (entry.node) entry.node.dataset.lampPower = power.value.toFixed(4);
+    // Changing radiance repaints the image but never invalidates caster depth.
+    if (previous !== power.value) shelfSnapshotDirty = true;
+    return t < 1 && power.from !== power.target;
+  }
+
   function updateEntries(scroll, zoom, now, finishedInsertions) {
     let activeBooks = 0, moving = false, shelfMoving = false;
     for (const entry of bookEntries) {
@@ -914,7 +928,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       vector.set(screenX / zoom, -screenY / zoom, 30 * lift / zoom).applyQuaternion(inverseRotation);
       entry.pose.position.set(entry.x - width / 2 + vector.x + entry.preview.x,
         -entry.y - (lamp && !undershelf ? entry.height / 2 : 0) + vector.y + entry.preview.y,
-        (undershelf ? -depth / 2 : lamp ? -(entry.depth || entry.width) / 2 : plant ? -entry.width * .35 : -entry.width / 2)
+        (undershelf ? shelfType === 'baggebo' ? -depth / 2 : 8 - (entry.depth || entry.width) / 2
+          : lamp ? -(entry.depth || entry.width) / 2 : plant ? -entry.width * .35 : -entry.width / 2)
           - (undershelf ? 0 : entry.depthInset || 0) + vector.z);
       entry.pose.rotation.set(decorative ? 4 * Math.PI / 180 * lift : 0,
         decorative ? -7 * Math.PI / 180 * lift : Math.PI / 2 - 7 * Math.PI / 180 * lift,
@@ -979,11 +994,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         }
         if (!decorative && (!away || insertion)) activeBooks++;
       }
+      if (lamp) moving = advanceLampPower(entry, now) || moving;
       if (node) {
         // A whole-model bounding rectangle includes empty space around plants
         // and most of an isometric book's cover. Give each semantic button a
         // centre on its visible, solid surface instead: binding or ceramic pot.
-        const surface = entry.model?.getObjectByName(plant ? 'ceramic-pot' : lamp ? undershelf ? 'lamp-housing' : 'lamp-base' : 'binding');
+        const surface = entry.model?.getObjectByName(plant ? 'ceramic-pot' : lamp
+          ? undershelf ? 'warm-opal-diffuser' : entry.lampId === 'tripod' ? 'woven-linen-drum-shade' : 'lamp-base'
+          : 'binding');
         let hitRect;
         if (surface?.geometry) {
           if (!surface.geometry.boundingBox) surface.geometry.computeBoundingBox();
@@ -1006,18 +1024,18 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           node.dataset.lampModelId = entry.lampId;
           node.dataset.lampMount = undershelf ? 'undershelf' : 'standing';
         }
-        if (!decorative) {
+        if (!decorative || lamp) {
           let coverHit = semanticCovers.get(node);
           if (!coverHit) {
             coverHit = document.createElement('span'); coverHit.setAttribute('aria-hidden', 'true');
-            coverHit.dataset.shelfCoverHit = 'true'; semanticCovers.set(node, coverHit); node.append(coverHit);
+            coverHit.dataset[lamp ? 'shelfLampHit' : 'shelfCoverHit'] = 'true'; semanticCovers.set(node, coverHit); node.append(coverHit);
           }
           // Keep tapping the exposed cover available without moving the
           // button's own focus/click centre away from its neighboring spine.
           // The existing handlers still raycast the true visible geometry.
           Object.assign(coverHit.style, { position:'absolute', left:`${rect.left - hitRect.left}px`,
             top:`${rect.top - hitRect.top}px`, width:`${rect.width}px`, height:`${rect.height}px`,
-            display:progress > .04 ? 'block' : 'none', background:'transparent',
+            display:lamp || progress > .04 ? 'block' : 'none', background:'transparent',
             pointerEvents:dragging || away || node.disabled || node.inert ? 'none' : 'inherit' });
         }
       }
@@ -1264,7 +1282,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const contentDirty = shadowDirty || shelfMoving || trashMoving || casters !== shadowCasters;
     const lampRefresh = lampLighting.update(bookEntries, { scroll, viewportHeight,
       shadowDirty:contentDirty, transform:furniture.matrixWorld });
-    const nextDaylight = lampLighting.activeCount ? shelfType === 'baggebo' ? .82 : .7 : 1;
+    const lampPower = lampLighting.activePower ?? (lampLighting.activeCount ? 1 : 0);
+    const nextDaylight = 1 - lampPower * (shelfType === 'baggebo' ? .18 : .3);
     if (nextDaylight !== daylightFactor) {
       daylightFactor = nextDaylight;
       for (const { light, intensity } of daylight) light.intensity = intensity * daylightFactor;
@@ -1387,6 +1406,17 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   return {
     canvas,
     getInspectionZoom:()=>inspectionZoom,
+    setLampPower(node, isOn, { animate = true } = {}) {
+      const entry = byNode.get(node);
+      if (disposed || entry?.kind !== 'lamp') return;
+      const previous = entry.lampPower?.value ?? entry.model?.userData.lightEmitter?.power ?? (entry.isOn === false ? 0 : 1);
+      entry.isOn = isOn !== false;
+      const target = entry.isOn ? 1 : 0;
+      entry.lampPower = { value:previous, from:previous, target, started:performance.now(),
+        duration:animate && !reducedMotion.matches ? 220 : 0 };
+      shelfSnapshotDirty = true;
+      invalidate(false);
+    },
     getInspectionView,
     setInspectionView(view,{moving=false,renderNow=false}={}) {
       if (disposed || desiredMode !== 'isometric' || transition || progress !== 1) return getInspectionView();

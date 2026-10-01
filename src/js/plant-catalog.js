@@ -211,7 +211,7 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
   const lampChoices = element('fieldset','ihr-plant-catalog__lamp-choices');
   const lampLegend = element('legend',null,'Elige tu lámpara');
   const lampList = element('div','ihr-plant-catalog__lamps');
-  const lampNote = element('p','ihr-plant-catalog__lamp-note','La luz cálida ilumina tus libros y plantas.');
+  const lampNote = element('p','ihr-plant-catalog__lamp-note','Toca una lámpara en la estantería para encenderla o apagarla.');
   lampChoices.append(lampLegend,lampList,lampNote);
   lampBody.append(lampPreview,lampChoices);
   const footer = element('footer','ihr-plant-catalog__footer');
