@@ -627,6 +627,18 @@ describe('real shelf book materials', () => {
     model.userData.dispose();
   });
 
+  it('renders enlarged shelf covers at 1024 or 2048 pixels with surface grain', () => {
+    canvasContext();
+    for (const resolution of [1024,2048]) {
+      const model = createBookModel(book, style, 132, 200, 40, null, {shelf:true,inspectionResolution:resolution});
+      const cover = model.getObjectByName('front-cover').material[0];
+      expect(cover.map.image.height).toBe(resolution);
+      expect(cover.normalMap).toBeTruthy();
+      expect(model.userData.inspectionResolution).toBe(resolution);
+      model.userData.dispose();
+    }
+  });
+
   it('keeps the loaded cover separate from cloth and gives the shelf visible paper edges', () => {
     canvasContext();
     let completeLoad;

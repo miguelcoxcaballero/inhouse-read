@@ -100,6 +100,7 @@ import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCov
 import { bookColorOptions, spineColorStyle, spineFinish, surfaceFinish, METAL_COLORS } from './book-colors.js';
 import { normalizeBookAuthor } from './book-title.js';
 import { bookView, fitCoverImage, getBookRenderer, planReadingBookPose } from './book-model.js';
+import { createShelfZoom } from './shelf-zoom.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
 import { layoutShelvedObjects, moveShelfObject } from './shelf-placement.js';
 import { createPlantCatalog } from './plant-catalog.js';
@@ -363,6 +364,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
   root.classList.toggle('has-trash', hasTrash);
   root.append(scroller);
+  const shelfZoom = createShelfZoom({root,scroller,getScene:()=>state.shelfScene,
+    isEnabled:()=>Boolean(state.shelfScene && state.viewMode === SHELF_VIEW_MODES.ISOMETRIC &&
+      !state.busy && !state.session && !state.returnMotion && !state.trashRemoval),
+    onGestureStart:()=>{
+      if (state.dragSession) finishSpineDrag({pointerId:state.dragSession.pointerId},state.dragSession.node,true);
+      state.pressedBookId = null;
+      for (const node of scroller.querySelectorAll('.is-pressed')) node.classList.remove('is-pressed');
+    }});
   if (trashStatus) root.append(trashStatus);
   const plantCatalog = createPlantCatalog({ onAdd:addCatalogPlant });
   const catalogNode = !opts.sections ? el('button', {
@@ -1329,7 +1338,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       for (const button of root.querySelectorAll('.ihr-view-switch__button')) {
         button.setAttribute('aria-pressed', String(button.dataset.viewMode === mode));
       }
-      state.shelfScene.setMode(mode);
+      state.shelfScene.setMode(mode); shelfZoom.sync();
     } else render();
     root.querySelector(`[data-view-mode="${mode}"]`)?.focus({ preventScroll:true });
   }
@@ -1351,6 +1360,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         onClick:() => setViewMode(mode.id)
       }, [svgIcon(mode.icon, { className:'ihr-view-switch__icon' }), el('span', { text:mode.label })]));
     }
+    controls.append(shelfZoom.element);
     return controls;
   }
 
@@ -1493,6 +1503,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       for (const previous of previousChildren) previous.remove();
       if (retainedScene) retainedScene.updateLayout(layout);
       else state.shelfScene = createBookshelfScene(layout);
+      shelfZoom.sync();
     }
     if (focusedObjectId) {
       [...scroller.querySelectorAll('[data-object-id]')]
@@ -3032,7 +3043,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     destroy() {
       state.destroyed = true;
-      plantCatalog.destroy();
+      plantCatalog.destroy(); shelfZoom.destroy();
       cancelTrashRemoval();
       if (state.dragSession) finishSpineDrag({ pointerId:state.dragSession.pointerId }, state.dragSession.node, true);
       state.pendingSelection?.cancel();

@@ -9,6 +9,16 @@ function triangleCount(group) {
 }
 
 describe('botanical shelf models', () => {
+  it('upgrades plant and pot maps for inspection while sharing geometry proportions', () => {
+    const entry = {catalogId:'monstera',variant:'monstera',potId:'muskot',width:70,height:100,seed:'detail-test'};
+    const shelf = createShelfPlant(entry), detail = createShelfPlant({...entry,inspectionResolution:256});
+    expect(detail.getObjectByName('ceramic-pot').material.map.image).toMatchObject({width:256,height:512});
+    expect(shelf.getObjectByName('ceramic-pot').material.map.image).toMatchObject({width:128,height:256});
+    const a = new THREE.Box3().setFromObject(shelf), b = new THREE.Box3().setFromObject(detail);
+    expect(a.min.distanceTo(b.min)).toBe(0); expect(a.max.distanceTo(b.max)).toBe(0);
+    shelf.userData.dispose(); detail.userData.dispose();
+  });
+
   for (const variant of ['upright','sansevieria','cactus','succulent','suculenta','leafy','pothos','monstera']) {
     it(`${variant} fits its collision envelope and mobile geometry budget`, () => {
       const plant = createShelfPlant({ width:42, height:67, variant, seed:'botanical-fixture' });

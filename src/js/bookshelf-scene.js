@@ -215,7 +215,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const freshPreview = () => ({ x:0, y:0, fromX:0, fromY:0, targetX:0, targetY:0, started:0, active:false });
   const freshEntry = (entry, index) => ({ ...entry, key:entryKey(entry, index), model:null, replacement:null, pose:new THREE.Object3D(),
     lift:{ value:0, from:0, target:0, started:0 }, landing:null, offset:{ x:0, y:0 }, preview:freshPreview(), state:'', rect:null, insertion:null,
-    overview:false, qualityReplacement:false, replacementReady:false });
+    overview:false, inspectionResolution:0, qualityReplacement:false, replacementReady:false });
   let bookEntries = entries.map(freshEntry);
   const byNode = new Map(bookEntries.filter(entry => entry.node).map(entry => [entry.node, entry]));
   const boardHeight = 15;
@@ -264,6 +264,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let sceneFitHeight = 1;
   let dropMarker = null, dropPosition = null;
   let desiredMode = mode === 'isometric' ? 'isometric' : 'spine';
+  let inspectionZoom = 1, panX = 0, panY = 0;
   let trashHover = false, trashOpenness = 0, trashTransition = null;
   let trashRect = null;
   const trashOriginalStates = new Map();
@@ -346,8 +347,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function makeModel(entry) {
     const model = entry.kind === 'plant' ? createShelfPlant(entry)
-      : createBookModel(entry.book, entry.style, entry.width, entry.height, entry.thickness, entry.coverUrl, { shelf:true, overview:entry.overview });
+      : createBookModel(entry.book, entry.style, entry.width, entry.height, entry.thickness, entry.coverUrl, { shelf:true, overview:entry.overview, inspectionResolution:entry.inspectionResolution });
     model.userData.invalidate = invalidate;
+    model.traverse(object => {
+      for (const material of Array.isArray(object.material) ? object.material : object.material ? [object.material] : [])
+        for (const key of ['map','normalMap','bumpMap','roughnessMap'])
+          if (material[key]) material[key].anisotropy = Math.min(16,renderer.capabilities.getMaxAnisotropy());
+    });
     model.userData.entry = entry;
     model.traverse(object => {
       if (object.isMesh) { object.castShadow = true; object.receiveShadow = true; }
@@ -562,8 +568,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     });
   }
 
+  const qualityMatches = (model,entry) => Boolean(model?.userData.overview) === entry.overview && (model?.userData.inspectionResolution || 0) === entry.inspectionResolution;
+
   function replaceBookQuality(entry) {
-    if (entry.qualityReplacement && entry.replacement && Boolean(entry.replacement.userData.overview) !== entry.overview)
+    if (entry.qualityReplacement && entry.replacement && !qualityMatches(entry.replacement,entry))
       cancelReplacement(entry);
     if (entry.replacement) return;
     const previous = entry.model, replacement = makeModel(entry);
@@ -580,7 +588,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function applyBookQuality(entry) {
     // A late cover decode can finish after the user has reversed the view or
     // pressed/released this book. Never paint the obsolete quality first.
-    if (entry.qualityReplacement && entry.replacement && Boolean(entry.replacement.userData.overview) !== entry.overview) {
+    if (entry.qualityReplacement && entry.replacement && !qualityMatches(entry.replacement,entry)) {
       cancelReplacement(entry); return;
     }
     if (!entry.qualityReplacement || !entry.replacementReady || entry.trashDrop || entry.insertion ||
@@ -652,7 +660,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function viewport() {
     viewportHeight = Math.max(1, Math.ceil(Math.min(scroller.clientHeight || window.innerHeight, window.innerHeight)));
-    const ratio = Math.min(window.devicePixelRatio || 1, width < 600 ? 1.5 : 2);
+    const ratio = Math.min(window.devicePixelRatio || 1, inspectionZoom > 1.001 && desiredMode === 'isometric' ? 2.5 : width < 600 ? 1.5 : 2);
     const pixelWidth = Math.ceil(sceneWidth * ratio), pixelHeight = Math.ceil(viewportHeight * ratio);
     if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
       canvas.width = pixelWidth; canvas.height = pixelHeight; shelfSnapshotDirty = true;
@@ -700,11 +708,17 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Pull back far enough to see every shelf, its feet and the open lid.
     // Interpolating the height constraint preserves the frontal close view.
     const heightZoom = Math.min(1, (sceneFitHeight - padding * 2) / Math.max(1, framed.height));
-    const zoom = Math.max(.0001, Math.min(widthZoom, 1 + (heightZoom - 1) * progress));
-    furniture.scale.setScalar(zoom); furniture.updateMatrix();
+    const fitZoom = Math.max(.0001, Math.min(widthZoom, 1 + (heightZoom - 1) * progress));
+    furniture.scale.setScalar(fitZoom); furniture.updateMatrix();
     const bounds = corners(framedBounds, furniture.matrix);
-    const reserve = (frameRight - frameLeft - unscaled.width) * zoom;
-    furniture.position.set(sceneWidth / 2 - (frameLeft + frameRight) * zoom / 2, bounds.top - padding, 0);
+    const factor = 1 + (inspectionZoom-1)*progress, zoom = fitZoom*factor;
+    panX = clamp(panX,-(inspectionZoom-1)*sceneWidth/2,(inspectionZoom-1)*sceneWidth/2);
+    panY = clamp(panY,-(inspectionZoom-1)*sceneFitHeight/2,(inspectionZoom-1)*sceneFitHeight/2);
+    const reserve = (frameRight - frameLeft - unscaled.width) * fitZoom;
+    const baseX = sceneWidth/2 - (frameLeft+frameRight)*fitZoom/2, baseY = bounds.top-padding;
+    furniture.scale.setScalar(zoom);
+    furniture.position.set(baseX*factor + (1-factor)*sceneWidth/2 + panX*progress,
+      baseY*factor - (1-factor)*sceneFitHeight/2 - panY*progress,0);
     furniture.updateMatrixWorld(true);
     // Matrix arithmetic can produce fitHeight + 1e-12; do not round that
     // into a new CSS pixel and recreate a scrollbar in the fitted overview.
@@ -714,6 +728,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     canvas.dataset.yaw = (-30 * progress).toFixed(3);
     canvas.dataset.pitch = (14 * progress).toFixed(3);
     canvas.dataset.zoom = zoom.toFixed(4);
+    canvas.dataset.inspectionZoom = inspectionZoom.toFixed(4);
+    canvas.dataset.inspectionPan = JSON.stringify([panX,panY]);
     canvas.dataset.cabinetWidth = String(width); canvas.dataset.trashReserve = reserve.toFixed(3);
     canvas.dataset.sceneFitHeight = String(sceneFitHeight); canvas.dataset.floorVisible = String(floor.visible);
     const framedWorld = corners(framedBounds, furniture.matrixWorld);
@@ -810,6 +826,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       entry.rect = rect;
       const trashDrop = entry.trashDrop;
       const visible = Boolean(trashDrop) || ((!away || insertion) && rect.bottom > scroll - 220 && rect.top < scroll + viewportHeight + 220);
+      if (plant && visible && !trashDrop && !insertion && !away) {
+        entry.inspectionResolution = inspectionZoom > 1.001 && progress === 1 ? 256 : 0;
+        if (entry.model && !qualityMatches(entry.model,entry)) replaceBookQuality(entry);
+        applyBookQuality(entry);
+      }
       if (!plant && visible && !trashDrop && !insertion && !away) {
         // Choose overview quality only after the global view settles, rather
         // than rebuilding repeatedly while the book crosses a size threshold.
@@ -817,7 +838,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         if (lifted || node?.classList.contains('is-pressed')) entry.overview = false;
         else if (!entry.model && desiredMode === 'isometric' && rect.height < 90) entry.overview = true;
         else if (stableView) entry.overview = progress === 1 && rect.height < 90;
-        if (entry.model && Boolean(entry.model.userData.overview) !== entry.overview) replaceBookQuality(entry);
+        const physicalHeight = rect.height*Math.min(window.devicePixelRatio || 1,2.5);
+        const inspecting = inspectionZoom > 1.001 && progress === 1 && physicalHeight > 192;
+        if (inspecting) entry.overview = false;
+        entry.inspectionResolution = inspecting ? (physicalHeight > 900 ? 2048 : 1024) : 0;
+        if (entry.model && !qualityMatches(entry.model,entry)) replaceBookQuality(entry);
         applyBookQuality(entry);
       }
       if (visible && !entry.model) {
@@ -1143,8 +1168,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     for (const entry of bookEntries) if (entry.insertion?.overlayCanvas) paintInsertionOverlay(entry);
     canvas.dataset.renderCount = String(++renderCount);
     canvas.dataset.activePlants = String(bookEntries.filter(entry => entry.kind === 'plant' && entry.model?.visible).length);
+    canvas.dataset.highResolutionPlants = String(bookEntries.filter(entry => entry.kind === 'plant' && entry.model?.visible && entry.model.userData.inspectionResolution).length);
     const paintedBooks = bookEntries.filter(entry => entry.kind !== 'plant' && entry.model?.visible);
     canvas.dataset.overviewBooks = String(paintedBooks.filter(entry => entry.model.userData.overview).length);
+    canvas.dataset.highResolutionBooks = String(paintedBooks.filter(entry => entry.model.userData.inspectionResolution).length);
+    canvas.dataset.pixelRatio = String(ratio);
     canvas.dataset.detailedBooks = String(paintedBooks.filter(entry => !entry.model.userData.overview).length);
     canvas.dataset.bookQualityPending = String(bookEntries.filter(entry => entry.qualityReplacement).length);
     canvas.dataset.shadowMapSize = '1024';
@@ -1214,6 +1242,23 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   return {
     canvas,
+    getInspectionZoom:()=>inspectionZoom,
+    zoomTo(value,clientX,clientY) {
+      if (disposed || desiredMode !== 'isometric' || transition || progress !== 1) return inspectionZoom;
+      const next = clamp(Number(value) || 1,1,4), relative = next/inspectionZoom;
+      const rect = canvas.getBoundingClientRect();
+      const x = Number.isFinite(clientX) ? clientX-rect.left : sceneWidth/2;
+      const y = Number.isFinite(clientY) ? clientY-rect.top : sceneFitHeight/2;
+      panX = x-sceneWidth/2-(x-sceneWidth/2-panX)*relative;
+      panY = y-sceneFitHeight/2-(y-sceneFitHeight/2-panY)*relative;
+      inspectionZoom = next;
+      if (next === 1) panX = panY = 0;
+      invalidate(); return inspectionZoom;
+    },
+    panBy(x,y) {
+      if (disposed || desiredMode !== 'isometric' || inspectionZoom <= 1) return;
+      panX += Number(x) || 0; panY += Number(y) || 0; invalidate();
+    },
     invalidate,
     hitTrash,
     setTrashHover(active) {
@@ -1231,6 +1276,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const wasIsometric = desiredMode === 'isometric';
       desiredMode = next === 'isometric' ? 'isometric' : 'spine';
       const target = desiredMode === 'isometric' ? 1 : 0;
+      if (!target) { inspectionZoom = 1; panX = panY = 0; }
       if (target && !wasIsometric) frontalScroll = scroller.scrollTop;
       const scrollTo = target ? 0 : frontalScroll;
       if (!target && trash) {
