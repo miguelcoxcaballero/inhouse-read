@@ -403,6 +403,44 @@ describe('real shelf book materials', () => {
     }
   });
 
+  it('keeps the reflection imperfections on every outer book surface at all detail levels', () => {
+    canvasContext();
+    const keys = new Set();
+    for (const options of [{ shelf:true, overview:true }, { shelf:true }, { shelf:true, inspectionResolution:1024 }, {}]) {
+      const model = createBookModel({ ...book, coverFinish:'glossy' }, style, 132, 200, 40, null, options);
+      const front = model.getObjectByName('front-cover').material;
+      const cover = Array.isArray(front) ? front[0] : front;
+      for (const name of ['binding', 'back-cover', 'binding-head-cap', 'binding-tail-cap'])
+        expect(model.getObjectByName(name).material.userData.bookReflectionSurface).toBeTruthy();
+      expect(cover.userData.bookReflectionSurface).toBeTruthy();
+      keys.add(cover.customProgramCacheKey());
+      const edges = [].concat(model.getObjectByName('page-block').material);
+      expect(edges.every(material => !material.userData.bookReflectionSurface)).toBe(true);
+      model.userData.dispose();
+    }
+    expect(keys.size).toBe(1);
+  });
+
+  it('changes only reflection uniforms while keeping cover pixels, geometry and GPU resources intact', () => {
+    const context = canvasContext();
+    const model = createBookModel({ ...book, coverFinish:'glossy' }, style, 132, 200, 40, null,
+      { shelf:true, inspectionResolution:1024 });
+    const front = model.getObjectByName('front-cover'), cover = front.material[0];
+    const geometry = front.geometry, vertices = [...geometry.attributes.position.array];
+    const map = cover.map, normal = cover.normalMap, version = cover.version;
+    const key = cover.customProgramCacheKey();
+    context.drawImage.mockClear(); context.fillText.mockClear();
+    const disposeMap = vi.spyOn(map, 'dispose');
+    cover.userData.bookReflectionSurface.setStrength(0);
+    cover.userData.bookReflectionSurface.setStrength(.018);
+    expect(front.geometry).toBe(geometry); expect([...geometry.attributes.position.array]).toEqual(vertices);
+    expect(cover.map).toBe(map); expect(cover.normalMap).toBe(normal);
+    expect(cover.version).toBe(version); expect(cover.customProgramCacheKey()).toBe(key);
+    expect(context.drawImage).not.toHaveBeenCalled(); expect(context.fillText).not.toHaveBeenCalled();
+    expect(disposeMap).not.toHaveBeenCalled();
+    model.userData.dispose(); expect(disposeMap).toHaveBeenCalledOnce();
+  });
+
   it('smooths the existing printed grain when laminating without repainting or reallocating the cover', () => {
     const context = canvasContext();
     let completeLoad;
