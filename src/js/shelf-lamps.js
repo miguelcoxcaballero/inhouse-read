@@ -175,22 +175,31 @@ function lantern(group,quality,segments) {
       [Math.cos(angle) * 7,161,Math.sin(angle) * 7],[0,163,0]],.3,16,4)});
   }
   addBatch(group,'led-filament-support',support,supportParts,{castShadow:false});
-  const filament = new THREE.MeshStandardMaterial({color:0x0c0701,roughness:.9,
-    emissive:0xffb83d,emissiveIntensity:2.1,toneMapped:true});
+  const filament = new THREE.MeshStandardMaterial({color:0x71501f,roughness:.78,
+    emissive:0xffd6a2,emissiveIntensity:4.5,toneMapped:true});
   // The scene's point source approximates the LED as a whole. It must not
   // illuminate its own microscopic emitters a second time at zero distance.
   filament.onBeforeCompile = shader => {
-    shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_end>',`
+    // A phosphor strand has a bright warm centre and an amber round edge.
+    // The normal gives that profile around each of the four tubes without
+    // another translucent shell or a fullscreen glow pass. Keeping the
+    // centre narrow makes the individual fibres legible through the glass.
+    shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>',`
+      #include <emissivemap_fragment>
+      float filamentFacing = clamp(abs(dot(normal,normalize(vViewPosition))),0.0,1.0);
+      float filamentCore = pow(filamentFacing,4.0);
+      totalEmissiveRadiance *= mix(vec3(.65,.37,.09),vec3(1.2,1.16,1.07),filamentCore);
+    `).replace('#include <lights_fragment_end>',`
       #include <lights_fragment_end>
       reflectedLight.directDiffuse = vec3(0.0);
       reflectedLight.directSpecular = vec3(0.0);`);
   };
-  filament.customProgramCacheKey = () => 'shelf-self-emitting-filament';
+  filament.customProgramCacheKey = () => 'shelf-phosphor-filament-core';
   const filaments = [];
   for (let index = 0; index < 4; index++) {
     const angle = index / 4 * Math.PI * 2 + Math.PI / 8;
     filaments.push({geometry:tube([[Math.cos(angle) * 7,116,Math.sin(angle) * 7],
-      [Math.cos(angle) * 7.8,140,Math.sin(angle) * 7.8],[Math.cos(angle) * 6.8,161,Math.sin(angle) * 6.8]],.72,16,6)});
+      [Math.cos(angle) * 7.8,140,Math.sin(angle) * 7.8],[Math.cos(angle) * 6.8,161,Math.sin(angle) * 6.8]],1.05,16,6)});
   }
   addBatch(group,'glowing-retro-led-filaments',filament,filaments,{castShadow:false});
   const cord = new THREE.MeshStandardMaterial({color:0x242626,roughness:.97});
@@ -283,7 +292,7 @@ function tripod(group,quality,segments) {
  * height fit uniformly, preserving the shape instead of stretching it.
  * Emissive meshes belong here; budgeted real lights belong to the scene.
  */
-export function createShelfLamp({lampId='tarnaby',width=null,height=null,quality='high'}={}) {
+export function createShelfLamp({lampId='tarnaby',width=null,height=null,quality='high',isOn=true}={}) {
   const lamp = getCatalogLamp(lampId) || getCatalogLamp('tarnaby');
   const native = lamp.dimensions;
   const widthScale = Number.isFinite(width) && width > 0 ? width / native.width : 1;
@@ -312,9 +321,22 @@ export function createShelfLamp({lampId='tarnaby',width=null,height=null,quality
       // World units are millimetres before fitting. Inverse-square lights
       // need intensity to follow the same squared fit, preserving their
       // irradiance on books and boards when the screen or zoom changes.
-      intensity:emitter.intensity * scale * scale,distance:range,decay:2,
+      intensity:emitter.intensity * scale * scale,distance:range,decay:2,power:1,
       ...(emitter.direction ? {direction:emitter.direction,angle:emitter.angle,penumbra:emitter.penumbra} : {}) }
   };
+  // Store the original radiance once. Animation scales it absolutely rather
+  // than multiplying the previous frame, and never allocates GPU resources.
+  // Non-emitting physical materials, maps and refraction stay unchanged.
+  const emittingMaterials = [...fittedMaterials]
+    .filter(material => material.emissive?.getHex() && Number.isFinite(material.emissiveIntensity))
+    .map(material => ({material,intensity:material.emissiveIntensity}));
+  group.userData.setPower = power => {
+    const value = clamp(Number.isFinite(power) ? power : 0);
+    for (const {material,intensity} of emittingMaterials) material.emissiveIntensity = intensity * value;
+    group.userData.lightEmitter.power = value;
+    return value;
+  };
+  group.userData.setPower(isOn === false ? 0 : 1);
   let disposed = false;
   group.dispose = group.userData.dispose = () => {
     if (disposed) return; disposed = true;

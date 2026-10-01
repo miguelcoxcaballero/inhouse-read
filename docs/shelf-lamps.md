@@ -19,13 +19,36 @@ Catalogue dimensions are millimetres, with centred x and z axes. A standing
 lamp has its support plane at y=0 and extends upward. The spotlight's mounting
 face is y=0 and the housing extends downward. It belongs at the underside of
 the shelf above the selected row, not among objects standing on its lower shelf.
+On the wooden cabinet it mounts just behind the front edge so its underside
+diffuser is visible and touchable beneath the opaque board from the isometric
+camera. The open BAGGEBO keeps its central mounting position.
 
-`createShelfLamp({lampId, width, height, quality})` uniformly fits the requested
+`createShelfLamp({lampId, width, height, quality, isOn=true})` uniformly fits the requested
 width and an optional maximum height. Geometry is scaled into root-local units,
 so the returned group's scale stays 1 and `lightEmitter.position` can be passed
 to `localToWorld` directly. The emitter carries colour, inverse-square decay,
 range, intensity and optional spotlight direction/angle/penumbra. The model has
 no actual Three.js light: the scene owns its bounded lighting budget.
+
+## Switching and filament emission
+
+Each placed lamp stores `isOn`; older records default to on. A tap or native
+keyboard activation toggles that one fixture, while a hold, drag, cancelled
+touch or pinch keeps its power unchanged. The projected lamp body is also a
+native hit surface, with raycasting to reject empty or occluded pixels.
+
+`userData.setPower(value)` scales the original emissive intensities and the
+emitter's `power` together, without rebuilding any GPU resource. The scene
+eases between 0 and 1 over 220 ms, or changes immediately with reduced motion.
+The four retro LED strands use a narrow bright warm core and amber round edge
+inside their existing material shader; zero power leaves non-emitting phosphor
+and real glass. No bloom or additional material batch is introduced.
+
+The lighting manager multiplies nominal irradiance by `power`, removes sources
+at zero, and excludes them from its light budget. Colour and power changes
+reuse existing caster depth maps; actual geometry and cone projection changes
+still refresh them. Ambient compensation follows the selected sources' maximum
+power continuously. Rendering stops after the transition settles.
 
 ## Materials and resources
 

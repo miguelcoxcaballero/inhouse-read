@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.20
+
+- Toca cada lámpara para encenderla o apagarla; su estado se guarda al recargar y al cambiar de estantería. Mantener pulsado sigue sirviendo para moverla.
+- Los cuatro filamentos LED del farol retro tienen un centro luminoso cálido y borde ámbar, visibles a través del cristal. El brillo y la iluminación de libros y baldas cambian juntos con una transición breve.
+- Las transiciones reutilizan geometría y sombras, y la escena vuelve a descansar al terminar. El movimiento reducido cambia la luz inmediatamente.
+
 ### Actualización web · 1.6.19
 
 - Zoom y desplazamiento reutilizan las sombras mientras se mueven los dedos; al soltar, la luz principal ajusta una sola vez su mapa a la vista ampliada. Conserva las resoluciones, el suavizado y los efectos cálidos.

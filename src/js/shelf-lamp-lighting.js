@@ -5,6 +5,11 @@ const MAX_LAMP_SHADOWS = 2;
 const position = new THREE.Vector3(), direction = new THREE.Vector3();
 const localMatrix = new THREE.Matrix4(), inverseRoot = new THREE.Matrix4();
 
+function emitterPower(emitter) {
+  const power = Number(emitter.power ?? 1);
+  return Number.isFinite(power) ? THREE.MathUtils.clamp(power, 0, 1) : 1;
+}
+
 function sameMatrix(a, b) {
   return a.elements.every((value, index) => Math.abs(value - b.elements[index]) <=
     1e-7 * Math.max(1, Math.abs(value), Math.abs(b.elements[index])));
@@ -46,7 +51,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       scene.add(light.target);
     }
     scene.add(light);
-    const fixture = { light, spotlight, signature:'', emitterSignature:'', localMatrix:new THREE.Matrix4(),
+    const fixture = { light, spotlight, power:0, signature:'', shadowSignature:'', emitterSignature:'', localMatrix:new THREE.Matrix4(),
       rootMatrix:new THREE.Matrix4(), hasTransform:false };
     fixtures.set(key, fixture);
     return fixture;
@@ -58,7 +63,8 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       if (canTransport) inverseRoot.copy(transform).invert();
       const middle = Number.isFinite(viewportHeight) ? scroll + viewportHeight / 2 : 0;
       const candidates = entries.filter(entry => entry.kind === 'lamp' && entry.model?.visible &&
-        entry.model.userData.lightEmitter && !entry.node?.classList.contains('is-away') && !entry.trashDrop);
+        entry.model.userData.lightEmitter && emitterPower(entry.model.userData.lightEmitter) > 0 &&
+        !entry.node?.classList.contains('is-away') && !entry.trashDrop);
       // The picked lamp keeps its pool while moving. Others nearest the
       // camera centre have priority, with a stable key resolving equal scores.
       const priority = entry => entry.node?.classList.contains('is-dragging') ? -Infinity :
@@ -78,9 +84,10 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
         model.updateWorldMatrix(true, false);
         if (canTransport) localMatrix.multiplyMatrices(inverseRoot, model.matrixWorld);
         const scale = model.matrixWorld.getMaxScaleOnAxis();
+        fixture.power = emitterPower(emitter);
         position.fromArray(emitter.position).applyMatrix4(model.matrixWorld); light.position.copy(position);
         light.color.set(emitter.color ?? 0xffd19a);
-        light.intensity = Math.max(0, Number(emitter.intensity) || 0) * scale * scale;
+        light.intensity = Math.max(0, Number(emitter.intensity) || 0) * fixture.power * scale * scale;
         light.distance = Math.max(.01, Number(emitter.distance) || entry.width * 6) * scale;
         light.decay = Number(emitter.decay) || 2;
         const shadowed = spotlight && shadows++ < MAX_LAMP_SHADOWS;
@@ -104,13 +111,20 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
           light.shadow.normalBias = .15 * scale;
         }
         light.updateMatrixWorld(true);
-        const signature = [light.position.x, light.position.y, light.position.z, light.intensity, light.distance,
-          ...(spotlight ? light.target.position.toArray() : []), shadowed].join(':');
-        const emitterSignature = [emitter.position, emitter.direction, light.color.getHex(), emitter.intensity,
-          emitter.distance, light.decay, light.angle, light.penumbra, shadowed].join(':');
+        // Switching or fading a lamp changes its radiance, not the stored
+        // caster depths. Keep these signatures separate so filament animation
+        // does not schedule a depth and blur pass on every frame.
+        const shadowSignature = [light.position.x, light.position.y, light.position.z, light.distance,
+          ...(spotlight ? [...light.target.position.toArray(), ...light.shadow.camera.up.toArray(), light.angle] : []), shadowed].join(':');
+        const signature = [shadowSignature, light.intensity, light.color.getHex(), light.decay,
+          light.angle, light.penumbra].join(':');
+        const emitterSignature = [emitter.position, emitter.direction, emitter.distance,
+          light.angle, shadowed].join(':');
         const rootMoved = canTransport && fixture.hasTransform && !sameMatrix(transform, fixture.rootMatrix);
         if (signature !== fixture.signature || emitterSignature !== fixture.emitterSignature || shadowDirty || rootMoved) {
-          if (shadowed) {
+          const projectionChanged = shadowSignature !== fixture.shadowSignature ||
+            emitterSignature !== fixture.emitterSignature || shadowDirty || rootMoved;
+          if (shadowed && projectionChanged) {
             const unchangedRoom = canTransport && fixture.hasTransform && !shadowDirty &&
               emitterSignature === fixture.emitterSignature && sameMatrix(localMatrix, fixture.localMatrix);
             if (unchangedRoom) {
@@ -122,6 +136,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
           }
           fixture.signature = signature; changed = true;
         }
+        fixture.shadowSignature = shadowSignature;
         fixture.emitterSignature = emitterSignature;
         fixture.hasTransform = Boolean(canTransport);
         if (canTransport) { fixture.localMatrix.copy(localMatrix); fixture.rootMatrix.copy(transform); }
@@ -129,6 +144,11 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       return changed;
     },
     get activeCount() { return fixtures.size; },
+    get activePower() {
+      let power = 0;
+      for (const fixture of fixtures.values()) power = Math.max(power, fixture.power);
+      return power;
+    },
     get shadowCount() { return [...fixtures.values()].filter(fixture => fixture.light.castShadow).length; },
     dispose() {
       if (disposed) return;

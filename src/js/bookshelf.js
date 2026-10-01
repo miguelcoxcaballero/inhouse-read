@@ -357,6 +357,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     trashRemoval: null,
     trashStatusTimer: 0,
     suppressOpenBookId: null,
+    suppressLampClickKey: null,
     queuedBooks: null,
     renderQueued: false,
     reorderTimer: 0,
@@ -727,6 +728,34 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       depth:lamp.dimensions.depth * scale };
   }
 
+  function updateLampControl(node, record) {
+    const lamp = getCatalogLamp(record.lampId), isOn = record.isOn !== false;
+    node.dataset.lampOn = String(isOn);
+    node.setAttribute('aria-pressed', String(isOn));
+    node.setAttribute('aria-label', `${isOn ? 'Apagar' : 'Encender'} lámpara ${lamp.name}`);
+    node.title = `${lamp.name} · Toca para ${isOn ? 'apagar' : 'encender'} · Mantén pulsado para mover`;
+  }
+
+  function toggleLamp(node) {
+    if (state.destroyed || state.busy || state.session || state.dragSession || state.returnMotion || state.arranging) return;
+    const key = objectKey(node), record = state.lamps.find(lamp => lamp.key === key);
+    if (!record) return;
+    const previous = state.lamps, next = { ...record, isOn:record.isOn === false };
+    state.lamps = previous.map(lamp => lamp.key === key ? next : lamp);
+    try { saveLamps({ strict:true }); }
+    catch {
+      state.lamps = previous;
+      if (trashStatus) {
+        trashStatus.textContent = 'No se pudo guardar el estado de la lámpara. Vuelve a intentarlo.';
+        trashStatus.classList.add('is-error');
+      }
+      return;
+    }
+    state.placementObjects = state.placementObjects.map(item => item.key === key ? { ...item, isOn:next.isOn } : item);
+    updateLampControl(node, next);
+    state.shelfScene?.setLampPower(node, next.isOn, { animate:!prefersReducedMotion() });
+  }
+
   async function addCatalogLamp({ lampId }) {
     if (state.destroyed || state.busy || state.session || state.dragSession || state.returnMotion)
       throw new Error('Espera a que termine la animación y vuelve a intentarlo.');
@@ -909,6 +938,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   function startSpineDrag(event, node) {
     if ((event.button !== undefined && event.button !== 0) || state.dragSession || state.busy || state.session || state.returnMotion) return;
+    state.suppressLampClickKey = null;
     let backgroundOnly = false;
     if (state.shelfScene) {
       const hit = state.shelfScene.getObjectAtPoint(event.clientX, event.clientY);
@@ -1013,6 +1043,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
     const oldRects = drag.active && drag.moved ? objectRects() : null;
     state.dragSession = null;
+    if (node.classList.contains('ihr-lamp') && (drag.active || drag.scrolling || drag.cancelled || cancelled))
+      state.suppressLampClickKey = objectKey(node);
     state.shelfScene?.setDropPosition(null);
     state.shelfScene?.previewPlacements(null);
     if (!discard) { trashNode?.classList.remove('is-over'); state.shelfScene?.setTrashHover(false); }
@@ -1318,12 +1350,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const node = el('button', {
       type:'button', class:`ihr-lamp ihr-lamp--${lamp.id}`,
       'data-object-id':item.key, 'data-lamp-id':lamp.id, 'data-lamp-mount':lamp.mount,
-      'aria-label':`Mover lámpara ${lamp.name}`,
-      'aria-keyshortcuts':'Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown Delete',
-      'aria-description':'Mantén pulsado para cambiar su posición o balda. Usa Mayús y las flechas para moverla, y Suprimir para retirarla.',
-      title:`${lamp.name} · Mantén pulsado para mover`,
+      'aria-keyshortcuts':'Enter Space Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown Delete',
+      'aria-description':'Toca para encender o apagar. Mantén pulsado para cambiar su posición o balda. Usa Mayús y las flechas para moverla, y Suprimir para retirarla.',
       style:`--ihr-lamp-w:${item.width}px;--ihr-lamp-h:${item.height}px`
     });
+    updateLampControl(node, item);
     if (!state.useScene) {
       node.innerHTML = lampCatalogIllustration(lamp.id);
       node.querySelector('svg').setAttribute('preserveAspectRatio','none');
@@ -1332,7 +1363,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     node.addEventListener('pointermove', event => moveSpineDrag(event, state.dragSession?.node || node));
     node.addEventListener('pointerup', event => finishSpineDrag(event, state.dragSession?.node || node));
     node.addEventListener('pointercancel', event => finishSpineDrag(event, state.dragSession?.node || node, true));
+    node.addEventListener('click', event => {
+      if (event.detail && state.suppressLampClickKey === objectKey(node)) { state.suppressLampClickKey = null; return; }
+      if (!event.detail) state.suppressLampClickKey = null;
+      if (event.detail && state.shelfScene && state.shelfScene.getObjectAtPoint(event.clientX, event.clientY) !== node) return;
+      toggleLamp(node);
+    });
     node.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') state.suppressLampClickKey = null;
       if (hasTrash && event.key === 'Delete' && !event.repeat) {
         event.preventDefault();
         if (state.busy || state.session || state.dragSession || state.returnMotion) return;

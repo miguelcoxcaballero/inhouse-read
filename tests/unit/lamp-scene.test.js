@@ -23,7 +23,7 @@ vi.mock('../../src/js/book-model.js', async () => {
 });
 vi.mock('../../src/js/shelf-lamps.js', async () => {
   const Three = await import('three');
-  return { createShelfLamp({ lampId, width, height }) {
+  return { createShelfLamp({ lampId, width, height, isOn = true }) {
     const model = new Three.Group(); model.name = `lamp:${lampId}`;
     const puck = lampId === 'mittled';
     const solid = new Three.Mesh(new Three.BoxGeometry(width, height, width), new Three.MeshStandardMaterial());
@@ -35,6 +35,11 @@ vi.mock('../../src/js/shelf-lamps.js', async () => {
     model.userData.lightEmitter = { position:[0, puck ? -height : height * .6, 0],
       color:0xffd19a, intensity:10000, distance:500,
       ...(puck ? { direction:[0, -1, 0] } : {}) };
+    model.userData.setPower = vi.fn(power => {
+      model.userData.lightEmitter.power = power;
+      glow.material.emissiveIntensity = power;
+    });
+    model.userData.setPower(isOn === false ? 0 : 1);
     model.userData.dispose = vi.fn(() => model.traverse(object => { object.geometry?.dispose(); object.material?.dispose(); }));
     return model;
   } };
@@ -43,10 +48,13 @@ vi.mock('../../src/js/shelf-lamps.js', async () => {
 let shelf, stage, scroller, frames, clock;
 const rect = (left, top, width, height) => ({ left, top, width, height, right:left + width, bottom:top + height });
 const fixtureLights = scene => scene.children.filter(object => object.userData.shelfLamp);
+function advanceFrame(milliseconds = 16) {
+  clock += milliseconds; const callbacks = [...frames.values()]; frames.clear();
+  for (const callback of callbacks) callback(clock);
+}
 function flushFrames() {
   for (let index = 0; frames.size && index < 100; index++) {
-    clock += 16; const callbacks = [...frames.values()]; frames.clear();
-    for (const callback of callbacks) callback(clock);
+    advanceFrame();
   }
 }
 function layout() {
@@ -93,7 +101,9 @@ describe('warm lamps in the retained shelf scene', () => {
     const table = gpu.scene.getObjectByName('lamp:tarnaby'), puck = gpu.scene.getObjectByName('lamp:mittled');
     expect(table.position.y).toBe(-data.rows[0].bottom);
     expect(puck.position.y).toBe(-data.rows[0].ceiling);
-    expect(puck.position.z).toBe(-gpu.scene.getObjectByName('Library floor').geometry.parameters.depth / 2 + 105);
+    // The front edge remains flush with the cabinet, making the underside
+    // diffuser reachable beneath an opaque board from the isometric view.
+    expect(puck.position.z).toBe(8 - data.entries[1].depth / 2);
     const localBounds = new THREE.Box3().setFromObject(puck).applyMatrix4(puck.parent.matrixWorld.clone().invert());
     expect(localBounds.max.y).toBeCloseTo(-data.rows[0].ceiling);
     expect(localBounds.min.y).toBeCloseTo(-data.rows[0].ceiling - 5);
@@ -133,6 +143,121 @@ describe('warm lamps in the retained shelf scene', () => {
     const spot = fixtureLights(gpu.scene).find(light => light.isSpotLight);
     expect(spot.position.distanceTo(oldPuck.localToWorld(new THREE.Vector3(0, -5, 0)))).toBeLessThan(1e-7);
     expect(shelf.canvas.dataset.activeLamps).toBe('2');
+  });
+
+  it('fades the emitting material and actual light together without recreating models or refreshing static shadows', () => {
+    const data = layout(); mount(data);
+    const [tableNode, puckNode] = data.entries.map(entry => entry.node);
+    const table = gpu.scene.getObjectByName('lamp:tarnaby'), puck = gpu.scene.getObjectByName('lamp:mittled');
+    const geometry = table.getObjectByName('lamp-base').geometry;
+    const glow = table.getObjectByName('warm-led-bulb').material;
+    const creations = shelf.canvas.dataset.modelCreations;
+    const point = fixtureLights(gpu.scene).find(light => light.isPointLight), intensity = point.intensity;
+    const spot = fixtureLights(gpu.scene).find(light => light.isSpotLight);
+    spot.shadow.needsUpdate = false;
+
+    shelf.setLampPower(tableNode, false);
+    advanceFrame(110);
+    const power = table.userData.lightEmitter.power;
+    expect(power).toBeGreaterThan(0); expect(power).toBeLessThan(1);
+    expect(Number(tableNode.dataset.lampPower)).toBeCloseTo(power, 4);
+    expect(glow.emissiveIntensity).toBe(power);
+    expect(point.intensity / intensity).toBeCloseTo(power, 8);
+    expect(puckNode.dataset.lampPower).toBe('1.0000');
+    expect(puck.userData.lightEmitter.power).toBe(1);
+    expect(spot.shadow.needsUpdate).toBe(false);
+    expect(frames.size).toBe(1);
+
+    advanceFrame(110);
+    expect(tableNode.dataset.lampPower).toBe('0.0000');
+    expect(glow.emissiveIntensity).toBe(0);
+    expect(fixtureLights(gpu.scene)).toEqual([spot]);
+    expect(shelf.canvas.dataset.activeLampLights).toBe('1');
+    expect(frames.size).toBe(0); expect(spot.shadow.needsUpdate).toBe(false);
+
+    shelf.setLampPower(tableNode, true);
+    advanceFrame(110);
+    const restoredPoint = fixtureLights(gpu.scene).find(light => light.isPointLight);
+    expect(restoredPoint.intensity / intensity).toBeCloseTo(table.userData.lightEmitter.power, 8);
+    expect(glow.emissiveIntensity).toBe(table.userData.lightEmitter.power);
+    advanceFrame(110);
+    expect(tableNode.dataset.lampPower).toBe('1.0000');
+    expect(glow.emissiveIntensity).toBe(1); expect(restoredPoint.intensity).toBe(intensity);
+    expect(gpu.scene.getObjectByName('lamp:tarnaby')).toBe(table);
+    expect(table.getObjectByName('lamp-base').geometry).toBe(geometry);
+    expect(gpu.scene.getObjectByName('lamp:mittled')).toBe(puck);
+    expect(shelf.canvas.dataset.modelCreations).toBe(creations);
+    expect(table.userData.dispose).not.toHaveBeenCalled();
+    expect(frames.size).toBe(0); expect(spot.shadow.needsUpdate).toBe(false);
+  });
+
+  it('reverses a lamp transition from its current brightness without changing another lamp', () => {
+    const data = layout(); data.entries[0].isOn = false; mount(data);
+    const node = data.entries[0].node, table = gpu.scene.getObjectByName('lamp:tarnaby');
+    const puck = gpu.scene.getObjectByName('lamp:mittled');
+    const creations = shelf.canvas.dataset.modelCreations;
+    expect(node.dataset.lampPower).toBe('0.0000');
+    expect(fixtureLights(gpu.scene)).toHaveLength(1);
+
+    shelf.setLampPower(node, true); advanceFrame(60);
+    const warming = table.userData.lightEmitter.power;
+    expect(warming).toBeGreaterThan(0); expect(warming).toBeLessThan(1);
+    shelf.setLampPower(node, false); advanceFrame(0);
+    expect(table.userData.lightEmitter.power).toBe(warming);
+    advanceFrame(60);
+    const cooling = table.userData.lightEmitter.power;
+    expect(cooling).toBeGreaterThan(0); expect(cooling).toBeLessThan(warming);
+    shelf.setLampPower(node, true); advanceFrame(0);
+    expect(table.userData.lightEmitter.power).toBe(cooling);
+    advanceFrame(20);
+    expect(table.userData.lightEmitter.power).toBeGreaterThan(cooling);
+    expect(puck.userData.lightEmitter.power).toBe(1);
+    expect(data.entries[1].node.dataset.lampPower).toBe('1.0000');
+    flushFrames();
+    expect(node.dataset.lampPower).toBe('1.0000'); expect(frames.size).toBe(0);
+    expect(gpu.scene.getObjectByName('lamp:tarnaby')).toBe(table);
+    expect(shelf.canvas.dataset.modelCreations).toBe(creations);
+  });
+
+  it('retains a switched-off model when rebinding a persisted off lamp into a new layout', () => {
+    const data = layout(); mount(data);
+    const oldNode = data.entries[0].node, table = gpu.scene.getObjectByName('lamp:tarnaby');
+    const geometry = table.getObjectByName('lamp-base').geometry, creations = shelf.canvas.dataset.modelCreations;
+    shelf.setLampPower(oldNode, false); flushFrames();
+    const replacement = document.createElement('button'); replacement.className = 'ihr-lamp';
+    replacement.dataset.objectId = oldNode.dataset.objectId; oldNode.replaceWith(replacement);
+    const retained = { ...data.entries[0], node:replacement, x:120, isOn:false };
+    shelf.updateLayout({ ...data, entries:[retained, data.entries[1]] });
+    flushFrames();
+    expect(replacement.dataset.lampPower).toBe('0.0000');
+    expect(table.userData.lightEmitter.power).toBe(0);
+    expect(table.getObjectByName('warm-led-bulb').material.emissiveIntensity).toBe(0);
+    expect(fixtureLights(gpu.scene).every(light => light.isSpotLight)).toBe(true);
+    expect(shelf.canvas.dataset.activeLamps).toBe('2');
+    expect(shelf.canvas.dataset.activeLampLights).toBe('1');
+    expect(gpu.scene.getObjectByName('lamp:tarnaby')).toBe(table);
+    expect(table.getObjectByName('lamp-base').geometry).toBe(geometry);
+    expect(shelf.canvas.dataset.modelCreations).toBe(creations);
+    shelf.setLampPower(oldNode, true); expect(frames.size).toBe(0);
+    shelf.setLampPower(replacement, true, { animate:false }); advanceFrame(0);
+    expect(replacement.dataset.lampPower).toBe('1.0000'); expect(frames.size).toBe(0);
+  });
+
+  it.each([false, true])('applies immediate power changes without leaving RAF work (reduced motion: %s)', reducedMotion => {
+    window.matchMedia = () => ({ matches:reducedMotion });
+    const data = layout(); mount(data);
+    const node = data.entries[0].node, table = gpu.scene.getObjectByName('lamp:tarnaby');
+    shelf.setLampPower(node, false, { animate:reducedMotion });
+    advanceFrame(0);
+    expect(node.dataset.lampPower).toBe('0.0000');
+    expect(table.userData.lightEmitter.power).toBe(0);
+    expect(table.getObjectByName('warm-led-bulb').material.emissiveIntensity).toBe(0);
+    expect(fixtureLights(gpu.scene)).toHaveLength(1); expect(frames.size).toBe(0);
+    shelf.setLampPower(node, true, { animate:reducedMotion });
+    advanceFrame(0);
+    expect(node.dataset.lampPower).toBe('1.0000');
+    expect(table.userData.lightEmitter.power).toBe(1);
+    expect(fixtureLights(gpu.scene)).toHaveLength(2); expect(frames.size).toBe(0);
   });
 
   it('releases the removed model and source without retaining native targets or GPU shadows', () => {
@@ -220,6 +345,106 @@ describe('bounded lamp lighting', () => {
     a.node.classList.add('is-away'); b.trashDrop = {};
     expect(manager.update([a, b])).toBe(true); expect(manager.activeCount).toBe(0);
     manager.dispose(); expect(manager.update([a, b])).toBe(false);
+  });
+  it('powers each lamp independently, preserving full brightness for older emitters without a power value', () => {
+    const scene = new THREE.Scene(), manager = createShelfLampLighting(scene);
+    const a = source(0, false), b = source(1), legacy = source(2, false);
+    scene.add(a.model, b.model, legacy.model);
+    a.model.userData.lightEmitter.power = .35;
+    b.model.userData.lightEmitter.power = .65;
+    expect(manager.update([a, b, legacy])).toBe(true);
+    const lights = new Map(fixtureLights(scene).map(light => [light.userData.entryKey, light]));
+    expect(lights.get(a.key).intensity).toBe(3500);
+    expect(lights.get(b.key).intensity).toBe(6500);
+    expect(lights.get(legacy.key).intensity).toBe(10000);
+    expect(manager.activePower).toBe(1);
+    a.model.userData.lightEmitter.power = .25;
+    expect(manager.update([a, b, legacy])).toBe(true);
+    expect(lights.get(a.key).intensity).toBe(2500);
+    expect(lights.get(b.key).intensity).toBe(6500);
+    expect(lights.get(legacy.key).intensity).toBe(10000);
+    expect(manager.update([a, b, legacy])).toBe(false);
+    legacy.model.userData.lightEmitter.power = 0;
+    manager.update([a, b, legacy]);
+    expect(manager.activePower).toBe(.65);
+    manager.dispose();
+    expect(manager.activePower).toBe(0);
+  });
+  it('releases an unpowered cone and its shadow resources until it is switched on again', () => {
+    const scene = new THREE.Scene(), manager = createShelfLampLighting(scene), entry = source(0);
+    scene.add(entry.model); manager.update([entry]);
+    const initial = fixtureLights(scene)[0], map = { dispose:vi.fn() }, blur = { dispose:vi.fn() };
+    initial.shadow.map = map; initial.shadow.mapPass = blur;
+    entry.model.userData.lightEmitter.power = 0;
+    expect(manager.update([entry])).toBe(true);
+    expect(manager.activeCount).toBe(0); expect(manager.shadowCount).toBe(0);
+    expect(manager.activePower).toBe(0);
+    expect(fixtureLights(scene)).toHaveLength(0);
+    expect(initial.parent).toBeNull(); expect(initial.target.parent).toBeNull();
+    expect(map.dispose).toHaveBeenCalledTimes(1); expect(blur.dispose).toHaveBeenCalledTimes(1);
+    expect(manager.update([entry])).toBe(false);
+    entry.model.userData.lightEmitter.power = .05;
+    expect(manager.update([entry])).toBe(true);
+    const restarted = fixtureLights(scene)[0];
+    expect(restarted).not.toBe(initial); expect(restarted.intensity).toBe(500);
+    expect(manager.activePower).toBe(.05);
+    expect(restarted.castShadow).toBe(true); expect(restarted.shadow.needsUpdate).toBe(true);
+    restarted.shadow.needsUpdate = false;
+    expect(manager.update([entry])).toBe(false); expect(restarted.shadow.needsUpdate).toBe(false);
+    manager.dispose();
+  });
+  it('reserves the source and shadow budget for powered lamps, including when an off lamp is dragged', () => {
+    const scene = new THREE.Scene(), manager = createShelfLampLighting(scene, { maxLights:2 });
+    const entries = Array.from({ length:7 }, (_, index) => source(index));
+    for (const entry of entries) {
+      scene.add(entry.model);
+      entry.model.userData.lightEmitter.power = Number([2, 4, 6].includes(Number(entry.key.split(':')[1])));
+    }
+    entries[0].node.classList.add('is-dragging');
+    manager.update(entries, { viewportHeight:400 });
+    expect(fixtureLights(scene).map(light => light.userData.entryKey)).toEqual(['lamp:2', 'lamp:4']);
+    expect(manager.activeCount).toBe(2); expect(manager.shadowCount).toBe(2);
+    entries[6].node.classList.add('is-dragging');
+    manager.update(entries, { viewportHeight:400 });
+    expect(fixtureLights(scene).map(light => light.userData.entryKey).sort()).toEqual(['lamp:2', 'lamp:6']);
+    expect(manager.activeCount).toBe(2); expect(manager.shadowCount).toBe(2);
+    entries[2].model.userData.lightEmitter.power = .2;
+    entries[6].model.userData.lightEmitter.power = .4;
+    manager.update(entries, { viewportHeight:400 });
+    // An unselected full-power fixture must not dim the surrounding daylight.
+    expect(manager.activePower).toBe(.4);
+    manager.dispose();
+  });
+  it.each([false, true])('fades light output without regenerating a stationary cone shadow (room transform: %s)', withTransform => {
+    const scene = new THREE.Scene(), room = new THREE.Group(), manager = createShelfLampLighting(scene), entry = source(0);
+    scene.add(room); room.add(entry.model); room.updateMatrixWorld(true);
+    entry.model.userData.lightEmitter.power = .05;
+    const options = withTransform ? { transform:room.matrixWorld } : {};
+    manager.update([entry], options);
+    const light = fixtureLights(scene)[0];
+    light.shadow.needsUpdate = false;
+    const updateProjection = vi.spyOn(light.shadow, 'updateMatrices');
+    for (const power of [.1, .2, .4, .7, 1, .6, .3, .05]) {
+      entry.model.userData.lightEmitter.power = power;
+      expect(manager.update([entry], options)).toBe(true);
+      expect(fixtureLights(scene)[0]).toBe(light);
+      expect(light.intensity).toBeCloseTo(10000 * power);
+      expect(manager.activePower).toBe(power);
+      expect(light.shadow.needsUpdate).toBe(false);
+    }
+    // Changing colour or base output also leaves caster depths untouched.
+    entry.model.userData.lightEmitter.color = 0xffb060;
+    entry.model.userData.lightEmitter.intensity = 12000;
+    entry.model.userData.lightEmitter.decay = 1.8;
+    entry.model.userData.lightEmitter.penumbra = .8;
+    expect(manager.update([entry], options)).toBe(true);
+    expect(light.intensity).toBe(600); expect(light.color.getHex()).toBe(0xffb060);
+    expect(light.shadow.needsUpdate).toBe(false); expect(updateProjection).not.toHaveBeenCalled();
+    expect(manager.update([entry], options)).toBe(false);
+    // Actual caster movement still refreshes the shadow while the light fades.
+    manager.update([entry], { ...options, shadowDirty:true });
+    expect(light.shadow.needsUpdate).toBe(true);
+    manager.dispose();
   });
   it('changes a fixture range independently of its power and preserves irradiance through scene scaling', () => {
     const scene = new THREE.Scene(),manager = createShelfLampLighting(scene),entry = source(0,false);
