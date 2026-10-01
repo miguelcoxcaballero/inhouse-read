@@ -29,7 +29,7 @@ export function classifySwipe({ dx, dy, durationMs, velocityX = 0 }) {
 /** Returns a detach function, including pending taps and animation frames. */
 export function attachSwipeNavigation(el, {
   onNext, onPrev, onToggleZoom, onToggleChrome,
-  canSwipe = () => true, nativeTouchSwipes = false, onNativeSwipe, getMotionSurface
+  canSwipe = () => true, nativeTouchSwipes = false, onNativeSwipe, getMotionSurface, tapZone
 } = {}) {
   const doc = el.ownerDocument
   const view = doc?.defaultView || window
@@ -161,7 +161,9 @@ export function attachSwipeNavigation(el, {
     }
     if (moved > TAP_MAX_MOVEMENT || durationMs > TAP_MAX_DURATION || scrolled) return clearTap()
     const rect = el.getBoundingClientRect(), stamp = now(event)
-    const zone = classifyTapZone(event.clientX - rect.left, rect.width)
+    // tapZone lets a caller judge the tap against what the reader actually shows
+    // when this element is much larger than the screen (a paginated EPUB section).
+    const zone = tapZone?.(event) ?? classifyTapZone(event.clientX - rect.left, rect.width)
     if (!onToggleZoom) return navigate(zone)
     const doubleTap = lastTap && stamp - lastTap.time < DOUBLE_TAP_MAX_DELAY
       && Math.hypot(event.clientX - lastTap.x,event.clientY - lastTap.y) < 30

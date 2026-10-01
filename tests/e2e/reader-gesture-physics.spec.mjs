@@ -79,3 +79,39 @@ test('EPUB: reduced motion retains direct page navigation without animated snapp
   await page.getByRole('button',{name:'Página siguiente',exact:true}).click()
   await expect.poll(() => page.evaluate(() => document.querySelector('foliate-view').renderer.containerPosition)).toBeGreaterThan(initial+50)
 })
+
+test('EPUB: tapping the side edges turns pages and the centre toggles the controls', async ({page}) => {
+  test.setTimeout(90_000)
+  await open(page,'epub','reduce')
+  const position = () => page.evaluate(() => document.querySelector('foliate-view').renderer.containerPosition)
+  const chromeHidden = () => page.evaluate(() => document.body.classList.contains('is-reader-focus'))
+  // Hiding the controls resizes the page, so count navigations instead of comparing offsets.
+  await page.evaluate(() => {
+    const view = document.querySelector('foliate-view')
+    window.__tapTurns = 0
+    for (const name of ['next','prev']) {
+      const original = view[name].bind(view)
+      view[name] = (...args) => {window.__tapTurns++;return original(...args)}
+    }
+  })
+  const turns = () => page.evaluate(() => window.__tapTurns)
+  const bounds = await page.locator('#reader-viewport').boundingBox(), y = bounds.y + bounds.height * .55
+  const tap = fraction => page.touchscreen.tap(bounds.x + bounds.width * fraction, y)
+  const first = await position()
+  await tap(.9)
+  await expect.poll(position).toBeGreaterThan(first + 50)
+  const second = await position()
+  await tap(.9)
+  await expect.poll(position).toBeGreaterThan(second + 50)
+  const third = await position()
+  // The left edge must go BACK, not forward as when zones were measured on the wide chapter document.
+  await tap(.1)
+  await expect.poll(position).toBeLessThan(third - 50)
+  const before = await turns()
+  expect(await chromeHidden()).toBe(false)
+  await tap(.5)
+  await expect.poll(chromeHidden).toBe(true)
+  await tap(.5)
+  await expect.poll(chromeHidden).toBe(false)
+  expect(await turns()).toBe(before)
+})

@@ -172,6 +172,22 @@ describe('reader gesture ownership and motion', () => {
     expect(next).toHaveBeenCalledTimes(2)
   })
 
+  it('lets the caller judge a tap against the visible reader instead of the element', () => {
+    // A paginated EPUB section is far wider than the screen: its own rect says
+    // every tap is in the first 28%, so the caller supplies the visible zone.
+    element.getBoundingClientRect = () => ({left:-4000,top:0,width:20000,height:700})
+    const tapZone = vi.fn(event => event.clientX < 100 ? ZONE.PREV : event.clientX > 300 ? ZONE.NEXT : ZONE.CENTER)
+    connect({tapZone})
+    pointer('pointerdown',380,200,0); pointer('pointerup',380,200,60)
+    expect(next).toHaveBeenCalledOnce()
+    pointer('pointerdown',20,200,100); pointer('pointerup',20,200,160)
+    expect(prev).toHaveBeenCalledOnce()
+    pointer('pointerdown',200,200,200); pointer('pointerup',200,200,260)
+    expect(chrome).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledOnce(); expect(prev).toHaveBeenCalledOnce()
+    expect(tapZone).toHaveBeenCalledTimes(3)
+  })
+
   it('does not navigate while zoom-panning, scrolling, selecting text or long pressing', () => {
     connect({canSwipe:() => false})
     pointer('pointerdown',300,200)
