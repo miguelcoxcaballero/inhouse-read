@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderBookshelf } from '../../src/js/bookshelf.js'
 
-const catalog = vi.hoisted(() => ({ options:null, open:vi.fn(), destroy:vi.fn() }))
+const catalog = vi.hoisted(() => ({ options:null, open:vi.fn(), destroy:vi.fn(), setShelfType:vi.fn() }))
 vi.mock('../../src/js/plant-catalog.js', () => ({ createPlantCatalog(options) {
   catalog.options = options
-  return { open:catalog.open, close:vi.fn(), destroy:catalog.destroy }
+  return { open:catalog.open, close:vi.fn(), destroy:catalog.destroy, setShelfType:catalog.setShelfType }
 } }))
 
 const KEY = 'inhouse-read-shelf-plants'
@@ -133,5 +133,22 @@ describe('persistent catalog plants', () => {
     expect(button.hidden).toBe(false); button.click(); expect(catalog.open).toHaveBeenCalledWith(button)
     shelf.destroy(); shelf=null
     expect(catalog.destroy).toHaveBeenCalledOnce()
+  })
+  it('persists the chosen shelf type across remounts without losing books or plant positions', () => {
+    localStorage.setItem(KEY, JSON.stringify(plants()))
+    shelf=renderBookshelf(container, books(), { shelfWidth:390, viewMode:'isometric' })
+    const originalPlants = localStorage.getItem(KEY)
+    catalog.options.onShelfChange({ shelfType:'baggebo' })
+    expect(localStorage.getItem('inhouse-read-shelf-type')).toBe('baggebo')
+    expect(container.querySelector('.ihr-bookshelf').dataset.shelfType).toBe('baggebo')
+    expect(container.querySelector('.ihr-spine').dataset.bookId).toBe('keep')
+    expect(localStorage.getItem(KEY)).toBe(originalPlants)
+    shelf.destroy(); shelf=renderBookshelf(container, books(), { shelfWidth:390, viewMode:'isometric' })
+    container.querySelector('.ihr-shelf-catalog').click()
+    expect(catalog.setShelfType).toHaveBeenLastCalledWith('baggebo')
+    catalog.options.onShelfChange({ shelfType:'walnut' })
+    expect(localStorage.getItem('inhouse-read-shelf-type')).toBe('walnut')
+    expect(container.querySelector('.ihr-spine').dataset.bookId).toBe('keep')
+    expect(localStorage.getItem(KEY)).toBe(originalPlants)
   })
 })

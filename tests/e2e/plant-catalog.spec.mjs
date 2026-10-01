@@ -112,7 +112,7 @@ test('el catálogo está pegado al lateral 3D, sólo aparece en isométrica y a�
   await expect(dialog.locator('img')).toHaveCount(0);
   await dialog.locator('[data-catalog-plant="monstera"]').click();
   await dialog.locator('[data-catalog-pot="gradvis"]').click();
-  await expect(dialog.locator('.ihr-plant-catalog__caption h3')).toHaveText('MONSTERA DELICIOSA');
+  await expect(dialog.locator('.ihr-plant-catalog__body:not([hidden]) .ihr-plant-catalog__caption h3')).toHaveText('MONSTERA DELICIOSA');
   await expect(dialog.locator('.ihr-plant-catalog__pot-name')).toHaveText('GRADVIS');
   await testInfo.attach('catalogo-ikea-en-movil',{ body:await dialog.screenshot(),contentType:'image/png' });
   await dialog.getByRole('button',{ name:'Añadir a la estantería' }).click();
@@ -163,6 +163,8 @@ test('el folleto sigue siendo usable en 320 px, mantiene el botón de añadir vi
   await expect(dialog.getByRole('img',{name:'IKEA',exact:true})).toBeVisible();
   for (const [width,height] of [[320,568],[390,844],[844,390],[1280,720]]) {
     await page.setViewportSize({width,height});
+    // Container-query sizes and the 3D ResizeObserver settle at the next paint.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const layout = await dialog.evaluate(node => {
       const body = node.querySelector('.ihr-plant-catalog__body'), area = body.getBoundingClientRect();
       const controls = [...body.querySelectorAll('button')].map(button => {
@@ -527,7 +529,7 @@ test('las plantas de una instalación antigua migran a los modelos actuales sin 
 test('la preview frontal usa el modelo 3D y el acabado elegido se conserva al añadir y recargar',async ({ page },testInfo) => {
   const errors = []; page.on('pageerror',error => errors.push(error.message));
   const dialog = await openCatalog(page);
-  const preview = dialog.locator('.ihr-plant-catalog__drawing');
+  const preview = dialog.locator('.ihr-plant-catalog__body:not([hidden]) .ihr-plant-catalog__drawing');
   await expect(preview).toHaveAttribute('data-renderer','three-mesh');
   await expect(preview.locator('canvas')).toBeVisible();
   await expect(preview.locator('svg')).toHaveCount(0);
@@ -545,10 +547,10 @@ test('la preview frontal usa el modelo 3D y el acabado elegido se conserva al a�
   await expect(page.locator('.ihr-plant')).toHaveAttribute('data-pot-color-id','seafoam');
   expect((await savedPlants(page))[0].potColorId).toBe('seafoam');
   const reopened = await openCatalog(page);
-  await expect(reopened.locator('.ihr-plant-catalog__drawing')).toHaveAttribute('data-renderer','three-mesh');
+  await expect(reopened.locator('.ihr-plant-catalog__body:not([hidden]) .ihr-plant-catalog__drawing')).toHaveAttribute('data-renderer','three-mesh');
   await reopened.locator('[data-catalog-pot="akerbar"]').click();
   await expect(reopened.locator('[data-catalog-color="seafoam"]')).toHaveCount(0);
   await reopened.locator('[data-catalog-color="copper"]').click();
-  await expect(reopened.locator('.ihr-plant-catalog__drawing')).toHaveAttribute('data-pot-color-id','copper');
+  await expect(reopened.locator('.ihr-plant-catalog__body:not([hidden]) .ihr-plant-catalog__drawing')).toHaveAttribute('data-pot-color-id','copper');
   expect(errors).toEqual([]);
 });

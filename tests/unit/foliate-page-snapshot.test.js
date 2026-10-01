@@ -25,7 +25,7 @@ beforeEach(() => {
   Object.assign(view, {
     open:vi.fn(async () => {}),init:vi.fn(async () => {}),close:vi.fn(),
     lastLocation:{fraction:.6,cfi:'epubcfi(/6/4!/4/2)',range,tocItem:{label:'Beyond the window'}},
-    renderer:{getContents:() => [{doc,index:1}],setStyles:vi.fn(),setAttribute:vi.fn()}
+    renderer:{getContents:() => [{doc,index:1}],setStyles:vi.fn(),setAttribute:vi.fn(),removeAttribute:vi.fn()}
   })
   const create = document.createElement.bind(document)
   vi.spyOn(document,'createElement').mockImplementation(name => name==='foliate-view' ? view : create(name))
@@ -105,7 +105,7 @@ describe('EPUB usable viewport', () => {
     expect(view.renderer.setAttribute).toHaveBeenCalledWith('gap', `${((48 + 16) / 1280 * 100).toFixed(4)}%`)
     width = 390
     await reader.applyPreferences({})
-    expect(view.renderer.setAttribute).toHaveBeenLastCalledWith('max-block-size', '1440px')
+    expect(view.renderer.setAttribute).toHaveBeenCalledWith('max-block-size', '1440px')
     expect(view.renderer.setAttribute).toHaveBeenCalledWith('max-inline-size', '720px')
     reader.close()
   })
@@ -121,6 +121,18 @@ describe('EPUB usable viewport', () => {
     expect(view.renderer.setAttribute).toHaveBeenCalledWith('gap', `${(32 / 390 * 100).toFixed(4)}%`)
     await reader.applyPreferences({ margin:32, flow:'scrolled' })
     expect(view.renderer.setAttribute).toHaveBeenCalledWith('gap', `${(32 / (390 + 32) * 100).toFixed(4)}%`)
+    reader.close()
+  })
+
+  it('uses native animated snapping only when reduced motion allows it', async () => {
+    let reduced = false
+    vi.stubGlobal('matchMedia', () => ({matches:reduced}))
+    const reader = new FoliateReader()
+    await reader.open(container,new File(['epub'],'book.epub'))
+    expect(view.renderer.setAttribute).toHaveBeenCalledWith('animated','')
+    reduced = true
+    await reader.applyPreferences({})
+    expect(view.renderer.removeAttribute).toHaveBeenCalledWith('animated')
     reader.close()
   })
 

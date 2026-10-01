@@ -3,7 +3,7 @@ import * as THREE from 'three';
 /** A parked book's transform in the cabinet's coordinate system. */
 export function shelfBookSlot(entry, cabinetWidth) {
   return new THREE.Matrix4().compose(
-    new THREE.Vector3(entry.x - cabinetWidth / 2, -entry.y, -entry.width / 2),
+    new THREE.Vector3(entry.x - cabinetWidth / 2, -entry.y, -entry.width / 2 - (entry.depthInset || 0)),
     new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0, 'XYZ')),
     new THREE.Vector3(1, 1, 1)
   );
