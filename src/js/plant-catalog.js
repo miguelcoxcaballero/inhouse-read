@@ -1,3 +1,4 @@
+import ikeaLogo from '../assets/ikea-logo.svg?raw';
 import { createPlantCatalogPreview } from './plant-catalog-preview.js';
 import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot, getPotColors, getPotColor } from './plant-catalog-data.js';
 
@@ -128,7 +129,9 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
   dialog.setAttribute('aria-describedby',`${id}-description`);
   const paper = element('div','ihr-plant-catalog__paper');
   const header = element('header','ihr-plant-catalog__header');
-  const brand = element('span','ihr-plant-catalog__brand','IKEA');
+  const brand = element('span','ihr-plant-catalog__brand');
+  brand.setAttribute('role','img'); brand.setAttribute('aria-label','IKEA');
+  brand.innerHTML = ikeaLogo.replace('<svg ', '<svg aria-hidden="true" focusable="false" ');
   const title = element('h2','ihr-plant-catalog__title','PLANTAS'); title.id = `${id}-title`;
   const closeButton = element('button','ihr-plant-catalog__close');
   closeButton.type = 'button'; closeButton.setAttribute('aria-label','Cerrar catálogo');
