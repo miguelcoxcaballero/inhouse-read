@@ -110,7 +110,7 @@ test('la estantería frontal ocupa todo el ancho y la papelera sólo se activa e
     await expect(scene).toHaveAttribute('data-view-progress', '1')
     await expect(scene).toHaveAttribute('data-animating', 'false')
     await assertFullCabinetWidth(page)
-    await expect(page.getByRole('button', { name:'Abrir catálogo IKEA de plantas y macetas' })).toBeVisible()
+    await expect(page.getByRole('button', { name:'Abrir catálogo IKEA de plantas, estanterías e iluminación' })).toBeVisible()
     // The basket is on the cabinet's physical floor. On taller screens or
     // shelves it is reached by scrolling, rather than pinned to the viewport.
     await page.locator('.ihr-bookshelf__scroll').evaluate(node => { node.scrollTop = node.scrollHeight })
@@ -135,7 +135,7 @@ test('la estantería frontal ocupa todo el ancho y la papelera sólo se activa e
       body:await page.screenshot(), contentType:'image/png'
     })
     await page.locator('.ihr-bookshelf__scroll').evaluate(node => { node.scrollTop = 0 })
-    await expect(page.getByRole('button', { name:'Abrir catálogo IKEA de plantas y macetas' })).toBeVisible()
+    await expect(page.getByRole('button', { name:'Abrir catálogo IKEA de plantas, estanterías e iluminación' })).toBeVisible()
     await page.getByRole('button', { name:'Vista de canto' }).click()
     await expect(scene).toHaveAttribute('data-view-progress', '0')
     await expect(scene).toHaveAttribute('data-animating', 'false')

@@ -179,3 +179,64 @@
   .ihr-plant-catalog[open] { animation: ihr-plant-catalog-open 180ms ease-out both; }
   @keyframes ihr-plant-catalog-open { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: scale(1); } }
 }
+
+/* Three compact luminaires with enough space to see glass and fabric in 3D. */
+.ihr-plant-catalog__body--lights { grid-template-columns: 44% 56%; }
+.ihr-plant-catalog__lamp-drawing { height: min(44cqh,360px); }
+.ihr-plant-catalog__lamp-preview .ihr-plant-catalog__caption { max-width: 310px; }
+.ihr-plant-catalog__lamp-warmth { display: inline-flex; align-items: center; gap: 5px; margin-top: 9px; font-size: 11px; font-weight: 700; color: #8c5b13; }
+.ihr-plant-catalog__lamp-warmth::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #eebc65; box-shadow: 0 0 8px #eebc6555; }
+.ihr-plant-catalog__caption .ihr-plant-catalog__lamp-mount { margin-top: 5px; font-size: 11px; }
+.ihr-plant-catalog__lamp-choices { display: flex; flex-direction: column; justify-content: center; min-width: 0; min-height: 0; margin: 0; padding: 18px; border: 0; }
+.ihr-plant-catalog__lamp-choices legend { font-size: 15px; font-weight: 700; padding: 0; }
+.ihr-plant-catalog__lamps { display: grid; gap: 9px; }
+.ihr-plant-catalog__lamp { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 86px; padding: 9px 12px; border: 1px solid #d7d7d7; background: #fff; text-align: left; }
+.ihr-plant-catalog__lamp[aria-pressed='true'] { border-color: var(--catalog-blue); background: #f4f8fb; box-shadow: inset 0 0 0 1px var(--catalog-blue); }
+.ihr-plant-catalog__lamp-icon { display: block; width: 62px; height: 62px; flex: none; }
+.ihr-plant-catalog__lamp-icon svg { display: block; width: 100%; height: 100%; }
+.ihr-plant-catalog__lamp-option-caption { display: flex; flex-direction: column; min-width: 0; gap: 4px; font-size: 11px; line-height: 1.25; }
+.ihr-plant-catalog__lamp-option-caption strong { font-size: 14px; }
+.ihr-plant-catalog__lamp-installation { color: #686868; }
+.ihr-plant-catalog__lamp-note { margin: 12px 0 0; color: #686868; font-size: 11px; line-height: 1.3; }
+
+@media (max-width: 650px) and (min-height: 481px) {
+  .ihr-plant-catalog__navigation { gap: clamp(10px,3.3vw,18px); }
+  .ihr-plant-catalog[data-catalog-page='lights'] .ihr-plant-catalog__title { font-size: clamp(15px,4.7vw,21px); }
+  .ihr-plant-catalog__body--lights { display: flex; flex-direction: column; }
+  .ihr-plant-catalog__lamp-preview { display: flex; flex-direction: column; flex: 1; height: auto; padding: 8px 12px; }
+  .ihr-plant-catalog__lamp-drawing { flex: 1; min-height: 70px; height: auto; max-height: 330px; }
+  .ihr-plant-catalog__lamp-preview .ihr-plant-catalog__caption { width: 100%; padding: 4px 0 0; text-align: center; }
+  .ihr-plant-catalog__lamp-warmth { margin-top: 5px; font-size: 10px; }
+  .ihr-plant-catalog__caption .ihr-plant-catalog__lamp-mount { margin-top: 3px; font-size: 10px; }
+  .ihr-plant-catalog__lamp-choices { flex: none; padding: 8px; }
+  .ihr-plant-catalog__lamp-choices legend { margin-bottom: 4px; font-size: 13px; }
+  .ihr-plant-catalog__lamps { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 5px; }
+  .ihr-plant-catalog__lamp { flex-direction: column; justify-content: flex-start; gap: 4px; padding: 6px 3px; min-height: 124px; text-align: center; }
+  .ihr-plant-catalog__lamp-icon { width: 48px; height: 48px; }
+  .ihr-plant-catalog__lamp-option-caption { gap: 3px; font-size: 9px; }
+  .ihr-plant-catalog__lamp-option-caption strong { font-size: 11px; overflow-wrap: anywhere; }
+  .ihr-plant-catalog__lamp-note { margin-top: 5px; font-size: 9px; text-align: center; }
+}
+@media (max-width: 650px) and (min-height: 700px) {
+  .ihr-plant-catalog__lamp-icon { width: 62px; height: 62px; }
+  .ihr-plant-catalog__lamp { padding: 9px 4px; min-height: 155px; }
+  .ihr-plant-catalog__lamp-option-caption { font-size: 10px; }
+  .ihr-plant-catalog__lamp-option-caption strong { font-size: 12px; }
+}
+@media (max-height: 480px) {
+  .ihr-plant-catalog__body--lights { grid-template-columns: 44% 56%; }
+  .ihr-plant-catalog__lamp-preview { padding: 3px 8px; }
+  .ihr-plant-catalog__lamp-drawing { height: 34cqh; }
+  .ihr-plant-catalog__lamp-preview .ihr-plant-catalog__caption { margin-top: 2px; }
+  .ihr-plant-catalog__lamp-warmth { margin-top: 3px; font-size: 10px; }
+  .ihr-plant-catalog__caption .ihr-plant-catalog__lamp-mount { margin-top: 2px; font-size: 9px; }
+  .ihr-plant-catalog__lamp-choices { padding: 4px 10px; }
+  .ihr-plant-catalog__lamp-choices legend { font-size: 12px; margin-bottom: 4px; }
+  .ihr-plant-catalog__lamps { gap: 4px; }
+  .ihr-plant-catalog__lamp { min-height: 54px; padding: 4px 8px; gap: 8px; }
+  .ihr-plant-catalog__lamp-icon { width: 42px; height: 42px; }
+  .ihr-plant-catalog__lamp-option-caption { gap: 2px; font-size: 10px; }
+  .ihr-plant-catalog__lamp-option-caption strong { font-size: 12px; }
+  .ihr-plant-catalog__lamp-installation { font-size: 9px; }
+  .ihr-plant-catalog__lamp-note { margin-top: 5px; font-size: 9px; }
+}

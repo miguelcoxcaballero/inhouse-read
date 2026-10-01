@@ -2,10 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPlantCatalog, plantCatalogIllustration } from '../../src/js/plant-catalog.js';
 import { PLANT_CATALOG, POT_CATALOG } from '../../src/js/plant-catalog-data.js';
 import { createShelfCatalogPreview } from '../../src/js/shelf-catalog-preview.js';
+import { createLampCatalogPreview } from '../../src/js/lamp-catalog-preview.js';
 
 vi.mock('../../src/js/shelf-catalog-preview.js',() => ({
   createShelfCatalogPreview:vi.fn(host => ({
     update:vi.fn(selection => { host.dataset.shelfType = selection.shelfType; }),
+    dispose:vi.fn(() => host.replaceChildren())
+  }))
+}));
+
+vi.mock('../../src/js/lamp-catalog-preview.js',() => ({
+  createLampCatalogPreview:vi.fn(host => ({
+    update:vi.fn(selection => { host.dataset.lampId = selection.lampId; }),
     dispose:vi.fn(() => host.replaceChildren())
   }))
 }));
@@ -25,6 +33,7 @@ afterEach(() => {
   for (const instance of instances.splice(0)) instance.destroy();
   document.body.replaceChildren();
   vi.mocked(createShelfCatalogPreview).mockClear();
+  vi.mocked(createLampCatalogPreview).mockClear();
   vi.restoreAllMocks();
 });
 
@@ -136,7 +145,7 @@ describe('IKEA plant instruction booklet',() => {
     dialog().querySelector('[data-catalog-page="shelves"]').click();
     expect(dialog().dataset.catalogPage).toBe('shelves');
     expect(dialog().querySelector('h2').textContent).toBe('ESTANTERÍAS');
-    expect(dialog().querySelector('.ihr-plant-catalog__page-number').textContent).toBe('02 / 02');
+    expect(dialog().querySelector('.ihr-plant-catalog__page-number').textContent).toBe('02 / 03');
     expect(dialog().querySelectorAll('[data-catalog-shelf]')).toHaveLength(2);
     expect(dialog().querySelector('.ihr-plant-catalog__body').hidden).toBe(true);
     expect(add().textContent).toBe('Usar esta estantería');
@@ -147,7 +156,68 @@ describe('IKEA plant instruction booklet',() => {
     expect(dialog().querySelector('.ihr-plant-catalog__body').hidden).toBe(false);
     expect(dialog().querySelector('[data-catalog-plant="monstera"]').getAttribute('aria-pressed')).toBe('true');
     expect(dialog().querySelector('[data-catalog-pot="gradvis"]').getAttribute('aria-pressed')).toBe('true');
-    expect(dialog().querySelector('.ihr-plant-catalog__page-number').textContent).toBe('01 / 02');
+    expect(dialog().querySelector('.ihr-plant-catalog__page-number').textContent).toBe('01 / 03');
+  });
+  it('offers three warm lamp designs on a third page and keeps one active preview',() => {
+    create({ onAdd:vi.fn(),onAddLamp:vi.fn(),onShelfChange:vi.fn() }).open();
+    dialog().querySelector('[data-catalog-page="shelves"]').click();
+    const shelfPreview = vi.mocked(createShelfCatalogPreview).mock.results[0].value;
+    dialog().querySelector('[data-catalog-page="lights"]').click();
+    expect(dialog().dataset.catalogPage).toBe('lights');
+    expect(dialog().querySelector('h2').textContent).toBe('ILUMINACIÓN');
+    expect(dialog().querySelector('.ihr-plant-catalog__page-number').textContent).toBe('03 / 03');
+    expect(dialog().querySelectorAll('[data-catalog-lamp]')).toHaveLength(3);
+    expect(dialog().querySelector('.ihr-plant-catalog__body--shelves').hidden).toBe(true);
+    expect(dialog().querySelector('.ihr-plant-catalog__body--lights').hidden).toBe(false);
+    expect(dialog().querySelector('.ihr-plant-catalog__lamp-warmth').textContent).toContain('2700 K');
+    expect(dialog().querySelector('.ihr-plant-catalog__lamp-mount').textContent).toContain('bajo la balda');
+    expect(shelfPreview.dispose).toHaveBeenCalledOnce();
+    const preview = vi.mocked(createLampCatalogPreview).mock.results[0].value;
+    expect(preview.update).toHaveBeenLastCalledWith({ lampId:'mittled' });
+    dialog().querySelector('[data-catalog-lamp="tarnaby"]').click();
+    expect(preview.update).toHaveBeenLastCalledWith({ lampId:'tarnaby' });
+    expect(dialog().querySelector('.ihr-plant-catalog__lamp-mount').textContent).toContain('sobre la balda');
+    expect(dialog().querySelectorAll('[data-catalog-lamp][aria-pressed="true"]')).toHaveLength(1);
+    dialog().querySelector('[data-catalog-page="plants"]').click();
+    expect(preview.dispose).toHaveBeenCalledOnce();
+    dialog().querySelector('[data-catalog-page="lights"]').click();
+    expect(dialog().querySelector('[data-catalog-lamp="tarnaby"]').getAttribute('aria-pressed')).toBe('true');
+  });
+  it('waits for one lamp save, disables page switches and disposes the light preview on close',async () => {
+    let finish;
+    const onAddLamp = vi.fn(() => new Promise(resolve => { finish = resolve; })), onAdd = vi.fn();
+    create({ onAdd,onAddLamp }).open();
+    dialog().querySelector('[data-catalog-page="lights"]').click();
+    dialog().querySelector('[data-catalog-lamp="tripod"]').click(); add().click(); add().click();
+    expect(onAddLamp).toHaveBeenCalledExactlyOnceWith({ lampId:'tripod' });
+    expect(onAdd).not.toHaveBeenCalled();
+    expect(dialog().querySelector('[data-catalog-page="shelves"]').disabled).toBe(true);
+    expect(dialog().querySelector('[data-catalog-lamp="mittled"]').disabled).toBe(true);
+    expect(dialog().hasAttribute('open')).toBe(true);
+    finish(); await settle();
+    expect(dialog().hasAttribute('open')).toBe(false);
+    expect(vi.mocked(createLampCatalogPreview).mock.results[0].value.dispose).toHaveBeenCalledOnce();
+  });
+  it('keeps a failed lamp selected for retry without changing plant storage',async () => {
+    const onAddLamp = vi.fn().mockRejectedValueOnce(new Error('storage details')).mockResolvedValue();
+    const onAdd = vi.fn();
+    create({ onAdd,onAddLamp }).open();
+    dialog().querySelector('[data-catalog-page="lights"]').click();
+    dialog().querySelector('[data-catalog-lamp="tarnaby"]').click(); add().click(); await settle();
+    expect(dialog().hasAttribute('open')).toBe(true);
+    expect(dialog().querySelector('[role="status"]').textContent).toContain('No se pudo añadir la lámpara');
+    expect(dialog().textContent).not.toContain('storage details');
+    expect(add().disabled).toBe(false);
+    expect(dialog().querySelector('[data-catalog-lamp="tarnaby"]').getAttribute('aria-pressed')).toBe('true');
+    add().click(); await settle();
+    expect(onAddLamp).toHaveBeenCalledTimes(2);
+    expect(onAdd).not.toHaveBeenCalled();
+    expect(dialog().hasAttribute('open')).toBe(false);
+  });
+  it('disables adding lights without a lamp callback even when plant adding is available',() => {
+    create({ onAdd:vi.fn() }).open();
+    dialog().querySelector('[data-catalog-page="lights"]').click();
+    expect(add().disabled).toBe(true);
   });
   it('uses the exact BAGGEBO size, awaits one shelf change and restores the opener',async () => {
     let finish;

@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.17
+
+- Nueva pestaña **Iluminación** en el catálogo IKEA: foco circular bajo balda, farol TÄRNABY con bombilla LED de filamento visible y lámpara compacta de trípode con pantalla de lino.
+- Modelos 3D con cristal, latón, metal, veta de madera y tejido; luz cálida de 2700 K que ilumina los libros y las plantas.
+- Las lámparas se guardan, se pueden mover entre baldas y retirar con la papelera. Los focos ocupan el techo de la leja sin desplazar los libros; funcionan con madera y BAGGEBO.
+
 ### Actualización web · 1.6.16
 
 - Escena 3D móvil a todo el ancho, sin marco lateral ni banda inferior al ampliar con los dedos. El espacio del título y los controles se conserva dentro de su propia fila.
