@@ -120,6 +120,18 @@ describe('reader appearance and compact location', () => {
     expect(reader.applyPreferences).toHaveBeenLastCalledWith(expect.objectContaining({ theme:'amoled' }))
   })
 
+  it('applies the brightness filter only when the brightness is not the 100% identity', async () => {
+    const { experience } = await setup()
+    const filter = () => experience.screen.style.getPropertyValue('--reader-brightness-filter')
+    expect(filter()).toBe('none')
+    await experience.setPreference('brightness', 80)
+    expect(filter()).toBe('brightness(80%)')
+    await experience.setPreference('brightness', 120)
+    expect(filter()).toBe('brightness(120%)')
+    await experience.setPreference('brightness', 100)
+    expect(filter()).toBe('none')
+  })
+
   it('restores the saved AMOLED preference when constructing a reader', async () => {
     localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({ theme:'amoled', margin:0 }))
     const { experience } = await setup()

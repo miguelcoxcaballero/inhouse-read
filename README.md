@@ -4,6 +4,11 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización Android · APK 1.1.2
+
+- La app Android vota por el modo de pantalla más rápido de la resolución actual (hasta 120 Hz) al abrirse, volver al primer plano, ganar el foco o girar, y en Android 15 o posterior pide además la categoría de frecuencia alta. Sin ese voto muchos móviles mantenían el WebView a 60 Hz. Requiere instalar la APK 1.1.2 (versionCode 15); la web no cambia.
+- El filtro de brillo del lector sólo se aplica cuando el brillo no es 100 %, de modo que la página no se convierte en una superficie de filtro durante las animaciones.
+
 ### Actualización web · 1.6.25
 
 - TÄRNABY ilumina desde cuatro superficies estrechas alineadas con sus filamentos LED, en lugar de una luz puntual en el centro de la bombilla. Los reflejos responden a la longitud y orientación de las fibras.
