@@ -27,9 +27,23 @@ visualization geometry, not manufacturing drawings with certified tolerances.
 Mesh pitch, fine bevel radii, coating texture and tiny screw details are visual
 approximations from the source photos and assembly illustrations.
 
-Four material batches keep each unit to four draw calls. Expanded metal uses a
-small repeating cutout texture shared between colour and shadow passes. Its
-raycast override also checks apertures, so the back panel has real holes for
-picking rather than behaving as a solid printed rectangle. Each model owns and
-disposes its GPU geometries, materials, shadow materials and textures; immutable
-mask pixels are cached to avoid recomputing them when the catalogue opens again.
+Four material batches keep each unit to four draw calls and approximately
+70,300 triangles. The expanded metal is now geometry: connected hexagonal
+strands with a 0.65 mm pressed profile, two reflecting facets on stretched
+strands and flatter connecting bonds. Apertures remain physically empty from
+above, below and through the back brace; the standard raycaster and shadow
+passes use that same geometry. There is no cutout texture or invisible panel
+across the holes, and close views show the strand profile instead of enlarged
+alpha-mask pixels. The strand width and pressed profile are visual
+approximations, not measured sheet-gauge specifications.
+
+Folded shelf lips, smooth upright corners and bevelled fastener heads add
+highlights without changing the overall dimensions or the book baselines.
+The neutral white powder coating has a small clear-coat component and a
+sub-millimetre bump texture whose UVs use physical millimetres, so grain has
+the same scale on a long post and a short rail.
+
+Each model owns and disposes its GPU geometries, materials and paint texture.
+Immutable panel vertex arrays are cached on the CPU to avoid rebuilding the
+hexagonal pattern when the catalogue reopens; every model receives independent
+buffers so disposing a preview cannot invalidate the bookshelf scene.

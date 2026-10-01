@@ -14,7 +14,11 @@ vi.mock('../../src/js/book-model.js', async () => {
     setPixelRatio:value => { ratio = value; }, getSize:target => target.copy(size),
     setSize:(width, height) => size.set(width, height),
     render:scene => { gpu.scene = scene; } };
-  return { getBookRenderer:() => renderer, lightBookScene() {},
+  return { getBookRenderer:() => renderer, lightBookScene(scene) {
+      scene.add(new Three.HemisphereLight(0xffffff, 0x666666, .5));
+      scene.add(new Three.DirectionalLight(0xffffff, 1.9));
+      scene.environmentIntensity = .55;
+    },
     createBookModel(book, style, width, height, thickness, coverUrl, options = {}) {
       const model = new Three.Group(); model.name = `book:${book.id}`;
       model.add(new Three.Mesh(new Three.BoxGeometry(width, height, thickness), new Three.MeshStandardMaterial()));
@@ -133,7 +137,7 @@ describe('BAGGEBO in the retained shelf scene', () => {
     expect(shelf.canvas.dataset.shelfType).toBe('walnut');
   });
 
-  it('releases metal textures, cutout shadow materials and retained walnut materials on final disposal', () => {
+  it('releases physical mesh, paint and retained walnut resources once on final disposal', () => {
     const raw = layout(); mount(raw);
     const woodMaterials = new Set(cabinet().children.map(mesh => mesh.material));
     expect(woodMaterials.size).toBe(3);
@@ -145,12 +149,39 @@ describe('BAGGEBO in the retained shelf scene', () => {
       for (const resource of [mesh.material.alphaMap, mesh.material.bumpMap, mesh.customDepthMaterial, mesh.customDistanceMaterial])
         if (resource) owned.add(resource);
     });
-    expect([...owned].filter(resource => resource.isDataTexture)).toHaveLength(2);
-    expect([...owned].filter(resource => resource.isMeshDepthMaterial || resource.isMeshDistanceMaterial)).toHaveLength(2);
+    expect([...owned].filter(resource => resource.isDataTexture)).toHaveLength(1);
+    expect([...owned].filter(resource => resource.isMeshDepthMaterial || resource.isMeshDistanceMaterial)).toHaveLength(0);
     const releases = new Map([...owned].map(resource => [resource, 0]));
     for (const resource of owned) resource.addEventListener('dispose', () => releases.set(resource, releases.get(resource) + 1));
     shelf.dispose(); shelf = null;
     for (const count of releases.values()) expect(count).toBe(1);
     expect(frames.size).toBe(0);
+  });
+
+  it('receives lamp light on a separate room wall while preserving the open frame and daylight after removal', () => {
+    const raw = layout(), data = baggeboLayout(raw); mount(data);
+    shelf.setMode('isometric', { animate:false }); shelf.flush();
+    const roomWall = gpu.scene.getObjectByName('Library room wall');
+    expect(roomWall.receiveShadow).toBe(true); expect(roomWall.castShadow).toBe(false);
+    expect(roomWall.userData.furniture).toBeUndefined();
+    expect(roomWall.position.z).toBeLessThan(-BAGGEBO_SPEC.depth * raw.width / BAGGEBO_SPEC.width);
+    const hits = []; roomWall.raycast(null, hits); expect(hits).toEqual([]);
+    const lights = gpu.scene.children.filter(child => child.isLight);
+    const daylight = lights.map(light => light.intensity);
+    const lampNode = document.createElement('button'); stage.append(lampNode);
+    const lamp = { node:lampNode, key:'lamp:test', kind:'lamp', lampId:'mittled', mount:'undershelf',
+      x:150, y:data.rows[0].ceiling, width:44.2, height:7.15, depth:44.2, shelf:0 };
+    shelf.updateLayout({ ...data, entries:[...data.entries, lamp] }); shelf.flush();
+    expect(shelf.canvas.dataset.activeLampLights).toBe('1');
+    lights.forEach((light, index) => expect(light.intensity).toBeCloseTo(daylight[index] * .82));
+    expect(gpu.scene.environmentIntensity).toBeCloseTo(.55 * .82);
+    expect(shelf.canvas.dataset.fullCabinetInFrame).toBe('true');
+    shelf.updateLayout(data); shelf.flush();
+    lights.forEach((light, index) => expect(light.intensity).toBe(daylight[index]));
+    expect(gpu.scene.environmentIntensity).toBe(.55);
+    const releases = { material:0, geometry:0 };
+    roomWall.material.addEventListener('dispose', () => releases.material++);
+    roomWall.geometry.addEventListener('dispose', () => releases.geometry++);
+    shelf.dispose(); shelf = null; expect(releases).toEqual({ material:1, geometry:1 });
   });
 });

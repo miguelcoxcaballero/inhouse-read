@@ -47,26 +47,29 @@ describe('IKEA BAGGEBO model', () => {
     shelf.userData.dispose();
   });
 
-  it('keeps actual mesh apertures open for raycasting and both shadow passes', () => {
+  it('uses physical mesh openings and thickness for raycasting, grazing views and shadows', () => {
     const shelf = createBaggebo();
     shelf.updateMatrixWorld(true);
-    const mesh = shelf.children.find(child => child.material.alphaMap);
+    const mesh = shelf.children.find(child => child.material.name === 'Open expanded white-painted steel');
     const raycaster = new THREE.Raycaster(new THREE.Vector3(0, -528, 20), new THREE.Vector3(0, 0, -1));
-    // This ray crosses the centre of an aperture in the central back panel.
+    // Both the back brace and the top panel have actual holes. The stock
+    // raycaster sees through them, with no alpha sampling or custom override.
     expect(raycaster.intersectObject(mesh)).toHaveLength(0);
     raycaster.ray.origin.x = 3.6;
-    // At the same elevation, this point is a metal strand, not an aperture.
     expect(raycaster.intersectObject(mesh).length).toBeGreaterThan(0);
-    expect(mesh.customDepthMaterial.alphaMap).toBe(mesh.material.alphaMap);
-    expect(mesh.customDistanceMaterial.alphaMap).toBe(mesh.material.alphaMap);
-    expect(mesh.customDepthMaterial.alphaTest).toBe(mesh.material.alphaTest);
-    expect(mesh.customDistanceMaterial.alphaTest).toBe(mesh.material.alphaTest);
+    raycaster.ray.set(new THREE.Vector3(0, 10, -72), new THREE.Vector3(0, -1, 0));
+    expect(raycaster.intersectObject(mesh)).toHaveLength(0);
+    raycaster.ray.origin.z = -75.6;
+    expect(raycaster.intersectObject(mesh).length).toBeGreaterThan(0);
+    expect(mesh.material.alphaMap).toBeNull();
+    expect(mesh.customDepthMaterial).toBeUndefined();
+    expect(mesh.customDistanceMaterial).toBeUndefined();
     expect(mesh.material.side).toBe(THREE.DoubleSide);
     expect(mesh.castShadow).toBe(true);
     expect(mesh.receiveShadow).toBe(true);
-    const data = mesh.material.alphaMap.image.data;
-    expect(data.some((value, index) => index % 4 === 1 && value === 0)).toBe(true);
-    expect(data.some((value, index) => index % 4 === 1 && value === 255)).toBe(true);
+    const top = shelf.userData.parts.find(part => part.kind === 'mesh-top');
+    expect(top.bounds.getSize(new THREE.Vector3()).y).toBeCloseTo(.65, 5);
+    expect(shelf.userData.parts.filter(part => part.kind === 'folded-lip')).toHaveLength(8);
     shelf.userData.dispose();
   });
 
@@ -74,16 +77,19 @@ describe('IKEA BAGGEBO model', () => {
     const shelf = createBaggebo();
     expect(shelf.children).toHaveLength(4);
     const triangles = shelf.children.reduce((total, mesh) => total + mesh.geometry.attributes.position.count / 3, 0);
-    expect(triangles).toBeLessThan(12000);
+    expect(triangles).toBeLessThan(80000);
     for (const mesh of shelf.children) {
       expect(mesh.castShadow).toBe(true);
-      expect([...mesh.geometry.attributes.position.array].every(Number.isFinite)).toBe(true);
-      expect([...mesh.geometry.attributes.normal.array].every(Number.isFinite)).toBe(true);
-      expect([...mesh.geometry.attributes.uv.array].every(Number.isFinite)).toBe(true);
+      expect(mesh.geometry.attributes.position.array.every(Number.isFinite)).toBe(true);
+      expect(mesh.geometry.attributes.normal.array.every(Number.isFinite)).toBe(true);
+      expect(mesh.geometry.attributes.uv.array.every(Number.isFinite)).toBe(true);
     }
     const painted = shelf.children.find(mesh => mesh.material.name.includes('powder-coated'));
     expect(painted.material.roughness).toBeGreaterThan(.3);
     expect(painted.material.metalness).toBeLessThan(.2);
+    expect(painted.material.bumpScale).toBeLessThan(.04);
+    // Long posts repeat the same sub-millimetre paint grain as short rails.
+    expect(painted.geometry.attributes.uv.array.some(value => Math.abs(value) > 100)).toBe(true);
     shelf.userData.dispose();
   });
 
@@ -99,10 +105,14 @@ describe('IKEA BAGGEBO model', () => {
     }
     let disposals = 0, secondDisposals = 0;
     for (const resource of resources) resource.addEventListener('dispose', () => { disposals += 1; });
-    const firstMask = first.children.find(mesh => mesh.material.alphaMap).material.alphaMap;
-    const secondMask = second.children.find(mesh => mesh.material.alphaMap).material.alphaMap;
-    expect(firstMask).not.toBe(secondMask);
-    secondMask.addEventListener('dispose', () => { secondDisposals += 1; });
+    const firstPaint = first.children.find(mesh => mesh.material.bumpMap).material.bumpMap;
+    const secondPaint = second.children.find(mesh => mesh.material.bumpMap).material.bumpMap;
+    expect(firstPaint).not.toBe(secondPaint);
+    first.children.forEach((mesh, index) => {
+      expect(mesh.geometry).not.toBe(second.children[index].geometry);
+      expect(mesh.geometry.attributes.position.array === second.children[index].geometry.attributes.position.array).toBe(false);
+    });
+    secondPaint.addEventListener('dispose', () => { secondDisposals += 1; });
     first.userData.dispose(); first.userData.disposeGeometry();
     expect(disposals).toBe(resources.size);
     expect(secondDisposals).toBe(0);

@@ -9,7 +9,7 @@ const WALNUT_SURFACE = new URL('../assets/library/walnut-surface.webp',import.me
 
 /** The same cabinet geometry as the library, lit and rendered only on demand. */
 export function createShelfCatalogPreview(host) {
-  let renderer, environment, model, observer, frame = 0, disposed = false, selected;
+  let renderer, environment, model, observer, hemisphere, key, fill, frame = 0, disposed = false, selected;
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-400,400,640,-640,1,5000);
   camera.position.set(0,0,2500); camera.lookAt(0,0,0);
@@ -63,6 +63,8 @@ export function createShelfCatalogPreview(host) {
     renderer = new THREE.WebGLRenderer({ antialias:true,alpha:true });
     renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1,2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = .95;
+    renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.autoUpdate = false;
     renderer.domElement.setAttribute('aria-hidden','true');
     renderer.domElement.addEventListener('webglcontextlost',event => {
       event.preventDefault(); if (!disposed) unavailable();
@@ -70,9 +72,13 @@ export function createShelfCatalogPreview(host) {
     const pmrem = new THREE.PMREMGenerator(renderer), room = new RoomEnvironment();
     environment = pmrem.fromScene(room,.04); room.dispose(); pmrem.dispose();
     scene.environment = environment.texture; scene.environmentIntensity = .55;
-    scene.add(new THREE.HemisphereLight('#fffaf3','#7b8190',.8));
-    const key = new THREE.DirectionalLight('#fff7ec',2.4); key.position.set(-750,1200,1000); scene.add(key);
-    const fill = new THREE.DirectionalLight('#e7efff',.6); fill.position.set(700,200,800); scene.add(fill);
+    hemisphere = new THREE.HemisphereLight('#fffaf3','#7b8190',.8); scene.add(hemisphere);
+    key = new THREE.DirectionalLight('#fffaf4',2.4); key.position.set(-750,1200,1000); scene.add(key);
+    key.shadow.mapSize.set(1024,1024);
+    Object.assign(key.shadow.camera,{ left:-800,right:800,top:850,bottom:-850,near:50,far:4000 });
+    key.shadow.camera.updateProjectionMatrix();
+    key.shadow.bias = -.00012; key.shadow.normalBias = .35;
+    fill = new THREE.DirectionalLight('#e7efff',.6); fill.position.set(700,200,800); scene.add(fill);
     host.replaceChildren(renderer.domElement); host.dataset.renderer = 'three-mesh';
     observer = new ResizeObserver(invalidate); observer.observe(host);
   } catch {
@@ -84,6 +90,15 @@ export function createShelfCatalogPreview(host) {
       host.dataset.shelfType = type;
       if (disposed || !renderer || selected === type) return;
       selected = type; removeModel();
+      // White paint needs a gentler studio key and less ambient fill so the
+      // folded lips and expanded-metal facets remain visible against the page.
+      const whiteSteel = type === 'baggebo';
+      hemisphere.intensity = whiteSteel ? .36 : .8;
+      key.intensity = whiteSteel ? 1.2 : 2.4;
+      fill.intensity = whiteSteel ? .22 : .6;
+      scene.environmentIntensity = whiteSteel ? .38 : .55;
+      key.castShadow = whiteSteel;
+      renderer.shadowMap.needsUpdate = true;
       model = type === 'baggebo' ? createBaggebo({ width:600 }) : createShelfFurniture({
         width:600,height:1160,depth:250,rows:[{ bottom:370 },{ bottom:705 },{ bottom:1035 }],...walnutMaterials()
       });
@@ -104,7 +119,7 @@ export function createShelfCatalogPreview(host) {
       observer?.disconnect(); removeModel();
       for (const material of materials) material.dispose();
       for (const texture of textures) texture.dispose();
-      environment?.dispose(); renderer?.dispose(); renderer?.forceContextLoss();
+      key?.shadow.dispose(); environment?.dispose(); renderer?.dispose(); renderer?.forceContextLoss();
       host.replaceChildren();
     }
   };

@@ -221,4 +221,20 @@ describe('bounded lamp lighting', () => {
     expect(manager.update([a, b])).toBe(true); expect(manager.activeCount).toBe(0);
     manager.dispose(); expect(manager.update([a, b])).toBe(false);
   });
+  it('changes a fixture range independently of its power and preserves irradiance through scene scaling', () => {
+    const scene = new THREE.Scene(),manager = createShelfLampLighting(scene),entry = source(0,false);
+    scene.add(entry.model); manager.update([entry]);
+    const light = fixtureLights(scene)[0],intensity = light.intensity;
+    entry.model.userData.lightEmitter.distance = 700;
+    expect(manager.update([entry])).toBe(true);
+    expect(light.distance).toBe(700); expect(light.intensity).toBe(intensity);
+    // Screen fitting and finger zoom scale both geometry and light distance;
+    // their inverse-square irradiance must stay unchanged at a book surface.
+    const before = light.intensity / 200 ** light.decay;
+    entry.model.scale.setScalar(.6); manager.update([entry]);
+    expect(light.distance).toBe(420);
+    expect(light.intensity / 120 ** light.decay).toBeCloseTo(before,8);
+    expect(manager.update([entry])).toBe(false);
+    manager.dispose();
+  });
 });
