@@ -237,4 +237,36 @@ describe('bounded lamp lighting', () => {
     expect(manager.update([entry])).toBe(false);
     manager.dispose();
   });
+
+  it('keeps cone shadow coordinates exact during room zoom, pan and rotation without redrawing its map', () => {
+    const scene = new THREE.Scene(), room = new THREE.Group(), manager = createShelfLampLighting(scene), entry = source(0);
+    scene.add(room); room.add(entry.model); room.updateMatrixWorld(true);
+    manager.update([entry], { transform:room.matrixWorld });
+    const light = fixtureLights(scene)[0];
+    light.shadow.updateMatrices(light); light.shadow.needsUpdate = false;
+    const receiver = new THREE.Vector3(20, -260, -70);
+    const projected = receiver.clone().applyMatrix4(light.shadow.matrix);
+    let redraws = 0;
+    for (let index = 1; index <= 60; index++) {
+      room.scale.setScalar(1 + index / 40); room.position.set(index * 2, index / 2, 0);
+      room.rotation.set(index / 200, -index / 100, index / 300); room.updateMatrixWorld(true);
+      manager.update([entry], { transform:room.matrixWorld });
+      redraws += Number(light.shadow.needsUpdate);
+      const current = receiver.clone().applyMatrix4(room.matrixWorld).applyMatrix4(light.shadow.matrix);
+      expect(current.distanceTo(projected)).toBeLessThan(1e-7);
+    }
+    expect(redraws).toBe(0);
+    expect(manager.update([entry], { transform:room.matrixWorld })).toBe(false);
+    // Relative fixture movement, another caster moving and emitter changes
+    // are actual changes to the map, even when the camera also moves.
+    entry.model.position.x += 10;
+    expect(manager.update([entry], { transform:room.matrixWorld })).toBe(true);
+    expect(light.shadow.needsUpdate).toBe(true); light.shadow.needsUpdate = false;
+    manager.update([entry], { transform:room.matrixWorld, shadowDirty:true });
+    expect(light.shadow.needsUpdate).toBe(true); light.shadow.needsUpdate = false;
+    entry.model.userData.lightEmitter.angle = .8;
+    manager.update([entry], { transform:room.matrixWorld });
+    expect(light.shadow.needsUpdate).toBe(true);
+    manager.dispose();
+  });
 });

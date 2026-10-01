@@ -2,6 +2,15 @@ import { test, expect } from '@playwright/test'
 
 const PDF = 'tests/e2e/fixtures/tiny.pdf'
 
+async function assertCapturedFrame(canvas) {
+  await expect.poll(() => canvas.evaluate(node => {
+    const pixels = node.getContext('2d').getImageData(0, 0, node.width, node.height).data
+    let painted = 0
+    for (let index = 3; index < pixels.length; index += 4) if (pixels[index] > 0) painted++
+    return painted / (node.width * node.height)
+  })).toBeGreaterThan(.05)
+}
+
 for (const variant of [
   { name:'móvil compacto', width:320, height:568, theme:'light' },
   { name:'móvil oscuro', width:390, height:844, theme:'dark' },
@@ -23,6 +32,9 @@ for (const variant of [
   const cover = page.locator('.ihr-flyout__cover-target')
   await expect(cover).toBeVisible()
   await expect(page.locator('.ihr-flyout__book canvas')).toHaveAttribute('data-angle', '0')
+  // Shared WebGL snapshots must retain actual pixels after the GPU's drawing
+  // buffer is released; CSS visibility alone cannot detect a blank book.
+  await assertCapturedFrame(page.locator('.ihr-flyout__book canvas'))
   const bounds = await page.locator('.ihr-flyout').evaluate(root => {
     const box = selector => {
       const r = root.querySelector(selector).getBoundingClientRect()
@@ -45,6 +57,7 @@ for (const variant of [
   await expect(page.locator('.reader-toolbar')).toBeHidden()
   await page.getByRole('button', { name:'Cerrar', exact:true }).click()
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
+  await assertCapturedFrame(page.locator('.ihr-bookshelf-scene'))
   await page.locator('.ihr-spine').first().click()
   await expect(cover).toBeVisible()
   await page.evaluate(() => {
@@ -82,6 +95,9 @@ test('girar el móvil con una portada abierta devuelve el libro a su nueva balda
 })
 
 test('movimiento reducido conserva los dos pasos y el foco del diálogo', async ({ page }) => {
+  // Reduced motion still loads and snapshots the 3D model twice. Software
+  // WebGL can exceed the default test budget even when all focus checks pass.
+  test.setTimeout(90_000)
   await page.emulateMedia({ reducedMotion:'reduce' })
   await page.goto('/')
   await page.locator('#file-picker').setInputFiles(PDF)
