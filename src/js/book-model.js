@@ -315,12 +315,23 @@ function spineGrazingFade(material) {
 
 function applyCoverFinish(material, value) {
   applySurfaceFinish(material, value, 'satin');
-  // Printed jackets reflect through a thin laminate. The stronger foil rig
-  // must not veil the image in white or lift every colour into a highlight.
-  material.specularIntensity = .45;
-  material.envMapIntensity *= .7;
-  material.clearcoat *= .65;
-  material.clearcoatRoughness = Math.max(.1, material.clearcoatRoughness);
+  // Dielectric reflection belongs to the laminate, above the printed image.
+  // Suppressing it uniformly erased both the glossy/satin distinction and
+  // warm lamp highlights. The physical clearcoat keeps highlights local and
+  // leaves the artwork's diffuse colour and texture untouched.
+  material.specularIntensity = 1;
+}
+
+function applySpineCapFinish(material, book) {
+  const metallic = ['gold', 'silver'].includes(book.spineFinish);
+  material.metalness = metallic ? 1 : 0;
+  if (metallic) {
+    // Keep the foil's existing response; its base layer already reflects the
+    // lamp, so a second full laminate would over-brighten the metal.
+    material.roughness = .3; material.envMapIntensity = 1.8;
+    material.clearcoat = .42; material.clearcoatRoughness = .16;
+    material.needsUpdate = true;
+  } else applySurfaceFinish(material, book.spineSurfaceFinish, 'matte');
 }
 
 // A half-ellipse extruded along the binding. Shared vertices give the entire
@@ -790,14 +801,22 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     cloth.normalMap = sharedTexture('cloth', clothNormals);
     cloth.normalMap.repeat.set(14 * ratio, 14); cloth.normalScale.setScalar(.5 * weaveStrength);
   }
-  let coverGrain = null;
+  let coverGrain = null, coverSurfaceFinish = surfaceFinish(book.coverFinish);
+  const updateCoverGrainStrength = () => {
+    if (!cover.normalMap) return;
+    // A laminate fills the paper/cloth tooth rather than polishing its dye.
+    // Keep the same shared normal raster while changing only its strength.
+    const strength = coverGrain === 'cloth' ? .55 * weaveStrength : .16;
+    const tooth = { matte:1, satin:.5, glossy:.16 }[coverSurfaceFinish];
+    cover.normalScale.setScalar(strength * tooth);
+  };
   const setCoverGrain = kind => {
     if ((!detail && !inspectionResolution) || kind === coverGrain) return;
     coverGrain = kind; cover.normalMap?.dispose();
     cover.normalMap = sharedTexture(kind, kind === 'cloth' ? clothNormals : paperNormals);
     const tiles = kind === 'cloth' ? 14 : 5;
     cover.normalMap.repeat.set(tiles * ratio, tiles);
-    cover.normalScale.setScalar(kind === 'cloth' ? .55 * weaveStrength : .16); cover.needsUpdate = true;
+    updateCoverGrainStrength(); cover.needsUpdate = true;
   };
   const box = (w, h, d, material, x = 0, y = 0, z = 0) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
@@ -958,10 +977,10 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   group.add(bindingMesh);
   const capMaterials = [];
   for (const y of [-height / 2, height / 2]) {
-    const metallic = ['gold','silver'].includes(book.spineFinish);
-    const mesh = new THREE.Mesh(capGeometry(width, thickness, bindingSegments, overview ? 0 : board * 1.1), new THREE.MeshPhysicalMaterial({ color: style.color,
-      roughness: metallic ? .3 : .86, metalness: metallic ? 1 : 0, envMapIntensity:metallic ? 1.8 : 1,
-      clearcoat:metallic ? .42 : 0, clearcoatRoughness:metallic ? .16 : .4, side: THREE.DoubleSide }));
+    const material = new THREE.MeshPhysicalMaterial({ color:style.color, side:THREE.DoubleSide });
+    applySpineCapFinish(material, book);
+    const mesh = new THREE.Mesh(capGeometry(width, thickness, bindingSegments, overview ? 0 : board * 1.1), material);
+    mesh.name = y < 0 ? 'binding-tail-cap' : 'binding-head-cap';
     capMaterials.push(mesh.material);
     mesh.rotation.x = Math.PI / 2; mesh.position.y = y; group.add(mesh);
   }
@@ -1042,15 +1061,13 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     if (ribbonMaterial) tintRibbon(ribbonMaterial, silk(), !detail);
     for (const material of capMaterials) {
       material.color.set(nextStyle.color);
-      material.metalness = ['gold','silver'].includes(nextBook.spineFinish) ? 1 : 0;
-      material.roughness = material.metalness ? .3 : .86;
-      material.envMapIntensity = material.metalness ? 1.8 : 1;
-      material.clearcoat = material.metalness ? .42 : 0;
-      material.clearcoatRoughness = material.metalness ? .16 : .4;
+      applySpineCapFinish(material, nextBook);
     }
   };
   group.userData.updateCoverAppearance = nextBook => {
+    coverSurfaceFinish = surfaceFinish(nextBook.coverFinish);
     applyCoverFinish(cover, nextBook.coverFinish);
+    updateCoverGrainStrength();
   };
   group.userData.setCoverOpen = amount => {
     const next = Math.max(0, Math.min(1, amount));
@@ -1153,6 +1170,11 @@ export function getBookRenderer() {
       bar.position.set(x, y, .02); pane.add(bar);
     }
     glow(new THREE.SphereGeometry(.55, 16, 8), [1, .7, .4], 16, [7.4, 1.2, 3.6]);
+    // Shelf covers face the room's rear-right side after the isometric turn.
+    // Give their laminate a broad secondary window to reflect; the existing
+    // front-left key still lights the print. This is baked into the shared
+    // environment once, adding no live light or reflection render pass.
+    glow(new THREE.PlaneGeometry(4, 6), [1, .98, .95], 2.2, [7, -1, -6.4]);
     glow(new THREE.PlaneGeometry(7, 2.2), [1, .96, .92], .9, [0, 9.4, -1]);
     const pmrem = new THREE.PMREMGenerator(renderer);
     studioEnvironment = pmrem.fromScene(room, .035).texture;

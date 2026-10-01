@@ -373,6 +373,87 @@ describe('real shelf book materials', () => {
     return context;
   }
 
+  it('keeps glossy lamp reflections sharp, satin broad and matte uncoated at every shelf detail level', () => {
+    canvasContext();
+    for (const options of [{ shelf:true, overview:true }, { shelf:true }, { shelf:true, inspectionResolution:1024 }, {}]) {
+      const models = ['matte', 'satin', 'glossy'].map(finish => createBookModel({ ...book,
+        coverFinish:finish, spineSurfaceFinish:finish }, style, 132, 200, 40, null, options));
+      const materials = models.map(model => {
+        const front = model.getObjectByName('front-cover').material;
+        return Array.isArray(front) ? front[0] : front;
+      });
+      const [matte, satin, glossy] = materials;
+      // A nearly smooth laminate resolves a small lamp reflection; satin
+      // spreads the same energy and matte cannot acquire a varnish hotspot.
+      expect(glossy.clearcoat).toBe(1); expect(glossy.clearcoatRoughness).toBeLessThan(.09);
+      expect(glossy.clearcoatRoughness).toBeGreaterThanOrEqual(.06);
+      expect(satin.clearcoatRoughness).toBeGreaterThan(.2);
+      expect(satin.clearcoat).toBeLessThan(glossy.clearcoat / 2);
+      expect(matte.clearcoat).toBe(0); expect(matte.roughness).toBeGreaterThan(.9);
+      expect(satin.roughness - glossy.roughness).toBeGreaterThan(.25);
+      expect(matte.roughness - satin.roughness).toBeGreaterThan(.4);
+      for (let i = 0; i < models.length; i++) {
+        expect(materials[i].metalness).toBe(0); expect(materials[i].specularIntensity).toBe(1);
+        expect(materials[i].color.getHex()).toBe(0xffffff);
+        // Spine roughness lives in packed green, so a second multiplication
+        // by the finish roughness would accidentally square it.
+        expect(models[i].getObjectByName('binding').material.roughness).toBe(1);
+        models[i].userData.dispose();
+      }
+    }
+  });
+
+  it('smooths the existing printed grain when laminating without repainting or reallocating the cover', () => {
+    const context = canvasContext();
+    let completeLoad;
+    vi.spyOn(THREE.TextureLoader.prototype, 'load').mockImplementation((_url, ready) => { completeLoad = ready; });
+    const model = createBookModel({ ...book, coverFinish:'matte' }, style, 132, 200, 40,
+      'blob:laminate-grain', { shelf:true, inspectionResolution:1024 });
+    completeLoad(new THREE.Texture({ width:660, height:1000 }));
+    const front = model.getObjectByName('front-cover'), cover = front.material[0];
+    const map = cover.map, normal = cover.normalMap, geometry = front.geometry;
+    const source = normal.source, matteGrain = cover.normalScale.x;
+    const disposeNormal = vi.spyOn(normal, 'dispose');
+    context.drawImage.mockClear(); context.fillText.mockClear();
+    model.userData.updateCoverAppearance({ coverFinish:'satin' });
+    const satinGrain = cover.normalScale.x;
+    model.userData.updateCoverAppearance({ coverFinish:'glossy' });
+    expect(cover.normalScale.x).toBeLessThan(satinGrain / 2);
+    expect(satinGrain).toBeLessThan(matteGrain);
+    expect(front.material[0]).toBe(cover); expect(front.geometry).toBe(geometry);
+    expect(cover.map).toBe(map); expect(cover.normalMap).toBe(normal); expect(normal.source).toBe(source);
+    expect(context.drawImage).not.toHaveBeenCalled(); expect(context.fillText).not.toHaveBeenCalled();
+    expect(disposeNormal).not.toHaveBeenCalled();
+    model.userData.updateCoverAppearance({ coverFinish:'matte' });
+    expect(cover.normalScale.x).toBe(matteGrain);
+    model.userData.dispose(); expect(disposeNormal).toHaveBeenCalledOnce();
+  });
+
+  it('continues the selected spine finish over its visible head and tail while preserving metallic foil', () => {
+    canvasContext();
+    const model = createBookModel({ ...book, spineSurfaceFinish:'matte' }, style, 132, 200, 40, null,
+      { shelf:true, overview:true });
+    const caps = ['binding-head-cap', 'binding-tail-cap'].map(name => model.getObjectByName(name));
+    const resources = caps.map(mesh => ({ material:mesh.material, geometry:mesh.geometry }));
+    expect(caps.every(mesh => mesh.material.clearcoat === 0 && mesh.material.roughness > .9)).toBe(true);
+    model.userData.updateSpineAppearance({ ...book, spineSurfaceFinish:'glossy' }, style);
+    for (const [i, cap] of caps.entries()) {
+      expect(cap.material).toBe(resources[i].material); expect(cap.geometry).toBe(resources[i].geometry);
+      expect(cap.material.clearcoat).toBe(1); expect(cap.material.roughness).toBeLessThan(.2);
+    }
+    model.userData.updateSpineAppearance({ ...book, spineFinish:'gold', spineSurfaceFinish:'glossy' }, style);
+    const foil = caps.map(mesh => ({ roughness:mesh.material.roughness, clearcoat:mesh.material.clearcoat,
+      clearcoatRoughness:mesh.material.clearcoatRoughness, envMapIntensity:mesh.material.envMapIntensity }));
+    model.userData.updateSpineAppearance({ ...book, spineFinish:'gold', spineSurfaceFinish:'matte' }, style);
+    for (const [i, cap] of caps.entries()) {
+      expect(cap.material.metalness).toBe(1);
+      for (const [key, value] of Object.entries(foil[i])) expect(cap.material[key]).toBe(value);
+    }
+    model.userData.updateSpineAppearance({ ...book, spineSurfaceFinish:'matte' }, style);
+    expect(caps.every(mesh => mesh.material.metalness === 0 && mesh.material.clearcoat === 0)).toBe(true);
+    model.userData.dispose();
+  });
+
   it('builds a small overview directly without allocating full text or relief canvases', () => {
     const context = canvasContext(), canvases = [];
     const createElement = document.createElement.bind(document);

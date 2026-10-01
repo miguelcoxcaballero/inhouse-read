@@ -54,9 +54,12 @@ export const METAL_COLORS = { gold:'#d6ad55', silver:'#d5dce3' }
 export function spineFinish(value) { return ['gold','silver'].includes(value) ? value : 'matte' }
 
 export const SURFACE_FINISHES = Object.freeze({
-  glossy: Object.freeze({ roughness:.16, clearcoat:1, clearcoatRoughness:.035, envMapIntensity:2.1 }),
-  satin: Object.freeze({ roughness:.4, clearcoat:.58, clearcoatRoughness:.2, envMapIntensity:1.55 }),
-  matte: Object.freeze({ roughness:.88, clearcoat:.05, clearcoatRoughness:.42, envMapIntensity:1.15 })
+  // Laminate thickness changes the specular lobe, never the printed colour.
+  // A soft satin reflection must stay broader than a glossy jacket's bright
+  // window or lamp reflection; matte stock has no smooth outer coating.
+  glossy: Object.freeze({ roughness:.18, clearcoat:1, clearcoatRoughness:.065, envMapIntensity:1.35 }),
+  satin: Object.freeze({ roughness:.48, clearcoat:.35, clearcoatRoughness:.28, envMapIntensity:1.1 }),
+  matte: Object.freeze({ roughness:.94, clearcoat:0, clearcoatRoughness:.6, envMapIntensity:1 })
 })
 export function surfaceFinish(value, fallback = 'satin') {
   if (typeof value === 'string' && Object.hasOwn(SURFACE_FINISHES, value)) return value

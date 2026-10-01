@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.21
+
+- Los acabados mate, satinado y brillante de los libros usan reflejos físicos distintos: luz difusa, brillo suave y reflejos definidos de las lámparas y la habitación.
+- Cambiar solo el brillo del lomo actualiza también el libro cerrado en la estantería; sus extremos mantienen el mismo acabado.
+- El laminado suaviza el relieve de la portada conservando su imagen y resolución. La mejora reutiliza las mismas mallas, texturas y luces, y la escena descansa al terminar cada cambio.
+
 ### Actualización web · 1.6.20
 
 - Toca cada lámpara para encenderla o apagarla; su estado se guarda al recargar y al cambiar de estantería. Mantener pulsado sigue sirviendo para moverla.

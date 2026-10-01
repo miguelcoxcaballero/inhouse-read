@@ -32,6 +32,7 @@ vi.mock('../../src/js/book-model.js', async () => {
       model.add(new Three.Mesh(new Three.BoxGeometry(width, height, thickness), new Three.MeshStandardMaterial()));
       model.userData.overview = Boolean(options.overview);
       model.userData.inspectionResolution = options.inspectionResolution || 0;
+      model.userData.updateSpineAppearance = vi.fn();
       model.userData.dispose = () => {};
       return model;
     } };
@@ -91,6 +92,27 @@ afterEach(() => {
 });
 
 describe('shelf shadows while scrolling', () => {
+  it('updates only the existing binding when its saved surface finish changes', () => {
+    gpu.passes = []; shelf.invalidate(); flushFrames();
+    const model = gpu.passes.at(-1).meshes.find(({ object }) => object.parent?.name === 'book:30').object.parent;
+    const creations = shelf.canvas.dataset.modelCreations;
+    const update = model.userData.updateSpineAppearance;
+    const book = { id:'30', title:'Book 30', author:'Author', spineSurfaceFinish:'glossy' };
+    const style = { color:'#41694f', width:28 };
+    shelf.updateEntry(nodes[30], book, style); flushFrames();
+    expect(update).toHaveBeenCalledExactlyOnceWith(book, style);
+    expect(shelf.canvas.dataset.modelCreations).toBe(creations);
+    shelf.updateEntry(nodes[30], { ...book }, { ...style }); flushFrames();
+    expect(update).toHaveBeenCalledTimes(1);
+    const matte = { ...book, spineSurfaceFinish:'matte' };
+    shelf.updateEntry(nodes[30], matte, style); flushFrames();
+    expect(update).toHaveBeenLastCalledWith(matte, style);
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(shelf.canvas.dataset.modelCreations).toBe(creations);
+    expect(frames.size).toBe(0);
+    gpu.passes = null;
+  });
+
   it('repaints a scrolled window from the same shadow map until the casters or the fitted window change', () => {
     const renders = () => Number(shelf.canvas.dataset.snapshotRenderCount), creations = () => shelf.canvas.dataset.modelCreations;
     const before = renders(), models = creations();

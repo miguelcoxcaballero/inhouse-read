@@ -404,7 +404,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const { book, style, coverUrl } = entry;
     return {
       spine:JSON.stringify([style, book.spineTitleOverride, book.title, book.author, book.spineFontSize,
-        book.spineAuthorFontSize, book.spineFinish, book.spineTextFinish, book.spineTextColor, book.spineEngraved]),
+        book.spineAuthorFontSize, book.spineFinish, book.spineSurfaceFinish, book.spineTextFinish, book.spineTextColor, book.spineEngraved]),
       cover:JSON.stringify([coverUrl, style.coverRatio, style.color, !coverUrl && [book.title, book.author, book.format, style.fontFamily]]),
       coverFinish:book.coverFinish,
       edgeFinish:book.pageEdgeFinish,
@@ -1315,6 +1315,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       context.clearRect(0, 0, canvas.width, canvas.height);
       context.drawImage(renderer.domElement, 0, 0, canvas.width, canvas.height);
       canvas.dataset.snapshotRenderCount = String(++shelfSnapshotRenders);
+      canvas.dataset.sceneDrawCalls = String(renderer.info?.render.calls || 0);
       shelfSnapshotDirty = false;
     }
     for (const entry of bookEntries) if (entry.insertion?.overlayCanvas) paintInsertionOverlay(entry);
