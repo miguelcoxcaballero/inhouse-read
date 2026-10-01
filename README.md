@@ -4,6 +4,11 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.6.16
+
+- Escena 3D móvil a todo el ancho, sin marco lateral ni banda inferior al ampliar con los dedos. El espacio del título y los controles se conserva dentro de su propia fila.
+- La superficie de zoom ocupa todo el espacio disponible hasta el borde inferior; el escritorio conserva su ancho máximo de 860 px.
+
 ### Actualización web · 1.6.15
 
 - Segunda página del catálogo IKEA para elegir la estantería y guardar la selección sin perder libros ni plantas.

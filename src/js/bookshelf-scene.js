@@ -291,6 +291,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let transition = null, reorderTransition = null;
   let frontalScroll = mode === 'isometric' ? 0 : scroller.scrollTop;
   let sceneFitHeight = 1;
+  let edgeToEdge = false;
   let dropMarker = null, dropPosition = null;
   let desiredMode = mode === 'isometric' ? 'isometric' : 'spine';
   let inspectionZoom = 1, panX = 0, panY = 0, inspectionMoving = false;
@@ -697,7 +698,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function viewport() {
-    viewportHeight = Math.max(1, Math.ceil(Math.min(scroller.clientHeight || window.innerHeight, window.innerHeight)));
+    const availableHeight = edgeToEdge && progress === 1 ? sceneFitHeight : scroller.clientHeight || window.innerHeight;
+    viewportHeight = Math.max(1, Math.ceil(Math.min(availableHeight, window.innerHeight)));
     const ratio = Math.min(window.devicePixelRatio || 1, inspectionZoom > 1.001 && desiredMode === 'isometric' ? 2.5 : width < 600 ? 1.5 : 2);
     const pixelWidth = Math.ceil(sceneWidth * ratio), pixelHeight = Math.ceil(viewportHeight * ratio);
     if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
@@ -716,11 +718,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function measureFitHeight() {
     const clip = scroller.getBoundingClientRect(), stageBounds = stage.getBoundingClientRect();
-    const bottomPadding = parseFloat(getComputedStyle(scroller).paddingBottom) || 0;
+    const style = getComputedStyle(scroller);
+    edgeToEdge = style.getPropertyValue('--ihr-scene-edge-to-edge').trim() === '1';
+    const bottomPadding = parseFloat(style.paddingBottom) || 0;
     // The stage's resting top includes the actual library heading, empty
     // copy and padding, even when the frontal shelf is scrolled far down.
     const restingTop = stageBounds.top + scroller.scrollTop;
-    return Math.max(1, Math.floor(Math.min(window.innerHeight, clip.bottom) - Math.max(clip.top, restingTop) - bottomPadding) - 2);
+    return Math.max(1, Math.floor(Math.min(window.innerHeight, clip.bottom) - Math.max(clip.top, restingTop) - bottomPadding) - (edgeToEdge ? 0 : 2));
   }
 
   function updateTransform() {
@@ -731,7 +735,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     furniture.position.set(0, 0, 0); furniture.rotation.set(pitch, yaw, 0); furniture.scale.setScalar(1);
     furniture.updateMatrix();
     const unscaled = corners(fullBounds, furniture.matrix);
-    const padding = 8 * progress;
+    sceneFitHeight = measureFitHeight();
+    const padding = (edgeToEdge ? 0 : 8) * progress;
     const framedBounds = fullBounds.clone();
     if (trash) framedBounds.union(trashBounds.clone().translate(trash.position));
     const framed = corners(framedBounds, furniture.matrix);
@@ -740,7 +745,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // the diagonal endpoint includes it without any object reveal animation.
     const frameLeft = unscaled.left + (framed.left - unscaled.left) * progress;
     const frameRight = unscaled.right + (framed.right - unscaled.right) * progress;
-    sceneFitHeight = measureFitHeight();
     const widthZoom = Math.min((1 - .22 * progress) * Math.min(1, width / unscaled.width),
       (sceneWidth - padding * 2 - TRASH_PADDING * 2 * progress) / (frameRight - frameLeft));
     // Pull back far enough to see every shelf, its feet and the open lid.
@@ -760,7 +764,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     furniture.updateMatrixWorld(true);
     // Matrix arithmetic can produce fitHeight + 1e-12; do not round that
     // into a new CSS pixel and recreate a scrollbar in the fitted overview.
-    stage.style.height = `${Math.ceil(bounds.height + padding * 2 - 1e-7)}px`;
+    const objectHeight = Math.ceil(bounds.height + padding * 2 - 1e-7);
+    // The mobile zoom surface fills the screen below the library controls.
+    // A shorter fitted cabinet must not crop zoomed books inside its own box.
+    const stageHeight = edgeToEdge ? objectHeight + Math.max(0, sceneFitHeight - objectHeight) * progress : objectHeight;
+    stage.style.height = `${stageHeight}px`;
     canvas.dataset.shelfView = desiredMode;
     canvas.dataset.viewProgress = String(Number(progress.toFixed(4)));
     canvas.dataset.yaw = (-30 * progress).toFixed(3);

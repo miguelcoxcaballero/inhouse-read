@@ -91,6 +91,19 @@
   scrollbar-width: none;
 }
 
+/* The room reaches the phone's edges; only text and controls need a gutter. */
+@media (max-width:599px), (max-height:500px) and (pointer:coarse) {
+  .ihr-bookshelf__scroll {
+    width:100%;
+    --ihr-scroll-pad-top:0px;
+    --ihr-scene-edge-to-edge:1;
+    padding:0;
+  }
+  .ihr-bookshelf--with-actions .ihr-bookshelf__scroll {
+    padding-bottom:calc(76px + env(safe-area-inset-bottom));
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * Secciones
  * ------------------------------------------------------------------ */
@@ -112,6 +125,9 @@
 .ihr-library-heading__tools { display:flex; align-items:center; gap:14px; }
 .ihr-library-heading p { margin:0; color:var(--text-secondary); font-size:.8rem; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .ihr-library-heading p:empty { display:none; }
+@media (max-width:599px), (max-height:500px) and (pointer:coarse) {
+  .ihr-library-heading { margin:12px max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left)); }
+}
 /* Control segmentado: un carril hundido y la opción activa como una pieza
    de papel apoyada encima (sin verde sobre gris, que en oscuro se ensuciaba). */
 .ihr-view-switch { display:inline-flex; align-items:center; gap:2px; padding:3px; border-radius:11px; background:color-mix(in srgb,var(--text-primary) 6%,transparent); box-shadow:inset 0 1px 1px color-mix(in srgb,var(--text-primary) 5%,transparent); }
