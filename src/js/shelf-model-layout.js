@@ -14,11 +14,19 @@ export function baggeboLayout(layout) {
     return { left, right:left + unitWidth, unit,
       padding:Math.max(16, (BAGGEBO_SPEC.postSize + 4) * scale),
       top:(slot ? BAGGEBO_SPEC.shelfBottoms[slot - 1] + BAGGEBO_SPEC.shelfRimHeight : BAGGEBO_SPEC.postSize) * scale,
+      ceiling:(slot ? BAGGEBO_SPEC.shelfBottoms[slot - 1] + 3.75 : 3.75) * scale,
       bottom:BAGGEBO_SPEC.shelfBottoms[slot] * scale };
   });
   const entries = layout.entries.map(entry => {
     const index = Math.max(0, Math.min(rows.length - 1, entry.shelf ?? 0));
     const row = rows[index];
+    if (entry.kind === 'lamp') {
+      const fit = Math.min(1, (row.bottom - row.top - 4 * scale) / entry.height,
+        BAGGEBO_SPEC.usableDepth * scale / entry.depth);
+      return { ...entry, x:row.left + entry.x, height:entry.height * fit, width:entry.width * fit,
+        depth:entry.depth * fit, y:entry.mount === 'undershelf' ? row.ceiling : row.bottom - entry.height * fit / 2,
+        depthInset:15 * scale };
+    }
     // A book's depth is its cover width. Preserve its aspect ratio when a
     // landscape cover or tall plant would exceed the actual usable space.
     const height = entry.kind === 'plant' ? entry.height : 280 * scale * entry.style.heightRatio;

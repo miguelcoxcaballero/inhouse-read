@@ -102,12 +102,14 @@ import { normalizeBookAuthor } from './book-title.js';
 import { bookView, fitCoverImage, getBookRenderer, planReadingBookPose } from './book-model.js';
 import { createShelfZoom } from './shelf-zoom.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
-import { layoutShelvedObjects, moveShelfObject } from './shelf-placement.js';
+import { layoutShelfDecorations, moveShelfDecoration } from './shelf-decoration-layout.js';
 import { createPlantCatalog } from './plant-catalog.js';
 import { normalizeShelfType, BAGGEBO_SPEC } from './shelf-types.js';
 import { baggeboLayout } from './shelf-model-layout.js';
 import { getCatalogPlant, getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { normalizeShelfPlant, resolveCatalogPlant } from './plant-records.js';
+import { getCatalogLamp, normalizeShelfLamp } from './lamp-catalog-data.js';
+import { lampCatalogIllustration } from './lamp-illustration.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
@@ -115,6 +117,7 @@ const TAP_SLOP = 12;
 const REORDER_HOLD_MS = 440;
 const SHELF_VIEW_STORAGE_KEY = 'inhouse-read-shelf-view';
 const SHELF_PLANTS_STORAGE_KEY = 'inhouse-read-shelf-plants';
+const SHELF_LAMPS_STORAGE_KEY = 'inhouse-read-shelf-lamps';
 const SHELF_TYPE_STORAGE_KEY = 'inhouse-read-shelf-type';
 
 function storedShelfType() {
@@ -133,6 +136,18 @@ function savedShelfPlants() {
     }
     return plants;
   } catch { return null; }
+}
+
+function savedShelfLamps() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SHELF_LAMPS_STORAGE_KEY) || '[]');
+    if (!Array.isArray(saved)) return [];
+    const keys = new Set();
+    return saved.map(normalizeShelfLamp).filter(record => {
+      if (!record || keys.has(record.key)) return false;
+      keys.add(record.key); return true;
+    });
+  } catch { return []; }
 }
 const SHELF_VIEW_MODES = Object.freeze({ SPINE:'spine', ISOMETRIC:'isometric' });
 const ICONS = Object.freeze({
@@ -331,6 +346,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     itemsById: new Map(),
     placementObjects: [],
     plants: savedPlants || [],
+    lamps: savedShelfLamps(),
     plantsInitialized: savedPlants !== null,
     appearanceRefreshPending: false,
     pressedBookId: null,
@@ -359,7 +375,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   const hasTrash = !opts.sections || hasBookTrash;
   const trashNode = hasTrash ? el('div', {
     class:'ihr-shelf-trash', role:'img',
-    'aria-label':'Papelera: arrastra un libro o una planta para retirarlos de la estantería',
+    'aria-label':'Papelera: arrastra un libro, una planta o una lámpara para retirarlos de la estantería',
     title:'Retirar de la estantería. El archivo original se conserva en Drive o en tu dispositivo.'
   }, [
     el('span', { class:'ihr-shelf-trash__body', 'aria-hidden':'true' }),
@@ -382,7 +398,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       for (const node of scroller.querySelectorAll('.is-pressed')) node.classList.remove('is-pressed');
     }});
   if (trashStatus) root.append(trashStatus);
-  const plantCatalog = createPlantCatalog({ onAdd:addCatalogPlant, shelfType:state.shelfType,
+  const plantCatalog = createPlantCatalog({ onAdd:addCatalogPlant, onAddLamp:addCatalogLamp, shelfType:state.shelfType,
     onShelfChange:({ shelfType }) => {
       state.shelfType = normalizeShelfType(shelfType);
       try { localStorage.setItem(SHELF_TYPE_STORAGE_KEY, state.shelfType); } catch { /* Local preference only. */ }
@@ -390,7 +406,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     } });
   const catalogNode = !opts.sections ? el('button', {
     type:'button', class:'ihr-shelf-catalog', hidden:'', tabindex:'-1',
-    'aria-label':'Abrir catálogo IKEA de plantas y macetas', title:'Plantas y macetas · IKEA',
+    'aria-label':'Abrir catálogo IKEA de plantas, estanterías e iluminación', title:'Catálogo · IKEA',
     onClick:() => {
       if (!state.busy && !state.session && !state.dragSession && !state.returnMotion && state.viewMode === SHELF_VIEW_MODES.ISOMETRIC) {
         plantCatalog.setShelfType(state.shelfType);
@@ -688,12 +704,47 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   const objectKey = node => node.dataset.objectId || `book:${node.dataset.bookId}`;
-  const objectRects = () => new Map([...scroller.querySelectorAll('.ihr-spine, .ihr-plant')]
+  const objectRects = () => new Map([...scroller.querySelectorAll('.ihr-spine, .ihr-plant, .ihr-lamp')]
     .map(node => [objectKey(node), node.getBoundingClientRect()]));
 
   function savePlants({ strict = false } = {}) {
     try { localStorage.setItem(SHELF_PLANTS_STORAGE_KEY, JSON.stringify(state.plants)); }
     catch (error) { if (strict) throw error; }
+  }
+
+  function saveLamps({ strict = false } = {}) {
+    try { localStorage.setItem(SHELF_LAMPS_STORAGE_KEY, JSON.stringify(state.lamps)); }
+    catch (error) { if (strict) throw error; }
+  }
+
+  function lampShelfObject(record) {
+    const lamp = getCatalogLamp(record.lampId);
+    const shelfHeight = window.innerWidth >= 600 ? 200 : 172;
+    const scale = Math.min(state.shelfWidth / 600,
+      state.shelfType === 'baggebo' ? Infinity : (shelfHeight + 36) / lamp.dimensions.height);
+    return { ...record, kind:'lamp', mount:lamp.mount,
+      width:lamp.dimensions.width * scale, height:lamp.dimensions.height * scale,
+      depth:lamp.dimensions.depth * scale };
+  }
+
+  async function addCatalogLamp({ lampId }) {
+    if (state.destroyed || state.busy || state.session || state.dragSession || state.returnMotion)
+      throw new Error('Espera a que termine la animación y vuelve a intentarlo.');
+    const lamp = getCatalogLamp(lampId);
+    if (!lamp) throw new Error('Elige una lámpara del catálogo.');
+    const key = `lamp:${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+    const record = normalizeShelfLamp({ key, seed:key, lampId:lamp.id, shelf:0,
+      ...(lamp.mount === 'undershelf' ? { x:.5 } : {}) });
+    const previous = state.lamps, oldRects = objectRects();
+    const arranged = layoutShelfDecorations([...state.placementObjects, lampShelfObject(record)], placementConfig());
+    const positions = new Map(arranged.flatMap(shelf => shelf.items)
+      .map(item => [item.key, { shelf:item.shelf, x:item.x }]));
+    state.lamps = [...previous, record].map(item => ({ ...item, ...positions.get(item.key) }));
+    try { saveLamps({ strict:true }); }
+    catch (error) { state.lamps = previous; throw new Error('No se pudo guardar la lámpara. Vuelve a intentarlo.', { cause:error }); }
+    render();
+    state.shelfScene?.animateFromRects(oldRects);
+    root.dataset.lastAddedLamp = key;
   }
 
   async function addCatalogPlant({ catalogId, potId, potColorId }) {
@@ -709,7 +760,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       width:plant.width, height:plant.height, shelf:destination?.shelf ?? 0 };
     const oldRects = objectRects(), previous = state.plants;
     const objects = [...state.placementObjects, { ...record, kind:'plant' }];
-    const arranged = layoutShelvedObjects(objects, placementConfig()).flatMap(shelf => shelf.items);
+    const arranged = layoutShelfDecorations(objects, placementConfig()).flatMap(shelf => shelf.items);
     const positions = new Map(arranged.map(item => [item.key, { shelf:item.shelf, x:item.x }]));
     state.plants = [...previous, record].map(item => ({ ...item, ...positions.get(item.key) }));
     try { savePlants({ strict:true }); }
@@ -726,7 +777,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   function persistObjectPlacement(node, destination, oldRects = objectRects()) {
     if (!destination || !state.placementObjects.length) return;
-    const result = moveShelfObject(state.placementObjects, objectKey(node), destination, placementConfig());
+    const result = moveShelfDecoration(state.placementObjects, objectKey(node), destination, placementConfig());
     const changed = [];
     state.books = state.books.map(book => {
       const shelfPosition = result.placements[`book:${book.id}`];
@@ -735,7 +786,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       return { ...book, shelfPosition };
     });
     state.plants = state.plants.map(plant => ({ ...plant, ...result.placements[plant.key] }));
+    state.lamps = state.lamps.map(lamp => ({ ...lamp, ...result.placements[lamp.key] }));
     savePlants();
+    saveLamps();
     Promise.resolve(options.onShelfPlacementChange?.({ books:changed,
       plants:Object.fromEntries(state.plants.map(plant => [plant.key, { shelf:plant.shelf, x:plant.x }])) }))
       .catch(error => console.warn('No se pudo guardar la posición en la estantería:', error));
@@ -760,8 +813,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     [...scroller.querySelectorAll('[data-object-id]')].find(candidate => objectKey(candidate) === item.key)?.focus({ preventScroll:true });
   }
 
-  function dropPositionAt(x, y) {
-    if (state.shelfScene) return state.shelfScene.getDropPosition(x, y);
+  function dropPositionAt(x, y, node = null) {
+    if (state.shelfScene) return state.shelfScene.getDropPosition(x, y, node);
     const rows = [...scroller.querySelectorAll('.ihr-shelf__row')];
     const nearest = rows.map((row, shelf) => {
       const bounds = row.getBoundingClientRect();
@@ -783,12 +836,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       state.shelfScene?.previewPlacements(null);
       return;
     }
-    drag.destination = dropPositionAt(drag.x, drag.y);
+    drag.destination = dropPositionAt(drag.x, drag.y, node);
     state.shelfScene?.setDropPosition(drag.destination);
     if (drag.destination && !drag.previewFrame) drag.previewFrame = requestAnimationFrame(() => {
       drag.previewFrame = 0;
       if (state.dragSession !== drag || !drag.destination) return;
-      const preview = moveShelfObject(state.placementObjects, objectKey(node), drag.destination, placementConfig());
+      const preview = moveShelfDecoration(state.placementObjects, objectKey(node), drag.destination, placementConfig());
       state.shelfScene?.previewPlacements(preview.objects, objectKey(node));
     });
   }
@@ -863,7 +916,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (hit && hit !== node) { node.classList.remove('is-pressed'); state.pressedBookId = null; }
       node = hit || node;
     }
-    if (!backgroundOnly && event.pointerType === 'touch' && node.classList.contains('ihr-plant')) {
+    if (!backgroundOnly && event.pointerType === 'touch' && node.matches('.ihr-plant, .ihr-lamp')) {
       event.preventDefault();
       const stage = node.closest('.ihr-shelf-stage'), selection = window.getSelection?.();
       if (stage && selection && (stage.contains(selection.anchorNode) || stage.contains(selection.focusNode)))
@@ -988,7 +1041,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   function hitTrash(x, y, node) {
     if (!trashNode || state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC ||
-      !(node?.classList.contains('ihr-plant') || hasBookTrash && node?.classList.contains('ihr-spine'))) return false;
+      !(node?.matches('.ihr-plant, .ihr-lamp') || hasBookTrash && node?.classList.contains('ihr-spine'))) return false;
     // The scene flushes its pending scroll frame before testing the bin. Its
     // DOM target can still be hidden just as a held object reaches the floor.
     if (state.shelfScene) return state.shelfScene.hitTrash(x, y);
@@ -1013,8 +1066,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   async function removeBookInTrash(node, { motion, rect, duration = prefersReducedMotion() ? 1 : 820 } = {}) {
     const plant = node.classList.contains('ihr-plant') ? state.plants.find(item => item.key === objectKey(node)) : null;
-    const item = plant ? null : state.itemsById.get(node.dataset.bookId);
-    if (!hasTrash || !(plant || hasBookTrash && item) || state.busy || state.destroyed) { motion?.cancel?.(); return; }
+    const lamp = node.classList.contains('ihr-lamp') ? state.lamps.find(item => item.key === objectKey(node)) : null;
+    const item = plant || lamp ? null : state.itemsById.get(node.dataset.bookId);
+    if (!hasTrash || !(plant || lamp || hasBookTrash && item) || state.busy || state.destroyed) { motion?.cancel?.(); return; }
     const operation = { node, motion, cancelled:false, persisting:false, clone:null };
     state.trashRemoval = operation; state.busy = true;
     root.classList.add('is-discarding');
@@ -1047,6 +1101,17 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       // Delete the app's record only after the model has landed. External
       // originals are managed by the application callback and stay intact.
       operation.persisting = true;
+      if (lamp) {
+        const previous = state.lamps;
+        state.lamps = state.lamps.filter(record => record.key !== lamp.key);
+        try { saveLamps({ strict:true }); }
+        catch (error) { state.lamps = previous; throw error; }
+        trashStatus.textContent = `${getCatalogLamp(lamp.lampId).name} retirada de la estantería`;
+        trashStatus.classList.remove('is-error');
+        state.trashStatusTimer = setTimeout(() => { trashStatus.textContent = ''; }, 4500);
+        root.dataset.lastRemovedLamp = lamp.key;
+        return;
+      }
       if (plant) {
         const previous = state.plants;
         state.plants = state.plants.filter(item => item.key !== plant.key);
@@ -1076,7 +1141,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       root.dataset.lastRemovedBook = id;
     } catch (error) {
       operation.motion?.cancel?.(); node.classList.remove('is-away');
-      trashStatus.textContent = `No se pudo retirar ${plant ? 'la planta' : 'el libro'}. Vuelve a intentarlo.`;
+      trashStatus.textContent = `No se pudo retirar ${plant ? 'la planta' : lamp ? 'la lámpara' : 'el libro'}. Vuelve a intentarlo.`;
       trashStatus.classList.add('is-error');
       state.trashStatusTimer = setTimeout(() => { trashStatus.textContent = ''; }, 6500);
       console.warn('No se pudo retirar el objeto de la estantería:', error);
@@ -1248,16 +1313,49 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     return node;
   }
 
+  function buildLamp(item) {
+    const lamp = getCatalogLamp(item.lampId);
+    const node = el('button', {
+      type:'button', class:`ihr-lamp ihr-lamp--${lamp.id}`,
+      'data-object-id':item.key, 'data-lamp-id':lamp.id, 'data-lamp-mount':lamp.mount,
+      'aria-label':`Mover lámpara ${lamp.name}`,
+      'aria-keyshortcuts':'Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown Delete',
+      'aria-description':'Mantén pulsado para cambiar su posición o balda. Usa Mayús y las flechas para moverla, y Suprimir para retirarla.',
+      title:`${lamp.name} · Mantén pulsado para mover`,
+      style:`--ihr-lamp-w:${item.width}px;--ihr-lamp-h:${item.height}px`
+    });
+    if (!state.useScene) {
+      node.innerHTML = lampCatalogIllustration(lamp.id);
+      node.querySelector('svg').setAttribute('preserveAspectRatio','none');
+    }
+    node.addEventListener('pointerdown', event => startSpineDrag(event, node));
+    node.addEventListener('pointermove', event => moveSpineDrag(event, state.dragSession?.node || node));
+    node.addEventListener('pointerup', event => finishSpineDrag(event, state.dragSession?.node || node));
+    node.addEventListener('pointercancel', event => finishSpineDrag(event, state.dragSession?.node || node, true));
+    node.addEventListener('keydown', event => {
+      if (hasTrash && event.key === 'Delete' && !event.repeat) {
+        event.preventDefault();
+        if (state.busy || state.session || state.dragSession || state.returnMotion) return;
+        state.shelfScene?.flush();
+        const duration = prefersReducedMotion() ? 1 : 820;
+        const motion = state.shelfScene?.animateObjectToTrash(node, { duration });
+        void removeBookInTrash(node, { motion, duration });
+      } else moveObjectWithKeyboard(event, node);
+    });
+    return node;
+  }
+
   function buildShelf(shelf) {
     const unit = el('div', { class: 'ihr-shelf', 'data-shelf-index':shelf.index });
     const row = el('div', { class: 'ihr-shelf__row' });
     for (const item of shelf.items) {
-      const node = item.kind === 'plant' ? buildPlant(item) : buildSpine(item);
+      const node = item.kind === 'plant' ? buildPlant(item) : item.kind === 'lamp' ? buildLamp(item) : buildSpine(item);
       if (Number.isFinite(item.left)) {
         row.classList.add('has-placements');
         node.style.position = 'absolute';
         node.style.left = `${item.left}px`;
-        node.style.bottom = '0';
+        if (item.kind === 'lamp' && item.mount === 'undershelf') node.style.top = '0';
+        else node.style.bottom = '0';
         node.dataset.objectId = item.key;
         node.dataset.shelfIndex = String(shelf.index);
         node.dataset.shelfX = String(item.x);
@@ -1303,9 +1401,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       savePlants();
     }
     objects.push(...state.plants.map(plant => ({ ...plant, kind:'plant' })));
+    objects.push(...state.lamps.map(lampShelfObject));
     const placements = Object.fromEntries(objects.filter(item => item.kind === 'book' && item.book.shelfPosition)
       .map(item => [item.key, item.book.shelfPosition]));
-    const result = layoutShelvedObjects(objects, { ...cfg, placements });
+    const result = layoutShelfDecorations(objects, { ...cfg, placements });
     state.placementObjects = result.flatMap(shelf => shelf.items);
     return result;
   }
@@ -1546,11 +1645,20 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       shelf.style.contentVisibility = 'visible';
       const row = shelf.querySelector('.ihr-shelf__row').getBoundingClientRect();
       const shelfIndex = rows.length;
-      rows.push({ top:row.top - origin.top, bottom:row.bottom - origin.top });
-      for (const node of shelf.querySelectorAll('.ihr-spine, .ihr-plant')) {
+      rows.push({ top:row.top - origin.top, bottom:row.bottom - origin.top,
+        ceiling:shelfIndex ? rows[shelfIndex - 1].bottom + 15 : 12 });
+      for (const node of shelf.querySelectorAll('.ihr-spine, .ihr-plant, .ihr-lamp')) {
         const rect = node.getBoundingClientRect();
         const x = rect.left + rect.width / 2 - origin.left;
         const y = rect.top + rect.height / 2 - origin.top;
+        if (node.classList.contains('ihr-lamp')) {
+          const record = state.lamps.find(item => item.key === node.dataset.objectId);
+          if (!record) continue;
+          const item = lampShelfObject(record);
+          entries.push({ ...item, node, x, y:item.mount === 'undershelf' ? rows[shelfIndex].ceiling : y,
+            shelf:shelfIndex, depthInset:0 });
+          continue;
+        }
         if (node.classList.contains('ihr-plant')) {
           entries.push({ kind:'plant', key:node.dataset.objectId, node, x, y, shelf:shelfIndex, depthInset:0, width:rect.width, height:rect.height,
             catalogId:node.dataset.catalogId, potId:node.dataset.potId, potColorId:node.dataset.potColorId,

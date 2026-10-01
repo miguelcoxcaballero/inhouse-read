@@ -4,7 +4,9 @@ import { bookmarkFor } from './bookshelf-layout.js';
 import { shelfBookSlot, shelfBookInsertion, projectShelfBookPose } from './bookshelf-return.js';
 import { createShelfFurniture, createShelfOcclusion } from './shelf-furniture.js';
 import { createShelfPlant } from './shelf-plants.js';
+import { createShelfLamp } from './shelf-lamps.js';
 import { createShelfLighting, widePenumbra } from './shelf-lighting.js';
+import { createShelfLampLighting } from './shelf-lamp-lighting.js';
 import { createShelfTrash, sampleTrashDrop } from './shelf-trash.js';
 import { createShelfCatalog } from './shelf-catalog.js';
 import { createBaggebo } from './baggebo-model.js';
@@ -90,11 +92,18 @@ function trashFootprint(bin) {
   return bounds;
 }
 
-/** Project a pointer ray onto the cabinet's front, independent of its view. */
-export function projectShelfDropPosition(worldRay, furnitureMatrix, rows, width, padding = 16) {
+/** Bottom-standing objects project onto the front plane. Under-shelf fixtures
+ * project at their actual mounting depth, then snap to the nearest ceiling.
+ * In a pitched view, intersecting the front plane shifts a ceiling pointer
+ * vertically and can mistakenly select the shelf immediately above it.
+ */
+export function projectShelfDropPosition(worldRay, furnitureMatrix, rows, width, options = {}) {
+  const padding = typeof options === 'number' ? options : options.padding ?? 16;
+  const undershelf = typeof options === 'object' && options.mount === 'undershelf';
+  const mountingDepth = undershelf ? Math.max(0, Number(options.depth) || 0) / 2 : 0;
   if (!rows.length || !Number.isFinite(width) || width <= padding * 2) return null;
   const localRay = worldRay.clone().applyMatrix4(furnitureMatrix.clone().invert());
-  const point = localRay.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3());
+  const point = localRay.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), mountingDepth), new THREE.Vector3());
   if (!point) return null;
   const y = -point.y;
   let shelf = 0, nearest = Infinity;
@@ -102,12 +111,13 @@ export function projectShelfDropPosition(worldRay, furnitureMatrix, rows, width,
     const { top, bottom, left = 0, right = width } = rows[index];
     const localX = point.x + width / 2;
     const dx = localX < left ? left - localX : localX > right ? localX - right : 0;
-    const dy = y < top ? top - y : y > bottom ? y - bottom : 0;
+    const dy = undershelf ? Math.abs(y - (rows[index].ceiling ?? top)) : y < top ? top - y : y > bottom ? y - bottom : 0;
     const distance = Math.hypot(dx, dy);
     if (distance < nearest) { nearest = distance; shelf = index; }
   }
   const { left = 0, right = width, padding:inset = padding } = rows[shelf];
-  return { shelf, x:clamp((point.x + width / 2 - left - inset) / (right - left - inset * 2), 0, 1) };
+  return { shelf, x:clamp((point.x + width / 2 - left - inset) / (right - left - inset * 2), 0, 1),
+    ...(undershelf ? { mount:'undershelf' } : {}) };
 }
 
 function releaseObject(object) {
@@ -176,6 +186,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const scene = new THREE.Scene();
   lightBookScene(scene);
   const lighting = createShelfLighting(scene, renderer);
+  const lampLighting = createShelfLampLighting(scene);
   const furniture = new THREE.Group();
   scene.add(furniture);
   sceneWidth = Math.max(1, Number(sceneWidth) || width);
@@ -216,9 +227,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   furniture.add(floor, occlusion);
   let floorY = -height, floorLit = false;
   let depth = shelfType === 'baggebo' ? BAGGEBO_SPEC.depth * unitWidth / BAGGEBO_SPEC.width
-    : Math.max(155, ...entries.filter(e => e.kind !== 'plant').map(e => e.width + 12));
-  const entryKey = (entry, index) => entry.kind === 'plant'
-    ? `plant:${entry.node?.dataset.objectId ?? entry.key ?? index}`
+    : Math.max(155, ...entries.filter(e => e.kind !== 'plant' && e.kind !== 'lamp').map(e => e.width + 12),
+      ...entries.filter(e => e.kind === 'lamp' && e.mount !== 'undershelf').map(e => (e.depth || e.width) + 12));
+  const entryKey = (entry, index) => entry.kind === 'plant' || entry.kind === 'lamp'
+    ? `${entry.kind}:${entry.node?.dataset.objectId ?? entry.key ?? index}`
     : `book:${String(entry.book?.id ?? entry.node?.dataset.bookId ?? entry.book?.path ?? entry.book?.title ?? index)}`;
   const freshPreview = () => ({ x:0, y:0, fromX:0, fromY:0, targetX:0, targetY:0, started:0, active:false });
   const freshEntry = (entry, index) => ({ ...entry, key:entryKey(entry, index), model:null, replacement:null, pose:new THREE.Object3D(),
@@ -351,6 +363,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     ? new THREE.Box3(new THREE.Vector3(-width / 2, -height, -depth), new THREE.Vector3(width / 2, 0, 0))
     : new THREE.Box3(new THREE.Vector3(-width / 2, -height - boardHeight, -depth - 4), new THREE.Vector3(width / 2, 2, 12));
   const slotBox = entry => {
+    if (entry.kind === 'lamp') return new THREE.Box3(
+      new THREE.Vector3(-entry.width / 2, entry.mount === 'undershelf' ? -entry.height : 0, -(entry.depth || entry.width) / 2),
+      new THREE.Vector3(entry.width / 2, entry.mount === 'undershelf' ? 0 : entry.height, (entry.depth || entry.width) / 2)
+    );
     const plant = entry.kind === 'plant';
     return new THREE.Box3(
       new THREE.Vector3(-entry.width / 2 - (plant ? 0 : entry.thickness * .38), -entry.height / 2, -(plant ? entry.width * .35 : entry.thickness / 2)),
@@ -376,9 +392,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   const plantKeys = entry => JSON.stringify([entry.width, entry.height, entry.variant, entry.catalogId, entry.potId, entry.potColorId, entry.seed]);
+  const lampKeys = entry => JSON.stringify([entry.lampId, entry.width, entry.height, entry.depth, entry.mount]);
 
   function makeModel(entry) {
     const model = entry.kind === 'plant' ? createShelfPlant(entry)
+      : entry.kind === 'lamp' ? createShelfLamp({ lampId:entry.lampId, width:entry.width, height:entry.height, quality:'high' })
       : createBookModel(entry.book, entry.style, entry.width, entry.height, entry.thickness, entry.coverUrl, { shelf:true, overview:entry.overview, inspectionResolution:entry.inspectionResolution });
     model.userData.invalidate = invalidate;
     model.traverse(object => {
@@ -388,9 +406,16 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     });
     model.userData.entry = entry;
     model.traverse(object => {
-      if (object.isMesh) { object.castShadow = true; object.receiveShadow = true; }
+      if (object.isMesh) {
+        // Fixtures own their shadow flags: clear glass, opal diffusers and
+        // glowing bulb envelopes transmit the source placed inside them.
+        // Making the shaded LED opaque here would extinguish its entire cone.
+        if (entry.kind !== 'lamp') object.castShadow = true;
+        object.receiveShadow = true;
+      }
     });
-    if (entry.kind !== 'plant') model.userData.shelfKeys = materialKeys(entry);
+    if (entry.kind === 'lamp') model.userData.shelfLampKeys = lampKeys(entry);
+    else if (entry.kind !== 'plant') model.userData.shelfKeys = materialKeys(entry);
     else {
       model.userData.shelfPlantKeys = plantKeys(entry);
       if (entry.node) {
@@ -512,7 +537,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       canvas.dataset.trashDropProgress = value;
       canvas.dataset.trashingBookId = String(dropEntry.book?.id ?? '');
       canvas.dataset.trashingObjectId = String(dropEntry.node?.dataset.objectId ?? dropEntry.key);
-      canvas.dataset.trashingObjectKind = dropEntry.kind === 'plant' ? 'plant' : 'book';
+      canvas.dataset.trashingObjectKind = dropEntry.kind === 'plant' || dropEntry.kind === 'lamp' ? dropEntry.kind : 'book';
       moving ||= t < 1;
       if (t === 1 && !drop.complete) {
         drop.complete = true;
@@ -634,7 +659,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function updateMaterials(entry) {
     const model = entry.model;
-    if (!model || entry.kind === 'plant') return;
+    if (!model || entry.kind === 'plant' || entry.kind === 'lamp') return;
     const previous = model.userData.shelfKeys || {}, next = materialKeys(entry);
     if (previous.spine !== next.spine) model.userData.updateSpineAppearance?.(entry.book, entry.style);
     if (previous.cover !== next.cover) model.userData.updateCoverSource?.(entry.coverUrl, entry.book, entry.style);
@@ -829,7 +854,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function updateEntries(scroll, zoom, now, finishedInsertions) {
     let activeBooks = 0, moving = false, shelfMoving = false;
     for (const entry of bookEntries) {
-      const node = entry.node, plant = entry.kind === 'plant';
+      const node = entry.node, plant = entry.kind === 'plant', lamp = entry.kind === 'lamp';
+      const decorative = plant || lamp, undershelf = lamp && entry.mount === 'undershelf';
       const dragging = node?.classList.contains('is-dragging');
       const lifted = dragging || node?.classList.contains('is-lifted');
       const away = node?.classList.contains('is-away');
@@ -864,11 +890,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const screenX = (dragging ? parseFloat(node.style.getPropertyValue('--ihr-drag-x')) || 0 : 0) + entry.offset.x;
       const screenY = (dragging ? parseFloat(node.style.getPropertyValue('--ihr-drag-y')) || 0 : 0) + entry.offset.y - 18 * lift;
       vector.set(screenX / zoom, -screenY / zoom, 30 * lift / zoom).applyQuaternion(inverseRotation);
-      entry.pose.position.set(entry.x - width / 2 + vector.x + entry.preview.x, -entry.y + vector.y + entry.preview.y,
-        (plant ? -entry.width * .35 : -entry.width / 2) - (entry.depthInset || 0) + vector.z);
-      entry.pose.rotation.set(plant ? 4 * Math.PI / 180 * lift : 0,
-        plant ? -7 * Math.PI / 180 * lift : Math.PI / 2 - 7 * Math.PI / 180 * lift,
-        plant ? -3 * Math.PI / 180 * lift : 0);
+      entry.pose.position.set(entry.x - width / 2 + vector.x + entry.preview.x,
+        -entry.y - (lamp && !undershelf ? entry.height / 2 : 0) + vector.y + entry.preview.y,
+        (undershelf ? -depth / 2 : lamp ? -(entry.depth || entry.width) / 2 : plant ? -entry.width * .35 : -entry.width / 2)
+          - (undershelf ? 0 : entry.depthInset || 0) + vector.z);
+      entry.pose.rotation.set(decorative ? 4 * Math.PI / 180 * lift : 0,
+        decorative ? -7 * Math.PI / 180 * lift : Math.PI / 2 - 7 * Math.PI / 180 * lift,
+        decorative ? -3 * Math.PI / 180 * lift : 0);
       entry.pose.scale.setScalar(1 + .04 * lift);
       entry.pose.updateMatrix();
       projectedMatrix.multiplyMatrices(furniture.matrixWorld, entry.pose.matrix);
@@ -881,7 +909,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         if (entry.model && !qualityMatches(entry.model,entry)) replaceBookQuality(entry);
         applyBookQuality(entry);
       }
-      if (!plant && visible && !trashDrop && !insertion && !away && !inspectionMoving) {
+      if (!decorative && visible && !trashDrop && !insertion && !away && !inspectionMoving) {
         // Choose overview quality only after the global view settles, rather
         // than rebuilding repeatedly while the book crosses a size threshold.
         const stableView = !transition && (progress === 0 || progress === 1);
@@ -927,20 +955,20 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           entry.model.rotation.copy(entry.pose.rotation);
           entry.model.scale.copy(entry.pose.scale);
         }
-        if (!plant && (!away || insertion)) activeBooks++;
+        if (!decorative && (!away || insertion)) activeBooks++;
       }
       if (node) {
         // A whole-model bounding rectangle includes empty space around plants
         // and most of an isometric book's cover. Give each semantic button a
         // centre on its visible, solid surface instead: binding or ceramic pot.
-        const surface = entry.model?.getObjectByName(plant ? 'ceramic-pot' : 'binding');
+        const surface = entry.model?.getObjectByName(plant ? 'ceramic-pot' : lamp ? undershelf ? 'lamp-housing' : 'lamp-base' : 'binding');
         let hitRect;
         if (surface?.geometry) {
           if (!surface.geometry.boundingBox) surface.geometry.computeBoundingBox();
           entry.model.updateMatrixWorld(true);
           hitRect = corners(surface.geometry.boundingBox, surface.matrixWorld);
         } else {
-          const fallback = plant ? new THREE.Box3(
+          const fallback = lamp ? entry.box : plant ? new THREE.Box3(
             new THREE.Vector3(-entry.width * .285, -entry.height / 2, -entry.width * .285),
             new THREE.Vector3(entry.width * .285, -entry.height / 2 + entry.height * .32, entry.width * .285)
           ) : spineHitBox(entry);
@@ -951,8 +979,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         node.style.width = `${hitRect.width}px`; node.style.height = `${hitRect.height}px`;
         node.style.margin = '0'; node.style.zIndex = String(100 + Math.round(rect.closest + height));
         node.dataset.sceneProjected = 'true';
-        node.dataset.sceneHitSurface = plant ? 'pot' : 'spine';
-        if (!plant) {
+        node.dataset.sceneHitSurface = plant ? 'pot' : lamp ? undershelf ? 'ceiling-lamp' : 'lamp' : 'spine';
+        if (lamp) {
+          node.dataset.lampModelId = entry.lampId;
+          node.dataset.lampMount = undershelf ? 'undershelf' : 'standing';
+        }
+        if (!decorative) {
           let coverHit = semanticCovers.get(node);
           if (!coverHit) {
             coverHit = document.createElement('span'); coverHit.setAttribute('aria-hidden', 'true');
@@ -1058,11 +1090,15 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const row = dropPosition && rows[dropPosition.shelf];
     dropMarker.visible = Boolean(row);
     if (!row) return;
-    const markerHeight = clamp((row.bottom - row.top) * .82, 60, 180);
+    const undershelf = dropPosition.mount === 'undershelf';
+    const ceiling = row.ceiling ?? row.top;
+    const markerHeight = undershelf ? clamp((row.bottom - ceiling) * .08, 12, 24) : clamp((row.bottom - row.top) * .82, 60, 180);
     const { left = 0, right = width, padding = 16 } = row;
-    dropMarker.position.set(-width / 2 + left + padding + dropPosition.x * (right - left - padding * 2), -row.bottom, 13);
-    dropMarker.children[0].position.y = markerHeight / 2;
+    dropMarker.position.set(-width / 2 + left + padding + dropPosition.x * (right - left - padding * 2),
+      -(undershelf ? ceiling : row.bottom), undershelf ? -depth / 2 : 13);
+    dropMarker.children[0].position.y = (undershelf ? -1 : 1) * markerHeight / 2;
     dropMarker.children[0].scale.y = markerHeight;
+    dropMarker.children[1].position.y = undershelf ? -1 : 1;
   }
 
   function pointerRay(clientX, clientY) {
@@ -1190,6 +1226,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const { moving, shelfMoving } = updateEntries(scroll, zoom, now, finishedInsertions);
     const finishedDrops = [];
     const trashMoving = updateTrash(scroll, now, finishedDrops);
+    const lampRefresh = lampLighting.update(bookEntries, { scroll, viewportHeight,
+      shadowDirty:shadowDirty || furnitureMoving || shelfMoving });
+    if (lampRefresh && lampLighting.shadowCount) renderer.shadowMap.needsUpdate = true;
     // Fit the key's shadow to the cabinet (and bin) in world space; the
     // lighting clips it to the camera window, so each texel covers less.
     shadowBounds.copy(fullBounds);
@@ -1206,7 +1245,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Its hidden slot and neighbors are already painted. Reuse that snapshot
     // during a stationary insertion instead of reallocating the shared GPU
     // buffer between the smaller shelf and full-screen output every frame.
-    if (!overlayInsertion || shelfSnapshotDirty || shadowRefresh || furnitureMoving || shelfMoving || trashMoving) {
+    if (!overlayInsertion || shelfSnapshotDirty || shadowRefresh || lampRefresh || furnitureMoving || shelfMoving || trashMoving) {
       if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
       renderer.getSize(rendererSize);
       if (rendererSize.x !== sceneWidth || rendererSize.y !== viewportHeight) renderer.setSize(sceneWidth, viewportHeight, false);
@@ -1220,7 +1259,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     canvas.dataset.renderCount = String(++renderCount);
     canvas.dataset.activePlants = String(bookEntries.filter(entry => entry.kind === 'plant' && entry.model?.visible).length);
     canvas.dataset.highResolutionPlants = String(bookEntries.filter(entry => entry.kind === 'plant' && entry.model?.visible && entry.model.userData.inspectionResolution).length);
-    const paintedBooks = bookEntries.filter(entry => entry.kind !== 'plant' && entry.model?.visible);
+    canvas.dataset.activeLamps = String(bookEntries.filter(entry => entry.kind === 'lamp' && entry.model?.visible).length);
+    canvas.dataset.lampLightCount = String(lampLighting.activeCount);
+    canvas.dataset.activeLampLights = String(lampLighting.activeCount);
+    canvas.dataset.lampShadowCount = String(lampLighting.shadowCount);
+    canvas.dataset.lampLightTemperature = '2700';
+    const paintedBooks = bookEntries.filter(entry => entry.kind !== 'plant' && entry.kind !== 'lamp' && entry.model?.visible);
     canvas.dataset.overviewBooks = String(paintedBooks.filter(entry => entry.model.userData.overview).length);
     canvas.dataset.highResolutionBooks = String(paintedBooks.filter(entry => entry.model.userData.inspectionResolution).length);
     canvas.dataset.pixelRatio = String(ratio);
@@ -1363,7 +1407,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     getBookPose(node) {
       const entry = byNode.get(node);
-      if (!entry) return null;
+      if (!entry || entry.kind === 'plant' || entry.kind === 'lamp') return null;
       const stageRect = stage.getBoundingClientRect();
       return { ...projectShelfBookPose(furniture.matrixWorld, entry.pose.matrix, entry, stageRect),
         rect:entry.rect && { ...entry.rect, left:stageRect.left + entry.rect.left, top:stageRect.top + entry.rect.top,
@@ -1371,14 +1415,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     getReturnPose(node) {
       const entry = byNode.get(node);
-      if (!entry || entry.kind === 'plant' || disposed) return null;
+      if (!entry || entry.kind === 'plant' || entry.kind === 'lamp' || disposed) return null;
       cancelAnimationFrame(raf); raf = 0; draw();
       const dock = shelfBookInsertion(shelfBookSlot(entry, width), entry.width);
       return projectShelfBookPose(furniture.matrixWorld, dock, entry, stage.getBoundingClientRect());
     },
     returnBook(node, { duration = 180, overlayCanvas = null } = {}) {
       const entry = byNode.get(node);
-      if (!entry || entry.kind === 'plant' || disposed) return null;
+      if (!entry || entry.kind === 'plant' || entry.kind === 'lamp' || disposed) return null;
       cancelInsertion(entry);
       let resolve;
       const finished = new Promise(done => { resolve = done; });
@@ -1402,19 +1446,22 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     getBookAtPoint(clientX, clientY) {
       const node = objectAtPoint(clientX, clientY);
-      return node && byNode.get(node)?.kind !== 'plant' ? node : null;
+      const entry = node && byNode.get(node);
+      return entry && entry.kind !== 'plant' && entry.kind !== 'lamp' ? node : null;
     },
     getObjectAtPoint(clientX, clientY) {
       return objectAtPoint(clientX, clientY);
     },
-    getDropPosition(clientX, clientY) {
-      return projectShelfDropPosition(pointerRay(clientX, clientY).ray, furniture.matrixWorld, rows, width);
+    getDropPosition(clientX, clientY, node = null) {
+      const entry = node && byNode.get(node);
+      return projectShelfDropPosition(pointerRay(clientX, clientY).ray, furniture.matrixWorld, rows, width,
+        entry?.kind === 'lamp' && entry.mount === 'undershelf' ? { mount:'undershelf', depth } : {});
     },
     setDropPosition(position) {
       if (disposed) return;
       const shelf = Number(position?.shelf), x = Number(position?.x);
       dropPosition = position && Number.isInteger(shelf) && rows[shelf] && Number.isFinite(x)
-        ? { shelf, x:clamp(x, 0, 1) } : null;
+        ? { shelf, x:clamp(x, 0, 1), ...(position.mount === 'undershelf' ? { mount:'undershelf' } : {}) } : null;
       if (dropPosition && !dropMarker) {
         dropMarker = new THREE.Group(); dropMarker.userData.dropMarker = true;
         const material = new THREE.MeshBasicMaterial({ color:'#709980', transparent:true, opacity:.9, depthTest:false, depthWrite:false });
@@ -1424,6 +1471,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       canvas.dataset.dropShelf = dropPosition ? String(dropPosition.shelf) : '';
       canvas.dataset.dropX = dropPosition ? dropPosition.x.toFixed(4) : '';
+      canvas.dataset.dropMount = dropPosition?.mount || '';
       invalidate();
     },
     previewPlacements(objects, draggedKey) {
@@ -1437,14 +1485,15 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         const row = placement && rows[placement.shelf];
         const center = Number(placement?.center);
         const x = row && Number.isFinite(center) ? (row.left || 0) + center - entry.x : 0;
-        const y = row && Number.isFinite(center) ? entry.y - (row.bottom - entry.height / 2) : 0;
+        const y = row && Number.isFinite(center) ? entry.y -
+          (entry.kind === 'lamp' && entry.mount === 'undershelf' ? row.ceiling ?? row.top : row.bottom - entry.height / 2) : 0;
         changed = previewOffset(entry, x, y, now) || changed;
       }
       if (changed) invalidate();
     },
     updateEntry(node, book, style, coverUrl) {
       const entry = byNode.get(node);
-      if (!entry) return;
+      if (!entry || entry.kind === 'plant' || entry.kind === 'lamp') return;
       updateRecord(entry, book, style, coverUrl);
       invalidate();
     },
@@ -1478,7 +1527,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       shelfType = normalizeShelfType(next.shelfType);
       unitWidth = next.unitWidth || width; unitCount = next.unitCount || 1;
       depth = shelfType === 'baggebo' ? BAGGEBO_SPEC.depth * unitWidth / BAGGEBO_SPEC.width
-        : Math.max(155, ...next.entries.filter(entry => entry.kind !== 'plant').map(entry => entry.width + 12));
+        : Math.max(155, ...next.entries.filter(entry => entry.kind !== 'plant' && entry.kind !== 'lamp').map(entry => entry.width + 12),
+          ...next.entries.filter(entry => entry.kind === 'lamp' && entry.mount !== 'undershelf').map(entry => (entry.depth || entry.width) + 12));
       sceneWidth = Math.max(1, Number(next.sceneWidth) || width);
       const nextTrashNode = next.trashNode || null;
       if (nextTrashNode !== trashNode) {
@@ -1514,8 +1564,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
             clearPlantDiagnostics(entry.node);
           }
           entry.node = data.node;
-          if (data.kind === 'plant') {
-            if (plantKeys(entry) !== plantKeys(data)) releaseEntry(entry);
+          if (data.kind === 'plant' || data.kind === 'lamp') {
+            const changed = data.kind === 'lamp' ? lampKeys(entry) !== lampKeys(data) : plantKeys(entry) !== plantKeys(data);
+            if (changed) releaseEntry(entry);
             Object.assign(entry, data); entry.box = slotBox(entry);
           } else updateRecord(entry, data.book, data.style, data.coverUrl, data);
         } else { entry = freshEntry(data, index); entry.box = slotBox(entry); }
@@ -1530,7 +1581,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       for (const entry of oldEntries.values()) releaseEntry(entry);
       bookEntries = retained; byNode.clear();
-      fitDepth(Math.max(155, ...bookEntries.filter(entry => entry.kind !== 'plant').map(entry => entry.width + 12)));
+      fitDepth(Math.max(155, ...bookEntries.filter(entry => entry.kind !== 'plant' && entry.kind !== 'lamp').map(entry => entry.width + 12),
+        ...bookEntries.filter(entry => entry.kind === 'lamp' && entry.mount !== 'undershelf').map(entry => (entry.depth || entry.width) + 12)));
       for (const entry of bookEntries) if (entry.node) {
         byNode.set(entry.node, entry);
         mutations.observe(entry.node, { attributes:true, attributeFilter:['class', 'style'] });
@@ -1573,6 +1625,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       for (const object of [...furniture.children]) if (object.userData.furniture) {
         object.removeFromParent(); object.userData.disposeGeometry?.();
       }
+      lampLighting.dispose();
       releaseObject(furniture); texture.dispose(); grain.dispose(); lighting.dispose();
       wood.dispose(); backWood.dispose(); darkWood.dispose();
       for (const material of depthOnly) material.dispose();

@@ -49,4 +49,19 @@ describe('BAGGEBO physical shelf layout', () => {
     const ray = new THREE.Ray(new THREE.Vector3(second.left + 300 - result.width / 2, -600, 100), new THREE.Vector3(0, 0, -1));
     expect(projectShelfDropPosition(ray, new THREE.Matrix4(), result.rows, result.width)).toEqual({ shelf:4, x:.5 });
   });
+
+  it('seats table lamps on the mesh and attaches circular lights to its underside in every unit', () => {
+    const input = layout(6, 300);
+    input.entries = [
+      { kind:'lamp', lampId:'tarnaby', mount:'standing', shelf:0, x:80, width:75, height:125, depth:75 },
+      { kind:'lamp', lampId:'mittled', mount:'undershelf', shelf:4, x:150, width:34, height:5.5, depth:34 }
+    ];
+    const result = baggeboLayout(input);
+    const [table, puck] = result.entries;
+    expect(table.y + table.height / 2).toBe(result.rows[0].bottom);
+    expect(puck.y).toBe(result.rows[4].ceiling);
+    expect(puck.y).toBe((360 + 3.75) * .5);
+    expect(puck.x).toBe(462);
+    expect(table.width / table.height).toBeCloseTo(150 / 250);
+  });
 });

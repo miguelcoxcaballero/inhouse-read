@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 const PLANTS_KEY = 'inhouse-read-shelf-plants';
-const CATALOG_NAME = 'Abrir catálogo IKEA de plantas y macetas';
+const CATALOG_NAME = 'Abrir catálogo IKEA de plantas, estanterías e iluminación';
 test.use({ viewport:{ width:390,height:844 },hasTouch:true,isMobile:true,deviceScaleFactor:1 });
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion:'no-preference' });
