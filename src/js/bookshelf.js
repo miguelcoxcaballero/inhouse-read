@@ -104,6 +104,8 @@ import { createShelfZoom } from './shelf-zoom.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
 import { layoutShelvedObjects, moveShelfObject } from './shelf-placement.js';
 import { createPlantCatalog } from './plant-catalog.js';
+import { normalizeShelfType, BAGGEBO_SPEC } from './shelf-types.js';
+import { baggeboLayout } from './shelf-model-layout.js';
 import { getCatalogPlant, getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { normalizeShelfPlant, resolveCatalogPlant } from './plant-records.js';
 
@@ -113,6 +115,12 @@ const TAP_SLOP = 12;
 const REORDER_HOLD_MS = 440;
 const SHELF_VIEW_STORAGE_KEY = 'inhouse-read-shelf-view';
 const SHELF_PLANTS_STORAGE_KEY = 'inhouse-read-shelf-plants';
+const SHELF_TYPE_STORAGE_KEY = 'inhouse-read-shelf-type';
+
+function storedShelfType() {
+  try { return normalizeShelfType(localStorage.getItem(SHELF_TYPE_STORAGE_KEY)); }
+  catch { return 'walnut'; }
+}
 
 function savedShelfPlants() {
   try {
@@ -311,6 +319,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   const state = {
     books: Array.isArray(books) ? books.slice() : [],
     shelfWidth: 0,
+    shelfType:options.shelfType ? normalizeShelfType(options.shelfType) : storedShelfType(),
     busy: false,
     session: null,
     pendingSelection: null,
@@ -373,13 +382,20 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       for (const node of scroller.querySelectorAll('.is-pressed')) node.classList.remove('is-pressed');
     }});
   if (trashStatus) root.append(trashStatus);
-  const plantCatalog = createPlantCatalog({ onAdd:addCatalogPlant });
+  const plantCatalog = createPlantCatalog({ onAdd:addCatalogPlant, shelfType:state.shelfType,
+    onShelfChange:({ shelfType }) => {
+      state.shelfType = normalizeShelfType(shelfType);
+      try { localStorage.setItem(SHELF_TYPE_STORAGE_KEY, state.shelfType); } catch { /* Local preference only. */ }
+      render();
+    } });
   const catalogNode = !opts.sections ? el('button', {
     type:'button', class:'ihr-shelf-catalog', hidden:'', tabindex:'-1',
     'aria-label':'Abrir catálogo IKEA de plantas y macetas', title:'Plantas y macetas · IKEA',
     onClick:() => {
-      if (!state.busy && !state.session && !state.dragSession && !state.returnMotion && state.viewMode === SHELF_VIEW_MODES.ISOMETRIC)
+      if (!state.busy && !state.session && !state.dragSession && !state.returnMotion && state.viewMode === SHELF_VIEW_MODES.ISOMETRIC) {
+        plantCatalog.setShelfType(state.shelfType);
         plantCatalog.open(catalogNode);
+      }
     }
   }, [el('span', { class:'ihr-shelf-catalog__brand', text:'IKEA', 'aria-hidden':'true' }),
     el('span', { class:'ihr-shelf-catalog__title', text:'PLANTAS', 'aria-hidden':'true' }),
@@ -753,7 +769,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }).sort((a,b) => a.distance-b.distance)[0];
     if (!nearest) return null;
     return { shelf:nearest.shelf, x:Math.max(0, Math.min(1,
-      (x-nearest.bounds.left-opts.shelfPadding)/(state.shelfWidth-opts.shelfPadding*2))) };
+      (x-nearest.bounds.left-shelfPadding())/(state.shelfWidth-shelfPadding()*2))) };
   }
 
   function updateDropPreview(drag, node) {
@@ -1255,8 +1271,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function placementConfig() {
-    return { shelfWidth:state.shelfWidth, padding:opts.shelfPadding, gap:opts.gap,
+    return { shelfWidth:state.shelfWidth, padding:shelfPadding(), gap:opts.gap,
       minShelves:Math.max(3, Number(opts.minimumShelves) || 3) };
+  }
+
+  function shelfPadding() {
+    return state.shelfType === 'baggebo' ? Math.max(16, (BAGGEBO_SPEC.postSize + 4) * state.shelfWidth / BAGGEBO_SPEC.width)
+      : opts.shelfPadding;
   }
 
   function freelyPlacedShelves(shelves) {
@@ -1366,6 +1387,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function render() {
     if (state.destroyed) return;
     root.dataset.viewMode = state.viewMode;
+    root.dataset.shelfType = state.shelfType;
     if (state.returnMotion || state.busy || state.session || state.dragSession) { state.renderQueued = true; return; }
     if (!state.appearancesReady && state.books.length > 0) {
       state.shelfScene?.dispose();
@@ -1402,7 +1424,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     const plan = planBookshelf(state.books, {
       shelfWidth: width,
-      padding: opts.shelfPadding,
+      padding: shelfPadding(),
       gap: opts.gap,
       plantEvery: opts.plantEvery,
       sort: opts.sort,
@@ -1523,13 +1545,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       // Measure before replacing the DOM drawing with the shared 3D scene.
       shelf.style.contentVisibility = 'visible';
       const row = shelf.querySelector('.ihr-shelf__row').getBoundingClientRect();
+      const shelfIndex = rows.length;
       rows.push({ top:row.top - origin.top, bottom:row.bottom - origin.top });
       for (const node of shelf.querySelectorAll('.ihr-spine, .ihr-plant')) {
         const rect = node.getBoundingClientRect();
         const x = rect.left + rect.width / 2 - origin.left;
         const y = rect.top + rect.height / 2 - origin.top;
         if (node.classList.contains('ihr-plant')) {
-          entries.push({ kind:'plant', key:node.dataset.objectId, node, x, y, width:rect.width, height:rect.height,
+          entries.push({ kind:'plant', key:node.dataset.objectId, node, x, y, shelf:shelfIndex, depthInset:0, width:rect.width, height:rect.height,
             catalogId:node.dataset.catalogId, potId:node.dataset.potId, potColorId:node.dataset.potColorId,
             seed:node.dataset.plantSeed, variant:node.dataset.plantVariant });
           continue;
@@ -1537,13 +1560,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         const item = state.itemsById.get(node.dataset.bookId);
         if (!item) continue;
         const height = (window.innerWidth >= 600 ? 200 : 172) * item.style.heightRatio;
-        entries.push({ node, book:item.book, style:item.style, x, y, height,
+        entries.push({ node, book:item.book, style:item.style, x, y, height, shelf:shelfIndex, depthInset:0,
           width:height * coverRatioFor(item.style), thickness:item.style.width,
           coverUrl:resolveCoverImmediately(item.book) });
       }
     }
-    return { stage, scroller, entries, rows, width, sceneWidth:width, trashNode, catalogNode,
-      height:stage.getBoundingClientRect().height, mode:state.viewMode };
+    const layout = { stage, scroller, entries, rows, width, sceneWidth:width, trashNode, catalogNode,
+      shelfType:state.shelfType, height:stage.getBoundingClientRect().height, mode:state.viewMode };
+    return state.shelfType === 'baggebo' ? baggeboLayout(layout) : layout;
   }
 
   function scheduleRender() {

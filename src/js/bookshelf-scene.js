@@ -7,6 +7,8 @@ import { createShelfPlant } from './shelf-plants.js';
 import { createShelfLighting, widePenumbra } from './shelf-lighting.js';
 import { createShelfTrash, sampleTrashDrop } from './shelf-trash.js';
 import { createShelfCatalog } from './shelf-catalog.js';
+import { createBaggebo } from './baggebo-model.js';
+import { BAGGEBO_SPEC, normalizeShelfType } from './shelf-types.js';
 
 const WALNUT = new URL('../assets/library/walnut-pbr.webp', import.meta.url).href;
 // Packed from the same photograph: R = pore/figure height, G = roughness.
@@ -97,11 +99,15 @@ export function projectShelfDropPosition(worldRay, furnitureMatrix, rows, width,
   const y = -point.y;
   let shelf = 0, nearest = Infinity;
   for (let index = 0; index < rows.length; index++) {
-    const { top, bottom } = rows[index];
-    const distance = y < top ? top - y : y > bottom ? y - bottom : 0;
+    const { top, bottom, left = 0, right = width } = rows[index];
+    const localX = point.x + width / 2;
+    const dx = localX < left ? left - localX : localX > right ? localX - right : 0;
+    const dy = y < top ? top - y : y > bottom ? y - bottom : 0;
+    const distance = Math.hypot(dx, dy);
     if (distance < nearest) { nearest = distance; shelf = index; }
   }
-  return { shelf, x:clamp((point.x + width / 2 - padding) / (width - padding * 2), 0, 1) };
+  const { left = 0, right = width, padding:inset = padding } = rows[shelf];
+  return { shelf, x:clamp((point.x + width / 2 - left - inset) / (right - left - inset * 2), 0, 1) };
 }
 
 function releaseObject(object) {
@@ -149,7 +155,8 @@ const darkPage = () => document.documentElement.dataset.theme === 'dark';
  * hit targets, projected from the meshes after every camera/group update.
  */
 export function createBookshelfScene({ stage, scroller, entries, rows, width, height, sceneWidth = width,
-  trashNode = null, catalogNode = null, mode = 'spine' }) {
+  trashNode = null, catalogNode = null, mode = 'spine', shelfType = 'walnut', unitWidth = width, unitCount = 1 }) {
+  shelfType = normalizeShelfType(shelfType);
   const renderer = getBookRenderer();
   if (!renderer || !width || !height) return null;
   const canvas = document.createElement('canvas');
@@ -171,7 +178,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const lighting = createShelfLighting(scene, renderer);
   const furniture = new THREE.Group();
   scene.add(furniture);
-  sceneWidth = Math.max(width, Number(sceneWidth) || width);
+  sceneWidth = Math.max(1, Number(sceneWidth) || width);
   let trash = trashNode ? createShelfTrash() : null;
   let trashBounds = trash ? trashFootprint(trash) : null;
   if (trash) furniture.add(trash);
@@ -208,7 +215,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   floor.visible = false;
   furniture.add(floor, occlusion);
   let floorY = -height, floorLit = false;
-  let depth = Math.max(155, ...entries.filter(e => e.kind !== 'plant').map(e => e.width + 12));
+  let depth = shelfType === 'baggebo' ? BAGGEBO_SPEC.depth * unitWidth / BAGGEBO_SPEC.width
+    : Math.max(155, ...entries.filter(e => e.kind !== 'plant').map(e => e.width + 12));
   const entryKey = (entry, index) => entry.kind === 'plant'
     ? `plant:${entry.node?.dataset.objectId ?? entry.key ?? index}`
     : `book:${String(entry.book?.id ?? entry.node?.dataset.bookId ?? entry.book?.path ?? entry.book?.title ?? index)}`;
@@ -223,12 +231,31 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     for (const object of [...furniture.children]) if (object.userData.furniture) {
       furniture.remove(object); object.userData.disposeGeometry?.();
     }
-    const cabinet = createShelfFurniture({ width, height, depth, rows, wood, backWood, darkWood });
+    let cabinet;
+    if (shelfType === 'baggebo') {
+      cabinet = new THREE.Group(); cabinet.name = 'BAGGEBO units'; cabinet.userData.furniture = true;
+      const units = [];
+      for (let index = 0; index < unitCount; index++) {
+        const unit = createBaggebo({ width:unitWidth });
+        unit.position.x = -width / 2 + unitWidth / 2 + index * (unitWidth + 24 * unitWidth / BAGGEBO_SPEC.width);
+        cabinet.add(unit); units.push(unit);
+      }
+      cabinet.userData.disposeGeometry = () => { for (const unit of units) unit.userData.dispose(); };
+    } else cabinet = createShelfFurniture({ width, height, depth, rows, wood, backWood, darkWood });
     furniture.add(cabinet);
     // Geometry determines the shared floor: long upright ends or the last
     // shelf board can be the cabinet's lowest physical surface.
     const localBounds = new THREE.Box3();
-    for (const mesh of cabinet.children) localBounds.union(mesh.geometry.boundingBox);
+    const measureLocal = (object, parentMatrix) => {
+      object.updateMatrix();
+      const matrix = parentMatrix.clone().multiply(object.matrix);
+      if (object.geometry) {
+        object.geometry.computeBoundingBox();
+        localBounds.union(object.geometry.boundingBox.clone().applyMatrix4(matrix));
+      }
+      for (const child of object.children) measureLocal(child, matrix);
+    };
+    measureLocal(cabinet, new THREE.Matrix4());
     floorY = localBounds.min.y;
     floor.geometry.dispose();
     floor.geometry = new THREE.BoxGeometry(width + 210, 2, depth + 210);
@@ -239,6 +266,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function rebuildOcclusion() {
     occlusion.geometry.dispose();
     floorLit = darkPage();
+    occlusion.visible = shelfType !== 'baggebo';
+    if (shelfType === 'baggebo') { occlusion.geometry = new THREE.BufferGeometry(); return; }
     occlusion.geometry = createShelfOcclusion({ width, height, depth, rows, floorY, floorLight:floorLit ? DARK_FLOOR_LIGHT : null,
       footprints:trash ? [{ x:trash.position.x, z:trash.position.z, radius:trash.userData.radius }] : [] });
   }
@@ -317,7 +346,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
     return { left, right, top, bottom, width:right - left, height:bottom - top, closest };
   };
-  const fullBounds = new THREE.Box3(new THREE.Vector3(-width / 2, -height - boardHeight, -depth - 4), new THREE.Vector3(width / 2, 2, 12));
+  const fullBounds = shelfType === 'baggebo'
+    ? new THREE.Box3(new THREE.Vector3(-width / 2, -height, -depth), new THREE.Vector3(width / 2, 0, 0))
+    : new THREE.Box3(new THREE.Vector3(-width / 2, -height - boardHeight, -depth - 4), new THREE.Vector3(width / 2, 2, 12));
   const slotBox = entry => {
     const plant = entry.kind === 'plant';
     return new THREE.Box3(
@@ -625,7 +656,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     entry.width = entry.height * (ratio > 0 && Number.isFinite(ratio) ? clamp(ratio, .25, 2.5) : previousRatio);
     entry.thickness = Number(style.width) || entry.thickness;
     entry.y = baseline - entry.height / 2;
-    if (dimensions) for (const field of ['width', 'height', 'thickness', 'x', 'y']) if (dimensions[field] !== undefined) entry[field] = dimensions[field];
+    if (dimensions) for (const field of ['width', 'height', 'thickness', 'x', 'y', 'depthInset', 'shelf']) if (dimensions[field] !== undefined) entry[field] = dimensions[field];
+    if (shelfType === 'baggebo' && !dimensions) {
+      const row = rows[entry.shelf], scale = unitWidth / BAGGEBO_SPEC.width;
+      const fit = Math.min(1, BAGGEBO_SPEC.usableDepth * scale / entry.width,
+        row ? (row.bottom - row.top - 4 * scale) / entry.height : 1);
+      entry.height *= fit; entry.width *= fit; entry.y = baseline - entry.height / 2;
+    }
     entry.book = book; entry.style = style; entry.coverUrl = coverUrl;
     entry.box = slotBox(entry);
     fitDepth(entry.width + 12);
@@ -637,6 +674,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function fitDepth(nextDepth) {
+    if (shelfType === 'baggebo') return;
     if (nextDepth <= depth) return;
     depth = nextDepth;
     rebuildFurniture();
@@ -732,6 +770,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     canvas.dataset.inspectionMoving = String(inspectionMoving);
     canvas.dataset.inspectionPan = JSON.stringify([panX,panY]);
     canvas.dataset.cabinetWidth = String(width); canvas.dataset.trashReserve = reserve.toFixed(3);
+    canvas.dataset.shelfType = shelfType;
+    canvas.dataset.shelfUnits = String(unitCount);
+    canvas.dataset.shelfDimensions = shelfType === 'baggebo' ? JSON.stringify(BAGGEBO_SPEC.dimensions) : '';
     canvas.dataset.sceneFitHeight = String(sceneFitHeight); canvas.dataset.floorVisible = String(floor.visible);
     const framedWorld = corners(framedBounds, furniture.matrixWorld);
     canvas.dataset.fullCabinetInFrame = String(framedWorld.left >= -.01 && framedWorld.right <= sceneWidth + .01 &&
@@ -816,7 +857,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const screenY = (dragging ? parseFloat(node.style.getPropertyValue('--ihr-drag-y')) || 0 : 0) + entry.offset.y - 18 * lift;
       vector.set(screenX / zoom, -screenY / zoom, 30 * lift / zoom).applyQuaternion(inverseRotation);
       entry.pose.position.set(entry.x - width / 2 + vector.x + entry.preview.x, -entry.y + vector.y + entry.preview.y,
-        (plant ? -entry.width * .35 : -entry.width / 2) + vector.z);
+        (plant ? -entry.width * .35 : -entry.width / 2) - (entry.depthInset || 0) + vector.z);
       entry.pose.rotation.set(plant ? 4 * Math.PI / 180 * lift : 0,
         plant ? -7 * Math.PI / 180 * lift : Math.PI / 2 - 7 * Math.PI / 180 * lift,
         plant ? -3 * Math.PI / 180 * lift : 0);
@@ -1010,7 +1051,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     dropMarker.visible = Boolean(row);
     if (!row) return;
     const markerHeight = clamp((row.bottom - row.top) * .82, 60, 180);
-    dropMarker.position.set(-width / 2 + 16 + dropPosition.x * (width - 32), -row.bottom, 13);
+    const { left = 0, right = width, padding = 16 } = row;
+    dropMarker.position.set(-width / 2 + left + padding + dropPosition.x * (right - left - padding * 2), -row.bottom, 13);
     dropMarker.children[0].position.y = markerHeight / 2;
     dropMarker.children[0].scale.y = markerHeight;
   }
@@ -1386,7 +1428,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         const placement = objectKey !== String(draggedKey) ? placements.get(objectKey) : null;
         const row = placement && rows[placement.shelf];
         const center = Number(placement?.center);
-        const x = row && Number.isFinite(center) ? center - entry.x : 0;
+        const x = row && Number.isFinite(center) ? (row.left || 0) + center - entry.x : 0;
         const y = row && Number.isFinite(center) ? entry.y - (row.bottom - entry.height / 2) : 0;
         changed = previewOffset(entry, x, y, now) || changed;
       }
@@ -1403,7 +1445,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       shelfSnapshotDirty = shadowDirty = true;
       cancelAnimationFrame(raf); raf = 0; mutations.disconnect();
       const oldEntries = new Map(bookEntries.map(entry => [entry.key, entry]));
-      const oldWidth = width, oldHeight = height, oldRows = JSON.stringify(rows), oldDepth = depth;
+      const oldWidth = width, oldHeight = height, oldRows = JSON.stringify(rows), oldDepth = depth, oldShelfType = shelfType;
       // Restore only the outgoing DOM. The already painted canvas and GPU
       // resources remain alive while the replacement semantic tree is bound.
       if (next.stage !== stage) {
@@ -1425,7 +1467,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         stage.prepend(canvas);
       }
       width = next.width; height = next.height; rows = next.rows;
-      sceneWidth = Math.max(width, Number(next.sceneWidth) || width);
+      shelfType = normalizeShelfType(next.shelfType);
+      unitWidth = next.unitWidth || width; unitCount = next.unitCount || 1;
+      depth = shelfType === 'baggebo' ? BAGGEBO_SPEC.depth * unitWidth / BAGGEBO_SPEC.width
+        : Math.max(155, ...next.entries.filter(entry => entry.kind !== 'plant').map(entry => entry.width + 12));
+      sceneWidth = Math.max(1, Number(next.sceneWidth) || width);
       const nextTrashNode = next.trashNode || null;
       if (nextTrashNode !== trashNode) {
         restoreTrashNode(trashNode);
@@ -1482,9 +1528,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         mutations.observe(entry.node, { attributes:true, attributeFilter:['class', 'style'] });
       }
       if (reorderTransition) reorderTransition.entries = reorderTransition.entries.filter(item => retained.includes(item.entry));
-      if (width !== oldWidth || height !== oldHeight || depth !== oldDepth || JSON.stringify(rows) !== oldRows) rebuildFurniture();
-      fullBounds.min.set(-width / 2, -height - boardHeight, -depth - 4);
-      fullBounds.max.set(width / 2, 2, 12);
+      if (width !== oldWidth || height !== oldHeight || depth !== oldDepth || shelfType !== oldShelfType || JSON.stringify(rows) !== oldRows) rebuildFurniture();
+      fullBounds.min.set(-width / 2, -height - (shelfType === 'baggebo' ? 0 : boardHeight), -depth - (shelfType === 'baggebo' ? 0 : 4));
+      fullBounds.max.set(width / 2, shelfType === 'baggebo' ? 0 : 2, shelfType === 'baggebo' ? 0 : 12);
       canvas.dataset.layoutUpdates = String(Number(canvas.dataset.layoutUpdates || 0) + 1);
       draw();
       return true;
@@ -1516,7 +1562,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       for (const entry of bookEntries) releaseEntry(entry);
       if (catalog) { catalog.removeFromParent(); catalog.userData.dispose(); }
       trash?.removeFromParent();
+      for (const object of [...furniture.children]) if (object.userData.furniture) {
+        object.removeFromParent(); object.userData.disposeGeometry?.();
+      }
       releaseObject(furniture); texture.dispose(); grain.dispose(); lighting.dispose();
+      wood.dispose(); backWood.dispose(); darkWood.dispose();
       for (const material of depthOnly) material.dispose();
       trash?.userData.dispose();
       canvas.remove(); stage.style.height = originalHeight;

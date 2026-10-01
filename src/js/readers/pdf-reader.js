@@ -71,7 +71,12 @@ export class PdfReader {
       onNext: () => { onUserNavigation?.(); return this.next() },
       onPrev: () => { onUserNavigation?.(); return this.prev() },
       onToggleZoom: (x, y) => this.toggleZoom(x, y),
-      onToggleChrome
+      onToggleChrome,
+      // Enlarged PDFs must pan, rather than accidentally turn a page. Let the
+      // browser supply its touch momentum and keep long-press selection native.
+      canSwipe: () => this.#preferences.pdfMode === 'text'
+        || !this.#zoomed && this.#preferences.zoom <= 100,
+      getMotionSurface: () => this.#preferences.pdfMode === 'text' ? this.#reflow : this.#pageWrap
     })
 
     await this.goToPage(1)
@@ -114,16 +119,25 @@ export class PdfReader {
   }
 
   async toggleZoom(clientX, clientY) {
+    if (!this.#doc || this.#preferences.pdfMode === 'text') return
+    const containerRect = this.#container.getBoundingClientRect()
+    const pageRect = this.#canvas.getBoundingClientRect()
+    const x = clientX ?? containerRect.left + containerRect.width / 2
+    const y = clientY ?? containerRect.top + containerRect.height / 2
+    const width = pageRect.width || parseFloat(this.#canvas.style.width)
+    const height = pageRect.height || parseFloat(this.#canvas.style.height)
+    const focalX = Math.max(0, Math.min(1, (x - pageRect.left) / width))
+    const focalY = Math.max(0, Math.min(1, (y - pageRect.top) / height))
     this.#zoomed = !this.#zoomed
-    await this.#render()
-    if (this.#zoomed) {
-      const rect = this.#container.getBoundingClientRect()
-      this.#container.scrollTo({
-        left: (clientX - rect.left) * (ZOOM_STEP_SCALE - 1),
-        top: (clientY - rect.top) * (ZOOM_STEP_SCALE - 1),
-        behavior: 'instant'
-      })
-    }
+    if (!await this.#render() || !this.#doc) return
+    // Keep the same printed point under the tap, including an already scrolled
+    // page and the PDF's desk margins, instead of jumping toward its corner.
+    const updated = this.#canvas.getBoundingClientRect()
+    this.#container.scrollTo({
+      left:this.#container.scrollLeft + updated.left + focalX * (updated.width || parseFloat(this.#canvas.style.width)) - x,
+      top:this.#container.scrollTop + updated.top + focalY * (updated.height || parseFloat(this.#canvas.style.height)) - y,
+      behavior:'instant'
+    })
   }
 
   #render() {
@@ -157,6 +171,7 @@ export class PdfReader {
     this.#pageWrap.hidden = textMode
     this.#reflow.hidden = !textMode
     if (textMode) {
+      this.#container.dataset.readerZoomed = 'false'
       const content = await page.getTextContent()
       if (token !== this.#renderToken) return false
       this.#pageText = content.items.map(item => item.str + (item.hasEOL ? '\n' : ' ')).join('')
@@ -171,6 +186,7 @@ export class PdfReader {
     this.#baseScale = containerWidth / unscaledViewport.width
     this.#layoutWidth = containerWidth
     const scale = this.#baseScale * (this.#zoomed ? ZOOM_STEP_SCALE : this.#preferences.zoom / 100)
+    this.#container.dataset.readerZoomed = String(this.#zoomed || this.#preferences.zoom > 100)
 
     const dpr = window.devicePixelRatio || 1
     const viewport = page.getViewport({ scale: scale * dpr })
@@ -315,6 +331,10 @@ export class PdfReader {
     this.#loadingTask = null
     this.#doc = null
     this.#pageText = ''
-    if (this.#container) { this.#container.innerHTML = ''; this.#container.classList.remove('pdf-reader') }
+    if (this.#container) {
+      this.#container.innerHTML = ''
+      this.#container.classList.remove('pdf-reader')
+      delete this.#container.dataset.readerZoomed
+    }
   }
 }

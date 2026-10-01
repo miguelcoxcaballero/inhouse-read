@@ -1,6 +1,8 @@
 import ikeaLogo from '../assets/ikea-logo.svg?raw';
 import { createPlantCatalogPreview } from './plant-catalog-preview.js';
+import { createShelfCatalogPreview } from './shelf-catalog-preview.js';
 import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot, getPotColors, getPotColor } from './plant-catalog-data.js';
+import { SHELF_TYPES, getShelfType, normalizeShelfType } from './shelf-types.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 let catalogSequence = 0;
@@ -121,7 +123,7 @@ function element(tag, className, text) {
   return node;
 }
 
-export function createPlantCatalog({ onAdd, onClose } = {}) {
+export function createPlantCatalog({ onAdd, onClose, onShelfChange, shelfType = 'walnut' } = {}) {
   const id = `ihr-plant-catalog-${++catalogSequence}`;
   const dialog = element('dialog','ihr-plant-catalog');
   dialog.dataset.testid = 'plant-catalog';
@@ -139,7 +141,18 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
   header.append(brand,title,closeButton);
   const description = element('p','ihr-plant-catalog__description','Elige una planta y una maceta para tu estantería.');
   description.id = `${id}-description`;
+  const navigation = element('nav','ihr-plant-catalog__navigation');
+  navigation.setAttribute('aria-label','Páginas del catálogo IKEA');
+  const pageButtons = new Map();
+  for (const [page,label] of [['plants','Plantas y macetas'],['shelves','Estanterías']]) {
+    const button = element('button','ihr-plant-catalog__page-tab',label);
+    button.type = 'button'; button.dataset.catalogPage = page;
+    button.setAttribute('aria-controls',`${id}-${page}`);
+    button.addEventListener('click',() => switchPage(page));
+    navigation.append(button); pageButtons.set(page,button);
+  }
   const body = element('div','ihr-plant-catalog__body');
+  body.id = `${id}-plants`;
   const preview = element('section','ihr-plant-catalog__preview');
   preview.setAttribute('aria-label','Planta y maceta seleccionadas');
   const drawing = element('div','ihr-plant-catalog__drawing');
@@ -165,27 +178,80 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
   colors.append(colorsLegend,colorList);
   choices.append(plants,pots,colors);
   body.append(preview,choices);
+  const shelfBody = element('div','ihr-plant-catalog__body ihr-plant-catalog__body--shelves');
+  shelfBody.id = `${id}-shelves`; shelfBody.hidden = true;
+  const shelfPreview = element('section','ihr-plant-catalog__preview ihr-plant-catalog__shelf-preview');
+  shelfPreview.setAttribute('aria-label','Estantería seleccionada en 3D');
+  const shelfDrawing = element('div','ihr-plant-catalog__drawing ihr-plant-catalog__shelf-drawing');
+  const shelfCaption = element('div','ihr-plant-catalog__caption');
+  const shelfName = element('h3'), shelfSubtitle = element('p');
+  const shelfDimensions = element('p','ihr-plant-catalog__shelf-dimensions');
+  shelfCaption.append(shelfName,shelfSubtitle,shelfDimensions);
+  shelfPreview.append(shelfDrawing,shelfCaption);
+  const shelfChoices = element('fieldset','ihr-plant-catalog__shelf-choices');
+  const shelfLegend = element('legend',null,'Elige tu estantería');
+  const shelfList = element('div','ihr-plant-catalog__shelves');
+  const shelfNote = element('p','ihr-plant-catalog__shelf-note','Tus libros y plantas se recolocan en la estantería elegida.');
+  shelfChoices.append(shelfLegend,shelfList,shelfNote);
+  shelfBody.append(shelfPreview,shelfChoices);
   const footer = element('footer','ihr-plant-catalog__footer');
   const status = element('p','ihr-plant-catalog__status');
   status.setAttribute('role','status'); status.setAttribute('aria-live','polite');
   const add = element('button','ihr-plant-catalog__add','Añadir a la estantería');
   add.type = 'button'; add.dataset.catalogAdd = '';
-  const pageNumber = element('span','ihr-plant-catalog__page-number','01 / 01');
+  const pageNumber = element('span','ihr-plant-catalog__page-number','01 / 02');
   pageNumber.setAttribute('aria-hidden','true');
   footer.append(status,add,pageNumber);
-  paper.append(header,description,body,footer); dialog.append(paper); document.body.append(dialog);
+  paper.append(header,navigation,description,body,shelfBody,footer); dialog.append(paper); document.body.append(dialog);
 
   let selectedPlant = PLANT_CATALOG[0]?.id;
   let selectedPot = PLANT_CATALOG[0]?.defaultPotId || POT_CATALOG[0]?.id;
   let selectedColor = getPotColor(selectedPot).id;
   const rememberedColors = new Map();
-  let preview3d = null;
+  let preview3d = null, shelfPreview3d = null;
+  let activePage = 'plants', savedShelf = normalizeShelfType(shelfType), selectedShelf = savedShelf;
   let trigger = null, destroyed = false, busy = false, opening = false;
-  const plantButtons = new Map(), potButtons = new Map();
+  const plantButtons = new Map(), potButtons = new Map(), shelfButtons = new Map();
+
+  function disposePreviews() {
+    preview3d?.dispose(); preview3d = null;
+    shelfPreview3d?.dispose(); shelfPreview3d = null;
+  }
+  function mountPreview() {
+    if (!opening || destroyed) return;
+    if (activePage === 'plants') preview3d = createPlantCatalogPreview(drawing);
+    else shelfPreview3d = createShelfCatalogPreview(shelfDrawing);
+  }
+  function switchPage(page) {
+    if (busy || destroyed || activePage === page) return;
+    activePage = page; disposePreviews();
+    status.textContent = ''; status.removeAttribute('data-error');
+    update(); mountPreview(); update();
+  }
 
   function update() {
     const plant = getCatalogPlant(selectedPlant), pot = getCatalogPot(selectedPot);
+    const selectedType = getShelfType(selectedShelf);
+    const shelfPage = activePage === 'shelves';
+    dialog.dataset.catalogPage = activePage;
+    body.hidden = shelfPage; shelfBody.hidden = !shelfPage;
+    title.textContent = shelfPage ? 'ESTANTERÍAS' : 'PLANTAS';
+    description.textContent = shelfPage ? 'Elige el mueble para tu biblioteca.' : 'Elige una planta y una maceta para tu estantería.';
+    pageNumber.textContent = shelfPage ? '02 / 02' : '01 / 02';
+    for (const [page,button] of pageButtons) {
+      button.setAttribute('aria-pressed',String(page === activePage)); button.disabled = busy;
+    }
     preview3d?.update({ catalogId:selectedPlant,potId:selectedPot,potColorId:selectedColor });
+    shelfPreview3d?.update({ shelfType:selectedShelf });
+    shelfName.textContent = selectedType.name;
+    shelfSubtitle.textContent = selectedType.subtitle;
+    shelfDimensions.textContent = selectedType.dimensions
+      ? `${selectedType.dimensions.width / 10} × ${selectedType.dimensions.depth / 10} × ${selectedType.dimensions.height / 10} cm`
+      : 'Se adapta a tu biblioteca';
+    for (const [type,button] of shelfButtons) {
+      button.setAttribute('aria-pressed',String(type === selectedShelf)); button.disabled = busy;
+      button.querySelector('.ihr-plant-catalog__shelf-current').textContent = type === savedShelf ? 'Estantería actual' : '';
+    }
     for (const button of colorList.querySelectorAll('button')) {
       button.setAttribute('aria-pressed',String(button.dataset.catalogColor === selectedColor)); button.disabled = busy;
     }
@@ -199,8 +265,10 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
     for (const [key, button] of potButtons) {
       button.setAttribute('aria-pressed',String(key === selectedPot)); button.disabled = busy;
     }
-    add.disabled = busy || !plant || !pot || typeof onAdd !== 'function';
-    add.textContent = busy ? 'Añadiendo…' : 'Añadir a la estantería';
+    add.disabled = busy || (shelfPage ? typeof onShelfChange !== 'function' : !plant || !pot || typeof onAdd !== 'function');
+    add.textContent = shelfPage ? (busy ? 'Cambiando…' : 'Usar esta estantería') : (busy ? 'Añadiendo…' : 'Añadir a la estantería');
+    if (shelfPage) add.dataset.catalogShelfAdd = '';
+    else delete add.dataset.catalogShelfAdd;
     dialog.setAttribute('aria-busy',String(busy));
   }
 
@@ -235,6 +303,26 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
     });
     potList.append(button); potButtons.set(pot.id,button);
   }
+  for (const type of SHELF_TYPES) {
+    const button = element('button','ihr-plant-catalog__shelf');
+    button.type = 'button'; button.dataset.catalogShelf = type.id;
+    button.setAttribute('aria-label',`${type.name}, ${type.subtitle}`);
+    const icon = element('span','ihr-plant-catalog__shelf-icon');
+    icon.innerHTML = type.id === 'baggebo'
+      ? '<svg viewBox="0 0 64 96" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M8 90V5h43v85M8 5l6-3h43v85M51 5l6-3M8 31h43l6-3H14M8 56h43l6-3H14M8 80h43l6-3H14M14 2v85M27 31v22m3-22v22m3-22v22m3-22v22m3-22v22m3-22v22"/></svg>'
+      : '<svg viewBox="0 0 64 96" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M7 90V7h43v83H7Zm0-83 7-4h43v83l-7 4M50 7l7-4M11 11h35v74H11V11Zm0 23h35M11 59h35M11 82h35M19 11v23m9-23v23m9-23v23m-18 2v23m9-23v23m9-23v23m-18 2v23m9-23v23m9-23v23"/></svg>';
+    const caption = element('span','ihr-plant-catalog__shelf-option-caption');
+    const dimensions = type.dimensions
+      ? `${type.dimensions.width / 10} × ${type.dimensions.depth / 10} × ${type.dimensions.height / 10} cm`
+      : 'Tamaño adaptable';
+    caption.append(element('strong',null,type.name),element('span',null,type.subtitle),element('span',null,dimensions),element('span','ihr-plant-catalog__shelf-current'));
+    button.append(icon,caption);
+    button.addEventListener('click',() => {
+      if (busy) return;
+      selectedShelf = type.id; status.textContent = ''; status.removeAttribute('data-error'); update();
+    });
+    shelfList.append(button); shelfButtons.set(type.id,button);
+  }
 
   function buildColors() {
     colorList.replaceChildren();
@@ -257,7 +345,7 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
   function finishClose() {
     if (!opening) return;
     opening = false;
-    preview3d?.dispose(); preview3d = null;
+    disposePreviews();
     onClose?.();
     if (trigger?.isConnected) trigger.focus({ preventScroll:true });
     trigger = null;
@@ -280,21 +368,25 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
     if (event.key === 'Escape') { event.preventDefault(); close(); return; }
     // Native <dialog> also traps focus; this keeps the fallback usable.
     if (event.key !== 'Tab') return;
-    const buttons = [...dialog.querySelectorAll('button:not(:disabled)')];
+    const buttons = [...dialog.querySelectorAll('button:not(:disabled)')].filter(button => !button.closest('[hidden]'));
     const first = buttons[0], last = buttons.at(-1);
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   });
   add.addEventListener('click',async () => {
-    if (busy || typeof onAdd !== 'function') return;
+    const shelfPage = activePage === 'shelves';
+    if (busy || (shelfPage ? typeof onShelfChange !== 'function' : typeof onAdd !== 'function')) return;
     busy = true; status.textContent = ''; status.removeAttribute('data-error'); update();
     try {
-      await onAdd({ catalogId:selectedPlant, potId:selectedPot,potColorId:selectedColor });
+      if (shelfPage) {
+        await onShelfChange({ shelfType:selectedShelf });
+        savedShelf = selectedShelf;
+      } else await onAdd({ catalogId:selectedPlant, potId:selectedPot,potColorId:selectedColor });
       if (!destroyed) close();
     } catch {
       if (!destroyed) {
         status.dataset.error = 'true';
-        status.textContent = 'No se pudo añadir la planta. Vuelve a intentarlo.';
+        status.textContent = shelfPage ? 'No se pudo cambiar la estantería. Vuelve a intentarlo.' : 'No se pudo añadir la planta. Vuelve a intentarlo.';
       }
     } finally {
       busy = false;
@@ -306,11 +398,16 @@ export function createPlantCatalog({ onAdd, onClose } = {}) {
     open(from = document.activeElement) {
       if (destroyed || opening) return;
       trigger = from instanceof HTMLElement ? from : null;
+      selectedShelf = savedShelf; activePage = 'plants';
       opening = true; status.textContent = ''; status.removeAttribute('data-error');
       if (typeof dialog.showModal === 'function') dialog.showModal();
       else { dialog.setAttribute('open',''); dialog.setAttribute('aria-modal','true'); }
-      preview3d = createPlantCatalogPreview(drawing); update();
+      update(); mountPreview(); update();
       body.scrollTop = 0; closeButton.focus({ preventScroll:true });
+    },
+    setShelfType(value) {
+      savedShelf = normalizeShelfType(value); selectedShelf = savedShelf;
+      if (!destroyed) update();
     },
     close,
     destroy() {

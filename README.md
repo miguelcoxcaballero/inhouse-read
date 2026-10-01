@@ -2,7 +2,14 @@
 
 Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguelcoxcaballero/inhousenotes): misma paleta, misma tipografía (Comfortaa + DM Sans), mismo patrón de despliegue a GitHub Pages.
 
-La biblioteca es una estantería 3D con madera texturizada, libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
+La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
+
+### Actualización web · 1.6.15
+
+- Segunda página del catálogo IKEA para elegir la estantería y guardar la selección sin perder libros ni plantas.
+- BAGGEBO de 60 × 25 × 116 cm, con tres baldas interiores, tapa de rejilla, refuerzo trasero y pies regulables. Basada en el manual y la geometría oficiales; [fuentes y precisión del modelo](docs/baggebo-model.md). Las bibliotecas largas usan unidades adicionales con las mismas proporciones.
+- Deslizamiento PDF con resistencia y retorno amortiguado; doble toque centrado en el punto pulsado y desplazamiento nativo del PDF ampliado. EPUB conserva su gesto nativo sin pasar página dos veces y respeta el movimiento reducido.
+
 
 ### Actualización web · 1.6.14
 

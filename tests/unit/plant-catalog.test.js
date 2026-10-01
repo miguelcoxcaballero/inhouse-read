@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPlantCatalog, plantCatalogIllustration } from '../../src/js/plant-catalog.js';
 import { PLANT_CATALOG, POT_CATALOG } from '../../src/js/plant-catalog-data.js';
+import { createShelfCatalogPreview } from '../../src/js/shelf-catalog-preview.js';
+
+vi.mock('../../src/js/shelf-catalog-preview.js',() => ({
+  createShelfCatalogPreview:vi.fn(host => ({
+    update:vi.fn(selection => { host.dataset.shelfType = selection.shelfType; }),
+    dispose:vi.fn(() => host.replaceChildren())
+  }))
+}));
 
 const instances = [];
 function create(options) {
@@ -16,6 +24,7 @@ const settle = async () => { await Promise.resolve(); await Promise.resolve(); }
 afterEach(() => {
   for (const instance of instances.splice(0)) instance.destroy();
   document.body.replaceChildren();
+  vi.mocked(createShelfCatalogPreview).mockClear();
   vi.restoreAllMocks();
 });
 
@@ -120,5 +129,70 @@ describe('IKEA plant instruction booklet',() => {
     expect(dialog()).toBeNull(); finish(); await settle();
     expect(dialog()).toBeNull(); expect(onClose).toHaveBeenCalledOnce();
     catalog.open(); expect(dialog()).toBeNull();
+  });
+  it('opens the second furniture page and preserves plant and pot choices when returning',() => {
+    create({ onAdd:vi.fn(),onShelfChange:vi.fn() }).open();
+    pickPlant('monstera'); pickPot('gradvis');
+    dialog().querySelector('[data-catalog-page="shelves"]').click();
+    expect(dialog().dataset.catalogPage).toBe('shelves');
+    expect(dialog().querySelector('h2').textContent).toBe('ESTANTERÍAS');
+    expect(dialog().querySelector('.ihr-plant-catalog__page-number').textContent).toBe('02 / 02');
+    expect(dialog().querySelectorAll('[data-catalog-shelf]')).toHaveLength(2);
+    expect(dialog().querySelector('.ihr-plant-catalog__body').hidden).toBe(true);
+    expect(add().textContent).toBe('Usar esta estantería');
+    const preview = vi.mocked(createShelfCatalogPreview).mock.results[0].value;
+    expect(preview.update).toHaveBeenLastCalledWith({ shelfType:'walnut' });
+    dialog().querySelector('[data-catalog-page="plants"]').click();
+    expect(preview.dispose).toHaveBeenCalledOnce();
+    expect(dialog().querySelector('.ihr-plant-catalog__body').hidden).toBe(false);
+    expect(dialog().querySelector('[data-catalog-plant="monstera"]').getAttribute('aria-pressed')).toBe('true');
+    expect(dialog().querySelector('[data-catalog-pot="gradvis"]').getAttribute('aria-pressed')).toBe('true');
+    expect(dialog().querySelector('.ihr-plant-catalog__page-number').textContent).toBe('01 / 02');
+  });
+  it('uses the exact BAGGEBO size, awaits one shelf change and restores the opener',async () => {
+    let finish;
+    const onShelfChange = vi.fn(() => new Promise(resolve => { finish = resolve; })), onAdd = vi.fn();
+    const trigger = document.createElement('button'); document.body.append(trigger); trigger.focus();
+    create({ onShelfChange,onAdd }).open(trigger);
+    dialog().querySelector('[data-catalog-page="shelves"]').click();
+    dialog().querySelector('[data-catalog-shelf="baggebo"]').click();
+    expect(dialog().querySelector('.ihr-plant-catalog__shelf-dimensions').textContent).toBe('60 × 25 × 116 cm');
+    expect(dialog().querySelector('[data-catalog-shelf="baggebo"]').getAttribute('aria-pressed')).toBe('true');
+    add().click(); add().click();
+    expect(onShelfChange).toHaveBeenCalledExactlyOnceWith({ shelfType:'baggebo' });
+    expect(onAdd).not.toHaveBeenCalled();
+    expect(dialog().querySelector('[data-catalog-page="plants"]').disabled).toBe(true);
+    expect(dialog().hasAttribute('open')).toBe(true);
+    finish(); await settle();
+    expect(dialog().hasAttribute('open')).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+    expect(vi.mocked(createShelfCatalogPreview).mock.results[0].value.dispose).toHaveBeenCalledOnce();
+  });
+  it('syncs a persisted shelf selection and resets to the plant page on reopening',() => {
+    const catalog = create({ shelfType:'baggebo',onAdd:vi.fn(),onShelfChange:vi.fn() });
+    catalog.open(); dialog().querySelector('[data-catalog-page="shelves"]').click();
+    expect(dialog().querySelector('[data-catalog-shelf="baggebo"]').getAttribute('aria-pressed')).toBe('true');
+    expect(dialog().querySelector('[data-catalog-shelf="baggebo"] .ihr-plant-catalog__shelf-current').textContent).toBe('Estantería actual');
+    catalog.setShelfType('walnut');
+    expect(dialog().querySelector('[data-catalog-shelf="walnut"]').getAttribute('aria-pressed')).toBe('true');
+    catalog.close(); catalog.open();
+    expect(dialog().dataset.catalogPage).toBe('plants');
+    dialog().querySelector('[data-catalog-page="shelves"]').click();
+    expect(dialog().querySelector('[data-catalog-shelf="walnut"]').getAttribute('aria-pressed')).toBe('true');
+  });
+  it('keeps a rejected shelf change selected for retry and disposes its preview after saving',async () => {
+    const onShelfChange = vi.fn().mockRejectedValueOnce(new Error('storage details')).mockResolvedValue();
+    create({ onShelfChange }).open();
+    dialog().querySelector('[data-catalog-page="shelves"]').click();
+    dialog().querySelector('[data-catalog-shelf="baggebo"]').click(); add().click(); await settle();
+    expect(dialog().hasAttribute('open')).toBe(true);
+    expect(dialog().querySelector('[role="status"]').textContent).toContain('No se pudo cambiar la estantería');
+    expect(dialog().textContent).not.toContain('storage details');
+    expect(add().disabled).toBe(false);
+    expect(dialog().querySelector('[data-catalog-shelf="baggebo"]').getAttribute('aria-pressed')).toBe('true');
+    add().click(); await settle();
+    expect(onShelfChange).toHaveBeenCalledTimes(2);
+    expect(dialog().hasAttribute('open')).toBe(false);
+    expect(vi.mocked(createShelfCatalogPreview).mock.results[0].value.dispose).toHaveBeenCalledOnce();
   });
 });

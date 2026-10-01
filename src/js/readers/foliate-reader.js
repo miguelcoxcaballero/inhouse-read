@@ -63,7 +63,12 @@ export class FoliateReader {
     const gestures = {
       onNext: () => { onUserNavigation?.(); return this.next() },
       onPrev: () => { onUserNavigation?.(); return this.prev() },
-      onToggleChrome
+      onToggleChrome,
+      // Foliate already tracks touch drag/velocity and snaps to the next page.
+      // A second pointerup navigation here used to advance twice per swipe.
+      nativeTouchSwipes:true,
+      onNativeSwipe:() => onUserNavigation?.(),
+      canSwipe:() => this.#preferences.flow !== 'scrolled'
     }
     this.#detachGestures = attachSwipeNavigation(container, gestures)
     this.#view.addEventListener('load', event => {
@@ -252,6 +257,9 @@ export class FoliateReader {
     for (const [name, value] of Object.entries(attributes)) {
       if (renderer.getAttribute?.(name) !== value) renderer.setAttribute(name, value)
     }
+    const animated = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (animated) renderer.setAttribute('animated', '')
+    else renderer.removeAttribute('animated')
   }
 
   #applyReaderStyles() {
