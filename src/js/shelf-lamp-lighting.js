@@ -16,19 +16,49 @@ function emitterPower(emitter) {
 }
 
 function sameMatrix(a, b) {
-  return a.elements.every((value, index) => Math.abs(value - b.elements[index]) <=
-    1e-7 * Math.max(1, Math.abs(value), Math.abs(b.elements[index])));
+  for (let index = 0; index < 16; index++) {
+    const value = a.elements[index], other = b.elements[index];
+    if (!(Math.abs(value - other) <= 1e-7 * Math.max(1, Math.abs(value), Math.abs(other)))) return false;
+  }
+  return true;
 }
 
 function uniformTransform(matrix) {
   const e = matrix.elements, size = e[0] ** 2 + e[1] ** 2 + e[2] ** 2,
     tolerance = Math.max(1, size) * 1e-7;
   return size > 0 && Number.isFinite(size) && matrix.determinant() > 0 &&
-    [e[4] ** 2 + e[5] ** 2 + e[6] ** 2 - size, e[8] ** 2 + e[9] ** 2 + e[10] ** 2 - size,
-      e[0] * e[4] + e[1] * e[5] + e[2] * e[6], e[0] * e[8] + e[1] * e[9] + e[2] * e[10],
-      e[4] * e[8] + e[5] * e[9] + e[6] * e[10]]
-      .every(value => Math.abs(value) <= tolerance);
+    Math.abs(e[4] ** 2 + e[5] ** 2 + e[6] ** 2 - size) <= tolerance &&
+    Math.abs(e[8] ** 2 + e[9] ** 2 + e[10] ** 2 - size) <= tolerance &&
+    Math.abs(e[0] * e[4] + e[1] * e[5] + e[2] * e[6]) <= tolerance &&
+    Math.abs(e[0] * e[8] + e[1] * e[9] + e[2] * e[10]) <= tolerance &&
+    Math.abs(e[4] * e[8] + e[5] * e[9] + e[6] * e[10]) <= tolerance;
 }
+
+/** Change detection without garbage: values are compared exactly (NaN equals
+ * itself) against the previous frame's and stored in place, instead of being
+ * joined into a fresh string every frame. */
+class Stamp {
+  constructor(size) { this.values = new Float64Array(size); this.index = 0; this.changed = false; }
+  begin() { this.index = 0; this.changed = false; }
+  add(value) {
+    const last = this.values[this.index];
+    if (last !== value && (last === last || value === value)) { this.values[this.index] = value; this.changed = true; }
+    this.index++;
+  }
+}
+
+// Reused every frame; emptied before returning so no entry is retained.
+const candidates = [], selectedKeys = new Set();
+const POSE_VALUES = 11;
+let middle = 0;
+const isCandidate = entry => entry.kind === 'lamp' && entry.model?.visible &&
+  entry.model.userData.lightEmitter && emitterPower(entry.model.userData.lightEmitter) > 0 &&
+  !entry.node?.classList.contains('is-away') && !entry.trashDrop;
+// The picked lamp keeps its pool while moving. Others nearest the
+// camera centre have priority, with a stable key resolving equal scores.
+const priority = entry => entry.node?.classList.contains('is-dragging') ? -Infinity :
+  Math.abs((entry.rect?.top + entry.rect?.bottom) / 2 - middle) || 0;
+const byPriority = (a, b) => priority(a) - priority(b) || String(a.key).localeCompare(String(b.key));
 
 /** Warm fixtures light the actual shelf materials. A small shared budget avoids
  * an ever-growing shader when a library has many decorated rows. Circular
@@ -59,8 +89,9 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       scene.add(light.target);
     }
     scene.add(light);
-    const fixture = { light, spotlight, power:0, signature:'', shadowSignature:'', emitterSignature:'', localMatrix:new THREE.Matrix4(),
-      rootMatrix:new THREE.Matrix4(), hasTransform:false };
+    // Point lights store no cone: its stamp slots stay zero.
+    const fixture = { light, spotlight, power:0, shadowStamp:new Stamp(12), lightStamp:new Stamp(5), emitterStamp:new Stamp(9),
+      localMatrix:new THREE.Matrix4(), rootMatrix:new THREE.Matrix4(), hasTransform:false };
     fixtures.set(key, fixture);
     return fixture;
   }
@@ -73,7 +104,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       light.userData.filamentIndex = index;
       scene.add(light); return light;
     });
-    const fixture = { light:lights[0], lights, filaments:true, power:0, signature:'' };
+    const fixture = { light:lights[0], lights, filaments:true, power:0, poseStamp:new Stamp(lights.length * POSE_VALUES) };
     fixtures.set(key, fixture); return fixture;
   }
   return {
@@ -81,19 +112,16 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       if (disposed) return false;
       const canTransport = transform && uniformTransform(transform);
       if (canTransport) inverseRoot.copy(transform).invert();
-      const middle = Number.isFinite(viewportHeight) ? scroll + viewportHeight / 2 : 0;
-      const candidates = entries.filter(entry => entry.kind === 'lamp' && entry.model?.visible &&
-        entry.model.userData.lightEmitter && emitterPower(entry.model.userData.lightEmitter) > 0 &&
-        !entry.node?.classList.contains('is-away') && !entry.trashDrop);
-      // The picked lamp keeps its pool while moving. Others nearest the
-      // camera centre have priority, with a stable key resolving equal scores.
-      const priority = entry => entry.node?.classList.contains('is-dragging') ? -Infinity :
-        Math.abs((entry.rect?.top + entry.rect?.bottom) / 2 - middle) || 0;
-      candidates.sort((a, b) => priority(a) - priority(b) || String(a.key).localeCompare(String(b.key)));
-      const selected = candidates.slice(0, Math.max(0, Math.min(MAX_SHELF_LAMP_LIGHTS, maxLights)));
-      const keys = new Set(selected.map(entry => entry.key));
+      middle = Number.isFinite(viewportHeight) ? scroll + viewportHeight / 2 : 0;
+      candidates.length = 0;
+      for (const entry of entries) if (isCandidate(entry)) candidates.push(entry);
+      if (candidates.length > 1) candidates.sort(byPriority);
+      const selected = candidates;
+      selected.length = Math.min(selected.length, Math.max(0, Math.min(MAX_SHELF_LAMP_LIGHTS, maxLights)));
+      selectedKeys.clear();
+      for (const entry of selected) selectedKeys.add(entry.key);
       let changed = false, shadows = 0;
-      for (const key of fixtures.keys()) if (!keys.has(key)) { remove(key); changed = true; }
+      for (const key of fixtures.keys()) if (!selectedKeys.has(key)) { remove(key); changed = true; }
       for (const entry of selected) {
         const model = entry.model, emitter = model.userData.lightEmitter;
         if (emitter.filaments?.length) {
@@ -105,6 +133,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
           model.updateWorldMatrix(true, false); model.getWorldQuaternion(modelRotation);
           const scale = model.matrixWorld.getMaxScaleOnAxis();
           fixture.power = emitterPower(emitter);
+          const pose = fixture.poseStamp; pose.begin();
           for (let index = 0; index < fixture.lights.length; index++) {
             const strip = emitter.filaments[index], light = fixture.lights[index];
             stripStart.fromArray(strip.start); stripEnd.fromArray(strip.end);
@@ -126,10 +155,11 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
             light.intensity = Math.max(0, Number(emitter.intensity) || 0) * fixture.power *
               4 / (fixture.lights.length * strip.width * length);
             light.updateMatrixWorld(true);
+            pose.add(light.position.x); pose.add(light.position.y); pose.add(light.position.z);
+            pose.add(light.quaternion.x); pose.add(light.quaternion.y); pose.add(light.quaternion.z); pose.add(light.quaternion.w);
+            pose.add(light.width); pose.add(light.height); pose.add(light.intensity); pose.add(light.color.getHex());
           }
-          const signature = fixture.lights.map(light => [light.position.toArray(), light.quaternion.toArray(),
-            light.width, light.height, light.intensity, light.color.getHex()].join(':')).join('|');
-          if (signature !== fixture.signature) { fixture.signature = signature; changed = true; }
+          if (pose.changed) changed = true;
           continue;
         }
         const spotlight = Array.isArray(emitter.direction);
@@ -170,19 +200,29 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
         // Switching or fading a lamp changes its radiance, not the stored
         // caster depths. Keep these signatures separate so filament animation
         // does not schedule a depth and blur pass on every frame.
-        const shadowSignature = [light.position.x, light.position.y, light.position.z, light.distance,
-          ...(spotlight ? [...light.target.position.toArray(), ...light.shadow.camera.up.toArray(), light.angle] : []), shadowed].join(':');
-        const signature = [shadowSignature, light.intensity, light.color.getHex(), light.decay,
-          light.angle, light.penumbra].join(':');
-        const emitterSignature = [emitter.position, emitter.direction, emitter.distance,
-          light.angle, shadowed].join(':');
+        const { shadowStamp, lightStamp, emitterStamp } = fixture;
+        shadowStamp.begin(); lightStamp.begin(); emitterStamp.begin();
+        shadowStamp.add(light.position.x); shadowStamp.add(light.position.y); shadowStamp.add(light.position.z);
+        shadowStamp.add(light.distance);
+        if (spotlight) {
+          const { target, shadow } = light;
+          shadowStamp.add(target.position.x); shadowStamp.add(target.position.y); shadowStamp.add(target.position.z);
+          shadowStamp.add(shadow.camera.up.x); shadowStamp.add(shadow.camera.up.y); shadowStamp.add(shadow.camera.up.z);
+          shadowStamp.add(light.angle);
+        } else for (let slot = 0; slot < 7; slot++) shadowStamp.add(0);
+        shadowStamp.add(shadowed ? 1 : 0);
+        lightStamp.add(light.intensity); lightStamp.add(light.color.getHex()); lightStamp.add(light.decay);
+        lightStamp.add(spotlight ? light.angle : 0); lightStamp.add(spotlight ? light.penumbra : 0);
+        for (let axis = 0; axis < 3; axis++) emitterStamp.add(emitter.position[axis]);
+        for (let axis = 0; axis < 3; axis++) emitterStamp.add(spotlight ? emitter.direction[axis] : 0);
+        emitterStamp.add(emitter.distance); emitterStamp.add(spotlight ? light.angle : 0); emitterStamp.add(shadowed ? 1 : 0);
+        const emitterChanged = emitterStamp.changed;
         const rootMoved = canTransport && fixture.hasTransform && !sameMatrix(transform, fixture.rootMatrix);
-        if (signature !== fixture.signature || emitterSignature !== fixture.emitterSignature || shadowDirty || rootMoved) {
-          const projectionChanged = shadowSignature !== fixture.shadowSignature ||
-            emitterSignature !== fixture.emitterSignature || shadowDirty || rootMoved;
+        if (shadowStamp.changed || lightStamp.changed || emitterChanged || shadowDirty || rootMoved) {
+          const projectionChanged = shadowStamp.changed || emitterChanged || shadowDirty || rootMoved;
           if (shadowed && projectionChanged) {
             const unchangedRoom = canTransport && fixture.hasTransform && !shadowDirty &&
-              emitterSignature === fixture.emitterSignature && sameMatrix(localMatrix, fixture.localMatrix);
+              !emitterChanged && sameMatrix(localMatrix, fixture.localMatrix);
             if (unchangedRoom) {
               // The cone and the entire furnished room moved together. Its
               // projection (including near/far under a uniform zoom) preserves
@@ -190,13 +230,12 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
               light.shadow.updateMatrices(light);
             } else light.shadow.needsUpdate = true;
           }
-          fixture.signature = signature; changed = true;
+          changed = true;
         }
-        fixture.shadowSignature = shadowSignature;
-        fixture.emitterSignature = emitterSignature;
         fixture.hasTransform = Boolean(canTransport);
         if (canTransport) { fixture.localMatrix.copy(localMatrix); fixture.rootMatrix.copy(transform); }
       }
+      candidates.length = 0; selectedKeys.clear();
       return changed;
     },
     get activeCount() { return fixtures.size; },
@@ -205,7 +244,11 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       for (const fixture of fixtures.values()) power = Math.max(power, fixture.power);
       return power;
     },
-    get shadowCount() { return [...fixtures.values()].filter(fixture => fixture.light.castShadow).length; },
+    get shadowCount() {
+      let count = 0;
+      for (const fixture of fixtures.values()) if (fixture.light.castShadow) count++;
+      return count;
+    },
     dispose() {
       if (disposed) return;
       disposed = true;

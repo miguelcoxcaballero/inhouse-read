@@ -72,3 +72,59 @@ describe('continuous LED filament illumination', () => {
     s.manager.dispose(); s.model.dispose();
   });
 });
+
+describe('quiet change detection for every lamp type', () => {
+  const entryFor = (lampId, key = lampId) => {
+    const model = createShelfLamp({lampId,width:75}); model.position.set(40,-30,10); model.updateMatrixWorld(true);
+    return {kind:'lamp',key,model,width:75};
+  };
+
+  it.each(['tarnaby','mittled','tripod'])('%s: reports a change only when its light really changed', lampId => {
+    const scene = new THREE.Scene(), manager = createShelfLampLighting(scene), entry = entryFor(lampId);
+    scene.add(entry.model);
+    expect(manager.update([entry])).toBe(true);
+    for (let frame = 0; frame < 3; frame++) expect(manager.update([entry])).toBe(false);
+    entry.model.position.x += 12; entry.model.updateMatrixWorld(true);
+    expect(manager.update([entry])).toBe(true); expect(manager.update([entry])).toBe(false);
+    entry.model.userData.setPower(.4);
+    expect(manager.update([entry])).toBe(true); expect(manager.update([entry])).toBe(false);
+    expect(manager.activePower).toBeCloseTo(.4);
+    entry.model.userData.setPower(0);
+    expect(manager.update([entry])).toBe(true); expect(manager.activeCount).toBe(0);
+    expect(manager.update([entry])).toBe(false);
+    manager.dispose(); entry.model.dispose();
+  });
+
+  it('counts only the cones that cast a shadow and redraws their map when a cone moves', () => {
+    const scene = new THREE.Scene(), manager = createShelfLampLighting(scene);
+    const entries = ['a','b','c'].map(key => entryFor('mittled',key)); entries.forEach(entry => scene.add(entry.model));
+    manager.update(entries);
+    expect(manager.activeCount).toBe(3); expect(manager.shadowCount).toBe(2);
+    const shadowed = scene.children.filter(object => object.userData.shelfLamp && object.castShadow);
+    for (const light of shadowed) light.shadow.needsUpdate = false;
+    expect(manager.update(entries)).toBe(false);
+    expect(shadowed.every(light => !light.shadow.needsUpdate)).toBe(true);
+    entries[0].model.position.y -= 25; entries[0].model.updateMatrixWorld(true);
+    expect(manager.update(entries)).toBe(true);
+    expect(shadowed.some(light => light.shadow.needsUpdate)).toBe(true);
+    manager.dispose(); expect(manager.shadowCount).toBe(0);
+    entries.forEach(entry => entry.model.dispose());
+  });
+
+  it('retains none of the entries it was given and keeps lamps nearest the view centre', () => {
+    const scene = new THREE.Scene(), manager = createShelfLampLighting(scene);
+    const entries = Array.from({length:6},(_,index) => ({...entryFor('tripod',`lamp:${index}`),
+      rect:{top:index * 200,bottom:index * 200 + 100}}));
+    entries.forEach(entry => scene.add(entry.model));
+    manager.update(entries,{scroll:400,viewportHeight:200});
+    const keys = () => scene.children.filter(object => object.userData.shelfLamp).map(light => light.userData.entryKey).sort();
+    expect(keys()).toEqual(['lamp:1','lamp:2','lamp:3','lamp:4']);
+    // The picked lamp keeps its light however far it is from the centre.
+    entries[5].node = {classList:{contains:name => name === 'is-dragging'}};
+    manager.update(entries,{scroll:400,viewportHeight:200});
+    expect(keys()).toEqual(['lamp:1','lamp:2','lamp:3','lamp:5']);
+    manager.update([]);
+    expect(manager.activeCount).toBe(0); expect(keys()).toEqual([]);
+    manager.dispose(); entries.forEach(entry => entry.model.dispose());
+  });
+});

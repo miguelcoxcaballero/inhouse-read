@@ -1132,8 +1132,9 @@ export function getBookRenderer() {
     // Shelf, reader and insertion snapshots copy the frame synchronously
     // after render. The GPU need not retain a second framebuffer between
     // frames; their visible 2D canvases already own the captured pixels.
+    // Every consumer (bookView, the shelf and its insertion overlay) sets its
+    // own pixel ratio and size before drawing, so no oversized buffer is allocated up front.
     renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-    renderer.setPixelRatio(Math.min(Math.max(devicePixelRatio || 1, 2), 3));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     // Preserve print colours and gently compress real specular highlights.
     // Unmapped studio radiance used to clip RGB channels on bright jackets.

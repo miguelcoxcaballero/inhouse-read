@@ -24,7 +24,10 @@ function firmVarianceShadows() {
 // window's shadow arrives with a wide penumbra: it averages the (already
 // blurred) map over a Vogel disk this many blur radii across.
 const PANEL_REACH = 3.6;
-const PANEL_SHADOW = `
+// Every pixel uses the same Vogel disk, so its taps reach the shader as
+// constants (radius and angle evaluated here) instead of a sqrt, cos and sin
+// per tap and pixel.
+const panelShadow = taps => `
 #ifdef USE_SHADOWMAP
 float getPanelShadow( sampler2D map, vec2 size, float intensity, float bias, float radius, vec4 coord ) {
   // Taps slide along the panel itself (screen derivatives of the shadow
@@ -33,10 +36,11 @@ float getPanelShadow( sampler2D map, vec2 size, float intensity, float bias, flo
   vec3 du = dFdx( coord.xyz ), dv = dFdy( coord.xyz );
   du *= reach / max( length( du.xy ), 1e-7 ); dv *= reach / max( length( dv.xy ), 1e-7 );
   float sum = 0.0;
-  for ( int k = 0; k < PANEL_TAPS; k ++ ) {
-    float r = sqrt( ( float( k ) + .5 ) / float( PANEL_TAPS ) ), a = float( k ) * 2.39996 + .4;
-    sum += getShadow( map, size, intensity, bias, radius, coord + vec4( r * ( cos( a ) * du + sin( a ) * dv ), 0.0 ) );
-  }
+${Array.from({ length:taps }, (_, k) => {
+    const r = Math.sqrt((k + .5) / taps), a = k * 2.39996 + .4;
+    return `  sum += getShadow( map, size, intensity, bias, radius, coord + vec4( ${(r * Math.cos(a)).toFixed(8)} * du + ${
+      (r * Math.sin(a)).toFixed(8)} * dv, 0.0 ) );`;
+  }).join('\n')}
   return sum / float( PANEL_TAPS );
 }
 #endif`;
@@ -47,10 +51,11 @@ float getPanelShadow( sampler2D map, vec2 size, float intensity, float bias, flo
  * string patches: a later three without these lines compiles stock shaders. */
 export function widePenumbra(material) {
   // Phones shade many more device pixels: fewer taps, fixed for the session.
-  material.defines = { ...material.defines, PANEL_TAPS:compactScreen() ? 9 : 12 };
+  const taps = compactScreen() ? 9 : 12;
+  material.defines = { ...material.defines, PANEL_TAPS:taps };
   material.onBeforeCompile = shader => {
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <shadowmap_pars_fragment>', `#include <shadowmap_pars_fragment>\n${PANEL_SHADOW}`)
+      .replace('#include <shadowmap_pars_fragment>', `#include <shadowmap_pars_fragment>\n${panelShadow(taps)}`)
       .replace('#include <lights_fragment_begin>', THREE.ShaderChunk.lights_fragment_begin
         .replace('getShadow( directionalShadowMap[ i ]', 'getPanelShadow( directionalShadowMap[ i ]'))
       // Deep inside the carcass, sides and shelves hide much of the room:
@@ -97,6 +102,27 @@ export function createShelfLighting(scene, renderer) {
   const previousBounds = new THREE.Box3(), transportedBounds = new THREE.Box3();
   let hasTransform = false;
   let frame = '';
+  // The layout key is a pure function of these raw numbers: its strings are
+  // only rebuilt when one of them differs from the previous frame's.
+  const layoutInputs = new Float64Array(9);
+  let layoutKey = '', layoutBounded = false;
+  const layoutOf = (width, viewportHeight, depth, bounds) => {
+    let stale = !layoutKey || Boolean(bounds) !== layoutBounded || layoutInputs[0] !== width ||
+      layoutInputs[1] !== viewportHeight || layoutInputs[2] !== depth;
+    if (bounds) for (let axis = 0; axis < 3 && !stale; axis++) {
+      stale = layoutInputs[3 + axis] !== bounds.min.getComponent(axis) || layoutInputs[6 + axis] !== bounds.max.getComponent(axis);
+    }
+    if (stale) {
+      layoutInputs[0] = width; layoutInputs[1] = viewportHeight; layoutInputs[2] = depth;
+      for (let axis = 0; axis < 3 && bounds; axis++) {
+        layoutInputs[3 + axis] = bounds.min.getComponent(axis); layoutInputs[6 + axis] = bounds.max.getComponent(axis);
+      }
+      layoutBounded = Boolean(bounds);
+      layoutKey = [width, viewportHeight, depth, ...(bounds ? [...bounds.min.toArray(), ...bounds.max.toArray()] : [])]
+        .map(value => value.toFixed(2)).join(':');
+    }
+    return layoutKey;
+  };
   // The camera window (plus some slack), clipped to the cabinet's world bounds.
   const windowBox = (box, { width, viewportHeight, scroll, depth, bounds }, slack) => {
     box.min.set(0, -scroll - viewportHeight - slack, -depth - 24);
@@ -148,10 +174,11 @@ export function createShelfLighting(scene, renderer) {
     windowBox(want, options, 0);
     // Anything but a scroll (resize, depth, a turning or rebuilt cabinet)
     // refits at once; a scroll only once the view leaves the fitted slack.
-    const layout = [width, viewportHeight, depth, ...(bounds ? [...bounds.min.toArray(), ...bounds.max.toArray()] : [])]
-      .map(value => value.toFixed(2)).join(':');
-    const transformChanged = transform && hasTransform && transform.elements.some((value, index) =>
-      Math.abs(value - previousTransform.elements[index]) > 1e-7);
+    const layout = layoutOf(width, viewportHeight, depth, bounds);
+    let transformChanged = false;
+    if (transform && hasTransform) for (let index = 0; index < 16 && !transformChanged; index++) {
+      transformChanged = Math.abs(transform.elements[index] - previousTransform.elements[index]) > 1e-7;
+    }
     let transported = false;
     if (transform && hasTransform && !dirty && !forceRefit && bounds && !previousBounds.isEmpty()) {
       delta.multiplyMatrices(transform, inverseTransform.copy(previousTransform).invert());
