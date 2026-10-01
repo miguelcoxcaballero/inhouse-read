@@ -160,6 +160,32 @@ test('voz Android: reproduce texto, pausa, continúa y pasa a la siguiente pági
   await expect(page.getByRole('button', { name:'Reproducir',exact:true })).toBeVisible()
 })
 
+test('voz Android: lista agrupada de voces naturales, voz automática y descarga de mejores voces', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__spoken = []; window.__voiceSettings = 0
+    const voice = (voiceURI, lang, quality, extra = {}) => ({ voiceURI, name:`${lang} ${voiceURI}`, lang, quality, latency:200, network:false, installed:true, features:[], ...extra })
+    window.InhouseSpeech = {
+      getVoices:() => JSON.stringify([voice('en-robot', 'en-US', 200, { name:'eSpeak' }), voice('en-normal', 'en-US', 300), voice('es-high', 'es-ES', 400)]),
+      speak:(text, language, rate, voiceName, id) => window.__spoken.push({ text, language, rate, voiceName, id }),
+      stop:() => {}, openVoiceSettings:() => { window.__voiceSettings++ }, refreshVoices:() => {}
+    }
+  })
+  await openPdf(page)
+  await page.getByRole('button', { name:'Escuchar el libro' }).click()
+  const select = page.getByRole('combobox', { name:'Voz de lectura' })
+  await expect(select.locator('optgroup')).toHaveCount(2)
+  await expect(select.locator('optgroup[label="Recomendadas (naturales)"] option')).toHaveCount(2)
+  await expect(select.locator('optgroup[label="Todas las voces"] option')).toHaveCount(3)
+  await expect(select.locator('option').first()).toHaveText('Automática · mejor voz natural')
+  // The book (and the test browser) is English: its best on-device voice is only "normal", so Android offers better ones.
+  await expect(page.getByText('Se usará: Inglés (EE. UU.) · Calidad normal · sin conexión.')).toBeVisible()
+  await page.getByRole('button', { name:'Descargar voces de mayor calidad' }).click()
+  expect(await page.evaluate(() => window.__voiceSettings)).toBe(1)
+  await page.getByRole('button', { name:'Reproducir', exact:true }).click()
+  await expect.poll(() => page.evaluate(() => window.__spoken.length)).toBeGreaterThan(0)
+  expect(await page.evaluate(() => window.__spoken[0])).toMatchObject({ voiceName:'en-normal', language:'en-US' })
+})
+
 test('la estantería dibuja madera y plantas 3D sin recursos rotos', async ({ page }) => {
   const brokenAssets = []
   page.on('response', response => { if (response.url().includes('/assets/') && response.status() >= 400) brokenAssets.push(response.url()) })

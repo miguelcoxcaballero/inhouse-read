@@ -323,3 +323,68 @@ describe('search results', () => {
     expect(reader.clearSearch).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('voice picker', () => {
+  const nativeVoice = (voiceURI, lang, quality, extra = {}) => ({ voiceURI, name:`${lang} ${voiceURI}`, lang, quality, network:false, installed:true, ...extra })
+  const stubBridge = (voices, extra = {}) => {
+    const bridge = { speak:vi.fn(), stop:vi.fn(), getVoices:() => JSON.stringify(voices), ...extra }
+    vi.stubGlobal('InhouseSpeech', bridge)
+    return bridge
+  }
+  const select = experience => experience.panel.querySelector('[data-pref="voice"]')
+  const groups = experience => [...select(experience).querySelectorAll('optgroup')].map(group => [group.label, [...group.querySelectorAll('option')].map(option => option.value)])
+
+  it('groups the voices into recommended and all, with Automática as the best natural voice', async () => {
+    stubBridge([nativeVoice('es-good', 'es-ES', 400), nativeVoice('es-robot', 'es-ES', 300, { name:'eSpeak' }), nativeVoice('en-good', 'en-US', 400)])
+    const { experience, reader } = await setup()
+    reader.language = 'es'
+    experience.populateVoices()
+    expect(select(experience).options[0]).toMatchObject({ value:'', textContent:'Automática · mejor voz natural' })
+    expect(groups(experience)).toEqual([['Recomendadas (naturales)', ['es-good', 'en-good']], ['Todas las voces', ['es-good', 'es-robot', 'en-good']]])
+    expect(select(experience).getAttribute('aria-label')).toBe('Voz de lectura')
+    expect(experience.panel.querySelector('[data-voice-auto]').textContent).toBe('Se usará: Español (España) · Alta calidad · sin conexión.')
+  })
+
+  it('offers the voice download only on Android and only when the best voice is not high quality', async () => {
+    const bridge = stubBridge([nativeVoice('es-normal', 'es-ES', 300)], { openVoiceSettings:vi.fn() })
+    const { experience, reader } = await setup()
+    reader.language = 'es'
+    experience.populateVoices()
+    const button = experience.panel.querySelector('[data-voice-settings]')
+    expect(button.hidden).toBe(false)
+    expect(button.textContent).toBe('Descargar voces de mayor calidad')
+    button.click()
+    expect(bridge.openVoiceSettings).toHaveBeenCalledOnce()
+    bridge.getVoices = () => JSON.stringify([nativeVoice('es-high', 'es-ES', 500)])
+    experience.populateVoices()
+    expect(button.hidden).toBe(true)
+    expect(experience.panel.querySelector('[data-voice-info]').hidden).toBe(false) // still says which voice Automática uses
+  })
+
+  it('does not show the download hint without the native bridge, or with an older app that cannot open settings', async () => {
+    stubBridge([nativeVoice('es-normal', 'es-ES', 300)])
+    const { experience, reader } = await setup()
+    reader.language = 'es'
+    experience.populateVoices()
+    expect(experience.panel.querySelector('[data-voice-settings]').hidden).toBe(true)
+    vi.stubGlobal('InhouseSpeech', undefined)
+    experience.populateVoices()
+    expect(experience.panel.querySelector('[data-voice-settings]').hidden).toBe(true)
+  })
+
+  it('keeps an explicit choice selected, falls back to Automática when it is gone, and refreshes native voices when the audio tab opens', async () => {
+    const bridge = stubBridge([nativeVoice('es-good', 'es-ES', 400), nativeVoice('en-good', 'en-US', 400)], { refreshVoices:vi.fn() })
+    const { experience, reader } = await setup()
+    reader.language = 'es'
+    experience.preferences = { ...experience.preferences, voice:'en-good' }
+    experience.populateVoices()
+    expect(select(experience).value).toBe('en-good')
+    expect(experience.panel.querySelector('[data-voice-auto]').textContent).toBe('')
+    experience.preferences = { ...experience.preferences, voice:'uninstalled' }
+    experience.populateVoices()
+    expect(select(experience).value).toBe('')
+    experience.panel.showModal = vi.fn()
+    experience.show('audio')
+    expect(bridge.refreshVoices).toHaveBeenCalled()
+  })
+})

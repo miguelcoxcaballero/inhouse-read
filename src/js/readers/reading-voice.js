@@ -1,3 +1,5 @@
+import { detectLanguage, readSystemVoices, resolveVoice } from './voice-catalog.js'
+
 export function speechChunks(text) {
   return (String(text || '').replace(/\s+/g, ' ').trim().match(/[^.!?。！？]+[.!?。！？]*\s*/g) || [])
     .flatMap(sentence => sentence.match(/.{1,180}(?:\s|$)|.{1,180}/g) || []).map(x => x.trim()).filter(Boolean)
@@ -46,17 +48,22 @@ export class ReadingVoice {
     const id = `${this.generation}-${this.index}-${Date.now()}`
     this.utteranceId = id
     const text = this.chunks[this.index]
-    const language = this.options.multilingual ? this.detectLanguage(text) : this.reader.language || navigator.language || 'es-ES'
-    if (this.native) { window.InhouseSpeech.speak(text, language, this.rate, this.options.multilingual ? '' : this.voice, id); return }
+    const { language, voiceId } = this.voiceFor(text)
+    if (this.native) { window.InhouseSpeech.speak(text, language, this.rate, voiceId, id); return }
     const utterance = new SpeechSynthesisUtterance(text)
     this.utterance = utterance
     utterance.lang = language
     utterance.rate = this.rate
     const voices = speechSynthesis.getVoices()
-    utterance.voice = (!this.options.multilingual && voices.find(v => v.voiceURI === this.voice)) || voices.find(v => v.lang.startsWith(language.split('-')[0])) || null
+    utterance.voice = (voiceId && voices.find(v => v.voiceURI === voiceId)) || voices.find(v => v.lang.startsWith(language.split('-')[0])) || null
     utterance.onend = () => { if (id === this.utteranceId && this.state === 'playing') this.advance() }
     utterance.onerror = event => { if (id === this.utteranceId && !['canceled','interrupted'].includes(event.error)) this.fail('No se pudo reproducir la voz. Prueba otra voz instalada.') }
     speechSynthesis.speak(utterance)
+  }
+  /** Voice and language for one chunk; the ranking (best natural voice, per-chunk language) lives in voice-catalog.js. */
+  voiceFor(text) {
+    const language = this.options.multilingual ? this.detectLanguage(text) : this.reader.language || navigator.language || 'es-ES'
+    return resolveVoice(readSystemVoices(window), { voiceId:this.voice, language, multilingual:this.options.multilingual, deviceLang:navigator.language })
   }
   async advance() {
     if (this.state !== 'playing') return
@@ -91,12 +98,7 @@ export class ReadingVoice {
     return value
   }
   detectLanguage(text) {
-    const sample = String(text || '').toLocaleLowerCase()
-    if (/[ñ¿¡]|\b(el|la|los|las|que|para|con|una|del)\b/.test(sample)) return 'es-ES'
-    if (/[àâçéèêëîïôûùüÿœ]/.test(sample)) return 'fr-FR'
-    if (/[äöüß]/.test(sample)) return 'de-DE'
-    if (/[ãõ]/.test(sample)) return 'pt-PT'
-    return this.reader.language || navigator.language || 'en-US'
+    return detectLanguage(text, this.reader.language || navigator.language || 'en-US')
   }
   pause() {
     if (this.state !== 'playing') return
