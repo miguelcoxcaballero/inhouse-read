@@ -159,7 +159,24 @@ test('el folleto sigue siendo usable en 320 px, mantiene el botón de añadir vi
     body:node.querySelector('.ihr-plant-catalog__body').scrollHeight,
     bodyAvailable:node.querySelector('.ihr-plant-catalog__body').clientHeight }));
   expect(overflow.width).toBeLessThanOrEqual(overflow.available + 1);
-  expect(overflow.body).toBeGreaterThan(overflow.bodyAvailable);
+  expect(overflow.body).toBeLessThanOrEqual(overflow.bodyAvailable + 1);
+  await expect(dialog.getByRole('img',{name:'IKEA',exact:true})).toBeVisible();
+  for (const [width,height] of [[320,568],[390,844],[844,390],[1280,720]]) {
+    await page.setViewportSize({width,height});
+    const layout = await dialog.evaluate(node => {
+      const body = node.querySelector('.ihr-plant-catalog__body'), area = body.getBoundingClientRect();
+      const controls = [...body.querySelectorAll('button')].map(button => {
+        const rect = button.getBoundingClientRect();
+        const visible = rect.top >= area.top - 1 && rect.bottom <= area.bottom + 1 && rect.left >= area.left - 1 && rect.right <= area.right + 1;
+        const target = document.elementFromPoint(rect.x + rect.width/2,rect.y + rect.height/2);
+        return visible && button.contains(target);
+      });
+      return {scroll:body.scrollHeight,available:body.clientHeight,controls};
+    });
+    expect(layout.scroll).toBeLessThanOrEqual(layout.available + 1);
+    expect(layout.controls.every(Boolean)).toBe(true);
+  }
+  await page.setViewportSize({width:320,height:568});
   await testInfo.attach('catalogo-320px',{ body:await dialog.screenshot(),contentType:'image/png' });
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
