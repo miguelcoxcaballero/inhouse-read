@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as THREE from 'three';
 import { bindingGeometry, boardGeometry, bookmarkGeometry, pageBlockGeometry, leafStackGeometry, ribbonSilk, sampleBookMotion, fitCoverImage, createBookModel, projectBookPageBounds, planBookPageZoom, planReadingBookPose } from '../../src/js/book-model.js';
-import { spineLayout } from '../../src/js/spine-surface.js';
+import { spineLayout, spineSurface, releaseSurface } from '../../src/js/spine-surface.js';
 
 describe('whole reading spread framing',() => {
   for (const viewport of [{width:320,height:568},{width:390,height:844},{width:844,height:390},{width:1280,height:800}]) {
@@ -1029,5 +1029,73 @@ describe('real shelf book materials', () => {
     for (const spy of released) expect(spy).toHaveBeenCalledOnce();
     for (const spy of kept) expect(spy).not.toHaveBeenCalled();
     second.userData.dispose();
+  });
+});
+
+describe('spine surface scratch rasters', () => {
+  const book = { id:'scratch-1', title:'Scratch', author:'Author' };
+  const style = { color:'#42604b', ink:'#ffffff', width:40 };
+  const shelf = { textureWidth:256, textureHeight:1024, level:'shelf' };
+  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
+
+  function recordingCanvases() {
+    const log = [], attributes = [];
+    const context = new Proxy({
+      measureText: text => ({ width:String(text).length * 16 }),
+      createLinearGradient: () => ({ addColorStop() {} }),
+      reset: vi.fn(() => log.push('reset')), fillText: vi.fn(() => log.push('fillText')),
+      getImageData: vi.fn((_x, _y, width, height) => ({ data:new Uint8ClampedArray(width * height * 4) }))
+    }, { get: (target, key) => target[key] ?? (() => {}) });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((_type, options) => { attributes.push(options); return context; });
+    const make = document.createElement.bind(document), created = [];
+    vi.spyOn(document, 'createElement').mockImplementation(tag => {
+      const element = make(tag);
+      if (tag === 'canvas') created.push(element);
+      return element;
+    });
+    const bigCanvases = () => created.filter(canvas => canvas.width === 256 && canvas.height === 1024).length;
+    return { context, log, attributes, bigCanvases };
+  }
+
+  it('reuses the glyph mask and ink rasters instead of allocating two full-size canvases per spine', () => {
+    const { context, bigCanvases } = recordingCanvases();
+    releaseSurface(spineSurface(book, style, 200, 32, shelf));
+    // mask, colour, ink, packed
+    expect(bigCanvases()).toBe(4);
+    releaseSurface(spineSurface({ ...book, id:'scratch-2' }, style, 200, 32, shelf));
+    expect(bigCanvases()).toBe(6);
+    expect(context.reset).toHaveBeenCalledTimes(2);
+    // another size is a different raster
+    releaseSurface(spineSurface(book, style, 200, 32, { ...shelf, textureHeight:512 }));
+    expect(context.reset).toHaveBeenCalledTimes(2);
+  });
+
+  it('wipes the reused canvases before the next book is lettered', () => {
+    const { log } = recordingCanvases();
+    releaseSurface(spineSurface(book, style, 200, 32, shelf));
+    log.length = 0;
+    releaseSurface(spineSurface({ ...book, id:'scratch-2', title:'Another' }, style, 200, 32, shelf));
+    expect(log.indexOf('reset')).toBeGreaterThanOrEqual(0);
+    expect(log.indexOf('reset')).toBeLessThan(log.indexOf('fillText'));
+  });
+
+  it('keeps relief rasters on the CPU and apart from the plain mask', () => {
+    const { attributes, bigCanvases } = recordingCanvases();
+    releaseSurface(spineSurface({ ...book, spineEngraved:true }, style, 200, 32, shelf));
+    expect(attributes.filter(options => options?.willReadFrequently).length).toBe(2);
+    releaseSurface(spineSurface(book, style, 200, 32, shelf));
+    const before = bigCanvases();
+    releaseSurface(spineSurface({ ...book, spineEngraved:true }, style, 200, 32, shelf));
+    // engraved again: its CPU mask and sample are held, only colour and packed are new
+    expect(bigCanvases() - before).toBe(2);
+  });
+
+  it('lets the scratch rasters go when the task that built the spines ends', async () => {
+    const { bigCanvases } = recordingCanvases();
+    releaseSurface(spineSurface(book, style, 200, 32, shelf));
+    await Promise.resolve();
+    const before = bigCanvases();
+    releaseSurface(spineSurface(book, style, 200, 32, shelf));
+    expect(bigCanvases() - before).toBe(4);
   });
 });

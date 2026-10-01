@@ -198,6 +198,31 @@ function paintRelief(c, designWidth, random, layout, { wear = true } = {}) {
   }
 }
 
+// The glyph mask, the ink layer and the relief sample never leave spineSurface,
+// which runs to the end synchronously: reuse one raster of each kind instead of
+// allocating, zeroing and later collecting up to three more full-size canvases
+// per spine (a row of new books entering the scroll margin builds many in one
+// task). reset() restores the default state and a transparent bitmap, exactly
+// what a new canvas starts with. The CPU-read flag cannot change after the
+// first getContext, so the relief rasters have kinds of their own. They are
+// let go when the task ends: nothing is held while the shelf is idle.
+const scratchRasters = {}
+let scratchHeld = false
+function scratchRaster(kind, width, height, attributes) {
+  if (!scratchHeld) { scratchHeld = true; queueMicrotask(releaseScratch) }
+  const held = scratchRasters[kind]
+  if (held?.canvas.width === width && held.canvas.height === height && typeof held.context?.reset === 'function') {
+    held.context.reset()
+    return held
+  }
+  const canvas = Object.assign(document.createElement('canvas'), { width, height })
+  return scratchRasters[kind] = { canvas, context:canvas.getContext('2d', attributes) }
+}
+function releaseScratch() {
+  scratchHeld = false
+  for (const kind of Object.keys(scratchRasters)) delete scratchRasters[kind]
+}
+
 // Colour and PBR channels share exactly the same glyph raster. Text never
 // becomes a floating decal: it follows the continuous curved binding UVs.
 // level: 'detail' (lifted book: height channel drives a bump map), 'shelf'
@@ -212,7 +237,7 @@ export function spineSurface(book, style, physicalHeight = 200, thickness = 32,
   const engraved = engraving && book.spineEngraved === true
   // Relief is sampled on the CPU: keep that raster off the GPU so reading it
   // back does not stall on a full GPU flush (seconds on software renderers).
-  const mask = canvas(), c = mask.getContext('2d', engraved ? { willReadFrequently:true } : undefined)
+  const { canvas:mask, context:c } = scratchRaster(engraved ? 'relief-mask' : 'mask', width, height, engraved ? { willReadFrequently:true } : undefined)
   toDesign(c); c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle'
   const layout = spineLayout(book), [top, bottom] = layout.span
   const family = `"${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`
@@ -283,7 +308,7 @@ export function spineSurface(book, style, physicalHeight = 200, thickness = 32,
   if (woven) paintWeave(ctx, designWidth)
   paintRelief(ctx, designWidth, random, layout, { wear:!thumb })
   ctx.setTransform?.(1, 0, 0, 1, 0, 0)
-  const ink = canvas(), ic = ink.getContext('2d')
+  const { canvas:ink, context:ic } = scratchRaster('ink', width, height)
   // Tint the glyph mask (optionally only the strip a shifted copy leaves
   // uncovered, i.e. one wall of each stroke) and lay it on the cloth.
   const stamp = (fill, offset = 0) => {
@@ -337,8 +362,8 @@ export function spineSurface(book, style, physicalHeight = 200, thickness = 32,
   const bump = level === 'detail' ? 2.6 : engraved ? .035 : 0
   let relief = null
   if (engraved) {
-    const sample = document.createElement('canvas'); sample.width = 256; sample.height = 1024
-    const sc = sample.getContext('2d', { willReadFrequently:true }); sc.filter = 'blur(1.2px)'; sc.drawImage(mask, 0, 0, 256, 1024)
+    const { context:sc } = scratchRaster('relief-sample', 256, 1024, { willReadFrequently:true })
+    sc.filter = 'blur(1.2px)'; sc.drawImage(mask, 0, 0, 256, 1024)
     const pixels = sc.getImageData(0, 0, 256, 1024).data
     relief = (u,v) => pixels[(Math.min(1023, Math.floor((1-v)*1024))*256 + Math.min(255, Math.floor(u*256)))*4+3]/255
   }
