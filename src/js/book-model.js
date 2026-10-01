@@ -3,6 +3,7 @@ import { spineSurface, releaseSurface, seededRandom, textSeed, withStops, paintC
 import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from './book-colors.js';
 import { normalizeBookAuthor } from './book-title.js';
 import { bookmarkFor } from './bookshelf-layout.js';
+import { applyBookReflectionSurface } from './book-reflection-surface.js';
 
 // Procedural micro-detail shared by every book: generated once, uploaded once.
 // Models receive clones (same Source, own repeat); three.js keeps the GPU
@@ -781,15 +782,19 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   const bindingSegments = overview ? 16 : shelf ? 32 : 96, reliefRows = shelf ? 96 : 384;
   const ribbonSegments = overview ? 8 : 32, ribbonSeed = textSeed(`ribbon|${book?.id ?? ''}|${book?.title ?? ''}`) || 1;
   const detail = !shelf && !overview, level = group.userData.detailLevel, ratio = width / height;
+  const surfaceSeed = String(book?.id ?? book?.path ?? book?.title ?? 'book');
   const cloth = new THREE.MeshStandardMaterial({ color: style.color, roughness: .86 });
+  applyBookReflectionSurface(cloth, { seed:`${surfaceSeed}|back`, strength:.018 });
   let surface = shelfSpineSurface(book, style, height, thickness, shelf, overview, inspectionResolution);
   const binding = new THREE.MeshPhysicalMaterial({ ...surface.material, side: THREE.DoubleSide });
   const updateSpineFade = !shelf && !overview ? spineGrazingFade(binding) : null;
   updateSpineFade?.(book, style);
+  applyBookReflectionSurface(binding, { seed:`${surfaceSeed}|binding`, strength:.014 });
   // Painted once, by updateCoverSource below (or as the placeholder while a
   // download is pending), never twice per book.
   const cover = new THREE.MeshPhysicalMaterial({ map:null });
   applyCoverFinish(cover, book.coverFinish);
+  applyBookReflectionSurface(cover, { seed:`${surfaceSeed}|cover`, strength:.018 });
   // Close-up copies carry woven or paper tooth in the normal channel. On the
   // shelf it would not survive the mipmaps, so those copies skip the cost.
   // 224 threads per board height: below ~3 device pixels a thread the weave
@@ -979,6 +984,8 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   for (const y of [-height / 2, height / 2]) {
     const material = new THREE.MeshPhysicalMaterial({ color:style.color, side:THREE.DoubleSide });
     applySpineCapFinish(material, book);
+    applyBookReflectionSurface(material, { seed:`${surfaceSeed}|${y < 0 ? 'tail' : 'head'}`, strength:.01,
+      uvScale:[1 / width, 1 / thickness] });
     const mesh = new THREE.Mesh(capGeometry(width, thickness, bindingSegments, overview ? 0 : board * 1.1), material);
     mesh.name = y < 0 ? 'binding-tail-cap' : 'binding-head-cap';
     capMaterials.push(mesh.material);

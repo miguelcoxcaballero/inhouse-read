@@ -18,6 +18,29 @@ green channel with material roughness 1, so the finish is not multiplied twice.
 Spine caps follow the selected surface finish; foil keeps its metal response.
 Paper edges remain more fibrous and less coated than a jacket.
 
+## Reflection imperfections
+
+Outer boards, curved bindings and their head/tail caps carry three broad smooth
+height-wave slopes, seeded by book identity and surface name. The same pattern
+survives changes between overview, enlarged and lifted copies. Normalized UVs
+span each board/binding; the caps' raw shape UVs are scaled by physical width
+and thickness to avoid dense ripples.
+
+The local shader hook bends only direct GGX/clearcoat normals and specular
+environment sampling. Original Lambert irradiance, diffuse environment
+irradiance, multiscattering energy compensation and the coat's diffuse
+attenuation keep their original normals. Printed maps, vertex positions and
+shadow geometry are unchanged. Existing paper/cloth grain remains separate.
+The field is evaluated once per fragment and reused by all lights; foil's
+anisotropic frame follows the reflected surface. No additional texture,
+geometry, light, draw or animation timer is needed.
+
+`applyBookReflectionSurface` composes with existing material shader hooks,
+including the lifted spine's grazing fade. Each material owns its phase and
+slope uniforms while sharing a versioned program key. For controlled rendering
+comparisons, `material.userData.bookReflectionSurface.setStrength(0)` removes
+the waviness through a uniform change, keeping programs and resources alive.
+
 The shelf's material cache includes `spineSurfaceFinish`. Changing this setting
 updates the existing binding immediately, including when it is the only changed
 field. The same book model, cover artwork and shared grain textures remain
