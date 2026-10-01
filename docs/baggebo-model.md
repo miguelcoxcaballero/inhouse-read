@@ -18,16 +18,18 @@ Sources checked on 2026-10-01:
 | Rear mesh brace | 216 × 320 mm, between 463.49 and 783.49 mm from floor |
 | Expanded sheet depth | 220 mm, 15 mm inset from the overall front/back faces |
 | Expanded sheet width | Approximately 567.58 mm; rounded to 567.5 mm |
-| Post profile | Approximately 18 mm, allowing 564 mm clear internal width |
+| Post profile | Rounded right triangle in an 18 × 18 mm envelope; inward diagonal faces the matching shelf corner |
+| Feet | Approximately 11.4 mm reference diameter; model uses 11.2 mm, seated in the triangular profile |
+| Shelf perimeter | Folded pan with four 45° clipped corners, fitting inside the posts; fixing heads and tabs face the diagonal |
 | Shelf rim | Approximately 16.5 mm below the surface |
 
 Only the overall dimensions and material specification are published product
-measurements. Internal positions above are measurements from IKEA's public
+measurements. The published 250 mm depth describes the cabinet body; wall-attachment hardware in the reference viewer extends roughly 26 mm behind it. The app preserves the nominal cabinet envelope. Internal positions above are measurements from IKEA's public
 visualization geometry, not manufacturing drawings with certified tolerances.
 Mesh pitch, fine bevel radii, coating texture and tiny screw details are visual
 approximations from the source photos and assembly illustrations.
 
-Four material batches keep each unit to four draw calls and 70,226 triangles.
+Four material batches keep each unit to four draw calls and 68,866 triangles (61,690 belong to the expanded sheet).
 The expanded metal is geometry: connected hexagonal
 strands with a 0.65 mm pressed profile, two reflecting facets on stretched
 strands and flatter connecting bonds. Apertures remain physically empty from
@@ -44,10 +46,10 @@ sub-millimetre bump texture whose UVs use physical millimetres, so grain has
 the same scale on a long post and a short rail.
 
 Indexed triangle corners preserve the same positions, apertures, physical UVs
-and pressed facets while reducing vertices from 210,678 to 145,432. Normals use
+and pressed facets. The assembly now uses 142,996 indexed vertices. Normals use
 normalized signed 16-bit storage (maximum component error below 0.000016);
 positions and UVs retain their original Float32 values. Geometry buffers shrink
-from 6.83 to 4.59 MB per unit. No triangles or close-up details are removed.
+to 4.52 MB per unit. The expanded sheet retains every aperture and pressed facet; the changed vertex count comes from the corrected frame profiles.
 
 Each model owns and disposes its GPU geometries, materials and paint texture.
 The complete four finished batches are cached as immutable CPU data, including

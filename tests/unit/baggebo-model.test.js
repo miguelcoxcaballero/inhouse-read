@@ -47,6 +47,65 @@ describe('IKEA BAGGEBO model', () => {
     shelf.userData.dispose();
   });
 
+  it('uses four correctly oriented triangular posts instead of solid square profiles', () => {
+    const shelf = createBaggebo();
+    shelf.updateMatrixWorld(true);
+    const painted = shelf.children.find(child => child.material.name.includes('powder-coated'));
+    const uprights = shelf.userData.parts.filter(part => part.kind === 'upright');
+    for (const part of uprights) {
+      expect(part.profile).toBe('rounded-right-triangle');
+      expect(part.bounds.getSize(new THREE.Vector3()).toArray()).toEqual([18, 1153, 18]);
+    }
+    for (const side of [-1, 1]) for (const front of [-1, 1]) {
+      const outerZ = front > 0 ? 0 : -250;
+      // The inner half of each old square must now be genuinely empty.
+      const empty = new THREE.Raycaster(new THREE.Vector3(side * 285, -590, outerZ - front * 15),
+        new THREE.Vector3(0, -1, 0), 0, 20);
+      expect(empty.intersectObject(painted)).toHaveLength(0);
+      const ray = new THREE.Raycaster(new THREE.Vector3(side * 280, -600, outerZ - front * 20),
+        new THREE.Vector3(side, 0, front).normalize(), 0, 100);
+      const [hit] = ray.intersectObject(painted);
+      expect(hit).toBeDefined();
+      // Its exposed diagonal faces inwards and sits at 45° in every corner.
+      expect(hit.face.normal.x).toBeCloseTo(-side / Math.SQRT2, 5);
+      expect(hit.face.normal.z).toBeCloseTo(-front / Math.SQRT2, 5);
+      expect(hit.face.normal.y).toBeCloseTo(0, 10);
+      expect(300 - Math.abs(hit.point.x) + front * (outerZ - hit.point.z)).toBeCloseTo(uprights[0].diagonal, 4);
+    }
+    const feet = shelf.userData.parts.filter(part => part.kind === 'foot');
+    for (const foot of feet) {
+      expect(foot.bounds.getSize(new THREE.Vector3()).x).toBeCloseTo(11.2, 4);
+      expect(foot.bounds.min.y).toBe(-1160);
+    }
+    shelf.userData.dispose();
+  });
+
+  it('fits chamfered folded pans and diagonal fixing heads to the triangular posts', () => {
+    const shelf = createBaggebo();
+    const rims = shelf.userData.parts.filter(part => part.kind === 'shelf-rim');
+    expect(rims).toHaveLength(4);
+    for (const rim of rims) {
+      expect(rim.outline).toHaveLength(8);
+      expect(rim.bounds.getSize(new THREE.Vector3()).x).toBeCloseTo(598.7, 4);
+      expect(rim.bounds.getSize(new THREE.Vector3()).z).toBeCloseTo(248.7, 4);
+      for (const [x, z] of rim.outline) {
+        const frontInset = Math.min(-z, 250 + z);
+        expect(300 - Math.abs(x) + frontInset).toBeCloseTo(rim.cornerCut, 8);
+      }
+      expect(rim.cornerCut).toBeGreaterThan(shelf.userData.parts.find(part => part.kind === 'upright').diagonal);
+    }
+    const fixings = shelf.userData.parts.filter(part => part.kind === 'screw' && /(?:front|back)-fixing/.test(part.name));
+    expect(fixings).toHaveLength(16);
+    for (const fixing of fixings) {
+      expect(Math.abs(fixing.axis[0])).toBeCloseTo(1 / Math.SQRT2, 8);
+      expect(Math.abs(fixing.axis[2])).toBeCloseTo(1 / Math.SQRT2, 8);
+      expect(fixing.axis[1]).toBe(0);
+    }
+    expect(shelf.userData.parts.filter(part => part.kind === 'mount-tab')).toHaveLength(16);
+    expect(shelf.userData.parts.filter(part => part.kind === 'fixing-shank')).toHaveLength(16);
+    shelf.userData.dispose();
+  });
+
   it('uses physical mesh openings and thickness for raycasting, grazing views and shadows', () => {
     const shelf = createBaggebo();
     shelf.updateMatrixWorld(true);
@@ -69,7 +128,7 @@ describe('IKEA BAGGEBO model', () => {
     expect(mesh.receiveShadow).toBe(true);
     const top = shelf.userData.parts.find(part => part.kind === 'mesh-top');
     expect(top.bounds.getSize(new THREE.Vector3()).y).toBeCloseTo(.65, 5);
-    expect(shelf.userData.parts.filter(part => part.kind === 'folded-lip')).toHaveLength(8);
+    expect(shelf.userData.parts.filter(part => part.kind === 'folded-lip')).toHaveLength(4);
     shelf.userData.dispose();
   });
 
@@ -108,9 +167,11 @@ describe('IKEA BAGGEBO model', () => {
         if (length !== 0 && Math.abs(length - 1) > .00003) validNormals = false;
       }
     }
-    // The optimization reuses triangle corners, preserving every facet;
-    // the previous non-indexed model needed 210,678 vertices and 6.83 MB.
-    expect(triangles).toBe(70226);
+    // All 61,690 original pressed-sheet triangles survive the profile fix;
+    // uprights, pans and hardware remain small compared with that sheet.
+    const sheet = shelf.children.find(mesh => mesh.material.name === 'Open expanded white-painted steel');
+    expect(sheet.geometry.index.count / 3).toBe(61690);
+    expect(triangles).toBeLessThan(70226);
     expect(vertices).toBeLessThan(147000);
     expect(bytes).toBeLessThan(4700000);
     expect(validNormals).toBe(true);

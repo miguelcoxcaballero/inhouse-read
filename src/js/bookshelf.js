@@ -397,6 +397,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (state.dragSession) finishSpineDrag({pointerId:state.dragSession.pointerId},state.dragSession.node,true);
       state.pressedBookId = null;
       for (const node of scroller.querySelectorAll('.is-pressed')) node.classList.remove('is-pressed');
+      state.shelfScene?.beginInspectionGesture?.();
     }});
   if (trashStatus) root.append(trashStatus);
   const plantCatalog = createPlantCatalog({ onAdd:addCatalogPlant, onAddLamp:addCatalogLamp, shelfType:state.shelfType,

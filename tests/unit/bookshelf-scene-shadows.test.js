@@ -232,15 +232,16 @@ describe('shelf shadows while scrolling', () => {
     shelf.setMode('isometric',{animate:false}); flushFrames();
     await Promise.resolve(); flushFrames();
     gpu.samples=[];
+    const movingSamples = gpu.key.shadow.blurSamples;
     const view=shelf.getInspectionView();
     const zoomed=shelf.setInspectionView({...view,zoom:2,panX:240,panY:0},{moving:true,renderNow:true});
     const canvas=stage.querySelector('canvas');
     expect(canvas.dataset.inspectionMoving).toBe('true');
     expect(canvas.dataset.animating).toBe('true');
     expect(zoomed.panX).toBe(240); // elastic slack beyond the 195 px resting edge
-    const movingSamples=gpu.samples.at(-1)[0];
     shelf.setInspectionView({...zoomed,zoom:2.2,panX:180},{moving:true,renderNow:true});
-    expect(gpu.samples.at(-1)[0]).toBe(movingSamples);
+    expect(gpu.samples).toHaveLength(0);
+    expect(gpu.key.shadow.blurSamples).toBe(movingSamples);
     shelf.setInspectionView(zoomed,{moving:false,renderNow:true});
     expect(shelf.getInspectionView().panX).toBe(195);
     expect(canvas.dataset.inspectionMoving).toBe('false');
@@ -248,20 +249,157 @@ describe('shelf shadows while scrolling', () => {
     gpu.samples=null;
   });
 
-  it('keeps the shadow map through sixty inspection frames with unchanged visible casters', async () => {
+  it('composites sixty inspection frames without drawing or copying the unchanged 3D room', async () => {
     shelf.setMode('isometric',{animate:false}); flushFrames();
     await Promise.resolve(); flushFrames();
     gpu.samples=[]; gpu.renderer.shadowMap.needsUpdate=false;
     const view=shelf.getInspectionView(), models=shelf.canvas.dataset.modelCreations;
+    const logicalBounds = shelf.canvas.getBoundingClientRect();
     for(let index=0;index<60;index++) {
       shelf.setInspectionView({...view,zoom:1+index/300,panX:index/20,panY:index/30},{moving:true,renderNow:true});
     }
     expect(shelf.canvas.dataset.modelCreations).toBe(models);
-    expect(gpu.samples).toHaveLength(60);
-    expect(gpu.samples.every(([,redraw])=>!redraw)).toBe(true);
+    expect(gpu.samples).toHaveLength(0);
+    expect(shelf.canvas.dataset.inspectionCompositorFrames).toBe('60');
+    expect(shelf.canvas.dataset.inspectionCacheActive).toBe('true');
+    expect(shelf.canvas.style.visibility).toBe('hidden');
+    expect(shelf.canvas.getBoundingClientRect()).toEqual(logicalBounds);
+    expect(stage.querySelector('.ihr-bookshelf-inspection-snapshot').style.transform).toMatch(/^matrix\(/);
+    expect(shelf.getInspectionView().centerX).toBe(view.centerX);
+    expect(shelf.getInspectionView().centerY).toBe(view.centerY);
     shelf.invalidate(); flushFrames();
     expect(gpu.samples.some(([,redraw])=>redraw)).toBe(true);
+    expect(shelf.canvas.style.visibility).toBe('');
+    expect(shelf.canvas.dataset.inspectionCacheActive).toBe('false');
     gpu.samples=null;
+  });
+
+  it('keeps a complete backdrop beyond the detailed tile and restores sharp native bounds at rest', async () => {
+    shelf.setMode('isometric',{animate:false}); flushFrames();
+    await Promise.resolve(); flushFrames();
+    const view = shelf.getInspectionView();
+    shelf.setInspectionView({...view,zoom:2,panX:0,panY:0},{moving:false,renderNow:true});
+    await Promise.resolve(); flushFrames();
+    const detailed = stage.querySelector('.ihr-bookshelf-inspection-snapshot');
+    const overview = stage.querySelector('.ihr-bookshelf-inspection-overview');
+    const dimensions = [detailed.width, detailed.height, overview.width, overview.height];
+    gpu.samples = [];
+    // Cross the overscan in both directions, then magnify far past the tile's
+    // own resolution. The fitted backdrop still includes every revealed row.
+    for (let i = 0; i < 30; i++) {
+      shelf.setInspectionView({...view,zoom:2+i/20,panX:i*8,panY:i*6},{moving:true,renderNow:true});
+      expect(detailed.style.display).toBe('block');
+      expect(overview.style.display).toBe('block');
+    }
+    expect(gpu.samples).toHaveLength(0);
+    expect([detailed.width, detailed.height, overview.width, overview.height]).toEqual(dimensions);
+    shelf.setInspectionView({...shelf.getInspectionView(),panX:100000},{moving:false,renderNow:true});
+    expect(gpu.samples).toHaveLength(1);
+    expect(detailed.style.display).toBe('none');
+    expect(overview.style.display).toBe('none');
+    expect(shelf.canvas.style.visibility).toBe('');
+    expect(shelf.getInspectionView().panX).toBeCloseTo((shelf.getInspectionZoom()-1)*view.width/2);
+    expect(shelf.canvas.width).toBe(Math.ceil(view.width*Number(shelf.canvas.dataset.pixelRatio)));
+    gpu.samples = null;
+  });
+
+  it('keeps drag picking and unchanged drop guides inside the one demand frame', async () => {
+    shelf.setMode('isometric',{animate:false}); flushFrames();
+    await Promise.resolve(); flushFrames();
+    gpu.samples = [];
+    shelf.invalidate();
+    const pending = frames.size;
+    for (let i = 0; i < 20; i++) shelf.getDropPosition(120+i,280);
+    expect(gpu.samples).toHaveLength(0);
+    expect(frames.size).toBe(pending);
+    flushFrames();
+    shelf.setDropPosition({shelf:2,x:.5}); flushFrames();
+    gpu.samples = [];
+    shelf.setDropPosition({shelf:2,x:.5});
+    expect(frames.size).toBe(0);
+    shelf.setDropPosition({shelf:2,x:.6}); flushFrames();
+    expect(gpu.samples).toHaveLength(1);
+    expect(gpu.samples[0][1]).toBe(false);
+    gpu.samples = null;
+  });
+
+  it('turns an already painted pressure frame into a pinch without repeated GPU lift frames', async () => {
+    shelf.setMode('isometric',{animate:false}); flushFrames();
+    await Promise.resolve(); flushFrames();
+    // The first finger lands on a real native book, one display frame before
+    // the second. Its visual pressure has started when navigation cancels it.
+    nodes[30].classList.add('is-pressed'); await Promise.resolve(); flushFrames(16);
+    expect(shelf.canvas.dataset.animating).toBe('true');
+    nodes[30].classList.remove('is-pressed');
+    shelf.beginInspectionGesture();
+    gpu.samples = [];
+    const view = shelf.getInspectionView();
+    for (let i = 0; i < 10; i++) shelf.setInspectionView({...view,zoom:1.1+i/20,panX:i*2},{moving:true,renderNow:true});
+    await Promise.resolve();
+    expect(gpu.samples).toHaveLength(0);
+    expect(frames.size).toBe(0);
+    expect(shelf.canvas.dataset.inspectionCacheActive).toBe('true');
+    expect(stage.querySelector('.ihr-bookshelf-inspection-overview').style.display).toBe('block');
+    shelf.setInspectionView(shelf.getInspectionView(),{moving:false,renderNow:true});
+    expect(gpu.samples).toHaveLength(1);
+    expect(nodes[30].classList.contains('is-pressed')).toBe(false);
+    expect(shelf.canvas.dataset.animating).toBe('false');
+    gpu.samples = null;
+  });
+
+  it('defers same-artwork texture notifications until a gesture settles', async () => {
+    gpu.passes = [];
+    shelf.setMode('isometric',{animate:false}); flushFrames();
+    await Promise.resolve(); flushFrames();
+    const model = gpu.passes.at(-1).meshes.find(({ object }) => /^book:/.test(object.parent?.name)).object.parent;
+    const view = shelf.getInspectionView();
+    shelf.setInspectionView({...view,zoom:2},{moving:true,renderNow:true});
+    gpu.samples = [];
+    for (let i = 0; i < 20; i++) {
+      model.userData.invalidate();
+      shelf.setInspectionView({...view,zoom:2+i/30,panX:i*3},{moving:true,renderNow:true});
+    }
+    expect(gpu.samples).toHaveLength(0);
+    expect(frames.size).toBe(0);
+    shelf.setInspectionView(shelf.getInspectionView(),{moving:false,renderNow:true});
+    expect(gpu.samples).toHaveLength(1);
+    expect(shelf.canvas.dataset.inspectionCacheActive).toBe('false');
+    gpu.samples = gpu.passes = null;
+  });
+
+  it('commits twenty background book analyses together after finger movement', async () => {
+    gpu.passes = [];
+    shelf.setMode('isometric',{animate:false}); flushFrames();
+    await Promise.resolve(); flushFrames();
+    const models = new Map(gpu.passes.at(-1).meshes.filter(({ object }) => /^book:/.test(object.parent?.name))
+      .map(({ object }) => [object.parent.name, object.parent]));
+    const view = shelf.getInspectionView();
+    shelf.beginInspectionGesture();
+    shelf.setInspectionView({...view,zoom:2},{moving:true,renderNow:true});
+    gpu.samples = [];
+    for (let i = 0; i < 20; i++) {
+      const id = String(30+i), book = {id,title:`Book ${id}`,author:'Author',spineSurfaceFinish:'glossy'};
+      const style = {color:'#abcdef',width:28};
+      if (i === 19) Object.assign(style,{width:45,heightRatio:1.1});
+      shelf.updateEntry(nodes[30+i],book,style);
+      shelf.setInspectionView({...view,zoom:2,panX:i*3},{moving:true,renderNow:true});
+    }
+    expect(gpu.samples).toHaveLength(0);
+    expect(shelf.canvas.dataset.inspectionPendingEntries).toBe('20');
+    for (let i = 30; i < 49; i++) expect(models.get(`book:${i}`).userData.updateSpineAppearance).not.toHaveBeenCalled();
+    shelf.setInspectionView(shelf.getInspectionView(),{moving:false,renderNow:true});
+    expect(gpu.samples).toHaveLength(1);
+    expect(shelf.canvas.dataset.inspectionPendingEntries).toBe('0');
+    for (let i = 30; i < 49; i++) {
+      expect(models.get(`book:${i}`).userData.updateSpineAppearance).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({id:String(i),spineSurfaceFinish:'glossy'}),expect.objectContaining({color:'#abcdef'}));
+    }
+    await Promise.resolve(); flushFrames();
+    const resized = gpu.passes.at(-1).meshes.find(({ object }) => object.parent?.name === 'book:49').object;
+    expect(resized.geometry.parameters.width).toBeCloseTo(110);
+    expect(resized.geometry.parameters.height).toBeCloseTo(198);
+    expect(resized.geometry.parameters.depth).toBe(45);
+    gpu.samples = gpu.passes = null;
   });
 
 });
