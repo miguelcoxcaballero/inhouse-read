@@ -132,7 +132,7 @@ test('editar el lomo en móvil muestra su modelo de canto y mantiene el editor e
   await dialog.getByRole('button', { name:'Editar' }).click()
   await expect(dialog).toHaveClass(/is-editing-spine/)
   await expect(dialog.locator('.ihr-spine-editor')).toBeVisible()
-  await expect(dialog.getByRole('heading', { name:'Editar el lomo' })).toBeVisible()
+  await expect(dialog.getByRole('heading', { name:'Lomo' })).toBeVisible()
   await expect(dialog.locator('.ihr-flyout__cover-target')).toBeHidden()
   const canvas = dialog.locator('.ihr-flyout__book canvas')
   await expect.poll(() => canvas.getAttribute('data-angle')).toBe('90')

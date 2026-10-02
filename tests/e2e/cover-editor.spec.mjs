@@ -38,7 +38,7 @@ test('pestañas Lomo y Portada: teclado, giro del libro y título', async ({ pag
   test.setTimeout(240_000)
   await page.setViewportSize({ width: 390, height: 844 })
   const errors = await openShelfEditor(page)
-  await expect(page.getByRole('heading', { name: 'Editar el lomo' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Lomo' })).toBeVisible()
   await expect(page.getByRole('tablist')).toBeVisible()
   const lomo = page.getByRole('tab', { name: 'Lomo' }), portada = page.getByRole('tab', { name: 'Portada' })
   await expect(lomo).toHaveAttribute('aria-selected', 'true')
@@ -49,7 +49,7 @@ test('pestañas Lomo y Portada: teclado, giro del libro y título', async ({ pag
   await page.keyboard.press('ArrowRight')
   await expect(portada).toBeFocused()
   await expect(portada).toHaveAttribute('aria-selected', 'true')
-  await expect(page.getByRole('heading', { name: 'Editar la portada' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Portada' })).toBeVisible()
   await expect(page.getByLabel('Brillo de la portada')).toBeHidden()
   await expect.poll(() => canvasAngle(page), { timeout: 15_000 }).toBe(0)
   // La portada gira completa y queda sobre la hoja, sin tapar ni salirse.

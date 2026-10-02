@@ -122,7 +122,7 @@ describe('pestañas del editor', () => {
     expect(panels.every(panel => panel?.getAttribute('role') === 'tabpanel')).toBe(true)
     expect(panels.map(panel => panel.getAttribute('aria-labelledby'))).toEqual(tabs.map(item => item.id))
     expect(panels.map(panel => panel.hidden)).toEqual([false, true])
-    expect(editor.querySelector('.ihr-spine-editor__heading').textContent).toBe('Editar el lomo')
+    expect(editor.querySelector('.ihr-spine-editor__heading').textContent).toBe('Lomo')
 
     tabs[0].focus()
     tabs[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }))
@@ -131,8 +131,8 @@ describe('pestañas del editor', () => {
     expect(tab('Portada').tabIndex).toBe(0)
     expect(tab('Lomo').tabIndex).toBe(-1)
     expect(panels.map(panel => panel.hidden)).toEqual([true, false])
-    expect(editor.querySelector('.ihr-spine-editor__heading').textContent).toBe('Editar la portada')
-    expect(editor.getAttribute('aria-label')).toBe('Editar la portada')
+    expect(editor.querySelector('.ihr-spine-editor__heading').textContent).toBe('Portada')
+    expect(editor.getAttribute('aria-label')).toBe('Portada')
 
     tab('Portada').dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true, cancelable: true }))
     expect(document.activeElement).toBe(tab('Lomo'))
@@ -203,7 +203,7 @@ describe('giro animado entre lomo y portada', () => {
     expect(editor.hidden).toBe(true)
     document.querySelector('.ihr-flyout__edit-button').click()
     expect(tab('Lomo').getAttribute('aria-selected')).toBe('true')
-    expect(editor.querySelector('.ihr-spine-editor__heading').textContent).toBe('Editar el lomo')
+    expect(editor.querySelector('.ihr-spine-editor__heading').textContent).toBe('Lomo')
   })
 
   it('Escape cierra el editor desde la pestaña Portada', async () => {

@@ -5,8 +5,8 @@ import { sampleBookMotion } from '../../src/js/book-model.js'
 describe('pestañas del editor', () => {
   it('ofrece Lomo y Portada, en ese orden, y valida el id', () => {
     expect(EDITOR_TABS.map(tab => [tab.id, tab.label, tab.heading])).toEqual([
-      ['spine', 'Lomo', 'Editar el lomo'],
-      ['cover', 'Portada', 'Editar la portada']
+      ['spine', 'Lomo', 'Lomo'],
+      ['cover', 'Portada', 'Portada']
     ])
     expect(editorTabId('cover')).toBe('cover')
     expect(editorTabId('nope')).toBe('spine')
