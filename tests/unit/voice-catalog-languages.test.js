@@ -33,10 +33,10 @@ describe('catalogue of the added languages', () => {
       expect(recommendedVoice(language).piperId).toBe(voice)
     }
   })
-  it('lists the Ukrainian model once per speaker (they share one download) and every model is a plain onnx of 60-80 MB', () => {
+  it('lists the Ukrainian model once per speaker (they share one download) and every model is a plain onnx of 60-80 MB (the two high-quality ones about 114 MB)', () => {
     const ukrainian = neuralVoices.filter(v => v.lang === 'uk-UA')
     expect(ukrainian.map(v => [v.id, v.speaker, v.name])).toEqual([['piper:uk_UA-ukrainian_tts-medium', 0, 'Lada'], ['piper:uk_UA-ukrainian_tts-medium#1', 1, 'Mykyta'], ['piper:uk_UA-ukrainian_tts-medium#2', 2, 'Tetiana']])
-    for (const [piperId, voices] of modelsOf(neuralVoices)) { expect(voices[0].sizeMB, piperId).toBeGreaterThanOrEqual(60); expect(voices[0].sizeMB, piperId).toBeLessThanOrEqual(80) }
+    for (const [piperId, voices] of modelsOf(neuralVoices)) { expect(voices[0].sizeMB, piperId).toBeGreaterThanOrEqual(60); expect(voices[0].sizeMB, piperId).toBeLessThanOrEqual(voices[0].quality === 'high' ? 120 : 80) }
   })
   it('builds the Hugging Face paths of the new voices (Norwegian lives under no/, not nb/)', () => {
     expect(piperPath('no_NO-talesyntese-medium')).toBe('no/no_NO/talesyntese/medium/no_NO-talesyntese-medium')
