@@ -1560,7 +1560,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.view.Display;
 import android.view.View;
+import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
@@ -1644,6 +1646,40 @@ public class MainActivity extends BridgeActivity {{
             && (page.getPath() == null ? "" : page.getPath()).startsWith("/inhouse-read/");
     }}
 
+    // Vote for the panel's fastest mode at the CURRENT resolution: a WebView app
+    // with no vote stays on the OEM's 60 Hz default.
+    private void applyHighRefreshRate() {{
+        try {{
+            Window window = getWindow();
+            if (window == null) return;
+            Display display = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                ? getDisplay()
+                : getWindowManager().getDefaultDisplay();
+            if (display == null) return;
+            Display.Mode current = display.getMode();
+            Display.Mode best = current;
+            for (Display.Mode mode : display.getSupportedModes()) {{
+                if (mode.getPhysicalWidth() == current.getPhysicalWidth()
+                        && mode.getPhysicalHeight() == current.getPhysicalHeight()
+                        && mode.getRefreshRate() > best.getRefreshRate() + 0.5f) {{
+                    best = mode;
+                }}
+            }}
+            WindowManager.LayoutParams params = window.getAttributes();
+            if (params.preferredDisplayModeId != best.getModeId()
+                    || params.preferredRefreshRate != best.getRefreshRate()) {{
+                params.preferredDisplayModeId = best.getModeId();
+                params.preferredRefreshRate = best.getRefreshRate();
+                window.setAttributes(params);
+            }}
+            if (Build.VERSION.SDK_INT >= 35) {{
+                window.getDecorView().setRequestedFrameRate(View.REQUESTED_FRAME_RATE_CATEGORY_HIGH);
+                View web = getBridge() != null ? getBridge().getWebView() : null;
+                if (web != null) web.setRequestedFrameRate(View.REQUESTED_FRAME_RATE_CATEGORY_HIGH);
+            }}
+        }} catch (Throwable ignored) {{}}
+    }}
+
     @Override
     public void onCreate(Bundle savedInstanceState) {{
         super.onCreate(savedInstanceState);
@@ -1706,6 +1742,7 @@ public class MainActivity extends BridgeActivity {{
         cookieManager.setAcceptCookie(true);
         cookieManager.setAcceptThirdPartyCookies(webView, true);
         cookieManager.flush();
+        applyHighRefreshRate();
 
         speechBridge = new ReadAloudBridge(this, webView);
         webView.addJavascriptInterface(speechBridge, "InhouseSpeech");
@@ -1894,6 +1931,24 @@ public class MainActivity extends BridgeActivity {{
         CookieManager.getInstance().flush();
         super.onStop();
     }}
+
+    @Override
+    public void onResume() {{
+        super.onResume();
+        applyHighRefreshRate();
+    }}
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {{
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) applyHighRefreshRate();
+    }}
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {{
+        super.onConfigurationChanged(newConfig);
+        applyHighRefreshRate();
+    }}
 }}
 """,
                 encoding="utf-8",
@@ -1981,6 +2036,33 @@ class MainActivity : BridgeActivity() {{
             && (page.path ?: "").startsWith("/inhouse-read/")
     }}
 
+    // Vote for the panel's fastest mode at the CURRENT resolution: a WebView app
+    // with no vote stays on the OEM's 60 Hz default.
+    @Suppress("DEPRECATION")
+    private fun applyHighRefreshRate() {{
+        try {{
+            val screen = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) this.display
+                else windowManager.defaultDisplay) ?: return
+            val current = screen.mode
+            var best = current
+            for (mode in screen.supportedModes) {{
+                if (mode.physicalWidth == current.physicalWidth
+                    && mode.physicalHeight == current.physicalHeight
+                    && mode.refreshRate > best.refreshRate + 0.5f) best = mode
+            }}
+            val params = window.attributes
+            if (params.preferredDisplayModeId != best.modeId || params.preferredRefreshRate != best.refreshRate) {{
+                params.preferredDisplayModeId = best.modeId
+                params.preferredRefreshRate = best.refreshRate
+                window.attributes = params
+            }}
+            if (Build.VERSION.SDK_INT >= 35) {{
+                window.decorView.setRequestedFrameRate(View.REQUESTED_FRAME_RATE_CATEGORY_HIGH)
+                bridge?.webView?.setRequestedFrameRate(View.REQUESTED_FRAME_RATE_CATEGORY_HIGH)
+            }}
+        }} catch (ignored: Throwable) {{}}
+    }}
+
     override fun onCreate(savedInstanceState: Bundle?) {{
         super.onCreate(savedInstanceState)
 
@@ -2038,6 +2120,7 @@ class MainActivity : BridgeActivity() {{
             setAcceptThirdPartyCookies(webView, true)
             flush()
         }}
+        applyHighRefreshRate()
 
         speechBridge = ReadAloudBridge(this, webView)
         webView.addJavascriptInterface(speechBridge!!, "InhouseSpeech")
@@ -2205,6 +2288,21 @@ class MainActivity : BridgeActivity() {{
     override fun onStop() {{
         CookieManager.getInstance().flush()
         super.onStop()
+    }}
+
+    override fun onResume() {{
+        super.onResume()
+        applyHighRefreshRate()
+    }}
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {{
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applyHighRefreshRate()
+    }}
+
+    override fun onConfigurationChanged(newConfig: Configuration) {{
+        super.onConfigurationChanged(newConfig)
+        applyHighRefreshRate()
     }}
 }}
 """,

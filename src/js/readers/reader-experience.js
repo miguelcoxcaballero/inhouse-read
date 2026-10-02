@@ -276,7 +276,8 @@ export class ReaderExperience {
       surface.dataset.readingTheme = p.theme
       surface.style.colorScheme = theme.scheme
     }
-    this.screen.style.setProperty('--reader-brightness',`${p.brightness}%`)
+    // 100% is the identity: leave the filter off so the viewport is not a filter surface during reader animations.
+    this.screen.style.setProperty('--reader-brightness-filter',p.brightness === 100 ? 'none' : `brightness(${p.brightness}%)`)
     for (const surface of [this.screen,this.screen.parentElement,this.panel]) {
       surface.style.setProperty('--reading-paper', theme.background)
       surface.style.setProperty('--reading-ink', theme.color)

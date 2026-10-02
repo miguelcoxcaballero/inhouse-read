@@ -14,7 +14,7 @@ body.is-reading .reader-heading { display:flex; width:100%; height:48px; gap:4px
 .reader-heading .icon-btn { flex:none; width:44px; height:44px; color:inherit; border-radius:10px; }
 /* The screen is already below the app header. Only the hidden, fixed preloader
    reserves that header here, so the opening snapshot and final page agree. */
-.reader-viewport { top:0; bottom:calc(var(--reader-bar-height) + var(--reader-audio-height,0px) + var(--reader-return-height,0px)); background:var(--reading-paper,#faf9f5); filter:brightness(var(--reader-brightness,100%)); }
+.reader-viewport { top:0; bottom:calc(var(--reader-bar-height) + var(--reader-audio-height,0px) + var(--reader-return-height,0px)); background:var(--reading-paper,#faf9f5); isolation:isolate; filter:var(--reader-brightness-filter,none); }
 #reader-screen.is-preparing .reader-viewport { top:var(--reader-header-height); }
 #reader-screen.is-preparing:has(.reader-toolbar[hidden]),
 #reader-screen.is-opening-from-book:has(.reader-toolbar[hidden]) { --reader-bar-height:calc(48px + env(safe-area-inset-bottom,0px)); }
