@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createBaggebo } from './baggebo-model.js';
 import { createShelfFurniture } from './shelf-furniture.js';
-import { normalizeShelfType } from './shelf-types.js';
+import { normalizeShelfType, WALNUT_SPEC } from './shelf-types.js';
 
 const WALNUT = new URL('../assets/library/walnut-pbr.webp',import.meta.url).href;
 const WALNUT_SURFACE = new URL('../assets/library/walnut-surface.webp',import.meta.url).href;
@@ -100,7 +100,8 @@ export function createShelfCatalogPreview(host) {
       key.castShadow = whiteSteel;
       renderer.shadowMap.needsUpdate = true;
       model = type === 'baggebo' ? createBaggebo({ width:600 }) : createShelfFurniture({
-        width:600,height:1160,depth:250,rows:[{ bottom:370 },{ bottom:705 },{ bottom:1035 }],...walnutMaterials()
+        width:WALNUT_SPEC.width,height:WALNUT_SPEC.height,depth:WALNUT_SPEC.depth,scale:1,
+        rows:WALNUT_SPEC.shelfBottoms.map(bottom => ({ bottom })),...walnutMaterials()
       });
       // A near-front angle reveals the shallow depth and perforations while
       // retaining an easy comparison of the two furniture silhouettes.

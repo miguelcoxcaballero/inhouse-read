@@ -26,7 +26,7 @@ describe('persistent shelf illumination', () => {
   it.each(['walnut','baggebo'])('keeps lamps at the same physical scale as books and pots on %s', async shelfType => {
     shelf = renderBookshelf(container, [], { shelfWidth:390, shelfType });
     await catalog.options.onAddLamp({lampId:'tarnaby'});
-    const scale = shelfType === 'baggebo' ? 390 / 600 : (window.innerWidth >= 600 ? 200 : 172) / 280;
+    const scale = 390 / 600; // both shelves are 600 mm units filling the shelf width
     const node=container.querySelector('.ihr-lamp');
     expect(parseFloat(node.style.getPropertyValue('--ihr-lamp-h'))).toBeCloseTo(250*scale);
     expect(parseFloat(node.style.getPropertyValue('--ihr-lamp-w'))).toBeCloseTo(150*scale);

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createBookshelfScene, projectPlantFoliage } from '../../src/js/bookshelf-scene.js';
+import { minimumBookTapWidth } from '../../src/js/plant-dimensions.js';
 
 const gpu = vi.hoisted(() => ({ renders:0, scene:null, models:[], disposed:0, readyFor:null }));
 vi.mock('../../src/js/book-model.js', async () => {
@@ -62,7 +63,8 @@ function assertGroundedBin() {
   const footY = foot.geometry.boundingBox.clone().applyMatrix4(foot.matrix).min.y + bin.position.y;
   const groundY = floor.geometry.boundingBox.max.y + floor.position.y;
   const cabinet = floor.parent.children.find(child => child.userData.furniture);
-  expect(groundY).toBeCloseTo(Math.min(...cabinet.children.map(mesh => mesh.geometry.boundingBox.min.y)), 6);
+  // The cabinet is built to a real 600 x 250 x 1160 mm unit and scaled to the shelf width.
+  expect(groundY).toBeCloseTo(Math.min(...cabinet.children.map(mesh => mesh.geometry.boundingBox.min.y)) * cabinet.scale.y + cabinet.position.y, 6);
   expect(footY).toBeCloseTo(groundY, 6);
   expect(Number(shelf.canvas.dataset.trashFootY)).toBeCloseTo(groundY, 6);
   expect(Number(shelf.canvas.dataset.cabinetFloorY)).toBeCloseTo(groundY, 6);
@@ -514,7 +516,10 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     const full = shelf.getBookPose(bookNode).rect;
     const bookHit = { left:20 + parseFloat(bookNode.style.left), top:60 + parseFloat(bookNode.style.top),
       width:parseFloat(bookNode.style.width), height:parseFloat(bookNode.style.height) };
-    expect(bookHit.width).toBeLessThan(full.width * .4);
+    // The button follows the spine, not the whole isometric book (<40 % of it), but a
+    // spine thinner than the minimum tap width is padded to exactly that width.
+    expect(bookHit.width).toBeLessThan(Math.max(full.width * .4, minimumBookTapWidth(window.innerWidth) + .01));
+    expect(bookHit.width).toBeGreaterThanOrEqual(minimumBookTapWidth(window.innerWidth) - .01);
     expect(bookHit.left).toBeLessThan(full.left + full.width * .2);
     expect(bookNode.dataset.sceneHitSurface).toBe('spine');
     expect(shelf.getObjectAtPoint(bookHit.left + bookHit.width / 2, bookHit.top + bookHit.height / 2)).toBe(bookNode);

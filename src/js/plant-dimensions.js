@@ -1,4 +1,4 @@
-import { BAGGEBO_SPEC } from './shelf-types.js';
+import { BAGGEBO_SPEC, SHELF_SPECS } from './shelf-types.js';
 
 /** Canonical centimetres. IKEA's “12 cm” is the maximum nursery pot,
  * not the outer diameter. Product measurements checked 2026-10-02.
@@ -46,18 +46,15 @@ export const POT_SIZES = Object.freeze(Object.fromEntries(Object.entries(IKEA_SI
 export const PLANT_SIZES = Object.freeze(Object.fromEntries(Object.entries(IKEA_SIZES_CM.plants).map(([id,p]) =>
   [id, { ...p, widthConfidence:'baja', classes:{ [p.nursery]:{ height:p.height*10, width:p.width*10 } } }])));
 
-/** Free height (mm) between a shelf board and the underside of the one above. */
+/** Free height (mm) between a shelf board and the underside of the one above.
+ * Clearance includes the rim under the preceding surface: the smallest
+ * compartment of each cabinet (155 to 800 mm from the floor). Both types are
+ * built to the same 600 x 250 x 1160 mm spec, so the figures agree. */
+const clearanceOf = spec => Math.min(...spec.shelfBottoms.map((bottom, slot) =>
+  bottom - (slot ? spec.shelfBottoms[slot - 1] + spec.shelfRimHeight : spec.postSize)));
 export const SHELF_CLEARANCE_MM = Object.freeze({
-  // Clearance includes the 16.5 mm rim under the preceding surface: smallest
-  // BAGGEBO compartments (155 to 800 mm from the floor, see BAGGEBO_SPEC).
-  baggebo:Math.min(...BAGGEBO_SPEC.shelfBottoms.map((bottom, slot) =>
-    bottom - (slot ? BAGGEBO_SPEC.shelfBottoms[slot - 1] + BAGGEBO_SPEC.shelfRimHeight : BAGGEBO_SPEC.postSize))),
-  // 'Madera' has no published size: it follows the book scale below. The top
-  // compartment (bookmark room 48 + row, minus the 12 px of cabinet top) is the
-  // tightest: 208 px on a phone (172 px rows), 236 px on a wide screen (200 px
-  // rows), over 172 and 200 px for a 280 mm book: 339 mm and 330 mm. The
-  // lower ones add the 16 px board and 24 px padding, minus 15 px: 245 and 273 px.
-  walnut:Math.round(Math.min(208 / (172 / 280), 236 / (200 / 280)))
+  baggebo:clearanceOf(SHELF_SPECS.baggebo),
+  walnut:clearanceOf(SHELF_SPECS.walnut)
 });
 
 /** Plants above this conservative interior limit use the open roof, keeping
@@ -97,18 +94,70 @@ export function plantSizeLabel(plantId, potId) {
   return `Maceta Ø${cm(size.potDiameter)} × ${cm(size.potHeight)} cm · planta ${cm(size.height)} cm${estimated ? ' aprox.' : ''}${unverified ? ' (sin verificar)' : ''}${placement}`;
 }
 
-/** Book height at its tallest (heightRatio 1): 28 cm, as baggeboLayout draws it. */
-export const BOOK_REFERENCE_MM = 280;
-const WALNUT_BOOK_PX = viewportWidth => viewportWidth >= 600 ? 200 : 172;
+/** Book height at its tallest (heightRatio 1): 24 cm; spineStyleFor varies it
+ * down to 80 % (19.2 cm), a typical 21-22 cm paperback or hardback. */
+export const BOOK_REFERENCE_MM = 240;
+/** Spine thickness of a real book: a slim paperback to a thick hardback. */
+export const BOOK_THICKNESS_MM = Object.freeze({ min:15, max:45 });
+/** Depth of a standing book: its cover width, 13-16 cm for a hardback. */
+export const BOOK_DEPTH_MM = Object.freeze({ min:130, max:160 });
+
+/** `spineStyleFor` options that draw real thicknesses, in pixels for a shelf
+ * `shelfWidth` px wide (a 600 mm unit): 15-45 mm, so a row of 56 cm holds
+ * roughly 12-18 books instead of two. */
+export function bookSpineOptions(shelfWidth) {
+  const scale = shelfScale({ shelfWidth });
+  return { minWidth:BOOK_THICKNESS_MM.min * scale, maxWidth:BOOK_THICKNESS_MM.max * scale, jitter:4 * scale };
+}
+
+/** A thin real spine is hard to tap, so a book never gets a layout cell
+ * narrower than this many pixels, even if the drawn spine is. This only
+ * spaces the books out: the tappable surface is widened separately, see
+ * `padTapRect` (the spine is centred in its cell, so the padded surface
+ * fits inside the cell and never reaches a neighbour). */
+export function minimumBookCellWidth(viewportWidth = 0) { return viewportWidth >= 600 ? 18 : 16; }
+
+/** Narrowest tappable width, in pixels, of any book: the same 16 px (phone) /
+ * 18 px (desktop) as its layout cell. */
+export function minimumBookTapWidth(viewportWidth = 0) { return minimumBookCellWidth(viewportWidth); }
 
 /**
- * Scene pixels per millimetre. On BAGGEBO the 600 mm unit fills the shelf
- * width, the scale lamps and books already use. 'Madera' has no published
- * size, so a 28 cm book is the full 172 px (200 px on wide screens) row.
+ * The tappable rectangle of a spine: `rect` (the projected, drawn spine) widened
+ * symmetrically around its centre to at least `minWidth`, independent of how
+ * thin the drawn book is. Height and vertical position are the spine's own.
+ * Pass `out` to refresh a retained rectangle in place.
  */
-export function shelfScale({ shelfType, shelfWidth, viewportWidth = 0 } = {}) {
-  if (shelfType === 'baggebo' && shelfWidth > 0) return shelfWidth / BAGGEBO_SPEC.width;
-  return WALNUT_BOOK_PX(viewportWidth) / BOOK_REFERENCE_MM;
+export function padTapRect(rect, minWidth, out = {}) {
+  const extra = Math.max(0, minWidth - rect.width);
+  out.left = rect.left - extra / 2; out.top = rect.top;
+  out.width = rect.width + extra; out.height = rect.height;
+  return out;
+}
+
+/**
+ * Nearest-centre picking among padded tap rectangles: of the `targets`
+ * ({ left, top, width, height, ...anything }) containing (x, y), the one whose
+ * centre is nearest the point. Where two padded rectangles overlap a tap goes
+ * to the book it is closest to, so neither steals the other's tap. Null when
+ * no rectangle contains the point.
+ */
+export function nearestTapTarget(targets, x, y) {
+  let best = null, bestDistance = Infinity;
+  for (const target of targets) {
+    if (x < target.left || x > target.left + target.width || y < target.top || y > target.top + target.height) continue;
+    const distance = (x - target.left - target.width / 2) ** 2 + ((y - target.top - target.height / 2) * .25) ** 2;
+    if (distance < bestDistance) { bestDistance = distance; best = target; }
+  }
+  return best;
+}
+
+/**
+ * Scene pixels per millimetre. Both shelves are 600 mm wide units that fill
+ * the shelf width, the scale lamps, books and plants use. Without a measured
+ * width (a DOM-only fallback) a 600 mm unit is assumed 390 px wide.
+ */
+export function shelfScale({ shelfWidth } = {}) {
+  return (shelfWidth > 0 ? shelfWidth : 390) / BAGGEBO_SPEC.width;
 }
 
 /** Plant size in scene pixels for a scale from `shelfScale`. */
