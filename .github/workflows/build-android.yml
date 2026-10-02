@@ -112,6 +112,7 @@ jobs:
             android-import-*.xml
             android-logcat.txt
             android-reading-*
+            android-*.capture-errors.json
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4

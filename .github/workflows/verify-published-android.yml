@@ -86,3 +86,4 @@ jobs:
             android-google-login.txt
             android-logcat.txt
             android-reading-*
+            android-*.capture-errors.json

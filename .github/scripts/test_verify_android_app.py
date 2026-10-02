@@ -2,6 +2,10 @@
 """Parser and lifecycle contracts for the real Android window verifier."""
 
 import unittest
+import subprocess
+import tempfile
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 from xml.etree import ElementTree
 
@@ -32,6 +36,64 @@ def displays(visible=True):
 def ui(top=0, reading=True):
     reader = '<node text="Volver a la estantería" enabled="true" bounds="[10,10][60,60]"/>' if reading else ''
     return ElementTree.fromstring(f'<hierarchy><node class="android.webkit.WebView" bounds="[0,{top}][1080,2300]">{reader}<node text="Intent reading"/></node></hierarchy>')
+
+
+class AndroidCaptureTests(unittest.TestCase):
+    def capture_with_failures(self, failures):
+        with tempfile.TemporaryDirectory() as directory:
+            dump = Path(directory) / "android-ui.xml"
+            # A previous successful tree must never survive a failed capture.
+            dump.write_text('<hierarchy><node text="stale"/></hierarchy>', encoding="utf-8")
+            pulls = []
+
+            def run(*args):
+                if args[:3] == ("adb", "shell", "rm"):
+                    self.assertFalse(dump.exists())
+                if args[:3] == ("adb", "pull", "/sdcard/inhouse-read-ui.xml"):
+                    pulls.append(args)
+                    failure = failures[len(pulls) - 1] if len(pulls) <= len(failures) else None
+                    if failure == "missing":
+                        raise subprocess.CalledProcessError(1, args, output="", stderr="remote object does not exist")
+                    if failure == "malformed":
+                        dump.write_text('<hierarchy>', encoding="utf-8")
+                    elif failure != "empty":
+                        dump.write_text('<hierarchy><node text="fresh"/></hierarchy>', encoding="utf-8")
+                return SimpleNamespace(stdout="ERROR: could not get idle state" if len(pulls) == 0 else "dump complete", stderr="")
+
+            with patch.object(verifier, "run", side_effect=run) as command, patch.object(verifier.time, "sleep") as sleep:
+                root = verifier.capture(Path(directory) / "screen.png", dump)
+            self.assertEqual(verifier.node_text(root).strip(), "fresh")
+            self.assertEqual(len(pulls), len(failures) + 1)
+            self.assertEqual(sleep.call_count, len(failures))
+            self.assertEqual(sum(call.args[:3] == ("adb", "shell", "rm") for call in command.call_args_list), len(pulls))
+
+    def test_exit_zero_without_remote_xml_retries_dump_and_pull(self):
+        self.capture_with_failures(["missing"])
+
+    def test_missing_local_xml_does_not_use_previous_dump(self):
+        self.capture_with_failures(["empty"])
+
+    def test_malformed_xml_retries_with_a_fresh_dump(self):
+        self.capture_with_failures(["malformed"])
+
+    def test_repeated_ui_failure_remains_a_failure_with_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dump = Path(directory) / "android-ui.xml"
+            failure = subprocess.CalledProcessError(1, ("adb", "pull"), output="", stderr="remote object does not exist")
+
+            def run(*args):
+                if args[:3] == ("adb", "pull", "/sdcard/inhouse-read-ui.xml"):
+                    raise failure
+                return SimpleNamespace(stdout="captured diagnostics", stderr="")
+
+            with patch.object(verifier, "run", side_effect=run) as command, patch.object(verifier.time, "sleep") as sleep, patch.object(verifier.Path, "write_text") as write:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    verifier.capture(Path(directory) / "screen.png", dump)
+            self.assertEqual(sleep.call_count, 3)
+            self.assertEqual(sum(call.args[:3] == ("adb", "shell", "rm") for call in command.call_args_list), 4)
+            self.assertEqual(write.call_count, 2)
+            self.assertIn('"attempt": 4', write.call_args_list[0].args[0])
+            self.assertIn(unittest.mock.call("adb", "logcat", "-d"), command.call_args_list)
 
 
 class AndroidReadingDisplayVerifierTests(unittest.TestCase):

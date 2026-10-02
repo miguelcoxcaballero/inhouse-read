@@ -20,19 +20,36 @@ def run(*args):
 
 
 def capture(screenshot=SCREENSHOT, ui_dump=UI_DUMP):
-    run("adb", "shell", "screencap", "-p", "/sdcard/inhouse-read-status-bar.png")
-    run("adb", "pull", "/sdcard/inhouse-read-status-bar.png", str(screenshot))
+    errors = []
     for attempt in range(4):
+        dumped = None
         try:
-            run("adb", "shell", "uiautomator", "dump", "--compressed", "/sdcard/inhouse-read-ui.xml")
-            break
-        except subprocess.CalledProcessError as error:
+            run("adb", "shell", "screencap", "-p", "/sdcard/inhouse-read-status-bar.png")
+            run("adb", "pull", "/sdcard/inhouse-read-status-bar.png", str(screenshot))
+            # uiautomator can exit 0 after an idle timeout without writing XML.
+            # Remove both old copies so an earlier successful dump cannot pass.
+            ui_dump.unlink(missing_ok=True)
+            run("adb", "shell", "rm", "-f", "/sdcard/inhouse-read-ui.xml")
+            dumped = run("adb", "shell", "uiautomator", "dump", "--compressed", "/sdcard/inhouse-read-ui.xml")
+            run("adb", "pull", "/sdcard/inhouse-read-ui.xml", str(ui_dump))
+            return ElementTree.parse(ui_dump).getroot()
+        except (subprocess.CalledProcessError, OSError, ElementTree.ParseError) as error:
+            detail = {"attempt": attempt + 1, "error": str(error)}
+            if isinstance(error, subprocess.CalledProcessError):
+                detail.update({"command": error.cmd, "stdout": error.stdout, "stderr": error.stderr})
+            if dumped is not None:
+                detail["dumpStdout"] = dumped.stdout
+                detail["dumpStderr"] = dumped.stderr
+            errors.append(detail)
+            print("Android UI capture was not ready: " + json.dumps(detail), flush=True)
             if attempt == 3:
+                ui_dump.with_suffix(".capture-errors.json").write_text(json.dumps(errors, indent=2), encoding="utf-8")
+                try:
+                    Path("android-logcat.txt").write_text(run("adb", "logcat", "-d").stdout, encoding="utf-8")
+                except subprocess.CalledProcessError as log_error:
+                    print(f"Could not capture Android logcat: {log_error}", flush=True)
                 raise
-            print(f"Android UI service not ready ({error.returncode}); retrying capture", flush=True)
             time.sleep(4)
-    run("adb", "pull", "/sdcard/inhouse-read-ui.xml", str(ui_dump))
-    return ElementTree.parse(ui_dump).getroot()
 
 
 def node_text(root):
