@@ -61,6 +61,8 @@ export class ReaderController {
   async goToTarget(target) { await this.#reader?.goToTarget?.(target) }
   async applyPreferences(preferences) { await this.#reader?.applyPreferences?.(preferences) }
   async getSpeechText() { return await this.#reader?.getSpeechText?.() || '' }
+  /** Text plus the mapping the audiobook needs to highlight and follow each sentence; null when the engine has none. */
+  async getSpeechSource() { return await this.#reader?.getSpeechSource?.() || null }
   async getPageSnapshot() {
     const reader = this.#reader
     const snapshot = await reader?.getPageSnapshot?.()

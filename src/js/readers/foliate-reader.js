@@ -15,6 +15,8 @@ import { attachSwipeNavigation } from '../gestures.js'
 import { DEFAULT_READING_PREFERENCES, readingCSS, normalizeReadingPreferences } from './reading-preferences.js'
 import { READING_THEMES } from './reading-preferences.js'
 import { compositePageSnapshots, renderedPageFilter, settlePageLayout, snapshotDOMPage } from './page-snapshot.js'
+import { mapSpeechText } from './speech-map.js'
+import { SPEECH_HIGHLIGHT, clearSpeechRange, installSpeechStyle, paintSpeechRange } from './speech-highlight.js'
 
 // foliate marca las coincidencias de búsqueda con Overlayer.outline (un
 // recuadro rojo de 3px que parecía una capa de depuración). Lo sustituimos una
@@ -31,6 +33,13 @@ Overlayer.outline = (rects, { color = '#d9a23a' } = {}) => {
   return g
 }
 // El extracto de foliate llega como { pre, match, post }; se aplana para quien espere texto.
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+// Where a spoken fragment starts relative to the page foliate shows: -1 before, 0 on it, 1 after.
+function pageSide(visible, range) {
+  const { startContainer:node, startOffset:offset } = range
+  const side = visible.comparePoint(node, offset)
+  return side === 0 && node === visible.endContainer && offset >= visible.endOffset ? 1 : side
+}
 const excerptParts = excerpt => typeof excerpt === 'string' ? { pre:excerpt, match:'', post:'' }
   : { pre:String(excerpt?.pre ?? ''), match:String(excerpt?.match ?? ''), post:String(excerpt?.post ?? '') }
 
@@ -43,6 +52,8 @@ export class FoliateReader {
   #documentGestures = []
   #resizeObserver
   #resizeTimer
+  #followTicket = 0
+  #followTurn = Promise.resolve()
 
   async open(container, file, { onRelocate, onToggleChrome, onUserNavigation, onFollowLink } = {}) {
     this.#container = container
@@ -151,6 +162,69 @@ export class FoliateReader {
   async goToTarget(target) { await this.#view?.goTo(target) }
   async getSpeechText() {
     return this.#view?.lastLocation?.range?.toString() || ''
+  }
+  /**
+   * The audiobook reads from the visible page to the end of its section, so a
+   * sentence is never cut at a page break. Offsets index the returned text; the
+   * DOM is only read (ranges for the highlight), never changed.
+   */
+  async getSpeechSource() {
+    const view = this.#view, visible = view?.lastLocation?.range, doc = visible?.startContainer?.ownerDocument
+    const content = view?.renderer?.getContents?.().find(item => item.doc === doc)
+    if (!content || !doc.body) return null
+    installSpeechStyle(doc, this.#preferences.theme)
+    const map = mapSpeechText(doc.body)
+    const live = () => this.#view === view && view.renderer.getContents().some(item => item.doc === doc)
+    // Clearing also cancels a page turn still queued for a sentence nobody is reading any more.
+    const clear = () => { this.#followTicket++; clearSpeechRange(doc); try { content.overlayer?.remove(SPEECH_HIGHLIGHT) } catch { /* overlay already gone */ } }
+    return {
+      text:map.text, start:map.offsetOf(visible.startContainer, visible.startOffset), clear,
+      highlight:(start, end) => {
+        if (!live()) return
+        const range = map.rangeFor(start, end)
+        if (!range) return clear()
+        // Old WebViews without the Highlight API still get a wash, drawn by foliate's own overlay.
+        if (!paintSpeechRange(range)) content.overlayer?.add(SPEECH_HIGHLIGHT, range, Overlayer.outline, { color:this.#preferences.theme === 'night' || this.#preferences.theme === 'amoled' ? '#e8b854' : '#d9a23a' })
+      },
+      follow:(start, end) => live() ? this.#followSpeech(doc, map.rangeFor(start, end)) : undefined
+    }
+  }
+  /**
+   * Turns pages with foliate's own animated paging (programmatic: it never goes
+   * through the gesture callbacks that stop the voice) until the fragment being
+   * spoken is on screen. Only the newest request matters; older ones yield.
+   */
+  #followSpeech(doc, range) {
+    if (!range) return
+    const ticket = ++this.#followTicket
+    return this.#followTurn = this.#followTurn.catch(() => {}).then(async () => {
+      const view = this.#view, renderer = view?.renderer
+      if (ticket !== this.#followTicket || !renderer || !renderer.getContents().some(item => item.doc === doc)) return
+      if (renderer.scrolled) return this.#followScroll(doc, range)
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const visible = view.lastLocation?.range
+        if (ticket !== this.#followTicket || visible?.startContainer?.ownerDocument !== doc) return
+        const side = pageSide(visible, range)
+        if (!side) return
+        const before = view.lastLocation
+        await (side > 0 ? view.next() : view.prev())
+        // A turn requested while another one animates is ignored by foliate: retry.
+        if (view.lastLocation === before) await wait(150)
+      }
+      if (ticket === this.#followTicket) await renderer.scrollToAnchor(range)
+    })
+  }
+  /** Scroll flow: glide only when the sentence leaves the screen, landing it a quarter down so the next lines stay visible. */
+  async #followScroll(doc, range) {
+    const view = this.#view, renderer = view.renderer
+    if (doc.defaultView.getComputedStyle(doc.documentElement).writingMode.startsWith('vertical')) return
+    const rect = range.getClientRects()[0]
+    if (!rect) return
+    const size = renderer.size, top = rect.top - renderer.start
+    if (top >= 0 && top <= size * .62) return
+    const delta = top - size * .25
+    if (delta > 0 && renderer.viewSize - renderer.end > 2) await view.next(delta)
+    else if (delta < 0 && renderer.start > 0) await view.prev(-delta)
   }
   /** Snapshot the current paginated column/scroll viewport after CFI restore. */
   async getPageSnapshot() {

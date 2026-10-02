@@ -267,6 +267,7 @@ export class ReaderExperience {
     if (!audio) this.voice.stop()
     this.preferences = normalizeReadingPreferences({ ...this.preferences, [key]:value }); this.applyPreferences(!audio)
     this.voice.options = {footnotes:this.preferences.footnotes,multilingual:this.preferences.multilingual,skipHeaders:this.preferences.skipHeaders}
+    if (key === 'rate' || key === 'voice') this.voice.restart?.()
   }
   async applyPreferences(updateBook = true) {
     const p = this.preferences

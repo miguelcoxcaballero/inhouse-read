@@ -1,7 +1,8 @@
-export function speechChunks(text) {
-  return (String(text || '').replace(/\s+/g, ' ').trim().match(/[^.!?。！？]+[.!?。！？]*\s*/g) || [])
-    .flatMap(sentence => sentence.match(/.{1,180}(?:\s|$)|.{1,180}/g) || []).map(x => x.trim()).filter(Boolean)
-}
+import { planSpeech, speechChunks } from './speech-text.js'
+
+export { speechChunks }
+// Blank or image-only pages passed over, one page turn at a time, before giving up.
+const MAX_EMPTY_PAGES = 12
 
 /** One short utterance at a time also avoids Android/browser long-speech timeouts. */
 export class ReadingVoice {
@@ -12,6 +13,8 @@ export class ReadingVoice {
     this.generation = 0
     this.index = 0
     this.chunks = []
+    this.items = []
+    this.source = null
     this.rate = 1
     this.voice = ''
     this.options = {footnotes:false,multilingual:false,skipHeaders:false}
@@ -34,17 +37,18 @@ export class ReadingVoice {
     const generation = ++this.generation
     this.state = 'loading'; this.notify('Preparando la voz…')
     try {
-      this.chunks = speechChunks(this.prepareText(await this.reader.getSpeechText()))
+      const plan = await this.prepare()
       if (generation !== this.generation) return
-      this.index = 0
+      this.adopt(plan)
       if (!this.chunks.length) return this.fail('Esta página no contiene texto legible. Los PDF escaneados necesitan reconocimiento de texto para escucharlos.')
       this.state = 'playing'; this.notify(); this.speakCurrent()
     } catch { if (generation === this.generation) this.fail('No se pudo preparar el texto para la lectura en voz alta.') }
   }
   speakCurrent() {
     if (this.state !== 'playing') return
-    const id = `${this.generation}-${this.index}-${Date.now()}`
+    const id = `${this.generation}-${this.index}-${Date.now()}-${this.spoken = (this.spoken || 0) + 1}`
     this.utteranceId = id
+    this.present()
     const text = this.chunks[this.index]
     const language = this.options.multilingual ? this.detectLanguage(text) : this.reader.language || navigator.language || 'es-ES'
     if (this.native) { window.InhouseSpeech.speak(text, language, this.rate, this.options.multilingual ? '' : this.voice, id); return }
@@ -62,17 +66,50 @@ export class ReadingVoice {
     if (this.state !== 'playing') return
     if (++this.index < this.chunks.length) return this.speakCurrent()
     const generation = this.generation
-    const previous = JSON.stringify(this.reader.location)
+    this.source?.clear?.()
     try {
-      await this.reader.next()
-      if (generation !== this.generation || this.state !== 'playing') return
-      if (JSON.stringify(this.reader.location) === previous) { this.stop(); this.notify('Has llegado al final.'); return }
-      this.chunks = speechChunks(this.prepareText(await this.reader.getSpeechText()))
-      if (generation !== this.generation || this.state !== 'playing') return
-      this.index = 0
-      if (!this.chunks.length) return this.fail('La siguiente página no tiene texto legible. Puedes avanzar y volver a escuchar.')
-      this.speakCurrent()
+      for (let blank = 0; blank < MAX_EMPTY_PAGES; blank++) {
+        const previous = JSON.stringify(this.reader.location)
+        await this.reader.next()
+        if (generation !== this.generation || this.state !== 'playing') return
+        if (JSON.stringify(this.reader.location) === previous) { this.stop(); this.notify('Has llegado al final.'); return }
+        const plan = await this.prepare()
+        if (generation !== this.generation || this.state !== 'playing') return
+        this.adopt(plan)
+        if (this.chunks.length) return this.speakCurrent()
+      }
+      this.fail('La siguiente página no tiene texto legible. Puedes avanzar y volver a escuchar.')
     } catch { if (generation === this.generation) this.fail('No se pudo continuar en la siguiente página.') }
+  }
+  /**
+   * Text to speak from the visible page on. Readers that can map text back to the
+   * page hand over a source (offsets -> DOM) so each sentence can be highlighted
+   * and followed; the others keep the plain text path, unhighlighted.
+   */
+  async prepare() {
+    const pending = this.reader.getSpeechSource?.()
+    const source = pending ? await pending : null
+    if (!source) return { source, items:speechChunks(this.prepareText(await this.reader.getSpeechText())).map(text => ({ text })) }
+    const { footnotes, skipHeaders } = this.options
+    return { source, items:planSpeech(source.text, { footnotes, skipHeaders }, source.start || 0) }
+  }
+  adopt({ source, items }) {
+    if (this.source && this.source !== source) this.source.clear?.()
+    this.source = source; this.items = items; this.chunks = items.map(item => item.text); this.index = 0
+  }
+  /** Highlights the whole sentence being spoken and lets the reader bring it on screen. Cosmetic: it can never stop the voice. */
+  present() {
+    const item = this.items[this.index], source = this.source
+    if (!source || !item?.sentence) return
+    try {
+      source.highlight?.(item.sentence.start, item.sentence.end)
+      Promise.resolve(source.follow?.(item.start, item.end)).catch(() => {})
+    } catch { /* the page may have changed under a paused voice */ }
+  }
+  /** Re-speaks the current fragment, so a new speed or voice is heard now instead of at the next one. */
+  restart() {
+    if (this.state !== 'playing' || this.index >= this.chunks.length) return
+    this.cancelUtterance(); this.speakCurrent()
   }
   cancelUtterance() {
     this.utteranceId = null
@@ -100,13 +137,13 @@ export class ReadingVoice {
   }
   pause() {
     if (this.state !== 'playing') return
-    ++this.generation; this.state = 'paused'; this.cancelUtterance()
+    ++this.generation; this.state = 'paused'; this.cancelUtterance(); this.source?.clear?.()
     if (this.index >= this.chunks.length) this.chunks = []
     this.notify()
   }
   stop() {
-    ++this.generation; this.state = 'stopped'; this.cancelUtterance()
-    this.chunks = []; this.index = 0; clearTimeout(this.sleepTimer); this.notify()
+    ++this.generation; this.state = 'stopped'; this.cancelUtterance(); this.source?.clear?.()
+    this.chunks = []; this.items = []; this.source = null; this.index = 0; clearTimeout(this.sleepTimer); this.notify()
   }
   fail(message) { this.stop(); this.notify(message) }
   setSleep(minutes) {

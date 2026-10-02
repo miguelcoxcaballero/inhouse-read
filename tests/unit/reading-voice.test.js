@@ -38,3 +38,173 @@ describe('reading voice lifecycle', () => {
     expect(voice.state).toBe('stopped'); expect(stop).toHaveBeenCalled(); expect(next).not.toHaveBeenCalled()
   })
 })
+
+// A reader that can map text back to its page: records what the voice asks it to show.
+function mappedReader(pages, { follow } = {}) {
+  const calls = []
+  let page = 0
+  const reader = {
+    calls, location:{ fraction:0, page:0 }, nexts:0,
+    getSpeechSource:async () => {
+      const text = pages[page]?.text ?? '', current = page
+      return { text, start:pages[current]?.start ?? 0,
+        highlight:(start, end) => calls.push(['highlight', current, start, end, text.slice(start, end)]),
+        follow:(start, end) => { calls.push(['follow', current, start, end]); return follow?.(start, end) },
+        clear:() => calls.push(['clear', current]) }
+    },
+    getSpeechText:async () => { throw new Error('the mapped path must not use plain text') },
+    next:async () => { reader.nexts++; if (page < pages.length - 1) { page++; reader.location = { fraction:page / pages.length, page } } }
+  }
+  return reader
+}
+const say = (speak, n = -1) => speak.mock.calls.at(n)
+const done = id => window.dispatchEvent(new CustomEvent('inhouse-tts', { detail:{ id, type:'done' } }))
+
+describe('audiobook sentence highlight and page follow', () => {
+  it('highlights each whole sentence as its speech starts and follows with the fragment being spoken', async () => {
+    const speak = vi.fn(), stop = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop })
+    const long = `${'lorem '.repeat(50)}end.`
+    const text = `First one. ${long} Last bit.`
+    const reader = mappedReader([{ text }])
+    const voice = new ReadingVoice(reader)
+    await voice.play()
+    const sentences = []
+    for (let i = 0; i < voice.chunks.length; i++) { if (i) done(say(speak)[4]); sentences.push(reader.calls.filter(c => c[0] === 'highlight').at(-1)) }
+    expect(sentences[0].slice(2)).toEqual([0, 10, 'First one.'])
+    expect(sentences[1][4]).toBe(long)
+    // the 180-char fragments of the long sentence share its whole-sentence highlight but have their own follow ranges
+    const middle = sentences.filter(s => s[4] === long)
+    expect(middle.length).toBeGreaterThan(1)
+    const follows = reader.calls.filter(c => c[0] === 'follow')
+    expect(follows.length).toBe(voice.chunks.length)
+    expect(follows.map(c => c[2]).every((start, i, all) => !i || start > all[i - 1])).toBe(true)
+    expect(sentences.at(-1)[4]).toBe('Last bit.')
+    voice.stop()
+  })
+  it('starts at the first character of the visible page and clears on pause, re-highlighting the same sentence on resume', async () => {
+    const speak = vi.fn(), stop = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop })
+    const text = 'Left over. One. Two. Three.'
+    const reader = mappedReader([{ text, start:text.indexOf('One') }])
+    const voice = new ReadingVoice(reader)
+    await voice.play()
+    expect(say(speak)[0]).toBe('One.')
+    done(say(speak)[4])
+    expect(say(speak)[0]).toBe('Two.')
+    reader.calls.length = 0
+    voice.pause()
+    expect(reader.calls).toEqual([['clear', 0]])
+    // a late native completion of the interrupted utterance changes nothing
+    done(say(speak)[4]); expect(speak).toHaveBeenCalledTimes(2)
+    await voice.play()
+    expect(say(speak)[0]).toBe('Two.')
+    expect(reader.calls.filter(c => c[0] === 'highlight').at(-1)[4]).toBe('Two.')
+    voice.stop()
+    expect(reader.calls.at(-1)).toEqual(['clear', 0])
+  })
+  it('turns to the next page when a page is spoken, without stopping the voice, and highlights the new page', async () => {
+    const speak = vi.fn(), stop = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop })
+    const reader = mappedReader([{ text:'Page one.' }, { text:'Page two. More.' }])
+    const voice = new ReadingVoice(reader)
+    await voice.play()
+    done(say(speak)[4])
+    await vi.waitFor(() => expect(speak).toHaveBeenCalledTimes(2))
+    expect(reader.nexts).toBe(1)
+    expect(say(speak)[0]).toBe('Page two.')
+    expect(voice.state).toBe('playing')
+    expect(stop).not.toHaveBeenCalled()
+    expect(reader.calls).toContainEqual(['clear', 0])
+    expect(reader.calls.filter(c => c[0] === 'highlight').at(-1).slice(1)).toEqual([1, 0, 9, 'Page two.'])
+    voice.stop()
+  })
+  it('skips pages with no text and reports the end of the book politely', async () => {
+    const speak = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop:vi.fn() })
+    const messages = []
+    const reader = mappedReader([{ text:'Only text.' }, { text:'' }, { text:'  \n ' }, { text:'Back again.' }])
+    const voice = new ReadingVoice(reader, (state, message) => message && messages.push(message))
+    await voice.play()
+    done(say(speak)[4])
+    await vi.waitFor(() => expect(say(speak)[0]).toBe('Back again.'))
+    expect(reader.nexts).toBe(3)
+    done(say(speak)[4])
+    await vi.waitFor(() => expect(voice.state).toBe('stopped'))
+    expect(messages).toContain('Has llegado al final.')
+  })
+  it('keeps the old message when a run of pages has no readable text at all', async () => {
+    const speak = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop:vi.fn() })
+    const messages = []
+    const reader = mappedReader([{ text:'Start.' }, ...Array.from({ length:20 }, () => ({ text:'' }))])
+    const voice = new ReadingVoice(reader, (state, message) => message && messages.push(message))
+    await voice.play(); done(say(speak)[4])
+    await vi.waitFor(() => expect(voice.state).toBe('stopped'))
+    expect(messages).toContain('La siguiente página no tiene texto legible. Puedes avanzar y volver a escuchar.')
+  })
+  it('a failing or rejected page follow never interrupts the speech', async () => {
+    const speak = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop:vi.fn() })
+    const reader = mappedReader([{ text:'One. Two.' }])
+    reader.getSpeechSource = async () => ({ text:'One. Two.', highlight() { throw new Error('range detached') }, follow:() => Promise.reject(new Error('x')), clear() {} })
+    const voice = new ReadingVoice(reader)
+    await voice.play(); done(say(speak)[4])
+    expect(say(speak)[0]).toBe('Two.')
+    expect(voice.state).toBe('playing')
+    voice.stop()
+  })
+  it('honours the footnote option while keeping raw offsets for the highlight', async () => {
+    const speak = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop:vi.fn() })
+    const reader = mappedReader([{ text:'Claim.[12] Next point (nota 3) here.' }])
+    const voice = new ReadingVoice(reader)
+    await voice.play()
+    expect(say(speak)[0]).toBe('Claim.')
+    done(say(speak)[4])
+    expect(say(speak)[0]).toBe('Next point here.')
+    expect(reader.calls.filter(c => c[0] === 'highlight').at(-1)[4]).toBe('Next point (nota 3) here.')
+    voice.stop()
+    voice.options = { ...voice.options, footnotes:true }
+    await voice.play()
+    expect(say(speak)[0]).toBe('Claim.')
+    done(say(speak)[4])
+    expect(say(speak)[0]).toBe('[12] Next point (nota 3) here.')
+    voice.stop()
+  })
+  it('works through speechSynthesis too, one highlight per utterance end', async () => {
+    const utterances = []
+    class FakeUtterance { constructor(text) { this.text = text } }
+    vi.stubGlobal('SpeechSynthesisUtterance', FakeUtterance)
+    vi.stubGlobal('speechSynthesis', { getVoices:() => [], speak:u => utterances.push(u), cancel:vi.fn() })
+    const reader = mappedReader([{ text:'Alpha. Beta.' }])
+    const voice = new ReadingVoice(reader)
+    await voice.play()
+    utterances[0].onend(); expect(utterances[1].text).toBe('Beta.')
+    expect(reader.calls.filter(c => c[0] === 'highlight').map(c => c[4])).toEqual(['Alpha.', 'Beta.'])
+    voice.stop()
+  })
+  it('a speed or voice change re-speaks the current sentence with the new settings; stale completions are ignored', async () => {
+    const speak = vi.fn(), stop = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop })
+    const voice = new ReadingVoice(mappedReader([{ text:'One. Two.' }]))
+    await voice.play()
+    const firstId = say(speak)[4]
+    voice.rate = 1.6; voice.restart()
+    expect(speak).toHaveBeenCalledTimes(2)
+    expect(say(speak).slice(0, 3)).toEqual(['One.', expect.any(String), 1.6])
+    done(firstId)
+    expect(speak).toHaveBeenCalledTimes(2)
+    voice.pause(); voice.restart(); expect(speak).toHaveBeenCalledTimes(2)
+    voice.stop()
+  })
+  it('readers without a speech source keep the plain text path and never highlight', async () => {
+    const speak = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop:vi.fn() })
+    const voice = new ReadingVoice({ getSpeechText:async () => 'Plain one. Plain two.' })
+    await voice.play()
+    expect(say(speak)[0]).toBe('Plain one.')
+    expect(voice.source).toBeNull()
+    voice.stop()
+  })
+})

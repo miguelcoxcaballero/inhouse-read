@@ -24,6 +24,7 @@ vi.mock('../../src/js/readers/foliate-reader.js', () => ({
     goToFraction = vi.fn()
     close = vi.fn()
     getPageSnapshot = foliateSnapshot
+    getSpeechSource = vi.fn(async () => ({ text:'Hello.', start:0 }))
   }
 }))
 
@@ -110,5 +111,14 @@ describe('ReaderController', () => {
     resolve({ source:document.createElement('canvas'), width:200, height:300 })
     expect(await pending).toBeNull()
     expect(await controller.getPageSnapshot()).toBeNull()
+  })
+
+  it('passes the speech source of the engine through, and has none for engines without one', async () => {
+    const controller = new ReaderController()
+    expect(await controller.getSpeechSource()).toBeNull()
+    await controller.open(document.createElement('div'), new File(['PK\x03\x04'], 'a.epub'))
+    expect(await controller.getSpeechSource()).toEqual({ text:'Hello.', start:0 })
+    await controller.open(document.createElement('div'), new File(['%PDF-1.4'], 'a.pdf'))
+    expect(await controller.getSpeechSource()).toBeNull()
   })
 })
