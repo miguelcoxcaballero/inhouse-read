@@ -208,29 +208,52 @@ def assert_reading_window_state(state, reading, foreground=True):
 
 
 def wait_for_reading_display(label, reading, foreground=True, timeout=45):
-    deadline = time.monotonic() + timeout
+    started = time.monotonic()
+    deadline = started + timeout
     prefix = "android-reading-" + label
     last_error = None
+    timeline = []
     while True:
+        capture_started = time.time()
         root = capture(Path(prefix + ".png"), Path(prefix + ".xml"))
+        captured = time.time()
         windows = run("adb", "shell", "dumpsys", "window", "windows").stdout
         displays = run("adb", "shell", "dumpsys", "window", "displays").stdout
         Path(prefix + "-windows.txt").write_text(windows, encoding="utf-8")
         Path(prefix + "-displays.txt").write_text(displays, encoding="utf-8")
+        text = node_text(root)
+        entry = {"attempt": len(timeline) + 1, "elapsedSeconds": round(time.monotonic() - started, 3),
+                 "captureStartedAt": capture_started, "captureCompletedAt": captured,
+                 "readerVisible": bool(re.search(r"Volver a la estanter.a", text)),
+                 "bookshelfVisible": bool(re.search(r"\bBiblioteca\b", text))}
+        timeline.append(entry)
         try:
             state = android_window_state(windows, displays)
+            entry["windowState"] = state
             assert_reading_window_state(state, reading, foreground)
             if foreground:
                 state["webViewBounds"] = verify_webview_bounds(root, reading)
-                reader_visible = bool(re.search(r"Volver a la estanter.a", node_text(root)))
-                assert reader_visible == reading, "The real reader/shelf UI has not settled"
+                assert entry["readerVisible"] == reading, "The real reader/shelf UI has not settled"
             Path(prefix + ".json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+            Path(prefix + "-timeline.json").write_text(json.dumps(timeline, indent=2) + "\n", encoding="utf-8")
             print(f"Android reading display verified ({label}): {json.dumps(state)}", flush=True)
             return root
         except AssertionError as error:
             last_error = error
+            entry["error"] = str(error)
             Path(prefix + ".json").write_text(json.dumps({"error": str(error)}, indent=2) + "\n", encoding="utf-8")
+            Path(prefix + "-timeline.json").write_text(json.dumps(timeline, indent=2) + "\n", encoding="utf-8")
+            # Keep independently sampled frames rather than overwriting all
+            # evidence while an imported book prepares its first 3D return.
+            for extension in (".png", ".xml"):
+                sample = Path(prefix + extension)
+                if sample.is_file():
+                    Path(prefix + f"-attempt-{entry['attempt']}" + extension).write_bytes(sample.read_bytes())
         if time.monotonic() >= deadline:
+            try:
+                Path("android-logcat.txt").write_text(run("adb", "logcat", "-d").stdout, encoding="utf-8")
+            except subprocess.CalledProcessError as log_error:
+                print(f"Could not capture Android logcat: {log_error}", flush=True)
             raise AssertionError(f"Android reading display did not settle ({label}): {last_error}")
         time.sleep(2)
 
@@ -284,7 +307,11 @@ def verify_loaded_reader_display(mode, background=False):
         root = wait_for_reading_display("resumed-reader", reading=True)
         assert re.search("Intent " + mode, node_text(root), re.I), "Returning from Home lost the loaded document"
     return_to_bookshelf(root)
-    wait_for_reading_display(mode + "-shelf-after", reading=False)
+    # A newly imported book has no shelf origin: its first return prepares the
+    # 3D model before the flight. Android15 SwiftShader reached the home UI but
+    # was still closing at 45s. Only this endpoint gets the full return budget;
+    # initial reader, Home release and resume retain their original 45s limit.
+    wait_for_reading_display(mode + "-shelf-after", reading=False, timeout=120)
 
 
 def verify_reading_display():

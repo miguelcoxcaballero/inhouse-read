@@ -4,6 +4,7 @@
 import unittest
 import subprocess
 import tempfile
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -97,6 +98,43 @@ class AndroidCaptureTests(unittest.TestCase):
 
 
 class AndroidReadingDisplayVerifierTests(unittest.TestCase):
+    def test_closing_samples_until_native_policy_and_shelf_both_restore(self):
+        samples = iter([ui(), ui(24, False)])
+        window_samples = iter([windows(True), windows()])
+        display_samples = iter([displays(False), displays()])
+        def run(*args):
+            return SimpleNamespace(stdout=next(window_samples) if args[-1] == "windows" else next(display_samples), stderr="")
+        with patch.object(verifier, "capture", side_effect=lambda *_: next(samples)), patch.object(verifier, "run", side_effect=run), patch.object(verifier.time, "monotonic", side_effect=[0, 1, 2, 4]), patch.object(verifier.time, "sleep") as sleep, patch.object(verifier.Path, "is_file", return_value=False), patch.object(verifier.Path, "write_text") as write:
+            result = verifier.wait_for_reading_display("closing", reading=False, timeout=120)
+        self.assertEqual(verifier.verify_webview_bounds(result, reading=False)[1], 24)
+        sleep.assert_called_once_with(2)
+        timeline = json.loads(next(call.args[0] for call in reversed(write.call_args_list) if call.args[0].startswith("[")))
+        self.assertEqual([entry["readerVisible"] for entry in timeline], [True, False])
+        self.assertEqual([entry["windowState"]["keepScreenOn"] for entry in timeline], [True, False])
+        self.assertIn("error", timeline[0])
+        self.assertNotIn("error", timeline[1])
+
+    def test_reader_gone_does_not_exempt_a_native_flag_remaining_enabled(self):
+        def run(*args):
+            return SimpleNamespace(stdout=windows(True) if args[-1] == "windows" else displays(False) if args[-1] == "displays" else "diagnostic log", stderr="")
+        with patch.object(verifier, "capture", return_value=ui(24, False)), patch.object(verifier, "run", side_effect=run) as command, patch.object(verifier.time, "monotonic", side_effect=[0, 120, 120]), patch.object(verifier.Path, "is_file", return_value=False), patch.object(verifier.Path, "write_text"):
+            with self.assertRaisesRegex(AssertionError, "did not settle.*KEEP_SCREEN_ON"):
+                verifier.wait_for_reading_display("closing", reading=False, timeout=120)
+        self.assertIn(unittest.mock.call("adb", "logcat", "-d"), command.call_args_list)
+
+    def test_native_restore_does_not_exempt_a_reader_still_visible(self):
+        def run(*args):
+            return SimpleNamespace(stdout=windows() if args[-1] == "windows" else displays() if args[-1] == "displays" else "diagnostic log", stderr="")
+        with patch.object(verifier, "capture", return_value=ui(24)), patch.object(verifier, "run", side_effect=run), patch.object(verifier.time, "monotonic", side_effect=[0, 120, 120]), patch.object(verifier.Path, "write_text"), patch.object(verifier.Path, "is_file", return_value=False):
+            with self.assertRaisesRegex(AssertionError, "real reader/shelf UI has not settled"):
+                verifier.wait_for_reading_display("closing", reading=False, timeout=120)
+
+    def test_return_without_home_extends_only_the_final_endpoint(self):
+        with patch.object(verifier, "wait_for_reading_display", return_value=ui()) as wait, patch.object(verifier, "return_to_bookshelf"), patch.object(verifier, "run") as run:
+            verifier.verify_loaded_reader_display("warm", background=False)
+        self.assertEqual(wait.call_args_list, [unittest.mock.call("warm-reader", reading=True), unittest.mock.call("warm-shelf-after", reading=False, timeout=120)])
+        run.assert_not_called()
+
     def test_reader_requires_flag_request_and_real_hidden_bar(self):
         state = verifier.android_window_state(windows(True), displays(False))
         self.assertTrue(state["keepScreenOn"])
@@ -205,7 +243,7 @@ class AndroidReadingDisplayVerifierTests(unittest.TestCase):
             unittest.mock.call("reading-reader", reading=True),
             unittest.mock.call("background", reading=False, foreground=False),
             unittest.mock.call("resumed-reader", reading=True),
-            unittest.mock.call("reading-shelf-after", reading=False),
+            unittest.mock.call("reading-shelf-after", reading=False, timeout=120),
         ])
         self.assertEqual(run.call_args_list, [
             unittest.mock.call("adb", "shell", "input", "keyevent", "KEYCODE_HOME"),
