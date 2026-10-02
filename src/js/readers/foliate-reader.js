@@ -148,6 +148,11 @@ export class FoliateReader {
     return this.#view?.book?.toc ?? []
   }
 
+  /** Right-to-left books turn pages from the left edge. */
+  get rtl() {
+    return this.#view?.book?.dir === 'rtl'
+  }
+
   /** Portada embebida del libro (EPUB/MOBI), si el archivo trae una. */
   async getCoverBlob() {
     try {

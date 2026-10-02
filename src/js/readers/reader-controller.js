@@ -56,6 +56,7 @@ export class ReaderController {
     return this.#reader?.metadata ?? {}
   }
   get location() { return this.#location }
+  get rtl() { return Boolean(this.#reader?.rtl) }
   get language() { const lang = this.metadata.language; return (Array.isArray(lang) ? lang[0] : lang) || navigator.language }
   get toc() { return this.#reader?.toc ?? [] }
   async goToTarget(target) { await this.#reader?.goToTarget?.(target) }

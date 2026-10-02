@@ -16,8 +16,6 @@ body.is-reading .reader-heading { display:flex; width:100%; height:48px; gap:4px
    reserves that header here, so the opening snapshot and final page agree. */
 .reader-viewport { top:0; bottom:calc(var(--reader-bar-height) + var(--reader-audio-height,0px) + var(--reader-return-height,0px)); background:var(--reading-paper,#faf9f5); isolation:isolate; filter:var(--reader-brightness-filter,none); }
 #reader-screen.is-preparing .reader-viewport { top:var(--reader-header-height); }
-#reader-screen.is-preparing:has(.reader-toolbar[hidden]),
-#reader-screen.is-opening-from-book:has(.reader-toolbar[hidden]) { --reader-bar-height:calc(48px + env(safe-area-inset-bottom,0px)); }
 .reader-toolbar { display:grid; grid-template-columns:44px minmax(0,1fr) repeat(4,44px); gap:0; height:var(--reader-bar-height); min-height:0; padding:0 8px env(safe-area-inset-bottom,0px); z-index:3; border:0; box-shadow:none; backdrop-filter:none; background:var(--reading-paper,#faf9f5); color:var(--reading-ink,#292821); }
 .reader-toolbar .icon-btn { width:44px; height:44px; padding:10px; color:inherit; border-radius:10px; }
 .reader-toolbar .file-format-badge { display:none; }
@@ -204,10 +202,13 @@ body.is-reading:has(#reader-screen.reader-kids-mode) .reader-heading-actions but
 @media (max-width:360px) { .reading-panel { padding-inline:16px; } .reading-row { gap:8px; } .reading-tabs { gap:4px; } }
 @media (prefers-reduced-motion:no-preference) { .reading-panel[open] { animation:reading-sheet-in .18s var(--ease); } @keyframes reading-sheet-in { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } } }
 
-#reader-screen:has(.reader-toolbar[hidden]) { --reader-bar-height:0px; }
-body.is-reader-focus .app-header { display:none; }
-body.is-reader-focus #reader-screen:has(.reader-toolbar[hidden]) { --reader-bar-height:env(safe-area-inset-bottom,0px); }
-body.is-reader-focus .reader-viewport { top:env(safe-area-inset-top,0px); }
+/* Focus keeps both page margins. Hidden contents are immediately removed
+   from hit testing, keyboard navigation and the accessibility tree. */
+body.is-reader-focus .reader-heading, body.is-reader-focus .reader-toolbar > * { visibility:hidden; opacity:0; }
+@media (prefers-reduced-motion:no-preference) {
+  .reader-heading { transition:opacity .12s linear; }
+  .reader-toolbar > * { transition:opacity .12s linear, background-color .15s var(--ease); }
+}
 .reader-viewport:focus { outline:none; }
 
 .reader-heading .icon-btn svg, .reader-toolbar .icon-btn svg { stroke:currentColor; }
