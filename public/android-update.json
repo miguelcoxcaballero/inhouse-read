@@ -1,9 +1,9 @@
 {
-  "version": "1.1.1",
-  "versionCode": 14,
+  "version": "1.1.2",
+  "versionCode": 15,
   "required": true,
-  "apkSizeBytes": 3172541,
-  "apkSha256": "575f8cd826abbc6e3edfae1df2963ee030ca7168c01c57ad484baf8a6aaa96bf",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.1/inhouse-read-release-v1.1.1.apk",
-  "releaseNotes": "Abrir con y compartir libros desde Android: PDF, EPUB, MOBI, AZW, AZW3, KF8, FB2 y CBZ. Importación directa y sincronización con Drive."
+  "apkSizeBytes": 3174277,
+  "apkSha256": "802764a4a72a2e7f3d9a769fad90819cf4a4c71d5c468d56f25e13c98d84663d",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.2/inhouse-read-release-v1.1.2.apk",
+  "releaseNotes": "Animaciones más fluidas: la app pide a la pantalla su tasa de refresco más alta (hasta 120 Hz). Mantiene Abrir con y compartir libros desde Android."
 }
