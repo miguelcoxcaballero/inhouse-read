@@ -22,4 +22,15 @@ que retiene los eventos del motor y comprueba que no se gira la página durante
 la preparación ni después de pausar. `neural-page-follow.spec.mjs` añade una
 frase corta que cruza columnas reales y registra PCM, los inicios audibles y
 las reubicaciones del lector con el modelo real Davefx. La verificación de este
-caso sobre la publicación es necesaria antes de dar por concluida la entrega.
+caso sobre la publicación pasó también en `main-Ds1rBulm.js`, con Davefx
+descargado desde el origen HTTPS de Hugging Face: la reubicación ocurrió 2 ms
+después del inicio audible de la continuación, sin girar antes, perder texto
+ni llamar a voces del dispositivo. El PCM de ambos fragmentos fue finito y
+audible. Evidencia: `.animation.local/final-live-evidence/page-https179/`.
+
+Las nueve comprobaciones publicadas de papel y temas también pasaron, sin
+fotogramas omitidos ni reintentos. El primer intento del caso de audio no tenía
+la ruta de fixtures configurada; el siguiente usaba un espejo HTTP local que
+el navegador bloqueó desde la página HTTPS. El caso final conserva las mismas
+aserciones y usa la descarga normal de producción. Esos intentos se conservan
+como fallos del entorno de prueba, separados del resultado final.

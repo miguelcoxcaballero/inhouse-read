@@ -1293,9 +1293,26 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
 
     // Presión: se ve qué lomo se va a abrir antes de levantar el dedo.
-    let start = null;
+    let start = null, touch = null, ignoreTouchClick = false;
     node.addEventListener('pointerdown', (event) => {
+      if (event.button !== undefined && event.button !== 0) return;
+      if (event.isPrimary === false || state.dragSession && state.dragSession.pointerId !== event.pointerId) {
+        ignoreTouchClick = true;
+        if (touch) touch.cancelled = true;
+        if (state.dragSession) { state.dragSession.cancelled = true; clearTimeout(state.dragSession.timer); }
+        return;
+      }
+      ignoreTouchClick = false;
+      // A new contact is a new gesture, even before the previous hold's
+      // zero-delay compatibility-click cleanup has had a turn to run.
+      state.suppressOpenBookId = null;
       start = { x: event.clientX, y: event.clientY };
+      // Validate before pressure feedback moves the curved surface. Do not
+      // redirect this button's touch to a different or occluded book.
+      touch = event.pointerType === 'touch' ? {
+        pointerId:event.pointerId, ...start, cancelled:false,
+        valid:!state.shelfScene || state.shelfScene.getBookAtPoint(event.clientX, event.clientY) === node
+      } : null;
       state.pressedBookId = String(book.id ?? book.path ?? book.title ?? 'book');
       node.classList.add('is-pressed');
       warmCover(book);
@@ -1309,16 +1326,24 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         setTimeout(maybeRefreshAppearanceStyles, 0);
       }
     };
-    node.addEventListener('pointerup', release);
-    node.addEventListener('pointercancel', release);
-    node.addEventListener('pointerleave', release);
+    node.addEventListener('pointerup', event => { if (!touch || touch.pointerId === event.pointerId) release(); });
+    node.addEventListener('pointercancel', event => {
+      if (touch?.pointerId === event.pointerId) { touch = null; ignoreTouchClick = true; }
+      release();
+    });
+    node.addEventListener('pointerleave', () => { if (touch) touch.cancelled = true; release(); });
     node.addEventListener('pointermove', (event) => {
       if (!start) return;
       if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > TAP_SLOP) {
+        if (touch) touch.cancelled = true;
         release(); // el dedo se ha ido a hacer scroll: esto no era un tap
       }
     });
     node.addEventListener('click', event => {
+      // Some Android/Chromium taps after a pan have no compatibility click;
+      // others still deliver one. The validated pointerup handles both once.
+      // A detail-zero activation belongs to the keyboard or assistive tech.
+      if (event.detail && (ignoreTouchClick || touch)) { ignoreTouchClick = false; touch = null; return; }
       if (state.arranging || state.suppressOpenBookId) { state.suppressOpenBookId = null; return; }
       const hit = event.detail ? state.shelfScene?.getBookAtPoint(event.clientX, event.clientY) : null;
       if (event.detail && state.shelfScene && !hit) return;
@@ -1345,7 +1370,17 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     });
     node.addEventListener('pointerdown', event => startSpineDrag(event, node));
     node.addEventListener('pointermove', event => moveSpineDrag(event, state.dragSession?.node || node));
-    node.addEventListener('pointerup', event => finishSpineDrag(event, state.dragSession?.node || node));
+    node.addEventListener('pointerup', event => {
+      const candidate = touch?.pointerId === event.pointerId ? touch : null;
+      const drag = state.dragSession;
+      const activate = candidate?.valid && !candidate.cancelled && event.pointerType === 'touch' &&
+        Math.hypot(event.clientX - candidate.x, event.clientY - candidate.y) <= TAP_SLOP &&
+        drag?.pointerId === event.pointerId && drag.node === node && !drag.active && !drag.moved &&
+        !drag.cancelled && !drag.scrolling && !state.arranging;
+      finishSpineDrag(event, drag?.node || node);
+      if (candidate) { touch = null; ignoreTouchClick = true; }
+      if (activate && node.isConnected && !state.suppressOpenBookId) openBook(node, item);
+    });
     node.addEventListener('pointercancel', event => finishSpineDrag(event, state.dragSession?.node || node, true));
     return node;
   }

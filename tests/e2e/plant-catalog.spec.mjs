@@ -539,6 +539,10 @@ test('las plantas de una instalación antigua migran a los modelos actuales sin 
 });
 
 test('la preview frontal usa el modelo 3D y el acabado elegido se conserva al añadir y recargar',async ({ page },testInfo) => {
+  // CI SwiftShader spent 4.8s starting, 9.7s completing the first camera move,
+  // then rendered two catalogue previews and reloaded. The whole 30s budget
+  // expired after reopening; retain every assertion with room for both scenes.
+  test.setTimeout(60_000);
   const errors = []; page.on('pageerror',error => errors.push(error.message));
   const dialog = await openCatalog(page);
   const preview = dialog.locator('.ihr-plant-catalog__body:not([hidden]) .ihr-plant-catalog__drawing');

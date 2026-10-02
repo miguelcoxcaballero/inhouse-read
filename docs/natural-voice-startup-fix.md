@@ -24,7 +24,7 @@ Published asset: `/inhouse-read/assets/main-3lf-QqBP.js`, 1,365,072 bytes, SHA-2
 
 The three neural jobs of Production checks **37073632148** also passed with **56/56** executed cases: engine 9, reading 10 and languages 37 (all 36 catalogue options plus the dictionary-pack check), with zero skips or retries. This confirms the voice jobs only; the complete CI and bookshelf/reader checks are tracked separately in [remaining-wip-verification.md](remaining-wip-verification.md).
 
-## Candidata 1.7.9: Daniela y sólo voces naturales
+## Corrección publicada 1.7.9: Daniela y sólo voces naturales
 
 Daniela high superó RTF 1,6 durante varios segmentos. El motor anterior
 convertía esa lentitud en error `too-slow`; el lector guardaba un veto global
@@ -37,4 +37,13 @@ La regresión con pesos reales de Argentina pasó a 1× y 1,25×, con worker fr�
 y tres inicios audibles por velocidad. RTF 1,802 y 1,821 activaron el buffer
 completo y la lectura continuó; el primer inicio tardó 3285 y 3269 ms. Ambas
 API de voces del dispositivo permanecieron sin llamadas. Evidencia local:
-`.animation.local/argentina-real-179/`; pendiente repetir contra la publicación.
+`.animation.local/argentina-real-179/`.
+
+La comprobación publicada también pasó: Daniela a 1× y 1,25×, worker frío,
+tres fragmentos por velocidad, pesos descargados desde Hugging Face y cero
+llamadas a ambas API de voces del dispositivo. RTF 1,806 y 1,831 activaron el
+buffer sin cancelar la voz; primer audio en 3343 y 3181 ms en esta máquina.
+Pim automático neerlandés a 1,25× pasó después de la descarga y de recargar con
+Hugging Face bloqueado, reutilizando los recursos instalados. Los dos casos
+pasaron sin omisiones, reintentos ni errores en `main-Ds1rBulm.js`.
+Evidencia: `.animation.local/final-live-evidence/voices179/`.

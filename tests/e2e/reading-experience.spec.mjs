@@ -1,11 +1,15 @@
 import { test, expect } from '@playwright/test'
 import { audioMenu, openAudioMenu, pickVoice, selectedOption } from './helpers/audio-menus.mjs'
-import { fakeEngineScript } from '../helpers/fake-neural-engine.js'
+import { fakeEngineScript, FAKE_CATALOG } from '../helpers/fake-neural-engine.js'
+import { neuralVoices } from '../../src/js/readers/neural-voice/catalog.js'
 
 const PDF = 'tests/e2e/fixtures/reading-journey.pdf'
 const EPUB = 'tests/e2e/fixtures/reading-journey.epub'
-const LESSAC = 'piper:en_US-lessac-high'
+const LESSAC = 'piper:en_US-lessac-medium'
 const ALBA = 'piper:en_GB-alba-medium'
+// Saved preferences are validated against the real catalogue even when audio
+// uses the fake engine. Keep Lessac's fixture id identical to the shipped model.
+const READING_CATALOG = FAKE_CATALOG.map(voice => voice.name === 'Lessac' ? neuralVoices.find(entry => entry.id === LESSAC) : voice)
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width:390, height:844 })
   await page.emulateMedia({ reducedMotion:'reduce' })
@@ -103,7 +107,7 @@ test('PDF: guarda una cita seleccionada y la conserva al reabrir el libro', asyn
 
 test('EPUB: tipografía real, capítulos, enlaces internos y voz desde el texto visible', async ({ page }) => {
   const errors = []; page.on('pageerror', error => errors.push(error.message))
-  await page.addInitScript(fakeEngineScript({ installed:[LESSAC], holdAfter:1 }))
+  await page.addInitScript(fakeEngineScript({ voices:READING_CATALOG, installed:[LESSAC], holdAfter:1 }))
   await page.goto(process.env.IHR_TEST_URL || '/')
   await page.locator('#file-picker').setInputFiles(EPUB)
   await expect(page.locator('foliate-view')).toBeVisible()
@@ -134,9 +138,9 @@ test('EPUB: tipografía real, capítulos, enlaces internos y voz desde el texto 
 
 test('velocidad: cinco pasos accesibles por teclado, caben en móvil y conservan la elección', async ({ page }) => {
   await page.setViewportSize({ width:320, height:844 })
-  await page.addInitScript(fakeEngineScript({ installed:[LESSAC], hold:true }))
+  await page.addInitScript(fakeEngineScript({ voices:READING_CATALOG, installed:[LESSAC], hold:true }))
   await page.addInitScript(() => {
-    if (!localStorage.getItem('inhouse-read-reading-preferences')) localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({ rate:1.3, voiceLang:'en', voice:'piper:en_US-lessac-high' }))
+    if (!localStorage.getItem('inhouse-read-reading-preferences')) localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({ rate:1.3, voiceLang:'en', voice:'piper:en_US-lessac-medium' }))
   })
   await openPdf(page)
   await page.getByRole('button', { name:'Escuchar el libro' }).click()
@@ -167,7 +171,7 @@ test('velocidad: cinco pasos accesibles por teclado, caben en móvil y conservan
   const bounds = await group.boundingBox()
   expect(bounds.x).toBeGreaterThanOrEqual(0)
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(320)
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('inhouse-read-reading-preferences')))).toMatchObject({ rate:2, voice:'piper:en_US-lessac-high', voiceLang:'en' })
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('inhouse-read-reading-preferences')))).toMatchObject({ rate:2, voice:LESSAC, voiceLang:'en' })
   await page.getByRole('button', { name:'Cerrar opciones de lectura' }).click()
   await page.locator('#reader-back').click()
   await page.reload()
@@ -176,11 +180,12 @@ test('velocidad: cinco pasos accesibles por teclado, caben en móvil y conservan
   await expect(group.getByRole('radio', { name:'2×', exact:true })).toBeChecked()
   await expect(page.getByRole('button', { name:/^Idioma/ })).toBeVisible()
   await expect(page.getByRole('button', { name:/^Voz/ })).toBeVisible()
+  await expect(selectedOption(page)).toHaveAttribute('data-value', LESSAC)
   if (process.env.IHR_EVIDENCE_DIR) await page.screenshot({ path:`${process.env.IHR_EVIDENCE_DIR}/audio-speed-mobile-320.png` })
 })
 
 test('voz natural: reproduce texto, pausa, continúa y pasa a la siguiente página', async ({ page }) => {
-  await page.addInitScript(fakeEngineScript({ installed:[LESSAC], holdAfter:1 }))
+  await page.addInitScript(fakeEngineScript({ voices:READING_CATALOG, installed:[LESSAC], holdAfter:1 }))
   await openPdf(page)
   await page.getByRole('button', { name:'Escuchar el libro' }).click()
   await page.getByRole('radio', { name:'1,25×', exact:true }).check()
@@ -202,7 +207,7 @@ test('voz natural: reproduce texto, pausa, continúa y pasa a la siguiente pági
 })
 
 test('voz natural: lista agrupada, voz automática y descarga de otra voz', async ({ page }) => {
-  await page.addInitScript(fakeEngineScript({ installed:[LESSAC], manual:true, holdAfter:1 }))
+  await page.addInitScript(fakeEngineScript({ voices:READING_CATALOG, installed:[LESSAC], manual:true, holdAfter:1 }))
   await openPdf(page)
   await page.getByRole('button', { name:'Escuchar el libro' }).click()
   const languages = await openAudioMenu(page, 'Idioma')
@@ -212,7 +217,7 @@ test('voz natural: lista agrupada, voz automática y descarga de otra voz', asyn
   await expect(languages.locator('.select-menu__panel')).toBeHidden()
   await expect(page.locator('.reading-panel')).toBeVisible()
   const voices = await openAudioMenu(page, 'Voz')
-  expect(await voices.locator('[role="option"]').evaluateAll(items => items.map(item => item.dataset.value))).toEqual(['', LESSAC, ALBA]) // English natural voices, installed or available to download
+  expect(await voices.locator('[role="option"]').evaluateAll(items => items.map(item => item.dataset.value))).toEqual(['', LESSAC]) // Only installed English voices can be selected for playback.
   await expect(voices.locator('.select-menu__value')).toHaveText(/^Automática · /)
   // The download is owned by the app and the installed natural voice becomes
   // the selected engine voice; there is no external Android settings handoff.
@@ -221,6 +226,7 @@ test('voz natural: lista agrupada, voz automática y descarga de otra voz', asyn
   await expect(alba.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
   await page.evaluate(id => window.__inhouseNeuralTest.engine.finish(id), ALBA)
   await expect(selectedOption(page)).toHaveAttribute('data-value', ALBA)
+  expect(await voices.locator('[role="option"]').evaluateAll(items => items.map(item => item.dataset.value))).toEqual(['', LESSAC, ALBA])
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()
   await expect.poll(() => page.evaluate(() => window.__inhouseNeuralTest.engine.calls.length)).toBeGreaterThan(0)
   expect(await page.evaluate(() => window.__inhouseNeuralTest.engine.calls[0])).toMatchObject({ voiceId:ALBA })

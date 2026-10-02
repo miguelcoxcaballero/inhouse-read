@@ -566,7 +566,14 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
   })
 
   test('removing the natural voice in use pauses and the next Play chooses another installed natural voice', async () => {
-    await open(page,EPUB); await openAudio(page); await spyOnEngine(page)
+    await open(page,EPUB); await openAudio(page)
+    // The regression is also runnable on its own; it must not rely on an earlier test's downloads.
+    for (const [id,name] of [[CLAUDE_ID,'Claude'],[DAVEFX_ID,'Davefx']]) {
+      const download=row(page,id).getByRole('button',{ name:new RegExp('Descargar la voz '+name) })
+      if(await download.isVisible()) await download.click()
+      await expect(row(page,id).getByRole('button',{ name:new RegExp('(Voz en uso|Elegir la voz) '+name) })).toBeVisible(SLOW)
+    }
+    await spyOnEngine(page)
     await pickVoice(page,CLAUDE_ID); await play(page)
     await expect.poll(async()=>(await starts(page)).length,SLOW).toBeGreaterThan(0)
     await openAudioMenu(page,'Voz')
@@ -574,11 +581,16 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await expect(row(page,CLAUDE_ID).getByRole('button',{ name:/Descargar la voz Claude/ })).toBeVisible(SLOW)
     await expect(selectedOption(page)).toHaveAttribute('data-value','')
     await expect(page.locator('.reading-audio-status')).toContainText('Voz natural quitada')
+    await expect(page.getByRole('button',{ name:'Continuar',exact:true })).toBeVisible()
+    const cancelled=await neu(page,n=>n.speak.at(-1))
+    expect(cancelled.voiceId).toBe(CLAUDE_ID)
     const stoppedAudio=await neu(page,n=>n.audio.length)
     await page.waitForTimeout(1200)
     expect(await neu(page,n=>n.audio.length)).toBe(stoppedAudio)
-    await play(page)
+    await page.getByRole('button',{ name:'Continuar',exact:true }).click()
     await expect.poll(async()=>(await neu(page,n=>n.speak)).at(-1)?.voiceId,SLOW).toBe(DAVEFX_ID)
+    const resumed=await neu(page,(n,old)=>n.speak.find(request=>request.voiceId==='piper:es_ES-davefx-medium'&&request.at>old.at),cancelled)
+    expect(resumed.text).toBe(cancelled.text)
     await expect.poll(()=>neu(page,n=>n.audio.length),SLOW).toBeGreaterThan(stoppedAudio)
     expect(await systemSpoken(page)).toBe(0)
     await page.getByRole('button',{ name:'Detener',exact:true }).click()
