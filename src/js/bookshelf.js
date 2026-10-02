@@ -1581,6 +1581,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       plantEvery: opts.plantEvery,
       sort: opts.sort,
       spine: spineOptionsFor(width),
+      // Only spaces the books out; the scene pads each thin spine's tap area to
+      // the same minimum width (padTapRect) and picks the nearest centre.
       displayWidthFor: (_book, style) => Math.max(style.width, minimumBookCellWidth(window.innerWidth)),
       plantWidth: Math.min(...plantVariants.map(plantSlotWidth)),
       plantWidthFor: plantSlotWidth,

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createBookshelfScene, projectPlantFoliage } from '../../src/js/bookshelf-scene.js';
+import { minimumBookTapWidth } from '../../src/js/plant-dimensions.js';
 
 const gpu = vi.hoisted(() => ({ renders:0, scene:null, models:[], disposed:0, readyFor:null }));
 vi.mock('../../src/js/book-model.js', async () => {
@@ -515,7 +516,10 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     const full = shelf.getBookPose(bookNode).rect;
     const bookHit = { left:20 + parseFloat(bookNode.style.left), top:60 + parseFloat(bookNode.style.top),
       width:parseFloat(bookNode.style.width), height:parseFloat(bookNode.style.height) };
-    expect(bookHit.width).toBeLessThan(full.width * .4);
+    // The button follows the spine, not the whole isometric book (<40 % of it), but a
+    // spine thinner than the minimum tap width is padded to exactly that width.
+    expect(bookHit.width).toBeLessThan(Math.max(full.width * .4, minimumBookTapWidth(window.innerWidth) + .01));
+    expect(bookHit.width).toBeGreaterThanOrEqual(minimumBookTapWidth(window.innerWidth) - .01);
     expect(bookHit.left).toBeLessThan(full.left + full.width * .2);
     expect(bookNode.dataset.sceneHitSurface).toBe('spine');
     expect(shelf.getObjectAtPoint(bookHit.left + bookHit.width / 2, bookHit.top + bookHit.height / 2)).toBe(bookNode);
