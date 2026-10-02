@@ -278,3 +278,28 @@ body.is-reading .app-header, #reader-screen, .reader-viewport, .reader-toolbar, 
 #reading-audio .reading-details { margin-top:2px; margin-bottom:14px; border-bottom:1px solid color-mix(in srgb,currentColor 10%,transparent); }
 #reading-audio .reading-details summary { padding:14px 0; }
 #reading-audio .reading-neural { border-top:0; padding-top:0; }
+
+/* Velocidad: cinco pasos en una sola fila (grupo de radios), el activo relleno con la tinta del tema. */
+.reading-speed { gap:0; min-height:0; margin:6px 0 10px; padding:3px; border:1px solid color-mix(in srgb,currentColor 18%,transparent); border-radius:24px; }
+.reading-speed__step { position:relative; flex:1 1 0; min-width:0; }
+.reading-speed__step input { position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer; }
+.reading-speed__step span { display:flex; align-items:center; justify-content:center; min-height:44px; max-width:none; border-radius:21px; font-size:14px; font-variant-numeric:tabular-nums; pointer-events:none; }
+.reading-speed__step input:checked + span { background:var(--reading-ink,var(--text-primary)); color:var(--reading-paper,var(--bg-primary)); font-weight:600; }
+.reading-speed__step input:focus-visible + span { outline:2px solid currentColor; outline-offset:2px; }
+@media (max-width:360px) { .reading-speed__step span { font-size:13px; } }
+
+/* Voces naturales por idioma: "Instaladas" arriba y un grupo plegable por idioma (el del libro abierto). */
+.reading-neural__installed { margin:0 0 6px; }
+.reading-neural__group-title { margin:12px 0 0; font-size:12px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; opacity:.65; }
+.reading-neural__rows { margin:0; padding:0; list-style:none; }
+.reading-neural__lang { border-top:1px solid color-mix(in srgb,currentColor 10%,transparent); }
+.reading-neural__lang:last-child { border-bottom:1px solid color-mix(in srgb,currentColor 10%,transparent); }
+.reading-neural__lang-head { display:flex; align-items:center; gap:12px; min-height:48px; list-style:none; cursor:pointer; }
+.reading-neural__lang-head::-webkit-details-marker { display:none; }
+.reading-neural__lang-head::after { content:''; flex:none; width:6px; height:6px; margin:0 3px 3px 0; border-right:1.5px solid; border-bottom:1.5px solid; opacity:.6; transform:rotate(45deg); transition:transform .18s var(--ease); }
+.reading-neural__lang[open] > .reading-neural__lang-head::after { transform:translateY(3px) rotate(-135deg); }
+.reading-neural__lang-head:focus-visible { outline:2px solid currentColor; outline-offset:2px; border-radius:4px; }
+.reading-neural__lang-name { flex:1; min-width:0; font-size:14px; font-weight:500; }
+.reading-neural__lang-count { flex:none; font-size:12px; opacity:.65; }
+.reading-neural__lang .reading-neural-voice:last-child { border-bottom:0; }
+@media (prefers-reduced-motion:reduce) { .reading-neural__lang-head::after { transition:none; } }

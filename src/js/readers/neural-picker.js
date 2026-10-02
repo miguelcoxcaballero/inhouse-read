@@ -58,7 +58,9 @@ export class NeuralVoicePicker {
     const panel = host.panel
     this.block = panel.querySelector('[data-neural]')
     this.offer = panel.querySelector('[data-neural-offer]')
+    this.open = new Map() // language base -> whether the person opened (true) or closed (false) its group; no entry means the default
     for (const root of [this.block, this.offer]) root.addEventListener('click', event => this.click(event))
+    this.block.addEventListener('toggle', event => { const base = event.target?.dataset?.neuralLang; if (base) this.open.set(base, event.target.open) }, true)
     panel.querySelector('[data-neural-retry]').addEventListener('click', () => { host.voice.retryNeural?.(); this.render() })
   }
   /** Nothing loads at app start: a book being opened schedules the engine module for an idle moment, ready before Play is tapped. */
@@ -146,9 +148,41 @@ export class NeuralVoicePicker {
     const reason = this.host.voice?.neuralOff
     this.block.querySelector('[data-neural-warning]').hidden = !reason
     this.block.querySelector('[data-neural-warning-text]').textContent = reason ? WARNINGS[reason] || WARNINGS.default : ''
-    this.block.querySelector('[data-neural-list]').replaceChildren(...ordered.map(voice => this.row(engine, voice)))
+    this.block.querySelector('[data-neural-list]').replaceChildren(...this.groups(engine, ordered))
     this.renderOffer(engine, list)
     this.restoreFocus(focus)
+  }
+  /**
+   * The list as the person reads it: 'Instaladas' on top (always visible, what the audiobook can use now), then one section
+   * per language (the book's first, the device's second, as orderNeuralVoices sorts them) with the voices still to download.
+   * Only the book's language starts open; a group the person opens or closes stays that way across repaints.
+   */
+  groups(engine, ordered) {
+    const bookBase = langBase(this.bookLang), nodes = []
+    const installed = ordered.filter(voice => engine.installed.has(voice.id))
+    if (installed.length) {
+      const wrap = element('div', 'reading-neural__installed'), list = element('ul', 'reading-neural__rows')
+      list.setAttribute('role', 'list'); list.setAttribute('aria-label', 'Instaladas')
+      list.append(...installed.map(voice => this.row(engine, voice, { withLanguage:true })))
+      wrap.append(element('h4', 'reading-neural__group-title', 'Instaladas'), list)
+      nodes.push(wrap)
+    }
+    const byLanguage = new Map()
+    for (const voice of ordered) { if (!byLanguage.has(voice.base)) byLanguage.set(voice.base, []); byLanguage.get(voice.base).push(voice) }
+    for (const [base, voices] of byLanguage) {
+      const pending = voices.filter(voice => !engine.installed.has(voice.id))
+      if (!pending.length) continue
+      const have = voices.length - pending.length
+      const group = element('details', 'reading-neural__lang'); group.dataset.neuralLang = base
+      group.open = this.open.has(base) ? this.open.get(base) : base === bookBase
+      const summary = element('summary', 'reading-neural__lang-head')
+      summary.append(element('span', 'reading-neural__lang-name', languageName(base)), element('span', 'reading-neural__lang-count', `${voices.length} ${voices.length === 1 ? 'voz' : 'voces'}${have ? ` · ${have} ${have === 1 ? 'instalada' : 'instaladas'}` : ''}`))
+      const list = element('ul', 'reading-neural__rows'); list.setAttribute('role', 'list')
+      list.append(...pending.map(voice => this.row(engine, voice)))
+      group.append(summary, list)
+      nodes.push(group)
+    }
+    return nodes
   }
   state(engine, voice) {
     const download = engine.downloads?.get(voice.id)
@@ -157,12 +191,14 @@ export class NeuralVoicePicker {
     if (this.errors.has(voice.id) || download?.state === 'error') return { name:'error', message:this.errors.get(voice.id) || DOWNLOAD_ERRORS[download?.code] || DOWNLOAD_ERRORS.default }
     return { name:'idle' }
   }
-  row(engine, voice) {
+  row(engine, voice, { withLanguage = false } = {}) {
     const { name, download, message } = this.state(engine, voice), selected = this.host.preferences.voice === voice.id
     const item = element('li', 'reading-neural-voice'); item.dataset.neuralVoice = voice.id; item.dataset.state = name
     const text = element('div', 'reading-neural-voice__text'), title = element('span', 'reading-neural-voice__name', voice.name)
     if (voice.recommended) title.append(' ', element('small', 'reading-neural-voice__badge', 'Recomendada'))
-    const detail = [languageName(voice.lang), name === 'installed' ? 'Instalada' : `${Math.round(voice.sizeMB)} MB`]
+    // Inside a language group the language is the header: only the region (España, México) and the size are left.
+    const region = languageName(voice.lang).match(/\((.+)\)$/)?.[1] || ''
+    const detail = [withLanguage ? languageName(voice.lang) : region, `${Math.round(voice.sizeMB)} MB`].filter(Boolean)
     text.append(title, element('span', 'reading-neural-voice__meta', detail.join(' · ')))
     const actions = element('div', 'reading-neural-voice__actions')
     const where = `${voice.name}, ${languageName(voice.lang)}`

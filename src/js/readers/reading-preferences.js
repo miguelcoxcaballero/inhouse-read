@@ -21,6 +21,15 @@ export const READING_FONTS = {
   sans: 'Arial, Helvetica, sans-serif',
   mono: 'monospace'
 }
+/** The speeds the audiobook offers (a segmented control, not a slider). A saved arbitrary rate moves to the nearest one. */
+export const RATE_STEPS = Object.freeze([0.75, 1, 1.25, 1.5, 2])
+export const nearestRate = value => {
+  const rate = Number(value)
+  if (!Number.isFinite(rate) || value === '' || value == null) return 1
+  return RATE_STEPS.reduce((best, step) => Math.abs(step - rate) < Math.abs(best - rate) ? step : best)
+}
+/** '1.25' -> '1,25×' (Spanish decimal comma). */
+export const rateLabel = rate => `${String(rate).replace('.', ',')}×`
 export const DEFAULT_READING_PREFERENCES = Object.freeze({
   theme:'paper', font:'book', fontSize:20, lineHeight:1.6, margin:16,
   align:'start', flow:'paginated', pdfMode:'original', zoom:100, rate:1, voice:'',
@@ -40,7 +49,7 @@ export function normalizeReadingPreferences(input = {}) {
     align:input.align === 'justify' ? 'justify' : 'start',
     flow:input.flow === 'scrolled' ? 'scrolled' : 'paginated',
     pdfMode:input.pdfMode === 'text' ? 'text' : 'original',
-    zoom:number('zoom',70,200), rate:number('rate',0.5,2), voice:String(input.voice || ''),
+    zoom:number('zoom',70,200), rate:nearestRate(input.rate), voice:String(input.voice || ''),
     brightness:number('brightness',50,120), fontWeight:[400,500,600].includes(Number(input.fontWeight)) ? Number(input.fontWeight) : 400,
     footnotes:Boolean(input.footnotes), multilingual:Boolean(input.multilingual), skipHeaders:Boolean(input.skipHeaders)
   }

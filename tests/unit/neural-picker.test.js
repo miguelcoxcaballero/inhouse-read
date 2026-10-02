@@ -41,6 +41,33 @@ const offer = panel => panel.querySelector('[data-neural-offer]')
 const select = panel => panel.querySelector('[data-pref="voice"]')
 const saved = () => JSON.parse(localStorage.getItem('inhouse-read-reading-preferences')).voice
 
+describe('natural voices by language', () => {
+  const groups = panel => [...panel.querySelectorAll('details[data-neural-lang]')]
+  it('groups the voices by language, the book language first and open, the device language second, the rest closed', async () => {
+    const { panel } = await setup({ language:'es-ES' })
+    const list = groups(panel)
+    expect(list.slice(0, 2).map(group => group.dataset.neuralLang)).toEqual(['es', 'en'])
+    expect(list[0].open).toBe(true)
+    expect(list.slice(1).every(group => !group.open)).toBe(true)
+    expect(list[0].querySelector('summary').textContent).toContain('Español')
+    expect(list[0].querySelector('summary').textContent).toMatch(/\d+ voces/)
+    expect(list[0].querySelectorAll('[data-neural-voice]').length).toBeGreaterThan(0)
+  })
+  it('lists installed voices on top under Instaladas, counts them in their language header and keeps the choice of an open group', async () => {
+    const { panel, engine, experience } = await setup({ language:'es-ES' })
+    expect(panel.querySelector('.reading-neural__installed')).toBeNull()
+    click(panel, LESSAC, 'install'); engine.finish(LESSAC)
+    await vi.waitFor(() => expect(row(panel).closest('.reading-neural__installed')).not.toBeNull())
+    expect(panel.querySelector('.reading-neural__group-title').textContent).toBe('Instaladas')
+    const english = groups(panel).find(group => group.dataset.neuralLang === 'en')
+    expect(english.querySelector('summary').textContent).toContain('1 instalada')
+    expect(groups(panel).some(group => group.contains(row(panel)))).toBe(false)
+    english.open = true; english.dispatchEvent(new Event('toggle'))
+    experience.neuralPicker.render()
+    expect(groups(panel).find(group => group.dataset.neuralLang === 'en').open).toBe(true)
+  })
+})
+
 describe('natural voices group', () => {
   it('is hidden where the engine is unsupported, and nothing else changes', async () => {
     const { panel, experience } = await setup({ supported:false })
@@ -59,7 +86,7 @@ describe('natural voices group', () => {
     expect(rows(panel).slice(0, 3).map(item => item.dataset.neuralVoice)).toEqual([DAVEFX, 'piper:es_MX-claude-high', LESSAC]) // book language (es-ES first), then the device language (en-US)
     expect(row(panel, DAVEFX).textContent).toContain('Davefx')
     expect(row(panel, DAVEFX).textContent).toContain('Recomendada')
-    expect(row(panel, DAVEFX).textContent).toContain('Español (España) · 63 MB')
+    expect(row(panel, DAVEFX).textContent).toContain('España · 63 MB') // inside the Español group only the region and the size are left
     const button = row(panel, DAVEFX).querySelector('button')
     expect(button.textContent).toBe('Descargar')
     expect(button.getAttribute('aria-label')).toBe('Descargar la voz Davefx, Español (España) (63 MB)')
@@ -100,7 +127,7 @@ describe('natural voices group', () => {
     expect(row(panel).querySelector('[data-neural-action="cancel"]').getAttribute('aria-label')).toBe('Cancelar la descarga de Lessac')
     engine.finish(LESSAC)
     await vi.waitFor(() => expect(row(panel).dataset.state).toBe('installed'))
-    expect(row(panel).textContent).toContain('Instalada')
+    expect(row(panel).closest('.reading-neural__installed')).not.toBeNull() // an installed voice moves to the 'Instaladas' list on top
     const use = row(panel).querySelector('[data-neural-action="use"]')
     expect(use.getAttribute('aria-pressed')).toBe('true')
     expect(use.textContent).toBe('En uso')

@@ -335,6 +335,19 @@ describe('search results', () => {
     expect(reader.clearSearch).toHaveBeenCalledTimes(2)
   })
 
+  it('the speed is a radio group of five steps that follows the saved value and moves an arbitrary one to the nearest step', async () => {
+    localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({ rate:1.3 }))
+    const { experience } = await setup()
+    const group = experience.panel.querySelector('[role="radiogroup"][aria-label="Velocidad"]')
+    expect([...group.querySelectorAll('input')].map(input => input.value)).toEqual(['0.75', '1', '1.25', '1.5', '2'])
+    expect([...group.querySelectorAll('label')].map(label => label.textContent)).toEqual(['0,75×', '1×', '1,25×', '1,5×', '2×'])
+    expect(experience.preferences.rate).toBe(1.25)
+    expect(group.querySelector('input:checked').value).toBe('1.25')
+    const faster = group.querySelector('input[value="1.5"]'); faster.checked = true; faster.dispatchEvent(new Event('change'))
+    expect(experience.voice.rate).toBe(1.5)
+    expect(JSON.parse(localStorage.getItem('inhouse-read-reading-preferences')).rate).toBe(1.5)
+    expect(group.querySelector('input:checked').value).toBe('1.5')
+  })
   it('a speed or voice change re-speaks the sentence being read, other audio options do not', async () => {
     const { experience } = await setup()
     experience.voice.restart = vi.fn()
