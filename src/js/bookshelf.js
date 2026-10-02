@@ -100,6 +100,8 @@ import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCov
 import { bookColorOptions, spineColorStyle, spineFinish, surfaceFinish, METAL_COLORS } from './book-colors.js';
 import { normalizeBookAuthor } from './book-title.js';
 import { bookView, fitCoverImage, getBookRenderer, planReadingBookPose } from './book-model.js';
+import { analyzeCoverRelief, normalizeCoverRelief } from './cover-relief.js';
+import { EDITOR_TABS, coverEditorPose, coverTiltFrames, editorTabId, nextEditorTab } from './cover-editor.js';
 import { createShelfZoom } from './shelf-zoom.js';
 import { markTiming, resetTimeline } from './perf-marks.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
@@ -249,6 +251,8 @@ function roofMark(className = 'ihr-roof') {
   return svgIcon(ROOF_PATH, { viewBox: '0 0 40 28', className });
 }
 
+let editorSerial = 0;
+
 function prefersReducedMotion() {
   return (
     typeof matchMedia === 'function' &&
@@ -345,6 +349,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     destroyed: false,
     frame: 0,
     coverAppearances: new Map(),
+    reliefProposals: new Map(),
     appearanceTasks: new Map(),
     itemsById: new Map(),
     placementObjects: [],
@@ -2143,6 +2148,125 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       editorPose.scale = scale;
       editorPose.y = bottom - coverH * scale / 2 - centerY;
     }
+    // ---- Editor de la portada: pestañas, giro del libro y relieve ----------
+    // El editor tiene dos pestañas. 'Lomo' es el editor de siempre (libro de
+    // canto). 'Portada' gira el libro hasta mostrar la portada de frente sobre
+    // la hoja y aloja las funciones de la portada; por ahora, 'Relieve'.
+    const editorUid = `ihr-ed-${++editorSerial}`;
+    let editorTab = 'spine';
+    const coverPose = { x: 0, y: 0, scale: 1, angle: 0, pitch: 0 };
+    const poseForTab = tab => tab === 'cover' ? coverPose : editorPose;
+    const relief = { status: 'idle', proposals: [], controller: null, tiltTimer: 0, tiltToken: 0, tiltCleanup: null, sliderFrame: 0 };
+    function fitCoverPose() {
+      // La hoja de la pestaña activa ya está maquetada: su borde superior
+      // marca el límite de la franja libre. Sin medida usable, un respaldo.
+      const sheetTop = editorPanel.hidden ? NaN : editorPanel.getBoundingClientRect().top;
+      Object.assign(coverPose, coverEditorPose({
+        viewportWidth: vw, viewportHeight: vh, landscape, coverW, coverH, centerY, thickness, sheetTop
+      }));
+    }
+    // Al llegar las tarjetas la hoja puede cambiar de alto unos píxeles: la
+    // portada se reacomoda con suavidad, salvo que ya se esté balanceando.
+    function refitCoverPose() {
+      if (!view || editorTab !== 'cover' || editorPanel.hidden || session.phase !== 'ready' || relief.tiltCleanup) return;
+      const before = { ...coverPose };
+      fitCoverPose();
+      if (Math.abs(before.y - coverPose.y) < 6 && Math.abs(before.scale - coverPose.scale) < .02) { Object.assign(coverPose, before); return; }
+      view.animate([{ transform: before }, { transform: coverPose }], { duration: prefersReducedMotion() ? 1 : 220 });
+    }
+    function reliefKey() {
+      return `${item.coverKey ?? coverUrl ?? ''}|${book.title ?? ''}|${normalizeBookAuthor(book.author)}`;
+    }
+    // Deja de lado todo lo que dependa de la pestaña: balanceo, temporizadores
+    // y análisis en curso (cierre del editor o cambio de pestaña).
+    function cancelCoverTilt() {
+      clearTimeout(relief.tiltTimer);
+      relief.tiltTimer = 0;
+      relief.tiltToken++;
+      relief.tiltCleanup?.();
+      relief.tiltCleanup = null;
+    }
+    function stopCoverEditorWork() {
+      cancelCoverTilt();
+      if (relief.sliderFrame) cancelAnimationFrame(relief.sliderFrame);
+      relief.sliderFrame = 0;
+      if (relief.status === 'loading') {
+        relief.controller?.abort();
+        relief.controller = null;
+        relief.status = 'idle';
+        renderReliefCards();
+      }
+    }
+    function startCoverTilt() {
+      relief.tiltTimer = 0;
+      if (!view || editorTab !== 'cover' || editorPanel.hidden || session.phase !== 'ready') return;
+      const token = ++relief.tiltToken;
+      const { frames, duration } = coverTiltFrames(coverPose);
+      const motion = view.animate(frames, { duration });
+      // Cualquier gesto del usuario corta el balanceo y devuelve la portada
+      // a su sitio; no se compite con la mano.
+      const interrupt = () => {
+        if (token !== relief.tiltToken) return;
+        cancelCoverTilt();
+        view.animate([
+          { transform: view.getPose?.() ?? coverPose },
+          { transform: coverPose }
+        ], { duration: 240 });
+      };
+      const events = ['pointerdown', 'keydown', 'wheel', 'touchstart'];
+      for (const type of events) document.addEventListener(type, interrupt, { capture: true, passive: true });
+      relief.tiltCleanup = () => { for (const type of events) document.removeEventListener(type, interrupt, { capture: true }); };
+      motion.finished.then(() => { if (token === relief.tiltToken) cancelCoverTilt(); });
+    }
+    // Tras elegir un relieve el libro se balancea unas veces para que la luz
+    // recorra la superficie. Con movimiento reducido no se balancea: el relieve
+    // se aprecia igual con el sombreado en reposo y un vaivén del libro es
+    // justo el tipo de movimiento que ese ajuste pide evitar.
+    function scheduleCoverTilt() {
+      cancelCoverTilt();
+      if (!view || prefersReducedMotion() || editorTab !== 'cover') return;
+      const token = relief.tiltToken;
+      Promise.resolve(relief.applied ?? true).then(done => {
+        if (done === false || token !== relief.tiltToken || editorTab !== 'cover' || editorPanel.hidden || state.session !== session) return;
+        relief.tiltTimer = setTimeout(startCoverTilt, 140);
+      });
+    }
+    function syncEditorTab(tab) {
+      editorTab = editorTabId(tab);
+      const cover = editorTab === 'cover';
+      for (const [id, button] of editorTabButtons) {
+        button.setAttribute('aria-selected', String(id === editorTab));
+        button.tabIndex = id === editorTab ? 0 : -1;
+      }
+      spinePanel.hidden = cover;
+      coverPanel.hidden = !cover;
+      const label = EDITOR_TABS.find(candidate => candidate.id === editorTab).heading;
+      editorHeading.textContent = label;
+      editorPanel.setAttribute('aria-label', label);
+      editorPanel.dataset.tab = editorTab;
+      flyout.classList.toggle('is-editing-cover', cover);
+    }
+    function selectEditorTab(next, { focusTab = false } = {}) {
+      next = editorTabId(next);
+      const previous = editorTab;
+      if (focusTab) editorTabButtons.get(next)?.focus({ preventScroll: true });
+      if (next === previous) return;
+      cancelCoverTilt();
+      syncEditorTab(next);
+      editorPanel.scrollTop = 0;
+      let turned = null;
+      if (!editorPanel.hidden && session.phase === 'ready') {
+        if (next === 'cover') fitCoverPose(); else fitEditorPose();
+        if (view) turned = view.animate([
+          { transform: poseForTab(previous) },
+          { transform: poseForTab(next) }
+        ], { duration: prefersReducedMotion() ? 1 : 300 });
+      }
+      // El análisis espera a que el giro termine: no compite con su animación.
+      if (next === 'cover') (turned?.finished ?? Promise.resolve()).then(() => {
+        if (editorTab === 'cover' && !editorPanel.hidden && state.session === session) loadReliefProposals();
+      });
+    }
     function saveCustomizationNow() {
       if (customizationSaveTimer) clearTimeout(customizationSaveTimer);
       customizationSaveTimer = 0;
@@ -2178,6 +2302,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     function updateCustomization(fields) {
       Object.assign(book, fields);
       Object.assign(customizationFields, fields);
+      // El relieve sólo toca la portada y ya lo aplica view.setCoverRelief:
+      // ni rehace el modelo al cerrar ni repinta el lomo de la estantería.
+      if (Object.keys(fields).every(key => key === 'coverRelief')) { queueCustomizationSave(); return; }
       appearanceDirty = true;
       applyCoverAppearance(item, getCachedAppearance());
       style = item.style;
@@ -2205,6 +2332,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       session.editorViewportWidth = viewport.width;
       session.editorViewportHeight = viewport.height;
       session.keyboardOpen = false;
+      // Siempre se abre en el lomo; la portada se elige con su pestaña.
+      syncEditorTab('spine');
       editorPanel.hidden = false;
       flyout.classList.add('is-editing-spine');
       meta.classList.add('is-editing');
@@ -2223,6 +2352,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
     function closeEditor({ commit = true, restoreFocus = true } = {}) {
       if (editorPanel.hidden) return;
+      const leavingPose = poseForTab(editorTab);
+      stopCoverEditorWork();
+      syncEditorTab('spine');
       editorPanel.hidden = true;
       flyout.classList.remove('is-editing-spine');
       meta.classList.remove('is-editing');
@@ -2240,7 +2372,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (commit && session.phase === 'ready' && view) {
         coverTarget.disabled = true;
         const returnToCover = view.animate([
-          { transform: editorPose },
+          { transform: leavingPose },
           { transform: { x: 0, y: 0, scale: 1, angle: 0, pitch: 0 } }
         ], {
           duration: prefersReducedMotion() ? 1 : 220
@@ -2641,18 +2773,37 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       class:`ihr-spine-editor__section ihr-spine-editor__section--${modifier}`
     }, [el('h3', { class:'ihr-spine-editor__section-title', text:title }), ...children]);
     const sheetGrip = el('span', { class:'ihr-spine-editor__grip', 'aria-hidden':'true' });
+    const editorHeading = el('h2', { class:'ihr-spine-editor__heading', text:'Editar el lomo' });
+    // Pestañas 'Lomo' | 'Portada': lista de pestañas con tabulación móvil
+    // (sólo la activa entra en el orden de Tab; flechas, Inicio y Fin mueven).
+    const editorTabButtons = new Map(EDITOR_TABS.map(tab => [tab.id, el('button', {
+      type:'button', role:'tab', class:'ihr-spine-editor__tab', id:`${editorUid}-tab-${tab.id}`,
+      'aria-selected':String(tab.id === editorTab), 'aria-controls':`${editorUid}-panel-${tab.id}`,
+      tabindex:tab.id === editorTab ? '0' : '-1', text:tab.label,
+      onClick:() => selectEditorTab(tab.id)
+    })]));
+    const editorTabs = el('div', {
+      class:'ihr-spine-editor__tabs', role:'tablist', 'aria-label':'Qué quieres editar',
+      onKeydown:event => {
+        const target = nextEditorTab(editorTab, event.key);
+        if (!target) return;
+        event.preventDefault(); event.stopPropagation();
+        selectEditorTab(target, { focusTab:true });
+      }
+    }, [...editorTabButtons.values()]);
     const editorHeader = el('header', { class:'ihr-spine-editor__header' }, [
       sheetGrip,
       el('div', { class:'ihr-spine-editor__titles' }, [
-        el('h2', { class:'ihr-spine-editor__heading', text:'Editar el lomo' }),
+        editorHeading,
         editorSubtitle
       ]),
-      el('button', { type:'button', class:'ihr-btn ihr-spine-editor__done', text:'Listo', onClick:closeEditor })
+      el('button', { type:'button', class:'ihr-btn ihr-spine-editor__done', text:'Listo', onClick:closeEditor }),
+      editorTabs
     ]);
-    editorPanel.append(
-      editorHeader,
-      editorPreview,
-      el('div', { class:'ihr-spine-editor__body' }, [
+    const spinePanel = el('div', {
+      class:'ihr-spine-editor__body', id:`${editorUid}-panel-spine`, role:'tabpanel',
+      'aria-labelledby':`${editorUid}-tab-spine`
+    }, [
         section('Rótulo', 'text', [
           el('label', { class:'ihr-spine-editor__field ihr-spine-editor__field--title' }, [editorLabel('Texto del lomo'), titleInput]),
           el('label', { class:'ihr-spine-editor__field ihr-spine-editor__field--author' }, [editorLabel('Autor'), authorInput])
@@ -2674,8 +2825,169 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           pickerRow('Acabado', bindingPicker)
         ]),
         section('Brillo', 'gloss', [surfaceFinishControls])
+    ]);
+
+    // ---- Pestaña 'Portada' · Relieve ----
+    const reliefName = `${editorUid}-relief`;
+    const reliefStatus = el('p', { class:'ihr-relief__status', role:'status', 'aria-live':'polite' });
+    const reliefRetry = el('button', {
+      type:'button', class:'ihr-spine-editor__auto ihr-relief__retry', text:'Reintentar', hidden:true,
+      onClick:() => { relief.status = 'idle'; loadReliefProposals(); }
+    });
+    const reliefGrid = el('div', { class:'ihr-relief__cards' });
+    const reliefNoneInput = el('input', {
+      type:'radio', name:reliefName, value:'', class:'ihr-relief__input',
+      onChange:() => chooseRelief(null)
+    });
+    const reliefNone = el('label', { class:'ihr-relief-none', hidden:true }, [
+      reliefNoneInput, el('span', { class:'ihr-relief-none__mark', 'aria-hidden':'true' }), el('span', { text:'Sin relieve' })
+    ]);
+    const reliefGroup = el('div', { class:'ihr-relief__group', role:'radiogroup', 'aria-label':'Propuestas de relieve' }, [reliefGrid, reliefNone]);
+    const reliefStrengthOutput = el('output', { class:'ihr-spine-editor__size' });
+    const reliefStrength = el('input', {
+      type:'range', min:'10', max:'100', step:'5', class:'ihr-spine-editor__slider', 'aria-label':'Intensidad del relieve',
+      onInput:event => {
+        const percent = Number(event.currentTarget.value);
+        reliefStrengthOutput.textContent = `${percent} %`;
+        syncRange(event.currentTarget);
+        const current = normalizeCoverRelief(book.coverRelief);
+        if (!current) return;
+        updateCustomization({ coverRelief:{ id:current.id, strength:percent / 100 } });
+        // Un empujón a la vista por fotograma como mucho al arrastrar.
+        if (!relief.sliderFrame) relief.sliderFrame = requestAnimationFrame(() => {
+          relief.sliderFrame = 0;
+          pushReliefToView(normalizeCoverRelief(book.coverRelief));
+        });
+      }
+    });
+    const reliefStrengthRow = el('label', { class:'ihr-spine-editor__row ihr-relief__strength' }, [
+      editorLabel('Intensidad'), el('span', { class:'ihr-spine-editor__range' }, [reliefStrength, reliefStrengthOutput])
+    ]);
+    const coverPanel = el('div', {
+      class:'ihr-spine-editor__cover', id:`${editorUid}-panel-cover`, role:'tabpanel',
+      'aria-labelledby':`${editorUid}-tab-cover`, hidden:true
+    }, [
+      section('Relieve', 'relief', [
+        el('p', { class:'ihr-relief__intro', text:'Zonas de tu portada que, en un libro impreso, podrían llevar relieve o brillo.' }),
+        el('div', { class:'ihr-relief__state' }, [reliefStatus, reliefRetry]),
+        reliefGroup,
+        reliefStrengthRow
       ])
-    );
+    ]);
+    const cleanProposals = list => (Array.isArray(list) ? list : []).slice(0, 3)
+      .filter(proposal => proposal && typeof proposal.id === 'string' && typeof proposal.label === 'string')
+      .map(proposal => ({
+        id:proposal.id, label:proposal.label,
+        description:typeof proposal.description === 'string' ? proposal.description : '',
+        strength:Number.isFinite(proposal.strength) ? Math.min(1, Math.max(.1, proposal.strength)) : .7,
+        thumbnail:typeof proposal.thumbnail === 'string' && proposal.thumbnail.startsWith('data:image/') ? proposal.thumbnail : ''
+      }));
+    function pushReliefToView(next) {
+      if (view?.setCoverRelief) {
+        relief.applied = Promise.resolve(view.setCoverRelief(next)).catch(error => {
+          console.warn('No se pudo aplicar el relieve:', error); return false;
+        });
+      } else { view?.updateCoverAppearance?.(book); relief.applied = Promise.resolve(true); }
+      return relief.applied;
+    }
+    function applyRelief(next) {
+      updateCustomization({ coverRelief:next });
+      pushReliefToView(next);
+    }
+    function syncReliefSelection() {
+      const current = normalizeCoverRelief(book.coverRelief);
+      for (const input of reliefGrid.querySelectorAll('input')) {
+        const on = input.value === current?.id;
+        input.checked = on;
+        input.closest('.ihr-relief-card').classList.toggle('is-selected', on);
+      }
+      reliefNoneInput.checked = !current;
+      reliefNone.classList.toggle('is-selected', !current);
+      reliefNone.hidden = !(relief.status === 'ready' || current);
+      reliefStrength.disabled = !current;
+      const percent = Math.round((current?.strength ?? .7) * 100);
+      reliefStrength.value = String(Math.max(10, percent));
+      reliefStrengthOutput.textContent = current ? `${percent} %` : '—';
+      syncRange(reliefStrength);
+      reliefStrengthRow.hidden = !(relief.status === 'ready' || current);
+    }
+    function chooseRelief(proposal) {
+      const next = proposal ? normalizeCoverRelief({ id:proposal.id, strength:proposal.strength }) : null;
+      if (proposal && !next) return;
+      applyRelief(next);
+      syncReliefSelection();
+      if (next) scheduleCoverTilt(); else cancelCoverTilt();
+    }
+    function reliefCard(proposal) {
+      const input = el('input', {
+        type:'radio', name:reliefName, value:proposal.id, class:'ihr-relief__input',
+        onChange:() => chooseRelief(proposal),
+        // Volver a tocar la propuesta elegida repite el balanceo.
+        onClick:() => { if (normalizeCoverRelief(book.coverRelief)?.id === proposal.id) scheduleCoverTilt(); }
+      });
+      return el('label', { class:'ihr-relief-card' }, [
+        input,
+        el('span', { class:'ihr-relief-card__preview', 'aria-hidden':'true' },
+          proposal.thumbnail ? [el('img', { class:'ihr-relief-card__thumb', src:proposal.thumbnail, alt:'', draggable:'false' })] : []),
+        el('span', { class:'ihr-relief-card__text' }, [
+          el('span', { class:'ihr-relief-card__label', text:proposal.label }),
+          proposal.description ? el('span', { class:'ihr-relief-card__description', text:proposal.description }) : null
+        ])
+      ]);
+    }
+    function renderReliefCards() {
+      const { status, proposals } = relief;
+      coverPanel.setAttribute('aria-busy', String(status === 'loading'));
+      reliefGroup.classList.toggle('is-loading', status === 'loading');
+      reliefRetry.hidden = status !== 'error';
+      reliefStatus.textContent = status === 'loading' ? 'Buscando zonas con relieve…'
+        : status === 'error' ? 'No se pudo analizar la portada. Inténtalo de nuevo.'
+        : status === 'empty' ? (coverUrl ? 'No se han encontrado zonas claras para darles relieve en esta portada.'
+          : 'Este libro no tiene imagen de portada que analizar.')
+        : status === 'ready' ? `${proposals.length} propuestas para esta portada` : '';
+      reliefStatus.classList.toggle('is-busy', status === 'loading');
+      // Reserve the cards before the turn; starting analysis must not grow
+      // the sheet over the cover that was just fitted above it.
+      if (status === 'loading' || status === 'idle') {
+        reliefGrid.replaceChildren(...[0, 1, 2].map(() => el('span', { class:'ihr-relief-card is-skeleton', 'aria-hidden':'true' }, [
+          el('span', { class:'ihr-relief-card__preview' }),
+          el('span', { class:'ihr-relief-card__text' }, [el('span', { class:'ihr-relief-card__label' }), el('span', { class:'ihr-relief-card__description' })])
+        ])));
+      } else reliefGrid.replaceChildren(...(status === 'ready' ? proposals.map(reliefCard) : []));
+      syncReliefSelection();
+    }
+    async function loadReliefProposals() {
+      if (relief.status === 'loading' || relief.status === 'ready') return;
+      if (!coverUrl) { relief.status = 'empty'; renderReliefCards(); refitCoverPose(); return; }
+      const key = reliefKey();
+      const cached = state.reliefProposals.get(key);
+      if (cached) { relief.proposals = cached; relief.status = 'ready'; renderReliefCards(); refitCoverPose(); return; }
+      const controller = new AbortController();
+      relief.controller = controller;
+      relief.status = 'loading';
+      renderReliefCards();
+      try {
+        const result = await analyzeCoverRelief(coverUrl, {
+          title:book.title, author:normalizeBookAuthor(book.author), signal:controller.signal
+        });
+        if (relief.controller !== controller || state.session !== session) return;
+        relief.proposals = cleanProposals(result?.proposals);
+        relief.status = relief.proposals.length ? 'ready' : 'empty';
+        if (relief.proposals.length) {
+          state.reliefProposals.set(key, relief.proposals);
+          if (state.reliefProposals.size > 12) state.reliefProposals.delete(state.reliefProposals.keys().next().value);
+        }
+      } catch (error) {
+        if (relief.controller !== controller || controller.signal.aborted) return;
+        console.warn('No se pudo analizar la portada para el relieve:', error);
+        relief.status = 'error';
+      }
+      relief.controller = null;
+      renderReliefCards();
+      refitCoverPose();
+    }
+    editorPanel.append(editorHeader, editorPreview, spinePanel, coverPanel);
+    renderReliefCards();
     updateColorSelection();
     // Mobile sheet: dragging the header down dismisses it, like its grabber suggests.
     let sheetDrag = null;
