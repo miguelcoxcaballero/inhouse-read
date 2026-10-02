@@ -1,4 +1,5 @@
 import { getCatalogPlant, getCatalogPot, getPotColor } from './plant-catalog-data.js';
+import { plantDimensions } from './plant-dimensions.js';
 
 const LEGACY_PLANTS = Object.freeze({
   upright:'sansevieria', sansevieria:'sansevieria', monstera:'monstera',
@@ -17,11 +18,15 @@ export function resolveCatalogPlant(entry = {}) {
   return getCatalogPlant(LEGACY_PLANTS[alias] || 'monstera');
 }
 
-/** Complete old records without moving objects or resetting an empty collection. */
+/** Complete old records without moving objects or resetting an empty collection.
+ * `width` and `height` are always the real IKEA size in millimetres (see
+ * plant-dimensions.js): a size saved by an earlier version (arbitrary pixels)
+ * is replaced, while the place, seed, pot and colour are kept. */
 export function normalizeShelfPlant(record) {
   if (!record || typeof record.key !== 'string' || !record.key.trim()) return null;
   const plant = resolveCatalogPlant(record);
   const potId = getCatalogPot(record.potId)?.id || plant.defaultPotId;
+  const size = plantDimensions(plant.id, potId);
   return {
     ...record,
     ...(record.potColorId !== undefined ? { potColorId:getPotColor(potId,record.potColorId).id } : {}),
@@ -29,7 +34,7 @@ export function normalizeShelfPlant(record) {
     catalogId:plant.id,
     variant:plant.variant,
     potId,
-    width:Number.isFinite(record.width) && record.width > 0 ? record.width : plant.width,
-    height:Number.isFinite(record.height) && record.height > 0 ? record.height : plant.height
+    width:size.width,
+    height:size.height
   };
 }

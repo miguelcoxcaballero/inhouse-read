@@ -95,7 +95,7 @@
  * hay que abrir uno.
  */
 
-import { planBookshelf, bookmarkFor, withDefaults } from './bookshelf-layout.js';
+import { planBookshelf, bookmarkFor, withDefaults, DEFAULT_LAYOUT } from './bookshelf-layout.js';
 import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from './cover-appearance.js';
 import { bookColorOptions, spineColorStyle, spineFinish, surfaceFinish, METAL_COLORS } from './book-colors.js';
 import { normalizeBookAuthor } from './book-title.js';
@@ -108,6 +108,7 @@ import { normalizeShelfType, BAGGEBO_SPEC } from './shelf-types.js';
 import { baggeboLayout } from './shelf-model-layout.js';
 import { getCatalogPlant, getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { normalizeShelfPlant, resolveCatalogPlant } from './plant-records.js';
+import { shelfScale, plantDimensions } from './plant-dimensions.js';
 import { getCatalogLamp, normalizeShelfLamp } from './lamp-catalog-data.js';
 import { lampCatalogIllustration } from './lamp-illustration.js';
 
@@ -729,6 +730,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       depth:lamp.dimensions.depth * scale };
   }
 
+  /** Real IKEA sizes are millimetres; scene pixels follow the shelf's scale. */
+  const plantScale = () => shelfScale({ shelfType:state.shelfType, shelfWidth:state.shelfWidth, viewportWidth:window.innerWidth });
+  function plantShelfObject(record, scale = plantScale()) {
+    const size = normalizeShelfPlant({ ...record, key:record.key || 'plant' });
+    const real = plantDimensions(size.catalogId, size.potId);
+    return { ...record, kind:'plant', width:size.width * scale, height:size.height * scale, depth:real.depth * scale };
+  }
+
   function updateLampControl(node, record) {
     const lamp = getCatalogLamp(record.lampId), isOn = record.isOn !== false;
     node.dataset.lampOn = String(isOn);
@@ -786,10 +795,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const viewport = scroller.getBoundingClientRect();
     const destination = dropPositionAt(viewport.left + viewport.width * .4,
       viewport.top + Math.min(viewport.height * .4, 260));
-    const record = { key, seed:key, catalogId:plant.id, variant:plant.variant, potId:pot.id, potColorId:getPotColor(pot.id,potColorId).id,
-      width:plant.width, height:plant.height, shelf:destination?.shelf ?? 0 };
+    let record = { key, seed:key, catalogId:plant.id, variant:plant.variant, potId:pot.id, potColorId:getPotColor(pot.id,potColorId).id,
+      shelf:destination?.shelf ?? 0 };
     const oldRects = objectRects(), previous = state.plants;
-    const objects = [...state.placementObjects, { ...record, kind:'plant' }];
+    record = normalizeShelfPlant(record);
+    const objects = [...state.placementObjects, plantShelfObject(record)];
     const arranged = layoutShelfDecorations(objects, placementConfig()).flatMap(shelf => shelf.items);
     const positions = new Map(arranged.map(item => [item.key, { shelf:item.shelf, x:item.x }]));
     state.plants = [...previous, record].map(item => ({ ...item, ...positions.get(item.key) }));
@@ -1313,7 +1323,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function buildPlant(item) {
     item = normalizeShelfPlant({ ...item, key:item.key || `plant:${item.seed}` });
     const plant = resolveCatalogPlant(item);
-    const height = item.height;
+    const scale = plantScale(), width = item.width * scale, height = item.height * scale;
     const node = el('button', {
       type:'button',
       class: `ihr-plant ihr-plant--${item.variant}`,
@@ -1325,7 +1335,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       'aria-description':'Mantén pulsado para mover la planta o llevarla a la papelera. Usa Mayús y las flechas para cambiar su posición o balda, y Suprimir para retirarla.',
       title:'Mantén pulsado para mover la planta',
       style:
-        `--ihr-plant-w:${item.width}px;` +
+        `--ihr-plant-w:${width}px;` +
         `--ihr-plant-h:${height}px;` +
         '--ihr-plant-overhang:0px'
     });
@@ -1434,12 +1444,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       }
     }
     if (!state.plantsInitialized) {
-      state.plants = initialPlants.map(({ key, seed, variant, width, shelf, x }) =>
-        normalizeShelfPlant({ key, seed, variant, width, shelf, x }));
+      state.plants = initialPlants.map(({ key, seed, variant, shelf, x }) =>
+        normalizeShelfPlant({ key, seed, variant, shelf, x }));
       state.plantsInitialized = true;
       savePlants();
     }
-    objects.push(...state.plants.map(plant => ({ ...plant, kind:'plant' })));
+    const scale = plantScale();
+    objects.push(...state.plants.map(plant => plantShelfObject(plant, scale)));
     objects.push(...state.lamps.map(lampShelfObject));
     const placements = Object.fromEntries(objects.filter(item => item.kind === 'book' && item.book.shelfPosition)
       .map(item => [item.key, item.book.shelfPosition]));
@@ -1560,6 +1571,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const previousChildren = retainedScene ? [...scroller.children] : [];
     if (!retainedScene) scroller.textContent = '';
 
+    const plantSlotWidth = variant => plantShelfObject({ key:'plant', variant }).width;
+    const plantVariants = DEFAULT_LAYOUT.plantVariants;
     const plan = planBookshelf(state.books, {
       shelfWidth: width,
       padding: shelfPadding(),
@@ -1567,6 +1580,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       plantEvery: opts.plantEvery,
       sort: opts.sort,
       spine: spineOptionsFor(width),
+      plantWidth: Math.min(...plantVariants.map(plantSlotWidth)),
+      plantWidthFor: plantSlotWidth,
       // Sin secciones, 0 recientes: todo cae en una estantería continua.
       recentLimit: opts.sections ? opts.recentLimit : 0
     });
@@ -1580,7 +1595,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           index,
           items: [{
             kind: 'plant', variant: plants[index % plants.length],
-            seed: `empty-shelf-${index}`, width: 42 + (index % 3) * 6
+            seed: `empty-shelf-${index}`, width: plantSlotWidth(plants[index % plants.length])
           }]
         });
       }
@@ -1699,7 +1714,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           continue;
         }
         if (node.classList.contains('ihr-plant')) {
+          const record = state.plants.find(item => item.key === node.dataset.objectId);
           entries.push({ kind:'plant', key:node.dataset.objectId, node, x, y, shelf:shelfIndex, depthInset:0, width:rect.width, height:rect.height,
+            depth:record ? plantShelfObject(record).depth : rect.width * .7,
             catalogId:node.dataset.catalogId, potId:node.dataset.potId, potColorId:node.dataset.potColorId,
             seed:node.dataset.plantSeed, variant:node.dataset.plantVariant });
           continue;

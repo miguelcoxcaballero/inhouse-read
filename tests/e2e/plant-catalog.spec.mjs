@@ -122,7 +122,7 @@ test('el catálogo está pegado al lateral 3D, sólo aparece en isométrica y a�
   await expect(page.locator('.ihr-plant')).toHaveAttribute('data-pot-id','gradvis');
   const plants = await savedPlants(page);
   expect(plants).toHaveLength(1);
-  expect(plants[0]).toMatchObject({ catalogId:'monstera',potId:'gradvis',variant:'monstera',width:92,height:126 });
+  expect(plants[0]).toMatchObject({ catalogId:'monstera',potId:'gradvis',variant:'monstera',width:170,height:280 });
   expect(Number.isFinite(plants[0].x)).toBe(true);
   expect(Number.isFinite(plants[0].shelf)).toBe(true);
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating','false');

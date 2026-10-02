@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createShelfPlant } from '../../src/js/shelf-plants.js';
+import { plantDimensions } from '../../src/js/plant-dimensions.js';
+import { resolveCatalogPlant } from '../../src/js/plant-records.js';
 
 function triangleCount(group) {
   let count = 0;
@@ -21,12 +23,15 @@ describe('botanical shelf models', () => {
 
   for (const variant of ['upright','sansevieria','cactus','succulent','suculenta','leafy','pothos','monstera']) {
     it(`${variant} fits its collision envelope and mobile geometry budget`, () => {
-      const plant = createShelfPlant({ width:42, height:67, variant, seed:'botanical-fixture' });
+      // The size is the real IKEA one: only the scene height (here 0.1 unit per mm) is given.
+      const real = plantDimensions(resolveCatalogPlant({ variant }).id, resolveCatalogPlant({ variant }).defaultPotId), unit = .1;
+      const plant = createShelfPlant({ width:42, height:real.height * unit, variant, seed:'botanical-fixture' });
       const bounds = new THREE.Box3().setFromObject(plant);
-      expect(bounds.min.y).toBeCloseTo(-33.5, 4);
-      expect(bounds.max.y).toBeCloseTo(33.5, 4);
-      expect(Math.max(Math.abs(bounds.min.x), Math.abs(bounds.max.x))).toBeLessThanOrEqual(21.0001);
-      expect(Math.max(Math.abs(bounds.min.z), Math.abs(bounds.max.z))).toBeLessThanOrEqual(14.7001);
+      expect(bounds.min.y).toBeCloseTo(-real.height * unit / 2, 4);
+      expect(bounds.max.y).toBeCloseTo(real.height * unit / 2, 4);
+      // The saved width (42) is ignored: the canopy and the round pot set the footprint.
+      expect(Math.max(Math.abs(bounds.min.x), Math.abs(bounds.max.x))).toBeLessThanOrEqual(real.width * unit / 2 + .0001);
+      expect(Math.max(Math.abs(bounds.min.z), Math.abs(bounds.max.z))).toBeLessThanOrEqual(real.depth * unit / 2 + .0001);
       expect(triangleCount(plant)).toBeGreaterThan(3000);
       expect(triangleCount(plant)).toBeLessThan(14000);
       expect(plant.getObjectByName('ceramic-pot').geometry.type).toBe('LatheGeometry');

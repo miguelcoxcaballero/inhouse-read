@@ -70,6 +70,15 @@ describe('IKEA plant instruction booklet',() => {
     expect(dialog().querySelectorAll('[data-catalog-plant][aria-pressed="true"]')).toHaveLength(1);
     expect(dialog().querySelectorAll('[data-catalog-pot][aria-pressed="true"]')).toHaveLength(1);
   });
+  it('shows the real IKEA size of the selected plant in its pot, the same Ø12 cm pot for all',() => {
+    create({ onAdd:vi.fn() }).open();
+    const size = () => dialog().querySelector('.ihr-plant-catalog__plant-size').textContent;
+    expect(size()).toBe('Maceta Ø12 cm · planta 25 cm');
+    pickPlant('succulent'); expect(size()).toBe('Maceta Ø12 cm · planta 15 cm');
+    pickPlant('nephrolepis'); pickPot('gradvis'); expect(size()).toBe('Maceta Ø12 cm · planta 28 cm');
+    // The shelf page still owns its own published-measures line.
+    expect(dialog().querySelector('.ihr-plant-catalog__shelf-dimensions').textContent).not.toContain('planta');
+  });
   it('passes the selected IDs once, waits for storage, then closes and restores focus',async () => {
     let finish;
     const onAdd = vi.fn(() => new Promise(resolve => { finish = resolve; })), onClose = vi.fn();

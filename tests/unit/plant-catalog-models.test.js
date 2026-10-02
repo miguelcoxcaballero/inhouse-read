@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot, getPotColors } from '../../src/js/plant-catalog-data.js';
 import { createShelfPlant } from '../../src/js/shelf-plants.js';
+import { plantDimensions } from '../../src/js/plant-dimensions.js';
 
 // Each case builds whole detailed plants; a loaded CI machine needs more than 5 s.
 vi.setConfig({ testTimeout:20000 });
@@ -23,7 +24,9 @@ describe('IKEA referenced plant catalog', () => {
     for (const item of PLANT_CATALOG) {
       expect(getCatalogPlant(item.id)).toBe(item); expect(getCatalogPot(item.defaultPotId)).not.toBeNull();
       expect(item.referenceUrl).toMatch(/^https:\/\/www\.ikea\.com\/es\/es\/p\//);
-      expect(item.width).toBeGreaterThan(45); expect(item.height).toBeLessThanOrEqual(140);
+      // Real IKEA sizes in millimetres (plant-dimensions.js), not shelf pixels.
+      expect(item.width).toBeGreaterThanOrEqual(120); expect(item.height).toBeGreaterThanOrEqual(100);
+      expect(item.height).toBeLessThanOrEqual(300);
       expect(Object.isFrozen(item)).toBe(true);
     }
     for (const item of POT_CATALOG) expect(new URL(item.referenceUrl).hostname).toMatch(/^www\.ikea\.com(?:\.tr)?$/);
@@ -33,11 +36,17 @@ describe('IKEA referenced plant catalog', () => {
   for (const species of PLANT_CATALOG) for (const pot of POT_CATALOG) {
     it(`${species.id} / ${pot.id} keeps detailed geometry within the mobile budget and saved collision dimensions`, () => {
       const model = createShelfPlant({ catalogId:species.id,potId:pot.id,seed:'ikea:model:fixture' });
+      const real = plantDimensions(species.id,pot.id), unit = .5; // the preview's scale: 0.5 unit per mm
       const box = new THREE.Box3().setFromObject(model), counts = statistics(model);
       expect(model.userData.catalogId).toBe(species.id); expect(model.userData.potId).toBe(pot.id);
-      expect(box.min.y).toBeCloseTo(-species.height/2,4); expect(box.max.y).toBeCloseTo(species.height/2,4);
-      expect(Math.max(Math.abs(box.min.x),Math.abs(box.max.x))).toBeLessThanOrEqual(species.width/2+.0001);
-      expect(Math.max(Math.abs(box.min.z),Math.abs(box.max.z))).toBeLessThanOrEqual(species.width*.35+.0001);
+      expect(box.min.y).toBeCloseTo(-real.height*unit/2,4); expect(box.max.y).toBeCloseTo(real.height*unit/2,4);
+      expect(Math.max(Math.abs(box.min.x),Math.abs(box.max.x))).toBeLessThanOrEqual(real.width*unit/2+.0001);
+      expect(Math.max(Math.abs(box.min.z),Math.abs(box.max.z))).toBeLessThanOrEqual(real.depth*unit/2+.0001);
+      // Every pot is the same 12 cm pot, whatever the plant: Ø120 mm at the scene scale.
+      const pot3d = new THREE.Box3().setFromObject(model.getObjectByName('ceramic-pot'));
+      expect(Math.abs(pot3d.max.x - pot3d.min.x - real.potDiameter*unit)).toBeLessThan(1.5); // faceted lathe, rib crests of GRADVIS
+      expect(pot3d.max.y - pot3d.min.y).toBeGreaterThan(real.potHeight*unit*.95);
+      expect(pot3d.max.y - pot3d.min.y).toBeLessThan(real.potHeight*unit*1.4); // MUSKOTBLOMMA's saucer adds a little
       expect(counts.triangles).toBeGreaterThan(3000); expect(counts.triangles).toBeLessThan(14000);
       expect(counts.draws).toBeLessThanOrEqual(8);
       expect(model.getObjectByName('ceramic-pot').geometry.type).toBe('LatheGeometry');

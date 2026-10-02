@@ -31,9 +31,12 @@ export function baggeboLayout(layout) {
     // landscape cover or tall plant would exceed the actual usable space.
     const height = entry.kind === 'plant' ? entry.height : 280 * scale * entry.style.heightRatio;
     const width = entry.kind === 'plant' ? entry.width : height * entry.width / entry.height;
+    // A plant stands on its own footprint depth and keeps its real size: the
+    // catalogue only offers sizes that fit, so `fit` stays 1 for them.
     const fit = Math.min(1, (row.bottom - row.top - 4 * scale) / height,
-      BAGGEBO_SPEC.usableDepth * scale / width);
-    return { ...entry, x:row.left + entry.x, height:height * fit, width:width * fit,
+      BAGGEBO_SPEC.usableDepth * scale / (entry.kind === 'plant' ? entry.depth || width * .7 : width));
+    return { ...entry, ...(entry.kind === 'plant' && entry.depth ? { depth:entry.depth * fit } : {}),
+      x:row.left + entry.x, height:height * fit, width:width * fit,
       y:row.bottom - height * fit / 2, depthInset:15 * scale };
   });
   return { ...layout, entries, rows, shelfType:'baggebo', unitWidth, unitCount,

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { resolveCatalogPlant } from './plant-records.js';
+import { plantDimensions } from './plant-dimensions.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const clamp01 = value => Math.min(1, Math.max(0, value));
@@ -328,6 +329,9 @@ function potProfile(potId) {
 
 function potGeometry(potId, radius, height, soilFraction) {
   const profile = potProfile(potId), n = profile.length, fluted = potId === 'gradvis';
+  // `radius` is the pot's real outer radius: its widest point (a rolled rim, or
+  // the crest of a rib) reaches exactly that, whatever the profile's own units.
+  radius /= Math.max(...profile.map(([r]) => r)) + (fluted ? .018 : 0);
   const segments = fluted ? 96 : potId === 'muskot' ? 40 : 48;
   const geometry = new THREE.LatheGeometry(profile.map(([r,y]) => new THREE.Vector2(r * radius, y * height)), segments);
   const s = [0];
@@ -381,7 +385,7 @@ function potGeometry(potId, radius, height, soilFraction) {
       normal.setXYZ(j, a.x, a.y, a.z); normal.setXYZ(segments * n + j, a.x, a.y, a.z);
     }
   }
-  return { geometry, soilRadius:soil.r * radius };
+  return { geometry, soilRadius:soil.r * radius, radius };
 }
 
 function soilPainter(kind) {
@@ -696,15 +700,24 @@ const STEM_TONES = { stem:['#4b5a2f','#6a8a3c'], woody:['#5a4630','#5d7336'], zz
   // Ivy's wiry stems and petioles stay dark and purplish-green.
   ivy:['#4a3a2c','#4c5a31'] };
 
+/** Scene units per millimetre of a plant shown without a shelf (the catalogue preview). */
+const PREVIEW_SCALE = .5;
+
 /** Every saved plant uses a current catalog mesh, including legacy records.
  * Its own opaque leaf texture covers real geometry; no photo cutout is used.
+ * Sizes are the real IKEA ones (plant-dimensions.js): only `entry.height`,
+ * the scene's height for that plant, sets the scale, so a width or height
+ * saved by an older version cannot distort the pot or the foliage.
  */
 export function createShelfPlant(entry) {
   const quality = entry.inspectionResolution ? 2 : 1;
   const catalogPlant = resolveCatalogPlant(entry);
-  const width = Math.max(1, Number(entry.width) || catalogPlant?.width || 46), height = Math.max(1, Number(entry.height) || catalogPlant?.height || 70);
   const variant = variantFor(catalogPlant?.variant || entry.variant), seed = entry.seed ?? entry.key ?? entry.node?.dataset.objectId ?? variant;
   const potId = getCatalogPot(entry.potId)?.id ?? catalogPlant?.defaultPotId ?? null;
+  const real = plantDimensions(catalogPlant.id, potId);
+  const height = Math.max(1, Number(entry.height) || real.height * PREVIEW_SCALE), unit = height / real.height;
+  // The foliage envelope is the real canopy: the pot below it is the real 12 cm pot.
+  const width = real.canopy * unit;
   const detailed = Boolean(catalogPlant || potId || ['palm','fern','ivy','zz'].includes(variant));
   const random = randomFor(seed), group = new THREE.Group(), content = new THREE.Group();
   content.position.y = -height / 2; group.add(content);
@@ -718,9 +731,7 @@ export function createShelfPlant(entry) {
     object.castShadow = true; object.receiveShadow = true; content.add(object); return object;
   };
   const own = maps => { for (const texture of Object.values(maps)) textures.add(texture); return maps; };
-  const radius = width * (variant === 'ivy' || variant === 'fern' || variant === 'palm' ? .22 : .275);
-  // Narrow saved envelopes keep a real pot's proportions instead of a tube.
-  const potHeight = Math.min(height * (variant === 'succulent' ? .58 : variant === 'ivy' || variant === 'fern' ? .34 : .29), radius * (potId === 'gradvis' ? 2.1 : variant === 'succulent' ? 2.5 : 2.3));
+  const radius = real.potDiameter / 2 * unit, potHeight = real.potHeight * unit;
   const soilFraction = .9, soilY = potHeight * soilFraction, sink = width * .012, above = height - soilY;
   const clays = ['#a97958', '#b18b6c', '#bcad94', '#826d60'];
   const potColor = getPotColor(potId,entry.potColorId);
@@ -753,7 +764,7 @@ export function createShelfPlant(entry) {
     const seamGeometry = new THREE.CylinderGeometry(width*.0015,width*.0015,potHeight*.87,5);
     seamGeometry.setAttribute('color', new THREE.Float32BufferAttribute(new Array(seamGeometry.attributes.position.count * 3).fill(.86), 3));
     const seam = mesh(seamGeometry,clay,'steel-folded-seam');
-    seam.position.set(0,potHeight*.48,-radius*.878); seam.rotation.x = -.16;
+    seam.position.set(0,potHeight*.48,-pot.radius*.878); seam.rotation.x = -.16;
   }
   const mineral = new THREE.MeshStandardMaterial({ color:'#b7ae9c', roughness:1 });
   const stemMaterial = new THREE.MeshStandardMaterial({ color:0xffffff, vertexColors:true, roughness:.72 });

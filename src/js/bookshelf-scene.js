@@ -442,6 +442,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const fullBounds = shelfType === 'baggebo'
     ? new THREE.Box3(new THREE.Vector3(-width / 2, -height, -depth), new THREE.Vector3(width / 2, 0, 0))
     : new THREE.Box3(new THREE.Vector3(-width / 2, -height - boardHeight, -depth - 4), new THREE.Vector3(width / 2, 2, 12));
+  // Half the depth a plant occupies on its board (see plantDimensions).
+  const plantHalfDepth = entry => (entry.depth || entry.width * .7) / 2;
   const slotBox = entry => {
     if (entry.kind === 'lamp') return new THREE.Box3(
       new THREE.Vector3(-entry.width / 2, entry.mount === 'undershelf' ? -entry.height : 0, -(entry.depth || entry.width) / 2),
@@ -449,8 +451,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     );
     const plant = entry.kind === 'plant';
     return new THREE.Box3(
-      new THREE.Vector3(-entry.width / 2 - (plant ? 0 : entry.thickness * .38), -entry.height / 2, -(plant ? entry.width * .35 : entry.thickness / 2)),
-      new THREE.Vector3(entry.width / 2, entry.height / 2 + (plant ? 0 : 20), plant ? entry.width * .35 : entry.thickness / 2)
+      new THREE.Vector3(-entry.width / 2 - (plant ? 0 : entry.thickness * .38), -entry.height / 2, -(plant ? plantHalfDepth(entry) : entry.thickness / 2)),
+      new THREE.Vector3(entry.width / 2, entry.height / 2 + (plant ? 0 : 20), plant ? plantHalfDepth(entry) : entry.thickness / 2)
     );
   };
   const spineHitBox = entry => new THREE.Box3(
@@ -1070,7 +1072,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       entry.pose.position.set(entry.x - width / 2 + vector.x + entry.preview.x,
         -entry.y - (lamp && !undershelf ? entry.height / 2 : 0) + vector.y + entry.preview.y,
         (undershelf ? shelfType === 'baggebo' ? -depth / 2 : 8 - (entry.depth || entry.width) / 2
-          : lamp ? -(entry.depth || entry.width) / 2 : plant ? -entry.width * .35 : -entry.width / 2)
+          : lamp ? -(entry.depth || entry.width) / 2 : plant ? -plantHalfDepth(entry) : -entry.width / 2)
           - (undershelf ? 0 : entry.depthInset || 0) + vector.z);
       entry.pose.rotation.set(decorative ? 4 * Math.PI / 180 * lift : 0,
         decorative ? -7 * Math.PI / 180 * lift : Math.PI / 2 - 7 * Math.PI / 180 * lift,
