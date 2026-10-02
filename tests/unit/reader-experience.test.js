@@ -365,10 +365,10 @@ describe('voice picker', () => {
     const { experience, reader } = await setup()
     reader.language = 'es'
     experience.populateVoices()
-    expect(select(experience).options[0]).toMatchObject({ value:'', textContent:'Automática · mejor voz natural' })
-    expect(groups(experience)).toEqual([['Recomendadas (naturales)', ['es-good', 'en-good']], ['Todas las voces', ['es-good', 'es-robot', 'en-good']]])
+    expect(select(experience).options[0]).toMatchObject({ value:'', textContent:'Automática' })
+    expect(groups(experience)).toEqual([['Recomendadas', ['es-good', 'en-good']], ['Todas las voces', ['es-good', 'es-robot', 'en-good']]])
     expect(select(experience).getAttribute('aria-label')).toBe('Voz de lectura')
-    expect(experience.panel.querySelector('[data-voice-auto]').textContent).toBe('Se usará: Español (España) · Alta calidad · sin conexión.')
+    expect(experience.panel.querySelector('[data-voice-auto]').textContent).toBe('Español (España) · Alta calidad · sin conexión')
   })
 
   it('offers the voice download only on Android and only when the best voice is not high quality', async () => {
@@ -378,7 +378,7 @@ describe('voice picker', () => {
     experience.populateVoices()
     const button = experience.panel.querySelector('[data-voice-settings]')
     expect(button.hidden).toBe(false)
-    expect(button.textContent).toBe('Descargar voces de mayor calidad')
+    expect(button.textContent).toBe('Instalar voces')
     button.click()
     expect(bridge.openVoiceSettings).toHaveBeenCalledOnce()
     bridge.getVoices = () => JSON.stringify([nativeVoice('es-high', 'es-ES', 500)])

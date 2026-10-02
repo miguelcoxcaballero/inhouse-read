@@ -19,7 +19,7 @@ export { NEURAL_PREFIX, isNeuralVoiceId, neuralVoices }
  * @property {string} piperId    'es_MX-claude-high' (the Hugging Face rhasspy/piper-voices file stem)
  * @property {string} lang       BCP-47 tag, 'es-MX'
  * @property {string} name       person/brand name shown in the picker, 'Claude'
- * @property {'medium'|'high'} quality
+ * @property {'low'|'medium'|'high'} quality
  * @property {number} sizeMB     download size, ~63
  * @property {number} speaker    speaker id inside the model (0 for single-speaker models)
  * @property {boolean} [recommended]  the one to offer first for its language

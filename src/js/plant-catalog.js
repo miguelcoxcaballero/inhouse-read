@@ -195,9 +195,9 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
   shelfCaption.append(shelfName,shelfSubtitle,shelfDimensions);
   shelfPreview.append(shelfDrawing,shelfCaption);
   const shelfChoices = element('fieldset','ihr-plant-catalog__shelf-choices');
-  const shelfLegend = element('legend',null,'Elige tu estantería');
+  const shelfLegend = element('legend',null,'Estantería');
   const shelfList = element('div','ihr-plant-catalog__shelves');
-  const shelfNote = element('p','ihr-plant-catalog__shelf-note','Tus libros y plantas se recolocan en la estantería elegida.');
+  const shelfNote = element('p','ihr-plant-catalog__shelf-note','Libros y plantas se recolocan.');
   shelfChoices.append(shelfLegend,shelfList,shelfNote);
   shelfBody.append(shelfPreview,shelfChoices);
   const lampBody = element('div','ihr-plant-catalog__body ihr-plant-catalog__body--lights');
@@ -212,9 +212,9 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
   lampCaption.append(lampName,lampSubtitle,lampWarmth,lampMount);
   lampPreview.append(lampDrawing,lampCaption);
   const lampChoices = element('fieldset','ihr-plant-catalog__lamp-choices');
-  const lampLegend = element('legend',null,'Elige tu lámpara');
+  const lampLegend = element('legend',null,'Lámpara');
   const lampList = element('div','ihr-plant-catalog__lamps');
-  const lampNote = element('p','ihr-plant-catalog__lamp-note','Toca una lámpara en la estantería para encenderla o apagarla.');
+  const lampNote = element('p','ihr-plant-catalog__lamp-note','Toca una lámpara para encenderla.');
   lampChoices.append(lampLegend,lampList,lampNote);
   lampBody.append(lampPreview,lampChoices);
   const footer = element('footer','ihr-plant-catalog__footer');
