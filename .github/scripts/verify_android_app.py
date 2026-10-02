@@ -39,6 +39,21 @@ def node_text(root):
                     for node in root.iter("node"))
 
 
+def interactive_bookshelf_visible(root):
+    # These controls and the empty state are created by bookshelf.js, after
+    # startup. A static HTML header alone must never pass this check.
+    if not re.search(r"\bSin libros\b", node_text(root), re.I):
+        return False
+    buttons = [node for node in root.iter("node")
+               if node.attrib.get("enabled") == "true"
+               and node.attrib.get("class") in ("android.widget.Button", "android.widget.ToggleButton")]
+    has_import = any(re.fullmatch(r"A.adir libro", node_text(node).strip(), re.I)
+                     for node in buttons)
+    has_view = any(re.search(r"Vista de canto|Vista isom.trica", node_text(node), re.I)
+                   for node in buttons)
+    return has_import and has_view
+
+
 def google_signin_visible(root):
     text = node_text(root)
     if "accounts.google.com" not in text:
@@ -207,7 +222,7 @@ def main():
             raise AssertionError("Android displayed an error instead of the app")
         # HTML/CSS can paint a header before the JS bundle has executed. The
         # empty shelf is created by JS and proves the app is actually ready.
-        if re.search(r"Tu estanter.a|A.ade tu primer libro|A.adir tu primer libro", node_text(root), re.I):
+        if interactive_bookshelf_visible(root):
             print("Published APK loaded the interactive bookshelf")
             if "--google-login" in sys.argv:
                 verify_google_login(root)
