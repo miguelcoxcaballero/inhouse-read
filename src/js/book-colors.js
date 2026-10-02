@@ -1,4 +1,5 @@
 import { normalizeBookAuthor } from './book-title.js'
+import { normalizeCoverRelief } from './cover-relief.js'
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 
 function parseHex(value) {
@@ -101,6 +102,8 @@ export function spineCustomization(book) {
   }
   for (const key of ['spineFinish','spineTextFinish']) if (key in (book || {})) result[key] = spineFinish(book[key])
   if ('coverFinish' in (book || {})) result.coverFinish = surfaceFinish(book.coverFinish)
+  // Relieve de la portada: {id, strength} validado, o null para quitarlo.
+  if ('coverRelief' in (book || {})) result.coverRelief = normalizeCoverRelief(book.coverRelief)
   if ('pageEdgeFinish' in (book || {})) result.pageEdgeFinish = surfaceFinish(book.pageEdgeFinish)
   if ('spineSurfaceFinish' in (book || {})) result.spineSurfaceFinish = surfaceFinish(book.spineSurfaceFinish, 'matte')
   if (typeof book?.spineEngraved === 'boolean') result.spineEngraved = book.spineEngraved
