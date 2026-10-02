@@ -8,7 +8,7 @@ const BASE_URL = `http://127.0.0.1:${PORT}/inhouse-read/`
 const SUITE = process.env.PLAYWRIGHT_SUITE || 'all'
 const REAL_SPECS = {
   engine: /[/\\]neural-voice-engine\.spec\.mjs$/,
-  reading: /[/\\]neural-voice-reading\.spec\.mjs$/,
+  reading: /[/\\]neural-(voice-reading|page-follow)\.spec\.mjs$/,
   languages: /[/\\]neural-voice-languages\.spec\.mjs$/
 }
 if (!['all', 'general', ...Object.keys(REAL_SPECS)].includes(SUITE)) throw new Error(`Unknown PLAYWRIGHT_SUITE: ${SUITE}`)
@@ -16,7 +16,7 @@ if (!['all', 'general', ...Object.keys(REAL_SPECS)].includes(SUITE)) throw new E
 export default defineConfig({
   testDir: './tests/e2e',
   testMatch: REAL_SPECS[SUITE] || /.*\.spec\.mjs/,
-  ...(SUITE === 'general' ? { testIgnore: /[/\\]neural-voice-(engine|reading|languages)\.spec\.mjs$/ } : {}),
+  ...(SUITE === 'general' ? { testIgnore: /[/\\]neural-(voice-(engine|reading|languages)|page-follow)\.spec\.mjs$/ } : {}),
   timeout: 30_000,
   expect: { timeout: 8_000 },
   fullyParallel: false,

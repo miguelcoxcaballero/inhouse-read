@@ -254,8 +254,8 @@ async function observeClosing(page, expected) {
   },expected);
 }
 async function assertClosing(page,testInfo) {
-  await expect(page.locator('.ihr-flyout--return')).toHaveCount(0,{timeout:20000});
-  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/,{timeout:20000});
+  await expect(page.locator('.ihr-flyout--return')).toHaveCount(0,{timeout:30000});
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/,{timeout:30000});
   const result=await page.evaluate(() => { const state=window.__bookClosing; state.done=true;return state; });
   await testInfo.attach('reverse-book-animation',{body:JSON.stringify({...result,image:undefined}),contentType:'application/json'});
   if (result.image) await testInfo.attach('current-page-with-3d-bookmark',{
@@ -319,7 +319,7 @@ test('móvil EPUB: la vuelta usa el capítulo actual y cancela limpiamente al gi
     observer.observe(document.body,{subtree:true,attributes:true,attributeFilter:['data-return-phase']});
   });
   await page.getByRole('button',{name:'Volver a la estantería'}).click();
-  await expect.poll(()=>page.evaluate(()=>window.__cancelAtBookmark)).toBe(true);
+  await expect.poll(()=>page.evaluate(()=>window.__cancelAtBookmark),{timeout:30_000}).toBe(true);
   await page.setViewportSize({width:844,height:390});
   await expect(page.locator('.ihr-flyout')).toHaveCount(0);
   await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/);
@@ -378,6 +378,8 @@ test('móvil: abre la página PDF guardada en el modelo 3D antes del zoom y cons
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 3 de 4/)
   await expect(page.locator('.pdf-text-layer')).toContainText('Saved blue page. Page 3.')
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
+  await expect(page.locator('body')).not.toHaveClass(/is-reading|is-closing-reader/,{timeout:30_000})
+  await expect(page.locator('.ihr-flyout--return')).toHaveCount(0,{timeout:30_000})
   await expect.poll(async () => (await savedBook(page,'opening-colours.pdf'))?.locator).toEqual({ kind:'pdf-page',value:3 })
   await page.reload()
   const spine = page.locator('.ihr-spine').first()
@@ -410,6 +412,8 @@ test('móvil: abre el capítulo EPUB del CFI guardado con su texto real durante 
   const chapter = () => page.evaluate(() => document.querySelector('foliate-view')?.renderer?.getContents()?.[0]?.doc.querySelector('h1')?.textContent)
   await expect.poll(chapter).toBe('Beyond the window')
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
+  await expect(page.locator('body')).not.toHaveClass(/is-reading|is-closing-reader/,{timeout:30_000})
+  await expect(page.locator('.ihr-flyout--return')).toHaveCount(0,{timeout:30_000})
   await expect.poll(async () => (await savedBook(page,'reading-journey.epub'))?.locator?.kind).toBe('cfi')
   const record = await savedBook(page,'reading-journey.epub')
   await page.reload()
@@ -434,6 +438,8 @@ test('móvil: cancelar la apertura al redimensionar libera la estantería y perm
   await page.getByRole('button', { name:'Página siguiente', exact:true }).click()
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 3 de 4/)
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
+  await expect(page.locator('body')).not.toHaveClass(/is-reading|is-closing-reader/,{timeout:30_000})
+  await expect(page.locator('.ihr-flyout--return')).toHaveCount(0,{timeout:30_000})
   await expect.poll(async () => (await savedBook(page,'opening-resize.pdf'))?.locator).toEqual({ kind:'pdf-page',value:3 })
   await page.reload()
   await page.locator('.ihr-spine').first().click()
@@ -450,6 +456,8 @@ test('móvil: cancelar la apertura al redimensionar libera la estantería y perm
   await expect(page.locator('#reader-screen')).not.toHaveAttribute('data-opening-book',/.+/)
   await expect(page.locator('.app-header')).toBeVisible()
   await expect(page.locator('.ihr-spine').first()).not.toHaveClass(/is-away/)
+  await expect(page.locator('body')).not.toHaveClass(/is-reading|is-closing-reader/,{timeout:30_000})
+  await expect(page.locator('.ihr-flyout--return')).toHaveCount(0,{timeout:30_000})
   await expect.poll(async () => (await savedBook(page,'opening-resize.pdf'))?.locator).toEqual({ kind:'pdf-page',value:3 })
 
   // A stale busy/session flag used to make the next tap do nothing. Reuse the

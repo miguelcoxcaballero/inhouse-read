@@ -2,6 +2,10 @@ import { expect, test } from '@playwright/test';
 
 const PLANTS_KEY = 'inhouse-read-shelf-plants';
 const CATALOG_NAME = 'Abrir catálogo IKEA de plantas, estanterías e iluminación';
+// The camera clock advances at most 50 ms per rendered frame. CI's software
+// renderer reached progress .9977 only after 8.2 s, or .7651 with three plants;
+// wait for the exact endpoint while retaining every geometry assertion.
+const VIEW_TRANSITION_TIMEOUT = 30_000;
 test.use({ viewport:{ width:390,height:844 },hasTouch:true,isMobile:true,deviceScaleFactor:1 });
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion:'no-preference' });
@@ -26,7 +30,7 @@ test.beforeEach(async ({ page }) => {
 
 async function openCatalog(page) {
   await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
-  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress','1');
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress','1',{ timeout:VIEW_TRANSITION_TIMEOUT });
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating','false');
   await assertIsometricOverview(page);
   const catalog = page.getByRole('button',{ name:CATALOG_NAME });
@@ -83,9 +87,9 @@ test('una planta junto a un libro fino no tapa su zona táctil al girar o recarg
   const spine = page.locator('.ihr-spine').first();
   await expect(spine).toBeVisible();
   await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
-  await expect(canvas).toHaveAttribute('data-view-progress','1');
+  await expect(canvas).toHaveAttribute('data-view-progress','1',{ timeout:VIEW_TRANSITION_TIMEOUT });
   await page.reload();
-  await expect(canvas).toHaveAttribute('data-view-progress','1');
+  await expect(canvas).toHaveAttribute('data-view-progress','1',{ timeout:VIEW_TRANSITION_TIMEOUT });
   await expect(canvas).toHaveAttribute('data-animating','false');
   expect(await spine.evaluate(node => {
     const box = node.getBoundingClientRect();
@@ -141,7 +145,7 @@ test('el catálogo está pegado al lateral 3D, sólo aparece en isométrica y a�
   expect(await savedPlants(page)).toEqual(plants);
   await assertIsometricOverview(page);
   await page.getByRole('button',{ name:'Vista de canto' }).click();
-  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress','0');
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress','0',{ timeout:VIEW_TRANSITION_TIMEOUT });
   await expect(page.locator('.ihr-shelf-catalog')).toBeHidden();
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-catalog-visible','false');
   expect(errors).toEqual([]);
@@ -208,7 +212,7 @@ test('una planta cae como modelo 3D en la papelera y la última planta retirada 
   await expect(canvas).toHaveAttribute('data-trash3d','true');
   await expect(page.locator('.ihr-shelf-trash')).toBeHidden();
   await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
-  await expect(canvas).toHaveAttribute('data-view-progress','1');
+  await expect(canvas).toHaveAttribute('data-view-progress','1',{ timeout:VIEW_TRANSITION_TIMEOUT });
   await expect(canvas).toHaveAttribute('data-animating','false');
   await assertIsometricOverview(page);
   await expect(page.locator('.ihr-shelf-trash')).toBeVisible();
@@ -275,7 +279,7 @@ test('un gesto táctil desde las hojas mueve una planta superior directamente a 
   await expect(plant).toHaveAttribute('data-shelf-index','0');
   await expect(canvas).toHaveAttribute('data-animating','false');
   await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
-  await expect(canvas).toHaveAttribute('data-view-progress','1');
+  await expect(canvas).toHaveAttribute('data-view-progress','1',{ timeout:VIEW_TRANSITION_TIMEOUT });
   await expect(canvas).toHaveAttribute('data-animating','false');
   // The first and tenth shelves and grounded basket must fit simultaneously.
   // Neither wheel nor a native touch swipe may scroll the isometric overview.
@@ -475,12 +479,12 @@ test('las plantas de una instalación antigua migran a los modelos actuales sin 
   }
   await testInfo.attach('legacy-plantas-3d-frontal',{ body:await page.screenshot(),contentType:'image/png' });
   await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
-  await expect(canvas).toHaveAttribute('data-view-progress','1');
+  await expect(canvas).toHaveAttribute('data-view-progress','1',{ timeout:VIEW_TRANSITION_TIMEOUT });
   await assertModels();
   expect(await savedPlants(page)).toEqual(migrated);
   await testInfo.attach('legacy-plantas-3d-isometrica',{ body:await page.screenshot(),contentType:'image/png' });
   await page.reload();
-  await expect(canvas).toHaveAttribute('data-view-progress','1');
+  await expect(canvas).toHaveAttribute('data-view-progress','1',{ timeout:VIEW_TRANSITION_TIMEOUT });
   await assertModels();
   expect(await savedPlants(page)).toEqual(migrated);
 

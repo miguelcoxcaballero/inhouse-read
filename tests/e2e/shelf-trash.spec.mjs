@@ -6,6 +6,10 @@ const PDF_FIXTURE = 'tests/e2e/fixtures/tiny.pdf'
 const PLANTS_KEY = 'inhouse-read-shelf-plants'
 const DRIVE_ID = 'keep-on-drive'
 
+// At 50 ms of camera time per rendered frame, CI reached .98 after 8.3 s
+// but needed further real frames. Keep the exact endpoint and geometry checks.
+const VIEW_TRANSITION_TIMEOUT = 30_000
+
 function savedDrivePdf() {
   const colours = ['.72 .08 .15', '.08 .22 .78', '.1 .52 .23']
   const objects = ['<< /Type /Catalog /Pages 2 0 R >>',
@@ -143,7 +147,7 @@ async function seedShelf(page, { long = false, linked = false, driveBytes = null
 async function useIsometricShelf(page) {
   if (await page.locator('.ihr-bookshelf').getAttribute('data-view-mode') !== 'isometric')
     await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
-  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1')
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1', { timeout:VIEW_TRANSITION_TIMEOUT })
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
 }
 
@@ -567,9 +571,18 @@ test('la estantería larga cabe entera en isométrica y permite llevar libros su
   const seed = await seedShelf(page, { long:true })
   const scene = page.locator('.ihr-bookshelf-scene')
   const scroller = page.locator('.ihr-bookshelf__scroll')
-  expect(await scroller.evaluate(node => node.scrollHeight / node.clientHeight)).toBeGreaterThan(2)
+  // Ten populated shelf slots now occupy four real 600 × 250 × 1160 mm
+  // cabinets side by side; the old vertically stretched cabinet no longer
+  // creates the frontal scrollbar this fixture used to require.
+  await expect(scene).toHaveAttribute('data-shelf-units', '4')
+  await expect(scene).toHaveAttribute('data-active-books', '21')
+  expect(JSON.parse(await scene.getAttribute('data-shelf-dimensions')))
+    .toEqual({ width:600, depth:250, height:1160 })
+  await testInfo.attach('four-real-cabinets-before-overview', {
+    body:JSON.stringify(await shelfScrollDiagnostics(page), null, 2), contentType:'application/json'
+  })
   await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
-  await expect(scene).toHaveAttribute('data-view-progress', '1')
+  await expect(scene).toHaveAttribute('data-view-progress', '1', { timeout:VIEW_TRANSITION_TIMEOUT })
   await expect(scene).toHaveAttribute('data-animating', 'false')
   // The entire tall cabinet and grounded basket fit together. Wheel input
   // must not turn the overview into the old scrollable partial view.
@@ -678,7 +691,7 @@ test('el giro de cámara encuadra la papelera del suelo sin hacerla aparecer esc
   await testInfo.attach('fixed-floor-bin-camera-entry',{ body:JSON.stringify(motion,null,2),contentType:'application/json' })
   await testInfo.attach('floor-bin-isometric-320',{ body:await page.screenshot(),contentType:'image/png' })
   await page.getByRole('button',{ name:'Vista de canto' }).click()
-  await expect(scene).toHaveAttribute('data-view-progress','0')
+  await expect(scene).toHaveAttribute('data-view-progress','0', { timeout:VIEW_TRANSITION_TIMEOUT })
   await expect(scene).toHaveAttribute('data-animating','false')
   expect(await scene.getAttribute('data-trash-local-position')).toBe(motion[0].position)
   expect(await scene.getAttribute('data-trash-local-scale')).toBe('1.000000')

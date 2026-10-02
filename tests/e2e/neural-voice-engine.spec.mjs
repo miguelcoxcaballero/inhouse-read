@@ -248,7 +248,7 @@ test.describe('neural voice engine (real Piper weights, real ORT + espeak-ng WAS
     await page.evaluate(() => window.neural.engine.stop())
   })
 
-  test('speeds 1.5x and 2x: compute speed scales with the rate, and the voice either keeps up or honestly gives up', async () => {
+  test('speeds 1.5x and 2x: compute speed scales with the rate and natural audio completes without a slow-voice veto', async () => {
     for (const rate of [1.5, 2]) {
       // new text per rate: the fragment cache must not hide the compute speed
       const fresh = FRAGMENTS.slice(0, 5).map(t => `${rate === 1.5 ? 'Primero' : 'Entonces'}, ${t[0].toLowerCase()}${t.slice(1)}`)
@@ -256,8 +256,8 @@ test.describe('neural voice engine (real Piper weights, real ORT + espeak-ng WAS
       const stats = await page.evaluate(() => ({ ...window.neural.engine.stats }))
       const error = log.find(e => e.type === 'error')
       numbers[`rate${rate}`] = { rtf: +stats.rtf.toFixed(2), underruns: stats.underruns, tooSlow: stats.tooSlow, done: log.filter(e => e.type === 'done').length, error: error?.reason || null, firstAudioMs: Math.round(log.find(e => e.type === 'start')?.at || -1) }
-      if (error) expect(error.reason).toBe('too-slow')
-      else expect(log.filter(e => e.type === 'done').length).toBe(fresh.length)
+      expect(error).toBeUndefined()
+      expect(log.filter(e => e.type === 'done').length).toBe(fresh.length)
       await page.evaluate(() => window.neural.engine.stop())
     }
     // the rate really changes the speech: the same text at 2x is clearly shorter than at 1x (not exactly half: Piper's

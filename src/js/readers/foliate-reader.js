@@ -16,6 +16,7 @@ import { DEFAULT_READING_PREFERENCES, readingCSS, normalizeReadingPreferences } 
 import { READING_THEMES } from './reading-preferences.js'
 import { compositePageSnapshots, renderedPageFilter, settlePageLayout, snapshotDOMPage } from './page-snapshot.js'
 import { mapSpeechText } from './speech-map.js'
+import { speechPageBreaks } from './speech-page-breaks.js'
 import { SPEECH_HIGHLIGHT, clearSpeechRange, installSpeechStyle, paintSpeechRange, speechOverlayColor } from './speech-highlight.js'
 
 // foliate marca las coincidencias de búsqueda con Overlayer.outline (un
@@ -210,7 +211,9 @@ export class FoliateReader {
   }
   /**
    * The audiobook reads from the visible page to the end of its section, so a
-   * sentence is never cut at a page break. Offsets index the returned text; the
+   * sentence keeps one highlight across page breaks. Its audio fragments end
+   * at actual page boundaries, so the next audible fragment turns the page.
+   * Offsets index the returned text; the
    * DOM is only read (ranges for the highlight), never changed.
    */
   async getSpeechSource() {
@@ -220,10 +223,12 @@ export class FoliateReader {
     installSpeechStyle(doc, this.#preferences.theme)
     const map = mapSpeechText(doc.body)
     const live = () => this.#view === view && view.renderer.getContents().some(item => item.doc === doc)
+    const pageBreaks = await speechPageBreaks(map, view.renderer, { isCurrent:live })
+    if (!live()) return null
     // Clearing also cancels a page turn still queued for a sentence nobody is reading any more.
     const clear = () => { this.#followTicket++; clearSpeechRange(doc); try { content.overlayer?.remove(SPEECH_HIGHLIGHT) } catch { /* overlay already gone */ } }
     return {
-      text:map.text, start:map.offsetOf(visible.startContainer, visible.startOffset), clear,
+      text:map.text, start:map.offsetOf(visible.startContainer, visible.startOffset), pageBreaks, clear,
       highlight:(start, end) => {
         if (!live()) return
         const range = map.rangeFor(start, end)

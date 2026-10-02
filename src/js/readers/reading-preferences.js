@@ -1,3 +1,6 @@
+import { isNeuralVoiceId, neuralVoices } from './neural-voice/catalog.js'
+import { langBase } from './voice-catalog.js'
+
 export const READING_THEMES = {
   paper: { background:'#faf9f5', color:'#292821', scheme:'light' },
   sepia: { background:'#eee0c4', color:'#483825', scheme:'light' },
@@ -36,6 +39,7 @@ export const DEFAULT_READING_PREFERENCES = Object.freeze({
 })
 export function normalizeReadingPreferences(input = {}) {
   if (!input || typeof input !== 'object') input = {}
+  const voice = String(input.voice || ''), voiceLang = langBase(input.voiceLang)
   const number = (key, min, max) => {
     const value = input[key] == null || input[key] === '' ? NaN : Number(input[key])
     return Math.min(max, Math.max(min, Number.isFinite(value) ? value : DEFAULT_READING_PREFERENCES[key]))
@@ -48,7 +52,9 @@ export function normalizeReadingPreferences(input = {}) {
     align:input.align === 'justify' ? 'justify' : 'start',
     flow:input.flow === 'scrolled' ? 'scrolled' : 'paginated',
     pdfMode:input.pdfMode === 'text' ? 'text' : 'original',
-    zoom:number('zoom',70,200), rate:nearestRate(input.rate), voice:String(input.voice || ''), voiceLang:/^[a-z]{2,3}$/.test(String(input.voiceLang || '')) ? String(input.voiceLang) : '',
+    zoom:number('zoom',70,200), rate:nearestRate(input.rate),
+    voice:isNeuralVoiceId(voice) && neuralVoices.some(entry => entry.id === voice) ? voice : '',
+    voiceLang:voiceLang && neuralVoices.some(entry => langBase(entry.lang) === voiceLang) ? voiceLang : '',
     brightness:number('brightness',50,120), fontWeight:[400,500,600].includes(Number(input.fontWeight)) ? Number(input.fontWeight) : 400,
     footnotes:Boolean(input.footnotes), multilingual:Boolean(input.multilingual), skipHeaders:Boolean(input.skipHeaders)
   }

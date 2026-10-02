@@ -9,7 +9,8 @@ const DAVEFX = 'piper:es_ES-davefx-medium', LESSAC = 'piper:en_US-lessac-high'
 let saved
 beforeAll(async () => { await loadNeural(); saved = [...neuralVoices]; neuralVoices.splice(0, neuralVoices.length, ...FAKE_CATALOG) })
 afterAll(() => { neuralVoices.splice(0, neuralVoices.length, ...saved); setNeuralEngine(null) })
-afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); localStorage.clear() }) // a 'too-slow' verdict is remembered across sessions: not across tests
+const activeVoices = new Set()
+afterEach(() => { for (const voice of activeVoices) voice.stop(); activeVoices.clear(); setNeuralEngine(null); vi.unstubAllGlobals(); vi.useRealTimers(); localStorage.clear() })
 
 const engineWith = (options = {}) => { const engine = createFakeNeuralEngine({ voices:FAKE_CATALOG, installed:[DAVEFX], hold:true, ...options }); setNeuralEngine(engine); return engine }
 const device = (voices = [{ voiceURI:'es-good', name:'es voice', lang:'es-ES', quality:400, network:false, installed:true }, { voiceURI:'en-good', name:'en voice', lang:'en-US', quality:400, network:false, installed:true }]) => {
@@ -26,6 +27,7 @@ function mappedReader(text, extra = {}) {
 }
 async function reading(text = SENTENCES, { reader = { language:'es', getSpeechText:async () => text }, onState, ...settings } = {}) {
   const voice = new ReadingVoice(reader, onState)
+  activeVoices.add(voice)
   Object.assign(voice, settings)
   await voice.play()
   return voice
@@ -40,17 +42,18 @@ describe('neural transport', () => {
     expect(last(engine)).toMatchObject({ text:'Primera frase.', voiceId:DAVEFX, rate:1.3, id:voice.utteranceId, upcoming:['Segunda frase.', 'Tercera frase.', 'Cuarta frase.', 'Quinta frase.'] })
     voice.stop()
   })
-  it('an installed neural voice is the default; an explicit system voice still wins; an uninstalled neural id is never used', async () => {
+  it('uses automatic natural selection for an obsolete device choice and never substitutes a missing explicit natural voice', async () => {
     const speak = device(), engine = engineWith()
     let voice = await reading('Hola mundo.'); voice.stop()
     expect(engine.calls).toHaveLength(1)
     voice = await reading('Hola mundo.', { voice:'es-good' }); voice.stop()
-    expect(engine.calls).toHaveLength(1) // not asked again
-    expect(speak.mock.calls[0].slice(1, 4)).toEqual(['es-ES', 1, 'es-good'])
-    voice = await reading('Hola mundo.', { voice:'piper:es_MX-claude-high' }); voice.stop() // chosen once, deleted since: the best available voice
-    expect(speak).toHaveBeenCalledTimes(1)
     expect(engine.calls).toHaveLength(2)
     expect(last(engine).voiceId).toBe(DAVEFX)
+    voice = await reading('Hola mundo.', { voice:'piper:es_MX-claude-high' })
+    expect(voice.state).toBe('stopped')
+    expect(voice.voice).toBe('piper:es_MX-claude-high')
+    expect(speak).not.toHaveBeenCalled()
+    expect(engine.calls).toHaveLength(2)
   })
   it('works with no system speech at all once a neural voice is installed', async () => {
     vi.stubGlobal('speechSynthesis', undefined)
@@ -73,11 +76,11 @@ describe('neural transport', () => {
     await resuming
     voice.stop()
   })
-  it('does not unlock audio when no neural voice is installed (nothing to play)', async () => {
+  it('unlocks the natural audio context inside the tap even before the first installation', async () => {
     device()
     const engine = engineWith({ installed:[] })
     const voice = await reading('Hola mundo.'); voice.stop()
-    expect(engine.unlocks).toBe(0)
+    expect(engine.unlocks).toBe(1)
     expect(engine.calls).toHaveLength(0)
   })
   it('the highlight is painted at the engine start event, never on a timer', async () => {
@@ -168,123 +171,147 @@ describe('neural transport', () => {
     expect(last(engine).text).toBe('Otra página.')
     voice.stop()
   })
+  it('a cancelled cache refresh cannot report a later error over a newer playback', async () => {
+    device()
+    const engine=engineWith(), states=[]
+    let rejectOld
+    engine.refresh=vi.fn().mockImplementationOnce(()=>new Promise((resolve,reject)=>{ rejectOld=reject })).mockResolvedValue(undefined)
+    const voice=new ReadingVoice({ language:'es',getSpeechText:async()=>SENTENCES },(state,message)=>states.push({ state,message }))
+    activeVoices.add(voice)
+    const oldPlay=voice.play()
+    await vi.waitFor(()=>expect(rejectOld).toBeTypeOf('function'))
+    voice.stop()
+    await voice.play()
+    const current=voice.utteranceId,observed=[...states]
+    rejectOld(new Error('late cache failure'))
+    await oldPlay
+    expect(voice.state).toBe('playing')
+    expect(voice.utteranceId).toBe(current)
+    expect(voice.neuralOff).toBe('')
+    expect(states).toEqual(observed)
+    expect(engine.calls).toHaveLength(1)
+  })
 })
 
-describe('neural voice failures fall back to the best system voice', () => {
+describe('natural voice failures retain the chosen voice for retry', () => {
   const messages = []
   const watch = (state, message) => message && message !== 'Preparando la voz…' && messages.push(message)
   afterEach(() => { messages.length = 0 })
 
-  it.each([
-    ['too-slow', 'Voz natural demasiado lenta. Se usa la del sistema.']
-  ])("'%s' hands over to the system voice for the rest of the session, with a visible message", async (reason, message) => {
+  it('a legacy too-slow error exposes a retry without using a device voice', async () => {
     const speak = device(), engine = engineWith()
-    const voice = await reading(SENTENCES, { onState:watch })
-    tts('error', last(engine).id, reason)
-    expect(messages).toEqual([message])
-    expect(voice.state).toBe('playing')
-    expect(engine.stops).toBeGreaterThan(0)
-    expect(speak).toHaveBeenCalledTimes(1)
-    expect(speak.mock.calls[0].slice(0, 4)).toEqual(['Primera frase.', 'es-ES', 1, 'es-good']) // the same fragment, never a "piper:" id
-    expect(voice.neuralOff).toBe(reason)
-    // the rest of the session: system voice, the neural engine is not asked again
-    tts('done', speak.mock.calls[0][4])
-    expect(speak.mock.calls[1][0]).toBe('Segunda frase.')
-    expect(engine.calls).toHaveLength(1)
-    // pause and resume do not bring it back either, but retryNeural() does
-    voice.pause(); await voice.play()
-    expect(engine.calls).toHaveLength(1)
-    voice.retryNeural(); voice.restart()
-    expect(engine.calls).toHaveLength(2)
-    voice.stop()
-  })
-  it('a system voice failing after the hand-over is a real error', async () => {
-    const speak = device(), engine = engineWith()
-    const voice = await reading(SENTENCES, { onState:watch })
+    const voice = await reading(SENTENCES, { onState:watch, voice:DAVEFX })
     tts('error', last(engine).id, 'too-slow')
-    tts('error', speak.mock.calls[0][4])
-    expect(voice.state).toBe('stopped')
-    expect(messages.at(-1)).toMatch(/No hay voz para este idioma/)
+    expect(messages.at(-1)).toContain('Pulsa Reintentar')
+    expect(voice.state).toBe('paused')
+    expect(engine.stops).toBeGreaterThan(0)
+    expect(speak).not.toHaveBeenCalled()
+    expect(voice.voice).toBe(DAVEFX)
+    await voice.play()
+    expect(engine.calls).toHaveLength(2)
+    expect(last(engine)).toMatchObject({ text:'Primera frase.', voiceId:DAVEFX })
+    expect(voice.neuralOff).toBe('')
   })
-  it("'not-installed' (the saved choice points at a deleted voice) uses the best available voice and asks the engine to re-read its cache", async () => {
+  it('late failure events cannot change the error or start another transport after pausing', async () => {
+    const speak = device(), engine = engineWith()
+    const voice = await reading(SENTENCES, { onState:watch })
+    const id = last(engine).id
+    tts('error', id, 'too-slow')
+    const observed = [...messages]
+    tts('error', id, 'synth-failed'); tts('done', id); tts('start', id)
+    expect(voice.state).toBe('paused')
+    expect(messages).toEqual(observed)
+    expect(engine.calls).toHaveLength(1)
+    expect(speak).not.toHaveBeenCalled()
+  })
+  it('not-installed refreshes the cache but retains the explicit selection until the person changes it', async () => {
     const speak = device(), engine = engineWith({ installed:[DAVEFX, 'piper:es_MX-claude-high'] })
     const voice = await reading(SENTENCES, { onState:watch, voice:'piper:es_MX-claude-high' })
-    expect(last(engine).voiceId).toBe('piper:es_MX-claude-high')
     tts('error', last(engine).id, 'not-installed')
-    expect(messages).toEqual(['Voz no instalada. Se usa otra voz.'])
-    expect(engine.refreshes).toBeGreaterThan(0)
-    expect(last(engine)).toMatchObject({ voiceId:DAVEFX, text:'Primera frase.' }) // another neural voice of the language takes over
+    expect(messages.at(-1)).toContain('Descárgala de nuevo')
+    expect(engine.refreshes).toBeGreaterThan(1)
+    expect(voice.voice).toBe('piper:es_MX-claude-high')
+    expect(voice.state).toBe('paused')
+    expect(engine.calls).toHaveLength(1)
     expect(speak).not.toHaveBeenCalled()
-    tts('error', last(engine).id, 'not-installed')
-    expect(speak.mock.calls[0].slice(0, 4)).toEqual(['Primera frase.', 'es-ES', 1, 'es-good']) // none left: the best system voice
-    expect(voice.neuralOff).toBe('') // the voices are fine, only those two are gone
-    voice.stop()
+    voice.voice = DAVEFX
+    await voice.play()
+    expect(last(engine)).toMatchObject({ voiceId:DAVEFX, text:'Primera frase.' })
   })
-  it('an engine that throws on speak() falls back too', async () => {
+  it('an engine that throws on speak exhausts its retries and reports the failure', async () => {
     const speak = device(), engine = engineWith()
-    engine.speak = () => { throw new Error('worker died') }
-    const voice = await reading(SENTENCES, { onState:watch })
-    await vi.waitFor(() => expect(speak).toHaveBeenCalledTimes(1))
-    expect(messages.at(-1)).toMatch(/La voz natural no arrancó/) // after the restarts were tried
-    voice.stop()
+    const broken = vi.fn(() => { throw new Error('worker died') })
+    engine.speak = broken
+    const voice = await reading(SENTENCES, { onState:watch, voice:DAVEFX })
+    await vi.waitFor(() => expect(voice.state).toBe('paused'))
+    expect(broken).toHaveBeenCalledTimes(4)
+    expect(messages.at(-1)).toContain('Pulsa Reintentar')
+    expect(voice.voice).toBe(DAVEFX)
+    expect(speak).not.toHaveBeenCalled()
   })
-  it.each(['synth-failed', 'init-failed'])("a worker that dies mid-reading ('%s') is rebuilt and the same fragment is spoken again with the neural voice", async reason => {
+  it.each(['synth-failed', 'init-failed'])('rebuilds a failed worker (%s) with the same natural voice and fragment', async reason => {
     const speak = device(), engine = engineWith()
     const voice = await reading(SENTENCES, { onState:watch })
-    tts('done', last(engine).id) // one sentence is heard...
-    expect(last(engine).text).toBe('Segunda frase.')
-    tts('error', last(engine).id, reason) // ...and the worker dies on the next
-    expect(engine.calls.at(-1).text).toBe('Segunda frase.'); expect(engine.calls.at(-2).text).toBe('Segunda frase.')
+    tts('done', last(engine).id)
+    tts('error', last(engine).id, reason)
+    expect(engine.calls.at(-1).text).toBe('Segunda frase.')
+    expect(engine.calls.at(-2).text).toBe('Segunda frase.')
+    expect(last(engine).voiceId).toBe(DAVEFX)
     expect(messages).toEqual(['Reiniciando la voz natural…'])
-    expect(voice.neuralOff).toBe('') // not given up on
+    expect(voice.neuralOff).toBe('')
     expect(speak).not.toHaveBeenCalled()
     tts('done', last(engine).id)
-    expect(last(engine).text).toBe('Tercera frase.') // the reading carries on, still natural
-    voice.stop()
+    expect(last(engine).text).toBe('Tercera frase.')
   })
-  it('a worker that keeps dying is given up on after a few restarts in a row, with the system voice and the usual message', async () => {
+  it('a repeatedly failing worker pauses and a manual retry uses the same natural fragment', async () => {
     const speak = device(), engine = engineWith()
-    const voice = await reading(SENTENCES, { onState:watch })
-    for (let attempt = 0; attempt < 3; attempt++) tts('error', last(engine).id, 'synth-failed')
-    expect(engine.calls).toHaveLength(4) // the first try and three restarts
-    expect(speak).not.toHaveBeenCalled()
+    const voice = await reading(SENTENCES, { onState:watch, voice:DAVEFX })
+    for (let attempt=0; attempt<3; attempt++) tts('error', last(engine).id, 'synth-failed')
+    expect(engine.calls).toHaveLength(4)
     tts('error', last(engine).id, 'synth-failed')
-    expect(messages.at(-1)).toBe('La voz natural no arrancó. Se usa la del sistema.')
+    expect(messages.at(-1)).toContain('Pulsa Reintentar')
+    expect(voice.state).toBe('paused')
     expect(voice.neuralOff).toBe('synth-failed')
-    expect(speak.mock.calls[0].slice(0, 4)).toEqual(['Primera frase.', 'es-ES', 1, 'es-good'])
-    voice.stop()
+    expect(speak).not.toHaveBeenCalled()
+    await voice.play()
+    expect(engine.calls).toHaveLength(5)
+    expect(last(engine)).toMatchObject({ text:'Primera frase.', voiceId:DAVEFX })
   })
-  it('a fragment heard to the end clears the count: a worker that only dies now and then never ends the neural reading', async () => {
+  it('a completed fragment clears retries so an occasional worker failure does not end reading', async () => {
     const speak = device(), engine = engineWith()
     const voice = await reading(SENTENCES, { onState:watch })
-    for (let sentence = 0; sentence < 5; sentence++) {
-      for (let attempt = 0; attempt < 2; attempt++) tts('error', last(engine).id, 'synth-failed')
+    for (let sentence=0; sentence<5; sentence++) {
+      for (let attempt=0; attempt<2; attempt++) tts('error', last(engine).id, 'synth-failed')
       tts('done', last(engine).id)
     }
     expect(voice.neuralOff).toBe('')
+    expect(voice.state).toBe('playing')
     expect(speak).not.toHaveBeenCalled()
-    voice.stop()
   })
-  it('an engine that disappears (unsupported) between fragments is replaced by the system voice', async () => {
+  it('an engine that becomes unsupported between fragments stops with an explicit error', async () => {
     const speak = device(), engine = engineWith()
-    const voice = await reading()
+    const voice = await reading(SENTENCES, { onState:watch })
     engine.config.supported = false
     tts('done', last(engine).id)
-    expect(speak.mock.calls[0].slice(0, 4)).toEqual(['Segunda frase.', 'es-ES', 1, 'es-good'])
-    voice.stop()
+    expect(voice.state).toBe('stopped')
+    expect(messages.at(-1)).toContain('voz natural')
+    expect(speak).not.toHaveBeenCalled()
   })
-  it('unsupported engines are never used, and the reading is exactly as before', async () => {
+  it('unsupported engines report unsupported natural playback without speaking through the device', async () => {
     const speak = device(), engine = engineWith({ supported:false })
-    const voice = await reading('Hola mundo.')
-    expect(engine.unlocks).toBe(0); expect(engine.calls).toHaveLength(0)
-    expect(speak.mock.calls[0].slice(1, 4)).toEqual(['es-ES', 1, 'es-good'])
-    voice.stop()
+    const states=[]
+    const voice = await reading('Hola mundo.', { onState:(state,message)=>states.push(message) })
+    expect(engine.unlocks).toBe(0)
+    expect(engine.calls).toHaveLength(0)
+    expect(voice.state).toBe('stopped')
+    expect(states.at(-1)).toContain('no puede reproducir voces naturales')
+    expect(speak).not.toHaveBeenCalled()
   })
 })
 
 describe('multilingual reading with neural voices', () => {
   const MIXED = 'Los niños salieron a jugar con una pelota. Salieron todos juntos al parque. The old man was sitting by the window and she was not there. He was not there either.'
-  it('uses the installed neural voice of each fragment language and the best system voice otherwise; upcoming stops at a language change', async () => {
+  it('uses installed natural voices per language and stops visibly when that language needs a download', async () => {
     const speak = device(), engine = engineWith()
     const voice = await reading(MIXED, { reader:{ language:'es', getSpeechText:async () => MIXED }, options:{ footnotes:false, multilingual:true, skipHeaders:false }, voice:DAVEFX })
     expect(last(engine)).toMatchObject({ voiceId:DAVEFX, text:expect.stringContaining('Los niños') })
@@ -292,9 +319,9 @@ describe('multilingual reading with neural voices', () => {
     expect(last(engine).upcoming.every(text => !/old man/.test(text))).toBe(true)
     tts('done', last(engine).id) // second Spanish sentence
     expect(last(engine).voiceId).toBe(DAVEFX)
-    tts('done', last(engine).id) // English: no English neural voice is installed: the system voice
-    expect(speak).toHaveBeenCalledTimes(1)
-    expect(speak.mock.calls[0].slice(1, 4)).toEqual(['en-US', 1, 'en-good'])
+    tts('done', last(engine).id) // English needs an explicit natural voice download
+    expect(speak).not.toHaveBeenCalled()
+    expect(voice.state).toBe('stopped')
     voice.stop()
     // with an English neural voice installed it takes the English fragment
     const english = engineWith({ installed:[DAVEFX, LESSAC] })
@@ -308,15 +335,15 @@ describe('multilingual reading with neural voices', () => {
 describe('review fixes', () => {
   const MIXED = 'Los niños salieron a jugar con una pelota. Salieron todos juntos al parque. The old man was sitting by the window and she was not there. He was not there either.'
 
-  it('a neural voice removed while it reads (also the automatic pick) hands the fragment over at once, instead of leaving the reading silent', async () => {
+  it('removing the currently read natural voice pauses until another natural voice is selected', async () => {
     const speak = device(), engine = engineWith()
     const voice = await reading(SENTENCES)
     expect(voice.spokenWith.id).toBe(DAVEFX)
     voice.voiceRemoved(DAVEFX)
     expect(engine.stops).toBeGreaterThan(0)
-    expect(speak).toHaveBeenCalledTimes(1)
-    expect(speak.mock.calls[0].slice(0, 4)).toEqual(['Primera frase.', 'es-ES', 1, 'es-good'])
-    expect(voice.state).toBe('playing')
+    expect(speak).not.toHaveBeenCalled()
+    expect(voice.state).toBe('paused')
+    expect(engine.calls).toHaveLength(1)
     voice.stop()
   })
   it('a voice removed that is not the one being read changes nothing now, but is not used afterwards', async () => {
@@ -343,7 +370,7 @@ describe('review fixes', () => {
     expect(states.at(-1)).toBe('')
     voice.stop()
   })
-  it('turning Voz multilingüe on while the neural voice reads ahead silences the engine before the system voice takes a foreign fragment', async () => {
+  it('turning multilingual on cancels lookahead when the next language has no installed natural voice', async () => {
     const speak = device(), engine = engineWith()
     const voice = await reading(MIXED, { reader:{ language:'es', getSpeechText:async () => MIXED } })
     expect(voice.transport).toBe('neural')
@@ -351,60 +378,31 @@ describe('review fixes', () => {
     tts('done', last(engine).id) // second Spanish fragment: still the neural voice
     expect(speak).not.toHaveBeenCalled()
     const stops = engine.stops
-    tts('done', last(engine).id) // the English one: the system voice
-    expect(speak).toHaveBeenCalledTimes(1)
-    expect(speak.mock.calls[0].slice(1, 4)).toEqual(['en-US', 1, 'en-good'])
+    tts('done', last(engine).id) // the English fragment has no installed natural voice
+    expect(speak).not.toHaveBeenCalled()
     expect(engine.stops).toBeGreaterThan(stops)
-    expect(voice.transport).toBe('native')
+    expect(voice.transport).toBeNull()
+    expect(voice.state).toBe('stopped')
     voice.stop()
   })
 
-  describe('a device that cannot keep up is remembered', () => {
-    const giveUp = async () => {
-      const engine = engineWith()
-      const voice = await reading(SENTENCES, { rate:1.2 })
-      tts('error', last(engine).id, 'too-slow')
-      voice.stop()
-      return engine
-    }
-    it('the next session starts with the system voice, with the warning, without waking the engine', async () => {
-      const speak = device()
-      await giveUp()
-      const engine = engineWith()
-      const voice = await reading(SENTENCES, { rate:1.2 })
-      expect(voice.neuralOff).toBe('too-slow')
-      expect(engine.calls).toHaveLength(0)
-      expect(speak).toHaveBeenCalled()
-      voice.stop()
-    })
-    it('a faster speed is slower still, but a slower one gets another chance', async () => {
-      device()
-      await giveUp()
-      let engine = engineWith()
-      let voice = await reading(SENTENCES, { rate:1.8 }); voice.stop()
-      expect(engine.calls).toHaveLength(0)
-      engine = engineWith()
-      voice = await reading(SENTENCES, { rate:1 }); voice.stop()
-      expect(engine.calls).toHaveLength(1)
-    })
-    it('Volver a probar (or a new voice or speed) forgets it for good', async () => {
-      device()
-      await giveUp()
-      let voice = new ReadingVoice({ language:'es', getSpeechText:async () => SENTENCES })
-      voice.retryNeural()
+  describe('obsolete slow-voice storage cannot veto natural playback', () => {
+    it.each([1, 1.25, 2])('uses the selected natural voice at rate %s despite an old global slow verdict', async rate => {
+      localStorage.setItem('inhouse-read-neural-slow', JSON.stringify({ rate:1.2, at:Date.now() }))
+      const speak=device(), engine=engineWith()
+      const voice=await reading(SENTENCES, { rate, voice:DAVEFX })
+      expect(voice.neuralOff).toBe('')
+      expect(last(engine)).toMatchObject({ voiceId:DAVEFX, rate })
       expect(localStorage.getItem('inhouse-read-neural-slow')).toBeNull()
-      const engine = engineWith()
-      voice = await reading(SENTENCES, { rate:1.2 }); voice.stop()
-      expect(engine.calls).toHaveLength(1)
+      expect(speak).not.toHaveBeenCalled()
     })
-    it('and is forgotten after two weeks', async () => {
-      device()
-      await giveUp()
-      const saved = JSON.parse(localStorage.getItem('inhouse-read-neural-slow'))
-      localStorage.setItem('inhouse-read-neural-slow', JSON.stringify({ ...saved, at:saved.at - 15 * 864e5 }))
-      const engine = engineWith()
-      const voice = await reading(SENTENCES, { rate:1.2 }); voice.stop()
-      expect(engine.calls).toHaveLength(1)
+    it('ignores an expired verdict too, without changing the natural selection', async () => {
+      localStorage.setItem('inhouse-read-neural-slow', JSON.stringify({ rate:1.2, at:Date.now()-15*864e5 }))
+      const speak=device(), engine=engineWith()
+      const voice=await reading(SENTENCES, { voice:DAVEFX })
+      expect(last(engine).voiceId).toBe(DAVEFX)
+      expect(voice.voice).toBe(DAVEFX)
+      expect(speak).not.toHaveBeenCalled()
     })
   })
 
@@ -412,7 +410,8 @@ describe('review fixes', () => {
     const speak = device(), engine = engineWith()
     const voice = await reading('The quick brown fox jumps over the lazy dog.', { reader:{ language:'en-US', metadata:{ language:'en-US' }, getSpeechText:async () => 'The quick brown fox jumps over the lazy dog.' }, voice:DAVEFX })
     expect(engine.calls).toHaveLength(0)
-    expect(speak.mock.calls[0].slice(1, 4)).toEqual(['en-US', 1, 'en-good'])
+    expect(speak).not.toHaveBeenCalled()
+    expect(voice.state).toBe('stopped')
     voice.stop()
     const english = engineWith({ installed:[DAVEFX, LESSAC] })
     const again = await reading('The quick brown fox jumps over the lazy dog.', { reader:{ language:'en-US', metadata:{ language:['en-US'] }, getSpeechText:async () => 'The quick brown fox jumps over the lazy dog.' }, voice:DAVEFX })

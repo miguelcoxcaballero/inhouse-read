@@ -12,6 +12,8 @@ beforeAll(async () => { await loadNeural(); catalogue = [...neuralVoices]; neura
 afterAll(() => { neuralVoices.splice(0, neuralVoices.length, ...catalogue); setNeuralEngine(null) })
 beforeEach(() => {
   localStorage.clear()
+  // Finish the idle warm-up inside the test, before its DOM is removed.
+  vi.stubGlobal('requestIdleCallback', callback => { callback(); return 0 })
   vi.stubGlobal('InhouseSpeech', { speak:vi.fn(), stop:vi.fn(), getVoices:() => '[]' })
   document.body.innerHTML = '<header class="app-header"></header><section id="reader-screen"><div id="reader-toolbar"></div></section>'
   for (const id of ['reader-location', 'reader-settings', 'reader-audio', 'reader-save-bookmark', 'reader-search-shortcut', 'reader-more-shortcut', 'reader-top-title', 'reader-top-byline']) {
@@ -20,7 +22,7 @@ beforeEach(() => {
     document.getElementById('reader-screen').append(button)
   }
 })
-afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = '' })
+afterEach(async () => { await Promise.resolve(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
 
 async function setup({ language = 'en', ...engineOptions } = {}) {
   const engine = createFakeNeuralEngine({ voices:FAKE_CATALOG, manual:true, hold:true, ...engineOptions })
@@ -175,13 +177,13 @@ describe('warm-up', () => {
     await vi.waitFor(() => expect(engine.warmed).toContain(LESSAC))
     expect(new Set(engine.warmed)).toEqual(new Set([LESSAC]))
   })
-  it('does not spin the worker up for a system voice, for a voice that is not downloaded, or after the neural voice was given up on', async () => {
+  it('migrates a device selection to natural warm-up but never warms an uninstalled voice', async () => {
     vi.stubGlobal('InhouseSpeech', { speak:vi.fn(), stop:vi.fn(), getVoices:() => JSON.stringify([{ voiceURI:'en-sys', name:'en', lang:'en-US', quality:300, network:false, installed:true }]) })
     const { experience, engine } = await setup({ installed:[LESSAC] })
     experience.panel.showModal = vi.fn()
     await settle(); engine.warmed.length = 0 // setup() opened the book with 'Automática', which already warmed the installed neural voice
     experience.setPreference('voice', 'en-sys'); experience.show('audio'); await settle()
-    expect(engine.warmed).toEqual([])
+    expect(new Set(engine.warmed)).toEqual(new Set([LESSAC]))
     experience.voice.neuralOff = 'too-slow'; experience.setPreference('voice', LESSAC, { restart:false }); await settle()
     expect(new Set(engine.warmed)).toEqual(new Set([LESSAC])) // choosing it again is a new chance (retryNeural runs first)
     const second = await setup({ installed:[] })
@@ -192,9 +194,9 @@ describe('warm-up', () => {
 })
 
 describe('first-use offer', () => {
-  it('appears only once the audiobook runs, for a book language with no installed neural voice, and never downloads by itself', async () => {
+  it('offers the first download before playback and after missing-voice failure, without downloading automatically', async () => {
     const { panel, engine, experience } = await setup()
-    expect(offer(panel).hidden).toBe(true)
+    expect(offer(panel).hidden).toBe(false)
     experience.voice.state = 'playing'; experience.neuralPicker.render()
     expect(offer(panel).hidden).toBe(false)
     expect(offer(panel).querySelector('.reading-neural-offer__title').textContent).toBe('Voz natural · 63 MB')
@@ -202,7 +204,7 @@ describe('first-use offer', () => {
     expect(offer(panel).getAttribute('role')).toBe('group')
     expect(engine.installs).toEqual([])
     experience.voice.state = 'paused'; experience.neuralPicker.render(); expect(offer(panel).hidden).toBe(false)
-    experience.voice.state = 'stopped'; experience.neuralPicker.render(); expect(offer(panel).hidden).toBe(true)
+    experience.voice.state = 'stopped'; experience.neuralPicker.render(); expect(offer(panel).hidden).toBe(false)
   })
   it('Ahora no hides it and is remembered for that language only', async () => {
     const { panel, experience } = await setup()
@@ -251,6 +253,22 @@ describe('reading preferences accept neural voice ids', () => {
 })
 
 describe('review fixes', () => {
+  it('Reintentar after a synthesis failure starts the same selected natural voice without a device handover', async () => {
+    const { panel,engine,experience }=await setup({ language:'es-ES',installed:[DAVEFX] })
+    experience.setPreference('voice',DAVEFX)
+    await experience.voice.play()
+    for(let attempt=0;attempt<4;attempt++) engine.emit('error',engine.calls.at(-1).id,'synth-failed')
+    expect(experience.voice.state).toBe('paused')
+    expect(panel.querySelector('[data-neural-warning-text]').textContent).toContain('Pulsa Reintentar')
+    const calls=engine.calls.length,text=engine.calls.at(-1).text
+    panel.querySelector('[data-neural-retry]').click()
+    await vi.waitFor(()=>expect(engine.calls).toHaveLength(calls+1))
+    expect(engine.calls.at(-1)).toMatchObject({ voiceId:DAVEFX,text })
+    expect(experience.voice.state).toBe('playing')
+    expect(experience.preferences.voice).toBe(DAVEFX)
+    expect(InhouseSpeech.speak).not.toHaveBeenCalled()
+    experience.voice.stop()
+  })
   it('a voice downloaded for another language than the book is installed but not pinned as the global choice', async () => {
     const { panel, engine, experience } = await setup({ language:'es-ES' })
     experience.reader.metadata = { language:'es-ES' } // a language the book declares itself
@@ -262,7 +280,7 @@ describe('review fixes', () => {
     // so an English book later still gets its own voice, and a Spanish one never the English voice
     expect(experience.voice.voiceFor('Hola.').voice?.id ?? '').not.toBe(LESSAC)
   })
-  it('Quitar on the voice that is being read (picked by Automática) moves the reading to another voice at once', async () => {
+  it('Quitar on the automatic natural voice pauses reading without choosing a device voice', async () => {
     const speak = vi.fn()
     vi.stubGlobal('InhouseSpeech', { speak, stop:vi.fn(), getVoices:() => JSON.stringify([{ voiceURI:'es-sys', name:'es', lang:'es-ES', quality:400, network:false, installed:true }]) })
     const { panel, engine, experience } = await setup({ language:'es-ES', installed:[DAVEFX] })
@@ -271,9 +289,9 @@ describe('review fixes', () => {
     expect(speak).not.toHaveBeenCalled()
     click(panel, DAVEFX, 'remove')
     await vi.waitFor(() => expect(engine.removed).toEqual([DAVEFX]))
-    expect(speak).toHaveBeenCalledTimes(1)
-    expect(speak.mock.calls[0].slice(1, 4)).toEqual(['es-ES', 1, 'es-sys'])
-    expect(experience.voice.state).toBe('playing')
+    expect(speak).not.toHaveBeenCalled()
+    expect(experience.voice.state).toBe('paused')
+    expect(panel.querySelector('.reading-audio-status').textContent).toContain('Voz natural quitada')
     experience.voice.stop()
   })
   it('Quitar on the saved voice that is being read does the same, and goes back to Automática', async () => {
@@ -286,7 +304,8 @@ describe('review fixes', () => {
     click(panel, DAVEFX, 'remove')
     await vi.waitFor(() => expect(engine.removed).toEqual([DAVEFX]))
     expect(engine.calls).toHaveLength(calls) // not re-spoken with the voice that is going away
-    expect(speak).toHaveBeenCalledTimes(1)
+    expect(speak).not.toHaveBeenCalled()
+    expect(experience.voice.state).toBe('paused')
     expect(saved()).toBe('')
     experience.voice.stop()
   })

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { fakeEngineScript } from '../helpers/fake-neural-engine.js'
 
 test.use({viewport:{width:390,height:844},hasTouch:true,isMobile:true,deviceScaleFactor:2})
 const point = (x,y) => ({id:1,x,y})
@@ -94,25 +95,26 @@ test('PDF: double tap keeps its page, native zoom pan does not navigate, and swi
 
 test('EPUB: native touch drag advances once and enables smooth snapping', async ({page}) => {
   test.setTimeout(90_000)
-  await page.addInitScript(() => {
-    window.__readerVoiceStops = 0
-    window.InhouseSpeech = {getVoices:() => '[]',speak:() => {},stop:() => {window.__readerVoiceStops++}}
-  })
+  await page.addInitScript(fakeEngineScript({ installed:['piper:en_US-lessac-high'], hold:true }))
   await open(page,'epub')
+  await page.getByRole('button',{name:'Escuchar el libro'}).click()
+  await page.getByRole('button',{name:'Reproducir',exact:true}).click()
+  await expect.poll(() => page.evaluate(() => window.__inhouseNeuralTest.engine.calls.length)).toBe(1)
+  await page.getByRole('button',{name:'Cerrar opciones de lectura'}).click()
   await expect.poll(() => page.evaluate(() => document.querySelector('foliate-view').renderer.hasAttribute('animated'))).toBe(true)
   const initial = await page.evaluate(() => {
     const view = document.querySelector('foliate-view'), renderer = view.renderer
     window.__readerNextCalls = 0
     const originalNext = view.next.bind(view)
     view.next = (...args) => {window.__readerNextCalls++;return originalNext(...args)}
-    window.__readerVoiceStopsBeforeDrag = window.__readerVoiceStops
+    window.__readerVoiceStopsBeforeDrag = window.__inhouseNeuralTest.engine.stops
     return renderer.containerPosition
   })
   const bounds = await page.locator('#reader-viewport').boundingBox(), cdp = await page.context().newCDPSession(page)
   await drag(cdp,bounds.x+bounds.width*.8,bounds.y+bounds.height*.55,-180)
   await expect.poll(() => page.evaluate(() => document.querySelector('foliate-view').renderer.containerPosition)).toBeGreaterThan(initial+50)
   expect(await page.evaluate(() => window.__readerNextCalls)).toBe(0)
-  expect(await page.evaluate(() => window.__readerVoiceStops-window.__readerVoiceStopsBeforeDrag)).toBe(1)
+  expect(await page.evaluate(() => window.__inhouseNeuralTest.engine.stops-window.__readerVoiceStopsBeforeDrag)).toBe(1)
 })
 
 test('EPUB: reduced motion retains direct page navigation without animated snapping', async ({page}) => {

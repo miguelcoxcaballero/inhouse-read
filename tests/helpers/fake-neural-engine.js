@@ -18,13 +18,14 @@ export const FAKE_CATALOG = [
 /**
  * options: supported (true), installed ([] of ids), voices (FAKE_CATALOG), manual (false: downloads advance only through
  * engine.progress/finish/fail), steps (5) and stepMs (30) for automatic downloads, startDelay (0 ms before 'start'),
- * speakMs (40 ms between 'start' and 'done'), hold (true: speak() never starts nor ends by itself), failNext (a reason: the
+ * speakMs (40 ms between 'start' and 'done'), hold (true: speak() never starts nor ends by itself), holdAfter (a call count:
+ * that fragment starts but does not end, so its highlight can be measured), failNext (a reason: the
  * next speak() answers with that 'error'), failInstall ({[id]: code} rejects that download once).
  * Recorded for the tests: calls (speak arguments), stops, unlocks, removed, installs, plus the highlight the page showed
  * when speak() was called (atSpeak) and when 'start' fired (atStart), read from window.__speechHighlight when it exists.
  */
 export function createFakeNeuralEngine(options = {}) {
-  const config = { supported:true, installed:[], steps:5, stepMs:30, startDelay:0, speakMs:40, manual:false, hold:false, failNext:'', failInstall:{}, ...options }
+  const config = { supported:true, installed:[], steps:5, stepMs:30, startDelay:0, speakMs:40, manual:false, hold:false, holdAfter:null, failNext:'', failInstall:{}, ...options }
   const catalog = options.voices || []
   const sizeOf = id => Math.round(((catalog.find(voice => voice.id === id) || {}).sizeMB || 63) * 1e6)
   const coded = (code, message = code) => Object.assign(new Error(message), { code })
@@ -98,7 +99,7 @@ export function createFakeNeuralEngine(options = {}) {
       if (config.hold) return
       this.speechTimer = this.later(() => {
         this.emit('start', id); call.atStart = highlight()
-        this.speechTimer = this.later(() => this.emit('done', id), config.speakMs)
+        if (config.holdAfter == null || this.calls.length < config.holdAfter) this.speechTimer = this.later(() => this.emit('done', id), config.speakMs)
       }, config.startDelay)
     }
     clearSpeech() { clearTimeout(this.speechTimer); this.timers.delete(this.speechTimer) }

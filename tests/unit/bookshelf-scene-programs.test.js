@@ -15,7 +15,7 @@ vi.mock('../../src/js/book-model.js', async () => {
     setSize:(width, height) => size.set(width, height), render() { gpu.renders++; },
     getRenderTarget:() => target, setRenderTarget(next) { target = next; },
     properties:{ get:() => ({ programs:new Map([['key', gpu.linked]]) }) },
-    compile(listing) { gpu.compiles++; const materials = new Set(); listing.traverse(object => materials.add(object.material)); return materials; } };
+    compile(listing, camera, scene) { gpu.scene = scene; gpu.compiles++; const materials = new Set(); listing.traverse(object => materials.add(object.material)); gpu.compiledMaterials = materials; return materials; } };
   return { getBookRenderer:() => renderer, lightBookScene() {},
     createBookModel(book, style, width, height, thickness) {
       const model = new Three.Group(); model.name = `book:${book.id}`;
@@ -37,7 +37,7 @@ function flushFrames() {
 
 beforeEach(() => {
   clock = 0; frames = new Map(); let serial = 0;
-  Object.assign(gpu, { renders:0, compiles:0 }); gpu.linked.ready = false;
+  Object.assign(gpu, { renders:0, compiles:0, scene:null, compiledMaterials:null }); gpu.linked.ready = false;
   vi.useFakeTimers({ toFake:['setTimeout', 'clearTimeout'] });
   vi.stubGlobal('requestAnimationFrame', callback => { const id = ++serial; frames.set(id, callback); return id; });
   vi.stubGlobal('cancelAnimationFrame', id => frames.delete(id));
@@ -100,6 +100,34 @@ describe('first frame of the shelf scene', () => {
     expect(shelf.canvas.dataset.renderCount).toBe('1');
     shelf.flush(); flushFrames();
     expect(gpu.compiles).toBe(1);
+  });
+
+  it('prepares the hidden placement guide before the first drag, then reuses and disposes it', () => {
+    shelf = createBookshelfScene(layout());
+    const marker = gpu.scene.getObjectByName('Shelf placement guide');
+    expect(marker).toBeDefined();
+    expect(marker.visible).toBe(false);
+    expect(marker.children).toHaveLength(2);
+    const material = marker.children[0].material;
+    expect(marker.children[1].material).toBe(material);
+    expect(gpu.compiledMaterials.has(material)).toBe(true);
+    // Preparation starts with the shelf's existing batch: no extra render or
+    // a second batch on first pointer movement.
+    expect(gpu.compiles).toBe(1);
+    expect(gpu.renders).toBe(0);
+    const disposeMaterial = vi.spyOn(material, 'dispose');
+    const disposeGeometry = marker.children.map(mesh => vi.spyOn(mesh.geometry, 'dispose'));
+    gpu.linked.ready = true;
+    vi.advanceTimersByTime(10); flushFrames();
+    shelf.setDropPosition({ shelf:0, x:.5 }); flushFrames();
+    expect(marker.visible).toBe(true);
+    expect(marker.children[0].material).toBe(material);
+    expect(gpu.compiles).toBe(1);
+    shelf.setDropPosition(null); flushFrames();
+    expect(marker.visible).toBe(false);
+    shelf.dispose(); shelf = null;
+    expect(disposeMaterial).toHaveBeenCalledTimes(1);
+    for (const dispose of disposeGeometry) expect(dispose).toHaveBeenCalledTimes(1);
   });
 
   it('still resolves an animation that finished on a frame held back by linking', async () => {

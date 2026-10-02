@@ -185,10 +185,23 @@ export function planSpeech(raw, options = {}, from = 0) {
   let low = 0, high = map.length
   while (low < high) { const mid = (low + high) >> 1; if (map[mid] < from) low = mid + 1; else high = mid }
   const rawRange = (start, end) => ({ start:map[low + start], end:map[low + end - 1] + 1 })
+  const pageCuts = [...new Set((options.pageBreaks || []).filter(Number.isFinite).map(offset => {
+    let a = low, b = map.length
+    while (a < b) { const mid = (a + b) >>> 1; if (map[mid] < offset) a = mid + 1; else b = mid }
+    return a - low
+  }))].sort((a, b) => a - b)
   const items = []
   for (const sentence of speechSentences(text.slice(low), breaks.filter(at => at >= low).map(at => at - low))) {
     const whole = rawRange(sentence.start, sentence.end)
-    for (const fragment of sentence.fragments) items.push({ text:fragment.text, ...rawRange(fragment.start, fragment.end), sentence:whole })
+    for (const fragment of sentence.fragments) {
+      const cuts = [fragment.start, ...pageCuts.filter(at => at > fragment.start && at < fragment.end), fragment.end]
+      for (let index = 1; index < cuts.length; index++) {
+        let start = cuts[index - 1], end = cuts[index]
+        while (start < end && /\s/.test(text[low + start])) start++
+        while (end > start && /\s/.test(text[low + end - 1])) end--
+        if (end > start) items.push({ text:text.slice(low + start, low + end), ...rawRange(start, end), sentence:whole })
+      }
+    }
   }
   return items
 }

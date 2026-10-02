@@ -1,43 +1,31 @@
 import { test, expect } from '@playwright/test'
+import { fakeEngineScript } from '../helpers/fake-neural-engine.js'
 
 const PDF = 'tests/e2e/fixtures/reading-journey.pdf'
 const EPUB = 'tests/e2e/fixtures/reading-journey.epub'
 const EVIDENCE = process.env.FOLLOW_EVIDENCE_DIR || 'test-results'
 
-// A deterministic speechSynthesis: every utterance "starts" (onstart, after state.startDelay ms) and "finishes" after a short
-// timer, so playback advances sentence by sentence without any audio device. Each utterance snapshots what the page
-// highlights once it has started: the highlight follows the engine's start, not the speak() request.
+// The same neural-engine contract as production, with deterministic start/done
+// events and adjustable cadence. No system voice participates in this suite.
 test.beforeEach(async ({ page }) => {
   test.setTimeout(120_000)
   await page.setViewportSize({ width:390, height:844 })
-  await page.addInitScript(() => {
-    const log = [], state = { cancels:0, hold:Infinity, pending:null, ms:140, startDelay:0 }
-    window.__tts = { log, state }
-    window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text } }
+  const configure = () => {
+    const engine = window.__inhouseNeuralTest.engine, state = { cancels:0, stacks:[] }
+    Object.defineProperties(state, {
+      ms:{ get:() => engine.config.speakMs, set:value => { engine.config.speakMs = value } },
+      startDelay:{ get:() => engine.config.startDelay, set:value => { engine.config.startDelay = value } },
+      hold:{ get:() => engine.config.holdAfter ?? Infinity, set:value => { engine.config.holdAfter = Number.isFinite(value) ? value : null } }
+    })
+    const stop = engine.stop.bind(engine)
+    engine.stop = () => { state.cancels++; state.stacks.push(new Error().stack); stop() }
+    window.__narration = { log:engine.calls, state }
     window.__speechHighlight = () => {
       const read = win => { const highlight = win?.CSS?.highlights?.get('inhouse-speech'); return highlight ? [...highlight].map(range => range.toString()).join('') : '' }
       return read(window) || read(document.querySelector('foliate-view')?.renderer?.getContents?.()[0]?.doc?.defaultView)
     }
-    const fake = {
-      getVoices:() => [{ name:'Fake', lang:'en-US', voiceURI:'fake', localService:true }],
-      addEventListener() {}, removeEventListener() {}, pause() {}, resume() {},
-      cancel() { state.cancels++; (state.stacks ||= []).push(new Error().stack); clearTimeout(state.pending); clearTimeout(state.starting); state.cancelled = true },
-      speak(utterance) {
-        // What the page showed when speak() was called (still the previous sentence), and once the engine started.
-        const entry = { text:utterance.text, highlight:'', atSpeak:window.__speechHighlight() }
-        log.push(entry)
-        const start = () => {
-          utterance.onstart?.({})
-          entry.highlight = window.__speechHighlight()
-          if (log.length >= state.hold) return
-          state.pending = setTimeout(() => utterance.onend?.({}), state.ms)
-        }
-        state.cancelled = false
-        if (state.startDelay) state.starting = setTimeout(start, state.startDelay); else Promise.resolve().then(() => { if (!state.cancelled) start() })
-      }
-    }
-    Object.defineProperty(window, 'speechSynthesis', { value:fake, configurable:true })
-  })
+  }
+  await page.addInitScript(fakeEngineScript({ installed:['piper:en_US-lessac-high'], speakMs:140 }) + `;(${configure.toString()})();`)
 })
 
 const squash = text => String(text).replace(/\s+/g, '')
@@ -58,13 +46,13 @@ async function setTheme(page, name) {
 }
 async function play(page, { closePanel = true } = {}) {
   // Opening the book resets the voice once; what matters is that nothing cancels speech after Play.
-  await page.evaluate(() => { window.__tts.state.cancels = 0; window.__tts.state.stacks = [] })
+  await page.evaluate(() => { window.__narration.state.cancels = 0; window.__narration.state.stacks = [] })
   await page.getByRole('button', { name:'Escuchar el libro' }).click()
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()
   if (closePanel) await page.getByRole('button', { name:'Cerrar opciones de lectura' }).click()
 }
-const logged = page => page.evaluate(() => window.__tts.log.map(entry => ({ ...entry })))
-const holdAfter = (page, count) => page.evaluate(n => { window.__tts.state.hold = n }, count)
+const logged = page => page.evaluate(() => window.__narration.log.map(entry => ({ ...entry, highlight:entry.atStart ?? '' })))
+const holdAfter = (page, count) => page.evaluate(n => { window.__narration.state.hold = n }, count)
 // Is the highlighted sentence actually inside the reader viewport, in screen coordinates?
 const highlightOnScreen = page => page.evaluate(() => {
   const own = CSS.highlights.get('inhouse-speech')
@@ -91,7 +79,7 @@ test('PDF: the sentence being read is highlighted in the text layer and the page
   for (const entry of entries) expect(squash(entry.highlight)).toContain(unstopped(entry.text))
   expect(new Set(entries.map(entry => squash(entry.highlight))).size).toBeGreaterThan(2)
   // The voice was never stopped or interrupted by the automatic page turn.
-  expect(await page.evaluate(() => window.__tts.state.stacks || [])).toEqual([])
+  expect(await page.evaluate(() => window.__narration.state.stacks || [])).toEqual([])
   await expect(page.getByRole('button', { name:'Pausar lectura' })).toBeVisible()
   expect(await page.evaluate(() => document.querySelectorAll('.pdf-text-layer span').length)).toBeGreaterThan(0)
 
@@ -144,7 +132,7 @@ test('EPUB paginated: highlight moves sentence by sentence and the visible page 
     await expect.poll(async () => (await logged(page)).length).toBeGreaterThan(count)
     await expect.poll(async () => (await highlightOnScreen(page))?.inside, { timeout:5_000 }).toBe(true)
   }
-  expect(await page.evaluate(() => window.__tts.state.stacks)).toEqual([])
+  expect(await page.evaluate(() => window.__narration.state.stacks)).toEqual([])
   const entries = await logged(page)
   expect(entries.every(entry => squash(entry.highlight).includes(unstopped(entry.text)))).toBe(true)
   expect(new Set(entries.map(entry => entry.highlight)).size).toBeGreaterThan(5)
@@ -164,7 +152,7 @@ test('EPUB paginated: highlight moves sentence by sentence and the visible page 
 
 test('EPUB: keeps speaking across the end of a chapter', async ({ page }) => {
   await open(page, EPUB)
-  await page.evaluate(() => { window.__tts.state.ms = 15 })
+  await page.evaluate(() => { window.__narration.state.ms = 15 })
   await play(page)
   await expect.poll(() => page.evaluate(() => document.querySelector('foliate-view').renderer.getContents()[0]?.doc.querySelector('h1')?.textContent), { timeout:60_000 }).toBe('Beyond the window')
   await expect.poll(async () => (await logged(page)).some(entry => entry.text.startsWith('Beyond the window')), { timeout:10_000 }).toBe(true)
@@ -173,7 +161,7 @@ test('EPUB: keeps speaking across the end of a chapter', async ({ page }) => {
   expect(heading).toBeGreaterThan(20)
   expect(texts[heading - 1]).toMatch(/follow a story wherever it leads\.$/)
   await expect.poll(async () => (await logged(page)).at(-1).highlight).not.toBe('')
-  expect(await page.evaluate(() => window.__tts.state.stacks)).toEqual([])
+  expect(await page.evaluate(() => window.__narration.state.stacks)).toEqual([])
 })
 
 test('EPUB scrolled flow: the page scrolls to keep the sentence in view', async ({ page }) => {
@@ -190,7 +178,7 @@ test('EPUB scrolled flow: the page scrolls to keep the sentence in view', async 
     await expect.poll(async () => (await logged(page)).length).toBeGreaterThan(count)
     await expect.poll(async () => (await highlightOnScreen(page))?.inside, { timeout:5_000 }).toBe(true)
   }
-  expect(await page.evaluate(() => window.__tts.state.stacks)).toEqual([])
+  expect(await page.evaluate(() => window.__narration.state.stacks)).toEqual([])
 })
 
 for (const [theme, label] of [['paper', 'Papel'], ['sepia', 'Sepia'], ['night', 'Noche'], ['amoled', 'AMOLED']]) {
@@ -208,7 +196,7 @@ for (const [theme, label] of [['paper', 'Papel'], ['sepia', 'Sepia'], ['night', 
     await page.getByRole('button', { name:'Volver a la estantería' }).click()
     await page.locator('#file-picker').setInputFiles(PDF)
     await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 1 de 4/)
-    await page.evaluate(() => { window.__tts.log.length = 0; window.__tts.state.hold = 3 })
+    await page.evaluate(() => { window.__narration.log.length = 0; window.__narration.state.hold = 3 })
     await play(page)
     await expect.poll(async () => (await logged(page)).length).toBe(3)
     await expect.poll(async () => (await highlightOnScreen(page))?.inside).toBe(true)
@@ -216,10 +204,10 @@ for (const [theme, label] of [['paper', 'Papel'], ['sepia', 'Sepia'], ['night', 
   })
 }
 
-// Android's TextToSpeech takes hundreds of ms to start talking; the sentence must not be marked (or the page turned) before that.
+// Neural synthesis can take hundreds of ms to start; highlight and page follow must wait for its actual start.
 test('EPUB: the sentence is highlighted when the engine starts speaking it, not when it is asked to', async ({ page }) => {
   await open(page, EPUB, 'reduce')
-  await page.evaluate(() => { window.__tts.state.startDelay = 450; window.__tts.state.ms = 60 })
+  await page.evaluate(() => { window.__narration.state.startDelay = 450; window.__narration.state.ms = 60 })
   await play(page)
   await expect.poll(async () => (await logged(page)).length, { timeout:30_000 }).toBeGreaterThan(4)
   const entries = (await logged(page)).slice(0, 4)

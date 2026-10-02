@@ -47,7 +47,14 @@ jobs:
       # on that runner, while the six runners finish the complete UI suite.
       # npm's pretest:e2e uses the same production build, including the legacy
       # PDF chunk, as the actual Pages deployment.
+      - name: List every required UI test in this shard
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/manifest.json
+        run: npx playwright test --list --workers=1 --shard=${{ matrix.shard }}/6 --reporter=json
       - run: npm run test:e2e -- --workers=1 --shard=${{ matrix.shard }}/6 --reporter=list,json
+      - name: Require every listed UI test to pass without omissions or retries
+        if: always()
+        run: node scripts/check-ui-results.mjs playwright-report/manifest.json playwright-report/results.json "${{ matrix.shard }}/6"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -68,7 +75,7 @@ jobs:
           - suite: engine
             voices: es_MX-claude-high,en_US-lessac-medium
           - suite: reading
-            voices: es_MX-claude-high,es_ES-davefx-medium
+            voices: es_MX-claude-high,es_ES-davefx-medium,es_AR-daniela-high
           # Download the whole catalogue for the language job: new language
           # cases must have real weights instead of disappearing via skip().
           - suite: languages
@@ -107,10 +114,17 @@ jobs:
         with:
           path: .neural-fixtures.local
           key: ${{ steps.voices-cache.outputs.cache-primary-key }}
-      - run: npm run test:e2e -- --workers=1 --reporter=list,json
+      - name: List every required real neural test
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/manifest.json
+        run: npx playwright test --list --workers=1 --shard=1/1 --reporter=json
+      - run: npm run test:e2e -- --workers=1 --shard=1/1 --reporter=list,json
       - name: Require every real neural test to execute
         if: always()
         run: node scripts/check-neural-results.mjs "${{ matrix.suite }}" playwright-report/results.json
+      - name: Require every listed neural case to pass without a retry
+        if: always()
+        run: node scripts/check-ui-results.mjs playwright-report/manifest.json playwright-report/results.json "1/1"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

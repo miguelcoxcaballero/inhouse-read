@@ -99,7 +99,7 @@ export class NeuralVoiceEngine extends EventTarget {
    * CustomEvent('inhouse-tts', {detail:{type, id, reason?}}) exactly like the Android bridge:
    *   'start'       the first sample of THIS text is audible now (drives the sentence highlight),
    *   'done'        it finished playing,
-   *   'error'       it cannot be spoken (detail.reason: 'too-slow' | 'not-installed' | 'init-failed' | 'synth-failed'),
+   *   'error'       it cannot be spoken (detail.reason: 'not-installed' | 'init-failed' | 'synth-failed'),
    *   'interrupted' playback was stopped from outside (not by stop()).
    * `upcoming` are the next fragments the reader will ask for, same voice and rate: the engine synthesises them while
    * this one plays so the voice is gapless. Calling speak() again replaces whatever was playing, except that asking for

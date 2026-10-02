@@ -14,6 +14,7 @@ import {
 import { initAndroidUpdateChecks, offerAvailableAndroidUpdate } from './android-update.js'
 import { initContentFreshnessChecks } from './content-freshness.js'
 import { initAndroidFileImports } from './android-file-import.js'
+import { initReadingDisplay } from './reading-display.js'
 import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
 import { normalizeShelfPosition } from './book-colors.js'
 import { ReaderExperience } from './readers/reader-experience.js'
@@ -1214,7 +1215,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.7.8'
+els.appVersion.textContent = 'Inhouse Read · v1.7.9'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')
@@ -1222,6 +1223,7 @@ refreshShelf()
 loadDriveAccountProfile().catch(error => console.warn('No se pudo restaurar la cuenta:', error))
 initAndroidUpdateChecks()
 initContentFreshnessChecks()
+initReadingDisplay()
 initAndroidFileImports({
   canImport: () => !closingReader && !driveUploadsInFlight && !els.readerScreen.classList.contains('is-preparing'),
   onFile: async file => {

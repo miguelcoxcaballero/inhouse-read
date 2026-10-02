@@ -369,7 +369,15 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let frontalScroll = mode === 'isometric' ? 0 : scroller.scrollTop;
   let sceneFitHeight = 1;
   let edgeToEdge = false;
-  let dropMarker = null, dropPosition = null;
+  // Prepare this tiny guide with the initial scene, while keeping it hidden.
+  // First dragging a book must not synchronously link a new GPU program.
+  const dropMarker = new THREE.Group();
+  dropMarker.name = 'Shelf placement guide'; dropMarker.userData.dropMarker = true; dropMarker.visible = false;
+  const dropMaterial = new THREE.MeshBasicMaterial({ color:'#709980', transparent:true, opacity:.9, depthTest:false, depthWrite:false });
+  const dropGuide = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 2), dropMaterial);
+  const dropFoot = new THREE.Mesh(new THREE.BoxGeometry(12, 2, 4), dropMaterial); dropFoot.position.y = 1;
+  dropMarker.add(dropGuide, dropFoot); furniture.add(dropMarker);
+  let dropPosition = null;
   let desiredMode = mode === 'isometric' ? 'isometric' : 'spine';
   let inspectionZoom = 1, panX = 0, panY = 0, inspectionMoving = false;
   let inspectionShadowRefit = false;
@@ -1674,7 +1682,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // The models and lamp lights now exist: link their programs in parallel
     // instead of one blocking link per material inside the first render.
     if (programsReady !== true) {
-      programsReady ||= compilePrograms(renderer, scene, camera);
+      programsReady ||= compilePrograms(renderer, scene, camera, [dropGuide]);
       if (!programsReady()) {
         // Animations that finished on this unpainted frame resolve after the next painted one.
         unpainted.push(...finishedInsertions, ...finishedDrops);
@@ -2064,13 +2072,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if ((!next && !dropPosition) || (next && dropPosition && next.shelf === dropPosition.shelf &&
         next.x === dropPosition.x && next.mount === dropPosition.mount)) return;
       dropPosition = next;
-      if (dropPosition && !dropMarker) {
-        dropMarker = new THREE.Group(); dropMarker.userData.dropMarker = true;
-        const material = new THREE.MeshBasicMaterial({ color:'#709980', transparent:true, opacity:.9, depthTest:false, depthWrite:false });
-        const guide = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 2), material);
-        const foot = new THREE.Mesh(new THREE.BoxGeometry(12, 2, 4), material); foot.position.y = 1;
-        dropMarker.add(guide, foot); furniture.add(dropMarker);
-      }
       canvas.dataset.dropShelf = dropPosition ? String(dropPosition.shelf) : '';
       canvas.dataset.dropX = dropPosition ? dropPosition.x.toFixed(4) : '';
       canvas.dataset.dropMount = dropPosition?.mount || '';

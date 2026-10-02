@@ -7,7 +7,7 @@
 // speak(k) just ADOPTS the entry it has prepared for k (same text, voice and rate) and the sound never stops. Anything else
 // (another voice/rate/text, a jump) is a clean restart. Synthesis runs ahead of playback by up to ~30 s of audio / 6
 // fragments (memory-bounded). If the voice cannot keep up it waits (buffering: silence, never garbage); after repeated
-// underruns, or a compute speed far below real time, it gives up with error reason 'too-slow'.
+// underruns, or a compute speed far below real time, it buffers complete fragments and keeps the selected natural voice.
 import { findNeuralVoice, modelsOf, neuralVoices } from './catalog.js'
 import { GaplessPlayer, safeToStart } from './player.js'
 import { VoiceStore, storeError } from './store.js'
@@ -20,7 +20,7 @@ export const LIMITS = {
   maxAhead: 6,             // ... and at most this many fragments ahead of the one playing
   maxUpcoming: 6,          // fragments of `upcoming` the engine looks at
   maxHoldMs: 5000,         // never stay silent longer than this just to get a better head start
-  underrunLimit: 3,        // underruns within underrunWindowMs that make the voice 'too-slow'
+  underrunLimit: 3,        // underruns within underrunWindowMs that switch to complete-fragment buffering
   underrunWindowMs: 120_000,
   cleanFragments: 8,       // this many fragments in a row without an underrun forgive the earlier ones
   slowRtf: 1.6,            // compute seconds per audio second above which (after minRtfSamples chunks) it cannot keep up at all
@@ -234,7 +234,7 @@ export class NeuralEngine extends EventTarget {
       const rebuild = this.#worthRebuilding(run)
       this.#hardStop()
       if (rebuild) this.#teardown() // a running segment cannot be interrupted: when waiting for it costs more than a cold start, start afresh
-      run = this.run = { voice, rate, entries: [], gateOpen: false, prepared: null, job: null, heldSince: null, holdTimer: null, pumpTimer: null, rtf: 0, rtfN: 0, spi: 0, t0: now(), firstAudio: false }
+      run = this.run = { voice, rate, entries: [], gateOpen: false, buffered: false, prepared: null, job: null, heldSince: null, holdTimer: null, pumpTimer: null, rtf: 0, rtfN: 0, spi: 0, t0: now(), firstAudio: false }
       this.#adopt(run, this.#entry(run, text), id, upcomingTexts, true)
       this.#setStatus('buffering')
     }
@@ -385,7 +385,7 @@ export class NeuralEngine extends EventTarget {
     }
     entry.chunks.push({ pcm, sampleRate, dur, last })
     if (last) this.#finish(run, entry)
-    if (run.rtfN >= this.limits.minRtfSamples && run.rtf > this.limits.slowRtf) return this.#tooSlow()
+    if (run.rtfN >= this.limits.minRtfSamples && run.rtf > this.limits.slowRtf) this.#bufferSlow()
     this.#feed(run)
     this.#pump()
   }
@@ -421,6 +421,7 @@ export class NeuralEngine extends EventTarget {
       if (entry.total == null || entry.chunks.length < entry.total) { incomplete = entry; break }
     }
     if (!ready.length) return false
+    if (run.buffered) return true // #feed admits only complete fragments in this mode
     if (incomplete?.counts) {
       const spi = run.spi || 0.03 / run.rate
       for (let i = incomplete.chunks.length; i < incomplete.counts.length; i++) pending.push(incomplete.counts[i] * spi)
@@ -434,6 +435,7 @@ export class NeuralEngine extends EventTarget {
     if (this.run !== run) return
     for (const entry of run.entries) {
       if (entry.error) return
+      if (run.buffered && entry.state !== 'done') { this.#setStatus('buffering'); return }
       while (entry.scheduled < entry.chunks.length) {
         if (run.gateOpen && this.player.drained()) { run.gateOpen = false; this.#underrun(); if (this.run !== run) return }
         if (!run.gateOpen) {
@@ -462,15 +464,16 @@ export class NeuralEngine extends EventTarget {
     this.underrunTimes.push(at)
     this.cleanStreak = 0
     this.#setStatus('buffering')
-    if (this.underrunTimes.length >= this.limits.underrunLimit) this.#tooSlow()
+    if (this.underrunTimes.length >= this.limits.underrunLimit) this.#bufferSlow()
   }
 
-  #tooSlow() {
-    const id = this.currentId
+  #bufferSlow() {
+    const run = this.run
+    if (!run || run.buffered) return
+    run.buffered = true
     this.stats.tooSlow++
     this.underrunTimes = []
-    this.#hardStop()
-    this.#emit('error', id, 'too-slow')
+    this.#setStatus('buffering')
   }
 
   #entryOf(n) { return this.run?.entries.find(entry => entry.n === n) }

@@ -5,7 +5,7 @@ import { fakeEngineScript } from '../helpers/fake-neural-engine.js'
 // The on-device neural voices (Piper) as the reader sees them. The engine itself (workers, models, Hugging Face) is not
 // here: a fake that implements the engine contract is injected on window.__inhouseNeuralTest before the app starts.
 // What these tests prove is the integration: picker, download states, selection, the first-use offer, the neural
-// transport (speak arguments, highlight at the engine's 'start') and the fallback to the system voice.
+// transport (speak arguments, highlight at the engine's 'start') and visible failure/retry without a system fallback.
 const PDF = 'tests/e2e/fixtures/reading-journey.pdf'
 const EPUB = 'tests/e2e/fixtures/reading-journey.epub'
 const EVIDENCE = process.env.NEURAL_EVIDENCE_DIR || 'test-results'
@@ -13,7 +13,7 @@ const LESSAC = 'piper:en_US-lessac-high'
 const squash = text => String(text).replace(/\s+/g, '')
 const unstopped = text => squash(text).replace(/\.$/, '')
 
-// speechSynthesis stand-in for the system voice: every utterance starts at once and ends after a short timer.
+// Deliberately available system APIs are probes: natural-only narration must never use them.
 async function prepare(page, engineOptions = {}, { theme = 'paper' } = {}) {
   test.setTimeout(200_000)
   await page.setViewportSize({ width:390, height:844 })
@@ -21,17 +21,16 @@ async function prepare(page, engineOptions = {}, { theme = 'paper' } = {}) {
   await page.addInitScript(fakeEngineScript({ manual:true, startDelay:350, speakMs:60, ...engineOptions }))
   await page.addInitScript(selected => {
     if (selected.theme) localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({ theme:selected.theme }))
-    const log = [], state = { ms:120, hold:Infinity }
-    window.__tts = { log, state }
+    window.__systemSpeechCalls = []
+    window.InhouseSpeech = { getVoices:() => '[]', stop() {}, speak:text => window.__systemSpeechCalls.push({ api:'native', text }) }
     window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text } }
     window.__speechHighlight = () => {
       const read = win => { const highlight = win?.CSS?.highlights?.get('inhouse-speech'); return highlight ? [...highlight].map(range => range.toString()).join('') : '' }
       return read(window) || read(document.querySelector('foliate-view')?.renderer?.getContents?.()[0]?.doc?.defaultView)
     }
     Object.defineProperty(window, 'speechSynthesis', { configurable:true, value:{
-      getVoices:() => [{ name:'Fake', lang:'en-US', voiceURI:'fake', localService:true }], addEventListener() {}, removeEventListener() {}, pause() {}, resume() {},
-      cancel() { clearTimeout(state.pending) },
-      speak(utterance) { log.push({ text:utterance.text }); Promise.resolve().then(() => { utterance.onstart?.({}); if (log.length < state.hold) state.pending = setTimeout(() => utterance.onend?.({}), state.ms) }) }
+      getVoices:() => [{ name:'Unavailable system fallback', lang:'en-US', voiceURI:'fake', localService:true }], addEventListener() {}, removeEventListener() {}, pause() {}, resume() {}, cancel() {},
+      speak:utterance => window.__systemSpeechCalls.push({ api:'browser', text:utterance.text })
     } })
   }, { theme })
 }
@@ -97,7 +96,7 @@ for (const [format, file] of [['EPUB', EPUB], ['PDF', PDF]]) {
     expect(spoken[0].upcoming.length).toBeGreaterThanOrEqual(2); expect(spoken[0].upcoming.length).toBeLessThanOrEqual(4)
     expect(spoken[1].text).toBe(spoken[0].upcoming[0])
     expect(await engine(page, e => e.unlocks)).toBeGreaterThanOrEqual(1)
-    expect(await page.evaluate(() => window.__tts.log.length)).toBe(0)
+    expect(await page.evaluate(() => window.__systemSpeechCalls.length)).toBe(0)
     // The sentence is painted when the engine says it started (350 ms after speak), not before.
     for (const call of spoken.slice(0, 2)) expect(squash(call.atStart)).toContain(unstopped(call.text))
     await expect(page.getByRole('button', { name:'Pausar', exact:true })).toBeVisible()
@@ -145,17 +144,26 @@ test('the download can be cancelled, fails with a clear message and can be retri
   expect(await engine(page, e => e.installs)).toEqual([alba, 'piper:en_US-lessac-high', 'piper:en_US-lessac-high'])
 })
 
-test('Quitar on the voice that is being read (the automatic pick) moves the reading to the system voice instead of leaving it silent', async ({ page }) => {
-  await prepare(page, { installed:[LESSAC], hold:true })
+test('Quitar pauses the natural voice being read; another installed natural voice can continue the same fragment', async ({ page }) => {
+  const alba = 'piper:en_GB-alba-medium'
+  await prepare(page, { installed:[LESSAC, alba], hold:true })
   await open(page, EPUB)
   await openAudio(page)
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()
-  await expect.poll(async () => (await calls(page)).length).toBeGreaterThan(0)
-  expect(await page.evaluate(() => window.__tts.log.length)).toBe(0)
+  await expect.poll(async () => (await calls(page)).length).toBe(1)
+  const fragment = (await calls(page))[0].text
   await openAudioMenu(page, 'Voz')
   await row(page).getByRole('button', { name:/Quitar la voz Lessac/ }).click()
   await expect(row(page).getByRole('button', { name:/Descargar la voz Lessac/ })).toBeVisible()
-  await expect.poll(() => page.evaluate(() => window.__tts.log.length)).toBeGreaterThan(0) // the system voice took the same fragment
+  await expect(page.locator('.reading-audio-status')).toHaveText('Voz natural quitada. Elige otra voz natural para continuar.')
+  await expect(page.getByRole('button', { name:'Continuar', exact:true })).toBeVisible()
+  expect(await engine(page, e => e.stops)).toBeGreaterThan(0)
+  expect((await calls(page)).length).toBe(1)
+  expect(await page.evaluate(() => window.__systemSpeechCalls.length)).toBe(0)
+  await row(page, alba).getByRole('button', { name:/Usar la voz Alba/ }).click()
+  await page.getByRole('button', { name:'Continuar', exact:true }).click()
+  await expect.poll(async () => (await calls(page)).length).toBe(2)
+  expect((await calls(page))[1]).toMatchObject({ voiceId:alba, text:fragment })
   await expect(page.getByRole('button', { name:'Pausar', exact:true })).toBeVisible()
 })
 
@@ -180,7 +188,7 @@ for (const theme of ['paper', 'night', 'sepia', 'sage', 'amoled']) {
     await prepare(page, { hold:true }, { theme })
     await open(page, EPUB)
     await openAudio(page)
-    await expect(page.locator('[data-neural-offer]')).toBeHidden() // not before the audiobook starts
+    await expect(page.locator('[data-neural-offer]')).toBeVisible() // download is available before the first playback
     await shot(page, `picker-${theme}-idle`)
     await page.getByRole('button', { name:'Reproducir', exact:true }).click()
     const offer = page.locator('[data-neural-offer]')
@@ -190,8 +198,9 @@ for (const theme of ['paper', 'night', 'sepia', 'sage', 'amoled']) {
     await expect(offer.getByRole('button', { name:'Ahora no' })).toBeVisible()
     await offer.scrollIntoViewIfNeeded()
     await page.screenshot({ path:`${EVIDENCE}/offer-${theme}.png` })
-    // the card never stops the voice: the system voice is speaking
-    await expect.poll(() => page.evaluate(() => window.__tts.log.length)).toBeGreaterThan(0)
+    await expect(page.locator('.reading-audio-status')).toHaveText('Descarga una voz natural para este idioma.')
+    expect((await calls(page)).length).toBe(0)
+    expect(await page.evaluate(() => window.__systemSpeechCalls.length)).toBe(0)
     await offer.getByRole('button', { name:/Descargar la voz natural Lessac/ }).click()
     await engine(page, e => e.progress('piper:en_US-lessac-high', .35))
     await expect(offer.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '35')
@@ -203,11 +212,14 @@ for (const theme of ['paper', 'night', 'sepia', 'sage', 'amoled']) {
     await expect(offer).toBeHidden()
     await showNeural(page)
     await page.screenshot({ path:`${EVIDENCE}/picker-${theme}-installed.png` })
+    await page.getByRole('button', { name:'Reproducir', exact:true }).click()
+    await expect.poll(async () => (await calls(page)).length).toBe(1)
+    expect((await calls(page))[0].voiceId).toBe(LESSAC)
     expect(await noOverflow(page)).toBe(true)
   })
 }
 
-test('first-use offer: Ahora no is remembered per language; Descargar starts the download and the voice takes over at the next fragment', async ({ page }) => {
+test('first-use offer: Ahora no is remembered per language; Descargar installs the natural voice for the next Play', async ({ page }) => {
   await prepare(page, { manual:false, steps:3, stepMs:60 })
   await open(page, EPUB)
   await openAudio(page)
@@ -223,49 +235,62 @@ test('first-use offer: Ahora no is remembered per language; Descargar starts the
   await open(page, EPUB)
   await openAudio(page)
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()
-  await expect.poll(() => page.evaluate(() => window.__tts.log.length)).toBeGreaterThan(0)
+  await expect(page.locator('.reading-audio-status')).toHaveText('Descarga una voz natural para este idioma.')
+  expect((await calls(page)).length).toBe(0)
+  expect(await page.evaluate(() => window.__systemSpeechCalls.length)).toBe(0)
   await expect(offer).toBeHidden()
   // but the list in the picker still offers the download
   await openAudioMenu(page, 'Voz')
   await expect(row(page).getByRole('button', { name:/Descargar la voz Lessac/ })).toBeVisible()
   // forget the choice: Descargar this time
   await page.evaluate(() => localStorage.removeItem('inhouse-read-neural-offer-dismissed'))
-  await page.getByRole('button', { name:'Detener', exact:true }).click()
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()
   await expect(offer).toBeVisible()
   await offer.getByRole('button', { name:/Descargar la voz natural Lessac/ }).click()
   await expect(offer).toBeHidden({ timeout:15_000 }) // installed: no more offer
   await expect(selectedOption(page)).toHaveAttribute('data-value', LESSAC)
+  await page.getByRole('button', { name:'Reproducir', exact:true }).click()
   await expect.poll(async () => (await calls(page)).length, { timeout:30_000 }).toBeGreaterThan(0)
   expect((await calls(page))[0].voiceId).toBe(LESSAC)
 })
 
-test('a neural voice that is too slow hands over to the system voice with a visible message', async ({ page }) => {
-  await prepare(page, { installed:[LESSAC], manual:false, failNext:'too-slow' })
+test('a failed natural voice reports the error and retries the same voice without a system fallback', async ({ page }) => {
+  await prepare(page, { installed:[LESSAC], manual:false, failNext:'synth-failed', hold:true })
   await open(page, EPUB)
   await openAudio(page)
   await expect(row(page).getByRole('button', { name:/Usar la voz Lessac/ })).toBeVisible()
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()
-  await expect(page.locator('.reading-audio-status')).toHaveText('Voz natural demasiado lenta. Se usa la del sistema.')
-  await expect.poll(() => page.evaluate(() => window.__tts.log.length)).toBeGreaterThan(0) // the system voice carries on
-  expect((await calls(page)).length).toBe(1) // the neural engine is not asked again
-  await openAudioMenu(page, 'Voz') // the warning lives in the Voz list
+  await expect.poll(async () => (await calls(page)).length).toBe(2) // first worker failure rebuilds the same voice
+  for (let attempt = 2; attempt <= 4; attempt++) {
+    await engine(page, e => e.emit('error', e.current.id, 'synth-failed'))
+    if (attempt < 4) await expect.poll(async () => (await calls(page)).length).toBe(attempt + 1)
+  }
+  await expect(page.locator('.reading-audio-status')).toHaveText('No se pudo iniciar la voz natural. Pulsa Reintentar para volver a usarla.')
+  expect((await calls(page)).length).toBe(4)
+  expect((await calls(page)).every(call => call.voiceId === LESSAC)).toBe(true)
+  expect(await page.evaluate(() => window.__systemSpeechCalls.length)).toBe(0)
+  await openAudioMenu(page, 'Voz')
   await expect(page.locator('[data-neural-warning]')).toBeVisible()
-  await shot(page, 'picker-fallback')
-  // Volver a probar gives the neural voice another chance
-  await page.getByRole('button', { name:'Reintentar' }).click()
+  await shot(page, 'picker-retry')
+  const fragment = (await calls(page)).at(-1).text
+  await engine(page, e => { e.config.hold = false })
+  await page.getByRole('button', { name:'Reintentar', exact:true }).click()
   await expect(page.locator('[data-neural-warning]')).toBeHidden()
+  await expect.poll(async () => (await calls(page)).length).toBeGreaterThan(4)
+  expect((await calls(page))[4]).toMatchObject({ voiceId:LESSAC, text:fragment })
+  expect(await page.evaluate(() => window.__systemSpeechCalls.length)).toBe(0)
 })
 
-test('where the engine is unsupported the natural voices are not offered and reading is unchanged', async ({ page }) => {
+test('an unsupported engine exposes a clear error and never invokes system narration', async ({ page }) => {
   await prepare(page, { supported:false })
   await open(page, EPUB)
   await openAudio(page)
   await expect(neural(page)).toBeHidden()
   const voices = await audioMenu(page, 'Voz').locator('[role="option"]').evaluateAll(items => items.map(item => item.dataset.value))
-  expect(voices.some(value => value.startsWith('piper:'))).toBe(false) // only the system voices
+  expect(voices.every(value => !value || value.startsWith('piper:'))).toBe(true)
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()
+  await expect(page.locator('.reading-audio-status')).toHaveText('Este dispositivo no puede reproducir voces naturales.')
   await expect(page.locator('[data-neural-offer]')).toBeHidden()
-  await expect.poll(() => page.evaluate(() => window.__tts.log.length)).toBeGreaterThan(0)
+  expect(await page.evaluate(() => window.__systemSpeechCalls.length)).toBe(0)
   expect(await engine(page, e => e.calls.length)).toBe(0)
 })

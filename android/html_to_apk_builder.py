@@ -1537,8 +1537,9 @@ class ApkBuilderApp(tk.Tk):
         PKCE callback flow. The updater and status-bar insets are also managed
         here.
 
-        Keeps Android's system bars visible and moves the whole WebView inside
-        the system-bar/cutout safe area by padding its native parent container.
+        Keeps the shelf inside the system-bar/cutout safe area by padding its
+        native parent. Reading hides the status bar, removes the top inset and
+        keeps the display awake; leaving or pausing restores normal bars.
         WebView padding does not reliably move its HTML layout viewport away
         from the status bar. The handled insets are zeroed before dispatch to
         WebView so it cannot apply the same spacing a second time.
@@ -1592,6 +1593,8 @@ import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {{
     private ReadAloudBridge speechBridge;
+    private boolean readingMode = false;
+    private boolean activityResumed = false;
     @Override public void onDestroy() {{
         if (speechBridge != null) speechBridge.close();
         super.onDestroy();
@@ -1644,6 +1647,26 @@ public class MainActivity extends BridgeActivity {{
         return "https".equals(page.getScheme())
             && "miguelcoxcaballero.github.io".equals(page.getHost())
             && (page.getPath() == null ? "" : page.getPath()).startsWith("/inhouse-read/");
+    }}
+
+    private boolean isReadingDisplayActive() {{
+        return readingMode && activityResumed && isTrustedReadPage();
+    }}
+
+    private void applyReadingDisplay() {{
+        Window window = getWindow();
+        if (window == null) return;
+        boolean active = isReadingDisplayActive();
+        if (active) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        WindowInsetsControllerCompat controller = new WindowInsetsControllerCompat(window, window.getDecorView());
+        controller.setSystemBarsBehavior(active
+            ? WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            : WindowInsetsControllerCompat.BEHAVIOR_DEFAULT);
+        if (active) controller.hide(WindowInsetsCompat.Type.statusBars());
+        else controller.show(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.navigationBars());
+        View root = findViewById(android.R.id.content);
+        if (root != null) ViewCompat.requestApplyInsets(root);
     }}
 
     // Vote for the panel's fastest mode at the CURRENT resolution: a WebView app
@@ -1719,7 +1742,7 @@ public class MainActivity extends BridgeActivity {{
             Insets safeInsets = windowInsets.getInsets(safeTypes);
             view.setPadding(
                 initialLeft + safeInsets.left,
-                initialTop + safeInsets.top,
+                initialTop + (isReadingDisplayActive() ? 0 : safeInsets.top),
                 initialRight + safeInsets.right,
                 initialBottom + safeInsets.bottom);
             return new WindowInsetsCompat.Builder(windowInsets)
@@ -1752,6 +1775,15 @@ public class MainActivity extends BridgeActivity {{
 
     public class InhouseNativeBridge {{
         private volatile boolean updateDownloadRunning = false;
+
+        @JavascriptInterface
+        public void setReadingMode(boolean enabled) {{
+            runOnUiThread(() -> {{
+                if (!isTrustedReadPage()) return;
+                readingMode = enabled;
+                applyReadingDisplay();
+            }});
+        }}
 
         @JavascriptInterface
         public String getAppVersion() {{
@@ -1922,6 +1954,8 @@ public class MainActivity extends BridgeActivity {{
 
     @Override
     public void onPause() {{
+        activityResumed = false;
+        applyReadingDisplay();
         CookieManager.getInstance().flush();
         super.onPause();
     }}
@@ -1936,18 +1970,22 @@ public class MainActivity extends BridgeActivity {{
     public void onResume() {{
         super.onResume();
         applyHighRefreshRate();
+        activityResumed = true;
+        applyReadingDisplay();
     }}
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {{
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) applyHighRefreshRate();
+        if (hasFocus) applyReadingDisplay();
     }}
 
     @Override
     public void onConfigurationChanged(Configuration newConfig) {{
         super.onConfigurationChanged(newConfig);
         applyHighRefreshRate();
+        applyReadingDisplay();
     }}
 }}
 """,
@@ -1988,6 +2026,8 @@ import org.json.JSONObject
 
 class MainActivity : BridgeActivity() {{
     private var speechBridge: ReadAloudBridge? = null
+    private var readingMode = false
+    private var activityResumed = false
     override fun onDestroy() {{
         speechBridge?.close()
         super.onDestroy()
@@ -2034,6 +2074,20 @@ class MainActivity : BridgeActivity() {{
         val page = Uri.parse(bridge.webView.url ?: "")
         return page.scheme == "https" && page.host == "miguelcoxcaballero.github.io"
             && (page.path ?: "").startsWith("/inhouse-read/")
+    }}
+
+    private fun isReadingDisplayActive(): Boolean = readingMode && activityResumed && isTrustedReadPage()
+
+    private fun applyReadingDisplay() {{
+        val active = isReadingDisplayActive()
+        if (active) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.systemBarsBehavior = if (active)
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE else WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+        if (active) controller.hide(WindowInsetsCompat.Type.statusBars())
+        else controller.show(WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars())
+        findViewById<View>(android.R.id.content)?.let {{ ViewCompat.requestApplyInsets(it) }}
     }}
 
     // Vote for the panel's fastest mode at the CURRENT resolution: a WebView app
@@ -2097,7 +2151,7 @@ class MainActivity : BridgeActivity() {{
             val safeInsets = windowInsets.getInsets(safeTypes)
             view.setPadding(
                 initialPadding.left + safeInsets.left,
-                initialPadding.top + safeInsets.top,
+                initialPadding.top + (if (isReadingDisplayActive()) 0 else safeInsets.top),
                 initialPadding.right + safeInsets.right,
                 initialPadding.bottom + safeInsets.bottom)
             WindowInsetsCompat.Builder(windowInsets)
@@ -2131,6 +2185,15 @@ class MainActivity : BridgeActivity() {{
     inner class InhouseNativeBridge {{
         @Volatile
         private var updateDownloadRunning = false
+
+        @JavascriptInterface
+        fun setReadingMode(enabled: Boolean) {{
+            runOnUiThread {{
+                if (!isTrustedReadPage()) return@runOnUiThread
+                readingMode = enabled
+                applyReadingDisplay()
+            }}
+        }}
 
         @JavascriptInterface
         fun getAppVersion(): String = "{self.version_name.get().strip()}"
@@ -2281,6 +2344,8 @@ class MainActivity : BridgeActivity() {{
     }}
 
     override fun onPause() {{
+        activityResumed = false
+        applyReadingDisplay()
         CookieManager.getInstance().flush()
         super.onPause()
     }}
@@ -2293,16 +2358,20 @@ class MainActivity : BridgeActivity() {{
     override fun onResume() {{
         super.onResume()
         applyHighRefreshRate()
+        activityResumed = true
+        applyReadingDisplay()
     }}
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {{
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) applyHighRefreshRate()
+        if (hasFocus) applyReadingDisplay()
     }}
 
     override fun onConfigurationChanged(newConfig: Configuration) {{
         super.onConfigurationChanged(newConfig)
         applyHighRefreshRate()
+        applyReadingDisplay()
     }}
 }}
 """,

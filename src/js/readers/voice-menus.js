@@ -19,12 +19,12 @@ export function orderLanguages(bases, { bookLang = '', deviceLang = '' } = {}) {
 export function languageOptions(voices, { bookLang = '', deviceLang = '' } = {}) {
   const byBase = new Map()
   for (const voice of voices || []) {
-    if (!voice?.base) continue
+    if (!voice?.neural || !voice.base) continue
     const entry = byBase.get(voice.base) || { ready:0, download:0 }
     if (voice.installed) entry.ready++; else if (voice.neural) entry.download++
     byBase.set(voice.base, entry)
   }
-  const options = [{ value:AUTO, label:'Automática', hint:baseLanguageName(bookLang) }]
+  const options = [{ value:AUTO, label:'Automática', hint:byBase.has(langBase(bookLang)) ? baseLanguageName(bookLang) : 'Elige un idioma' }]
   for (const base of orderLanguages([...byBase.keys()], { bookLang, deviceLang })) {
     const { ready, download } = byBase.get(base)
     if (!ready && !download) continue
@@ -46,7 +46,7 @@ const qualityHint = voice => voice.neural ? 'Natural' : voice.quality === null ?
  */
 export function voiceOptions(voices, base, { bookLang = '', deviceLang = '' } = {}) {
   const language = base || langBase(bookLang)
-  const ranked = rankedVoicesFor(voices || [], language === langBase(bookLang) ? bookLang : language, deviceLang)
+  const ranked = rankedVoicesFor((voices || []).filter(voice => voice?.neural), language === langBase(bookLang) ? bookLang : language, deviceLang)
   const seen = new Map()
   const rows = ranked.map(voice => {
     const title = voice.neural ? voice.name : systemName(voice)

@@ -25,7 +25,7 @@ test('finger-only zoom preserves book interaction, promotes textures, pans and r
   await expect(page.locator('.ihr-flyout')).toHaveCount(0);
   await page.getByRole('button',{name:'Vista isométrica, libros de lado'}).click();
   const canvas=page.locator('.ihr-bookshelf-scene'),scroller=page.locator('.ihr-bookshelf__scroll');
-  await expect(canvas).toHaveAttribute('data-view-progress','1');
+  await expect(canvas).toHaveAttribute('data-view-progress','1',{timeout:30_000});
   await expect(canvas).toHaveAttribute('data-animating','false');
   await expect(page.getByRole('group',{name:'Zoom de la estantería',exact:true})).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Acercar estantería',exact:true})).toHaveCount(0);
@@ -61,7 +61,7 @@ test('a finger flick coasts and a fresh touch stops it without losing the fitted
   await page.emulateMedia({reducedMotion:'no-preference'});
   await page.addInitScript(()=>localStorage.setItem('inhouse-read-shelf-plants','[]'));
   await page.goto('/');await page.getByRole('button',{name:'Vista isométrica, libros de lado'}).click();
-  const canvas=page.locator('.ihr-bookshelf-scene');await expect(canvas).toHaveAttribute('data-view-progress','1');
+  const canvas=page.locator('.ihr-bookshelf-scene');await expect(canvas).toHaveAttribute('data-view-progress','1',{timeout:30_000});
   const frame=await canvas.boundingBox(),cdp=await page.context().newCDPSession(page),x=frame.x+frame.width/2,y=frame.y+90;
   await pinch(cdp,x,y,100,200);
   await expect.poll(async()=>Number(await canvas.getAttribute('data-inspection-zoom'))).toBeGreaterThan(1.8);

@@ -4,6 +4,17 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.9
+
+- El audiolibro utiliza sólo las voces naturales del catálogo y sus idiomas. Los dispositivos lentos esperan a que se prepare el fragmento completo sin cancelar la voz seleccionada ni pasar a otra del sistema. Las preferencias anteriores de voces del dispositivo se migran a selección automática.
+- Una frase que cruza de página se divide según sus posiciones reales en el documento. La página avanza cuando empieza a sonar el fragmento que continúa en ella; el resaltado conserva la frase completa.
+- El lector mantiene la pantalla encendida mientras está visible, libera la solicitud al salir o pasar a segundo plano y la recupera al volver.
+- El indicador de colocación se prepara junto a la estantería y reutiliza sus gráficos al iniciar el primer arrastre. Retirar un libro conserva la escena y sus programas preparados.
+
+### Actualización Android · APK 1.1.3
+
+- En el lector se activa `KEEP_SCREEN_ON`, se oculta la barra de estado completa y se aprovecha su espacio superior. La estantería recupera sus barras e insets normales. Se conservan los ajustes de refresco y la importación desde «Abrir con». Requiere instalar la APK 1.1.3 (versionCode 16).
+
 ### Actualización web · 1.7.8
 
 - La página blanca preparada en segundo plano se dibuja antes de comenzar a abrir el libro, incluso si se pulsa la portada antes de terminar la preparación. Los nueve casos de transición conservan las comprobaciones de color y estado desde el primer fotograma.
@@ -219,7 +230,7 @@ La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal 
 - Madera de nogal texturizada, profundidad y sombras de contacto; plantas fotográficas propias en cerámica y terracota. Recursos optimizados en `src/assets/library/`, con los prompts de creación en `docs/library-assets.json` y `docs/succulent-asset.txt`.
 - Lector con temas Papel, Sepia, Noche y Salvia; fuentes, tamaño, interlineado, márgenes, alineación y desplazamiento continuo para EPUB. Los PDF añaden zoom y un modo de texto adaptable para personalizar su texto extraíble.
 - Navegación por porcentaje, página PDF e índice de capítulos. Los marcadores, la última página y las posiciones anteriores a un salto se guardan en el dispositivo y se sincronizan con el progreso en Drive. El botón «Volver a…» recupera el punto anterior incluso después de cerrar el libro.
-- Lectura en voz alta con pausa, continuación, selección de voz, velocidad y temporizador; avance automático entre páginas. En Android 1.1.0 se utiliza TextToSpeech del sistema y en navegadores compatibles, Web Speech. Los documentos escaneados sin texto necesitan OCR; la función no genera ni descarga archivos de audiolibro. La disponibilidad de voces offline depende de las voces instaladas.
+- Lectura en voz alta con pausa, continuación, selección de voz natural, velocidad y temporizador; avance automático sincronizado con los fragmentos de audio. Se descargan las voces naturales del catálogo una vez y se conservan sus recursos para usarlas sin conexión. Los documentos escaneados sin texto necesitan OCR; la función no genera archivos de audiolibro.
 
 ### Actualización web · 1.0.27
 

@@ -46,9 +46,11 @@ const listing = objects => ({ traverse: callback => objects.forEach(callback), t
 /** Start linking every program `scene` draws in parallel. Returns a cheap
  * `ready()` predicate, false while any link is still running (for at most
  * LINK_TIMEOUT, after which the first draw links what is left). The scene's
- * lights and environment must already be configured. Where the extension is
- * missing programs report ready at once and link on first draw as before. */
-export function compilePrograms(renderer, scene, camera) {
+ * lights and environment must already be configured. `prepared` can include
+ * hidden interaction meshes that must be ready before the first gesture.
+ * Without the extension, programs report ready at once and link on the
+ * first draw as before. */
+export function compilePrograms(renderer, scene, camera, prepared = []) {
   if (typeof renderer.compile !== 'function') return () => true;
   const programs = new Set();
   const compile = objects => {
@@ -57,6 +59,7 @@ export function compilePrograms(renderer, scene, camera) {
   };
   const drawn = [];
   scene.traverseVisible(object => { if ((object.isMesh || object.isPoints || object.isLine) && object.material) drawn.push(object); });
+  for (const object of prepared) if (!drawn.includes(object)) drawn.push(object);
   compile(drawn);
   // Glass makes three draw the opaque scene a second time into a linear
   // half-float target, which needs its own variant of every program.

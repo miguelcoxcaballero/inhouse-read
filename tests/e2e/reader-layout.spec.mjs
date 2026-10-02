@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { fakeEngineScript } from '../helpers/fake-neural-engine.js'
 
 const fixture = format => `tests/e2e/fixtures/reading-journey.${format}`
 const ink = 'rgb(198, 198, 198)'
@@ -28,11 +29,11 @@ function quotePdf(text) {
 async function prepare(page, size, preferences = {}) {
   await page.setViewportSize(size)
   await page.emulateMedia({ reducedMotion:'reduce' })
+  await page.addInitScript(fakeEngineScript({ installed:['piper:en_US-lessac-high'], hold:true }))
   await page.addInitScript(preferences => {
     if (!localStorage.getItem('inhouse-read-reading-preferences')) {
       localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify(preferences))
     }
-    window.InhouseSpeech = { getVoices:() => '[]', stop:() => {}, speak:() => {} }
   }, preferences)
   await page.goto(process.env.IHR_TEST_URL || './')
 }

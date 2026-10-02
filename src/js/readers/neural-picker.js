@@ -13,8 +13,8 @@ const DOWNLOAD_ERRORS = {
   default:'No se pudo descargar.'
 }
 const WARNINGS = {
-  'too-slow':'Voz natural demasiado lenta. Se usa la del sistema.',
-  default:'La voz natural no arrancó. Se usa la del sistema.'
+  'not-installed':'La voz natural seleccionada no está instalada. Descárgala de nuevo.',
+  default:'No se pudo iniciar la voz natural. Pulsa Reintentar para volver a usarla.'
 }
 
 const element = (tag, className, text) => {
@@ -59,7 +59,7 @@ export class NeuralVoicePicker {
     this.block = panel.querySelector('[data-neural]')
     this.offer = panel.querySelector('[data-neural-offer]')
     for (const root of [this.block, this.offer]) root.addEventListener('click', event => this.click(event))
-    panel.querySelector('[data-neural-retry]').addEventListener('click', () => { host.voice.retryNeural?.(); this.render() })
+    panel.querySelector('[data-neural-retry]').addEventListener('click', () => { host.voice.retryNeural?.(); host.voice.play?.(); this.render() })
   }
   /** Nothing loads at app start: a book being opened schedules the engine module for an idle moment, ready before Play is tapped. */
   warm() {
@@ -137,7 +137,7 @@ export class NeuralVoicePicker {
 
   render() {
     cancelAnimationFrame(this.frame); this.frame = 0
-    const engine = neuralEngine(), list = neuralVoiceList(engine)
+    const engine = neuralEngine(), list = engine ? neuralVoiceList(engine) : []
     this.signature = engine ? [...engine.installed].sort().join(',') : ''
     this.block.hidden = !list.length
     if (!list.length) { this.offer.hidden = true; this.offer.replaceChildren(); return }
@@ -262,10 +262,10 @@ export class NeuralVoicePicker {
     try { localStorage.setItem(OFFER_KEY, JSON.stringify({ ...this.dismissed(), [base]:Date.now() })) } catch { /* it just asks again next time */ }
     this.render()
   }
-  /** The voice to offer, or null: the audiobook is on, nothing neural speaks the book's language yet and the offer was not dismissed for it. */
+  /** Offer a download when no installed natural voice speaks the book's language, including before the first playback. */
   offerFor(engine, list) {
     const base = langBase(this.bookLang)
-    if (!engine || !base || !this.host.voice || this.host.voice.state === 'stopped' || this.snoozed(base)) return null
+    if (!engine || !base || !this.host.voice || this.snoozed(base)) return null
     if (list.some(voice => voice.base === base && engine.installed.has(voice.id))) return null
     return recommendedNeuralFor(list, this.bookLang, navigator.language)
   }

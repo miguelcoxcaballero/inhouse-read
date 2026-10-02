@@ -1,7 +1,7 @@
 import { readerPanelMarkup, readerIcon } from './reader-interface.js'
 import { normalizeReadingPreferences, rateLabel, READING_THEMES } from './reading-preferences.js'
 import { ReadingVoice } from './reading-voice.js'
-import { baseLanguageName, declaredLanguage, langBase, needsBetterVoice, readSystemVoices } from './voice-catalog.js'
+import { declaredLanguage, langBase } from './voice-catalog.js'
 import { SelectMenu } from './select-menu.js'
 import { AUTO, languageOptions, voiceOptions } from './voice-menus.js'
 import { neuralVoiceList } from './neural-runtime.js'
@@ -149,13 +149,6 @@ export class ReaderExperience {
       event.currentTarget.setAttribute('aria-label',enabled ? 'Salir del modo infantil' : 'Activar modo infantil')
     }
     this.panel.querySelectorAll('[data-voice-option]').forEach(control => control.addEventListener('change', () => this.setPreference(control.dataset.voiceOption,control.checked)))
-    window.speechSynthesis?.addEventListener('voiceschanged', () => this.populateVoices())
-    window.addEventListener('inhouse-tts', event => { if (event.detail?.type === 'voiceschanged') this.populateVoices() })
-    this.panel.querySelector('[data-voice-settings]').onclick = () => {
-      try { window.InhouseSpeech.openVoiceSettings() } catch { this.error('No se pudieron abrir los ajustes de voz.') }
-    }
-    // Coming back from Android's voice downloads: ask the bridge to re-read the installed voices.
-    document.addEventListener('visibilitychange', () => { if (!document.hidden && this.panel.open) this.refreshNativeVoices() })
     // Idioma first, then the voices of that language. Both are the app's own dropdowns (no operating-system <select>);
     // the downloadable natural voices of the chosen language live at the end of the voice list.
     this.languageMenu = new SelectMenu({ label:'Idioma', onChange:value => this.chooseLanguage(value) })
@@ -229,7 +222,7 @@ export class ReaderExperience {
   label(place) { return place.locator?.kind === 'pdf-page' ? `Página ${place.locator.value}${this.reader.pageCount ? ` de ${this.reader.pageCount}` : ''}` : place.section ? `${place.section}${place.page ? ` · Página ${place.page}` : ''}` : `${Math.round(place.fraction * 100)} % del libro` }
   show(tab) {
     this.showTab(tab)
-    if (tab === 'audio') { this.populateVoices(); this.refreshNativeVoices(); this.neuralPicker.refresh() } // the recommended list depends on the book's language
+    if (tab === 'audio') { this.populateVoices(); this.neuralPicker.refresh() }
     if (!this.panel.open) this.panel.showModal()
     this.updateMiniPlayer(); this.resizePanel()
     this.panel.querySelector('[data-close]').focus({preventScroll:true})
@@ -317,13 +310,11 @@ export class ReaderExperience {
     this.panel.querySelector('[data-pdf-hint]').hidden = !originalPdf
     this.panel.querySelector('[data-pdf-zoom]').hidden = !originalPdf
     this.voice.rate = p.rate; this.voice.voice = p.voice; this.voice.languageOverride = p.voiceLang
-    this.updateVoiceInfo()
     this.neuralPicker?.render()
     this.voice.options = {footnotes:p.footnotes,multilingual:p.multilingual,skipHeaders:p.skipHeaders}
     this.updateMiniPlayer()
     try { if (updateBook) await this.reader.applyPreferences(p) } catch { this.error('No se pudo aplicar.') }
   }
-  refreshNativeVoices() { try { window.InhouseSpeech?.refreshVoices?.() } catch { /* older app: voices stay as loaded */ } }
   /** The language of the open book (the device's when it has none or no book is open). */
   bookLanguage() {
     let bookLang = ''
@@ -352,13 +343,13 @@ export class ReaderExperience {
     return book
   }
   populateVoices() {
-    const voices = [...readSystemVoices(window), ...neuralVoiceList()]
+    const voices = neuralVoiceList()
     const bookLang = this.bookLanguage(), deviceLang = navigator.language
-    const base = this.voiceBase(voices), bookBase = langBase(bookLang)
+    const requestedBase = this.voiceBase(voices), bookBase = langBase(bookLang)
+    const base = voices.some(voice => voice.base === requestedBase) ? requestedBase : ''
     this.voiceBaseShown = base
     const languages = languageOptions(voices, { bookLang, deviceLang })
-    if (base && !languages.some(option => option.value === base)) languages.push({ value:base, label:baseLanguageName(base) })
-    const pickedLanguage = this.preferences.voiceLang || (base !== bookBase ? base : AUTO)
+    const pickedLanguage = this.preferences.voiceLang || (base && base !== bookBase ? base : AUTO)
     this.languageMenu.setOptions(languages, pickedLanguage)
     this.languageMenu.setValueText(pickedLanguage === AUTO ? `Automática · ${languages[0].hint}` : '')
     const options = voiceOptions(voices, base, { bookLang, deviceLang })
@@ -366,18 +357,7 @@ export class ReaderExperience {
     this.voiceMenu.setOptions(options, saved)
     this.voiceMenu.setValueText(saved === AUTO ? (options.length > 1 ? `Automática · ${options[0].hint}` : 'Sin voces instaladas') : '')
     this.voiceCatalog = { voices, bookLang }
-    this.updateVoiceInfo()
     this.neuralPicker?.render()
-  }
-  /** On Android only: offers the system's voice download when the best voice of the language is not high quality. */
-  updateVoiceInfo() {
-    if (!this.voiceCatalog) return
-    const { voices, bookLang } = this.voiceCatalog
-    const native = typeof window.InhouseSpeech?.openVoiceSettings === 'function'
-    const better = native && needsBetterVoice(voices, this.voiceBaseShown || bookLang, navigator.language)
-    const info = this.panel.querySelector('[data-voice-info]')
-    info.querySelector('[data-voice-settings]').hidden = !better
-    info.hidden = !better
   }
   error(message) { this.panel.querySelector('.reading-error').textContent = message }
   async savePlaces() {

@@ -2,6 +2,10 @@ import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { spinePointerPosition } from './helpers/shelf-pointer.mjs'
 
+// At 50 ms of camera time per rendered frame, CI reached .98 after 8.3 s
+// but needed further real frames. Keep the exact endpoint and geometry checks.
+const VIEW_TRANSITION_TIMEOUT = 30_000
+
 const PLANTS_KEY = 'inhouse-read-shelf-plants'
 async function seedShelf(page) {
   const bytes = [...await readFile('tests/e2e/fixtures/tiny.pdf')]
@@ -97,7 +101,7 @@ test('la estantería frontal ocupa todo el ancho y la papelera sólo se activa e
   const positions = await Promise.all(Array.from({ length:4 }, (_, index) => positionFor(page,`placement:${index}`)))
   for (const width of [320,390,860]) {
     await page.setViewportSize({ width, height:844 })
-    await expect(scene).toHaveAttribute('data-view-progress', '0')
+    await expect(scene).toHaveAttribute('data-view-progress', '0', { timeout:VIEW_TRANSITION_TIMEOUT })
     await expect(scene).toHaveAttribute('data-animating', 'false')
     await assertFullCabinetWidth(page)
     await expect(bin).toBeHidden()
@@ -107,7 +111,7 @@ test('la estantería frontal ocupa todo el ancho y la papelera sólo se activa e
       inert:node.inert, tabIndex:node.tabIndex }))).toEqual({ pointerEvents:'none', inert:true, tabIndex:-1 })
     await expect(page.locator('.ihr-shelf-catalog')).toBeHidden()
     await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
-    await expect(scene).toHaveAttribute('data-view-progress', '1')
+    await expect(scene).toHaveAttribute('data-view-progress', '1', { timeout:VIEW_TRANSITION_TIMEOUT })
     await expect(scene).toHaveAttribute('data-animating', 'false')
     await assertFullCabinetWidth(page)
     await expect(page.getByRole('button', { name:'Abrir catálogo IKEA de plantas, estanterías e iluminación' })).toBeVisible()
@@ -137,7 +141,7 @@ test('la estantería frontal ocupa todo el ancho y la papelera sólo se activa e
     await page.locator('.ihr-bookshelf__scroll').evaluate(node => { node.scrollTop = 0 })
     await expect(page.getByRole('button', { name:'Abrir catálogo IKEA de plantas, estanterías e iluminación' })).toBeVisible()
     await page.getByRole('button', { name:'Vista de canto' }).click()
-    await expect(scene).toHaveAttribute('data-view-progress', '0')
+    await expect(scene).toHaveAttribute('data-view-progress', '0', { timeout:VIEW_TRANSITION_TIMEOUT })
     await expect(scene).toHaveAttribute('data-animating', 'false')
     await assertFullCabinetWidth(page)
     await expect(bin).toBeHidden()
@@ -149,7 +153,7 @@ test('la estantería frontal ocupa todo el ancho y la papelera sólo se activa e
     await assertNoOverlap(page)
   }
   await page.reload()
-  await expect(scene).toHaveAttribute('data-view-progress', '0')
+  await expect(scene).toHaveAttribute('data-view-progress', '0', { timeout:VIEW_TRANSITION_TIMEOUT })
   await assertFullCabinetWidth(page)
   await expect(bin).toBeHidden()
   expect(await Promise.all(Array.from({ length:4 }, (_, index) => positionFor(page,`placement:${index}`)))).toEqual(positions)
@@ -193,7 +197,7 @@ test('libros y plantas se colocan libremente, se apartan al colisionar y conserv
   await assertNoOverlap(page)
 
   await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
-  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1')
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1', { timeout:VIEW_TRANSITION_TIMEOUT })
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
   const thirdRowPlant = await object(page, 'plant:placement-c').boundingBox()
   await dragTo(page, 'book:placement:1', { x:thirdRowPlant.x + thirdRowPlant.width / 2, y:thirdRowPlant.y + thirdRowPlant.height - 22 }, 2)
@@ -207,7 +211,7 @@ test('libros y plantas se colocan libremente, se apartan al colisionar y conserv
   const finalPlants = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), PLANTS_KEY)
   const finalPositions = await Promise.all(Array.from({ length:4 }, (_, index) => positionFor(page,`placement:${index}`)))
   await page.getByRole('button', { name:'Vista de canto' }).click()
-  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '0')
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '0', { timeout:VIEW_TRANSITION_TIMEOUT })
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
   await assertFullCabinetWidth(page)
   await expect(page.locator('.ihr-shelf-trash')).toBeHidden()
@@ -215,7 +219,7 @@ test('libros y plantas se colocan libremente, se apartan al colisionar y conserv
   await page.reload()
   expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), PLANTS_KEY)).toEqual(finalPlants)
   await expect(object(page, 'book:placement:1')).toHaveAttribute('data-shelf-index', '1')
-  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '0')
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '0', { timeout:VIEW_TRANSITION_TIMEOUT })
   await assertFullCabinetWidth(page)
   await expect(page.locator('.ihr-shelf-trash')).toBeHidden()
   expect(await Promise.all(Array.from({ length:4 }, (_, index) => positionFor(page,`placement:${index}`)))).toEqual(finalPositions)

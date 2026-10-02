@@ -1,8 +1,11 @@
 import { test, expect } from '@playwright/test'
-import { audioMenu, openAudioMenu, pickVoice } from './helpers/audio-menus.mjs'
+import { audioMenu, openAudioMenu, pickVoice, selectedOption } from './helpers/audio-menus.mjs'
+import { fakeEngineScript } from '../helpers/fake-neural-engine.js'
 
 const PDF = 'tests/e2e/fixtures/reading-journey.pdf'
 const EPUB = 'tests/e2e/fixtures/reading-journey.epub'
+const LESSAC = 'piper:en_US-lessac-high'
+const ALBA = 'piper:en_GB-alba-medium'
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width:390, height:844 })
   await page.emulateMedia({ reducedMotion:'reduce' })
@@ -100,10 +103,7 @@ test('PDF: guarda una cita seleccionada y la conserva al reabrir el libro', asyn
 
 test('EPUB: tipografía real, capítulos, enlaces internos y voz desde el texto visible', async ({ page }) => {
   const errors = []; page.on('pageerror', error => errors.push(error.message))
-  await page.addInitScript(() => {
-    window.__epubSpeech = []
-    window.InhouseSpeech = {getVoices:() => '[]',stop:() => {},speak:text => window.__epubSpeech.push(text)}
-  })
+  await page.addInitScript(fakeEngineScript({ installed:[LESSAC], holdAfter:1 }))
   await page.goto(process.env.IHR_TEST_URL || '/')
   await page.locator('#file-picker').setInputFiles(EPUB)
   await expect(page.locator('foliate-view')).toBeVisible()
@@ -127,16 +127,16 @@ test('EPUB: tipografía real, capítulos, enlaces internos y voz desde el texto 
   await expect(page.locator('.reader-return')).toBeVisible()
   await page.getByRole('button', { name:'Escuchar el libro' }).click()
   await page.getByRole('button', { name:'Reproducir',exact:true }).click()
-  await expect.poll(() => page.evaluate(() => window.__epubSpeech.join(' '))).toMatch(/Beyond|Paragraph/)
+  await expect.poll(() => page.evaluate(() => window.__inhouseNeuralTest.engine.calls.map(call => call.text).join(' '))).toMatch(/Beyond|Paragraph/)
   await page.getByRole('button', { name:'Detener',exact:true }).click()
   expect(errors).toEqual([])
 })
 
 test('velocidad: cinco pasos accesibles por teclado, caben en móvil y conservan la elección', async ({ page }) => {
   await page.setViewportSize({ width:320, height:844 })
+  await page.addInitScript(fakeEngineScript({ installed:[LESSAC], hold:true }))
   await page.addInitScript(() => {
-    if (!localStorage.getItem('inhouse-read-reading-preferences')) localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({ rate:1.3, voiceLang:'en', voice:'en-device' }))
-    window.InhouseSpeech = { getVoices:() => JSON.stringify([{name:'English device',voiceURI:'en-device',lang:'en-US',installed:true}]), stop() {}, speak() {} }
+    if (!localStorage.getItem('inhouse-read-reading-preferences')) localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({ rate:1.3, voiceLang:'en', voice:'piper:en_US-lessac-high' }))
   })
   await openPdf(page)
   await page.getByRole('button', { name:'Escuchar el libro' }).click()
@@ -167,7 +167,7 @@ test('velocidad: cinco pasos accesibles por teclado, caben en móvil y conservan
   const bounds = await group.boundingBox()
   expect(bounds.x).toBeGreaterThanOrEqual(0)
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(320)
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('inhouse-read-reading-preferences')))).toMatchObject({ rate:2, voice:'en-device', voiceLang:'en' })
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('inhouse-read-reading-preferences')))).toMatchObject({ rate:2, voice:'piper:en_US-lessac-high', voiceLang:'en' })
   await page.getByRole('button', { name:'Cerrar opciones de lectura' }).click()
   await page.locator('#reader-back').click()
   await page.reload()
@@ -179,45 +179,30 @@ test('velocidad: cinco pasos accesibles por teclado, caben en móvil y conservan
   if (process.env.IHR_EVIDENCE_DIR) await page.screenshot({ path:`${process.env.IHR_EVIDENCE_DIR}/audio-speed-mobile-320.png` })
 })
 
-test('voz Android: reproduce texto, pausa, continúa y pasa a la siguiente página', async ({ page }) => {
-  await page.addInitScript(() => {
-    window.__spoken = []; window.__stopped = 0
-    window.InhouseSpeech = {
-      getVoices:() => JSON.stringify([{name:'English device',voiceURI:'en-device',lang:'en-US'}]),
-      speak:(text,language,rate,voice,id) => window.__spoken.push({text,language,rate,voice,id}),
-      stop:() => { window.__stopped++ }
-    }
-  })
+test('voz natural: reproduce texto, pausa, continúa y pasa a la siguiente página', async ({ page }) => {
+  await page.addInitScript(fakeEngineScript({ installed:[LESSAC], holdAfter:1 }))
   await openPdf(page)
   await page.getByRole('button', { name:'Escuchar el libro' }).click()
   await page.getByRole('radio', { name:'1,25×', exact:true }).check()
-  await pickVoice(page, 'en-device')
+  await pickVoice(page, LESSAC)
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()
-  await expect.poll(() => page.evaluate(() => window.__spoken.length)).toBeGreaterThan(0)
-  expect(await page.evaluate(() => window.__spoken[0])).toMatchObject({rate:1.25,voice:'en-device'})
+  await expect.poll(() => page.evaluate(() => window.__inhouseNeuralTest.engine.calls.length)).toBeGreaterThan(0)
+  expect(await page.evaluate(() => window.__inhouseNeuralTest.engine.calls[0])).toMatchObject({rate:1.25,voiceId:LESSAC})
   await page.getByRole('button', { name:'Pausar', exact:true }).click()
   await expect(page.getByRole('button', { name:'Continuar',exact:true })).toBeVisible()
   await page.getByRole('button', { name:'Continuar',exact:true }).click()
   for (let i=0;i<4;i++) {
-    const count = await page.evaluate(() => window.__spoken.length)
-    await page.evaluate(() => window.dispatchEvent(new CustomEvent('inhouse-tts',{detail:{type:'done',id:window.__spoken.at(-1).id}})))
-    await expect.poll(() => page.evaluate(() => window.__spoken.length)).toBeGreaterThan(count)
+    const count = await page.evaluate(() => window.__inhouseNeuralTest.engine.calls.length)
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('inhouse-tts',{detail:{type:'done',id:window.__inhouseNeuralTest.engine.calls.at(-1).id}})))
+    await expect.poll(() => page.evaluate(() => window.__inhouseNeuralTest.engine.calls.length)).toBeGreaterThan(count)
   }
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 2 de 4/)
   await page.getByRole('button', { name:'Detener',exact:true }).click()
   await expect(page.getByRole('button', { name:'Reproducir',exact:true })).toBeVisible()
 })
 
-test('voz Android: lista agrupada de voces naturales, voz automática y descarga de mejores voces', async ({ page }) => {
-  await page.addInitScript(() => {
-    window.__spoken = []; window.__voiceSettings = 0
-    const voice = (voiceURI, lang, quality, extra = {}) => ({ voiceURI, name:`${lang} ${voiceURI}`, lang, quality, latency:200, network:false, installed:true, features:[], ...extra })
-    window.InhouseSpeech = {
-      getVoices:() => JSON.stringify([voice('en-robot', 'en-US', 200, { name:'eSpeak' }), voice('en-normal', 'en-US', 300), voice('es-high', 'es-ES', 400)]),
-      speak:(text, language, rate, voiceName, id) => window.__spoken.push({ text, language, rate, voiceName, id }),
-      stop:() => {}, openVoiceSettings:() => { window.__voiceSettings++ }, refreshVoices:() => {}
-    }
-  })
+test('voz natural: lista agrupada, voz automática y descarga de otra voz', async ({ page }) => {
+  await page.addInitScript(fakeEngineScript({ installed:[LESSAC], manual:true, holdAfter:1 }))
   await openPdf(page)
   await page.getByRole('button', { name:'Escuchar el libro' }).click()
   const languages = await openAudioMenu(page, 'Idioma')
@@ -227,14 +212,19 @@ test('voz Android: lista agrupada de voces naturales, voz automática y descarga
   await expect(languages.locator('.select-menu__panel')).toBeHidden()
   await expect(page.locator('.reading-panel')).toBeVisible()
   const voices = await openAudioMenu(page, 'Voz')
-  expect(await voices.locator('[role="option"]').evaluateAll(items => items.map(item => item.dataset.value))).toEqual(['', 'en-normal', 'en-robot']) // best first, only English
+  expect(await voices.locator('[role="option"]').evaluateAll(items => items.map(item => item.dataset.value))).toEqual(['', LESSAC, ALBA]) // English natural voices, installed or available to download
   await expect(voices.locator('.select-menu__value')).toHaveText(/^Automática · /)
-  // The book (and the test browser) is English: its best on-device voice is only "normal", so Android offers better ones.
-  await page.getByRole('button', { name:'Instalar voces' }).click()
-  expect(await page.evaluate(() => window.__voiceSettings)).toBe(1)
+  // The download is owned by the app and the installed natural voice becomes
+  // the selected engine voice; there is no external Android settings handoff.
+  const alba = page.locator(`[data-neural-voice="${ALBA}"]`)
+  await alba.getByRole('button', { name:/Descargar la voz Alba/ }).click()
+  await expect(alba.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0')
+  await page.evaluate(id => window.__inhouseNeuralTest.engine.finish(id), ALBA)
+  await expect(selectedOption(page)).toHaveAttribute('data-value', ALBA)
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()
-  await expect.poll(() => page.evaluate(() => window.__spoken.length)).toBeGreaterThan(0)
-  expect(await page.evaluate(() => window.__spoken[0])).toMatchObject({ voiceName:'en-normal', language:'en-US' })
+  await expect.poll(() => page.evaluate(() => window.__inhouseNeuralTest.engine.calls.length)).toBeGreaterThan(0)
+  expect(await page.evaluate(() => window.__inhouseNeuralTest.engine.calls[0])).toMatchObject({ voiceId:ALBA })
+  await expect(page.getByRole('button', { name:'Instalar voces', exact:true })).toHaveCount(0)
 })
 
 test('la estantería dibuja madera y plantas 3D sin recursos rotos', async ({ page }) => {

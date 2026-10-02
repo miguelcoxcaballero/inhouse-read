@@ -136,7 +136,7 @@ test('muestra la estantería 3D vacía con tres baldas y plantas que se pueden m
   // must still show all three meshes when the camera includes every shelf.
   await page.emulateMedia({ reducedMotion:'reduce' })
   await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
-  await expect(canvas).toHaveAttribute('data-view-progress', '1')
+  await expect(canvas).toHaveAttribute('data-view-progress', '1',{timeout:30_000})
   await expect(canvas).toHaveAttribute('data-active-plants', '3')
   await expect.poll(() => canvas.evaluate(node => {
     const pixels = node.getContext('2d').getImageData(0,0,node.width,node.height).data
@@ -464,7 +464,7 @@ test('aleja y gira toda la estantería en 3D, permite abrir libros y recuerda la
   await expect(shelf).toHaveAttribute('data-view-mode', 'isometric')
   await expect(isometric).toHaveAttribute('aria-pressed', 'true')
   await expect.poll(() => page.evaluate(() => window.__shelfViewFrames.some(value => value > 0 && value < 1))).toBe(true)
-  await expect(canvas).toHaveAttribute('data-view-progress', '1')
+  await expect(canvas).toHaveAttribute('data-view-progress', '1',{timeout:30_000})
   await expect(canvas).toHaveAttribute('data-animating','false')
   await expect(canvas).toHaveAttribute('data-floor-visible','false')
   await expect(canvas).toHaveAttribute('data-full-cabinet-in-frame','true')
@@ -485,7 +485,7 @@ test('aleja y gira toda la estantería en 3D, permite abrir libros y recuerda la
   await frontal.click()
   await expect.poll(() => page.evaluate(() => window.__shelfViewFrames.some(value => value > 0 && value < 1))).toBe(true)
   await isometric.click()
-  await expect(canvas).toHaveAttribute('data-view-progress', '1')
+  await expect(canvas).toHaveAttribute('data-view-progress', '1',{timeout:30_000})
   await expect(canvas).toHaveAttribute('data-animating', 'false')
   await page.evaluate(() => window.__shelfViewObserver.disconnect())
   expect(await bookOrder()).toEqual(initialOrder)
@@ -546,7 +546,7 @@ test('la vista isométrica muestra los 80 libros en 3D dentro de la pantalla sin
   const canvas = page.locator('.ihr-bookshelf-scene')
   const scroller = page.locator('.ihr-bookshelf__scroll')
   await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
-  await expect(canvas).toHaveAttribute('data-view-progress', '1')
+  await expect(canvas).toHaveAttribute('data-view-progress', '1',{timeout:30_000})
   const assertOverview = async () => {
     await expect(canvas).toHaveAttribute('data-animating','false')
     await expect(canvas).toHaveAttribute('data-full-cabinet-in-frame','true')
@@ -599,10 +599,10 @@ test('la vista isométrica muestra los 80 libros en 3D dentro de la pantalla sin
   await page.setViewportSize({ width:414, height:844 })
   await assertOverview()
   expect(await page.evaluate(() => window.__longShelfCanvas === document.querySelector('.ihr-bookshelf-scene'))).toBe(true)
-  await expect(canvas).toHaveAttribute('data-view-progress', '1')
+  await expect(canvas).toHaveAttribute('data-view-progress', '1',{timeout:30_000})
   await page.screenshot({ path:'test-results/whole-shelf-isometric-last-row.png' })
   await page.reload()
-  await expect(canvas).toHaveAttribute('data-view-progress','1')
+  await expect(canvas).toHaveAttribute('data-view-progress','1',{timeout:30_000})
   await assertOverview()
   expect(errors).toEqual([])
 })

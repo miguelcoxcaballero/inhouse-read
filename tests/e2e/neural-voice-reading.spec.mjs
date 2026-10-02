@@ -29,7 +29,7 @@ const numbers = {}
 const squash = text => String(text).replace(/\s+/g, '')
 
 // ---- Instrumentation, installed before the app starts. It only OBSERVES: Web Audio sources, 'inhouse-tts' events, the
-// ---- sentence highlight, progress bars and frame cadence; the speechSynthesis stand-in is the "system voice" of the test.
+// ---- sentence highlight, progress bars and frame cadence; available device APIs are observed to ensure reading never invokes them.
 function instrument({ base }) {
   if (base) window.INHOUSE_NEURAL_VOICE_BASE = base
   const neu = window.__neu = { audio: [], stops: 0, events: [], progress: [], speak: [], tap: 0, frames: [], longTasks: [] }
@@ -57,33 +57,16 @@ function instrument({ base }) {
   setInterval(() => { const bar = document.querySelector('[role="progressbar"]'); if (bar) neu.progress.push(Number(bar.getAttribute('aria-valuenow'))) }, 40)
   try { new PerformanceObserver(list => { for (const entry of list.getEntries()) neu.longTasks.push(entry.duration) }).observe({ type: 'longtask', buffered: true }) } catch { /* not supported */ }
 
-  // Automatic completion for the reading tests; hold a fragment when testing a voice switch so the tiny book cannot end
-  // during a silence assertion. Cancellation also invalidates a start still queued in the microtask queue.
-  const log = [], state = { ms: 250, hold: false }
-  window.__tts = { log, state, finish: () => state.finish?.() }
-  window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text } }
-  Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: {
-    getVoices: () => [{ name: 'Sistema', lang: 'es-ES', voiceURI: 'sistema-es', localService: true }], addEventListener() {}, removeEventListener() {}, pause() {}, resume() {},
-    cancel() { clearTimeout(state.pending); state.utterance = null; state.finish = null },
-    speak(utterance) {
-      const entry = { text: utterance.text, highlight: '' }
-      log.push(entry)
-      state.utterance = utterance
-      Promise.resolve().then(() => {
-        if (state.utterance !== utterance) return
-        utterance.onstart?.({})
-        entry.highlight = window.__speechHighlight()
-        const finish = () => {
-          if (state.utterance !== utterance) return
-          clearTimeout(state.pending)
-          state.utterance = null; state.finish = null
-          utterance.onend?.({})
-        }
-        state.finish = finish
-        if (!state.hold) state.pending = setTimeout(finish, state.ms)
-      })
-    }
+  // Both legacy APIs are present. They record forbidden handovers and never simulate speech events.
+  window.__tts={ log:[] }
+  window.SpeechSynthesisUtterance=class { constructor(text) { this.text=text } }
+  Object.defineProperty(window,'speechSynthesis',{ configurable:true,value:{
+    getVoices:()=>[{ name:'Sistema',lang:'es-ES',voiceURI:'sistema-es',localService:true }],
+    addEventListener() {},removeEventListener() {},cancel() {},speak:utterance=>window.__tts.log.push({ text:utterance.text })
   } })
+  window.InhouseSpeech={ getVoices:()=>JSON.stringify([{ name:'Sistema',lang:'es-ES',voiceURI:'sistema-es',quality:500,installed:true }]),
+    stop() {},speak:(...args)=>window.__tts.log.push({ native:args }) }
+
 }
 
 // ---- Page helpers -------------------------------------------------------------------------------------------------------
@@ -173,6 +156,58 @@ test.afterAll(() => {
   writeFileSync(join(EVIDENCE, 'numbers.json'), JSON.stringify(numbers, null, 2))
 })
 
+test('Argentina: Daniela starts cold and continues with real natural audio at rates 1 and 1.25', async ({ browser }) => {
+  const model='es_AR-daniela-high', id=`piper:${model}`
+  if (!haveVoice(model)) throw new Error(`Required Argentina fixture missing: ${model} in ${FIXTURES}`)
+  test.setTimeout(300_000)
+  const mirror=await startHuggingFaceMirror({ voices:[model], sliceMs:0 })
+  const context=await browser.newContext({ viewport:{ width:390,height:844 }, reducedMotion:'reduce' })
+  context.setDefaultTimeout(30_000)
+  await context.addInitScript(instrument,{ base:mirror.base })
+  await context.addInitScript(() => {
+    window.__nativeSpoken=[]
+    window.InhouseSpeech={
+      getVoices:()=>JSON.stringify([{ voiceURI:'device-ar',name:'Dispositivo',lang:'es-AR',quality:500,installed:true }]),
+      speak:(...args)=>window.__nativeSpoken.push(args), stop() {}
+    }
+    if (window.top===window) localStorage.setItem('inhouse-read-neural-slow',JSON.stringify({ rate:1,at:Date.now() }))
+  })
+  const page=await context.newPage(), errors=[]
+  page.on('pageerror',error=>errors.push(error.message))
+  try {
+    await open(page,EPUB); await openAudio(page)
+    await row(page,id).getByRole('button',{ name:/Descargar la voz Daniela/ }).click()
+    await expect(row(page,id).getByRole('button',{ name:/Voz en uso Daniela/ })).toBeVisible(SLOW)
+    for (const [rate,label] of [[1,'1×'],[1.25,'1,25×']]) {
+      await open(page,EPUB); await openAudio(page); await pickVoice(page,id)
+      await page.getByRole('radio',{ name:label,exact:true }).check()
+      await spyOnEngine(page)
+      await expect.poll(()=>page.evaluate(()=>window.__neuEngine.core.client?.loaded || ''),SLOW).toBe(model)
+      await page.evaluate(()=>{
+        const core=window.__neuEngine.core
+        core.client.dispose(); core.client=null
+        window.__neu.audio.length=0; window.__neu.events.length=0; window.__neu.speak.length=0
+      })
+      await play(page)
+      await expect.poll(async()=>(await starts(page)).length,{ timeout:180_000 }).toBeGreaterThanOrEqual(3)
+      const requests=await neu(page,n=>n.speak), events=await neu(page,n=>n.events)
+      expect(requests.length).toBeGreaterThanOrEqual(3)
+      expect(requests.every(request=>request.voiceId===id && request.rate===rate)).toBe(true)
+      expect(events.filter(event=>event.type==='error')).toEqual([])
+      expect(await systemSpoken(page)).toBe(0)
+      expect(await page.evaluate(()=>window.__nativeSpoken)).toEqual([])
+      expect(await page.evaluate(()=>localStorage.getItem('inhouse-read-neural-slow'))).toBeNull()
+      const audio=await expectCleanAudio(page,`Daniela ${rate}`)
+      expect((await starts(page)).every(event=>event.highlight)).toBe(true)
+      const timing=await neu(page,n=>({ tapToAudioScheduledMs:Math.round(n.audio[0].at-n.tap),tapToStartEventMs:Math.round(n.events.find(event=>event.type==='start').at-n.tap) }))
+      numbers[`argentina${rate}`]={ ...timing,chunks:audio.length,starts:(await starts(page)).length,engine:await engineStats(page),deviceCalls:0 }
+      await shot(page,`argentina-${rate}-speaking`)
+      await page.getByRole('button',{ name:'Detener',exact:true }).click()
+    }
+    expect(errors).toEqual([])
+  } finally { await context.close(); await mirror.close() }
+})
+
 test.describe('natural voices, end to end (real picker, download, engine and audio)', () => {
   test.describe.configure({ mode: 'serial' })
   test.skip(!haveVoice(CLAUDE), `fixtures not found in ${FIXTURES} (set NEURAL_VOICE_FIXTURES)`)
@@ -181,7 +216,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
   let context, page, mirror
   const errors = []
   test.beforeAll(async ({ browser }) => {
-    mirror = await startHuggingFaceMirror({ voices: [CLAUDE], sliceMs: 60 })
+    mirror = await startHuggingFaceMirror({ voices: [CLAUDE,DAVEFX], sliceMs: 60 })
     // One browser context for the whole story: Cache Storage (the downloaded voice), the saved voice and the speed survive its reloads.
     context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' })
     context.setDefaultTimeout(30_000)
@@ -350,60 +385,46 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     expect(errors).toEqual([])
   })
 
-  test('switching to a system voice in the middle of the reading, and back', async () => {
-    await open(page, EPUB)
-    await openAudio(page)
-    // This regression must also work when selected with --grep, without the picker's earlier installation test.
-    await expect(row(page, CLAUDE_ID)).toBeVisible(SLOW)
-    const download = row(page, CLAUDE_ID).getByRole('button', { name: /Descargar la voz Claude/ })
-    if (await download.isVisible()) await download.click()
-    await expect(row(page, CLAUDE_ID).getByRole('button', { name: /(Voz en uso|Elegir la voz) Claude/ })).toBeVisible(SLOW)
-    await pickVoice(page, CLAUDE_ID)
-    await spyOnEngine(page)
-    await page.getByRole('radio', { name:'1,25×', exact:true }).check()
-    await page.evaluate(() => { window.__tts.state.hold = true })
+  test('switching between two natural voices preserves the current fragment and cancels old audio', async () => {
+    if (!haveVoice(DAVEFX)) throw new Error('Required Davefx fixture is missing')
+    await open(page,EPUB); await openAudio(page)
+    for (const [id,name] of [[CLAUDE_ID,'Claude'],[DAVEFX_ID,'Davefx']]) {
+      const download=row(page,id).getByRole('button',{ name:new RegExp('Descargar la voz '+name) })
+      if(await download.isVisible()) await download.click()
+      await expect(row(page,id).getByRole('button',{ name:new RegExp('(Voz en uso|Elegir la voz) '+name) })).toBeVisible(SLOW)
+    }
+    await pickVoice(page,CLAUDE_ID); await spyOnEngine(page)
+    await page.getByRole('radio',{ name:'1,25×',exact:true }).check()
     await play(page)
-    await expect.poll(async () => (await starts(page)).length, SLOW).toBeGreaterThan(0)
-
-    await pickVoice(page, 'sistema-es')
-    await expect.poll(() => systemSpoken(page), SLOW).toBe(1)
-    // Observe after the selection: normal neural progress while the dropdown was being opened is not a failed cancellation.
-    const neuralStarts = (await starts(page)).length, speaks = (await neu(page, n => n.speak)).length
-    const scheduledAtSwitch = await neu(page, n => n.audio.length)
-    expect(await page.evaluate(() => window.__tts.log[0].text)).toBe((await neu(page, n => n.speak)).at(-1).text)
-    await expect.poll(() => page.evaluate(() => Boolean(window.__tts.state.finish))).toBe(true)
-    await page.evaluate(() => window.__tts.finish())
-    await expect.poll(() => systemSpoken(page), SLOW).toBe(2) // the system voice carries on to the next fragment
-    const quiet = await eventCount(page)
-    await page.waitForTimeout(1200)
-    expect((await types(page, quiet)).includes('start')).toBe(false) // and it is silent: no neural start after the switch
-    expect((await neu(page, n => n.speak)).length).toBe(speaks)
-    expect(await neu(page, n => n.audio.length)).toBe(scheduledAtSwitch)
-    expect((await engineStats(page)).status).toBe('idle')
-    await expect.poll(() => page.evaluate(() => window.__speechHighlight()), SLOW).not.toBe('') // the highlight still follows
-    expect(await starts(page)).toHaveLength(neuralStarts)
-    await expect(page.getByRole('button', { name: 'Pausar', exact: true })).toBeVisible()
-
-    // Back to the natural voice: the same current fragment is resumed with the chosen speed, with real audible audio.
-    const currentFragment = await page.evaluate(() => window.__tts.log.at(-1).text)
-    await pickVoice(page, CLAUDE_ID)
-    await expect.poll(async () => (await neu(page, n => n.speak)).length, SLOW).toBeGreaterThan(speaks)
-    await expect.poll(async () => (await starts(page)).length, SLOW).toBeGreaterThan(neuralStarts)
-    expect((await neu(page, n => n.speak))[speaks]).toMatchObject({ text: currentFragment, voiceId: CLAUDE_ID, rate: 1.25 })
-    await expect.poll(() => neu(page, n => n.audio.length), SLOW).toBeGreaterThan(scheduledAtSwitch)
-    await expectCleanAudio(page, 'resumed after system voice')
-    await shot(page, 'voice-switch-resumed')
-    numbers.voiceSwitch = { neuralStartsBeforeSystem: neuralStarts, neuralRequestsBeforeSystem: speaks,
-      systemFragments: await systemSpoken(page), resumedFragment: currentFragment }
-    // Leaving the book while the natural voice speaks silences it for good (the reader's own stop, nothing keeps playing on the shelf).
-    await closePanel(page)
-    await page.locator('#reader-back').click()
-    await expect(page.getByRole('heading', { name:'Biblioteca' })).toBeVisible(SLOW)
-    await expect.poll(async () => (await engineStats(page)).status, SLOW).toBe('idle')
-    const left = await eventCount(page), scheduled = await neu(page, n => n.audio.length)
+    await expect.poll(async()=>(await starts(page)).length,SLOW).toBeGreaterThan(0)
+    await pickVoice(page,DAVEFX_ID)
+    const switching=await neu(page,n=>{
+      const index=n.speak.findIndex(request=>request.voiceId==='piper:es_ES-davefx-medium')
+      return { request:n.speak[index],previous:n.speak[index-1],oldIds:n.speak.slice(0,index).map(request=>request.id) }
+    })
+    expect(switching.request).toMatchObject({ voiceId:DAVEFX_ID,rate:1.25,text:switching.previous.text })
+    await expect.poll(()=>neu(page,(n,id)=>n.events.some(event=>event.type==='start'&&event.id===id),switching.request.id),SLOW).toBe(true)
+    expect(await neu(page,(n,data)=>n.events.filter(event=>event.type==='start'&&data.oldIds.includes(event.id)&&event.at>data.request.at),switching)).toEqual([])
+    expect(await neu(page,n=>n.stops)).toBeGreaterThan(0)
+    await expect.poll(()=>page.evaluate(()=>window.__speechHighlight()),SLOW).not.toBe('')
+    await pickVoice(page,CLAUDE_ID)
+    const resumed=await neu(page,(n,after)=>{
+      const index=n.speak.findIndex(request=>request.voiceId==='piper:es_MX-claude-high'&&request.at>after)
+      return { request:n.speak[index],previous:n.speak[index-1] }
+    },switching.request.at)
+    expect(resumed.request).toMatchObject({ voiceId:CLAUDE_ID,rate:1.25,text:resumed.previous.text })
+    await expect.poll(()=>neu(page,(n,id)=>n.events.some(event=>event.type==='start'&&event.id===id),resumed.request.id),SLOW).toBe(true)
+    await expectCleanAudio(page,'resumed natural voice')
+    expect(await systemSpoken(page)).toBe(0)
+    numbers.voiceSwitch={ first:switching.request,back:resumed.request,deviceCalls:0 }
+    await shot(page,'voice-switch-resumed')
+    await closePanel(page); await page.locator('#reader-back').click()
+    await expect(page.getByRole('heading',{ name:'Biblioteca' })).toBeVisible(SLOW)
+    await expect.poll(async()=>(await engineStats(page)).status,SLOW).toBe('idle')
+    const left=await eventCount(page),scheduled=await neu(page,n=>n.audio.length)
     await page.waitForTimeout(2000)
-    expect((await types(page, left)).filter(type => type !== 'done')).toEqual([])
-    expect(await neu(page, n => n.audio.length)).toBe(scheduled)
+    expect((await types(page,left)).filter(type=>type!=='done')).toEqual([])
+    expect(await neu(page,n=>n.audio.length)).toBe(scheduled)
     expect(errors).toEqual([])
   })
 
@@ -534,31 +555,39 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     expect(mirror.hits.length).toBe(hitsBefore) // not a single request reached the voice host
     // Trying to download another voice says so in Spanish instead of failing silently.
     await openAudioMenu(page, 'Voz')
-    await row(page, DAVEFX_ID).getByRole('button', { name: /Descargar la voz Davefx/ }).click()
-    await expect(row(page, DAVEFX_ID).getByRole('alert')).toHaveText('Sin conexión.', SLOW)
-    await expect(row(page, DAVEFX_ID).getByRole('button', { name: /Reintentar la descarga de Davefx/ })).toBeVisible()
+    const missing='piper:es_AR-daniela-high'
+    await row(page, missing).getByRole('button', { name: /Descargar la voz Daniela/ }).click()
+    await expect(row(page, missing).getByRole('alert')).toHaveText('Sin conexión.', SLOW)
+    await expect(row(page, missing).getByRole('button', { name: /Reintentar la descarga de Daniela/ })).toBeVisible()
     await shot(page, 'offline-error')
     await page.getByRole('button', { name: 'Detener', exact: true }).click()
     await context.unroute(`${mirror.origin}/**`)
     numbers.offline = { requestsToVoiceHost: mirror.hits.length - hitsBefore, abortedFetches: failed.length }
   })
 
-  test('removing the voice in use goes back to Automática and reading carries on with the system voice', async () => {
-    await open(page, EPUB)
-    await openAudio(page)
-    await row(page, CLAUDE_ID).getByRole('button', { name: /Quitar la voz Claude/ }).click()
-    await expect(row(page, CLAUDE_ID).getByRole('button', { name: /Descargar la voz Claude/ })).toBeVisible(SLOW)
-    await expect(selectedOption(page)).toHaveAttribute('data-value', '')
+  test('removing the natural voice in use pauses and the next Play chooses another installed natural voice', async () => {
+    await open(page,EPUB); await openAudio(page); await spyOnEngine(page)
+    await pickVoice(page,CLAUDE_ID); await play(page)
+    await expect.poll(async()=>(await starts(page)).length,SLOW).toBeGreaterThan(0)
+    await openAudioMenu(page,'Voz')
+    await row(page,CLAUDE_ID).getByRole('button',{ name:/Quitar la voz Claude/ }).click()
+    await expect(row(page,CLAUDE_ID).getByRole('button',{ name:/Descargar la voz Claude/ })).toBeVisible(SLOW)
+    await expect(selectedOption(page)).toHaveAttribute('data-value','')
+    await expect(page.locator('.reading-audio-status')).toContainText('Voz natural quitada')
+    const stoppedAudio=await neu(page,n=>n.audio.length)
+    await page.waitForTimeout(1200)
+    expect(await neu(page,n=>n.audio.length)).toBe(stoppedAudio)
     await play(page)
-    await expect.poll(() => systemSpoken(page), SLOW).toBeGreaterThan(0)
-    await page.getByRole('button', { name: 'Detener', exact: true }).click()
+    await expect.poll(async()=>(await neu(page,n=>n.speak)).at(-1)?.voiceId,SLOW).toBe(DAVEFX_ID)
+    await expect.poll(()=>neu(page,n=>n.audio.length),SLOW).toBeGreaterThan(stoppedAudio)
+    expect(await systemSpoken(page)).toBe(0)
+    await page.getByRole('button',{ name:'Detener',exact:true }).click()
   })
 })
 
 // The default Hugging Face URLs (no INHOUSE_NEURAL_VOICE_BASE): the layout the app really requests, answered by route interception.
-// This is also the owner's first-use journey: the audiobook starts with the system voice, the offer card appears, one tap
-// downloads the recommended voice and the natural voice takes over at the next fragment without stopping the reading.
-test('default Hugging Face URLs and the first-use offer: one tap downloads the voice and it takes over mid-reading; a second voice speaks too', async ({ browser }) => {
+// First-use journey: download the recommended natural voice, then explicitly start its audio.
+test('default Hugging Face URLs and first use: download then Play uses natural audio; a second natural voice speaks too', async ({ browser }) => {
   test.skip(!haveVoice(DAVEFX), `fixture ${DAVEFX} not found in ${FIXTURES}`)
   test.setTimeout(280_000)
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' })
@@ -577,11 +606,12 @@ test('default Hugging Face URLs and the first-use offer: one tap downloads the v
     return route.fulfill({ status: 404, headers, body: 'not found' })
   })
   await open(page, EPUB)
-  await page.evaluate(() => { window.__tts.state.ms = 2500 }) // the system voice reads slowly: the download finishes while it is speaking
   await openAudio(page)
   await page.getByRole('radio', { name:'1,25×', exact:true }).check()
   await play(page)
-  await expect.poll(() => systemSpoken(page), SLOW).toBeGreaterThan(0) // the system voice carries the first fragments
+  await expect(page.locator('.reading-audio-status')).toContainText('Descarga una voz natural')
+  expect(await systemSpoken(page)).toBe(0)
+  expect(await starts(page)).toEqual([])
   const offer = page.locator('[data-neural-offer]')
   await expect(offer).toBeVisible(SLOW)
   await expect(offer).toContainText('Voz natural · 63 MB')
@@ -591,12 +621,10 @@ test('default Hugging Face URLs and the first-use offer: one tap downloads the v
   await expect(selectedOption(page)).toHaveAttribute('data-value', CLAUDE_ID)
   expect(requested.filter(url => !url.endsWith('voices.json')).sort()).toEqual([`${ROOT}${hfPath(CLAUDE)}.onnx`, `${ROOT}${hfPath(CLAUDE)}.onnx.json`].sort())
   await spyOnEngine(page)
-  // The natural voice takes over at the next fragment, while the audiobook keeps playing.
+  await play(page) // installation is explicit; so is the first playback
   await expect.poll(async () => (await starts(page)).length, SLOW).toBeGreaterThan(1)
   expect((await neu(page, n => n.speak))[0]).toMatchObject({ voiceId: CLAUDE_ID, rate: 1.25 })
-  const spokenBySystem = await systemSpoken(page)
-  await page.waitForTimeout(3000)
-  expect(await systemSpoken(page)).toBe(spokenBySystem) // the system voice is not used again
+  expect(await systemSpoken(page)).toBe(0)
   await expect(page.getByRole('button', { name: 'Pausar', exact: true })).toBeVisible()
   expect((await starts(page)).every(entry => entry.highlight)).toBe(true)
   await expectCleanAudio(page, 'first use')

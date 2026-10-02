@@ -1,4 +1,4 @@
-name: Verify published Android login
+name: Verify published Android login and reader
 
 on:
   workflow_dispatch:
@@ -6,10 +6,14 @@ on:
       version:
         description: Published APK version to verify
         required: true
-        default: '1.0.14'
+        default: '1.1.3'
+      fixture_run_id:
+        description: Android build run containing the intent fixture for reader verification
+        required: false
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   verify:
@@ -30,6 +34,15 @@ jobs:
           gh release download "android-v$VERSION" --pattern '*.apk' --output published.apk
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr
+      - name: Download the reader import fixture from its build
+        if: inputs.fixture_run_id != ''
+        env:
+          FIXTURE_RUN_ID: ${{ inputs.fixture_run_id }}
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$FIXTURE_RUN_ID" =~ ^[0-9]+$ ]]
+          gh run download "$FIXTURE_RUN_ID" --name "inhouse-read-android-intent-fixture-v$VERSION" --dir .
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -50,6 +63,16 @@ jobs:
           profile: pixel_4
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server ${{ steps.runner-dns.outputs.servers }}
           script: python -u .github/scripts/verify_android_app.py published.apk --google-login
+      - name: Verify the published reader display policy
+        if: inputs.fixture_run_id != ''
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_4
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server ${{ steps.runner-dns.outputs.servers }}
+          script: python -u .github/scripts/verify_android_app.py published.apk --reading-display
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -62,3 +85,4 @@ jobs:
             android-google-login.xml
             android-google-login.txt
             android-logcat.txt
+            android-reading-*

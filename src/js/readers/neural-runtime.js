@@ -1,7 +1,9 @@
 // The reader's single doorway to the on-device neural voice engine (neural-voice/index.js).
 // The engine is imported lazily and every call here is guarded: if the module cannot load (offline chunk, old WebView) or
-// misbehaves, the voices simply are not there and reading goes on with the system voices. Nothing downloads from here.
+// misbehaves, reading reports the failure and can retry. Nothing downloads from here.
 import { normalizeNeuralVoice } from './voice-catalog.js'
+import { neuralVoices } from './neural-voice/catalog.js'
+import { unlockAudio } from './neural-voice/audio.js'
 
 let engineModule = null, loading = null
 
@@ -31,12 +33,11 @@ export function neuralEngine() {
   } catch { return null }
 }
 
-/** Every catalogue voice as a voice object (installed or not); empty when the engine is missing or unsupported. */
+/** The natural catalogue is available before the heavy engine loads; only its installed state depends on that engine. */
 export function neuralVoiceList(engine = neuralEngine()) {
   try {
-    if (!engine) return []
-    const installed = engine.installed
-    return engineModule.neuralVoices.map(entry => normalizeNeuralVoice(entry, installed)).filter(Boolean)
+    const installed = engine?.installed || []
+    return (engineModule?.neuralVoices || neuralVoices).map(entry => normalizeNeuralVoice(entry, installed)).filter(Boolean)
   } catch { return [] }
 }
 
@@ -47,5 +48,5 @@ export function neuralReady(engine = neuralEngine()) {
 
 /** Creates/resumes the engine's AudioContext. Call synchronously inside a user gesture; never throws. */
 export function unlockNeural() {
-  try { const engine = neuralEngine(); if (neuralReady(engine)) engine.unlock() } catch { /* audio stays locked: the system voice still works */ }
+  try { const engine = neuralEngine(); if (engine) engine.unlock(); else unlockAudio() } catch { /* a later tap can unlock audio again */ }
 }

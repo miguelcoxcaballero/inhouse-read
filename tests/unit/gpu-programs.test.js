@@ -62,6 +62,21 @@ describe('compilePrograms', () => {
     expect(renderer.calls[0].target).toBe(null);
   });
 
+  it('prepares an explicitly supplied hidden interaction without making it visible or linking it twice', () => {
+    const scene = new THREE.Scene(), shown = mesh(new THREE.MeshStandardMaterial());
+    const group = new THREE.Group(); group.visible = false;
+    const guide = mesh(new THREE.MeshBasicMaterial({ transparent:true })); group.add(guide); scene.add(shown, group);
+    const linking = program(false);
+    const renderer = fakeRenderer(new Map([[guide.material, new Map([['guide', linking]])]]));
+    const ready = compilePrograms(renderer, scene, new THREE.PerspectiveCamera(), [guide, guide]);
+    expect(renderer.calls).toHaveLength(1);
+    expect(renderer.calls[0].meshes).toEqual([shown, guide]);
+    expect(group.visible).toBe(false);
+    expect(ready()).toBe(false);
+    linking.ready = true;
+    expect(ready()).toBe(true);
+  });
+
   it('reports ready only when every linked program has finished', () => {
     const scene = new THREE.Scene(), material = new THREE.MeshStandardMaterial();
     const slow = program(false), fast = program(true);

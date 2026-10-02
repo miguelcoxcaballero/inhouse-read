@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Verify that the signed APK actually renders the live app in Android."""
 
+import argparse
+import json
 import re
 import subprocess
-import sys
 import time
 from pathlib import Path
 from xml.etree import ElementTree
@@ -123,19 +124,160 @@ def dismiss_emulator_launcher_anr(root):
     return False
 
 
-def verify_webview_bounds(root):
+def webview_bounds(root):
     for node in root.iter("node"):
         if node.attrib.get("class") != "android.webkit.WebView":
             continue
         bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
         if not bounds:
             continue
-        top = int(bounds.group(2))
-        if top <= 0:
-            raise AssertionError("The WebView overlaps the Android status bar")
-        print(f"Android status bar reserved above WebView: {top} pixels")
-        return
+        return tuple(map(int, bounds.groups()))
     raise AssertionError("The signed APK did not display its WebView")
+
+
+def verify_webview_bounds(root, reading=False):
+    bounds = webview_bounds(root)
+    top = bounds[1]
+    if reading:
+        assert top == 0, f"Reader retained a native top inset: {bounds}"
+    else:
+        assert top > 0, "The WebView overlaps the Android status bar"
+    print(f"Android WebView bounds (reading={reading}): {bounds}")
+    return bounds
+
+
+def android_window_state(windows, displays):
+    """Read the actual app window and display inset source on Android 15.
+
+    WindowState.dump prints the XOR with defaultVisible(), not the requested
+    mask itself: statusBars in that line means the normally visible bar was
+    requested hidden. Keep both the request and the real source visibility.
+    """
+    app_windows = []
+    for block in re.split(r"(?m)^\s{2}Window #\d+ ", windows)[1:]:
+        title = block.splitlines()[0]
+        if re.search(r"com\.inhousesoftware\.read/(?:com\.inhousesoftware\.read\.)?\.?MainActivity\}", title):
+            app_windows.append(block)
+    assert len(app_windows) == 1, f"Expected one native MainActivity window, found {len(app_windows)}"
+    app_window = app_windows[0]
+    flags = re.search(r"(?m)^\s+fl=([^\r\n]*)", app_window)
+    assert flags, "MainActivity window flags were absent from dumpsys"
+    changed = re.search(r"Requested non-default-visibility types:\s*([^\r\n]*)", app_window)
+    changed_types = changed.group(1).split() if changed else []
+    # Restrict visibility to the display controller's raw InsetsState; copies
+    # in source providers or unrelated windows must never satisfy this check.
+    controllers = re.findall(r"WindowInsetsStateController\s+(.*?)\s+Control map:", displays, re.S)
+    assert len(controllers) == 1, f"Expected one emulator display inset controller, found {len(controllers)}"
+    status = re.findall(r"InsetsSource[^\r\n]*\btype=statusBars\b[^\r\n]*\bvisible=(true|false)\b", controllers[0])
+    assert len(status) == 1, f"Expected one real status bar inset source, found {len(status)}"
+    focus = re.search(r"\bmCurrentFocus=([^\r\n]+)", windows + "\n" + displays)
+    assert focus, "Focused Android window was absent from dumpsys"
+    return {
+        "window": app_window.splitlines()[0],
+        "flags": flags.group(1).strip(),
+        "keepScreenOn": "KEEP_SCREEN_ON" in flags.group(1).split(),
+        "requestedNonDefaultTypes": changed_types,
+        "statusBarRequestedVisible": "statusBars" not in changed_types,
+        "statusBarVisible": status[0] == "true",
+        "appFocused": bool(re.search(r"com\.inhousesoftware\.read/", focus.group(1))),
+    }
+
+
+def assert_reading_window_state(state, reading, foreground=True):
+    assert state["appFocused"] == foreground, f"Unexpected focused window: {state}"
+    assert state["keepScreenOn"] == reading, f"KEEP_SCREEN_ON was wrong: {state}"
+    assert state["statusBarRequestedVisible"] == (not reading), f"Status bar request was wrong: {state}"
+    assert state["statusBarVisible"] == (not reading), f"Actual status bar visibility was wrong: {state}"
+
+
+def wait_for_reading_display(label, reading, foreground=True, timeout=45):
+    deadline = time.monotonic() + timeout
+    prefix = "android-reading-" + label
+    last_error = None
+    while True:
+        root = capture(Path(prefix + ".png"), Path(prefix + ".xml"))
+        windows = run("adb", "shell", "dumpsys", "window", "windows").stdout
+        displays = run("adb", "shell", "dumpsys", "window", "displays").stdout
+        Path(prefix + "-windows.txt").write_text(windows, encoding="utf-8")
+        Path(prefix + "-displays.txt").write_text(displays, encoding="utf-8")
+        try:
+            state = android_window_state(windows, displays)
+            assert_reading_window_state(state, reading, foreground)
+            if foreground:
+                state["webViewBounds"] = verify_webview_bounds(root, reading)
+                reader_visible = bool(re.search(r"Volver a la estanter.a", node_text(root)))
+                assert reader_visible == reading, "The real reader/shelf UI has not settled"
+            Path(prefix + ".json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+            print(f"Android reading display verified ({label}): {json.dumps(state)}", flush=True)
+            return root
+        except AssertionError as error:
+            last_error = error
+            Path(prefix + ".json").write_text(json.dumps({"error": str(error)}, indent=2) + "\n", encoding="utf-8")
+        if time.monotonic() >= deadline:
+            raise AssertionError(f"Android reading display did not settle ({label}): {last_error}")
+        time.sleep(2)
+
+
+def return_to_bookshelf(root):
+    for node in root.iter("node"):
+        if not re.fullmatch(r"Volver a la estanter.a", node_text(node).strip()):
+            continue
+        bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if bounds and node.attrib.get("enabled") == "true":
+            left, top, right, bottom = map(int, bounds.groups())
+            run("adb", "shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
+            return
+    raise AssertionError("The loaded document had no usable return-to-bookshelf control")
+
+
+def open_fixture_document(mode):
+    run("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read.intentfixture/.MainActivity", "--es", "mode", mode)
+    for attempt in range(24):
+        time.sleep(3)
+        root = capture(Path("android-import-" + mode + ".png"), Path("android-import-" + mode + ".xml"))
+        text = node_text(root)
+        # Offline fixture has no Google account: dismiss external login and
+        # its cancellation notice, while preserving the imported local book.
+        if re.search(r"accounts.google.com|Use without an account|No thanks", text):
+            run("adb", "shell", "input", "keyevent", "4")
+            continue
+        if re.search(r"No se pudo conectar|No se pudo sincronizar", text):
+            run("adb", "shell", "input", "keyevent", "66")
+            continue
+        # The document title is assigned only after reader.open renders the
+        # real page and the imported record is saved to IndexedDB.
+        if re.search(r"Volver a la estanter.a", text) and re.search("Intent " + mode, text, re.I):
+            print(f"Actual content URI imported successfully: {mode}")
+            return root
+    log = run("adb", "logcat", "-d").stdout
+    Path("android-logcat.txt").write_text(log, encoding="utf-8")
+    print(run("adb", "shell", "dumpsys", "webviewupdate").stdout, flush=True)
+    print("\n".join(line for line in log.splitlines() if re.search(r"chromium|Capacitor/Console|BookImport|Uncaught|SyntaxError", line))[-16000:], flush=True)
+    raise AssertionError(f"{mode} import failed: {text[:2000]}")
+
+
+def verify_loaded_reader_display(mode, background=False):
+    root = wait_for_reading_display(mode + "-reader", reading=True)
+    if background:
+        # Home exercises Activity.onPause without destroying the document.
+        # Returning must reapply the policy to the same open real PDF.
+        run("adb", "shell", "input", "keyevent", "KEYCODE_HOME")
+        wait_for_reading_display("background", reading=False, foreground=False)
+        run("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read/.MainActivity")
+        root = wait_for_reading_display("resumed-reader", reading=True)
+        assert re.search("Intent " + mode, node_text(root), re.I), "Returning from Home lost the loaded document"
+    return_to_bookshelf(root)
+    wait_for_reading_display(mode + "-shelf-after", reading=False)
+
+
+def verify_reading_display():
+    # The separate sender APK is a CI artifact, never a release asset. This
+    # independent scenario can verify the actual downloaded, signed APK.
+    assert Path("intent-fixture-debug.apk").is_file(), "Reading display verification needs intent-fixture-debug.apk from the same build run"
+    wait_for_reading_display("shelf-before", reading=False)
+    run("adb", "install", "-r", "intent-fixture-debug.apk")
+    open_fixture_document("reading")
+    verify_loaded_reader_display("reading", background=True)
 
 
 def verify_book_imports():
@@ -158,39 +300,22 @@ def verify_book_imports():
     chooser = capture(Path("android-open-with.png"), Path("android-open-with.xml"))
     assert "Inhouse Read" in node_text(chooser), "Read was absent from Android's real Open with chooser"
     run("adb", "shell", "input", "keyevent", "4")
+    wait_for_reading_display("shelf-before", reading=False)
     for mode in ("cold", "warm", "share"):
         if mode == "cold": run("adb", "shell", "am", "force-stop", "com.inhousesoftware.read")
-        run("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read.intentfixture/.MainActivity", "--es", "mode", mode)
-        for attempt in range(24):
-            time.sleep(3)
-            root = capture(Path("android-import-" + mode + ".png"), Path("android-import-" + mode + ".xml"))
-            text = node_text(root)
-            # Offline fixture has no Google account: dismiss external login and
-            # its cancellation notice, while preserving the imported local book.
-            if re.search(r"accounts.google.com|Use without an account|No thanks", text):
-                run("adb", "shell", "input", "keyevent", "4")
-                continue
-            if re.search(r"No se pudo conectar|No se pudo sincronizar", text):
-                run("adb", "shell", "input", "keyevent", "66")
-                continue
-            # The compact reader deliberately hides its format badge. The
-            # real document title is assigned only after reader.open renders
-            # the page and the imported record is saved to IndexedDB.
-            if re.search(r"Volver a la estanter.a", text) and re.search("Intent " + mode, text, re.I):
-                print(f"Actual content URI imported successfully: {mode}")
-                break
-        else:
-            log = run("adb", "logcat", "-d").stdout
-            Path("android-logcat.txt").write_text(log, encoding="utf-8")
-            print(run("adb", "shell", "dumpsys", "webviewupdate").stdout, flush=True)
-            print("\n".join(line for line in log.splitlines() if re.search(r"chromium|Capacitor/Console|BookImport|Uncaught|SyntaxError", line))[-16000:], flush=True)
-            raise AssertionError(f"{mode} import failed: {text[:2000]}")
+        open_fixture_document(mode)
+        verify_loaded_reader_display(mode, background=(mode == "cold"))
 
 
 def main():
-    if len(sys.argv) not in (2, 3):
-        raise SystemExit("Usage: verify_android_app.py <signed-apk> [--google-login|--book-imports]")
-    run("adb", "install", "-r", sys.argv[1])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("apk", help="The signed APK to install and verify")
+    scenario = parser.add_mutually_exclusive_group()
+    scenario.add_argument("--google-login", action="store_true")
+    scenario.add_argument("--book-imports", action="store_true")
+    scenario.add_argument("--reading-display", action="store_true")
+    args = parser.parse_args()
+    run("adb", "install", "-r", args.apk)
     run("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read/.MainActivity")
     time.sleep(25)
     for attempt in range(15):
@@ -224,10 +349,12 @@ def main():
         # empty shelf is created by JS and proves the app is actually ready.
         if interactive_bookshelf_visible(root):
             print("Published APK loaded the interactive bookshelf")
-            if "--google-login" in sys.argv:
+            if args.google_login:
                 verify_google_login(root)
-            if "--book-imports" in sys.argv:
+            if args.book_imports:
                 verify_book_imports()
+            if args.reading_display:
+                verify_reading_display()
             return
         time.sleep(5)
     Path("android-logcat.txt").write_text(run("adb", "logcat", "-d").stdout, encoding="utf-8")

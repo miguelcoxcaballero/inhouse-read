@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { fakeEngineScript } from '../helpers/fake-neural-engine.js'
 
 for (const layout of [
   {name:'compact',width:320,height:568,theme:'paper'},
@@ -8,9 +9,9 @@ for (const layout of [
   test.setTimeout(60_000)
   await page.setViewportSize(layout)
   await page.emulateMedia({reducedMotion:'reduce'})
+  await page.addInitScript(fakeEngineScript({ installed:['piper:en_US-lessac-high'], hold:true }))
   await page.addInitScript(theme => {
     localStorage.setItem('inhouse-read-reading-preferences',JSON.stringify({theme,pdfMode:'text'}))
-    window.InhouseSpeech={getVoices:()=> '[]',stop:()=>{},speak:()=>{}}
   },layout.theme)
   const errors=[]; page.on('pageerror',e=>errors.push(e.message))
   await page.goto('./')

@@ -75,7 +75,6 @@ export const readerPanelMarkup = `
     <div class="reading-neural-offer" data-neural-offer hidden></div>
     <div class="reading-row reading-speed" role="radiogroup" aria-label="Velocidad">${RATE_STEPS.map(step => `<label class="reading-speed__step"><input type="radio" name="reading-rate" value="${step}" data-rate><span>${rateLabel(step)}</span></label>`).join('')}</div>
     <div class="reading-voice-menus" data-voice-menus></div>
-    <div class="reading-voice-info" data-voice-info hidden><button type="button" class="reading-text-button" data-voice-settings hidden>Instalar voces</button></div>
     <div class="reading-row reading-sleep" role="radiogroup" aria-label="Temporizador de voz"><span>Temporizador</span><div class="reading-chips" data-sleep><button type="button" role="radio" aria-checked="true" data-sleep-value="0">No</button><button type="button" role="radio" aria-checked="false" data-sleep-value="15">15 min</button><button type="button" role="radio" aria-checked="false" data-sleep-value="30">30 min</button><button type="button" role="radio" aria-checked="false" data-sleep-value="60">1 h</button></div></div>
     <details class="reading-details" data-audio-more><summary>Más ajustes</summary>
       <label class="reading-row"><span>Notas al pie</span><input type="checkbox" data-voice-option="footnotes" aria-label="Leer notas al pie"></label>

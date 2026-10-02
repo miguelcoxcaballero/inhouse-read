@@ -29,7 +29,7 @@ describe('complete real neural results guard', () => {
   })
 
   it('derives the language minimum from every selectable voice plus the dictionary check', () => {
-    expect(MINIMUM_TESTS).toEqual({ engine:9, reading:10, languages:neuralVoices.length + 1 })
+    expect(MINIMUM_TESTS).toEqual({ engine:9, reading:12, languages:neuralVoices.length + 1 })
   })
 
   it('counts successful retried tests without accepting omissions', () => {
@@ -74,6 +74,6 @@ describe('complete real neural results guard', () => {
   })
 
   it('reads a complete JSON result file', async () => {
-    await expect(checkNeuralResultsFile('reading', fixture(JSON.stringify(report({ expected:10 }))))).resolves.toMatchObject({ suite:'reading', passed:10 })
+    await expect(checkNeuralResultsFile('reading', fixture(JSON.stringify(report({ expected:12 }))))).resolves.toMatchObject({ suite:'reading', passed:12 })
   })
 })

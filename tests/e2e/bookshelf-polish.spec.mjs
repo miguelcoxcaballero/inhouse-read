@@ -81,6 +81,9 @@ for (const variant of [
 })
 
 test('girar el móvil con una portada abierta devuelve el libro a su nueva balda', async ({ page }) => {
+  // Import, a full return and the next 3D selection exceed 30 s on software GL.
+  // Keep each control/geometry assertion's limit while budgeting the whole flow.
+  test.setTimeout(90_000)
   await page.setViewportSize({ width:390, height:844 })
   await page.goto('/')
   await page.locator('#file-picker').setInputFiles(PDF)
@@ -118,6 +121,9 @@ test('movimiento reducido conserva los dos pasos y el foco del diálogo', async 
 })
 
 test('editar el lomo en móvil muestra su modelo de canto y mantiene el editor estable', async ({ page }) => {
+  // Import, a full return and the next 3D selection exceed 30 s on software GL.
+  // Keep each control/geometry assertion's limit while budgeting the whole flow.
+  test.setTimeout(90_000)
   const pageErrors = []
   page.on('pageerror', error => pageErrors.push(error.message))
   await page.setViewportSize({ width:390, height:844 })

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { fakeEngineScript } from '../helpers/fake-neural-engine.js'
 import fs from 'node:fs'
 
 // Showing or hiding the reader controls (header with title/search/more/focus,
@@ -13,11 +14,11 @@ const box = rect => rect && ({x:round(rect.x),y:round(rect.y),width:round(rect.w
 
 async function open(page, format, preferences = {}) {
   await page.emulateMedia({reducedMotion:'reduce'})
+  await page.addInitScript(fakeEngineScript({ installed:['piper:en_US-lessac-high'], hold:true }))
   await page.addInitScript(preferences => {
     if (!localStorage.getItem('inhouse-read-reading-preferences')) {
       localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify(preferences))
     }
-    window.InhouseSpeech = {getVoices:() => '[]',speak:() => {},stop:() => {}}
   }, preferences)
   await page.goto(process.env.IHR_TEST_URL || './')
   await page.locator('#file-picker').setInputFiles(fixture(format))

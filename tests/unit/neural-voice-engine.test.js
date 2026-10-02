@@ -217,7 +217,7 @@ describe('NeuralEngine reading aloud', () => {
     expect(types(t.events)).toContain('start:b')
   })
 
-  it("gives up with 'too-slow' after repeated underruns, for the fragment being read", async () => {
+  it('keeps the selected voice and buffers complete fragments after repeated underruns', async () => {
     t.engine.speak({ text: 'F0', voiceId: CLAUDE, id: 'id0', upcoming: ['F1', 'F2', 'F3', 'F4'] })
     await flush()
     const client = t.clients.last()
@@ -231,10 +231,10 @@ describe('NeuralEngine reading aloud', () => {
     await flush()
     expect(t.engine.stats.underruns).toBe(3)
     expect(t.engine.stats.tooSlow).toBe(1)
-    const last = t.events.at(-1)
-    expect(last.type).toBe('error')
-    expect(last.reason).toBe('too-slow')
-    expect(t.engine.status).toBe('idle')
+    expect(t.events.some(event => event.type === 'error')).toBe(false)
+    expect(t.engine.run.buffered).toBe(true)
+    expect(t.engine.run.voice.id).toBe(CLAUDE)
+    expect(t.engine.currentId).toBe('id2')
   })
 
   it('forgives the underruns of a page that was read to its end (a short heading before a long sentence), but not of a restart in mid-page', async () => {
@@ -261,13 +261,17 @@ describe('NeuralEngine reading aloud', () => {
     expect(t.engine.underrunTimes).toEqual([0, 1])
   })
 
-  it("gives up with 'too-slow' at once when compute is far slower than real time", async () => {
+  it('buffers without aborting when compute is far slower than real time', async () => {
     t.engine.speak({ text: 'Uno.', voiceId: CLAUDE, id: 'a', upcoming: ['Dos.', 'Tres.', 'Cuatro.'] })
     await flush()
     const client = t.clients.last()
     for (let i = 0; i < 3; i++) feedJob(client.jobs[i], 2, { ms: 2 * 1000 * 2.5 })  // 2.5 s of compute per second of speech
     await flush()
-    expect(t.events.at(-1)).toMatchObject({ type: 'error', id: 'a', reason: 'too-slow' })
+    expect(t.events.some(event => event.type === 'error')).toBe(false)
+    expect(t.engine.run.buffered).toBe(true)
+    expect(t.engine.run.voice.id).toBe(CLAUDE)
+    expect(t.engine.currentId).toBe('a')
+    expect(t.engine.stats.tooSlow).toBe(1)
   })
 
   it('forgives underruns after a clean stretch of fragments', async () => {

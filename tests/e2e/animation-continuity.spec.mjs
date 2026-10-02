@@ -218,8 +218,9 @@ test('varias portadas reales salen y regresan sin mostrar portadas provisionales
   // The original shelf has already decoded its images. Any newly generated
   // jacket during a selection is an avoidable duplicate decode, as on a slow phone.
   await page.waitForTimeout(1150)
+  // The bounded camera clock preserves each pose even under software GL.
   await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
-  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1')
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1', { timeout:30_000 })
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
   await observePrintedCoverFrames(page)
   // Cancel in the image-metadata phase, before the lifted view exists.
@@ -326,7 +327,7 @@ test('el libro vuelve entre sus vecinos con profundidad real en vistas frontal e
   for (const mode of ['frontal', 'isometric']) {
     if (mode === 'isometric') {
       await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
-      await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1')
+      await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1', { timeout:30_000 })
       await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
     }
     await test.step(`${mode}: cerrar la portada`, async () => {
