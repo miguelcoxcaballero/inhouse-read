@@ -85,6 +85,9 @@ test('EPUB: tapping the side edges turns pages and the centre toggles the contro
   test.setTimeout(90_000)
   await open(page,'epub','reduce')
   const position = () => page.evaluate(() => document.querySelector('foliate-view').renderer.containerPosition)
+  const pageSize = () => page.evaluate(() => document.querySelector('foliate-view').renderer.size)
+  // Exact page offsets, not "moved a bit": a loaded machine can sample a turn half way.
+  const reach = target => expect.poll(async () => Math.abs(await position() - target) <= 1, {timeout:60_000}).toBe(true)
   const chromeHidden = () => page.evaluate(() => document.body.classList.contains('is-reader-focus'))
   // Hiding the controls resizes the page, so count navigations instead of comparing offsets.
   await page.evaluate(() => {
@@ -98,16 +101,14 @@ test('EPUB: tapping the side edges turns pages and the centre toggles the contro
   const turns = () => page.evaluate(() => window.__tapTurns)
   const bounds = await page.locator('#reader-viewport').boundingBox(), y = bounds.y + bounds.height * .55
   const tap = fraction => page.touchscreen.tap(bounds.x + bounds.width * fraction, y)
-  const first = await position()
+  const first = await position(), step = await pageSize()
   await tap(.9)
-  await expect.poll(position).toBeGreaterThan(first + 50)
-  const second = await position()
+  await reach(first + step)
   await tap(.9)
-  await expect.poll(position).toBeGreaterThan(second + 50)
-  const third = await position()
+  await reach(first + 2 * step)
   // The left edge must go BACK, not forward as when zones were measured on the wide chapter document.
   await tap(.1)
-  await expect.poll(position).toBeLessThan(third - 50)
+  await reach(first + step)
   const before = await turns()
   expect(await chromeHidden()).toBe(false)
   await tap(.5)
@@ -131,24 +132,19 @@ test('EPUB: a tap still turns the page when touchend reaches the page after poin
     }, true)
   })
   const position = () => page.evaluate(() => document.querySelector('foliate-view').renderer.containerPosition)
-  const settled = async () => {
-    let last = -1, stable = 0
-    while (stable < 5) { await page.waitForTimeout(150); const now = await position(); stable = now === last ? stable + 1 : 0; last = now }
-    return last
-  }
+  const pageSize = () => page.evaluate(() => document.querySelector('foliate-view').renderer.size)
+  const reach = target => expect.poll(async () => Math.abs(await position() - target) <= 1, {timeout:60_000}).toBe(true)
   const bounds = await page.locator('#reader-viewport').boundingBox(), cdp = await page.context().newCDPSession(page)
   const tap = async fraction => {
     const touch = {id:1,x:bounds.x + bounds.width * fraction,y:bounds.y + bounds.height * .55}, stamp = Date.now() / 1000
     await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',timestamp:stamp,touchPoints:[touch]})
     await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',timestamp:stamp + .05,touchPoints:[]})
   }
-  const first = await settled()
+  const first = await position(), step = await pageSize()
   await tap(.9)
-  const second = await settled()
-  expect(second).toBeGreaterThan(first + 50)
+  await reach(first + step)
   await tap(.9)
-  const third = await settled()
-  expect(third).toBeGreaterThan(second + 50)
+  await reach(first + 2 * step)
   await tap(.1)
-  expect(await settled()).toBe(second)
+  await reach(first + step)
 })
