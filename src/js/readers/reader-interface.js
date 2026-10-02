@@ -74,7 +74,7 @@ export const readerPanelMarkup = `
     <div class="reading-neural-offer" data-neural-offer hidden></div>
     <label class="reading-row reading-range-row"><span>Velocidad</span><input type="range" data-pref="rate" min="0.5" max="2" step="0.1" aria-label="Velocidad de voz"><output data-output="rate"></output></label>
     <div class="reading-voice-menus" data-voice-menus></div>
-    <div class="reading-voice-info" data-voice-info hidden><span data-voice-auto hidden></span><button type="button" class="reading-text-button" data-voice-settings hidden>Instalar voces</button></div>
+    <div class="reading-voice-info" data-voice-info hidden><button type="button" class="reading-text-button" data-voice-settings hidden>Instalar voces</button></div>
     <div class="reading-row reading-sleep" role="radiogroup" aria-label="Temporizador de voz"><span>Temporizador</span><div class="reading-chips" data-sleep><button type="button" role="radio" aria-checked="true" data-sleep-value="0">No</button><button type="button" role="radio" aria-checked="false" data-sleep-value="15">15 min</button><button type="button" role="radio" aria-checked="false" data-sleep-value="30">30 min</button><button type="button" role="radio" aria-checked="false" data-sleep-value="60">1 h</button></div></div>
     <details class="reading-details" data-audio-more><summary>Más ajustes</summary>
       <label class="reading-row"><span>Notas al pie</span><input type="checkbox" data-voice-option="footnotes" aria-label="Leer notas al pie"></label>

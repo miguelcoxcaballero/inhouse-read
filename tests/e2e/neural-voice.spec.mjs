@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { openAudioMenu, selectedOption } from './helpers/audio-menus.mjs'
+import { audioMenu, openAudioMenu, selectedOption } from './helpers/audio-menus.mjs'
 import { fakeEngineScript } from '../helpers/fake-neural-engine.js'
 
 // The on-device neural voices (Piper) as the reader sees them. The engine itself (workers, models, Hugging Face) is not
@@ -46,9 +46,11 @@ const engine = (page, fn, arg) => page.evaluate(`(${fn})(window.__inhouseNeuralT
 const calls = page => engine(page, e => e.calls.map(call => ({ ...call })))
 const openAudio = async page => { await page.getByRole('button', { name:'Escuchar el libro' }).click(); await openAudioMenu(page, 'Voz') } // the natural voices live in the Voz list
 const neural = page => page.locator('[data-neural]')
+// A press outside the Voz dropdown folds it (Reproducir, the offer...): the natural voices are only on screen while it is open.
+const showNeural = async page => { await openAudioMenu(page, 'Voz'); await neural(page).scrollIntoViewIfNeeded() }
 const row = (page, id = LESSAC) => page.locator(`[data-neural-voice="${id}"]`)
 const shot = async (page, name) => {
-  await neural(page).scrollIntoViewIfNeeded()
+  await showNeural(page)
   await page.screenshot({ path:`${EVIDENCE}/${name}.png` })
 }
 const noOverflow = page => page.locator('.reading-panel').evaluate(panel => panel.scrollWidth <= panel.clientWidth)
@@ -82,7 +84,7 @@ for (const [format, file] of [['EPUB', EPUB], ['PDF', PDF]]) {
     await expect(row(page)).toContainText('Instalada')
     await expect(selectedOption(page)).toHaveAttribute('data-value', LESSAC)
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('inhouse-read-reading-preferences')).voice)).toBe(LESSAC)
-    await expect(page.locator('[data-voice-auto]')).toHaveText('')
+    await expect(audioMenu(page, 'Voz').locator('.select-menu__value')).toHaveText('Lessac') // the row names the voice in use
     await shot(page, `picker-${format}-installed`)
     expect(await noOverflow(page)).toBe(true)
 
@@ -150,6 +152,7 @@ test('Quitar on the voice that is being read (the automatic pick) moves the read
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()
   await expect.poll(async () => (await calls(page)).length).toBeGreaterThan(0)
   expect(await page.evaluate(() => window.__tts.log.length)).toBe(0)
+  await openAudioMenu(page, 'Voz')
   await row(page).getByRole('button', { name:/Quitar la voz Lessac/ }).click()
   await expect(row(page).getByRole('button', { name:/Descargar la voz Lessac/ })).toBeVisible()
   await expect.poll(() => page.evaluate(() => window.__tts.log.length)).toBeGreaterThan(0) // the system voice took the same fragment
@@ -194,11 +197,11 @@ for (const theme of ['paper', 'night', 'sepia', 'sage', 'amoled']) {
     await expect(offer.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '35')
     await offer.scrollIntoViewIfNeeded()
     await page.screenshot({ path:`${EVIDENCE}/offer-${theme}-downloading.png` })
-    await neural(page).scrollIntoViewIfNeeded()
+    await showNeural(page)
     await page.screenshot({ path:`${EVIDENCE}/picker-${theme}-downloading.png` })
     await engine(page, e => e.finish('piper:en_US-lessac-high'))
     await expect(offer).toBeHidden()
-    await neural(page).scrollIntoViewIfNeeded()
+    await showNeural(page)
     await page.screenshot({ path:`${EVIDENCE}/picker-${theme}-installed.png` })
     expect(await noOverflow(page)).toBe(true)
   })
@@ -223,6 +226,7 @@ test('first-use offer: Ahora no is remembered per language; Descargar starts the
   await expect.poll(() => page.evaluate(() => window.__tts.log.length)).toBeGreaterThan(0)
   await expect(offer).toBeHidden()
   // but the list in the picker still offers the download
+  await openAudioMenu(page, 'Voz')
   await expect(row(page).getByRole('button', { name:/Descargar la voz Lessac/ })).toBeVisible()
   // forget the choice: Descargar this time
   await page.evaluate(() => localStorage.removeItem('inhouse-read-neural-offer-dismissed'))
@@ -245,6 +249,7 @@ test('a neural voice that is too slow hands over to the system voice with a visi
   await expect(page.locator('.reading-audio-status')).toHaveText('Voz natural demasiado lenta. Se usa la del sistema.')
   await expect.poll(() => page.evaluate(() => window.__tts.log.length)).toBeGreaterThan(0) // the system voice carries on
   expect((await calls(page)).length).toBe(1) // the neural engine is not asked again
+  await openAudioMenu(page, 'Voz') // the warning lives in the Voz list
   await expect(page.locator('[data-neural-warning]')).toBeVisible()
   await shot(page, 'picker-fallback')
   // Volver a probar gives the neural voice another chance
@@ -257,7 +262,8 @@ test('where the engine is unsupported the natural voices are not offered and rea
   await open(page, EPUB)
   await openAudio(page)
   await expect(neural(page)).toBeHidden()
-  expect(await page.locator('[data-pref="voice"] optgroup').evaluateAll(groups => groups.map(group => group.label))).toEqual(['Recomendadas', 'Todas las voces']) // only the system voices
+  const voices = await audioMenu(page, 'Voz').locator('[role="option"]').evaluateAll(items => items.map(item => item.dataset.value))
+  expect(voices.some(value => value.startsWith('piper:'))).toBe(false) // only the system voices
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()
   await expect(page.locator('[data-neural-offer]')).toBeHidden()
   await expect.poll(() => page.evaluate(() => window.__tts.log.length)).toBeGreaterThan(0)
