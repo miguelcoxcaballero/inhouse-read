@@ -58,7 +58,7 @@ export const isNatural = voice => NEURAL.test(`${voice.id} ${voice.name}`)
 export function scoreVoice(voice) {
   const text = `${voice.id} ${voice.name}`
   let score = voice.quality ?? 300 // browsers do not report quality: assume "normal"
-  if (voice.network) score -= 60 // free, but it needs a connection and can stall: only wins when clearly better
+  if (voice.network) score -= voice.quality === null ? 60 : 110 // needs a connection and can stall: an on-device voice wins even one Android tier lower (browsers report no tier and keep their online neural voices competitive)
   if (ROBOTIC.test(text)) score -= 200
   if (NOVELTY.test(text)) score -= 250
   if (NEURAL.test(text)) score += 80
@@ -167,16 +167,22 @@ export function readSystemVoices(env = globalThis) {
 }
 
 // --- Language detection: stop-word scoring per language, with a few script/diacritic hints. ---
+// Words that several languages share ("la", "de", "en"...) are listed in each of them but count half, so they can never
+// decide a language on their own; only markers of one language do. The book language also gets a head start below.
 const WORDS = {
-  es: 'el los las que para con una del por como pero más está también sin sobre este esta entre cuando muy ya todo hay fue son su sus es se no lo al yo usted nosotros',
-  en: 'the and of to in is that it was for with as his her he she they you this have not but are were been from at by on an i my your we what do does did know there their will would can just',
-  fr: 'le la les des une est que qui dans pour pas sur avec il elle ils nous vous mais ou au aux du ce cette sont été être je tu et',
-  de: 'der die das und ist nicht ein eine mit den dem des auf für von zu sich auch es war ich er sie wir aber wie oder',
-  it: 'il lo gli che di non una è sono per con come più ma anche questo questa nel nella della delle degli si io lui lei',
-  pt: 'o os as que não uma um do da dos das em para com por mais como mas foi são está também ele ela você eu nós',
-  ca: 'el la els les que i amb per una és són però també això aquest aquesta dels de molt més no jo tu nosaltres'
+  es: 'el la los las de y en un una unos unas del al que para con por como pero más mas está esta este esto estos también sin sobre entre cuando muy ya todo todos toda nada algo hay fue era eran ser soy eres somos son su sus es se no lo le les me mi mis te tu nos os ni sí así aquí allí donde porque quien quién cual cuyo cuyos qué cómo dónde ha han he hemos había tiene tengo tenía voy va vamos van hacia hasta desde después antes mientras aunque pues bien otro otra otros vez mismo yo usted ustedes nosotros ella ellos ellas',
+  en: 'the and of to in is that it was for with as his her he she they you this have not but are were been from at by on an i my your we what do does did know there their will would can just be has had them then him me our its who which when where how all been out about if or so no up one into than some could should said like over only more now',
+  fr: 'le la les des une un est que qui dans pour pas sur avec il elle ils elles nous vous mais ou au aux du de ce cette ces sont été être je tu et en ne se sa son ses mon ma mes ton ta tes leur leurs où comme plus très tout tous faire fait avait était ont a ai suis es sommes êtes y lui moi toi',
+  de: 'der die das und ist nicht ein eine mit den dem des auf für von zu sich auch es war ich er sie wir aber wie oder im in an um aus bei nach noch nur schon dann wenn dass da du ihr ihm ihn mir dir uns euch hat haben hatte sind waren wird wurde kann so was wer wo man mein dein sein',
+  it: 'il lo la gli le che di non una un è sono per con come più ma anche questo questa nel nella della delle degli dei del al alla alle allo si io lui lei noi voi loro mi ti ci vi ha hanno ho abbiamo era erano fu essere molto tutto tutti quando dove perché cosa niente solo già ancora sempre mai',
+  pt: 'o a os as que não uma um uns umas do da dos das em no na nos nas de para com por mais como mas foi são está estão também ele ela eles elas você vocês eu nós me te se lhe lhes meu minha seu sua seus suas era eram ser tem têm tinha muito já ainda quando onde porque quem cujo ao aos à às',
+  ca: 'el la els les que i amb per una un uns unes és són però també això aquest aquesta aquests aquestes dels de del al als molt més no jo tu nosaltres vosaltres ell ella ells elles em et es ens us li hi en ha han hem heu he va vaig vam van era eren ser sóc ets som sou mateix perquè quan on qui què com tot tots tota totes res algú ningú meva meu meus meves seva seu seus seves nostre vostre sense després abans fins des mentre encara ja ara aquí allà'
 }
 const WORD_SETS = Object.fromEntries(Object.entries(WORDS).map(([lang, words]) => [lang, new Set(words.split(' '))]))
+const WORD_LANGS = new Map()
+for (const [lang, set] of Object.entries(WORD_SETS)) for (const word of set) WORD_LANGS.set(word, [...(WORD_LANGS.get(word) || []), lang])
+// What the book language is worth up front, and how far another language must clearly be ahead to override it.
+const FALLBACK_BONUS = 2
 const HINTS = [
   ['es', /[ñ¿¡]/g, 3], ['de', /ß/g, 3], ['de', /[äöü]/g, 1], ['pt', /[ãõ]/g, 3], ['fr', /œ/g, 3], ['fr', /ç/g, 1], ['ca', /ç/g, 1], ['ca', /l·l|·/g, 3],
   ['it', /[ìù]/g, 1.5], ['fr', /[èêâîôû]/g, 0.5], ['ca', /[àò]/g, 1]
@@ -192,12 +198,17 @@ const BRAZILIAN = /(?<!\p{L})(?:você|vocês|ônibus|celular|geladeira|café da 
 export function detectLanguage(text, fallback = 'en-US') {
   const sample = String(text || '').toLocaleLowerCase()
   const scores = {}
-  for (const word of sample.match(/[\p{L}·']+/gu) || []) for (const [lang, set] of Object.entries(WORD_SETS)) if (set.has(word)) scores[lang] = (scores[lang] || 0) + 1
+  for (const word of sample.match(/[\p{L}·']+/gu) || []) {
+    const langs = WORD_LANGS.get(word)
+    if (langs) for (const lang of langs) scores[lang] = (scores[lang] || 0) + (langs.length === 1 ? 1 : 0.5)
+  }
   for (const [lang, pattern, weight] of HINTS) { const hits = sample.match(pattern); if (hits) scores[lang] = (scores[lang] || 0) + hits.length * weight }
-  const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1])
+  const known = normalizeLang(fallback), home = langBase(known)
+  // The book language starts ahead: a different language must beat it clearly, not by a shared "la" or "de".
+  if (home in WORD_SETS) scores[home] = scores[home] || 0
+  const ranked = Object.entries(scores).map(([lang, score]) => [lang, lang === home ? score + FALLBACK_BONUS : score]).sort((a, b) => b[1] - a[1])
   const [lang, score] = ranked[0] || []
-  if (!lang || score < 2 || (ranked[1] && ranked[1][1] === score)) return fallback
-  const known = normalizeLang(fallback)
+  if (!lang || scores[lang] < 2 || (ranked[1] && ranked[1][1] === score)) return fallback
   if (langBase(known) === lang && langRegion(known)) return known
   if (lang === 'pt') return BRAZILIAN.test(sample) ? 'pt-BR' : 'pt-PT'
   return `${lang}-${DEFAULT_REGION[lang]}`

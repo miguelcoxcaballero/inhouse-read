@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   normalizeLang, normalizeVoice, normalizeVoices, scoreVoice, isHighQuality, rankedVoicesFor, bestVoiceFor, needsBetterVoice,
-  languageName, voiceLabel, buildVoiceGroups, resolveVoice, readSystemVoices, detectLanguage
+  languageName, voiceLabel, buildVoiceGroups, resolveVoice, readSystemVoices, detectLanguage, langBase
 } from '../../src/js/readers/voice-catalog.js'
 
 // Shapes the Android bridge sends: quality 100..500, latency, network flag, installed flag.
@@ -57,6 +57,13 @@ describe('naturalness score', () => {
   it('prefers an on-device voice to an online one of the same quality (free and unlimited, works offline)', () => {
     expect(score({ quality:400, network:false })).toBeGreaterThan(score({ quality:400, network:true }))
     expect(score({ localService:true })).toBeGreaterThan(score({ localService:false }))
+  })
+  it('keeps on-device voices ahead of online ones that report up to one tier higher, but uses an online voice when nothing local exists', () => {
+    expect(score({ quality:400, network:false })).toBeGreaterThan(score({ quality:500, network:true }))
+    expect(score({ quality:300, network:false })).toBeGreaterThan(score({ quality:400, network:true }))
+    const local = android('es-es-x-eed-local', 'es-ES', 400), online = android('es-es-x-eea-network', 'es-ES', 500, { network:true })
+    expect(bestVoiceFor(normalizeVoices([online, local]), 'es-ES').id).toBe('es-es-x-eed-local')
+    expect(bestVoiceFor(normalizeVoices([online]), 'es-ES').id).toBe('es-es-x-eea-network')
   })
   it('rewards natural/neural markers and Google Speech Services ids, and demotes robotic engines', () => {
     expect(score({ name:'Microsoft Ava Online (Natural)' })).toBeGreaterThan(score({ name:'Microsoft David' }))
@@ -189,6 +196,45 @@ describe('language detection', () => {
     ['Você sabe que não é assim, e ela também não foi com você.', 'pt-BR'],
     ['Els nens van anar al parc amb una pilota, però també és molt tard.', 'ca-ES']
   ])('%s -> %s', (text, expected) => { expect(detectLanguage(text, 'sv-SE')).toBe(expected) })
+  // Everyday sentences, several of them short and full of words the languages share ("la", "de", "en", "que"...).
+  const SENTENCES = {
+    es: ['Voy a la casa de la abuela de Pedro.', 'La casa de mi madre está en la calle de la Luna.', 'En el pueblo de la Mancha, de cuyo nombre no quiero acordarme', 'Me gusta la música de los años ochenta.',
+      'Era la hora de la cena y todos esperaban en la mesa.', 'Ella le dio un libro a su hermano y se fue.', 'Y entonces la niña se puso a llorar.', 'Nunca he visto una cosa así en mi vida.',
+      'No sé qué hacer con esto.', 'Se levantó de la cama y miró por la ventana.', 'Dijo que iba a venir mañana por la tarde.', 'Tengo que ir a la tienda.', 'Juan y María viven en una casa que es muy grande.'],
+    ca: ['Els nens van anar al parc amb una pilota, però també és molt tard.', 'La casa de la meva mare és al carrer de la Lluna.', 'Això és el que volia dir, però no sé com fer-ho.', "Ells són a l'escola i nosaltres som a casa.",
+      "El poble de l'avi és molt bonic i tranquil.", 'Va dir que vindria demà a la tarda, perquè tenia feina.', 'Aquesta nit hem sopat amb els amics de la mare.', 'No hi ha res que li agradi més que passejar pel bosc.'],
+    pt: ['As crianças não foram com a mãe porque estavam cansadas, mas ela está bem.', 'A casa da minha avó fica na rua da Lua.', 'O menino disse que ia ao mercado com o pai.', 'Eu não sei o que fazer com isto.',
+      'Ela me deu um livro e foi embora.', 'Os homens da aldeia foram à festa.', 'Ele tinha muito medo do escuro.'],
+    it: ['Il bambino non è andato con la madre perché era stanco, ma anche felice.', 'La casa della nonna è in fondo alla strada.', 'Non so che cosa fare con questo.', 'Lui mi ha detto che sarebbe venuto domani.',
+      'Il ragazzo e la ragazza sono andati al mercato.', 'Nel mezzo del cammin di nostra vita mi ritrovai per una selva oscura.', 'Io non lo so, ma tu sei molto gentile.'],
+    fr: ['Les enfants sont allés dans la forêt avec leur mère et ils ont mangé.', 'La maison de ma grand-mère est au bout de la rue.', 'Je ne sais pas ce que je dois faire.', "Il a dit qu'il viendrait demain avec sa soeur.",
+      'Elle est très fatiguée, mais elle est contente.', 'Nous avons vu le chat de la voisine dans le jardin.', "C'est la vie, et tout est bien."],
+    de: ['Der Mann ist nicht mit dem Zug gefahren, weil er müde war und es regnete.', 'Das Haus meiner Großmutter steht am Ende der Straße.', 'Ich weiß nicht, was ich tun soll.', 'Er sagte, dass er morgen kommen würde.',
+      'Die Kinder sind in den Wald gegangen und haben gespielt.', 'Wir haben die Katze der Nachbarin im Garten gesehen.'],
+    en: ['The old man was sitting by the window and she was not there.', "I don't know what you want from me.", 'The house of my grandmother is at the end of the street.', 'He said that he would come tomorrow with his sister.',
+      'It was the best of times, it was the worst of times.', 'She had a book in her hand and a smile on her face.', 'What do you think of the new plan?']
+  }
+  const REGION = { es:'es-ES', ca:'ca-ES', pt:'pt-PT', it:'it-IT', fr:'fr-FR', de:'de-DE', en:'en-US' }
+  const cases = Object.entries(SENTENCES).flatMap(([lang, list]) => list.map(text => [lang, text]))
+  it.each(cases)('%s sentence is recognised without any book language: %s', (lang, text) => { expect(detectLanguage(text, 'sv-SE')).toBe(REGION[lang]) })
+  it.each(cases)('%s sentence keeps the book language when it is that language: %s', (lang, text) => { expect(detectLanguage(text, `${lang}-XX`)).toBe(`${lang}-XX`) })
+  it('shared function words (la, de, en) never turn a Spanish book into Catalan, whatever the book region', () => {
+    for (const text of SENTENCES.es) for (const book of ['es-ES', 'es-MX', 'es']) expect(langBase(detectLanguage(text, book))).toBe('es')
+    expect(detectLanguage('Voy a la casa de la abuela de Pedro.', 'es-ES')).toBe('es-ES')
+  })
+  it('a clear other language still wins over the book language, and Catalan needs its own markers', () => {
+    expect(detectLanguage('Les enfants sont allés dans la forêt avec leur mère et ils ont mangé.', 'es-ES')).toBe('fr-FR')
+    expect(detectLanguage('The old man was sitting by the window and she was not there.', 'es-ES')).toBe('en-US')
+    expect(detectLanguage('Els nens van anar al parc amb una pilota, però també és molt tard.', 'es-ES')).toBe('ca-ES')
+    expect(detectLanguage('Ells són a l\'escola i nosaltres som a casa.', 'es-ES')).toBe('ca-ES')
+    expect(detectLanguage('La casa de la abuela de la calle de la Luna.', 'xx-XX')).toBe('xx-XX') // only shared words: no guess
+  })
+  it('a short foreign quote inside a sentence does not change its language', () => {
+    expect(detectLanguage('Ella le dijo a su madre: "I don\'t know", y se fue a la casa de la abuela.', 'es-ES')).toBe('es-ES')
+    expect(detectLanguage('Pedro gritó "Je ne sais pas" y todos los niños salieron de la casa con una sonrisa.', 'es-ES')).toBe('es-ES')
+    expect(detectLanguage('He said "Je ne sais pas" and left the house with his sister and the dog.', 'en-US')).toBe('en-US')
+    expect(detectLanguage('Der Mann sagte "the end" und ging nicht mit dem Zug, weil er müde war.', 'de-DE')).toBe('de-DE')
+  })
   it('keeps the book region when the detected language agrees and falls back on short or ambiguous text', () => {
     expect(detectLanguage('Los niños salieron a jugar con una pelota.', 'es-MX')).toBe('es-MX')
     expect(detectLanguage('As crianças não foram com a mãe porque estavam cansadas.', 'pt-BR')).toBe('pt-BR')

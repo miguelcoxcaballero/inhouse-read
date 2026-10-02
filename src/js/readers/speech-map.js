@@ -14,19 +14,35 @@ const BLOCKS = new Set(['address', 'article', 'aside', 'blockquote', 'dd', 'deta
 // Blocks that are sentences by themselves: a heading or list item rarely ends in a full stop.
 const HARD_BLOCKS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'dt', 'dd', 'th', 'td', 'caption', 'figcaption', 'summary'])
 
+// Not rendered, so neither read nor followed: [hidden], aria-hidden decoration, display:none (EPUB3 footnote asides) and
+// visibility:hidden. Computed style when the document has a window (a real page), the inline style otherwise (parsed markup).
+function notRendered(el) {
+  if (el.hasAttribute('hidden') || el.getAttribute('aria-hidden') === 'true') return true
+  const view = el.ownerDocument?.defaultView
+  let style
+  try { style = view?.getComputedStyle ? view.getComputedStyle(el) : el.style } catch { style = el.style }
+  return style?.display === 'none' || style?.visibility === 'hidden' || style?.visibility === 'collapse'
+}
+
 /** Text of `root` in reading order plus the span table that maps offsets back to its text nodes. */
 export function mapSpeechText(root) {
   const doc = root.ownerDocument || root
-  const walker = doc.createTreeWalker(root, SHOW_ELEMENT | SHOW_TEXT, { acceptNode: node => node.nodeType === 1 && SKIPPED.has(node.localName) ? REJECT : 1 })
+  const walker = doc.createTreeWalker(root, SHOW_ELEMENT | SHOW_TEXT, { acceptNode: node => node.nodeType === 1 && (SKIPPED.has(node.localName) || (node !== root && notRendered(node))) ? REJECT : 1 })
   const spans = []
   let text = '', pending = false, lastBlock = null
+  // The nearest heading/list item/table cell around a block: <li><p>…</p></li> is as hard as <li>…</li>.
+  const hardOf = el => { while (el && !HARD_BLOCKS.has(el.localName)) el = el === root ? null : el.parentElement; return el }
   const blockOf = node => { let el = node.parentElement; while (el && el !== root && !BLOCKS.has(el.localName)) el = el.parentElement; return el }
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     if (node.nodeType === 1) { if (node.localName === 'br') pending = true; continue }
     const value = node.nodeValue
     if (!value) continue
     const block = blockOf(node)
-    if (text && (pending || block !== lastBlock)) text += HARD_BLOCKS.has(block?.localName) || HARD_BLOCKS.has(lastBlock?.localName) ? HARD_BREAK : '\n'
+    if (text && (pending || block !== lastBlock)) {
+      const hard = hardOf(block), lastHard = hardOf(lastBlock)
+      // Two paragraphs inside the same list item or cell stay one soft line break; a <br> there is still a hard one.
+      text += (hard || lastHard) && (pending || hard !== lastHard) ? HARD_BREAK : '\n'
+    }
     pending = false; lastBlock = block
     spans.push({ node, start:text.length, end:text.length + value.length })
     text += value

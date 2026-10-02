@@ -39,9 +39,32 @@ describe('speech text mapping over the DOM', () => {
     expect(items.map(item => item.text)).toEqual(['The quiet room.', 'It was late and the light was low.', 'Eggs.', 'Milk.'])
     expect(items.map(item => spoken(map, item.sentence.start, item.sentence.end))).toEqual(['The quiet room', 'It was late and thelight was low.', 'Eggs', 'Milk.'])
   })
+  it('does not add a stray full stop after a closing quote or bracket that already ends the sentence', () => {
+    const doc = html('<ul><li>Dijo: "Voy."</li><li>Otro</li></ul><h2>«Fin»</h2><p>Texto.</p><ul><li>(Ver nota.)</li><li>Él gritó: «¡Corre!»</li></ul>')
+    const map = mapSpeechText(doc.body)
+    expect(planSpeech(map.text).map(item => item.text)).toEqual(['Dijo: "Voy."', 'Otro.', '«Fin».', 'Texto.', '(Ver nota.)', 'Él gritó: «¡Corre!»'])
+    expect(normalizeSpeech('Dijo: "Voy."\u2029Otro').text).toBe('Dijo: "Voy." Otro')
+  })
   it('skips scripts, styles, ruby annotations and svg text', () => {
     const doc = html('<style>p{}</style><script>var x</script><p>Hello <ruby>漢<rt>kan</rt></ruby> world</p><svg><text>ignored</text></svg>')
     expect(mapSpeechText(doc.body).text).toBe('Hello 漢 world')
+  })
+  it('does not read text that is not rendered: display:none asides, [hidden], aria-hidden and visibility:hidden', () => {
+    const doc = html('<p>Visible end of chapter.</p><aside style="display:none"><p>1. Hidden endnote text.</p></aside><p hidden>Hidden para.</p><span aria-hidden="true">decor</span><div style="visibility:hidden">Ghost</div><p>The real next.</p>')
+    const map = mapSpeechText(doc.body)
+    expect(map.text).toBe('Visible end of chapter.\nThe real next.')
+    expect(planSpeech(map.text).map(item => item.text)).toEqual(['Visible end of chapter.', 'The real next.'])
+  })
+  it('uses the computed style of a real page (stylesheet rules), not only inline styles', () => {
+    document.body.innerHTML = '<style>.note{display:none}</style><p>Shown.</p><aside class="note"><p>Footnote text.</p></aside><p>Also shown.</p>'
+    expect(mapSpeechText(document.body).text).toBe('Shown.\nAlso shown.')
+    document.body.innerHTML = ''
+  })
+  it('keeps the hard break when a list item or cell wraps its text in a paragraph', () => {
+    const doc = html('<ul><li><p>Uno</p></li><li><p>Dos</p></li></ul><table><tr><td><p>A</p></td><td><p>B</p></td></tr></table><ul><li><p>Dos parrafos.</p><p>Mismo item.</p></li></ul>')
+    const map = mapSpeechText(doc.body)
+    expect(map.text).toBe('Uno\u2029Dos\u2029A\u2029B\u2029Dos parrafos.\nMismo item.')
+    expect(planSpeech(map.text).map(item => item.text)).toEqual(['Uno.', 'Dos.', 'A.', 'B.', 'Dos parrafos.', 'Mismo item.'])
   })
   it('offsetOf finds the first character of a visible range, whatever its container', () => {
     const doc = html('<p>One two.</p><p>Three four.</p>')

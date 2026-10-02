@@ -133,6 +133,39 @@ describe('audiobook sentence highlight and page follow', () => {
     await vi.waitFor(() => expect(voice.state).toBe('stopped'))
     expect(messages).toContain('Has llegado al final.')
   })
+  it('does not report the end of the book while foliate still ignores the turn (page lock held by the voice\'s own follow)', async () => {
+    const speak = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop:vi.fn() })
+    const messages = []
+    const reader = mappedReader([{ text:'Last of page one.' }, { text:'Page two.' }])
+    const turn = reader.next
+    let calls = 0
+    reader.next = async () => { calls++; if (calls > 1) await turn() } // the first turn is silently ignored
+    const voice = new ReadingVoice(reader, (state, message) => message && messages.push(message))
+    await voice.play(); done(say(speak)[4])
+    await vi.waitFor(() => expect(say(speak)[0]).toBe('Page two.'))
+    expect(calls).toBe(2)
+    expect(messages).not.toContain('Has llegado al final.')
+    expect(voice.state).toBe('playing')
+    voice.stop()
+  })
+  it('retries a bounded number of times, and a Stop during the wait cancels the rest', async () => {
+    vi.useFakeTimers()
+    const speak = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop:vi.fn() })
+    const messages = []
+    const reader = mappedReader([{ text:'Only page.' }])
+    const voice = new ReadingVoice(reader, (state, message) => message && messages.push(message))
+    await voice.play(); done(say(speak)[4])
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(reader.nexts).toBe(3) // the turn and two retries, then it really is the end
+    expect(messages).toContain('Has llegado al final.')
+    const again = new ReadingVoice(mappedReader([{ text:'Only page.' }]))
+    await again.play(); done(vi.mocked(window.InhouseSpeech.speak).mock.calls.at(-1)[4])
+    again.stop()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(again.reader.nexts).toBe(1)
+  })
   it('keeps the old message when a run of pages has no readable text at all', async () => {
     const speak = vi.fn()
     vi.stubGlobal('InhouseSpeech', { speak, stop:vi.fn() })
@@ -252,6 +285,29 @@ describe('reading voice selection', () => {
     const again = vi.mocked(window.InhouseSpeech.speak)
     await reading('Hola mundo.')
     expect(again.mock.calls[0][3]).toBe('old-es')
+  })
+  it('an online voice that fails (offline) hands over once to the best on-device voice instead of stopping', async () => {
+    const speak = bridge([voice('es-net', 'es-ES', 500, { network:true }), voice('es-good', 'es-ES', 400)])
+    const messages = []
+    const reader = new ReadingVoice({ language:'es', getSpeechText:async () => 'Hola mundo. Adiós.' }, (state, message) => message && messages.push(message))
+    reader.voice = 'es-net' // explicitly chosen online voice
+    await reader.play()
+    expect(speak.mock.calls[0][3]).toBe('es-net')
+    const fail = () => window.dispatchEvent(new CustomEvent('inhouse-tts', { detail:{ id:speak.mock.calls.at(-1)[4], type:'error' } }))
+    fail()
+    expect(reader.state).toBe('playing')
+    expect(speak.mock.calls[1].slice(0, 4)).toEqual(['Hola mundo.', 'es-ES', 1, 'es-good'])
+    fail() // the local voice failing too is a real error
+    expect(reader.state).toBe('stopped')
+    expect(messages.at(-1)).toMatch(/No hay una voz disponible/)
+  })
+  it('an on-device voice failing is a real error right away', async () => {
+    const speak = bridge()
+    const reader = new ReadingVoice({ language:'es', getSpeechText:async () => 'Hola mundo.' })
+    await reader.play()
+    window.dispatchEvent(new CustomEvent('inhouse-tts', { detail:{ id:speak.mock.calls[0][4], type:'error' } }))
+    expect(reader.state).toBe('stopped')
+    expect(speak).toHaveBeenCalledTimes(1)
   })
   it('picks the best browser voice for speechSynthesis and passes its language', async () => {
     const spoken = []

@@ -1994,6 +1994,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (!flyout.isConnected) instant = true;
       else fadeMeta();
       flyout.classList.remove('is-ready');
+      // A cancelled or failed opening may stop mid-fade: the book flies back in sepia, not in a half-mixed page.
+      if (view && session.phase === 'reading') view.setPageTheme(0);
       if (!instant) await playReturn();
       if (state.session === session) finishClose({ silent, instant });
     }

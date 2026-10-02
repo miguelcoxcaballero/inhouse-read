@@ -11,6 +11,8 @@ const INVISIBLE = /[­​⁠﻿]/
 const HEADER_WINDOW = 40
 // speech-map.js puts this between blocks that must not run into each other (see HARD_BLOCKS there).
 export const HARD_BREAK = '\u2029'
+const TERMINATORS = /[.!?。！？…:;]/
+const CLOSERS = /["'”’»›)\]}」』]/
 
 /** Drops what must not be read, keeping raw offsets: returns { text, map } with map[i] = raw offset of text[i]. */
 export function normalizeSpeech(raw, { footnotes = true, skipHeaders = false } = {}) {
@@ -39,7 +41,10 @@ export function normalizeSpeech(raw, { footnotes = true, skipHeaders = false } =
     if (ch === HARD_BREAK) {
       // End of a heading, list item or table cell: it is its own sentence even without a full stop, so it is read and highlighted alone.
       if (chars.at(-1) === ' ') { chars.pop(); map.pop() }
-      if (chars.length && !/[.!?。！？…:;]/.test(chars.at(-1))) { chars.push('.'); map.push(i) }
+      // Not after 'Dijo: "Voy."' either: a terminator followed by closing quotes/brackets already ends the sentence.
+      let last = chars.length - 1
+      while (last >= 0 && CLOSERS.test(chars[last])) last--
+      if (chars.length && !TERMINATORS.test(chars[Math.max(last, 0)]) && !TERMINATORS.test(chars.at(-1))) { chars.push('.'); map.push(i) }
     }
     if (/\s/.test(ch)) {
       if (chars.length && chars.at(-1) !== ' ') { chars.push(' '); map.push(i) }
@@ -53,7 +58,7 @@ export function normalizeSpeech(raw, { footnotes = true, skipHeaders = false } =
 /** Sentences of an already normalised text; long ones also carry their <=180 character spoken fragments. */
 export function speechSentences(text) {
   const sentences = []
-  for (const sentence of String(text).matchAll(/[^.!?。！？]+[.!?。！？]*\s*/g)) {
+  for (const sentence of String(text).matchAll(/[^.!?。！？]+(?:[.!?。！？]+["'”’»›)\]}」』]*)?\s*/g)) {
     const fragments = []
     for (const part of sentence[0].matchAll(/.{1,180}(?:\s|$)|.{1,180}/g)) {
       const value = part[0].trim()

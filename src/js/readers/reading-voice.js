@@ -4,6 +4,10 @@ import { planSpeech, speechChunks } from './speech-text.js'
 export { speechChunks }
 // Blank or image-only pages passed over, one page turn at a time, before giving up.
 const MAX_EMPTY_PAGES = 12
+// foliate ignores a page turn while another one animates (the voice's own follow turn included): next() is retried
+// this many times, this far apart, before an unchanged location is taken as the end of the book.
+const END_RETRIES = 2, END_RETRY_MS = 200
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 /** One short utterance at a time also avoids Android/browser long-speech timeouts. */
 export class ReadingVoice {
@@ -23,7 +27,7 @@ export class ReadingVoice {
       if (event.detail?.id !== this.utteranceId || this.state !== 'playing') return
       if (event.detail.type === 'done') this.advance()
       if (event.detail.type === 'interrupted') this.pause()
-      if (event.detail.type === 'error') this.fail('No hay una voz disponible para este idioma. Revisa las voces instaladas en Android.')
+      if (event.detail.type === 'error' && !this.useLocalVoice()) this.fail('No hay una voz disponible para este idioma. Revisa las voces instaladas en Android.')
     })
   }
   get native() { return typeof window.InhouseSpeech?.speak === 'function' }
@@ -51,7 +55,8 @@ export class ReadingVoice {
     this.utteranceId = id
     this.present()
     const text = this.chunks[this.index]
-    const { language, voiceId } = this.voiceFor(text)
+    const { language, voiceId, voice } = this.voiceFor(text)
+    this.spokenWith = voice
     if (this.native) { window.InhouseSpeech.speak(text, language, this.rate, voiceId, id); return }
     const utterance = new SpeechSynthesisUtterance(text)
     this.utterance = utterance
@@ -60,13 +65,22 @@ export class ReadingVoice {
     const voices = speechSynthesis.getVoices()
     utterance.voice = (voiceId && voices.find(v => v.voiceURI === voiceId)) || voices.find(v => v.lang.startsWith(language.split('-')[0])) || null
     utterance.onend = () => { if (id === this.utteranceId && this.state === 'playing') this.advance() }
-    utterance.onerror = event => { if (id === this.utteranceId && !['canceled','interrupted'].includes(event.error)) this.fail('No se pudo reproducir la voz. Prueba otra voz instalada.') }
+    utterance.onerror = event => { if (id === this.utteranceId && !['canceled','interrupted'].includes(event.error) && !this.useLocalVoice()) this.fail('No se pudo reproducir la voz. Prueba otra voz instalada.') }
     speechSynthesis.speak(utterance)
   }
   /** Voice and language for one chunk; the ranking (best natural voice, per-chunk language) lives in voice-catalog.js. */
   voiceFor(text) {
     const language = this.options.multilingual ? this.detectLanguage(text) : this.reader.language || navigator.language || 'es-ES'
-    return resolveVoice(readSystemVoices(window), { voiceId:this.voice, language, multilingual:this.options.multilingual, deviceLang:navigator.language })
+    let voices = readSystemVoices(window), voiceId = this.voice
+    if (this.localOnly) { voices = voices.filter(voice => !voice.network); if (!voices.some(voice => voice.id === voiceId)) voiceId = '' }
+    return resolveVoice(voices, { voiceId, language, multilingual:this.options.multilingual, deviceLang:navigator.language })
+  }
+  /** An online voice failed (offline, quota): once per session, carry on with the best on-device voice instead of stopping. */
+  useLocalVoice() {
+    if (this.localOnly || !this.spokenWith?.network || this.state !== 'playing') return false
+    this.localOnly = true
+    this.speakCurrent()
+    return true
   }
   async advance() {
     if (this.state !== 'playing') return
@@ -78,6 +92,12 @@ export class ReadingVoice {
         const previous = JSON.stringify(this.reader.location)
         await this.reader.next()
         if (generation !== this.generation || this.state !== 'playing') return
+        for (let retry = 0; retry < END_RETRIES && JSON.stringify(this.reader.location) === previous; retry++) {
+          await wait(END_RETRY_MS)
+          if (generation !== this.generation || this.state !== 'playing') return
+          await this.reader.next()
+          if (generation !== this.generation || this.state !== 'playing') return
+        }
         if (JSON.stringify(this.reader.location) === previous) { this.stop(); this.notify('Has llegado al final.'); return }
         const plan = await this.prepare()
         if (generation !== this.generation || this.state !== 'playing') return
@@ -144,7 +164,7 @@ export class ReadingVoice {
   }
   stop() {
     ++this.generation; this.state = 'stopped'; this.cancelUtterance(); this.source?.clear?.()
-    this.chunks = []; this.items = []; this.source = null; this.index = 0; clearTimeout(this.sleepTimer); this.notify()
+    this.chunks = []; this.items = []; this.source = null; this.index = 0; this.localOnly = false; this.spokenWith = null; clearTimeout(this.sleepTimer); this.notify()
   }
   fail(message) { this.stop(); this.notify(message) }
   setSleep(minutes) {

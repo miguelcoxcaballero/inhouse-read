@@ -224,7 +224,8 @@ export class FoliateReader {
    * spoken is on screen. Only the newest request matters; older ones yield.
    */
   #followSpeech(doc, range) {
-    if (!range) return
+    // Text that is not rendered (a hidden note) has no boxes: there is no page to show it on, so never turn pages for it.
+    if (!range || !range.getClientRects().length) return
     const ticket = ++this.#followTicket
     return this.#followTurn = this.#followTurn.catch(() => {}).then(async () => {
       const view = this.#view, renderer = view?.renderer
