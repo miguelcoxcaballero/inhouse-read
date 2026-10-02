@@ -86,11 +86,11 @@ for (const [format, file] of [['EPUB', EPUB], ['PDF', PDF]]) {
     expect(await noOverflow(page)).toBe(true)
 
     // Reading: the neural engine gets the fragment, the next ones and the speed; the system voice stays silent.
-    await page.getByRole('slider', { name:'Velocidad de voz' }).fill('1.4')
+    await page.getByRole('radio', { name: '1,5×', exact: true }).check()
     await page.getByRole('button', { name:'Reproducir', exact:true }).click()
     await expect.poll(async () => (await calls(page)).length).toBeGreaterThan(2)
     const spoken = await calls(page)
-    expect(spoken[0]).toMatchObject({ voiceId:LESSAC, rate:1.4, atSpeak:'' })
+    expect(spoken[0]).toMatchObject({ voiceId:LESSAC, rate:1.5, atSpeak:'' })
     expect(spoken[0].upcoming.length).toBeGreaterThanOrEqual(2); expect(spoken[0].upcoming.length).toBeLessThanOrEqual(4)
     expect(spoken[1].text).toBe(spoken[0].upcoming[0])
     expect(await engine(page, e => e.unlocks)).toBeGreaterThanOrEqual(1)

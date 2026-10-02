@@ -200,8 +200,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
       await expect(row(page, CLAUDE_ID).getByRole('button', { name: /Voz en uso Claude/ })).toBeVisible(SLOW) // the voice came back from Cache Storage after the reload
       await spyOnEngine(page)
       expect(await engineStats(page)).toMatchObject({ status: 'idle', installed: [CLAUDE_ID] })
-      const rate = page.getByRole('slider', { name: 'Velocidad de voz' })
-      await rate.fill('1.2')
+      await page.getByRole('radio', { name: '1,25×', exact: true }).check()
 
       // --- Play: the engine speaks (audio scheduled), the system voice stays silent.
       await play(page)
@@ -210,7 +209,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
       const first = await neu(page, n => ({ tap: n.tap, audio: n.audio[0].at, start: n.events.find(event => event.type === 'start').at, state: n.audio[0].state }))
       expect(first.state).toBe('running')
       expect(await systemSpoken(page)).toBe(0)
-      expect((await neu(page, n => n.speak))[0]).toMatchObject({ voiceId: CLAUDE_ID, rate: 1.2 })
+      expect((await neu(page, n => n.speak))[0]).toMatchObject({ voiceId: CLAUDE_ID, rate: 1.25 })
       expect((await neu(page, n => n.speak))[0].upcoming).toBeGreaterThanOrEqual(1)
       await closePanel(page)
 
@@ -256,11 +255,11 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
 
       // --- Speed: a new speed is heard now (the fragment is spoken again at that speed) and the look-ahead is rebuilt for it.
       await page.getByRole('button', { name: 'Escuchar el libro' }).click()
-      await page.getByRole('slider', { name: 'Velocidad de voz' }).fill('1.6')
-      await expect.poll(async () => (await neu(page, n => n.speak)).at(-1).rate, SLOW).toBe(1.6)
+      await page.getByRole('radio', { name: '1,5×', exact: true }).check()
+      await expect.poll(async () => (await neu(page, n => n.speak)).at(-1).rate, SLOW).toBe(1.5)
       const afterSpeed = await eventCount(page)
       await expect.poll(async () => (await types(page, afterSpeed)).includes('start'), SLOW).toBe(true)
-      expect((await neu(page, n => n.speak)).at(-1)).toMatchObject({ voiceId: CLAUDE_ID, rate: 1.6 })
+      expect((await neu(page, n => n.speak)).at(-1)).toMatchObject({ voiceId: CLAUDE_ID, rate: 1.5 })
       expect(await systemSpoken(page)).toBe(0)
       await shot(page, `${format}-speaking`)
       await page.getByRole('button', { name: 'Cerrar opciones de lectura' }).click()
@@ -309,7 +308,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await stopAndForget()
 
     // C: reading again within 90 s of the last speech (another speed, so nothing comes from the replay cache): the worker is alive.
-    await page.getByRole('slider', { name: 'Velocidad de voz' }).fill('1.3')
+    await page.getByRole('radio', { name: '1,25×', exact: true }).check()
     await play(page)
     numbers.firstAudio.tapWithWorkerAlive = await heard()
     expect(numbers.firstAudio.tapWithWorkerAlive.tapToStartEventMs).toBeLessThan(5000)
@@ -321,7 +320,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await open(page, EPUB)
     await openAudio(page)
     await spyOnEngine(page)
-    await page.getByRole('slider', { name: 'Velocidad de voz' }).fill('1.2')
+    await page.getByRole('radio', { name: '1,25×', exact: true }).check()
     await play(page)
     await expect.poll(async () => (await starts(page)).length, SLOW).toBeGreaterThan(0)
     const neuralStarts = (await starts(page)).length
@@ -486,7 +485,7 @@ test('default Hugging Face URLs and the first-use offer: one tap downloads the v
   await open(page, EPUB)
   await page.evaluate(() => { window.__tts.state.ms = 2500 }) // the system voice reads slowly: the download finishes while it is speaking
   await openAudio(page)
-  await page.getByRole('slider', { name: 'Velocidad de voz' }).fill('1.2')
+  await page.getByRole('radio', { name: '1,25×', exact: true }).check()
   await play(page)
   await expect.poll(() => systemSpoken(page), SLOW).toBeGreaterThan(0) // the system voice carries the first fragments
   const offer = page.locator('[data-neural-offer]')
@@ -500,7 +499,7 @@ test('default Hugging Face URLs and the first-use offer: one tap downloads the v
   await spyOnEngine(page)
   // The natural voice takes over at the next fragment, while the audiobook keeps playing.
   await expect.poll(async () => (await starts(page)).length, SLOW).toBeGreaterThan(1)
-  expect((await neu(page, n => n.speak))[0]).toMatchObject({ voiceId: CLAUDE_ID, rate: 1.2 })
+  expect((await neu(page, n => n.speak))[0]).toMatchObject({ voiceId: CLAUDE_ID, rate: 1.25 })
   const spokenBySystem = await systemSpoken(page)
   await page.waitForTimeout(3000)
   expect(await systemSpoken(page)).toBe(spokenBySystem) // the system voice is not used again
