@@ -178,7 +178,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await expect.poll(() => bar.getAttribute('aria-valuenow').then(Number).catch(() => 100), SLOW).toBeGreaterThan(5) // mid-download, on screen
     await shot(page, 'download-in-progress').catch(() => {}) // best effort: the picture is evidence, not an assertion
     await expect(row(page, CLAUDE_ID).getByRole('button', { name: /Voz en uso Claude/ })).toHaveAttribute('aria-pressed', 'true', SLOW)
-    await expect(row(page, CLAUDE_ID)).toContainText('Instalada')
+    await expect(row(page, CLAUDE_ID)).toHaveAttribute('data-state', 'installed')
     await expect(page.getByRole('combobox', { name: 'Voz de lectura' })).toHaveValue(CLAUDE_ID)
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('inhouse-read-reading-preferences')).voice)).toBe(CLAUDE_ID)
     expect(await noOverflow(page)).toBe(true)
@@ -433,7 +433,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await openAudio(page)
     // The list is read from Cache Storage, no network needed.
     await expect(row(page, CLAUDE_ID).getByRole('button', { name: /Voz en uso Claude/ })).toBeVisible(SLOW)
-    await expect(row(page, CLAUDE_ID)).toContainText('Instalada')
+    await expect(row(page, CLAUDE_ID)).toHaveAttribute('data-state', 'installed')
     await spyOnEngine(page)
     await play(page)
     await expect.poll(async () => (await starts(page)).length, SLOW).toBeGreaterThan(1)

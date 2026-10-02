@@ -65,7 +65,7 @@ for (const [format, file] of [['EPUB', EPUB], ['PDF', PDF]]) {
     expect(await neural(page).locator('[data-neural-voice]').evaluateAll(items => items.slice(0, 2).map(item => item.dataset.neuralVoice))).toEqual([LESSAC, 'piper:en_GB-alba-medium'])
     expect(await engine(page, e => e.installs)).toEqual([]) // nothing downloads by itself
     await expect(row(page)).toContainText('Recomendada')
-    await expect(row(page)).toContainText('Inglés (EE. UU.) · 63 MB')
+    await expect(row(page)).toContainText('EE. UU. · 63 MB')
 
     await row(page).getByRole('button', { name:/Descargar la voz Lessac/ }).click()
     const bar = row(page).getByRole('progressbar', { name:'Descargando Lessac' })
@@ -78,7 +78,7 @@ for (const [format, file] of [['EPUB', EPUB], ['PDF', PDF]]) {
 
     await engine(page, e => e.finish('piper:en_US-lessac-high'))
     await expect(row(page).getByRole('button', { name:/Voz en uso Lessac/ })).toHaveAttribute('aria-pressed', 'true')
-    await expect(row(page)).toContainText('Instalada')
+    await expect(row(page)).toHaveAttribute('data-state', 'installed')
     await expect(page.getByRole('combobox', { name:'Voz de lectura' })).toHaveValue(LESSAC)
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('inhouse-read-reading-preferences')).voice)).toBe(LESSAC)
     await expect(page.locator('[data-voice-auto]')).toHaveText('')
