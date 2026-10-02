@@ -303,7 +303,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await expect.poll(() => page.evaluate(() => window.__neuEngine.core?.client?.loaded || ''), SLOW).toBe(CLAUDE)
     await play(page)
     numbers.firstAudio.tapAfterWarmUp = await heard()
-    expect(numbers.firstAudio.tapAfterWarmUp.tapToStartEventMs).toBeLessThan(5000) // a loaded machine adds seconds; a cold start would be ~4 s on top
+    expect(numbers.firstAudio.tapAfterWarmUp.tapToStartEventMs, 'the warm-up takes the cold start off the tap').toBeLessThan(numbers.firstAudio.coldWorker.tapToStartEventMs * 0.7)
     await stopAndForget()
 
     // C: reading again within 90 s of the last speech (another speed, so nothing comes from the replay cache): the worker is alive.
