@@ -20,7 +20,7 @@ for (const layout of [
   expect(await page.locator('#reader-back svg').evaluate(el=>getComputedStyle(el).stroke)).toBe(await page.locator('#reader-screen').evaluate(el=>getComputedStyle(el).color))
   await page.getByRole('button',{name:'Aspecto de lectura'}).click()
   await expect(page.getByRole('dialog',{name:'Texto',exact:true})).toBeVisible()
-  await expect(page.locator('.reading-details')).not.toHaveAttribute('open','')
+  await expect(page.locator('#reading-appearance .reading-details')).not.toHaveAttribute('open','')
   await expect(page.getByRole('slider',{name:'Interlineado',exact:true})).toBeHidden()
   await page.getByRole('button',{name:'Aumentar tamaño de letra'}).click()
   await expect(page.getByRole('slider',{name:'Tamaño de letra',exact:true})).toHaveValue('21')

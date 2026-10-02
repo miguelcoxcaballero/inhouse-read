@@ -48,7 +48,7 @@ test('PDF: temas y texto adaptable aplican tipografía, tamaño e interlineado p
   await page.getByRole('combobox', { name:'Vista del PDF' }).selectOption('text')
   await page.getByRole('combobox', { name:'Tipografía de lectura' }).selectOption('sans')
   await page.getByRole('slider', { name:'Tamaño de letra', exact:true }).fill('26')
-  await page.locator('.reading-details summary').click()
+  await page.locator('#reading-appearance .reading-details summary').click()
   await page.getByRole('slider', { name:'Interlineado', exact:true }).fill('2')
   await page.screenshot({ path:'test-results/reading-appearance-mobile.png' })
   await page.getByRole('button', { name:'Cerrar opciones de lectura' }).click()
@@ -178,7 +178,7 @@ test('voz Android: lista agrupada de voces naturales, voz automática y descarga
   await expect(select.locator('optgroup[label="Todas las voces"] option')).toHaveCount(3)
   await expect(select.locator('option').first()).toHaveText('Automática')
   // The book (and the test browser) is English: its best on-device voice is only "normal", so Android offers better ones.
-  await expect(page.getByText('Se usará: Inglés (EE. UU.) · Calidad normal · sin conexión.')).toBeVisible()
+  await expect(page.locator('[data-voice-auto]')).toHaveText('Inglés (EE. UU.) · Calidad normal · sin conexión')
   await page.getByRole('button', { name:'Instalar voces' }).click()
   expect(await page.evaluate(() => window.__voiceSettings)).toBe(1)
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()

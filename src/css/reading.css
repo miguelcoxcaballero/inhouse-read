@@ -268,12 +268,12 @@ body.is-reading .app-header, #reader-screen, .reader-viewport, .reader-toolbar, 
 .reading-neural-percent { flex:none; font-size:12px; font-variant-numeric:tabular-nums; opacity:.75; }
 @media (prefers-reduced-motion:no-preference) { .reading-neural-bar i { transition:width .2s linear; } }
 /* The first-use offer is one plain row under the controls: it never covers or delays playback. */
-.reading-neural-offer { margin:0 0 8px; padding:6px 0 6px 14px; border-radius:12px; background:color-mix(in srgb,currentColor 6%,transparent); }
+.reading-neural-offer { margin:0 0 8px; padding:6px 8px 6px 14px; border-radius:12px; background:color-mix(in srgb,currentColor 6%,transparent); }
 .reading-neural-offer__row { display:flex; align-items:center; gap:4px; }
 .reading-neural-offer__title { flex:1; min-width:0; margin:0; font-size:14px; font-weight:500; }
 .reading-neural-offer .reading-neural-btn { padding:0 12px; }
-.reading-neural-offer .reading-neural-voice__error { margin:0 14px 8px 0; }
-.reading-neural-offer .reading-neural-progress { margin:0 14px 10px 0; }
+.reading-neural-offer .reading-neural-voice__error { margin:0 6px 8px 0; }
+.reading-neural-offer .reading-neural-progress { margin:0 6px 10px 0; }
 @media (prefers-reduced-motion:reduce) { .reading-neural-bar i, .reading-row input[type=checkbox], .reading-row input[type=checkbox]::after { transition:none; } }
 #reading-audio .reading-details { margin-top:2px; margin-bottom:14px; border-bottom:1px solid color-mix(in srgb,currentColor 10%,transparent); }
 #reading-audio .reading-details summary { padding:14px 0; }
