@@ -5,6 +5,10 @@ import { DEFAULT_READING_PREFERENCES, READING_THEMES, normalizeReadingPreference
 vi.mock('../../src/js/readers/reading-voice.js', () => ({
   ReadingVoice:class { state = 'stopped'; stop = vi.fn() }
 }))
+// These tests exercise system voice controls; neural picker integration has its own suite.
+vi.mock('../../src/js/readers/neural-runtime.js', () => ({
+  loadNeural:async () => null, neuralEngine:() => null, neuralVoiceList:() => []
+}))
 
 const place = (value, fraction) => ({ locator:{ kind:'cfi', value }, fraction })
 const quiet = place('epubcfi(/6/2)', .1)
@@ -17,6 +21,8 @@ function deferred() {
 
 beforeEach(() => {
   localStorage.clear()
+  // Finish the idle warm-up inside the test, before its DOM is removed.
+  vi.stubGlobal('requestIdleCallback', callback => { callback(); return 0 })
   document.body.innerHTML = '<header class="app-header"></header><section id="reader-screen"><div id="reader-toolbar"></div></section>'
   for (const id of ['reader-location', 'reader-settings', 'reader-audio', 'reader-save-bookmark',
     'reader-search-shortcut', 'reader-more-shortcut',
@@ -27,7 +33,7 @@ beforeEach(() => {
     document.getElementById('reader-screen').append(button)
   }
 })
-afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = '' })
+afterEach(async () => { await Promise.resolve(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
 
 async function setup(persist = vi.fn(async () => {})) {
   const reader = {

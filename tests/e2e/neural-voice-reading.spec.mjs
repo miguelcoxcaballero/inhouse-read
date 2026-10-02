@@ -15,6 +15,7 @@ import { openAudioMenu, pickVoice, selectedOption } from './helpers/audio-menus.
 import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadavg } from 'node:os'
+import { execFileSync } from 'node:child_process'
 import { FIXTURES, haveVoice, hfPath, startHuggingFaceMirror } from './helpers/hf-mirror.mjs'
 
 const EPUB = 'tests/e2e/fixtures/lectura-es.epub'
@@ -56,14 +57,32 @@ function instrument({ base }) {
   setInterval(() => { const bar = document.querySelector('[role="progressbar"]'); if (bar) neu.progress.push(Number(bar.getAttribute('aria-valuenow'))) }, 40)
   try { new PerformanceObserver(list => { for (const entry of list.getEntries()) neu.longTasks.push(entry.duration) }).observe({ type: 'longtask', buffered: true }) } catch { /* not supported */ }
 
-  // The system voice: speechSynthesis with one Spanish voice; every utterance starts at once and ends after a short timer.
-  const log = [], state = { ms: 250 }
-  window.__tts = { log, state }
+  // Automatic completion for the reading tests; hold a fragment when testing a voice switch so the tiny book cannot end
+  // during a silence assertion. Cancellation also invalidates a start still queued in the microtask queue.
+  const log = [], state = { ms: 250, hold: false }
+  window.__tts = { log, state, finish: () => state.finish?.() }
   window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text } }
   Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: {
     getVoices: () => [{ name: 'Sistema', lang: 'es-ES', voiceURI: 'sistema-es', localService: true }], addEventListener() {}, removeEventListener() {}, pause() {}, resume() {},
-    cancel() { clearTimeout(state.pending) },
-    speak(utterance) { log.push({ text: utterance.text, highlight: '' }); Promise.resolve().then(() => { utterance.onstart?.({}); log.at(-1).highlight = window.__speechHighlight(); state.pending = setTimeout(() => utterance.onend?.({}), state.ms) }) }
+    cancel() { clearTimeout(state.pending); state.utterance = null; state.finish = null },
+    speak(utterance) {
+      const entry = { text: utterance.text, highlight: '' }
+      log.push(entry)
+      state.utterance = utterance
+      Promise.resolve().then(() => {
+        if (state.utterance !== utterance) return
+        utterance.onstart?.({})
+        entry.highlight = window.__speechHighlight()
+        const finish = () => {
+          if (state.utterance !== utterance) return
+          clearTimeout(state.pending)
+          state.utterance = null; state.finish = null
+          utterance.onend?.({})
+        }
+        state.finish = finish
+        if (!state.hold) state.pending = setTimeout(finish, state.ms)
+      })
+    }
   } })
 }
 
@@ -72,8 +91,14 @@ async function open(page, file) {
   await page.goto('./')
   await page.locator('#file-picker').setInputFiles(file)
   await expect(page.locator(file.endsWith('pdf') ? '.pdf-text-layer span' : 'foliate-view').first()).toBeVisible(SLOW)
+  if (!file.endsWith('pdf')) await expect.poll(() => page.evaluate(() => Boolean(document.querySelector('foliate-view')?.renderer?.getContents?.()[0]?.doc?.body)), SLOW).toBe(true)
+  // Cache Storage intentionally survives between cases, but the previous case's reading position must not. Rewind through
+  // the reader's own controls instead of deleting app data or depending on how far the previous audiobook got.
+  await page.locator('#reader-location').click()
+  await page.getByRole('slider', { name: 'Progreso del libro', exact: true }).fill('0')
   if (file.endsWith('pdf')) await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 1 de 3/, SLOW)
-  else await expect.poll(() => page.evaluate(() => Boolean(document.querySelector('foliate-view')?.renderer?.getContents?.()[0]?.doc?.body)), SLOW).toBe(true)
+  else await expect.poll(() => chapter(page), SLOW).toBe('La llegada')
+  await expect(page.locator('.reading-panel')).not.toBeVisible(SLOW) // a successful jump closes its own panel
 }
 const chapter = page => page.evaluate(() => document.querySelector('foliate-view')?.renderer?.getContents?.()[0]?.doc.querySelector('h1')?.textContent || '')
 const openAudio = async page => { await page.getByRole('button', { name: 'Escuchar el libro' }).click(); await openAudioMenu(page, 'Voz') } // the natural voices live in the Voz list
@@ -106,8 +131,14 @@ async function spyOnEngine(page) {
 }
 const engineStats = page => page.evaluate(() => ({ ...window.__neuEngine.stats, status: window.__neuEngine.status, installed: [...window.__neuEngine.installed] }))
 
-/** Sum of the resident memory of every Chromium process of the sandbox (MB): the worker's ONNX Runtime heap included. */
+/** Chromium resident memory (MB), including the worker's ONNX Runtime heap. */
 function residentMB() {
+  if (process.platform === 'win32') {
+    const bytes = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      '(Get-Process -Name headless_shell,chrome-headless-shell -ErrorAction SilentlyContinue | Measure-Object -Property WorkingSet64 -Sum).Sum'],
+    { encoding:'utf8', windowsHide:true }).trim()
+    return Number(bytes || 0) / 1048576
+  }
   let total = 0
   for (const pid of readdirSync('/proc').filter(name => /^\d+$/.test(name))) {
     try {
@@ -119,7 +150,7 @@ function residentMB() {
 }
 function watchMemory() {
   let peak = 0
-  const timer = setInterval(() => { peak = Math.max(peak, residentMB()) }, 400)
+  const timer = setInterval(() => { peak = Math.max(peak, residentMB()) }, process.platform === 'win32' ? 1000 : 400)
   return () => { clearInterval(timer); return Math.round(Math.max(peak, residentMB())) }
 }
 
@@ -142,8 +173,8 @@ test.afterAll(() => {
   writeFileSync(join(EVIDENCE, 'numbers.json'), JSON.stringify(numbers, null, 2))
 })
 
-test.describe.configure({ mode: 'serial' })
 test.describe('natural voices, end to end (real picker, download, engine and audio)', () => {
+  test.describe.configure({ mode: 'serial' })
   test.skip(!haveVoice(CLAUDE), `fixtures not found in ${FIXTURES} (set NEURAL_VOICE_FIXTURES)`)
   test.setTimeout(280_000)
 
@@ -153,6 +184,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     mirror = await startHuggingFaceMirror({ voices: [CLAUDE], sliceMs: 60 })
     // One browser context for the whole story: Cache Storage (the downloaded voice), the saved voice and the speed survive its reloads.
     context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' })
+    context.setDefaultTimeout(30_000)
     await context.addInitScript(instrument, { base: mirror.base })
     page = await context.newPage()
     page.on('pageerror', error => errors.push(error.message))
@@ -321,27 +353,48 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
   test('switching to a system voice in the middle of the reading, and back', async () => {
     await open(page, EPUB)
     await openAudio(page)
+    // This regression must also work when selected with --grep, without the picker's earlier installation test.
+    await expect(row(page, CLAUDE_ID)).toBeVisible(SLOW)
+    const download = row(page, CLAUDE_ID).getByRole('button', { name: /Descargar la voz Claude/ })
+    if (await download.isVisible()) await download.click()
+    await expect(row(page, CLAUDE_ID).getByRole('button', { name: /(Voz en uso|Elegir la voz) Claude/ })).toBeVisible(SLOW)
+    await pickVoice(page, CLAUDE_ID)
     await spyOnEngine(page)
     await page.getByRole('slider', { name: 'Velocidad de voz' }).fill('1.2')
+    await page.evaluate(() => { window.__tts.state.hold = true })
     await play(page)
     await expect.poll(async () => (await starts(page)).length, SLOW).toBeGreaterThan(0)
-    const neuralStarts = (await starts(page)).length
-    const speaks = (await neu(page, n => n.speak)).length
 
     await pickVoice(page, 'sistema-es')
-    await expect.poll(() => systemSpoken(page), SLOW).toBeGreaterThan(1) // the system voice carries on, fragment after fragment
-    expect((await neu(page, n => n.speak)).length).toBe(speaks) // the neural engine is not asked again
+    await expect.poll(() => systemSpoken(page), SLOW).toBe(1)
+    // Observe after the selection: normal neural progress while the dropdown was being opened is not a failed cancellation.
+    const neuralStarts = (await starts(page)).length, speaks = (await neu(page, n => n.speak)).length
+    const scheduledAtSwitch = await neu(page, n => n.audio.length)
+    expect(await page.evaluate(() => window.__tts.log[0].text)).toBe((await neu(page, n => n.speak)).at(-1).text)
+    await expect.poll(() => page.evaluate(() => Boolean(window.__tts.state.finish))).toBe(true)
+    await page.evaluate(() => window.__tts.finish())
+    await expect.poll(() => systemSpoken(page), SLOW).toBe(2) // the system voice carries on to the next fragment
     const quiet = await eventCount(page)
     await page.waitForTimeout(1200)
     expect((await types(page, quiet)).includes('start')).toBe(false) // and it is silent: no neural start after the switch
+    expect((await neu(page, n => n.speak)).length).toBe(speaks)
+    expect(await neu(page, n => n.audio.length)).toBe(scheduledAtSwitch)
     expect((await engineStats(page)).status).toBe('idle')
     await expect.poll(() => page.evaluate(() => window.__speechHighlight()), SLOW).not.toBe('') // the highlight still follows
     expect(await starts(page)).toHaveLength(neuralStarts)
+    await expect(page.getByRole('button', { name: 'Pausar', exact: true })).toBeVisible()
 
-    // Back to the natural voice: it takes over again at once.
+    // Back to the natural voice: the same current fragment is resumed with the chosen speed, with real audible audio.
+    const currentFragment = await page.evaluate(() => window.__tts.log.at(-1).text)
     await pickVoice(page, CLAUDE_ID)
     await expect.poll(async () => (await neu(page, n => n.speak)).length, SLOW).toBeGreaterThan(speaks)
     await expect.poll(async () => (await starts(page)).length, SLOW).toBeGreaterThan(neuralStarts)
+    expect((await neu(page, n => n.speak))[speaks]).toMatchObject({ text: currentFragment, voiceId: CLAUDE_ID, rate: 1.2 })
+    await expect.poll(() => neu(page, n => n.audio.length), SLOW).toBeGreaterThan(scheduledAtSwitch)
+    await expectCleanAudio(page, 'resumed after system voice')
+    await shot(page, 'voice-switch-resumed')
+    numbers.voiceSwitch = { neuralStartsBeforeSystem: neuralStarts, neuralRequestsBeforeSystem: speaks,
+      systemFragments: await systemSpoken(page), resumedFragment: currentFragment }
     // Leaving the book while the natural voice speaks silences it for good (the reader's own stop, nothing keeps playing on the shelf).
     await closePanel(page)
     await page.locator('#reader-back').click()
@@ -443,6 +496,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     expect(await systemSpoken(page)).toBe(0)
     expect(mirror.hits.length).toBe(hitsBefore) // not a single request reached the voice host
     // Trying to download another voice says so in Spanish instead of failing silently.
+    await openAudioMenu(page, 'Voz')
     await row(page, DAVEFX_ID).getByRole('button', { name: /Descargar la voz Davefx/ }).click()
     await expect(row(page, DAVEFX_ID).getByRole('alert')).toHaveText('Sin conexión.', SLOW)
     await expect(row(page, DAVEFX_ID).getByRole('button', { name: /Reintentar la descarga de Davefx/ })).toBeVisible()
@@ -471,6 +525,7 @@ test('default Hugging Face URLs and the first-use offer: one tap downloads the v
   test.skip(!haveVoice(DAVEFX), `fixture ${DAVEFX} not found in ${FIXTURES}`)
   test.setTimeout(280_000)
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' })
+  context.setDefaultTimeout(30_000)
   await context.addInitScript(instrument, { base: null })
   const page = await context.newPage()
   const errors = []; page.on('pageerror', error => errors.push(error.message))
@@ -511,6 +566,7 @@ test('default Hugging Face URLs and the first-use offer: one tap downloads the v
   await page.getByRole('button', { name: 'Detener', exact: true }).click()
 
   // A second voice (another model) from the catalogue downloads from its own URL and speaks.
+  await openAudioMenu(page, 'Voz')
   await row(page, DAVEFX_ID).getByRole('button', { name: /Descargar la voz Davefx/ }).click()
   await expect(row(page, DAVEFX_ID).getByRole('button', { name: /Voz en uso Davefx/ })).toBeVisible(SLOW)
   expect(requested).toContain(`${ROOT}${hfPath(DAVEFX)}.onnx`)
