@@ -220,6 +220,22 @@ describe('actual rendered reading page snapshots', () => {
     expect(asCalls(painted)).toEqual([['a',0],['b',12.5],['cd',35]])
   })
 
+  it('keeps an emoji sequence in one piece even when the word has to be spread character by character', async () => {
+    charWidth = 10
+    // "👍🏽 ab": the thumb and its skin tone (two code points, two UTF-16 units each) are 50 px wide in the page but 40 in the font.
+    const { painted } = await paint('<article><p>👍🏽 ab</p></article>',
+      [[[0,25]],[[0,25]],[[25,25]],[[25,25]],[[50,40]],[[90,10]],[[100,10]]])
+    expect(asCalls(painted)).toEqual([['👍🏽',0],['ab',90]])
+  })
+
+  it('keeps a combining accent, a variation selector and a joiner with the character they belong to', async () => {
+    charWidth = 10
+    const { painted, snapshot } = await paint('<article><p>ae\u0301 b\u2764\ufe0f</p></article>',
+      one([0,10],[10,10],[20,0],[20,10],[30,10],[40,10],[50,0]))
+    expect(asCalls(painted)).toEqual([['ae\u0301 b\u2764\ufe0f',0]])
+    expect(snapshot.text).toBe('ae\u0301 b\u2764\ufe0f')
+  })
+
   it('draws the hyphen the browser generates at a soft hyphen line break and does not move the next letter to it', async () => {
     charWidth = 10
     // "ma­nera" broke after "ma": the soft hyphen has a zero-width rect plus the hyphen's, and its

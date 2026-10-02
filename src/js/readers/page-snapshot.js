@@ -17,6 +17,11 @@ const LETTER = /\p{L}/u
 const LETTER_BEFORE = /[\p{L}\p{N}'\u2019]/u
 // What ::first-letter styles: the first letter or digit and the punctuation before it.
 const INITIAL = /^[\s\p{P}\p{S}]*[\p{L}\p{N}]/u
+// Zero-width marks that belong to the character before them: combining accents, joiners, variation selectors.
+const ATTACHED = /[\p{M}\u200c\u200d]/u
+// An emoji is often several code points the browser draws as one glyph: skin tones, ZWJ sequences, flags.
+const EMOJI_JOIN = /^[\u{1f3fb}-\u{1f3ff}\u200d]/u
+const REGIONAL = /^[\u{1f1e6}-\u{1f1ff}]$/u
 const INITIAL_PROPERTIES = ['fontSize', 'fontFamily', 'fontWeight', 'fontStyle', 'color']
 
 export function plainBounds(rect) {
@@ -367,7 +372,14 @@ export async function snapshotDOMPage(root, {
           // Words that do not match their natural width (letter-spaced scripts, tabular figures) keep their characters where they are.
           if (!(width - ctx.measureText(wordGlyphs).width > STRETCH_TOLERANCE)) put(wordGlyphs + tail, anchor(word[0]))
           else {
-            for (const item of word) put(item.glyph, anchor(item))
+            // ...but a glyph the font draws from several code points (emoji sequences, flags) stays together.
+            const glyphs = []
+            for (const item of word) {
+              const before = glyphs.at(-1)
+              if (before && (EMOJI_JOIN.test(item.glyph) || before.glyph.endsWith('\u200d') || (REGIONAL.test(item.glyph) && REGIONAL.test(before.glyph)))) before.glyph += item.glyph
+              else glyphs.push({ ...item })
+            }
+            for (const item of glyphs) put(item.glyph, anchor(item))
             if (tail) put(tail, reverse ? word.at(-1).left - ctx.measureText(tail).width : word.at(-1).right)
           }
           word = []
@@ -406,7 +418,12 @@ export async function snapshotDOMPage(root, {
         // soft hyphen leaks into the next character's list. The last one is its own.
         const rect = [...measured.getClientRects()].at(-1)
         // Collapsed white space and zero-width marks occupy no space: they neither paint nor break the line.
-        if (!rect || rect.width < ZERO_WIDTH) continue
+        if (!rect || rect.width < ZERO_WIDTH) {
+          // A mark, joiner or variation selector has no width of its own: it is drawn with the character before it.
+          const last = run?.chars.at(-1)
+          if (last && !last.space && ATTACHED.test(character)) { last.glyph += character; run.text += character }
+          continue
+        }
         if (!intersects(rect, bounds)) { flush(); continue }
         const variant = initial && at < initial.length ? initial.style : null
         const capital = transform === 'capitalize' && !LETTER_BEFORE.test(node.nodeValue[at - 1] || ' ')
