@@ -23,6 +23,14 @@ function pointer(node, type, x=160, y=240) {
 }
 
 describe('persistent shelf illumination', () => {
+  it.each(['walnut','baggebo'])('keeps lamps at the same physical scale as books and pots on %s', async shelfType => {
+    shelf = renderBookshelf(container, [], { shelfWidth:390, shelfType });
+    await catalog.options.onAddLamp({lampId:'tarnaby'});
+    const scale = shelfType === 'baggebo' ? 390 / 600 : (window.innerWidth >= 600 ? 200 : 172) / 280;
+    const node=container.querySelector('.ihr-lamp');
+    expect(parseFloat(node.style.getPropertyValue('--ihr-lamp-h'))).toBeCloseTo(250*scale);
+    expect(parseFloat(node.style.getPropertyValue('--ihr-lamp-w'))).toBeCloseTo(150*scale);
+  });
   it('adds all three models with distinct identities and restores their saved placement', async () => {
     shelf = renderBookshelf(container, [], { shelfWidth:390 });
     for (const lampId of ['mittled','tarnaby','tripod']) await catalog.options.onAddLamp({ lampId });

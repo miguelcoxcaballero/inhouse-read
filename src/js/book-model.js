@@ -940,7 +940,14 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   pagePaper.position.set(inset * .3 - inset / 2, 0, pageFront);
   pagePaper.visible = false;
   pagePaper.name = 'reading-page-paper'; group.add(pagePaper);
-  const pageMaterial = new THREE.MeshBasicMaterial({ color:0xffffff, toneMapped:false });
+  // Both map and blending variants exist before the first flyout frame.
+  // Replacing their pixels cannot introduce a shader variant when opening.
+  const blankPageMap = () => {
+    const map = new THREE.DataTexture(new Uint8Array([255,255,255,255]), 1, 1);
+    map.colorSpace = THREE.SRGBColorSpace; map.minFilter = THREE.LinearFilter;
+    map.generateMipmaps = false; map.needsUpdate = true; return map;
+  };
+  const pageMaterial = new THREE.MeshBasicMaterial({ color:0xffffff, toneMapped:false, map:blankPageMap(), transparent:true });
   const pageImage = new THREE.Mesh(new THREE.PlaneGeometry(pageWidth, pageHeight), pageMaterial);
   pageImage.name = 'reading-page';
   pageImage.position.set(inset * .3, 0, pageFront + board * .02);
@@ -950,7 +957,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   // book opens and closes in sepia and the reading theme fades over it
   // (pageTheme 0 = sepia, 1 = the reader's theme). Only exists when the
   // snapshot carries a variant, i.e. when the theme is not sepia already.
-  const sepiaMaterial = new THREE.MeshBasicMaterial({ color:0xffffff, toneMapped:false });
+  const sepiaMaterial = new THREE.MeshBasicMaterial({ color:0xffffff, toneMapped:false, map:blankPageMap() });
   const sepiaImage = new THREE.Mesh(new THREE.PlaneGeometry(pageWidth, pageHeight), sepiaMaterial);
   sepiaImage.name = 'reading-page-sepia';
   sepiaImage.position.set(inset * .3, 0, pageFront + board * .01);
@@ -977,7 +984,9 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     return true;
   };
   group.userData.getPageTheme = () => pageTheme;
-  group.userData.setPageSnapshot = (snapshot, { pageTheme:initialTheme } = {}) => {
+  // `redraw:false` builds the page without rendering it (the caller draws later).
+  group.userData.getPageTextures = () => sepiaImage.visible ? [pageMaterial.map, sepiaMaterial.map] : [pageMaterial.map];
+  group.userData.setPageSnapshot = (snapshot, { pageTheme:initialTheme, redraw = true } = {}) => {
     if (disposed || !snapshot?.source) return false;
     const imageWidth = Number(snapshot.width || snapshot.source.width || snapshot.source.naturalWidth);
     const imageHeight = Number(snapshot.height || snapshot.source.height || snapshot.source.naturalHeight);
@@ -998,13 +1007,14 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     const variant = snapshot.sepia?.source ? snapshot.sepia : null;
     const sameSize = variant && Number(variant.width || variant.source.width) === imageWidth
       && Number(variant.height || variant.source.height) === imageHeight;
-    sepiaMaterial.map?.dispose(); sepiaMaterial.map = null;
+    sepiaMaterial.map?.dispose();
     if (sameSize) {
       sepiaImage.geometry.dispose(); sepiaImage.geometry = pageImage.geometry.clone();
       sepiaMaterial.map = pageTexture(variant.source); sepiaMaterial.needsUpdate = true;
-      sepiaImage.visible = true; pageMaterial.transparent = true;
+      sepiaImage.visible = true;
     } else {
-      sepiaImage.visible = false; pageMaterial.transparent = false; pageMaterial.opacity = 1;
+      sepiaMaterial.map = blankPageMap();
+      sepiaImage.visible = false; pageMaterial.opacity = 1;
     }
     if (initialTheme != null) pageTheme = Math.max(0, Math.min(1, Number(initialTheme) || 0));
     // White for a PDF, the theme's paper for an EPUB; cream when unreadable.
@@ -1013,7 +1023,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     if (sepiaImage.visible) applyPageTheme();
     else if (themeTone) { pagePaper.material.color.copy(themeTone); leafPaper?.color.copy(themeTone).multiply(LEAF_LIGHT); }
     group.userData.pageSnapshot = snapshot;
-    group.userData.invalidate?.();
+    if (redraw) group.userData.invalidate?.();
     return true;
   };
   let bookmark = bookmarkFor(book);
@@ -1471,20 +1481,33 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   }
   // `pageTheme` (0 = sepia, 1 = the reader's own theme; default 1) is where the
   // page's colour starts: the book opens and closes in sepia.
-  function setPageSnapshot(snapshot, { pageTheme:initialTheme } = {}) {
+  function setPageSnapshot(snapshot, { pageTheme:initialTheme, redraw = true } = {}) {
     if (initialTheme != null) {
       pageTheme = Math.max(0, Math.min(1, Number(initialTheme) || 0));
       if (current) current = { ...current, pageTheme };
     }
-    if (disposed || !model.userData.setPageSnapshot(snapshot, { pageTheme })) return false;
+    if (disposed || !model.userData.setPageSnapshot(snapshot, { pageTheme, redraw })) return false;
     currentSnapshot = snapshot;
-    pendingModel?.userData.setPageSnapshot(snapshot, { pageTheme });
+    pendingModel?.userData.setPageSnapshot(snapshot, { pageTheme, redraw });
     canvas.dataset.pageSource = snapshot.sourceType || snapshot.engine || 'reader-page';
     canvas.dataset.pageLocator = JSON.stringify(snapshot.location?.locator ?? snapshot.location ?? null);
     canvas.dataset.pageText = String(snapshot.text || '').slice(0, 500);
     canvas.dataset.pageWidth = String(snapshot.width || snapshot.source.width);
     canvas.dataset.pageHeight = String(snapshot.height || snapshot.source.height);
-    if (current) draw(current);
+    if (current && redraw) draw(current);
+    return true;
+  }
+  // Warm-up of a page that is not on screen yet: the textures go to the GPU
+  // one by one (each upload is its own slice of main-thread time), then a
+  // single draw links the page's programs. Opening later finds all of it done.
+  const pageTextures = () => (disposed ? [] : model.userData.getPageTextures());
+  // Starts linking the programs the now visible page needs; where the driver
+  // links in parallel, the draw that follows finds them done.
+  function compilePage() { if (!disposed) try { gpu.compile(scene, camera); } catch { /* linked on first draw */ } }
+  function uploadPageTexture(texture) {
+    if (disposed || !pageTextures().includes(texture)) return false;
+    texture.anisotropy = Math.min(16, gpu.capabilities.getMaxAnisotropy()); // what draw() would set first
+    gpu.initTexture(texture);
     return true;
   }
   function getPageBounds() {
@@ -1548,7 +1571,8 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   }
   return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
     updateAppearance, updateSpineAppearance, updateCoverAppearance, updateEdgeAppearance,
-    setPageSnapshot, setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
+    setPageSnapshot, pageTextures, uploadPageTexture, compilePage, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
+    setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
     getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,
     animateCoverOpen, animateCoverClose, animateBookmark, alignToPage, animateToPage,
     animate:animateMotion,

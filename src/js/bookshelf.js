@@ -95,19 +95,22 @@
  * hay que abrir uno.
  */
 
-import { planBookshelf, bookmarkFor, withDefaults } from './bookshelf-layout.js';
+import { planBookshelf, bookmarkFor, withDefaults, DEFAULT_LAYOUT } from './bookshelf-layout.js';
 import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from './cover-appearance.js';
 import { bookColorOptions, spineColorStyle, spineFinish, surfaceFinish, METAL_COLORS } from './book-colors.js';
 import { normalizeBookAuthor } from './book-title.js';
 import { bookView, fitCoverImage, getBookRenderer, planReadingBookPose } from './book-model.js';
 import { createShelfZoom } from './shelf-zoom.js';
+import { markTiming, resetTimeline } from './perf-marks.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
 import { layoutShelfDecorations, moveShelfDecoration } from './shelf-decoration-layout.js';
 import { createPlantCatalog } from './plant-catalog.js';
 import { normalizeShelfType, BAGGEBO_SPEC } from './shelf-types.js';
 import { baggeboLayout } from './shelf-model-layout.js';
+import { placeRooftopPlants } from './plant-rooftop-layout.js';
 import { getCatalogPlant, getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { normalizeShelfPlant, resolveCatalogPlant } from './plant-records.js';
+import { shelfScale, plantDimensions, PLANT_MAX_HEIGHT_MM } from './plant-dimensions.js';
 import { getCatalogLamp, normalizeShelfLamp } from './lamp-catalog-data.js';
 import { lampCatalogIllustration } from './lamp-illustration.js';
 
@@ -721,12 +724,18 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   function lampShelfObject(record) {
     const lamp = getCatalogLamp(record.lampId);
-    const shelfHeight = window.innerWidth >= 600 ? 200 : 172;
-    const scale = Math.min(state.shelfWidth / 600,
-      state.shelfType === 'baggebo' ? Infinity : (shelfHeight + 36) / lamp.dimensions.height);
+    const scale = shelfScale({ shelfType:state.shelfType, shelfWidth:state.shelfWidth, viewportWidth:window.innerWidth });
     return { ...record, kind:'lamp', mount:lamp.mount,
       width:lamp.dimensions.width * scale, height:lamp.dimensions.height * scale,
       depth:lamp.dimensions.depth * scale };
+  }
+
+  /** Real IKEA sizes are millimetres; scene pixels follow the shelf's scale. */
+  const plantScale = () => shelfScale({ shelfType:state.shelfType, shelfWidth:state.shelfWidth, viewportWidth:window.innerWidth });
+  function plantShelfObject(record, scale = plantScale()) {
+    const size = normalizeShelfPlant({ ...record, key:record.key || 'plant' });
+    const real = plantDimensions(size.catalogId, size.potId);
+    return { ...record, kind:'plant', width:size.width * scale, height:size.height * scale, depth:real.depth * scale };
   }
 
   function updateLampControl(node, record) {
@@ -786,10 +795,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const viewport = scroller.getBoundingClientRect();
     const destination = dropPositionAt(viewport.left + viewport.width * .4,
       viewport.top + Math.min(viewport.height * .4, 260));
-    const record = { key, seed:key, catalogId:plant.id, variant:plant.variant, potId:pot.id, potColorId:getPotColor(pot.id,potColorId).id,
-      width:plant.width, height:plant.height, shelf:destination?.shelf ?? 0 };
+    let record = { key, seed:key, catalogId:plant.id, variant:plant.variant, potId:pot.id, potColorId:getPotColor(pot.id,potColorId).id,
+      shelf:destination?.shelf ?? 0 };
     const oldRects = objectRects(), previous = state.plants;
-    const objects = [...state.placementObjects, { ...record, kind:'plant' }];
+    record = normalizeShelfPlant(record);
+    const objects = [...state.placementObjects, plantShelfObject(record)];
     const arranged = layoutShelfDecorations(objects, placementConfig()).flatMap(shelf => shelf.items);
     const positions = new Map(arranged.map(item => [item.key, { shelf:item.shelf, x:item.x }]));
     state.plants = [...previous, record].map(item => ({ ...item, ...positions.get(item.key) }));
@@ -1313,7 +1323,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function buildPlant(item) {
     item = normalizeShelfPlant({ ...item, key:item.key || `plant:${item.seed}` });
     const plant = resolveCatalogPlant(item);
-    const height = item.height;
+    const scale = plantScale(), width = item.width * scale, height = item.height * scale;
     const node = el('button', {
       type:'button',
       class: `ihr-plant ihr-plant--${item.variant}`,
@@ -1325,7 +1335,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       'aria-description':'Mantén pulsado para mover la planta o llevarla a la papelera. Usa Mayús y las flechas para cambiar su posición o balda, y Suprimir para retirarla.',
       title:'Mantén pulsado para mover la planta',
       style:
-        `--ihr-plant-w:${item.width}px;` +
+        `--ihr-plant-w:${width}px;` +
         `--ihr-plant-h:${height}px;` +
         '--ihr-plant-overhang:0px'
     });
@@ -1434,12 +1444,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       }
     }
     if (!state.plantsInitialized) {
-      state.plants = initialPlants.map(({ key, seed, variant, width, shelf, x }) =>
-        normalizeShelfPlant({ key, seed, variant, width, shelf, x }));
+      state.plants = initialPlants.map(({ key, seed, variant, shelf, x }) =>
+        normalizeShelfPlant({ key, seed, variant, shelf, x }));
       state.plantsInitialized = true;
       savePlants();
     }
-    objects.push(...state.plants.map(plant => ({ ...plant, kind:'plant' })));
+    const scale = plantScale();
+    objects.push(...state.plants.map(plant => plantShelfObject(plant, scale)));
     objects.push(...state.lamps.map(lampShelfObject));
     const placements = Object.fromEntries(objects.filter(item => item.kind === 'book' && item.book.shelfPosition)
       .map(item => [item.key, item.book.shelfPosition]));
@@ -1560,6 +1571,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const previousChildren = retainedScene ? [...scroller.children] : [];
     if (!retainedScene) scroller.textContent = '';
 
+    const plantSlotWidth = variant => plantShelfObject({ key:'plant', variant }).width;
+    const plantVariants = DEFAULT_LAYOUT.plantVariants;
     const plan = planBookshelf(state.books, {
       shelfWidth: width,
       padding: shelfPadding(),
@@ -1567,6 +1580,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       plantEvery: opts.plantEvery,
       sort: opts.sort,
       spine: spineOptionsFor(width),
+      plantWidth: Math.min(...plantVariants.map(plantSlotWidth)),
+      plantWidthFor: plantSlotWidth,
       // Sin secciones, 0 recientes: todo cae en una estantería continua.
       recentLimit: opts.sections ? opts.recentLimit : 0
     });
@@ -1580,7 +1595,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           index,
           items: [{
             kind: 'plant', variant: plants[index % plants.length],
-            seed: `empty-shelf-${index}`, width: 42 + (index % 3) * 6
+            seed: `empty-shelf-${index}`, width: plantSlotWidth(plants[index % plants.length])
           }]
         });
       }
@@ -1699,7 +1714,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           continue;
         }
         if (node.classList.contains('ihr-plant')) {
+          const record = state.plants.find(item => item.key === node.dataset.objectId);
           entries.push({ kind:'plant', key:node.dataset.objectId, node, x, y, shelf:shelfIndex, depthInset:0, width:rect.width, height:rect.height,
+            depth:record ? plantShelfObject(record).depth : rect.width * .7,
             catalogId:node.dataset.catalogId, potId:node.dataset.potId, potColorId:node.dataset.potColorId,
             seed:node.dataset.plantSeed, variant:node.dataset.plantVariant });
           continue;
@@ -1714,7 +1731,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
     const layout = { stage, scroller, entries, rows, width, sceneWidth:width, trashNode, catalogNode,
       shelfType:state.shelfType, height:stage.getBoundingClientRect().height, mode:state.viewMode };
-    return state.shelfType === 'baggebo' ? baggeboLayout(layout) : layout;
+    if (state.shelfType === 'baggebo') return placeRooftopPlants(baggeboLayout(layout));
+    for (const entry of entries) if (entry.kind === 'plant' && entry.height > PLANT_MAX_HEIGHT_MM * plantScale()) {
+      entry.rooftop = true; entry.y = -entry.height / 2;
+    }
+    return placeRooftopPlants(layout);
   }
 
   function scheduleRender() {
@@ -1805,6 +1826,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   async function openBook(spineEl, item) {
     if (state.busy || state.session || state.returnMotion || state.destroyed) return;
     state.busy = true;
+    // True once the lifted book sits still (the pull-out has finished), false if
+    // the selection ends without that. The page being prepared for this book waits for it.
+    let settle;
+    const settled = new Promise(resolve => { settle = resolve; });
     const finishPendingSelection = () => {
       document.removeEventListener('keydown', onPendingKeydown, true);
       if (state.pendingSelection === pendingSelection) state.pendingSelection = null;
@@ -1812,6 +1837,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const pendingSelection = { cancelled:false, cancel() {
       if (state.pendingSelection !== pendingSelection) return;
       pendingSelection.cancelled = true;
+      settle(false);
+      options.onBookDismiss?.(item.book);
       finishPendingSelection();
       state.busy = false;
       applyDeferredShelfUpdates();
@@ -1827,7 +1854,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const { book } = item;
     let style = item.style;
     const initialStyle = item.style;
-    options.onPrepareBook?.(book);
+    resetTimeline(); markTiming('select');
+    options.onPrepareBook?.(book, { settled });
     /*
       Se mide sin transform: de un libro inclinado, getBoundingClientRect
       devuelve la caja del rectángulo girado (más ancha y más alta que el
@@ -1987,6 +2015,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       }
       clearInterval(readyCheck);
       session.cancelled = true;
+      settle(false);
+      options.onBookDismiss?.(book);
       session.onCancel?.();
       document.removeEventListener('keydown', onKeydown, true);
       // A slow image may still be loading before the flyout's first frame.
@@ -2809,17 +2839,20 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (session.cancelled || state.destroyed) return;
 
     session.phase = 'ready';
+    markTiming('flyout-ready');
+    settle(true);
     flyout.classList.add('is-ready');
     actionButtons[0].disabled = false;
     actionButtons[2].disabled = false;
     coverTarget.hidden = !opts.autoOpen;
     coverTarget.classList.add('is-ready');
 
-    function installOpeningPage(snapshot) {
+    function installOpeningPage(snapshot, { redraw = true } = {}) {
       if (!snapshot?.source) return false;
       // The book opens in sepia whatever the reading theme: the snapshot's
       // sepia variant starts at pageTheme 0 and fades to the theme on the zoom.
-      if (view) return view.setPageSnapshot(snapshot, snapshot.sepia ? { pageTheme:0 } : undefined);
+      // A page warmed up while the book waited is already on the model.
+      if (view) return view.hasPageSnapshot(snapshot) || view.setPageSnapshot(snapshot, { ...(snapshot.sepia ? { pageTheme:0 } : {}), redraw });
       const pages = bookNode.querySelector('.ihr-flyout__fallback-pages');
       if (!pages) return false;
       const canvas = snapshot.source;
@@ -2833,6 +2866,28 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       pages.replaceChildren(...fallbackPageLayers(canvas, snapshot, 0));
       return true;
     }
+
+    // The page this book will open on arrives while the cover still waits for
+    // a tap (the cover is closed, so it stays hidden behind it). Textures and
+    // programs are built here, in separate idle slices, so the tap only has to
+    // play the animation. Returns false when it could not (or need not) be done.
+    session.warmOpeningPage = async (snapshot, idle) => {
+      const stale = () => session.cancelled || state.destroyed || state.session !== session || session.phase !== 'ready';
+      if (!view || stale() || !installOpeningPage(snapshot, { redraw:false })) return false;
+      await idle();
+      if (stale() || !view.hasPageSnapshot(snapshot)) return false;
+      view.compilePage();
+      for (const texture of view.pageTextures()) {
+        await idle();
+        if (stale() || !view.hasPageSnapshot(snapshot)) return false;
+        view.uploadPageTexture(texture);
+      }
+      await idle();
+      if (stale() || !view.hasPageSnapshot(snapshot)) return false;
+      view.draw(view.getPose()); // links the page's programs and renders the covered page once
+      markTiming('textures-uploaded');
+      return true;
+    };
 
     async function animateBookToPage(target) {
       if (session.cancelled || state.destroyed) return;
@@ -2863,6 +2918,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     async function finishReaderTransition({ pageSnapshot, animatePage } = {}) {
       if (session.cancelled || state.destroyed) return false;
       if (pageSnapshot && !installOpeningPage(pageSnapshot)) throw new Error('No se pudo preparar la página del modelo 3D.');
+      markTiming('page-installed');
       session.phase = 'reading';
       flyout.dataset.openingPhase = 'opening';
       flyout.classList.add('is-opening-book');
@@ -2927,6 +2983,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       coverTarget.hidden = true;
       actionButtons.forEach(button => { button.disabled = true; });
       readiness.textContent = 'Preparando tu última página…';
+      markTiming('open-tap');
       try {
         await onOpen?.(book, {
           coverUrl,
@@ -3231,6 +3288,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     update: refresh,
     returnToShelf,
     hasReaderOrigin:bookId => state.lastOpened?.book.id === bookId,
+
+    /** Hands the page a lifted book will open on to its 3D model ahead of the tap. */
+    prepareOpeningPage(bookId, snapshot, idle = () => new Promise(resolve => setTimeout(resolve, 0))) {
+      const session = state.session;
+      if (!session?.warmOpeningPage || session.cancelled || session.book.id !== bookId) return Promise.resolve(false);
+      return session.warmOpeningPage(snapshot, idle);
+    },
 
     /** Repliega la portada abierta, si la hay. */
     close() {

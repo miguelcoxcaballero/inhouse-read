@@ -12,6 +12,7 @@ export class ReaderController {
   #reader
   #format
   #location = { fraction:0, locator:null }
+  #epoch = 0
 
   async open(container, file, { onRelocate, onToggleChrome, onUserNavigation, onFollowLink } = {}) {
     this.close()
@@ -51,11 +52,15 @@ export class ReaderController {
     return this.#format
   }
 
+  /** Changes every time an engine is opened or closed: anything derived from the page of an earlier engine is stale. */
+  get epoch() { return this.#epoch }
+
   /** Metadatos del libro cuando el motor los expone (foliate); {} en PDF. */
   get metadata() {
     return this.#reader?.metadata ?? {}
   }
   get location() { return this.#location }
+  get rtl() { return Boolean(this.#reader?.rtl) }
   get language() { const lang = this.metadata.language; return (Array.isArray(lang) ? lang[0] : lang) || navigator.language }
   get toc() { return this.#reader?.toc ?? [] }
   async goToTarget(target) { await this.#reader?.goToTarget?.(target) }
@@ -121,6 +126,7 @@ export class ReaderController {
   }
 
   close() {
+    this.#epoch++
     this.#reader?.close()
     this.#reader = null
     this.#location = { fraction:0, locator:null }

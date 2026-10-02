@@ -6,6 +6,14 @@ test.use({ viewport:{ width:390,height:844 },hasTouch:true,isMobile:true,deviceS
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion:'no-preference' });
   await page.addInitScript(() => {
+    window.__plantGpu={links:0,longTasks:[]};
+    for (const type of [window.WebGLRenderingContext,window.WebGL2RenderingContext]) {
+      if (!type) continue;
+      const original=type.prototype.linkProgram;
+      type.prototype.linkProgram=function(...args) { window.__plantGpu.links++; return original.apply(this,args); };
+    }
+    new PerformanceObserver(list=>window.__plantGpu.longTasks.push(...list.getEntries().map(entry=>({start:entry.startTime,duration:entry.duration}))))
+      .observe({type:'longtask',buffered:true});
     if (localStorage.getItem('inhouse-read-shelf-plants') === null)
       localStorage.setItem('inhouse-read-shelf-plants','[]');
     if (localStorage.getItem('inhouse-read-shelf-view') === null)
@@ -122,7 +130,7 @@ test('el catálogo está pegado al lateral 3D, sólo aparece en isométrica y a�
   await expect(page.locator('.ihr-plant')).toHaveAttribute('data-pot-id','gradvis');
   const plants = await savedPlants(page);
   expect(plants).toHaveLength(1);
-  expect(plants[0]).toMatchObject({ catalogId:'monstera',potId:'gradvis',variant:'monstera',width:92,height:126 });
+  expect(plants[0]).toMatchObject({ catalogId:'monstera',potId:'gradvis',variant:'monstera',width:260,height:350 });
   expect(Number.isFinite(plants[0].x)).toBe(true);
   expect(Number.isFinite(plants[0].shelf)).toBe(true);
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating','false');
@@ -374,13 +382,13 @@ test('un gesto táctil desde las hojas mueve una planta superior directamente a 
     await testInfo.attach('hojas-touch-a-papelera-3d',{ body:Buffer.from(motion.image.split(',')[1],'base64'),contentType:'image/png' });
     await testInfo.attach('native-foliage-touch-events',{ body:JSON.stringify(motion.events,null,2),contentType:'application/json' });
     await testInfo.attach('native-foliage-trash-frames',{ body:JSON.stringify(motion.frames,null,2),contentType:'application/json' });
-    expect(await savedPlants(page)).toEqual([survivor]);
+    expect(await savedPlants(page)).toEqual([{...survivor,width:140,height:180}]);
     await assertIsometricOverview(page);
     await expect(page.locator('.ihr-plant')).toHaveCount(1);
     await page.reload();
     await expect(page.locator('.ihr-plant')).toHaveCount(1);
     await expect(plant).toHaveCount(0);
-    expect(await savedPlants(page)).toEqual([survivor]);
+    expect(await savedPlants(page)).toEqual([{...survivor,width:140,height:180}]);
     await assertIsometricOverview(page);
     expect(errors).toEqual([]);
   } catch (error) {
@@ -421,9 +429,9 @@ test('las plantas de una instalación antigua migran a los modelos actuales sin 
     { key:'plant:legacy-suculenta',seed:'legacy-suculenta',variant:'suculenta',width:50,shelf:2,x:.65 }
   ];
   const species = [
-    { catalogId:'sansevieria',variant:'sansevieria',potId:'muskot',height:124 },
-    { catalogId:'hedera',variant:'hedera',potId:'muskotblomma',height:106 },
-    { catalogId:'succulent',variant:'succulent',potId:'muskotblomma',height:72 }
+    { catalogId:'sansevieria',variant:'sansevieria',potId:'muskot',width:150,height:250 },
+    { catalogId:'hedera',variant:'hedera',potId:'muskotblomma',width:180,height:240 },
+    { catalogId:'succulent',variant:'succulent',potId:'muskotblomma',width:160,height:160 }
   ];
   await page.evaluate(({ plantsKey,legacy }) => {
     localStorage.setItem(plantsKey,JSON.stringify(legacy));
@@ -463,7 +471,7 @@ test('las plantas de una instalación antigua migran a los modelos actuales sin 
     expect(migrated[index]).toMatchObject({
       key:legacy[index].key,seed:legacy[index].seed,shelf:legacy[index].shelf,x:legacy[index].x,...species[index]
     });
-    expect(migrated[index].width).toBe(legacy[index].width);
+    expect(migrated[index].width).toBe(species[index].width);
   }
   await testInfo.attach('legacy-plantas-3d-frontal',{ body:await page.screenshot(),contentType:'image/png' });
   await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
@@ -553,4 +561,35 @@ test('la preview frontal usa el modelo 3D y el acabado elegido se conserva al a�
   await reopened.locator('[data-catalog-color="copper"]').click();
   await expect(reopened.locator('.ihr-plant-catalog__body:not([hidden]) .ihr-plant-catalog__drawing')).toHaveAttribute('data-pot-color-id','copper');
   expect(errors).toEqual([]);
+});
+
+test('una MONSTERA de 35 cm conserva su tamaño sobre el mueble en ambos tipos de estantería',async ({page},testInfo) => {
+  await page.setViewportSize({width:390,height:844});
+  await page.goto('./');
+  await page.evaluate(({key}) => {
+    localStorage.setItem(key,JSON.stringify([{key:'plant:real-monstera',seed:'preserved',catalogId:'monstera',potId:'gradvis',potColorId:'seafoam',width:92,height:126,shelf:1,x:.5}]));
+    localStorage.setItem('inhouse-read-shelf-view','isometric');
+  },{key:PLANTS_KEY});
+  for (const type of ['walnut','baggebo']) {
+    await page.evaluate(type=>localStorage.setItem('inhouse-read-shelf-type',type),type);
+    await page.reload();
+    const plant=page.locator('[data-object-id="plant:real-monstera"]');
+    await expect(plant).toHaveAttribute('data-plant-placement','rooftop');
+    await expect(plant).toHaveAttribute('data-scene-projected','true');
+    expect((await savedPlants(page))[0]).toMatchObject({seed:'preserved',potColorId:'seafoam',width:260,height:350,shelf:1,x:.5});
+    await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating','false');
+    const before=await page.evaluate(()=>({links:window.__plantGpu.links,programs:+document.querySelector('.ihr-bookshelf-scene').dataset.scenePrograms,
+      calls:+document.querySelector('.ihr-bookshelf-scene').dataset.sceneDrawCalls,renderCount:+document.querySelector('.ihr-bookshelf-scene').dataset.renderCount,start:performance.now()}));
+    await page.setViewportSize({width:391,height:844});
+    await expect.poll(async()=>+await page.locator('.ihr-bookshelf-scene').getAttribute('data-render-count')).toBeGreaterThan(before.renderCount);
+    await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating','false');
+    const after=await page.evaluate(start=>({links:window.__plantGpu.links,programs:+document.querySelector('.ihr-bookshelf-scene').dataset.scenePrograms,
+      calls:+document.querySelector('.ihr-bookshelf-scene').dataset.sceneDrawCalls,longTasks:window.__plantGpu.longTasks.filter(entry=>entry.start>=start)}),before.start);
+    expect(after.links-before.links).toBe(0);
+    expect(after.programs).toBe(before.programs);
+    expect(after.calls).toBe(before.calls);
+    console.log('PLANT_GPU',type,JSON.stringify({before,after}));
+    await page.setViewportSize({width:390,height:844});
+    await testInfo.attach(`monstera-${type}-real`,{body:await page.screenshot({path:process.env.IHR_SIZES_EVIDENCE_DIR ? `${process.env.IHR_SIZES_EVIDENCE_DIR}/${type}.png` : undefined}),contentType:'image/png'});
+  }
 });
