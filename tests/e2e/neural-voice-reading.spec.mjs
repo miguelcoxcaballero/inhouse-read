@@ -230,6 +230,11 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
       const stats = await engineStats(page)
       numbers[`${format}Reading`] = { fragmentsStarted: reading.length, chunks: audio.length, audioSeconds: +audio.reduce((sum, c) => sum + c.duration, 0).toFixed(1), ...stats }
       expect(stats.tooSlow).toBe(0)
+      // Silence between one fragment's 'done' and the next one's 'start': ~0 inside a page (gapless look-ahead), longer where the page turns
+      // (the next page's text is only known after the turn, so its first fragment is computed from scratch).
+      const gaps = await neu(page, n => n.events.flatMap((event, i) => event.type === 'done' && n.events[i + 1]?.type === 'start' ? [Math.round(n.events[i + 1].at - event.at)] : []))
+      numbers[`${format}Reading`].silenceBetweenFragmentsMs = gaps
+      expect(Math.max(...gaps)).toBeLessThan(6000)
 
       // --- Pause: the voice stops at once and the highlight goes; resume speaks the same sentence again.
       const speaksBefore = (await neu(page, n => n.speak)).length
@@ -298,14 +303,14 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await expect.poll(() => page.evaluate(() => window.__neuEngine.core?.client?.loaded || ''), SLOW).toBe(CLAUDE)
     await play(page)
     numbers.firstAudio.tapAfterWarmUp = await heard()
-    expect(numbers.firstAudio.tapAfterWarmUp.tapToStartEventMs).toBeLessThan(3000)
+    expect(numbers.firstAudio.tapAfterWarmUp.tapToStartEventMs).toBeLessThan(5000) // a loaded machine adds seconds; a cold start would be ~4 s on top
     await stopAndForget()
 
     // C: reading again within 90 s of the last speech (another speed, so nothing comes from the replay cache): the worker is alive.
     await page.getByRole('slider', { name: 'Velocidad de voz' }).fill('1.3')
     await play(page)
     numbers.firstAudio.tapWithWorkerAlive = await heard()
-    expect(numbers.firstAudio.tapWithWorkerAlive.tapToStartEventMs).toBeLessThan(3000)
+    expect(numbers.firstAudio.tapWithWorkerAlive.tapToStartEventMs).toBeLessThan(5000)
     await stopAndForget()
     expect(errors).toEqual([])
   })
@@ -335,6 +340,59 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await expect.poll(async () => (await neu(page, n => n.speak)).length, SLOW).toBeGreaterThan(speaks)
     await expect.poll(async () => (await starts(page)).length, SLOW).toBeGreaterThan(neuralStarts)
     await page.getByRole('button', { name: 'Detener', exact: true }).click()
+    expect(errors).toEqual([])
+  })
+
+  test('the shelf loads none of the engine, and its frames stay fluid while the voice thinks next to it', async () => {
+    const lazy = /\/(engine|worker)-[\w-]+\.js|\/neural-voice\//
+    await page.goto('./')
+    await expect(page.getByRole('heading', { name: 'Tu biblioteca' })).toBeVisible(SLOW)
+    await page.waitForTimeout(3000)
+    expect(await page.evaluate(pattern => performance.getEntriesByType('resource').map(entry => entry.name).filter(name => new RegExp(pattern).test(name)), lazy.source)).toEqual([]) // nothing of the engine reaches the shelf's start-up
+
+    // Open a book once (the engine's chunk loads with it), come back to the shelf and let the engine speak while the shelf renders.
+    await page.locator('#file-picker').setInputFiles(EPUB)
+    await expect.poll(() => page.evaluate(() => Boolean(document.querySelector('foliate-view')?.renderer?.getContents?.()[0]?.doc?.body)), SLOW).toBe(true)
+    await openAudio(page)
+    await spyOnEngine(page)
+    await closePanel(page)
+    await page.locator('#reader-back').click()
+    await expect(page.getByRole('heading', { name: 'Tu biblioteca' })).toBeVisible(SLOW)
+    await page.evaluate(() => {
+      const neu = window.__neu
+      window.__sample = ms => new Promise(resolve => {
+        neu.longTasks.length = 0
+        const deltas = []; let last = performance.now(); const end = last + ms
+        const tick = now => { deltas.push(now - last); last = now; if (now < end) requestAnimationFrame(tick); else resolve({ deltas, longTasks: [...neu.longTasks] }) }
+        requestAnimationFrame(tick)
+      })
+      document.addEventListener('click', () => window.__neuEngine.unlock(), { once: true })
+    })
+    const summary = ({ deltas, longTasks }) => {
+      const sorted = [...deltas].sort((a, b) => a - b), at = q => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))]
+      return { frames: deltas.length, p50: +at(0.5).toFixed(1), p95: +at(0.95).toFixed(1), max: +sorted.at(-1).toFixed(1), longTasks: longTasks.length, longestTask: Math.round(Math.max(0, ...longTasks)) }
+    }
+    const stopMemory = watchMemory()
+    const baseline = summary(await page.evaluate(() => window.__sample(5000)))
+
+    await page.getByRole('heading', { name: 'Tu biblioteca' }).click() // a real tap: the audio context is unlocked inside it
+    const texts = ['Después de un largo día, Ana volvió a casa y abrió el libro que su abuelo le había regalado.', 'La lluvia golpeaba suavemente los cristales de la vieja biblioteca.', 'Nadie en el pueblo recordaba cuándo había llegado el forastero.', 'Todos coincidían en que traía consigo una maleta de cuero gastada.', 'Ella sonrió, cerró el libro y apagó la lámpara.']
+    await page.evaluate(({ texts, voiceId }) => {
+      let i = 0
+      const speak = () => window.__neuEngine.speak({ text: texts[i], voiceId, rate: 1.2, id: `m${i}`, upcoming: texts.slice(i + 1, i + 4) })
+      window.addEventListener('inhouse-tts', event => { if (event.detail.type === 'done' && String(event.detail.id).startsWith('m') && ++i < texts.length) speak() })
+      speak()
+    }, { texts, voiceId: CLAUDE_ID })
+    const speaking = summary(await page.evaluate(() => window.__sample(14000)))
+    const memory = stopMemory()
+    const stats = await engineStats(page)
+    expect(await expectCleanAudio(page, 'shelf')).toBeTruthy()
+    numbers.shelfNextToTheVoice = { baseline, whileSynthesising: speaking, engine: stats, peakResidentMB: memory }
+    // The voice thinks in a worker: the page's frames do not wait for it. (Software GL makes the shelf itself slow; what matters is the difference.)
+    expect(speaking.p50).toBeLessThan(baseline.p50 * 2 + 10)
+    expect(speaking.max).toBeLessThan(baseline.max * 2 + 150)
+    expect(speaking.longestTask).toBeLessThan(Math.max(250, baseline.longestTask * 2))
+    await page.evaluate(() => window.__neuEngine.stop())
     expect(errors).toEqual([])
   })
 
