@@ -70,10 +70,20 @@ export class NeuralVoicePicker {
     if (engine && engine !== this.engine) {
       this.engine = engine
       engine.addEventListener('change', () => this.changed())
-      engine.refresh?.()?.catch?.(() => {})
-    }
+      Promise.resolve(engine.refresh?.()).catch(() => {}).then(() => this.warmUp())
+    } else if (engine) this.warmUp()
     if (!engine) this.engine = null
     this.host.populateVoices()
+  }
+  /**
+   * Starts the engine's worker and loads the model of the voice the next Play will use, so the tap does not pay the cold start
+   * (3-6 s). The engine tears it down by itself after ~90 s without speech. Does nothing unless that voice is a downloaded neural one.
+   */
+  warmUp() {
+    try {
+      const engine = neuralEngine(), { voice } = this.host.voice?.voiceFor?.('') || {}
+      if (engine?.warmUp && voice?.neural && voice.installed) Promise.resolve(engine.warmUp(voice.id)).catch(() => {})
+    } catch { /* the first speak() starts the worker as before */ }
   }
   /** Installed set changes rebuild the voice select too; download progress only repaints this block. */
   changed() {

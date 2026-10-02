@@ -148,6 +148,34 @@ describe('natural voices group', () => {
   })
 })
 
+describe('warm-up', () => {
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0))
+  it('loads the engine of the voice the next Play will use when the audio tab opens: the default voice, or the chosen one', async () => {
+    const { experience, engine } = await setup({ installed:[LESSAC] }) // an installed neural voice wins 'Automática'
+    experience.panel.showModal = vi.fn()
+    experience.show('audio')
+    await vi.waitFor(() => expect(engine.warmed).toContain(LESSAC))
+    await settle(); engine.warmed.length = 0
+    experience.setPreference('voice', '')
+    await vi.waitFor(() => expect(engine.warmed).toContain(LESSAC))
+    expect(new Set(engine.warmed)).toEqual(new Set([LESSAC]))
+  })
+  it('does not spin the worker up for a system voice, for a voice that is not downloaded, or after the neural voice was given up on', async () => {
+    vi.stubGlobal('InhouseSpeech', { speak:vi.fn(), stop:vi.fn(), getVoices:() => JSON.stringify([{ voiceURI:'en-sys', name:'en', lang:'en-US', quality:300, network:false, installed:true }]) })
+    const { experience, engine } = await setup({ installed:[LESSAC] })
+    experience.panel.showModal = vi.fn()
+    await settle(); engine.warmed.length = 0 // setup() opened the book with 'Automática', which already warmed the installed neural voice
+    experience.setPreference('voice', 'en-sys'); experience.show('audio'); await settle()
+    expect(engine.warmed).toEqual([])
+    experience.voice.neuralOff = 'too-slow'; experience.setPreference('voice', LESSAC, { restart:false }); await settle()
+    expect(new Set(engine.warmed)).toEqual(new Set([LESSAC])) // choosing it again is a new chance (retryNeural runs first)
+    const second = await setup({ installed:[] })
+    second.experience.panel.showModal = vi.fn()
+    second.experience.show('audio'); await settle()
+    expect(second.engine.warmed).toEqual([])
+  })
+})
+
 describe('first-use offer', () => {
   it('appears only once the audiobook runs, for a book language with no installed neural voice, and never downloads by itself', async () => {
     const { panel, engine, experience } = await setup()

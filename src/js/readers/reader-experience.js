@@ -280,6 +280,7 @@ export class ReaderExperience {
     this.preferences = normalizeReadingPreferences({ ...this.preferences, [key]:value }); this.applyPreferences(!audio)
     this.voice.options = {footnotes:this.preferences.footnotes,multilingual:this.preferences.multilingual,skipHeaders:this.preferences.skipHeaders}
     if (key === 'rate' || key === 'voice') { this.voice.retryNeural?.(); if (restart) this.voice.restart?.() } // a new speed or choice gives a neural voice another chance
+    if (key === 'voice') this.neuralPicker?.warmUp() // a neural voice is loaded (worker, model) before the tap, not at it
   }
   async applyPreferences(updateBook = true) {
     const p = this.preferences

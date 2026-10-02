@@ -33,7 +33,7 @@ export function createFakeNeuralEngine(options = {}) {
     constructor() {
       super()
       this.set = new Set(config.installed); this.map = new Map(); this.tasks = new Map(); this.timers = new Set()
-      this.calls = []; this.stops = 0; this.unlocks = 0; this.removed = []; this.installs = []; this.refreshes = 0; this.config = config
+      this.calls = []; this.stops = 0; this.unlocks = 0; this.removed = []; this.installs = []; this.refreshes = 0; this.warmed = []; this.config = config
     }
     static isSupported() { return config.supported }
     get supported() { return config.supported }
@@ -41,6 +41,7 @@ export function createFakeNeuralEngine(options = {}) {
     get downloads() { return this.map }
     emitChange() { this.dispatchEvent(new Event('change')) }
     async refresh() { this.refreshes++ }
+    async warmUp(id) { this.warmed.push(id); return true }
     install(id, { signal } = {}) {
       this.installs.push(id)
       if (this.tasks.has(id)) return this.tasks.get(id).promise
