@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { PDF_PAGE_FILTERS, READING_THEMES } from '../../src/js/readers/reading-preferences.js'
 
-// The 3D book always opens and closes in sepia; while the camera zooms into the
+// The 3D book always opens and closes on white paper; while the camera zooms into the
 // reader (and out of it) the pages cross-fade to / from the reading theme the
 // user picked. These tests sample the pixels of the page on the 3D book canvas
 // at the phases the app reports through data-* attributes, never at wall-clock
@@ -28,7 +28,7 @@ async function startWithTheme(page, theme, { reduced = false } = {}) {
 }
 
 // What a white PDF page looks like under a theme's filter: the reference the
-// 3D page must reach (and, for sepia, start from).
+// 3D page must reach (starting from unfiltered white paper).
 function pdfPaper(page, theme) {
   return page.evaluate(filter => {
     const source = document.createElement('canvas'); source.width = source.height = 8
@@ -45,7 +45,7 @@ async function record(page, direction, tag) {
   await page.evaluate(({ direction, tag, capture }) => {
     const probe = document.createElement('canvas'); probe.width = probe.height = 24
     const context = probe.getContext('2d', { willReadFrequently:true })
-    const state = window.__sepiaTransition = { samples:[], shots:{}, phases:[], done:false }
+    const state = window.__paperTransition = { samples:[], shots:{}, phases:[], done:false }
     let last = ''
     const median = values => values.sort((a, b) => a - b)[values.length >> 1]
     const region = (canvas, width = 24, height = 24) => {
@@ -119,10 +119,10 @@ async function record(page, direction, tag) {
 
 async function collect(page, direction, testInfo, tag = direction) {
   // The flyout only exists once the page snapshot is ready: wait until it was seen, then gone.
-  await page.waitForFunction(() => window.__sepiaTransition.phases.length > 0, null, { timeout:120_000 })
+  await page.waitForFunction(() => window.__paperTransition.phases.length > 0, null, { timeout:120_000 })
   await expect(page.locator('.ihr-flyout')).toHaveCount(0, { timeout:120_000 })
   if (direction === 'close') await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/, { timeout:120_000 })
-  const result = await page.evaluate(() => { const state = window.__sepiaTransition; state.stop(); return state })
+  const result = await page.evaluate(() => { const state = window.__paperTransition; state.stop(); return state })
   await testInfo.attach(`${direction}-samples`, { body:JSON.stringify({ ...result, shots:Object.keys(result.shots) }, null, 2), contentType:'application/json' })
   if (EVIDENCE_DIR) {
     await mkdir(EVIDENCE_DIR, { recursive:true })
@@ -138,20 +138,17 @@ async function importAndRead(page, file) {
   await expect(page.locator('#reader-toolbar')).toBeVisible()
 }
 
-const sepiaOf = (kind, sepiaPaper) => kind === 'pdf' ? sepiaPaper : hex(READING_THEMES.sepia.background)
+const stockColour = [255, 255, 255]
 
 /**
  * Runs one close (reader -> shelf) then one open (shelf -> reader) with the
  * given theme and checks both ends and the fade between them.
  */
 async function transition(page, testInfo, { kind, file, theme, tag }) {
-  const sepiaPaper = kind === 'pdf' ? await pdfPaper(page, 'sepia') : hex(READING_THEMES.sepia.background)
   const themePaper = kind === 'pdf' ? await pdfPaper(page, theme) : hex(READING_THEMES[theme].background)
-  const sepiaTheme = theme === 'sepia'
   await importAndRead(page, file)
-  const sepiaColour = sepiaOf(kind, sepiaPaper)
 
-  // ---- closing: the theme page leaves the reader, the book closes in sepia
+  // ---- closing: the theme page leaves the reader, the book closes on white paper
   await record(page, 'close', `${tag}-close`)
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
   const closing = await collect(page, 'close', testInfo, tag)
@@ -161,37 +158,37 @@ async function transition(page, testInfo, { kind, file, theme, tag }) {
   // It starts exactly as the reader showed it (the DOM still on top of it) ...
   expect(zoomOut[0].pageTheme).toBeGreaterThan(.5)
   expect(distance(zoomOut[0].colour, themePaper)).toBeLessThanOrEqual(fadeBand)
-  // ... and the mix only ever moves from the theme towards sepia.
+  // ... and the mix only ever moves from the theme towards white paper.
   const closingMix = closing.samples.filter(s => s.phase === 'zooming').map(s => s.pageTheme)
   for (let i = 1; i < closingMix.length; i++) expect(closingMix[i]).toBeLessThanOrEqual(closingMix[i - 1] + 1e-9)
   for (const sample of closing.samples.filter(s => ['bookmark', 'closing'].includes(s.phase) && s.colour && s.opened > .6)) {
-    // Sepia while the bookmark goes in and the cover shuts, whatever the theme.
-    if (!sepiaTheme) expect(sample.pageTheme).toBe(0)
-    expect(distance(sample.colour, sepiaColour)).toBeLessThanOrEqual(fadeBand)
+    // White while the bookmark goes in and the cover shuts, whatever the theme.
+    expect(sample.pageTheme).toBe(0)
+    expect(distance(sample.colour, stockColour)).toBeLessThanOrEqual(fadeBand)
     expect(luminance(sample.colour)).toBeGreaterThan(150)
   }
 
-  // ---- opening: sepia through hinge and bookmark, fade during the zoom
+  // ---- opening: white paper through hinge and bookmark, fade during the zoom
   await page.locator('.ihr-spine').click()
   await record(page, 'open', `${tag}-open`)
   await page.getByRole('button', { name:/Toca para leer/ }).click()
   const opening = await collect(page, 'open', testInfo, tag)
   // The mix itself is checked on every drawn state, whatever the load ...
-  if (!sepiaTheme) for (const sample of opening.samples.filter(s => ['opening', 'bookmark'].includes(s.phase))) expect(sample.pageTheme).toBe(0)
+  for (const sample of opening.samples.filter(s => ['opening', 'bookmark'].includes(s.phase))) expect(sample.pageTheme).toBe(0)
   // ... the pixels only on states where the cover is open enough to show the page. A
   // starved software GL can release the hinge's watchdog before it opens that far (then
   // the run says so instead of failing on an unobservable moment).
   const still = opening.samples.filter(s => ['opening', 'bookmark'].includes(s.phase) && s.colour && s.opened > .6)
   if (!still.length) testInfo.annotations.push({ type:'starved', description:`${tag}: no drawn frame showed the open page during the hinge/bookmark` })
   for (const sample of still) {
-    if (!sepiaTheme) expect(sample.pageTheme).toBe(0)
-    expect(distance(sample.colour, sepiaColour)).toBeLessThanOrEqual(fadeBand)
+    expect(sample.pageTheme).toBe(0)
+    expect(distance(sample.colour, stockColour)).toBeLessThanOrEqual(fadeBand)
     expect(luminance(sample.colour)).toBeGreaterThan(150) // never the black pages of night/amoled
   }
   const zoom = opening.samples.filter(s => s.phase === 'zooming')
   const openingMix = zoom.map(s => s.pageTheme)
   for (let i = 1; i < openingMix.length; i++) expect(openingMix[i]).toBeGreaterThanOrEqual(openingMix[i - 1] - 1e-9)
-  if (!sepiaTheme) {
+  {
     // Arrives exactly at the reader's colour: a starved GL may draw no frame between the
     // last eased step and the handoff, so the handoff state counts as the end of the zoom.
     const toHandoff = opening.samples.filter(s => s.phase === 'zooming' || s.phase === 'handoff')
@@ -199,21 +196,18 @@ async function transition(page, testInfo, { kind, file, theme, tag }) {
     const arrival = toHandoff.filter(s => s.pageTheme >= .97 && s.colour).at(-1)
     expect(arrival, 'a frame at the end of the zoom').toBeTruthy()
     expect(distance(arrival.colour, themePaper)).toBeLessThanOrEqual(fadeBand)
-    // The colour travels monotonically from sepia towards the theme paper.
+    // The colour travels monotonically from white paper towards the theme paper.
     const progress = zoom.filter(s => s.colour).map(s => distance(s.colour, themePaper))
     for (let i = 1; i < progress.length; i++) expect(progress[i]).toBeLessThanOrEqual(progress[i - 1] + 8)
-  } else {
-    // Sepia stays sepia: no colour change at any frame.
-    for (const sample of zoom.filter(s => s.colour)) expect(distance(sample.colour, sepiaColour)).toBeLessThanOrEqual(fadeBand)
   }
-  return { closing, opening, sepiaColour, themePaper }
+  return { closing, opening, stockColour, themePaper }
 }
 
 for (const [kind, file] of [['pdf', 'tests/e2e/fixtures/reading-journey.pdf'], ['epub', 'tests/e2e/fixtures/reading-journey.epub']]) {
-  for (const theme of ['amoled', 'night', 'paper']) {
-    // PDF paper (white) only differs slightly from sepia: keep it to the dark themes and one light one.
-    if (kind === 'pdf' && theme === 'paper') continue
-    test(`${kind} ${theme}: el libro abre y cierra en sepia y hace fundido al tema elegido durante el zoom`, async ({ page }, testInfo) => {
+  for (const theme of ['amoled', 'night', 'paper', 'sepia']) {
+    // PDF paper (white) only differs slightly from white paper: keep it to the dark themes and one light one.
+    if (kind === 'epub' && theme === 'sepia') continue
+    test(`${kind} ${theme}: el libro abre y cierra con papel blanco y hace fundido al tema elegido durante el zoom`, async ({ page }, testInfo) => {
       test.setTimeout(240_000)
       const errors = []; page.on('pageerror', error => errors.push(error.message))
       await startWithTheme(page, theme)
@@ -225,15 +219,17 @@ for (const [kind, file] of [['pdf', 'tests/e2e/fixtures/reading-journey.pdf'], [
   }
 }
 
-test('epub sepia: con el tema sepia el color de las páginas nunca cambia', async ({ page }, testInfo) => {
+test('epub sepia: el papel blanco cambia a sepia al abrir y vuelve a blanco al cerrar', async ({ page }, testInfo) => {
   test.setTimeout(240_000)
   const errors = []; page.on('pageerror', error => errors.push(error.message))
   await startWithTheme(page, 'sepia')
   const { opening, closing } = await transition(page, testInfo, { kind:'epub', file:'tests/e2e/fixtures/reading-journey.epub', theme:'sepia', tag:'epub-sepia' })
   const all = [...opening.samples, ...closing.samples].filter(s => s.colour && s.opened > .6)
   expect(all.length).toBeGreaterThan(2)
-  const first = all[0].colour
-  for (const sample of all) expect(distance(sample.colour, first)).toBeLessThanOrEqual(10)
+  const whiteFrames = all.filter(sample => sample.pageTheme === 0)
+  expect(whiteFrames.length).toBeGreaterThan(0)
+  for (const sample of whiteFrames) expect(distance(sample.colour, stockColour)).toBeLessThanOrEqual(18)
+  expect(all.some(sample => sample.pageTheme > .05 && sample.pageTheme < .95)).toBe(true)
   expect(errors).toEqual([])
 })
 

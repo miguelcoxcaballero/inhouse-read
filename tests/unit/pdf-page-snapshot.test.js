@@ -8,6 +8,7 @@ vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
 vi.mock('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url', () => ({default:'worker.mjs'}))
 vi.mock('../../src/js/gestures.js', () => ({attachSwipeNavigation:() => () => {}}))
 import { PdfReader } from '../../src/js/readers/pdf-reader.js'
+import { PDF_PAGE_FILTERS, READING_THEMES } from '../../src/js/readers/reading-preferences.js'
 
 let container, contexts
 const rect = {left:0,top:64,width:390,height:720,right:390,bottom:784}
@@ -48,23 +49,48 @@ describe('PDF restored-page preview', () => {
     expect(await reader.getPageSnapshot()).toBeNull()
   })
 
-  it('adds the same page under the sepia filter for the open/close transition, except in sepia itself', async () => {
+  it.each(Object.keys(READING_THEMES))('keeps the original PDF pixels unfiltered for white paper under %s', async theme => {
     const reader = new PdfReader()
     await reader.open(container,new ArrayBuffer(0))
-    await reader.applyPreferences({theme:'night'})
+    await reader.applyPreferences({theme})
     const live = container.querySelector('canvas')
-    live.style.filter = 'invert(0.89) hue-rotate(180deg)'
+    live.style.filter = PDF_PAGE_FILTERS[theme]
+    container.style.filter = 'brightness(0.65)'
     live.getBoundingClientRect = () => ({...rect,height:600,bottom:664})
-    const night = await reader.getPageSnapshot()
-    expect(contexts.get(night.source).filter).toContain('invert(0.89)')
-    expect(night.sepia.source).not.toBe(night.source)
-    expect(contexts.get(night.sepia.source).filter).toBe('sepia(.5) brightness(.94)')
-    expect(contexts.get(night.sepia.source).drawImage.mock.calls[0][0]).toBe(live)
-    expect(night.sepia).toMatchObject({width:night.width,height:night.height})
-    await reader.applyPreferences({theme:'sepia'})
-    live.style.filter = 'sepia(0.5) brightness(0.94)'
-    expect((await reader.getPageSnapshot()).sepia).toBeUndefined()
+    const snapshot = await reader.getPageSnapshot()
+    expect(contexts.get(snapshot.source).filter).toContain('brightness(0.65)')
+    expect(snapshot.paper.source).not.toBe(snapshot.source)
+    expect(contexts.get(snapshot.paper.source).filter).toBe('none')
+    expect(contexts.get(snapshot.paper.source).drawImage.mock.calls[0][0]).toBe(live)
+    expect(snapshot.paper).toMatchObject({width:snapshot.width,height:snapshot.height})
     reader.close()
+  })
+
+  it('captures reflowed sepia PDF text on white paper without moving its glyphs or dimming its ink', async () => {
+    const reader = new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    await reader.applyPreferences({theme:'sepia',pdfMode:'text'})
+    container.style.filter = 'brightness(0.65)'
+    const reflow = container.querySelector('.pdf-reflow-page')
+    reflow.textContent = 'Saved PDF text'
+    reflow.style.color = '#483825'
+    const rangePrototype = Object.getPrototypeOf(document.createRange())
+    rangePrototype.getClientRects = function () {
+      return [{left:this.startOffset * 10,top:90,width:(this.endOffset-this.startOffset)*10,height:20,
+        right:this.endOffset * 10,bottom:110}]
+    }
+    try {
+      const snapshot = await reader.getPageSnapshot()
+      expect(snapshot.text).toBe('Saved PDF text')
+      const themed = contexts.get(snapshot.source), paper = contexts.get(snapshot.paper.source)
+      expect(themed.filter).toBe('brightness(0.65)')
+      expect(paper.filter).toBe('none')
+      expect(paper.fillStyle).toBe('#292821')
+      expect(paper.fillText.mock.calls).toEqual(themed.fillText.mock.calls)
+    } finally {
+      delete rangePrototype.getClientRects
+      reader.close()
+    }
   })
 
   it('awaits an in-flight restored page instead of taking pixels left from page 1', async () => {

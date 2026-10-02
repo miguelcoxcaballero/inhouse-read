@@ -989,18 +989,19 @@ describe('real shelf book materials', () => {
     const context = canvasContext();
     const model = createBookModel({ ...book, progressFraction:.4 }, style, 132, 200, 40, null);
     const leaves = model.getObjectByName('read-leaves').material[0], margin = model.getObjectByName('reading-page-paper').material;
-    const cream = leaves.color.clone(), creamMargin = margin.color.clone();
+    const white = leaves.color.clone(), whiteMargin = margin.color.clone();
+    expect(whiteMargin.getHexString()).toBe('ffffff');
     const ring = rgb => (_x, _y, w, h) => ({ data:Uint8ClampedArray.from({ length:w * h * 4 }, (_, i) => i % 4 === 3 ? 255 : rgb(i >> 2)[i % 4]) });
     const page = () => Object.assign(document.createElement('canvas'), { width:400, height:600 });
     // A full-bleed picture has no paper margin: the default paper stays.
     context.getImageData.mockImplementation(ring(p => p % 2 ? [20, 30, 200] : [240, 220, 40]));
     model.userData.setPageSnapshot({ source:page(), width:400, height:600 });
-    expect(leaves.color.equals(cream)).toBe(true); expect(margin.color.equals(creamMargin)).toBe(true);
-    // A white PDF page: the margin is exactly white, the lit leaf is lifted to match it.
+    expect(leaves.color.equals(white)).toBe(true); expect(margin.color.equals(whiteMargin)).toBe(true);
+    // A white PDF page matches the physical book's existing white stock.
     context.getImageData.mockImplementation(ring(() => [255, 255, 255]));
     model.userData.setPageSnapshot({ source:page(), width:400, height:600 });
     expect(margin.color.getHexString()).toBe('ffffff');
-    expect(leaves.color.g).toBeGreaterThan(cream.g); expect(leaves.toneMapped).toBe(false);
+    expect(leaves.color.equals(white)).toBe(true); expect(leaves.toneMapped).toBe(false);
     model.userData.dispose();
   });
 

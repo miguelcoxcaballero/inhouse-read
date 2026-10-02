@@ -843,9 +843,9 @@ body.is-closing-reader .screen { pointer-events:none; }
 .ihr-flyout__book--fallback { transform-style:preserve-3d; }
 .ihr-flyout__fallback-pages {
   position:absolute; inset:1.5% 1% 1% 7%;
-  border:1px solid #bdb19b;
+  border:1px solid #c1c1c1;
   border-radius:1px 6px 6px 1px;
-  background:repeating-linear-gradient(180deg,#f3ecdc 0 3px,#ddd2bd 3px 4px);
+  background:repeating-linear-gradient(180deg,#fff 0 3px,#e1e1e1 3px 4px);
   box-shadow:5px 6px 13px #0004;
   transform:translateZ(1px);
 }
@@ -1526,7 +1526,7 @@ body.is-closing-reader .screen { pointer-events:none; }
 .ihr-flyout.is-editing-spine.no-webgl .ihr-flyout__book--fallback { visibility:hidden; }
 .ihr-spine-editor__preview-pages {
   position:absolute; width:48px; height:126px; left:calc(50% - 13px); top:8px;
-  border-radius:2px 7px 7px 2px; background:linear-gradient(90deg,#c8bda8,#f5eedf 24%,#ddd3c0 82%,#b5a990);
+  border-radius:2px 7px 7px 2px; background:linear-gradient(90deg,#c8c8c8,#fff 24%,#e3e3e3 82%,#b8b8b8);
   box-shadow:8px 8px 12px rgba(0,0,0,.2); transform:translateX(6px) rotateY(-15deg);
 }
 .ihr-spine-editor__preview-binding {

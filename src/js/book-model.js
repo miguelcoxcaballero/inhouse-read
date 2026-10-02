@@ -72,7 +72,7 @@ const ribbonNotch = () => {
 function pageEdgeAtlas(size) {
   const canvas = Object.assign(document.createElement('canvas'), { width:size, height:size });
   const c = canvas.getContext('2d'), random = seededRandom(size * 131 + 7), unit = size / 256;
-  c.fillStyle = '#ede4d0'; c.fillRect(0, 0, size, size);
+  c.fillStyle = '#ffffff'; c.fillRect(0, 0, size, size);
   const leaf = (x, style, weight) => {
     const phase = random() * Math.PI * 2, amplitude = (.25 + random() * .55) * unit;
     c.strokeStyle = style; c.lineWidth = weight;
@@ -87,27 +87,27 @@ function pageEdgeAtlas(size) {
   };
   for (let x = 0; x < size; x += (1.1 + random() * 1.5) * unit) {
     const tone = random();
-    leaf(x, tone > .74 ? `rgba(120,98,68,${.08 + random() * .12})`
-      : tone > .32 ? `rgba(255,253,245,${.22 + random() * .34})` : `rgba(165,142,108,${.05 + random() * .08})`,
+    leaf(x, tone > .74 ? `rgba(108,108,108,${.08 + random() * .12})`
+      : tone > .32 ? `rgba(255,255,255,${.22 + random() * .34})` : `rgba(150,150,150,${.05 + random() * .08})`,
     (.45 + random() * .6) * unit);
   }
   for (let x = random() * 18 * unit; x < size; x += (20 + random() * 18) * unit) {
-    leaf(x, `rgba(96,74,48,${.16 + random() * .14})`, 1.15 * unit);
+    leaf(x, `rgba(88,88,88,${.16 + random() * .14})`, 1.15 * unit);
   }
   // Head/tail: the gutter falls into shadow where the leaves bend into the spine.
   c.fillStyle = withStops(c.createLinearGradient(0, size * .02, 0, size * .2),
-    [[0, 'rgba(74,54,32,.34)'], [.45, 'rgba(74,54,32,.1)'], [1, 'rgba(74,54,32,0)']]);
+    [[0, 'rgba(64,64,64,.34)'], [.45, 'rgba(64,64,64,.1)'], [1, 'rgba(64,64,64,0)']]);
   c.fillRect(0, 0, size, size * .2);
   // Dust settles on both ends of the fore-edge first.
   for (const [from, to] of [[size * .54, size * .6], [size * .98, size * .92]]) {
-    c.fillStyle = withStops(c.createLinearGradient(0, from, 0, to), [[0, 'rgba(110,86,56,.16)'], [1, 'rgba(110,86,56,0)']]);
+    c.fillStyle = withStops(c.createLinearGradient(0, from, 0, to), [[0, 'rgba(100,100,100,.16)'], [1, 'rgba(100,100,100,0)']]);
     c.fillRect(0, Math.min(from, to), size, Math.abs(to - from));
   }
-  c.fillStyle = '#ece3cf'; c.fillRect(0, size * .47, size, size * .06);
+  c.fillStyle = '#ffffff'; c.fillRect(0, size * .47, size, size * .06);
   // Headband: two-tone silk wound over a cord, rounded by its own shading.
   const band = size * .016, stripe = 4 * unit;
   for (let x = 0, i = 0; x < size; x += stripe, i++) {
-    c.fillStyle = i % 2 ? '#e8dcc0' : '#7b1f28';
+    c.fillStyle = i % 2 ? '#f6f6f6' : '#7b1f28';
     c.beginPath(); c.moveTo(x, 0); c.lineTo(x + stripe, 0); c.lineTo(x + stripe * 1.6, size * .02 + band);
     c.lineTo(x + stripe * .6, size * .02 + band); c.closePath(); c.fill();
   }
@@ -119,21 +119,21 @@ function pageEdgeAtlas(size) {
   return texture;
 }
 
-// Endpaper: a warm wove stock with a faint speckle and a few long fibres.
+// Endpaper: a white wove stock with a faint speckle and a few long fibres.
 // White-based so the material colour tints it; every stroke wraps the tile.
 function endpaperTexture() {
   const size = 256, canvas = Object.assign(document.createElement('canvas'), { width:size, height:size });
   const c = canvas.getContext('2d'), random = seededRandom(90127);
   c.fillStyle = '#fff'; c.fillRect(0, 0, size, size);
   for (let i = 0; i < 2400; i++) {
-    c.fillStyle = random() > .55 ? `rgba(92,70,44,${.035 + random() * .05})` : `rgba(255,255,255,${.3 + random() * .4})`;
+    c.fillStyle = random() > .55 ? `rgba(86,86,86,${.035 + random() * .05})` : `rgba(255,255,255,${.3 + random() * .4})`;
     c.fillRect(Math.floor(random() * size), Math.floor(random() * size), 1, 1);
   }
   c.lineCap = 'round';
   for (let i = 0; i < 70; i++) {
     const x = random() * size, y = random() * size, a = random() * Math.PI, length = 6 + random() * 22;
     const bend = (random() - .5) * length * .5, dx = Math.cos(a) * length, dy = Math.sin(a) * length;
-    c.strokeStyle = `rgba(120,96,64,${.05 + random() * .07})`; c.lineWidth = .5 + random() * .5;
+    c.strokeStyle = `rgba(112,112,112,${.05 + random() * .07})`; c.lineWidth = .5 + random() * .5;
     for (const ox of [-size, 0, size]) for (const oy of [-size, 0, size]) {
       c.beginPath(); c.moveTo(x + ox, y + oy);
       c.quadraticCurveTo(x + ox + dx / 2 - dy / length * bend, y + oy + dy / 2 + dx / length * bend, x + ox + dx, y + oy + dy);
@@ -631,20 +631,20 @@ function paperTone(source) {
 const LEAF_LIGHT = new THREE.Color(.96 / 1.03, .96 / .96, .96 / .895);
 
 /**
- * Cross-fade between the sepia paper and the reader's own paper, mixed in
+ * Cross-fade between the white stock and the reader's own paper, mixed in
  * sRGB exactly as the two page textures are blended on screen, so the paper
  * under and beside the page fades in step with it. A side that has no paper
  * (a full-bleed picture) yields to the other; with neither, null.
  */
 const toneScratch = { a:{}, b:{} };
-export function mixPaperTone(target, sepia, theme, mix) {
+export function mixPaperTone(target, stock, theme, mix) {
   const k = Math.max(0, Math.min(1, Number(mix)));
-  if (!sepia && !theme) return null;
-  if (!sepia) return target.copy(theme);
-  if (!theme) return target.copy(sepia);
-  if (!(k > 0)) return target.copy(sepia);
+  if (!stock && !theme) return null;
+  if (!stock) return target.copy(theme);
+  if (!theme) return target.copy(stock);
+  if (!(k > 0)) return target.copy(stock);
   if (!(k < 1)) return target.copy(theme);
-  const a = sepia.getRGB(toneScratch.a, THREE.SRGBColorSpace), b = theme.getRGB(toneScratch.b, THREE.SRGBColorSpace);
+  const a = stock.getRGB(toneScratch.a, THREE.SRGBColorSpace), b = theme.getRGB(toneScratch.b, THREE.SRGBColorSpace);
   return target.setRGB(a.r + (b.r - a.r) * k, a.g + (b.g - a.g) * k, a.b + (b.b - a.b) * k, THREE.SRGBColorSpace);
 }
 
@@ -944,7 +944,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     pasteShade.push(shade, shade, shade);
   }
   pasteGeometry.setAttribute('color', new THREE.Float32BufferAttribute(pasteShade, 3));
-  const endpaper = new THREE.MeshStandardMaterial({ color:'#f1e9d8', roughness:1, vertexColors:true,
+  const endpaper = new THREE.MeshStandardMaterial({ color:'#ffffff', roughness:1, vertexColors:true,
     map:overview ? null : sharedTexture('endpaper', endpaperTexture) });
   endpaper.map?.repeat.set(3 * pasteWidth / pasteHeight, 3);
   const pastedown = new THREE.Mesh(pasteGeometry, endpaper);
@@ -961,9 +961,9 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   if (overview) {
     // A thumbnail keeps a plain block and one tiny owned raster.
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 32;
-    const c = canvas.getContext('2d'); c.fillStyle = '#ece3cf'; c.fillRect(0, 0, 32, 32);
+    const c = canvas.getContext('2d'); c.fillStyle = '#ffffff'; c.fillRect(0, 0, 32, 32);
     for (let i = 1; i < 32; i += 3) {
-      c.fillStyle = i % 9 === 1 ? 'rgba(112,90,62,.22)' : 'rgba(255,252,242,.4)'; c.fillRect(0, i, 32, 1);
+      c.fillStyle = i % 9 === 1 ? 'rgba(112,112,112,.18)' : 'rgba(255,255,255,.4)'; c.fillRect(0, i, 32, 1);
     }
     const map = new THREE.CanvasTexture(canvas); map.colorSpace = THREE.SRGBColorSpace;
     edges = new THREE.MeshPhysicalMaterial({ map, roughness:1 });
@@ -990,7 +990,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   }
   paperGeometry.setAttribute('color', new THREE.Float32BufferAttribute(paperShade, 3));
   const pagePaper = new THREE.Mesh(paperGeometry,
-    new THREE.MeshBasicMaterial({ color:'#e6dfd0', toneMapped:false, vertexColors:true }));
+    new THREE.MeshBasicMaterial({ color:'#ffffff', toneMapped:false, vertexColors:true }));
   pagePaper.position.set(inset * .3 - inset / 2, 0, pageFront);
   pagePaper.visible = false;
   pagePaper.name = 'reading-page-paper'; group.add(pagePaper);
@@ -1007,24 +1007,24 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   pageImage.position.set(inset * .3, 0, pageFront + board * .02);
   pageImage.visible = false; group.add(pageImage);
   group.userData.pageSurface = pageImage;
-  // The same page in the sepia theme sits just behind the reader's own: the
-  // book opens and closes in sepia and the reading theme fades over it
-  // (pageTheme 0 = sepia, 1 = the reader's theme). Only exists when the
-  // snapshot carries a variant, i.e. when the theme is not sepia already.
-  const sepiaMaterial = new THREE.MeshBasicMaterial({ color:0xffffff, toneMapped:false, map:blankPageMap() });
-  const sepiaImage = new THREE.Mesh(new THREE.PlaneGeometry(pageWidth, pageHeight), sepiaMaterial);
-  sepiaImage.name = 'reading-page-sepia';
-  sepiaImage.position.set(inset * .3, 0, pageFront + board * .01);
-  sepiaImage.visible = false; group.add(sepiaImage);
-  let pageTheme = 1, themeTone = null, sepiaTone = null;
+  // The same page on white stock sits just behind the reader's own: the
+  // book opens and closes on white paper and the reading theme fades over it
+  // (pageTheme 0 = white stock, 1 = the reader's theme). Only exists when the
+  // snapshot carries a variant, i.e. for each reader theme, including sepia.
+  const stockMaterial = new THREE.MeshBasicMaterial({ color:0xffffff, toneMapped:false, map:blankPageMap() });
+  const stockImage = new THREE.Mesh(new THREE.PlaneGeometry(pageWidth, pageHeight), stockMaterial);
+  stockImage.name = 'reading-page-stock';
+  stockImage.position.set(inset * .3, 0, pageFront + board * .01);
+  stockImage.visible = false; group.add(stockImage);
+  let pageTheme = 1, themeTone = null, stockTone = null;
   const paperScratch = new THREE.Color();
   const applyPageTheme = () => {
-    const faded = sepiaImage.visible;
+    const faded = stockImage.visible;
     // Transparent for the whole life of a variant (never toggled while it is
     // on screen: that would recompile the program mid-opening); at opacity 1
     // the blend is exactly the opaque result.
     pageMaterial.opacity = faded ? pageTheme : 1;
-    const tone = faded ? mixPaperTone(paperScratch, sepiaTone, themeTone, pageTheme) : themeTone;
+    const tone = faded ? mixPaperTone(paperScratch, stockTone, themeTone, pageTheme) : themeTone;
     if (tone) { pagePaper.material.color.copy(tone); leafPaper?.color.copy(tone).multiply(LEAF_LIGHT); }
   };
   group.userData.setPageTheme = (mix, redraw = true) => {
@@ -1032,14 +1032,14 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     const next = Math.max(0, Math.min(1, Number.isFinite(Number(mix)) ? Number(mix) : 1));
     const changed = next !== pageTheme;
     pageTheme = next;
-    if (!sepiaImage.visible) return false;
+    if (!stockImage.visible) return false;
     applyPageTheme();
     if (changed && redraw) group.userData.invalidate?.();
     return true;
   };
   group.userData.getPageTheme = () => pageTheme;
   // `redraw:false` builds the page without rendering it (the caller draws later).
-  group.userData.getPageTextures = () => sepiaImage.visible ? [pageMaterial.map, sepiaMaterial.map] : [pageMaterial.map];
+  group.userData.getPageTextures = () => stockImage.visible ? [pageMaterial.map, stockMaterial.map] : [pageMaterial.map];
   group.userData.setPageSnapshot = (snapshot, { pageTheme:initialTheme, redraw = true } = {}) => {
     if (disposed || !snapshot?.source) return false;
     const imageWidth = Number(snapshot.width || snapshot.source.width || snapshot.source.naturalWidth);
@@ -1057,24 +1057,24 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     const map = pageTexture(snapshot.source);
     pageMaterial.map?.dispose(); pageMaterial.map = map; pageMaterial.needsUpdate = true;
     pageImage.visible = true;
-    // The sepia variant must be the same page: same canvas size.
-    const variant = snapshot.sepia?.source ? snapshot.sepia : null;
+    // The stock variant must be the same page: same canvas size.
+    const variant = snapshot.paper?.source ? snapshot.paper : null;
     const sameSize = variant && Number(variant.width || variant.source.width) === imageWidth
       && Number(variant.height || variant.source.height) === imageHeight;
-    sepiaMaterial.map?.dispose();
+    stockMaterial.map?.dispose();
     if (sameSize) {
-      sepiaImage.geometry.dispose(); sepiaImage.geometry = pageImage.geometry.clone();
-      sepiaMaterial.map = pageTexture(variant.source); sepiaMaterial.needsUpdate = true;
-      sepiaImage.visible = true;
+      stockImage.geometry.dispose(); stockImage.geometry = pageImage.geometry.clone();
+      stockMaterial.map = pageTexture(variant.source); stockMaterial.needsUpdate = true;
+      stockImage.visible = true;
     } else {
-      sepiaMaterial.map = blankPageMap();
-      sepiaImage.visible = false; pageMaterial.opacity = 1;
+      stockMaterial.map = blankPageMap();
+      stockImage.visible = false; pageMaterial.opacity = 1;
     }
     if (initialTheme != null) pageTheme = Math.max(0, Math.min(1, Number(initialTheme) || 0));
-    // White for a PDF, the theme's paper for an EPUB; cream when unreadable.
+    // Match the reader's snapshot; ordinary unthemed book paper stays white.
     themeTone = paperTone(snapshot.source);
-    sepiaTone = sameSize ? paperTone(variant.source) : null;
-    if (sepiaImage.visible) applyPageTheme();
+    stockTone = sameSize ? paperTone(variant.source) : null;
+    if (stockImage.visible) applyPageTheme();
     else if (themeTone) { pagePaper.material.color.copy(themeTone); leafPaper?.color.copy(themeTone).multiply(LEAF_LIGHT); }
     group.userData.pageSnapshot = snapshot;
     if (redraw) group.userData.invalidate?.();
@@ -1101,7 +1101,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   // Text paper: cooler and smoother than the endpaper, the tone of the page.
   // Like the saved page beside it, it skips tone mapping: the two sheets must
   // not be graded differently. Matte paper has no highlight to compress.
-  const leafPaper = detail ? new THREE.MeshStandardMaterial({ color:'#e5e1d8', roughness:.93, vertexColors:true,
+  const leafPaper = detail ? new THREE.MeshStandardMaterial({ color:new THREE.Color(0xffffff).multiply(LEAF_LIGHT), roughness:.93, vertexColors:true,
     map:sharedTexture('endpaper', endpaperTexture), toneMapped:false }) : null;
   // Finer than the endpaper: the fibres shrink into the grain of a book paper.
   leafPaper?.map.repeat.set(6 * width / height, 6);
@@ -1651,8 +1651,8 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     const origin = { ...current };
     return animateMotion([{ transform:origin }, { transform:{ ...origin, bookmarkWithdraw:withdraw } }], { duration });
   }
-  // `pageTheme` (0 = sepia, 1 = the reader's own theme; default 1) is where the
-  // page's colour starts: the book opens and closes in sepia.
+  // `pageTheme` (0 = white stock, 1 = the reader's own theme; default 1) is where the
+  // page's colour starts: the book opens and closes on white paper.
   function setPageSnapshot(snapshot, { pageTheme:initialTheme, redraw = true } = {}) {
     if (initialTheme != null) {
       pageTheme = Math.max(0, Math.min(1, Number(initialTheme) || 0));
@@ -1761,7 +1761,7 @@ export function sampleBookMotion(frames, progress) {
   const span = times[index + 1] - times[index], k = (t - times[index]) / span;
   const k2 = k * k, k3 = k2 * k, pose = {};
   for (const key of ['x', 'y', 'scale', 'angle', 'pitch', 'roll', 'coverOpen', 'bookmarkWithdraw', 'pageTheme']) {
-    // The page's sepia/theme mix only moves when every frame says where it goes.
+    // The page's stock/theme mix only moves when every frame says where it goes.
     if (key === 'pageTheme' && frames.some(frame => frame.transform.pageTheme == null)) continue;
     const value = i => frames[i].transform[key] ?? 0;
     const tangent = i => {

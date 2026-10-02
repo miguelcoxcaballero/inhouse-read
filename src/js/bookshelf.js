@@ -2049,7 +2049,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (!flyout.isConnected) instant = true;
       else fadeMeta();
       flyout.classList.remove('is-ready');
-      // A cancelled or failed opening may stop mid-fade: the book flies back in sepia, not in a half-mixed page.
+      // A cancelled or failed opening may stop mid-fade: the book flies back on white paper, not in a half-mixed page.
       if (view && session.phase === 'reading') view.setPageTheme(0);
       if (!instant) await playReturn();
       if (state.session === session) finishClose({ silent, instant });
@@ -3180,10 +3180,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     function installOpeningPage(snapshot, { redraw = true } = {}) {
       if (!snapshot?.source) return false;
-      // The book opens in sepia whatever the reading theme: the snapshot's
-      // sepia variant starts at pageTheme 0 and fades to the theme on the zoom.
+      // The book opens on white paper whatever the reading theme: the snapshot's
+      // white-paper variant starts at pageTheme 0 and fades to the theme on the zoom.
       // A page warmed up while the book waited is already on the model.
-      if (view) return view.hasPageSnapshot(snapshot) || view.setPageSnapshot(snapshot, { ...(snapshot.sepia ? { pageTheme:0 } : {}), redraw });
+      if (view) return view.hasPageSnapshot(snapshot) || view.setPageSnapshot(snapshot, { ...(snapshot.paper ? { pageTheme:0 } : {}), redraw });
       const pages = bookNode.querySelector('.ihr-flyout__fallback-pages');
       if (!pages) return false;
       const canvas = snapshot.source;
@@ -3223,7 +3223,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     async function animateBookToPage(target) {
       if (session.cancelled || state.destroyed) return;
       if (view) {
-        // The pages fade from sepia to the reader's theme with the zoom itself.
+        // The pages fade from white paper to the reader's theme with the zoom itself.
         session.pageZoom = view.animateToPage({ ...target, pageTheme:1 });
         await waitForMotion(session.pageZoom, target.duration);
         return;
@@ -3231,7 +3231,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       const page = bookNode.querySelector('.ihr-flyout__saved-page');
       const bounds = page?.getBoundingClientRect();
       if (!bounds?.width || !bounds.height) return;
-      if (bookNode.querySelector('.ihr-flyout__saved-page-sepia')) {
+      if (bookNode.querySelector('.ihr-flyout__saved-page-stock')) {
         animate(page, [{ opacity:0 }, { opacity:1 }], { duration:target.duration, easing:'cubic-bezier(.2,.74,.2,1)', fill:'both' });
       }
       const scale = target.width / bounds.width;
@@ -3396,15 +3396,15 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
   }
 
-  // Non-WebGL pages: the sepia variant sits under the reader's own canvas,
-  // which fades over it (opacity 0 = sepia, 1 = the reading theme).
+  // Non-WebGL pages: the white-paper variant sits under the reader's own canvas,
+  // which fades over it (opacity 0 = white paper, 1 = the reading theme).
   function fallbackPageLayers(canvas, snapshot, opacity) {
-    const sepia = snapshot.sepia?.source;
-    if (!sepia) return [canvas];
-    sepia.className = 'ihr-flyout__saved-page-sepia';
-    sepia.style.cssText = canvas.style.cssText;
+    const stock = snapshot.paper?.source;
+    if (!stock) return [canvas];
+    stock.className = 'ihr-flyout__saved-page-stock';
+    stock.style.cssText = canvas.style.cssText;
     canvas.style.opacity = String(opacity);
-    return [sepia, canvas];
+    return [stock, canvas];
   }
 
   /** Cierra el tomo 3D desde el lector y lo devuelve a su hueco. */
@@ -3527,14 +3527,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         onPageReady?.();
         flyout.dataset.returnPhase = 'zooming';
         animate(scrim, [{ opacity:0 }, { opacity:1 }], { duration:prefersReducedMotion() ? 1 : 320, fill:'both' });
-        // Back to sepia on the zoom's own clock: the page leaves the reader in
-        // its theme (as the still image shows it) and the book closes in sepia.
-        animation = view.animate([{ transform:view.getPose() }, { transform:{ ...readingPose, bookmarkWithdraw:1, ...(pageSnapshot.sepia ? { pageTheme:0 } : {}) } }],
+        // Back to white paper on the zoom's own clock: the page leaves the reader in
+        // its theme (as the still image shows it) and the book closes on white paper.
+        animation = view.animate([{ transform:view.getPose() }, { transform:{ ...readingPose, bookmarkWithdraw:1, ...(pageSnapshot.paper ? { pageTheme:0 } : {}) } }],
           { duration:prefersReducedMotion() ? 1 : 620 });
         await waitForMotion(animation, prefersReducedMotion() ? 1 : 620);
         if (!active()) return false;
-        // Sepia from here on, even if a stalled frame let the zoom's watchdog release it early.
-        if (pageSnapshot.sepia && view.getPageTheme() > 0) view.setPageTheme(0);
+        // White paper from here on, even if a stalled frame let the zoom's watchdog release it early.
+        if (pageSnapshot.paper && view.getPageTheme() > 0) view.setPageTheme(0);
         flyout.dataset.returnPhase = 'bookmark';
         animation = view.animateBookmark({ withdraw:0, duration:prefersReducedMotion() ? 1 : 360 });
         await waitForMotion(animation, prefersReducedMotion() ? 1 : 360);
@@ -3566,7 +3566,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         animation = animate(bookNode,[{ transform:bookNode.style.transform },{ transform:'translate(0,0) scale(1)' }],
           { duration:prefersReducedMotion() ? 1 : 620, easing:EASE, fill:'both' });
         fallbackAnimations.push(animation);
-        if (pageSnapshot.sepia?.source) fallbackAnimations.push(animate(image,[{ opacity:1 },{ opacity:0 }],
+        if (pageSnapshot.paper?.source) fallbackAnimations.push(animate(image,[{ opacity:1 },{ opacity:0 }],
           { duration:prefersReducedMotion() ? 1 : 620, easing:EASE, fill:'both' }));
         await waitForMotion(animation, prefersReducedMotion() ? 1 : 620);
         if (!active()) return false;

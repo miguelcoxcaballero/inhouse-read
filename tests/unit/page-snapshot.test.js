@@ -189,12 +189,12 @@ describe('actual rendered reading page snapshots', () => {
     expect(snapshot.text).toBe('aa bb cc')
   })
 
-  it('paints both the theme and the sepia canvas with the same word positions', async () => {
+  it('paints both the theme and the white paper canvas with the same word positions', async () => {
     charWidth = 10
     const { snapshot } = await paint('<article><p>aa bb</p></article>',
-      one([0,10],[10,10],[20,40],[60,10],[70,10]),{snapshot:{sepia:{background:'#eee0c4',color:'#483825',themeColor:'rgb(41, 40, 33)'}}})
+      one([0,10],[10,10],[20,40],[60,10],[70,10]),{snapshot:{paper:{background:'#ffffff',color:'#292821',themeColor:'rgb(41, 40, 33)'}}})
     expect(asCalls(contexts.get(snapshot.source).painted)).toEqual([['aa',0],['bb',60]])
-    expect(asCalls(contexts.get(snapshot.sepia.source).painted)).toEqual([['aa',0],['bb',60]])
+    expect(asCalls(contexts.get(snapshot.paper.source).painted)).toEqual([['aa',0],['bb',60]])
   })
 
   it('keeps an unstretched line as one string so kerning and ligatures across spaces survive', async () => {

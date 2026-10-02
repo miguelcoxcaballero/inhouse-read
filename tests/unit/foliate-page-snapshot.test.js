@@ -3,6 +3,7 @@ vi.mock('foliate-js/view.js', () => ({}))
 vi.mock('foliate-js/overlayer.js', () => ({Overlayer:{highlight:vi.fn()}}))
 vi.mock('../../src/js/gestures.js', () => ({attachSwipeNavigation:() => () => {}}))
 import { FoliateReader } from '../../src/js/readers/foliate-reader.js'
+import { READING_THEMES } from '../../src/js/readers/reading-preferences.js'
 import { Overlayer } from 'foliate-js/overlayer.js'
 
 const rect = (left,top,width,height) => ({left,top,width,height,right:left+width,bottom:top+height})
@@ -59,21 +60,24 @@ describe('restored EPUB visible page', () => {
     expect(await reader.getPageSnapshot()).toBeNull()
   })
 
-  it('paints the restored page again in the sepia theme, and only when the reader is not sepia', async () => {
+  it.each(Object.keys(READING_THEMES))('paints the restored %s page on white paper with unfiltered dark ink', async theme => {
     const reader = new FoliateReader()
     await reader.open(container,new File(['epub'],'book.epub'))
-    await reader.applyPreferences({theme:'night'})
-    const night = await reader.getPageSnapshot()
-    expect(night.sepia.source).not.toBe(night.source)
-    expect(night.sepia).toMatchObject({width:night.width,height:night.height})
-    expect(contexts.get(night.sepia.source).fillStyle).toBe('#eee0c4')
-    expect(contexts.get(night.source).fillStyle).toBe('#191c1a')
+    await reader.applyPreferences({theme})
+    doc.querySelector('h1').style.color = READING_THEMES[theme].color
+    const snapshot = await reader.getPageSnapshot()
+    expect(snapshot.paper.source).not.toBe(snapshot.source)
+    expect(snapshot.paper).toMatchObject({width:snapshot.width,height:snapshot.height})
+    expect(contexts.get(snapshot.paper.source).fillStyle).toBe('#ffffff')
+    expect(contexts.get(snapshot.paper.source).filter).toBe('none')
+    expect(contexts.get(snapshot.source).fillStyle).toBe(READING_THEMES[theme].background)
     const painted = [...contexts.values()].filter(value => value.fillText.mock.calls.length)
     expect(painted).toHaveLength(2)
-    expect(painted[0].fillStyle).toBe('rgb(212, 216, 204)')
-    expect(painted[1].fillStyle).toBe('#483825')
-    await reader.applyPreferences({theme:'sepia'})
-    expect((await reader.getPageSnapshot()).sepia).toBeUndefined()
+    expect(painted[0].fillStyle).toBe(doc.querySelector('h1').style.color)
+    expect(painted[0].filter).toBe('brightness(0.9)')
+    expect(painted[1].fillStyle).toBe('#292821')
+    expect(painted[1].filter).toBe('none')
+    expect(painted[1].fillText.mock.calls).toEqual(painted[0].fillText.mock.calls)
     reader.close()
   })
 
@@ -107,7 +111,7 @@ describe('restored EPUB visible page', () => {
     expect(snapshot).toMatchObject({text:'Saved blue page',sourceType:'epub-page',
       location:{locator:{kind:'cfi',value:'epubcfi(/6/6)'}}})
     expect([...contexts.values()].some(ctx => ctx.scale.mock.calls.some(([x,y])=>x===.5&&y===.5))).toBe(true)
-    // The page is painted once for the reader's theme and once more, identically placed, for the sepia transition.
+    // The page is painted once for the reader's theme and once more, identically placed, on white paper.
     const painted = [...contexts.values()].filter(ctx => ctx.fillText.mock.calls.length)
     expect(painted).toHaveLength(2)
     for (const ctx of painted) expect(ctx.fillText.mock.calls.map(([text])=>text)).toEqual(['Saved blue page'])

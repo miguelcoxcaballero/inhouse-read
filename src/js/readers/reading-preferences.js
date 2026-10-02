@@ -6,8 +6,8 @@ export const READING_THEMES = {
   sage: { background:'#dce5d8', color:'#2c3a30', scheme:'light' }
 }
 // The filter each theme puts on an original PDF page (src/css/reading.css,
-// `[data-reading-theme] .pdf-page-canvas`). The opening/closing transition
-// replays the sepia one on the snapshot so its sepia pages are the reader's.
+// `[data-reading-theme] .pdf-page-canvas`). Physical page snapshots keep the
+// original unfiltered pixels and blend into these themed reader pixels.
 export const PDF_PAGE_FILTERS = {
   paper: 'none',
   sepia: 'sepia(.5) brightness(.94)',

@@ -37,20 +37,20 @@ function canvasFor(width, height, scale = 1) {
 }
 
 /** Copies before returning: subsequent PDF renders cannot alter the preview. */
-export function snapshotCanvas(source, { filter = 'none', displayBounds, sepiaFilter } = {}) {
+export function snapshotCanvas(source, { filter = 'none', displayBounds, paper = false } = {}) {
   const target = canvasFor(source?.width, source?.height)
   if (!target) return null
   target.context.filter = filter
   target.context.drawImage(source, 0, 0, target.canvas.width, target.canvas.height)
   const snapshot = { source:target.canvas, width:target.canvas.width, height:target.canvas.height,
     displayBounds:plainBounds(displayBounds || source.getBoundingClientRect()) }
-  // The same raw page under the sepia theme's filter, for the open/close
-  // transition. One more drawImage; the themed copy is untouched.
-  const sepia = sepiaFilter == null ? null : canvasFor(source.width, source.height)
-  if (sepia) {
-    sepia.context.filter = sepiaFilter
-    sepia.context.drawImage(source, 0, 0, sepia.canvas.width, sepia.canvas.height)
-    snapshot.sepia = { source:sepia.canvas, width:sepia.canvas.width, height:sepia.canvas.height }
+  // Physical pages keep the original PDF pixels, without the reader's theme
+  // or brightness filters. The separately themed copy is untouched.
+  const paperTarget = paper ? canvasFor(source.width, source.height) : null
+  if (paperTarget) {
+    paperTarget.context.filter = 'none'
+    paperTarget.context.drawImage(source, 0, 0, paperTarget.canvas.width, paperTarget.canvas.height)
+    snapshot.paper = { source:paperTarget.canvas, width:paperTarget.canvas.width, height:paperTarget.canvas.height }
   }
   return snapshot
 }
@@ -167,7 +167,7 @@ export async function rasterizeInlineSVG(svg, { deadline = performance.now() + D
 }
 
 /** Composite visible fixed-layout spread frames into the same reader viewport. */
-export function compositePageSnapshots(snapshots, { viewport, background = '#faf9f5', filter = 'none', sepiaBackground } = {}) {
+export function compositePageSnapshots(snapshots, { viewport, background = '#faf9f5', filter = 'none', paperBackground } = {}) {
   const scale = Math.min(2,window.devicePixelRatio || 1)
   const target = canvasFor(viewport?.width,viewport?.height,scale)
   if (!target || !snapshots.length) return null
@@ -178,15 +178,14 @@ export function compositePageSnapshots(snapshots, { viewport, background = '#faf
   for (const snapshot of snapshots) context.drawImage(snapshot.source,0,0,canvas.width,canvas.height)
   const composite = {source:canvas,width:canvas.width,height:canvas.height,displayBounds:plainBounds(viewport),
     text:snapshots.map(snapshot => snapshot.text).filter(Boolean).join(' ')}
-  // The sepia transition copy is composed the same way, only when every frame has one.
-  const sepia = sepiaBackground != null && snapshots.every(snapshot => snapshot.sepia?.source)
+  // The physical paper copy uses the same spread geometry, with no reader filter.
+  const paper = paperBackground != null && snapshots.every(snapshot => snapshot.paper?.source)
     ? canvasFor(viewport.width,viewport.height,scale) : null
-  if (sepia) {
-    sepia.context.filter = filter; sepia.context.fillStyle = sepiaBackground
-    sepia.context.fillRect(0,0,sepia.canvas.width,sepia.canvas.height)
-    sepia.context.filter = 'none'
-    for (const snapshot of snapshots) sepia.context.drawImage(snapshot.sepia.source,0,0,sepia.canvas.width,sepia.canvas.height)
-    composite.sepia = { source:sepia.canvas, width:sepia.canvas.width, height:sepia.canvas.height }
+  if (paper) {
+    paper.context.filter = 'none'; paper.context.fillStyle = paperBackground
+    paper.context.fillRect(0,0,paper.canvas.width,paper.canvas.height)
+    for (const snapshot of snapshots) paper.context.drawImage(snapshot.paper.source,0,0,paper.canvas.width,paper.canvas.height)
+    composite.paper = { source:paper.canvas, width:paper.canvas.width, height:paper.canvas.height }
   }
   return composite
 }
@@ -217,7 +216,7 @@ function decorationsOf(element, styleOf) {
  */
 export async function snapshotDOMPage(root, {
   viewport, offsetX = 0, offsetY = 0, background = '#faf9f5', filter = 'none', range,
-  coordinateScaleX = 1, coordinateScaleY = 1, clipBounds, sepia,
+  coordinateScaleX = 1, coordinateScaleY = 1, clipBounds, paper,
   deadline = performance.now() + DECODE_BUDGET
 } = {}) {
   if (!root || !viewport) return null
@@ -225,13 +224,13 @@ export async function snapshotDOMPage(root, {
   const target = canvasFor(viewport.width, viewport.height, Math.min(2, window.devicePixelRatio || 1))
   if (!target) return null
   const { canvas, context:ctx, ratio } = target
-  // `sepia` ({ background, color, themeColor }) paints the very same laid out
-  // page a second time under the sepia theme: the layout (the expensive part)
+  // `paper` ({ background, color, themeColor }) paints the very same laid out
+  // page a second time on physical white paper: the layout (the expensive part)
   // is measured once, text and background are drawn on both canvases and
   // images, which no theme recolours, are shared.
-  const sepiaTarget = sepia ? canvasFor(viewport.width, viewport.height, Math.min(2, window.devicePixelRatio || 1)) : null
-  const sepiaCtx = sepiaTarget?.context
-  const all = sepiaCtx ? [ctx, sepiaCtx] : [ctx]
+  const paperTarget = paper ? canvasFor(viewport.width, viewport.height, Math.min(2, window.devicePixelRatio || 1)) : null
+  const paperCtx = paperTarget?.context
+  const all = paperCtx ? [ctx, paperCtx] : [ctx]
   for (const [index, c] of all.entries()) {
     c.scale(ratio * coordinateScaleX, ratio * coordinateScaleY)
     if (clipBounds) {
@@ -240,8 +239,8 @@ export async function snapshotDOMPage(root, {
         clipBounds.width / coordinateScaleX,clipBounds.height / coordinateScaleY)
       c.clip()
     }
-    c.filter = filter
-    c.fillStyle = index ? sepia.background : background
+    c.filter = index ? 'none' : filter
+    c.fillStyle = index ? paper.background : background
     c.fillRect(0, 0, viewport.width / coordinateScaleX, viewport.height / coordinateScaleY)
   }
   const bounds = { left:offsetX, top:offsetY, right:offsetX + viewport.width / coordinateScaleX,
@@ -320,8 +319,8 @@ export async function snapshotDOMPage(root, {
     const fontFor = (source, size) => `${source.fontStyle || 'normal'} ${source.fontWeight || '400'} ${size}px ${source.fontFamily || 'serif'}`
     const setInk = color => {
       ctx.fillStyle = inkOf(color)
-      // Only the theme's own ink becomes the sepia ink; a publisher's own colour stays.
-      if (sepiaCtx) sepiaCtx.fillStyle = sameColor(color, sepia.themeColor) ? sepia.color : ctx.fillStyle
+      // Only the theme's own ink becomes dark paper ink; a publisher's own colour stays.
+      if (paperCtx) paperCtx.fillStyle = sameColor(color, paper.themeColor) ? paper.color : ctx.fillStyle
     }
     const setFont = (source, size) => {
       for (const c of all) {
@@ -385,7 +384,7 @@ export async function snapshotDOMPage(root, {
           for (const [kind, y] of [['underline', baseline + size * .12], ['line-through', baseline - size * .3]]) {
             if (!line.includes(kind)) continue
             for (const [which, c] of all.entries()) {
-              c.fillStyle = which && sameColor(color, sepia.themeColor) ? sepia.color : inkOf(color)
+              c.fillStyle = which && sameColor(color, paper.themeColor) ? paper.color : inkOf(color)
               c.fillRect(left - offsetX, y - thickness / 2, right - left, thickness)
             }
           }
@@ -447,5 +446,5 @@ export async function snapshotDOMPage(root, {
   }
   return { source:canvas, width:canvas.width, height:canvas.height,
     displayBounds:plainBounds(viewport), text:visibleText.join(' ').replace(/\s+/g, ' ').trim(),
-    ...(sepiaTarget ? { sepia:{ source:sepiaTarget.canvas, width:sepiaTarget.canvas.width, height:sepiaTarget.canvas.height } } : {}) }
+    ...(paperTarget ? { paper:{ source:paperTarget.canvas, width:paperTarget.canvas.width, height:paperTarget.canvas.height } } : {}) }
 }
