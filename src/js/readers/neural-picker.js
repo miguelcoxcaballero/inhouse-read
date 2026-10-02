@@ -31,7 +31,7 @@ function button(label, action, id, className = '', ariaLabel = '') {
 }
 function progress(label, download, voice) {
   const percent = Math.max(0, Math.min(100, Math.round((download?.fraction || 0) * 100)))
-  const total = download?.total > 0 ? download.total / 1048576 : voice.sizeMB
+  const total = download?.total > 0 ? download.total / 1e6 : voice.sizeMB
   const wrap = element('div', 'reading-neural-progress')
   const bar = element('div', 'reading-neural-bar'), fill = element('i')
   bar.setAttribute('role', 'progressbar'); bar.setAttribute('aria-label', label)
@@ -103,8 +103,10 @@ export class NeuralVoicePicker {
     if (!list.length) { this.offer.hidden = true; this.offer.replaceChildren(); return }
     const focus = this.focusKey()
     const ordered = orderNeuralVoices(list, { bookLang:this.bookLang, deviceLang:navigator.language })
-    const size = Math.max(...list.map(voice => voice.sizeMB)) || 63
-    this.block.querySelector('[data-neural-note]').textContent = `Se descarga una vez (${Math.round(size)} MB) y funciona sin internet.`
+    const sizes = new Map()
+    for (const voice of list) sizes.set(Math.round(voice.sizeMB), (sizes.get(Math.round(voice.sizeMB)) || 0) + 1)
+    const size = [...sizes].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0] || 63 // the usual size (each row says its own), not the biggest one
+    this.block.querySelector('[data-neural-note]').textContent = `Se descarga una vez (${size} MB) y funciona sin internet.`
     const reason = this.host.voice?.neuralOff
     this.block.querySelector('[data-neural-warning]').hidden = !reason
     this.block.querySelector('[data-neural-warning-text]').textContent = reason ? WARNINGS[reason] || WARNINGS.default : ''

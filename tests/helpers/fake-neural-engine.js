@@ -26,7 +26,7 @@ export const FAKE_CATALOG = [
 export function createFakeNeuralEngine(options = {}) {
   const config = { supported:true, installed:[], steps:5, stepMs:30, startDelay:0, speakMs:40, manual:false, hold:false, failNext:'', failInstall:{}, ...options }
   const catalog = options.voices || []
-  const sizeOf = id => Math.round(((catalog.find(voice => voice.id === id) || {}).sizeMB || 63) * 1048576)
+  const sizeOf = id => Math.round(((catalog.find(voice => voice.id === id) || {}).sizeMB || 63) * 1e6)
   const coded = (code, message = code) => Object.assign(new Error(message), { code })
   const highlight = () => { try { return window.__speechHighlight?.() ?? '' } catch { return '' } }
   class FakeNeuralEngine extends EventTarget {

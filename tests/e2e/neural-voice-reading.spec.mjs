@@ -435,7 +435,9 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
 })
 
 // The default Hugging Face URLs (no INHOUSE_NEURAL_VOICE_BASE): the layout the app really requests, answered by route interception.
-test('default Hugging Face URLs: a second voice downloads from where the catalogue says and speaks', async ({ browser }) => {
+// This is also the owner's first-use journey: the audiobook starts with the system voice, the offer card appears, one tap
+// downloads the recommended voice and the natural voice takes over at the next fragment without stopping the reading.
+test('default Hugging Face URLs and the first-use offer: one tap downloads the voice and it takes over mid-reading; a second voice speaks too', async ({ browser }) => {
   test.skip(!haveVoice(DAVEFX), `fixture ${DAVEFX} not found in ${FIXTURES}`)
   test.setTimeout(280_000)
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' })
@@ -447,19 +449,42 @@ test('default Hugging Face URLs: a second voice downloads from where the catalog
   await context.route('https://huggingface.co/**', async route => {
     const url = route.request().url()
     requested.push(url)
-    const rel = url.slice(ROOT.length)
-    const file = join(FIXTURES, rel.split('/').pop())
+    const rel = url.slice(ROOT.length), name = rel.split('/').pop(), stem = name.replace(/\.onnx(\.json)?$/, '')
     const headers = { 'access-control-allow-origin': '*', 'access-control-expose-headers': 'content-length, etag', etag: '"fixture"' }
-    if (rel === `${hfPath(DAVEFX)}.onnx` || rel === `${hfPath(DAVEFX)}.onnx.json`) return route.fulfill({ status: 200, headers, body: readFileSync(file) })
+    if (haveVoice(stem) && rel === `${hfPath(stem)}${name.slice(stem.length)}`) return route.fulfill({ status: 200, headers, body: readFileSync(join(FIXTURES, name)) })
     return route.fulfill({ status: 404, headers, body: 'not found' })
   })
   await open(page, EPUB)
+  await page.evaluate(() => { window.__tts.state.ms = 2500 }) // the system voice reads slowly: the download finishes while it is speaking
   await openAudio(page)
+  await page.getByRole('slider', { name: 'Velocidad de voz' }).fill('1.2')
+  await play(page)
+  await expect.poll(() => systemSpoken(page), SLOW).toBeGreaterThan(0) // the system voice carries the first fragments
+  const offer = page.locator('[data-neural-offer]')
+  await expect(offer).toBeVisible(SLOW)
+  await expect(offer).toContainText('Voz natural sin conexión (63 MB)')
+  await shot(page, 'first-use-offer', offer)
+  await offer.getByRole('button', { name: /Descargar la voz natural Claude/ }).click()
+  await expect(offer).toBeHidden(SLOW) // installed: no more offer
+  await expect(page.getByRole('combobox', { name: 'Voz de lectura' })).toHaveValue(CLAUDE_ID)
+  expect(requested.filter(url => !url.endsWith('voices.json')).sort()).toEqual([`${ROOT}${hfPath(CLAUDE)}.onnx`, `${ROOT}${hfPath(CLAUDE)}.onnx.json`].sort())
+  await spyOnEngine(page)
+  // The natural voice takes over at the next fragment, while the audiobook keeps playing.
+  await expect.poll(async () => (await starts(page)).length, SLOW).toBeGreaterThan(1)
+  expect((await neu(page, n => n.speak))[0]).toMatchObject({ voiceId: CLAUDE_ID, rate: 1.2 })
+  const spokenBySystem = await systemSpoken(page)
+  await page.waitForTimeout(3000)
+  expect(await systemSpoken(page)).toBe(spokenBySystem) // the system voice is not used again
+  await expect(page.getByRole('button', { name: 'Pausar', exact: true })).toBeVisible()
+  expect((await starts(page)).every(entry => entry.highlight)).toBe(true)
+  await expectCleanAudio(page, 'first use')
+  await page.getByRole('button', { name: 'Detener', exact: true }).click()
+
+  // A second voice (another model) from the catalogue downloads from its own URL and speaks.
   await row(page, DAVEFX_ID).getByRole('button', { name: /Descargar la voz Davefx/ }).click()
   await expect(row(page, DAVEFX_ID).getByRole('button', { name: /Voz en uso Davefx/ })).toBeVisible(SLOW)
-  expect(requested.filter(url => !url.endsWith('voices.json')).sort()).toEqual([`${ROOT}${hfPath(DAVEFX)}.onnx`, `${ROOT}${hfPath(DAVEFX)}.onnx.json`].sort())
-  await spyOnEngine(page)
-  await page.getByRole('slider', { name: 'Velocidad de voz' }).fill('1.2')
+  expect(requested).toContain(`${ROOT}${hfPath(DAVEFX)}.onnx`)
+  await page.evaluate(() => { window.__neu.audio.length = 0; window.__neu.speak.length = 0; window.__neu.events.length = 0 })
   await play(page)
   await expect.poll(async () => (await starts(page)).length, SLOW).toBeGreaterThan(1)
   expect((await neu(page, n => n.speak))[0]).toMatchObject({ voiceId: DAVEFX_ID })

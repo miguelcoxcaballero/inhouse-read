@@ -65,6 +65,18 @@ describe('natural voices group', () => {
     expect(button.getAttribute('aria-label')).toBe('Descargar la voz Davefx, Español (España) (63 MB)')
     expect(row(panel, DAVEFX).dataset.state).toBe('idle')
   })
+  it('the note says the usual download size, not the biggest one, and the progress counts in the same decimal MB as the rows', async () => {
+    const big = { id:'piper:es_ES-sharvard-medium', piperId:'es_ES-sharvard-medium', lang:'es-ES', name:'Sharvard', quality:'medium', sizeMB:77, speaker:0 }
+    neuralVoices.push(big)
+    try {
+      const { panel, engine } = await setup()
+      expect(panel.querySelector('[data-neural-note]').textContent).toBe('Se descarga una vez (63 MB) y funciona sin internet.')
+      expect(row(panel, big.id).textContent).toContain('77 MB')
+      click(panel, LESSAC, 'install')
+      engine.progress(LESSAC, .5)
+      await vi.waitFor(() => expect(row(panel).querySelector('.reading-neural-percent').textContent).toBe('50 % · 32 de 63 MB'))
+    } finally { neuralVoices.splice(neuralVoices.indexOf(big), 1) }
+  })
   it('never downloads by itself: only a tap asks the engine', async () => {
     const { panel, engine, experience } = await setup()
     experience.voice.state = 'playing'; experience.neuralPicker.render()
