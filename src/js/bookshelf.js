@@ -168,7 +168,7 @@ const ICONS = Object.freeze({
 export const DEFAULT_TEXTS = Object.freeze({
   shelfLabel: 'Tu estantería',
   emptyTitle: 'Tu estantería está vacía',
-  emptyBody: 'Añade tu primer libro y lo verás aquí de canto, con sus plantas.',
+  emptyBody: 'Añade tu primer libro.',
   addLocal: 'Añadir libro',
   addDrive: 'Drive',
   emptyAction: 'Añadir tu primer libro',
@@ -2891,7 +2891,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       'aria-labelledby':`${editorUid}-tab-cover`, hidden:true
     }, [
       section('Relieve', 'relief', [
-        el('p', { class:'ihr-relief__intro', text:'Zonas de tu portada que, en un libro impreso, podrían llevar relieve o brillo.' }),
+        el('p', { class:'ihr-relief__intro', text:'Zonas con relieve o brillo.' }),
         el('div', { class:'ihr-relief__state' }, [reliefStatus, reliefRetry]),
         reliefGroup,
         reliefStrengthRow
@@ -2964,10 +2964,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       reliefGroup.classList.toggle('is-loading', status === 'loading');
       reliefRetry.hidden = status !== 'error';
       reliefStatus.textContent = status === 'loading' ? 'Buscando zonas con relieve…'
-        : status === 'error' ? 'No se pudo analizar la portada. Inténtalo de nuevo.'
-        : status === 'empty' ? (coverUrl ? 'No se han encontrado zonas claras para darles relieve en esta portada.'
-          : 'Este libro no tiene imagen de portada que analizar.')
-        : status === 'ready' ? `${proposals.length} propuestas para esta portada` : '';
+        : status === 'error' ? 'No se pudo analizar la portada.'
+        : status === 'empty' ? (coverUrl ? 'Sin zonas con relieve.'
+          : 'Este libro no tiene portada.')
+        : status === 'ready' ? `${proposals.length} propuestas` : '';
       reliefStatus.classList.toggle('is-busy', status === 'loading');
       // Reserve the cards before the turn; starting analysis must not grow
       // the sheet over the cover that was just fitted above it.

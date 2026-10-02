@@ -39,9 +39,9 @@ describe('neural voices in the catalogue', () => {
     expect(scoreVoice(high)).toBeGreaterThan(scoreVoice({ ...medium, recommended:false }))
     expect(scoreVoice(medium)).toBeGreaterThan(scoreVoice({ ...medium, recommended:false }))
   })
-  it('labels read "Natural · sin conexión"', () => {
-    expect(voiceLabel(neural()[0])).toBe('Español (España) · Davefx · Natural · sin conexión')
-    expect(voiceLabel(neural().find(voice => voice.id === 'piper:es_MX-claude-high'))).toBe('Español (México) · Claude · Natural · sin conexión')
+  it('labels read language and name', () => {
+    expect(voiceLabel(neural()[0])).toBe('Español (España) · Davefx')
+    expect(voiceLabel(neural().find(voice => voice.id === 'piper:es_MX-claude-high'))).toBe('Español (México) · Claude')
   })
 })
 
@@ -92,9 +92,9 @@ describe('picker groups with neural voices', () => {
   it('lists installed neural voices apart, and keeps system groups system-only', () => {
     const groups = buildVoiceGroups([...SYSTEM, ...neural(['piper:es_ES-davefx-medium', 'piper:en_US-lessac-high'])], { bookLang:'es-ES', deviceLang:'en-US' })
     expect(groups.neural.map(item => item.id)).toEqual(['piper:es_ES-davefx-medium', 'piper:en_US-lessac-high'])
-    expect(groups.neural[0].label).toBe('Español (España) · Davefx · Natural · sin conexión')
+    expect(groups.neural[0].label).toBe('Español (España) · Davefx')
     expect([...groups.recommended, ...groups.all].some(item => item.voice.neural)).toBe(false)
-    expect(groups.labels.get('piper:en_US-lessac-high')).toMatch(/Natural · sin conexión/)
+    expect(groups.labels.get('piper:en_US-lessac-high')).toBe('Inglés (EE. UU.) · Lessac')
     expect(buildVoiceGroups(SYSTEM, {}).neural).toEqual([])
   })
   it('orders the download list: book language first (its region, then recommended), then device language, then the rest', () => {

@@ -7,6 +7,7 @@ Files here are shipped as they are (`public/` is copied to `dist/neural-voice/ph
 | --- | --- | --- |
 | `piper_phonemize.wasm` | the `piper-phonemize` C++ program compiled with Emscripten (statically links espeak-ng), **byte for byte** as published | 629 KB |
 | `piper_phonemize.data` | the espeak-ng data package, **trimmed** to the dictionaries of the languages we offer: es, en, fr, de, it, pt, ca (plus every non-dictionary file: voices, phoneme tables) | 1.4 MB (18 MB untrimmed) |
+| `dict/<lang>_dict` | the espeak-ng dictionaries of the languages added later (nl, pl, ru, uk, tr, sv, da, no, fi, cs, el, hu, ro, ar, cmn, vi), byte for byte as in the package, one file each: **not** part of the first download, the phonemizer fetches the one a voice needs the first time that voice speaks (ru 8.3 MB, cmn 1.5 MB, ar 0.5 MB, da 0.2 MB, the rest under 0.15 MB) and writes it into the module's `/espeak-ng-data` | 11 MB in all |
 | `piper_phonemize.mjs` | only the Emscripten JavaScript glue of the same package, exported as a factory (see below) | 107 KB |
 
 ## Provenance
@@ -19,9 +20,9 @@ Files here are shipped as they are (`public/` is copied to `dist/neural-voice/ph
   it is rewritten to match the trimmed `.data`.
 * Rebuild everything with `node scripts/trim-espeak-data.mjs <path of the piper-tts-web package> public/neural-voice/phon`
   (every pattern is checked, the script fails if the package changes shape). To offer another language, add it to the
-  language list of the script, run it again and add the voice to `src/js/readers/neural-voice/catalog.js`.
+  extra list of the script (its dictionary then goes to `dict/`) and to `EXTRA_DICTIONARIES` in `src/js/readers/neural-voice/phonemizer.js`, run the script again and add the voice to `src/js/readers/neural-voice/catalog.js`. A language of the first list (inside the .data) needs no code.
 * The trimmed data was verified to give the same phoneme ids as the untrimmed package for the sentences tried in the
-  spikes (es, en, fr, de, it, pt, ca), and every voice of the catalogue was synthesised with it.
+  spikes (es, en, fr, de, it, pt, ca), and every voice of the catalogue was synthesised with it (the languages of `dict/` with their real Piper weights in `tests/e2e/neural-voice-languages.spec.mjs`).
 
 ## Licences (the repository and the site are public: read before changing anything here)
 
@@ -39,7 +40,7 @@ Files here are shipped as they are (`public/` is copied to `dist/neural-voice/ph
   downloaded by the user, on demand, from Hugging Face, so they are not redistributed from here. The catalogue
   (`src/js/readers/neural-voice/catalog.js`) lists the voices used (Piper models `es_MX-claude-high`, `es_ES-davefx-medium`,
   `es_ES-sharvard-medium`, `en_US-lessac-medium`, `en_GB-alba-medium`, `fr_FR-siwis-medium`, `de_DE-thorsten-medium`,
-  `it_IT-paola-medium`, `pt_BR-faber-medium`, `ca_ES-upc_ona-medium`); credit for each belongs to the author of its dataset,
+  `it_IT-paola-medium`, `pt_BR-faber-medium`, `ca_ES-upc_ona-medium`, and the voices of the later languages: see the table in the catalogue); credit for each belongs to the author of its dataset,
   named in its model card. Check the card of a voice before using it outside a personal setting (several datasets are
   CC-BY, CC-BY-SA or non-commercial).
 * onnxruntime-web (MIT) is copied to `dist/neural-voice/ort/` at build time by `scripts/neural-voice-assets.mjs`.

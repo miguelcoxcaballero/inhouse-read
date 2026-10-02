@@ -5,7 +5,7 @@ import { loadNeural } from '../../src/js/readers/neural-runtime.js'
 import { neuralVoices, setNeuralEngine } from '../../src/js/readers/neural-voice/index.js'
 import { createFakeNeuralEngine, FAKE_CATALOG } from '../helpers/fake-neural-engine.js'
 
-// The "Voces naturales · sin conexión" picker and the first-use offer, driven by a fake engine (no real ReadingVoice audio).
+// The "Voces naturales" picker and the first-use offer, driven by a fake engine (no real ReadingVoice audio).
 const LESSAC = 'piper:en_US-lessac-high', ALBA = 'piper:en_GB-alba-medium', DAVEFX = 'piper:es_ES-davefx-medium'
 let catalogue
 beforeAll(async () => { await loadNeural(); catalogue = [...neuralVoices]; neuralVoices.splice(0, neuralVoices.length, ...FAKE_CATALOG) })
@@ -46,16 +46,16 @@ describe('natural voices group', () => {
     const { panel, experience } = await setup({ supported:false })
     expect(block(panel).hidden).toBe(true)
     expect(offer(panel).hidden).toBe(true)
-    expect([...select(panel).querySelectorAll('optgroup')].map(group => group.label)).not.toContain('Voces naturales · sin conexión')
+    expect([...select(panel).querySelectorAll('optgroup')].map(group => group.label)).not.toContain('Voces naturales')
     experience.voice.state = 'playing'; experience.neuralPicker.render()
     expect(offer(panel).hidden).toBe(true)
   })
-  it('lists the catalogue with the book language first, with name, language, size and a Descargar button, plus the honest note', async () => {
+  it('lists the catalogue with the book language first, with name, language, size and a Descargar button', async () => {
     const { panel } = await setup({ language:'es-ES' })
     expect(block(panel).hidden).toBe(false)
-    expect(panel.querySelector('#reading-neural-title').textContent).toBe('Voces naturales · sin conexión')
+    expect(panel.querySelector('#reading-neural-title').textContent).toBe('Voces naturales')
     expect(block(panel).getAttribute('aria-labelledby')).toBe('reading-neural-title')
-    expect(panel.querySelector('[data-neural-note]').textContent).toBe('Se descarga una vez (63 MB, más unos 16 MB del motor) y se guarda en el dispositivo. Habla sin enviar nada a internet; la app necesita abrirse con conexión.')
+    expect(panel.querySelector('[data-neural-note]')).toBeNull() // no explanatory note: each row says its size
     expect(rows(panel).slice(0, 3).map(item => item.dataset.neuralVoice)).toEqual([DAVEFX, 'piper:es_MX-claude-high', LESSAC]) // book language (es-ES first), then the device language (en-US)
     expect(row(panel, DAVEFX).textContent).toContain('Davefx')
     expect(row(panel, DAVEFX).textContent).toContain('Recomendada')
@@ -65,12 +65,12 @@ describe('natural voices group', () => {
     expect(button.getAttribute('aria-label')).toBe('Descargar la voz Davefx, Español (España) (63 MB)')
     expect(row(panel, DAVEFX).dataset.state).toBe('idle')
   })
-  it('the note says the usual download size, not the biggest one, and the progress counts in the same decimal MB as the rows', async () => {
+  it('each row says its own size and the progress counts in the same decimal MB as the rows', async () => {
     const big = { id:'piper:es_ES-sharvard-medium', piperId:'es_ES-sharvard-medium', lang:'es-ES', name:'Sharvard', quality:'medium', sizeMB:77, speaker:0 }
     neuralVoices.push(big)
     try {
       const { panel, engine } = await setup()
-      expect(panel.querySelector('[data-neural-note]').textContent).toBe('Se descarga una vez (63 MB, más unos 16 MB del motor) y se guarda en el dispositivo. Habla sin enviar nada a internet; la app necesita abrirse con conexión.')
+      expect(row(panel, LESSAC).textContent).toContain('63 MB')
       expect(row(panel, big.id).textContent).toContain('77 MB')
       click(panel, LESSAC, 'install')
       engine.progress(LESSAC, .5)
@@ -106,7 +106,7 @@ describe('natural voices group', () => {
     expect(use.textContent).toBe('En uso')
     expect(saved()).toBe(LESSAC)
     expect(select(panel).value).toBe(LESSAC)
-    expect([...select(panel).querySelectorAll('optgroup')][0].label).toBe('Voces naturales · sin conexión')
+    expect([...select(panel).querySelectorAll('optgroup')][0].label).toBe('Voces naturales')
     expect(panel.querySelector('[data-neural-status]').textContent).toBe('Voz Lessac instalada y seleccionada.')
   })
   it('Cancelar aborts the download without leaving a selection', async () => {
@@ -122,7 +122,7 @@ describe('natural voices group', () => {
     const { panel, engine } = await setup({ failInstall:{ [LESSAC]:'storage' } })
     click(panel, LESSAC, 'install')
     await vi.waitFor(() => expect(row(panel).dataset.state).toBe('error'))
-    expect(row(panel).textContent).toContain('No hay espacio suficiente en el dispositivo.')
+    expect(row(panel).textContent).toContain('Sin espacio en el dispositivo.')
     expect(row(panel).querySelector('[role="alert"]')).not.toBeNull()
     const retry = row(panel).querySelector('[data-neural-action="install"]')
     expect(retry.textContent).toBe('Reintentar')
@@ -135,8 +135,8 @@ describe('natural voices group', () => {
     const { panel } = await setup({ failInstall:{ [LESSAC]:'offline', [ALBA]:'http' } })
     click(panel, LESSAC, 'install'); click(panel, ALBA, 'install')
     await vi.waitFor(() => expect(row(panel, ALBA).dataset.state).toBe('error'))
-    expect(row(panel).textContent).toContain('Sin conexión. Conéctate a internet para descargarla.')
-    expect(row(panel, ALBA).textContent).toContain('No se pudo descargar la voz. Inténtalo de nuevo.')
+    expect(row(panel).textContent).toContain('Sin conexión.')
+    expect(row(panel, ALBA).textContent).toContain('No se pudo descargar.')
   })
   it('Usar selects an installed voice, Quitar deletes it and goes back to Automática if it was selected', async () => {
     const { panel, engine } = await setup({ installed:[LESSAC, ALBA] })
@@ -156,7 +156,7 @@ describe('natural voices group', () => {
     const { panel, experience } = await setup({ installed:[LESSAC] })
     expect(experience.preferences.voice).toBe(ALBA)
     expect(select(panel).value).toBe('')
-    expect(panel.querySelector('[data-voice-auto]').textContent).toBe('Se usará: Inglés (EE. UU.) · Lessac · Natural · sin conexión.')
+    expect(panel.querySelector('[data-voice-auto]').textContent).toBe('Inglés (EE. UU.) · Lessac')
   })
 })
 
@@ -194,7 +194,7 @@ describe('first-use offer', () => {
     expect(offer(panel).hidden).toBe(true)
     experience.voice.state = 'playing'; experience.neuralPicker.render()
     expect(offer(panel).hidden).toBe(false)
-    expect(offer(panel).querySelector('.reading-neural-offer__title').textContent).toBe('Voz natural sin conexión (63 MB)')
+    expect(offer(panel).querySelector('.reading-neural-offer__title').textContent).toBe('Voz natural · 63 MB')
     expect([...offer(panel).querySelectorAll('button')].map(node => node.textContent)).toEqual(['Descargar', 'Ahora no'])
     expect(offer(panel).getAttribute('role')).toBe('group')
     expect(engine.installs).toEqual([])
@@ -323,7 +323,7 @@ describe('review fixes', () => {
     engine.map.set(ALBA, { state:'error', fraction:0, received:0, total:0, error:'No hay conexión', code:'offline' })
     engine.emitChange()
     await vi.waitFor(() => expect(row(panel, ALBA).dataset.state).toBe('error'))
-    expect(row(panel, ALBA).textContent).toContain('Sin conexión. Conéctate a internet para descargarla.')
+    expect(row(panel, ALBA).textContent).toContain('Sin conexión.')
   })
   it('opening a book warms the worker only for someone who has listened with a neural voice before; the audio tab always does', async () => {
     const { panel, engine, experience } = await setup({ installed:[LESSAC] })
@@ -354,10 +354,10 @@ describe('review fixes', () => {
       expect(offer(panel).hidden).toBe(hidden)
     }
   })
-  it('the offer says it is generated on the device, not that it beats every system voice, and advises Wi-Fi', async () => {
+  it('the offer is one plain row: name and size, Descargar and Ahora no, no marketing claims', async () => {
     const { panel, experience } = await setup()
     experience.voice.state = 'playing'; experience.neuralPicker.render()
-    expect(offer(panel).textContent).toContain('Mejor con Wi-Fi')
+    expect(offer(panel).textContent).toBe('Voz natural · 63 MBDescargarAhora no')
     expect(offer(panel).textContent).not.toContain('Suena más natural')
   })
 })

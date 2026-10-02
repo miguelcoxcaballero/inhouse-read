@@ -1,6 +1,6 @@
-// The "Voces naturales · sin conexión" part of the audio panel: the list of downloadable on-device voices (Descargar /
-// progress and Cancelar / Instalada, Usar and Quitar / error and Reintentar), the one-line honest note, the warning shown
-// when the neural voice was given up on, and the first-use offer card. It talks to the engine only through
+// The "Voces naturales" part of the audio panel: the list of downloadable on-device voices (Descargar /
+// progress and Cancelar / Instalada, Usar and Quitar / error and Reintentar), the warning shown
+// when the neural voice was given up on, and the first-use offer row. It talks to the engine only through
 // neural-runtime.js, never downloads by itself, and stays hidden where the engine is unsupported or failed to load.
 import { loadNeural, neuralEngine, neuralVoiceList } from './neural-runtime.js'
 import { declaredLanguage, isNeuralId, langBase, languageName, orderNeuralVoices, recommendedNeuralFor } from './voice-catalog.js'
@@ -8,13 +8,13 @@ import { declaredLanguage, isNeuralId, langBase, languageName, orderNeuralVoices
 const OFFER_KEY = 'inhouse-read-neural-offer-dismissed', USED_KEY = 'inhouse-read-neural-used'
 const OFFER_SNOOZE_DAYS = 30 // 'Ahora no' means not now: the offer comes back for that language after this long
 const DOWNLOAD_ERRORS = {
-  offline:'Sin conexión. Conéctate a internet para descargarla.',
-  storage:'No hay espacio suficiente en el dispositivo.',
-  default:'No se pudo descargar la voz. Inténtalo de nuevo.'
+  offline:'Sin conexión.',
+  storage:'Sin espacio en el dispositivo.',
+  default:'No se pudo descargar.'
 }
 const WARNINGS = {
-  'too-slow':'La voz natural no va lo bastante rápida en este dispositivo, así que se usa la voz del sistema. Baja la velocidad o vuelve a probar.',
-  default:'La voz natural no ha podido arrancar, así que se usa la voz del sistema.'
+  'too-slow':'Voz natural demasiado lenta. Se usa la del sistema.',
+  default:'La voz natural no arrancó. Se usa la del sistema.'
 }
 
 const element = (tag, className, text) => {
@@ -143,10 +143,6 @@ export class NeuralVoicePicker {
     if (!list.length) { this.offer.hidden = true; this.offer.replaceChildren(); return }
     const focus = this.focusKey()
     const ordered = orderNeuralVoices(list, { bookLang:this.bookLang, deviceLang:navigator.language })
-    const sizes = new Map()
-    for (const voice of list) sizes.set(Math.round(voice.sizeMB), (sizes.get(Math.round(voice.sizeMB)) || 0) + 1)
-    const size = [...sizes].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0] || 63 // the usual size (each row says its own), not the biggest one
-    this.block.querySelector('[data-neural-note]').textContent = `Se descarga una vez (${size} MB, más unos 16 MB del motor) y se guarda en el dispositivo. Habla sin enviar nada a internet; la app necesita abrirse con conexión.`
     const reason = this.host.voice?.neuralOff
     this.block.querySelector('[data-neural-warning]').hidden = !reason
     this.block.querySelector('[data-neural-warning-text]').textContent = reason ? WARNINGS[reason] || WARNINGS.default : ''
@@ -208,7 +204,7 @@ export class NeuralVoicePicker {
     try { engine.unlock?.() } catch { /* the play tap unlocks audio again */ }
     const controller = new AbortController(), name = this.voiceName(id)
     this.tasks.set(id, controller); this.errors.delete(id)
-    this.announce(`Descargando la voz ${name}.`)
+    this.announce(`Descargando ${name}.`)
     let task
     try { task = engine.install(id, { signal:controller.signal }) } catch (error) { task = Promise.reject(error) }
     this.render()
@@ -226,7 +222,7 @@ export class NeuralVoicePicker {
     } catch (error) {
       this.tasks.delete(id)
       if (error?.code === 'aborted' || controller.signal.aborted) this.announce('Descarga cancelada.')
-      else { const message = DOWNLOAD_ERRORS[error?.code] || DOWNLOAD_ERRORS.default; this.errors.set(id, message); this.announce(`No se pudo descargar la voz ${name}. ${message}`) }
+      else { const message = DOWNLOAD_ERRORS[error?.code] || DOWNLOAD_ERRORS.default; this.errors.set(id, message); this.announce(`No se pudo descargar ${name}. ${message}`) }
       this.render()
     }
   }
@@ -275,16 +271,15 @@ export class NeuralVoicePicker {
     const { name, download, message } = this.state(engine, voice)
     this.offer.dataset.voice = voice.id; this.offer.dataset.state = name
     const size = Math.round(voice.sizeMB)
-    const title = element('p', 'reading-neural-offer__title', `Voz natural sin conexión (${size} MB)`)
-    const body = element('p', 'reading-hint', name === 'error' ? message : `Se genera en el dispositivo, sin enviar nada a internet. Mejor con Wi-Fi. Mientras se descarga, la lectura sigue con la voz de ahora.`)
-    this.offer.setAttribute('role', 'group'); this.offer.setAttribute('aria-label', 'Voz natural sin conexión')
-    const nodes = [title, body]
-    if (name === 'downloading') nodes.push(progress(`Descargando ${voice.name}`, download, voice), button('Cancelar', 'cancel', voice.id, 'is-block', `Cancelar la descarga de ${voice.name}`))
-    else {
-      const actions = element('div', 'reading-neural-offer__actions')
-      actions.append(button(name === 'error' ? 'Reintentar' : 'Descargar', 'install', voice.id, 'is-primary', `${name === 'error' ? 'Reintentar la descarga de' : 'Descargar'} la voz natural ${voice.name} (${size} MB)`), button('Ahora no', 'dismiss', '', 'is-quiet'))
-      nodes.push(actions)
-    }
+    const title = element('p', 'reading-neural-offer__title', `Voz natural · ${size} MB`)
+    this.offer.setAttribute('role', 'group'); this.offer.setAttribute('aria-label', 'Voz natural')
+    const head = [title]
+    if (name === 'downloading') head.push(button('Cancelar', 'cancel', voice.id, '', `Cancelar la descarga de ${voice.name}`))
+    else head.push(button(name === 'error' ? 'Reintentar' : 'Descargar', 'install', voice.id, 'is-primary', `${name === 'error' ? 'Reintentar la descarga de' : 'Descargar'} la voz natural ${voice.name} (${size} MB)`), button('Ahora no', 'dismiss', '', 'is-quiet'))
+    const nodes = [element('div', 'reading-neural-offer__row')]
+    nodes[0].append(...head)
+    if (name === 'error') { const note = element('p', 'reading-neural-voice__error', message); note.setAttribute('role', 'alert'); nodes.push(note) }
+    if (name === 'downloading') nodes.push(progress(`Descargando ${voice.name}`, download, voice))
     this.offer.replaceChildren(...nodes)
   }
 

@@ -140,7 +140,7 @@ describe('audiobook sentence highlight and page follow', () => {
     expect(reader.nexts).toBe(3)
     done(say(speak)[4])
     await vi.waitFor(() => expect(voice.state).toBe('stopped'))
-    expect(messages).toContain('Has llegado al final.')
+    expect(messages).toContain('Final del libro.')
   })
   it('does not report the end of the book while foliate still ignores the turn (page lock held by the voice\'s own follow)', async () => {
     const speak = vi.fn()
@@ -154,7 +154,7 @@ describe('audiobook sentence highlight and page follow', () => {
     await voice.play(); done(say(speak)[4])
     await vi.waitFor(() => expect(say(speak)[0]).toBe('Page two.'))
     expect(calls).toBe(2)
-    expect(messages).not.toContain('Has llegado al final.')
+    expect(messages).not.toContain('Final del libro.')
     expect(voice.state).toBe('playing')
     voice.stop()
   })
@@ -168,7 +168,7 @@ describe('audiobook sentence highlight and page follow', () => {
     await voice.play(); done(say(speak)[4])
     await vi.advanceTimersByTimeAsync(1000)
     expect(reader.nexts).toBe(3) // the turn and two retries, then it really is the end
-    expect(messages).toContain('Has llegado al final.')
+    expect(messages).toContain('Final del libro.')
     const again = new ReadingVoice(mappedReader([{ text:'Only page.' }]))
     await again.play(); done(vi.mocked(window.InhouseSpeech.speak).mock.calls.at(-1)[4])
     again.stop()
@@ -183,7 +183,7 @@ describe('audiobook sentence highlight and page follow', () => {
     const voice = new ReadingVoice(reader, (state, message) => message && messages.push(message))
     await voice.play(); done(say(speak)[4])
     await vi.waitFor(() => expect(voice.state).toBe('stopped'))
-    expect(messages).toContain('La siguiente página no tiene texto legible. Puedes avanzar y volver a escuchar.')
+    expect(messages).toContain('Página siguiente sin texto legible.')
   })
   it('a failing or rejected page follow never interrupts the speech', async () => {
     const speak = vi.fn()
@@ -378,7 +378,7 @@ describe('reading voice selection', () => {
     expect(speak.mock.calls[1].slice(0, 4)).toEqual(['Hola mundo.', 'es-ES', 1, 'es-good'])
     fail() // the local voice failing too is a real error
     expect(reader.state).toBe('stopped')
-    expect(messages.at(-1)).toMatch(/No hay una voz disponible/)
+    expect(messages.at(-1)).toMatch(/No hay voz para este idioma/)
   })
   it('an on-device voice failing is a real error right away', async () => {
     const speak = bridge()
