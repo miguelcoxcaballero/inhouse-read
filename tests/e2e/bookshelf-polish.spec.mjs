@@ -27,7 +27,7 @@ for (const variant of [
   await page.locator('#file-picker').setInputFiles(PDF)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
-  await expect(page.getByRole('heading', { name:'Tu biblioteca' })).toBeVisible()
+  await expect(page.getByRole('heading', { name:'Biblioteca' })).toBeVisible()
   await page.locator('.ihr-spine').first().click()
   const cover = page.locator('.ihr-flyout__cover-target')
   await expect(cover).toBeVisible()

@@ -55,7 +55,7 @@ export const readerPanelMarkup = `
     <div id="reading-list-history" role="tabpanel" aria-labelledby="reading-tab-history" data-places="history" hidden><div data-history class="reading-list"></div></div>
   </section>
   <section id="reading-search" aria-label="Buscar en el libro" hidden>
-    <form class="reading-search-form" data-search-form><label>Buscar en el libro<input type="search" data-search-query placeholder="Palabra o frase" enterkeyhint="search" required></label><button type="submit" class="reading-text-button">Buscar</button></form>
+    <form class="reading-search-form" data-search-form><label><span class="visually-hidden">Buscar en el libro</span><input type="search" data-search-query placeholder="Palabra o frase" enterkeyhint="search" required></label><button type="submit" class="reading-text-button">Buscar</button></form>
     <p class="reading-hint" data-search-status></p><div class="reading-list" data-search-results></div>
   </section>
   <section id="reading-more" aria-label="Más opciones" hidden>

@@ -1618,7 +1618,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     state.itemsById.clear();
     const fragment = document.createDocumentFragment();
     const heading = el('div', { class: 'ihr-library-heading' }, [
-      el('h1', { text: 'Tu biblioteca' }),
+      el('h1', { text: 'Biblioteca' }),
       el('div', { class:'ihr-library-heading__tools' }, [
         // An empty shelf already says so below; "0 libros" would only repeat it.
         el('p', { 'aria-live': 'polite', text: state.books.length ? `${state.books.length} ${state.books.length === 1 ? 'libro' : 'libros'}` : '' }),
