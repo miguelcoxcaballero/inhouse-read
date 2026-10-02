@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "foliate-js": "^1.0.1",
+    "onnxruntime-web": "^1.30.0",
     "pdfjs-dist": "^6.3.289",
     "three": "0.180.0"
   }
