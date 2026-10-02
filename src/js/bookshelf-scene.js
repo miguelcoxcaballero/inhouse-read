@@ -28,7 +28,7 @@ function clearPlantDiagnostics(node) { if (node) for (const key of PLANT_DIAGNOS
 // Diagnostics rarely change from one frame to the next, yet even an identical
 // attribute write queues mutation records and style invalidation.
 function setData(element, key, value) { if (element.dataset[key] !== value) element.dataset[key] = value; }
-const BAGGEBO_DIMENSIONS = JSON.stringify(BAGGEBO_SPEC.dimensions);
+const SHELF_DIMENSIONS = Object.fromEntries(Object.entries(SHELF_SPECS).map(([type, spec]) => [type, JSON.stringify(spec.dimensions)]));
 const CLASS_SEPARATOR = /[ \t\n\f\r]+/;
 const NO_FLAGS = Object.freeze({ away:false, dragging:false, lifted:false, pressed:false });
 const IDENTITY = new THREE.Matrix4();
@@ -970,7 +970,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     setData(canvas, 'cabinetWidth', String(width)); setData(canvas, 'trashReserve', reserve.toFixed(3));
     setData(canvas, 'shelfType', shelfType);
     setData(canvas, 'shelfUnits', String(unitCount));
-    setData(canvas, 'shelfDimensions', shelfType === 'baggebo' ? BAGGEBO_DIMENSIONS : '');
+    setData(canvas, 'shelfDimensions', SHELF_DIMENSIONS[shelfType]);
     setData(canvas, 'sceneFitHeight', String(sceneFitHeight)); setData(canvas, 'floorVisible', String(floor.visible));
     const framedWorld = corners(framedBounds, furniture.matrixWorld, transformRects.world);
     setData(canvas, 'fullCabinetInFrame', String(framedWorld.left >= -.01 && framedWorld.right <= sceneWidth + .01 &&

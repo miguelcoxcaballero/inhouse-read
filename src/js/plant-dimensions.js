@@ -1,4 +1,4 @@
-import { BAGGEBO_SPEC } from './shelf-types.js';
+import { BAGGEBO_SPEC, SHELF_SPECS } from './shelf-types.js';
 
 /** Canonical centimetres. IKEA's “12 cm” is the maximum nursery pot,
  * not the outer diameter. Product measurements checked 2026-10-02.
@@ -46,18 +46,15 @@ export const POT_SIZES = Object.freeze(Object.fromEntries(Object.entries(IKEA_SI
 export const PLANT_SIZES = Object.freeze(Object.fromEntries(Object.entries(IKEA_SIZES_CM.plants).map(([id,p]) =>
   [id, { ...p, widthConfidence:'baja', classes:{ [p.nursery]:{ height:p.height*10, width:p.width*10 } } }])));
 
-/** Free height (mm) between a shelf board and the underside of the one above. */
+/** Free height (mm) between a shelf board and the underside of the one above.
+ * Clearance includes the rim under the preceding surface: the smallest
+ * compartment of each cabinet (155 to 800 mm from the floor). Both types are
+ * built to the same 600 x 250 x 1160 mm spec, so the figures agree. */
+const clearanceOf = spec => Math.min(...spec.shelfBottoms.map((bottom, slot) =>
+  bottom - (slot ? spec.shelfBottoms[slot - 1] + spec.shelfRimHeight : spec.postSize)));
 export const SHELF_CLEARANCE_MM = Object.freeze({
-  // Clearance includes the 16.5 mm rim under the preceding surface: smallest
-  // BAGGEBO compartments (155 to 800 mm from the floor, see BAGGEBO_SPEC).
-  baggebo:Math.min(...BAGGEBO_SPEC.shelfBottoms.map((bottom, slot) =>
-    bottom - (slot ? BAGGEBO_SPEC.shelfBottoms[slot - 1] + BAGGEBO_SPEC.shelfRimHeight : BAGGEBO_SPEC.postSize))),
-  // 'Madera' has no published size: it follows the book scale below. The top
-  // compartment (bookmark room 48 + row, minus the 12 px of cabinet top) is the
-  // tightest: 208 px on a phone (172 px rows), 236 px on a wide screen (200 px
-  // rows), over 172 and 200 px for a 280 mm book: 339 mm and 330 mm. The
-  // lower ones add the 16 px board and 24 px padding, minus 15 px: 245 and 273 px.
-  walnut:Math.round(Math.min(208 / (172 / 280), 236 / (200 / 280)))
+  baggebo:clearanceOf(SHELF_SPECS.baggebo),
+  walnut:clearanceOf(SHELF_SPECS.walnut)
 });
 
 /** Plants above this conservative interior limit use the open roof, keeping
@@ -102,6 +99,20 @@ export function plantSizeLabel(plantId, potId) {
 export const BOOK_REFERENCE_MM = 240;
 /** Spine thickness of a real book: a slim paperback to a thick hardback. */
 export const BOOK_THICKNESS_MM = Object.freeze({ min:15, max:45 });
+/** Depth of a standing book: its cover width, 13-16 cm for a hardback. */
+export const BOOK_DEPTH_MM = Object.freeze({ min:130, max:160 });
+
+/** `spineStyleFor` options that draw real thicknesses, in pixels for a shelf
+ * `shelfWidth` px wide (a 600 mm unit): 15-45 mm, so a row of 56 cm holds
+ * roughly 12-18 books instead of two. */
+export function bookSpineOptions(shelfWidth) {
+  const scale = shelfScale({ shelfWidth });
+  return { minWidth:BOOK_THICKNESS_MM.min * scale, maxWidth:BOOK_THICKNESS_MM.max * scale, jitter:4 * scale };
+}
+
+/** A thin real spine is hard to tap: its layout cell (and so its hit area)
+ * is never narrower than this many pixels, even if the drawn book is. */
+export function minimumBookCellWidth(viewportWidth = 0) { return viewportWidth >= 600 ? 18 : 16; }
 
 /**
  * Scene pixels per millimetre. Both shelves are 600 mm wide units that fill
