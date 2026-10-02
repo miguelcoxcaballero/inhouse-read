@@ -80,7 +80,7 @@ test('elegir BAGGEBO conserva libros y plantas al recargar y permite recuperar l
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating','false');
   let dialog = await openCatalog(page);
   await dialog.locator('[data-catalog-plant="monstera"]').click();
-  await dialog.getByRole('button',{ name:'Añadir a la estantería' }).click();
+  await dialog.getByRole('button',{ name:'Añadir', exact:true }).click();
   await expect(dialog).toBeHidden();
   await expect(page.locator('.ihr-plant')).toHaveCount(1);
   const originalPlant = await page.evaluate(key => JSON.parse(localStorage.getItem(key))[0],PLANTS_KEY);
@@ -88,7 +88,7 @@ test('elegir BAGGEBO conserva libros y plantas al recargar y permite recuperar l
   dialog = await openCatalog(page);
   await dialog.getByRole('button',{ name:'Estanterías',exact:true }).click();
   await dialog.locator('[data-catalog-shelf="baggebo"]').click();
-  await dialog.getByRole('button',{ name:'Usar esta estantería' }).click();
+  await dialog.getByRole('button',{ name:'Usar', exact:true }).click();
   await expect(dialog).toBeHidden();
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-shelf-type','baggebo');
   expect(await page.evaluate(key => localStorage.getItem(key),SHELF_KEY)).toBe('baggebo');
@@ -105,7 +105,7 @@ test('elegir BAGGEBO conserva libros y plantas al recargar y permite recuperar l
   await dialog.getByRole('button',{ name:'Estanterías',exact:true }).click();
   await expect(dialog.locator('[data-catalog-shelf="baggebo"]')).toHaveAttribute('aria-pressed','true');
   await dialog.locator('[data-catalog-shelf="walnut"]').click();
-  await dialog.getByRole('button',{ name:'Usar esta estantería' }).click();
+  await dialog.getByRole('button',{ name:'Usar', exact:true }).click();
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-shelf-type','walnut');
   await expect(page.locator('.ihr-spine')).toHaveAttribute('data-book-id',originalBookId);
   await expect(page.locator('.ihr-plant')).toHaveAttribute('data-object-id',originalPlant.key);

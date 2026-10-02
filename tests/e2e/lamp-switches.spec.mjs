@@ -103,7 +103,7 @@ test('un toque controla cada luz, ilumina superficies y conserva el estado al re
   await expect(catalog).toBeVisible();
   await catalog.getByRole('button', { name:'Estanterías', exact:true }).click();
   await catalog.locator('[data-catalog-shelf="walnut"]').click();
-  await catalog.getByRole('button', { name:'Usar esta estantería' }).click();
+  await catalog.getByRole('button', { name:'Usar', exact:true }).click();
   await expect(catalog).toBeHidden();
   await expect(scene).toHaveAttribute('data-shelf-type', 'walnut');
   expect(await powerStates(page)).toEqual([false, false, false]);

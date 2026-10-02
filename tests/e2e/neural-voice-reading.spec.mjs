@@ -345,7 +345,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     // Leaving the book while the natural voice speaks silences it for good (the reader's own stop, nothing keeps playing on the shelf).
     await closePanel(page)
     await page.locator('#reader-back').click()
-    await expect(page.getByRole('heading', { name: 'Tu biblioteca' })).toBeVisible(SLOW)
+    await expect(page.getByRole('heading', { name:'Biblioteca' })).toBeVisible(SLOW)
     await expect.poll(async () => (await engineStats(page)).status, SLOW).toBe('idle')
     const left = await eventCount(page), scheduled = await neu(page, n => n.audio.length)
     await page.waitForTimeout(2000)
@@ -376,7 +376,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
   test('the shelf loads none of the engine, and its frames stay fluid while the voice thinks next to it', async () => {
     const lazy = /\/(engine|worker)-[\w-]+\.js|\/neural-voice\//
     await page.goto('./')
-    await expect(page.getByRole('heading', { name: 'Tu biblioteca' })).toBeVisible(SLOW)
+    await expect(page.getByRole('heading', { name:'Biblioteca' })).toBeVisible(SLOW)
     await page.waitForTimeout(3000)
     expect(await page.evaluate(pattern => performance.getEntriesByType('resource').map(entry => entry.name).filter(name => new RegExp(pattern).test(name)), lazy.source)).toEqual([]) // nothing of the engine reaches the shelf's start-up
 
@@ -387,7 +387,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await spyOnEngine(page)
     await closePanel(page)
     await page.locator('#reader-back').click()
-    await expect(page.getByRole('heading', { name: 'Tu biblioteca' })).toBeVisible(SLOW)
+    await expect(page.getByRole('heading', { name:'Biblioteca' })).toBeVisible(SLOW)
     await page.evaluate(() => {
       const neu = window.__neu
       window.__sample = ms => new Promise(resolve => {
@@ -405,7 +405,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     const stopMemory = watchMemory()
     const baseline = summary(await page.evaluate(() => window.__sample(5000)))
 
-    await page.getByRole('heading', { name: 'Tu biblioteca' }).click() // a real tap: the audio context is unlocked inside it
+    await page.getByRole('heading', { name:'Biblioteca' }).click() // a real tap: the audio context is unlocked inside it
     const texts = ['Después de un largo día, Ana volvió a casa y abrió el libro que su abuelo le había regalado.', 'La lluvia golpeaba suavemente los cristales de la vieja biblioteca.', 'Nadie en el pueblo recordaba cuándo había llegado el forastero.', 'Todos coincidían en que traía consigo una maleta de cuero gastada.', 'Ella sonrió, cerró el libro y apagó la lámpara.']
     await page.evaluate(({ texts, voiceId }) => {
       let i = 0

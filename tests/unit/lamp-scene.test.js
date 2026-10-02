@@ -104,9 +104,9 @@ describe('warm lamps in the retained shelf scene', () => {
     const table = gpu.scene.getObjectByName('lamp:tarnaby'), puck = gpu.scene.getObjectByName('lamp:mittled');
     expect(table.position.y).toBe(-data.rows[0].bottom);
     expect(puck.position.y).toBe(-data.rows[0].ceiling);
-    // The front edge remains flush with the cabinet, making the underside
-    // diffuser reachable beneath an opaque board from the isometric view.
-    expect(puck.position.z).toBe(8 - data.entries[1].depth / 2);
+    // Both shelves are the same 250 mm deep unit: the underside diffuser
+    // is centred on the board, like the BAGGEBO's.
+    expect(puck.position.z).toBe(-250 * 390 / 600 / 2);
     const localBounds = new THREE.Box3().setFromObject(puck).applyMatrix4(puck.parent.matrixWorld.clone().invert());
     expect(localBounds.max.y).toBeCloseTo(-data.rows[0].ceiling);
     expect(localBounds.min.y).toBeCloseTo(-data.rows[0].ceiling - 5);

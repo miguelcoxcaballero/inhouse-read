@@ -117,10 +117,12 @@ async function seedShelf(page, { long = false, linked = false, driveBytes = null
     ]
     localStorage.setItem(plantsKey, JSON.stringify(plants))
     localStorage.setItem('inhouse-read-shelf-view', 'spine')
+    // Since the IKEA plant sizing (1.7.3) a legacy record migrates to the real
+    // pot and plant dimensions of its catalogue model, not to the old px sizes.
     const migratedPlants = [
-      { ...plants[0], catalogId:'cactus', potId:'akerbar', height:90 },
-      { ...plants[1], catalogId:'succulent', variant:'succulent', potId:'muskotblomma', height:72 },
-      { ...plants[2], catalogId:'hedera', variant:'hedera', potId:'muskotblomma', height:106 }
+      { ...plants[0], catalogId:'cactus', potId:'akerbar', width:140, height:180 },
+      { ...plants[1], catalogId:'succulent', variant:'succulent', potId:'muskotblomma', width:160, height:160 },
+      { ...plants[2], catalogId:'hedera', variant:'hedera', potId:'muskotblomma', width:180, height:240 }
     ]
     return { originalId:original.id, ids:records.map(book => book.id), plants:migratedPlants,
       remote:records.filter(book => book.driveFileId).map(book => ({ id:book.driveFileId, name:book.name, size:String(book.size || book.content.size), mimeType:'application/pdf' })) }
@@ -388,6 +390,58 @@ test('papelera 3D: retira la copia de la app con animación en un móvil de 320 
   await assertCabinetOverview(page)
   await assertBinMesh(page)
   expect(errors).toEqual([])
+})
+
+test('retirar un libro no muestra aviso, no enlaza shaders y no reconstruye la escena 3D', async ({ page }, testInfo) => {
+  test.setTimeout(150_000)
+  // Counts every shader program link from the next navigation on. A removal
+  // must reuse the programs the shelf already holds.
+  await page.addInitScript(() => {
+    window.__programLinks = 0
+    for (const Context of [window.WebGL2RenderingContext, window.WebGLRenderingContext]) {
+      if (!Context) continue
+      const link = Context.prototype.linkProgram
+      Context.prototype.linkProgram = function (...args) { window.__programLinks++; return link.apply(this, args) }
+    }
+  })
+  const seed = await seedShelf(page)
+  await useIsometricShelf(page)
+  await assertCabinetOverview(page)
+  const scene = page.locator('.ihr-bookshelf-scene')
+  await page.waitForTimeout(500)
+  const before = await page.evaluate(() => {
+    const canvas = document.querySelector('.ihr-bookshelf-scene')
+    canvas.dataset.sameSceneProbe = 'kept'
+    window.__programLinks = 0
+    return { activeBooks:Number(canvas.dataset.activeBooks), spines:document.querySelectorAll('.ihr-spine').length,
+      layoutUpdates:Number(canvas.dataset.layoutUpdates || 0) }
+  })
+  expect(before.spines).toBe(3)
+  await beginDrag(page, seed.originalId)
+  await finishDropIntoBin(page, seed.originalId, testInfo)
+  await expect(page.locator('.ihr-spine')).toHaveCount(2)
+  await expect(scene).toHaveAttribute('data-animating', 'false')
+  const after = await page.evaluate(() => {
+    const canvas = document.querySelector('.ihr-bookshelf-scene')
+    return { same:canvas.dataset.sameSceneProbe, activeBooks:Number(canvas.dataset.activeBooks),
+      layoutUpdates:Number(canvas.dataset.layoutUpdates || 0), links:window.__programLinks,
+      visibleStatus:document.querySelector('.ihr-trash-status')?.textContent,
+      statusBox:document.querySelector('.ihr-trash-status').getBoundingClientRect().height,
+      live:document.querySelector('.ihr-trash-announce')?.textContent,
+      liveBox:document.querySelector('.ihr-trash-announce').getBoundingClientRect() }
+  })
+  // The same scene (canvas, renderer, GPU programs) survives: it is updated,
+  // never rebuilt, and the book count in it drops by exactly one.
+  expect(after.same).toBe('kept')
+  expect(after.activeBooks).toBe(before.activeBooks - 1)
+  expect(after.layoutUpdates - before.layoutUpdates).toBeLessThanOrEqual(1)
+  expect(after.links).toBe(0)
+  // No visible 'retirado' pill; the announcement stays in a hidden live region.
+  expect(after.visibleStatus).toBe('')
+  expect(after.statusBox).toBe(0)
+  expect(after.live).toContain('retirado de la estantería')
+  expect(after.liveBox.width).toBeLessThanOrEqual(1)
+  expect(after.liveBox.height).toBeLessThanOrEqual(1)
 })
 
 test('un libro retirado sigue en Drive y la sincronización automática no lo vuelve a añadir', async ({ page }, testInfo) => {

@@ -116,7 +116,7 @@ export class ReaderExperience {
     document.getElementById('reader-rotate').onclick = async () => {
       try {
         if (screen.orientation?.lock) { await screen.orientation.lock(screen.orientation.type.startsWith('portrait') ? 'landscape' : 'portrait'); this.error('') }
-        else this.error('No se puede girar la pantalla aquí.')
+        else this.error('No se puede girar.')
       } catch { this.error('Gira el dispositivo.') }
     }
     this.panel.querySelector('[data-play]').onclick = () => this.voice.state === 'playing' ? this.voice.pause() : this.voice.play()
@@ -319,7 +319,7 @@ export class ReaderExperience {
     this.neuralPicker?.render()
     this.voice.options = {footnotes:p.footnotes,multilingual:p.multilingual,skipHeaders:p.skipHeaders}
     this.updateMiniPlayer()
-    try { if (updateBook) await this.reader.applyPreferences(p) } catch { this.error('No se pudo aplicar el ajuste.') }
+    try { if (updateBook) await this.reader.applyPreferences(p) } catch { this.error('No se pudo aplicar.') }
   }
   refreshNativeVoices() { try { window.InhouseSpeech?.refreshVoices?.() } catch { /* older app: voices stay as loaded */ } }
   /** The language of the open book (the device's when it has none or no book is open). */
@@ -416,7 +416,7 @@ export class ReaderExperience {
         else await this.reader.goToLocator(place.locator, place.fraction)
         if (!isCurrent()) return
         this.relocate(); this.panel.close()
-      } catch { if (isCurrent()) this.error('No se pudo abrir esa posición.') }
+      } catch { if (isCurrent()) this.error('No se pudo abrir.') }
     })
   }
   returnToReading(index = 0) {
@@ -458,7 +458,7 @@ export class ReaderExperience {
     try {
       const results = await this.reader.search(query)
       this.searchActive = results.length > 0
-      status.textContent = results.length ? `${results.length} resultados` : 'No se encontraron coincidencias.'
+      status.textContent = results.length ? `${results.length} ${results.length === 1 ? 'resultado' : 'resultados'}` : 'Sin resultados'
       for (const result of results) {
         // Where (chapter/page) above, the excerpt below with the match marked.
         const button = document.createElement('button'); button.type = 'button'; button.className = 'reading-search-hit'
@@ -470,7 +470,7 @@ export class ReaderExperience {
         button.onclick = () => { this.keepSearchHits = true; this.jump({fraction:result.fraction ?? this.location.fraction,locator:result.locator}) }
         list.append(button)
       }
-    } catch { status.textContent = 'No se pudo buscar en este documento.' }
+    } catch { status.textContent = 'No se pudo buscar.' }
   }
   // Clears the on-page hit marks together with the result list they belong to.
   endSearch() {
@@ -499,7 +499,7 @@ export class ReaderExperience {
     for (const [name, places] of [['history',this.history],['bookmarks',this.bookmarks],['quotes',this.quotes]]) {
       const list = this.panel.querySelector(`[data-${name}]`)
       list.replaceChildren()
-      if (!places.length) { const empty = document.createElement('p'); empty.className = 'reading-hint'; empty.textContent = name === 'history' ? 'Sin saltos recientes.' : name === 'quotes' ? 'Sin citas.' : 'Sin marcadores.'; list.append(empty) }
+      if (!places.length) { const empty = document.createElement('p'); empty.className = 'reading-hint'; empty.textContent = name === 'history' ? 'Sin recientes' : name === 'quotes' ? 'Sin citas' : 'Sin marcadores'; list.append(empty) }
       places.forEach((place,index) => {
         const row = document.createElement('div'); row.className = 'reading-place'
         const button = document.createElement('button'); button.type = 'button'; button.textContent = name === 'quotes' ? `“${place.text}” · ${place.label || this.label(place)}` : place.label || this.label(place)

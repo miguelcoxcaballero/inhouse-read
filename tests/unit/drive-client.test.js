@@ -44,7 +44,7 @@ describe('autorización de Google Drive', () => {
 
   it('pide conexión explícita cuando falta la sesión', async () => {
     await expect(drive.listDriveBooks()).rejects.toThrow(/Pulsa Conectar/)
-    await expect(drive.requestDriveAccess()).rejects.toThrow(/Google aún está cargando/)
+    await expect(drive.requestDriveAccess()).rejects.toThrow(/Google está cargando/)
   })
 
   it('usa el mismo Custom Tab y PKCE de Notes en Android', async () => {

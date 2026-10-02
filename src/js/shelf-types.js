@@ -15,6 +15,7 @@ export const BAGGEBO_SPEC = Object.freeze({
   footRadius:5.6,
   innerWidth:564,
   usableDepth:220,
+  ceilingOffset:3.75,
   shelfRimHeight:16.5,
   shelfBottoms:Object.freeze([360, 682.5, 1005]),
   shelfHeightsFromFloor:Object.freeze([800, 477.5, 155]),
@@ -39,8 +40,27 @@ export const BAGGEBO_SPEC = Object.freeze({
   })
 });
 
+/** The wooden cabinet is built to the same outer size and compartments as the
+ * BAGGEBO, so both types share one set of measures (mm): change them here. */
+export const WALNUT_SPEC = Object.freeze({
+  width:BAGGEBO_SPEC.width,
+  depth:BAGGEBO_SPEC.depth,
+  height:BAGGEBO_SPEC.height,
+  dimensions:BAGGEBO_SPEC.dimensions,
+  shelfBottoms:BAGGEBO_SPEC.shelfBottoms,
+  shelfHeightsFromFloor:BAGGEBO_SPEC.shelfHeightsFromFloor,
+  postSize:BAGGEBO_SPEC.postSize,
+  shelfRimHeight:BAGGEBO_SPEC.shelfRimHeight,
+  usableDepth:BAGGEBO_SPEC.usableDepth,
+  /** Solid timber boards: the underside of a shelf is 23 mm below its top
+   * surface (the BAGGEBO's mesh is a 3.75 mm sheet). */
+  ceilingOffset:23
+});
+
+export const SHELF_SPECS = Object.freeze({ walnut:WALNUT_SPEC, baggebo:BAGGEBO_SPEC });
+
 export const SHELF_TYPES = Object.freeze([
-  Object.freeze({ id:'walnut', name:'Madera', subtitle:'Nogal', dimensions:null }),
+  Object.freeze({ id:'walnut', name:'Madera', subtitle:'Nogal', dimensions:WALNUT_SPEC.dimensions }),
   Object.freeze({ id:'baggebo', name:'BAGGEBO', subtitle:'Metal blanco', dimensions:BAGGEBO_SPEC.dimensions })
 ]);
 

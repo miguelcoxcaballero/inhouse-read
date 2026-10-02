@@ -2,8 +2,8 @@
 // Sin DOM ni Three: se prueba aparte y la usa bookshelf.js.
 
 export const EDITOR_TABS = Object.freeze([
-  Object.freeze({ id: 'spine', label: 'Lomo', heading: 'Editar el lomo' }),
-  Object.freeze({ id: 'cover', label: 'Portada', heading: 'Editar la portada' })
+  Object.freeze({ id: 'spine', label: 'Lomo', heading: 'Lomo' }),
+  Object.freeze({ id: 'cover', label: 'Portada', heading: 'Portada' })
 ])
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))

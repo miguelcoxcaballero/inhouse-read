@@ -11,7 +11,9 @@ import { createShelfTrash, sampleTrashDrop } from './shelf-trash.js';
 import { createShelfCatalog } from './shelf-catalog.js';
 import { createBaggebo } from './baggebo-model.js';
 import { compilePrograms } from './gpu-programs.js';
-import { BAGGEBO_SPEC, normalizeShelfType } from './shelf-types.js';
+import { BAGGEBO_SPEC, SHELF_SPECS, normalizeShelfType } from './shelf-types.js';
+import { minimumBookTapWidth, nearestTapTarget, padTapRect } from './plant-dimensions.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const WALNUT = new URL('../assets/library/walnut-pbr.webp', import.meta.url).href;
 // Packed from the same photograph: R = pore/figure height, G = roughness.
@@ -27,7 +29,7 @@ function clearPlantDiagnostics(node) { if (node) for (const key of PLANT_DIAGNOS
 // Diagnostics rarely change from one frame to the next, yet even an identical
 // attribute write queues mutation records and style invalidation.
 function setData(element, key, value) { if (element.dataset[key] !== value) element.dataset[key] = value; }
-const BAGGEBO_DIMENSIONS = JSON.stringify(BAGGEBO_SPEC.dimensions);
+const SHELF_DIMENSIONS = Object.fromEntries(Object.entries(SHELF_SPECS).map(([type, spec]) => [type, JSON.stringify(spec.dimensions)]));
 const CLASS_SEPARATOR = /[ \t\n\f\r]+/;
 const NO_FLAGS = Object.freeze({ away:false, dragging:false, lifted:false, pressed:false });
 const IDENTITY = new THREE.Matrix4();
@@ -256,9 +258,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   roomWall.receiveShadow = true; roomWall.raycast = () => {};
   furniture.add(roomWall);
   let floorY = -height, floorLit = false;
-  let depth = shelfType === 'baggebo' ? BAGGEBO_SPEC.depth * unitWidth / BAGGEBO_SPEC.width
-    : Math.max(155, ...entries.filter(e => e.kind !== 'plant' && e.kind !== 'lamp').map(e => e.width + 12),
-      ...entries.filter(e => e.kind === 'lamp' && e.mount !== 'undershelf').map(e => (e.depth || e.width) + 12));
+  // Both shelf types are exact 600 x 250 x 1160 mm units (shelf-types.js).
+  const specDepth = () => SHELF_SPECS[shelfType].depth * unitWidth / SHELF_SPECS[shelfType].width;
+  let depth = specDepth();
   const entryKey = (entry, index) => entry.kind === 'plant' || entry.kind === 'lamp'
     ? `${entry.kind}:${entry.node?.dataset.objectId ?? entry.key ?? index}`
     : `book:${String(entry.book?.id ?? entry.node?.dataset.bookId ?? entry.book?.path ?? entry.book?.title ?? index)}`;
@@ -271,23 +273,35 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     written:null, seen:0, domDirty:true });
   let bookEntries = entries.map(freshEntry);
   const byNode = new Map(bookEntries.filter(entry => entry.node).map(entry => [entry.node, entry]));
-  const boardHeight = 15;
   function rebuildFurniture() {
     if (roomKey) roomKey.color.copy(shelfType === 'baggebo' ? new THREE.Color('#ffffff') : roomKeyColor);
     for (const object of [...furniture.children]) if (object.userData.furniture) {
       furniture.remove(object); object.userData.disposeGeometry?.();
     }
     let cabinet;
+    const unitScale = unitWidth / SHELF_SPECS[shelfType].width, unitGap = 24 * unitScale;
+    cabinet = new THREE.Group(); cabinet.userData.furniture = true;
+    const units = [];
     if (shelfType === 'baggebo') {
-      cabinet = new THREE.Group(); cabinet.name = 'BAGGEBO units'; cabinet.userData.furniture = true;
-      const units = [];
+      cabinet.name = 'BAGGEBO units';
       for (let index = 0; index < unitCount; index++) {
         const unit = createBaggebo({ width:unitWidth });
-        unit.position.x = -width / 2 + unitWidth / 2 + index * (unitWidth + 24 * unitWidth / BAGGEBO_SPEC.width);
+        unit.position.x = -width / 2 + unitWidth / 2 + index * (unitWidth + unitGap);
         cabinet.add(unit); units.push(unit);
       }
       cabinet.userData.disposeGeometry = () => { for (const unit of units) unit.userData.dispose(); };
-    } else cabinet = createShelfFurniture({ width, height, depth, rows, wood, backWood, darkWood });
+    } else {
+      cabinet.name = 'Walnut cabinet units';
+      for (let index = 0; index < unitCount; index++) {
+        const unit = createShelfFurniture({ width:unitWidth, height, depth, scale:unitScale, wood, backWood, darkWood,
+          rows:rows.filter(row => (row.unit ?? 0) === index) });
+        unit.position.x = -width / 2 + unitWidth / 2 + index * (unitWidth + unitGap);
+        cabinet.add(unit); units.push(unit);
+      }
+      cabinet.userData.disposeGeometry = () => { for (const unit of units) unit.userData.disposeGeometry?.(); };
+      // A single unit is the cabinet itself: no wrapper group to traverse.
+      if (unitCount === 1) { cabinet = units[0]; cabinet.position.x = 0; cabinet.userData.furniture = true; }
+    }
     furniture.add(cabinet);
     // Geometry determines the shared floor: long upright ends or the last
     // shelf board can be the cabinet's lowest physical surface.
@@ -317,8 +331,17 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     floorLit = darkPage();
     occlusion.visible = shelfType !== 'baggebo';
     if (shelfType === 'baggebo') { occlusion.geometry = new THREE.BufferGeometry(); return; }
-    occlusion.geometry = createShelfOcclusion({ width, height, depth, rows, floorY, floorLight:floorLit ? DARK_FLOOR_LIGHT : null,
-      footprints:trash ? [{ x:trash.position.x, z:trash.position.z, radius:trash.userData.radius }] : [] });
+    const unitScale = unitWidth / SHELF_SPECS[shelfType].width, unitGap = 24 * unitScale, parts = [];
+    for (let index = 0; index < unitCount; index++) {
+      const x = -width / 2 + unitWidth / 2 + index * (unitWidth + unitGap), last = index === unitCount - 1;
+      // The bin and the lamp's floor pool belong to the right-hand end.
+      const geometry = createShelfOcclusion({ width:unitWidth, height, depth, scale:unitScale, floorY,
+        rows:rows.filter(row => (row.unit ?? 0) === index), floorLight:floorLit && last ? DARK_FLOOR_LIGHT : null,
+        footprints:trash && last ? [{ x:trash.position.x - x, z:trash.position.z, radius:trash.userData.radius }] : [] });
+      geometry.translate(x, 0, 0); parts.push(geometry);
+    }
+    occlusion.geometry = parts.length === 1 ? parts[0] : mergeGeometries(parts, false);
+    if (parts.length > 1) for (const part of parts) part.dispose();
   }
   function positionTrash() {
     if (trash) {
@@ -441,7 +464,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   };
   const fullBounds = shelfType === 'baggebo'
     ? new THREE.Box3(new THREE.Vector3(-width / 2, -height, -depth), new THREE.Vector3(width / 2, 0, 0))
-    : new THREE.Box3(new THREE.Vector3(-width / 2, -height - boardHeight, -depth - 4), new THREE.Vector3(width / 2, 2, 12));
+    : new THREE.Box3(new THREE.Vector3(-width / 2, -height, -depth - 4), new THREE.Vector3(width / 2, 2, 12));
   // Half the depth a plant occupies on its board (see plantDimensions).
   const plantHalfDepth = entry => (entry.depth || entry.width * .7) / 2;
   const slotBox = entry => {
@@ -810,9 +833,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     entry.thickness = Number(style.width) || entry.thickness;
     entry.y = baseline - entry.height / 2;
     if (dimensions) for (const field of ['width', 'height', 'thickness', 'x', 'y', 'depthInset', 'shelf']) if (dimensions[field] !== undefined) entry[field] = dimensions[field];
-    if (shelfType === 'baggebo' && !dimensions) {
+    if (!dimensions) {
       const row = rows[entry.shelf], scale = unitWidth / BAGGEBO_SPEC.width;
-      const fit = Math.min(1, BAGGEBO_SPEC.usableDepth * scale / entry.width,
+      const fit = Math.min(1, SHELF_SPECS[shelfType].usableDepth * scale / entry.width,
         row ? (row.bottom - row.top - 4 * scale) / entry.height : 1);
       entry.height *= fit; entry.width *= fit; entry.y = baseline - entry.height / 2;
     }
@@ -826,13 +849,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
   }
 
-  function fitDepth(nextDepth) {
-    if (shelfType === 'baggebo') return;
-    if (nextDepth <= depth) return;
-    depth = nextDepth;
-    rebuildFurniture();
-    fullBounds.min.z = -depth - 4;
-  }
+  // Both shelves keep their real, fixed depth: nothing grows the furniture.
+  function fitDepth() {}
 
   function updateWoodTheme() {
     const tones = WOOD_TONES[darkPage() ? 'dark' : 'light'];
@@ -955,7 +973,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     setData(canvas, 'cabinetWidth', String(width)); setData(canvas, 'trashReserve', reserve.toFixed(3));
     setData(canvas, 'shelfType', shelfType);
     setData(canvas, 'shelfUnits', String(unitCount));
-    setData(canvas, 'shelfDimensions', shelfType === 'baggebo' ? BAGGEBO_DIMENSIONS : '');
+    setData(canvas, 'shelfDimensions', SHELF_DIMENSIONS[shelfType]);
     setData(canvas, 'sceneFitHeight', String(sceneFitHeight)); setData(canvas, 'floorVisible', String(floor.visible));
     const framedWorld = corners(framedBounds, furniture.matrixWorld, transformRects.world);
     setData(canvas, 'fullCabinetInFrame', String(framedWorld.left >= -.01 && framedWorld.right <= sceneWidth + .01 &&
@@ -1073,7 +1091,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       vector.set(screenX / zoom, -screenY / zoom, 30 * lift / zoom).applyQuaternion(inverseRotation);
       entry.pose.position.set(entry.x - width / 2 + vector.x + entry.preview.x,
         -entry.y - (lamp && !undershelf ? entry.height / 2 : 0) + vector.y + entry.preview.y,
-        (undershelf ? shelfType === 'baggebo' ? -depth / 2 : 8 - (entry.depth || entry.width) / 2
+        (undershelf ? -depth / 2
           : lamp ? -(entry.depth || entry.width) / 2 : plant ? -plantHalfDepth(entry) : -entry.width / 2)
           - (undershelf ? 0 : entry.depthInset || 0) + vector.z);
       entry.pose.rotation.set(decorative ? 4 * Math.PI / 180 * lift : 0,
@@ -1152,16 +1170,21 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           entry.model.updateMatrixWorld(true);
           corners(surface.geometry.boundingBox, surface.matrixWorld, hitRect);
         } else corners(fallbackBox(entry, plant, lamp), projectedMatrix, hitRect);
+        // The button covers the hit surface, but a real-scale spine is only 5-13 px
+        // thick: a book's button is padded to the minimum tap width around the
+        // spine's centre (hitRect keeps the drawn surface). Plants and lamps
+        // are not thin, so their button is the hit surface itself.
+        const tapRect = plant || lamp ? hitRect : padTapRect(hitRect, minimumBookTapWidth(window.innerWidth), entry.tapRect || (entry.tapRect = {}));
         // A frame that moves nothing restyles nothing: only numbers that differ
         // from the last written ones reach the DOM, in the same order as a first write.
         let written = entry.written;
         if (written?.node !== node) written = entry.written = entryStyleCache(node);
         const style = node.style;
         if (!written.fixed) style.position = 'absolute';
-        if (hitRect.left !== written.left) style.left = `${written.left = hitRect.left}px`;
-        if (hitRect.top !== written.top) style.top = `${written.top = hitRect.top}px`;
-        if (hitRect.width !== written.width) style.width = `${written.width = hitRect.width}px`;
-        if (hitRect.height !== written.height) style.height = `${written.height = hitRect.height}px`;
+        if (tapRect.left !== written.left) style.left = `${written.left = tapRect.left}px`;
+        if (tapRect.top !== written.top) style.top = `${written.top = tapRect.top}px`;
+        if (tapRect.width !== written.width) style.width = `${written.width = tapRect.width}px`;
+        if (tapRect.height !== written.height) style.height = `${written.height = tapRect.height}px`;
         if (!written.fixed) style.margin = '0';
         const zIndex = 100 + Math.round(rect.closest + height);
         if (zIndex !== written.z) style.zIndex = String(written.z = zIndex);
@@ -1184,7 +1207,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           // Keep tapping the exposed cover available without moving the
           // button's own focus/click centre away from its neighboring spine.
           // The existing handlers still raycast the true visible geometry.
-          const coverStyle = coverHit.style, coverLeft = rect.left - hitRect.left, coverTop = rect.top - hitRect.top;
+          const coverStyle = coverHit.style, coverLeft = rect.left - tapRect.left, coverTop = rect.top - tapRect.top;
           if (!written.coverFixed) coverStyle.position = 'absolute';
           if (coverLeft !== written.coverLeft) coverStyle.left = `${written.coverLeft = coverLeft}px`;
           if (coverTop !== written.coverTop) coverStyle.top = `${written.coverTop = coverTop}px`;
@@ -1358,6 +1381,23 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     return raycaster;
   }
 
+  // A thin spine's ray often falls between two books (on the back panel) although
+  // the finger is on the book's padded button: the book whose padded tap rectangle
+  // holds the point, nearest centre first, so overlapping rectangles never steal
+  // each other's taps. Rectangles are in the stage's frame, as the buttons are.
+  const tapTargets = [];
+  function bookNearPoint(clientX, clientY) {
+    const origin = stage.getBoundingClientRect();
+    tapTargets.length = 0;
+    for (const entry of bookEntries) {
+      const tap = entry.tapRect;
+      if (!tap || !entry.node || !entry.model?.visible || entry.flags?.away || entry.flags?.dragging || entry.trashDrop) continue;
+      if (entry.kind === 'plant' || entry.kind === 'lamp' || entry.node.classList.contains('is-away')) continue;
+      tapTargets.push({ left:tap.left + origin.left, top:tap.top + origin.top, width:tap.width, height:tap.height, node:entry.node });
+    }
+    return nearestTapTarget(tapTargets, clientX, clientY)?.node ?? null;
+  }
+
   function objectAtPoint(clientX, clientY) {
     const ray = pointerRay(clientX, clientY);
     const pickable = furniture.children.filter(object => object.visible && !object.userData.dropMarker &&
@@ -1366,10 +1406,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       let object = hit.object;
       while (object && !object.userData.entry) object = object.parent;
       if (object?.userData.entry?.node && object.visible) return object.userData.entry.node;
-      // Solid wood in front blocks the object behind it.
-      if (!object?.userData.entry) return null;
+      // Solid wood in front blocks the object behind it, but a book's padded tap
+      // rectangle still wins over the panel seen between two thin spines.
+      if (!object?.userData.entry) return bookNearPoint(clientX, clientY);
     }
-    return null;
+    return bookNearPoint(clientX, clientY);
   }
 
   const isSolid = (material, side) => material.visible && material.depthWrite && material.depthTest && !material.transparent &&
@@ -2039,9 +2080,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       width = next.width; height = next.height; rows = next.rows;
       shelfType = normalizeShelfType(next.shelfType);
       unitWidth = next.unitWidth || width; unitCount = next.unitCount || 1;
-      depth = shelfType === 'baggebo' ? BAGGEBO_SPEC.depth * unitWidth / BAGGEBO_SPEC.width
-        : Math.max(155, ...next.entries.filter(entry => entry.kind !== 'plant' && entry.kind !== 'lamp').map(entry => entry.width + 12),
-          ...next.entries.filter(entry => entry.kind === 'lamp' && entry.mount !== 'undershelf').map(entry => (entry.depth || entry.width) + 12));
+      depth = specDepth();
       sceneWidth = Math.max(1, Number(next.sceneWidth) || width);
       const nextTrashNode = next.trashNode || null;
       if (nextTrashNode !== trashNode) {
@@ -2105,7 +2144,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       if (reorderTransition) reorderTransition.entries = reorderTransition.entries.filter(item => retained.includes(item.entry));
       if (width !== oldWidth || height !== oldHeight || depth !== oldDepth || shelfType !== oldShelfType || JSON.stringify(rows) !== oldRows) rebuildFurniture();
-      fullBounds.min.set(-width / 2, -height - (shelfType === 'baggebo' ? 0 : boardHeight), -depth - (shelfType === 'baggebo' ? 0 : 4));
+      fullBounds.min.set(-width / 2, -height, -depth - (shelfType === 'baggebo' ? 0 : 4));
       fullBounds.max.set(width / 2, shelfType === 'baggebo' ? 0 : 2, shelfType === 'baggebo' ? 0 : 12);
       canvas.dataset.layoutUpdates = String(Number(canvas.dataset.layoutUpdates || 0) + 1);
       draw();
@@ -2117,7 +2156,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       for (const entry of bookEntries) {
         const old = oldRects.get(entry.node?.dataset.objectId) || oldRects.get(entry.book?.id) ||
           oldRects.get(entry.node?.dataset.bookId) || oldRects.get(entry.key);
-        const targetRect = entry.hitRect || entry.rect;
+        const targetRect = entry.tapRect || entry.hitRect || entry.rect;
         if (!old || !targetRect) continue;
         const x = old.left - (targetRect.left + stageRect.left), y = old.top - (targetRect.top + stageRect.top);
         if (Math.abs(x) + Math.abs(y) > 1) items.push({ entry, x, y });

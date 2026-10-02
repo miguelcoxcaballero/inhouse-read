@@ -115,7 +115,7 @@ test('una sesión caducada vuelve a mostrar Conectar y oculta el perfil', async 
 })
 
 test('muestra la estantería 3D vacía con tres baldas y plantas que se pueden mover', async ({ page }) => {
-  await expect(page.getByText('Tu estantería está vacía')).toBeVisible()
+  await expect(page.getByText('Sin libros')).toBeVisible()
   await expect(page.locator('.ihr-shelf')).toHaveCount(3)
   await expect(page.locator('.ihr-spine')).toHaveCount(0)
   await expect(page.locator('.ihr-plant[data-object-id]')).toHaveCount(3)

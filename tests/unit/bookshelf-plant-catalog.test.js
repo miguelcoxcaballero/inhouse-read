@@ -39,8 +39,8 @@ describe('persistent catalog plants', () => {
     const node = container.querySelector('.ihr-plant');
     expect(node.dataset).toMatchObject({ objectId:'plant:old', catalogId:'hedera', potId:'muskotblomma',
       plantSeed:'old-seed', plantVariant:'hedera' });
-    // HEDERA is 240 mm tall in IKEA's 9 cm class; jsdom is a wide window, so a 280 mm book is 200 px.
-    expect(Number.parseFloat(node.style.getPropertyValue('--ihr-plant-h'))).toBeCloseTo(240 * 200 / 280, 3);
+    // HEDERA is 240 mm tall in IKEA's 9 cm class; a 600 mm shelf is 390 px wide.
+    expect(Number.parseFloat(node.style.getPropertyValue('--ihr-plant-h'))).toBeCloseTo(240 * 390 / 600, 3);
     expect(container.querySelectorAll('.ihr-plant img, .ihr-plant--photo')).toHaveLength(0);
     expect(JSON.parse(localStorage.getItem(KEY))).toEqual([
       { ...legacy[0], catalogId:'hedera', variant:'hedera', potId:'muskotblomma', width:180, height:240 }
@@ -109,7 +109,7 @@ describe('persistent catalog plants', () => {
     expect(saved[1].potId).toBe('gradvis')
     expect(saved[0].key).not.toBe(saved[1].key)
     for (const node of container.querySelectorAll('.ihr-plant')) {
-      expect(Number.parseFloat(node.style.getPropertyValue('--ihr-plant-h'))).toBeCloseTo(200 * 200 / 280, 3)
+      expect(Number.parseFloat(node.style.getPropertyValue('--ihr-plant-h'))).toBeCloseTo(200 * 390 / 600, 3)
       expect(node.dataset.catalogId).toBe('chamaedorea')
     }
     const before=saved.map(item => [item.key,item.shelf,item.x,item.potId])

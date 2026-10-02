@@ -6,7 +6,7 @@ import { layoutShelvedObjects } from '../../src/js/shelf-placement.js';
 import { baggeboLayout } from '../../src/js/shelf-model-layout.js';
 import {
   PLANT_MAX_HEIGHT_MM, PLANT_SIZES, POT_DIAMETER_MM, POT_SIZES, SHELF_CLEARANCE_MM, plantDimensions,
-  plantSceneSize, plantSizeLabel, shelfScale, standardPlantClass
+  plantSceneSize, plantSizeLabel, shelfScale, standardPlantClass, BOOK_REFERENCE_MM
 } from '../../src/js/plant-dimensions.js';
 
 describe('standard IKEA plant and pot sizes', () => {
@@ -64,16 +64,17 @@ describe('standard IKEA plant and pot sizes', () => {
     }
   });
 
-  it('keeps real proportions against a 12 cm pot, a 28 cm book and the 60 cm shelf', () => {
+  it('keeps real proportions against a 12 cm pot, a 24 cm book and the 60 cm shelf', () => {
     const baggebo = shelfScale({ shelfType:'baggebo', shelfWidth:390, viewportWidth:390 });
     expect(baggebo * BAGGEBO_SPEC.width).toBeCloseTo(390);
-    expect(baggebo * 280).toBeCloseTo(182); // the book height baggeboLayout draws
-    expect(shelfScale({ shelfType:'walnut', shelfWidth:390, viewportWidth:390 }) * 280).toBeCloseTo(172);
-    expect(shelfScale({ shelfType:'walnut', shelfWidth:900, viewportWidth:1280 }) * 280).toBeCloseTo(200);
+    expect(baggebo * BOOK_REFERENCE_MM).toBeCloseTo(156); // the tallest book baggeboLayout draws
+    // The wooden shelf is the same 600 mm unit: one scale for both types.
+    expect(shelfScale({ shelfType:'walnut', shelfWidth:390, viewportWidth:390 })).toBeCloseTo(baggebo);
+    expect(shelfScale({ shelfType:'walnut', shelfWidth:900, viewportWidth:1280 }) * BAGGEBO_SPEC.width).toBeCloseTo(900);
     const pot = POT_DIAMETER_MM * baggebo, shelf = BAGGEBO_SPEC.width * baggebo;
     expect(pot / shelf).toBeCloseTo(.2); // a 12 cm pot is a fifth of the 60 cm shelf
     const size = plantSceneSize('monstera', 'muskot', baggebo);
-    expect(size.height / (280 * baggebo)).toBeCloseTo(1.25); // a 35 cm monstera is as tall as the tallest book
+    expect(size.height / (BOOK_REFERENCE_MM * baggebo)).toBeCloseTo(350 / 240); // a 35 cm monstera against a 24 cm book
     expect(plantSceneSize('missing', 'muskot', 1)).toBeNull();
   });
 
