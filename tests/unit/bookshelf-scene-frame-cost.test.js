@@ -80,6 +80,27 @@ afterEach(() => {
 });
 
 describe('per-frame cost of the retained shelf scene', () => {
+  it('paints intermediate camera poses after a long driver stall and still settles', () => {
+    shelf.setMode('isometric');
+    clock += 2000;
+    const callbacks = [...frames.values()]; frames.clear();
+    for (const callback of callbacks) callback(clock);
+    const first = Number(shelf.canvas.dataset.viewProgress);
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(1);
+    expect(shelf.canvas.dataset.animating).toBe('true');
+    const poses = [first];
+    while (frames.size && poses.length < 30) {
+      clock += 800;
+      const next = [...frames.values()]; frames.clear();
+      for (const callback of next) callback(clock);
+      poses.push(Number(shelf.canvas.dataset.viewProgress));
+    }
+    expect(poses.filter(value => value > 0 && value < 1).length).toBeGreaterThan(3);
+    expect(shelf.canvas.dataset.viewProgress).toBe('1');
+    expect(shelf.canvas.dataset.animating).toBe('false');
+  });
+
   it('restyles no semantic node, canvas style or foliage when a redraw moves nothing', () => {
     settle();
     const svg = plantNode.querySelector('.ihr-plant-foliage');

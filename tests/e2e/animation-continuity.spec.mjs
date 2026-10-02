@@ -188,7 +188,9 @@ async function expectDepthTestedInsertion(page, trigger, bookId = 'continuity:2'
 }
 
 test('varias portadas reales salen y regresan sin mostrar portadas provisionales ni reconstruir la estantería', async ({ page }) => {
-  test.setTimeout(90_000)
+  // Four complete selections, two cancellations and camera changes. CI
+  // exhausted 90 seconds at the final Close, after all prior returns passed.
+  test.setTimeout(150_000)
   await page.setViewportSize({ width:390, height:844 })
   await page.emulateMedia({ reducedMotion:'no-preference' })
   await page.addInitScript(() => {
@@ -275,7 +277,9 @@ test('varias portadas reales salen y regresan sin mostrar portadas provisionales
 })
 
 test('seleccionar otro libro y volver al primero abre su documento y conserva la portada al regresar', async ({ page }) => {
-  test.setTimeout(60_000)
+  // The two preview returns and document opening took 56 seconds on CI;
+  // the third return needs its own preparation/insertion time after that.
+  test.setTimeout(120_000)
   await page.setViewportSize({ width:390, height:844 })
   await page.emulateMedia({ reducedMotion:'no-preference' })
   await page.goto(process.env.IHR_TEST_URL || '/')
@@ -305,7 +309,9 @@ test('seleccionar otro libro y volver al primero abre su documento y conserva la
 })
 
 test('el libro vuelve entre sus vecinos con profundidad real en vistas frontal e isométrica y desde el lector', async ({ page }) => {
-  test.setTimeout(90_000)
+  // Five real selections/returns in two camera modes. CI reached the fourth
+  // return at 90 seconds, with all preceding depth/cover assertions passing.
+  test.setTimeout(180_000)
   await page.setViewportSize({ width:390, height:844 })
   await page.emulateMedia({ reducedMotion:'no-preference' })
   await page.goto(process.env.IHR_TEST_URL || '/')
@@ -373,7 +379,9 @@ test('cancelar una devolución al cambiar el viewport restaura el libro y permit
       observer.observe(scene, { attributes:true, attributeFilter:['data-returning-book-id'] })
     }, bookId)
     await trigger()
-    await expect.poll(() => page.evaluate(() => window.__resizeCancellation.triggered)).toBe(true)
+    // Returning from the document first zooms, inserts the bookmark and
+    // closes the book. CI was still in bookmark at the old eight-second poll.
+    await expect.poll(() => page.evaluate(() => window.__resizeCancellation.triggered),{timeout:30_000}).toBe(true)
     await expect(page.locator('.ihr-flyout')).toHaveCount(0)
     await expect(book).not.toHaveClass(/is-away/)
     await expect(page.locator('.ihr-bookshelf-scene')).not.toHaveAttribute('data-returning-book-id', bookId)

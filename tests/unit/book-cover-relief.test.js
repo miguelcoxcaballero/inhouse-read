@@ -35,6 +35,24 @@ it('creates all local finish map slots in neutral from the start',()=>{
   expect(cover.roughnessMap).toBe(cover.metalnessMap);
   expect(cover.clearcoatRoughnessMap).toBe(cover.roughnessMap);
 });
+it('keeps flyouts lazy but arms the editor material once before its first relief choice',async()=>{
+  model.userData.dispose();
+  model=createBookModel(book,style,132,200,30,null,{eagerRelief:false});
+  cover=model.getObjectByName('front-cover').material[0];
+  expect(cover.clearcoatNormalMap).toBeNull();
+  expect(cover.roughnessMap).toBeNull();
+  expect(model.userData.prepareCoverRelief()).toBe(true);
+  const version=cover.version, normal=cover.clearcoatNormalMap, packed=cover.roughnessMap;
+  expect(normal.image.width).toBe(1);
+  expect(model.userData.prepareCoverRelief()).toBe(true);
+  expect(cover.clearcoatNormalMap).toBe(normal);
+  expect(cover.roughnessMap).toBe(packed);
+  expect(cover.version).toBe(version);
+  await model.userData.setCoverRelief({id:'foil',strength:.75});
+  expect(cover.version).toBe(version);
+  model.userData.dispose();
+  expect(model.userData.prepareCoverRelief()).toBe(false);
+});
 it('cancels pending map analysis when cleared and leaves neutral textures installed',async()=>{
   const gate=deferred();vi.mocked(buildReliefMaps).mockImplementation(()=>gate.promise);
   const pending=model.userData.setCoverRelief({id:'foil',strength:.75});

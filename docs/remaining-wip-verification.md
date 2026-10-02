@@ -1,6 +1,6 @@
 # WIP restante — puntos 3, 4 y 5
 
-Estado: 2 de octubre de 2026. La implementación está integrada en el árbol de trabajo; la batería completa de Production checks sigue pendiente. Las tandas locales indicadas abajo no equivalen a un CI completo aprobado.
+Estado: 3 de octubre de 2026. Los puntos 4 y 5 están publicados en la web 1.7.7. La primera ejecución completa de Production checks detectó regresiones de EPUB, interacciones de estantería y pruebas con contratos anteriores; se corrigen en 1.7.8. El check completo sigue pendiente de repetirse sobre esa versión.
 
 ## Punto 3 — Verificación general y CI
 
@@ -18,11 +18,15 @@ Evidencia confirmada:
 | Tanda | Resultado | Alcance |
 | --- | --- | --- |
 | Comprobaciones de refresco Android tras normalizar CRLF | 9/9 | Unitarias, Windows |
-| Última tanda unitaria general anterior al guard de resultados | 1591/1591 | No incluye las nuevas unitarias del guard |
+| Tanda unitaria de Production checks 37069236676 | 1618/1618 | Código publicado 1.7.7; 95 archivos |
+| Tanda unitaria final local de 1.7.8 | 1630/1630 | 97 archivos; dos workers, 176,77 s |
 | Guard de resultados neuronales | 19/19 | Reportes correctos y rechazo de ausencia, vacío, omisiones, fallos y tandas cortas |
 | Importación Android y continuidad de animaciones | 8/8, 3,5 min | Cuatro casos de importación y cuatro de continuidad; build `main-DsZr-Lsq.js`, preview exclusivo 4193 |
 | Los mismos casos con SwiftShader explícito | 8/8, 4,2 min | Renderizado por software, trazas completas, cero omisiones y cero reintentos |
 | Preparación de fixtures | 33 modelos y Nakdimon verificados | Descarga e integridad de ficheros; no acredita por sí sola la síntesis de cada voz |
+| Motores reales en Production checks 37069236676 | 9/9 engine, 37/37 languages | Cero omisiones, fallos o reintentos |
+| Lectura real en el mismo CI | 10 casos ejecutados, uno necesitó reintento | El criterio antiguo de RSS global se sustituye por cierre real del worker, liberación de sus recursos y creación de otro desde caché |
+| Regresión local de inactividad corregida y controles | 5/5 | Audio real, worker cerrado, recursos liberados y nueva lectura sin descargar modelo/configuración; tres diseños del lector |
 
 Las pruebas Android comprueban el puente con un doble de navegador, los bytes guardados y la apertura del PDF; no son una prueba en un teléfono físico. En SwiftShader, el retorno del primer libro importado tardó 15,3 s frente a un plazo de 20 s. No se reprodujo un fallo funcional y no se cambiaron estas pruebas ni el código de importación/animación.
 
@@ -48,4 +52,6 @@ Marko usa el modelo serbio del autor con revisión fijada; el modelo de nombre p
 
 Hay 19 copias de diccionarios en `phon/dict/`. El fonemizador reutiliza los que ya están en el paquete; los necesarios fuera del paquete se descargan y verifican al instalar la voz, y se conservan en Cache Storage para un worker nuevo y lectura sin conexión. La implementación y procedencia están en [el README del fonemizador](../public/neural-voice/phon/README.md).
 
-El harness de idiomas tiene 36 casos de voces que cubren todos los modelos y hablantes del catálogo, más una comprobación de diccionarios: 37 pruebas en total. La preparación de sus 33 modelos reales y Nakdimon ha terminado; la verificación de síntesis, recarga y offline de la ampliación sigue en curso. No se da por validado todo el catálogo hasta que termine esa tanda y la batería de CI.
+El harness de idiomas tiene 36 casos de voces que cubren todos los modelos y hablantes del catálogo, más una comprobación de diccionarios: 37 pruebas en total. Los 37 pasan con audio real tanto en Windows como en el CI Linux de la versión 1.7.7. Búlgaro y hebreo comprueban además una recarga fría antes de sintetizar, con la descarga de modelos y diccionarios bloqueada. Esto acredita la caché de voz, no el arranque completo de una APK sin conexión.
+
+La web publicada también pasó una lectura automática en neerlandés con Pim y una segunda lectura desde caché tras recargar, con descargas bloqueadas. La comprobación del archivo APK real mantiene el loader de 2089 bytes, idéntico al del repositorio, y versión Android 1.1.2. Las correcciones web llegan a esa APK sin incorporar pesos de voz al instalador.

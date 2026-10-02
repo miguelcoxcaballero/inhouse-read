@@ -55,8 +55,10 @@ export class FoliateReader {
   #resizeTimer
   #followTicket = 0
   #followTurn = Promise.resolve()
+  #pageTurn = Promise.resolve()
 
   async open(container, file, { onRelocate, onToggleChrome, onUserNavigation, onFollowLink } = {}) {
+    this.#pageTurn = Promise.resolve()
     this.#container = container
     this.#onRelocate = onRelocate ?? (() => {})
 
@@ -178,13 +180,22 @@ export class FoliateReader {
     }
   }
 
-  async next() {
-    await this.#view?.next()
+  // Foliate silently discards a turn while its previous one is locked. Even
+  // without animation it holds that lock for 100 ms AFTER moving the page.
+  // Preserve rapid tap/button order through the full promise, not just until
+  // the new offset becomes visible; a closed/replaced book drops pending turns.
+  #turnPage(direction) {
+    const view = this.#view
+    const turn = this.#pageTurn.then(() => {
+      if (view && view === this.#view) return view[direction]()
+    })
+    this.#pageTurn = turn.catch(() => {})
+    return turn
   }
 
-  async prev() {
-    await this.#view?.prev()
-  }
+  async next() { await this.#turnPage('next') }
+
+  async prev() { await this.#turnPage('prev') }
 
   async goToFraction(fraction) {
     await this.#view?.goToFraction(fraction)
@@ -394,6 +405,7 @@ export class FoliateReader {
     this.#view?.close()
     this.#view?.remove()
     this.#view = null
+    this.#pageTurn = Promise.resolve()
     if (this.#container) { this.#container.innerHTML = ''; this.#container.classList.remove('foliate-reader') }
   }
 }

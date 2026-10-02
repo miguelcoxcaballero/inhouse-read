@@ -351,13 +351,17 @@ test('móvil sin WebGL: la salida conserva la página real durante el cierre y l
 });
 
 test('movimiento reducido: salir conserva la última página y no deja bloqueos ni capas de transición',async ({page}) => {
+  // Reduced motion still captures and prepares the real 3D return view; CI
+  // needed longer than eight seconds before that work released the reader.
+  test.setTimeout(60_000);
   await page.emulateMedia({reducedMotion:'reduce'});
   await page.locator('#file-picker').setInputFiles({name:'reverse-reduced.pdf',mimeType:'application/pdf',buffer:colouredPdf()});
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 1 de 4/);
   await page.getByRole('button',{name:'Página siguiente',exact:true}).click();
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 2 de 4/);
   await page.getByRole('button',{name:'Volver a la estantería'}).click();
-  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/);
+  await expect(page.locator('body')).toHaveClass(/is-closing-reader/);
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/,{timeout:30_000});
   await expect(page.locator('.ihr-flyout,.ihr-reader-return-page')).toHaveCount(0);
   await expect.poll(async()=> (await savedBook(page,'reverse-reduced.pdf'))?.locator).toEqual({kind:'pdf-page',value:2});
   await page.locator('.ihr-spine').click();

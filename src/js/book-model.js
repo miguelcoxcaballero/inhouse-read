@@ -863,7 +863,9 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   };
   let coverFinishValue = book.coverFinish;
   laminate(book.coverFinish);
-  applyBookReflectionSurface(cover, { seed:`${surfaceSeed}|cover`, strength:.018 });
+  // Keep the broad studio reflection from washing out printed ink at an
+  // oblique angle. Diffuse colour and direct lamp highlights are unchanged.
+  applyBookReflectionSurface(cover, { seed:`${surfaceSeed}|cover`, strength:.018, environmentReflection:.75 });
   installCoverRelief(cover);
   if (reliefArmed) {
     reliefArmed = false; armRelief();
@@ -1181,6 +1183,13 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   }
   group.userData.coverRelief = () => (wantedRelief ? { ...wantedRelief } : null);
   group.userData.supportsCoverRelief = reliefCapable;
+  // Only the cover editor needs these shader slots before its first choice.
+  // Ordinary flyouts retain the cheaper material until editing is requested.
+  group.userData.prepareCoverRelief = () => {
+    if (disposed || !reliefCapable) return false;
+    armRelief();
+    return true;
+  };
   /** Apply (or clear, with null) a relief choice. Resolves true once drawn. */
   group.userData.setCoverRelief = async relief => {
     if (disposed || !reliefCapable) return false;
@@ -1540,6 +1549,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   if (shelf) canvas.dataset.shelfView = shelfView;
   const camera = new THREE.OrthographicCamera(-viewportWidth / 2, viewportWidth / 2, viewportHeight / 2, -viewportHeight / 2, .1, 10000); camera.position.z = 3000;
   let disposed = false, current, cancel = () => {}, pendingModel = null, appearanceRevision = 0;
+  let reliefPrepared = false, reliefPreparation = null;
   let currentBook = book, currentSnapshot = null, pageTheme = 1;
   function draw(pose) {
     if (disposed) return;
@@ -1587,7 +1597,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (disposed) return false;
     const revision = ++appearanceRevision;
     pendingModel?.userData.dispose();
-    const replacement = createBookModel(currentBook, nextStyle, width, height, thickness, coverUrl, { shelf, eagerRelief:false });
+    const replacement = createBookModel(currentBook, nextStyle, width, height, thickness, coverUrl, { shelf, eagerRelief:reliefPrepared });
     pendingModel = replacement;
     const replace = () => {
       if (disposed || revision !== appearanceRevision) { replacement.userData.dispose(); return; }
@@ -1619,6 +1629,22 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     model.userData.updateCoverAppearance?.(nextBook);
     if (current) draw(current);
     return true;
+  }
+  /** Compile and draw the neutral relief material before offering choices.
+   * The first draw completes any deferred driver compilation and uploads its
+   * maps; later selections replace pixels/uniforms without a shader variant. */
+  function prepareCoverRelief() {
+    if (disposed) return Promise.resolve(false);
+    if (reliefPreparation) return reliefPreparation;
+    reliefPreparation = Promise.resolve().then(() => {
+      if (disposed || !model.userData.prepareCoverRelief?.()) return false;
+      reliefPrepared = true;
+      pendingModel?.userData.prepareCoverRelief?.();
+      gpu.compile(scene, camera);
+      if (current) draw(current);
+      return true;
+    }).catch(error => { reliefPreparation = null; throw error; });
+    return reliefPreparation;
   }
   /** Apply (or clear, with null) a cover relief on the book, the one still
    * loading included. Resolves once the maps are on the cover and drawn. */
@@ -1742,7 +1768,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     raf = requestAnimationFrame(tick); return animation;
   }
   return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
-    updateAppearance, updateSpineAppearance, updateCoverAppearance, setCoverRelief, updateEdgeAppearance,
+    updateAppearance, updateSpineAppearance, updateCoverAppearance, prepareCoverRelief, setCoverRelief, updateEdgeAppearance,
     setPageSnapshot, pageTextures, uploadPageTexture, compilePage, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
     setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
     getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,

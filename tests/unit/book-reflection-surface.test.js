@@ -9,6 +9,20 @@ function compile(material) {
   return shader;
 }
 
+it('attenuates only environmental reflections without changing printed colour or direct lamp highlights', () => {
+  const material = applyBookReflectionSurface(new THREE.MeshPhysicalMaterial(), { environmentReflection:.75 });
+  const shader = compile(material), version = material.version, key = material.customProgramCacheKey();
+  expect(shader.uniforms.bookEnvironmentReflection.value).toBe(.75);
+  expect(shader.fragmentShader).toContain('radiance += bookEnvironmentReflection * getIBLRadiance');
+  expect(shader.fragmentShader).toContain('clearcoatRadiance += bookEnvironmentReflection * getIBLRadiance');
+  expect(shader.fragmentShader).toContain('iblIrradiance += getIBLIrradiance( geometryNormal );');
+  expect(shader.fragmentShader).toContain('reflectedLight.directSpecular += bookSpecularIrradiance * BRDF_GGX(');
+  material.userData.bookReflectionSurface.setEnvironmentReflection(.5);
+  expect(shader.uniforms.bookEnvironmentReflection.value).toBe(.5);
+  expect(material.version).toBe(version);
+  expect(material.customProgramCacheKey()).toBe(key);
+});
+
 describe('specular-only book board imperfection', () => {
   it('supports cover laminates and standard cloth, excluding paper/basic materials chosen by the caller', () => {
     for (const material of [new THREE.MeshPhysicalMaterial(), new THREE.MeshStandardMaterial()]) {
@@ -65,7 +79,7 @@ describe('specular-only book board imperfection', () => {
     expect(shader.vertexShader).toContain('varying float vSpineFacing;');
     expect(shader.fragmentShader.indexOf('normal = normalize(mix(nonPerturbedNormal, normal, .5));'))
       .toBeLessThan(shader.fragmentShader.indexOf('bookReflectionNormal = normalize(normal - bookReflectionTilt);'));
-    expect(material.customProgramCacheKey()).toBe('spine-grazing-fade|book-reflection-surface-v1');
+    expect(material.customProgramCacheKey()).toBe('spine-grazing-fade|book-reflection-surface-v2');
   });
 
   it('allows a zero-strength A/B entirely through uniforms without resource or program changes', () => {
@@ -166,7 +180,7 @@ describe('specular-only book board imperfection', () => {
     expect(shader.vertexShader).toContain('#include <project_vertex>');
     expect(shader.vertexShader).toContain('#include <shadowmap_vertex>');
     expect(shader.vertexShader.match(/transformed\s*[+\-*]?=/g)).toBeNull();
-    expect(Object.keys(shader.uniforms).sort()).toEqual(['bookReflectionPhase', 'bookReflectionStrength', 'bookReflectionUvScale']);
+    expect(Object.keys(shader.uniforms).sort()).toEqual(['bookEnvironmentReflection', 'bookReflectionPhase', 'bookReflectionStrength', 'bookReflectionUvScale']);
     // Shader-chunk expansion retains existing sampler reads; the wave field
     // itself is exactly one vec3 cosine with no custom texture or time source.
     const waveStart = shader.fragmentShader.indexOf('vec3 bookWaveAngle'), waveEnd = shader.fragmentShader.indexOf('#include <emissivemap_fragment>');

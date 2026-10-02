@@ -2,6 +2,13 @@ import { test, expect } from '@playwright/test'
 
 const PDF_FIXTURE = 'tests/e2e/fixtures/tiny.pdf'
 
+async function expectReturnComplete(page) {
+  // A return layer is created asynchronously. Its initial absence is not
+  // completion: CI still painted the bookmark phase after 20 seconds.
+  await expect(page.locator('body')).toHaveClass(/is-closing-reader/)
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:30_000})
+}
+
 test.beforeEach(async ({ page }) => {
   // Keep this flow independent of desktop-only File System Access pickers.
   await page.addInitScript(() => {
@@ -89,7 +96,7 @@ test('Android: mantiene una pantalla de carga hasta que Drive guarda el libro y 
     return books.some(book => book.name === 'tiny.pdf' && book.driveFileId === 'drive-book')
   })
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
-  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:20_000})
+  await expectReturnComplete(page)
   await expect(page.getByRole('button', { name:/Abrir tiny/i })).toBeVisible()
 })
 
@@ -119,7 +126,7 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   expect(await savedBook.jsonValue()).toMatchObject({ bytes: 445, mimeType: 'application/pdf' })
 
   await page.getByRole('button', { name: 'Volver a la estantería' }).click()
-  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:20_000})
+  await expectReturnComplete(page)
   const spine = page.locator('.ihr-spine').first()
   await expect(spine).toBeVisible()
   const shelfCanvas = page.locator('.ihr-bookshelf-scene')
@@ -228,7 +235,7 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   // The reader now hands its current page to an OPEN book before that book
   // closes. Every first frame must retain a painted page throughout capture.
   expect(Object.values(firstReturnFrame).some(Boolean)).toBe(true)
-  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:20_000})
+  await expectReturnComplete(page)
   const returnFlight = page.locator('.ihr-flyout--return')
   await expect(returnFlight).toHaveCount(0, { timeout:20_000 })
   await expect(page.locator('.ihr-spine').first()).not.toHaveClass(/is-away/)
@@ -287,10 +294,14 @@ test('si Pages conserva el manifiesto viejo, ofrece la APK nueva desde GitHub Re
 
 
 test('móvil: el modelo se dibuja, se cancela durante el giro y vuelve a abrir', async ({ page }) => {
+  // CI spent 20–23 seconds returning the imported book before the two opens.
+  // Give this complete sequence its own budget, then assert each final state.
+  test.setTimeout(90_000)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   await page.getByRole('button', { name: 'Volver a la estantería' }).click()
+  await expectReturnComplete(page)
   await expect(page.locator('.ihr-flyout--return')).toHaveCount(0)
   const spine = page.locator('.ihr-spine').first()
   await spine.click()
@@ -308,6 +319,7 @@ test('móvil: el modelo se dibuja, se cancela durante el giro y vuelve a abrir',
 })
 
 test('sin WebGL se mantiene la apertura del libro con una portada de reserva', async ({ page }) => {
+  test.setTimeout(60_000)
   await page.addInitScript(() => {
     Object.defineProperty(window, 'WebGLRenderingContext', { value: undefined })
     Object.defineProperty(window, 'WebGL2RenderingContext', { value: undefined })
@@ -316,6 +328,7 @@ test('sin WebGL se mantiene la apertura del libro con una portada de reserva', a
   await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   await page.getByRole('button', { name: 'Volver a la estantería' }).click()
+  await expectReturnComplete(page)
   await expect(page.locator('.ihr-flyout--return')).toHaveCount(0)
   await page.locator('.ihr-spine').first().click()
   await expect(page.locator('.ihr-flyout__book--fallback')).toBeVisible()

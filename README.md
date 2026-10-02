@@ -4,6 +4,15 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.8
+
+- La página blanca preparada en segundo plano se dibuja antes de comenzar a abrir el libro, incluso si se pulsa la portada antes de terminar la preparación. Los nueve casos de transición conservan las comprobaciones de color y estado desde el primer fotograma.
+- Los cambios de página de EPUB conservan el orden de los toques rápidos, incluido volver atrás mientras acaba el avance anterior.
+- El editor prepara el material del relieve antes de mostrar las propuestas, también al reabrir una portada con propuestas guardadas en caché. Elegir el primer acabado ya no compila un shader durante el balanceo.
+- El giro de la estantería conserva las poses intermedias aunque un fotograma tarde más al preparar los gráficos.
+- Las portadas mantienen su tinta al limitar los reflejos ambientales amplios; los reflejos de las lámparas y los acabados mate, satinado y brillante se conservan.
+- El punto de toque de la lámpara MITTLED se centra en una parte visible del difusor, incluyendo las coordenadas de toque y clic del móvil. Se recalcula al mover la cámara y se reutiliza durante los cambios de luz.
+
 ### Actualización web · 1.7.7
 
 - Catálogo de 36 voces naturales en 27 idiomas: incorpora portugués de Portugal, búlgaro, serbio, hindi y hebreo, y corrige la descarga de turco. La instalación guarda también los diccionarios y, para hebreo, el modelo de vocalización necesarios para sintetizar sin volver a descargarlos al recargar el lector.

@@ -71,6 +71,10 @@ async function seedShelf(page, { long = false, linked = false, driveBytes = null
   await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
+  // Home becomes visible while the return book is still zooming/closing.
+  // CI reached those phases after the old eight-second layer check expired.
+  await expect(page.locator('body')).toHaveClass(/is-closing-reader/)
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{ timeout:30_000 })
   await expect(page.locator('#home-screen')).toBeVisible()
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
   const seed = await page.evaluate(async ({ long, linked, driveBytes, plantsKey, driveId }) => {

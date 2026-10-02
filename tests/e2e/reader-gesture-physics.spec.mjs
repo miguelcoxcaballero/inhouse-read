@@ -34,12 +34,54 @@ test('PDF: double tap keeps its page, native zoom pan does not navigate, and swi
   expect(await viewport.evaluate(node => getComputedStyle(node).touchAction)).toBe('pan-x pan-y')
   const cdp = await page.context().newCDPSession(page)
   await viewport.evaluate(node => {node.scrollLeft = 80;node.scrollTop = 60})
+  await viewport.evaluate(node => new Promise(resolve => {
+    // Flush the initial instant scroll before observing the touch pan's end.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      window.__pdfPanEnded = false
+      const onEnd = () => {window.__pdfPanEnded = true}
+      node.addEventListener('scrollend', onEnd, {once:true})
+      window.__stopPdfPanObservation = () => node.removeEventListener('scrollend', onEnd)
+      resolve()
+    }))
+  }))
   await drag(cdp,bounds.x+bounds.width*.65,y,-80)
   await expect.poll(() => viewport.evaluate(node => node.scrollLeft)).toBeGreaterThan(100)
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 1 de 4/)
-  // Both edges of the enlarged sheet remain reachable, with no negative flex overflow.
+  // A native touch fling continues after touchend. Resetting during it samples
+  // a moving sheet: CI saw 0 -> 5/14px of scroll, not negative flex overflow.
+  const panSettlement = await viewport.evaluate(node => new Promise((resolve,reject) => {
+    const started = performance.now()
+    let left = node.scrollLeft, top = node.scrollTop, stable = 0
+    const check = () => {
+      const nextLeft = node.scrollLeft, nextTop = node.scrollTop
+      stable = nextLeft === left && nextTop === top ? stable + 1 : 0
+      left = nextLeft;top = nextTop
+      // CDP touch flings on some Chromium builds omit scrollend. In that case
+      // require twelve unchanged frames instead of treating touchend as rest.
+      if (stable >= (window.__pdfPanEnded ? 3 : 12)) {
+        window.__stopPdfPanObservation()
+        return resolve({scrollend:window.__pdfPanEnded,stableFrames:stable,left,top,elapsed:performance.now()-started})
+      }
+      if (performance.now() - started >= 8_000) {
+        window.__stopPdfPanObservation()
+        return reject(new Error('PDF pan did not settle'))
+      }
+      requestAnimationFrame(check)
+    }
+    requestAnimationFrame(check)
+  }))
+  // Both sheet edges must reach the viewport's inner edges within one pixel.
+  const edges = await viewport.evaluate(node => {
+    const rect = node.getBoundingClientRect()
+    return {left:rect.left + node.clientLeft,right:rect.left + node.clientLeft + node.clientWidth}
+  })
   await viewport.evaluate(node => {node.scrollLeft = 0})
-  expect(await canvas.evaluate(node => node.getBoundingClientRect().left)).toBeGreaterThanOrEqual(bounds.x-1)
+  await expect.poll(async () => Math.abs(await canvas.evaluate(node => node.getBoundingClientRect().left) - edges.left)).toBeLessThanOrEqual(1)
+  const left = await canvas.evaluate(node => node.getBoundingClientRect().left)
+  await viewport.evaluate(node => {node.scrollLeft = node.scrollWidth})
+  await expect.poll(async () => Math.abs(await canvas.evaluate(node => node.getBoundingClientRect().right) - edges.right)).toBeLessThanOrEqual(1)
+  const right = await canvas.evaluate(node => node.getBoundingClientRect().right)
+  await test.info().attach('pdf-pan-bounds', {body:Buffer.from(JSON.stringify({panSettlement,edges,left,right})),contentType:'application/json'})
   await page.touchscreen.tap(x,y)
   await page.touchscreen.tap(x,y)
   await expect(viewport).toHaveAttribute('data-reader-zoomed','false')

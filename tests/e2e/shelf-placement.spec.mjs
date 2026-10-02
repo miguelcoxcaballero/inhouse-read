@@ -158,7 +158,10 @@ test('la estantería frontal ocupa todo el ancho y la papelera sólo se activa e
 })
 
 test('libros y plantas se colocan libremente, se apartan al colisionar y conservan los huecos tras recargar', async ({ page }) => {
-  test.setTimeout(90_000)
+  // Four real 12-step drags, collision checks and three reloads. CI spent
+  // 17 and 29 seconds drawing the first two drags and exhausted 90 seconds
+  // during the third, with every completed placement assertion passing.
+  test.setTimeout(240_000)
   const errors = []; page.on('pageerror', error => errors.push(error.message))
   await page.setViewportSize({ width:390, height:844 })
   await page.emulateMedia({ reducedMotion:'no-preference' })

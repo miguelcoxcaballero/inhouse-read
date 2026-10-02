@@ -22,6 +22,7 @@ vi.mock('../../src/js/book-model.js', () => ({
       canvas, animations: [],
       draw() {}, updateAppearance() {}, updateSpineAppearance() {}, updateEdgeAppearance() {},
       updateCoverAppearance: vi.fn(),
+      prepareCoverRelief: vi.fn(async () => true),
       setCoverRelief: vi.fn(async () => {}),
       getPose: () => ({ ...pose }),
       animate(frames, timing) {
@@ -215,6 +216,44 @@ describe('giro animado entre lomo y portada', () => {
 })
 
 describe('propuestas de relieve', () => {
+  it('no ofrece tarjetas hasta que termina la preparación del material, aunque el análisis ya esté listo', async () => {
+    const { editor, tab, view } = await openEditor()
+    let prepared
+    view.prepareCoverRelief.mockImplementationOnce(() => new Promise(resolve => { prepared = resolve }))
+    tab('Portada').click()
+    await vi.waitFor(() => expect(view.prepareCoverRelief).toHaveBeenCalledOnce())
+    expect(analyzeCoverRelief).toHaveBeenCalledOnce()
+    expect(editor.querySelectorAll('.ihr-relief-card:not(.is-skeleton)')).toHaveLength(0)
+    expect(editor.querySelector('[role="tabpanel"][aria-busy="true"]')).not.toBeNull()
+    prepared(true)
+    await vi.waitFor(() => expect(editor.querySelectorAll('.ihr-relief-card:not(.is-skeleton)')).toHaveLength(3))
+  })
+  it('prepara también la nueva vista al reutilizar propuestas guardadas en caché', async () => {
+    reduceMotion(true)
+    const first = await openEditor()
+    first.tab('Portada').click()
+    await vi.waitFor(() => expect(first.editor.querySelectorAll('.ihr-relief-card:not(.is-skeleton)')).toHaveLength(3))
+    document.querySelector('.ihr-flyout__close').click()
+    await vi.waitFor(() => expect(document.querySelector('.ihr-flyout')).toBeNull())
+    container.querySelector('.ihr-spine').click()
+    const edit = await vi.waitFor(() => {
+      const button = document.querySelector('.ihr-flyout__edit-button')
+      expect(button?.disabled).toBe(false)
+      return button
+    })
+    const view = views.at(-1)
+    expect(view).not.toBe(first.view)
+    let prepared
+    view.prepareCoverRelief.mockImplementationOnce(() => new Promise(resolve => { prepared = resolve }))
+    edit.click()
+    first.tab('Portada').click()
+    const editor = document.querySelector('.ihr-spine-editor')
+    await vi.waitFor(() => expect(view.prepareCoverRelief).toHaveBeenCalledOnce())
+    expect(analyzeCoverRelief).toHaveBeenCalledOnce()
+    expect(editor.querySelectorAll('.ihr-relief-card:not(.is-skeleton)')).toHaveLength(0)
+    prepared(true)
+    await vi.waitFor(() => expect(editor.querySelectorAll('.ihr-relief-card:not(.is-skeleton)')).toHaveLength(3))
+  })
   it('analiza la portada al entrar, con estado de carga, y ofrece exactamente tres tarjetas más Sin relieve', async () => {
     let finish
     vi.mocked(analyzeCoverRelief).mockImplementation(() => new Promise(resolve => { finish = resolve }))

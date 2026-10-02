@@ -2980,15 +2980,19 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (!coverUrl) { relief.status = 'empty'; renderReliefCards(); refitCoverPose(); return; }
       const key = reliefKey();
       const cached = state.reliefProposals.get(key);
-      if (cached) { relief.proposals = cached; relief.status = 'ready'; renderReliefCards(); refitCoverPose(); return; }
       const controller = new AbortController();
       relief.controller = controller;
       relief.status = 'loading';
       renderReliefCards();
       try {
-        const result = await analyzeCoverRelief(coverUrl, {
-          title:book.title, author:normalizeBookAuthor(book.author), signal:controller.signal
-        });
+        // Cached proposals still belong to a new flyout/material. Prepare its
+        // shader before any card can be chosen, after the tab's turn has ended.
+        const [result] = await Promise.all([
+          cached ? { proposals:cached } : analyzeCoverRelief(coverUrl, {
+            title:book.title, author:normalizeBookAuthor(book.author), signal:controller.signal
+          }),
+          view?.prepareCoverRelief?.()
+        ]);
         if (relief.controller !== controller || state.session !== session) return;
         relief.proposals = cleanProposals(result?.proposals);
         relief.status = relief.proposals.length ? 'ready' : 'empty';
@@ -3183,7 +3187,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       // The book opens on white paper whatever the reading theme: the snapshot's
       // white-paper variant starts at pageTheme 0 and fades to the theme on the zoom.
       // A page warmed up while the book waited is already on the model.
-      if (view) return view.hasPageSnapshot(snapshot) || view.setPageSnapshot(snapshot, { ...(snapshot.paper ? { pageTheme:0 } : {}), redraw });
+      if (view) {
+        if (!view.hasPageSnapshot(snapshot)) return view.setPageSnapshot(snapshot, { ...(snapshot.paper ? { pageTheme:0 } : {}), redraw });
+        // A tap may interrupt the idle warm-up after installation but before its
+        // final draw. Commit the white page before announcing the opening phase.
+        if (redraw) view.draw({ ...view.getPose(), ...(snapshot.paper ? { pageTheme:0 } : {}) });
+        return true;
+      }
       const pages = bookNode.querySelector('.ihr-flyout__fallback-pages');
       if (!pages) return false;
       const canvas = snapshot.source;

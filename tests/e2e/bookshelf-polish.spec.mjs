@@ -219,6 +219,9 @@ test('el teclado móvil no cierra el editor y mantiene visible el campo del lomo
 })
 
 test('las portadas PDF se guardan nítidas y se regeneran las miniaturas antiguas', async ({ page }) => {
+  // Import, reload and reopen render real 3D frames. On CI the book was still
+  // opening at the old eight-second canvas check, so wait for that handoff.
+  test.setTimeout(90_000)
   await page.goto('/')
   await page.locator('#file-picker').setInputFiles(PDF)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
@@ -245,6 +248,9 @@ test('las portadas PDF se guardan nítidas y se regeneran las miniaturas antigua
   await page.locator('.ihr-spine').first().click()
   await expect(page.locator('.ihr-flyout__cover-target')).toBeVisible()
   await page.locator('.ihr-flyout__cover-target').click()
+  await expect(page.locator('#reader-screen')).toHaveClass(/is-opening-from-book/)
+  await expect(page.locator('#reader-screen')).not.toHaveClass(/is-opening-from-book/,{timeout:30_000})
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   await expect.poll(() => page.evaluate(async () => {
     const db=await new Promise(resolve=>{const req=indexedDB.open('inhouse-read');req.onsuccess=()=>resolve(req.result)})

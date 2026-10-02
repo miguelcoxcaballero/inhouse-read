@@ -2,9 +2,18 @@ import { test, expect } from '@playwright/test'
 import { spinePointerPosition } from './helpers/shelf-pointer.mjs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readFileSync } from 'node:fs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PDF_FIXTURE = path.join(__dirname, 'fixtures', 'tiny.pdf')
+const VERSION = JSON.parse(readFileSync(path.join(__dirname, '../../package.json'), 'utf8')).version
+
+async function closeReader(page) {
+  await page.getByRole('button', { name:'Volver a la estantería' }).click()
+  await expect(page.locator('body')).toHaveClass(/is-closing-reader/)
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/, { timeout:30_000 })
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0)
+}
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
@@ -55,7 +64,7 @@ test('conecta Google sin redirección y muestra la foto en la esquina derecha', 
   await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   expect(await page.evaluate(() => window.__oauthOptions.redirect_uri)).toBeUndefined()
   await button.click()
-  await expect(page.locator('#app-version')).toHaveText('Inhouse Read · v1.7.4')
+  await expect(page.locator('#app-version')).toHaveText(`Inhouse Read · v${VERSION}`)
   await expect(page.locator('#drive-theme-toggle')).toBeVisible()
   await expect(page.locator('#drive-profile-initial-menu')).toBeHidden()
   await page.locator('#drive-theme-toggle').check()
@@ -115,6 +124,7 @@ test('una sesión caducada vuelve a mostrar Conectar y oculta el perfil', async 
 })
 
 test('muestra la estantería 3D vacía con tres baldas y plantas que se pueden mover', async ({ page }) => {
+  test.setTimeout(60_000)
   await expect(page.getByText('Sin libros')).toBeVisible()
   await expect(page.locator('.ihr-shelf')).toHaveCount(3)
   await expect(page.locator('.ihr-spine')).toHaveCount(0)
@@ -122,6 +132,11 @@ test('muestra la estantería 3D vacía con tres baldas y plantas que se pueden m
   const canvas = page.locator('.ihr-bookshelf-scene')
   await expect(canvas).toBeVisible()
   await expect(canvas).toHaveAttribute('data-active-books', '0')
+  // The frontal camera culls plants outside its viewport. The full cabinet
+  // must still show all three meshes when the camera includes every shelf.
+  await page.emulateMedia({ reducedMotion:'reduce' })
+  await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
+  await expect(canvas).toHaveAttribute('data-view-progress', '1')
   await expect(canvas).toHaveAttribute('data-active-plants', '3')
   await expect.poll(() => canvas.evaluate(node => {
     const pixels = node.getContext('2d').getImageData(0,0,node.width,node.height).data
@@ -389,6 +404,7 @@ test('mueve un libro al mantenerlo pulsado con animación 3D y conserva su posic
 })
 
 test('el libro abierto reaparece en la estantería al volver', async ({ page }) => {
+  test.setTimeout(60_000)
   await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
 
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
@@ -410,20 +426,18 @@ test('el libro abierto reaparece en la estantería al volver', async ({ page }) 
     return count > 0
   })
 
-  await page.getByRole('button', { name: 'Volver a la estantería' }).click()
-
-  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:20_000})
+  await closeReader(page)
   await expect(page.locator('#home-screen')).toBeVisible()
   await expect(page.getByRole('button', { name: /Abrir tiny/i })).toBeVisible()
 })
 
 test('aleja y gira toda la estantería en 3D, permite abrir libros y recuerda la vista', async ({ page }) => {
-  test.setTimeout(90_000)
+  test.setTimeout(180_000)
   await page.setViewportSize({ width:390, height:844 })
   await page.emulateMedia({ reducedMotion:'no-preference' })
   await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/tiny.pdf')
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
-  await page.getByRole('button', { name:'Volver a la estantería' }).click()
+  await closeReader(page)
 
   const shelf = page.locator('[data-ihr-bookshelf]')
   await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:20_000})
@@ -496,8 +510,7 @@ test('aleja y gira toda la estantería en 3D, permite abrir libros y recuerda la
   await spine.click()
   await page.getByRole('button', { name:/Toca para leer/ }).click()
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
-  await page.getByRole('button', { name:'Volver a la estantería' }).click()
-  await expect(page.locator('.ihr-flyout')).toHaveCount(0)
+  await closeReader(page)
   await expect(canvas).toBeVisible()
   await expect(spine).toBeFocused()
   expect(await bookOrder()).toEqual(initialOrder)

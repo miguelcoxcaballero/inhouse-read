@@ -107,7 +107,14 @@ test('un toque controla cada luz, ilumina superficies y conserva el estado al re
   await expect(catalog).toBeHidden();
   await expect(scene).toHaveAttribute('data-shelf-type', 'walnut');
   expect(await powerStates(page)).toEqual([false, false, false]);
-  await page.locator('.ihr-lamp[data-lamp-id="mittled"]').tap();
+  // The solid walnut ceiling hides this puck from the diagonal camera. Its
+  // accessible switch remains usable without allowing taps through the wood.
+  const walnutPuck = page.locator('.ihr-lamp[data-lamp-id="mittled"]');
+  await walnutPuck.tap();
+  await expect(walnutPuck).toHaveAttribute('aria-pressed', 'false');
+  expect(await powerStates(page)).toEqual([false, false, false]);
+  await walnutPuck.focus();
+  await walnutPuck.press('Enter');
   await expect(scene).toHaveAttribute('data-active-lamp-lights', '1');
   expect(await powerStates(page)).toEqual([true, false, false]);
   await page.reload();

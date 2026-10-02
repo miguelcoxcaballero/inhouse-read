@@ -407,23 +407,60 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     expect(errors).toEqual([])
   })
 
-  test('idle: a worker nobody speaks to is torn down after ~90 s (the memory comes back) and the next Play rebuilds it from the cache', async () => {
+  test('idle: the real worker closes after ~90 s and the next Play creates a new worker from the cache', async () => {
     test.skip(!process.env.NEURAL_VOICE_IDLE, 'takes ~2 minutes: set NEURAL_VOICE_IDLE=1')
+    const voiceWorkers = () => page.workers().filter(worker => /\/assets\/worker-[\w-]+\.js(?:[?#]|$)/.test(worker.url()))
+    await page.goto('./')
+    await expect.poll(() => voiceWorkers().length).toBe(0)
+    const beforeLoad = residentMB()
     await open(page, EPUB)
     await openAudio(page)
     await spyOnEngine(page)
     await expect.poll(() => page.evaluate(() => window.__neuEngine.core?.client?.loaded || ''), SLOW).toBe(CLAUDE) // warmed up, nothing spoken
+    await expect.poll(() => voiceWorkers().length).toBe(1)
+    const warmWorker = voiceWorkers()[0]
+    let workerClosed = false
+    warmWorker.once('close', () => { workerClosed = true })
+    await page.evaluate(() => { window.__idleObservedClient = window.__neuEngine.core.client })
     await page.waitForTimeout(2000)
     const warm = residentMB()
     await page.waitForTimeout(95_000)
     expect(await page.evaluate(() => window.__neuEngine.core.client)).toBeNull() // terminated by the engine's own idle timer
+    await expect.poll(() => workerClosed).toBe(true) // browser-observed termination, not just a cleared facade reference
+    expect(voiceWorkers()).toHaveLength(0)
+    const released = await page.evaluate(() => {
+      const client = window.__idleObservedClient
+      return { worker:client.worker, loaded:client.loaded, ready:client.ready, config:client.config, alive:client.alive,
+        pendingCalls:client.calls.size, pendingJobs:client.jobs.size, pendingPreparations:client.preparations.size }
+    })
+    expect(released).toEqual({ worker:null, loaded:null, ready:null, config:null, alive:false,
+      pendingCalls:0, pendingJobs:0, pendingPreparations:0 })
     const torn = residentMB()
-    numbers.idleTeardown = { residentWarmMB: Math.round(warm), residentAfterMB: Math.round(torn), freedMB: Math.round(warm - torn) }
-    expect(warm - torn).toBeGreaterThan(250)
-    await play(page) // rebuilt lazily from Cache Storage
-    await expect.poll(async () => (await starts(page)).length, SLOW).toBeGreaterThan(0)
-    await expectCleanAudio(page, 'after teardown')
-    await page.getByRole('button', { name: 'Detener', exact: true }).click()
+    // Aggregate browser/GPU/renderer RSS is diagnostic: CI released 233.52 MB
+    // on the first attempt and ~250 MB on retry. It cannot isolate a worker's
+    // allocator or establish a portable 250 MB threshold. Its actual close,
+    // cleared resources and distinct cached replacement are the pass criteria.
+    numbers.idleTeardown = { residentBeforeLoadMB: Math.round(beforeLoad), residentWarmMB: Math.round(warm),
+      residentAfterMB: Math.round(torn), freedMB: +(warm - torn).toFixed(2), workerClosed, released }
+    const uncachedRequests = []
+    const blockUncached = route => { uncachedRequests.push(route.request().url()); return route.abort('internetdisconnected') }
+    await page.route(`${mirror.base}**`, blockUncached)
+    try {
+      await play(page) // rebuilt lazily from Cache Storage, with model/config network access blocked
+      await expect.poll(async () => (await starts(page)).length, SLOW).toBeGreaterThan(0)
+      await expect.poll(() => page.evaluate(() => window.__neuEngine.core.client?.loaded || ''), SLOW).toBe(CLAUDE)
+      expect(await page.evaluate(() => window.__neuEngine.core.client !== window.__idleObservedClient)).toBe(true)
+      await expect.poll(() => voiceWorkers().length).toBe(1)
+      expect(voiceWorkers()[0]).not.toBe(warmWorker)
+      expect(uncachedRequests).toEqual([])
+      numbers.idleTeardown.newWorkerCreated = true
+      numbers.idleTeardown.uncachedModelRequests = uncachedRequests.length
+      await expectCleanAudio(page, 'after teardown')
+      await page.getByRole('button', { name: 'Detener', exact: true }).click()
+    } finally {
+      await page.unroute(`${mirror.base}**`, blockUncached)
+      await page.evaluate(() => { delete window.__idleObservedClient })
+    }
   })
 
   test('the shelf loads none of the engine, and its frames stay fluid while the voice thinks next to it', async () => {

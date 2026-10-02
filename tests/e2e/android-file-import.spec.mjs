@@ -37,7 +37,8 @@ for (const cold of [true, false]) test(`Android Abrir con: importa los bytes exa
   })
   expect(saved?.bytes).toEqual(pdf)
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
-  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/, {timeout:20_000})
+  await expect(page.locator('body')).toHaveClass(/is-closing-reader/)
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/, {timeout:30_000})
   await expect(page.getByRole('button', { name:/Abrir Android Open With/i })).toBeVisible()
 })
 

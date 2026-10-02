@@ -127,7 +127,7 @@ test('mate, satinado y brillante cambian el libro real en la estantería, reflej
     if (message.type() === 'error' && /THREE\.WebGLProgram|VALIDATE_STATUS|shader.*(?:compil|link)|GL_INVALID/i.test(message.text()))
       errors.push(message.text());
   });
-  await page.goto(process.env.IHR_TEST_URL || '/');
+  await page.goto(process.env.IHR_TEST_URL || './');
   await expect(page.locator('.ihr-bookshelf')).toBeVisible();
   const bytes = blueCoverPdf();
   await page.evaluate(async ({ bytes, id, lampKey }) => {

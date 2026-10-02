@@ -7,3 +7,9 @@ Verification: 133 focused unit tests passed across book-model, page-theme-transi
 These checks used a dedicated preview at port 4182 and verified that its main JS and CSS matched the freshly built dist; the already-running server on port 4173 was serving an older artifact. Tests against that server were excluded from the results above. The production build, including the legacy PDF chunk compatibility step, passed.
 
 After release, the EPUB sepia transition was also checked against the live 1.7.6 application: 1/1 real WebGL end-to-end case passed in 19.4 seconds. The live opening and closing captures and sampled frame colours are retained in `.lighting.local/white-pages-live/`.
+
+## Prepared-page handoff — 1.7.8
+
+The live 1.7.7 check passed EPUB night and sepia but exposed one stale PDF state: its first `opening` sample still reported `pageTheme:1`, with the cover completely closed and no page pixels visible. Every subsequent visible hinge/bookmark sample was white. An interrupted idle preparation had installed the snapshot without drawing, and reuse skipped the draw. Opening now draws that prepared white pose before announcing its phase; it retains the existing textures.
+
+A deterministic unit regression reproduces the interrupted preparation. All 20 focused unit tests and all nine real WebGL transition cases passed after the correction, without skips, retries or unobserved-frame annotations. The permanent end-to-end file is now `tests/e2e/book-page-theme.spec.mjs`, retaining every previous case. Evidence is stored locally in `.animation.local/white-handoff-evidence/`, with `.animation.local/white-handoff.json` and the matching served-build record `.animation.local/white-handoff-artifact.json`.

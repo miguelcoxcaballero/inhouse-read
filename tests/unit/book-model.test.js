@@ -398,6 +398,7 @@ describe('real shelf book materials', () => {
       expect(matte.roughness - satin.roughness).toBeGreaterThan(.4);
       for (let i = 0; i < models.length; i++) {
         expect(materials[i].metalness).toBe(0); expect(materials[i].specularIntensity).toBe(1);
+        expect(materials[i].userData.bookReflectionSurface.uniforms.bookEnvironmentReflection.value).toBe(.75);
         expect(materials[i].color.getHex()).toBe(0xffffff);
         // Spine roughness lives in packed green, so a second multiplication
         // by the finish roughness would accidentally square it.

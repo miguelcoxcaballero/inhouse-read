@@ -24,7 +24,7 @@ test.beforeEach(async ({ page }) => {
 async function startWithTheme(page, theme, { reduced = false } = {}) {
   await page.emulateMedia({ reducedMotion:reduced ? 'reduce' : 'no-preference' })
   await page.addInitScript(({ key, theme }) => localStorage.setItem(key, JSON.stringify({ theme })), { key:PREFERENCES_KEY, theme })
-  await page.goto(process.env.IHR_TEST_URL || '/')
+  await page.goto(process.env.IHR_TEST_URL || './')
 }
 
 // What a white PDF page looks like under a theme's filter: the reference the

@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createBookshelfScene, projectShelfDropPosition } from '../../src/js/bookshelf-scene.js';
 import { createShelfLampLighting, MAX_SHELF_LAMP_LIGHTS } from '../../src/js/shelf-lamp-lighting.js';
+import { shelfModelLayout } from '../../src/js/shelf-model-layout.js';
 
-const gpu = vi.hoisted(() => ({ scene:null }));
+const gpu = vi.hoisted(() => ({ scene:null, realPuck:false }));
 vi.mock('../../src/js/book-model.js', async () => {
   const Three = await import('three');
   let ratio = 1;
@@ -21,9 +22,11 @@ vi.mock('../../src/js/book-model.js', async () => {
       return model;
     } };
 });
-vi.mock('../../src/js/shelf-lamps.js', async () => {
+vi.mock('../../src/js/shelf-lamps.js', async importOriginal => {
   const Three = await import('three');
+  const original = await importOriginal();
   return { createShelfLamp({ lampId, width, height, isOn = true }) {
+    if (gpu.realPuck && lampId === 'mittled') return original.createShelfLamp({lampId,width,height,isOn});
     const model = new Three.Group(); model.name = `lamp:${lampId}`;
     const puck = lampId === 'mittled';
     const solid = new Three.Mesh(new Three.BoxGeometry(width, height, width), new Three.MeshStandardMaterial());
@@ -77,7 +80,7 @@ function mount(data) {
 }
 
 beforeEach(() => {
-  clock = 0; frames = new Map(); gpu.scene = null; let serial = 0;
+  clock = 0; frames = new Map(); gpu.scene = null; gpu.realPuck = false; let serial = 0;
   vi.stubGlobal('requestAnimationFrame', callback => { const id = ++serial; frames.set(id, callback); return id; });
   vi.stubGlobal('cancelAnimationFrame', id => frames.delete(id));
   vi.spyOn(performance, 'now').mockImplementation(() => clock);
@@ -99,6 +102,33 @@ afterEach(() => {
 });
 
 describe('warm lamps in the retained shelf scene', () => {
+  it.each(['baggebo','walnut'])('keeps the real undershelf touch centre exposed on steel and occluded by solid wood (%s)', shelfType => {
+    gpu.realPuck = true;
+    const initial = layout();
+    Object.assign(initial.entries[1], {x:16 + .58 * (390 - 32),width:44.2,height:7.15,depth:44.2});
+    const data = shelfModelLayout(initial,shelfType); mount(data);
+    shelf.setMode('isometric', {animate:false}); shelf.flush();
+    const node = data.entries[1].node;
+    const x = parseFloat(node.style.left) + parseFloat(node.style.width) / 2;
+    const y = 60 + parseFloat(node.style.top) + parseFloat(node.style.height) / 2;
+    const expected = shelfType === 'baggebo' ? node : null;
+    expect(shelf.getObjectAtPoint(x,y)).toBe(expected);
+    expect(shelf.getObjectAtPoint(Math.round(x),Math.round(y))).toBe(expected);
+    const cast = vi.spyOn(THREE.Raycaster.prototype, 'intersectObjects');
+    shelf.setLampPower(node,false); flushFrames();
+    expect(cast).not.toHaveBeenCalled();
+    expect(parseFloat(node.style.left) + parseFloat(node.style.width) / 2).toBeCloseTo(x);
+    expect(60 + parseFloat(node.style.top) + parseFloat(node.style.height) / 2).toBeCloseTo(y);
+    shelf.zoomTo(2.2,x,y); shelf.panBy(13,7); shelf.flush();
+    const zoomX = parseFloat(node.style.left) + parseFloat(node.style.width) / 2;
+    const zoomY = 60 + parseFloat(node.style.top) + parseFloat(node.style.height) / 2;
+    expect(shelf.getObjectAtPoint(zoomX,zoomY)).toBe(expected);
+    expect(shelf.getObjectAtPoint(Math.round(zoomX),Math.round(zoomY))).toBe(expected);
+    cast.mockClear();
+    shelf.setLampPower(node,true); flushFrames();
+    expect(cast).not.toHaveBeenCalled();
+  });
+
   it('mounts a round light under the ceiling and stands the tabletop lamp on the board', () => {
     const data = layout(); mount(data);
     const table = gpu.scene.getObjectByName('lamp:tarnaby'), puck = gpu.scene.getObjectByName('lamp:mittled');

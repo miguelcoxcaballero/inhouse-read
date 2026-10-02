@@ -5,6 +5,7 @@ for (const layout of [
   {name:'night',width:390,height:844,theme:'night'},
   {name:'desktop',width:1280,height:800,theme:'sepia'}
 ]) test(`lector sin paneles anidados y audio compacto: ${layout.name}`, async ({page}) => {
+  test.setTimeout(60_000)
   await page.setViewportSize(layout)
   await page.emulateMedia({reducedMotion:'reduce'})
   await page.addInitScript(theme => {
@@ -61,6 +62,9 @@ for (const layout of [
   await expect(mini).toBeHidden()
   await expect(page.locator('#reader-screen')).not.toHaveClass(/has-reading-audio/)
   await page.getByRole('button',{name:'Volver a la estantería'}).click()
+  // Returning an imported book creates its first 3D view. The header belongs
+  // to the completed transition, not to the click while that view is preparing.
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:30_000})
   await expect(page.locator('.header-actions')).toBeVisible()
   expect(errors).toEqual([])
 })

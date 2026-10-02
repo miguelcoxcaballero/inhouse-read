@@ -36,6 +36,7 @@ jobs:
       PLAYWRIGHT_SUITE: general
       PLAYWRIGHT_PORT: 4283
       PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
+      IHR_CONTROLS_EVIDENCE_DIR: test-results/controls
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

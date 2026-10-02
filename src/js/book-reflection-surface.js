@@ -3,7 +3,7 @@ import { ShaderChunk, Vector2, Vector3 } from 'three';
 // A covered board is slightly uneven beneath its laminate. Keep that shape
 // entirely in the reflection layer: neither the printed image, Lambert light,
 // cover silhouette nor shadow geometry should acquire visible bumps.
-const CACHE_KEY = 'book-reflection-surface-v1';
+const CACHE_KEY = 'book-reflection-surface-v2';
 const installed = new WeakMap();
 
 function reflectionProfile(seed) {
@@ -22,6 +22,7 @@ const declarations = /* glsl */`
 varying vec2 vBookReflectionUv;
 uniform vec3 bookReflectionPhase;
 uniform float bookReflectionStrength;
+uniform float bookEnvironmentReflection;
 vec3 bookReflectionNormal;
 vec3 bookReflectionClearcoatNormal;
 #ifdef USE_ANISOTROPY
@@ -104,6 +105,8 @@ const physicalPars = ShaderChunk.lights_physical_pars_fragment
     'lightColor * material.diffuseColor * LTC_Evaluate( geometryNormal,');
 
 const environmentMaps = ShaderChunk.lights_fragment_maps
+  .replaceAll('\tradiance += getIBL', '\tradiance += bookEnvironmentReflection * getIBL')
+  .replace('clearcoatRadiance += getIBL', 'clearcoatRadiance += bookEnvironmentReflection * getIBL')
   .replace('getIBLAnisotropyRadiance( geometryViewDir, geometryNormal, material.roughness, material.anisotropyB,',
     'getIBLAnisotropyRadiance( geometryViewDir, bookReflectionNormal, material.roughness, bookReflectionAnisotropyB,')
   .replace('getIBLRadiance( geometryViewDir, geometryNormal,',
@@ -118,19 +121,23 @@ const environmentMaps = ShaderChunk.lights_fragment_maps
  * uvScale converts unnormalized cap UVs into one wave field per surface.
  * userData.bookReflectionSurface.setStrength(0) provides a uniform-only A/B;
  * it does not rebuild materials, programs, textures, geometry or shadows. */
-export function applyBookReflectionSurface(material, { seed = '', strength = .018, uvScale = [1, 1] } = {}) {
+export function applyBookReflectionSurface(material, { seed = '', strength = .018, uvScale = [1, 1], environmentReflection = 1 } = {}) {
   if (!material?.isMeshStandardMaterial) return material;
   const existing = installed.get(material);
   if (existing) {
-    existing.setSeed(seed); existing.setStrength(strength); existing.setUvScale(uvScale);
+    existing.setSeed(seed); existing.setStrength(strength); existing.setUvScale(uvScale); existing.setEnvironmentReflection(environmentReflection);
     return material;
   }
 
   let profile = reflectionProfile(seed), slope = 0;
   const uniforms = { bookReflectionPhase:{ value:profile.phase }, bookReflectionStrength:{ value:0 },
-    bookReflectionUvScale:{ value:new Vector2(1, 1) } };
+    bookReflectionUvScale:{ value:new Vector2(1, 1) }, bookEnvironmentReflection:{ value:1 } };
   const controls = {
     uniforms,
+    setEnvironmentReflection(value) {
+      const number = Number(value);
+      uniforms.bookEnvironmentReflection.value = Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 1;
+    },
     setStrength(value) {
       const number = Number(value);
       slope = Number.isFinite(number) ? Math.min(.05, Math.max(0, number)) : 0;
@@ -148,6 +155,7 @@ export function applyBookReflectionSurface(material, { seed = '', strength = .01
     }
   };
   controls.setStrength(strength);
+  controls.setEnvironmentReflection(environmentReflection);
   controls.setUvScale(uvScale);
   installed.set(material, controls);
   material.userData.bookReflectionSurface = controls;

@@ -18,8 +18,10 @@ for (const proto of [globalThis.WebGL2RenderingContext?.prototype, globalThis.We
 }
 import { bookView, getBookRenderer } from '/inhouse-read/src/js/book-model.js';
 import { analyzeCoverRelief, buildReliefMaps } from '/inhouse-read/src/js/cover-relief.js';
-import { drawCoverCorpus } from '/inhouse-read/tests/e2e/helpers/cover-corpus.js';
-const corpus = drawCoverCorpus();
+import { drawCoverCorpus, prepareCoverCorpusFonts, loadCoverCorpus } from '/inhouse-read/tests/e2e/helpers/cover-corpus.js';
+const regenerate = ${process.env.IHR_RELIEF_REGENERATE === '1'};
+if (regenerate) await prepareCoverCorpusFonts();
+const corpus = regenerate ? drawCoverCorpus() : await loadCoverCorpus();
 const urls = {};
 const urlOf = async name => urls[name] ??= URL.createObjectURL(await new Promise(r => corpus[name].toBlob(r, 'image/png')));
 const host = document.getElementById('host');
@@ -34,6 +36,8 @@ async function open(name, finish = 'satin', relief = null) {
   view = bookView(host, { id:'relief:' + name, title:name, author:'', coverFinish:finish, spineSurfaceFinish:finish, pageEdgeFinish:'matte', coverRelief:relief },
     style, { width:Math.min(bookWidth, 330), height:H, thickness:44, viewportWidth:VW, viewportHeight:VH, centerX:VW / 2, centerY:VH / 2, coverUrl });
   await view.ready;
+  // Match the editor: its cards are only enabled after this one-time warm-up.
+  await view.prepareCoverRelief();
   view.draw({ x:0, y:0, scale:1.15, angle:0, pitch:0 });
   return true;
 }
@@ -52,6 +56,7 @@ function diff(a, b) {
   return { mean:total / Math.max(1, n), max, changedFraction:changed / Math.max(1, n) };
 }
 window.reliefFixture = { names:Object.keys(corpus), open, counters, pose, shot, pixels, diff, urlOf, analyze:async name => analyzeCoverRelief(await urlOf(name), {}),
+  sourceShots:() => Object.fromEntries(Object.entries(corpus).map(([name, canvas]) => [name, canvas.toDataURL('image/png').split(',')[1]])),
   apply:relief => view.setCoverRelief(relief), maps:async (name, relief) => { const m = await buildReliefMaps(await urlOf(name), relief, { maxSize:512 }); return { width:m.width ?? m.size.width, ms:m.stats.ms, longest:m.stats.longestSliceMs }; },
   render:() => view.draw(view.getPose()), model:() => view };
 </script></body></html>`;
@@ -116,6 +121,7 @@ test('cada cover del corpus recibe exactamente tres propuestas distintas y el an
   });
   console.info('Relief corpus report:', JSON.stringify(report.map(({ name, ids, confidences, analysis }) => ({ name, ids, confidences, ms:analysis.ms, p95:analysis.p95SliceMs, longest:analysis.longestSliceMs }))));
   if (EVIDENCE) await mkdir(EVIDENCE, { recursive:true }).then(() => writeFile(EVIDENCE + '/corpus-report.json', JSON.stringify(report, null, 1)));
+  if (EVIDENCE) for (const [name, png] of Object.entries(await page.evaluate(() => window.reliefFixture.sourceShots()))) await save(name + '-source', png);
   for (const item of report) {
     expect(item.ids, item.name).toHaveLength(3);
     expect(new Set(item.ids).size, item.name + ' no repite familias').toBe(3);
