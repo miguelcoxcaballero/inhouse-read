@@ -216,6 +216,43 @@ for (const [theme, label] of [['paper', 'Papel'], ['sepia', 'Sepia'], ['night', 
   })
 }
 
+// Android's TextToSpeech takes hundreds of ms to start talking; the sentence must not be marked (or the page turned) before that.
+test('EPUB: the sentence is highlighted when the engine starts speaking it, not when it is asked to', async ({ page }) => {
+  await open(page, EPUB, 'reduce')
+  await page.evaluate(() => { window.__tts.state.startDelay = 450; window.__tts.state.ms = 60 })
+  await play(page)
+  await expect.poll(async () => (await logged(page)).length, { timeout:30_000 }).toBeGreaterThan(4)
+  const entries = (await logged(page)).slice(0, 4)
+  expect(entries[0].atSpeak).toBe('')
+  for (const [i, entry] of entries.entries()) {
+    expect(squash(entry.highlight)).toContain(unstopped(entry.text))
+    // when speak() was called, the page still showed the sentence being finished (or nothing before the first one)
+    if (i) expect(squash(entry.atSpeak)).toContain(unstopped(entries[i - 1].text))
+    if (i) expect(squash(entry.atSpeak)).not.toContain(unstopped(entry.text))
+  }
+})
+
+test('PDF: the highlight hugs the printed text instead of spanning the whole text item', async ({ page }) => {
+  await open(page, PDF)
+  await holdAfter(page, 3) // "Reading journey." "Page 1." "A quiet room, a book and a moment to read."
+  await play(page)
+  await expect.poll(async () => (await logged(page)).length).toBe(3)
+  await expect.poll(async () => (await logged(page))[2].highlight).toContain('quiet')
+  const box = await page.evaluate(() => {
+    const range = [...CSS.highlights.get('inhouse-speech')][0]
+    const rect = range.getClientRects()[0], canvas = document.querySelector('.pdf-page-canvas') || document.querySelector('canvas')
+    const origin = canvas.getBoundingClientRect(), scale = canvas.width / origin.width
+    const data = canvas.getContext('2d').getImageData(0, Math.round((rect.top - origin.top) * scale), canvas.width, Math.max(1, Math.round(rect.height * scale))).data
+    let left = Infinity, right = -Infinity
+    for (let i = 0; i < data.length; i += 4) if (data[i] + data[i + 1] + data[i + 2] < 300) { const x = (i / 4) % canvas.width / scale; left = Math.min(left, x); right = Math.max(right, x) }
+    return { ink:{ left:origin.left + left, right:origin.left + right }, highlight:{ left:rect.left, right:rect.right, height:rect.height } }
+  })
+  expect(box.ink.right).toBeGreaterThan(box.ink.left + 100)
+  expect(box.highlight.left).toBeGreaterThan(box.ink.left - 4)
+  expect(box.highlight.right).toBeLessThan(box.ink.right + 4)
+  expect(box.highlight.height).toBeLessThan(20)
+})
+
 // Old Android WebViews (before Chromium 105) have no CSS Custom Highlight API: the readers paint their own marks.
 test.describe('without the CSS Custom Highlight API', () => {
   test.beforeEach(async ({ page }) => {
