@@ -17,6 +17,7 @@ import { initAndroidFileImports } from './android-file-import.js'
 import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
 import { normalizeShelfPosition } from './book-colors.js'
 import { ReaderExperience } from './readers/reader-experience.js'
+import { markTiming } from './perf-marks.js'
 
 const library = new LibraryStore()
 const reader = new ReaderController()
@@ -306,13 +307,16 @@ async function openBookRecord(book, ctx) {
       markOpening()
       try {
         await revealPreparedReader()
+        markTiming('reveal-done')
         const record = await library.get(book.id) || book
         if ((ctx.isActive && !ctx.isActive()) || currentBookId !== book.id) { cancelOpening(); return }
         // Restore after both type settings and final viewport dimensions.
         restoringProgress = true
         try { await reader.goToLocator(record.locator, record.progressFraction || 0) }
         finally { restoringProgress = false }
+        markTiming('page-restored')
         const pageSnapshot = await reader.getPageSnapshot()
+        markTiming('page-snapshot')
         if (ctx.isActive && !ctx.isActive()) { cancelOpening(); return }
         if (!pageSnapshot) throw new Error('No se pudo preparar la página guardada del libro.')
         const completed = await ctx.finish?.({ pageSnapshot, animatePage:animateReaderPageFromBook })
@@ -622,6 +626,7 @@ function prepareBookOpen(book) {
     const opened = await openFile(file, { existingRecord: updated, forcedId: book.id, preparing: true })
     if (generation !== preparationGeneration) return false
     activePreparedBookId = opened ? book.id : null
+    markTiming('engine-opened')
     if (opened) await extractCoverInBackground(await library.get(book.id) || updated)
     return opened
   })

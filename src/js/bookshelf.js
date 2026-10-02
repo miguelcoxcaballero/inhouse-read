@@ -101,6 +101,7 @@ import { bookColorOptions, spineColorStyle, spineFinish, surfaceFinish, METAL_CO
 import { normalizeBookAuthor } from './book-title.js';
 import { bookView, fitCoverImage, getBookRenderer, planReadingBookPose } from './book-model.js';
 import { createShelfZoom } from './shelf-zoom.js';
+import { markTiming, resetTimeline } from './perf-marks.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
 import { layoutShelfDecorations, moveShelfDecoration } from './shelf-decoration-layout.js';
 import { createPlantCatalog } from './plant-catalog.js';
@@ -1827,6 +1828,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const { book } = item;
     let style = item.style;
     const initialStyle = item.style;
+    resetTimeline(); markTiming('select');
     options.onPrepareBook?.(book);
     /*
       Se mide sin transform: de un libro inclinado, getBoundingClientRect
@@ -2809,6 +2811,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (session.cancelled || state.destroyed) return;
 
     session.phase = 'ready';
+    markTiming('flyout-ready');
     flyout.classList.add('is-ready');
     actionButtons[0].disabled = false;
     actionButtons[2].disabled = false;
@@ -2863,6 +2866,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     async function finishReaderTransition({ pageSnapshot, animatePage } = {}) {
       if (session.cancelled || state.destroyed) return false;
       if (pageSnapshot && !installOpeningPage(pageSnapshot)) throw new Error('No se pudo preparar la página del modelo 3D.');
+      markTiming('page-installed');
       session.phase = 'reading';
       flyout.dataset.openingPhase = 'opening';
       flyout.classList.add('is-opening-book');
@@ -2927,6 +2931,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       coverTarget.hidden = true;
       actionButtons.forEach(button => { button.disabled = true; });
       readiness.textContent = 'Preparando tu última página…';
+      markTiming('open-tap');
       try {
         await onOpen?.(book, {
           coverUrl,
