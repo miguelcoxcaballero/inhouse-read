@@ -362,6 +362,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     suppressOpenBookId: null,
     suppressLampClickKey: null,
     queuedBooks: null,
+    pendingRemovals: new Set(),
     renderQueued: false,
     reorderTimer: 0,
     appearancesReady: true,
@@ -386,7 +387,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     el('span', { class:'ihr-shelf-trash__lid', 'aria-hidden':'true' }),
     el('span', { class:'ihr-shelf-trash__label', text:'Retirar', 'aria-hidden':'true' })
   ]) : null;
+  // Errors stay visible. A successful removal is only announced to assistive
+  // technology: the object leaving the shelf is its own confirmation.
   const trashStatus = hasTrash ? el('div', { class:'ihr-trash-status', role:'status', 'aria-live':'polite' }) : null;
+  const trashAnnounce = hasTrash ? el('div', { class:'ihr-trash-announce visually-hidden', role:'status', 'aria-live':'polite' }) : null;
   if (trashNode) {
     trashNode.hidden = state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC;
     trashNode.inert = trashNode.hidden;
@@ -402,7 +406,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       for (const node of scroller.querySelectorAll('.is-pressed')) node.classList.remove('is-pressed');
       state.shelfScene?.beginInspectionGesture?.();
     }});
-  if (trashStatus) root.append(trashStatus);
+  if (trashStatus) root.append(trashStatus, trashAnnounce);
   const plantCatalog = createPlantCatalog({ onAdd:addCatalogPlant, onAddLamp:addCatalogLamp, shelfType:state.shelfType,
     onShelfChange:({ shelfType }) => {
       state.shelfType = normalizeShelfType(shelfType);
@@ -1115,7 +1119,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const operation = { node, motion, cancelled:false, persisting:false, clone:null };
     state.trashRemoval = operation; state.busy = true;
     root.classList.add('is-discarding');
-    clearTimeout(state.trashStatusTimer); trashStatus.textContent = '';
+    clearTimeout(state.trashStatusTimer); trashStatus.textContent = ''; trashStatus.classList.remove('is-error'); trashAnnounce.textContent = '';
     node.classList.add('is-away');
     trashNode.classList.add('is-over');
     try {
@@ -1149,9 +1153,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         state.lamps = state.lamps.filter(record => record.key !== lamp.key);
         try { saveLamps({ strict:true }); }
         catch (error) { state.lamps = previous; throw error; }
-        trashStatus.textContent = `${getCatalogLamp(lamp.lampId).name} retirada de la estantería`;
-        trashStatus.classList.remove('is-error');
-        state.trashStatusTimer = setTimeout(() => { trashStatus.textContent = ''; }, 4500);
+        trashAnnounce.textContent = `${getCatalogLamp(lamp.lampId).name} retirada de la estantería`;
         root.dataset.lastRemovedLamp = lamp.key;
         return;
       }
@@ -1161,15 +1163,20 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         try { savePlants({ strict:true }); }
         catch (error) { state.plants = previous; throw error; }
         state.plantsInitialized = true;
-        trashStatus.textContent = `${getCatalogPlant(plant.catalogId)?.name || 'Planta'} retirada de la estantería`;
-        trashStatus.classList.remove('is-error');
-        state.trashStatusTimer = setTimeout(() => { trashStatus.textContent = ''; }, 4500);
+        trashAnnounce.textContent = `${getCatalogPlant(plant.catalogId)?.name || 'Planta'} retirada de la estantería`;
         root.dataset.lastRemovedPlant = plant.key;
         return;
       }
-      await options.onBookRemove(item.book);
-      if (state.destroyed) return;
+      // The book has landed in the bin: take it off the shelf now and let
+      // the stored removal finish in the background. Waiting for IndexedDB
+      // (and the Drive-removed memory) here held the whole page still on a
+      // large library. A failed write puts the book back, visibly.
       const id = String(item.book.id);
+      const index = state.books.findIndex(book => String(book.id) === id);
+      let persisted;
+      try { persisted = Promise.resolve(options.onBookRemove(item.book)); }
+      catch (error) { persisted = Promise.reject(error); }
+      state.pendingRemovals.add(id);
       state.books = state.books.filter(book => String(book.id) !== id);
       if (state.queuedBooks) state.queuedBooks = state.queuedBooks.filter(book => String(book.id) !== id);
       if (String(state.lastOpened?.book.id) === id) state.lastOpened = null;
@@ -1178,10 +1185,26 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         savedCoverUrls.delete(key);
         if (state.objectUrls.delete(url)) URL.revokeObjectURL?.(url);
       }
-      trashStatus.textContent = `${item.book.title || 'Libro'} retirado de la estantería`;
-      trashStatus.classList.remove('is-error');
-      state.trashStatusTimer = setTimeout(() => { trashStatus.textContent = ''; }, 4500);
+      trashAnnounce.textContent = `${item.book.title || 'Libro'} retirado de la estantería`;
       root.dataset.lastRemovedBook = id;
+      persisted.then(() => { state.pendingRemovals.delete(id); }, error => {
+        state.pendingRemovals.delete(id);
+        console.warn('No se pudo retirar el objeto de la estantería:', error);
+        if (state.destroyed) return;
+        trashAnnounce.textContent = '';
+        trashStatus.textContent = 'No se pudo retirar el libro. Vuelve a intentarlo.';
+        trashStatus.classList.add('is-error');
+        clearTimeout(state.trashStatusTimer);
+        state.trashStatusTimer = setTimeout(() => { trashStatus.textContent = ''; }, 6500);
+        delete root.dataset.lastRemovedBook;
+        const restore = list => {
+          if (list.some(book => String(book.id) === id)) return list;
+          const next = list.slice(); next.splice(index < 0 ? next.length : Math.min(index, next.length), 0, item.book);
+          return next;
+        };
+        if (state.queuedBooks) state.queuedBooks = restore(state.queuedBooks);
+        refresh(restore(state.books));
+      });
     } catch (error) {
       operation.motion?.cancel?.(); node.classList.remove('is-away');
       trashStatus.textContent = `No se pudo retirar ${plant ? 'la planta' : lamp ? 'la lámpara' : 'el libro'}. Vuelve a intentarlo.`;
@@ -3036,11 +3059,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function refresh(nextBooks) {
     if (state.destroyed) return;
     if (state.returnMotion || state.reorderTimer || state.busy || state.session || state.dragSession) {
-      if (Array.isArray(nextBooks)) state.queuedBooks = nextBooks.slice();
+      if (Array.isArray(nextBooks)) state.queuedBooks = nextBooks.filter(book => !state.pendingRemovals.has(String(book.id)));
       return;
     }
     const top = scroller.scrollTop;
-    state.books = Array.isArray(nextBooks) ? nextBooks.slice() : state.books;
+    // A removal still being written must not let an older record list put its book back.
+    state.books = Array.isArray(nextBooks) ? nextBooks.filter(book => !state.pendingRemovals.has(String(book.id))) : state.books;
     if (!state.appearancesReady && options.waitForCoverAppearance) {
       state.appearanceGeneration += 1;
       state.appearancesReady = true;
