@@ -71,7 +71,7 @@ test('PDF: búsqueda completa el libro y los resultados llevan a la página corr
   await page.getByRole('button',{name:'Buscar en el libro'}).click()
   await page.getByRole('searchbox',{name:'Buscar en el libro'}).fill('Page 3')
   await page.getByRole('button',{name:'Buscar',exact:true}).click()
-  await expect(page.locator('[data-search-status]')).toContainText('resultados')
+  await expect(page.locator('[data-search-status]')).toContainText(/resultado/)
   await page.locator('[data-search-results] button').first().click()
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 3 de 4/)
 })
