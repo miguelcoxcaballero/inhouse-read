@@ -71,9 +71,17 @@ export const readerPanelMarkup = `
     <p class="reading-audio-caption">Desde tu página actual</p>
     <div class="reading-audio-controls"><button type="button" class="reading-icon-button" data-audio-prev aria-label="Anterior">${readerIcon('prev')}</button><button type="button" class="reading-play" data-play aria-label="Reproducir">${readerIcon('play')}</button><button type="button" class="reading-icon-button" data-audio-next aria-label="Siguiente">${readerIcon('next')}</button><button type="button" class="reading-icon-button" data-stop aria-label="Detener" title="Detener">${readerIcon('stop')}</button></div>
     <p class="reading-audio-status" role="status">Lista para escuchar</p>
+    <div class="reading-neural-offer" data-neural-offer hidden></div>
     <label class="reading-row reading-range-row"><span>Velocidad</span><input type="range" data-pref="rate" min="0.5" max="2" step="0.1" aria-label="Velocidad de voz"><output data-output="rate"></output></label>
     <label class="reading-row"><span>Voz</span><select data-pref="voice" aria-label="Voz de lectura"><option value="">Automática · mejor voz natural</option></select></label>
     <div class="reading-voice-info" data-voice-info hidden><p class="reading-hint"><span data-voice-auto></span> <span data-voice-better hidden>Hay voces gratuitas de mayor calidad que puedes instalar en el dispositivo.</span></p><button type="button" class="reading-text-button" data-voice-settings hidden>Descargar voces de mayor calidad</button></div>
+    <section class="reading-neural" data-neural aria-labelledby="reading-neural-title" hidden>
+      <h3 id="reading-neural-title" class="reading-neural__title">Voces naturales · sin conexión</h3>
+      <p class="reading-hint" data-neural-note>Se descarga una vez (63 MB) y funciona sin internet.</p>
+      <p class="reading-hint reading-neural__warning" data-neural-warning hidden><span data-neural-warning-text></span> <button type="button" class="reading-text-button" data-neural-retry>Volver a probar</button></p>
+      <ul class="reading-neural__list" role="list" data-neural-list></ul>
+      <p class="visually-hidden" role="status" aria-live="polite" data-neural-status></p>
+    </section>
     <label class="reading-row"><span>Apagar en</span><select data-sleep aria-label="Temporizador de voz"><option value="0">No apagar</option><option value="15">15 minutos</option><option value="30">30 minutos</option><option value="60">1 hora</option></select></label>
     <label class="reading-row"><span>Leer notas al pie</span><input type="checkbox" data-voice-option="footnotes" aria-label="Leer notas al pie"></label>
     <label class="reading-row"><span>Voz multilingüe</span><input type="checkbox" data-voice-option="multilingual" aria-label="Voz multilingüe"></label>

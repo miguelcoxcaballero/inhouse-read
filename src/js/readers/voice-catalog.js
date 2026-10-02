@@ -1,6 +1,8 @@
 // Pure helpers that rank the voices the device already has (Android TextToSpeech through
-// window.InhouseSpeech, or the browser's speechSynthesis). Nothing here calls a cloud TTS:
-// "free and unlimited" means we only choose among system voices, preferring on-device ones.
+// window.InhouseSpeech, or the browser's speechSynthesis) and the on-device neural voices (Piper, see neural-voice/).
+// Nothing here calls a cloud TTS: "free and unlimited" means we only choose among on-device voices, preferring them
+// to online ones. Neural voices are ordinary voices flagged `neural`; one that is not downloaded yet has
+// `installed:false`, so it is listed for download but never chosen for speech.
 
 const ISO3 = { spa:'es', eng:'en', fra:'fr', fre:'fr', deu:'de', ger:'de', ita:'it', por:'pt', cat:'ca', glg:'gl', nld:'nl', dut:'nl', rus:'ru', jpn:'ja', zho:'zh', chi:'zh', kor:'ko', pol:'pl' }
 // Languages the curated list always tries to cover, in the order they appear after the book/device language.
@@ -13,6 +15,12 @@ const NOVELTY = /\b(bad news|bahh|bells|boing|bubbles|cellos|good news|jester|or
 const NEURAL = /neural|natural|wavenet|studio|premium|enhanced|siri|\bhq\b|high.?quality/i
 const MULTILINGUAL = /multilingual|multiling/i
 const GOOGLE_ID = /-x-[a-z0-9]{2,5}-(?:local|network)\b/i
+
+/** Same value as NEURAL_PREFIX in neural-voice/index.js (a test keeps them equal); repeated here so this file stays pure and the engine stays lazily loaded. */
+export const NEURAL_ID_PREFIX = 'piper:'
+export const isNeuralId = id => typeof id === 'string' && id.startsWith(NEURAL_ID_PREFIX)
+// Above any system voice (Android tops out near 650 with every marker), so an installed neural voice is the default pick.
+const NEURAL_SCORE = 900
 
 /** 'es_ES', 'spa-ESP', 'ES-es' -> 'es-ES' (language lower-case, region upper-case). */
 export function normalizeLang(tag) {
@@ -53,9 +61,24 @@ export function normalizeVoices(list) {
   return (Array.isArray(list) ? list : Array.from(list || [])).map(normalizeVoice).filter(voice => voice && !seen.has(voice.id) && seen.add(voice.id))
 }
 
-export const isNatural = voice => NEURAL.test(`${voice.id} ${voice.name}`)
+/**
+ * A catalogue entry of neural-voice/index.js ({id,lang,name,quality:'medium'|'high',sizeMB,speaker,recommended}) as a voice.
+ * `installed` is a Set (or array) of the ids downloaded so far.
+ */
+export function normalizeNeuralVoice(entry, installed = []) {
+  if (!entry || typeof entry !== 'object' || !isNeuralId(entry.id)) return null
+  const lang = normalizeLang(entry.lang)
+  if (!lang) return null
+  const have = installed instanceof Set ? installed : new Set(installed || [])
+  return { id:entry.id, name:String(entry.name || entry.piperId || entry.id), lang, base:langBase(lang), region:langRegion(lang), quality:null, latency:null, network:false,
+    installed:have.has(entry.id), features:[], isDefault:false, native:false, label:'',
+    neural:true, tier:entry.quality === 'high' ? 'high' : 'medium', sizeMB:Number(entry.sizeMB) || 0, speaker:Number(entry.speaker) || 0, recommended:entry.recommended === true }
+}
+
+export const isNatural = voice => voice.neural === true || NEURAL.test(`${voice.id} ${voice.name}`)
 /** Higher is more natural. Quality tier first, then on-device over online, then name/id markers. */
 export function scoreVoice(voice) {
+  if (voice.neural) return NEURAL_SCORE + (voice.tier === 'high' ? 10 : 0) + (voice.recommended ? 5 : 0)
   const text = `${voice.id} ${voice.name}`
   let score = voice.quality ?? 300 // browsers do not report quality: assume "normal"
   if (voice.network) score -= voice.quality === null ? 60 : 110 // needs a connection and can stall: an on-device voice wins even one Android tier lower (browsers report no tier and keep their online neural voices competitive)
@@ -69,7 +92,7 @@ export function scoreVoice(voice) {
   return score
 }
 /** "High quality" for the download hint: Android's own tier >= HIGH, or a neural marker when no tier is known. */
-export const isHighQuality = voice => voice.quality !== null ? voice.quality >= 400 && !ROBOTIC.test(`${voice.id} ${voice.name}`) : isNatural(voice) && !ROBOTIC.test(voice.name)
+export const isHighQuality = voice => voice.neural ? true : voice.quality !== null ? voice.quality >= 400 && !ROBOTIC.test(`${voice.id} ${voice.name}`) : isNatural(voice) && !ROBOTIC.test(voice.name)
 
 const byScore = (a, b) => scoreVoice(b) - scoreVoice(a) || a.id.localeCompare(b.id)
 const usable = voices => voices.filter(voice => voice.installed)
@@ -110,18 +133,36 @@ function voiceTitle(voice) {
 }
 /** e.g. 'Español (España) · Alta calidad · sin conexión'. */
 export function voiceLabel(voice) {
+  if (voice.neural) return [languageName(voice.lang), voice.name, 'Natural', 'sin conexión'].join(' · ')
   const quality = voice.quality === null ? (isNatural(voice) ? 'Natural' : '') : voice.quality >= 400 ? 'Alta calidad' : voice.quality >= 300 ? 'Calidad normal' : 'Calidad básica'
   return [languageName(voice.lang), voiceTitle(voice), quality, voice.network ? 'requiere internet' : 'sin conexión'].filter(Boolean).join(' · ')
 }
 
 /**
+ * The neural voices in the order the picker lists them: the book's language first (its own region first, the recommended
+ * voice first), then the device language, then es/en/fr/de/it/pt/ca, then the rest alphabetically. Installed or not.
+ */
+export function orderNeuralVoices(neuralVoices, { bookLang = '', deviceLang = '' } = {}) {
+  const bookBase = langBase(bookLang), deviceBase = langBase(deviceLang), bookRegion = langRegion(bookLang)
+  const rank = voice => voice.base === bookBase ? 0 : voice.base === deviceBase ? 1 : 2 + (PRIORITY_LANGUAGES.includes(voice.base) ? PRIORITY_LANGUAGES.indexOf(voice.base) : PRIORITY_LANGUAGES.length)
+  const near = voice => voice.base === bookBase && bookRegion && voice.region === bookRegion ? 0 : 1
+  return [...(neuralVoices || [])].filter(voice => voice?.neural).sort((a, b) => rank(a) - rank(b)
+    || (rank(a) > 2 ? languageName(a.base).localeCompare(languageName(b.base), 'es') : 0)
+    || near(a) - near(b) || Number(b.recommended) - Number(a.recommended) || Number(b.tier === 'high') - Number(a.tier === 'high') || a.name.localeCompare(b.name, 'es') || a.id.localeCompare(b.id))
+}
+/** The neural voice to offer first for a language (own region first, then the catalogue's recommended one); null when there is none. */
+export const recommendedNeuralFor = (neuralVoices, lang, deviceLang = '') => orderNeuralVoices(neuralVoices, { bookLang:lang, deviceLang }).find(voice => voice.base === langBase(lang)) || null
+
+/**
  * Groups for the picker: a curated 'Recomendadas (naturales)' (best 1-2 per language, book language first, then the
- * device language, then es/en/fr/de/it/pt/ca) and 'Todas las voces'. Identical labels get "· voz N" so they can be told apart.
+ * device language, then es/en/fr/de/it/pt/ca) and 'Todas las voces', both of system voices; `neural` lists the installed
+ * neural voices apart (their own group, same order as the download list). Identical labels get "· voz N" so they can be told apart.
  */
 export function buildVoiceGroups(voices, { bookLang = '', deviceLang = '' } = {}) {
-  const all = usable(voices)
+  const everyone = usable(voices)
+  const all = everyone.filter(voice => !voice.neural)
   const names = new Map(), count = new Map()
-  for (const voice of [...all].sort(byScore)) {
+  for (const voice of [...everyone].sort(byScore)) {
     const label = voiceLabel(voice)
     count.set(label, (count.get(label) || 0) + 1)
     names.set(voice.id, count.get(label) > 1 ? `${label} · voz ${count.get(label)}` : label)
@@ -140,7 +181,8 @@ export function buildVoiceGroups(voices, { bookLang = '', deviceLang = '' } = {}
   }
   const rank = voice => voice.base === bookBase ? 0 : voice.base === deviceBase ? 1 : 2
   const everything = [...all].sort((a, b) => rank(a) - rank(b) || languageName(a.base).localeCompare(languageName(b.base), 'es') || byScore(a, b)).map(entry)
-  return { recommended, all:everything, labels:names }
+  const neural = orderNeuralVoices(everyone, { bookLang, deviceLang }).map(entry)
+  return { recommended, all:everything, neural, labels:names }
 }
 
 /**

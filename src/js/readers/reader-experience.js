@@ -2,6 +2,8 @@ import { readerPanelMarkup, readerIcon } from './reader-interface.js'
 import { normalizeReadingPreferences, READING_THEMES } from './reading-preferences.js'
 import { ReadingVoice } from './reading-voice.js'
 import { bestVoiceFor, buildVoiceGroups, languageName, needsBetterVoice, readSystemVoices } from './voice-catalog.js'
+import { neuralVoiceList } from './neural-runtime.js'
+import { NeuralVoicePicker } from './neural-picker.js'
 import { clonePlace, cleanPlaces, cleanQuotes } from './reading-state.js'
 import { normalizeBookAuthor } from '../book-title.js'
 
@@ -64,6 +66,7 @@ export class ReaderExperience {
       document.getElementById('reader-audio').classList.toggle('is-playing', state === 'playing')
       if (state === 'stopped') this.panel.querySelector('[data-sleep]').value = '0'
       this.updateMiniPlayer(state, message)
+      this.neuralPicker?.render() // the first-use offer follows the audiobook, the warning follows the neural voice
     })
     this.panel.querySelector('[data-close]').onclick = () => this.panel.close()
     this.panel.addEventListener('click', event => {
@@ -150,6 +153,7 @@ export class ReaderExperience {
     }
     // Coming back from Android's voice downloads: ask the bridge to re-read the installed voices.
     document.addEventListener('visibilitychange', () => { if (!document.hidden && this.panel.open) this.refreshNativeVoices() })
+    this.neuralPicker = new NeuralVoicePicker(this)
     this.populateVoices()
     const resize = () => {
       if (!this.panel.open) return
@@ -187,6 +191,7 @@ export class ReaderExperience {
     for (const element of this.panel.querySelectorAll('[data-pdf]')) element.hidden = !pdf
     this.panel.querySelector('[data-epub]').hidden = pdf
     this.panel.querySelector('input[type="number"]').max = String(this.reader.pageCount || 1)
+    this.neuralPicker.warm() // the engine module (needed synchronously at the first Play tap) loads while the book settles
     this.renderPlaces(); this.renderToc(); await this.applyPreferences(); this.relocate()
     for (const quote of this.quotes) this.reader.addQuoteAnnotation(quote)
   }
@@ -215,7 +220,7 @@ export class ReaderExperience {
   label(place) { return place.locator?.kind === 'pdf-page' ? `Página ${place.locator.value}${this.reader.pageCount ? ` de ${this.reader.pageCount}` : ''}` : place.section ? `${place.section}${place.page ? ` · Página ${place.page}` : ''}` : `${Math.round(place.fraction * 100)} % del libro` }
   show(tab) {
     this.showTab(tab)
-    if (tab === 'audio') { this.populateVoices(); this.refreshNativeVoices() } // the recommended list depends on the book's language
+    if (tab === 'audio') { this.populateVoices(); this.refreshNativeVoices(); this.neuralPicker.refresh() } // the recommended list depends on the book's language
     if (!this.panel.open) this.panel.showModal()
     this.updateMiniPlayer(); this.resizePanel()
     this.panel.querySelector('[data-close]').focus({preventScroll:true})
@@ -269,12 +274,12 @@ export class ReaderExperience {
     const quick = document.getElementById('reader-save-bookmark')
     quick.setAttribute('aria-pressed',String(marked)); quick.setAttribute('aria-label',marked ? 'Quitar marcador rápido' : 'Guardar marcador rápido')
   }
-  setPreference(key, value) {
+  setPreference(key, value, { restart = true } = {}) {
     const audio = ['rate','voice','footnotes','multilingual','skipHeaders'].includes(key)
     if (!audio) this.voice.stop()
     this.preferences = normalizeReadingPreferences({ ...this.preferences, [key]:value }); this.applyPreferences(!audio)
     this.voice.options = {footnotes:this.preferences.footnotes,multilingual:this.preferences.multilingual,skipHeaders:this.preferences.skipHeaders}
-    if (key === 'rate' || key === 'voice') this.voice.restart?.()
+    if (key === 'rate' || key === 'voice') { this.voice.retryNeural?.(); if (restart) this.voice.restart?.() } // a new speed or choice gives a neural voice another chance
   }
   async applyPreferences(updateBook = true) {
     const p = this.preferences
@@ -302,20 +307,25 @@ export class ReaderExperience {
     this.panel.querySelector('[data-pdf-zoom]').hidden = !originalPdf
     this.voice.rate = p.rate; this.voice.voice = p.voice
     this.updateVoiceInfo()
+    this.neuralPicker?.render()
     this.voice.options = {footnotes:p.footnotes,multilingual:p.multilingual,skipHeaders:p.skipHeaders}
     this.updateMiniPlayer()
     try { if (updateBook) await this.reader.applyPreferences(p) } catch { this.error('No se pudo aplicar este ajuste. Inténtalo de nuevo.') }
   }
   refreshNativeVoices() { try { window.InhouseSpeech?.refreshVoices?.() } catch { /* older app: voices stay as loaded */ } }
-  populateVoices() {
-    const select = this.panel.querySelector('[data-pref="voice"]')
-    const voices = readSystemVoices(window)
+  /** The language of the open book (the device's when it has none or no book is open). */
+  bookLanguage() {
     let bookLang = ''
     try { bookLang = this.reader.language || '' } catch { /* no book open yet */ }
-    bookLang = bookLang || navigator.language || ''
+    return bookLang || navigator.language || ''
+  }
+  populateVoices() {
+    const select = this.panel.querySelector('[data-pref="voice"]')
+    const voices = [...readSystemVoices(window), ...neuralVoiceList()]
+    const bookLang = this.bookLanguage()
     const groups = buildVoiceGroups(voices, { bookLang, deviceLang:navigator.language })
     select.replaceChildren(new Option('Automática · mejor voz natural', ''))
-    for (const [label, items] of [['Recomendadas (naturales)', groups.recommended], ['Todas las voces', groups.all]]) {
+    for (const [label, items] of [['Voces naturales · sin conexión', groups.neural], ['Recomendadas (naturales)', groups.recommended], ['Todas las voces', groups.all]]) {
       if (!items.length) continue
       const group = document.createElement('optgroup'); group.label = label
       for (const item of items) group.append(new Option(item.label, item.id))
@@ -325,6 +335,7 @@ export class ReaderExperience {
     if (select.value !== this.preferences.voice) select.value = '' // a saved voice that is no longer installed falls back to Automática
     this.voiceCatalog = { voices, groups, bookLang }
     this.updateVoiceInfo()
+    this.neuralPicker?.render()
   }
   /** Says which voice 'Automática' will use and, on Android only, offers the voice download when the best one is not high quality. */
   updateVoiceInfo() {
@@ -332,7 +343,7 @@ export class ReaderExperience {
     const { voices, groups, bookLang } = this.voiceCatalog
     const native = typeof window.InhouseSpeech?.openVoiceSettings === 'function'
     const best = bestVoiceFor(voices, bookLang, navigator.language)
-    const auto = !this.preferences.voice || !voices.some(voice => voice.id === this.preferences.voice)
+    const auto = !this.preferences.voice || !voices.some(voice => voice.id === this.preferences.voice && voice.installed)
     const better = native && needsBetterVoice(voices, bookLang, navigator.language)
     const info = this.panel.querySelector('[data-voice-info]')
     info.querySelector('[data-voice-auto]').textContent = !auto ? '' : best ? `Se usará: ${groups.labels.get(best.id)}.` : voices.length ? `No hay voces instaladas para ${languageName(bookLang)}.` : ''

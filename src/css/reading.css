@@ -238,3 +238,33 @@ body.is-reading .app-header, #reader-screen, .reader-viewport, .reader-toolbar, 
 
 .reading-voice-info .reading-text-button { text-decoration:underline; text-underline-offset:3px; }
 .reading-voice-info:not([hidden]) { margin:-4px 0 10px; }
+
+/* Voces naturales (Piper): descargables, sin conexión. Todo en tinta/papel del tema de lectura, así que sirve en los cinco. */
+.reading-neural { margin:4px 0 12px; padding-top:12px; border-top:1px solid color-mix(in srgb,currentColor 10%,transparent); }
+.reading-neural__title { margin:0 0 4px; font-size:13px; font-weight:600; letter-spacing:-.1px; }
+.reading-neural__warning { display:flex; flex-direction:column; align-items:flex-start; gap:0; padding:10px 12px 0; border-radius:10px; background:color-mix(in srgb,currentColor 7%,transparent); opacity:1; }
+.reading-neural__warning .reading-text-button { min-height:44px; padding:0; font-size:12px; text-decoration:underline; text-underline-offset:3px; }
+.reading-neural__list { margin:0; padding:0; list-style:none; }
+.reading-neural-voice { display:flex; flex-wrap:wrap; align-items:center; gap:2px 12px; padding:6px 0; border-bottom:1px solid color-mix(in srgb,currentColor 8%,transparent); }
+.reading-neural-voice:last-child { border-bottom:0; }
+.reading-neural-voice__text { display:flex; flex:1 1 150px; flex-direction:column; gap:2px; min-width:0; }
+.reading-neural-voice__name { font-size:14px; font-weight:500; overflow-wrap:anywhere; }
+.reading-neural-voice__badge { margin-inline-start:4px; font-size:10px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; opacity:.6; }
+.reading-neural-voice__meta { font-size:12px; opacity:.65; }
+.reading-neural-voice__actions { display:flex; flex:none; gap:4px; }
+.reading-neural-voice__error { flex:1 0 100%; margin:0 0 6px; font-size:12px; line-height:1.5; }
+.reading-neural-btn { min-width:44px; min-height:44px; padding:0 14px; border:1px solid color-mix(in srgb,currentColor 30%,transparent); border-radius:22px; background:transparent; color:inherit; font:500 13px var(--f-body); }
+.reading-neural-btn.is-quiet { border-color:transparent; opacity:.7; }
+.reading-neural-btn.is-selected, .reading-neural-btn.is-primary { border-color:transparent; background:var(--reading-ink,var(--text-primary)); color:var(--reading-paper,var(--bg-primary)); }
+.reading-neural-btn.is-block { width:100%; margin-top:2px; }
+.reading-neural-progress { display:flex; flex:1 0 100%; align-items:center; gap:10px; margin:2px 0 6px; }
+.reading-neural-bar { flex:1; min-width:0; height:6px; overflow:hidden; border-radius:3px; background:color-mix(in srgb,currentColor 16%,transparent); }
+.reading-neural-bar i { display:block; height:100%; border-radius:inherit; background:currentColor; }
+.reading-neural-percent { flex:none; font-size:12px; font-variant-numeric:tabular-nums; opacity:.75; }
+@media (prefers-reduced-motion:no-preference) { .reading-neural-bar i { transition:width .2s linear; } }
+/* The first-use offer sits right under the play controls, quiet and dismissible: it never covers or delays playback. */
+.reading-neural-offer { margin:0 0 14px; padding:14px 16px 10px; border:1px solid color-mix(in srgb,currentColor 18%,transparent); border-radius:12px; background:color-mix(in srgb,currentColor 5%,transparent); }
+.reading-neural-offer__title { margin:0 0 4px; font-size:14px; font-weight:600; }
+.reading-neural-offer .reading-hint { margin-bottom:6px; }
+.reading-neural-offer__actions { display:flex; align-items:center; gap:8px; }
+.reading-neural-offer .reading-neural-progress { margin-top:6px; }
