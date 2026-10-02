@@ -126,15 +126,23 @@ const displayName = (code, type) => {
   try { const value = new Intl.DisplayNames(['es'], { type }).of(code); return value && value !== code ? value : '' } catch { return '' }
 }
 const capitalize = text => text.charAt(0).toLocaleUpperCase('es') + text.slice(1)
+/** 'Español' for 'es-MX' (the language alone, without the region). */
+export function baseLanguageName(tag) {
+  const base = langBase(tag)
+  return base ? LANGUAGES[base] || capitalize(displayName(base, 'language') || base) : ''
+}
+/** 'México' for 'es-MX'; '' when the tag has no region. */
+export function regionName(tag) {
+  const region = langRegion(tag)
+  return region ? REGIONS[region] || displayName(region, 'region') || region : ''
+}
 export function languageName(tag) {
-  const lang = normalizeLang(tag), base = langBase(lang), region = langRegion(lang)
-  if (!base) return ''
-  const name = LANGUAGES[base] || capitalize(displayName(base, 'language') || base)
-  const where = region ? REGIONS[region] || displayName(region, 'region') || region : ''
+  const name = baseLanguageName(tag), where = regionName(tag)
+  if (!name) return ''
   return where ? `${name} (${where})` : name
 }
 /** The person/brand part of a browser voice name ("Microsoft Helena - Spanish (Spain)" -> "Helena"); empty for technical ids. */
-function voiceTitle(voice) {
+export function voiceTitle(voice) {
   if (voice.native || /-x-|^[a-z]{2,3}[-_][a-z0-9]{2,4}\b/i.test(voice.name)) return ''
   const title = voice.name.replace(/^(?:Microsoft|Google|Apple)\s+/i, '').split(/\s+-\s+/)[0].replace(/\(.*?\)/g, '').replace(/\b(?:Online|Natural)\b/gi, '').replace(/\s+/g, ' ').trim()
   return title && !title.toLocaleLowerCase('es').startsWith((LANGUAGES[voice.base] || voice.base).toLocaleLowerCase('es')) ? title : ''

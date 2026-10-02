@@ -357,18 +357,56 @@ describe('voice picker', () => {
     vi.stubGlobal('InhouseSpeech', bridge)
     return bridge
   }
-  const select = experience => experience.panel.querySelector('[data-pref="voice"]')
-  const groups = experience => [...select(experience).querySelectorAll('optgroup')].map(group => [group.label, [...group.querySelectorAll('option')].map(option => option.value)])
+  const values = menu => menu.options.map(option => option.value)
 
-  it('groups the voices into recommended and all, with Automática as the best natural voice', async () => {
+  it('lists the languages that have voices, and only the voices of the language shown, with Automática first', async () => {
     stubBridge([nativeVoice('es-good', 'es-ES', 400), nativeVoice('es-robot', 'es-ES', 300, { name:'eSpeak' }), nativeVoice('en-good', 'en-US', 400)])
     const { experience, reader } = await setup()
     reader.language = 'es'
     experience.populateVoices()
-    expect(select(experience).options[0]).toMatchObject({ value:'', textContent:'Automática' })
-    expect(groups(experience)).toEqual([['Recomendadas', ['es-good', 'en-good']], ['Todas las voces', ['es-good', 'es-robot', 'en-good']]])
-    expect(select(experience).getAttribute('aria-label')).toBe('Voz de lectura')
-    expect(experience.panel.querySelector('[data-voice-auto]').textContent).toBe('Español (España) · Alta calidad · sin conexión')
+    expect(experience.languageMenu.options.slice(0, 3).map(option => option.label)).toEqual(['Automática', 'Español', 'Inglés'])
+    expect(experience.languageMenu.options[0].hint).toBe('Español')
+    expect(experience.languageMenu.value).toBe('')
+    expect(values(experience.voiceMenu)).toEqual(['', 'es-good', 'es-robot']) // best first; no English voice here
+    expect(experience.voiceMenu.value).toBe('')
+    expect(experience.voiceMenu.valueNode.textContent).toMatch(/^Automática · /)
+  })
+
+  it('choosing a language lists its voices, resets a voice of another language and speaks with that language', async () => {
+    stubBridge([nativeVoice('es-good', 'es-ES', 400), nativeVoice('en-good', 'en-US', 400), nativeVoice('en-two', 'en-GB', 400)])
+    const { experience, reader } = await setup()
+    reader.language = 'es'
+    experience.preferences = { ...experience.preferences, voice:'es-good' }
+    experience.populateVoices()
+    expect(experience.voiceMenu.value).toBe('es-good')
+    experience.chooseLanguage('en')
+    expect(experience.preferences.voiceLang).toBe('en')
+    expect(experience.preferences.voice).toBe('') // the Spanish voice does not speak English
+    expect(experience.voice.languageOverride).toBe('en')
+    expect(experience.languageMenu.value).toBe('en')
+    expect(values(experience.voiceMenu)).toEqual(['', 'en-good', 'en-two'])
+    experience.chooseLanguage('') // back to the book's language
+    expect(experience.voice.languageOverride).toBe('')
+    expect(values(experience.voiceMenu)).toEqual(['', 'es-good'])
+  })
+
+  it('an explicit voice is kept (and its language shown) and the dropdowns react to their own clicks', async () => {
+    stubBridge([nativeVoice('es-good', 'es-ES', 400), nativeVoice('en-good', 'en-US', 400)])
+    const { experience, reader } = await setup()
+    reader.language = 'es'
+    experience.preferences = { ...experience.preferences, voice:'en-good' }
+    experience.populateVoices()
+    expect(experience.voiceMenu.value).toBe('en-good')
+    expect(experience.languageMenu.value).toBe('en') // the language follows the voice in use
+    experience.languageMenu.trigger.click()
+    expect(experience.languageMenu.isOpen).toBe(true)
+    experience.voiceMenu.trigger.click() // opening one closes the other
+    expect(experience.languageMenu.isOpen).toBe(false)
+    expect(experience.voiceMenu.isOpen).toBe(true)
+    const auto = experience.voiceMenu.list.querySelector('[data-value=""]')
+    auto.click()
+    expect(experience.preferences.voice).toBe('')
+    expect(experience.voiceMenu.isOpen).toBe(false)
   })
 
   it('offers the voice download only on Android and only when the best voice is not high quality', async () => {
@@ -384,7 +422,7 @@ describe('voice picker', () => {
     bridge.getVoices = () => JSON.stringify([nativeVoice('es-high', 'es-ES', 500)])
     experience.populateVoices()
     expect(button.hidden).toBe(true)
-    expect(experience.panel.querySelector('[data-voice-info]').hidden).toBe(false) // still says which voice Automática uses
+    expect(experience.panel.querySelector('[data-voice-info]').hidden).toBe(true)
   })
 
   it('does not show the download hint without the native bridge, or with an older app that cannot open settings', async () => {
@@ -398,19 +436,26 @@ describe('voice picker', () => {
     expect(experience.panel.querySelector('[data-voice-settings]').hidden).toBe(true)
   })
 
-  it('keeps an explicit choice selected, falls back to Automática when it is gone, and refreshes native voices when the audio tab opens', async () => {
+  it('falls back to Automática when the saved voice is gone, and refreshes native voices when the audio tab opens', async () => {
     const bridge = stubBridge([nativeVoice('es-good', 'es-ES', 400), nativeVoice('en-good', 'en-US', 400)], { refreshVoices:vi.fn() })
     const { experience, reader } = await setup()
     reader.language = 'es'
-    experience.preferences = { ...experience.preferences, voice:'en-good' }
-    experience.populateVoices()
-    expect(select(experience).value).toBe('en-good')
-    expect(experience.panel.querySelector('[data-voice-auto]').textContent).toBe('')
     experience.preferences = { ...experience.preferences, voice:'uninstalled' }
     experience.populateVoices()
-    expect(select(experience).value).toBe('')
+    expect(experience.voiceMenu.value).toBe('')
     experience.panel.showModal = vi.fn()
     experience.show('audio')
     expect(bridge.refreshVoices).toHaveBeenCalled()
+  })
+
+  it('the sleep timer is a row of chips, not a system select', async () => {
+    const { experience } = await setup()
+    const chips = [...experience.panel.querySelectorAll('[data-sleep-value]')]
+    expect(chips.map(chip => chip.dataset.sleepValue)).toEqual(['0', '15', '30', '60'])
+    experience.voice.setSleep = vi.fn()
+    chips[2].click()
+    expect(experience.voice.setSleep).toHaveBeenCalledWith(30)
+    expect(chips.map(chip => chip.getAttribute('aria-checked'))).toEqual(['false', 'false', 'true', 'false'])
+    expect(experience.panel.querySelector('#reading-audio select')).toBeNull() // no operating-system dropdown left in the audio panel
   })
 })

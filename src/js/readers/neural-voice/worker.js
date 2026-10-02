@@ -42,7 +42,10 @@ async function load({ voice: key, config: cfg, model }) {
   while (draining) await new Promise(resolve => setTimeout(resolve, 5)) // a cancelled synth finishes its segment first
   if (session) { await session.release().catch(() => {}); session = null }
   const t = performance.now()
-  session = await ort.InferenceSession.create(new Uint8Array(model), { executionProviders: ['wasm'], graphOptimizationLevel: 'all' })
+  // Every fragment has another length, so the shapes change on each run. With the memory arena and the memory-pattern planner
+  // on (ort's defaults) each new shape keeps its buffers and the WASM heap only grows: a phone's WebView runs out of memory
+  // after a sentence or two and the worker dies. Off, buffers are freed after every run (a little slower, flat memory).
+  session = await ort.InferenceSession.create(new Uint8Array(model), { executionProviders: ['wasm'], graphOptimizationLevel: 'all', enableCpuMemArena: false, enableMemPattern: false })
   config = cfg; voice = key
   return { createMs: performance.now() - t, inputs: session.inputNames }
 }

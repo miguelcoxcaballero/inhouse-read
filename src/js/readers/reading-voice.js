@@ -20,6 +20,10 @@ const NEURAL_WAIT_MS = 900, NEURAL_LOOKAHEAD = 4
 // session does not repeat the cold start and the stutter; it is forgotten after SLOW_DAYS, or at once when the person
 // changes the voice or the speed or taps 'Reintentar' (retryNeural).
 const SLOW_KEY = 'inhouse-read-neural-slow', SLOW_DAYS = 14
+// A neural worker that dies mid-reading (a phone's WebView short of memory) is rebuilt and the fragment spoken again, this many
+// times in a row, before the voice is given up on. A fragment that is heard to the end clears the count, so a worker that
+// only dies now and then never ends the neural reading.
+const NEURAL_RETRIES = 3
 // What the person sees when the neural voice gives up and the best system voice takes over.
 const NEURAL_FALLBACK = {
   'too-slow':'Voz natural demasiado lenta. Se usa la del sistema.',
@@ -40,12 +44,13 @@ export class ReadingVoice {
     this.source = null
     this.rate = 1
     this.voice = ''
+    this.languageOverride = '' // 'es', 'en'... chosen in the Idioma dropdown; '' follows the book
     this.options = {footnotes:false,multilingual:false,skipHeaders:false}
     // Where the current utterance was handed: 'neural' (our engine), 'native' (Android bridge) or 'web' (speechSynthesis).
     this.transport = null
     // Neural voice trouble: `neuralOff` is the reason it was given up on (system voices only until retryNeural());
     // `missing` are voices the engine said are not installed any more (this reading only).
-    this.neuralOff = ''; this.missing = new Set()
+    this.neuralOff = ''; this.missing = new Set(); this.neuralRetries = 0
     this.slow = this.readSlow()
     window.addEventListener('inhouse-tts', event => {
       if (event.detail?.id !== this.utteranceId || this.state !== 'playing') return
@@ -109,7 +114,7 @@ export class ReadingVoice {
    * installed (any more) or given up on resolves to the best other voice, never to a system voice with a foreign id.
    */
   voiceFor(text) {
-    const language = this.options.multilingual ? this.detectLanguage(text) : this.reader.language || navigator.language || 'es-ES'
+    const language = this.options.multilingual ? this.detectLanguage(text) : this.languageOverride || this.reader.language || navigator.language || 'es-ES'
     let voices = readSystemVoices(window), voiceId = this.voice
     if (!this.neuralOff && this.slowFor(this.rate)) this.neuralOff = 'too-slow'
     if (!this.neuralOff) voices = [...voices, ...neuralVoiceList().filter(voice => voice.installed && !this.missing.has(voice.id))]
@@ -119,7 +124,7 @@ export class ReadingVoice {
     // book DECLARES would garble it, so an English book read after picking a Spanish voice gets the automatic pick for English
     // instead. A book that declares nothing (a PDF) keeps the person's choice: the device language says nothing about it.
     const declared = declaredLanguage(this.reader)
-    if (isNeuralId(voiceId) && !this.options.multilingual && declared) {
+    if (isNeuralId(voiceId) && !this.options.multilingual && declared && !this.languageOverride) {
       const chosen = voices.find(voice => voice.id === voiceId)
       if (chosen && chosen.base !== langBase(declared)) voiceId = ''
     }
@@ -157,13 +162,20 @@ export class ReadingVoice {
     const reason = detail.reason
     clearTimeout(this.waitTimer); this.waiting = false
     try { neuralEngine()?.stop() } catch { /* already stopped */ }
+    if ((reason === 'synth-failed' || reason === 'init-failed') && this.neuralRetries < NEURAL_RETRIES) {
+      // The engine already dropped its dead worker: speaking the same fragment again starts a fresh one.
+      this.neuralRetries++
+      this.notify('Reiniciando la voz natural…')
+      this.speakCurrent()
+      return
+    }
     if (reason === 'not-installed') { this.missing.add(this.spokenWith?.id); try { neuralEngine()?.refresh?.() } catch { /* the picker refreshes on its own */ } }
     else { this.neuralOff = reason || 'synth-failed'; if (reason === 'too-slow') this.rememberSlow() }
     this.notify(NEURAL_FALLBACK[reason] || NEURAL_FALLBACK.default)
     this.speakCurrent()
   }
   /** Lets the neural voice try again after it was given up on (the person changed the voice or the speed). */
-  retryNeural() { this.neuralOff = ''; this.missing.clear(); this.forgetSlow() }
+  retryNeural() { this.neuralOff = ''; this.neuralRetries = 0; this.missing.clear(); this.forgetSlow() }
   /** A neural voice was removed (the person tapped Quitar): the reading in progress stops using it now, not when its files are gone. */
   voiceRemoved(id) {
     this.missing.add(id)
@@ -248,7 +260,7 @@ export class ReadingVoice {
   }
   /** The engine finished `id`: remember whether it ever announced a start, so a silent engine is not waited for again. */
   engineEnded(id) {
-    if (this.transport === 'neural') { if (this.startedId !== id) this.present(id); return } // our engine always announces starts; if one was lost, still show the sentence
+    if (this.transport === 'neural') { this.neuralRetries = 0; if (this.startedId !== id) this.present(id); return } // our engine always announces starts; if one was lost, still show the sentence
     if (this.startedId === id) this.heardStart = true
     else if (!this.heardStart) this.silentEngine = true
   }

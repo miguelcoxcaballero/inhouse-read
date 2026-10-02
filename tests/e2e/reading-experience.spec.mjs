@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { audioMenu, openAudioMenu, pickVoice } from './helpers/audio-menus.mjs'
 
 const PDF = 'tests/e2e/fixtures/reading-journey.pdf'
 const EPUB = 'tests/e2e/fixtures/reading-journey.epub'
@@ -143,7 +144,7 @@ test('voz Android: reproduce texto, pausa, continúa y pasa a la siguiente pági
   await openPdf(page)
   await page.getByRole('button', { name:'Escuchar el libro' }).click()
   await page.getByRole('slider', { name:'Velocidad de voz' }).fill('1.3')
-  await page.getByRole('combobox', { name:'Voz de lectura' }).selectOption('en-device')
+  await pickVoice(page, 'en-device')
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()
   await expect.poll(() => page.evaluate(() => window.__spoken.length)).toBeGreaterThan(0)
   expect(await page.evaluate(() => window.__spoken[0])).toMatchObject({rate:1.3,voice:'en-device'})
@@ -172,13 +173,16 @@ test('voz Android: lista agrupada de voces naturales, voz automática y descarga
   })
   await openPdf(page)
   await page.getByRole('button', { name:'Escuchar el libro' }).click()
-  const select = page.getByRole('combobox', { name:'Voz de lectura' })
-  await expect(select.locator('optgroup')).toHaveCount(2)
-  await expect(select.locator('optgroup[label="Recomendadas"] option')).toHaveCount(2)
-  await expect(select.locator('optgroup[label="Todas las voces"] option')).toHaveCount(3)
-  await expect(select.locator('option').first()).toHaveText('Automática')
+  const languages = await openAudioMenu(page, 'Idioma')
+  const names = await languages.locator('[role="option"] .select-menu__option-label').allTextContents()
+  expect(names.slice(0, 3)).toEqual(['Automática', 'Inglés', 'Español']) // the book (and the test browser) is English; then the natural voices that can be downloaded
+  await page.keyboard.press('Escape') // folds the list, not the whole panel
+  await expect(languages.locator('.select-menu__panel')).toBeHidden()
+  await expect(page.locator('.reading-panel')).toBeVisible()
+  const voices = await openAudioMenu(page, 'Voz')
+  expect(await voices.locator('[role="option"]').evaluateAll(items => items.map(item => item.dataset.value))).toEqual(['', 'en-normal', 'en-robot']) // best first, only English
+  await expect(voices.locator('.select-menu__value')).toHaveText(/^Automática · /)
   // The book (and the test browser) is English: its best on-device voice is only "normal", so Android offers better ones.
-  await expect(page.locator('[data-voice-auto]')).toHaveText('Inglés (EE. UU.) · Calidad normal · sin conexión')
   await page.getByRole('button', { name:'Instalar voces' }).click()
   expect(await page.evaluate(() => window.__voiceSettings)).toBe(1)
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()

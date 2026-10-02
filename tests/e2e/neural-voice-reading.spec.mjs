@@ -11,6 +11,7 @@
 //
 // Heavy (a real neural voice thinks hard on one core): about six minutes. Run it alone.
 import { test, expect } from '@playwright/test'
+import { openAudioMenu, pickVoice, selectedOption } from './helpers/audio-menus.mjs'
 import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadavg } from 'node:os'
@@ -75,7 +76,7 @@ async function open(page, file) {
   else await expect.poll(() => page.evaluate(() => Boolean(document.querySelector('foliate-view')?.renderer?.getContents?.()[0]?.doc?.body)), SLOW).toBe(true)
 }
 const chapter = page => page.evaluate(() => document.querySelector('foliate-view')?.renderer?.getContents?.()[0]?.doc.querySelector('h1')?.textContent || '')
-const openAudio = page => page.getByRole('button', { name: 'Escuchar el libro' }).click()
+const openAudio = async page => { await page.getByRole('button', { name: 'Escuchar el libro' }).click(); await openAudioMenu(page, 'Voz') } // the natural voices live in the Voz list
 const closePanel = page => page.getByRole('button', { name: 'Cerrar opciones de lectura' }).click()
 const play = page => page.getByRole('button', { name: 'Reproducir', exact: true }).click()
 const row = (page, id) => page.locator(`[data-neural-voice="${id}"]`)
@@ -179,7 +180,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await shot(page, 'download-in-progress').catch(() => {}) // best effort: the picture is evidence, not an assertion
     await expect(row(page, CLAUDE_ID).getByRole('button', { name: /Voz en uso Claude/ })).toHaveAttribute('aria-pressed', 'true', SLOW)
     await expect(row(page, CLAUDE_ID)).toContainText('Instalada')
-    await expect(page.getByRole('combobox', { name: 'Voz de lectura' })).toHaveValue(CLAUDE_ID)
+    await expect(selectedOption(page)).toHaveAttribute('data-value', CLAUDE_ID)
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('inhouse-read-reading-preferences')).voice)).toBe(CLAUDE_ID)
     expect(await noOverflow(page)).toBe(true)
 
@@ -327,7 +328,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     const neuralStarts = (await starts(page)).length
     const speaks = (await neu(page, n => n.speak)).length
 
-    await page.getByRole('combobox', { name: 'Voz de lectura' }).selectOption('sistema-es')
+    await pickVoice(page, 'sistema-es')
     await expect.poll(() => systemSpoken(page), SLOW).toBeGreaterThan(1) // the system voice carries on, fragment after fragment
     expect((await neu(page, n => n.speak)).length).toBe(speaks) // the neural engine is not asked again
     const quiet = await eventCount(page)
@@ -338,7 +339,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     expect(await starts(page)).toHaveLength(neuralStarts)
 
     // Back to the natural voice: it takes over again at once.
-    await page.getByRole('combobox', { name: 'Voz de lectura' }).selectOption(CLAUDE_ID)
+    await pickVoice(page, CLAUDE_ID)
     await expect.poll(async () => (await neu(page, n => n.speak)).length, SLOW).toBeGreaterThan(speaks)
     await expect.poll(async () => (await starts(page)).length, SLOW).toBeGreaterThan(neuralStarts)
     // Leaving the book while the natural voice speaks silences it for good (the reader's own stop, nothing keeps playing on the shelf).
@@ -456,7 +457,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await openAudio(page)
     await row(page, CLAUDE_ID).getByRole('button', { name: /Quitar la voz Claude/ }).click()
     await expect(row(page, CLAUDE_ID).getByRole('button', { name: /Descargar la voz Claude/ })).toBeVisible(SLOW)
-    await expect(page.getByRole('combobox', { name: 'Voz de lectura' })).toHaveValue('')
+    await expect(selectedOption(page)).toHaveAttribute('data-value', '')
     await play(page)
     await expect.poll(() => systemSpoken(page), SLOW).toBeGreaterThan(0)
     await page.getByRole('button', { name: 'Detener', exact: true }).click()
@@ -495,7 +496,7 @@ test('default Hugging Face URLs and the first-use offer: one tap downloads the v
   await shot(page, 'first-use-offer', offer)
   await offer.getByRole('button', { name: /Descargar la voz natural Claude/ }).click()
   await expect(offer).toBeHidden(SLOW) // installed: no more offer
-  await expect(page.getByRole('combobox', { name: 'Voz de lectura' })).toHaveValue(CLAUDE_ID)
+  await expect(selectedOption(page)).toHaveAttribute('data-value', CLAUDE_ID)
   expect(requested.filter(url => !url.endsWith('voices.json')).sort()).toEqual([`${ROOT}${hfPath(CLAUDE)}.onnx`, `${ROOT}${hfPath(CLAUDE)}.onnx.json`].sort())
   await spyOnEngine(page)
   // The natural voice takes over at the next fragment, while the audiobook keeps playing.

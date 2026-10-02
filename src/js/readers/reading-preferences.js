@@ -23,7 +23,7 @@ export const READING_FONTS = {
 }
 export const DEFAULT_READING_PREFERENCES = Object.freeze({
   theme:'paper', font:'book', fontSize:20, lineHeight:1.6, margin:16,
-  align:'start', flow:'paginated', pdfMode:'original', zoom:100, rate:1, voice:'',
+  align:'start', flow:'paginated', pdfMode:'original', zoom:100, rate:1, voice:'', voiceLang:'',
   brightness:100, fontWeight:400, footnotes:false, multilingual:false, skipHeaders:false
 })
 export function normalizeReadingPreferences(input = {}) {
@@ -40,7 +40,7 @@ export function normalizeReadingPreferences(input = {}) {
     align:input.align === 'justify' ? 'justify' : 'start',
     flow:input.flow === 'scrolled' ? 'scrolled' : 'paginated',
     pdfMode:input.pdfMode === 'text' ? 'text' : 'original',
-    zoom:number('zoom',70,200), rate:number('rate',0.5,2), voice:String(input.voice || ''),
+    zoom:number('zoom',70,200), rate:number('rate',0.5,2), voice:String(input.voice || ''), voiceLang:/^[a-z]{2,3}$/.test(String(input.voiceLang || '')) ? String(input.voiceLang) : '',
     brightness:number('brightness',50,120), fontWeight:[400,500,600].includes(Number(input.fontWeight)) ? Number(input.fontWeight) : 400,
     footnotes:Boolean(input.footnotes), multilingual:Boolean(input.multilingual), skipHeaders:Boolean(input.skipHeaders)
   }

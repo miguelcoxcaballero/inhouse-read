@@ -43,7 +43,7 @@ describe('neural runtime guards', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(experience.panel.querySelector('[data-neural]').hidden).toBe(true)
     expect(experience.panel.querySelector('[data-neural-offer]').hidden).toBe(true)
-    expect(experience.panel.querySelector('[data-pref="voice"]').value).toBe('')
+    expect(experience.voiceMenu.value).toBe('')
   })
   it('an engine whose getters throw is treated as absent', async () => {
     const runtime = await import('../../src/js/readers/neural-runtime.js')

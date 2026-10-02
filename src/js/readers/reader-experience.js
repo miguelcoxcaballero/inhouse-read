@@ -1,7 +1,9 @@
 import { readerPanelMarkup, readerIcon } from './reader-interface.js'
 import { normalizeReadingPreferences, READING_THEMES } from './reading-preferences.js'
 import { ReadingVoice } from './reading-voice.js'
-import { bestVoiceFor, buildVoiceGroups, languageName, needsBetterVoice, readSystemVoices } from './voice-catalog.js'
+import { baseLanguageName, declaredLanguage, langBase, needsBetterVoice, readSystemVoices } from './voice-catalog.js'
+import { SelectMenu } from './select-menu.js'
+import { AUTO, languageOptions, voiceOptions } from './voice-menus.js'
 import { neuralVoiceList } from './neural-runtime.js'
 import { NeuralVoicePicker } from './neural-picker.js'
 import { clonePlace, cleanPlaces, cleanQuotes } from './reading-state.js'
@@ -64,7 +66,7 @@ export class ReaderExperience {
       this.panel.querySelector('[data-play]').disabled = state === 'loading'
       this.panel.querySelector('.reading-audio-status').textContent = message || (state === 'playing' ? 'Leyendo' : state === 'paused' ? 'En pausa' : 'Detenido')
       document.getElementById('reader-audio').classList.toggle('is-playing', state === 'playing')
-      if (state === 'stopped') this.panel.querySelector('[data-sleep]').value = '0'
+      if (state === 'stopped') this.setSleepChoice(0)
       this.updateMiniPlayer(state, message)
       this.neuralPicker?.render() // the first-use offer follows the audiobook, the warning follows the neural voice
     })
@@ -97,7 +99,7 @@ export class ReaderExperience {
     for (const button of this.panel.querySelectorAll('[data-theme]')) button.onclick = () => this.setPreference('theme', button.dataset.theme)
     for (const control of this.panel.querySelectorAll('[data-pref]')) control.addEventListener('change', () => this.setPreference(control.dataset.pref, control.value))
     this.panel.querySelector('[data-reset]').onclick = () => {
-      this.preferences = normalizeReadingPreferences({ rate:this.preferences.rate, voice:this.preferences.voice })
+      this.preferences = normalizeReadingPreferences({ rate:this.preferences.rate, voice:this.preferences.voice, voiceLang:this.preferences.voiceLang })
       this.applyPreferences()
     }
     this.panel.querySelector('[data-progress]').addEventListener('input', event => {
@@ -121,7 +123,7 @@ export class ReaderExperience {
     this.panel.querySelector('[data-audio-prev]').onclick = () => this.step(-1)
     this.panel.querySelector('[data-audio-next]').onclick = () => this.step(1)
     this.panel.querySelector('[data-stop]').onclick = () => this.voice.stop()
-    this.panel.querySelector('[data-sleep]').onchange = event => this.voice.setSleep(Number(event.target.value))
+    for (const chip of this.panel.querySelectorAll('[data-sleep-value]')) chip.onclick = () => { const minutes = Number(chip.dataset.sleepValue); this.setSleepChoice(minutes); this.voice.setSleep(minutes) }
     document.getElementById('reader-settings').onclick = () => this.show('appearance')
     document.getElementById('reader-audio').onclick = () => this.show('audio')
     this.locationButton.onclick = () => this.show('navigation')
@@ -153,6 +155,11 @@ export class ReaderExperience {
     }
     // Coming back from Android's voice downloads: ask the bridge to re-read the installed voices.
     document.addEventListener('visibilitychange', () => { if (!document.hidden && this.panel.open) this.refreshNativeVoices() })
+    // Idioma first, then the voices of that language. Both are the app's own dropdowns (no operating-system <select>);
+    // the downloadable natural voices of the chosen language live at the end of the voice list.
+    this.languageMenu = new SelectMenu({ label:'Idioma', onChange:value => this.chooseLanguage(value) })
+    this.voiceMenu = new SelectMenu({ label:'Voz', extra:this.panel.querySelector('[data-neural]'), onChange:value => this.setPreference('voice', value) })
+    this.panel.querySelector('[data-voice-menus]').append(this.languageMenu.root, this.voiceMenu.root)
     this.neuralPicker = new NeuralVoicePicker(this)
     this.populateVoices()
     const resize = () => {
@@ -276,11 +283,11 @@ export class ReaderExperience {
     quick.setAttribute('aria-pressed',String(marked)); quick.setAttribute('aria-label',marked ? 'Quitar marcador rápido' : 'Guardar marcador rápido')
   }
   setPreference(key, value, { restart = true } = {}) {
-    const audio = ['rate','voice','footnotes','multilingual','skipHeaders'].includes(key)
+    const audio = ['rate','voice','voiceLang','footnotes','multilingual','skipHeaders'].includes(key)
     if (!audio) this.voice.stop()
     this.preferences = normalizeReadingPreferences({ ...this.preferences, [key]:value }); this.applyPreferences(!audio)
     this.voice.options = {footnotes:this.preferences.footnotes,multilingual:this.preferences.multilingual,skipHeaders:this.preferences.skipHeaders}
-    if (key === 'rate' || key === 'voice') { this.voice.retryNeural?.(); if (restart) this.voice.restart?.() } // a new speed or choice gives a neural voice another chance
+    if (key === 'rate' || key === 'voice' || key === 'voiceLang') { this.voice.retryNeural?.(); if (restart) this.voice.restart?.() } // a new speed or choice gives a neural voice another chance
     if (key === 'voice') this.neuralPicker?.warmUp() // a neural voice is loaded (worker, model) before the tap, not at it
   }
   async applyPreferences(updateBook = true) {
@@ -307,7 +314,7 @@ export class ReaderExperience {
     this.panel.querySelector('[data-typography]').hidden = originalPdf
     this.panel.querySelector('[data-pdf-hint]').hidden = !originalPdf
     this.panel.querySelector('[data-pdf-zoom]').hidden = !originalPdf
-    this.voice.rate = p.rate; this.voice.voice = p.voice
+    this.voice.rate = p.rate; this.voice.voice = p.voice; this.voice.languageOverride = p.voiceLang
     this.updateVoiceInfo()
     this.neuralPicker?.render()
     this.voice.options = {footnotes:p.footnotes,multilingual:p.multilingual,skipHeaders:p.skipHeaders}
@@ -321,36 +328,54 @@ export class ReaderExperience {
     try { bookLang = this.reader.language || '' } catch { /* no book open yet */ }
     return bookLang || navigator.language || ''
   }
+  setSleepChoice(minutes) {
+    for (const chip of this.panel.querySelectorAll('[data-sleep-value]')) chip.setAttribute('aria-checked', String(Number(chip.dataset.sleepValue) === minutes))
+  }
+  /** Picking a language: the voice goes back to Automática unless the one in use already speaks it. */
+  chooseLanguage(value) {
+    const voices = this.voiceCatalog?.voices || []
+    const base = value || langBase(this.bookLanguage())
+    const keep = voices.some(voice => voice.id === this.preferences.voice && voice.installed && voice.base === base)
+    if (!keep && this.preferences.voice) this.setPreference('voice', '', { restart:false })
+    this.setPreference('voiceLang', value)
+    this.populateVoices()
+  }
+  /** The language whose voices the second dropdown lists: the one picked, else the one of the voice in use, else the book's. */
+  voiceBase(voices) {
+    const book = langBase(this.bookLanguage()), { voice: id, voiceLang } = this.preferences
+    if (voiceLang) return voiceLang
+    const chosen = id && voices.find(voice => voice.id === id && voice.installed)
+    const declared = declaredLanguage(this.reader)
+    if (chosen && !(chosen.neural && declared && chosen.base !== langBase(declared))) return chosen.base
+    return book
+  }
   populateVoices() {
-    const select = this.panel.querySelector('[data-pref="voice"]')
     const voices = [...readSystemVoices(window), ...neuralVoiceList()]
-    const bookLang = this.bookLanguage()
-    const groups = buildVoiceGroups(voices, { bookLang, deviceLang:navigator.language })
-    select.replaceChildren(new Option('Automática', ''))
-    for (const [label, items] of [['Voces naturales', groups.neural], ['Recomendadas', groups.recommended], ['Todas las voces', groups.all]]) {
-      if (!items.length) continue
-      const group = document.createElement('optgroup'); group.label = label
-      for (const item of items) group.append(new Option(item.label, item.id))
-      select.append(group)
-    }
-    select.value = this.preferences.voice
-    if (select.value !== this.preferences.voice) select.value = '' // a saved voice that is no longer installed falls back to Automática
-    this.voiceCatalog = { voices, groups, bookLang }
+    const bookLang = this.bookLanguage(), deviceLang = navigator.language
+    const base = this.voiceBase(voices), bookBase = langBase(bookLang)
+    this.voiceBaseShown = base
+    const languages = languageOptions(voices, { bookLang, deviceLang })
+    if (base && !languages.some(option => option.value === base)) languages.push({ value:base, label:baseLanguageName(base) })
+    const pickedLanguage = this.preferences.voiceLang || (base !== bookBase ? base : AUTO)
+    this.languageMenu.setOptions(languages, pickedLanguage)
+    this.languageMenu.setValueText(pickedLanguage === AUTO ? `Automática · ${languages[0].hint}` : '')
+    const options = voiceOptions(voices, base, { bookLang, deviceLang })
+    const saved = options.some(option => option.value === this.preferences.voice) ? this.preferences.voice : AUTO // a voice that is gone falls back to Automática
+    this.voiceMenu.setOptions(options, saved)
+    this.voiceMenu.setValueText(saved === AUTO ? (options.length > 1 ? `Automática · ${options[0].hint}` : 'Sin voces instaladas') : '')
+    this.voiceCatalog = { voices, bookLang }
     this.updateVoiceInfo()
     this.neuralPicker?.render()
   }
-  /** Says which voice 'Automática' will use and, on Android only, offers the voice download when the best one is not high quality. */
+  /** On Android only: offers the system's voice download when the best voice of the language is not high quality. */
   updateVoiceInfo() {
     if (!this.voiceCatalog) return
-    const { voices, groups, bookLang } = this.voiceCatalog
+    const { voices, bookLang } = this.voiceCatalog
     const native = typeof window.InhouseSpeech?.openVoiceSettings === 'function'
-    const best = bestVoiceFor(voices, bookLang, navigator.language)
-    const auto = !this.preferences.voice || !voices.some(voice => voice.id === this.preferences.voice && voice.installed)
-    const better = native && needsBetterVoice(voices, bookLang, navigator.language)
+    const better = native && needsBetterVoice(voices, this.voiceBaseShown || bookLang, navigator.language)
     const info = this.panel.querySelector('[data-voice-info]')
-    info.querySelector('[data-voice-auto]').textContent = !auto ? '' : best ? groups.labels.get(best.id) : voices.length ? `Sin voces en ${languageName(bookLang)}` : ''
     info.querySelector('[data-voice-settings]').hidden = !better
-    info.hidden = !(better || info.querySelector('[data-voice-auto]').textContent)
+    info.hidden = !better
   }
   error(message) { this.panel.querySelector('.reading-error').textContent = message }
   async savePlaces() {

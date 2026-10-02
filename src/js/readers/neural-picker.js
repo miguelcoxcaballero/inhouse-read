@@ -142,7 +142,10 @@ export class NeuralVoicePicker {
     this.block.hidden = !list.length
     if (!list.length) { this.offer.hidden = true; this.offer.replaceChildren(); return }
     const focus = this.focusKey()
-    const ordered = orderNeuralVoices(list, { bookLang:this.bookLang, deviceLang:navigator.language })
+    // The list sits inside the Voz dropdown, so it only shows the voices of the language chosen in the Idioma dropdown.
+    const shown = this.host.voiceBaseShown
+    const ordered = orderNeuralVoices(list, { bookLang:this.bookLang, deviceLang:navigator.language }).filter(voice => !shown || voice.base === shown)
+    this.block.hidden = !ordered.length
     const reason = this.host.voice?.neuralOff
     this.block.querySelector('[data-neural-warning]').hidden = !reason
     this.block.querySelector('[data-neural-warning-text]').textContent = reason ? WARNINGS[reason] || WARNINGS.default : ''
@@ -215,7 +218,9 @@ export class NeuralVoicePicker {
       // reading a Spanish book must not become the voice of an English one ('Automática' already prefers an installed
       // neural voice of each book's language, so nothing is lost).
       const declared = declaredLanguage(this.host.reader) // a book that declares no language (a PDF) takes it: the device language says nothing about it
-      const here = !declared || langBase(neuralVoiceList().find(voice => voice.id === id)?.lang) === langBase(declared)
+      // A language picked in the Idioma dropdown is an explicit choice: its voices are selected whatever the book declares.
+      const base = langBase(neuralVoiceList().find(voice => voice.id === id)?.lang), picked = this.host.preferences.voiceLang
+      const here = picked ? base === picked : !declared || base === langBase(declared)
       this.announce(here ? `Voz ${name} instalada y seleccionada.` : `Voz ${name} instalada.`)
       if (here) this.host.setPreference('voice', id, { restart:false }) // the next fragment is already spoken with it
       this.host.populateVoices()

@@ -27,6 +27,7 @@ async function setup({ language = 'en', ...engineOptions } = {}) {
   setNeuralEngine(engine)
   const reader = { language, location:{ fraction:0 }, format:{ engine:'foliate' }, toc:[], pageCount:null, applyPreferences:async () => {}, addQuoteAnnotation() {}, getSelection() {}, next:async () => {}, prev:async () => {}, getSpeechText:async () => 'Hello there. Second one.' }
   const experience = new ReaderExperience(reader, { persist:async () => {} })
+  experience.panel.voiceMenu = experience.voiceMenu
   experience.panel.close = vi.fn()
   await experience.open({ id:'b', title:'Book' })
   experience.neuralPicker.refresh(); await loadNeural(); await new Promise(resolve => setTimeout(resolve, 0)) // the picker attaches once the module is there
@@ -38,7 +39,7 @@ const rows = panel => [...panel.querySelectorAll('[data-neural-voice]')]
 const row = (panel, id = LESSAC) => panel.querySelector(`[data-neural-voice="${id}"]`)
 const click = (panel, id, action) => panel.querySelector(`[data-neural-voice="${id}"] [data-neural-action="${action}"]`).click()
 const offer = panel => panel.querySelector('[data-neural-offer]')
-const select = panel => panel.querySelector('[data-pref="voice"]')
+const select = panel => panel.voiceMenu // the Voz dropdown of the audio panel (see setup)
 const saved = () => JSON.parse(localStorage.getItem('inhouse-read-reading-preferences')).voice
 
 describe('natural voices group', () => {
@@ -46,7 +47,7 @@ describe('natural voices group', () => {
     const { panel, experience } = await setup({ supported:false })
     expect(block(panel).hidden).toBe(true)
     expect(offer(panel).hidden).toBe(true)
-    expect([...select(panel).querySelectorAll('optgroup')].map(group => group.label)).not.toContain('Voces naturales')
+    expect(select(panel).options.some(option => option.value.startsWith('piper:'))).toBe(false)
     experience.voice.state = 'playing'; experience.neuralPicker.render()
     expect(offer(panel).hidden).toBe(true)
   })
@@ -56,7 +57,7 @@ describe('natural voices group', () => {
     expect(panel.querySelector('#reading-neural-title').textContent).toBe('Voces naturales')
     expect(block(panel).getAttribute('aria-labelledby')).toBe('reading-neural-title')
     expect(panel.querySelector('[data-neural-note]')).toBeNull() // no explanatory note: each row says its size
-    expect(rows(panel).slice(0, 3).map(item => item.dataset.neuralVoice)).toEqual([DAVEFX, 'piper:es_MX-claude-high', LESSAC]) // book language (es-ES first), then the device language (en-US)
+    expect(rows(panel).map(item => item.dataset.neuralVoice)).toEqual([DAVEFX, 'piper:es_MX-claude-high']) // only the language chosen in Idioma (the book's: es-ES first)
     expect(row(panel, DAVEFX).textContent).toContain('Davefx')
     expect(row(panel, DAVEFX).textContent).toContain('Recomendada')
     expect(row(panel, DAVEFX).textContent).toContain('Español (España) · 63 MB')
@@ -69,9 +70,11 @@ describe('natural voices group', () => {
     const big = { id:'piper:es_ES-sharvard-medium', piperId:'es_ES-sharvard-medium', lang:'es-ES', name:'Sharvard', quality:'medium', sizeMB:77, speaker:0 }
     neuralVoices.push(big)
     try {
-      const { panel, engine } = await setup()
+      const { panel, engine, experience } = await setup()
       expect(row(panel, LESSAC).textContent).toContain('63 MB')
+      experience.chooseLanguage('es')
       expect(row(panel, big.id).textContent).toContain('77 MB')
+      experience.chooseLanguage('')
       click(panel, LESSAC, 'install')
       engine.progress(LESSAC, .5)
       await vi.waitFor(() => expect(row(panel).querySelector('.reading-neural-percent').textContent).toBe('50 % · 32 de 63 MB'))
@@ -106,7 +109,7 @@ describe('natural voices group', () => {
     expect(use.textContent).toBe('En uso')
     expect(saved()).toBe(LESSAC)
     expect(select(panel).value).toBe(LESSAC)
-    expect([...select(panel).querySelectorAll('optgroup')][0].label).toBe('Voces naturales')
+    expect(select(panel).options.map(option => option.value)).toContain(LESSAC)
     expect(panel.querySelector('[data-neural-status]').textContent).toBe('Voz Lessac instalada y seleccionada.')
   })
   it('Cancelar aborts the download without leaving a selection', async () => {
@@ -156,7 +159,7 @@ describe('natural voices group', () => {
     const { panel, experience } = await setup({ installed:[LESSAC] })
     expect(experience.preferences.voice).toBe(ALBA)
     expect(select(panel).value).toBe('')
-    expect(panel.querySelector('[data-voice-auto]').textContent).toBe('Inglés (EE. UU.) · Lessac')
+    expect(select(panel).valueNode.textContent).toBe('Automática · Lessac')
   })
 })
 
@@ -251,9 +254,9 @@ describe('review fixes', () => {
   it('a voice downloaded for another language than the book is installed but not pinned as the global choice', async () => {
     const { panel, engine, experience } = await setup({ language:'es-ES' })
     experience.reader.metadata = { language:'es-ES' } // a language the book declares itself
-    click(panel, LESSAC, 'install')
+    experience.neuralPicker.install(LESSAC) // its row is not listed: the Idioma dropdown shows the book's language (Español)
     engine.finish(LESSAC)
-    await vi.waitFor(() => expect(row(panel).dataset.state).toBe('installed'))
+    await vi.waitFor(() => expect(engine.installed.has(LESSAC)).toBe(true))
     expect(saved()).toBe('')
     expect(panel.querySelector('[data-neural-status]').textContent).toBe('Voz Lessac instalada.')
     // so an English book later still gets its own voice, and a Spanish one never the English voice

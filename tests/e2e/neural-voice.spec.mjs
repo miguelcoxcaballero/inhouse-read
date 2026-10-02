@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { openAudioMenu, selectedOption } from './helpers/audio-menus.mjs'
 import { fakeEngineScript } from '../helpers/fake-neural-engine.js'
 
 // The on-device neural voices (Piper) as the reader sees them. The engine itself (workers, models, Hugging Face) is not
@@ -43,7 +44,7 @@ async function open(page, file) {
 }
 const engine = (page, fn, arg) => page.evaluate(`(${fn})(window.__inhouseNeuralTest.engine, ${JSON.stringify(arg ?? null)})`)
 const calls = page => engine(page, e => e.calls.map(call => ({ ...call })))
-const openAudio = page => page.getByRole('button', { name:'Escuchar el libro' }).click()
+const openAudio = async page => { await page.getByRole('button', { name:'Escuchar el libro' }).click(); await openAudioMenu(page, 'Voz') } // the natural voices live in the Voz list
 const neural = page => page.locator('[data-neural]')
 const row = (page, id = LESSAC) => page.locator(`[data-neural-voice="${id}"]`)
 const shot = async (page, name) => {
@@ -79,7 +80,7 @@ for (const [format, file] of [['EPUB', EPUB], ['PDF', PDF]]) {
     await engine(page, e => e.finish('piper:en_US-lessac-high'))
     await expect(row(page).getByRole('button', { name:/Voz en uso Lessac/ })).toHaveAttribute('aria-pressed', 'true')
     await expect(row(page)).toContainText('Instalada')
-    await expect(page.getByRole('combobox', { name:'Voz de lectura' })).toHaveValue(LESSAC)
+    await expect(selectedOption(page)).toHaveAttribute('data-value', LESSAC)
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('inhouse-read-reading-preferences')).voice)).toBe(LESSAC)
     await expect(page.locator('[data-voice-auto]')).toHaveText('')
     await shot(page, `picker-${format}-installed`)
@@ -134,10 +135,10 @@ test('the download can be cancelled, fails with a clear message and can be retri
   // pick another installed voice, then remove the one in use: the choice goes back to Automática
   await engine(page, e => { e.set.add('piper:en_GB-alba-medium'); e.emitChange() })
   await row(page, alba).getByRole('button', { name:/Usar la voz Alba/ }).click()
-  await expect(page.getByRole('combobox', { name:'Voz de lectura' })).toHaveValue(alba)
+  await expect(selectedOption(page)).toHaveAttribute('data-value', alba)
   await row(page, alba).getByRole('button', { name:/Quitar la voz Alba/ }).click()
   await expect(row(page, alba).getByRole('button', { name:/Descargar la voz Alba/ })).toBeVisible()
-  await expect(page.getByRole('combobox', { name:'Voz de lectura' })).toHaveValue('')
+  await expect(selectedOption(page)).toHaveAttribute('data-value', '')
   expect(await engine(page, e => e.removed)).toEqual([alba])
   expect(await engine(page, e => e.installs)).toEqual([alba, 'piper:en_US-lessac-high', 'piper:en_US-lessac-high'])
 })
@@ -230,7 +231,7 @@ test('first-use offer: Ahora no is remembered per language; Descargar starts the
   await expect(offer).toBeVisible()
   await offer.getByRole('button', { name:/Descargar la voz natural Lessac/ }).click()
   await expect(offer).toBeHidden({ timeout:15_000 }) // installed: no more offer
-  await expect(page.getByRole('combobox', { name:'Voz de lectura' })).toHaveValue(LESSAC)
+  await expect(selectedOption(page)).toHaveAttribute('data-value', LESSAC)
   await expect.poll(async () => (await calls(page)).length, { timeout:30_000 }).toBeGreaterThan(0)
   expect((await calls(page))[0].voiceId).toBe(LESSAC)
 })

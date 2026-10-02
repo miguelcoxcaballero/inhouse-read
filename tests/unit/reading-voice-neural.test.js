@@ -176,9 +176,7 @@ describe('neural voice failures fall back to the best system voice', () => {
   afterEach(() => { messages.length = 0 })
 
   it.each([
-    ['too-slow', 'Voz natural demasiado lenta. Se usa la del sistema.'],
-    ['init-failed', 'La voz natural no arrancó. Se usa la del sistema.'],
-    ['synth-failed', 'La voz natural no arrancó. Se usa la del sistema.']
+    ['too-slow', 'Voz natural demasiado lenta. Se usa la del sistema.']
   ])("'%s' hands over to the system voice for the rest of the session, with a visible message", async (reason, message) => {
     const speak = device(), engine = engineWith()
     const voice = await reading(SENTENCES, { onState:watch })
@@ -227,7 +225,44 @@ describe('neural voice failures fall back to the best system voice', () => {
     engine.speak = () => { throw new Error('worker died') }
     const voice = await reading(SENTENCES, { onState:watch })
     await vi.waitFor(() => expect(speak).toHaveBeenCalledTimes(1))
-    expect(messages[0]).toMatch(/La voz natural no arrancó/)
+    expect(messages.at(-1)).toMatch(/La voz natural no arrancó/) // after the restarts were tried
+    voice.stop()
+  })
+  it.each(['synth-failed', 'init-failed'])("a worker that dies mid-reading ('%s') is rebuilt and the same fragment is spoken again with the neural voice", async reason => {
+    const speak = device(), engine = engineWith()
+    const voice = await reading(SENTENCES, { onState:watch })
+    tts('done', last(engine).id) // one sentence is heard...
+    expect(last(engine).text).toBe('Segunda frase.')
+    tts('error', last(engine).id, reason) // ...and the worker dies on the next
+    expect(engine.calls.at(-1).text).toBe('Segunda frase.'); expect(engine.calls.at(-2).text).toBe('Segunda frase.')
+    expect(messages).toEqual(['Reiniciando la voz natural…'])
+    expect(voice.neuralOff).toBe('') // not given up on
+    expect(speak).not.toHaveBeenCalled()
+    tts('done', last(engine).id)
+    expect(last(engine).text).toBe('Tercera frase.') // the reading carries on, still natural
+    voice.stop()
+  })
+  it('a worker that keeps dying is given up on after a few restarts in a row, with the system voice and the usual message', async () => {
+    const speak = device(), engine = engineWith()
+    const voice = await reading(SENTENCES, { onState:watch })
+    for (let attempt = 0; attempt < 3; attempt++) tts('error', last(engine).id, 'synth-failed')
+    expect(engine.calls).toHaveLength(4) // the first try and three restarts
+    expect(speak).not.toHaveBeenCalled()
+    tts('error', last(engine).id, 'synth-failed')
+    expect(messages.at(-1)).toBe('La voz natural no arrancó. Se usa la del sistema.')
+    expect(voice.neuralOff).toBe('synth-failed')
+    expect(speak.mock.calls[0].slice(0, 4)).toEqual(['Primera frase.', 'es-ES', 1, 'es-good'])
+    voice.stop()
+  })
+  it('a fragment heard to the end clears the count: a worker that only dies now and then never ends the neural reading', async () => {
+    const speak = device(), engine = engineWith()
+    const voice = await reading(SENTENCES, { onState:watch })
+    for (let sentence = 0; sentence < 5; sentence++) {
+      for (let attempt = 0; attempt < 2; attempt++) tts('error', last(engine).id, 'synth-failed')
+      tts('done', last(engine).id)
+    }
+    expect(voice.neuralOff).toBe('')
+    expect(speak).not.toHaveBeenCalled()
     voice.stop()
   })
   it('an engine that disappears (unsupported) between fragments is replaced by the system voice', async () => {
