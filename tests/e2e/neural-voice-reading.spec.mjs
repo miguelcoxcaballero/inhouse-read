@@ -234,6 +234,8 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
       // (the next page's text is only known after the turn, so its first fragment is computed from scratch).
       const gaps = await neu(page, n => n.events.flatMap((event, i) => event.type === 'done' && n.events[i + 1]?.type === 'start' ? [Math.round(n.events[i + 1].at - event.at)] : []))
       numbers[`${format}Reading`].silenceBetweenFragmentsMs = gaps
+      // Silence on the audio clock between consecutive scheduled chunks (an underrun shows up here as a gap inside the speech).
+      numbers[`${format}Reading`].audioClockGapsOver30ms = audio.flatMap((chunk, i) => i && chunk.when >= audio[i - 1].when ? [Math.round((chunk.when - audio[i - 1].when - audio[i - 1].duration) * 1000)] : []).filter(gap => gap > 30)
       expect(Math.max(...gaps)).toBeLessThan(6000)
 
       // --- Pause: the voice stops at once and the highlight goes; resume speaks the same sentence again.
@@ -339,8 +341,35 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await page.getByRole('combobox', { name: 'Voz de lectura' }).selectOption(CLAUDE_ID)
     await expect.poll(async () => (await neu(page, n => n.speak)).length, SLOW).toBeGreaterThan(speaks)
     await expect.poll(async () => (await starts(page)).length, SLOW).toBeGreaterThan(neuralStarts)
-    await page.getByRole('button', { name: 'Detener', exact: true }).click()
+    // Leaving the book while the natural voice speaks silences it for good (the reader's own stop, nothing keeps playing on the shelf).
+    await closePanel(page)
+    await page.locator('#reader-back').click()
+    await expect(page.getByRole('heading', { name: 'Tu biblioteca' })).toBeVisible(SLOW)
+    await expect.poll(async () => (await engineStats(page)).status, SLOW).toBe('idle')
+    const left = await eventCount(page), scheduled = await neu(page, n => n.audio.length)
+    await page.waitForTimeout(2000)
+    expect((await types(page, left)).filter(type => type !== 'done')).toEqual([])
+    expect(await neu(page, n => n.audio.length)).toBe(scheduled)
     expect(errors).toEqual([])
+  })
+
+  test('idle: a worker nobody speaks to is torn down after ~90 s (the memory comes back) and the next Play rebuilds it from the cache', async () => {
+    test.skip(!process.env.NEURAL_VOICE_IDLE, 'takes ~2 minutes: set NEURAL_VOICE_IDLE=1')
+    await open(page, EPUB)
+    await openAudio(page)
+    await spyOnEngine(page)
+    await expect.poll(() => page.evaluate(() => window.__neuEngine.core?.client?.loaded || ''), SLOW).toBe(CLAUDE) // warmed up, nothing spoken
+    await page.waitForTimeout(2000)
+    const warm = residentMB()
+    await page.waitForTimeout(95_000)
+    expect(await page.evaluate(() => window.__neuEngine.core.client)).toBeNull() // terminated by the engine's own idle timer
+    const torn = residentMB()
+    numbers.idleTeardown = { residentWarmMB: Math.round(warm), residentAfterMB: Math.round(torn), freedMB: Math.round(warm - torn) }
+    expect(warm - torn).toBeGreaterThan(250)
+    await play(page) // rebuilt lazily from Cache Storage
+    await expect.poll(async () => (await starts(page)).length, SLOW).toBeGreaterThan(0)
+    await expectCleanAudio(page, 'after teardown')
+    await page.getByRole('button', { name: 'Detener', exact: true }).click()
   })
 
   test('the shelf loads none of the engine, and its frames stay fluid while the voice thinks next to it', async () => {
