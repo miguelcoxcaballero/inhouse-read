@@ -17,6 +17,7 @@ import { initAndroidFileImports } from './android-file-import.js'
 import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
 import { normalizeShelfPosition } from './book-colors.js'
 import { ReaderExperience } from './readers/reader-experience.js'
+import { classifyTapZone, ZONE } from './gestures.js'
 
 const library = new LibraryStore()
 const reader = new ReaderController()
@@ -201,18 +202,33 @@ async function refreshShelf() {
   }
 }
 
+// Hiding the controls only hides them: the header and the toolbar keep their
+// margins (see reading.css), so the page never repaginates or refits. The
+// toolbar's own `hidden` attribute is left to the opening and closing flights.
 function setReaderChromeHidden(hidden) {
   if (els.readerScreen.hidden || els.readerScreen.classList.contains('is-preparing') ||
       els.readerScreen.classList.contains('is-opening-from-book')) return
   const focus = Boolean(hidden)
   document.body.classList.toggle('is-reader-focus', focus)
-  els.readerToolbar.hidden = focus
   els.readerFocus.setAttribute('aria-pressed', String(focus))
   els.readerFocus.setAttribute('aria-label', focus ? 'Mostrar controles' : 'Ocultar controles')
   if (focus) els.readerViewport.focus({ preventScroll:true })
 }
 
 els.readerFocus.addEventListener('click', () => setReaderChromeHidden(true))
+// The blank margins left by hidden controls still take taps like the page does:
+// the edges turn pages and the centre brings the controls back. Their buttons
+// are invisible and unreachable, so only a tap on the margin itself lands here.
+for (const margin of [document.querySelector('.app-header'), els.readerToolbar]) {
+  margin.addEventListener('click', event => {
+    if (event.target !== margin || !document.body.classList.contains('is-reader-focus')) return
+    const bounds = margin.getBoundingClientRect()
+    const zone = classifyTapZone(event.clientX - bounds.left, bounds.width)
+    if (zone === ZONE.CENTER) return setReaderChromeHidden(false)
+    const forward = (zone === ZONE.NEXT) !== reader.rtl
+    readingExperience.step(forward ? 1 : -1)
+  })
+}
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && document.body.classList.contains('is-reader-focus') && !readingExperience.panel.open) {
     setReaderChromeHidden(false)
