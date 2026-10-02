@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import 'fake-indexeddb/auto'
 import { Blob as NativeBlob } from 'node:buffer'
-import { LibraryStore, idForSource } from '../../src/js/library-store.js'
+import { LibraryStore, idForSource, sameBookRecords } from '../../src/js/library-store.js'
 
 describe('idForSource', () => {
   it('genera un id estable para archivos locales basado en nombre+tamaño', () => {
@@ -250,5 +250,42 @@ describe('LibraryStore', () => {
       await store.addOrTouch({ sourceType: 'local', name: `b${i}.pdf`, size: 1, title: `B${i}`, format: 'PDF' })
     }
     expect(await store.listRecents(2)).toHaveLength(2)
+  })
+})
+
+describe('sameBookRecords', () => {
+  const record = (extra = {}) => ({
+    id: 'local:dune.epub:1', title: 'Dune', progressFraction: .25, locator: { cfi: 'epubcfi(/6/4)', path: [1, 2] },
+    cover: new Blob(['cover'], { type: 'image/png' }), content: new Blob(['0123456789'], { type: 'application/epub+zip' }),
+    shelfPosition: { shelf: 1, x: .4 }, ...extra
+  })
+
+  it('treats a fresh read of identical records as the same shelf, comparing Blobs by type and size', () => {
+    expect(sameBookRecords([record(), record({ id: 'b' })], [record(), record({ id: 'b' })])).toBe(true)
+    expect(sameBookRecords([], [])).toBe(true)
+  })
+
+  it('notices any field a shelf could draw changing', () => {
+    expect(sameBookRecords([record()], [record({ progressFraction: .5 })])).toBe(false)
+    expect(sameBookRecords([record()], [record({ locator: { cfi: 'epubcfi(/6/4)', path: [1, 3] } })])).toBe(false)
+    expect(sameBookRecords([record()], [record({ shelfPosition: { shelf: 2, x: .4 } })])).toBe(false)
+    expect(sameBookRecords([record()], [record({ coverUpdatedAt: 5 })])).toBe(false)
+    expect(sameBookRecords([record()], [record({ title: 'Dune Messiah' })])).toBe(false)
+  })
+
+  it('notices a replaced or missing Blob and a different list', () => {
+    expect(sameBookRecords([record()], [record({ cover: new Blob(['a larger cover'], { type: 'image/png' }) })])).toBe(false)
+    expect(sameBookRecords([record()], [record({ cover: new Blob(['cover'], { type: 'image/jpeg' }) })])).toBe(false)
+    expect(sameBookRecords([record()], [record({ cover: undefined })])).toBe(false)
+    expect(sameBookRecords([record()], [record({ content: 'text' })])).toBe(false)
+    expect(sameBookRecords([record()], [record(), record({ id: 'b' })])).toBe(false)
+    expect(sameBookRecords([record(), record({ id: 'b' })], [record({ id: 'b' }), record()])).toBe(false)
+  })
+
+  it('never claims equality for values it cannot compare', () => {
+    expect(sameBookRecords([record({ stamp: new Date(1) })], [record({ stamp: new Date(1) })])).toBe(true)
+    expect(sameBookRecords([record({ stamp: new Date(1) })], [record({ stamp: new Date(2) })])).toBe(false)
+    expect(sameBookRecords([record({ map: new Map([[1, 2]]) })], [record({ map: new Map([[1, 2]]) })])).toBe(false)
+    expect(sameBookRecords([record({ list: [1] })], [record({ list: { 0: 1 } })])).toBe(false)
   })
 })

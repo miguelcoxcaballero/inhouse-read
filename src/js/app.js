@@ -1,4 +1,4 @@
-import { LibraryStore } from './library-store.js'
+import { LibraryStore, sameBookRecords } from './library-store.js'
 import { renderBookshelf } from './bookshelf.js'
 import { ReaderController, UnsupportedFormatError } from './readers/reader-controller.js'
 import {
@@ -61,6 +61,7 @@ const els = {
 }
 
 let shelf = null
+let shelfRecords = null
 let currentBookId = null
 let pendingLocalReopenId = null
 let pendingReaderTransition = null
@@ -164,6 +165,10 @@ async function refreshShelf() {
   const books = normalizedBooks.filter(book => book && (
     book.sourceType !== 'drive' || (accountId && (!book.cloudAccountId || book.cloudAccountId === accountId))
   ))
+  // Background syncs report a change even when every record came back the
+  // same; repainting the whole 3D shelf for them is pure jank.
+  if (shelf && shelfRecords && sameBookRecords(shelfRecords, books)) return
+  shelfRecords = books
   // A selection can begin while the IndexedDB read is pending. Let the shelf
   // queue this record set instead of replacing a book already in flight.
   if (!shelf) {

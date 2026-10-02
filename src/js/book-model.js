@@ -4,6 +4,7 @@ import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from './bo
 import { normalizeBookAuthor } from './book-title.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { applyBookReflectionSurface } from './book-reflection-surface.js';
+import { keepProgramsAlive } from './gpu-programs.js';
 
 // Procedural micro-detail shared by every book: generated once, uploaded once.
 // Models receive clones (same Source, own repeat); three.js keeps the GPU
@@ -1256,6 +1257,7 @@ export function getBookRenderer() {
     studioEnvironment = pmrem.fromScene(room, .035).texture;
     room.traverse(object => { object.geometry?.dispose(); object.material?.dispose(); });
     pmrem.dispose();
+    keepProgramsAlive(renderer);
   } catch { return null; }
   return renderer;
 }
