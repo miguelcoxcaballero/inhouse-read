@@ -97,18 +97,19 @@ export function plantSizeLabel(plantId, potId) {
   return `Maceta Ø${cm(size.potDiameter)} × ${cm(size.potHeight)} cm · planta ${cm(size.height)} cm${estimated ? ' aprox.' : ''}${unverified ? ' (sin verificar)' : ''}${placement}`;
 }
 
-/** Book height at its tallest (heightRatio 1): 28 cm, as baggeboLayout draws it. */
-export const BOOK_REFERENCE_MM = 280;
-const WALNUT_BOOK_PX = viewportWidth => viewportWidth >= 600 ? 200 : 172;
+/** Book height at its tallest (heightRatio 1): 24 cm; spineStyleFor varies it
+ * down to 80 % (19.2 cm), a typical 21-22 cm paperback or hardback. */
+export const BOOK_REFERENCE_MM = 240;
+/** Spine thickness of a real book: a slim paperback to a thick hardback. */
+export const BOOK_THICKNESS_MM = Object.freeze({ min:15, max:45 });
 
 /**
- * Scene pixels per millimetre. On BAGGEBO the 600 mm unit fills the shelf
- * width, the scale lamps and books already use. 'Madera' has no published
- * size, so a 28 cm book is the full 172 px (200 px on wide screens) row.
+ * Scene pixels per millimetre. Both shelves are 600 mm wide units that fill
+ * the shelf width, the scale lamps, books and plants use. Without a measured
+ * width (a DOM-only fallback) a 600 mm unit is assumed 390 px wide.
  */
-export function shelfScale({ shelfType, shelfWidth, viewportWidth = 0 } = {}) {
-  if (shelfType === 'baggebo' && shelfWidth > 0) return shelfWidth / BAGGEBO_SPEC.width;
-  return WALNUT_BOOK_PX(viewportWidth) / BOOK_REFERENCE_MM;
+export function shelfScale({ shelfWidth } = {}) {
+  return (shelfWidth > 0 ? shelfWidth : 390) / BAGGEBO_SPEC.width;
 }
 
 /** Plant size in scene pixels for a scale from `shelfScale`. */
