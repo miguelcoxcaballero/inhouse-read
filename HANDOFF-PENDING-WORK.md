@@ -24,3 +24,12 @@ Todo lo que sigue está en ramas `wip/*` del remoto (sin revisar, sin verificar 
 - Voces: Kokoro es ~4x más lento que el audio en WASM de un solo hilo; sherpa-onnx necesita parches frágiles; Piper (onnxruntime-web + piper_phonemize, modelos de Hugging Face, ~63 MB por voz) mide ~0,45 s por segundo de audio. Las URL de Hugging Face no se pudieron probar desde el sandbox (bloqueadas); los tests las simulan con los modelos locales.
 - Android: la app es un WebView que carga el sitio de GitHub Pages, así que los cambios web llegan al desplegar; el 120 Hz nativo necesita publicar un APK nuevo a mano (versión 1.1.2).
 - Máquina de pruebas: 4 núcleos con GPU por software; no lanzar varios paquetes pesados a la vez (la carga llegó a 18 y los tests se agotan por tiempo).
+
+## Actualización final de la sesión (2026-10-02, ~16:05 UTC)
+**Ya en `main` (desplegado):** resaltado de frases (b4dd143); controles sin reflow 1.7.1, página preparada 1.7.2, tamaños IKEA 1.7.3 y editor de portada con relieve 1.7.4 (todo de ChatGPT); voces neuronales Piper (e6bc309, verificadas: 1309 unitarias, 54 e2e de voz/lector pasan); cobertura de relieve en perezoso para que los libros sin relieve no paguen el shader pesado en el vuelo de apertura/cierre (e407b44).
+**Pendiente:**
+- Papelera (congelación ~5 s + texto "retirado"): `wip/trash-freeze` (da4a581), sin terminar ni revisar.
+- Justificación de la página 3D: `wip/snapshot-justified` (a4d09eb), implementada, sin revisar (mezclar con `main`).
+- Estanterías a medidas reales (ambas 60×25×116 cm, BAGGEBO como referencia, libros/lámparas a escala real): `wip/shelf-real-scale` (3ed5fe6), apenas empezada.
+- "El 8 no funciona" (página preparada 1.7.2): no se pudo reproducir en el sandbox (GL por software). Los smoke `155`, `391`, `420` de `tests/e2e/smoke.spec.mjs` fallan también en b4dd143 con una espera de 20 s a `is-closing-reader`: es lentitud de SwiftShader, no una regresión. Hay que probar la línea de tiempo (`markTiming`: engine-opened, page-restored, page-snapshot, page-reused) en un navegador con GPU real.
+- Android 120 Hz: publicar a mano el APK 1.1.2.
