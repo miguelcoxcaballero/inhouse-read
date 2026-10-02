@@ -229,7 +229,7 @@ function fontMask(title, candidate, size, upper, align, maxWidth) {
   const linesCanvas = document.createElement('canvas');
   linesCanvas.width = maxWidth;
   linesCanvas.height = Math.ceil(size * 5.5);
-  const linesContext = linesCanvas.getContext('2d');
+  const linesContext = linesCanvas.getContext('2d', { willReadFrequently: true });
   if (!linesContext) return null;
   linesContext.clearRect(0, 0, linesCanvas.width, linesCanvas.height);
   linesContext.font = `${candidate.weight} ${size}px "${candidate.family}", ${candidate.fallback}`;
