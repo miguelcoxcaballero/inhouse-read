@@ -289,4 +289,30 @@ describe('cover analysis is single-flight', () => {
     expect(order.length).toBeGreaterThan(0)
     expect(order.filter((name, index) => name !== order[index - 1]).length).toBe(titles.length)
   })
+
+  it('reads every canvas it analyses through a CPU-backed context', async () => {
+    // getImageData on a GPU-backed 2D canvas forces a readback each time. The
+    // lettering search reads one canvas per font candidate and size, which froze
+    // the page for seconds (software GL, e.g. just after removing a book).
+    const requests = []
+    globalThis.Image = class {
+      constructor() { this.naturalWidth = 192; this.naturalHeight = 288 }
+      decode() { return Promise.resolve() }
+      set src(value) { this.url = value }
+    }
+    document.createElement = tag => {
+      if (tag !== 'canvas') return realCreate(tag)
+      let reads = false
+      const context = {
+        drawImage() {}, clearRect() {}, fillText() {},
+        measureText: text => ({ width: text.length * 5 }),
+        getImageData: (x, y, w, h) => { reads = true; return { data: new Uint8ClampedArray(w * h * 4).fill(120) } }
+      }
+      return { width: 0, height: 0, getContext: (type, options) => { requests.push({ options, read: () => reads }); return context } }
+    }
+    await analyzeCoverAppearance('blob:cpu', 'Alpha beta gamma')
+    const reading = requests.filter(request => request.read())
+    expect(reading.length).toBeGreaterThan(0)
+    expect(reading.every(request => request.options?.willReadFrequently === true)).toBe(true)
+  })
 })
