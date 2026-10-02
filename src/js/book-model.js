@@ -598,6 +598,24 @@ function paperTone(source) {
 // read as the same sheet, the left one a shade quieter.
 const LEAF_LIGHT = new THREE.Color(.96 / 1.03, .96 / .96, .96 / .895);
 
+/**
+ * Cross-fade between the sepia paper and the reader's own paper, mixed in
+ * sRGB exactly as the two page textures are blended on screen, so the paper
+ * under and beside the page fades in step with it. A side that has no paper
+ * (a full-bleed picture) yields to the other; with neither, null.
+ */
+const toneScratch = { a:{}, b:{} };
+export function mixPaperTone(target, sepia, theme, mix) {
+  const k = Math.max(0, Math.min(1, Number(mix)));
+  if (!sepia && !theme) return null;
+  if (!sepia) return target.copy(theme);
+  if (!theme) return target.copy(sepia);
+  if (!(k > 0)) return target.copy(sepia);
+  if (!(k < 1)) return target.copy(theme);
+  const a = sepia.getRGB(toneScratch.a, THREE.SRGBColorSpace), b = theme.getRGB(toneScratch.b, THREE.SRGBColorSpace);
+  return target.setRGB(a.r + (b.r - a.r) * k, a.g + (b.g - a.g) * k, a.b + (b.b - a.b) * k, THREE.SRGBColorSpace);
+}
+
 export function fitCoverImage(imageWidth, imageHeight, width, height) {
   const scale = Math.min(width / imageWidth, height / imageHeight);
   const w = imageWidth * scale, h = imageHeight * scale;
@@ -927,7 +945,38 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   pageImage.position.set(inset * .3, 0, pageFront + board * .02);
   pageImage.visible = false; group.add(pageImage);
   group.userData.pageSurface = pageImage;
-  group.userData.setPageSnapshot = snapshot => {
+  // The same page in the sepia theme sits just behind the reader's own: the
+  // book opens and closes in sepia and the reading theme fades over it
+  // (pageTheme 0 = sepia, 1 = the reader's theme). Only exists when the
+  // snapshot carries a variant, i.e. when the theme is not sepia already.
+  const sepiaMaterial = new THREE.MeshBasicMaterial({ color:0xffffff, toneMapped:false });
+  const sepiaImage = new THREE.Mesh(new THREE.PlaneGeometry(pageWidth, pageHeight), sepiaMaterial);
+  sepiaImage.name = 'reading-page-sepia';
+  sepiaImage.position.set(inset * .3, 0, pageFront + board * .01);
+  sepiaImage.visible = false; group.add(sepiaImage);
+  let pageTheme = 1, themeTone = null, sepiaTone = null;
+  const paperScratch = new THREE.Color();
+  const applyPageTheme = () => {
+    const faded = sepiaImage.visible;
+    // Transparent for the whole life of a variant (never toggled while it is
+    // on screen: that would recompile the program mid-opening); at opacity 1
+    // the blend is exactly the opaque result.
+    pageMaterial.opacity = faded ? pageTheme : 1;
+    const tone = faded ? mixPaperTone(paperScratch, sepiaTone, themeTone, pageTheme) : themeTone;
+    if (tone) { pagePaper.material.color.copy(tone); leafPaper?.color.copy(tone).multiply(LEAF_LIGHT); }
+  };
+  group.userData.setPageTheme = (mix, redraw = true) => {
+    if (disposed) return false;
+    const next = Math.max(0, Math.min(1, Number.isFinite(Number(mix)) ? Number(mix) : 1));
+    const changed = next !== pageTheme;
+    pageTheme = next;
+    if (!sepiaImage.visible) return false;
+    applyPageTheme();
+    if (changed && redraw) group.userData.invalidate?.();
+    return true;
+  };
+  group.userData.getPageTheme = () => pageTheme;
+  group.userData.setPageSnapshot = (snapshot, { pageTheme:initialTheme } = {}) => {
     if (disposed || !snapshot?.source) return false;
     const imageWidth = Number(snapshot.width || snapshot.source.width || snapshot.source.naturalWidth);
     const imageHeight = Number(snapshot.height || snapshot.source.height || snapshot.source.naturalHeight);
@@ -935,14 +984,33 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     const fit = fitCoverImage(imageWidth, imageHeight, pageWidth, pageHeight);
     pageImage.geometry.dispose();
     pageImage.geometry = new THREE.PlaneGeometry(fit.width, fit.height);
-    const map = new THREE.CanvasTexture(snapshot.source);
-    map.colorSpace = THREE.SRGBColorSpace;
-    map.minFilter = THREE.LinearFilter; map.generateMipmaps = false;
+    const pageTexture = source => {
+      const map = new THREE.CanvasTexture(source);
+      map.colorSpace = THREE.SRGBColorSpace;
+      map.minFilter = THREE.LinearFilter; map.generateMipmaps = false;
+      return map;
+    };
+    const map = pageTexture(snapshot.source);
     pageMaterial.map?.dispose(); pageMaterial.map = map; pageMaterial.needsUpdate = true;
     pageImage.visible = true;
+    // The sepia variant must be the same page: same canvas size.
+    const variant = snapshot.sepia?.source ? snapshot.sepia : null;
+    const sameSize = variant && Number(variant.width || variant.source.width) === imageWidth
+      && Number(variant.height || variant.source.height) === imageHeight;
+    sepiaMaterial.map?.dispose(); sepiaMaterial.map = null;
+    if (sameSize) {
+      sepiaImage.geometry.dispose(); sepiaImage.geometry = pageImage.geometry.clone();
+      sepiaMaterial.map = pageTexture(variant.source); sepiaMaterial.needsUpdate = true;
+      sepiaImage.visible = true; pageMaterial.transparent = true;
+    } else {
+      sepiaImage.visible = false; pageMaterial.transparent = false; pageMaterial.opacity = 1;
+    }
+    if (initialTheme != null) pageTheme = Math.max(0, Math.min(1, Number(initialTheme) || 0));
     // White for a PDF, the theme's paper for an EPUB; cream when unreadable.
-    const tone = paperTone(snapshot.source);
-    if (tone) { pagePaper.material.color.copy(tone); leafPaper?.color.copy(tone).multiply(LEAF_LIGHT); }
+    themeTone = paperTone(snapshot.source);
+    sepiaTone = sameSize ? paperTone(variant.source) : null;
+    if (sepiaImage.visible) applyPageTheme();
+    else if (themeTone) { pagePaper.material.color.copy(themeTone); leafPaper?.color.copy(themeTone).multiply(LEAF_LIGHT); }
     group.userData.pageSnapshot = snapshot;
     group.userData.invalidate?.();
     return true;
@@ -1297,12 +1365,14 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   if (shelf) canvas.dataset.shelfView = shelfView;
   const camera = new THREE.OrthographicCamera(-viewportWidth / 2, viewportWidth / 2, viewportHeight / 2, -viewportHeight / 2, .1, 10000); camera.position.z = 3000;
   let disposed = false, current, cancel = () => {}, pendingModel = null, appearanceRevision = 0;
-  let currentBook = book, currentSnapshot = null;
+  let currentBook = book, currentSnapshot = null, pageTheme = 1;
   function draw(pose) {
     if (disposed) return;
+    if (pose.pageTheme != null) pageTheme = Math.max(0, Math.min(1, Number(pose.pageTheme) || 0));
     current = { ...pose, coverOpen:Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0)),
-      bookmarkWithdraw:Math.max(0, Math.min(1, pose.bookmarkWithdraw ?? current?.bookmarkWithdraw ?? 0)) };
+      bookmarkWithdraw:Math.max(0, Math.min(1, pose.bookmarkWithdraw ?? current?.bookmarkWithdraw ?? 0)), pageTheme };
     model.userData.setCoverOpen?.(current.coverOpen);
+    model.userData.setPageTheme?.(pageTheme, false);
     model.userData.setBookmarkWithdraw?.(current.bookmarkWithdraw);
     model.position.set(centerX - viewportWidth / 2 + pose.x, viewportHeight / 2 - centerY - pose.y, 0);
     model.rotation.set((pose.pitch ?? 0) * Math.PI / 180, pose.angle * Math.PI / 180, (pose.roll ?? 0) * Math.PI / 180); model.scale.setScalar(pose.scale);
@@ -1321,6 +1391,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     context.clearRect(0, 0, canvas.width, canvas.height); context.drawImage(gpu.domElement, 0, 0, canvas.width, canvas.height);
     canvas.dataset.angle = String(pose.angle); canvas.dataset.renderer = 'three-mesh';
     canvas.dataset.coverOpen = String(current.coverOpen);
+    canvas.dataset.pageTheme = String(pageTheme);
     canvas.dataset.bookmarkWithdraw = String(current.bookmarkWithdraw);
     canvas.dataset.boardBounds = JSON.stringify(projectBookBoardBounds(model,camera,viewportWidth,viewportHeight));
   }
@@ -1396,10 +1467,16 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     const origin = { ...current };
     return animateMotion([{ transform:origin }, { transform:{ ...origin, bookmarkWithdraw:withdraw } }], { duration });
   }
-  function setPageSnapshot(snapshot) {
-    if (disposed || !model.userData.setPageSnapshot(snapshot)) return false;
+  // `pageTheme` (0 = sepia, 1 = the reader's own theme; default 1) is where the
+  // page's colour starts: the book opens and closes in sepia.
+  function setPageSnapshot(snapshot, { pageTheme:initialTheme } = {}) {
+    if (initialTheme != null) {
+      pageTheme = Math.max(0, Math.min(1, Number(initialTheme) || 0));
+      if (current) current = { ...current, pageTheme };
+    }
+    if (disposed || !model.userData.setPageSnapshot(snapshot, { pageTheme })) return false;
     currentSnapshot = snapshot;
-    pendingModel?.userData.setPageSnapshot(snapshot);
+    pendingModel?.userData.setPageSnapshot(snapshot, { pageTheme });
     canvas.dataset.pageSource = snapshot.sourceType || snapshot.engine || 'reader-page';
     canvas.dataset.pageLocator = JSON.stringify(snapshot.location?.locator ?? snapshot.location ?? null);
     canvas.dataset.pageText = String(snapshot.text || '').slice(0, 500);
@@ -1430,7 +1507,16 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   function animateToPage(target) {
     const origin = { ...current }, destination = pagePose(target);
     if (!destination) return { finished:Promise.resolve(), cancel:() => {} };
+    // The page's colour moves on the zoom's own clock and easing.
+    if (target.pageTheme != null) destination.pageTheme = target.pageTheme;
     return animateMotion([{ transform:origin }, { transform:destination }], { duration:target.duration ?? 620 });
+  }
+  function setPageTheme(mix) {
+    if (current) draw({ ...current, pageTheme:mix });
+  }
+  function animatePageTheme({ from, to = 1, duration = 720 } = {}) {
+    const origin = { ...current, pageTheme:from ?? current?.pageTheme ?? pageTheme };
+    return animateMotion([{ transform:origin }, { transform:{ ...origin, pageTheme:to } }], { duration });
   }
   function setBookmarkWithdraw(amount) {
     if (current) draw({ ...current, bookmarkWithdraw:amount });
@@ -1460,7 +1546,8 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   }
   return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
     updateAppearance, updateSpineAppearance, updateCoverAppearance, updateEdgeAppearance,
-    setPageSnapshot, getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,
+    setPageSnapshot, setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
+    getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,
     animateCoverOpen, animateCoverClose, animateBookmark, alignToPage, animateToPage,
     animate:animateMotion,
     dispose(removeCanvas = true) { cancel(); disposed = true; pendingModel?.userData.dispose(); model.userData.dispose(); if (removeCanvas) canvas.remove(); } };
@@ -1475,7 +1562,9 @@ export function sampleBookMotion(frames, progress) {
   while (index < frames.length - 2 && t > times[index + 1]) index++;
   const span = times[index + 1] - times[index], k = (t - times[index]) / span;
   const k2 = k * k, k3 = k2 * k, pose = {};
-  for (const key of ['x', 'y', 'scale', 'angle', 'pitch', 'roll', 'coverOpen', 'bookmarkWithdraw']) {
+  for (const key of ['x', 'y', 'scale', 'angle', 'pitch', 'roll', 'coverOpen', 'bookmarkWithdraw', 'pageTheme']) {
+    // The page's sepia/theme mix only moves when every frame says where it goes.
+    if (key === 'pageTheme' && frames.some(frame => frame.transform.pageTheme == null)) continue;
     const value = i => frames[i].transform[key] ?? 0;
     const tangent = i => {
       if (i === 0 || i === frames.length - 1) return 0;

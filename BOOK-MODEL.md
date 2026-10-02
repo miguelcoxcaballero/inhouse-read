@@ -19,6 +19,11 @@ or model service are required.
 - The first motion stops at a cover that waits for a tap. That tap scales the
   same model to fill the screen; the reader renders behind it. Once the first
   page is ready, the cover fades and the reader controls slide up from below.
+- The saved page is always sepia while the book is opened or closed. Readers
+  snapshot the page twice (the user's theme and `snapshot.sepia`, the same page
+  under the sepia theme's palette or PDF filter); the model stacks the sepia
+  plane under the themed one and `pageTheme` (0 sepia, 1 theme) cross-fades them,
+  with the paper tones, on the zoom's own clock. Sepia readers carry no variant.
 - Devices without WebGL retain accessible shelf titles and a cover fallback.
 
 Verification: geometry unit tests check the ellipse, outward normals and UVs;
