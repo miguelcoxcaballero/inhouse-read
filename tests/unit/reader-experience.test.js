@@ -334,6 +334,20 @@ describe('search results', () => {
     experience.reset()
     expect(reader.clearSearch).toHaveBeenCalledTimes(2)
   })
+
+  it('a speed or voice change re-speaks the sentence being read, other audio options do not', async () => {
+    const { experience } = await setup()
+    experience.voice.restart = vi.fn()
+    experience.setPreference('rate', 1.5)
+    expect(experience.voice.restart).toHaveBeenCalledTimes(1)
+    expect(experience.voice.rate).toBe(1.5)
+    experience.setPreference('voice', 'es-device')
+    expect(experience.voice.restart).toHaveBeenCalledTimes(2)
+    expect(experience.voice.voice).toBe('es-device')
+    experience.setPreference('footnotes', true)
+    expect(experience.voice.restart).toHaveBeenCalledTimes(2)
+    expect(experience.voice.stop).not.toHaveBeenCalled()
+  })
 })
 
 describe('voice picker', () => {

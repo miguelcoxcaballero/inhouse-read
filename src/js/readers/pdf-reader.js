@@ -14,6 +14,8 @@ import { TextLayer } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { attachSwipeNavigation } from '../gestures.js'
 import { DEFAULT_READING_PREFERENCES, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES, normalizeReadingPreferences } from './reading-preferences.js'
 import { renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from './page-snapshot.js'
+import { mapTextLayer, mapTextNode } from './speech-map.js'
+import { SPEECH_SPAN_CLASS, clearSpeechRange, installSpeechStyle, paintSpeechRange } from './speech-highlight.js'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -227,6 +229,55 @@ export class PdfReader {
     const page = await this.#doc.getPage(this.#pageNum)
     const text = await page.getTextContent()
     return text.items.map(item => item.str + (item.hasEOL ? '\n' : ' ')).join('')
+  }
+  /** The page's text as the audiobook reads it, mapped onto the rendered text layer (or the reflow text) it is highlighted in. */
+  async getSpeechSource() {
+    if (!this.#doc) return null
+    let pending
+    do { pending = this.#renderReady; await pending } while (this.#doc && pending !== this.#renderReady)
+    if (!this.#doc) return null
+    const page = this.#pageNum
+    const build = () => this.#preferences.pdfMode === 'text'
+      ? mapTextNode(this.#pageText ? this.#reflow.firstChild : null) : mapTextLayer(this.#textLayerEl)
+    const first = build()
+    const doc = this.#container.ownerDocument
+    installSpeechStyle(doc, this.#preferences.theme)
+    let map = first, marked = []
+    // A zoom or view change re-renders the layer under a paused voice: re-map it, but only if it is still this page's text.
+    const current = () => {
+      if (this.#doc && page === this.#pageNum && !map.spans[0]?.node.isConnected) { const again = build(); if (again.text === first.text) map = again }
+      return this.#doc && page === this.#pageNum && (!map.spans.length || map.spans[0].node.isConnected) ? map : null
+    }
+    const clear = () => {
+      clearSpeechRange(doc)
+      for (const element of marked) element.classList.remove(SPEECH_SPAN_CLASS)
+      marked = []
+    }
+    return {
+      text:first.text, start:0, clear,
+      highlight:(start, end) => {
+        const live = current(), range = live?.rangeFor(start, end)
+        clear()
+        if (!range) return
+        if (paintSpeechRange(range)) return
+        // Fallback for WebViews without the Highlight API: tint the text-layer spans (or reflow page) the sentence touches.
+        marked = live.spans.filter(span => span.end > start && span.start < end).map(span => span.node.parentElement)
+        for (const element of marked) element.classList.add(SPEECH_SPAN_CLASS)
+      },
+      follow:(start, end) => {
+        const rect = current()?.rangeFor(start, end)?.getClientRects()[0]
+        if (!rect) return
+        const box = this.#container.getBoundingClientRect()
+        // Zoomed pages and the text view scroll: keep the sentence in view, a third from the top, without jolting while it is already visible.
+        const lower = rect.bottom > box.bottom - 24 || rect.top < box.top + 8
+        const side = rect.right > box.right || rect.left < box.left
+        if (!lower && !side) return
+        this.#container.scrollBy({
+          top:lower ? rect.top - (box.top + box.height * .3) : 0, left:side ? rect.left - (box.left + box.width * .15) : 0,
+          behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'
+        })
+      }
+    }
   }
 
   /** The restored reading page, copied only after its latest render settles. */
