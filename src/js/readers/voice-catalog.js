@@ -120,8 +120,8 @@ export function needsBetterVoice(voices, lang, deviceLang = '') {
 }
 
 // Names are in Spanish because the UI is; Intl.DisplayNames covers the long tail.
-const LANGUAGES = { es:'Español', en:'Inglés', fr:'Francés', de:'Alemán', it:'Italiano', pt:'Portugués', ca:'Catalán', gl:'Gallego', eu:'Euskera', nl:'Neerlandés', ru:'Ruso', ja:'Japonés', zh:'Chino', ko:'Coreano', pl:'Polaco' }
-const REGIONS = { ES:'España', US:'EE. UU.', GB:'Reino Unido', MX:'México', AR:'Argentina', CO:'Colombia', CL:'Chile', FR:'Francia', DE:'Alemania', IT:'Italia', PT:'Portugal', BR:'Brasil', CA:'Canadá', AU:'Australia', IN:'India', IE:'Irlanda', CH:'Suiza', AT:'Austria', BE:'Bélgica' }
+const LANGUAGES = { es:'Español', en:'Inglés', fr:'Francés', de:'Alemán', it:'Italiano', pt:'Portugués', ca:'Catalán', gl:'Gallego', eu:'Euskera', nl:'Neerlandés', ru:'Ruso', ja:'Japonés', zh:'Chino', ko:'Coreano', pl:'Polaco', tr:'Turco', cs:'Checo', sv:'Sueco', da:'Danés', fi:'Finés', ro:'Rumano', hu:'Húngaro', el:'Griego' }
+const REGIONS = { ES:'España', US:'EE. UU.', GB:'Reino Unido', MX:'México', AR:'Argentina', CO:'Colombia', CL:'Chile', FR:'Francia', DE:'Alemania', IT:'Italia', PT:'Portugal', BR:'Brasil', CA:'Canadá', AU:'Australia', IN:'India', IE:'Irlanda', CH:'Suiza', AT:'Austria', BE:'Bélgica', NL:'Países Bajos', PL:'Polonia', TR:'Turquía', CZ:'Chequia', SE:'Suecia', DK:'Dinamarca', FI:'Finlandia', RO:'Rumanía', HU:'Hungría', GR:'Grecia' }
 const displayName = (code, type) => {
   try { const value = new Intl.DisplayNames(['es'], { type }).of(code); return value && value !== code ? value : '' } catch { return '' }
 }
@@ -139,9 +139,9 @@ function voiceTitle(voice) {
   const title = voice.name.replace(/^(?:Microsoft|Google|Apple)\s+/i, '').split(/\s+-\s+/)[0].replace(/\(.*?\)/g, '').replace(/\b(?:Online|Natural)\b/gi, '').replace(/\s+/g, ' ').trim()
   return title && !title.toLocaleLowerCase('es').startsWith((LANGUAGES[voice.base] || voice.base).toLocaleLowerCase('es')) ? title : ''
 }
-/** e.g. 'Español (España) · Alta calidad · sin conexión'. */
+/** e.g. 'Español (España) · Alta calidad · sin conexión'; a natural voice is 'Español (España) · Davefx'. */
 export function voiceLabel(voice) {
-  if (voice.neural) return [languageName(voice.lang), voice.name, 'Natural', 'sin conexión'].join(' · ')
+  if (voice.neural) return [languageName(voice.lang), voice.name].join(' · ')
   const quality = voice.quality === null ? (isNatural(voice) ? 'Natural' : '') : voice.quality >= 400 ? 'Alta calidad' : voice.quality >= 300 ? 'Calidad normal' : 'Calidad básica'
   return [languageName(voice.lang), voiceTitle(voice), quality, voice.network ? 'requiere internet' : 'sin conexión'].filter(Boolean).join(' · ')
 }
@@ -162,7 +162,7 @@ export function orderNeuralVoices(neuralVoices, { bookLang = '', deviceLang = ''
 export const recommendedNeuralFor = (neuralVoices, lang, deviceLang = '') => orderNeuralVoices(neuralVoices, { bookLang:lang, deviceLang }).find(voice => voice.base === langBase(lang)) || null
 
 /**
- * Groups for the picker: a curated 'Recomendadas (naturales)' (best 1-2 per language, book language first, then the
+ * Groups for the picker: a curated 'Recomendadas' (best 1-2 per language, book language first, then the
  * device language, then es/en/fr/de/it/pt/ca) and 'Todas las voces', both of system voices; `neural` lists the installed
  * neural voices apart (their own group, same order as the download list). Identical labels get "· voz N" so they can be told apart.
  */
@@ -228,6 +228,21 @@ const WORDS = {
   pt: 'o a os as que não uma um uns umas do da dos das em no na nos nas de para com por mais como mas foi são está estão também ele ela eles elas você vocês eu nós me te se lhe lhes meu minha seu sua seus suas era eram ser tem têm tinha muito já ainda quando onde porque quem cujo ao aos à às',
   ca: 'el la els les que i amb per una un uns unes és són però també això aquest aquesta aquests aquestes dels de del al als molt més no jo tu nosaltres vosaltres ell ella ells elles em et es ens us li hi en ha han hem heu he va vaig vam van era eren ser sóc ets som sou mateix perquè quan on qui què com tot tots tota totes res algú ningú meva meu meus meves seva seu seus seves nostre vostre sense després abans fins des mentre encara ja ara aquí allà'
 }
+// The later languages only count words none of the first seven has, so adding them never changes how those are told apart.
+const LATER = {
+  nl: 'de het een en van dat die niet is zijn was waren met voor op te aan ook maar als dan nog wel naar bij uit om door over ik je jij hij zij wij ze mij hem haar ons hun deze dit er zo hoe wat wie waar wanneer omdat heeft hebben had worden wordt werd kan zal zou geen niets alles meer heel nu',
+  pl: 'i w na z do nie to się że jest jak ale po co tak za od przez dla czy był była było są być ten ta te tego jego jej ich już tylko bardzo też jeszcze kiedy gdzie który która które mnie ciebie sobie mój twój nasz wszystko nic',
+  tr: 'bir ve bu da de için ile ne ama çok daha gibi var yok olarak ben sen biz siz onlar o şu mi mı mu mü değil kadar sonra önce her şey çünkü ise ya veya ki bana sana ona bizi beni seni',
+  cs: 'a je to se na že v s z do o ale jako byl byla bylo jsou být ten ta toho jeho její jejich už jen velmi také ještě kdy kde který která které mě tebe sobě můj tvůj náš všechno nic',
+  sv: 'och att det som en är på för med av den till inte har ett om men var jag du han hon vi ni de sig vad kan ska skulle från så här där när hur vem alla mycket också bara efter',
+  da: 'og at det som en er på for med af den til ikke har et om men var jeg du han hun vi de sig hvad kan skal skulle fra så her der når hvordan hvem alle meget også bare efter',
+  fi: 'minun sinun hänen pitäisi tehdä tämän tuon kanssa hyvä mutta ja on ei että se oli hän mutta kun niin kuin tai jos vain myös kaikki ovat olla minä sinä me te he tämä tuo mikä kuka missä milloin miksi hyvin vielä sitten jo ole ollut',
+  ro: 'și în de la cu pe că nu este un o sunt era au fost să mai dar ca din pentru care ce eu tu el ea noi voi ei ele acest această foarte tot toate dacă când unde cum cine',
+  hu: 'a az és hogy nem egy is de van volt vagy meg el ez azt mint csak még már ami aki ahol amikor hogyan ki mi te ő mi ti ők nagyon minden semmi után előtt',
+  el: 'ο η το οι τα και να σε με για από που δεν θα είναι ήταν ένα μια αυτό αυτή αλλά πολύ τον την του της ότι πως τι ποιος'
+}
+const TAKEN = new Set(Object.values(WORDS).flatMap(words => words.split(' ')))
+for (const [lang, words] of Object.entries(LATER)) WORDS[lang] = words.split(' ').filter(word => !TAKEN.has(word)).join(' ')
 const WORD_SETS = Object.fromEntries(Object.entries(WORDS).map(([lang, words]) => [lang, new Set(words.split(' '))]))
 const WORD_LANGS = new Map()
 for (const [lang, set] of Object.entries(WORD_SETS)) for (const word of set) WORD_LANGS.set(word, [...(WORD_LANGS.get(word) || []), lang])
@@ -235,9 +250,10 @@ for (const [lang, set] of Object.entries(WORD_SETS)) for (const word of set) WOR
 const FALLBACK_BONUS = 2
 const HINTS = [
   ['es', /[ñ¿¡]/g, 3], ['de', /ß/g, 3], ['de', /[äöü]/g, 1], ['pt', /[ãõ]/g, 3], ['fr', /œ/g, 3], ['fr', /ç/g, 1], ['ca', /ç/g, 1], ['ca', /l·l|·/g, 3],
-  ['it', /[ìù]/g, 1.5], ['fr', /[èêâîôû]/g, 0.5], ['ca', /[àò]/g, 1]
+  ['it', /[ìù]/g, 1.5], ['fr', /[èêâîôû]/g, 0.5], ['ca', /[àò]/g, 1],
+  ['pl', /[ąęłńśźż]/g, 3], ['tr', /[ğışİ]/g, 3], ['cs', /[řěůď]/g, 3], ['ro', /[ăț]/g, 3], ['hu', /[őű]/g, 3], ['sv', /å/g, 1], ['da', /[æø]/g, 1.5], ['fi', /[äö]/g, 0.5], ['el', /[α-ωά-ώ]/g, 0.3]
 ]
-const DEFAULT_REGION = { es:'ES', en:'US', fr:'FR', de:'DE', it:'IT', pt:'PT', ca:'ES' }
+const DEFAULT_REGION = { es:'ES', en:'US', fr:'FR', de:'DE', it:'IT', pt:'PT', ca:'ES', nl:'NL', pl:'PL', tr:'TR', cs:'CZ', sv:'SE', da:'DK', fi:'FI', ro:'RO', hu:'HU', el:'GR' }
 // \b does not treat accented letters as word characters, hence the explicit letter look-arounds.
 const BRAZILIAN = /(?<!\p{L})(?:você|vocês|ônibus|celular|geladeira|café da manhã|a gente)(?!\p{L})/iu
 

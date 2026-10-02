@@ -59,9 +59,9 @@ for (const [format, file] of [['EPUB', EPUB], ['PDF', PDF]]) {
     await open(page, file)
     await openAudio(page)
 
-    // The group, the honest note and the book language first (the book is English: Lessac is the recommended one).
-    await expect(neural(page).getByRole('heading', { name:'Voces naturales · sin conexión' })).toBeVisible()
-    await expect(neural(page)).toContainText('Se descarga una vez (63 MB, más unos 16 MB del motor) y se guarda en el dispositivo. Habla sin enviar nada a internet; la app necesita abrirse con conexión.')
+    // The group and the book language first (the book is English: Lessac is the recommended one).
+    await expect(neural(page).getByRole('heading', { name:'Voces naturales' })).toBeVisible()
+    await expect(neural(page).locator('[data-neural-note]')).toHaveCount(0)
     expect(await neural(page).locator('[data-neural-voice]').evaluateAll(items => items.slice(0, 2).map(item => item.dataset.neuralVoice))).toEqual([LESSAC, 'piper:en_GB-alba-medium'])
     expect(await engine(page, e => e.installs)).toEqual([]) // nothing downloads by itself
     await expect(row(page)).toContainText('Recomendada')
@@ -125,7 +125,7 @@ test('the download can be cancelled, fails with a clear message and can be retri
   await expect(page.locator('[data-neural-status]')).toHaveText('Descarga cancelada.')
   // error, then retry
   await row(page).getByRole('button', { name:/Descargar la voz Lessac/ }).click()
-  await expect(row(page)).toContainText('Sin conexión. Conéctate a internet para descargarla.')
+  await expect(row(page)).toContainText('Sin conexión.')
   await expect(row(page).getByRole('alert')).toBeVisible()
   await shot(page, 'picker-error')
   await row(page).getByRole('button', { name:/Reintentar la descarga de Lessac/ }).click()
@@ -181,7 +181,7 @@ for (const theme of ['paper', 'night', 'sepia', 'sage', 'amoled']) {
     await page.getByRole('button', { name:'Reproducir', exact:true }).click()
     const offer = page.locator('[data-neural-offer]')
     await expect(offer).toBeVisible()
-    await expect(offer).toContainText('Voz natural sin conexión (63 MB)')
+    await expect(offer).toContainText('Voz natural · 63 MB')
     await expect(offer.getByRole('button', { name:/Descargar la voz natural Lessac/ })).toBeVisible()
     await expect(offer.getByRole('button', { name:'Ahora no' })).toBeVisible()
     await offer.scrollIntoViewIfNeeded()
@@ -241,13 +241,13 @@ test('a neural voice that is too slow hands over to the system voice with a visi
   await openAudio(page)
   await expect(row(page).getByRole('button', { name:/Usar la voz Lessac/ })).toBeVisible()
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()
-  await expect(page.locator('.reading-audio-status')).toHaveText('La voz natural no va lo bastante rápida en este dispositivo. Sigo con la mejor voz del sistema.')
+  await expect(page.locator('.reading-audio-status')).toHaveText('Voz natural demasiado lenta. Se usa la del sistema.')
   await expect.poll(() => page.evaluate(() => window.__tts.log.length)).toBeGreaterThan(0) // the system voice carries on
   expect((await calls(page)).length).toBe(1) // the neural engine is not asked again
   await expect(page.locator('[data-neural-warning]')).toBeVisible()
   await shot(page, 'picker-fallback')
   // Volver a probar gives the neural voice another chance
-  await page.getByRole('button', { name:'Volver a probar' }).click()
+  await page.getByRole('button', { name:'Reintentar' }).click()
   await expect(page.locator('[data-neural-warning]')).toBeHidden()
 })
 
@@ -256,7 +256,7 @@ test('where the engine is unsupported the natural voices are not offered and rea
   await open(page, EPUB)
   await openAudio(page)
   await expect(neural(page)).toBeHidden()
-  expect(await page.locator('[data-pref="voice"] optgroup').evaluateAll(groups => groups.map(group => group.label))).toEqual(['Recomendadas (naturales)', 'Todas las voces']) // only the system voices
+  expect(await page.locator('[data-pref="voice"] optgroup').evaluateAll(groups => groups.map(group => group.label))).toEqual(['Recomendadas', 'Todas las voces']) // only the system voices
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()
   await expect(page.locator('[data-neural-offer]')).toBeHidden()
   await expect.poll(() => page.evaluate(() => window.__tts.log.length)).toBeGreaterThan(0)

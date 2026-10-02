@@ -14,7 +14,7 @@
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 
-const DEFAULT_LANGS = 'es,en,fr,de,it,pt,ca'
+const DEFAULT_LANGS = 'es,en,fr,de,it,pt,ca,nl,pl,tr,cs,sv,da,fi,ro,hu'
 const [pkg, outArg, langsArg] = process.argv.slice(2)
 if (!pkg) { console.error('usage: node scripts/trim-espeak-data.mjs <piper-tts-web/package dir> [outDir] [langs]'); process.exit(1) }
 const out = resolve(outArg || 'public/neural-voice/phon')

@@ -179,24 +179,26 @@ body.is-reading:has(#reader-screen.reader-kids-mode) .reader-heading-actions but
 .reading-place button:first-child { flex:1; min-width:0; }
 .reading-place button:last-child { display:grid; place-items:center; flex:none; width:44px; opacity:.5; }
 .reading-place svg { width:16px; height:16px; }
-.reading-audio-title { margin:10px auto 6px; max-width:320px; text-align:center; font-size:22px; font-weight:400; line-height:1.35; letter-spacing:-.5px; overflow-wrap:anywhere; }
-.reading-audio-caption { text-align:center; font-size:12px; opacity:.55; margin:0; }
-.reading-audio-controls { position:relative; display:flex; justify-content:center; align-items:center; gap:18px; margin:24px 0 12px; }
-.reading-play { display:grid; place-items:center; width:64px; height:64px; border:0; border-radius:50%; background:var(--reading-ink,var(--text-primary)); color:var(--reading-paper,var(--bg-primary)); }
-.reading-play svg { width:26px; height:26px; }
+.reading-audio-title { margin:8px auto 2px; max-width:320px; text-align:center; font-size:17px; font-weight:600; line-height:1.35; letter-spacing:-.2px; overflow-wrap:anywhere; }
+.reading-audio-where { margin:0; text-align:center; font-size:12px; font-variant-numeric:tabular-nums; opacity:.6; }
+.reading-audio-where:empty { display:none; }
+.reading-audio-controls { position:relative; display:flex; justify-content:center; align-items:center; gap:18px; margin:18px 0 4px; }
+.reading-play { display:grid; place-items:center; width:72px; height:72px; border:0; border-radius:50%; background:var(--reading-ink,var(--text-primary)); color:var(--reading-paper,var(--bg-primary)); }
+.reading-play svg { width:30px; height:30px; }
+.reading-play:focus-visible { outline:2px solid currentColor; outline-offset:3px; }
 /* prev · play · next are centred under the title; stop is a secondary action
    hung after them, so it no longer pushes play off the panel's axis. */
 .reading-audio-controls { display:grid; grid-template-columns:minmax(0,1fr) auto auto auto minmax(0,1fr); }
 .reading-audio-controls [data-audio-prev] { grid-column:2; }
 .reading-audio-controls [data-stop] { position:static; grid-column:5; justify-self:start; margin-inline-start:6px; }
-.reading-audio-controls > .reading-icon-button { width:44px; height:44px; opacity:.72; }
-.reading-audio-status { min-height:20px; margin:0 0 16px; text-align:center; font-size:12px; line-height:1.5; opacity:.65; }
+.reading-audio-controls > .reading-icon-button { width:48px; height:48px; opacity:.8; }
+.reading-audio-status { min-height:20px; margin:0 0 12px; text-align:center; font-size:13px; line-height:1.5; opacity:.7; }
 .reading-error { margin:12px 0 0; font-size:13px; line-height:1.6; }
 .reading-error:empty { display:none; }
 .reading-mini-player { display:flex; align-items:center; gap:4px; position:absolute; z-index:3; inset:auto 0 var(--reader-bar-height); min-height:48px; padding:2px 8px; background:var(--reading-paper); color:var(--reading-ink); border-bottom:1px solid color-mix(in srgb,currentColor 10%,transparent); }
 .reading-mini-player [data-mini-open] { flex:1; display:flex; flex-direction:column; gap:3px; min-width:0; text-align:left; background:none; border:0; color:inherit; }
-.reading-mini-player [data-mini-title] { max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px; }
-.reading-mini-player small { font-size:10px; opacity:.65; }
+.reading-mini-player [data-mini-title] { max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13px; font-weight:500; }
+.reading-mini-player small { font-size:11px; opacity:.65; }
 .reading-panel button:focus-visible,.reading-panel input:not([type=search],[type=number]):focus-visible,.reading-panel select:focus-visible,.reading-panel summary:focus-visible,.reading-mini-player button:focus-visible,.reader-location:focus-visible { outline:2px solid currentColor; outline-offset:3px; }
 @media (min-width:760px) { .reading-panel { inset:auto 20px 60px auto; margin:0; border-radius:8px; padding:8px 24px 16px; box-shadow:0 8px 32px #0002; } }
 @media (max-width:360px) { .reading-panel { padding-inline:16px; } .reading-row { gap:8px; } .reading-tabs { gap:4px; } }
@@ -237,24 +239,26 @@ body.is-reading .app-header, #reader-screen, .reader-viewport, .reader-toolbar, 
   .reading-panel:has(> #reading-navigation:not([hidden])) { right:auto; left:max(20px,var(--reader-chrome-inset),calc(50vw - 66px - 220px)); }
 }
 
-.reading-voice-info .reading-text-button { text-decoration:underline; text-underline-offset:3px; }
-.reading-voice-info:not([hidden]) { margin:-4px 0 10px; }
+.reading-voice-info { align-items:center; justify-content:space-between; gap:12px; font-size:12px; opacity:.7; }
+.reading-voice-info:not([hidden]) { display:flex; margin:-6px 0 6px; }
+.reading-voice-info .reading-text-button { min-height:44px; padding:0; font-size:12px; text-decoration:underline; text-underline-offset:3px; }
 
 /* Voces naturales (Piper): descargables, sin conexión. Todo en tinta/papel del tema de lectura, así que sirve en los cinco. */
-.reading-neural { margin:4px 0 12px; padding-top:12px; border-top:1px solid color-mix(in srgb,currentColor 10%,transparent); }
-.reading-neural__title { margin:0 0 4px; font-size:13px; font-weight:600; letter-spacing:-.1px; }
-.reading-neural__warning { display:flex; flex-direction:column; align-items:flex-start; gap:0; padding:10px 12px 0; border-radius:10px; background:color-mix(in srgb,currentColor 7%,transparent); opacity:1; }
-.reading-neural__warning .reading-text-button { min-height:44px; padding:0; font-size:12px; text-decoration:underline; text-underline-offset:3px; }
+.reading-neural { margin:4px 0 0; padding-top:14px; border-top:1px solid color-mix(in srgb,currentColor 10%,transparent); }
+.reading-neural__title { margin:0 0 2px; font-size:13px; font-weight:600; }
+.reading-neural__warning { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:4px 0; font-size:12px; line-height:1.5; }
+.reading-neural__warning .reading-text-button { flex:none; min-height:44px; padding:0 4px; font-size:12px; text-decoration:underline; text-underline-offset:3px; }
 .reading-neural__list { margin:0; padding:0; list-style:none; }
-.reading-neural-voice { display:flex; flex-wrap:wrap; align-items:center; gap:2px 12px; padding:6px 0; border-bottom:1px solid color-mix(in srgb,currentColor 8%,transparent); }
+.reading-neural-voice { display:flex; flex-wrap:wrap; align-items:center; gap:0 12px; min-height:56px; padding:4px 0; border-bottom:1px solid color-mix(in srgb,currentColor 8%,transparent); }
 .reading-neural-voice:last-child { border-bottom:0; }
-.reading-neural-voice__text { display:flex; flex:1 1 150px; flex-direction:column; gap:2px; min-width:0; }
+.reading-neural-voice__text { display:flex; flex:1 1 140px; flex-direction:column; gap:2px; min-width:0; }
 .reading-neural-voice__name { font-size:14px; font-weight:500; overflow-wrap:anywhere; }
-.reading-neural-voice__badge { margin-inline-start:4px; font-size:10px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; opacity:.8; }
+.reading-neural-voice__badge { margin-inline-start:4px; font-size:10px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; opacity:.6; }
 .reading-neural-voice__meta { font-size:12px; opacity:.65; }
 .reading-neural-voice__actions { display:flex; flex:none; gap:4px; }
 .reading-neural-voice__error { flex:1 0 100%; margin:0 0 6px; font-size:12px; line-height:1.5; }
-.reading-neural-btn { min-width:44px; min-height:44px; padding:0 14px; border:1px solid color-mix(in srgb,currentColor 30%,transparent); border-radius:22px; background:transparent; color:inherit; font:500 13px var(--f-body); }
+.reading-neural-btn { min-width:44px; min-height:44px; padding:0 14px; border:1px solid color-mix(in srgb,currentColor 28%,transparent); border-radius:22px; background:transparent; color:inherit; font:500 13px var(--f-body); cursor:pointer; }
+.reading-neural-btn:focus-visible { outline:2px solid currentColor; outline-offset:2px; }
 .reading-neural-btn.is-quiet { border-color:transparent; opacity:.85; }
 .reading-neural-btn.is-selected, .reading-neural-btn.is-primary { border-color:transparent; background:var(--reading-ink,var(--text-primary)); color:var(--reading-paper,var(--bg-primary)); }
 .reading-neural-btn.is-block { width:100%; margin-top:2px; }
@@ -263,9 +267,14 @@ body.is-reading .app-header, #reader-screen, .reader-viewport, .reader-toolbar, 
 .reading-neural-bar i { display:block; height:100%; border-radius:inherit; background:currentColor; }
 .reading-neural-percent { flex:none; font-size:12px; font-variant-numeric:tabular-nums; opacity:.75; }
 @media (prefers-reduced-motion:no-preference) { .reading-neural-bar i { transition:width .2s linear; } }
-/* The first-use offer sits right under the play controls, quiet and dismissible: it never covers or delays playback. */
-.reading-neural-offer { margin:0 0 14px; padding:14px 16px 10px; border:1px solid color-mix(in srgb,currentColor 18%,transparent); border-radius:12px; background:color-mix(in srgb,currentColor 5%,transparent); }
-.reading-neural-offer__title { margin:0 0 4px; font-size:14px; font-weight:600; }
-.reading-neural-offer .reading-hint { margin-bottom:6px; }
-.reading-neural-offer__actions { display:flex; align-items:center; gap:8px; }
-.reading-neural-offer .reading-neural-progress { margin-top:6px; }
+/* The first-use offer is one plain row under the controls: it never covers or delays playback. */
+.reading-neural-offer { margin:0 0 8px; padding:6px 0 6px 14px; border-radius:12px; background:color-mix(in srgb,currentColor 6%,transparent); }
+.reading-neural-offer__row { display:flex; align-items:center; gap:4px; }
+.reading-neural-offer__title { flex:1; min-width:0; margin:0; font-size:14px; font-weight:500; }
+.reading-neural-offer .reading-neural-btn { padding:0 12px; }
+.reading-neural-offer .reading-neural-voice__error { margin:0 14px 8px 0; }
+.reading-neural-offer .reading-neural-progress { margin:0 14px 10px 0; }
+@media (prefers-reduced-motion:reduce) { .reading-neural-bar i, .reading-row input[type=checkbox], .reading-row input[type=checkbox]::after { transition:none; } }
+#reading-audio .reading-details { margin-top:2px; margin-bottom:14px; border-bottom:1px solid color-mix(in srgb,currentColor 10%,transparent); }
+#reading-audio .reading-details summary { padding:14px 0; }
+#reading-audio .reading-neural { border-top:0; padding-top:0; }

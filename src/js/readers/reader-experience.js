@@ -62,7 +62,7 @@ export class ReaderExperience {
       this.panel.querySelector('[data-play]').setAttribute('aria-label', label)
       this.panel.querySelector('[data-play]').innerHTML = readerIcon(state === 'playing' ? 'pause' : 'play')
       this.panel.querySelector('[data-play]').disabled = state === 'loading'
-      this.panel.querySelector('.reading-audio-status').textContent = message || (state === 'playing' ? 'Leyendo en voz alta' : state === 'paused' ? 'En pausa' : 'Lista para escuchar')
+      this.panel.querySelector('.reading-audio-status').textContent = message || (state === 'playing' ? 'Leyendo' : state === 'paused' ? 'En pausa' : 'Detenido')
       document.getElementById('reader-audio').classList.toggle('is-playing', state === 'playing')
       if (state === 'stopped') this.panel.querySelector('[data-sleep]').value = '0'
       this.updateMiniPlayer(state, message)
@@ -114,8 +114,8 @@ export class ReaderExperience {
     document.getElementById('reader-rotate').onclick = async () => {
       try {
         if (screen.orientation?.lock) { await screen.orientation.lock(screen.orientation.type.startsWith('portrait') ? 'landscape' : 'portrait'); this.error('') }
-        else this.error('Este dispositivo no permite cambiar la orientación desde la app.')
-      } catch { this.error('Gira el dispositivo para cambiar la orientación.') }
+        else this.error('No se puede girar la pantalla aquí.')
+      } catch { this.error('Gira el dispositivo.') }
     }
     this.panel.querySelector('[data-play]').onclick = () => this.voice.state === 'playing' ? this.voice.pause() : this.voice.play()
     this.panel.querySelector('[data-audio-prev]').onclick = () => this.step(-1)
@@ -149,7 +149,7 @@ export class ReaderExperience {
     window.speechSynthesis?.addEventListener('voiceschanged', () => this.populateVoices())
     window.addEventListener('inhouse-tts', event => { if (event.detail?.type === 'voiceschanged') this.populateVoices() })
     this.panel.querySelector('[data-voice-settings]').onclick = () => {
-      try { window.InhouseSpeech.openVoiceSettings() } catch { this.error('No se pudieron abrir los ajustes de voz de Android.') }
+      try { window.InhouseSpeech.openVoiceSettings() } catch { this.error('No se pudieron abrir los ajustes de voz.') }
     }
     // Coming back from Android's voice downloads: ask the bridge to re-read the installed voices.
     document.addEventListener('visibilitychange', () => { if (!document.hidden && this.panel.open) this.refreshNativeVoices() })
@@ -211,6 +211,7 @@ export class ReaderExperience {
     this.locationButton.setAttribute('aria-label', `Progreso y capítulos, ${label}`)
     this.locationButton.title = label
     this.panel.querySelector('.reading-position').textContent = label
+    this.panel.querySelector('[data-audio-where]').textContent = label
     const range = this.panel.querySelector('[data-progress]')
     if (document.activeElement !== range) range.value = String(this.location.fraction * 100)
     const page = this.panel.querySelector('input[type="number"]')
@@ -250,7 +251,7 @@ export class ReaderExperience {
     this.miniPlayer.hidden = !active || this.panel.open
     this.screen.classList.toggle('has-reading-mini-player', !this.miniPlayer.hidden)
     this.miniPlayer.querySelector('[data-mini-title]').textContent = this.book?.title || ''
-    this.miniPlayer.querySelector('[data-mini-status]').textContent = message || `${state === 'paused' ? 'En pausa' : state === 'loading' ? 'Preparando…' : 'Escuchando'} · ${this.preferences.rate}×`
+    this.miniPlayer.querySelector('[data-mini-status]').textContent = message || `${state === 'paused' ? 'En pausa' : state === 'loading' ? 'Preparando…' : 'Leyendo'} · ${this.preferences.rate}×`
     const play = this.miniPlayer.querySelector('[data-mini-play]')
     play.innerHTML = readerIcon(state === 'playing' ? 'pause' : 'play')
     play.setAttribute('aria-label',state === 'playing' ? 'Pausar lectura' : 'Continuar lectura')
@@ -311,7 +312,7 @@ export class ReaderExperience {
     this.neuralPicker?.render()
     this.voice.options = {footnotes:p.footnotes,multilingual:p.multilingual,skipHeaders:p.skipHeaders}
     this.updateMiniPlayer()
-    try { if (updateBook) await this.reader.applyPreferences(p) } catch { this.error('No se pudo aplicar este ajuste. Inténtalo de nuevo.') }
+    try { if (updateBook) await this.reader.applyPreferences(p) } catch { this.error('No se pudo aplicar el ajuste.') }
   }
   refreshNativeVoices() { try { window.InhouseSpeech?.refreshVoices?.() } catch { /* older app: voices stay as loaded */ } }
   /** The language of the open book (the device's when it has none or no book is open). */
@@ -325,8 +326,8 @@ export class ReaderExperience {
     const voices = [...readSystemVoices(window), ...neuralVoiceList()]
     const bookLang = this.bookLanguage()
     const groups = buildVoiceGroups(voices, { bookLang, deviceLang:navigator.language })
-    select.replaceChildren(new Option('Automática · mejor voz natural', ''))
-    for (const [label, items] of [['Voces naturales · sin conexión', groups.neural], ['Recomendadas (naturales)', groups.recommended], ['Todas las voces', groups.all]]) {
+    select.replaceChildren(new Option('Automática', ''))
+    for (const [label, items] of [['Voces naturales', groups.neural], ['Recomendadas', groups.recommended], ['Todas las voces', groups.all]]) {
       if (!items.length) continue
       const group = document.createElement('optgroup'); group.label = label
       for (const item of items) group.append(new Option(item.label, item.id))
@@ -347,8 +348,7 @@ export class ReaderExperience {
     const auto = !this.preferences.voice || !voices.some(voice => voice.id === this.preferences.voice && voice.installed)
     const better = native && needsBetterVoice(voices, bookLang, navigator.language)
     const info = this.panel.querySelector('[data-voice-info]')
-    info.querySelector('[data-voice-auto]').textContent = !auto ? '' : best ? `Se usará: ${groups.labels.get(best.id)}.` : voices.length ? `No hay voces instaladas para ${languageName(bookLang)}.` : ''
-    info.querySelector('[data-voice-better]').hidden = !better
+    info.querySelector('[data-voice-auto]').textContent = !auto ? '' : best ? groups.labels.get(best.id) : voices.length ? `Sin voces en ${languageName(bookLang)}` : ''
     info.querySelector('[data-voice-settings]').hidden = !better
     info.hidden = !(better || info.querySelector('[data-voice-auto]').textContent)
   }
@@ -356,7 +356,7 @@ export class ReaderExperience {
   async savePlaces() {
     if (!this.book) return
     try { await this.persist(this.book.id, { readingHistory:cleanPlaces(this.history), bookmarks:cleanPlaces(this.bookmarks, 100), quotes:cleanQuotes(this.quotes) }) }
-    catch { this.error('No se pudieron guardar los marcadores. Comprueba el espacio del dispositivo.') }
+    catch { this.error('No se pudieron guardar los marcadores.') }
   }
   cancelNavigation() {
     this.navigationGeneration++
@@ -391,7 +391,7 @@ export class ReaderExperience {
         else await this.reader.goToLocator(place.locator, place.fraction)
         if (!isCurrent()) return
         this.relocate(); this.panel.close()
-      } catch { if (isCurrent()) this.error('No se pudo abrir esa posición del libro.') }
+      } catch { if (isCurrent()) this.error('No se pudo abrir esa posición.') }
     })
   }
   returnToReading(index = 0) {
@@ -407,7 +407,7 @@ export class ReaderExperience {
         await this.savePlaces()
         if (!isCurrent()) return
         this.relocate(); this.renderPlaces(); this.panel.close()
-      } catch { if (isCurrent()) this.error('No se pudo volver a ese punto de lectura.') }
+      } catch { if (isCurrent()) this.error('No se pudo volver.') }
     })
   }
   async addBookmark() {
@@ -420,7 +420,7 @@ export class ReaderExperience {
   async addQuote() {
     const selection = this.reader.getSelection() || this.selectedQuoteSelection
     const text = typeof selection === 'string' ? selection : selection?.text
-    if (!text) { this.error('Selecciona primero un fragmento del texto del libro.'); return }
+    if (!text) { this.error('Selecciona un texto primero.'); return }
     const locator = typeof selection === 'string' ? this.location.locator : selection.locator
     const quote = {id:globalThis.crypto?.randomUUID?.() || `${Date.now()}`,text,locator,fraction:this.location.fraction,label:this.label(this.location),color:this.quoteColor,createdAt:Date.now()}
     this.quotes = cleanQuotes([quote,...this.quotes]); this.reader.addQuoteAnnotation(quote)
@@ -457,13 +457,13 @@ export class ReaderExperience {
   }
   async shareBook() {
     const content = this.book?.content
-    if (!content) { this.error('El archivo original no está disponible en este dispositivo.'); return }
+    if (!content) { this.error('Archivo original no disponible.'); return }
     const file = new File([content],this.book.fileName || `${this.book.title}.${String(this.book.format||'pdf').toLowerCase()}`,{type:this.book.mimeType || content.type || 'application/octet-stream'})
     try {
       if (navigator.canShare?.({files:[file]}) && navigator.share) await navigator.share({title:this.book.title,files:[file]})
       else { const url = URL.createObjectURL(file), link = document.createElement('a'); link.href=url; link.download=file.name; link.click(); setTimeout(()=>URL.revokeObjectURL(url),30000) }
       this.panel.close()
-    } catch (error) { if (error.name !== 'AbortError') this.error('No se pudo compartir el archivo.') }
+    } catch (error) { if (error.name !== 'AbortError') this.error('No se pudo compartir.') }
   }
   formatSize(bytes = 0) { return bytes >= 1048576 ? `${(bytes/1048576).toFixed(1)} MB` : `${Math.max(1,Math.round(bytes/1024))} KB` }
   renderPlaces() {
@@ -474,7 +474,7 @@ export class ReaderExperience {
     for (const [name, places] of [['history',this.history],['bookmarks',this.bookmarks],['quotes',this.quotes]]) {
       const list = this.panel.querySelector(`[data-${name}]`)
       list.replaceChildren()
-      if (!places.length) { const empty = document.createElement('p'); empty.className = 'reading-hint'; empty.textContent = name === 'history' ? 'Todavía no has saltado a otra parte.' : name === 'quotes' ? 'Aún no has guardado citas.' : 'Guarda aquí las páginas que quieras recuperar.'; list.append(empty) }
+      if (!places.length) { const empty = document.createElement('p'); empty.className = 'reading-hint'; empty.textContent = name === 'history' ? 'Sin saltos recientes.' : name === 'quotes' ? 'Sin citas.' : 'Sin marcadores.'; list.append(empty) }
       places.forEach((place,index) => {
         const row = document.createElement('div'); row.className = 'reading-place'
         const button = document.createElement('button'); button.type = 'button'; button.textContent = name === 'quotes' ? `“${place.text}” · ${place.label || this.label(place)}` : place.label || this.label(place)

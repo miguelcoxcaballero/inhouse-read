@@ -18,13 +18,13 @@ const START_FALLBACK_MS = 1500, SPOKEN_FALLBACK_MS = 4000, SILENT_ENGINE_MS = 0
 const NEURAL_WAIT_MS = 900, NEURAL_LOOKAHEAD = 4
 // A device that could not keep up with the neural voice is remembered (per speed: a faster one is slower still) so the next
 // session does not repeat the cold start and the stutter; it is forgotten after SLOW_DAYS, or at once when the person
-// changes the voice or the speed or taps 'Volver a probar' (retryNeural).
+// changes the voice or the speed or taps 'Reintentar' (retryNeural).
 const SLOW_KEY = 'inhouse-read-neural-slow', SLOW_DAYS = 14
 // What the person sees when the neural voice gives up and the best system voice takes over.
 const NEURAL_FALLBACK = {
-  'too-slow':'La voz natural no va lo bastante rápida en este dispositivo. Sigo con la mejor voz del sistema.',
-  'not-installed':'Esa voz natural ya no está instalada. Sigo con la mejor voz disponible.',
-  default:'La voz natural no ha podido arrancar. Sigo con la mejor voz del sistema.'
+  'too-slow':'Voz natural demasiado lenta. Se usa la del sistema.',
+  'not-installed':'Voz no instalada. Se usa otra voz.',
+  default:'La voz natural no arrancó. Se usa la del sistema.'
 }
 
 /** One short utterance at a time also avoids Android/browser long-speech timeouts. */
@@ -60,7 +60,7 @@ export class ReadingVoice {
   notify(message = '') { this.onState(this.state, message) }
   async play() {
     unlockNeural() // synchronously, inside the tap: the browser only lets the page start audio from a user gesture
-    if (!this.supported) return this.fail('Actualiza la app Android para activar la lectura en voz alta, o utiliza un navegador con síntesis de voz.')
+    if (!this.supported) return this.fail('Este dispositivo no puede leer en voz alta.')
     if (this.state === 'playing' || this.state === 'loading') return
     if (this.state === 'paused' && this.chunks.length) {
       this.state = 'playing'; this.notify(); this.speakCurrent(); return
@@ -73,7 +73,7 @@ export class ReadingVoice {
       this.adopt(plan)
       if (!this.chunks.length) return this.fail('Esta página no contiene texto legible. Los PDF escaneados necesitan reconocimiento de texto para escucharlos.')
       this.state = 'playing'; this.notify(); this.speakCurrent()
-    } catch { if (generation === this.generation) this.fail('No se pudo preparar el texto para la lectura en voz alta.') }
+    } catch { if (generation === this.generation) this.fail('No se pudo preparar el texto.') }
   }
   speakCurrent() {
     if (this.state !== 'playing') return
@@ -100,7 +100,7 @@ export class ReadingVoice {
     utterance.voice = (voiceId && voices.find(v => v.voiceURI === voiceId)) || voices.find(v => v.lang.startsWith(language.split('-')[0])) || null
     utterance.onstart = () => this.engineStarted(id)
     utterance.onend = () => { if (id === this.utteranceId && this.state === 'playing') { this.engineEnded(id); this.advance() } }
-    utterance.onerror = event => { if (id === this.utteranceId && !['canceled','interrupted'].includes(event.error) && !this.useLocalVoice()) this.fail('No se pudo reproducir la voz. Prueba otra voz instalada.') }
+    utterance.onerror = event => { if (id === this.utteranceId && !['canceled','interrupted'].includes(event.error) && !this.useLocalVoice()) this.fail('No se pudo reproducir. Prueba otra voz.') }
     speechSynthesis.speak(utterance)
   }
   /**
@@ -151,7 +151,7 @@ export class ReadingVoice {
   /** The engine could not speak `detail.id`. A neural voice hands over to the best system voice; the others stop (or go local) as before. */
   engineFailed(detail) {
     if (this.transport !== 'neural') {
-      if (!this.useLocalVoice()) this.fail('No hay una voz disponible para este idioma. Revisa las voces instaladas en Android.')
+      if (!this.useLocalVoice()) this.fail('No hay voz para este idioma. Instala una en Android.')
       return
     }
     const reason = detail.reason
@@ -207,14 +207,14 @@ export class ReadingVoice {
           await this.reader.next()
           if (generation !== this.generation || this.state !== 'playing') return
         }
-        if (JSON.stringify(this.reader.location) === previous) { this.stop(); this.notify('Has llegado al final.'); return }
+        if (JSON.stringify(this.reader.location) === previous) { this.stop(); this.notify('Final del libro.'); return }
         const plan = await this.prepare()
         if (generation !== this.generation || this.state !== 'playing') return
         this.adopt(plan)
         if (this.chunks.length) return this.speakCurrent()
       }
-      this.fail('La siguiente página no tiene texto legible. Puedes avanzar y volver a escuchar.')
-    } catch { if (generation === this.generation) this.fail('No se pudo continuar en la siguiente página.') }
+      this.fail('Página siguiente sin texto legible.')
+    } catch { if (generation === this.generation) this.fail('No se pudo pasar de página.') }
   }
   /**
    * Text to speak from the visible page on. Readers that can map text back to the
@@ -322,6 +322,6 @@ export class ReadingVoice {
   fail(message) { this.stop(); this.notify(message) }
   setSleep(minutes) {
     clearTimeout(this.sleepTimer)
-    if (minutes > 0) this.sleepTimer = setTimeout(() => { this.stop(); this.notify('Se ha detenido la voz al terminar el temporizador.') }, minutes * 60000)
+    if (minutes > 0) this.sleepTimer = setTimeout(() => { this.stop(); this.notify('Temporizador terminado.') }, minutes * 60000)
   }
 }

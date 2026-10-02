@@ -44,6 +44,8 @@ export function voiceUrls(piperId, base = neuralVoiceBase()) {
   return { model: `${path}.onnx`, config: `${path}.onnx.json`, catalogue: `${base}voices.json`, key: `${piperPath(piperId)}.onnx` }
 }
 
+// The first seven languages were proven end to end with their real weights; nl, pl, tr, cs, sv, da, fi, ro and hu were added
+// from the rhasspy/piper-voices listing without network access to the files (see public/neural-voice/phon/README.md).
 // One row per downloadable model. `sizeMB` is the .onnx download (63 MB for a 'medium' voice, 77 for sharvard);
 // the name and the speakers come from each voice's .onnx.json (dataset, speaker_id_map).
 // Spanish is first (the app's own language); `recommended` is the one the picker offers first for its language.
@@ -57,7 +59,17 @@ const MODELS = [
   { piperId: 'de_DE-thorsten-medium', lang: 'de-DE', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Thorsten' }] },
   { piperId: 'it_IT-paola-medium', lang: 'it-IT', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Paola' }] },
   { piperId: 'pt_BR-faber-medium', lang: 'pt-BR', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Faber' }] },
-  { piperId: 'ca_ES-upc_ona-medium', lang: 'ca-ES', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Ona' }] }
+  { piperId: 'ca_ES-upc_ona-medium', lang: 'ca-ES', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Ona' }] },
+  { piperId: 'nl_NL-pim-medium', lang: 'nl-NL', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Pim' }] },
+  { piperId: 'nl_BE-nathalie-medium', lang: 'nl-BE', quality: 'medium', sizeMB: 63, speakers: [{ name: 'Nathalie' }] },
+  { piperId: 'pl_PL-gosia-medium', lang: 'pl-PL', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Gosia' }] },
+  { piperId: 'tr_TR-dfki-medium', lang: 'tr-TR', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Dfki' }] },
+  { piperId: 'cs_CZ-jirka-medium', lang: 'cs-CZ', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Jirka' }] },
+  { piperId: 'sv_SE-nst-medium', lang: 'sv-SE', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Nst' }] },
+  { piperId: 'da_DK-talesyntese-medium', lang: 'da-DK', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Talesyntese' }] },
+  { piperId: 'fi_FI-harri-medium', lang: 'fi-FI', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Harri' }] },
+  { piperId: 'ro_RO-mihai-medium', lang: 'ro-RO', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Mihai' }] },
+  { piperId: 'hu_HU-anna-medium', lang: 'hu-HU', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Anna' }] }
 ]
 
 /**

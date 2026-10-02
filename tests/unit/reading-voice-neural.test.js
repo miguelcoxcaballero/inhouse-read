@@ -176,9 +176,9 @@ describe('neural voice failures fall back to the best system voice', () => {
   afterEach(() => { messages.length = 0 })
 
   it.each([
-    ['too-slow', 'La voz natural no va lo bastante rápida en este dispositivo. Sigo con la mejor voz del sistema.'],
-    ['init-failed', 'La voz natural no ha podido arrancar. Sigo con la mejor voz del sistema.'],
-    ['synth-failed', 'La voz natural no ha podido arrancar. Sigo con la mejor voz del sistema.']
+    ['too-slow', 'Voz natural demasiado lenta. Se usa la del sistema.'],
+    ['init-failed', 'La voz natural no arrancó. Se usa la del sistema.'],
+    ['synth-failed', 'La voz natural no arrancó. Se usa la del sistema.']
   ])("'%s' hands over to the system voice for the rest of the session, with a visible message", async (reason, message) => {
     const speak = device(), engine = engineWith()
     const voice = await reading(SENTENCES, { onState:watch })
@@ -206,14 +206,14 @@ describe('neural voice failures fall back to the best system voice', () => {
     tts('error', last(engine).id, 'too-slow')
     tts('error', speak.mock.calls[0][4])
     expect(voice.state).toBe('stopped')
-    expect(messages.at(-1)).toMatch(/No hay una voz disponible/)
+    expect(messages.at(-1)).toMatch(/No hay voz para este idioma/)
   })
   it("'not-installed' (the saved choice points at a deleted voice) uses the best available voice and asks the engine to re-read its cache", async () => {
     const speak = device(), engine = engineWith({ installed:[DAVEFX, 'piper:es_MX-claude-high'] })
     const voice = await reading(SENTENCES, { onState:watch, voice:'piper:es_MX-claude-high' })
     expect(last(engine).voiceId).toBe('piper:es_MX-claude-high')
     tts('error', last(engine).id, 'not-installed')
-    expect(messages).toEqual(['Esa voz natural ya no está instalada. Sigo con la mejor voz disponible.'])
+    expect(messages).toEqual(['Voz no instalada. Se usa otra voz.'])
     expect(engine.refreshes).toBeGreaterThan(0)
     expect(last(engine)).toMatchObject({ voiceId:DAVEFX, text:'Primera frase.' }) // another neural voice of the language takes over
     expect(speak).not.toHaveBeenCalled()
@@ -227,7 +227,7 @@ describe('neural voice failures fall back to the best system voice', () => {
     engine.speak = () => { throw new Error('worker died') }
     const voice = await reading(SENTENCES, { onState:watch })
     await vi.waitFor(() => expect(speak).toHaveBeenCalledTimes(1))
-    expect(messages[0]).toMatch(/La voz natural no ha podido arrancar/)
+    expect(messages[0]).toMatch(/La voz natural no arrancó/)
     voice.stop()
   })
   it('an engine that disappears (unsupported) between fragments is replaced by the system voice', async () => {

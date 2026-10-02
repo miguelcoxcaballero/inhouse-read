@@ -216,7 +216,7 @@ describe('language detection', () => {
   }
   const REGION = { es:'es-ES', ca:'ca-ES', pt:'pt-PT', it:'it-IT', fr:'fr-FR', de:'de-DE', en:'en-US' }
   const cases = Object.entries(SENTENCES).flatMap(([lang, list]) => list.map(text => [lang, text]))
-  it.each(cases)('%s sentence is recognised without any book language: %s', (lang, text) => { expect(detectLanguage(text, 'sv-SE')).toBe(REGION[lang]) })
+  it.each(cases)('%s sentence is recognised without any book language: %s', (lang, text) => { expect(detectLanguage(text, 'ja-JP')).toBe(REGION[lang]) })
   it.each(cases)('%s sentence keeps the book language when it is that language: %s', (lang, text) => { expect(detectLanguage(text, `${lang}-XX`)).toBe(`${lang}-XX`) })
   it('shared function words (la, de, en) never turn a Spanish book into Catalan, whatever the book region', () => {
     for (const text of SENTENCES.es) for (const book of ['es-ES', 'es-MX', 'es']) expect(langBase(detectLanguage(text, book))).toBe('es')
@@ -242,4 +242,10 @@ describe('language detection', () => {
     expect(detectLanguage('', 'de-DE')).toBe('de-DE')
     expect(detectLanguage('12345 ...', undefined)).toBe('en-US')
   })
+})
+
+describe('language detection of the later languages', () => {
+  const CASES = [['nl', 'Het huis van mijn grootmoeder staat aan het einde van de straat.', 'nl-NL'], ['pl', 'Nie wiem, co mam zrobić z tą książką.', 'pl-PL'], ['tr', 'Bu kitabı çok sevdim ama sonunu beğenmedim.', 'tr-TR'],
+    ['sv', 'Jag vet inte vad jag ska göra med den här boken.', 'sv-SE'], ['fi', 'En tiedä mitä minun pitäisi tehdä tämän kirjan kanssa.', 'fi-FI'], ['el', 'Δεν ξέρω τι να κάνω με αυτό το βιβλίο.', 'el-GR']]
+  it.each(CASES)('%s sentence is recognised', (_lang, text, tag) => { expect(detectLanguage(text, 'ja-JP')).toBe(tag) })
 })

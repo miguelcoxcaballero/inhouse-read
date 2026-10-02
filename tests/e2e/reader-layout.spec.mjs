@@ -168,7 +168,7 @@ for (const item of [
     })
     await page.locator('#reader-location').click()
     await page.getByRole('tab',{name:'Citas'}).click()
-    await page.getByRole('button',{name:'Guardar selección como cita'}).click()
+    await page.getByRole('button',{name:'Guardar cita'}).click()
     await expect(page.locator('[data-quotes]')).toContainText(quote)
     expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
     const citation = await page.locator('[data-quotes] .reading-place button').first().boundingBox()

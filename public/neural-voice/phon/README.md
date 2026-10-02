@@ -6,7 +6,7 @@ Files here are shipped as they are (`public/` is copied to `dist/neural-voice/ph
 | File | What it is | Size |
 | --- | --- | --- |
 | `piper_phonemize.wasm` | the `piper-phonemize` C++ program compiled with Emscripten (statically links espeak-ng), **byte for byte** as published | 629 KB |
-| `piper_phonemize.data` | the espeak-ng data package, **trimmed** to the dictionaries of the languages we offer: es, en, fr, de, it, pt, ca (plus every non-dictionary file: voices, phoneme tables) | 1.4 MB (18 MB untrimmed) |
+| `piper_phonemize.data` | the espeak-ng data package, **trimmed** to the dictionaries of the languages we offer: es, en, fr, de, it, pt, ca, nl, pl, tr, cs, sv, da, fi, ro, hu (plus every non-dictionary file: voices, phoneme tables) | 2.2 MB (18 MB untrimmed) |
 | `piper_phonemize.mjs` | only the Emscripten JavaScript glue of the same package, exported as a factory (see below) | 107 KB |
 
 ## Provenance
@@ -21,7 +21,7 @@ Files here are shipped as they are (`public/` is copied to `dist/neural-voice/ph
   (every pattern is checked, the script fails if the package changes shape). To offer another language, add it to the
   language list of the script, run it again and add the voice to `src/js/readers/neural-voice/catalog.js`.
 * The trimmed data was verified to give the same phoneme ids as the untrimmed package for the sentences tried in the
-  spikes (es, en, fr, de, it, pt, ca), and every voice of the catalogue was synthesised with it.
+  spikes (es, en, fr, de, it, pt, ca), and the first seven languages' voices were synthesised with it. The later nine (nl, pl, tr, cs, sv, da, fi, ro, hu) were added without network access to the voice files: their dictionaries are in the pack, their voices are untested end to end. Russian (an 8 MB dictionary) and Ukrainian are not included.
 
 ## Licences (the repository and the site are public: read before changing anything here)
 
