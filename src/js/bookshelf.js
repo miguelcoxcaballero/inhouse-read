@@ -112,7 +112,7 @@ import { shelfModelLayout } from './shelf-model-layout.js';
 import { placeRooftopPlants } from './plant-rooftop-layout.js';
 import { getCatalogPlant, getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { normalizeShelfPlant, resolveCatalogPlant } from './plant-records.js';
-import { shelfScale, plantDimensions, BOOK_THICKNESS_MM } from './plant-dimensions.js';
+import { shelfScale, plantDimensions, bookSpineOptions, minimumBookCellWidth } from './plant-dimensions.js';
 import { getCatalogLamp, normalizeShelfLamp } from './lamp-catalog-data.js';
 import { lampCatalogIllustration } from './lamp-illustration.js';
 
@@ -1496,16 +1496,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     return Math.max(0, Math.round(width));
   }
 
-  /** En pantallas estrechas los lomos adelgazan para que quepan más por balda. */
-  function spineOptionsFor(width) {
-    // Real thickness, 15-45 mm, at the shelf's pixels-per-millimetre.
-    const scale = width / BAGGEBO_SPEC.width;
-    return { minWidth: BOOK_THICKNESS_MM.min * scale, maxWidth: BOOK_THICKNESS_MM.max * scale, jitter: 2.5 * scale / .65 };
-  }
-
-  /** A thin real spine is hard to tap: its layout cell (and so its hit area)
-   * is never narrower than this many pixels, even if the drawn book is. */
-  function minimumCellWidth() { return window.innerWidth >= 600 ? 18 : 16; }
+  /** Los lomos tienen su grosor real (15-45 mm) a la escala de la balda. */
+  function spineOptionsFor(width) { return bookSpineOptions(width); }
 
   function setViewMode(mode) {
     if (state.trashRemoval) return;
@@ -1589,7 +1581,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       plantEvery: opts.plantEvery,
       sort: opts.sort,
       spine: spineOptionsFor(width),
-      displayWidthFor: (_book, style) => Math.max(style.width, minimumCellWidth()),
+      displayWidthFor: (_book, style) => Math.max(style.width, minimumBookCellWidth(window.innerWidth)),
       plantWidth: Math.min(...plantVariants.map(plantSlotWidth)),
       plantWidthFor: plantSlotWidth,
       // Sin secciones, 0 recientes: todo cae en una estantería continua.
