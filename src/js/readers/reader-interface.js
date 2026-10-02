@@ -10,7 +10,7 @@ export const readerPanelMarkup = `
   <header class="reading-panel__header"><h2 id="reading-panel-title">Texto</h2><button type="button" class="reading-icon-button" data-close aria-label="Cerrar opciones de lectura">${readerIcon('close')}</button></header>
   <section id="reading-appearance" aria-label="Aspecto de lectura">
     <label class="reading-row" data-pdf><span>Vista del PDF</span><select data-pref="pdfMode" aria-label="Vista del PDF"><option value="original">Página original</option><option value="text">Texto adaptable</option></select></label>
-    <p class="reading-hint" data-pdf-hint>Cambia a Texto adaptable para ajustar la letra.</p>
+    <p class="reading-hint" data-pdf-hint>La letra se ajusta en Texto adaptable.</p>
     <div class="reading-themes" role="group" aria-label="Color de lectura">
       <button type="button" data-theme="paper" aria-label="Papel"><i aria-hidden="true">Aa</i><span>Papel</span></button>
       <button type="button" data-theme="sepia" aria-label="Sepia"><i aria-hidden="true">Aa</i><span>Sepia</span></button>
@@ -51,8 +51,8 @@ export const readerPanelMarkup = `
     </nav>
     <div id="reading-list-toc" role="tabpanel" aria-labelledby="reading-tab-toc" data-places="toc"><div data-toc class="reading-list"></div></div>
     <div id="reading-list-bookmarks" role="tabpanel" aria-labelledby="reading-tab-bookmarks" data-places="bookmarks" hidden><div data-bookmarks class="reading-list"></div></div>
-    <div id="reading-list-quotes" role="tabpanel" aria-labelledby="reading-tab-quotes" data-places="quotes" hidden><p class="reading-hint">Selecciona un fragmento y guárdalo con un color.</p><div class="reading-quote-colors" role="group" aria-label="Color del resaltado"><button type="button" data-quote-color="yellow" aria-label="Amarillo" aria-pressed="true"></button><button type="button" data-quote-color="green" aria-label="Verde" aria-pressed="false"></button><button type="button" data-quote-color="blue" aria-label="Azul" aria-pressed="false"></button><button type="button" data-quote-color="pink" aria-label="Rosa" aria-pressed="false"></button></div><button type="button" class="reading-text-button" data-save-quote>Guardar selección como cita</button><div data-quotes class="reading-list"></div></div>
-    <div id="reading-list-history" role="tabpanel" aria-labelledby="reading-tab-history" data-places="history" hidden><p class="reading-hint">Vuelve a donde estabas antes de saltar.</p><div data-history class="reading-list"></div></div>
+    <div id="reading-list-quotes" role="tabpanel" aria-labelledby="reading-tab-quotes" data-places="quotes" hidden><div class="reading-quote-colors" role="group" aria-label="Color del resaltado"><button type="button" data-quote-color="yellow" aria-label="Amarillo" aria-pressed="true"></button><button type="button" data-quote-color="green" aria-label="Verde" aria-pressed="false"></button><button type="button" data-quote-color="blue" aria-label="Azul" aria-pressed="false"></button><button type="button" data-quote-color="pink" aria-label="Rosa" aria-pressed="false"></button></div><button type="button" class="reading-text-button" data-save-quote>Guardar cita</button><div data-quotes class="reading-list"></div></div>
+    <div id="reading-list-history" role="tabpanel" aria-labelledby="reading-tab-history" data-places="history" hidden><div data-history class="reading-list"></div></div>
   </section>
   <section id="reading-search" aria-label="Buscar en el libro" hidden>
     <form class="reading-search-form" data-search-form><label>Buscar en el libro<input type="search" data-search-query placeholder="Palabra o frase" enterkeyhint="search" required></label><button type="submit" class="reading-text-button">Buscar</button></form>
@@ -61,30 +61,31 @@ export const readerPanelMarkup = `
   <section id="reading-more" aria-label="Más opciones" hidden>
     <button type="button" class="reading-menu-row" id="reader-toc-shortcut" aria-label="Índice, marcadores y citas">Índice, marcadores y citas</button>
     <button type="button" class="reading-menu-row" id="reader-rotate">Girar pantalla</button>
-    <button type="button" class="reading-menu-row" data-about>Acerca del documento</button>
-    <button type="button" class="reading-menu-row" data-share>Compartir archivo</button>
-    <button type="button" class="reading-menu-row" data-kids aria-pressed="false">Modo infantil <span>Oculta controles y enlaces del libro</span></button>
+    <button type="button" class="reading-menu-row" data-about>Documento</button>
+    <button type="button" class="reading-menu-row" data-share>Compartir</button>
+    <button type="button" class="reading-menu-row" data-kids aria-pressed="false">Modo infantil</button>
   </section>
-  <section id="reading-about" aria-label="Acerca del documento" hidden><p class="reading-document-about" id="reading-document-about"></p></section>
-  <section id="reading-audio" aria-label="Lectura en voz alta" hidden>
+  <section id="reading-about" aria-label="Documento" hidden><p class="reading-document-about" id="reading-document-about"></p></section>
+  <section id="reading-audio" aria-label="Escuchar" hidden>
     <p id="reading-book-title" class="reading-audio-title"></p>
-    <p class="reading-audio-caption">Desde tu página actual</p>
-    <div class="reading-audio-controls"><button type="button" class="reading-icon-button" data-audio-prev aria-label="Anterior">${readerIcon('prev')}</button><button type="button" class="reading-play" data-play aria-label="Reproducir">${readerIcon('play')}</button><button type="button" class="reading-icon-button" data-audio-next aria-label="Siguiente">${readerIcon('next')}</button><button type="button" class="reading-icon-button" data-stop aria-label="Detener" title="Detener">${readerIcon('stop')}</button></div>
-    <p class="reading-audio-status" role="status">Lista para escuchar</p>
+    <p class="reading-audio-where" data-audio-where></p>
+    <div class="reading-audio-controls"><button type="button" class="reading-icon-button" data-audio-prev aria-label="Anterior">${readerIcon('prev')}</button><button type="button" class="reading-play" data-play aria-label="Reproducir">${readerIcon('play')}</button><button type="button" class="reading-icon-button" data-audio-next aria-label="Siguiente">${readerIcon('next')}</button><button type="button" class="reading-icon-button" data-stop aria-label="Detener">${readerIcon('stop')}</button></div>
+    <p class="reading-audio-status" role="status">Detenido</p>
     <div class="reading-neural-offer" data-neural-offer hidden></div>
     <label class="reading-row reading-range-row"><span>Velocidad</span><input type="range" data-pref="rate" min="0.5" max="2" step="0.1" aria-label="Velocidad de voz"><output data-output="rate"></output></label>
-    <label class="reading-row"><span>Voz</span><select data-pref="voice" aria-label="Voz de lectura"><option value="">Automática · mejor voz natural</option></select></label>
-    <div class="reading-voice-info" data-voice-info hidden><p class="reading-hint"><span data-voice-auto></span> <span data-voice-better hidden>Hay voces gratuitas de mayor calidad que puedes instalar en el dispositivo.</span></p><button type="button" class="reading-text-button" data-voice-settings hidden>Descargar voces de mayor calidad</button></div>
+    <label class="reading-row"><span>Voz</span><select data-pref="voice" aria-label="Voz de lectura"><option value="">Automática</option></select></label>
+    <div class="reading-voice-info" data-voice-info hidden><span data-voice-auto></span><button type="button" class="reading-text-button" data-voice-settings hidden>Instalar voces</button></div>
+    <details class="reading-details" data-audio-more><summary>Más ajustes</summary>
+      <label class="reading-row"><span>Temporizador</span><select data-sleep aria-label="Temporizador de voz"><option value="0">No</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">1 h</option></select></label>
+      <label class="reading-row"><span>Notas al pie</span><input type="checkbox" data-voice-option="footnotes" aria-label="Leer notas al pie"></label>
+      <label class="reading-row"><span>Multilingüe</span><input type="checkbox" data-voice-option="multilingual" aria-label="Voz multilingüe"></label>
+      <label class="reading-row"><span>Omitir encabezados</span><input type="checkbox" data-voice-option="skipHeaders" aria-label="Omitir encabezados repetidos"></label>
+    </details>
     <section class="reading-neural" data-neural aria-labelledby="reading-neural-title" hidden>
-      <h3 id="reading-neural-title" class="reading-neural__title">Voces naturales · sin conexión</h3>
-      <p class="reading-hint" data-neural-note>Se descarga una vez (63 MB, más unos 16 MB del motor) y se guarda en el dispositivo. Habla sin enviar nada a internet; la app necesita abrirse con conexión.</p>
-      <p class="reading-hint reading-neural__warning" data-neural-warning hidden><span data-neural-warning-text></span> <button type="button" class="reading-text-button" data-neural-retry>Volver a probar</button></p>
+      <h3 id="reading-neural-title" class="reading-neural__title">Voces naturales</h3>
+      <p class="reading-neural__warning" data-neural-warning hidden><span data-neural-warning-text></span> <button type="button" class="reading-text-button" data-neural-retry>Reintentar</button></p>
       <ul class="reading-neural__list" role="list" data-neural-list></ul>
       <p class="visually-hidden" role="status" aria-live="polite" data-neural-status></p>
     </section>
-    <label class="reading-row"><span>Apagar en</span><select data-sleep aria-label="Temporizador de voz"><option value="0">No apagar</option><option value="15">15 minutos</option><option value="30">30 minutos</option><option value="60">1 hora</option></select></label>
-    <label class="reading-row"><span>Leer notas al pie</span><input type="checkbox" data-voice-option="footnotes" aria-label="Leer notas al pie"></label>
-    <label class="reading-row"><span>Voz multilingüe</span><input type="checkbox" data-voice-option="multilingual" aria-label="Voz multilingüe"></label>
-    <label class="reading-row"><span>Omitir encabezados repetidos</span><input type="checkbox" data-voice-option="skipHeaders" aria-label="Omitir encabezados repetidos"></label>
   </section>
   <p class="reading-error" role="status"></p>`

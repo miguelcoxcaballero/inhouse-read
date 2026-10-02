@@ -304,7 +304,7 @@ describe('propuestas de relieve', () => {
   it('un libro sin imagen de portada no analiza nada y lo dice', async () => {
     const { editor, tab } = await openEditor([book({ cover: undefined })], { coverSrcFor: () => null })
     tab('Portada').click()
-    await vi.waitFor(() => expect(editor.querySelector('.ihr-relief__status').textContent).toMatch(/no tiene imagen de portada/))
+    await vi.waitFor(() => expect(editor.querySelector('.ihr-relief__status').textContent).toBe('Este libro no tiene portada.'))
     expect(analyzeCoverRelief).not.toHaveBeenCalled()
   })
 })

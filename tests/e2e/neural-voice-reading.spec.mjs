@@ -165,7 +165,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await open(page, EPUB)
     await openAudio(page)
     const block = page.locator('[data-neural]')
-    await expect(block.getByRole('heading', { name: 'Voces naturales · sin conexión' })).toBeVisible(SLOW)
+    await expect(block.getByRole('heading', { name: 'Voces naturales' })).toBeVisible(SLOW)
     // The book is Spanish: its voices come first, the recommended one on top.
     const order = await block.locator('[data-neural-voice]').evaluateAll(items => items.map(item => item.dataset.neuralVoice))
     expect(order.slice(0, 5)).toEqual([CLAUDE_ID, 'piper:es_AR-daniela-high', DAVEFX_ID, 'piper:es_ES-sharvard-medium', 'piper:es_ES-sharvard-medium#1']) // es_AR (high quality) sorts right after the recommended voice
@@ -272,7 +272,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
       await page.waitForTimeout(1500)
       expect((await types(page, stoppedAt)).filter(type => type !== 'done')).toEqual([])
       await page.getByRole('button', { name: 'Escuchar el libro' }).click()
-      await expect(page.locator('.reading-audio-status')).toHaveText('Lista para escuchar')
+      await expect(page.locator('.reading-audio-status')).toHaveText('Detenido')
       expect(errors).toEqual([])
       numbers[`${format}Reading`].peakResidentMB = stopMemory()
     })
@@ -443,7 +443,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     expect(mirror.hits.length).toBe(hitsBefore) // not a single request reached the voice host
     // Trying to download another voice says so in Spanish instead of failing silently.
     await row(page, DAVEFX_ID).getByRole('button', { name: /Descargar la voz Davefx/ }).click()
-    await expect(row(page, DAVEFX_ID).getByRole('alert')).toHaveText('Sin conexión. Conéctate a internet para descargarla.', SLOW)
+    await expect(row(page, DAVEFX_ID).getByRole('alert')).toHaveText('Sin conexión.', SLOW)
     await expect(row(page, DAVEFX_ID).getByRole('button', { name: /Reintentar la descarga de Davefx/ })).toBeVisible()
     await shot(page, 'offline-error')
     await page.getByRole('button', { name: 'Detener', exact: true }).click()
@@ -491,7 +491,7 @@ test('default Hugging Face URLs and the first-use offer: one tap downloads the v
   await expect.poll(() => systemSpoken(page), SLOW).toBeGreaterThan(0) // the system voice carries the first fragments
   const offer = page.locator('[data-neural-offer]')
   await expect(offer).toBeVisible(SLOW)
-  await expect(offer).toContainText('Voz natural sin conexión (63 MB)')
+  await expect(offer).toContainText('Voz natural · 63 MB')
   await shot(page, 'first-use-offer', offer)
   await offer.getByRole('button', { name: /Descargar la voz natural Claude/ }).click()
   await expect(offer).toBeHidden(SLOW) // installed: no more offer

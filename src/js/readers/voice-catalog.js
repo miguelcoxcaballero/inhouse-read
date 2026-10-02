@@ -141,7 +141,7 @@ function voiceTitle(voice) {
 }
 /** e.g. 'Español (España) · Alta calidad · sin conexión'. */
 export function voiceLabel(voice) {
-  if (voice.neural) return [languageName(voice.lang), voice.name, 'Natural', 'sin conexión'].join(' · ')
+  if (voice.neural) return [languageName(voice.lang), voice.name].join(' · ')
   const quality = voice.quality === null ? (isNatural(voice) ? 'Natural' : '') : voice.quality >= 400 ? 'Alta calidad' : voice.quality >= 300 ? 'Calidad normal' : 'Calidad básica'
   return [languageName(voice.lang), voiceTitle(voice), quality, voice.network ? 'requiere internet' : 'sin conexión'].filter(Boolean).join(' · ')
 }
@@ -234,11 +234,15 @@ const WORDS = {
   nb: 'og at det er en som på de med for ikke jeg han hun vi i av til den har var fra om men når så kan skal vil også bare etter mye seg sin sitt sine være ble hadde skulle her der hva hvem hvorfor eller uten under mot allerede alltid aldri et noe ingen meg deg kun hvor noen veldig vært moren barna lekte skogen husket landsbyen fremmede gikk også kommet nå hva barn',
   fi: 'ja on ei että se oli hän mutta kun niin kuin ovat olla mitä miksi miten kuka missä tämä tuo nämä nuo minä sinä me te he ne vain myös jo vielä hyvin sitten ennen jälkeen kanssa ole olen olet emme eivät kaikki jos koska tai mikä joka lapset menivät metsään siellä äiti äitinsä muukalainen kylässä kukaan ei muistanut milloin saapunut haluat tiedä',
   cs: 'a se je na že to s v z o do jak ale po co tak pro od už jen může být byl byla bylo jsou jsem velmi jeho její jejich my vy oni ona ten ta tohle všechno když kdy tady tam ještě také nebo který která které není není aby jako',
-  hu: 'a az és hogy nem is egy de meg van volt ez azt mint csak már még vagy el ki be fel le rá én te ő mi ti ők nagyon után előtt miért hogyan mert ha amikor itt ott minden ezt akkor kell lehet nincs vagyok vagyunk',
+  hu: 'a az és hogy nem is egy de meg van volt ez azt mint csak már még vagy el ki be fel le rá én te ő mi ti ők nagyon után előtt miért hogyan mert ha amikor itt ott minden ezt akkor kell lehet nincs vagyok vagyunk sem senki mikor rá nincs kell lehet valaki valami minden akkor azonban között után előtt falu idegen',
   ro: 'și în de la cu pe că nu un o este sunt sau dar mai ce cum pentru din care să se mi ei ea noi voi eu tu el ele foarte după înainte dacă când aici acolo tot toate era fost fi are am avea o mea meu lui lor',
   vi: 'và của không là một những được có trong cho người này đã với các để tôi bạn anh chị em ông bà nó chúng ta họ rất cũng nhưng khi nếu vì sao ai đâu gì nào ở đến từ lại ra vào',
   ca: 'el la els les que i amb per una un uns unes és són però també això aquest aquesta aquests aquestes dels de del al als molt més no jo tu nosaltres vosaltres ell ella ells elles em et es ens us li hi en ha han hem heu he va vaig vam van era eren ser sóc ets som sou mateix perquè quan on qui què com tot tots tota totes res algú ningú meva meu meus meves seva seu seus seves nostre vostre sense després abans fins des mentre encara ja ara aquí allà'
 }
+// The later languages only count words none of the first seven has, so adding them never changes how those are told apart.
+const CORE_LANGUAGES = ['es', 'en', 'fr', 'de', 'it', 'pt', 'ca']
+const CORE_WORDS = new Set(CORE_LANGUAGES.flatMap(lang => WORDS[lang].split(' ')))
+for (const lang of Object.keys(WORDS)) if (!CORE_LANGUAGES.includes(lang)) WORDS[lang] = WORDS[lang].split(' ').filter(word => !CORE_WORDS.has(word)).join(' ')
 const WORD_SETS = Object.fromEntries(Object.entries(WORDS).map(([lang, words]) => [lang, new Set(words.split(' '))]))
 const WORD_LANGS = new Map()
 for (const [lang, set] of Object.entries(WORD_SETS)) for (const word of set) WORD_LANGS.set(word, [...(WORD_LANGS.get(word) || []), lang])

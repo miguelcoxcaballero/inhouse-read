@@ -59,8 +59,8 @@ const MODELS = [
   { piperId: 'pt_BR-faber-medium', lang: 'pt-BR', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Faber' }] },
   { piperId: 'ca_ES-upc_ona-medium', lang: 'ca-ES', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Ona' }] },
   // Other regions of the first languages.
-  { piperId: 'es_AR-daniela-high', lang: 'es-AR', quality: 'high', sizeMB: 63, speakers: [{ name: 'Daniela' }] },
-  { piperId: 'en_GB-cori-high', lang: 'en-GB', quality: 'high', sizeMB: 63, speakers: [{ name: 'Cori' }] },
+  { piperId: 'es_AR-daniela-high', lang: 'es-AR', quality: 'high', sizeMB: 114, speakers: [{ name: 'Daniela' }] },
+  { piperId: 'en_GB-cori-high', lang: 'en-GB', quality: 'high', sizeMB: 114, speakers: [{ name: 'Cori' }] },
   // More languages. Their espeak-ng dictionaries are not in piper_phonemize.data: the phonemizer fetches each one on first use (phonemizer.js).
   { piperId: 'nl_NL-pim-medium', lang: 'nl-NL', quality: 'medium', sizeMB: 64, recommended: true, speakers: [{ name: 'Pim' }] },
   { piperId: 'pl_PL-gosia-medium', lang: 'pl-PL', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Gosia' }] },
