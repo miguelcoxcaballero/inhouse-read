@@ -117,10 +117,12 @@ async function seedShelf(page, { long = false, linked = false, driveBytes = null
     ]
     localStorage.setItem(plantsKey, JSON.stringify(plants))
     localStorage.setItem('inhouse-read-shelf-view', 'spine')
+    // Since the IKEA plant sizing (1.7.3) a legacy record migrates to the real
+    // pot and plant dimensions of its catalogue model, not to the old px sizes.
     const migratedPlants = [
-      { ...plants[0], catalogId:'cactus', potId:'akerbar', height:90 },
-      { ...plants[1], catalogId:'succulent', variant:'succulent', potId:'muskotblomma', height:72 },
-      { ...plants[2], catalogId:'hedera', variant:'hedera', potId:'muskotblomma', height:106 }
+      { ...plants[0], catalogId:'cactus', potId:'akerbar', width:140, height:180 },
+      { ...plants[1], catalogId:'succulent', variant:'succulent', potId:'muskotblomma', width:160, height:160 },
+      { ...plants[2], catalogId:'hedera', variant:'hedera', potId:'muskotblomma', width:180, height:240 }
     ]
     return { originalId:original.id, ids:records.map(book => book.id), plants:migratedPlants,
       remote:records.filter(book => book.driveFileId).map(book => ({ id:book.driveFileId, name:book.name, size:String(book.size || book.content.size), mimeType:'application/pdf' })) }
