@@ -174,6 +174,8 @@ test.describe('neural voices of the added languages (real Piper weights, real OR
       const fetched = dictionaryRequests.filter(path => path === `dict/${dictionary}_dict`)
       if (!['es-AR', 'en-GB'].includes(language)) expect(fetched).toHaveLength(1)
       else expect(fetched).toHaveLength(0)
+      // one voice at a time: the next download must not run into the browser's storage quota
+      await page.evaluate(voice => window.neural.engine.remove(voice), id)
     })
   }
 })
