@@ -106,11 +106,11 @@ import { createBookshelfScene } from './bookshelf-scene.js';
 import { layoutShelfDecorations, moveShelfDecoration } from './shelf-decoration-layout.js';
 import { createPlantCatalog } from './plant-catalog.js';
 import { normalizeShelfType, BAGGEBO_SPEC } from './shelf-types.js';
-import { baggeboLayout } from './shelf-model-layout.js';
+import { shelfModelLayout } from './shelf-model-layout.js';
 import { placeRooftopPlants } from './plant-rooftop-layout.js';
 import { getCatalogPlant, getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { normalizeShelfPlant, resolveCatalogPlant } from './plant-records.js';
-import { shelfScale, plantDimensions, PLANT_MAX_HEIGHT_MM } from './plant-dimensions.js';
+import { shelfScale, plantDimensions, BOOK_THICKNESS_MM } from './plant-dimensions.js';
 import { getCatalogLamp, normalizeShelfLamp } from './lamp-catalog-data.js';
 import { lampCatalogIllustration } from './lamp-illustration.js';
 
@@ -1423,8 +1423,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function shelfPadding() {
-    return state.shelfType === 'baggebo' ? Math.max(16, (BAGGEBO_SPEC.postSize + 4) * state.shelfWidth / BAGGEBO_SPEC.width)
-      : opts.shelfPadding;
+    // Both shelves are 600 mm units: the same side clearance, in millimetres.
+    return Math.max(16, (BAGGEBO_SPEC.postSize + 4) * state.shelfWidth / BAGGEBO_SPEC.width);
   }
 
   function freelyPlacedShelves(shelves) {
@@ -1493,10 +1493,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   /** En pantallas estrechas los lomos adelgazan para que quepan más por balda. */
   function spineOptionsFor(width) {
-    if (width < 360) return { minWidth: 26, maxWidth: 44 };
-    if (width < 520) return { minWidth: 28, maxWidth: 50 };
-    return { minWidth: 30, maxWidth: 56 };
+    // Real thickness, 15-45 mm, at the shelf's pixels-per-millimetre.
+    const scale = width / BAGGEBO_SPEC.width;
+    return { minWidth: BOOK_THICKNESS_MM.min * scale, maxWidth: BOOK_THICKNESS_MM.max * scale, jitter: 2.5 * scale / .65 };
   }
+
+  /** A thin real spine is hard to tap: its layout cell (and so its hit area)
+   * is never narrower than this many pixels, even if the drawn book is. */
+  function minimumCellWidth() { return window.innerWidth >= 600 ? 18 : 16; }
 
   function setViewMode(mode) {
     if (state.trashRemoval) return;
@@ -1580,6 +1584,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       plantEvery: opts.plantEvery,
       sort: opts.sort,
       spine: spineOptionsFor(width),
+      displayWidthFor: (_book, style) => Math.max(style.width, minimumCellWidth()),
       plantWidth: Math.min(...plantVariants.map(plantSlotWidth)),
       plantWidthFor: plantSlotWidth,
       // Sin secciones, 0 recientes: todo cae en una estantería continua.
@@ -1731,11 +1736,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
     const layout = { stage, scroller, entries, rows, width, sceneWidth:width, trashNode, catalogNode,
       shelfType:state.shelfType, height:stage.getBoundingClientRect().height, mode:state.viewMode };
-    if (state.shelfType === 'baggebo') return placeRooftopPlants(baggeboLayout(layout));
-    for (const entry of entries) if (entry.kind === 'plant' && entry.height > PLANT_MAX_HEIGHT_MM * plantScale()) {
-      entry.rooftop = true; entry.y = -entry.height / 2;
-    }
-    return placeRooftopPlants(layout);
+    return placeRooftopPlants(shelfModelLayout(layout, state.shelfType));
   }
 
   function scheduleRender() {
