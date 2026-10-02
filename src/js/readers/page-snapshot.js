@@ -5,6 +5,19 @@
 
 const MAX_EDGE = 1600
 const DECODE_BUDGET = 1500
+// Text painting. A line whose measured width differs from the font's natural
+// width by more than this was stretched by the browser (justified text, word-spacing:
+// layout only ever widens text beyond what the font alone would measure).
+const STRETCH_TOLERANCE = .6
+// Collapsed white space and soft hyphens inside a line measure 0 (or a 1/64 px sliver).
+const ZERO_WIDTH = .25
+const SPACE = /\s/u
+const SOFT_HYPHEN = '\u00ad'
+const LETTER = /\p{L}/u
+const LETTER_BEFORE = /[\p{L}\p{N}'\u2019]/u
+// What ::first-letter styles: the first letter or digit and the punctuation before it.
+const INITIAL = /^[\s\p{P}\p{S}]*[\p{L}\p{N}]/u
+const INITIAL_PROPERTIES = ['fontSize', 'fontFamily', 'fontWeight', 'fontStyle', 'color']
 
 export function plainBounds(rect) {
   if (!rect) return null
@@ -184,6 +197,17 @@ const colorKey = value => {
 /** Does a computed CSS colour (rgb()) equal a theme colour (#rrggbb)? */
 export const sameColor = (a, b) => Boolean(a && b) && colorKey(a) === colorKey(b)
 
+/** Underline / line-through of the element and the inline ancestors it propagates from. */
+function decorationsOf(element, styleOf) {
+  const lines = []
+  for (let node = element; node; node = node.parentElement) {
+    const style = styleOf(node)
+    if (style.textDecorationLine && style.textDecorationLine !== 'none') lines.push({ line:style.textDecorationLine, color:style.textDecorationColor || style.color })
+    if (!style.display.startsWith('inline')) break
+  }
+  return lines
+}
+
 /**
  * Snapshot DOM in its actual visible viewport, including iframe offset after
  * a Foliate column/CFI jump. No HTML serialization or remote image requests.
@@ -243,7 +267,28 @@ export async function snapshotDOMPage(root, {
 
   const walker = doc.createTreeWalker(root, 4 /* SHOW_TEXT */)
   const measured = doc.createRange()
+  const view = doc.defaultView
   const visibleText = []
+  const styles = new Map() // computed styles of the ancestors, shared by the text nodes
+  const styleOf = element => { let value = styles.get(element); if (!value) styles.set(element, value = view.getComputedStyle(element)); return value }
+  const blockLetters = new Map() // block -> its ::first-letter style when that differs from the block's own
+  /** `{ length, style }` of the ::first-letter group (drop caps, enlarged initials) when `node` opens its block. */
+  const initialOf = (node, start) => {
+    if (start > 0) return null
+    const match = INITIAL.exec(node.nodeValue)
+    const block = node.parentElement
+    if (!match || !block || styleOf(block).display.startsWith('inline')) return null
+    if (!blockLetters.has(block)) {
+      const own = styleOf(block), pseudo = view.getComputedStyle(block, '::first-letter')
+      blockLetters.set(block, Number.parseFloat(pseudo.fontSize) > 0 && INITIAL_PROPERTIES.some(name => pseudo[name] !== own[name]) ? pseudo : null)
+    }
+    const pseudo = blockLetters.get(block)
+    if (!pseudo) return null
+    const first = doc.createTreeWalker(block, 4)
+    let text = first.nextNode()
+    while (text && !text.nodeValue.trim()) text = first.nextNode()
+    return text === node ? { length:match[0].length, style:pseudo } : null
+  }
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     if (!node.nodeValue?.trim() || node.parentElement?.closest('script,style,noscript,svg')) continue
     if (range && !range.intersectsNode(node)) continue
@@ -265,50 +310,127 @@ export async function snapshotDOMPage(root, {
     }
     visibleChunks(start, end)
     if (!segments.length) continue
-    const style = doc.defaultView.getComputedStyle(node.parentElement)
+    const style = styleOf(node.parentElement)
     if (style.display === 'none' || style.color === 'transparent' || style.color === 'rgba(0, 0, 0, 0)') continue
+    const initial = initialOf(node, start)
+    const baseDirection = style.direction || 'ltr'
+    const inkOf = value => value || '#292821'
+    const fontFor = (source, size) => `${source.fontStyle || 'normal'} ${source.fontWeight || '400'} ${size}px ${source.fontFamily || 'serif'}`
+    const setInk = color => {
+      ctx.fillStyle = inkOf(color)
+      // Only the theme's own ink becomes the sepia ink; a publisher's own colour stays.
+      if (sepiaCtx) sepiaCtx.fillStyle = sameColor(color, sepia.themeColor) ? sepia.color : ctx.fillStyle
+    }
+    const setFont = (source, size) => {
+      for (const c of all) {
+        c.font = fontFor(source, size)
+        if ('fontVariantCaps' in c) c.fontVariantCaps = source.fontVariantCaps || 'normal'
+        if ('letterSpacing' in c) c.letterSpacing = !source.letterSpacing || source.letterSpacing === 'normal' ? '0px' : source.letterSpacing
+        c.textBaseline = 'alphabetic'
+      }
+      const metrics = ctx.measureText('Hg')
+      return { ascent:metrics.fontBoundingBoxAscent || size * .8, descent:metrics.fontBoundingBoxDescent || size * .2 }
+    }
     const fontSize = Number.parseFloat(style.fontSize) || 20
-    const font = `${style.fontStyle || 'normal'} ${style.fontWeight || '400'} ${fontSize}px ${style.fontFamily || 'serif'}`
-    ctx.fillStyle = style.color || '#292821'
-    // Only the theme's own ink becomes the sepia ink; a publisher's own colour stays.
-    if (sepiaCtx) sepiaCtx.fillStyle = sameColor(style.color, sepia.themeColor) ? sepia.color : ctx.fillStyle
-    for (const c of all) {
-      c.font = font
-      c.direction = style.direction || 'ltr'
-      c.textAlign = c.direction === 'rtl' ? 'right' : 'left'
-      c.textBaseline = 'alphabetic'
-      if ('letterSpacing' in c) c.letterSpacing = style.letterSpacing === 'normal' ? '0px' : style.letterSpacing
-    }
-    const metrics = ctx.measureText('Hg')
-    const ascent = metrics.fontBoundingBoxAscent || fontSize * .8
-    const descent = metrics.fontBoundingBoxDescent || fontSize * .2
+    const baseFace = setFont(style, fontSize)
+    setInk(style.color)
+    const lines = decorationsOf(node.parentElement, styleOf)
+    const transform = style.textTransform
+    // The generated hyphen of `hyphens:auto` (and of a soft hyphen) is not a text character.
+    const hyphenates = style.hyphens === 'auto' && (style.overflowWrap || 'normal') === 'normal' && (style.wordBreak || 'normal') === 'normal'
+
+    // A run is one stretch of one line, painted in one go. A line the browser
+    // stretched (justification, word-spacing) is painted word by word, each at
+    // its measured position, instead of with the font's natural spacing.
     let run = null
-    const flush = () => {
-      if (!run) return
-      const transformed = style.textTransform === 'uppercase' ? run.text.toLocaleUpperCase()
-        : style.textTransform === 'lowercase' ? run.text.toLocaleLowerCase() : run.text
-      for (const c of all) c.fillText(transformed, (ctx.direction === 'rtl' ? run.right : run.left) - offsetX,
-        run.top - offsetY + (run.height - ascent - descent) / 2 + ascent)
-      visibleText.push(run.text)
-      run = null
+    const paint = current => {
+      const initialRun = current.initial
+      const size = initialRun ? Number.parseFloat(initialRun.fontSize) || fontSize : fontSize
+      const face = initialRun ? setFont(initialRun, size) : baseFace
+      if (initialRun) setInk(initialRun.color)
+      const direction = current.direction || baseDirection, reverse = direction === 'rtl'
+      for (const c of all) { c.direction = direction; c.textAlign = reverse ? 'right' : 'left' }
+      const anchor = item => reverse ? item.right : item.left
+      const baseline = current.top - offsetY + (current.height - face.ascent - face.descent) / 2 + face.ascent
+      const hyphen = current.hyphen ? '-' : ''
+      const put = (glyphs, x) => { for (const c of all) c.fillText(glyphs, x - offsetX, baseline) }
+      const glyphs = current.chars.map(item => item.glyph).join('')
+      const stretch = current.right - current.left - ctx.measureText(glyphs).width
+      if (!(stretch > STRETCH_TOLERANCE)) put(glyphs + hyphen, reverse ? current.right : current.left)
+      else {
+        let word = []
+        const emit = last => {
+          if (!word.length) return
+          const tail = last ? hyphen : ''
+          const wordGlyphs = word.map(item => item.glyph).join('')
+          const width = Math.max(...word.map(item => item.right)) - Math.min(...word.map(item => item.left))
+          // Words that do not match their natural width (letter-spaced scripts, tabular figures) keep their characters where they are.
+          if (!(width - ctx.measureText(wordGlyphs).width > STRETCH_TOLERANCE)) put(wordGlyphs + tail, anchor(word[0]))
+          else {
+            for (const item of word) put(item.glyph, anchor(item))
+            if (tail) put(tail, reverse ? word.at(-1).left - ctx.measureText(tail).width : word.at(-1).right)
+          }
+          word = []
+        }
+        for (const item of current.chars) { if (item.space) emit(false); else word.push(item) }
+        emit(true)
+      }
+      const inked = current.chars.filter(item => !item.space)
+      if (lines.length && inked.length) {
+        const left = Math.min(...inked.map(item => item.left)), right = Math.max(...inked.map(item => item.right))
+        const thickness = Math.max(1, Math.round(size / 18 * 4) / 4)
+        for (const { line, color } of lines) {
+          for (const [kind, y] of [['underline', baseline + size * .12], ['line-through', baseline - size * .3]]) {
+            if (!line.includes(kind)) continue
+            for (const [which, c] of all.entries()) {
+              c.fillStyle = which && sameColor(color, sepia.themeColor) ? sepia.color : inkOf(color)
+              c.fillRect(left - offsetX, y - thickness / 2, right - left, thickness)
+            }
+          }
+        }
+        setInk(initialRun ? initialRun.color : style.color)
+      }
+      visibleText.push(current.text)
+      if (initialRun) { setFont(style, fontSize); setInk(style.color) }
     }
+    const flush = () => { if (run) paint(run); run = null }
+    let index = start
     for (const [from, to] of segments) {
-      let index = from
+      index = from
       for (const character of node.nodeValue.slice(from, to)) {
-        measured.setStart(node, index)
+        const at = index
         index += character.length
+        measured.setStart(node, at)
         measured.setEnd(node, index)
-        const rect = [...measured.getClientRects()].find(value => intersects(value, bounds))
-        if (!rect) { flush(); continue }
-        if (!run || Math.abs(run.top - rect.top) > 1 || Math.abs(run.height - rect.height) > 1 ||
-            (ctx.direction === 'rtl' ? Math.abs(run.left - rect.right) : Math.abs(run.right - rect.left)) > 2) {
+        // A character that wraps carries two rects: the line-end hyphen of a
+        // soft hyphen leaks into the next character's list. The last one is its own.
+        const rect = [...measured.getClientRects()].at(-1)
+        // Collapsed white space and zero-width marks occupy no space: they neither paint nor break the line.
+        if (!rect || rect.width < ZERO_WIDTH) continue
+        if (!intersects(rect, bounds)) { flush(); continue }
+        const variant = initial && at < initial.length ? initial.style : null
+        const capital = transform === 'capitalize' && !LETTER_BEFORE.test(node.nodeValue[at - 1] || ' ')
+        const glyph = character === SOFT_HYPHEN ? '-' : transform === 'uppercase' || capital ? character.toLocaleUpperCase()
+          : transform === 'lowercase' ? character.toLocaleLowerCase() : character
+        const previous = run?.chars.at(-1)
+        // The way the characters advance tells their direction: right for left-to-right
+        // text, left for right-to-left, so mixed scripts in one paragraph keep their own runs.
+        const way = !previous ? null : Math.abs(rect.left - previous.right) <= 2 && Math.abs(rect.right - previous.left) <= 2 ? 'either'
+          : Math.abs(rect.left - previous.right) <= 2 ? 'ltr' : Math.abs(rect.right - previous.left) <= 2 ? 'rtl' : null
+        const joins = run && run.initial === variant && Math.abs(run.top - rect.top) <= 1 && Math.abs(run.height - rect.height) <= 1 &&
+          way && (way === 'either' || !run.direction || run.direction === way)
+        if (!joins) {
+          // Same word on the next line: the browser broke it with a hyphen it generated.
+          if (run && hyphenates && rect.top > run.top + run.height / 2 && LETTER.test(node.nodeValue[at - 1] || '') && LETTER.test(character)) run.hyphen = true
           flush()
-          run = { left:rect.left, right:rect.right, top:rect.top, height:rect.height, text:character }
+          run = { left:rect.left, right:rect.right, top:rect.top, height:rect.height, direction:null, initial:variant, chars:[], text:'', hyphen:false }
         } else {
-          run.text += character
+          if (way !== 'either' && !run.direction) run.direction = way
           run.left = Math.min(run.left, rect.left)
           run.right = Math.max(run.right, rect.right)
         }
+        run.chars.push({ glyph, left:rect.left, right:rect.right, space:SPACE.test(character) })
+        if (character !== SOFT_HYPHEN) run.text += character
       }
     }
     flush()

@@ -24,6 +24,15 @@ or model service are required.
   under the sepia theme's palette or PDF filter); the model stacks the sepia
   plane under the themed one and `pageTheme` (0 sepia, 1 theme) cross-fades them,
   with the paper tones, on the zoom's own clock. Sepia readers carry no variant.
+- The page text is not a screenshot: `snapshotDOMPage` re-paints the laid out
+  text at the browser's measured character positions, so it follows the user's
+  reading settings. A line the browser stretched (justified text, word spacing)
+  is painted word by word, each word at its measured x, so justified pages are
+  flush on the right while the book opens and closes; unstretched lines stay one
+  string (kerning, ligatures). Soft-hyphen and `hyphens:auto` line-end hyphens,
+  link underlines, small caps, `capitalize`, mixed-direction runs and enlarged
+  `::first-letter` initials are painted too. Not painted: backgrounds, borders,
+  list markers, text shadows, vertical writing, quote highlights.
 - Devices without WebGL retain accessible shelf titles and a cover fallback.
 
 Verification: geometry unit tests check the ellipse, outward normals and UVs;
