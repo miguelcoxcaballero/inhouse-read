@@ -364,12 +364,16 @@ const yieldToMain = () => new Promise(resolve => {
 let matcherTurn = Promise.resolve();
 
 /** Run a generator to completion, handing the main thread back whenever a
- * slice has used its budget. Resolves to the generator's return value. */
-export async function runInSlices(task, sliceMs = SLICE_MS) {
+ * slice has used its budget. Resolves to the generator's return value.
+ * `onSlice(ms)` (optional) hears how long each slice ran before it yielded. */
+export async function runInSlices(task, sliceMs = SLICE_MS, onSlice) {
   let sliceStart = performance.now();
   for (let step = task.next(); ; step = task.next()) {
-    if (step.done) return step.value;
-    if (performance.now() - sliceStart >= sliceMs) { await yieldToMain(); sliceStart = performance.now(); }
+    if (step.done) { onSlice?.(performance.now() - sliceStart); return step.value; }
+    if (performance.now() - sliceStart >= sliceMs) {
+      onSlice?.(performance.now() - sliceStart);
+      await yieldToMain(); sliceStart = performance.now();
+    }
   }
 }
 

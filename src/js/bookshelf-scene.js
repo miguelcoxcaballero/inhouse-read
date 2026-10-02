@@ -491,6 +491,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         book.spineAuthorFontSize, book.spineFinish, book.spineSurfaceFinish, book.spineTextFinish, book.spineTextColor, book.spineEngraved]),
       cover:JSON.stringify([coverUrl, style.coverRatio, style.color, !coverUrl && [book.title, book.author, book.format, style.fontFamily]]),
       coverFinish:book.coverFinish,
+      coverRelief:JSON.stringify(book.coverRelief ?? null),
       edgeFinish:book.pageEdgeFinish,
       bookmark:JSON.stringify(bookmarkFor(book))
     };
@@ -787,7 +788,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const previous = model.userData.shelfKeys || {}, next = materialKeys(entry);
     if (previous.spine !== next.spine) model.userData.updateSpineAppearance?.(entry.book, entry.style);
     if (previous.cover !== next.cover) model.userData.updateCoverSource?.(entry.coverUrl, entry.book, entry.style);
-    if (previous.coverFinish !== next.coverFinish) model.userData.updateCoverAppearance?.(entry.book);
+    if (previous.coverFinish !== next.coverFinish || previous.coverRelief !== next.coverRelief) model.userData.updateCoverAppearance?.(entry.book);
     if (previous.edgeFinish !== next.edgeFinish) model.userData.updateEdgeAppearance?.(entry.book);
     if (previous.bookmark !== next.bookmark) {
       if (model.userData.updateBookmark) model.userData.updateBookmark(entry.book);
