@@ -6,6 +6,11 @@ Todo lo que sigue está en ramas `wip/*` del remoto (sin revisar, sin verificar 
 ## Ya en `main`
 - Resaltado de frases del audiolibro arreglado (b4dd143): sigue el evento de inicio del motor de voz, PDF con el resaltado pegado al texto, frases no cortadas en abreviaturas/decimales, estilo limpio. 25/25 e2e y 1002 unitarios pasaron.
 
+## Reparto entre agentes
+- **ChatGPT** (ver `PROMPT-CHATGPT.md`): 3) controles del lector, 5) preparar la última página, 6) tamaños IKEA, 7) editor de portada con relieve.
+- **Claude**: 1) voces neuronales, 2) papelera, 4) justificación de la página 3D.
+- Ramas WIP (SHA): `wip/reader-controls-stable-layout` fd82295, `wip/prepare-saved-page` b90a7a9, `wip/ikea-plant-sizes` e6df289, `wip/cover-relief-engine` 0f96f06, `wip/cover-editor-ui` e4af205, `wip/snapshot-justified` a4d09eb, `wip/neural-voices-integrated` 95ca80a.
+
 ## Cola (en este orden, uno a uno)
 1. **Voces neuronales (Piper, sin conexión)** — `wip/neural-voices-integrated` (95ca80a) = motor + integración unidos y con correcciones. Faltaba: revisión adversarial (3 revisores) y correcciones, luego subir a `main`. Ramas de origen: `wip/neural-voices-engine`, `wip/neural-voices-integration`.
 2. **Papelera: congelación de ~5 s y texto "retirado de la estantería"** — sin código todavía. Plan: perfilar `removeBookInTrash()` (bookshelf.js ~1100) + `removeBookFromShelf()` (app.js ~215): sospecha de `render()` reconstruyendo la escena y de esperar persistencia pesada; el aviso es `trashStatus` (`.ihr-trash-status`): dejarlo solo para lector de pantalla, el error sigue visible.
