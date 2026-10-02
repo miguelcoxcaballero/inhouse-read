@@ -37,7 +37,7 @@ describe('bookshelf wastebasket',() => {
     removeKey('trash:a')
     expect(spine('trash:a')).not.toBeNull()
   })
-  it('waits for the landing and storage result, then filters queued updates of the removed book',async () => {
+  it('waits for the landing, then takes the book off the shelf without waiting for storage and filters stale updates',async () => {
     let finishStorage
     const removed=vi.fn(() => new Promise(resolve => { finishStorage=resolve }))
     shelf=renderBookshelf(container,records(),{shelfWidth:390,viewMode:'isometric',onBookRemove:removed})
@@ -49,13 +49,43 @@ describe('bookshelf wastebasket',() => {
     expect(spine('trash:a')).not.toBeNull()
     await vi.advanceTimersByTimeAsync(50)
     expect(removed).toHaveBeenCalledWith(expect.objectContaining({id:'trash:a'}))
-    expect(spine('trash:a')).not.toBeNull()
+    // Persistence is off the critical path: the shelf no longer waits for it.
+    expect(spine('trash:a')).toBeNull()
+    expect(spine('trash:b')).not.toBeNull()
+    expect(shelf.element.classList.contains('is-discarding')).toBe(false)
+    // A record list read before the write finished must not resurrect the book.
+    shelf.update(records())
+    expect(spine('trash:a')).toBeNull()
     finishStorage()
     await vi.advanceTimersByTimeAsync(50)
     expect(spine('trash:a')).toBeNull()
     expect(spine('trash:b')).not.toBeNull()
-    expect(container.querySelector('[role="status"]').textContent).toContain('Primero retirado')
+    // The success message is only announced to screen readers, never shown.
+    const visible=container.querySelector('.ihr-trash-status')
+    expect(visible.textContent).toBe('')
+    const live=container.querySelector('.ihr-trash-announce')
+    expect(live.classList.contains('visually-hidden')).toBe(true)
+    expect(live.getAttribute('aria-live')).toBe('polite')
+    expect(live.textContent).toContain('Primero retirado')
     expect(document.querySelector('.ihr-trash-flight')).toBeNull()
+  })
+  it('puts the book back, with a visible error, when the stored removal is rejected after the landing',async () => {
+    vi.spyOn(console,'warn').mockImplementation(() => {})
+    let fail
+    const removed=vi.fn(() => new Promise((_resolve,reject) => { fail=reject }))
+    shelf=renderBookshelf(container,records(),{shelfWidth:390,viewMode:'isometric',onBookRemove:removed})
+    removeKey('trash:a')
+    await vi.advanceTimersByTimeAsync(900)
+    expect(spine('trash:a')).toBeNull()
+    fail(new Error('Storage unavailable'))
+    await vi.advanceTimersByTimeAsync(50)
+    expect(spine('trash:a')).not.toBeNull()
+    expect(spine('trash:b')).not.toBeNull()
+    const visible=container.querySelector('.ihr-trash-status')
+    expect(visible.textContent).toContain('No se pudo retirar el libro')
+    expect(visible.classList.contains('is-error')).toBe(true)
+    expect(container.querySelector('.ihr-trash-announce').textContent).toBe('')
+    expect(shelf.element.classList.contains('is-discarding')).toBe(false)
   })
   it('restores the book when IndexedDB rejects removal',async () => {
     vi.spyOn(console,'warn').mockImplementation(() => {})
