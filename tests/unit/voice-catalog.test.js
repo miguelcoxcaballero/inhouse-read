@@ -195,7 +195,7 @@ describe('language detection', () => {
     ['As crianças não foram com a mãe porque estavam cansadas, mas ela está bem.', 'pt-PT'],
     ['Você sabe que não é assim, e ela também não foi com você.', 'pt-BR'],
     ['Els nens van anar al parc amb una pilota, però també és molt tard.', 'ca-ES']
-  ])('%s -> %s', (text, expected) => { expect(detectLanguage(text, 'sv-SE')).toBe(expected) })
+  ])('%s -> %s', (text, expected) => { expect(detectLanguage(text, 'xx-XX')).toBe(expected) })
   // Everyday sentences, several of them short and full of words the languages share ("la", "de", "en", "que"...).
   const SENTENCES = {
     es: ['Voy a la casa de la abuela de Pedro.', 'La casa de mi madre está en la calle de la Luna.', 'En el pueblo de la Mancha, de cuyo nombre no quiero acordarme', 'Me gusta la música de los años ochenta.',
@@ -216,7 +216,7 @@ describe('language detection', () => {
   }
   const REGION = { es:'es-ES', ca:'ca-ES', pt:'pt-PT', it:'it-IT', fr:'fr-FR', de:'de-DE', en:'en-US' }
   const cases = Object.entries(SENTENCES).flatMap(([lang, list]) => list.map(text => [lang, text]))
-  it.each(cases)('%s sentence is recognised without any book language: %s', (lang, text) => { expect(detectLanguage(text, 'sv-SE')).toBe(REGION[lang]) })
+  it.each(cases)('%s sentence is recognised without any book language: %s', (lang, text) => { expect(detectLanguage(text, 'xx-XX')).toBe(REGION[lang]) })
   it.each(cases)('%s sentence keeps the book language when it is that language: %s', (lang, text) => { expect(detectLanguage(text, `${lang}-XX`)).toBe(`${lang}-XX`) })
   it('shared function words (la, de, en) never turn a Spanish book into Catalan, whatever the book region', () => {
     for (const text of SENTENCES.es) for (const book of ['es-ES', 'es-MX', 'es']) expect(langBase(detectLanguage(text, book))).toBe('es')

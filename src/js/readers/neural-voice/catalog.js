@@ -44,7 +44,7 @@ export function voiceUrls(piperId, base = neuralVoiceBase()) {
   return { model: `${path}.onnx`, config: `${path}.onnx.json`, catalogue: `${base}voices.json`, key: `${piperPath(piperId)}.onnx` }
 }
 
-// One row per downloadable model. `sizeMB` is the .onnx download (63 MB for a 'medium' voice, 77 for sharvard);
+// One row per downloadable model. `sizeMB` is the .onnx download (63 MB for a 'medium' voice, 77 for sharvard and ukrainian_tts);
 // the name and the speakers come from each voice's .onnx.json (dataset, speaker_id_map).
 // Spanish is first (the app's own language); `recommended` is the one the picker offers first for its language.
 const MODELS = [
@@ -57,7 +57,27 @@ const MODELS = [
   { piperId: 'de_DE-thorsten-medium', lang: 'de-DE', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Thorsten' }] },
   { piperId: 'it_IT-paola-medium', lang: 'it-IT', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Paola' }] },
   { piperId: 'pt_BR-faber-medium', lang: 'pt-BR', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Faber' }] },
-  { piperId: 'ca_ES-upc_ona-medium', lang: 'ca-ES', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Ona' }] }
+  { piperId: 'ca_ES-upc_ona-medium', lang: 'ca-ES', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Ona' }] },
+  // Other regions of the first languages.
+  { piperId: 'es_AR-daniela-high', lang: 'es-AR', quality: 'high', sizeMB: 63, speakers: [{ name: 'Daniela' }] },
+  { piperId: 'en_GB-cori-high', lang: 'en-GB', quality: 'high', sizeMB: 63, speakers: [{ name: 'Cori' }] },
+  // More languages. Their espeak-ng dictionaries are not in piper_phonemize.data: the phonemizer fetches each one on first use (phonemizer.js).
+  { piperId: 'nl_NL-pim-medium', lang: 'nl-NL', quality: 'medium', sizeMB: 64, recommended: true, speakers: [{ name: 'Pim' }] },
+  { piperId: 'pl_PL-gosia-medium', lang: 'pl-PL', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Gosia' }] },
+  { piperId: 'ru_RU-irina-medium', lang: 'ru-RU', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Irina' }] },
+  { piperId: 'uk_UA-ukrainian_tts-medium', lang: 'uk-UA', quality: 'medium', sizeMB: 77, recommended: true, speakers: [{ name: 'Lada', speaker: 0 }, { name: 'Mykyta', speaker: 1 }, { name: 'Tetiana', speaker: 2 }] },
+  { piperId: 'tr_TR-fettah-medium', lang: 'tr-TR', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Fettah' }] },
+  { piperId: 'sv_SE-nst-medium', lang: 'sv-SE', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'NST' }] },
+  { piperId: 'da_DK-talesyntese-medium', lang: 'da-DK', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Talesyntese' }] },
+  { piperId: 'no_NO-talesyntese-medium', lang: 'nb-NO', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Talesyntese' }] },
+  { piperId: 'fi_FI-harri-medium', lang: 'fi-FI', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Harri' }] },
+  { piperId: 'cs_CZ-jirka-medium', lang: 'cs-CZ', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Jirka' }] },
+  { piperId: 'el_GR-rapunzelina-low', lang: 'el-GR', quality: 'low', sizeMB: 63, recommended: true, speakers: [{ name: 'Rapunzelina' }] },
+  { piperId: 'hu_HU-anna-medium', lang: 'hu-HU', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Anna' }] },
+  { piperId: 'ro_RO-mihai-medium', lang: 'ro-RO', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Mihai' }] },
+  { piperId: 'ar_JO-kareem-medium', lang: 'ar-JO', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Kareem' }] },
+  { piperId: 'zh_CN-huayan-medium', lang: 'zh-CN', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Huayan' }] },
+  { piperId: 'vi_VN-vais1000-medium', lang: 'vi-VN', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Vais1000' }] }
 ]
 
 /**

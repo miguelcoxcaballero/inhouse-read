@@ -27,7 +27,7 @@ describe('the contract (index.js)', () => {
   it('every catalogue entry has the contract fields', () => {
     for (const voice of neuralVoices) {
       expect(voice.id).toBe(voice.speaker ? `${NEURAL_PREFIX}${voice.piperId}#${voice.speaker}` : NEURAL_PREFIX + voice.piperId)
-      expect(voice).toMatchObject({ lang: expect.stringMatching(/^[a-z]{2}-[A-Z]{2}$/), name: expect.any(String), quality: expect.stringMatching(/^(medium|high)$/), sizeMB: expect.any(Number), speaker: expect.any(Number) })
+      expect(voice).toMatchObject({ lang: expect.stringMatching(/^[a-z]{2}-[A-Z]{2}$/), name: expect.any(String), quality: expect.stringMatching(/^(low|medium|high)$/), sizeMB: expect.any(Number), speaker: expect.any(Number) })
     }
   })
 
