@@ -4,6 +4,11 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 /** All timber pieces use the same physical texture scale, in shelf pixels. */
 const TIMBER_SCALE = 160;
 const BOARD_HEIGHT = 15;
+/** The joinery constants below were tuned at this many pixels per millimetre
+ * (a 600 mm cabinet 390 px wide). `scale` builds the same cabinet at any real
+ * pixel-per-millimetre size by scaling the finished, merged geometry. */
+const REFERENCE_SCALE = 0.65;
+const unitFactor = scale => Number.isFinite(scale) && scale > 0 ? scale / REFERENCE_SCALE : 1;
 const validDimension = (value, fallback) => Number.isFinite(value) && value > 0 ? value : fallback;
 
 function hash(seed) {
@@ -164,7 +169,17 @@ function shelfBottoms(rows) {
  * remain the caller's property. Three merged meshes keep the cost steady
  * even when the library has a hundred shelves.
  */
-export function createShelfFurniture({ width, height, depth, rows = [], wood, backWood, darkWood }) {
+export function createShelfFurniture({ width, height, depth, rows = [], wood, backWood, darkWood, scale }) {
+  const factor = unitFactor(scale);
+  if (factor !== 1) {
+    // Build in reference units, then scale the finished group about its
+    // top-centre-front origin: joinery, grain and bevels keep their look.
+    const inside = createShelfFurniture({ width:width / factor, height:height / factor, depth:depth / factor,
+      rows:(Array.isArray(rows) ? rows : []).map(row => ({ ...row, bottom:row?.bottom / factor })), wood, backWood, darkWood });
+    inside.scale.setScalar(factor);
+    inside.userData.scale = factor;
+    return inside;
+  }
   const { w, h, d, side, inner, shelfWidth } = cabinetFrame(width, height, depth);
   if (!wood && !backWood && !darkWood) throw new TypeError('createShelfFurniture requires a shared wood material');
   const materials = { wood:wood || darkWood || backWood, back:backWood || wood || darkWood, trim:darkWood || wood || backWood };
@@ -247,7 +262,19 @@ export function createShelfFurniture({ width, height, depth, rows = [], wood, ba
  * ([r, g, b, alpha], linear) adds a faint pool of light on the floor first,
  * for a near-black page where a shadow alone has nothing to darken (120 more).
  */
-export function createShelfOcclusion({ width, height, depth, rows = [], floorY, footprints = [], floorLight = null }) {
+export function createShelfOcclusion({ scale, ...options }) {
+  const factor = unitFactor(scale);
+  if (factor === 1) return buildShelfOcclusion(options);
+  const geometry = buildShelfOcclusion({ ...options, width:options.width / factor, height:options.height / factor,
+    depth:options.depth / factor, floorY:options.floorY / factor,
+    rows:(Array.isArray(options.rows) ? options.rows : []).map(row => ({ ...row, bottom:row?.bottom / factor })),
+    footprints:(options.footprints || []).map(({ x, z, radius }) => ({ x:x / factor, z:z / factor, radius:radius / factor })) });
+  geometry.scale(factor, factor, factor);
+  geometry.computeBoundingBox(); geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function buildShelfOcclusion({ width, height, depth, rows = [], floorY, footprints = [], floorLight = null }) {
   const { w, h, d, side, inner } = cabinetFrame(width, height, depth);
   const positions = [], colors = [];
   // Pure darkness for every shadow: anything lighter would glow over the
