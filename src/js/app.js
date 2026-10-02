@@ -191,7 +191,13 @@ async function refreshShelf() {
       onBookRemove: book => {
         preparedPages.invalidateBook(book.id, 'removed')
         releasePageGate('removed', book.id)
-        return removeBookFromShelf(book)
+        return removeBookFromShelf(book).then(removal => {
+          // The shelf already dropped the book: keep the remembered record set
+          // in step so the next identical sync is recognised as "no change"
+          // instead of repainting the whole shelf.
+          if (shelfRecords) shelfRecords = shelfRecords.filter(record => record.id !== book.id)
+          return removal
+        })
       },
       onAddBooks: pickLocalFile,
       coverSrcFor: book => book.cover ?? null,
