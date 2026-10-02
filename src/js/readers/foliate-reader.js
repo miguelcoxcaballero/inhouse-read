@@ -177,7 +177,11 @@ export class FoliateReader {
     }).filter(Boolean)
     if (!contents.length) return null
     const location = view.lastLocation
-    const background = READING_THEMES[this.#preferences.theme].background
+    const theme = READING_THEMES[this.#preferences.theme]
+    const { background } = theme
+    // The book opens and closes in sepia whatever the theme (page transition).
+    const sepia = this.#preferences.theme === 'sepia' ? undefined
+      : { background:READING_THEMES.sepia.background, color:READING_THEMES.sepia.color, themeColor:theme.color }
     const filter = renderedPageFilter(this.#container)
     const deadline = performance.now() + 1500
     const pages = []
@@ -185,12 +189,12 @@ export class FoliateReader {
       const root = doc.body || (doc.documentElement.localName === 'svg' ? doc.documentElement : null)
       const page = await snapshotDOMPage(root, {
         viewport, offsetX:(viewport.left - rect.left) / scaleX, offsetY:(viewport.top - rect.top) / scaleY,
-        coordinateScaleX:scaleX,coordinateScaleY:scaleY,clipBounds,background,filter,deadline,
+        coordinateScaleX:scaleX,coordinateScaleY:scaleY,clipBounds,background,filter,deadline,sepia,
         range:location?.range?.startContainer?.ownerDocument === doc ? location.range : undefined
       })
       if (page) pages.push(page)
     }
-    const snapshot = compositePageSnapshots(pages,{viewport,background,filter})
+    const snapshot = compositePageSnapshots(pages,{viewport,background,filter,sepiaBackground:sepia?.background})
     if (!snapshot || view !== this.#view || location !== view.lastLocation) return null
     return { ...snapshot, engine:'foliate', sourceType:'epub-page',
       label:location?.pageItem?.label || location?.tocItem?.label || '',

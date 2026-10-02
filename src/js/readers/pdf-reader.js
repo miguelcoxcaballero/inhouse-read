@@ -12,7 +12,7 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { TextLayer } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { attachSwipeNavigation } from '../gestures.js'
-import { DEFAULT_READING_PREFERENCES, READING_FONTS, normalizeReadingPreferences } from './reading-preferences.js'
+import { DEFAULT_READING_PREFERENCES, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES, normalizeReadingPreferences } from './reading-preferences.js'
 import { renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from './page-snapshot.js'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
@@ -242,8 +242,12 @@ export class PdfReader {
     if (!this.#doc || pending !== this.#renderReady) return this.getPageSnapshot()
     const page = this.#pageNum
     const textMode = this.#preferences.pdfMode === 'text'
+    // The book opens and closes in sepia whatever the theme (page transition).
+    const themed = this.#preferences.theme !== 'sepia'
+    const theme = READING_THEMES[this.#preferences.theme]
     const snapshot = textMode
       ? await snapshotDOMPage(this.#reflow, {
+        sepia:themed ? { background:READING_THEMES.sepia.background, color:READING_THEMES.sepia.color, themeColor:theme.color } : undefined,
         viewport:this.#container.getBoundingClientRect(),
         offsetX:this.#container.getBoundingClientRect().left,
         offsetY:this.#container.getBoundingClientRect().top,
@@ -251,7 +255,8 @@ export class PdfReader {
         filter:renderedPageFilter(this.#reflow)
       })
       : snapshotCanvas(this.#canvas, {
-        filter:renderedPageFilter(this.#canvas), displayBounds:this.#canvas.getBoundingClientRect()
+        filter:renderedPageFilter(this.#canvas), displayBounds:this.#canvas.getBoundingClientRect(),
+        sepiaFilter:themed ? renderedPageFilter(this.#canvas, { themeFilter:PDF_PAGE_FILTERS.sepia }) : undefined
       })
     if (!snapshot || !this.#doc || page !== this.#pageNum) return null
     return { ...snapshot, engine:'pdf', sourceType:textMode ? 'pdf-text' : 'pdf-canvas',

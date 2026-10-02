@@ -48,6 +48,25 @@ describe('PDF restored-page preview', () => {
     expect(await reader.getPageSnapshot()).toBeNull()
   })
 
+  it('adds the same page under the sepia filter for the open/close transition, except in sepia itself', async () => {
+    const reader = new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    await reader.applyPreferences({theme:'night'})
+    const live = container.querySelector('canvas')
+    live.style.filter = 'invert(0.89) hue-rotate(180deg)'
+    live.getBoundingClientRect = () => ({...rect,height:600,bottom:664})
+    const night = await reader.getPageSnapshot()
+    expect(contexts.get(night.source).filter).toContain('invert(0.89)')
+    expect(night.sepia.source).not.toBe(night.source)
+    expect(contexts.get(night.sepia.source).filter).toBe('sepia(.5) brightness(.94)')
+    expect(contexts.get(night.sepia.source).drawImage.mock.calls[0][0]).toBe(live)
+    expect(night.sepia).toMatchObject({width:night.width,height:night.height})
+    await reader.applyPreferences({theme:'sepia'})
+    live.style.filter = 'sepia(0.5) brightness(0.94)'
+    expect((await reader.getPageSnapshot()).sepia).toBeUndefined()
+    reader.close()
+  })
+
   it('awaits an in-flight restored page instead of taking pixels left from page 1', async () => {
     const reader = new PdfReader()
     await reader.open(container,new ArrayBuffer(0))

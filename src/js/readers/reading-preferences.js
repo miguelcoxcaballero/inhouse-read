@@ -5,6 +5,16 @@ export const READING_THEMES = {
   amoled: { background:'#000000', color:'#c6c6c6', scheme:'dark' },
   sage: { background:'#dce5d8', color:'#2c3a30', scheme:'light' }
 }
+// The filter each theme puts on an original PDF page (src/css/reading.css,
+// `[data-reading-theme] .pdf-page-canvas`). The opening/closing transition
+// replays the sepia one on the snapshot so its sepia pages are the reader's.
+export const PDF_PAGE_FILTERS = {
+  paper: 'none',
+  sepia: 'sepia(.5) brightness(.94)',
+  night: 'invert(.89) hue-rotate(180deg)',
+  amoled: 'grayscale(1) invert(1) brightness(.77647)',
+  sage: 'sepia(.25) hue-rotate(45deg) brightness(.94)'
+}
 export const READING_FONTS = {
   book: 'Georgia, "Times New Roman", serif',
   classic: 'Palatino, "Book Antiqua", serif',
