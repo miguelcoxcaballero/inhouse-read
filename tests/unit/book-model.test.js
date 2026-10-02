@@ -389,7 +389,11 @@ describe('real shelf book materials', () => {
       expect(glossy.clearcoatRoughness).toBeGreaterThanOrEqual(.06);
       expect(satin.clearcoatRoughness).toBeGreaterThan(.2);
       expect(satin.clearcoat).toBeLessThan(glossy.clearcoat / 2);
-      expect(matte.clearcoat).toBe(0); expect(matte.roughness).toBeGreaterThan(.9);
+      // Covers that can carry a relief keep a clearcoat program from the start (so raising
+      // varnish never recompiles): matte gets a coat far too thin to see, the rest stay uncoated.
+      if (options.overview || options.shelf && !options.inspectionResolution) expect(matte.clearcoat).toBe(0);
+      else { expect(matte.clearcoat).toBeGreaterThan(0); expect(matte.clearcoat).toBeLessThan(.002); }
+      expect(matte.roughness).toBeGreaterThan(.9);
       expect(satin.roughness - glossy.roughness).toBeGreaterThan(.25);
       expect(matte.roughness - satin.roughness).toBeGreaterThan(.4);
       for (let i = 0; i < models.length; i++) {
