@@ -521,7 +521,8 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     const plantHit = { left:20 + parseFloat(plantNode.style.left), top:60 + parseFloat(plantNode.style.top),
       width:parseFloat(plantNode.style.width), height:parseFloat(plantNode.style.height) };
     expect(plantNode.dataset.sceneHitSurface).toBe('pot');
-    expect(plantHit.height).toBeLessThan(124 * .5);
+    // The published pot is 14/25 of this plant, before camera projection.
+    expect(plantHit.height).toBeLessThan(124 * 14 / 25);
     expect(shelf.getObjectAtPoint(plantHit.left + plantHit.width / 2, plantHit.top + plantHit.height * .75)).toBe(plantNode);
     expect(bookNode.querySelector('[data-shelf-cover-hit]')).not.toBeNull();
     expect(bookNode.querySelector('[data-shelf-cover-hit]').style.width).toBe(`${full.width}px`);
@@ -606,10 +607,17 @@ describe('wastebasket in the shared 3D shelf scene', () => {
     const received = []; node.addEventListener('pointerdown', event => received.push(event));
     path.dispatchEvent(event); expect(received).toEqual([event]);
     expect(path.closest('[data-object-id]')).toBe(node);
-    const leafX = parseFloat(node.style.left) + parseFloat(node.style.width) * .5;
-    const leafY = parseFloat(node.style.top) - parseFloat(node.style.height) * .75;
-    expect(containsTriangle(path.getAttribute('d'), leafX, leafY)).toBe(true);
-    expect(shelf.getObjectAtPoint(20 + leafX, 60 + leafY)).toBe(node);
+    // Sample the actual projected top leaf triangle, rather than a point
+    // based on the former arbitrary pot-to-foliage proportions.
+    const triangles = [...path.getAttribute('d').matchAll(/M([\d.e+-]+),([\d.e+-]+)L([\d.e+-]+),([\d.e+-]+)L([\d.e+-]+),([\d.e+-]+)Z/g)]
+      .map(match => ({ x:(+match[1] + +match[3] + +match[5])/3, y:(+match[2] + +match[4] + +match[6])/3 }))
+      .sort((a,b) => a.y - b.y);
+    expect(triangles.length).toBeGreaterThan(50);
+    const leaf = triangles.find(point => point.y < parseFloat(node.style.top)
+      && shelf.getObjectAtPoint(20 + point.x, 60 + point.y) === node);
+    expect(leaf).toBeDefined();
+    expect(containsTriangle(path.getAttribute('d'), leaf.x, leaf.y)).toBe(true);
+    expect(shelf.getObjectAtPoint(20 + leaf.x, 60 + leaf.y)).toBe(node);
   });
 
   it('preserves empty gaps in the foliage rather than catching its rectangular envelope', () => {

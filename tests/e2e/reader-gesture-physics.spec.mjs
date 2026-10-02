@@ -89,7 +89,7 @@ test('EPUB: tapping the side edges turns pages and the centre toggles the contro
   // Exact page offsets, not "moved a bit": a loaded machine can sample a turn half way.
   const reach = target => expect.poll(async () => Math.abs(await position() - target) <= 1, {timeout:60_000}).toBe(true)
   const chromeHidden = () => page.evaluate(() => document.body.classList.contains('is-reader-focus'))
-  // Hiding the controls resizes the page, so count navigations instead of comparing offsets.
+  // Count navigations (a tap in the centre must not turn the page) rather than comparing offsets.
   await page.evaluate(() => {
     const view = document.querySelector('foliate-view')
     window.__tapTurns = 0

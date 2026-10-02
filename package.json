@@ -1,7 +1,7 @@
 {
   "name": "inhouse-read",
   "private": true,
-  "version": "1.7.0",
+  "version": "1.7.4",
   "type": "module",
   "description": "Inhouse Read - lector de PDF, ePub y MOBI, hermano de Inhouse Notes.",
   "scripts": {
@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "foliate-js": "^1.0.1",
+    "onnxruntime-web": "^1.30.0",
     "pdfjs-dist": "^6.3.289",
     "three": "0.180.0"
   }

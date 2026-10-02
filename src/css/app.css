@@ -174,12 +174,8 @@ body.is-opening-reader .app-header {
   visibility:hidden;
   pointer-events:none;
 }
-/* Reserve the final controls' space throughout preparation and opening.
-   EPUB must not repaginate when the controls rise after the page handoff. */
-#reader-screen.is-preparing:has(.reader-toolbar[hidden]),
-#reader-screen.is-opening-from-book:has(.reader-toolbar[hidden]) {
-  --reader-bar-height:calc(64px + env(safe-area-inset-bottom));
-}
+/* reading.css reserves the same controls' space during preparation,
+   opening and focus. The visible page is the reference in every state. */
 
 .reader-viewport {
   position: absolute;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { bookColorOptions, spineColorStyle, spineCustomization, surfaceFinish, normalizeShelfPosition } from '../../src/js/book-colors.js'
+import { RELIEF_IDS } from '../../src/js/cover-relief.js'
 
 describe('book spine colors', () => {
   it('derives three distinct choices from the cover color', () => {
@@ -64,5 +65,13 @@ describe('distinct palette and saved finishes', () => {
     })
     expect(spineCustomization({spineFontSize:99,spineAuthorFontSize:2})).toEqual({spineFontSize:48,spineAuthorFontSize:6})
     expect(spineCustomization({spineTextColor:'url(bad)',spineFinish:'bad',spineEngraved:'true'})).toEqual({spineFinish:'matte'})
+  })
+  it('syncs the cover relief only when valid, and null clears it', () => {
+    const id = RELIEF_IDS[0]
+    expect(spineCustomization({coverRelief:{id,strength:.4,evil:1}})).toEqual({coverRelief:{id,strength:.4}})
+    expect(spineCustomization({coverRelief:{id,strength:9}})).toEqual({coverRelief:{id,strength:1}})
+    expect(spineCustomization({coverRelief:null})).toEqual({coverRelief:null})
+    expect(spineCustomization({coverRelief:{id:'<script>',strength:.5}})).toEqual({coverRelief:null})
+    expect(spineCustomization({})).toEqual({})
   })
 })

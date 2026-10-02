@@ -5,6 +5,8 @@ import { normalizeBookAuthor } from './book-title.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { applyBookReflectionSurface } from './book-reflection-surface.js';
 import { keepProgramsAlive } from './gpu-programs.js';
+import { buildReliefMaps, composeMaterialMap, normalizeCoverRelief } from './cover-relief.js';
+import { runInSlices } from './cover-appearance.js';
 
 // Procedural micro-detail shared by every book: generated once, uploaded once.
 // Models receive clones (same Source, own repeat); three.js keeps the GPU
@@ -322,6 +324,35 @@ function applyCoverFinish(material, value) {
   // warm lamp highlights. The physical clearcoat keeps highlights local and
   // leaves the artwork's diffuse colour and texture untouched.
   material.specularIntensity = 1;
+}
+
+// A cover that can carry relief keeps a clearcoat program from the start: a
+// laminate-free (matte) board is given a clearcoat too thin to see, so raising
+// varnish later only changes uniforms and texture contents, never the shader.
+const COVER_CLEARCOAT_FLOOR = .001;
+
+/** Relief reaches the shader through the clearcoat normal map. The same
+ * tangent-space normal also bends the base layer's normal, so the raised
+ * zones read under a matte, satin or glossy laminate alike. Neutral
+ * placeholder maps leave every pixel unchanged. */
+function installCoverRelief(material) {
+  const previousHook = material.onBeforeCompile, previousKey = material.customProgramCacheKey();
+  material.onBeforeCompile = function(shader, renderer) {
+    previousHook.call(this, shader, renderer);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+	#ifdef USE_CLEARCOAT_NORMALMAP
+		vec3 reliefN = texture2D( clearcoatNormalMap, vClearcoatNormalMapUv ).xyz * 2.0 - 1.0;
+		reliefN.xy *= clearcoatNormalScale;
+		normal = normalize( normal + tbn2 * reliefN - tbn2[ 2 ] );
+	#endif`);
+  };
+  material.customProgramCacheKey = () => `${previousKey}|cover-relief-v1`;
+}
+
+function neutralTexture(r, g, b) {
+  const texture = new THREE.DataTexture(new Uint8Array([r, g, b, 255]), 1, 1);
+  texture.needsUpdate = true;
+  return texture;
 }
 
 function applySpineCapFinish(material, book) {
@@ -790,7 +821,7 @@ function acquireCoverImage(url, onImage, onError) {
 }
 
 export function createBookModel(book, style, width, height, thickness, coverUrl,
-  { shelf = false, overview = false, inspectionResolution = 0 } = {}) {
+  { shelf = false, overview = false, inspectionResolution = 0, eagerRelief = true } = {}) {
   const group = new THREE.Group();
   inspectionResolution = shelf && !overview ? (inspectionResolution >= 2048 ? 2048 : inspectionResolution >= 1024 ? 1024 : 0) : 0;
   group.userData.inspectionResolution = inspectionResolution;
@@ -812,8 +843,31 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   // Painted once, by updateCoverSource below (or as the placeholder while a
   // download is pending), never twice per book.
   const cover = new THREE.MeshPhysicalMaterial({ map:null });
-  applyCoverFinish(cover, book.coverFinish);
+  const reliefCapable = detail || Boolean(inspectionResolution);
+  // The clearcoat + relief program is costly to shade. Views that only fly a
+  // book (opening, closing) skip it unless the cover already has a relief; a
+  // view that gets one later arms it then, once (setCoverRelief).
+  let reliefArmed = reliefCapable && (eagerRelief || Boolean(book.coverRelief));
+  const laminate = value => {
+    applyCoverFinish(cover, value);
+    if (reliefArmed && !cover.clearcoat) cover.clearcoat = COVER_CLEARCOAT_FLOOR;
+  };
+  const armRelief = () => {
+    if (reliefArmed || !reliefCapable) return;
+    reliefArmed = true;
+    laminate(coverFinishValue);
+    // Neutral 1x1 maps: clearcoat x1, roughness x1, metalness 0, flat normal.
+    cover.clearcoatNormalMap = neutralTexture(128, 128, 255);
+    cover.clearcoatMap = cover.clearcoatRoughnessMap = cover.roughnessMap = cover.metalnessMap = neutralTexture(255, 255, 0);
+    cover.needsUpdate = true;
+  };
+  let coverFinishValue = book.coverFinish;
+  laminate(book.coverFinish);
   applyBookReflectionSurface(cover, { seed:`${surfaceSeed}|cover`, strength:.018 });
+  installCoverRelief(cover);
+  if (reliefArmed) {
+    reliefArmed = false; armRelief();
+  }
   // Close-up copies carry woven or paper tooth in the normal channel. On the
   // shelf it would not survive the mipmaps, so those copies skip the cost.
   // 224 threads per board height: below ~3 device pixels a thread the weave
@@ -940,7 +994,14 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   pagePaper.position.set(inset * .3 - inset / 2, 0, pageFront);
   pagePaper.visible = false;
   pagePaper.name = 'reading-page-paper'; group.add(pagePaper);
-  const pageMaterial = new THREE.MeshBasicMaterial({ color:0xffffff, toneMapped:false });
+  // Both map and blending variants exist before the first flyout frame.
+  // Replacing their pixels cannot introduce a shader variant when opening.
+  const blankPageMap = () => {
+    const map = new THREE.DataTexture(new Uint8Array([255,255,255,255]), 1, 1);
+    map.colorSpace = THREE.SRGBColorSpace; map.minFilter = THREE.LinearFilter;
+    map.generateMipmaps = false; map.needsUpdate = true; return map;
+  };
+  const pageMaterial = new THREE.MeshBasicMaterial({ color:0xffffff, toneMapped:false, map:blankPageMap(), transparent:true });
   const pageImage = new THREE.Mesh(new THREE.PlaneGeometry(pageWidth, pageHeight), pageMaterial);
   pageImage.name = 'reading-page';
   pageImage.position.set(inset * .3, 0, pageFront + board * .02);
@@ -950,7 +1011,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   // book opens and closes in sepia and the reading theme fades over it
   // (pageTheme 0 = sepia, 1 = the reader's theme). Only exists when the
   // snapshot carries a variant, i.e. when the theme is not sepia already.
-  const sepiaMaterial = new THREE.MeshBasicMaterial({ color:0xffffff, toneMapped:false });
+  const sepiaMaterial = new THREE.MeshBasicMaterial({ color:0xffffff, toneMapped:false, map:blankPageMap() });
   const sepiaImage = new THREE.Mesh(new THREE.PlaneGeometry(pageWidth, pageHeight), sepiaMaterial);
   sepiaImage.name = 'reading-page-sepia';
   sepiaImage.position.set(inset * .3, 0, pageFront + board * .01);
@@ -977,7 +1038,9 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     return true;
   };
   group.userData.getPageTheme = () => pageTheme;
-  group.userData.setPageSnapshot = (snapshot, { pageTheme:initialTheme } = {}) => {
+  // `redraw:false` builds the page without rendering it (the caller draws later).
+  group.userData.getPageTextures = () => sepiaImage.visible ? [pageMaterial.map, sepiaMaterial.map] : [pageMaterial.map];
+  group.userData.setPageSnapshot = (snapshot, { pageTheme:initialTheme, redraw = true } = {}) => {
     if (disposed || !snapshot?.source) return false;
     const imageWidth = Number(snapshot.width || snapshot.source.width || snapshot.source.naturalWidth);
     const imageHeight = Number(snapshot.height || snapshot.source.height || snapshot.source.naturalHeight);
@@ -998,13 +1061,14 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     const variant = snapshot.sepia?.source ? snapshot.sepia : null;
     const sameSize = variant && Number(variant.width || variant.source.width) === imageWidth
       && Number(variant.height || variant.source.height) === imageHeight;
-    sepiaMaterial.map?.dispose(); sepiaMaterial.map = null;
+    sepiaMaterial.map?.dispose();
     if (sameSize) {
       sepiaImage.geometry.dispose(); sepiaImage.geometry = pageImage.geometry.clone();
       sepiaMaterial.map = pageTexture(variant.source); sepiaMaterial.needsUpdate = true;
-      sepiaImage.visible = true; pageMaterial.transparent = true;
+      sepiaImage.visible = true;
     } else {
-      sepiaImage.visible = false; pageMaterial.transparent = false; pageMaterial.opacity = 1;
+      sepiaMaterial.map = blankPageMap();
+      sepiaImage.visible = false; pageMaterial.opacity = 1;
     }
     if (initialTheme != null) pageTheme = Math.max(0, Math.min(1, Number(initialTheme) || 0));
     // White for a PDF, the theme's paper for an EPUB; cream when unreadable.
@@ -1013,7 +1077,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     if (sepiaImage.visible) applyPageTheme();
     else if (themeTone) { pagePaper.material.color.copy(themeTone); leafPaper?.color.copy(themeTone).multiply(LEAF_LIGHT); }
     group.userData.pageSnapshot = snapshot;
-    group.userData.invalidate?.();
+    if (redraw) group.userData.invalidate?.();
     return true;
   };
   let bookmark = bookmarkFor(book);
@@ -1061,9 +1125,102 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     mesh.rotation.x = Math.PI / 2; mesh.position.y = y; group.add(mesh);
   }
   let disposed = false, coverRevision = 0, currentCoverUrl, releaseImage = () => {}, resolveCoverReady = () => {};
+  let currentImage = null;
+  // ---- cover relief: raised, foil and varnished zones from the cover picture.
+  // The maps are rebuilt from the picture (deterministic per cover), so only
+  // { id, strength } is ever saved. They swap into texture slots the cover
+  // material already compiled with: selecting a relief links no program.
+  let wantedRelief = null, reliefRevision = 0, reliefMaps = null, reliefOwned = new Set();
+  let reliefController = null, materialRevision = 0;
+  const canvasTexture = (rgba, width, height) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    canvas.getContext('2d').putImageData(new ImageData(rgba, width, height), 0, 0);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.anisotropy = 4;
+    return texture;
+  };
+  const adoptReliefTextures = (normal, material) => {
+    const fresh = new Set([normal, material]);
+    for (const old of reliefOwned) if (!fresh.has(old)) old.dispose();
+    for (const old of [cover.clearcoatNormalMap, cover.clearcoatMap]) if (old && !fresh.has(old) && !reliefOwned.has(old)) old.dispose();
+    reliefOwned = fresh;
+    cover.clearcoatNormalMap = normal;
+    cover.clearcoatMap = cover.clearcoatRoughnessMap = cover.roughnessMap = cover.metalnessMap = material;
+  };
+  const reliefGain = strength => .9 + 2.6 * strength;
+  const applyReliefUniforms = () => {
+    if (!wantedRelief || !reliefMaps) {
+      cover.metalness = 0; cover.clearcoatNormalScale.set(1, 1);
+      if (reliefArmed) laminate(coverFinishValue);
+      return;
+    }
+    // Full clearcoat share: the map's red channel carries the laminate's own
+    // share outside the varnished zones, so a matte board still gets gloss spots.
+    cover.clearcoat = 1; cover.metalness = 1;
+    cover.clearcoatNormalScale.setScalar(reliefGain(wantedRelief.strength));
+  };
+  async function bakeReliefMaterial(revision, maps = reliefMaps, signal) {
+    if (!maps) return false;
+    const ticket = ++materialRevision;
+    const finish = SURFACE_FINISHES[coverSurfaceFinish];
+    const rgba = await runInSlices(composeMaterialMap(maps.pixels, { clearcoat: finish.clearcoat, roughness: finish.roughness }));
+    if (revision !== reliefRevision || ticket !== materialRevision || signal?.aborted || disposed) return false;
+    const { width, height } = maps.size;
+    adoptReliefTextures(maps.normalTexture, canvasTexture(rgba, width, height));
+    reliefMaps = maps;
+    applyReliefUniforms();
+    return true;
+  }
+  function clearRelief() {
+    reliefMaps = null;
+    materialRevision++;
+    adoptReliefTextures(neutralTexture(128, 128, 255), neutralTexture(255, 255, 0));
+    applyReliefUniforms();
+    group.userData.invalidate?.();
+  }
+  group.userData.coverRelief = () => (wantedRelief ? { ...wantedRelief } : null);
+  group.userData.supportsCoverRelief = reliefCapable;
+  /** Apply (or clear, with null) a relief choice. Resolves true once drawn. */
+  group.userData.setCoverRelief = async relief => {
+    if (disposed || !reliefCapable) return false;
+    reliefController?.abort();
+    const controller = reliefController = new AbortController();
+    const next = normalizeCoverRelief(relief), revision = ++reliefRevision;
+    wantedRelief = next;
+    if (!next) { if (reliefArmed) clearRelief(); return true; }
+    armRelief();
+    // Only installed maps may be reused. A pending bake owns no cached state.
+    if (reliefMaps && reliefMaps.id === next.id && reliefMaps.source === (currentImage ?? cover.map?.image)) {
+      applyReliefUniforms(); group.userData.invalidate?.(); return true;
+    }
+    let built;
+    try {
+      await group.userData.ready;
+      if (revision !== reliefRevision || disposed || controller.signal.aborted) return false;
+      const source = currentImage ?? cover.map?.image;
+      if (!source) return false;
+      built = await buildReliefMaps(source, next, { maxSize: 512, signal: controller.signal });
+      if (!built || revision !== reliefRevision || disposed || controller.signal.aborted) return false;
+      const { width, height } = built.size;
+      built.normalTexture = canvasTexture(built.normal, width, height);
+      built.id = next.id; built.source = source;
+      if (!await bakeReliefMaterial(revision, built, controller.signal)) {
+        built.normalTexture.dispose(); return false;
+      }
+      group.userData.invalidate?.();
+      return true;
+    } catch {
+      if (built?.normalTexture && !reliefOwned.has(built.normalTexture)) built.normalTexture.dispose();
+      return false;
+    }
+  };
   function updateCoverSource(url, nextBook = book, nextStyle = style) {
     if (disposed) return Promise.resolve(false);
     if (url && url === currentCoverUrl) return group.userData.ready;
+    reliefController?.abort(); reliefRevision++;
+    if (reliefArmed && reliefMaps) clearRelief();
+    currentImage = null;
     resolveCoverReady(false);
     const revision = ++coverRevision, releasePrevious = releaseImage;
     currentCoverUrl = url;
@@ -1072,6 +1229,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
       if (revision !== coverRevision || disposed) return;
       group.userData.coverLoaded = loaded;
       resolveCoverReady(loaded);
+      if (loaded && wantedRelief) group.userData.setCoverRelief(wantedRelief);
       group.userData.invalidate?.();
     };
     const replaceMap = map => {
@@ -1085,6 +1243,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     } else releaseImage = acquireCoverImage(url, image => {
       if (revision !== coverRevision || disposed) return;
       // The previous cover remains on the mesh until every new pixel is ready.
+      currentImage = image;
       try {
         const canvas = document.createElement('canvas');
         const dimensions = coverRasterDimensions(nextStyle.coverRatio, textureHeight, maxTextureDimension);
@@ -1106,6 +1265,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   }
   group.userData.updateCoverSource = updateCoverSource;
   updateCoverSource(coverUrl);
+  if (reliefCapable && book.coverRelief) group.userData.setCoverRelief(book.coverRelief);
   // Only a download still in flight (or one that already failed) needs the
   // generated case meanwhile; a decoded image or a generated cover is on.
   if (!cover.map) {
@@ -1114,11 +1274,12 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   group.userData.dispose = () => {
     if (disposed) return;
     releaseImage(); resolveCoverReady(false);
-    disposed = true;
+    reliefController?.abort();
+    disposed = true; reliefRevision++; materialRevision++; reliefMaps = null;
     const materials = new Set([insideCover]), textures = new Set([surface.map, surface.channels]);
     group.traverse(obj => { obj.geometry?.dispose(); if (obj.material) for (const m of [].concat(obj.material)) materials.add(m); });
     for (const m of materials) {
-      for (const key of ['map', 'roughnessMap', 'metalnessMap', 'bumpMap', 'normalMap', 'alphaMap']) if (m[key]) textures.add(m[key]);
+      for (const key of ['map', 'roughnessMap', 'metalnessMap', 'bumpMap', 'normalMap', 'alphaMap', 'clearcoatMap', 'clearcoatRoughnessMap', 'clearcoatNormalMap']) if (m[key]) textures.add(m[key]);
       m.dispose();
     }
     // Shared procedural sources survive: only this model's clones release.
@@ -1141,9 +1302,21 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     }
   };
   group.userData.updateCoverAppearance = nextBook => {
+    const finishChanged = surfaceFinish(nextBook.coverFinish) !== coverSurfaceFinish;
     coverSurfaceFinish = surfaceFinish(nextBook.coverFinish);
-    applyCoverFinish(cover, nextBook.coverFinish);
+    coverFinishValue = nextBook.coverFinish;
+    laminate(nextBook.coverFinish);
+    applyReliefUniforms();
     updateCoverGrainStrength();
+    const wanted = 'coverRelief' in nextBook ? normalizeCoverRelief(nextBook.coverRelief) : wantedRelief;
+    const selectionChanged = JSON.stringify(wanted) !== JSON.stringify(wantedRelief);
+    if (reliefCapable && selectionChanged) {
+      group.userData.setCoverRelief(wanted);
+    } else if (finishChanged && reliefMaps) {
+      const revision = reliefRevision;
+      bakeReliefMaterial(revision).then(done => { if (done) group.userData.invalidate?.(); });
+    }
+
   };
   group.userData.setCoverOpen = amount => {
     const next = Math.max(0, Math.min(1, amount));
@@ -1362,7 +1535,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   canvas.width = Math.ceil(viewportWidth * pixelRatio); canvas.height = Math.ceil(viewportHeight * pixelRatio);
   host.append(canvas); const context = canvas.getContext('2d');
   const scene = lightBookScene(new THREE.Scene());
-  let model = createBookModel(book, style, width, height, thickness, coverUrl, { shelf }); scene.add(model);
+  let model = createBookModel(book, style, width, height, thickness, coverUrl, { shelf, eagerRelief:false }); scene.add(model);
   canvas.dataset.bookmark3d = String(Boolean(model.userData.hasBookmark));
   if (shelf) canvas.dataset.shelfView = shelfView;
   const camera = new THREE.OrthographicCamera(-viewportWidth / 2, viewportWidth / 2, viewportHeight / 2, -viewportHeight / 2, .1, 10000); camera.position.z = 3000;
@@ -1414,7 +1587,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (disposed) return false;
     const revision = ++appearanceRevision;
     pendingModel?.userData.dispose();
-    const replacement = createBookModel(currentBook, nextStyle, width, height, thickness, coverUrl, { shelf });
+    const replacement = createBookModel(currentBook, nextStyle, width, height, thickness, coverUrl, { shelf, eagerRelief:false });
     pendingModel = replacement;
     const replace = () => {
       if (disposed || revision !== appearanceRevision) { replacement.userData.dispose(); return; }
@@ -1447,6 +1620,15 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (current) draw(current);
     return true;
   }
+  /** Apply (or clear, with null) a cover relief on the book, the one still
+   * loading included. Resolves once the maps are on the cover and drawn. */
+  async function setCoverRelief(relief) {
+    if (disposed) return false;
+    currentBook = { ...currentBook, coverRelief: normalizeCoverRelief(relief) };
+    const results = await Promise.all([pendingModel?.userData.setCoverRelief?.(relief), model.userData.setCoverRelief?.(relief)]);
+    if (!disposed && current) draw(current);
+    return results.some(Boolean);
+  }
   function updateEdgeAppearance(nextBook) {
     if (disposed) return false;
     currentBook = { ...currentBook, ...nextBook };
@@ -1471,20 +1653,33 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   }
   // `pageTheme` (0 = sepia, 1 = the reader's own theme; default 1) is where the
   // page's colour starts: the book opens and closes in sepia.
-  function setPageSnapshot(snapshot, { pageTheme:initialTheme } = {}) {
+  function setPageSnapshot(snapshot, { pageTheme:initialTheme, redraw = true } = {}) {
     if (initialTheme != null) {
       pageTheme = Math.max(0, Math.min(1, Number(initialTheme) || 0));
       if (current) current = { ...current, pageTheme };
     }
-    if (disposed || !model.userData.setPageSnapshot(snapshot, { pageTheme })) return false;
+    if (disposed || !model.userData.setPageSnapshot(snapshot, { pageTheme, redraw })) return false;
     currentSnapshot = snapshot;
-    pendingModel?.userData.setPageSnapshot(snapshot, { pageTheme });
+    pendingModel?.userData.setPageSnapshot(snapshot, { pageTheme, redraw });
     canvas.dataset.pageSource = snapshot.sourceType || snapshot.engine || 'reader-page';
     canvas.dataset.pageLocator = JSON.stringify(snapshot.location?.locator ?? snapshot.location ?? null);
     canvas.dataset.pageText = String(snapshot.text || '').slice(0, 500);
     canvas.dataset.pageWidth = String(snapshot.width || snapshot.source.width);
     canvas.dataset.pageHeight = String(snapshot.height || snapshot.source.height);
-    if (current) draw(current);
+    if (current && redraw) draw(current);
+    return true;
+  }
+  // Warm-up of a page that is not on screen yet: the textures go to the GPU
+  // one by one (each upload is its own slice of main-thread time), then a
+  // single draw links the page's programs. Opening later finds all of it done.
+  const pageTextures = () => (disposed ? [] : model.userData.getPageTextures());
+  // Starts linking the programs the now visible page needs; where the driver
+  // links in parallel, the draw that follows finds them done.
+  function compilePage() { if (!disposed) try { gpu.compile(scene, camera); } catch { /* linked on first draw */ } }
+  function uploadPageTexture(texture) {
+    if (disposed || !pageTextures().includes(texture)) return false;
+    texture.anisotropy = Math.min(16, gpu.capabilities.getMaxAnisotropy()); // what draw() would set first
+    gpu.initTexture(texture);
     return true;
   }
   function getPageBounds() {
@@ -1547,8 +1742,9 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     raf = requestAnimationFrame(tick); return animation;
   }
   return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
-    updateAppearance, updateSpineAppearance, updateCoverAppearance, updateEdgeAppearance,
-    setPageSnapshot, setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
+    updateAppearance, updateSpineAppearance, updateCoverAppearance, setCoverRelief, updateEdgeAppearance,
+    setPageSnapshot, pageTextures, uploadPageTexture, compilePage, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
+    setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
     getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,
     animateCoverOpen, animateCoverClose, animateBookmark, alignToPage, animateToPage,
     animate:animateMotion,

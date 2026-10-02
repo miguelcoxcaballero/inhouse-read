@@ -442,6 +442,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const fullBounds = shelfType === 'baggebo'
     ? new THREE.Box3(new THREE.Vector3(-width / 2, -height, -depth), new THREE.Vector3(width / 2, 0, 0))
     : new THREE.Box3(new THREE.Vector3(-width / 2, -height - boardHeight, -depth - 4), new THREE.Vector3(width / 2, 2, 12));
+  // Half the depth a plant occupies on its board (see plantDimensions).
+  const plantHalfDepth = entry => (entry.depth || entry.width * .7) / 2;
   const slotBox = entry => {
     if (entry.kind === 'lamp') return new THREE.Box3(
       new THREE.Vector3(-entry.width / 2, entry.mount === 'undershelf' ? -entry.height : 0, -(entry.depth || entry.width) / 2),
@@ -449,8 +451,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     );
     const plant = entry.kind === 'plant';
     return new THREE.Box3(
-      new THREE.Vector3(-entry.width / 2 - (plant ? 0 : entry.thickness * .38), -entry.height / 2, -(plant ? entry.width * .35 : entry.thickness / 2)),
-      new THREE.Vector3(entry.width / 2, entry.height / 2 + (plant ? 0 : 20), plant ? entry.width * .35 : entry.thickness / 2)
+      new THREE.Vector3(-entry.width / 2 - (plant ? 0 : entry.thickness * .38), -entry.height / 2, -(plant ? plantHalfDepth(entry) : entry.thickness / 2)),
+      new THREE.Vector3(entry.width / 2, entry.height / 2 + (plant ? 0 : 20), plant ? plantHalfDepth(entry) : entry.thickness / 2)
     );
   };
   const spineHitBox = entry => new THREE.Box3(
@@ -491,6 +493,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         book.spineAuthorFontSize, book.spineFinish, book.spineSurfaceFinish, book.spineTextFinish, book.spineTextColor, book.spineEngraved]),
       cover:JSON.stringify([coverUrl, style.coverRatio, style.color, !coverUrl && [book.title, book.author, book.format, style.fontFamily]]),
       coverFinish:book.coverFinish,
+      coverRelief:JSON.stringify(book.coverRelief ?? null),
       edgeFinish:book.pageEdgeFinish,
       bookmark:JSON.stringify(bookmarkFor(book))
     };
@@ -787,7 +790,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const previous = model.userData.shelfKeys || {}, next = materialKeys(entry);
     if (previous.spine !== next.spine) model.userData.updateSpineAppearance?.(entry.book, entry.style);
     if (previous.cover !== next.cover) model.userData.updateCoverSource?.(entry.coverUrl, entry.book, entry.style);
-    if (previous.coverFinish !== next.coverFinish) model.userData.updateCoverAppearance?.(entry.book);
+    if (previous.coverFinish !== next.coverFinish || previous.coverRelief !== next.coverRelief) model.userData.updateCoverAppearance?.(entry.book);
     if (previous.edgeFinish !== next.edgeFinish) model.userData.updateEdgeAppearance?.(entry.book);
     if (previous.bookmark !== next.bookmark) {
       if (model.userData.updateBookmark) model.userData.updateBookmark(entry.book);
@@ -909,6 +912,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     sceneFitHeight = measureFitHeight();
     const padding = (edgeToEdge ? 0 : 8) * progress;
     const framedBounds = framedScratch.copy(fullBounds);
+    for (const entry of bookEntries) if (entry.rooftop) framedBounds.max.y = Math.max(framedBounds.max.y, -entry.y + entry.height / 2);
     if (trash) framedBounds.union(framedTrash.copy(trashBounds).translate(trash.position));
     const framed = corners(framedBounds, furniture.matrix, transformRects.framed);
     // The same camera framing turns and pulls back from the whole room.
@@ -1070,7 +1074,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       entry.pose.position.set(entry.x - width / 2 + vector.x + entry.preview.x,
         -entry.y - (lamp && !undershelf ? entry.height / 2 : 0) + vector.y + entry.preview.y,
         (undershelf ? shelfType === 'baggebo' ? -depth / 2 : 8 - (entry.depth || entry.width) / 2
-          : lamp ? -(entry.depth || entry.width) / 2 : plant ? -entry.width * .35 : -entry.width / 2)
+          : lamp ? -(entry.depth || entry.width) / 2 : plant ? -plantHalfDepth(entry) : -entry.width / 2)
           - (undershelf ? 0 : entry.depthInset || 0) + vector.z);
       entry.pose.rotation.set(decorative ? 4 * Math.PI / 180 * lift : 0,
         decorative ? -7 * Math.PI / 180 * lift : Math.PI / 2 - 7 * Math.PI / 180 * lift,

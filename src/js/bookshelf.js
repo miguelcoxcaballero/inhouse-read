@@ -95,19 +95,24 @@
  * hay que abrir uno.
  */
 
-import { planBookshelf, bookmarkFor, withDefaults } from './bookshelf-layout.js';
+import { planBookshelf, bookmarkFor, withDefaults, DEFAULT_LAYOUT } from './bookshelf-layout.js';
 import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from './cover-appearance.js';
 import { bookColorOptions, spineColorStyle, spineFinish, surfaceFinish, METAL_COLORS } from './book-colors.js';
 import { normalizeBookAuthor } from './book-title.js';
 import { bookView, fitCoverImage, getBookRenderer, planReadingBookPose } from './book-model.js';
+import { analyzeCoverRelief, normalizeCoverRelief } from './cover-relief.js';
+import { EDITOR_TABS, coverEditorPose, coverTiltFrames, editorTabId, nextEditorTab } from './cover-editor.js';
 import { createShelfZoom } from './shelf-zoom.js';
+import { markTiming, resetTimeline } from './perf-marks.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
 import { layoutShelfDecorations, moveShelfDecoration } from './shelf-decoration-layout.js';
 import { createPlantCatalog } from './plant-catalog.js';
 import { normalizeShelfType, BAGGEBO_SPEC } from './shelf-types.js';
 import { baggeboLayout } from './shelf-model-layout.js';
+import { placeRooftopPlants } from './plant-rooftop-layout.js';
 import { getCatalogPlant, getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { normalizeShelfPlant, resolveCatalogPlant } from './plant-records.js';
+import { shelfScale, plantDimensions, PLANT_MAX_HEIGHT_MM } from './plant-dimensions.js';
 import { getCatalogLamp, normalizeShelfLamp } from './lamp-catalog-data.js';
 import { lampCatalogIllustration } from './lamp-illustration.js';
 
@@ -246,6 +251,8 @@ function roofMark(className = 'ihr-roof') {
   return svgIcon(ROOF_PATH, { viewBox: '0 0 40 28', className });
 }
 
+let editorSerial = 0;
+
 function prefersReducedMotion() {
   return (
     typeof matchMedia === 'function' &&
@@ -342,6 +349,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     destroyed: false,
     frame: 0,
     coverAppearances: new Map(),
+    reliefProposals: new Map(),
     appearanceTasks: new Map(),
     itemsById: new Map(),
     placementObjects: [],
@@ -721,12 +729,18 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   function lampShelfObject(record) {
     const lamp = getCatalogLamp(record.lampId);
-    const shelfHeight = window.innerWidth >= 600 ? 200 : 172;
-    const scale = Math.min(state.shelfWidth / 600,
-      state.shelfType === 'baggebo' ? Infinity : (shelfHeight + 36) / lamp.dimensions.height);
+    const scale = shelfScale({ shelfType:state.shelfType, shelfWidth:state.shelfWidth, viewportWidth:window.innerWidth });
     return { ...record, kind:'lamp', mount:lamp.mount,
       width:lamp.dimensions.width * scale, height:lamp.dimensions.height * scale,
       depth:lamp.dimensions.depth * scale };
+  }
+
+  /** Real IKEA sizes are millimetres; scene pixels follow the shelf's scale. */
+  const plantScale = () => shelfScale({ shelfType:state.shelfType, shelfWidth:state.shelfWidth, viewportWidth:window.innerWidth });
+  function plantShelfObject(record, scale = plantScale()) {
+    const size = normalizeShelfPlant({ ...record, key:record.key || 'plant' });
+    const real = plantDimensions(size.catalogId, size.potId);
+    return { ...record, kind:'plant', width:size.width * scale, height:size.height * scale, depth:real.depth * scale };
   }
 
   function updateLampControl(node, record) {
@@ -786,10 +800,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const viewport = scroller.getBoundingClientRect();
     const destination = dropPositionAt(viewport.left + viewport.width * .4,
       viewport.top + Math.min(viewport.height * .4, 260));
-    const record = { key, seed:key, catalogId:plant.id, variant:plant.variant, potId:pot.id, potColorId:getPotColor(pot.id,potColorId).id,
-      width:plant.width, height:plant.height, shelf:destination?.shelf ?? 0 };
+    let record = { key, seed:key, catalogId:plant.id, variant:plant.variant, potId:pot.id, potColorId:getPotColor(pot.id,potColorId).id,
+      shelf:destination?.shelf ?? 0 };
     const oldRects = objectRects(), previous = state.plants;
-    const objects = [...state.placementObjects, { ...record, kind:'plant' }];
+    record = normalizeShelfPlant(record);
+    const objects = [...state.placementObjects, plantShelfObject(record)];
     const arranged = layoutShelfDecorations(objects, placementConfig()).flatMap(shelf => shelf.items);
     const positions = new Map(arranged.map(item => [item.key, { shelf:item.shelf, x:item.x }]));
     state.plants = [...previous, record].map(item => ({ ...item, ...positions.get(item.key) }));
@@ -1313,7 +1328,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function buildPlant(item) {
     item = normalizeShelfPlant({ ...item, key:item.key || `plant:${item.seed}` });
     const plant = resolveCatalogPlant(item);
-    const height = item.height;
+    const scale = plantScale(), width = item.width * scale, height = item.height * scale;
     const node = el('button', {
       type:'button',
       class: `ihr-plant ihr-plant--${item.variant}`,
@@ -1325,7 +1340,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       'aria-description':'Mantén pulsado para mover la planta o llevarla a la papelera. Usa Mayús y las flechas para cambiar su posición o balda, y Suprimir para retirarla.',
       title:'Mantén pulsado para mover la planta',
       style:
-        `--ihr-plant-w:${item.width}px;` +
+        `--ihr-plant-w:${width}px;` +
         `--ihr-plant-h:${height}px;` +
         '--ihr-plant-overhang:0px'
     });
@@ -1434,12 +1449,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       }
     }
     if (!state.plantsInitialized) {
-      state.plants = initialPlants.map(({ key, seed, variant, width, shelf, x }) =>
-        normalizeShelfPlant({ key, seed, variant, width, shelf, x }));
+      state.plants = initialPlants.map(({ key, seed, variant, shelf, x }) =>
+        normalizeShelfPlant({ key, seed, variant, shelf, x }));
       state.plantsInitialized = true;
       savePlants();
     }
-    objects.push(...state.plants.map(plant => ({ ...plant, kind:'plant' })));
+    const scale = plantScale();
+    objects.push(...state.plants.map(plant => plantShelfObject(plant, scale)));
     objects.push(...state.lamps.map(lampShelfObject));
     const placements = Object.fromEntries(objects.filter(item => item.kind === 'book' && item.book.shelfPosition)
       .map(item => [item.key, item.book.shelfPosition]));
@@ -1560,6 +1576,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const previousChildren = retainedScene ? [...scroller.children] : [];
     if (!retainedScene) scroller.textContent = '';
 
+    const plantSlotWidth = variant => plantShelfObject({ key:'plant', variant }).width;
+    const plantVariants = DEFAULT_LAYOUT.plantVariants;
     const plan = planBookshelf(state.books, {
       shelfWidth: width,
       padding: shelfPadding(),
@@ -1567,6 +1585,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       plantEvery: opts.plantEvery,
       sort: opts.sort,
       spine: spineOptionsFor(width),
+      plantWidth: Math.min(...plantVariants.map(plantSlotWidth)),
+      plantWidthFor: plantSlotWidth,
       // Sin secciones, 0 recientes: todo cae en una estantería continua.
       recentLimit: opts.sections ? opts.recentLimit : 0
     });
@@ -1580,7 +1600,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           index,
           items: [{
             kind: 'plant', variant: plants[index % plants.length],
-            seed: `empty-shelf-${index}`, width: 42 + (index % 3) * 6
+            seed: `empty-shelf-${index}`, width: plantSlotWidth(plants[index % plants.length])
           }]
         });
       }
@@ -1699,7 +1719,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           continue;
         }
         if (node.classList.contains('ihr-plant')) {
+          const record = state.plants.find(item => item.key === node.dataset.objectId);
           entries.push({ kind:'plant', key:node.dataset.objectId, node, x, y, shelf:shelfIndex, depthInset:0, width:rect.width, height:rect.height,
+            depth:record ? plantShelfObject(record).depth : rect.width * .7,
             catalogId:node.dataset.catalogId, potId:node.dataset.potId, potColorId:node.dataset.potColorId,
             seed:node.dataset.plantSeed, variant:node.dataset.plantVariant });
           continue;
@@ -1714,7 +1736,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
     const layout = { stage, scroller, entries, rows, width, sceneWidth:width, trashNode, catalogNode,
       shelfType:state.shelfType, height:stage.getBoundingClientRect().height, mode:state.viewMode };
-    return state.shelfType === 'baggebo' ? baggeboLayout(layout) : layout;
+    if (state.shelfType === 'baggebo') return placeRooftopPlants(baggeboLayout(layout));
+    for (const entry of entries) if (entry.kind === 'plant' && entry.height > PLANT_MAX_HEIGHT_MM * plantScale()) {
+      entry.rooftop = true; entry.y = -entry.height / 2;
+    }
+    return placeRooftopPlants(layout);
   }
 
   function scheduleRender() {
@@ -1805,6 +1831,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   async function openBook(spineEl, item) {
     if (state.busy || state.session || state.returnMotion || state.destroyed) return;
     state.busy = true;
+    // True once the lifted book sits still (the pull-out has finished), false if
+    // the selection ends without that. The page being prepared for this book waits for it.
+    let settle;
+    const settled = new Promise(resolve => { settle = resolve; });
     const finishPendingSelection = () => {
       document.removeEventListener('keydown', onPendingKeydown, true);
       if (state.pendingSelection === pendingSelection) state.pendingSelection = null;
@@ -1812,6 +1842,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const pendingSelection = { cancelled:false, cancel() {
       if (state.pendingSelection !== pendingSelection) return;
       pendingSelection.cancelled = true;
+      settle(false);
+      options.onBookDismiss?.(item.book);
       finishPendingSelection();
       state.busy = false;
       applyDeferredShelfUpdates();
@@ -1827,7 +1859,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const { book } = item;
     let style = item.style;
     const initialStyle = item.style;
-    options.onPrepareBook?.(book);
+    resetTimeline(); markTiming('select');
+    options.onPrepareBook?.(book, { settled });
     /*
       Se mide sin transform: de un libro inclinado, getBoundingClientRect
       devuelve la caja del rectángulo girado (más ancha y más alta que el
@@ -1987,6 +2020,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       }
       clearInterval(readyCheck);
       session.cancelled = true;
+      settle(false);
+      options.onBookDismiss?.(book);
       session.onCancel?.();
       document.removeEventListener('keydown', onKeydown, true);
       // A slow image may still be loading before the flyout's first frame.
@@ -2113,6 +2148,125 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       editorPose.scale = scale;
       editorPose.y = bottom - coverH * scale / 2 - centerY;
     }
+    // ---- Editor de la portada: pestañas, giro del libro y relieve ----------
+    // El editor tiene dos pestañas. 'Lomo' es el editor de siempre (libro de
+    // canto). 'Portada' gira el libro hasta mostrar la portada de frente sobre
+    // la hoja y aloja las funciones de la portada; por ahora, 'Relieve'.
+    const editorUid = `ihr-ed-${++editorSerial}`;
+    let editorTab = 'spine';
+    const coverPose = { x: 0, y: 0, scale: 1, angle: 0, pitch: 0 };
+    const poseForTab = tab => tab === 'cover' ? coverPose : editorPose;
+    const relief = { status: 'idle', proposals: [], controller: null, tiltTimer: 0, tiltToken: 0, tiltCleanup: null, sliderFrame: 0 };
+    function fitCoverPose() {
+      // La hoja de la pestaña activa ya está maquetada: su borde superior
+      // marca el límite de la franja libre. Sin medida usable, un respaldo.
+      const sheetTop = editorPanel.hidden ? NaN : editorPanel.getBoundingClientRect().top;
+      Object.assign(coverPose, coverEditorPose({
+        viewportWidth: vw, viewportHeight: vh, landscape, coverW, coverH, centerY, thickness, sheetTop
+      }));
+    }
+    // Al llegar las tarjetas la hoja puede cambiar de alto unos píxeles: la
+    // portada se reacomoda con suavidad, salvo que ya se esté balanceando.
+    function refitCoverPose() {
+      if (!view || editorTab !== 'cover' || editorPanel.hidden || session.phase !== 'ready' || relief.tiltCleanup) return;
+      const before = { ...coverPose };
+      fitCoverPose();
+      if (Math.abs(before.y - coverPose.y) < 6 && Math.abs(before.scale - coverPose.scale) < .02) { Object.assign(coverPose, before); return; }
+      view.animate([{ transform: before }, { transform: coverPose }], { duration: prefersReducedMotion() ? 1 : 220 });
+    }
+    function reliefKey() {
+      return `${item.coverKey ?? coverUrl ?? ''}|${book.title ?? ''}|${normalizeBookAuthor(book.author)}`;
+    }
+    // Deja de lado todo lo que dependa de la pestaña: balanceo, temporizadores
+    // y análisis en curso (cierre del editor o cambio de pestaña).
+    function cancelCoverTilt() {
+      clearTimeout(relief.tiltTimer);
+      relief.tiltTimer = 0;
+      relief.tiltToken++;
+      relief.tiltCleanup?.();
+      relief.tiltCleanup = null;
+    }
+    function stopCoverEditorWork() {
+      cancelCoverTilt();
+      if (relief.sliderFrame) cancelAnimationFrame(relief.sliderFrame);
+      relief.sliderFrame = 0;
+      if (relief.status === 'loading') {
+        relief.controller?.abort();
+        relief.controller = null;
+        relief.status = 'idle';
+        renderReliefCards();
+      }
+    }
+    function startCoverTilt() {
+      relief.tiltTimer = 0;
+      if (!view || editorTab !== 'cover' || editorPanel.hidden || session.phase !== 'ready') return;
+      const token = ++relief.tiltToken;
+      const { frames, duration } = coverTiltFrames(coverPose);
+      const motion = view.animate(frames, { duration });
+      // Cualquier gesto del usuario corta el balanceo y devuelve la portada
+      // a su sitio; no se compite con la mano.
+      const interrupt = () => {
+        if (token !== relief.tiltToken) return;
+        cancelCoverTilt();
+        view.animate([
+          { transform: view.getPose?.() ?? coverPose },
+          { transform: coverPose }
+        ], { duration: 240 });
+      };
+      const events = ['pointerdown', 'keydown', 'wheel', 'touchstart'];
+      for (const type of events) document.addEventListener(type, interrupt, { capture: true, passive: true });
+      relief.tiltCleanup = () => { for (const type of events) document.removeEventListener(type, interrupt, { capture: true }); };
+      motion.finished.then(() => { if (token === relief.tiltToken) cancelCoverTilt(); });
+    }
+    // Tras elegir un relieve el libro se balancea unas veces para que la luz
+    // recorra la superficie. Con movimiento reducido no se balancea: el relieve
+    // se aprecia igual con el sombreado en reposo y un vaivén del libro es
+    // justo el tipo de movimiento que ese ajuste pide evitar.
+    function scheduleCoverTilt() {
+      cancelCoverTilt();
+      if (!view || prefersReducedMotion() || editorTab !== 'cover') return;
+      const token = relief.tiltToken;
+      Promise.resolve(relief.applied ?? true).then(done => {
+        if (done === false || token !== relief.tiltToken || editorTab !== 'cover' || editorPanel.hidden || state.session !== session) return;
+        relief.tiltTimer = setTimeout(startCoverTilt, 140);
+      });
+    }
+    function syncEditorTab(tab) {
+      editorTab = editorTabId(tab);
+      const cover = editorTab === 'cover';
+      for (const [id, button] of editorTabButtons) {
+        button.setAttribute('aria-selected', String(id === editorTab));
+        button.tabIndex = id === editorTab ? 0 : -1;
+      }
+      spinePanel.hidden = cover;
+      coverPanel.hidden = !cover;
+      const label = EDITOR_TABS.find(candidate => candidate.id === editorTab).heading;
+      editorHeading.textContent = label;
+      editorPanel.setAttribute('aria-label', label);
+      editorPanel.dataset.tab = editorTab;
+      flyout.classList.toggle('is-editing-cover', cover);
+    }
+    function selectEditorTab(next, { focusTab = false } = {}) {
+      next = editorTabId(next);
+      const previous = editorTab;
+      if (focusTab) editorTabButtons.get(next)?.focus({ preventScroll: true });
+      if (next === previous) return;
+      cancelCoverTilt();
+      syncEditorTab(next);
+      editorPanel.scrollTop = 0;
+      let turned = null;
+      if (!editorPanel.hidden && session.phase === 'ready') {
+        if (next === 'cover') fitCoverPose(); else fitEditorPose();
+        if (view) turned = view.animate([
+          { transform: poseForTab(previous) },
+          { transform: poseForTab(next) }
+        ], { duration: prefersReducedMotion() ? 1 : 300 });
+      }
+      // El análisis espera a que el giro termine: no compite con su animación.
+      if (next === 'cover') (turned?.finished ?? Promise.resolve()).then(() => {
+        if (editorTab === 'cover' && !editorPanel.hidden && state.session === session) loadReliefProposals();
+      });
+    }
     function saveCustomizationNow() {
       if (customizationSaveTimer) clearTimeout(customizationSaveTimer);
       customizationSaveTimer = 0;
@@ -2148,6 +2302,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     function updateCustomization(fields) {
       Object.assign(book, fields);
       Object.assign(customizationFields, fields);
+      // El relieve sólo toca la portada y ya lo aplica view.setCoverRelief:
+      // ni rehace el modelo al cerrar ni repinta el lomo de la estantería.
+      if (Object.keys(fields).every(key => key === 'coverRelief')) { queueCustomizationSave(); return; }
       appearanceDirty = true;
       applyCoverAppearance(item, getCachedAppearance());
       style = item.style;
@@ -2175,6 +2332,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       session.editorViewportWidth = viewport.width;
       session.editorViewportHeight = viewport.height;
       session.keyboardOpen = false;
+      // Siempre se abre en el lomo; la portada se elige con su pestaña.
+      syncEditorTab('spine');
       editorPanel.hidden = false;
       flyout.classList.add('is-editing-spine');
       meta.classList.add('is-editing');
@@ -2193,6 +2352,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
     function closeEditor({ commit = true, restoreFocus = true } = {}) {
       if (editorPanel.hidden) return;
+      const leavingPose = poseForTab(editorTab);
+      stopCoverEditorWork();
+      syncEditorTab('spine');
       editorPanel.hidden = true;
       flyout.classList.remove('is-editing-spine');
       meta.classList.remove('is-editing');
@@ -2210,7 +2372,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (commit && session.phase === 'ready' && view) {
         coverTarget.disabled = true;
         const returnToCover = view.animate([
-          { transform: editorPose },
+          { transform: leavingPose },
           { transform: { x: 0, y: 0, scale: 1, angle: 0, pitch: 0 } }
         ], {
           duration: prefersReducedMotion() ? 1 : 220
@@ -2611,18 +2773,37 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       class:`ihr-spine-editor__section ihr-spine-editor__section--${modifier}`
     }, [el('h3', { class:'ihr-spine-editor__section-title', text:title }), ...children]);
     const sheetGrip = el('span', { class:'ihr-spine-editor__grip', 'aria-hidden':'true' });
+    const editorHeading = el('h2', { class:'ihr-spine-editor__heading', text:'Editar el lomo' });
+    // Pestañas 'Lomo' | 'Portada': lista de pestañas con tabulación móvil
+    // (sólo la activa entra en el orden de Tab; flechas, Inicio y Fin mueven).
+    const editorTabButtons = new Map(EDITOR_TABS.map(tab => [tab.id, el('button', {
+      type:'button', role:'tab', class:'ihr-spine-editor__tab', id:`${editorUid}-tab-${tab.id}`,
+      'aria-selected':String(tab.id === editorTab), 'aria-controls':`${editorUid}-panel-${tab.id}`,
+      tabindex:tab.id === editorTab ? '0' : '-1', text:tab.label,
+      onClick:() => selectEditorTab(tab.id)
+    })]));
+    const editorTabs = el('div', {
+      class:'ihr-spine-editor__tabs', role:'tablist', 'aria-label':'Qué quieres editar',
+      onKeydown:event => {
+        const target = nextEditorTab(editorTab, event.key);
+        if (!target) return;
+        event.preventDefault(); event.stopPropagation();
+        selectEditorTab(target, { focusTab:true });
+      }
+    }, [...editorTabButtons.values()]);
     const editorHeader = el('header', { class:'ihr-spine-editor__header' }, [
       sheetGrip,
       el('div', { class:'ihr-spine-editor__titles' }, [
-        el('h2', { class:'ihr-spine-editor__heading', text:'Editar el lomo' }),
+        editorHeading,
         editorSubtitle
       ]),
-      el('button', { type:'button', class:'ihr-btn ihr-spine-editor__done', text:'Listo', onClick:closeEditor })
+      el('button', { type:'button', class:'ihr-btn ihr-spine-editor__done', text:'Listo', onClick:closeEditor }),
+      editorTabs
     ]);
-    editorPanel.append(
-      editorHeader,
-      editorPreview,
-      el('div', { class:'ihr-spine-editor__body' }, [
+    const spinePanel = el('div', {
+      class:'ihr-spine-editor__body', id:`${editorUid}-panel-spine`, role:'tabpanel',
+      'aria-labelledby':`${editorUid}-tab-spine`
+    }, [
         section('Rótulo', 'text', [
           el('label', { class:'ihr-spine-editor__field ihr-spine-editor__field--title' }, [editorLabel('Texto del lomo'), titleInput]),
           el('label', { class:'ihr-spine-editor__field ihr-spine-editor__field--author' }, [editorLabel('Autor'), authorInput])
@@ -2644,8 +2825,169 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           pickerRow('Acabado', bindingPicker)
         ]),
         section('Brillo', 'gloss', [surfaceFinishControls])
+    ]);
+
+    // ---- Pestaña 'Portada' · Relieve ----
+    const reliefName = `${editorUid}-relief`;
+    const reliefStatus = el('p', { class:'ihr-relief__status', role:'status', 'aria-live':'polite' });
+    const reliefRetry = el('button', {
+      type:'button', class:'ihr-spine-editor__auto ihr-relief__retry', text:'Reintentar', hidden:true,
+      onClick:() => { relief.status = 'idle'; loadReliefProposals(); }
+    });
+    const reliefGrid = el('div', { class:'ihr-relief__cards' });
+    const reliefNoneInput = el('input', {
+      type:'radio', name:reliefName, value:'', class:'ihr-relief__input',
+      onChange:() => chooseRelief(null)
+    });
+    const reliefNone = el('label', { class:'ihr-relief-none', hidden:true }, [
+      reliefNoneInput, el('span', { class:'ihr-relief-none__mark', 'aria-hidden':'true' }), el('span', { text:'Sin relieve' })
+    ]);
+    const reliefGroup = el('div', { class:'ihr-relief__group', role:'radiogroup', 'aria-label':'Propuestas de relieve' }, [reliefGrid, reliefNone]);
+    const reliefStrengthOutput = el('output', { class:'ihr-spine-editor__size' });
+    const reliefStrength = el('input', {
+      type:'range', min:'10', max:'100', step:'5', class:'ihr-spine-editor__slider', 'aria-label':'Intensidad del relieve',
+      onInput:event => {
+        const percent = Number(event.currentTarget.value);
+        reliefStrengthOutput.textContent = `${percent} %`;
+        syncRange(event.currentTarget);
+        const current = normalizeCoverRelief(book.coverRelief);
+        if (!current) return;
+        updateCustomization({ coverRelief:{ id:current.id, strength:percent / 100 } });
+        // Un empujón a la vista por fotograma como mucho al arrastrar.
+        if (!relief.sliderFrame) relief.sliderFrame = requestAnimationFrame(() => {
+          relief.sliderFrame = 0;
+          pushReliefToView(normalizeCoverRelief(book.coverRelief));
+        });
+      }
+    });
+    const reliefStrengthRow = el('label', { class:'ihr-spine-editor__row ihr-relief__strength' }, [
+      editorLabel('Intensidad'), el('span', { class:'ihr-spine-editor__range' }, [reliefStrength, reliefStrengthOutput])
+    ]);
+    const coverPanel = el('div', {
+      class:'ihr-spine-editor__cover', id:`${editorUid}-panel-cover`, role:'tabpanel',
+      'aria-labelledby':`${editorUid}-tab-cover`, hidden:true
+    }, [
+      section('Relieve', 'relief', [
+        el('p', { class:'ihr-relief__intro', text:'Zonas de tu portada que, en un libro impreso, podrían llevar relieve o brillo.' }),
+        el('div', { class:'ihr-relief__state' }, [reliefStatus, reliefRetry]),
+        reliefGroup,
+        reliefStrengthRow
       ])
-    );
+    ]);
+    const cleanProposals = list => (Array.isArray(list) ? list : []).slice(0, 3)
+      .filter(proposal => proposal && typeof proposal.id === 'string' && typeof proposal.label === 'string')
+      .map(proposal => ({
+        id:proposal.id, label:proposal.label,
+        description:typeof proposal.description === 'string' ? proposal.description : '',
+        strength:Number.isFinite(proposal.strength) ? Math.min(1, Math.max(.1, proposal.strength)) : .7,
+        thumbnail:typeof proposal.thumbnail === 'string' && proposal.thumbnail.startsWith('data:image/') ? proposal.thumbnail : ''
+      }));
+    function pushReliefToView(next) {
+      if (view?.setCoverRelief) {
+        relief.applied = Promise.resolve(view.setCoverRelief(next)).catch(error => {
+          console.warn('No se pudo aplicar el relieve:', error); return false;
+        });
+      } else { view?.updateCoverAppearance?.(book); relief.applied = Promise.resolve(true); }
+      return relief.applied;
+    }
+    function applyRelief(next) {
+      updateCustomization({ coverRelief:next });
+      pushReliefToView(next);
+    }
+    function syncReliefSelection() {
+      const current = normalizeCoverRelief(book.coverRelief);
+      for (const input of reliefGrid.querySelectorAll('input')) {
+        const on = input.value === current?.id;
+        input.checked = on;
+        input.closest('.ihr-relief-card').classList.toggle('is-selected', on);
+      }
+      reliefNoneInput.checked = !current;
+      reliefNone.classList.toggle('is-selected', !current);
+      reliefNone.hidden = !(relief.status === 'ready' || current);
+      reliefStrength.disabled = !current;
+      const percent = Math.round((current?.strength ?? .7) * 100);
+      reliefStrength.value = String(Math.max(10, percent));
+      reliefStrengthOutput.textContent = current ? `${percent} %` : '—';
+      syncRange(reliefStrength);
+      reliefStrengthRow.hidden = !(relief.status === 'ready' || current);
+    }
+    function chooseRelief(proposal) {
+      const next = proposal ? normalizeCoverRelief({ id:proposal.id, strength:proposal.strength }) : null;
+      if (proposal && !next) return;
+      applyRelief(next);
+      syncReliefSelection();
+      if (next) scheduleCoverTilt(); else cancelCoverTilt();
+    }
+    function reliefCard(proposal) {
+      const input = el('input', {
+        type:'radio', name:reliefName, value:proposal.id, class:'ihr-relief__input',
+        onChange:() => chooseRelief(proposal),
+        // Volver a tocar la propuesta elegida repite el balanceo.
+        onClick:() => { if (normalizeCoverRelief(book.coverRelief)?.id === proposal.id) scheduleCoverTilt(); }
+      });
+      return el('label', { class:'ihr-relief-card' }, [
+        input,
+        el('span', { class:'ihr-relief-card__preview', 'aria-hidden':'true' },
+          proposal.thumbnail ? [el('img', { class:'ihr-relief-card__thumb', src:proposal.thumbnail, alt:'', draggable:'false' })] : []),
+        el('span', { class:'ihr-relief-card__text' }, [
+          el('span', { class:'ihr-relief-card__label', text:proposal.label }),
+          proposal.description ? el('span', { class:'ihr-relief-card__description', text:proposal.description }) : null
+        ])
+      ]);
+    }
+    function renderReliefCards() {
+      const { status, proposals } = relief;
+      coverPanel.setAttribute('aria-busy', String(status === 'loading'));
+      reliefGroup.classList.toggle('is-loading', status === 'loading');
+      reliefRetry.hidden = status !== 'error';
+      reliefStatus.textContent = status === 'loading' ? 'Buscando zonas con relieve…'
+        : status === 'error' ? 'No se pudo analizar la portada. Inténtalo de nuevo.'
+        : status === 'empty' ? (coverUrl ? 'No se han encontrado zonas claras para darles relieve en esta portada.'
+          : 'Este libro no tiene imagen de portada que analizar.')
+        : status === 'ready' ? `${proposals.length} propuestas para esta portada` : '';
+      reliefStatus.classList.toggle('is-busy', status === 'loading');
+      // Reserve the cards before the turn; starting analysis must not grow
+      // the sheet over the cover that was just fitted above it.
+      if (status === 'loading' || status === 'idle') {
+        reliefGrid.replaceChildren(...[0, 1, 2].map(() => el('span', { class:'ihr-relief-card is-skeleton', 'aria-hidden':'true' }, [
+          el('span', { class:'ihr-relief-card__preview' }),
+          el('span', { class:'ihr-relief-card__text' }, [el('span', { class:'ihr-relief-card__label' }), el('span', { class:'ihr-relief-card__description' })])
+        ])));
+      } else reliefGrid.replaceChildren(...(status === 'ready' ? proposals.map(reliefCard) : []));
+      syncReliefSelection();
+    }
+    async function loadReliefProposals() {
+      if (relief.status === 'loading' || relief.status === 'ready') return;
+      if (!coverUrl) { relief.status = 'empty'; renderReliefCards(); refitCoverPose(); return; }
+      const key = reliefKey();
+      const cached = state.reliefProposals.get(key);
+      if (cached) { relief.proposals = cached; relief.status = 'ready'; renderReliefCards(); refitCoverPose(); return; }
+      const controller = new AbortController();
+      relief.controller = controller;
+      relief.status = 'loading';
+      renderReliefCards();
+      try {
+        const result = await analyzeCoverRelief(coverUrl, {
+          title:book.title, author:normalizeBookAuthor(book.author), signal:controller.signal
+        });
+        if (relief.controller !== controller || state.session !== session) return;
+        relief.proposals = cleanProposals(result?.proposals);
+        relief.status = relief.proposals.length ? 'ready' : 'empty';
+        if (relief.proposals.length) {
+          state.reliefProposals.set(key, relief.proposals);
+          if (state.reliefProposals.size > 12) state.reliefProposals.delete(state.reliefProposals.keys().next().value);
+        }
+      } catch (error) {
+        if (relief.controller !== controller || controller.signal.aborted) return;
+        console.warn('No se pudo analizar la portada para el relieve:', error);
+        relief.status = 'error';
+      }
+      relief.controller = null;
+      renderReliefCards();
+      refitCoverPose();
+    }
+    editorPanel.append(editorHeader, editorPreview, spinePanel, coverPanel);
+    renderReliefCards();
     updateColorSelection();
     // Mobile sheet: dragging the header down dismisses it, like its grabber suggests.
     let sheetDrag = null;
@@ -2809,17 +3151,20 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (session.cancelled || state.destroyed) return;
 
     session.phase = 'ready';
+    markTiming('flyout-ready');
+    settle(true);
     flyout.classList.add('is-ready');
     actionButtons[0].disabled = false;
     actionButtons[2].disabled = false;
     coverTarget.hidden = !opts.autoOpen;
     coverTarget.classList.add('is-ready');
 
-    function installOpeningPage(snapshot) {
+    function installOpeningPage(snapshot, { redraw = true } = {}) {
       if (!snapshot?.source) return false;
       // The book opens in sepia whatever the reading theme: the snapshot's
       // sepia variant starts at pageTheme 0 and fades to the theme on the zoom.
-      if (view) return view.setPageSnapshot(snapshot, snapshot.sepia ? { pageTheme:0 } : undefined);
+      // A page warmed up while the book waited is already on the model.
+      if (view) return view.hasPageSnapshot(snapshot) || view.setPageSnapshot(snapshot, { ...(snapshot.sepia ? { pageTheme:0 } : {}), redraw });
       const pages = bookNode.querySelector('.ihr-flyout__fallback-pages');
       if (!pages) return false;
       const canvas = snapshot.source;
@@ -2833,6 +3178,28 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       pages.replaceChildren(...fallbackPageLayers(canvas, snapshot, 0));
       return true;
     }
+
+    // The page this book will open on arrives while the cover still waits for
+    // a tap (the cover is closed, so it stays hidden behind it). Textures and
+    // programs are built here, in separate idle slices, so the tap only has to
+    // play the animation. Returns false when it could not (or need not) be done.
+    session.warmOpeningPage = async (snapshot, idle) => {
+      const stale = () => session.cancelled || state.destroyed || state.session !== session || session.phase !== 'ready';
+      if (!view || stale() || !installOpeningPage(snapshot, { redraw:false })) return false;
+      await idle();
+      if (stale() || !view.hasPageSnapshot(snapshot)) return false;
+      view.compilePage();
+      for (const texture of view.pageTextures()) {
+        await idle();
+        if (stale() || !view.hasPageSnapshot(snapshot)) return false;
+        view.uploadPageTexture(texture);
+      }
+      await idle();
+      if (stale() || !view.hasPageSnapshot(snapshot)) return false;
+      view.draw(view.getPose()); // links the page's programs and renders the covered page once
+      markTiming('textures-uploaded');
+      return true;
+    };
 
     async function animateBookToPage(target) {
       if (session.cancelled || state.destroyed) return;
@@ -2863,6 +3230,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     async function finishReaderTransition({ pageSnapshot, animatePage } = {}) {
       if (session.cancelled || state.destroyed) return false;
       if (pageSnapshot && !installOpeningPage(pageSnapshot)) throw new Error('No se pudo preparar la página del modelo 3D.');
+      markTiming('page-installed');
       session.phase = 'reading';
       flyout.dataset.openingPhase = 'opening';
       flyout.classList.add('is-opening-book');
@@ -2927,6 +3295,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       coverTarget.hidden = true;
       actionButtons.forEach(button => { button.disabled = true; });
       readiness.textContent = 'Preparando tu última página…';
+      markTiming('open-tap');
       try {
         await onOpen?.(book, {
           coverUrl,
@@ -3231,6 +3600,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     update: refresh,
     returnToShelf,
     hasReaderOrigin:bookId => state.lastOpened?.book.id === bookId,
+
+    /** Hands the page a lifted book will open on to its 3D model ahead of the tap. */
+    prepareOpeningPage(bookId, snapshot, idle = () => new Promise(resolve => setTimeout(resolve, 0))) {
+      const session = state.session;
+      if (!session?.warmOpeningPage || session.cancelled || session.book.id !== bookId) return Promise.resolve(false);
+      return session.warmOpeningPage(snapshot, idle);
+    },
 
     /** Repliega la portada abierta, si la hay. */
     close() {

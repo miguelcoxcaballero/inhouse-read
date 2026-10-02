@@ -1,4 +1,5 @@
-import { detectLanguage, readSystemVoices, resolveVoice } from './voice-catalog.js'
+import { declaredLanguage, detectLanguage, isNeuralId, langBase, readSystemVoices, resolveVoice } from './voice-catalog.js'
+import { neuralEngine, neuralVoiceList, neuralReady, unlockNeural } from './neural-runtime.js'
 import { planSpeech, speechChunks } from './speech-text.js'
 
 export { speechChunks }
@@ -12,6 +13,19 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 // (hundreds of ms on Android's TextToSpeech, 1-2 s for an online voice) and says so with a 'start' event. If an engine never
 // does, the sentence is shown after START_FALLBACK_MS (SILENT_ENGINE_MS once an utterance has ended without a 'start').
 const START_FALLBACK_MS = 1500, SPOKEN_FALLBACK_MS = 4000, SILENT_ENGINE_MS = 0
+// A neural voice always reports its 'start' (it is our own engine), so it has no fallback timer: it is waited for, and
+// the status says so after NEURAL_WAIT_MS. It reads this many fragments ahead (same voice and speed) to stay gapless.
+const NEURAL_WAIT_MS = 900, NEURAL_LOOKAHEAD = 4
+// A device that could not keep up with the neural voice is remembered (per speed: a faster one is slower still) so the next
+// session does not repeat the cold start and the stutter; it is forgotten after SLOW_DAYS, or at once when the person
+// changes the voice or the speed or taps 'Volver a probar' (retryNeural).
+const SLOW_KEY = 'inhouse-read-neural-slow', SLOW_DAYS = 14
+// What the person sees when the neural voice gives up and the best system voice takes over.
+const NEURAL_FALLBACK = {
+  'too-slow':'La voz natural no va lo bastante rápida en este dispositivo. Sigo con la mejor voz del sistema.',
+  'not-installed':'Esa voz natural ya no está instalada. Sigo con la mejor voz disponible.',
+  default:'La voz natural no ha podido arrancar. Sigo con la mejor voz del sistema.'
+}
 
 /** One short utterance at a time also avoids Android/browser long-speech timeouts. */
 export class ReadingVoice {
@@ -27,18 +41,25 @@ export class ReadingVoice {
     this.rate = 1
     this.voice = ''
     this.options = {footnotes:false,multilingual:false,skipHeaders:false}
+    // Where the current utterance was handed: 'neural' (our engine), 'native' (Android bridge) or 'web' (speechSynthesis).
+    this.transport = null
+    // Neural voice trouble: `neuralOff` is the reason it was given up on (system voices only until retryNeural());
+    // `missing` are voices the engine said are not installed any more (this reading only).
+    this.neuralOff = ''; this.missing = new Set()
+    this.slow = this.readSlow()
     window.addEventListener('inhouse-tts', event => {
       if (event.detail?.id !== this.utteranceId || this.state !== 'playing') return
       if (event.detail.type === 'start') this.engineStarted(event.detail.id)
       if (event.detail.type === 'done') { this.engineEnded(event.detail.id); this.advance() }
       if (event.detail.type === 'interrupted') this.pause()
-      if (event.detail.type === 'error' && !this.useLocalVoice()) this.fail('No hay una voz disponible para este idioma. Revisa las voces instaladas en Android.')
+      if (event.detail.type === 'error') this.engineFailed(event.detail)
     })
   }
   get native() { return typeof window.InhouseSpeech?.speak === 'function' }
-  get supported() { return this.native || Boolean(window.speechSynthesis && window.SpeechSynthesisUtterance) }
+  get supported() { return this.native || Boolean(window.speechSynthesis && window.SpeechSynthesisUtterance) || neuralReady() }
   notify(message = '') { this.onState(this.state, message) }
   async play() {
+    unlockNeural() // synchronously, inside the tap: the browser only lets the page start audio from a user gesture
     if (!this.supported) return this.fail('Actualiza la app Android para activar la lectura en voz alta, o utiliza un navegador con síntesis de voz.')
     if (this.state === 'playing' || this.state === 'loading') return
     if (this.state === 'paused' && this.chunks.length) {
@@ -58,10 +79,18 @@ export class ReadingVoice {
     if (this.state !== 'playing') return
     const id = `${this.generation}-${this.index}-${Date.now()}-${this.spoken = (this.spoken || 0) + 1}`
     this.utteranceId = id
-    this.armPresent(id)
     const text = this.chunks[this.index]
-    const { language, voiceId, voice } = this.voiceFor(text)
+    let { language, voiceId, voice } = this.voiceFor(text)
     this.spokenWith = voice
+    if (voice?.neural) {
+      if (this.speakNeural(id, text, voice)) return
+      ;({ language, voiceId, voice } = this.voiceFor(text)); this.spokenWith = voice // the engine is gone: a system voice takes this fragment
+    }
+    // The neural engine reads ahead (it has scheduled the next fragments on its own audio clock): when a system voice takes
+    // over (Voz multilingüe, a fallback) it must be silenced first or both would speak the same fragments at once.
+    if (this.transport === 'neural') { try { neuralEngine()?.stop() } catch { /* nothing to stop */ } }
+    this.useTransport(this.native ? 'native' : 'web')
+    this.armPresent(id)
     if (this.native) { window.InhouseSpeech.speak(text, language, this.rate, voiceId, id); return }
     const utterance = new SpeechSynthesisUtterance(text)
     this.utterance = utterance
@@ -74,13 +103,87 @@ export class ReadingVoice {
     utterance.onerror = event => { if (id === this.utteranceId && !['canceled','interrupted'].includes(event.error) && !this.useLocalVoice()) this.fail('No se pudo reproducir la voz. Prueba otra voz instalada.') }
     speechSynthesis.speak(utterance)
   }
-  /** Voice and language for one chunk; the ranking (best natural voice, per-chunk language) lives in voice-catalog.js. */
+  /**
+   * Voice and language for one chunk; the ranking (best natural voice, per-chunk language) lives in voice-catalog.js.
+   * Installed neural voices compete with the system ones (and win by default); a saved neural choice that is not
+   * installed (any more) or given up on resolves to the best other voice, never to a system voice with a foreign id.
+   */
   voiceFor(text) {
     const language = this.options.multilingual ? this.detectLanguage(text) : this.reader.language || navigator.language || 'es-ES'
     let voices = readSystemVoices(window), voiceId = this.voice
-    if (this.localOnly) { voices = voices.filter(voice => !voice.network); if (!voices.some(voice => voice.id === voiceId)) voiceId = '' }
+    if (!this.neuralOff && this.slowFor(this.rate)) this.neuralOff = 'too-slow'
+    if (!this.neuralOff) voices = [...voices, ...neuralVoiceList().filter(voice => voice.installed && !this.missing.has(voice.id))]
+    if (this.localOnly) voices = voices.filter(voice => !voice.network)
+    if (this.localOnly || isNeuralId(voiceId)) { if (!voices.some(voice => voice.id === voiceId)) voiceId = '' }
+    // A neural voice speaks one language (its phonemiser is the language's): a saved choice for another language than the one the
+    // book DECLARES would garble it, so an English book read after picking a Spanish voice gets the automatic pick for English
+    // instead. A book that declares nothing (a PDF) keeps the person's choice: the device language says nothing about it.
+    const declared = declaredLanguage(this.reader)
+    if (isNeuralId(voiceId) && !this.options.multilingual && declared) {
+      const chosen = voices.find(voice => voice.id === voiceId)
+      if (chosen && chosen.base !== langBase(declared)) voiceId = ''
+    }
     return resolveVoice(voices, { voiceId, language, multilingual:this.options.multilingual, deviceLang:navigator.language })
   }
+  useTransport(name) {
+    if (this.transport !== name) this.heardStart = this.silentEngine = false // each engine says on its own whether it announces starts
+    this.transport = name
+  }
+  /**
+   * Hands the fragment to the neural engine, with the next few fragments (same voice and speed) so it can synthesise them while
+   * this one plays. False when the engine is gone: the caller carries on with a system voice.
+   */
+  speakNeural(id, text, voice) {
+    const engine = neuralEngine()
+    if (!engine) { this.neuralOff = 'init-failed'; return false }
+    clearTimeout(this.presentTimer)
+    this.useTransport('neural')
+    const upcoming = []
+    for (let next = this.index + 1; next < this.chunks.length && upcoming.length < NEURAL_LOOKAHEAD; next++) {
+      if (this.options.multilingual && this.voiceFor(this.chunks[next]).voice?.id !== voice.id) break // another language: another voice, not prefetched
+      upcoming.push(this.chunks[next])
+    }
+    clearTimeout(this.waitTimer)
+    this.waitTimer = setTimeout(() => { if (id === this.utteranceId && this.state === 'playing' && this.startedId !== id) { this.waiting = true; this.notify('Preparando la voz natural…') } }, NEURAL_WAIT_MS)
+    try { engine.speak({ text, voiceId:voice.id, rate:this.rate, id, upcoming }) } catch { queueMicrotask(() => this.engineFailed({ id, reason:'synth-failed' })) }
+    return true
+  }
+  /** The engine could not speak `detail.id`. A neural voice hands over to the best system voice; the others stop (or go local) as before. */
+  engineFailed(detail) {
+    if (this.transport !== 'neural') {
+      if (!this.useLocalVoice()) this.fail('No hay una voz disponible para este idioma. Revisa las voces instaladas en Android.')
+      return
+    }
+    const reason = detail.reason
+    clearTimeout(this.waitTimer); this.waiting = false
+    try { neuralEngine()?.stop() } catch { /* already stopped */ }
+    if (reason === 'not-installed') { this.missing.add(this.spokenWith?.id); try { neuralEngine()?.refresh?.() } catch { /* the picker refreshes on its own */ } }
+    else { this.neuralOff = reason || 'synth-failed'; if (reason === 'too-slow') this.rememberSlow() }
+    this.notify(NEURAL_FALLBACK[reason] || NEURAL_FALLBACK.default)
+    this.speakCurrent()
+  }
+  /** Lets the neural voice try again after it was given up on (the person changed the voice or the speed). */
+  retryNeural() { this.neuralOff = ''; this.missing.clear(); this.forgetSlow() }
+  /** A neural voice was removed (the person tapped Quitar): the reading in progress stops using it now, not when its files are gone. */
+  voiceRemoved(id) {
+    this.missing.add(id)
+    if (this.state === 'playing' && this.spokenWith?.id === id) this.restart()
+  }
+  readSlow() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SLOW_KEY) || 'null')
+      return saved && Number(saved.rate) > 0 && Date.now() - Number(saved.at) < SLOW_DAYS * 864e5 ? { rate:Number(saved.rate), at:Number(saved.at) } : null
+    } catch { return null }
+  }
+  rememberSlow() {
+    this.slow = { rate:this.rate, at:Date.now() }
+    try { localStorage.setItem(SLOW_KEY, JSON.stringify(this.slow)) } catch { /* it is only remembered for this session */ }
+  }
+  forgetSlow() {
+    this.slow = null
+    try { localStorage.removeItem(SLOW_KEY) } catch { /* nothing stored */ }
+  }
+  slowFor(rate) { return Boolean(this.slow) && Number(rate) >= this.slow.rate }
   /** An online voice failed (offline, quota): once per session, carry on with the best on-device voice instead of stopping. */
   useLocalVoice() {
     if (this.localOnly || !this.spokenWith?.network || this.state !== 'playing') return false
@@ -133,6 +236,8 @@ export class ReadingVoice {
   engineStarted(id) {
     if (id !== this.utteranceId || this.state !== 'playing') return
     this.startedId = id
+    clearTimeout(this.waitTimer)
+    if (this.waiting) { this.waiting = false; this.notify() }
     this.present(id)
   }
   /** Safety net for engines (or old bridges) that never say when they start; a missing event must not leave the page plain. */
@@ -143,6 +248,7 @@ export class ReadingVoice {
   }
   /** The engine finished `id`: remember whether it ever announced a start, so a silent engine is not waited for again. */
   engineEnded(id) {
+    if (this.transport === 'neural') { if (this.startedId !== id) this.present(id); return } // our engine always announces starts; if one was lost, still show the sentence
     if (this.startedId === id) this.heardStart = true
     else if (!this.heardStart) this.silentEngine = true
   }
@@ -178,10 +284,14 @@ export class ReadingVoice {
   /** Re-speaks the current fragment, so a new speed or voice is heard now instead of at the next one. */
   restart() {
     if (this.state !== 'playing' || this.index >= this.chunks.length) return
-    this.cancelUtterance(); this.speakCurrent()
+    const preparing = this.waiting // the 'Preparando la voz natural…' of the old utterance must not outlive it
+    this.cancelUtterance()
+    if (preparing) this.notify()
+    this.speakCurrent()
   }
   cancelUtterance() {
-    this.utteranceId = null; clearTimeout(this.presentTimer)
+    this.utteranceId = null; clearTimeout(this.presentTimer); clearTimeout(this.waitTimer); this.waiting = false
+    if (this.transport === 'neural') { this.transport = null; try { neuralEngine()?.stop() } catch { /* nothing to stop */ } return }
     if (this.native) window.InhouseSpeech.stop()
     else window.speechSynthesis?.cancel()
   }
@@ -207,7 +317,7 @@ export class ReadingVoice {
   }
   stop() {
     ++this.generation; this.state = 'stopped'; this.cancelUtterance(); this.unpaint()
-    this.chunks = []; this.items = []; this.source = null; this.index = 0; this.localOnly = false; this.spokenWith = null; this.heardStart = this.silentEngine = false; clearTimeout(this.sleepTimer); this.notify()
+    this.chunks = []; this.items = []; this.source = null; this.index = 0; this.localOnly = false; this.missing.clear(); this.spokenWith = null; this.heardStart = this.silentEngine = false; clearTimeout(this.sleepTimer); this.notify()
   }
   fail(message) { this.stop(); this.notify(message) }
   setSleep(minutes) {

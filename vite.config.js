@@ -1,13 +1,14 @@
 import { defineConfig } from 'vite'
 import { fileURLToPath, URL } from 'node:url'
 import { foliateFixedLayoutPatch } from './scripts/foliate-fixed-layout-patch.mjs'
+import { neuralVoiceAssets } from './scripts/neural-voice-assets.mjs'
 
 const resolvePath = p => fileURLToPath(new URL(p, import.meta.url))
 
 // GitHub Pages sirve el proyecto bajo /inhouse-read/, no en la raíz del dominio.
 export default defineConfig({
   base: '/inhouse-read/',
-  plugins:[foliateFixedLayoutPatch()],
+  plugins:[foliateFixedLayoutPatch(), neuralVoiceAssets()],
   // Keep the same guarded source in development as in production; otherwise
   // dependency prebundling would bypass the fixed-layout transform in dev.
   optimizeDeps:{ exclude:['foliate-js'] },

@@ -39,17 +39,18 @@ describe('persistent catalog plants', () => {
     const node = container.querySelector('.ihr-plant');
     expect(node.dataset).toMatchObject({ objectId:'plant:old', catalogId:'hedera', potId:'muskotblomma',
       plantSeed:'old-seed', plantVariant:'hedera' });
-    expect(node.style.getPropertyValue('--ihr-plant-h')).toBe('106px');
+    // HEDERA is 240 mm tall in IKEA's 9 cm class; jsdom is a wide window, so a 280 mm book is 200 px.
+    expect(Number.parseFloat(node.style.getPropertyValue('--ihr-plant-h'))).toBeCloseTo(240 * 200 / 280, 3);
     expect(container.querySelectorAll('.ihr-plant img, .ihr-plant--photo')).toHaveLength(0);
     expect(JSON.parse(localStorage.getItem(KEY))).toEqual([
-      { ...legacy[0], catalogId:'hedera', variant:'hedera', potId:'muskotblomma', height:106 }
+      { ...legacy[0], catalogId:'hedera', variant:'hedera', potId:'muskotblomma', width:180, height:240 }
     ]);
   });
   it('restores catalog-only records before filtering missing legacy fields', () => {
     localStorage.setItem(KEY, JSON.stringify([{ key:'plant:saved', catalogId:'nephrolepis', shelf:0, x:.6 }]));
     shelf=renderBookshelf(container, books(), { shelfWidth:390 });
     expect(container.querySelector('.ihr-plant').dataset.catalogId).toBe('nephrolepis');
-    expect(JSON.parse(localStorage.getItem(KEY))[0]).toMatchObject({ width:94, height:104, potId:'akerbar' });
+    expect(JSON.parse(localStorage.getItem(KEY))[0]).toMatchObject({ width:200, height:170, potId:'akerbar' });
   });
   it('persists complete current models for newly initialized decorations', () => {
     shelf=renderBookshelf(container, [], { shelfWidth:390 });
@@ -104,11 +105,11 @@ describe('persistent catalog plants', () => {
     await catalog.options.onAdd({ catalogId:'chamaedorea', potId:'gradvis' })
     const saved=JSON.parse(localStorage.getItem(KEY))
     expect(saved).toHaveLength(2)
-    expect(saved[0]).toMatchObject({ catalogId:'chamaedorea', potId:'akerbar', width:88, height:136 })
+    expect(saved[0]).toMatchObject({ catalogId:'chamaedorea', potId:'akerbar', width:200, height:200 })
     expect(saved[1].potId).toBe('gradvis')
     expect(saved[0].key).not.toBe(saved[1].key)
     for (const node of container.querySelectorAll('.ihr-plant')) {
-      expect(node.style.getPropertyValue('--ihr-plant-h')).toBe('136px')
+      expect(Number.parseFloat(node.style.getPropertyValue('--ihr-plant-h'))).toBeCloseTo(200 * 200 / 280, 3)
       expect(node.dataset.catalogId).toBe('chamaedorea')
     }
     const before=saved.map(item => [item.key,item.shelf,item.x,item.potId])

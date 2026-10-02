@@ -31,10 +31,15 @@ export function baggeboLayout(layout) {
     // landscape cover or tall plant would exceed the actual usable space.
     const height = entry.kind === 'plant' ? entry.height : 280 * scale * entry.style.heightRatio;
     const width = entry.kind === 'plant' ? entry.width : height * entry.width / entry.height;
-    const fit = Math.min(1, (row.bottom - row.top - 4 * scale) / height,
+    // Plants retain physical dimensions; tall ones use the open roof.
+    // Canopies may overhang, while pots fit the usable board depth.
+    const plant = entry.kind === 'plant';
+    const rooftop = plant && height > row.bottom - row.top - 4 * scale;
+    const fit = plant ? 1 : Math.min(1, (row.bottom - row.top - 4 * scale) / height,
       BAGGEBO_SPEC.usableDepth * scale / width);
-    return { ...entry, x:row.left + entry.x, height:height * fit, width:width * fit,
-      y:row.bottom - height * fit / 2, depthInset:15 * scale };
+    return { ...entry, ...(entry.kind === 'plant' && entry.depth ? { depth:entry.depth * fit } : {}),
+      x:row.left + entry.x, height:height * fit, width:width * fit,
+      y:(rooftop ? 0 : row.bottom) - height * fit / 2, rooftop, depthInset:15 * scale };
   });
   return { ...layout, entries, rows, shelfType:'baggebo', unitWidth, unitCount,
     width:unitWidth * unitCount + unitGap * (unitCount - 1),

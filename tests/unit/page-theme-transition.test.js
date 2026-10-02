@@ -172,12 +172,28 @@ describe('book model page theme', () => {
   const make = () => createBookModel({ ...book, progressFraction:.4 }, style, 132, 200, 40, null)
   const srgb = color => color.getRGB({}, THREE.SRGBColorSpace)
 
+  it('keeps mapped and blending variants stable from creation through themed and sepia pages', () => {
+    const model = make()
+    const themed = model.getObjectByName('reading-page'), sepia = model.getObjectByName('reading-page-sepia')
+    expect(themed.material.map.image.width).toBe(1)
+    expect(sepia.material.map.image.width).toBe(1)
+    expect(themed.material.transparent).toBe(true)
+    for (const variant of [true,false,true]) {
+      model.userData.setPageSnapshot(snapshotWith([20,20,20], [238,224,196], variant))
+      expect(themed.material.map).toBeTruthy()
+      expect(sepia.material.map).toBeTruthy()
+      expect(themed.material.transparent).toBe(true)
+      expect(themed.material.opacity).toBe(1)
+    }
+    model.userData.dispose()
+  })
+
   it('keeps the page exactly as before when there is no sepia variant', () => {
     const model = make()
     const themed = model.getObjectByName('reading-page'), sepia = model.getObjectByName('reading-page-sepia')
     expect(model.userData.setPageSnapshot(snapshotWith([20, 20, 20], null, false))).toBe(true)
-    expect(sepia.visible).toBe(false); expect(sepia.material.map).toBeNull()
-    expect(themed.material.transparent).toBe(false); expect(themed.material.opacity).toBe(1)
+    expect(sepia.visible).toBe(false); expect(sepia.material.map.image.width).toBe(1)
+    expect(themed.material.transparent).toBe(true); expect(themed.material.opacity).toBe(1)
     expect(model.userData.setPageTheme(0)).toBe(false)
     expect(themed.material.opacity).toBe(1)
     model.userData.dispose()
