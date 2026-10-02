@@ -176,7 +176,7 @@ describe('renderBookshelf', () => {
     shelf = renderBookshelf(container, [], { shelfWidth: SHELF_WIDTH, onAddBooks })
     const empty = container.querySelector('.ihr-empty')
     expect(empty).not.toBeNull()
-    expect(empty.textContent).toContain('Tu estantería está vacía')
+    expect(empty.textContent).toContain('Sin libros')
     expect(container.querySelectorAll('.ihr-plant').length).toBe(3)
     expect(container.querySelectorAll('.ihr-shelf')).toHaveLength(3)
     empty.querySelector('.ihr-empty__action').click()

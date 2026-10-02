@@ -122,7 +122,7 @@ describe('pestañas del editor', () => {
     expect(panels.every(panel => panel?.getAttribute('role') === 'tabpanel')).toBe(true)
     expect(panels.map(panel => panel.getAttribute('aria-labelledby'))).toEqual(tabs.map(item => item.id))
     expect(panels.map(panel => panel.hidden)).toEqual([false, true])
-    expect(editor.querySelector('.ihr-spine-editor__heading').textContent).toBe('Editar el lomo')
+    expect(editor.querySelector('.ihr-spine-editor__heading').textContent).toBe('Lomo')
 
     tabs[0].focus()
     tabs[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }))
@@ -131,8 +131,8 @@ describe('pestañas del editor', () => {
     expect(tab('Portada').tabIndex).toBe(0)
     expect(tab('Lomo').tabIndex).toBe(-1)
     expect(panels.map(panel => panel.hidden)).toEqual([true, false])
-    expect(editor.querySelector('.ihr-spine-editor__heading').textContent).toBe('Editar la portada')
-    expect(editor.getAttribute('aria-label')).toBe('Editar la portada')
+    expect(editor.querySelector('.ihr-spine-editor__heading').textContent).toBe('Portada')
+    expect(editor.getAttribute('aria-label')).toBe('Portada')
 
     tab('Portada').dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true, cancelable: true }))
     expect(document.activeElement).toBe(tab('Lomo'))
@@ -203,7 +203,7 @@ describe('giro animado entre lomo y portada', () => {
     expect(editor.hidden).toBe(true)
     document.querySelector('.ihr-flyout__edit-button').click()
     expect(tab('Lomo').getAttribute('aria-selected')).toBe('true')
-    expect(editor.querySelector('.ihr-spine-editor__heading').textContent).toBe('Editar el lomo')
+    expect(editor.querySelector('.ihr-spine-editor__heading').textContent).toBe('Lomo')
   })
 
   it('Escape cierra el editor desde la pestaña Portada', async () => {
@@ -229,7 +229,7 @@ describe('propuestas de relieve', () => {
     expect(options.signal).toBeInstanceOf(AbortSignal)
     const status = editor.querySelector('.ihr-relief__status')
     expect(status.getAttribute('aria-live')).toBe('polite')
-    expect(status.textContent).toBe('Buscando zonas con relieve…')
+    expect(status.textContent).toBe('Analizando…')
     expect(editor.querySelectorAll('.ihr-relief-card.is-skeleton')).toHaveLength(3)
     expect(editor.querySelectorAll('input[type="radio"]')).toHaveLength(1)
 
@@ -304,7 +304,7 @@ describe('propuestas de relieve', () => {
   it('un libro sin imagen de portada no analiza nada y lo dice', async () => {
     const { editor, tab } = await openEditor([book({ cover: undefined })], { coverSrcFor: () => null })
     tab('Portada').click()
-    await vi.waitFor(() => expect(editor.querySelector('.ihr-relief__status').textContent).toBe('Este libro no tiene portada.'))
+    await vi.waitFor(() => expect(editor.querySelector('.ihr-relief__status').textContent).toBe('Sin portada'))
     expect(analyzeCoverRelief).not.toHaveBeenCalled()
   })
 })

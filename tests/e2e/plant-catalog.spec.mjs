@@ -123,7 +123,7 @@ test('el catálogo está pegado al lateral 3D, sólo aparece en isométrica y a�
   await expect(dialog.locator('.ihr-plant-catalog__body:not([hidden]) .ihr-plant-catalog__caption h3')).toHaveText('MONSTERA DELICIOSA');
   await expect(dialog.locator('.ihr-plant-catalog__pot-name')).toHaveText('GRADVIS');
   await testInfo.attach('catalogo-ikea-en-movil',{ body:await dialog.screenshot(),contentType:'image/png' });
-  await dialog.getByRole('button',{ name:'Añadir a la estantería' }).click();
+  await dialog.getByRole('button',{ name:'Añadir', exact:true }).click();
   await expect(dialog).toBeHidden();
   await expect(page.locator('.ihr-plant')).toHaveCount(1);
   await expect(page.locator('.ihr-plant')).toHaveAttribute('data-catalog-id','monstera');
@@ -156,7 +156,7 @@ test('el folleto sigue siendo usable en 320 px, mantiene el botón de añadir vi
   expect(bounds.y).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(321);
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(569);
-  const add = dialog.getByRole('button',{ name:'Añadir a la estantería' });
+  const add = dialog.getByRole('button',{ name:'Añadir', exact:true });
   const footerBounds = await add.boundingBox();
   expect(footerBounds.y + footerBounds.height).toBeLessThanOrEqual(568);
   await dialog.locator('[data-catalog-plant="hedera"]').click();
@@ -547,7 +547,7 @@ test('la preview frontal usa el modelo 3D y el acabado elegido se conserva al a�
   await expect(preview).toHaveAttribute('data-pot-color-id','seafoam');
   await expect(dialog.locator('[data-catalog-color="seafoam"]')).toHaveAttribute('aria-pressed','true');
   await testInfo.attach('preview-3d-gres-verde-agua',{body:await dialog.screenshot(),contentType:'image/png'});
-  await dialog.getByRole('button',{name:'Añadir a la estantería'}).click();
+  await dialog.getByRole('button',{name:'Añadir', exact:true }).click();
   await expect(dialog).toBeHidden();
   expect((await savedPlants(page))[0]).toMatchObject({catalogId:'monstera',potId:'gradvis',potColorId:'seafoam'});
   await expect(page.locator('.ihr-plant')).toHaveAttribute('data-pot-color-id','seafoam');

@@ -30,7 +30,7 @@ function formatDate(iso) {
 function renderRelease(release) {
   const apkAsset = release.assets?.find(asset => asset.name.endsWith('.apk'))
   if (!apkAsset) {
-    renderFallback('El último release no tiene ningún APK adjunto todavía.')
+    renderFallback('La última versión no tiene APK.')
     return
   }
 
@@ -43,11 +43,11 @@ function renderRelease(release) {
       <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16"/>
       </svg>
-      Descargar APK (${escapeHtml(humanSize(apkAsset.size))})
+      Descargar APK · ${escapeHtml(humanSize(apkAsset.size))}
     </a>
     <p class="dl-filename">${escapeHtml(apkAsset.name)}</p>
     <a class="dl-secondary-link" href="https://github.com/${REPO}/releases/tag/${encodeURIComponent(release.tag_name)}">
-      Ver todos los releases en GitHub →
+      Todas las versiones →
     </a>
   `
 }
@@ -56,7 +56,7 @@ function renderFallback(message) {
   card.innerHTML = `
     <p class="dl-status dl-status--error">${escapeHtml(message)}</p>
     <a class="dl-secondary-link" href="https://github.com/${REPO}/releases">
-      Ver los releases directamente en GitHub →
+      Ver releases en GitHub →
     </a>
   `
 }
@@ -76,14 +76,14 @@ async function loadLatestRelease() {
     const res = await fetch(API_URL, { headers: { Accept: 'application/vnd.github+json' } })
     if (!res.ok) {
       throw new Error(res.status === 403
-        ? 'Límite de peticiones a la API de GitHub alcanzado; reintenta en unos minutos.'
+        ? 'Límite de GitHub alcanzado. Reintenta en unos minutos.'
         : `GitHub respondió ${res.status}`)
     }
     const release = await res.json()
     renderRelease(release)
   } catch (err) {
     console.error('No se pudo consultar el último release:', err)
-    renderFallback('No se pudo consultar automáticamente la última versión.')
+    renderFallback('No se pudo consultar la última versión.')
   }
 }
 

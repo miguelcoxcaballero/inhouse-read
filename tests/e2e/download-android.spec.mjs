@@ -30,7 +30,7 @@ test('si la API de GitHub falla, muestra un enlace de respaldo a Releases', asyn
   )
   await page.reload()
   await expect(page.locator('.dl-status--error')).toBeVisible()
-  await expect(page.getByRole('link', { name: /releases directamente en GitHub/i })).toHaveAttribute(
+  await expect(page.getByRole('link', { name: /releases en GitHub/i })).toHaveAttribute(
     'href', 'https://github.com/miguelcoxcaballero/inhouse-read/releases'
   )
 })

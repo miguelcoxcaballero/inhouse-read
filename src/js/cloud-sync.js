@@ -289,7 +289,7 @@ export class CloudSync {
     }
     this.#onStatus(errors.length
       ? `Sincronización incompleta: ${errors[0]}`
-      : `Sincronizado con Drive · ${remoteIds.size} ${remoteIds.size === 1 ? 'libro' : 'libros'}`)
+      : `Sincronizado · ${remoteIds.size} ${remoteIds.size === 1 ? 'libro' : 'libros'}`)
     this.#onChange()
     return { books: remoteIds.size, uploaded, errors }
   }

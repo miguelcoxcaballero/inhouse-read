@@ -112,7 +112,7 @@ describe('IKEA plant instruction booklet',() => {
     const onAdd = vi.fn().mockRejectedValueOnce(new Error('IndexedDB private stack')).mockResolvedValueOnce();
     create({ onAdd }).open(); add().click(); await settle();
     expect(dialog().hasAttribute('open')).toBe(true);
-    expect(dialog().querySelector('[role="status"]').textContent).toContain('Vuelve a intentarlo');
+    expect(dialog().querySelector('[role="status"]').textContent).toContain('Reintenta');
     expect(dialog().textContent).not.toContain('IndexedDB');
     expect(add().disabled).toBe(false);
     add().click(); await settle();
@@ -157,7 +157,7 @@ describe('IKEA plant instruction booklet',() => {
     expect(dialog().querySelector('.ihr-plant-catalog__page-number').textContent).toBe('02 / 03');
     expect(dialog().querySelectorAll('[data-catalog-shelf]')).toHaveLength(2);
     expect(dialog().querySelector('.ihr-plant-catalog__body').hidden).toBe(true);
-    expect(add().textContent).toBe('Usar esta estantería');
+    expect(add().textContent).toBe('Usar');
     const preview = vi.mocked(createShelfCatalogPreview).mock.results[0].value;
     expect(preview.update).toHaveBeenLastCalledWith({ shelfType:'walnut' });
     dialog().querySelector('[data-catalog-page="plants"]').click();
@@ -179,13 +179,13 @@ describe('IKEA plant instruction booklet',() => {
     expect(dialog().querySelector('.ihr-plant-catalog__body--shelves').hidden).toBe(true);
     expect(dialog().querySelector('.ihr-plant-catalog__body--lights').hidden).toBe(false);
     expect(dialog().querySelector('.ihr-plant-catalog__lamp-warmth').textContent).toContain('2700 K');
-    expect(dialog().querySelector('.ihr-plant-catalog__lamp-mount').textContent).toContain('bajo la balda');
+    expect(dialog().querySelector('.ihr-plant-catalog__lamp-mount').textContent).toContain('Bajo la balda');
     expect(shelfPreview.dispose).toHaveBeenCalledOnce();
     const preview = vi.mocked(createLampCatalogPreview).mock.results[0].value;
     expect(preview.update).toHaveBeenLastCalledWith({ lampId:'mittled' });
     dialog().querySelector('[data-catalog-lamp="tarnaby"]').click();
     expect(preview.update).toHaveBeenLastCalledWith({ lampId:'tarnaby' });
-    expect(dialog().querySelector('.ihr-plant-catalog__lamp-mount').textContent).toContain('sobre la balda');
+    expect(dialog().querySelector('.ihr-plant-catalog__lamp-mount').textContent).toContain('Sobre la balda');
     expect(dialog().querySelectorAll('[data-catalog-lamp][aria-pressed="true"]')).toHaveLength(1);
     dialog().querySelector('[data-catalog-page="plants"]').click();
     expect(preview.dispose).toHaveBeenCalledOnce();
@@ -214,7 +214,7 @@ describe('IKEA plant instruction booklet',() => {
     dialog().querySelector('[data-catalog-page="lights"]').click();
     dialog().querySelector('[data-catalog-lamp="tarnaby"]').click(); add().click(); await settle();
     expect(dialog().hasAttribute('open')).toBe(true);
-    expect(dialog().querySelector('[role="status"]').textContent).toContain('No se pudo añadir la lámpara');
+    expect(dialog().querySelector('[role="status"]').textContent).toContain('No se pudo añadir. Reintenta.');
     expect(dialog().textContent).not.toContain('storage details');
     expect(add().disabled).toBe(false);
     expect(dialog().querySelector('[data-catalog-lamp="tarnaby"]').getAttribute('aria-pressed')).toBe('true');
@@ -251,7 +251,7 @@ describe('IKEA plant instruction booklet',() => {
     const catalog = create({ shelfType:'baggebo',onAdd:vi.fn(),onShelfChange:vi.fn() });
     catalog.open(); dialog().querySelector('[data-catalog-page="shelves"]').click();
     expect(dialog().querySelector('[data-catalog-shelf="baggebo"]').getAttribute('aria-pressed')).toBe('true');
-    expect(dialog().querySelector('[data-catalog-shelf="baggebo"] .ihr-plant-catalog__shelf-current').textContent).toBe('Estantería actual');
+    expect(dialog().querySelector('[data-catalog-shelf="baggebo"] .ihr-plant-catalog__shelf-current').textContent).toBe('Actual');
     catalog.setShelfType('walnut');
     expect(dialog().querySelector('[data-catalog-shelf="walnut"]').getAttribute('aria-pressed')).toBe('true');
     catalog.close(); catalog.open();
@@ -265,7 +265,7 @@ describe('IKEA plant instruction booklet',() => {
     dialog().querySelector('[data-catalog-page="shelves"]').click();
     dialog().querySelector('[data-catalog-shelf="baggebo"]').click(); add().click(); await settle();
     expect(dialog().hasAttribute('open')).toBe(true);
-    expect(dialog().querySelector('[role="status"]').textContent).toContain('No se pudo cambiar la estantería');
+    expect(dialog().querySelector('[role="status"]').textContent).toContain('No se pudo cambiar. Reintenta.');
     expect(dialog().textContent).not.toContain('storage details');
     expect(add().disabled).toBe(false);
     expect(dialog().querySelector('[data-catalog-shelf="baggebo"]').getAttribute('aria-pressed')).toBe('true');
