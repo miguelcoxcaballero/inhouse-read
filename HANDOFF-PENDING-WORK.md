@@ -33,3 +33,14 @@ Todo lo que sigue está en ramas `wip/*` del remoto (sin revisar, sin verificar 
 - Estanterías a medidas reales (ambas 60×25×116 cm, BAGGEBO como referencia, libros/lámparas a escala real): `wip/shelf-real-scale` (3ed5fe6), apenas empezada.
 - "El 8 no funciona" (página preparada 1.7.2): no se pudo reproducir en el sandbox (GL por software). Los smoke `155`, `391`, `420` de `tests/e2e/smoke.spec.mjs` fallan también en b4dd143 con una espera de 20 s a `is-closing-reader`: es lentitud de SwiftShader, no una regresión. Hay que probar la línea de tiempo (`markTiming`: engine-opened, page-restored, page-snapshot, page-reused) en un navegador con GPU real.
 - Android 120 Hz: publicar a mano el APK 1.1.2.
+
+## Parada final (2026-10-02, ~19:55 UTC)
+Todo el trabajo terminado está en `main` (8e0b667): voces neuronales (23 idiomas, 31 voces), resaltado, justificación de la página 3D, papelera (causa: `getImageData` sin `willReadFrequently` en cover-appearance, más borrado optimista y aviso solo para lectores de pantalla), estanterías a 60x25x116 cm con libros a escala y zona de toque mínima, textos más cortos, y lo de ChatGPT (controles, página preparada, plantas IKEA, relieve de portada, UI de audio con desplegables Idioma/Voz).
+**Sin cerrar:**
+- e2e `tests/e2e/neural-voice-reading.spec.mjs:321` ("switching to a system voice in the middle of the reading, and back") falla en `main` incluso solo; en la captura el libro corto ya llegó a "Final del libro" antes de la voz del sistema: probablemente la prueba, pero sin confirmar. Los 5 tests siguientes de ese grupo quedan sin ejecutar por ser serie.
+- `reader-layout.spec.mjs` y `book-open-prepared.spec.mjs` no llegaron a terminar (el entorno se reinicia cada pocos minutos y mata las ejecuciones largas): repetirlos por trozos.
+- Los smoke 155/391/420 de `smoke.spec.mjs` fallan en este sandbox también antes de los últimos cambios (lentitud de SwiftShader).
+- Selector de velocidad de 5 pasos: `wip/audio-speed-steps` (no se fusionó porque ChatGPT rehízo el panel de audio). La velocidad sigue siendo un deslizador.
+- Falta pt-PT y voces para búlgaro, serbio, hindi, hebreo; las URL de Hugging Face de las voces nuevas no se pudieron probar desde el sandbox.
+- Android 120 Hz: publicar a mano el APK 1.1.2.
+Ramas `wip/*` guardadas: audio-speed-steps, cover-editor-ui, cover-relief-engine, ikea-plant-sizes, neural-voices-*, prepare-saved-page, reader-controls-stable-layout, shelf-final, shelf-real-scale, snapshot-justified, trash-final, trash-freeze, trash-verify (casi todas ya fusionadas en `main`; sirven de respaldo).
