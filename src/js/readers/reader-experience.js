@@ -1,6 +1,7 @@
 import { readerPanelMarkup, readerIcon } from './reader-interface.js'
 import { normalizeReadingPreferences, READING_THEMES } from './reading-preferences.js'
 import { ReadingVoice } from './reading-voice.js'
+import { bestVoiceFor, buildVoiceGroups, languageName, needsBetterVoice, readSystemVoices } from './voice-catalog.js'
 import { clonePlace, cleanPlaces, cleanQuotes } from './reading-state.js'
 import { normalizeBookAuthor } from '../book-title.js'
 
@@ -144,6 +145,11 @@ export class ReaderExperience {
     this.panel.querySelectorAll('[data-voice-option]').forEach(control => control.addEventListener('change', () => this.setPreference(control.dataset.voiceOption,control.checked)))
     window.speechSynthesis?.addEventListener('voiceschanged', () => this.populateVoices())
     window.addEventListener('inhouse-tts', event => { if (event.detail?.type === 'voiceschanged') this.populateVoices() })
+    this.panel.querySelector('[data-voice-settings]').onclick = () => {
+      try { window.InhouseSpeech.openVoiceSettings() } catch { this.error('No se pudieron abrir los ajustes de voz de Android.') }
+    }
+    // Coming back from Android's voice downloads: ask the bridge to re-read the installed voices.
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && this.panel.open) this.refreshNativeVoices() })
     this.populateVoices()
     const resize = () => {
       if (!this.panel.open) return
@@ -209,6 +215,7 @@ export class ReaderExperience {
   label(place) { return place.locator?.kind === 'pdf-page' ? `Página ${place.locator.value}${this.reader.pageCount ? ` de ${this.reader.pageCount}` : ''}` : place.section ? `${place.section}${place.page ? ` · Página ${place.page}` : ''}` : `${Math.round(place.fraction * 100)} % del libro` }
   show(tab) {
     this.showTab(tab)
+    if (tab === 'audio') { this.populateVoices(); this.refreshNativeVoices() } // the recommended list depends on the book's language
     if (!this.panel.open) this.panel.showModal()
     this.updateMiniPlayer(); this.resizePanel()
     this.panel.querySelector('[data-close]').focus({preventScroll:true})
@@ -293,17 +300,44 @@ export class ReaderExperience {
     this.panel.querySelector('[data-pdf-hint]').hidden = !originalPdf
     this.panel.querySelector('[data-pdf-zoom]').hidden = !originalPdf
     this.voice.rate = p.rate; this.voice.voice = p.voice
+    this.updateVoiceInfo()
     this.voice.options = {footnotes:p.footnotes,multilingual:p.multilingual,skipHeaders:p.skipHeaders}
     this.updateMiniPlayer()
     try { if (updateBook) await this.reader.applyPreferences(p) } catch { this.error('No se pudo aplicar este ajuste. Inténtalo de nuevo.') }
   }
+  refreshNativeVoices() { try { window.InhouseSpeech?.refreshVoices?.() } catch { /* older app: voices stay as loaded */ } }
   populateVoices() {
     const select = this.panel.querySelector('[data-pref="voice"]')
-    select.replaceChildren(new Option('Automática', ''))
-    let voices = window.speechSynthesis?.getVoices() || []
-    try { if (this.voice.native) voices = JSON.parse(window.InhouseSpeech.getVoices()) } catch { /* default system voice */ }
-    for (const voice of voices) select.add(new Option(`${voice.name} · ${voice.lang}`, voice.voiceURI))
+    const voices = readSystemVoices(window)
+    let bookLang = ''
+    try { bookLang = this.reader.language || '' } catch { /* no book open yet */ }
+    bookLang = bookLang || navigator.language || ''
+    const groups = buildVoiceGroups(voices, { bookLang, deviceLang:navigator.language })
+    select.replaceChildren(new Option('Automática · mejor voz natural', ''))
+    for (const [label, items] of [['Recomendadas (naturales)', groups.recommended], ['Todas las voces', groups.all]]) {
+      if (!items.length) continue
+      const group = document.createElement('optgroup'); group.label = label
+      for (const item of items) group.append(new Option(item.label, item.id))
+      select.append(group)
+    }
     select.value = this.preferences.voice
+    if (select.value !== this.preferences.voice) select.value = '' // a saved voice that is no longer installed falls back to Automática
+    this.voiceCatalog = { voices, groups, bookLang }
+    this.updateVoiceInfo()
+  }
+  /** Says which voice 'Automática' will use and, on Android only, offers the voice download when the best one is not high quality. */
+  updateVoiceInfo() {
+    if (!this.voiceCatalog) return
+    const { voices, groups, bookLang } = this.voiceCatalog
+    const native = typeof window.InhouseSpeech?.openVoiceSettings === 'function'
+    const best = bestVoiceFor(voices, bookLang, navigator.language)
+    const auto = !this.preferences.voice || !voices.some(voice => voice.id === this.preferences.voice)
+    const better = native && needsBetterVoice(voices, bookLang, navigator.language)
+    const info = this.panel.querySelector('[data-voice-info]')
+    info.querySelector('[data-voice-auto]').textContent = !auto ? '' : best ? `Se usará: ${groups.labels.get(best.id)}.` : voices.length ? `No hay voces instaladas para ${languageName(bookLang)}.` : ''
+    info.querySelector('[data-voice-better]').hidden = !better
+    info.querySelector('[data-voice-settings]').hidden = !better
+    info.hidden = !(better || info.querySelector('[data-voice-auto]').textContent)
   }
   error(message) { this.panel.querySelector('.reading-error').textContent = message }
   async savePlaces() {

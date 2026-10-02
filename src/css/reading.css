@@ -235,3 +235,6 @@ body.is-reading .app-header, #reader-screen, .reader-viewport, .reader-toolbar, 
      is 50vw − 66px; the 440px sheet is centred there, kept in the column. */
   .reading-panel:has(> #reading-navigation:not([hidden])) { right:auto; left:max(20px,var(--reader-chrome-inset),calc(50vw - 66px - 220px)); }
 }
+
+.reading-voice-info .reading-text-button { text-decoration:underline; text-underline-offset:3px; }
+.reading-voice-info:not([hidden]) { margin:-4px 0 10px; }

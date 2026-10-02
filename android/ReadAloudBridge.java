@@ -1,14 +1,18 @@
 package __PACKAGE__;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.net.Uri;
+import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.speech.tts.Voice;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import java.util.Locale;
+import java.util.Set;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -25,6 +29,8 @@ public final class ReadAloudBridge {
     private Runnable pending;
     private String activeId;
     private volatile String voicesJson = "[]";
+    // Set when the user was sent to the engine's voice downloads: the next refreshVoices() rebuilds the engine so new voices show up without restarting the app.
+    private boolean voiceInstallOpened = false;
 
     public ReadAloudBridge(Activity activity, WebView webView) {
         this.activity = activity;
@@ -35,6 +41,10 @@ public final class ReadAloudBridge {
                 activity.runOnUiThread(() -> { String id = activeId; stopOnUi(); emit("interrupted", id); });
             }
         };
+        startEngine();
+    }
+    private void startEngine() {
+        ready = false; failed = false;
         engine = new TextToSpeech(activity, status -> {
             if (closed) return;
             ready = status == TextToSpeech.SUCCESS;
@@ -45,22 +55,48 @@ public final class ReadAloudBridge {
                     @Override public void onDone(String id) { emit("done", id); }
                     @Override public void onError(String id) { emit("error", id); }
                 });
-                JSONArray voices = new JSONArray();
-                if (engine.getVoices() != null) for (Voice voice : engine.getVoices()) {
-                    try {
-                        JSONObject item = new JSONObject();
-                        item.put("voiceURI", voice.getName());
-                        item.put("name", voice.getLocale().getDisplayName() + (voice.isNetworkConnectionRequired() ? " · online" : " · dispositivo"));
-                        item.put("lang", voice.getLocale().toLanguageTag());
-                        voices.put(item);
-                    } catch (Exception ignored) {}
-                }
-                voicesJson = voices.toString();
+                try {
+                    // Tell the engine this is spoken media so volume keys, ducking and routing behave like an audiobook.
+                    engine.setAudioAttributes(new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build());
+                } catch (Exception ignored) {}
+                voicesJson = buildVoicesJson();
                 emit("voiceschanged", "");
             }
             Runnable next = pending; pending = null;
             if (next != null) next.run();
         });
+    }
+    /** Every installed voice with the metadata the web catalog ranks by; voiceURI/name/lang stay for older web code. */
+    private String buildVoicesJson() {
+        JSONArray voices = new JSONArray();
+        try {
+            Set<Voice> all = engine == null ? null : engine.getVoices();
+            if (all != null) for (Voice voice : all) {
+                try { voices.put(describe(voice)); } catch (Exception ignored) {}
+            }
+        } catch (Exception ignored) {}
+        return voices.toString();
+    }
+    private static JSONObject describe(Voice voice) throws Exception {
+        Locale locale = voice.getLocale();
+        Set<String> features = voice.getFeatures();
+        boolean network = voice.isNetworkConnectionRequired();
+        boolean installed = features == null || !features.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED);
+        int quality = voice.getQuality();
+        String qualityLabel = quality >= Voice.QUALITY_HIGH ? "alta calidad" : quality >= Voice.QUALITY_NORMAL ? "calidad normal" : "calidad básica";
+        String where = network ? "requiere internet" : "sin conexión";
+        JSONObject item = new JSONObject();
+        item.put("voiceURI", voice.getName());
+        item.put("name", locale.getDisplayName() + (network ? " · online" : " · dispositivo"));
+        item.put("label", locale.getDisplayName() + " · " + qualityLabel + " · " + where);
+        item.put("lang", locale.toLanguageTag());
+        item.put("quality", quality);
+        item.put("latency", voice.getLatency());
+        item.put("network", network);
+        item.put("installed", installed);
+        item.put("features", features == null ? new JSONArray() : new JSONArray(features));
+        return item;
     }
     private boolean trusted() {
         Uri page = Uri.parse(webView.getUrl() == null ? "" : webView.getUrl());
@@ -68,6 +104,31 @@ public final class ReadAloudBridge {
             && (page.getPath() == null ? "" : page.getPath()).startsWith("/inhouse-read/");
     }
     @JavascriptInterface public String getVoices() { return voicesJson; }
+    /** Opens the engine's voice-data download screen (best), else the system TTS settings, so the user can install higher-quality offline voices. */
+    @JavascriptInterface public void openVoiceSettings() {
+        activity.runOnUiThread(() -> {
+            if (closed || !trusted()) return;
+            String[] actions = { TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA, "com.android.settings.TTS_SETTINGS", Settings.ACTION_SETTINGS };
+            for (String action : actions) {
+                try { activity.startActivity(new Intent(action)); voiceInstallOpened = true; return; }
+                catch (Exception ignored) { /* no activity for this action on this device: try the next one */ }
+            }
+        });
+    }
+    /** Re-reads the installed voices (after the user came back from the voice settings) and tells the page. */
+    @JavascriptInterface public void refreshVoices() {
+        activity.runOnUiThread(() -> {
+            if (closed || !trusted()) return;
+            if (voiceInstallOpened && activeId == null && pending == null) {
+                voiceInstallOpened = false;
+                try { if (engine != null) engine.shutdown(); } catch (Exception ignored) {}
+                startEngine(); // its init callback republishes the voices
+                return;
+            }
+            voicesJson = buildVoicesJson();
+            emit("voiceschanged", "");
+        });
+    }
     @JavascriptInterface public void speak(String text, String language, double rate, String voiceName, String id) {
         activity.runOnUiThread(() -> {
             if (closed || !trusted() || text == null || id == null) return;
