@@ -298,6 +298,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         cabinet.add(unit); units.push(unit);
       }
       cabinet.userData.disposeGeometry = () => { for (const unit of units) unit.userData.disposeGeometry?.(); };
+      // A single unit is the cabinet itself: no wrapper group to traverse.
+      if (unitCount === 1) { cabinet = units[0]; cabinet.position.x = 0; cabinet.userData.furniture = true; }
     }
     furniture.add(cabinet);
     // Geometry determines the shared floor: long upright ends or the last

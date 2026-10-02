@@ -62,7 +62,8 @@ function assertGroundedBin() {
   const footY = foot.geometry.boundingBox.clone().applyMatrix4(foot.matrix).min.y + bin.position.y;
   const groundY = floor.geometry.boundingBox.max.y + floor.position.y;
   const cabinet = floor.parent.children.find(child => child.userData.furniture);
-  expect(groundY).toBeCloseTo(Math.min(...cabinet.children.map(mesh => mesh.geometry.boundingBox.min.y)), 6);
+  // The cabinet is built to a real 600 x 250 x 1160 mm unit and scaled to the shelf width.
+  expect(groundY).toBeCloseTo(Math.min(...cabinet.children.map(mesh => mesh.geometry.boundingBox.min.y)) * cabinet.scale.y + cabinet.position.y, 6);
   expect(footY).toBeCloseTo(groundY, 6);
   expect(Number(shelf.canvas.dataset.trashFootY)).toBeCloseTo(groundY, 6);
   expect(Number(shelf.canvas.dataset.cabinetFloorY)).toBeCloseTo(groundY, 6);

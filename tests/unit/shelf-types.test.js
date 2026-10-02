@@ -4,7 +4,8 @@ import { BAGGEBO_SPEC, SHELF_TYPES, getShelfType, normalizeShelfType } from '../
 describe('shelf types and BAGGEBO measurements', () => {
   it('offers the existing walnut cabinet and the fixed-size IKEA model', () => {
     expect(SHELF_TYPES.map(type => type.id)).toEqual(['walnut', 'baggebo']);
-    expect(getShelfType('walnut').dimensions).toBeNull();
+    // The wooden cabinet is built to the same real IKEA measures as the BAGGEBO.
+    expect(getShelfType('walnut').dimensions).toEqual({ width:600, depth:250, height:1160 });
     expect(getShelfType('BAGGEBO').dimensions).toEqual({ width:600, depth:250, height:1160 });
     expect(getShelfType('baggebo').subtitle).toBe('Metal blanco');
   });
