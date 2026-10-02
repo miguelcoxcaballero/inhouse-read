@@ -4,7 +4,7 @@
 // to online ones. Neural voices are ordinary voices flagged `neural`; one that is not downloaded yet has
 // `installed:false`, so it is listed for download but never chosen for speech.
 
-const ISO3 = { spa:'es', eng:'en', fra:'fr', fre:'fr', deu:'de', ger:'de', ita:'it', por:'pt', cat:'ca', glg:'gl', nld:'nl', dut:'nl', rus:'ru', jpn:'ja', zho:'zh', chi:'zh', kor:'ko', pol:'pl', ukr:'uk', tur:'tr', swe:'sv', dan:'da', nob:'nb', nor:'nb', no:'nb', fin:'fi', ces:'cs', cze:'cs', ell:'el', gre:'el', hun:'hu', ron:'ro', rum:'ro', ara:'ar', vie:'vi', hin:'hi', heb:'he', tha:'th', iw:'he' }
+const ISO3 = { spa:'es', eng:'en', fra:'fr', fre:'fr', deu:'de', ger:'de', ita:'it', por:'pt', cat:'ca', glg:'gl', nld:'nl', dut:'nl', rus:'ru', jpn:'ja', zho:'zh', chi:'zh', kor:'ko', pol:'pl', ukr:'uk', tur:'tr', swe:'sv', dan:'da', nob:'nb', nor:'nb', no:'nb', fin:'fi', ces:'cs', cze:'cs', ell:'el', gre:'el', hun:'hu', ron:'ro', rum:'ro', ara:'ar', vie:'vi', hin:'hi', heb:'he', tha:'th', iw:'he', bul:'bg', srp:'sr' }
 // Languages the curated list always tries to cover, in the order they appear after the book/device language.
 export const PRIORITY_LANGUAGES = ['es','en','fr','de','it','pt','ca']
 const MIN_RECOMMENDED = 240
@@ -263,12 +263,12 @@ const HINTS = [
   ['vi', /[ơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹđ]/g, 2],
   ['it', /[ìù]/g, 1.5], ['fr', /[èêâîôû]/g, 0.5], ['ca', /[àò]/g, 1]
 ]
-const DEFAULT_REGION = { es:'ES', en:'US', fr:'FR', de:'DE', it:'IT', pt:'PT', ca:'ES', nl:'NL', pl:'PL', tr:'TR', sv:'SE', da:'DK', nb:'NO', fi:'FI', cs:'CZ', hu:'HU', ro:'RO', ru:'RU', uk:'UA', el:'GR', ar:'SA', zh:'CN', ja:'JP', ko:'KR', hi:'IN', he:'IL', th:'TH', vi:'VN' }
+const DEFAULT_REGION = { es:'ES', en:'US', fr:'FR', de:'DE', it:'IT', pt:'PT', ca:'ES', nl:'NL', pl:'PL', tr:'TR', sv:'SE', da:'DK', nb:'NO', fi:'FI', cs:'CZ', hu:'HU', ro:'RO', ru:'RU', uk:'UA', el:'GR', ar:'SA', zh:'CN', ja:'JP', ko:'KR', hi:'IN', he:'IL', th:'TH', vi:'VN', bg:'BG', sr:'RS' }
 // Languages with a script of their own are told by their letters; the Latin-script ones by the lists above. Cyrillic is Russian
 // unless it has letters only Ukrainian uses; Han with kana is Japanese.
 const SCRIPTS = [['el', /\p{Script=Greek}/gu], ['ar', /\p{Script=Arabic}/gu], ['he', /\p{Script=Hebrew}/gu], ['hi', /\p{Script=Devanagari}/gu], ['th', /\p{Script=Thai}/gu], ['ko', /\p{Script=Hangul}/gu], ['ja', /[\p{Script=Hiragana}\p{Script=Katakana}]/gu], ['zh', /\p{Script=Han}/gu], ['ru', /\p{Script=Cyrillic}/gu]]
 const UKRAINIAN = /[іїєґ]/g
-function detectByScript(sample) {
+function detectByScript(sample, fallback) {
   const letters = (sample.match(/\p{L}/gu) || []).length
   if (!letters) return ''
   const counts = Object.fromEntries(SCRIPTS.map(([lang, pattern]) => [lang, (sample.match(pattern) || []).length]))
@@ -276,6 +276,14 @@ function detectByScript(sample) {
   if (count < 2 && !(count === 1 && letters === 1) || count < letters * 0.4) return ''
   if (lang === 'ja' || (lang === 'zh' && counts.ja)) return 'ja'
   if (lang === 'ru' && (sample.match(UKRAINIAN) || []).length > (sample.match(/[ыэёъ]/g) || []).length) return 'uk'
+  if (lang === 'ru') {
+    if (/[ђјљњћџ]/u.test(sample)) return 'sr'
+    // Cyrillic alone cannot tell Bulgarian from Russian; retain the book's declared language.
+    const home = langBase(fallback)
+    if (['bg', 'sr', 'uk'].includes(home) && !/[ыэё]/u.test(sample)) return home
+    const bulgarian = new Set(['беше', 'когато', 'някой', 'никой', 'съм', 'също', 'която', 'който', 'това', 'дъждът'])
+    if ((sample.match(/\p{L}+/gu) || []).filter(word => bulgarian.has(word)).length >= 2) return 'bg'
+  }
   return lang
 }
 // \b does not treat accented letters as word characters, hence the explicit letter look-arounds.
@@ -287,7 +295,7 @@ const BRAZILIAN = /(?<!\p{L})(?:você|vocês|ônibus|celular|geladeira|café da 
  */
 export function detectLanguage(text, fallback = 'en-US') {
   const sample = String(text || '').toLocaleLowerCase()
-  const byScript = detectByScript(sample)
+  const byScript = detectByScript(sample, fallback)
   if (byScript) return langBase(fallback) === byScript && langRegion(fallback) ? normalizeLang(fallback) : `${byScript}-${DEFAULT_REGION[byScript]}`
   const scores = {}
   for (const word of sample.match(/[\p{L}·']+/gu) || []) {

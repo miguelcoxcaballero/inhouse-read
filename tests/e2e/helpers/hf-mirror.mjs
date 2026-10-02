@@ -28,7 +28,7 @@ export function startHuggingFaceMirror({ dir = FIXTURES, voices = [], sliceMs = 
   const server = createServer((request, response) => {
     const { pathname } = new URL(request.url, 'http://x')
     if (request.method === 'OPTIONS') { response.writeHead(204, CORS); return response.end() }
-    const rel = pathname.slice('/hf/'.length)
+    const rel = decodeURIComponent(pathname.slice('/hf/'.length))
     hits.push(rel)
     if (!pathname.startsWith('/hf/')) { response.writeHead(404, CORS); return response.end('not found') }
     if (rel === 'voices.json') {

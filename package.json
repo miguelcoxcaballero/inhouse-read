@@ -1,7 +1,7 @@
 {
   "name": "inhouse-read",
   "private": true,
-  "version": "1.7.6",
+  "version": "1.7.7",
   "type": "module",
   "description": "Inhouse Read - lector de PDF, ePub y MOBI, hermano de Inhouse Notes.",
   "scripts": {
@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
-    "pretest:e2e": "vite build",
+    "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
     "test": "npm run test:unit && npm run test:e2e"
   },

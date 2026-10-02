@@ -9,12 +9,14 @@
 // 74-call minimum measured with 180-character fragments; building one takes ~100 ms) and when a call throws, in which case
 // that text is tried once more on the fresh module.
 
+import { fetchDictionary, dictionaryUrl } from './dictionary-cache.js'
+
 /**
  * espeak-ng dictionaries that are NOT inside piper_phonemize.data (the languages added after the first seven: ru alone is 8 MB):
  * each one is a file of its own, dict/<name>_dict next to the data, fetched the first time a voice of that language speaks.
  * The list is the one of scripts/trim-espeak-data.mjs.
  */
-export const EXTRA_DICTIONARIES = ['nl', 'pl', 'ru', 'uk', 'tr', 'sv', 'da', 'no', 'fi', 'cs', 'el', 'hu', 'ro', 'ar', 'cmn', 'vi']
+export const EXTRA_DICTIONARIES = ['nl', 'pl', 'ru', 'uk', 'tr', 'sv', 'da', 'no', 'fi', 'cs', 'el', 'hu', 'ro', 'ar', 'cmn', 'vi', 'bg', 'sr', 'hi']
 const DICTIONARY_ALIASES = { nb: 'no', nn: 'no', zh: 'cmn' }
 /** 'ru' -> 'ru', 'nb' -> 'no', 'es-419' -> '' (that one is in the data pack); '' when no separate dictionary is needed. */
 export function extraDictionaryOf(espeakVoice) {
@@ -33,7 +35,7 @@ export const PHONEMIZER_REVISION = '20261002-dictionaries'
  *   base: absolute URL (ending in '/') of the folder holding piper_phonemize.{mjs,wasm,data}.
  * @returns {Promise<{phonemize:(text:string, espeakVoice:string)=>Promise<number[]>, destroy:()=>void}>}
  */
-export async function createPhonemizer({ base, importModule = url => import(/* @vite-ignore */ url), rebuildEvery = REBUILD_EVERY, fetchFile = url => fetch(url) }) {
+export async function createPhonemizer({ base, importModule = url => import(/* @vite-ignore */ url), rebuildEvery = REBUILD_EVERY, fetchFile = url => fetchDictionary(url) }) {
   const assetUrl = name => `${base}${name}?v=${PHONEMIZER_REVISION}`
   const { default: factory } = await importModule(assetUrl('piper_phonemize.mjs'))
   let line = null, errors = [], module = null, calls = 0
@@ -62,7 +64,7 @@ export async function createPhonemizer({ base, importModule = url => import(/* @
     }
     let bytes = downloaded.get(name)
     if (!bytes) {
-      const response = await fetchFile(`${base}dict/${name}_dict`)
+      const response = await fetchFile(dictionaryUrl(base, name))
       if (!response?.ok) throw new Error(`phonemizer dictionary "${name}" not available (${response?.status ?? 'no response'})`)
       bytes = new Uint8Array(await response.arrayBuffer())
       downloaded.set(name, bytes)

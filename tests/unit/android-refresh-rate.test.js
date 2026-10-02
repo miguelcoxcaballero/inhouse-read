@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 
-const read = path => readFileSync(path, 'utf8')
+const read = path => readFileSync(path, 'utf8').replace(/\r\n?/g, '\n')
 const builder = read('android/html_to_apk_builder.py')
 const apkScript = read('.github/scripts/build_android_apk.py')
 const workflow = read('.github/workflows/build-android.yml')

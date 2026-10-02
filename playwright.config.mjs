@@ -1,11 +1,22 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const PORT = 4173
+// A dedicated port and a fresh server keep tests from attaching to an unrelated
+// preview left running by another task. Parallel local runs can choose a port.
+const PORT = Number(process.env.PLAYWRIGHT_PORT || 4283)
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) throw new Error('PLAYWRIGHT_PORT must be a valid TCP port')
 const BASE_URL = `http://127.0.0.1:${PORT}/inhouse-read/`
+const SUITE = process.env.PLAYWRIGHT_SUITE || 'all'
+const REAL_SPECS = {
+  engine: /[/\\]neural-voice-engine\.spec\.mjs$/,
+  reading: /[/\\]neural-voice-reading\.spec\.mjs$/,
+  languages: /[/\\]neural-voice-languages\.spec\.mjs$/
+}
+if (!['all', 'general', ...Object.keys(REAL_SPECS)].includes(SUITE)) throw new Error(`Unknown PLAYWRIGHT_SUITE: ${SUITE}`)
 
 export default defineConfig({
   testDir: './tests/e2e',
-  testMatch: /.*\.spec\.mjs/,
+  testMatch: REAL_SPECS[SUITE] || /.*\.spec\.mjs/,
+  ...(SUITE === 'general' ? { testIgnore: /[/\\]neural-voice-(engine|reading|languages)\.spec\.mjs$/ } : {}),
   timeout: 30_000,
   expect: { timeout: 8_000 },
   fullyParallel: false,
@@ -31,6 +42,6 @@ export default defineConfig({
     command: `npm run preview -- --host 127.0.0.1 --port ${PORT} --strictPort`,
     url: BASE_URL,
     timeout: 30_000,
-    reuseExistingServer: !process.env.CI
+    reuseExistingServer: false
   }
 })

@@ -2,11 +2,12 @@
 // Pages has no COOP/COEP, so no SharedArrayBuffer), the espeak-ng phonemizer, and the clean-up of the audio (peak
 // normalisation, silence trimming). The page only receives transferable Float32Array chunks.
 //
-// ONE model session is alive at a time (a second voice replaces the first). Messages carry request ids.
+// ONE voice session is alive at a time (a second voice replaces the first). Hebrew also holds its small Nakdimon session.
+// Messages carry request ids.
 //
 //   page -> worker
 //     {type:'init',  id, ortBase, phonBase}                   load onnxruntime-web (files of OUR site) and the phonemizer
-//     {type:'load',  id, voice, config, model:ArrayBuffer}    create the session from the cached bytes (replaces the previous one)
+//     {type:'load',  id, voice, config, model:ArrayBuffer, phonemizerModel?:ArrayBuffer} create sessions from cached bytes
 //     {type:'synth', id, text, rate, speaker}                 speak `text`: replies with plan + chunks (below), queued FIFO
 //     {type:'cancel', id}                                     forget a queued/running synth (a running segment finishes first)
 //     {type:'free'}                                           release the session
@@ -17,9 +18,10 @@
 //     {type:'end',   id}                                      synth finished
 //     {type:'error', id, error}                               anything that failed (the worker stays usable)
 import { createPhonemizer } from './phonemizer.js'
+import { createHebrewPhonemizer } from './hebrew.js'
 import { peakNormalize, trimSilence, fadeEdges, silence, concat, pauseAfter, splitSegments, limitIds, lengthScaleFor, PAUSE_MS } from './pcm.js'
 
-let ort = null, phonemizer = null, session = null, config = null, voice = null, initPromise = null, loadChain = Promise.resolve()
+let ort = null, phonemizer = null, hebrewPhonemizer = null, session = null, config = null, voice = null, initPromise = null, loadChain = Promise.resolve()
 const cancelled = new Set()
 const queue = []
 let draining = false, current = null
@@ -38,14 +40,27 @@ async function init({ ortBase, phonBase }) {
   phonemizer = phon
 }
 
-async function load({ voice: key, config: cfg, model }) {
+async function releaseVoice() {
+  const oldSession = session, oldHebrew = hebrewPhonemizer
+  session = null; hebrewPhonemizer = null; config = null; voice = null
+  if (oldSession) await oldSession.release().catch(() => {})
+  if (oldHebrew) await oldHebrew.destroy().catch(() => {})
+}
+
+async function load({ voice: key, config: cfg, model, phonemizerModel }) {
   while (draining) await new Promise(resolve => setTimeout(resolve, 5)) // a cancelled synth finishes its segment first
-  if (session) { await session.release().catch(() => {}); session = null }
+  await releaseVoice()
   const t = performance.now()
   // Every fragment has another length, so the shapes change on each run. With the memory arena and the memory-pattern planner
   // on (ort's defaults) each new shape keeps its buffers and the WASM heap only grows: a phone's WebView runs out of memory
   // after a sentence or two and the worker dies. Off, buffers are freed after every run (a little slower, flat memory).
-  session = await ort.InferenceSession.create(new Uint8Array(model), { executionProviders: ['wasm'], graphOptimizationLevel: 'all', enableCpuMemArena: false, enableMemPattern: false })
+  try {
+    if (cfg.phoneme_type === 'hebrew') hebrewPhonemizer = await createHebrewPhonemizer({ ort, model: phonemizerModel, config: cfg })
+    session = await ort.InferenceSession.create(new Uint8Array(model), { executionProviders: ['wasm'], graphOptimizationLevel: 'all', enableCpuMemArena: false, enableMemPattern: false })
+  } catch (error) {
+    await releaseVoice()
+    throw error
+  }
   config = cfg; voice = key
   return { createMs: performance.now() - t, inputs: session.inputNames }
 }
@@ -68,7 +83,8 @@ async function runSegment(ids, { rate, speaker }) {
 
 async function synth({ id, text, rate, speaker }) {
   const sampleRate = config.audio.sample_rate
-  const segments = splitSegments(limitIds(await phonemizer.phonemize(text, config.espeak.voice), config.num_symbols))
+  const ids = config.phoneme_type === 'hebrew' ? await hebrewPhonemizer.phonemize(text) : await phonemizer.phonemize(text, config.espeak.voice)
+  const segments = splitSegments(limitIds(ids, config.num_symbols))
   if (!segments.length) { // nothing speakable ("...", an ornament): a short rest keeps the reading flowing
     post({ type: 'plan', id, counts: [0] })
     const pcm = silence(sampleRate, 120)
@@ -131,7 +147,12 @@ self.onmessage = async ({ data: m }) => {
     } else if (m.type === 'cancel') {
       if (current === m.id || queue.some(job => job.id === m.id)) cancelled.add(m.id)
     } else if (m.type === 'free') {
-      if (session) { await session.release().catch(() => {}); session = null; voice = null }
+      const freeing = loadChain.then(async () => {
+        while (draining) await new Promise(resolve => setTimeout(resolve, 5))
+        await releaseVoice()
+      })
+      loadChain = freeing.catch(() => {})
+      await freeing
       post({ type: 'freed', id: m.id })
     }
   } catch (error) {

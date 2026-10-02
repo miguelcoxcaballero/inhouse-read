@@ -4,6 +4,14 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.7
+
+- Catálogo de 36 voces naturales en 27 idiomas: incorpora portugués de Portugal, búlgaro, serbio, hindi y hebreo, y corrige la descarga de turco. La instalación guarda también los diccionarios y, para hebreo, el modelo de vocalización necesarios para sintetizar sin volver a descargarlos al recargar el lector.
+- Velocidades de lectura de 0,75×, 1×, 1,25×, 1,5× y 2×, con controles accesibles y distribución adaptada a móviles pequeños. Las preferencias anteriores se conservan en el paso más próximo.
+- Las preparaciones de voces se ordenan y se invalidan al liberar el motor; un calentamiento tardío conserva la voz que está leyendo.
+- Las páginas físicas del libro 3D son blancas. Al abrir, pasan al tema del lector durante el acercamiento; al cerrar, vuelven al blanco antes de poner el marcapáginas y devolver el libro a la balda. Publicado primero en 1.7.6.
+- El arranque de neerlandés y otros idiomas reutiliza los diccionarios que ya incluye el motor, evitando crear dos veces el mismo archivo y pasar a la voz del sistema. Publicado primero en 1.7.5.
+
 ### Actualización Android · APK 1.1.2
 
 - La app Android vota por el modo de pantalla más rápido de la resolución actual (hasta 120 Hz) al abrirse, volver al primer plano, ganar el foco o girar, y en Android 15 o posterior pide además la categoría de frecuencia alta. Sin ese voto muchos móviles mantenían el WebView a 60 Hz. Requiere instalar la APK 1.1.2 (versionCode 15); la web no cambia.

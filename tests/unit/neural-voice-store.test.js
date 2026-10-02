@@ -108,6 +108,33 @@ describe('VoiceStore download', () => {
     expect((await store.list()).size).toBe(0)
   })
 
+  it.each(['config', 'model'])('cleans the complete voice when cancelled during the %s cache write', async cancelledWrite => {
+    const { store, caches } = makeStore(), controller = new AbortController(), writes = []
+    const open = caches.open.bind(caches)
+    caches.open = async name => {
+      const cache = await open(name)
+      return { ...cache, put: async (url, response) => {
+        await cache.put(url, response)
+        const stage = url === URLS.config ? 'config' : 'model'
+        writes.push(stage)
+        if (stage === cancelledWrite) controller.abort()
+      } }
+    }
+    await expect(store.download(ID, { signal: controller.signal })).rejects.toMatchObject({ code: 'aborted' })
+    expect(writes).toEqual(cancelledWrite === 'config' ? ['config'] : ['config', 'model'])
+    expect(await store.has(ID)).toBe(false)
+    expect(await (await open(CACHE_NAME)).keys()).toEqual([])
+  })
+
+  it('keeps a real storage failure classified as storage when cancellation happens at the same time', async () => {
+    const { store, caches } = makeStore(), controller = new AbortController()
+    const failure = Object.assign(new Error('quota'), { name: 'QuotaExceededError' })
+    const open = caches.open.bind(caches)
+    caches.open = async name => ({ ...await open(name), put: async () => { controller.abort(); throw failure } })
+    await expect(store.download(ID, { signal: controller.signal })).rejects.toMatchObject({ code: 'storage', cause: failure })
+    expect(await store.has(ID)).toBe(false)
+  })
+
   it('rejects at once when already aborted or offline, without touching the network', async () => {
     const { store, net } = makeStore({ deps: { online: () => false } })
     await expect(store.download(ID)).rejects.toMatchObject({ code: 'offline' })
@@ -191,6 +218,41 @@ describe('VoiceStore download', () => {
     net.fetch = async (url, init) => url === URLS.config ? new Response('<html>', { status: 200 }) : real(url, init)
     const { store } = makeStore({ net })
     await expect(store.download(ID)).rejects.toMatchObject({ code: 'http' })
+  })
+})
+
+describe('VoiceStore default retry sleep', () => {
+  it('removes each abort listener after the retry delay resolves', async () => {
+    const store = new VoiceStore(), controller = new AbortController()
+    const add = vi.spyOn(controller.signal, 'addEventListener'), remove = vi.spyOn(controller.signal, 'removeEventListener')
+    try {
+      await store.sleep(0, controller.signal)
+      await store.sleep(0, controller.signal)
+      expect(remove).toHaveBeenCalledTimes(2)
+      for (const [event, listener] of add.mock.calls) expect(remove).toHaveBeenCalledWith(event, listener)
+    } finally { add.mockRestore(); remove.mockRestore() }
+  })
+
+  it('removes the listener and clears the timer after an abort', async () => {
+    const store = new VoiceStore(), controller = new AbortController()
+    const add = vi.spyOn(controller.signal, 'addEventListener'), remove = vi.spyOn(controller.signal, 'removeEventListener')
+    try {
+      const sleeping = store.sleep(60_000, controller.signal)
+      const rejection = expect(sleeping).rejects.toMatchObject({ code: 'aborted' })
+      controller.abort()
+      await rejection
+      expect(remove).toHaveBeenCalledWith('abort', add.mock.calls[0][1])
+    } finally { add.mockRestore(); remove.mockRestore() }
+  })
+
+  it('rejects an already aborted delay before registering a listener', async () => {
+    const store = new VoiceStore(), controller = new AbortController()
+    controller.abort()
+    const add = vi.spyOn(controller.signal, 'addEventListener')
+    try {
+      await expect(store.sleep(0, controller.signal)).rejects.toMatchObject({ code: 'aborted' })
+      expect(add).not.toHaveBeenCalled()
+    } finally { add.mockRestore() }
   })
 })
 

@@ -10,6 +10,13 @@ export const isNeuralVoiceId = id => typeof id === 'string' && id.startsWith(NEU
 /** Where the models live. Tests and mirrors set window.INHOUSE_NEURAL_VOICE_BASE before the app starts (see neuralVoiceBase). */
 export const DEFAULT_VOICE_BASE = 'https://huggingface.co/rhasspy/piper-voices/resolve/main/'
 
+export const NAKDIMON = Object.freeze({
+  url: 'https://raw.githubusercontent.com/OHF-Voice/piper1-gpl/efffbfb226bfb511ebbcf55d0cecd8b35a89743d/src/piper/hebrew/nakdimon.onnx',
+  bytes: 21312753,
+  sha256: '9ff491dcc7d66392019d427a98b97d5de10c0d721628ae740858174ae22b190e'
+})
+const MARKO_BASE = 'https://huggingface.co/phantom9623/piper-serbian-tts/resolve/a71694f9ec3480f132dffaf7eb422d43aebd69e0/'
+
 // A downloaded model is loaded into onnxruntime, so where it comes from is not negotiable at run time: the override must be
 // https (or http on this very machine, for the test mirror) and is read ONCE, when this module loads at the start of the app.
 // Anything a book's own script sets on window later (an EPUB's inline script runs with the page's origin) is ignored.
@@ -41,7 +48,21 @@ export function piperPath(piperId) {
 /** URLs of the two files of a voice and of the catalogue that lists their sizes. */
 export function voiceUrls(piperId, base = neuralVoiceBase()) {
   const path = base + piperPath(piperId)
-  return { model: `${path}.onnx`, config: `${path}.onnx.json`, catalogue: `${base}voices.json`, key: `${piperPath(piperId)}.onnx` }
+  const urls = { model: `${path}.onnx`, config: `${path}.onnx.json`, catalogue: `${base}voices.json`, key: `${piperPath(piperId)}.onnx` }
+  if (piperId === 'sr_RS-marko-medium') {
+    if (base === DEFAULT_VOICE_BASE) {
+      urls.model = `${MARKO_BASE}sr_Marko_medium.onnx`
+      urls.config = `${MARKO_BASE}sr_Marko_medium.onnx.json`
+    }
+    urls.modelBytes = 63516051
+  }
+  if (piperId === 'he_IL-saspeech-medium') Object.assign(urls, {
+    phonemizerModel: base === DEFAULT_VOICE_BASE ? NAKDIMON.url : `${base}aux/nakdimon.onnx`,
+    phonemizerSize: NAKDIMON.bytes,
+    phonemizerSha256: NAKDIMON.sha256
+  })
+  for (const name of ['model', 'config', 'phonemizerModel']) if (urls[name]) urls[name] = new URL(urls[name]).href
+  return urls
 }
 
 // One row per downloadable model. `sizeMB` is the .onnx download (63 MB for a 'medium' voice, 77 for sharvard and ukrainian_tts);
@@ -57,16 +78,17 @@ const MODELS = [
   { piperId: 'de_DE-thorsten-medium', lang: 'de-DE', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Thorsten' }] },
   { piperId: 'it_IT-paola-medium', lang: 'it-IT', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Paola' }] },
   { piperId: 'pt_BR-faber-medium', lang: 'pt-BR', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Faber' }] },
+  { piperId: 'pt_PT-tugão-medium', lang: 'pt-PT', quality: 'medium', sizeMB: 63, speakers: [{ name: 'Tugão' }] },
   { piperId: 'ca_ES-upc_ona-medium', lang: 'ca-ES', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Ona' }] },
   // Other regions of the first languages.
   { piperId: 'es_AR-daniela-high', lang: 'es-AR', quality: 'high', sizeMB: 114, speakers: [{ name: 'Daniela' }] },
   { piperId: 'en_GB-cori-high', lang: 'en-GB', quality: 'high', sizeMB: 114, speakers: [{ name: 'Cori' }] },
-  // More languages. Their espeak-ng dictionaries are not in piper_phonemize.data: the phonemizer fetches each one on first use (phonemizer.js).
+  // More languages. Installation retains required external dictionaries for cold offline playback.
   { piperId: 'nl_NL-pim-medium', lang: 'nl-NL', quality: 'medium', sizeMB: 64, recommended: true, speakers: [{ name: 'Pim' }] },
   { piperId: 'pl_PL-gosia-medium', lang: 'pl-PL', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Gosia' }] },
   { piperId: 'ru_RU-irina-medium', lang: 'ru-RU', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Irina' }] },
   { piperId: 'uk_UA-ukrainian_tts-medium', lang: 'uk-UA', quality: 'medium', sizeMB: 77, recommended: true, speakers: [{ name: 'Lada', speaker: 0 }, { name: 'Mykyta', speaker: 1 }, { name: 'Tetiana', speaker: 2 }] },
-  { piperId: 'tr_TR-fettah-medium', lang: 'tr-TR', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Fettah' }] },
+  { piperId: 'tr_TR-dfki-medium', lang: 'tr-TR', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'DFKI' }] },
   { piperId: 'sv_SE-nst-medium', lang: 'sv-SE', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'NST' }] },
   { piperId: 'da_DK-talesyntese-medium', lang: 'da-DK', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Talesyntese' }] },
   { piperId: 'no_NO-talesyntese-medium', lang: 'nb-NO', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Talesyntese' }] },
@@ -77,7 +99,13 @@ const MODELS = [
   { piperId: 'ro_RO-mihai-medium', lang: 'ro-RO', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Mihai' }] },
   { piperId: 'ar_JO-kareem-medium', lang: 'ar-JO', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Kareem' }] },
   { piperId: 'zh_CN-huayan-medium', lang: 'zh-CN', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Huayan' }] },
-  { piperId: 'vi_VN-vais1000-medium', lang: 'vi-VN', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Vais1000' }] }
+  { piperId: 'vi_VN-vais1000-medium', lang: 'vi-VN', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Vais1000' }] },
+  { piperId: 'bg_BG-dimitar-medium', lang: 'bg-BG', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Dimitar' }] },
+  // Author-trained Serbian model; the similarly named rhasspy model is actually Sorbian.
+  { piperId: 'sr_RS-marko-medium', lang: 'sr-RS', quality: 'medium', sizeMB: 64, recommended: true, speakers: [{ name: 'Marko' }] },
+  { piperId: 'hi_IN-pratham-medium', lang: 'hi-IN', quality: 'medium', sizeMB: 64, recommended: true, speakers: [{ name: 'Pratham' }] },
+  // Includes Nakdimon, required for real Hebrew phonemization and offline playback.
+  { piperId: 'he_IL-saspeech-medium', lang: 'he-IL', quality: 'medium', sizeMB: 85, recommended: true, speakers: [{ name: 'Saspeech' }] }
 ]
 
 /**

@@ -513,10 +513,10 @@ describe('catalogue', () => {
   it('has every curated voice once, one entry per speaker, a recommended default per language', () => {
     const ids = neuralVoices.map(v => v.id)
     expect(new Set(ids).size).toBe(ids.length)
-    expect(neuralVoices.length).toBe(31)
+    expect(neuralVoices.length).toBe(36)
     expect(neuralVoices.filter(v => v.piperId === 'es_ES-sharvard-medium').map(v => [v.id, v.speaker])).toEqual([[SHARVARD_M, 0], [SHARVARD_F, 1]])
     const languages = [...new Set(neuralVoices.map(v => v.lang.split('-')[0]))]
-    expect(languages).toEqual(['es', 'en', 'fr', 'de', 'it', 'pt', 'ca', 'nl', 'pl', 'ru', 'uk', 'tr', 'sv', 'da', 'nb', 'fi', 'cs', 'el', 'hu', 'ro', 'ar', 'zh', 'vi'])
+    expect(languages).toEqual(['es', 'en', 'fr', 'de', 'it', 'pt', 'ca', 'nl', 'pl', 'ru', 'uk', 'tr', 'sv', 'da', 'nb', 'fi', 'cs', 'el', 'hu', 'ro', 'ar', 'zh', 'vi', 'bg', 'sr', 'hi', 'he'])
     for (const language of languages) expect(neuralVoices.filter(v => v.lang.startsWith(language + '-') && v.recommended).length).toBe(1)
     expect(neuralVoices.find(v => v.piperId === 'es_MX-claude-high').quality).toBe('high')
   })

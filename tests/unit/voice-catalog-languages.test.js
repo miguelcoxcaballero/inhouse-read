@@ -9,7 +9,7 @@ const ADDED = {
   pl: { voice: 'pl_PL-gosia-medium', region: 'PL', text: ['Dzieci poszły z matką do lasu i tam się bawiły.', 'Nie wiem, czego ode mnie chcesz, ale jest już późno.', 'Nikt we wsi nie pamiętał, kiedy przybył nieznajomy.'] },
   ru: { voice: 'ru_RU-irina-medium', region: 'RU', text: ['Дети пошли с матерью в лес и играли там.', 'Дождь тихо стучал в окна старой библиотеки.'] },
   uk: { voice: 'uk_UA-ukrainian_tts-medium', region: 'UA', text: ['Діти пішли з матір’ю до лісу і гралися там.', 'Дощ тихо стукав у вікна старої бібліотеки, і ґанок був мокрий.'] },
-  tr: { voice: 'tr_TR-fettah-medium', region: 'TR', text: ['Çocuklar annesiyle birlikte ormana gitti ve orada oynadı.', 'Ne istediğimi bilmiyorum ama artık çok geç oldu.', 'Köyde kimse yabancının ne zaman geldiğini hatırlamıyordu.'] },
+  tr: { voice: 'tr_TR-dfki-medium', region: 'TR', text: ['Çocuklar annesiyle birlikte ormana gitti ve orada oynadı.', 'Ne istediğimi bilmiyorum ama artık çok geç oldu.', 'Köyde kimse yabancının ne zaman geldiğini hatırlamıyordu.'] },
   sv: { voice: 'sv_SE-nst-medium', region: 'SE', text: ['Barnen gick med sin mamma till skogen och lekte där.', 'Jag vet inte vad du vill av mig, men det är redan sent.', 'Ingen i byn mindes när främlingen hade kommit.'] },
   da: { voice: 'da_DK-talesyntese-medium', region: 'DK', text: ['Børnene gik med deres mor i skoven og legede der.', 'Jeg ved ikke, hvad du vil have af mig, men det er allerede sent.', 'Ingen i landsbyen kunne huske, hvornår den fremmede var kommet.'] },
   nb: { voice: 'no_NO-talesyntese-medium', region: 'NO', text: ['Barna gikk med moren sin til skogen og lekte der.', 'Jeg vet ikke hva du vil ha fra meg, men det er allerede sent.', 'Ingen i landsbyen husket når den fremmede var kommet.'] },
@@ -36,7 +36,7 @@ describe('catalogue of the added languages', () => {
   it('lists the Ukrainian model once per speaker (they share one download) and every model is a plain onnx of 60-80 MB (the two high-quality ones about 114 MB)', () => {
     const ukrainian = neuralVoices.filter(v => v.lang === 'uk-UA')
     expect(ukrainian.map(v => [v.id, v.speaker, v.name])).toEqual([['piper:uk_UA-ukrainian_tts-medium', 0, 'Lada'], ['piper:uk_UA-ukrainian_tts-medium#1', 1, 'Mykyta'], ['piper:uk_UA-ukrainian_tts-medium#2', 2, 'Tetiana']])
-    for (const [piperId, voices] of modelsOf(neuralVoices)) { expect(voices[0].sizeMB, piperId).toBeGreaterThanOrEqual(60); expect(voices[0].sizeMB, piperId).toBeLessThanOrEqual(voices[0].quality === 'high' ? 120 : 80) }
+    for (const [piperId, voices] of modelsOf(neuralVoices)) { expect(voices[0].sizeMB, piperId).toBeGreaterThanOrEqual(60); expect(voices[0].sizeMB, piperId).toBeLessThanOrEqual(piperId === 'he_IL-saspeech-medium' ? 85 : voices[0].quality === 'high' ? 120 : 80) }
   })
   it('builds the Hugging Face paths of the new voices (Norwegian lives under no/, not nb/)', () => {
     expect(piperPath('no_NO-talesyntese-medium')).toBe('no/no_NO/talesyntese/medium/no_NO-talesyntese-medium')
@@ -56,7 +56,7 @@ describe('catalogue of the added languages', () => {
     const voices = neuralVoices.map(entry => normalizeNeuralVoice(entry))
     const order = [...new Set(orderNeuralVoices(voices, { bookLang: 'es-ES', deviceLang: 'es-ES' }).map(v => v.base))]
     expect(order.slice(0, 7)).toEqual(['es', 'en', 'fr', 'de', 'it', 'pt', 'ca'])
-    expect(order).toHaveLength(23)
+    expect(order).toHaveLength(27)
     expect(recommendedNeuralFor(voices, 'no').id).toBe('piper:no_NO-talesyntese-medium') // a book that says "no" (Norwegian) gets the Bokmål voice
   })
 })

@@ -27,6 +27,21 @@ function setup(overrides = {}) {
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
 describe('SynthClient', () => {
+  it('transfers the cached auxiliary pointing model with Hebrew weights', async () => {
+    const auxiliary = new ArrayBuffer(12)
+    const { client, worker, model } = setup({ readPhonemizerModel:vi.fn(async () => auxiliary) })
+    const ready = client.prepare('he_IL-saspeech-medium')
+    await settle()
+    worker.reply({ type:'ready', id:worker.last('init').message.id })
+    await settle()
+    const loading = worker.last('load')
+    expect(loading.message.phonemizerModel).toBe(auxiliary)
+    expect(loading.transfer).toEqual([model, auxiliary])
+    worker.reply({ type:'loaded', id:loading.message.id })
+    await ready
+    expect(client.loaded).toBe('he_IL-saspeech-medium')
+  })
+
   it('spawns the worker once, inits it with OUR asset folders and loads the voice with the model transferred', async () => {
     const { client, worker, model } = setup()
     const prepared = client.prepare('es_MX-claude-high')
@@ -119,6 +134,27 @@ describe('SynthClient', () => {
     expect(() => client.synth({ text: 'x', rate: 1, speaker: 0 }, handlers)).toThrow(/not running/)
   })
 
+  it.each(['onerror', 'onmessageerror'])('ignores a late %s from a released worker while its replacement is speaking', async eventName => {
+    const oldWorker = fakeWorker(), replacement = fakeWorker()
+    const { client } = setup({ createWorker: vi.fn().mockReturnValueOnce(oldWorker).mockReturnValueOnce(replacement) })
+    try {
+      await ready(client, oldWorker)
+      const late = oldWorker[eventName]
+      client.dispose()
+      await ready(client, replacement)
+      const handlers = { onChunk: vi.fn(), onEnd: vi.fn(), onError: vi.fn() }
+      const job = client.synth({ text: 'Nueva voz.', rate: 1 }, handlers)
+      late({ message: 'old worker failure', preventDefault() {} })
+      expect(client.alive).toBe(true)
+      expect(replacement.terminated).toBe(false)
+      expect(handlers.onError).not.toHaveBeenCalled()
+      replacement.reply({ type: 'chunk', id: job.id, index: 0, last: true, pcm: new Float32Array(3), sampleRate: 22050, ms: 5 })
+      replacement.reply({ type: 'end', id: job.id })
+      expect(handlers.onChunk).toHaveBeenCalledOnce()
+      expect(handlers.onEnd).toHaveBeenCalledOnce()
+    } finally { client.dispose() }
+  })
+
   it("rejects prepare() with 'init-failed' (and frees the worker) when ONNX Runtime or the phonemizer cannot start", async () => {
     const { client, worker } = setup()
     const prepared = client.prepare('es_MX-claude-high')
@@ -135,5 +171,48 @@ describe('SynthClient', () => {
     expect(worker.terminated).toBe(true)
     expect(client.alive).toBe(false)
     client.dispose() // harmless twice
+  })
+
+  it('loads overlapping voice preparations in request order even when the first model read is slower', async () => {
+    let finishFirst
+    const firstBytes = new Promise(resolve => { finishFirst = resolve })
+    const { client, worker } = setup({ readModel: id => id === 'es_MX-claude-high' ? firstBytes : Promise.resolve(new ArrayBuffer(8)) })
+    const first = client.prepare('es_MX-claude-high'), second = client.prepare('nl_NL-pim-medium')
+    first.catch(() => {}); second.catch(() => {})
+    try {
+      await settle(); worker.reply({ type:'ready', id:worker.last('init').message.id }); await settle()
+      expect(worker.sent.filter(({ message }) => message.type === 'load')).toEqual([])
+      finishFirst(new ArrayBuffer(8)); await settle()
+      expect(worker.last('load').message.voice).toBe('es_MX-claude-high')
+      worker.reply({ type:'loaded', id:worker.last('load').message.id }); await first; await settle()
+      expect(worker.last('load').message.voice).toBe('nl_NL-pim-medium')
+      worker.reply({ type:'loaded', id:worker.last('load').message.id }); await second
+      expect(client.loaded).toBe('nl_NL-pim-medium')
+    } finally { finishFirst(new ArrayBuffer(8)); client.dispose(); await settle() }
+  })
+
+  it('rejects pending and queued preparations on dispose without spawning an orphan worker', async () => {
+    const { client, worker } = setup()
+    const outcomes = []
+    for (const id of ['es_MX-claude-high', 'nl_NL-pim-medium']) {
+      client.prepare(id).then(() => outcomes.push('ready'), error => outcomes.push(error.code))
+    }
+    await settle()
+    expect(worker.last('init')).toBeTruthy()
+    client.dispose(); await settle()
+    expect(outcomes).toEqual(['init-failed', 'init-failed'])
+    expect(client.createWorker).toHaveBeenCalledOnce()
+    expect(client.alive).toBe(false)
+  })
+
+  it('rejects preparation immediately when disposed during the model cache read', async () => {
+    let finishRead, outcome = 'pending'
+    const { client, worker } = setup({ readModel:() => new Promise(resolve => { finishRead = resolve }) })
+    client.prepare('nl_NL-pim-medium').then(() => { outcome = 'ready' }, error => { outcome = error.code })
+    try {
+      await settle(); worker.reply({ type:'ready', id:worker.last('init').message.id }); await settle()
+      client.dispose(); await settle()
+      expect(outcome).toBe('init-failed')
+    } finally { finishRead(new ArrayBuffer(8)); await settle(); client.dispose() }
   })
 })

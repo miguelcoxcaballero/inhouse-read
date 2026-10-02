@@ -1,5 +1,5 @@
 import { readerPanelMarkup, readerIcon } from './reader-interface.js'
-import { normalizeReadingPreferences, READING_THEMES } from './reading-preferences.js'
+import { normalizeReadingPreferences, rateLabel, READING_THEMES } from './reading-preferences.js'
 import { ReadingVoice } from './reading-voice.js'
 import { baseLanguageName, declaredLanguage, langBase, needsBetterVoice, readSystemVoices } from './voice-catalog.js'
 import { SelectMenu } from './select-menu.js'
@@ -98,6 +98,7 @@ export class ReaderExperience {
     this.miniPlayer.querySelector('[data-mini-stop]').onclick = () => this.voice.stop()
     for (const button of this.panel.querySelectorAll('[data-theme]')) button.onclick = () => this.setPreference('theme', button.dataset.theme)
     for (const control of this.panel.querySelectorAll('[data-pref]')) control.addEventListener('change', () => this.setPreference(control.dataset.pref, control.value))
+    for (const radio of this.panel.querySelectorAll('[data-rate]')) radio.addEventListener('change', () => { if (radio.checked) this.setPreference('rate', radio.value) })
     this.panel.querySelector('[data-reset]').onclick = () => {
       this.preferences = normalizeReadingPreferences({ rate:this.preferences.rate, voice:this.preferences.voice, voiceLang:this.preferences.voiceLang })
       this.applyPreferences()
@@ -258,7 +259,7 @@ export class ReaderExperience {
     this.miniPlayer.hidden = !active || this.panel.open
     this.screen.classList.toggle('has-reading-mini-player', !this.miniPlayer.hidden)
     this.miniPlayer.querySelector('[data-mini-title]').textContent = this.book?.title || ''
-    this.miniPlayer.querySelector('[data-mini-status]').textContent = message || `${state === 'paused' ? 'En pausa' : state === 'loading' ? 'Preparando…' : 'Leyendo'} · ${this.preferences.rate}×`
+    this.miniPlayer.querySelector('[data-mini-status]').textContent = message || `${state === 'paused' ? 'En pausa' : state === 'loading' ? 'Preparando…' : 'Leyendo'} · ${rateLabel(this.preferences.rate)}`
     const play = this.miniPlayer.querySelector('[data-mini-play]')
     play.innerHTML = readerIcon(state === 'playing' ? 'pause' : 'play')
     play.setAttribute('aria-label',state === 'playing' ? 'Pausar lectura' : 'Continuar lectura')
@@ -307,6 +308,7 @@ export class ReaderExperience {
     this.panel.querySelector('[data-size-step="-1"]').disabled = p.fontSize <= 14
     this.panel.querySelector('[data-size-step="1"]').disabled = p.fontSize >= 36
     for (const field of this.panel.querySelectorAll('[data-pref]')) field.value = String(p[field.dataset.pref])
+    for (const radio of this.panel.querySelectorAll('[data-rate]')) radio.checked = Number(radio.value) === p.rate
     for (const field of this.panel.querySelectorAll('[data-voice-option]')) field.checked = Boolean(p[field.dataset.voiceOption])
     for (const output of this.panel.querySelectorAll('[data-output]')) output.textContent = `${p[output.dataset.output]}${output.dataset.output === 'rate' ? '×' : ['zoom','brightness'].includes(output.dataset.output) ? '%' : ['fontSize','margin'].includes(output.dataset.output) ? ' px' : ''}`
     for (const button of this.panel.querySelectorAll('[data-theme]')) button.setAttribute('aria-pressed', String(button.dataset.theme === p.theme))

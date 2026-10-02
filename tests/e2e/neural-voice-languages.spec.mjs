@@ -1,11 +1,11 @@
-// REAL-engine check of the voices of the languages added after the first seven: each one is downloaded through the engine from a
-// local mirror of Hugging Face, its espeak-ng dictionary is fetched on demand from dict/ (they are not in piper_phonemize.data),
-// and a short text is read with the real onnxruntime-web + espeak-ng WebAssembly. Audio sanity (finite, audible, not clipped, a
+// REAL-engine check of every selectable catalogue voice: each one is installed through the engine from a local model mirror,
+// including its required dictionary or Hebrew pointing model, then reads with real onnxruntime-web and its phonemizer.
+// Audio sanity (finite, audible, not clipped, a
 // plausible length) and the speed (RTF) are recorded in numbers-languages.json.
 //
 //   NEURAL_VOICE_FIXTURES  folder with <piperId>.onnx and <piperId>.onnx.json (default: the sandbox folder models-extra);
-//                          voices that are not there are skipped, so CI stays green.
-//   NEURAL_VOICE_LANGS     comma separated language codes to run (default: all that have fixtures).
+//                          PLAYWRIGHT_SUITE=languages fails when any required fixture is missing.
+//   NEURAL_VOICE_LANGS     comma separated case keys to run (default: the complete catalogue).
 //   NEURAL_VOICE_EVIDENCE  where the numbers and the WAV files go (default: a temp folder).
 import { test, expect } from '@playwright/test'
 import { createServer } from 'node:http'
@@ -23,11 +23,24 @@ const haveVoice = piperId => existsSync(join(FIXTURES, `${piperId}.onnx`)) && ex
 
 // language -> the voice of the catalogue and two sentences of a novel
 const CASES = {
+  'es-MX': ['es_MX-claude-high', ['La lluvia caía sobre las ventanas de la biblioteca.', 'Nadie recordaba cuándo había llegado el visitante.']],
+  'es-ES': ['es_ES-davefx-medium', ['La lluvia caía sobre las ventanas de la biblioteca.', 'Nadie recordaba cuándo había llegado el visitante.']],
+  'es-ES-sharvard': ['es_ES-sharvard-medium', ['La lluvia caía sobre las ventanas de la biblioteca.', 'Nadie recordaba cuándo había llegado el visitante.']],
+  'es-ES-sharvard-female': ['es_ES-sharvard-medium', ['La lluvia caía sobre las ventanas de la biblioteca.', 'Nadie recordaba cuándo había llegado el visitante.'], 1],
+  'en-US': ['en_US-lessac-medium', ['The rain tapped softly against the library windows.', 'Nobody remembered when the visitor had arrived.']],
+  'en-GB-alba': ['en_GB-alba-medium', ['The rain tapped softly against the library windows.', 'Nobody remembered when the visitor had arrived.']],
+  fr: ['fr_FR-siwis-medium', ['La pluie tombait doucement sur les fenêtres de la bibliothèque.', 'Personne ne se souvenait de la visite du voyageur.']],
+  de: ['de_DE-thorsten-medium', ['Der Regen klopfte leise an die Fenster der Bibliothek.', 'Niemand erinnerte sich an den fremden Besucher.']],
+  it: ['it_IT-paola-medium', ['La pioggia cadeva sulle finestre della biblioteca.', 'Nessuno ricordava quando fosse arrivato il visitatore.']],
+  'pt-BR': ['pt_BR-faber-medium', ['A chuva caía nas janelas da biblioteca.', 'Ninguém lembrava quando o visitante tinha chegado.']],
+  ca: ['ca_ES-upc_ona-medium', ['La pluja queia a les finestres de la biblioteca.', 'Ningú recordava quan havia arribat el visitant.']],
   nl: ['nl_NL-pim-medium', ['De regen tikte zachtjes tegen de ramen van de oude bibliotheek.', 'Niemand in het dorp wist wanneer de vreemdeling was aangekomen.']],
   pl: ['pl_PL-gosia-medium', ['Deszcz cicho stukał w okna starej biblioteki.', 'Nikt we wsi nie pamiętał, kiedy przybył nieznajomy.']],
   ru: ['ru_RU-irina-medium', ['Дождь тихо стучал в окна старой библиотеки.', 'Никто в деревне не помнил, когда приехал незнакомец.']],
   uk: ['uk_UA-ukrainian_tts-medium', ['Дощ тихо стукав у вікна старої бібліотеки.', 'Ніхто в селі не пам’ятав, коли приїхав незнайомець.']],
-  tr: ['tr_TR-fettah-medium', ['Yağmur eski kütüphanenin pencerelerine usulca vuruyordu.', 'Köyde kimse yabancının ne zaman geldiğini hatırlamıyordu.']],
+  'uk-mykyta': ['uk_UA-ukrainian_tts-medium', ['Дощ тихо стукав у вікна старої бібліотеки.', 'Ніхто в селі не пам’ятав, коли приїхав незнайомець.'], 1],
+  'uk-tetiana': ['uk_UA-ukrainian_tts-medium', ['Дощ тихо стукав у вікна старої бібліотеки.', 'Ніхто в селі не пам’ятав, коли приїхав незнайомець.'], 2],
+  tr: ['tr_TR-dfki-medium', ['Yağmur eski kütüphanenin pencerelerine usulca vuruyordu.', 'Köyde kimse yabancının ne zaman geldiğini hatırlamıyordu.']],
   sv: ['sv_SE-nst-medium', ['Regnet knackade försiktigt på fönstren i det gamla biblioteket.', 'Ingen i byn mindes när främlingen hade kommit.']],
   da: ['da_DK-talesyntese-medium', ['Regnen bankede sagte på vinduerne i det gamle bibliotek.', 'Ingen i landsbyen kunne huske, hvornår den fremmede var kommet.']],
   nb: ['no_NO-talesyntese-medium', ['Regnet banket forsiktig på vinduene i det gamle biblioteket.', 'Ingen i landsbyen husket når den fremmede var kommet.']],
@@ -40,9 +53,18 @@ const CASES = {
   zh: ['zh_CN-huayan-medium', ['雨轻轻地敲打着旧图书馆的窗户。', '村里没有人记得陌生人是什么时候来的。']],
   vi: ['vi_VN-vais1000-medium', ['Mưa nhẹ nhàng gõ vào cửa sổ của thư viện cũ.', 'Không ai trong làng nhớ người lạ đã đến từ khi nào.']],
   'es-AR': ['es_AR-daniela-high', ['Ayer fui al centro con mi hermano y compramos unos libros viejos.', 'La lluvia golpeaba suavemente los cristales de la biblioteca.']],
-  'en-GB': ['en_GB-cori-high', ['The rain tapped softly on the windows of the old library.', 'Nobody in the village remembered when the stranger had arrived.']]
+  'en-GB': ['en_GB-cori-high', ['The rain tapped softly on the windows of the old library.', 'Nobody in the village remembered when the stranger had arrived.']],
+  'pt-PT': ['pt_PT-tugão-medium', ['A chuva batia suavemente nas janelas da biblioteca antiga.', 'Ninguém na aldeia se lembrava de quando o desconhecido tinha chegado.']],
+  bg: ['bg_BG-dimitar-medium', ['Дъждът тихо почукваше по прозорците на старата библиотека.', 'Никой в селото не помнеше кога беше пристигнал непознатият.']],
+  sr: ['sr_RS-marko-medium', ['Киша је тихо куцала по прозорима старе библиотеке.', 'Нико у селу није памтио када је стигао непознати човек.']],
+  hi: ['hi_IN-pratham-medium', ['बारिश पुरानी पुस्तकालय की खिड़कियों पर धीरे धीरे गिर रही थी।', 'गाँव में किसी को याद नहीं था कि अजनबी कब आया था।']],
+  he: ['he_IL-saspeech-medium', ['הגשם ירד על החלונות של הספרייה הישנה.', 'איש בכפר לא זכר מתי הגיע האיש הזר.']]
 }
 const selected = Object.entries(CASES).filter(([language, [piperId]]) => (!ONLY.length || ONLY.includes(language)) && haveVoice(piperId))
+if (process.env.PLAYWRIGHT_SUITE === 'languages') {
+  const missing = Object.entries(CASES).filter(([language, [piperId]]) => (!ONLY.length || ONLY.includes(language)) && !haveVoice(piperId)).map(([, [piperId]]) => piperId)
+  if (missing.length) throw new Error(`Real language suite is missing required weights: ${missing.join(', ')}`)
+}
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.wasm': 'application/wasm', '.data': 'application/octet-stream', '.map': 'application/json' }
 const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'range, if-range', 'access-control-expose-headers': 'content-length, content-range, etag, accept-ranges' }
@@ -69,11 +91,12 @@ function startServer(distDir, hits) {
     const { pathname } = new URL(request.url, 'http://x')
     if (request.method === 'OPTIONS') { response.writeHead(204, CORS); return response.end() }
     if (pathname.startsWith('/hf/')) {
-      const rel = pathname.slice(4)
+      const rel = decodeURIComponent(pathname.slice(4))
       hits.push(rel)
+      if (rel === 'aux/nakdimon.onnx') return sendFile(request, response, join(FIXTURES, 'nakdimon.onnx'), 'application/octet-stream', CORS)
       if (rel === 'voices.json') {
         const body = {}
-        for (const name of readdirSync(FIXTURES).filter(file => file.endsWith('.onnx'))) {
+        for (const name of readdirSync(FIXTURES).filter(file => file.endsWith('.onnx') && existsSync(join(FIXTURES, `${file}.json`)))) {
           const piperId = name.slice(0, -5), key = hfPath(piperId)
           body[piperId] = { key: piperId, files: { [`${key}.onnx`]: { size_bytes: statSync(join(FIXTURES, name)).size, md5_digest: '' }, [`${key}.onnx.json`]: { size_bytes: statSync(join(FIXTURES, `${name}.json`)).size, md5_digest: '' } } }
         }
@@ -150,7 +173,7 @@ test.describe('neural voices of the added languages (real Piper weights, real OR
     server?.close()
   })
 
-  test('the first download of a voice does not fetch any extra dictionary until that language speaks', async () => {
+  test('embedded dictionaries do not require a separate download', async () => {
     expect(dictionaryRequests.filter(path => path.startsWith('dict/'))).toEqual([])
     expect(existsSync(join(outDir, 'neural-voice/phon/dict/ru_dict'))).toBe(true)
     const glue = readFileSync(join(outDir, 'neural-voice/phon/piper_phonemize.mjs'), 'utf8')
@@ -159,14 +182,24 @@ test.describe('neural voices of the added languages (real Piper weights, real OR
     expect(packBytes).toBeLessThan(2_500_000)
   })
 
-  for (const [language, [piperId, texts]] of selected) {
-    test(`${language}: ${piperId} installs, fetches its dictionary on demand and speaks`, async () => {
-      const id = `piper:${piperId}`
+  for (const [language, [piperId, texts, speaker = 0]] of selected) {
+    test(`${language}: ${piperId} installs with its phonemizer and speaks`, async () => {
+      const id = `piper:${piperId}${speaker ? `#${speaker}` : ''}`
       const t0 = Date.now()
       await page.evaluate(voice => window.neural.engine.install(voice), id)
       const installMs = Date.now() - t0
       expect(await page.evaluate(voice => window.neural.engine.installed.has(voice), id)).toBe(true)
       expect(hits).toEqual(expect.arrayContaining([`${hfPath(piperId)}.onnx`, `${hfPath(piperId)}.onnx.json`]))
+      if (['bg', 'he'].includes(language)) {
+        // Both companions must already be cached by installation: first speech from a cold worker needs no dictionary,
+        // voice weights or Hebrew pointing weights from the network.
+        await page.reload()
+        await page.waitForFunction(() => window.neural)
+        await page.click('#unlock')
+        await page.route('**/phon/dict/**', route => route.abort('internetdisconnected'))
+        await page.route('**/hf/**', route => route.abort('internetdisconnected'))
+        await page.evaluate(() => window.neural.engine.refresh())
+      }
       await page.evaluate(() => { window.__capture = true; window.neural.starts.length = 0 })
       const log = await page.evaluate(([voice, list]) => window.neural.readAll(voice, list, 1, { prefix: 'l' }), [id, texts])
       const engineStats = await page.evaluate(() => ({ ...window.neural.engine.stats }))
@@ -176,20 +209,27 @@ test.describe('neural voices of the added languages (real Piper weights, real OR
       expect(log.filter(event => event.type === 'done')).toHaveLength(texts.length)
       const sampleRate = chunks[0].sampleRate
       const pcm = Float32Array.from(chunks.flatMap(chunk => chunk.data))
-      writeFileSync(join(EVIDENCE, `lang-${piperId}.wav`), wavOf(pcm, sampleRate))
+      writeFileSync(join(EVIDENCE, `lang-${piperId}${speaker ? `-speaker${speaker}` : ''}.wav`), wavOf(pcm, sampleRate))
       const audio = { seconds: +(pcm.length / sampleRate).toFixed(2), ...stats(pcm) }
-      numbers[piperId] = { language, installMs, sampleRate, ...audio, peak: +audio.peak.toFixed(3), rms: +audio.rms.toFixed(3), firstAudioMs: Math.round(log.find(event => event.type === 'start').at), wallSec: +(log.at(-1).at / 1000).toFixed(2), rtf: +engineStats.rtf.toFixed(2) }
+      numbers[id] = { language, installMs, sampleRate, ...audio, peak: +audio.peak.toFixed(3), rms: +audio.rms.toFixed(3), firstAudioMs: Math.round(log.find(event => event.type === 'start').at), wallSec: +(log.at(-1).at / 1000).toFixed(2), rtf: +engineStats.rtf.toFixed(2) }
       expect(audio.finite).toBe(true)
       expect(audio.seconds).toBeGreaterThan(2)
       expect(audio.seconds).toBeLessThan(40)
       expect(audio.peak).toBeGreaterThan(0.3)
       expect(audio.peak).toBeLessThanOrEqual(0.9001)
       expect(audio.rms).toBeGreaterThan(0.01)
+      if (['bg', 'he'].includes(language)) {
+        await page.unroute('**/phon/dict/**')
+        await page.unroute('**/hf/**')
+      }
       // the dictionary of a language outside the data pack came from dict/ (once), the others are inside the pack
-      const dictionary = { nb: 'no', zh: 'cmn' }[language] || language
+      const cfg = JSON.parse(readFileSync(join(FIXTURES, `${piperId}.onnx.json`), 'utf8'))
+      const espeak = cfg.espeak?.voice?.split(/[-_]/)[0] || language
+      const dictionary = { nb:'no', zh:'cmn' }[espeak] || espeak
       const fetched = dictionaryRequests.filter(path => path === `dict/${dictionary}_dict`)
       const packaged = readFileSync(join(outDir, 'neural-voice/phon/piper_phonemize.mjs'), 'utf8').includes(`filename: "/espeak-ng-data/${dictionary}_dict"`)
-      expect(fetched).toHaveLength(packaged || ['es-AR', 'en-GB'].includes(language) ? 0 : 1)
+      expect(fetched).toHaveLength(packaged || cfg.phoneme_type === 'hebrew' ? 0 : 1)
+      if (language === 'he') expect(hits).toContain('aux/nakdimon.onnx')
       if (language === 'nl') {
         // The user's first heading failed before playback: exercise that cold worker again after reload at the video's
         // speed, with dictionary requests blocked. A packaged Dutch dictionary must work without any extra network.

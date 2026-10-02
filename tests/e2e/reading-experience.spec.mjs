@@ -132,6 +132,53 @@ test('EPUB: tipografía real, capítulos, enlaces internos y voz desde el texto 
   expect(errors).toEqual([])
 })
 
+test('velocidad: cinco pasos accesibles por teclado, caben en móvil y conservan la elección', async ({ page }) => {
+  await page.setViewportSize({ width:320, height:844 })
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('inhouse-read-reading-preferences')) localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({ rate:1.3, voiceLang:'en', voice:'en-device' }))
+    window.InhouseSpeech = { getVoices:() => JSON.stringify([{name:'English device',voiceURI:'en-device',lang:'en-US',installed:true}]), stop() {}, speak() {} }
+  })
+  await openPdf(page)
+  await page.getByRole('button', { name:'Escuchar el libro' }).click()
+  const group = page.getByRole('radiogroup', { name:'Velocidad', exact:true })
+  const labels = ['0,75×', '1×', '1,25×', '1,5×', '2×']
+  await expect(group.getByRole('radio')).toHaveCount(5)
+  for (const label of labels) await expect(group.getByRole('radio', { name:label, exact:true })).toBeVisible()
+  const selected = group.getByRole('radio', { name:'1,25×', exact:true })
+  await expect(selected).toBeChecked()
+  await selected.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(group.getByRole('radio', { name:'1,5×', exact:true })).toBeChecked()
+  await page.keyboard.press('ArrowRight')
+  await expect(group.getByRole('radio', { name:'2×', exact:true })).toBeChecked()
+  await page.keyboard.press('ArrowRight')
+  await expect(group.getByRole('radio', { name:'0,75×', exact:true })).toBeChecked()
+  await page.keyboard.press('ArrowLeft')
+  await expect(group.getByRole('radio', { name:'2×', exact:true })).toBeChecked()
+  expect(await group.evaluate(group => {
+    const active = group.querySelector('input:checked').nextElementSibling
+    return getComputedStyle(active).outlineColor === getComputedStyle(group).color
+  })).toBe(true)
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name:/^Idioma/ })).toBeFocused()
+  const overflow = await page.locator('.reading-panel').evaluate(panel => ({ extra:panel.scrollWidth - panel.clientWidth,
+    outside:[...panel.querySelectorAll('*')].filter(node => node.getBoundingClientRect().right > panel.getBoundingClientRect().right).map(node => node.className) }))
+  expect(overflow.extra, JSON.stringify(overflow)).toBeLessThanOrEqual(0)
+  const bounds = await group.boundingBox()
+  expect(bounds.x).toBeGreaterThanOrEqual(0)
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(320)
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('inhouse-read-reading-preferences')))).toMatchObject({ rate:2, voice:'en-device', voiceLang:'en' })
+  await page.getByRole('button', { name:'Cerrar opciones de lectura' }).click()
+  await page.locator('#reader-back').click()
+  await page.reload()
+  await reopen(page)
+  await page.getByRole('button', { name:'Escuchar el libro' }).click()
+  await expect(group.getByRole('radio', { name:'2×', exact:true })).toBeChecked()
+  await expect(page.getByRole('button', { name:/^Idioma/ })).toBeVisible()
+  await expect(page.getByRole('button', { name:/^Voz/ })).toBeVisible()
+  if (process.env.IHR_EVIDENCE_DIR) await page.screenshot({ path:`${process.env.IHR_EVIDENCE_DIR}/audio-speed-mobile-320.png` })
+})
+
 test('voz Android: reproduce texto, pausa, continúa y pasa a la siguiente página', async ({ page }) => {
   await page.addInitScript(() => {
     window.__spoken = []; window.__stopped = 0
@@ -143,11 +190,11 @@ test('voz Android: reproduce texto, pausa, continúa y pasa a la siguiente pági
   })
   await openPdf(page)
   await page.getByRole('button', { name:'Escuchar el libro' }).click()
-  await page.getByRole('slider', { name:'Velocidad de voz' }).fill('1.3')
+  await page.getByRole('radio', { name:'1,25×', exact:true }).check()
   await pickVoice(page, 'en-device')
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()
   await expect.poll(() => page.evaluate(() => window.__spoken.length)).toBeGreaterThan(0)
-  expect(await page.evaluate(() => window.__spoken[0])).toMatchObject({rate:1.3,voice:'en-device'})
+  expect(await page.evaluate(() => window.__spoken[0])).toMatchObject({rate:1.25,voice:'en-device'})
   await page.getByRole('button', { name:'Pausar', exact:true }).click()
   await expect(page.getByRole('button', { name:'Continuar',exact:true })).toBeVisible()
   await page.getByRole('button', { name:'Continuar',exact:true }).click()

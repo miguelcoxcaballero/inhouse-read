@@ -1,3 +1,4 @@
+import { RATE_STEPS, rateLabel } from './reading-preferences.js'
 const paths = {
   close:'M6 6l12 12M18 6L6 18',
   play:'m9 5 11 7-11 7Z', pause:'M8 5v14M16 5v14', stop:'M7 7h10v10H7Z',
@@ -72,7 +73,7 @@ export const readerPanelMarkup = `
     <div class="reading-audio-controls"><button type="button" class="reading-icon-button" data-audio-prev aria-label="Anterior">${readerIcon('prev')}</button><button type="button" class="reading-play" data-play aria-label="Reproducir">${readerIcon('play')}</button><button type="button" class="reading-icon-button" data-audio-next aria-label="Siguiente">${readerIcon('next')}</button><button type="button" class="reading-icon-button" data-stop aria-label="Detener">${readerIcon('stop')}</button></div>
     <p class="reading-audio-status" role="status">Detenido</p>
     <div class="reading-neural-offer" data-neural-offer hidden></div>
-    <label class="reading-row reading-range-row"><span>Velocidad</span><input type="range" data-pref="rate" min="0.5" max="2" step="0.1" aria-label="Velocidad de voz"><output data-output="rate"></output></label>
+    <div class="reading-row reading-speed" role="radiogroup" aria-label="Velocidad">${RATE_STEPS.map(step => `<label class="reading-speed__step"><input type="radio" name="reading-rate" value="${step}" data-rate><span>${rateLabel(step)}</span></label>`).join('')}</div>
     <div class="reading-voice-menus" data-voice-menus></div>
     <div class="reading-voice-info" data-voice-info hidden><button type="button" class="reading-text-button" data-voice-settings hidden>Instalar voces</button></div>
     <div class="reading-row reading-sleep" role="radiogroup" aria-label="Temporizador de voz"><span>Temporizador</span><div class="reading-chips" data-sleep><button type="button" role="radio" aria-checked="true" data-sleep-value="0">No</button><button type="button" role="radio" aria-checked="false" data-sleep-value="15">15 min</button><button type="button" role="radio" aria-checked="false" data-sleep-value="30">30 min</button><button type="button" role="radio" aria-checked="false" data-sleep-value="60">1 h</button></div></div>

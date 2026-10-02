@@ -3,12 +3,43 @@
 Files here are shipped as they are (`public/` is copied to `dist/neural-voice/phon/`) and loaded by the synthesis worker
 (`src/js/readers/neural-voice/phonemizer.js`). They turn text into the phoneme ids a Piper voice expects.
 
+The current catalogue offers **36 selectable voices from 33 models in 27 base languages**. Models with multiple speakers
+share their weights. These counts describe the implementation; the expanded real-audio and complete CI verification is
+tracked in [remaining-wip-verification.md](../../../docs/remaining-wip-verification.md).
+
 | File | What it is | Size |
 | --- | --- | --- |
-| `piper_phonemize.wasm` | the `piper-phonemize` C++ program compiled with Emscripten (statically links espeak-ng), **byte for byte** as published | 629 KB |
-| `piper_phonemize.data` | the espeak-ng data package, **trimmed** to ca, cs, da, de, en, es, fi, fr, hu, it, nl, pl, pt, ro, sv, tr (plus every non-dictionary file: voices, phoneme tables) | 2.23 MB (18 MB untrimmed) |
-| `dict/<lang>_dict` | separate dictionary copies, byte for byte as in the package. The wrapper inspects the module filesystem first and reuses a packaged dictionary; only a missing dictionary is fetched and written into `/espeak-ng-data` (ru 8.3 MB, cmn 1.5 MB, ar 0.5 MB, the rest under 0.2 MB) | 11 MB in all |
-| `piper_phonemize.mjs` | only the Emscripten JavaScript glue of the same package, exported as a factory (see below) | 107 KB |
+| `piper_phonemize.wasm` | the `piper-phonemize` C++ program compiled with Emscripten (statically links espeak-ng), **byte for byte** as published | 629,166 bytes |
+| `piper_phonemize.data` | the espeak-ng data package, **trimmed** to ca, cs, da, de, en, es, fi, fr, hu, it, nl, pl, pt, ro, sv, tr (plus every non-dictionary file: voices, phoneme tables) | 2,232,748 bytes (18 MB untrimmed) |
+| `dict/<lang>_dict` | 19 separate dictionary copies, byte for byte as in the package: nl, pl, ru, uk, tr, sv, da, no, fi, cs, el, hu, ro, ar, cmn, vi, bg, sr, hi | 11,734,558 bytes in all |
+| `piper_phonemize.mjs` | only the Emscripten JavaScript glue of the same package, exported as a factory (see below) | 109,336 bytes |
+
+## Dictionary installation and offline reuse
+
+The wrapper checks the Emscripten filesystem before creating a dictionary. A dictionary already embedded in `.data`,
+including Dutch, is reused; creating it twice would throw EEXIST. The 19 exported copies therefore do not mean 19 extra
+downloads for every voice.
+
+For a config requiring a dictionary outside the pack (ar, bg, cmn, el, hi, no, ru, sr, uk or vi), installing the voice also
+fetches that dictionary. `dictionary-cache.js` checks its exact length and SHA-256 and stores it in the shared
+`inhouse-neural-dictionaries-v1` Cache Storage cache. Installation and worker playback use the same URL/cache, so a new
+worker can load the dictionary without a network request. Download progress includes the required dictionary bytes;
+the voice installation finishes only after they have been saved. A corrupt or incomplete dictionary is rejected.
+
+The worker writes the verified bytes into `/espeak-ng-data` only when absent and retains an in-memory copy across its
+periodic Emscripten rebuilds. Norwegian `nb`/`nn` maps to `no`; Mandarin `zh` maps to `cmn`. Resource URLs use the
+`20261002-dictionaries` revision to keep the glue, filesystem table and data pack consistent in cached sessions.
+
+## Hebrew auxiliary model
+
+`he_IL-saspeech-medium` uses Hebrew phonemization rather than an espeak dictionary. Installation also downloads
+`nakdimon.onnx` (21,312,753 bytes), verifies SHA-256
+`9ff491dcc7d66392019d427a98b97d5de10c0d721628ae740858174ae22b190e`, and saves it with the voice. Installed detection
+requires model, config and auxiliary; removing the voice also removes the auxiliary. The worker restores niqqud with
+Nakdimon, applies the Piper Hebrew-to-IPA rules, and maps the result through the voice config's phoneme ids.
+
+The auxiliary source is pinned to OHF-Voice/piper1-gpl revision `efffbfb226bfb511ebbcf55d0cecd8b35a89743d`.
+The source attribution and MIT/GPL notices are retained in [hebrew-NOTICE.txt](../hebrew-NOTICE.txt) and [COPYING](COPYING).
 
 ## Provenance
 
@@ -18,11 +49,21 @@ Files here are shipped as they are (`public/` is copied to `dist/neural-voice/ph
 * `piper_phonemize.mjs` is the Emscripten glue taken out of `PhonemizeWebWorker.js`: the package's own worker/message
   wrapper is cut away and the factory is exported instead; our own small wrapper replaces it. `FS_analyzePath` is exported so a packaged dictionary is never created twice. The file table inside
   it is rewritten to match the trimmed `.data`.
-* Rebuild this pack with `node scripts/trim-espeak-data.mjs <path of the piper-tts-web package> public/neural-voice/phon es,en,fr,de,it,pt,ca,cs,da,fi,hu,nl,pl,ro,sv,tr`
-  (every pattern is checked, the script fails if the package changes shape). To offer another language, add it to the
-  extra list of the script (its dictionary then goes to `dict/`) and to `EXTRA_DICTIONARIES` in `src/js/readers/neural-voice/phonemizer.js`, run the script again and add the voice to `src/js/readers/neural-voice/catalog.js`. A language of the first list (inside the .data) needs no code.
+* Rebuild this pack with `node scripts/trim-espeak-data.mjs <path of the piper-tts-web package> public/neural-voice/phon`.
+  Its defaults preserve the 16 packaged dictionaries and export the 19 copies listed above. Every pattern is checked;
+  the script fails if the package changes shape. To offer another espeak language, update the script's extra list,
+  `EXTRA_DICTIONARIES` in `src/js/readers/neural-voice/phonemizer.js`, and the verified descriptor in
+  `dictionary-cache.js`; regenerate the files and add the real model and synthesis case. A language already inside
+  `.data` needs no extra dictionary download.
 * The trimmed data was verified to give the same phoneme ids as the untrimmed package for the sentences tried in the
-  spikes (es, en, fr, de, it, pt, ca), and every voice of the catalogue was synthesised with it (the languages of `dict/` with their real Piper weights in `tests/e2e/neural-voice-languages.spec.mjs`).
+  spikes (es, en, fr, de, it, pt, ca). `tests/e2e/neural-voice-languages.spec.mjs` now has 36 real-weight cases covering
+  every catalogue model and speaker. The expanded synthesis/offline verification is still in progress; the historical
+  spike results do not establish that all current voices have passed.
+* Test fixtures are prepared by `scripts/prepare-neural-fixtures.mjs`: by default all 33 catalogue models, plus Nakdimon,
+  with file verification and pinned source revisions. Serbian Marko comes from the author's
+  `phantom9623/piper-serbian-tts` revision `a71694f9ec3480f132dffaf7eb422d43aebd69e0`; the similarly named model in
+  the general catalogue is Sorbian. Portuguese from Portugal, Bulgarian, Hindi and Hebrew are also present in the
+  current catalogue; Turkish uses `tr_TR-dfki-medium`.
 
 ## Licences (the repository and the site are public: read before changing anything here)
 

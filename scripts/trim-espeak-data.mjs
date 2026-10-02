@@ -16,9 +16,9 @@
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, rmSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 
-const DEFAULT_LANGS = 'es,en,fr,de,it,pt,ca'
+const DEFAULT_LANGS = 'ca,cs,da,de,en,es,fi,fr,hu,it,nl,pl,pt,ro,sv,tr'
 // Languages whose dictionary is fetched on demand (names of the espeak-ng *_dict files; Mandarin is 'cmn', Norwegian 'no').
-const DEFAULT_EXTRA = 'nl,pl,ru,uk,tr,sv,da,no,fi,cs,el,hu,ro,ar,cmn,vi'
+const DEFAULT_EXTRA = 'nl,pl,ru,uk,tr,sv,da,no,fi,cs,el,hu,ro,ar,cmn,vi,bg,sr,hi'
 const [pkg, outArg, langsArg, extraArg] = process.argv.slice(2)
 if (!pkg) { console.error('usage: node scripts/trim-espeak-data.mjs <piper-tts-web/package dir> [outDir] [langs] [extraLangs]'); process.exit(1) }
 const out = resolve(outArg || 'public/neural-voice/phon')

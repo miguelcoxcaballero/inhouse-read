@@ -38,6 +38,8 @@ $env:NEURAL_VOICE_IDLE = '1'
 npx playwright test tests/e2e/neural-voice-reading.spec.mjs --workers=1
 ```
 
-## Pendiente del punto 3
+## Seguimiento de los puntos 3, 4 y 5
 
-La suite unitaria general termina con 1462 casos correctos y cinco fallos en `android-refresh-rate.test.js`, sin los rechazos asíncronos anteriores. Esos cinco fallos se deben al checkout CRLF de Windows: el helper busca delimitadores y bloques con LF. Se verificó en lectura que normalizar `readFileSync(...).replace(/\r\n?/g, '\n')` recupera ambas plantillas y el bloque de versión. Esa corrección y la verificación general del lector, escenas y CI quedan para el punto 3.
+Los cinco fallos de `android-refresh-rate.test.js` se debían al checkout CRLF de Windows. El helper ya normaliza los saltos de línea y sus nueve casos pasan. También pasan los ocho casos de importación Android y continuidad, tanto en la ejecución normal como con SwiftShader explícito. La batería completa de Production checks sigue pendiente.
+
+El estado de CI, los cinco pasos de velocidad y la ampliación del catálogo se mantiene en [remaining-wip-verification.md](remaining-wip-verification.md), con sus resultados confirmados y verificaciones restantes.

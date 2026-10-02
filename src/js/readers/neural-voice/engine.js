@@ -62,7 +62,8 @@ function defaultCreateClient(store) {
     ortBase: `${base}ort/`,
     phonBase: `${base}phon/`,
     readModel: id => store.readModel(id),
-    readConfig: id => store.readConfig(id)
+    readConfig: id => store.readConfig(id),
+    readPhonemizerModel: id => store.readPhonemizerModel?.(id) || null
   })
 }
 
@@ -195,13 +196,16 @@ export class NeuralEngine extends EventTarget {
   async warmUp(voiceId) {
     const voice = findNeuralVoice(voiceId, this.voices)
     if (!voice || !this._installed.has(voice.id) || !this.supported) return false
+    if (this.run) return false // a warm-up must not replace the model a reading is using
     this.#clearIdle()
+    let client = this.client
     try {
-      this.client ||= this.createClient()
-      await this.client.prepare(voice.piperId)
+      client ||= this.client = this.createClient()
+      await client.prepare(voice.piperId)
+      if (this.client !== client) return false
       if (!this.run) this.#armIdle()
       return true
-    } catch { this.#teardown(); return false }
+    } catch { if (this.client === client && !this.run) this.#teardown(); return false }
   }
 
   #emit(type, id, reason) {

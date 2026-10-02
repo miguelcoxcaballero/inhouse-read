@@ -202,6 +202,7 @@ body.is-reading:has(#reader-screen.reader-kids-mode) .reader-heading-actions but
 .reading-panel button:focus-visible,.reading-panel input:not([type=search],[type=number]):focus-visible,.reading-panel select:focus-visible,.reading-panel summary:focus-visible,.reading-mini-player button:focus-visible,.reader-location:focus-visible { outline:2px solid currentColor; outline-offset:3px; }
 @media (min-width:760px) { .reading-panel { inset:auto 20px 60px auto; margin:0; border-radius:8px; padding:8px 24px 16px; box-shadow:0 8px 32px #0002; } }
 @media (max-width:360px) { .reading-panel { padding-inline:16px; } .reading-row { gap:8px; } .reading-tabs { gap:4px; } }
+@media (max-width:360px) { .reading-audio-controls { gap:6px; } .reading-audio-controls [data-stop] { margin-inline-start:0; } }
 @media (prefers-reduced-motion:no-preference) { .reading-panel[open] { animation:reading-sheet-in .18s var(--ease); } @keyframes reading-sheet-in { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } } }
 
 /* Focus keeps both page margins. Hidden contents are immediately removed
@@ -277,6 +278,15 @@ body.is-reading .app-header, #reader-screen, .reader-viewport, .reader-toolbar, 
 @media (prefers-reduced-motion:reduce) { .reading-neural-bar i, .reading-row input[type=checkbox], .reading-row input[type=checkbox]::after { transition:none; } }
 #reading-audio .reading-details { margin-top:2px; margin-bottom:14px; border-bottom:1px solid color-mix(in srgb,currentColor 10%,transparent); }
 #reading-audio .reading-details summary { padding:14px 0; }
+/* Five speeds, with native radio navigation and a visible keyboard focus. */
+.reading-speed { gap:0; min-height:0; margin:6px 0 10px; padding:3px; border:1px solid color-mix(in srgb,currentColor 18%,transparent); border-radius:24px; }
+.reading-speed__step { position:relative; flex:1 1 0; min-width:0; }
+.reading-speed__step input { position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer; }
+.reading-speed__step span { display:flex; align-items:center; justify-content:center; min-height:44px; max-width:none; border-radius:21px; font-size:14px; font-variant-numeric:tabular-nums; pointer-events:none; }
+.reading-speed__step input:checked + span { background:var(--reading-ink,var(--text-primary)); color:var(--reading-paper,var(--bg-primary)); font-weight:600; }
+.reading-speed__step input:focus-visible + span { outline:2px solid var(--reading-ink,var(--text-primary)); outline-offset:2px; }
+@media (max-width:360px) { .reading-speed__step span { font-size:13px; } }
+
 /* Own dropdowns (Idioma, Voz): a row with the current choice that opens its list in place. */
 .reading-voice-menus { margin:0 0 4px; }
 .select-menu { border-bottom:1px solid color-mix(in srgb,currentColor 9%,transparent); }
@@ -297,8 +307,8 @@ body.is-reading .app-header, #reader-screen, .reader-viewport, .reader-toolbar, 
 .select-menu__option:focus-visible { box-shadow:inset 0 0 0 2px currentColor; }
 .select-menu__trigger:focus-visible { outline:2px solid currentColor; outline-offset:3px; }
 .select-menu__panel .reading-neural { margin:8px 0 0; padding:10px 12px 0; border-top:1px solid color-mix(in srgb,currentColor 10%,transparent); }
-.reading-sleep { justify-content:space-between; }
-.reading-chips { display:flex; flex:none; gap:2px; }
+.reading-sleep { justify-content:space-between; flex-wrap:wrap; row-gap:0; }
+.reading-chips { display:flex; flex:none; gap:2px; margin-inline-start:auto; }
 .reading-chips button { min-width:44px; min-height:44px; padding:0 10px; border:0; border-radius:22px; background:none; color:inherit; font:400 13px var(--f-body); opacity:.6; cursor:pointer; }
 .reading-chips button[aria-checked=true] { background:color-mix(in srgb,currentColor 10%,transparent); font-weight:600; opacity:1; }
 @media (prefers-reduced-motion:no-preference) { .select-menu__trigger svg { transition:transform .15s; } }

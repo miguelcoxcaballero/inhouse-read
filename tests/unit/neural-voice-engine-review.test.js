@@ -82,6 +82,45 @@ describe('a worker that failed', () => {
   })
 })
 
+describe('warm-up during a newer reading', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('does not reject when creating the warm-up client fails', async () => {
+    const t = setup()
+    t.engine.createClient = () => { throw new Error('worker unavailable') }
+    expect(await t.engine.warmUp(CLAUDE)).toBe(false)
+  })
+
+  it('does not replace the model of an active run with a different warm-up voice', async () => {
+    const other = 'piper:es_ES-davefx-medium', t = setup({ installed:[CLAUDE, other] })
+    t.engine.speak({ text:'Uno.', voiceId:CLAUDE, id:'a' }); await flush()
+    const client = t.clients.last()
+    expect(await t.engine.warmUp(other)).toBe(false)
+    expect(client.prepared).toEqual(['es_MX-claude-high'])
+    expect(t.engine.run.voice.id).toBe(CLAUDE)
+    t.engine.stop()
+  })
+
+  it('a failed warm-up from a released worker cannot dispose the newer reading worker', async () => {
+    const t = setup()
+    const old = t.clients.createClient()
+    let failOld
+    old.prepare = () => new Promise((resolve, reject) => { failOld = reject })
+    t.engine.client = old
+    const warming = t.engine.warmUp(CLAUDE)
+    t.engine.stop(); vi.advanceTimersByTime(90_000)
+    expect(old.disposed).toBe(true)
+    t.engine.speak({ text:'Nueva lectura.', voiceId:CLAUDE, id:'new' }); await flush()
+    const current = t.clients.last()
+    failOld(new Error('old worker was released'))
+    expect(await warming).toBe(false)
+    expect(current.disposed).toBe(false)
+    expect(t.engine.client).toBe(current)
+    expect(t.engine.run.voice.id).toBe(CLAUDE)
+    t.engine.stop()
+  })
+})
+
 describe('compute speed samples', () => {
   afterEach(() => vi.useRealTimers())
 

@@ -13,38 +13,123 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  unit:
+    name: Unit tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run test:unit
 
+  e2e:
+    name: Reader and bookshelf (${{ matrix.shard }}/6)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    env:
+      PLAYWRIGHT_SUITE: general
+      PLAYWRIGHT_PORT: 4283
+      PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-
-      - name: Unit tests (Vitest)
-        run: npm run test:unit
-
-      - name: E2E (Playwright, contra el build de producción)
-        # "pretest:e2e" (ver package.json) hace "vite build" antes de correr
-        # Playwright, así que esto ya prueba el bundle real de producción.
-        # Keep one software WebGL context active on this runner. Parallel
-        # rendering competes for its graphics process and stalls unrelated
-        # animation, screenshot and even pointer commands.
-        env:
-          PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
-        run: npm run test:e2e -- --workers=1 --reporter=list,json
-
-      - if: failure()
-        uses: actions/upload-artifact@v4
+      # Each shard has its own runner. Keep one software WebGL context active
+      # on that runner, while the six runners finish the complete UI suite.
+      # npm's pretest:e2e uses the same production build, including the legacy
+      # PDF chunk, as the actual Pages deployment.
+      - run: npm run test:e2e -- --workers=1 --shard=${{ matrix.shard }}/6 --reporter=list,json
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: playwright-report
+          name: playwright-ui-${{ matrix.shard }}
           path: |
             playwright-report
             test-results
           if-no-files-found: ignore
+
+  neural:
+    name: Real neural voices (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: engine
+            voices: es_MX-claude-high,en_US-lessac-medium
+          - suite: reading
+            voices: es_MX-claude-high,es_ES-davefx-medium
+          # Download the whole catalogue for the language job: new language
+          # cases must have real weights instead of disappearing via skip().
+          - suite: languages
+            voices: ''
+    env:
+      PLAYWRIGHT_SUITE: ${{ matrix.suite }}
+      PLAYWRIGHT_PORT: 4283
+      PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
+      NEURAL_VOICE_FIXTURES: ${{ github.workspace }}/.neural-fixtures.local
+      NEURAL_VOICE_EVIDENCE: ${{ github.workspace }}/test-results/neural-${{ matrix.suite }}
+      NEURAL_VOICE_IDLE: ${{ matrix.suite == 'reading' && '1' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - uses: actions/cache/restore@v4
+        id: voices-cache
+        with:
+          path: .neural-fixtures.local
+          key: neural-fixtures-v1-${{ matrix.suite }}-${{ hashFiles('src/js/readers/neural-voice/catalog.js', 'scripts/prepare-neural-fixtures.mjs', 'public/neural-voice/phon/*.json') }}
+      - name: Prepare and verify every required real model
+        env:
+          REQUIRED_VOICES: ${{ matrix.voices }}
+        run: |
+          if [ -n "$REQUIRED_VOICES" ]; then
+            node scripts/prepare-neural-fixtures.mjs --output "$NEURAL_VOICE_FIXTURES" --voices "$REQUIRED_VOICES"
+          else
+            node scripts/prepare-neural-fixtures.mjs --output "$NEURAL_VOICE_FIXTURES"
+          fi
+      # Persist verified weights before testing, even if a later regression
+      # fails: a failing browser test must not force a fresh model download.
+      - uses: actions/cache/save@v4
+        if: steps.voices-cache.outputs.cache-hit != 'true'
+        with:
+          path: .neural-fixtures.local
+          key: ${{ steps.voices-cache.outputs.cache-primary-key }}
+      - run: npm run test:e2e -- --workers=1 --reporter=list,json
+      - name: Require every real neural test to execute
+        if: always()
+        run: node scripts/check-neural-results.mjs "${{ matrix.suite }}" playwright-report/results.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-neural-${{ matrix.suite }}
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+
+  # Preserve the original overall check name, and fail if any shard or real
+  # voice job did not finish successfully.
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [unit, e2e, neural]
+    env:
+      UNIT_RESULT: ${{ needs.unit.result }}
+      UI_RESULT: ${{ needs.e2e.result }}
+      NEURAL_RESULT: ${{ needs.neural.result }}
+    steps:
+      - name: Require the complete production suite
+        run: test "$UNIT_RESULT" = success && test "$UI_RESULT" = success && test "$NEURAL_RESULT" = success

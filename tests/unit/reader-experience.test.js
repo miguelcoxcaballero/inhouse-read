@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ReaderExperience } from '../../src/js/readers/reader-experience.js'
-import { DEFAULT_READING_PREFERENCES, READING_THEMES, normalizeReadingPreferences, readingCSS } from '../../src/js/readers/reading-preferences.js'
+import { DEFAULT_READING_PREFERENCES, RATE_STEPS, READING_THEMES, nearestRate, rateLabel, normalizeReadingPreferences, readingCSS } from '../../src/js/readers/reading-preferences.js'
 
 vi.mock('../../src/js/readers/reading-voice.js', () => ({
   ReadingVoice:class { state = 'stopped'; stop = vi.fn() }
@@ -353,6 +353,51 @@ describe('search results', () => {
     experience.setPreference('footnotes', true)
     expect(experience.voice.restart).toHaveBeenCalledTimes(2)
     expect(experience.voice.stop).not.toHaveBeenCalled()
+  })
+})
+
+describe('audiobook speed choices', () => {
+  it('offers five fixed speeds with Spanish decimal labels', () => {
+    expect(RATE_STEPS).toEqual([0.75, 1, 1.25, 1.5, 2])
+    expect(RATE_STEPS.map(rateLabel)).toEqual(['0,75×', '1×', '1,25×', '1,5×', '2×'])
+    expect(Object.isFrozen(RATE_STEPS)).toBe(true)
+  })
+
+  it.each([[0.5,0.75], [0.8,0.75], [0.9,1], [1.2,1.25], [1.3,1.25], [1.6,1.5], [1.9,2], [3,2], [1.375,1.25], ['1.2',1.25]])('moves the saved rate %s to %s', (saved, expected) => {
+    expect(nearestRate(saved)).toBe(expected)
+    expect(normalizeReadingPreferences({ rate:saved }).rate).toBe(expected)
+  })
+
+  it.each([undefined, null, '', NaN, Infinity, 'invalid'])('defaults invalid saved rate %s to normal speed', saved => {
+    expect(nearestRate(saved)).toBe(1)
+  })
+
+  it('restores one selected radio and changes speed without resetting the language, voice or reading theme', async () => {
+    localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({ rate:1.3, voice:'es-device', voiceLang:'es', theme:'sepia' }))
+    const { experience, reader } = await setup()
+    const group = experience.panel.querySelector('[role="radiogroup"][aria-label="Velocidad"]')
+    expect([...group.querySelectorAll('input')].map(input => [input.type, input.value])).toEqual(RATE_STEPS.map(rate => ['radio', String(rate)]))
+    expect([...group.querySelectorAll('label')].map(label => label.textContent)).toEqual(RATE_STEPS.map(rateLabel))
+    expect(group.querySelectorAll('input:checked')).toHaveLength(1)
+    expect(group.querySelector('input:checked').value).toBe('1.25')
+    expect(experience.panel.querySelector('[data-pref="rate"]')).toBeNull()
+    expect(experience.languageMenu).toBeDefined()
+    expect(experience.voiceMenu).toBeDefined()
+
+    experience.voice.restart = vi.fn()
+    experience.voice.state = 'playing'
+    reader.applyPreferences.mockClear()
+    group.querySelector('input[value="1.5"]').click()
+    expect(experience.voice.rate).toBe(1.5)
+    expect(experience.voice.restart).toHaveBeenCalledOnce()
+    expect(experience.voice.stop).not.toHaveBeenCalled()
+    expect(reader.applyPreferences).not.toHaveBeenCalled()
+    expect(experience.miniPlayer.querySelector('[data-mini-status]').textContent).toBe('Leyendo · 1,5×')
+    expect(JSON.parse(localStorage.getItem('inhouse-read-reading-preferences'))).toMatchObject({ rate:1.5, voice:'es-device', voiceLang:'es', theme:'sepia' })
+    expect(group.querySelectorAll('input:checked')).toHaveLength(1)
+    expect(group.querySelector('input:checked').value).toBe('1.5')
+    group.querySelector('input[value="1.5"]').click()
+    expect(experience.voice.restart).toHaveBeenCalledOnce()
   })
 })
 

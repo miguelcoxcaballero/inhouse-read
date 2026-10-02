@@ -119,7 +119,7 @@ test('PDF: reaches the end of the book and says so', async ({ page }) => {
   await page.getByRole('combobox', { name:'Vista del PDF' }).selectOption('text')
   await page.getByRole('button', { name:'Cerrar opciones de lectura' }).click()
   await page.getByRole('button', { name:'Escuchar el libro' }).click()
-  await page.getByRole('slider', { name:'Velocidad de voz' }).fill('2')
+  await page.getByRole('radio', { name:'2×', exact:true }).check()
   await page.getByRole('button', { name:'Reproducir', exact:true }).click()
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 4 de 4/, { timeout:30_000 })
   await expect(page.locator('.reading-audio-status')).toHaveText('Final del libro.', { timeout:30_000 })
