@@ -77,7 +77,8 @@
 .ihr-plant-catalog__body--shelves > .ihr-plant-catalog__shelf-preview { height: auto; align-self: stretch; }
 .ihr-plant-catalog__shelf-preview { padding: 12px 18px; }
 .ihr-plant-catalog__shelf-drawing { height: min(47cqh,390px); border-radius: 2px; overflow: hidden; background: #eef0ef; }
-.ihr-plant-catalog__caption .ihr-plant-catalog__shelf-dimensions { margin-top: 6px; color: #111; font-size: 13px; font-weight: 700; }
+.ihr-plant-catalog__caption .ihr-plant-catalog__shelf-dimensions,
+.ihr-plant-catalog__caption .ihr-plant-catalog__plant-size { margin-top: 6px; color: #111; font-size: 13px; font-weight: 700; }
 .ihr-plant-catalog__shelf-choices { min-width: 0; padding: 16px 20px; margin: auto 0; border: 0; }
 .ihr-plant-catalog__shelf-choices legend { padding: 0; margin-bottom: 12px; font-size: 17px; font-weight: 700; }
 .ihr-plant-catalog__shelves { display: grid; gap: 10px; }
@@ -123,7 +124,8 @@
   .ihr-plant-catalog__shelf-preview { display: flex; flex-direction: column; height: auto; padding: 8px 6px; border-right: 1px solid #ddd; border-bottom: 0; }
   .ihr-plant-catalog__shelf-drawing { height: min(48cqh,350px); }
   .ihr-plant-catalog__shelf-preview .ihr-plant-catalog__caption { width: 100%; padding: 4px 0 0; text-align: center; }
-  .ihr-plant-catalog__caption .ihr-plant-catalog__shelf-dimensions { font-size: 10px; margin-top: 5px; }
+  .ihr-plant-catalog__caption .ihr-plant-catalog__shelf-dimensions,
+  .ihr-plant-catalog__caption .ihr-plant-catalog__plant-size { font-size: 10px; margin-top: 5px; }
   .ihr-plant-catalog__shelf-choices { padding: 8px; }
   .ihr-plant-catalog__shelf-choices legend { margin-bottom: 8px; font-size: 13px; }
   .ihr-plant-catalog__shelves { gap: 8px; }

@@ -6,6 +6,7 @@ import { LAMP_CATALOG, getCatalogLamp } from './lamp-catalog-data.js';
 import { lampCatalogIllustration } from './lamp-illustration.js';
 import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot, getPotColors, getPotColor } from './plant-catalog-data.js';
 import { SHELF_TYPES, getShelfType, normalizeShelfType } from './shelf-types.js';
+import { plantSizeLabel } from './plant-dimensions.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 let catalogSequence = 0;
@@ -164,7 +165,9 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
   const previewSubtitle = element('p');
   const previewPot = element('span','ihr-plant-catalog__pot-name');
   const previewColor = element('span','ihr-plant-catalog__color-caption');
-  previewCaption.append(previewName,previewSubtitle,previewPot,previewColor);
+  // Real IKEA size of this plant in this pot, in the style of the shelf's published measures.
+  const previewSize = element('p','ihr-plant-catalog__plant-size');
+  previewCaption.append(previewName,previewSubtitle,previewPot,previewColor,previewSize);
   preview.append(drawing,previewCaption);
   const choices = element('div','ihr-plant-catalog__choices');
   const plants = element('fieldset','ihr-plant-catalog__section');
@@ -292,6 +295,7 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
     previewSubtitle.textContent = plant?.subtitle || '';
     previewPot.textContent = pot?.name || '';
     previewColor.textContent = getPotColor(selectedPot,selectedColor).name;
+    previewSize.textContent = plantSizeLabel(selectedPlant,selectedPot);
     for (const [key, button] of plantButtons) {
       button.setAttribute('aria-pressed',String(key === selectedPlant)); button.disabled = busy;
     }

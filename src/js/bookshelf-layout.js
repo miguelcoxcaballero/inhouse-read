@@ -258,6 +258,7 @@ export const DEFAULT_LAYOUT = Object.freeze({
   tiltThreshold: 16, // px de hueco libre necesarios para que un libro se incline
   maxTilt: 8,        // grados
   spine: undefined,  // opciones para spineStyleFor
+  plantWidthFor: null, // ancho real de cada especie: (variante) => px
   displayWidthFor: null // ancho de celda distinto del grosor físico, si hace falta
 });
 
@@ -301,6 +302,8 @@ export function layoutShelves(books, options = {}) {
     shelf.items.push(item);
   };
 
+  // Cada especie ocupa su tamaño real (`plantWidthFor`); sin él, un ancho fijo.
+  const variantWidth = (variant) => cfg.plantWidthFor?.(variant) ?? cfg.plantWidth;
   const plantItem = (salt) => {
     const seed = `shelf-${shelf.index}-${shelf.items.length}-${salt}`;
     // Dos macetas pegadas no pueden ser la misma planta: canta a copia-pega.
@@ -312,7 +315,7 @@ export function layoutShelves(books, options = {}) {
     return {
       kind: 'plant',
       variant: pick(catalogue, seed, 'variant'),
-      width: cfg.plantWidth,
+      width: variantWidth(pick(catalogue, seed, 'variant')),
       seed
     };
   };
@@ -326,8 +329,9 @@ export function layoutShelves(books, options = {}) {
       // Una balda a medias (la última, normalmente) se remata con una o dos
       // macetas: un hueco pelado de media balda parece un error de pintado.
       for (let i = 0; i < cfg.maxTailPlants; i += 1) {
-        if (available - shelf.usedWidth < cfg.plantWidth + cfg.gap) break;
-        push(plantItem(`tail-${i}`));
+        const tail = plantItem(`tail-${i}`);
+        if (available - shelf.usedWidth < tail.width + cfg.gap) break;
+        push(tail);
       }
       sinceLastPlant = 0;
     } else if (
@@ -356,12 +360,9 @@ export function layoutShelves(books, options = {}) {
     const item = { kind: 'book', book, style, width: displayWidth, displayWidth, tilt: 0 };
 
     // ¿Toca maceta intercalada? Sólo si caben la maceta y el libro siguiente.
-    if (
-      sinceLastPlant >= cfg.plantEvery &&
-      shelf.items.length > 0 &&
-      shelf.usedWidth + cfg.gap + cfg.plantWidth + cfg.gap + item.width <= available
-    ) {
-      push(plantItem('mid'));
+    const midPlant = sinceLastPlant >= cfg.plantEvery && shelf.items.length > 0 ? plantItem('mid') : null;
+    if (midPlant && shelf.usedWidth + cfg.gap + midPlant.width + cfg.gap + item.width <= available) {
+      push(midPlant);
       sinceLastPlant = 0;
     }
 
