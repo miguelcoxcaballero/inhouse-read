@@ -222,9 +222,10 @@ describe('actual rendered reading page snapshots', () => {
 
   it('keeps an emoji sequence in one piece even when the word has to be spread character by character', async () => {
     charWidth = 10
-    // "👍🏽 ab": the thumb and its skin tone (two code points, two UTF-16 units each) are 50 px wide in the page but 40 in the font.
+    // "👍🏽 ab": the thumb and its skin tone (two code points, two UTF-16 units each) are one 50 px glyph in the page
+    // (each reports the rect of the whole glyph) but 40 px of characters in the font.
     const { painted } = await paint('<article><p>👍🏽 ab</p></article>',
-      [[[0,25]],[[0,25]],[[25,25]],[[25,25]],[[50,40]],[[90,10]],[[100,10]]])
+      [[[0,50]],[[0,50]],[[0,50]],[[0,50]],[[50,40]],[[90,10]],[[100,10]]])
     expect(asCalls(painted)).toEqual([['👍🏽',0],['ab',90]])
   })
 
