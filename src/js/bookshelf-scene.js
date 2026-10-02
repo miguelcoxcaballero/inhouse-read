@@ -156,8 +156,7 @@ function walnutTexture(url, renderer, colour, mean, onLoad) {
   // Geometry UVs repeat every 160 shelf pixels. The seamless photograph is a
   // ~32 cm flitch of veneer, so it spans two repeats and its figure reads true.
   map.repeat.set(.5, .5);
-  // The camera is orthographic and the steepest foreshortening is about 4:1.
-  map.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+  map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   return map;
 }
 
@@ -267,7 +266,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     lift:{ value:0, from:0, target:0, started:0 }, landing:null, offset:{ x:0, y:0 }, preview:freshPreview(), state:'', rect:null, hitRect:null, insertion:null,
     overview:false, inspectionResolution:0, qualityReplacement:false, replacementReady:false,
     // Per-frame caches of what the DOM said last time (see stateFor, hitSurface, project).
-    classText:null, flags:NO_FLAGS, dragX:'', dragY:'', stateText:'', hitModel:null, hitSurface:null, fallbackFor:null, fallbackBox:null,
+    classText:null, flags:NO_FLAGS, dragX:'', dragY:'', stateText:'', fallbackFor:null, fallbackBox:null,
     written:null, seen:0, domDirty:true });
   let bookEntries = entries.map(freshEntry);
   const byNode = new Map(bookEntries.filter(entry => entry.node).map(entry => [entry.node, entry]));
@@ -461,8 +460,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function hitSurface(entry, name) {
     const model = entry.model;
     if (!model) return undefined;
-    if (entry.hitModel !== model || !entry.hitSurface?.parent) { entry.hitSurface = model.getObjectByName(name); entry.hitModel = model; }
-    return entry.hitSurface;
+    // Cached on the model itself, so a released model is never kept alive by its entry.
+    const cached = model.userData.hitSurface;
+    if (cached?.parent && cached.name === name) return cached;
+    return model.userData.hitSurface = model.getObjectByName(name);
   }
   // The stand-in hit box of a culled model only changes with its slot box.
   function fallbackBox(entry, plant, lamp) {
@@ -505,7 +506,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     model.traverse(object => {
       for (const material of Array.isArray(object.material) ? object.material : object.material ? [object.material] : [])
         for (const key of ['map','normalMap','bumpMap','roughnessMap'])
-          if (material[key]) material[key].anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+          if (material[key]) material[key].anisotropy = Math.min(16,renderer.capabilities.getMaxAnisotropy());
     });
     model.userData.entry = entry;
     model.traverse(object => {
@@ -769,7 +770,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       cancelReplacement(entry); return;
     }
     if (!entry.qualityReplacement || !entry.replacementReady || entry.trashDrop || entry.insertion ||
-      entry.flags.away || entry.flags.dragging) return;
+      entry.node?.classList.contains('is-away') || entry.node?.classList.contains('is-dragging')) return;
     const previous = entry.model;
     entry.model = entry.replacement; entry.replacement = null;
     entry.qualityReplacement = false; entry.replacementReady = false;
