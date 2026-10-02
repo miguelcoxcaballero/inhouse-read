@@ -538,7 +538,7 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
       if (transition) await transition.onReaderError?.()
     }
     if (err instanceof UnsupportedFormatError) {
-      alert(`"${file.name}" no es un formato soportado. Formatos válidos: PDF, EPUB, MOBI, AZW3, FB2, CBZ.`)
+      alert(`Formato no admitido: "${file.name}". Usa PDF, EPUB, MOBI, AZW3, FB2 o CBZ.`)
     } else {
       alert(`No se pudo abrir "${file.name}": ${err.message}`)
       console.error(err)
@@ -854,7 +854,7 @@ async function uploadBookToDrive(book) {
     const updated = await cloudSync.uploadBook(book)
     if (!updated) return null
     await cloudSync.flushProgress(updated.id)
-    setDriveSyncStatus('Sincronizado con Google Drive')
+    setDriveSyncStatus('Sincronizado')
     return updated
   } finally {
     driveUploadsInFlight = Math.max(0, driveUploadsInFlight - 1)
@@ -930,7 +930,7 @@ async function syncLibraryToDrive({ silent = false } = {}) {
   const profile = await loadDriveAccountProfile()
   if (!profile) {
     if (silent) return
-    throw new Error('La sesión de Google ha caducado. Pulsa Conectar.')
+    throw new Error('Sesión caducada. Pulsa Conectar.')
   }
   try { await restoreLegacyBookBytes(library) }
   catch (error) { console.warn('No se pudieron recuperar libros antiguos de la carpeta local:', error) }
@@ -950,7 +950,7 @@ function showAuthNotice(message, { retry = false, pending = false } = {}) {
 
 async function connectGoogleAccount() {
   els.driveConnectBtn.disabled = true
-  showAuthNotice('Completa el acceso en Google. Tu biblioteca aparecerá al volver.', { pending: true })
+  showAuthNotice('Completa el acceso en Google.', { pending: true })
   try {
     await requestDriveAccess()
     showAuthNotice('')
@@ -973,10 +973,10 @@ globalThis.addEventListener('inhouse-drive-auth', event => {
 async function reportDriveConnectionError(error) {
   if (error?.code === 'ANDROID_SHELL_OUTDATED') {
     if (await offerAvailableAndroidUpdate()) return
-    showAuthNotice('Actualiza la app Android para conectar con Google Drive.', { retry: true })
+    showAuthNotice('Actualiza la app para conectar Drive.', { retry: true })
     return
   }
-  showAuthNotice(error.message === 'Conexión cancelada.' ? '' : `No se pudo conectar con Google Drive. ${error.message}`, { retry: true })
+  showAuthNotice(error.message === 'Conexión cancelada.' ? '' : `No se pudo conectar. ${error.message}`, { retry: true })
 }
 els.driveThemeToggle.addEventListener('change', () => {
   const theme = els.driveThemeToggle.checked ? 'dark' : 'light'
@@ -1166,7 +1166,7 @@ async function loadDriveFiles() {
     if (!hasDriveSession()) await requestDriveAccess()
     await loadDriveAccountProfile()
     const files = await listAllDriveBooks()
-    els.driveStatus.textContent = files.length ? '' : 'No se encontraron libros en tu Drive.'
+    els.driveStatus.textContent = files.length ? '' : 'Sin libros en Drive.'
     for (const f of files) {
       const item = document.createElement('button')
       item.type = 'button'
@@ -1198,7 +1198,7 @@ async function loadDriveFiles() {
       els.driveModal.hidden = true
     } else {
       els.driveStatus.textContent = err?.code === 'ANDROID_SHELL_OUTDATED'
-        ? 'La actualización de Android para Google Drive aún no está publicada. Usa la versión web por ahora.'
+        ? 'Drive aún no está disponible en Android. Usa la web.'
         : `No se pudo conectar con Drive: ${err.message}`
     }
   }
@@ -1210,7 +1210,7 @@ initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
 els.appVersion.textContent = 'Inhouse Read · v1.7.4'
 els.addDriveBtn.disabled = !isDriveConfigured()
-els.addDriveBtn.title = isDriveConfigured() ? '' : 'Google Drive no está disponible'
+els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')
 refreshShelf()
 loadDriveAccountProfile().catch(error => console.warn('No se pudo restaurar la cuenta:', error))

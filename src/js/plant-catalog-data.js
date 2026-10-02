@@ -3,14 +3,14 @@ import { PLANT_SIZES, POT_SIZES, plantDimensions } from './plant-dimensions.js';
 /** `width` and `height` are the real IKEA size in millimetres (the standard
  * class shown on the shelf); the table lives in plant-dimensions.js. */
 const PLANT_REFERENCES = Object.freeze([
-  { id:'sansevieria', name:'SANSEVIERIA', subtitle:'Lengua de suegra · hojas verticales', variant:'sansevieria', defaultPotId:'muskot', referenceUrl:'https://www.ikea.com/es/es/p/sansevieria-planta-mezcla-especies-plantas-50597549/' },
-  { id:'monstera', name:'MONSTERA DELICIOSA', subtitle:'Cerimán · hojas recortadas', variant:'monstera', defaultPotId:'gradvis', referenceUrl:'https://www.ikea.com/es/es/p/monstera-deliciosa-planta-ceriman-50515493/' },
-  { id:'chamaedorea', name:'CHAMAEDOREA ELEGANS', subtitle:'Palmera de salón · frondas finas', variant:'chamaedorea', defaultPotId:'muskot', referenceUrl:'https://www.ikea.com/es/es/p/chamaedorea-elegans-planta-palmera-salon-90392763/' },
-  { id:'nephrolepis', name:'NEPHROLEPIS', subtitle:'Helecho · frondas arqueadas', variant:'nephrolepis', defaultPotId:'akerbar', referenceUrl:'https://www.ikea.com/es/es/p/nephrolepis-planta-helecho-00630773/' },
-  { id:'hedera', name:'HEDERA HELIX', subtitle:'Hiedra · ramas colgantes', variant:'hedera', defaultPotId:'muskotblomma', referenceUrl:'https://www.ikea.com/es/es/p/hedera-helix-planta-hiedra-66804047/' },
-  { id:'zamioculcas', name:'ZAMIOCULCAS', subtitle:'Tallos erguidos · hojas brillantes', variant:'zamioculcas', defaultPotId:'gradvis', referenceUrl:'https://www.ikea.com/es/es/p/zamioculcas-planta-zamioculcas-50598681/' },
-  { id:'succulent', name:'SUCCULENT', subtitle:'Suculenta · roseta carnosa', variant:'succulent', defaultPotId:'muskotblomma', referenceUrl:'https://www.ikea.com/es/es/p/succulent-planta-mezcla-especies-plantas-suculenta-10311006/' },
-  { id:'cactus', name:'FEJKA', subtitle:'Cactus · columnas y espinas', variant:'cactus', defaultPotId:'akerbar', referenceUrl:'https://www.ikea.com/es/es/p/fejka-planta-artificial-interior-exterior-cactus-60587154/' },
+  { id:'sansevieria', name:'SANSEVIERIA', subtitle:'Lengua de suegra', variant:'sansevieria', defaultPotId:'muskot', referenceUrl:'https://www.ikea.com/es/es/p/sansevieria-planta-mezcla-especies-plantas-50597549/' },
+  { id:'monstera', name:'MONSTERA DELICIOSA', subtitle:'Cerimán', variant:'monstera', defaultPotId:'gradvis', referenceUrl:'https://www.ikea.com/es/es/p/monstera-deliciosa-planta-ceriman-50515493/' },
+  { id:'chamaedorea', name:'CHAMAEDOREA ELEGANS', subtitle:'Palmera de salón', variant:'chamaedorea', defaultPotId:'muskot', referenceUrl:'https://www.ikea.com/es/es/p/chamaedorea-elegans-planta-palmera-salon-90392763/' },
+  { id:'nephrolepis', name:'NEPHROLEPIS', subtitle:'Helecho', variant:'nephrolepis', defaultPotId:'akerbar', referenceUrl:'https://www.ikea.com/es/es/p/nephrolepis-planta-helecho-00630773/' },
+  { id:'hedera', name:'HEDERA HELIX', subtitle:'Hiedra', variant:'hedera', defaultPotId:'muskotblomma', referenceUrl:'https://www.ikea.com/es/es/p/hedera-helix-planta-hiedra-66804047/' },
+  { id:'zamioculcas', name:'ZAMIOCULCAS', subtitle:'Planta ZZ', variant:'zamioculcas', defaultPotId:'gradvis', referenceUrl:'https://www.ikea.com/es/es/p/zamioculcas-planta-zamioculcas-50598681/' },
+  { id:'succulent', name:'SUCCULENT', subtitle:'Suculenta', variant:'succulent', defaultPotId:'muskotblomma', referenceUrl:'https://www.ikea.com/es/es/p/succulent-planta-mezcla-especies-plantas-suculenta-10311006/' },
+  { id:'cactus', name:'FEJKA', subtitle:'Cactus', variant:'cactus', defaultPotId:'akerbar', referenceUrl:'https://www.ikea.com/es/es/p/fejka-planta-artificial-interior-exterior-cactus-60587154/' },
 ]);
 
 export const PLANT_CATALOG = Object.freeze(PLANT_REFERENCES.map(plant => {
@@ -20,10 +20,10 @@ export const PLANT_CATALOG = Object.freeze(PLANT_REFERENCES.map(plant => {
 }));
 
 const POT_REFERENCES = Object.freeze([
-  { id:'muskot', name:'MUSKOT', subtitle:'Cerámica blanca · anillos horizontales', referenceUrl:'https://www.ikea.com.tr/en/product/muskot-white-12-cm-earthenware-plant-pot-50308196' },
-  { id:'muskotblomma', name:'MUSKOTBLOMMA', subtitle:'Terracota · maceta con plato', referenceUrl:'https://www.ikea.com/es/es/p/muskotblomma-maceta-con-plato-interior-exterior-terracota-00454883/' },
-  { id:'akerbar', name:'ÅKERBÄR', subtitle:'Acero galvanizado · borde enrollado', referenceUrl:'https://www.ikea.com/es/es/p/akerbar-macetero-interior-exterior-galvanizado-50497696/' },
-  { id:'gradvis', name:'GRADVIS', subtitle:'Gres rosa · estrías verticales', referenceUrl:'https://www.ikea.com/es/es/p/gradvis-macetero-rosa-60414078/' },
+  { id:'muskot', name:'MUSKOT', subtitle:'Cerámica blanca', referenceUrl:'https://www.ikea.com.tr/en/product/muskot-white-12-cm-earthenware-plant-pot-50308196' },
+  { id:'muskotblomma', name:'MUSKOTBLOMMA', subtitle:'Terracota con plato', referenceUrl:'https://www.ikea.com/es/es/p/muskotblomma-maceta-con-plato-interior-exterior-terracota-00454883/' },
+  { id:'akerbar', name:'ÅKERBÄR', subtitle:'Acero galvanizado', referenceUrl:'https://www.ikea.com/es/es/p/akerbar-macetero-interior-exterior-galvanizado-50497696/' },
+  { id:'gradvis', name:'GRADVIS', subtitle:'Gres rosa', referenceUrl:'https://www.ikea.com/es/es/p/gradvis-macetero-rosa-60414078/' },
 ]);
 
 export const POT_CATALOG = Object.freeze(POT_REFERENCES.map(pot => Object.freeze({ ...pot,

@@ -83,8 +83,8 @@ function requestWebDriveAccess() {
   const oauth = globalThis.google?.accounts?.oauth2
   if (!oauth?.initTokenClient) {
     throw new Error(navigator.onLine === false
-      ? 'Conéctate a Internet para acceder a Google Drive.'
-      : 'Google aún está cargando. Vuelve a pulsar Conectar.')
+      ? 'Sin conexión a Internet.'
+      : 'Google está cargando. Pulsa Conectar otra vez.')
   }
   return new Promise((resolve, reject) => {
     const generation = authGeneration
@@ -111,10 +111,10 @@ function requestWebDriveAccess() {
       },
       error_callback: error => {
         const messages = {
-          popup_closed: 'Se cerró la ventana de Google. Puedes volver a conectar.',
-          popup_failed_to_open: 'El navegador bloqueó la ventana de Google. Permite las ventanas emergentes y vuelve a conectar.'
+          popup_closed: 'Se cerró la ventana de Google. Pulsa Conectar.',
+          popup_failed_to_open: 'Ventana de Google bloqueada. Permite las ventanas emergentes.'
         }
-        finish(null, new Error(messages[error?.type] || 'No se pudo abrir el acceso a Google. Vuelve a intentarlo.'))
+        finish(null, new Error(messages[error?.type] || 'No se pudo abrir Google. Reintenta.'))
       }
     })
     // This runs in the original button click, before an await can lose the
@@ -156,7 +156,7 @@ async function tokenRequest(body, generation = authGeneration) {
     })
     data = await response.json()
   } catch (error) {
-    if (controller.signal.aborted) throw new Error('Google tardó demasiado en responder. Vuelve a intentarlo.')
+    if (controller.signal.aborted) throw new Error('Google tardó demasiado. Reintenta.')
     throw error
   } finally { clearTimeout(timeout) }
   if (generation !== authGeneration) throw new Error('Sesión cerrada.')
@@ -172,7 +172,7 @@ async function tokenRequest(body, generation = authGeneration) {
 
 async function refreshDriveAccessToken() {
   const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)
-  if (!refreshToken) throw new Error('La sesión de Google ha caducado. Pulsa Conectar para continuar.')
+  if (!refreshToken) throw new Error('Sesión caducada. Pulsa Conectar.')
   const body = new URLSearchParams({ client_id: ANDROID_OAUTH_CLIENT_ID, grant_type: 'refresh_token', refresh_token: refreshToken })
   try { return await tokenRequest(body) }
   catch (error) {
@@ -219,11 +219,11 @@ async function requestNativeDriveAccess(interactive) {
     try { return await refreshDriveAccessToken() }
     catch (error) { if (!interactive || generation !== authGeneration) throw error }
   }
-  if (!interactive) throw new Error('La sesión de Google ha caducado. Pulsa Conectar para continuar.')
+  if (!interactive) throw new Error('Sesión caducada. Pulsa Conectar.')
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       if (nativeRequest?.generation !== generation) return
-      cancelDriveConnection('La conexión con Google ha caducado. Vuelve a intentarlo.')
+      cancelDriveConnection('La conexión con Google caducó. Reintenta.')
     }, AUTH_TIMEOUT_MS)
     const finish = fn => value => { clearTimeout(timer); fn(value) }
     const pending = { resolve: finish(resolve), reject: finish(reject), generation }
@@ -256,12 +256,12 @@ globalThis.handleInhouseNativeOAuth = payload => {
   const verifier = localStorage.getItem(PKCE_VERIFIER_KEY)
   localStorage.removeItem(PKCE_VERIFIER_KEY)
   if (Date.now() - transaction.createdAt > AUTH_TIMEOUT_MS) {
-    finishError(new Error('La conexión con Google ha caducado. Vuelve a intentarlo.'))
+    finishError(new Error('La conexión con Google caducó. Reintenta.'))
     return true
   }
   if (params.get('error')) {
     finishError(new Error(params.get('error') === 'access_denied'
-      ? 'No se ha autorizado la conexión con Google.' : 'Google no pudo completar la conexión. Vuelve a intentarlo.'))
+      ? 'No se ha autorizado la conexión con Google.' : 'No se pudo conectar con Google. Reintenta.'))
     return true
   }
   const code = params.get('code')
@@ -299,12 +299,12 @@ export function requestDriveAccess({ interactive = true } = {}) {
   if (restoreToken()) return Promise.resolve(currentToken)
   if (authPromise) return authPromise
   if (isNativeShell() && !hasNativeAuthBridge()) {
-    const error = new Error('Esta versión de Android no incluye el acceso nativo a Google Drive.')
+    const error = new Error('Esta versión de Android no admite Drive.')
     error.code = 'ANDROID_SHELL_OUTDATED'
     return Promise.reject(error)
   }
   if (!interactive && !hasNativeAuthBridge()) {
-    return Promise.reject(new Error('La sesión de Google ha caducado. Pulsa Conectar para continuar.'))
+    return Promise.reject(new Error('Sesión caducada. Pulsa Conectar.'))
   }
   try {
     authPromise = Promise.resolve(hasNativeAuthBridge()

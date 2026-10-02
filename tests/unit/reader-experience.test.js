@@ -187,7 +187,7 @@ describe('reader appearance and compact location', () => {
     expect(document.querySelectorAll('#reader-rotate')).toHaveLength(1)
     expect(rotate.onclick).toBeTypeOf('function')
     const contents = experience.panel.querySelector('#reading-more #reader-toc-shortcut')
-    expect(contents?.textContent).toBe('Índice, marcadores y citas')
+    expect(contents?.textContent).toBe('Contenido')
     expect(document.querySelectorAll('#reader-toc-shortcut')).toHaveLength(1)
     expect(contents.onclick).toBeTypeOf('function')
   })

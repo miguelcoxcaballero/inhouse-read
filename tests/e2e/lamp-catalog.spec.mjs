@@ -82,7 +82,7 @@ test('añadir cada diseño conserva las tres lámparas al recargar y al cambiar 
   for (const [index,lampId] of ['mittled','tarnaby','tripod'].entries()) {
     const dialog = await openLights(page);
     await dialog.locator(`[data-catalog-lamp="${lampId}"]`).click();
-    await dialog.getByRole('button',{ name:'Añadir a la estantería' }).click();
+    await dialog.getByRole('button',{ name:'Añadir', exact:true }).click();
     await expect(dialog).toBeHidden();
     await expect(page.locator('.ihr-lamp')).toHaveCount(index + 1);
     await expect(page.locator(`.ihr-lamp[data-lamp-id="${lampId}"]`)).toHaveCount(1);
@@ -99,7 +99,7 @@ test('añadir cada diseño conserva las tres lámparas al recargar y al cambiar 
   const dialog = await openLights(page);
   await dialog.getByRole('button',{ name:'Estanterías',exact:true }).click();
   await dialog.locator('[data-catalog-shelf="baggebo"]').click();
-  await dialog.getByRole('button',{ name:'Usar esta estantería' }).click();
+  await dialog.getByRole('button',{ name:'Usar', exact:true }).click();
   await expect(dialog).toBeHidden();
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-shelf-type','baggebo');
   await expect(page.locator('.ihr-lamp')).toHaveCount(3);

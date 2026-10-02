@@ -143,7 +143,7 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
   closeButton.type = 'button'; closeButton.setAttribute('aria-label','Cerrar catálogo');
   closeButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6L6 18"/></svg>';
   header.append(brand,title,closeButton);
-  const description = element('p','ihr-plant-catalog__description','Elige una planta y una maceta para tu estantería.');
+  const description = element('p','ihr-plant-catalog__description','Planta, maceta y color'); description.hidden = true;
   description.id = `${id}-description`;
   const navigation = element('nav','ihr-plant-catalog__navigation');
   navigation.setAttribute('aria-label','Páginas del catálogo IKEA');
@@ -171,15 +171,15 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
   preview.append(drawing,previewCaption);
   const choices = element('div','ihr-plant-catalog__choices');
   const plants = element('fieldset','ihr-plant-catalog__section');
-  const plantsLegend = element('legend'); plantsLegend.innerHTML = '<span class="ihr-plant-catalog__step">1</span> Elige la planta';
+  const plantsLegend = element('legend'); plantsLegend.innerHTML = '<span class="ihr-plant-catalog__step">1</span> Planta';
   const plantList = element('div','ihr-plant-catalog__plants');
   plants.append(plantsLegend,plantList);
   const pots = element('fieldset','ihr-plant-catalog__section ihr-plant-catalog__section--pots');
-  const potsLegend = element('legend'); potsLegend.innerHTML = '<span class="ihr-plant-catalog__step">2</span> Elige la maceta';
+  const potsLegend = element('legend'); potsLegend.innerHTML = '<span class="ihr-plant-catalog__step">2</span> Maceta';
   const potList = element('div','ihr-plant-catalog__pots');
   pots.append(potsLegend,potList);
   const colors = element('fieldset','ihr-plant-catalog__section ihr-plant-catalog__section--colors');
-  const colorsLegend = element('legend'); colorsLegend.innerHTML = '<span class="ihr-plant-catalog__step">3</span> Elige el color';
+  const colorsLegend = element('legend'); colorsLegend.innerHTML = '<span class="ihr-plant-catalog__step">3</span> Color';
   const colorList = element('div','ihr-plant-catalog__colors');
   colors.append(colorsLegend,colorList);
   choices.append(plants,pots,colors);
@@ -197,8 +197,7 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
   const shelfChoices = element('fieldset','ihr-plant-catalog__shelf-choices');
   const shelfLegend = element('legend',null,'Estantería');
   const shelfList = element('div','ihr-plant-catalog__shelves');
-  const shelfNote = element('p','ihr-plant-catalog__shelf-note','Libros y plantas se recolocan.');
-  shelfChoices.append(shelfLegend,shelfList,shelfNote);
+  shelfChoices.append(shelfLegend,shelfList);
   shelfBody.append(shelfPreview,shelfChoices);
   const lampBody = element('div','ihr-plant-catalog__body ihr-plant-catalog__body--lights');
   lampBody.id = `${id}-lights`; lampBody.hidden = true;
@@ -214,13 +213,12 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
   const lampChoices = element('fieldset','ihr-plant-catalog__lamp-choices');
   const lampLegend = element('legend',null,'Lámpara');
   const lampList = element('div','ihr-plant-catalog__lamps');
-  const lampNote = element('p','ihr-plant-catalog__lamp-note','Toca una lámpara para encenderla.');
-  lampChoices.append(lampLegend,lampList,lampNote);
+  lampChoices.append(lampLegend,lampList);
   lampBody.append(lampPreview,lampChoices);
   const footer = element('footer','ihr-plant-catalog__footer');
   const status = element('p','ihr-plant-catalog__status');
   status.setAttribute('role','status'); status.setAttribute('aria-live','polite');
-  const add = element('button','ihr-plant-catalog__add','Añadir a la estantería');
+  const add = element('button','ihr-plant-catalog__add','Añadir');
   add.type = 'button'; add.dataset.catalogAdd = '';
   const pageNumber = element('span','ihr-plant-catalog__page-number','01 / 03');
   pageNumber.setAttribute('aria-hidden','true');
@@ -263,8 +261,7 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
     dialog.dataset.catalogPage = activePage;
     body.hidden = activePage !== 'plants'; shelfBody.hidden = !shelfPage; lampBody.hidden = !lampPage;
     title.textContent = shelfPage ? 'ESTANTERÍAS' : lampPage ? 'ILUMINACIÓN' : 'PLANTAS';
-    description.textContent = shelfPage ? 'Elige el mueble para tu biblioteca.' : lampPage
-      ? 'Dale una luz cálida a tu rincón de lectura.' : 'Elige una planta y una maceta para tu estantería.';
+    description.textContent = shelfPage ? 'Estantería' : lampPage ? 'Lámpara' : 'Planta, maceta y color';
     pageNumber.textContent = shelfPage ? '02 / 03' : lampPage ? '03 / 03' : '01 / 03';
     for (const [page,button] of pageButtons) {
       button.setAttribute('aria-pressed',String(page === activePage)); button.disabled = busy;
@@ -273,9 +270,9 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
     shelfPreview3d?.update({ shelfType:selectedShelf });
     lampPreview3d?.update({ lampId:selectedLamp });
     lampName.textContent = lamp?.name || '';
-    lampSubtitle.textContent = lamp?.description || lamp?.subtitle || '';
-    lampWarmth.textContent = `Luz cálida · ${lamp?.warmKelvin || 2700} K`;
-    lampMount.textContent = lamp?.mount === 'undershelf' ? 'Se fija bajo la balda superior' : 'Se apoya sobre la balda';
+    lampSubtitle.textContent = lamp?.subtitle || '';
+    lampWarmth.textContent = `${lamp?.warmKelvin || 2700} K`;
+    lampMount.textContent = lamp?.mount === 'undershelf' ? 'Bajo la balda' : 'Sobre la balda';
     for (const [lampId,button] of lampButtons) {
       button.setAttribute('aria-pressed',String(lampId === selectedLamp)); button.disabled = busy;
     }
@@ -283,10 +280,10 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
     shelfSubtitle.textContent = selectedType.subtitle;
     shelfDimensions.textContent = selectedType.dimensions
       ? `${selectedType.dimensions.width / 10} × ${selectedType.dimensions.depth / 10} × ${selectedType.dimensions.height / 10} cm`
-      : 'Se adapta a tu biblioteca';
+      : 'A medida';
     for (const [type,button] of shelfButtons) {
       button.setAttribute('aria-pressed',String(type === selectedShelf)); button.disabled = busy;
-      button.querySelector('.ihr-plant-catalog__shelf-current').textContent = type === savedShelf ? 'Estantería actual' : '';
+      button.querySelector('.ihr-plant-catalog__shelf-current').textContent = type === savedShelf ? 'Actual' : '';
     }
     for (const button of colorList.querySelectorAll('button')) {
       button.setAttribute('aria-pressed',String(button.dataset.catalogColor === selectedColor)); button.disabled = busy;
@@ -304,7 +301,7 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
     }
     add.disabled = busy || (shelfPage ? typeof onShelfChange !== 'function'
       : lampPage ? !lamp || typeof onAddLamp !== 'function' : !plant || !pot || typeof onAdd !== 'function');
-    add.textContent = shelfPage ? (busy ? 'Cambiando…' : 'Usar esta estantería') : (busy ? 'Añadiendo…' : 'Añadir a la estantería');
+    add.textContent = shelfPage ? (busy ? 'Cambiando…' : 'Usar') : (busy ? 'Añadiendo…' : 'Añadir');
     if (shelfPage) add.dataset.catalogShelfAdd = '';
     else delete add.dataset.catalogShelfAdd;
     if (lampPage) add.dataset.catalogLampAdd = '';
@@ -354,7 +351,7 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
     const caption = element('span','ihr-plant-catalog__shelf-option-caption');
     const dimensions = type.dimensions
       ? `${type.dimensions.width / 10} × ${type.dimensions.depth / 10} × ${type.dimensions.height / 10} cm`
-      : 'Tamaño adaptable';
+      : 'A medida';
     caption.append(element('strong',null,type.name),element('span',null,type.subtitle),element('span',null,dimensions),element('span','ihr-plant-catalog__shelf-current'));
     button.append(icon,caption);
     button.addEventListener('click',() => {
@@ -371,7 +368,7 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
     const icon = element('span','ihr-plant-catalog__lamp-icon');
     icon.innerHTML = lampCatalogIllustration(lamp.id);
     const caption = element('span','ihr-plant-catalog__lamp-option-caption');
-    caption.append(element('strong',null,lamp.name),element('span',null,lamp.subtitle || lamp.description),
+    caption.append(element('strong',null,lamp.name),element('span',null,lamp.subtitle),
       element('span','ihr-plant-catalog__lamp-installation',lamp.mount === 'undershelf' ? 'Bajo la balda' : 'Sobre la balda'));
     button.append(icon,caption);
     button.addEventListener('click',() => {
@@ -445,8 +442,8 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
     } catch {
       if (!destroyed) {
         status.dataset.error = 'true';
-        status.textContent = shelfPage ? 'No se pudo cambiar la estantería. Vuelve a intentarlo.' : lampPage
-          ? 'No se pudo añadir la lámpara. Vuelve a intentarlo.' : 'No se pudo añadir la planta. Vuelve a intentarlo.';
+        status.textContent = shelfPage ? 'No se pudo cambiar. Reintenta.' : lampPage
+          ? 'No se pudo añadir. Reintenta.' : 'No se pudo añadir. Reintenta.';
       }
     } finally {
       busy = false;

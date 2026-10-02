@@ -166,12 +166,12 @@ const ICONS = Object.freeze({
   brush: ['m9.06 11.9 8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08', 'M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02Z']
 });
 export const DEFAULT_TEXTS = Object.freeze({
-  shelfLabel: 'Tu estantería',
-  emptyTitle: 'Tu estantería está vacía',
-  emptyBody: 'Añade tu primer libro.',
+  shelfLabel: 'Estantería',
+  emptyTitle: 'Sin libros',
+  emptyBody: '',
   addLocal: 'Añadir libro',
   addDrive: 'Drive',
-  emptyAction: 'Añadir tu primer libro',
+  emptyAction: 'Añadir libro',
   openAction: 'Abrir',
   tapCover: (book) => `Toca para leer ${book.title ?? 'este libro'}`,
   closeAction: 'Cerrar',
@@ -385,7 +385,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   const trashNode = hasTrash ? el('div', {
     class:'ihr-shelf-trash', role:'img',
     'aria-label':'Papelera: arrastra un libro, una planta o una lámpara para retirarlos de la estantería',
-    title:'Retirar de la estantería. El archivo original se conserva en Drive o en tu dispositivo.'
+    title:'Retirar de la estantería'
   }, [
     el('span', { class:'ihr-shelf-trash__body', 'aria-hidden':'true' }),
     el('span', { class:'ihr-shelf-trash__lid', 'aria-hidden':'true' }),
@@ -683,7 +683,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         type: 'button',
         class: 'ihr-btn',
         disabled: options.driveAvailable === false,
-        title: options.driveAvailable === false ? 'Drive no está configurado' : null,
+        title: options.driveAvailable === false ? 'Drive no disponible' : null,
         onClick: () => onDrive()
       });
       button.append(
@@ -705,7 +705,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       'aria-label': 'Preparando tu estantería'
     }, [
       el('span', { class: 'ihr-library-loading__spinner', 'aria-hidden': 'true' }),
-      el('span', { text: 'Preparando tu estantería…' })
+      el('span', { text: 'Cargando…' })
     ]);
   }
 
@@ -748,7 +748,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     node.dataset.lampOn = String(isOn);
     node.setAttribute('aria-pressed', String(isOn));
     node.setAttribute('aria-label', `${isOn ? 'Apagar' : 'Encender'} lámpara ${lamp.name}`);
-    node.title = `${lamp.name} · Toca para ${isOn ? 'apagar' : 'encender'} · Mantén pulsado para mover`;
+    node.title = `${lamp.name} · ${isOn ? 'Apagar' : 'Encender'}`;
   }
 
   function toggleLamp(node) {
@@ -761,7 +761,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     catch {
       state.lamps = previous;
       if (trashStatus) {
-        trashStatus.textContent = 'No se pudo guardar el estado de la lámpara. Vuelve a intentarlo.';
+        trashStatus.textContent = 'No se pudo guardar la lámpara. Reintenta.';
         trashStatus.classList.add('is-error');
       }
       return;
@@ -773,9 +773,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   async function addCatalogLamp({ lampId }) {
     if (state.destroyed || state.busy || state.session || state.dragSession || state.returnMotion)
-      throw new Error('Espera a que termine la animación y vuelve a intentarlo.');
+      throw new Error('Espera a que termine la animación.');
     const lamp = getCatalogLamp(lampId);
-    if (!lamp) throw new Error('Elige una lámpara del catálogo.');
+    if (!lamp) throw new Error('Elige una lámpara.');
     const key = `lamp:${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
     const record = normalizeShelfLamp({ key, seed:key, lampId:lamp.id, shelf:0,
       ...(lamp.mount === 'undershelf' ? { x:.5 } : {}) });
@@ -785,7 +785,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       .map(item => [item.key, { shelf:item.shelf, x:item.x }]));
     state.lamps = [...previous, record].map(item => ({ ...item, ...positions.get(item.key) }));
     try { saveLamps({ strict:true }); }
-    catch (error) { state.lamps = previous; throw new Error('No se pudo guardar la lámpara. Vuelve a intentarlo.', { cause:error }); }
+    catch (error) { state.lamps = previous; throw new Error('No se pudo guardar la lámpara. Reintenta.', { cause:error }); }
     render();
     state.shelfScene?.animateFromRects(oldRects);
     root.dataset.lastAddedLamp = key;
@@ -793,9 +793,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   async function addCatalogPlant({ catalogId, potId, potColorId }) {
     if (state.destroyed || state.busy || state.session || state.dragSession || state.returnMotion)
-      throw new Error('Espera a que termine la animación y vuelve a intentarlo.');
+      throw new Error('Espera a que termine la animación.');
     const plant = getCatalogPlant(catalogId), pot = getCatalogPot(potId);
-    if (!plant || !pot) throw new Error('Elige una planta y una maceta del catálogo.');
+    if (!plant || !pot) throw new Error('Elige una planta y una maceta.');
     const key = `plant:${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
     const viewport = scroller.getBoundingClientRect();
     const destination = dropPositionAt(viewport.left + viewport.width * .4,
@@ -1189,7 +1189,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       root.dataset.lastRemovedBook = id;
     } catch (error) {
       operation.motion?.cancel?.(); node.classList.remove('is-away');
-      trashStatus.textContent = `No se pudo retirar ${plant ? 'la planta' : lamp ? 'la lámpara' : 'el libro'}. Vuelve a intentarlo.`;
+      trashStatus.textContent = `No se pudo retirar ${plant ? 'la planta' : lamp ? 'la lámpara' : 'el libro'}. Reintenta.`;
       trashStatus.classList.add('is-error');
       state.trashStatusTimer = setTimeout(() => { trashStatus.textContent = ''; }, 6500);
       console.warn('No se pudo retirar el objeto de la estantería:', error);
@@ -1215,7 +1215,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       'aria-label': bookmark
         ? `${opts.texts.openAria(book)}, ${opts.texts.progressAria(bookmark.percent)}`
         : opts.texts.openAria(book),
-      title: 'Mantén pulsado para mover el libro',
+      title: 'Mantén pulsado para mover',
       'aria-keyshortcuts': 'Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown',
       'aria-description': 'Mantén pulsado para sacar el libro y moverlo. Usa Mayús y las flechas para cambiar su posición o balda.',
       style:
@@ -1338,7 +1338,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       'aria-label':`Mover planta ${plant.name}`,
       'aria-keyshortcuts':'Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown Delete',
       'aria-description':'Mantén pulsado para mover la planta o llevarla a la papelera. Usa Mayús y las flechas para cambiar su posición o balda, y Suprimir para retirarla.',
-      title:'Mantén pulsado para mover la planta',
+      title:'Mantén pulsado para mover',
       style:
         `--ihr-plant-w:${width}px;` +
         `--ihr-plant-h:${height}px;` +
@@ -1469,7 +1469,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       el('div', { class: 'ihr-empty__copy' }, [
         roofMark('ihr-roof ihr-empty__roof'),
         el('h2', { class: 'ihr-empty__title', text: opts.texts.emptyTitle }),
-        el('p', { class: 'ihr-empty__body', text: opts.texts.emptyBody }),
+        opts.texts.emptyBody ? el('p', { class: 'ihr-empty__body', text: opts.texts.emptyBody }) : null,
         onPickLocal
           ? el('button', {
               type: 'button',
@@ -1964,7 +1964,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       el('p', { class: 'ihr-flyout__title', text: book.title ?? '' }),
       normalizeBookAuthor(book.author) ? el('p', { class: 'ihr-flyout__author', text: normalizeBookAuthor(book.author) }) : null
     ]);
-    const readiness = el('p', { class: 'ihr-flyout__readiness', text: options.getBookPreparation ? 'Preparando el libro…' : 'Toca la portada para leer', 'aria-live': 'polite' });
+    const readiness = el('p', { class: 'ihr-flyout__readiness', text: options.getBookPreparation ? 'Preparando…' : 'Toca la portada para leer', 'aria-live': 'polite' });
     meta.append(readiness);
     const coverTarget = el('button', {
       type: 'button', class: 'ihr-flyout__cover-target',
@@ -1972,7 +1972,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       style: `left:${centerX - coverW / 2}px;top:${centerY - coverH / 2}px;width:${coverW}px;height:${coverH}px`
     });
     const colorPickLayer = el('div', { class:'ihr-color-pick', hidden:true, 'aria-label':'Elegir un color de la portada' });
-    const colorPickMessage = el('p', { class:'ihr-color-pick__message', text:'Arrastra la muestra hasta el color de la portada' });
+    const colorPickMessage = el('p', { class:'ihr-color-pick__message', text:'Arrastra sobre la portada' });
     const colorPickCancel = el('button', { type:'button', class:'ihr-color-pick__cancel', text:'Cancelar', onClick:() => finishColorPick(false) });
     const colorPickHandle = el('button', {
       type:'button', class:'ihr-color-pick__handle', 'aria-label':'Muestra de color: arrastra sobre la portada',
@@ -2063,7 +2063,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     const isDownloaded = book.sourceType === 'drive' && Boolean(book.content);
     const alreadySaved = book.sourceType === 'drive' ? isDownloaded : Boolean(book.driveFileId);
-    const actionLabel = book.sourceType === 'drive' ? (isDownloaded ? 'Disponible offline' : 'Descargar') : (book.driveFileId ? 'En Drive' : 'Guardar en Drive');
+    const actionLabel = book.sourceType === 'drive' ? (isDownloaded ? 'Sin conexión' : 'Descargar') : (book.driveFileId ? 'En Drive' : 'Guardar en Drive');
     const actionTitle = book.sourceType === 'drive' ? (isDownloaded ? 'Disponible sin conexión' : 'Descargar para usar sin conexión') : actionLabel;
     // En móvil estrecho la etiqueta larga partía el botón en dos líneas.
     const actionShort = book.sourceType === 'drive' ? (isDownloaded ? 'Offline' : 'Descargar') : (book.driveFileId ? 'En Drive' : 'Drive');
@@ -2414,7 +2414,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       const rect = { left:centerX-coverW/2, top:centerY-coverH/2, right:centerX+coverW/2, bottom:centerY+coverH/2 };
       if (!coverSampleCanvas || clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
         sampledCoverColor = '';
-        colorPickMessage.textContent = 'Arrastra la muestra hasta la portada';
+        colorPickMessage.textContent = 'Arrastra sobre la portada';
         colorPickHandle.style.removeProperty('--ihr-picked-color');
         colorPickHandle.removeAttribute('data-color');
         return false;
@@ -2425,7 +2425,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       sampledCoverColor = `#${[r,g,b].map(value => value.toString(16).padStart(2,'0')).join('')}`;
       colorPickHandle.style.setProperty('--ihr-picked-color', sampledCoverColor);
       colorPickHandle.dataset.color = sampledCoverColor;
-      colorPickMessage.textContent = `${sampledCoverColor.toUpperCase()} · Suelta para aplicar`;
+      colorPickMessage.textContent = `${sampledCoverColor.toUpperCase()} · Suelta`;
       return true;
     }
     async function beginColorPick() {
@@ -2452,7 +2452,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       actionButtons[2].setAttribute('aria-expanded', 'false');
       colorPickLayer.hidden = false;
       colorPickCancel.textContent = 'Cancelar';
-      colorPickMessage.textContent = 'Arrastra la muestra hasta el color de la portada';
+      colorPickMessage.textContent = 'Arrastra sobre la portada';
       colorPickHandle.style.setProperty('--ihr-picked-color', selectedColor);
       colorPickHandle.style.left = `${centerX}px`;
       colorPickHandle.style.top = `${Math.min(vh - 76, centerY + coverH / 2 + 44)}px`;
@@ -2518,7 +2518,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       colorPickHandle.style.left = `${x}px`; colorPickHandle.style.top = `${y}px`;
       sampleCoverAt(x, y);
       if (sampledCoverColor) finishColorPick(true);
-      else colorPickMessage.textContent = 'Suelta la muestra sobre la portada';
+      else colorPickMessage.textContent = 'Suelta sobre la portada';
     });
     colorPickHandle.addEventListener('pointercancel', () => {
       colorHandleDragging = false;
@@ -2868,8 +2868,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       'aria-labelledby':`${editorUid}-tab-cover`, hidden:true
     }, [
       section('Relieve', 'relief', [
-        el('p', { class:'ihr-relief__intro', text:'Zonas con relieve o brillo.' }),
-        el('div', { class:'ihr-relief__state' }, [reliefStatus, reliefRetry]),
+                el('div', { class:'ihr-relief__state' }, [reliefStatus, reliefRetry]),
         reliefGroup,
         reliefStrengthRow
       ])
@@ -2940,11 +2939,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       coverPanel.setAttribute('aria-busy', String(status === 'loading'));
       reliefGroup.classList.toggle('is-loading', status === 'loading');
       reliefRetry.hidden = status !== 'error';
-      reliefStatus.textContent = status === 'loading' ? 'Buscando zonas con relieve…'
-        : status === 'error' ? 'No se pudo analizar la portada.'
-        : status === 'empty' ? (coverUrl ? 'Sin zonas con relieve.'
-          : 'Este libro no tiene portada.')
-        : status === 'ready' ? `${proposals.length} propuestas` : '';
+      reliefStatus.textContent = status === 'loading' ? 'Analizando…'
+        : status === 'error' ? 'No se pudo analizar la portada'
+        : status === 'empty' ? (coverUrl ? 'Sin zonas detectadas'
+          : 'Sin portada')
+        : status === 'ready' ? '' : '';
       reliefStatus.classList.toggle('is-busy', status === 'loading');
       // Reserve the cards before the turn; starting analysis must not grow
       // the sheet over the cover that was just fitted above it.
@@ -3294,7 +3293,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       flyout.classList.add('is-expanding');
       coverTarget.hidden = true;
       actionButtons.forEach(button => { button.disabled = true; });
-      readiness.textContent = 'Preparando tu última página…';
+      readiness.textContent = 'Preparando…';
       markTiming('open-tap');
       try {
         await onOpen?.(book, {

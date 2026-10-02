@@ -229,7 +229,7 @@ describe('propuestas de relieve', () => {
     expect(options.signal).toBeInstanceOf(AbortSignal)
     const status = editor.querySelector('.ihr-relief__status')
     expect(status.getAttribute('aria-live')).toBe('polite')
-    expect(status.textContent).toBe('Buscando zonas con relieve…')
+    expect(status.textContent).toBe('Analizando…')
     expect(editor.querySelectorAll('.ihr-relief-card.is-skeleton')).toHaveLength(3)
     expect(editor.querySelectorAll('input[type="radio"]')).toHaveLength(1)
 
@@ -304,7 +304,7 @@ describe('propuestas de relieve', () => {
   it('un libro sin imagen de portada no analiza nada y lo dice', async () => {
     const { editor, tab } = await openEditor([book({ cover: undefined })], { coverSrcFor: () => null })
     tab('Portada').click()
-    await vi.waitFor(() => expect(editor.querySelector('.ihr-relief__status').textContent).toBe('Este libro no tiene portada.'))
+    await vi.waitFor(() => expect(editor.querySelector('.ihr-relief__status').textContent).toBe('Sin portada'))
     expect(analyzeCoverRelief).not.toHaveBeenCalled()
   })
 })

@@ -144,7 +144,7 @@ function buildGate() {
           <div class="android-update-progressfill" data-update-progressfill></div>
         </div>
       </div>
-      <button type="button" class="android-update-install" data-update-install>Instalar actualización</button>
+      <button type="button" class="android-update-install" data-update-install>Instalar</button>
       <p class="android-update-status" data-update-status aria-live="polite"></p>
     </div>`
   document.body.append(gate)
@@ -189,19 +189,19 @@ export function handleInhouseUpdateResult(payload) {
   const status = gate.querySelector('[data-update-status]')
 
   if (result.status === 'permission_required') {
-    status.textContent = 'Activa "Permitir desde esta fuente", vuelve a Inhouse Read y pulsa Continuar.'
-    install.textContent = 'Continuar instalación'
+    status.textContent = 'Activa "Permitir desde esta fuente" y vuelve a pulsar Instalar.'
+    install.textContent = 'Instalar'
     install.disabled = false
   } else if (result.status === 'downloading') {
     renderProgress(gate, result)
-    status.textContent = 'Descargando de forma segura dentro de Inhouse Read…'
+    status.textContent = 'Descargando…'
     install.disabled = true
   } else if (result.status === 'ready') {
     renderProgress(gate, { ...result, percent: 100 })
-    status.textContent = 'Descarga terminada. Confirma la instalación en Android.'
+    status.textContent = 'Confirma la instalación en Android.'
     install.disabled = true
   } else if (result.status === 'error') {
-    status.textContent = result.message || 'No se pudo descargar la actualización. Inténtalo de nuevo.'
+    status.textContent = result.message || 'No se pudo descargar. Reintenta.'
     install.textContent = 'Reintentar'
     install.disabled = false
   }
@@ -211,12 +211,12 @@ function showUpdateGate(manifest, installedVersion) {
   const gate = getGate() ?? buildGate()
   gate.dataset.updateTotalBytes = String(Math.max(0, Number(manifest.apkSizeBytes) || 0))
   gate.querySelector('[data-update-message]').textContent =
-    `Tienes Inhouse Read ${installedVersion}. Instala la versión ${manifest.version} para continuar.`
+    `Versión ${installedVersion}. Instala la ${manifest.version} para continuar.`
 
   const install = gate.querySelector('[data-update-install]')
   const status = gate.querySelector('[data-update-status]')
   install.onclick = () => {
-    status.textContent = 'Preparando la actualización…'
+    status.textContent = 'Preparando…'
     install.disabled = true
     renderProgress(gate, { downloadedBytes: 0, totalBytes: Number(manifest.apkSizeBytes) || 0, percent: 0 })
     try {
@@ -226,7 +226,7 @@ function showUpdateGate(manifest, installedVersion) {
         window.location.assign(manifest.apkUrl)
       }
     } catch {
-      status.textContent = 'No se pudo iniciar la descarga. Inténtalo de nuevo.'
+      status.textContent = 'No se pudo iniciar la descarga. Reintenta.'
       install.disabled = false
     }
   }

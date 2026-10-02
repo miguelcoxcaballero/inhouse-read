@@ -10,7 +10,7 @@ export const readerPanelMarkup = `
   <header class="reading-panel__header"><h2 id="reading-panel-title">Texto</h2><button type="button" class="reading-icon-button" data-close aria-label="Cerrar opciones de lectura">${readerIcon('close')}</button></header>
   <section id="reading-appearance" aria-label="Aspecto de lectura">
     <label class="reading-row" data-pdf><span>Vista del PDF</span><select data-pref="pdfMode" aria-label="Vista del PDF"><option value="original">Página original</option><option value="text">Texto adaptable</option></select></label>
-    <p class="reading-hint" data-pdf-hint>La letra se ajusta en Texto adaptable.</p>
+    <p class="reading-hint" data-pdf-hint>Solo en Texto adaptable.</p>
     <div class="reading-themes" role="group" aria-label="Color de lectura">
       <button type="button" data-theme="paper" aria-label="Papel"><i aria-hidden="true">Aa</i><span>Papel</span></button>
       <button type="button" data-theme="sepia" aria-label="Sepia"><i aria-hidden="true">Aa</i><span>Sepia</span></button>
@@ -59,7 +59,7 @@ export const readerPanelMarkup = `
     <p class="reading-hint" data-search-status></p><div class="reading-list" data-search-results></div>
   </section>
   <section id="reading-more" aria-label="Más opciones" hidden>
-    <button type="button" class="reading-menu-row" id="reader-toc-shortcut" aria-label="Índice, marcadores y citas">Índice, marcadores y citas</button>
+    <button type="button" class="reading-menu-row" id="reader-toc-shortcut" aria-label="Contenido">Contenido</button>
     <button type="button" class="reading-menu-row" id="reader-rotate">Girar pantalla</button>
     <button type="button" class="reading-menu-row" data-about>Documento</button>
     <button type="button" class="reading-menu-row" data-share>Compartir</button>
