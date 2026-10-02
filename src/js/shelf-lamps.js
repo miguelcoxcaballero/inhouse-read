@@ -84,11 +84,37 @@ function tube(points,radius,segments=36,radialSegments=6) {
   return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points.map(point => new THREE.Vector3(...point))),segments,radius,radialSegments,false);
 }
 
-function glass(colour=0xffffff,thickness=1.6) {
-  return new THREE.MeshPhysicalMaterial({ color:colour,roughness:.055,metalness:0,
-    transmission:.98,thickness,ior:1.46,attenuationColor:colour,attenuationDistance:180,
-    clearcoat:1,clearcoatRoughness:.025,envMapIntensity:1.15,side:THREE.DoubleSide,
-    depthWrite:false });
+// Clear glass is composited, not refracted. three's transmission re-renders
+// the whole opaque room into a second buffer, with a second set of shader
+// programs, on every frame the lamp is in view. A thin wall refracts almost
+// nothing, so the same look is a blend over the room already drawn:
+// reflections (specular, clearcoat, environment) added at full strength
+// and the room behind seen through the glass's tint and Fresnel loss, as
+// transmission computes them. Both faces are drawn: a closed body shows two
+// walls (near and far), so each layer passes the square root of the light
+// that the pair lets through, the two layers transmission also gave.
+// `grazing` darkens the longer optical path at a grazing angle.
+function glass(colour,{roughness=.055,clearcoatRoughness=.025,envMapIntensity=1.15,grazing=false,key}) {
+  const material = new THREE.MeshPhysicalMaterial({ color:colour,roughness,metalness:0,ior:1.46,
+    clearcoat:1,clearcoatRoughness,envMapIntensity,side:THREE.DoubleSide,depthWrite:false,transparent:true,
+    blending:THREE.CustomBlending,blendSrc:THREE.OneFactor,blendDst:THREE.OneMinusSrcAlphaFactor });
+  const tint = (material.color.r + material.color.g + material.color.b) / 3;
+  material.onBeforeCompile = shader => {
+    shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_end>',`
+      #include <lights_fragment_end>
+      reflectedLight.directDiffuse = vec3(0.0);
+      reflectedLight.indirectDiffuse = vec3(0.0);`).replace('#include <opaque_fragment>',`
+      vec3 glassView = normalize(vViewPosition);
+      vec3 glassFresnel = EnvironmentBRDF(normal,glassView,material.specularColor,material.specularF90,material.roughness);
+      float glassSeen = ${tint.toFixed(4)} * (1.0 - (glassFresnel.r + glassFresnel.g + glassFresnel.b) / 3.0) * (1.0 - Fcc.r);
+      ${grazing ? `vec3 glassPath = mix(vec3(1.0),vec3(.74,.80,.82),pow(1.0 - abs(dot(normal,glassView)),2.5));
+      outgoingLight *= glassPath;
+      glassSeen *= (glassPath.r + glassPath.g + glassPath.b) / 3.0;` : ''}
+      diffuseColor.a = 1.0 - sqrt(glassSeen);
+      #include <opaque_fragment>`);
+  };
+  material.customProgramCacheKey = () => key;
+  return material;
 }
 
 function puck(group,quality,segments) {
@@ -139,20 +165,12 @@ function lantern(group,quality,segments) {
     [31.3,237],[41.5,226],[48.5,214],[51.3,203],[52.3,185],[52.3,135],
     [50.8,117],[47.4,104],[41.5,98],[37,96],[37,94]
   ];
-  const chimneyMaterial = glass(0xeaf0f1,1.7);
   // Thin clear walls need slightly more absorption at a grazing angle, where
   // the optical path is longer. This also retains the rolled silhouette on
   // the catalogue's white background without drawing an artificial outline.
-  chimneyMaterial.onBeforeCompile = shader => {
-    shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>',`
-      float chimneyPath = pow(1.0 - abs(dot(normal,normalize(vViewPosition))),2.5);
-      outgoingLight *= mix(vec3(1.0),vec3(.74,.80,.82),chimneyPath);
-      #include <opaque_fragment>`);
-  };
-  chimneyMaterial.customProgramCacheKey = () => 'shelf-chimney-optical-path';
+  const chimneyMaterial = glass(0xeaf0f1,{grazing:true,key:'shelf-chimney-optical-path'});
   addBatch(group,'clear-glass-chimney',chimneyMaterial,[{geometry:lathe(chimney,segments)}],{castShadow:false});
-  const rimMaterial = new THREE.MeshPhysicalMaterial({color:0xe2e8e8,metalness:0,roughness:.03,
-    transmission:.91,thickness:1.2,ior:1.46,clearcoat:1,depthWrite:false});
+  const rimMaterial = glass(0xe2e8e8,{roughness:.03,clearcoatRoughness:0,envMapIntensity:1,key:'shelf-glass-rim'});
   addBatch(group,'rolled-glass-rim',rimMaterial,[{geometry:new THREE.TorusGeometry(28.7,.9,6,segments),
     position:[0,249,0],rotation:[Math.PI / 2,0,0]}],{castShadow:false});
   // A second transmissive volume inside the chimney samples Three's same

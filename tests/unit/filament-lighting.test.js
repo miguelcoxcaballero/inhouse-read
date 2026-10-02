@@ -45,7 +45,7 @@ describe('continuous LED filament illumination', () => {
     s.manager.dispose(); s.model.dispose();
   });
 
-  it('fades the actual emitting surfaces together with the visible fibres and releases all four when off', () => {
+  it('fades the actual emitting surfaces together with the visible fibres and keeps all four, dark, when off', () => {
     const s = setup(); s.manager.update([s.entry]);
     const initial = s.lights(), intensity = initial[0].intensity;
     const material = s.model.getObjectByName('glowing-retro-led-filaments').material, glow = material.emissiveIntensity;
@@ -56,10 +56,11 @@ describe('continuous LED filament illumination', () => {
       expect(material.emissiveIntensity).toBeCloseTo(glow*power);
     }
     s.model.userData.setPower(0); s.manager.update([s.entry]);
-    expect(s.lights()).toHaveLength(0); expect(initial.every(light => !light.parent)).toBe(true);
+    // Adding or removing a light would recompile every shader of the room.
+    expect(s.lights()).toEqual(initial); expect(initial.every(light => light.parent === s.scene && light.intensity === 0)).toBe(true);
     expect(s.manager.activeCount).toBe(0); expect(material.emissiveIntensity).toBe(0);
     s.model.userData.setPower(1); s.manager.update([s.entry]);
-    expect(s.lights()).toHaveLength(4); expect(s.lights()[0]).not.toBe(initial[0]);
+    expect(s.lights()).toEqual(initial); expect(s.lights()[0].intensity).toBeCloseTo(intensity);
     s.manager.dispose(); expect(s.lights()).toHaveLength(0); s.model.dispose();
   });
 

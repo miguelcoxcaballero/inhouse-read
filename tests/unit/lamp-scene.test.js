@@ -48,6 +48,9 @@ vi.mock('../../src/js/shelf-lamps.js', async () => {
 let shelf, stage, scroller, frames, clock;
 const rect = (left, top, width, height) => ({ left, top, width, height, right:left + width, bottom:top + height });
 const fixtureLights = scene => scene.children.filter(object => object.userData.shelfLamp);
+// The pool of lights stays in the scene (the lights' count is part of every
+// shader); a lamp that is unlit has a slot with zero intensity.
+const litLights = scene => fixtureLights(scene).filter(light => light.intensity > 0);
 function advanceFrame(milliseconds = 16) {
   clock += milliseconds; const callbacks = [...frames.values()]; frames.clear();
   for (const callback of callbacks) callback(clock);
@@ -115,9 +118,10 @@ describe('warm lamps in the retained shelf scene', () => {
     expect(data.entries[1].node.dataset.sceneHitSurface).toBe('ceiling-lamp');
     expect(table.getObjectByName('lamp-base').castShadow).toBe(true);
     expect(table.getObjectByName('warm-led-bulb').castShadow).toBe(false);
-    const [bulb, spot] = fixtureLights(gpu.scene);
-    expect(bulb.isPointLight).toBe(true); expect(bulb.castShadow).toBe(false);
-    expect(spot.isSpotLight).toBe(true); expect(spot.castShadow).toBe(true);
+    const bulb = fixtureLights(gpu.scene).find(light => light.isPointLight), spot = fixtureLights(gpu.scene).find(light => light.isSpotLight);
+    expect(fixtureLights(gpu.scene)).toHaveLength(2);
+    expect(bulb.castShadow).toBe(false);
+    expect(spot.castShadow).toBe(true);
     expect(spot.target.position.y).toBeLessThan(spot.position.y);
     expect(spot.shadow.mapSize.toArray()).toEqual([512,512]);
     expect(frames.size).toBe(0);
@@ -171,13 +175,16 @@ describe('warm lamps in the retained shelf scene', () => {
     advanceFrame(110);
     expect(tableNode.dataset.lampPower).toBe('0.0000');
     expect(glow.emissiveIntensity).toBe(0);
-    expect(fixtureLights(gpu.scene)).toEqual([spot]);
+    // Switching off only zeroes the light: the room's lights, and so its shaders, stay the same.
+    expect(litLights(gpu.scene)).toEqual([spot]);
+    expect(fixtureLights(gpu.scene)).toHaveLength(2); expect(point.parent).toBe(gpu.scene); expect(point.intensity).toBe(0);
     expect(shelf.canvas.dataset.activeLampLights).toBe('1');
     expect(frames.size).toBe(0); expect(spot.shadow.needsUpdate).toBe(false);
 
     shelf.setLampPower(tableNode, true);
     advanceFrame(110);
     const restoredPoint = fixtureLights(gpu.scene).find(light => light.isPointLight);
+    expect(restoredPoint).toBe(point);
     expect(restoredPoint.intensity / intensity).toBeCloseTo(table.userData.lightEmitter.power, 8);
     expect(glow.emissiveIntensity).toBe(table.userData.lightEmitter.power);
     advanceFrame(110);
@@ -197,7 +204,7 @@ describe('warm lamps in the retained shelf scene', () => {
     const puck = gpu.scene.getObjectByName('lamp:mittled');
     const creations = shelf.canvas.dataset.modelCreations;
     expect(node.dataset.lampPower).toBe('0.0000');
-    expect(fixtureLights(gpu.scene)).toHaveLength(1);
+    expect(litLights(gpu.scene)).toHaveLength(1); expect(fixtureLights(gpu.scene)).toHaveLength(2);
 
     shelf.setLampPower(node, true); advanceFrame(60);
     const warming = table.userData.lightEmitter.power;
@@ -232,7 +239,7 @@ describe('warm lamps in the retained shelf scene', () => {
     expect(replacement.dataset.lampPower).toBe('0.0000');
     expect(table.userData.lightEmitter.power).toBe(0);
     expect(table.getObjectByName('warm-led-bulb').material.emissiveIntensity).toBe(0);
-    expect(fixtureLights(gpu.scene).every(light => light.isSpotLight)).toBe(true);
+    expect(litLights(gpu.scene).every(light => light.isSpotLight)).toBe(true);
     expect(shelf.canvas.dataset.activeLamps).toBe('2');
     expect(shelf.canvas.dataset.activeLampLights).toBe('1');
     expect(gpu.scene.getObjectByName('lamp:tarnaby')).toBe(table);
@@ -252,12 +259,12 @@ describe('warm lamps in the retained shelf scene', () => {
     expect(node.dataset.lampPower).toBe('0.0000');
     expect(table.userData.lightEmitter.power).toBe(0);
     expect(table.getObjectByName('warm-led-bulb').material.emissiveIntensity).toBe(0);
-    expect(fixtureLights(gpu.scene)).toHaveLength(1); expect(frames.size).toBe(0);
+    expect(litLights(gpu.scene)).toHaveLength(1); expect(fixtureLights(gpu.scene)).toHaveLength(2); expect(frames.size).toBe(0);
     shelf.setLampPower(node, true, { animate:reducedMotion });
     advanceFrame(0);
     expect(node.dataset.lampPower).toBe('1.0000');
     expect(table.userData.lightEmitter.power).toBe(1);
-    expect(fixtureLights(gpu.scene)).toHaveLength(2); expect(frames.size).toBe(0);
+    expect(litLights(gpu.scene)).toHaveLength(2); expect(fixtureLights(gpu.scene)).toHaveLength(2); expect(frames.size).toBe(0);
   });
 
   it('releases the removed model and source without retaining native targets or GPU shadows', () => {
@@ -325,7 +332,7 @@ describe('bounded lamp lighting', () => {
     model.userData.lightEmitter = { position:[0, -2, 0], color:0xffd19a, intensity:10000, distance:400,
       ...(spotlight ? { direction:[0, -1, 0] } : {}) };
     model.position.set(index * 50, -100, -80);
-    return { kind:'lamp', key:`lamp:${index}`, model, width:40, rect:{ top:index * 100, bottom:index * 100 + 40 }, node:document.createElement('button') };
+    return { kind:'lamp', key:`lamp:${index}`, lampId:spotlight ? 'mittled' : undefined, model, width:40, rect:{ top:index * 100, bottom:index * 100 + 40 }, node:document.createElement('button') };
   }
   it('caps active sources and cone shadows, and prioritizes a lamp being dragged', () => {
     const scene = new THREE.Scene(), manager = createShelfLampLighting(scene), entries = Array.from({ length:10 }, (_, index) => source(index));
@@ -370,27 +377,67 @@ describe('bounded lamp lighting', () => {
     manager.dispose();
     expect(manager.activePower).toBe(0);
   });
-  it('releases an unpowered cone and its shadow resources until it is switched on again', () => {
+  it('keeps an unpowered cone and its shadow resources in the pool, zeroed, so switching it on again is free', () => {
     const scene = new THREE.Scene(), manager = createShelfLampLighting(scene), entry = source(0);
     scene.add(entry.model); manager.update([entry]);
     const initial = fixtureLights(scene)[0], map = { dispose:vi.fn() }, blur = { dispose:vi.fn() };
-    initial.shadow.map = map; initial.shadow.mapPass = blur;
+    initial.shadow.map = map; initial.shadow.mapPass = blur; initial.shadow.needsUpdate = false;
     entry.model.userData.lightEmitter.power = 0;
     expect(manager.update([entry])).toBe(true);
     expect(manager.activeCount).toBe(0); expect(manager.shadowCount).toBe(0);
     expect(manager.activePower).toBe(0);
-    expect(fixtureLights(scene)).toHaveLength(0);
-    expect(initial.parent).toBeNull(); expect(initial.target.parent).toBeNull();
-    expect(map.dispose).toHaveBeenCalledTimes(1); expect(blur.dispose).toHaveBeenCalledTimes(1);
+    // The light stays, with the same shadow flag: three's light state (and every shader) is unchanged.
+    expect(fixtureLights(scene)).toEqual([initial]); expect(litLights(scene)).toHaveLength(0);
+    expect(initial.intensity).toBe(0); expect(initial.castShadow).toBe(true);
+    expect(map.dispose).not.toHaveBeenCalled(); expect(blur.dispose).not.toHaveBeenCalled();
     expect(manager.update([entry])).toBe(false);
     entry.model.userData.lightEmitter.power = .05;
     expect(manager.update([entry])).toBe(true);
-    const restarted = fixtureLights(scene)[0];
-    expect(restarted).not.toBe(initial); expect(restarted.intensity).toBe(500);
-    expect(manager.activePower).toBe(.05);
-    expect(restarted.castShadow).toBe(true); expect(restarted.shadow.needsUpdate).toBe(true);
-    restarted.shadow.needsUpdate = false;
-    expect(manager.update([entry])).toBe(false); expect(restarted.shadow.needsUpdate).toBe(false);
+    expect(fixtureLights(scene)[0]).toBe(initial); expect(initial.intensity).toBe(500);
+    expect(manager.activePower).toBe(.05); expect(manager.shadowCount).toBe(1);
+    // Nothing moved while it was off: its cached shadow is still valid.
+    expect(initial.shadow.needsUpdate).toBe(false); expect(manager.shadowRefresh).toBe(false);
+    expect(manager.update([entry])).toBe(false); expect(initial.shadow.needsUpdate).toBe(false);
+    manager.dispose();
+    expect(map.dispose).toHaveBeenCalledTimes(1); expect(blur.dispose).toHaveBeenCalledTimes(1);
+    expect(fixtureLights(scene)).toHaveLength(0);
+  });
+  it('redraws a cone shadow that went stale while its lamp was off only once the lamp is lit again', () => {
+    const scene = new THREE.Scene(), manager = createShelfLampLighting(scene), entry = source(0);
+    scene.add(entry.model); manager.update([entry]);
+    const light = fixtureLights(scene)[0]; light.shadow.needsUpdate = false;
+    entry.model.userData.lightEmitter.power = 0; manager.update([entry]);
+    expect(manager.update([entry], { shadowDirty:true })).toBe(false);
+    entry.model.position.x += 30; expect(manager.update([entry])).toBe(false);
+    expect(light.shadow.needsUpdate).toBe(false); expect(manager.shadowRefresh).toBe(false);
+    entry.model.userData.lightEmitter.power = .5;
+    expect(manager.update([entry])).toBe(true);
+    expect(light.shadow.needsUpdate).toBe(true); expect(manager.shadowRefresh).toBe(true);
+    manager.dispose();
+  });
+  it('keeps the same lights and shadow flags while lamps are switched, faded, scrolled out and back', () => {
+    const scene = new THREE.Scene(), manager = createShelfLampLighting(scene);
+    const entries = Array.from({ length:6 }, (_, index) => source(index));
+    for (const entry of entries) scene.add(entry.model);
+    const signature = () => fixtureLights(scene).map(light => `${light.type}:${light.castShadow}`).sort().join();
+    manager.update(entries, { viewportHeight:600 });
+    const lights = [...fixtureLights(scene)], expected = signature();
+    expect(lights).toHaveLength(MAX_SHELF_LAMP_LIGHTS);
+    const step = () => {
+      manager.update(entries, { viewportHeight:600 });
+      expect(signature()).toBe(expected); expect(fixtureLights(scene)).toEqual(lights);
+    };
+    for (const entry of entries) {
+      for (const power of [.4, 0, 0, 1]) { entry.model.userData.lightEmitter.power = power; step(); }
+      // A culled model (scrolled far away) is released, then built again.
+      const { model } = entry; entry.model = null; step(); entry.model = model; step();
+      entry.model.visible = false; step(); entry.model.visible = true; step();
+    }
+    for (const entry of entries) entry.model.userData.lightEmitter.power = 0;
+    step(); expect(manager.activeCount).toBe(0);
+    // Only the library's own lamps change the pool.
+    manager.update(entries.slice(3), { viewportHeight:600 });
+    expect(fixtureLights(scene)).toHaveLength(3);
     manager.dispose();
   });
   it('reserves the source and shadow budget for powered lamps, including when an off lamp is dragged', () => {
@@ -402,11 +449,11 @@ describe('bounded lamp lighting', () => {
     }
     entries[0].node.classList.add('is-dragging');
     manager.update(entries, { viewportHeight:400 });
-    expect(fixtureLights(scene).map(light => light.userData.entryKey)).toEqual(['lamp:2', 'lamp:4']);
+    expect(litLights(scene).map(light => light.userData.entryKey)).toEqual(['lamp:2', 'lamp:4']);
     expect(manager.activeCount).toBe(2); expect(manager.shadowCount).toBe(2);
     entries[6].node.classList.add('is-dragging');
     manager.update(entries, { viewportHeight:400 });
-    expect(fixtureLights(scene).map(light => light.userData.entryKey).sort()).toEqual(['lamp:2', 'lamp:6']);
+    expect(litLights(scene).map(light => light.userData.entryKey).sort()).toEqual(['lamp:2', 'lamp:6']);
     expect(manager.activeCount).toBe(2); expect(manager.shadowCount).toBe(2);
     entries[2].model.userData.lightEmitter.power = .2;
     entries[6].model.userData.lightEmitter.power = .4;

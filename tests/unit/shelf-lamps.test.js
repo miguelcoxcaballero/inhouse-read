@@ -157,11 +157,11 @@ describe('physical shelf lamp models', () => {
     });
   }
 
-  it('keeps the retro LED filaments visible through real refractive glass', () => {
+  it('keeps the retro LED filaments visible through clear glass', () => {
     const model = createShelfLamp({lampId:'tarnaby'});
     const chimney = model.getObjectByName('clear-glass-chimney'),bulb = model.getObjectByName('amber-candle-led-bulb');
     expect(chimney.material.isMeshPhysicalMaterial).toBe(true);
-    expect(chimney.material.transmission).toBeGreaterThan(0);
+    expect(chimney.material.transparent).toBe(true);
     expect(chimney.material.ior).toBeGreaterThan(1.4);
     expect(chimney.castShadow).toBe(false);
     expect(bulb.material.isMeshPhysicalMaterial).toBe(true);
@@ -268,6 +268,34 @@ describe('physical shelf lamp models', () => {
         .toBeCloseTo(irradiance(native.userData.lightEmitter,350),6);
       native.dispose(); fitted.dispose();
     }
+  });
+
+  it('declares in the catalogue the very lights each model needs, so the room can size its lights before any model exists', () => {
+    for (const lamp of LAMP_CATALOG) {
+      const emitter = createShelfLamp({lampId:lamp.id}).userData.lightEmitter;
+      expect(lamp.light).toBe(emitter.filaments ? `filaments:${emitter.filaments.length}` :
+        emitter.direction ? 'cone' : 'point');
+    }
+  });
+
+  it('draws clear glass as a blend over the room, never as transmission (a second full render of the room)', () => {
+    const lantern = createShelfLamp({lampId:'tarnaby'}), materials = [];
+    lantern.traverse(object => { if (object.material) materials.push(object.material); });
+    expect(materials.some(material => material.transmission > 0)).toBe(false);
+    for (const name of ['clear-glass-chimney','rolled-glass-rim']) {
+      const glass = lantern.getObjectByName(name).material;
+      // Reflections stay at full strength; only the light from behind is attenuated.
+      expect(glass.transparent).toBe(true); expect(glass.depthWrite).toBe(false);
+      expect(glass.clearcoat).toBe(1); expect(glass.blending).toBe(THREE.CustomBlending);
+      expect(glass.blendSrc).toBe(THREE.OneFactor); expect(glass.blendDst).toBe(THREE.OneMinusSrcAlphaFactor);
+    }
+    const chimney = lantern.getObjectByName('clear-glass-chimney').material, shader = { fragmentShader:
+      '#include <lights_fragment_end>\n#include <opaque_fragment>' };
+    chimney.onBeforeCompile(shader);
+    expect(shader.fragmentShader).toContain('reflectedLight.directDiffuse = vec3(0.0)');
+    expect(shader.fragmentShader).toContain('diffuseColor.a = 1.0 - sqrt(glassSeen)');
+    expect(chimney.customProgramCacheKey()).not.toBe(lantern.getObjectByName('rolled-glass-rim').material.customProgramCacheKey());
+    lantern.dispose();
   });
 
   it('lets the tripod cone leave its lower aperture without being blocked by its own support', () => {

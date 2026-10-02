@@ -1555,7 +1555,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       scene.environmentIntensity = daylightEnvironment * daylightFactor;
       shelfSnapshotDirty = true;
     }
-    if (lampRefresh && lampLighting.shadowCount) renderer.shadowMap.needsUpdate = true;
+    if (lampLighting.shadowRefresh) renderer.shadowMap.needsUpdate = true;
     // Fit the key's shadow to the cabinet (and bin) in world space; the
     // lighting clips it to the camera window, so each texel covers less.
     shadowBounds.copy(fullBounds);
