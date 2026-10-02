@@ -6,8 +6,8 @@ Files here are shipped as they are (`public/` is copied to `dist/neural-voice/ph
 | File | What it is | Size |
 | --- | --- | --- |
 | `piper_phonemize.wasm` | the `piper-phonemize` C++ program compiled with Emscripten (statically links espeak-ng), **byte for byte** as published | 629 KB |
-| `piper_phonemize.data` | the espeak-ng data package, **trimmed** to the dictionaries of the languages we offer: es, en, fr, de, it, pt, ca (plus every non-dictionary file: voices, phoneme tables) | 1.4 MB (18 MB untrimmed) |
-| `dict/<lang>_dict` | the espeak-ng dictionaries of the languages added later (nl, pl, ru, uk, tr, sv, da, no, fi, cs, el, hu, ro, ar, cmn, vi), byte for byte as in the package, one file each: **not** part of the first download, the phonemizer fetches the one a voice needs the first time that voice speaks (ru 8.3 MB, cmn 1.5 MB, ar 0.5 MB, da 0.2 MB, the rest under 0.15 MB) and writes it into the module's `/espeak-ng-data` | 11 MB in all |
+| `piper_phonemize.data` | the espeak-ng data package, **trimmed** to ca, cs, da, de, en, es, fi, fr, hu, it, nl, pl, pt, ro, sv, tr (plus every non-dictionary file: voices, phoneme tables) | 2.23 MB (18 MB untrimmed) |
+| `dict/<lang>_dict` | separate dictionary copies, byte for byte as in the package. The wrapper inspects the module filesystem first and reuses a packaged dictionary; only a missing dictionary is fetched and written into `/espeak-ng-data` (ru 8.3 MB, cmn 1.5 MB, ar 0.5 MB, the rest under 0.2 MB) | 11 MB in all |
 | `piper_phonemize.mjs` | only the Emscripten JavaScript glue of the same package, exported as a factory (see below) | 107 KB |
 
 ## Provenance
@@ -16,9 +16,9 @@ Files here are shipped as they are (`public/` is copied to `dist/neural-voice/ph
   `dist/piper/piper_phonemize.{wasm,data}` and `dist/worker/PhonemizeWebWorker.js`. Those are builds of
   [rhasspy/piper-phonemize](https://github.com/rhasspy/piper-phonemize) (MIT) and [espeak-ng](https://github.com/espeak-ng/espeak-ng).
 * `piper_phonemize.mjs` is the Emscripten glue taken out of `PhonemizeWebWorker.js`: the package's own worker/message
-  wrapper is cut away and the factory is exported instead; our own small wrapper replaces it. The file table inside
+  wrapper is cut away and the factory is exported instead; our own small wrapper replaces it. `FS_analyzePath` is exported so a packaged dictionary is never created twice. The file table inside
   it is rewritten to match the trimmed `.data`.
-* Rebuild everything with `node scripts/trim-espeak-data.mjs <path of the piper-tts-web package> public/neural-voice/phon`
+* Rebuild this pack with `node scripts/trim-espeak-data.mjs <path of the piper-tts-web package> public/neural-voice/phon es,en,fr,de,it,pt,ca,cs,da,fi,hu,nl,pl,ro,sv,tr`
   (every pattern is checked, the script fails if the package changes shape). To offer another language, add it to the
   extra list of the script (its dictionary then goes to `dict/`) and to `EXTRA_DICTIONARIES` in `src/js/readers/neural-voice/phonemizer.js`, run the script again and add the voice to `src/js/readers/neural-voice/catalog.js`. A language of the first list (inside the .data) needs no code.
 * The trimmed data was verified to give the same phoneme ids as the untrimmed package for the sentences tried in the

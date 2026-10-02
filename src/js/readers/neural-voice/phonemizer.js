@@ -25,6 +25,8 @@ export function extraDictionaryOf(espeakVoice) {
 
 /** Calls after which the module is replaced (measured: the worst case, 180-character texts, breaks at 74). */
 export const REBUILD_EVERY = 40
+// Keep the filesystem API, file table and data pack from the same revision in Android's HTTP cache.
+export const PHONEMIZER_REVISION = '20261002-dictionaries'
 
 /**
  * @param {{base:string, importModule?:(url:string)=>Promise<{default:Function}>, rebuildEvery?:number}} options
@@ -32,7 +34,8 @@ export const REBUILD_EVERY = 40
  * @returns {Promise<{phonemize:(text:string, espeakVoice:string)=>Promise<number[]>, destroy:()=>void}>}
  */
 export async function createPhonemizer({ base, importModule = url => import(/* @vite-ignore */ url), rebuildEvery = REBUILD_EVERY, fetchFile = url => fetch(url) }) {
-  const { default: factory } = await importModule(base + 'piper_phonemize.mjs')
+  const assetUrl = name => `${base}${name}?v=${PHONEMIZER_REVISION}`
+  const { default: factory } = await importModule(assetUrl('piper_phonemize.mjs'))
   let line = null, errors = [], module = null, calls = 0
   const written = new Set() // extra dictionaries written into the current module's file system
   const downloaded = new Map() // their bytes, kept so a rebuilt module does not fetch them again
@@ -44,13 +47,19 @@ export async function createPhonemizer({ base, importModule = url => import(/* @
       print: text => { line = text },
       printErr: text => { errors.push(text) },
       // The glue asks for 'piper_phonemize.wasm' and 'piper_phonemize.data': both come from our own folder (never a CDN).
-      locateFile: name => base + name
+      locateFile: assetUrl
     })
   }
   await build()
   const ensureDictionary = async espeakVoice => {
     const name = extraDictionaryOf(espeakVoice)
     if (!name || written.has(name)) return
+    // Some of these dictionaries are already in the shipped pack. Creating the same file again throws EEXIST before
+    // the first word (Pim/nl, among others). Inspect the real module rather than guessing its packaged languages.
+    if (module.FS_analyzePath?.(`/espeak-ng-data/${name}_dict`)?.exists) {
+      written.add(name)
+      return
+    }
     let bytes = downloaded.get(name)
     if (!bytes) {
       const response = await fetchFile(`${base}dict/${name}_dict`)

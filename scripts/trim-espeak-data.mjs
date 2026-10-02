@@ -55,6 +55,10 @@ const at = glue.indexOf(marker)
 if (at < 0 || !glue.includes('export default wt();')) throw new Error('worker wrapper not found where expected')
 glue = glue.slice(0, at) + 'factory = (B.exports == null ? {} : B.exports).default || B.exports;\n});\nwt();\nexport default factory;\n'
 glue = 'let factory;\n' + glue
+// The wrapper must distinguish a packaged dictionary from one to fetch on demand (otherwise createDataFile throws EEXIST).
+const filesystemExport = 'l.FS_createDataFile = n.createDataFile'
+if (!glue.includes(filesystemExport)) throw new Error('filesystem export not found in the phonemizer glue')
+glue = glue.replace(filesystemExport, 'l.FS_analyzePath = n.analyzePath, ' + filesystemExport)
 
 mkdirSync(out, { recursive: true })
 writeFileSync(join(out, 'piper_phonemize.data'), trimmed)

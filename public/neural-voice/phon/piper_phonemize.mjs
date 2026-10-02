@@ -1736,7 +1736,7 @@ var wt = ut((je, B) => {
         var a = Ae(e) + 1, t = Ze(a);
         return J(e, t, a), t;
       }, lt = n.createPath, ft = (e) => n.unlink(e), mt = n.createLazyFile, ct = n.createDevice;
-      n.createPreloadedFile = Ke, n.staticInit(), l.FS_createPath = n.createPath, l.FS_createDataFile = n.createDataFile, l.FS_createPreloadedFile = n.createPreloadedFile, l.FS_unlink = n.unlink, l.FS_createLazyFile = n.createLazyFile, l.FS_createDevice = n.createDevice, v.doesNotExistError = new n.ErrnoError(44), v.doesNotExistError.stack = "<generic error, no stack>";
+      n.createPreloadedFile = Ke, n.staticInit(), l.FS_createPath = n.createPath, l.FS_analyzePath = n.analyzePath, l.FS_createDataFile = n.createDataFile, l.FS_createPreloadedFile = n.createPreloadedFile, l.FS_unlink = n.unlink, l.FS_createLazyFile = n.createLazyFile, l.FS_createDevice = n.createDevice, v.doesNotExistError = new n.ErrnoError(44), v.doesNotExistError.stack = "<generic error, no stack>";
       var pt = { a: Sa, b: Pa, e: Ta, s: ja, h: Ca, f: xa, q: Oa, p: La, r: Ua, k: Ba, j: Ia, n: qa, l: Ga, i: Je, o: Xa, t: Ya, u: Za, d: et, c: at, v: nt, m: rt, g: it }, Y;
       Ea();
       var Qe = l._main = (e, a) => (Qe = l._main = Y.y)(e, a), ea = (e) => (ea = Y.A)(e);

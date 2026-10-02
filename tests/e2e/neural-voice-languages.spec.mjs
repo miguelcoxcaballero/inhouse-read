@@ -9,7 +9,7 @@
 //   NEURAL_VOICE_EVIDENCE  where the numbers and the WAV files go (default: a temp folder).
 import { test, expect } from '@playwright/test'
 import { createServer } from 'node:http'
-import { existsSync, statSync, mkdirSync, writeFileSync, createReadStream, readdirSync } from 'node:fs'
+import { existsSync, statSync, mkdirSync, writeFileSync, readFileSync, createReadStream, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve, extname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -124,6 +124,18 @@ test.describe('neural voices of the added languages (real Piper weights, real OR
     await build({ root: ROOT, configFile: join(ROOT, 'vite.config.js'), logLevel: 'warn', build: { outDir, emptyOutDir: true, sourcemap: false, rollupOptions: { input: join(ROOT, 'tests/e2e/fixtures/neural-voice-harness.html') } } })
     ;({ server, port } = await startServer(outDir, hits))
     page = await browser.newPage()
+    await page.addInitScript(() => {
+      const NativeWorker = window.Worker
+      window.__neuralWorkerErrors = []
+      window.Worker = class extends NativeWorker {
+        constructor(...args) {
+          super(...args)
+          this.addEventListener('message', ({ data }) => {
+            if (data?.type === 'error') window.__neuralWorkerErrors.push(data.error)
+          })
+        }
+      }
+    })
     await page.addInitScript(base => { window.INHOUSE_NEURAL_VOICE_BASE = base }, `http://127.0.0.1:${port}/hf/`)
     page.on('pageerror', error => console.log('[pageerror]', error.message))
     page.on('worker', worker => worker.on('console', () => {}))
@@ -141,7 +153,10 @@ test.describe('neural voices of the added languages (real Piper weights, real OR
   test('the first download of a voice does not fetch any extra dictionary until that language speaks', async () => {
     expect(dictionaryRequests.filter(path => path.startsWith('dict/'))).toEqual([])
     expect(existsSync(join(outDir, 'neural-voice/phon/dict/ru_dict'))).toBe(true)
-    expect(statSync(join(outDir, 'neural-voice/phon/piper_phonemize.data')).size).toBeLessThan(2_000_000)
+    const glue = readFileSync(join(outDir, 'neural-voice/phon/piper_phonemize.mjs'), 'utf8')
+    const packBytes = statSync(join(outDir, 'neural-voice/phon/piper_phonemize.data')).size
+    expect(packBytes).toBe(Number(/remote_package_size:\s*(\d+)/.exec(glue)[1]))
+    expect(packBytes).toBeLessThan(2_500_000)
   })
 
   for (const [language, [piperId, texts]] of selected) {
@@ -156,7 +171,8 @@ test.describe('neural voices of the added languages (real Piper weights, real OR
       const log = await page.evaluate(([voice, list]) => window.neural.readAll(voice, list, 1, { prefix: 'l' }), [id, texts])
       const engineStats = await page.evaluate(() => ({ ...window.neural.engine.stats }))
       const chunks = await page.evaluate(() => { window.__capture = false; return window.neural.starts.splice(0).map(s => ({ data: s.data, sampleRate: s.sampleRate })) })
-      expect(log.some(event => event.type === 'error'), JSON.stringify(log)).toBe(false)
+      const workerErrors = await page.evaluate(() => window.__neuralWorkerErrors)
+      expect(log.some(event => event.type === 'error'), JSON.stringify({ log, workerErrors })).toBe(false)
       expect(log.filter(event => event.type === 'done')).toHaveLength(texts.length)
       const sampleRate = chunks[0].sampleRate
       const pcm = Float32Array.from(chunks.flatMap(chunk => chunk.data))
@@ -172,8 +188,21 @@ test.describe('neural voices of the added languages (real Piper weights, real OR
       // the dictionary of a language outside the data pack came from dict/ (once), the others are inside the pack
       const dictionary = { nb: 'no', zh: 'cmn' }[language] || language
       const fetched = dictionaryRequests.filter(path => path === `dict/${dictionary}_dict`)
-      if (!['es-AR', 'en-GB'].includes(language)) expect(fetched).toHaveLength(1)
-      else expect(fetched).toHaveLength(0)
+      const packaged = readFileSync(join(outDir, 'neural-voice/phon/piper_phonemize.mjs'), 'utf8').includes(`filename: "/espeak-ng-data/${dictionary}_dict"`)
+      expect(fetched).toHaveLength(packaged || ['es-AR', 'en-GB'].includes(language) ? 0 : 1)
+      if (language === 'nl') {
+        // The user's first heading failed before playback: exercise that cold worker again after reload at the video's
+        // speed, with dictionary requests blocked. A packaged Dutch dictionary must work without any extra network.
+        await page.reload()
+        await page.waitForFunction(() => window.neural)
+        await page.click('#unlock')
+        await page.route('**/phon/dict/**', route => route.abort('internetdisconnected'))
+        await page.evaluate(() => window.neural.engine.refresh())
+        const coldLog = await page.evaluate(voice => window.neural.readAll(voice, ['De Gekke Loempia.', 'Hoofdstuk één. Voorbereidingen.'], 1.1, { prefix:'reload' }), id)
+        expect(coldLog.some(event => event.type === 'error'), JSON.stringify(coldLog)).toBe(false)
+        expect(coldLog.filter(event => event.type === 'done')).toHaveLength(2)
+        await page.unroute('**/phon/dict/**')
+      }
       // one voice at a time: the next download must not run into the browser's storage quota
       await page.evaluate(voice => window.neural.engine.remove(voice), id)
     })

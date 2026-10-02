@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest'
-import { createPhonemizer, extraDictionaryOf, EXTRA_DICTIONARIES } from '../../src/js/readers/neural-voice/phonemizer.js'
+import { createPhonemizer, extraDictionaryOf, EXTRA_DICTIONARIES, PHONEMIZER_REVISION } from '../../src/js/readers/neural-voice/phonemizer.js'
 
 /** The shape of the Emscripten module of piper_phonemize: a factory taking print/printErr/locateFile, giving callMain. */
 const fakeModule = (respond) => {
@@ -12,10 +12,10 @@ describe('createPhonemizer', () => {
   it('loads the glue and the data from the given folder (never a CDN) and runs the program with the voice and the text', async () => {
     const { factory, importModule } = fakeModule((hooks, args) => hooks.print(JSON.stringify({ phoneme_ids: [1, 0, 5, 0, 2] })))
     const phonemizer = await createPhonemizer({ base: 'https://site/inhouse-read/neural-voice/phon/', importModule })
-    expect(importModule).toHaveBeenCalledWith('https://site/inhouse-read/neural-voice/phon/piper_phonemize.mjs')
+    expect(importModule).toHaveBeenCalledWith(`https://site/inhouse-read/neural-voice/phon/piper_phonemize.mjs?v=${PHONEMIZER_REVISION}`)
     const hooks = factory.mock.calls[0][0]
-    expect(hooks.locateFile('piper_phonemize.wasm')).toBe('https://site/inhouse-read/neural-voice/phon/piper_phonemize.wasm')
-    expect(hooks.locateFile('piper_phonemize.data')).toBe('https://site/inhouse-read/neural-voice/phon/piper_phonemize.data')
+    expect(hooks.locateFile('piper_phonemize.wasm')).toBe(`https://site/inhouse-read/neural-voice/phon/piper_phonemize.wasm?v=${PHONEMIZER_REVISION}`)
+    expect(hooks.locateFile('piper_phonemize.data')).toBe(`https://site/inhouse-read/neural-voice/phon/piper_phonemize.data?v=${PHONEMIZER_REVISION}`)
     const ids = await phonemizer.phonemize('Hola "mundo".', 'es-419')
     expect(ids).toEqual([1, 0, 5, 0, 2])
     const module = await factory.mock.results[0].value
@@ -38,6 +38,20 @@ describe('createPhonemizer', () => {
 })
 
 describe('dictionaries of the added languages', () => {
+  it('reuses a packaged Dutch dictionary without network or duplicate file creation, including after rebuild', async () => {
+    const fetchFile = vi.fn(() => { throw new Error('offline') })
+    const createFile = vi.fn(() => { throw Object.assign(new Error('EEXIST'), { errno:20 }) })
+    const factory = vi.fn(async hooks => ({
+      FS_analyzePath: path => ({ exists:path === '/espeak-ng-data/nl_dict' }),
+      FS_createDataFile:createFile,
+      callMain:() => hooks.print(JSON.stringify({ phoneme_ids:[1, 0, 5, 0, 2] }))
+    }))
+    const phonemizer = await createPhonemizer({ base:'https://site/phon/', importModule:async () => ({ default:factory }), fetchFile, rebuildEvery:2 })
+    for (let i = 0; i < 3; i++) expect(await phonemizer.phonemize('De Gekke Loempia.', 'nl')).toEqual([1, 0, 5, 0, 2])
+    expect(factory).toHaveBeenCalledTimes(2)
+    expect(createFile).not.toHaveBeenCalled()
+    expect(fetchFile).not.toHaveBeenCalled()
+  })
   const dictionaryFetch = () => vi.fn(async url => ({ ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode(`dict of ${url}`).buffer }))
   const withFiles = respond => {
     const written = []
