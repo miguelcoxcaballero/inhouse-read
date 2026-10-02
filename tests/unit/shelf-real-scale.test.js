@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import * as THREE from 'three';
+import { createShelfFurniture } from '../../src/js/shelf-furniture.js';
+import { createBaggebo } from '../../src/js/baggebo-model.js';
 import { BAGGEBO_SPEC, SHELF_SPECS, SHELF_TYPES, WALNUT_SPEC } from '../../src/js/shelf-types.js';
 import { shelfModelLayout } from '../../src/js/shelf-model-layout.js';
 import { layoutShelves, spineStyleFor } from '../../src/js/bookshelf-layout.js';
@@ -46,6 +49,27 @@ describe('both shelves are the real 600 x 250 x 1160 mm IKEA unit', () => {
       expect(heights[1]).toBeCloseTo(322.5 - BAGGEBO_SPEC.shelfRimHeight, 6);
       expect(heights[2]).toBeCloseTo(322.5 - BAGGEBO_SPEC.shelfRimHeight, 6);
       expect(wood.shelfType).toBe('walnut'); expect(metal.shelfType).toBe('baggebo');
+    }
+  });
+
+  it('builds meshes whose measured outer bounds are the 600 x 250 x 1160 mm spec, wood and metal alike', () => {
+    const measure = group => { const size = new THREE.Box3().setFromObject(group).getSize(new THREE.Vector3()); return size; };
+    for (const width of [320, 390, 600, 900]) {
+      const scale = width / 600, material = new THREE.MeshStandardMaterial();
+      const wood = createShelfFurniture({ width, height:1160 * scale, depth:250 * scale, scale,
+        rows:WALNUT_SPEC.shelfBottoms.map(bottom => ({ bottom:bottom * scale })), wood:material, backWood:material, darkWood:material });
+      const size = measure(wood);
+      expect(size.x / scale).toBeCloseTo(600, 3);
+      expect(size.y / scale).toBeCloseTo(1160, 3);
+      // Back backer to shelf lips: the carcase is not 272.6 mm deep, it is 250.
+      expect(size.z / scale).toBeCloseTo(250, 3);
+      wood.userData.disposeGeometry();
+      const metal = createBaggebo({ width:width });
+      const metalSize = measure(metal);
+      expect(metalSize.x / scale).toBeCloseTo(600, 0);
+      expect(metalSize.y / scale).toBeCloseTo(1160, 0);
+      expect(metalSize.z / scale).toBeCloseTo(250, 0);
+      metal.userData.dispose?.();
     }
   });
 

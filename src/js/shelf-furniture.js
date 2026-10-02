@@ -147,9 +147,18 @@ function shelfLip(width, seed) {
   return builder.finish();
 }
 
+/** How far the joinery reaches outside the carcase depth, in reference pixels:
+ * the back backer 3 behind the back plane, and the shelf lips 11.7 in front of
+ * the front plane (z = 0). `cabinetFrame.d` is the carcase depth, so that the
+ * cabinet's outer depth (back backer to lip, the Box3 of the group) is exactly
+ * the `depth` asked for: a 250 mm unit is 250 mm deep, not 272.6 mm. The front
+ * stays where the books stand against the lips; the back panel moves forward. */
+const BACK_REACH = 3, FRONT_REACH = 11.7;
+
 /** Shared cabinet measurements, so occlusion follows the real joinery. */
 function cabinetFrame(width, height, depth) {
-  const w = validDimension(width, 360), h = validDimension(height, 600), d = validDimension(depth, 155);
+  const w = validDimension(width, 360), h = validDimension(height, 600);
+  const d = Math.max(1, validDimension(depth, 155) - BACK_REACH - FRONT_REACH);
   const side = Math.min(12, w * 0.12);
   return { w, h, d, side, inner:Math.max(1, w - 24), shelfWidth:Math.max(1, w - side * 2 + 8) };
 }

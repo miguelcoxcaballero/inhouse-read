@@ -26,6 +26,8 @@ describe('createShelfFurniture', () => {
     expect(bounds.min.y).toBeGreaterThanOrEqual(-636 - 15);
     expect(bounds.min.z).toBeGreaterThanOrEqual(-155 - 4);
     expect(bounds.max.z).toBeLessThanOrEqual(12);
+    // Outer depth, back backer to shelf lips, is exactly the depth asked for.
+    expect(bounds.max.z - bounds.min.z).toBeCloseTo(155, 3);
     for (let index = 0; index < 3; index += 1) {
       const board = cabinet.userData.parts.find(part => part.name === `shelf-${index}-board`);
       const lip = cabinet.userData.parts.find(part => part.name === `shelf-${index}-lip`);
@@ -53,7 +55,8 @@ describe('createShelfFurniture', () => {
     const planks = cabinet.userData.parts.filter(part => part.name.startsWith('back-plank'));
     expect(planks.length).toBeGreaterThan(2);
     expect(planks[1].bounds.min.x - planks[0].bounds.max.x).toBeCloseTo(0.85, 4);
-    expect(planks[0].bounds.max.z).toBeLessThan(-150);
+    // The planks are the rearmost boards: within 6 px of the cabinet's back face.
+    expect(planks[0].bounds.max.z).toBeLessThan(new THREE.Box3().setFromObject(cabinet).min.z + 6);
     const lip = cabinet.userData.parts.find(part => part.name === 'shelf-0-lip');
     expect(lip.bounds.max.z).toBeGreaterThan(11);
     cabinet.userData.disposeGeometry();
@@ -230,7 +233,8 @@ describe('createShelfFurniture', () => {
     const cabinet = create(3, { depth:320, rows:[{ bottom:192 }, { bottom:192 }, null, { bottom:NaN }] });
     expect(cabinet.userData.parts.filter(part => part.name.endsWith('-board'))).toHaveLength(1);
     const bounds = new THREE.Box3().setFromObject(cabinet);
-    expect(bounds.min.z).toBe(-323);
+    // The outer depth, back backer to shelf lips, is exactly the 320 asked for.
+    expect(bounds.max.z - bounds.min.z).toBeCloseTo(320, 3);
     expect(bounds.max.z).toBeLessThan(12);
     cabinet.userData.disposeGeometry();
   });
