@@ -12,6 +12,7 @@ import { createShelfCatalog } from './shelf-catalog.js';
 import { createBaggebo } from './baggebo-model.js';
 import { compilePrograms } from './gpu-programs.js';
 import { BAGGEBO_SPEC, SHELF_SPECS, normalizeShelfType } from './shelf-types.js';
+import { minimumBookTapWidth, nearestTapTarget, padTapRect } from './plant-dimensions.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const WALNUT = new URL('../assets/library/walnut-pbr.webp', import.meta.url).href;
@@ -1169,16 +1170,21 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           entry.model.updateMatrixWorld(true);
           corners(surface.geometry.boundingBox, surface.matrixWorld, hitRect);
         } else corners(fallbackBox(entry, plant, lamp), projectedMatrix, hitRect);
+        // The button covers the hit surface, but a real-scale spine is only 5-13 px
+        // thick: a book's button is padded to the minimum tap width around the
+        // spine's centre (hitRect keeps the drawn surface). Plants and lamps
+        // are not thin, so their button is the hit surface itself.
+        const tapRect = plant || lamp ? hitRect : padTapRect(hitRect, minimumBookTapWidth(window.innerWidth), entry.tapRect || (entry.tapRect = {}));
         // A frame that moves nothing restyles nothing: only numbers that differ
         // from the last written ones reach the DOM, in the same order as a first write.
         let written = entry.written;
         if (written?.node !== node) written = entry.written = entryStyleCache(node);
         const style = node.style;
         if (!written.fixed) style.position = 'absolute';
-        if (hitRect.left !== written.left) style.left = `${written.left = hitRect.left}px`;
-        if (hitRect.top !== written.top) style.top = `${written.top = hitRect.top}px`;
-        if (hitRect.width !== written.width) style.width = `${written.width = hitRect.width}px`;
-        if (hitRect.height !== written.height) style.height = `${written.height = hitRect.height}px`;
+        if (tapRect.left !== written.left) style.left = `${written.left = tapRect.left}px`;
+        if (tapRect.top !== written.top) style.top = `${written.top = tapRect.top}px`;
+        if (tapRect.width !== written.width) style.width = `${written.width = tapRect.width}px`;
+        if (tapRect.height !== written.height) style.height = `${written.height = tapRect.height}px`;
         if (!written.fixed) style.margin = '0';
         const zIndex = 100 + Math.round(rect.closest + height);
         if (zIndex !== written.z) style.zIndex = String(written.z = zIndex);
@@ -1201,7 +1207,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           // Keep tapping the exposed cover available without moving the
           // button's own focus/click centre away from its neighboring spine.
           // The existing handlers still raycast the true visible geometry.
-          const coverStyle = coverHit.style, coverLeft = rect.left - hitRect.left, coverTop = rect.top - hitRect.top;
+          const coverStyle = coverHit.style, coverLeft = rect.left - tapRect.left, coverTop = rect.top - tapRect.top;
           if (!written.coverFixed) coverStyle.position = 'absolute';
           if (coverLeft !== written.coverLeft) coverStyle.left = `${written.coverLeft = coverLeft}px`;
           if (coverTop !== written.coverTop) coverStyle.top = `${written.coverTop = coverTop}px`;
@@ -1375,6 +1381,23 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     return raycaster;
   }
 
+  // A thin spine's ray often falls between two books (on the back panel) although
+  // the finger is on the book's padded button: the book whose padded tap rectangle
+  // holds the point, nearest centre first, so overlapping rectangles never steal
+  // each other's taps. Rectangles are in the stage's frame, as the buttons are.
+  const tapTargets = [];
+  function bookNearPoint(clientX, clientY) {
+    const origin = stage.getBoundingClientRect();
+    tapTargets.length = 0;
+    for (const entry of bookEntries) {
+      const tap = entry.tapRect;
+      if (!tap || !entry.node || !entry.model?.visible || entry.flags?.away || entry.flags?.dragging || entry.trashDrop) continue;
+      if (entry.kind === 'plant' || entry.kind === 'lamp' || entry.node.classList.contains('is-away')) continue;
+      tapTargets.push({ left:tap.left + origin.left, top:tap.top + origin.top, width:tap.width, height:tap.height, node:entry.node });
+    }
+    return nearestTapTarget(tapTargets, clientX, clientY)?.node ?? null;
+  }
+
   function objectAtPoint(clientX, clientY) {
     const ray = pointerRay(clientX, clientY);
     const pickable = furniture.children.filter(object => object.visible && !object.userData.dropMarker &&
@@ -1383,10 +1406,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       let object = hit.object;
       while (object && !object.userData.entry) object = object.parent;
       if (object?.userData.entry?.node && object.visible) return object.userData.entry.node;
-      // Solid wood in front blocks the object behind it.
-      if (!object?.userData.entry) return null;
+      // Solid wood in front blocks the object behind it, but a book's padded tap
+      // rectangle still wins over the panel seen between two thin spines.
+      if (!object?.userData.entry) return bookNearPoint(clientX, clientY);
     }
-    return null;
+    return bookNearPoint(clientX, clientY);
   }
 
   const isSolid = (material, side) => material.visible && material.depthWrite && material.depthTest && !material.transparent &&
@@ -2132,7 +2156,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       for (const entry of bookEntries) {
         const old = oldRects.get(entry.node?.dataset.objectId) || oldRects.get(entry.book?.id) ||
           oldRects.get(entry.node?.dataset.bookId) || oldRects.get(entry.key);
-        const targetRect = entry.hitRect || entry.rect;
+        const targetRect = entry.tapRect || entry.hitRect || entry.rect;
         if (!old || !targetRect) continue;
         const x = old.left - (targetRect.left + stageRect.left), y = old.top - (targetRect.top + stageRect.top);
         if (Math.abs(x) + Math.abs(y) > 1) items.push({ entry, x, y });

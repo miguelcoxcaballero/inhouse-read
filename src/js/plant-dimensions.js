@@ -110,9 +110,46 @@ export function bookSpineOptions(shelfWidth) {
   return { minWidth:BOOK_THICKNESS_MM.min * scale, maxWidth:BOOK_THICKNESS_MM.max * scale, jitter:4 * scale };
 }
 
-/** A thin real spine is hard to tap: its layout cell (and so its hit area)
- * is never narrower than this many pixels, even if the drawn book is. */
+/** A thin real spine is hard to tap, so a book never gets a layout cell
+ * narrower than this many pixels, even if the drawn spine is. This only
+ * spaces the books out: the tappable surface is widened separately, see
+ * `padTapRect` (the spine is centred in its cell, so the padded surface
+ * fits inside the cell and never reaches a neighbour). */
 export function minimumBookCellWidth(viewportWidth = 0) { return viewportWidth >= 600 ? 18 : 16; }
+
+/** Narrowest tappable width, in pixels, of any book: the same 16 px (phone) /
+ * 18 px (desktop) as its layout cell. */
+export function minimumBookTapWidth(viewportWidth = 0) { return minimumBookCellWidth(viewportWidth); }
+
+/**
+ * The tappable rectangle of a spine: `rect` (the projected, drawn spine) widened
+ * symmetrically around its centre to at least `minWidth`, independent of how
+ * thin the drawn book is. Height and vertical position are the spine's own.
+ * Pass `out` to refresh a retained rectangle in place.
+ */
+export function padTapRect(rect, minWidth, out = {}) {
+  const extra = Math.max(0, minWidth - rect.width);
+  out.left = rect.left - extra / 2; out.top = rect.top;
+  out.width = rect.width + extra; out.height = rect.height;
+  return out;
+}
+
+/**
+ * Nearest-centre picking among padded tap rectangles: of the `targets`
+ * ({ left, top, width, height, ...anything }) containing (x, y), the one whose
+ * centre is nearest the point. Where two padded rectangles overlap a tap goes
+ * to the book it is closest to, so neither steals the other's tap. Null when
+ * no rectangle contains the point.
+ */
+export function nearestTapTarget(targets, x, y) {
+  let best = null, bestDistance = Infinity;
+  for (const target of targets) {
+    if (x < target.left || x > target.left + target.width || y < target.top || y > target.top + target.height) continue;
+    const distance = (x - target.left - target.width / 2) ** 2 + ((y - target.top - target.height / 2) * .25) ** 2;
+    if (distance < bestDistance) { bestDistance = distance; best = target; }
+  }
+  return best;
+}
 
 /**
  * Scene pixels per millimetre. Both shelves are 600 mm wide units that fill
