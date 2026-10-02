@@ -204,6 +204,10 @@ export class NeuralEngine extends EventTarget {
     if (head && head.text === text) {
       this.#adopt(run, head, id, upcomingTexts)
     } else {
+      // A page read to its end hands over to a fresh run (the reader asks for the next page's first fragment): the hiccup it
+      // may have had (a short heading before a long sentence leaves a hole while the long one is computed) is history, so
+      // short pages cannot add up to a 'too-slow' verdict on a device that keeps up. A restart in mid-page keeps its record.
+      if (run?.entries.length && run.entries.every(entry => entry.ended)) this.underrunTimes = []
       this.#hardStop()
       run = this.run = { voice, rate, entries: [], gateOpen: false, prepared: null, job: null, heldSince: null, holdTimer: null, pumpTimer: null, rtf: 0, rtfN: 0, spi: 0, t0: now(), firstAudio: false }
       this.#adopt(run, this.#entry(run, text), id, upcomingTexts, true)

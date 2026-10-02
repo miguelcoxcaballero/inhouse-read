@@ -237,6 +237,30 @@ describe('NeuralEngine reading aloud', () => {
     expect(t.engine.status).toBe('idle')
   })
 
+  it('forgives the underruns of a page that was read to its end (a short heading before a long sentence), but not of a restart in mid-page', async () => {
+    t.engine.speak({ text: 'Uno.', voiceId: CLAUDE, id: 'a', upcoming: ['Dos.'] })
+    await flush()
+    const client = t.clients.last()
+    feedJob(client.jobs[0], 1)
+    advance(t.ctx, 3)                                          // the heading is over, the long sentence is still being computed
+    await flush()
+    feedJob(client.jobs[1], 2)                                 // late: an underrun
+    expect(t.engine.stats.underruns).toBe(1)
+    expect(t.engine.underrunTimes.length).toBe(1)
+    t.engine.speak({ text: 'Dos.', voiceId: CLAUDE, id: 'b' })
+    advance(t.ctx, 2.5)
+    await flush()
+    expect(types(t.events)).toContain('done:b')                // the page was read to its end
+    t.engine.speak({ text: 'Tres.', voiceId: CLAUDE, id: 'c', upcoming: ['Cuatro.'] }) // the next page
+    await flush()
+    expect(t.engine.underrunTimes).toEqual([])                 // forgiven
+    expect(t.engine.stats.underruns).toBe(1)                   // but still counted for the diagnostics
+    t.engine.underrunTimes = [0, 1]
+    t.engine.speak({ text: 'Otra.', voiceId: CLAUDE, id: 'd' }) // a jump in mid-page: its record stays
+    await flush()
+    expect(t.engine.underrunTimes).toEqual([0, 1])
+  })
+
   it("gives up with 'too-slow' at once when compute is far slower than real time", async () => {
     t.engine.speak({ text: 'Uno.', voiceId: CLAUDE, id: 'a', upcoming: ['Dos.', 'Tres.', 'Cuatro.'] })
     await flush()
