@@ -6,7 +6,8 @@
 // bytes received so far are kept in memory and the transfer continues with a Range request (If-Range with the ETag, so a
 // file replaced upstream is never glued together); a server that ignores Range, or a Range request that fails before a
 // single byte arrives (CORS, proxies), makes it start again cleanly instead. Sizes are checked against Content-Length and,
-// when it can be reached, against the catalogue (voices.json) of the voice repository.
+// when it can be reached, against the catalogue (voices.json) of the voice repository. A connection that goes silent without
+// closing (a phone changing network) is given up on after `stallMs` without a byte and takes the same resume path.
 import { neuralVoiceBase, voiceUrls } from './catalog.js'
 
 export const CACHE_NAME = 'inhouse-neural-voices-v1'
@@ -23,10 +24,10 @@ const defaultSleep = (ms, signal) => new Promise((resolve, reject) => {
 export class VoiceStore {
   /**
    * Everything the browser provides is injectable so the logic can be tested without a network or a real cache.
-   * @param {{caches?:CacheStorage, fetch?:typeof fetch, base?:()=>string, storage?:StorageManager, sleep?:(ms:number,signal?:AbortSignal)=>Promise<void>, maxRetries?:number, online?:()=>boolean}} deps
+   * @param {{caches?:CacheStorage, fetch?:typeof fetch, base?:()=>string, storage?:StorageManager, sleep?:(ms:number,signal?:AbortSignal)=>Promise<void>, maxRetries?:number, online?:()=>boolean, stallMs?:number}} deps
    */
-  constructor({ caches = globalThis.caches, fetch = globalThis.fetch?.bind(globalThis), base = () => neuralVoiceBase(), storage = globalThis.navigator?.storage, sleep = defaultSleep, maxRetries = 4, online = () => globalThis.navigator?.onLine !== false } = {}) {
-    Object.assign(this, { caches, fetchFn: fetch, baseFn: base, storage, sleep, maxRetries, online })
+  constructor({ caches = globalThis.caches, fetch = globalThis.fetch?.bind(globalThis), base = () => neuralVoiceBase(), storage = globalThis.navigator?.storage, sleep = defaultSleep, maxRetries = 4, online = () => globalThis.navigator?.onLine !== false, stallMs = 20_000 } = {}) {
+    Object.assign(this, { caches, fetchFn: fetch, baseFn: base, storage, sleep, maxRetries, online, stallMs })
   }
 
   get supported() { return !!this.caches && typeof this.fetchFn === 'function' }
@@ -136,6 +137,18 @@ export class VoiceStore {
     return response
   }
 
+  /** reader.read(), but a connection that sends nothing for `stallMs` is cancelled and counts as dropped (retried by the caller); an abort ends the wait at once. */
+  #readOrStall(reader, signal) {
+    let timer, onAbort
+    const interrupted = new Promise((resolve, reject) => {
+      if (this.stallMs > 0) timer = setTimeout(() => { reader.cancel().catch(() => {}); reject(new TypeError('connection stalled')) }, this.stallMs)
+      onAbort = () => { reader.cancel().catch(() => {}); reject(storeError('aborted', 'aborted')) }
+      signal?.addEventListener('abort', onAbort, { once: true })
+    })
+    interrupted.catch(() => {}) // settled by the race below, or never
+    return Promise.race([reader.read(), interrupted]).finally(() => { clearTimeout(timer); signal?.removeEventListener('abort', onAbort) })
+  }
+
   /** Streams `url` into memory, riding out connection drops. Returns the received chunks. */
   async #fetchBody(url, { signal, expected, onProgress }) {
     let parts = [], received = 0, total = expected || 0, etag = '', ranged = true
@@ -163,7 +176,7 @@ export class VoiceStore {
         } else {
           for (;;) {
             if (signal?.aborted) { reader.cancel().catch(() => {}); throw storeError('aborted', 'aborted') }
-            const { done, value } = await reader.read()
+            const { done, value } = await this.#readOrStall(reader, signal)
             if (done) break
             parts.push(value); received += value.length; gotBytes = true
             onProgress({ received, total, fraction: total ? Math.min(1, received / total) : 0 })

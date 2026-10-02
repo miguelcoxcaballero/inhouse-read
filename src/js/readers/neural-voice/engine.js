@@ -24,7 +24,9 @@ export const LIMITS = {
   underrunWindowMs: 120_000,
   cleanFragments: 8,       // this many fragments in a row without an underrun forgive the earlier ones
   slowRtf: 1.6,            // compute seconds per audio second above which (after minRtfSamples chunks) it cannot keep up at all
+  maxRtfSample: 3.2,       // one chunk counts for no more than this: a stall of a few seconds (the worker descheduled, the app in the background) is not a slow device
   minRtfSamples: 3,
+  coldStartMs: 5000,       // assumed cost of rebuilding the worker (replaced by what the first build measured); a jump that would wait longer for the running segment rebuilds it instead
   rtfPrior: 0.7,           // assumed compute speed before anything was measured
   lruEntries: 40, lruSamples: 6_000_000   // synthesised fragments kept for replays (~24 MB of Float32 at most)
 }
@@ -84,6 +86,7 @@ export class NeuralEngine extends EventTarget {
     this._installed = new Set()
     this._downloads = new Map()
     this.installing = new Map() // piperId -> promise
+    this.aborts = new Map()     // piperId -> AbortController of the download in progress
     this.client = null
     this.run = null
     this.unitSeq = 0
@@ -130,11 +133,15 @@ export class NeuralEngine extends EventTarget {
     if (this.installing.has(piperId)) return this.installing.get(piperId)
     const publish = (entry) => { for (const v of siblings) this._downloads.set(v.id, entry); this.#changed() }
     publish({ state: 'downloading', fraction: 0, received: 0, total: 0 })
+    // The download is shared by the speakers of one model, so cancel(id) of any of them aborts it (not only the caller's signal).
+    const abort = new AbortController()
+    if (signal?.aborted) abort.abort(); else signal?.addEventListener?.('abort', () => abort.abort(), { once: true })
+    this.aborts.set(piperId, abort)
     let lastPublished = 0
     const job = (async () => {
       try {
         await this.store.download(piperId, {
-          signal,
+          signal: abort.signal,
           onProgress: ({ received, total, fraction }) => {
             const at = now()
             if (at - lastPublished < 120 && fraction < 1) return // 'change' on every network chunk would flood the picker
@@ -149,17 +156,29 @@ export class NeuralEngine extends EventTarget {
         for (const v of siblings) { if (aborted) this._downloads.delete(v.id); else this._downloads.set(v.id, { state: 'error', fraction: 0, received: 0, total: 0, error: error.message, code: error.code }) }
         this.#changed()
         throw error.code ? error : storeError('http', error.message, error)
-      } finally { this.installing.delete(piperId) }
+      } finally { this.installing.delete(piperId); if (this.aborts.get(piperId) === abort) this.aborts.delete(piperId) }
     })()
     this.installing.set(piperId, job)
     return job
   }
 
+  /** Aborts the download of the model this voice belongs to (whichever of its speakers asked for it). */
+  cancel(id) {
+    const voice = findNeuralVoice(id, this.voices)
+    if (voice) this.aborts.get(voice.piperId)?.abort()
+  }
+
   async remove(id) {
     const voice = findNeuralVoice(id, this.voices)
     if (!voice) return
-    if (this.run?.voice.piperId === voice.piperId) this.stop()
-    if (this.client?.loaded === voice.piperId) this.#teardown()
+    if (this.run?.voice.piperId === voice.piperId) {
+      // A voice being read cannot be answered any more: stop() fires no event, so say it for the current fragment (the reader
+      // carries on with another voice) instead of leaving it waiting for a 'done' that never comes.
+      const id = this.currentId
+      this.stop()
+      this.#emit('error', id, 'not-installed')
+    }
+    if (this.client?.loaded === voice.piperId && !this.run) this.#teardown() // (a run on another voice replaces the session by itself)
     await this.store.remove(voice.piperId)
     for (const v of this.models.get(voice.piperId)) { this._installed.delete(v.id); this._downloads.delete(v.id) }
     for (const key of [...this.cache.map.keys()]) if (key.startsWith(`${voice.piperId}#`)) this.cache.delete(key)
@@ -208,7 +227,9 @@ export class NeuralEngine extends EventTarget {
       // may have had (a short heading before a long sentence leaves a hole while the long one is computed) is history, so
       // short pages cannot add up to a 'too-slow' verdict on a device that keeps up. A restart in mid-page keeps its record.
       if (run?.entries.length && run.entries.every(entry => entry.ended)) this.underrunTimes = []
+      const rebuild = this.#worthRebuilding(run)
       this.#hardStop()
+      if (rebuild) this.#teardown() // a running segment cannot be interrupted: when waiting for it costs more than a cold start, start afresh
       run = this.run = { voice, rate, entries: [], gateOpen: false, prepared: null, job: null, heldSince: null, holdTimer: null, pumpTimer: null, rtf: 0, rtfN: 0, spi: 0, t0: now(), firstAudio: false }
       this.#adopt(run, this.#entry(run, text), id, upcomingTexts, true)
       this.#setStatus('buffering')
@@ -285,6 +306,7 @@ export class NeuralEngine extends EventTarget {
   #pump() {
     const run = this.run
     if (!run || run.job) return
+    if (run.entries.some(e => e.error)) return // nothing after a failed fragment can be played: do not compute it
     const entry = run.entries.find(e => e.state === 'queued')
     if (!entry) return
     const ahead = run.entries.filter(e => !e.started && e.state !== 'queued').length
@@ -299,6 +321,7 @@ export class NeuralEngine extends EventTarget {
     if (!run.prepared) { this.#prepare(run); return }
     if (run.prepared === 'pending') return
     entry.state = 'synth'
+    run.segStart = now()
     const rate = run.rate, speaker = run.voice.speaker
     run.job = this.client.synth({ text: entry.text, rate, speaker }, {
       onPlan: counts => { entry.counts = counts; entry.total = counts.length },
@@ -311,9 +334,11 @@ export class NeuralEngine extends EventTarget {
   async #prepare(run) {
     run.prepared = 'pending'
     this.#setStatus('loading')
+    const t = now(), cold = !this.client?.alive
     try {
       this.client ||= this.createClient()
       await this.client.prepare(run.voice.piperId)
+      if (cold) this.coldMs = Math.max(1500, now() - t)
     } catch (error) {
       if (this.run !== run) return
       const id = this.currentId
@@ -327,13 +352,29 @@ export class NeuralEngine extends EventTarget {
     this.#pump()
   }
 
+  /**
+   * A jump (another text, speed or voice) cannot cancel the segment the worker is computing: its answer is waited for. That
+   * wait is predicted from the plan (ids of the segment x seconds per id x compute speed) and compared with what rebuilding
+   * the worker costs (a cold start, measured the first time). Only when the wait would be longer is the worker dropped.
+   */
+  #worthRebuilding(run) {
+    if (!run?.job || !this.client?.alive) return false
+    const entry = run.entries.find(e => e.state === 'synth')
+    const ids = entry?.counts?.[entry.chunks.length]
+    if (!ids) return false // not phonemised yet: nothing is being computed
+    const rtf = run.rtfN ? run.rtf : this.limits.rtfPrior, spi = run.spi || 0.03 / run.rate
+    const remaining = ids * spi * rtf * 1000 - (now() - run.segStart)
+    return remaining > (this.coldMs || this.limits.coldStartMs)
+  }
+
   #chunk(run, entry, { index, last, pcm, sampleRate, ms }) {
     if (this.run !== run) return
+    run.segStart = now()
     const dur = pcm.length / sampleRate
     const ids = entry.counts?.[index] || 0
     if (ids && dur > 0.2) run.spi = run.spi ? run.spi * 0.5 + (dur / ids) * 0.5 : dur / ids
     if (ms > 0 && dur > 0.2) {
-      const rtf = ms / 1000 / dur
+      const rtf = Math.min(ms / 1000 / dur, this.limits.maxRtfSample)
       run.rtf = run.rtfN ? run.rtf * 0.6 + rtf * 0.4 : rtf
       run.rtfN++
       this.stats.rtf = run.rtf
@@ -355,6 +396,7 @@ export class NeuralEngine extends EventTarget {
   #failEntry(run, entry, code) {
     if (this.run !== run) return
     entry.error = code; entry.state = 'done'
+    if (code === 'synth-failed') this.#teardown() // a worker that failed is not asked again (a dead one crashes the page): the next fragment gets a fresh one
     if (entry.id != null) { const id = entry.id; this.#hardStop(); this.#emit('error', id, code); return }
     this.#feed(run) // earlier fragments keep playing; the error is reported when the reader asks for this one
   }

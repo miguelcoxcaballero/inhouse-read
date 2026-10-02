@@ -19,7 +19,7 @@
 import { createPhonemizer } from './phonemizer.js'
 import { peakNormalize, trimSilence, fadeEdges, silence, concat, pauseAfter, splitSegments, limitIds, lengthScaleFor, PAUSE_MS } from './pcm.js'
 
-let ort = null, phonemizer = null, session = null, config = null, voice = null, initPromise = null
+let ort = null, phonemizer = null, session = null, config = null, voice = null, initPromise = null, loadChain = Promise.resolve()
 const cancelled = new Set()
 const queue = []
 let draining = false, current = null
@@ -65,7 +65,7 @@ async function runSegment(ids, { rate, speaker }) {
 
 async function synth({ id, text, rate, speaker }) {
   const sampleRate = config.audio.sample_rate
-  const segments = splitSegments(limitIds(phonemizer.phonemize(text, config.espeak.voice), config.num_symbols))
+  const segments = splitSegments(limitIds(await phonemizer.phonemize(text, config.espeak.voice), config.num_symbols))
   if (!segments.length) { // nothing speakable ("...", an ornament): a short rest keeps the reading flowing
     post({ type: 'plan', id, counts: [0] })
     const pcm = silence(sampleRate, 120)
@@ -118,7 +118,11 @@ self.onmessage = async ({ data: m }) => {
       post({ type: 'ready', id: m.id, version: ort.env.versions?.common, crossOriginIsolated: self.crossOriginIsolated })
     } else if (m.type === 'load') {
       await initPromise
-      post({ type: 'loaded', id: m.id, ...(await load(m)) })
+      // One load at a time: two overlapping loads (the voice changed while the first model was still loading) would both
+      // see "no session", and the first session would leak (~150 MB) when the second one overwrote it.
+      const loading = loadChain.then(() => load(m))
+      loadChain = loading.catch(() => {})
+      post({ type: 'loaded', id: m.id, ...(await loading) })
     } else if (m.type === 'synth') {
       queue.push(m); drain()
     } else if (m.type === 'cancel') {

@@ -77,7 +77,7 @@ export const readerPanelMarkup = `
     <div class="reading-voice-info" data-voice-info hidden><p class="reading-hint"><span data-voice-auto></span> <span data-voice-better hidden>Hay voces gratuitas de mayor calidad que puedes instalar en el dispositivo.</span></p><button type="button" class="reading-text-button" data-voice-settings hidden>Descargar voces de mayor calidad</button></div>
     <section class="reading-neural" data-neural aria-labelledby="reading-neural-title" hidden>
       <h3 id="reading-neural-title" class="reading-neural__title">Voces naturales · sin conexión</h3>
-      <p class="reading-hint" data-neural-note>Se descarga una vez (63 MB) y funciona sin internet.</p>
+      <p class="reading-hint" data-neural-note>Se descarga una vez (63 MB, más unos 16 MB del motor) y se guarda en el dispositivo. Habla sin enviar nada a internet; la app necesita abrirse con conexión.</p>
       <p class="reading-hint reading-neural__warning" data-neural-warning hidden><span data-neural-warning-text></span> <button type="button" class="reading-text-button" data-neural-retry>Volver a probar</button></p>
       <ul class="reading-neural__list" role="list" data-neural-list></ul>
       <p class="visually-hidden" role="status" aria-live="polite" data-neural-status></p>

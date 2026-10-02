@@ -61,7 +61,7 @@ for (const [format, file] of [['EPUB', EPUB], ['PDF', PDF]]) {
 
     // The group, the honest note and the book language first (the book is English: Lessac is the recommended one).
     await expect(neural(page).getByRole('heading', { name:'Voces naturales · sin conexión' })).toBeVisible()
-    await expect(neural(page)).toContainText('Se descarga una vez (63 MB) y funciona sin internet.')
+    await expect(neural(page)).toContainText('Se descarga una vez (63 MB, más unos 16 MB del motor) y se guarda en el dispositivo. Habla sin enviar nada a internet; la app necesita abrirse con conexión.')
     expect(await neural(page).locator('[data-neural-voice]').evaluateAll(items => items.slice(0, 2).map(item => item.dataset.neuralVoice))).toEqual([LESSAC, 'piper:en_GB-alba-medium'])
     expect(await engine(page, e => e.installs)).toEqual([]) // nothing downloads by itself
     await expect(row(page)).toContainText('Recomendada')
@@ -142,6 +142,19 @@ test('the download can be cancelled, fails with a clear message and can be retri
   expect(await engine(page, e => e.installs)).toEqual([alba, 'piper:en_US-lessac-high', 'piper:en_US-lessac-high'])
 })
 
+test('Quitar on the voice that is being read (the automatic pick) moves the reading to the system voice instead of leaving it silent', async ({ page }) => {
+  await prepare(page, { installed:[LESSAC], hold:true })
+  await open(page, EPUB)
+  await openAudio(page)
+  await page.getByRole('button', { name:'Reproducir', exact:true }).click()
+  await expect.poll(async () => (await calls(page)).length).toBeGreaterThan(0)
+  expect(await page.evaluate(() => window.__tts.log.length)).toBe(0)
+  await row(page).getByRole('button', { name:/Quitar la voz Lessac/ }).click()
+  await expect(row(page).getByRole('button', { name:/Descargar la voz Lessac/ })).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.__tts.log.length)).toBeGreaterThan(0) // the system voice took the same fragment
+  await expect(page.getByRole('button', { name:'Pausar', exact:true })).toBeVisible()
+})
+
 test('the picker works with the keyboard and keeps focus while it repaints', async ({ page }) => {
   await prepare(page)
   await open(page, EPUB)
@@ -199,7 +212,7 @@ test('first-use offer: Ahora no is remembered per language; Descargar starts the
   await expect(offer).toBeVisible()
   await offer.getByRole('button', { name:'Ahora no' }).click()
   await expect(offer).toBeHidden()
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('inhouse-read-neural-offer-dismissed')))).toEqual({ en:true })
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('inhouse-read-neural-offer-dismissed')))).toEqual({ en:expect.any(Number) })
   expect(await engine(page, e => e.installs)).toEqual([])
   // a new session does not ask again
   await page.reload()

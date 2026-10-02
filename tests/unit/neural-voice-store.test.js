@@ -13,13 +13,14 @@ const config = { audio: { sample_rate: 22050 }, num_speakers: 1 }
 /** A server-ish fetch. `script` decides per call; by default a normal one with Range support. */
 function fakeNetwork({ body = bytes, catalogueSize, onCall, failures = [] } = {}) {
   const calls = []
-  const stream = (data, { dieAt } = {}) => {
+  const stream = (data, { dieAt, stallAt } = {}) => {
     let at = 0
     return new ReadableStream({
       pull(controller) {
+        if (stallAt !== undefined && at >= stallAt) return new Promise(() => {}) // the connection goes silent without closing
         if (dieAt !== undefined && at >= dieAt) return controller.error(new TypeError('network error'))
         if (at >= data.length) return controller.close()
-        const end = Math.min(data.length, at + 10_000, dieAt ?? Infinity)
+        const end = Math.min(data.length, at + 10_000, dieAt ?? Infinity, stallAt ?? Infinity)
         controller.enqueue(data.slice(at, end)); at = end
       }
     })
@@ -43,7 +44,7 @@ function fakeNetwork({ body = bytes, catalogueSize, onCall, failures = [] } = {}
       return new Response(stream(body.slice(start)), { status: 206, headers: { 'content-length': String(body.length - start), 'content-range': `bytes ${start}-${body.length - 1}/${body.length}`, etag: '"v1"' } })
     }
     const die = failure && failure.dieAt
-    return new Response(stream(body, { dieAt: die }), { status: 200, headers: { 'content-length': String(body.length), etag: '"v1"' } })
+    return new Response(stream(body, { dieAt: die, stallAt: failure && failure.stallAt }), { status: 200, headers: { 'content-length': String(body.length), etag: '"v1"' } })
   }
   return { fetch, calls }
 }
@@ -128,6 +129,23 @@ describe('VoiceStore download', () => {
     expect(modelCalls[1].range).toBe('bytes=40000-')
     expect(modelCalls[1].ifRange).toBe('"v1"')
     expect(new Uint8Array(await store.readModel(ID))).toEqual(bytes)  // no byte lost, none repeated
+  })
+
+  it('gives up on a connection that goes silent (no byte for stallMs, no close) and resumes with a Range request', async () => {
+    const net = fakeNetwork({ failures: [undefined, undefined, { stallAt: 40_000 }] })
+    const { store } = makeStore({ net, deps: { stallMs: 40 } })
+    await store.download(ID)
+    const modelCalls = net.calls.filter(c => c.url === URLS.model)
+    expect(modelCalls.map(c => c.range)).toEqual([undefined, 'bytes=40000-'])
+    expect(new Uint8Array(await store.readModel(ID))).toEqual(bytes)
+  })
+
+  it('a silent connection does not outlive an abort', async () => {
+    const net = fakeNetwork({ failures: [undefined, undefined, { stallAt: 10_000 }] })
+    const { store } = makeStore({ net, deps: { stallMs: 60_000 } })
+    const controller = new AbortController()
+    const promise = store.download(ID, { signal: controller.signal, onProgress: p => { if (p.received >= 10_000) setTimeout(() => controller.abort(), 5) } })
+    await expect(promise).rejects.toMatchObject({ code: 'aborted' })
   })
 
   it('starts again cleanly when the server ignores Range', async () => {

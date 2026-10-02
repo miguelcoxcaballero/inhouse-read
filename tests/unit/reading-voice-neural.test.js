@@ -9,7 +9,7 @@ const DAVEFX = 'piper:es_ES-davefx-medium', LESSAC = 'piper:en_US-lessac-high'
 let saved
 beforeAll(async () => { await loadNeural(); saved = [...neuralVoices]; neuralVoices.splice(0, neuralVoices.length, ...FAKE_CATALOG) })
 afterAll(() => { neuralVoices.splice(0, neuralVoices.length, ...saved); setNeuralEngine(null) })
-afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); localStorage.clear() }) // a 'too-slow' verdict is remembered across sessions: not across tests
 
 const engineWith = (options = {}) => { const engine = createFakeNeuralEngine({ voices:FAKE_CATALOG, installed:[DAVEFX], hold:true, ...options }); setNeuralEngine(engine); return engine }
 const device = (voices = [{ voiceURI:'es-good', name:'es voice', lang:'es-ES', quality:400, network:false, installed:true }, { voiceURI:'en-good', name:'en voice', lang:'en-US', quality:400, network:false, installed:true }]) => {
@@ -267,5 +267,127 @@ describe('multilingual reading with neural voices', () => {
     tts('done', last(english).id); tts('done', last(english).id)
     expect(last(english)).toMatchObject({ voiceId:LESSAC, text:expect.stringContaining('old man') })
     again.stop()
+  })
+})
+
+describe('review fixes', () => {
+  const MIXED = 'Los niños salieron a jugar con una pelota. Salieron todos juntos al parque. The old man was sitting by the window and she was not there. He was not there either.'
+
+  it('a neural voice removed while it reads (also the automatic pick) hands the fragment over at once, instead of leaving the reading silent', async () => {
+    const speak = device(), engine = engineWith()
+    const voice = await reading(SENTENCES)
+    expect(voice.spokenWith.id).toBe(DAVEFX)
+    voice.voiceRemoved(DAVEFX)
+    expect(engine.stops).toBeGreaterThan(0)
+    expect(speak).toHaveBeenCalledTimes(1)
+    expect(speak.mock.calls[0].slice(0, 4)).toEqual(['Primera frase.', 'es-ES', 1, 'es-good'])
+    expect(voice.state).toBe('playing')
+    voice.stop()
+  })
+  it('a voice removed that is not the one being read changes nothing now, but is not used afterwards', async () => {
+    const speak = device(), engine = engineWith({ installed:[DAVEFX, 'piper:es_MX-claude-high'] })
+    const voice = await reading(SENTENCES)
+    expect(voice.spokenWith.id).not.toBe(DAVEFX) // the high-quality voice wins the automatic pick
+    const calls = engine.calls.length
+    voice.voiceRemoved(DAVEFX)
+    expect(engine.calls).toHaveLength(calls)
+    expect(speak).not.toHaveBeenCalled()
+    voice.stop()
+  })
+  it("'Preparando la voz natural…' does not outlive a speed change when the new utterance starts quickly", async () => {
+    vi.useFakeTimers()
+    device(); engineWith()
+    const states = []
+    const voice = await reading(SENTENCES, { onState:(state, message) => states.push(message) })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(states.at(-1)).toBe('Preparando la voz natural…')
+    voice.rate = 1.2; voice.restart()
+    expect(states.at(-1)).toBe('') // cleared with the old utterance
+    await vi.advanceTimersByTimeAsync(100)
+    tts('start', voice.utteranceId)
+    expect(states.at(-1)).toBe('')
+    voice.stop()
+  })
+  it('turning Voz multilingüe on while the neural voice reads ahead silences the engine before the system voice takes a foreign fragment', async () => {
+    const speak = device(), engine = engineWith()
+    const voice = await reading(MIXED, { reader:{ language:'es', getSpeechText:async () => MIXED } })
+    expect(voice.transport).toBe('neural')
+    voice.options = { footnotes:false, multilingual:true, skipHeaders:false } // what setPreference does for an audio option: no restart
+    tts('done', last(engine).id) // second Spanish fragment: still the neural voice
+    expect(speak).not.toHaveBeenCalled()
+    const stops = engine.stops
+    tts('done', last(engine).id) // the English one: the system voice
+    expect(speak).toHaveBeenCalledTimes(1)
+    expect(speak.mock.calls[0].slice(1, 4)).toEqual(['en-US', 1, 'en-good'])
+    expect(engine.stops).toBeGreaterThan(stops)
+    expect(voice.transport).toBe('native')
+    voice.stop()
+  })
+
+  describe('a device that cannot keep up is remembered', () => {
+    const giveUp = async () => {
+      const engine = engineWith()
+      const voice = await reading(SENTENCES, { rate:1.2 })
+      tts('error', last(engine).id, 'too-slow')
+      voice.stop()
+      return engine
+    }
+    it('the next session starts with the system voice, with the warning, without waking the engine', async () => {
+      const speak = device()
+      await giveUp()
+      const engine = engineWith()
+      const voice = await reading(SENTENCES, { rate:1.2 })
+      expect(voice.neuralOff).toBe('too-slow')
+      expect(engine.calls).toHaveLength(0)
+      expect(speak).toHaveBeenCalled()
+      voice.stop()
+    })
+    it('a faster speed is slower still, but a slower one gets another chance', async () => {
+      device()
+      await giveUp()
+      let engine = engineWith()
+      let voice = await reading(SENTENCES, { rate:1.8 }); voice.stop()
+      expect(engine.calls).toHaveLength(0)
+      engine = engineWith()
+      voice = await reading(SENTENCES, { rate:1 }); voice.stop()
+      expect(engine.calls).toHaveLength(1)
+    })
+    it('Volver a probar (or a new voice or speed) forgets it for good', async () => {
+      device()
+      await giveUp()
+      let voice = new ReadingVoice({ language:'es', getSpeechText:async () => SENTENCES })
+      voice.retryNeural()
+      expect(localStorage.getItem('inhouse-read-neural-slow')).toBeNull()
+      const engine = engineWith()
+      voice = await reading(SENTENCES, { rate:1.2 }); voice.stop()
+      expect(engine.calls).toHaveLength(1)
+    })
+    it('and is forgotten after two weeks', async () => {
+      device()
+      await giveUp()
+      const saved = JSON.parse(localStorage.getItem('inhouse-read-neural-slow'))
+      localStorage.setItem('inhouse-read-neural-slow', JSON.stringify({ ...saved, at:saved.at - 15 * 864e5 }))
+      const engine = engineWith()
+      const voice = await reading(SENTENCES, { rate:1.2 }); voice.stop()
+      expect(engine.calls).toHaveLength(1)
+    })
+  })
+
+  it('a neural voice of another language than the book is not used for it (a Spanish choice must not garble an English book)', async () => {
+    const speak = device(), engine = engineWith()
+    const voice = await reading('The quick brown fox jumps over the lazy dog.', { reader:{ language:'en-US', metadata:{ language:'en-US' }, getSpeechText:async () => 'The quick brown fox jumps over the lazy dog.' }, voice:DAVEFX })
+    expect(engine.calls).toHaveLength(0)
+    expect(speak.mock.calls[0].slice(1, 4)).toEqual(['en-US', 1, 'en-good'])
+    voice.stop()
+    const english = engineWith({ installed:[DAVEFX, LESSAC] })
+    const again = await reading('The quick brown fox jumps over the lazy dog.', { reader:{ language:'en-US', metadata:{ language:['en-US'] }, getSpeechText:async () => 'The quick brown fox jumps over the lazy dog.' }, voice:DAVEFX })
+    expect(last(english).voiceId).toBe(LESSAC)
+    again.stop()
+  })
+  it('a book that declares no language (a PDF, read on a device in another language) keeps the explicit neural choice', async () => {
+    device(); const engine = engineWith()
+    const voice = await reading('Hola mundo.', { reader:{ language:'en-US', metadata:{}, getSpeechText:async () => 'Hola mundo.' }, voice:DAVEFX })
+    expect(last(engine).voiceId).toBe(DAVEFX)
+    voice.stop()
   })
 })

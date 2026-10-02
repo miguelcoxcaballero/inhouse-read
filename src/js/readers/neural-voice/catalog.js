@@ -7,12 +7,21 @@
 export const NEURAL_PREFIX = 'piper:'
 export const isNeuralVoiceId = id => typeof id === 'string' && id.startsWith(NEURAL_PREFIX)
 
-/** Where the models live. Tests and mirrors set window.INHOUSE_NEURAL_VOICE_BASE (see neuralVoiceBase). */
+/** Where the models live. Tests and mirrors set window.INHOUSE_NEURAL_VOICE_BASE before the app starts (see neuralVoiceBase). */
 export const DEFAULT_VOICE_BASE = 'https://huggingface.co/rhasspy/piper-voices/resolve/main/'
 
-/** The base URL (always ending in '/') every model, config and the voices.json catalogue is fetched from. */
+// A downloaded model is loaded into onnxruntime, so where it comes from is not negotiable at run time: the override must be
+// https (or http on this very machine, for the test mirror) and is read ONCE, when this module loads at the start of the app.
+// Anything a book's own script sets on window later (an EPUB's inline script runs with the page's origin) is ignored.
+const trustedBase = url => {
+  try { const { protocol, hostname } = new URL(url); return protocol === 'https:' || (protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(hostname)) } catch { return false }
+}
+const overrideOf = env => { const value = env?.INHOUSE_NEURAL_VOICE_BASE; return typeof value === 'string' && trustedBase(value) ? value : '' }
+const OVERRIDE_AT_LOAD = overrideOf(globalThis)
+
+/** The base URL (always ending in '/') every model, config and the voices.json catalogue is fetched from. `env` is for tests: any other object is read as it is now. */
 export function neuralVoiceBase(env = globalThis) {
-  const base = String(env?.INHOUSE_NEURAL_VOICE_BASE || DEFAULT_VOICE_BASE)
+  const base = (env === globalThis ? OVERRIDE_AT_LOAD : overrideOf(env)) || DEFAULT_VOICE_BASE
   return base.endsWith('/') ? base : base + '/'
 }
 

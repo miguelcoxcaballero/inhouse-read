@@ -348,19 +348,21 @@ test.describe('neural voice engine (real Piper weights, real ORT + espeak-ng WAS
   })
 
   test('with no network the download fails as "offline" and the real HF URL layout is used by default', async () => {
+    // The base override is read once when the app loads (a book's script cannot redirect downloads later): the default base is
+    // tested on a page that never had one.
+    const context = await page.context().browser().newContext()
+    const fresh = await context.newPage()
     const requested = []
-    const record = request => requested.push(request.url())
-    page.on('request', record)
-    await page.route('https://huggingface.co/**', route => route.abort('internetdisconnected'))
-    const result = await page.evaluate(async () => {
-      const original = window.INHOUSE_NEURAL_VOICE_BASE
-      window.INHOUSE_NEURAL_VOICE_BASE = '' // the default base: Hugging Face
+    fresh.on('request', request => requested.push(request.url()))
+    await fresh.route('https://huggingface.co/**', route => route.abort('internetdisconnected'))
+    await fresh.goto(`http://127.0.0.1:${port}/inhouse-read/tests/e2e/fixtures/neural-voice-harness.html`)
+    await fresh.waitForFunction(() => window.neural)
+    const result = await fresh.evaluate(async () => {
       let code = null
       try { await window.neural.engine.install('piper:de_DE-thorsten-medium') } catch (error) { code = error.code }
-      window.INHOUSE_NEURAL_VOICE_BASE = original
       return { code, downloads: [...window.neural.engine.downloads.values()].map(d => d.state) }
     })
-    page.off('request', record)
+    await context.close()
     result.requested = requested.filter(url => url.startsWith('https://huggingface.co/'))
     expect(result.requested[0]).toBe('https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/medium/de_DE-thorsten-medium.onnx.json')
     expect(result.code).toBe('offline')

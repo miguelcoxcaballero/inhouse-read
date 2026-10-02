@@ -76,7 +76,7 @@ export function createFakeNeuralEngine(options = {}) {
       const task = this.tasks.get(id)
       if (!task) return
       const known = this.map.get(id) || { fraction:0, received:0, total:sizeOf(id) }
-      this.tasks.delete(id); this.map.set(id, { ...known, state:'error', error:code })
+      this.tasks.delete(id); this.map.set(id, { ...known, state:'error', error:`error ${code}`, code }) // like the real engine: a message in `error`, the machine-readable reason in `code`
       this.emitChange(); task.reject(coded(code))
     }
     abort(id) {
@@ -85,6 +85,7 @@ export function createFakeNeuralEngine(options = {}) {
       this.tasks.delete(id); this.map.delete(id)
       this.emitChange(); task.reject(coded('aborted'))
     }
+    cancel(id) { this.abort(id) }
     async remove(id) { this.removed.push(id); this.set.delete(id); this.map.delete(id); this.emitChange() }
     unlock() { this.unlocks++ }
     emit(type, id, reason) { window.dispatchEvent(new CustomEvent('inhouse-tts', { detail:{ type, id, ...(reason ? { reason } : {}) } })) }

@@ -23,12 +23,23 @@ Files here are shipped as they are (`public/` is copied to `dist/neural-voice/ph
 * The trimmed data was verified to give the same phoneme ids as the untrimmed package for the sentences tried in the
   spikes (es, en, fr, de, it, pt, ca), and every voice of the catalogue was synthesised with it.
 
-## Licences (this is a private app; read before distributing anything)
+## Licences (the repository and the site are public: read before changing anything here)
 
-* **espeak-ng is GPL-3.0-or-later.** `piper_phonemize.wasm` and `.data` contain it, so redistributing this site/app
-  publicly would have to follow the GPL for those files (source offer, notices). piper-phonemize itself and piper-tts-web are MIT.
+* **espeak-ng is GPL-3.0-or-later.** `piper_phonemize.wasm` and `.data` contain it, and they are distributed with the site
+  (this repository is public and GitHub Pages serves these very files), so the GPL applies to them:
+  * the licence text is next to the files: [`COPYING`](COPYING) (GPL-3.0);
+  * the corresponding source is public: [espeak-ng](https://github.com/espeak-ng/espeak-ng) (the data is its `espeak-ng-data`,
+    trimmed by `scripts/trim-espeak-data.mjs`) and [rhasspy/piper-phonemize](https://github.com/rhasspy/piper-phonemize)
+    (the program that statically links it; MIT). The build recipe is the one of [piper-tts-web](https://www.npmjs.com/package/piper-tts-web) 1.1.2 (MIT), named above;
+  * the rest of the app only talks to that program through its command line (text in, phoneme ids out), as the Piper
+    project itself does.
+  Keep these notes and `COPYING` with the files if they are ever moved.
 * **Each Piper voice has its own dataset licence**, stated in the model card of the voice on Hugging Face
   (`rhasspy/piper-voices`, the `MODEL_CARD` next to every voice). The voices are *not* part of this repository: they are
-  downloaded by the user, on demand, from Hugging Face. Check the card of a voice before using it outside a private
-  setting (several datasets are CC-BY, CC-BY-SA or non-commercial).
+  downloaded by the user, on demand, from Hugging Face, so they are not redistributed from here. The catalogue
+  (`src/js/readers/neural-voice/catalog.js`) lists the voices used (Piper models `es_MX-claude-high`, `es_ES-davefx-medium`,
+  `es_ES-sharvard-medium`, `en_US-lessac-medium`, `en_GB-alba-medium`, `fr_FR-siwis-medium`, `de_DE-thorsten-medium`,
+  `it_IT-paola-medium`, `pt_BR-faber-medium`, `ca_ES-upc_ona-medium`); credit for each belongs to the author of its dataset,
+  named in its model card. Check the card of a voice before using it outside a personal setting (several datasets are
+  CC-BY, CC-BY-SA or non-commercial).
 * onnxruntime-web (MIT) is copied to `dist/neural-voice/ort/` at build time by `scripts/neural-voice-assets.mjs`.

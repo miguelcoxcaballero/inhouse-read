@@ -80,10 +80,12 @@ export class NeuralVoiceEngine extends EventTarget {
    * Downloads a voice (model + config) from Hugging Face into Cache Storage with progress ('change' events and
    * `downloads`), asks for persistent storage, and resolves when it is usable. Rejects with an Error whose `code` is
    * 'offline' | 'http' | 'storage' | 'aborted' ('unsupported' for an unknown voice or a browser without the pieces). Never starts by itself: only the user asks for a download.
-   * The base URL is https://huggingface.co/rhasspy/piper-voices/resolve/main/ unless window.INHOUSE_NEURAL_VOICE_BASE says otherwise.
+   * The base URL is https://huggingface.co/rhasspy/piper-voices/resolve/main/ unless window.INHOUSE_NEURAL_VOICE_BASE (an https URL, or http on localhost) was set before the app started: it is read once at load, later changes are ignored.
    */
   async install(id, { signal } = {}) { return (await this.preload()).install(id, { signal }) }
-  /** Deletes a downloaded voice. */
+  /** ADDED: aborts the download of `id` (also when another speaker of the same model started it); the install() promise rejects with code 'aborted'. */
+  cancel(id) { this.core?.cancel(id) }
+  /** Deletes a downloaded voice. If it is the one being read, the current id gets an 'error' event with reason 'not-installed' (stop() itself fires none). */
   async remove(id) { return (await this.preload()).remove(id) }
   /** ADDED: loads the worker and the voice's model ahead of the first speak() (cold start 3-6 s). Call it when a book opens with a neural voice selected. Never rejects. */
   async warmUp(voiceId) { return (await this.preload()).warmUp(voiceId) }

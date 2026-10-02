@@ -22,6 +22,14 @@ export const isNeuralId = id => typeof id === 'string' && id.startsWith(NEURAL_I
 // Above any system voice (Android tops out near 650 with every marker), so an installed neural voice is the default pick.
 const NEURAL_SCORE = 900
 
+/**
+ * The language a book itself declares (its metadata), or ''. reader.language falls back to the device's language, which says
+ * nothing about the book: a PDF has no language and is often read with a device in another one.
+ */
+export function declaredLanguage(reader) {
+  try { const language = reader?.metadata?.language; return String((Array.isArray(language) ? language[0] : language) || '') } catch { return '' }
+}
+
 /** 'es_ES', 'spa-ESP', 'ES-es' -> 'es-ES' (language lower-case, region upper-case). */
 export function normalizeLang(tag) {
   const parts = String(tag || '').trim().replace(/_/g, '-').split('-').filter(Boolean)

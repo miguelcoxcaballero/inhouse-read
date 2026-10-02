@@ -55,7 +55,7 @@ describe('natural voices group', () => {
     expect(block(panel).hidden).toBe(false)
     expect(panel.querySelector('#reading-neural-title').textContent).toBe('Voces naturales · sin conexión')
     expect(block(panel).getAttribute('aria-labelledby')).toBe('reading-neural-title')
-    expect(panel.querySelector('[data-neural-note]').textContent).toBe('Se descarga una vez (63 MB) y funciona sin internet.')
+    expect(panel.querySelector('[data-neural-note]').textContent).toBe('Se descarga una vez (63 MB, más unos 16 MB del motor) y se guarda en el dispositivo. Habla sin enviar nada a internet; la app necesita abrirse con conexión.')
     expect(rows(panel).slice(0, 3).map(item => item.dataset.neuralVoice)).toEqual([DAVEFX, 'piper:es_MX-claude-high', LESSAC]) // book language (es-ES first), then the device language (en-US)
     expect(row(panel, DAVEFX).textContent).toContain('Davefx')
     expect(row(panel, DAVEFX).textContent).toContain('Recomendada')
@@ -70,7 +70,7 @@ describe('natural voices group', () => {
     neuralVoices.push(big)
     try {
       const { panel, engine } = await setup()
-      expect(panel.querySelector('[data-neural-note]').textContent).toBe('Se descarga una vez (63 MB) y funciona sin internet.')
+      expect(panel.querySelector('[data-neural-note]').textContent).toBe('Se descarga una vez (63 MB, más unos 16 MB del motor) y se guarda en el dispositivo. Habla sin enviar nada a internet; la app necesita abrirse con conexión.')
       expect(row(panel, big.id).textContent).toContain('77 MB')
       click(panel, LESSAC, 'install')
       engine.progress(LESSAC, .5)
@@ -206,7 +206,7 @@ describe('first-use offer', () => {
     experience.voice.state = 'playing'; experience.neuralPicker.render()
     offer(panel).querySelector('[data-neural-action="dismiss"]').click()
     expect(offer(panel).hidden).toBe(true)
-    expect(JSON.parse(localStorage.getItem('inhouse-read-neural-offer-dismissed'))).toEqual({ en:true })
+    expect(JSON.parse(localStorage.getItem('inhouse-read-neural-offer-dismissed'))).toEqual({ en:expect.any(Number) })
     experience.neuralPicker.render(); expect(offer(panel).hidden).toBe(true)
     // another language still gets its offer
     experience.reader.language = 'es-ES'; experience.neuralPicker.render()
@@ -244,5 +244,120 @@ describe('reading preferences accept neural voice ids', () => {
   it('keeps a piper: id as the saved voice', () => {
     expect(normalizeReadingPreferences({ voice:LESSAC }).voice).toBe(LESSAC)
     expect(normalizeReadingPreferences({ voice:null }).voice).toBe('')
+  })
+})
+
+describe('review fixes', () => {
+  it('a voice downloaded for another language than the book is installed but not pinned as the global choice', async () => {
+    const { panel, engine, experience } = await setup({ language:'es-ES' })
+    experience.reader.metadata = { language:'es-ES' } // a language the book declares itself
+    click(panel, LESSAC, 'install')
+    engine.finish(LESSAC)
+    await vi.waitFor(() => expect(row(panel).dataset.state).toBe('installed'))
+    expect(saved()).toBe('')
+    expect(panel.querySelector('[data-neural-status]').textContent).toBe('Voz Lessac instalada.')
+    // so an English book later still gets its own voice, and a Spanish one never the English voice
+    expect(experience.voice.voiceFor('Hola.').voice?.id ?? '').not.toBe(LESSAC)
+  })
+  it('Quitar on the voice that is being read (picked by Automática) moves the reading to another voice at once', async () => {
+    const speak = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop:vi.fn(), getVoices:() => JSON.stringify([{ voiceURI:'es-sys', name:'es', lang:'es-ES', quality:400, network:false, installed:true }]) })
+    const { panel, engine, experience } = await setup({ language:'es-ES', installed:[DAVEFX] })
+    await experience.voice.play()
+    expect(engine.calls.at(-1)).toMatchObject({ voiceId:DAVEFX })
+    expect(speak).not.toHaveBeenCalled()
+    click(panel, DAVEFX, 'remove')
+    await vi.waitFor(() => expect(engine.removed).toEqual([DAVEFX]))
+    expect(speak).toHaveBeenCalledTimes(1)
+    expect(speak.mock.calls[0].slice(1, 4)).toEqual(['es-ES', 1, 'es-sys'])
+    expect(experience.voice.state).toBe('playing')
+    experience.voice.stop()
+  })
+  it('Quitar on the saved voice that is being read does the same, and goes back to Automática', async () => {
+    const speak = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop:vi.fn(), getVoices:() => JSON.stringify([{ voiceURI:'es-sys', name:'es', lang:'es-ES', quality:400, network:false, installed:true }]) })
+    const { panel, engine, experience } = await setup({ language:'es-ES', installed:[DAVEFX] })
+    experience.setPreference('voice', DAVEFX)
+    await experience.voice.play()
+    const calls = engine.calls.length
+    click(panel, DAVEFX, 'remove')
+    await vi.waitFor(() => expect(engine.removed).toEqual([DAVEFX]))
+    expect(engine.calls).toHaveLength(calls) // not re-spoken with the voice that is going away
+    expect(speak).toHaveBeenCalledTimes(1)
+    expect(saved()).toBe('')
+    experience.voice.stop()
+  })
+  it('a progress tick updates the bar in place: the Cancelar being pressed is not replaced under the finger', async () => {
+    const { panel, engine } = await setup()
+    click(panel, LESSAC, 'install')
+    const cancel = row(panel).querySelector('[data-neural-action="cancel"]'), list = panel.querySelector('[data-neural-list]')
+    const item = row(panel)
+    for (const fraction of [.2, .5, .8]) {
+      engine.progress(LESSAC, fraction)
+      await vi.waitFor(() => expect(row(panel).querySelector('[role="progressbar"]').getAttribute('aria-valuenow')).toBe(String(Math.round(fraction * 100))))
+    }
+    expect(row(panel)).toBe(item)
+    expect(row(panel).querySelector('[data-neural-action="cancel"]')).toBe(cancel)
+    expect(row(panel).querySelector('i').style.width).toBe('80%')
+    engine.finish(LESSAC)
+    await vi.waitFor(() => expect(row(panel).dataset.state).toBe('installed')) // a state change still rebuilds
+    expect(list.contains(item)).toBe(false)
+  })
+  it('the offer card also updates its bar in place', async () => {
+    const { panel, engine, experience } = await setup({ language:'es-MX' })
+    experience.voice.state = 'playing'; experience.neuralPicker.render()
+    offer(panel).querySelector('[data-neural-action="install"]').click()
+    const cancel = offer(panel).querySelector('[data-neural-action="cancel"]')
+    engine.progress('piper:es_MX-claude-high', .6)
+    await vi.waitFor(() => expect(offer(panel).querySelector('[role="progressbar"]').getAttribute('aria-valuenow')).toBe('60'))
+    expect(offer(panel).querySelector('[data-neural-action="cancel"]')).toBe(cancel)
+  })
+  it('the row of another speaker of a model downloading can cancel it (through the engine), and says why a download failed', async () => {
+    const { panel, engine } = await setup()
+    engine.cancel = vi.fn()
+    engine.map.set(ALBA, { state:'downloading', fraction:.3, received:1, total:10 }) // a sibling speaker: the picker did not start it
+    engine.emitChange()
+    await vi.waitFor(() => expect(row(panel, ALBA).dataset.state).toBe('downloading'))
+    click(panel, ALBA, 'cancel')
+    expect(engine.cancel).toHaveBeenCalledWith(ALBA)
+    engine.map.set(ALBA, { state:'error', fraction:0, received:0, total:0, error:'No hay conexión', code:'offline' })
+    engine.emitChange()
+    await vi.waitFor(() => expect(row(panel, ALBA).dataset.state).toBe('error'))
+    expect(row(panel, ALBA).textContent).toContain('Sin conexión. Conéctate a internet para descargarla.')
+  })
+  it('opening a book warms the worker only for someone who has listened with a neural voice before; the audio tab always does', async () => {
+    const { panel, engine, experience } = await setup({ installed:[LESSAC] })
+    const picker = experience.neuralPicker
+    const refresh = vi.spyOn(picker, 'refresh').mockImplementation(() => {})
+    vi.stubGlobal('requestIdleCallback', undefined)
+    vi.useFakeTimers()
+    picker.warmed = false; picker.warm(); vi.advanceTimersByTime(3000)
+    expect(refresh).toHaveBeenLastCalledWith({ warm:false })
+    engine.status = 'speaking'; engine.dispatchEvent(new Event('status'))
+    expect(localStorage.getItem('inhouse-read-neural-used')).toBe('1')
+    picker.warmed = false; picker.warm(); vi.advanceTimersByTime(3000)
+    expect(refresh).toHaveBeenLastCalledWith({ warm:true })
+    vi.useRealTimers(); refresh.mockRestore()
+    const warmUp = vi.spyOn(picker, 'warmUp').mockImplementation(() => {}) // (the engine's own warm-ups from the page opening are not what is measured)
+    warmUp.mockClear()
+    picker.attach(false); await new Promise(resolve => setTimeout(resolve, 20))
+    expect(warmUp).not.toHaveBeenCalled()
+    picker.attach(true)
+    await vi.waitFor(() => expect(warmUp).toHaveBeenCalled())
+  })
+  it('Ahora no is not for ever: the offer comes back after a month', async () => {
+    const { panel, experience } = await setup()
+    experience.voice.state = 'playing'
+    for (const [value, hidden] of [[Date.now() - 29 * 864e5, true], [Date.now() - 31 * 864e5, false], [true, true]]) {
+      localStorage.setItem('inhouse-read-neural-offer-dismissed', JSON.stringify({ en:value }))
+      experience.neuralPicker.render()
+      expect(offer(panel).hidden).toBe(hidden)
+    }
+  })
+  it('the offer says it is generated on the device, not that it beats every system voice, and advises Wi-Fi', async () => {
+    const { panel, experience } = await setup()
+    experience.voice.state = 'playing'; experience.neuralPicker.render()
+    expect(offer(panel).textContent).toContain('Mejor con Wi-Fi')
+    expect(offer(panel).textContent).not.toContain('Suena más natural')
   })
 })

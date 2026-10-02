@@ -33,6 +33,7 @@ export function fakeClients() {
   const createClient = () => {
     const client = {
       loaded: null, disposed: false, prepared: [], jobs: [], failPrepare: null,
+      get alive() { return !client.disposed },
       async prepare(piperId) { client.prepared.push(piperId); if (client.failPrepare) throw client.failPrepare; client.loaded = piperId },
       synth(request, handlers) {
         const job = { request, handlers, cancelled: false, cancel() { job.cancelled = true } }
