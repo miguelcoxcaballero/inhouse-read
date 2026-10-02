@@ -10,6 +10,7 @@ import { createShelfLampLighting } from './shelf-lamp-lighting.js';
 import { createShelfTrash, sampleTrashDrop } from './shelf-trash.js';
 import { createShelfCatalog } from './shelf-catalog.js';
 import { createBaggebo } from './baggebo-model.js';
+import { compilePrograms } from './gpu-programs.js';
 import { BAGGEBO_SPEC, normalizeShelfType } from './shelf-types.js';
 
 const WALNUT = new URL('../assets/library/walnut-pbr.webp', import.meta.url).href;
@@ -320,6 +321,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   let disposed = false, raf = 0, renderCount = 0, modelCreations = 0, viewportHeight = 1, progress = mode === 'isometric' ? 1 : 0;
   let shelfSnapshotDirty = true, shelfSnapshotRenders = 0;
+  // Every program is linked in parallel before the first frame (see gpu-programs.js).
+  let programsReady = null, programsPoll = 0, unpainted = [];
   // A scroll only moves the camera: world-space shadows stay valid unless
   // something in the scene changed (or the lighting's fitted window moved).
   let shadowDirty = true, shadowCasters = 0;
@@ -1338,6 +1341,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     return true;
   }
 
+  // Cheap readiness check between frames; the scene is only redrawn once ready.
+  function pollPrograms() {
+    programsPoll = 0;
+    if (disposed || programsReady === true) return;
+    if (programsReady()) invalidate(false); else programsPoll = setTimeout(pollPrograms, 10);
+  }
+
   function draw(now = performance.now()) {
     raf = 0;
     if (disposed) return;
@@ -1393,6 +1403,17 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       shelfSnapshotDirty = true;
     }
     if (lampRefresh && lampLighting.shadowCount) renderer.shadowMap.needsUpdate = true;
+    // The models and lamp lights now exist: link their programs in parallel
+    // instead of one blocking link per material inside the first render.
+    if (programsReady !== true) {
+      programsReady ||= compilePrograms(renderer, scene, camera);
+      if (!programsReady()) {
+        // Animations that finished on this unpainted frame resolve after the next painted one.
+        unpainted.push(...finishedInsertions, ...finishedDrops);
+        programsPoll ||= setTimeout(pollPrograms, 10); return;
+      }
+      programsReady = true;
+    }
     // Fit the key's shadow to the cabinet (and bin) in world space; the
     // lighting clips it to the camera window, so each texel covers less.
     shadowBounds.copy(fullBounds);
@@ -1484,6 +1505,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     canvas.dataset.plantGeometry = 'catalog-3d';
     canvas.dataset.animating = String(Boolean(transition || reorderTransition || moving || trashMoving || inspectionMoving));
     lastSceneMoving = Boolean(transition || reorderTransition || moving || trashMoving);
+    for (const resolve of unpainted.splice(0)) resolve();
     for (const resolve of finishedInsertions) resolve();
     for (const resolve of finishedDrops) resolve();
     // One more frame after any motion redraws its cheaper shadow at full quality.

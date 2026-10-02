@@ -18,7 +18,16 @@
   <link rel="stylesheet" href="/src/css/plant-catalog.css" />
   <link rel="stylesheet" href="/src/css/android-update.css" />
   <link rel="stylesheet" href="/src/css/reading.css" />
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script>
+    // Google Identity Services only serves the web sign-in popup. The Android
+    // shell signs in natively (PKCE), so its WebView skips downloading and
+    // running the library while the shelf is starting.
+    if (!/\bInhouseReadApp\/\d/i.test(navigator.userAgent)) {
+      const gsi = document.createElement('script')
+      gsi.src = 'https://accounts.google.com/gsi/client'; gsi.async = true
+      document.head.append(gsi)
+    }
+  </script>
 
 </head>
 <body>

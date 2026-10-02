@@ -108,6 +108,31 @@ export function idForSource({ sourceType, driveFileId, name, size }) {
   return `local:${name}:${size}`
 }
 
+const isBlob = value => /^\[object (Blob|File)\]$/.test(Object.prototype.toString.call(value))
+
+function sameValue(a, b) {
+  if (Object.is(a, b)) return true
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false
+  // IndexedDB returns fresh Blob objects on every read; type, size and
+  // modification time identify the stored file.
+  if (isBlob(a) || isBlob(b)) return isBlob(a) && isBlob(b) && a.type === b.type && a.size === b.size && a.lastModified === b.lastModified
+  if (a instanceof Date || b instanceof Date) return a instanceof Date && b instanceof Date && a.getTime() === b.getTime()
+  const plain = Array.isArray(a) ? Array.isArray(b) : Object.getPrototypeOf(a) === Object.prototype && Object.getPrototypeOf(b) === Object.prototype
+  if (!plain) return false
+  const keys = Object.keys(a)
+  return keys.length === Object.keys(b).length && keys.every(key => key in b && sameValue(a[key], b[key]))
+}
+
+/**
+ * True when two record lists describe the same shelf. A background sync
+ * reports a change even when every record came back identical, and drawing
+ * the 3D shelf again for it costs a full layout and repaint. Anything this
+ * cannot prove equal (any other object type included) counts as different.
+ */
+export function sameBookRecords(previous, next) {
+  return previous.length === next.length && previous.every((record, index) => sameValue(record, next[index]))
+}
+
 export class LibraryStore {
   #dbPromise
 
