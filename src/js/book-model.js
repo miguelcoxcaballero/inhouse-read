@@ -821,7 +821,7 @@ function acquireCoverImage(url, onImage, onError) {
 }
 
 export function createBookModel(book, style, width, height, thickness, coverUrl,
-  { shelf = false, overview = false, inspectionResolution = 0 } = {}) {
+  { shelf = false, overview = false, inspectionResolution = 0, eagerRelief = true } = {}) {
   const group = new THREE.Group();
   inspectionResolution = shelf && !overview ? (inspectionResolution >= 2048 ? 2048 : inspectionResolution >= 1024 ? 1024 : 0) : 0;
   group.userData.inspectionResolution = inspectionResolution;
@@ -844,17 +844,29 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   // download is pending), never twice per book.
   const cover = new THREE.MeshPhysicalMaterial({ map:null });
   const reliefCapable = detail || Boolean(inspectionResolution);
+  // The clearcoat + relief program is costly to shade. Views that only fly a
+  // book (opening, closing) skip it unless the cover already has a relief; a
+  // view that gets one later arms it then, once (setCoverRelief).
+  let reliefArmed = reliefCapable && (eagerRelief || Boolean(book.coverRelief));
   const laminate = value => {
     applyCoverFinish(cover, value);
-    if (reliefCapable && !cover.clearcoat) cover.clearcoat = COVER_CLEARCOAT_FLOOR;
+    if (reliefArmed && !cover.clearcoat) cover.clearcoat = COVER_CLEARCOAT_FLOOR;
   };
-  laminate(book.coverFinish);
-  applyBookReflectionSurface(cover, { seed:`${surfaceSeed}|cover`, strength:.018 });
-  installCoverRelief(cover);
-  if (reliefCapable) {
+  const armRelief = () => {
+    if (reliefArmed || !reliefCapable) return;
+    reliefArmed = true;
+    laminate(coverFinishValue);
     // Neutral 1x1 maps: clearcoat x1, roughness x1, metalness 0, flat normal.
     cover.clearcoatNormalMap = neutralTexture(128, 128, 255);
     cover.clearcoatMap = cover.clearcoatRoughnessMap = cover.roughnessMap = cover.metalnessMap = neutralTexture(255, 255, 0);
+    cover.needsUpdate = true;
+  };
+  let coverFinishValue = book.coverFinish;
+  laminate(book.coverFinish);
+  applyBookReflectionSurface(cover, { seed:`${surfaceSeed}|cover`, strength:.018 });
+  installCoverRelief(cover);
+  if (reliefArmed) {
+    reliefArmed = false; armRelief();
   }
   // Close-up copies carry woven or paper tooth in the normal channel. On the
   // shelf it would not survive the mipmaps, so those copies skip the cost.
@@ -1118,7 +1130,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   // The maps are rebuilt from the picture (deterministic per cover), so only
   // { id, strength } is ever saved. They swap into texture slots the cover
   // material already compiled with: selecting a relief links no program.
-  let wantedRelief = null, reliefRevision = 0, reliefMaps = null, reliefOwned = new Set(), coverFinishValue = book.coverFinish;
+  let wantedRelief = null, reliefRevision = 0, reliefMaps = null, reliefOwned = new Set();
   let reliefController = null, materialRevision = 0;
   const canvasTexture = (rgba, width, height) => {
     const canvas = document.createElement('canvas');
@@ -1140,7 +1152,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   const applyReliefUniforms = () => {
     if (!wantedRelief || !reliefMaps) {
       cover.metalness = 0; cover.clearcoatNormalScale.set(1, 1);
-      if (reliefCapable) laminate(coverFinishValue);
+      if (reliefArmed) laminate(coverFinishValue);
       return;
     }
     // Full clearcoat share: the map's red channel carries the laminate's own
@@ -1176,7 +1188,8 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     const controller = reliefController = new AbortController();
     const next = normalizeCoverRelief(relief), revision = ++reliefRevision;
     wantedRelief = next;
-    if (!next) { clearRelief(); return true; }
+    if (!next) { if (reliefArmed) clearRelief(); return true; }
+    armRelief();
     // Only installed maps may be reused. A pending bake owns no cached state.
     if (reliefMaps && reliefMaps.id === next.id && reliefMaps.source === (currentImage ?? cover.map?.image)) {
       applyReliefUniforms(); group.userData.invalidate?.(); return true;
@@ -1206,7 +1219,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     if (disposed) return Promise.resolve(false);
     if (url && url === currentCoverUrl) return group.userData.ready;
     reliefController?.abort(); reliefRevision++;
-    if (reliefCapable && reliefMaps) clearRelief();
+    if (reliefArmed && reliefMaps) clearRelief();
     currentImage = null;
     resolveCoverReady(false);
     const revision = ++coverRevision, releasePrevious = releaseImage;
@@ -1522,7 +1535,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   canvas.width = Math.ceil(viewportWidth * pixelRatio); canvas.height = Math.ceil(viewportHeight * pixelRatio);
   host.append(canvas); const context = canvas.getContext('2d');
   const scene = lightBookScene(new THREE.Scene());
-  let model = createBookModel(book, style, width, height, thickness, coverUrl, { shelf }); scene.add(model);
+  let model = createBookModel(book, style, width, height, thickness, coverUrl, { shelf, eagerRelief:false }); scene.add(model);
   canvas.dataset.bookmark3d = String(Boolean(model.userData.hasBookmark));
   if (shelf) canvas.dataset.shelfView = shelfView;
   const camera = new THREE.OrthographicCamera(-viewportWidth / 2, viewportWidth / 2, viewportHeight / 2, -viewportHeight / 2, .1, 10000); camera.position.z = 3000;
@@ -1574,7 +1587,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (disposed) return false;
     const revision = ++appearanceRevision;
     pendingModel?.userData.dispose();
-    const replacement = createBookModel(currentBook, nextStyle, width, height, thickness, coverUrl, { shelf });
+    const replacement = createBookModel(currentBook, nextStyle, width, height, thickness, coverUrl, { shelf, eagerRelief:false });
     pendingModel = replacement;
     const replace = () => {
       if (disposed || revision !== appearanceRevision) { replacement.userData.dispose(); return; }
