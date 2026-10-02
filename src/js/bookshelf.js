@@ -1207,8 +1207,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           const next = list.slice(); next.splice(index < 0 ? next.length : Math.min(index, next.length), 0, item.book);
           return next;
         };
+        // While another removal keeps the shelf busy only the queue is updated: refresh() would replace it with a
+        // list built from state.books, dropping any book a sync queued in the meantime.
         if (state.queuedBooks) state.queuedBooks = restore(state.queuedBooks);
-        refresh(restore(state.books));
+        else refresh(restore(state.books));
       });
     } catch (error) {
       operation.motion?.cancel?.(); node.classList.remove('is-away');
@@ -2086,7 +2088,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     const isDownloaded = book.sourceType === 'drive' && Boolean(book.content);
     const alreadySaved = book.sourceType === 'drive' ? isDownloaded : Boolean(book.driveFileId);
-    const actionLabel = book.sourceType === 'drive' ? (isDownloaded ? 'Sin conexión' : 'Descargar') : (book.driveFileId ? 'En Drive' : 'Guardar en Drive');
+    const actionLabel = book.sourceType === 'drive' ? (isDownloaded ? 'Descargado' : 'Descargar') : (book.driveFileId ? 'En Drive' : 'Guardar en Drive');
     const actionTitle = book.sourceType === 'drive' ? (isDownloaded ? 'Disponible sin conexión' : 'Descargar para usar sin conexión') : actionLabel;
     // En móvil estrecho la etiqueta larga partía el botón en dos líneas.
     const actionShort = book.sourceType === 'drive' ? (isDownloaded ? 'Offline' : 'Descargar') : (book.driveFileId ? 'En Drive' : 'Drive');
