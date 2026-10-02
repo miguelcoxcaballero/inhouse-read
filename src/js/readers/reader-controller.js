@@ -12,6 +12,7 @@ export class ReaderController {
   #reader
   #format
   #location = { fraction:0, locator:null }
+  #epoch = 0
 
   async open(container, file, { onRelocate, onToggleChrome, onUserNavigation, onFollowLink } = {}) {
     this.close()
@@ -50,6 +51,9 @@ export class ReaderController {
   get format() {
     return this.#format
   }
+
+  /** Changes every time an engine is opened or closed: anything derived from the page of an earlier engine is stale. */
+  get epoch() { return this.#epoch }
 
   /** Metadatos del libro cuando el motor los expone (foliate); {} en PDF. */
   get metadata() {
@@ -121,6 +125,7 @@ export class ReaderController {
   }
 
   close() {
+    this.#epoch++
     this.#reader?.close()
     this.#reader = null
     this.#location = { fraction:0, locator:null }

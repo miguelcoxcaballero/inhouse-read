@@ -1806,6 +1806,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   async function openBook(spineEl, item) {
     if (state.busy || state.session || state.returnMotion || state.destroyed) return;
     state.busy = true;
+    // True once the lifted book sits still (the pull-out has finished), false if
+    // the selection ends without that. The page being prepared for this book waits for it.
+    let settle;
+    const settled = new Promise(resolve => { settle = resolve; });
     const finishPendingSelection = () => {
       document.removeEventListener('keydown', onPendingKeydown, true);
       if (state.pendingSelection === pendingSelection) state.pendingSelection = null;
@@ -1813,6 +1817,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const pendingSelection = { cancelled:false, cancel() {
       if (state.pendingSelection !== pendingSelection) return;
       pendingSelection.cancelled = true;
+      settle(false);
+      options.onBookDismiss?.(item.book);
       finishPendingSelection();
       state.busy = false;
       applyDeferredShelfUpdates();
@@ -1829,7 +1835,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     let style = item.style;
     const initialStyle = item.style;
     resetTimeline(); markTiming('select');
-    options.onPrepareBook?.(book);
+    options.onPrepareBook?.(book, { settled });
     /*
       Se mide sin transform: de un libro inclinado, getBoundingClientRect
       devuelve la caja del rectángulo girado (más ancha y más alta que el
@@ -1989,6 +1995,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       }
       clearInterval(readyCheck);
       session.cancelled = true;
+      settle(false);
+      options.onBookDismiss?.(book);
       session.onCancel?.();
       document.removeEventListener('keydown', onKeydown, true);
       // A slow image may still be loading before the flyout's first frame.
@@ -2812,17 +2820,19 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     session.phase = 'ready';
     markTiming('flyout-ready');
+    settle(true);
     flyout.classList.add('is-ready');
     actionButtons[0].disabled = false;
     actionButtons[2].disabled = false;
     coverTarget.hidden = !opts.autoOpen;
     coverTarget.classList.add('is-ready');
 
-    function installOpeningPage(snapshot) {
+    function installOpeningPage(snapshot, { redraw = true } = {}) {
       if (!snapshot?.source) return false;
       // The book opens in sepia whatever the reading theme: the snapshot's
       // sepia variant starts at pageTheme 0 and fades to the theme on the zoom.
-      if (view) return view.setPageSnapshot(snapshot, snapshot.sepia ? { pageTheme:0 } : undefined);
+      // A page warmed up while the book waited is already on the model.
+      if (view) return view.hasPageSnapshot(snapshot) || view.setPageSnapshot(snapshot, { ...(snapshot.sepia ? { pageTheme:0 } : {}), redraw });
       const pages = bookNode.querySelector('.ihr-flyout__fallback-pages');
       if (!pages) return false;
       const canvas = snapshot.source;
@@ -2836,6 +2846,28 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       pages.replaceChildren(...fallbackPageLayers(canvas, snapshot, 0));
       return true;
     }
+
+    // The page this book will open on arrives while the cover still waits for
+    // a tap (the cover is closed, so it stays hidden behind it). Textures and
+    // programs are built here, in separate idle slices, so the tap only has to
+    // play the animation. Returns false when it could not (or need not) be done.
+    session.warmOpeningPage = async (snapshot, idle) => {
+      const stale = () => session.cancelled || state.destroyed || state.session !== session || session.phase !== 'ready';
+      if (!view || stale() || !installOpeningPage(snapshot, { redraw:false })) return false;
+      await idle();
+      if (stale() || !view.hasPageSnapshot(snapshot)) return false;
+      view.compilePage();
+      for (const texture of view.pageTextures()) {
+        await idle();
+        if (stale() || !view.hasPageSnapshot(snapshot)) return false;
+        view.uploadPageTexture(texture);
+      }
+      await idle();
+      if (stale() || !view.hasPageSnapshot(snapshot)) return false;
+      view.draw(view.getPose()); // links the page's programs and renders the covered page once
+      markTiming('textures-uploaded');
+      return true;
+    };
 
     async function animateBookToPage(target) {
       if (session.cancelled || state.destroyed) return;
@@ -3236,6 +3268,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     update: refresh,
     returnToShelf,
     hasReaderOrigin:bookId => state.lastOpened?.book.id === bookId,
+
+    /** Hands the page a lifted book will open on to its 3D model ahead of the tap. */
+    prepareOpeningPage(bookId, snapshot, idle = () => new Promise(resolve => setTimeout(resolve, 0))) {
+      const session = state.session;
+      if (!session?.warmOpeningPage || session.cancelled || session.book.id !== bookId) return Promise.resolve(false);
+      return session.warmOpeningPage(snapshot, idle);
+    },
 
     /** Repliega la portada abierta, si la hay. */
     close() {

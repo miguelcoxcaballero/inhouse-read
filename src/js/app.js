@@ -18,6 +18,7 @@ import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
 import { normalizeShelfPosition } from './book-colors.js'
 import { ReaderExperience } from './readers/reader-experience.js'
 import { markTiming } from './perf-marks.js'
+import { createPreparedPageCache, createStageGate, pageKeyMismatch } from './prepared-page.js'
 
 const library = new LibraryStore()
 const reader = new ReaderController()
@@ -73,6 +74,10 @@ let activePreparedBookId = null
 let activeOpeningContext = null
 let closingReader = false
 let readerPreparationQueue = Promise.resolve()
+// The page the open book lands on, prepared while the book is lifted off the
+// shelf (see prepared-page.js and the 'Página preparada' block below).
+const preparedPages = createPreparedPageCache()
+let pageGate = null
 const coverUpgrades = new Map()
 const progressWrites = new Map()
 let driveProfile = null
@@ -176,6 +181,7 @@ async function refreshShelf() {
     shelf = renderBookshelf(els.bookshelfRoot, books, {
       onBookOpen: openBookRecord,
       onPrepareBook: prepareBookOpen,
+      onBookDismiss: dismissPreparedPage,
       sections: false,
       sort: 'none',
       minimumShelves: 3,
@@ -230,6 +236,7 @@ async function removeBookFromShelf(book) {
   }
   const cancelledGeneration = preparationGeneration
   preparedBooks.delete(book.id)
+  preparedPages.invalidateBook(book.id, 'removed')
   coverUpgrades.delete(book.id)
   const preparingTask = readerPreparationQueue
   const removal = await cloudSync.removeFromShelf(book)
@@ -310,13 +317,7 @@ async function openBookRecord(book, ctx) {
         markTiming('reveal-done')
         const record = await library.get(book.id) || book
         if ((ctx.isActive && !ctx.isActive()) || currentBookId !== book.id) { cancelOpening(); return }
-        // Restore after both type settings and final viewport dimensions.
-        restoringProgress = true
-        try { await reader.goToLocator(record.locator, record.progressFraction || 0) }
-        finally { restoringProgress = false }
-        markTiming('page-restored')
-        const pageSnapshot = await reader.getPageSnapshot()
-        markTiming('page-snapshot')
+        const pageSnapshot = await openingPageSnapshot(book.id, record)
         if (ctx.isActive && !ctx.isActive()) { cancelOpening(); return }
         if (!pageSnapshot) throw new Error('No se pudo preparar la página guardada del libro.')
         const completed = await ctx.finish?.({ pageSnapshot, animatePage:animateReaderPageFromBook })
@@ -332,6 +333,8 @@ async function openBookRecord(book, ctx) {
   }
   const prepared = preparedBooks.get(book.id)
   if (prepared) {
+    // Somebody is waiting for the page now: no more waiting for idle time.
+    releasePageGate('open', book.id)
     try {
       const ready = await prepared
       if (!isActive()) return
@@ -474,7 +477,7 @@ els.filePicker.addEventListener('change', async () => {
 async function openFile(file, { existingRecord, forcedId, folderFileName, transition, preparing = false, restoreRemoved = false, onImportReady } = {}) {
   if (transition?.isActive && !transition.isActive()) return false
   if (!preparing) {
-    preparationGeneration++
+    supersedePreparation('reader-replaced')
     requestedPreparationId = null
     activePreparedBookId = null
     preparedBooks.clear()
@@ -597,9 +600,24 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
   return true
 }
 
-function prepareBookOpen(book) {
-  if (requestedPreparationId === book.id && preparedBooks.has(book.id)) return preparedBooks.get(book.id)
-  const generation = ++preparationGeneration
+function prepareBookOpen(book, { settled } = {}) {
+  if (requestedPreparationId === book.id && preparedBooks.has(book.id)) {
+    // Selected again while its engine is still loaded: the engine is ready,
+    // only the page (dropped when the earlier selection ended) may need redoing.
+    const generation = preparationGeneration
+    const gate = openPageGate(book.id, settled)
+    const again = preparedBooks.get(book.id).then(async ready => {
+      if (ready && generation === preparationGeneration && activePreparedBookId === book.id) {
+        await preparePageStage(book.id, generation, gate)
+      }
+      return ready
+    })
+    readerPreparationQueue = again.catch(() => {})
+    preparedBooks.set(book.id, again)
+    return again
+  }
+  supersedePreparation('new-selection')
+  const generation = preparationGeneration
   requestedPreparationId = book.id
   preparedBooks.clear()
   const fileTask = book.content && (book.sourceType === 'local' || book.sourceType === 'drive')
@@ -614,6 +632,7 @@ function prepareBookOpen(book) {
     : Promise.resolve()
   const filesReady = Promise.all([fileTask, progressTask])
   filesReady.catch(() => {})
+  const gate = openPageGate(book.id, settled)
   // All preparations share one reader. A newer selection supersedes queued
   // work, and an already loading engine settles before another replaces it.
   const task = readerPreparationQueue.catch(() => {}).then(async () => {
@@ -628,11 +647,118 @@ function prepareBookOpen(book) {
     activePreparedBookId = opened ? book.id : null
     markTiming('engine-opened')
     if (opened) await extractCoverInBackground(await library.get(book.id) || updated)
+    if (opened) await preparePageStage(book.id, generation, gate)
     return opened
   })
   readerPreparationQueue = task.catch(() => {})
   preparedBooks.set(book.id, task)
   return task
+}
+
+// ---- Página preparada ----
+// Opening used to start only at the tap: restore the saved place, lay the page
+// out, rasterise it, hand it to the 3D book. All of that now happens while the
+// book sits lifted off the shelf, once the pull-out animation has finished and
+// the main thread is idle, so the tap only plays the animation. The result is
+// kept in `preparedPages` under a key of everything it depends on; the tap
+// reuses it only when the key still holds and otherwise computes it as before.
+
+const idleSlice = () => new Promise(resolve => {
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(() => resolve(), { timeout:250 })
+  else setTimeout(resolve, 50)
+})
+
+function openPageGate(bookId, settled) {
+  const gate = createStageGate(settled, { idle:idleSlice })
+  pageGate = { bookId, gate }
+  return gate
+}
+
+function releasePageGate(reason, bookId) {
+  if (pageGate && (!bookId || pageGate.bookId === bookId)) pageGate.gate.release(reason)
+}
+
+/** The reader is replaced or closed: whatever was prepared (or waiting to be) belongs to the past. */
+function supersedePreparation(reason) {
+  preparationGeneration++
+  preparedPages.invalidate(reason)
+  releasePageGate(reason)
+}
+
+function dismissPreparedPage() {
+  preparedPages.invalidate('dismissed')
+  releasePageGate('dismissed')
+}
+
+/** Everything the prepared page depends on, as it is right now. */
+function pageKeyFor(bookId, record) {
+  const box = els.readerViewport.getBoundingClientRect()
+  const { fraction, locator } = reader.location
+  return {
+    bookId, epoch:reader.epoch,
+    locator:record?.locator ?? null, fraction:record?.progressFraction || 0,
+    location:{ fraction, locator },
+    viewport:{ left:box.left, top:box.top, width:box.width, height:box.height },
+    pixelRatio:window.devicePixelRatio || 1,
+    preferences:JSON.stringify(readingExperience.preferences),
+    theme:document.documentElement.getAttribute('data-theme') || '',
+    filter:getComputedStyle(els.readerViewport).filter
+  }
+}
+
+async function restoreAndSnapshot(record) {
+  // Restore after both type settings and final viewport dimensions.
+  restoringProgress = true
+  try { await reader.goToLocator(record.locator, record.progressFraction || 0) }
+  finally { restoringProgress = false }
+  markTiming('page-restored')
+  const snapshot = await reader.getPageSnapshot()
+  markTiming('page-snapshot')
+  return snapshot
+}
+
+async function preparePageStage(bookId, generation, gate) {
+  try {
+    if (!await gate.wait()) return false
+    const current = () => generation === preparationGeneration && activePreparedBookId === bookId && currentBookId === bookId
+    if (!current()) return false
+    const record = await library.get(bookId)
+    if (!record || !current()) return false
+    const ticket = preparedPages.begin(bookId)
+    const started = pageKeyFor(bookId, record)
+    const snapshot = await restoreAndSnapshot(record)
+    if (!snapshot || !current() || !preparedPages.isCurrent(ticket)) return false
+    const key = pageKeyFor(bookId, record)
+    // Size, preferences or theme moved while the page was being made: it is not the page for either.
+    if (pageKeyMismatch({ ...key, location:started.location }, started)) return false
+    if (!preparedPages.store(ticket, key, snapshot)) return false
+    // Textures and shaders of the 3D page are built now, in idle slices.
+    await shelf?.prepareOpeningPage(bookId, snapshot, idleSlice)
+    return true
+  } catch (error) {
+    // Never fail the preparation for this: the tap computes the page itself.
+    console.warn('No se pudo preparar la página guardada de antemano:', error)
+    return false
+  }
+}
+
+/** The page the opening animation shows: the prepared one while still valid, otherwise computed now. */
+async function openingPageSnapshot(bookId, record) {
+  const prepared = preparedPages.take(pageKeyFor(bookId, record))
+  if (prepared) { markTiming('page-reused'); return prepared }
+  return restoreAndSnapshot(record)
+}
+
+// A resized window or a rotated phone changes the page's pixels and layout.
+globalThis.addEventListener('resize', () => preparedPages.invalidate('resize'))
+if (typeof ResizeObserver === 'function') {
+  let viewportBox = null
+  new ResizeObserver(() => {
+    const box = els.readerViewport.getBoundingClientRect()
+    const key = `${box.width}x${box.height}`
+    if (viewportBox !== null && key !== viewportBox) preparedPages.invalidate('viewport')
+    viewportBox = key
+  }).observe(els.readerViewport)
 }
 
 async function revealPreparedReader() {
@@ -958,7 +1084,7 @@ els.readerBack.addEventListener('click', async () => {
       image.style.cssText = `position:absolute;left:${bounds.left}px;top:${bounds.top}px;width:${bounds.width}px;height:${bounds.height}px`
       stillPage.append(image); document.body.append(stillPage)
     }
-    preparationGeneration++
+    supersedePreparation('reader-closed')
     requestedPreparationId = null
     activePreparedBookId = null
     preparedBooks.clear()

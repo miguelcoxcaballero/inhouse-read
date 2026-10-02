@@ -977,7 +977,9 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     return true;
   };
   group.userData.getPageTheme = () => pageTheme;
-  group.userData.setPageSnapshot = (snapshot, { pageTheme:initialTheme } = {}) => {
+  // `redraw:false` builds the page without rendering it (the caller draws later).
+  group.userData.getPageTextures = () => [pageMaterial.map, sepiaMaterial.map].filter(Boolean);
+  group.userData.setPageSnapshot = (snapshot, { pageTheme:initialTheme, redraw = true } = {}) => {
     if (disposed || !snapshot?.source) return false;
     const imageWidth = Number(snapshot.width || snapshot.source.width || snapshot.source.naturalWidth);
     const imageHeight = Number(snapshot.height || snapshot.source.height || snapshot.source.naturalHeight);
@@ -1013,7 +1015,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     if (sepiaImage.visible) applyPageTheme();
     else if (themeTone) { pagePaper.material.color.copy(themeTone); leafPaper?.color.copy(themeTone).multiply(LEAF_LIGHT); }
     group.userData.pageSnapshot = snapshot;
-    group.userData.invalidate?.();
+    if (redraw) group.userData.invalidate?.();
     return true;
   };
   let bookmark = bookmarkFor(book);
@@ -1471,20 +1473,33 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   }
   // `pageTheme` (0 = sepia, 1 = the reader's own theme; default 1) is where the
   // page's colour starts: the book opens and closes in sepia.
-  function setPageSnapshot(snapshot, { pageTheme:initialTheme } = {}) {
+  function setPageSnapshot(snapshot, { pageTheme:initialTheme, redraw = true } = {}) {
     if (initialTheme != null) {
       pageTheme = Math.max(0, Math.min(1, Number(initialTheme) || 0));
       if (current) current = { ...current, pageTheme };
     }
-    if (disposed || !model.userData.setPageSnapshot(snapshot, { pageTheme })) return false;
+    if (disposed || !model.userData.setPageSnapshot(snapshot, { pageTheme, redraw })) return false;
     currentSnapshot = snapshot;
-    pendingModel?.userData.setPageSnapshot(snapshot, { pageTheme });
+    pendingModel?.userData.setPageSnapshot(snapshot, { pageTheme, redraw });
     canvas.dataset.pageSource = snapshot.sourceType || snapshot.engine || 'reader-page';
     canvas.dataset.pageLocator = JSON.stringify(snapshot.location?.locator ?? snapshot.location ?? null);
     canvas.dataset.pageText = String(snapshot.text || '').slice(0, 500);
     canvas.dataset.pageWidth = String(snapshot.width || snapshot.source.width);
     canvas.dataset.pageHeight = String(snapshot.height || snapshot.source.height);
-    if (current) draw(current);
+    if (current && redraw) draw(current);
+    return true;
+  }
+  // Warm-up of a page that is not on screen yet: the textures go to the GPU
+  // one by one (each upload is its own slice of main-thread time), then a
+  // single draw links the page's programs. Opening later finds all of it done.
+  const pageTextures = () => (disposed ? [] : model.userData.getPageTextures());
+  // Starts linking the programs the now visible page needs; where the driver
+  // links in parallel, the draw that follows finds them done.
+  function compilePage() { if (!disposed) try { gpu.compile(scene, camera); } catch { /* linked on first draw */ } }
+  function uploadPageTexture(texture) {
+    if (disposed || !pageTextures().includes(texture)) return false;
+    texture.anisotropy = Math.min(16, gpu.capabilities.getMaxAnisotropy()); // what draw() would set first
+    gpu.initTexture(texture);
     return true;
   }
   function getPageBounds() {
@@ -1548,7 +1563,8 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   }
   return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
     updateAppearance, updateSpineAppearance, updateCoverAppearance, updateEdgeAppearance,
-    setPageSnapshot, setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
+    setPageSnapshot, pageTextures, uploadPageTexture, compilePage, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
+    setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
     getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,
     animateCoverOpen, animateCoverClose, animateBookmark, alignToPage, animateToPage,
     animate:animateMotion,
