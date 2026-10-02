@@ -33,7 +33,7 @@ export function normalizeSpeech(raw, { footnotes = true, skipHeaders = false } =
   // "informa-\ntion": a line-end hyphen between letters is typesetting, not speech.
   for (const m of raw.matchAll(/(?<=\p{L})[-‐]\n(?=\p{Ll})/gu)) remove(m.index, m.index + 2)
   // Characters are collected in arrays: books are long and string surgery per break would be quadratic.
-  const chars = [], map = []
+  const chars = [], map = [], breaks = []
   for (let i = 0; i < raw.length; i++) {
     if (removed[i]) continue
     const ch = raw[i]
@@ -45,6 +45,7 @@ export function normalizeSpeech(raw, { footnotes = true, skipHeaders = false } =
       let last = chars.length - 1
       while (last >= 0 && CLOSERS.test(chars[last])) last--
       if (chars.length && !TERMINATORS.test(chars[Math.max(last, 0)]) && !TERMINATORS.test(chars.at(-1))) { chars.push('.'); map.push(i) }
+      if (chars.length) breaks.push(chars.length) // the space pushed below: a sentence ends here whatever the punctuation (so "A." and "B." cells are not initials)
     }
     if (/\s/.test(ch)) {
       if (chars.length && chars.at(-1) !== ' ') { chars.push(' '); map.push(i) }
@@ -52,21 +53,122 @@ export function normalizeSpeech(raw, { footnotes = true, skipHeaders = false } =
   }
   if (chars.at(-1) === ' ') { chars.pop(); map.pop() }
   const text = chars.join('')
-  return { text, map }
+  return { text, map, breaks:breaks.filter(at => at < text.length) }
 }
 
-/** Sentences of an already normalised text; long ones also carry their <=180 character spoken fragments. */
-export function speechSentences(text) {
-  const sentences = []
-  for (const sentence of String(text).matchAll(/[^.!?。！？]+(?:[.!?。！？]+["'”’»›)\]}」』]*)?\s*/g)) {
-    const fragments = []
-    for (const part of sentence[0].matchAll(/.{1,180}(?:\s|$)|.{1,180}/g)) {
-      const value = part[0].trim()
-      if (!value) continue
-      const start = sentence.index + part.index + part[0].length - part[0].trimStart().length
-      fragments.push({ start, end:start + value.length, text:value })
+// A '.' after one of these is part of the word, never the end of a sentence ("Sr. Gómez", "pág. 12", "Fig. 3").
+const ABBREVIATIONS = new Set(('sr sra sres sras srta srs dr dra drs lic ing arq prof profa pág págs pag pags núm num vol vols ed eds av avda pza gral cnel sto sta ud uds vd vds '
+  + 'ee mr mrs ms mx messrs mt jr vs cf fig figs pp approx '
+  + 'm mm mme mmes mlle mlles st ste env chap bd '
+  + 'hr nr str bzw ggf '
+  + 'sig sigg dott avv').split(' '))
+// ...but these only when a number follows ("Jan. 3rd", "n.º 4").
+const BEFORE_NUMBER = new Set('jan feb mar apr jun jul aug sep sept oct nov dec ene abr ago dic no nº n.º p'.split(' '))
+const OPENERS = /[—–\-"'“‘«‹(\[]/
+const CLOSING_QUOTES = '"\'”’»›)]}」』'
+const RUN = /[.!?。！？…؟।॥]+/g
+const isLower = ch => ch !== undefined && ch !== ch.toUpperCase() && ch === ch.toLowerCase()
+const isUpper = ch => ch !== undefined && ch !== ch.toLowerCase()
+
+/** Does the terminator run [runStart, runEnd) (closing quotes up to `end`) really end a sentence? The text before it starts at `from`. */
+function endsSentence(text, from, runStart, runEnd, end) {
+  if (end >= text.length) return true
+  const run = text.slice(runStart, runEnd)
+  const last = run.at(-1)
+  let n = end
+  while (n < text.length && /\s/.test(text[n])) n++
+  if (n >= text.length) return true
+  if (n === end) {
+    // No space after it: "3.5", "U.S.A", "c.-à-d.", "example.com" stay whole; full-width and ?/! runs end the sentence.
+    return /[。！？]/.test(last) || /[!?]/.test(run) || !/[\p{L}\p{N}-]/u.test(text[n])
+  }
+  let lead = n
+  while (lead < text.length && OPENERS.test(text[lead])) lead++
+  const next = text[lead]
+  const word = /([\p{L}\p{N}]+)$/u.exec(text.slice(from, runStart))?.[1] || ''
+  const lower = word.toLocaleLowerCase()
+  if (isLower(next)) {
+    // « Bonjour ! » dit-il, "—¿Vienes? —preguntó Luis", "nadie lo creyó... pero", "etc. y", "p. ej. sobre": the sentence goes on.
+    if (end > runEnd || /[—–-]/.test(text[n]) || /\.{2,}|…/.test(run)) return false
+    if (run === '.' && (word.length <= 2 || ABBREVIATIONS.has(lower) || lower === 'etc')) return false
+  }
+  if (run !== '.') return true
+  if (ABBREVIATIONS.has(lower) && (word.length > 1 || lower === 'm')) return false
+  if (BEFORE_NUMBER.has(lower) && /\p{N}/u.test(next || '')) return false
+  // Initials ("J. R. R. Tolkien") and list numbers ("1." "a)") on their own.
+  if (word.length === 1 && isUpper(word) && isUpper(next)) return false
+  if (/^[(\[]?(?:\d{1,3}|[a-z]|[ivxlcdm]{1,6})[.)\]]*$/i.test(text.slice(from, end).trim())) return false
+  return true
+}
+
+/** Raw end offsets of the sentences of `text`: terminators that really end one, plus the hard breaks (`breaks`: indexes of the space after a heading, cell or item). */
+function sentenceEnds(text, breaks = []) {
+  const candidates = [...breaks.map(at => ({ end:at, hard:true }))]
+  for (const run of text.matchAll(RUN)) {
+    const runEnd = run.index + run[0].length
+    let end = runEnd
+    for (;;) {
+      if (CLOSING_QUOTES.includes(text[end] ?? '\0')) end++
+      else if (text[end] === ' ' && /[»›]/.test(text[end + 1] || '')) end += 2 // French « … ! »
+      else break
     }
-    if (fragments.length) sentences.push({ start:fragments[0].start, end:fragments.at(-1).end, fragments })
+    candidates.push({ end, runStart:run.index, runEnd })
+  }
+  candidates.sort((a, b) => a.end - b.end)
+  const ends = []
+  let from = 0
+  for (const candidate of candidates) {
+    if (candidate.end <= from) continue
+    if (candidate.hard || endsSentence(text, from, candidate.runStart, candidate.runEnd, candidate.end)) { ends.push(candidate.end); from = candidate.end }
+  }
+  if (from < text.length) ends.push(text.length)
+  return ends
+}
+
+const MAX_FRAGMENT = 180
+const CLAUSE = /[,;:—–،、，；：]/
+
+/** Cuts [from, to) into spoken fragments of at most MAX_FRAGMENT characters: evenly sized, at a clause mark when there is one near the middle, never an orphan word. */
+function cutFragments(text, from, to) {
+  const cuts = []
+  let pos = from
+  while (to - pos > MAX_FRAGMENT) {
+    const ideal = Math.round((to - pos) / Math.ceil((to - pos) / MAX_FRAGMENT))
+    let best = -1, bestScore = Infinity
+    for (let at = pos + Math.ceil(ideal * .6); at <= Math.min(pos + MAX_FRAGMENT, to - 1); at++) {
+      const space = /\s/.test(text[at]) && !/\s/.test(text[at - 1]), cjk = /[、，；：]/.test(text[at - 1]) && !/\s/.test(text[at])
+      if (!space && !cjk) continue
+      const score = Math.abs(at - pos - ideal) + (CLAUSE.test(text[at - 1]) ? 0 : ideal)
+      if (score < bestScore) { best = at; bestScore = score }
+    }
+    const cut = best > 0 ? best : pos + MAX_FRAGMENT // text with no spaces at all: hard cut
+    cuts.push([pos, cut])
+    pos = cut
+    while (pos < to && /\s/.test(text[pos])) pos++
+  }
+  cuts.push([pos, to])
+  return cuts
+}
+
+/**
+ * Sentences of an already normalised text; long ones also carry their <=180 character spoken fragments.
+ * `breaks` are the places where a heading, list item or cell ends (normalizeSpeech reports them).
+ * Evaluated against Intl.Segmenter: ICU does not know "Sr." or "J. K." either, glues "¡Imposible! —Hola —dijo Ana—." together and
+ * splits « Bonjour ! » dit-il, so the splitter stays this one, with the abbreviation/initial/number rules above.
+ */
+export function speechSentences(text, breaks = []) {
+  text = String(text)
+  const sentences = []
+  let from = 0
+  for (const end of sentenceEnds(text, breaks)) {
+    let start = from
+    from = end
+    while (start < end && /\s/.test(text[start])) start++
+    let stop = end
+    while (stop > start && /\s/.test(text[stop - 1])) stop--
+    if (stop <= start) continue
+    const fragments = cutFragments(text, start, stop).map(([a, b]) => ({ start:a, end:b, text:text.slice(a, b) }))
+    sentences.push({ start, end:stop, fragments })
   }
   return sentences
 }
@@ -79,12 +181,12 @@ export const speechChunks = text => speechSentences(String(text || '').replace(/
  * (what gets highlighted while its fragments are spoken).
  */
 export function planSpeech(raw, options = {}, from = 0) {
-  const { text, map } = normalizeSpeech(raw, options)
+  const { text, map, breaks } = normalizeSpeech(raw, options)
   let low = 0, high = map.length
   while (low < high) { const mid = (low + high) >> 1; if (map[mid] < from) low = mid + 1; else high = mid }
   const rawRange = (start, end) => ({ start:map[low + start], end:map[low + end - 1] + 1 })
   const items = []
-  for (const sentence of speechSentences(text.slice(low))) {
+  for (const sentence of speechSentences(text.slice(low), breaks.filter(at => at >= low).map(at => at - low))) {
     const whole = rawRange(sentence.start, sentence.end)
     for (const fragment of sentence.fragments) items.push({ text:fragment.text, ...rawRange(fragment.start, fragment.end), sentence:whole })
   }

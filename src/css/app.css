@@ -210,6 +210,22 @@ body.is-opening-reader .app-header {
   transform-origin: 0 0;
 }
 
+/* PDF.js writes each item's font height, horizontal stretch and rotation as custom properties and expects the
+   host page to apply them (pdf_viewer.css does it for the stock viewer): the span is then exactly the glyphs' box. */
+.pdf-text-layer {
+  --total-scale-factor: 1;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.pdf-text-layer > span {
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
 .pdf-text-layer ::selection {
   background: var(--accent-read-soft);
 }

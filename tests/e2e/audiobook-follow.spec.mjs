@@ -4,14 +4,14 @@ const PDF = 'tests/e2e/fixtures/reading-journey.pdf'
 const EPUB = 'tests/e2e/fixtures/reading-journey.epub'
 const EVIDENCE = process.env.FOLLOW_EVIDENCE_DIR || 'test-results'
 
-// A deterministic speechSynthesis: every utterance "finishes" after a short
-// timer, so playback advances sentence by sentence without any audio device.
-// Each speak() snapshots what the page highlights at that very moment.
+// A deterministic speechSynthesis: every utterance "starts" (onstart, after state.startDelay ms) and "finishes" after a short
+// timer, so playback advances sentence by sentence without any audio device. Each utterance snapshots what the page
+// highlights once it has started: the highlight follows the engine's start, not the speak() request.
 test.beforeEach(async ({ page }) => {
   test.setTimeout(120_000)
   await page.setViewportSize({ width:390, height:844 })
   await page.addInitScript(() => {
-    const log = [], state = { cancels:0, hold:Infinity, pending:null, ms:140 }
+    const log = [], state = { cancels:0, hold:Infinity, pending:null, ms:140, startDelay:0 }
     window.__tts = { log, state }
     window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text } }
     window.__speechHighlight = () => {
@@ -21,11 +21,19 @@ test.beforeEach(async ({ page }) => {
     const fake = {
       getVoices:() => [{ name:'Fake', lang:'en-US', voiceURI:'fake', localService:true }],
       addEventListener() {}, removeEventListener() {}, pause() {}, resume() {},
-      cancel() { state.cancels++; (state.stacks ||= []).push(new Error().stack); clearTimeout(state.pending) },
+      cancel() { state.cancels++; (state.stacks ||= []).push(new Error().stack); clearTimeout(state.pending); clearTimeout(state.starting); state.cancelled = true },
       speak(utterance) {
-        log.push({ text:utterance.text, highlight:window.__speechHighlight() })
-        if (log.length >= state.hold) return
-        state.pending = setTimeout(() => utterance.onend?.({}), state.ms)
+        // What the page showed when speak() was called (still the previous sentence), and once the engine started.
+        const entry = { text:utterance.text, highlight:'', atSpeak:window.__speechHighlight() }
+        log.push(entry)
+        const start = () => {
+          utterance.onstart?.({})
+          entry.highlight = window.__speechHighlight()
+          if (log.length >= state.hold) return
+          state.pending = setTimeout(() => utterance.onend?.({}), state.ms)
+        }
+        state.cancelled = false
+        if (state.startDelay) state.starting = setTimeout(start, state.startDelay); else Promise.resolve().then(() => { if (!state.cancelled) start() })
       }
     }
     Object.defineProperty(window, 'speechSynthesis', { value:fake, configurable:true })

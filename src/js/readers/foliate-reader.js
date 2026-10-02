@@ -16,7 +16,7 @@ import { DEFAULT_READING_PREFERENCES, readingCSS, normalizeReadingPreferences } 
 import { READING_THEMES } from './reading-preferences.js'
 import { compositePageSnapshots, renderedPageFilter, settlePageLayout, snapshotDOMPage } from './page-snapshot.js'
 import { mapSpeechText } from './speech-map.js'
-import { SPEECH_HIGHLIGHT, clearSpeechRange, installSpeechStyle, paintSpeechRange } from './speech-highlight.js'
+import { SPEECH_HIGHLIGHT, clearSpeechRange, installSpeechStyle, paintSpeechRange, speechOverlayColor } from './speech-highlight.js'
 
 // foliate marca las coincidencias de búsqueda con Overlayer.outline (un
 // recuadro rojo de 3px que parecía una capa de depuración). Lo sustituimos una
@@ -212,8 +212,8 @@ export class FoliateReader {
         if (!live()) return
         const range = map.rangeFor(start, end)
         if (!range) return clear()
-        // Old WebViews without the Highlight API still get a wash, drawn by foliate's own overlay.
-        if (!paintSpeechRange(range)) content.overlayer?.add(SPEECH_HIGHLIGHT, range, Overlayer.outline, { color:this.#preferences.theme === 'night' || this.#preferences.theme === 'amoled' ? '#e8b854' : '#d9a23a' })
+        // Old WebViews without the Highlight API still get the same wash, drawn by foliate's own overlay.
+        if (!paintSpeechRange(range)) content.overlayer?.add(SPEECH_HIGHLIGHT, range, Overlayer.highlight, { color:speechOverlayColor(this.#preferences.theme) })
       },
       follow:(start, end) => live() ? this.#followSpeech(doc, map.rangeFor(start, end)) : undefined
     }

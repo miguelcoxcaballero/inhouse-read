@@ -59,6 +59,9 @@ function mappedReader(pages, { follow } = {}) {
 }
 const say = (speak, n = -1) => speak.mock.calls.at(n)
 const done = id => window.dispatchEvent(new CustomEvent('inhouse-tts', { detail:{ id, type:'done' } }))
+// The engine's first audible word: the highlight and the page follow wait for it.
+const started = id => window.dispatchEvent(new CustomEvent('inhouse-tts', { detail:{ id, type:'start' } }))
+const highlights = reader => reader.calls.filter(c => c[0] === 'highlight')
 
 describe('audiobook sentence highlight and page follow', () => {
   it('highlights each whole sentence as its speech starts and follows with the fragment being spoken', async () => {
@@ -70,7 +73,7 @@ describe('audiobook sentence highlight and page follow', () => {
     const voice = new ReadingVoice(reader)
     await voice.play()
     const sentences = []
-    for (let i = 0; i < voice.chunks.length; i++) { if (i) done(say(speak)[4]); sentences.push(reader.calls.filter(c => c[0] === 'highlight').at(-1)) }
+    for (let i = 0; i < voice.chunks.length; i++) { if (i) done(say(speak)[4]); started(say(speak)[4]); sentences.push(reader.calls.filter(c => c[0] === 'highlight').at(-1)) }
     expect(sentences[0].slice(2)).toEqual([0, 10, 'First one.'])
     expect(sentences[1][4]).toBe(long)
     // the 180-char fragments of the long sentence share its whole-sentence highlight but have their own follow ranges
@@ -80,6 +83,8 @@ describe('audiobook sentence highlight and page follow', () => {
     expect(follows.length).toBe(voice.chunks.length)
     expect(follows.map(c => c[2]).every((start, i, all) => !i || start > all[i - 1])).toBe(true)
     expect(sentences.at(-1)[4]).toBe('Last bit.')
+    // painted once per sentence, not once per fragment
+    expect(highlights(reader).map(c => c[4])).toEqual(['First one.', long, 'Last bit.'])
     voice.stop()
   })
   it('starts at the first character of the visible page and clears on pause, re-highlighting the same sentence on resume', async () => {
@@ -99,6 +104,7 @@ describe('audiobook sentence highlight and page follow', () => {
     done(say(speak)[4]); expect(speak).toHaveBeenCalledTimes(2)
     await voice.play()
     expect(say(speak)[0]).toBe('Two.')
+    started(say(speak)[4])
     expect(reader.calls.filter(c => c[0] === 'highlight').at(-1)[4]).toBe('Two.')
     voice.stop()
     expect(reader.calls.at(-1)).toEqual(['clear', 0])
@@ -109,12 +115,15 @@ describe('audiobook sentence highlight and page follow', () => {
     const reader = mappedReader([{ text:'Page one.' }, { text:'Page two. More.' }])
     const voice = new ReadingVoice(reader)
     await voice.play()
-    done(say(speak)[4])
+    started(say(speak)[4]); done(say(speak)[4])
     await vi.waitFor(() => expect(speak).toHaveBeenCalledTimes(2))
     expect(reader.nexts).toBe(1)
     expect(say(speak)[0]).toBe('Page two.')
     expect(voice.state).toBe('playing')
     expect(stop).not.toHaveBeenCalled()
+    // the last sentence of the old page stays painted until the new page's first one is heard
+    expect(reader.calls).not.toContainEqual(['clear', 0])
+    started(say(speak)[4])
     expect(reader.calls).toContainEqual(['clear', 0])
     expect(reader.calls.filter(c => c[0] === 'highlight').at(-1).slice(1)).toEqual([1, 0, 9, 'Page two.'])
     voice.stop()
@@ -182,8 +191,9 @@ describe('audiobook sentence highlight and page follow', () => {
     const reader = mappedReader([{ text:'One. Two.' }])
     reader.getSpeechSource = async () => ({ text:'One. Two.', highlight() { throw new Error('range detached') }, follow:() => Promise.reject(new Error('x')), clear() {} })
     const voice = new ReadingVoice(reader)
-    await voice.play(); done(say(speak)[4])
+    await voice.play(); started(say(speak)[4]); done(say(speak)[4])
     expect(say(speak)[0]).toBe('Two.')
+    started(say(speak)[4])
     expect(voice.state).toBe('playing')
     voice.stop()
   })
@@ -196,6 +206,7 @@ describe('audiobook sentence highlight and page follow', () => {
     expect(say(speak)[0]).toBe('Claim.')
     done(say(speak)[4])
     expect(say(speak)[0]).toBe('Next point here.')
+    started(say(speak)[4])
     expect(reader.calls.filter(c => c[0] === 'highlight').at(-1)[4]).toBe('Next point (nota 3) here.')
     voice.stop()
     voice.options = { ...voice.options, footnotes:true }
@@ -213,8 +224,11 @@ describe('audiobook sentence highlight and page follow', () => {
     const reader = mappedReader([{ text:'Alpha. Beta.' }])
     const voice = new ReadingVoice(reader)
     await voice.play()
-    utterances[0].onend(); expect(utterances[1].text).toBe('Beta.')
-    expect(reader.calls.filter(c => c[0] === 'highlight').map(c => c[4])).toEqual(['Alpha.', 'Beta.'])
+    expect(highlights(reader)).toEqual([])
+    utterances[0].onstart(); utterances[0].onend(); expect(utterances[1].text).toBe('Beta.')
+    expect(highlights(reader).map(c => c[4])).toEqual(['Alpha.'])
+    utterances[1].onstart()
+    expect(highlights(reader).map(c => c[4])).toEqual(['Alpha.', 'Beta.'])
     voice.stop()
   })
   it('a speed or voice change re-speaks the current sentence with the new settings; stale completions are ignored', async () => {
@@ -229,6 +243,71 @@ describe('audiobook sentence highlight and page follow', () => {
     done(firstId)
     expect(speak).toHaveBeenCalledTimes(2)
     voice.pause(); voice.restart(); expect(speak).toHaveBeenCalledTimes(2)
+    voice.stop()
+  })
+  it('does not paint or follow before the engine says it started, then does once', async () => {
+    const speak = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop:vi.fn() })
+    const reader = mappedReader([{ text:'Alpha one. Beta two.' }])
+    const voice = new ReadingVoice(reader)
+    await voice.play()
+    expect(reader.calls).toEqual([])
+    started(say(speak)[4])
+    expect(reader.calls.map(c => c[0])).toEqual(['highlight', 'follow'])
+    started(say(speak)[4]) // a repeated event never repaints the same sentence
+    expect(highlights(reader)).toHaveLength(1)
+    // a late 'start' of an utterance that is no longer current changes nothing
+    const first = say(speak)[4]
+    done(first); started(first)
+    expect(highlights(reader)).toHaveLength(1)
+    voice.stop()
+  })
+  it('a missing start event cannot leave the page plain: the sentence shows after a safety delay, and at once for a silent engine', async () => {
+    vi.useFakeTimers()
+    const speak = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop:vi.fn() })
+    const reader = mappedReader([{ text:'Alpha one. Beta two. Gamma three.' }])
+    const voice = new ReadingVoice(reader)
+    await voice.play()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(highlights(reader)).toEqual([])
+    await vi.advanceTimersByTimeAsync(600)
+    expect(highlights(reader).map(c => c[4])).toEqual(['Alpha one.'])
+    // the utterance ended without ever starting: this engine does not report it, so stop waiting for it
+    done(say(speak)[4])
+    await vi.advanceTimersByTimeAsync(1)
+    expect(highlights(reader).map(c => c[4])).toEqual(['Alpha one.', 'Beta two.'])
+    voice.stop()
+  })
+  it('pausing, restarting or stopping while the engine is still starting cancels the pending highlight', async () => {
+    vi.useFakeTimers()
+    const speak = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop:vi.fn() })
+    const reader = mappedReader([{ text:'Alpha one. Beta two.' }])
+    const voice = new ReadingVoice(reader)
+    await voice.play()
+    voice.pause()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(highlights(reader)).toEqual([])
+    await voice.play(); voice.restart()
+    started(say(speak, -2)[4]) // the cancelled utterance's start event is stale
+    expect(highlights(reader)).toEqual([])
+    started(say(speak)[4])
+    expect(highlights(reader)).toHaveLength(1)
+    voice.stop()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(highlights(reader)).toHaveLength(1)
+  })
+  it('a speed change re-speaks without repainting the sentence that is already shown', async () => {
+    const speak = vi.fn()
+    vi.stubGlobal('InhouseSpeech', { speak, stop:vi.fn() })
+    const reader = mappedReader([{ text:'Alpha one. Beta two.' }])
+    const voice = new ReadingVoice(reader)
+    await voice.play(); started(say(speak)[4])
+    voice.rate = 1.4; voice.restart(); started(say(speak)[4])
+    expect(highlights(reader)).toHaveLength(1)
+    expect(reader.calls.filter(c => c[0] === 'follow')).toHaveLength(2)
+    expect(reader.calls.some(c => c[0] === 'clear')).toBe(false)
     voice.stop()
   })
   it('readers without a speech source keep the plain text path and never highlight', async () => {

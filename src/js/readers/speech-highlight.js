@@ -8,21 +8,24 @@
 export const SPEECH_HIGHLIGHT = 'inhouse-speech'
 export const SPEECH_SPAN_CLASS = 'inhouse-speech-current'
 
-// A soft amber wash plus a thin underline: legible without hiding the text on
-// the four reading themes. Alpha is kept low on dark pages so ink stays crisp.
+// A soft amber wash and nothing else. Judged on real pages (inline markup, links, drop caps, footnote refs, wrapped lines): the thin
+// underline that used to come with it doubled up on every link's own underline and ruled a line under each wrapped line, which read
+// as busy; the wash alone marks the sentence cleanly and never touches the ink colour, so contrast is the page's own.
+// `overlay` is the same colour opaque, for foliate's Overlayer (it paints it at 30% opacity). One entry per READING_THEMES theme.
 export const SPEECH_COLORS = {
-  paper:{ tint:'rgba(217,162,58,.36)', line:'rgba(160,100,10,.75)' },
-  sepia:{ tint:'rgba(196,112,28,.30)', line:'rgba(130,70,10,.75)' },
-  night:{ tint:'rgba(232,184,84,.30)', line:'rgba(240,200,110,.8)' },
-  amoled:{ tint:'rgba(240,190,90,.30)', line:'rgba(245,205,120,.85)' },
-  sage:{ tint:'rgba(190,130,30,.30)', line:'rgba(120,80,10,.75)' }
+  paper:{ tint:'rgba(226,166,48,.40)', overlay:'#d9a23a' },
+  sepia:{ tint:'rgba(200,108,24,.40)', overlay:'#c4701c' },
+  night:{ tint:'rgba(236,184,76,.42)', overlay:'#ecb84c' },
+  amoled:{ tint:'rgba(244,192,84,.44)', overlay:'#f4c054' },
+  sage:{ tint:'rgba(196,128,24,.38)', overlay:'#be821e' }
 }
 const colorsFor = theme => SPEECH_COLORS[theme] || SPEECH_COLORS.paper
+export const speechOverlayColor = theme => colorsFor(theme).overlay
 
 export function speechCSS(theme) {
-  const { tint, line } = colorsFor(theme)
-  return `::highlight(${SPEECH_HIGHLIGHT}) { background-color:${tint}; color:inherit; text-decoration:underline; text-decoration-color:${line}; text-decoration-thickness:1px; text-underline-offset:3px; }
-.${SPEECH_SPAN_CLASS} { background-color:${tint}; border-radius:2px; box-shadow:0 1px 0 ${line}; }`
+  const { tint } = colorsFor(theme)
+  return `::highlight(${SPEECH_HIGHLIGHT}) { background-color:${tint}; color:inherit; }
+.${SPEECH_SPAN_CLASS} { background-color:${tint}; border-radius:2px; }`
 }
 
 /** Idempotent: one <style> per document, restyled when the theme changes. */

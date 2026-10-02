@@ -220,6 +220,12 @@ export class PdfReader {
       viewport: cssViewport
     })
     this.#textTask = textLayer
+    // TextLayer sizes the container and every span through CSS variables (--total-scale-factor, --font-height, --scale-x,
+    // --rotate; see .pdf-text-layer in app.css). Without the scale the spans were as wide as the fallback font made them,
+    // not as wide as the glyphs on the canvas: selections and the read-aloud highlight were bars wider than the text.
+    this.#textLayerEl.style.setProperty('--total-scale-factor', String(scale))
+    this.#textLayerEl.style.width = `${viewport.width / dpr}px`
+    this.#textLayerEl.style.height = `${viewport.height / dpr}px`
     try { await textLayer.render() } catch (error) { if (token !== this.#renderToken) return false; throw error }
     return token === this.#renderToken
   }
