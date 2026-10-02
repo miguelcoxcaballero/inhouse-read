@@ -297,7 +297,7 @@ body.is-reading .app-header, #reader-screen, .reader-viewport, .reader-toolbar, 
 .select-menu__option:focus-visible { box-shadow:inset 0 0 0 2px currentColor; }
 .select-menu__trigger:focus-visible { outline:2px solid currentColor; outline-offset:3px; }
 .select-menu__panel .reading-neural { margin:8px 0 0; padding:10px 12px 0; border-top:1px solid color-mix(in srgb,currentColor 10%,transparent); }
-.reading-sleep { justify-content:space-between; border-bottom:1px solid color-mix(in srgb,currentColor 9%,transparent); }
+.reading-sleep { justify-content:space-between; }
 .reading-chips { display:flex; flex:none; gap:2px; }
 .reading-chips button { min-width:44px; min-height:44px; padding:0 10px; border:0; border-radius:22px; background:none; color:inherit; font:400 13px var(--f-body); opacity:.6; cursor:pointer; }
 .reading-chips button[aria-checked=true] { background:color-mix(in srgb,currentColor 10%,transparent); font-weight:600; opacity:1; }
