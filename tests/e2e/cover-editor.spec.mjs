@@ -18,7 +18,12 @@ async function openShelfEditor(page, { reduced = false, theme = '', colors = ['#
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 1/)
   await page.getByRole('button', { name: 'Volver a la estantería' }).click()
+  // Return creates its flyout asynchronously. Wait for the whole lifecycle
+  // before checking removal; count0 alone can pass before the flight exists.
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/, { timeout:30_000 })
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
+  await expect(page.locator('#home')).toBeVisible()
+  await expect(page.locator('.ihr-spine').first()).not.toHaveClass(/is-away/)
   // The source PDF still exercises the real import/open/close. Only the
   // jacket is controlled: every proposed region has a known source colour.
   await page.evaluate(async colors => {
