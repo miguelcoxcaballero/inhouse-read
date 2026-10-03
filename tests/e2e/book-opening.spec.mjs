@@ -608,6 +608,25 @@ test('móvil CBZ: abre la imagen azul guardada y descarta el iframe oculto de la
   expect(errors).toEqual([])
 })
 
+test('una reubicación CBZ sin ancla no borra la página guardada', async ({page})=>{
+  test.setTimeout(90_000)
+  await page.locator('#file-picker').setInputFiles({name:'anchor-comic.cbz',mimeType:'application/vnd.comicbook+zip',buffer:colouredComic()})
+  await expect(page.locator('#reader-toolbar')).toBeVisible()
+  await page.locator('#reader-location').click()
+  await page.getByRole('button',{name:'03.png',exact:true}).click()
+  await expect.poll(async()=>(await savedBook(page,'anchor-comic.cbz'))?.locator?.kind).toBe('cfi')
+  const before=await savedBook(page,'anchor-comic.cbz')
+  await page.evaluate(()=>document.querySelector('foliate-view').dispatchEvent(new CustomEvent('relocate',{
+    detail:{fraction:0,section:{current:0}}
+  })))
+  // Give the real IndexedDB write path time to commit; an immediate read
+  // could hide the old handler's queued write of an empty anchor.
+  await page.waitForTimeout(250)
+  const after=await savedBook(page,'anchor-comic.cbz')
+  expect(after.locator).toEqual(before.locator)
+  expect(after.progressFraction).toBe(before.progressFraction)
+})
+
 const workerGateTest = test.extend({ serviceWorkers:'block' })
 workerGateTest('móvil: cancelar durante la preparación y reabrir el mismo libro no deja que la sesión anterior oculte el lector nuevo', async ({ page }, testInfo) => {
   test.setTimeout(90_000)

@@ -450,6 +450,9 @@ test('aleja y gira toda la estantería en 3D, permite abrir libros y recuerda la
   await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:20_000})
   const canvas = page.locator('.ihr-bookshelf-scene')
   const bookOrder = () => page.locator('.ihr-spine').evaluateAll(nodes => nodes.map(node => node.dataset.bookId))
+  // Import stores bytes before its detached geometry count finishes. Compare
+  // two populated shelf orders, under the original eight-second expectation.
+  await expect(page.locator('.ihr-spine')).toHaveCount(1)
   const initialOrder = await bookOrder()
   const initialRows = await page.locator('.ihr-shelf').count()
   await expect(canvas).toHaveCount(1)

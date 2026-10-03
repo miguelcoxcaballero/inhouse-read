@@ -23,6 +23,7 @@ import { classifyTapZone, ZONE } from './gestures.js'
 import { markTiming } from './perf-marks.js'
 import { createPreparedPageCache, createStageGate, pageKeyMismatch } from './prepared-page.js'
 import { createBookLengthQueue, isBookLengthReady } from './book-length-queue.js'
+import { persistablePosition, persistableRelocation } from './readers/persistable-position.js'
 
 const library = new LibraryStore()
 const reader = new ReaderController()
@@ -1129,13 +1130,11 @@ function onReaderRelocate({ fraction, cfi, index, textOffset }) {
   els.readerProgressFill.style.width = `${Math.round((fraction ?? 0) * 100)}%`
   readingExperience.relocate()
   if (!currentBookId || restoringProgress) return
-  const locator = cfi ? { kind: 'cfi', value: cfi }
-    : Number.isInteger(index) && reader.format?.engine === 'pdf' ? { kind:'pdf-page', value:index + 1,
-        ...(Number.isInteger(textOffset) && textOffset > 0 ? { textOffset } : {}) }
-      : null
+  const position = persistableRelocation({ fraction, cfi, index, textOffset }, reader.format?.engine)
+  if (!position) return
   const bookId = currentBookId
   const previous = progressWrites.get(bookId) || Promise.resolve()
-  const write = previous.catch(() => {}).then(() => library.updateProgress(bookId, fraction ?? 0, locator))
+  const write = previous.catch(() => {}).then(() => library.updateProgress(bookId,position.fraction,position.locator))
     .then(record => { if (record?.driveFileId && hasDriveSession()) cloudSync.scheduleProgress(bookId) })
   progressWrites.set(bookId, write)
   write.catch(error => console.warn('No se pudo guardar el progreso:', error))
@@ -1168,8 +1167,9 @@ els.readerBack.addEventListener('click', async () => {
       return null
     })
     await progressWrites.get(bookId)?.catch(() => {})
-    if (pageSnapshot?.location) {
-      await library.updateProgress(bookId,pageSnapshot.location.fraction ?? 0,pageSnapshot.location.locator ?? null)
+    const position = persistablePosition(pageSnapshot?.location)
+    if (position) {
+      await library.updateProgress(bookId,position.fraction,position.locator)
       if (hasDriveSession()) cloudSync.scheduleProgress(bookId)
     }
     const book = await library.get(bookId)
@@ -1289,7 +1289,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.7.27'
+els.appVersion.textContent = 'Inhouse Read · v1.7.28'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')

@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.28
+
+- Una notificación incompleta de maquetación ya no borra la página guardada. Conserva el CFI EPUB/CBZ o la página y posición de texto PDF hasta recibir otra posición válida; una captura de cierre incompleta tampoco sobrescribe el marcador.
+- La regresión sobre el lector CBZ real reproduce el borrado con 1.7.27. Pasan 45 focales, incluidas diez comprobaciones de posiciones válidas e incompletas. La verificación nueva está en curso.
+- La prueba isométrica espera que el libro importado aparezca antes de comparar su orden, conservando el plazo de ocho segundos y todas las comprobaciones de cámara y organización.
+
 ### Actualización web · 1.7.27
 
 - La voz cede entre segmentos y pasos de inferencia mediante tareas de mensajes, evitando las esperas de timers que Android puede suspender en segundo plano. Cancelar, cambiar de voz y liberar el worker esperan su terminación real, sin polling. Conserva los modelos y la calidad de síntesis.

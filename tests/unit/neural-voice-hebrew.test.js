@@ -4,6 +4,7 @@ import { runInNewContext } from 'node:vm'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { createHebrewPhonemizer, normalizeNakdimonCharacter, nakdimonInputIds, mergeNiqqud, hebrewToIpa, phonemeIdsFromIpa } from '../../src/js/readers/neural-voice/hebrew.js'
 import * as pcm from '../../src/js/readers/neural-voice/pcm.js'
+import { yieldToMessages } from '../../src/js/readers/neural-voice/task-yield.js'
 import { IPA_ORACLES, NAKDIMON_ORACLE, NON_DECIMAL_DIGIT_RANGES } from './fixtures/hebrew-oracles.js'
 
 const ID_MAP = {
@@ -217,7 +218,7 @@ function workerHarness({ voiceFailure = false } = {}) {
     .replace(/^import .*$/gm, '')
     .replace("import(/* @vite-ignore */ ortBase + 'ort.wasm.min.mjs')", 'Promise.resolve(__ort)')
   runInNewContext(source, { self, __ort: fake.ort, createPhonemizer: async () => espeak, createHebrewPhonemizer,
-    ...pcm, performance, setTimeout, Uint8Array, Float32Array, BigInt64Array, ArrayBuffer })
+    ...pcm, yieldToMessages, performance, setTimeout, Uint8Array, Float32Array, BigInt64Array, ArrayBuffer })
   let id = 0
   const send = async message => { const request = { ...message, id: ++id }; await self.onmessage({ data: request }); return request.id }
   return { ...fake, voiceSession, espeak, messages, send }
