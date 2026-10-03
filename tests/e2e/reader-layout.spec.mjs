@@ -159,6 +159,11 @@ for (const item of [
     // checks the quote row's flex wrapping, not just a handcrafted DOM label.
     const quote = 'https://inhouse.example/' + 'abcdefghijklmnopqrstuvwxyz0123456789'.repeat(8)
     await page.getByRole('button',{name:'Volver a la estantería'}).click()
+    // The file picker is inaccessible during the asynchronous return flight.
+    // Complete the same transition a user must wait for before importing again.
+    await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/,{timeout:20_000})
+    await expect(page.locator('.ihr-flyout')).toHaveCount(0)
+    await expect(page.locator('#home-screen')).toBeVisible()
     await page.setViewportSize(item.size)
     await page.locator('#file-picker').setInputFiles({name:'Cita larga.pdf',mimeType:'application/pdf',buffer:quotePdf(quote)})
     await expect(page.locator('.pdf-reflow-page')).toContainText(quote)
