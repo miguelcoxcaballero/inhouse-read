@@ -1,4 +1,16 @@
-# Verificación del WIP — web 1.7.34 publicada; 1.7.35 en preparación; Android 1.1.4 pendiente
+# Verificación del WIP — web 1.7.35 publicada; 1.7.36 en preparación; Android 1.1.4 pendiente
+
+## Cambios de 1.7.36 en preparación
+
+La extracción EPUB conserva el Inflate original de zip.js, bytes locales, documentos, encodings y CRC; se desactiva sólo su dependencia de DecompressionStream nativo. La regresión nueva reproduce cinco entradas al codec nativo en la fuente anterior y pasa con cero sobre el candidato. Pasan 10 focales, incluidos los siete originales de bytes/ZIP. El primer E2E nuevo tenía un censo incorrecto de tres capítulos para un fixture de dos; se conserva fallido. Con el censo exacto de dos capítulos, el build anterior conserva otro fallo: seis llamadas al codec nativo. No demuestra todavía la causa de la interrupción Android. Cada done real que deja la cola vacía conserva un snapshot en su evaluación original; se elimina el filtro diagnóstico que sólo observaba el primero del epoch. No hay polling, timers ni evaluaciones añadidas al puente.
+
+Sobre el build final pasan **2.596 unitarias en 165 archivos**, **21 E2E sin omisiones ni reintentos** y las **75 verificaciones Python originales**. La tanda E2E incluye 14 casos con modelos naturales reales, tres de continuidad/pausa/detener entre capítulos, dos de lector/catálogo, espeak offline y la regresión de descompresión. La publicación, CI y captura Android nuevas siguen separadas.
+
+## Verificación de 1.7.35
+
+Fuente `9a15ab839d19597e13a2bb88f8fe138f91482a8a`, Pages `73ba3a8071e17863b8515f555057a514d9ce9fb2`. Pasan 2.594 unitarias en 164 archivos, certificado `2ccb45506f6594ebf92515b8bb3d2a14fb6128f8318f53d7c23047d6794ae44d`. Coinciden por HTTP 22 módulos y 43 recursos offline, artefacto `8ad481fc8b06bb3accd7ad603e3995c8a4009eacb1174f6b3a634bd0d253e429`. Cinco casos públicos pasan sin reintentos, con 110 cuerpos HTTP y cuatro capturas revisadas; certificado `67b4767e0a57a6377c8cc3877c47818579262d6e446d20e5be956d105314f84f`. Pasan 17 E2E locales finales y, por separado, tres casos originales de continuidad/pausa/detener entre capítulos. CI original `37160432704` sigue en curso.
+
+Android `37160573040` conserva FAILED: 366.366 ms bloqueado, 120 starts/dones, 240 callbacks emparejados y cero PCM nuevo en los 30 segundos finales. Captura `77b45ca1e5b9c83c5aebdc470fa9a77e9dfb5c8590eb9e4852e5b663b1169ef6`; ZIP 9.349.798 bytes y 104 miembros. Los 175 recibos originales de síntesis muestran que la petición 27 completa su fase 7; no hay una petición posterior antes de despertar. Revisión de fases `092dd1964324730b97be987717050343ec384366254074462ee84c8cb7b4dbc7`; fallo preservado `306e576a63d3c598ae89c3b5c7c16a87512aa3176122c391068b8904707480f9`. No se publicó APK. La extracción del siguiente capítulo sigue siendo una hipótesis por comprobar; la recuperación al despertar no aprueba el gate.
 
 ## Cambios de 1.7.35 en preparación
 
@@ -8,7 +20,7 @@ Los recibos nativos sólo registran fases numéricas en los awaits originales de
 
 ## Verificación de 1.7.34
 
-Fuente `3850274e7bfbe639dd1718bd1a8ecffecd742427`, Pages `5430b1f64794b502da8c424883bfd91a3a4311a5`. Pasan 2.584 unitarias en 162 archivos, certificado `dfc1d9de0805f58af78fe6f14827d4c516f4c8c6db3ce1c7e9c73492a98f06f1`. Coinciden por HTTP sus 22 módulos y 43 recursos offline; artefacto `069cc291f4787efc0e591556fab06e51af657968b86c8bd25c8e1d65b0fc6895`. Cinco casos públicos pasan sin omisiones ni reintentos, con 109 cuerpos HTTP y cuatro capturas revisadas; certificado `8d461555b44ae3dcb30f0c16d8171000a985907740cd9523dbf718df61160c39`. El primer pin rechazó HTML anterior durante la propagación y conserva sus bytes. La CI completa se verifica por separado.
+Fuente `3850274e7bfbe639dd1718bd1a8ecffecd742427`, Pages `5430b1f64794b502da8c424883bfd91a3a4311a5`. Pasan 2.584 unitarias en 162 archivos, certificado `dfc1d9de0805f58af78fe6f14827d4c516f4c8c6db3ce1c7e9c73492a98f06f1`. Coinciden por HTTP sus 22 módulos y 43 recursos offline; artefacto `069cc291f4787efc0e591556fab06e51af657968b86c8bd25c8e1d65b0fc6895`. Cinco casos públicos pasan sin omisiones ni reintentos, con 109 cuerpos HTTP y cuatro capturas revisadas; certificado `8d461555b44ae3dcb30f0c16d8171000a985907740cd9523dbf718df61160c39`. El primer pin rechazó HTML anterior durante la propagación y conserva sus bytes. CI original `37158691462` aprobada: 2.584 unitarias en 162 archivos y 512 E2E, sin omisiones ni reintentos; certificado `7dd6e83519e7b2e2072cd765f15caafca15449afa245615cddf30143cde6c8e2`.
 
 Android `37158815932` conserva FAILED: 368.473 ms bloqueado, 120 starts/dones y 240 callbacks emparejados, capítulos 0–19, cero PCM nuevo en el tramo final de 30 segundos. El ZIP original autenticado tiene 8.512.616 bytes y 112 miembros; certificado de captura `3fd731a1a5175e2d6af7e44991a20ff19c413654340e578cb4284a36c1bbf288`. No se publicó APK. Los 120 fragmentos reproducidos no son un recuento de llamadas al fonemizador, porque el audio puede reutilizarse del caché. La recuperación al despertar permanece sólo diagnóstico.
 
@@ -213,8 +225,8 @@ El observador software de interrupción usa **2.200 ms en CI**; el límite local
 
 ## Pendientes y límites
 
-- **Android 1.1.4 sigue PENDIENTE.** El último ensayo, run `37158815932`, fuente `3850274`, conserva FAILED: 120 starts/dones y 240 callbacks completos, capítulos 0–19, pero cero PCM nuevo en el tramo final de 30 segundos. No se publica esa APK. Certificado de captura `3fd731a1a5175e2d6af7e44991a20ff19c413654340e578cb4284a36c1bbf288`; revisión independiente de fallo `3a16d3ae6a52b8aca3daf8b57f9b3e93f60035da2426b92a2c77445ccbad08e4`. El siguiente ensayo debe superar continuidad bloqueada, controles de notificación, liberación de servicio/wake y PDF oculto, sin modificar sus umbrales.
-- **Fuente nueva 1.7.35:** reutilización de archivos/código compilado del fonemizador y recibos nativos de síntesis; verificación nueva en curso. La web 1.7.34 conserva comprobación HTTP y cinco casos públicos aprobados.
+- **Android 1.1.4 sigue PENDIENTE.** El último ensayo, run `37160573040`, fuente `9a15ab8`, conserva FAILED: 120 starts/dones y 240 callbacks completos, capítulos 0–19, pero cero PCM nuevo en el tramo final de 30 segundos. No se publica esa APK. Captura `77b45ca1e5b9c83c5aebdc470fa9a77e9dfb5c8590eb9e4852e5b663b1169ef6`; fallo independiente `306e576a63d3c598ae89c3b5c7c16a87512aa3176122c391068b8904707480f9`. El siguiente ensayo debe superar continuidad bloqueada, controles de notificación, liberación de servicio/wake y PDF oculto, sin modificar sus umbrales.
+- **Fuente nueva 1.7.36:** codec ZIP original en JavaScript y snapshots de las terminaciones reales que vacían AudioTrack; verificación nueva en curso. La web 1.7.35 conserva comprobación HTTP y cinco casos públicos aprobados.
 - **Cuenta Google real:** falta conexión al navegador autenticado para comprobar login y subida reales. Las 61 pruebas focales y cinco E2E de Drive usan respuestas controladas y no sustituyen esa comprobación.
 - No se añade OCR ni se garantiza el orden perfecto de cualquier PDF. Los ocho casos públicos PDF usan texto y audio controlados para verificar navegación, visibilidad y cancelación; no sustituyen una comprobación de audio natural en un teléfono bloqueado. Drive usa respuestas de prueba y no autentica una cuenta real.
 - La batería web no certifica una APK nueva, audio en un teléfono físico, FPS, temperatura o batería. La evidencia histórica de Android 1.1.3 y la sesión de voz anterior mantienen su alcance original.

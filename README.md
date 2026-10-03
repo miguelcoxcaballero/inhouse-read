@@ -4,11 +4,15 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.36
+
+Los EPUB usan el descompresor JavaScript original de zip.js sobre los bytes locales del archivo. La extracción conserva los documentos, codificaciones y verificaciones del ZIP, y evita depender de la cola nativa de DecompressionStream. La continuidad Android requiere una captura nueva: 1.7.35 terminó su última síntesis pero dejó de entregar audio después de 120 fragmentos. Los diagnósticos de cola se obtienen de cada final real que vacía AudioTrack, mediante su evaluación original, sin polling ni comandos de reproducción adicionales.
+
 ### Actualización web · 1.7.35
 
 El fonemizador carga su WASM y datos una vez por worker y reutiliza el código compilado. Cada renovación conserva una memoria y un sistema de archivos nuevos, con el mismo límite de 40 llamadas; no vuelve a descargar ni compilar los archivos durante la lectura. La prueba con espeak real completa 161 llamadas en inglés, neerlandés y español, desconectando la red tras las primeras 40. Los IDs de fonemas se conservan. En Android se registran únicamente fases numéricas en los awaits originales de síntesis, sin timers, polling ni audio añadido.
 
-Esto no acredita todavía continuidad Android: el ensayo de 1.7.34 conserva su fallo después de 120 fragmentos. La nueva captura y la batería completa de 1.7.35 se verifican por separado.
+Esto no acredita todavía continuidad Android: el ensayo de 1.7.35 conserva su fallo después de 120 fragmentos. La batería web y la captura Android mantienen resultados separados.
 
 ### Actualización web · 1.7.34
 

@@ -48,7 +48,6 @@ public final class NativePcmService extends Service {
     private int rate;
     private long headBase, written, queued, played, lastHead, headWrap;
     private long lastStateLog, lastStatePublish;
-    private long lastEmptySnapshotEpoch = Long.MIN_VALUE;
     private volatile long epoch;
     private final ArrayList<Unit> units = new ArrayList<>();
     private static final class Chunk {
@@ -99,7 +98,6 @@ public final class NativePcmService extends Service {
             playback.removeCallbacks(pump);
             playback.post(() -> {
                 // Epoch numbers are scoped to the bridge session, not global.
-                lastEmptySnapshotEpoch = Long.MIN_VALUE;
                 resetTrack(true);
             });
             session = next;
@@ -225,8 +223,11 @@ public final class NativePcmService extends Service {
                     if (!u.started && played > u.start) { u.started = true; if (owner != null) owner.emit(currentSession, epoch, "start", u.id, null); }
                     if (u.complete && played >= u.end) {
                         units.remove(u);
-                        boolean queueEmpty = units.isEmpty() && lastEmptySnapshotEpoch != epoch;
-                        if (queueEmpty) lastEmptySnapshotEpoch = epoch;
+                        // Snapshot an actual drained completion, including a
+                        // later one in the same playback epoch. The original
+                        // done evaluation carries it; no polling/evaluation is
+                        // added and no playback command depends on the result.
+                        boolean queueEmpty = units.isEmpty();
                         if (owner != null) owner.emit(currentSession, epoch, "done", u.id, null, queueEmpty);
                     }
                 }
