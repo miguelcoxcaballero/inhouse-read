@@ -41,30 +41,61 @@ async function assertFits(dialog) {
   }
 }
 
-test('las dos páginas caben sin scroll en móvil pequeño, móvil y horizontal y liberan el preview anterior',async ({ page },testInfo) => {
+test('las dos páginas caben sin scroll en móvil pequeño, móvil y horizontal y reutilizan los previews suspendidos',async ({ page },testInfo) => {
   test.setTimeout(120_000);
   const errors = []; page.on('pageerror',error => errors.push(error.message));
-  for (const viewport of [{ width:320,height:568 },{ width:390,height:844 },{ width:844,height:390 }]) {
+  // Studios are created lazily and retained; only the selected page may draw.
+  // Use the existing counters and DOM identity, without adding rendering probes.
+  const assertRetained = async (dialog,count) => {
+    await expect(dialog.locator('canvas')).toHaveCount(count);
+    expect(await dialog.evaluate(node => {
+      const current = [...node.querySelectorAll('canvas')];
+      const retained = window.__shelfTypeCanvases || [];
+      const same = retained.every((canvas,index) => canvas === current[index]);
+      window.__shelfTypeCanvases = current;
+      return same;
+    })).toBe(true);
+  };
+  for (const [index,viewport] of [{ width:320,height:568 },{ width:390,height:844 },{ width:844,height:390 }].entries()) {
     await page.setViewportSize(viewport);
     await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating','false');
     const dialog = await openCatalog(page);
     await assertFits(dialog);
-    await expect(dialog.locator('canvas')).toHaveCount(1);
+    await assertRetained(dialog,index === 0 ? 1 : 2);
+    await expect(dialog.locator('canvas:visible')).toHaveCount(1);
+    await expect(dialog.locator('[data-preview-active="true"]')).toHaveCount(1);
+    const plantDrawing = dialog.locator('.ihr-plant-catalog__drawing:not(.ihr-plant-catalog__shelf-drawing):not(.ihr-plant-catalog__lamp-drawing)');
+    await expect(plantDrawing).toHaveAttribute('data-preview-active','true');
     await dialog.getByRole('button',{ name:'Estanterías',exact:true }).click();
     await expect(dialog).toHaveAttribute('data-catalog-page','shelves');
+    await expect(plantDrawing).toHaveAttribute('data-preview-active','false');
+    const suspendedPlant = await plantDrawing.getAttribute('data-render-count');
     await dialog.locator('[data-catalog-shelf="baggebo"]').click();
     await expect(dialog.locator('.ihr-plant-catalog__shelf-drawing')).toHaveAttribute('data-renderer','three-mesh');
     await expect(dialog.locator('.ihr-plant-catalog__shelf-drawing')).toHaveAttribute('data-shelf-type','baggebo');
     await expect(dialog.locator('.ihr-plant-catalog__shelf-dimensions')).toHaveText('60 × 25 × 116 cm');
     const previewBounds = await dialog.locator('.ihr-plant-catalog__shelf-drawing').boundingBox();
     expect(previewBounds.height).toBeGreaterThan(viewport.height > 480 ? 200 : 100);
-    await expect(dialog.locator('canvas')).toHaveCount(1);
+    await assertRetained(dialog,2);
+    await expect(dialog.locator('canvas:visible')).toHaveCount(1);
+    await expect(dialog.locator('[data-preview-active="true"]')).toHaveCount(1);
+    await expect(dialog.locator('.ihr-plant-catalog__shelf-drawing')).toHaveAttribute('data-preview-active','true');
     await assertFits(dialog);
     await testInfo.attach(`catalogo-baggebo-${viewport.width}x${viewport.height}`,{ body:await dialog.screenshot(),contentType:'image/png' });
+    expect(await plantDrawing.getAttribute('data-render-count')).toBe(suspendedPlant);
     await dialog.getByRole('button',{ name:'Plantas y macetas',exact:true }).click();
-    await expect(dialog.locator('canvas')).toHaveCount(1);
+    await assertRetained(dialog,2);
+    await expect(dialog.locator('canvas:visible')).toHaveCount(1);
+    await expect(plantDrawing).toHaveAttribute('data-preview-active','true');
+    await expect(dialog.locator('.ihr-plant-catalog__shelf-drawing')).toHaveAttribute('data-preview-active','false');
     await dialog.getByRole('button',{ name:'Cerrar catálogo' }).click();
-    await expect(dialog.locator('canvas')).toHaveCount(0);
+    await expect(dialog).toBeHidden();
+    await expect(dialog.locator('canvas:visible')).toHaveCount(0);
+    await expect(dialog.locator('[data-preview-active="true"]')).toHaveCount(0);
+    await assertRetained(dialog,2);
+    const suspended = await dialog.locator('[data-renderer="three-mesh"]').evaluateAll(nodes => nodes.map(node => node.dataset.renderCount));
+    await page.waitForTimeout(250);
+    expect(await dialog.locator('[data-renderer="three-mesh"]').evaluateAll(nodes => nodes.map(node => node.dataset.renderCount))).toEqual(suspended);
   }
   expect(errors).toEqual([]);
 });

@@ -54,6 +54,8 @@ jobs:
       # Wait for the complete return and visible saved book; keep the local
       # 30 s default, renderer clock and every frame unchanged.
       ANDROID_IMPORT_RETURN_TIMEOUT_MS: 60000
+      # Six real cabinet turns plus final reload need their complete scenario budget.
+      SHELF_PLACEMENT_SCENARIO_TIMEOUT_MS: 180000
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

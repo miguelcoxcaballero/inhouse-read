@@ -45,20 +45,93 @@ for (const cold of [true, false]) test(`Android Abrir con: importa los bytes exa
   await expect(page.getByRole('button', { name:/Abrir Android Open With/i })).toBeVisible()
 })
 
-test('Android: un acceso a Google pendiente no bloquea el siguiente Abrir con', async ({ page }) => {
+test('Android: un acceso a Google pendiente no bloquea el siguiente Abrir con', async ({ page }, testInfo) => {
+  // First import remains local. Start the pending login through the actual
+  // account button before delivering the second native inbox entry.
+  test.setTimeout(Math.max(90_000, returnTimeout + 60_000))
   await installInbox(page, true)
   await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'userAgent', {value:`${navigator.userAgent} InhouseReadApp/1.1.1`,configurable:true})
+    Object.defineProperty(navigator, 'userAgent', {value:navigator.userAgent + ' InhouseReadApp/1.1.1',configurable:true})
     window.testAuthOpened = false
-    window.InhouseNative = { getAppVersion:() => '1.1.1', openAuthUrl:() => { window.testAuthOpened = true } }
+    window.testAuthUrls = []
+    window.InhouseNative = { getAppVersion:() => '1.1.1', openAuthUrl:url => {
+      window.testAuthOpened = true
+      window.testAuthUrls.push(url)
+    } }
+  })
+  const driveRequests = []
+  // Observe and block any unexpected Drive API traffic. Fonts do not count.
+  await page.route(/^https:\/\/www\.googleapis\.com\/(?:upload\/)?drive\/v3(?:\/|\?)/, route => {
+    driveRequests.push({method:route.request().method(),url:route.request().url()})
+    return route.fulfill({status:403,contentType:'application/json',body:JSON.stringify({error:'Unexpected Drive API request'})})
   })
   await page.route('**/android-update.json?**', route => route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({version:'1.1.1',required:false})}))
   await page.route('https://api.github.com/repos/miguelcoxcaballero/inhouse-read/releases/latest', route => route.fulfill({status:404,body:'No update'}))
+  const localBooks = () => page.evaluate(async () => {
+    const db = await new Promise((resolve,reject) => {
+      const request = indexedDB.open('inhouse-read')
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    try {
+      const books = await new Promise((resolve,reject) => {
+        const request = db.transaction('books').objectStore('books').getAll()
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+      return Promise.all(books.filter(book => ['Android_Open_With.pdf','Second_Android_Book.pdf'].includes(book.name)).map(async book => ({
+        id:book.id,name:book.name,sourceType:book.sourceType,driveFileId:book.driveFileId || null,
+        bytes:[...new Uint8Array(await book.content.arrayBuffer())]
+      })))
+    } finally { db.close() }
+  })
   await page.goto(process.env.IHR_TEST_URL || '/')
-  await page.waitForFunction(() => window.testAuthOpened && window.testImportAcks.length === 1)
+  await expect(page.locator('#reader-top-title')).toHaveText('Android Open With')
+  await page.waitForFunction(() => window.testImportAcks.length === 1)
+  expect(await page.evaluate(() => window.testAuthOpened)).toBe(false)
+  const first = await localBooks()
+  expect(first).toHaveLength(1)
+  expect(first[0]).toMatchObject({name:'Android_Open_With.pdf',sourceType:'local',driveFileId:null,bytes:pdf})
+  expect(driveRequests).toEqual([])
+
+  await page.getByRole('button', {name:'Volver a la estantería'}).click()
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/, {timeout:returnTimeout})
+  await expect(page.locator('#home-screen')).toBeVisible()
+  const connect = page.getByRole('button', {name:'Conectar cuenta de Google',exact:true})
+  await connect.click()
+  await page.waitForFunction(() => window.testAuthOpened && window.testAuthUrls.length === 1)
+  await expect(connect).toBeDisabled()
+  await expect(page.locator('#drive-auth-message')).toHaveText('Completa el acceso en Google.')
+  const pendingBefore = await page.evaluate(() => ({
+    acks:window.testImportAcks.length,authCalls:window.testAuthUrls.length,
+    pending:!document.querySelector('#drive-auth-cancel').hidden,
+    session:localStorage.getItem('ihr_drive_session_v2')
+  }))
+  expect(pendingBefore).toEqual({acks:1,authCalls:1,pending:true,session:null})
+  expect(driveRequests).toEqual([])
+
+  // No OAuth callback is supplied: the actual auth promise stays unresolved.
   await page.evaluate(() => window.testDeliverBook('Second_Android_Book.pdf'))
   await expect(page.locator('#reader-top-title')).toHaveText('Second Android Book')
+  await expect(page.locator('#reader-format-badge')).toHaveText('PDF')
   await page.waitForFunction(() => window.testImportAcks.length === 2)
+  const saved = await localBooks()
+  expect(saved).toHaveLength(2)
+  expect(new Set(saved.map(book => book.id)).size).toBe(2)
+  for (const name of ['Android_Open_With.pdf','Second_Android_Book.pdf']) {
+    expect(saved.find(book => book.name === name)).toMatchObject({name,sourceType:'local',driveFileId:null,bytes:pdf})
+  }
+  const pendingAfter = await page.evaluate(() => ({
+    acks:window.testImportAcks.length,authCalls:window.testAuthUrls.length,
+    pending:!document.querySelector('#drive-auth-cancel').hidden,
+    session:localStorage.getItem('ihr_drive_session_v2'),
+    connectDisabled:document.querySelector('#drive-connect-btn').disabled
+  }))
+  expect(pendingAfter).toEqual({acks:2,authCalls:1,pending:true,session:null,connectDisabled:true})
+  expect(driveRequests).toEqual([])
+  await testInfo.attach('native-inbox-during-explicit-oauth.json', {contentType:'application/json',body:JSON.stringify({
+    firstImport:first,pendingBefore,secondImport:saved,pendingAfter,driveRequests
+  },null,2)})
 })
 
 test('Android: abre el PDF con un WebView sin las APIs recientes de Promise y Math', async ({ page }) => {

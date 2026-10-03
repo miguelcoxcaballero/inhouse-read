@@ -5,6 +5,10 @@ import { spinePointerPosition } from './helpers/shelf-pointer.mjs'
 // At 50 ms of camera time per rendered frame, CI reached .98 after 8.3 s
 // but needed further real frames. Keep the exact endpoint and geometry checks.
 const VIEW_TRANSITION_TIMEOUT = 30_000
+// Six completed real camera turns took 85.9s in CI before final reload.
+// Keep the local scenario and each exact endpoint unchanged; the software
+// renderer profile supplies only this scenario's total budget.
+const FULL_WIDTH_SCENARIO_TIMEOUT = process.env.SHELF_PLACEMENT_SCENARIO_TIMEOUT_MS === '180000' ? 180_000 : 120_000
 
 const PLANTS_KEY = 'inhouse-read-shelf-plants'
 async function seedShelf(page) {
@@ -90,7 +94,7 @@ async function assertFullCabinetWidth(page) {
 }
 
 test('la estantería frontal ocupa todo el ancho y la papelera sólo se activa en isométrica sin cambiar posiciones', async ({ page }, testInfo) => {
-  test.setTimeout(120_000)
+  test.setTimeout(FULL_WIDTH_SCENARIO_TIMEOUT)
   const errors = []; page.on('pageerror', error => errors.push(error.message))
   await page.setViewportSize({ width:390, height:844 })
   await page.emulateMedia({ reducedMotion:'no-preference' })
