@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { collapse as collapseCfi } from 'foliate-js/epubcfi.js'
 import { deflateSync } from 'node:zlib'
+import { settledGeometryLength } from './helpers/settled-geometry-length.mjs'
 
 test.use({ viewport:{ width:390, height:844 }, hasTouch:true, isMobile:true, deviceScaleFactor:1 })
 test.beforeEach(async ({ page }) => {
@@ -595,7 +596,7 @@ const workerGateTest = test.extend({ serviceWorkers:'block' })
 workerGateTest('móvil: cancelar durante la preparación y reabrir el mismo libro no deja que la sesión anterior oculte el lector nuevo', async ({ page }, testInfo) => {
   test.setTimeout(90_000)
   const errors = []; page.on('pageerror', error => errors.push(error.message))
-  await page.evaluate(async ({ bytes,coverBytes }) => {
+  await page.evaluate(async ({ bytes,coverBytes,geometry }) => {
     const db = await new Promise((resolve,reject) => {
       const request = indexedDB.open('inhouse-read')
       request.onsuccess = () => resolve(request.result)
@@ -605,6 +606,7 @@ workerGateTest('móvil: cancelar durante la preparación y reabrir el mismo libr
     transaction.objectStore('books').put({
       id:'opening-preparation-race',title:'Saved race',name:'opening-preparation-race.pdf',
       sourceType:'local',format:'PDF',mimeType:'application/pdf',pageCount:4,
+      ...geometry,
       content:new Blob([new Uint8Array(bytes)],{type:'application/pdf'}),
       cover:new Blob([new Uint8Array(coverBytes)],{type:'image/png'}),
       locator:{kind:'pdf-page',value:3},progressFraction:2/3,
@@ -614,7 +616,8 @@ workerGateTest('móvil: cancelar durante la preparación y reabrir el mismo libr
       transaction.oncomplete = resolve; transaction.onerror = () => reject(transaction.error)
     })
     db.close()
-  }, { bytes:[...colouredPdf()],coverBytes:[...colouredPng([184,20,40])] })
+  }, { bytes:[...colouredPdf()],coverBytes:[...colouredPng([184,20,40])],
+    geometry:settledGeometryLength(1_200, 'opening-preparation-race') })
 
   let workerBlocked = false, releaseWorker
   const workerGate = new Promise(resolve => { releaseWorker = resolve })

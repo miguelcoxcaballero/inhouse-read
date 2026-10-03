@@ -38,6 +38,16 @@ describe('local original book bytes', () => {
       { retainedContent:old.content })
     expect(await (await store.get(old.id)).content.text()).toBe('new')
   })
+  it('invalidates the previous Drive byte identity on reimport but preserves it on a cached reopen', async () => {
+    const store=library(), checksum='a'.repeat(32)
+    const old=await store.addOrTouch({ sourceType:'local',name:'same.epub',size:3,content:new Blob(['old']),
+      contentRevision:'old-revision',driveFileId:'saved',driveContentChecksum:checksum,contentDriveChecksum:checksum })
+    await storeBookFile(store,new File([old.content],old.name),{ id:old.id,name:old.name,size:3,
+      contentRevision:old.contentRevision },{ reuseStoredContent:true })
+    expect((await store.get(old.id)).contentDriveChecksum).toBe(checksum)
+    await storeBookFile(store,new File(['new'],old.name),{ id:old.id,name:old.name,size:3 })
+    expect(await store.get(old.id)).toMatchObject({ driveFileId:'saved',driveContentChecksum:checksum,contentDriveChecksum:null })
+  })
   it('does not erase a saved file, Drive link or position through undefined reopen fields', async () => {
     const store = library()
     const book = await store.addOrTouch({ sourceType:'local', name:'keep.pdf', size:5,

@@ -6,6 +6,7 @@ const foliateNext = vi.fn(async () => {})
 const pdfSnapshot = vi.fn(async () => null)
 const foliateSnapshot = vi.fn(async () => null)
 const foliateLength = vi.fn(async () => null)
+const pdfLength = vi.fn(async () => null)
 
 vi.mock('../../src/js/readers/pdf-reader.js', () => ({
   PdfReader: class {
@@ -15,6 +16,7 @@ vi.mock('../../src/js/readers/pdf-reader.js', () => ({
     close = vi.fn()
     pageCount = 10
     getPageSnapshot = pdfSnapshot
+    getLengthMetadata = pdfLength
   }
 }))
 
@@ -45,6 +47,7 @@ describe('ReaderController', () => {
     pdfSnapshot.mockReset()
     foliateSnapshot.mockReset()
     foliateLength.mockReset()
+    pdfLength.mockReset()
   })
 
   it('enruta un PDF al PdfReader', async () => {
@@ -152,7 +155,9 @@ describe('ReaderController', () => {
     expect(await controller.getLengthMetadata()).toEqual({ wordCount:180000, estimatedPageCount:600, lengthSource:'text' })
     expect(controller.pageCount).toBeNull()
     await controller.open(document.createElement('div'), new File(['%PDF-1.4'], 'a.pdf'))
-    expect(await controller.getLengthMetadata()).toEqual({ pageCount:10, lengthSource:'pages' })
+    pdfLength.mockResolvedValue({wordCount:90_000,wordCountVersion:2,wordCountComplete:true,estimatedPageCount:300,lengthSource:'text'})
+    expect(await controller.getLengthMetadata()).toEqual({wordCount:90_000,wordCountVersion:2,wordCountComplete:true,estimatedPageCount:300,lengthSource:'text'})
+    expect(controller.pageCount).toBe(10)
   })
 
   it('discards a background length count after its reader session closes', async () => {

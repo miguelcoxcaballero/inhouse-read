@@ -884,11 +884,13 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   // Painted once, by updateCoverSource below (or as the placeholder while a
   // download is pending), never twice per book.
   const cover = new THREE.MeshPhysicalMaterial({ map:null });
-  const reliefCapable = detail || Boolean(inspectionResolution);
+  const reliefCapable = true;
   // The clearcoat + relief program is costly to shade. Views that only fly a
   // book (opening, closing) skip it unless the cover already has a relief; a
   // view that gets one later arms it then, once (setCoverRelief).
-  let reliefArmed = reliefCapable && (eagerRelief || Boolean(book.coverRelief));
+  // Shelf books need the same saved pigment mask as the lifted book. Keep
+  // ordinary shelf materials cheap until a relief is actually selected.
+  let reliefArmed = ((detail || Boolean(inspectionResolution)) && eagerRelief) || Boolean(book.coverRelief);
   const laminate = value => {
     applyCoverFinish(cover, value);
     if (reliefArmed && !cover.clearcoat) cover.clearcoat = COVER_CLEARCOAT_FLOOR;
@@ -1290,7 +1292,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
       // any aspect-ratio margins. Analysing the unfitted source shifts masks.
       const source = reliefSource();
       if (!source) return false;
-      built = await buildReliefMaps(source, next, { maxSize: 512, signal: controller.signal });
+      built = await buildReliefMaps(source, next, { maxSize: overview ? 128 : shelf && !inspectionResolution ? 256 : 512, signal: controller.signal });
       if (!built || revision !== reliefRevision || disposed || controller.signal.aborted) return false;
       const { width, height } = built.size;
       const normals = built.normal.slice();

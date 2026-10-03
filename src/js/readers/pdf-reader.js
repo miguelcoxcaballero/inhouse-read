@@ -11,6 +11,7 @@
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { TextLayer } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import { measurePDFBookLength } from '../pdf-book-length.js'
 import { attachSwipeNavigation } from '../gestures.js'
 import { DEFAULT_READING_PREFERENCES, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES, normalizeReadingPreferences } from './reading-preferences.js'
 import { hasUntrackedPDFImages, paintPDFTheme } from './pdf-page-theme.js'
@@ -50,8 +51,13 @@ export class PdfReader {
   #resizeTimer
   #layoutWidth = 0
   #imageLayouts = new WeakMap()
+  #lengthMetadata
+  #textOffset = 0
+  #textHeight = 0
+  #scrollTimer
+  #detachScroll = () => {}
 
-  async open(container, arrayBuffer, { onRelocate, onToggleChrome, onUserNavigation, initialPage, initialFraction = 0, preferences } = {}) {
+  async open(container, arrayBuffer, { onRelocate, onToggleChrome, onUserNavigation, initialPage, initialLocator, initialFraction = 0, preferences } = {}) {
     this.#container = container
     this.#onRelocate = onRelocate ?? (() => {})
 
@@ -59,6 +65,8 @@ export class PdfReader {
     const pdf = await loading.promise
     if (loading !== this.#loadingTask) return
     this.#doc = pdf
+    this.#lengthMetadata = null
+    this.#textOffset = 0
     this.#zoomed = false
     if (preferences) this.#preferences = normalizeReadingPreferences(preferences)
 
@@ -80,6 +88,13 @@ export class PdfReader {
     this.#reflow.hidden = true
     container.append(this.#reflow)
     this.#applyTextStyles()
+    const onScroll = () => {
+      if (!this.#doc || this.#preferences.pdfMode !== 'text') return
+      clearTimeout(this.#scrollTimer)
+      this.#scrollTimer = setTimeout(() => this.#rememberTextPosition(), 150)
+    }
+    container.addEventListener('scroll', onScroll, { passive:true })
+    this.#detachScroll = () => container.removeEventListener('scroll', onScroll)
 
     this.#detachGestures = attachSwipeNavigation(container, {
       onNext: () => { onUserNavigation?.(); return this.next() },
@@ -93,7 +108,8 @@ export class PdfReader {
       getMotionSurface: () => this.#preferences.pdfMode === 'text' ? this.#reflow : this.#pageWrap
     })
 
-    await this.goToPage(initialPage ?? Math.round((Number(initialFraction) || 0) * (pdf.numPages - 1)) + 1)
+    await this.goToPage(initialPage ?? (initialLocator?.kind === 'pdf-page' ? initialLocator.value : undefined)
+      ?? Math.round((Number(initialFraction) || 0) * (pdf.numPages - 1)) + 1, { textOffset:initialLocator?.textOffset })
     if (loading !== this.#loadingTask) return
     // The reader lives inside the actual usable viewport. A phone rotation,
     // split view or browser resize must refit both pixels and selection, without
@@ -112,26 +128,102 @@ export class PdfReader {
     return this.#pageNum
   }
 
-  async goToPage(n) {
+  async goToPage(n, { textOffset = 0, edge } = {}) {
     if (!this.#doc) return
     this.#invalidateStagedSpeech()
     const clamped = Math.min(Math.max(1, Math.round(Number(n) || 1)), this.#doc.numPages)
     this.#pageNum = clamped
     const rendered = await this.#render()
     if (!rendered || this.#pageNum !== clamped) return
-    this.#container.scrollTop = 0
-    this.#onRelocate({
-      index: this.#pageNum - 1,
-      fraction: (this.#pageNum - 1) / Math.max(1, this.#doc.numPages - 1 || 1)
-    })
+    clearTimeout(this.#scrollTimer)
+    this.#container.scrollTop = edge === 'end' && this.#preferences.pdfMode === 'text'
+      ? Math.max(0, this.#container.scrollHeight - this.#container.clientHeight) : 0
+    this.#textOffset = Math.min(this.#pageText.length, Number.isFinite(Number(textOffset)) ? Math.max(0, Math.trunc(Number(textOffset))) : 0)
+    if (edge === 'end') this.#textOffset = this.#visibleTextOffset()
+    else this.#restoreTextOffset(this.#textOffset)
+    this.#emitLocation()
   }
 
-  async next() {
+  async next({ source = false, isActive } = {}) {
+    if (!this.#doc || isActive?.() === false) return
+    // The voice has already read the entire physical page. Manual navigation
+    // instead traverses every screen of an adaptable page before leaving it.
+    if (!source && this.#moveTextViewport(1)) return
     if (this.#pageNum < this.pageCount) await this.goToPage(this.#pageNum + 1)
   }
 
   async prev() {
-    if (this.#pageNum > 1) await this.goToPage(this.#pageNum - 1)
+    if (!this.#doc || this.#moveTextViewport(-1)) return
+    if (this.#pageNum > 1) await this.goToPage(this.#pageNum - 1, { edge:'end' })
+  }
+
+  #moveTextViewport(direction) {
+    if (this.#preferences.pdfMode !== 'text') return false
+    const height = this.#container.clientHeight
+    if (!(height > 0)) return false
+    const end = Math.max(0, this.#container.scrollHeight - height)
+    const current = Math.min(end, Math.max(0, this.#container.scrollTop))
+    if (direction > 0 ? current >= end - 1 : current <= 1) return false
+    // One line of overlap makes words on a viewport boundary readable in full.
+    const line = Math.ceil(this.#preferences.fontSize * this.#preferences.lineHeight)
+    const top = Math.min(end, Math.max(0, current + direction * Math.max(1, height - line)))
+    this.#container.scrollTo({ top, behavior:'instant' })
+    this.#rememberTextPosition()
+    return true
+  }
+
+  #visibleTextOffset() {
+    const node = this.#reflow?.firstChild, doc = node?.ownerDocument
+    if (this.#preferences.pdfMode !== 'text' || !node?.nodeValue || !doc?.createRange) return this.#textOffset
+    const edge = this.#container.getBoundingClientRect().top
+    const range = doc.createRange()
+    if (typeof range.getClientRects !== 'function') return this.#textOffset
+    let low = 0, high = node.nodeValue.length
+    while (low < high) {
+      const middle = (low + high) >>> 1
+      range.setStart(node, middle); range.setEnd(node, middle + 1)
+      const rect = range.getClientRects()[0]
+      if (!rect || rect.bottom <= edge + 1) low = middle + 1
+      else high = middle
+    }
+    return Math.min(node.nodeValue.length, low)
+  }
+
+  #restoreTextOffset(offset) {
+    if (this.#preferences.pdfMode !== 'text') return
+    const node = this.#reflow?.firstChild
+    this.#textOffset = Math.min(node?.nodeValue?.length || 0, Math.max(0, Math.trunc(Number(offset) || 0)))
+    if (!node?.nodeValue || !this.#textOffset) return
+    const range = node.ownerDocument.createRange()
+    range.setStart(node, Math.min(this.#textOffset, node.nodeValue.length - 1))
+    range.setEnd(node, Math.min(this.#textOffset + 1, node.nodeValue.length))
+    const rect = range.getClientRects?.()[0]
+    if (rect) this.#container.scrollTo({ top:this.#container.scrollTop + rect.top - this.#container.getBoundingClientRect().top, behavior:'instant' })
+  }
+
+  #rememberTextPosition() {
+    if (!this.#doc || this.#preferences.pdfMode !== 'text' || this.#reflow.hidden) return
+    const offset = this.#visibleTextOffset()
+    if (offset === this.#textOffset) return
+    this.#textOffset = offset
+    this.#emitLocation()
+  }
+
+  #emitLocation() {
+    if (!this.#doc) return
+    this.#onRelocate({ index:this.#pageNum - 1,
+      fraction:(this.#pageNum - 1) / Math.max(1, this.#doc.numPages - 1),
+      ...(this.#textOffset > 0 ? { textOffset:this.#textOffset } : {}) })
+  }
+
+  async getLengthMetadata() {
+    const pdf = this.#doc
+    if (!pdf) return null
+    if (this.#lengthMetadata?.pdf !== pdf) {
+      this.#lengthMetadata = { pdf, promise:measurePDFBookLength(pdf, { isActive:() => this.#doc === pdf }) }
+    }
+    const result = await this.#lengthMetadata.promise
+    return this.#doc === pdf ? result : null
   }
 
   async toggleZoom(clientX, clientY) {
@@ -226,7 +318,17 @@ export class PdfReader {
 
   #onResize() {
     if (this.#stagedSpeech && !this.#stagedSpeech.valid()) this.#invalidateStagedSpeech()
-    if (!this.#doc || this.#preferences.pdfMode === 'text') return
+    if (!this.#doc) return
+    if (this.#preferences.pdfMode === 'text') {
+      if (Math.abs(this.#containerWidth() - this.#layoutWidth) < 1 && this.#container.clientHeight === this.#textHeight) return
+      this.#layoutWidth = this.#containerWidth(); this.#textHeight = this.#container.clientHeight
+      clearTimeout(this.#resizeTimer)
+      this.#resizeTimer = setTimeout(() => {
+        if (!this.#doc || this.#preferences.pdfMode !== 'text') return
+        this.#restoreTextOffset(this.#textOffset)
+      }, 80)
+      return
+    }
     if (Math.abs(this.#containerWidth() - this.#layoutWidth) < 1) return
     clearTimeout(this.#resizeTimer)
     this.#resizeTimer = setTimeout(() => {
@@ -296,6 +398,8 @@ export class PdfReader {
       state.pageText = state.textLayout.text
       reflow.textContent = state.pageText || 'Esta página es una imagen. Cambia a Página original para verla.'
       state.zoomed = false
+      state.layoutWidth = this.#containerWidth()
+      this.#textHeight = this.#container.clientHeight
       return true
     }
 
@@ -543,10 +647,12 @@ export class PdfReader {
           this.#renderReady = Promise.resolve(true)
           this.#pageNum = number
           this.#useRenderedPage(staged)
+          clearTimeout(this.#scrollTimer)
           this.#container.scrollTop = 0
+          this.#textOffset = 0
           oldCanvas.width = oldCanvas.height = 0
           activated = true
-          this.#onRelocate({ index:number - 1, fraction:(number - 1) / Math.max(1, pdf.numPages - 1) })
+          this.#emitLocation()
           return true
         }
         source.clear = () => {
@@ -579,6 +685,7 @@ export class PdfReader {
     if (!this.#doc || pending !== this.#renderReady) return this.getPageSnapshot()
     const page = this.#pageNum
     const textMode = this.#preferences.pdfMode === 'text'
+    if (textMode) this.#rememberTextPosition()
     // Physical white pages blend into the current reader theme on opening.
     const theme = READING_THEMES[this.#preferences.theme]
     const snapshot = textMode
@@ -597,7 +704,8 @@ export class PdfReader {
     if (!snapshot || !this.#doc || page !== this.#pageNum) return null
     return { ...snapshot, engine:'pdf', sourceType:textMode ? 'pdf-text' : 'pdf-canvas',
       text:snapshot.text || this.#pageText, label:`Página ${page} de ${this.pageCount}`,
-      location:{ fraction:(page - 1) / Math.max(1, this.pageCount - 1), locator:{ kind:'pdf-page', value:page } } }
+      location:{ fraction:(page - 1) / Math.max(1, this.pageCount - 1), locator:{ kind:'pdf-page', value:page,
+        ...(this.#textOffset > 0 ? { textOffset:this.#textOffset } : {}) } } }
   }
   async search(query) {
     const term = String(query || '').trim().toLocaleLowerCase()
@@ -627,6 +735,11 @@ export class PdfReader {
   async applyPreferences(preferences) {
     this.#invalidateStagedSpeech()
     const previous = this.#preferences
+    const offset = previous.pdfMode === 'text' ? this.#visibleTextOffset() : this.#textOffset
+    if (this.#doc && previous.pdfMode === 'text' && offset !== this.#textOffset) {
+      this.#textOffset = offset
+      this.#emitLocation()
+    }
     this.#preferences = normalizeReadingPreferences(preferences)
     const p = this.#preferences
     this.#applyTextStyles()
@@ -635,6 +748,11 @@ export class PdfReader {
       this.#container.setAttribute('aria-busy', 'true')
       const ready = this.#renderReady
       await this.#trackRender(this.#retheme(ready, p), this.#renderKey())
+    }
+    this.#textOffset = offset
+    if (this.#doc && p.pdfMode === 'text') {
+      clearTimeout(this.#scrollTimer)
+      this.#restoreTextOffset(offset)
     }
   }
 
@@ -672,6 +790,13 @@ export class PdfReader {
     this.#resizeObserver = null
     clearTimeout(this.#resizeTimer)
     this.#resizeTimer = null
+    clearTimeout(this.#scrollTimer)
+    this.#scrollTimer = null
+    this.#detachScroll()
+    this.#detachScroll = () => {}
+    this.#textOffset = 0
+    this.#textHeight = 0
+    this.#lengthMetadata = null
     this.#layoutWidth = 0
     ++this.#renderToken
     this.#invalidateStagedSpeech()

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { mkdir, readFile } from 'node:fs/promises';
+import { settledGeometryLength } from './helpers/settled-geometry-length.mjs';
 
 const BOOK_PREFIX = 'motion:book:';
 const LAMP_KEY = 'inhouse-read-shelf-lamps';
@@ -36,7 +37,7 @@ async function seedShelf(page) {
   await page.goto(TARGET_URL);
   await expect(page.locator('.ihr-bookshelf')).toBeVisible();
   const bytes = [...await readFile('tests/e2e/fixtures/tiny.pdf')];
-  await page.evaluate(async ({ bytes, prefix }) => {
+  await page.evaluate(async ({ bytes, prefix, geometry }) => {
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open('inhouse-read');
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
@@ -54,6 +55,7 @@ async function seedShelf(page) {
     for (let index = 0; index < 6; index++) books.put({
       id:`${prefix}${index}`, title:`Libro ${index + 1}`, name:`motion-${index}.pdf`,
       format:'PDF', sourceType:'local', mimeType:'application/pdf', pageCount:260,
+      ...geometry,
       content:new Blob([new Uint8Array(bytes)], { type:'application/pdf' }), cover:covers[index],
       coverFinish:index % 2 ? 'satin' : 'glossy', spineSurfaceFinish:index % 2 ? 'satin' : 'glossy',
       spineColorOverride:['#18364b', '#713b42', '#375a46'][Math.floor(index / 2)],
@@ -63,7 +65,7 @@ async function seedShelf(page) {
     await new Promise((resolve, reject) => {
       transaction.oncomplete = resolve; transaction.onerror = () => reject(transaction.error);
     }); db.close();
-  }, { bytes, prefix:BOOK_PREFIX });
+  }, { bytes, prefix:BOOK_PREFIX, geometry:settledGeometryLength(78_000, 'shelf-motion') });
   await page.reload();
   const scene = page.locator('.ihr-bookshelf-scene');
   await expect(page.locator('.ihr-spine')).toHaveCount(6);

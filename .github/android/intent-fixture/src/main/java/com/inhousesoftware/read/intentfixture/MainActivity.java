@@ -15,17 +15,19 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         try {
             String mode = getIntent().getStringExtra("mode");
-            String name = "Intent_" + mode + ".pdf";
+            boolean audiobook = "audiobook".equals(mode);
+            String name = "Intent_" + mode + (audiobook ? ".epub" : ".pdf");
             File file = new File(getFilesDir(), name);
-            try (InputStream input = getAssets().open("tiny.pdf"); FileOutputStream output = new FileOutputStream(file)) {
+            try (InputStream input = getAssets().open(audiobook ? "audiobook.epub" : "backgroundpdf".equals(mode) ? "background.pdf" : "tiny.pdf"); FileOutputStream output = new FileOutputStream(file)) {
                 byte[] buffer = new byte[8192]; int count;
                 while ((count = input.read(buffer)) != -1) output.write(buffer,0,count);
             }
             Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", file);
             Intent open = new Intent("share".equals(mode) ? Intent.ACTION_SEND : Intent.ACTION_VIEW);
-            open.setType("application/pdf");
+            String mime = audiobook ? "application/epub+zip" : "application/pdf";
+            open.setType(mime);
             if (Intent.ACTION_SEND.equals(open.getAction())) open.putExtra(Intent.EXTRA_STREAM, uri);
-            else open.setDataAndType(uri, "application/pdf");
+            else open.setDataAndType(uri, mime);
             open.setClipData(ClipData.newRawUri(name, uri));
             open.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             if ("chooser".equals(mode)) startActivity(Intent.createChooser(open, "Open ebook"));

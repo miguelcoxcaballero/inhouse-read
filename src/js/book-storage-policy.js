@@ -1,3 +1,5 @@
+import { newContentRevision, clearBookLength } from './book-length-queue.js'
+
 /** Downloaded books belong to this device even when Google is disconnected. */
 export function isBookVisible(book, accountId) {
   return Boolean(book && (book.content || book.sourceType !== 'drive' ||
@@ -10,12 +12,19 @@ export function bookCloudState(book, { connected = false } = {}) {
 }
 
 /** Resolve only after the original bytes have committed to IndexedDB. */
-export async function storeBookFile(library, file, fields, { restoreRemoved = false } = {}) {
+export async function storeBookFile(library, file, fields, { restoreRemoved = false, reuseStoredContent = false } = {}) {
   try {
     // Blob parts share bytes without converting them to text/base64. Equal
     // name and size do not prove that a reimport contains the previous book.
     const content = new Blob([file], { type:file.type })
-    return await library.addOrTouch({ ...fields, content }, { restoreRemoved })
+    const preserveLength = reuseStoredContent && typeof fields.contentRevision === 'string' && fields.contentRevision
+    return await library.addOrTouch({ ...fields, content,
+      ...(preserveLength ? {} : clearBookLength()),
+      // A new import may differ even when its name/size matches the Drive
+      // original. Only an actual cached reopen retains that byte identity.
+      ...(preserveLength ? {} : { contentDriveChecksum:null }),
+      contentRevision:preserveLength ? fields.contentRevision : newContentRevision()
+    }, { restoreRemoved })
   } catch (cause) {
     const error = new Error('No se pudo guardar el libro en este dispositivo. Libera espacio y vuelve a importarlo.', { cause })
     error.code = 'LOCAL_BOOK_STORAGE_FAILED'

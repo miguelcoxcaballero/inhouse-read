@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { webcrypto } from 'node:crypto'
+import { Blob as NativeBlob, File as NativeFile } from 'node:buffer'
 
 let drive
 const token = 'test-access-token'
@@ -136,6 +137,17 @@ describe('autorización de Google Drive', () => {
 })
 
 describe('biblioteca y progreso de Drive', () => {
+  it('writes verified whole-book word metadata in the real state JSON request', async () => {
+    vi.stubGlobal('Blob',NativeBlob);vi.stubGlobal('File',NativeFile);session()
+    let body
+    globalThis.fetch=vi.fn(async (_url,options)=>{body=await options.body.text();return json({id:'state-words'})})
+    const bookLength={schemaVersion:1,driveFileId:'book-words',md5Checksum:'a'.repeat(32),byteLength:600,
+      wordCount:120000,wordCountVersion:2,wordCountComplete:true}
+    await drive.writeDriveProgress('book-words',{fraction:.4,locator:{kind:'pdf-page',value:6},bookLength,updatedAt:123},'state-words')
+    const payload=JSON.parse(body.split('\r\n\r\n').at(-1).split('\r\n--')[0])
+    expect(payload).toMatchObject({schemaVersion:1,driveFileId:'book-words',bookLength,fraction:.4,locator:{kind:'pdf-page',value:6},updatedAt:123})
+    expect(globalThis.fetch.mock.calls[0][1].method).toBe('PATCH')
+  })
   beforeEach(() => { session() })
 
   it('lists an empty account without creating a folder or uploading files', async () => {

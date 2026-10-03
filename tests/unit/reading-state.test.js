@@ -12,3 +12,17 @@ describe('reading state', () => {
     expect(cleanPlaces([{fraction:.3,locator:{kind:'pdf-page',value:5}}])).toHaveLength(1)
   })
 })
+
+
+describe('adaptable PDF text positions', () => {
+  it('preserves optional character positions in bookmarks and quotes', () => {
+    const locator = { kind:'pdf-page', value:3, textOffset:1234 }
+    expect(cleanPlaces([{ fraction:.4, locator }])[0].locator).toEqual(locator)
+    expect(cleanQuotes([{ fraction:.4, text:'A quote', locator }])[0].locator).toEqual(locator)
+  })
+  it.each([-1, NaN, Infinity, '20', 1.5, null])('does not keep an invalid text offset %s', textOffset => {
+    const locator = { kind:'pdf-page', value:2, textOffset }
+    expect(cleanPlaces([{ fraction:.4, locator }])[0].locator).toEqual({kind:'pdf-page',value:2})
+    expect(cleanQuotes([{ fraction:.4, text:'A quote', locator }])[0].locator).toEqual({kind:'pdf-page',value:2})
+  })
+})

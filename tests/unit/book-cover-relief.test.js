@@ -199,6 +199,28 @@ it('cannot revive a cleared mask from an older finish rebake',async()=>{
   expect(model.userData.coverRelief()).toBeNull();
 });
 
+it.each([[false,256],[true,128]])('renders persisted relief on ordinary shelf models (overview=%s) with bounded maps',async(overview,size)=>{
+  model.userData.dispose();
+  model=createBookModel({...book,coverRelief:choice()},style,132,200,30,null,{shelf:true,overview});
+  const material=model.getObjectByName('front-cover').material;
+  cover=Array.isArray(material)?material[0]:material;
+  await vi.waitFor(()=>expect(cover.clearcoatNormalMap?.image.width).toBe(2));
+  expect(model.userData.coverRelief()).toEqual(choice());
+  expect(buildReliefMaps).toHaveBeenCalledWith(expect.anything(),choice(),expect.objectContaining({maxSize:size}));
+});
+
+it('keeps an unedited shelf cheap and applies a newly saved relief without replacing its mesh',async()=>{
+  model.userData.dispose();
+  model=createBookModel(book,style,132,200,30,null,{shelf:true});
+  cover=model.getObjectByName('front-cover').material[0];
+  expect(cover.clearcoatNormalMap).toBeNull();
+  const geometry=model.getObjectByName('front-cover').geometry;
+  model.userData.updateCoverAppearance({...book,coverRelief:choice()});
+  await vi.waitFor(()=>expect(cover.clearcoatNormalMap?.image.width).toBe(2));
+  expect(model.getObjectByName('front-cover').geometry).toBe(geometry);
+  expect(model.userData.coverRelief()).toEqual(choice());
+});
+
 it('excludes fitted white board margins when the printed image has a different aspect ratio',async()=>{
   vi.spyOn(TextureLoader.prototype,'load').mockImplementation((_url,onLoad)=>{
     const texture=new Texture({width:600,height:900});onLoad(texture);return texture;

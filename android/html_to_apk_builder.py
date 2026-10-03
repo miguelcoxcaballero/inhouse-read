@@ -1452,6 +1452,11 @@ class ApkBuilderApp(tk.Tk):
         # Android 8+ bloquea instalar el APK descargado aunque venga de
         # dentro de la propia app.
         wanted.append("android.permission.REQUEST_INSTALL_PACKAGES")
+        wanted.extend([
+            "android.permission.WAKE_LOCK",
+            "android.permission.FOREGROUND_SERVICE",
+            "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        ])
         if self.permission_location.get():
             wanted.extend(
                 [
@@ -1476,6 +1481,13 @@ class ApkBuilderApp(tk.Tk):
         application = root.find("application")
         if application is not None:
             application.set(f"{ns}label", app_name)
+            service_name = f"{package_id}.NativePcmService"
+            service = next((item for item in application.findall("service") if item.get(f"{ns}name") == service_name), None)
+            if service is None:
+                service = ET.SubElement(application, "service")
+            service.set(f"{ns}name", service_name)
+            service.set(f"{ns}exported", "false")
+            service.set(f"{ns}foregroundServiceType", "mediaPlayback")
             # FileProvider: instalar un APK descargado por la propia app exige
             # entregarlo al instalador del sistema como content:// URI, no
             # file:// (bloqueado desde Android 7 por StrictMode). Ver
@@ -1550,6 +1562,8 @@ class ApkBuilderApp(tk.Tk):
         speech_file = main_src_root / "java" / Path(*package_id.split(".")) / "ReadAloudBridge.java"
         speech_file.parent.mkdir(parents=True, exist_ok=True)
         speech_file.write_text(Path(__file__).with_name("ReadAloudBridge.java").read_text(encoding="utf-8").replace("__PACKAGE__", package_id), encoding="utf-8")
+        for name in ("NativePcmBridge.java", "NativePcmService.java"):
+            (speech_file.parent / name).write_text(Path(__file__).with_name(name).read_text(encoding="utf-8").replace("__PACKAGE__", package_id), encoding="utf-8")
 
         if java_file.exists():
             java_file.write_text(
@@ -1593,10 +1607,12 @@ import org.json.JSONObject;
 
 public class MainActivity extends BridgeActivity {{
     private ReadAloudBridge speechBridge;
+    private NativePcmBridge pcmBridge;
     private boolean readingMode = false;
     private boolean activityResumed = false;
     @Override public void onDestroy() {{
         if (speechBridge != null) speechBridge.close();
+        if (pcmBridge != null) pcmBridge.close();
         super.onDestroy();
     }}
     private String pendingOAuthQuery = null;
@@ -1769,6 +1785,8 @@ public class MainActivity extends BridgeActivity {{
 
         speechBridge = new ReadAloudBridge(this, webView);
         webView.addJavascriptInterface(speechBridge, "InhouseSpeech");
+        pcmBridge = new NativePcmBridge(this, webView);
+        webView.addJavascriptInterface(pcmBridge, "InhousePcm");
         webView.addJavascriptInterface(new InhouseNativeBridge(), "InhouseNative");
         handleAppCallback(getIntent());
     }}
@@ -1958,6 +1976,7 @@ public class MainActivity extends BridgeActivity {{
         applyReadingDisplay();
         CookieManager.getInstance().flush();
         super.onPause();
+        if (pcmBridge != null) pcmBridge.onActivityPaused();
     }}
 
     @Override
@@ -2026,10 +2045,12 @@ import org.json.JSONObject
 
 class MainActivity : BridgeActivity() {{
     private var speechBridge: ReadAloudBridge? = null
+    private var pcmBridge: NativePcmBridge? = null
     private var readingMode = false
     private var activityResumed = false
     override fun onDestroy() {{
         speechBridge?.close()
+        pcmBridge?.close()
         super.onDestroy()
     }}
     private var pendingOAuthQuery: String? = null
@@ -2178,6 +2199,8 @@ class MainActivity : BridgeActivity() {{
 
         speechBridge = ReadAloudBridge(this, webView)
         webView.addJavascriptInterface(speechBridge!!, "InhouseSpeech")
+        pcmBridge = NativePcmBridge(this, webView)
+        webView.addJavascriptInterface(pcmBridge!!, "InhousePcm")
         webView.addJavascriptInterface(InhouseNativeBridge(), "InhouseNative")
         handleAppCallback(intent)
     }}
@@ -2348,6 +2371,7 @@ class MainActivity : BridgeActivity() {{
         applyReadingDisplay()
         CookieManager.getInstance().flush()
         super.onPause()
+        pcmBridge?.onActivityPaused()
     }}
 
     override fun onStop() {{

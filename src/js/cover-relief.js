@@ -1,5 +1,5 @@
 /*
- * Cover relief selects up to three actual colors printed on a cover. Each
+ * Cover relief selects up to ten actual colors printed on a cover. Each
  * portable HEX/tolerance choice recreates an exclusive, conservatively soft
  * height/gloss mask; it never recolors ink or invents borders, grain or foil.
  *
@@ -10,7 +10,7 @@
  * Working rasters are bounded: 288 px on the long side to find things, at
  * most 512 px to build the maps.
  *
- * A saved choice is `{ id:'color-1'|'color-2'|'color-3', color:'#rrggbb',
+ * A saved choice is `{ id:'color-1'..'color-10', color:'#rrggbb',
  * tolerance, strength }`; tolerance is Euclidean OKLab * 100 (1..12). Maps
  * are never persisted. Uniform/bicolor covers have one/two choices. Legacy
  * family records remain readable and render their first real dominant color;
@@ -18,7 +18,7 @@
  */
 import { runInSlices } from './cover-appearance.js';
 
-export const COLOR_RELIEF_IDS = Object.freeze(['color-1', 'color-2', 'color-3']);
+export const COLOR_RELIEF_IDS = Object.freeze(Array.from({ length:10 }, (_, index) => `color-${index + 1}`));
 export const LEGACY_RELIEF_IDS = Object.freeze(['lettering', 'foil', 'frame', 'emblem', 'varnish', 'band', 'grain', 'panel']);
 export const RELIEF_IDS = Object.freeze([...COLOR_RELIEF_IDS, ...LEGACY_RELIEF_IDS]);
 export const DEFAULT_RELIEF_STRENGTH = .75;
@@ -982,7 +982,7 @@ function colorName(hex) {
   if (chroma < 3) return l < 20 ? 'Negro' : l > 95 ? 'Blanco' : l > 78 ? 'Gris claro' : l < 45 ? 'Gris oscuro' : 'Gris';
   if (l > 85 && chroma < 12 && hue >= 65 && hue < 125) return 'Crema';
   if (hue >= 45 && hue < 105 && l < 65) return 'Marrón';
-  const name = hue < 55 || hue >= 355 ? 'Rojo' : hue < 90 ? 'Naranja' : hue < 125 ? 'Amarillo'
+  const name = hue < 45 || hue >= 355 ? 'Rojo' : hue < 90 ? 'Naranja' : hue < 125 ? 'Amarillo'
     : hue < 165 ? 'Verde' : hue < 220 ? 'Turquesa' : hue < 285 ? 'Azul' : hue < 330 ? 'Violeta' : 'Rosa';
   return name + (l < 42 ? ' oscuro' : l > 80 ? ' claro' : '');
 }
@@ -1058,10 +1058,30 @@ function* colorCandidates(bins, opaque) {
   }
   ordered.sort((a, b) => b.density - a.density || b.count - a.count || a.bin.packed - b.bin.packed);
   yield;
+  const flatInks = bins.filter(bin => bin.modeCount >= Math.max(8, opaque * .05));
+  const rareMode = Math.max(2, Math.ceil(Math.max(0, ...flatInks.map(bin => bin.modeCount)) * .005));
+  // Expanding to ten choices must not turn the subpixel blends at the edge
+  // of a printed letter into additional pigments. Only dismiss rare modes
+  // lying on the RGB blend between two large, exact printed fields; a real
+  // small field and photographic modes without flat endpoints remain valid.
+  const edgeBlend = bin => {
+    if (bin.modeCount >= rareMode) return false;
+    for (let a = 0; a < flatInks.length; a++) for (let b = a + 1; b < flatInks.length; b++) {
+      const from = flatInks[a].rgb, delta = flatInks[b].rgb.map((v,c) => v - from[c]);
+      const length = delta.reduce((sum,v) => sum + v*v, 0);
+      if (!length) continue;
+      const t = bin.rgb.reduce((sum,v,c) => sum + (v-from[c])*delta[c],0) / length;
+      if (t <= .02 || t >= .98) continue;
+      const error = bin.rgb.reduce((sum,v,c) => sum + (v-from[c]-t*delta[c]) ** 2,0);
+      if (error <= 3) return true;
+    }
+    return false;
+  };
   const chosen = [], minimumSupport = Math.max(1, Math.ceil(opaque * .0025));
-  for (let i = 0; i < ordered.length && chosen.length < 3; i++) {
+  for (let i = 0; i < ordered.length && chosen.length < COLOR_RELIEF_IDS.length; i++) {
     const cell = ordered[i], bin = cell.mode;
     if (cell.density < minimumSupport) break;
+    if (edgeBlend(bin)) continue;
     if (chosen.some(other => distance2(other.lab, bin.lab) < DISTINCT_COLOR_DISTANCE ** 2)) continue;
     let supported = 0;
     for (let j = 0; j < bins.length; j++) {
@@ -1092,7 +1112,7 @@ function* colorMask(image, color, tolerance) {
   return out;
 }
 
-/** Up to three distinct supported colors, never fabricated family suggestions.
+/** Up to ten distinct supported colors, never fabricated family suggestions.
  * Radii are less than half every inter-center distance, so all generated
  * choices remain disjoint even when recreated independently from persistence. */
 export function* analyzePixels(image) {
@@ -1293,21 +1313,25 @@ async function thumbnailOf(work, maps, run) {
   return small.toDataURL('image/jpeg', .82);
 }
 
-/** Find, rank and preview up to three actual color proposals (URL or decoded
+/** Find, rank and preview up to ten actual color proposals (URL or decoded
  * image). Returns fewer choices for covers with fewer supported colors. Heavy
  * loops run in main-thread slices; pass `signal` to cancel. */
-export async function analyzeCoverRelief(coverUrl, { title = '', author = '', signal } = {}) {
+export async function analyzeCoverRelief(coverUrl, { title = '', author = '', signal, previews = true } = {}) {
   void title; void author; // the picture decides: names never add a claim the pixels do not support
   const stats = { slices: 0, longestSliceMs: 0, ms: 0, durations: [] };
   const drawable = await decode(coverUrl, signal);
   const work = raster(drawable, WORK_SIZE, { sampleColors:true });
   const found = await runSliced(analyzePixels(work), { signal, stats });
+  // Ten choices must not multiply full-size map construction. The small
+  // thumbnails only illustrate the selected ink; the model independently
+  // rebuilds its physical mask at the appropriate rendering resolution.
+  const preview = previews ? raster(drawable, 96, { sampleColors:true }) : null;
   const proposals = [];
   for (const choice of found.chosen) {
-    const maps = await runSliced(buildMapsFromPixels(work, work, choice, found.seed), { signal, stats });
+    const maps = preview ? await runSliced(buildMapsFromPixels(work, preview, choice, found.seed), { signal, stats }) : null;
     const { label, description } = describe(choice);
     proposals.push({ id: choice.id, color:choice.color, tolerance:choice.tolerance, label, description, strength:DEFAULT_RELIEF_STRENGTH,
-      thumbnail: await thumbnailOf(work, maps, task => runSliced(task, { signal, stats })), confidence: Math.round(choice.confidence * 100) / 100, detected: choice.detected });
+      thumbnail: preview ? await thumbnailOf(preview, maps, task => runSliced(task, { signal, stats })) : '', confidence: Math.round(choice.confidence * 100) / 100, detected: choice.detected });
   }
   return { proposals, analysis: { width: work.width, height: work.height, seed: found.seed, colorSpace:found.colorSpace, photo: found.feats.photo,
     busy: Math.round(found.feats.busy * 1000) / 1000, strokeFraction: Math.round(found.feats.strokeFraction * 1000) / 1000,

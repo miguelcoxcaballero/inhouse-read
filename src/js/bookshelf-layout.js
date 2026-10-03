@@ -198,10 +198,9 @@ function sqrtScale(value, from, to) {
 /**
  * Aspecto del lomo de un libro. Determinista respecto a `seedFor(book)`.
  *
- * El grosor usa datos reales cuando existen (`pageCount`, si no `sizeBytes`)
- * porque un tocho debe verse como un tocho; cuando no hay ninguno cae al
- * hash. En el caso con datos se añade un jitter determinista para que dos
- * libros de 300 páginas no salgan clavados.
+ * El grosor usa el total de palabras normalizado a una convención física de
+ * papel, sin depender de páginas, compresión, imágenes o ID. La app prepara
+ * la geometría antes de mostrar un libro que todavía no se ha contado.
  *
  * @param {object} book
  * @param {object} [options] sobrescribe DEFAULT_SPINE (p.ej. escalado móvil)
@@ -214,19 +213,15 @@ export function spineStyleFor(book, options = {}) {
   const palette = pick(SPINE_PALETTE, seed, 'palette');
   const span = cfg.maxWidth - cfg.minWidth;
 
-  let ratio = sqrtScale(book?.pageCount, 40, 900);
-  if (ratio == null) ratio = sqrtScale(book?.sizeBytes, 200 * 1024, 12 * 1024 * 1024);
+  const ratio = sqrtScale(printedPageCount(book), 40, 900) ?? 0;
 
   let width;
   if (Number.isFinite(cfg.pageThickness) && cfg.pageThickness > 0) {
     // Shelf geometry follows the amount of paper. Compression, scan resolution
     // and a book's ID must never make equal-length books differently thick.
     width = (cfg.bindingThickness || 0) + printedPageCount(book) * cfg.pageThickness;
-  } else if (ratio == null) {
-    width = cfg.minWidth + span * unit(seed, 'width');
   } else {
-    const jitter = (unit(seed, 'jitter') - 0.5) * 2 * cfg.jitter;
-    width = cfg.minWidth + span * ratio + jitter;
+    width = cfg.minWidth + span * ratio;
   }
 
   const heightRatio =

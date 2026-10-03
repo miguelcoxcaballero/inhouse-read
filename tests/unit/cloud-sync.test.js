@@ -10,6 +10,8 @@ vi.mock('../../src/js/drive-client.js', () => ({
 
 import { CloudSync } from '../../src/js/cloud-sync.js'
 import * as drive from '../../src/js/drive-client.js'
+import { completeWordCount } from '../../src/js/book-length.js'
+import { driveBookLength } from '../../src/js/book-length-drive.js'
 
 let library
 let sync
@@ -26,6 +28,39 @@ beforeEach(() => {
 afterEach(async () => { sync.reset(); await library.close() })
 
 describe('CloudSync', () => {
+  it('persists a complete word count even when the book has no reading progress yet', async () => {
+    const book=await library.addOrTouch({sourceType:'local',name:'counted.pdf',size:4,content:new NativeBlob(['file']),
+      driveFileId:'word-drive',cloudAccountId:'account-1',contentRevision:'v1',wordCountContentRevision:'v1',
+      driveContentChecksum:'a'.repeat(32),contentDriveChecksum:'a'.repeat(32),...completeWordCount(120_000),lengthDirty:true})
+    drive.writeDriveProgress.mockResolvedValue({id:'length-state'})
+    await sync.syncBookProgress(book.id)
+    expect(drive.writeDriveProgress).toHaveBeenCalledWith('word-drive',expect.objectContaining({bookLength:driveBookLength(book),fraction:0}),undefined)
+    expect(await library.get(book.id)).toMatchObject({wordCount:120_000,lengthDirty:false,progressStateFileId:'length-state'})
+    expect(drive.uploadDriveFile).not.toHaveBeenCalled()
+  })
+  it('publishes local word metadata while preserving newer progress and appearance from another device', async () => {
+    const book=await library.addOrTouch({sourceType:'local',name:'counted.pdf',size:4,content:new NativeBlob(['file']),
+      driveFileId:'word-drive',cloudAccountId:'account-1',contentRevision:'v1',wordCountContentRevision:'v1',
+      driveContentChecksum:'a'.repeat(32),contentDriveChecksum:'a'.repeat(32),...completeWordCount(90_000),lengthDirty:true,
+      progressFraction:.2,locator:{kind:'pdf-page',value:2},progressUpdatedAt:100,progressDirty:false})
+    drive.readDriveProgress.mockResolvedValue({fraction:.8,locator:{kind:'pdf-page',value:8},appearance:{spineColorOverride:'#123456'},
+      updatedAt:200,stateFileId:'remote-state'})
+    drive.writeDriveProgress.mockResolvedValue({id:'remote-state'})
+    await sync.syncBookProgress(book.id)
+    expect(drive.writeDriveProgress).toHaveBeenCalledWith('word-drive',expect.objectContaining({bookLength:driveBookLength(book),
+      fraction:.8,locator:{kind:'pdf-page',value:8},appearance:{spineColorOverride:'#123456'},updatedAt:200}),'remote-state')
+    expect(await library.get(book.id)).toMatchObject({wordCount:90_000,lengthDirty:false,progressFraction:.8,
+      locator:{kind:'pdf-page',value:8},spineColorOverride:'#123456'})
+  })
+  it('receives verified complete text volume on a fresh device with the same Drive original', async () => {
+    const book=await library.addOrTouch({sourceType:'drive',name:'same.pdf',size:4,content:new NativeBlob(['file']),
+      driveFileId:'word-drive',cloudAccountId:'account-1',contentRevision:'second',driveContentChecksum:'a'.repeat(32),contentDriveChecksum:'a'.repeat(32)})
+    const length=driveBookLength({...book,...completeWordCount(120_000),wordCountContentRevision:'second'})
+    drive.readDriveProgress.mockResolvedValue({fraction:.5,locator:{kind:'pdf-page',value:5},bookLength:length,updatedAt:200,stateFileId:'length-state'})
+    await sync.syncBookProgress(book.id)
+    expect(await library.get(book.id)).toMatchObject({...completeWordCount(120_000),wordCountContentRevision:'second',lengthDirty:false})
+    expect(drive.writeDriveProgress).not.toHaveBeenCalled()
+  })
   it('retira el libro sin borrar Drive y no lo redescubre en siguientes sincronizaciones', async () => {
     const book = await library.addOrTouch({ sourceType:'local', name:'keep-drive.pdf', size:4,
       content:new Blob(['file']), cover:new Blob(['cover']), driveFileId:'keep-drive', cloudAccountId:'account-1' })

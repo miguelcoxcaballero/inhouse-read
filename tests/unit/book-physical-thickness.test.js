@@ -7,13 +7,13 @@ describe('paper thickness at shelf scale', () => {
   it.each([320, 390, 900])('maps physical paper to the same relative thickness on a %ipx shelf', width => {
     const scale = shelfScale({shelfWidth:width});
     for (const pages of [100, 300, 600, 900]) {
-      const style = spineStyleFor({id:'edition',pageCount:pages},bookSpineOptions(width));
+      const style = spineStyleFor({id:'edition',wordCount:pages*300},bookSpineOptions(width));
       expect(style.width/scale).toBeCloseTo(4+pages*.07,1);
     }
   });
 
   it('long books remain distinct beyond the old 900-page/45mm ceiling', () => {
-    const widths = [600,900,1100].map(pageCount => spineStyleFor({pageCount},bookSpineOptions(600)).width);
+    const widths = [600,900,1100].map(pages => spineStyleFor({wordCount:pages*300},bookSpineOptions(600)).width);
     expect(widths).toEqual([46,67,81]);
   });
 
@@ -32,8 +32,8 @@ describe('paper thickness at shelf scale', () => {
 
   it('changing length leaves the cover aspect and height untouched', () => {
     const options = bookSpineOptions(390), ratio=.705;
-    const entries = [100,900].map(pageCount => {
-      const style=spineStyleFor({id:'same',pageCount},options);
+    const entries = [100,900].map(pages => {
+      const style=spineStyleFor({id:'same',wordCount:pages*300},options);
       return {shelf:0,x:60,height:172,width:172*ratio,thickness:style.width,style};
     });
     const result=shelfModelLayout({width:390,rows:[{}],entries},'walnut').entries;
@@ -41,5 +41,12 @@ describe('paper thickness at shelf scale', () => {
     expect(result[0].width/result[0].height).toBeCloseTo(ratio,8);
     expect(result[1].width/result[1].height).toBeCloseTo(ratio,8);
     expect(result[1].thickness).toBeGreaterThan(result[0].thickness*5);
+  });
+  it('different PDF page counts with the same words have exactly the same thickness', () => {
+    const options=bookSpineOptions(600);
+    expect(spineStyleFor({pageCount:12,wordCount:90_000},options).width)
+      .toBe(spineStyleFor({pageCount:900,wordCount:90_000},options).width);
+    expect(spineStyleFor({pageCount:12,wordCount:30_000},options).width)
+      .toBeLessThan(spineStyleFor({pageCount:12,wordCount:120_000},options).width);
   });
 });

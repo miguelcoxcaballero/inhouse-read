@@ -8,7 +8,7 @@
 // client) with a dynamic import the first time it is needed. The worker, onnxruntime-web and the phonemizer are loaded
 // even later, on the first speak(), inside the worker. Nothing of this reaches the cold start of the 3D shelf.
 import { NEURAL_PREFIX, isNeuralVoiceId, neuralVoices } from './catalog.js'
-import { unlockAudio } from './audio.js'
+import { nativePcmBridge, pauseNativeAudio, stopNativeAudio, unlockAudio } from './audio.js'
 
 export { NEURAL_PREFIX, isNeuralVoiceId, neuralVoices }
 export { piperVoices, supertonicVoices } from './catalog.js'
@@ -41,7 +41,7 @@ const NONE = new Set(), NO_DOWNLOADS = new Map()
 export class NeuralVoiceEngine extends EventTarget {
   /** Worker + WebAssembly + AudioContext + Cache Storage are all available. */
   static isSupported(env = globalThis) {
-    return typeof env.Worker === 'function' && typeof env.WebAssembly === 'object' && !!(env.AudioContext || env.webkitAudioContext) && !!env.caches
+    return typeof env.Worker === 'function' && typeof env.WebAssembly === 'object' && !!(env.AudioContext || env.webkitAudioContext || nativePcmBridge(env)) && !!env.caches
   }
 
   /** @param {object} [options] dependencies handed to the real engine (tests inject fakes; see engine.js) */
@@ -95,8 +95,9 @@ export class NeuralVoiceEngine extends EventTarget {
   /** ADDED: loads the worker and the voice's model ahead of the first speak() (cold start 3-6 s). Call it when a book opens with a neural voice selected. Never rejects. */
   async warmUp(voiceId) { return (await this.preload()).warmUp(voiceId) }
   /** Call synchronously inside a user gesture (the play tap): creates/resumes the AudioContext. */
-  unlock() {
-    unlockAudio(this.options.env || globalThis)
+  unlock({ playback = true } = {}) {
+    const env = this.options.env || globalThis
+    if (playback || !nativePcmBridge(env)) unlockAudio(env)
     this.preload().catch(() => {}) // speak() follows: have the engine code on its way
   }
   /**
@@ -115,6 +116,7 @@ export class NeuralVoiceEngine extends EventTarget {
     this.queue.push(core => core.speak(request))
     this.preload().catch(() => {
       this.queue.length = 0
+      stopNativeAudio()
       queueMicrotask(() => (this.options.env || globalThis).dispatchEvent?.(new CustomEvent('inhouse-tts', { detail: { type: 'error', id: request.id, reason: 'init-failed' } })))
     })
   }
@@ -124,7 +126,14 @@ export class NeuralVoiceEngine extends EventTarget {
   stop() {
     if (this.core) return this.core.stop()
     this.queue.length = 0
+    stopNativeAudio()
   }
+  pause() {
+    if (this.core) return this.core.pause()
+    this.queue.length = 0
+    pauseNativeAudio()
+  }
+  cancelCurrent() { if (this.core) this.core.cancelCurrent(); else this.queue.length = 0 }
 }
 
 let shared = null

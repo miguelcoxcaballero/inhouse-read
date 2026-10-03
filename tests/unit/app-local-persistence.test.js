@@ -3,6 +3,12 @@ import { readFileSync } from 'node:fs'
 import { Blob as NativeBlob, File as NativeFile } from 'node:buffer'
 
 const state = vi.hoisted(() => ({ connected:false, serial:0 }))
+// These tests deliberately import invalid eight-byte PDF fixtures to check
+// original-byte persistence. Text extraction is covered with real documents
+// separately; this new background dependency must not parse those fixtures.
+vi.mock('../../src/js/file-book-length.js', () => ({
+  measureFileBookLength:vi.fn((...args) => state.measureFileLength(...args))
+}))
 vi.mock('../../src/js/library-store.js', async importOriginal => {
   const actual = await importOriginal()
   return { ...actual, LibraryStore:class extends actual.LibraryStore {
@@ -66,6 +72,8 @@ vi.mock('../../src/js/android-file-import.js', () => ({ initAndroidFileImports:o
 let listeners = []
 beforeEach(async () => {
   vi.resetModules(); vi.clearAllMocks(); state.connected = false
+  state.measureFileLength = vi.fn(async () => ({ wordCount:600, wordCountVersion:2,
+    wordCountComplete:true, estimatedPageCount:2, lengthSource:'text' }))
   vi.stubGlobal('Blob', NativeBlob); vi.stubGlobal('File', NativeFile)
   vi.stubGlobal('navigator', { userAgent:'InhouseReadApp/1.1.3', onLine:true })
   vi.stubGlobal('alert', vi.fn())
@@ -84,6 +92,7 @@ beforeEach(async () => {
   await vi.waitFor(() => expect(state.options).toBeTruthy())
 })
 afterEach(async () => {
+  window.dispatchEvent(new Event('pagehide'))
   await state.library?.close()
   for (const [target, type, callback, options] of listeners.splice(0)) target.removeEventListener(type, callback, options)
   vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = ''
@@ -167,6 +176,7 @@ describe('local reopen and closing progress', () => {
   })
   it('saves final progress locally before the return flight, without any account', async () => {
     const book = await importBook()
+    await vi.waitFor(async () => expect((await state.library.get(book.id)).wordCountComplete).toBe(true))
     state.reader.location = { fraction:.5, locator:{ kind:'pdf-page', value:2 } }
     state.shelf.returnToShelf.mockImplementation(async id => {
       expect(await state.library.get(id)).toMatchObject({ progressFraction:.5, locator:{ kind:'pdf-page', value:2 } })
@@ -180,6 +190,7 @@ describe('local reopen and closing progress', () => {
   it('returns a linked book while the Drive progress request is still pending', async () => {
     state.connected = true
     const book = await importBook()
+    await vi.waitFor(async () => expect((await state.library.get(book.id)).wordCountComplete).toBe(true))
     await state.library.patch(book.id, { driveFileId:'already-saved', cloudAccountId:'account' })
     state.reader.location = { fraction:.5, locator:{ kind:'pdf-page', value:2 } }
     state.cloud.flushProgress.mockReturnValue(new Promise(() => {}))
@@ -188,6 +199,23 @@ describe('local reopen and closing progress', () => {
     await vi.waitFor(() => expect(document.body.classList.contains('is-closing-reader')).toBe(false))
     expect(state.cloud.flushProgress).toHaveBeenCalledWith(book.id)
     expect((await state.library.get(book.id)).locator).toEqual({ kind:'pdf-page', value:2 })
+  })
+  it('opens and closes an imported file while its detached word count is pending', async () => {
+    let finish
+    state.measureFileLength.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const book = await importBook()
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    expect(state.reader.open).toHaveBeenCalledOnce()
+    expect((await state.library.get(book.id)).content.size).toBe(8)
+    expect(state.options.getBookGeometryState(await state.library.get(book.id))).toBe('pending')
+    state.reader.location = { fraction:.5, locator:{ kind:'pdf-page', value:2 } }
+    document.getElementById('reader-back').click()
+    await vi.waitFor(() => expect(document.body.classList.contains('is-closing-reader')).toBe(false))
+    expect(state.shelf.returnToShelf).not.toHaveBeenCalled()
+    expect((await state.library.get(book.id)).locator).toEqual({ kind:'pdf-page', value:2 })
+    finish({ wordCount:600, wordCountVersion:2, wordCountComplete:true })
+    await vi.waitFor(async () => expect((await state.library.get(book.id)).wordCountComplete).toBe(true))
+    expect(state.reader.open).toHaveBeenCalledOnce()
   })
 })
 

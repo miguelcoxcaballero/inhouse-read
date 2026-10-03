@@ -211,7 +211,7 @@ export class NeuralVoicePicker {
   async install(id) {
     const engine = neuralEngine()
     if (!engine || this.tasks.has(id) || !isNeuralId(id)) return
-    try { engine.unlock?.() } catch { /* the play tap unlocks audio again */ }
+    try { engine.unlock?.({ playback:false }) } catch { /* the play tap unlocks audio again */ }
     const controller = new AbortController(), name = this.voiceName(id)
     this.tasks.set(id, controller); this.errors.delete(id)
     this.announce(`Descargando ${name}.`)
@@ -239,7 +239,7 @@ export class NeuralVoicePicker {
     }
   }
   use(id) {
-    try { neuralEngine()?.unlock?.() } catch { /* see install() */ }
+    try { neuralEngine()?.unlock?.({ playback:false }) } catch { /* see install() */ }
     this.host.setPreference('voice', id)
     this.announce(`Voz ${this.voiceName(id)} seleccionada.`)
     this.host.populateVoices()

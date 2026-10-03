@@ -1,5 +1,6 @@
 import { spineCustomization } from './book-colors.js'
 import { cleanQuotes } from './readers/reading-state.js'
+import { normalizeDriveBookLength } from './book-length-drive.js'
 // The web app uses Google Identity Services. Android uses the same Custom Tab
 // + authorization-code/PKCE flow as Inhouse Notes.
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
@@ -383,7 +384,7 @@ async function getOrCreateStateFolder() {
   return stateFolderIdPromise
 }
 
-async function listFolder(folderId, { pageToken, pageSize = 100, fields = 'id,name,mimeType,size,modifiedTime' } = {}) {
+async function listFolder(folderId, { pageToken, pageSize = 100, fields = 'id,name,mimeType,size,modifiedTime,md5Checksum' } = {}) {
   const params = new URLSearchParams({
     q: `'${folderId}' in parents and trashed = false`,
     fields: `nextPageToken,files(${fields})`, pageSize: String(pageSize), spaces: 'drive'
@@ -443,11 +444,11 @@ export async function uploadDriveFile(file, { driveFileId, name = file.name, par
       `--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`,
       file, `\r\n--${boundary}--`
     ], { type: `multipart/related; boundary=${boundary}` })
-    return (await driveFetch(`${endpoint}?uploadType=multipart&fields=id,name,mimeType,size`, {
+    return (await driveFetch(`${endpoint}?uploadType=multipart&fields=id,name,mimeType,size,md5Checksum`, {
       method, headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body
     })).json()
   }
-  const start = await driveFetch(`${endpoint}?uploadType=resumable&fields=id,name,mimeType,size`, {
+  const start = await driveFetch(`${endpoint}?uploadType=resumable&fields=id,name,mimeType,size,md5Checksum`, {
     method,
     headers: {
       'Content-Type': 'application/json; charset=UTF-8',
@@ -489,6 +490,7 @@ export async function writeDriveProgress(driveFileId, progress, stateFileId) {
     fraction: Math.min(1, Math.max(0, Number(progress.fraction) || 0)),
     locator: progress.locator ?? null,
     appearance: spineCustomization(progress.appearance),
+    bookLength:normalizeDriveBookLength(progress.bookLength),
     readingHistory: Array.isArray(progress.readingHistory) ? progress.readingHistory.slice(0,20) : [],
     bookmarks: Array.isArray(progress.bookmarks) ? progress.bookmarks.slice(0,100) : [],
     quotes: cleanQuotes(progress.quotes),

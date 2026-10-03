@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { spinePointerPosition } from './helpers/shelf-pointer.mjs'
+import { settledGeometryLength } from './helpers/settled-geometry-length.mjs'
 
 // At 50 ms of camera time per rendered frame, CI reached .98 after 8.3 s
 // but needed further real frames. Keep the exact endpoint and geometry checks.
@@ -13,7 +14,7 @@ const FULL_WIDTH_SCENARIO_TIMEOUT = process.env.SHELF_PLACEMENT_SCENARIO_TIMEOUT
 const PLANTS_KEY = 'inhouse-read-shelf-plants'
 async function seedShelf(page) {
   const bytes = [...await readFile('tests/e2e/fixtures/tiny.pdf')]
-  await page.evaluate(async bytes => {
+  await page.evaluate(async ({ bytes, geometry }) => {
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open('inhouse-read')
       request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error)
@@ -21,6 +22,7 @@ async function seedShelf(page) {
     const records = Array.from({ length:4 }, (_, index) => ({
       id:`placement:${index}`, title:`Libro ${index + 1}`, name:`placement-${index}.pdf`,
       format:'PDF', sourceType:'local', mimeType:'application/pdf', pageCount:100,
+      ...geometry,
       content:new Blob([new Uint8Array(bytes)], { type:'application/pdf' }),
       shelfPosition:{ shelf:0, x:[.18,.34,.5,.66][index] }, shelfOrder:index,
       addedAt:Date.now(), lastOpenedAt:Date.now() - index, progressFraction:0
@@ -35,7 +37,7 @@ async function seedShelf(page) {
       { key:'plant:placement-c', seed:'placement-c', variant:'pothos', width:48, shelf:2, x:.2 }
     ]))
     localStorage.setItem('inhouse-read-shelf-view', 'spine')
-  }, bytes)
+  }, { bytes, geometry:settledGeometryLength(30_000, 'shelf-placement') })
   await page.reload()
   await expect(page.locator('.ihr-spine')).toHaveCount(4)
   await expect(page.locator('.ihr-bookshelf-scene')).toBeVisible()

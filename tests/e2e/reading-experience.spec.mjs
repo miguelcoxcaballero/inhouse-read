@@ -267,7 +267,9 @@ test('la estantería dibuja madera y plantas 3D sin recursos rotos', async ({ pa
     const tx=db.transaction('books','readwrite')
     const titles=['El jardín secreto','Una habitación propia','El principito','La vida de las plantas','Viaje al centro de la Tierra','El arte de la calma','Jane Eyre','Walden']
     const colors=['#456452','#b88a5b','#2d526b','#79815a','#7b4534','#c4a974','#49464e','#887861']
-    titles.forEach((title,i)=>tx.objectStore('books').put({id:`visual-${i}`,title,format:'EPUB',sourceType:'local',spineColorOverride:colors[i],spineFontFamily:'Georgia',pageCount:150+i*44,sizeBytes:100000+i*20000,lastOpenedAt:Date.now()-i*10000,addedAt:Date.now(),progressFraction:i===0?.3:0}))
+    // These geometry-only records have a previously completed word count;
+    // original-file extraction and pending legacy records have separate cases.
+    titles.forEach((title,i)=>tx.objectStore('books').put({id:`visual-${i}`,title,format:'EPUB',sourceType:'local',spineColorOverride:colors[i],spineFontFamily:'Georgia',wordCount:(150+i*44)*300,wordCountVersion:2,wordCountComplete:true,pageCount:150+i*44,sizeBytes:100000+i*20000,lastOpenedAt:Date.now()-i*10000,addedAt:Date.now(),progressFraction:i===0?.3:0}))
     await new Promise(resolve=>tx.oncomplete=resolve);db.close()
   })
   await page.reload(); await expect(page.locator('.ihr-spine').first()).toBeVisible()

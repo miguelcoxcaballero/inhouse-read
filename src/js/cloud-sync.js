@@ -5,6 +5,8 @@ import {
 } from './drive-client.js'
 import { normalizeBookTitle } from './book-title.js'
 import { cleanPlaces, cleanQuotes } from './readers/reading-state.js'
+import { driveBookLength, wordCountFromDrive } from './book-length-drive.js'
+import { clearBookLength, newContentRevision } from './book-length-queue.js'
 
 const EXTENSIONS = /\.(pdf|epub|mobi|azw|azw3|fb2|cbz)$/i
 
@@ -17,7 +19,9 @@ function sameProgress(a, b) {
     JSON.stringify(cleanPlaces(a.readingHistory)) === JSON.stringify(cleanPlaces(b.readingHistory)) &&
     JSON.stringify(cleanPlaces(a.bookmarks,100)) === JSON.stringify(cleanPlaces(b.bookmarks,100)) &&
     JSON.stringify(cleanQuotes(a.quotes)) === JSON.stringify(cleanQuotes(b.quotes)) &&
-    JSON.stringify(spineCustomization(a)) === JSON.stringify(spineCustomization(b))
+    JSON.stringify(spineCustomization(a)) === JSON.stringify(spineCustomization(b)) &&
+    a.contentRevision === b.contentRevision && Boolean(a.lengthDirty) === Boolean(b.lengthDirty) &&
+    JSON.stringify(driveBookLength(a)) === JSON.stringify(driveBookLength(b))
 }
 
 /** Reconciles IndexedDB with the user's "inhouse read" Drive folder. */
@@ -103,6 +107,7 @@ export class CloudSync {
       }
       const updated = await this.#library.patch(record.id, {
         driveFileId: uploaded.id, driveFileName: uploaded.name,
+        driveContentChecksum:uploaded.md5Checksum || null, contentDriveChecksum:uploaded.md5Checksum || null,
         cloudAccountId: accountId, sourceType: 'local'
       })
       if (updated) this.#onChange()
@@ -132,7 +137,8 @@ export class CloudSync {
       if (this.#isCurrent(book.id, bookGeneration, generation)) {
         let saved
         try {
-          saved = await this.#library.patch(record.id, { content: new Blob([file], { type: file.type }), cloudAccountId: accountId })
+          saved = await this.#library.patch(record.id, { content: new Blob([file], { type: file.type }), cloudAccountId: accountId,
+            ...clearBookLength(), contentRevision:newContentRevision(), contentDriveChecksum:record.driveContentChecksum || null })
         } catch (cause) {
           const error = new Error('No se pudo guardar el libro descargado en este dispositivo. Libera espacio y vuelve a intentarlo.', { cause })
           error.code = 'LOCAL_BOOK_STORAGE_FAILED'
@@ -193,6 +199,17 @@ export class CloudSync {
     record = await this.#library.get(id)
     if (!record || record.driveFileId !== driveFileId ||
         !this.#isCurrent(id, bookGeneration, generation)) return
+    const cloudLength = wordCountFromDrive(record, remote?.bookLength)
+    if (cloudLength) {
+      const saved = await this.#library.patch(id, cloudLength, {
+        ifCurrent:current => this.#isCurrent(id, bookGeneration, generation) && sameProgress(current, record)
+      })
+      if (!saved) { if (this.#isCurrent(id, bookGeneration, generation)) this.scheduleProgress(id); return }
+      record = saved
+      this.#onChange()
+    }
+    const bookLength = driveBookLength(record)
+    const lengthNeedsUpload = bookLength && JSON.stringify(bookLength) !== JSON.stringify(remote?.bookLength ?? null)
     const localUpdatedAt = Number(record.progressUpdatedAt) || 0
     const remoteUpdatedAt = Number(remote?.updatedAt) || 0
     const localHasProgress = record.progressDirty || record.progressFraction > 0 || record.locator != null
@@ -213,12 +230,22 @@ export class CloudSync {
       }, { ifCurrent:current => this.#isCurrent(id, bookGeneration, generation) && sameProgress(current, record) })
       if (updated) this.#onChange()
       else if (this.#isCurrent(id, bookGeneration, generation)) this.scheduleProgress(id)
+      // Length is content metadata, independent of which device's locator won.
+      // Preserve the winning remote progress while publishing a local count.
+      if (updated && lengthNeedsUpload && this.#isCurrent(id, bookGeneration, generation)) {
+        const uploaded = await writeDriveProgress(driveFileId, { ...remote, bookLength }, remote.stateFileId)
+        if (!this.#isCurrent(id, bookGeneration, generation)) return
+        await this.#library.patch(id, { lengthDirty:false, progressStateFileId:uploaded.id }, {
+          ifCurrent:current => this.#isCurrent(id, bookGeneration, generation) && sameProgress(current, updated)
+        })
+      }
       return
     }
-    if (!localHasProgress) return
+    if (!localHasProgress && !bookLength) return
     const snapshot = {
       fraction: record.progressFraction, locator: record.locator,
       appearance:spineCustomization(record),
+      bookLength,
       readingHistory:cleanPlaces(record.readingHistory), bookmarks:cleanPlaces(record.bookmarks,100),
       quotes:cleanQuotes(record.quotes),
       updatedAt: localUpdatedAt || Date.now()
@@ -234,9 +261,10 @@ export class CloudSync {
       JSON.stringify(cleanPlaces(latest.readingHistory)) === JSON.stringify(snapshot.readingHistory) &&
       JSON.stringify(cleanPlaces(latest.bookmarks,100)) === JSON.stringify(snapshot.bookmarks) &&
       JSON.stringify(cleanQuotes(latest.quotes)) === JSON.stringify(snapshot.quotes) &&
-      JSON.stringify(spineCustomization(latest)) === JSON.stringify(snapshot.appearance)
+      JSON.stringify(spineCustomization(latest)) === JSON.stringify(snapshot.appearance) &&
+      JSON.stringify(driveBookLength(latest)) === JSON.stringify(snapshot.bookLength)
     const updated = await this.#library.patch(record.id, {
-      ...(unchanged ? { progressDirty: false, progressUpdatedAt: snapshot.updatedAt } : {}),
+      ...(unchanged ? { progressDirty: false, progressUpdatedAt: snapshot.updatedAt, lengthDirty:false } : {}),
       progressStateFileId: uploaded.id
     }, { ifCurrent:current => this.#isCurrent(id, bookGeneration, generation) && sameProgress(current, latest) })
     if (!updated && this.#isCurrent(id, bookGeneration, generation)) this.scheduleProgress(id)
@@ -272,12 +300,16 @@ export class CloudSync {
           cloudAccountId: accountId, name: remote.name,
           title: normalizeBookTitle(remote.name), mimeType: remote.mimeType,
           size: Number(remote.size) || 0, sizeBytes: Number(remote.size) || 0,
+          driveContentChecksum:remote.md5Checksum || null,
           format: remote.name.match(EXTENSIONS)?.[1].toUpperCase() || ''
         })
         if (!record) continue
         this.#onChange()
       } else if (!record.cloudAccountId) {
         record = await this.#library.patch(record.id, { cloudAccountId: accountId })
+      }
+      if (record && remote.md5Checksum && record.driveContentChecksum !== remote.md5Checksum) {
+        record = await this.#library.patch(record.id, { driveContentChecksum:remote.md5Checksum })
       }
       if (record) linked.push(record)
     }

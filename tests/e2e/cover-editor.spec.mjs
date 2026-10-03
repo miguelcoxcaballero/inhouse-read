@@ -51,11 +51,11 @@ const canvasAngle = page => page.locator('.ihr-flyout__book canvas').evaluate(ca
 const sheet = page => page.locator('.ihr-spine-editor')
 const cards = page => page.getByRole('radiogroup', { name: 'Propuestas de relieve' }).getByRole('radio')
 
-async function enterCover(page) {
+async function enterCover(page, count = 3) {
   await page.getByRole('tab', { name: 'Portada' }).click()
   await expect.poll(() => canvasAngle(page), { timeout: 15_000 }).toBe(0)
   // Tres propuestas más 'Sin relieve'.
-  await expect(cards(page)).toHaveCount(4, { timeout: 60_000 })
+  await expect(cards(page)).toHaveCount(count + 1, { timeout: 60_000 })
 }
 
 test('pestañas Lomo y Portada: teclado, giro del libro y título', async ({ page }) => {
@@ -116,7 +116,7 @@ test('relieve: tres propuestas, selección con balanceo, persistencia y Sin reli
   if (evidence) await page.screenshot({ path: `${evidence}/mobile-light-propuestas.png` })
   const group = page.getByRole('radiogroup', { name: 'Propuestas de relieve' })
   await expect(group.locator('.ihr-relief-card')).toHaveCount(3)
-  await expect(group.locator('.ihr-relief-card img')).toHaveCount(3)
+  await expect(group.locator('.ihr-relief-card img')).toHaveCount(0)
   const labels = await group.locator('.ihr-relief-card__label').allTextContents()
   expect(new Set(labels).size).toBe(3)
   const sourceColors=await group.locator('.ihr-relief-card').evaluateAll(nodes=>nodes.map(node=>node.dataset.reliefColor))
@@ -298,8 +298,9 @@ for (const [name, viewport] of [['movil', { width: 390, height: 844 }], ['escrit
     test(`diseño de la pestaña Portada: ${name}, tema ${theme}`, async ({ page }) => {
       test.setTimeout(240_000)
       await page.setViewportSize(viewport)
-      const errors = await openShelfEditor(page, { theme })
-      await enterCover(page)
+      const colors=['#000000','#ffffff','#ff0000','#00ff00','#0000ff','#ffff00','#00ffff','#ff00ff','#ff8000','#646464']
+      const errors = await openShelfEditor(page, { theme, colors })
+      await enterCover(page, 10)
       const group = page.getByRole('radiogroup', { name: 'Propuestas de relieve' })
       await group.locator('.ihr-relief-card').first().click()
       await page.waitForTimeout(250)
@@ -307,13 +308,21 @@ for (const [name, viewport] of [['movil', { width: 390, height: 844 }], ['escrit
       // Sin desbordes horizontales y todo dentro de la hoja.
       const overflow = await sheet(page).evaluate(node => node.scrollWidth - node.clientWidth)
       expect(overflow).toBeLessThanOrEqual(1)
+      // All ten actual colors and the intensity control fit without scrolling.
+      expect(await sheet(page).evaluate(node=>node.scrollHeight-node.clientHeight)).toBeLessThanOrEqual(1)
+      await expect(group.locator('.ihr-relief-card')).toHaveCount(10)
+      expect(new Set(await group.locator('.ihr-relief-card').evaluateAll(nodes=>nodes.map(node=>node.dataset.reliefColor)))).toEqual(new Set(colors))
       const sheetBox = await sheet(page).boundingBox()
       expect(sheetBox.x + sheetBox.width).toBeLessThanOrEqual(viewport.width + 1)
       for (const card of await group.locator('.ihr-relief-card').all()) {
         const box = await card.boundingBox()
         expect(box.x).toBeGreaterThanOrEqual(sheetBox.x - 1)
         expect(box.x + box.width).toBeLessThanOrEqual(sheetBox.x + sheetBox.width + 1)
+        expect(box.y).toBeGreaterThanOrEqual(sheetBox.y - 1)
+        expect(box.y + box.height).toBeLessThanOrEqual(sheetBox.y + sheetBox.height + 1)
       }
+      const intensity=await page.getByLabel('Intensidad del relieve').boundingBox()
+      expect(intensity.y+intensity.height).toBeLessThanOrEqual(sheetBox.y+sheetBox.height+1)
       await page.getByRole('tab', { name: 'Lomo' }).click()
       await expect.poll(() => canvasAngle(page), { timeout: 15_000 }).toBe(90)
       await page.waitForTimeout(250)

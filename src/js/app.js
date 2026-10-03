@@ -22,6 +22,7 @@ import { ReaderExperience } from './readers/reader-experience.js'
 import { classifyTapZone, ZONE } from './gestures.js'
 import { markTiming } from './perf-marks.js'
 import { createPreparedPageCache, createStageGate, pageKeyMismatch } from './prepared-page.js'
+import { createBookLengthQueue, isBookLengthReady } from './book-length-queue.js'
 
 const library = new LibraryStore()
 const reader = new ReaderController()
@@ -86,10 +87,34 @@ const progressWrites = new Map()
 let driveProfile = null
 let restoringProgress = false
 let shelfRefreshQueued = false
+let lengthStatusVersion = 0
+let shelfLengthStatusVersion = -1
+let lengthRefreshTimer = null
+let appDisposed = false
 let driveUploadsInFlight = 0
 const cloudSync = new CloudSync(library, {
   onStatus: setDriveSyncStatus,
   onChange: refreshShelf
+})
+function scheduleLengthRefresh() {
+  if (appDisposed || document.hidden || !els.readerScreen.hidden || lengthRefreshTimer != null) return
+  lengthRefreshTimer = setTimeout(() => {
+    lengthRefreshTimer = null
+    if (!appDisposed && !document.hidden && els.readerScreen.hidden) {
+      refreshShelf().catch(error => console.warn('No se pudo actualizar la estantería:', error))
+    }
+  }, 80)
+}
+const wordCountQueue = createBookLengthQueue(library, {
+  onChange: record => {
+    if (appDisposed) return
+    lengthStatusVersion += 1
+    // Batch short books: rebuilding the shelf once per completed chapter or
+    // library record would spend far more time drawing than counting text.
+    scheduleLengthRefresh()
+    if (record?.driveFileId && hasDriveSession()) cloudSync.scheduleProgress(record.id)
+  },
+  onError: error => console.warn('No se pudo contar el texto del libro:', error)
 })
 async function persistBookState(bookId, fields) {
   const previous = progressWrites.get(bookId) || Promise.resolve()
@@ -136,7 +161,21 @@ function showScreen(name) {
   els.homeScreen.hidden = name !== 'home'
   els.readerScreen.hidden = name !== 'reader'
   shelf?.setPresentationActive?.(name === 'home')
+  if (name === 'home' && shelfLengthStatusVersion !== lengthStatusVersion) scheduleLengthRefresh()
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && shelfLengthStatusVersion !== lengthStatusVersion) scheduleLengthRefresh()
+})
+// A discarded page has no shelf to update. Keep the queue alive for bfcache
+// restores, but cancel callbacks for a document that is actually leaving.
+addEventListener('pagehide', event => {
+  if (event.persisted) return
+  appDisposed = true
+  clearTimeout(lengthRefreshTimer)
+  lengthRefreshTimer = null
+  wordCountQueue.dispose()
+})
 
 function isAndroidShell() {
   return /\bInhouseReadApp\/\d/i.test(navigator.userAgent || '')
@@ -147,6 +186,7 @@ function isAndroidShell() {
 // propio src/js/bookshelf.js (cabecera del archivo).
 
 async function refreshShelf({ immediate = false } = {}) {
+  if (appDisposed) return
   // Re-rendering a shelf closes its current 3D cover. Defer background
   // changes until the reader transition or close has finished.
   if (document.querySelector('.ihr-flyout')) {
@@ -164,6 +204,7 @@ async function refreshShelf({ immediate = false } = {}) {
   }
   const accountId = (driveProfile || getRememberedDriveProfile())?.id
   const storedBooks = await library.listAll()
+  if (appDisposed) return
   const normalizedBooks = await Promise.all(storedBooks.map(book => {
     const title = normalizeBookTitle(book.title || book.name)
     const author = normalizeBookAuthor(book.author)
@@ -173,10 +214,16 @@ async function refreshShelf({ immediate = false } = {}) {
     return Object.keys(patch).length ? library.patch(book.id, patch) : book
   }))
   const books = normalizedBooks.filter(book => isBookVisible(book, accountId))
+  if (appDisposed) return
+  // Counting is detached from the active reader and serial, so a home reload,
+  // reader close or chapter change never attributes text to another book.
+  for (const book of books) wordCountQueue.ensure(book).catch(error => console.warn('Preparación del grosor:', error))
   // Background syncs report a change even when every record came back the
   // same; repainting the whole 3D shelf for them is pure jank.
-  if (shelf && shelfRecords && sameBookRecords(shelfRecords, books)) return
+  if (shelf && shelfRecords && sameBookRecords(shelfRecords, books)
+      && shelfLengthStatusVersion === lengthStatusVersion) return
   shelfRecords = books
+  shelfLengthStatusVersion = lengthStatusVersion
   // A selection can begin while the IndexedDB read is pending. Let the shelf
   // queue this record set instead of replacing a book already in flight.
   if (!shelf) {
@@ -188,9 +235,12 @@ async function refreshShelf({ immediate = false } = {}) {
       sort: 'none',
       minimumShelves: 3,
       getBookPreparation: book => preparedBooks.get(book.id),
+      getBookGeometryState: book => wordCountQueue.geometryState(book),
+      onBookGeometryRetry: book => wordCountQueue.retry(book.id),
       onBookAction: handleCoverAction,
       getBookCloudState: book => bookCloudState(book, { connected:hasDriveSession() }),
       onBookRemove: book => {
+        wordCountQueue.cancel(book.id)
         preparedPages.invalidateBook(book.id, 'removed')
         releasePageGate('removed', book.id)
         return removeBookFromShelf(book).then(removal => {
@@ -392,7 +442,7 @@ async function openBookRecord(book, ctx) {
         const file = new File([book.content], book.name || book.title || 'libro', {
           type: book.mimeType || book.content.type || ''
         })
-        await openFile(file, { existingRecord: book, forcedId: book.id, transition })
+        await openFile(file, { existingRecord: book, forcedId: book.id, transition, reuseStoredContent:true })
         return
       } catch (err) {
         if (!isActive()) return
@@ -451,7 +501,8 @@ async function openBookRecord(book, ctx) {
     try {
       const file = await cloudSync.downloadForOffline(book)
       if (!isActive()) return
-      await openFile(file, { existingRecord: book, transition })
+      const saved = await library.get(book.id) || book
+      await openFile(file, { existingRecord:saved, transition, reuseStoredContent:true })
     } catch (err) {
       if (!isActive()) return
       closeOpening({ instant: true })
@@ -493,7 +544,7 @@ els.filePicker.addEventListener('change', async () => {
 
 // ---- Apertura y lectura ----
 
-async function openFile(file, { existingRecord, forcedId, folderFileName, transition, preparing = false, restoreRemoved = false, onImportReady } = {}) {
+async function openFile(file, { existingRecord, forcedId, folderFileName, transition, preparing = false, restoreRemoved = false, onImportReady, reuseStoredContent = false } = {}) {
   if (!existingRecord && forcedId) existingRecord = await library.get(forcedId)
   if (transition?.isActive && !transition.isActive()) return false
   if (!preparing) {
@@ -523,6 +574,7 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
   try {
     format = await reader.open(els.readerViewport, file, {
       initialPage:existingRecord?.locator?.kind === 'pdf-page' ? existingRecord.locator.value : undefined,
+      initialLocator:existingRecord?.locator,
       initialFraction:existingRecord?.progressFraction,
       preferences:readingExperience.preferences,
       onRelocate: onReaderRelocate,
@@ -563,6 +615,7 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
     mimeType: existingRecord?.mimeType ?? file.type,
     name: file.name,
     size: file.size,
+    contentRevision:reuseStoredContent ? existingRecord?.contentRevision : undefined,
     // Para el grosor real del lomo en la estantería (bookshelf-layout.js):
     // Fixed-page formats report real pages. Reflowable text is measured below;
     // the compressed file size never determines the physical book thickness.
@@ -575,7 +628,7 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
   }
   let record
   try {
-    record = await storeBookFile(library, file, baseFields, { restoreRemoved })
+    record = await storeBookFile(library, file, baseFields, { restoreRemoved, reuseStoredContent })
   } catch (err) {
     reader.close()
     readingExperience.reset()
@@ -587,15 +640,9 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
   if (!record) return false
   if (transition?.isActive && !transition.isActive()) return false
   currentBookId = record.id
-  // Count real text in the background; it cannot hold up opening or depend on
-  // the compressed file size. The controller discards a superseded reader.
-  if (!record.pageCount && !record.wordCount && reader.getLengthMetadata) {
-    const lengthBookId = record.id
-    reader.getLengthMetadata().then(length => {
-      if (length && currentBookId === lengthBookId) return library.patch(lengthBookId, length)
-    }).then(updated => { if (updated) refreshShelf() })
-      .catch(error => console.warn('No se pudo medir la longitud del libro:', error))
-  }
+  // Original bytes have already committed and reading can begin immediately.
+  // Geometry waits for the complete detached count, never a provisional size.
+  wordCountQueue.ensure(record).catch(error => console.warn('No se pudo medir el libro:', error))
 
   restoringProgress = true
   try {
@@ -655,7 +702,7 @@ function prepareBookOpen(book, { settled } = {}) {
     const updated = await library.get(book.id)
     if (!updated) return false
     if (generation !== preparationGeneration) return false
-    const opened = await openFile(file, { existingRecord: updated, forcedId: book.id, preparing: true })
+    const opened = await openFile(file, { existingRecord: updated, forcedId: book.id, preparing: true, reuseStoredContent:true })
     if (generation !== preparationGeneration) return false
     activePreparedBookId = opened ? book.id : null
     markTiming('engine-opened')
@@ -1058,12 +1105,13 @@ function extractCoverInBackground(record) {
   return task
 }
 
-function onReaderRelocate({ fraction, cfi, index }) {
+function onReaderRelocate({ fraction, cfi, index, textOffset }) {
   els.readerProgressFill.style.width = `${Math.round((fraction ?? 0) * 100)}%`
   readingExperience.relocate()
   if (!currentBookId || restoringProgress) return
   const locator = cfi ? { kind: 'cfi', value: cfi }
-    : Number.isInteger(index) && reader.format?.engine === 'pdf' ? { kind: 'pdf-page', value: index + 1 }
+    : Number.isInteger(index) && reader.format?.engine === 'pdf' ? { kind:'pdf-page', value:index + 1,
+        ...(Number.isInteger(textOffset) && textOffset > 0 ? { textOffset } : {}) }
       : null
   const bookId = currentBookId
   const previous = progressWrites.get(bookId) || Promise.resolve()
@@ -1137,11 +1185,18 @@ els.readerBack.addEventListener('click', async () => {
     els.readerToolbar.hidden = true
     // Newly imported books have never had a shelf selection. Populate their
     // slot while the current-page overlay masks the home layout.
-    if (!shelf?.hasReaderOrigin(bookId)) await refreshShelf({ immediate:true })
+    const geometryReady = isBookLengthReady(book)
+    if (!shelf?.hasReaderOrigin(bookId) || !geometryReady) await refreshShelf({ immediate:true })
     // The overlay masks shelf layout and cover decoding until the same page
     // is ready on the 3D mesh. Drive sync continues independently of the flight.
-    const returnFlight = shelf?.returnToShelf(bookId, { pageSnapshot, book, onPageReady:handoff })
-    await returnFlight
+    if (geometryReady) await shelf?.returnToShelf(bookId, { pageSnapshot, book, onPageReady:handoff })
+    else {
+      // Never invent a physical volume while a long original is still being
+      // measured. Close promptly, retain its accessible preparation row, and
+      // let the final book appear after the detached job commits.
+      handoff()
+      await stillFade?.finished.catch(() => {})
+    }
   } catch (error) {
     console.warn('No se pudo devolver el libro a la estantería:', error)
     reader.close(); currentBookId = null
@@ -1182,14 +1237,15 @@ async function loadDriveFiles() {
         try {
           const record = (await library.listAll()).find(book => book.driveFileId === f.id)
             || await library.addOrTouch({ sourceType: 'drive', driveFileId: f.id, cloudAccountId: driveProfile?.id,
-              name: f.name, title: normalizeBookTitle(f.name), mimeType: f.mimeType, size: Number(f.size) || 0 }, { restoreRemoved:true })
+              name: f.name, title: normalizeBookTitle(f.name), mimeType: f.mimeType, size: Number(f.size) || 0,
+              driveContentChecksum:f.md5Checksum || null }, { restoreRemoved:true })
           const file = await cloudSync.downloadForOffline(record)
           if (!file) return
           try { await cloudSync.syncBookProgress(record.id) }
           catch (error) { console.warn('No se pudo recuperar el progreso de Drive; se abrirá la copia descargada:', error) }
           const latest = await library.get(record.id)
           if (!latest) return
-          await openFile(file, { existingRecord: latest, forcedId: latest.id })
+          await openFile(file, { existingRecord: latest, forcedId: latest.id, reuseStoredContent:true })
         } catch (error) { alert(`No se pudo abrir el libro: ${error.message}`) }
       })
       els.driveList.append(item)
@@ -1213,7 +1269,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.7.19'
+els.appVersion.textContent = 'Inhouse Read · v1.7.20'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')

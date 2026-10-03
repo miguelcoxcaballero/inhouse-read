@@ -17,6 +17,20 @@ it('offers exactly three actual distinct colors instead of detected or invented 
   expect(found.chosen.every(c=>c.detected&&c.tolerance>=1&&c.tolerance<=6)).toBe(true);
 });
 
+it('offers ten supported ink colors with separate portable masks',()=>{
+  const colors=[[0,0,0],[255,255,255],[255,0,0],[0,255,0],[0,0,255],
+    [255,255,0],[0,255,255],[255,0,255],[255,128,0],[100,100,100]];
+  const image=raster(100,60,colors), found=drain(analyzePixels(image));
+  expect(found.chosen.map(c=>c.id)).toEqual(Array.from({length:10},(_,i)=>`color-${i+1}`));
+  expect(new Set(found.chosen.map(c=>c.color))).toEqual(new Set(colors.map(hex)));
+  for(const choice of found.chosen) {
+    expect(normalizeCoverRelief(choice)).toMatchObject({id:choice.id,color:choice.color});
+    const maps=drain(buildMapsFromPixels(image,image,choice,found.seed));
+    expect(maps.gloss.some(v=>v>0)).toBe(true);
+    for(let i=0;i<maps.mask.length;i++) if(hex([...image.data.slice(i*4,i*4+3)])!==choice.color) expect(maps.mask[i]).toBe(0);
+  }
+});
+
 it('returns one actual color for a uniform cover without inventing grain, frame or repeated masks',()=>{
   const image=raster(60,90,[[32,48,64]]), found=drain(analyzePixels(image));
   expect(found.chosen).toHaveLength(1);
@@ -76,7 +90,7 @@ it('rejects missing or malformed colors and unknown color slots',()=>{
   for(const color of [undefined,null,123,'red','#fff','#12ff00aa','#zz0000',' #c02030']) {
     expect(normalizeCoverRelief({id:'color-1',color,tolerance:6})).toBeNull();
   }
-  expect(normalizeCoverRelief({id:'color-4',color:'#c02030',tolerance:6})).toBeNull();
+  expect(normalizeCoverRelief({id:'color-11',color:'#c02030',tolerance:6})).toBeNull();
 });
 
 it('uses the published OKLab transform on a scale of 100, including exact black',()=>{

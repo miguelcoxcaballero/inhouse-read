@@ -13,8 +13,9 @@ export class ReaderController {
   #format
   #location = { fraction:0, locator:null }
   #epoch = 0
+  #speechPosition = null
 
-  async open(container, file, { onRelocate, onToggleChrome, onUserNavigation, onFollowLink, initialPage, initialFraction, preferences } = {}) {
+  async open(container, file, { onRelocate, onToggleChrome, onUserNavigation, onFollowLink, initialPage, initialLocator, initialFraction, preferences } = {}) {
     this.close()
     this.#format = await detectFormat(file)
     if (!isSupported(this.#format)) {
@@ -25,10 +26,13 @@ export class ReaderController {
 
     this.#engine = this.#format.engine
     const relocate = data => {
+      this.#speechPosition = Number.isInteger(data.index) && data.index >= 0
+        ? { kind:this.#engine === ENGINE.PDF ? 'page' : 'chapter', index:data.index } : null
       this.#location = {
         fraction: Math.min(1, Math.max(0, Number(data.fraction) || 0)),
         locator: data.cfi ? { kind:'cfi', value:data.cfi }
-          : this.#engine === ENGINE.PDF ? { kind:'pdf-page', value:(data.index || 0) + 1 } : null,
+          : this.#engine === ENGINE.PDF ? { kind:'pdf-page', value:(data.index || 0) + 1,
+            ...(Number.isInteger(data.textOffset) && data.textOffset > 0 ? { textOffset:data.textOffset } : {}) } : null,
         section:data.section || '', page:data.page || ''
       }
       onRelocate?.(data)
@@ -37,7 +41,7 @@ export class ReaderController {
       const { PdfReader } = await import('./pdf-reader.js')
       this.#reader = new PdfReader()
       const buffer = await file.arrayBuffer()
-      await this.#reader.open(container, buffer, { onRelocate:relocate, onToggleChrome, onUserNavigation, initialPage, initialFraction, preferences })
+      await this.#reader.open(container, buffer, { onRelocate:relocate, onToggleChrome, onUserNavigation, initialPage, initialLocator, initialFraction, preferences })
     } else {
       const { FoliateReader } = await import('./foliate-reader.js')
       this.#reader = new FoliateReader()
@@ -60,6 +64,8 @@ export class ReaderController {
     return this.#reader?.metadata ?? {}
   }
   get location() { return this.#location }
+  /** Numeric native media progress; no text, CFI, credentials or persisted cursor changes. */
+  get speechPosition() { return this.#speechPosition ? { ...this.#speechPosition } : null }
   get rtl() { return Boolean(this.#reader?.rtl) }
   get language() { const lang = this.metadata.language; return (Array.isArray(lang) ? lang[0] : lang) || navigator.language }
   get toc() { return this.#reader?.toc ?? [] }
@@ -93,7 +99,6 @@ export class ReaderController {
   async getLengthMetadata() {
     const reader = this.#reader, epoch = this.#epoch
     if (!reader) return null
-    if (this.#engine === ENGINE.PDF) return this.pageCount > 0 ? { pageCount:this.pageCount, lengthSource:'pages' } : null
     const result = await reader.getLengthMetadata?.()
     return reader === this.#reader && epoch === this.#epoch ? result || null : null
   }
@@ -130,7 +135,9 @@ export class ReaderController {
       try { await this.#reader?.goToCfi(locator.value); return } catch { /* changed edition */ }
     }
     if (locator?.kind === 'pdf-page' && this.#engine === ENGINE.PDF) {
-      await this.#reader?.goToPage(locator.value)
+      if (Number.isInteger(locator.textOffset) && locator.textOffset > 0) {
+        await this.#reader?.goToPage(locator.value, { textOffset:locator.textOffset })
+      } else await this.#reader?.goToPage(locator.value)
       return
     }
     await this.goToFraction(fallbackFraction)
@@ -140,6 +147,7 @@ export class ReaderController {
     this.#epoch++
     this.#reader?.close()
     this.#reader = null
+    this.#speechPosition = null
     this.#location = { fraction:0, locator:null }
   }
 }

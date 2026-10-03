@@ -10,10 +10,11 @@
 // underruns, or a compute speed far below real time, it buffers complete fragments and keeps the selected natural voice.
 import { findNeuralVoice, modelsOf, neuralVoices } from './catalog.js'
 import { GaplessPlayer, safeToStart } from './player.js'
+import { NativePcmPlayer } from './native-player.js'
 import { storeError } from './store.js'
 import { NeuralPackageStore } from './package-store.js'
 import { SynthClient } from './client.js'
-import { audioContext, unlockAudio } from './audio.js'
+import { audioContext, nativePcmBridge, unlockAudio } from './audio.js'
 
 export const LIMITS = {
   idleMs: 90_000,          // without speech for this long the worker (and its ~0.6 GB) is terminated; the next speak rebuilds it
@@ -85,7 +86,13 @@ export class NeuralEngine extends EventTarget {
     this.setTimer = setTimer; this.clearTimer = clearTimer
     this.limits = { ...LIMITS, ...limits }
     this.cache = new FragmentCache(this.limits.lruEntries, this.limits.lruSamples)
-    this.player = new GaplessPlayer({ context: () => this.audio.context(), onStart: n => this.#unitStarted(n), onEnd: n => this.#unitEnded(n), setTimer, clearTimer })
+    const playback = { onStart:n => this.#unitStarted(n), onEnd:n => this.#unitEnded(n) }
+    this.player = !audio && nativePcmBridge(env)
+      ? new NativePcmPlayer({ env, ...playback, onError:reason => {
+        const id = this.currentId
+        this.#hardStop(); this.#emit('error', id, reason)
+      } })
+      : new GaplessPlayer({ context:() => this.audio.context(), ...playback, setTimer, clearTimer })
     this._installed = new Set()
     this._downloads = new Map()
     this.installing = new Map() // piperId -> promise
@@ -103,7 +110,7 @@ export class NeuralEngine extends EventTarget {
 
   // ----------------------------------------------------------------- state exposed to the picker
   static isSupported(env = globalThis) {
-    return typeof env.Worker === 'function' && typeof env.WebAssembly === 'object' && !!(env.AudioContext || env.webkitAudioContext) && !!env.caches
+    return typeof env.Worker === 'function' && typeof env.WebAssembly === 'object' && !!(env.AudioContext || env.webkitAudioContext || nativePcmBridge(env)) && !!env.caches
   }
   get supported() { return NeuralEngine.isSupported(this.env) }
   get installed() { return this._installed }
@@ -189,7 +196,7 @@ export class NeuralEngine extends EventTarget {
   }
 
   // ----------------------------------------------------------------- reading aloud
-  unlock() { this.audio.unlock() }
+  unlock({ playback = true } = {}) { if (playback || !nativePcmBridge(this.env)) this.audio.unlock() }
 
   /**
    * Starts the worker and loads the voice's model ahead of the first speak() (a cold start is 3-6 s: worker, ONNX
@@ -234,9 +241,9 @@ export class NeuralEngine extends EventTarget {
       // short pages cannot add up to a 'too-slow' verdict on a device that keeps up. A restart in mid-page keeps its record.
       if (run?.entries.length && run.entries.every(entry => entry.ended)) this.underrunTimes = []
       const rebuild = this.#worthRebuilding(run)
-      this.#hardStop()
+      this.#hardStop({ keepSession:true })
       if (rebuild) this.#teardown() // a running segment cannot be interrupted: when waiting for it costs more than a cold start, start afresh
-      run = this.run = { voice, rate, entries: [], gateOpen: false, buffered: false, prepared: null, job: null, heldSince: null, holdTimer: null, pumpTimer: null, rtf: 0, rtfN: 0, spi: 0, t0: now(), firstAudio: false }
+      run = this.run = { voice, rate, entries: [], gateOpen: false, buffered: false, prepared: null, job: null, heldSince: null, holdTimer: null, pumpTimer: null, feedTimer: null, rtf: 0, rtfN: 0, spi: 0, t0: now(), firstAudio: false }
       this.#adopt(run, this.#entry(run, text), id, upcomingTexts, true, deferAfter)
       this.#setStatus('buffering')
     }
@@ -261,6 +268,13 @@ export class NeuralEngine extends EventTarget {
     this.#hardStop()
     this.#armIdle()
   }
+
+  pause() {
+    this.#hardStop({ pause:true })
+    this.#armIdle()
+  }
+  /** Cancel a changed voice/rate without tearing down the native foreground session. */
+  cancelCurrent() { this.#hardStop({ keepSession:true }); this.#armIdle() }
 
   // The system can take the audio away (a call, Bluetooth switching, the OS suspending the page): that is 'interrupted',
   // which the reader treats as a pause. Not by us: we never suspend or close the context.
@@ -319,12 +333,12 @@ export class NeuralEngine extends EventTarget {
     if (announce && head.ended) this.#emit('done', id)
   }
 
-  #hardStop() {
+  #hardStop(playback = {}) {
     const run = this.run
     this.run = null
     this.currentId = null
-    if (run) { run.job?.cancel(); this.clearTimer(run.holdTimer); this.clearTimer(run.pumpTimer) }
-    this.player.stopAll()
+    if (run) { run.job?.cancel(); this.clearTimer(run.holdTimer); this.clearTimer(run.pumpTimer); this.clearTimer(run.feedTimer) }
+    this.player.stopAll(playback)
     this.#setStatus('idle')
   }
 
@@ -461,6 +475,15 @@ export class NeuralEngine extends EventTarget {
       if (entry.deferred) return
       if (run.buffered && entry.state !== 'done') { this.#setStatus('buffering'); return }
       while (entry.scheduled < entry.chunks.length) {
+        // Cached replays already contain every ahead fragment. Bound delivery
+        // to AudioTrack as well as synthesis: its native queue is finite.
+        // Keep the exact PCM in the cache until the rendered clock frees room.
+        const waiting = this.player instanceof NativePcmPlayer ? this.player.buffered() : 0
+        if (waiting > 0 && waiting + entry.chunks[entry.scheduled].dur > this.limits.lookaheadSec) {
+          this.clearTimer(run.feedTimer)
+          run.feedTimer = this.setTimer(() => this.#feed(run), 1000)
+          return
+        }
         if (run.gateOpen && this.player.drained()) { run.gateOpen = false; this.#underrun(); if (this.run !== run) return }
         if (!run.gateOpen) {
           if (run.heldSince == null) run.heldSince = now()
@@ -469,7 +492,9 @@ export class NeuralEngine extends EventTarget {
           this.clearTimer(run.holdTimer)
         }
         const chunk = entry.chunks[entry.scheduled++]
-        this.player.schedule(entry.n, chunk.pcm, chunk.sampleRate, { last: !!chunk.last })
+        try { this.player.schedule(entry.n, chunk.pcm, chunk.sampleRate, { last: !!chunk.last }) }
+        catch { this.#failEntry(run, entry, 'native-playback-failed'); return }
+        if (this.run !== run) return
       }
       if (entry.total == null || entry.scheduled < entry.total) return // the next fragment waits for this one's remaining chunks
     }

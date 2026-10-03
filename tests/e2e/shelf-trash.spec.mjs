@@ -74,6 +74,14 @@ async function seedShelf(page, { long = false, linked = false, driveBytes = null
   // flyout or renderer replaces the feature under test.
   await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+  // This scenario exercises the full return flight, so wait for the real
+  // tiny document's detached count rather than asking a pending import to
+  // invent a temporary 3D thickness. No model/measurement is mocked here.
+  await expect.poll(() => page.evaluate(async () => {
+    const db = await new Promise(resolve => { const request=indexedDB.open('inhouse-read'); request.onsuccess=()=>resolve(request.result) })
+    const records = await new Promise(resolve => { const request=db.transaction('books').objectStore('books').getAll(); request.onsuccess=()=>resolve(request.result) })
+    db.close(); return records.find(book => book.name === 'tiny.pdf')?.wordCountComplete
+  })).toBe(true)
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
   // Home becomes visible while the return book is still zooming/closing.
   // CI reached those phases after the old eight-second layer check expired.
@@ -106,7 +114,9 @@ async function seedShelf(page, { long = false, linked = false, driveBytes = null
     ]
     if (driveBytes) Object.assign(records[1], {
       content:new Blob([new Uint8Array(driveBytes)], { type:'application/pdf' }),
-      size:driveBytes.length, sizeBytes:driveBytes.length, pageCount:3
+      size:driveBytes.length, sizeBytes:driveBytes.length, pageCount:3,
+      contentRevision:'trash-drive-original', wordCount:null, wordCountVersion:null,
+      wordCountComplete:false, wordCountContentRevision:null
     })
     if (long) for (let index=0; index<18; index++) records.push({ ...clean,
       id:`trash:long:${index}`, name:`long-${index}.pdf`, title:`Libro ${index + 4}`,

@@ -1,11 +1,12 @@
 import { test, expect } from '@playwright/test'
 import { spinePointerPosition } from './helpers/shelf-pointer.mjs'
 import { readFile } from 'node:fs/promises'
+import { settledGeometryLength } from './helpers/settled-geometry-length.mjs'
 
 async function seedCoveredBooks(page) {
   const content = [...await readFile('tests/e2e/fixtures/reading-journey.pdf')]
   const shortContent = [...await readFile('tests/e2e/fixtures/tiny.pdf')]
-  await page.evaluate(async ({ bytes, shortBytes }) => {
+  await page.evaluate(async ({ bytes, shortBytes, geometry }) => {
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open('inhouse-read')
       request.onsuccess = () => resolve(request.result)
@@ -28,6 +29,7 @@ async function seedCoveredBooks(page) {
       const id = `continuity:${index}`, title = `Biblioteca ${index + 1}`
       return {
         id, title, author:'Autora de prueba', name:`biblioteca-${index}.pdf`,
+        ...geometry[index],
         sourceType:'local', format:'PDF', mimeType:'application/pdf',
         content:new Blob([new Uint8Array(index === 0 ? shortBytes : bytes)], { type:'application/pdf' }),
         cover, coverAppearance:{ color:'#446548', shade:'#2a422c', ink:'#fffaf0',
@@ -44,7 +46,8 @@ async function seedCoveredBooks(page) {
       transaction.onerror = () => reject(transaction.error)
     })
     db.close()
-  }, { bytes:content, shortBytes:shortContent })
+  }, { bytes:content, shortBytes:shortContent,
+    geometry:Array.from({ length:8 }, (_, index) => settledGeometryLength((index === 0 ? 1 : 4) * 300, `continuity:${index}`)) })
   await page.reload()
   await expect(page.locator('.ihr-spine')).toHaveCount(8)
 }

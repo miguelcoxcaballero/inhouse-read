@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { settledGeometryLength } from './helpers/settled-geometry-length.mjs';
 
 const BOOK_ID = 'finish:controlled-blue';
 const LAMP_KEY = 'inhouse-read-shelf-lamps';
@@ -130,7 +131,7 @@ test('mate, satinado y brillante cambian el libro real en la estantería, reflej
   await page.goto(process.env.IHR_TEST_URL || './');
   await expect(page.locator('.ihr-bookshelf')).toBeVisible();
   const bytes = blueCoverPdf();
-  await page.evaluate(async ({ bytes, id, lampKey }) => {
+  await page.evaluate(async ({ bytes, id, lampKey, geometry }) => {
     const cover = document.createElement('canvas'); cover.width = 400; cover.height = 600;
     const context = cover.getContext('2d'); context.fillStyle = '#18364b'; context.fillRect(0, 0, 400, 600);
     context.fillStyle = '#e4e7de'; context.font = '36px serif'; context.textAlign = 'center';
@@ -140,6 +141,7 @@ test('mate, satinado y brillante cambian el libro real en la estantería, reflej
     const transaction = db.transaction('books', 'readwrite');
     transaction.objectStore('books').put({
       id, title:'Luz y papel', name:'finish.pdf', format:'PDF', sourceType:'local', mimeType:'application/pdf', pageCount:400,
+      ...geometry,
       content:new Blob([new Uint8Array(bytes)], { type:'application/pdf' }), cover:coverBlob,
       shelfPosition:{ shelf:0, x:.46 }, shelfOrder:0, addedAt:Date.now(), lastOpenedAt:Date.now(), progressFraction:0,
       spineColorOverride:'#18364b', coverFinish:'matte', spineSurfaceFinish:'matte', pageEdgeFinish:'matte'
@@ -149,7 +151,7 @@ test('mate, satinado y brillante cambian el libro real en la estantería, reflej
     localStorage.setItem('inhouse-read-shelf-type', 'baggebo');
     localStorage.setItem('inhouse-read-shelf-plants', '[]');
     localStorage.setItem(lampKey, JSON.stringify([{ key:'lamp:finish-retro', lampId:'tarnaby', shelf:0, x:.72, isOn:false }]));
-  }, { bytes, id:BOOK_ID, lampKey:LAMP_KEY });
+  }, { bytes, id:BOOK_ID, lampKey:LAMP_KEY, geometry:settledGeometryLength(120_000, BOOK_ID) });
   await page.reload();
   const scene = page.locator('.ihr-bookshelf-scene'), spine = page.locator(`.ihr-spine[data-book-id="${BOOK_ID}"]`);
   const lamp = page.locator('.ihr-lamp[data-lamp-id="tarnaby"]');

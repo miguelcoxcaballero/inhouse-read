@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { settledGeometryLength } from './helpers/settled-geometry-length.mjs';
 
 const KEY = 'inhouse-read-shelf-lamps';
 const lamps = [
@@ -22,19 +23,20 @@ async function seedShelf(page) {
   await page.goto(process.env.IHR_TEST_URL || '/');
   await expect(page.locator('.ihr-bookshelf')).toBeVisible();
   const bytes = [...await readFile('tests/e2e/fixtures/tiny.pdf')];
-  await page.evaluate(async bytes => {
+  await page.evaluate(async ({ bytes, geometry }) => {
     const db = await new Promise(resolve => {
       const request = indexedDB.open('inhouse-read'); request.onsuccess = () => resolve(request.result);
     });
     const transaction = db.transaction('books', 'readwrite');
     for (let index = 0; index < 6; index++) transaction.objectStore('books').put({
       id:`switch:${index}`, title:`Libro ${index}`, name:`switch-${index}.pdf`, format:'PDF', sourceType:'local',
+      ...geometry,
       mimeType:'application/pdf', pageCount:100, content:new Blob([new Uint8Array(bytes)], { type:'application/pdf' }),
       shelfPosition:{ shelf:Math.floor(index / 2), x:index % 2 ? .4 : .25 }, shelfOrder:index,
       addedAt:Date.now(), lastOpenedAt:Date.now() - index, progressFraction:0
     });
     await new Promise(resolve => { transaction.oncomplete = resolve; }); db.close();
-  }, bytes);
+  }, { bytes, geometry:settledGeometryLength(30_000, 'lamp-switches') });
   await page.reload();
   const scene = page.locator('.ihr-bookshelf-scene');
   await expect(scene).toHaveAttribute('data-animating', 'false', { timeout:30_000 });

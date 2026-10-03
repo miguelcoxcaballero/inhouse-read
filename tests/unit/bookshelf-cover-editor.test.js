@@ -220,6 +220,21 @@ describe('giro animado entre lomo y portada', () => {
 })
 
 describe('propuestas de relieve', () => {
+  it('ofrece diez colores reales y permite guardar el décimo sin generar miniportadas',async()=>{
+    const proposals=Array.from({length:10},(_,index)=>({...PROPOSALS[0],id:`color-${index+1}`,
+      color:`#${(index+1).toString(16).padStart(6,'0')}`,label:`Tinta ${index+1}`,thumbnail:''}));
+    vi.mocked(analyzeCoverRelief).mockResolvedValue({proposals});
+    const {editor,tab}=await openEditor();
+    tab('Portada').click();
+    await vi.waitFor(()=>expect(editor.querySelectorAll('.ihr-relief-card:not(.is-skeleton)')).toHaveLength(10));
+    expect(vi.mocked(analyzeCoverRelief).mock.calls[0][1].previews).toBe(false);
+    const last=editor.querySelector('input[value="color-10"]');
+    last.click();
+    expect(last.checked).toBe(true);
+    expect(last.closest('.ihr-relief-card').classList.contains('is-selected')).toBe(true);
+    expect(views.at(-1).setCoverRelief).toHaveBeenCalledWith(expect.objectContaining({id:'color-10',color:'#00000a'}));
+    expect(editor.querySelectorAll('.ihr-relief-card img')).toHaveLength(0);
+  });
   it.each([1, 2])('ofrece sólo los %s colores reales disponibles sin completar con zonas inventadas', async count => {
     vi.mocked(analyzeCoverRelief).mockResolvedValue({proposals:PROPOSALS.slice(0, count)})
     const {editor, tab} = await openEditor()
@@ -315,7 +330,7 @@ describe('propuestas de relieve', () => {
     const status = editor.querySelector('.ihr-relief__status')
     expect(status.getAttribute('aria-live')).toBe('polite')
     expect(status.textContent).toBe('Analizando…')
-    expect(editor.querySelectorAll('.ihr-relief-card.is-skeleton')).toHaveLength(3)
+    expect(editor.querySelectorAll('.ihr-relief-card.is-skeleton')).toHaveLength(10)
     expect(editor.querySelectorAll('input[type="radio"]')).toHaveLength(1)
 
     finish({ proposals: PROPOSALS })
@@ -398,7 +413,7 @@ describe('propuestas de relieve', () => {
 
 it('reserva las tarjetas antes del giro para que la hoja no crezca sobre la portada', async () => {
   const { editor } = await openEditor()
-  expect(editor.querySelectorAll('.ihr-relief-card.is-skeleton')).toHaveLength(3)
+  expect(editor.querySelectorAll('.ihr-relief-card.is-skeleton')).toHaveLength(10)
 })
 
 describe('elegir un relieve', () => {

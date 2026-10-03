@@ -28,17 +28,18 @@ const urlOf = async name => urls[name] ??= URL.createObjectURL(await new Promise
 const host = document.getElementById('host');
 let view = null, bookWidthCurrent = 200;
 const W = 200, H = 300, VW = 420, VH = 520;
-async function open(name, finish = 'satin', relief = null) {
+async function open(name, finish = 'satin', relief = null, shelf = false) {
   view?.dispose(); host.textContent = '';
   const coverUrl = await urlOf(name), canvas = corpus[name];
   const ratio = canvas.width / canvas.height, w = Math.round(H * Math.min(1, ratio) * (ratio > 1 ? 1 : 1)), h = H;
   const style = { color:'#143a2a', shade:'#0e2a1e', ink:'#fffaf0', coverRatio:ratio };
   const bookWidth = Math.round(H * ratio); bookWidthCurrent = Math.min(bookWidth, 330);
   view = bookView(host, { id:'relief:' + name, title:name, author:'', coverFinish:finish, spineSurfaceFinish:finish, pageEdgeFinish:'matte', coverRelief:relief },
-    style, { width:Math.min(bookWidth, 330), height:H, thickness:44, viewportWidth:VW, viewportHeight:VH, centerX:VW / 2, centerY:VH / 2, coverUrl });
+    style, { width:Math.min(bookWidth, 330), height:H, thickness:44, viewportWidth:VW, viewportHeight:VH, centerX:VW / 2, centerY:VH / 2, coverUrl, shelf });
   await view.ready;
   // Match the editor: its cards are only enabled after this one-time warm-up.
   await view.prepareCoverRelief();
+  if (relief) await view.setCoverRelief(relief);
   view.draw({ x:0, y:0, scale:1.15, angle:0, pitch:0 });
   return true;
 }
@@ -190,6 +191,35 @@ async function boot(page) {
   return errors;
 }
 
+test('el relieve guardado también brilla en el modelo de la estantería',async({page})=>{
+  test.setTimeout(180_000);
+  const errors=await boot(page);
+  const result=await page.evaluate(async()=>{
+    const api=window.reliefFixture,name='13-rgb-exact';
+    const {proposals}=await api.analyze(name),choice=proposals.find(item=>item.color==='#d4a93c');
+    if(!choice)throw Error('Missing known printed pigment');
+    await api.open(name,'matte',null,true);
+    api.pose(68,4);
+    const base=api.pixels(),ink=api.sourceState(),before=api.shot();
+    if(!await api.apply(choice))throw Error('Shelf relief was not applied');
+    api.pose(68,4);
+    const selected=api.pixels(),delta=api.diff(base,selected),after=api.shot(),paint=api.localized(base,selected,choice.color);
+    const inkAfter=api.sourceState();
+    await api.open(name,'matte',choice,true);
+    api.pose(68,4);
+    const reopened=api.diff(selected,api.pixels());
+    return {delta,reopened,paint,ink,inkAfter,before,after};
+  });
+  expect(result.delta.max).toBeGreaterThan(6);
+  expect(result.delta.changedFraction).toBeGreaterThan(.0005);
+  expect(result.paint.outside.max).toBeLessThanOrEqual(1);
+  expect(result.inkAfter).toEqual(result.ink);
+  expect(result.reopened.max).toBeLessThanOrEqual(1);
+  await save('shelf-relief-before',result.before);
+  await save('shelf-relief-after',result.after);
+  expect(errors).toEqual([]);
+});
+
 test('el corpus recibe hasta tres colores reales distintos, sin familias inventadas, y el análisis cede el hilo principal', async ({ page }) => {
   test.setTimeout(280_000);
   const errors = await boot(page);
@@ -210,8 +240,8 @@ test('el corpus recibe hasta tres colores reales distintos, sin familias inventa
   if (EVIDENCE) for (const [name, png] of Object.entries(await page.evaluate(() => window.reliefFixture.sourceShots()))) await save(name + '-source', png);
   for (const item of report) {
     expect(item.ids.length,item.name).toBeGreaterThan(0);
-    expect(item.ids.length,item.name).toBeLessThanOrEqual(3);
-    expect(item.ids).toEqual(['color-1','color-2','color-3'].slice(0,item.ids.length));
+    expect(item.ids.length,item.name).toBeLessThanOrEqual(10);
+    expect(item.ids).toEqual(Array.from({length:10},(_,i)=>`color-${i+1}`).slice(0,item.ids.length));
     expect(new Set(item.colors).size,item.name+' no repite colores').toBe(item.ids.length);
     expect(item.again,item.name+' IDs deterministas').toEqual(item.ids);
     expect(item.againColors,item.name+' HEX deterministas').toEqual(item.colors);

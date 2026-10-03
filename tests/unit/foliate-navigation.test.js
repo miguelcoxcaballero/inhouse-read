@@ -33,7 +33,7 @@ describe('EPUB page turn ordering', () => {
     const first = reader.getLengthMetadata(), second = reader.getLengthMetadata()
     expect(first).toBe(second)
     await vi.runAllTimersAsync()
-    expect(await first).toEqual({wordCount:3,estimatedPageCount:1,lengthSource:'text'})
+    expect(await first).toEqual({wordCount:3,wordCountVersion:2,wordCountComplete:true,estimatedPageCount:1,lengthSource:'text'})
     expect(createDocument).toHaveBeenCalledOnce()
     expect(reader.getLengthMetadata()).toBe(first)
   })

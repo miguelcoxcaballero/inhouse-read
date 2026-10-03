@@ -305,8 +305,10 @@ test('mueve un libro al mantenerlo pulsado con animación 3D y conserva su posic
     const transaction = db.transaction('books', 'readwrite')
     const store = transaction.objectStore('books')
     const now = Date.now()
-    store.put({ id:'shelf:alpha', title:'Alpha', author:'Autor', format:'PDF', sourceType:'local', addedAt:now, lastOpenedAt:now, progressFraction:0, shelfPosition:{ shelf:0, x:.18 } })
-    store.put({ id:'shelf:bravo', title:'Bravo', author:'Autor', format:'PDF', sourceType:'local', addedAt:now, lastOpenedAt:now - 1, progressFraction:0, shelfPosition:{ shelf:0, x:.38 } })
+    // Geometry-only records, with the complete count already cached.
+    const volume={wordCount:96000,wordCountVersion:2,wordCountComplete:true}
+    store.put({ id:'shelf:alpha', title:'Alpha', author:'Autor', format:'PDF', sourceType:'local', ...volume, addedAt:now, lastOpenedAt:now, progressFraction:0, shelfPosition:{ shelf:0, x:.18 } })
+    store.put({ id:'shelf:bravo', title:'Bravo', author:'Autor', format:'PDF', sourceType:'local', ...volume, addedAt:now, lastOpenedAt:now - 1, progressFraction:0, shelfPosition:{ shelf:0, x:.38 } })
     await new Promise((resolve, reject) => {
       transaction.oncomplete = resolve
       transaction.onerror = () => reject(transaction.error)
@@ -536,6 +538,8 @@ test('la vista isométrica muestra los 80 libros en 3D dentro de la pantalla sin
       transaction.objectStore('books').put({
         id:`long-shelf:${index}`, title:`Libro ${index + 1}`, author:'Autor',
         format:'PDF', sourceType:'local', addedAt:Date.now(), shelfOrder:index,
+        // This rendering case starts with a completed geometry-only cache.
+        wordCount:120000,wordCountVersion:2,wordCountComplete:true,
         pageCount:400, progressFraction:0
       })
     }

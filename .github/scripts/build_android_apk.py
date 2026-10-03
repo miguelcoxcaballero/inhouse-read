@@ -15,6 +15,7 @@ import os
 import shutil
 import subprocess
 from register_book_imports import register_book_imports
+from audiobook_fixture import write_audiobook, write_background_pdf
 from pathlib import Path
 
 
@@ -22,11 +23,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BUILDER_PATH = REPO_ROOT / "android" / "html_to_apk_builder.py"
 SOURCE_HTML = REPO_ROOT / ".github" / "android" / "app-loader.html"
 ICON_PATH = REPO_ROOT / "android" / "inhouse-read-logo.png"
-OUTPUT_APK = REPO_ROOT / "inhouse-read-release-v1.1.3.apk"
+OUTPUT_APK = REPO_ROOT / "inhouse-read-release-v1.1.4.apk"
 APP_NAME = "Inhouse Read"
 PACKAGE_ID = "com.inhousesoftware.read"
-ANDROID_VERSION_NAME = "1.1.3"
-ANDROID_VERSION_CODE = 16
+ANDROID_VERSION_NAME = "1.1.4"
+ANDROID_VERSION_CODE = 17
 
 
 class Value:
@@ -108,6 +109,8 @@ def main() -> None:
     assets = fixture / "src/main/assets"
     assets.mkdir(parents=True)
     shutil.copy2(REPO_ROOT / "tests/e2e/fixtures/tiny.pdf", assets / "tiny.pdf")
+    write_audiobook(assets / "audiobook.epub")
+    write_background_pdf(assets / "background.pdf")
     settings = project_dir / "android/settings.gradle"
     with settings.open("a", encoding="utf-8") as output:
         output.write("\ninclude ':intent-fixture'\n")

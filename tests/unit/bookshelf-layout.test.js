@@ -137,19 +137,19 @@ describe('spineStyleFor', () => {
     }
   })
 
-  it('a igualdad de semilla, más páginas = lomo más gordo', () => {
+  it('a igualdad de semilla, más palabras = lomo más gordo', () => {
     const widths = [50, 120, 300, 600, 900].map(
-      (pageCount) => spineStyleFor({ ...book, pageCount }).width
+      (pages) => spineStyleFor({ ...book, wordCount:pages*300 }).width
     )
     const sorted = [...widths].sort((a, b) => a - b)
     expect(widths).toEqual(sorted)
     expect(widths.at(-1)).toBeGreaterThan(widths[0])
   })
 
-  it('usa el tamaño del fichero cuando no hay número de páginas', () => {
+  it('ignora el tamaño del fichero y las páginas al conservar las mismas palabras', () => {
     const small = spineStyleFor({ ...book, sizeBytes: 300 * 1024 }).width
     const big = spineStyleFor({ ...book, sizeBytes: 11 * 1024 * 1024 }).width
-    expect(big).toBeGreaterThan(small)
+    expect(big).toBe(small)
   })
 
   it('sin metadatos de tamaño sigue dando un lomo válido', () => {

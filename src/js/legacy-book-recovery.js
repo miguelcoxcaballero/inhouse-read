@@ -1,6 +1,7 @@
 import {
   getSavedFolderHandle, isFolderApiSupported, readFileFromFolder
 } from './local-folder-store.js'
+import { newContentRevision, clearBookLength } from './book-length-queue.js'
 
 /** Restores old local imports from the already-authorized library folder. */
 export async function restoreLegacyBookBytes(library, {
@@ -20,7 +21,8 @@ export async function restoreLegacyBookBytes(library, {
     const file = await readFile(handle, book.folderFileName)
     if (!file || Number(file.size) !== Number(book.size)) continue
     const mimeType = file.type || book.mimeType || 'application/octet-stream'
-    await library.patch(book.id, { content: new Blob([file], { type: mimeType }), mimeType })
+    await library.patch(book.id, { content: new Blob([file], { type: mimeType }), mimeType,
+      ...clearBookLength(), contentRevision:newContentRevision() })
     restored += 1
   }
   return restored

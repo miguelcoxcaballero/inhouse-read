@@ -100,7 +100,7 @@ import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCov
 import { bookColorOptions, spineColorStyle, spineFinish, surfaceFinish, METAL_COLORS } from './book-colors.js';
 import { normalizeBookAuthor } from './book-title.js';
 import { bookView, fitCoverImage, getBookRenderer, planReadingBookPose } from './book-model.js';
-import { analyzeCoverRelief, normalizeCoverRelief } from './cover-relief.js';
+import { analyzeCoverRelief, normalizeCoverRelief, COLOR_RELIEF_IDS } from './cover-relief.js';
 import { EDITOR_TABS, coverEditorPose, coverTiltFrames, editorTabId, nextEditorTab } from './cover-editor.js';
 import { createShelfZoom } from './shelf-zoom.js';
 import { markTiming, resetTimeline } from './perf-marks.js';
@@ -1268,6 +1268,26 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     document.addEventListener('keydown', clear, true);
   }
 
+  function bookGeometryState(book) { return options.getBookGeometryState?.(book) || 'ready'; }
+
+  function buildGeometryStatus(books) {
+    const status = el('div', { class:'ihr-library-loading ihr-library-loading--books', role:'status', 'aria-live':'polite' });
+    for (const book of books) {
+      const state = bookGeometryState(book);
+      const row = el('div', { class:'ihr-library-loading__book' });
+      if (state === 'pending') row.append(el('span', { class:'ihr-library-loading__spinner', 'aria-hidden':'true' }));
+      const title = book.title || book.name || 'Libro';
+      row.append(el('span', { text:state === 'pending' ? `Preparando ${title}…`
+        : state === 'needs-source' ? `${title} · vuelve a seleccionar el archivo`
+          : `${title} · no se pudo contar su texto` }));
+      row.append(el('button', { type:'button', class:'ihr-btn ihr-btn--ghost',
+        onClick:() => state === 'failed' ? options.onBookGeometryRetry?.(book) : onOpen?.(book)
+      }, [el('span', { text:state === 'failed' ? 'Reintentar' : 'Abrir' })]));
+      status.append(row);
+    }
+    return status;
+  }
+
   function buildSpine(item) {
     const { book, style } = item;
     state.itemsById.set(String(book.id ?? book.path ?? book.title ?? 'book'), item);
@@ -1727,7 +1747,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     const plantSlotWidth = variant => plantShelfObject({ key:'plant', variant }).width;
     const plantVariants = DEFAULT_LAYOUT.plantVariants;
-    const plan = planBookshelf(state.books, {
+    const pendingGeometry = state.books.filter(book => bookGeometryState(book) !== 'ready');
+    const geometryBooks = state.books.filter(book => bookGeometryState(book) === 'ready');
+    const plan = planBookshelf(geometryBooks, {
       shelfWidth: width,
       padding: shelfPadding(),
       gap: opts.gap,
@@ -1778,6 +1800,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       ])
     ]);
     fragment.append(heading);
+    if (pendingGeometry.length) fragment.append(buildGeometryStatus(pendingGeometry));
     if (!state.books.length) {
       const body = opts.texts.emptyText ?? opts.texts.emptyBody;
       fragment.append(el('div', { class:'ihr-empty ihr-empty--library' }, [
@@ -2336,7 +2359,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       view.animate([{ transform: before }, { transform: coverPose }], { duration: prefersReducedMotion() ? 1 : 220 });
     }
     function reliefKey() {
-      return `color-zones-v2|${item.coverKey ?? coverUrl ?? ''}|${book.title ?? ''}|${normalizeBookAuthor(book.author)}`;
+      return `color-zones-v3-ten|${item.coverKey ?? coverUrl ?? ''}|${book.title ?? ''}|${normalizeBookAuthor(book.author)}`;
     }
     // Deja de lado todo lo que dependa de la pestaña: balanceo, temporizadores
     // y análisis en curso (cierre del editor o cambio de pestaña).
@@ -3043,7 +3066,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         proposals.push({ ...choice, label:proposal.label,
           description:typeof proposal.description === 'string' ? proposal.description : '',
           thumbnail:typeof proposal.thumbnail === 'string' && proposal.thumbnail.startsWith('data:image/') ? proposal.thumbnail : '' });
-        if (proposals.length === 3) break;
+        if (proposals.length === COLOR_RELIEF_IDS.length) break;
       }
       return proposals;
     };
@@ -3093,9 +3116,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         // Volver a tocar la propuesta elegida repite el balanceo.
         onClick:() => { if (normalizeCoverRelief(book.coverRelief)?.color === proposal.color) scheduleCoverTilt(); }
       });
-      return el('label', { class:'ihr-relief-card', 'data-relief-color':proposal.color }, [
+      return el('label', { class:'ihr-relief-card', 'data-relief-color':proposal.color, title:`${proposal.label} · ${proposal.color}` }, [
         input,
-        el('span', { class:'ihr-relief-card__preview', 'aria-hidden':'true' },
+        el('span', { class:'ihr-relief-card__preview', style:`background:${proposal.color}`, 'aria-hidden':'true' },
           proposal.thumbnail ? [el('img', { class:'ihr-relief-card__thumb', src:proposal.thumbnail, alt:'', draggable:'false' })] : []),
         el('span', { class:'ihr-relief-card__text' }, [
           el('span', { class:'ihr-relief-card__label' }, [
@@ -3121,7 +3144,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       // Reserve the cards before the turn; starting analysis must not grow
       // the sheet over the cover that was just fitted above it.
       if (status === 'loading' || status === 'idle') {
-        reliefGrid.replaceChildren(...[0, 1, 2].map(() => el('span', { class:'ihr-relief-card is-skeleton', 'aria-hidden':'true' }, [
+        reliefGrid.replaceChildren(...COLOR_RELIEF_IDS.map(() => el('span', { class:'ihr-relief-card is-skeleton', 'aria-hidden':'true' }, [
           el('span', { class:'ihr-relief-card__preview' }),
           el('span', { class:'ihr-relief-card__text' }, [el('span', { class:'ihr-relief-card__label' }), el('span', { class:'ihr-relief-card__description' })])
         ])));
@@ -3142,7 +3165,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         // shader before any card can be chosen, after the tab's turn has ended.
         const [result] = await Promise.all([
           cached ? { proposals:cached } : analyzeCoverRelief(coverUrl, {
-            title:book.title, author:normalizeBookAuthor(book.author), signal:controller.signal
+            title:book.title, author:normalizeBookAuthor(book.author), signal:controller.signal, previews:false
           }),
           view?.prepareCoverRelief?.()
         ]);

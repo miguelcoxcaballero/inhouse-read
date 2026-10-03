@@ -23,6 +23,11 @@ const REMOVED_STORE = 'removed-books'
  *                                    carpetas (funciona igual en Android que en
  *                                    escritorio)
  * @property {Blob}   [cover]       - portada renderizada, si se pudo extraer
+ * @property {string} [contentRevision] - identity of these committed original bytes
+ * @property {number} [wordCount] - complete extractable text across all PDF pages/spine sections
+ * @property {number} [wordCountVersion] - counting convention, independent of reader layout
+ * @property {boolean} [wordCountComplete] - partial/legacy counts never determine shelf geometry
+ * @property {string} [wordCountContentRevision] - bytes to which the count belongs
  * @property {number} addedAt
  * @property {number} lastOpenedAt
  * @property {number} progressFraction - 0..1
