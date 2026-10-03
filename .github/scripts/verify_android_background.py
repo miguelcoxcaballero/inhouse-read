@@ -16,15 +16,17 @@ from verify_android_app import run, capture, open_fixture_document, node_text, r
 PACKAGE = "com.inhousesoftware.read"
 PREFIX = "android-background-"
 history = []
+LESSAC_DOWNLOAD_PATTERN = r"^Descargar la voz Lessac,\s"
 
 def labels(root):
     return [(n, (n.get("content-desc", "") or n.get("text", "")).strip()) for n in root.iter("node")]
 
-def tap(root, pattern, *, require_button=False):
+def tap(root, pattern, *, require_button=False, within_voice_catalog=False):
+    parents = {child: parent for parent in root.iter() for child in parent} if within_voice_catalog else {}
     for node, label in labels(root):
         if node.get("enabled") != "true" or not re.search(pattern, label, re.I):
             continue
-        if require_button and (node.get("class") != "android.widget.Button" or node.get("clickable") != "true"):
+        if (require_button or within_voice_catalog) and (node.get("class") != "android.widget.Button" or node.get("clickable") != "true"):
             continue
         box = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
         if not box:
@@ -32,15 +34,35 @@ def tap(root, pattern, *, require_button=False):
         x1, y1, x2, y2 = map(int, box.groups())
         if x2 <= x1 or y2 <= y1:
             continue
+        if within_voice_catalog:
+            # Accessibility can still expose the initial offer after opening
+            # the catalog, even when its bounds lie above the visible dialog.
+            dialog = catalog = None
+            ancestor = parents.get(node)
+            while ancestor is not None:
+                name = (ancestor.get("content-desc", "") or ancestor.get("text", "")).strip()
+                if ancestor.get("enabled") == "true":
+                    if ancestor.get("class") == "android.app.Dialog" and name == "Escuchar":
+                        dialog = ancestor
+                    elif ancestor.get("class") == "android.view.View" and name == "Voces naturales":
+                        catalog = ancestor
+                ancestor = parents.get(ancestor)
+            if dialog is None or catalog is None:
+                continue
+            containers = [re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", item.get("bounds", "")) for item in (dialog, catalog)]
+            if any(item is None for item in containers):
+                continue
+            if not all(left <= x1 < x2 <= right and top <= y1 < y2 <= bottom for left, top, right, bottom in (map(int, item.groups()) for item in containers)):
+                continue
         run("adb", "shell", "input", "tap", str((x1+x2)//2), str((y1+y2)//2))
         return label
     return None
 
-def ui_action(label, pattern, timeout=45, *, require_button=False):
+def ui_action(label, pattern, timeout=45, *, require_button=False, within_voice_catalog=False):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         root = capture(Path(PREFIX+label+".png"), Path(PREFIX+label+".xml"))
-        used = tap(root, pattern, require_button=require_button)
+        used = tap(root, pattern, require_button=require_button, within_voice_catalog=within_voice_catalog)
         if used:
             history.append({"action": label, "control": used, "at": time.time()})
             return root
@@ -125,7 +147,7 @@ def main():
         open_fixture_document("audiobook")
         ui_action("audio",r"^Escuchar el libro$")
         ui_action("voices",r"^Voz(?:\s|$)",require_button=True)
-        ui_action("download",r"^Descargar la voz(?: natural)? Lessac\b")
+        ui_action("download",LESSAC_DOWNLOAD_PATTERN,within_voice_catalog=True)
         # The exact real installed row replaces Download; no forced install API.
         end=time.monotonic()+600
         while True:
