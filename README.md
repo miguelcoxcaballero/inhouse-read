@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.32
+
+- Las respuestas de Drive conservan su sesión hasta terminar de leer los datos y durante los pasos de listado, subida y progreso. Cambiar de cuenta descarta los datos pendientes de la anterior.
+- Un fallo tardío de una carpeta antigua no borra la petición de carpeta de la cuenta actual. Cancelar una conexión invalida sus carpetas recordadas.
+- Pasan 61 pruebas focales, 2.563 unitarias en 159 archivos, el build y cinco E2E sin reintentos. Ocho regresiones nuevas conservan cinco fallos en la fuente anterior. No cambia los clientes, permisos ni el login Google de Notes; la prueba con una cuenta real sigue pendiente.
+
 ### Actualización web · 1.7.31
 
 - El lector conserva su iframe al cambiar de capítulo y libera las marcas y observadores de la página anterior. Los eventos de carga de un documento anterior no pueden completar la navegación nueva.

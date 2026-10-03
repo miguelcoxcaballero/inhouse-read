@@ -287,6 +287,8 @@ globalThis.handleInhouseNativeOAuth = payload => {
 
 export function cancelDriveConnection(message = 'Conexión cancelada.') {
   authGeneration += 1
+  folderIdPromise = null
+  stateFolderIdPromise = null
   for (const cancel of pendingWebRequests) cancel(message)
   if (nativeRequest) nativeRequest.reject(new Error(message))
   nativeRequest = null
@@ -333,8 +335,27 @@ async function accessToken() {
   return requestDriveAccess({ interactive: false })
 }
 
-async function driveFetch(url, options = {}) {
-  const generation = authGeneration
+function requireDriveGeneration(generation) {
+  if (generation !== authGeneration) throw new Error('La conexión de Google ha cambiado.')
+}
+
+function guardResponseBody(response, generation) {
+  const readers = new Set(['json', 'blob', 'arrayBuffer', 'text', 'formData'])
+  return new Proxy(response, { get(target, key) {
+    const value = Reflect.get(target, key, target)
+    if (typeof value !== 'function') return value
+    if (!readers.has(key)) return value.bind(target)
+    return async (...args) => {
+      requireDriveGeneration(generation)
+      const body = await value.apply(target, args)
+      requireDriveGeneration(generation)
+      return body
+    }
+  } })
+}
+
+async function driveFetch(url, options = {}, generation = authGeneration) {
+  requireDriveGeneration(generation)
   const token = await accessToken()
   if (generation !== authGeneration) throw new Error('La conexión de Google ha cambiado.')
   const response = await fetch(url, {
@@ -348,65 +369,82 @@ async function driveFetch(url, options = {}) {
     try { message = (await response.json()).error?.message || message } catch { /* non-JSON error */ }
     throw new Error(message)
   }
-  return response
+  return guardResponseBody(response, generation)
 }
 
 function escapeDriveQuery(value) { return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'") }
 
-async function findFolder(name, parentId) {
+async function findFolder(name, parentId, generation = authGeneration) {
   const where = [`name = '${escapeDriveQuery(name)}'`, "mimeType = 'application/vnd.google-apps.folder'", 'trashed = false']
   if (parentId) where.push(`'${parentId}' in parents`)
   const params = new URLSearchParams({
     q: where.join(' and '), spaces: 'drive', fields: 'files(id,name)', pageSize: '100'
   })
-  const found = await (await driveFetch(`${DRIVE_FILES_URL}?${params}`)).json()
+  const found = await (await driveFetch(`${DRIVE_FILES_URL}?${params}`, {}, generation)).json()
   return found.files?.[0]?.id || null
 }
 
-async function findOrCreateFolder(name, parentId) {
-  const found = await findFolder(name, parentId)
+async function findOrCreateFolder(name, parentId, generation = authGeneration) {
+  const found = await findFolder(name, parentId, generation)
+  requireDriveGeneration(generation)
   if (found) return found
   const created = await (await driveFetch(DRIVE_FILES_URL, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', ...(parentId ? { parents: [parentId] } : {}) })
-  })).json()
+  }, generation)).json()
   return created.id
 }
 
 export async function getOrCreateReadFolder() {
-  if (!folderIdPromise) folderIdPromise = findOrCreateFolder(FOLDER_NAME).catch(error => { folderIdPromise = null; throw error })
-  return folderIdPromise
+  const generation = authGeneration
+  if (!folderIdPromise) {
+    const task = findOrCreateFolder(FOLDER_NAME, undefined, generation).catch(error => {
+      if (folderIdPromise === task) folderIdPromise = null
+      throw error
+    })
+    folderIdPromise = task
+  }
+  const result = await folderIdPromise
+  requireDriveGeneration(generation)
+  return result
 }
 
 async function getOrCreateStateFolder() {
+  const generation = authGeneration
   if (!stateFolderIdPromise) {
-    stateFolderIdPromise = getOrCreateReadFolder()
-      .then(parentId => findOrCreateFolder(STATE_FOLDER_NAME, parentId))
-      .catch(error => { stateFolderIdPromise = null; throw error })
+    const task = getOrCreateReadFolder()
+      .then(parentId => findOrCreateFolder(STATE_FOLDER_NAME, parentId, generation))
+      .catch(error => { if (stateFolderIdPromise === task) stateFolderIdPromise = null; throw error })
+    stateFolderIdPromise = task
   }
-  return stateFolderIdPromise
+  const result = await stateFolderIdPromise
+  requireDriveGeneration(generation)
+  return result
 }
 
-async function listFolder(folderId, { pageToken, pageSize = 100, fields = 'id,name,mimeType,size,modifiedTime,md5Checksum' } = {}) {
+async function listFolder(folderId, { pageToken, pageSize = 100, fields = 'id,name,mimeType,size,modifiedTime,md5Checksum' } = {}, generation = authGeneration) {
   const params = new URLSearchParams({
     q: `'${folderId}' in parents and trashed = false`,
     fields: `nextPageToken,files(${fields})`, pageSize: String(pageSize), spaces: 'drive'
   })
   if (pageToken) params.set('pageToken', pageToken)
-  return (await driveFetch(`${DRIVE_FILES_URL}?${params}`)).json()
+  return (await driveFetch(`${DRIVE_FILES_URL}?${params}`, {}, generation)).json()
 }
 
-export async function listDriveBooks(options = {}) {
+export async function listDriveBooks(options = {}, generation = authGeneration) {
   // Reading an empty account must not create folders or upload any files.
-  const folder = await findFolder(FOLDER_NAME)
-  return folder ? listFolder(folder, options) : { files:[] }
+  const folder = await findFolder(FOLDER_NAME, undefined, generation)
+  requireDriveGeneration(generation)
+  return folder ? listFolder(folder, options, generation) : { files:[] }
 }
 
 export async function listAllDriveBooks() {
+  const generation = authGeneration
   const files = []
   let pageToken
   do {
-    const page = await listDriveBooks({ pageToken })
+    const page = await listDriveBooks({ pageToken }, generation)
+    requireDriveGeneration(generation)
     files.push(...(page.files || []).filter(file => /\.(pdf|epub|mobi|azw|azw3|fb2|cbz)$/i.test(file.name || '')))
     pageToken = page.nextPageToken
   } while (pageToken)
@@ -416,7 +454,7 @@ export async function listAllDriveBooks() {
 export async function getDriveProfile() {
   const generation = authGeneration
   const params = new URLSearchParams({ fields: 'user(displayName,emailAddress,photoLink,permissionId)' })
-  const user = (await (await driveFetch(`${ABOUT_URL}?${params}`)).json()).user
+  const user = (await (await driveFetch(`${ABOUT_URL}?${params}`, {}, generation)).json()).user
   if (generation !== authGeneration) throw new Error('La conexión de Google ha cambiado.')
   if (!user) throw new Error('Google no devolvió los datos de la cuenta.')
   const profile = {
@@ -430,12 +468,16 @@ export async function getDriveProfile() {
 }
 
 export async function downloadDriveFile(fileId, { name, mimeType } = {}) {
-  const blob = await (await driveFetch(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}?alt=media`)).blob()
+  const generation = authGeneration
+  const blob = await (await driveFetch(`${DRIVE_FILES_URL}/${encodeURIComponent(fileId)}?alt=media`, {}, generation)).blob()
+  requireDriveGeneration(generation)
   return new File([blob], name ?? fileId, { type: mimeType || blob.type || 'application/octet-stream' })
 }
 
-export async function uploadDriveFile(file, { driveFileId, name = file.name, parentId } = {}) {
+export async function uploadDriveFile(file, { driveFileId, name = file.name, parentId } = {}, generation = authGeneration) {
+  requireDriveGeneration(generation)
   const folderId = driveFileId ? null : (parentId || await getOrCreateReadFolder())
+  requireDriveGeneration(generation)
   const metadata = { name, ...(folderId ? { parents: [folderId] } : {}) }
   const mime = file.type || 'application/octet-stream'
   const endpoint = `${UPLOAD_URL}${driveFileId ? `/${encodeURIComponent(driveFileId)}` : ''}`
@@ -449,7 +491,7 @@ export async function uploadDriveFile(file, { driveFileId, name = file.name, par
     ], { type: `multipart/related; boundary=${boundary}` })
     return (await driveFetch(`${endpoint}?uploadType=multipart&fields=id,name,mimeType,size,md5Checksum`, {
       method, headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body
-    })).json()
+    }, generation)).json()
   }
   const start = await driveFetch(`${endpoint}?uploadType=resumable&fields=id,name,mimeType,size,md5Checksum`, {
     method,
@@ -459,35 +501,42 @@ export async function uploadDriveFile(file, { driveFileId, name = file.name, par
       'X-Upload-Content-Length': String(file.size)
     },
     body: JSON.stringify(metadata)
-  })
+  }, generation)
   const location = start.headers.get('Location')
   if (!location) throw new Error('Drive no devolvió la dirección para subir el libro.')
   return (await driveFetch(location, {
     method: 'PUT', headers: { 'Content-Type': mime }, body: file
-  })).json()
+  }, generation)).json()
 }
 
 function stateName(driveFileId) { return `progress-${driveFileId}.json` }
 
 export async function readDriveProgress(driveFileId) {
-  const readFolder = await findFolder(FOLDER_NAME)
+  const generation = authGeneration
+  const readFolder = await findFolder(FOLDER_NAME, undefined, generation)
+  requireDriveGeneration(generation)
   if (!readFolder) return null
-  const folderId = await findFolder(STATE_FOLDER_NAME, readFolder)
+  const folderId = await findFolder(STATE_FOLDER_NAME, readFolder, generation)
+  requireDriveGeneration(generation)
   if (!folderId) return null
   const params = new URLSearchParams({
     q: `'${folderId}' in parents and name = '${escapeDriveQuery(stateName(driveFileId))}' and trashed = false`,
     fields: 'files(id,name,modifiedTime)', spaces: 'drive', pageSize: '100'
   })
-  const files = (await (await driveFetch(`${DRIVE_FILES_URL}?${params}`)).json()).files || []
+  const files = (await (await driveFetch(`${DRIVE_FILES_URL}?${params}`, {}, generation)).json()).files || []
+  requireDriveGeneration(generation)
   if (!files.length) return null
   const latest = files.sort((a, b) => Date.parse(b.modifiedTime) - Date.parse(a.modifiedTime))[0]
-  const data = await (await driveFetch(`${DRIVE_FILES_URL}/${encodeURIComponent(latest.id)}?alt=media`)).json()
+  const data = await (await driveFetch(`${DRIVE_FILES_URL}/${encodeURIComponent(latest.id)}?alt=media`, {}, generation)).json()
+  requireDriveGeneration(generation)
   if (data?.schemaVersion !== 1 || data.driveFileId !== driveFileId) return null
   return { ...data, stateFileId: latest.id, cloudModifiedAt: Date.parse(latest.modifiedTime) || 0 }
 }
 
 export async function writeDriveProgress(driveFileId, progress, stateFileId) {
+  const generation = authGeneration
   const parentId = stateFileId ? undefined : await getOrCreateStateFolder()
+  requireDriveGeneration(generation)
   const body = JSON.stringify({
     schemaVersion: 1, driveFileId,
     fraction: Math.min(1, Math.max(0, Number(progress.fraction) || 0)),
@@ -500,5 +549,5 @@ export async function writeDriveProgress(driveFileId, progress, stateFileId) {
     updatedAt: Number(progress.updatedAt) || Date.now()
   })
   const file = new File([body], stateName(driveFileId), { type: 'application/json' })
-  return uploadDriveFile(file, { driveFileId: stateFileId, parentId })
+  return uploadDriveFile(file, { driveFileId: stateFileId, parentId }, generation)
 }

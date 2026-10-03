@@ -1,4 +1,14 @@
-# Verificación del WIP — web 1.7.30 publicada; 1.7.31 en preparación; Android 1.1.4 pendiente
+# Verificación del WIP — web 1.7.31 publicada; 1.7.32 en preparación; Android 1.1.4 en verificación
+
+## Cambios de 1.7.32
+
+Las lecturas JSON y Blob de Drive comprueban la generación antes y después de consumir su cuerpo, sin una copia adicional del archivo. Los pasos de carpeta, listado, descarga, subida multipart/reanudable y progreso conservan la generación de su operación. Las carpetas sólo se invalidan si la petición que falla sigue siendo la que está guardada; cancelar la sesión descarta esos caches.
+
+La fuente anterior reproduce **cinco fallos y tres aprobados** en ocho regresiones. El candidato preparado pasa **31/31**: las ocho nuevas, seis carreras de sesión y 17 contratos de OAuth/cliente existentes. Originales separados en `release-1732/drive-body-expanded-baseline.*` y `drive-body-expanded-candidate.*`. Son respuestas controladas, sin una cuenta Google real. Sobre la fuente final pasan **61/61 focales**, **2.563/2.563 unitarias en 159 archivos**, build y **cinco E2E sin reintentos**. Publicación HTTP y CI se verifican por separado.
+
+## Verificación de 1.7.31
+
+Fuente `0036d69eddd6549aa7750580e766fe1184405fc9`, Pages `9536329e84014f07f3cc30fba32acfdb6f9d04e0`. Pasan 2.555 unitarias en 158 archivos y seis E2E focales sin reintentos. Certificado local SHA-256 `fe58e9abbc6129abbaae99cfe105f0d1ac879e6407e27034de463bd8558e173e`. Los 22 módulos y 43 recursos offline coinciden por HTTP, artefacto SHA-256 `dbc90a5d0f6abc419a04c94520f15a1dff1210cc701114524db2c393e807a3d3`. Pasan cinco casos públicos con 110 cuerpos HTTP y cuatro capturas revisadas, certificado `900f8ad89bbe5f3e546f7deaa13335dd7058e727620c4adeacde42b0e4329d78`. La primera consulta de pin conservó HTML anterior durante propagación; sus bytes y el rechazo permanecen separados del segundo pin correcto.
 
 ## Cambios de 1.7.31
 
@@ -9,6 +19,8 @@ Se conserva el View y su iframe entre capítulos, manteniendo la navegación rea
 Pasan **29/29 focales en cuatro archivos**, build, **seis E2E sin reintentos** y **75 verificaciones Python**. Los E2E conservan los plazos originales: seguimiento y cambio de capítulo, cancelación al pausar/detener, cierre EPUB al girar, reapertura CBZ y conservación de ancla. La batería unitaria completa ha pasado. No demuestra aún continuidad bloqueada. El diagnóstico Android conserva un logcat completo antes de despertar o recuperar tras un fallo; los umbrales de audio y controles originales siguen intactos.
 
 ## Verificación de 1.7.30
+
+Batería CI completa aprobada, run `37153385656`: **2.546 unitarias en 157 archivos y 512 E2E**, 3.058 en total, sin omisiones, reintentos ni flaky. Once ZIP y doce jobs originales contrastados; certificado SHA-256 `e137add78e5e68d3086268484b4e324cc805890bf53bb61418e33d835c105c8e`.
 
 Fuente `be2cc4d7cfb11cd94959b7bae8902e4dea5d321d`, Pages `d9b530ba1adbce5b11d44cefa1b048e9ec33e0b3`. Sus 22 módulos y 43 recursos offline coinciden por HTTP; certificado de artefacto SHA-256 `90ff91df4cdbb52944bb2f45a4ce9d293a8f280c834c68eb947bc807d4d54bfc`. Pasan **cinco casos públicos sin reintentos**, con 110 cuerpos HTTP y cuatro capturas revisadas, certificado SHA-256 `37be533b1fcdbabae904ed8ebaf8d49ea25821ebdcdeb32f57248851cfb1bf23`. La batería CI de esta fuente sigue separada.
 
@@ -161,9 +173,9 @@ El observador software de interrupción usa **2.200 ms en CI**; el límite local
 
 ## Pendientes y límites
 
-- **Android 1.1.4 sigue PENDIENTE.** El último ensayo, run `37152067644`, fuente `b4da776`, conserva FAILED: 114 starts/dones y 228 callbacks completos, pero cero PCM nuevo en el tramo final de 30 segundos, mientras espera la carga del capítulo siguiente. No se publica esa APK. Los originales y el certificado independiente de fallo se conservan, SHA-256 `81474495e1f7096b0c5b6f12ac40dcff9998b4e471205d5084efa652d5b294c6`. El siguiente ensayo debe superar continuidad bloqueada, controles de notificación, liberación de servicio/wake y PDF oculto, sin modificar sus umbrales.
-- **Fuente nueva 1.7.31:** pasan las 2.555 unitarias y seis E2E locales; requiere su publicación HTTP, batería CI completa y ensayo Android nuevos. No hereda aprobados de otra fuente.
-- **Cuenta Google real:** falta conexión al navegador autenticado para comprobar login y subida reales. Las 53 pruebas focales y E2E de Drive usan respuestas controladas y no sustituyen esa comprobación.
+- **Android 1.1.4 sigue PENDIENTE.** El último ensayo, run `37154645400`, fuente `0036d69`, conserva FAILED: 108 starts/dones y 216 callbacks completos, pero cero PCM nuevo en el tramo final de 30 segundos. El último cambio de capítulo sí termina en 21 ms; la espera restante ocurre después. No se publica esa APK. ZIP original autenticado: 11.587.243 bytes, 112 miembros; certificado de captura SHA-256 `090649c48fac00816ef40834f1cb97a81aea1e6c16e00284353926ff6260e2b0`. El siguiente ensayo debe superar continuidad bloqueada, controles de notificación, liberación de servicio/wake y PDF oculto, sin modificar sus umbrales.
+- **Fuente nueva 1.7.32:** pasan 2.563 unitarias y cinco E2E locales; necesita publicación HTTP y batería CI propias. La web 1.7.31 tiene comprobación HTTP y cinco casos públicos aprobados; su ensayo Android conserva FAILED.
+- **Cuenta Google real:** falta conexión al navegador autenticado para comprobar login y subida reales. Las 61 pruebas focales y cinco E2E de Drive usan respuestas controladas y no sustituyen esa comprobación.
 - No se añade OCR ni se garantiza el orden perfecto de cualquier PDF. Los ocho casos públicos PDF usan texto y audio controlados para verificar navegación, visibilidad y cancelación; no sustituyen una comprobación de audio natural en un teléfono bloqueado. Drive usa respuestas de prueba y no autentica una cuenta real.
 - La batería web no certifica una APK nueva, audio en un teléfono físico, FPS, temperatura o batería. La evidencia histórica de Android 1.1.3 y la sesión de voz anterior mantienen su alcance original.
 
