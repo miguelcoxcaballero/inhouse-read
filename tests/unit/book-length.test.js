@@ -4,6 +4,7 @@ import { completeWordCount, countTextWords, measureBookLength, printedPageCount 
 const documentFor = html => new DOMParser().parseFromString(html, 'text/html');
 const section = html => ({ createDocument:vi.fn(async () => documentFor(html)) });
 const measure = (book, options = {}) => measureBookLength(book, { yieldTask:async () => {}, ...options });
+const imageSection = (id = 'page.png') => ({ id, size:64, load:vi.fn(), unload:vi.fn() });
 
 describe('printed book length', () => {
   it('uses words only, independent of page breaks or an old page estimate', () => {
@@ -54,6 +55,44 @@ describe('printed book length', () => {
     pages[71] = section('<p>Text on the last page.</p><img src="never-loaded.jpg">');
     expect(await measure({ sections:pages, rendition:{ layout:'pre-paginated' } })).toEqual(completeWordCount(5));
     expect(pages.every(page => page.createDocument.mock.calls.length === 1)).toBe(true);
+  });
+
+  it('completes a recognized image-only comic with zero text without loading any image', async () => {
+    const pages = ['one.png','nested/two.jpg','three.jpeg','four.gif','five.bmp','six.webp','seven.svg','eight.jxl','nine.avif'].map(imageSection);
+    expect(await measure({ sections:pages, rendition:{ layout:'pre-paginated' } })).toEqual(completeWordCount(0));
+    for (const page of pages) { expect(page.load).not.toHaveBeenCalled(); expect(page.unload).not.toHaveBeenCalled(); }
+  });
+
+  it.each([
+    ['missing fixed-layout recognition', { sections:[imageSection()] }],
+    ['unrecognized source ID', { sections:[imageSection('chapter.xhtml')], rendition:{ layout:'pre-paginated' } }],
+    ['missing loader', { sections:[{ ...imageSection(), load:undefined }], rendition:{ layout:'pre-paginated' } }],
+    ['missing unload lifecycle', { sections:[{ ...imageSection(), unload:undefined }], rendition:{ layout:'pre-paginated' } }],
+    ['empty image entry', { sections:[{ ...imageSection(), size:0 }], rendition:{ layout:'pre-paginated' } }],
+    ['non-finite image entry', { sections:[{ ...imageSection(), size:Infinity }], rendition:{ layout:'pre-paginated' } }],
+    ['broken document extractor', { sections:[{ ...imageSection(), createDocument:null }], rendition:{ layout:'pre-paginated' } }],
+    ['mixed text/image source', { sections:[imageSection(), section('<p>Actual text</p>')], rendition:{ layout:'pre-paginated' } }]
+  ])('does not infer zero words for %s', async (_, book) => {
+    expect(await measure(book)).toBeNull();
+  });
+
+  it('keeps comic validation bounded and cancels between slices without image loading', async () => {
+    let active = true;
+    const pages = Array.from({ length:256 }, (_, index) => imageSection(`${index}.png`));
+    const book = { sections:pages, rendition:{ layout:'pre-paginated' } };
+    expect(await measure(book, { maxSections:255 })).toBeNull();
+    const yieldTask = vi.fn(async () => { active = false; });
+    expect(await measure(book, { isActive:() => active, yieldTask })).toBeNull();
+    expect(yieldTask).toHaveBeenCalledOnce();
+    expect(pages.every(page => page.load.mock.calls.length === 0)).toBe(true);
+  });
+
+  it('finishes zero only after the final active check for an image-only comic', async () => {
+    let active = true;
+    const pages = [imageSection()];
+    const yieldTask = vi.fn(async () => { active = false; });
+    expect(await measure({ sections:pages, rendition:{ layout:'pre-paginated' } }, { yieldTask, isActive:() => active })).toBeNull();
+    expect(yieldTask).toHaveBeenCalledOnce(); expect(pages[0].load).not.toHaveBeenCalled();
   });
 
   it('rejects partial results for an unreadable or over-budget book', async () => {

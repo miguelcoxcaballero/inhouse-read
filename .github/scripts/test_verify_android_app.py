@@ -39,6 +39,58 @@ def ui(top=0, reading=True):
     return ElementTree.fromstring(f'<hierarchy><node class="android.webkit.WebView" bounds="[0,{top}][1080,2300]">{reader}<node text="Intent reading"/></node></hierarchy>')
 
 
+def shelf_ui(*, imported=True, import_enabled=True, region=True, region_enabled=True,
+             focusable=True, empty=True, legacy_view=False):
+    # Expected native projection of the JS role=region/tabindex=0 cabinet:
+    # named/focusable view attributes, not DOM classes or literal ARIA roles.
+    add = ('<node class="android.widget.Button" content-desc="Añadir libro" '
+           f'enabled="{str(import_enabled).lower()}" clickable="true"/>') if imported else ''
+    cabinet = ('<node class="android.view.View" content-desc="Estantería" '
+               f'enabled="{str(region_enabled).lower()}" focusable="{str(focusable).lower()}"/>') if region else ''
+    state = '<node class="android.view.View" text="Sin libros"/>' if empty else ''
+    old = '<node class="android.widget.Button" text="Vista de canto" enabled="true"/>' if legacy_view else ''
+    return ElementTree.fromstring(f'<hierarchy><node class="android.webkit.WebView">'
+                                 f'<node text="Inhouse Read"/>{add}{cabinet}{state}{old}</node></hierarchy>')
+
+
+class AndroidInteractiveShelfTests(unittest.TestCase):
+    def test_current_keyboard_and_swipe_region_with_import_and_empty_state_is_ready(self):
+        self.assertTrue(verifier.interactive_bookshelf_visible(shelf_ui()))
+
+    def test_static_header_alone_is_not_an_interactive_shelf(self):
+        root = ElementTree.fromstring('<hierarchy><node text="Inhouse Read"/></hierarchy>')
+        self.assertFalse(verifier.interactive_bookshelf_visible(root))
+
+    def test_named_focusable_region_requires_the_import_button(self):
+        self.assertFalse(verifier.interactive_bookshelf_visible(shelf_ui(imported=False)))
+
+    def test_disabled_import_button_is_not_ready(self):
+        self.assertFalse(verifier.interactive_bookshelf_visible(shelf_ui(import_enabled=False)))
+
+    def test_old_view_buttons_do_not_replace_the_current_runtime_region(self):
+        self.assertFalse(verifier.interactive_bookshelf_visible(shelf_ui(region=False, legacy_view=True)))
+
+    def test_region_must_be_enabled_and_focusable(self):
+        for options in ({'focusable':False}, {'region_enabled':False}):
+            with self.subTest(options=options):
+                self.assertFalse(verifier.interactive_bookshelf_visible(shelf_ui(**options)))
+
+    def test_region_name_is_exact_and_not_a_header_or_description_text_fallback(self):
+        for label in ('Estantería de Inhouse Read', 'Vista isométrica', 'Biblioteca'):
+            root = shelf_ui()
+            next(node for node in root.iter('node') if node.get('focusable') == 'true').set('content-desc', label)
+            with self.subTest(label=label):
+                self.assertFalse(verifier.interactive_bookshelf_visible(root))
+
+    def test_region_does_not_exempt_the_missing_js_empty_state(self):
+        self.assertFalse(verifier.interactive_bookshelf_visible(shelf_ui(empty=False)))
+
+    def test_text_named_import_is_not_a_native_button(self):
+        root = shelf_ui()
+        next(node for node in root.iter('node') if node.get('content-desc') == 'Añadir libro').set('class', 'android.view.View')
+        self.assertFalse(verifier.interactive_bookshelf_visible(root))
+
+
 class AndroidCaptureTests(unittest.TestCase):
     def capture_with_failures(self, failures):
         with tempfile.TemporaryDirectory() as directory:

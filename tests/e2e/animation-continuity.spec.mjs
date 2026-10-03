@@ -1,3 +1,4 @@
+import { switchShelfView } from './helpers/shelf-view-gesture.mjs'
 import { test, expect } from '@playwright/test'
 import { spinePointerPosition } from './helpers/shelf-pointer.mjs'
 import { readFile } from 'node:fs/promises'
@@ -222,7 +223,7 @@ test('varias portadas reales salen y regresan sin mostrar portadas provisionales
   // jacket during a selection is an avoidable duplicate decode, as on a slow phone.
   await page.waitForTimeout(1150)
   // The bounded camera clock preserves each pose even under software GL.
-  await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
+  await switchShelfView(page, 'isometric')
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1', { timeout:30_000 })
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
   await observePrintedCoverFrames(page)
@@ -252,7 +253,7 @@ test('varias portadas reales salen y regresan sin mostrar portadas provisionales
   }
 
   // Cancel while the book is still leaving its slot, then select another.
-  await page.getByRole('button', { name:'Vista de canto', exact:true }).click()
+  await switchShelfView(page, 'spine')
   // Software WebGL must render the complete reverse camera path, too.
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '0', { timeout:30_000 })
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
@@ -339,7 +340,7 @@ test('el libro vuelve entre sus vecinos con profundidad real en vistas frontal e
 
   for (const mode of ['frontal', 'isometric']) {
     if (mode === 'isometric') {
-      await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
+      await switchShelfView(page, 'isometric')
       await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1', { timeout:30_000 })
       await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
     }

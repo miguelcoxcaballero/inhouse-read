@@ -100,9 +100,10 @@ import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCov
 import { bookColorOptions, spineColorStyle, spineFinish, surfaceFinish, METAL_COLORS } from './book-colors.js';
 import { normalizeBookAuthor } from './book-title.js';
 import { bookView, fitCoverImage, getBookRenderer, planReadingBookPose } from './book-model.js';
-import { analyzeCoverRelief, normalizeCoverRelief, COLOR_RELIEF_IDS } from './cover-relief.js';
+import { analyzeCoverRelief, normalizeCoverRelief, coverReliefLayers, COLOR_RELIEF_IDS } from './cover-relief.js';
 import { EDITOR_TABS, coverEditorPose, coverTiltFrames, editorTabId, nextEditorTab } from './cover-editor.js';
 import { createShelfZoom } from './shelf-zoom.js';
+import { createShelfViewGesture } from './shelf-view-gesture.js';
 import { markTiming, resetTimeline } from './perf-marks.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
 import { bookReturnSignature, createBookReturnCache } from './bookshelf-return.js';
@@ -382,7 +383,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   };
   const returnViews = createBookReturnCache();
 
-  const root = el('div', { class: 'ihr-bookshelf', 'data-ihr-bookshelf': '' });
+  const root = el('div', { class: 'ihr-bookshelf', 'data-ihr-bookshelf': '', role:'region', tabindex:'0',
+    'aria-label':'Estantería', 'aria-keyshortcuts':'ArrowLeft ArrowRight',
+    'aria-description':'Desliza a la izquierda para ver la estantería de lado y a la derecha para volver a los lomos. También puedes usar las flechas al enfocar la estantería.' });
   const scroller = el('div', { class: 'ihr-bookshelf__scroll' });
   const hasBookTrash = typeof options.onBookRemove === 'function';
   const hasTrash = !opts.sections || hasBookTrash;
@@ -405,6 +408,19 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
   root.classList.toggle('has-trash', hasTrash);
   root.append(scroller);
+  const shelfViewGesture = createShelfViewGesture({ root, scroller,
+    getMode:() => state.viewMode, setMode:setViewMode,
+    isEnabled:() => !state.destroyed && !state.busy && !state.session && !state.returnMotion &&
+      !state.trashRemoval && !state.arranging && (state.shelfScene?.getInspectionZoom?.() || 1) <= 1.001,
+    onGestureStart:event => {
+      if (state.dragSession) {
+        state.dragSession.cancelled = true;
+        finishSpineDrag(event, state.dragSession.node, true);
+      }
+      state.pressedBookId = null;
+      for (const node of scroller.querySelectorAll('.is-pressed')) node.classList.remove('is-pressed');
+    }
+  });
   const shelfZoom = createShelfZoom({root,scroller,getScene:()=>state.shelfScene,
     isEnabled:()=>Boolean(state.shelfScene && state.viewMode === SHELF_VIEW_MODES.ISOMETRIC &&
       !state.busy && !state.session && !state.returnMotion && !state.trashRemoval),
@@ -1667,32 +1683,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     try { localStorage.setItem(SHELF_VIEW_STORAGE_KEY, mode); } catch { /* Preferencias no bloquean la biblioteca. */ }
     if (state.shelfScene) {
       root.dataset.viewMode = mode;
-      for (const button of root.querySelectorAll('.ihr-view-switch__button')) {
-        button.setAttribute('aria-pressed', String(button.dataset.viewMode === mode));
-      }
       state.shelfScene.setMode(mode); shelfZoom.sync();
     } else render();
-    root.querySelector(`[data-view-mode="${mode}"]`)?.focus({ preventScroll:true });
-  }
-
-  function buildViewControls() {
-    const controls = el('div', { class:'ihr-view-switch', role:'group', 'aria-label':'Vista de la estantería' });
-    const modes = [
-      { id:SHELF_VIEW_MODES.SPINE, label:'Lomos', title:'Vista de canto', icon:['M5 5v14','M10 3v18','M15 6v15','M20 4v16'] },
-      { id:SHELF_VIEW_MODES.ISOMETRIC, label:'Isométrica', title:'Vista isométrica, libros de lado', icon:['M12 3 21 8v8l-9 5-9-5V8l9-5Z','m3.5 8.5 8.5 5 8.5-5','M12 13.5V21','m7.5 5.5 9 5'] }
-    ];
-    for (const mode of modes) {
-      controls.append(el('button', {
-        type:'button',
-        class:'ihr-view-switch__button',
-        'data-view-mode':mode.id,
-        'aria-label':mode.title,
-        'aria-pressed':state.viewMode === mode.id ? 'true' : 'false',
-        title:mode.title,
-        onClick:() => setViewMode(mode.id)
-      }, [svgIcon(mode.icon, { className:'ihr-view-switch__icon' }), el('span', { text:mode.label })]));
-    }
-    return controls;
   }
 
   function consumeRenderRequests() {
@@ -1795,8 +1787,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       el('h1', { text: 'Biblioteca' }),
       el('div', { class:'ihr-library-heading__tools' }, [
         // An empty shelf already says so below; "0 libros" would only repeat it.
-        el('p', { 'aria-live': 'polite', text: state.books.length ? `${state.books.length} ${state.books.length === 1 ? 'libro' : 'libros'}` : '' }),
-        buildViewControls()
+        el('p', { 'aria-live': 'polite', text: state.books.length ? `${state.books.length} ${state.books.length === 1 ? 'libro' : 'libros'}` : '' })
       ])
     ]);
     fragment.append(heading);
@@ -2340,7 +2331,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     let editorTab = 'spine';
     const coverPose = { x: 0, y: 0, scale: 1, angle: 0, pitch: 0 };
     const poseForTab = tab => tab === 'cover' ? coverPose : editorPose;
-    const relief = { status: 'idle', proposals: [], controller: null, tiltTimer: 0, tiltToken: 0, tiltCleanup: null, sliderFrame: 0 };
+    const relief = { status: 'idle', proposals: [], activeColor: null, controller: null, tiltTimer: 0, tiltToken: 0, tiltCleanup: null, sliderFrame: 0 };
     function fitCoverPose() {
       // La hoja de la pestaña activa ya está maquetada: su borde superior
       // marca el límite de la franja libre. Sin medida usable, un respaldo.
@@ -3012,21 +3003,23 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     ]);
 
     // ---- Pestaña 'Portada' · Relieve ----
-    const reliefName = `${editorUid}-relief`;
     const reliefStatus = el('p', { class:'ihr-relief__status', role:'status', 'aria-live':'polite' });
     const reliefRetry = el('button', {
       type:'button', class:'ihr-spine-editor__auto ihr-relief__retry', text:'Reintentar', hidden:true,
       onClick:() => { relief.status = 'idle'; loadReliefProposals(); }
     });
     const reliefGrid = el('div', { class:'ihr-relief__cards' });
-    const reliefNoneInput = el('input', {
-      type:'radio', name:reliefName, value:'', class:'ihr-relief__input',
-      onChange:() => chooseRelief(null)
-    });
-    const reliefNone = el('label', { class:'ihr-relief-none', hidden:true }, [
-      reliefNoneInput, el('span', { class:'ihr-relief-none__mark', 'aria-hidden':'true' }), el('span', { text:'Sin relieve' })
+    const reliefNone = el('button', { type:'button', class:'ihr-relief-none', hidden:true,
+      'aria-pressed':'true', onClick:() => chooseRelief(null)
+    }, [
+      el('span', { class:'ihr-relief-none__mark', 'aria-hidden':'true' }), el('span', { text:'Sin relieve' })
     ]);
-    const reliefGroup = el('div', { class:'ihr-relief__group', role:'radiogroup', 'aria-label':'Propuestas de relieve' }, [reliefGrid, reliefNone]);
+    const reliefGroup = el('div', { class:'ihr-relief__group', role:'group', 'aria-label':'Propuestas de relieve' }, [reliefGrid, reliefNone]);
+    const reliefColorSelect = el('select', { class:'ihr-relief__color-select', hidden:true,
+      'aria-label':'Color del relieve a ajustar',
+      onChange:event => { relief.activeColor = event.currentTarget.value; syncReliefSelection(); }
+    });
+    const reliefIntensityLabel = editorLabel('Intensidad');
     const reliefStrengthOutput = el('output', { class:'ihr-spine-editor__size' });
     const reliefStrength = el('input', {
       type:'range', min:'10', max:'100', step:'5', class:'ihr-spine-editor__slider', 'aria-label':'Intensidad del relieve',
@@ -3034,9 +3027,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         const percent = Number(event.currentTarget.value);
         reliefStrengthOutput.textContent = `${percent} %`;
         syncRange(event.currentTarget);
-        const current = normalizeCoverRelief(book.coverRelief);
-        if (!current) return;
-        updateCustomization({ coverRelief:{ ...current, strength:percent / 100 } });
+        const layers = coverReliefLayers(book.coverRelief);
+        if (!layers.length) return;
+        const next = layers.map(layer => layer.color === relief.activeColor ? { ...layer, strength:percent / 100 } : layer);
+        updateCustomization({ coverRelief:packRelief(next) });
         // Un empujón a la vista por fotograma como mucho al arrastrar.
         if (!relief.sliderFrame) relief.sliderFrame = requestAnimationFrame(() => {
           relief.sliderFrame = 0;
@@ -3044,8 +3038,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         });
       }
     });
-    const reliefStrengthRow = el('label', { class:'ihr-spine-editor__row ihr-relief__strength' }, [
-      editorLabel('Intensidad'), el('span', { class:'ihr-spine-editor__range' }, [reliefStrength, reliefStrengthOutput])
+    const reliefStrengthRow = el('div', { class:'ihr-spine-editor__row ihr-relief__strength' }, [
+      reliefIntensityLabel, reliefColorSelect, el('span', { class:'ihr-spine-editor__range' }, [reliefStrength, reliefStrengthOutput])
     ]);
     const coverPanel = el('div', {
       class:'ihr-spine-editor__cover', id:`${editorUid}-panel-cover`, role:'tabpanel',
@@ -3082,39 +3076,53 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       updateCustomization({ coverRelief:next });
       pushReliefToView(next);
     }
+    function packRelief(layers) {
+      return layers.length > 1 ? normalizeCoverRelief({ layers }) : layers[0] || null;
+    }
     function syncReliefSelection() {
       const current = normalizeCoverRelief(book.coverRelief);
+      const layers = coverReliefLayers(current);
+      if (!layers.some(layer => layer.color === relief.activeColor)) relief.activeColor = layers.at(-1)?.color || null;
+      const active = layers.find(layer => layer.color === relief.activeColor);
       for (const input of reliefGrid.querySelectorAll('input')) {
         const proposal = relief.proposals.find(item => item.id === input.value);
-        const on = Boolean(current?.color && proposal?.color === current.color && proposal.tolerance === current.tolerance);
+        const on = layers.some(layer => proposal?.color === layer.color && proposal.tolerance === layer.tolerance);
         input.checked = on;
         input.closest('.ihr-relief-card').classList.toggle('is-selected', on);
       }
-      reliefNoneInput.checked = !current;
+      reliefNone.setAttribute('aria-pressed', String(!current));
       reliefNone.classList.toggle('is-selected', !current);
       reliefNone.hidden = !(relief.status === 'ready' || current);
-      reliefStrength.disabled = !current;
-      const percent = Math.round((current?.strength ?? .7) * 100);
+      reliefColorSelect.hidden = layers.length < 2;
+      reliefIntensityLabel.hidden = layers.length > 1;
+      reliefColorSelect.replaceChildren(...layers.map(layer => el('option', { value:layer.color,
+        text:relief.proposals.find(proposal => proposal.color === layer.color)?.label || layer.color
+      })));
+      reliefColorSelect.value = relief.activeColor || '';
+      reliefStrength.disabled = !active;
+      const percent = Math.round((active?.strength ?? .7) * 100);
       reliefStrength.value = String(Math.max(10, percent));
-      reliefStrengthOutput.textContent = current ? `${percent} %` : '—';
+      reliefStrengthOutput.textContent = active ? `${percent} %` : '—';
+      reliefStrength.setAttribute('aria-description', active ? `Intensidad de ${active.color}` : 'Elige uno o varios colores');
       syncRange(reliefStrength);
       reliefStrengthRow.hidden = !(relief.status === 'ready' || current);
-      if (relief.status === 'ready') reliefStatus.textContent = current && !current.color
+      if (relief.status === 'ready') reliefStatus.textContent = current && !layers.length
         ? 'Elige un color para actualizar el relieve.' : '';
     }
-    function chooseRelief(proposal) {
-      const next = proposal ? normalizeCoverRelief(proposal) : null;
-      if (proposal && !next) return;
+    function chooseRelief(proposal, checked = true) {
+      const choice = proposal ? normalizeCoverRelief(proposal) : null;
+      if (proposal && !choice) return;
+      const layers = coverReliefLayers(book.coverRelief).filter(layer => layer.color !== choice?.color);
+      if (choice && checked) { layers.push(choice); relief.activeColor = choice.color; }
+      const next = proposal ? packRelief(layers) : null;
       applyRelief(next);
       syncReliefSelection();
       if (next) scheduleCoverTilt(); else cancelCoverTilt();
     }
     function reliefCard(proposal) {
       const input = el('input', {
-        type:'radio', name:reliefName, value:proposal.id, class:'ihr-relief__input',
-        onChange:() => chooseRelief(proposal),
-        // Volver a tocar la propuesta elegida repite el balanceo.
-        onClick:() => { if (normalizeCoverRelief(book.coverRelief)?.color === proposal.color) scheduleCoverTilt(); }
+        type:'checkbox', value:proposal.id, class:'ihr-relief__input',
+        onChange:event => chooseRelief(proposal, event.currentTarget.checked)
       });
       return el('label', { class:'ihr-relief-card', 'data-relief-color':proposal.color, title:`${proposal.label} · ${proposal.color}` }, [
         input,
@@ -3138,7 +3146,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         : status === 'error' ? 'No se pudo analizar la portada'
         : status === 'empty' ? (coverUrl ? 'Sin zonas detectadas'
           : 'Sin portada')
-        : status === 'ready' && normalizeCoverRelief(book.coverRelief) && !normalizeCoverRelief(book.coverRelief)?.color
+        : status === 'ready' && normalizeCoverRelief(book.coverRelief) && !coverReliefLayers(book.coverRelief).length
           ? 'Elige un color para actualizar el relieve.' : '';
       reliefStatus.classList.toggle('is-busy', status === 'loading');
       // Reserve the cards before the turn; starting analysis must not grow
@@ -3844,7 +3852,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       state.destroyed = true;
       returnViews.clear();
       clearOpeningClick?.();
-      plantCatalog.destroy(); shelfZoom.destroy();
+      plantCatalog.destroy(); shelfViewGesture.destroy(); shelfZoom.destroy();
       cancelTrashRemoval();
       if (state.dragSession) finishSpineDrag({ pointerId:state.dragSession.pointerId }, state.dragSession.node, true);
       state.pendingSelection?.cancel();

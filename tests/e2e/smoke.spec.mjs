@@ -1,3 +1,4 @@
+import { switchShelfView } from './helpers/shelf-view-gesture.mjs'
 import { test, expect } from '@playwright/test'
 import { spinePointerPosition } from './helpers/shelf-pointer.mjs'
 import path from 'node:path'
@@ -135,7 +136,7 @@ test('muestra la estantería 3D vacía con tres baldas y plantas que se pueden m
   // The frontal camera culls plants outside its viewport. The full cabinet
   // must still show all three meshes when the camera includes every shelf.
   await page.emulateMedia({ reducedMotion:'reduce' })
-  await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
+  await switchShelfView(page, 'isometric')
   await expect(canvas).toHaveAttribute('data-view-progress', '1',{timeout:30_000})
   await expect(canvas).toHaveAttribute('data-active-plants', '3')
   await expect.poll(() => canvas.evaluate(node => {
@@ -448,8 +449,6 @@ test('aleja y gira toda la estantería en 3D, permite abrir libros y recuerda la
   const shelf = page.locator('[data-ihr-bookshelf]')
   await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:20_000})
   const canvas = page.locator('.ihr-bookshelf-scene')
-  const isometric = page.getByRole('button', { name:'Vista isométrica, libros de lado' })
-  const frontal = page.getByRole('button', { name:'Vista de canto', exact:true })
   const bookOrder = () => page.locator('.ihr-spine').evaluateAll(nodes => nodes.map(node => node.dataset.bookId))
   const initialOrder = await bookOrder()
   const initialRows = await page.locator('.ihr-shelf').count()
@@ -466,9 +465,9 @@ test('aleja y gira toda la estantería en 3D, permite abrir libros y recuerda la
     })
   })
 
-  await isometric.click()
+  await switchShelfView(page, 'isometric')
   await expect(shelf).toHaveAttribute('data-view-mode', 'isometric')
-  await expect(isometric).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.ihr-view-switch')).toHaveCount(0)
   await expect.poll(() => page.evaluate(() => window.__shelfViewFrames.some(value => value > 0 && value < 1))).toBe(true)
   await expect(canvas).toHaveAttribute('data-view-progress', '1',{timeout:30_000})
   await expect(canvas).toHaveAttribute('data-animating','false')
@@ -488,9 +487,9 @@ test('aleja y gira toda la estantería en 3D, permite abrir libros y recuerda la
 
   // Interrupted transitions finish in the last requested view without rebuilding the layout.
   await page.evaluate(() => { window.__shelfViewFrames = [] })
-  await frontal.click()
+  await switchShelfView(page, 'spine')
   await expect.poll(() => page.evaluate(() => window.__shelfViewFrames.some(value => value > 0 && value < 1))).toBe(true)
-  await isometric.click()
+  await switchShelfView(page, 'isometric')
   await expect(canvas).toHaveAttribute('data-view-progress', '1',{timeout:30_000})
   await expect(canvas).toHaveAttribute('data-animating', 'false')
   await page.evaluate(() => window.__shelfViewObserver.disconnect())
@@ -553,7 +552,7 @@ test('la vista isométrica muestra los 80 libros en 3D dentro de la pantalla sin
   await expect(page.locator('.ihr-spine')).toHaveCount(80)
   const canvas = page.locator('.ihr-bookshelf-scene')
   const scroller = page.locator('.ihr-bookshelf__scroll')
-  await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
+  await switchShelfView(page, 'isometric')
   await expect(canvas).toHaveAttribute('data-view-progress', '1',{timeout:30_000})
   const assertOverview = async () => {
     await expect(canvas).toHaveAttribute('data-animating','false')

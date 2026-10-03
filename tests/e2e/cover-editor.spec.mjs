@@ -49,13 +49,13 @@ async function openShelfEditor(page, { reduced = false, theme = '', colors = ['#
 
 const canvasAngle = page => page.locator('.ihr-flyout__book canvas').evaluate(canvas => Number(canvas.dataset.angle))
 const sheet = page => page.locator('.ihr-spine-editor')
-const cards = page => page.getByRole('radiogroup', { name: 'Propuestas de relieve' }).getByRole('radio')
+const cards = page => page.getByRole('group', { name: 'Propuestas de relieve' }).getByRole('checkbox')
 
 async function enterCover(page, count = 3) {
   await page.getByRole('tab', { name: 'Portada' }).click()
   await expect.poll(() => canvasAngle(page), { timeout: 15_000 }).toBe(0)
-  // Tres propuestas más 'Sin relieve'.
-  await expect(cards(page)).toHaveCount(count + 1, { timeout: 60_000 })
+  await expect(cards(page)).toHaveCount(count, { timeout: 60_000 })
+  await expect(page.getByRole('button', { name:'Sin relieve', exact:true })).toBeVisible()
 }
 
 test('pestañas Lomo y Portada: teclado, giro del libro y título', async ({ page }) => {
@@ -114,7 +114,7 @@ test('relieve: tres propuestas, selección con balanceo, persistencia y Sin reli
   const errors = await openShelfEditor(page)
   await enterCover(page)
   if (evidence) await page.screenshot({ path: `${evidence}/mobile-light-propuestas.png` })
-  const group = page.getByRole('radiogroup', { name: 'Propuestas de relieve' })
+  const group = page.getByRole('group', { name: 'Propuestas de relieve' })
   await expect(group.locator('.ihr-relief-card')).toHaveCount(3)
   await expect(group.locator('.ihr-relief-card img')).toHaveCount(0)
   const labels = await group.locator('.ihr-relief-card__label').allTextContents()
@@ -123,7 +123,8 @@ test('relieve: tres propuestas, selección con balanceo, persistencia y Sin reli
   expect(new Set(sourceColors).size).toBe(3)
   expect([...sourceColors].sort()).toEqual(['#2350b5','#d4a93c','#fffaf0'].sort())
   const selectedColor=sourceColors[1]
-  await expect(cards(page).last()).toBeChecked()
+  await expect(page.getByRole('button', { name:'Sin relieve', exact:true })).toHaveAttribute('aria-pressed','true')
+  for (const card of await cards(page).all()) await expect(card).not.toBeChecked()
   await expect(page.getByLabel('Intensidad del relieve')).toBeDisabled()
 
   // Record every displayed pose inside the browser. Polling through RPC or
@@ -156,7 +157,7 @@ test('relieve: tres propuestas, selección con balanceo, persistencia y Sin reli
   await page.locator('.ihr-spine').first().click()
   await page.getByRole('button', { name: 'Editar', exact: true }).click()
   await page.getByRole('tab', { name: 'Portada' }).click()
-  await expect(cards(page)).toHaveCount(4, { timeout: 60_000 })
+  await expect(cards(page)).toHaveCount(3, { timeout: 60_000 })
   await expect(cards(page).nth(1)).toBeChecked()
   await expect(group.locator('.ihr-relief-card').nth(1)).toHaveAttribute('data-relief-color',selectedColor)
   await expect(page.getByLabel('Intensidad del relieve')).toBeEnabled()
@@ -172,7 +173,8 @@ test('relieve: tres propuestas, selección con balanceo, persistencia y Sin reli
     db.close();return records[0].coverRelief
   })).toMatchObject({color:selectedColor,strength:.3})
   await page.getByText('Sin relieve', { exact: true }).click()
-  await expect(cards(page).last()).toBeChecked()
+  await expect(page.getByRole('button', { name:'Sin relieve', exact:true })).toHaveAttribute('aria-pressed','true')
+  for (const card of await cards(page).all()) await expect(card).not.toBeChecked()
   await expect(page.getByLabel('Intensidad del relieve')).toBeDisabled()
   await page.getByRole('button', { name: 'Listo', exact: true }).click()
   await page.getByRole('button', { name: 'Cerrar', exact: true }).click()
@@ -180,8 +182,9 @@ test('relieve: tres propuestas, selección con balanceo, persistencia y Sin reli
   await page.locator('.ihr-spine').first().click()
   await page.getByRole('button', { name: 'Editar', exact: true }).click()
   await page.getByRole('tab', { name: 'Portada' }).click()
-  await expect(cards(page)).toHaveCount(4, { timeout: 60_000 })
-  await expect(cards(page).last()).toBeChecked()
+  await expect(cards(page)).toHaveCount(3, { timeout: 60_000 })
+  await expect(page.getByRole('button', { name:'Sin relieve', exact:true })).toHaveAttribute('aria-pressed','true')
+  for (const card of await cards(page).all()) await expect(card).not.toBeChecked()
   expect(errors).toEqual([])
 })
 
@@ -190,9 +193,9 @@ for(const colors of [['#2350b5'],['#2350b5','#fffaf0']]) test(`relieve: muestra 
   await page.setViewportSize({width:390,height:844})
   const errors=await openShelfEditor(page,{colors,reduced:true})
   await page.getByRole('tab',{name:'Portada'}).click()
-  const group=page.getByRole('radiogroup',{name:'Propuestas de relieve'})
+  const group=page.getByRole('group',{name:'Propuestas de relieve'})
   await expect(group.locator('.ihr-relief-card')).toHaveCount(colors.length,{timeout:60_000})
-  await expect(cards(page)).toHaveCount(colors.length+1)
+  await expect(cards(page)).toHaveCount(colors.length)
   const found=await group.locator('.ihr-relief-card').evaluateAll(nodes=>nodes.map(node=>node.dataset.reliefColor))
   expect(found.sort()).toEqual([...colors].sort())
   expect(errors).toEqual([])
@@ -229,7 +232,7 @@ test('un gesto del usuario corta el balanceo', async ({ page }, testInfo) => {
       return record
     }
   })
-  await page.getByRole('radiogroup', { name: 'Propuestas de relieve' }).locator('.ihr-relief-card').first().click()
+  await page.getByRole('group', { name: 'Propuestas de relieve' }).locator('.ihr-relief-card').first().click()
   await page.mouse.move(heading.x + heading.width / 2, heading.y + heading.height / 2)
   // Observe directly on the rendering frame, then deliver a real pointerdown
   // without another locator/actionability round trip. The capture above must
@@ -272,7 +275,7 @@ test('con movimiento reducido el libro gira sin animar y no se balancea', async 
   await page.setViewportSize({ width: 390, height: 844 })
   const errors = await openShelfEditor(page, { reduced: true })
   await enterCover(page)
-  await page.getByRole('radiogroup', { name: 'Propuestas de relieve' }).locator('.ihr-relief-card').first().click()
+  await page.getByRole('group', { name: 'Propuestas de relieve' }).locator('.ihr-relief-card').first().click()
   const samples = []
   for (let i = 0; i < 30; i++) { samples.push(await canvasAngle(page)); await page.waitForTimeout(60) }
   expect(new Set(samples)).toEqual(new Set([0]))
@@ -289,7 +292,7 @@ test('cerrar el editor mientras busca relieve no deja nada colgado', async ({ pa
   await page.getByRole('button', { name: 'Editar', exact: true }).click()
   await expect(page.getByRole('tab', { name: 'Lomo' })).toHaveAttribute('aria-selected', 'true')
   await page.getByRole('tab', { name: 'Portada' }).click()
-  await expect(cards(page)).toHaveCount(4, { timeout: 60_000 })
+  await expect(cards(page)).toHaveCount(3, { timeout: 60_000 })
   expect(errors).toEqual([])
 })
 
@@ -301,8 +304,12 @@ for (const [name, viewport] of [['movil', { width: 390, height: 844 }], ['escrit
       const colors=['#000000','#ffffff','#ff0000','#00ff00','#0000ff','#ffff00','#00ffff','#ff00ff','#ff8000','#646464']
       const errors = await openShelfEditor(page, { theme, colors })
       await enterCover(page, 10)
-      const group = page.getByRole('radiogroup', { name: 'Propuestas de relieve' })
+      const group = page.getByRole('group', { name: 'Propuestas de relieve' })
       await group.locator('.ihr-relief-card').first().click()
+      await group.locator('.ihr-relief-card').nth(1).click()
+      await expect(cards(page).nth(0)).toBeChecked()
+      await expect(cards(page).nth(1)).toBeChecked()
+      await expect(page.getByLabel('Color del relieve a ajustar')).toBeVisible()
       await page.waitForTimeout(250)
       if (evidence) await page.screenshot({ path: `${evidence}/${name}-${theme}-portada.png` })
       // Sin desbordes horizontales y todo dentro de la hoja.
@@ -331,3 +338,49 @@ for (const [name, viewport] of [['movil', { width: 390, height: 844 }], ['escrit
     })
   }
 }
+
+test('varios colores conservan su intensidad independiente al guardar, reabrir y quitar sólo uno', async ({ page }) => {
+  test.setTimeout(280_000)
+  await page.setViewportSize({ width:390, height:844 })
+  const errors = await openShelfEditor(page, { reduced:true })
+  await enterCover(page)
+  const group = page.getByRole('group', { name:'Propuestas de relieve' })
+  const options = group.locator('.ihr-relief-card')
+  const colors = await options.evaluateAll(nodes => nodes.map(node => node.dataset.reliefColor))
+  const saved = () => page.evaluate(async () => {
+    const db = await new Promise((resolve,reject) => { const request=indexedDB.open('inhouse-read'); request.onsuccess=()=>resolve(request.result); request.onerror=()=>reject(request.error) })
+    try { return await new Promise((resolve,reject) => { const request=db.transaction('books').objectStore('books').getAll(); request.onsuccess=()=>resolve(request.result[0]?.coverRelief); request.onerror=()=>reject(request.error) }) }
+    finally { db.close() }
+  })
+  await options.nth(0).click()
+  await page.getByLabel('Intensidad del relieve').fill('35')
+  await expect.poll(saved).toMatchObject({ color:colors[0], strength:.35 })
+  await options.nth(1).click()
+  await expect(cards(page).nth(0)).toBeChecked()
+  await expect(cards(page).nth(1)).toBeChecked()
+  await expect(page.getByLabel('Color del relieve a ajustar')).toHaveValue(colors[1])
+  await page.getByLabel('Intensidad del relieve').fill('85')
+  await expect.poll(saved).toMatchObject({ layers:[{ color:colors[0], strength:.35 }, { color:colors[1], strength:.85 }] })
+  await page.getByLabel('Color del relieve a ajustar').selectOption(colors[0])
+  await expect(page.getByLabel('Intensidad del relieve')).toHaveValue('35')
+  await page.getByLabel('Intensidad del relieve').fill('50')
+  await expect.poll(saved).toMatchObject({ layers:[{ color:colors[0], strength:.5 }, { color:colors[1], strength:.85 }] })
+  await page.getByRole('button', { name:'Listo', exact:true }).click()
+  await page.getByRole('button', { name:'Cerrar', exact:true }).click()
+  await page.reload()
+  await page.locator('.ihr-spine').first().click()
+  await page.getByRole('button', { name:'Editar', exact:true }).click()
+  await enterCover(page)
+  await expect(cards(page).nth(0)).toBeChecked()
+  await expect(cards(page).nth(1)).toBeChecked()
+  await options.nth(0).click()
+  await expect(cards(page).nth(0)).not.toBeChecked()
+  await expect(cards(page).nth(1)).toBeChecked()
+  await expect(page.getByLabel('Color del relieve a ajustar')).toBeHidden()
+  await expect(page.getByLabel('Intensidad del relieve')).toHaveValue('85')
+  await expect.poll(saved).toMatchObject({ color:colors[1], strength:.85 })
+  await page.getByRole('button', { name:'Sin relieve', exact:true }).click()
+  await expect.poll(saved).toBeNull()
+  for (const card of await cards(page).all()) await expect(card).not.toBeChecked()
+  expect(errors).toEqual([])
+})

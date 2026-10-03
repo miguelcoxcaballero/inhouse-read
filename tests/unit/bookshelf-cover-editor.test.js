@@ -64,6 +64,8 @@ const selected = (index, strength = PROPOSALS[index].strength) => {
   const { id, color, tolerance } = PROPOSALS[index]
   return { id, color, tolerance, strength }
 }
+const selectedLayers = (...layers) => ({ layers })
+const adjustColor = editor => editor.querySelector('select[aria-label="Color del relieve a ajustar"]')
 
 let container, shelf
 const flush = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms))
@@ -241,8 +243,9 @@ describe('propuestas de relieve', () => {
     tab('Portada').click()
     await vi.waitFor(() => expect(editor.querySelectorAll('.ihr-relief-card:not(.is-skeleton)')).toHaveLength(count))
     expect(editor.querySelectorAll('.ihr-relief-card.is-skeleton')).toHaveLength(0)
-    expect(editor.querySelectorAll('[role="radiogroup"] input')).toHaveLength(count + 1)
-    expect(editor.querySelector('.ihr-relief-none input').checked).toBe(true)
+    expect(editor.querySelectorAll('[role="group"][aria-label="Propuestas de relieve"] input[type="checkbox"]')).toHaveLength(count)
+    expect(editor.querySelector('.ihr-relief-none').getAttribute('aria-pressed')).toBe('true')
+    expect(editor.querySelector('input[type="radio"]')).toBeNull()
   })
   it('rechaza colores inválidos, ids repetidos y el mismo color antes de limitar las tres propuestas', async () => {
     vi.mocked(analyzeCoverRelief).mockResolvedValue({proposals:[
@@ -331,23 +334,27 @@ describe('propuestas de relieve', () => {
     expect(status.getAttribute('aria-live')).toBe('polite')
     expect(status.textContent).toBe('Analizando…')
     expect(editor.querySelectorAll('.ihr-relief-card.is-skeleton')).toHaveLength(10)
-    expect(editor.querySelectorAll('input[type="radio"]')).toHaveLength(1)
+    expect(editor.querySelectorAll('[role="group"][aria-label="Propuestas de relieve"] input')).toHaveLength(0)
+    expect(editor.querySelector('.ihr-relief-none').hidden).toBe(true)
 
     finish({ proposals: PROPOSALS })
     await vi.waitFor(() => expect(editor.querySelectorAll('.ihr-relief-card:not(.is-skeleton)')).toHaveLength(3))
-    const group = editor.querySelector('[role="radiogroup"]')
+    const group = editor.querySelector('[role="group"][aria-label="Propuestas de relieve"]')
     expect(group.getAttribute('aria-label')).toBeTruthy()
-    const radios = [...group.querySelectorAll('input[type="radio"]')]
-    expect(radios.map(radio => radio.value)).toEqual(['color-1', 'color-2', 'color-3', ''])
-    expect(new Set(radios.map(radio => radio.name)).size).toBe(1)
+    const checkboxes = [...group.querySelectorAll('input[type="checkbox"]')]
+    expect(checkboxes.map(input => input.value)).toEqual(['color-1', 'color-2', 'color-3'])
+    expect(group.querySelector('input[type="radio"]')).toBeNull()
     const first = editor.querySelector('.ihr-relief-card')
     expect(first.textContent).toContain('Color #d4a93c')
     expect(first.textContent).toContain('Zonas amarillas de la portada.')
     expect([...group.querySelectorAll('.ihr-relief-card')].map(card => card.dataset.reliefColor)).toEqual(PROPOSALS.map(item => item.color))
     expect(group.querySelectorAll('.ihr-relief-card__swatch')).toHaveLength(3)
     expect(first.querySelector('img').getAttribute('src')).toBe('data:image/png;base64,AAAA')
-    expect(radios.at(-1).checked).toBe(true)
+    expect(checkboxes.every(input => !input.checked)).toBe(true)
     expect(editor.querySelector('.ihr-relief-none').hidden).toBe(false)
+    expect(editor.querySelector('.ihr-relief-none').tagName).toBe('BUTTON')
+    expect(editor.querySelector('.ihr-relief-none').getAttribute('aria-pressed')).toBe('true')
+    expect(adjustColor(editor).hidden).toBe(true)
     expect(editor.querySelector('.ihr-relief__strength input').disabled).toBe(true)
   })
 
@@ -424,7 +431,7 @@ describe('elegir un relieve', () => {
     context.cards = [...context.editor.querySelectorAll('.ihr-relief-card input')]
     return context
   }
-  const choose = input => { input.checked = true; input.dispatchEvent(new Event('change', { bubbles: true })) }
+  const choose = (input, checked = true) => { input.checked = checked; input.dispatchEvent(new Event('change', { bubbles: true })) }
 
   it('espera a que los mapas estén aplicados antes de balancear el libro', async () => {
     const { view, cards } = await ready()
@@ -462,6 +469,179 @@ describe('elegir un relieve', () => {
       { coverRelief:selected(1) }))
   })
 
+  it('selecciona tres colores sin quitar los anteriores y guarda cada capa completa', async () => {
+    const { editor, view, cards, onBookCustomizationChange } = await ready()
+    choose(cards[0]); choose(cards[1]); choose(cards[2])
+    const expected = selectedLayers(selected(0), selected(1), selected(2))
+    expect(cards.map(input => input.checked)).toEqual([true, true, true])
+    expect(cards.every(input => input.closest('.ihr-relief-card').classList.contains('is-selected'))).toBe(true)
+    expect(view.setCoverRelief).toHaveBeenLastCalledWith(expected)
+    expect(editor.querySelector('.ihr-relief-none').getAttribute('aria-pressed')).toBe('false')
+    const picker = adjustColor(editor)
+    expect(picker.hidden).toBe(false)
+    expect([...picker.options].map(option => option.value)).toEqual(PROPOSALS.map(item => item.color))
+    expect(picker.value).toBe(PROPOSALS[2].color)
+    expect(editor.querySelector('.ihr-relief__strength input').value).toBe('50')
+    await vi.waitFor(() => expect(onBookCustomizationChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ coverRelief:expected }), { coverRelief:expected }))
+  })
+
+  it('ajusta sólo la intensidad del color activo y cambiar el selector no marca ni desmarca colores', async () => {
+    const { editor, view, cards, onBookCustomizationChange } = await ready()
+    choose(cards[0]); choose(cards[1])
+    const slider = editor.querySelector('.ihr-relief__strength input')
+    slider.value = '45'
+    slider.dispatchEvent(new Event('input', { bubbles:true }))
+    const latest = selectedLayers(selected(0), selected(1, .45))
+    await vi.waitFor(() => expect(view.setCoverRelief).toHaveBeenLastCalledWith(latest))
+    await vi.waitFor(() => expect(onBookCustomizationChange).toHaveBeenLastCalledWith(expect.anything(), { coverRelief:latest }))
+    view.setCoverRelief.mockClear()
+    onBookCustomizationChange.mockClear()
+    const picker = adjustColor(editor)
+    picker.value = PROPOSALS[0].color
+    picker.dispatchEvent(new Event('change', { bubbles:true }))
+    expect(cards.map(input => input.checked)).toEqual([true, true, false])
+    expect(slider.value).toBe('75')
+    expect(view.setCoverRelief).not.toHaveBeenCalled()
+    expect(onBookCustomizationChange).not.toHaveBeenCalled()
+    slider.value = '90'
+    slider.dispatchEvent(new Event('input', { bubbles:true }))
+    const expected = selectedLayers(selected(0, .9), selected(1, .45))
+    await vi.waitFor(() => expect(view.setCoverRelief).toHaveBeenLastCalledWith(expected))
+    await vi.waitFor(() => expect(onBookCustomizationChange).toHaveBeenLastCalledWith(expect.anything(), { coverRelief:expected }))
+    expect(cards.map(input => input.checked)).toEqual([true, true, false])
+  })
+
+  it('desmarcar el color activo conserva la intensidad del restante y vuelve al formato de una capa', async () => {
+    const { editor, view, cards, onBookCustomizationChange } = await ready()
+    choose(cards[0])
+    const slider = editor.querySelector('.ihr-relief__strength input')
+    slider.value = '40'
+    slider.dispatchEvent(new Event('input', { bubbles:true }))
+    await vi.waitFor(() => expect(view.setCoverRelief).toHaveBeenLastCalledWith(selected(0, .4)))
+    choose(cards[1])
+    choose(cards[1], false)
+    expect(cards.map(input => input.checked)).toEqual([true, false, false])
+    expect(view.setCoverRelief).toHaveBeenLastCalledWith(selected(0, .4))
+    expect(slider.value).toBe('40')
+    expect(slider.disabled).toBe(false)
+    expect(adjustColor(editor).hidden).toBe(true)
+    await vi.waitFor(() => expect(onBookCustomizationChange).toHaveBeenLastCalledWith(expect.anything(), { coverRelief:selected(0, .4) }))
+  })
+
+  it('desmarcar otro color conserva el activo y las dos capas restantes', async () => {
+    const { editor, view, cards, onBookCustomizationChange } = await ready()
+    choose(cards[0]); choose(cards[1]); choose(cards[2])
+    choose(cards[0], false)
+    const expected = selectedLayers(selected(1), selected(2))
+    expect(cards.map(input => input.checked)).toEqual([false, true, true])
+    expect(view.setCoverRelief).toHaveBeenLastCalledWith(expected)
+    expect(adjustColor(editor).value).toBe(PROPOSALS[2].color)
+    expect(editor.querySelector('.ihr-relief__strength input').value).toBe('50')
+    await vi.waitFor(() => expect(onBookCustomizationChange).toHaveBeenLastCalledWith(expect.anything(), { coverRelief:expected }))
+  })
+
+  it('desmarcar el último color limpia el relieve sin reiniciar el balanceo', async () => {
+    const { editor, view, cards, onBookCustomizationChange } = await ready()
+    choose(cards[0])
+    await vi.waitFor(() => expect(view.animations.some(motion => motion.timing.duration === 2400)).toBe(true))
+    choose(cards[0], false)
+    expect(view.setCoverRelief).toHaveBeenLastCalledWith(null)
+    expect(cards.every(input => !input.checked)).toBe(true)
+    expect(editor.querySelector('.ihr-relief-none').getAttribute('aria-pressed')).toBe('true')
+    expect(editor.querySelector('.ihr-relief__strength input').disabled).toBe(true)
+    const animations = view.animations.length
+    await flush(250)
+    expect(view.animations.length).toBe(animations)
+    await vi.waitFor(() => expect(onBookCustomizationChange).toHaveBeenLastCalledWith(expect.anything(), { coverRelief:null }))
+  })
+
+  it('Sin relieve borra todas las capas, desmarca las tarjetas y oculta el selector', async () => {
+    const { editor, view, cards, onBookCustomizationChange } = await ready()
+    choose(cards[0]); choose(cards[1]); choose(cards[2])
+    const none = editor.querySelector('.ihr-relief-none')
+    none.click()
+    expect(cards.every(input => !input.checked)).toBe(true)
+    expect(editor.querySelectorAll('.ihr-relief-card.is-selected')).toHaveLength(0)
+    expect(none.getAttribute('aria-pressed')).toBe('true')
+    expect(view.setCoverRelief).toHaveBeenLastCalledWith(null)
+    expect(adjustColor(editor).hidden).toBe(true)
+    expect(editor.querySelector('.ihr-relief__strength input').disabled).toBe(true)
+    const animations = view.animations.length
+    await flush(250)
+    expect(view.animations.length).toBe(animations)
+    await vi.waitFor(() => expect(onBookCustomizationChange).toHaveBeenLastCalledWith(expect.anything(), { coverRelief:null }))
+  })
+
+  it('restaura varias capas por color con intensidad independiente sin persistir ni balancear al abrir', async () => {
+    const savedRelief = selectedLayers(selected(2, .35), selected(0, .85))
+    vi.mocked(analyzeCoverRelief).mockResolvedValue({ proposals:[
+      {...PROPOSALS[0], id:'color-3'}, {...PROPOSALS[1], id:'color-1'}, {...PROPOSALS[2], id:'color-2'}
+    ] })
+    const { editor, view, tab, onBookCustomizationChange } = await openEditor([book({ coverRelief:savedRelief })])
+    tab('Portada').click()
+    await vi.waitFor(() => expect(editor.querySelectorAll('.ihr-relief-card:not(.is-skeleton)')).toHaveLength(3))
+    expect([...editor.querySelectorAll('.ihr-relief-card input')].map(input => input.checked)).toEqual([true, false, true])
+    const picker = adjustColor(editor)
+    const slider = editor.querySelector('.ihr-relief__strength input')
+    expect(picker.hidden).toBe(false)
+    expect(picker.value).toBe(PROPOSALS[0].color)
+    expect(slider.value).toBe('85')
+    picker.value = PROPOSALS[2].color
+    picker.dispatchEvent(new Event('change', { bubbles:true }))
+    expect(slider.value).toBe('35')
+    const animations = view.animations.length
+    await flush(250)
+    expect(view.animations.length).toBe(animations)
+    expect(view.setCoverRelief).not.toHaveBeenCalled()
+    expect(onBookCustomizationChange).not.toHaveBeenCalled()
+  })
+
+  it('conserva el color guardado al añadir otro cuyo nuevo id coincide con el id antiguo', async () => {
+    vi.mocked(analyzeCoverRelief).mockResolvedValue({ proposals:[
+      {...PROPOSALS[1], id:'color-1'}, {...PROPOSALS[2], id:'color-2'}, {...PROPOSALS[0], id:'color-3'}
+    ] })
+    const { editor, view, tab, onBookCustomizationChange } = await openEditor([book({ coverRelief:selected(0, .4) })])
+    tab('Portada').click()
+    await vi.waitFor(() => expect(editor.querySelectorAll('.ihr-relief-card:not(.is-skeleton)')).toHaveLength(3))
+    const cards = [...editor.querySelectorAll('.ihr-relief-card input')]
+    expect(cards.map(input => input.checked)).toEqual([false, false, true])
+    choose(cards[0])
+    const blue = { ...selected(1), id:'color-1' }
+    const expected = selectedLayers(selected(0, .4), blue)
+    expect(view.setCoverRelief).toHaveBeenLastCalledWith(expected)
+    expect(cards.map(input => input.checked)).toEqual([true, false, true])
+    expect(adjustColor(editor).value).toBe(PROPOSALS[1].color)
+    expect(editor.querySelector('.ihr-relief__strength input').value).toBe('60')
+    await vi.waitFor(() => expect(onBookCustomizationChange).toHaveBeenLastCalledWith(expect.anything(), { coverRelief:expected }))
+  })
+
+  it('mantiene el foco en checkbox, selector e intensidad al cambiar el color activo', async () => {
+    const { editor, cards } = await ready()
+    expect(cards.every(input => input.type === 'checkbox' && input.tabIndex === 0 && input.closest('label'))).toBe(true)
+    cards[0].focus()
+    cards[0].click()
+    expect(document.activeElement).toBe(cards[0])
+    cards[1].focus()
+    cards[1].click()
+    expect(document.activeElement).toBe(cards[1])
+    const picker = adjustColor(editor)
+    expect(picker.tabIndex).toBe(0)
+    picker.focus()
+    picker.value = PROPOSALS[0].color
+    // Native keyboard selection dispatches change; jsdom does not emulate the
+    // browser's default Arrow/Space actions for select or checkbox controls.
+    picker.dispatchEvent(new Event('change', { bubbles:true }))
+    expect(document.activeElement).toBe(picker)
+    expect(cards.map(input => input.checked)).toEqual([true, true, false])
+    const slider = editor.querySelector('input[aria-label="Intensidad del relieve"]')
+    slider.focus()
+    slider.value = '55'
+    slider.dispatchEvent(new Event('input', { bubbles:true }))
+    expect(document.activeElement).toBe(slider)
+    expect(cards.map(input => input.checked)).toEqual([true, true, false])
+  })
+
   it('el relieve no rehace el modelo del libro al cerrar el editor', async () => {
     const { view, cards } = await ready()
     choose(cards[0])
@@ -476,7 +656,7 @@ describe('elegir un relieve', () => {
     const { view, cards, editor, onBookCustomizationChange } = await ready()
     choose(cards[0])
     await flush(200)
-    choose(editor.querySelector('.ihr-relief-none input'))
+    editor.querySelector('.ihr-relief-none').click()
     expect(view.setCoverRelief).toHaveBeenLastCalledWith(null)
     const animations = view.animations.length
     await flush(250)
@@ -504,8 +684,9 @@ describe('elegir un relieve', () => {
     const { editor, view, tab } = await openEditor([saved])
     tab('Portada').click()
     await vi.waitFor(() => expect(editor.querySelectorAll('.ihr-relief-card:not(.is-skeleton)')).toHaveLength(3))
-    const radios = [...editor.querySelectorAll('.ihr-relief-card input')]
-    expect(radios.map(radio => radio.checked)).toEqual([false, false, true])
+    const checkboxes = [...editor.querySelectorAll('.ihr-relief-card input')]
+    expect(checkboxes.map(input => input.checked)).toEqual([false, false, true])
+    expect(adjustColor(editor).hidden).toBe(true)
     expect(editor.querySelector('.ihr-relief__strength input').value).toBe('40')
     const animations = view.animations.length
     await flush(250)

@@ -1,3 +1,4 @@
+import { switchShelfView } from './helpers/shelf-view-gesture.mjs'
 import { expect, test } from '@playwright/test'
 import { spinePointerPosition } from './helpers/shelf-pointer.mjs'
 import { readFile } from 'node:fs/promises'
@@ -143,6 +144,9 @@ async function seedShelf(page, { long = false, linked = false, driveBytes = null
       { ...plants[2], catalogId:'hedera', variant:'hedera', potId:'muskotblomma', width:180, height:240 }
     ]
     return { originalId:original.id, ids:records.map(book => book.id), plants:migratedPlants,
+      originalLength:{ schemaVersion:1, driveFileId:'original-on-drive', md5Checksum:null,
+        byteLength:original.content.size, wordCount:original.wordCount,
+        wordCountVersion:original.wordCountVersion, wordCountComplete:true },
       remote:records.filter(book => book.driveFileId).map(book => ({ id:book.driveFileId, name:book.name, size:String(book.size || book.content.size), mimeType:'application/pdf' })) }
   }, { long, linked, driveBytes, plantsKey:PLANTS_KEY, driveId:DRIVE_ID })
   await page.reload()
@@ -156,7 +160,7 @@ async function seedShelf(page, { long = false, linked = false, driveBytes = null
 
 async function useIsometricShelf(page) {
   if (await page.locator('.ihr-bookshelf').getAttribute('data-view-mode') !== 'isometric')
-    await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
+    await switchShelfView(page, 'isometric')
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1', { timeout:VIEW_TRANSITION_TIMEOUT })
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
 }
@@ -476,16 +480,19 @@ test('un libro retirado sigue en Drive y la sincronización automática no lo vu
     appearance:{ author:'Ursula Le Guin', spineTitleOverride:'Mi libro en Drive' },
     updatedAt:Date.now() + 60_000
   }
-  const requests = []; let remoteLists = 0, stateReads = 0, fileDownloads = 0
+  const requests = [], stateWrites = []
+  const storedStates = new Map([['saved-state', savedProgress]])
+  let remoteLists = 0, stateReads = 0, fileDownloads = 0
   await page.route('https://www.googleapis.com/drive/v3/about?**', route => route.fulfill({
     status:200, contentType:'application/json', body:JSON.stringify({ user:{ permissionId:'trash-account', displayName:'Miguel', emailAddress:'trash@example.com' } })
   }))
   await page.route('https://www.googleapis.com/drive/v3/files**', route => {
     const request = route.request(), url = new URL(request.url()), query = url.searchParams.get('q') || ''
     requests.push({ method:request.method(), url:request.url(), body:request.postData() })
-    if (url.pathname.endsWith('/saved-state') && url.searchParams.get('alt') === 'media') {
+    const stateId = url.pathname.split('/').at(-1)
+    if (storedStates.has(stateId) && url.searchParams.get('alt') === 'media') {
       stateReads++
-      return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(savedProgress) })
+      return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify(storedStates.get(stateId)) })
     }
     if (url.pathname.endsWith(`/${DRIVE_ID}`) && url.searchParams.get('alt') === 'media') {
       fileDownloads++
@@ -495,10 +502,37 @@ test('un libro retirado sigue en Drive y la sincronización automática no lo vu
     if (query.includes("name = '.inhouse-read-state'")) files = [{ id:'state-folder', name:'.inhouse-read-state' }]
     else if (query.includes("name = 'inhouse read'")) files = [{ id:'read-folder', name:'inhouse read' }]
     else if (query.includes("'read-folder' in parents")) { files = seed.remote; remoteLists++ }
-    else if (query.includes(`name = 'progress-${DRIVE_ID}.json'`)) files = [{
-      id:'saved-state', name:`progress-${DRIVE_ID}.json`, modifiedTime:new Date(savedProgress.updatedAt).toISOString()
-    }]
+    else {
+      const name = query.match(/name = '(progress-[^']+\.json)'/)?.[1]
+      if (name) files = [...storedStates].filter(([,state]) => name === `progress-${state.driveFileId}.json`)
+        .map(([id,state]) => ({ id, name, modifiedTime:new Date(state.updatedAt).toISOString() }))
+    }
     return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ files }) })
+  })
+  // Linked books may now publish complete text-count metadata in their state
+  // JSON. Keep those writes in this Drive fixture: no request with its fake
+  // token may reach Google and expire the session before the next book syncs.
+  await page.route(/^https:\/\/www\.googleapis\.com\/upload\/drive\/v3\/files(?:\/[^/?]+)?\?/, route => {
+    const request = route.request(), url = new URL(request.url())
+    requests.push({ method:request.method(), url:request.url(), body:request.postData() })
+    expect(url.searchParams.get('uploadType')).toBe('multipart')
+    const boundary = request.headers()['content-type']?.match(/boundary=([^;]+)/)?.[1]
+    expect(boundary).toBeTruthy()
+    const parts = request.postDataBuffer().toString('utf8').split(`--${boundary}`)
+      .filter(part => part.includes('Content-Type:'))
+      .map(part => JSON.parse(part.slice(part.indexOf('\r\n\r\n') + 4).trim()))
+    expect(parts).toHaveLength(2)
+    const [metadata, state] = parts
+    expect(metadata.name).toBe(`progress-${state.driveFileId}.json`)
+    expect(metadata.name).toMatch(/^progress-.+\.json$/)
+    expect(state).toMatchObject({ schemaVersion:1, driveFileId:expect.any(String), updatedAt:expect.any(Number) })
+    expect(seed.remote.some(book => book.id === state.driveFileId)).toBe(true)
+    const id = request.method() === 'PATCH' ? url.pathname.split('/').at(-1) : `state-${state.driveFileId}`
+    expect(['POST','PATCH']).toContain(request.method())
+    if (request.method() === 'PATCH') expect(storedStates.has(id)).toBe(true)
+    if (storedStates.has(id)) expect(state.updatedAt).toBeGreaterThanOrEqual(storedStates.get(id).updatedAt)
+    storedStates.set(id, state); stateWrites.push(state)
+    return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ id, name:metadata.name }) })
   })
   await page.evaluate(() => localStorage.setItem('ihr_drive_session_v2', JSON.stringify({ accessToken:'shelf-trash-test', expiresAt:Date.now() + 3600_000 })))
   await page.reload()
@@ -507,6 +541,7 @@ test('un libro retirado sigue en Drive y la sincronización automática no lo vu
   await expect(page.locator('.ihr-spine')).toHaveCount(3)
   await expect.poll(async () => (await storedLibrary(page)).books.find(book => book.id === 'trash:drive'))
     .toMatchObject({ locator:savedProgress.locator, progressFraction:.5, author:'Ursula Le Guin' })
+  expect(stateWrites.find(state => state.driveFileId === 'original-on-drive')?.bookLength).toEqual(seed.originalLength)
   await dropIntoBin(page, 'trash:drive', testInfo)
   expect((await storedLibrary(page)).removed.find(book => book.id === 'trash:drive')).toMatchObject({ driveFileId:DRIVE_ID })
   const listsBefore = remoteLists
@@ -539,6 +574,9 @@ test('un libro retirado sigue en Drive y la sincronización automática no lo vu
   expect(restored.removed.some(book => book.driveFileId === DRIVE_ID)).toBe(false)
   expect(fileDownloads).toBe(1)
   expect(stateReads).toBeGreaterThan(readsBeforeImport)
+  for (const state of stateWrites.filter(state => state.driveFileId === DRIVE_ID))
+    expect(state).toMatchObject({ fraction:savedProgress.fraction, locator:savedProgress.locator,
+      appearance:savedProgress.appearance })
   const pixel = await page.locator('.pdf-page-canvas').evaluate(canvas =>
     [...canvas.getContext('2d').getImageData(canvas.width / 2,canvas.height / 2,1,1).data])
   expect(pixel[2]).toBeGreaterThan(120)
@@ -598,7 +636,7 @@ test('la estantería larga cabe entera en isométrica y permite llevar libros su
   await testInfo.attach('four-real-cabinets-before-overview', {
     body:JSON.stringify(await shelfScrollDiagnostics(page), null, 2), contentType:'application/json'
   })
-  await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
+  await switchShelfView(page, 'isometric')
   await expect(scene).toHaveAttribute('data-view-progress', '1', { timeout:VIEW_TRANSITION_TIMEOUT })
   await expect(scene).toHaveAttribute('data-animating', 'false')
   // The entire tall cabinet and grounded basket fit together. Wheel input
@@ -707,7 +745,7 @@ test('el giro de cámara encuadra la papelera del suelo sin hacerla aparecer esc
   await assertBinMesh(page)
   await testInfo.attach('fixed-floor-bin-camera-entry',{ body:JSON.stringify(motion,null,2),contentType:'application/json' })
   await testInfo.attach('floor-bin-isometric-320',{ body:await page.screenshot(),contentType:'image/png' })
-  await page.getByRole('button',{ name:'Vista de canto' }).click()
+  await switchShelfView(page, 'spine')
   await expect(scene).toHaveAttribute('data-view-progress','0', { timeout:VIEW_TRANSITION_TIMEOUT })
   await expect(scene).toHaveAttribute('data-animating','false')
   expect(await scene.getAttribute('data-trash-local-position')).toBe(motion[0].position)

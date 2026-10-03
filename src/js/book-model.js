@@ -5,7 +5,7 @@ import { normalizeBookAuthor } from './book-title.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { applyBookReflectionSurface } from './book-reflection-surface.js';
 import { keepProgramsAlive } from './gpu-programs.js';
-import { buildReliefMaps, composeMaterialMap, normalizeCoverRelief } from './cover-relief.js';
+import { buildReliefMaps, composeMaterialMap, coverReliefLayers, normalizeCoverRelief, updateReliefMapStrengths } from './cover-relief.js';
 import { runInSlices } from './cover-appearance.js';
 
 // Procedural micro-detail shared by every book: generated once, uploaded once.
@@ -1221,10 +1221,14 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     cover.clearcoatMap = cover.clearcoatRoughnessMap = cover.roughnessMap = cover.metalnessMap = material;
   };
   const reliefGain = strength => 3.5 * strength;
-  const reliefKey = choice => JSON.stringify([choice.id, choice.color ?? null, choice.tolerance ?? null]);
+  const reliefKey = choice => choice.layers ? JSON.stringify(['layers',...coverReliefLayers(choice)
+    .sort((a,b)=>a.color.localeCompare(b.color)).map(layer=>[layer.color,layer.tolerance])])
+    : JSON.stringify([choice.id, choice.color ?? null, choice.tolerance ?? null]);
+  const reliefStrengthKey=choice=>choice.layers?JSON.stringify(coverReliefLayers(choice)
+    .sort((a,b)=>a.color.localeCompare(b.color)).map(layer=>layer.strength)):null;
   const applyReliefUniforms = () => {
     setReliefBaseFinish();
-    reliefUniforms.bookReliefStrength.value = wantedRelief && reliefMaps ? wantedRelief.strength : 0;
+    reliefUniforms.bookReliefStrength.value = wantedRelief && reliefMaps ? (wantedRelief.layers?1:wantedRelief.strength) : 0;
     if (!wantedRelief || !reliefMaps) {
       cover.metalness = 0; cover.clearcoatNormalScale.set(1, 1);
       if (reliefArmed) laminate(coverFinishValue);
@@ -1235,7 +1239,9 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     // Varnish is a dielectric layer over unchanged printed ink, including
     // yellow ink. Colour selection never implies a metallic pigment.
     cover.clearcoat = 1; cover.metalness = 0;
-    cover.clearcoatNormalScale.setScalar(reliefGain(wantedRelief.strength));
+    // Multicolour intensities are already encoded independently in the height
+    // and finish pixels. A global scalar must not attenuate all other layers.
+    cover.clearcoatNormalScale.setScalar(reliefGain(wantedRelief.layers?1:wantedRelief.strength));
   };
   async function bakeReliefMaterial(revision, maps = reliefMaps, signal) {
     if (!maps) return false;
@@ -1262,7 +1268,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     applyReliefUniforms();
     group.userData.invalidate?.();
   }
-  group.userData.coverRelief = () => (wantedRelief ? { ...wantedRelief } : null);
+  group.userData.coverRelief = () => normalizeCoverRelief(wantedRelief);
   group.userData.supportsCoverRelief = reliefCapable;
   // Only the cover editor needs these shader slots before its first choice.
   // Ordinary flyouts retain the cheaper material until editing is requested.
@@ -1281,7 +1287,8 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     if (!next) { if (reliefArmed) clearRelief(); return true; }
     armRelief();
     // Only installed maps may be reused. A pending bake owns no cached state.
-    if (reliefMaps && reliefMaps.key === reliefKey(next) && reliefMaps.source === reliefSource()) {
+    const cached=reliefMaps && reliefMaps.key === reliefKey(next) && reliefMaps.source === reliefSource();
+    if (cached && (!next.layers || reliefMaps.strengthKey===reliefStrengthKey(next))) {
       applyReliefUniforms(); group.userData.invalidate?.(); return true;
     }
     let built;
@@ -1292,7 +1299,8 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
       // any aspect-ratio margins. Analysing the unfitted source shifts masks.
       const source = reliefSource();
       if (!source) return false;
-      built = await buildReliefMaps(source, next, { maxSize: overview ? 128 : shelf && !inspectionResolution ? 256 : 512, signal: controller.signal });
+      built = cached ? await updateReliefMapStrengths(reliefMaps,next,{signal:controller.signal})
+        : await buildReliefMaps(source, next, { maxSize: overview ? 128 : shelf && !inspectionResolution ? 256 : 512, signal: controller.signal });
       if (!built || revision !== reliefRevision || disposed || controller.signal.aborted) return false;
       const { width, height } = built.size;
       const normals = built.normal.slice();
@@ -1304,7 +1312,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
           ?? Math.max(built.pixels.gloss[i], built.pixels.foil[i], built.pixels.heightMap?.[i] ?? 0);
       }
       built.normalTexture = mapTexture(normals, width, height);
-      built.id = next.id; built.key = reliefKey(next); built.source = source;
+      built.id = next.id; built.key = reliefKey(next); built.strengthKey=reliefStrengthKey(next); built.source = source;
       if (!await bakeReliefMaterial(revision, built, controller.signal)) {
         built.normalTexture.dispose(); return false;
       }
@@ -1861,8 +1869,12 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     // frame that scheduled the motion.
     const maxStep = Math.max(48, Math.min(100, duration / 2));
     let started = false;
-    const tick = now => {
+    const tick = () => {
       if (disposed) return resolve();
+      // RAF's shared frame timestamp can precede a gesture delivered after a
+      // slow draw. Measure when this callback actually runs, on the same clock
+      // that started the motion, so its first painted pose advances too.
+      const now = performance.now();
       elapsed += Math.min(started ? maxStep : 48, Math.max(0, now - lastFrame)); lastFrame = now; started = true;
       const t = duration > 0 ? Math.min(1, elapsed / duration) : 1;
       draw(sampleBookMotion(frames, t)); animation.lastFrameTime = performance.now();

@@ -86,4 +86,29 @@ describe('complete navigation through long adaptable PDF pages',()=>{
   await open();const source=await reader.getSpeechSource();source.follow(0,10);expect(container.scrollBy).not.toHaveBeenCalled()
   source.follow(1000,1010);expect(container.scrollBy).toHaveBeenCalled();expect(container.scrollTop).toBeGreaterThan(0)
  })
+ for(const notifyBeforeScroll of [false,true])it(`preserves the anchor when a font-change scroll debounce reaches a rotated layout ${notifyBeforeScroll?'during':'before'} ResizeObserver restoration`,async()=>{
+  vi.useFakeTimers()
+  try {
+   await open();await reader.next();await reader.applyPreferences({pdfMode:'text',fontSize:36})
+   const saved=relocate.mock.calls.at(-1)[0].textOffset, calls=relocate.mock.calls.length
+   container.dispatchEvent(new Event('scroll'))
+   await vi.advanceTimersByTimeAsync(140)
+   Object.defineProperty(container,'clientWidth',{value:844,configurable:true});height=300
+   Object.defineProperty(Range.prototype,'getClientRects',{configurable:true,value:function(){
+    const top=50+12+Math.floor(this.startOffset/45)*36*1.6-container.scrollTop
+    return[{top,bottom:top+36,left:16,right:800,width:784,height:36}]
+   }})
+   if(notifyBeforeScroll)state.resize()
+   await vi.advanceTimersByTimeAsync(10)
+   expect(relocate).toHaveBeenCalledTimes(calls)
+   if(!notifyBeforeScroll)state.resize()
+   await vi.advanceTimersByTimeAsync(80)
+   const range=document.createRange(),node=container.querySelector('.pdf-reflow-page').firstChild
+   range.setStart(node,saved);range.setEnd(node,saved+1)
+   const box=container.getBoundingClientRect(),rect=range.getClientRects()[0]
+   expect(rect.top).toBeGreaterThanOrEqual(box.top-1)
+   expect(rect.bottom).toBeLessThanOrEqual(box.bottom+1)
+   expect(reader.currentPage).toBe(1)
+  } finally {vi.useRealTimers()}
+ })
 })

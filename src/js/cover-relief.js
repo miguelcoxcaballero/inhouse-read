@@ -12,7 +12,9 @@
  *
  * A saved choice is `{ id:'color-1'..'color-10', color:'#rrggbb',
  * tolerance, strength }`; tolerance is Euclidean OKLab * 100 (1..12). Maps
- * are never persisted. Uniform/bicolor covers have one/two choices. Legacy
+ * are never persisted. `{ layers:[choice,...] }` combines up to ten colours
+ * with independent intensities; HEX identifies a layer even if slot ranks
+ * change on reanalysis. Uniform/bicolor covers have one/two choices. Legacy
  * family records remain readable and render their first real dominant color;
  * the original record is only replaced by an explicit new user selection.
  */
@@ -34,6 +36,17 @@ const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); retu
 
 /** Validate portable color choices and old family records; discard map data. */
 export function normalizeCoverRelief(value) {
+  if (value && typeof value === 'object' && Array.isArray(value.layers)) {
+    const layers = [], colors = new Set();
+    for (const entry of value.layers.slice(0, 10)) {
+      // Nested selections, legacy families and decoded rasters never become
+      // layers. A portable layer names one actual supported printed colour.
+      const layer = entry && !Array.isArray(entry.layers) && normalizeCoverRelief(entry);
+      if (!layer || !COLOR_RELIEF_IDS.includes(layer.id) || colors.has(layer.color)) continue;
+      layers.push(layer); colors.add(layer.color);
+    }
+    return layers.length ? { layers } : null;
+  }
   if (!value || typeof value !== 'object' || !RELIEF_IDS.includes(value.id)) return null;
   const number = value.strength == null ? DEFAULT_RELIEF_STRENGTH : Number(value.strength);
   const strength = Number.isFinite(number) ? Math.round(clamp(number, 0, 1) * 100) / 100 : DEFAULT_RELIEF_STRENGTH;
@@ -46,8 +59,31 @@ export function normalizeCoverRelief(value) {
   return { id: value.id, strength };
 }
 
+/** Colour-only editor access. Legacy family choices remain readable and are
+ * rendered through the old fallback without being silently rewritten. */
+export function coverReliefLayers(value) {
+  const normalized = normalizeCoverRelief(value);
+  if (normalized?.layers) return normalized.layers;
+  return normalized && COLOR_RELIEF_IDS.includes(normalized.id) ? [normalized] : [];
+}
+
+// Each detected colour has its own stable printing/varnish depth and finish.
+// These profiles never generate colour, a mask or a metallic pigment. The
+// original single-layer renderer stays unchanged for existing saved books.
+export function colorReliefProfile(choice) {
+  // Slot ranks can change after a cover is reanalysed. The actual printed HEX
+  // is the identity; its stable mix yields a bounded physical coating profile.
+  let seed=parseInt(choice.color.slice(1),16);
+  seed=Math.imul(seed^(seed>>>16),0x45d9f3b);
+  seed=Math.imul(seed^(seed>>>16),0x45d9f3b);
+  const fraction=((seed^(seed>>>16))>>>0)/0xffffffff;
+  return { heightMM:.16 + fraction*.14, roughness:.012 + fraction*.018,
+    clearcoatRoughness:.01 + fraction*.018 };
+}
+
 // Maps store physical height in units of MAX_RELIEF_MM. New color zones use
-// .30 mm before the renderer's strength multiplier. Old detector recipes
+// .30 mm before the renderer's strength multiplier for existing singles;
+// combined colours have their own stable .16–.30 mm coating profiles. Old detector recipes
 // below are retained only as pure compatibility fixtures, never as proposals.
 export const MAX_RELIEF_MM = .6;
 const FAMILIES = Object.freeze({
@@ -1137,6 +1173,7 @@ export function* buildMapsFromPixels(work, hires, selection) {
   validateRaster(work); validateRaster(hires);
   let choice = normalizeCoverRelief(selection);
   if (!choice) throw new TypeError('Color de relieve no válido');
+  if (choice.layers) return yield* buildColorLayerMaps(hires, choice);
   // Preserve the old record id until the user chooses a color. Its renderer
   // uses the stable first actual color, never its old geometric/noise fallback.
   if (LEGACY_RELIEF_IDS.includes(choice.id)) choice = (yield* analyzePixels(work)).chosen[0];
@@ -1160,6 +1197,59 @@ export function* buildMapsFromPixels(work, hires, selection) {
   return out;
 }
 
+function* buildColorLayerMaps(image, selection) {
+  const { width, height } = image, count = width * height;
+  // Canonical order makes overlapping externally supplied tolerances resolve
+  // deterministically, independently of the order in which boxes were ticked.
+  const layers = coverReliefLayers(selection).sort((a,b) => a.color.localeCompare(b.color));
+  // Keep the unscaled physical height in float precision. Quantizing before
+  // the per-colour strength would round two distinct coatings to one height.
+  const owners = new Uint8Array(count), baseMask = new Uint8Array(count), baseHeight = new Float32Array(count);
+  const bevel = Math.max(1.2, Math.max(width, height) * .003);
+  for (let index = 0; index < layers.length; index++) {
+    const layer = layers[index], membership = yield* colorMask(image, layer.color, layer.tolerance);
+    const hard = new Uint8Array(count), profile = colorReliefProfile(layer);
+    for (let i=0;i<count;i++) { hard[i]=membership[i]>0?1:0;if((i&4095)===4095)yield; }
+    const distance = yield* insideDistance(hard,width,height);
+    for (let i=0;i<count;i++) {
+      const amount=toByte(membership[i]);
+      // A pixel belongs to exactly one selected pigment; contributions cannot
+      // add brightness/height or spill into another pigment on overlap.
+      if (amount>baseMask[i]) {
+        owners[i]=index+1;baseMask[i]=amount;
+        baseHeight[i]=membership[i]*smoothstep(0,bevel,distance[i]-.5)*profile.heightMM/MAX_RELIEF_MM*255;
+      }
+      if((i&1023)===1023)yield;
+    }
+  }
+  return yield* composeReliefLayerPixels({ width,height,preserveInk:true,foilColor:null,
+    owners,baseMask,baseHeight,layers }, selection);
+}
+
+/** Reuse the classified colour ownership while adjusting a layer's intensity.
+ * Only three bounded output planes are allocated; no image decode, clustering
+ * or per-layer GPU textures are needed on slider updates. */
+export function* composeReliefLayerPixels(maps, selection) {
+  const layers=coverReliefLayers(selection).sort((a,b)=>a.color.localeCompare(b.color));
+  if (!maps.owners || layers.length!==maps.layers.length || layers.some((layer,index)=>
+    layer.color!==maps.layers[index].color || layer.tolerance!==maps.layers[index].tolerance)) {
+    throw new TypeError('Las zonas de relieve han cambiado');
+  }
+  const count=maps.width*maps.height;
+  const out={ ...maps,layers,heightMap:new Uint8Array(count),mask:new Uint8Array(count),
+    gloss:new Uint8Array(count),foil:new Uint8Array(count) };
+  for(let i=0;i<count;i++) {
+    const layer=layers[maps.owners[i]-1];
+    if(layer?.strength>0) {
+      out.mask[i]=maps.baseMask[i];
+      out.gloss[i]=toByte(maps.baseMask[i]/255*layer.strength);
+      out.heightMap[i]=Math.round(maps.baseHeight[i]*layer.strength);
+    }
+    if((i&1023)===1023)yield;
+  }
+  return out;
+}
+
 function sampleInk(image, foil) {
   let r = 0, g = 0, b = 0, n = 0;
   for (let i = 0; i < foil.length; i++) if (foil[i] > 200) { r += image.data[i * 4]; g += image.data[i * 4 + 1]; b += image.data[i * 4 + 2]; n++; }
@@ -1175,10 +1265,16 @@ export function* heightToNormals(maps, { gain = 1 } = {}) {
   const { width, height, heightMap } = maps;
   const out = new Uint8ClampedArray(width * height * 4);
   const mmPerPixel = MM_FULL_COVER / Math.max(width, height), unit = MAX_RELIEF_MM / 255 / (2 * mmPerPixel) * gain;
-  const at = (x, y) => heightMap[clamp(y, 0, height - 1) * width + clamp(x, 0, width - 1)];
+  const at = (x, y, owner) => {
+    const index=clamp(y,0,height-1)*width+clamp(x,0,width-1);
+    // Each pigment rises from the board, not from the neighbouring pigment's
+    // height. Its normal response remains independent when that one changes.
+    return maps.owners && maps.owners[index]!==owner ? 0 : heightMap[index];
+  };
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const nx = -(at(x + 1, y) - at(x - 1, y)) * unit, ny = (at(x, y + 1) - at(x, y - 1)) * unit;
+      const owner=maps.owners?.[y*width+x];
+      const nx = -(at(x + 1, y,owner) - at(x - 1, y,owner)) * unit, ny = (at(x, y + 1,owner) - at(x, y - 1,owner)) * unit;
       const length = Math.hypot(nx, ny, 1), i = (y * width + x) * 4;
       if (maps.preserveInk && !maps.mask[y * width + x]) out.set([128, 128, 255, 255], i);
       else { out[i] = (nx / length * .5 + .5) * 255; out[i + 1] = (ny / length * .5 + .5) * 255; out[i + 2] = (1 / length * .5 + .5) * 255; out[i + 3] = 255; }
@@ -1196,12 +1292,20 @@ export function* composeMaterialMap(maps, { clearcoat = 0, roughness = .5, clear
   const base = clamp(clearcoat, 0, 1), foilRoughness = clamp(.3 / Math.max(.05, roughness), .2, 1);
   const glossRoughness = clamp(.05 / Math.max(.01, roughness), 0, 1);
   const glossCoatRoughness = clamp(.05 / Math.max(.01, clearcoatRoughness), 0, 1);
+  const profiles=maps.layers?.map(layer=>{
+    const profile=colorReliefProfile(layer);
+    return { roughness:clamp(profile.roughness/Math.max(.01,roughness),0,1),
+      clearcoatRoughness:clamp(profile.clearcoatRoughness/Math.max(.01,clearcoatRoughness),0,1) };
+  });
   for (let i = 0; i < width * height; i++) {
     const f = maps.preserveInk ? 0 : foil[i] / 255, g = gloss[i] / 255;
+    const profile=profiles?.[maps.owners[i]-1];
+    const localRoughness=profile?.roughness??glossRoughness;
+    const localCoatRoughness=profile?.clearcoatRoughness??glossCoatRoughness;
     out[i * 4] = (base + (1 - base) * g) * 255;
-    out[i * 4 + 1] = (1 - Math.max(f * (1 - foilRoughness), g * (1 - glossRoughness))) * 255;
+    out[i * 4 + 1] = (1 - Math.max(f * (1 - foilRoughness), g * (1 - localRoughness))) * 255;
     out[i * 4 + 2] = f * 255;
-    out[i * 4 + 3] = maps.preserveInk ? (1 - g * (1 - glossCoatRoughness)) * 255 : 255;
+    out[i * 4 + 3] = maps.preserveInk ? (1 - g * (1 - localCoatRoughness)) * 255 : 255;
     if ((i & 32767) === 32767) yield;
   }
   return out;
@@ -1351,13 +1455,22 @@ export async function buildReliefMaps(coverUrl, relief, { maxSize = MAP_SIZE, si
   const stats = { slices: 0, longestSliceMs: 0, ms: 0 };
   const drawable = await decode(coverUrl, signal);
   const hires = raster(drawable, clamp(maxSize, 64, MAP_SIZE));
-  const work = COLOR_RELIEF_IDS.includes(choice.id) ? hires : raster(drawable, WORK_SIZE, { sampleColors:true });
+  const work = choice.layers || COLOR_RELIEF_IDS.includes(choice.id) ? hires : raster(drawable, WORK_SIZE, { sampleColors:true });
   const maps = await runSliced(buildMapsFromPixels(work, hires, choice), { signal, stats });
   const normal = await runSliced(heightToNormals(maps), { signal, stats });
   return { height: new ImageData(grayToRgba(maps.heightMap), maps.width, maps.height),
     foil: new ImageData(grayToRgba(maps.foil), maps.width, maps.height), gloss: new ImageData(grayToRgba(maps.gloss), maps.width, maps.height),
     normal, pixels: maps, size: { width: maps.width, height: maps.height }, foilColor: maps.foilColor,
     stats: { ms: Math.round(stats.ms), longestSliceMs: stats.longestSliceMs, slices: stats.slices } };
+}
+
+/** Recompose installed multicolour maps from the same stored classification.
+ * The returned normal/pixels are separate, so a cancelled bake cannot mutate
+ * the cover that remains on screen. */
+export async function updateReliefMapStrengths(built, selection, { signal } = {}) {
+  const pixels=await runSliced(composeReliefLayerPixels(built.pixels,selection),{signal});
+  const normal=await runSliced(heightToNormals(pixels),{signal});
+  return { ...built,pixels,normal };
 }
 
 function grayToRgba(gray) {

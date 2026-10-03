@@ -14,6 +14,32 @@ def evidence():
     return 'enqueue session=a epoch=1 unit=1 peak=0.8 rms=0.06',states,events,progress
 
 class NativeMediaEvidenceTests(unittest.TestCase):
+    def test_voice_menu_uses_the_real_clickable_button_not_the_offer_group(self):
+        # Exact labels/bounds/classes from the authenticated Android15 failure.
+        # The non-clickable group's centre lands on its Download child.
+        root=ElementTree.fromstring('''<hierarchy>
+          <node class="android.view.View" enabled="true" clickable="false" text="Voz natural" bounds="[55,1223][1028,1380]">
+            <node class="android.widget.TextView" enabled="true" clickable="false" text="Voz natural · 63 MB" bounds="[90,1276][519,1328]" />
+            <node class="android.widget.Button" enabled="true" clickable="true" text="Descargar la voz natural Lessac (63 MB)" bounds="[528,1237][772,1364]" />
+          </node>
+          <node class="android.widget.Button" enabled="true" clickable="true" text="Voz Sin voces instaladas" bounds="[55,1713][1028,1859]" />
+        </hierarchy>''')
+        with patch.object(verifier,'run') as command:
+            label=verifier.tap(root,r'^Voz(?:\s|$)',require_button=True)
+        self.assertEqual(label,'Voz Sin voces instaladas')
+        command.assert_called_once_with('adb','shell','input','tap','541','1786')
+
+    def test_menu_requires_an_enabled_clickable_button_and_retains_the_language_row(self):
+        root=ElementTree.fromstring('''<hierarchy>
+          <node class="android.widget.TextView" enabled="true" clickable="false" text="Idioma" bounds="[55,1200][300,1250]" />
+          <node class="android.widget.Button" enabled="false" clickable="true" text="Idioma viejo" bounds="[55,1400][1028,1450]" />
+          <node class="android.widget.Button" enabled="true" clickable="false" text="Idioma no interactivo" bounds="[55,1400][1028,1450]" />
+          <node class="android.widget.Button" enabled="true" clickable="true" text="Idioma Automática · Inglés" bounds="[55,1500][1028,1600]" />
+        </hierarchy>''')
+        with patch.object(verifier,'run') as command:
+            self.assertEqual(verifier.tap(root,r'^Idioma(?:\s|$)',require_button=True),'Idioma Automática · Inglés')
+        command.assert_called_once_with('adb','shell','input','tap','541','1550')
+
     def test_requires_real_clock_frames_chapters_and_non_silent_pcm(self):
         raw,states,events,progress=evidence()
         result=verifier.locked_metrics(raw,states,events,progress,'a')

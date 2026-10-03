@@ -1,3 +1,4 @@
+import { switchShelfView } from './helpers/shelf-view-gesture.mjs'
 import { expect, test } from '@playwright/test';
 
 test.use({ viewport:{ width:390,height:844 },hasTouch:true,isMobile:true,deviceScaleFactor:1 });
@@ -79,9 +80,9 @@ for (const shelfType of ['walnut','baggebo']) {
       await expect(page.getByTestId('plant-catalog')).toBeVisible();
       await page.getByRole('button',{ name:'Cerrar catálogo' }).tap();
       await expect(page.getByTestId('plant-catalog')).toBeHidden();
-      await page.getByRole('button',{ name:'Vista de canto',exact:true }).tap();
+      await switchShelfView(page, 'spine');
       await expect(canvas).toHaveAttribute('data-view-progress','0');
-      await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).tap();
+      await switchShelfView(page, 'isometric');
       await expect(canvas).toHaveAttribute('data-view-progress','1');
       // Reduced motion publishes its endpoint before the queued frame resizes
       // the canvas. Observe that rendered geometry before measuring the view.

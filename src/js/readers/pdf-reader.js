@@ -130,11 +130,13 @@ export class PdfReader {
 
   async goToPage(n, { textOffset = 0, edge } = {}) {
     if (!this.#doc) return
+    this.#cancelResize()
     this.#invalidateStagedSpeech()
     const clamped = Math.min(Math.max(1, Math.round(Number(n) || 1)), this.#doc.numPages)
     this.#pageNum = clamped
     const rendered = await this.#render()
     if (!rendered || this.#pageNum !== clamped) return
+    this.#cancelResize()
     clearTimeout(this.#scrollTimer)
     this.#container.scrollTop = edge === 'end' && this.#preferences.pdfMode === 'text'
       ? Math.max(0, this.#container.scrollHeight - this.#container.clientHeight) : 0
@@ -159,6 +161,7 @@ export class PdfReader {
 
   #moveTextViewport(direction) {
     if (this.#preferences.pdfMode !== 'text') return false
+    this.#settleTextResize()
     const height = this.#container.clientHeight
     if (!(height > 0)) return false
     const end = Math.max(0, this.#container.scrollHeight - height)
@@ -203,10 +206,31 @@ export class PdfReader {
 
   #rememberTextPosition() {
     if (!this.#doc || this.#preferences.pdfMode !== 'text' || this.#reflow.hidden) return
+    // A queued scroll event can arrive before ResizeObserver after rotation.
+    // Those pixels belong to the new layout, not a new reading position.
+    if (this.#resizeTimer != null) return
+    if (this.#textLayoutChanged()) { this.#onResize(); return }
     const offset = this.#visibleTextOffset()
     if (offset === this.#textOffset) return
     this.#textOffset = offset
     this.#emitLocation()
+  }
+
+  #textLayoutChanged() {
+    return Math.abs(this.#containerWidth() - this.#layoutWidth) >= 1 || this.#container.clientHeight !== this.#textHeight
+  }
+
+  #cancelResize() {
+    clearTimeout(this.#resizeTimer)
+    this.#resizeTimer = null
+  }
+
+  #settleTextResize() {
+    if (!this.#doc || this.#preferences.pdfMode !== 'text' || this.#resizeTimer == null && !this.#textLayoutChanged()) return
+    this.#cancelResize()
+    clearTimeout(this.#scrollTimer)
+    this.#layoutWidth = this.#containerWidth(); this.#textHeight = this.#container.clientHeight
+    this.#restoreTextOffset(this.#textOffset)
   }
 
   #emitLocation() {
@@ -320,18 +344,22 @@ export class PdfReader {
     if (this.#stagedSpeech && !this.#stagedSpeech.valid()) this.#invalidateStagedSpeech()
     if (!this.#doc) return
     if (this.#preferences.pdfMode === 'text') {
-      if (Math.abs(this.#containerWidth() - this.#layoutWidth) < 1 && this.#container.clientHeight === this.#textHeight) return
+      if (!this.#textLayoutChanged()) return
+      const offset = this.#textOffset, pdf = this.#doc, page = this.#pageNum
+      clearTimeout(this.#scrollTimer)
       this.#layoutWidth = this.#containerWidth(); this.#textHeight = this.#container.clientHeight
-      clearTimeout(this.#resizeTimer)
+      this.#cancelResize()
       this.#resizeTimer = setTimeout(() => {
-        if (!this.#doc || this.#preferences.pdfMode !== 'text') return
-        this.#restoreTextOffset(this.#textOffset)
+        this.#resizeTimer = null
+        if (this.#doc !== pdf || this.#pageNum !== page || this.#preferences.pdfMode !== 'text') return
+        this.#restoreTextOffset(offset)
       }, 80)
       return
     }
     if (Math.abs(this.#containerWidth() - this.#layoutWidth) < 1) return
     clearTimeout(this.#resizeTimer)
     this.#resizeTimer = setTimeout(() => {
+      this.#resizeTimer = null
       if (!this.#doc) return
       this.#render().catch(error => {
         if (this.#doc) console.warn('No se pudo adaptar la página al nuevo tamaño.', error)
@@ -554,6 +582,7 @@ export class PdfReader {
         for (const element of marked) element.classList.add(SPEECH_SPAN_CLASS)
       },
       follow:(start, end) => {
+        this.#settleTextResize()
         const rect = current()?.rangeFor(start, end)?.getClientRects()[0]
         if (!rect) return
         const box = this.#container.getBoundingClientRect()
@@ -643,6 +672,7 @@ export class PdfReader {
           this.#pageWrap = staged.pageWrap; this.#canvas = staged.canvas
           this.#textLayerEl = staged.textLayerEl; this.#reflow = staged.reflow
           this.#renderState = staged
+          this.#cancelResize()
           this.#renderRequest = null
           this.#renderReady = Promise.resolve(true)
           this.#pageNum = number
@@ -685,7 +715,7 @@ export class PdfReader {
     if (!this.#doc || pending !== this.#renderReady) return this.getPageSnapshot()
     const page = this.#pageNum
     const textMode = this.#preferences.pdfMode === 'text'
-    if (textMode) this.#rememberTextPosition()
+    if (textMode) { this.#settleTextResize(); this.#rememberTextPosition() }
     // Physical white pages blend into the current reader theme on opening.
     const theme = READING_THEMES[this.#preferences.theme]
     const snapshot = textMode
@@ -735,6 +765,8 @@ export class PdfReader {
   async applyPreferences(preferences) {
     this.#invalidateStagedSpeech()
     const previous = this.#preferences
+    this.#settleTextResize()
+    this.#cancelResize()
     const offset = previous.pdfMode === 'text' ? this.#visibleTextOffset() : this.#textOffset
     if (this.#doc && previous.pdfMode === 'text' && offset !== this.#textOffset) {
       this.#textOffset = offset

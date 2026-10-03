@@ -122,6 +122,15 @@ function blockFor(node, root) {
   return root;
 }
 
+// Foliate's comic parser has validated the archive and exposes image entries
+// without a detached document extractor. Recognize only that fixed-layout
+// shape; an unknown/broken document must never become a completed zero count.
+const imageSection = section => section?.createDocument === undefined
+  && typeof section.id === 'string' && !section.id.includes('\0')
+  && /\.(?:jpe?g|png|gif|bmp|webp|svg|jxl|avif)$/i.test(section.id)
+  && typeof section.load === 'function' && typeof section.unload === 'function'
+  && Number.isSafeInteger(section.size) && section.size > 0;
+
 /** All detached spine sections, including fixed-layout EPUB text. No images,
  * pagination or active-reader navigation. Zero means textless; null means an
  * incomplete/unreadable/cancelled source. Never publish a partial count. */
@@ -132,6 +141,20 @@ export async function measureBookLength(book, { isActive = () => true, yieldTask
   const language = Array.isArray(book.metadata?.language) ? book.metadata.language[0] : book.metadata?.language;
   const counter = createWordCounter(language, { isActive, yieldTask, maxCharacters });
   try {
+    if (book.rendition?.layout === 'pre-paginated') {
+      let imageOnly = true;
+      for (let index=0; index<sections.length; index++) {
+        if (!isActive()) return null;
+        if (!imageSection(sections[index])) { imageOnly = false; break; }
+        if ((index + 1) % 128 === 0 || index === sections.length - 1) {
+          await yieldTask();
+          if (!isActive()) return null;
+        }
+      }
+      // No OCR, image decompression or fictional printed pages. The same
+      // complete text-count contract also represents textless PDF/EPUB pages.
+      if (imageOnly) return completeWordCount(0);
+    }
     for (const section of sections) {
       if (!isActive() || typeof section.createDocument !== 'function') return null;
       const doc = await section.createDocument();

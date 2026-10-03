@@ -1,6 +1,6 @@
 import { afterEach,beforeEach,expect,it,vi } from 'vitest';
 import { createBookModel } from '../../src/js/book-model.js';
-import { buildReliefMaps } from '../../src/js/cover-relief.js';
+import { buildMapsFromPixels, buildReliefMaps, drain, heightToNormals } from '../../src/js/cover-relief.js';
 import { ShaderLib, Texture, TextureLoader } from 'three';
 
 const gates=vi.hoisted(()=>({next:null,taken:false}));
@@ -244,4 +244,95 @@ it('excludes fitted white board margins when the printed image has a different a
   const previous=source;
   await model.userData.setCoverRelief(choice(1,{color:'#ffffff',tolerance:2}));
   expect(vi.mocked(buildReliefMaps).mock.calls.at(-1)[0]).toBe(previous);
+});
+
+function multicolourMaps(selection) {
+  const width=24,height=24,data=new Uint8ClampedArray(width*height*4);
+  const palette=[choice(1).color,choice(2).color,'#fffaf0'];
+  for(let y=0;y<height;y++)for(let x=0;x<width;x++) {
+    const color=palette[Math.floor(x/8)];
+    data.set([1,3,5].map(at=>parseInt(color.slice(at,at+2),16)).concat(255),(y*width+x)*4);
+  }
+  const image={width,height,data},pixels=drain(buildMapsFromPixels(image,image,selection));
+  return {size:{width,height},pixels,normal:drain(heightToNormals(pixels))};
+}
+function actualLayerMaps() {
+  vi.mocked(buildReliefMaps).mockImplementation(async(_source,selection)=>multicolourMaps(selection));
+}
+
+it('persists independent colour layers and returns deep copies without extra meshes or a new shader program',async()=>{
+  actualLayerMaps();
+  const selection={layers:[choice(1,{strength:.2}),choice(2,{strength:.8})]},printed=cover.map,
+    colour=cover.color.clone(),version=cover.version,geometries=[];
+  model.traverse(node=>{if(node.geometry)geometries.push([node,node.geometry]);});
+  expect(await model.userData.setCoverRelief(selection)).toBe(true);
+  expect(cover.map).toBe(printed);expect(cover.color).toEqual(colour);expect(cover.version).toBe(version);
+  for(const [node,geometry] of geometries)expect(node.geometry).toBe(geometry);
+  const saved=model.userData.coverRelief();expect(saved).toEqual(selection);saved.layers[0].strength=1;
+  expect(model.userData.coverRelief()).toEqual(selection);expect(selection.layers[0].strength).toBe(.2);
+  const shader={uniforms:{},vertexShader:ShaderLib.physical.vertexShader,fragmentShader:ShaderLib.physical.fragmentShader};
+  cover.onBeforeCompile(shader,{});expect(shader.uniforms.bookReliefStrength.value).toBe(1);
+  expect(cover.clearcoatNormalScale.toArray()).toEqual([3.5,3.5]);
+});
+
+it('reuses classified pixels when changing only one layer strength and preserves every other uploaded pixel',async()=>{
+  actualLayerMaps();
+  await model.userData.setCoverRelief({layers:[choice(1,{strength:.8}),choice(2,{strength:.8})]});
+  const beforeNormal=cover.clearcoatNormalMap.image.data.slice(),beforeMaterial=cover.clearcoatMap.image.data.slice(),
+    version=cover.version,oldNormal=vi.spyOn(cover.clearcoatNormalMap,'dispose');
+  expect(await model.userData.setCoverRelief({layers:[choice(1,{strength:0}),choice(2,{strength:.8})]})).toBe(true);
+  expect(buildReliefMaps).toHaveBeenCalledOnce();expect(cover.version).toBe(version);expect(oldNormal).toHaveBeenCalledOnce();
+  let changed=0;
+  for(let y=0;y<24;y++)for(let x=0;x<24;x++) {
+    const index=(y*24+x)*4;
+    if(x<8) {
+      expect([...cover.clearcoatNormalMap.image.data.slice(index,index+4)]).toEqual([128,128,255,0]);
+      if(cover.clearcoatMap.image.data[index]!==beforeMaterial[index])changed++;
+    } else {
+      expect([...cover.clearcoatNormalMap.image.data.slice(index,index+4)]).toEqual([...beforeNormal.slice(index,index+4)]);
+      expect([...cover.clearcoatMap.image.data.slice(index,index+4)]).toEqual([...beforeMaterial.slice(index,index+4)]);
+    }
+  }
+  expect(changed).toBeGreaterThan(0);
+});
+
+it('keys every selected colour and tolerance while ignoring checkbox order and retaining strength-only cache reuse',async()=>{
+  actualLayerMaps();
+  const layers=[choice(1),choice(2)];await model.userData.setCoverRelief({layers});
+  const normal=cover.clearcoatNormalMap,packed=cover.clearcoatMap;
+  await model.userData.setCoverRelief({layers:[...layers].reverse()});
+  expect(buildReliefMaps).toHaveBeenCalledOnce();expect(cover.clearcoatNormalMap).toBe(normal);expect(cover.clearcoatMap).toBe(packed);
+  await model.userData.setCoverRelief({layers:[{...layers[0],id:'color-3'},{...layers[1],id:'color-3'}]});
+  expect(buildReliefMaps).toHaveBeenCalledOnce();expect(cover.clearcoatNormalMap).toBe(normal);expect(cover.clearcoatMap).toBe(packed);
+  await model.userData.setCoverRelief({layers:[layers[0],choice(2,{tolerance:2})]});
+  expect(buildReliefMaps).toHaveBeenCalledTimes(2);
+  await model.userData.setCoverRelief({layers:[layers[0],choice(2,{color:'#204b79',tolerance:2})]});
+  expect(buildReliefMaps).toHaveBeenCalledTimes(3);
+});
+
+it('cannot revive a cleared multicolour profile from a pending intensity recomposition',async()=>{
+  actualLayerMaps();await model.userData.setCoverRelief({layers:[choice(1),choice(2)]});
+  const gate=deferred();gates.next=gate;
+  const pending=model.userData.setCoverRelief({layers:[choice(1,{strength:.1}),choice(2)]});
+  await vi.waitFor(()=>expect(gates.taken).toBe(true));
+  await model.userData.setCoverRelief(null);const normal=cover.clearcoatNormalMap,packed=cover.clearcoatMap;
+  gate.resolve();expect(await pending).toBe(false);
+  expect(cover.clearcoatNormalMap).toBe(normal);expect(cover.clearcoatMap).toBe(packed);
+  expect(model.userData.coverRelief()).toBeNull();expect(buildReliefMaps).toHaveBeenCalledOnce();
+});
+
+it('rebuilds a saved multicolour shelf profile with bounded maps and survives a later laminate change',async()=>{
+  actualLayerMaps();model.userData.dispose();
+  const selection={layers:[choice(1,{strength:.3}),choice(2,{strength:.9})]};
+  model=createBookModel({...book,coverRelief:selection},style,132,200,30,null,{shelf:true,overview:true});
+  const materials=model.getObjectByName('front-cover').material;
+  cover=Array.isArray(materials)?materials[0]:materials;
+  await vi.waitFor(()=>expect(cover.clearcoatNormalMap?.image.width).toBe(24));
+  expect(buildReliefMaps).toHaveBeenCalledWith(expect.anything(),selection,expect.objectContaining({maxSize:128}));
+  expect(model.userData.coverRelief()).toEqual(selection);const normal=cover.clearcoatNormalMap,packed=cover.clearcoatMap;
+  model.userData.updateCoverAppearance({...book,coverFinish:'matte',coverRelief:selection});
+  await vi.waitFor(()=>expect(cover.clearcoatMap).not.toBe(packed));
+  expect(cover.clearcoatNormalMap).toBe(normal);expect(buildReliefMaps).toHaveBeenCalledOnce();
+  expect(cover.clearcoatMap.image.data[(12*24+20)*4]).toBe(0); // unselected paper remains matte
+  expect(cover.clearcoatMap.image.data[(12*24+4)*4]).toBeGreaterThan(0);
 });

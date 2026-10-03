@@ -104,7 +104,15 @@ async function savedBook(page, name) {
     })
     db.close()
     const book = books.find(item => item.name === name)
-    return book ? { id:book.id, locator:book.locator, fraction:book.progressFraction } : null
+    return book ? {
+      id:book.id,
+      locator:book.locator,
+      fraction:book.progressFraction,
+      wordCountComplete:book.wordCountComplete,
+      wordCountVersion:book.wordCountVersion,
+      contentRevision:book.contentRevision,
+      wordCountContentRevision:book.wordCountContentRevision,
+    } : null
   }, name)
 }
 
@@ -278,6 +286,14 @@ test('móvil: salir coloca el marcapáginas, cierra la página actual y vuelve a
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.locator('#file-picker').setInputFiles({name:'reverse-current-page.pdf',mimeType:'application/pdf',buffer:colouredPdf()});
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 1 de 4/);
+  // This case observes the complete 3D return of an already measured volume.
+  // A fresh import may finish its first visible page before the independent
+  // full-document word count; its pending close deliberately returns promptly.
+  await expect.poll(async()=>{
+    const book=await savedBook(page,'reverse-current-page.pdf');
+    return book?.wordCountComplete===true && book.wordCountVersion===2 && Boolean(book.contentRevision)
+      && book.wordCountContentRevision===book.contentRevision;
+  }).toBe(true);
   await observeClosing(page,{source:'pdf-canvas',locator:{kind:'pdf-page',value:1},text:'Printed page 1.',blue:false});
   await page.getByRole('button',{name:'Volver a la estantería'}).click();
   await assertClosing(page,testInfo);

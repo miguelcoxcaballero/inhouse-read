@@ -1,3 +1,4 @@
+import { switchShelfView } from './helpers/shelf-view-gesture.mjs'
 import { expect, test } from '@playwright/test';
 
 const PLANTS_KEY = 'inhouse-read-shelf-plants';
@@ -29,7 +30,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function openCatalog(page) {
-  await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
+  await switchShelfView(page, 'isometric');
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress','1',{ timeout:VIEW_TRANSITION_TIMEOUT });
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating','false');
   await assertIsometricOverview(page);
@@ -86,7 +87,7 @@ test('una planta junto a un libro fino no tapa su zona táctil al girar o recarg
   const canvas = page.locator('.ihr-bookshelf-scene');
   const spine = page.locator('.ihr-spine').first();
   await expect(spine).toBeVisible();
-  await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
+  await switchShelfView(page, 'isometric');
   await expect(canvas).toHaveAttribute('data-view-progress','1',{ timeout:VIEW_TRANSITION_TIMEOUT });
   await page.reload();
   await expect(canvas).toHaveAttribute('data-view-progress','1',{ timeout:VIEW_TRANSITION_TIMEOUT });
@@ -150,7 +151,7 @@ test('el catálogo está pegado al lateral 3D, sólo aparece en isométrica y a�
   await expect(page.locator('.ihr-plant')).toHaveAttribute('data-object-id',plants[0].key);
   expect(await savedPlants(page)).toEqual(plants);
   await assertIsometricOverview(page);
-  await page.getByRole('button',{ name:'Vista de canto' }).click();
+  await switchShelfView(page, 'spine');
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress','0',{ timeout:VIEW_TRANSITION_TIMEOUT });
   await expect(page.locator('.ihr-shelf-catalog')).toBeHidden();
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-catalog-visible','false');
@@ -217,7 +218,7 @@ test('una planta cae como modelo 3D en la papelera y la última planta retirada 
   await expect(canvas).toHaveAttribute('data-animating','false');
   await expect(canvas).toHaveAttribute('data-trash3d','true');
   await expect(page.locator('.ihr-shelf-trash')).toBeHidden();
-  await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
+  await switchShelfView(page, 'isometric');
   await expect(canvas).toHaveAttribute('data-view-progress','1',{ timeout:VIEW_TRANSITION_TIMEOUT });
   await expect(canvas).toHaveAttribute('data-animating','false');
   await assertIsometricOverview(page);
@@ -284,7 +285,7 @@ test('un gesto táctil desde las hojas mueve una planta superior directamente a 
   await expect(page.locator('.ihr-plant')).toHaveCount(2);
   await expect(plant).toHaveAttribute('data-shelf-index','0');
   await expect(canvas).toHaveAttribute('data-animating','false');
-  await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
+  await switchShelfView(page, 'isometric');
   await expect(canvas).toHaveAttribute('data-view-progress','1',{ timeout:VIEW_TRANSITION_TIMEOUT });
   await expect(canvas).toHaveAttribute('data-animating','false');
   // The first and tenth shelves and grounded basket must fit simultaneously.
@@ -486,7 +487,7 @@ test('las plantas de una instalación antigua migran a los modelos actuales sin 
     expect(migrated[index].width).toBe(species[index].width);
   }
   await testInfo.attach('legacy-plantas-3d-frontal',{ body:await page.screenshot(),contentType:'image/png' });
-  await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).click();
+  await switchShelfView(page, 'isometric');
   await expect(canvas).toHaveAttribute('data-view-progress','1',{ timeout:VIEW_TRANSITION_TIMEOUT });
   await assertModels();
   expect(await savedPlants(page)).toEqual(migrated);

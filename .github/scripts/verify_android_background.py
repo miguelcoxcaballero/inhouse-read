@@ -20,9 +20,11 @@ history = []
 def labels(root):
     return [(n, (n.get("content-desc", "") or n.get("text", "")).strip()) for n in root.iter("node")]
 
-def tap(root, pattern):
+def tap(root, pattern, *, require_button=False):
     for node, label in labels(root):
         if node.get("enabled") != "true" or not re.search(pattern, label, re.I):
+            continue
+        if require_button and (node.get("class") != "android.widget.Button" or node.get("clickable") != "true"):
             continue
         box = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
         if not box:
@@ -34,11 +36,11 @@ def tap(root, pattern):
         return label
     return None
 
-def ui_action(label, pattern, timeout=45):
+def ui_action(label, pattern, timeout=45, *, require_button=False):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         root = capture(Path(PREFIX+label+".png"), Path(PREFIX+label+".xml"))
-        used = tap(root, pattern)
+        used = tap(root, pattern, require_button=require_button)
         if used:
             history.append({"action": label, "control": used, "at": time.time()})
             return root
@@ -122,7 +124,7 @@ def main():
         run("adb","logcat","-G","16M");run("adb","logcat","-c")
         open_fixture_document("audiobook")
         ui_action("audio",r"^Escuchar el libro$")
-        ui_action("voices",r"^Voz(?:\s|$)")
+        ui_action("voices",r"^Voz(?:\s|$)",require_button=True)
         ui_action("download",r"^Descargar la voz(?: natural)? Lessac\b")
         # The exact real installed row replaces Download; no forced install API.
         end=time.monotonic()+600
@@ -168,9 +170,9 @@ def main():
         # also finish with document.hidden, not just an EPUB spine animation.
         open_fixture_document("backgroundpdf")
         ui_action("pdf-audio",r"^Escuchar el libro$")
-        ui_action("pdf-language",r"^Idioma(?:\s|$)")
+        ui_action("pdf-language",r"^Idioma(?:\s|$)",require_button=True)
         ui_action("pdf-english",r"^Ingl[eé]s(?:\s|$)")
-        ui_action("pdf-voices",r"^Voz(?:\s|$)")
+        ui_action("pdf-voices",r"^Voz(?:\s|$)",require_button=True)
         ui_action("pdf-lessac",r"^(Usar la voz|Voz en uso) Lessac\b")
         run("adb","shell","input","keyevent","KEYCODE_ESCAPE")
         ui_action("pdf-play",r"^Reproducir$")

@@ -47,7 +47,19 @@ for (const scenario of [
     const state=await visibleWords(page);screens.push(state)
     for(const word of state.words)if(word.visible)coverage.add(word.index)
     await page.getByRole('button',{name:'Página siguiente',exact:true}).click()
-    const aria=await page.locator('#reader-location').getAttribute('aria-label')
+    // A click can finish while PDF.js is still rendering the next physical
+    // page. Observe one settled viewport, rather than branching on its old label.
+    let endpoint
+    await expect.poll(async()=>{
+      endpoint=await page.evaluate(()=>({
+        busy:document.querySelector('#reader-viewport').getAttribute('aria-busy')==='true',
+        aria:document.querySelector('#reader-location').getAttribute('aria-label'),
+        scrollTop:document.querySelector('#reader-viewport').scrollTop
+      }))
+      return !endpoint.busy && (endpoint.aria.includes('Página 2 de 2')
+        || (endpoint.aria.includes('Página 1 de 2') && endpoint.scrollTop>state.scrollTop))
+    }).toBe(true)
+    const aria=endpoint.aria
     if(aria.includes('Página 2 de 2'))break
     await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 1 de 2/)
     expect((await visibleWords(page)).scrollTop).toBeGreaterThan(state.scrollTop)

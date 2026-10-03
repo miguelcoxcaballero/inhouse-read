@@ -1,3 +1,4 @@
+import { switchShelfView } from './helpers/shelf-view-gesture.mjs'
 import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import { spinePointerPosition } from './helpers/shelf-pointer.mjs'
@@ -116,7 +117,7 @@ test('la estantería frontal ocupa todo el ancho y la papelera sólo se activa e
     expect(await bin.evaluate(node => ({ pointerEvents:getComputedStyle(node).pointerEvents,
       inert:node.inert, tabIndex:node.tabIndex }))).toEqual({ pointerEvents:'none', inert:true, tabIndex:-1 })
     await expect(page.locator('.ihr-shelf-catalog')).toBeHidden()
-    await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
+    await switchShelfView(page, 'isometric')
     await expect(scene).toHaveAttribute('data-view-progress', '1', { timeout:VIEW_TRANSITION_TIMEOUT })
     await expect(scene).toHaveAttribute('data-animating', 'false')
     await assertFullCabinetWidth(page)
@@ -146,7 +147,7 @@ test('la estantería frontal ocupa todo el ancho y la papelera sólo se activa e
     })
     await page.locator('.ihr-bookshelf__scroll').evaluate(node => { node.scrollTop = 0 })
     await expect(page.getByRole('button', { name:'Abrir catálogo IKEA de plantas, estanterías e iluminación' })).toBeVisible()
-    await page.getByRole('button', { name:'Vista de canto' }).click()
+    await switchShelfView(page, 'spine')
     await expect(scene).toHaveAttribute('data-view-progress', '0', { timeout:VIEW_TRANSITION_TIMEOUT })
     await expect(scene).toHaveAttribute('data-animating', 'false')
     await assertFullCabinetWidth(page)
@@ -202,7 +203,7 @@ test('libros y plantas se colocan libremente, se apartan al colisionar y conserv
   expect(Number(await object(page, 'plant:placement-a').getAttribute('data-shelf-x'))).not.toBeCloseTo(plantX, 2)
   await assertNoOverlap(page)
 
-  await page.getByRole('button', { name:'Vista isométrica, libros de lado' }).click()
+  await switchShelfView(page, 'isometric')
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '1', { timeout:VIEW_TRANSITION_TIMEOUT })
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
   const thirdRowPlant = await object(page, 'plant:placement-c').boundingBox()
@@ -216,7 +217,7 @@ test('libros y plantas se colocan libremente, se apartan al colisionar y conserv
   await assertNoOverlap(page)
   const finalPlants = await page.evaluate(key => JSON.parse(localStorage.getItem(key)), PLANTS_KEY)
   const finalPositions = await Promise.all(Array.from({ length:4 }, (_, index) => positionFor(page,`placement:${index}`)))
-  await page.getByRole('button', { name:'Vista de canto' }).click()
+  await switchShelfView(page, 'spine')
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '0', { timeout:VIEW_TRANSITION_TIMEOUT })
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
   await assertFullCabinetWidth(page)

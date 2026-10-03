@@ -19,6 +19,7 @@ for (const proto of [globalThis.WebGL2RenderingContext?.prototype, globalThis.We
 import { Vector3 } from 'three';
 import { bookView, getBookRenderer } from '/inhouse-read/src/js/book-model.js';
 import { analyzeCoverRelief, buildReliefMaps } from '/inhouse-read/src/js/cover-relief.js';
+import { LibraryStore } from '/inhouse-read/src/js/library-store.js';
 import { drawCoverCorpus, prepareCoverCorpusFonts, loadCoverCorpus, loadColourMaskCorpus } from '/inhouse-read/tests/e2e/helpers/cover-corpus.js';
 const regenerate = ${process.env.IHR_RELIEF_REGENERATE === '1'};
 if (regenerate) await prepareCoverCorpusFonts();
@@ -105,10 +106,19 @@ async function maskOracle(name,choice) {
   const rgba=context.getImageData(0,0,width,height).data, target=toLab(choice.color.slice(1).match(/../g).map(x=>parseInt(x,16)));
   const expected=new Uint8Array(width*height),core=new Uint8Array(width*height),actual=built.pixels;
   let selected=0,falsePositive=0,foil=0,outsideHeight=0,outsideGloss=0,outsideNormal=0,interior=0,missingInterior=0,flatInterior=0;
+  let coreCount=0,missingCore=0,zeroHeightCore=0,zeroGlossCore=0;
   for(let i=0;i<expected.length;i++) {
     const distance=Math.hypot(...toLab([...rgba.slice(i*4,i*4+3)]).map((value,c)=>value-target[c]));
     expected[i]=distance<choice.tolerance?1:0;
     core[i]=distance<choice.tolerance*.5?1:0;
+    // The colour-distance core is independent of the generated mask. A fine
+    // pigment can be real without containing many entirely solid 7x7 squares.
+    if(core[i]) {
+      coreCount++;
+      if(!actual.mask[i])missingCore++;
+      if(!actual.heightMap[i])zeroHeightCore++;
+      if(!actual.gloss[i])zeroGlossCore++;
+    }
     if(actual.mask[i]){selected++;if(!expected[i])falsePositive++;}
     if(actual.foil[i])foil++;
     if(!expected[i]) {
@@ -126,7 +136,56 @@ async function maskOracle(name,choice) {
   for(let i=0;i<actual.mask.length;i++){maskRGBA.set([actual.mask[i],actual.mask[i],actual.mask[i],255],i*4);}
   maskCanvas.getContext('2d').putImageData(new ImageData(maskRGBA,width,height),0,0);
   return {name,choice,width,height,selected,falsePositive,foil,outsideHeight,outsideGloss,outsideNormal,interior,missingInterior,flatInterior,
+    coreCount,missingCore,zeroHeightCore,zeroGlossCore,
     maskPng:maskCanvas.toDataURL('image/png').split(',')[1]};
+}
+async function multiMaskOracle(name,profile,changed) {
+  const source=await urlOf(name),built=await buildReliefMaps(source,profile,{maxSize:512});
+  const next=await buildReliefMaps(source,changed,{maxSize:512}),{width,height}=built.size;
+  if(next.size.width!==width||next.size.height!==height)throw Error('Independent multilayer raster sizes differ');
+  const image=new Image();image.src=source;await image.decode();
+  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+  const context=canvas.getContext('2d',{willReadFrequently:true});context.imageSmoothingQuality='high';context.drawImage(image,0,0,width,height);
+  const rgba=context.getImageData(0,0,width,height).data;
+  const targets=profile.layers.map(layer=>toLab(layer.color.slice(1).match(/../g).map(x=>parseInt(x,16))));
+  const counts=profile.layers.map(layer=>({color:layer.color,core:0,missing:0,zeroHeight:0,zeroGloss:0,changedCore:0}));
+  let outsideMask=0,outsideHeight=0,outsideGloss=0,outsideNormal=0,foil=0,unchangedLayerDifferences=0,outsideDifferences=0;
+  for(let i=0;i<width*height;i++) {
+    const lab=toLab([...rgba.slice(i*4,i*4+3)]),distances=targets.map(target=>Math.hypot(...lab.map((v,c)=>v-target[c])));
+    const region=distances.findIndex((distance,index)=>distance<profile.layers[index].tolerance);
+    const differs=built.pixels.mask[i]!==next.pixels.mask[i]||built.pixels.heightMap[i]!==next.pixels.heightMap[i]
+      ||built.pixels.gloss[i]!==next.pixels.gloss[i]||[0,1,2,3].some(c=>built.normal[i*4+c]!==next.normal[i*4+c]);
+    if(built.pixels.foil[i]||next.pixels.foil[i])foil++;
+    if(region<0) {
+      if(built.pixels.mask[i]||next.pixels.mask[i])outsideMask++;
+      if(built.pixels.heightMap[i]||next.pixels.heightMap[i])outsideHeight++;
+      if(built.pixels.gloss[i]||next.pixels.gloss[i])outsideGloss++;
+      if([built,next].some(map=>map.normal[i*4]!==128||map.normal[i*4+1]!==128||map.normal[i*4+2]!==255))outsideNormal++;
+      if(differs)outsideDifferences++;
+    } else {
+      if(region===1&&differs)unchangedLayerDifferences++;
+      if(distances[region]<profile.layers[region].tolerance*.5) {
+        const count=counts[region];count.core++;
+        if(!built.pixels.mask[i]||!next.pixels.mask[i])count.missing++;
+        if(!built.pixels.heightMap[i]||!next.pixels.heightMap[i])count.zeroHeight++;
+        if(!built.pixels.gloss[i]||!next.pixels.gloss[i])count.zeroGloss++;
+        if(differs)count.changedCore++;
+      }
+    }
+  }
+  return {width,height,counts,outsideMask,outsideHeight,outsideGloss,outsideNormal,foil,unchangedLayerDifferences,outsideDifferences};
+}
+function currentRelief() {
+  let profile=null;renderedScene.traverse(object=>{if(typeof object.userData.coverRelief==='function')profile=object.userData.coverRelief();});
+  return profile;
+}
+async function persistRelief(profile) {
+  const dbName='inhouse-relief-multi-corpus',id='local:multilayer-rgb';
+  const store=new LibraryStore(dbName);
+  await store.addOrTouch({id,title:'Exact RGB pigment cover',sourceType:'local',coverRelief:null});
+  await store.patch(id,{coverRelief:profile});await store.close();
+  const reopened=new LibraryStore(dbName),saved=await reopened.get(id);await reopened.close();
+  return saved.coverRelief;
 }
 const counters = () => ({ links, calls:gpu.info.render.calls, programs:gpu.info.programs.length, textures:gpu.info.memory.textures, triangles:gpu.info.render.triangles });
 const pose = (yaw, pitch) => view.draw({ x:0, y:0, scale:1.15, angle:yaw, pitch });
@@ -142,6 +201,7 @@ function diff(a, b) {
   return { mean:total / Math.max(1, n), max, changedFraction:changed / Math.max(1, n) };
 }
 window.reliefFixture = { maskOracle, sourceState, localized, names:Object.keys(corpus), open, counters, pose, shot, pixels, diff, urlOf, analyze:async name => analyzeCoverRelief(await urlOf(name), {}),
+  multiMaskOracle,currentRelief,persistRelief,
   sourceShots:() => Object.fromEntries(Object.entries(corpus).map(([name, canvas]) => [name, canvas.toDataURL('image/png').split(',')[1]])),
   apply:relief => view.setCoverRelief(relief), maps:async (name, relief) => { const m = await buildReliefMaps(await urlOf(name), relief, { maxSize:512 }); return { width:m.width ?? m.size.width, ms:m.stats.ms, longest:m.stats.longestSliceMs }; },
   render:() => view.draw(view.getPose()), model:() => view };
@@ -191,6 +251,102 @@ async function boot(page) {
   return errors;
 }
 
+test('dos colores conservan relieves independientes al ajustar su fuerza, inclinar y reabrir el libro',async({page},testInfo)=>{
+  test.setTimeout(180_000);
+  const errors=await boot(page),angles=[[-14,7],[-7,-4],[0,0],[7,4],[14,-7]];
+  const result=await page.evaluate(async angles=>{
+    const api=window.reliefFixture,name='13-rgb-exact',colors=['#2350b5','#d4a93c'];
+    const {proposals}=await api.analyze(name);
+    // Select actual persisted HEX pigments, independently of proposal order.
+    const layers=colors.map((color,index)=>{
+      const choice=proposals.find(item=>item.color===color);
+      if(!choice)throw Error('Missing independent RGB fixture pigment '+color);
+      return {id:choice.id,color,tolerance:choice.tolerance,strength:index===0 ? .25 : .8};
+    });
+    const profile={layers},changed={layers:layers.map((layer,index)=>({...layer,strength:index===0 ? .95 : layer.strength}))};
+    const saved=await api.persistRelief(profile),oracle=await api.multiMaskOracle(name,saved,changed);
+    await api.open(name,'matte');
+    const ink=api.sourceState(),before=api.counters(),baseline={},selected={},shots=[];
+    for(const [yaw,pitch] of angles){api.pose(yaw,pitch);baseline[yaw+':'+pitch]=api.pixels().slice();}
+    if(!await api.apply(saved))throw Error('Multiple persisted colour layers were not applied');
+    const active=api.currentRelief(),regions=colors.map(color=>({color,samples:[],motion:[]})),outside=[];
+    for(const [yaw,pitch] of angles) {
+      api.pose(yaw,pitch);const key=yaw+':'+pitch,current=api.pixels().slice();selected[key]=current;
+      for(const region of regions)region.samples.push({...api.localized(baseline[key],current,region.color),yaw,pitch});
+      outside.push({yaw,pitch,...api.localized(baseline[key],current,'#fffaf0').inside});
+      if(yaw===-14||yaw===0||yaw===14)shots.push({name:'multilayer-selected-'+yaw,png:api.shot()});
+    }
+    const inkSelected=api.sourceState(),afterSelected=api.counters();
+    if(!await api.apply(changed))throw Error('Individual layer strength was not applied');
+    const activeChanged=api.currentRelief(),isolated=[];
+    for(const [yaw,pitch] of angles) {
+      api.pose(yaw,pitch);const current=api.pixels().slice(),original=selected[yaw+':'+pitch];
+      isolated.push({yaw,pitch,first:api.localized(original,current,colors[0]),second:api.localized(original,current,colors[1]),outside:api.localized(original,current,'#fffaf0').inside});
+      if(yaw===-14||yaw===0||yaw===14)shots.push({name:'multilayer-first-strength-'+yaw,png:api.shot()});
+    }
+    const inkChanged=api.sourceState(),afterChanged=api.counters(),savedChanged=await api.persistRelief(changed);
+    api.pose(0,0);const changedPixels=api.pixels().slice();
+    await api.open(name,'matte',savedChanged);api.pose(0,0);
+    const reopened=api.diff(changedPixels,api.pixels()),reopenedActive=api.currentRelief(),inkReopened=api.sourceState();
+    shots.push({name:'multilayer-reopened',png:api.shot()});
+    const summary=region=>{
+      for(let i=1;i<region.samples.length;i++) {
+        let delta=0,count=0;
+        for(let j=0;j<region.samples[i].deltas.length;j++)for(let channel=0;channel<3;channel++) {
+          delta+=Math.abs(region.samples[i].deltas[j][channel]-region.samples[i-1].deltas[j][channel]);count++;
+        }
+        region.motion.push(delta/count);
+      }
+      return {...region,samples:region.samples.map(({deltas,...sample})=>sample)};
+    };
+    return {profile,changed,saved,savedChanged,active,activeChanged,reopenedActive,oracle,ink,inkSelected,inkChanged,inkReopened,before,afterSelected,afterChanged,
+      regions:regions.map(summary),outside,isolated:isolated.map(({first,second,...sample})=>({...sample,first:(({deltas,...rest})=>rest)(first),second:(({deltas,...rest})=>rest)(second)})),reopened,shots};
+  },angles);
+  const {shots,...summary}=result;
+  await testInfo.attach('independent-persisted-multicolour-relief',{body:JSON.stringify(summary),contentType:'application/json'});
+  if(EVIDENCE)await mkdir(EVIDENCE,{recursive:true}).then(()=>writeFile(EVIDENCE+'/multilayer-independent.json',JSON.stringify(summary,null,2)));
+  for(const shot of shots)await save(shot.name,shot.png);
+  await testInfo.attach('multicolour-relief-reopened',{body:Buffer.from(shots.at(-1).png,'base64'),contentType:'image/png'});
+  expect(result.saved).toEqual(result.profile);
+  expect(result.active).toEqual(result.profile);
+  expect(result.savedChanged).toEqual(result.changed);
+  expect(result.activeChanged).toEqual(result.changed);
+  expect(result.reopenedActive).toEqual(result.changed);
+  expect(result.profile.layers.map(layer=>layer.color)).toEqual(['#2350b5','#d4a93c']);
+  for(const layer of result.savedChanged.layers)expect(Object.keys(layer).sort()).toEqual(['color','id','strength','tolerance']);
+  for(const key of ['outsideMask','outsideHeight','outsideGloss','outsideNormal','foil','unchangedLayerDifferences','outsideDifferences'])expect(result.oracle[key],key).toBe(0);
+  for(const layer of result.oracle.counts) {
+    expect(layer.core,layer.color+' independent pigment core').toBeGreaterThan(100);
+    for(const key of ['missing','zeroHeight','zeroGloss'])expect(layer[key],layer.color+' '+key).toBe(0);
+  }
+  expect(result.oracle.counts[0].changedCore).toBeGreaterThan(100);
+  expect(result.oracle.counts[1].changedCore).toBe(0);
+  expect(result.inkSelected).toEqual(result.ink);
+  expect(result.inkChanged).toEqual(result.ink);
+  expect({...result.inkReopened,map:null}).toEqual({...result.ink,map:null});
+  expect(result.ink.metalness).toBe(0);
+  for(const counters of [result.afterSelected,result.afterChanged]) {
+    expect(counters.links).toBe(result.before.links);
+    expect(counters.programs).toBe(result.before.programs);
+    expect(counters.calls).toBeLessThanOrEqual(result.before.calls);
+  }
+  for(const region of result.regions) {
+    for(const sample of region.samples)expect(sample.inside.count).toBeGreaterThan(100);
+    expect(Math.max(...region.samples.map(sample=>sample.edgeInside.max)),region.color+' own visible edge').toBeGreaterThan(6);
+    expect(Math.max(...region.motion),region.color+' highlight moves with tilt').toBeGreaterThan(.05);
+  }
+  for(const sample of result.outside) {expect(sample.count).toBeGreaterThan(100);expect(sample.max).toBeLessThanOrEqual(1);expect(sample.changed).toBe(0);}
+  for(const sample of result.isolated) {
+    expect(sample.first.outside.max,'changing blue leaves the other pigment and paper unchanged').toBeLessThanOrEqual(1);
+    expect(sample.first.outside.changed).toBe(0);
+    expect(sample.second.inside.max).toBeLessThanOrEqual(1);
+    expect(sample.outside.max).toBeLessThanOrEqual(1);
+  }
+  expect(Math.max(...result.isolated.map(sample=>sample.first.edgeInside.max))).toBeGreaterThan(6);
+  expect(result.reopened.max).toBeLessThanOrEqual(1);
+  expect(errors).toEqual([]);
+});
+
 test('el relieve guardado también brilla en el modelo de la estantería',async({page})=>{
   test.setTimeout(180_000);
   const errors=await boot(page);
@@ -220,7 +376,7 @@ test('el relieve guardado también brilla en el modelo de la estantería',async(
   expect(errors).toEqual([]);
 });
 
-test('el corpus recibe hasta tres colores reales distintos, sin familias inventadas, y el análisis cede el hilo principal', async ({ page }) => {
+test('el corpus recibe hasta diez colores reales distintos, sin familias inventadas, y el análisis cede el hilo principal', async ({ page }) => {
   test.setTimeout(280_000);
   const errors = await boot(page);
   const report = await page.evaluate(async () => {
@@ -265,18 +421,32 @@ test('el corpus recibe hasta tres colores reales distintos, sin familias inventa
 test('las máscaras siguen sólo el color de RGB, antialias, JPEG y fotografía con normales y metal neutros fuera', async ({ page },testInfo) => {
   test.setTimeout(280_000);
   const errors=await boot(page);
-  const rows=await page.evaluate(async()=>{
-    const api=window.reliefFixture,rows=[];
+  const {rows,census}=await page.evaluate(async()=>{
+    const api=window.reliefFixture,rows=[],census=[];
     for(const name of ['13-rgb-exact','14-colour-antialias','15-colour-jpeg','16-cc0-flower-photo']) {
-      for(const proposal of (await api.analyze(name)).proposals) rows.push(await api.maskOracle(name,proposal));
+      const {proposals}=await api.analyze(name);
+      census.push({name,proposals:proposals.map(({id,color,tolerance})=>({id,color,tolerance}))});
+      for(const proposal of proposals) rows.push(await api.maskOracle(name,proposal));
     }
-    return rows;
+    return {rows,census};
   });
   const summary=rows.map(({maskPng,...row})=>row);
   await testInfo.attach('colour-mask-independent-oracles',{body:JSON.stringify(summary,null,2),contentType:'application/json'});
+  await testInfo.attach('colour-mask-complete-proposal-census',{body:JSON.stringify(census,null,2),contentType:'application/json'});
   if(EVIDENCE)await mkdir(EVIDENCE,{recursive:true}).then(()=>writeFile(EVIDENCE+'/mask-oracles.json',JSON.stringify(summary,null,2)));
   for(const row of rows)await save(row.name+'-'+row.choice.id+'-mask',row.maskPng);
-  expect(rows).toHaveLength(12);
+  expect(census.map(item=>item.name)).toEqual(['13-rgb-exact','14-colour-antialias','15-colour-jpeg','16-cc0-flower-photo']);
+  expect(rows).toHaveLength(census.reduce((sum,item)=>sum+item.proposals.length,0));
+  for(const {name,proposals} of census) {
+    if(name==='16-cc0-flower-photo') {
+      expect(proposals.length).toBeGreaterThanOrEqual(3);
+      expect(proposals.length).toBeLessThanOrEqual(10);
+    } else expect(proposals).toHaveLength(3);
+    expect(new Set(proposals.map(choice=>choice.id)).size).toBe(proposals.length);
+    expect(new Set(proposals.map(choice=>choice.color)).size).toBe(proposals.length);
+    expect(proposals.map(choice=>choice.id)).toEqual(proposals.map((_,index)=>'color-'+(index+1)));
+    expect(rows.filter(row=>row.name===name).map(row=>({id:row.choice.id,color:row.choice.color,tolerance:row.choice.tolerance}))).toEqual(proposals);
+  }
   for(const row of rows) {
     const label=row.name+' '+row.choice.color;
     expect(row.selected,label+' selecciona píxeles reales').toBeGreaterThan(20);
@@ -285,7 +455,14 @@ test('las máscaras siguen sólo el color de RGB, antialias, JPEG y fotografía 
     expect(row.outsideHeight,label+' altura exterior cero').toBe(0);
     expect(row.outsideGloss,label+' brillo exterior cero').toBe(0);
     expect(row.outsideNormal,label+' normal exterior plana').toBe(0);
-    expect(row.interior,label+' el oráculo tiene una región interior').toBeGreaterThan(20);
+    // Retain every original broad-region assertion for the original three
+    // proposals. Extra genuine fine colours need not contain a 7x7 plateau;
+    // their independently classified colour core must still have real relief.
+    if(Number(row.choice.id.slice('color-'.length))<=3)expect(row.interior,label+' el oráculo tiene una región interior').toBeGreaterThan(20);
+    expect(row.coreCount,label+' núcleo del pigmento real').toBeGreaterThan(20);
+    expect(row.missingCore,label+' conserva todo el núcleo del color').toBe(0);
+    expect(row.zeroHeightCore,label+' relieve positivo en el núcleo del color').toBe(0);
+    expect(row.zeroGlossCore,label+' brillo positivo en el núcleo del color').toBe(0);
     expect(row.missingInterior,label+' no pierde el interior del color').toBe(0);
     if(row.name==='13-rgb-exact')expect(row.flatInterior,label+' sólo bisela bordes').toBe(row.interior);
   }

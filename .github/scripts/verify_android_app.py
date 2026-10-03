@@ -67,9 +67,15 @@ def interactive_bookshelf_visible(root):
                and node.attrib.get("class") in ("android.widget.Button", "android.widget.ToggleButton")]
     has_import = any(re.fullmatch(r"A.adir libro", node_text(node).strip(), re.I)
                      for node in buttons)
-    has_view = any(re.search(r"Vista de canto|Vista isom.trica", node_text(node), re.I)
-                   for node in buttons)
-    return has_import and has_view
+    # The cabinet now exposes native keyboard/swipe navigation instead of view
+    # buttons. Require its named, enabled, focusable JS region; a header or the
+    # removed buttons must not stand in for an initialized bookshelf.
+    has_region = any(node.attrib.get("enabled") == "true"
+                     and node.attrib.get("focusable") == "true"
+                     and any(label.strip() == "Estantería" for label in
+                             (node.attrib.get("text", ""), node.attrib.get("content-desc", "")))
+                     for node in root.iter("node"))
+    return has_import and has_region
 
 
 def google_signin_visible(root):

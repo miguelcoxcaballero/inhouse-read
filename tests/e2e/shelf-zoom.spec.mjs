@@ -1,3 +1,4 @@
+import { switchShelfView } from './helpers/shelf-view-gesture.mjs'
 import { expect, test } from '@playwright/test';
 
 test.use({viewport:{width:390,height:844},hasTouch:true,isMobile:true,deviceScaleFactor:2});
@@ -23,7 +24,7 @@ test('finger-only zoom preserves book interaction, promotes textures, pans and r
   await expect(page.locator('.pdf-page-canvas')).toBeVisible();
   await page.getByRole('button',{name:'Volver a la estantería'}).click();
   await expect(page.locator('.ihr-flyout')).toHaveCount(0);
-  await page.getByRole('button',{name:'Vista isométrica, libros de lado'}).click();
+  await switchShelfView(page, 'isometric');
   const canvas=page.locator('.ihr-bookshelf-scene'),scroller=page.locator('.ihr-bookshelf__scroll');
   await expect(canvas).toHaveAttribute('data-view-progress','1',{timeout:30_000});
   await expect(canvas).toHaveAttribute('data-animating','false');
@@ -60,7 +61,7 @@ test('a finger flick coasts and a fresh touch stops it without losing the fitted
   test.setTimeout(90_000);
   await page.emulateMedia({reducedMotion:'no-preference'});
   await page.addInitScript(()=>localStorage.setItem('inhouse-read-shelf-plants','[]'));
-  await page.goto('/');await page.getByRole('button',{name:'Vista isométrica, libros de lado'}).click();
+  await page.goto('/');await switchShelfView(page, 'isometric');
   const canvas=page.locator('.ihr-bookshelf-scene');await expect(canvas).toHaveAttribute('data-view-progress','1',{timeout:30_000});
   const frame=await canvas.boundingBox(),cdp=await page.context().newCDPSession(page),x=frame.x+frame.width/2,y=frame.y+90;
   await pinch(cdp,x,y,100,200);
@@ -82,6 +83,10 @@ test('a finger flick coasts and a fresh touch stops it without losing the fitted
   await page.waitForTimeout(100);expect(JSON.parse(await canvas.getAttribute('data-inspection-pan'))[0]).toBe(stopped);
   await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
   await expect(canvas).toHaveAttribute('data-inspection-moving','false');
-  await page.getByRole('button',{name:'Vista de canto',exact:true}).click();
+  // A magnified cabinet owns single-finger panning. Fit it again before
+  // using the horizontal view gesture; this also preserves the pan checks.
+  await pinch(cdp,x,y,200,70);
+  await expect(canvas).toHaveAttribute('data-inspection-zoom','1.0000');
+  await switchShelfView(page, 'spine');
   await expect(canvas).toHaveAttribute('data-inspection-zoom','1.0000');
 });
