@@ -1,4 +1,4 @@
-import { PLANT_SIZES, POT_SIZES, plantDimensions } from './plant-dimensions.js';
+import { PLANT_SIZES, POT_SIZES, PLANT_DEFAULT_POTS, plantDimensions } from './plant-dimensions.js';
 
 /** `width` and `height` are the real IKEA size in millimetres (the standard
  * class shown on the shelf); the table lives in plant-dimensions.js. */
@@ -14,6 +14,7 @@ const PLANT_REFERENCES = Object.freeze([
 ]);
 
 export const PLANT_CATALOG = Object.freeze(PLANT_REFERENCES.map(plant => {
+  plant = { ...plant, defaultPotId:PLANT_DEFAULT_POTS[plant.id] };
   const size = plantDimensions(plant.id, plant.defaultPotId);
   return Object.freeze({ ...plant, width:size.width, height:size.height, canopy:size.canopy, potClass:size.potClass,
     confidence:PLANT_SIZES[plant.id].confidence });
@@ -24,9 +25,11 @@ const POT_REFERENCES = Object.freeze([
   { id:'muskotblomma', name:'MUSKOTBLOMMA', subtitle:'Terracota con plato', referenceUrl:'https://www.ikea.com/es/es/p/muskotblomma-maceta-con-plato-interior-exterior-terracota-00454883/' },
   { id:'akerbar', name:'ÅKERBÄR', subtitle:'Acero galvanizado', referenceUrl:'https://www.ikea.com/es/es/p/akerbar-macetero-interior-exterior-galvanizado-50497696/' },
   { id:'gradvis', name:'GRADVIS', subtitle:'Gres rosa', referenceUrl:'https://www.ikea.com/es/es/p/gradvis-macetero-rosa-60414078/' },
+  { id:'muskot9', modelId:'muskot', name:'MUSKOT · compacta', subtitle:'Cerámica · interior 9 cm · exterior 12 cm', referenceUrl:'https://www.ikea.com.tr/en/product/muskot-white-9-cm-earthenware-plant-pot-30308201' },
 ]);
 
 export const POT_CATALOG = Object.freeze(POT_REFERENCES.map(pot => Object.freeze({ ...pot,
+  nurseryClass:POT_SIZES[pot.id].nursery,
   diameter:POT_SIZES[pot.id].diameter, height:POT_SIZES[pot.id].height, footprint:POT_SIZES[pot.id].footprint })));
 
 const plantsById = new Map(PLANT_CATALOG.map(item => [item.id,item]));
@@ -41,5 +44,5 @@ export const POT_COLORS = Object.freeze(Object.fromEntries(Object.entries({
   akerbar:[['zinc','Zinc','#cfd3d5'],['graphite','Grafito','#646b70'],['copper','Cobre','#be896c'],['bronze','Bronce','#a49466']],
   gradvis:[['rose','Rosa','#dcb7b3'],['cream','Crema','#d9ceb9'],['seafoam','Verde agua','#97b1aa'],['slate','Azul pizarra','#81949e']],
 }).map(([potId, colors]) => [potId,Object.freeze(colors.map(([id,name,hex]) => Object.freeze({id,name,hex})))])));
-export const getPotColors = potId => POT_COLORS[potId] || POT_COLORS.muskot;
+export const getPotColors = potId => POT_COLORS[getCatalogPot(potId)?.modelId || potId] || POT_COLORS.muskot;
 export const getPotColor = (potId, colorId) => getPotColors(potId).find(color => color.id === colorId) || getPotColors(potId)[0];

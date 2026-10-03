@@ -8,6 +8,18 @@ import { cleanPlaces, cleanQuotes } from './readers/reading-state.js'
 
 const EXTENSIONS = /\.(pdf|epub|mobi|azw|azw3|fb2|cbz)$/i
 
+function sameProgress(a, b) {
+  return a.driveFileId === b.driveFileId && a.cloudAccountId === b.cloudAccountId &&
+    (Number(a.progressUpdatedAt) || 0) === (Number(b.progressUpdatedAt) || 0) &&
+    Boolean(a.progressDirty) === Boolean(b.progressDirty) &&
+    Number(a.progressFraction) === Number(b.progressFraction) &&
+    JSON.stringify(a.locator ?? null) === JSON.stringify(b.locator ?? null) &&
+    JSON.stringify(cleanPlaces(a.readingHistory)) === JSON.stringify(cleanPlaces(b.readingHistory)) &&
+    JSON.stringify(cleanPlaces(a.bookmarks,100)) === JSON.stringify(cleanPlaces(b.bookmarks,100)) &&
+    JSON.stringify(cleanQuotes(a.quotes)) === JSON.stringify(cleanQuotes(b.quotes)) &&
+    JSON.stringify(spineCustomization(a)) === JSON.stringify(spineCustomization(b))
+}
+
 /** Reconciles IndexedDB with the user's "inhouse read" Drive folder. */
 export class CloudSync {
   #library
@@ -53,12 +65,18 @@ export class CloudSync {
     this.#profile = null
     for (const timer of this.#progressTimers.values()) clearTimeout(timer)
     this.#progressTimers.clear()
+    this.#syncTask = null
+    this.#uploads.clear()
+    this.#downloads.clear()
+    this.#progressSyncs.clear()
   }
 
   async #account() {
-    if (!this.#profile) this.#profile = await getDriveProfile()
-    if (!this.#profile?.id) throw new Error('No se pudo identificar la cuenta de Google.')
-    return this.#profile.id
+    const generation = this.#generation
+    const profile = this.#profile || await getDriveProfile()
+    if (!profile?.id) throw new Error('No se pudo identificar la cuenta de Google.')
+    if (generation === this.#generation && !this.#profile) this.#profile = profile
+    return profile.id
   }
 
   async uploadBook(book) {
@@ -112,7 +130,15 @@ export class CloudSync {
       }
       const file = await downloadDriveFile(record.driveFileId, { name: record.name || record.title, mimeType: record.mimeType })
       if (this.#isCurrent(book.id, bookGeneration, generation)) {
-        await this.#library.patch(record.id, { content: new Blob([file], { type: file.type }), cloudAccountId: accountId })
+        let saved
+        try {
+          saved = await this.#library.patch(record.id, { content: new Blob([file], { type: file.type }), cloudAccountId: accountId })
+        } catch (cause) {
+          const error = new Error('No se pudo guardar el libro descargado en este dispositivo. Libera espacio y vuelve a intentarlo.', { cause })
+          error.code = 'LOCAL_BOOK_STORAGE_FAILED'
+          throw error
+        }
+        if (!saved || !this.#isCurrent(book.id, bookGeneration, generation)) return null
         this.#onChange()
       } else return null
       return file
@@ -153,13 +179,20 @@ export class CloudSync {
 
   async #syncBookProgressOnce(id, generation, bookGeneration) {
     if (!this.#isCurrent(id, bookGeneration, generation)) return
-    const record = await this.#library.get(id)
+    let record = await this.#library.get(id)
     if (!record?.driveFileId) return
     const accountId = await this.#account()
     if (!this.#isCurrent(id, bookGeneration, generation)) return
     if (record.cloudAccountId && record.cloudAccountId !== accountId) return
-    const remote = await readDriveProgress(record.driveFileId)
+    const driveFileId = record.driveFileId
+    const remote = await readDriveProgress(driveFileId)
     if (!this.#isCurrent(id, bookGeneration, generation)) return
+    // A close, bookmark or page turn may have saved while the network waited.
+    // Compare the remote timestamp with that committed local state, not the
+    // record captured before the request.
+    record = await this.#library.get(id)
+    if (!record || record.driveFileId !== driveFileId ||
+        !this.#isCurrent(id, bookGeneration, generation)) return
     const localUpdatedAt = Number(record.progressUpdatedAt) || 0
     const remoteUpdatedAt = Number(remote?.updatedAt) || 0
     const localHasProgress = record.progressDirty || record.progressFraction > 0 || record.locator != null
@@ -169,7 +202,7 @@ export class CloudSync {
     // stale remote value can erase the newest page the reader just saved.
     if (remote && (!localHasProgress || remoteUpdatedAt > localUpdatedAt ||
       (remoteUpdatedAt === localUpdatedAt && !record.progressDirty))) {
-      await this.#library.patch(record.id, {
+      const updated = await this.#library.patch(record.id, {
         progressFraction: remote.fraction, locator: remote.locator,
         ...spineCustomization(remote.appearance),
         ...(Array.isArray(remote.readingHistory) ? { readingHistory:cleanPlaces(remote.readingHistory) } : {}),
@@ -177,8 +210,9 @@ export class CloudSync {
         ...(Array.isArray(remote.quotes) ? { quotes:cleanQuotes(remote.quotes) } : {}),
         progressUpdatedAt: remoteUpdatedAt, progressDirty: false,
         progressStateFileId: remote.stateFileId
-      })
-      this.#onChange()
+      }, { ifCurrent:current => this.#isCurrent(id, bookGeneration, generation) && sameProgress(current, record) })
+      if (updated) this.#onChange()
+      else if (this.#isCurrent(id, bookGeneration, generation)) this.scheduleProgress(id)
       return
     }
     if (!localHasProgress) return
@@ -201,28 +235,30 @@ export class CloudSync {
       JSON.stringify(cleanPlaces(latest.bookmarks,100)) === JSON.stringify(snapshot.bookmarks) &&
       JSON.stringify(cleanQuotes(latest.quotes)) === JSON.stringify(snapshot.quotes) &&
       JSON.stringify(spineCustomization(latest)) === JSON.stringify(snapshot.appearance)
-    await this.#library.patch(record.id, {
+    const updated = await this.#library.patch(record.id, {
       ...(unchanged ? { progressDirty: false, progressUpdatedAt: snapshot.updatedAt } : {}),
       progressStateFileId: uploaded.id
-    })
+    }, { ifCurrent:current => this.#isCurrent(id, bookGeneration, generation) && sameProgress(current, latest) })
+    if (!updated && this.#isCurrent(id, bookGeneration, generation)) this.scheduleProgress(id)
   }
 
   sync() {
     if (this.#syncTask) return this.#syncTask
-    this.#syncTask = this.#doSync().finally(() => { this.#syncTask = null })
-    return this.#syncTask
+    const task = this.#doSync().finally(() => { if (this.#syncTask === task) this.#syncTask = null })
+    this.#syncTask = task
+    return task
   }
 
   async #doSync() {
     const generation = this.#generation
     const accountId = await this.#account()
+    if (generation !== this.#generation) return
     this.#onStatus('Buscando libros en Google Drive…', true)
     const remoteBooks = await listAllDriveBooks()
     const localBooks = await this.#library.listAll()
     const byDriveId = new Map(localBooks.filter(book =>
       book.driveFileId && (!book.cloudAccountId || book.cloudAccountId === accountId)
     ).map(book => [book.driveFileId, book]))
-    const usedLocalIds = new Set()
     const linked = []
 
     for (const remote of remoteBooks) {
@@ -231,27 +267,14 @@ export class CloudSync {
       if (await this.#library.isRemovedFromShelf(remoteSource)) continue
       let record = byDriveId.get(remote.id)
       if (!record) {
-        const matches = localBooks.filter(book =>
-          !book.driveFileId && !usedLocalIds.has(book.id) &&
-          (!book.cloudAccountId || book.cloudAccountId === accountId) &&
-          book.name === remote.name && Number(book.size) === Number(remote.size)
-        )
-        if (matches.length === 1) {
-          record = await this.#library.patch(matches[0].id, {
-            driveFileId: remote.id, driveFileName: remote.name, cloudAccountId: accountId
-          })
-          if (!record) continue
-          usedLocalIds.add(record.id)
-        } else {
-          record = await this.#library.addOrTouch({
-            sourceType: 'drive', driveFileId: remote.id, driveFileName: remote.name,
-            cloudAccountId: accountId, name: remote.name,
-            title: normalizeBookTitle(remote.name), mimeType: remote.mimeType,
-            size: Number(remote.size) || 0, sizeBytes: Number(remote.size) || 0,
-            format: remote.name.match(EXTENSIONS)?.[1].toUpperCase() || ''
-          })
-          if (!record) continue
-        }
+        record = await this.#library.addOrTouch({
+          sourceType: 'drive', driveFileId: remote.id, driveFileName: remote.name,
+          cloudAccountId: accountId, name: remote.name,
+          title: normalizeBookTitle(remote.name), mimeType: remote.mimeType,
+          size: Number(remote.size) || 0, sizeBytes: Number(remote.size) || 0,
+          format: remote.name.match(EXTENSIONS)?.[1].toUpperCase() || ''
+        })
+        if (!record) continue
         this.#onChange()
       } else if (!record.cloudAccountId) {
         record = await this.#library.patch(record.id, { cloudAccountId: accountId })
@@ -260,26 +283,21 @@ export class CloudSync {
     }
 
     const remoteIds = new Set(remoteBooks.map(book => book.id))
-    const pending = localBooks.filter(book =>
-      book.sourceType === 'local' && book.content && !book.driveFileId &&
-      !usedLocalIds.has(book.id) &&
-      (!book.cloudAccountId || book.cloudAccountId === accountId)
-    )
-    let uploaded = 0
+    // Discovery and login are read-only for local book bytes. Only the cover's
+    // explicit upload action may create a Drive copy or link a local record.
     const errors = []
-    for (const book of pending) {
+    // Include legacy linked records whose file was moved outside the app's
+    // Drive folder. Retain every available original on this device, serially
+    // in the background; no caller's opening/return animation awaits sync().
+    const linkedIds = new Set(linked.map(book => book.id))
+    for (const record of byDriveId.values()) if (!linkedIds.has(record.id)) linked.push(record)
+    let downloaded = 0
+    for (const record of linked) {
       if (generation !== this.#generation) return
-      this.#onStatus(`Subiendo ${uploaded + 1} de ${pending.length} libros…`, true)
-      try {
-        const record = await this.uploadBook(book)
-        if (record?.driveFileId) {
-          linked.push(record)
-          remoteIds.add(record.driveFileId)
-          uploaded += 1
-        }
-      } catch (error) {
-        errors.push(`${book.title || book.name}: ${error.message}`)
-      }
+      if (record.content) continue
+      this.#onStatus(`Guardando ${record.title || record.name || 'libro'} en este dispositivo…`, true)
+      try { if (await this.downloadForOffline(record)) downloaded += 1 }
+      catch (error) { errors.push(`${record.title || record.name}: ${error.message}`) }
     }
 
     for (const record of linked) {
@@ -291,6 +309,6 @@ export class CloudSync {
       ? `Sincronización incompleta: ${errors[0]}`
       : `Sincronizado · ${remoteIds.size} ${remoteIds.size === 1 ? 'libro' : 'libros'}`)
     this.#onChange()
-    return { books: remoteIds.size, uploaded, errors }
+    return { books: remoteIds.size, uploaded:0, downloaded, errors }
   }
 }

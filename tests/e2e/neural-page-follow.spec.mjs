@@ -120,7 +120,7 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
     await page.addInitScript(({base, id}) => {
       window.INHOUSE_NEURAL_VOICE_BASE = base
       localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({voice:id,voiceLang:'es'}))
-      const evidence = window.__pdfSpeech = {requests:[],events:[],frames:[],pcm:[],device:0}
+      const evidence = window.__pdfSpeech = {requests:[],events:[],frames:[],pcm:[],jobs:[],previews:[],device:0}
       const sample = document.createElement('canvas'); sample.width=32; sample.height=48
       const context = sample.getContext('2d', {willReadFrequently:true})
       const visible = () => {
@@ -184,6 +184,28 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
         const facade=module.getNeuralEngine ? module : Object.values(module).find(value => typeof value?.getNeuralEngine==='function')
         if(!facade) continue
         const engine=window.__pdfEngine=facade.getNeuralEngine(), speak=engine.speak.bind(engine)
+        const core=engine.core
+        const observeClient=client => {
+          const synth=client.synth.bind(client)
+          client.synth=(request,handlers) => {
+            const job={...request,at:performance.now(),visible:window.__pdfVisible(),currentId:core.currentId}
+            window.__pdfSpeech.jobs.push(job)
+            return synth(request,{...handlers,onChunk:chunk=>{
+              job.chunkAt=performance.now();job.visibleAtChunk=window.__pdfVisible()
+              return handlers.onChunk(chunk)
+            },onEnd:()=>{job.doneAt=performance.now();return handlers.onEnd()}})
+          }
+          return client
+        }
+        if(core.client) observeClient(core.client)
+        const createClient=core.createClient.bind(core)
+        core.createClient=()=>observeClient(createClient())
+        const extend=engine.extendUpcoming.bind(engine)
+        engine.extendUpcoming=request=>{
+          const preview={...request,at:performance.now(),visible:window.__pdfVisible()}
+          window.__pdfSpeech.previews.push(preview)
+          return preview.accepted=extend(request)
+        }
         engine.speak=request => {
           window.__pdfSpeech.requests.push({...request,at:performance.now(),visible:window.__pdfVisible()})
           return speak(request)
@@ -197,20 +219,36 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
     await page.getByRole('button',{name:'Reproducir',exact:true}).click()
     await expect.poll(() => page.evaluate(() => window.__pdfSpeech.events.filter(event => event.type==='done').length),{timeout:90_000}).toBe(2)
     await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 2 de 2/)
-    const evidence=await page.evaluate(() => { window.__stopPdfFrames=true; return window.__pdfSpeech })
+    const evidence=await page.evaluate(() => { window.__stopPdfFrames=true; window.__pdfSpeech.stats={...window.__pdfEngine.stats}; return window.__pdfSpeech })
     await testInfo.attach('actual-pdf-audio-page-boundary',{body:JSON.stringify(evidence),contentType:'application/json'})
     expect(evidence.requests.map(request => request.text)).toEqual(PDF_PARTS)
     expect(evidence.requests.map(request => request.text).join(' ')).toBe(PDF_PARTS.join(' '))
     expect(evidence.requests.every(request => request.voiceId===ID)).toBe(true)
     const [first,second]=evidence.requests
+    const firstStart=evidence.events.find(event => event.type==='start' && event.id===first.id)
     const done=evidence.events.find(event => event.type==='done' && event.id===first.id)
     const start=evidence.events.find(event => event.type==='start' && event.id===second.id)
     expect(done).toBeTruthy(); expect(start).toBeTruthy()
     expect(second.at).toBeGreaterThanOrEqual(done.at)
-    expect(start.at).toBeGreaterThan(second.at)
-    // Both the rendered pixels and their mapped text stay unchanged through
-    // PDF preparation and neural synthesis, even after page one's audio ends.
-    const waiting=[done,second.visible,start,...evidence.frames.filter(frame => frame.at>=done.at && frame.at<start.at)]
+    expect(start.at).toBeGreaterThanOrEqual(second.at)
+    const prepared=evidence.previews.find(preview=>preview.accepted && preview.upcoming.includes(PDF_PARTS[1]))
+    expect(prepared).toBeTruthy()
+    expect(prepared.at).toBeGreaterThanOrEqual(firstStart.at)
+    expect(prepared.at).toBeLessThan(done.at)
+    expect(prepared.deferAfter).toBe(0)
+    const nextJob=evidence.jobs.find(job=>job.text===PDF_PARTS[1])
+    expect(nextJob).toBeTruthy()
+    expect(nextJob.currentId).toBe(first.id)
+    expect(nextJob.at).toBeGreaterThanOrEqual(prepared.at)
+    expect(nextJob.at).toBeLessThan(done.at)
+    expect(nextJob.doneAt).toBeLessThan(done.at)
+    expect(evidence.jobs.map(job=>job.text)).toEqual(PDF_PARTS)
+    expect(evidence.stats.prefetchHits).toBe(1)
+    // Detached preparation and cached PCM happen during the previous page's
+    // real audio. No deferred sample reaches Web Audio before adoption, and
+    // all mapped text/pixels stay on page one until the actual next start.
+    const waiting=[prepared.visible,nextJob.visible,nextJob.visibleAtChunk,done,second.visible,start,
+      ...evidence.frames.filter(frame => frame.at>=firstStart.at && frame.at<start.at)]
     expect(waiting.length).toBeGreaterThan(3)
     for(const frame of waiting) {
       expect(frame.label).toMatch(/Página 1 de 2/)
@@ -230,6 +268,7 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
     const firstSecondPage=evidence.frames.find(frame => /Página 2 de 2/.test(frame.label))
     expect(firstSecondPage?.at).toBeGreaterThanOrEqual(start.at)
     expect(evidence.pcm.filter(chunk => chunk.id===second.id).length).toBeGreaterThan(0)
+    expect(evidence.pcm.filter(chunk=>chunk.id===second.id).every(chunk=>chunk.at>=second.at)).toBe(true)
     expect(evidence.pcm.every(chunk => chunk.finite && chunk.peak>.05 && chunk.peak<=1)).toBe(true)
     expect(evidence.device).toBe(0)
     expect(evidence.events.filter(event => event.type==='error')).toEqual([])

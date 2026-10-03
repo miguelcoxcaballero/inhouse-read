@@ -1,9 +1,58 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { shelfBookSlot, shelfBookInsertion, projectShelfBookPose } from '../../src/js/bookshelf-return.js';
+import { shelfBookSlot, shelfBookInsertion, projectShelfBookPose, bookReturnSignature, createBookReturnCache } from '../../src/js/bookshelf-return.js';
 
 const entry = { x:112, y:150, width:100, height:160, thickness:28 };
 const stage = { left:12, top:76 };
+const book = { id:'return-book',title:'A physical book',format:'PDF',progressFraction:.1,locator:1,lastOpenedAt:100 };
+const style = { color:'#246',coverRatio:.66 };
+const geometry = { width:200,height:300,thickness:32,viewportWidth:390,viewportHeight:844,centerX:195,centerY:320 };
+const signature = (record = book,dimensions = geometry,appearance = style,url = 'blob:cover') => bookReturnSignature(record,appearance,dimensions,url);
+
+describe('retaining the already rendered book for the reader return', () => {
+  it('ignores progress-only writes while keeping the final ribbon available for update', () => {
+    expect(signature({ ...book,progressFraction:.8,locator:10,lastOpenedAt:500,progressUpdatedAt:500,progressDirty:true })).toBe(signature());
+  });
+  it('preserves the case across Drive linkage, offline bytes and length metadata written in the background', () => {
+    expect(signature({ ...book,driveFileId:'cloud-1',cloudAccountId:'account-1',progressStateFileId:'state-1',
+      content:new Blob(['same local book']),wordCount:60000,estimatedPageCount:200,pageCount:100,
+      sourceType:'drive',lastSyncedAt:700 })).toBe(signature());
+  });
+  it.each(['width','height','thickness','viewportWidth','viewportHeight','centerX','centerY'])('rejects a changed %s instead of reusing the old camera/geometry', key => {
+    expect(signature(book,{ ...geometry,[key]:geometry[key]+1 })).not.toBe(signature());
+  });
+  it.each(['title','author','spineFontFamily','spineFontSize','spineAuthorFontSize','spineTitleOverride','coverFinish','coverRelief','spineFinish','spineTextColor','pageEdgeFinish'])('rejects an edited %s', key => {
+    expect(signature({ ...book,[key]:'changed' })).not.toBe(signature());
+  });
+  it('rejects a changed style, decoded cover source or nonfinite camera', () => {
+    expect(signature(book,geometry,{ ...style,color:'#fff' })).not.toBe(signature());
+    expect(signature(book,geometry,style,'blob:new')).not.toBe(signature());
+    expect(signature(book,{ ...geometry,centerY:NaN })).toBeNull();
+  });
+  it('transfers exactly the same view once and leaves disposal to the return animation', () => {
+    const cache = createBookReturnCache(), view = { dispose:vi.fn() };
+    cache.retain(signature(),view);
+    expect(cache.take(signature())).toBe(view);
+    expect(cache.take(signature())).toBeNull();
+    cache.clear();
+    expect(view.dispose).not.toHaveBeenCalled();
+  });
+  it('disposes an incompatible view once and empties the cache', () => {
+    const cache = createBookReturnCache(), view = { dispose:vi.fn() };
+    cache.retain(signature(),view);
+    expect(cache.take(signature({ ...book,title:'New title' }))).toBeNull();
+    cache.clear();
+    expect(view.dispose).toHaveBeenCalledOnce();
+  });
+  it('keeps at most one view and releases it on replacement or destruction', () => {
+    const cache = createBookReturnCache(), first = { dispose:vi.fn() }, second = { dispose:vi.fn() };
+    cache.retain(signature(),first); cache.retain(signature(),second);
+    expect(first.dispose).toHaveBeenCalledOnce();
+    expect(second.dispose).not.toHaveBeenCalled();
+    cache.clear(); cache.clear();
+    expect(second.dispose).toHaveBeenCalledOnce();
+  });
+});
 
 describe('returning a book into the shared cabinet scene', () => {
   it('starts entirely in front of the shelf and ends at the exact parked matrix', () => {

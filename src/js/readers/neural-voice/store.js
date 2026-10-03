@@ -8,7 +8,7 @@
 // single byte arrives (CORS, proxies), makes it start again cleanly instead. Sizes are checked against Content-Length and,
 // when it can be reached, against the catalogue (voices.json) of the voice repository. A connection that goes silent without
 // closing (a phone changing network) is given up on after `stallMs` without a byte and takes the same resume path.
-import { neuralVoiceBase, neuralVoices, voiceUrls } from './catalog.js'
+import { neuralVoiceBase, piperVoices, voiceUrls } from './catalog.js'
 import { dictionaryNeeded, dictionaryUrl, fetchDictionary } from './dictionary-cache.js'
 
 export const CACHE_NAME = 'inhouse-neural-voices-v1'
@@ -53,7 +53,7 @@ export class VoiceStore {
       if (have.has(`${url}.json`)) found.add(piperId)
     }
     // Author-hosted voices and auxiliary models have URLs outside the ordinary Piper base.
-    for (const { piperId } of neuralVoices) {
+    for (const { piperId } of piperVoices) {
       const urls = this.urls(piperId)
       if (have.has(urls.model) && have.has(urls.config) && (!urls.phonemizerModel || have.has(urls.phonemizerModel))) found.add(piperId)
       else found.delete(piperId)

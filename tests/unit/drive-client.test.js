@@ -138,6 +138,20 @@ describe('autorización de Google Drive', () => {
 describe('biblioteca y progreso de Drive', () => {
   beforeEach(() => { session() })
 
+  it('lists an empty account without creating a folder or uploading files', async () => {
+    globalThis.fetch = vi.fn(async () => json({ files:[] }))
+    await expect(drive.listAllDriveBooks()).resolves.toEqual([])
+    expect(globalThis.fetch).toHaveBeenCalledOnce()
+    expect(globalThis.fetch.mock.calls[0][1]).not.toHaveProperty('method')
+  })
+  it('reads missing progress without creating a state folder', async () => {
+    globalThis.fetch = vi.fn(async url => String(url).includes('name+%3D+%27inhouse+read%27')
+      ? json({ files:[{ id:'root' }] }) : json({ files:[] }))
+    await expect(drive.readDriveProgress('book')).resolves.toBeNull()
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2)
+    for (const [, options] of globalThis.fetch.mock.calls) expect(options).not.toHaveProperty('method')
+  })
+
   it('encuentra la carpeta inhouse read y sube un libro', async () => {
     globalThis.fetch = vi.fn(async url => {
       if (String(url).includes('uploadType=multipart')) return json({ id: 'book-1', name: 'book.pdf' })
@@ -170,6 +184,16 @@ describe('biblioteca y progreso de Drive', () => {
       id: 'account-1', name: 'Miguel', email: 'miguel@example.com', photo: 'https://example.com/avatar.jpg'
     })
     expect(drive.getRememberedDriveProfile()?.photo).toBe('https://example.com/avatar.jpg')
+  })
+  it('does not restore the old profile after signing out during its request', async () => {
+    let finish
+    globalThis.fetch = vi.fn(() => new Promise(resolve => { finish = resolve }))
+    const profile = drive.getDriveProfile()
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    drive.signOutDrive()
+    finish(json({ user:{ permissionId:'old-account', displayName:'Old reader' } }))
+    await expect(profile).rejects.toThrow(/conexión.*cambiado/)
+    expect(drive.getRememberedDriveProfile()).toBeNull()
   })
 
   it('lee el progreso remoto de la subcarpeta de estado', async () => {

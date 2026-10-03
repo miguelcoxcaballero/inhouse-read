@@ -89,12 +89,21 @@ export class ReaderController {
     return (await this.#reader?.getCoverBlob?.()) ?? null
   }
 
+  /** A stale background count cannot be attributed to a subsequently opened book. */
+  async getLengthMetadata() {
+    const reader = this.#reader, epoch = this.#epoch
+    if (!reader) return null
+    if (this.#engine === ENGINE.PDF) return this.pageCount > 0 ? { pageCount:this.pageCount, lengthSource:'pages' } : null
+    const result = await reader.getLengthMetadata?.()
+    return reader === this.#reader && epoch === this.#epoch ? result || null : null
+  }
+
   /**
    * Número de páginas reales, solo cuando el formato lo tiene de verdad
    * (PDF). EPUB/MOBI son texto reflowable sin un "número de página" fijo
    * independiente del tamaño de pantalla/fuente, así que devuelve null en
-   * vez de inventar un número — el grosor del lomo en la estantería cae
-   * entonces a `sizeBytes` (ver bookshelf-layout.js, sqrtScale).
+   * vez de inventar un número. getLengthMetadata cuenta su texto aparte para
+   * estimar el papel de su lomo sin depender de la paginación en pantalla.
    */
   get pageCount() {
     return this.#engine === ENGINE.PDF ? (this.#reader?.pageCount ?? null) : null

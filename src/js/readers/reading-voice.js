@@ -33,6 +33,7 @@ export class ReadingVoice {
     this.items = []
     this.source = null
     this.preparingPage = null; this.deferredPage = null; this.resumeNextPage = false
+    this.aheadPage = null
     this.rate = 1
     this.voice = ''
     this.languageOverride = '' // 'es', 'en'... chosen in the Idioma dropdown; '' follows the book
@@ -127,15 +128,57 @@ export class ReadingVoice {
     if (!engine) { this.neuralOff = 'init-failed'; this.fail(NEURAL_ERRORS.default); return false }
     clearTimeout(this.presentTimer)
     this.useTransport('neural')
+    const { upcoming, deferAfter } = this.upcomingFor(voice)
+    clearTimeout(this.waitTimer)
+    this.waitTimer = setTimeout(() => { if (id === this.utteranceId && this.state === 'playing' && this.startedId !== id) { this.waiting = true; this.notify('Preparando la voz natural…') } }, NEURAL_WAIT_MS)
+    try { engine.speak({ text, voiceId:voice.id, rate:this.rate, id, upcoming, deferAfter }) } catch { queueMicrotask(() => this.engineFailed({ id, reason:'synth-failed' })) }
+    return true
+  }
+  upcomingFor(voice) {
     const upcoming = []
     for (let next = this.index + 1; next < this.chunks.length && upcoming.length < NEURAL_LOOKAHEAD; next++) {
       if (this.options.multilingual && this.voiceFor(this.chunks[next]).voice?.id !== voice.id) break // another language: another voice, not prefetched
       upcoming.push(this.chunks[next])
     }
-    clearTimeout(this.waitTimer)
-    this.waitTimer = setTimeout(() => { if (id === this.utteranceId && this.state === 'playing' && this.startedId !== id) { this.waiting = true; this.notify('Preparando la voz natural…') } }, NEURAL_WAIT_MS)
-    try { engine.speak({ text, voiceId:voice.id, rate:this.rate, id, upcoming }) } catch { queueMicrotask(() => this.engineFailed({ id, reason:'synth-failed' })) }
-    return true
+    const deferAfter = upcoming.length
+    const plan = this.aheadPage?.plan
+    if (this.index + 1 + upcoming.length === this.chunks.length && plan?.items) {
+      for (const item of plan.items.slice(0, NEURAL_LOOKAHEAD)) {
+        if (this.voiceFor(item.text).voice?.id !== voice.id) break
+        upcoming.push(item.text)
+      }
+    }
+    return { upcoming, deferAfter }
+  }
+  /** One detached page, prepared only near the current page's end. Never
+   * reveal it or let its PCM play until advance adopts its first fragment. */
+  prepareAhead() {
+    if (this.state !== 'playing' || this.aheadPage || this.deferredPage ||
+      this.chunks.length - this.index - 1 > NEURAL_LOOKAHEAD || typeof this.reader.getNextSpeechSource !== 'function') return
+    const request = { generation:this.generation, source:this.source, plan:undefined, cancelled:false }
+    this.aheadPage = request
+    const isActive = () => !request.cancelled && request.generation === this.generation &&
+      this.state === 'playing' && (this.source === request.source || this.source === request.plan?.source)
+    request.promise = (async () => {
+      let source
+      try {
+        source = await this.reader.getNextSpeechSource({ isActive })
+        if (!isActive()) { source?.clear?.(); return undefined }
+        request.plan = source == null ? source : await this.prepare(source)
+        if (!isActive()) { source?.clear?.(); request.plan = undefined; return undefined }
+        const { voice } = this.voiceFor(this.chunks[this.index])
+        if (voice && this.index < this.chunks.length) {
+          const { upcoming, deferAfter } = this.upcomingFor(voice)
+          neuralEngine()?.extendUpcoming?.({ id:this.utteranceId, voiceId:voice.id, rate:this.rate, upcoming, deferAfter })
+        }
+        return request.plan
+      } catch (error) { source?.clear?.(); request.error = error; return undefined }
+    })()
+  }
+  clearAhead() {
+    const ahead = this.aheadPage
+    this.aheadPage = null
+    if (ahead) { ahead.cancelled = true; ahead.plan?.source?.clear?.() }
   }
   /** Retry a failed worker with the same natural voice, then expose the error for a manual retry. */
   engineFailed(detail) {
@@ -169,8 +212,15 @@ export class ReadingVoice {
     // The sentence just read stays painted while the page turns: the next one replaces it the moment it is heard (see present()).
     try {
       if (typeof this.reader.getNextSpeechSource === 'function') {
-        const next = await this.prepareNext(generation)
-        if (generation !== this.generation || this.state !== 'playing') return
+        const ahead = this.aheadPage
+        let next
+        if (ahead) {
+          this.aheadPage = null
+          const request = { generation }; this.preparingPage = request
+          try { next = await ahead.promise; if (ahead.error) throw ahead.error }
+          finally { if (this.preparingPage === request) this.preparingPage = null }
+        } else next = await this.prepareNext(generation)
+        if (generation !== this.generation || this.state !== 'playing') { next?.source?.clear?.(); return }
         if (next === null) { this.stop(); this.notify('Final del libro.'); return }
         if (next !== undefined) {
           this.adopt(next)
@@ -240,6 +290,7 @@ export class ReadingVoice {
     clearTimeout(this.waitTimer)
     if (this.waiting) { this.waiting = false; this.notify() }
     this.present(id)
+    if (this.state === 'playing') this.prepareAhead()
   }
   /** The engine finished `id`: remember whether it ever announced a start, so a silent engine is not waited for again. */
   engineEnded(id) {
@@ -289,6 +340,7 @@ export class ReadingVoice {
   restart() {
     if (this.state !== 'playing' || this.index >= this.chunks.length) return
     const preparing = this.waiting // the 'Preparando la voz natural…' of the old utterance must not outlive it
+    this.clearAhead()
     this.cancelUtterance()
     if (preparing) this.notify()
     this.speakCurrent()
@@ -315,12 +367,14 @@ export class ReadingVoice {
     if (this.state !== 'playing') return
     const pendingPage = this.deferredPage || this.preparingPage?.generation === this.generation
     if (pendingPage) this.resumeNextPage = true
+    this.clearAhead()
     ++this.generation; this.state = 'paused'; this.cancelUtterance(); this.unpaint()
     if (pendingPage) { this.chunks = []; this.items = []; this.source = null; this.index = 0; this.deferredPage = null }
     if (this.index >= this.chunks.length) this.chunks = []
     this.notify()
   }
   stop() {
+    this.clearAhead()
     ++this.generation; this.state = 'stopped'; this.cancelUtterance(); this.unpaint()
     this.preparingPage = null; this.deferredPage = null; this.resumeNextPage = false
     this.chunks = []; this.items = []; this.source = null; this.index = 0; this.missing.clear(); this.spokenWith = null; clearTimeout(this.sleepTimer); this.notify()

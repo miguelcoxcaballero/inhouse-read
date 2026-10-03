@@ -62,16 +62,21 @@ test('las tres lámparas tienen preview 3D con luz cálida y caben sin scroll en
       await expect(preview).toHaveAttribute('data-light-emitter','warm-physical');
       await expect(preview.locator('canvas')).toBeVisible();
       await expect(preview.locator('svg,img')).toHaveCount(0);
-      await expect(dialog.locator('canvas')).toHaveCount(1);
+      await expect(dialog.locator('canvas:visible')).toHaveCount(1);
       await assertFits(dialog);
       if (viewport.width === 390)
         await testInfo.attach(`lampara-${lampId}-3d-movil`,{ body:await dialog.screenshot(),contentType:'image/png' });
     }
     await dialog.getByRole('button',{ name:'Estanterías',exact:true }).click();
-    await expect(preview.locator('canvas')).toHaveCount(0);
-    await expect(dialog.locator('canvas')).toHaveCount(1);
+    await expect(preview.locator('canvas')).toHaveCount(1);
+    await expect(preview.locator('canvas')).toBeHidden();
+    await expect(preview).toHaveAttribute('data-preview-active','false');
+    await expect(dialog.locator('canvas:visible')).toHaveCount(1);
+    await expect(dialog.locator('canvas')).toHaveCount(3);
     await dialog.getByRole('button',{ name:'Cerrar catálogo' }).click();
-    await expect(dialog.locator('canvas')).toHaveCount(0);
+    await expect(dialog.locator('canvas:visible')).toHaveCount(0);
+    await expect(dialog.locator('canvas')).toHaveCount(3);
+    await expect(dialog.locator('[data-preview-active="true"]')).toHaveCount(0);
   }
   expect(errors).toEqual([]);
 });

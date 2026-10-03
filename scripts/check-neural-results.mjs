@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { neuralVoices } from '../src/js/readers/neural-voice/catalog.js'
+import { piperVoices, supertonicVoices } from '../src/js/readers/neural-voice/catalog.js'
 
-export const MINIMUM_TESTS = Object.freeze({ engine:9, reading:13, languages:neuralVoices.length + 1 })
+export const MINIMUM_TESTS = Object.freeze({ engine:9, reading:14, languages:piperVoices.length + 1, supertonic:supertonicVoices.length })
 
 /** Every required real test must execute, even when Playwright itself exits successfully. */
 export function validateNeuralResults(suite, report) {
@@ -34,7 +34,7 @@ export async function checkNeuralResultsFile(suite, path) {
 async function main(args) {
   const [suite, path, ...extra] = args
   try {
-    if (extra.length) throw new Error('Usage: node scripts/check-neural-results.mjs <engine|reading|languages> <results.json>')
+    if (extra.length) throw new Error('Usage: node scripts/check-neural-results.mjs <engine|reading|languages|supertonic> <results.json>')
     const counts = await checkNeuralResultsFile(suite, path)
     console.log(JSON.stringify({ ok:true, ...counts }))
   } catch (error) {

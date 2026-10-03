@@ -105,6 +105,7 @@ import { EDITOR_TABS, coverEditorPose, coverTiltFrames, editorTabId, nextEditorT
 import { createShelfZoom } from './shelf-zoom.js';
 import { markTiming, resetTimeline } from './perf-marks.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
+import { bookReturnSignature, createBookReturnCache } from './bookshelf-return.js';
 import { layoutShelfDecorations, moveShelfDecoration } from './shelf-decoration-layout.js';
 import { createPlantCatalog } from './plant-catalog.js';
 import { normalizeShelfType, BAGGEBO_SPEC } from './shelf-types.js';
@@ -378,6 +379,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       ? options.viewMode
       : storedShelfViewMode()
   };
+  const returnViews = createBookReturnCache();
 
   const root = el('div', { class: 'ihr-bookshelf', 'data-ihr-bookshelf': '' });
   const scroller = el('div', { class: 'ihr-bookshelf__scroll' });
@@ -1588,7 +1590,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
     if (!state.plantsInitialized) {
       state.plants = initialPlants.map(({ key, seed, variant, shelf, x }) =>
-        normalizeShelfPlant({ key, seed, variant, shelf, x }));
+        normalizeShelfPlant({ key, seed, variant, shelf, x,potId:resolveCatalogPlant({ variant })?.defaultPotId }));
       state.plantsInitialized = true;
       savePlants();
     }
@@ -1893,7 +1895,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (state.frame) return;
     state.frame = requestAnimationFrame(() => {
       state.frame = 0;
-      render();
+      if (state.queuedBooks) applyDeferredShelfUpdates();
+      else render();
     });
   }
 
@@ -1975,6 +1978,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   async function openBook(spineEl, item) {
     if (state.busy || state.session || state.returnMotion || state.destroyed) return;
+    returnViews.clear();
     state.busy = true;
     // True once the lifted book sits still (the pull-out has finished), false if
     // the selection ends without that. The page being prepared for this book waits for it.
@@ -2206,15 +2210,25 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     state.session = session;
     finishPendingSelection();
 
-    const isDownloaded = book.sourceType === 'drive' && Boolean(book.content);
-    const alreadySaved = book.sourceType === 'drive' ? isDownloaded : Boolean(book.driveFileId);
-    const actionLabel = book.sourceType === 'drive' ? (isDownloaded ? 'Descargado' : 'Descargar') : (book.driveFileId ? 'En Drive' : 'Guardar en Drive');
-    const actionTitle = book.sourceType === 'drive' ? (isDownloaded ? 'Disponible sin conexión' : 'Descargar para usar sin conexión') : actionLabel;
-    // En móvil estrecho la etiqueta larga partía el botón en dos líneas.
-    const actionShort = book.sourceType === 'drive' ? (isDownloaded ? 'Offline' : 'Descargar') : (book.driveFileId ? 'En Drive' : 'Drive');
+    const cloud = options.getBookCloudState?.(book) || { connected:false,saved:Boolean(book.driveFileId) };
+    const needsDownload = book.sourceType === 'drive' && !book.content;
+    const cloudAction = needsDownload
+      ? el('button', { type:'button',class:'ihr-btn ihr-btn--quiet',title:'Descargar para usar sin conexión',
+        'aria-label':'Descargar para usar sin conexión',disabled:!options.onBookAction,
+        onClick:event => options.onBookAction?.('offline',book,event.currentTarget) },
+        [svgIcon(ICONS.download,{ className:'ihr-icon' }),el('span',{ text:'Descargar' })])
+      : cloud.saved
+        ? el('span', { class:'ihr-btn ihr-btn--quiet ihr-flyout__cloud-saved',role:'status' },
+          [svgIcon(ICONS.check,{ className:'ihr-icon' }),el('span',{ text:'Guardado en Google Drive' })])
+        : cloud.connected && book.content
+          ? el('button', { type:'button',class:'ihr-btn ihr-btn--quiet ihr-flyout__cloud-action',title:'Subir a Google Drive',
+            'aria-label':'Subir a Google Drive',disabled:!options.onBookAction,
+            onClick:event => options.onBookAction?.('drive',book,event.currentTarget) },
+            [svgIcon(ICONS.drive,{ className:'ihr-icon' }),el('span',{ text:'Subir a Google Drive' })])
+          : null;
     const actionButtons = [
       el('button', { type: 'button', class: 'ihr-btn ihr-btn--primary', disabled:true, onClick: () => expandCover() }, [svgIcon(ICONS.read, { className:'ihr-icon' }), el('span', { text: opts.texts.openAction })]),
-      el('button', { type: 'button', class: 'ihr-btn ihr-btn--quiet', title:actionTitle, 'aria-label':actionTitle, disabled:!options.onBookAction || alreadySaved, onClick: event => options.onBookAction?.(book.sourceType === 'drive' ? 'offline' : 'drive', book, event.currentTarget) }, [svgIcon(alreadySaved ? ICONS.check : book.sourceType === 'drive' ? ICONS.download : ICONS.drive, { className:'ihr-icon' }), el('span', { class:'ihr-btn__label', text:actionLabel }), el('span', { class:'ihr-btn__label ihr-btn__label--short', 'aria-hidden':'true', text:actionShort })]),
+      cloudAction,
       el('button', { type: 'button', class: 'ihr-btn ihr-btn--quiet ihr-flyout__edit-button', disabled:true, 'aria-expanded': 'false', onClick: () => editorPanel.hidden ? openEditor() : closeEditor() }, [svgIcon(ICONS.brush, { className:'ihr-icon' }), el('span', { text:'Editar' })])
     ];
 
@@ -3244,7 +3258,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       metaEntrance.cancel?.();
       animate(meta, [{ opacity }, { opacity:0 }], { duration:prefersReducedMotion() ? 1 : 160, fill:'both' });
       meta.style.pointerEvents = 'none';
-      actionButtons.forEach(button => { button.disabled = true; });
+      actionButtons.forEach(button => { if (button?.tagName === 'BUTTON') button.disabled = true; });
       editorPanel.querySelectorAll('button, input, select').forEach(control => { control.disabled = true; });
     }
 
@@ -3432,7 +3446,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         session.cancelled = true;
         clearInterval(readyCheck);
         document.removeEventListener('keydown', onKeydown, true);
-        view?.dispose();
+        // The close animation uses the same physical book and viewport. Keep
+        // its decoded case and linked programs instead of rebuilding them at
+        // Back. Only one view is retained, and incompatible geometry is never
+        // reused. The ribbon is refreshed from the reader's final progress.
+        if (view?.updateBookmark) returnViews.retain(bookReturnSignature(book,item.style,
+          { width:coverW,height:coverH,thickness,viewportWidth:vw,viewportHeight:vh,centerX,centerY },coverUrl),view);
+        else view?.dispose();
         flyout.remove();
         return true;
       }
@@ -3447,7 +3467,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       coverTarget.disabled = true;
       flyout.classList.add('is-expanding');
       coverTarget.hidden = true;
-      actionButtons.forEach(button => { button.disabled = true; });
+      actionButtons.forEach(button => { if (button?.tagName === 'BUTTON') button.disabled = true; });
       readiness.textContent = 'Preparando…';
       markTiming('open-tap');
       try {
@@ -3470,6 +3490,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   let observer = null;
   const onViewportResize = () => {
+    returnViews.clear();
     cancelTrashRemoval();
     if (state.session?.handleViewportResize?.()) return;
     if (state.dragSession) finishSpineDrag({ pointerId:state.dragSession.pointerId }, state.dragSession.node, true);
@@ -3499,12 +3520,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   });
 
   /** Sustituye la biblioteca y vuelve a pintar, conservando el scroll. */
-  function refresh(nextBooks) {
+  function refresh(nextBooks, { defer = false } = {}) {
     if (state.destroyed) return;
-    if (state.returnMotion || state.reorderTimer || state.busy || state.session || state.dragSession) {
+    if (defer || state.returnMotion || state.reorderTimer || state.busy || state.session || state.dragSession) {
       if (Array.isArray(nextBooks)) state.queuedBooks = nextBooks.filter(book => !state.pendingRemovals.has(String(book.id)));
+      if (defer) scheduleRender();
       return;
     }
+    state.queuedBooks = null;
     const top = scroller.scrollTop;
     // A removal still being written must not let an older record list put its book back.
     state.books = Array.isArray(nextBooks) ? nextBooks.filter(book => !state.pendingRemovals.has(String(book.id))) : state.books;
@@ -3602,12 +3625,16 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     flyout.dataset.returnPhase = 'preparing';
     const coverUrl = resolveCoverImmediately(book);
     if (state.destroyed || state.lastOpened !== previous || window.innerWidth !== vw || window.innerHeight !== vh) return false;
-    const view = bookView(bookNode, book, previous.style, {
+    const cachedView = returnViews.take(pageSnapshot?.source ? bookReturnSignature(book,previous.style,
+      { width:coverW,height:coverH,thickness,viewportWidth:vw,viewportHeight:vh,centerX,centerY },coverUrl) : null);
+    if (cachedView) { bookNode.append(cachedView.canvas); cachedView.updateBookmark(book); }
+    const view = cachedView || bookView(bookNode, book, previous.style, {
       width:coverW, height:coverH, thickness, viewportWidth:vw, viewportHeight:vh,
       centerX, centerY, coverUrl,
       initialPose:{ x:0, y:0, scale:1, angle:0, pitch:0, coverOpen:pageSnapshot ? 1 : 0, bookmarkWithdraw:pageSnapshot ? 1 : 0 }
     });
     if (view) {
+      flyout.dataset.returnView = cachedView ? 'reused' : 'created';
       bookNode.classList.add('ihr-flyout__book--webgl');
       bookNode.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
     } else {
@@ -3752,6 +3779,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   return {
     element: root,
     refresh,
+    // Storage may notify for several records in one turn. Keep only the last
+    // complete list and commit one semantic/GPU layout on the next frame.
+    queueRefresh:nextBooks => refresh(nextBooks, { defer:true }),
     update: refresh,
     returnToShelf,
     hasReaderOrigin:bookId => state.lastOpened?.book.id === bookId,
@@ -3771,6 +3801,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     destroy() {
       state.destroyed = true;
+      returnViews.clear();
       clearOpeningClick?.();
       plantCatalog.destroy(); shelfZoom.destroy();
       cancelTrashRemoval();

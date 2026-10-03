@@ -10,12 +10,30 @@ import {
 } from '../../src/js/plant-dimensions.js';
 
 describe('standard IKEA plant and pot sizes', () => {
-  it('gives every pot model the same 12 cm nursery class, with model-specific outer dimensions', () => {
+  it('keeps botanical height constant above the soil when the selected pot changes', () => {
+    for (const plant of PLANT_CATALOG) {
+      const sizes = POT_CATALOG.map(pot => plantDimensions(plant.id,pot.id));
+      expect(new Set(sizes.map(size => size.foliageHeight)).size).toBe(1);
+      for (const size of sizes) expect(size.height-size.soilHeight).toBeCloseTo(sizes[0].foliageHeight,6);
+    }
+    expect(plantDimensions('succulent','muskot').foliageHeight).toBe(90);
+    expect(plantDimensions('nephrolepis','gradvis').foliageHeight).toBe(100);
+  });
+
+  it('scales outer pot diameter against shelf width rather than the nursery label', () => {
+    for (const width of [320,390,900]) for (const pot of POT_CATALOG) {
+      const size=plantDimensions('succulent',pot.id), scale=shelfScale({shelfWidth:width});
+      expect(size.potDiameter*scale/width).toBeCloseTo(pot.diameter/600,9);
+      expect(size.potDiameter).toBeGreaterThan(POT_SIZES[pot.id].nursery * 10);
+    }
+  });
+
+  it('distinguishes compact 9 cm and original 12 cm nursery classes from their exterior dimensions', () => {
     expect(POT_DIAMETER_MM).toBe(120);
     expect(Object.keys(POT_SIZES).sort()).toEqual(POT_CATALOG.map(pot => pot.id).sort());
     for (const pot of POT_CATALOG) {
-      expect(POT_SIZES[pot.id].nursery).toBe(12);
-      expect(pot.diameter).toBe({muskot:150,muskotblomma:160,akerbar:140,gradvis:130}[pot.id]);
+      expect(POT_SIZES[pot.id].nursery).toBe(pot.id === 'muskot9' ? 9 : 12);
+      expect(pot.diameter).toBe({muskot9:120,muskot:150,muskotblomma:160,akerbar:140,gradvis:130}[pot.id]);
       expect(pot.height).toBeGreaterThanOrEqual(90); expect(pot.height).toBeLessThanOrEqual(140);
       expect(pot.footprint).toBeGreaterThanOrEqual(pot.diameter);
     }
@@ -26,7 +44,7 @@ describe('standard IKEA plant and pot sizes', () => {
     for (const plant of PLANT_CATALOG) {
       const standard = standardPlantClass(plant.id);
       expect([6, 9, 12]).toContain(standard.potClass);
-      expect(plant.height).toBe(standard.height);
+      expect(plant.height).toBe(plantDimensions(plant.id,plant.defaultPotId).height);
       expect(plant.canopy).toBe(standard.width);
       expect(plant.width).toBeGreaterThanOrEqual(plant.canopy);
       expect(plant.height).toBeGreaterThanOrEqual(100); expect(plant.height).toBeLessThanOrEqual(450);
@@ -48,6 +66,16 @@ describe('standard IKEA plant and pot sizes', () => {
     expect(standardPlantClass('missing')).toBeNull();
   });
 
+  it('defaults small nursery plants to an actual compact pot and keeps the 12 cm monstera in its fitting container', () => {
+    for (const plant of PLANT_CATALOG) {
+      const pot=POT_SIZES[plant.defaultPotId];
+      expect(pot.nursery).toBeGreaterThanOrEqual(plant.potClass);
+      expect(plant.defaultPotId).toBe(plant.id === 'monstera' ? 'gradvis' : 'muskot9');
+      if (plant.id !== 'monstera') expect(pot.diameter).toBeLessThanOrEqual(120);
+    }
+    expect(plantDimensions('succulent','muskot9')).toMatchObject({height:189,foliageHeight:90,potDiameter:120,potHeight:110});
+  });
+
   it('fits the tightest compartment of every shelf type with its book margin', () => {
     const margin = 4, rows = BAGGEBO_SPEC.shelfBottoms.map((bottom, slot) =>
       bottom - (slot ? BAGGEBO_SPEC.shelfBottoms[slot - 1] + BAGGEBO_SPEC.shelfRimHeight : BAGGEBO_SPEC.postSize) - margin);
@@ -57,7 +85,8 @@ describe('standard IKEA plant and pot sizes', () => {
     expect(PLANT_MAX_HEIGHT_MM).toBeLessThan(SHELF_CLEARANCE_MM.walnut);
     for (const plant of PLANT_CATALOG) for (const pot of POT_CATALOG) {
       const size = plantDimensions(plant.id, pot.id);
-      expect(size.height).toBeLessThanOrEqual(plant.id === 'monstera' ? 350 : PLANT_MAX_HEIGHT_MM);
+      expect(size.height).toBeCloseTo(size.soilHeight + size.foliageHeight, 6);
+      expect(size.height).toBeLessThanOrEqual(plant.id === 'monstera' ? 368 : PLANT_MAX_HEIGHT_MM);
       // The round pot always has room on the 220 mm usable depth.
       expect(size.depth).toBeLessThanOrEqual(BAGGEBO_SPEC.usableDepth);
       expect(size.depth).toBeGreaterThanOrEqual(size.potFootprint);
@@ -74,13 +103,13 @@ describe('standard IKEA plant and pot sizes', () => {
     const pot = POT_DIAMETER_MM * baggebo, shelf = BAGGEBO_SPEC.width * baggebo;
     expect(pot / shelf).toBeCloseTo(.2); // a 12 cm pot is a fifth of the 60 cm shelf
     const size = plantSceneSize('monstera', 'muskot', baggebo);
-    expect(size.height / (BOOK_REFERENCE_MM * baggebo)).toBeCloseTo(350 / 240); // a 35 cm monstera against a 24 cm book
+    expect(size.height / (BOOK_REFERENCE_MM * baggebo)).toBeCloseTo(368 / 240); // 35 cm reference assembly, soil raised 18 mm by MUSKOT
     expect(plantSceneSize('missing', 'muskot', 1)).toBeNull();
   });
 
   it('writes the size the way the shelf catalogue writes published measures', () => {
     expect(plantSizeLabel('sansevieria', 'muskot')).toBe('Maceta Ø15 × 14 cm · planta 25 cm aprox. (sin verificar)');
-    expect(plantSizeLabel('succulent', 'gradvis')).toBe('Maceta Ø13 × 12 cm · planta 16 cm aprox.');
+    expect(plantSizeLabel('succulent', 'gradvis')).toBe('Maceta Ø13 × 12 cm · planta 19,8 cm aprox.');
     expect(plantSizeLabel('missing', 'muskot')).toBe('');
   });
 

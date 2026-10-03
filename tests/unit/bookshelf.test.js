@@ -404,6 +404,48 @@ describe('renderBookshelf', () => {
     expect(onBookAction).toHaveBeenCalledWith('offline', expect.objectContaining({ driveFileId:'remote-1' }), download)
   })
 
+  it('sólo ofrece subir bytes locales mediante una conexión explícita a Drive', async () => {
+    const book = { ...makeBooks(1)[0],content:new Blob(['offline book']) }
+    const onBookAction = vi.fn()
+    shelf = renderBookshelf(container,[book],{ shelfWidth:SHELF_WIDTH,revealDuration:0,onBookAction,
+      getBookCloudState:() => ({ connected:true,saved:false }) })
+    container.querySelector('.ihr-spine').click()
+    const upload = await vi.waitFor(() => {
+      const button = document.querySelector('button[aria-label="Subir a Google Drive"]')
+      expect(button).not.toBeNull(); return button
+    })
+    expect(upload.textContent).toBe('Subir a Google Drive')
+    expect(upload.disabled).toBe(false)
+    upload.click()
+    expect(onBookAction).toHaveBeenCalledExactlyOnceWith('drive',book,upload)
+  })
+
+  it.each([false,true])('no ofrece subir sin sesión conectada (bytes locales=%s)', async content => {
+    shelf = renderBookshelf(container,[{ ...makeBooks(1)[0],content:content ? new Blob(['book']) : null }],
+      { shelfWidth:SHELF_WIDTH,revealDuration:0,onBookAction:vi.fn(),getBookCloudState:() => ({ connected:false,saved:false }) })
+    container.querySelector('.ihr-spine').click()
+    await vi.waitFor(() => expect(document.querySelector('.ihr-flyout__actions')).not.toBeNull())
+    expect(document.querySelector('[aria-label="Subir a Google Drive"]')).toBeNull()
+    expect(document.querySelector('.ihr-flyout__cloud-saved')).toBeNull()
+  })
+
+  it('presenta Drive guardado como estado no interactivo incluso desconectado, sin ocultar los bytes offline', async () => {
+    const book = { ...makeBooks(1)[0],driveFileId:'saved-1',content:new Blob(['book']) }
+    shelf = renderBookshelf(container,[book],{ shelfWidth:SHELF_WIDTH,revealDuration:0,onBookAction:vi.fn(),
+      getBookCloudState:() => ({ connected:false,saved:true }) })
+    container.querySelector('.ihr-spine').click()
+    const status = await vi.waitFor(() => {
+      const node = document.querySelector('.ihr-flyout__cloud-saved')
+      expect(node).not.toBeNull(); return node
+    })
+    expect(status.tagName).toBe('SPAN')
+    expect(status.getAttribute('role')).toBe('status')
+    expect(status.textContent).toBe('Guardado en Google Drive')
+    expect(status.getAttribute('tabindex')).toBeNull()
+    expect(document.querySelector('[aria-label="Subir a Google Drive"]')).toBeNull()
+    expect(book.content.size).toBe(4)
+  })
+
   it('mantiene el foco dentro de la portada y muestra un cierre accesible', async () => {
     shelf = renderBookshelf(container, makeBooks(1), { shelfWidth:SHELF_WIDTH, revealDuration:0 })
     container.querySelector('.ihr-spine').click()

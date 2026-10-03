@@ -1,5 +1,5 @@
 import { getCatalogPlant, getCatalogPot, getPotColor } from './plant-catalog-data.js';
-import { plantDimensions } from './plant-dimensions.js';
+import { plantDimensions, PLANT_REFERENCE_POTS } from './plant-dimensions.js';
 
 const LEGACY_PLANTS = Object.freeze({
   upright:'sansevieria', sansevieria:'sansevieria', monstera:'monstera',
@@ -25,7 +25,9 @@ export function resolveCatalogPlant(entry = {}) {
 export function normalizeShelfPlant(record) {
   if (!record || typeof record.key !== 'string' || !record.key.trim()) return null;
   const plant = resolveCatalogPlant(record);
-  const potId = getCatalogPot(record.potId)?.id || plant.defaultPotId;
+  // Legacy records without a pot keep the original assembly. Only newly
+  // selected plants explicitly receive the catalogue's compact default.
+  const potId = getCatalogPot(record.potId)?.id || PLANT_REFERENCE_POTS[plant.id];
   const size = plantDimensions(plant.id, potId);
   return {
     ...record,

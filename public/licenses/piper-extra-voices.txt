@@ -1,0 +1,20 @@
+Additional Piper voices
+
+Pau — ca_ES-upc_pau-x_low
+Dataset: UPC FestCat TTS Corpora, distributed by Col·lectivaT.
+Dataset source: https://collectivat.cat/asr#upc-festcat-tts-corpora
+Licence: Creative Commons Attribution-ShareAlike 3.0 Spain (CC BY-SA 3.0 ES).
+Licence text: https://creativecommons.org/licenses/by-sa/3.0/es/legalcode
+Original model card:
+https://huggingface.co/rhasspy/piper-voices/blob/main/ca/ca_ES/upc_pau/x_low/MODEL_CARD
+The application downloads the original Piper weights without modifying them.
+
+NVCC KON and NVCC MON — no_NO-nvcc-medium, speakers 3 and 6
+Dataset: Norwegian Voice Cloning Corpus, National Library of Norway.
+Licence: CC0, as declared in the Piper model card.
+Licence text: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+Original model card:
+https://huggingface.co/rhasspy/piper-voices/blob/main/no/no_NO/nvcc/medium/MODEL_CARD
+Speaker names and Oslo dialect are documented in Table 2 (page 4):
+https://www.nb.no/sbfil/nvcc/NVCC_about_the_corpus.pdf
+The two profiles use distinct recorded speakers within one unmodified model.

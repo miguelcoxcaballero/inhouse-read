@@ -1,3 +1,5 @@
+import { printedPageCount } from './book-length.js';
+
 /**
  * bookshelf-layout.js — lógica pura de la estantería del home de Inhouse Read.
  *
@@ -216,7 +218,11 @@ export function spineStyleFor(book, options = {}) {
   if (ratio == null) ratio = sqrtScale(book?.sizeBytes, 200 * 1024, 12 * 1024 * 1024);
 
   let width;
-  if (ratio == null) {
+  if (Number.isFinite(cfg.pageThickness) && cfg.pageThickness > 0) {
+    // Shelf geometry follows the amount of paper. Compression, scan resolution
+    // and a book's ID must never make equal-length books differently thick.
+    width = (cfg.bindingThickness || 0) + printedPageCount(book) * cfg.pageThickness;
+  } else if (ratio == null) {
     width = cfg.minWidth + span * unit(seed, 'width');
   } else {
     const jitter = (unit(seed, 'jitter') - 0.5) * 2 * cfg.jitter;
@@ -233,7 +239,8 @@ export function spineStyleFor(book, options = {}) {
     color: palette.base,
     shade: palette.shade,
     ink: palette.ink,
-    width: Math.round(clamp(width, cfg.minWidth, cfg.maxWidth)),
+    width: cfg.pageThickness ? Math.round(clamp(width, cfg.minWidth, cfg.maxWidth) * 100) / 100
+      : Math.round(clamp(width, cfg.minWidth, cfg.maxWidth)),
     heightRatio: Math.round(heightRatio * 1000) / 1000,
     texture: pick(SPINE_TEXTURES, seed, 'texture')
   };

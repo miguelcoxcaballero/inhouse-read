@@ -2126,7 +2126,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           delete node.dataset.sceneProjected;
           delete node.dataset.sceneHitSurface;
           semanticCovers.get(node)?.remove(); semanticCovers.delete(node);
-          semanticFoliage.get(node)?.svg.remove(); semanticFoliage.delete(node);
+          // Keep the expensive projected leaf triangles until entries are
+          // rebound below. An unchanged plant can move its native hit surface
+          // to the replacement semantic button without tessellating again.
           clearPlantDiagnostics(node);
         }
         originalStyles.clear();
@@ -2172,16 +2174,26 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         if (entry) {
           oldEntries.delete(key);
           if (entry.node !== data.node && entry.node?.classList.contains('is-away')) data.node?.classList.add('is-away');
-          if (entry.node !== data.node) {
-            semanticFoliage.get(entry.node)?.svg.remove(); semanticFoliage.delete(entry.node);
-            clearPlantDiagnostics(entry.node);
-          }
-          entry.node = data.node;
           if (data.kind === 'plant' || data.kind === 'lamp') {
             const changed = data.kind === 'lamp' ? lampKeys(entry) !== lampKeys(data) : plantKeys(entry) !== plantKeys(data);
             if (changed) releaseEntry(entry);
+            else if (entry.node !== data.node) {
+              const native = semanticFoliage.get(entry.node);
+              if (native && data.node) {
+                semanticFoliage.delete(entry.node);
+                // The outgoing node's hit target must cease to exist. Clone
+                // its already projected triangles/cache into a fresh target;
+                // this preserves native cleanup without reprojecting leaves.
+                const svg = native.svg.cloneNode(true);
+                native.svg.remove();
+                const rebound = { ...native,svg,path:svg.querySelector(':scope > path'),
+                  exclusions:svg.querySelector('clipPath path') };
+                data.node.append(svg); semanticFoliage.set(data.node,rebound);
+              }
+            }
+            if (entry.node !== data.node) clearPlantDiagnostics(entry.node);
             Object.assign(entry, data); entry.box = slotBox(entry);
-          } else updateRecord(entry, data.book, data.style, data.coverUrl, data);
+          } else { entry.node = data.node; updateRecord(entry, data.book, data.style, data.coverUrl, data); }
         } else { entry = freshEntry(data, index); entry.box = slotBox(entry); }
         // The new layout has already committed the preview's destination.
         // Retaining that offset would apply it twice; captured projected rects

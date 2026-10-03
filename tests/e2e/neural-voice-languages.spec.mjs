@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, extname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'vite'
+import { piperVoices } from '../../src/js/readers/neural-voice/catalog.js'
 
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)))
 const FIXTURES = process.env.NEURAL_VOICE_FIXTURES || '/tmp/claude-0/-home-user-inhouse-read/6c70f5ca-de80-5128-bee1-f59b39f4610d/scratchpad/piper/web/models-extra'
@@ -34,6 +35,7 @@ const CASES = {
   it: ['it_IT-paola-medium', ['La pioggia cadeva sulle finestre della biblioteca.', 'Nessuno ricordava quando fosse arrivato il visitatore.']],
   'pt-BR': ['pt_BR-faber-medium', ['A chuva caía nas janelas da biblioteca.', 'Ninguém lembrava quando o visitante tinha chegado.']],
   ca: ['ca_ES-upc_ona-medium', ['La pluja queia a les finestres de la biblioteca.', 'Ningú recordava quan havia arribat el visitant.']],
+  'ca-pau': ['ca_ES-upc_pau-x_low', ['La pluja queia a les finestres de la biblioteca.', 'Ningú recordava quan havia arribat el visitant.']],
   nl: ['nl_NL-pim-medium', ['De regen tikte zachtjes tegen de ramen van de oude bibliotheek.', 'Niemand in het dorp wist wanneer de vreemdeling was aangekomen.']],
   pl: ['pl_PL-gosia-medium', ['Deszcz cicho stukał w okna starej biblioteki.', 'Nikt we wsi nie pamiętał, kiedy przybył nieznajomy.']],
   ru: ['ru_RU-irina-medium', ['Дождь тихо стучал в окна старой библиотеки.', 'Никто в деревне не помнил, когда приехал незнакомец.']],
@@ -44,6 +46,8 @@ const CASES = {
   sv: ['sv_SE-nst-medium', ['Regnet knackade försiktigt på fönstren i det gamla biblioteket.', 'Ingen i byn mindes när främlingen hade kommit.']],
   da: ['da_DK-talesyntese-medium', ['Regnen bankede sagte på vinduerne i det gamle bibliotek.', 'Ingen i landsbyen kunne huske, hvornår den fremmede var kommet.']],
   nb: ['no_NO-talesyntese-medium', ['Regnet banket forsiktig på vinduene i det gamle biblioteket.', 'Ingen i landsbyen husket når den fremmede var kommet.']],
+  'nb-kon': ['no_NO-nvcc-medium', ['Regnet banket forsiktig på vinduene i det gamle biblioteket.', 'Ingen i landsbyen husket når den fremmede var kommet.'], 3],
+  'nb-mon': ['no_NO-nvcc-medium', ['Regnet banket forsiktig på vinduene i det gamle biblioteket.', 'Ingen i landsbyen husket når den fremmede var kommet.'], 6],
   fi: ['fi_FI-harri-medium', ['Sade ropisi hiljaa vanhan kirjaston ikkunoihin.', 'Kukaan kylässä ei muistanut, milloin muukalainen oli saapunut.']],
   cs: ['cs_CZ-jirka-medium', ['Déšť tiše klepal na okna staré knihovny.', 'Nikdo ve vsi si nepamatoval, kdy cizinec přijel.']],
   el: ['el_GR-rapunzelina-low', ['Η βροχή χτυπούσε απαλά τα παράθυρα της παλιάς βιβλιοθήκης.', 'Κανείς στο χωριό δεν θυμόταν πότε είχε έρθει ο ξένος.']],
@@ -64,6 +68,10 @@ const selected = Object.entries(CASES).filter(([language, [piperId]]) => (!ONLY.
 if (process.env.PLAYWRIGHT_SUITE === 'languages') {
   const missing = Object.entries(CASES).filter(([language, [piperId]]) => (!ONLY.length || ONLY.includes(language)) && !haveVoice(piperId)).map(([, [piperId]]) => piperId)
   if (missing.length) throw new Error(`Real language suite is missing required weights: ${missing.join(', ')}`)
+}
+const caseIds = Object.values(CASES).map(([model,,speaker=0]) => `piper:${model}${speaker ? `#${speaker}` : ''}`)
+if (new Set(caseIds).size !== caseIds.length || JSON.stringify([...caseIds].sort()) !== JSON.stringify(piperVoices.map(voice=>voice.id).sort())) {
+  throw new Error('Real Piper cases must cover every selectable catalogue speaker exactly once')
 }
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.wasm': 'application/wasm', '.data': 'application/octet-stream', '.map': 'application/json' }

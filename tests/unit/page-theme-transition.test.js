@@ -41,12 +41,13 @@ const lineMetrics = () => {
 }
 
 describe('reader theme palette', () => {
-  it('replays exactly the filter the reader gives a stock PDF page', () => {
+  it('keeps theme filters off the complete PDF page so images are not recoloured', () => {
     const css = readFileSync('src/css/reading.css', 'utf8')
     for (const [name, filter] of Object.entries(PDF_PAGE_FILTERS)) {
       if (name === 'paper') continue
-      expect(css).toContain(`[data-reading-theme='${name}'] .pdf-page-canvas { filter:${filter}; }`)
+      expect(css).not.toContain(`[data-reading-theme='${name}'] .pdf-page-canvas { filter:${filter}; }`)
     }
+    expect(css).toContain('.pdf-page-canvas { filter:none; }')
     expect(READING_THEMES.sepia).toMatchObject({ background:'#eee0c4', color:'#483825' })
   })
 

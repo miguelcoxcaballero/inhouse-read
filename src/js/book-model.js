@@ -1663,6 +1663,17 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (current) draw(current);
     return true;
   }
+  function updateBookmark(nextBook) {
+    if (disposed) return false;
+    const changed = JSON.stringify(bookmarkFor(currentBook)) !== JSON.stringify(bookmarkFor(nextBook));
+    currentBook = { ...currentBook, ...nextBook };
+    if (changed) {
+      pendingModel?.userData.updateBookmark?.(nextBook);
+      model.userData.updateBookmark?.(nextBook);
+      canvas.dataset.bookmark3d = String(Boolean(model.userData.hasBookmark));
+    }
+    return true;
+  }
   function animateCoverOpen({ duration = 520, offsetX = 0, targetPose } = {}) {
     const origin = { ...current };
     return animateMotion([{ transform:origin }, { transform:{ ...origin, ...targetPose,
@@ -1768,7 +1779,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     raf = requestAnimationFrame(tick); return animation;
   }
   return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
-    updateAppearance, updateSpineAppearance, updateCoverAppearance, prepareCoverRelief, setCoverRelief, updateEdgeAppearance,
+    updateAppearance, updateSpineAppearance, updateCoverAppearance, prepareCoverRelief, setCoverRelief, updateEdgeAppearance, updateBookmark,
     setPageSnapshot, pageTextures, uploadPageTexture, compilePage, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
     setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
     getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,

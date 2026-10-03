@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test'
+import {readFileSync} from 'node:fs'
+import {createHash} from 'node:crypto'
+import {localBookBytes} from './helpers/offline-shell.mjs'
 
 const PDF_FIXTURE = 'tests/e2e/fixtures/tiny.pdf'
 
@@ -19,8 +22,8 @@ test.beforeEach(async ({ page }) => {
   await page.goto(process.env.IHR_TEST_URL || '/')
 })
 
-test('Android: mantiene una pantalla de carga hasta que Drive guarda el libro y lo muestra en la estantería', async ({ page }) => {
-  test.setTimeout(60_000)
+test('Android: importa localmente sin subir y guarda en Drive sólo desde la portada elegida', async ({ page }) => {
+  test.setTimeout(120_000)
   await page.setViewportSize({ width:390, height:844 })
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'userAgent', {
@@ -74,30 +77,38 @@ test('Android: mantiene una pantalla de carga hasta que Drive guarda el libro y 
 
   await page.reload()
   await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
-  await bookUploadStarted
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+  const original=readFileSync(PDF_FIXTURE),before=await localBookBytes(page,'tiny.pdf')
+  expect(before).toMatchObject({bytes:original.length,sha256:createHash('sha256').update(original).digest('hex'),hasDriveCopy:false})
+  expect(uploadCount).toBe(0)
   const uploadScreen = page.locator('#drive-upload-screen')
-  await expect(uploadScreen).toBeVisible()
-  await expect(uploadScreen).toHaveAttribute('aria-busy', 'true')
-  await expect(page.locator('#drive-upload-book')).toHaveText('Tiny')
-
-  finishBookUpload()
   await expect(uploadScreen).toBeHidden()
-  await page.waitForFunction(async () => {
-    const db = await new Promise((resolve, reject) => {
-      const request = indexedDB.open('inhouse-read')
-      request.onsuccess = () => resolve(request.result)
-      request.onerror = () => reject(request.error)
-    })
-    const books = await new Promise((resolve, reject) => {
-      const request = db.transaction('books', 'readonly').objectStore('books').getAll()
-      request.onsuccess = () => resolve(request.result)
-      request.onerror = () => reject(request.error)
-    })
-    return books.some(book => book.name === 'tiny.pdf' && book.driveFileId === 'drive-book')
-  })
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
   await expectReturnComplete(page)
-  await expect(page.getByRole('button', { name:/Abrir tiny/i })).toBeVisible()
+  const spine=page.getByRole('button', { name:/Abrir tiny/i })
+  await expect(spine).toBeVisible();await spine.click()
+  const upload=page.getByRole('button',{name:'Subir a Google Drive',exact:true})
+  await expect(upload).toBeVisible()
+  expect(uploadCount).toBe(0) // connected login, import and close never upload bytes
+  await upload.click();await bookUploadStarted
+  await expect(upload).toHaveAttribute('aria-busy','true')
+  await expect(upload).toHaveAccessibleName('Guardando…')
+  await expect(uploadScreen).toBeHidden() // the selected cover remains usable
+  expect(await localBookBytes(page,'tiny.pdf')).toEqual(before)
+  finishBookUpload()
+  const saved=page.locator('.ihr-flyout__cloud-saved')
+  await expect(saved).toHaveText('Guardado en Google Drive')
+  await expect(saved).toHaveAttribute('role','status')
+  expect(await saved.evaluate(element=>element.tagName)).toBe('SPAN')
+  await expect(page.locator('.ihr-flyout__cloud-action')).toHaveCount(0)
+  const after=await localBookBytes(page,'tiny.pdf')
+  expect(after).toEqual({...before,hasDriveCopy:true})
+  const driveId=await page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const request=indexedDB.open('inhouse-read');request.onsuccess=()=>resolve(request.result)})
+    const books=await new Promise(resolve=>{const request=db.transaction('books').objectStore('books').getAll();request.onsuccess=()=>resolve(request.result)})
+    db.close();return books.find(book=>book.name==='tiny.pdf')?.driveFileId
+  })
+  expect(driveId).toBe('drive-book')
 })
 
 test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recargar', async ({ page }) => {
@@ -203,7 +214,8 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   await expect(page.locator('.pdf-page-canvas')).toBeAttached()
   await expect(page.locator('#reader-screen')).toHaveClass(/is-preparing/)
   await expect(page.locator('.reader-toolbar')).toBeHidden()
-  await expect(page.getByRole('button', { name: 'Guardar en Drive' })).toBeVisible()
+  await expect(page.locator('.ihr-flyout__cloud-action')).toHaveCount(0)
+  await expect(page.getByRole('button', { name:'Subir a Google Drive',exact:true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Toca para leer/ })).toBeVisible()
   await page.getByRole('button', { name: /Toca para leer/ }).click()
   await expect(page.locator('#reader-screen')).toHaveClass(/is-opening-from-book/)

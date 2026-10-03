@@ -22,6 +22,7 @@ const drain = async () => { for (let step = 0; step < 20; step++) await Promise.
 
 function reading(pages = ['Primera página.', 'Continúa la frase.']) {
   const engine = createFakeNeuralEngine({ voices:FAKE_CATALOG, installed:[VOICE], hold:true })
+  engine.extendUpcoming = vi.fn()
   setNeuralEngine(engine)
   const calls = [], stages = [], messages = []
   let visible = 0
@@ -58,6 +59,91 @@ function reading(pages = ['Primera página.', 'Continúa la frase.']) {
 }
 
 describe('prepared page sources follow only an audible natural fragment', () => {
+  it('prepares the next page during audible playback and sends only deferred upcoming text', async () => {
+    const t = reading()
+    await t.voice.play(); t.emit('start'); await drain()
+    expect(t.reader.getNextSpeechSource).toHaveBeenCalledOnce()
+    expect(t.visible()).toBe(0)
+    expect(t.engine.calls).toHaveLength(1)
+    expect(t.stages[0].activate).not.toHaveBeenCalled()
+    expect(t.engine.extendUpcoming).toHaveBeenCalledWith(expect.objectContaining({
+      id:t.engine.calls[0].id, voiceId:VOICE, upcoming:['Continúa la frase.'], deferAfter:0
+    }))
+    t.emit('done'); await drain()
+    expect(t.reader.getNextSpeechSource).toHaveBeenCalledOnce()
+    expect(t.visible()).toBe(0)
+    t.emit('start'); expect(t.visible()).toBe(1)
+  })
+  it('starts at most one page ahead near the end and caps the deferred future to four fragments', async () => {
+    const t = reading(['Uno. Dos. Tres. Cuatro. Cinco. Seis.', 'Primera nueva. Segunda nueva. Tercera nueva. Cuarta nueva. Quinta nueva. Sexta nueva.'])
+    await t.voice.play(); t.emit('start'); await drain()
+    expect(t.reader.getNextSpeechSource).not.toHaveBeenCalled()
+    t.emit('done'); t.emit('start'); await drain()
+    expect(t.reader.getNextSpeechSource).toHaveBeenCalledOnce()
+    const ahead = t.engine.extendUpcoming.mock.calls[0][0]
+    expect(ahead.deferAfter).toBe(4)
+    expect(ahead.upcoming.slice(ahead.deferAfter)).toHaveLength(4)
+    expect(t.stages).toHaveLength(1)
+    expect(t.voice.aheadPage.plan.items.length).toBeGreaterThan(4)
+  })
+  it('cancels a ready ahead page on Pause without skipping the current audible fragment on resume', async () => {
+    const t = reading()
+    await t.voice.play(); t.emit('start'); await drain()
+    const old = t.stages[0]
+    t.voice.pause()
+    expect(t.voice.resumeNextPage).toBe(false)
+    expect(old.clear).toHaveBeenCalledOnce()
+    await t.voice.play(); t.emit('start'); await drain()
+    expect(t.engine.calls.map(call => call.text)).toEqual(['Primera página.','Primera página.'])
+    expect(t.visible()).toBe(0)
+    expect(old.activate).not.toHaveBeenCalled()
+    expect(t.stages).toHaveLength(2)
+  })
+  it('disposes a late ahead source after pausing while current audio still plays', async () => {
+    const t = reading()
+    let finish, active
+    t.reader.getNextSpeechSource.mockImplementationOnce(({ isActive }) => { active = isActive; return new Promise(resolve => { finish = resolve }) })
+    await t.voice.play(); t.emit('start'); t.voice.pause()
+    const old = t.source(1, active); finish(old); await drain()
+    expect(old.clear).toHaveBeenCalledOnce()
+    expect(t.engine.extendUpcoming).not.toHaveBeenCalled()
+    await t.voice.play()
+    expect(t.engine.calls.at(-1).text).toBe('Primera página.')
+    expect(t.visible()).toBe(0)
+  })
+  it('disposes ready ahead work on Stop and ignores its old utterance events', async () => {
+    const t = reading()
+    await t.voice.play(); t.emit('start'); await drain()
+    const oldId = t.engine.calls[0].id, ahead = t.stages[0]
+    t.voice.stop(); t.emit('done', oldId); t.emit('start', oldId); await drain()
+    expect(ahead.clear).toHaveBeenCalledOnce()
+    expect(ahead.activate).not.toHaveBeenCalled()
+    expect(t.engine.calls).toHaveLength(1)
+    expect(t.visible()).toBe(0)
+  })
+  it('rebuilds ahead work after changing voice and rate without advancing the current page', async () => {
+    const t = reading()
+    await t.voice.play(); t.emit('start'); await drain()
+    const oldId = t.engine.calls[0].id, ahead = t.stages[0]
+    t.engine.set.add(SECOND); t.voice.voice = SECOND; t.voice.rate = 1.25; t.voice.restart()
+    t.emit('start', oldId); expect(t.stages).toHaveLength(1)
+    t.emit('start'); await drain()
+    expect(ahead.clear).toHaveBeenCalledOnce()
+    expect(t.engine.calls.at(-1)).toMatchObject({ text:'Primera página.', voiceId:SECOND, rate:1.25 })
+    expect(t.engine.extendUpcoming.mock.calls.at(-1)[0]).toMatchObject({ voiceId:SECOND, rate:1.25 })
+    expect(t.visible()).toBe(0)
+  })
+  it('keeps an ahead preparation error from interrupting the current audible fragment', async () => {
+    const t = reading()
+    t.reader.getNextSpeechSource.mockRejectedValue(new Error('Render failed'))
+    await t.voice.play(); t.emit('start'); await drain()
+    expect(t.voice.state).toBe('playing')
+    expect(t.visible()).toBe(0)
+    t.emit('done'); await drain()
+    expect(t.voice.state).toBe('stopped')
+    expect(t.messages.at(-1)).toBe('No se pudo pasar de página.')
+    expect(t.messages).not.toContain('Final del libro.')
+  })
   it('keeps the previous page while preparing and synthesising, then commits before the first highlight', async () => {
     const t = reading()
     await t.first()
@@ -121,7 +207,10 @@ describe('prepared page sources follow only an audible natural fragment', () => 
   it('resumes an already activated page with its existing fragment and mapping', async () => {
     const t = reading()
     await t.first(); t.emit('start'); t.voice.pause(); await t.voice.play(); t.emit('start')
-    expect(t.reader.getNextSpeechSource).toHaveBeenCalledTimes(1)
+    // The audible page is reused. End-of-book ahead checks before/after Pause
+    // create no replacement page or mapped source.
+    expect(t.reader.getNextSpeechSource).toHaveBeenCalledTimes(3)
+    expect(t.stages).toHaveLength(1)
     expect(t.visible()).toBe(1)
     expect(t.engine.calls.at(-1).text).toBe('Continúa la frase.')
     expect(t.stages[0].highlight).toHaveBeenCalledTimes(2)

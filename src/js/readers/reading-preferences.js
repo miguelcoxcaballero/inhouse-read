@@ -8,9 +8,8 @@ export const READING_THEMES = {
   amoled: { background:'#000000', color:'#c6c6c6', scheme:'dark' },
   sage: { background:'#dce5d8', color:'#2c3a30', scheme:'light' }
 }
-// The filter each theme puts on an original PDF page (src/css/reading.css,
-// `[data-reading-theme] .pdf-page-canvas`). Physical page snapshots keep the
-// original unfiltered pixels and blend into these themed reader pixels.
+// Applied only to printed paper/ink by pdf-page-theme.js. Embedded images are
+// restored from the original render; never apply these filters to the DOM page.
 export const PDF_PAGE_FILTERS = {
   paper: 'none',
   sepia: 'sepia(.5) brightness(.94)',

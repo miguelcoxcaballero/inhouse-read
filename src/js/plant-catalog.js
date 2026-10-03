@@ -240,15 +240,31 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
     shelfPreview3d?.dispose(); shelfPreview3d = null;
     lampPreview3d?.dispose(); lampPreview3d = null;
   }
+  function suspendPreviews() {
+    preview3d?.setActive(false);
+    shelfPreview3d?.setActive(false);
+    lampPreview3d?.setActive(false);
+  }
   function mountPreview() {
     if (!opening || destroyed) return;
-    if (activePage === 'plants') preview3d = createPlantCatalogPreview(drawing);
-    else if (activePage === 'shelves') shelfPreview3d = createShelfCatalogPreview(shelfDrawing);
-    else lampPreview3d = createLampCatalogPreview(lampDrawing);
+    // Each page is created on its first visit. Retaining its model/environment
+    // avoids recompiling the same studio when navigating or reopening the book.
+    // Only the visible page can request a draw; destroy releases all three.
+    suspendPreviews();
+    if (activePage === 'plants') {
+      preview3d ||= createPlantCatalogPreview(drawing);
+      preview3d.setActive(true);
+    } else if (activePage === 'shelves') {
+      shelfPreview3d ||= createShelfCatalogPreview(shelfDrawing);
+      shelfPreview3d.setActive(true);
+    } else {
+      lampPreview3d ||= createLampCatalogPreview(lampDrawing);
+      lampPreview3d.setActive(true);
+    }
   }
   function switchPage(page) {
     if (busy || destroyed || activePage === page) return;
-    activePage = page; disposePreviews();
+    activePage = page;
     status.textContent = ''; status.removeAttribute('data-error');
     update(); mountPreview(); update();
   }
@@ -266,9 +282,9 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
     for (const [page,button] of pageButtons) {
       button.setAttribute('aria-pressed',String(page === activePage)); button.disabled = busy;
     }
-    preview3d?.update({ catalogId:selectedPlant,potId:selectedPot,potColorId:selectedColor });
-    shelfPreview3d?.update({ shelfType:selectedShelf });
-    lampPreview3d?.update({ lampId:selectedLamp });
+    if (opening && activePage === 'plants') preview3d?.update({ catalogId:selectedPlant,potId:selectedPot,potColorId:selectedColor });
+    if (opening && shelfPage) shelfPreview3d?.update({ shelfType:selectedShelf });
+    if (opening && lampPage) lampPreview3d?.update({ lampId:selectedLamp });
     lampName.textContent = lamp?.name || '';
     lampSubtitle.textContent = lamp?.subtitle || '';
     lampWarmth.textContent = `${lamp?.warmKelvin || 2700} K`;
@@ -399,7 +415,7 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
   function finishClose() {
     if (!opening) return;
     opening = false;
-    disposePreviews();
+    suspendPreviews();
     onClose?.();
     if (trigger?.isConnected) trigger.focus({ preventScroll:true });
     trigger = null;
@@ -469,7 +485,7 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
     close,
     destroy() {
       if (destroyed) return;
-      close(); destroyed = true; dialog.remove();
+      close(); destroyed = true; disposePreviews(); dialog.remove();
     }
   };
 }

@@ -17,10 +17,35 @@ function statistics(model) {
 }
 
 describe('IKEA referenced plant catalog', () => {
-  it('defines eight distinct species and four independently selectable pots with product references', () => {
-    expect(PLANT_CATALOG).toHaveLength(8); expect(POT_CATALOG).toHaveLength(4);
+  it('preserves leaf geometry when changing the pot instead of crushing the canopy into an old height box', () => {
+    for (const catalogId of ['succulent','nephrolepis','monstera','sansevieria']) {
+      const models=POT_CATALOG.map(pot => createShelfPlant({catalogId,potId:pot.id,seed:'same-growth'}));
+      const reference=models[0].getObjectByName('leaf-0').geometry.attributes.position.array;
+      for (const [index,model] of models.entries()) {
+        expect([...model.getObjectByName('leaf-0').geometry.attributes.position.array]).toEqual([...reference]);
+        const real=plantDimensions(catalogId,POT_CATALOG[index].id);
+        const bounds=new THREE.Box3().setFromObject(model);
+        expect(bounds.max.y-bounds.min.y).toBeCloseTo(real.height*.5,4);
+        model.userData.dispose();
+      }
+    }
+  });
+
+  it('keeps pot height exact including the steel rolled rim, at the scale of a 60 cm shelf', () => {
+    for (const pot of POT_CATALOG) {
+      const real=plantDimensions('succulent',pot.id), scale=390/600;
+      const model=createShelfPlant({catalogId:'succulent',potId:pot.id,height:real.height*scale});
+      const box=new THREE.Box3().setFromObject(model.getObjectByName('ceramic-pot'));
+      expect((box.max.y-box.min.y)/scale).toBeCloseTo(real.potHeight,3);
+      expect((box.max.x-box.min.x)/390).toBeCloseTo(real.potDiameter/600,2);
+      model.userData.dispose();
+    }
+  });
+
+  it('defines eight distinct species and five independently selectable pot sizes with product references', () => {
+    expect(PLANT_CATALOG).toHaveLength(8); expect(POT_CATALOG).toHaveLength(5);
     expect(new Set(PLANT_CATALOG.map(item => item.id)).size).toBe(8);
-    expect(new Set(POT_CATALOG.map(item => item.id)).size).toBe(4);
+    expect(new Set(POT_CATALOG.map(item => item.id)).size).toBe(5);
     for (const item of PLANT_CATALOG) {
       expect(getCatalogPlant(item.id)).toBe(item); expect(getCatalogPot(item.defaultPotId)).not.toBeNull();
       expect(item.referenceUrl).toMatch(/^https:\/\/www\.ikea\.com\/es\/es\/p\//);
@@ -105,7 +130,7 @@ describe('IKEA referenced plant catalog', () => {
   it('keeps the pot form and material properties distinct instead of recoloring one generic pot', () => {
     const models = POT_CATALOG.map(pot => createShelfPlant({catalogId:'monstera',potId:pot.id,seed:'same-seed'}));
     const pots = models.map(model => model.getObjectByName('ceramic-pot'));
-    expect(new Set(pots.map(pot => [...pot.geometry.attributes.position.array].join(','))).size).toBe(4);
+    expect(new Set(pots.map(pot => [...pot.geometry.attributes.position.array].join(','))).size).toBe(5);
     expect(pots[0].material.clearcoat).toBeGreaterThan(.2);
     expect(pots[1].material.roughness).toBeGreaterThan(.9);
     expect(models[1].userData.parts).toContain('terracotta-saucer');

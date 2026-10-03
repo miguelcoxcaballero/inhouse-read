@@ -17,7 +17,7 @@ const REMOVED_STORE = 'removed-books'
  * @property {string} format        - etiqueta legible: 'PDF' | 'EPUB' | 'MOBI' | ...
  * @property {'local'|'drive'} sourceType
  * @property {string} [driveFileId] - solo si sourceType === 'drive'
- * @property {Blob}   [content]     - bytes del propio libro (solo local): permite
+ * @property {Blob}   [content]     - bytes del propio libro, también descargado de Drive: permite
  *                                    reabrirlo sin volver a pedirle el archivo al
  *                                    usuario, sin depender de ninguna API de
  *                                    carpetas (funciona igual en Android que en
@@ -203,10 +203,13 @@ export class LibraryStore {
     if (restoreRemoved) for (const removal of matching) removedStore.delete(removal.id)
     const existing = await wrap(store.get(id))
     const now = Date.now()
+    // Missing optional fields on a reopen must not erase a saved Drive link,
+    // original bytes or progress. Explicit null still clears a field.
+    const defined = Object.fromEntries(Object.entries(partial).filter(([, value]) => value !== undefined))
     const record = {
       progressFraction: 0,
       ...existing,
-      ...partial,
+      ...defined,
       id,
       addedAt: existing?.addedAt ?? now,
       lastOpenedAt: now
@@ -218,6 +221,7 @@ export class LibraryStore {
 
   async updateProgress(id, progressFraction, locator) {
     const store = await this.#store('readwrite')
+    const completion = committed(store.transaction)
     const existing = await wrap(store.get(id))
     if (!existing) return null
     const now = Date.now()
@@ -226,6 +230,7 @@ export class LibraryStore {
       progressUpdatedAt: now, progressDirty: true, lastOpenedAt: now
     }
     await wrap(store.put(record))
+    await completion
     return record
   }
 
@@ -266,22 +271,27 @@ export class LibraryStore {
   }
 
   /** Actualiza metadatos de Drive sin cambiar el orden de la estantería. */
-  async patch(id, fields) {
+  async patch(id, fields, { ifCurrent } = {}) {
     const store = await this.#store('readwrite')
+    const completion = committed(store.transaction)
     const existing = await wrap(store.get(id))
     if (!existing) return null
+    if (ifCurrent && !ifCurrent(existing)) { await completion; return null }
     const record = { ...existing, ...fields, id }
     await wrap(store.put(record))
+    await completion
     return record
   }
 
   /** Guarda/actualiza solo la portada, sin tocar lastOpenedAt. */
   async setCover(id, coverBlob) {
     const store = await this.#store('readwrite')
+    const completion = committed(store.transaction)
     const existing = await wrap(store.get(id))
     if (!existing) return null
     const record = { ...existing, cover: coverBlob, coverUpdatedAt: Date.now() }
     await wrap(store.put(record))
+    await completion
     return record
   }
 

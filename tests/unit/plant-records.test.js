@@ -3,6 +3,15 @@ import { normalizeShelfPlant, resolveCatalogPlant } from '../../src/js/plant-rec
 import { plantDimensions } from '../../src/js/plant-dimensions.js';
 
 describe('current models for saved plant generations', () => {
+  it('preserves explicit large pots and legacy defaults while retaining an explicitly chosen compact size', () => {
+    for (const potId of ['muskot','muskotblomma','akerbar','gradvis','muskot9']) {
+      const saved=normalizeShelfPlant({key:'saved',catalogId:'succulent',potId});
+      expect(saved.potId).toBe(potId);
+      expect(saved.height).toBe(plantDimensions('succulent',potId).height);
+    }
+    expect(normalizeShelfPlant({key:'legacy',catalogId:'succulent'}).potId).toBe('muskotblomma');
+    expect(normalizeShelfPlant({key:'new',catalogId:'succulent',potId:'muskot9'}).height).toBe(189);
+  });
   it.each([
     ['upright','sansevieria'], ['sansevieria','sansevieria'], ['monstera','monstera'],
     ['leafy','hedera'], ['pothos','hedera'], ['ivy','hedera'], ['suculenta','succulent'],
@@ -28,15 +37,15 @@ describe('current models for saved plant generations', () => {
     expect(normalizeShelfPlant({ key:'plant:old', catalogId:'sansevieria', width, height }))
       .toMatchObject({ width:150, height:250 });
   });
-  it('gives the same real size to a plant in any of the four pots, widening only for a saucer', () => {
+  it('preserves the same foliage above each pot soil line, widening only for its footprint', () => {
     const size = potId => normalizeShelfPlant({ key:'plant:p', catalogId:'succulent', potId });
-    expect(size('muskot')).toMatchObject({ width:150, height:160 });
-    expect(size('gradvis')).toMatchObject({ width:140, height:160 });
-    expect(size('muskotblomma')).toMatchObject({ width:160, height:160 });
+    expect(size('muskot')).toMatchObject({ width:150, height:216 });
+    expect(size('gradvis')).toMatchObject({ width:140, height:198 });
+    expect(size('muskotblomma')).toMatchObject({ width:160, height:207 });
   });
   it('supplies invalid pots from the resolved catalog, with the standard size', () => {
     expect(normalizeShelfPlant({ key:'plant:old', catalogId:'succulent', width:0, height:NaN, potId:'removed' }))
-      .toMatchObject({ seed:'plant:old', catalogId:'succulent', variant:'succulent', width:160, height:160, potId:'muskotblomma' });
+      .toMatchObject({ seed:'plant:old', catalogId:'succulent', variant:'succulent', width:160, height:207, potId:'muskotblomma' });
   });
   it('migrates every legacy alias to the size of its current species and keeps places', () => {
     const records = ['upright','leafy','pothos','ivy','suculenta','palm','fern','zz','cactus','monstera']
@@ -56,7 +65,7 @@ describe('current models for saved plant generations', () => {
   });
   it('keeps complete current records identical and is idempotent', () => {
     const current = { key:'plant:kept', seed:'kept', catalogId:'monstera', variant:'monstera',
-      potId:'muskot', width:260, height:350, shelf:0, x:.45 };
+      potId:'muskot', width:260, height:368, shelf:0, x:.45 };
     expect(normalizeShelfPlant(current)).toEqual(current);
     const migrated = normalizeShelfPlant({ key:'plant:old', variant:'suculenta', width:50 });
     expect(normalizeShelfPlant(migrated)).toEqual(migrated);

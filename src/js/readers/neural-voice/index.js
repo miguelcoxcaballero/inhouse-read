@@ -1,4 +1,4 @@
-// On-device neural voices (Piper VITS models run by onnxruntime-web inside a Web Worker, played with Web Audio).
+// On-device natural voices (Piper and Supertonic models run by onnxruntime-web in a Worker, played with Web Audio).
 // Free, unlimited and offline once a voice is downloaded; nothing is sent anywhere. This file is the CONTRACT between
 // the engine and the reading integration (reading-voice.js, voice-catalog.js, the voice picker): the integration only
 // imports from here.
@@ -11,18 +11,23 @@ import { NEURAL_PREFIX, isNeuralVoiceId, neuralVoices } from './catalog.js'
 import { unlockAudio } from './audio.js'
 
 export { NEURAL_PREFIX, isNeuralVoiceId, neuralVoices }
+export { piperVoices, supertonicVoices } from './catalog.js'
 
 /**
  * Curated catalogue (see catalog.js), best default of each language first.
  * @typedef {object} NeuralVoice
  * @property {string} id         'piper:es_MX-claude-high' ('piper:<piperId>#<speaker>' for the 2nd+ speaker of a model)
- * @property {string} piperId    'es_MX-claude-high' (the Hugging Face rhasspy/piper-voices file stem)
+ * @property {string} piperId    shared installation key: a Piper file stem or 'supertonic3'
  * @property {string} lang       BCP-47 tag, 'es-MX'
  * @property {string} name       person/brand name shown in the picker, 'Claude'
- * @property {'low'|'medium'|'high'} quality
+ * @property {'low'|'medium'|'high'|'natural'} quality
  * @property {number} sizeMB     download size, ~63
  * @property {number} speaker    speaker id inside the model (0 for single-speaker models)
  * @property {boolean} [recommended]  the one to offer first for its language
+ * @property {'supertonic3'} [runtime]  absent for Piper
+ * @property {string} [style]  genuine Supertonic speaker profile, independent of language
+ * @property {boolean} [sharedPack]  one install/removal affects every profile in the pack
+ * @property {string} [licenseUrl]
  */
 
 /**
@@ -59,8 +64,8 @@ export class NeuralVoiceEngine extends EventTarget {
    * Fires 'status' on this engine when it changes.
    */
   get status() { return this.core ? this.core.status : 'idle' }
-  /** ADDED: {rtf, underruns, firstAudioMs, cacheHits, tooSlow} of the voice so far (diagnostics). */
-  get stats() { return this.core ? this.core.stats : { rtf: 0, underruns: 0, firstAudioMs: 0, cacheHits: 0, tooSlow: 0 } }
+  /** ADDED: {rtf, underruns, firstAudioMs, cacheHits, prefetchHits, tooSlow} (diagnostics). */
+  get stats() { return this.core ? this.core.stats : { rtf: 0, underruns: 0, firstAudioMs: 0, cacheHits: 0, prefetchHits:0, tooSlow: 0 } }
 
   /** ADDED: starts loading the engine code (not the worker, not a model). Call it when the picker opens or a neural voice is chosen. Resolves when it is ready. */
   preload() {
@@ -113,6 +118,8 @@ export class NeuralVoiceEngine extends EventTarget {
       queueMicrotask(() => (this.options.env || globalThis).dispatchEvent?.(new CustomEvent('inhouse-tts', { detail: { type: 'error', id: request.id, reason: 'init-failed' } })))
     })
   }
+  /** Adds deferred page fragments only to a running core; it never starts playback or loads one. */
+  extendUpcoming(request) { return this.core?.extendUpcoming(request) ?? false }
   /** Stops playback and drops queued synthesis; fires no event for the cancelled id. Frees the workers after an idle spell (~90 s). */
   stop() {
     if (this.core) return this.core.stop()

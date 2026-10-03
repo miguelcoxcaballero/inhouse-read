@@ -4,6 +4,7 @@ import { normalizeReadingPreferences } from '../../src/js/readers/reading-prefer
 import { loadNeural } from '../../src/js/readers/neural-runtime.js'
 import { neuralVoices, setNeuralEngine } from '../../src/js/readers/neural-voice/index.js'
 import { createFakeNeuralEngine, FAKE_CATALOG } from '../helpers/fake-neural-engine.js'
+import { SUPERTONIC_BYTES } from '../../src/js/readers/neural-voice/supertonic-catalog.js'
 
 // The "Voces naturales" picker and the first-use offer, driven by a fake engine (no real ReadingVoice audio).
 const LESSAC = 'piper:en_US-lessac-high', ALBA = 'piper:en_GB-alba-medium', DAVEFX = 'piper:es_ES-davefx-medium'
@@ -45,6 +46,35 @@ const select = panel => panel.voiceMenu // the Voz dropdown of the audio panel (
 const saved = () => JSON.parse(localStorage.getItem('inhouse-read-reading-preferences')).voice
 
 describe('natural voices group', () => {
+  it('labels the multilingual pack size and licence, and downloads only after a tap', async () => {
+    const shared={id:'supertonic3:F1:es',piperId:'supertonic3',modelKey:'supertonic3',runtime:'supertonic3',lang:'es',style:'F1',name:'Supertonic F1',quality:'natural',sizeMB:Math.ceil(SUPERTONIC_BYTES/1e6),sharedPack:true,licenseUrl:'licenses/supertonic3-OpenRAIL-M.txt'}
+    neuralVoices.push(shared)
+    try {
+      const {panel,engine}=await setup({language:'es'})
+      const item=row(panel,shared.id)
+      expect(item.textContent).toContain(`${Math.ceil(SUPERTONIC_BYTES/1e6)} MB`)
+      expect(item.textContent).toContain('Paquete compartido · todos sus idiomas y voces')
+      expect(item.querySelector('a').textContent).toBe('Licencia OpenRAIL-M')
+      expect(item.querySelector('a').getAttribute('href')).toContain('/licenses/supertonic3-OpenRAIL-M.txt')
+      expect(engine.installs).toEqual([])
+      click(panel,shared.id,'install');expect(engine.installs).toEqual([shared.id])
+      engine.abort(shared.id);await Promise.resolve()
+    } finally {neuralVoices.splice(neuralVoices.indexOf(shared),1)}
+  })
+  it('removing one shared profile clears a selected sibling and tells reading about every removed profile', async () => {
+    const shared=['F1','M1'].map(style=>({id:`supertonic3:${style}:es`,piperId:'supertonic3',modelKey:'supertonic3',runtime:'supertonic3',lang:'es',style,name:`Supertonic ${style}`,sizeMB:400,sharedPack:true}))
+    neuralVoices.push(...shared)
+    try {
+      const {panel,experience}=await setup({language:'es',installed:shared.map(voice=>voice.id)})
+      experience.setPreference('voice',shared[1].id,{restart:false})
+      const removed=vi.spyOn(experience.voice,'voiceRemoved')
+      expect(row(panel,shared[0].id).querySelector('[data-neural-action="remove"]').getAttribute('aria-label')).toContain('paquete compartido')
+      await experience.neuralPicker.remove(shared[0].id)
+      expect(experience.preferences.voice).toBe('')
+      expect(removed.mock.calls.map(([id])=>id)).toEqual(shared.map(voice=>voice.id))
+      expect(panel.querySelector('[data-neural-status]').textContent).toBe('Paquete compartido Supertonic quitado.')
+    } finally {for(const voice of shared)neuralVoices.splice(neuralVoices.indexOf(voice),1)}
+  })
   it('is hidden where the engine is unsupported, and nothing else changes', async () => {
     const { panel, experience } = await setup({ supported:false })
     expect(block(panel).hidden).toBe(true)

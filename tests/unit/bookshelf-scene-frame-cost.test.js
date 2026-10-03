@@ -25,7 +25,7 @@ vi.mock('../../src/js/book-model.js', async () => {
     } };
 });
 
-let clock, frames, shelf, stage, scroller, trashNode, catalogNode, plantNode, nodes, scroll, reads;
+let clock, frames, shelf, stage, scroller, trashNode, catalogNode, plantNode, nodes, scroll, reads, layoutData;
 const rect = (left, top, width, height) => ({ left, top, width, height, right:left + width, bottom:top + height });
 function flushFrames(duration = 1200) {
   const end = clock + duration;
@@ -69,7 +69,8 @@ beforeEach(() => {
     style:{ color:'#41694f', width:28 }, x:50 + index % 4 * 70, y:rows[Math.floor(index / 4)].bottom - 90, width:100, height:180, thickness:28 }));
   const plant = { kind:'plant', node:plantNode, key:'plant:fixture', seed:'fixture', variant:'monstera', catalogId:'monstera', potId:'muskot',
     x:90, y:165, width:86, height:110 };
-  shelf = createBookshelfScene({ stage, scroller, width:390, sceneWidth:390, height:750, rows, trashNode, catalogNode, entries:[...books, plant] });
+  layoutData = { stage, scroller, width:390, sceneWidth:390, height:750, rows, trashNode, catalogNode, entries:[...books, plant] };
+  shelf = createBookshelfScene(layoutData);
   shelf.canvas.getBoundingClientRect = () => { reads.canvas++; return rect(20, 60, 390, 700); };
   shelf.flush(); flushFrames();
 });
@@ -80,6 +81,42 @@ afterEach(() => {
 });
 
 describe('per-frame cost of the retained shelf scene', () => {
+  it('retains an unchanged plant model/projected triangles while replacing its outgoing native target', () => {
+    settle();
+    const svg = plantNode.querySelector('.ihr-plant-foliage'), path = svg.querySelector('path[fill="transparent"]');
+    const oldPath = path.getAttribute('d'), creations = shelf.canvas.dataset.modelCreations;
+    const newStage = document.createElement('div'); scroller.append(newStage);
+    newStage.getBoundingClientRect = stage.getBoundingClientRect;
+    const entries = layoutData.entries.map(data => {
+      const node = data.node.cloneNode(false); newStage.append(node); return { ...data,node };
+    });
+    newStage.append(trashNode,catalogNode);
+    shelf.updateLayout({ ...layoutData,stage:newStage,entries });
+    const replacement = entries.at(-1).node;
+    const rebound = replacement.querySelector('.ihr-plant-foliage');
+    expect(rebound).not.toBe(svg);
+    expect(svg.isConnected).toBe(false);
+    expect(rebound.querySelector('path[fill="transparent"]').getAttribute('d')).toBe(oldPath);
+    expect(rebound.dataset.triangles).toBe(svg.dataset.triangles);
+    expect(rebound.dataset.triangles).not.toBe('0');
+    expect(shelf.canvas.dataset.modelCreations).toBe(creations);
+    expect(plantNode.querySelector('.ihr-plant-foliage')).toBeNull();
+    expect(shelf.canvas.dataset.layoutUpdates).toBe('1');
+    shelf.dispose(); shelf = null;
+    expect(replacement.querySelector('.ihr-plant-foliage')).toBeNull();
+  });
+
+  it('replaces the plant and its hit geometry when physical size changes instead of retaining stale triangles', () => {
+    settle();
+    const svg = plantNode.querySelector('.ihr-plant-foliage'), creations = Number(shelf.canvas.dataset.modelCreations);
+    const entries = layoutData.entries.map(data => data.kind === 'plant' ? { ...data,height:data.height + 20 } : data);
+    shelf.updateLayout({ ...layoutData,entries });
+    expect(plantNode.querySelector('.ihr-plant-foliage')).not.toBe(svg);
+    expect(svg.isConnected).toBe(false);
+    expect(Number(shelf.canvas.dataset.modelCreations)).toBe(creations + 1);
+    expect(plantNode.querySelector('.ihr-plant-foliage').dataset.triangles).not.toBe('0');
+  });
+
   it('paints intermediate camera poses after a long driver stall and still settles', () => {
     shelf.setMode('isometric');
     clock += 2000;

@@ -50,7 +50,7 @@ describe('persistent catalog plants', () => {
     localStorage.setItem(KEY, JSON.stringify([{ key:'plant:saved', catalogId:'nephrolepis', shelf:0, x:.6 }]));
     shelf=renderBookshelf(container, books(), { shelfWidth:390 });
     expect(container.querySelector('.ihr-plant').dataset.catalogId).toBe('nephrolepis');
-    expect(JSON.parse(localStorage.getItem(KEY))[0]).toMatchObject({ width:200, height:170, potId:'akerbar' });
+    expect(JSON.parse(localStorage.getItem(KEY))[0]).toMatchObject({ width:200, height:208, potId:'akerbar' });
   });
   it('persists complete current models for newly initialized decorations', () => {
     shelf=renderBookshelf(container, [], { shelfWidth:390 });
@@ -105,11 +105,11 @@ describe('persistent catalog plants', () => {
     await catalog.options.onAdd({ catalogId:'chamaedorea', potId:'gradvis' })
     const saved=JSON.parse(localStorage.getItem(KEY))
     expect(saved).toHaveLength(2)
-    expect(saved[0]).toMatchObject({ catalogId:'chamaedorea', potId:'akerbar', width:200, height:200 })
+    expect(saved[0]).toMatchObject({ catalogId:'chamaedorea', potId:'akerbar', width:200, height:182 })
     expect(saved[1].potId).toBe('gradvis')
     expect(saved[0].key).not.toBe(saved[1].key)
     for (const node of container.querySelectorAll('.ihr-plant')) {
-      expect(Number.parseFloat(node.style.getPropertyValue('--ihr-plant-h'))).toBeCloseTo(200 * 390 / 600, 3)
+      expect(Number.parseFloat(node.style.getPropertyValue('--ihr-plant-h'))).toBeCloseTo(182 * 390 / 600, 3)
       expect(node.dataset.catalogId).toBe('chamaedorea')
     }
     const before=saved.map(item => [item.key,item.shelf,item.x,item.potId])

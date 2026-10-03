@@ -4,7 +4,7 @@ import { mkdtempSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MINIMUM_TESTS, checkNeuralResultsFile, validateNeuralResults } from '../../scripts/check-neural-results.mjs'
-import { neuralVoices } from '../../src/js/readers/neural-voice/catalog.js'
+import { piperVoices, supertonicVoices } from '../../src/js/readers/neural-voice/catalog.js'
 
 const report = stats => ({ stats:{ expected:9, flaky:0, skipped:0, unexpected:0, ...stats } })
 const temporary = []
@@ -23,13 +23,14 @@ afterEach(() => {
 })
 
 describe('complete real neural results guard', () => {
-  it.each(['engine', 'reading', 'languages'])('accepts every required %s test', suite => {
+  it.each(['engine', 'reading', 'languages', 'supertonic'])('accepts every required %s test', suite => {
     const counts = validateNeuralResults(suite, report({ expected:MINIMUM_TESTS[suite] }))
     expect(counts).toMatchObject({ suite, passed:MINIMUM_TESTS[suite], skipped:0, unexpected:0 })
   })
 
-  it('derives the language minimum from every selectable voice plus the dictionary check', () => {
-    expect(MINIMUM_TESTS).toEqual({ engine:9, reading:13, languages:neuralVoices.length + 1 })
+  it('requires every selectable voice in its real engine suite plus the Piper dictionary check', () => {
+    expect(MINIMUM_TESTS).toEqual({ engine:9, reading:14, languages:piperVoices.length + 1, supertonic:supertonicVoices.length })
+    expect(supertonicVoices.length).toBeGreaterThanOrEqual(66)
   })
 
   it('counts successful retried tests without accepting omissions', () => {
@@ -61,7 +62,7 @@ describe('complete real neural results guard', () => {
     expect(() => validateNeuralResults('engine', report({ unexpected:1 }))).toThrow('1 unexpected tests')
   })
 
-  it.each(['engine', 'reading', 'languages'])('rejects a short %s run', suite => {
+  it.each(['engine', 'reading', 'languages', 'supertonic'])('rejects a short %s run', suite => {
     expect(() => validateNeuralResults(suite, report({ expected:MINIMUM_TESTS[suite] - 1 }))).toThrow(`require at least ${MINIMUM_TESTS[suite]}`)
   })
 
@@ -74,6 +75,6 @@ describe('complete real neural results guard', () => {
   })
 
   it('reads a complete JSON result file', async () => {
-    await expect(checkNeuralResultsFile('reading', fixture(JSON.stringify(report({ expected:13 }))))).resolves.toMatchObject({ suite:'reading', passed:13 })
+    await expect(checkNeuralResultsFile('reading', fixture(JSON.stringify(report({ expected:14 }))))).resolves.toMatchObject({ suite:'reading', passed:14 })
   })
 })

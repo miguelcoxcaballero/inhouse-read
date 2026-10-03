@@ -61,4 +61,21 @@ describe('Android file intent inbox', () => {
     expect(bridge.acknowledge).toHaveBeenCalledWith('book-1')
     stop()
   })
+  it('retains the native original after local storage fails, then retries after returning to the app', async () => {
+    const bridge = inbox()
+    const failure = Object.assign(new Error('Device full'), { code:'LOCAL_BOOK_STORAGE_FAILED' })
+    const onFile = vi.fn().mockRejectedValueOnce(failure).mockResolvedValue(undefined)
+    const onError = vi.fn()
+    const stop = initAndroidFileImports({ bridge, onFile, onError, pollMs:10 })
+    try {
+      await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(failure))
+      expect(bridge.acknowledge).not.toHaveBeenCalled()
+      await new Promise(resolve => setTimeout(resolve, 35))
+      expect(onFile).toHaveBeenCalledTimes(1)
+      document.dispatchEvent(new Event('visibilitychange'))
+      await vi.waitFor(() => expect(bridge.acknowledge).toHaveBeenCalledWith('book-1'))
+      expect(onFile).toHaveBeenCalledTimes(2)
+      expect([...new Uint8Array(await onFile.mock.calls[1][0].arrayBuffer())]).toEqual([37,80,68,70,45])
+    } finally { stop() }
+  })
 })

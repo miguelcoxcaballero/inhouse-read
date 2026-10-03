@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { getPage, destroy } = vi.hoisted(() => ({getPage:vi.fn(),destroy:vi.fn()}))
 vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
-  GlobalWorkerOptions:{}, getDocument:() => ({promise:Promise.resolve({numPages:4,getPage}),destroy}),
+  GlobalWorkerOptions:{}, OPS:{}, getDocument:() => ({promise:Promise.resolve({numPages:4,getPage}),destroy}),
   TextLayer:class { render = vi.fn(async () => {}); cancel = vi.fn() }
 }))
 vi.mock('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url', () => ({default:'worker.mjs'}))
@@ -14,6 +14,7 @@ let container, contexts
 const rect = {left:0,top:64,width:390,height:720,right:390,bottom:784}
 function fakePage(number, renderReady = Promise.resolve()) {
   return { getViewport:({scale}) => ({width:390*scale,height:600*scale}),
+    imageCoordinates:new Float32Array(), getOperatorList:async () => ({fnArray:[]}),
     getTextContent:async () => ({items:[{str:`Reading journey. Page ${number}.`,hasEOL:true}]}),
     render:() => ({promise:renderReady,cancel:vi.fn()}) }
 }
@@ -23,7 +24,7 @@ beforeEach(() => {
   container = document.querySelector('main')
   container.getBoundingClientRect = () => rect
   vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockImplementation(function () {
-    if (!contexts.has(this)) contexts.set(this,{drawImage:vi.fn(),fillRect:vi.fn(),fillText:vi.fn(),scale:vi.fn(),measureText:() => ({width:10})})
+    if (!contexts.has(this)) contexts.set(this,{clearRect:vi.fn(),drawImage:vi.fn(),fillRect:vi.fn(),fillText:vi.fn(),scale:vi.fn(),measureText:() => ({width:10})})
     return contexts.get(this)
   })
   vi.stubGlobal('requestAnimationFrame',callback => {callback(0);return 1})
@@ -32,6 +33,34 @@ beforeEach(() => {
 afterEach(() => {vi.restoreAllMocks();vi.unstubAllGlobals();document.body.innerHTML=''})
 
 describe('PDF restored-page preview', () => {
+  it('changes themes using the same decoded PDF and text layer, without a fresh PDF render', async () => {
+    const rendered = vi.fn(() => ({promise:Promise.resolve(),cancel:vi.fn()}))
+    getPage.mockImplementation(async number => ({...fakePage(number),render:rendered}))
+    const reader = new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    const live = container.querySelector('canvas'), layer = container.querySelector('.pdf-text-layer')
+    await reader.applyPreferences({theme:'night'})
+    await reader.applyPreferences({theme:'sepia'})
+    await reader.applyPreferences({theme:'paper'})
+    expect(rendered).toHaveBeenCalledOnce()
+    expect(container.querySelector('canvas')).toBe(live)
+    expect(container.querySelector('.pdf-text-layer')).toBe(layer)
+    expect(container.getAttribute('aria-busy')).toBe('false')
+    reader.close()
+  })
+
+  it('releases the separate original bitmap when a themed document closes', async () => {
+    const reader = new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    await reader.applyPreferences({theme:'amoled'})
+    const snapshot = await reader.getPageSnapshot()
+    const original = contexts.get(snapshot.paper.source).drawImage.mock.calls[0][0]
+    expect(original.width).toBeGreaterThan(0)
+    reader.close()
+    expect(original.width).toBe(0); expect(original.height).toBe(0)
+    expect(container.hasAttribute('aria-busy')).toBe(false)
+  })
+
   it('uses saved page 3 pixels, text, exact locator and applied visual filter', async () => {
     const reader = new PdfReader()
     await reader.open(container,new ArrayBuffer(0))
@@ -54,14 +83,15 @@ describe('PDF restored-page preview', () => {
     await reader.open(container,new ArrayBuffer(0))
     await reader.applyPreferences({theme})
     const live = container.querySelector('canvas')
-    live.style.filter = PDF_PAGE_FILTERS[theme]
     container.style.filter = 'brightness(0.65)'
     live.getBoundingClientRect = () => ({...rect,height:600,bottom:664})
     const snapshot = await reader.getPageSnapshot()
     expect(contexts.get(snapshot.source).filter).toContain('brightness(0.65)')
     expect(snapshot.paper.source).not.toBe(snapshot.source)
     expect(contexts.get(snapshot.paper.source).filter).toBe('none')
-    expect(contexts.get(snapshot.paper.source).drawImage.mock.calls[0][0]).toBe(live)
+    const original = contexts.get(snapshot.paper.source).drawImage.mock.calls[0][0]
+    expect(original === live).toBe(theme === 'paper')
+    if (theme !== 'paper') expect(contexts.get(live).drawImage.mock.calls[0][0]).toBe(original)
     expect(snapshot.paper).toMatchObject({width:snapshot.width,height:snapshot.height})
     reader.close()
   })

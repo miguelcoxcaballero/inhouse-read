@@ -37,7 +37,7 @@ function canvasFor(width, height, scale = 1) {
 }
 
 /** Copies before returning: subsequent PDF renders cannot alter the preview. */
-export function snapshotCanvas(source, { filter = 'none', displayBounds, paper = false } = {}) {
+export function snapshotCanvas(source, { filter = 'none', displayBounds, paper = false, paperSource = source } = {}) {
   const target = canvasFor(source?.width, source?.height)
   if (!target) return null
   target.context.filter = filter
@@ -46,10 +46,10 @@ export function snapshotCanvas(source, { filter = 'none', displayBounds, paper =
     displayBounds:plainBounds(displayBounds || source.getBoundingClientRect()) }
   // Physical pages keep the original PDF pixels, without the reader's theme
   // or brightness filters. The separately themed copy is untouched.
-  const paperTarget = paper ? canvasFor(source.width, source.height) : null
+  const paperTarget = paper ? canvasFor(paperSource.width, paperSource.height) : null
   if (paperTarget) {
     paperTarget.context.filter = 'none'
-    paperTarget.context.drawImage(source, 0, 0, paperTarget.canvas.width, paperTarget.canvas.height)
+    paperTarget.context.drawImage(paperSource, 0, 0, paperTarget.canvas.width, paperTarget.canvas.height)
     snapshot.paper = { source:paperTarget.canvas, width:paperTarget.canvas.width, height:paperTarget.canvas.height }
   }
   return snapshot

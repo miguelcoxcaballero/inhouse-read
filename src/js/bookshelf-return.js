@@ -1,5 +1,38 @@
 import * as THREE from 'three';
 
+const CASE_FIELDS = ['id','path','name','title','author','format','spineTitleOverride','spineColorOverride',
+  'spineFontFamily','spineFontSize','spineAuthorFontSize','spineFinish','spineSurfaceFinish','spineTextFinish',
+  'spineTextColor','spineEngraved','coverFinish','coverRelief','pageEdgeFinish'];
+
+/** Keep the case's visual inputs strict. Storage/cloud metadata and progress
+ * cannot alter its pixels; final progress is applied to the ribbon separately. */
+export function bookReturnSignature(book, style, geometry, coverUrl) {
+  if (!geometry || Object.values(geometry).some(value => !Number.isFinite(value))) return null;
+  if (['width','height','thickness','viewportWidth','viewportHeight'].some(key => !(geometry[key] > 0))) return null;
+  const appearance = CASE_FIELDS.map(key => book?.[key]);
+  return JSON.stringify([appearance,style,geometry,coverUrl]);
+}
+
+/** One already rendered book may wait behind the reader. Ownership transfers
+ * once to the close animation; a mismatch, replacement or destroy releases it. */
+export function createBookReturnCache() {
+  let held = null;
+  const clear = () => { const previous = held; held = null; previous?.view.dispose(); };
+  return {
+    retain(signature, view) {
+      clear();
+      if (!signature || !view) { view?.dispose(); return false; }
+      held = { signature,view }; return true;
+    },
+    take(signature) {
+      const previous = held; held = null;
+      if (previous && signature && previous.signature === signature) return previous.view;
+      previous?.view.dispose(); return null;
+    },
+    clear
+  };
+}
+
 /** A parked book's transform in the cabinet's coordinate system. */
 export function shelfBookSlot(entry, cabinetWidth) {
   return new THREE.Matrix4().compose(

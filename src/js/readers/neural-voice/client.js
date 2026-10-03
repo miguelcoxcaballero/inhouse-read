@@ -3,13 +3,14 @@
 
 /** Error whose `code` is the 'error' reason of the engine contract. */
 const clientError = (code, message, cause) => Object.assign(new Error(message), { code }, cause ? { cause } : {})
+const familyOf = key => key === 'supertonic3' ? 'supertonic3' : 'piper'
 
 export class SynthClient {
   /**
    * @param {{createWorker:()=>Worker, ortBase:string, phonBase:string, readModel:(piperId:string)=>Promise<ArrayBuffer>, readConfig:(piperId:string)=>Promise<object>}} deps
    */
-  constructor({ createWorker, ortBase, phonBase, readModel, readConfig, readPhonemizerModel = async () => null }) {
-    Object.assign(this, { createWorker, ortBase, phonBase, readModel, readConfig, readPhonemizerModel })
+  constructor({ createWorker, ortBase, phonBase, readModel, readConfig, readPhonemizerModel = async () => null, readRuntimeAssets = async () => null }) {
+    Object.assign(this, { createWorker, ortBase, phonBase, readModel, readConfig, readPhonemizerModel, readRuntimeAssets })
     this.worker = null
     this.seq = 0
     this.calls = new Map()  // id -> {resolve, reject} for init/load/free
@@ -78,18 +79,34 @@ export class SynthClient {
 
   async #prepare(piperId, generation) {
     if (generation !== this.generation) throw clientError('init-failed', 'worker was released')
+    // ORT session.release() does not shrink WASM's grown heap. A family change
+    // terminates that worker; language/profile changes share the same pack.
+    if (this.loaded && familyOf(this.loaded) !== familyOf(piperId)) {
+      const worker = this.worker, calls = [...this.calls.values()], jobs = [...this.jobs.values()]
+      const error = clientError('init-failed', 'voice runtime was replaced')
+      this.worker = null; this.ready = null; this.loaded = null; this.config = null
+      this.calls.clear(); this.jobs.clear()
+      try { worker?.terminate() } catch { /* already gone */ }
+      for (const call of calls) call.reject(error)
+      for (const job of jobs) job.onError(error)
+    }
     this.#spawn()
     const worker = this.worker
-    this.ready ||= this.#call({ type: 'init', ortBase: this.ortBase, phonBase: this.phonBase })
+    this.ready ||= this.#call({ type: 'init', ortBase: this.ortBase, phonBase: this.phonBase, ...(familyOf(piperId) === 'supertonic3' ? { runtime:'supertonic3' } : {}) })
     // Reading the model out of Cache Storage does not need the worker: do it while the worker starts.
-    const reading = this.loaded === piperId ? null : Promise.all([this.readConfig(piperId), this.readModel(piperId), this.readPhonemizerModel(piperId)])
+    const reading = this.loaded === piperId ? null : this.readConfig(piperId).then(async config => {
+      if (config.runtime === 'supertonic3') return { config, buffers:await this.readRuntimeAssets(piperId) }
+      const [model, phonemizerModel] = await Promise.all([this.readModel(piperId), this.readPhonemizerModel(piperId)])
+      return { config, model, phonemizerModel }
+    })
     reading?.catch(() => {})
     try { await this.ready } catch (error) { if (this.worker === worker && generation === this.generation) this.dispose(); throw error }
     if (this.worker !== worker || generation !== this.generation) throw clientError('init-failed', 'worker was released')
     if (this.loaded === piperId) return this.config
-    const [config, model, phonemizerModel] = await reading
+    const { config, model, phonemizerModel, buffers } = await reading
     if (this.worker !== worker || generation !== this.generation) throw clientError('init-failed', 'worker was released')
-    const loaded = await this.#call({ type: 'load', voice: piperId, config, model, ...(phonemizerModel ? { phonemizerModel } : {}) }, phonemizerModel ? [model, phonemizerModel] : [model])
+    const transfer = buffers ? [...new Set(Object.values(buffers))] : phonemizerModel ? [model, phonemizerModel] : [model]
+    const loaded = await this.#call({ type: 'load', voice: piperId, config, ...(buffers ? { buffers } : { model }), ...(phonemizerModel ? { phonemizerModel } : {}) }, transfer)
     if (this.worker !== worker || generation !== this.generation) throw clientError('init-failed', 'worker was released')
     this.loaded = piperId; this.config = config; this.createMs = loaded.createMs
     return config
@@ -99,11 +116,11 @@ export class SynthClient {
    * Runs a synth job. Handlers: onPlan(counts), onChunk({index,last,pcm,sampleRate,ms}), onEnd(), onError(error).
    * Returns {cancel()}: after it, no handler is called any more.
    */
-  synth({ text, rate, speaker }, handlers) {
+  synth({ text, rate, speaker, lang, style }, handlers) {
     if (!this.worker) throw clientError('init-failed', 'worker is not running')
     const id = ++this.seq
     this.jobs.set(id, handlers)
-    this.worker.postMessage({ type: 'synth', id, text, rate, speaker })
+    this.worker.postMessage({ type: 'synth', id, text, rate, speaker, ...(lang ? { lang } : {}), ...(style ? { style } : {}) })
     return { id, cancel: () => { if (this.jobs.delete(id)) this.worker?.postMessage({ type: 'cancel', id }) } }
   }
 

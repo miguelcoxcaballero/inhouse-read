@@ -12,7 +12,8 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { TextLayer } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { attachSwipeNavigation } from '../gestures.js'
-import { DEFAULT_READING_PREFERENCES, READING_FONTS, READING_THEMES, normalizeReadingPreferences } from './reading-preferences.js'
+import { DEFAULT_READING_PREFERENCES, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES, normalizeReadingPreferences } from './reading-preferences.js'
+import { hasUntrackedPDFImages, paintPDFTheme } from './pdf-page-theme.js'
 import { renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from './page-snapshot.js'
 import { mapTextLayer, mapTextNode } from './speech-map.js'
 import { SPEECH_SPAN_CLASS, clearSpeechRange, installSpeechStyle, paintSpeechRange } from './speech-highlight.js'
@@ -48,6 +49,7 @@ export class PdfReader {
   #resizeObserver
   #resizeTimer
   #layoutWidth = 0
+  #imageLayouts = new WeakMap()
 
   async open(container, arrayBuffer, { onRelocate, onToggleChrome, onUserNavigation } = {}) {
     this.#container = container
@@ -173,8 +175,10 @@ export class PdfReader {
 
   async #renderPage() {
     const token = ++this.#renderToken
+    this.#container.setAttribute('aria-busy', 'true')
     this.#invalidateStagedSpeech()
     this.#cancelRender(this.#renderState)
+    this.#releaseOriginal(this.#renderState)
     const state = this.#renderState = {
       pageWrap:this.#pageWrap, canvas:this.#canvas, textLayerEl:this.#textLayerEl, reflow:this.#reflow
     }
@@ -188,17 +192,35 @@ export class PdfReader {
 
   #cancelRender(state) { state?.renderTask?.cancel(); state?.textTask?.cancel() }
 
+  #releaseOriginal(state) {
+    if (state?.originalCanvas && state.originalCanvas !== state.canvas) {
+      state.originalCanvas.width = state.originalCanvas.height = 0
+    }
+    if (state) state.originalCanvas = null
+  }
+
+  async #imageLayout(page) {
+    if (!this.#imageLayouts.has(page)) {
+      this.#imageLayouts.set(page, page.getOperatorList
+        ? page.getOperatorList().then(list => !hasUntrackedPDFImages(list, pdfjsLib.OPS))
+        : Promise.resolve(false))
+    }
+    return this.#imageLayouts.get(page)
+  }
+
   #useRenderedPage(state) {
     this.#pageText = state.pageText
     this.#baseScale = state.baseScale ?? this.#baseScale
     this.#layoutWidth = state.layoutWidth ?? this.#layoutWidth
     this.#container.dataset.readerZoomed = String(state.zoomed)
+    this.#container.setAttribute('aria-busy', 'false')
   }
 
   // The same PDF.js rendering and mapping produce visible and staged pages. A staged
   // canvas/TextLayer stays detached until the engine reports its first audible sample.
   async #drawPage(page, state, valid, content) {
     const { pageWrap, canvas, textLayerEl, reflow } = state
+    state.page = page
     const textMode = this.#preferences.pdfMode === 'text'
     pageWrap.hidden = textMode
     reflow.hidden = !textMode
@@ -228,13 +250,18 @@ export class PdfReader {
     canvas.style.width = `${viewport.width / dpr}px`
     canvas.style.height = `${viewport.height / dpr}px`
 
-    const ctx = canvas.getContext('2d')
-    state.renderTask = page.render({ canvasContext: ctx, viewport })
+    const themeFilter = PDF_PAGE_FILTERS[this.#preferences.theme]
+    const original = state.originalCanvas = themeFilter === 'none' ? canvas : document.createElement('canvas')
+    original.width = canvas.width; original.height = canvas.height
+    original.style.width = canvas.style.width; original.style.height = canvas.style.height
+    const ctx = original.getContext('2d')
+    state.renderTask = page.render({ canvasContext: ctx, viewport, recordImages:true })
     try { await state.renderTask.promise } catch (error) {
       if (error.name === 'RenderingCancelledException') return false
       throw error
     }
     if (!valid()) return false
+    if (original !== canvas && !await this.#paintTheme(state, this.#preferences.theme, valid)) return false
 
     // Capa de texto seleccionable, alineada 1:1 con el canvas ya renderizado.
     textLayerEl.replaceChildren()
@@ -258,6 +285,34 @@ export class PdfReader {
     textLayerEl.style.height = `${viewport.height / dpr}px`
     try { await textLayer.render() } catch (error) { if (!valid()) return false; throw error }
     return valid()
+  }
+
+  async #paintTheme(state, theme, valid) {
+    const filter = PDF_PAGE_FILTERS[theme], { canvas, page } = state
+    if (state.originalCanvas === canvas && filter === 'none') return valid()
+    const tracked = filter === 'none' || await this.#imageLayout(page)
+    if (!valid()) return false
+    if (state.originalCanvas === canvas) {
+      const original = document.createElement('canvas')
+      original.width = canvas.width; original.height = canvas.height
+      original.getContext('2d').drawImage(canvas, 0, 0)
+      state.originalCanvas = original
+    }
+    paintPDFTheme(state.originalCanvas, canvas, tracked && page.imageCoordinates != null ? filter : 'none', page.imageCoordinates || [])
+    return valid()
+  }
+
+  // A theme switch reuses decoded PDF pixels and the selectable text layer.
+  // The canvas is repainted synchronously only when everything is ready, so
+  // changing the paper colour never clears the visible page for a new render.
+  async #retheme(ready, preferences) {
+    await ready
+    const state = this.#renderState
+    const valid = () => Boolean(this.#doc) && state === this.#renderState && preferences === this.#preferences
+    if (!valid() || !state?.originalCanvas) return false
+    const painted = await this.#paintTheme(state, preferences.theme, valid)
+    if (painted) this.#container.setAttribute('aria-busy', 'false')
+    return painted
   }
 
   async getSpeechText() {
@@ -344,6 +399,7 @@ export class PdfReader {
     this.#stagedSpeech = null
     staged.invalid = true
     this.#cancelRender(staged)
+    this.#releaseOriginal(staged)
     staged.canvas.width = staged.canvas.height = 0
     staged.pageWrap.replaceChildren()
     staged.reflow.replaceChildren()
@@ -395,6 +451,7 @@ export class PdfReader {
           if (!staged.valid()) { source.clear(); return false }
           this.#stagedSpeech = null
           this.#cancelRender(this.#renderState)
+          this.#releaseOriginal(this.#renderState)
           ++this.#renderToken
           const oldCanvas = this.#canvas
           this.#pageWrap.replaceWith(staged.pageWrap)
@@ -454,7 +511,7 @@ export class PdfReader {
       })
       : snapshotCanvas(this.#canvas, {
         filter:renderedPageFilter(this.#canvas), displayBounds:this.#canvas.getBoundingClientRect(),
-        paper:true
+        paper:true, paperSource:this.#renderState?.originalCanvas || this.#canvas
       })
     if (!snapshot || !this.#doc || page !== this.#pageNum) return null
     return { ...snapshot, engine:'pdf', sourceType:textMode ? 'pdf-text' : 'pdf-canvas',
@@ -496,6 +553,12 @@ export class PdfReader {
       fontWeight:String(p.fontWeight), padding:`12px ${p.margin}px`, textAlign:p.align
     })
     if (this.#doc && (previous.pdfMode !== p.pdfMode || previous.zoom !== p.zoom)) await this.#render()
+    else if (this.#doc && p.pdfMode !== 'text' && previous.theme !== p.theme) {
+      this.#container.setAttribute('aria-busy', 'true')
+      const ready = this.#renderReady
+      this.#renderReady = this.#retheme(ready, p)
+      await this.#renderReady
+    }
   }
 
   /** Miniatura de la página 1 como Blob, para la portada de la estantería. */
@@ -528,6 +591,7 @@ export class PdfReader {
     ++this.#renderToken
     this.#invalidateStagedSpeech()
     this.#cancelRender(this.#renderState)
+    this.#releaseOriginal(this.#renderState)
     this.#renderState = null
     this.#detachGestures()
     // PDFDocumentProxy no expone destroy(): la limpieza vive en el
@@ -535,10 +599,12 @@ export class PdfReader {
     this.#loadingTask?.destroy()
     this.#loadingTask = null
     this.#doc = null
+    this.#imageLayouts = new WeakMap()
     this.#pageText = ''
     if (this.#container) {
       this.#container.innerHTML = ''
       this.#container.classList.remove('pdf-reader')
+      this.#container.removeAttribute('aria-busy')
       delete this.#container.dataset.readerZoomed
     }
   }

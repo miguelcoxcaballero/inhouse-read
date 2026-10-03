@@ -4,6 +4,7 @@ export function initAndroidFileImports({ onFile, onError, canImport = () => true
   if (!bridge?.pending || !bridge?.readChunk || !bridge?.acknowledge) return () => {}
   let busy = false
   let stopped = false
+  const storageFailures = new Set()
   async function consume() {
     if (stopped || busy || !canImport() || document.visibilityState === 'hidden') return
     busy = true
@@ -11,6 +12,7 @@ export function initAndroidFileImports({ onFile, onError, canImport = () => true
       const entries = JSON.parse(bridge.pending())
       for (const entry of entries) {
         if (stopped || !canImport()) break
+        if (storageFailures.has(entry.id)) continue
         try {
           if (entry.error) throw new Error(entry.error)
           if (!Number.isSafeInteger(entry.size) || entry.size <= 0) throw new Error('El archivo está vacío o no se pudo leer.')
@@ -29,15 +31,22 @@ export function initAndroidFileImports({ onFile, onError, canImport = () => true
           await onFile(file)
           bridge.acknowledge(entry.id)
         } catch (error) {
+          if (error?.code === 'LOCAL_BOOK_STORAGE_FAILED') storageFailures.add(entry.id)
           await onError?.(error)
-          bridge.acknowledge(entry.id)
+          // Keep the native original when IndexedDB could not commit it. A
+          // return to this app after freeing space retries the same inbox file.
+          if (error?.code !== 'LOCAL_BOOK_STORAGE_FAILED') bridge.acknowledge(entry.id)
         }
       }
     } catch (error) { await onError?.(error) }
     finally { busy = false }
   }
   const timer = setInterval(consume, pollMs)
-  document.addEventListener('visibilitychange', consume)
+  const onVisibilityChange = () => {
+    if (document.visibilityState !== 'hidden') storageFailures.clear()
+    consume()
+  }
+  document.addEventListener('visibilitychange', onVisibilityChange)
   consume()
-  return () => { stopped = true; clearInterval(timer); document.removeEventListener('visibilitychange', consume) }
+  return () => { stopped = true; clearInterval(timer); document.removeEventListener('visibilitychange', onVisibilityChange) }
 }

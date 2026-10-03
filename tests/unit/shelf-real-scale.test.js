@@ -99,14 +99,13 @@ describe('books, lamps and plants at the scale of a 60 cm shelf', () => {
     expect(BOOK_REFERENCE_MM * .8).toBeGreaterThanOrEqual(190);
   });
 
-  it('draws spine thicknesses of 15-45 mm', () => {
+  it('keeps physical spine thicknesses within the paper-stock model bounds', () => {
     for (const width of [320, 390, 900]) {
       const scale = width / 600;
       for (const book of library(80)) {
         const { width:thickness } = spineStyleFor(book, bookSpineOptions(width));
-        // spineStyleFor rounds to whole pixels: half a pixel of slack.
-        expect(thickness / scale).toBeGreaterThanOrEqual(BOOK_THICKNESS_MM.min - .5 / scale);
-        expect(thickness / scale).toBeLessThanOrEqual(BOOK_THICKNESS_MM.max + .5 / scale);
+        expect(thickness / scale).toBeGreaterThanOrEqual(BOOK_THICKNESS_MM.min - .005 / scale);
+        expect(thickness / scale).toBeLessThanOrEqual(BOOK_THICKNESS_MM.max + .005 / scale);
       }
     }
   });

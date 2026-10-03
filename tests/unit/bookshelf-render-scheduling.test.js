@@ -92,6 +92,52 @@ afterEach(() => {
 })
 
 describe('bookshelf render request consumption', () => {
+  it('coalesces a batch of storage lists into one layout using the last complete list', () => {
+    mount()
+    shelf.queueRefresh(records().slice(0,1))
+    shelf.queueRefresh(changedRecords())
+    expect(scene.updateLayout).not.toHaveBeenCalled()
+    expect(frames.size).toBe(1)
+    flushFrame()
+    expectUpdatedBooks(['render:a','render:b','render:c'])
+    expect(spine('render:b').getAttribute('aria-label')).toContain('Segundo actualizado')
+    expect(scene.updateLayout).toHaveBeenCalledOnce()
+    expect(frames.size).toBe(0)
+  })
+
+  it('a later synchronous import refresh supersedes a queued list without restoring older records', () => {
+    mount()
+    shelf.queueRefresh(records().slice(0,1))
+    shelf.refresh(changedRecords())
+    expectUpdatedBooks(['render:a','render:b','render:c'])
+    expect(frames.size).toBe(0)
+    flushFrame()
+    expect(scene.updateLayout).toHaveBeenCalledOnce()
+  })
+
+  it('a queued empty list is committed once instead of being mistaken for no refresh', () => {
+    mount()
+    shelf.queueRefresh(changedRecords())
+    shelf.queueRefresh([])
+    flushFrame()
+    expect(container.querySelectorAll('.ihr-spine')).toHaveLength(0)
+    expect(scene.updateLayout).toHaveBeenCalledOnce()
+    expect(frames.size).toBe(0)
+  })
+
+  it('coalesced updates arriving during a removal preserve the newest other books and do not resurrect the removed record', async () => {
+    mount()
+    removeBook()
+    shelf.queueRefresh(records())
+    shelf.queueRefresh(changedRecords())
+    expect(scene.updateLayout).not.toHaveBeenCalled()
+    await land()
+    expectUpdatedBooks(['render:b','render:c'])
+    expect(spine('render:b').getAttribute('aria-label')).toContain('Segundo actualizado')
+    expect(scene.updateLayout).toHaveBeenCalledOnce()
+    expect(frames.size).toBe(0)
+  })
+
   it('a successful direct refresh consumes its previously scheduled animation frame', () => {
     mount()
     resize(420)

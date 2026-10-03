@@ -35,10 +35,9 @@ body.is-reading .reader-heading { display:flex; width:100%; height:48px; gap:4px
 .reader-return[hidden] { display:none; }
 #reader-audio.is-playing { color:var(--reading-ink); position:relative; }
 #reader-audio.is-playing::after { content:''; position:absolute; width:5px; height:5px; border-radius:50%; background:currentColor; right:7px; top:5px; }
-[data-reading-theme='sepia'] .pdf-page-canvas { filter:sepia(.5) brightness(.94); }
-[data-reading-theme='night'] .pdf-page-canvas { filter:invert(.89) hue-rotate(180deg); }
-[data-reading-theme='amoled'] .pdf-page-canvas { filter:grayscale(1) invert(1) brightness(.77647); }
-[data-reading-theme='sage'] .pdf-page-canvas { filter:sepia(.25) hue-rotate(45deg) brightness(.94); }
+/* PDF paper and ink are themed at render time; photographs retain their
+   original pixels. Filtering the whole canvas also recoloured every image. */
+.pdf-page-canvas { filter:none; }
 .pdf-reflow-page { width:100%; max-width:800px; margin:0 auto; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--reading-ink); background:var(--reading-paper); }
 .pdf-reflow-page[hidden], .pdf-page-wrap[hidden] { display:none; }
 .pdf-page-wrap { flex:none; }

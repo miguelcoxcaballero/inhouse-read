@@ -4,7 +4,7 @@ const { pdf, loading, layers } = vi.hoisted(() => ({
   pdf:{numPages:4,getPage:vi.fn()}, loading:{destroy:vi.fn()}, layers:[]
 }))
 vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
-  GlobalWorkerOptions:{}, getDocument:() => ({promise:Promise.resolve(pdf),destroy:loading.destroy}),
+  GlobalWorkerOptions:{}, OPS:{}, getDocument:() => ({promise:Promise.resolve(pdf),destroy:loading.destroy}),
   TextLayer:class {
     constructor({textContentSource,container,viewport}) { Object.assign(this,{content:textContentSource,container,viewport}); layers.push(this) }
     async render() {
@@ -32,6 +32,7 @@ const rect = () => ({left:0,top:48,width,height,right:width,bottom:height+48})
 function page(number, items = [{str:`Page ${number}.`,hasEOL:true}]) {
   const value = {
     getViewport:({scale}) => ({width:600*scale,height:900*scale}),
+    imageCoordinates:new Float32Array(), getOperatorList:async () => ({fnArray:[]}),
     getTextContent:vi.fn(async () => ({items})),
     render:vi.fn(({canvasContext,viewport}) => {
       const task = {promise:Promise.resolve(),cancel:vi.fn()}
@@ -63,7 +64,7 @@ beforeEach(() => {
   pdf.getPage.mockImplementation(async number => pages.get(number) || page(number))
   vi.stubGlobal('devicePixelRatio',2)
   vi.stubGlobal('ResizeObserver',class { constructor(callback) {resize=callback} observe() {} disconnect() {} })
-  vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockImplementation(function () {return {canvas:this}})
+  vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockImplementation(function () {return {canvas:this,clearRect:vi.fn(),drawImage:vi.fn()}})
 })
 afterEach(() => { reader?.close(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); document.body.innerHTML='' })
 

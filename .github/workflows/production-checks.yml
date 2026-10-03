@@ -22,7 +22,13 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci
-      - run: npm run test:unit
+      - run: npm run test:unit -- --reporter=default --reporter=json --outputFile=unit-report/results.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-results
+          path: unit-report/results.json
+          if-no-files-found: error
 
   e2e:
     name: Reader and bookshelf (${{ matrix.shard }}/6)
@@ -145,17 +151,66 @@ jobs:
             test-results
           if-no-files-found: ignore
 
+  supertonic:
+    name: Real offline Supertonic voices
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PLAYWRIGHT_SUITE: supertonic
+      PLAYWRIGHT_PORT: 4283
+      PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
+      SUPERTONIC_FIXTURES: ${{ github.workspace }}/.supertonic-fixtures.local
+      SUPERTONIC_EVIDENCE: ${{ github.workspace }}/test-results/supertonic
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - uses: actions/cache/restore@v4
+        id: voices-cache
+        with:
+          path: .supertonic-fixtures.local
+          key: supertonic-fixtures-v1-${{ hashFiles('src/js/readers/neural-voice/supertonic-catalog.js', 'scripts/prepare-supertonic-fixtures.mjs') }}
+      - name: Download and verify the pinned shared voice pack
+        run: node scripts/prepare-supertonic-fixtures.mjs --output "$SUPERTONIC_FIXTURES"
+      - uses: actions/cache/save@v4
+        if: steps.voices-cache.outputs.cache-hit != 'true'
+        with:
+          path: .supertonic-fixtures.local
+          key: ${{ steps.voices-cache.outputs.cache-primary-key }}
+      - name: List every required real Supertonic test
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/manifest.json
+        run: npx playwright test --list --workers=1 --shard=1/1 --reporter=json
+      - run: npm run test:e2e -- --workers=1 --shard=1/1 --reporter=list,json
+      - name: Require every offline voice to execute
+        if: always()
+        run: node scripts/check-neural-results.mjs supertonic playwright-report/results.json
+      - name: Require every listed Supertonic case to pass without a retry
+        if: always()
+        run: node scripts/check-ui-results.mjs playwright-report/manifest.json playwright-report/results.json "1/1"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-supertonic
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+
   # Preserve the original overall check name, and fail if any shard or real
   # voice job did not finish successfully.
   test:
     name: test
     runs-on: ubuntu-latest
     if: always()
-    needs: [unit, e2e, neural]
+    needs: [unit, e2e, neural, supertonic]
     env:
       UNIT_RESULT: ${{ needs.unit.result }}
       UI_RESULT: ${{ needs.e2e.result }}
       NEURAL_RESULT: ${{ needs.neural.result }}
+      SUPERTONIC_RESULT: ${{ needs.supertonic.result }}
     steps:
       - name: Require the complete production suite
-        run: test "$UNIT_RESULT" = success && test "$UI_RESULT" = success && test "$NEURAL_RESULT" = success
+        run: test "$UNIT_RESULT" = success && test "$UI_RESULT" = success && test "$NEURAL_RESULT" = success && test "$SUPERTONIC_RESULT" = success

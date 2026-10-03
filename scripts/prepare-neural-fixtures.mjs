@@ -8,13 +8,13 @@ import { dirname, join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { setTimeout as delay } from 'node:timers/promises'
-import { DEFAULT_VOICE_BASE, neuralVoices, piperPath, voiceUrls } from '../src/js/readers/neural-voice/catalog.js'
+import { DEFAULT_VOICE_BASE, piperVoices, piperPath, voiceUrls } from '../src/js/readers/neural-voice/catalog.js'
 
 // The catalogue may pin a newer revision explicitly. A /main/ default is
 // resolved to this audited commit for fixtures, never to moving model bytes.
 const REVISION = /\/resolve\/([a-f0-9]{40})\//.exec(DEFAULT_VOICE_BASE)?.[1] || 'c10ece1aade47bb51c153c893d14e5bf8e5b7117'
 const BASE = DEFAULT_VOICE_BASE.replace('/resolve/main/', `/resolve/${REVISION}/`)
-const allModels = [...new Set(neuralVoices.map(voice => voice.piperId))]
+const allModels = [...new Set(piperVoices.map(voice => voice.piperId))]
 
 function options(args) {
   let output = process.env.NEURAL_VOICE_FIXTURES || '.neural-fixtures.local', voices = allModels

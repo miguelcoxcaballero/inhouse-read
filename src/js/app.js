@@ -1,4 +1,5 @@
 import { LibraryStore, sameBookRecords } from './library-store.js'
+import { bookCloudState, isBookVisible, storeBookFile } from './book-storage-policy.js'
 import { renderBookshelf } from './bookshelf.js'
 import { ReaderController, UnsupportedFormatError } from './readers/reader-controller.js'
 import {
@@ -8,11 +9,11 @@ import {
 import { CloudSync } from './cloud-sync.js'
 import { restoreLegacyBookBytes } from './legacy-book-recovery.js'
 import {
-  isFolderApiSupported, getSavedFolderHandle, getOrChooseFolder, ensureFolderPermission,
-  saveFileIntoFolder, readFileFromFolder
+  isFolderApiSupported, getSavedFolderHandle, ensureFolderPermission, readFileFromFolder
 } from './local-folder-store.js'
 import { initAndroidUpdateChecks, offerAvailableAndroidUpdate } from './android-update.js'
 import { initContentFreshnessChecks } from './content-freshness.js'
+import { registerOfflineShell } from './offline-shell.js'
 import { initAndroidFileImports } from './android-file-import.js'
 import { initReadingDisplay } from './reading-display.js'
 import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
@@ -94,7 +95,7 @@ async function persistBookState(bookId, fields) {
   const previous = progressWrites.get(bookId) || Promise.resolve()
   const write = previous.catch(() => {}).then(() => library.patch(bookId, {
     ...fields, progressUpdatedAt:Date.now(), progressDirty:true
-  })).then(() => { if (hasDriveSession()) cloudSync.scheduleProgress(bookId) })
+  })).then(record => { if (record?.driveFileId && hasDriveSession()) cloudSync.scheduleProgress(bookId) })
   progressWrites.set(bookId, write)
   try { await write } finally { if (progressWrites.get(bookId) === write) progressWrites.delete(bookId) }
 }
@@ -144,7 +145,7 @@ function isAndroidShell() {
 // Contrato de renderBookshelf(container, books, options) documentado en el
 // propio src/js/bookshelf.js (cabecera del archivo).
 
-async function refreshShelf() {
+async function refreshShelf({ immediate = false } = {}) {
   // Re-rendering a shelf closes its current 3D cover. Defer background
   // changes until the reader transition or close has finished.
   if (document.querySelector('.ihr-flyout')) {
@@ -170,9 +171,7 @@ async function refreshShelf() {
     if (author !== (book.author || '')) patch.author = author || null
     return Object.keys(patch).length ? library.patch(book.id, patch) : book
   }))
-  const books = normalizedBooks.filter(book => book && (
-    book.sourceType !== 'drive' || (accountId && (!book.cloudAccountId || book.cloudAccountId === accountId))
-  ))
+  const books = normalizedBooks.filter(book => isBookVisible(book, accountId))
   // Background syncs report a change even when every record came back the
   // same; repainting the whole 3D shelf for them is pure jank.
   if (shelf && shelfRecords && sameBookRecords(shelfRecords, books)) return
@@ -189,6 +188,7 @@ async function refreshShelf() {
       minimumShelves: 3,
       getBookPreparation: book => preparedBooks.get(book.id),
       onBookAction: handleCoverAction,
+      getBookCloudState: book => bookCloudState(book, { connected:hasDriveSession() }),
       onBookRemove: book => {
         preparedPages.invalidateBook(book.id, 'removed')
         releasePageGate('removed', book.id)
@@ -216,7 +216,8 @@ async function refreshShelf() {
       onBookOrderChange: order => Promise.all(order.map(({ id, shelfOrder }) => library.patch(id, { shelfOrder })))
     })
   } else {
-    shelf.update(books)
+    if (!immediate && shelf.queueRefresh) shelf.queueRefresh(books)
+    else shelf.update(books)
   }
 }
 
@@ -478,29 +479,21 @@ els.filePicker.addEventListener('change', async () => {
     pendingLocalReopenId = null
     const transition = pendingReaderTransition
     pendingReaderTransition = null
-    await openFile(file, { forcedId, transition })
+    try { await openFile(file, { forcedId, transition }) }
+    catch (error) { alert(error.message) }
     return
   }
 
-  // Importación nueva: si el navegador soporta elegir una carpeta real
-  // (Chrome/Edge de escritorio), guarda ahí una copia del libro — pidiendo
-  // que se elija una carpeta la primera vez — para poder reabrirlo después
-  // sin tener que volver a seleccionarlo a mano.
-  let folderFileName
-  if (isFolderApiSupported()) {
-    try {
-      const folderHandle = await getOrChooseFolder()
-      folderFileName = await saveFileIntoFolder(folderHandle, file)
-    } catch (err) {
-      console.warn('No se pudo guardar el libro en la carpeta elegida; se abre igualmente para esta sesión.', err)
-    }
-  }
-  await openFile(file, { folderFileName, restoreRemoved:true })
+  // IndexedDB keeps the original bytes on this device without a folder picker
+  // or a Google connection. The folder path above only recovers legacy books.
+  try { await openFile(file, { restoreRemoved:true }) }
+  catch (error) { alert(error.message) }
 })
 
 // ---- Apertura y lectura ----
 
 async function openFile(file, { existingRecord, forcedId, folderFileName, transition, preparing = false, restoreRemoved = false, onImportReady } = {}) {
+  if (!existingRecord && forcedId) existingRecord = await library.get(forcedId)
   if (transition?.isActive && !transition.isActive()) return false
   if (!preparing) {
     supersedePreparation('reader-replaced')
@@ -558,8 +551,6 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
 
   const meta = reader.metadata
   const sourceType = existingRecord?.sourceType ?? 'local'
-  // Cachea una copia de Drive para que la próxima apertura funcione sin red.
-  const shouldCacheContent = !existingRecord?.content
   const baseFields = {
     id: forcedId,
     sourceType,
@@ -569,7 +560,8 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
     name: file.name,
     size: file.size,
     // Para el grosor real del lomo en la estantería (bookshelf-layout.js):
-    // pageCount cuando el formato lo tiene (PDF), si no sizeBytes como proxy.
+    // Fixed-page formats report real pages. Reflowable text is measured below;
+    // the compressed file size never determines the physical book thickness.
     pageCount: reader.pageCount ?? existingRecord?.pageCount,
     sizeBytes: file.size,
     folderFileName: folderFileName ?? existingRecord?.folderFileName,
@@ -579,22 +571,27 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
   }
   let record
   try {
-    record = await library.addOrTouch({
-      ...baseFields,
-      content: shouldCacheContent ? new Blob([file], { type: file.type }) : existingRecord?.content
-    }, { restoreRemoved })
+    record = await storeBookFile(library, file, baseFields, { restoreRemoved })
   } catch (err) {
-    // Un libro muy grande puede agotar la cuota de IndexedDB del dispositivo.
-    // Que eso falle no puede tirar abajo la lectura (el lector ya tiene el
-    // fichero en memoria y sigue funcionando): se reintenta sin `content`,
-    // igual que antes de este cambio — como mucho, la próxima vez habrá que
-    // volver a elegir el archivo.
-    console.warn('No se pudo guardar la copia del libro (¿cuota de almacenamiento?); se seguirá pidiendo el archivo al reabrir:', err)
-    record = await library.addOrTouch({ ...baseFields, content: existingRecord?.content }, { restoreRemoved })
+    reader.close()
+    readingExperience.reset()
+    els.readerScreen.classList.remove('is-preparing')
+    showScreen('home')
+    await transition?.onReaderError?.()
+    throw err
   }
   if (!record) return false
   if (transition?.isActive && !transition.isActive()) return false
   currentBookId = record.id
+  // Count real text in the background; it cannot hold up opening or depend on
+  // the compressed file size. The controller discards a superseded reader.
+  if (!record.pageCount && !record.wordCount && reader.getLengthMetadata) {
+    const lengthBookId = record.id
+    reader.getLengthMetadata().then(length => {
+      if (length && currentBookId === lengthBookId) return library.patch(lengthBookId, length)
+    }).then(updated => { if (updated) refreshShelf() })
+      .catch(error => console.warn('No se pudo medir la longitud del libro:', error))
+  }
 
   restoringProgress = true
   try {
@@ -608,21 +605,8 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
   if (!preparing) refreshShelf()
   if (!preparing) extractCoverInBackground(record)
   if (!preparing) await transition?.onReaderReady?.()
-  // The Android inbox can release its temporary copy once IndexedDB and the
-  // reader are ready; Google consent may remain pending for several minutes.
+  // Android releases its inbox copy only after original bytes are committed.
   if (!preparing) onImportReady?.()
-  if (sourceType === 'local' && !record.driveFileId) {
-    try {
-      // En Android, añadir un libro significa guardarlo en la cuenta de Drive.
-      // Si aún no hay sesión, se completa el acceso antes de empezar la subida.
-      if (isAndroidShell() && !hasDriveSession()) await requestDriveAccess()
-      if (hasDriveSession()) await uploadBookToDrive(record)
-    } catch (error) {
-      setDriveSyncStatus(`No se pudo sincronizar: ${error.message}`)
-      console.warn('No se pudo sincronizar el libro con Drive:', error)
-      await reportDriveConnectionError(error)
-    }
-  }
   return true
 }
 
@@ -653,16 +637,15 @@ function prepareBookOpen(book, { settled } = {}) {
     : book.sourceType === 'drive' && hasDriveSession()
       ? cloudSync.downloadForOffline(book) : null
   if (!fileTask) return
-  const progressTask = book.driveFileId && hasDriveSession()
-    ? cloudSync.syncBookProgress(book.id).catch(error => console.warn('Progreso remoto no disponible:', error))
-    : Promise.resolve()
-  const filesReady = Promise.all([fileTask, progressTask])
+  // A locally cached book opens immediately from its saved position. Remote
+  // progress reconciles in the background sync, never on the opening path.
+  const filesReady = Promise.resolve(fileTask)
   filesReady.catch(() => {})
   const gate = openPageGate(book.id, settled)
   // All preparations share one reader. A newer selection supersedes queued
   // work, and an already loading engine settles before another replaces it.
   const task = readerPreparationQueue.catch(() => {}).then(async () => {
-    const [file] = await filesReady
+    const file = await filesReady
     if (generation !== preparationGeneration) return false
     await progressWrites.get(book.id)?.catch(() => {})
     const updated = await library.get(book.id)
@@ -832,15 +815,19 @@ async function handleCoverAction(action, book, button) {
       if (!hasDriveSession()) await requestDriveAccess()
       if (book.sourceType === 'drive') {
         await cloudSync.downloadForOffline(book)
-      } else {
-        await uploadBookToDrive(book)
-      }
+      } else throw new Error('Este libro ya tiene su copia en el dispositivo.')
       setLabel('Disponible offline', 'Offline')
       saved = true
     } else if (action === 'drive') {
-      if (!hasDriveSession()) await requestDriveAccess()
-      await uploadBookToDrive(book)
-      setLabel('En Drive')
+      if (!hasDriveSession()) throw new Error('Conecta tu cuenta de Google para subir este libro.')
+      const updated = await uploadBookToDrive(book)
+      if (!updated) return
+      Object.assign(book, updated)
+      const status = document.createElement('span')
+      status.className = 'ihr-btn ihr-btn--quiet ihr-flyout__cloud-saved'
+      status.textContent = 'Guardado en Google Drive'
+      status.setAttribute('role', 'status')
+      button.replaceWith(status)
       saved = true
     }
   } catch (error) {
@@ -854,14 +841,14 @@ async function handleCoverAction(action, book, button) {
 
 async function uploadBookToDrive(book) {
   driveUploadsInFlight += 1
-  els.driveUploadBook.textContent = book.title || book.name || 'Libro'
-  els.driveUploadScreen.hidden = false
-  els.driveUploadScreen.setAttribute('aria-busy', 'true')
   try {
     const updated = await cloudSync.uploadBook(book)
     if (!updated) return null
-    await cloudSync.flushProgress(updated.id)
-    setDriveSyncStatus('Sincronizado')
+    // The file is saved already. Its progress update stays asynchronous so a
+    // slow network cannot hold up opening the cover or returning to the shelf.
+    cloudSync.flushProgress(updated.id)
+      .catch(error => setDriveSyncStatus(`Progreso pendiente: ${error.message}`))
+    setDriveSyncStatus('Guardado en Google Drive')
     return updated
   } finally {
     driveUploadsInFlight = Math.max(0, driveUploadsInFlight - 1)
@@ -1070,7 +1057,7 @@ function onReaderRelocate({ fraction, cfi, index }) {
   const bookId = currentBookId
   const previous = progressWrites.get(bookId) || Promise.resolve()
   const write = previous.catch(() => {}).then(() => library.updateProgress(bookId, fraction ?? 0, locator))
-    .then(() => { if (hasDriveSession()) cloudSync.scheduleProgress(bookId) })
+    .then(record => { if (record?.driveFileId && hasDriveSession()) cloudSync.scheduleProgress(bookId) })
   progressWrites.set(bookId, write)
   write.catch(error => console.warn('No se pudo guardar el progreso:', error))
     .finally(() => { if (progressWrites.get(bookId) === write) progressWrites.delete(bookId) })
@@ -1139,7 +1126,7 @@ els.readerBack.addEventListener('click', async () => {
     els.readerToolbar.hidden = true
     // Newly imported books have never had a shelf selection. Populate their
     // slot while the current-page overlay masks the home layout.
-    if (!shelf?.hasReaderOrigin(bookId)) await refreshShelf()
+    if (!shelf?.hasReaderOrigin(bookId)) await refreshShelf({ immediate:true })
     // The overlay masks shelf layout and cover decoding until the same page
     // is ready on the 3D mesh. Drive sync continues independently of the flight.
     const returnFlight = shelf?.returnToShelf(bookId, { pageSnapshot, book, onPageReady:handoff })
@@ -1215,7 +1202,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.7.14'
+els.appVersion.textContent = 'Inhouse Read · v1.7.15'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')
@@ -1223,9 +1210,10 @@ refreshShelf()
 loadDriveAccountProfile().catch(error => console.warn('No se pudo restaurar la cuenta:', error))
 initAndroidUpdateChecks()
 initContentFreshnessChecks()
+registerOfflineShell().catch(error => console.warn('No se pudo guardar la app para abrirla sin conexión:', error))
 initReadingDisplay()
 initAndroidFileImports({
-  canImport: () => !closingReader && !driveUploadsInFlight && !els.readerScreen.classList.contains('is-preparing'),
+  canImport: () => !closingReader && !els.readerScreen.classList.contains('is-preparing'),
   onFile: async file => {
     await shelf?.close()
     await progressWrites.get(currentBookId)?.catch(() => {})

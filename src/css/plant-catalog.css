@@ -49,6 +49,7 @@
 .ihr-plant-catalog__section legend { display: flex; align-items: center; gap: 7px; width: 100%; padding: 0; margin: 0 0 5px; font-size: 15px; font-weight: 700; line-height: 1.2; }
 .ihr-plant-catalog__step { display: grid; place-items: center; width: 22px; height: 22px; border: 1px solid currentColor; border-radius: 50%; font-size: 13px; flex: none; }
 .ihr-plant-catalog__plants, .ihr-plant-catalog__pots, .ihr-plant-catalog__colors { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.ihr-plant-catalog__pots { grid-template-columns:repeat(5,minmax(0,1fr)); }
 .ihr-plant-catalog__plants, .ihr-plant-catalog__pots { container-type: inline-size; }
 .ihr-plant-catalog__plant, .ihr-plant-catalog__pot, .ihr-plant-catalog__color { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 0; padding: 4px 2px; border: 1px solid transparent; border-radius: 0; background: none; position: relative; }
 .ihr-plant-catalog__plant, .ihr-plant-catalog__pot { transition: background-color .15s ease, border-color .15s ease; }

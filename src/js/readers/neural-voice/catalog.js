@@ -3,9 +3,11 @@
 // Pure data and string helpers: this file is imported by the app at start-up (the voice picker needs the list), so it must
 // stay tiny and free of the engine.
 
+import { isSupertonicVoiceId, supertonicVoicesFor } from './supertonic-catalog.js'
+
 /** Voice ids are namespaced so they never collide with Android/browser voice ids. */
 export const NEURAL_PREFIX = 'piper:'
-export const isNeuralVoiceId = id => typeof id === 'string' && id.startsWith(NEURAL_PREFIX)
+export const isNeuralVoiceId = id => typeof id === 'string' && (id.startsWith(NEURAL_PREFIX) || isSupertonicVoiceId(id))
 
 /** Where the models live. Tests and mirrors set window.INHOUSE_NEURAL_VOICE_BASE before the app starts (see neuralVoiceBase). */
 export const DEFAULT_VOICE_BASE = 'https://huggingface.co/rhasspy/piper-voices/resolve/main/'
@@ -80,6 +82,7 @@ const MODELS = [
   { piperId: 'pt_BR-faber-medium', lang: 'pt-BR', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Faber' }] },
   { piperId: 'pt_PT-tugão-medium', lang: 'pt-PT', quality: 'medium', sizeMB: 63, speakers: [{ name: 'Tugão' }] },
   { piperId: 'ca_ES-upc_ona-medium', lang: 'ca-ES', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Ona' }] },
+  { piperId: 'ca_ES-upc_pau-x_low', lang: 'ca-ES', quality: 'low', sizeMB: 28, licenseName:'CC BY-SA 3.0 ES', licenseUrl:'licenses/piper-extra-voices.txt', speakers: [{ name: 'Pau' }] },
   // Other regions of the first languages.
   { piperId: 'es_AR-daniela-high', lang: 'es-AR', quality: 'high', sizeMB: 114, speakers: [{ name: 'Daniela' }] },
   { piperId: 'en_GB-cori-high', lang: 'en-GB', quality: 'high', sizeMB: 114, speakers: [{ name: 'Cori' }] },
@@ -92,6 +95,9 @@ const MODELS = [
   { piperId: 'sv_SE-nst-medium', lang: 'sv-SE', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'NST' }] },
   { piperId: 'da_DK-talesyntese-medium', lang: 'da-DK', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Talesyntese' }] },
   { piperId: 'no_NO-talesyntese-medium', lang: 'nb-NO', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Talesyntese' }] },
+  // NVCC's source speaker map and Table 2 identify KON and MON as distinct
+  // Oslo speakers. Both share the same downloaded model, not a pitch preset.
+  { piperId: 'no_NO-nvcc-medium', lang:'nb-NO', quality:'medium', sizeMB:77, licenseName:'CC0', licenseUrl:'licenses/piper-extra-voices.txt', speakers:[{name:'NVCC KON',speaker:3},{name:'NVCC MON',speaker:6}] },
   { piperId: 'fi_FI-harri-medium', lang: 'fi-FI', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Harri' }] },
   { piperId: 'cs_CZ-jirka-medium', lang: 'cs-CZ', quality: 'medium', sizeMB: 63, recommended: true, speakers: [{ name: 'Jirka' }] },
   { piperId: 'el_GR-rapunzelina-low', lang: 'el-GR', quality: 'low', sizeMB: 63, recommended: true, speakers: [{ name: 'Rapunzelina' }] },
@@ -114,19 +120,24 @@ const MODELS = [
  * `models` below groups them by model.
  * @type {import('./index.js').NeuralVoice[]}
  */
-export const neuralVoices = MODELS.flatMap(model => model.speakers.map((who, index) => {
+export const piperVoices = MODELS.flatMap(model => model.speakers.map((who, index) => {
   const speaker = who.speaker ?? 0
   return {
-    id: NEURAL_PREFIX + model.piperId + (index ? `#${speaker}` : ''),
+    id: NEURAL_PREFIX + model.piperId + (speaker ? `#${speaker}` : ''),
     piperId: model.piperId,
     lang: model.lang,
     name: who.name,
     quality: model.quality,
     sizeMB: model.sizeMB,
     speaker,
+    ...(model.licenseUrl ? {licenseUrl:model.licenseUrl,licenseName:model.licenseName} : {}),
     ...(model.recommended && !index ? { recommended: true } : {})
   }
 }))
+// Multilingual profiles use generic language tags. They do not claim an
+// Argentine, Mexican, Portuguese or other regional accent.
+export const supertonicVoices = supertonicVoicesFor(piperVoices.map(voice => voice.lang))
+export const neuralVoices = [...piperVoices, ...supertonicVoices]
 
 /** piperId -> the voices (speakers) that share that model. */
 export const modelsOf = voices => {
@@ -143,5 +154,7 @@ export function recommendedVoice(lang, voices = neuralVoices) {
   const tag = String(lang || '').replace('_', '-')
   const base = tag.split('-')[0].toLowerCase()
   const ofLanguage = voices.filter(voice => voice.lang.split('-')[0] === base)
-  return ofLanguage.find(voice => voice.lang.toLowerCase() === tag.toLowerCase()) || ofLanguage.find(voice => voice.recommended) || ofLanguage[0] || null
+  // A generic multilingual tag is not a regional match that should override
+  // the compact recommended Piper download for the language.
+  return ofLanguage.find(voice => tag.includes('-') && voice.lang.toLowerCase() === tag.toLowerCase()) || ofLanguage.find(voice => voice.recommended) || ofLanguage[0] || null
 }

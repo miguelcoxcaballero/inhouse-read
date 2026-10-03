@@ -11,6 +11,8 @@ import { BAGGEBO_SPEC, SHELF_SPECS } from './shelf-types.js';
 const product = path => `https://www.ikea.com/es/es/p/${path}/`;
 export const IKEA_SIZES_CM = Object.freeze({
   pots:{
+    muskot9:{ nursery:9, diameter:12, height:11, footprint:12, confidence:'alta',
+      source:'https://www.ikea.com.tr/en/product/muskot-white-9-cm-earthenware-plant-pot-30308201' },
     muskot:{ nursery:12, diameter:15, height:14, footprint:15, confidence:'alta',
       source:'https://www.ikea.com.tr/en/product/muskot-white-12-cm-earthenware-plant-pot-50308196' },
     muskotblomma:{ nursery:12, diameter:16, height:13, footprint:16, confidence:'alta',
@@ -28,14 +30,14 @@ export const IKEA_SIZES_CM = Object.freeze({
       source:product('monstera-deliciosa-planta-ceriman-50515493') },
     chamaedorea:{ nursery:9, height:20, width:20, widthConfidence:'baja', confidence:'alta',
       source:product('chamaedorea-elegans-planta-palmera-salon-90392763') },
-    nephrolepis:{ nursery:9, height:17, width:20, widthConfidence:'baja', confidence:'media',
-      source:product('nephrolepis-planta-helecho-00630773'), note:'Follaje publicado 10 cm; envolvente con maceta decorativa estimada en 17 cm.' },
+    nephrolepis:{ nursery:9, height:20.8, foliageHeight:10, width:20, widthConfidence:'baja', confidence:'media',
+      source:product('nephrolepis-planta-helecho-00630773'), note:'Follaje publicado 10 cm; altura total estimada sumando la línea de tierra del recipiente elegido.' },
     hedera:{ nursery:9, height:24, width:18, widthConfidence:'baja', confidence:'baja',
       source:product('hedera-helix-planta-hiedra-66804047'), note:'Ficha de 13 cm y 35 cm de altura; variante compacta estimada, no verificada.' },
     zamioculcas:{ nursery:9, height:28, width:17, widthConfidence:'baja', confidence:'baja',
       source:product('zamioculcas-planta-zamioculcas-50598681'), note:'Ficha de 17 cm y 55 cm de altura; variante compacta estimada, no verificada.' },
-    succulent:{ nursery:9, height:16, width:14, widthConfidence:'baja', confidence:'media',
-      source:product('succulent-planta-mezcla-especies-plantas-suculenta-10311006'), note:'Follaje publicado 9 cm; envolvente decorativa estimada en 16 cm.' },
+    succulent:{ nursery:9, height:20.7, foliageHeight:9, width:14, widthConfidence:'baja', confidence:'media',
+      source:product('succulent-planta-mezcla-especies-plantas-suculenta-10311006'), note:'Follaje publicado 9 cm; altura total estimada sumando la línea de tierra del recipiente elegido.' },
     cactus:{ nursery:6, height:18, width:12, widthConfidence:'baja', confidence:'media',
       source:product('fejka-planta-artificial-interior-exterior-cactus-60587154'), note:'Artículo publicado de 14 cm; envolvente con maceta decorativa estimada en 18 cm.' }
   }
@@ -45,6 +47,17 @@ export const POT_SIZES = Object.freeze(Object.fromEntries(Object.entries(IKEA_SI
   [id, { ...p, diameter:p.diameter*10, height:p.height*10, footprint:p.footprint*10 }])));
 export const PLANT_SIZES = Object.freeze(Object.fromEntries(Object.entries(IKEA_SIZES_CM.plants).map(([id,p]) =>
   [id, { ...p, widthConfidence:'baja', classes:{ [p.nursery]:{ height:p.height*10, width:p.width*10 } } }])));
+
+/** The reference assembly sets botanical growth only. Changing a container
+ * raises/lowers its soil line; it must not compress the same leaves to fit an
+ * old total-height box. The nursery class remains distinct from outer size. */
+export const PLANT_REFERENCE_POTS = Object.freeze({ sansevieria:'muskot', monstera:'gradvis', chamaedorea:'muskot',
+  nephrolepis:'akerbar', hedera:'muskotblomma', zamioculcas:'gradvis', succulent:'muskotblomma', cactus:'akerbar' });
+// New small nursery plants use the verified 9 cm MUSKOT (12 cm outside).
+// Reference assemblies above remain fixed so changing pots never resizes leaves.
+export const PLANT_DEFAULT_POTS = Object.freeze(Object.fromEntries(Object.entries(PLANT_SIZES)
+  .map(([id, plant]) => [id, plant.nursery <= 9 ? 'muskot9' : PLANT_REFERENCE_POTS[id]])));
+export const POT_SOIL_FRACTION = .9;
 
 /** Free height (mm) between a shelf board and the underside of the one above.
  * Clearance includes the rim under the preceding surface: the smallest
@@ -78,9 +91,13 @@ export function plantDimensions(plantId, potId) {
   const plant = standardPlantClass(plantId), pot = POT_SIZES[potId] || POT_SIZES.muskot;
   if (!plant) return null;
   const width = Math.max(plant.width, pot.footprint);
+  const referenceSoilHeight = POT_SIZES[PLANT_REFERENCE_POTS[plantId]].height * POT_SOIL_FRACTION;
+  const foliageHeight = PLANT_SIZES[plantId].foliageHeight * 10 || plant.height - referenceSoilHeight;
+  const soilHeight = pot.height * POT_SOIL_FRACTION;
   // Depth on the board: the slot's 0.7 proportion, but never less than the round pot.
-  return { height:plant.height, canopy:plant.width, width, depth:Math.max(width * .7, pot.footprint),
-    potDiameter:pot.diameter, potHeight:pot.height, potFootprint:pot.footprint, potClass:plant.potClass };
+  return { height:soilHeight + foliageHeight, foliageHeight, referenceHeight:plant.height, soilHeight,
+    canopy:plant.width, width, depth:Math.max(width * .7, pot.footprint),
+    potDiameter:pot.diameter, potHeight:pot.height, potFootprint:pot.footprint, potClass:plant.potClass, containerClass:pot.nursery };
 }
 
 /** Outer pot diameter × height, plant height and confidence in the catalogue. */
@@ -88,7 +105,8 @@ export function plantSizeLabel(plantId, potId) {
   const size = plantDimensions(plantId, potId);
   if (!size) return '';
   const cm = value => String(Math.round(value) / 10).replace('.', ',');
-  const estimated = PLANT_SIZES[plantId].confidence !== 'alta' || POT_SIZES[potId]?.confidence !== 'alta';
+  const estimated = PLANT_SIZES[plantId].confidence !== 'alta' || POT_SIZES[potId]?.confidence !== 'alta'
+    || potId !== PLANT_REFERENCE_POTS[plantId];
   const unverified = PLANT_SIZES[plantId].confidence === 'baja' || POT_SIZES[potId]?.confidence === 'baja';
   const placement = size.height > PLANT_MAX_HEIGHT_MM ? ' · sobre el mueble' : '';
   return `Maceta Ø${cm(size.potDiameter)} × ${cm(size.potHeight)} cm · planta ${cm(size.height)} cm${estimated ? ' aprox.' : ''}${unverified ? ' (sin verificar)' : ''}${placement}`;
@@ -98,16 +116,18 @@ export function plantSizeLabel(plantId, potId) {
  * down to 80 % (19.2 cm), a typical 21-22 cm paperback or hardback. */
 export const BOOK_REFERENCE_MM = 240;
 /** Spine thickness of a real book: a slim paperback to a thick hardback. */
-export const BOOK_THICKNESS_MM = Object.freeze({ min:15, max:45 });
+export const BOOK_THICKNESS_MM = Object.freeze({ min:10, max:84, binding:4, perPage:.07 });
 /** Depth of a standing book: its cover width, 13-16 cm for a hardback. */
 export const BOOK_DEPTH_MM = Object.freeze({ min:130, max:160 });
 
 /** `spineStyleFor` options that draw real thicknesses, in pixels for a shelf
- * `shelfWidth` px wide (a 600 mm unit): 15-45 mm, so a row of 56 cm holds
- * roughly 12-18 books instead of two. */
+ * `shelfWidth` px wide (a 600 mm unit). The paper stock is one consistent
+ * visual convention: 0.14 mm per leaf (two pages) plus 4 mm for the binding.
+ * Long volumes can exceed 45 mm; their cover aspect ratio stays independent. */
 export function bookSpineOptions(shelfWidth) {
   const scale = shelfScale({ shelfWidth });
-  return { minWidth:BOOK_THICKNESS_MM.min * scale, maxWidth:BOOK_THICKNESS_MM.max * scale, jitter:4 * scale };
+  return { minWidth:BOOK_THICKNESS_MM.min * scale, maxWidth:BOOK_THICKNESS_MM.max * scale,
+    bindingThickness:BOOK_THICKNESS_MM.binding * scale, pageThickness:BOOK_THICKNESS_MM.perPage * scale, jitter:0 };
 }
 
 /** A thin real spine is hard to tap, so a book never gets a layout cell

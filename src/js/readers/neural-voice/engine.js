@@ -10,7 +10,8 @@
 // underruns, or a compute speed far below real time, it buffers complete fragments and keeps the selected natural voice.
 import { findNeuralVoice, modelsOf, neuralVoices } from './catalog.js'
 import { GaplessPlayer, safeToStart } from './player.js'
-import { VoiceStore, storeError } from './store.js'
+import { storeError } from './store.js'
+import { NeuralPackageStore } from './package-store.js'
 import { SynthClient } from './client.js'
 import { audioContext, unlockAudio } from './audio.js'
 
@@ -63,7 +64,8 @@ function defaultCreateClient(store) {
     phonBase: `${base}phon/`,
     readModel: id => store.readModel(id),
     readConfig: id => store.readConfig(id),
-    readPhonemizerModel: id => store.readPhonemizerModel?.(id) || null
+    readPhonemizerModel: id => store.readPhonemizerModel?.(id) || null,
+    readRuntimeAssets: id => store.readRuntimeAssets?.(id) || null
   })
 }
 
@@ -76,7 +78,7 @@ export class NeuralEngine extends EventTarget {
     super()
     this.voices = voices
     this.models = modelsOf(voices)
-    this.store = store || new VoiceStore()
+    this.store = store || new NeuralPackageStore()
     this.createClient = createClient || (() => defaultCreateClient(this.store))
     this.audio = audio || { context: audioContext, unlock: () => unlockAudio(env) }
     this.env = env
@@ -96,7 +98,7 @@ export class NeuralEngine extends EventTarget {
     this._status = 'idle'
     this.underrunTimes = []
     this.cleanStreak = 0
-    this.stats = { rtf: 0, underruns: 0, firstAudioMs: 0, cacheHits: 0, tooSlow: 0 }
+    this.stats = { rtf: 0, underruns: 0, firstAudioMs: 0, cacheHits: 0, prefetchHits:0, tooSlow: 0 }
   }
 
   // ----------------------------------------------------------------- state exposed to the picker
@@ -214,7 +216,7 @@ export class NeuralEngine extends EventTarget {
     queueMicrotask(() => this.env.dispatchEvent?.(new CustomEvent('inhouse-tts', { detail })))
   }
 
-  speak({ text, voiceId, rate = 1, id, upcoming = [] }) {
+  speak({ text, voiceId, rate = 1, id, upcoming = [], deferAfter = Infinity }) {
     this.#clearIdle()
     const voice = findNeuralVoice(voiceId, this.voices)
     if (!voice || !this._installed.has(voice.id)) { this.#hardStop(); this.#emit('error', id, 'not-installed'); return }
@@ -225,7 +227,7 @@ export class NeuralEngine extends EventTarget {
     let run = this.run
     const head = run && run.voice.id === voice.id && run.rate === rate ? run.entries.find(entry => entry.id == null) : null
     if (head && head.text === text) {
-      this.#adopt(run, head, id, upcomingTexts)
+      this.#adopt(run, head, id, upcomingTexts, false, deferAfter)
     } else {
       // A page read to its end hands over to a fresh run (the reader asks for the next page's first fragment): the hiccup it
       // may have had (a short heading before a long sentence leaves a hole while the long one is computed) is history, so
@@ -235,11 +237,24 @@ export class NeuralEngine extends EventTarget {
       this.#hardStop()
       if (rebuild) this.#teardown() // a running segment cannot be interrupted: when waiting for it costs more than a cold start, start afresh
       run = this.run = { voice, rate, entries: [], gateOpen: false, buffered: false, prepared: null, job: null, heldSince: null, holdTimer: null, pumpTimer: null, rtf: 0, rtfN: 0, spi: 0, t0: now(), firstAudio: false }
-      this.#adopt(run, this.#entry(run, text), id, upcomingTexts, true)
+      this.#adopt(run, this.#entry(run, text), id, upcomingTexts, true, deferAfter)
       this.#setStatus('buffering')
     }
     this.#feed(run)
     this.#pump()
+  }
+
+  /** Append a prepared page while this fragment plays, without restarting it.
+   * Deferred PCM is computed/cached but cannot reach the audio player until
+   * the reader adopts its fragment with an actual speak() call. */
+  extendUpcoming({ id, voiceId, rate = 1, upcoming = [], deferAfter = Infinity }) {
+    const run = this.run
+    if (!run || this.currentId !== id || run.voice.id !== voiceId || run.rate !== clampRate(rate)) return false
+    const current = run.entries.find(entry => entry.id === id)
+    if (!current || current.ended) return false
+    this.#adopt(run, current, id, upcoming.slice(0, this.limits.maxUpcoming), false, deferAfter, false)
+    this.#feed(run); this.#pump()
+    return true
   }
 
   stop() {
@@ -264,15 +279,21 @@ export class NeuralEngine extends EventTarget {
   }
 
   // A run is a continuous stretch of reading with one voice and rate; its entries are the fragments, in reading order.
-  #entry(run, text) {
-    const entry = { n: ++this.unitSeq, text, key: `${run.voice.piperId}#${run.voice.speaker}|${run.rate}|${text}`, id: null, state: 'queued', chunks: [], scheduled: 0, total: null, counts: null, started: false, ended: false, error: null }
+  #entry(run, text, deferred = false) {
+    const profile = run.voice.runtime === 'supertonic3' ? `${run.voice.style}:${run.voice.lang}` : run.voice.speaker
+    const entry = { n: ++this.unitSeq, text, key: `${run.voice.piperId}#${profile}|${run.rate}|${text}`, deferred, id: null, state: 'queued', chunks: [], scheduled: 0, total: null, counts: null, started: false, ended: false, error: null }
     const cached = this.cache.get(entry.key)
     if (cached) { entry.chunks = cached.slice(); entry.total = cached.length; entry.state = 'done'; this.stats.cacheHits++ }
     run.entries.push(entry)
     return entry
   }
 
-  #adopt(run, head, id, upcoming, fresh = false) {
+  #adopt(run, head, id, upcoming, fresh = false, deferAfter = Infinity, announce = true) {
+    if (head.deferred) {
+      if (head.state === 'done') this.stats.prefetchHits++
+      run.gateOpen = false; run.heldSince = null
+    }
+    head.deferred = false
     head.id = id
     this.currentId = id
     if (!fresh) {
@@ -281,20 +302,21 @@ export class NeuralEngine extends EventTarget {
       const after = run.entries.slice(at + 1)
       let keep = 0
       while (keep < after.length && keep < upcoming.length && after[keep].text === upcoming[keep]) keep++
+      for (let index = 0; index < keep; index++) after[index].deferred = index >= deferAfter
       const dropped = after.slice(keep)
       if (dropped.length) {
         for (const entry of dropped) if (entry.state === 'synth') { run.job?.cancel(); run.job = null }
         run.entries.length = at + 1 + keep
         this.player.truncateAfter(run.entries.at(-1).n)
       }
-      for (const text of upcoming.slice(keep)) this.#entry(run, text)
+      for (let index = keep; index < upcoming.length; index++) this.#entry(run, upcoming[index], index >= deferAfter)
     } else {
-      for (const text of upcoming) this.#entry(run, text)
+      for (let index = 0; index < upcoming.length; index++) this.#entry(run, upcoming[index], index >= deferAfter)
     }
     // Whatever already happened to the adopted fragment is reported now, as if it had been live.
     if (head.error) { this.#emit('error', id, head.error); this.#hardStop(); return }
-    if (head.started) this.#emit('start', id)
-    if (head.ended) this.#emit('done', id)
+    if (announce && head.started) this.#emit('start', id)
+    if (announce && head.ended) this.#emit('done', id)
   }
 
   #hardStop() {
@@ -327,7 +349,7 @@ export class NeuralEngine extends EventTarget {
     entry.state = 'synth'
     run.segStart = now()
     const rate = run.rate, speaker = run.voice.speaker
-    run.job = this.client.synth({ text: entry.text, rate, speaker }, {
+    run.job = this.client.synth({ text: entry.text, rate, speaker, ...(run.voice.runtime === 'supertonic3' ? { lang:run.voice.lang, style:run.voice.style } : {}) }, {
       onPlan: counts => { entry.counts = counts; entry.total = counts.length },
       onChunk: chunk => this.#chunk(run, entry, chunk),
       onEnd: () => { run.job = null; this.#finish(run, entry); this.#pump() },
@@ -416,6 +438,7 @@ export class NeuralEngine extends EventTarget {
     const ready = [], pending = []
     let incomplete = null
     for (const entry of run.entries) {
+      if (entry.deferred) break
       if (entry.error) break
       for (let i = entry.scheduled; i < entry.chunks.length; i++) ready.push(entry.chunks[i].dur)
       if (entry.total == null || entry.chunks.length < entry.total) { incomplete = entry; break }
@@ -435,6 +458,7 @@ export class NeuralEngine extends EventTarget {
     if (this.run !== run) return
     for (const entry of run.entries) {
       if (entry.error) return
+      if (entry.deferred) return
       if (run.buffered && entry.state !== 'done') { this.#setStatus('buffering'); return }
       while (entry.scheduled < entry.chunks.length) {
         if (run.gateOpen && this.player.drained()) { run.gateOpen = false; this.#underrun(); if (this.run !== run) return }

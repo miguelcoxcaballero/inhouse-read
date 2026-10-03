@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { LibraryStore } from '../../src/js/library-store.js'
+import { Blob as NativeBlob, File as NativeFile } from 'node:buffer'
 
 vi.mock('../../src/js/drive-client.js', () => ({
   getDriveProfile: vi.fn(), listAllDriveBooks: vi.fn(),
@@ -20,6 +21,7 @@ beforeEach(() => {
   sync.setProfile({ id: 'account-1', email: 'miguel@example.com' })
   drive.readDriveProgress.mockResolvedValue(null)
   drive.listAllDriveBooks.mockResolvedValue([])
+  drive.downloadDriveFile.mockImplementation(async (id, { name, mimeType }) => new File(['downloaded'], name || id, { type:mimeType }))
 })
 afterEach(async () => { sync.reset(); await library.close() })
 
@@ -118,20 +120,20 @@ describe('CloudSync', () => {
     expect(drive.readDriveProgress).not.toHaveBeenCalled()
   })
 
-  it('omite un libro retirado cuando llega su turno en una cola de subidas', async () => {
+  it('no inicia una cola de subidas locales y mantiene retirado un libro durante discovery', async () => {
     const first = await library.addOrTouch({ sourceType:'local', name:'first.pdf', size:4, content:new Blob(['file']) })
     await new Promise(resolve => setTimeout(resolve, 2))
     const queued = await library.addOrTouch({ sourceType:'local', name:'queued.pdf', size:4, content:new Blob(['file']) })
     // Sync uses most-recent first, so the queued record is deliberately older.
     await library.patch(first.id, { lastOpenedAt:Date.now() + 1000 })
-    let finishUpload
-    drive.uploadDriveFile.mockImplementation(() => new Promise(resolve => { finishUpload = resolve }))
+    let finishList
+    drive.listAllDriveBooks.mockImplementation(() => new Promise(resolve => { finishList = resolve }))
     const syncing = sync.sync()
-    await vi.waitFor(() => expect(drive.uploadDriveFile).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(drive.listAllDriveBooks).toHaveBeenCalledTimes(1))
     await sync.removeFromShelf(queued)
-    finishUpload({ id:'first-drive', name:'first.pdf' })
+    finishList([])
     await syncing
-    expect(drive.uploadDriveFile).toHaveBeenCalledTimes(1)
+    expect(drive.uploadDriveFile).not.toHaveBeenCalled()
     expect(await library.get(queued.id)).toBeNull()
     expect((await library.listAll()).map(book => book.id)).toEqual([first.id])
   })
@@ -219,7 +221,7 @@ describe('CloudSync', () => {
     await sync.syncBookProgress(book.id)
     expect(await library.get(book.id)).toMatchObject({...appearance,spineTextFinish:'silver'})
   })
-  it('vincula el libro local al de Drive sin duplicarlo y recupera su posición', async () => {
+  it('no vincula por nombre y tamaño un libro local que no se ha subido explícitamente', async () => {
     const local = await library.addOrTouch({ sourceType: 'local', name: 'book.pdf', title: 'book', size: 123,
       content: new Blob(['pdf'], { type: 'application/pdf' }) })
     drive.listAllDriveBooks.mockResolvedValue([{ id: 'drive-1', name: 'book.pdf', size: '123', mimeType: 'application/pdf' }])
@@ -227,20 +229,26 @@ describe('CloudSync', () => {
       fraction: .6, locator: { kind: 'pdf-page', value: 7 }, updatedAt: 1000, stateFileId: 'state-1' })
     await sync.sync()
     const books = await library.listAll()
-    expect(books).toHaveLength(1)
-    expect(books[0]).toMatchObject({ id: local.id, driveFileId: 'drive-1', cloudAccountId: 'account-1',
-      progressFraction: .6, locator: { kind: 'pdf-page', value: 7 } })
+    expect(books).toHaveLength(2)
+    expect(await library.get(local.id)).toMatchObject({ progressFraction:0 })
+    expect((await library.get(local.id)).driveFileId).toBeUndefined()
+    expect(books.find(book => book.driveFileId === 'drive-1')).toMatchObject({
+      progressFraction:.6, locator:{ kind:'pdf-page', value:7 } })
     expect(drive.uploadDriveFile).not.toHaveBeenCalled()
   })
 
-  it('descubre libros remotos y sube libros locales pendientes', async () => {
+  it('descubre libros remotos sin subir libros locales al iniciar sesión o sincronizar', async () => {
     await library.addOrTouch({ sourceType: 'local', name: 'local.pdf', title: 'local', size: 3,
-      content: new Blob(['pdf'], { type: 'application/pdf' }) })
+      content: new NativeBlob(['pdf'], { type: 'application/pdf' }) })
     drive.listAllDriveBooks.mockResolvedValue([{ id: 'remote-1', name: 'remote.epub', size: '9', mimeType: 'application/epub+zip' }])
     drive.uploadDriveFile.mockResolvedValue({ id: 'uploaded-1', name: 'local.pdf' })
     const result = await sync.sync()
-    expect(result).toMatchObject({ books: 2, uploaded: 1, errors: [] })
-    expect((await library.listAll()).map(book => book.driveFileId).sort()).toEqual(['remote-1', 'uploaded-1'])
+    expect(result).toMatchObject({ books:1, uploaded:0, errors:[] })
+    expect(await library.listAll()).toHaveLength(2)
+    expect(drive.uploadDriveFile).not.toHaveBeenCalled()
+    const local = (await library.listAll()).find(book => book.sourceType === 'local')
+    expect(local.content.size).toBe(3)
+    expect(local.driveFileId).toBeUndefined()
   })
 
   it('sincroniza la posición local más reciente y conserva el locator exacto', async () => {
@@ -296,5 +304,159 @@ describe('CloudSync', () => {
       fraction: .8, locator: { kind: 'pdf-page', value: 8 }
     })
     expect((await library.get(book.id)).progressDirty).toBe(false)
+  })
+
+  it('keeps a newer local position saved while reading old remote progress', async () => {
+    const book = await library.addOrTouch({ sourceType:'local', name:'close.pdf', size:3,
+      driveFileId:'saved-drive', cloudAccountId:'account-1', progressFraction:.2,
+      locator:{ kind:'pdf-page', value:2 }, progressUpdatedAt:100, progressDirty:true })
+    let finishRead
+    drive.readDriveProgress.mockImplementation(() => new Promise(resolve => { finishRead = resolve }))
+    const pending = sync.syncBookProgress(book.id)
+    await vi.waitFor(() => expect(drive.readDriveProgress).toHaveBeenCalledOnce())
+    await library.patch(book.id, { progressFraction:.8, locator:{ kind:'pdf-page', value:8 },
+      progressUpdatedAt:300, progressDirty:true })
+    drive.writeDriveProgress.mockResolvedValue({ id:'state' })
+    finishRead({ fraction:.4, locator:{ kind:'pdf-page', value:4 }, updatedAt:200, stateFileId:'state' })
+    await pending
+    expect(await library.get(book.id)).toMatchObject({ progressFraction:.8, locator:{ kind:'pdf-page', value:8 } })
+    expect(drive.writeDriveProgress).toHaveBeenCalledWith('saved-drive', expect.objectContaining({ fraction:.8 }), 'state')
+  })
+
+  it('uploads only on explicit request and preserves original local bytes after success', async () => {
+    vi.stubGlobal('Blob', NativeBlob); vi.stubGlobal('File', NativeFile)
+    try {
+      const bytes = new Uint8Array([0,255,37,80,68,70])
+      const book = await library.addOrTouch({ sourceType:'local', name:'exact.pdf', size:bytes.length,
+        content:new NativeBlob([bytes], { type:'application/pdf' }) })
+      await sync.sync()
+      expect(drive.uploadDriveFile).not.toHaveBeenCalled()
+      drive.uploadDriveFile.mockResolvedValue({ id:'explicit-drive', name:'exact.pdf' })
+      const saved = await sync.uploadBook(book)
+      expect(saved.driveFileId).toBe('explicit-drive')
+      expect([...new Uint8Array(await drive.uploadDriveFile.mock.calls[0][0].arrayBuffer())]).toEqual([...bytes])
+      expect([...new Uint8Array(await (await library.get(book.id)).content.arrayBuffer())]).toEqual([...bytes])
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('persists downloaded bytes for a cold offline reopen without another account or network request', async () => {
+    vi.stubGlobal('Blob', NativeBlob); vi.stubGlobal('File', NativeFile)
+    try {
+      const bytes = new Uint8Array([0,255,37,80,68,70])
+      const book = await library.addOrTouch({ sourceType:'drive', driveFileId:'remote', cloudAccountId:'account-1',
+        name:'exact.pdf', size:bytes.length, mimeType:'application/pdf' })
+      drive.downloadDriveFile.mockResolvedValue(new NativeFile([bytes], 'exact.pdf', { type:'application/pdf' }))
+      const first = await sync.downloadForOffline(book)
+      expect([...new Uint8Array(await first.arrayBuffer())]).toEqual([...bytes])
+      sync.reset()
+      sync = new CloudSync(library)
+      drive.getDriveProfile.mockRejectedValue(new Error('Offline'))
+      drive.downloadDriveFile.mockRejectedValue(new Error('Offline'))
+      const next = await sync.downloadForOffline(await library.get(book.id))
+      expect([...new Uint8Array(await next.arrayBuffer())]).toEqual([...bytes])
+      expect(drive.getDriveProfile).not.toHaveBeenCalled()
+      expect(drive.downloadDriveFile).toHaveBeenCalledOnce()
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('does not claim a downloaded file is cached when its local transaction fails', async () => {
+    const book = await library.addOrTouch({ sourceType:'drive', driveFileId:'remote', cloudAccountId:'account-1', name:'exact.pdf' })
+    drive.downloadDriveFile.mockResolvedValue(new File(['bytes'], 'exact.pdf'))
+    vi.spyOn(library, 'patch').mockRejectedValueOnce(new DOMException('Full', 'QuotaExceededError'))
+    await expect(sync.downloadForOffline(book)).rejects.toMatchObject({ code:'LOCAL_BOOK_STORAGE_FAILED' })
+    expect((await library.get(book.id)).content).toBeUndefined()
+  })
+
+  it('does not apply a remote snapshot if a local close commits just before its transaction', async () => {
+    const book = await library.addOrTouch({ sourceType:'local', name:'late-close.pdf', size:3,
+      driveFileId:'saved-drive', cloudAccountId:'account-1', progressFraction:.2,
+      locator:{ page:2 }, progressUpdatedAt:100, progressDirty:true })
+    drive.readDriveProgress.mockResolvedValue({ fraction:.4, locator:{ page:4 }, updatedAt:200, stateFileId:'state' })
+    const patch = library.patch.bind(library)
+    vi.spyOn(library, 'patch').mockImplementationOnce(async (id, fields, options) => {
+      await patch(id, { progressFraction:.8, locator:{ page:8 }, progressUpdatedAt:300, progressDirty:true })
+      return patch(id, fields, options)
+    })
+    await sync.syncBookProgress(book.id)
+    expect(await library.get(book.id)).toMatchObject({ progressFraction:.8, locator:{ page:8 }, progressDirty:true })
+  })
+  it('does not clear a dirty local change committed just before the upload completion transaction', async () => {
+    const book = await library.addOrTouch({ sourceType:'local', name:'late-write.pdf', size:3,
+      driveFileId:'saved-drive', cloudAccountId:'account-1', progressFraction:.2,
+      locator:{ page:2 }, progressUpdatedAt:100, progressDirty:true })
+    drive.writeDriveProgress.mockResolvedValue({ id:'state' })
+    const patch = library.patch.bind(library)
+    vi.spyOn(library, 'patch').mockImplementationOnce(async (id, fields, options) => {
+      await patch(id, { progressFraction:.8, locator:{ page:8 }, progressUpdatedAt:300, progressDirty:true })
+      return patch(id, fields, options)
+    })
+    await sync.syncBookProgress(book.id)
+    expect(await library.get(book.id)).toMatchObject({ progressFraction:.8, locator:{ page:8 }, progressDirty:true })
+    expect((await library.get(book.id)).progressStateFileId).toBeUndefined()
+  })
+
+  it('hydrates discovered and legacy Drive files serially and commits every original locally', async () => {
+    vi.stubGlobal('Blob', NativeBlob); vi.stubGlobal('File', NativeFile)
+    try {
+      const legacy = await library.addOrTouch({ sourceType:'drive', driveFileId:'moved-drive', cloudAccountId:'account-1', name:'legacy.epub' })
+      drive.listAllDriveBooks.mockResolvedValue([{ id:'discovered', name:'new.epub', size:'3', mimeType:'application/epub+zip' }])
+      const finishes = []
+      drive.downloadDriveFile.mockImplementation((id, options) => new Promise(resolve => { finishes.push(() => resolve(new NativeFile([id], options.name))) }))
+      const task = sync.sync()
+      await vi.waitFor(() => expect(finishes).toHaveLength(1))
+      expect(drive.downloadDriveFile.mock.calls[0][0]).toBe('discovered')
+      finishes[0]()
+      await vi.waitFor(() => expect(finishes).toHaveLength(2))
+      expect(await (await library.get('drive:discovered')).content.text()).toBe('discovered')
+      finishes[1]()
+      expect(await task).toMatchObject({ downloaded:2, uploaded:0, errors:[] })
+      expect(await (await library.get(legacy.id)).content.text()).toBe('moved-drive')
+      expect(drive.uploadDriveFile).not.toHaveBeenCalled()
+      sync.reset(); sync = new CloudSync(library); sync.setProfile({ id:'account-1' })
+      drive.downloadDriveFile.mockRejectedValue(new Error('Offline'))
+      await sync.sync()
+      expect(drive.downloadDriveFile).toHaveBeenCalledTimes(2)
+    } finally { vi.unstubAllGlobals() }
+  })
+
+  it('reports hydration quota failure while preserving the local library and never uploading it', async () => {
+    const local = await library.addOrTouch({ sourceType:'local', name:'kept.epub', content:new NativeBlob(['local']) })
+    drive.listAllDriveBooks.mockResolvedValue([{ id:'remote', name:'cloud.epub', size:'3' }])
+    const patch = library.patch.bind(library)
+    vi.spyOn(library, 'patch').mockImplementation((id, fields, options) => fields.content
+      ? Promise.reject(new DOMException('Full', 'QuotaExceededError')) : patch(id, fields, options))
+    const result = await sync.sync()
+    expect(result.errors[0]).toMatch(/guardar.*dispositivo|Libera espacio/)
+    expect(await (await library.get(local.id)).content.text()).toBe('local')
+    expect((await library.get('drive:remote')).content).toBeUndefined()
+    expect(drive.uploadDriveFile).not.toHaveBeenCalled()
+  })
+
+  it('allows a fresh sync after reconnect and ignores the old account result', async () => {
+    let finishOld
+    drive.listAllDriveBooks.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+    const old = sync.sync()
+    await vi.waitFor(() => expect(drive.listAllDriveBooks).toHaveBeenCalledOnce())
+    sync.reset(); sync.setProfile({ id:'account-2' })
+    drive.listAllDriveBooks.mockResolvedValue([])
+    expect(await sync.sync()).toMatchObject({ books:0, errors:[] })
+    finishOld([{ id:'old-account-book', name:'old.pdf' }])
+    await old
+    expect(await library.listAll()).toEqual([])
+    expect(drive.downloadDriveFile).not.toHaveBeenCalled()
+  })
+  it('does not replace the new account with a profile request that finishes after reset', async () => {
+    sync.reset()
+    let finish
+    drive.getDriveProfile.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const old = sync.sync()
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    sync.reset(); sync.setProfile({ id:'account-2' })
+    finish({ id:'account-1' })
+    await old
+    expect(drive.listAllDriveBooks).not.toHaveBeenCalled()
+    const book = await library.addOrTouch({ sourceType:'local', name:'new-account.pdf', content:new Blob(['new']) })
+    drive.uploadDriveFile.mockResolvedValue({ id:'new-drive', name:'new-account.pdf' })
+    expect(await sync.uploadBook(book)).toMatchObject({ cloudAccountId:'account-2' })
   })
 })

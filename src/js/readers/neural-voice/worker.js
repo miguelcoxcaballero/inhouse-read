@@ -2,13 +2,14 @@
 // Pages has no COOP/COEP, so no SharedArrayBuffer), the espeak-ng phonemizer, and the clean-up of the audio (peak
 // normalisation, silence trimming). The page only receives transferable Float32Array chunks.
 //
-// ONE voice session is alive at a time (a second voice replaces the first). Hebrew also holds its small Nakdimon session.
+// One runtime family is alive at a time. Piper holds one voice session (and
+// Nakdimon for Hebrew); Supertonic holds four shared sessions for its profiles.
 // Messages carry request ids.
 //
 //   page -> worker
 //     {type:'init',  id, ortBase, phonBase}                   load onnxruntime-web (files of OUR site) and the phonemizer
-//     {type:'load',  id, voice, config, model:ArrayBuffer, phonemizerModel?:ArrayBuffer} create sessions from cached bytes
-//     {type:'synth', id, text, rate, speaker}                 speak `text`: replies with plan + chunks (below), queued FIFO
+//     {type:'load',  id, voice, config, model|buffers, phonemizerModel?} create sessions from cached bytes
+//     {type:'synth', id, text, rate, speaker, lang?, style?}  speak `text`: replies with plan + chunks (below), queued FIFO
 //     {type:'cancel', id}                                     forget a queued/running synth (a running segment finishes first)
 //     {type:'free'}                                           release the session
 //   worker -> page
@@ -19,9 +20,10 @@
 //     {type:'error', id, error}                               anything that failed (the worker stays usable)
 import { createPhonemizer } from './phonemizer.js'
 import { createHebrewPhonemizer } from './hebrew.js'
+import { createSupertonicRuntime } from './supertonic-runtime.js'
 import { peakNormalize, trimSilence, fadeEdges, silence, concat, pauseAfter, splitSegments, limitIds, lengthScaleFor, PAUSE_MS } from './pcm.js'
 
-let ort = null, phonemizer = null, hebrewPhonemizer = null, session = null, config = null, voice = null, initPromise = null, loadChain = Promise.resolve()
+let ort = null, phonemizer = null, phonBaseURL = null, hebrewPhonemizer = null, supertonicRuntime = null, session = null, config = null, voice = null, initPromise = null, loadChain = Promise.resolve()
 const cancelled = new Set()
 const queue = []
 let draining = false, current = null
@@ -30,9 +32,10 @@ const post = (message, transfer = []) => self.postMessage(message, transfer)
 // A segment of compute blocks this thread; yielding between segments lets 'cancel'/'load' messages in before the next one.
 const yieldToMessages = () => new Promise(resolve => setTimeout(resolve, 0))
 
-async function init({ ortBase, phonBase }) {
+async function init({ ortBase, phonBase, runtime }) {
   // ONNX Runtime and the phonemizer are independent: load them side by side (a cold start is the sum of everything serial).
-  const [module, phon] = await Promise.all([import(/* @vite-ignore */ ortBase + 'ort.wasm.min.mjs'), createPhonemizer({ base: phonBase })])
+  phonBaseURL = phonBase
+  const [module, phon] = await Promise.all([import(/* @vite-ignore */ ortBase + 'ort.wasm.min.mjs'), runtime === 'supertonic3' ? null : createPhonemizer({ base: phonBase })])
   ort = module
   ort.env.wasm.wasmPaths = ortBase       // ort-wasm-simd-threaded.{mjs,wasm}: our own copy, never a CDN
   ort.env.wasm.numThreads = 1            // 1 => never needs SharedArrayBuffer / COOP+COEP
@@ -41,13 +44,14 @@ async function init({ ortBase, phonBase }) {
 }
 
 async function releaseVoice() {
-  const oldSession = session, oldHebrew = hebrewPhonemizer
-  session = null; hebrewPhonemizer = null; config = null; voice = null
+  const oldSession = session, oldHebrew = hebrewPhonemizer, oldSupertonic = supertonicRuntime
+  session = null; hebrewPhonemizer = null; supertonicRuntime = null; config = null; voice = null
   if (oldSession) await oldSession.release().catch(() => {})
   if (oldHebrew) await oldHebrew.destroy().catch(() => {})
+  if (oldSupertonic) await Promise.resolve(oldSupertonic.dispose()).catch(() => {})
 }
 
-async function load({ voice: key, config: cfg, model, phonemizerModel }) {
+async function load({ voice: key, config: cfg, model, phonemizerModel, buffers }) {
   while (draining) await new Promise(resolve => setTimeout(resolve, 5)) // a cancelled synth finishes its segment first
   await releaseVoice()
   const t = performance.now()
@@ -55,6 +59,12 @@ async function load({ voice: key, config: cfg, model, phonemizerModel }) {
   // on (ort's defaults) each new shape keeps its buffers and the WASM heap only grows: a phone's WebView runs out of memory
   // after a sentence or two and the worker dies. Off, buffers are freed after every run (a little slower, flat memory).
   try {
+    if (cfg.runtime === 'supertonic3') {
+      supertonicRuntime = await createSupertonicRuntime({ ort, buffers, config:cfg.config, indexer:cfg.indexer, styles:cfg.styles })
+      config = cfg; voice = key
+      return { createMs:performance.now() - t }
+    }
+    if (!phonemizer && cfg.phoneme_type !== 'hebrew') phonemizer = await createPhonemizer({ base:phonBaseURL })
     if (cfg.phoneme_type === 'hebrew') hebrewPhonemizer = await createHebrewPhonemizer({ ort, model: phonemizerModel, config: cfg })
     session = await ort.InferenceSession.create(new Uint8Array(model), { executionProviders: ['wasm'], graphOptimizationLevel: 'all', enableCpuMemArena: false, enableMemPattern: false })
   } catch (error) {
@@ -81,7 +91,29 @@ async function runSegment(ids, { rate, speaker }) {
   return pcm
 }
 
-async function synth({ id, text, rate, speaker }) {
+async function synth({ id, text, rate, speaker, lang, style }) {
+  if (supertonicRuntime) {
+    post({ type:'plan', id, counts:[Math.max(1, [...text].length)] })
+    const t = performance.now()
+    const { pcm:raw, sampleRate } = await supertonicRuntime.synthesize(text, { lang, style, rate, isActive:() => !cancelled.has(id) })
+    if (cancelled.has(id)) return
+    if (!(raw instanceof Float32Array) || !raw.every(Number.isFinite) || !(sampleRate > 0)) throw new Error('invalid Supertonic audio')
+    // The SDK deliberately returns no samples when normalization removes all
+    // speakable text (for example an ornament). Keep Piper's short-rest policy.
+    if (!raw.length) {
+      const pcm = silence(sampleRate, 120)
+      post({ type:'chunk', id, index:0, last:true, pcm, sampleRate, ms:performance.now() - t }, [pcm.buffer])
+      await yieldToMessages()
+      return
+    }
+    peakNormalize(raw)
+    const speech = fadeEdges(trimSilence(raw, sampleRate), sampleRate)
+    const rest = 1 / Math.min(3, Math.max(0.5, Number(rate) || 1))
+    const pcm = concat([speech, silence(sampleRate, pauseAfter(text) * rest)])
+    post({ type:'chunk', id, index:0, last:true, pcm, sampleRate, ms:performance.now() - t }, [pcm.buffer])
+    await yieldToMessages()
+    return
+  }
   const sampleRate = config.audio.sample_rate
   const ids = config.phoneme_type === 'hebrew' ? await hebrewPhonemizer.phonemize(text) : await phonemizer.phonemize(text, config.espeak.voice)
   const segments = splitSegments(limitIds(ids, config.num_symbols))
@@ -118,7 +150,7 @@ async function drain() {
     if (cancelled.has(job.id)) { cancelled.delete(job.id); continue }
     current = job.id
     try {
-      if (!session) throw new Error('no voice loaded')
+      if (!session && !supertonicRuntime) throw new Error('no voice loaded')
       await synth(job)
       if (!cancelled.has(job.id)) post({ type: 'end', id: job.id })
     } catch (error) {

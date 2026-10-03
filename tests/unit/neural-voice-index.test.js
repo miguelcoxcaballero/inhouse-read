@@ -26,6 +26,11 @@ describe('the contract (index.js)', () => {
 
   it('every catalogue entry has the contract fields', () => {
     for (const voice of neuralVoices) {
+      if (voice.runtime === 'supertonic3') {
+        expect(voice.id).toBe(`supertonic3:${voice.style}:${voice.lang}`)
+        expect(voice).toMatchObject({ piperId:'supertonic3', lang:expect.stringMatching(/^[a-z]{2}$/), style:expect.stringMatching(/^(F1|M1|F2)$/), sharedPack:true, sizeMB:expect.any(Number) })
+        continue
+      }
       expect(voice.id).toBe(voice.speaker ? `${NEURAL_PREFIX}${voice.piperId}#${voice.speaker}` : NEURAL_PREFIX + voice.piperId)
       expect(voice).toMatchObject({ lang: expect.stringMatching(/^[a-z]{2}-[A-Z]{2}$/), name: expect.any(String), quality: expect.stringMatching(/^(low|medium|high)$/), sizeMB: expect.any(Number), speaker: expect.any(Number) })
     }
@@ -54,8 +59,11 @@ describe('the contract (index.js)', () => {
     expect(source).toMatch(/import\('\.\/engine\.js'\)/)
     for (const file of ['catalog.js', 'audio.js']) {
       const text = readFileSync(new URL(`../../src/js/readers/neural-voice/${file}`, import.meta.url), 'utf8')
-      expect([...text.matchAll(/^import .* from '([^']+)'/gm)]).toEqual([])
+      const imports = [...text.matchAll(/^import .* from '([^']+)'/gm)].map(match => match[1])
+      expect(imports).toEqual(file === 'catalog.js' ? ['./supertonic-catalog.js'] : [])
     }
+    const sharedData=readFileSync(new URL('../../src/js/readers/neural-voice/supertonic-catalog.js',import.meta.url),'utf8')
+    expect([...sharedData.matchAll(/^import .* from '([^']+)'/gm)]).toEqual([])
   })
 
   it('loads the engine on first use: speak() before it is ready is delivered, in order, once it is', async () => {
@@ -100,5 +108,15 @@ describe('the contract (index.js)', () => {
     await engine.preload()
     await flush()
     expect(events).toEqual([])
+  })
+  it('delegates deferred upcoming only after the core is loaded and never queues a stale preview', () => {
+    const engine = new NeuralVoiceEngine()
+    const request = {id:'current',voiceId:CLAUDE,upcoming:['Next page.'],deferAfter:0}
+    expect(engine.extendUpcoming(request)).toBe(false)
+    expect(engine.loading).toBe(null)
+    expect(engine.queue).toEqual([])
+    engine.core = {extendUpcoming:vi.fn(() => true)}
+    expect(engine.extendUpcoming(request)).toBe(true)
+    expect(engine.core.extendUpcoming).toHaveBeenCalledWith(request)
   })
 })

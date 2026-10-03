@@ -27,6 +27,55 @@ function setup(overrides = {}) {
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
 describe('SynthClient', () => {
+  it('transfers the four shared runtime buffers without reading Piper weights or phonemizer', async () => {
+    const buffers=Object.fromEntries(['duration_predictor','text_encoder','vector_estimator','vocoder'].map(key=>[key,new ArrayBuffer(8)]))
+    const {client,worker}=setup({readConfig:vi.fn(async()=>({runtime:'supertonic3',config:{},indexer:[],styles:{F1:{}}})),readRuntimeAssets:vi.fn(async()=>buffers)})
+    try {
+      const ready=client.prepare('supertonic3'); await settle()
+      expect(worker.last('init').message.runtime).toBe('supertonic3')
+      worker.reply({type:'ready',id:worker.last('init').message.id}); await settle()
+      const load=worker.last('load')
+      expect(load.message).toMatchObject({voice:'supertonic3',config:{runtime:'supertonic3'},buffers})
+      expect(load.message.model).toBeUndefined()
+      expect(load.transfer).toEqual(Object.values(buffers))
+      expect(client.readModel).not.toHaveBeenCalled()
+      worker.reply({type:'loaded',id:load.message.id}); await ready
+      client.synth({text:'Hola.',rate:1.25,lang:'es',style:'F1'},{onChunk:vi.fn(),onEnd:vi.fn(),onError:vi.fn()})
+      expect(worker.last('synth').message).toMatchObject({lang:'es',style:'F1',rate:1.25})
+    } finally {client.dispose()}
+  })
+  it('recreates the worker only on Piper/Supertonic family changes, releasing the grown WASM heap', async () => {
+    const workers=[fakeWorker(),fakeWorker(),fakeWorker()]
+    const {client}=setup({createWorker:vi.fn().mockReturnValueOnce(workers[0]).mockReturnValueOnce(workers[1]).mockReturnValueOnce(workers[2]),
+      readConfig:async key=>key==='supertonic3'?{runtime:'supertonic3'}:{audio:{sample_rate:22050}},readRuntimeAssets:async()=>({vocoder:new ArrayBuffer(8)})})
+    const complete=async(key,worker)=>{
+      const promise=client.prepare(key);await settle()
+      worker.reply({type:'ready',id:worker.last('init').message.id});await settle()
+      worker.reply({type:'loaded',id:worker.last('load').message.id});await promise
+    }
+    try {
+      await complete('es_MX-claude-high',workers[0])
+      await complete('supertonic3',workers[1]);expect(workers[0].terminated).toBe(true)
+      const loadedMessages=workers[1].sent.length
+      await client.prepare('supertonic3')
+      client.synth({text:'Hola.',lang:'es',style:'F1'},{onChunk:vi.fn(),onEnd:vi.fn(),onError:vi.fn()}).cancel()
+      client.synth({text:'Hello.',lang:'en',style:'M1'},{onChunk:vi.fn(),onEnd:vi.fn(),onError:vi.fn()}).cancel()
+      expect(workers[1].sent.filter(({message})=>message.type==='load')).toHaveLength(1)
+      expect(workers[1].sent.length).toBeGreaterThan(loadedMessages)
+      expect(workers[1].terminated).toBe(false);expect(client.createWorker).toHaveBeenCalledTimes(2)
+      await complete('nl_NL-pim-medium',workers[2]);expect(workers[1].terminated).toBe(true)
+      expect(client.createWorker).toHaveBeenCalledTimes(3)
+      expect(client.loaded).toBe('nl_NL-pim-medium')
+    } finally {client.dispose()}
+  })
+  it('does not transfer a shared pack that finished reading after disposal', async () => {
+    let finish
+    const {client,worker}=setup({readConfig:async()=>({runtime:'supertonic3'}),readRuntimeAssets:()=>new Promise(resolve=>{finish=resolve})})
+    const preparing=client.prepare('supertonic3'); const rejected=expect(preparing).rejects.toMatchObject({code:'init-failed'})
+    await settle();worker.reply({type:'ready',id:worker.last('init').message.id});await settle()
+    client.dispose();finish({vocoder:new ArrayBuffer(8)});await rejected;await settle()
+    expect(worker.last('load')).toBeUndefined()
+  })
   it('transfers the cached auxiliary pointing model with Hebrew weights', async () => {
     const auxiliary = new ArrayBuffer(12)
     const { client, worker, model } = setup({ readPhonemizerModel:vi.fn(async () => auxiliary) })

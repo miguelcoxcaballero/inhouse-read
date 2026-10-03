@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { resolveCatalogPlant } from './plant-records.js';
-import { plantDimensions } from './plant-dimensions.js';
+import { plantDimensions, POT_SOIL_FRACTION } from './plant-dimensions.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const clamp01 = value => Math.min(1, Math.max(0, value));
@@ -328,7 +328,8 @@ function potProfile(potId) {
 }
 
 function potGeometry(potId, radius, height, soilFraction) {
-  const profile = potProfile(potId), n = profile.length, fluted = potId === 'gradvis';
+  const rawProfile = potProfile(potId), fullHeight = Math.max(...rawProfile.map(([,y]) => y));
+  const profile = rawProfile.map(([r,y]) => [r,y/fullHeight]), n = profile.length, fluted = potId === 'gradvis';
   // `radius` is the pot's real outer radius: its widest point (a rolled rim, or
   // the crest of a rib) reaches exactly that, whatever the profile's own units.
   radius /= Math.max(...profile.map(([r]) => r)) + (fluted ? .018 : 0);
@@ -714,9 +715,10 @@ export function createShelfPlant(entry) {
   const catalogPlant = resolveCatalogPlant(entry);
   const variant = variantFor(catalogPlant?.variant || entry.variant), seed = entry.seed ?? entry.key ?? entry.node?.dataset.objectId ?? variant;
   const potId = getCatalogPot(entry.potId)?.id ?? catalogPlant?.defaultPotId ?? null;
+  const potModelId = getCatalogPot(potId)?.modelId || potId;
   const real = plantDimensions(catalogPlant.id, potId);
   const height = Math.max(1, Number(entry.height) || real.height * PREVIEW_SCALE), unit = height / real.height;
-  // The foliage envelope is the real canopy: the pot below it is the real 12 cm pot.
+  // The canopy and the pot share one mm scale, including the pot's outer rim.
   const width = real.canopy * unit;
   const detailed = Boolean(catalogPlant || potId || ['palm','fern','ivy','zz'].includes(variant));
   const random = randomFor(seed), group = new THREE.Group(), content = new THREE.Group();
@@ -732,11 +734,12 @@ export function createShelfPlant(entry) {
   };
   const own = maps => { for (const texture of Object.values(maps)) textures.add(texture); return maps; };
   const radius = real.potDiameter / 2 * unit, potHeight = real.potHeight * unit;
-  const soilFraction = .9, soilY = potHeight * soilFraction, sink = width * .012, above = height - soilY;
+  const soilFraction = POT_SOIL_FRACTION, soilY = potHeight * soilFraction, sink = width * .012, above = real.foliageHeight * unit;
+  const growthHeight = real.referenceHeight * unit;
   const clays = ['#a97958', '#b18b6c', '#bcad94', '#826d60'];
   const potColor = getPotColor(potId,entry.potColorId);
   const clayColor = potId ? potColor.hex : clays[Math.floor(random() * clays.length)];
-  const finish = POT_FINISHES[potId] ?? { painter:() => terracottaPainter(clayColor, 53), material:{ bumpScale:.4 } };
+  const finish = POT_FINISHES[potModelId] ?? { painter:() => terracottaPainter(clayColor, 53), material:{ bumpScale:.4 } };
   const potMaps = own(surface(`pot:${potId}:${clayColor}:${quality}`, [128 * quality, 256 * quality], true, finish.painter(potColor.hex), refresh));
   // Texels stay roughly square on the outer wall, whatever the pot proportions.
   potMaps.map.repeat.x = potMaps.data.repeat.x = Math.max(1, Math.round(Math.PI * 4 * radius * (RIM - FOOT) / potHeight));
@@ -744,7 +747,7 @@ export function createShelfPlant(entry) {
   const { bumpScale, ...finishOptions } = finish.material;
   const clay = new THREE.MeshPhysicalMaterial({ map:potMaps.map, roughnessMap:potMaps.data, bumpMap:potMaps.data, bumpScale,
     vertexColors:true, roughness:1, metalness:0, clearcoat:0, clearcoatRoughness:.3, ...finishOptions });
-  const pot = potGeometry(potId, radius, potHeight, soilFraction);
+  const pot = potGeometry(potModelId, radius, potHeight, soilFraction);
   mesh(pot.geometry, clay, 'ceramic-pot');
   if (potId === 'muskotblomma') {
     const profile = [[0,0],[1.13,0],[1.17,.025],[1.19,.075],[1.18,.14],[1.155,.172],[1.12,.17],[1.09,.12],[1.07,.07],[.9,.067],[.74,.066],[0,.065]];
@@ -824,9 +827,9 @@ export function createShelfPlant(entry) {
   };
   if (variant === 'cactus') {
     const green = new THREE.MeshStandardMaterial({ color:0xffffff, vertexColors:true, roughness:.8 });
-    const spikes = [], columns = [ {x:0,z:0,length:height * .71,radius:width * .12},
-      {x:-width*.16,z:width*.03,length:height*.47,radius:width*.085},
-      {x:width*.165,z:-width*.055,length:height*.36,radius:width*.083} ];
+    const spikes = [], columns = [ {x:0,z:0,length:growthHeight * .71,radius:width * .12},
+      {x:-width*.16,z:width*.03,length:growthHeight*.47,radius:width*.085},
+      {x:width*.165,z:-width*.055,length:growthHeight*.36,radius:width*.083} ];
     for (let index = 0; index < columns.length; index++) {
       const column = columns[index], bend = (random() - .5) * width * .09, base = soilY - column.length * .06;
       // The column enters the grit at full girth instead of resting on a rounded foot.
@@ -854,7 +857,7 @@ export function createShelfPlant(entry) {
       const angle = i * 2.39996, spread = width * (.045 + (i % 3) * .028);
       const position = new THREE.Vector3(Math.cos(angle) * spread, soilY - sink, Math.sin(angle) * spread);
       const direction = new THREE.Vector3(Math.cos(angle) * (.06 + (i % 3) * .035), 1, Math.sin(angle) * .055);
-      blade(position, direction, height * (i === 0 ? .74 : .50 + random() * .21), width * (catalogPlant ? .29 + random()*.075 : .24 + random() * .055), catalogPlant ? (i%3-1)*.38 : angle * .38,
+      blade(position, direction, growthHeight * (i === 0 ? .74 : .50 + random() * .21), width * (catalogPlant ? .29 + random()*.075 : .24 + random() * .055), catalogPlant ? (i%3-1)*.38 : angle * .38,
         .035 + random() * .03, (random() - .5) * .22, i);
     }
   } else if (variant === 'succulent') {
@@ -873,7 +876,7 @@ export function createShelfPlant(entry) {
       const size = catalogPlant ? .92 + random() * .16 : 1;
       // Each fleshy leaf keeps its concave upper face turned to the sky.
       blade(new THREE.Vector3(Math.cos(angle)*width*.02,crown + (catalogPlant ? tier*leaf*.1 : 0),Math.sin(angle)*width*.02), direction,
-        catalogPlant ? leaf * [1,.92,.8,.62][tier] * size : height * (i < 5 ? .58 : .51),
+        catalogPlant ? leaf * [1,.92,.8,.62][tier] * size : growthHeight * (i < 5 ? .58 : .51),
         catalogPlant ? leaf * [.62,.58,.5,.42][tier] * size : width * (.22 + random()*.035),
         catalogPlant ? 0 : angle,catalogPlant ? .05 : .09,(random()-.5)*.16,i,catalogPlant ? UP : null);
     }
@@ -900,10 +903,10 @@ export function createShelfPlant(entry) {
         for (const side of [-1,1]) {
           const direction = lateral.clone().multiplyScalar(side*.74).add(radial.clone().multiplyScalar(.38));
           direction.y = -.17 - p / pairs * .27;
-          blade(at,direction,height * .225 * taper * size,width * .030 * taper,side*.18,.13,(random()-.5)*.12,index++);
+          blade(at,direction,growthHeight * .225 * taper * size,width * .030 * taper,side*.18,.13,(random()-.5)*.12,index++);
         }
       }
-      blade(curve.getPoint(.90),curve.getTangent(.92),height*.075,width*.026,0,.065,0,index++);
+      blade(curve.getPoint(.90),curve.getTangent(.92),growthHeight*.075,width*.026,0,.065,0,index++);
     }
   } else if (variant === 'fern') {
     // Nephrolepis: a full crown of arching fronds, the young ones upright in
@@ -931,10 +934,10 @@ export function createShelfPlant(entry) {
         for (const hand of [-1,1]) {
           const at = curve.getPointAt(Math.min(1, f + (hand > 0 ? .012 : 0)));
           const direction = side.clone().multiplyScalar(hand * .88).add(tangent.clone().multiplyScalar(.4)); direction.y -= .05;
-          blade(at,direction,height * .105 * taper * (.88 + random() * .24),width * .03 * taper,0,.06,(random()-.5)*.2,index++,sky);
+          blade(at,direction,growthHeight * .105 * taper * (.88 + random() * .24),width * .03 * taper,0,.06,(random()-.5)*.2,index++,sky);
         }
       }
-      blade(curve.getPointAt(.97),curve.getTangentAt(.97),height*.05,width*.02,0,.05,0,index++,sky);
+      blade(curve.getPointAt(.97),curve.getTangentAt(.97),growthHeight*.05,width*.02,0,.05,0,index++,sky);
     }
   } else if (variant === 'zz') {
     let index = 0;
@@ -942,7 +945,7 @@ export function createShelfPlant(entry) {
       const angle = i * 2.39996, radial = new THREE.Vector3(Math.cos(angle),0,Math.sin(angle));
       const sideAxis = new THREE.Vector3(-radial.z,0,radial.x);
       const root = radial.clone().multiplyScalar(width*.065); root.y = soilY - sink;
-      const length = height * (.49 + random() * .22);
+      const length = growthHeight * (.49 + random() * .22);
       const endpoint = root.clone().add(radial.clone().multiplyScalar(width*(.08+random()*.12))).add(new THREE.Vector3(0,length,0));
       const curve = new THREE.CatmullRomCurve3([root,root.clone().lerp(endpoint,.50).add(radial.clone().multiplyScalar(-width*.04)),endpoint]);
       // Zamioculcas petioles swell into a bulbous base at the soil.
@@ -951,21 +954,21 @@ export function createShelfPlant(entry) {
         const f = .28 + pair*.135, at = curve.getPoint(f);
         const axis = sideAxis.clone().multiplyScalar(side*.66).add(radial.clone().multiplyScalar(.24)).add(new THREE.Vector3(0,.61,0));
         const size = (1 - pair*.07) * (.92 + random() * .16);
-        blade(at,axis,height*.17*size,width*.15*size,side*.2,.07,(random()-.5)*.15,index++);
+        blade(at,axis,growthHeight*.17*size,width*.15*size,side*.2,.07,(random()-.5)*.15,index++);
       }
-      blade(curve.getPoint(.94),new THREE.Vector3(radial.x*.3,1,radial.z*.3),height*.12,width*.12,0,.05,0,index++);
+      blade(curve.getPoint(.94),new THREE.Vector3(radial.x*.3,1,radial.z*.3),growthHeight*.12,width*.12,0,.05,0,index++);
     }
   } else if (variant === 'ivy') {
     // Hedera as it grows in a pot: a dense mound of short arching shoots over
     // the soil, longer shoots that lean out and nod over at the tip, and vines
     // spilling over the rim. Leaves alternate on short petioles, broad low on
     // each shoot and smaller towards the growing tip.
-    const unit = Math.min(width * .26, height * .12), sky = new THREE.Vector3(0,.5,.55);
+    const unit = Math.min(width * .26, growthHeight * .12), sky = new THREE.Vector3(0,.5,.55);
     let index = 0, vine = 0;
     const shoot = (angle, path, leaves, { size = 1, from = .14 } = {}) => {
       const radial = new THREE.Vector3(Math.cos(angle),0,Math.sin(angle)), across = new THREE.Vector3(-radial.z,0,radial.x), up = new THREE.Vector3();
       const root = radial.clone().multiplyScalar(width * .04); root.y = soilY - sink;
-      // [out, height, sway]: a gentle zigzag from node to node, as ivy grows.
+      // [out, growthHeight, sway]: a gentle zigzag from node to node, as ivy grows.
       const curve = new THREE.CatmullRomCurve3([root, ...path.map(([r, y, sway = 0]) => radial.clone().multiplyScalar(r).addScaledVector(across, sway).add(up.set(0, y, 0)))]);
       stem(curve,width*.0042,`ivy-vine-${vine++}`,{ tubular:12, radial:4, tone:'ivy', taper:[1.1,.55] });
       for (let j = 0; j < leaves; j++) {
@@ -998,7 +1001,7 @@ export function createShelfPlant(entry) {
     // Vines spill over the rim and hang down the pot.
     for (let i = 0; i < 6; i++) {
       const drop = potHeight * (.1 + random() * .35);
-      shoot(turn + 1.3 + i * 2.39996, [[width * .1, soilY + height * .06], [lip + width * .03, potHeight + height * .03],
+      shoot(turn + 1.3 + i * 2.39996, [[width * .1, soilY + growthHeight * .06], [lip + width * .03, potHeight + growthHeight * .03],
         [lip + width * .07, (potHeight + drop) * .6], [lip + width * (.09 + random() * .06), drop]], 6, { size:.92, from:.22 });
     }
   } else if (variant === 'leafy') {
@@ -1015,23 +1018,23 @@ export function createShelfPlant(entry) {
       { x:.025, z:-.13, y:.28, axis:[-.12,.96,-.18], length:.30, width:.34 }
     ];
     for (let i = 0; i < leaves.length; i++) {
-      const leaf = leaves[i], endpoint = new THREE.Vector3(leaf.x * width, soilY + leaf.y * height, leaf.z * width);
+      const leaf = leaves[i], endpoint = new THREE.Vector3(leaf.x * width, soilY + leaf.y * growthHeight, leaf.z * width);
       const root = new THREE.Vector3(leaf.x * width * .13, soilY - sink, leaf.z * width * .13);
-      const middle = new THREE.Vector3(endpoint.x * .42, soilY + height * (i === 5 || i === 6 ? .26 : leaf.y * .65), endpoint.z * .45);
+      const middle = new THREE.Vector3(endpoint.x * .42, soilY + growthHeight * (i === 5 || i === 6 ? .26 : leaf.y * .65), endpoint.z * .45);
       stem([root, middle, endpoint], width * .008, `petiole-${i}`, { tone:'petiole' });
-      blade(endpoint, new THREE.Vector3(...leaf.axis), height * leaf.length, width * leaf.width,
+      blade(endpoint, new THREE.Vector3(...leaf.axis), growthHeight * leaf.length, width * leaf.width,
         (random() - .5) * .36, .08 + random() * .05, (random() - .5) * .26, i);
     }
   } else {
     const count = variant === 'monstera' ? 5 : 8;
     for (let i = 0; i < count; i++) {
       const angle = i * 2.39996 + .30, spread = width * (.10 + random() * .075);
-      const endpoint = new THREE.Vector3(Math.cos(angle) * spread, soilY + height * (.22 + random() * .14), Math.sin(angle) * spread * .8);
+      const endpoint = new THREE.Vector3(Math.cos(angle) * spread, soilY + growthHeight * (.22 + random() * .14), Math.sin(angle) * spread * .8);
       const root = new THREE.Vector3(Math.cos(angle) * width * .025, soilY - sink, Math.sin(angle) * width * .025);
-      stem([root, new THREE.Vector3(endpoint.x * .34, soilY + height * .13, endpoint.z * .34), endpoint], width * (variant === 'monstera' ? .012 : .008), `petiole-${i}`,
+      stem([root, new THREE.Vector3(endpoint.x * .34, soilY + growthHeight * .13, endpoint.z * .34), endpoint], width * (variant === 'monstera' ? .012 : .008), `petiole-${i}`,
         { tone:'petiole', taper:[1.2,.85] });
       const direction = new THREE.Vector3(Math.cos(angle) * .35, 1, Math.sin(angle) * .18);
-      blade(endpoint, direction, height * (variant === 'monstera' ? .38 : .34) * (.94 + random() * .12), width * (variant === 'monstera' ? .43 : .32),
+      blade(endpoint, direction, growthHeight * (variant === 'monstera' ? .38 : .34) * (.94 + random() * .12), width * (variant === 'monstera' ? .43 : .32),
         Math.sin(angle) * .6, .11 + random() * .045, (random() - .5) * .40, i);
     }
   }

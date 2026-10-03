@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { neuralVoices, voiceUrls, piperPath, recommendedVoice, modelsOf, DEFAULT_VOICE_BASE } from '../../src/js/readers/neural-voice/catalog.js'
+import { neuralVoices, piperVoices, supertonicVoices, voiceUrls, piperPath, recommendedVoice, modelsOf, DEFAULT_VOICE_BASE } from '../../src/js/readers/neural-voice/catalog.js'
+import { SUPERTONIC_BYTES } from '../../src/js/readers/neural-voice/supertonic-catalog.js'
 import { detectLanguage, normalizeNeuralVoice, resolveVoice, languageName, langBase, orderNeuralVoices, recommendedNeuralFor } from '../../src/js/readers/voice-catalog.js'
 
 // The languages added after es/en/fr/de/it/pt/ca: the Piper voice picked for each, and a few sentences of ordinary prose.
@@ -33,10 +34,19 @@ describe('catalogue of the added languages', () => {
       expect(recommendedVoice(language).piperId).toBe(voice)
     }
   })
-  it('lists the Ukrainian model once per speaker (they share one download) and every model is a plain onnx of 60-80 MB (the two high-quality ones about 114 MB)', () => {
+  it('groups speakers by their actual model and reports the compact Piper and shared multilingual download sizes', () => {
     const ukrainian = neuralVoices.filter(v => v.lang === 'uk-UA')
     expect(ukrainian.map(v => [v.id, v.speaker, v.name])).toEqual([['piper:uk_UA-ukrainian_tts-medium', 0, 'Lada'], ['piper:uk_UA-ukrainian_tts-medium#1', 1, 'Mykyta'], ['piper:uk_UA-ukrainian_tts-medium#2', 2, 'Tetiana']])
-    for (const [piperId, voices] of modelsOf(neuralVoices)) { expect(voices[0].sizeMB, piperId).toBeGreaterThanOrEqual(60); expect(voices[0].sizeMB, piperId).toBeLessThanOrEqual(piperId === 'he_IL-saspeech-medium' ? 85 : voices[0].quality === 'high' ? 120 : 80) }
+    for (const [piperId, voices] of modelsOf(piperVoices)) {
+      if(piperId === 'ca_ES-upc_pau-x_low') {expect(voices[0].sizeMB).toBe(28);continue}
+      expect(voices[0].sizeMB, piperId).toBeGreaterThanOrEqual(60)
+      expect(voices[0].sizeMB, piperId).toBeLessThanOrEqual(piperId === 'he_IL-saspeech-medium' ? 85 : voices[0].quality === 'high' ? 120 : 80)
+    }
+    const packs=modelsOf(supertonicVoices)
+    expect(packs.size).toBe(1)
+    expect(packs.get('supertonic3')).toHaveLength(66)
+    expect(supertonicVoices.every(voice=>voice.sizeMB===Math.ceil(SUPERTONIC_BYTES/1e6)&&voice.downloadBytes===SUPERTONIC_BYTES)).toBe(true)
+    expect(piperVoices.filter(voice=>voice.piperId==='no_NO-nvcc-medium').map(voice=>[voice.id,voice.speaker])).toEqual([['piper:no_NO-nvcc-medium#3',3],['piper:no_NO-nvcc-medium#6',6]])
   })
   it('builds the Hugging Face paths of the new voices (Norwegian lives under no/, not nb/)', () => {
     expect(piperPath('no_NO-talesyntese-medium')).toBe('no/no_NO/talesyntese/medium/no_NO-talesyntese-medium')

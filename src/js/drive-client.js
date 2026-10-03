@@ -349,14 +349,19 @@ async function driveFetch(url, options = {}) {
 
 function escapeDriveQuery(value) { return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'") }
 
-async function findOrCreateFolder(name, parentId) {
+async function findFolder(name, parentId) {
   const where = [`name = '${escapeDriveQuery(name)}'`, "mimeType = 'application/vnd.google-apps.folder'", 'trashed = false']
   if (parentId) where.push(`'${parentId}' in parents`)
   const params = new URLSearchParams({
     q: where.join(' and '), spaces: 'drive', fields: 'files(id,name)', pageSize: '100'
   })
   const found = await (await driveFetch(`${DRIVE_FILES_URL}?${params}`)).json()
-  if (found.files?.length) return found.files[0].id
+  return found.files?.[0]?.id || null
+}
+
+async function findOrCreateFolder(name, parentId) {
+  const found = await findFolder(name, parentId)
+  if (found) return found
   const created = await (await driveFetch(DRIVE_FILES_URL, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', ...(parentId ? { parents: [parentId] } : {}) })
@@ -388,7 +393,9 @@ async function listFolder(folderId, { pageToken, pageSize = 100, fields = 'id,na
 }
 
 export async function listDriveBooks(options = {}) {
-  return listFolder(await getOrCreateReadFolder(), options)
+  // Reading an empty account must not create folders or upload any files.
+  const folder = await findFolder(FOLDER_NAME)
+  return folder ? listFolder(folder, options) : { files:[] }
 }
 
 export async function listAllDriveBooks() {
@@ -403,8 +410,10 @@ export async function listAllDriveBooks() {
 }
 
 export async function getDriveProfile() {
+  const generation = authGeneration
   const params = new URLSearchParams({ fields: 'user(displayName,emailAddress,photoLink,permissionId)' })
   const user = (await (await driveFetch(`${ABOUT_URL}?${params}`)).json()).user
+  if (generation !== authGeneration) throw new Error('La conexión de Google ha cambiado.')
   if (!user) throw new Error('Google no devolvió los datos de la cuenta.')
   const profile = {
     id: user.permissionId || user.emailAddress || '',
@@ -457,7 +466,10 @@ export async function uploadDriveFile(file, { driveFileId, name = file.name, par
 function stateName(driveFileId) { return `progress-${driveFileId}.json` }
 
 export async function readDriveProgress(driveFileId) {
-  const folderId = await getOrCreateStateFolder()
+  const readFolder = await findFolder(FOLDER_NAME)
+  if (!readFolder) return null
+  const folderId = await findFolder(STATE_FOLDER_NAME, readFolder)
+  if (!folderId) return null
   const params = new URLSearchParams({
     q: `'${folderId}' in parents and name = '${escapeDriveQuery(stateName(driveFileId))}' and trashed = false`,
     fields: 'files(id,name,modifiedTime)', spaces: 'drive', pageSize: '100'

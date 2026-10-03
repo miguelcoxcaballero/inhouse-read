@@ -17,6 +17,7 @@ import { READING_THEMES } from './reading-preferences.js'
 import { compositePageSnapshots, renderedPageFilter, settlePageLayout, snapshotDOMPage } from './page-snapshot.js'
 import { mapSpeechText } from './speech-map.js'
 import { speechPageBreaks } from './speech-page-breaks.js'
+import { measureBookLength } from '../book-length.js'
 import { SPEECH_HIGHLIGHT, clearSpeechRange, installSpeechStyle, paintSpeechRange, speechOverlayColor } from './speech-highlight.js'
 
 // foliate marca las coincidencias de búsqueda con Overlayer.outline (un
@@ -57,8 +58,10 @@ export class FoliateReader {
   #followTicket = 0
   #followTurn = Promise.resolve()
   #pageTurn = Promise.resolve()
+  #lengthMetadata = null
 
   async open(container, file, { onRelocate, onToggleChrome, onUserNavigation, onFollowLink } = {}) {
+    this.#lengthMetadata = null
     this.#pageTurn = Promise.resolve()
     this.#container = container
     this.#onRelocate = onRelocate ?? (() => {})
@@ -192,6 +195,13 @@ export class FoliateReader {
     })
     this.#pageTurn = turn.catch(() => {})
     return turn
+  }
+
+  /** Cached physical-length metadata, counted outside the visible paginator. */
+  getLengthMetadata() {
+    const view = this.#view, book = view?.book
+    if (!book) return Promise.resolve(null)
+    return this.#lengthMetadata ??= measureBookLength(book, { isActive:() => view === this.#view && book === view.book })
   }
 
   async next() { await this.#turnPage('next') }
@@ -400,6 +410,7 @@ export class FoliateReader {
   }
 
   close() {
+    this.#lengthMetadata = null
     this.#resizeObserver?.disconnect()
     this.#resizeObserver = null
     clearTimeout(this.#resizeTimer)

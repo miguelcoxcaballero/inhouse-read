@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import { loadavg } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { FIXTURES, haveVoice, hfPath, startHuggingFaceMirror } from './helpers/hf-mirror.mjs'
+import { waitForOfflineShell, localBookBytes, reopenOfflineBook, coldOfflinePage } from './helpers/offline-shell.mjs'
 
 const EPUB = 'tests/e2e/fixtures/lectura-es.epub'
 const PDF = 'tests/e2e/fixtures/lectura-es.pdf'
@@ -218,6 +219,53 @@ test('Argentina: Daniela starts cold and continues with real natural audio at ra
     }
     expect(errors).toEqual([])
   } finally { await context.close(); await mirror.close() }
+})
+
+test('cold offline app: locally stored book and downloaded Piper start with a new real synthesis worker',async({browser,baseURL},testInfo)=>{
+  test.setTimeout(240_000)
+  if(!haveVoice(DAVEFX))throw new Error(`Required Davefx fixture missing: ${DAVEFX} in ${FIXTURES}`)
+  const mirror=await startHuggingFaceMirror({voices:[DAVEFX],sliceMs:0})
+  const context=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'})
+  await context.addInitScript(instrument,{base:mirror.base})
+  await context.addInitScript(()=>{
+    const RealWorker=window.Worker;window.__coldWorkerUrls=[]
+    window.Worker=new Proxy(RealWorker,{construct(target,args){window.__coldWorkerUrls.push(String(args[0]));return Reflect.construct(target,args)}})
+  })
+  let page=await context.newPage()
+  try {
+    await open(page,PDF);const shell=await waitForOfflineShell(page)
+    await openAudio(page)
+    await row(page,DAVEFX_ID).locator('[data-neural-action="install"]').click()
+    await expect(row(page,DAVEFX_ID)).toContainText('Instalada',SLOW)
+    await pickVoice(page,DAVEFX_ID)
+    const book=await localBookBytes(page,'lectura-es.pdf')
+    expect(book?.bytes).toBeGreaterThan(0)
+    // Never play in the original document: the assertion is first speech in a
+    // newly created document/worker with *all* network access disabled.
+    expect(await page.evaluate(()=>window.__neu.audio.length)).toBe(0)
+    const mirrorHits=mirror.hits.length
+    const cold=await coldOfflinePage(context,page,new URL(`?t=${Date.now()}`,baseURL).href);page=cold.page
+    await reopenOfflineBook(page,book.id,'pdf')
+    expect(await localBookBytes(page,book.name)).toEqual(book)
+    await openAudio(page);await pickVoice(page,DAVEFX_ID);await spyOnEngine(page)
+    await closePanel(page)
+    await page.getByRole('button',{name:'Reproducir',exact:true}).click()
+    await expect.poll(()=>starts(page),SLOW).not.toHaveLength(0)
+    await expect.poll(()=>starts(page).then(events=>events[0]?.highlight),SLOW).toBeTruthy()
+    const audio=await expectCleanAudio(page,'cold offline Piper')
+    expect(await systemSpoken(page)).toBe(0)
+    expect(mirror.hits.length).toBe(mirrorHits)
+    const workerUrls=await page.evaluate(()=>window.__coldWorkerUrls)
+    expect(workerUrls.some(url=>/\/assets\/worker-[\w-]+\.js/.test(url))).toBe(true)
+    const runtimeResponses=cold.evidence.responses.filter(response=>/\/assets\/(worker|index|engine)-|\/neural-voice\/(ort|phon)\//.test(response.url))
+    for(const resource of ['ort.wasm.min.mjs','ort-wasm-simd-threaded.wasm','piper_phonemize.mjs','piper_phonemize.wasm','piper_phonemize.data'])
+      expect(runtimeResponses.some(response=>response.url.includes(resource)),`offline runtime ${resource}`).toBe(true)
+    expect(runtimeResponses.every(response=>response.serviceWorker)).toBe(true)
+    expect(cold.evidence.errors).toEqual([])
+    numbers.coldOffline={shell,book,workerUrls,audio,starts:await starts(page),engine:await engineStats(page),runtimeResponses,deviceCalls:0}
+    await testInfo.attach('cold-offline-piper.json',{body:JSON.stringify(numbers.coldOffline,null,2),contentType:'application/json'})
+    await page.getByRole('button',{name:'Detener',exact:true}).click()
+  } finally {await context.close();await mirror.close()}
 })
 
 test.describe('natural voices, end to end (real picker, download, engine and audio)', () => {

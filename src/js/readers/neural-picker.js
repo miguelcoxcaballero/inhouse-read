@@ -166,7 +166,14 @@ export class NeuralVoicePicker {
     const text = element('div', 'reading-neural-voice__text'), title = element('span', 'reading-neural-voice__name', voice.name)
     if (voice.recommended) title.append(' ', element('small', 'reading-neural-voice__badge', 'Recomendada'))
     const detail = [languageName(voice.lang), name === 'installed' ? 'Instalada' : `${Math.round(voice.sizeMB)} MB`]
+    if (voice.sharedPack) detail.push('Paquete compartido · todos sus idiomas y voces')
     text.append(title, element('span', 'reading-neural-voice__meta', detail.join(' · ')))
+    if (voice.licenseUrl) {
+      const license = element('a', 'reading-neural-voice__license', `Licencia ${voice.licenseName || 'OpenRAIL-M'}`)
+      license.href = new URL(voice.licenseUrl, new URL(import.meta.env?.BASE_URL || '/', location.href)).href
+      license.target = '_blank'; license.rel = 'noopener noreferrer'
+      text.append(license)
+    }
     const actions = element('div', 'reading-neural-voice__actions')
     const where = `${voice.name}, ${languageName(voice.lang)}`
     if (name === 'idle') actions.append(button('Descargar', 'install', voice.id, '', `Descargar la voz ${where} (${Math.round(voice.sizeMB)} MB)`))
@@ -175,7 +182,7 @@ export class NeuralVoicePicker {
     else {
       const use = button(selected ? 'En uso' : 'Usar', 'use', voice.id, selected ? 'is-selected' : '', `${selected ? 'Voz en uso' : 'Usar la voz'} ${where}`)
       use.setAttribute('aria-pressed', String(selected))
-      actions.append(use, button('Quitar', 'remove', voice.id, 'is-quiet', `Quitar la voz ${where} del dispositivo`))
+      actions.append(use, button('Quitar', 'remove', voice.id, 'is-quiet', voice.sharedPack ? `Quitar el paquete compartido Supertonic del dispositivo` : `Quitar la voz ${where} del dispositivo`))
     }
     item.append(text, actions)
     if (name === 'downloading') item.append(progress(`Descargando ${voice.name}`, download, voice))
@@ -240,13 +247,15 @@ export class NeuralVoicePicker {
   async remove(id) {
     const engine = neuralEngine(), name = this.voiceName(id)
     if (!engine) return
+    const list = neuralVoiceList(), voice = list.find(voice => voice.id === id)
+    const removed = voice?.sharedPack ? list.filter(other => other.modelKey === voice.modelKey).map(other => other.id) : [id]
     // The saved choice goes first, then the reading in progress is told the voice is gone (it moves on to another voice at once,
     // also when the voice was only the automatic pick), so nothing keeps using it while its files disappear.
-    if (this.host.preferences.voice === id) this.host.setPreference('voice', '', { restart:false })
-    this.host.voice?.voiceRemoved?.(id)
+    if (removed.includes(this.host.preferences.voice)) this.host.setPreference('voice', '', { restart:false })
+    for (const removedId of removed) this.host.voice?.voiceRemoved?.(removedId)
     try { await engine.remove(id) } catch { /* nothing else to clean up */ }
     this.errors.delete(id)
-    this.announce(`Voz ${name} quitada.`)
+    this.announce(voice?.sharedPack ? 'Paquete compartido Supertonic quitado.' : `Voz ${name} quitada.`)
     this.host.populateVoices()
   }
 

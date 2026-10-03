@@ -6,7 +6,7 @@ import { createShelfLampLighting } from './shelf-lamp-lighting.js';
 
 /** The actual shelf lamp, with its own warm light and reflected studio lighting. */
 export function createLampCatalogPreview(host) {
-  let renderer, environment, model, observer, fixture, target, filamentLighting, frame = 0, disposed = false, selected;
+  let renderer, environment, model, observer, fixture, target, filamentLighting, frame = 0, disposed = false, active = true, selected;
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-160,160,180,-180,1,5000);
   const display = new THREE.Group(); scene.add(display);
@@ -18,7 +18,7 @@ export function createLampCatalogPreview(host) {
   };
   function render() {
     frame = 0;
-    if (disposed || !renderer || !model) return;
+    if (disposed || !active || !renderer || !model) return;
     const rect = host.getBoundingClientRect();
     const width = Math.max(1,rect.width), height = Math.max(1,rect.height), aspect = width / height;
     const half = Math.max(size.y / 2,size.x / (2 * aspect)) * 1.13;
@@ -26,9 +26,10 @@ export function createLampCatalogPreview(host) {
     camera.top = half; camera.bottom = -half; camera.updateProjectionMatrix();
     filamentLighting?.update([{ kind:'lamp',key:'catalog-filaments',model,width:size.x }]);
     renderer.setSize(width,height,false); renderer.render(scene,camera);
+    host.dataset.renderCount = String(Number(host.dataset.renderCount || 0) + 1);
   }
   function invalidate() {
-    if (!disposed && !frame) frame = requestAnimationFrame(render);
+    if (!disposed && active && !frame) frame = requestAnimationFrame(render);
   }
   function removeModel() {
     filamentLighting?.dispose(); filamentLighting = null;
@@ -78,6 +79,13 @@ export function createLampCatalogPreview(host) {
     renderer?.dispose(); renderer = null; environment?.dispose(); environment = null; unavailable();
   }
   return {
+    setActive(value) {
+      if (disposed) return;
+      active = Boolean(value);
+      host.dataset.previewActive = String(active);
+      if (!active) { if (frame) cancelAnimationFrame(frame); frame = 0; }
+      else invalidate();
+    },
     update({ lampId }) {
       const lamp = getCatalogLamp(lampId);
       if (!lamp) return;

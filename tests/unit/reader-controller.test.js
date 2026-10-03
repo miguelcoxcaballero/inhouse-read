@@ -4,6 +4,7 @@ const pdfOpen = vi.fn(async () => {})
 const foliateOpen = vi.fn(async () => {})
 const pdfSnapshot = vi.fn(async () => null)
 const foliateSnapshot = vi.fn(async () => null)
+const foliateLength = vi.fn(async () => null)
 
 vi.mock('../../src/js/readers/pdf-reader.js', () => ({
   PdfReader: class {
@@ -24,6 +25,7 @@ vi.mock('../../src/js/readers/foliate-reader.js', () => ({
     goToFraction = vi.fn()
     close = vi.fn()
     getPageSnapshot = foliateSnapshot
+    getLengthMetadata = foliateLength
     getSpeechSource = vi.fn(async () => ({ text:'Hello.', start:0 }))
   }
 }))
@@ -40,6 +42,7 @@ describe('ReaderController', () => {
     foliateOpen.mockClear()
     pdfSnapshot.mockReset()
     foliateSnapshot.mockReset()
+    foliateLength.mockReset()
   })
 
   it('enruta un PDF al PdfReader', async () => {
@@ -120,5 +123,27 @@ describe('ReaderController', () => {
     expect(await controller.getSpeechSource()).toEqual({ text:'Hello.', start:0 })
     await controller.open(document.createElement('div'), new File(['%PDF-1.4'], 'a.pdf'))
     expect(await controller.getSpeechSource()).toBeNull()
+  })
+
+  it('forwards length metadata without calling an EPUB page count a real page count', async () => {
+    const controller = new ReaderController()
+    await controller.open(document.createElement('div'), new File(['PK\x03\x04'], 'a.epub'))
+    foliateLength.mockResolvedValue({ wordCount:180000, estimatedPageCount:600, lengthSource:'text' })
+    expect(await controller.getLengthMetadata()).toEqual({ wordCount:180000, estimatedPageCount:600, lengthSource:'text' })
+    expect(controller.pageCount).toBeNull()
+    await controller.open(document.createElement('div'), new File(['%PDF-1.4'], 'a.pdf'))
+    expect(await controller.getLengthMetadata()).toEqual({ pageCount:10, lengthSource:'pages' })
+  })
+
+  it('discards a background length count after its reader session closes', async () => {
+    const controller = new ReaderController()
+    expect(await controller.getLengthMetadata()).toBeNull()
+    await controller.open(document.createElement('div'), new File(['PK\x03\x04'], 'a.epub'))
+    let finish
+    foliateLength.mockImplementation(() => new Promise(resolve => { finish=resolve }))
+    const count = controller.getLengthMetadata()
+    controller.close()
+    finish({wordCount:90000,estimatedPageCount:300,lengthSource:'text'})
+    expect(await count).toBeNull()
   })
 })

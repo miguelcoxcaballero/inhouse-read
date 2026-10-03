@@ -18,7 +18,7 @@ const GOOGLE_ID = /-x-[a-z0-9]{2,5}-(?:local|network)\b/i
 
 /** Same value as NEURAL_PREFIX in neural-voice/index.js (a test keeps them equal); repeated here so this file stays pure and the engine stays lazily loaded. */
 export const NEURAL_ID_PREFIX = 'piper:'
-export const isNeuralId = id => typeof id === 'string' && id.startsWith(NEURAL_ID_PREFIX)
+export const isNeuralId = id => typeof id === 'string' && (id.startsWith(NEURAL_ID_PREFIX) || /^supertonic3:(F1|M1|F2):[a-z]{2}$/.test(id))
 // Above any system voice (Android tops out near 650 with every marker), so an installed neural voice is the default pick.
 const NEURAL_SCORE = 900
 
@@ -80,7 +80,8 @@ export function normalizeNeuralVoice(entry, installed = []) {
   const have = installed instanceof Set ? installed : new Set(installed || [])
   return { id:entry.id, name:String(entry.name || entry.piperId || entry.id), lang, base:langBase(lang), region:langRegion(lang), quality:null, latency:null, network:false,
     installed:have.has(entry.id), features:[], isDefault:false, native:false, label:'',
-    neural:true, tier:entry.quality === 'high' ? 'high' : 'medium', sizeMB:Number(entry.sizeMB) || 0, speaker:Number(entry.speaker) || 0, recommended:entry.recommended === true }
+    neural:true, tier:entry.quality === 'high' ? 'high' : 'medium', sizeMB:Number(entry.sizeMB) || 0, speaker:Number(entry.speaker) || 0, recommended:entry.recommended === true,
+    sharedPack:entry.sharedPack === true, modelKey:entry.modelKey || entry.piperId || entry.id, runtime:entry.runtime, licenseUrl:entry.licenseUrl, licenseName:entry.licenseName }
 }
 
 export const isNatural = voice => voice.neural === true || NEURAL.test(`${voice.id} ${voice.name}`)

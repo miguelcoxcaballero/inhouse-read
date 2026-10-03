@@ -4,6 +4,19 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.15
+
+- Arranque sin conexión después de una primera carga completa con internet: la app guarda su interfaz y los motores del lector. Los libros y las voces descargadas se conservan en sus almacenes locales; no hace falta mantener una pestaña abierta.
+- Cada libro importado conserva sus bytes originales y su progreso en este dispositivo. La importación no exige Google ni una subida: desde la portada puedes pulsar **Subir a Google Drive** y, una vez guardado, aparece **Guardado en Google Drive**. Los libros vinculados siguen sincronizando el progreso en segundo plano al cerrar.
+- Los libros encontrados en Drive descargan su copia local en segundo plano. Un libro ya guardado abre desde esa copia sin esperar al progreso remoto.
+- El grosor depende de las páginas reales o, para libros sin páginas fijas, de una estimación de su longitud textual. Se conserva la proporción de la portada. Las plantas compatibles pueden usar la nueva MUSKOT compacta de Ø12 × 11 cm exteriores; las macetas ya elegidas mantienen su talla.
+- Los temas del lector conservan los colores originales de las fotos y las ilustraciones. Cambiar el tema de un PDF reutiliza el renderizado y su capa de texto.
+- El catálogo pausa los modelos fuera de pantalla y conserva sus vistas al cambiar de sección. La devolución del libro reutiliza el modelo de apertura y actualiza el marcapáginas.
+- El audiolibro prepara la página siguiente del PDF y sus primeros fragmentos durante la lectura actual; la página cambia al comienzo de su audio.
+- Voces gratuitas de descarga manual: 39 opciones Piper de 35 modelos y tres perfiles Supertonic en 22 idiomas compatibles, que añaden 66 combinaciones. Son **105 opciones de idioma y voz**, no 105 personas diferentes. Piper sigue siendo la opción predeterminada. Supertonic comparte un paquete de 208.164.809 bytes (unos 209 MB en el selector), con licencia OpenRAIL-M, que permite sintetizar localmente tras descargarlo.
+
+[Implementación, licencias, límites por idioma y comprobaciones locales de 1.7.15](docs/overnight-polish-1715.md).
+
 ### Actualización web · 1.7.14
 
 - El audiolibro prepara la página siguiente del PDF con el mismo documento y motor de renderizado. Mantiene visible la página anterior mientras sintetiza y muestra la continuación al comenzar su audio, con el resaltado ya alineado; las preparaciones pendientes se descartan al navegar o cerrar.
@@ -371,13 +384,13 @@ npm test             # ambos
 
 ## Carpeta local persistente
 
-Los bytes de los libros importados se guardan en IndexedDB para reabrirlos sin tener que volver a elegir el archivo. Los libros importados antes de v1.0.5 necesitan una nueva importación para disponer de esa copia. En Chrome/Edge de escritorio también se puede guardar una copia en una carpeta elegida mediante File System Access API.
+Los bytes originales de cada libro importado se guardan en IndexedDB antes de dar la importación por terminada. No hace falta elegir una carpeta ni conectar Google. Los libros antiguos con una copia en una carpeta local autorizada se recuperan desde allí; cuando no existe ninguna copia accesible, deben importarse de nuevo. Al conectar Drive, los libros descubiertos descargan su copia local en segundo plano. El progreso se guarda primero en este dispositivo.
 
 **Limitación real**: `showDirectoryPicker` solo está disponible en navegadores Chromium de escritorio. En móvil, Safari y el APK, la copia de IndexedDB permite reabrir el libro mientras el almacenamiento del navegador no se borre y haya cuota suficiente.
 
 ## Google Drive
 
-La versión web utiliza Google Identity Services con el mismo cliente web de Inhouse Notes. A partir del APK v1.0.13, Android usa el mismo flujo de Notes: Custom Tab, código de autorización con PKCE, callback nativo y renovación de sesión. El cliente OAuth Android de Read debe estar registrado en el proyecto Google `inhouse-notes` para el paquete `com.inhousesoftware.read` y el SHA-1 del certificado de firma. Cada app conserva su propia sesión. Los libros se guardan en la carpeta `inhouse read` y la posición de lectura en archivos JSON de la subcarpeta `.inhouse-read-state`. La biblioteca descubre libros de otros dispositivos, sube los libros locales pendientes y permite descargar una copia para leer sin conexión. La foto de la cuenta aparece arriba a la derecha y su menú permite sincronizar, cambiar el tema y cerrar sesión.
+La versión web utiliza Google Identity Services con el mismo cliente web de Inhouse Notes. A partir del APK v1.0.13, Android usa el mismo flujo de Notes: Custom Tab, código de autorización con PKCE, callback nativo y renovación de sesión. El cliente OAuth Android de Read debe estar registrado en el proyecto Google `inhouse-notes` para el paquete `com.inhousesoftware.read` y el SHA-1 del certificado de firma. Cada app conserva su propia sesión. Con una cuenta conectada, **Subir a Google Drive** en la portada guarda el libro en la carpeta `inhouse read`; el estado y la posición de lectura se guardan en JSON de `.inhouse-read-state`. La biblioteca descubre libros de otros dispositivos y guarda su copia local, pero iniciar sesión o importar un archivo no sube automáticamente los libros locales nuevos. La foto de la cuenta aparece arriba a la derecha y su menú permite sincronizar, cambiar el tema y cerrar sesión.
 
 ## Despliegue (GitHub Pages)
 

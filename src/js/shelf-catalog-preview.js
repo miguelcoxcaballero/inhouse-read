@@ -9,7 +9,7 @@ const WALNUT_SURFACE = new URL('../assets/library/walnut-surface.webp',import.me
 
 /** The same cabinet geometry as the library, lit and rendered only on demand. */
 export function createShelfCatalogPreview(host) {
-  let renderer, environment, model, observer, hemisphere, key, fill, frame = 0, disposed = false, selected;
+  let renderer, environment, model, observer, hemisphere, key, fill, frame = 0, disposed = false, active = true, selected;
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-400,400,640,-640,1,5000);
   camera.position.set(0,0,2500); camera.lookAt(0,0,0);
@@ -19,7 +19,7 @@ export function createShelfCatalogPreview(host) {
   };
   function render() {
     frame = 0;
-    if (disposed || !renderer || !model) return;
+    if (disposed || !active || !renderer || !model) return;
     const rect = host.getBoundingClientRect();
     const width = Math.max(1,rect.width), height = Math.max(1,rect.height), aspect = width / height;
     const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
@@ -27,9 +27,10 @@ export function createShelfCatalogPreview(host) {
     camera.left = -half * aspect; camera.right = half * aspect;
     camera.top = half; camera.bottom = -half; camera.updateProjectionMatrix();
     renderer.setSize(width,height,false); renderer.render(scene,camera);
+    host.dataset.renderCount = String(Number(host.dataset.renderCount || 0) + 1);
   }
   function invalidate() {
-    if (!disposed && !frame) frame = requestAnimationFrame(render);
+    if (!disposed && active && !frame) frame = requestAnimationFrame(render);
   }
   function removeModel() {
     if (!model) return;
@@ -85,6 +86,13 @@ export function createShelfCatalogPreview(host) {
     renderer?.dispose(); renderer = null; environment?.dispose(); environment = null; unavailable();
   }
   return {
+    setActive(value) {
+      if (disposed) return;
+      active = Boolean(value);
+      host.dataset.previewActive = String(active);
+      if (!active) { if (frame) cancelAnimationFrame(frame); frame = 0; }
+      else invalidate();
+    },
     update({ shelfType }) {
       const type = normalizeShelfType(shelfType);
       host.dataset.shelfType = type;

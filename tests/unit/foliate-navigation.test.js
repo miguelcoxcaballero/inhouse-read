@@ -27,6 +27,28 @@ afterEach(() => {
 })
 
 describe('EPUB page turn ordering', () => {
+  it('caches the complete book length without turning pages or reloading sections', async () => {
+    const createDocument = vi.fn(async () => new DOMParser().parseFromString('<p>One two three.</p>', 'text/html'))
+    view.book = { sections:[{createDocument}] }
+    const first = reader.getLengthMetadata(), second = reader.getLengthMetadata()
+    expect(first).toBe(second)
+    await vi.runAllTimersAsync()
+    expect(await first).toEqual({wordCount:3,estimatedPageCount:1,lengthSource:'text'})
+    expect(createDocument).toHaveBeenCalledOnce()
+    expect(reader.getLengthMetadata()).toBe(first)
+  })
+
+  it('cancels a length scan on close without measuring the next chapter', async () => {
+    let finish
+    const next = vi.fn(async () => new DOMParser().parseFromString('<p>Late</p>', 'text/html'))
+    view.book = { sections:[{createDocument:() => new Promise(resolve => {finish=resolve})},{createDocument:next}] }
+    const pending=reader.getLengthMetadata()
+    reader.close()
+    finish(new DOMParser().parseFromString('<p>Old book</p>', 'text/html'))
+    expect(await pending).toBeNull()
+    expect(next).not.toHaveBeenCalled()
+  })
+
   it.each([100, 300])('preserves two advances and a return while the paginator holds its %i ms lock', async delay => {
     // Foliate updates its offset before releasing #locked. Further next/prev
     // calls return without moving, including a reduced-motion page already drawn.

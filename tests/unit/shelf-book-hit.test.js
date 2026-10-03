@@ -106,7 +106,8 @@ describe('padTapRect and nearestTapTarget', () => {
 
 describe('every real-scale book can be tapped', () => {
   it('hits each of 30 books of a 390 px shelf at its own centre, with a tap area of at least 16 px', () => {
-    const shelves = layoutShelves(library(30), { shelfWidth:390, padding:16, gap:3, plantEvery:Infinity, maxTailPlants:0,
+    const books = library(30).map((book, index) => ({ ...book, pageCount:[100, 300, 600][index % 3] }));
+    const shelves = layoutShelves(books, { shelfWidth:390, padding:16, gap:3, plantEvery:Infinity, maxTailPlants:0,
       spine:bookSpineOptions(390), displayWidthFor:(_book, style) => Math.max(style.width, minimumBookCellWidth(390)) });
     const cells = shelves.flatMap((row, rowIndex) => {
       let x = 16;
@@ -114,6 +115,7 @@ describe('every real-scale book can be tapped', () => {
     });
     expect(cells).toHaveLength(30);
     expect(Math.min(...cells.map(cell => cell.thickness))).toBeLessThan(tapWidth); // thin books really are thinner than a tap
+    expect(Math.max(...cells.map(cell => cell.thickness))).toBeGreaterThan(tapWidth); // longer books keep their real width
     const entries = mount(cells);
     const boxes = entries.map(entry => box(entry.node));
     entries.forEach((entry, index) => {
