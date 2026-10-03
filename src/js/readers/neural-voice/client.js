@@ -9,8 +9,8 @@ export class SynthClient {
   /**
    * @param {{createWorker:()=>Worker, ortBase:string, phonBase:string, readModel:(piperId:string)=>Promise<ArrayBuffer>, readConfig:(piperId:string)=>Promise<object>}} deps
    */
-  constructor({ createWorker, ortBase, phonBase, readModel, readConfig, readPhonemizerModel = async () => null, readRuntimeAssets = async () => null }) {
-    Object.assign(this, { createWorker, ortBase, phonBase, readModel, readConfig, readPhonemizerModel, readRuntimeAssets })
+  constructor({ createWorker, ortBase, phonBase, readModel, readConfig, readPhonemizerModel = async () => null, readRuntimeAssets = async () => null, onStage = null }) {
+    Object.assign(this, { createWorker, ortBase, phonBase, readModel, readConfig, readPhonemizerModel, readRuntimeAssets, onStage })
     this.worker = null
     this.seq = 0
     this.calls = new Map()  // id -> {resolve, reject} for init/load/free
@@ -38,6 +38,11 @@ export class SynthClient {
     for (const job of jobs) job.onError(error)
   }
   #message(m) {
+    if (m.type === 'stage') {
+      if (![1,2,3].includes(m.domain) || !Number.isInteger(m.stage) || m.stage < 1 || m.stage > 7 || !Number.isSafeInteger(m.id) || !Number.isInteger(m.part) || m.part < 0) return
+      try { this.onStage?.(m.domain, m.stage, m.id, m.part) } catch { /* passive diagnostics must never settle a synth job */ }
+      return
+    }
     const call = this.calls.get(m.id)
     if (call && m.type !== 'error') { this.calls.delete(m.id); call.resolve(m); return }
     if (call) { this.calls.delete(m.id); call.reject(clientError('init-failed', m.error)); return }
@@ -92,7 +97,7 @@ export class SynthClient {
     }
     this.#spawn()
     const worker = this.worker
-    this.ready ||= this.#call({ type: 'init', ortBase: this.ortBase, phonBase: this.phonBase, ...(familyOf(piperId) === 'supertonic3' ? { runtime:'supertonic3' } : {}) })
+    this.ready ||= this.#call({ type: 'init', ortBase: this.ortBase, phonBase: this.phonBase, ...(this.onStage ? {diagnostics:true} : {}), ...(familyOf(piperId) === 'supertonic3' ? { runtime:'supertonic3' } : {}) })
     // Reading the model out of Cache Storage does not need the worker: do it while the worker starts.
     const reading = this.loaded === piperId ? null : this.readConfig(piperId).then(async config => {
       if (config.runtime === 'supertonic3') return { config, buffers:await this.readRuntimeAssets(piperId) }

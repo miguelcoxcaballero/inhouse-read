@@ -1,4 +1,16 @@
-# Verificación del WIP — web 1.7.33 publicada; 1.7.34 en preparación; Android 1.1.4 pendiente
+# Verificación del WIP — web 1.7.34 publicada; 1.7.35 en preparación; Android 1.1.4 pendiente
+
+## Cambios de 1.7.35 en preparación
+
+El fonemizador carga una vez su código WASM y el paquete de datos, compila una vez y crea una instancia y un sistema de archivos nuevos cada 40 llamadas. Los datos maestros se conservan inmutables; cada filesystem recibe su propia copia. Pasan 51 focales en siete archivos y un caso con espeak WASM real: 161 llamadas, cinco heaps y tres idiomas con IDs constantes. Tras las primeras 40 llamadas se desconecta la red y no hay refetch de WASM ni datos. El primer ensayo focal conserva 28 aprobados y un fallo del nuevo doble de respuesta vacía: reutilizaba un mismo Response en dos lecturas; se corrige ese doble para entregar cuerpos distintos.
+
+Los recibos nativos sólo registran fases numéricas en los awaits originales del worker, cuando el puente diagnóstico está presente. No incorporan texto, timers, polling, evaluaciones adicionales ni cambios de reproducción. La descarga repetida es una dependencia eliminada; el registro anterior no prueba que sea la causa del fallo Android. Pasan **2.594 unitarias en 164 archivos**, build final y **75 verificaciones Python**. El caso real del fonemizador y las 51 focales conservan resultados propios; las pruebas finales con modelos reales, CI, publicación y captura Android siguen separadas.
+
+## Verificación de 1.7.34
+
+Fuente `3850274e7bfbe639dd1718bd1a8ecffecd742427`, Pages `5430b1f64794b502da8c424883bfd91a3a4311a5`. Pasan 2.584 unitarias en 162 archivos, certificado `dfc1d9de0805f58af78fe6f14827d4c516f4c8c6db3ce1c7e9c73492a98f06f1`. Coinciden por HTTP sus 22 módulos y 43 recursos offline; artefacto `069cc291f4787efc0e591556fab06e51af657968b86c8bd25c8e1d65b0fc6895`. Cinco casos públicos pasan sin omisiones ni reintentos, con 109 cuerpos HTTP y cuatro capturas revisadas; certificado `8d461555b44ae3dcb30f0c16d8171000a985907740cd9523dbf718df61160c39`. El primer pin rechazó HTML anterior durante la propagación y conserva sus bytes. La CI completa se verifica por separado.
+
+Android `37158815932` conserva FAILED: 368.473 ms bloqueado, 120 starts/dones y 240 callbacks emparejados, capítulos 0–19, cero PCM nuevo en el tramo final de 30 segundos. El ZIP original autenticado tiene 8.512.616 bytes y 112 miembros; certificado de captura `3fd731a1a5175e2d6af7e44991a20ff19c413654340e578cb4284a36c1bbf288`. No se publicó APK. Los 120 fragmentos reproducidos no son un recuento de llamadas al fonemizador, porque el audio puede reutilizarse del caché. La recuperación al despertar permanece sólo diagnóstico.
 
 ## Cambios de 1.7.34 en preparación
 
@@ -201,8 +213,8 @@ El observador software de interrupción usa **2.200 ms en CI**; el límite local
 
 ## Pendientes y límites
 
-- **Android 1.1.4 sigue PENDIENTE.** El último ensayo, run `37156804640`, fuente `a02d85e`, conserva FAILED: 108 starts/dones y 216 callbacks completos, pero cero PCM nuevo en el tramo final de 30 segundos. El último cambio espera la carga del iframe hasta despertar. No se publica esa APK. Certificado de captura `ccc1a3b3e0d17317d6fdd63987603d8e1ca20e69c75d369df73a9a44ded194c8`; revisión independiente de fallo `5d4b160140bca840231e0d83699b506d32608ee49cd6e5c6184059d00e8c32c7`. El siguiente ensayo debe superar continuidad bloqueada, controles de notificación, liberación de servicio/wake y PDF oculto, sin modificar sus umbrales.
-- **Fuente nueva 1.7.34:** preparación de capítulos sin iframe oculto y posición exacta; verificación nueva en curso. La web 1.7.33 conserva comprobación HTTP y cinco casos públicos aprobados.
+- **Android 1.1.4 sigue PENDIENTE.** El último ensayo, run `37158815932`, fuente `3850274`, conserva FAILED: 120 starts/dones y 240 callbacks completos, capítulos 0–19, pero cero PCM nuevo en el tramo final de 30 segundos. No se publica esa APK. Certificado de captura `3fd731a1a5175e2d6af7e44991a20ff19c413654340e578cb4284a36c1bbf288`; revisión independiente de fallo `3a16d3ae6a52b8aca3daf8b57f9b3e93f60035da2426b92a2c77445ccbad08e4`. El siguiente ensayo debe superar continuidad bloqueada, controles de notificación, liberación de servicio/wake y PDF oculto, sin modificar sus umbrales.
+- **Fuente nueva 1.7.35:** reutilización de archivos/código compilado del fonemizador y recibos nativos de síntesis; verificación nueva en curso. La web 1.7.34 conserva comprobación HTTP y cinco casos públicos aprobados.
 - **Cuenta Google real:** falta conexión al navegador autenticado para comprobar login y subida reales. Las 61 pruebas focales y cinco E2E de Drive usan respuestas controladas y no sustituyen esa comprobación.
 - No se añade OCR ni se garantiza el orden perfecto de cualquier PDF. Los ocho casos públicos PDF usan texto y audio controlados para verificar navegación, visibilidad y cancelación; no sustituyen una comprobación de audio natural en un teléfono bloqueado. Drive usa respuestas de prueba y no autentica una cuenta real.
 - La batería web no certifica una APK nueva, audio en un teléfono físico, FPS, temperatura o batería. La evidencia histórica de Android 1.1.3 y la sesión de voz anterior mantienen su alcance original.

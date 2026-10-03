@@ -27,6 +27,40 @@ function setup(overrides = {}) {
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
 describe('SynthClient', () => {
+  it('keeps numeric stage receipts separate from init and load answers', async () => {
+    const onStage=vi.fn(),{client,worker}=setup({onStage})
+    const ready=client.prepare('test');await settle()
+    const init=worker.last('init').message
+    expect(init.diagnostics).toBe(true)
+    worker.reply({type:'stage',id:init.id,domain:1,stage:1,part:0});await settle()
+    expect(worker.last('load')).toBeUndefined()
+    worker.reply({type:'ready',id:init.id});await settle()
+    const load=worker.last('load').message
+    worker.reply({type:'stage',id:load.id,domain:2,stage:1,part:0});await settle()
+    expect(client.loaded).toBeNull()
+    worker.reply({type:'loaded',id:load.id});await ready
+    expect(onStage.mock.calls).toEqual([[1,1,init.id,0],[2,1,load.id,0]])
+    client.dispose()
+  })
+  it('does not treat a synthesis stage as PCM or completion',async()=>{
+    const onStage=vi.fn(),{client,worker}=setup({onStage}),ready=client.prepare('test');await settle()
+    worker.reply({type:'ready',id:worker.last('init').message.id});await settle()
+    worker.reply({type:'loaded',id:worker.last('load').message.id});await ready
+    const handlers={onChunk:vi.fn(),onEnd:vi.fn(),onError:vi.fn()},job=client.synth({text:'Actual text.',rate:1},handlers)
+    worker.reply({type:'stage',id:job.id,domain:3,stage:3,part:0})
+    expect(client.jobs.has(job.id)).toBe(true);expect(handlers.onChunk).not.toHaveBeenCalled();expect(handlers.onEnd).not.toHaveBeenCalled()
+    worker.reply({type:'end',id:job.id});expect(handlers.onEnd).toHaveBeenCalledOnce();client.dispose()
+  })
+  it('ignores malformed observations and isolates observer errors',async()=>{
+    const onStage=vi.fn(()=>{throw new Error('logger closed')}),{client,worker}=setup({onStage}),ready=client.prepare('test');await settle()
+    const id=worker.last('init').message.id
+    worker.reply({type:'stage',id,domain:3,stage:0,part:0})
+    worker.reply({type:'stage',id,domain:0,stage:1,part:0})
+    expect(onStage).not.toHaveBeenCalled()
+    expect(()=>worker.reply({type:'stage',id,domain:1,stage:1,part:0})).not.toThrow()
+    expect(client.calls.has(id)).toBe(true)
+    worker.reply({type:'ready',id});await settle();worker.reply({type:'loaded',id:worker.last('load').message.id});await ready;client.dispose()
+  })
   it('transfers the four shared runtime buffers without reading Piper weights or phonemizer', async () => {
     const buffers=Object.fromEntries(['duration_predictor','text_encoder','vector_estimator','vocoder'].map(key=>[key,new ArrayBuffer(8)]))
     const {client,worker}=setup({readConfig:vi.fn(async()=>({runtime:'supertonic3',config:{},indexer:[],styles:{F1:{}}})),readRuntimeAssets:vi.fn(async()=>buffers)})

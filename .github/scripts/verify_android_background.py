@@ -81,7 +81,7 @@ def freeze_full_logcat(label):
         run("adb", "logcat", "-d", "-v", "threadtime").stdout, encoding="utf-8")
 
 def logs(*, prefix=PREFIX):
-    raw = run("adb", "logcat", "-d", "-v", "threadtime", "InhousePcm:I", "InhousePcmState:I", "InhousePcmProgress:I", "InhousePcmCallback:I", "InhousePcmRuntime:I", "InhousePcmAfterEvent:I", "InhouseBookLoad:I", "*:S").stdout
+    raw = run("adb", "logcat", "-d", "-v", "threadtime", "InhousePcm:I", "InhousePcmState:I", "InhousePcmProgress:I", "InhousePcmCallback:I", "InhousePcmRuntime:I", "InhousePcmAfterEvent:I", "InhouseBookLoad:I", "InhouseSynthesis:I", "*:S").stdout
     Path(prefix+"logcat.txt").write_text(raw, encoding="utf-8")
     states, events, progress = [], [], []
     for line in raw.splitlines():

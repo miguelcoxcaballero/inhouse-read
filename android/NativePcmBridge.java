@@ -45,6 +45,15 @@ public final class NativePcmBridge {
     // JavascriptInterface runs on a bridge thread. Do not read WebView here.
     @JavascriptInterface public int getProtocol() { return Build.VERSION.SDK_INT >= 26 ? 1 : 0; }
     @JavascriptInterface public String getState() { return NativePcmService.state; }
+    // Passive numeric synthesis receipts on the bridge thread. Do not read
+    // WebView, post another evaluation, wake the display or alter the service.
+    @JavascriptInterface public void reportSynthesisStage(String id, int domain, int stage, long request, int part) {
+        if (closed || id == null || !id.equals(session) || domain < 1 || domain > 3 || stage < 1 || stage > 7 || request < 0 || part < 0 || part > 100000) return;
+        JSONObject value = new JSONObject();
+        try { value.put("schema", 1); value.put("session", id); value.put("elapsedMs", SystemClock.elapsedRealtime()); value.put("domain", domain); value.put("stage", stage); value.put("request", request); value.put("part", part); }
+        catch (Exception ignored) { return; }
+        Log.i("InhouseSynthesis", value.toString());
+    }
     @JavascriptInterface public void begin(String id, String title) {
         if (id == null || id.length() > 120) return;
         ui(() -> {

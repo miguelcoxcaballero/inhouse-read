@@ -23,6 +23,18 @@ beforeEach(async()=>{
 afterEach(async()=>{await send({type:'free',id:999});vi.unstubAllGlobals()})
 async function superLoad(){await send({type:'load',id:2,voice:'supertonic3',config:pack,buffers:{vocoder:new ArrayBuffer(8)}})}
 describe('worker runtime routing and cancellation',()=>{
+  it('reports finite numeric boundaries of the original Piper awaits only when enabled',async()=>{
+    await send({type:'init',id:101,diagnostics:true})
+    mocks.phonemizer.mockResolvedValue({phonemize:vi.fn(async()=>[1,3,4,2])})
+    session.run=vi.fn(async()=>({output:{data:Float32Array.from({length:1000},(_,i)=>Math.sin(i/10)*.2),dispose:vi.fn()}}))
+    await send({type:'load',id:102,voice:'piper',config:{audio:{sample_rate:22050},espeak:{voice:'en-us'}},model:new ArrayBuffer(8)})
+    await send({type:'synth',id:103,text:'The quiet reader.',rate:1})
+    await vi.waitFor(()=>expect(messages.some(({message})=>message.id===103&&message.type==='end')).toBe(true))
+    const receipts=messages.filter(({message})=>message.id===103&&message.type==='stage').map(({message})=>message)
+    expect(receipts.map(item=>item.stage)).toEqual([1,2,3,4,5,6,7])
+    expect(receipts.every(item=>item.domain===3&&item.part===0&&Object.keys(item).sort().join(',')==='domain,id,part,stage,type')).toBe(true)
+    expect(messages.filter(({message})=>message.id===103&&message.type==='chunk')).toHaveLength(1)
+  })
   it('drains FIFO, cancels queued work and frees the actual worker with timers suspended',async()=>{
     await superLoad()
     const timer=vi.spyOn(globalThis,'setTimeout').mockImplementation(()=>0)

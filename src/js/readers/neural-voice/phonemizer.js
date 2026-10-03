@@ -10,6 +10,7 @@
 // that text is tried once more on the fresh module.
 
 import { fetchDictionary, dictionaryUrl } from './dictionary-cache.js'
+import { loadPhonemizerFactory } from './phonemizer-assets.js'
 
 /**
  * espeak-ng dictionaries that are NOT inside piper_phonemize.data (the languages added after the first seven: ru alone is 8 MB):
@@ -35,7 +36,7 @@ export const PHONEMIZER_REVISION = '20261002-dictionaries'
  *   base: absolute URL (ending in '/') of the folder holding piper_phonemize.{mjs,wasm,data}.
  * @returns {Promise<{phonemize:(text:string, espeakVoice:string)=>Promise<number[]>, destroy:()=>void}>}
  */
-export async function createPhonemizer({ base, importModule = url => import(/* @vite-ignore */ url), rebuildEvery = REBUILD_EVERY, fetchFile = url => fetchDictionary(url) }) {
+export async function createPhonemizer({ base, importModule = loadPhonemizerFactory, rebuildEvery = REBUILD_EVERY, fetchFile = url => fetchDictionary(url) }) {
   const assetUrl = name => `${base}${name}?v=${PHONEMIZER_REVISION}`
   const { default: factory } = await importModule(assetUrl('piper_phonemize.mjs'))
   let line = null, errors = [], module = null, calls = 0

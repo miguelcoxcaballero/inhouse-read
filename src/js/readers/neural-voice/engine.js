@@ -14,7 +14,7 @@ import { NativePcmPlayer } from './native-player.js'
 import { storeError } from './store.js'
 import { NeuralPackageStore } from './package-store.js'
 import { SynthClient } from './client.js'
-import { audioContext, nativePcmBridge, unlockAudio } from './audio.js'
+import { audioContext, nativeAudio, nativePcmBridge, unlockAudio } from './audio.js'
 
 export const LIMITS = {
   idleMs: 90_000,          // without speech for this long the worker (and its ~0.6 GB) is terminated; the next speak rebuilds it
@@ -66,7 +66,11 @@ function defaultCreateClient(store) {
     readModel: id => store.readModel(id),
     readConfig: id => store.readConfig(id),
     readPhonemizerModel: id => store.readPhonemizerModel?.(id) || null,
-    readRuntimeAssets: id => store.readRuntimeAssets?.(id) || null
+    readRuntimeAssets: id => store.readRuntimeAssets?.(id) || null,
+    onStage: typeof nativePcmBridge()?.reportSynthesisStage === 'function' ? (domain, stage, request, part) => {
+      const audio = nativeAudio()
+      if (audio) audio.bridge.reportSynthesisStage(audio.session, domain, stage, request, part)
+    } : null
   })
 }
 

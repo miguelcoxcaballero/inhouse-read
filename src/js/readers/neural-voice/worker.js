@@ -28,8 +28,12 @@ let ort = null, phonemizer = null, phonBaseURL = null, hebrewPhonemizer = null, 
 const cancelled = new Set()
 const queue = []
 let draining = false, current = null, drainDone = Promise.resolve()
+let diagnostics = false
 
 const post = (message, transfer = []) => self.postMessage(message, transfer)
+// Finite receipts at original await boundaries, enabled only by the native
+// diagnostic bridge. No text, PCM, timers, polling or playback changes.
+const stage = (domain, stage, id, part = 0) => { if (diagnostics) post({type:'stage',domain,stage,id,part}) }
 // A segment of compute blocks this thread; yielding between segments lets 'cancel'/'load' messages in before the next one.
 
 async function init({ ortBase, phonBase, runtime }) {
@@ -95,7 +99,9 @@ async function synth({ id, text, rate, speaker, lang, style }) {
   if (supertonicRuntime) {
     post({ type:'plan', id, counts:[Math.max(1, [...text].length)] })
     const t = performance.now()
+    stage(3,3,id)
     const { pcm:raw, sampleRate } = await supertonicRuntime.synthesize(text, { lang, style, rate, isActive:() => !cancelled.has(id) })
+    stage(3,4,id)
     if (cancelled.has(id)) return
     if (!(raw instanceof Float32Array) || !raw.every(Number.isFinite) || !(sampleRate > 0)) throw new Error('invalid Supertonic audio')
     // The SDK deliberately returns no samples when normalization removes all
@@ -115,7 +121,9 @@ async function synth({ id, text, rate, speaker, lang, style }) {
     return
   }
   const sampleRate = config.audio.sample_rate
+  stage(3,1,id)
   const ids = config.phoneme_type === 'hebrew' ? await hebrewPhonemizer.phonemize(text) : await phonemizer.phonemize(text, config.espeak.voice)
+  stage(3,2,id)
   const segments = splitSegments(limitIds(ids, config.num_symbols))
   if (!segments.length) { // nothing speakable ("...", an ornament): a short rest keeps the reading flowing
     post({ type: 'plan', id, counts: [0] })
@@ -127,7 +135,9 @@ async function synth({ id, text, rate, speaker, lang, style }) {
   for (let index = 0; index < segments.length; index++) {
     if (cancelled.has(id)) return
     const t = performance.now()
+    stage(3,3,id,index)
     const raw = await runSegment(segments[index], { rate, speaker })
+    stage(3,4,id,index)
     const ms = performance.now() - t
     peakNormalize(raw, { model:voice })
     const speech = fadeEdges(trimSilence(raw, sampleRate), sampleRate)
@@ -138,7 +148,9 @@ async function synth({ id, text, rate, speaker, lang, style }) {
     const pcm = concat([index ? silence(sampleRate, PAUSE_MS.sentence * rest) : new Float32Array(0), speech, last ? silence(sampleRate, pauseAfter(text) * rest) : new Float32Array(0)])
     if (cancelled.has(id)) return
     post({ type: 'chunk', id, index, last, pcm, sampleRate, ms }, [pcm.buffer])
+    stage(3,5,id,index)
     await yieldToMessages()
+    stage(3,6,id,index)
   }
 }
 
@@ -155,6 +167,7 @@ async function drain() {
     try {
       if (!session && !supertonicRuntime) throw new Error('no voice loaded')
       await synth(job)
+      stage(3,7,job.id)
       if (!cancelled.has(job.id)) post({ type: 'end', id: job.id })
     } catch (error) {
       if (!cancelled.has(job.id)) post({ type: 'error', id: job.id, error: String(error?.stack || error) })
@@ -171,13 +184,16 @@ async function drain() {
 self.onmessage = async ({ data: m }) => {
   try {
     if (m.type === 'init') {
+      diagnostics = m.diagnostics === true
+      stage(1,1,m.id)
       await (initPromise ||= init(m))
+      stage(1,2,m.id)
       post({ type: 'ready', id: m.id, version: ort.env.versions?.common, crossOriginIsolated: self.crossOriginIsolated })
     } else if (m.type === 'load') {
       await initPromise
       // One load at a time: two overlapping loads (the voice changed while the first model was still loading) would both
       // see "no session", and the first session would leak (~150 MB) when the second one overwrote it.
-      const loading = loadChain.then(() => load(m))
+      const loading = loadChain.then(async () => { stage(2,1,m.id); const result = await load(m); stage(2,2,m.id); return result })
       loadChain = loading.catch(() => {})
       post({ type: 'loaded', id: m.id, ...(await loading) })
     } else if (m.type === 'synth') {
