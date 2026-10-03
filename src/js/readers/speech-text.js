@@ -14,19 +14,38 @@ export const HARD_BREAK = '\u2029'
 const TERMINATORS = /[.!?。！？…:;]/
 const CLOSERS = /["'”’»›)\]}」』]/
 
+// A reader can confirm marginal header ranges without treating repeated body
+// paragraphs as headers. Ignore damaged metadata rather than clamping a range
+// into legitimate text. Confirmed ranges cover one complete short line only.
+function validHeaderRange(raw, range) {
+  const start = range?.start, end = range?.end
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > raw.length || end <= start) return false
+  const value = raw.slice(start, end)
+  if (!value.trim() || value.trim().length >= 90 || /[\r\n\u2028\u2029]/.test(value)) return false
+  const before = Math.max(...['\r', '\n', '\u2028', '\u2029'].map(separator => raw.lastIndexOf(separator, start - 1))) + 1
+  const next = raw.slice(end).search(/[\r\n\u2028\u2029]/), after = next < 0 ? raw.length : end + next
+  return !raw.slice(before, start).trim() && !raw.slice(end, after).trim()
+}
+
 /** Drops what must not be read, keeping raw offsets: returns { text, map } with map[i] = raw offset of text[i]. */
-export function normalizeSpeech(raw, { footnotes = true, skipHeaders = false } = {}) {
+export function normalizeSpeech(raw, { footnotes = true, skipHeaders = false, headerRanges } = {}) {
   raw = String(raw || '')
   const removed = new Uint8Array(raw.length)
   const remove = (from, to) => removed.fill(1, from, to)
   if (!footnotes) for (const pattern of FOOTNOTE_MARKERS) for (const m of raw.matchAll(pattern)) remove(m.index, m.index + m[0].length)
   if (skipHeaders) {
-    const lines = [...raw.matchAll(/[^\n\u2029]+/g)].map(m => ({ from:m.index, to:m.index + m[0].length, key:m[0].trim().toLocaleLowerCase() }))
-    const nearby = new Map()
-    lines.forEach((line, i) => { if (line.key && line.key.length < 90) (nearby.get(line.key) || nearby.set(line.key, []).get(line.key)).push(i) })
-    for (const places of nearby.values()) {
-      for (let i = 0; i < places.length; i++) {
-        if ((i > 0 && places[i] - places[i - 1] <= HEADER_WINDOW) || (i + 1 < places.length && places[i + 1] - places[i] <= HEADER_WINDOW)) remove(lines[places[i]].from, lines[places[i]].to)
+    if (headerRanges !== undefined) {
+      // [] means the reader confirmed no headers; malformed supplied metadata
+      // is also not permission to discard repeated genuine paragraphs.
+      if (Array.isArray(headerRanges)) for (const range of headerRanges) if (validHeaderRange(raw, range)) remove(range.start, range.end)
+    } else {
+      const lines = [...raw.matchAll(/[^\n\u2029]+/g)].map(m => ({ from:m.index, to:m.index + m[0].length, key:m[0].trim().toLocaleLowerCase() }))
+      const nearby = new Map()
+      lines.forEach((line, i) => { if (line.key && line.key.length < 90) (nearby.get(line.key) || nearby.set(line.key, []).get(line.key)).push(i) })
+      for (const places of nearby.values()) {
+        for (let i = 0; i < places.length; i++) {
+          if ((i > 0 && places[i] - places[i - 1] <= HEADER_WINDOW) || (i + 1 < places.length && places[i + 1] - places[i] <= HEADER_WINDOW)) remove(lines[places[i]].from, lines[places[i]].to)
+        }
       }
     }
   }

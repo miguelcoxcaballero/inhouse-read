@@ -24,6 +24,7 @@ vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
 vi.mock('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url', () => ({ default:'worker.mjs' }))
 vi.mock('../../src/js/gestures.js', () => ({ attachSwipeNavigation:() => () => {} }))
 import { PdfReader } from '../../src/js/readers/pdf-reader.js'
+import { planSpeech } from '../../src/js/readers/speech-text.js'
 
 const item = (str, x, y, width = 190, size = 12) => ({ str, dir:'ltr', width, height:size,
   transform:[size, 0, 0, size, x, 800 - y], fontName:'f1', hasEOL:true })
@@ -112,5 +113,32 @@ describe('PDF geometric reading order shared by text view and audiobook', () => 
     expect(source.isValid()).toBe(true)
     source.highlight(start, start + 20)
     expect([...container.querySelectorAll('.inhouse-speech-current')].map(element => element.textContent)).toEqual(['Derecha primera frase.'])
+  })
+  it.each(['original', 'text'])('preserves repeated body paragraphs with header skipping enabled on a geometric %s PDF', async mode => {
+    state.contents = [content([item('No.', 50, 100, 24), item('Sí.', 50, 132, 24), item('No.', 50, 164, 24)])]
+    await open(mode)
+    const source = await reader.getSpeechSource()
+    expect(source.headerRanges).toEqual([])
+    expect(Object.isFrozen(source.headerRanges)).toBe(true)
+    expect(planSpeech(source.text, { skipHeaders:true, headerRanges:source.headerRanges }).map(value => value.text)).toEqual(['No.', 'Sí.', 'No.'])
+  })
+  it('keeps confirmed-header metadata stable on a detached next page and through both PDF views', async () => {
+    state.contents = [shuffledColumns(), content([item('No.', 50, 100, 24), item('Sí.', 50, 132, 24), item('No.', 50, 164, 24)])]
+    await open('original')
+    const source = await reader.getNextSpeechSource(), headerRanges = source.headerRanges
+    expect(headerRanges).toEqual([])
+    expect(Object.isFrozen(headerRanges)).toBe(true)
+    expect(source.activate()).toBe(true)
+    for (const mode of ['text', 'original']) {
+      await reader.applyPreferences({ pdfMode:mode })
+      expect(source.isValid()).toBe(true)
+      expect(source.headerRanges).toBe(headerRanges)
+      expect(planSpeech(source.text, { skipHeaders:true, headerRanges }).map(value => value.text)).toEqual(['No.', 'Sí.', 'No.'])
+    }
+  })
+  it('leaves legacy sources without geometry on their existing header-skipping policy', async () => {
+    state.contents = [{ items:[{ str:'Running header', hasEOL:true }, { str:'Body.', hasEOL:true }] }]
+    await open('original')
+    expect(Object.hasOwn(await reader.getSpeechSource(), 'headerRanges')).toBe(false)
   })
 })

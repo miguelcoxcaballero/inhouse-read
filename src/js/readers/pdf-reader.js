@@ -406,10 +406,10 @@ export class PdfReader {
     let pending
     do { pending = this.#renderReady; await pending } while (this.#doc && pending !== this.#renderReady)
     if (!this.#doc) return null
-    return this.#makeSpeechSource(this.#pageNum, this.#speechMap()).source
+    return this.#makeSpeechSource(this.#pageNum, this.#speechMap(), this.#renderState?.textLayout).source
   }
 
-  #makeSpeechSource(page, first) {
+  #makeSpeechSource(page, first, textLayout) {
     const pdf = this.#doc
     const doc = this.#container.ownerDocument
     installSpeechStyle(doc, this.#preferences.theme)
@@ -436,6 +436,10 @@ export class PdfReader {
     }
     const source = {
       text:first.text, start:0, clear,
+      // Geometric paragraphs are real body text, including repeated dialogue.
+      // No marginal header is confirmed by page-local layout alone: preserve
+      // those paragraphs even when the legacy header-skipping option is on.
+      ...(textLayout?.geometric ? { headerRanges:Object.freeze([]) } : {}),
       highlight:(start, end) => {
         const live = current(), range = live?.rangeFor(start, end)
         clear()
@@ -518,7 +522,7 @@ export class PdfReader {
           ? mapTextNode(staged.reflow.firstChild)
           : mapPDFTextLayer(staged.textLayerEl, staged.textLayout) || mapTextLayer(staged.textLayerEl)
         if (!first.text.trim()) throw new Error('No se pudo preparar el texto de la página siguiente.')
-        const { source, current } = this.#makeSpeechSource(number, first)
+        const { source, current } = this.#makeSpeechSource(number, first, staged.textLayout)
         const clear = source.clear
         let activated = false
         source.isValid = () => activated ? Boolean(current()) : staged.valid()

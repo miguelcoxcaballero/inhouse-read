@@ -32,13 +32,15 @@ const SECOND = [
   ['The book ends after this final paragraph.', 40, 610]
 ]
 const escape = text => text.replace(/[()\\]/g, character => '\\' + character)
-export function readingOrderPDF() {
+export function readingOrderPDF({ repeatParagraphs = false } = {}) {
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>',
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>'
   ]
-  for (const [page, order] of [[FIRST, [9, 3, 7, 4, 0, 6, 2, 8, 5, 1]], [SECOND, [3, 2, 0, 1]]]) {
+  const second = repeatParagraphs ? [...SECOND, ['A pause.', 40, 560], ['A pause.', 40, 510]] : SECOND
+  const secondOrder = repeatParagraphs ? [3, 2, 4, 0, 5, 1] : [3, 2, 0, 1]
+  for (const [page, order] of [[FIRST, [9, 3, 7, 4, 0, 6, 2, 8, 5, 1]], [second, secondOrder]]) {
     const index = objects.length + 1
     const content = order.map(raw => {
       const [text, x, y, size = 12] = page[raw]

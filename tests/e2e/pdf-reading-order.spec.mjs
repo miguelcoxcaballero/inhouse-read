@@ -4,9 +4,9 @@ import { readingOrderPDF, PDF_ORDER_PARAGRAPHS, PDF_ORDER_PAGE_TWO } from './fix
 
 const squash = text => String(text).replace(/\s+/g, '')
 const sentences = paragraphs => paragraphs.flatMap(text => text.match(/[^.!?]+[.!?]/g).map(sentence => sentence.trim()))
-const expectedSpeech = sentences([...PDF_ORDER_PARAGRAPHS, ...PDF_ORDER_PAGE_TWO])
-
-for (const mode of ['original', 'text']) test(`PDF ${mode}: columns, wrapped paragraphs and narration have the same complete visual order`, async ({ page }, testInfo) => {
+for (const repeatParagraphs of [false, true]) for (const mode of ['original', 'text']) test(`PDF ${mode}: columns, wrapped paragraphs and narration have the same complete visual order${repeatParagraphs ? ' with header omission enabled' : ''}`, async ({ page }, testInfo) => {
+  const pageTwo = repeatParagraphs ? [...PDF_ORDER_PAGE_TWO, 'A pause.', 'A pause.'] : PDF_ORDER_PAGE_TWO
+  const expectedSpeech = sentences([...PDF_ORDER_PARAGRAPHS, ...pageTwo])
   test.setTimeout(90_000)
   await page.setViewportSize({ width:390, height:844 })
   await page.emulateMedia({ reducedMotion:'reduce' })
@@ -17,8 +17,9 @@ for (const mode of ['original', 'text']) test(`PDF ${mode}: columns, wrapped par
       return highlight ? [...highlight].map(range => range.toString()).join('') : '';
     };
   `)
+  if (repeatParagraphs) await page.addInitScript(() => localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({ skipHeaders:true })))
   await page.goto(process.env.IHR_TEST_URL || './')
-  await page.locator('#file-picker').setInputFiles({ name:'Visual reading order.pdf', mimeType:'application/pdf', buffer:readingOrderPDF() })
+  await page.locator('#file-picker').setInputFiles({ name:'Visual reading order.pdf', mimeType:'application/pdf', buffer:readingOrderPDF({ repeatParagraphs }) })
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 1 de 2/)
   await expect(page.locator('.pdf-text-layer span').first()).toBeVisible()
   if (mode === 'text') {
@@ -48,7 +49,7 @@ for (const mode of ['original', 'text']) test(`PDF ${mode}: columns, wrapped par
     expect(squash(call.atStart)).toContain(squash(call.text))
   }
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 2 de 2/)
-  if (mode === 'text') expect(await page.locator('.pdf-reflow-page').evaluate(element => element.textContent.split(/\n{2,}/))).toEqual(PDF_ORDER_PAGE_TWO)
-  await testInfo.attach(`narrated-pdf-${mode}`, { body:JSON.stringify({ paragraphs:PDF_ORDER_PARAGRAPHS, pageTwo:PDF_ORDER_PAGE_TWO, calls, errors }), contentType:'application/json' })
+  if (mode === 'text') expect(await page.locator('.pdf-reflow-page').evaluate(element => element.textContent.split(/\n{2,}/))).toEqual(pageTwo)
+  await testInfo.attach(`narrated-pdf-${mode}`, { body:JSON.stringify({ paragraphs:PDF_ORDER_PARAGRAPHS, pageTwo, skipHeaders:repeatParagraphs, calls, errors }), contentType:'application/json' })
   expect(errors).toEqual([])
 })

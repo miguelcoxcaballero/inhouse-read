@@ -273,7 +273,7 @@ export class ReadingVoice {
     }
     if (!source) return { source, items:speechChunks(this.prepareText(await this.reader.getSpeechText())).map(text => ({ text })) }
     const { footnotes, skipHeaders } = this.options
-    return { source, items:planSpeech(source.text, { footnotes, skipHeaders, pageBreaks:source.pageBreaks }, source.start || 0) }
+    return { source, items:planSpeech(source.text, { footnotes, skipHeaders, pageBreaks:source.pageBreaks, headerRanges:source.headerRanges }, source.start || 0) }
   }
   /** Optional fixed-page preparation: it must leave the current page visible until an audible start. */
   async prepareNext(generation) {
