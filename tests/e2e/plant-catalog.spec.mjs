@@ -120,7 +120,13 @@ test('el catálogo está pegado al lateral 3D, sólo aparece en isométrica y a�
   await expect(page.locator('.ihr-plant')).toHaveCount(0);
   const dialog = await openCatalog(page);
   await expect(dialog.locator('[data-catalog-plant]')).toHaveCount(8);
-  await expect(dialog.locator('[data-catalog-pot]')).toHaveCount(4);
+  await expect(dialog.locator('[data-catalog-pot]')).toHaveCount(5);
+  // Four existing containers remain available; the new compact MUSKOT is a
+  // separate 9 cm nursery class (12 cm outside), selected only for new plants.
+  expect(await dialog.locator('[data-catalog-pot]').evaluateAll(nodes => nodes.map(node => node.dataset.catalogPot))).toEqual([
+    'muskot','muskotblomma','akerbar','gradvis','muskot9'
+  ]);
+  await expect(dialog.locator('[data-catalog-pot="muskot9"]')).toHaveAttribute('aria-pressed','true');
   await expect(dialog.locator('img')).toHaveCount(0);
   await dialog.locator('[data-catalog-plant="monstera"]').click();
   await dialog.locator('[data-catalog-pot="gradvis"]').click();
@@ -435,7 +441,9 @@ test('las plantas de una instalación antigua migran a los modelos actuales sin 
   const species = [
     { catalogId:'sansevieria',variant:'sansevieria',potId:'muskot',width:150,height:250 },
     { catalogId:'hedera',variant:'hedera',potId:'muskotblomma',width:180,height:240 },
-    { catalogId:'succulent',variant:'succulent',potId:'muskotblomma',width:160,height:160 }
+    // Legacy SUCCULENT keeps its terracotta pot: soil at 13 cm × .9 plus
+    // 9 cm of foliage = 20.7 cm. The leaves are not squeezed into the old box.
+    { catalogId:'succulent',variant:'succulent',potId:'muskotblomma',width:160,height:207 }
   ];
   await page.evaluate(({ plantsKey,legacy }) => {
     localStorage.setItem(plantsKey,JSON.stringify(legacy));

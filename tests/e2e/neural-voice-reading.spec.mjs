@@ -265,7 +265,7 @@ test('cold offline app: locally stored book and downloaded Piper start with a ne
     expect(cold.evidence.errors).toEqual([])
     numbers.coldOffline={shell,book,workerUrls,audio,starts:await starts(page),engine:await engineStats(page),runtimeResponses,deviceCalls:0}
     await testInfo.attach('cold-offline-piper.json',{body:JSON.stringify(numbers.coldOffline,null,2),contentType:'application/json'})
-    await page.getByRole('button',{name:'Detener',exact:true}).click()
+    await page.getByRole('button',{name:'Detener lectura',exact:true}).click()
   } finally {await context.close();await mirror.close()}
 })
 

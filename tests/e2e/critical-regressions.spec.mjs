@@ -78,7 +78,9 @@ test('Android: importa localmente sin subir y guarda en Drive sólo desde la por
   await page.reload()
   await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
-  const original=readFileSync(PDF_FIXTURE),before=await localBookBytes(page,'tiny.pdf')
+  const original=readFileSync(PDF_FIXTURE)
+  await expect.poll(()=>localBookBytes(page,'tiny.pdf')).toMatchObject({bytes:original.length,sha256:createHash('sha256').update(original).digest('hex'),hasDriveCopy:false})
+  const before=await localBookBytes(page,'tiny.pdf')
   expect(before).toMatchObject({bytes:original.length,sha256:createHash('sha256').update(original).digest('hex'),hasDriveCopy:false})
   expect(uploadCount).toBe(0)
   const uploadScreen = page.locator('#drive-upload-screen')
@@ -87,8 +89,9 @@ test('Android: importa localmente sin subir y guarda en Drive sólo desde la por
   await expectReturnComplete(page)
   const spine=page.getByRole('button', { name:/Abrir tiny/i })
   await expect(spine).toBeVisible();await spine.click()
-  const upload=page.getByRole('button',{name:'Subir a Google Drive',exact:true})
+  const upload=page.locator('.ihr-flyout__cloud-action')
   await expect(upload).toBeVisible()
+  await expect(upload).toHaveAccessibleName('Subir a Google Drive')
   expect(uploadCount).toBe(0) // connected login, import and close never upload bytes
   await upload.click();await bookUploadStarted
   await expect(upload).toHaveAttribute('aria-busy','true')
