@@ -1,4 +1,12 @@
-# Verificación del WIP — web 1.7.27 publicada; 1.7.28 en preparación; Android 1.1.4 pendiente
+# Verificación del WIP — web 1.7.28 publicada; 1.7.29 en preparación; Android 1.1.4 pendiente
+
+## Cambios de 1.7.29
+
+El iframe del capítulo permanece en la maquetación con opacidad cero hasta recibir el evento original de carga y completar su renderizado. Se conserva la navegación, sandbox, cálculo vertical/RTL, fondo, estilos y observación de tamaño; no se añade un camino alternativo de preparación ni timers. Pasan 20 focales en tres archivos, el build y seis E2E sin reintentos: seguimiento al capítulo siguiente, pausa/detener durante el cambio, vuelta móvil EPUB, reapertura CBZ con resize y conservación de ancla. La continuidad bloqueada necesita un ensayo nuevo; esta hipótesis no convierte el fallo anterior en aprobado.
+
+## Verificación de 1.7.28
+
+Fuente `8a72d43cd021efe361a510e87f5a8cc8a98b04ef`, Pages `3a6c2e8a1489b49c002b2572ec097070bc74b503`. Pasan **2.536/2.536 unitarias en 155 archivos**, sin omisiones. Certificado local SHA-256 `3483647c880ff05e269a5884037e1a41f2c5e5790a6856c92368cc66faa19780`. Sus 22 módulos y 43 recursos offline coinciden por HTTP, certificado `artifact-1728-8a72d43.json`, SHA-256 `38d37f4ca385f7977e299a885c5fea00b47b13430ea286cca0703df18c5200fb`. Pasan **cinco casos públicos**, sin reintentos, y se revisan sus cuatro capturas originales. La batería CI completa de esta fuente sigue en curso.
 
 ## Cambios de 1.7.28
 
@@ -12,7 +20,7 @@ Fuente `ecc6d526cd7b91471aef5bb72a6c0abc9efc5422`, Pages `70b9cd7baddb53f730e720
 
 La batería local original conserva 2.525 aprobados y un fallo: el VM de la prueba de hebreo quitaba imports y no inyectaba el nuevo helper. Con sólo esa inyección corregida pasan **2.526/2.526 en 154 archivos**; el certificado conserva el diff exacto y su alcance, SHA-256 `68f79dbb395b4bd30ebdc10c70a4e288afb801623e39f281117bd36e9947f310`. No se declara aprobada la fuente de tests sin modificar.
 
-La primera tanda pública conserva **4/5 aprobados**: voz EPUB real, ampliación offline de perfiles, carga del lector y catálogo móvil. El caso isométrico comparó el orden vacío durante la preparación de geometría con el orden ya poblado; queda fallido, sin reintentos. El ensayo Android `37150241529` usa la web 1.7.27 y mantiene todos los gates; su resultado está pendiente y la producción permanece fija durante su captura.
+La primera tanda pública conserva **4/5 aprobados**: voz EPUB real, ampliación offline de perfiles, carga del lector y catálogo móvil. El caso isométrico comparó el orden vacío durante la preparación de geometría con el orden ya poblado; queda fallido, sin reintentos. El ensayo Android `37150241529` usa la web 1.7.27 y conserva el fallo de continuidad. Su certificado independiente de fallo tiene SHA-256 `858c3c3c05523ae6fe70a31952d32d09d824107e3ab6bb2647cc51a737aa2c5f`.
 
 La batería CI de 1.7.26, run `37148530807`, conserva **FAILED**: 2.520 unitarias aprobadas, 511 identidades E2E, un caso PDF fallido y otro CBZ flaky. Once ZIP y doce logs originales autenticados; certificado SHA-256 `28a65465d80d9162f88422bb017cec9aca75bb882c17ca100a3cdbe56a39934f`. Los dos casos originales pasan en una tanda local sin modificaciones ni reintentos sobre el build 1.7.27; esto no convierte el run anterior en aprobado. Sus capturas originales se revisaron: muestran la página correcta en el modelo 3D mientras la transición sigue en curso.
 

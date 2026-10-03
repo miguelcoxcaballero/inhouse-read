@@ -2,6 +2,7 @@
 // same exact endpoint when hidden, so Foliate's awaited page/follow operation
 // can finish and reading can reach the next chapter. Visible easing is intact.
 import { patchFoliateTurnDiagnostics } from './foliate-turn-diagnostic-patch.mjs'
+import { patchFoliateFrameLoading } from './foliate-frame-loading-patch.mjs'
 const animation = /const animate = \(a, b, duration, ease, render\) => new Promise\(resolve => \{\r?\n[\s\S]*?\r?\n\}\)/g
 const cooldownCall = "if (shouldGo || !this.hasAttribute('animated')) await wait(100)"
 // The 100ms lock after a settled page turn is visual pacing. Hidden pages
@@ -61,6 +62,6 @@ export function foliateBackgroundPatch() {
   return { name:'inhouse-read-foliate-background-follow', enforce:'pre', transform(source, id) {
     const path = id.split('?')[0].replaceAll('\\', '/')
     if (!path.endsWith('/node_modules/foliate-js/paginator.js')) return null
-    return { code:patchFoliateTurnDiagnostics(patchFoliateBackground(source)), map:null }
+    return { code:patchFoliateTurnDiagnostics(patchFoliateFrameLoading(patchFoliateBackground(source))), map:null }
   } }
 }
