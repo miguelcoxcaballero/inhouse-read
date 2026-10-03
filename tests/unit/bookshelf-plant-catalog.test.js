@@ -130,7 +130,8 @@ describe('persistent catalog plants', () => {
     shelf=renderBookshelf(container, [], { shelfWidth:390 })
     const button=container.querySelector('.ihr-shelf-catalog')
     expect(button.hidden).toBe(true); button.click(); expect(catalog.open).not.toHaveBeenCalled()
-    container.querySelector('[data-view-mode="isometric"]').click()
+    shelf.element.focus()
+    shelf.element.dispatchEvent(new KeyboardEvent('keydown', { key:'ArrowLeft', bubbles:true, cancelable:true }))
     expect(button.hidden).toBe(false); button.click(); expect(catalog.open).toHaveBeenCalledWith(button)
     shelf.destroy(); shelf=null
     expect(catalog.destroy).toHaveBeenCalledOnce()

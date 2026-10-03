@@ -21,12 +21,13 @@ LESSAC_DOWNLOAD_PATTERN = r"^Descargar la voz Lessac,\s"
 def labels(root):
     return [(n, (n.get("content-desc", "") or n.get("text", "")).strip()) for n in root.iter("node")]
 
-def tap(root, pattern, *, require_button=False, within_voice_catalog=False):
-    parents = {child: parent for parent in root.iter() for child in parent} if within_voice_catalog else {}
+def tap(root, pattern, *, require_button=False, within_voice_catalog=False, within_audio_dialog=False):
+    scoped = within_voice_catalog or within_audio_dialog
+    parents = {child: parent for parent in root.iter() for child in parent} if scoped else {}
     for node, label in labels(root):
         if node.get("enabled") != "true" or not re.search(pattern, label, re.I):
             continue
-        if (require_button or within_voice_catalog) and (node.get("class") != "android.widget.Button" or node.get("clickable") != "true"):
+        if (require_button or scoped) and (node.get("class") != "android.widget.Button" or node.get("clickable") != "true"):
             continue
         box = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
         if not box:
@@ -34,7 +35,7 @@ def tap(root, pattern, *, require_button=False, within_voice_catalog=False):
         x1, y1, x2, y2 = map(int, box.groups())
         if x2 <= x1 or y2 <= y1:
             continue
-        if within_voice_catalog:
+        if scoped:
             # Accessibility can still expose the initial offer after opening
             # the catalog, even when its bounds lie above the visible dialog.
             dialog = catalog = None
@@ -47,9 +48,9 @@ def tap(root, pattern, *, require_button=False, within_voice_catalog=False):
                     elif ancestor.get("class") == "android.view.View" and name == "Voces naturales":
                         catalog = ancestor
                 ancestor = parents.get(ancestor)
-            if dialog is None or catalog is None:
+            if dialog is None or (within_voice_catalog and catalog is None):
                 continue
-            containers = [re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", item.get("bounds", "")) for item in (dialog, catalog)]
+            containers = [re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", item.get("bounds", "")) for item in ([dialog, catalog] if within_voice_catalog else [dialog])]
             if any(item is None for item in containers):
                 continue
             if not all(left <= x1 < x2 <= right and top <= y1 < y2 <= bottom for left, top, right, bottom in (map(int, item.groups()) for item in containers)):
@@ -58,16 +59,21 @@ def tap(root, pattern, *, require_button=False, within_voice_catalog=False):
         return label
     return None
 
-def ui_action(label, pattern, timeout=45, *, require_button=False, within_voice_catalog=False):
+def ui_action(label, pattern, timeout=45, *, require_button=False, within_voice_catalog=False, within_audio_dialog=False):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         root = capture(Path(PREFIX+label+".png"), Path(PREFIX+label+".xml"))
-        used = tap(root, pattern, require_button=require_button, within_voice_catalog=within_voice_catalog)
+        used = tap(root, pattern, require_button=require_button, within_voice_catalog=within_voice_catalog, within_audio_dialog=within_audio_dialog)
         if used:
             history.append({"action": label, "control": used, "at": time.time()})
             return root
         time.sleep(2)
     raise AssertionError(f"Actual APK control missing: {label}/{pattern}: {node_text(root)[:2000]}")
+
+def close_voice_catalog(label):
+    # Download/Use lives outside the list's Escape listener. Escape there
+    # cancels the whole dialog; toggle its visible Voz row instead.
+    return ui_action(label, r"^Voz(?:\s|$)", require_button=True, within_audio_dialog=True)
 
 def logs():
     raw = run("adb", "logcat", "-d", "-v", "threadtime", "InhousePcm:I", "InhousePcmState:I", "InhousePcmProgress:I", "*:S").stdout
@@ -158,9 +164,8 @@ def main():
                 break
             assert time.monotonic()<end, "Real Piper voice download did not finish"
             time.sleep(3)
-        # Return from dropdown; Play remains inside the audio panel.
-        run("adb","shell","input","keyevent","KEYCODE_ESCAPE")
-        ui_action("play",r"^Reproducir$")
+        close_voice_catalog("voices-close")
+        ui_action("play",r"^Reproducir$",require_button=True,within_audio_dialog=True)
         first=wait_state(lambda s,e,p:s["active"] and s["playedFrames"]>0 and any(x.get("type")=="start" for x in e),"audible-start",120)
         ui_action("panel-close",r"^Cerrar opciones de lectura$")
         run("adb","shell","input","keyevent","KEYCODE_SLEEP")
@@ -196,8 +201,8 @@ def main():
         ui_action("pdf-english",r"^Ingl[eé]s(?:\s|$)")
         ui_action("pdf-voices",r"^Voz(?:\s|$)",require_button=True)
         ui_action("pdf-lessac",r"^(Usar la voz|Voz en uso) Lessac\b")
-        run("adb","shell","input","keyevent","KEYCODE_ESCAPE")
-        ui_action("pdf-play",r"^Reproducir$")
+        close_voice_catalog("pdf-voices-close")
+        ui_action("pdf-play",r"^Reproducir$",require_button=True,within_audio_dialog=True)
         pdf=wait_state(lambda s,e,p:s["active"] and s["playedFrames"]>0 and any(x.get("kind")=="page" and x.get("session")==s["session"] for x in p),"pdf-audible",120)
         ui_action("pdf-panel-close",r"^Cerrar opciones de lectura$")
         run("adb","shell","input","keyevent","KEYCODE_SLEEP")

@@ -35,6 +35,59 @@ def catalog_button(root):
     return next(node for node in root.iter('node') if node.get('text','').startswith('Descargar la voz Lessac,'))
 
 class NativeMediaEvidenceTests(unittest.TestCase):
+    def installed_catalog(self):
+        # Original421/run37136880647 installed XML: Play is accessibility-
+        # exposed above the dialog; the Voz trigger is actually inside it.
+        return ElementTree.fromstring('''<hierarchy>
+          <node class="android.app.Dialog" enabled="true" text="Escuchar" bounds="[0,398][1080,2217]">
+            <node class="android.view.View" enabled="true" text="Escuchar" bounds="[55,0][1028,2217]">
+              <node class="android.widget.Button" enabled="true" clickable="true" text="Reproducir" bounds="[440,63][640,264]" />
+              <node class="android.widget.Button" enabled="true" clickable="true" text="Voz Lessac" bounds="[55,673][1028,819]" />
+              <node class="android.view.View" enabled="true" text="Voces naturales" bounds="[55,1080][1028,2217]">
+                <node class="android.widget.ToggleButton" enabled="true" clickable="true" text="Voz en uso Lessac, Inglés (EE. UU.)" bounds="[599,1177][797,1300]" />
+              </node>
+            </node>
+          </node>
+        </hierarchy>''')
+
+    def test_installed_voice_closes_with_the_visible_dialog_trigger(self):
+        with patch.object(verifier,'run') as command:
+            self.assertEqual(verifier.tap(self.installed_catalog(),r'^Voz(?:\s|$)',require_button=True,within_audio_dialog=True),'Voz Lessac')
+        command.assert_called_once_with('adb','shell','input','tap','541','746')
+
+    def test_play_rejects_the_original_clipped_control_until_menu_closes(self):
+        root=self.installed_catalog()
+        with patch.object(verifier,'run') as command:
+            self.assertIsNone(verifier.tap(root,r'^Reproducir$',within_audio_dialog=True))
+        command.assert_not_called()
+        next(n for n in root.iter('node') if n.get('text')=='Reproducir').set('bounds','[440,673][640,874]')
+        with patch.object(verifier,'run') as command:
+            self.assertEqual(verifier.tap(root,r'^Reproducir$',within_audio_dialog=True),'Reproducir')
+        command.assert_called_once_with('adb','shell','input','tap','540','773')
+
+    def test_menu_toggle_never_falls_back_to_a_reader_or_missing_dialog(self):
+        for changes in [{'class':'android.view.View'},{'enabled':'false'},{'text':'Otro diálogo'}]:
+            with self.subTest(changes=changes):
+                root=self.installed_catalog();root.find('node').attrib.update(changes)
+                with patch.object(verifier,'run') as command:
+                    self.assertIsNone(verifier.tap(root,r'^Voz(?:\s|$)',within_audio_dialog=True))
+                command.assert_not_called()
+
+    def test_voice_trigger_requires_button_clickability_and_visible_bounds(self):
+        for changes in [{'clickable':'false'},{'enabled':'false'},{'class':'android.widget.TextView'},{'bounds':'[55,184][1028,341]'}]:
+            with self.subTest(changes=changes):
+                root=self.installed_catalog();next(n for n in root.iter('node') if n.get('text')=='Voz Lessac').attrib.update(changes)
+                with patch.object(verifier,'run') as command:
+                    self.assertIsNone(verifier.tap(root,r'^Voz(?:\s|$)',within_audio_dialog=True))
+                command.assert_not_called()
+
+    def test_close_catalog_uses_actual_button_for_epub_and_pdf_not_escape(self):
+        for label in ['voices-close','pdf-voices-close']:
+            with self.subTest(label=label),patch.object(verifier,'ui_action') as action,patch.object(verifier,'run') as command:
+                verifier.close_voice_catalog(label)
+                action.assert_called_once_with(label,r'^Voz(?:\s|$)',require_button=True,within_audio_dialog=True)
+                command.assert_not_called()
+
     def test_download_targets_the_visible_catalog_button_not_the_clipped_offer(self):
         with patch.object(verifier,'run') as command:
             label=verifier.tap(download_catalog(),verifier.LESSAC_DOWNLOAD_PATTERN,within_voice_catalog=True)

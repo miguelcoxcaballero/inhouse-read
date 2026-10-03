@@ -150,6 +150,19 @@ async function seedShelf(page, { long = false, linked = false, driveBytes = null
       remote:records.filter(book => book.driveFileId).map(book => ({ id:book.driveFileId, name:book.name, size:String(book.size || book.content.size), mimeType:'application/pdf' })) }
   }, { long, linked, driveBytes, plantsKey:PLANTS_KEY, driveId:DRIVE_ID })
   await page.reload()
+  if (driveBytes) {
+    // This seed replaces the PDF bytes and invalidates its previous count.
+    // Wait for the detached parser's real revision-matched result before the
+    // unchanged shelf deadline; a pending book deliberately has no 3D spine.
+    await expect.poll(() => page.evaluate(async () => {
+      const db = await new Promise(resolve => { const request=indexedDB.open('inhouse-read'); request.onsuccess=()=>resolve(request.result) })
+      const record = await new Promise(resolve => { const request=db.transaction('books').objectStore('books').get('trash:drive'); request.onsuccess=()=>resolve(request.result) })
+      db.close()
+      return { wordCountComplete:record?.wordCountComplete, wordCountVersion:record?.wordCountVersion,
+        contentRevision:record?.contentRevision, wordCountContentRevision:record?.wordCountContentRevision }
+    }), { timeout:30_000 }).toEqual({ wordCountComplete:true, wordCountVersion:2,
+      contentRevision:'trash-drive-original', wordCountContentRevision:'trash-drive-original' })
+  }
   await expect(page.locator('.ihr-spine')).toHaveCount(seed.ids.length)
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-trash3d', 'true')
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')

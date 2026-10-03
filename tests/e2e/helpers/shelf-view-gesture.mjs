@@ -6,6 +6,11 @@ export async function switchShelfView(page, mode) {
   if (!['spine','isometric'].includes(mode)) throw new Error('Unknown shelf view');
   const root = page.locator('[data-ihr-bookshelf]');
   if (await root.getAttribute('data-view-mode') === mode) return;
+  // An imported reader may have no flyout while its page is still closing.
+  // That lifecycle disables pointer events on the shelf; wait before taking
+  // its input coordinates. Camera transitions remain interruptible.
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/, { timeout:30_000 });
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0, { timeout:30_000 });
   const box = await root.locator('.ihr-bookshelf__scroll').boundingBox();
   if (!box || box.width < 120 || box.height < 70) throw new Error('Shelf must be visible before swiping');
   const y = box.y + Math.min(72, box.height * .2);
