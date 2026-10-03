@@ -283,8 +283,9 @@ test('móvil: salir coloca el marcapáginas, cierra la página actual y vuelve a
   await expect.poll(async()=> (await savedBook(page,'reverse-current-page.pdf'))?.locator).toEqual({kind:'pdf-page',value:1});
   await page.locator('.ihr-spine').click();
   await page.getByRole('button',{name:/Toca para leer/}).click();
+  // Reopening completes the same 3D handoff as assertOpening before exposing controls.
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0,{timeout:20_000});
   await expect(page.locator('#reader-toolbar')).toBeVisible();
-  await expect(page.locator('.ihr-flyout')).toHaveCount(0);
   await page.getByRole('button',{name:'Página siguiente',exact:true}).click();
   await page.getByRole('button',{name:'Página siguiente',exact:true}).click();
   await expect(page.locator('.pdf-text-layer')).toContainText('Saved blue page. Page 3.');
@@ -307,8 +308,9 @@ test('móvil EPUB: la vuelta usa el capítulo actual y cancela limpiamente al gi
   await assertClosing(page,testInfo);
   await page.locator('.ihr-spine').click();
   await page.getByRole('button',{name:/Toca para leer/}).click();
+  // Reopening completes the same 3D handoff as assertOpening before exposing controls.
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0,{timeout:20_000});
   await expect(page.locator('#reader-toolbar')).toBeVisible();
-  await expect(page.locator('.ihr-flyout')).toHaveCount(0);
   await page.evaluate(() => {
     window.__cancelAtBookmark=false;
     const observer=new MutationObserver(() => {
