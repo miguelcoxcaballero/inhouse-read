@@ -22,7 +22,7 @@ async function openShelfEditor(page, { reduced = false, theme = '', colors = ['#
   // before checking removal; count0 alone can pass before the flight exists.
   await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/, { timeout:30_000 })
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
-  await expect(page.locator('#home')).toBeVisible()
+  await expect(page.locator('#home-screen')).toBeVisible()
   await expect(page.locator('.ihr-spine').first()).not.toHaveClass(/is-away/)
   // The source PDF still exercises the real import/open/close. Only the
   // jacket is controlled: every proposed region has a known source colour.
