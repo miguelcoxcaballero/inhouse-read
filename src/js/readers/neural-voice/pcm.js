@@ -24,8 +24,14 @@ export function rmsOf(pcm) {
  * in level (es_ES davefx peaks at 0.97, ca_ES upc_ona at 0.14), so without this the volume would jump between voices;
  * the gain is capped so that a near-silent buffer (breath, noise) is not blown up. Works in place, returns the gain used.
  */
-export function peakNormalize(pcm, { target = 0.9, maxGain = 6, floor = 1e-3 } = {}) {
-  const gain = Math.min(maxGain, target / Math.max(peakOf(pcm), floor))
+export function peakNormalize(pcm, { target = 0.9, maxGain, floor = 1e-3, model = '' } = {}) {
+  const peak = peakOf(pcm)
+  // NVCC's real KON/MON speech peaks at 0.031–0.052 (RMS 0.0034–0.0092),
+  // too quiet even after the usual 6x cap. Allow 12x for this model only;
+  // low-level noise or a sparse click still uses the ordinary cap. Explicit
+  // caller limits and the common 0.9 peak ceiling remain authoritative.
+  const cap = maxGain ?? (model === 'no_NO-nvcc-medium' && peak >= 0.02 && rmsOf(pcm) >= 0.002 ? 12 : 6)
+  const gain = Math.min(cap, target / Math.max(peak, floor))
   if (Math.abs(gain - 1) > 1e-6) for (let i = 0; i < pcm.length; i++) pcm[i] *= gain
   return gain
 }

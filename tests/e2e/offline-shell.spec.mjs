@@ -12,6 +12,9 @@ for(const format of ['pdf','epub'])test(`cold offline ${format.toUpperCase()}: t
     await page.goto(baseURL);const shell=await waitForOfflineShell(page)
     await page.locator('#file-picker').setInputFiles(file)
     await expect(page.locator(format==='pdf'?'.pdf-text-layer span':'foliate-view').first()).toBeVisible({timeout:60_000})
+    // The EPUB element exists while its asynchronous open/import is still
+    // running. Wait for the actual local transaction before closing the page.
+    await expect.poll(()=>localBookBytes(page,name),{timeout:60_000}).toMatchObject({bytes:original.length,sha256:createHash('sha256').update(original).digest('hex'),hasDriveCopy:false})
     const before=await localBookBytes(page,name)
     expect(before).toMatchObject({bytes:original.length,sha256:createHash('sha256').update(original).digest('hex'),hasDriveCopy:false})
     const cold=await coldOfflinePage(context,page,new URL(`?t=${Date.now()}`,baseURL).href);page=cold.page

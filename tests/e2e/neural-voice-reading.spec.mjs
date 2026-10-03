@@ -11,7 +11,7 @@
 //
 // Heavy (a real neural voice thinks hard on one core): about six minutes. Run it alone.
 import { test, expect } from '@playwright/test'
-import { openAudioMenu, pickVoice, selectedOption } from './helpers/audio-menus.mjs'
+import { openAudioMenu, pickLanguage, pickVoice, selectedOption } from './helpers/audio-menus.mjs'
 import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { loadavg } from 'node:os'
@@ -235,6 +235,7 @@ test('cold offline app: locally stored book and downloaded Piper start with a ne
   try {
     await open(page,PDF);const shell=await waitForOfflineShell(page)
     await openAudio(page)
+    await pickLanguage(page,'es');await openAudioMenu(page,'Voz')
     await row(page,DAVEFX_ID).locator('[data-neural-action="install"]').click()
     await expect(row(page,DAVEFX_ID)).toContainText('Instalada',SLOW)
     await pickVoice(page,DAVEFX_ID)

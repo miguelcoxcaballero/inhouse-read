@@ -129,7 +129,7 @@ async function synth({ id, text, rate, speaker, lang, style }) {
     const t = performance.now()
     const raw = await runSegment(segments[index], { rate, speaker })
     const ms = performance.now() - t
-    peakNormalize(raw)
+    peakNormalize(raw, { model:voice })
     const speech = fadeEdges(trimSilence(raw, sampleRate), sampleRate)
     const last = index === segments.length - 1
     // Sentences of one fragment are separated by a rest at their start; the rest after the fragment comes with its last one.

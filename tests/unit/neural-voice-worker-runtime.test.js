@@ -79,4 +79,17 @@ describe('worker runtime routing and cancellation',()=>{
     await send({type:'load',id:3,voice:'piper',config:{audio:{sample_rate:22050}},model:new ArrayBuffer(8)})
     expect(messages.at(-1).message).toMatchObject({type:'loaded',id:3})
   })
+  it('applies the extra speech gain only to the loaded NVCC Piper model',async()=>{
+    mocks.phonemizer.mockResolvedValue({phonemize:vi.fn(async()=>[1,0,10,0,2])})
+    session.run=vi.fn(async()=>({output:{data:Float32Array.from({length:22050},(_,i)=>.033*Math.sin(i/10)),dispose:vi.fn()}}))
+    for(const [model,id,minimum,maximum]of [['no_NO-nvcc-medium',10,.39,.40],['no_NO-talesyntese-medium',11,.19,.20]]){
+      await send({type:'load',id:id+100,voice:model,config:{audio:{sample_rate:22050},espeak:{voice:'nb'}},model:new ArrayBuffer(8)})
+      await send({type:'synth',id,text:'Regnet falt.',rate:1,speaker:3})
+      await vi.waitFor(()=>expect(messages.some(entry=>entry.message.id===id&&entry.message.type==='end')).toBe(true))
+      const pcm=messages.find(entry=>entry.message.id===id&&entry.message.type==='chunk').message.pcm
+      let peak=0;for(const value of pcm)peak=Math.max(peak,Math.abs(value))
+      expect(peak).toBeGreaterThan(minimum);expect(peak).toBeLessThan(maximum)
+    }
+    expect(runtime.synthesize).not.toHaveBeenCalled()
+  })
 })

@@ -23,6 +23,33 @@ describe('peakNormalize', () => {
     expect(peakNormalize(quiet)).toBeLessThanOrEqual(6)
     expect(Array.from(quiet).every(x => x === 0)).toBe(true)
   })
+  it('raises quiet NVCC speech above the audible level without changing other models', () => {
+    // Real NVCC raw fragments measured peaks 0.031–0.052, RMS 0.0034–0.0092.
+    const raw = tone(1000, 0.033)
+    const nvcc = raw.slice(), ordinary = raw.slice()
+    expect(peakNormalize(nvcc, { model:'no_NO-nvcc-medium' })).toBe(12)
+    expect(peakOf(nvcc)).toBeGreaterThan(0.3)
+    expect(peakOf(nvcc)).toBeLessThanOrEqual(0.9001)
+    expect(peakNormalize(ordinary, { model:'no_NO-talesyntese-medium' })).toBe(6)
+    expect(peakOf(ordinary)).toBeCloseTo(0.198, 3)
+  })
+  it('keeps NVCC noise and sparse clicks under the ordinary gain cap', () => {
+    const noise = tone(1000, 0.005), click = new Float32Array(10000)
+    click[5000] = 0.033
+    expect(peakNormalize(noise, { model:'no_NO-nvcc-medium' })).toBe(6)
+    expect(peakNormalize(click, { model:'no_NO-nvcc-medium' })).toBe(6)
+    expect(peakOf(noise)).toBeLessThan(0.031)
+    const quiet = new Float32Array(1000)
+    expect(peakNormalize(quiet, { model:'no_NO-nvcc-medium' })).toBe(6)
+    expect(peakOf(quiet)).toBe(0)
+  })
+  it('retains the peak ceiling and explicit caller caps for NVCC', () => {
+    const hot = tone(1000, 0.3), limited = tone(1000, 0.033)
+    peakNormalize(hot, { model:'no_NO-nvcc-medium' })
+    expect(peakOf(hot)).toBeCloseTo(0.9, 3)
+    expect(peakNormalize(limited, { model:'no_NO-nvcc-medium', maxGain:2 })).toBe(2)
+    expect(peakOf(limited)).toBeCloseTo(0.066, 3)
+  })
 })
 
 describe('trimSilence', () => {
