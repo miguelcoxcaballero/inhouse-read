@@ -3,6 +3,14 @@ import { describe, expect, it } from 'vitest'
 const read=path=>readFileSync(path,'utf8').replace(/\r\n?/g,'\n')
 const bridge=read('android/NativePcmBridge.java'),service=read('android/NativePcmService.java'),builder=read('android/html_to_apk_builder.py'),workflow=read('.github/workflows/build-android.yml')
 describe('signed Android native natural media integration',()=>{
+  it('observes post-event microtasks with two bounded numeric receipts and no scheduler heartbeat',()=>{
+    expect(bridge).toContain('ticks===8||ticks===32');expect(bridge).toContain('if(ticks<32)observe()');
+    const report=bridge.slice(bridge.indexOf('@JavascriptInterface public void reportDiagnostic'),bridge.indexOf('private void logRuntime'));
+    expect(report).toContain('microtask != 8 && microtask != 32');
+    expect(report).toContain('!id.equals(session)');expect(report).toContain('serial > diagnosticSerial');
+    expect(report).toContain('sanitizeSnapshot(new JSONObject(encoded), 0)');
+    for(const forbidden of ['evaluateJavascript','postDelayed','setTimeout','enqueue(','reset(','keepExecuting('])expect(report).not.toContain(forbidden);
+  })
   it('ships an unexported mediaPlayback service and only the necessary native playback permissions',()=>{
     for(const permission of ['WAKE_LOCK','FOREGROUND_SERVICE','FOREGROUND_SERVICE_MEDIA_PLAYBACK'])expect(builder).toContain(`android.permission.${permission}`)
     expect(builder).toContain('service.set(f"{ns}exported", "false")')

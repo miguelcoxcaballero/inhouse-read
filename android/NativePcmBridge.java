@@ -149,8 +149,27 @@ public final class NativePcmBridge {
                 : "null";
             String code = "(()=>{window.dispatchEvent(new CustomEvent('inhouse-pcm',{detail:" + detail + "}));"
                 + "let snapshot=null;try{snapshot=" + snapshot + ";}catch{}"
+                + (queueEmpty ? "let ticks=0;const observe=()=>{queueMicrotask(()=>{ticks++;"
+                    + "if(ticks===8||ticks===32){try{window.InhousePcm.reportDiagnostic(" + JSONObject.quote(id) + "," + epoch + "," + unit + "," + serial + ",ticks,JSON.stringify(" + snapshot + "));}catch{}}"
+                    + "if(ticks<32)observe();});};observe();" : "")
                 + "return JSON.stringify({received:true,hidden:document.hidden,visibility:document.visibilityState,snapshot});})()";
             view.evaluateJavascript(code, value -> logCallback(id, epoch, type, unit, serial, requested, queueEmpty, "received", value));
+        });
+    }
+    // Two bounded numeric observations after the already-required playback
+    // event. No polling, timer, extra evaluation, text or progress mutation.
+    @JavascriptInterface public void reportDiagnostic(String id, long epoch, long unit, long serial, int microtask, String encoded) {
+        if (encoded == null || encoded.length() > 8192 || (microtask != 8 && microtask != 32)) return;
+        ui(() -> {
+            if (id == null || !id.equals(session) || serial <= 0 || serial > diagnosticSerial) return;
+            JSONObject value = new JSONObject();
+            try {
+                value.put("schema", 1); value.put("session", id); value.put("epoch", epoch);
+                value.put("unit", unit); value.put("serial", serial); value.put("microtask", microtask);
+                value.put("elapsedMs", SystemClock.elapsedRealtime());
+                value.put("snapshot", sanitizeSnapshot(new JSONObject(encoded), 0));
+                Log.i("InhousePcmAfterEvent", value.toString());
+            } catch (Exception ignored) {}
         });
     }
     private void logRuntime(String id) {

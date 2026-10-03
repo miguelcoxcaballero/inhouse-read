@@ -136,6 +136,27 @@ async function importAndRead(page, file) {
   await page.locator('#file-picker').setInputFiles(file)
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Progreso y capítulos, /)
   await expect(page.locator('#reader-toolbar')).toBeVisible()
+  // Import opens the reader before detached word counting finishes. A pending
+  // book deliberately has no provisional 3D geometry; test the physical return
+  // only after the real parser has saved the current revision's final count.
+  // Keep the existing 30-second metadata budget and all animation/pixel guards.
+  const name = file.split(/[\\/]/).pop()
+  await expect.poll(() => page.evaluate(name => new Promise((resolve, reject) => {
+    const request = indexedDB.open('inhouse-read')
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const db = request.result
+      const read = db.transaction('books', 'readonly').objectStore('books').getAll()
+      read.onerror = () => { db.close(); reject(read.error) }
+      read.onsuccess = () => {
+        const book = read.result.find(book => book.name === name)
+        db.close()
+        resolve(Boolean(book?.content?.size && book.wordCountComplete === true &&
+          book.wordCountVersion === 2 && Number.isFinite(book.wordCount) && book.wordCount >= 0 &&
+          book.contentRevision && book.wordCountContentRevision === book.contentRevision))
+      }
+    }
+  }), name), { timeout:30_000 }).toBe(true)
 }
 
 const stockColour = [255, 255, 255]
