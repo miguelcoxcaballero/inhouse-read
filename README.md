@@ -4,6 +4,15 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.17
+
+- El PDF abre directamente en la página guardada y reutiliza su renderizado completo cuando el documento, tamaño y preferencias siguen válidos.
+- La estantería conserva los cambios pendientes mientras lees y evita repintados 3D innecesarios.
+- Las plantas conservan sus geometrías al ampliar la vista; el marcapáginas reutiliza sus buffers al abrir y cerrar. Se mantienen resolución, modelos, iluminación y sombras.
+- Una extracción antigua de portada ya no puede alterar otro libro o una sesión nueva.
+
+**Verificado:** [2.141 unitarias y 331 E2E aprobados](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37113842421), además de 20 casos en la web publicada y una descarga nueva de la APK pública. [Comparación de rendimiento y calidad visual](docs/performance-1717.md).
+
 ### Actualización web · 1.7.16
 
 - Biblioteca local y arranque offline tras una primera carga completa. Los libros se suben a Google Drive cuando eliges **Subir a Google Drive**; los vinculados sincronizan su progreso.

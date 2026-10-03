@@ -1,10 +1,23 @@
-# Verificación del WIP — web 1.7.16 y APK 1.1.3
+# Verificación del WIP — web 1.7.17 y APK 1.1.3
+
+Estado: 3 de octubre de 2026. La optimización de rendimiento está publicada desde `64a91da1ff688d9bd0d3fe9d8e511fbf2d8548ca`, Pages `ae809d710a76a00eda4aa69a5f65276dd93e6915` y entrada `main-BL7jM-hN.js`.
+
+**Batería completa aprobada:** 2.141 unitarias en 127 archivos y 331 E2E, sin omisiones, reintentos, flaky ni errores; [run 37113842421](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37113842421), 12 jobs y 11 ZIP originales contrastados. Son 202 casos UI y 129 de motores de voz reales. También pasaron **20 casos sobre esta publicación**, con fuente y artefacto fijados.
+
+Se comprobó por HTTP el contenido de 20 módulos/estilos y los 40 archivos del shell offline. La APK pública 1.1.3, código 16, volvió a descargarse: conserva un loader de 2.089 bytes sin una copia vieja de la app. Las mejoras de JavaScript llegan mediante la web; no se generó otra APK para esta entrega.
+
+El PDF reutiliza las páginas válidas, la escena evita el trabajo oculto, las plantas conservan su geometría al ampliar y el marcapáginas reutiliza sus buffers. La comparación mantiene texturas, iluminación y sombras; la estantería estática y las vistas de inspección comparadas conservan los mismos píxeles. [Mediciones, fuentes, certificados y límites de 1.7.17](performance-1717.md).
+
+## Histórico certificado — web 1.7.16 y APK 1.1.3
+
+El bloque siguiente conserva la fuente, las fechas, los censos y el alcance originales de 1.7.16.
+
 
 Estado: 3 de octubre de 2026. **Batería completa aprobada: 2.086 unitarias en 123 archivos y 330 E2E**, sin omisiones, saltos, reintentos, flaky ni errores. El [run 37110847248](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37110847248) corresponde a `6822ae282c02573a98c88bd98087efdc855c8d69`; sus 12 jobs y 11 ZIP originales se contrastaron con el censo de esa fuente. Son 201 casos UI y 129 de voces reales: motor 9, lectura 14, Piper 40 y Supertonic 66.
 
 El certificado `.animation.local/ci-37110847248/aggregate.json` tiene SHA-256 `363888d41846ad0d9336f41c91734da59994ec863c3720847de0a9b53db3b75e`. La revisión semántica de voz, incluidos 106 WAV, tiene SHA-256 `3930134329b1024ef223850c88471e5bf2c2c92005e01f8aea51c2097e279d1a`.
 
-## Publicación y alcance actuales
+## Publicación y alcance de 1.7.16
 
 - **38 casos públicos aprobados**: 36 de aplicación y dos de Supertonic, con la fuente original `c29ac806174859347a632cd22cc4d1f8818f1bc1`, Pages `a2c676cf628d2c3b48dba7c67248016bcfb9a854` y entrada `main-CpRyO9Jy.js`. Sus originales no se renombraron ni se repitieron para la publicación posterior.
 - El commit 6822 sólo cambia cinco archivos de verificación. Pages actual `5fe4f3a16e62717297feb2ff593c60f9db71b89c` conserva **los 85 archivos idénticos**, árbol `ee2ab98c1bd58a78d37390358c8f508a10048166`; HTTP confirma entrada, 20 módulos y 40 recursos del shell. Certificado: `.animation.local/1716-contract2-public-equivalence.json`, SHA-256 `94e4d105dbf5e5ac5e3f2e07d1cb2e2bcd9a08c0f8291c0206700b578a628050`.
