@@ -1,4 +1,23 @@
-# Verificación del WIP — web 1.7.14 y APK 1.1.3
+# Verificación del WIP — web 1.7.16 y APK 1.1.3
+
+Estado: 3 de octubre de 2026. **Batería completa aprobada: 2.086 unitarias en 123 archivos y 330 E2E**, sin omisiones, saltos, reintentos, flaky ni errores. El [run 37110847248](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37110847248) corresponde a `6822ae282c02573a98c88bd98087efdc855c8d69`; sus 12 jobs y 11 ZIP originales se contrastaron con el censo de esa fuente. Son 201 casos UI y 129 de voces reales: motor 9, lectura 14, Piper 40 y Supertonic 66.
+
+El certificado `.animation.local/ci-37110847248/aggregate.json` tiene SHA-256 `363888d41846ad0d9336f41c91734da59994ec863c3720847de0a9b53db3b75e`. La revisión semántica de voz, incluidos 106 WAV, tiene SHA-256 `3930134329b1024ef223850c88471e5bf2c2c92005e01f8aea51c2097e279d1a`.
+
+## Publicación y alcance actuales
+
+- **38 casos públicos aprobados**: 36 de aplicación y dos de Supertonic, con la fuente original `c29ac806174859347a632cd22cc4d1f8818f1bc1`, Pages `a2c676cf628d2c3b48dba7c67248016bcfb9a854` y entrada `main-CpRyO9Jy.js`. Sus originales no se renombraron ni se repitieron para la publicación posterior.
+- El commit 6822 sólo cambia cinco archivos de verificación. Pages actual `5fe4f3a16e62717297feb2ff593c60f9db71b89c` conserva **los 85 archivos idénticos**, árbol `ee2ab98c1bd58a78d37390358c8f508a10048166`; HTTP confirma entrada, 20 módulos y 40 recursos del shell. Certificado: `.animation.local/1716-contract2-public-equivalence.json`, SHA-256 `94e4d105dbf5e5ac5e3f2e07d1cb2e2bcd9a08c0f8291c0206700b578a628050`.
+- Los tres focales de catálogo/importación y los dos de interceptación del worker pasaron por separado. Se conservan los certificados fallidos iniciales de los observadores y sus suplementos de sólo lectura, sin alterar resultados ni repetir pruebas.
+- El APK público **1.1.3, código 16**, volvió a descargarse y conserva su loader de **2.089 bytes**, sin una copia completa antigua de la web. SHA-256 del APK: `67a52bdebff36c889c81061c488d002f4ac881404e9d1a5f6ad49e909ce267f7`. Su prueba nativa conserva la certificación independiente del histórico; esto no acredita un teléfono físico nuevo.
+
+[Implementación, licencias y evidencia de 1.7.16](overnight-polish-1716.md). Se mantienen biblioteca local/offline, subida manual a Drive, libros y plantas proporcionados, páginas PDF sincronizadas con el inicio audible y conservación de imágenes. El catálogo suma **105 opciones de idioma y voz**, no 105 personas; Supertonic es una descarga manual compartida de unos **209 MB** y Piper sigue siendo predeterminado. Hebreo, serbio y chino tienen una voz cada uno. El PDF complejo conserva la página impresa original cuando no se pueden aislar sus imágenes.
+
+Las medidas LIVE Supertonic (RTF 1,74–1,88 en los primeros fragmentos), las de CI y las del benchmark histórico se documentan por separado. No se promete lectura universal sin pausas ni se certifican RAM, batería o temperaturas de un teléfono físico.
+
+## Histórico certificado — web 1.7.14 y APK 1.1.3
+
+El texto siguiente conserva su fecha, fuente y alcance originales. No describe el catálogo actual de 1.7.16 ni se suma a los censos actuales. El [informe de 1.7.15](overnight-polish-1715.md) también se conserva como histórico.
 
 Estado: 3 de octubre de 2026. Batería integrada y publicación confirmadas para el commit `506f7ef08c3e7dddaddc4e5ce6a63313756710e5`.
 

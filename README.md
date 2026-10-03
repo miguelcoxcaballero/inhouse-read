@@ -4,6 +4,15 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.16
+
+- Biblioteca local y arranque offline tras una primera carga completa. Los libros se suben a Google Drive cuando eliges **Subir a Google Drive**; los vinculados sincronizan su progreso.
+- Libros con grosor según su longitud, portadas proporcionadas y macetas compactas. Se reutilizan los modelos 3D al cerrar el lector y cambiar de catálogo.
+- La lectura PDF conserva la página actual hasta que empieza el audio siguiente y se adapta al abrir o cerrar los controles. Las imágenes mantienen sus colores; en PDF complejos se conserva la página completa cuando no se pueden aislar con seguridad.
+- **105 opciones de idioma y voz:** 39 Piper y 66 combinaciones Supertonic, no 105 personas. Piper sigue siendo predeterminado. Supertonic se instala manualmente como paquete compartido de **209 MB**, gratuito bajo OpenRAIL-M. Hebreo, serbio y chino conservan una voz cada uno.
+
+**Verificado:** [2.086 unitarias y 330 E2E aprobados](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37110847248), además de 38 casos en la web publicada. [Resultados, cobertura de voces y límites](docs/overnight-polish-1716.md).
+
 ### Actualización web · 1.7.15
 
 - Arranque sin conexión después de una primera carga completa con internet: la app guarda su interfaz y los motores del lector. Los libros y las voces descargadas se conservan en sus almacenes locales; no hace falta mantener una pestaña abierta.
