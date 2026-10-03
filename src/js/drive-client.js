@@ -334,13 +334,16 @@ async function accessToken() {
 }
 
 async function driveFetch(url, options = {}) {
+  const generation = authGeneration
   const token = await accessToken()
+  if (generation !== authGeneration) throw new Error('La conexión de Google ha cambiado.')
   const response = await fetch(url, {
     ...options,
     headers: { Authorization: `Bearer ${token}`, ...options.headers }
   })
+  if (generation !== authGeneration) throw new Error('La conexión de Google ha cambiado.')
   if (!response.ok) {
-    if (response.status === 401) clearToken()
+    if (response.status === 401 && currentToken === token) clearToken()
     let message = `Google Drive: error ${response.status}`
     try { message = (await response.json()).error?.message || message } catch { /* non-JSON error */ }
     throw new Error(message)

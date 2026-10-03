@@ -4,10 +4,16 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.30
+
+- Las respuestas pendientes de una cuenta anterior se descartan al cambiar de sesión. Un error 401 de un token antiguo tampoco elimina el token que acaba de renovarse. Conserva el flujo Google de Notes y sus clientes OAuth.
+- Pasan 53 pruebas focales de Drive y sincronización, incluidas seis regresiones de carreras de sesión. Cuatro de esas regresiones reproducen el fallo sobre la fuente anterior. Esta verificación usa respuestas controladas; la autenticación con una cuenta real sigue pendiente.
+
 ### Actualización web · 1.7.29
 
 - Los capítulos EPUB mantienen el iframe en la maquetación mientras carga su documento. La opacidad evita mostrar contenido sin preparar; se conserva el evento de carga, el cálculo de dirección, el fondo y la maquetación originales.
 - Pasan 20 pruebas focales del iframe, navegación y diagnóstico. El último ensayo Android falló esperando la carga del siguiente capítulo; este ajuste necesita su nuevo ensayo bloqueado antes de declarar solucionada la continuidad.
+- Pasan 2.540 unitarias en 156 archivos, seis E2E focales y cinco casos sobre la web publicada, sin reintentos. El nuevo ensayo Android también conserva el fallo de continuidad; aún no se publicó la APK 1.1.4.
 
 ### Actualización web · 1.7.28
 

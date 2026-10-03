@@ -1,4 +1,14 @@
-# Verificación del WIP — web 1.7.28 publicada; 1.7.29 en preparación; Android 1.1.4 pendiente
+# Verificación del WIP — web 1.7.29 publicada; 1.7.30 en preparación; Android 1.1.4 pendiente
+
+## Cambios de 1.7.30
+
+Las peticiones de Drive conservan la generación de sesión y el token concreto con que empezaron. Se rechaza una respuesta de una cuenta que ya se cerró antes de continuar con otra operación; un 401 tardío de un token anterior no borra un token renovado. No cambia los clientes, permisos ni el flujo OAuth de Notes. La fuente anterior reproduce cuatro fallos en seis regresiones. Pasan las seis sobre la fuente corregida, las 17 pruebas existentes de cliente y las 30 de CloudSync: **53/53**. Build y cinco E2E aprobados sin reintentos: importar local/subir desde portada, conexión con foto, reintento, perfil y caducidad. Usan respuestas controladas. La comprobación con una cuenta real sigue pendiente por la falta de conexión del navegador autenticado.
+
+## Verificación de 1.7.29
+
+Fuente `b4da77674116bd6e3598e3fc699143c9d53b5d6d`, Pages `f4f873374d55a40ea97c08d3e45733e83d927fe1`: **2.540/2.540 unitarias, 156 archivos**, seis E2E focales y cinco casos públicos sin reintentos. Certificado local SHA-256 `d854132c12c50218650915a1ecd96662b4f6ca2887ab1f939a0850305867d51c`; público `d46d10c2cc62c124f7153e60f693895ba3ccdc21cbeebb666d22380c7b52501a`, con 109 cuerpos HTTP y cuatro capturas revisadas. Los 22 módulos y 43 recursos offline coinciden por HTTP; artefacto SHA-256 `542132d212a89a7c30cad6b7d1a462ff0219a61f528278793176010650ddf623`. La preparación original alcanzó su buffer de 100 MB por los módulos históricos retenidos; el segundo método lee cada blob Git por separado y conserva todos los hashes. No altera pruebas ni límites del producto.
+
+Android `37152067644` conserva **FAILED**: 114 starts/dones y 228 callbacks emparejados, pero ningún PCM nuevo en el último tramo de 30 segundos. Reutilizar eventos por mensajes y mantener el iframe en layout no basta para resolver la interrupción. La APK no se publicó. El ZIP original autenticado tiene 7.048.365 bytes y 111 miembros; certificado de captura SHA-256 `466a8f634b40b7777b90c20331c25a261e0613f6b2e0e3457b4ac811cc8e64a1`.
 
 ## Cambios de 1.7.29
 
