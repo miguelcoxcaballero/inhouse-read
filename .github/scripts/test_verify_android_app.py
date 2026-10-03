@@ -432,5 +432,108 @@ class AndroidImportDiagnosticTests(unittest.TestCase):
         self.assertEqual([call.args[:2] for call in observed.call_args_list], [("reading", 0), ("reading", 1), ("reading", 2)])
 
 
+class AndroidResumePaintTests(unittest.TestCase):
+    def reader(self, bounds="[574,2090][698,2213]", title="Intent reading"):
+        root = ui()
+        next(root.iter("node")).append(ElementTree.fromstring(
+            '<node class="android.widget.Button" text="Página siguiente" bounds="' + bounds + '"/>'))
+        for node in root.iter("node"):
+            if node.attrib.get("text") == "Intent reading":
+                node.set("text", title)
+        return root
+
+    def test_disabled_observer_has_no_commands_files_or_delay(self):
+        root = self.reader()
+        with patch.dict(verifier.os.environ, {}, clear=True), patch.object(verifier, "run") as command, patch.object(verifier, "Path") as path, patch.object(verifier.time, "sleep") as sleep:
+            self.assertIs(verifier.observe_resumed_paint(root, "Intent reading"), root)
+        command.assert_not_called()
+        path.assert_not_called()
+        sleep.assert_not_called()
+
+    def observe(self, directory, roots=None, ink=True):
+        def command(*args):
+            return SimpleNamespace(stdout=windows(reading=True) if args[-1] == "windows" else displays(visible=False), stderr="")
+        with patch.dict(verifier.os.environ, {"ANDROID_RESUME_DIAGNOSTICS": "1"}), patch.object(verifier, "capture", side_effect=roots or [self.reader(), self.reader()]) as capture, patch.object(verifier, "run", side_effect=command) as run, patch.object(verifier, "Path", side_effect=lambda name: Path(directory, name)), patch.object(verifier.time, "sleep") as sleep, patch.object(verifier, "resume_paint_metrics", return_value={"hasControlInk": ink, "darkPixels": 30 if ink else 0}), patch.object(verifier, "observe_webview_viewport", return_value={"available": False, "reason": "no socket"}):
+            result = verifier.observe_resumed_paint(self.reader(), "Intent reading")
+        return result, capture.call_args_list, run.call_args_list, sleep.call_args_list
+
+    def test_later_pngs_follow_xml_and_preserve_navigation_and_budgets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result, captures, commands, delays = self.observe(directory)
+            summary = json.loads(Path(directory, "android-reading-resume-diagnostic.json").read_text())
+        self.assertIn("Intent reading", verifier.node_text(result))
+        self.assertEqual(delays, [unittest.mock.call(.5), unittest.mock.call(2)])
+        self.assertEqual(len(captures), 2)
+        self.assertEqual([call.args[0].name for call in captures], ["android-reading-resume-diagnostic-500ms-before-xml.png", "android-reading-resume-diagnostic-2s-before-xml.png"])
+        self.assertEqual([call.args[1].name for call in captures], ["android-reading-resume-diagnostic-500ms.xml", "android-reading-resume-diagnostic-2s.xml"])
+        self.assertEqual([call.args[1:4] for call in commands if call.args[1] == "shell"], [
+            ("shell", "screencap", "-p"), ("shell", "dumpsys", "window"), ("shell", "dumpsys", "window"),
+            ("shell", "screencap", "-p"), ("shell", "dumpsys", "window"), ("shell", "dumpsys", "window"),
+        ])
+        self.assertFalse(any("input" in call.args or "start" in call.args or "force-stop" in call.args for call in commands))
+        self.assertEqual(summary["conclusion"], "success")
+        self.assertGreaterEqual(summary["observationSeconds"], 0)
+        for sample in summary["samples"]:
+            self.assertGreaterEqual(sample["postXmlPngCompletedAt"], sample["xmlCompletedAt"])
+            self.assertEqual(sample["webViewBounds"], [0, 0, 1080, 2300])
+            self.assertTrue(sample["windowState"]["keepScreenOn"])
+            self.assertFalse(sample["windowState"]["statusBarVisible"])
+
+    def test_unpainted_later_png_is_failure_not_native_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(AssertionError, "no contrasting control ink"):
+                self.observe(directory, ink=False)
+            summary = json.loads(Path(directory, "android-reading-resume-diagnostic.json").read_text())
+        self.assertEqual(summary["conclusion"], "failure")
+        self.assertEqual(len(summary["samples"]), 2)
+
+    def test_moving_accessibility_control_is_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(AssertionError, "control moved"):
+                self.observe(directory, roots=[self.reader(), self.reader("[574,1400][698,1523]")])
+            summary = json.loads(Path(directory, "android-reading-resume-diagnostic.json").read_text())
+        self.assertEqual(summary["conclusion"], "failure")
+
+    def test_missing_or_wrong_title_is_failure(self):
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(AssertionError, "document title"):
+            self.observe(directory, roots=[self.reader(title="Another book")])
+
+    def test_missing_or_empty_control_is_failure(self):
+        for root in (ui(), self.reader("[10,10][10,10]")):
+            with self.subTest(root=root), self.assertRaises(AssertionError):
+                verifier.resume_control_bounds(root)
+
+    def test_paint_crop_requires_real_ink_and_in_bounds(self):
+        from PIL import Image, ImageDraw
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory, "sample.png")
+            image = Image.new("RGB", (100, 100), "white")
+            image.save(path)
+            self.assertFalse(verifier.resume_paint_metrics(path, (0, 0, 100, 100))["hasControlInk"])
+            ImageDraw.Draw(image).rectangle((40, 40, 50, 50), fill="black")
+            image.save(path)
+            self.assertTrue(verifier.resume_paint_metrics(path, (0, 0, 100, 100))["hasControlInk"])
+            Image.new("RGB", (100, 100), "black").save(path)
+            self.assertFalse(verifier.resume_paint_metrics(path, (0, 0, 100, 100))["hasControlInk"])
+            with self.assertRaisesRegex(AssertionError, "outside"):
+                verifier.resume_paint_metrics(path, (90, 90, 110, 110))
+
+    def test_no_cdp_socket_records_unavailable_without_enabling_debugging(self):
+        with patch.object(verifier, "run", side_effect=[SimpleNamespace(stdout="no socket"), SimpleNamespace(stdout="123")]) as command:
+            result = verifier.observe_webview_viewport()
+        self.assertFalse(result["available"])
+        self.assertIn("no existing", result["reason"])
+        self.assertEqual(command.call_args_list, [
+            unittest.mock.call("adb", "shell", "cat", "/proc/net/unix"),
+            unittest.mock.call("adb", "shell", "pidof", "com.inhousesoftware.read"),
+        ])
+
+    def test_observer_is_between_resume_endpoint_and_back(self):
+        events = []
+        with patch.object(verifier, "wait_for_reading_display", side_effect=lambda label, **kwargs: (events.append(label), ui())[1]), patch.object(verifier, "run"), patch.object(verifier, "observe_resumed_paint", side_effect=lambda root, title: (events.append("paint-observer"), root)[1]), patch.object(verifier, "return_to_bookshelf", side_effect=lambda root: events.append("back")):
+            verifier.verify_loaded_reader_display("reading", background=True)
+        self.assertEqual(events, ["reading-reader", "background", "resumed-reader", "paint-observer", "back", "reading-shelf-after"])
+
+
 if __name__ == "__main__":
     unittest.main()

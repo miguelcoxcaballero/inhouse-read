@@ -296,6 +296,146 @@ def return_to_bookshelf(root):
     raise AssertionError("The loaded document had no usable return-to-bookshelf control")
 
 
+def resume_control_bounds(root):
+    controls = [node for node in root.iter("node")
+                if node_text(node).strip() == "Página siguiente"
+                and node.attrib.get("class") == "android.widget.Button"]
+    assert len(controls) == 1, "Resume diagnostic needs the real next-page control"
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", controls[0].attrib.get("bounds", ""))
+    assert match, "Resume next-page bounds were absent"
+    bounds = tuple(map(int, match.groups()))
+    assert bounds[2] > bounds[0] and bounds[3] > bounds[1], "Resume next-page bounds were empty"
+    return bounds
+
+
+def resume_paint_metrics(path, bounds):
+    # The fixture is a white PDF with a dark arrow. The centre of its actual
+    # XML control must contain dark ink on a light background in the later
+    # PNG, not just in accessibility. This is not arrow-shape recognition.
+    from PIL import Image
+    with Image.open(path) as image:
+        width, height = image.size
+        left, top, right, bottom = bounds
+        assert 0 <= left < right <= width and 0 <= top < bottom <= height, "Resume control is outside the PNG"
+        inset_x, inset_y = (right - left) // 4, (bottom - top) // 4
+        crop = image.convert("RGB").crop((left + inset_x, top + inset_y, right - inset_x, bottom - inset_y))
+        dark = sum(max(pixel) < 160 for pixel in crop.getdata())
+        light = sum(min(pixel) > 220 for pixel in crop.getdata())
+        pixels = crop.width * crop.height
+        return {"imageSize": [width, height], "controlBounds": list(bounds),
+                "centrePixels": pixels, "darkPixels": dark, "lightPixels": light,
+                "hasControlInk": dark >= 20 and light >= pixels * .5}
+
+
+def observe_webview_viewport():
+    """Read an already exposed DevTools target; never enable APK debugging."""
+    result = {"available": False, "scope": "Optional read-only CDP observation; APK debugging is not enabled by this helper."}
+    port = None
+    try:
+        sockets = run("adb", "shell", "cat", "/proc/net/unix").stdout
+        pid = run("adb", "shell", "pidof", "com.inhousesoftware.read").stdout.strip()
+        socket = "webview_devtools_remote_" + pid
+        if not re.fullmatch(r"\d+", pid) or not re.search(r"@" + re.escape(socket) + r"\s*$", sockets, re.M):
+            result["reason"] = "The signed APK exposes no existing WebView DevTools socket."
+            return result
+        port = run("adb", "forward", "tcp:0", "localabstract:" + socket).stdout.strip()
+        assert re.fullmatch(r"\d+", port), "Invalid assigned CDP forwarding port"
+        from urllib.request import urlopen
+        import websocket
+        with urlopen("http://127.0.0.1:" + port + "/json/list", timeout=5) as response:
+            targets = json.load(response)
+        targets = [target for target in targets if target.get("type") == "page"
+                   and re.match(r"https://miguelcoxcaballero\.github\.io/inhouse-read/", target.get("url", ""))]
+        assert len(targets) == 1, "Expected the public app's one WebView target"
+        expression = """JSON.stringify({url:location.href,innerWidth,innerHeight,dpr:devicePixelRatio,
+          visualViewport:visualViewport?{width:visualViewport.width,height:visualViewport.height,offsetTop:visualViewport.offsetTop,offsetLeft:visualViewport.offsetLeft,scale:visualViewport.scale}:null,
+          clientHeight:document.documentElement.clientHeight,scrollHeight:document.documentElement.scrollHeight,
+          rects:[...document.querySelectorAll('#reader-screen,.reader-toolbar,.pdf-stage')].map(e=>({selector:e.id||e.className,rect:{x:e.getBoundingClientRect().x,y:e.getBoundingClientRect().y,width:e.getBoundingClientRect().width,height:e.getBoundingClientRect().height}}))})"""
+        connection = websocket.create_connection(targets[0]["webSocketDebuggerUrl"], timeout=5, suppress_origin=True)
+        try:
+            connection.send(json.dumps({"id": 1, "method": "Runtime.evaluate", "params": {"expression": expression, "returnByValue": True}}))
+            deadline = time.monotonic() + 5
+            for _ in range(30):
+                remaining = deadline - time.monotonic()
+                assert remaining > 0, "CDP observation exceeded its five-second limit"
+                connection.settimeout(remaining)
+                response = json.loads(connection.recv())
+                if response.get("id") == 1:
+                    assert "error" not in response and "exceptionDetails" not in response.get("result", {}), "CDP evaluation failed"
+                    result.update({"available": True, "viewport": json.loads(response["result"]["result"]["value"])})
+                    break
+            assert result["available"], "CDP evaluation response was absent"
+        finally:
+            connection.close()
+    except Exception as error:
+        result["reason"] = str(error)
+    finally:
+        if port:
+            try:
+                run("adb", "forward", "--remove", "tcp:" + port)
+            except (OSError, subprocess.CalledProcessError):
+                pass
+    return result
+
+
+def observe_resumed_paint(root, title):
+    """Opt-in snapshots after the unchanged native resume endpoint succeeds.
+
+    This adds measured observation time before Back, not a new readiness
+    budget or navigation action. Preserve earlier PNGs, including failures.
+    """
+    if os.environ.get("ANDROID_RESUME_DIAGNOSTICS") != "1":
+        return root
+    started = time.time()
+    original_bounds = webview_bounds(root)
+    original_control = resume_control_bounds(root)
+    summary = {"startedAt": started, "initialWebViewBounds": list(original_bounds),
+               "initialControlBounds": list(original_control), "samples": [],
+               "scope": "Additional delayed read-only samples after the original 45s resume assertion; PNG is captured again AFTER each XML. Added elapsed time is separate from native endpoint timing."}
+    try:
+        for label, delay in (("500ms", .5), ("2s", 2)):
+            prefix = "android-reading-resume-diagnostic-" + label
+            sample = {"label": label, "delaySeconds": delay, "delayStartedAt": time.time()}
+            summary["samples"].append(sample)
+            time.sleep(delay)
+            sample["captureStartedAt"] = time.time()
+            root = capture(Path(prefix + "-before-xml.png"), Path(prefix + ".xml"))
+            sample["xmlCompletedAt"] = time.time()
+            # capture() takes its PNG before XML. Take a separate later frame
+            # to distinguish settled accessible geometry from actual paint.
+            png = Path(prefix + "-after-xml.png")
+            run("adb", "shell", "screencap", "-p", "/sdcard/inhouse-read-resume-after-xml.png")
+            run("adb", "pull", "/sdcard/inhouse-read-resume-after-xml.png", str(png))
+            sample["postXmlPngCompletedAt"] = time.time()
+            windows = run("adb", "shell", "dumpsys", "window", "windows").stdout
+            displays = run("adb", "shell", "dumpsys", "window", "displays").stdout
+            Path(prefix + "-windows.txt").write_text(windows, encoding="utf-8")
+            Path(prefix + "-displays.txt").write_text(displays, encoding="utf-8")
+            sample["windowState"] = android_window_state(windows, displays)
+            assert_reading_window_state(sample["windowState"], reading=True)
+            assert re.search(re.escape(title), node_text(root), re.I), "Resume diagnostic lost the loaded document title"
+            sample["webViewBounds"] = list(verify_webview_bounds(root, reading=True))
+            sample["controlBounds"] = list(resume_control_bounds(root))
+            assert tuple(sample["webViewBounds"]) == original_bounds, "Resume WebView bounds changed after the native endpoint"
+            assert tuple(sample["controlBounds"]) == original_control, "Resume next-page control moved after the native endpoint"
+            sample["paint"] = resume_paint_metrics(png, original_control)
+            sample["cdp"] = observe_webview_viewport()
+            sample["completedAt"] = time.time()
+            Path(prefix + ".json").write_text(json.dumps(sample, indent=2) + "\n", encoding="utf-8")
+        assert summary["samples"][-1]["paint"]["hasControlInk"], "Resume final PNG has no contrasting control ink at the canonical next-page control"
+        summary["conclusion"] = "success"
+        return root
+    except Exception as error:
+        summary["conclusion"] = "failure"
+        summary["error"] = str(error)
+        raise
+    finally:
+        summary["completedAt"] = time.time()
+        summary["observationSeconds"] = summary["completedAt"] - started
+        Path("android-reading-resume-diagnostic.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+        print("Android resume paint diagnostic: " + json.dumps(summary), flush=True)
+
+
 def observe_import_attempt(mode, attempt, root=None, capture_started=None, capture_completed=None):
     """Opt-in evidence only: do not change import actions or readiness assertions."""
     if os.environ.get("ANDROID_IMPORT_DIAGNOSTICS") != "1":
@@ -408,6 +548,7 @@ def verify_loaded_reader_display(mode, background=False):
         run("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read/.MainActivity")
         root = wait_for_reading_display("resumed-reader", reading=True)
         assert re.search("Intent " + mode, node_text(root), re.I), "Returning from Home lost the loaded document"
+        root = observe_resumed_paint(root, "Intent " + mode)
     return_to_bookshelf(root)
     # A newly imported book has no shelf origin: its first return prepares the
     # 3D model before the flight. Android15 SwiftShader reached the home UI but
