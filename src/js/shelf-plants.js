@@ -156,7 +156,16 @@ function surface(key, [width, height], repeat, paint, refresh) {
   // the image for every clone; keep it, so identical surfaces share one upload.
   const clone = texture => {
     const version = texture.source.version, copy = texture.clone();
-    copy.source.version = version; base.clones?.push(copy); return copy;
+    copy.source.version = version; base.clones?.push(copy);
+    // A cancelled inspection may release a clone before its shared painter
+    // finishes. Do not retain it or mark a disposed GPU texture for upload.
+    const released = () => {
+      const index = base.clones?.indexOf(copy) ?? -1;
+      if (index >= 0) base.clones.splice(index, 1);
+      copy.removeEventListener('dispose', released);
+    };
+    if (base.clones) copy.addEventListener('dispose', released);
+    return copy;
   };
   if (refresh) base.waiting?.push(refresh);
   return { map:clone(base.map), data:clone(base.data) };
@@ -740,7 +749,8 @@ export function createShelfPlant(entry) {
   const potColor = getPotColor(potId,entry.potColorId);
   const clayColor = potId ? potColor.hex : clays[Math.floor(random() * clays.length)];
   const finish = POT_FINISHES[potModelId] ?? { painter:() => terracottaPainter(clayColor, 53), material:{ bumpScale:.4 } };
-  const potMaps = own(surface(`pot:${potId}:${clayColor}:${quality}`, [128 * quality, 256 * quality], true, finish.painter(potColor.hex), refresh));
+  const potSurface = (level, notify) => surface(`pot:${potId}:${clayColor}:${level}`, [128 * level, 256 * level], true, finish.painter(potColor.hex), notify);
+  const potMaps = own(potSurface(quality, refresh));
   // Texels stay roughly square on the outer wall, whatever the pot proportions.
   potMaps.map.repeat.x = potMaps.data.repeat.x = Math.max(1, Math.round(Math.PI * 4 * radius * (RIM - FOOT) / potHeight));
   potMaps.map.offset.x = potMaps.data.offset.x = random();
@@ -771,7 +781,8 @@ export function createShelfPlant(entry) {
   }
   const mineral = new THREE.MeshStandardMaterial({ color:'#b7ae9c', roughness:1 });
   const stemMaterial = new THREE.MeshStandardMaterial({ color:0xffffff, vertexColors:true, roughness:.72 });
-  const leafMaps = detailed ? own(botanicalTextures(variant, refresh, quality)) : null;
+  const leafSurface = (level, notify) => botanicalTextures(variant, notify, level);
+  const leafMaps = detailed ? own(leafSurface(quality, refresh)) : null;
   const leafMaterial = new THREE.MeshPhysicalMaterial({ map:leafMaps?.map ?? null, bumpMap:leafMaps?.data ?? null, roughnessMap:leafMaps?.data ?? null,
     color:0xffffff, vertexColors:true, bumpScale:width * (variant === 'succulent' ? .00035 : .0012),
     // Ivy is glossy rather than downy: its gloss lives in the thin clearcoat,
@@ -1039,7 +1050,8 @@ export function createShelfPlant(entry) {
     }
   }
   const soilKind = variant === 'cactus' || variant === 'succulent' ? 'grit' : 'peat';
-  const soilMaps = own(surface(`soil:${soilKind}:${quality}`, [128 * quality, 128 * quality], false, soilPainter(soilKind), refresh));
+  const soilSurface = (level, notify) => surface(`soil:${soilKind}:${level}`, [128 * level, 128 * level], false, soilPainter(soilKind), notify);
+  const soilMaps = own(soilSurface(quality, refresh));
   const soil = new THREE.MeshStandardMaterial({ map:soilMaps.map, roughnessMap:soilMaps.data, bumpMap:soilMaps.data,
     bumpScale:soilKind === 'grit' ? 1.4 : 1.1, roughness:1, vertexColors:true });
   mesh(soilGeometry(pot.soilRadius * .995, soilY, random, roots, soilKind), soil, 'potting-soil');
@@ -1071,8 +1083,60 @@ export function createShelfPlant(entry) {
   group.userData.parts = parts;
   group.userData.inspectionResolution = entry.inspectionResolution || 0;
   if (quality > 1) group.userData.ready = plantSurfacesReady().then(() => !disposed);
+  const surfaceBindings = [{ material:clay, create:potSurface }, { material:soil, create:soilSurface }];
+  if (leafMaps && materials.has(leafMaterial)) surfaceBindings.push({ material:leafMaterial, create:leafSurface });
+  let pendingQuality = null;
+  // Inspection changes pigment/detail map resolution only. Keep the exact
+  // meshes, baked leaf geometry and material programs; prepare maps offscreen
+  // and let the scene commit them after the gesture has settled.
+  group.userData.prepareSurfaceQuality = resolution => {
+    pendingQuality?.dispose();
+    if (disposed) return { ready:Promise.resolve(false), apply:() => false, dispose() {} };
+    const level = resolution ? 2 : 1, prepared = [];
+    try {
+      for (const binding of surfaceBindings) prepared.push({ ...binding, maps:binding.create(level) });
+    } catch (error) {
+      for (const item of prepared) for (const map of Object.values(item.maps)) map.dispose();
+      throw error;
+    }
+    let released = false, ready = false;
+    const plan = {
+      ready:null,
+      apply() {
+        if (disposed || released || !ready || pendingQuality !== plan) return false;
+        for (const { material, maps } of prepared) {
+          const previous = { map:material.map, data:material.bumpMap };
+          for (const key of ['map','data']) {
+            const before = previous[key], after = maps[key];
+            // UV placement, filtering and anisotropy belong to the existing
+            // model/renderer, not the procedural surface's shared source.
+            after.offset.copy(before.offset); after.repeat.copy(before.repeat); after.center.copy(before.center);
+            after.rotation = before.rotation; after.matrixAutoUpdate = before.matrixAutoUpdate; after.matrix.copy(before.matrix);
+            for (const property of ['wrapS','wrapT','magFilter','minFilter','anisotropy','channel','flipY','premultiplyAlpha','unpackAlignment'])
+              after[property] = before[property];
+            textures.add(after);
+          }
+          material.map = maps.map; material.bumpMap = material.roughnessMap = maps.data;
+          for (const map of Object.values(previous)) { textures.delete(map); map.dispose(); }
+        }
+        group.userData.inspectionResolution = resolution || 0;
+        released = true; pendingQuality = null;
+        return true;
+      },
+      dispose() {
+        if (released) return;
+        released = true;
+        for (const item of prepared) for (const map of Object.values(item.maps)) map.dispose();
+        if (pendingQuality === plan) pendingQuality = null;
+      }
+    };
+    pendingQuality = plan;
+    plan.ready = plantSurfacesReady().then(() => ready = !disposed && !released && pendingQuality === plan);
+    return plan;
+  };
   group.userData.dispose = () => {
     if (disposed) return; disposed = true;
+    pendingQuality?.dispose();
     for (const geometry of geometries) geometry.dispose();
     for (const material of materials) material.dispose();
     for (const texture of textures) texture.dispose();

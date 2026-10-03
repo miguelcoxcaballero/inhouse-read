@@ -135,6 +135,7 @@ function showScreen(name) {
   document.body.classList.toggle('is-reading', name === 'reader')
   els.homeScreen.hidden = name !== 'home'
   els.readerScreen.hidden = name !== 'reader'
+  shelf?.setPresentationActive?.(name === 'home')
 }
 
 function isAndroidShell() {
@@ -521,6 +522,9 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
   let format
   try {
     format = await reader.open(els.readerViewport, file, {
+      initialPage:existingRecord?.locator?.kind === 'pdf-page' ? existingRecord.locator.value : undefined,
+      initialFraction:existingRecord?.progressFraction,
+      preferences:readingExperience.preferences,
       onRelocate: onReaderRelocate,
       onUserNavigation: () => readingExperience.voice.stop(),
       onFollowLink: href => {
@@ -1026,7 +1030,10 @@ for (const image of [els.driveProfileAvatar, els.driveProfileAvatarMenu]) {
 
 /** No bloquea la apertura del libro: la portada se guarda para la próxima visita a la estantería. */
 function extractCoverInBackground(record) {
-  if (coverUpgrades.has(record.id)) return coverUpgrades.get(record.id)
+  const epoch = reader.epoch
+  const previous = coverUpgrades.get(record.id)
+  if (previous?.epoch === epoch) return previous.promise
+  const current = () => reader.epoch === epoch && currentBookId === record.id
   const coverNeedsUpgrade = async () => {
     if (!record.cover) return true
     if (record.format !== 'PDF' || typeof createImageBitmap !== 'function') return false
@@ -1037,13 +1044,17 @@ function extractCoverInBackground(record) {
       return small
     } catch { return false }
   }
+  const entry = { epoch }
   const task = coverNeedsUpgrade()
-    .then(needsCover => needsCover ? reader.getCoverBlob() : null)
-    .then(blob => { if (blob?.size > 0) return library.setCover(record.id, blob) })
+    .then(needsCover => needsCover && current() ? reader.getCoverBlob() : null)
+    .then(blob => {
+      if (blob?.size > 0 && current()) return library.patch(record.id, { cover:blob, coverUpdatedAt:Date.now() }, { ifCurrent:current })
+    })
     .then(updated => { if (updated) refreshShelf() })
     .catch(err => console.warn('No se pudo extraer la portada:', err))
-    .finally(() => coverUpgrades.delete(record.id))
-  coverUpgrades.set(record.id, task)
+    .finally(() => { if (coverUpgrades.get(record.id) === entry) coverUpgrades.delete(record.id) })
+  entry.promise = task
+  coverUpgrades.set(record.id, entry)
   return task
 }
 
@@ -1202,7 +1213,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.7.16'
+els.appVersion.textContent = 'Inhouse Read · v1.7.17'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')

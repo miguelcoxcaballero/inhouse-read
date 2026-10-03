@@ -986,6 +986,28 @@ describe('real shelf book materials', () => {
     shelfCopy.userData.dispose(); lifted.userData.dispose();
   });
 
+  it('bends the original ribbon buffers throughout opening, withdrawal and the reverse flight', () => {
+    canvasContext();
+    const model = createBookModel({ ...book, progressFraction:.4 }, style, 132, 200, 40, null);
+    const mesh = model.getObjectByName('reading-bookmark'), geometry = mesh.geometry;
+    const attributes = ['position','normal','uv'].map(key => geometry.getAttribute(key));
+    const release = vi.spyOn(geometry, 'dispose');
+    for (let frame=0; frame<=32; frame++) {
+      model.userData.setCoverOpen(frame/32);
+      model.userData.setBookmarkWithdraw(frame/32);
+      expect(mesh.geometry).toBe(geometry);
+      ['position','normal','uv'].forEach((key,index) => expect(geometry.getAttribute(key)).toBe(attributes[index]));
+    }
+    expect(mesh.visible).toBe(false);
+    for (let frame=32; frame>=0; frame--) {
+      model.userData.setBookmarkWithdraw(frame/32);
+      model.userData.setCoverOpen(frame/32);
+      expect(mesh.geometry).toBe(geometry);
+    }
+    expect(mesh.visible).toBe(true); expect(release).not.toHaveBeenCalled();
+    model.userData.dispose(); expect(release).toHaveBeenCalledOnce();
+  });
+
   it('gives the turned leaves and the page margin the paper of the saved page', () => {
     const context = canvasContext();
     const model = createBookModel({ ...book, progressFraction:.4 }, style, 132, 200, 40, null);

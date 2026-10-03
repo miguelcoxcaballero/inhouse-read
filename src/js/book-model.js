@@ -427,7 +427,7 @@ export function boardGeometry(width, height, depth, { shelf = false, overview = 
 
 /** A real ribbon mesh emerging from the top edge at the saved reading depth. */
 export function bookmarkGeometry(width, height, thickness, progress, peek = 10,
-  { open = 0, withdraw = 0, segments = 32, seed = 0 } = {}) {
+  { open = 0, withdraw = 0, segments = 32, seed = 0, geometry: target } = {}) {
   // Peek values belong to the 200 px shelf book, not the much larger lifted
   // copy. Keep the ribbon's physical proportions identical in both models.
   const ribbonWidth = Math.min(width * .09, Math.max(height * .035, Math.min(height * .055, thickness * .42)));
@@ -550,10 +550,25 @@ export function bookmarkGeometry(width, height, thickness, progress, peek = 10,
   indices.push(0, 2, 1, 1, 2, 3);
   const end = steps * 4;
   indices.push(end, end + 1, end + 2, end + 1, end + 3, end + 2);
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.setIndex(indices);
+  // Opening and withdrawing only bend the ribbon; its topology stays fixed.
+  // Keep the same GPU buffers during the flight instead of deleting and
+  // uploading a new indexed mesh on every frame. The path and normals are
+  // still calculated at the original resolution.
+  const reuse = target?.getAttribute('position')?.count === positions.length / 3
+    && target.getAttribute('uv')?.count === uvs.length / 2
+    && target.index?.count === indices.length;
+  const geometry = reuse ? target : new THREE.BufferGeometry();
+  if (reuse) {
+    geometry.getAttribute('position').array.set(positions);
+    geometry.getAttribute('uv').array.set(uvs);
+    geometry.getAttribute('position').needsUpdate = true;
+    geometry.getAttribute('uv').needsUpdate = true;
+    geometry.boundingBox = geometry.boundingSphere = null;
+  } else {
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+  }
   geometry.computeVertexNormals();
   return geometry;
 }
@@ -1340,9 +1355,11 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   };
   function updateRibbonGeometry() {
     if (!ribbonMesh || !bookmark) return;
-    ribbonMesh.geometry.dispose();
+    const previous = ribbonMesh.geometry;
     ribbonMesh.geometry = bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek,
-      { open:Math.max(0, Math.min(1, (coverOpening - .1) / .9)), withdraw:bookmarkWithdraw, segments:ribbonSegments, seed:ribbonSeed });
+      { open:Math.max(0, Math.min(1, (coverOpening - .1) / .9)), withdraw:bookmarkWithdraw,
+        segments:ribbonSegments, seed:ribbonSeed, geometry:previous });
+    if (ribbonMesh.geometry !== previous) previous.dispose();
     ribbonMesh.visible = bookmarkWithdraw < .999;
   }
   group.userData.setBookmarkWithdraw = amount => {

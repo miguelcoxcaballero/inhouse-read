@@ -125,6 +125,16 @@ describe('ReaderController', () => {
     expect(await controller.getSpeechSource()).toBeNull()
   })
 
+  it('forwards initial PDF restoration and preferences only to the PDF engine', async () => {
+    const controller = new ReaderController(), container = document.createElement('div')
+    const options = { initialPage:3, initialFraction:2/9, preferences:{ theme:'night', zoom:150 } }
+    await controller.open(container, makeFile('saved.pdf', new TextEncoder().encode('%PDF-1.4')), options)
+    expect(pdfOpen.mock.calls[0][2]).toMatchObject(options)
+    await controller.open(container, makeFile('saved.epub', new Uint8Array([0x50,0x4b,0x03,0x04])), options)
+    expect(foliateOpen.mock.calls[0][2]).not.toHaveProperty('initialPage')
+    expect(foliateOpen.mock.calls[0][2]).not.toHaveProperty('preferences')
+  })
+
   it('forwards length metadata without calling an EPUB page count a real page count', async () => {
     const controller = new ReaderController()
     await controller.open(document.createElement('div'), new File(['PK\x03\x04'], 'a.epub'))

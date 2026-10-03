@@ -222,7 +222,7 @@ describe('per-frame cost of the retained shelf scene', () => {
   it('reads the stage, scroller and canvas rectangles once per draw, before the nodes are restyled', () => {
     settle();
     reads.scroller = reads.stage = reads.canvas = 0;
-    shelf.flush();
+    shelf.flush({ force:true });
     // Fit measurement and viewport each look at the stage and scroller; the
     // trash, catalogue and snapshot reuse that frame's layout.
     expect(reads).toEqual({ scroller:2, stage:2, canvas:1 });
@@ -259,5 +259,66 @@ describe('per-frame cost of the retained shelf scene', () => {
     shelf.zoomTo(1); shelf.flush(); flushFrames();
     expect(shelf.canvas.dataset.highResolutionBooks).toBe(String(resolutions().filter(Boolean).length));
     expect(Number(shelf.canvas.dataset.overviewBooks) + Number(shelf.canvas.dataset.detailedBooks)).toBe(Number(painted));
+  });
+
+  function plantInspectionPlan() {
+    shelf.updateLayout({ ...layoutData, entries:layoutData.entries.filter(entry => entry.kind === 'plant') });
+    settle();
+    let model;
+    gpu.scene.traverse(object => { if (object.userData.shelfPlantKeys) model = object; });
+    let resolve;
+    const ready = new Promise(done => { resolve = done; });
+    const plan = { ready, apply:vi.fn(() => { model.userData.inspectionResolution = 256; return true; }), dispose:vi.fn() };
+    const prepare = vi.spyOn(model.userData,'prepareSurfaceQuality').mockReturnValue(plan);
+    return { model, plan, prepare, resolve };
+  }
+
+  it('upgrades plant inspection maps once without replacing meshes or rebuilding foliage hit triangles', async () => {
+    const { model, plan, prepare, resolve } = plantInspectionPlan();
+    const creations = shelf.canvas.dataset.modelCreations;
+    const geometry = model.getObjectByName('leaf-0').geometry;
+    const path = plantNode.querySelector('.ihr-plant-foliage path[fill="transparent"]').getAttribute('d');
+    shelf.setInspectionView({ zoom:1.5, panX:0, panY:0 }); shelf.flush(); flushFrames();
+    expect(prepare).toHaveBeenCalledExactlyOnceWith(256);
+    expect(shelf.canvas.dataset.modelCreations).toBe(creations);
+    expect(shelf.canvas.dataset.bookQualityPending).toBe('1');
+    expect(plan.apply).not.toHaveBeenCalled();
+    resolve(true); await Promise.resolve(); flushFrames();
+    expect(plan.apply).toHaveBeenCalledTimes(1);
+    expect(model.parent).not.toBeNull();
+    expect(model.getObjectByName('leaf-0').geometry).toBe(geometry);
+    expect(shelf.canvas.dataset.highResolutionPlants).toBe('1');
+    expect(shelf.canvas.dataset.bookQualityPending).toBe('0');
+    expect(shelf.canvas.dataset.modelCreations).toBe(creations);
+    expect(plantNode.querySelector('.ihr-plant-foliage path[fill="transparent"]').getAttribute('d')).toBe(path);
+  });
+
+  it('discards a plant quality request when inspection reverses before its maps finish', async () => {
+    const { model, plan, resolve } = plantInspectionPlan();
+    const creations = shelf.canvas.dataset.modelCreations;
+    shelf.setInspectionView({ zoom:1.5, panX:0, panY:0 }); shelf.flush();
+    shelf.setInspectionView({ zoom:1, panX:0, panY:0 }); shelf.flush();
+    expect(plan.dispose).toHaveBeenCalled();
+    resolve(true); await Promise.resolve(); flushFrames();
+    expect(plan.apply).not.toHaveBeenCalled();
+    expect(model.userData.inspectionResolution).toBe(0);
+    expect(shelf.canvas.dataset.modelCreations).toBe(creations);
+    expect(shelf.canvas.dataset.bookQualityPending).toBe('0');
+  });
+
+  it('holds prepared plant maps while dragging and releases pending maps when the scene is disposed', async () => {
+    const { model, plan, resolve } = plantInspectionPlan();
+    shelf.setInspectionView({ zoom:1.5, panX:0, panY:0 }); shelf.flush();
+    plantNode.classList.add('is-dragging'); resolve(true); await Promise.resolve(); flushFrames();
+    expect(plan.apply).not.toHaveBeenCalled();
+    expect(model.userData.inspectionResolution).toBe(0);
+    plantNode.classList.remove('is-dragging'); await Promise.resolve(); flushFrames();
+    expect(plan.apply).toHaveBeenCalledTimes(1);
+    const dispose = vi.fn(); let finish;
+    model.userData.prepareSurfaceQuality.mockReturnValue({ ready:new Promise(resolve => { finish = resolve; }), apply:vi.fn(), dispose });
+    shelf.setInspectionView({ zoom:1, panX:0, panY:0 }); shelf.flush();
+    shelf.dispose(); shelf = null;
+    expect(dispose).toHaveBeenCalled(); finish(true); await Promise.resolve();
+    expect(model.parent).toBeNull();
   });
 });

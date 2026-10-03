@@ -359,6 +359,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   rebuildFurniture();
 
   let disposed = false, raf = 0, renderCount = 0, modelCreations = 0, viewportHeight = 1, progress = mode === 'isometric' ? 1 : 0;
+  let presentationActive = true, drawPending = true, paintedViewport = null;
   let shelfSnapshotDirty = true, shelfSnapshotRenders = 0;
   // Every program is linked in parallel before the first frame (see gpu-programs.js).
   let programsReady = null, programsPoll = 0, unpainted = [];
@@ -578,6 +579,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function cancelReplacement(entry) {
+    entry.plantQuality?.plan.dispose(); entry.plantQuality = null;
     releaseCandidate(entry.replacement);
     entry.replacement = null;
     entry.qualityReplacement = false; entry.replacementReady = false;
@@ -786,6 +788,19 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const qualityMatches = (model,entry) => Boolean(model?.userData.overview) === entry.overview && (model?.userData.inspectionResolution || 0) === entry.inspectionResolution;
 
   function replaceBookQuality(entry) {
+    if (entry.kind === 'plant' && entry.model?.userData.prepareSurfaceQuality) {
+      if (entry.replacement || entry.plantQuality?.resolution === entry.inspectionResolution) return;
+      entry.plantQuality?.plan.dispose();
+      const model = entry.model, plan = model.userData.prepareSurfaceQuality(entry.inspectionResolution);
+      const pending = { model, plan, resolution:entry.inspectionResolution, ready:false };
+      entry.plantQuality = pending;
+      Promise.resolve(plan.ready).then(loaded => {
+        if (disposed || entry.plantQuality !== pending || entry.model !== model) { plan.dispose(); return; }
+        if (!loaded) { plan.dispose(); entry.plantQuality = null; return; }
+        pending.ready = true; invalidate(true, true);
+      }, () => { plan.dispose(); if (entry.plantQuality === pending) entry.plantQuality = null; });
+      return;
+    }
     if (entry.qualityReplacement && entry.replacement && !qualityMatches(entry.replacement,entry))
       cancelReplacement(entry);
     if (entry.replacement) return;
@@ -801,6 +816,16 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function applyBookQuality(entry) {
+    if (entry.plantQuality) {
+      const pending = entry.plantQuality;
+      if (entry.model !== pending.model || pending.resolution !== entry.inspectionResolution) {
+        pending.plan.dispose(); entry.plantQuality = null;
+      } else if (pending.ready && !entry.trashDrop && !entry.insertion &&
+        !entry.node?.classList.contains('is-away') && !entry.node?.classList.contains('is-dragging')) {
+        pending.plan.apply(); pending.plan.dispose(); entry.plantQuality = null;
+      }
+      return;
+    }
     // A late cover decode can finish after the user has reversed the view or
     // pressed/released this book. Never paint the obsolete quality first.
     if (entry.qualityReplacement && entry.replacement && !qualityMatches(entry.replacement,entry)) {
@@ -869,15 +894,17 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (floorLit !== darkPage()) rebuildOcclusion();
   }
 
-  // The node's class text and its two drag variables are all a frame reads of
-  // its DOM state. Tokenise the classes and rebuild the joined string only when
-  // one of those three texts differs from the last read, instead of asking
+  // Cache the geometry flags and native hit-control state. Tokenise the
+  // classes and rebuild the joined string only when one of these inputs
+  // differs from the last read, instead of asking
   // classList and the style four to six times per entry and frame.
   function stateFor(entry) {
     const node = entry.node;
     if (!node) return '';
     const classes = node.className, dragX = node.style.getPropertyValue('--ihr-drag-x'), dragY = node.style.getPropertyValue('--ihr-drag-y');
-    if (classes === entry.classText && dragX === entry.dragX && dragY === entry.dragY) return entry.stateText;
+    const disabled = Boolean(node.disabled), pointerEvents = node.style.pointerEvents;
+    if (classes === entry.classText && dragX === entry.dragX && dragY === entry.dragY &&
+      disabled === entry.controlDisabled && pointerEvents === entry.controlPointerEvents) return entry.stateText;
     if (classes !== entry.classText) {
       const tokens = classes.split(CLASS_SEPARATOR);
       entry.flags = { away:tokens.includes('is-away'), dragging:tokens.includes('is-dragging'),
@@ -885,8 +912,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       entry.classText = classes;
     }
     entry.dragX = dragX; entry.dragY = dragY;
+    entry.controlDisabled = disabled; entry.controlPointerEvents = pointerEvents;
     const { away, dragging, lifted, pressed } = entry.flags;
-    return entry.stateText = [away, dragging, lifted, pressed, dragX, dragY].join('|');
+    return entry.stateText = [away, dragging, lifted, pressed, dragX, dragY, disabled, pointerEvents].join('|');
   }
 
   function viewport() {
@@ -1616,12 +1644,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function pollPrograms() {
     programsPoll = 0;
     if (disposed || programsReady === true) return;
+    if (!canPresent() && !hasOngoingMotion()) return;
     if (programsReady()) invalidate(false); else programsPoll = setTimeout(pollPrograms, 10);
   }
 
   function draw(now = performance.now()) {
     raf = 0;
     if (disposed) return;
+    drawPending = false;
     hideInspectionSnapshot();
     if (!inspectionMoving && inspectionEntryUpdates.size) {
       // Cover analysis and metadata can finish independently for many books.
@@ -1686,6 +1716,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (!programsReady()) {
         // Animations that finished on this unpainted frame resolve after the next painted one.
         unpainted.push(...finishedInsertions, ...finishedDrops);
+        drawPending = true;
         programsPoll ||= setTimeout(pollPrograms, 10); return;
       }
       programsReady = true;
@@ -1761,7 +1792,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // One pass over the entries serves every count below.
     let plants = 0, highPlants = 0, lamps = 0, overview = 0, detailed = 0, highBooks = 0, pending = 0, bookCount = 0, resolutionsChanged = false;
     for (const entry of bookEntries) {
-      if (entry.qualityReplacement) pending++;
+      if (entry.qualityReplacement || entry.plantQuality) pending++;
       const model = entry.model;
       if (!model?.visible) continue;
       if (entry.kind === 'plant') { plants++; if (model.userData.inspectionResolution) highPlants++; }
@@ -1799,6 +1830,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     setData(canvas, 'plantGeometry', 'catalog-3d');
     setData(canvas, 'animating', String(Boolean(transition || reorderTransition || moving || trashMoving || inspectionMoving)));
     lastSceneMoving = Boolean(transition || reorderTransition || moving || trashMoving);
+    paintedViewport = { width:window.innerWidth, height:window.innerHeight,
+      ratio:window.devicePixelRatio || 1, clientHeight:scroller.clientHeight, scrollTop:scroller.scrollTop };
     for (const resolve of unpainted.splice(0)) resolve();
     for (const resolve of finishedInsertions) resolve();
     for (const resolve of finishedDrops) resolve();
@@ -1812,6 +1845,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function invalidate(dirty = true, preserveInspectionOverview = false, source = '') {
+    if (disposed) return;
     if (dirty && preserveInspectionOverview && inspectionMoving) {
       // A decoded quality replacement stays pending while the captured image
       // follows the fingers. Its ready flag is applied by the settled paint.
@@ -1823,7 +1857,58 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       shelfSnapshotDirty = shadowDirty = true;
       if (!preserveInspectionOverview) inspectionOverview = null;
     }
-    if (!disposed && !raf) raf = requestAnimationFrame(draw);
+    drawPending = true;
+    if (!disposed && !raf && (canPresent() || hasOngoingMotion())) raf = requestAnimationFrame(draw);
+  }
+
+  function canPresent() {
+    return presentationActive && document.visibilityState !== 'hidden';
+  }
+
+  // Do not interrupt an owner's actual flight, insertion or camera turn when
+  // a screen changes. Only stationary background repaints are deferred; their
+  // dirty image/shadow/projection state survives until the screen is visible.
+  function hasOngoingMotion() {
+    return Boolean(transition || reorderTransition || trashTransition || lastSceneMoving || lighting.settling ||
+      bookEntries.some(entry => entry.insertion && !entry.insertion.complete || entry.trashDrop && !entry.trashDrop.complete));
+  }
+
+  function presentationChanged() {
+    if (disposed) return;
+    if (!canPresent() && !hasOngoingMotion()) {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      if (programsPoll) clearTimeout(programsPoll);
+      programsPoll = 0;
+    } else if (canPresent() && !drawPending && viewportChanged()) invalidate(true, false, 'presentation-viewport');
+    else if (drawPending) invalidate(false);
+  }
+
+  function viewportChanged() {
+    if (!paintedViewport || !frameLayout.stage || !frameLayout.scroller || !frameLayout.canvas) return true;
+    if (paintedViewport.width !== window.innerWidth || paintedViewport.height !== window.innerHeight ||
+      paintedViewport.ratio !== (window.devicePixelRatio || 1) || paintedViewport.clientHeight !== scroller.clientHeight ||
+      paintedViewport.scrollTop !== scroller.scrollTop) return true;
+    for (const [node, previous] of [[stage,frameLayout.stage],[scroller,frameLayout.scroller],[canvas,frameLayout.canvas]]) {
+      const current = node.getBoundingClientRect();
+      if (['left','top','width','height'].some(key => current[key] !== previous[key])) return true;
+    }
+    return false;
+  }
+
+  function flushScene({ force = false } = {}) {
+    if (disposed) return false;
+    // A caller can write is-away/drag variables and need the new projection
+    // in the same task, before MutationObserver's asynchronous notification.
+    observeEntryChanges(mutations.takeRecords());
+    if (themeChanges.takeRecords().length) { updateWoodTheme(); invalidate(true, false, 'theme'); }
+    if (!force && !canPresent() && !hasOngoingMotion()) return false;
+    if (!force && !drawPending && viewportChanged()) invalidate(true, false, 'viewport-sync');
+    if (!force && !drawPending && !hasOngoingMotion()) return false;
+    if (force) { inspectionOverview = null; shelfSnapshotDirty = shadowDirty = true; }
+    cancelAnimationFrame(raf); raf = 0;
+    draw();
+    return true;
   }
   // Repaint the camera's new window; the shadow map is reused.
   function scrolled() {
@@ -1864,7 +1949,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     } };
   }
   let mutationBatch = 0;
-  const mutations = new MutationObserver(records => {
+  function observeEntryChanges(records) {
     let changed = false, pressureOnly = true;
     mutationBatch++;
     for (const record of records) {
@@ -1882,12 +1967,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         previous.every((value, index) => index === 3 || value === current[index]);
     }
     if (changed) invalidate(true, pressureOnly, pressureOnly ? 'state:pressure' : 'state:geometry');
-  });
+  }
+  const mutations = new MutationObserver(observeEntryChanges);
   const themeChanges = new MutationObserver(() => { updateWoodTheme(); invalidate(true, false, 'theme'); });
   themeChanges.observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
-  for (const node of byNode.keys()) mutations.observe(node, { attributes:true, attributeFilter:['class', 'style'] });
+  for (const node of byNode.keys()) mutations.observe(node, { attributes:true, attributeFilter:['class', 'style', 'disabled'] });
   scroller.addEventListener('scroll', scrolled, { passive:true });
   window.addEventListener('resize', invalidate, { passive:true });
+  document.addEventListener('visibilitychange', presentationChanged);
   document.fonts?.ready.then(() => invalidate(true, false, 'fonts-ready'));
   updateWoodTheme();
   draw();
@@ -1900,6 +1987,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   return {
     canvas,
+    setPresentationActive(value) {
+      presentationActive = Boolean(value);
+      presentationChanged();
+    },
     getInspectionZoom:()=>inspectionZoom,
     beginInspectionGesture() {
       if (disposed || desiredMode !== 'isometric' || progress !== 1 || transition) return;
@@ -1989,7 +2080,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     animateObjectToTrash,
     animateBookToTrash:animateObjectToTrash,
-    flush() { inspectionOverview = null; shelfSnapshotDirty = shadowDirty = true; cancelAnimationFrame(raf); raf = 0; draw(); },
+    flush:flushScene,
     setMode(next, { animate = true } = {}) {
       const wasIsometric = desiredMode === 'isometric';
       desiredMode = next === 'isometric' ? 'isometric' : 'spine';
@@ -2022,7 +2113,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     getReturnPose(node) {
       const entry = byNode.get(node);
       if (!entry || entry.kind === 'plant' || entry.kind === 'lamp' || disposed) return null;
-      cancelAnimationFrame(raf); raf = 0; draw();
+      flushScene();
       const dock = shelfBookInsertion(shelfBookSlot(entry, width), entry.width);
       return projectShelfBookPose(furniture.matrixWorld, dock, entry, stage.getBoundingClientRect());
     },
@@ -2213,7 +2304,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         ...bookEntries.filter(entry => entry.kind === 'lamp' && entry.mount !== 'undershelf').map(entry => (entry.depth || entry.width) + 12)));
       for (const entry of bookEntries) if (entry.node) {
         byNode.set(entry.node, entry);
-        mutations.observe(entry.node, { attributes:true, attributeFilter:['class', 'style'] });
+        mutations.observe(entry.node, { attributes:true, attributeFilter:['class', 'style', 'disabled'] });
       }
       if (reorderTransition) reorderTransition.entries = reorderTransition.entries.filter(item => retained.includes(item.entry));
       if (width !== oldWidth || height !== oldHeight || depth !== oldDepth || shelfType !== oldShelfType || JSON.stringify(rows) !== oldRows) rebuildFurniture();
@@ -2248,6 +2339,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       disposed = true; cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       inspectionEntryUpdates.clear();
       scroller.removeEventListener('scroll', scrolled); window.removeEventListener('resize', invalidate);
+      document.removeEventListener('visibilitychange', presentationChanged);
+      if (programsPoll) clearTimeout(programsPoll);
       for (const entry of bookEntries) releaseEntry(entry);
       if (catalog) { catalog.removeFromParent(); catalog.userData.dispose(); }
       trash?.removeFromParent();

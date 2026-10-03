@@ -123,3 +123,31 @@ test('al cerrar conserva el tomo del handoff, la página PDF real y todas las fa
   await testInfo.attach('book-return-reuse-metrics',{ body:JSON.stringify(metrics,null,2),contentType:'application/json' });
   expect(errors).toEqual([]);
 });
+
+test('el lector no repinta la estantería oculta al cambiar su viewport',async ({ page },testInfo) => {
+  test.setTimeout(90_000);
+  const errors = []; page.on('pageerror',error => errors.push(error.message));
+  await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/reading-journey.pdf');
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible();
+  await expect(page.locator('body')).toHaveClass(/is-reading/);
+  await page.evaluate(() => document.fonts.ready);
+  await page.waitForTimeout(250);
+  const scene = page.locator('.ihr-bookshelf-scene');
+  const before = await scene.evaluate(canvas => ({ renders:canvas.dataset.snapshotRenderCount,
+    frames:canvas.dataset.renderCount, dimensions:[canvas.width,canvas.height] }));
+  await page.setViewportSize({ width:440,height:800 });
+  const pageFitsViewport = () => page.locator('.pdf-page-canvas').evaluate(canvas => {
+    const viewport = document.querySelector('#reader-viewport');
+    return viewport.clientWidth > 0 && parseFloat(canvas.style.width) === viewport.clientWidth;
+  });
+  await expect.poll(pageFitsViewport).toBe(true);
+  await page.setViewportSize({ width:390,height:844 });
+  await expect.poll(pageFitsViewport).toBe(true);
+  await page.waitForTimeout(250);
+  const after = await scene.evaluate(canvas => ({ renders:canvas.dataset.snapshotRenderCount,
+    frames:canvas.dataset.renderCount, dimensions:[canvas.width,canvas.height] }));
+  expect(after).toEqual(before);
+  expect(await page.locator('.pdf-text-layer').textContent()).toContain('Reading journey');
+  await testInfo.attach('hidden-shelf-metrics',{ body:JSON.stringify({ before,after },null,2),contentType:'application/json' });
+  expect(errors).toEqual([]);
+});

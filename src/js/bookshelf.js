@@ -374,6 +374,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     appearancesReady: true,
     appearanceGeneration: 0,
     shelfScene: null,
+    presentationActive: true,
     useScene: Boolean((globalThis.WebGLRenderingContext || globalThis.WebGL2RenderingContext) && getBookRenderer()),
     viewMode: Object.values(SHELF_VIEW_MODES).includes(options.viewMode)
       ? options.viewMode
@@ -1833,6 +1834,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       for (const previous of previousChildren) previous.remove();
       if (retainedScene) retainedScene.updateLayout(layout);
       else state.shelfScene = createBookshelfScene(layout);
+      state.shelfScene?.setPresentationActive?.(state.presentationActive);
       shelfZoom.sync();
     }
     if (focusedObjectId) {
@@ -3784,6 +3786,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     queueRefresh:nextBooks => refresh(nextBooks, { defer:true }),
     update: refresh,
     returnToShelf,
+    setPresentationActive(value) {
+      state.presentationActive = Boolean(value);
+      state.shelfScene?.setPresentationActive?.(state.presentationActive);
+    },
     hasReaderOrigin:bookId => state.lastOpened?.book.id === bookId,
 
     /** Hands the page a lifted book will open on to its 3D model ahead of the tap. */

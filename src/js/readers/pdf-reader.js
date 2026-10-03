@@ -45,18 +45,23 @@ export class PdfReader {
   #stagedSpeech
   #speechRequest = 0
   #renderReady = Promise.resolve()
+  #renderRequest
   #pageText = ''
   #resizeObserver
   #resizeTimer
   #layoutWidth = 0
   #imageLayouts = new WeakMap()
 
-  async open(container, arrayBuffer, { onRelocate, onToggleChrome, onUserNavigation } = {}) {
+  async open(container, arrayBuffer, { onRelocate, onToggleChrome, onUserNavigation, initialPage, initialFraction = 0, preferences } = {}) {
     this.#container = container
     this.#onRelocate = onRelocate ?? (() => {})
 
-    this.#loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
-    this.#doc = await this.#loadingTask.promise
+    const loading = this.#loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+    const pdf = await loading.promise
+    if (loading !== this.#loadingTask) return
+    this.#doc = pdf
+    this.#zoomed = false
+    if (preferences) this.#preferences = normalizeReadingPreferences(preferences)
 
     container.innerHTML = ''
     container.classList.add('pdf-reader')
@@ -75,6 +80,7 @@ export class PdfReader {
     this.#reflow.className = 'pdf-reflow-page'
     this.#reflow.hidden = true
     container.append(this.#reflow)
+    this.#applyTextStyles()
 
     this.#detachGestures = attachSwipeNavigation(container, {
       onNext: () => { onUserNavigation?.(); return this.next() },
@@ -88,7 +94,8 @@ export class PdfReader {
       getMotionSurface: () => this.#preferences.pdfMode === 'text' ? this.#reflow : this.#pageWrap
     })
 
-    await this.goToPage(1)
+    await this.goToPage(initialPage ?? Math.round((Number(initialFraction) || 0) * (pdf.numPages - 1)) + 1)
+    if (loading !== this.#loadingTask) return
     // The reader lives inside the actual usable viewport. A phone rotation,
     // split view or browser resize must refit both pixels and selection, without
     // treating that layout change as navigation or losing the saved page.
@@ -151,9 +158,67 @@ export class PdfReader {
     })
   }
 
-  #render() {
-    this.#renderReady = this.#renderPage()
+  #renderPreferences() {
+    const p = this.#preferences
+    return JSON.stringify([p.pdfMode, p.zoom, this.#zoomed, p.theme,
+      ...(p.pdfMode === 'text' ? [p.font, p.fontSize, p.lineHeight, p.fontWeight, p.margin, p.align] : [])])
+  }
+
+  #renderKey() {
+    return { doc:this.#doc, page:this.#pageNum, geometry:this.#speechGeometry(), preferences:this.#renderPreferences() }
+  }
+
+  #sameRenderKey(a, b) {
+    return Boolean(a && b && a.doc === b.doc && a.page === b.page && a.preferences === b.preferences
+      && a.geometry.every((value, index) => value === b.geometry[index]))
+  }
+
+  #renderRootsMatch(state) {
+    return state && state.canvas === this.#canvas && state.textLayerEl === this.#textLayerEl
+      && state.pageWrap === this.#pageWrap && state.reflow === this.#reflow
+      && state.pageWrap.parentNode === this.#container && state.reflow.parentNode === this.#container
+      && state.canvas.parentNode === state.pageWrap && state.textLayerEl.parentNode === state.pageWrap
+  }
+
+  #rememberRenderedPage(state) {
+    state.complete = true
+    state.key ??= this.#renderKey()
+    state.painted = {
+      width:state.canvas.width, height:state.canvas.height,
+      cssWidth:state.canvas.style.width, cssHeight:state.canvas.style.height,
+      original:state.originalCanvas, originalWidth:state.originalCanvas?.width, originalHeight:state.originalCanvas?.height,
+      text:state.textLayerEl.textContent, layerStyle:state.textLayerEl.style.cssText,
+      nodes:[...state.textLayerEl.childNodes], reflowText:state.reflow.textContent, reflowStyle:state.reflow.style.cssText
+    }
+  }
+
+  #renderIsIntact(state) {
+    const saved = state?.painted
+    if (!state?.complete || !saved || !this.#renderRootsMatch(state)) return false
+    if (this.#preferences.pdfMode === 'text') {
+      return state.reflow.textContent === saved.reflowText && state.reflow.style.cssText === saved.reflowStyle
+    }
+    return state.layoutWidth === state.key.geometry[0] && state.canvas.width === saved.width && state.canvas.height === saved.height
+      && state.canvas.style.width === saved.cssWidth && state.canvas.style.height === saved.cssHeight
+      && state.originalCanvas === saved.original && state.originalCanvas?.width === saved.originalWidth
+      && state.originalCanvas?.height === saved.originalHeight && state.textLayerEl.textContent === saved.text
+      && state.textLayerEl.style.cssText === saved.layerStyle && state.textLayerEl.childNodes.length === saved.nodes.length
+      && saved.nodes.every((node, index) => node === state.textLayerEl.childNodes[index])
+  }
+
+  #trackRender(promise, key) {
+    const request = this.#renderRequest = { key }
+    this.#renderReady = promise.finally(() => { if (this.#renderRequest === request) this.#renderRequest = null })
     return this.#renderReady
+  }
+
+  #render() {
+    const key = this.#renderKey(), state = this.#renderState
+    // A restore can arrive while the same page or its theme is still settling.
+    // Await that work; only completed, unchanged pixels and text are reusable.
+    if (this.#sameRenderKey(this.#renderRequest?.key, key) && this.#renderRootsMatch(state)) return this.#renderReady
+    if (this.#sameRenderKey(state?.key, key) && this.#renderIsIntact(state)) return this.#renderReady
+    return this.#trackRender(this.#renderPage(key), key)
   }
 
   #containerWidth() {
@@ -173,14 +238,14 @@ export class PdfReader {
     }, 80)
   }
 
-  async #renderPage() {
+  async #renderPage(key) {
     const token = ++this.#renderToken
     this.#container.setAttribute('aria-busy', 'true')
     this.#invalidateStagedSpeech()
     this.#cancelRender(this.#renderState)
     this.#releaseOriginal(this.#renderState)
     const state = this.#renderState = {
-      pageWrap:this.#pageWrap, canvas:this.#canvas, textLayerEl:this.#textLayerEl, reflow:this.#reflow
+      pageWrap:this.#pageWrap, canvas:this.#canvas, textLayerEl:this.#textLayerEl, reflow:this.#reflow, key
     }
     const page = await this.#doc.getPage(this.#pageNum)
     if (token !== this.#renderToken) return false
@@ -214,6 +279,7 @@ export class PdfReader {
     this.#layoutWidth = state.layoutWidth ?? this.#layoutWidth
     this.#container.dataset.readerZoomed = String(state.zoomed)
     this.#container.setAttribute('aria-busy', 'false')
+    this.#rememberRenderedPage(state)
   }
 
   // The same PDF.js rendering and mapping produce visible and staged pages. A staged
@@ -308,10 +374,16 @@ export class PdfReader {
   async #retheme(ready, preferences) {
     await ready
     const state = this.#renderState
-    const valid = () => Boolean(this.#doc) && state === this.#renderState && preferences === this.#preferences
+    const valid = () => Boolean(this.#doc) && state === this.#renderState
+      && preferences.theme === this.#preferences.theme && preferences.pdfMode === this.#preferences.pdfMode
+      && preferences.zoom === this.#preferences.zoom
     if (!valid() || !state?.originalCanvas) return false
     const painted = await this.#paintTheme(state, preferences.theme, valid)
-    if (painted) this.#container.setAttribute('aria-busy', 'false')
+    if (painted) {
+      state.key = { ...state.key, preferences:this.#renderPreferences() }
+      this.#rememberRenderedPage(state)
+      this.#container.setAttribute('aria-busy', 'false')
+    }
     return painted
   }
 
@@ -460,6 +532,7 @@ export class PdfReader {
           this.#pageWrap = staged.pageWrap; this.#canvas = staged.canvas
           this.#textLayerEl = staged.textLayerEl; this.#reflow = staged.reflow
           this.#renderState = staged
+          this.#renderRequest = null
           this.#renderReady = Promise.resolve(true)
           this.#pageNum = number
           this.#useRenderedPage(staged)
@@ -549,17 +622,21 @@ export class PdfReader {
     const previous = this.#preferences
     this.#preferences = normalizeReadingPreferences(preferences)
     const p = this.#preferences
-    Object.assign(this.#reflow.style, {
-      fontFamily:READING_FONTS[p.font], fontSize:`${p.fontSize}px`, lineHeight:String(p.lineHeight),
-      fontWeight:String(p.fontWeight), padding:`12px ${p.margin}px`, textAlign:p.align
-    })
+    this.#applyTextStyles()
     if (this.#doc && (previous.pdfMode !== p.pdfMode || previous.zoom !== p.zoom)) await this.#render()
     else if (this.#doc && p.pdfMode !== 'text' && previous.theme !== p.theme) {
       this.#container.setAttribute('aria-busy', 'true')
       const ready = this.#renderReady
-      this.#renderReady = this.#retheme(ready, p)
-      await this.#renderReady
+      await this.#trackRender(this.#retheme(ready, p), this.#renderKey())
     }
+  }
+
+  #applyTextStyles() {
+    const p = this.#preferences
+    Object.assign(this.#reflow.style, {
+      fontFamily:READING_FONTS[p.font], fontSize:`${p.fontSize}px`, lineHeight:String(p.lineHeight),
+      fontWeight:String(p.fontWeight), padding:`12px ${p.margin}px`, textAlign:p.align
+    })
   }
 
   /** Miniatura de la página 1 como Blob, para la portada de la estantería. */
@@ -594,6 +671,7 @@ export class PdfReader {
     this.#cancelRender(this.#renderState)
     this.#releaseOriginal(this.#renderState)
     this.#renderState = null
+    this.#renderRequest = null
     this.#detachGestures()
     // PDFDocumentProxy no expone destroy(): la limpieza vive en el
     // loadingTask (ver pdfjs-dist/build/pdf.mjs, PDFDocumentLoadingTask).

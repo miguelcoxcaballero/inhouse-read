@@ -21,8 +21,8 @@ vi.mock('../../src/js/readers/reader-controller.js', () => ({ UnsupportedFormatE
       state.reader = this
       this.epoch = 1; this.pageCount = 2; this.format = { engine:'pdf' }
       this.metadata = { title:'Original book' }; this.location = { fraction:0, locator:null }
-      this.open = vi.fn(async (element, file, options) => { state.openedFile = file; state.readerOptions = options; return { label:'PDF' } })
-      this.close = vi.fn(); this.goToLocator = vi.fn(); this.getCoverBlob = vi.fn()
+      this.open = vi.fn(async (element, file, options) => { ++this.epoch; state.openedFile = file; state.readerOptions = options; return { label:'PDF' } })
+      this.close = vi.fn(() => { ++this.epoch }); this.goToLocator = vi.fn(); this.getCoverBlob = vi.fn()
       this.getPageSnapshot = vi.fn(async () => ({ location:this.location }))
       this.getLengthMetadata = vi.fn(async () => null)
     }
@@ -30,6 +30,7 @@ vi.mock('../../src/js/readers/reader-controller.js', () => ({ UnsupportedFormatE
 }))
 vi.mock('../../src/js/readers/reader-experience.js', () => ({ ReaderExperience:class {
   constructor(reader, options) {
+    state.experience = this
     state.persist = options.persist
     this.voice = { stop:vi.fn() }; this.panel = { close:vi.fn(), open:false }
     this.preferences = {}; this.open = vi.fn(); this.reset = vi.fn(); this.relocate = vi.fn(); this.step = vi.fn()
@@ -143,6 +144,15 @@ describe('app import and optional Drive upload', () => {
 })
 
 describe('local reopen and closing progress', () => {
+  it('passes saved PDF page and reading preferences to the initial paint', async () => {
+    const book = await state.library.addOrTouch({ sourceType:'local', name:'original.pdf', content:file(),
+      size:file().size, locator:{ kind:'pdf-page', value:2 }, progressFraction:1, format:'PDF' })
+    state.experience.preferences = { theme:'night', zoom:150, pdfMode:'original' }
+    await state.options.onPrepareBook(book, { settled:Promise.resolve() })
+    expect(state.readerOptions).toMatchObject({ initialPage:2, initialFraction:1,
+      preferences:{ theme:'night', zoom:150, pdfMode:'original' } })
+    expect(state.reader.goToLocator).toHaveBeenCalledWith(book.locator, 1)
+  })
   it('prepares a downloaded Drive book offline without waiting for remote progress', async () => {
     const book = await state.library.addOrTouch({ sourceType:'drive', driveFileId:'remote',
       cloudAccountId:'account', name:'original.pdf', mimeType:'application/pdf', content:file(), size:file().size,
@@ -178,5 +188,56 @@ describe('local reopen and closing progress', () => {
     await vi.waitFor(() => expect(document.body.classList.contains('is-closing-reader')).toBe(false))
     expect(state.cloud.flushProgress).toHaveBeenCalledWith(book.id)
     expect((await state.library.get(book.id)).locator).toEqual({ kind:'pdf-page', value:2 })
+  })
+})
+
+describe('cover extraction belongs to the reader session', () => {
+  it('does not save a late cover after a different book replaces the reader', async () => {
+    let finish
+    state.reader.getCoverBlob.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const first = await importBook()
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    await state.imports.onFile(new NativeFile(['%PDF-other'], 'other.pdf', { type:'application/pdf' }))
+    finish(new NativeBlob(['old-cover'], { type:'image/jpeg' }))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect((await state.library.get(first.id)).cover).toBeUndefined()
+  })
+
+  it('does not ask a replaced session for a cover after an asynchronous legacy-size check', async () => {
+    const book = await importBook()
+    const cover = new NativeBlob(['small-cover'], { type:'image/jpeg' })
+    await state.library.setCover(book.id, cover)
+    let finish
+    const close = vi.fn()
+    vi.stubGlobal('createImageBitmap', vi.fn(() => new Promise(resolve => { finish = resolve })))
+    const preparing = state.options.onPrepareBook(await state.library.get(book.id), { settled:Promise.resolve() })
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    const requested = state.reader.getCoverBlob.mock.calls.length
+    ++state.reader.epoch
+    finish({ width:200, height:300, close })
+    await preparing
+    expect(close).toHaveBeenCalledOnce()
+    expect(state.reader.getCoverBlob).toHaveBeenCalledTimes(requested)
+    expect(await (await state.library.get(book.id)).cover.text()).toBe('small-cover')
+  })
+
+  it('lets a new session of the same book extract its cover while the superseded task settles', async () => {
+    let finish
+    state.reader.getCoverBlob.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const first = await importBook()
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
+    state.reader.getCoverBlob.mockResolvedValueOnce(new NativeBlob(['new-cover'], { type:'image/jpeg' }))
+    await state.imports.onFile(file())
+    await vi.waitFor(async () => expect(await (await state.library.get(first.id)).cover?.text()).toBe('new-cover'))
+    finish(new NativeBlob(['old-cover'], { type:'image/jpeg' }))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(await (await state.library.get(first.id)).cover.text()).toBe('new-cover')
+  })
+
+  it('still commits a current cover with its original bytes', async () => {
+    state.reader.getCoverBlob.mockResolvedValue(new NativeBlob([new Uint8Array([0, 255, 17])], { type:'image/jpeg' }))
+    const book = await importBook()
+    await vi.waitFor(async () => expect((await state.library.get(book.id)).cover?.size).toBe(3))
+    expect([...new Uint8Array(await (await state.library.get(book.id)).cover.arrayBuffer())]).toEqual([0,255,17])
   })
 })

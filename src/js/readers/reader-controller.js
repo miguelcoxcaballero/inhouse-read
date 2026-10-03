@@ -14,7 +14,7 @@ export class ReaderController {
   #location = { fraction:0, locator:null }
   #epoch = 0
 
-  async open(container, file, { onRelocate, onToggleChrome, onUserNavigation, onFollowLink } = {}) {
+  async open(container, file, { onRelocate, onToggleChrome, onUserNavigation, onFollowLink, initialPage, initialFraction, preferences } = {}) {
     this.close()
     this.#format = await detectFormat(file)
     if (!isSupported(this.#format)) {
@@ -37,7 +37,7 @@ export class ReaderController {
       const { PdfReader } = await import('./pdf-reader.js')
       this.#reader = new PdfReader()
       const buffer = await file.arrayBuffer()
-      await this.#reader.open(container, buffer, { onRelocate:relocate, onToggleChrome, onUserNavigation })
+      await this.#reader.open(container, buffer, { onRelocate:relocate, onToggleChrome, onUserNavigation, initialPage, initialFraction, preferences })
     } else {
       const { FoliateReader } = await import('./foliate-reader.js')
       this.#reader = new FoliateReader()
