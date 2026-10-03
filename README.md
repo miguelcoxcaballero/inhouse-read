@@ -4,6 +4,10 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.34
+
+El audiolibro obtiene el capítulo siguiente directamente del archivo local cuando la pantalla está apagada. El texto conserva el CFI exacto del fragmento escuchado, y la página visible se recupera al volver. Su síntesis no espera que navegue un iframe oculto. La continuidad Android con pantalla bloqueada necesita una captura nativa nueva antes de publicar la APK 1.1.4.
+
 ### Actualización web · 1.7.33
 
 - Una frase nueva no espera detrás de frases posteriores que ya estén en la caché. Los límites de preparación cuentan el audio que puede reproducirse antes de esa frase.

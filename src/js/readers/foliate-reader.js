@@ -17,6 +17,7 @@ import { READING_THEMES } from './reading-preferences.js'
 import { compositePageSnapshots, renderedPageFilter, settlePageLayout, snapshotDOMPage } from './page-snapshot.js'
 import { mapSpeechText } from './speech-map.js'
 import { speechPageBreaks } from './speech-page-breaks.js'
+import { FoliateSpeechCursor } from './foliate-speech-cursor.js'
 import { measureBookLength } from '../book-length.js'
 import { SPEECH_HIGHLIGHT, clearSpeechRange, installSpeechStyle, paintSpeechRange, speechOverlayColor } from './speech-highlight.js'
 
@@ -59,6 +60,7 @@ export class FoliateReader {
   #followTurn = Promise.resolve()
   #pageTurn = Promise.resolve()
   #lengthMetadata = null
+  #speechCursor = null
   #diagnosticTurns = { followPending:0, pageTurnPending:0 }
 
   async open(container, file, { onRelocate, onToggleChrome, onUserNavigation, onFollowLink } = {}) {
@@ -87,7 +89,7 @@ export class FoliateReader {
       // Foliate already tracks touch drag/velocity and snaps to the next page.
       // A second pointerup navigation here used to advance twice per swipe.
       nativeTouchSwipes:true,
-      onNativeSwipe:() => onUserNavigation?.(),
+      onNativeSwipe:() => { this.#speechCursor?.reset(); onUserNavigation?.() },
       canSwipe:() => this.#preferences.flow !== 'scrolled'
     }
     this.#detachGestures = attachSwipeNavigation(container, gestures)
@@ -123,6 +125,8 @@ export class FoliateReader {
     })
 
     this.#view.addEventListener('relocate', e => {
+      // A visual catch-up must not overwrite the more recent audible CFI.
+      if (this.#speechCursor?.active) return
       this.#onRelocate({
         // View.lastLocation contains SectionProgress.section.current, not a top-level index.
         // Retain a valid explicit index for older adapters; never turn a missing index into chapter zero.
@@ -142,6 +146,9 @@ export class FoliateReader {
     this.#applyReaderLayout()
     this.#applyReaderStyles()
     await this.#view.init({ showTextStart: true })
+    this.#speechCursor = new FoliateSpeechCursor(this.#view, {
+      onRelocate:this.#onRelocate, theme:() => this.#preferences.theme
+    })
     if (typeof ResizeObserver !== 'undefined') {
       this.#resizeObserver = new ResizeObserver(() => {
         clearTimeout(this.#resizeTimer)
@@ -211,6 +218,10 @@ export class FoliateReader {
     diagnostic.pageTurnPending++
     const turn = this.#pageTurn.then(async () => {
       await following.catch(() => {}) // a highlight/follow failure stays cosmetic
+      if (view && view === this.#view && isActive()) {
+        if (!document.hidden && this.#speechCursor?.active) await this.#speechCursor.reveal()
+        this.#speechCursor?.reset()
+      }
       if (view && view === this.#view && isActive()) return view[direction]()
     })
     this.#pageTurn = turn.catch(() => {})
@@ -231,13 +242,16 @@ export class FoliateReader {
   async prev() { await this.#turnPage('prev') }
 
   async goToFraction(fraction) {
+    this.#speechCursor?.reset()
     await this.#view?.goToFraction(fraction)
   }
 
   async goToCfi(cfi) {
+    this.#speechCursor?.reset()
     if (cfi) await this.#view?.goTo(cfi)
   }
-  async goToTarget(target) { await this.#view?.goTo(target) }
+  async goToTarget(target) { this.#speechCursor?.reset(); await this.#view?.goTo(target) }
+  getNextSpeechSource(options) { return this.#speechCursor?.next(options) }
   async getSpeechText() {
     return this.#view?.lastLocation?.range?.toString() || ''
   }
@@ -249,6 +263,9 @@ export class FoliateReader {
    * DOM is only read (ranges for the highlight), never changed.
    */
   async getSpeechSource() {
+    if (document.hidden && this.#speechCursor?.active) return this.#speechCursor.currentSource()
+    if (this.#speechCursor?.active) await this.#speechCursor.reveal()
+    this.#speechCursor?.reset()
     const view = this.#view, visible = view?.lastLocation?.range, doc = visible?.startContainer?.ownerDocument
     const content = view?.renderer?.getContents?.().find(item => item.doc === doc)
     if (!content || !doc.body) return null
@@ -259,7 +276,7 @@ export class FoliateReader {
     if (!live()) return null
     // Clearing also cancels a page turn still queued for a sentence nobody is reading any more.
     const clear = () => { this.#followTicket++; clearSpeechRange(doc); try { content.overlayer?.remove(SPEECH_HIGHLIGHT) } catch { /* overlay already gone */ } }
-    return {
+    const source = {
       text:map.text, start:map.offsetOf(visible.startContainer, visible.startOffset), pageBreaks, clear,
       highlight:(start, end) => {
         if (!live()) return
@@ -270,6 +287,7 @@ export class FoliateReader {
       },
       follow:(start, end) => live() ? this.#followSpeech(doc, map.rangeFor(start, end)) : undefined
     }
+    return this.#speechCursor?.wrap(source, map, content.index) || source
   }
   /**
    * Turns pages with foliate's own animated paging (programmatic: it never goes
@@ -277,6 +295,7 @@ export class FoliateReader {
    * spoken is on screen. Only the newest request matters; older ones yield.
    */
   #followSpeech(doc, range) {
+    if (document.hidden) return
     // Text that is not rendered (a hidden note) has no boxes: there is no page to show it on, so never turn pages for it.
     if (!range || !range.getClientRects().length) return
     const ticket = ++this.#followTicket
@@ -316,6 +335,7 @@ export class FoliateReader {
   }
   /** Snapshot the current paginated column/scroll viewport after CFI restore. */
   async getPageSnapshot() {
+    if (!document.hidden && this.#speechCursor?.active) await this.#speechCursor.reveal()
     const view = this.#view
     const initial = view?.renderer?.getContents?.() || []
     if (!initial.some(item => item.doc?.body || item.doc?.documentElement?.localName === 'svg')) return null
@@ -437,6 +457,8 @@ export class FoliateReader {
   }
 
   close() {
+    this.#speechCursor?.close()
+    this.#speechCursor = null
     this.#lengthMetadata = null
     this.#resizeObserver?.disconnect()
     this.#resizeObserver = null

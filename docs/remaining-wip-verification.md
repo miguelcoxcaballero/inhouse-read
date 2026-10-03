@@ -1,4 +1,18 @@
-# Verificación del WIP — web 1.7.32 publicada; 1.7.33 en preparación; Android 1.1.4 pendiente
+# Verificación del WIP — web 1.7.33 publicada; 1.7.34 en preparación; Android 1.1.4 pendiente
+
+## Cambios de 1.7.34 en preparación
+
+Con la pantalla apagada, Foliate obtiene el texto del capítulo siguiente mediante su extractor original de documentos, sin navegar el iframe ni esperar su renderizado. Sólo el inicio audible activa ese capítulo; la posición se guarda con el CFI real del fragmento. Al volver a la app se muestra la posición más reciente y se conserva el paginador normal en primer plano. No se añade audio silencioso, heartbeat, recuperación por despertar ni sustitución de voces.
+
+Pasan 91 focales en siete archivos, incluidos 12 de documentos/CFI y tres de ReadingVoice con capítulos completos. El primer candidato conserva 51 aprobados y tres fallos: dos regresiones de orden de navegación corregidas dentro de la cola original y un helper de CFI de test corregido para utilizar el contrato real. Los ensayos iniciales permanecen separados. Las dos primeras baterías completas conservan cada una 2.583 aprobados y un fallo de snapshot: la espera vacía de catch-up retrasaba su inicio. Se corrige esperando sólo cuando existe un cursor audible; pasan 35 focales de snapshot, cursor y navegación. Los tests originales no cambian. Build final y cinco E2E finales aprobados sin reintentos: continuidad entre capítulos, pausa/detener durante el cambio, carga del lector y catálogo móvil. El candidato anterior pasó 17 E2E, incluidos 14 con modelos reales; el primer lanzamiento con una variable de fixtures incorrecta conserva tres aprobados, cuatro fallos de preflight y diez omitidos. No se suman ni se convierte ese intento en aprobado. La batería completa final, publicación y captura Android nuevas están pendientes.
+
+## Verificación de 1.7.33
+
+Fuente `a02d85ec0ada05daabc8293ae2cdcf2887fa826f`, Pages `257868c27be0f07a52b4732ee0fd24b0468e0e25`. Sus 22 módulos y 43 recursos offline coinciden por HTTP; certificado SHA-256 `937942ec1c8366e5a8714d1556cfa06c8edd16861f7cd32117b20751d93938fa`. Cinco casos públicos pasan sin omisiones ni reintentos, con 110 cuerpos HTTP y cuatro capturas revisadas; certificado `f1373b793360de039bb8d362b9b4a0b3327807ed664753b344637d9913d08d13`. CI original aprobada, run `37156691213`: **2.569 unitarias en 160 archivos y 512 E2E**, sin omisiones, reintentos ni flaky. Certificado SHA-256 `41ae3ea781910ec55b51cf8267830a5b502b6f6fe42984c8842a5a4d40afabfd`.
+
+Android `37156804640` conserva FAILED: 108 starts/dones y 216 callbacks emparejados; cero PCM nuevo en el tramo final de 30 segundos. El último cambio llega a `viewLoadPending:true` y no termina antes del gate. El ZIP original autenticado tiene 9.412.228 bytes; certificado de captura SHA-256 `ccc1a3b3e0d17317d6fdd63987603d8e1ca20e69c75d369df73a9a44ded194c8`. La recuperación al despertar sigue siendo sólo diagnóstico; no se publicó APK. La primera recogida HTTP falló por timeout mientras el run seguía activo; se conserva separada de la segunda recogida del mismo run, sin repetir pruebas.
+
+El botón Google real de la web publicada abre la página oficial para introducir la cuenta. La petición pública Android, con su cliente y redirect de producción, también obtiene la página de acceso sin `redirect_uri_mismatch`. Son preflight sin cuenta, permisos, token ni subida real: no acreditan una conexión Drive completada.
 
 ## Cambios de 1.7.33
 
@@ -8,7 +22,7 @@ La fuente 1.7.32 reproduce cinco fallos y un aprobado en seis casos sin avanzar 
 
 ## Verificación de 1.7.32
 
-Fuente `80cef03d0848ad9ac864634f2d6bd3cfa544a3a5`, Pages `f5470f8dfdd6386fff5950688533aa38884cf7ae`. Sus 22 módulos y 43 recursos offline coinciden por HTTP; artefacto SHA-256 `4207654df4b9575f1039909244916e735a4b641bf1e1a9c007f134e5cf5a08db`. Cinco casos públicos pasan sin reintentos, con 110 cuerpos HTTP y cuatro capturas revisadas; certificado `ca0924e7161f84de3604c4afe737134396181f4b886acac008293ca64e4d4145`. Certificado de 2.563 unitarias locales: `f149d259662100c3764ebb3ca0efdb4ac4921086bf9f35293b196b472bc1b385`. CI y autenticación Google real mantienen verificaciones separadas.
+Fuente `80cef03d0848ad9ac864634f2d6bd3cfa544a3a5`, Pages `f5470f8dfdd6386fff5950688533aa38884cf7ae`. Sus 22 módulos y 43 recursos offline coinciden por HTTP; artefacto SHA-256 `4207654df4b9575f1039909244916e735a4b641bf1e1a9c007f134e5cf5a08db`. Cinco casos públicos pasan sin reintentos, con 110 cuerpos HTTP y cuatro capturas revisadas; certificado `ca0924e7161f84de3604c4afe737134396181f4b886acac008293ca64e4d4145`. Certificado de 2.563 unitarias locales: `f149d259662100c3764ebb3ca0efdb4ac4921086bf9f35293b196b472bc1b385`. CI original de esta fuente aprobada, run `37156109766`: 2.563 unitarias en 159 archivos y 512 E2E, sin omisiones, reintentos ni flaky. Certificado SHA-256 `1bcbec9db3667ebab3e16561a78196093f8dc7eac37d4ae8abd3fb0364c68d03`. La autenticación Google real mantiene su verificación separada.
 
 ## Cambios de 1.7.32
 
@@ -187,8 +201,8 @@ El observador software de interrupción usa **2.200 ms en CI**; el límite local
 
 ## Pendientes y límites
 
-- **Android 1.1.4 sigue PENDIENTE.** El último ensayo, run `37154645400`, fuente `0036d69`, conserva FAILED: 108 starts/dones y 216 callbacks completos, pero cero PCM nuevo en el tramo final de 30 segundos. El último cambio de capítulo sí termina en 21 ms; la espera restante ocurre después. No se publica esa APK. ZIP original autenticado: 11.587.243 bytes, 112 miembros; certificado de captura SHA-256 `090649c48fac00816ef40834f1cb97a81aea1e6c16e00284353926ff6260e2b0`; certificado independiente de fallo `b0b9183c2e455868a47ebbd6ed602909b0c10b4f6596515f388301a6f97489c8`. El siguiente ensayo debe superar continuidad bloqueada, controles de notificación, liberación de servicio/wake y PDF oculto, sin modificar sus umbrales.
-- **Fuente nueva 1.7.33:** pasan 2.569 unitarias y 59 focales; pasan también 14 E2E reales; necesita publicación HTTP y CI propios. La web 1.7.32 tiene comprobación HTTP y cinco casos públicos aprobados.
+- **Android 1.1.4 sigue PENDIENTE.** El último ensayo, run `37156804640`, fuente `a02d85e`, conserva FAILED: 108 starts/dones y 216 callbacks completos, pero cero PCM nuevo en el tramo final de 30 segundos. El último cambio espera la carga del iframe hasta despertar. No se publica esa APK. Certificado de captura `ccc1a3b3e0d17317d6fdd63987603d8e1ca20e69c75d369df73a9a44ded194c8`; revisión independiente de fallo `5d4b160140bca840231e0d83699b506d32608ee49cd6e5c6184059d00e8c32c7`. El siguiente ensayo debe superar continuidad bloqueada, controles de notificación, liberación de servicio/wake y PDF oculto, sin modificar sus umbrales.
+- **Fuente nueva 1.7.34:** preparación de capítulos sin iframe oculto y posición exacta; verificación nueva en curso. La web 1.7.33 conserva comprobación HTTP y cinco casos públicos aprobados.
 - **Cuenta Google real:** falta conexión al navegador autenticado para comprobar login y subida reales. Las 61 pruebas focales y cinco E2E de Drive usan respuestas controladas y no sustituyen esa comprobación.
 - No se añade OCR ni se garantiza el orden perfecto de cualquier PDF. Los ocho casos públicos PDF usan texto y audio controlados para verificar navegación, visibilidad y cancelación; no sustituyen una comprobación de audio natural en un teléfono bloqueado. Drive usa respuestas de prueba y no autentica una cuenta real.
 - La batería web no certifica una APK nueva, audio en un teléfono físico, FPS, temperatura o batería. La evidencia histórica de Android 1.1.3 y la sesión de voz anterior mantienen su alcance original.

@@ -212,6 +212,7 @@ export class ReadingVoice {
       try {
         source = await this.reader.getNextSpeechSource({ isActive })
         if (!isActive()) { source?.clear?.(); return undefined }
+        if (source === undefined && this.aheadPage === request) this.aheadPage = null
         request.plan = source == null ? source : await this.prepare(source)
         if (!isActive()) { source?.clear?.(); request.plan = undefined; return undefined }
         const { voice } = this.voiceFor(this.chunks[this.index])
@@ -274,6 +275,7 @@ export class ReadingVoice {
             }
           }
           finally { if (this.preparingPage === request) this.preparingPage = null }
+          if (next === undefined && generation === this.generation && this.state === 'playing') next = await this.prepareNext(generation)
         } else next = await this.prepareNext(generation)
         if (generation !== this.generation || this.state !== 'playing') { next?.source?.clear?.(); return }
         if (!this.pagePlanValid(next)) next = await this.revalidateNext(next, generation)
