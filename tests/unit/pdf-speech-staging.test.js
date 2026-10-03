@@ -69,6 +69,32 @@ beforeEach(() => {
 afterEach(() => { reader?.close(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); document.body.innerHTML='' })
 
 describe('PDF continuation prepared without an early page turn', () => {
+  it('exposes strict candidate validity before activation when the mini-player changes viewport height', async () => {
+    await open()
+    const old = await reader.getNextSpeechSource(), visible = container.querySelector('canvas')
+    expect(old.isValid()).toBe(true)
+    height -= 49; resize()
+    expect(old.isValid()).toBe(false)
+    expect(old.activate()).toBe(false)
+    expect(reader.currentPage).toBe(1)
+    expect(container.querySelector('canvas')).toBe(visible)
+    const refreshed = await reader.getNextSpeechSource()
+    expect(refreshed.text).toBe(old.text)
+    expect(refreshed.isValid()).toBe(true)
+    expect(refreshed.activate()).toBe(true)
+    expect(reader.currentPage).toBe(2)
+  })
+
+  it('keeps an activated source valid through highlight clearing but invalid after real navigation', async () => {
+    await open()
+    const source = await reader.getNextSpeechSource()
+    expect(source.isValid()).toBe(true)
+    expect(source.activate()).toBe(true)
+    source.clear()
+    expect(source.isValid()).toBe(true)
+    await reader.goToPage(3)
+    expect(source.isValid()).toBe(false)
+  })
   it('keeps visible pixels, page and progress unchanged until a synchronous activation', async () => {
     await open()
     const visible = container.querySelector('canvas'), layer = container.querySelector('.pdf-text-layer')

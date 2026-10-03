@@ -129,7 +129,7 @@ async function seedShelf(page, { long = false, linked = false, driveBytes = null
     // pot and plant dimensions of its catalogue model, not to the old px sizes.
     const migratedPlants = [
       { ...plants[0], catalogId:'cactus', potId:'akerbar', width:140, height:180 },
-      { ...plants[1], catalogId:'succulent', variant:'succulent', potId:'muskotblomma', width:160, height:160 },
+      { ...plants[1], catalogId:'succulent', variant:'succulent', potId:'muskotblomma', width:160, height:207 },
       { ...plants[2], catalogId:'hedera', variant:'hedera', potId:'muskotblomma', width:180, height:240 }
     ]
     return { originalId:original.id, ids:records.map(book => book.id), plants:migratedPlants,

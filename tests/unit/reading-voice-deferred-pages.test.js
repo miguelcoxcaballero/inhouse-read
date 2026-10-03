@@ -25,18 +25,20 @@ function reading(pages = ['Primera página.', 'Continúa la frase.']) {
   engine.extendUpcoming = vi.fn()
   setNeuralEngine(engine)
   const calls = [], stages = [], messages = []
-  let visible = 0
+  let visible = 0, height = 748
   const source = (page, isActive) => {
     let activated = !isActive, disposed = false
+    const preparedHeight = height
     const value = {
       text:pages[page], start:0,
       highlight:vi.fn((start, end) => calls.push(['highlight', page, start, end])),
       follow:vi.fn((start, end) => calls.push(['follow', page, start, end])),
       clear:vi.fn(() => { if (!activated) disposed = true; calls.push(['clear', page]) })
     }
+    if (isActive) value.isValid = vi.fn(() => !disposed && (activated ? visible === page : isActive() && preparedHeight === height))
     if (isActive) value.activate = vi.fn(() => {
       calls.push(['activate', page])
-      if (disposed || (!activated && !isActive())) return false
+      if (!value.isValid()) return false
       if (activated) return visible === page
       activated = true; visible = page; reader.location = { page }; return true
     })
@@ -55,10 +57,104 @@ function reading(pages = ['Primera página.', 'Continúa la frase.']) {
   voice.voice = VOICE; voices.add(voice)
   const emit = (type, id = engine.calls.at(-1).id) => engine.emit(type, id)
   const first = async () => { await voice.play(); emit('start'); emit('done'); await drain() }
-  return { reader, voice, engine, calls, stages, messages, source, emit, first, visible:() => visible }
+  return { reader, voice, engine, calls, stages, messages, source, emit, first, visible:() => visible, resize:value => { height = value } }
 }
 
 describe('prepared page sources follow only an audible natural fragment', () => {
+  describe('layout changes while detached audio is prefetched', () => {
+    it('reprepares a ready page after closing the audio panel changes only mini-player height', async () => {
+      const t = reading()
+      t.voice.rate = 1.25
+      await t.voice.play(); t.emit('start'); await drain()
+      const old = t.stages[0], current = t.engine.calls[0]
+      expect(t.engine.extendUpcoming).toHaveBeenCalledWith(expect.objectContaining({id:current.id,upcoming:['Continúa la frase.']}))
+      // The panel closes after prefetch: the mini-player consumes 49px. PDF's
+      // strict geometry guard must invalidate the old detached bitmap.
+      t.resize(748 - 49)
+      expect(old.isValid()).toBe(false)
+      t.emit('done'); await drain()
+      expect(t.reader.getNextSpeechSource).toHaveBeenCalledTimes(2)
+      expect(old.clear).toHaveBeenCalledOnce()
+      expect(old.activate).not.toHaveBeenCalled()
+      expect(t.engine.stops).toBe(0) // reusable PCM remains in the neural cache
+      expect(t.engine.calls.at(-1)).toMatchObject({text:'Continúa la frase.',voiceId:VOICE,rate:1.25})
+      expect(t.engine.calls.at(-1).id).not.toBe(current.id)
+      expect(t.visible()).toBe(0)
+      t.emit('start')
+      expect(t.visible()).toBe(1)
+      expect(t.voice.state).toBe('playing')
+      expect(t.messages).not.toContain('No se pudo mostrar la página. Pulsa Reintentar para continuar.')
+    })
+
+    it('refreshes invalid ahead pixels at the next current-page start without changing its audible fragment', async () => {
+      const t = reading(['Una frase. Otra frase.', 'Continúa la frase.'])
+      await t.voice.play(); t.emit('start'); await drain()
+      const old = t.stages[0]
+      t.resize(699)
+      t.emit('done'); const current = t.engine.calls.at(-1)
+      t.emit('start'); await drain()
+      expect(current.text).toBe('Otra frase.')
+      expect(t.reader.getNextSpeechSource).toHaveBeenCalledTimes(2)
+      expect(old.clear).toHaveBeenCalledOnce()
+      expect(t.engine.calls).toHaveLength(2)
+      expect(t.engine.extendUpcoming.mock.calls.at(-1)[0]).toMatchObject({id:current.id,upcoming:['Continúa la frase.'],deferAfter:0})
+      expect(t.visible()).toBe(0)
+      t.emit('done'); await drain()
+      expect(t.reader.getNextSpeechSource).toHaveBeenCalledTimes(2)
+      t.emit('start')
+      expect(t.visible()).toBe(1)
+    })
+
+    it('retries an aborted detached preparation after layout changed while awaiting its render', async () => {
+      const t = reading()
+      let reject
+      t.reader.getNextSpeechSource.mockImplementationOnce(() => new Promise((_,no) => { reject = no }))
+      await t.voice.play(); t.emit('start')
+      t.resize(699); reject(Object.assign(new Error('viewport changed'),{name:'AbortError'})); await drain()
+      expect(t.visible()).toBe(0)
+      expect(t.voice.state).toBe('playing')
+      t.emit('done'); await drain()
+      expect(t.reader.getNextSpeechSource).toHaveBeenCalledTimes(2)
+      expect(t.engine.calls.at(-1).text).toBe('Continúa la frase.')
+      t.emit('start'); expect(t.visible()).toBe(1)
+      expect(t.messages).not.toContain('No se pudo pasar de página.')
+    })
+
+    it.each(['pause','stop'])('disposes a late refreshed page after %s without a stale start or navigation', async action => {
+      const t = reading()
+      await t.voice.play(); t.emit('start'); await drain()
+      t.resize(699)
+      let resolve, active
+      t.reader.getNextSpeechSource.mockImplementationOnce(({isActive}) => { active = isActive; return new Promise(done => { resolve = done }) })
+      const oldId = t.engine.calls[0].id
+      t.emit('done'); await drain()
+      expect(t.reader.getNextSpeechSource).toHaveBeenCalledTimes(2)
+      t.voice[action](); t.emit('start',oldId)
+      const refreshed = t.source(1,active); resolve(refreshed); await drain()
+      expect(refreshed.clear).toHaveBeenCalledOnce()
+      expect(refreshed.activate).not.toHaveBeenCalled()
+      expect(t.engine.calls).toHaveLength(1)
+      expect(t.visible()).toBe(0)
+      expect(t.messages).not.toContain('Final del libro.')
+      if (action === 'pause') {
+        await t.voice.play()
+        expect(t.engine.calls.at(-1).text).toBe('Continúa la frase.')
+        t.emit('start'); expect(t.visible()).toBe(1)
+      }
+    })
+
+    it('bounds repeated layout cancellation and preserves the visible error instead of claiming book end', async () => {
+      const t = reading()
+      t.reader.getNextSpeechSource.mockRejectedValue(Object.assign(new Error('viewport changed'),{name:'AbortError'}))
+      await t.voice.play(); t.emit('start'); await drain(); t.emit('done'); await drain()
+      expect(t.reader.getNextSpeechSource).toHaveBeenCalledTimes(4) // one ahead plus three boundary preparations
+      expect(t.engine.calls).toHaveLength(1)
+      expect(t.visible()).toBe(0)
+      expect(t.voice.state).toBe('stopped')
+      expect(t.messages.at(-1)).toBe('No se pudo pasar de página.')
+      expect(t.messages).not.toContain('Final del libro.')
+    })
+  })
   it('prepares the next page during audible playback and sends only deferred upcoming text', async () => {
     const t = reading()
     await t.voice.play(); t.emit('start'); await drain()

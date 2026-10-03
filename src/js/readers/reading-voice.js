@@ -8,6 +8,9 @@ const MAX_EMPTY_PAGES = 12
 // foliate ignores a page turn while another one animates (the voice's own follow turn included): next() is retried
 // this many times, this far apart, before an unchanged location is taken as the end of the book.
 const END_RETRIES = 2, END_RETRY_MS = 200
+// A changed reader viewport can invalidate detached pixels while current audio
+// keeps playing. Rebuild that candidate without discarding its cached voice PCM.
+const PAGE_PREPARATION_RETRIES = 2
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 // A neural voice always reports its 'start' (it is our own engine), so it has no fallback timer: it is waited for, and
 // the status says so after NEURAL_WAIT_MS. It reads this many fragments ahead (same voice and speed) to stay gapless.
@@ -153,6 +156,8 @@ export class ReadingVoice {
   /** One detached page, prepared only near the current page's end. Never
    * reveal it or let its PCM play until advance adopts its first fragment. */
   prepareAhead() {
+    if (this.aheadPage?.error?.name === 'AbortError' ||
+      this.aheadPage?.plan && !this.pagePlanValid(this.aheadPage.plan)) this.clearAhead()
     if (this.state !== 'playing' || this.aheadPage || this.deferredPage ||
       this.chunks.length - this.index - 1 > NEURAL_LOOKAHEAD || typeof this.reader.getNextSpeechSource !== 'function') return
     const request = { generation:this.generation, source:this.source, plan:undefined, cancelled:false }
@@ -217,9 +222,17 @@ export class ReadingVoice {
         if (ahead) {
           this.aheadPage = null
           const request = { generation }; this.preparingPage = request
-          try { next = await ahead.promise; if (ahead.error) throw ahead.error }
+          try {
+            next = await ahead.promise
+            if (ahead.error) {
+              if (ahead.error.name !== 'AbortError' || generation !== this.generation || this.state !== 'playing') throw ahead.error
+              next = await this.prepareNext(generation)
+            }
+          }
           finally { if (this.preparingPage === request) this.preparingPage = null }
         } else next = await this.prepareNext(generation)
+        if (generation !== this.generation || this.state !== 'playing') { next?.source?.clear?.(); return }
+        if (!this.pagePlanValid(next)) next = await this.revalidateNext(next, generation)
         if (generation !== this.generation || this.state !== 'playing') { next?.source?.clear?.(); return }
         if (next === null) { this.stop(); this.notify('Final del libro.'); return }
         if (next !== undefined) {
@@ -268,15 +281,35 @@ export class ReadingVoice {
     const isActive = () => generation === this.generation && (this.state === 'playing' || this.state === 'loading')
     let source
     try {
-      source = await this.reader.getNextSpeechSource({ isActive })
-      if (!isActive()) { source?.clear?.(); return undefined }
-      // undefined means this format has no deferred-page API; null means an actual end, never a cancelled preparation.
-      if (source == null) return source
-      const plan = await this.prepare(source)
-      if (!isActive()) { source.clear?.(); return undefined }
-      return plan
+      for (let retry = 0; retry <= PAGE_PREPARATION_RETRIES; retry++) {
+        try {
+          source = await this.reader.getNextSpeechSource({ isActive })
+          if (!isActive()) { source?.clear?.(); return undefined }
+          // undefined means this format has no deferred-page API; null means an actual end, never a cancelled preparation.
+          if (source == null) return source
+          const plan = await this.prepare(source)
+          if (!isActive()) { source.clear?.(); return undefined }
+          if (this.pagePlanValid(plan)) return plan
+          source.clear?.(); source = null
+          if (retry === PAGE_PREPARATION_RETRIES) throw new Error('La página preparada sigue cambiando.')
+        } catch (error) {
+          source?.clear?.(); source = null
+          if (!isActive()) return undefined
+          if (error.name !== 'AbortError' || retry === PAGE_PREPARATION_RETRIES) throw error
+        }
+      }
     } catch (error) { source?.clear?.(); throw error }
     finally { if (this.preparingPage === request) this.preparingPage = null }
+  }
+  pagePlanValid(plan) {
+    try { return !plan?.source?.isValid || plan.source.isValid() === true }
+    catch { return false }
+  }
+  async revalidateNext(plan, generation) {
+    if (this.pagePlanValid(plan)) return plan
+    plan?.source?.clear?.()
+    if (generation !== this.generation || this.state !== 'playing') return undefined
+    return this.prepareNext(generation)
   }
   adopt({ source, items }) {
     this.source = source; this.items = items; this.chunks = items.map(item => item.text); this.index = 0

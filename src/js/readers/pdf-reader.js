@@ -446,6 +446,7 @@ export class PdfReader {
         const { source, current } = this.#makeSpeechSource(number, first)
         const clear = source.clear
         let activated = false
+        source.isValid = () => activated ? Boolean(current()) : staged.valid()
         source.activate = () => {
           if (activated) return Boolean(current())
           if (!staged.valid()) { source.clear(); return false }
