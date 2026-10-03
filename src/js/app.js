@@ -544,7 +544,26 @@ els.filePicker.addEventListener('change', async () => {
 
 // ---- Apertura y lectura ----
 
-async function openFile(file, { existingRecord, forcedId, folderFileName, transition, preparing = false, restoreRemoved = false, onImportReady, reuseStoredContent = false } = {}) {
+let readerLoadGeneration = 0
+async function openFile(file, options = {}) {
+  const generation = ++readerLoadGeneration
+  const loading = document.getElementById('reader-loading')
+  const actions = document.querySelector('.reader-heading-actions')
+  els.readerToolbar.hidden = true
+  els.readerScreen.setAttribute('aria-busy', 'true')
+  actions.inert = true
+  loading.hidden = Boolean(options.transition) || Boolean(options.preparing)
+  try { return await openFileContent(file, options) }
+  finally {
+    if (generation === readerLoadGeneration) {
+      loading.hidden = true
+      actions.inert = false
+      els.readerScreen.setAttribute('aria-busy', 'false')
+    }
+  }
+}
+
+async function openFileContent(file, { existingRecord, forcedId, folderFileName, transition, preparing = false, restoreRemoved = false, onImportReady, reuseStoredContent = false } = {}) {
   if (!existingRecord && forcedId) existingRecord = await library.get(forcedId)
   if (transition?.isActive && !transition.isActive()) return false
   if (!preparing) {
@@ -560,7 +579,7 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
   els.readerFocus.setAttribute('aria-pressed', 'false')
   els.readerFocus.setAttribute('aria-label', 'Ocultar controles')
   currentBookId = null
-  els.readerToolbar.hidden = Boolean(transition) || preparing
+  els.readerToolbar.hidden = true
   if (preparing) {
     els.readerScreen.hidden = false
     els.readerScreen.classList.add('is-preparing')
@@ -658,6 +677,7 @@ async function openFile(file, { existingRecord, forcedId, folderFileName, transi
   if (!preparing) await transition?.onReaderReady?.()
   // Android releases its inbox copy only after original bytes are committed.
   if (!preparing) onImportReady?.()
+  if (!preparing && !transition) els.readerToolbar.hidden = false
   return true
 }
 
@@ -1269,7 +1289,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.7.24'
+els.appVersion.textContent = 'Inhouse Read · v1.7.25'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')

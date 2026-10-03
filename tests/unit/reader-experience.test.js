@@ -64,6 +64,18 @@ async function setup(persist = vi.fn(async () => {})) {
 }
 
 describe('reader navigation during asynchronous history writes', () => {
+  it('does not expose tools while the application is still restoring the reader', async () => {
+    const { experience } = await setup()
+    experience.panel.showModal = vi.fn()
+    document.getElementById('reader-screen').setAttribute('aria-busy','true')
+    experience.show('audio')
+    expect(experience.panel.showModal).not.toHaveBeenCalled()
+    expect(document.getElementById('reader-audio').getAttribute('aria-expanded')).toBe('false')
+    document.getElementById('reader-screen').setAttribute('aria-busy','false')
+    experience.show('audio')
+    expect(experience.panel.showModal).toHaveBeenCalledOnce()
+    expect(document.getElementById('reader-audio').getAttribute('aria-expanded')).toBe('true')
+  })
   it('keeps an internal link tapped after the previous section appears but before its history is saved', async () => {
     const saved = deferred()
     const persist = vi.fn().mockImplementationOnce(() => saved.promise).mockResolvedValue(undefined)

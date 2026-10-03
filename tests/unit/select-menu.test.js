@@ -82,6 +82,15 @@ describe('SelectMenu (the own dropdown of the app)', () => {
     const extra = document.createElement('p'); extra.textContent = 'Voces naturales'
     const menu = new SelectMenu({ label:'Voz', extra }); document.body.append(menu.root); menus.push(menu)
     expect(menu.panel.contains(extra)).toBe(true)
+    expect(menu.root.classList.contains('select-menu--catalog')).toBe(true)
+  })
+  it('scrolls the complete menu including its close trigger into view', () => {
+    const menu = make()
+    menu.root.scrollIntoView = vi.fn(); menu.panel.scrollIntoView = vi.fn()
+    menu.open()
+    expect(menu.root.scrollIntoView).toHaveBeenCalledWith({ block:'nearest' })
+    expect(menu.panel.scrollIntoView).not.toHaveBeenCalled()
+    menu.trigger.click(); expect(menu.isOpen).toBe(false)
   })
   it('a disabled menu cannot be opened', () => {
     const menu = make(); menu.setDisabled(true)

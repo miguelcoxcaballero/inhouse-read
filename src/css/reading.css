@@ -1,5 +1,7 @@
 /* Reader chrome follows the page. One surface, with direct, quiet controls. */
 #reader-screen { --reader-header-height:calc(48px + env(safe-area-inset-top,0px)); --reader-bar-height:calc(48px + env(safe-area-inset-bottom,0px)); --reader-audio-height:0px; --reader-return-height:0px; background:var(--reading-paper,#faf9f5); color:var(--reading-ink,#292821); }
+.reader-loading { position:absolute; inset:45% 16px auto; z-index:4; margin:0; text-align:center; color:var(--reading-ink,#292821); font:400 14px var(--f-body); }
+.reader-loading[hidden] { display:none; }
 .reader-heading { display:none; min-width:0; align-items:center; gap:8px; }
 body.is-reading .app-header { height:calc(48px + env(safe-area-inset-top,0px)); min-height:0; flex-wrap:nowrap; gap:0; padding:env(safe-area-inset-top,0px) max(8px,calc((100vw - 900px)/2)) 0; background:var(--reading-paper,#faf9f5); color:var(--reading-ink,#292821); border:0; }
 body.is-reading .app-header > .logo, body.is-reading .app-header > .header-actions { display:none; }
@@ -296,6 +298,8 @@ body.is-reading .app-header, #reader-screen, .reader-viewport, .reader-toolbar, 
 .select-menu.is-open > .select-menu__trigger svg { transform:rotate(180deg); }
 .select-menu__trigger:disabled { opacity:.35; cursor:default; }
 .select-menu__panel { padding:0 0 10px; }
+.select-menu--catalog .select-menu__panel { max-height:min(420px,48dvh); overflow-y:auto; overscroll-behavior:contain; }
+.select-menu--catalog .select-menu__list { max-height:none; overflow:visible; }
 .select-menu__list { max-height:min(264px,38dvh); margin:0; padding:0; overflow-y:auto; overscroll-behavior:contain; list-style:none; }
 .select-menu__option { display:flex; align-items:center; gap:10px; min-height:44px; padding:8px 10px 8px 12px; border-radius:8px; font-size:15px; cursor:pointer; }
 .select-menu__option-label { flex:1; min-width:0; overflow-wrap:anywhere; }

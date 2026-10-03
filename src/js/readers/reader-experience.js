@@ -221,6 +221,7 @@ export class ReaderExperience {
   }
   label(place) { return place.locator?.kind === 'pdf-page' ? `Página ${place.locator.value}${this.reader.pageCount ? ` de ${this.reader.pageCount}` : ''}` : place.section ? `${place.section}${place.page ? ` · Página ${place.page}` : ''}` : `${Math.round(place.fraction * 100)} % del libro` }
   show(tab) {
+    if (this.screen.getAttribute('aria-busy') === 'true') return
     this.showTab(tab)
     if (tab === 'audio') { this.populateVoices(); this.neuralPicker.refresh() }
     if (!this.panel.open) this.panel.showModal()

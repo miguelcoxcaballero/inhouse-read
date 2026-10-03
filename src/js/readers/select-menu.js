@@ -31,7 +31,7 @@ export class SelectMenu {
     this.panel = element('div', 'select-menu__panel'); this.panel.id = `${id}-panel`; this.panel.hidden = true
     this.list = element('ul', 'select-menu__list'); this.list.setAttribute('role', 'listbox'); this.list.setAttribute('aria-label', label)
     this.panel.append(this.list)
-    if (extra) { this.extra = extra; this.panel.append(extra) }
+    if (extra) { this.extra = extra; this.panel.append(extra); this.root.classList.add('select-menu--catalog') }
     this.root.append(this.trigger, this.panel)
     this.trigger.addEventListener('click', () => this.isOpen ? this.close() : this.open())
     this.trigger.addEventListener('keydown', event => {
@@ -81,7 +81,9 @@ export class SelectMenu {
     const target = where === 'last' ? items.at(-1) : items.find(item => item.dataset.value === this.current) || items[0]
     target?.focus({ preventScroll:true })
     target?.scrollIntoView?.({ block:'nearest' })
-    this.panel.scrollIntoView?.({ block:'nearest' })
+    // Keep the trigger and its bounded catalog together. Scrolling a catalog
+    // taller than the dialog aligned its top and hid the only close control.
+    this.root.scrollIntoView?.({ block:'nearest' })
   }
   close({ focus = false } = {}) {
     if (!this.isOpen) return

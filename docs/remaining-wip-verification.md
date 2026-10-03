@@ -1,4 +1,14 @@
-# Verificación del WIP — web 1.7.24 publicada; Android 1.1.4 pendiente
+# Verificación del WIP — web 1.7.25 en publicación; Android 1.1.4 pendiente
+
+## Cambios de 1.7.25
+
+La apertura del lector mantenía visibles los controles antes de completar la carga real del motor y de la posición guardada. Un observador sobre la fuente pública `40490ea` confirmó que durante ese intervalo todavía no existía un rango EPUB legible. La corrección mantiene los controles ocultos y las acciones superiores inertes hasta terminar; muestra un estado discreto de carga, limpia los fallos y conserva las transiciones de portada existentes.
+
+El [ensayo Android 37145835659](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37145835659), fuente `a94f895`, falló antes de iniciar el audio: después de descargar la voz, la fila «Voz» para cerrar el catálogo había quedado fuera del área visible. No hubo lectura con pantalla bloqueada ni datos para localizar el await pendiente. Se conservan el ZIP original de 105 miembros, SHA-256 `d2373d13db7c91b2a93dcdd36fd0492eba68a213e6c73a65aab7d00a5e8eb1a5`, y el certificado de captura, SHA-256 `3e5b56722285664f93daa3f3c7b70a16a9a5c341ff07e560964b9c23714998a7`. La corrección limita la altura del catálogo ampliado y desplaza su raíz, conservando el botón visible y alcanzable.
+
+Verificación local: **80/80 focales en tres archivos** y **2/2 E2E móviles**, sin reintentos. El caso de carga retiene el módulo real y comprueba que, al liberarlo, existe texto EPUB legible; el de catálogo comprueba el hit test del botón después de desplazar hasta M5 y cierra el menú. Su captura se revisó visualmente. Originales `.animation.local/release-1724/catalog-ready-unit.*`, `reader-ready-catalog-e2e.*` y `reader-ready-catalog-build.log`. La batería completa anterior al último ajuste del catálogo pasó **2.510 unitarias en 152 archivos**; no sustituye la batería de la fuente final, cuyo censo esperado es 2.511 unitarias y 511 E2E.
+
+La tercera tanda pública anterior pasó **3/3**, sin reintentos ni omisiones, sobre `a94f895`, Pages `782752125dee716296686e348da1cf1cede944e4`: continuidad EPUB con modelo real y sink controlado, ampliación de las voces anteriores con PCM real también sin conexión y gesto isométrico. Conserva 78 cuerpos HTTP autenticados y las capturas revisadas. Certificado `.animation.local/release-1724/public-ready-a94f895/certification.json`, SHA-256 `ef913a157334948ed38de86bf3634c313f854d9f7cb29ba9e5fb116cc7f86767`. Esa tanda esperó un rango EPUB legible antes de evaluar las voces; no acredita por sí sola la nueva corrección de carga ni AudioTrack Android. Los dos fallos públicos anteriores siguen separados.
 
 ## Cambios de 1.7.24
 

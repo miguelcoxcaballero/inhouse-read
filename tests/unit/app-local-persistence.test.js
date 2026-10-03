@@ -102,6 +102,31 @@ const file = () => new NativeFile([new Uint8Array([0, 255, 37, 80, 68, 70, 0, 12
 async function importBook() { await state.imports.onFile(file()); return (await state.library.listAll())[0] }
 
 describe('app import and optional Drive upload', () => {
+  it('keeps reader controls unavailable until the imported engine and saved reading state are ready', async () => {
+    let finishEngine, finishState
+    state.reader.open.mockImplementationOnce(() => new Promise(resolve => { finishEngine = resolve }))
+    state.experience.open.mockImplementationOnce(() => new Promise(resolve => { finishState = resolve }))
+    const importing = state.imports.onFile(file())
+    await vi.waitFor(() => expect(finishEngine).toBeTypeOf('function'))
+    const toolbar = document.getElementById('reader-toolbar'), screen = document.getElementById('reader-screen')
+    const loading = document.getElementById('reader-loading'), actions = document.querySelector('.reader-heading-actions')
+    expect(toolbar.hidden).toBe(true); expect(screen.getAttribute('aria-busy')).toBe('true')
+    expect(loading.hidden).toBe(false); expect(actions.inert).toBe(true)
+    finishEngine({ label:'PDF' })
+    await vi.waitFor(() => expect(finishState).toBeTypeOf('function'))
+    expect(toolbar.hidden).toBe(true); expect(actions.inert).toBe(true)
+    finishState(); await importing
+    expect(toolbar.hidden).toBe(false); expect(screen.getAttribute('aria-busy')).toBe('false')
+    expect(loading.hidden).toBe(true); expect(actions.inert).toBe(false)
+  })
+  it('clears the loading notice and controls lock when engine opening fails', async () => {
+    state.reader.open.mockRejectedValueOnce(new Error('Malformed book'))
+    await state.imports.onFile(file())
+    expect(document.getElementById('reader-loading').hidden).toBe(true)
+    expect(document.getElementById('reader-screen').getAttribute('aria-busy')).toBe('false')
+    expect(document.querySelector('.reader-heading-actions').inert).toBe(false)
+    expect(document.getElementById('reader-toolbar').hidden).toBe(true)
+  })
   it('commits original native-import bytes without launching Google or asking for a folder', async () => {
     const book = await importBook()
     const drive = await import('../../src/js/drive-client.js')
