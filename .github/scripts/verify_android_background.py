@@ -76,7 +76,7 @@ def close_voice_catalog(label):
     return ui_action(label, r"^Voz(?:\s|$)", require_button=True, within_audio_dialog=True)
 
 def logs(*, prefix=PREFIX):
-    raw = run("adb", "logcat", "-d", "-v", "threadtime", "InhousePcm:I", "InhousePcmState:I", "InhousePcmProgress:I", "InhousePcmCallback:I", "InhousePcmRuntime:I", "InhousePcmAfterEvent:I", "*:S").stdout
+    raw = run("adb", "logcat", "-d", "-v", "threadtime", "InhousePcm:I", "InhousePcmState:I", "InhousePcmProgress:I", "InhousePcmCallback:I", "InhousePcmRuntime:I", "InhousePcmAfterEvent:I", "InhouseBookLoad:I", "*:S").stdout
     Path(prefix+"logcat.txt").write_text(raw, encoding="utf-8")
     states, events, progress = [], [], []
     for line in raw.splitlines():

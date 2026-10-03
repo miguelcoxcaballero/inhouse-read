@@ -39,10 +39,11 @@ class NativeMediaEvidenceTests(unittest.TestCase):
     def test_preserves_post_microtask_diagnostics_in_original_logcat(self):
         with tempfile.TemporaryDirectory() as directory:
             from types import SimpleNamespace
-            raw = 'InhousePcmAfterEvent: {"microtask":32,"snapshot":{"advanceStage":"next-turn"}}\n'
+            raw = 'InhousePcmAfterEvent: {"microtask":32,"snapshot":{"advanceStage":"next-turn"}}\nInhouseBookLoad: {"displayStage":3,"viewLoadPending":true}\n'
             with patch.object(verifier, 'run', return_value=SimpleNamespace(stdout=raw)) as command:
                 captured, states, events, progress = verifier.logs(prefix=str(Path(directory)/'native-'))
             self.assertIn('InhousePcmAfterEvent:I', command.call_args.args)
+            self.assertIn('InhouseBookLoad:I', command.call_args.args)
             self.assertEqual(captured, raw)
             self.assertEqual(Path(directory, 'native-logcat.txt').read_text(), raw)
             self.assertEqual((states, events, progress), ([], [], []))

@@ -14,6 +14,7 @@ function displayProbe(){
     #index=0;#view=view;#styleMap=new Map();#styles='';sections=[{unload(){}},{load:()=>section.promise}];
     #createView(){return this.#view=view}#beforeRender(){}setStyles(){}focusView(){}
     scrollToAnchor(){return anchor.promise}
+    ${method('inhouseReadReportTurnDiagnostic()','get inhouseReadTurnDiagnostic()')}
     ${method('get inhouseReadTurnDiagnostic()','getContents()')}
     ${method('async #display(promise)','#canGoToIndex(index)')}
     ${method('async #goTo({ index, anchor, select })','async goTo(target)')}
@@ -63,5 +64,18 @@ describe('passive Foliate navigation stage observation',()=>{
     const getter=method('get inhouseReadTurnDiagnostic()','getContents()');
     expect(getter).not.toMatch(/await|dispatchEvent|setTimeout|requestAnimationFrame|\.then\(|load\(/);
     for(const secret of ['textContent','outerHTML','location','src','getCFI','metadata'])expect(getter).not.toContain(secret);
+  });
+  it('reports original load transitions directly with bounded values and no scheduling',async()=>{
+    const report=vi.fn();globalThis.InhousePcm={reportNavigationStage:report};
+    try {
+      const h=displayProbe();h.paginator.go();await drain();
+      expect(report).toHaveBeenCalledWith(0,1,true,false,1);
+      h.section.resolve('blob:original');await drain();
+      expect(report).toHaveBeenCalledWith(0,3,false,true,1);
+      h.frame.resolve();h.anchor.resolve();await drain();
+      expect(report).toHaveBeenCalledWith(0,0,false,false,3);
+      const body=method('inhouseReadReportTurnDiagnostic()','get inhouseReadTurnDiagnostic()');
+      expect(body).not.toMatch(/await|queueMicrotask|setTimeout|requestAnimationFrame|evaluateJavascript|\.then\(/);
+    } finally {delete globalThis.InhousePcm}
   });
 });

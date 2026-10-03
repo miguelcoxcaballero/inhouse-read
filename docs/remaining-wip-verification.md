@@ -1,4 +1,16 @@
-# Verificación del WIP — web 1.7.25 en publicación; Android 1.1.4 pendiente
+# Verificación del WIP — web 1.7.26 en preparación; Android 1.1.4 pendiente
+
+## Cambios de 1.7.26 y estado actual
+
+El archivo EPUB se lee una vez al abrirlo y zip.js conserva la descompresión y validación originales. Los capítulos se decodifican desde bytes en memoria y los recursos mantienen su MIME. Siete pruebas con el ZIP real contrastan todas las entradas con el lector anterior, bloquean las operaciones posteriores de Blob/Response y comprueban codificación, buffers y archivos incompletos. Los dos intentos iniciales con errores del harness permanecen separados del aprobado. Con las fases del paginador y el puente nativo pasan 22 focales en tres archivos.
+
+El [ensayo Android 37146839908](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37146839908), fuente `ccd3e67`, conserva **FAILED**: 114 starts/dones, 228 callbacks recibidos y capítulos 0–18, pero ningún PCM nuevo en los últimos 30 segundos. La última observación espera una sección EPUB; los capítulos anteriores muestran brevemente ese mismo estado. No demuestra por sí sola qué operación interna queda pendiente. El nuevo registro directo de fases añade sólo valores numéricos y booleanos en los puntos originales, sin nuevos timers, evaluaciones JavaScript ni comandos de reproducción. El gate de continuidad sigue intacto. No se publicó una APK fallida.
+
+La web 1.7.25 está publicada: fuente `ccd3e673805b63c6f173d7ec5905888a1583a324`, Pages `51e39703e23e664cbc31074dd1399270581d3c6a`. La batería local final pasó **2.511/2.511 unitarias en 152 archivos**. La segunda tanda pública pasó **5/5**, sin omisiones ni reintentos, con 110 cuerpos HTTP autenticados. Certificado `public-ccd3e67-attempt2/certification.json`, SHA-256 `e09a7bb388476de990819ad7bef24727bef750ec5c5e103c4b3a412b27197a29`. La primera conserva **4 aprobados y un fallo HTTP 503**. El caso EPUB usa un sink PCM controlado; no acredita AudioTrack bloqueado.
+
+La batería CI original de `40490ea` pasó **2.500 unitarias y 509 E2E**; la de `a94f895`, **2.507 unitarias y 509 E2E**. Sus once archivos originales, doce jobs y censos se contrastaron por separado, sin reintentos, omisiones ni flaky. Los 220 WAV originales de la primera matriz coinciden con sus mediciones: PCM real, diez hashes distintos por idioma, un worker y cero solicitudes externas después de instalar las voces. Esa prueba no acredita acentos regionales ni resuelve la continuidad Android.
+
+La cuenta Google real sigue sin verificarse: el navegador con sesión perdió la conexión y el navegador integrado no expuso la ventana de autenticación. Se canceló ese intento; no se declara ningún login ni subida real completados. La APK pública conserva la versión 1.1.3, código 16; 1.1.4 necesita superar continuidad, controles y PDF con pantalla bloqueada.
 
 ## Cambios de 1.7.25
 

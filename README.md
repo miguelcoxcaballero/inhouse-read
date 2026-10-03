@@ -4,11 +4,17 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.26
+
+- Los archivos EPUB comprimidos se leen una vez al abrirlos. Los capítulos y recursos se extraen desde memoria, conservando los bytes originales, codificaciones y tipos de recurso; el PDF conserva su lector.
+- La captura Android registra las fases originales del cambio de capítulo sin añadir timers, navegación ni comandos de reproducción. Esta versión necesita otra comprobación con pantalla bloqueada; todavía no se declara resuelta la interrupción.
+- [Pruebas, publicación y pendientes](docs/remaining-wip-verification.md).
+
 ### Actualización web · 1.7.25
 
 - Los controles del lector y del audiolibro aparecen cuando el documento y su posición guardada están preparados. Durante la carga se muestra «Abriendo el libro…»; las animaciones conservan su propia transición.
 - El catálogo de voces mantiene accesible la fila «Voz» para cerrarlo en móvil, incluso con los diez perfiles adicionales. Su contenido se desplaza dentro de una altura limitada.
-- Verificación local: 80 pruebas focales y los dos nuevos casos móviles aprobados, sin reintentos. La batería completa anterior al último ajuste del catálogo pasó 2.510 unitarias; la fuente final necesita su nueva batería completa. [Resultados y pendientes](docs/remaining-wip-verification.md).
+- Verificación local final: 2.511 unitarias en 152 archivos y cinco casos sobre la web publicada, sin reintentos. La primera tanda pública conserva su fallo HTTP 503; la segunda tiene resultados propios. [Resultados y pendientes](docs/remaining-wip-verification.md).
 
 ### Actualización web · 1.7.24
 

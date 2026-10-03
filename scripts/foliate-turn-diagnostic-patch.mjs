@@ -10,6 +10,16 @@ const getter = `    get inhouseReadTurnDiagnostic() {
         }
     }
 `;
+const reporter = `    inhouseReadReportTurnDiagnostic() {
+        try {
+            const bridge = globalThis.InhousePcm
+            if (typeof bridge?.reportNavigationStage !== 'function') return
+            const value = this.inhouseReadTurnDiagnostic
+            bridge.reportNavigationStage(value.turnStage, value.displayStage,
+                value.sectionLoadPending, value.viewLoadPending, value.viewReady)
+        } catch {}
+    }
+`;
 const replacements = [
   ["    async #display(promise) {\n        const { index, src, anchor, onLoad, select } = await promise",
    "    async #display(promise) {\n        this.inhouseReadDisplayStage = 1\n        const { index, src, anchor, onLoad, select } = await promise\n        this.inhouseReadDisplayStage = 2"],
@@ -33,5 +43,10 @@ export function patchFoliateTurnDiagnostics(input) {
     if (source.split(before).length !== 2) throw new Error('Unexpected Foliate navigation diagnostic signature; review before building.');
     source = source.replace(before, after);
   }
+  // Report directly where the original awaited operation changes stage. This
+  // does not create another navigation, timer, promise or rendering task.
+  source = source.replace(/^(\s*this\.inhouseRead(?:DisplayStage|TurnStage|ViewLoadPending|SectionLoadPending) = [^\n]+)$/gm,
+    '$1\n        this.inhouseReadReportTurnDiagnostic?.()');
+  source = source.replace('    get inhouseReadTurnDiagnostic() {', reporter + '    get inhouseReadTurnDiagnostic() {');
   return source;
 }

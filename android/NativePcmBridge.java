@@ -28,6 +28,7 @@ public final class NativePcmBridge {
     private NativePcmService service;
     private boolean wantsPlayback;
     private long diagnosticSerial;
+    private long navigationSerial;
     public NativePcmBridge(Activity activity, WebView web) {
         this.activity = new WeakReference<>(activity); this.web = new WeakReference<>(web);
     }
@@ -169,6 +170,21 @@ public final class NativePcmBridge {
                 value.put("elapsedMs", SystemClock.elapsedRealtime());
                 value.put("snapshot", sanitizeSnapshot(new JSONObject(encoded), 0));
                 Log.i("InhousePcmAfterEvent", value.toString());
+            } catch (Exception ignored) {}
+        });
+    }
+    // Passive stage receipts: no JS evaluations or playback commands.
+    @JavascriptInterface public void reportNavigationStage(int turnStage, int displayStage, boolean sectionPending, boolean viewPending, int viewReady) {
+        if (turnStage < 0 || turnStage > 3 || displayStage < 0 || displayStage > 6 || viewReady < 0 || viewReady > 3) return;
+        ui(() -> {
+            if (session == null || !wantsPlayback) return;
+            JSONObject value = new JSONObject();
+            try {
+                value.put("schema", 1); value.put("session", session);
+                value.put("sequence", ++navigationSerial); value.put("elapsedMs", SystemClock.elapsedRealtime());
+                value.put("turnStage", turnStage); value.put("displayStage", displayStage);
+                value.put("sectionLoadPending", sectionPending); value.put("viewLoadPending", viewPending); value.put("viewReady", viewReady);
+                Log.i("InhouseBookLoad", value.toString());
             } catch (Exception ignored) {}
         });
     }

@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vitest'
 const read=path=>readFileSync(path,'utf8').replace(/\r\n?/g,'\n')
 const bridge=read('android/NativePcmBridge.java'),service=read('android/NativePcmService.java'),builder=read('android/html_to_apk_builder.py'),workflow=read('.github/workflows/build-android.yml')
 describe('signed Android native natural media integration',()=>{
+  it('logs bounded navigation stages without touching playback or evaluating JS',()=>{
+    const report=bridge.slice(bridge.indexOf('@JavascriptInterface public void reportNavigationStage'),bridge.indexOf('private void logRuntime'));
+    expect(report).toContain('turnStage > 3');expect(report).toContain('displayStage > 6');expect(report).toContain('viewReady > 3');
+    expect(report).toContain('session == null || !wantsPlayback');expect(report).toContain('Log.i("InhouseBookLoad"');
+    for(const forbidden of ['evaluateJavascript','postDelayed','enqueue(','reset(','keepExecuting(','resumeTimers'])expect(report).not.toContain(forbidden);
+  })
   it('allows numeric paginator stages in the existing receipt without new playback evaluations',()=>{
     const sanitizer=bridge.slice(bridge.indexOf('private static JSONObject sanitizeSnapshot'),bridge.indexOf('private void logCallback'));
     for(const field of ['paginator','turnStage','displayStage','sectionLoadPending','viewLoadPending','viewReady'])expect(sanitizer).toContain(`"${field}"`);
