@@ -1,9 +1,9 @@
 {
-  "version": "1.1.2",
-  "versionCode": 15,
+  "version": "1.1.3",
+  "versionCode": 16,
   "required": true,
-  "apkSizeBytes": 3174277,
-  "apkSha256": "802764a4a72a2e7f3d9a769fad90819cf4a4c71d5c468d56f25e13c98d84663d",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.2/inhouse-read-release-v1.1.2.apk",
-  "releaseNotes": "Animaciones más fluidas: la app pide a la pantalla su tasa de refresco más alta (hasta 120 Hz). Mantiene Abrir con y compartir libros desde Android."
+  "apkSizeBytes": 3174689,
+  "apkSha256": "67a52bdebff36c889c81061c488d002f4ac881404e9d1a5f6ad49e909ce267f7",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.3/inhouse-read-release-v1.1.3.apk",
+  "releaseNotes": "El lector mantiene la pantalla encendida y oculta la barra de estado. Voces naturales sin fallback al dispositivo y avance al tramo leído de la página siguiente."
 }
