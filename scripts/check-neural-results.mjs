@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { neuralVoices } from '../src/js/readers/neural-voice/catalog.js'
 
-export const MINIMUM_TESTS = Object.freeze({ engine:9, reading:12, languages:neuralVoices.length + 1 })
+export const MINIMUM_TESTS = Object.freeze({ engine:9, reading:13, languages:neuralVoices.length + 1 })
 
 /** Every required real test must execute, even when Playwright itself exits successfully. */
 export function validateNeuralResults(suite, report) {

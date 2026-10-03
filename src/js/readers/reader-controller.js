@@ -68,6 +68,8 @@ export class ReaderController {
   async getSpeechText() { return await this.#reader?.getSpeechText?.() || '' }
   /** Text plus the mapping the audiobook needs to highlight and follow each sentence; null when the engine has none. */
   async getSpeechSource() { return await this.#reader?.getSpeechSource?.() || null }
+  /** undefined keeps legacy format navigation; null from a supported reader identifies the actual book end. */
+  get getNextSpeechSource() { return this.#reader?.getNextSpeechSource?.bind(this.#reader) }
   async getPageSnapshot() {
     const reader = this.#reader
     const snapshot = await reader?.getPageSnapshot?.()

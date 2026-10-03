@@ -32,6 +32,7 @@ export class ReadingVoice {
     this.chunks = []
     this.items = []
     this.source = null
+    this.preparingPage = null; this.deferredPage = null; this.resumeNextPage = false
     this.rate = 1
     this.voice = ''
     this.languageOverride = '' // 'es', 'en'... chosen in the Idioma dropdown; '' follows the book
@@ -55,7 +56,7 @@ export class ReadingVoice {
     unlockNeural() // synchronously, inside the tap: the browser only lets the page start audio from a user gesture
     if (this.state === 'playing' || this.state === 'loading') return
     this.retryNeural()
-    if (this.state === 'paused' && this.chunks.length) {
+    if (this.state === 'paused' && this.chunks.length && !this.resumeNextPage) {
       this.state = 'playing'; this.notify(); this.speakCurrent(); return
     }
     const generation = ++this.generation
@@ -70,9 +71,13 @@ export class ReadingVoice {
         this.neuralOff = 'init-failed'; return this.fail(NEURAL_ERRORS.default)
       }
       if (generation !== this.generation) return
-      const plan = await this.prepare()
+      const next = this.resumeNextPage ? await this.prepareNext(generation) : undefined
+      if (generation !== this.generation) return
+      if (next === null) { this.stop(); this.notify('Final del libro.'); return }
+      const plan = next || await this.prepare()
       if (generation !== this.generation) return
       this.adopt(plan)
+      this.resumeNextPage = false
       if (!this.chunks.length) return this.fail('Esta página no contiene texto legible. Los PDF escaneados necesitan reconocimiento de texto para escucharlos.')
       this.state = 'playing'; this.notify(); this.speakCurrent()
     } catch { if (generation === this.generation) this.fail('No se pudo preparar el texto.') }
@@ -163,6 +168,16 @@ export class ReadingVoice {
     const generation = this.generation
     // The sentence just read stays painted while the page turns: the next one replaces it the moment it is heard (see present()).
     try {
+      if (typeof this.reader.getNextSpeechSource === 'function') {
+        const next = await this.prepareNext(generation)
+        if (generation !== this.generation || this.state !== 'playing') return
+        if (next === null) { this.stop(); this.notify('Final del libro.'); return }
+        if (next !== undefined) {
+          this.adopt(next)
+          if (!this.chunks.length) return this.fail('Página siguiente sin texto legible.')
+          return this.speakCurrent()
+        }
+      }
       for (let blank = 0; blank < MAX_EMPTY_PAGES; blank++) {
         const previous = JSON.stringify(this.reader.location)
         await this.reader.next()
@@ -187,15 +202,35 @@ export class ReadingVoice {
    * page hand over a source (offsets -> DOM) so each sentence can be highlighted
    * and followed; the others keep the plain text path, unhighlighted.
    */
-  async prepare() {
-    const pending = this.reader.getSpeechSource?.()
-    const source = pending ? await pending : null
+  async prepare(source) {
+    if (source === undefined) {
+      const pending = this.reader.getSpeechSource?.()
+      source = pending ? await pending : null
+    }
     if (!source) return { source, items:speechChunks(this.prepareText(await this.reader.getSpeechText())).map(text => ({ text })) }
     const { footnotes, skipHeaders } = this.options
     return { source, items:planSpeech(source.text, { footnotes, skipHeaders, pageBreaks:source.pageBreaks }, source.start || 0) }
   }
+  /** Optional fixed-page preparation: it must leave the current page visible until an audible start. */
+  async prepareNext(generation) {
+    if (typeof this.reader.getNextSpeechSource !== 'function') return undefined
+    const request = { generation }; this.preparingPage = request
+    const isActive = () => generation === this.generation && (this.state === 'playing' || this.state === 'loading')
+    let source
+    try {
+      source = await this.reader.getNextSpeechSource({ isActive })
+      if (!isActive()) { source?.clear?.(); return undefined }
+      // undefined means this format has no deferred-page API; null means an actual end, never a cancelled preparation.
+      if (source == null) return source
+      const plan = await this.prepare(source)
+      if (!isActive()) { source.clear?.(); return undefined }
+      return plan
+    } catch (error) { source?.clear?.(); throw error }
+    finally { if (this.preparingPage === request) this.preparingPage = null }
+  }
   adopt({ source, items }) {
     this.source = source; this.items = items; this.chunks = items.map(item => item.text); this.index = 0
+    this.deferredPage = typeof source?.activate === 'function' ? source : null
   }
   // --- Highlight timing: what is painted and followed is what is being heard -------------------------------------------
   /** The engine reported the first audible word of utterance `id`. */
@@ -209,18 +244,28 @@ export class ReadingVoice {
   /** The engine finished `id`: remember whether it ever announced a start, so a silent engine is not waited for again. */
   engineEnded(id) {
     this.neuralRetries = 0
+    if (this.startedId !== id && this.source?.activate) { this.pause(); this.notify(NEURAL_ERRORS.default); return }
     if (this.startedId !== id) this.present(id)
   }
   /**
    * Shows the sentence of the fragment being spoken and lets the reader bring it on screen. The sentence is painted once
    * for all its <=180 character fragments (a fragment only re-follows) and the previous one stays until it is replaced,
-   * so there is no blank flash between sentences or at a page turn. Cosmetic: it can never stop the voice.
+   * so there is no blank flash between sentences or at a page turn. A deferred fixed page commits before its highlight;
+   * an invalidated page pauses the voice. Highlight and follow failures remain cosmetic.
    */
   present(id = this.utteranceId) {
     clearTimeout(this.presentTimer)
     if (id !== this.utteranceId || this.state !== 'playing') return
     const item = this.items[this.index], source = this.source
     if (!source || !item?.sentence) return
+    if (source.activate) {
+      // A no-start completion may paint a legacy source, but can never reveal a prepared next page.
+      if (this.startedId !== id) return
+      let activated = false
+      try { activated = source.activate() } catch { /* navigation or layout invalidated the prepared page */ }
+      if (activated !== true) { this.pause(); this.notify('No se pudo mostrar la página. Pulsa Reintentar para continuar.'); return }
+      this.deferredPage = null
+    }
     const { start, end } = item.sentence
     try {
       const shown = this.shown
@@ -268,12 +313,16 @@ export class ReadingVoice {
   }
   pause() {
     if (this.state !== 'playing') return
+    const pendingPage = this.deferredPage || this.preparingPage?.generation === this.generation
+    if (pendingPage) this.resumeNextPage = true
     ++this.generation; this.state = 'paused'; this.cancelUtterance(); this.unpaint()
+    if (pendingPage) { this.chunks = []; this.items = []; this.source = null; this.index = 0; this.deferredPage = null }
     if (this.index >= this.chunks.length) this.chunks = []
     this.notify()
   }
   stop() {
     ++this.generation; this.state = 'stopped'; this.cancelUtterance(); this.unpaint()
+    this.preparingPage = null; this.deferredPage = null; this.resumeNextPage = false
     this.chunks = []; this.items = []; this.source = null; this.index = 0; this.missing.clear(); this.spokenWith = null; clearTimeout(this.sleepTimer); this.notify()
   }
   fail(message) { this.stop(); this.notify(message) }
