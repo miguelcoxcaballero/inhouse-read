@@ -286,12 +286,21 @@ test('seleccionar otro libro y volver al primero abre su documento y conserva la
   await page.emulateMedia({ reducedMotion:'no-preference' })
   await page.goto(process.env.IHR_TEST_URL || '/')
   await seedCoveredBooks(page)
+  const preparationTimings = []
   for (const index of [0, 1]) {
     await page.locator(`.ihr-spine[data-book-id="continuity:${index}"]`).click()
+    // Revealing the cover finishes independently of the PDF preparation.
+    // Start its own eight-second budget after that visible presentation.
+    await expect(page.locator('.ihr-flyout__cover-target')).toBeVisible()
     await expect(page.locator('.ihr-flyout__readiness')).toHaveText('Listo para leer')
+    preparationTimings.push({ index, marks:await page.evaluate(() => performance.getEntriesByType('mark')
+      .filter(entry => entry.name.startsWith('ihr:')).map(entry => ({name:entry.name,at:entry.startTime}))) })
     await page.getByRole('button', { name:'Cerrar', exact:true }).click()
     await expect(page.locator('.ihr-flyout')).toHaveCount(0)
   }
+  await test.info().attach('book-preparation-timings', {
+    body:JSON.stringify(preparationTimings), contentType:'application/json'
+  })
   await page.locator('.ihr-spine[data-book-id="continuity:0"]').click()
   await page.locator('.ihr-flyout__cover-target').click()
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()

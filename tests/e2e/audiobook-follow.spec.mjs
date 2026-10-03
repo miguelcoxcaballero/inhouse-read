@@ -68,16 +68,50 @@ const highlightOnScreen = page => page.evaluate(() => {
   return { inside:x >= box.left - 1 && x + rect.width <= box.right + 1 && y >= box.top - 1 && y + rect.height <= box.bottom + 1, x, y }
 })
 
-test('PDF: the sentence being read is highlighted in the text layer and the page turns by itself', async ({ page }) => {
+test('PDF: the sentence being read is highlighted in the text layer and the page turns by itself', async ({ page }, testInfo) => {
   const errors = []; page.on('pageerror', error => errors.push(error.message))
   await open(page, PDF)
+  // Page one's four sentences must finish automatically. Hold the following
+  // heading, the first audible fragment on page two, while testing Pause/Resume.
+  // A synthesis request is not an audible start; the retained evidence records both.
+  const pageOne = ['Reading journey.', 'Page 1.', 'A quiet room, a book and a moment to read.', 'Keep this place while exploring another chapter.']
+  const heldCount = pageOne.length + 1
+  await holdAfter(page, heldCount)
+  await page.evaluate(() => {
+    window.__narration.state.startDelay = 450
+    const engine = window.__inhouseNeuralTest.engine
+    const evidence = window.__pdfFollowEvidence = { requests:[], events:[] }
+    const visible = () => ({ at:performance.now(), location:document.querySelector('#reader-location')?.getAttribute('aria-label'), highlight:window.__speechHighlight() })
+    const speak = engine.speak.bind(engine), emit = engine.emit.bind(engine)
+    engine.speak = request => { evidence.requests.push({ ...request, ...visible() }); return speak(request) }
+    engine.emit = (type, id, reason) => {
+      const before = visible()
+      emit(type, id, reason)
+      evidence.events.push({ type, id, before, after:visible() })
+    }
+  })
   await play(page)
-  await expect.poll(async () => (await logged(page)).length).toBeGreaterThan(1)
+  const started = async () => (await logged(page)).filter(entry => entry.atStart !== null)
+  await expect.poll(async () => (await started()).length).toBeGreaterThan(1)
   // Every utterance starts with its own sentence already highlighted, and the highlight moves.
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 2 de 4/, { timeout:20_000 })
-  const entries = await logged(page)
+  await expect.poll(async () => (await started()).length).toBe(heldCount)
+  const entries = await started()
+  expect((await logged(page)).length).toBe(heldCount)
+  expect(entries.map(entry => entry.text)).toEqual([...pageOne, pageOne[0]])
   for (const entry of entries) expect(squash(entry.highlight)).toContain(unstopped(entry.text))
   expect(new Set(entries.map(entry => squash(entry.highlight))).size).toBeGreaterThan(2)
+  expect(squash(entries.at(-1).atSpeak)).toContain(unstopped(pageOne.at(-1)))
+  expect(squash(entries.at(-1).atSpeak)).not.toContain(unstopped(entries.at(-1).text))
+  const audible = await page.evaluate(() => {
+    const engine = window.__inhouseNeuralTest.engine
+    return { count:engine.calls.length, current:{ ...engine.current }, highlight:window.__speechHighlight(), location:document.querySelector('#reader-location').getAttribute('aria-label') }
+  })
+  expect(audible.count).toBe(heldCount)
+  expect(audible.current.id).toBe(entries.at(-1).id)
+  expect(audible.current.atStart).not.toBeNull()
+  expect(audible.location).toMatch(/Página 2 de 4/)
+  expect(squash(audible.highlight)).toContain(unstopped(audible.current.text))
   // The voice was never stopped or interrupted by the automatic page turn.
   expect(await page.evaluate(() => window.__narration.state.stacks || [])).toEqual([])
   await expect(page.getByRole('button', { name:'Pausar lectura' })).toBeVisible()
@@ -86,18 +120,30 @@ test('PDF: the sentence being read is highlighted in the text layer and the page
   // Pause clears the highlight; resume brings back the same sentence.
   await page.getByRole('button', { name:'Pausar lectura' }).click()
   await expect.poll(() => page.evaluate(() => window.__speechHighlight())).toBe('')
-  const before = (await logged(page)).length
-  const paused = (await logged(page)).at(-1).text
+  const before = audible.count
+  const paused = audible.current.text
   await page.getByRole('button', { name:'Continuar lectura' }).click()
-  await expect.poll(async () => (await logged(page)).length).toBeGreaterThan(before)
-  expect((await logged(page))[before].text).toBe(paused)
-  expect(squash((await logged(page))[before].highlight)).toContain(squash(paused))
+  await expect.poll(async () => (await started()).length).toBe(before + 1)
+  const resumed = (await started())[before]
+  expect(resumed.id).not.toBe(audible.current.id)
+  expect(resumed.text).toBe(paused)
+  expect(squash(resumed.highlight)).toContain(unstopped(paused))
   expect(await highlightOnScreen(page)).toMatchObject({ inside:true })
 
   // A tap/swipe by the reader is user navigation: it stops the voice and clears the highlight.
   await page.getByRole('button', { name:'Página siguiente', exact:true }).click()
   await expect.poll(() => page.evaluate(() => window.__speechHighlight())).toBe('')
   await expect(page.getByRole('button', { name:'Pausar lectura' })).toHaveCount(0)
+  const evidence = await page.evaluate(() => window.__pdfFollowEvidence)
+  expect(evidence.requests.map(entry => entry.text)).toEqual([...pageOne, pageOne[0], paused])
+  const starts = evidence.events.filter(entry => entry.type === 'start')
+  expect(starts.map(entry => entry.id)).toEqual(evidence.requests.map(entry => entry.id))
+  for (const [index, entry] of starts.entries()) {
+    expect(entry.before.at).toBeGreaterThan(evidence.requests[index].at)
+    expect(squash(entry.after.highlight)).toContain(unstopped(evidence.requests[index].text))
+  }
+  expect(evidence.events.filter(entry => entry.type === 'done').length).toBe(pageOne.length)
+  await testInfo.attach('pdf-follow-request-start-pause', { body:JSON.stringify({ ...evidence, audible, resumed }), contentType:'application/json' })
   expect(errors).toEqual([])
 })
 
