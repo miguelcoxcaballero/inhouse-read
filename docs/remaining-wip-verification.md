@@ -1,4 +1,18 @@
-# Verificación del WIP — web 1.7.17 y APK 1.1.3
+# Verificación del WIP — web 1.7.18 y APK 1.1.3
+
+Estado: 3 de octubre de 2026. El relieve por colores está publicado desde `7be235b78ac769426b44c03abe65dbcf119ad6ca`. La verificación final usa `8936abedd970ac50b65925c2d51e699aabcb80a4`, que sólo corrige la espera de devolución antes de una importación en un test E2E. Pages actual: `d85b2321d18408dc887abdda08a6be8baf5e314f`; entrada `main-Bttpz-IX.js`.
+
+**Batería completa aprobada:** 2.191 unitarias en 128 archivos y 335 E2E, 206 UI y 129 de motores reales. [Run 37118962162](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37118962162): 12 jobs y 11 ZIP originales contrastados, 21 JSON y 89 PNG de interfaz, sin omisiones, reintentos, flaky ni errores. Certificado agregado SHA-256 `f58abd154ad0c094837d821b8bd6e137d998eba28d77b5750896828a47f4790a`.
+
+El editor ofrece hasta tres zonas de colores reales distintos, con relieve y barniz localizados. Conserva el color elegido y la intensidad al reabrir. El análisis se prepara en tareas cancelables y reutiliza los mapas al cambiar la intensidad. Las portadas monocromas o bicolores ofrecen sólo sus opciones reales.
+
+Pasaron **18 casos locales** de portada y **20 casos sobre la web publicada**. Se compararon por HTTP 20 módulos y estilos y 40 archivos del shell offline; la publicación posterior conserva sus 85 archivos de Pages idénticos. Las ejecuciones originales mantienen sus fuentes y fechas. La revisión de voces final verifica 106 WAV nuevos.
+
+La APK pública 1.1.3, código 16, volvió a descargarse y mantiene su firma V2 y loader de 2.089 bytes, sin una copia empaquetada de la app. Las mejoras llegan mediante la web. [Implementación, certificados y alcance de 1.7.18](cover-color-relief-1718.md).
+
+## Histórico certificado — web 1.7.17 y APK 1.1.3
+
+El bloque siguiente conserva la fuente, fechas, censos y alcance originales de 1.7.17.
 
 Estado: 3 de octubre de 2026. La optimización de rendimiento está publicada desde `64a91da1ff688d9bd0d3fe9d8e511fbf2d8548ca`, Pages `ae809d710a76a00eda4aa69a5f65276dd93e6915` y entrada `main-BL7jM-hN.js`.
 

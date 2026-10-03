@@ -4,6 +4,14 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.18
+
+- El editor propone hasta tres colores distintos presentes en la portada. Cada opción aplica relieve y brillo a las zonas de ese color y balancea el libro para mostrar el reflejo.
+- La tinta conserva sus colores. Las letras finas mantienen la cobertura del barniz y las máscaras siguen el mismo encuadre de la portada.
+- La selección guarda el color, su tolerancia y la intensidad; cambiar la intensidad reutiliza los mapas preparados. Las portadas de uno o dos colores ofrecen sólo esas opciones.
+
+**Verificado:** [2.191 unitarias y 335 E2E aprobados](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37118962162), además de 18 casos locales de portada, 20 sobre la web publicada y una descarga nueva de la APK pública. [Funcionamiento y evidencia de 1.7.18](docs/cover-color-relief-1718.md).
+
 ### Actualización web · 1.7.17
 
 - El PDF abre directamente en la página guardada y reutiliza su renderizado completo cuando el documento, tamaño y preferencias siguen válidos.
