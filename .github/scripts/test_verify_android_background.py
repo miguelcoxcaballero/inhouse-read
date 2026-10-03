@@ -36,6 +36,16 @@ def catalog_button(root):
     return next(node for node in root.iter('node') if node.get('text','').startswith('Descargar la voz Lessac,'))
 
 class NativeMediaEvidenceTests(unittest.TestCase):
+    def test_full_log_snapshot_is_a_single_passive_read(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as directory:
+            prefix=str(Path(directory)/'android-background-')
+            original='Capacitor/Console: InhouseReadFrame {"stage":2}\nerror: capítulo\n'
+            with patch.object(verifier,'PREFIX',prefix), patch.object(verifier,'run',return_value=SimpleNamespace(stdout=original)) as request:
+                verifier.freeze_full_logcat('locked-failure')
+            request.assert_called_once_with('adb','logcat','-d','-v','threadtime')
+            self.assertEqual(Path(prefix+'locked-failure-full-logcat.txt').read_text(encoding='utf-8'),original)
+
     def test_preserves_post_microtask_diagnostics_in_original_logcat(self):
         with tempfile.TemporaryDirectory() as directory:
             from types import SimpleNamespace

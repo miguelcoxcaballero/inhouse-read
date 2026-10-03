@@ -75,6 +75,11 @@ def close_voice_catalog(label):
     # cancels the whole dialog; toggle its visible Voz row instead.
     return ui_action(label, r"^Voz(?:\s|$)", require_button=True, within_audio_dialog=True)
 
+def freeze_full_logcat(label):
+    # One passive snapshot, separate from the filtered PCM acceptance data.
+    Path(PREFIX+label+"-full-logcat.txt").write_text(
+        run("adb", "logcat", "-d", "-v", "threadtime").stdout, encoding="utf-8")
+
 def logs(*, prefix=PREFIX):
     raw = run("adb", "logcat", "-d", "-v", "threadtime", "InhousePcm:I", "InhousePcmState:I", "InhousePcmProgress:I", "InhousePcmCallback:I", "InhousePcmRuntime:I", "InhousePcmAfterEvent:I", "InhouseBookLoad:I", "*:S").stdout
     Path(prefix+"logcat.txt").write_text(raw, encoding="utf-8")
@@ -221,8 +226,12 @@ def main():
         except Exception:
             # Freeze the failed gate's original bytes before any wake/recovery.
             Path(PREFIX+"locked-failure-logcat.txt").write_text(raw,encoding="utf-8")
+            # The filtered PCM log omits WebView exceptions. Capture once at
+            # the same frozen gate, before recovery can change the document.
+            freeze_full_logcat("locked-failure")
             result["diagnosticRecovery"]=diagnostic_recovery(first["session"])
             raise
+        freeze_full_logcat("locked")
         run("adb","shell","input","keyevent","KEYCODE_WAKEUP");run("adb","shell","wm","dismiss-keyguard")
         notification_action("notification-pause",r"^(Pausar|Pause)$")
         wait_state(lambda s,e,p:not s["active"] and not s["wakeHeld"],"paused")
@@ -268,6 +277,9 @@ def main():
         result["status"]="passed"
     except Exception as error:
         result["error"]=str(error)
+        if "diagnosticRecovery" not in result:
+            try: freeze_full_logcat("failure")
+            except Exception as capture_error: result["diagnosticLogError"]=str(capture_error)
         raise
     finally:
         logs(prefix=PREFIX+"recovery-" if "diagnosticRecovery" in result else PREFIX);result["finishedAt"]=time.time()

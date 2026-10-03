@@ -24,7 +24,7 @@ const replacements = [
   ["    async #display(promise) {\n        const { index, src, anchor, onLoad, select } = await promise",
    "    async #display(promise) {\n        this.inhouseReadDisplayStage = 1\n        const { index, src, anchor, onLoad, select } = await promise\n        this.inhouseReadDisplayStage = 2"],
   ["            await view.load(src, afterLoad, beforeRender)",
-   "            this.inhouseReadDisplayStage = 3\n            this.inhouseReadViewLoadPending = true\n            await view.load(src, afterLoad, beforeRender)\n            this.inhouseReadViewLoadPending = false\n            this.inhouseReadDisplayStage = 4"],
+   "            this.inhouseReadDisplayStage = 3\n            this.inhouseReadViewLoadPending = true\n            try { await view.load(src, afterLoad, beforeRender) }\n            finally {\n                this.inhouseReadViewLoadPending = false\n            }\n            this.inhouseReadDisplayStage = 4"],
   ["        await this.scrollToAnchor((typeof anchor === 'function'",
    "        this.inhouseReadDisplayStage = 5\n        await this.scrollToAnchor((typeof anchor === 'function'"],
   ["        if (hasFocus) this.focusView()\n    }\n    #canGoToIndex(index)",

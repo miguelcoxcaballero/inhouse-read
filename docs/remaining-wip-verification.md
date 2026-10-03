@@ -1,10 +1,24 @@
-# Verificación del WIP — web 1.7.29 publicada; 1.7.30 en preparación; Android 1.1.4 pendiente
+# Verificación del WIP — web 1.7.30 publicada; 1.7.31 en preparación; Android 1.1.4 pendiente
+
+## Cambios de 1.7.31
+
+Batería local completa: **2.555/2.555 unitarias en 158 archivos**, un worker, sin omisiones; originales `release-1731/full-unit.json` y `full-unit.log`. Las comprobaciones CI, HTTP y Android de esta fuente siguen separadas.
+
+Se conserva el View y su iframe entre capítulos, manteniendo la navegación real, el parser, el sandbox y la maquetación originales. Se eliminan los overlays y la observación del documento anterior. Los eventos `about:blank` o tardíos no completan la carga del capítulo nuevo; las fuentes anteriores tampoco expanden el documento actual. Los errores rechazan la promesa y cancelan sus listeners. El bloqueo del paginador se libera también cuando la carga falla o se cancela.
+
+Pasan **29/29 focales en cuatro archivos**, build, **seis E2E sin reintentos** y **75 verificaciones Python**. Los E2E conservan los plazos originales: seguimiento y cambio de capítulo, cancelación al pausar/detener, cierre EPUB al girar, reapertura CBZ y conservación de ancla. La batería unitaria completa ha pasado. No demuestra aún continuidad bloqueada. El diagnóstico Android conserva un logcat completo antes de despertar o recuperar tras un fallo; los umbrales de audio y controles originales siguen intactos.
+
+## Verificación de 1.7.30
+
+Fuente `be2cc4d7cfb11cd94959b7bae8902e4dea5d321d`, Pages `d9b530ba1adbce5b11d44cefa1b048e9ec33e0b3`. Sus 22 módulos y 43 recursos offline coinciden por HTTP; certificado de artefacto SHA-256 `90ff91df4cdbb52944bb2f45a4ce9d293a8f280c834c68eb947bc807d4d54bfc`. Pasan **cinco casos públicos sin reintentos**, con 110 cuerpos HTTP y cuatro capturas revisadas, certificado SHA-256 `37be533b1fcdbabae904ed8ebaf8d49ea25821ebdcdeb32f57248851cfb1bf23`. La batería CI de esta fuente sigue separada.
 
 ## Cambios de 1.7.30
 
 Las peticiones de Drive conservan la generación de sesión y el token concreto con que empezaron. Se rechaza una respuesta de una cuenta que ya se cerró antes de continuar con otra operación; un 401 tardío de un token anterior no borra un token renovado. No cambia los clientes, permisos ni el flujo OAuth de Notes. La fuente anterior reproduce cuatro fallos en seis regresiones. Pasan las seis sobre la fuente corregida, las 17 pruebas existentes de cliente y las 30 de CloudSync: **53/53**. Build y cinco E2E aprobados sin reintentos: importar local/subir desde portada, conexión con foto, reintento, perfil y caducidad. Usan respuestas controladas. La comprobación con una cuenta real sigue pendiente por la falta de conexión del navegador autenticado.
 
 ## Verificación de 1.7.29
+
+Batería CI completa aprobada, run `37151860869`: **2.540 unitarias en 156 archivos y 512 E2E**, 3.052 en total, sin reintentos, flaky ni omisiones. Once ZIP y doce jobs originales contrastados con su fuente; certificado SHA-256 `7060cf9d7a2004d6fefc94ffc78e12473095de10416061818f614fce61758703`.
 
 Fuente `b4da77674116bd6e3598e3fc699143c9d53b5d6d`, Pages `f4f873374d55a40ea97c08d3e45733e83d927fe1`: **2.540/2.540 unitarias, 156 archivos**, seis E2E focales y cinco casos públicos sin reintentos. Certificado local SHA-256 `d854132c12c50218650915a1ecd96662b4f6ca2887ab1f939a0850305867d51c`; público `d46d10c2cc62c124f7153e60f693895ba3ccdc21cbeebb666d22380c7b52501a`, con 109 cuerpos HTTP y cuatro capturas revisadas. Los 22 módulos y 43 recursos offline coinciden por HTTP; artefacto SHA-256 `542132d212a89a7c30cad6b7d1a462ff0219a61f528278793176010650ddf623`. La preparación original alcanzó su buffer de 100 MB por los módulos históricos retenidos; el segundo método lee cada blob Git por separado y conserva todos los hashes. No altera pruebas ni límites del producto.
 
@@ -16,7 +30,9 @@ El iframe del capítulo permanece en la maquetación con opacidad cero hasta rec
 
 ## Verificación de 1.7.28
 
-Fuente `8a72d43cd021efe361a510e87f5a8cc8a98b04ef`, Pages `3a6c2e8a1489b49c002b2572ec097070bc74b503`. Pasan **2.536/2.536 unitarias en 155 archivos**, sin omisiones. Certificado local SHA-256 `3483647c880ff05e269a5884037e1a41f2c5e5790a6856c92368cc66faa19780`. Sus 22 módulos y 43 recursos offline coinciden por HTTP, certificado `artifact-1728-8a72d43.json`, SHA-256 `38d37f4ca385f7977e299a885c5fea00b47b13430ea286cca0703df18c5200fb`. Pasan **cinco casos públicos**, sin reintentos, y se revisan sus cuatro capturas originales. La batería CI completa de esta fuente sigue en curso.
+Batería CI completa aprobada, run `37151378889`: **2.536 unitarias en 155 archivos y 512 E2E**, 3.048 en total, sin reintentos, flaky ni omisiones. Certificado original agregado SHA-256 `4922151ecf6e13d140c0e7aec93a63b562ca0355d029fe008c2796fb86d76cd2`.
+
+Fuente `8a72d43cd021efe361a510e87f5a8cc8a98b04ef`, Pages `3a6c2e8a1489b49c002b2572ec097070bc74b503`. Pasan **2.536/2.536 unitarias en 155 archivos**, sin omisiones. Certificado local SHA-256 `3483647c880ff05e269a5884037e1a41f2c5e5790a6856c92368cc66faa19780`. Sus 22 módulos y 43 recursos offline coinciden por HTTP, certificado `artifact-1728-8a72d43.json`, SHA-256 `38d37f4ca385f7977e299a885c5fea00b47b13430ea286cca0703df18c5200fb`. Pasan **cinco casos públicos**, sin reintentos, y se revisan sus cuatro capturas originales. La batería CI completa de esta fuente ha pasado con certificado propio indicado arriba.
 
 ## Cambios de 1.7.28
 
@@ -145,8 +161,9 @@ El observador software de interrupción usa **2.200 ms en CI**; el límite local
 
 ## Pendientes y límites
 
-- **Android 1.1.4 sigue PENDIENTE.** El [run 37137718223](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37137718223), fuente `a617036`, falló con la pantalla bloqueada: las marcas de capítulo quedaron vacías; el PCM avanzó durante aproximadamente 305 segundos y la cola quedó vacía durante los 63 segundos finales. El defecto del índice de sección explica las marcas ausentes; la causa de la interrupción posterior sigue sin confirmar. Los artefactos fallidos se conservan y no certifican continuidad ni una APK terminada.
-- **1.7.22 en verificación:** las correcciones del índice de sección y getters numéricos necesitan su batería completa y comprobación pública propias. No están cubiertas por el aprobado completo de `a617036`.
+- **Android 1.1.4 sigue PENDIENTE.** El último ensayo, run `37152067644`, fuente `b4da776`, conserva FAILED: 114 starts/dones y 228 callbacks completos, pero cero PCM nuevo en el tramo final de 30 segundos, mientras espera la carga del capítulo siguiente. No se publica esa APK. Los originales y el certificado independiente de fallo se conservan, SHA-256 `81474495e1f7096b0c5b6f12ac40dcff9998b4e471205d5084efa652d5b294c6`. El siguiente ensayo debe superar continuidad bloqueada, controles de notificación, liberación de servicio/wake y PDF oculto, sin modificar sus umbrales.
+- **Fuente nueva 1.7.31:** pasan las 2.555 unitarias y seis E2E locales; requiere su publicación HTTP, batería CI completa y ensayo Android nuevos. No hereda aprobados de otra fuente.
+- **Cuenta Google real:** falta conexión al navegador autenticado para comprobar login y subida reales. Las 53 pruebas focales y E2E de Drive usan respuestas controladas y no sustituyen esa comprobación.
 - No se añade OCR ni se garantiza el orden perfecto de cualquier PDF. Los ocho casos públicos PDF usan texto y audio controlados para verificar navegación, visibilidad y cancelación; no sustituyen una comprobación de audio natural en un teléfono bloqueado. Drive usa respuestas de prueba y no autentica una cuenta real.
 - La batería web no certifica una APK nueva, audio en un teléfono físico, FPS, temperatura o batería. La evidencia histórica de Android 1.1.3 y la sesión de voz anterior mantienen su alcance original.
 

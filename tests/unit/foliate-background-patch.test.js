@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { foliateBackgroundPatch, patchFoliateBackground } from '../../scripts/foliate-background-patch.mjs'
 import { patchFoliateTurnDiagnostics } from '../../scripts/foliate-turn-diagnostic-patch.mjs'
 import { patchFoliateFrameLoading } from '../../scripts/foliate-frame-loading-patch.mjs'
+import { patchFoliateRetainedFrame } from '../../scripts/foliate-retained-frame-patch.mjs'
 const upstream=readFileSync('node_modules/foliate-js/paginator.js','utf8')
 function harness(source,hidden=false) {
   const document=new EventTarget(); document.hidden=hidden
@@ -15,7 +16,7 @@ function harness(source,hidden=false) {
 }
 // Execute Foliate's actual chapter-turn method, including its private lock,
 // with a loaded section and a timer queue that the hidden WebView never fires.
-function chapterHarness(source,hidden=false) {
+function chapterHarness(source,hidden=false,failChapter=false) {
   const document=new EventTarget(); document.hidden=hidden
   const timers=new Map(); let serial=0
   const setTimer=vi.fn((fn,ms)=>{timers.set(++serial,{fn,ms});return serial})
@@ -24,7 +25,7 @@ function chapterHarness(source,hidden=false) {
   const prefix=source.slice(0,source.indexOf('// collapsed range'))
   const method=source.match(/    async #turnPage\(dir, distance\) \{[\s\S]*?\n    \}\n(?=    async prev\(distance\))/)?.[0]
   if(!method) throw new Error('Missing actual Foliate chapter-turn method')
-  const Probe=new Function('document','setTimeout','clearTimeout','requestAnimationFrame','cancelAnimationFrame',`${prefix}
+  const Probe=new Function('document','setTimeout','clearTimeout','requestAnimationFrame','cancelAnimationFrame','loadChapter',`${prefix}
     return class {
       #locked=false; #index=0
       get locked(){return this.#locked}
@@ -33,15 +34,27 @@ function chapterHarness(source,hidden=false) {
       async #scrollNext(){return true}
       async #scrollPrev(){return true}
       #adjacentIndex(dir){return this.#index+dir}
-      async #goTo({index}){this.#index=index}
+      async #goTo({index}){await loadChapter();this.#index=index}
       ${method}
       next(){return this.#turnPage(1)}
-    }`)(document,setTimer,clearTimer,()=>{throw new Error('Unexpected visual frame')},()=>{})
+    }`)(document,setTimer,clearTimer,()=>{throw new Error('Unexpected visual frame')},()=>{},async()=>{if(failChapter)throw new TypeError('chapter failed')})
   return {document,timers,setTimer,clearTimer,add,remove,paginator:new Probe(),
     fire(){const pending=[...timers.values()];timers.clear();for(const {fn} of pending)fn()} }
 }
 async function flushMicrotasks(){for(let i=0;i<12;i++) await Promise.resolve()}
 describe('Foliate page following while the native audiobook is hidden',()=>{
+  it('reproduces the old page-turn lock remaining stuck when a chapter fails',async()=>{
+    const h=chapterHarness(patchFoliateBackground(upstream),true,true)
+    await expect(h.paginator.next()).rejects.toThrow('chapter failed')
+    expect(h.paginator.locked).toBe(true)
+  })
+  it('releases the retained-frame page turn after a load error without reporting success',async()=>{
+    const source=patchFoliateTurnDiagnostics(patchFoliateRetainedFrame(patchFoliateFrameLoading(patchFoliateBackground(upstream))))
+    const h=chapterHarness(source,true,true)
+    await expect(h.paginator.next()).rejects.toThrow('chapter failed')
+    expect(h.paginator.locked).toBe(false);expect(h.paginator.index).toBe(0)
+    expect(h.setTimer).not.toHaveBeenCalled()
+  })
   it('reproduces upstream: a hidden page leaves chapter following pending without visual rAF',async()=>{
     const h=harness(upstream,true), render=vi.fn(), done=vi.fn()
     h.animate(0,100,400,x=>x,render).then(done); await Promise.resolve()
@@ -108,7 +121,7 @@ describe('Foliate page following while the native audiobook is hidden',()=>{
   })
   it('targets only the actual Foliate paginator and rejects a missing/duplicated signature',()=>{
     const plugin=foliateBackgroundPatch()
-    expect(plugin.transform(upstream,'C:\\repo\\node_modules\\foliate-js\\paginator.js?x').code).toBe(patchFoliateTurnDiagnostics(patchFoliateFrameLoading(patchFoliateBackground(upstream))))
+    expect(plugin.transform(upstream,'C:\\repo\\node_modules\\foliate-js\\paginator.js?x').code).toBe(patchFoliateTurnDiagnostics(patchFoliateRetainedFrame(patchFoliateFrameLoading(patchFoliateBackground(upstream)))))
     expect(plugin.transform('other','/src/paginator.js')).toBeNull()
     expect(()=>patchFoliateBackground('different')).toThrow(/Unexpected/)
     expect(()=>patchFoliateBackground(upstream+upstream)).toThrow(/Unexpected/)
