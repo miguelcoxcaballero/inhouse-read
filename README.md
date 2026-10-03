@@ -4,6 +4,10 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.13
+
+- Retirar un libro aplica los cambios pendientes de la biblioteca en una sola actualización de la escena. Las peticiones de repintado ya realizadas se consumen sin repetir el trabajo 3D; se conservan los cambios posteriores y la recuperación si falla el guardado.
+
 ### Actualización web · 1.7.12
 
 - La página preparada conserva su imagen y sus texturas al cambiar sólo de posición entre la portada y el lector. Los cambios de tamaño, progreso y preferencias siguen exigiendo una preparación nueva.

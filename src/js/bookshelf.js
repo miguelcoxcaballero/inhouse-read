@@ -1224,7 +1224,17 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         state.trashRemoval = null; state.busy = false;
         root.classList.remove('is-discarding'); trashNode.classList.remove('is-over');
         state.shelfScene?.setTrashHover(false);
-        if (!state.destroyed) { render(); applyDeferredShelfUpdates(); }
+        if (!state.destroyed) {
+          // A sync may have queued newer records during the flight. Paint
+          // that final list once, instead of painting the old list and then
+          // immediately rebuilding its layout when the queue is drained.
+          if (state.queuedBooks) {
+            const nextBooks = state.queuedBooks;
+            state.queuedBooks = null;
+            refresh(nextBooks);
+          } else render();
+          applyDeferredShelfUpdates();
+        }
       }
     }
   }
@@ -1662,6 +1672,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     return controls;
   }
 
+  function consumeRenderRequests() {
+    if (state.frame) cancelAnimationFrame(state.frame);
+    state.frame = 0;
+    state.renderQueued = false;
+    state.appearanceRefreshPending = false;
+  }
+
   function render() {
     if (state.destroyed) return;
     root.dataset.viewMode = state.viewMode;
@@ -1689,6 +1706,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       return;
     }
     if (state.books.length === 0 && opts.sections) {
+      if (width > 0) consumeRenderRequests();
       state.shelfScene?.dispose();
       state.shelfScene = null;
       scroller.textContent = '';
@@ -1696,6 +1714,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       return;
     }
     if (width <= 0) return; // aún sin layout: el ResizeObserver volverá a llamar
+    // This synchronous paint includes every appearance change already in
+    // memory. Consume earlier deferred/RAF requests only after the guards:
+    // a hidden or busy shelf still needs them when it can render again.
+    consumeRenderRequests();
     const retainedScene = state.shelfScene;
     const previousChildren = retainedScene ? [...scroller.children] : [];
     if (!retainedScene) scroller.textContent = '';
