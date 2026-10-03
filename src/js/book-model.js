@@ -337,20 +337,46 @@ const COVER_CLEARCOAT_FLOOR = .001;
  * placeholder maps leave every pixel unchanged. */
 function installCoverRelief(material) {
   const previousHook = material.onBeforeCompile, previousKey = material.customProgramCacheKey();
+  const uniforms = {
+    bookReliefBaseFinish:{ value:new THREE.Vector3() },
+    bookReliefStrength:{ value:0 }
+  };
+  const physical = THREE.ShaderChunk.lights_physical_fragment
+    .replace('material.clearcoatRoughness *= texture2D( clearcoatRoughnessMap, vClearcoatRoughnessMapUv ).y;',
+      'material.clearcoatRoughness *= texture2D( clearcoatRoughnessMap, vClearcoatRoughnessMapUv ).a;')
+    .replace('PhysicalMaterial material;', `roughnessFactor = mix( bookReliefBaseFinish.y, roughnessFactor, bookReliefAmount );
+PhysicalMaterial material;`)
+    .replace('material.clearcoat = saturate( material.clearcoat );', `material.clearcoat = mix( bookReliefBaseFinish.x, material.clearcoat, bookReliefAmount );
+  material.clearcoatRoughness = mix( bookReliefBaseFinish.z, material.clearcoatRoughness, bookReliefAmount );
+  material.clearcoat = saturate( material.clearcoat );`);
   material.onBeforeCompile = function(shader, renderer) {
     previousHook.call(this, shader, renderer);
-    shader.fragmentShader = shader.fragmentShader.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+    Object.assign(shader.uniforms, uniforms);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', `uniform vec3 bookReliefBaseFinish;
+uniform float bookReliefStrength;
+float bookReliefAmount = 0.0;
+void main() {`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
 	#ifdef USE_CLEARCOAT_NORMALMAP
-		vec3 reliefN = texture2D( clearcoatNormalMap, vClearcoatNormalMapUv ).xyz * 2.0 - 1.0;
+		vec4 reliefSample = texture2D( clearcoatNormalMap, vClearcoatNormalMapUv );
+		bookReliefAmount = step( 0.5 / 255.0, reliefSample.a ) * bookReliefStrength;
+		vec3 reliefN = vec3( ( reliefSample.xy * 255.0 - 128.0 ) / 127.0, reliefSample.z * 2.0 - 1.0 );
 		reliefN.xy *= clearcoatNormalScale;
+		reliefN.z = mix( 1.0, reliefN.z, bookReliefStrength );
 		normal = normalize( normal + tbn2 * reliefN - tbn2[ 2 ] );
-	#endif`);
+	#endif`)
+      .replace('#include <clearcoat_normal_fragment_maps>', THREE.ShaderChunk.clearcoat_normal_fragment_maps
+        .replace('texture2D( clearcoatNormalMap, vClearcoatNormalMapUv ).xyz * 2.0 - 1.0',
+          'vec3( ( reliefSample.xy * 255.0 - 128.0 ) / 127.0, reliefSample.z * 2.0 - 1.0 )'))
+      .replace('#include <lights_physical_fragment>', physical);
   };
-  material.customProgramCacheKey = () => `${previousKey}|cover-relief-v1`;
+  material.customProgramCacheKey = () => `${previousKey}|cover-relief-color-v2`;
+  return uniforms;
 }
 
-function neutralTexture(r, g, b) {
-  const texture = new THREE.DataTexture(new Uint8Array([r, g, b, 255]), 1, 1);
+function neutralTexture(r, g, b, a = 255) {
+  const texture = new THREE.DataTexture(new Uint8Array([r, g, b, a]), 1, 1);
   texture.needsUpdate = true;
   return texture;
 }
@@ -872,7 +898,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     reliefArmed = true;
     laminate(coverFinishValue);
     // Neutral 1x1 maps: clearcoat x1, roughness x1, metalness 0, flat normal.
-    cover.clearcoatNormalMap = neutralTexture(128, 128, 255);
+    cover.clearcoatNormalMap = neutralTexture(128, 128, 255, 0);
     cover.clearcoatMap = cover.clearcoatRoughnessMap = cover.roughnessMap = cover.metalnessMap = neutralTexture(255, 255, 0);
     cover.needsUpdate = true;
   };
@@ -881,7 +907,12 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   // Keep the broad studio reflection from washing out printed ink at an
   // oblique angle. Diffuse colour and direct lamp highlights are unchanged.
   applyBookReflectionSurface(cover, { seed:`${surfaceSeed}|cover`, strength:.018, environmentReflection:.75 });
-  installCoverRelief(cover);
+  const reliefUniforms = installCoverRelief(cover);
+  const setReliefBaseFinish = () => {
+    const finish = SURFACE_FINISHES[surfaceFinish(coverFinishValue)];
+    reliefUniforms.bookReliefBaseFinish.value.set(finish.clearcoat, finish.roughness, finish.clearcoatRoughness);
+  };
+  setReliefBaseFinish();
   if (reliefArmed) {
     reliefArmed = false; armRelief();
   }
@@ -1142,19 +1173,41 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     mesh.rotation.x = Math.PI / 2; mesh.position.y = y; group.add(mesh);
   }
   let disposed = false, coverRevision = 0, currentCoverUrl, releaseImage = () => {}, resolveCoverReady = () => {};
-  let currentImage = null;
-  // ---- cover relief: raised, foil and varnished zones from the cover picture.
-  // The maps are rebuilt from the picture (deterministic per cover), so only
-  // { id, strength } is ever saved. They swap into texture slots the cover
+  let coverImageBounds = null, coverMaskSource = null;
+  const reliefSource = () => {
+    const printed = cover.map?.image;
+    if (!printed || !coverImageBounds) return printed;
+    if (coverMaskSource) return coverMaskSource;
+    const { x, y, width, height } = coverImageBounds;
+    if (x === 0 && y === 0 && width === printed.width && height === printed.height) return printed;
+    const canvas = document.createElement('canvas'); canvas.width = printed.width; canvas.height = printed.height;
+    const context = canvas.getContext('2d'); context.drawImage(printed, 0, 0);
+    // The laminate still covers the whole board, but colour selection belongs
+    // only to the printed image. Transparent margins cannot become a white/
+    // cloth colour proposal or receive relief merely because their ink matches.
+    context.clearRect(0, 0, canvas.width, y);
+    context.clearRect(0, y + height, canvas.width, canvas.height - y - height);
+    context.clearRect(0, y, x, height);
+    context.clearRect(x + width, y, canvas.width - x - width, height);
+    return coverMaskSource = canvas;
+  };
+  // ---- cover relief: raised and varnished zones selected by printed colour.
+  // Only the portable colour/tolerance/strength choice is saved. Maps swap into slots the cover
   // material already compiled with: selecting a relief links no program.
   let wantedRelief = null, reliefRevision = 0, reliefMaps = null, reliefOwned = new Set();
   let reliefController = null, materialRevision = 0;
-  const canvasTexture = (rgba, width, height) => {
-    const canvas = document.createElement('canvas');
-    canvas.width = width; canvas.height = height;
-    canvas.getContext('2d').putImageData(new ImageData(rgba, width, height), 0, 0);
-    const texture = new THREE.CanvasTexture(canvas);
+  const mapTexture = (rgba, width, height) => {
+    // A canvas premultiplies transparent pixels and discards their RGB. The
+    // normal's alpha stores mask=0 outside, where RGB must remain 128/128/255.
+    // Raw pixels preserve those neutral normals with the same UV/filtering.
+    const bytes = new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength);
+    const texture = new THREE.DataTexture(bytes, width, height);
+    texture.flipY = true;
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearMipmapLinearFilter;
+    texture.generateMipmaps = true;
     texture.anisotropy = 4;
+    texture.needsUpdate = true;
     return texture;
   };
   const adoptReliefTextures = (normal, material) => {
@@ -1165,8 +1218,11 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     cover.clearcoatNormalMap = normal;
     cover.clearcoatMap = cover.clearcoatRoughnessMap = cover.roughnessMap = cover.metalnessMap = material;
   };
-  const reliefGain = strength => .9 + 2.6 * strength;
+  const reliefGain = strength => 3.5 * strength;
+  const reliefKey = choice => JSON.stringify([choice.id, choice.color ?? null, choice.tolerance ?? null]);
   const applyReliefUniforms = () => {
+    setReliefBaseFinish();
+    reliefUniforms.bookReliefStrength.value = wantedRelief && reliefMaps ? wantedRelief.strength : 0;
     if (!wantedRelief || !reliefMaps) {
       cover.metalness = 0; cover.clearcoatNormalScale.set(1, 1);
       if (reliefArmed) laminate(coverFinishValue);
@@ -1174,17 +1230,25 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     }
     // Full clearcoat share: the map's red channel carries the laminate's own
     // share outside the varnished zones, so a matte board still gets gloss spots.
-    cover.clearcoat = 1; cover.metalness = 1;
+    // Varnish is a dielectric layer over unchanged printed ink, including
+    // yellow ink. Colour selection never implies a metallic pigment.
+    cover.clearcoat = 1; cover.metalness = 0;
     cover.clearcoatNormalScale.setScalar(reliefGain(wantedRelief.strength));
   };
   async function bakeReliefMaterial(revision, maps = reliefMaps, signal) {
     if (!maps) return false;
     const ticket = ++materialRevision;
-    const finish = SURFACE_FINISHES[coverSurfaceFinish];
-    const rgba = await runInSlices(composeMaterialMap(maps.pixels, { clearcoat: finish.clearcoat, roughness: finish.roughness }));
+    const finishValue = coverSurfaceFinish, finish = SURFACE_FINISHES[finishValue];
+    const rgba = await runInSlices(composeMaterialMap(maps.pixels, {
+      clearcoat:finish.clearcoat, roughness:finish.roughness, clearcoatRoughness:finish.clearcoatRoughness
+    }));
     if (revision !== reliefRevision || ticket !== materialRevision || signal?.aborted || disposed) return false;
+    // A finish can change while the first colour map is still being built;
+    // at that point there is no installed map for updateCoverAppearance to
+    // rebake. Do not commit material pixels computed for the old laminate.
+    if (finishValue !== coverSurfaceFinish) return bakeReliefMaterial(revision, maps, signal);
     const { width, height } = maps.size;
-    adoptReliefTextures(maps.normalTexture, canvasTexture(rgba, width, height));
+    adoptReliefTextures(maps.normalTexture, mapTexture(rgba, width, height));
     reliefMaps = maps;
     applyReliefUniforms();
     return true;
@@ -1192,7 +1256,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   function clearRelief() {
     reliefMaps = null;
     materialRevision++;
-    adoptReliefTextures(neutralTexture(128, 128, 255), neutralTexture(255, 255, 0));
+    adoptReliefTextures(neutralTexture(128, 128, 255, 0), neutralTexture(255, 255, 0));
     applyReliefUniforms();
     group.userData.invalidate?.();
   }
@@ -1215,20 +1279,30 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     if (!next) { if (reliefArmed) clearRelief(); return true; }
     armRelief();
     // Only installed maps may be reused. A pending bake owns no cached state.
-    if (reliefMaps && reliefMaps.id === next.id && reliefMaps.source === (currentImage ?? cover.map?.image)) {
+    if (reliefMaps && reliefMaps.key === reliefKey(next) && reliefMaps.source === reliefSource()) {
       applyReliefUniforms(); group.userData.invalidate?.(); return true;
     }
     let built;
     try {
       await group.userData.ready;
       if (revision !== reliefRevision || disposed || controller.signal.aborted) return false;
-      const source = currentImage ?? cover.map?.image;
+      // The map uses the same fitted raster/UVs as the printed cover, including
+      // any aspect-ratio margins. Analysing the unfitted source shifts masks.
+      const source = reliefSource();
       if (!source) return false;
       built = await buildReliefMaps(source, next, { maxSize: 512, signal: controller.signal });
       if (!built || revision !== reliefRevision || disposed || controller.signal.aborted) return false;
       const { width, height } = built.size;
-      built.normalTexture = canvasTexture(built.normal, width, height);
-      built.id = next.id; built.source = source;
+      const normals = built.normal.slice();
+      for (let i = 0; i < width * height; i++) {
+        // Alpha is not used by a normal map. Keep the selection there so the
+        // shader restores exact base-finish floats outside it (no byte-rounding
+        // drift), without another texture, mesh, draw or shader variant.
+        normals[i * 4 + 3] = built.pixels.mask?.[i]
+          ?? Math.max(built.pixels.gloss[i], built.pixels.foil[i], built.pixels.heightMap?.[i] ?? 0);
+      }
+      built.normalTexture = mapTexture(normals, width, height);
+      built.id = next.id; built.key = reliefKey(next); built.source = source;
       if (!await bakeReliefMaterial(revision, built, controller.signal)) {
         built.normalTexture.dispose(); return false;
       }
@@ -1244,7 +1318,6 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     if (url && url === currentCoverUrl) return group.userData.ready;
     reliefController?.abort(); reliefRevision++;
     if (reliefArmed && reliefMaps) clearRelief();
-    currentImage = null;
     resolveCoverReady(false);
     const revision = ++coverRevision, releasePrevious = releaseImage;
     currentCoverUrl = url;
@@ -1256,7 +1329,8 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
       if (loaded && wantedRelief) group.userData.setCoverRelief(wantedRelief);
       group.userData.invalidate?.();
     };
-    const replaceMap = map => {
+    const replaceMap = (map, imageBounds = null) => {
+      coverImageBounds = imageBounds; coverMaskSource = null;
       map.anisotropy = Math.min(16, renderer?.capabilities.getMaxAnisotropy() || 1);
       cover.map?.dispose(); cover.map = map; cover.needsUpdate = true;
     };
@@ -1267,7 +1341,6 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     } else releaseImage = acquireCoverImage(url, image => {
       if (revision !== coverRevision || disposed) return;
       // The previous cover remains on the mesh until every new pixel is ready.
-      currentImage = image;
       try {
         const canvas = document.createElement('canvas');
         const dimensions = coverRasterDimensions(nextStyle.coverRatio, textureHeight, maxTextureDimension);
@@ -1281,7 +1354,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
         c.setTransform?.(unit, 0, 0, unit, 0, 0);
         finishBoard(c, canvas.width / unit, coverSeed(nextBook, nextStyle, 'print'), { wear:level !== 'overview' });
         const fittedMap = new THREE.CanvasTexture(canvas); fittedMap.colorSpace = THREE.SRGBColorSpace;
-        replaceMap(fittedMap); setCoverGrain('paper'); settle(true);
+        replaceMap(fittedMap, fit); setCoverGrain('paper'); settle(true);
       } catch { settle(false); }
     }, () => settle(false));
     releasePrevious();
@@ -1299,7 +1372,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     if (disposed) return;
     releaseImage(); resolveCoverReady(false);
     reliefController?.abort();
-    disposed = true; reliefRevision++; materialRevision++; reliefMaps = null;
+    disposed = true; reliefRevision++; materialRevision++; reliefMaps = null; coverMaskSource = null;
     const materials = new Set([insideCover]), textures = new Set([surface.map, surface.channels]);
     group.traverse(obj => { obj.geometry?.dispose(); if (obj.material) for (const m of [].concat(obj.material)) materials.add(m); });
     for (const m of materials) {

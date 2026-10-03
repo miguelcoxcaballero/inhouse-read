@@ -23,7 +23,7 @@ export function prepareCoverCorpusFonts() {
 const names = ['01-ornate-classic', '02-minimalist', '03-illustrated', '04-photo', '05-children',
   '06-nonfiction-band', '07-bw-scan', '08-no-text', '09-very-dark', '10-very-light', '11-landscape', '12-tiny-lowres'];
 export async function loadCoverCorpus() {
-  return Object.fromEntries(await Promise.all(names.map(async name => {
+  const originals = Object.fromEntries(await Promise.all(names.map(async name => {
     const image = new Image();
     image.src = new URL('../fixtures/cover-corpus/' + name + '.png', import.meta.url).href;
     await image.decode();
@@ -32,6 +32,33 @@ export async function loadCoverCorpus() {
     canvas.getContext('2d').drawImage(image, 0, 0);
     return [name, canvas];
   })));
+  return { ...originals, ...await loadColourMaskCorpus() };
+}
+
+// Independent colour oracles: no typography, fonts, detector or production
+// palette code participates in making these known regions.
+export const COLOUR_MASK_PALETTE = ['#2350b5', '#d4a93c', '#fffaf0'];
+export async function loadColourMaskCorpus() {
+  const make = () => { const canvas=document.createElement('canvas'); canvas.width=300; canvas.height=450; return canvas; };
+  const exact=make(), context=exact.getContext('2d');
+  COLOUR_MASK_PALETTE.forEach((colour,index)=>{context.fillStyle=colour;context.fillRect(0,index*150,300,150);});
+  const antialias=make(), aa=antialias.getContext('2d');
+  aa.fillStyle=COLOUR_MASK_PALETTE[0];aa.fillRect(0,0,300,450);
+  for(const [x,y,colour] of [[112.25,132.75,COLOUR_MASK_PALETTE[1]],[187.75,317.25,COLOUR_MASK_PALETTE[2]]]) {
+    aa.fillStyle=colour;aa.beginPath();aa.arc(x,y,86.25,0,Math.PI*2);aa.fill();
+  }
+  const jpegImage=new Image();jpegImage.src=exact.toDataURL('image/jpeg',.35);await jpegImage.decode();
+  const jpeg=make();jpeg.getContext('2d').drawImage(jpegImage,0,0);
+  const photograph=new Image();
+  photograph.src=new URL('../fixtures/cover-corpus/16-cc0-flower-photo.jpg',import.meta.url).href;
+  await photograph.decode();
+  const photo=document.createElement('canvas');photo.width=photograph.naturalWidth;photo.height=photograph.naturalHeight;
+  photo.getContext('2d').drawImage(photograph,0,0);
+  const mono=make();mono.getContext('2d').fillStyle=COLOUR_MASK_PALETTE[0];mono.getContext('2d').fillRect(0,0,300,450);
+  const two=make(), bi=two.getContext('2d');
+  bi.fillStyle=COLOUR_MASK_PALETTE[0];bi.fillRect(0,0,300,450);bi.fillStyle=COLOUR_MASK_PALETTE[1];bi.fillRect(0,225,300,225);
+  return {'13-rgb-exact':exact,'14-colour-antialias':antialias,'15-colour-jpeg':jpeg,
+    '16-cc0-flower-photo':photo,'17-single-colour':mono,'18-two-colours':two};
 }
 
 export function drawCoverCorpus() {

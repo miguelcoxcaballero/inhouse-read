@@ -22,12 +22,11 @@ it.each([[600,900],[900,600],[20,30]])('bounds portrait, landscape and tiny rast
   expect(size.width/size.height).toBeCloseTo(w/h,2);
   expect(size.width).toBeLessThanOrEqual(w);
 });
-it('returns deterministic distinct suggestions for an image with no printed features',()=>{
+it('returns one deterministic real color for an image with no printed features',()=>{
   const raster=image(),a=drain(analyzePixels(raster)),b=drain(analyzePixels(raster));
   expect(a.chosen.map(x=>x.id)).toEqual(b.chosen.map(x=>x.id));
-  expect(a.chosen).toHaveLength(3);
-  expect(new Set(a.chosen.map(x=>x.id)).size).toBe(3);
-  expect(a.chosen.every(x=>x.detected===false)).toBe(true);
+  expect(a.chosen).toHaveLength(1);
+  expect(a.chosen[0]).toMatchObject({id:'color-1',color:'#f0f0f0',detected:true});
   expect(a.chosen.map(x=>x.confidence)).toEqual([...a.chosen.map(x=>x.confidence)].sort((a,b)=>b-a));
   expect(seedOf(raster)).toBe(seedOf(raster));
   expect(seedOf(image(64,96,[20,30,40]))).not.toBe(seedOf(raster));
@@ -40,13 +39,13 @@ it('detects actual gold-coloured pixels without painting metal onto the surround
   expect(mask[0]).toBe(0);
   expect(mask.reduce((n,v)=>n+v,0)).toBeGreaterThan(500);
 });
-it('builds deterministic grain with bounded physical height and no invented foil',()=>{
-  const raster=image(),found=drain(analyzePixels(raster)),choice=found.chosen.find(x=>x.id==='grain');
+it('builds a deterministic flat single-color zone with bounded physical height and no invented foil',()=>{
+  const raster=image(),found=drain(analyzePixels(raster)),choice=found.chosen[0];
   const a=drain(buildMapsFromPixels(raster,raster,choice,found.seed));
   const b=drain(buildMapsFromPixels(raster,raster,choice,found.seed));
   expect(a.heightMap).toEqual(b.heightMap);
-  expect(new Set(a.heightMap).size).toBeGreaterThan(5);
-  expect(Math.max(...a.heightMap)/255*MAX_RELIEF_MM).toBeLessThanOrEqual(.12);
+  expect(new Set(a.heightMap).size).toBe(1);
+  expect(Math.max(...a.heightMap)/255*MAX_RELIEF_MM).toBeLessThanOrEqual(.303);
   expect(a.foil.every(x=>x===0)).toBe(true);
 });
 it('keeps a flat height map neutral and produces unit normals at an actual height edge',()=>{

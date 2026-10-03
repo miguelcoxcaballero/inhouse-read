@@ -2,13 +2,13 @@ import { mkdirSync } from 'node:fs'
 import { test, expect } from '@playwright/test'
 
 // Editor de la portada con el libro 3D real (WebGL por software). Los tests no
-// dependen de qué propuestas encuentre el motor de relieve: sólo de que sean
-// tres, seleccionables y persistentes.
+// usan una portada de tres colores reales: opciones seleccionables y
+// persistentes, sin completar con motivos que no están en la imagen.
 
 const evidence = process.env.COVER_EDITOR_EVIDENCE || ''
 if (evidence) mkdirSync(evidence, { recursive: true })
 
-async function openShelfEditor(page, { reduced = false, theme = '' } = {}) {
+async function openShelfEditor(page, { reduced = false, theme = '', colors = ['#2350b5','#d4a93c','#fffaf0'] } = {}) {
   await page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' })
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
@@ -18,6 +18,25 @@ async function openShelfEditor(page, { reduced = false, theme = '' } = {}) {
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 1/)
   await page.getByRole('button', { name: 'Volver a la estantería' }).click()
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0)
+  // The source PDF still exercises the real import/open/close. Only the
+  // jacket is controlled: every proposed region has a known source colour.
+  await page.evaluate(async colors => {
+    const image=document.createElement('canvas'); image.width=600; image.height=900
+    const context=image.getContext('2d')
+    for(let index=0;index<colors.length;index++) {
+      context.fillStyle=colors[index]
+      context.fillRect(0,900*index/colors.length,600,900/colors.length)
+    }
+    const cover=await new Promise(resolve=>image.toBlob(resolve,'image/png'))
+    const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('inhouse-read');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)})
+    const records=await new Promise((resolve,reject)=>{const request=db.transaction('books').objectStore('books').getAll();request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)})
+    const transaction=db.transaction('books','readwrite')
+    for(const record of records) transaction.objectStore('books').put({...record,cover,coverUpdatedAt:Date.now()})
+    await new Promise((resolve,reject)=>{transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error)})
+    db.close()
+  },colors)
+  await page.reload()
   await page.locator('.ihr-spine').first().click()
   await page.getByRole('button', { name: 'Editar', exact: true }).click()
   return errors
@@ -95,6 +114,10 @@ test('relieve: tres propuestas, selección con balanceo, persistencia y Sin reli
   await expect(group.locator('.ihr-relief-card img')).toHaveCount(3)
   const labels = await group.locator('.ihr-relief-card__label').allTextContents()
   expect(new Set(labels).size).toBe(3)
+  const sourceColors=await group.locator('.ihr-relief-card').evaluateAll(nodes=>nodes.map(node=>node.dataset.reliefColor))
+  expect(new Set(sourceColors).size).toBe(3)
+  expect([...sourceColors].sort()).toEqual(['#2350b5','#d4a93c','#fffaf0'].sort())
+  const selectedColor=sourceColors[1]
   await expect(cards(page).last()).toBeChecked()
   await expect(page.getByLabel('Intensidad del relieve')).toBeDisabled()
 
@@ -130,6 +153,7 @@ test('relieve: tres propuestas, selección con balanceo, persistencia y Sin reli
   await page.getByRole('tab', { name: 'Portada' }).click()
   await expect(cards(page)).toHaveCount(4, { timeout: 60_000 })
   await expect(cards(page).nth(1)).toBeChecked()
+  await expect(group.locator('.ihr-relief-card').nth(1)).toHaveAttribute('data-relief-color',selectedColor)
   await expect(page.getByLabel('Intensidad del relieve')).toBeEnabled()
   // Al restaurar no se balancea sola.
   await page.waitForTimeout(600)
@@ -137,6 +161,11 @@ test('relieve: tres propuestas, selección con balanceo, persistencia y Sin reli
 
   // Intensidad y Sin relieve.
   await page.getByLabel('Intensidad del relieve').fill('30')
+  await expect.poll(()=>page.evaluate(async()=>{
+    const db=await new Promise(resolve=>{const request=indexedDB.open('inhouse-read');request.onsuccess=()=>resolve(request.result)})
+    const records=await new Promise(resolve=>{const request=db.transaction('books').objectStore('books').getAll();request.onsuccess=()=>resolve(request.result)})
+    db.close();return records[0].coverRelief
+  })).toMatchObject({color:selectedColor,strength:.3})
   await page.getByText('Sin relieve', { exact: true }).click()
   await expect(cards(page).last()).toBeChecked()
   await expect(page.getByLabel('Intensidad del relieve')).toBeDisabled()
@@ -148,6 +177,19 @@ test('relieve: tres propuestas, selección con balanceo, persistencia y Sin reli
   await page.getByRole('tab', { name: 'Portada' }).click()
   await expect(cards(page)).toHaveCount(4, { timeout: 60_000 })
   await expect(cards(page).last()).toBeChecked()
+  expect(errors).toEqual([])
+})
+
+for(const colors of [['#2350b5'],['#2350b5','#fffaf0']]) test(`relieve: muestra sólo los ${colors.length} colores de una portada limitada`,async({page})=>{
+  test.setTimeout(240_000)
+  await page.setViewportSize({width:390,height:844})
+  const errors=await openShelfEditor(page,{colors,reduced:true})
+  await page.getByRole('tab',{name:'Portada'}).click()
+  const group=page.getByRole('radiogroup',{name:'Propuestas de relieve'})
+  await expect(group.locator('.ihr-relief-card')).toHaveCount(colors.length,{timeout:60_000})
+  await expect(cards(page)).toHaveCount(colors.length+1)
+  const found=await group.locator('.ihr-relief-card').evaluateAll(nodes=>nodes.map(node=>node.dataset.reliefColor))
+  expect(found.sort()).toEqual([...colors].sort())
   expect(errors).toEqual([])
 })
 

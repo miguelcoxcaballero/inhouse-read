@@ -1,23 +1,30 @@
 /*
- * Cover relief: which parts of a printed cover could carry embossing, foil
- * or spot varnish on a real book, and the height / foil / gloss maps that
- * the 3D cover turns into raised, shiny zones.
+ * Cover relief selects up to three actual colors printed on a cover. Each
+ * portable HEX/tolerance choice recreates an exclusive, conservatively soft
+ * height/gloss mask; it never recolors ink or invents borders, grain or foil.
  *
- * Everything here is a local, deterministic heuristic on pixels (no network,
+ * Everything here is local, deterministic perceptual clustering (no network,
  * no model). The analysis is split into pure generator functions over RGBA
  * arrays, so Node can test them; they `yield` every few rows so the browser
  * wrapper can hand the main thread back (runInSlices) and stop on an abort.
  * Working rasters are bounded: 288 px on the long side to find things, at
  * most 512 px to build the maps.
  *
- * A proposal is identified by a fixed family id, never by a stored map: the
- * same cover always yields the same three proposals and the same maps, so a
- * saved `{ id, strength }` is regenerated at load time.
+ * A saved choice is `{ id:'color-1'|'color-2'|'color-3', color:'#rrggbb',
+ * tolerance, strength }`; tolerance is Euclidean OKLab * 100 (1..12). Maps
+ * are never persisted. Uniform/bicolor covers have one/two choices. Legacy
+ * family records remain readable and render their first real dominant color;
+ * the original record is only replaced by an explicit new user selection.
  */
 import { runInSlices } from './cover-appearance.js';
 
-export const RELIEF_IDS = Object.freeze(['lettering', 'foil', 'frame', 'emblem', 'varnish', 'band', 'grain', 'panel']);
+export const COLOR_RELIEF_IDS = Object.freeze(['color-1', 'color-2', 'color-3']);
+export const LEGACY_RELIEF_IDS = Object.freeze(['lettering', 'foil', 'frame', 'emblem', 'varnish', 'band', 'grain', 'panel']);
+export const RELIEF_IDS = Object.freeze([...COLOR_RELIEF_IDS, ...LEGACY_RELIEF_IDS]);
 export const DEFAULT_RELIEF_STRENGTH = .75;
+export const DEFAULT_COLOR_TOLERANCE = 6;
+export const MIN_COLOR_TOLERANCE = 1;
+export const MAX_COLOR_TOLERANCE = 12;
 export const WORK_SIZE = 288;
 export const MAP_SIZE = 512;
 const CONFIDENT = .3;
@@ -25,16 +32,23 @@ const CONFIDENT = .3;
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 
-/** Persistence validation: a known id and a strength in 0..1, or null. */
+/** Validate portable color choices and old family records; discard map data. */
 export function normalizeCoverRelief(value) {
   if (!value || typeof value !== 'object' || !RELIEF_IDS.includes(value.id)) return null;
   const number = value.strength == null ? DEFAULT_RELIEF_STRENGTH : Number(value.strength);
   const strength = Number.isFinite(number) ? Math.round(clamp(number, 0, 1) * 100) / 100 : DEFAULT_RELIEF_STRENGTH;
+  if (COLOR_RELIEF_IDS.includes(value.id)) {
+    if (typeof value.color !== 'string' || !/^#[\da-f]{6}$/i.test(value.color)) return null;
+    const tolerance = value.tolerance;
+    if (!Number.isFinite(tolerance) || tolerance < MIN_COLOR_TOLERANCE || tolerance > MAX_COLOR_TOLERANCE) return null;
+    return { id:value.id, color:value.color.toLowerCase(), tolerance:Math.round(tolerance * 100) / 100, strength };
+  }
   return { id: value.id, strength };
 }
 
-// Physical height of the raised zones, in millimetres, by family. The maps
-// store height in units of MAX_RELIEF_MM, so 255 is the tallest possible.
+// Maps store physical height in units of MAX_RELIEF_MM. New color zones use
+// .30 mm before the renderer's strength multiplier. Old detector recipes
+// below are retained only as pure compatibility fixtures, never as proposals.
 export const MAX_RELIEF_MM = .6;
 const FAMILIES = Object.freeze({
   lettering: { mm: .30, strength: .8, order: 1 },
@@ -832,6 +846,8 @@ const METAL_NAMES = { gold: 'dorada', bronze: 'cobriza', silver: 'plateada' };
 
 function describe(candidate) {
   const f = candidate.facts ?? {};
+  if (COLOR_RELIEF_IDS.includes(candidate.id)) return { label:colorName(candidate.color),
+    description:`Zonas de este color (${pct(f.coverage)} de la portada), con relieve y brillo` };
   switch (candidate.id) {
     case 'lettering': return { label: 'Letras en relieve',
       description: f.lines > 1 ? `Las ${f.lines} líneas de texto de la portada, elevadas con barniz brillante` : 'La línea de texto de la portada, elevada con barniz brillante' };
@@ -866,9 +882,9 @@ function overlap(a, b) {
   return both / Math.max(1, Math.min(areaA, areaB));
 }
 
-/** Pure analysis on RGBA pixels: every candidate found, ranked, and the three
- * proposals chosen. Always exactly three, always the same for the same pixels. */
-export function* analyzePixels(image) {
+/** Retained only for the independent legacy detector tests; new proposals and
+ * persisted choices never invoke geometric/noise fallbacks. */
+function* analyzeLegacyPixels(image) {
   const feats = yield* featuresOf(image);
   const detectors = [
     ['foil', detectFoil], ['lettering', detectLettering], ['frame', detectFrame], ['band', detectBand]
@@ -901,7 +917,8 @@ export function* analyzePixels(image) {
     if (chosen.length === 3) break;
     if (!chosen.some(other => other.id === candidate.id || overlap(other.mask, candidate.mask) > .5)) chosen.push(candidate);
   }
-  // Suggestions: always available, so there are always three.
+  // Old detector-only compatibility fixtures included geometric suggestions.
+  // The public color analyzer below never offers these fallbacks.
   const taken = new Set(chosen.map(item => item.id));
   const fallbacks = feats.photo ? ['grain', 'frame', 'panel'] : ['frame', 'grain', 'panel'];
   for (const id of fallbacks) {
@@ -917,7 +934,7 @@ export function* analyzePixels(image) {
 /** Build the maps for one proposal. `hires` is the cover at map resolution
  * (stroke families are recomputed there so the edges stay crisp); blob and
  * suggested families are scaled up from the working mask. */
-export function* buildMapsFromPixels(work, hires, selection, seed) {
+function* buildLegacyMapsFromPixels(work, hires, selection, seed) {
   const { id } = selection, width = hires.width, height = hires.height;
   let mask01;
   const kind = selection.recipe.kind;
@@ -940,6 +957,189 @@ export function* buildMapsFromPixels(work, hires, selection, seed) {
   return maps;
 }
 
+// ---- actual printed colors --------------------------------------------------
+// OKLab conversion follows Björn Ottosson's public-domain 2021 matrices:
+// https://bottosson.github.io/posts/oklab/ . Distances below use OKLab * 100;
+// they are Euclidean Delta-E OK values, not CIEDE2000 or RGB channel units.
+const LINEAR_RGB = Float64Array.from({ length:256 }, (_, byte) => {
+  const s = byte / 255;
+  return s <= .04045 ? s / 12.92 : ((s + .055) / 1.055) ** 2.4;
+});
+function rgbToOklab(r, g, b) {
+  r = LINEAR_RGB[r]; g = LINEAR_RGB[g]; b = LINEAR_RGB[b];
+  const l = Math.cbrt(.4122214708 * r + .5363325363 * g + .0514459929 * b);
+  const m = Math.cbrt(.2119034982 * r + .6806995451 * g + .1073969566 * b);
+  const s = Math.cbrt(.0883024619 * r + .2817188376 * g + .6299787005 * b);
+  return [100 * (.2104542553 * l + .7936177850 * m - .0040720468 * s),
+    100 * (1.9779984951 * l - 2.4285922050 * m + .4505937099 * s),
+    100 * (.0259040371 * l + .7827717662 * m - .8086757660 * s)];
+}
+const distance2 = (a, b) => (a[0]-b[0]) ** 2 + (a[1]-b[1]) ** 2 + (a[2]-b[2]) ** 2;
+const hexOf = rgb => '#' + rgb.map(byte => byte.toString(16).padStart(2, '0')).join('');
+const rgbOf = hex => [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16));
+function colorName(hex) {
+  const [l, a, b] = rgbToOklab(...rgbOf(hex)), chroma = Math.hypot(a, b), hue = (Math.atan2(b, a) * 180 / Math.PI + 360) % 360;
+  if (chroma < 3) return l < 20 ? 'Negro' : l > 95 ? 'Blanco' : l > 78 ? 'Gris claro' : l < 45 ? 'Gris oscuro' : 'Gris';
+  if (l > 85 && chroma < 12 && hue >= 65 && hue < 125) return 'Crema';
+  if (hue >= 45 && hue < 105 && l < 65) return 'Marrón';
+  const name = hue < 55 || hue >= 355 ? 'Rojo' : hue < 90 ? 'Naranja' : hue < 125 ? 'Amarillo'
+    : hue < 165 ? 'Verde' : hue < 220 ? 'Turquesa' : hue < 285 ? 'Azul' : hue < 330 ? 'Violeta' : 'Rosa';
+  return name + (l < 42 ? ' oscuro' : l > 80 ? ' claro' : '');
+}
+const DISTINCT_COLOR_DISTANCE = 12;
+const CELL_SIZE = 3;
+function validateRaster(image) {
+  if (!image || !Number.isSafeInteger(image.width) || !Number.isSafeInteger(image.height)
+    || image.width < 1 || image.height < 1 || !image.data || image.data.length !== image.width * image.height * 4) {
+    throw new TypeError('Portada sin píxeles RGBA válidos');
+  }
+}
+
+/** Bounded RGB histogram; representatives are the most frequent exact RGB.
+ * Quantization pools counts only, never picks a rare AA pixel just because it
+ * is nearer a bucket center. Exact counts are bounded by the sampled pixels. */
+function* colorHistogram(image) {
+  const histogram = new Map(), frequencies = new Map(), { data } = image;
+  let opaque = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] >= 128) {
+      opaque++;
+      const rgb = [data[i], data[i + 1], data[i + 2]];
+      const key = ((rgb[0] >> 3) << 10) | ((rgb[1] >> 3) << 5) | (rgb[2] >> 3);
+      const packed = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+      const frequency = (frequencies.get(packed) || 0) + 1;
+      frequencies.set(packed, frequency);
+      const representativeDistance = rgb.reduce((sum, byte) => sum + ((byte & 7) - 3.5) ** 2, 0);
+      let bin = histogram.get(key);
+      if (!bin) { bin = { count:0, modeCount:0, rgb, packed, representativeDistance }; histogram.set(key, bin); }
+      bin.count++;
+      if (frequency > bin.modeCount || frequency === bin.modeCount
+        && (representativeDistance < bin.representativeDistance || representativeDistance === bin.representativeDistance && packed < bin.packed)) {
+        bin.rgb = rgb; bin.packed = packed; bin.representativeDistance = representativeDistance; bin.modeCount = frequency;
+      }
+    }
+    if ((i & 4095) === 4092) yield;
+  }
+  const bins = [...histogram.values()];
+  for (let i = 0; i < bins.length; i++) { bins[i].lab = rgbToOklab(...bins[i].rgb); if ((i & 255) === 255) yield; }
+  return { bins, opaque };
+}
+
+// Exact RGB frequency decides a cluster's representative; pooled counts rank
+// equally frequent photographic pixels. Last tie is stable in any scan order.
+const strongerMode = (a, b) => a.modeCount > b.modeCount || a.modeCount === b.modeCount
+  && (a.count > b.count || a.count === b.count && a.packed < b.packed);
+
+/** Perceptual mode clustering instead of random k-means initialization. Cells
+ * pool neighboring counts, but the exact RGB mode supplies the saved color.
+ * A sparse AA fringe may borrow density, never the identity of a flat region. */
+function* colorCandidates(bins, opaque) {
+  const cells = new Map();
+  for (let i = 0; i < bins.length; i++) {
+    const bin = bins[i], coords = bin.lab.map(v => Math.floor(v / CELL_SIZE)), key = coords.join(',');
+    let cell = cells.get(key);
+    if (!cell) { cell = { coords, count:0, bin }; cells.set(key, cell); }
+    cell.count += bin.count;
+    if (strongerMode(bin, cell.bin)) cell.bin = bin;
+    if ((i & 255) === 255) yield;
+  }
+  const ordered = [...cells.values()];
+  for (let i = 0; i < ordered.length; i++) {
+    const cell = ordered[i], [l, a, b] = cell.coords;
+    cell.density = 0; cell.mode = cell.bin;
+    for (let dl = -1; dl <= 1; dl++) for (let da = -1; da <= 1; da++) for (let db = -1; db <= 1; db++) {
+      const neighbor = cells.get([l + dl, a + da, b + db].join(','));
+      if (neighbor && distance2(cell.bin.lab, neighbor.bin.lab) <= DEFAULT_COLOR_TOLERANCE ** 2) {
+        cell.density += neighbor.count;
+        if (strongerMode(neighbor.bin, cell.mode)) cell.mode = neighbor.bin;
+      }
+    }
+    if ((i & 31) === 31) yield;
+  }
+  ordered.sort((a, b) => b.density - a.density || b.count - a.count || a.bin.packed - b.bin.packed);
+  yield;
+  const chosen = [], minimumSupport = Math.max(1, Math.ceil(opaque * .0025));
+  for (let i = 0; i < ordered.length && chosen.length < 3; i++) {
+    const cell = ordered[i], bin = cell.mode;
+    if (cell.density < minimumSupport) break;
+    if (chosen.some(other => distance2(other.lab, bin.lab) < DISTINCT_COLOR_DISTANCE ** 2)) continue;
+    let supported = 0;
+    for (let j = 0; j < bins.length; j++) {
+      if (distance2(bin.lab, bins[j].lab) <= DEFAULT_COLOR_TOLERANCE ** 2) supported += bins[j].count;
+      if ((j & 511) === 511) yield;
+    }
+    if (supported >= minimumSupport) chosen.push({ ...bin, supported });
+    yield;
+  }
+  chosen.sort((a, b) => b.supported - a.supported || a.packed - b.packed);
+  return chosen;
+}
+
+/** Membership is recalculated from real pixels at the requested resolution.
+ * No dilation/blur can include a pixel whose color is outside the stored ball.
+ * Softening falls toward zero inside its radius, never over an adjacent ink. */
+function* colorMask(image, color, tolerance) {
+  const target = rgbToOklab(...rgbOf(color)), out = new Float32Array(image.width * image.height);
+  const square = tolerance ** 2;
+  for (let i = 0; i < out.length; i++) {
+    const at = i * 4;
+    if (image.data[at + 3] >= 128) {
+      const d = distance2(target, rgbToOklab(image.data[at], image.data[at + 1], image.data[at + 2]));
+      if (d < square) out[i] = (1 - smoothstep(tolerance * .72, tolerance, Math.sqrt(d))) * image.data[at + 3] / 255;
+    }
+    if ((i & 1023) === 1023) yield;
+  }
+  return out;
+}
+
+/** Up to three distinct supported colors, never fabricated family suggestions.
+ * Radii are less than half every inter-center distance, so all generated
+ * choices remain disjoint even when recreated independently from persistence. */
+export function* analyzePixels(image) {
+  validateRaster(image);
+  const { bins, opaque } = yield* colorHistogram(image);
+  const colors = yield* colorCandidates(bins, opaque), chosen = [];
+  for (let index = 0; index < colors.length; index++) {
+    const color = colors[index], nearest = Math.min(...colors.filter(other => other !== color).map(other => Math.sqrt(distance2(color.lab, other.lab))));
+    const tolerance = Math.floor(Math.min(DEFAULT_COLOR_TOLERANCE, nearest * .45) * 100) / 100;
+    const hex = hexOf(color.rgb), mask = yield* colorMask(image, hex, tolerance);
+    let pixels = 0;
+    for (let i = 0; i < mask.length; i++) { if (mask[i] > 0) pixels++; if ((i & 4095) === 4095) yield; }
+    chosen.push({ id:COLOR_RELIEF_IDS[index], color:hex, tolerance, strength:DEFAULT_RELIEF_STRENGTH,
+      detected:true, confidence:1, recipe:{ kind:'color', color:hex, tolerance }, mask,
+      facts:{ color:hex, coverage:pixels / Math.max(1, opaque), pixels } });
+  }
+  return { chosen, candidates:chosen, seed:seedOf(image), feats:{ photo:false, busy:0, strokeFraction:0 },
+    colorSpace:'oklab-100', opaquePixels:opaque };
+}
+
+export function* buildMapsFromPixels(work, hires, selection) {
+  validateRaster(work); validateRaster(hires);
+  let choice = normalizeCoverRelief(selection);
+  if (!choice) throw new TypeError('Color de relieve no válido');
+  // Preserve the old record id until the user chooses a color. Its renderer
+  // uses the stable first actual color, never its old geometric/noise fallback.
+  if (LEGACY_RELIEF_IDS.includes(choice.id)) choice = (yield* analyzePixels(work)).chosen[0];
+  const { width, height } = hires, count = width * height;
+  const out = { width, height, heightMap:new Uint8Array(count), foil:new Uint8Array(count),
+    gloss:new Uint8Array(count), mask:new Uint8Array(count), preserveInk:true, foilColor:null };
+  if (!choice) return out;
+  const membership = yield* colorMask(hires, choice.color, choice.tolerance);
+  const hard = new Uint8Array(count);
+  for (let i = 0; i < count; i++) { hard[i] = membership[i] > 0 ? 1 : 0; if ((i & 4095) === 4095) yield; }
+  const distance = yield* insideDistance(hard, width, height), bevel = Math.max(1.2, Math.max(width, height) * .003);
+  for (let i = 0; i < count; i++) {
+    const soft = membership[i] * (hard[i] ? smoothstep(0, bevel, distance[i] - .5) : 0);
+    // Varnish follows every pixel of the selected pigment, including fine
+    // strokes. The geometric bevel reduces height only, never coat coverage.
+    out.mask[i] = out.gloss[i] = toByte(membership[i]);
+    out.heightMap[i] = toByte(soft * .3 / MAX_RELIEF_MM);
+    if ((i & 1023) === 1023) yield;
+  }
+  out.color = choice.color; out.tolerance = choice.tolerance;
+  return out;
+}
+
 function sampleInk(image, foil) {
   let r = 0, g = 0, b = 0, n = 0;
   for (let i = 0; i < foil.length; i++) if (foil[i] > 200) { r += image.data[i * 4]; g += image.data[i * 4 + 1]; b += image.data[i * 4 + 2]; n++; }
@@ -960,27 +1160,28 @@ export function* heightToNormals(maps, { gain = 1 } = {}) {
     for (let x = 0; x < width; x++) {
       const nx = -(at(x + 1, y) - at(x - 1, y)) * unit, ny = (at(x, y + 1) - at(x, y - 1)) * unit;
       const length = Math.hypot(nx, ny, 1), i = (y * width + x) * 4;
-      out[i] = (nx / length * .5 + .5) * 255; out[i + 1] = (ny / length * .5 + .5) * 255; out[i + 2] = (1 / length * .5 + .5) * 255; out[i + 3] = 255;
+      if (maps.preserveInk && !maps.mask[y * width + x]) out.set([128, 128, 255, 255], i);
+      else { out[i] = (nx / length * .5 + .5) * 255; out[i + 1] = (ny / length * .5 + .5) * 255; out[i + 2] = (1 / length * .5 + .5) * 255; out[i + 3] = 255; }
     }
     if ((y & 15) === 15) yield;
   }
   return out;
 }
 
-/** The packed material map: R clearcoat share, G roughness multiplier, B
- * metalness. `finish` carries the cover's own laminate so the zones that are
- * not varnished keep it exactly; gloss zones reach a full clearcoat even on a
- * matte cover, and foil drops to a polished metal roughness. */
-export function* composeMaterialMap(maps, { clearcoat = 0, roughness = .5 } = {}) {
+/** Packed R clearcoat, G roughness ratio, B metalness, A clearcoat-roughness
+ * ratio. Color masks use B=0 and leave the original ink/base finish intact.
+ * Generic old map fixtures retain their foil channel and opaque alpha. */
+export function* composeMaterialMap(maps, { clearcoat = 0, roughness = .5, clearcoatRoughness = .18 } = {}) {
   const { width, height, foil, gloss } = maps, out = new Uint8ClampedArray(width * height * 4);
   const base = clamp(clearcoat, 0, 1), foilRoughness = clamp(.3 / Math.max(.05, roughness), .2, 1);
   const glossRoughness = clamp(.05 / Math.max(.01, roughness), 0, 1);
+  const glossCoatRoughness = clamp(.05 / Math.max(.01, clearcoatRoughness), 0, 1);
   for (let i = 0; i < width * height; i++) {
-    const f = foil[i] / 255, g = gloss[i] / 255;
+    const f = maps.preserveInk ? 0 : foil[i] / 255, g = gloss[i] / 255;
     out[i * 4] = (base + (1 - base) * g) * 255;
     out[i * 4 + 1] = (1 - Math.max(f * (1 - foilRoughness), g * (1 - glossRoughness))) * 255;
     out[i * 4 + 2] = f * 255;
-    out[i * 4 + 3] = 255;
+    out[i * 4 + 3] = maps.preserveInk ? (1 - g * (1 - glossCoatRoughness)) * 255 : 255;
     if ((i & 32767) === 32767) yield;
   }
   return out;
@@ -999,6 +1200,12 @@ export function* shadePreview(image, maps, { slope = 7 } = {}) {
   const k = slope * MAX_RELIEF_MM / 255 * 14;
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const i = (y * width + x) * 4;
+    const mapIndex = clamp(Math.round(y * mh / height), 0, mh - 1) * mw + clamp(Math.round(x * mw / width), 0, mw - 1);
+    if (maps.preserveInk && !maps.mask[mapIndex]) {
+      out.set(data.subarray(i, i + 4), i);
+      if (x === width - 1 && (y & 7) === 7) yield;
+      continue;
+    }
     const nx = -(sample(x + 1, y) - sample(x - 1, y)) * k, ny = (sample(x, y + 1) - sample(x, y - 1)) * k;
     const length = Math.hypot(nx, ny, 1), n = [nx / length, ny / length, 1 / length];
     const diffuse = n[0] * light[0] + n[1] * light[1] + n[2] * light[2];
@@ -1011,7 +1218,7 @@ export function* shadePreview(image, maps, { slope = 7 } = {}) {
       const base = data[i + c] * shade;
       out[i + c] = base + (foil ? (255 - base) * Math.min(.9, shine / 255) * .9 : shine * .6);
     }
-    out[i + 3] = 255;
+    out[i + 3] = maps.preserveInk ? data[i + 3] : 255;
     if (x === width - 1 && (y & 7) === 7) yield;
   }
   return out;
@@ -1055,15 +1262,17 @@ function dimensionsOf(drawable) {
     height: drawable.naturalHeight || drawable.videoHeight || drawable.displayHeight || drawable.height };
 }
 
-function raster(drawable, long) {
+function raster(drawable, long, { sampleColors = false } = {}) {
   const natural = dimensionsOf(drawable), size = fitDimensions(natural.width, natural.height, long);
   const canvas = document.createElement('canvas');
   canvas.width = size.width; canvas.height = size.height;
   const context = canvas.getContext('2d', { willReadFrequently: true });
-  context.imageSmoothingEnabled = true; context.imageSmoothingQuality = 'high';
+  // Analysis samples actual pixels, without manufacturing blend colors along
+  // two-color edges. Map/preview resizing retains the existing high quality.
+  context.imageSmoothingEnabled = !sampleColors; context.imageSmoothingQuality = 'high';
   context.drawImage(drawable, 0, 0, size.width, size.height);
   const { data } = context.getImageData(0, 0, size.width, size.height);
-  // Transparent corners (a cutout cover) read as the dark of the board, never as black noise.
+  // Preserve alpha: transparent cutouts/board padding are excluded from colors.
   return { data, width: size.width, height: size.height };
 }
 
@@ -1084,22 +1293,23 @@ async function thumbnailOf(work, maps, run) {
   return small.toDataURL('image/jpeg', .82);
 }
 
-/** Find, rank and preview three relief proposals for a cover (URL or decoded
- * image). Heavy loops run in main-thread slices; pass `signal` to cancel. */
+/** Find, rank and preview up to three actual color proposals (URL or decoded
+ * image). Returns fewer choices for covers with fewer supported colors. Heavy
+ * loops run in main-thread slices; pass `signal` to cancel. */
 export async function analyzeCoverRelief(coverUrl, { title = '', author = '', signal } = {}) {
   void title; void author; // the picture decides: names never add a claim the pixels do not support
   const stats = { slices: 0, longestSliceMs: 0, ms: 0, durations: [] };
   const drawable = await decode(coverUrl, signal);
-  const work = raster(drawable, WORK_SIZE);
+  const work = raster(drawable, WORK_SIZE, { sampleColors:true });
   const found = await runSliced(analyzePixels(work), { signal, stats });
   const proposals = [];
   for (const choice of found.chosen) {
     const maps = await runSliced(buildMapsFromPixels(work, work, choice, found.seed), { signal, stats });
     const { label, description } = describe(choice);
-    proposals.push({ id: choice.id, label, description, strength: FAMILIES[choice.id].strength,
+    proposals.push({ id: choice.id, color:choice.color, tolerance:choice.tolerance, label, description, strength:DEFAULT_RELIEF_STRENGTH,
       thumbnail: await thumbnailOf(work, maps, task => runSliced(task, { signal, stats })), confidence: Math.round(choice.confidence * 100) / 100, detected: choice.detected });
   }
-  return { proposals, analysis: { width: work.width, height: work.height, seed: found.seed, photo: found.feats.photo,
+  return { proposals, analysis: { width: work.width, height: work.height, seed: found.seed, colorSpace:found.colorSpace, photo: found.feats.photo,
     busy: Math.round(found.feats.busy * 1000) / 1000, strokeFraction: Math.round(found.feats.strokeFraction * 1000) / 1000,
     candidates: found.candidates.map(item => ({ id: item.id, confidence: Math.round(item.confidence * 100) / 100, facts: item.facts })),
     ms: Math.round(stats.ms), slices: stats.slices, longestSliceMs: Math.round(stats.longestSliceMs * 10) / 10,
@@ -1108,21 +1318,17 @@ export async function analyzeCoverRelief(coverUrl, { title = '', author = '', si
 
 /** The maps of one relief choice for a cover: `height` (bytes, in
  * MAX_RELIEF_MM units), `foil` and `gloss` canvases at the cover's aspect,
- * plus `normal` (tangent-space RGBA) ready for a texture. The choice's family
- * is re-detected with the same seed, so nothing but `{ id, strength }` has to
- * be stored. */
+ * plus `normal` (tangent-space RGBA) ready for a texture. A saved HEX/radius is
+ * classified directly at map resolution, without re-centering/re-clustering.
+ * Legacy ids resolve to the first supported color but do not rewrite data. */
 export async function buildReliefMaps(coverUrl, relief, { maxSize = MAP_SIZE, signal } = {}) {
   const choice = normalizeCoverRelief(relief);
   if (!choice) return null;
   const stats = { slices: 0, longestSliceMs: 0, ms: 0 };
   const drawable = await decode(coverUrl, signal);
-  const work = raster(drawable, WORK_SIZE), hires = raster(drawable, clamp(maxSize, 64, MAP_SIZE));
-  const found = await runSliced(analyzePixels(work), { signal, stats });
-  // The saved family may no longer be one of the three (a newer detector, a
-  // different thumbnail of the same book): fall back to its suggestion.
-  let selection = found.candidates.find(item => item.id === choice.id) ?? found.chosen.find(item => item.id === choice.id);
-  if (!selection) selection = await runSliced(suggestion(choice.id, work), { signal, stats });
-  const maps = await runSliced(buildMapsFromPixels(work, hires, selection, found.seed), { signal, stats });
+  const hires = raster(drawable, clamp(maxSize, 64, MAP_SIZE));
+  const work = COLOR_RELIEF_IDS.includes(choice.id) ? hires : raster(drawable, WORK_SIZE, { sampleColors:true });
+  const maps = await runSliced(buildMapsFromPixels(work, hires, choice), { signal, stats });
   const normal = await runSliced(heightToNormals(maps), { signal, stats });
   return { height: new ImageData(grayToRgba(maps.heightMap), maps.width, maps.height),
     foil: new ImageData(grayToRgba(maps.foil), maps.width, maps.height), gloss: new ImageData(grayToRgba(maps.gloss), maps.width, maps.height),
@@ -1136,5 +1342,6 @@ function grayToRgba(gray) {
   return out;
 }
 
-/** Individual steps, exposed so tests can exercise each detector on its own. */
-export const internals = { featuresOf, detectLettering, detectFoil, detectFrame, detectBand, detectSubject, detectVarnish, metalMask, recipeMask, mapsFor, suggestedFrame, roundedRect };
+/** Pure classification steps and legacy detector helpers for compatibility tests. */
+export const internals = { rgbToOklab, colorMask, colorHistogram, colorCandidates, colorName, raster,
+  featuresOf, detectLettering, detectFoil, detectFrame, detectBand, detectSubject, detectVarnish, metalMask, recipeMask, mapsFor, suggestedFrame, roundedRect };

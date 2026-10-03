@@ -56,10 +56,14 @@ vi.mock('../../src/js/cover-appearance.js', async importOriginal => ({
 }))
 
 const PROPOSALS = [
-  { id: 'foil', label: 'Título y autor en relieve dorado', description: 'Letras elevadas con lámina dorada.', strength: .75, confidence: .8, thumbnail: 'data:image/png;base64,AAAA' },
-  { id: 'frame', label: 'Marco grabado', description: 'Un filete en el borde.', strength: .6, confidence: .5, thumbnail: 'data:image/png;base64,BBBB' },
-  { id: 'varnish', label: 'Barniz selectivo', description: 'Las zonas oscuras con brillo.', strength: .5, confidence: .3, thumbnail: 'data:image/png;base64,CCCC' }
+  { id:'color-1', color:'#d4a93c', tolerance:5, label:'Color #d4a93c', description:'Zonas amarillas de la portada.', strength:.75, thumbnail:'data:image/png;base64,AAAA' },
+  { id:'color-2', color:'#2350b5', tolerance:4, label:'Color #2350b5', description:'Zonas azules de la portada.', strength:.6, thumbnail:'data:image/png;base64,BBBB' },
+  { id:'color-3', color:'#fffaf0', tolerance:3, label:'Color #fffaf0', description:'Zonas claras de la portada.', strength:.5, thumbnail:'data:image/png;base64,CCCC' }
 ]
+const selected = (index, strength = PROPOSALS[index].strength) => {
+  const { id, color, tolerance } = PROPOSALS[index]
+  return { id, color, tolerance, strength }
+}
 
 let container, shelf
 const flush = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms))
@@ -216,6 +220,48 @@ describe('giro animado entre lomo y portada', () => {
 })
 
 describe('propuestas de relieve', () => {
+  it.each([1, 2])('ofrece sólo los %s colores reales disponibles sin completar con zonas inventadas', async count => {
+    vi.mocked(analyzeCoverRelief).mockResolvedValue({proposals:PROPOSALS.slice(0, count)})
+    const {editor, tab} = await openEditor()
+    tab('Portada').click()
+    await vi.waitFor(() => expect(editor.querySelectorAll('.ihr-relief-card:not(.is-skeleton)')).toHaveLength(count))
+    expect(editor.querySelectorAll('.ihr-relief-card.is-skeleton')).toHaveLength(0)
+    expect(editor.querySelectorAll('[role="radiogroup"] input')).toHaveLength(count + 1)
+    expect(editor.querySelector('.ihr-relief-none input').checked).toBe(true)
+  })
+  it('rechaza colores inválidos, ids repetidos y el mismo color antes de limitar las tres propuestas', async () => {
+    vi.mocked(analyzeCoverRelief).mockResolvedValue({proposals:[
+      {...PROPOSALS[0], color:'url(javascript:bad)'},
+      PROPOSALS[0], {...PROPOSALS[0], id:'color-2', color:'#D4A93C'},
+      {...PROPOSALS[1], id:'color-1'}, PROPOSALS[1], PROPOSALS[2]
+    ]})
+    const {editor, tab} = await openEditor()
+    tab('Portada').click()
+    await vi.waitFor(() => expect(editor.querySelectorAll('.ihr-relief-card:not(.is-skeleton)')).toHaveLength(3))
+    expect([...editor.querySelectorAll('.ihr-relief-card')].map(card => card.dataset.reliefColor)).toEqual(PROPOSALS.map(item => item.color))
+  })
+  it('restaura el mismo color aunque cambie su posición en las tres opciones', async () => {
+    const saved = book({coverRelief:selected(0, .4)})
+    vi.mocked(analyzeCoverRelief).mockResolvedValue({proposals:[
+      {...PROPOSALS[1], id:'color-1'}, {...PROPOSALS[2], id:'color-2'}, {...PROPOSALS[0], id:'color-3'}
+    ]})
+    const {editor, tab} = await openEditor([saved])
+    tab('Portada').click()
+    await vi.waitFor(() => expect(editor.querySelectorAll('.ihr-relief-card:not(.is-skeleton)')).toHaveLength(3))
+    expect([...editor.querySelectorAll('.ihr-relief-card input')].map(input => input.checked)).toEqual([false,false,true])
+    expect(editor.querySelector('.ihr-relief__strength input').value).toBe('40')
+  })
+  it('permite actualizar una selección antigua y quita el aviso al elegir un color real', async () => {
+    const {editor, tab, onBookCustomizationChange} = await openEditor([book({coverRelief:{id:'foil',strength:.4}})])
+    tab('Portada').click()
+    await vi.waitFor(() => expect(editor.querySelectorAll('.ihr-relief-card:not(.is-skeleton)')).toHaveLength(3))
+    expect(editor.querySelector('.ihr-relief__status').textContent).toBe('Elige un color para actualizar el relieve.')
+    expect(onBookCustomizationChange).not.toHaveBeenCalled()
+    const first=editor.querySelector('.ihr-relief-card input')
+    first.checked=true; first.dispatchEvent(new Event('change',{bubbles:true}))
+    expect(editor.querySelector('.ihr-relief__status').textContent).toBe('')
+    await vi.waitFor(() => expect(onBookCustomizationChange).toHaveBeenCalledWith(expect.anything(), {coverRelief:selected(0)}))
+  })
   it('no ofrece tarjetas hasta que termina la preparación del material, aunque el análisis ya esté listo', async () => {
     const { editor, tab, view } = await openEditor()
     let prepared
@@ -277,11 +323,13 @@ describe('propuestas de relieve', () => {
     const group = editor.querySelector('[role="radiogroup"]')
     expect(group.getAttribute('aria-label')).toBeTruthy()
     const radios = [...group.querySelectorAll('input[type="radio"]')]
-    expect(radios.map(radio => radio.value)).toEqual(['foil', 'frame', 'varnish', ''])
+    expect(radios.map(radio => radio.value)).toEqual(['color-1', 'color-2', 'color-3', ''])
     expect(new Set(radios.map(radio => radio.name)).size).toBe(1)
     const first = editor.querySelector('.ihr-relief-card')
-    expect(first.textContent).toContain('Título y autor en relieve dorado')
-    expect(first.textContent).toContain('Letras elevadas con lámina dorada.')
+    expect(first.textContent).toContain('Color #d4a93c')
+    expect(first.textContent).toContain('Zonas amarillas de la portada.')
+    expect([...group.querySelectorAll('.ihr-relief-card')].map(card => card.dataset.reliefColor)).toEqual(PROPOSALS.map(item => item.color))
+    expect(group.querySelectorAll('.ihr-relief-card__swatch')).toHaveLength(3)
     expect(first.querySelector('img').getAttribute('src')).toBe('data:image/png;base64,AAAA')
     expect(radios.at(-1).checked).toBe(true)
     expect(editor.querySelector('.ihr-relief-none').hidden).toBe(false)
@@ -388,15 +436,15 @@ describe('elegir un relieve', () => {
   it('aplica el relieve en la vista, lo guarda con el libro y marca la tarjeta', async () => {
     const { editor, view, cards, onBookCustomizationChange } = await ready()
     choose(cards[1])
-    expect(view.setCoverRelief).toHaveBeenCalledWith({ id: 'frame', strength: .6 })
+    expect(view.setCoverRelief).toHaveBeenCalledWith(selected(1))
     expect(cards[1].closest('.ihr-relief-card').classList.contains('is-selected')).toBe(true)
     expect(cards[0].closest('.ihr-relief-card').classList.contains('is-selected')).toBe(false)
     const slider = editor.querySelector('.ihr-relief__strength input')
     expect(slider.disabled).toBe(false)
     expect(slider.value).toBe('60')
     await vi.waitFor(() => expect(onBookCustomizationChange).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'local:relieve:1', coverRelief: { id: 'frame', strength: .6 } }),
-      { coverRelief: { id: 'frame', strength: .6 } }))
+      expect.objectContaining({ id:'local:relieve:1', coverRelief:selected(1) }),
+      { coverRelief:selected(1) }))
   })
 
   it('el relieve no rehace el modelo del libro al cerrar el editor', async () => {
@@ -431,13 +479,13 @@ describe('elegir un relieve', () => {
     for (const value of ['40', '45', '50']) { slider.value = value; slider.dispatchEvent(new Event('input', { bubbles: true })) }
     await vi.waitFor(() => expect(view.setCoverRelief).toHaveBeenCalled())
     expect(view.setCoverRelief.mock.calls.length).toBeLessThanOrEqual(2)
-    expect(view.setCoverRelief).toHaveBeenLastCalledWith({ id: 'foil', strength: .5 })
+    expect(view.setCoverRelief).toHaveBeenLastCalledWith(selected(0, .5))
     await vi.waitFor(() => expect(onBookCustomizationChange).toHaveBeenLastCalledWith(
-      expect.anything(), { coverRelief: { id: 'foil', strength: .5 } }))
+      expect.anything(), { coverRelief:selected(0, .5) }))
   })
 
   it('restaura el relieve guardado: tarjeta marcada, intensidad y sin balanceo', async () => {
-    const saved = book({ coverRelief: { id: 'varnish', strength: .4 } })
+    const saved = book({ coverRelief:selected(2, .4) })
     const { editor, view, tab } = await openEditor([saved])
     tab('Portada').click()
     await vi.waitFor(() => expect(editor.querySelectorAll('.ihr-relief-card:not(.is-skeleton)')).toHaveLength(3))

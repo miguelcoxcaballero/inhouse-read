@@ -67,11 +67,16 @@ describe('distinct palette and saved finishes', () => {
     expect(spineCustomization({spineTextColor:'url(bad)',spineFinish:'bad',spineEngraved:'true'})).toEqual({spineFinish:'matte'})
   })
   it('syncs the cover relief only when valid, and null clears it', () => {
-    const id = RELIEF_IDS[0]
+    const id = RELIEF_IDS.find(value => !value.startsWith('color-'))
     expect(spineCustomization({coverRelief:{id,strength:.4,evil:1}})).toEqual({coverRelief:{id,strength:.4}})
     expect(spineCustomization({coverRelief:{id,strength:9}})).toEqual({coverRelief:{id,strength:1}})
     expect(spineCustomization({coverRelief:null})).toEqual({coverRelief:null})
     expect(spineCustomization({coverRelief:{id:'<script>',strength:.5}})).toEqual({coverRelief:null})
     expect(spineCustomization({})).toEqual({})
+  })
+  it('keeps the actual selected cover colour and its tolerance in portable customization', () => {
+    const coverRelief = { id:'color-2', color:'#2350b5', tolerance:4, strength:.6 }
+    expect(spineCustomization({coverRelief:{ ...coverRelief, thumbnail:'discard', mask:new Uint8Array([1]) }})).toEqual({coverRelief})
+    expect(spineCustomization({coverRelief:{ id:'color-1', color:'url(bad)', tolerance:4, strength:.6 }})).toEqual({coverRelief:null})
   })
 })

@@ -2336,7 +2336,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       view.animate([{ transform: before }, { transform: coverPose }], { duration: prefersReducedMotion() ? 1 : 220 });
     }
     function reliefKey() {
-      return `${item.coverKey ?? coverUrl ?? ''}|${book.title ?? ''}|${normalizeBookAuthor(book.author)}`;
+      return `color-zones-v2|${item.coverKey ?? coverUrl ?? ''}|${book.title ?? ''}|${normalizeBookAuthor(book.author)}`;
     }
     // Deja de lado todo lo que dependa de la pestaña: balanceo, temporizadores
     // y análisis en curso (cierre del editor o cambio de pestaña).
@@ -3013,7 +3013,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         syncRange(event.currentTarget);
         const current = normalizeCoverRelief(book.coverRelief);
         if (!current) return;
-        updateCustomization({ coverRelief:{ id:current.id, strength:percent / 100 } });
+        updateCustomization({ coverRelief:{ ...current, strength:percent / 100 } });
         // Un empujón a la vista por fotograma como mucho al arrastrar.
         if (!relief.sliderFrame) relief.sliderFrame = requestAnimationFrame(() => {
           relief.sliderFrame = 0;
@@ -3034,14 +3034,19 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         reliefStrengthRow
       ])
     ]);
-    const cleanProposals = list => (Array.isArray(list) ? list : []).slice(0, 3)
-      .filter(proposal => proposal && typeof proposal.id === 'string' && typeof proposal.label === 'string')
-      .map(proposal => ({
-        id:proposal.id, label:proposal.label,
-        description:typeof proposal.description === 'string' ? proposal.description : '',
-        strength:Number.isFinite(proposal.strength) ? Math.min(1, Math.max(.1, proposal.strength)) : .7,
-        thumbnail:typeof proposal.thumbnail === 'string' && proposal.thumbnail.startsWith('data:image/') ? proposal.thumbnail : ''
-      }));
+    const cleanProposals = list => {
+      const proposals = [], colors = new Set(), ids = new Set();
+      for (const proposal of Array.isArray(list) ? list : []) {
+        const choice = normalizeCoverRelief(proposal);
+        if (!choice?.color || typeof proposal.label !== 'string' || colors.has(choice.color) || ids.has(choice.id)) continue;
+        colors.add(choice.color); ids.add(choice.id);
+        proposals.push({ ...choice, label:proposal.label,
+          description:typeof proposal.description === 'string' ? proposal.description : '',
+          thumbnail:typeof proposal.thumbnail === 'string' && proposal.thumbnail.startsWith('data:image/') ? proposal.thumbnail : '' });
+        if (proposals.length === 3) break;
+      }
+      return proposals;
+    };
     function pushReliefToView(next) {
       if (view?.setCoverRelief) {
         relief.applied = Promise.resolve(view.setCoverRelief(next)).catch(error => {
@@ -3057,7 +3062,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     function syncReliefSelection() {
       const current = normalizeCoverRelief(book.coverRelief);
       for (const input of reliefGrid.querySelectorAll('input')) {
-        const on = input.value === current?.id;
+        const proposal = relief.proposals.find(item => item.id === input.value);
+        const on = Boolean(current?.color && proposal?.color === current.color && proposal.tolerance === current.tolerance);
         input.checked = on;
         input.closest('.ihr-relief-card').classList.toggle('is-selected', on);
       }
@@ -3070,9 +3076,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       reliefStrengthOutput.textContent = current ? `${percent} %` : '—';
       syncRange(reliefStrength);
       reliefStrengthRow.hidden = !(relief.status === 'ready' || current);
+      if (relief.status === 'ready') reliefStatus.textContent = current && !current.color
+        ? 'Elige un color para actualizar el relieve.' : '';
     }
     function chooseRelief(proposal) {
-      const next = proposal ? normalizeCoverRelief({ id:proposal.id, strength:proposal.strength }) : null;
+      const next = proposal ? normalizeCoverRelief(proposal) : null;
       if (proposal && !next) return;
       applyRelief(next);
       syncReliefSelection();
@@ -3083,14 +3091,17 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         type:'radio', name:reliefName, value:proposal.id, class:'ihr-relief__input',
         onChange:() => chooseRelief(proposal),
         // Volver a tocar la propuesta elegida repite el balanceo.
-        onClick:() => { if (normalizeCoverRelief(book.coverRelief)?.id === proposal.id) scheduleCoverTilt(); }
+        onClick:() => { if (normalizeCoverRelief(book.coverRelief)?.color === proposal.color) scheduleCoverTilt(); }
       });
-      return el('label', { class:'ihr-relief-card' }, [
+      return el('label', { class:'ihr-relief-card', 'data-relief-color':proposal.color }, [
         input,
         el('span', { class:'ihr-relief-card__preview', 'aria-hidden':'true' },
           proposal.thumbnail ? [el('img', { class:'ihr-relief-card__thumb', src:proposal.thumbnail, alt:'', draggable:'false' })] : []),
         el('span', { class:'ihr-relief-card__text' }, [
-          el('span', { class:'ihr-relief-card__label', text:proposal.label }),
+          el('span', { class:'ihr-relief-card__label' }, [
+            el('span', { class:'ihr-relief-card__swatch', style:`background:${proposal.color}`, 'aria-hidden':'true' }),
+            el('span', { text:proposal.label })
+          ]),
           proposal.description ? el('span', { class:'ihr-relief-card__description', text:proposal.description }) : null
         ])
       ]);
@@ -3104,7 +3115,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         : status === 'error' ? 'No se pudo analizar la portada'
         : status === 'empty' ? (coverUrl ? 'Sin zonas detectadas'
           : 'Sin portada')
-        : status === 'ready' ? '' : '';
+        : status === 'ready' && normalizeCoverRelief(book.coverRelief) && !normalizeCoverRelief(book.coverRelief)?.color
+          ? 'Elige un color para actualizar el relieve.' : '';
       reliefStatus.classList.toggle('is-busy', status === 'loading');
       // Reserve the cards before the turn; starting analysis must not grow
       // the sheet over the cover that was just fitted above it.
