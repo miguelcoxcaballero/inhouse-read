@@ -21,16 +21,16 @@
 import { createPhonemizer } from './phonemizer.js'
 import { createHebrewPhonemizer } from './hebrew.js'
 import { createSupertonicRuntime } from './supertonic-runtime.js'
+import { yieldToMessages } from './task-yield.js'
 import { peakNormalize, trimSilence, fadeEdges, silence, concat, pauseAfter, splitSegments, limitIds, lengthScaleFor, PAUSE_MS } from './pcm.js'
 
 let ort = null, phonemizer = null, phonBaseURL = null, hebrewPhonemizer = null, supertonicRuntime = null, session = null, config = null, voice = null, initPromise = null, loadChain = Promise.resolve()
 const cancelled = new Set()
 const queue = []
-let draining = false, current = null
+let draining = false, current = null, drainDone = Promise.resolve()
 
 const post = (message, transfer = []) => self.postMessage(message, transfer)
 // A segment of compute blocks this thread; yielding between segments lets 'cancel'/'load' messages in before the next one.
-const yieldToMessages = () => new Promise(resolve => setTimeout(resolve, 0))
 
 async function init({ ortBase, phonBase, runtime }) {
   // ONNX Runtime and the phonemizer are independent: load them side by side (a cold start is the sum of everything serial).
@@ -52,7 +52,7 @@ async function releaseVoice() {
 }
 
 async function load({ voice: key, config: cfg, model, phonemizerModel, buffers }) {
-  while (draining) await new Promise(resolve => setTimeout(resolve, 5)) // a cancelled synth finishes its segment first
+  while (draining) await drainDone // a cancelled synth finishes its segment first
   await releaseVoice()
   const t = performance.now()
   // Every fragment has another length, so the shapes change on each run. With the memory arena and the memory-pattern planner
@@ -145,6 +145,9 @@ async function synth({ id, text, rate, speaker, lang, style }) {
 async function drain() {
   if (draining) return
   draining = true
+  let finishDrain
+  drainDone = new Promise(resolve => { finishDrain = resolve })
+  try {
   while (queue.length) {
     const job = queue.shift()
     if (cancelled.has(job.id)) { cancelled.delete(job.id); continue }
@@ -158,8 +161,11 @@ async function drain() {
     }
     cancelled.delete(job.id)
   }
-  current = null
-  draining = false
+  } finally {
+    current = null
+    draining = false
+    finishDrain()
+  }
 }
 
 self.onmessage = async ({ data: m }) => {
@@ -180,7 +186,7 @@ self.onmessage = async ({ data: m }) => {
       if (current === m.id || queue.some(job => job.id === m.id)) cancelled.add(m.id)
     } else if (m.type === 'free') {
       const freeing = loadChain.then(async () => {
-        while (draining) await new Promise(resolve => setTimeout(resolve, 5))
+        while (draining) await drainDone
         await releaseVoice()
       })
       loadChain = freeing.catch(() => {})

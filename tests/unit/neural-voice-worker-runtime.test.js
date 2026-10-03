@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { pathToFileURL } from 'node:url'
 import { resolve } from 'node:path'
+import { yieldToMessages } from '../../src/js/readers/neural-voice/task-yield.js'
 const mocks=vi.hoisted(()=>({runtime:vi.fn(),phonemizer:vi.fn()}))
 vi.mock('../../src/js/readers/neural-voice/supertonic-runtime.js',()=>({createSupertonicRuntime:mocks.runtime}))
 vi.mock('../../src/js/readers/neural-voice/phonemizer.js',()=>({createPhonemizer:mocks.phonemizer}))
@@ -22,6 +23,43 @@ beforeEach(async()=>{
 afterEach(async()=>{await send({type:'free',id:999});vi.unstubAllGlobals()})
 async function superLoad(){await send({type:'load',id:2,voice:'supertonic3',config:pack,buffers:{vocoder:new ArrayBuffer(8)}})}
 describe('worker runtime routing and cancellation',()=>{
+  it('drains FIFO, cancels queued work and frees the actual worker with timers suspended',async()=>{
+    await superLoad()
+    const timer=vi.spyOn(globalThis,'setTimeout').mockImplementation(()=>0)
+    try {
+      await send({type:'synth',id:51,text:'Primero.',lang:'es',style:'F1'})
+      await send({type:'synth',id:52,text:'Cancelado.',lang:'es',style:'F1'})
+      await send({type:'synth',id:53,text:'Segundo.',lang:'es',style:'F1'})
+      await send({type:'cancel',id:52})
+      // free must wait for synthesis completion, without polling a timer.
+      await send({type:'free',id:54})
+      expect(runtime.synthesize.mock.calls.map(([text])=>text)).toEqual(['Primero.','Segundo.'])
+      expect(messages.filter(({message})=>message.type==='end').map(({message})=>message.id)).toEqual([51,53])
+      expect(messages.some(({message})=>message.id===52)).toBe(false)
+      expect(messages.at(-1).message).toMatchObject({type:'freed',id:54})
+      expect(runtime.dispose).toHaveBeenCalledOnce()
+      expect(timer).not.toHaveBeenCalled()
+    } finally { timer.mockRestore() }
+  })
+  it('cancels active synthesis and switches voice with timers suspended',async()=>{
+    let finish
+    runtime.synthesize.mockImplementation(()=>new Promise(resolve=>{finish=resolve}))
+    await superLoad()
+    const timer=vi.spyOn(globalThis,'setTimeout').mockImplementation(()=>0)
+    try {
+      await send({type:'synth',id:61,text:'Cancelar.',lang:'es',style:'F1'})
+      await send({type:'cancel',id:61})
+      const loading=send({type:'load',id:62,voice:'piper',config:{audio:{sample_rate:22050}},model:new ArrayBuffer(8)})
+      await yieldToMessages()
+      expect(runtime.dispose).not.toHaveBeenCalled()
+      finish({pcm:new Float32Array(500),sampleRate:24000})
+      await loading
+      expect(messages.filter(({message})=>message.id===61).map(({message})=>message.type)).toEqual(['plan'])
+      expect(messages.at(-1).message).toMatchObject({type:'loaded',id:62})
+      expect(runtime.dispose).toHaveBeenCalledOnce()
+      expect(timer).not.toHaveBeenCalled()
+    } finally { timer.mockRestore() }
+  })
   it('releases Piper before creating the shared runtime and forwards its exact configuration',async()=>{
     expect(mocks.phonemizer).not.toHaveBeenCalled()
     await send({type:'load',id:2,voice:'piper',config:{audio:{sample_rate:22050}},model:new ArrayBuffer(8)})

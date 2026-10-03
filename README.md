@@ -4,11 +4,17 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.27
+
+- La voz cede entre segmentos y pasos de inferencia mediante tareas de mensajes, evitando las esperas de timers que Android puede suspender en segundo plano. Cancelar, cambiar de voz y liberar el worker esperan su terminación real, sin polling. Conserva los modelos y la calidad de síntesis.
+- Pasan 39 pruebas focales, incluidas cola, cancelación y cambio de voz con timers suspendidos. El worker anterior reproduce el atasco en la regresión. La continuidad con Android bloqueado necesita su nuevo ensayo antes de declarar resuelto el problema.
+- La prueba del gesto de portada observa la pose ya pintada antes de enviar el input real, conservando los límites y comprobaciones originales.
+
 ### Actualización web · 1.7.26
 
 - Los archivos EPUB comprimidos se leen una vez al abrirlos. Los capítulos y recursos se extraen desde memoria, conservando los bytes originales, codificaciones y tipos de recurso; el PDF conserva su lector.
 - La captura Android registra las fases originales del cambio de capítulo sin añadir timers, navegación ni comandos de reproducción. Esta versión necesita otra comprobación con pantalla bloqueada; todavía no se declara resuelta la interrupción.
-- [Pruebas, publicación y pendientes](docs/remaining-wip-verification.md).
+- Publicación comprobada por HTTP, 2.520 unitarias locales y cinco casos sobre la web real aprobados, sin reintentos. La APK nueva sigue pendiente de su prueba bloqueada. [Pruebas y pendientes](docs/remaining-wip-verification.md).
 
 ### Actualización web · 1.7.25
 

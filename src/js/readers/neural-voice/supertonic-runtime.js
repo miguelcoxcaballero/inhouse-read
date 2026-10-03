@@ -4,7 +4,7 @@
 import { SUPERTONIC_LANGUAGES, SUPERTONIC_STYLES, SUPERTONIC_LEGACY_STYLES } from './supertonic-catalog.js';
 
 const cancelled = () => Object.assign(new Error('Lectura cancelada'),{name:'AbortError',code:'aborted'});
-const yieldTask = () => new Promise(resolve=>setTimeout(resolve,0));
+import { yieldToMessages as yieldTask } from './task-yield.js';
 // Six steps preserved the tested Dutch/Spanish/English intelligibility at
 // <1 RTF in the recorded single-thread desktop WASM benchmark, unlike FP32/8.
 export const SUPERTONIC_STEPS = 6;

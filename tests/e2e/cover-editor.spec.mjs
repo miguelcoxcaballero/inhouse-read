@@ -206,8 +206,15 @@ test('un gesto del usuario corta el balanceo', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const errors = await openShelfEditor(page)
   await enterCover(page)
+  const input = await page.context().newCDPSession(page)
   const heading = await page.locator('.ihr-spine-editor__heading').boundingBox()
   expect(heading).not.toBeNull()
+  let inputDelivered = false
+  await page.exposeFunction('deliverCoverInterruption', async () => {
+    await input.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: heading.x + heading.width / 2, y: heading.y + heading.height / 2, button: 'left', clickCount: 1 })
+    await input.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: heading.x + heading.width / 2, y: heading.y + heading.height / 2, button: 'left', clickCount: 1 })
+    inputDelivered = true
+  })
   // Capture the delivered input and every painted pose in the browser. A
   // locator evaluation can spend a full half-cycle resolving its handle on
   // software GL, so it cannot prove when a transient angle was interrupted.
@@ -217,6 +224,12 @@ test('un gesto del usuario corta el balanceo', async ({ page }, testInfo) => {
     const observer = new MutationObserver(() => {
       const sample = { angle: Number(canvas.dataset.angle), time: performance.now() }
       record.samples.push(sample)
+      // Observe after the rendered pose changed. A separate rAF predicate
+      // can see the prior pose just before the animation paints a new one.
+      if (!record.requested && Math.abs(sample.angle) > 3) {
+        record.requested = true
+        window.deliverCoverInterruption()
+      }
       if (record.gesture && sample.angle === 0 && record.returnedAt === null) record.returnedAt = sample.time
     })
     observer.observe(canvas, { attributes: true, attributeFilter: ['data-angle'] })
@@ -234,12 +247,9 @@ test('un gesto del usuario corta el balanceo', async ({ page }, testInfo) => {
   })
   await page.getByRole('group', { name: 'Propuestas de relieve' }).locator('.ihr-relief-card').first().click()
   await page.mouse.move(heading.x + heading.width / 2, heading.y + heading.height / 2)
-  // Observe directly on the rendering frame, then deliver a real pointerdown
-  // without another locator/actionability round trip. The capture above must
-  // still prove that the input actually arrived while the book was tilted.
-  await page.waitForFunction(() => Math.abs(Number(document.querySelector('.ihr-flyout__book canvas').dataset.angle)) > 3, undefined, { polling: 'raf', timeout: 8000 })
-  await page.mouse.down()
-  await page.mouse.up()
+  // The painted-pose observer sends trusted input directly. Retain the eight
+  // second preparation budget and verify its actual delivered angle below.
+  await expect.poll(() => inputDelivered, { timeout: 8000 }).toBe(true)
   // Default checks the sub-second return. A software-GL observation profile
   // can extend its deadline without changing the 240 ms animation contract.
   const interruptDeadline = Number(process.env.COVER_EDITOR_INTERRUPT_TIMEOUT_MS || 900)
