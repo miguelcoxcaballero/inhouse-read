@@ -591,7 +591,8 @@ test('móvil CBZ: abre la imagen azul guardada y descarta el iframe oculto de la
   expect(errors).toEqual([])
 })
 
-test('móvil: cancelar durante la preparación y reabrir el mismo libro no deja que la sesión anterior oculte el lector nuevo', async ({ page }, testInfo) => {
+const workerGateTest = test.extend({ serviceWorkers:'block' })
+workerGateTest('móvil: cancelar durante la preparación y reabrir el mismo libro no deja que la sesión anterior oculte el lector nuevo', async ({ page }, testInfo) => {
   test.setTimeout(90_000)
   const errors = []; page.on('pageerror', error => errors.push(error.message))
   await page.evaluate(async ({ bytes,coverBytes }) => {

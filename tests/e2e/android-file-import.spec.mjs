@@ -134,16 +134,32 @@ test('Android: un acceso a Google pendiente no bloquea el siguiente Abrir con', 
   },null,2)})
 })
 
-test('Android: abre el PDF con un WebView sin las APIs recientes de Promise y Math', async ({ page }) => {
+const legacyWorkerTest = test.extend({ serviceWorkers:'block' })
+legacyWorkerTest('Android: abre el PDF con un WebView sin las APIs recientes de Promise y Math', async ({ page }, testInfo) => {
   await installInbox(page, true)
   await page.addInitScript(() => { Promise.try = undefined; Math.sumPrecise = undefined })
+  const injectedWorkers = []
   await page.route('**/pdf.worker*.mjs', async route => {
     const response = await route.fetch()
-    await route.fulfill({ response, body:'Promise.try = undefined; Math.sumPrecise = undefined;\n' + await response.text() })
+    // Capture the disabled APIs before PDF.js can supply its own polyfills.
+    const prefix = 'Promise.try = undefined; Math.sumPrecise = undefined;\n' +
+      'self.__legacyWorkerApisBeforePolyfill = { promiseTry:typeof Promise.try, sumPrecise:typeof Math.sumPrecise };\n'
+    await route.fulfill({ response, body:prefix + await response.text() })
+    injectedWorkers.push(route.request().url())
   })
   await page.goto(process.env.IHR_TEST_URL || '/')
   await expect(page.locator('#reader-format-badge')).toHaveText('PDF')
   await expect(page.locator('#reader-top-title')).toHaveText('Android Open With')
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   await page.waitForFunction(() => window.testImportAcks.length === 1)
+  // A successful render is meaningful here only if the real worker received
+  // the legacy precondition. Do not assert the APIs after PDF.js polyfills.
+  expect(injectedWorkers.length).toBeGreaterThan(0)
+  const worker = page.workers().find(worker => injectedWorkers.includes(worker.url()))
+  expect(worker, 'The injected PDF worker must actually render the imported PDF').toBeDefined()
+  const beforePolyfill = await worker.evaluate(() => self.__legacyWorkerApisBeforePolyfill)
+  expect(beforePolyfill).toEqual({ promiseTry:'undefined', sumPrecise:'undefined' })
+  await testInfo.attach('legacy-worker-precondition.json', { contentType:'application/json', body:JSON.stringify({
+    routeCalls:injectedWorkers.length, injectedWorkers, workerUrl:worker.url(), beforePolyfill
+  }, null, 2) })
 })
