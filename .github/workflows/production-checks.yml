@@ -37,6 +37,17 @@ jobs:
       PLAYWRIGHT_PORT: 4283
       PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
       IHR_CONTROLS_EVIDENCE_DIR: test-results/controls
+      # Measure cover interruption from the delivered pointerdown. Software
+      # WebGL here paints each of its four return frames in 236–272 ms; the
+      # real animation clock remains 240 ms. Keep every frame and the trusted
+      # gesture/monotonic-return checks, with an explicit software wall budget.
+      # Local/hardware runs retain the test's default 900 ms deadline.
+      COVER_EDITOR_INTERRUPT_TIMEOUT_MS: 1500
+      # A cold import builds its first shelf on return. The recorded software
+      # flight was still advancing at 30 s and reached its slot at 33.6 s.
+      # Wait for the complete return and visible saved book; keep the local
+      # 30 s default, renderer clock and every frame unchanged.
+      ANDROID_IMPORT_RETURN_TIMEOUT_MS: 60000
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

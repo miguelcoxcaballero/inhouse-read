@@ -199,6 +199,13 @@ test('un gesto del usuario corta el balanceo', async ({ page }, testInfo) => {
   await testInfo.attach('cover-interruption', { body: JSON.stringify(interruption, null, 2), contentType: 'application/json' })
   expect(interruption.gesture?.isTrusted).toBe(true)
   expect(Math.abs(interruption.gesture.angle)).toBeGreaterThan(3)
+  // The real input must arrive during the first oscillation. A late click on
+  // the last, naturally decreasing lobe would not prove an interruption.
+  const lobes = [...interruption.samples.slice(0, interruption.gesture.sampleIndex).map(sample => sample.angle), interruption.gesture.angle]
+    .filter(angle => Math.abs(angle) > 1).map(Math.sign)
+    .filter((sign, index, signs) => index === 0 || sign !== signs[index - 1])
+  expect(lobes[0]).toBe(1)
+  expect(lobes.length).toBeLessThanOrEqual(2)
   expect(interruption.returnedAt).toBeGreaterThan(interruption.gesture.time)
   expect(interruption.returnedAt - interruption.gesture.time).toBeLessThanOrEqual(interruptDeadline)
   // A cancellation returns monotonically to rest; another oscillation or a

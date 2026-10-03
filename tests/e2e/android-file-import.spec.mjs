@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 
 const pdf = [...readFileSync('tests/e2e/fixtures/tiny.pdf')]
+// A cold import constructs its first shelf on return. CI's software WebGL
+// needs a separate observation budget; ordinary runs retain 30 seconds.
+const returnTimeout = Number(process.env.ANDROID_IMPORT_RETURN_TIMEOUT_MS || 30_000)
 
 async function installInbox(page, cold) {
   await page.addInitScript(({ bytes, cold }) => {
@@ -19,7 +22,7 @@ async function installInbox(page, cold) {
 }
 
 for (const cold of [true, false]) test(`Android Abrir con: importa los bytes exactos con la app ${cold ? 'cerrada' : 'abierta'}`, async ({ page }) => {
-  test.setTimeout(60_000)
+  test.setTimeout(Math.max(60_000, returnTimeout * 2))
   await installInbox(page, cold)
   await page.goto(process.env.IHR_TEST_URL || '/')
   if (!cold) {
@@ -38,7 +41,7 @@ for (const cold of [true, false]) test(`Android Abrir con: importa los bytes exa
   expect(saved?.bytes).toEqual(pdf)
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
   await expect(page.locator('body')).toHaveClass(/is-closing-reader/)
-  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/, {timeout:30_000})
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/, {timeout:returnTimeout})
   await expect(page.getByRole('button', { name:/Abrir Android Open With/i })).toBeVisible()
 })
 
