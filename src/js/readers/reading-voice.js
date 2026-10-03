@@ -241,14 +241,15 @@ export class ReadingVoice {
           return this.speakCurrent()
         }
       }
+      const isActive = () => generation === this.generation && this.state === 'playing'
       for (let blank = 0; blank < MAX_EMPTY_PAGES; blank++) {
         const previous = JSON.stringify(this.reader.location)
-        await this.reader.next()
+        await this.reader.next({ isActive })
         if (generation !== this.generation || this.state !== 'playing') return
         for (let retry = 0; retry < END_RETRIES && JSON.stringify(this.reader.location) === previous; retry++) {
           await wait(END_RETRY_MS)
           if (generation !== this.generation || this.state !== 'playing') return
-          await this.reader.next()
+          await this.reader.next({ isActive })
           if (generation !== this.generation || this.state !== 'playing') return
         }
         if (JSON.stringify(this.reader.location) === previous) { this.stop(); this.notify('Final del libro.'); return }

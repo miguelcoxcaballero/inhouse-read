@@ -188,10 +188,17 @@ export class FoliateReader {
   // without animation it holds that lock for 100 ms AFTER moving the page.
   // Preserve rapid tap/button order through the full promise, not just until
   // the new offset becomes visible; a closed/replaced book drops pending turns.
-  #turnPage(direction) {
+  #turnPage(direction, { isActive = () => true } = {}) {
     const view = this.#view
-    const turn = this.#pageTurn.then(() => {
-      if (view && view === this.#view) return view[direction]()
+    // Speech follows the last fragment with the same paginator as manual
+    // navigation. Its relocate event fires before the animation releases
+    // Foliate's lock. At a chapter boundary, wait for that whole follow turn:
+    // otherwise next() silently does nothing and the voice mistakes the
+    // unchanged location for the end of the book.
+    const following = this.#followTurn
+    const turn = this.#pageTurn.then(async () => {
+      await following.catch(() => {}) // a highlight/follow failure stays cosmetic
+      if (view && view === this.#view && isActive()) return view[direction]()
     })
     this.#pageTurn = turn.catch(() => {})
     return turn
@@ -204,7 +211,7 @@ export class FoliateReader {
     return this.#lengthMetadata ??= measureBookLength(book, { isActive:() => view === this.#view && book === view.book })
   }
 
-  async next() { await this.#turnPage('next') }
+  async next(options) { await this.#turnPage('next', options) }
 
   async prev() { await this.#turnPage('prev') }
 

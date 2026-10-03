@@ -16,14 +16,13 @@ import { DEFAULT_READING_PREFERENCES, PDF_PAGE_FILTERS, READING_FONTS, READING_T
 import { hasUntrackedPDFImages, paintPDFTheme } from './pdf-page-theme.js'
 import { renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from './page-snapshot.js'
 import { mapTextLayer, mapTextNode } from './speech-map.js'
+import { extractPDFText, mapPDFTextLayer } from './pdf-text.js'
 import { SPEECH_SPAN_CLASS, clearSpeechRange, installSpeechStyle, paintSpeechRange } from './speech-highlight.js'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 const ZOOM_STEP_SCALE = 2.2
 const MAX_EMPTY_SPEECH_PAGES = 12
-const pageText = content => content.items.filter(item => typeof item.str === 'string')
-  .map(item => item.str + (item.hasEOL ? '\n' : ' ')).join('')
 const speechCancelled = () => new DOMException('La preparación de la página ha cambiado.', 'AbortError')
 
 export class PdfReader {
@@ -293,7 +292,8 @@ export class PdfReader {
     if (textMode) {
       content ??= await page.getTextContent()
       if (!valid()) return false
-      state.pageText = pageText(content)
+      state.textLayout = extractPDFText(content, page.getViewport({ scale:1 }))
+      state.pageText = state.textLayout.text
       reflow.textContent = state.pageText || 'Esta página es una imagen. Cambia a Página original para verla.'
       state.zoomed = false
       return true
@@ -336,9 +336,10 @@ export class PdfReader {
     const cssViewport = page.getViewport({ scale })
     const textContent = content ?? await page.getTextContent()
     if (!valid()) return false
-    state.pageText = pageText(textContent)
+    state.textLayout = extractPDFText(textContent, unscaledViewport)
+    state.pageText = state.textLayout.text
     const textLayer = new TextLayer({
-      textContentSource: textContent,
+      textContentSource: state.textLayout.geometric ? { ...textContent, items:state.textLayout.items } : textContent,
       container: textLayerEl,
       viewport: cssViewport
     })
@@ -391,11 +392,12 @@ export class PdfReader {
     if (!this.#doc) return ''
     const page = await this.#doc.getPage(this.#pageNum)
     const text = await page.getTextContent()
-    return pageText(text)
+    return extractPDFText(text, page.getViewport({ scale:1 })).text
   }
   #speechMap() {
     return this.#preferences.pdfMode === 'text'
-      ? mapTextNode(this.#pageText ? this.#reflow.firstChild : null) : mapTextLayer(this.#textLayerEl)
+      ? mapTextNode(this.#pageText ? this.#reflow.firstChild : null)
+      : mapPDFTextLayer(this.#textLayerEl, this.#renderState?.textLayout) || mapTextLayer(this.#textLayerEl)
   }
 
   /** The page's text as the audiobook reads it, mapped onto the rendered text layer (or the reflow text) it is highlighted in. */
@@ -507,13 +509,14 @@ export class PdfReader {
         if (!staged.valid()) throw speechCancelled()
         const content = await page.getTextContent()
         if (!staged.valid()) throw speechCancelled()
-        if (!pageText(content).trim()) {
+        if (!content.items.some(item => typeof item.str === 'string' && item.str.trim())) {
           if (number === pdf.numPages) { this.#invalidateStagedSpeech(); return null }
           continue
         }
         if (!await this.#drawPage(page, staged, staged.valid, content)) throw speechCancelled()
         const first = preferences.pdfMode === 'text'
-          ? mapTextNode(staged.reflow.firstChild) : mapTextLayer(staged.textLayerEl)
+          ? mapTextNode(staged.reflow.firstChild)
+          : mapPDFTextLayer(staged.textLayerEl, staged.textLayout) || mapTextLayer(staged.textLayerEl)
         if (!first.text.trim()) throw new Error('No se pudo preparar el texto de la página siguiente.')
         const { source, current } = this.#makeSpeechSource(number, first)
         const clear = source.clear
@@ -599,7 +602,7 @@ export class PdfReader {
     for (let pageNumber = 1; pageNumber <= this.pageCount; pageNumber++) {
       const page = await this.#doc.getPage(pageNumber)
       const content = await page.getTextContent()
-      const text = content.items.map(item => item.str).join(' ').replace(/\s+/g,' ').trim()
+      const text = extractPDFText(content, page.getViewport({ scale:1 })).text.replace(/\s+/g,' ').trim()
       const haystack = text.toLocaleLowerCase()
       let at = 0
       while ((at = haystack.indexOf(term,at)) >= 0 && results.length < 500) {

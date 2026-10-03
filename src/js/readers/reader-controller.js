@@ -109,8 +109,8 @@ export class ReaderController {
     return this.#engine === ENGINE.PDF ? (this.#reader?.pageCount ?? null) : null
   }
 
-  async next() {
-    await this.#reader?.next()
+  async next(options) {
+    await this.#reader?.next(options)
   }
 
   async prev() {

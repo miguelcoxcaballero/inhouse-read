@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const pdfOpen = vi.fn(async () => {})
 const foliateOpen = vi.fn(async () => {})
+const foliateNext = vi.fn(async () => {})
 const pdfSnapshot = vi.fn(async () => null)
 const foliateSnapshot = vi.fn(async () => null)
 const foliateLength = vi.fn(async () => null)
@@ -20,7 +21,7 @@ vi.mock('../../src/js/readers/pdf-reader.js', () => ({
 vi.mock('../../src/js/readers/foliate-reader.js', () => ({
   FoliateReader: class {
     open = foliateOpen
-    next = vi.fn()
+    next = foliateNext
     prev = vi.fn()
     goToFraction = vi.fn()
     close = vi.fn()
@@ -40,6 +41,7 @@ describe('ReaderController', () => {
   beforeEach(() => {
     pdfOpen.mockClear()
     foliateOpen.mockClear()
+    foliateNext.mockClear()
     pdfSnapshot.mockReset()
     foliateSnapshot.mockReset()
     foliateLength.mockReset()
@@ -84,6 +86,14 @@ describe('ReaderController', () => {
 
     expect(format.engine).toBe('foliate')
     expect(format.label).toBe('MOBI')
+  })
+
+  it('forwards a speech turn cancellation guard through to the EPUB reader', async () => {
+    const controller = new ReaderController()
+    await controller.open(document.createElement('div'), makeFile('libro.epub', new Uint8Array([0x50,0x4b,0x03,0x04])))
+    const options = { isActive:() => false }
+    await controller.next(options)
+    expect(foliateNext).toHaveBeenCalledWith(options)
   })
 
   it('lanza UnsupportedFormatError para un formato desconocido', async () => {
