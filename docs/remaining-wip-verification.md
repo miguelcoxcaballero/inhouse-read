@@ -1,10 +1,24 @@
-# Verificación del WIP — web 1.7.31 publicada; 1.7.32 en preparación; Android 1.1.4 en verificación
+# Verificación del WIP — web 1.7.32 publicada; 1.7.33 en preparación; Android 1.1.4 pendiente
+
+## Cambios de 1.7.33
+
+La preparación cuenta sólo el prefijo de audio anterior a la frase que falta. Una frase posterior guardada, incluso de una página diferida, no retrasa la frase actual. Los recibos reales start/done también liberan PCM que esperaba espacio en AudioTrack; la apertura de la cola ignora las frases terminadas cuyos buffers ya se liberaron. No cambia la voz, muestras, velocidad ni límites de preparación.
+
+La fuente 1.7.32 reproduce cinco fallos y un aprobado en seis casos sin avanzar temporizadores. La corrección pasa los seis, los 37 existentes de motor y los 16 de salida nativa: **59/59**. Batería completa: **2.569/2.569 en 160 archivos**, build aprobado. Pasan **14/14 E2E con modelos reales**, sin reintentos ni omisiones, incluidos Argentina, EPUB/PDF, continuidad entre páginas, cambio de voz, reinicio tras 90 segundos y modo sin conexión. Android necesita captura nueva. Un primer intento E2E no recibió la ruta de modelos del equipo: dos preflight fallidos y diez omitidos, conservados en `release-1733/reading-e2e.log` y sus trazas. El ensayo con los modelos locales tiene resultados propios y no convierte ese intento en aprobado.
+
+## Verificación de 1.7.32
+
+Fuente `80cef03d0848ad9ac864634f2d6bd3cfa544a3a5`, Pages `f5470f8dfdd6386fff5950688533aa38884cf7ae`. Sus 22 módulos y 43 recursos offline coinciden por HTTP; artefacto SHA-256 `4207654df4b9575f1039909244916e735a4b641bf1e1a9c007f134e5cf5a08db`. Cinco casos públicos pasan sin reintentos, con 110 cuerpos HTTP y cuatro capturas revisadas; certificado `ca0924e7161f84de3604c4afe737134396181f4b886acac008293ca64e4d4145`. Certificado de 2.563 unitarias locales: `f149d259662100c3764ebb3ca0efdb4ac4921086bf9f35293b196b472bc1b385`. CI y autenticación Google real mantienen verificaciones separadas.
 
 ## Cambios de 1.7.32
 
 Las lecturas JSON y Blob de Drive comprueban la generación antes y después de consumir su cuerpo, sin una copia adicional del archivo. Los pasos de carpeta, listado, descarga, subida multipart/reanudable y progreso conservan la generación de su operación. Las carpetas sólo se invalidan si la petición que falla sigue siendo la que está guardada; cancelar la sesión descarta esos caches.
 
 La fuente anterior reproduce **cinco fallos y tres aprobados** en ocho regresiones. El candidato preparado pasa **31/31**: las ocho nuevas, seis carreras de sesión y 17 contratos de OAuth/cliente existentes. Originales separados en `release-1732/drive-body-expanded-baseline.*` y `drive-body-expanded-candidate.*`. Son respuestas controladas, sin una cuenta Google real. Sobre la fuente final pasan **61/61 focales**, **2.563/2.563 unitarias en 159 archivos**, build y **cinco E2E sin reintentos**. Publicación HTTP y CI se verifican por separado.
+
+## Verificación CI de 1.7.31
+
+Run `37154550395`: **2.555 unitarias en 158 archivos y 512 E2E**, 3.067 en total, sin omisiones, flaky ni reintentos. Doce jobs y once ZIP originales autenticados, certificado SHA-256 `d91a51eaa82f5da3cabe274c97910d44beb5160a68994fa4ee16af528b3064b0`. Se conservan los mismos controles y censos; sólo se cambia el transporte HTTP de consulta a PowerShell ante el bloqueo de las peticiones CLI. La preparación inicial fuera del directorio del método falló antes de acceder a GitHub y se conserva separada.
 
 ## Verificación de 1.7.31
 
@@ -173,8 +187,8 @@ El observador software de interrupción usa **2.200 ms en CI**; el límite local
 
 ## Pendientes y límites
 
-- **Android 1.1.4 sigue PENDIENTE.** El último ensayo, run `37154645400`, fuente `0036d69`, conserva FAILED: 108 starts/dones y 216 callbacks completos, pero cero PCM nuevo en el tramo final de 30 segundos. El último cambio de capítulo sí termina en 21 ms; la espera restante ocurre después. No se publica esa APK. ZIP original autenticado: 11.587.243 bytes, 112 miembros; certificado de captura SHA-256 `090649c48fac00816ef40834f1cb97a81aea1e6c16e00284353926ff6260e2b0`. El siguiente ensayo debe superar continuidad bloqueada, controles de notificación, liberación de servicio/wake y PDF oculto, sin modificar sus umbrales.
-- **Fuente nueva 1.7.32:** pasan 2.563 unitarias y cinco E2E locales; necesita publicación HTTP y batería CI propias. La web 1.7.31 tiene comprobación HTTP y cinco casos públicos aprobados; su ensayo Android conserva FAILED.
+- **Android 1.1.4 sigue PENDIENTE.** El último ensayo, run `37154645400`, fuente `0036d69`, conserva FAILED: 108 starts/dones y 216 callbacks completos, pero cero PCM nuevo en el tramo final de 30 segundos. El último cambio de capítulo sí termina en 21 ms; la espera restante ocurre después. No se publica esa APK. ZIP original autenticado: 11.587.243 bytes, 112 miembros; certificado de captura SHA-256 `090649c48fac00816ef40834f1cb97a81aea1e6c16e00284353926ff6260e2b0`; certificado independiente de fallo `b0b9183c2e455868a47ebbd6ed602909b0c10b4f6596515f388301a6f97489c8`. El siguiente ensayo debe superar continuidad bloqueada, controles de notificación, liberación de servicio/wake y PDF oculto, sin modificar sus umbrales.
+- **Fuente nueva 1.7.33:** pasan 2.569 unitarias y 59 focales; pasan también 14 E2E reales; necesita publicación HTTP y CI propios. La web 1.7.32 tiene comprobación HTTP y cinco casos públicos aprobados.
 - **Cuenta Google real:** falta conexión al navegador autenticado para comprobar login y subida reales. Las 61 pruebas focales y cinco E2E de Drive usan respuestas controladas y no sustituyen esa comprobación.
 - No se añade OCR ni se garantiza el orden perfecto de cualquier PDF. Los ocho casos públicos PDF usan texto y audio controlados para verificar navegación, visibilidad y cancelación; no sustituyen una comprobación de audio natural en un teléfono bloqueado. Drive usa respuestas de prueba y no autentica una cuenta real.
 - La batería web no certifica una APK nueva, audio en un teléfono físico, FPS, temperatura o batería. La evidencia histórica de Android 1.1.3 y la sesión de voz anterior mantienen su alcance original.

@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.33
+
+- Una frase nueva no espera detrás de frases posteriores que ya estén en la caché. Los límites de preparación cuentan el audio que puede reproducirse antes de esa frase.
+- Al recibir el inicio o final real de AudioTrack, se entrega el siguiente audio pendiente sin depender sólo del temporizador del navegador. Las frases terminadas dejan de bloquear la cola.
+- Cinco fallos reproducidos en la fuente anterior; pasan seis regresiones nuevas, 59 pruebas focales y 2.569 unitarias en 160 archivos y 14 E2E con audio natural real, sin reintentos ni omisiones. La continuidad con Android bloqueado requiere su ensayo independiente.
+
 ### Actualización web · 1.7.32
 
 - Las respuestas de Drive conservan su sesión hasta terminar de leer los datos y durante los pasos de listado, subida y progreso. Cambiar de cuenta descarta los datos pendientes de la anterior.

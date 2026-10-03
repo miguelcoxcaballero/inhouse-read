@@ -369,8 +369,12 @@ export class NeuralEngine extends EventTarget {
     if (run.entries.some(e => e.error)) return // nothing after a failed fragment can be played: do not compute it
     const entry = run.entries.find(e => e.state === 'queued')
     if (!entry) return
-    const ahead = run.entries.filter(e => !e.started && e.state !== 'queued').length
-    const waiting = this.#heldSeconds(run) + this.player.buffered()
+    // Later cached sentences cannot play across this missing sentence. Only
+    // the prefix before it can justify delaying its synthesis; counting the
+    // whole cache here can leave an empty player waiting on a background timer.
+    const prefix = run.entries.slice(0, run.entries.indexOf(entry))
+    const ahead = prefix.filter(e => !e.started && e.state !== 'queued').length
+    const waiting = this.#heldSeconds({entries:prefix}) + this.player.buffered()
     if (ahead && waiting >= this.limits.lookaheadSec) {
       // enough audio is queued: look again when playback has eaten into it (nothing else would wake us before the next fragment starts)
       this.clearTimer(run.pumpTimer)
@@ -483,6 +487,7 @@ export class NeuralEngine extends EventTarget {
     const ready = [], pending = []
     let incomplete = null
     for (const entry of run.entries) {
+      if (entry.ended) continue
       if (entry.deferred) break
       if (entry.error) break
       for (let i = entry.scheduled; i < entry.chunks.length; i++) ready.push(entry.chunks[i].dur)
@@ -566,6 +571,7 @@ export class NeuralEngine extends EventTarget {
     if (!run.firstAudio) { run.firstAudio = true; this.stats.firstAudioMs = now() - run.t0 }
     this.#setStatus('speaking')
     if (entry.id != null) this.#emit('start', entry.id)
+    this.#feed(run)
     this.#pump()
   }
   #unitEnded(n) {
@@ -575,6 +581,9 @@ export class NeuralEngine extends EventTarget {
     if (++this.cleanStreak >= this.limits.cleanFragments) this.underrunTimes = []
     if (entry.id != null) this.#emit('done', entry.id)
     entry.chunks = [] // the cache keeps its own reference for replays
+    // AudioTrack receipts carry the real rendered clock. Release queued PCM
+    // here too, so an outstanding throttled delivery timer is not required.
+    this.#feed(run)
     this.#pump()
     if (run.entries.every(e => e.ended) && !run.job) { this.#setStatus('idle'); this.#armIdle() }
   }
