@@ -4,6 +4,22 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.22
+
+- Corrige el índice de capítulo EPUB comunicado al audiolibro y añade datos de diagnóstico para localizar la pausa con Android bloqueado.
+- Las nuevas regresiones y las pruebas focales de lectores y voz están aprobadas. Esta versión necesita su propia batería completa y comprobación del despliegue; el aprobado de 1.7.21 se conserva por separado. Android 1.1.4 sigue pendiente.
+
+### Actualización web · 1.7.21
+
+- Desliza la estantería a la izquierda para verla en isométrica y a la derecha para volver al frente. Conserva scroll, pinza y arrastre; con la estantería enfocada también puedes usar las flechas del teclado.
+- La portada propone hasta diez colores presentes en su imagen. Puedes combinar varios relieves y ajustar cada intensidad por separado, conservando la tinta y las zonas de los otros colores al girar o reabrir el libro.
+- El grosor usa el recuento completo de palabras del texto extraíble. La copia local se guarda primero y el recuento se prepara en segundo plano, sin impedir abrir el libro.
+- El PDF adaptable recorre el contenido de una página larga antes de pasar a la siguiente y conserva el punto de lectura al cambiar fuente, tamaño, orientación o reabrir. El seguimiento de voz revela la frase y la preparación PDF puede continuar con la pestaña oculta.
+
+**Verificado:** [2.465 unitarias en 148 archivos y 355 E2E aprobados](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37137687058) en la fuente `a617036`, sin omisiones ni reintentos. Otros **20 casos sobre la web publicada** mantienen su fuente original `b98265e` y Pages `e942539`; la publicación de `a617036` conserva sus 91 archivos idénticos. [Resultados, procedencia y pendientes](docs/remaining-wip-verification.md).
+
+**Android 1.1.4: pendiente.** El [ensayo 37137718223](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37137718223) falló durante la lectura con la pantalla bloqueada: hubo avance durante unos 305 segundos y después unos 63 segundos con la cola vacía. El diagnóstico sigue abierto. Las correcciones de 1.7.22 necesitan su propia verificación.
+
 ### Actualización web · 1.7.19
 
 - El PDF adaptable y el audiolibro reconstruyen el orden por la posición del texto: columnas completas, frases entre líneas y párrafos separados por su espaciado real.

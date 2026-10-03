@@ -117,6 +117,20 @@ export class NeuralEngine extends EventTarget {
   get downloads() { return this._downloads }
   /** 'idle' | 'loading' (starting the worker / the model) | 'buffering' (waiting for audio to be computed) | 'speaking'. */
   get status() { return this._status }
+  /** Whitelisted numeric state, sampled without reading book text or calling the native clock. */
+  getDiagnosticState() {
+    const run = this.run, entries = run?.entries || []
+    const count = predicate => entries.filter(predicate).length
+    return { loaded:true, moduleLoading:false, queuedRequests:0, status:this._status,
+      run:Boolean(run), job:Boolean(run?.job), prepared:run?.prepared === 'pending' ? 'pending' : run?.prepared === 'ready' ? 'ready' : 'none',
+      workerAlive:Boolean(this.client?.alive), currentUnit:entries.find(entry => entry.id === this.currentId)?.n ?? null,
+      entryCount:entries.length, queued:count(entry => entry.state === 'queued'), synth:count(entry => entry.state === 'synth'),
+      done:count(entry => entry.state === 'done'), started:count(entry => entry.started), ended:count(entry => entry.ended), deferred:count(entry => entry.deferred),
+      gateOpen:Boolean(run?.gateOpen), buffered:Boolean(run?.buffered),
+      scheduledChunks:entries.reduce((sum,entry) => sum + entry.scheduled,0), availableChunks:entries.reduce((sum,entry) => sum + entry.chunks.length,0),
+      timers:{ pump:run?.pumpTimer != null, feed:run?.feedTimer != null, hold:run?.holdTimer != null, idle:this.idleTimer != null }
+    }
+  }
   #setStatus(status) {
     if (status === this._status) return
     this._status = status
@@ -337,7 +351,10 @@ export class NeuralEngine extends EventTarget {
     const run = this.run
     this.run = null
     this.currentId = null
-    if (run) { run.job?.cancel(); this.clearTimer(run.holdTimer); this.clearTimer(run.pumpTimer); this.clearTimer(run.feedTimer) }
+    if (run) {
+      run.job?.cancel()
+      for (const key of ['holdTimer','pumpTimer','feedTimer']) { this.clearTimer(run[key]); run[key] = null }
+    }
     this.player.stopAll(playback)
     this.#setStatus('idle')
   }
@@ -354,7 +371,8 @@ export class NeuralEngine extends EventTarget {
     if (ahead && waiting >= this.limits.lookaheadSec) {
       // enough audio is queued: look again when playback has eaten into it (nothing else would wake us before the next fragment starts)
       this.clearTimer(run.pumpTimer)
-      run.pumpTimer = this.setTimer(() => this.#pump(), (waiting - this.limits.lookaheadSec + 0.25) * 1000)
+      const timer = this.setTimer(() => { if (run.pumpTimer === timer) run.pumpTimer = null; this.#pump() }, (waiting - this.limits.lookaheadSec + 0.25) * 1000)
+      run.pumpTimer = timer
       return
     }
     if (ahead >= this.limits.maxAhead) return
@@ -481,7 +499,8 @@ export class NeuralEngine extends EventTarget {
         const waiting = this.player instanceof NativePcmPlayer ? this.player.buffered() : 0
         if (waiting > 0 && waiting + entry.chunks[entry.scheduled].dur > this.limits.lookaheadSec) {
           this.clearTimer(run.feedTimer)
-          run.feedTimer = this.setTimer(() => this.#feed(run), 1000)
+          const timer = this.setTimer(() => { if (run.feedTimer === timer) run.feedTimer = null; this.#feed(run) }, 1000)
+          run.feedTimer = timer
           return
         }
         if (run.gateOpen && this.player.drained()) { run.gateOpen = false; this.#underrun(); if (this.run !== run) return }
@@ -489,7 +508,7 @@ export class NeuralEngine extends EventTarget {
           if (run.heldSince == null) run.heldSince = now()
           if (!this.#gateOpens(run)) { this.#armHold(run); return }
           run.gateOpen = true; run.heldSince = null
-          this.clearTimer(run.holdTimer)
+          this.clearTimer(run.holdTimer); run.holdTimer = null
         }
         const chunk = entry.chunks[entry.scheduled++]
         try { this.player.schedule(entry.n, chunk.pcm, chunk.sampleRate, { last: !!chunk.last }) }
@@ -503,7 +522,8 @@ export class NeuralEngine extends EventTarget {
   #armHold(run) {
     this.#setStatus('buffering')
     this.clearTimer(run.holdTimer)
-    run.holdTimer = this.setTimer(() => this.#feed(run), Math.max(50, this.limits.maxHoldMs - (now() - run.heldSince)))
+    const timer = this.setTimer(() => { if (run.holdTimer === timer) run.holdTimer = null; this.#feed(run) }, Math.max(50, this.limits.maxHoldMs - (now() - run.heldSince)))
+    run.holdTimer = timer
   }
 
   #underrun() {

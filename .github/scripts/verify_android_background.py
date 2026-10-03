@@ -75,9 +75,9 @@ def close_voice_catalog(label):
     # cancels the whole dialog; toggle its visible Voz row instead.
     return ui_action(label, r"^Voz(?:\s|$)", require_button=True, within_audio_dialog=True)
 
-def logs():
-    raw = run("adb", "logcat", "-d", "-v", "threadtime", "InhousePcm:I", "InhousePcmState:I", "InhousePcmProgress:I", "*:S").stdout
-    Path(PREFIX+"logcat.txt").write_text(raw, encoding="utf-8")
+def logs(*, prefix=PREFIX):
+    raw = run("adb", "logcat", "-d", "-v", "threadtime", "InhousePcm:I", "InhousePcmState:I", "InhousePcmProgress:I", "InhousePcmCallback:I", "InhousePcmRuntime:I", "*:S").stdout
+    Path(prefix+"logcat.txt").write_text(raw, encoding="utf-8")
     states, events, progress = [], [], []
     for line in raw.splitlines():
         matched = re.search(r"\b(InhousePcmState|InhousePcmProgress|InhousePcm)\s*:\s*(\{.*\})$", line)
@@ -117,6 +117,44 @@ def assert_released(label):
             raise AssertionError("Native media service survived Stop/reader close")
         time.sleep(1)
 
+def recent_pcm_progress(locked):
+    # This Lessac fixture must still render real PCM during its final 30 s.
+    # A native epoch resets the head; do not mistake that reset for regression.
+    cut = locked[-1]["elapsedMs"] - 30_000
+    baseline = max((i for i,s in enumerate(locked) if s["elapsedMs"] <= cut), default=0)
+    observations = locked[baseline:]
+    seconds = 0.0
+    for previous,current in zip(observations,observations[1:]):
+        frames = current["playedFrames"] - previous["playedFrames"] if current["epoch"] == previous["epoch"] else current["playedFrames"]
+        rate = current["sampleRate"] or previous["sampleRate"]
+        if rate and frames > 0: seconds += frames / rate
+    assert seconds > 0, "Lessac fixture rendered no new PCM during the final 30 seconds"
+    return {"windowMs":30_000,"baselineElapsedMs":observations[0]["elapsedMs"],"lastElapsedMs":observations[-1]["elapsedMs"],"renderedAudioSeconds":seconds,"observations":len(observations)}
+
+def diagnostic_recovery(session):
+    # Only called after the original locked-metrics gate failed. This is
+    # recovery evidence, never a retry or a conversion of that failure to PASS.
+    prefix = PREFIX+"recovery-"
+    proof = {"status":"diagnostic-only", "session":session, "startedAt":time.time(), "observations":[]}
+    try:
+        raw,states,events,progress=logs(prefix=prefix+"before-")
+        proof["before"]={"nativeState":states[-1] if states else None,"starts":sum(e.get("type")=="start" and e.get("session")==session for e in events),"done":sum(e.get("type")=="done" and e.get("session")==session for e in events)}
+        proof["wakeRequestedAt"]=time.time()
+        run("adb","shell","input","keyevent","KEYCODE_WAKEUP")
+        run("adb","shell","wm","dismiss-keyguard")
+        until=time.monotonic()+15
+        while time.monotonic()<until:
+            _,states,events,progress=logs(prefix=prefix)
+            proof["observations"].append({"at":time.time(),"nativeState":states[-1] if states else None,"starts":sum(e.get("type")=="start" and e.get("session")==session for e in events),"done":sum(e.get("type")=="done" and e.get("session")==session for e in events)})
+            time.sleep(min(1,max(0,until-time.monotonic())))
+        capture(Path(prefix+"reader.png"),Path(prefix+"reader.xml"))
+        logs(prefix=prefix)
+    except Exception as error:
+        proof["error"]=type(error).__name__+": "+str(error)
+    proof["finishedAt"]=time.time()
+    Path(prefix+"certification.json").write_text(json.dumps(proof,indent=2),encoding="utf-8")
+    return proof
+
 def locked_metrics(raw, states, events, progress, session):
     locked=[s for s in states if s.get("session")==session and s.get("interactive") is False and s.get("active")]
     assert locked, "No native rendered-frame observations while display locked"
@@ -130,6 +168,7 @@ def locked_metrics(raw, states, events, progress, session):
         by_epoch[s["epoch"]]=s
     audio_seconds=sum(s["playedFrames"]/s["sampleRate"] for s in by_epoch.values() if s["sampleRate"])
     assert audio_seconds >= 180, f"Locked output did not render enough real PCM: {audio_seconds} seconds"
+    recent = recent_pcm_progress(locked)
     chapters=sorted({p["chapter"] for p in progress if p.get("session")==session and p.get("kind")=="chapter" and p.get("interactive") is False})
     assert len(chapters)>=3 and chapters[-1]>chapters[0], f"Worker/reader did not cross real EPUB spine chapters while locked: {chapters}"
     started={e["unit"] for e in events if e.get("session")==session and e.get("type")=="start"}
@@ -139,7 +178,7 @@ def locked_metrics(raw, states, events, progress, session):
     assert not errors, f"Native pipeline reported errors: {errors}"
     audible=re.findall(r"enqueue session="+re.escape(session)+r"[^\n]*peak=([\d.Ee+-]+) rms=([\d.Ee+-]+)",raw)
     assert audible and max(float(p) for p,r in audible)>.05 and max(float(r) for p,r in audible)>.001, "Neural PCM was silent"
-    return {"lockedWallMs":locked[-1]["elapsedMs"]-locked[0]["elapsedMs"],"renderedAudioSeconds":audio_seconds,"chapters":chapters,"startedUnits":len(started),"endedUnits":len(ended),"errors":errors}
+    return {"lockedWallMs":locked[-1]["elapsedMs"]-locked[0]["elapsedMs"],"renderedAudioSeconds":audio_seconds,"chapters":chapters,"startedUnits":len(started),"endedUnits":len(ended),"errors":errors,"recentPlayback":recent}
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
@@ -177,7 +216,13 @@ def main():
             assert not any(e.get("type")=="error" for e in events), "Native audio error while locked"
             time.sleep(5)
         raw,states,events,progress=logs()
-        result["lockedPlayback"]=locked_metrics(raw,states,events,progress,first["session"])
+        try:
+            result["lockedPlayback"]=locked_metrics(raw,states,events,progress,first["session"])
+        except Exception:
+            # Freeze the failed gate's original bytes before any wake/recovery.
+            Path(PREFIX+"locked-failure-logcat.txt").write_text(raw,encoding="utf-8")
+            result["diagnosticRecovery"]=diagnostic_recovery(first["session"])
+            raise
         run("adb","shell","input","keyevent","KEYCODE_WAKEUP");run("adb","shell","wm","dismiss-keyguard")
         notification_action("notification-pause",r"^(Pausar|Pause)$")
         wait_state(lambda s,e,p:not s["active"] and not s["wakeHeld"],"paused")
@@ -225,7 +270,7 @@ def main():
         result["error"]=str(error)
         raise
     finally:
-        logs();result["finishedAt"]=time.time()
+        logs(prefix=PREFIX+"recovery-" if "diagnosticRecovery" in result else PREFIX);result["finishedAt"]=time.time()
         Path(PREFIX+"certification.json").write_text(json.dumps(result,indent=2),encoding="utf-8")
 
 if __name__=="__main__":main()

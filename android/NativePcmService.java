@@ -48,6 +48,7 @@ public final class NativePcmService extends Service {
     private int rate;
     private long headBase, written, queued, played, lastHead, headWrap;
     private long lastStateLog, lastStatePublish;
+    private long lastEmptySnapshotEpoch = Long.MIN_VALUE;
     private volatile long epoch;
     private final ArrayList<Unit> units = new ArrayList<>();
     private static final class Chunk {
@@ -96,7 +97,11 @@ public final class NativePcmService extends Service {
         if (!next.equals(session)) {
             // Queue this before bridge.attach flushes any new PCM commands.
             playback.removeCallbacks(pump);
-            playback.post(() -> resetTrack(true));
+            playback.post(() -> {
+                // Epoch numbers are scoped to the bridge session, not global.
+                lastEmptySnapshotEpoch = Long.MIN_VALUE;
+                resetTrack(true);
+            });
             session = next;
         }
         String label = intent.getStringExtra("title"); if (label != null) title = label;
@@ -218,7 +223,12 @@ public final class NativePcmService extends Service {
                 updateHead();
                 for (Unit u : new ArrayList<>(units)) {
                     if (!u.started && played > u.start) { u.started = true; if (owner != null) owner.emit(currentSession, epoch, "start", u.id, null); }
-                    if (u.complete && played >= u.end) { units.remove(u); if (owner != null) owner.emit(currentSession, epoch, "done", u.id, null); }
+                    if (u.complete && played >= u.end) {
+                        units.remove(u);
+                        boolean queueEmpty = units.isEmpty() && lastEmptySnapshotEpoch != epoch;
+                        if (queueEmpty) lastEmptySnapshotEpoch = epoch;
+                        if (owner != null) owner.emit(currentSession, epoch, "done", u.id, null, queueEmpty);
+                    }
                 }
                 if (track != null) outer: for (Unit u : units) for (Chunk c : u.chunks) {
                     if (c.offset >= c.pcm.length) continue;

@@ -59,9 +59,11 @@ export class FoliateReader {
   #followTurn = Promise.resolve()
   #pageTurn = Promise.resolve()
   #lengthMetadata = null
+  #diagnosticTurns = { followPending:0, pageTurnPending:0 }
 
   async open(container, file, { onRelocate, onToggleChrome, onUserNavigation, onFollowLink } = {}) {
     this.#lengthMetadata = null
+    this.#diagnosticTurns = { followPending:0, pageTurnPending:0 }
     this.#pageTurn = Promise.resolve()
     this.#container = container
     this.#onRelocate = onRelocate ?? (() => {})
@@ -122,7 +124,10 @@ export class FoliateReader {
 
     this.#view.addEventListener('relocate', e => {
       this.#onRelocate({
-        index: e.detail.index,
+        // View.lastLocation contains SectionProgress.section.current, not a top-level index.
+        // Retain a valid explicit index for older adapters; never turn a missing index into chapter zero.
+        index: Number.isInteger(e.detail.index) && e.detail.index >= 0 ? e.detail.index
+          : Number.isInteger(e.detail.section?.current) && e.detail.section.current >= 0 ? e.detail.section.current : undefined,
         fraction: e.detail.fraction ?? 0,
         cfi: e.detail.cfi,
         section:e.detail.tocItem?.label || '', page:e.detail.pageItem?.label || ''
@@ -145,6 +150,9 @@ export class FoliateReader {
       this.#resizeObserver.observe(container)
     }
   }
+
+  /** Numeric queue state only; no book text, labels, DOM ranges or CFI. */
+  get speechDiagnosticState() { return { ...this.#diagnosticTurns } }
 
   get metadata() {
     return this.#view?.book?.metadata ?? {}
@@ -196,11 +204,15 @@ export class FoliateReader {
     // otherwise next() silently does nothing and the voice mistakes the
     // unchanged location for the end of the book.
     const following = this.#followTurn
+    const diagnostic = this.#diagnosticTurns
+    diagnostic.pageTurnPending++
     const turn = this.#pageTurn.then(async () => {
       await following.catch(() => {}) // a highlight/follow failure stays cosmetic
       if (view && view === this.#view && isActive()) return view[direction]()
     })
     this.#pageTurn = turn.catch(() => {})
+    const settled = () => { diagnostic.pageTurnPending-- }
+    void turn.then(settled, settled)
     return turn
   }
 
@@ -265,7 +277,9 @@ export class FoliateReader {
     // Text that is not rendered (a hidden note) has no boxes: there is no page to show it on, so never turn pages for it.
     if (!range || !range.getClientRects().length) return
     const ticket = ++this.#followTicket
-    return this.#followTurn = this.#followTurn.catch(() => {}).then(async () => {
+    const diagnostic = this.#diagnosticTurns
+    diagnostic.followPending++
+    const turn = this.#followTurn = this.#followTurn.catch(() => {}).then(async () => {
       const view = this.#view, renderer = view?.renderer
       if (ticket !== this.#followTicket || !renderer || !renderer.getContents().some(item => item.doc === doc)) return
       if (renderer.scrolled) return this.#followScroll(doc, range)
@@ -281,6 +295,9 @@ export class FoliateReader {
       }
       if (ticket === this.#followTicket) await renderer.scrollToAnchor(range)
     })
+    const settled = () => { diagnostic.followPending-- }
+    void turn.then(settled, settled)
+    return turn
   }
   /** Scroll flow: glide only when the sentence leaves the screen, landing it a quarter down so the next lines stay visible. */
   async #followScroll(doc, range) {
@@ -428,6 +445,7 @@ export class FoliateReader {
     this.#view?.close()
     this.#view?.remove()
     this.#view = null
+    this.#diagnosticTurns = { followPending:0, pageTurnPending:0 }
     this.#pageTurn = Promise.resolve()
     if (this.#container) { this.#container.innerHTML = ''; this.#container.classList.remove('foliate-reader') }
   }

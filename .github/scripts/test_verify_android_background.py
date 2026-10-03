@@ -1,4 +1,5 @@
 import tempfile
+import json
 import unittest
 from pathlib import Path
 from zipfile import ZipFile
@@ -8,7 +9,7 @@ import verify_android_background as verifier
 from audiobook_fixture import write_audiobook, write_background_pdf
 
 def evidence():
-    states=[dict(session='a',epoch=1,active=True,wakeHeld=True,interactive=False,playedFrames=i*22050,sampleRate=22050,elapsedMs=i*1000) for i in (0,100,200,361)]
+    states=[dict(session='a',epoch=1,active=True,wakeHeld=True,interactive=False,playedFrames=i*22050,sampleRate=22050,elapsedMs=i*1000) for i in (0,100,200,330,331,361)]
     events=[dict(session='a',type='start',unit=i) for i in range(12)]+[dict(session='a',type='done',unit=i) for i in range(11)]
     progress=[dict(session='a',kind='chapter',interactive=False,chapter=i) for i in range(3)]
     return 'enqueue session=a epoch=1 unit=1 peak=0.8 rms=0.06',states,events,progress
@@ -187,6 +188,36 @@ class NativeMediaEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError,'backwards'):verifier.locked_metrics(raw,states,events,progress,'a')
         raw,states,events,progress=evidence();states[1]['wakeHeld']=False
         with self.assertRaisesRegex(AssertionError,'wake lock'):verifier.locked_metrics(raw,states,events,progress,'a')
+
+    def test_rejects_authenticated_a617_idle_tail_even_if_chapters_are_reported(self):
+        fixture=json.loads((Path(__file__).parent/'fixtures/android-background-idle-a617.json').read_text())
+        self.assertEqual(fixture['sourceRunId'],'37137718223')
+        states=fixture['states'];session=states[0]['session']
+        self.assertGreaterEqual(states[-1]['elapsedMs']-states[0]['elapsedMs'],360_000)
+        events=[dict(session=session,type=kind,unit=i) for kind in ('start','done') for i in range(1,109)]
+        # Stipulate chapter reports solely to isolate this new clock guard;
+        # the failed original had zero progress records, never certified here.
+        progress=[dict(session=session,kind='chapter',interactive=False,chapter=i) for i in range(3)]
+        raw=f'enqueue session={session} epoch=3 unit=1 peak=0.9 rms=0.14'
+        with self.assertRaisesRegex(AssertionError,'final 30 seconds'):
+            verifier.locked_metrics(raw,states,events,progress,session)
+
+    def test_recent_pcm_counts_a_new_epoch_without_accepting_an_idle_tail(self):
+        states=[dict(epoch=1,playedFrames=22050*400,sampleRate=22050,elapsedMs=330000),dict(epoch=2,playedFrames=0,sampleRate=0,elapsedMs=332000),dict(epoch=2,playedFrames=44100,sampleRate=22050,elapsedMs=361000)]
+        self.assertEqual(verifier.recent_pcm_progress(states)['renderedAudioSeconds'],2)
+        states[-1]['playedFrames']=0
+        with self.assertRaisesRegex(AssertionError,'final 30 seconds'):verifier.recent_pcm_progress(states)
+
+    def test_recovery_is_separate_and_begins_only_after_the_original_gate(self):
+        source=Path(verifier.__file__).read_text()
+        self.assertIn('except Exception:\n            # Freeze the failed gate',source)
+        self.assertIn('locked-failure-logcat.txt',source)
+        self.assertIn('result["diagnosticRecovery"]=diagnostic_recovery(first["session"])\n            raise',source)
+        with patch.object(verifier,'logs',return_value=('raw',[],[],[])) as logs,patch.object(verifier,'run') as run,patch.object(verifier,'capture'),patch.object(verifier.time,'monotonic',side_effect=[0,16]),patch.object(verifier.Path,'write_text'):
+            result=verifier.diagnostic_recovery('a')
+        self.assertEqual(result['status'],'diagnostic-only')
+        self.assertEqual([call.args for call in run.call_args_list],[('adb','shell','input','keyevent','KEYCODE_WAKEUP'),('adb','shell','wm','dismiss-keyguard')])
+        self.assertTrue(all(call.kwargs.get('prefix','').startswith(verifier.PREFIX+'recovery-') for call in logs.call_args_list))
 
     def test_sender_fixtures_have_real_multi_page_and_multi_spine_bytes(self):
         with tempfile.TemporaryDirectory() as directory:

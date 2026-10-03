@@ -38,6 +38,11 @@ export class ReadingVoice {
     this.source = null
     this.preparingPage = null; this.deferredPage = null; this.resumeNextPage = false
     this.aheadPage = null
+    this.diagnosticAdvance = null
+    this.diagnosticStarts = 0; this.diagnosticDones = 0
+    // The native bridge reads this synchronous, session-gated getter after real callbacks.
+    // This instance is the app's single reader voice; no worker/model is loaded by installation.
+    window.InhouseReadAudioDiagnostics = session => this.getDiagnosticState(session)
     this.rate = 1
     this.voice = ''
     this.languageOverride = '' // 'es', 'en'... chosen in the Idioma dropdown; '' follows the book
@@ -49,8 +54,8 @@ export class ReadingVoice {
     try { localStorage.removeItem('inhouse-read-neural-slow') } catch { /* obsolete policy is never consulted */ }
     window.addEventListener('inhouse-tts', event => {
       if (event.detail?.id !== this.utteranceId || this.state !== 'playing') return
-      if (event.detail.type === 'start') this.engineStarted(event.detail.id)
-      if (event.detail.type === 'done') { this.engineEnded(event.detail.id); this.advance() }
+      if (event.detail.type === 'start') { this.diagnosticStarts++; this.engineStarted(event.detail.id) }
+      if (event.detail.type === 'done') { this.diagnosticDones++; this.engineEnded(event.detail.id); this.advance() }
       if (event.detail.type === 'interrupted') this.pause()
       if (event.detail.type === 'error') this.engineFailed(event.detail)
     })
@@ -61,6 +66,26 @@ export class ReadingVoice {
       else if (detail.action === 'stop') this.stop()
       else if (detail.action === 'play' && this.state === 'paused') this.play()
     })
+  }
+  getDiagnosticState(session) {
+    if (!this.nativeSession || session !== this.nativeSession) return null
+    const numeric = value => Number.isFinite(value) && value >= 0 ? value : 0
+    const reader = this.reader.speechDiagnosticState
+    const position = this.reader.speechPosition
+    const advance = this.diagnosticAdvance?.generation === this.generation ? this.diagnosticAdvance : null
+    return {
+      schema:1, sessionMatches:true, nativeSessionMatches:nativeAudio()?.session === this.nativeSession,
+      hidden:Boolean(document.hidden), visibility:['visible','hidden','prerender'].includes(document.visibilityState) ? document.visibilityState : 'unknown',
+      state:this.state, generation:this.generation, utteranceSequence:numeric(this.spoken),
+      utterancePresent:Boolean(this.utteranceId), utteranceStarted:Boolean(this.utteranceId && this.startedId === this.utteranceId),
+      index:this.index, chunkCount:this.chunks.length, itemCount:this.items.length,
+      ttsStarts:this.diagnosticStarts, ttsDones:this.diagnosticDones, advanceStage:advance?.stage || 'idle',
+      preparingPage:Boolean(this.preparingPage?.generation === this.generation), deferredPage:Boolean(this.deferredPage), aheadPage:Boolean(this.aheadPage),
+      reader:{ kind:['pdf','foliate'].includes(reader?.kind) ? reader.kind : 'none',
+        index:Number.isInteger(position?.index) && position.index >= 0 ? position.index : null,
+        followPending:numeric(reader?.followPending), pageTurnPending:numeric(reader?.pageTurnPending) },
+      engine:neuralEngine()?.getDiagnosticState?.() ?? null
+    }
   }
   get supported() { return Boolean(neuralEngine()) }
   notify(message = '') { this.onState(this.state, message) }
@@ -226,6 +251,7 @@ export class ReadingVoice {
     if (this.state !== 'playing') return
     if (++this.index < this.chunks.length) return this.speakCurrent()
     const generation = this.generation
+    const diagnostic = this.diagnosticAdvance = { generation, stage:'prepare-next' }
     // The sentence just read stays painted while the page turns: the next one replaces it the moment it is heard (see present()).
     try {
       if (typeof this.reader.getNextSpeechSource === 'function') {
@@ -256,15 +282,19 @@ export class ReadingVoice {
       const isActive = () => generation === this.generation && this.state === 'playing'
       for (let blank = 0; blank < MAX_EMPTY_PAGES; blank++) {
         const previous = JSON.stringify(this.reader.location)
+        diagnostic.stage = 'next-turn'
         await this.reader.next({ source:true, isActive })
         if (generation !== this.generation || this.state !== 'playing') return
         for (let retry = 0; retry < END_RETRIES && JSON.stringify(this.reader.location) === previous; retry++) {
+          diagnostic.stage = 'retry-wait'
           await wait(END_RETRY_MS)
           if (generation !== this.generation || this.state !== 'playing') return
+          diagnostic.stage = 'retry-turn'
           await this.reader.next({ source:true, isActive })
           if (generation !== this.generation || this.state !== 'playing') return
         }
         if (JSON.stringify(this.reader.location) === previous) { this.stop(); this.notify('Final del libro.'); return }
+        diagnostic.stage = 'prepare-source'
         const plan = await this.prepare()
         if (generation !== this.generation || this.state !== 'playing') return
         this.adopt(plan)
@@ -272,6 +302,7 @@ export class ReadingVoice {
       }
       this.fail('Página siguiente sin texto legible.')
     } catch { if (generation === this.generation) this.fail('No se pudo pasar de página.') }
+    finally { if (this.diagnosticAdvance === diagnostic) this.diagnosticAdvance = null }
   }
   /**
    * Text to speak from the visible page on. Readers that can map text back to the
@@ -426,6 +457,7 @@ export class ReadingVoice {
     const pendingPage = this.deferredPage || this.preparingPage?.generation === this.generation
     if (pendingPage) this.resumeNextPage = true
     this.clearAhead()
+    this.diagnosticAdvance = null
     ++this.generation; this.state = 'paused'; this.cancelUtterance('pause'); this.unpaint()
     if (pendingPage) { this.chunks = []; this.items = []; this.source = null; this.index = 0; this.deferredPage = null }
     if (this.index >= this.chunks.length) this.chunks = []
@@ -433,6 +465,7 @@ export class ReadingVoice {
   }
   stop() {
     this.clearAhead()
+    this.diagnosticAdvance = null
     ++this.generation; this.state = 'stopped'; this.cancelUtterance(); this.unpaint()
     this.nativeSession = null
     this.preparingPage = null; this.deferredPage = null; this.resumeNextPage = false

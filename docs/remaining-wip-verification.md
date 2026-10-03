@@ -1,4 +1,46 @@
-# Verificación del WIP — web 1.7.18 y APK 1.1.3
+# Verificación del WIP — web 1.7.22 en verificación; Android 1.1.4 pendiente
+
+## Cambios de 1.7.22
+
+Se corrige el índice EPUB usando la forma real de `SectionProgress.section.current`, con compatibilidad para un índice explícito válido. Las diez regresiones fallan en cinco casos con el código anterior y pasan con la corrección. Junto con los diagnósticos numéricos de audio, pasan 498 pruebas focales distintas en 37 archivos; la batería completa y el despliegue de esta fuente se verifican por separado. El observador Android pasa 73 pruebas Python y ahora rechaza la cola vacía del último intervalo de 30 segundos del fixture Lessac. Estos resultados no acreditan que la pausa al bloquear Android esté resuelta.
+
+Estado: 3 de octubre de 2026. La implementación web verificada corresponde a `b98265e409bd4b67533c9e44c9361245cf0687cc`. El cierre `a61703640c3a23a6708baf081099992758ef0a15` modifica sólo observadores, preparación de pruebas y harness de Android; conserva el producto web. Las correcciones posteriores de 1.7.22 no heredan este aprobado.
+
+## Web 1.7.21 entregada
+
+- **Vistas por gesto:** izquierda para isométrica y derecha para frente, sin selector separado. Se conservan scroll vertical, pinza, pulsación larga, arrastre y teclado; soltar el gesto no abre el libro tocado.
+- **Relieve de varios colores:** hasta diez colores realmente encontrados en la portada, seleccionables simultáneamente, con intensidad independiente. Ajustar uno conserva los mapas y materiales de los otros, incluida su frontera; la tinta original no cambia. La elección persiste al reabrir y admite los perfiles antiguos de un solo color.
+- **Grosor por palabras:** recuento completo del texto extraíble de las páginas PDF y secciones EPUB, con una equivalencia de 300 palabras por página impresa. Los bytes se guardan antes del análisis; una cola por revisiones descarta recuentos antiguos y mantiene el libro accesible durante la preparación. Los cómics reconocidos sin texto completan con cero palabras.
+- **PDF adaptable:** avanzar y retroceder recorre el contenido de una página larga antes de cambiar de página PDF. El ancla visible se conserva al cambiar fuente, tamaño, orientación o reabrir; se corrige la carrera entre scroll y resize. El seguimiento de voz revela el texto correcto y el renderizado pendiente continúa al ocultar la pestaña, con cancelación y limpieza de sus observadores.
+
+## Batería completa y publicación
+
+[CI 37137687058](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37137687058), fuente exacta `a61703640c3a23a6708baf081099992758ef0a15`: **2.465/2.465 unitarias en 148 archivos y 355/355 E2E**. Se contrastaron los doce jobs, once ZIP originales, sus digests y doce logs con el censo de esa fuente. Cada E2E tiene un único intento aprobado: cero omisiones, duplicados, skips, flaky, reintentos o errores.
+
+| Suite E2E | Aprobados |
+|---|---:|
+| UI 1 / 2 / 3 / 4 / 5 / 6 | 44 / 38 / 37 / 41 / 36 / 30 |
+| Voces: motor / lectura / idiomas | 9 / 14 / 40 |
+| Supertonic | 66 |
+
+Certificado: `.animation.local/release-1721/ci-next-37137687058/certification.json`, SHA-256 `eff84eda5b03fd4b62700665003bbc148106aa9526faabbed31676e2bc1d851c`. Revisión de todos los intentos: `suite-results-review.json`, SHA-256 `2eef222c3cbd24599320fe91fb4f45ba4c1f9a08b9270d79797cb7de1c13a786`.
+
+Además pasaron **20 casos públicos distintos**, complementarios a CI: ocho PDF, dos de recuento, un smoke isométrico, uno de zoom, siete del editor y uno de retirada/reimportación desde Drive. Mantienen sus fuentes y fechas originales: `b98265e409bd4b67533c9e44c9361245cf0687cc`, Pages `e9425392607d2f3ea5fc1978c8c726b55236e30e`. Se autenticaron los cuerpos de los módulos recibidos sin reemplazar código de la app. El primer intento Drive con sellado de cuerpos incompleto se conserva y no se suma a esos veinte.
+
+El despliegue de `a617036` ([37137687016](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37137687016)) produjo Pages `c0cc5240c7584e615426ae8e3ec9971c0ba1b282`: **91 archivos idénticos** al Pages ejercitado, árbol `dae19b817c41fd997a73a393d00afec1bfbb8979`. Se contrastaron de nuevo 50 recursos HTTPS únicos. Entrada: `assets/main-jQpZcnwh.js`, 1.409.642 bytes, SHA-256 `af4fddc0736d38d29607c83e394a1cf001483f8a27020285085cf8d969b1f0bf`. Equivalencia: `.animation.local/release-1721-testclosure/public-equivalence-a617036.json`, SHA-256 `648e77efd8e7c0bbcba233f6867f77ad441dc7cbc80635ba94efaf5ce5372a57`. Esto acredita bytes iguales; no reetiqueta las pruebas públicas como ejecuciones sobre `a617036`.
+
+El observador software de interrupción usa **2.200 ms en CI**; el límite local sigue en **900 ms**. Se conservan el fallo local de 904,2 ms y los originales de CI de 1.802,2/1.812,5 ms frente a 1.500 ms. La calibración conserva reloj, poses, resolución y calidad: no acredita una mejora del rendimiento ni un límite garantizado de fotogramas. El run rechazado `37134706176` y sus intentos originales permanecen separados.
+
+## Pendientes y límites
+
+- **Android 1.1.4 sigue PENDIENTE.** El [run 37137718223](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37137718223), fuente `a617036`, falló con la pantalla bloqueada: las marcas de capítulo quedaron vacías; el PCM avanzó durante aproximadamente 305 segundos y la cola quedó vacía durante los 63 segundos finales. El defecto del índice de sección explica las marcas ausentes; la causa de la interrupción posterior sigue sin confirmar. Los artefactos fallidos se conservan y no certifican continuidad ni una APK terminada.
+- **1.7.22 en verificación:** las correcciones del índice de sección y getters numéricos necesitan su batería completa y comprobación pública propias. No están cubiertas por el aprobado completo de `a617036`.
+- No se añade OCR ni se garantiza el orden perfecto de cualquier PDF. Los ocho casos públicos PDF usan texto y audio controlados para verificar navegación, visibilidad y cancelación; no sustituyen una comprobación de audio natural en un teléfono bloqueado. Drive usa respuestas de prueba y no autentica una cuenta real.
+- La batería web no certifica una APK nueva, audio en un teléfono físico, FPS, temperatura o batería. La evidencia histórica de Android 1.1.3 y la sesión de voz anterior mantienen su alcance original.
+
+El [informe de 1.7.19](pdf-reading-continuity-1719.md) y los históricos siguientes conservan sus resultados; sus cifras no se suman a la batería actual.
+
+## Histórico certificado — web 1.7.18 y APK 1.1.3
 
 Estado: 3 de octubre de 2026. El relieve por colores está publicado desde `7be235b78ac769426b44c03abe65dbcf119ad6ca`. La verificación final usa `8936abedd970ac50b65925c2d51e699aabcb80a4`, que sólo corrige la espera de devolución antes de una importación en un test E2E. Pages actual: `d85b2321d18408dc887abdda08a6be8baf5e314f`; entrada `main-Bttpz-IX.js`.
 

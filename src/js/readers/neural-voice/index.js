@@ -64,6 +64,12 @@ export class NeuralVoiceEngine extends EventTarget {
    * Fires 'status' on this engine when it changes.
    */
   get status() { return this.core ? this.core.status : 'idle' }
+  /** Read-only bridge diagnostics do not preload the engine or create a worker. */
+  getDiagnosticState() {
+    return this.core?.getDiagnosticState() ?? { loaded:false, moduleLoading:Boolean(this.loading), queuedRequests:this.queue.length, status:'idle',
+      run:false, job:false, prepared:'none', workerAlive:false, currentUnit:null, entryCount:0, queued:0, synth:0, done:0, started:0, ended:0, deferred:0,
+      gateOpen:false, buffered:false, scheduledChunks:0, availableChunks:0, timers:{pump:false,feed:false,hold:false,idle:false} }
+  }
   /** ADDED: {rtf, underruns, firstAudioMs, cacheHits, prefetchHits, tooSlow} (diagnostics). */
   get stats() { return this.core ? this.core.stats : { rtf: 0, underruns: 0, firstAudioMs: 0, cacheHits: 0, prefetchHits:0, tooSlow: 0 } }
 

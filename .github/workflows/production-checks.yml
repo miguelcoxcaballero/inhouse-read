@@ -9,8 +9,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: production-checks-${{ github.ref }}
-  cancel-in-progress: true
+  # Every published version keeps its complete verification, even if the next
+  # feature ships while this version's tests are still running.
+  group: production-checks-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
 
 jobs:
   unit:
