@@ -32,6 +32,8 @@ jobs:
         run: |
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           gh release download "android-v$VERSION" --pattern '*.apk' --output published.apk
+          sha256sum published.apk | tee published-apk.sha256
+          stat -c '%s' published.apk | tee published-apk-size.txt
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr
       - name: Download the reader import fixture from its build
@@ -78,6 +80,8 @@ jobs:
         with:
           name: published-android-login
           path: |
+            published-apk.sha256
+            published-apk-size.txt
             android-status-bar.png
             android-ui.xml
             android-screen-text.txt
@@ -85,5 +89,6 @@ jobs:
             android-google-login.xml
             android-google-login.txt
             android-logcat.txt
+            android-import-*
             android-reading-*
             android-*.capture-errors.json

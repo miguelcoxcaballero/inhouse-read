@@ -98,6 +98,86 @@ class AndroidCaptureTests(unittest.TestCase):
 
 
 class AndroidReadingDisplayVerifierTests(unittest.TestCase):
+    def chrome_first_run(self, package="com.android.chrome"):
+        return ElementTree.fromstring(f'<hierarchy><node package="{package}" text="Welcome to Chrome"><node text="Use without an account" enabled="true"/></node></hierarchy>')
+
+    def test_initial_import_cancels_only_actual_chrome_first_run(self):
+        with patch.object(verifier, "run") as run:
+            self.assertTrue(verifier.dismiss_import_google_login(self.chrome_first_run()))
+        self.assertEqual(run.call_args_list, [
+            unittest.mock.call("adb", "shell", "input", "keyevent", "KEYCODE_BACK"),
+            unittest.mock.call("adb", "shell", "am", "start", "-W", "-n", "com.inhousesoftware.read/.MainActivity"),
+        ])
+
+    def test_initial_import_cancels_actual_chrome_google_account_form(self):
+        root = ElementTree.fromstring('<hierarchy><node package="com.android.chrome" text="accounts.google.com Forgot email?"><node class="android.widget.EditText" enabled="true"/></node></hierarchy>')
+        with patch.object(verifier, "run") as run:
+            self.assertTrue(verifier.dismiss_import_google_login(root))
+        self.assertEqual(run.call_count, 2)
+
+    def test_initial_import_does_not_cancel_unrelated_or_rejected_screens(self):
+        roots = [
+            self.chrome_first_run("com.inhousesoftware.read"),
+            ElementTree.fromstring('<hierarchy><node package="com.android.chrome" text="An unrelated page"/></hierarchy>'),
+            ElementTree.fromstring('<hierarchy><node package="com.android.chrome" text="accounts.google.com invalid_request Email or phone"/></hierarchy>'),
+            ElementTree.fromstring('<hierarchy><node package="com.android.chrome" text="Welcome to Chrome"><node text="Use without an account" enabled="false"/></node></hierarchy>'),
+        ]
+        with patch.object(verifier, "run") as run:
+            for root in roots:
+                with self.subTest(text=verifier.node_text(root)):
+                    self.assertFalse(verifier.dismiss_import_google_login(root))
+        run.assert_not_called()
+
+    def test_async_import_login_recovers_before_strict_native_reader_checks(self):
+        samples = iter([self.chrome_first_run(), ui()])
+        window_samples = iter([windows(foreground=False), windows(True)])
+        display_samples = iter([displays(), displays(False)])
+        def run(*args):
+            output = next(window_samples) if args[-1] == "windows" else next(display_samples) if args[-1] == "displays" else "returned to Read"
+            return SimpleNamespace(stdout=output, stderr="")
+        with patch.object(verifier, "capture", side_effect=lambda *_: next(samples)), patch.object(verifier, "run", side_effect=run) as command, patch.object(verifier.time, "monotonic", side_effect=[0, 1, 2, 4]), patch.object(verifier.time, "sleep"), patch.object(verifier.Path, "is_file", return_value=False), patch.object(verifier.Path, "write_text") as write:
+            result = verifier.wait_for_reading_display("reading-reader", reading=True, initial_import_title="Intent reading")
+        self.assertEqual(verifier.verify_webview_bounds(result, reading=True)[1], 0)
+        self.assertIn(unittest.mock.call("adb", "shell", "am", "start", "-W", "-n", "com.inhousesoftware.read/.MainActivity"), command.call_args_list)
+        timeline = json.loads(next(call.args[0] for call in reversed(write.call_args_list) if call.args[0].startswith("[")))
+        self.assertIn("error", timeline[0])
+        self.assertEqual(timeline[0]["action"], "cancelled-import-google-login-and-returned-to-read")
+        self.assertTrue(timeline[1]["windowState"]["keepScreenOn"])
+        self.assertFalse(timeline[1]["windowState"]["statusBarVisible"])
+        self.assertNotIn("error", timeline[1])
+
+    def test_login_recovery_never_exempts_missing_native_keep_flag(self):
+        samples = iter([self.chrome_first_run(), ui()])
+        window_samples = iter([windows(foreground=False), windows()])
+        def run(*args):
+            return SimpleNamespace(stdout=next(window_samples) if args[-1] == "windows" else displays() if args[-1] == "displays" else "diagnostic log", stderr="")
+        with patch.object(verifier, "capture", side_effect=lambda *_: next(samples)), patch.object(verifier, "run", side_effect=run), patch.object(verifier.time, "monotonic", side_effect=[0, 1, 2, 45, 45]), patch.object(verifier.time, "sleep"), patch.object(verifier.Path, "is_file", return_value=False), patch.object(verifier.Path, "write_text"):
+            with self.assertRaisesRegex(AssertionError, "did not settle.*KEEP_SCREEN_ON"):
+                verifier.wait_for_reading_display("reading-reader", reading=True, initial_import_title="Intent reading")
+
+    def test_other_native_stages_never_cancel_external_login(self):
+        def run(*args):
+            return SimpleNamespace(stdout=windows(foreground=False) if args[-1] == "windows" else displays() if args[-1] == "displays" else "diagnostic log", stderr="")
+        with patch.object(verifier, "capture", return_value=self.chrome_first_run()), patch.object(verifier, "run", side_effect=run), patch.object(verifier, "dismiss_import_google_login") as dismiss, patch.object(verifier.time, "monotonic", side_effect=[0, 45, 45]), patch.object(verifier.Path, "is_file", return_value=False), patch.object(verifier.Path, "write_text"):
+            with self.assertRaisesRegex(AssertionError, "did not settle.*focused"):
+                verifier.wait_for_reading_display("resumed-reader", reading=True)
+        dismiss.assert_not_called()
+
+    def test_initial_reader_must_preserve_the_real_pdf_title(self):
+        def run(*args):
+            return SimpleNamespace(stdout=windows(True) if args[-1] == "windows" else displays(False) if args[-1] == "displays" else "diagnostic log", stderr="")
+        with patch.object(verifier, "capture", return_value=ui()), patch.object(verifier, "run", side_effect=run), patch.object(verifier.time, "monotonic", side_effect=[0, 45, 45]), patch.object(verifier.Path, "is_file", return_value=False), patch.object(verifier.Path, "write_text"):
+            with self.assertRaisesRegex(AssertionError, "did not settle.*document title"):
+                verifier.wait_for_reading_display("reading-reader", reading=True, initial_import_title="Intent another-document")
+
+    def test_import_login_recovery_rejects_background_and_shelf_stages(self):
+        with patch.object(verifier, "run") as run, patch.object(verifier, "capture") as capture:
+            for options in ({"reading": False}, {"reading": True, "foreground": False}):
+                with self.subTest(options=options), self.assertRaisesRegex(AssertionError, "only valid on initial reader entry"):
+                    verifier.wait_for_reading_display("invalid-stage", initial_import_title="Intent reading", **options)
+        run.assert_not_called()
+        capture.assert_not_called()
+
     def test_chooser_returns_to_actual_app_before_foreground_shelf_checks(self):
         chooser = ElementTree.fromstring('<hierarchy><node text="Inhouse Read"/></hierarchy>')
         with patch.object(verifier, "run", return_value=SimpleNamespace(stdout="com.inhousesoftware.read/.MainActivity", stderr="")) as run, patch.object(verifier, "capture", return_value=chooser), patch.object(verifier.time, "sleep"), patch.object(verifier, "wait_for_reading_display") as wait, patch.object(verifier, "open_fixture_document") as opened, patch.object(verifier, "verify_loaded_reader_display") as verified:
@@ -263,7 +343,7 @@ class AndroidReadingDisplayVerifierTests(unittest.TestCase):
         with patch.object(verifier, "wait_for_reading_display", return_value=ui()) as wait, patch.object(verifier, "return_to_bookshelf") as back, patch.object(verifier, "run") as run:
             verifier.verify_loaded_reader_display("reading", background=True)
         self.assertEqual(wait.call_args_list, [
-            unittest.mock.call("reading-reader", reading=True),
+            unittest.mock.call("reading-reader", reading=True, initial_import_title="Intent reading"),
             unittest.mock.call("background", reading=False, foreground=False),
             unittest.mock.call("resumed-reader", reading=True),
             unittest.mock.call("reading-shelf-after", reading=False, timeout=120),

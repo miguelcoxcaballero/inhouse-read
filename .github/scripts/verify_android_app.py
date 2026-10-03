@@ -207,7 +207,26 @@ def assert_reading_window_state(state, reading, foreground=True):
     assert state["statusBarVisible"] == (not reading), f"Actual status bar visibility was wrong: {state}"
 
 
-def wait_for_reading_display(label, reading, foreground=True, timeout=45):
+def dismiss_import_google_login(root):
+    # An imported local book can request Drive sign-in asynchronously. Only
+    # cancel the actual Chrome account/first-run screen of this accountless
+    # fixture; an arbitrary external activity or an app error must still fail.
+    if not any(node.attrib.get("package") == "com.android.chrome" for node in root.iter("node")):
+        return False
+    text = node_text(root)
+    first_run = bool(re.search(r"Welcome to Chrome", text)) and any(
+        node.attrib.get("text") in ("Use without an account", "No thanks")
+        and node.attrib.get("enabled") == "true" for node in root.iter("node"))
+    if not first_run and not google_signin_visible(root):
+        return False
+    run("adb", "shell", "input", "keyevent", "KEYCODE_BACK")
+    run("adb", "shell", "am", "start", "-W", "-n", "com.inhousesoftware.read/.MainActivity")
+    print("Cancelled the fixture's external Google sign-in and returned to Read", flush=True)
+    return True
+
+
+def wait_for_reading_display(label, reading, foreground=True, timeout=45, initial_import_title=None):
+    assert initial_import_title is None or (reading and foreground), "Import login recovery is only valid on initial reader entry"
     started = time.monotonic()
     deadline = started + timeout
     prefix = "android-reading-" + label
@@ -234,6 +253,8 @@ def wait_for_reading_display(label, reading, foreground=True, timeout=45):
             if foreground:
                 state["webViewBounds"] = verify_webview_bounds(root, reading)
                 assert entry["readerVisible"] == reading, "The real reader/shelf UI has not settled"
+                if initial_import_title is not None:
+                    assert re.search(re.escape(initial_import_title), text, re.I), "Initial reader lost the imported document title"
             Path(prefix + ".json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
             Path(prefix + "-timeline.json").write_text(json.dumps(timeline, indent=2) + "\n", encoding="utf-8")
             print(f"Android reading display verified ({label}): {json.dumps(state)}", flush=True)
@@ -249,6 +270,9 @@ def wait_for_reading_display(label, reading, foreground=True, timeout=45):
                 sample = Path(prefix + extension)
                 if sample.is_file():
                     Path(prefix + f"-attempt-{entry['attempt']}" + extension).write_bytes(sample.read_bytes())
+            if initial_import_title is not None and dismiss_import_google_login(root):
+                entry["action"] = "cancelled-import-google-login-and-returned-to-read"
+                Path(prefix + "-timeline.json").write_text(json.dumps(timeline, indent=2) + "\n", encoding="utf-8")
         if time.monotonic() >= deadline:
             try:
                 Path("android-logcat.txt").write_text(run("adb", "logcat", "-d").stdout, encoding="utf-8")
@@ -297,7 +321,14 @@ def open_fixture_document(mode):
 
 
 def verify_loaded_reader_display(mode, background=False):
-    root = wait_for_reading_display(mode + "-reader", reading=True)
+    if mode == "reading":
+        # The public-APK scenario imports directly, without the preceding
+        # chooser/cold/warm cases. Chrome may take focus just after the first
+        # successful import capture. Handle that only during initial entry;
+        # Home, resume and exit continue to require the exact native states.
+        root = wait_for_reading_display(mode + "-reader", reading=True, initial_import_title="Intent reading")
+    else:
+        root = wait_for_reading_display(mode + "-reader", reading=True)
     if background:
         # Home exercises Activity.onPause without destroying the document.
         # Returning must reapply the policy to the same open real PDF.
