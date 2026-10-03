@@ -113,6 +113,18 @@ async function spyOnEngine(page) {
   }), SLOW).toBe(true)
 }
 const engineStats = page => page.evaluate(() => ({ ...window.__neuEngine.stats, status: window.__neuEngine.status, installed: [...window.__neuEngine.installed] }))
+async function activePCM(page, voiceId) {
+  await expect.poll(() => page.evaluate(id => {
+    const core=window.__neuEngine.core, player=core.player, unit=player.playing()
+    const entry=core.run?.entries.find(entry=>entry.n===unit), audio=player.units.get(unit)
+    return core.run?.voice.id===id && entry?.id===core.currentId &&
+      audio?.sources.some(source=>source.start<=player.now && source.end>player.now) && audio.end-player.now>3
+  },voiceId),{ ...SLOW,intervals:[25,50,100,250] }).toBe(true)
+  return page.evaluate(() => {
+    const core=window.__neuEngine.core, player=core.player, unit=player.playing(), audio=player.units.get(unit)
+    return { id:core.currentId,unit,remainingSeconds:audio.end-player.now,stops:window.__neu.stops }
+  })
+}
 
 /** Chromium resident memory (MB), including the worker's ONNX Runtime heap. */
 function residentMB() {
@@ -391,32 +403,40 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     for (const [id,name] of [[CLAUDE_ID,'Claude'],[DAVEFX_ID,'Davefx']]) {
       const download=row(page,id).getByRole('button',{ name:new RegExp('Descargar la voz '+name) })
       if(await download.isVisible()) await download.click()
-      await expect(row(page,id).getByRole('button',{ name:new RegExp('(Voz en uso|Elegir la voz) '+name) })).toBeVisible(SLOW)
+      await expect(row(page,id).getByRole('button',{ name:new RegExp('(Voz en uso|Usar la voz) '+name) })).toBeVisible(SLOW)
     }
     await pickVoice(page,CLAUDE_ID); await spyOnEngine(page)
     await page.getByRole('radio',{ name:'1,25×',exact:true }).check()
     await play(page)
     await expect.poll(async()=>(await starts(page)).length,SLOW).toBeGreaterThan(0)
+    // The opening heading can finish before the picker click. Observe a real, longer active PCM unit so stop() is meaningful.
+    await openAudioMenu(page,'Voz')
+    const beforeSwitch=await activePCM(page,CLAUDE_ID)
     await pickVoice(page,DAVEFX_ID)
     const switching=await neu(page,n=>{
       const index=n.speak.findIndex(request=>request.voiceId==='piper:es_ES-davefx-medium')
       return { request:n.speak[index],previous:n.speak[index-1],oldIds:n.speak.slice(0,index).map(request=>request.id) }
     })
+    expect(switching.previous.id).toBe(beforeSwitch.id)
     expect(switching.request).toMatchObject({ voiceId:DAVEFX_ID,rate:1.25,text:switching.previous.text })
     await expect.poll(()=>neu(page,(n,id)=>n.events.some(event=>event.type==='start'&&event.id===id),switching.request.id),SLOW).toBe(true)
     expect(await neu(page,(n,data)=>n.events.filter(event=>event.type==='start'&&data.oldIds.includes(event.id)&&event.at>data.request.at),switching)).toEqual([])
-    expect(await neu(page,n=>n.stops)).toBeGreaterThan(0)
+    expect(await neu(page,n=>n.stops)).toBeGreaterThan(beforeSwitch.stops)
     await expect.poll(()=>page.evaluate(()=>window.__speechHighlight()),SLOW).not.toBe('')
+    await openAudioMenu(page,'Voz')
+    const beforeBack=await activePCM(page,DAVEFX_ID)
     await pickVoice(page,CLAUDE_ID)
     const resumed=await neu(page,(n,after)=>{
       const index=n.speak.findIndex(request=>request.voiceId==='piper:es_MX-claude-high'&&request.at>after)
       return { request:n.speak[index],previous:n.speak[index-1] }
     },switching.request.at)
+    expect(resumed.previous.id).toBe(beforeBack.id)
     expect(resumed.request).toMatchObject({ voiceId:CLAUDE_ID,rate:1.25,text:resumed.previous.text })
     await expect.poll(()=>neu(page,(n,id)=>n.events.some(event=>event.type==='start'&&event.id===id),resumed.request.id),SLOW).toBe(true)
+    expect(await neu(page,n=>n.stops)).toBeGreaterThan(beforeBack.stops)
     await expectCleanAudio(page,'resumed natural voice')
     expect(await systemSpoken(page)).toBe(0)
-    numbers.voiceSwitch={ first:switching.request,back:resumed.request,deviceCalls:0 }
+    numbers.voiceSwitch={ first:switching.request,back:resumed.request,beforeSwitch,beforeBack,deviceCalls:0 }
     await shot(page,'voice-switch-resumed')
     await closePanel(page); await page.locator('#reader-back').click()
     await expect(page.getByRole('heading',{ name:'Biblioteca' })).toBeVisible(SLOW)
@@ -425,6 +445,43 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await page.waitForTimeout(2000)
     expect((await types(page,left)).filter(type=>type!=='done')).toEqual([])
     expect(await neu(page,n=>n.audio.length)).toBe(scheduled)
+
+    // Also cancel real in-flight synthesis before any PCM exists. A fresh page clears the fragment replay cache; the
+    // paragraph-only EPUB avoids relying on a short heading remaining in synthesis until a click reaches the picker.
+    await page.goto('./')
+    await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/speech-page-boundary.epub')
+    await expect.poll(()=>page.evaluate(()=>Boolean(document.querySelector('foliate-view')?.renderer?.getContents?.()[0]?.doc?.body)),SLOW).toBe(true)
+    await openAudio(page); await pickVoice(page,CLAUDE_ID); await spyOnEngine(page)
+    await expect.poll(()=>page.evaluate(()=>window.__neuEngine.core.client?.loaded || ''),SLOW).toBe(CLAUDE)
+    await page.evaluate(()=>{ const core=window.__neuEngine.core; core.client.dispose(); core.client=null })
+    await openAudioMenu(page,'Voz')
+    await play(page)
+    await expect.poll(()=>page.evaluate(()=>{
+      const core=window.__neuEngine.core
+      return Boolean(core.run?.job && core.run.entries.find(entry=>entry.id===core.currentId)?.state==='synth' && !core.player.units.size)
+    }),{ ...SLOW,intervals:[25,50,100] }).toBe(true)
+    const pending=await page.evaluate(()=>{
+      const n=window.__neu,core=window.__neuEngine.core
+      return { request:n.speak.at(-1),oldIds:n.speak.map(request=>request.id),starts:n.events.filter(event=>event.type==='start'),stops:n.stops,
+        nodes:core.player.units.size,state:core.run.entries.find(entry=>entry.id===core.currentId).state,loaded:core.client.loaded }
+    })
+    expect(pending.request.voiceId).toBe(CLAUDE_ID)
+    expect(pending.loaded).toBe(CLAUDE)
+    expect(pending.state).toBe('synth')
+    expect(pending.nodes).toBe(0)
+    expect(pending.starts).toEqual([])
+    expect(pending.stops).toBe(0)
+    await pickVoice(page,DAVEFX_ID)
+    const afterPending=await neu(page,n=>n.speak.find(request=>request.voiceId==='piper:es_ES-davefx-medium'))
+    expect(afterPending).toMatchObject({ voiceId:DAVEFX_ID,rate:1.25,text:pending.request.text })
+    await expect.poll(()=>neu(page,(n,id)=>n.events.some(event=>event.type==='start'&&event.id===id),afterPending.id),SLOW).toBe(true)
+    expect(await neu(page,(n,ids)=>n.events.filter(event=>event.type==='start'&&ids.includes(event.id)),pending.oldIds)).toEqual([])
+    expect(await neu(page,n=>n.stops)).toBe(0) // no AudioBuffer existed in the cancelled run
+    expect(await neu(page,n=>n.events.filter(event=>event.type==='error'))).toEqual([])
+    await expectCleanAudio(page,'switch during synthesis')
+    expect(await systemSpoken(page)).toBe(0)
+    numbers.voiceSwitch.duringSynthesis={ before:pending,after:afterPending,oldStarts:0,stops:0,deviceCalls:0 }
+    await page.getByRole('button',{name:'Detener',exact:true}).click()
     expect(errors).toEqual([])
   })
 
@@ -571,7 +628,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     for (const [id,name] of [[CLAUDE_ID,'Claude'],[DAVEFX_ID,'Davefx']]) {
       const download=row(page,id).getByRole('button',{ name:new RegExp('Descargar la voz '+name) })
       if(await download.isVisible()) await download.click()
-      await expect(row(page,id).getByRole('button',{ name:new RegExp('(Voz en uso|Elegir la voz) '+name) })).toBeVisible(SLOW)
+      await expect(row(page,id).getByRole('button',{ name:new RegExp('(Voz en uso|Usar la voz) '+name) })).toBeVisible(SLOW)
     }
     await spyOnEngine(page)
     await pickVoice(page,CLAUDE_ID); await play(page)

@@ -4,6 +4,11 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.11
+
+- El click de compatibilidad del mismo toque que saca un libro se consume aunque Android lo dirija al fondo o a los controles de la portada recién creada. El siguiente toque, el teclado y el arrastre siguen disponibles.
+- Las lámparas responden al toque breve después de ampliar la vista y conservan el arrastre por pulsación larga.
+
 ### Actualización web · 1.7.10
 
 - Los toques táctiles de la estantería se validan al apoyar el dedo y abren el libro al soltarlo, incluso cuando el navegador no genera el clic tras un desplazamiento. Se conservan los gestos de zoom, arrastre y pulsación prolongada, y cada toque abre una sola vez.

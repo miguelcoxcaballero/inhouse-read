@@ -67,6 +67,62 @@ describe('validated shelf touch activation', () => {
     expect(prepared).toHaveBeenCalledOnce()
   })
 
+  it.each(['ihr-flyout__scrim', 'ihr-flyout__cover-target', 'ihr-flyout__close'])('consumes the opening touch click retargeted to %s', className => {
+    const surface = document.createElement('button'); surface.className = className
+    document.body.append(surface)
+    const action = vi.fn(); surface.addEventListener('click', action)
+    pointer('pointerdown'); pointer('pointerup')
+    const compatibility = new MouseEvent('click', { detail:1, clientX:90, clientY:240, bubbles:true, cancelable:true })
+    Object.defineProperties(compatibility, { pointerId:{ value:1 }, pointerType:{ value:'touch' } })
+    surface.dispatchEvent(compatibility)
+    expect(prepared).toHaveBeenCalledOnce()
+    expect(action).not.toHaveBeenCalled()
+    expect(compatibility.defaultPrevented).toBe(true)
+  })
+
+  it('keeps a fresh touch on the new flyout controls available', () => {
+    const control = document.createElement('button'); document.body.append(control)
+    const action = vi.fn(); control.addEventListener('click', action)
+    pointer('pointerdown'); pointer('pointerup')
+    pointer('pointerdown', { node:control, id:2 }); pointer('pointerup', { node:control, id:2 })
+    control.dispatchEvent(new MouseEvent('click', { detail:1, clientX:90, clientY:240, bubbles:true }))
+    expect(action).toHaveBeenCalledOnce()
+  })
+
+  it('keeps detail-zero activation on the new flyout controls available', () => {
+    const control = document.createElement('button'); document.body.append(control)
+    const action = vi.fn(); control.addEventListener('click', action)
+    pointer('pointerdown'); pointer('pointerup')
+    control.dispatchEvent(new MouseEvent('click', { detail:0, bubbles:true }))
+    expect(action).toHaveBeenCalledOnce()
+  })
+
+  it('does not consume an unrelated pointer click at the same coordinates', () => {
+    const control = document.createElement('button'); document.body.append(control)
+    const action = vi.fn(); control.addEventListener('click', action)
+    pointer('pointerdown'); pointer('pointerup')
+    const unrelated = new MouseEvent('click', { detail:1, clientX:90, clientY:240, bubbles:true })
+    Object.defineProperties(unrelated, { pointerId:{ value:7 }, pointerType:{ value:'touch' } })
+    control.dispatchEvent(unrelated)
+    expect(action).toHaveBeenCalledOnce()
+  })
+
+  it('does not consume a legacy click elsewhere on the page', () => {
+    const control = document.createElement('button'); document.body.append(control)
+    const action = vi.fn(); control.addEventListener('click', action)
+    pointer('pointerdown'); pointer('pointerup')
+    control.dispatchEvent(new MouseEvent('click', { detail:1, clientX:200, clientY:240, bubbles:true }))
+    expect(action).toHaveBeenCalledOnce()
+  })
+
+  it('removes the compatibility guard when the shelf is destroyed', () => {
+    const control = document.createElement('button'); document.body.append(control)
+    const action = vi.fn(); control.addEventListener('click', action)
+    pointer('pointerdown'); pointer('pointerup'); shelf.destroy()
+    control.dispatchEvent(new MouseEvent('click', { detail:1, clientX:90, clientY:240, bubbles:true }))
+    expect(action).toHaveBeenCalledOnce()
+  })
+
   it('does not retarget a touch whose down ray missed the book', () => {
     scene.getBookAtPoint.mockReturnValue(null)
     pointer('pointerdown')

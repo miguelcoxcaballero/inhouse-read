@@ -1229,6 +1229,32 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
   }
 
+  let clearOpeningClick = null;
+  function discardTouchCompatibilityClick(release) {
+    clearOpeningClick?.();
+    // A touch handled on pointerup can still click a newly projected surface
+    // or flyout. Consume that contact's click before any surface acts twice.
+    // A new contact or keyboard action ends the guard without a time window.
+    const clear = () => {
+      document.removeEventListener('click', discard, true);
+      document.removeEventListener('pointerdown', clear, true);
+      document.removeEventListener('keydown', clear, true);
+      if (clearOpeningClick === clear) clearOpeningClick = null;
+    };
+    const discard = event => {
+      if (!event.detail || event.pointerType && event.pointerType !== 'touch') return;
+      if (event.pointerId !== undefined && event.pointerId !== release.pointerId) return;
+      if (Math.hypot(event.clientX - release.clientX, event.clientY - release.clientY) > TAP_SLOP) return;
+      clear();
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    clearOpeningClick = clear;
+    document.addEventListener('click', discard, true);
+    document.addEventListener('pointerdown', clear, true);
+    document.addEventListener('keydown', clear, true);
+  }
+
   function buildSpine(item) {
     const { book, style } = item;
     state.itemsById.set(String(book.id ?? book.path ?? book.title ?? 'book'), item);
@@ -1379,7 +1405,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         !drag.cancelled && !drag.scrolling && !state.arranging;
       finishSpineDrag(event, drag?.node || node);
       if (candidate) { touch = null; ignoreTouchClick = true; }
-      if (activate && node.isConnected && !state.suppressOpenBookId) openBook(node, item);
+      if (activate && node.isConnected && !state.suppressOpenBookId) {
+        discardTouchCompatibilityClick(event);
+        openBook(node, item);
+      }
     });
     node.addEventListener('pointercancel', event => finishSpineDrag(event, state.dragSession?.node || node, true));
     return node;
@@ -1435,11 +1464,50 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       node.innerHTML = lampCatalogIllustration(lamp.id);
       node.querySelector('svg').setAttribute('preserveAspectRatio','none');
     }
-    node.addEventListener('pointerdown', event => startSpineDrag(event, node));
-    node.addEventListener('pointermove', event => moveSpineDrag(event, state.dragSession?.node || node));
-    node.addEventListener('pointerup', event => finishSpineDrag(event, state.dragSession?.node || node));
-    node.addEventListener('pointercancel', event => finishSpineDrag(event, state.dragSession?.node || node, true));
+    let touch = null, ignoreTouchClick = false;
+    node.addEventListener('pointerdown', event => {
+      if (event.button !== undefined && event.button !== 0) return;
+      if (event.isPrimary === false || state.dragSession && state.dragSession.pointerId !== event.pointerId) {
+        if (touch) touch.cancelled = true;
+        ignoreTouchClick = true;
+        if (state.dragSession) { state.dragSession.cancelled = true; clearTimeout(state.dragSession.timer); }
+        return;
+      }
+      ignoreTouchClick = false;
+      // Validate the actual 3D lamp before the contact changes its projection.
+      // A later compatibility click may be absent or hit a different surface.
+      touch = event.pointerType === 'touch' ? {
+        pointerId:event.pointerId, x:event.clientX, y:event.clientY, cancelled:false,
+        valid:!state.shelfScene || state.shelfScene.getObjectAtPoint(event.clientX, event.clientY) === node
+      } : null;
+      startSpineDrag(event, node);
+    });
+    node.addEventListener('pointermove', event => {
+      if (touch?.pointerId === event.pointerId && Math.hypot(event.clientX-touch.x, event.clientY-touch.y) > TAP_SLOP)
+        touch.cancelled = true;
+      moveSpineDrag(event, state.dragSession?.node || node);
+    });
+    node.addEventListener('pointerleave', () => { if (touch) touch.cancelled = true; });
+    node.addEventListener('pointerup', event => {
+      const candidate = touch?.pointerId === event.pointerId ? touch : null;
+      const drag = state.dragSession;
+      const activate = candidate?.valid && !candidate.cancelled && event.pointerType === 'touch' &&
+        Math.hypot(event.clientX-candidate.x, event.clientY-candidate.y) <= TAP_SLOP &&
+        drag?.pointerId === event.pointerId && drag.node === node && !drag.active && !drag.moved &&
+        !drag.cancelled && !drag.scrolling && !state.arranging;
+      finishSpineDrag(event, drag?.node || node);
+      if (candidate) { touch = null; ignoreTouchClick = true; }
+      if (activate && node.isConnected && state.suppressLampClickKey !== objectKey(node)) {
+        discardTouchCompatibilityClick(event);
+        toggleLamp(node);
+      }
+    });
+    node.addEventListener('pointercancel', event => {
+      if (touch?.pointerId === event.pointerId) { touch = null; ignoreTouchClick = true; }
+      finishSpineDrag(event, state.dragSession?.node || node, true);
+    });
     node.addEventListener('click', event => {
+      if (event.detail && (ignoreTouchClick || touch)) { ignoreTouchClick = false; touch = null; return; }
       if (event.detail && state.suppressLampClickKey === objectKey(node)) { state.suppressLampClickKey = null; return; }
       if (!event.detail) state.suppressLampClickKey = null;
       if (event.detail && state.shelfScene && state.shelfScene.getObjectAtPoint(event.clientX, event.clientY) !== node) return;
@@ -3681,6 +3749,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     destroy() {
       state.destroyed = true;
+      clearOpeningClick?.();
       plantCatalog.destroy(); shelfZoom.destroy();
       cancelTrashRemoval();
       if (state.dragSession) finishSpineDrag({ pointerId:state.dragSession.pointerId }, state.dragSession.node, true);
