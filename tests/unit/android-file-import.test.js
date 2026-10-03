@@ -3,9 +3,10 @@ import { initAndroidFileImports } from '../../src/js/android-file-import.js'
 
 function inbox(bytes = new Uint8Array([37,80,68,70,45]), overrides = {}) {
   const entry = { id:'book-1', name:'Book.pdf', mimeType:'application/pdf', size:bytes.length, ...overrides }
-  const bridge = { pending:vi.fn(() => JSON.stringify([entry])),
+  let pending = true
+  const bridge = { pending:vi.fn(() => JSON.stringify(pending ? [entry] : [])),
     readChunk:vi.fn((id, offset) => btoa(String.fromCharCode(...bytes.slice(offset, offset + 2)))),
-    acknowledge:vi.fn() }
+    acknowledge:vi.fn(id => { if (id === entry.id) pending = false }) }
   return bridge
 }
 
@@ -75,6 +76,7 @@ describe('Android file intent inbox', () => {
       document.dispatchEvent(new Event('visibilitychange'))
       await vi.waitFor(() => expect(bridge.acknowledge).toHaveBeenCalledWith('book-1'))
       expect(onFile).toHaveBeenCalledTimes(2)
+      expect(JSON.parse(bridge.pending())).toEqual([])
       expect([...new Uint8Array(await onFile.mock.calls[1][0].arrayBuffer())]).toEqual([37,80,68,70,45])
     } finally { stop() }
   })
