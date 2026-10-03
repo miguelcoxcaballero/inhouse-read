@@ -330,6 +330,14 @@ test('cerrar y volver a abrir: la segunda apertura usa la posición donde se dej
   await expect(page.locator('#reader-toolbar')).toBeVisible()
   await page.getByRole('button', { name:'Página siguiente', exact:true }).click()
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 2 de 4/)
+  // The invisible picker must not create a root scroller after the full-height
+  // app. That one-pixel scroll shifted the visible reader away from its
+  // prepared viewport on the second opening, forcing another snapshot.
+  expect(await page.evaluate(() => ({
+    scrollY:window.scrollY,
+    height:document.documentElement.scrollHeight,
+    viewport:document.documentElement.clientHeight
+  }))).toEqual({ scrollY:0, height:844, viewport:844 })
   await backToShelf(page)
 
   await pickBook(page)

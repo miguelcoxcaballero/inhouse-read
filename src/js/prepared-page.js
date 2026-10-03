@@ -14,6 +14,8 @@ const sameNumber = (a, b, tolerance) => Math.abs((Number(a) || 0) - (Number(b) |
 /**
  * The first condition that differs between the key a page was prepared under
  * and the key of the moment it is wanted, or null when the page is still valid.
+ * Preparation is strict about position; only consumption of a completed page
+ * may allow its whole viewport to translate without changing its pixels.
  *
  * key = { bookId, epoch, locator, fraction, location, viewport:{left,top,width,height},
  *         pixelRatio, preferences, theme, filter }
@@ -23,7 +25,7 @@ const sameNumber = (a, b, tolerance) => Math.abs((Number(a) || 0) - (Number(b) |
  *  - viewport/pixelRatio: the geometry the page was rasterised for
  *  - preferences/theme/filter: reading preferences, app theme and the viewport's CSS filter
  */
-export function pageKeyMismatch(prepared, wanted) {
+export function pageKeyMismatch(prepared, wanted, { allowViewportTranslation = false } = {}) {
   if (!prepared || !wanted) return 'missing'
   if (prepared.bookId !== wanted.bookId) return 'book'
   if (prepared.epoch !== wanted.epoch) return 'engine'
@@ -31,6 +33,8 @@ export function pageKeyMismatch(prepared, wanted) {
       !sameNumber(prepared.fraction, wanted.fraction, FRACTION_TOLERANCE)) return 'saved-position'
   if (!sameJSON(prepared.location, wanted.location)) return 'reader-position'
   for (const edge of ['left', 'top', 'width', 'height']) {
+    if (!Number.isFinite(prepared.viewport?.[edge]) || !Number.isFinite(wanted.viewport?.[edge])) return 'viewport'
+    if (allowViewportTranslation && (edge === 'left' || edge === 'top')) continue
     if (!sameNumber(prepared.viewport?.[edge], wanted.viewport?.[edge], EDGE_TOLERANCE)) return 'viewport'
   }
   if (prepared.pixelRatio !== wanted.pixelRatio) return 'pixel-ratio'
@@ -65,13 +69,29 @@ export function createPreparedPageCache() {
       entry = { key, snapshot }
       return true
     },
-    /** The prepared page when `key` still matches, consuming it; otherwise null (and the page is dropped). */
+    /** Consume a matching page, rebasing a rigid translation; otherwise drop it. */
     take(key) {
       const held = entry
       entry = null
       if (!held) return null
-      const mismatch = pageKeyMismatch(held.key, key)
+      const mismatch = pageKeyMismatch(held.key, key, { allowViewportTranslation:true })
       if (mismatch) { lastDiscard = mismatch; return null }
+      const bounds = held.snapshot.displayBounds
+      const dx = key.viewport.left - held.key.viewport.left
+      const dy = key.viewport.top - held.key.viewport.top
+      if (!bounds || !['left', 'top', 'width', 'height'].every(edge => Number.isFinite(bounds[edge])) ||
+          !(bounds.width > 0 && bounds.height > 0) ||
+          !Number.isFinite(bounds.left + dx) || !Number.isFinite(bounds.top + dy)) {
+        lastDiscard = 'viewport'
+        return null
+      }
+      // A rigid translation changes where the page lands, not its laid-out
+      // pixels. Keep the warmed snapshot's identity (and its GPU textures),
+      // rebasing only its destination after every content/size check passed.
+      // Preparation itself still uses the strict default key comparison.
+      if (dx || dy) held.snapshot.displayBounds = {
+        ...bounds, left:bounds.left + dx, top:bounds.top + dy
+      }
       return held.snapshot
     },
     has: bookId => entry?.key.bookId === bookId,

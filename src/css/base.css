@@ -47,6 +47,10 @@ a {
 
 .visually-hidden {
   position: absolute;
+  /* An unpositioned control after the full-height shell otherwise creates a
+     one-pixel document scroller, moving the reader when a control gains focus. */
+  top: 0;
+  left: 0;
   width: 1px;
   height: 1px;
   overflow: hidden;

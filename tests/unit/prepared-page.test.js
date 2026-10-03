@@ -9,7 +9,8 @@ const key = (overrides = {}) => ({
   preferences:'{"theme":"paper","fontSize":19}', theme:'light', filter:'none',
   ...overrides
 })
-const snapshot = name => ({ source:{ name }, width:780, height:1464 })
+const snapshot = name => ({ source:{ name }, width:780, height:1464,
+  displayBounds:{ left:8, top:72, width:374, height:561 } })
 
 describe('pageKeyMismatch', () => {
   it('accepts the same conditions, ignoring sub-pixel layout noise', () => {
@@ -39,6 +40,15 @@ describe('pageKeyMismatch', () => {
     expect(pageKeyMismatch(null, key())).toBe('missing')
     expect(pageKeyMismatch(key(), undefined)).toBe('missing')
   })
+
+  it('keeps preparation strict while consumption can accept a rigid translation', () => {
+    const moved = key({ viewport:{ left:15, top:47, width:390, height:732 } })
+    expect(pageKeyMismatch(key(), moved)).toBe('viewport')
+    expect(pageKeyMismatch(key(), moved, { allowViewportTranslation:true })).toBeNull()
+    expect(pageKeyMismatch(key(), key({ viewport:{ left:15, top:47, width:391, height:732 } }),
+      { allowViewportTranslation:true })).toBe('viewport')
+    expect(pageKeyMismatch(key(), key({ pixelRatio:3 }), { allowViewportTranslation:true })).toBe('pixel-ratio')
+  })
 })
 
 describe('createPreparedPageCache', () => {
@@ -49,6 +59,101 @@ describe('createPreparedPageCache', () => {
     expect(cache.has('book-1')).toBe(true)
     expect(cache.take(key())).toBe(page)
     expect(cache.take(key())).toBeNull() // consumed: a second opening prepares its own
+  })
+
+  it.each([
+    [{ left:0, top:47, width:390, height:732 }, { left:8, top:71, width:374, height:561 }],
+    [{ left:25, top:31, width:390, height:732 }, { left:33, top:55, width:374, height:561 }]
+  ])('reuses the same bitmap for translation %o, rebasing its destination once', (viewport, expectedBounds) => {
+    const cache = createPreparedPageCache(), page = snapshot('translated')
+    page.paper = { source:{ name:'paper' }, width:780, height:1464 }
+    const source = page.source, paper = page.paper, originalBounds = page.displayBounds
+    cache.store(cache.begin('book-1'), key(), page)
+    expect(cache.take(key({ viewport }))).toBe(page)
+    expect(page.source).toBe(source)
+    expect(page.paper).toBe(paper)
+    expect(page.displayBounds).toEqual(expectedBounds)
+    expect(originalBounds).toEqual({ left:8, top:72, width:374, height:561 })
+    expect(page.width).toBe(780)
+    expect(page.height).toBe(1464)
+    expect(cache.take(key({ viewport }))).toBeNull()
+    expect(page.displayBounds).toEqual(expectedBounds)
+  })
+
+  it.each([
+    ['book', { bookId:'book-2' }],
+    ['engine', { epoch:4 }],
+    ['preferences', { preferences:'changed' }],
+    ['saved-position', { fraction:.8 }],
+    ['reader-position', { location:{ fraction:.9, locator:null } }],
+    ['viewport', { viewport:{ left:25, top:31, width:391, height:732 } }],
+    ['viewport', { viewport:{ left:25, top:31, width:390, height:733 } }],
+    ['pixel-ratio', { pixelRatio:3 }],
+    ['theme', { theme:'dark' }],
+    ['filter', { filter:'brightness(.8)' }]
+  ])('does not rebase the held page when %s invalidates it', (reason, changed) => {
+    const cache = createPreparedPageCache(), page = snapshot('unchanged')
+    const bounds = page.displayBounds
+    cache.store(cache.begin('book-1'), key(), page)
+    const wanted = key({ viewport:{ left:25, top:31, width:390, height:732 }, ...changed })
+    expect(cache.take(wanted)).toBeNull()
+    expect(page.displayBounds).toBe(bounds)
+    expect(page.displayBounds).toEqual({ left:8, top:72, width:374, height:561 })
+    expect(cache.lastDiscard).toBe(reason)
+  })
+
+  it.each([
+    ['missing viewport', { viewport:null }],
+    ['missing origin', { viewport:{ top:48, width:390, height:732 } }],
+    ['NaN origin', { viewport:{ left:0, top:NaN, width:390, height:732 } }],
+    ['infinite origin', { viewport:{ left:Infinity, top:48, width:390, height:732 } }]
+  ])('refuses translation with %s', (_name, changed) => {
+    const cache = createPreparedPageCache(), page = snapshot('unchanged')
+    const bounds = page.displayBounds
+    cache.store(cache.begin('book-1'), key(), page)
+    expect(cache.take(key(changed))).toBeNull()
+    expect(page.displayBounds).toBe(bounds)
+    expect(cache.lastDiscard).toBe('viewport')
+  })
+
+  it.each([
+    null,
+    { left:8, top:NaN, width:374, height:561 },
+    { left:Infinity, top:72, width:374, height:561 },
+    { left:8, top:72, width:0, height:561 },
+    { left:8, top:72, width:374, height:-1 }
+  ])('refuses a page whose destination cannot be safely rebased: %o', displayBounds => {
+    const cache = createPreparedPageCache(), page = snapshot('bad-bounds')
+    page.displayBounds = displayBounds
+    cache.store(cache.begin('book-1'), key(), page)
+    expect(cache.take(key({ viewport:{ left:25, top:31, width:390, height:732 } }))).toBeNull()
+    expect(page.displayBounds).toBe(displayBounds)
+  })
+
+  it('never resurrects invalidated work just because its origin moved', () => {
+    const cache = createPreparedPageCache(), page = snapshot('stale')
+    const ticket = cache.begin('book-1')
+    cache.invalidate('resize')
+    expect(cache.store(ticket, key(), page)).toBe(false)
+    expect(cache.take(key({ viewport:{ left:25, top:31, width:390, height:732 } }))).toBeNull()
+    expect(page.displayBounds).toEqual({ left:8, top:72, width:374, height:561 })
+  })
+
+  it('refuses a malformed prepared origin even when the wanted origin is finite', () => {
+    const cache = createPreparedPageCache(), page = snapshot('malformed')
+    const bounds = page.displayBounds
+    cache.store(cache.begin('book-1'), key({ viewport:{ left:0, top:NaN, width:390, height:732 } }), page)
+    expect(cache.take(key())).toBeNull()
+    expect(page.displayBounds).toBe(bounds)
+  })
+
+  it('refuses a translation whose finite coordinates overflow when rebased', () => {
+    const cache = createPreparedPageCache(), page = snapshot('overflow')
+    page.displayBounds.left = Number.MAX_VALUE
+    const bounds = page.displayBounds
+    cache.store(cache.begin('book-1'), key(), page)
+    expect(cache.take(key({ viewport:{ left:Number.MAX_VALUE, top:48, width:390, height:732 } }))).toBeNull()
+    expect(page.displayBounds).toBe(bounds)
   })
 
   it('drops a page whose conditions changed and says why', () => {
