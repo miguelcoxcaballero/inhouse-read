@@ -67,6 +67,8 @@ jobs:
           script: python -u .github/scripts/verify_android_app.py published.apk --google-login
       - name: Verify the published reader display policy
         if: inputs.fixture_run_id != ''
+        env:
+          ANDROID_IMPORT_DIAGNOSTICS: '1'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35

@@ -5,6 +5,7 @@ import unittest
 import subprocess
 import tempfile
 import json
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -359,6 +360,76 @@ class AndroidReadingDisplayVerifierTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "lost the loaded document"):
                 verifier.verify_loaded_reader_display("different-document", background=True)
         back.assert_not_called()
+
+
+class AndroidImportDiagnosticTests(unittest.TestCase):
+    def test_disabled_observer_has_no_commands_or_files(self):
+        with patch.dict(verifier.os.environ, {}, clear=True), patch.object(verifier, "run") as command, patch.object(verifier, "Path") as path:
+            verifier.observe_import_attempt("reading", 0)
+        command.assert_not_called()
+        path.assert_not_called()
+
+    def sample(self, directory, command):
+        root = ui(reading=False)
+        Path(directory, "android-import-reading.png").write_bytes(b"real-png-bytes")
+        Path(directory, "android-import-reading.xml").write_bytes(ElementTree.tostring(root))
+        with patch.dict(verifier.os.environ, {"ANDROID_IMPORT_DIAGNOSTICS": "1"}), patch.object(verifier, "run", side_effect=command), patch.object(verifier, "Path", side_effect=lambda name: Path(directory, name)):
+            verifier.observe_import_attempt("reading", 1, root, 100, 102)
+        return json.loads(Path(directory, "android-import-reading-attempt-01.json").read_text(encoding="utf-8"))
+
+    def test_preserves_exact_capture_and_does_not_change_original(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sample = self.sample(directory, lambda *args: SimpleNamespace(stdout='<map><string name="pending">[]</string></map>', stderr=""))
+            self.assertEqual(sample["captureStartedAt"], 100)
+            self.assertEqual(sample["captureCompletedAt"], 102)
+            self.assertEqual(sample["inbox"], [])
+            for suffix in (".png", ".xml"):
+                original = Path(directory, "android-import-reading" + suffix).read_bytes()
+                self.assertEqual(Path(directory, "android-import-reading-attempt-01" + suffix).read_bytes(), original)
+                self.assertEqual(sample["files"][suffix]["sha256"], hashlib.sha256(original).hexdigest())
+            self.assertEqual([c["label"] for c in sample["commands"]], ["windows", "displays", "activities", "pid", "inbox-direct"])
+
+    def test_permission_denials_are_observed_and_never_an_empty_inbox(self):
+        def command(*args):
+            if "cat" in args:
+                raise subprocess.CalledProcessError(1, args, output="", stderr="Permission denied")
+            return SimpleNamespace(stdout="raw-state", stderr="")
+        with tempfile.TemporaryDirectory() as directory:
+            sample = self.sample(directory, command)
+        self.assertNotIn("inbox", sample)
+        self.assertEqual(sample["commands"][-1]["label"], "inbox-su")
+        self.assertEqual(sample["commands"][-1]["returncode"], 1)
+        self.assertEqual(sample["commands"][-1]["stderr"], "Permission denied")
+
+    def test_inbox_bytes_observation_is_read_only_and_filters_unsafe_ids(self):
+        identifier = "12345678-1234-1234-1234-123456789abc"
+        pending = json.dumps([{"id": identifier, "size": 445}, {"id": "../../unsafe"}])
+        xml = '<map><string name="pending">' + pending + '</string></map>'
+        def command(*args):
+            return SimpleNamespace(stdout=xml if "cat" in args else "445 / exact-sha", stderr="")
+        with tempfile.TemporaryDirectory() as directory:
+            sample = self.sample(directory, command)
+        self.assertEqual(len(sample["inbox"]), 2)
+        self.assertEqual([c["label"] for c in sample["commands"]][-2:], ["file-" + identifier, "sha256-" + identifier])
+        self.assertFalse(any(any(value in c["command"] for value in ("input", "root", "acknowledge", "rm", "force-stop")) for c in sample["commands"]))
+
+    def test_malformed_inbox_is_retained_without_breaking_import(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sample = self.sample(directory, lambda *args: SimpleNamespace(stdout="not XML", stderr=""))
+        self.assertIn("inboxParseError", sample)
+        self.assertNotIn("inbox", sample)
+
+    def test_import_navigation_sleep_and_success_assertions_are_preserved(self):
+        chrome = ElementTree.fromstring('<hierarchy><node package="com.android.chrome" text="Use without an account"/></hierarchy>')
+        with patch.object(verifier, "observe_import_attempt") as observed, patch.object(verifier, "run") as command, patch.object(verifier, "capture", side_effect=[chrome, ui()]), patch.object(verifier.time, "sleep") as sleep:
+            root = verifier.open_fixture_document("reading")
+        self.assertIn("Intent reading", verifier.node_text(root))
+        self.assertEqual(command.call_args_list, [
+            unittest.mock.call("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read.intentfixture/.MainActivity", "--es", "mode", "reading"),
+            unittest.mock.call("adb", "shell", "input", "keyevent", "4"),
+        ])
+        self.assertEqual(sleep.call_args_list, [unittest.mock.call(3), unittest.mock.call(3)])
+        self.assertEqual([call.args[:2] for call in observed.call_args_list], [("reading", 0), ("reading", 1), ("reading", 2)])
 
 
 if __name__ == "__main__":

@@ -2,7 +2,9 @@
 """Verify that the signed APK actually renders the live app in Android."""
 
 import argparse
+import hashlib
 import json
+import os
 import re
 import subprocess
 import time
@@ -294,11 +296,80 @@ def return_to_bookshelf(root):
     raise AssertionError("The loaded document had no usable return-to-bookshelf control")
 
 
+def observe_import_attempt(mode, attempt, root=None, capture_started=None, capture_completed=None):
+    """Opt-in evidence only: do not change import actions or readiness assertions."""
+    if os.environ.get("ANDROID_IMPORT_DIAGNOSTICS") != "1":
+        return
+    prefix = f"android-import-{mode}-attempt-{attempt:02d}"
+    sample = {"attempt": attempt, "observedAt": time.time(),
+              "captureStartedAt": capture_started, "captureCompletedAt": capture_completed,
+              "packages": sorted({node.attrib.get("package", "") for node in root.iter("node")}) if root is not None else [],
+              "text": node_text(root) if root is not None else None,
+              "files": {}, "commands": []}
+    for suffix in (".png", ".xml"):
+        source = Path(f"android-import-{mode}" + suffix)
+        if root is not None and source.is_file():
+            data = source.read_bytes()
+            target = Path(prefix + suffix)
+            target.write_bytes(data)
+            sample["files"][suffix] = {"path": str(target), "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+    def observed_command(label, *args):
+        try:
+            result = run(*args)
+            value = {"command": list(args), "returncode": 0, "stdout": result.stdout, "stderr": result.stderr}
+        except subprocess.CalledProcessError as error:
+            value = {"command": list(args), "returncode": error.returncode,
+                     "stdout": error.stdout or "", "stderr": error.stderr or ""}
+        except OSError as error:
+            value = {"command": list(args), "error": str(error)}
+        sample["commands"].append({"label": label, **value})
+        Path(prefix + "-" + label + ".txt").write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
+        return value
+
+    observed_command("windows", "adb", "shell", "dumpsys", "window", "windows")
+    observed_command("displays", "adb", "shell", "dumpsys", "window", "displays")
+    observed_command("activities", "adb", "shell", "dumpsys", "activity", "activities")
+    observed_command("pid", "adb", "shell", "pidof", "com.inhousesoftware.read")
+    inbox_path = "/data/user/0/com.inhousesoftware.read/shared_prefs/book-imports.xml"
+    inbox = observed_command("inbox-direct", "adb", "shell", "cat", inbox_path)
+    # Google APIs images may allow the emulator's existing su command. A denied
+    # read is preserved as evidence, not accepted as an empty inbox. No adb root,
+    # process restart, package data mutation or acknowledgement is performed.
+    shell = ()
+    if inbox.get("returncode") != 0:
+        shell = ("su", "0")
+        inbox = observed_command("inbox-su", "adb", "shell", *shell, "cat", inbox_path)
+    if inbox.get("returncode") == 0:
+        try:
+            preferences = ElementTree.fromstring(inbox["stdout"])
+            pending = next((node.text for node in preferences.findall("string") if node.attrib.get("name") == "pending"), "[]")
+            entries = json.loads(pending or "[]")
+            assert isinstance(entries, list), "Inbox pending value is not an array"
+            sample["inbox"] = entries
+            for entry in entries[:12]:
+                identifier = entry.get("id") if isinstance(entry, dict) else None
+                if not isinstance(identifier, str) or not re.fullmatch(r"[a-f0-9-]{36}", identifier):
+                    continue
+                file_path = "/data/user/0/com.inhousesoftware.read/cache/book-imports/" + identifier
+                observed_command("file-" + identifier, "adb", "shell", *shell, "ls", "-l", file_path)
+                observed_command("sha256-" + identifier, "adb", "shell", *shell, "sha256sum", file_path)
+        except (AssertionError, ValueError, ElementTree.ParseError) as error:
+            sample["inboxParseError"] = str(error)
+    sample["observationCompletedAt"] = time.time()
+    Path(prefix + ".json").write_text(json.dumps(sample, indent=2) + "\n", encoding="utf-8")
+    print(f"Android import diagnostic retained: {prefix}.json", flush=True)
+
+
 def open_fixture_document(mode):
+    observe_import_attempt(mode, 0)
     run("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read.intentfixture/.MainActivity", "--es", "mode", mode)
     for attempt in range(24):
         time.sleep(3)
+        capture_started = time.time()
         root = capture(Path("android-import-" + mode + ".png"), Path("android-import-" + mode + ".xml"))
+        capture_completed = time.time()
+        observe_import_attempt(mode, attempt + 1, root, capture_started, capture_completed)
         text = node_text(root)
         # Offline fixture has no Google account: dismiss external login and
         # its cancellation notice, while preserving the imported local book.
