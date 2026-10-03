@@ -344,6 +344,9 @@ def verify_book_imports():
     chooser = capture(Path("android-open-with.png"), Path("android-open-with.xml"))
     assert "Inhouse Read" in node_text(chooser), "Read was absent from Android's real Open with chooser"
     run("adb", "shell", "input", "keyevent", "4")
+    # Android15's resolver may retain its bottom sheet after Back. Bring the
+    # already loaded app forward before asserting its foreground shelf policy.
+    run("adb", "shell", "am", "start", "-W", "-n", "com.inhousesoftware.read/.MainActivity")
     wait_for_reading_display("shelf-before", reading=False)
     for mode in ("cold", "warm", "share"):
         if mode == "cold": run("adb", "shell", "am", "force-stop", "com.inhousesoftware.read")

@@ -98,6 +98,29 @@ class AndroidCaptureTests(unittest.TestCase):
 
 
 class AndroidReadingDisplayVerifierTests(unittest.TestCase):
+    def test_chooser_returns_to_actual_app_before_foreground_shelf_checks(self):
+        chooser = ElementTree.fromstring('<hierarchy><node text="Inhouse Read"/></hierarchy>')
+        with patch.object(verifier, "run", return_value=SimpleNamespace(stdout="com.inhousesoftware.read/.MainActivity", stderr="")) as run, patch.object(verifier, "capture", return_value=chooser), patch.object(verifier.time, "sleep"), patch.object(verifier, "wait_for_reading_display") as wait, patch.object(verifier, "open_fixture_document") as opened, patch.object(verifier, "verify_loaded_reader_display") as verified:
+            verifier.verify_book_imports()
+        self.assertEqual(run.call_args_list[-5:-1], [
+            unittest.mock.call("adb", "install", "-r", "intent-fixture-debug.apk"),
+            unittest.mock.call("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read.intentfixture/.MainActivity", "--es", "mode", "chooser"),
+            unittest.mock.call("adb", "shell", "input", "keyevent", "4"),
+            unittest.mock.call("adb", "shell", "am", "start", "-W", "-n", "com.inhousesoftware.read/.MainActivity"),
+        ])
+        self.assertEqual(run.call_args_list[-1], unittest.mock.call("adb", "shell", "am", "force-stop", "com.inhousesoftware.read"))
+        wait.assert_called_once_with("shelf-before", reading=False)
+        self.assertEqual(opened.call_args_list, [unittest.mock.call(mode) for mode in ("cold", "warm", "share")])
+        self.assertEqual(verified.call_args_list, [unittest.mock.call(mode, background=mode == "cold") for mode in ("cold", "warm", "share")])
+
+    def test_missing_read_in_the_real_chooser_still_fails_before_app_return(self):
+        chooser = ElementTree.fromstring('<hierarchy><node text="Drive PDF Viewer"/></hierarchy>')
+        with patch.object(verifier, "run", return_value=SimpleNamespace(stdout="com.inhousesoftware.read/.MainActivity", stderr="")), patch.object(verifier, "capture", return_value=chooser), patch.object(verifier.time, "sleep"), patch.object(verifier, "wait_for_reading_display") as wait, patch.object(verifier, "open_fixture_document") as opened:
+            with self.assertRaisesRegex(AssertionError, "absent from Android's real Open with chooser"):
+                verifier.verify_book_imports()
+        wait.assert_not_called()
+        opened.assert_not_called()
+
     def test_closing_samples_until_native_policy_and_shelf_both_restore(self):
         samples = iter([ui(), ui(24, False)])
         window_samples = iter([windows(True), windows()])
