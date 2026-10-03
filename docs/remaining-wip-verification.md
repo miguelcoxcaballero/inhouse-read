@@ -1,4 +1,16 @@
-# Verificación del WIP — web 1.7.22 en verificación; Android 1.1.4 pendiente
+# Verificación del WIP — web 1.7.23 en verificación; Android 1.1.4 pendiente
+
+## Cambios de 1.7.23
+
+El paso de capítulo EPUB no espera el retardo visual de 100 ms si la app está oculta, ni si se oculta mientras espera. Conserva carga, disposición de página y bloqueo hasta el mismo endpoint; los 100 ms visibles y su limpieza siguen comprobados. El paginador real extraído reproduce el bloqueo anterior con el timer suspendido. Diez focales pasan; el baseline anterior conserva cuatro fallos. Certificado: `.animation.local/release-1722/hidden-cooldown/certification.json`, SHA-256 `61e4dc70c63a92b8722cff31af683995c20ae47a8f88489b1aae54451b01206c`. Esto acredita esa dependencia, no identifica por sí solo la causa exacta de la pausa nativa.
+
+El despliegue cambia `force_orphan` a `false` junto con `keep_files: true`: la implementación de Actions omitía la conservación al crear una rama huérfana. Se recuperaron ocho módulos inmutables de Pages `c0cc524` en `c01f1c21a54f18e301c98a390efa6ea97dd72907`; doce recursos HTTP coinciden con Git y los 91 archivos existentes de 1.7.22 permanecen idénticos. Los módulos PDF y EPUB que devolvían 404 vuelven a estar disponibles. Se conserva la prueba fallida anterior del contrato de despliegue y los dos focales corregidos. Esta versión necesita su propia batería completa y comprobación pública.
+
+La primera tanda local de 1.7.23, ejecutada mientras se compilaba, conserva **2.487 aprobados y tres timeouts de 5.000 ms**, en dos archivos de modelos 3D: no se presenta como batería aprobada. Sus JSON y log originales permanecen en `.animation.local/pages-reader-retention-1722/full-unit-1723.*`. El build pasó; las pruebas nuevas del cooldown y del contrato de despliegue pasaron. La comprobación completa posterior debe conservar su propia fuente, perfil y resultados.
+
+El [ensayo Android 37140077910](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37140077910), fuente `ea76f782`, permanece **FAILED**: 108 fragmentos y 18 capítulos, con 216 de 216 callbacks recibidos; no hubo PCM nuevo en los últimos 30 segundos y la cola estuvo vacía 65,53 segundos. Despertar recuperó la lectura en unos 0,5 segundos, en una captura diagnóstica posterior al fallo. El snapshot precede el microtask de avance y no localiza el await exacto. No se publicó una APK ni se considera aprobada por esa recuperación. Revisión original `.release.local/android-1.1.4-build-37140077910/failure-review22.json`, SHA-256 `df9d753927c1a42fde5b4337f3aa806326cbf6d04be25aceccbf77cd4f6e45e9`.
+
+La web real de 1.7.22 pasó dos casos propios sin reintentos: EPUB con motor/modelo reales y sink PCM controlado, y el gesto isométrico completo. Se autenticaron 54 cuerpos HTTP. Certificado `.animation.local/release-1722/public-ea76f78/certification.json`, SHA-256 `dc784283b4c7a6af3db33af828fbb86baf0f6a4059f953f3a308f3f172aeebbd`. Estos casos no certifican audio nativo bloqueado. Su batería completa sigue separada de 1.7.23 y del aprobado de 1.7.21.
 
 ## Cambios de 1.7.22
 

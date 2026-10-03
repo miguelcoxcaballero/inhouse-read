@@ -58,4 +58,7 @@ jobs:
           publish_branch: gh-pages
           # Los módulos con hash que Android aún tiene en caché siguen disponibles.
           keep_files: true
-          force_orphan: true
+          # ForceOrphan omite la lectura de la rama y el manejo de KeepFiles.
+          # Conservar el historial permite que un lector abierto termine de
+          # cargar sus módulos de la versión con la que empezó a leer.
+          force_orphan: false

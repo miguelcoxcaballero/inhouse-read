@@ -11,6 +11,34 @@ function harness(source,hidden=false) {
   const animate=new Function('document','requestAnimationFrame','cancelAnimationFrame',`${part}\nreturn animate`)(document,request,cancel)
   return {document,frames,request,cancel,add,remove,animate, tick(at){const pending=[...frames.values()];frames.clear();for(const fn of pending)fn(at)} }
 }
+// Execute Foliate's actual chapter-turn method, including its private lock,
+// with a loaded section and a timer queue that the hidden WebView never fires.
+function chapterHarness(source,hidden=false) {
+  const document=new EventTarget(); document.hidden=hidden
+  const timers=new Map(); let serial=0
+  const setTimer=vi.fn((fn,ms)=>{timers.set(++serial,{fn,ms});return serial})
+  const clearTimer=vi.fn(id=>timers.delete(id))
+  const add=vi.spyOn(document,'addEventListener'), remove=vi.spyOn(document,'removeEventListener')
+  const prefix=source.slice(0,source.indexOf('// collapsed range'))
+  const method=source.match(/    async #turnPage\(dir, distance\) \{[\s\S]*?\n    \}\n(?=    async prev\(distance\))/)?.[0]
+  if(!method) throw new Error('Missing actual Foliate chapter-turn method')
+  const Probe=new Function('document','setTimeout','clearTimeout','requestAnimationFrame','cancelAnimationFrame',`${prefix}
+    return class {
+      #locked=false; #index=0
+      get locked(){return this.#locked}
+      get index(){return this.#index}
+      hasAttribute(name){return name==='animated'}
+      async #scrollNext(){return true}
+      async #scrollPrev(){return true}
+      #adjacentIndex(dir){return this.#index+dir}
+      async #goTo({index}){this.#index=index}
+      ${method}
+      next(){return this.#turnPage(1)}
+    }`)(document,setTimer,clearTimer,()=>{throw new Error('Unexpected visual frame')},()=>{})
+  return {document,timers,setTimer,clearTimer,add,remove,paginator:new Probe(),
+    fire(){const pending=[...timers.values()];timers.clear();for(const {fn} of pending)fn()} }
+}
+async function flushMicrotasks(){for(let i=0;i<12;i++) await Promise.resolve()}
 describe('Foliate page following while the native audiobook is hidden',()=>{
   it('reproduces upstream: a hidden page leaves chapter following pending without visual rAF',async()=>{
     const h=harness(upstream,true), render=vi.fn(), done=vi.fn()
@@ -37,6 +65,44 @@ describe('Foliate page following while the native audiobook is hidden',()=>{
     const done=h.animate(10,90,400,x=>1-(1-x)*(1-x),render)
     h.tick(12);h.tick(212);h.tick(412);await done
     expect(render.mock.calls.map(c=>c[0])).toEqual([10,70,90]);expect(h.frames.size).toBe(0);expect(h.remove).toHaveBeenCalledOnce()
+  })
+  it('reproduces the upstream hidden chapter lock when its visual 100ms timer never fires',async()=>{
+    const h=chapterHarness(upstream,true), done=vi.fn()
+    h.paginator.next().then(done); await flushMicrotasks()
+    expect(h.paginator.index).toBe(1);expect(h.paginator.locked).toBe(true)
+    expect(done).not.toHaveBeenCalled();expect([...h.timers.values()].map(t=>t.ms)).toEqual([100])
+  })
+  it('releases a hidden chapter turn without waiting for a suspended visual timer',async()=>{
+    const h=chapterHarness(patchFoliateBackground(upstream),true), done=vi.fn()
+    h.paginator.next().then(done); await flushMicrotasks()
+    expect(h.paginator.index).toBe(1);expect(done).toHaveBeenCalledOnce();expect(h.paginator.locked).toBe(false)
+    expect(h.setTimer).not.toHaveBeenCalled();expect(h.timers.size).toBe(0)
+    expect(h.add).toHaveBeenCalledOnce();expect(h.remove).toHaveBeenCalledOnce()
+  })
+  it('retains the full visible 100ms chapter cooldown and lock',async()=>{
+    const h=chapterHarness(patchFoliateBackground(upstream)), done=vi.fn()
+    h.paginator.next().then(done); await flushMicrotasks()
+    expect(h.paginator.index).toBe(1);expect(h.paginator.locked).toBe(true);expect(done).not.toHaveBeenCalled()
+    expect([...h.timers.values()].map(t=>t.ms)).toEqual([100])
+    h.fire();await flushMicrotasks()
+    expect(done).toHaveBeenCalledOnce();expect(h.paginator.locked).toBe(false);expect(h.timers.size).toBe(0)
+    expect(h.remove).toHaveBeenCalledOnce()
+  })
+  it('hiding during the chapter cooldown finishes once and cleans its timer and listener',async()=>{
+    const h=chapterHarness(patchFoliateBackground(upstream)), done=vi.fn()
+    h.paginator.next().then(done); await flushMicrotasks()
+    expect(h.paginator.locked).toBe(true);expect(h.timers.size).toBe(1)
+    const stale=[...h.timers.values()][0].fn
+    h.document.hidden=true;h.document.dispatchEvent(new Event('visibilitychange'));await flushMicrotasks()
+    expect(done).toHaveBeenCalledOnce();expect(h.paginator.locked).toBe(false);expect(h.timers.size).toBe(0)
+    expect(h.clearTimer).toHaveBeenCalledOnce();expect(h.remove).toHaveBeenCalledOnce()
+    stale();h.document.dispatchEvent(new Event('visibilitychange'));await flushMicrotasks()
+    expect(done).toHaveBeenCalledOnce();expect(h.clearTimer).toHaveBeenCalledOnce();expect(h.remove).toHaveBeenCalledOnce()
+  })
+  it('rejects a changed or duplicate upstream chapter cooldown signature',()=>{
+    const call="if (shouldGo || !this.hasAttribute('animated')) await wait(100)"
+    expect(()=>patchFoliateBackground(upstream.replace(call,call.replace('100','101')))).toThrow(/Unexpected/)
+    expect(()=>patchFoliateBackground(upstream.replace(call,`${call}\n        ${call}`))).toThrow(/Unexpected/)
   })
   it('targets only the actual Foliate paginator and rejects a missing/duplicated signature',()=>{
     const plugin=foliateBackgroundPatch()

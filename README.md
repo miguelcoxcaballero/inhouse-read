@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.23
+
+- El cambio de capítulo EPUB deja de esperar el retardo visual de 100 ms cuando la app está oculta. Conserva la carga del capítulo, el bloqueo de navegación y la espera visible. Diez pruebas focales comprueban el cambio; esto todavía no acredita que la parada con Android bloqueado esté resuelta.
+- El despliegue conserva la rama y los módulos de los lectores anteriores. Se recuperaron ocho módulos inmutables de 1.7.21: sus doce comprobaciones HTTP pasaron y los 91 archivos existentes de 1.7.22 conservaron sus bytes.
+- Android 1.1.4 sigue pendiente: el ensayo `37140077910` volvió a detectar 65,53 segundos sin PCM antes de despertar. Los 216 callbacks llegaron; la recuperación al encender la pantalla se conserva como diagnóstico, no como aprobado. Esta corrección necesita un nuevo ensayo real y su propia batería completa.
+
 ### Actualización web · 1.7.22
 
 - Corrige el índice de capítulo EPUB comunicado al audiolibro y añade datos de diagnóstico para localizar la pausa con Android bloqueado.
