@@ -493,6 +493,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     const beforeLoad = residentMB()
     await open(page, EPUB)
     await openAudio(page)
+    await pickVoice(page, CLAUDE_ID) // the preceding synthesis-cancellation phase intentionally leaves Davefx selected
     await spyOnEngine(page)
     await expect.poll(() => page.evaluate(() => window.__neuEngine.core?.client?.loaded || ''), SLOW).toBe(CLAUDE) // warmed up, nothing spoken
     await expect.poll(() => voiceWorkers().length).toBe(1)
