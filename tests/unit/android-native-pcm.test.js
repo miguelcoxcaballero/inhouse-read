@@ -3,6 +3,11 @@ import { describe, expect, it } from 'vitest'
 const read=path=>readFileSync(path,'utf8').replace(/\r\n?/g,'\n')
 const bridge=read('android/NativePcmBridge.java'),service=read('android/NativePcmService.java'),builder=read('android/html_to_apk_builder.py'),workflow=read('.github/workflows/build-android.yml')
 describe('signed Android native natural media integration',()=>{
+  it('allows numeric paginator stages in the existing receipt without new playback evaluations',()=>{
+    const sanitizer=bridge.slice(bridge.indexOf('private static JSONObject sanitizeSnapshot'),bridge.indexOf('private void logCallback'));
+    for(const field of ['paginator','turnStage','displayStage','sectionLoadPending','viewLoadPending','viewReady'])expect(sanitizer).toContain(`"${field}"`);
+    for(const forbidden of ['evaluateJavascript','postDelayed','setTimeout','enqueue(','keepExecuting('])expect(sanitizer).not.toContain(forbidden);
+  })
   it('observes post-event microtasks with two bounded numeric receipts and no scheduler heartbeat',()=>{
     expect(bridge).toContain('ticks===8||ticks===32');expect(bridge).toContain('if(ticks<32)observe()');
     const report=bridge.slice(bridge.indexOf('@JavascriptInterface public void reportDiagnostic'),bridge.indexOf('private void logRuntime'));

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { foliateBackgroundPatch, patchFoliateBackground } from '../../scripts/foliate-background-patch.mjs'
+import { patchFoliateTurnDiagnostics } from '../../scripts/foliate-turn-diagnostic-patch.mjs'
 const upstream=readFileSync('node_modules/foliate-js/paginator.js','utf8')
 function harness(source,hidden=false) {
   const document=new EventTarget(); document.hidden=hidden
@@ -106,7 +107,7 @@ describe('Foliate page following while the native audiobook is hidden',()=>{
   })
   it('targets only the actual Foliate paginator and rejects a missing/duplicated signature',()=>{
     const plugin=foliateBackgroundPatch()
-    expect(plugin.transform(upstream,'C:\\repo\\node_modules\\foliate-js\\paginator.js?x').code).toBe(patchFoliateBackground(upstream))
+    expect(plugin.transform(upstream,'C:\\repo\\node_modules\\foliate-js\\paginator.js?x').code).toBe(patchFoliateTurnDiagnostics(patchFoliateBackground(upstream)))
     expect(plugin.transform('other','/src/paginator.js')).toBeNull()
     expect(()=>patchFoliateBackground('different')).toThrow(/Unexpected/)
     expect(()=>patchFoliateBackground(upstream+upstream)).toThrow(/Unexpected/)

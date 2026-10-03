@@ -70,7 +70,8 @@ export class ReaderController {
   get speechDiagnosticState() {
     const turns = this.#reader?.speechDiagnosticState
     return { kind:this.#reader ? this.#engine : 'none', index:this.#speechPosition?.index ?? null,
-      followPending:turns?.followPending ?? 0, pageTurnPending:turns?.pageTurnPending ?? 0 }
+      followPending:turns?.followPending ?? 0, pageTurnPending:turns?.pageTurnPending ?? 0,
+      ...(turns?.paginator ? { paginator:turns.paginator } : {}) }
   }
   get rtl() { return Boolean(this.#reader?.rtl) }
   get language() { const lang = this.metadata.language; return (Array.isArray(lang) ? lang[0] : lang) || navigator.language }

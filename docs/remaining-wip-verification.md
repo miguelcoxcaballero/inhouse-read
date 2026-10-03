@@ -1,6 +1,12 @@
-# Verificación del WIP — web 1.7.24 en preparación; Android 1.1.4 pendiente
+# Verificación del WIP — web 1.7.24 publicada; Android 1.1.4 pendiente
 
 ## Cambios de 1.7.24
+
+La fuente `40490ea6651497f8a65e4212900262e24cf969c4` está publicada en Pages `ed3e097ed6a131c7e49ba4f6b70067cce600fb2b`. HTTP confirma los 22 módulos actuales, 43 recursos offline y los chunks antiguos recuperados. Certificado `artifact-1724-40490ea.json`, SHA-256 `4c975e441981e6a965e676de5ad7954e39ba3f3d9e5382981538ce3b386e88ce`. La comprobación aislada de los diez perfiles Hindi pasó 10/10, sin reintentos, con WAV reales y salidas propias.
+
+Las dos primeras tandas públicas conservan cada una dos casos aprobados (EPUB y estantería) y un fallo en la ampliación de voces. La primera se cerró durante la preparación del caché; la segunda descargó y verificó el paquete original, pero al iniciar la lectura encontró «sin texto legible» y no produjo audio. No se presenta ninguna de esas tandas como aprobada ni se atribuye ese fallo al modelo sin localizarlo. Originales `public-three/` y `public-three-real-download/` en `.animation.local/release-1724/`.
+
+El observador de navegación añade estados numéricos para localizar los awaits originales del paginador: carga de sección, carga del iframe y anclaje. No añade tareas, timers, microtasks, eventos ni una navegación alternativa. Pasaron 32 focales y 74 verificaciones Python; los dos intentos iniciales con errores del harness se conservan. Este cambio es diagnóstico: requiere otro ensayo Android y no acredita haber corregido la pausa.
 
 Supertonic pasa de tres a diez perfiles reales, F1–F5 y M1–M5, en los 22 idiomas compatibles de la app: 220 combinaciones, junto con 39 opciones Piper existentes. Son 259 opciones de idioma y voz; los perfiles compartidos no equivalen a 259 personas ni acreditan acentos regionales nuevos. Las voces usan los [perfiles originales de Supertone](https://huggingface.co/Supertone/supertonic-3/tree/3cadd1ee6394adea1bd021217a0e650ede09a323/voice_styles), fijados por revisión, tamaño y SHA-256.
 

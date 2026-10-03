@@ -152,7 +152,10 @@ export class FoliateReader {
   }
 
   /** Numeric queue state only; no book text, labels, DOM ranges or CFI. */
-  get speechDiagnosticState() { return { ...this.#diagnosticTurns } }
+  get speechDiagnosticState() {
+    const paginator = this.#view?.renderer?.inhouseReadTurnDiagnostic
+    return { ...this.#diagnosticTurns, ...(paginator ? { paginator } : {}) }
+  }
 
   get metadata() {
     return this.#view?.book?.metadata ?? {}

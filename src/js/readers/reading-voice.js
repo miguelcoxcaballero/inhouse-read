@@ -83,7 +83,13 @@ export class ReadingVoice {
       preparingPage:Boolean(this.preparingPage?.generation === this.generation), deferredPage:Boolean(this.deferredPage), aheadPage:Boolean(this.aheadPage),
       reader:{ kind:['pdf','foliate'].includes(reader?.kind) ? reader.kind : 'none',
         index:Number.isInteger(position?.index) && position.index >= 0 ? position.index : null,
-        followPending:numeric(reader?.followPending), pageTurnPending:numeric(reader?.pageTurnPending) },
+        followPending:numeric(reader?.followPending), pageTurnPending:numeric(reader?.pageTurnPending),
+        ...(reader?.paginator ? { paginator:{
+          turnStage:Number.isInteger(reader.paginator.turnStage) && reader.paginator.turnStage >= 0 && reader.paginator.turnStage <= 3 ? reader.paginator.turnStage : 0,
+          displayStage:Number.isInteger(reader.paginator.displayStage) && reader.paginator.displayStage >= 0 && reader.paginator.displayStage <= 6 ? reader.paginator.displayStage : 0,
+          sectionLoadPending:Boolean(reader.paginator.sectionLoadPending), viewLoadPending:Boolean(reader.paginator.viewLoadPending),
+          viewReady:Number.isInteger(reader.paginator.viewReady) && reader.paginator.viewReady >= 0 && reader.paginator.viewReady <= 3 ? reader.paginator.viewReady : 0,
+        }} : {}) },
       engine:neuralEngine()?.getDiagnosticState?.() ?? null
     }
   }

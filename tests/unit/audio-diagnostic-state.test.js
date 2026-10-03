@@ -35,6 +35,16 @@ function playback(extra={}) {
 }
 const emit=(type,id=voice.utteranceId)=>window.dispatchEvent(new CustomEvent('inhouse-tts',{detail:{type,id}}))
 describe('numeric native callback diagnostics',()=>{
+  it('reports bounded paginator stages without copying text, URLs or changing playback',async()=>{
+    const t=playback({speechDiagnosticState:{kind:'foliate',followPending:0,pageTurnPending:1,
+      paginator:{turnStage:2,displayStage:3,sectionLoadPending:false,viewLoadPending:true,viewReady:1,text:'Secret words',url:'Secret credential'}}});
+    await voice.play();const state=window.InhouseReadAudioDiagnostics(voice.nativeSession);
+    expect(state.reader.paginator).toEqual({turnStage:2,displayStage:3,sectionLoadPending:false,viewLoadPending:true,viewReady:1});
+    expect(JSON.stringify(state)).not.toContain('Secret');expect(t.fake.calls).toHaveLength(1);
+    t.source.speechDiagnosticState.paginator={turnStage:NaN,displayStage:'Secret',viewReady:100};
+    expect(window.InhouseReadAudioDiagnostics(voice.nativeSession).reader.paginator).toEqual({turnStage:0,displayStage:0,sectionLoadPending:false,viewLoadPending:false,viewReady:0});
+    expect(t.fake.calls).toHaveLength(1);
+  })
   it('requires the current native session and never exposes book text, CFI, voice or session strings',async()=>{
     const t=playback();expect(window.InhouseReadAudioDiagnostics('old')).toBeNull()
     await voice.play();const session=voice.nativeSession

@@ -185,7 +185,7 @@ public final class NativePcmBridge {
     private static JSONObject sanitizeSnapshot(JSONObject raw, int depth) {
         JSONObject value = new JSONObject();
         if (raw == null || depth > 3) return value;
-        String[] keys = { "schema", "sessionMatches", "nativeSessionMatches", "hidden", "visibility", "state", "generation", "utteranceSequence", "utterancePresent", "utteranceStarted", "index", "chunkCount", "itemCount", "ttsStarts", "ttsDones", "advanceStage", "preparingPage", "deferredPage", "aheadPage", "reader", "kind", "followPending", "pageTurnPending", "engine", "loaded", "moduleLoading", "queuedRequests", "status", "run", "job", "prepared", "workerAlive", "currentUnit", "entryCount", "queued", "synth", "done", "started", "ended", "deferred", "gateOpen", "buffered", "scheduledChunks", "availableChunks", "timers", "pump", "feed", "hold", "idle" };
+        String[] keys = { "schema", "sessionMatches", "nativeSessionMatches", "hidden", "visibility", "state", "generation", "utteranceSequence", "utterancePresent", "utteranceStarted", "index", "chunkCount", "itemCount", "ttsStarts", "ttsDones", "advanceStage", "preparingPage", "deferredPage", "aheadPage", "reader", "kind", "followPending", "pageTurnPending", "paginator", "turnStage", "displayStage", "sectionLoadPending", "viewLoadPending", "viewReady", "engine", "loaded", "moduleLoading", "queuedRequests", "status", "run", "job", "prepared", "workerAlive", "currentUnit", "entryCount", "queued", "synth", "done", "started", "ended", "deferred", "gateOpen", "buffered", "scheduledChunks", "availableChunks", "timers", "pump", "feed", "hold", "idle" };
         for (String key : keys) {
             Object item = raw.opt(key);
             try {
