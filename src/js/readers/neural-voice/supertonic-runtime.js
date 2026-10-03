@@ -1,7 +1,7 @@
 // Adapted from Supertone's MIT-licensed web/helper.js inference recipe.
 // Copyright (c) 2025 Supertone Inc. See /licenses/supertonic-sdk-MIT.txt.
 // The model weights have the separate OpenRAIL-M licence.
-import { SUPERTONIC_LANGUAGES, SUPERTONIC_STYLES } from './supertonic-catalog.js';
+import { SUPERTONIC_LANGUAGES, SUPERTONIC_STYLES, SUPERTONIC_LEGACY_STYLES } from './supertonic-catalog.js';
 
 const cancelled = () => Object.assign(new Error('Lectura cancelada'),{name:'AbortError',code:'aborted'});
 const yieldTask = () => new Promise(resolve=>setTimeout(resolve,0));
@@ -49,8 +49,9 @@ export async function createSupertonicRuntime({ort,buffers,config,indexer,styles
       sessions[name]=await ort.InferenceSession.create(buffers[name],{executionProviders:['wasm'],graphOptimizationLevel:'all',enableCpuMemArena:false,enableMemPattern:false});
     }
     buffers=null;
-    for(const name of SUPERTONIC_STYLES) {
-      const raw=styles?.[name];if(!raw)throw new Error(`Falta el estilo ${name}`);
+    for(const name of SUPERTONIC_LEGACY_STYLES)if(!styles?.[name])throw new Error(`Falta el estilo ${name}`);
+    for(const name of SUPERTONIC_STYLES.filter(name=>styles?.[name])) {
+      const raw=styles[name];
       const tensors={};styleTensors[name]=tensors;
       for(const [key,field]of [['ttl','style_ttl'],['dp','style_dp']]) {
         const source=raw[field],dims=source?.dims,data=source?.data?.flat(Infinity);

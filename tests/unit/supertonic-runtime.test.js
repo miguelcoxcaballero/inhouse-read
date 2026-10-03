@@ -1,6 +1,6 @@
 import {describe,it,expect,vi} from 'vitest';
 import {createSupertonicRuntime,normalizeSupertonicText,supertonicTextChunks} from '../../src/js/readers/neural-voice/supertonic-runtime.js';
-import {SUPERTONIC_STYLES,supertonicVoicesFor,SUPERTONIC_ASSETS,SUPERTONIC_BYTES} from '../../src/js/readers/neural-voice/supertonic-catalog.js';
+import {SUPERTONIC_STYLES,SUPERTONIC_LEGACY_STYLES,supertonicVoicesFor,SUPERTONIC_ASSETS,SUPERTONIC_BYTES,SUPERTONIC_LEGACY_ASSETS,isSupertonicVoiceId} from '../../src/js/readers/neural-voice/supertonic-catalog.js';
 
 function fixture(overrides={}) {
   const tensors=[],sessions=[];
@@ -21,9 +21,14 @@ function fixture(overrides={}) {
 describe('Supertonic immutable catalogue',()=>{
   it('offers real styles under generic language tags and shares one pack',()=>{
     const voices=supertonicVoicesFor(['es-MX','es-AR','en-GB','ca','he','sr','zh']);
-    expect(voices).toHaveLength(6);expect(new Set(voices.map(v=>v.lang))).toEqual(new Set(['es','en']));
-    expect(new Set(voices.map(v=>v.modelKey))).toEqual(new Set(['supertonic3']));expect(new Set(voices.map(v=>v.id)).size).toBe(6);
-    expect(SUPERTONIC_ASSETS).toHaveLength(10);expect(SUPERTONIC_BYTES).toBe(208164809);
+    expect(voices).toHaveLength(20);expect(new Set(voices.map(v=>v.lang))).toEqual(new Set(['es','en']));
+    expect(new Set(voices.map(v=>v.modelKey))).toEqual(new Set(['supertonic3']));expect(new Set(voices.map(v=>v.id)).size).toBe(20);
+    expect(SUPERTONIC_ASSETS).toHaveLength(17);expect(SUPERTONIC_BYTES).toBe(210204134);
+    expect(SUPERTONIC_LEGACY_ASSETS).toHaveLength(10);
+    expect(SUPERTONIC_LEGACY_ASSETS.reduce((sum,a)=>sum+a.bytes,0)).toBe(208164809);
+    expect(SUPERTONIC_STYLES).toHaveLength(10);
+    for(const voice of voices)expect(isSupertonicVoiceId(voice.id)).toBe(true);
+    expect(isSupertonicVoiceId('supertonic3:F6:es')).toBe(false);
     const vector=SUPERTONIC_ASSETS.find(a=>a.path==='onnx/vector_estimator.onnx');
     expect(vector.bytes).toBe(65447164);expect(vector.url).toContain('/askurios8/supertonic-3-int8/resolve/95618f5d61cef4923c3b802a332fd603723718f7/');
     expect(SUPERTONIC_ASSETS.find(a=>a.path==='onnx/vocoder.onnx').sha256).toBe('085de76dd8e8d5836d6ca66826601f615939218f90e519f70ee8a36ed2a4c4ba');
@@ -32,6 +37,13 @@ describe('Supertonic immutable catalogue',()=>{
 });
 
 describe('Supertonic inference lifecycle',()=>{
+  it('keeps the complete legacy three-profile pack usable offline and rejects an absent new style',async()=>{
+    const f=fixture();f.args.styles=Object.fromEntries(SUPERTONIC_LEGACY_STYLES.map(name=>[name,f.args.styles[name]]));
+    const runtime=await createSupertonicRuntime(f.args);
+    expect((await runtime.synthesize('Hola',{lang:'es',style:'F2'})).pcm.length).toBeGreaterThan(0);
+    await expect(runtime.synthesize('Hola',{lang:'es',style:'F3'})).rejects.toThrow('Opciones');
+    await runtime.dispose();expect(f.sessions.every(session=>session.release.mock.calls.length===1)).toBe(true);
+  });
   it('normalizes upstream punctuation, rejects absent languages and preserves supported script',()=>{
     expect(normalizeSupertonicText(' hola_mundo 😀 ','es')).toBe('<es>hola mundo.</es>');
     expect(normalizeSupertonicText('مرحبا بالعالم','ar')).toContain('مرحبا');
@@ -49,7 +61,7 @@ describe('Supertonic inference lifecycle',()=>{
     expect(result.sampleRate).toBe(8000);expect(result.pcm).toHaveLength(800);expect(result.pcm[0]).toBe(.25);
     expect(f.sessions[2].run).toHaveBeenCalledTimes(2);
     expect(f.sessions.every(s=>s.options.enableCpuMemArena===false&&s.options.enableMemPattern===false)).toBe(true);
-    expect(f.tensors.filter(t=>!t.dispose.mock.calls.length)).toHaveLength(6);
+    expect(f.tensors.filter(t=>!t.dispose.mock.calls.length)).toHaveLength(SUPERTONIC_STYLES.length*2);
     await runtime.dispose();await runtime.dispose();expect(f.tensors.every(t=>t.dispose.mock.calls.length===1)).toBe(true);expect(f.sessions.every(s=>s.release.mock.calls.length===1)).toBe(true);
   });
   it('uses speed in predicted duration and retains the selected style',async()=>{
@@ -65,7 +77,7 @@ describe('Supertonic inference lifecycle',()=>{
   it('cancels after an inference boundary, releases intermediate tensors and never invokes the vocoder',async()=>{
     let active=true;const f=fixture({beforeRun:name=>{if(name==='vector_estimator')active=false;}}),runtime=await createSupertonicRuntime(f.args);
     await expect(runtime.synthesize('Hola',{lang:'es',isActive:()=>active})).rejects.toMatchObject({code:'aborted'});
-    expect(f.sessions[3].run).not.toHaveBeenCalled();expect(f.tensors.filter(t=>!t.dispose.mock.calls.length)).toHaveLength(6);await runtime.dispose();
+    expect(f.sessions[3].run).not.toHaveBeenCalled();expect(f.tensors.filter(t=>!t.dispose.mock.calls.length)).toHaveLength(SUPERTONIC_STYLES.length*2);await runtime.dispose();
   });
   it('rejects overlapping jobs and waits for active inference before releasing sessions',async()=>{
     let resolve,entered;const ready=new Promise(r=>entered=r),gate=new Promise(r=>resolve=r);

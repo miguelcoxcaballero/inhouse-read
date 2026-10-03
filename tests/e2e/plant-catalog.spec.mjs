@@ -1,4 +1,5 @@
 import { switchShelfView } from './helpers/shelf-view-gesture.mjs'
+import { waitForFinalBookGeometry } from './helpers/final-book-geometry.mjs'
 import { expect, test } from '@playwright/test';
 
 const PLANTS_KEY = 'inhouse-read-shelf-plants';
@@ -75,6 +76,9 @@ test('una planta junto a un libro fino no tapa su zona táctil al girar o recarg
   // center above the foliage and does not expose this interception regression.
   await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/tiny.pdf');
   await expect(page.locator('.pdf-page-canvas')).toBeVisible();
+  // This scene requires a measured physical spine. Import deliberately opens
+  // the reader before counting; a reload must not cancel the fixture's parser.
+  await waitForFinalBookGeometry(page, 'tiny.pdf');
   await page.getByRole('button',{ name:'Volver a la estantería' }).click();
   await expect(page.locator('.ihr-flyout')).toHaveCount(0);
   await page.evaluate(() => {

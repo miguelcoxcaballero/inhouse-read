@@ -28,7 +28,7 @@ describe('the contract (index.js)', () => {
     for (const voice of neuralVoices) {
       if (voice.runtime === 'supertonic3') {
         expect(voice.id).toBe(`supertonic3:${voice.style}:${voice.lang}`)
-        expect(voice).toMatchObject({ piperId:'supertonic3', lang:expect.stringMatching(/^[a-z]{2}$/), style:expect.stringMatching(/^(F1|M1|F2)$/), sharedPack:true, sizeMB:expect.any(Number) })
+        expect(voice).toMatchObject({ piperId:'supertonic3', lang:expect.stringMatching(/^[a-z]{2}$/), style:expect.stringMatching(/^[FM][1-5]$/), sharedPack:true, sizeMB:expect.any(Number) })
         continue
       }
       expect(voice.id).toBe(voice.speaker ? `${NEURAL_PREFIX}${voice.piperId}#${voice.speaker}` : NEURAL_PREFIX + voice.piperId)

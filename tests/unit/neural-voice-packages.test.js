@@ -9,7 +9,7 @@ import { advance, fakeAudioContext, fakeClients, feedJob, flush, recordEvents } 
 
 function stores() {
   const piper={list:vi.fn(async()=>new Set(['es_MX-claude-high'])),has:vi.fn(async()=>true),download:vi.fn(),remove:vi.fn(),readConfig:vi.fn(async()=>({phoneme_type:'espeak'})),readModel:vi.fn(),readPhonemizerModel:vi.fn()}
-  const supertonic={installed:vi.fn(async()=>true),install:vi.fn(),remove:vi.fn(),readAssets:vi.fn(async()=>({vocoder:new ArrayBuffer(8)})),readConfig:vi.fn(async()=>({config:{},indexer:[],styles:{F1:{}}}))}
+  const supertonic={availableStyles:vi.fn(async()=>new Set(['F1','M1','F2','F3','F4','F5','M2','M3','M4','M5'])),installed:vi.fn(async()=>true),install:vi.fn(),remove:vi.fn(),readAssets:vi.fn(async()=>({vocoder:new ArrayBuffer(8)})),readConfig:vi.fn(async()=>({config:{},indexer:[],styles:{F1:{}}}))}
   return {piper,supertonic,store:new NeuralPackageStore({piper,supertonic})}
 }
 let engine
@@ -24,13 +24,13 @@ async function reading() {
 }
 
 describe('natural voice runtime packages',()=>{
-  it('keeps every existing Piper voice and adds three genuine generic-language profiles per supported language',()=>{
+  it('keeps every existing Piper voice and adds ten genuine generic-language profiles per supported language',()=>{
     expect(piperVoices).toHaveLength(39)
-    expect(supertonicVoices).toHaveLength(66)
+    expect(supertonicVoices).toHaveLength(220)
     const languages=[...new Set(supertonicVoices.map(voice=>voice.lang))]
     expect(languages).toHaveLength(22)
     expect(languages.some(lang=>['ca','nb','zh','sr','he'].includes(lang))).toBe(false)
-    for(const lang of languages)expect(supertonicVoices.filter(voice=>voice.lang===lang).map(voice=>voice.style)).toEqual(['F1','M1','F2'])
+    for(const lang of languages)expect(supertonicVoices.filter(voice=>voice.lang===lang).map(voice=>voice.style)).toEqual(['F1','M1','F2','F3','F4','F5','M2','M3','M4','M5'])
     expect(supertonicVoices.every(voice=>voice.lang.length===2 && voice.piperId==='supertonic3' && voice.sharedPack)).toBe(true)
     for(const lang of languages)expect(recommendedVoice(lang).runtime).not.toBe('supertonic3')
   })
@@ -39,6 +39,11 @@ describe('natural voice runtime packages',()=>{
     expect(isNeuralVoiceId(voice.id)).toBe(true);expect(isNeuralId(voice.id)).toBe(true)
     expect(normalizeReadingPreferences({voice:voice.id}).voice).toBe(voice.id)
     expect(normalizeNeuralVoice(voice,new Set([voice.id]))).toMatchObject({neural:true,installed:true,sharedPack:true,modelKey:'supertonic3',licenseUrl:voice.licenseUrl})
+    for(const voice of supertonicVoices) {
+      expect(isNeuralVoiceId(voice.id)).toBe(true);expect(isNeuralId(voice.id)).toBe(true);
+      expect(normalizeReadingPreferences({voice:voice.id}).voice).toBe(voice.id);
+      expect(normalizeNeuralVoice(voice,new Set([voice.id]))).toMatchObject({installed:true,upgradeBytes:2039325});
+    }
     for(const id of ['supertonic3:F9:es','supertonic3:F1:es-AR','supertonic3:F1:xx'])expect(normalizeReadingPreferences({voice:id}).voice).toBe('')
   })
   it('routes shared installation, assets and deletion without treating the pack as Piper',async()=>{

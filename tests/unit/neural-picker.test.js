@@ -23,6 +23,21 @@ beforeEach(() => {
     document.getElementById('reader-screen').append(button)
   }
 })
+
+describe('shared voice expansion',()=>{
+  it('offers only the small additional download while preserving installed legacy profiles',async()=>{
+    const shared=['F1','F3'].map(style=>({id:`supertonic3:${style}:es`,piperId:'supertonic3',modelKey:'supertonic3',runtime:'supertonic3',lang:'es',style,name:`Supertonic ${style}`,sizeMB:211,upgradeBytes:2039325,sharedPack:true}));
+    neuralVoices.push(...shared);
+    try {
+      const {panel}=await setup({language:'es',installed:[shared[0].id]});
+      expect(row(panel,shared[0].id).textContent).toContain('Instalada');
+      const item=row(panel,shared[1].id);
+      expect(item.textContent).toContain('2 MB adicionales');
+      expect(item.querySelector('[data-neural-action="install"]').textContent).toBe('Ampliar voces');
+      expect(item.querySelector('[data-neural-action="install"]').getAttribute('aria-label')).toContain('(2 MB)');
+    } finally {for(const voice of shared)neuralVoices.splice(neuralVoices.indexOf(voice),1)}
+  });
+});
 afterEach(async () => { await Promise.resolve(); vi.unstubAllGlobals(); document.body.innerHTML = '' })
 
 async function setup({ language = 'en', ...engineOptions } = {}) {

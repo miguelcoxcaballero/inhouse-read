@@ -4,6 +4,13 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.24
+
+- Diez perfiles naturales Supertonic en los 22 idiomas compatibles: 220 combinaciones, junto con las 39 opciones Piper existentes. Son 259 opciones de idioma y voz, no 259 personas ni voces regionales nuevas.
+- Conserva el paquete anterior y sus voces sin conexión. «Ampliar voces» descarga sólo siete perfiles adicionales, unos 2 MB; no vuelve a descargar los modelos. Una descarga interrumpida conserva las voces anteriores y la ampliación no interrumpe el audiolibro activo.
+- El paquete completo ocupa 210.204.134 bytes. Sigue siendo de descarga manual, gratuito bajo OpenRAIL-M y utilizable sin Internet tras descargarlo. Hebreo, serbio y chino mantienen sus voces Piper existentes.
+- Las 2.500 unitarias pasan; la matriz real de 220 combinaciones, la nueva batería CI y la comprobación pública conservan sus resultados propios en [el informe de verificación](docs/remaining-wip-verification.md). La nueva APK sigue pendiente de resolver la navegación EPUB con Android bloqueado.
+
 ### Actualización web · 1.7.23
 
 - El cambio de capítulo EPUB deja de esperar el retardo visual de 100 ms cuando la app está oculta. Conserva la carga del capítulo, el bloqueo de navegación y la espera visible. Diez pruebas focales comprueban el cambio; esto todavía no acredita que la parada con Android bloqueado esté resuelta.

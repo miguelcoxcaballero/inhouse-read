@@ -482,6 +482,44 @@ describe('NeuralEngine downloads', () => {
     expect(t.engine.installed).toEqual(new Set([SHARVARD_M, SHARVARD_F]))
   })
 
+  it('refresh exposes only the legacy profiles actually committed offline', async () => {
+    const old = 'supertonic3:F1:es', added = 'supertonic3:F3:es'
+    const t = setup({ installed:[], store:{listVoices:vi.fn(async () => new Set([old]))} })
+    await t.engine.refresh()
+    expect(t.store.listVoices).toHaveBeenCalledWith(neuralVoices)
+    expect(t.engine.installed.has(old)).toBe(true)
+    expect(t.engine.installed.has(added)).toBe(false)
+    expect(t.store.list).not.toHaveBeenCalled()
+  })
+
+  it('selecting a newly installed profile replaces an old three-style worker before synthesis', async () => {
+    const added = 'supertonic3:F3:es', t = setup({installed:[added]})
+    const old = t.clients.createClient()
+    old.loaded = 'supertonic3'; old.config = {runtime:'supertonic3',styles:{F1:{},M1:{},F2:{}}}
+    t.engine.client = old
+    t.engine.speak({text:'Hola.',voiceId:added,id:'new-profile'})
+    await flush()
+    expect(old.disposed).toBe(true)
+    expect(t.clients.last()).not.toBe(old)
+    expect(t.clients.last().prepared).toEqual(['supertonic3'])
+    expect(t.clients.last().jobs[0].request).toMatchObject({style:'F3',lang:'es',text:'Hola.'})
+  })
+
+  it('expanding a pack preserves playback and the active legacy worker until a new profile is selected', async () => {
+    const oldId = 'supertonic3:F1:es', added = 'supertonic3:F3:es', t = setup({installed:[oldId]})
+    t.engine.speak({text:'Hola.',voiceId:oldId,id:'old-profile'})
+    await flush()
+    const old = t.clients.last(); old.config={runtime:'supertonic3',styles:{F1:{},M1:{},F2:{}}}
+    feedJob(old.jobs[0],5)
+    advance(t.ctx,.1); await flush()
+    await t.engine.install(added)
+    expect(old.disposed).toBe(false)
+    expect(t.engine.client).toBe(old)
+    expect(t.ctx.sources.every(source=>!source.stopped)).toBe(true)
+    expect(t.engine.installed.has(added)).toBe(true)
+    expect(types(t.events)).toEqual(['start:old-profile'])
+  })
+
   it('remove() stops a voice that is speaking, deletes it and forgets its cached audio', async () => {
     const t = setup({ installed: [CLAUDE] })
     t.engine.speak({ text: 'Uno.', voiceId: CLAUDE, id: 'a' })
@@ -518,7 +556,7 @@ describe('catalogue', () => {
     const ids = neuralVoices.map(v => v.id)
     expect(new Set(ids).size).toBe(ids.length)
     expect(neuralVoices.filter(voice => voice.runtime !== 'supertonic3')).toHaveLength(39)
-    expect(neuralVoices.filter(voice => voice.runtime === 'supertonic3')).toHaveLength(66)
+    expect(neuralVoices.filter(voice => voice.runtime === 'supertonic3')).toHaveLength(220)
     expect(neuralVoices.filter(v => v.piperId === 'es_ES-sharvard-medium').map(v => [v.id, v.speaker])).toEqual([[SHARVARD_M, 0], [SHARVARD_F, 1]])
     const languages = [...new Set(neuralVoices.map(v => v.lang.split('-')[0]))]
     expect(languages).toEqual(['es', 'en', 'fr', 'de', 'it', 'pt', 'ca', 'nl', 'pl', 'ru', 'uk', 'tr', 'sv', 'da', 'nb', 'fi', 'cs', 'el', 'hu', 'ro', 'ar', 'zh', 'vi', 'bg', 'sr', 'hi', 'he'])

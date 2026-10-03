@@ -68,14 +68,52 @@ export const SUPERTONIC_ASSETS = Object.freeze([
     "path": "LICENSE",
     "bytes": 15007,
     "sha256": "0d944a9110fed9a9602d60e0423a272903e7bd21ab060490774efc77c2275e9f"
+  },
+  {
+    "path": "voice_styles/F3.json",
+    "bytes": 290794,
+    "sha256": "12f6ef2573baa2defa1128069cb59f203e3ab67c92af77b42df8a0e3a2f7c6ab"
+  },
+  {
+    "path": "voice_styles/F4.json",
+    "bytes": 291808,
+    "sha256": "c2fa764c1225a76dfc3e2c73e8aa4f70d9ee48793860eb34c295fff01c2e032b"
+  },
+  {
+    "path": "voice_styles/F5.json",
+    "bytes": 291479,
+    "sha256": "45966e73316415626cf41a7d1c6f3b4c70dbc1ba2bee5c1978ef0ce33244fc8d"
+  },
+  {
+    "path": "voice_styles/M2.json",
+    "bytes": 292055,
+    "sha256": "b76cbf62bac707c710cf0ae5aba5e31eea1a6339a9734bfae33ab98499534a50"
+  },
+  {
+    "path": "voice_styles/M3.json",
+    "bytes": 290198,
+    "sha256": "ea1ac35ccb91b0d7ecad533a2fbd0eec10c91513d8951e3b25fbba99954e159b"
+  },
+  {
+    "path": "voice_styles/M4.json",
+    "bytes": 291522,
+    "sha256": "ca8eefad4fcd989c9379032ff3e50738adc547eeb5e221b82593a6d7b3bac303"
+  },
+  {
+    "path": "voice_styles/M5.json",
+    "bytes": 291469,
+    "sha256": "dd22b92740314321f8ae11c5e87f8dd60d060f15dd3a632b5adf77f471f77af2"
   }
 ].map(asset=>Object.freeze({...asset,url:asset.url||SUPERTONIC_BASE+asset.path})));
 export const SUPERTONIC_BYTES = SUPERTONIC_ASSETS.reduce((sum, asset) => sum + asset.bytes, 0);
 export const SUPERTONIC_LANGUAGES = Object.freeze(["en","ko","ja","ar","bg","cs","da","de","el","es","et","fi","fr","hi","hr","hu","id","it","lt","lv","nl","pl","pt","ro","ru","sk","sl","sv","tr","uk","vi"]);
-export const SUPERTONIC_STYLES = Object.freeze(['F1', 'M1', 'F2']);
+export const SUPERTONIC_LEGACY_STYLES = Object.freeze(['F1', 'M1', 'F2']);
+export const SUPERTONIC_STYLES = Object.freeze([...SUPERTONIC_LEGACY_STYLES, 'F3', 'F4', 'F5', 'M2', 'M3', 'M4', 'M5']);
+// Exact previous manifest; only this complete, verified pack can migrate offline.
+export const SUPERTONIC_LEGACY_ASSETS = Object.freeze(SUPERTONIC_ASSETS.filter(asset => !asset.path.startsWith('voice_styles/') || SUPERTONIC_LEGACY_STYLES.includes(asset.path.split('/').at(-1).replace('.json', ''))));
 export const SUPERTONIC_LICENSE = Object.freeze({name:'OpenRAIL-M',url:SUPERTONIC_BASE+'LICENSE',attribution:'Copyright (c) 2026 Supertone Inc.'});
-export const isSupertonicVoiceId = id => typeof id === 'string' && /^supertonic3:(F1|M1|F2):[a-z]{2}$/.test(id);
+export const isSupertonicVoiceId = id => typeof id === 'string' && /^supertonic3:([FM][1-5]):[a-z]{2}$/.test(id);
 export function supertonicVoicesFor(languages) {
   const unique=[...new Set(languages.map(lang => String(lang).split(/[-_]/)[0]))].filter(lang => SUPERTONIC_LANGUAGES.includes(lang));
-  return unique.flatMap(lang => SUPERTONIC_STYLES.map(style => ({id:`supertonic3:${style}:${lang}`, modelId:SUPERTONIC_MODEL_ID, modelKey:SUPERTONIC_MODEL_ID, piperId:SUPERTONIC_MODEL_ID, runtime:'supertonic3', provider:'supertonic',lang,style,name:`Supertonic ${style}`,quality:'natural',sizeMB:Math.ceil(SUPERTONIC_BYTES/1e6),downloadBytes:SUPERTONIC_BYTES,licenseUrl:'licenses/supertonic3-OpenRAIL-M.txt',sharedPack:true})));
+  return unique.flatMap(lang => SUPERTONIC_STYLES.map(style => ({id:`supertonic3:${style}:${lang}`, modelId:SUPERTONIC_MODEL_ID, modelKey:SUPERTONIC_MODEL_ID, piperId:SUPERTONIC_MODEL_ID, runtime:'supertonic3', provider:'supertonic',lang,style,name:`Supertonic ${style}`,quality:'natural',sizeMB:Math.ceil(SUPERTONIC_BYTES/1e6),downloadBytes:SUPERTONIC_BYTES,upgradeBytes:SUPERTONIC_BYTES-SUPERTONIC_LEGACY_ASSETS.reduce((sum,a)=>sum+a.bytes,0),licenseUrl:'licenses/supertonic3-OpenRAIL-M.txt',sharedPack:true})));
 }

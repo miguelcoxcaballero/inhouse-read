@@ -44,7 +44,7 @@ describe('catalogue of the added languages', () => {
     }
     const packs=modelsOf(supertonicVoices)
     expect(packs.size).toBe(1)
-    expect(packs.get('supertonic3')).toHaveLength(66)
+    expect(packs.get('supertonic3')).toHaveLength(220)
     expect(supertonicVoices.every(voice=>voice.sizeMB===Math.ceil(SUPERTONIC_BYTES/1e6)&&voice.downloadBytes===SUPERTONIC_BYTES)).toBe(true)
     expect(piperVoices.filter(voice=>voice.piperId==='no_NO-nvcc-medium').map(voice=>[voice.id,voice.speaker])).toEqual([['piper:no_NO-nvcc-medium#3',3],['piper:no_NO-nvcc-medium#6',6]])
   })

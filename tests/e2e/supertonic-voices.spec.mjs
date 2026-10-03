@@ -1,5 +1,5 @@
 // Real shared Supertonic 3 weights, production worker/ORT WASM and Web Audio.
-// One pack/session is reused across all 22 app languages and three profiles.
+// One pack/session is reused across all 22 app languages and ten profiles.
 // This measures the current Chromium machine; it makes no phone speed claim.
 import { test,expect } from '@playwright/test';
 import { createServer } from 'node:http';
@@ -73,7 +73,7 @@ function wavOf(pcm,sampleRate) {
 }
 
 test.describe.configure({mode:'serial'});
-test.describe('Supertonic 3: 22 app languages × three real offline profiles',()=>{
+test.describe('Supertonic 3: 22 app languages × ten real offline profiles',()=>{
   test.setTimeout(180_000);
   let page,context,server,port,dist,installedHits;
   const hits=[],outside=[],pageErrors=[],numbers={revision:SUPERTONIC_REVISION,packBytes:SUPERTONIC_BYTES,assetSources:SUPERTONIC_ASSETS,scope:'Chromium WASM on this machine; fully offline playback after the installed worker is warmed',cases:{}};
@@ -142,7 +142,7 @@ test.describe('Supertonic 3: 22 app languages × three real offline profiles',()
       const file=join(EVIDENCE,`${lang}-${style}.wav`);writeFileSync(file,wav);
       const metrics={voiceId,lang,style,rate,sampleRate,...audio,sha256,firstAudioAt:first.at,firstAudioClock:first.ctxTime,rtf:result.stats.rtf,workers:result.workers,modelRequestsAfterInstall:hits.length-installedHits};
       numbers.cases[voiceId]=metrics;
-      if(style==='F2')expect(new Set(SUPERTONIC_STYLES.map(s=>numbers.cases[`supertonic3:${s}:${lang}`].sha256)).size).toBe(3);
+      if(style===SUPERTONIC_STYLES.at(-1))expect(new Set(SUPERTONIC_STYLES.map(s=>numbers.cases[`supertonic3:${s}:${lang}`].sha256)).size).toBe(SUPERTONIC_STYLES.length);
       await testInfo.attach('supertonic-real-audio',{body:JSON.stringify(metrics,null,2),contentType:'application/json'});
       await testInfo.attach('supertonic-wav',{path:file,contentType:'audio/wav'});
     });

@@ -12,6 +12,12 @@ export class NeuralPackageStore {
     const [piper, supertonic] = await Promise.allSettled([this.piper.list(), this.supertonic.installed()])
     return new Set([...(piper.status === 'fulfilled' ? piper.value : []), ...(supertonic.status === 'fulfilled' && supertonic.value ? [SUPERTONIC_MODEL_ID] : [])])
   }
+  async listVoices(voices) {
+    const [piper,styles]=await Promise.allSettled([this.piper.list(),this.supertonic.availableStyles()]);
+    return new Set(voices.filter(voice=>voice.runtime==='supertonic3'
+      ? styles.status==='fulfilled'&&styles.value.has(voice.style)
+      : piper.status==='fulfilled'&&piper.value.has(voice.piperId)).map(voice=>voice.id));
+  }
   has(key) { return key === SUPERTONIC_MODEL_ID ? this.supertonic.installed() : this.piper.has(key) }
   download(key, options) { return key === SUPERTONIC_MODEL_ID ? this.supertonic.install(options) : this.piper.download(key, options) }
   remove(key) { return key === SUPERTONIC_MODEL_ID ? this.supertonic.remove() : this.piper.remove(key) }

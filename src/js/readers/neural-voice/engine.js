@@ -139,9 +139,11 @@ export class NeuralEngine extends EventTarget {
   #changed() { this.dispatchEvent(new Event('change')) }
 
   async refresh() {
-    let piperIds
-    try { piperIds = await this.store.list() } catch { piperIds = new Set() }
-    const next = new Set(this.voices.filter(voice => piperIds.has(voice.piperId)).map(voice => voice.id))
+    let next
+    try {
+      if (this.store.listVoices) next = await this.store.listVoices(this.voices)
+      else { const piperIds = await this.store.list(); next = new Set(this.voices.filter(voice => piperIds.has(voice.piperId)).map(voice => voice.id)) }
+    } catch { next = new Set() }
     if (next.size === this._installed.size && [...next].every(id => this._installed.has(id))) return
     this._installed = next
     this.#changed()
@@ -221,6 +223,7 @@ export class NeuralEngine extends EventTarget {
     if (!voice || !this._installed.has(voice.id) || !this.supported) return false
     if (this.run) return false // a warm-up must not replace the model a reading is using
     this.#clearIdle()
+    this.#refreshStyleSession(voice)
     let client = this.client
     try {
       client ||= this.client = this.createClient()
@@ -392,8 +395,10 @@ export class NeuralEngine extends EventTarget {
   async #prepare(run) {
     run.prepared = 'pending'
     this.#setStatus('loading')
-    const t = now(), cold = !this.client?.alive
+    const t = now()
     try {
+      this.#refreshStyleSession(run.voice)
+      const cold = !this.client?.alive
       this.client ||= this.createClient()
       await this.client.prepare(run.voice.piperId)
       if (cold) this.coldMs = Math.max(1500, now() - t)
@@ -408,6 +413,14 @@ export class NeuralEngine extends EventTarget {
     run.prepared = 'ready'
     this.#setStatus('buffering')
     this.#pump()
+  }
+
+  #refreshStyleSession(voice) {
+    // Expanding an installed pack does not interrupt its current audiobook.
+    // Selecting a newly downloaded profile replaces a legacy three-style
+    // worker before synthesis; all profiles then reuse that single session.
+    if (voice.runtime === 'supertonic3' && this.client?.loaded === voice.piperId &&
+        this.client.config?.runtime === 'supertonic3' && !this.client.config.styles?.[voice.style]) this.#teardown()
   }
 
   /**

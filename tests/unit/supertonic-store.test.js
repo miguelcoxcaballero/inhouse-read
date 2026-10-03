@@ -2,6 +2,7 @@ import {describe,it,expect,vi} from 'vitest';
 import {webcrypto} from 'node:crypto';
 import {SupertonicStore} from '../../src/js/readers/neural-voice/supertonic-store.js';
 import {SUPERTONIC_BASE,supertonicAssetUrl} from '../../src/js/readers/neural-voice/supertonic-catalog.js';
+import {NeuralPackageStore} from '../../src/js/readers/neural-voice/package-store.js';
 
 async function fixture() {
   const map=new Map(),cache={match:vi.fn(async key=>map.get(key)?.clone()),put:vi.fn(async(key,response)=>{const bytes=await response.arrayBuffer();map.set(key,new Response(bytes,{headers:response.headers}));}),delete:vi.fn(async key=>map.delete(key))};
@@ -13,6 +14,46 @@ async function fixture() {
 }
 
 describe('Supertonic shared pack storage',()=>{
+  async function expansion() {
+    const f=await fixture();await f.store.install();
+    const text='{"voice":3}',sha256=Buffer.from(await webcrypto.subtle.digest('SHA-256',new TextEncoder().encode(text))).toString('hex');
+    const added={path:'voice_styles/F3.json',bytes:text.length,sha256};
+    return {...f,added,text,expanded:new SupertonicStore({...f.deps,assets:[...f.assets,added],legacyAssets:f.assets})};
+  }
+  it('keeps exactly the committed legacy profiles readable without fetching optional profiles',async()=>{
+    const f=await expansion();f.fetch.mockClear();f.fetch.mockRejectedValue(Error('offline'));
+    expect(await f.expanded.installed()).toBe(false);
+    expect([...await f.expanded.availableStyles()]).toEqual(['F1']);
+    expect((await f.expanded.readConfig()).styles).toEqual({F1:{voice:1}});
+    expect((await f.expanded.readAssets()).duration_predictor.byteLength).toBe(10);
+    expect(f.fetch).not.toHaveBeenCalled();
+    const voices=[{id:'old-en',runtime:'supertonic3',style:'F1'}, {id:'old-es',runtime:'supertonic3',style:'F1'},
+      {id:'new-es',runtime:'supertonic3',style:'F3'}, {id:'piper',piperId:'model'}];
+    const store=new NeuralPackageStore({piper:{list:async()=>new Set(['model'])},supertonic:f.expanded});
+    expect([...await store.listVoices(voices)]).toEqual(['old-en','old-es','piper']);
+  });
+  it('expands using only the missing verified style, then exposes it to every language',async()=>{
+    const f=await expansion();f.fetch.mockClear();f.fetch.mockResolvedValue(new Response(f.text));
+    await f.expanded.install();expect(await f.expanded.installed()).toBe(true);
+    expect(f.fetch).toHaveBeenCalledTimes(1);expect(f.fetch.mock.calls[0][0]).toBe('https://fixture/'+f.added.path);
+    expect([...await f.expanded.availableStyles()]).toEqual(['F1','F3']);
+    expect((await f.expanded.readConfig()).styles).toEqual({F1:{voice:1},F3:{voice:3}});
+  });
+  it('preserves the old offline completion marker after an interrupted expansion',async()=>{
+    const f=await expansion(),before=await (await f.cache.match(f.store.marker)).text();
+    f.fetch.mockRejectedValue(Error('offline'));await expect(f.expanded.install()).rejects.toMatchObject({code:'offline'});
+    expect(await (await f.cache.match(f.store.marker)).text()).toBe(before);
+    expect([...await f.expanded.availableStyles()]).toEqual(['F1']);
+    expect((await f.expanded.readConfig()).styles.F1).toEqual({voice:1});
+    expect(await f.expanded.installed()).toBe(false);
+  });
+  it('rejects legacy migration if its pinned URL changes or a committed file disappears',async()=>{
+    const f=await expansion();
+    const changed=new SupertonicStore({...f.deps,assets:[...f.assets,f.added],legacyAssets:f.assets.map((a,i)=>i?a:{...a,url:'https://other/model'})});
+    expect([...await changed.availableStyles()]).toEqual([]);
+    await f.cache.delete('https://fixture/LICENSE');expect([...await f.expanded.availableStyles()]).toEqual([]);
+    await expect(f.expanded.readConfig()).rejects.toMatchObject({code:'missing'});
+  });
   it('pins each source URL in the completion manifest while preserving local fixture paths',async()=>{
     const f=await fixture();await f.store.install();
     const assets=f.assets.map((asset,i)=>i?asset:{...asset,url:'https://huggingface.co/author/model/resolve/pinned-revision/quantized.onnx'});

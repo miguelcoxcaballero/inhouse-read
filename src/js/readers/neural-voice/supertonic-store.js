@@ -1,29 +1,41 @@
-import { SUPERTONIC_ASSETS, supertonicBase, supertonicAssetUrl, SUPERTONIC_REVISION } from './supertonic-catalog.js';
+import { SUPERTONIC_ASSETS, SUPERTONIC_LEGACY_ASSETS, supertonicBase, supertonicAssetUrl, SUPERTONIC_REVISION } from './supertonic-catalog.js';
 
 export const SUPERTONIC_CACHE = 'inhouse-supertonic3-v1';
 const failure = (code, message, cause) => Object.assign(new Error(message, {cause}), {code});
 const aborted = () => failure('aborted', 'Descarga cancelada');
 const hashHex = buffer => Array.from(new Uint8Array(buffer), n => n.toString(16).padStart(2,'0')).join('');
+const manifestOf = (assets,base) => JSON.stringify(assets.map(({path,url,bytes,sha256})=>({path,url:url||base+path,bytes,sha256})));
 
 /** One immutable pack for all languages/styles. Streams each file into Cache
  * Storage, verifies it, and writes the completion marker last. Interrupted
  * downloads can reuse complete verified files, but never appear installed. */
 export class SupertonicStore {
   constructor({caches=globalThis.caches,fetch=globalThis.fetch?.bind(globalThis),storage=globalThis.navigator?.storage,
-    crypto=globalThis.crypto,base=supertonicBase(),assets=SUPERTONIC_ASSETS,stallMs=20000}={}) {
-    Object.assign(this,{caches,fetchFn:fetch,storage,crypto,base,assets,stallMs});
-    this.marker=base+'.inhouse-complete.json';this.manifest=JSON.stringify(assets.map(({path,url,bytes,sha256})=>({path,url:url||base+path,bytes,sha256})));this.job=null;this.generation=0;this.controller=null;
+    crypto=globalThis.crypto,base=supertonicBase(),assets=SUPERTONIC_ASSETS,
+    legacyAssets=assets===SUPERTONIC_ASSETS?SUPERTONIC_LEGACY_ASSETS:[],stallMs=20000}={}) {
+    Object.assign(this,{caches,fetchFn:fetch,storage,crypto,base,assets,legacyAssets,stallMs});
+    this.marker=base+'.inhouse-complete.json';this.manifest=manifestOf(assets,base);this.job=null;this.generation=0;this.controller=null;
   }
   async cache() { if(!this.caches)throw failure('storage','El dispositivo no permite guardar voces');return this.caches.open(SUPERTONIC_CACHE); }
-  async installed() {
+  async committedAssets() {
     const cache=await this.cache(),marker=await cache.match(this.marker);
-    if(!marker)return false;
-    try { const record=await marker.json();if(record.revision!==SUPERTONIC_REVISION||record.manifest!==this.manifest)return false; } catch{return false;}
-    for(const asset of this.assets) {
+    if(!marker)return null;
+    let assets;
+    try {
+      const record=await marker.json();if(record.revision!==SUPERTONIC_REVISION)return null;
+      assets=record.manifest===this.manifest?this.assets:
+        this.legacyAssets.length&&record.manifest===manifestOf(this.legacyAssets,this.base)?this.legacyAssets:null;
+      if(!assets)return null;
+    } catch{return null;}
+    for(const asset of assets) {
       const r=await cache.match(this.base+asset.path);
-      if(!r||r.headers.get('x-inhouse-sha256')!==asset.sha256||Number(r.headers.get('content-length'))!==asset.bytes)return false;
+      if(!r||r.headers.get('x-inhouse-sha256')!==asset.sha256||Number(r.headers.get('content-length'))!==asset.bytes)return null;
     }
-    return true;
+    return assets;
+  }
+  async installed() { return await this.committedAssets()===this.assets; }
+  async availableStyles() {
+    return new Set((await this.committedAssets()||[]).filter(a=>a.path.startsWith('voice_styles/')).map(a=>a.path.split('/').at(-1).replace('.json','')));
   }
   install({signal,onProgress=()=>{}}={}) {
     if(this.job)return this.job;
@@ -32,7 +44,10 @@ export class SupertonicStore {
     const abort=()=>controller.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
     const check=()=>{if(controller.signal.aborted||generation!==this.generation)throw aborted();};
     const run=async()=>{
-      check();const cache=await this.cache();await cache.delete(this.marker);
+      check();const cache=await this.cache();
+      // A failed optional expansion must leave the previous offline pack usable.
+      // New/invalid installs still have no completion marker until all hashes pass.
+      if(!await this.committedAssets())await cache.delete(this.marker);
       const total=this.assets.reduce((sum,a)=>sum+a.bytes,0);let received=0;
       for(const asset of this.assets) {
         check();const url=this.base+asset.path,old=await cache.match(url);
@@ -66,19 +81,21 @@ export class SupertonicStore {
     const promise=run().finally(()=>{signal?.removeEventListener('abort',abort);if(this.job===promise){this.job=null;this.controller=null;}});this.job=promise;return promise;
   }
   async readAssets() {
-    if(!await this.installed())throw failure('missing','Descarga primero el paquete de voces');
+    const assets=await this.committedAssets();
+    if(!assets)throw failure('missing','Descarga primero el paquete de voces');
     const cache=await this.cache(),buffers={};
-    for(const asset of this.assets.filter(a=>a.path.endsWith('.onnx'))) {
+    for(const asset of assets.filter(a=>a.path.endsWith('.onnx'))) {
       const response=await cache.match(this.base+asset.path);if(!response)throw failure('missing','Falta un archivo de la voz');
       const bytes=await response.arrayBuffer();if(bytes.byteLength!==asset.bytes)throw failure('storage','El modelo guardado está incompleto');buffers[asset.path.split('/').at(-1).replace('.onnx','')]=bytes;
     }
     return buffers;
   }
   async readConfig() {
-    if(!await this.installed())throw failure('missing','Descarga primero el paquete de voces');
+    const assets=await this.committedAssets();
+    if(!assets)throw failure('missing','Descarga primero el paquete de voces');
     const cache=await this.cache();const json=async path=>{const r=await cache.match(this.base+path);if(!r)throw failure('missing','Falta la configuración de la voz');return r.json();};
     const config=await json('onnx/tts.json'),indexer=await json('onnx/unicode_indexer.json'),styles={};
-    for(const asset of this.assets.filter(a=>a.path.startsWith('voice_styles/')))styles[asset.path.split('/').at(-1).replace('.json','')]=await json(asset.path);
+    for(const asset of assets.filter(a=>a.path.startsWith('voice_styles/')))styles[asset.path.split('/').at(-1).replace('.json','')]=await json(asset.path);
     return {config,indexer,styles};
   }
   async remove() {

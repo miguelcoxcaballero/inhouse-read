@@ -165,7 +165,9 @@ export class NeuralVoicePicker {
     const item = element('li', 'reading-neural-voice'); item.dataset.neuralVoice = voice.id; item.dataset.state = name
     const text = element('div', 'reading-neural-voice__text'), title = element('span', 'reading-neural-voice__name', voice.name)
     if (voice.recommended) title.append(' ', element('small', 'reading-neural-voice__badge', 'Recomendada'))
-    const detail = [languageName(voice.lang), name === 'installed' ? 'Instalada' : `${Math.round(voice.sizeMB)} MB`]
+    const expansion = voice.sharedPack && voice.upgradeBytes > 0 && [...engine.installed].some(id=>id.startsWith(voice.modelKey+':'))
+    const size = expansion ? Math.round(voice.upgradeBytes/1e6) : Math.round(voice.sizeMB)
+    const detail = [languageName(voice.lang), name === 'installed' ? 'Instalada' : `${size} MB${expansion?' adicionales':''}`]
     if (voice.sharedPack) detail.push('Paquete compartido · todos sus idiomas y voces')
     text.append(title, element('span', 'reading-neural-voice__meta', detail.join(' · ')))
     if (voice.licenseUrl) {
@@ -176,7 +178,7 @@ export class NeuralVoicePicker {
     }
     const actions = element('div', 'reading-neural-voice__actions')
     const where = `${voice.name}, ${languageName(voice.lang)}`
-    if (name === 'idle') actions.append(button('Descargar', 'install', voice.id, '', `Descargar la voz ${where} (${Math.round(voice.sizeMB)} MB)`))
+    if (name === 'idle') actions.append(button(expansion?'Ampliar voces':'Descargar', 'install', voice.id, '', `${expansion?'Ampliar con':'Descargar'} la voz ${where} (${size} MB)`))
     else if (name === 'downloading') actions.append(button('Cancelar', 'cancel', voice.id, '', `Cancelar la descarga de ${voice.name}`))
     else if (name === 'error') actions.append(button('Reintentar', 'install', voice.id, '', `Reintentar la descarga de ${voice.name}`))
     else {
