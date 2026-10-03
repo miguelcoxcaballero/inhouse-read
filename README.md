@@ -4,6 +4,14 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.19
+
+- El PDF adaptable y el audiolibro reconstruyen el orden por la posición del texto: columnas completas, frases entre líneas y párrafos separados por su espaciado real.
+- Los párrafos cortos repetidos se conservan también al activar la omisión de cabeceras. Búsqueda y resaltado siguen el mismo texto.
+- Al acabar un capítulo, la voz espera al giro de página pendiente. Pausa, Detener y cerrar cancelan el avance pendiente.
+
+**Verificado:** [2.262 unitarias y 342 E2E aprobados](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37126412116), más 37 verificaciones públicas en cuatro tandas: 20 de lectura, 14 del editor, una sesión real de voz de más de seis minutos y dos escenarios completos de editor/papelera. Se contrastaron de nuevo 47 recursos HTTPS y la APK pública. [Correcciones, procedencia y límites](docs/pdf-reading-continuity-1719.md).
+
 ### Actualización web · 1.7.18
 
 - El editor propone hasta tres colores distintos presentes en la portada. Cada opción aplica relieve y brillo a las zonas de ese color y balancea el libro para mostrar el reflejo.
