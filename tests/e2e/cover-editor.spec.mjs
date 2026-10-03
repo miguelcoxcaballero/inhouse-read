@@ -110,7 +110,7 @@ test('relieve: tres propuestas, selección con balanceo, persistencia y Sin reli
   await expect(page.getByLabel('Intensidad del relieve')).toBeEnabled()
   // Maps must be ready before the nominal 2400 ms motion begins. Software GL
   // caps animation steps, so observe completion rather than assume wall time.
-  await expect.poll(async () => Math.abs(await canvasAngle(page)), { timeout:30_000 }).toBeGreaterThan(1)
+  await expect.poll(() => page.evaluate(() => Math.max(0, ...window.coverAngleSamples.map(Math.abs))), { timeout:30_000 }).toBeGreaterThan(1)
   if (evidence) await page.screenshot({ path: `${evidence}/mobile-light-balanceo.png` })
   await expect.poll(() => canvasAngle(page), { timeout:30_000 }).toBe(0)
   const samples = await page.evaluate(() => {
@@ -151,21 +151,64 @@ test('relieve: tres propuestas, selección con balanceo, persistencia y Sin reli
   expect(errors).toEqual([])
 })
 
-test('un gesto del usuario corta el balanceo', async ({ page }) => {
+test('un gesto del usuario corta el balanceo', async ({ page }, testInfo) => {
   test.setTimeout(240_000)
   await page.setViewportSize({ width: 390, height: 844 })
   const errors = await openShelfEditor(page)
   await enterCover(page)
+  const heading = await page.locator('.ihr-spine-editor__heading').boundingBox()
+  expect(heading).not.toBeNull()
+  // Capture the delivered input and every painted pose in the browser. A
+  // locator evaluation can spend a full half-cycle resolving its handle on
+  // software GL, so it cannot prove when a transient angle was interrupted.
+  await page.evaluate(() => {
+    const canvas = document.querySelector('.ihr-flyout__book canvas')
+    const record = window.coverInterruption = { samples: [], gesture: null, returnedAt: null }
+    const observer = new MutationObserver(() => {
+      const sample = { angle: Number(canvas.dataset.angle), time: performance.now() }
+      record.samples.push(sample)
+      if (record.gesture && sample.angle === 0 && record.returnedAt === null) record.returnedAt = sample.time
+    })
+    observer.observe(canvas, { attributes: true, attributeFilter: ['data-angle'] })
+    const capture = event => {
+      if (!event.target.closest('.ihr-spine-editor__heading')) return
+      record.gesture = { angle: Number(canvas.dataset.angle), time: performance.now(), isTrusted: event.isTrusted, sampleIndex: record.samples.length }
+      document.removeEventListener('pointerdown', capture, true)
+    }
+    document.addEventListener('pointerdown', capture, true)
+    window.finishCoverInterruption = () => {
+      observer.disconnect()
+      document.removeEventListener('pointerdown', capture, true)
+      return record
+    }
+  })
   await page.getByRole('radiogroup', { name: 'Propuestas de relieve' }).locator('.ihr-relief-card').first().click()
-  // Esperar a que el balanceo esté en marcha (la guiñada se aparta de 0).
-  await expect.poll(async () => Math.abs(await canvasAngle(page)), { timeout: 8000 }).toBeGreaterThan(3)
-  await page.waitForTimeout(500)
-  await page.locator('.ihr-spine-editor__heading').click()
+  await page.mouse.move(heading.x + heading.width / 2, heading.y + heading.height / 2)
+  // Observe directly on the rendering frame, then deliver a real pointerdown
+  // without another locator/actionability round trip. The capture above must
+  // still prove that the input actually arrived while the book was tilted.
+  await page.waitForFunction(() => Math.abs(Number(document.querySelector('.ihr-flyout__book canvas').dataset.angle)) > 3, undefined, { polling: 'raf', timeout: 8000 })
+  await page.mouse.down()
+  await page.mouse.up()
   // Default checks the sub-second return. A software-GL observation profile
   // can extend its deadline without changing the 240 ms animation contract.
   const interruptDeadline = Number(process.env.COVER_EDITOR_INTERRUPT_TIMEOUT_MS || 900)
-  await expect.poll(() => canvasAngle(page), { timeout: interruptDeadline }).toBe(0)
+  await page.waitForFunction(() => window.coverInterruption.returnedAt !== null, undefined, { polling: 'raf', timeout: interruptDeadline })
   await page.waitForTimeout(500)
+  const interruption = await page.evaluate(() => window.finishCoverInterruption())
+  await testInfo.attach('cover-interruption', { body: JSON.stringify(interruption, null, 2), contentType: 'application/json' })
+  expect(interruption.gesture?.isTrusted).toBe(true)
+  expect(Math.abs(interruption.gesture.angle)).toBeGreaterThan(3)
+  expect(interruption.returnedAt).toBeGreaterThan(interruption.gesture.time)
+  expect(interruption.returnedAt - interruption.gesture.time).toBeLessThanOrEqual(interruptDeadline)
+  // A cancellation returns monotonically to rest; another oscillation or a
+  // natural finish after the remaining cycles does not satisfy this contract.
+  let previousAngle = Math.abs(interruption.gesture.angle)
+  for (const sample of interruption.samples.slice(interruption.gesture.sampleIndex)) {
+    expect(Math.abs(sample.angle)).toBeLessThanOrEqual(previousAngle + 1e-6)
+    previousAngle = Math.abs(sample.angle)
+  }
+  expect(previousAngle).toBe(0)
   expect(await canvasAngle(page)).toBe(0)
   expect(errors).toEqual([])
 })
