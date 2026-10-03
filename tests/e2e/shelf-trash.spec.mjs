@@ -379,7 +379,10 @@ async function finishDropIntoBin(page, id, testInfo) {
 }
 
 test('papelera 3D: retira la copia de la app con animación en un móvil de 320 px y conserva los otros libros y plantas', async ({ page }, testInfo) => {
-  test.setTimeout(90_000)
+  // Import, two shelf renders, the camera turn and the 14-step drag share
+  // this scenario budget under software GL. Keep every local deadline and
+  // the motion, pixels, persistence and post-reload assertions unchanged.
+  test.setTimeout(150_000)
   await page.setViewportSize({ width:320, height:844 })
   const errors = []; page.on('pageerror', error => errors.push(error.message))
   const fixtureBefore = await readFile(PDF_FIXTURE)

@@ -176,8 +176,12 @@ test('edita y conserva el color, fuente, tamaño y texto del lomo', async ({ pag
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
 
   const spine = page.locator('.ihr-spine').first()
-  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/,{timeout:20_000})
+  // The return advances by rendered frames; its complete lifecycle needs
+  // the same software-GL allowance as the other book-return scenarios.
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/,{timeout:30_000})
+  await expect(page.locator('#home-screen')).toBeVisible()
   await expect(spine).toBeVisible()
+  await expect(spine).not.toHaveClass(/is-away/)
   const original = await spine.evaluate(node => getComputedStyle(node).getPropertyValue('--ihr-spine-base').trim())
   await spine.click()
   const dialog = page.locator('.ihr-flyout')
