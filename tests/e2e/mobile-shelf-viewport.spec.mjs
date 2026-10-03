@@ -83,6 +83,16 @@ for (const shelfType of ['walnut','baggebo']) {
       await expect(canvas).toHaveAttribute('data-view-progress','0');
       await page.getByRole('button',{ name:'Vista isométrica, libros de lado' }).tap();
       await expect(canvas).toHaveAttribute('data-view-progress','1');
+      // Reduced motion publishes its endpoint before the queued frame resizes
+      // the canvas. Observe that rendered geometry before measuring the view.
+      await page.waitForFunction(() => {
+        const canvas = document.querySelector('.ihr-bookshelf-scene');
+        const stage = document.querySelector('.ihr-shelf-stage');
+        if (!canvas || !stage || canvas.dataset.viewProgress !== '1' || canvas.dataset.animating !== 'false') return false;
+        const drawing = canvas.getBoundingClientRect(), bounds = stage.getBoundingClientRect();
+        return Math.abs(drawing.left-bounds.left) <= 1 && Math.abs(drawing.right-bounds.right) <= 1 &&
+          Math.abs(drawing.bottom-bounds.bottom) <= 1;
+      },null,{ timeout:8_000 });
       await assertViewportFills(page,viewport.width);
     }
     expect(errors).toEqual([]);
