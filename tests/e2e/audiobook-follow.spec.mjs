@@ -194,6 +194,10 @@ for (const [theme, label] of [['paper', 'Papel'], ['sepia', 'Sepia'], ['night', 
     await page.screenshot({ path:`${EVIDENCE}/epub-${theme}.png` })
     // Same wash over the PDF's canvas + text layer.
     await page.getByRole('button', { name:'Volver a la estantería' }).click()
+    // Import the next document after the EPUB has returned and released its
+    // reader; the click itself only starts the asynchronous closing flight.
+    await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/, { timeout:30_000 })
+    await expect(page.locator('.ihr-flyout')).toHaveCount(0)
     await page.locator('#file-picker').setInputFiles(PDF)
     await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 1 de 4/)
     await page.evaluate(() => { window.__narration.log.length = 0; window.__narration.state.hold = 3 })

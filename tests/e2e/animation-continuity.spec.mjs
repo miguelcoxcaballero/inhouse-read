@@ -250,7 +250,8 @@ test('varias portadas reales salen y regresan sin mostrar portadas provisionales
 
   // Cancel while the book is still leaving its slot, then select another.
   await page.getByRole('button', { name:'Vista de canto', exact:true }).click()
-  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '0')
+  // Software WebGL must render the complete reverse camera path, too.
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-view-progress', '0', { timeout:30_000 })
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating', 'false')
   await page.locator('.ihr-spine[data-book-id="continuity:0"]').click()
   await expect(page.locator('.ihr-flyout')).toBeVisible()

@@ -453,7 +453,9 @@ test('retirar un libro no muestra aviso, no enlaza shaders y no reconstruye la e
 })
 
 test('un libro retirado sigue en Drive y la sincronización automática no lo vuelve a añadir', async ({ page }, testInfo) => {
-  test.setTimeout(120_000)
+  // Two reader round trips, a camera turn, a 3D drop and Drive reimport all
+  // render under software GL. Preserve every local deadline and assertion.
+  test.setTimeout(240_000)
   const drivePdf = savedDrivePdf()
   const seed = await seedShelf(page, { linked:true, driveBytes:[...drivePdf] })
   const savedProgress = {
@@ -542,7 +544,9 @@ test('un libro retirado sigue en Drive y la sincronización automática no lo vu
 })
 
 test('entrar en la papelera y soltar fuera cancela la eliminación y mantiene los archivos', async ({ page }) => {
-  test.setTimeout(90_000)
+  // The outward and return drags each draw every pointer step in software GL;
+  // leave room for both paths after seeding, reader closure and camera turn.
+  test.setTimeout(180_000)
   const seed = await seedShelf(page)
   await useIsometricShelf(page)
   await assertCabinetOverview(page)
