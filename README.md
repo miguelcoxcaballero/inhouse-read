@@ -8,7 +8,7 @@ La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal 
 
 - La vuelta del lector prepara su hueco sin repintar la habitación bajo la página. Los shaders de profundidad se preparan con la estantería y se reutiliza su imagen mientras el libro entra en su hueco.
 - El renderizado del libro y de su inserción usa una ventana menor cuando cabe, con la misma densidad de píxeles, iluminación, materiales y profundidad. El zoom inicial y los casos que no caben conservan el framebuffer completo.
-- El perfil local DPR 2 completa el cierre en 7.063 ms dentro del plazo original de ocho segundos. Pasan 20 casos originales de apertura/temas y cinco comparaciones GPU con cero diferencias de píxeles. La batería completa de esta fuente se contrasta por separado. [Resultados y pendientes](docs/remaining-wip-verification.md).
+- La web publicada completa el cierre en 6.915 ms con el perfil original DPR 2. Pasan 2.639 unitarias en 173 archivos, 514 E2E y siete casos públicos sin reintentos. Los 20 casos locales de apertura/temas y cinco comparaciones GPU conservan cero diferencias de píxeles. La configuración gráfica forzada adicional tarda 9.275 ms y conserva su fallo; Google necesita su prueba con una cuenta real. [Resultados y pendientes](docs/remaining-wip-verification.md).
 
 ### Actualización web · 1.7.39
 

@@ -1,12 +1,22 @@
-# Verificación del WIP — web 1.7.39 y Android 1.1.4 publicados
+# Verificación del WIP — web 1.7.40 y Android 1.1.4 publicados
 
-## Preparación de 1.7.40: cierre y profundidad
+## Publicación verificada de 1.7.40: cierre y profundidad
 
 El retorno marca el hueco antes de reconstruir los nodos del mueble, prepara su proyección bajo la página opaca y entrega un único repintado antes del zoom. Los tres materiales originales de profundidad se enlazan con el primer batch de la estantería, sobre la geometría ya existente del indicador. No añaden objetos visibles ni render passes. Durante la inserción, el libro oculto no invalida la imagen ni las sombras de una habitación que no cambia; los cambios reales pendientes siguen respetándose. Su watchdog observa el reloj original de la inserción.
 
 El framebuffer del libro y el depth pass de inserción usan ventanas de cámara alineadas a píxeles. El canvas final, DPR, materiales, iluminación, geometrías, sombras y relojes de animación permanecen. El primer zoom, un DPR fraccionario y cualquier modelo que no cabe usan el buffer completo. La profundidad continúa recortando el libro detrás de sus vecinos y madera.
 
-El candidato aislado final completa **7.062,9 ms** en el reloj DOM original del móvil 390 × 844 a DPR 2, sin reintentos y con el mismo límite de ocho segundos. Pasan **20 casos originales** de apertura y temas, incluidos giro/cancelación, CBZ, PDF, EPUB, fallback y movimiento reducido. Cinco poses GPU, desde la página ampliada hasta el lomo girado, comparan 5.266.560 componentes RGBA por pose: **cero diferencias**, con portada brillante, lomo dorado, página, texto y marcapáginas. No es una medición de un teléfono físico. Los ensayos anteriores fallidos se conservan: no se publica el candidato que contenía texto mal codificado, aunque su reloj pasaba. La fuente final y CI necesitan su verificación propia.
+El candidato aislado final completa **7.062,9 ms** en el reloj DOM original del móvil 390 × 844 a DPR 2, sin reintentos y con el mismo límite de ocho segundos. Pasan **20 casos originales** de apertura y temas, incluidos giro/cancelación, CBZ, PDF, EPUB, fallback y movimiento reducido. Cinco poses GPU, desde la página ampliada hasta el lomo girado, comparan 5.266.560 componentes RGBA por pose: **cero diferencias**, con portada brillante, lomo dorado, página, texto y marcapáginas. No es una medición de un teléfono físico. Los ensayos anteriores fallidos se conservan: no se publica el candidato que contenía texto mal codificado, aunque su reloj pasaba. La equivalencia de runtime con la fuente final está contrastada: sólo cambian el footer de versión y comentarios. Su CI y publicación tienen pruebas propias indicadas a continuación.
+
+Fuente `4bfed7bca97e094c189c54c66de424ea09fa3dcd`, Pages `6ebd58117eb3c2ff88fdac0772c1fbe50a0dc8ce`. La [CI original 37170288785](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37170288785) supera **2.639 unitarias en 173 archivos y 514 E2E**, 3.153 en total, sin omisiones, reintentos, flaky ni errores. Se contrastan sus doce jobs y once ZIP originales; certificado `5a16b70dabb6d3ab61f3ec670020a75afc11e791cf367486e6d6a9f446ba1df2`. Las 75 comprobaciones Python también pasan en esta fuente.
+
+La comprobación HTTP coincide con los 23 módulos y 44 recursos offline. El entry real `main-r6wn8ozD.js` tiene 1.418.752 bytes y SHA `4f165f565dd55b3e099d407126fc18238eabde5ebb068400c1040fe88f0f1d43`; certificado HTTP `4000cc464259183180470ad49d379ae9c839ea31b093e31725849b4beffeaa62`. Los seis casos funcionales publicados pasan con 133 cuerpos HTTP y cuatro PNG revisadas: capítulos reales, ampliación offline de perfiles, carga del lector, catálogo móvil y estantería isométrica. Certificado `49a5eaf4cd63aec6f549ad861e0dc8ee399bc366954fd13cdbfed7e372814e84`.
+
+Un séptimo caso público conserva el test original del cierre a DPR 2 y su presupuesto de ocho segundos. Con el launch por defecto de la prueba local original, registra **6.914,7 ms**, entrega real del libro y limpieza del overlay, sin reintentos. Los cuerpos de la app se contrastan con Pages. El contexto observado pertenece a **ANGLE / SwiftShader Vulkan 1.3.0**, un renderer de software; no acredita un teléfono físico. Certificado `f58e5c6dbc8eab835df49d4a35472dfd8fbb27deafcc8e9aebb7befa3f45e7a8`.
+
+Se conserva separado el primer caso adicional que fuerza `--use-gl=angle`, `--use-angle=swiftshader` y `--enable-unsafe-swiftshader`: **9.274,7 ms, FAILED** con el mismo límite. No se transforma en aprobado ni se explica su causa por una diferencia de driver que no se haya observado. Los candidatos posteriores 55–67 no se publican: no acreditan la mejora buscada en esa configuración. El candidato 67 pasa el perfil original en 7.084,8 ms, sin una mejora demostrada frente al candidato publicado; también conserva el fallo de la configuración forzada. Sus mediciones y fuentes permanecen separadas.
+
+El certificado de entrega `ee3a2249d3a4ece630feb46ccacc2a5898cd5ae1cc29180a1b805b699386dc7c` conserva tanto las aprobaciones del perfil original como ese fallo adicional y las verificaciones externas pendientes. La APK sigue siendo 1.1.4: los archivos del wrapper/loader y módulos seleccionados de audio, lectura y Drive son idénticos a la fuente nativa probada en 1.7.39. Esto es equivalencia de fuente, no una captura nueva de Android sobre 1.7.40.
 
 ## Publicación verificada de 1.7.39 y Android 1.1.4
 
@@ -22,7 +32,7 @@ La [APK pública 1.1.4, código 17](https://github.com/miguelcoxcaballero/inhous
 
 Se conservan los verificadores públicos fallidos anteriores: uno imponía el antiguo límite arbitrario de 64 MB y otro contaba los dos stubs de cero bytes como una app empaquetada. La revisión final exige el tamaño exacto autenticado y el inventario exacto de tres archivos públicos. El nuevo tamaño corresponde al motor ONNX nativo; las voces siguen siendo descargas opcionales. La página real de descarga muestra 1.1.4 y 74,9 MiB.
 
-Estos ensayos de emulador y navegador no acreditan calidad acústica, temperatura, batería, FPS ni reproducción indefinida en un teléfono físico. Continúan pendientes el cierre dentro de ocho segundos en el perfil local DPR 2 y la autenticación/subida real de Google sin una sesión disponible.
+Estos ensayos de emulador y navegador no acreditan calidad acústica, temperatura, batería, FPS ni reproducción indefinida en un teléfono físico. En esa fuente quedó pendiente el plazo del cierre; 1.7.40 tiene su comprobación separada arriba. La autenticación/subida real de Google continúa sin una sesión disponible.
 
 ## Cambios de 1.7.39
 
@@ -291,7 +301,7 @@ El observador software de interrupción usa **2.200 ms en CI**; el límite local
 
 ## Pendientes y límites
 
-- **Rendimiento del cierre:** la preparación publicada elimina copias redundantes. Los candidatos aislados posteriores conservan sus fallos del plazo original de ocho segundos; no se publican como correcciones aprobadas. La resolución, materiales y relojes originales se conservan.
+- **Configuración gráfica forzada adicional:** el perfil original local y publicado pasa dentro de ocho segundos. El caso público con los tres flags ANGLE/SwiftShader conserva FAILED en 9.274,7 ms; los experimentos posteriores no se publican. Resolución, materiales y relojes originales permanecen. La causa específica de esa diferencia sigue sin acreditarse.
 - **Cuenta Google real:** falta una sesión autenticada disponible para comprobar login y subida reales. Las pruebas de Drive con respuestas controladas y el preflight público no sustituyen esa comprobación.
 - **Prueba en teléfono físico:** Android 1.1.4 sí pasa continuidad y controles en el emulador original. Sigue sin acreditarse su calidad acústica, FPS, temperatura, batería ni reproducción indefinida en un teléfono físico.
 - No se añade OCR ni se garantiza el orden perfecto de cualquier PDF. La evidencia histórica mantiene sus propios resultados y alcance.
