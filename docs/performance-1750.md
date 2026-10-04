@@ -80,7 +80,47 @@ Certificado `atomic-size-quality-attempt1/summary.json`, SHA
 Se inspeccionó la captura de portada y marcapáginas. Es una comprobación con
 SwiftShader en escritorio; no mide la velocidad de un teléfono.
 
-Pendientes de incorporar: CI original y web/APK publicados.
-Ningún resultado local sustituye estos controles ni los
-fallos originales de 1.7.49. No se ha medido temperatura, batería o fluidez
-de un teléfono físico.
+## Publicación real
+
+Fuente `bfbd2e3f2735a6fe63b3ba4a79e5ee544ec7d864`, deploy 37227762665 SUCCESS,
+Pages `4c14733aad1d42c4811cea9b712000ec5e89e80e`. El primer pin conserva FAILED:
+el CDN todavía devolvía el HTML anterior. El segundo pin tiene su namespace
+propio y compara bytes HTTP con el commit de Pages, sin relajar la comprobación.
+
+La web sirve `main-CysGYWYS.js`, 1.446.626 bytes, SHA
+`c18c5e760c97476a3ba11c549e539ae9403b0c0a84eb3aa1828bacad45b47590`.
+Sus 23 módulos y 44 recursos offline coinciden exactamente con Pages. El build
+publicado tiene identidad propia; no se confunde con el build local anterior.
+Evidencia bajo `.animation.local/performance-1750/public-bfbd2e3-attempt2/`:
+
+- HTTP `http-attempt1/artifact-1750-bfbd2e3.json`, SHA
+  `c0762a99c5ad728e13793b0a995ffc05bf8c50ff5bc2a10019d8ce758d9627a0`.
+- Editor móvil y dos regresos nativos: 3/3 al primer intento, cero retries,
+  50 cuerpos HTTP reales comprobados. Certificado
+  `performance-browser-attempt1/performance-qualification.json`, SHA
+  `c0b59cd077176a8cfb09c080a8df7aa36c2ef7be70cedc4c9c80e3faef6a21b9`.
+- PDF: 18/18 al primer intento, cero retries, 310 cuerpos HTTP y 15 capturas.
+  Certificado `browser-attempt1/certification.json`, SHA
+  `f390f21808f5d96a791835e316447a498ced4772ac3491551f308cb1a61db5a3`.
+  Se inspeccionó la captura AMOLED: conserva las imágenes RGB y el texto completo.
+- Descarga nueva del APK 1.1.4, código 17: 78.515.243 bytes, SHA
+  `feafaaa762b35344ac8b19418f9f6eb6cb1f725fba22b1ef3d3f273bd32a6191`.
+  Su loader de 2.089 bytes coincide con la fuente y conserva únicamente éste
+  y dos stubs Cordova vacíos en `assets/public`. Certificados
+  `apk-attempt1/public-apk.json` y `apk-attempt1/apk-loader.json`, SHA
+  `9ee4506b09698c7ff80a3706be6033093485c200223c008b728de40ad4cb9214` y
+  `db0f5f2fdc9c0b20d07c01d1c53d2783c45aa5d8f612fd5bd7f9427b6570595c`.
+
+El job original UI3 de CI 37227762667 conserva FAILURE: cuarenta casos,
+38 expected y dos unexpected, 42 intentos, cuatro fallos y dos retries.
+Los cuatro intentos nativos no llegaron a `reader-back`: la espera original
+de ocho segundos encontró el PDF preparado pero oculto, con la transición
+en `zooming` (coverOpen y bookmarkWithdraw 1; pageTheme 0,972). El informe
+finaliza por timeout global de treinta segundos. Estos datos localizan la
+apertura; no se atribuyen al gate del cierre. Assertions y plazos son los
+mismos de 1.7.49. Log y ZIP originales quedan en
+`failure-ui3-bfbd2e3-first-early/` bajo el namespace de esta versión.
+
+Pendiente de incorporar: CI original 37227762667 completa.
+Ningún resultado local o público sustituye ese control ni los fallos originales
+de 1.7.49. No se ha medido temperatura, batería o fluidez de un teléfono físico.

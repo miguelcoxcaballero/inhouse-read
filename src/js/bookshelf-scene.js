@@ -451,18 +451,36 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     output.toBlob=function(...args) { capture();return toBlob.apply(this,args); };
     nativeSnapshotBindings.push(()=>{unbind();output.getContext=getContext;output.toDataURL=toDataURL;output.toBlob=toBlob;});
   }
-  function captureNativeInspection(overview=false) {
+  function captureNativeInspection(overview=false, captured=null) {
     const frame=overview?nativeOverviewExportFrame:nativeInspectionExportFrame,raw=overview?inspectionOverviewContext:inspectionContext;
     const revision=overview?nativeOverviewRevision:nativeInspectionRevision;
-    if (!nativeFrameCache?.validFrame(frame) || !raw || revision===(overview?nativeOverviewMaterialized:nativeInspectionMaterialized)) return;
-    withRendererPresentation(renderer,nativeRoomLease,()=>{
-      try {
-        nativeFrameCache.repaint(frame);
-        raw.clearRect(0,0,raw.canvas.width,raw.canvas.height);
-        raw.drawImage(renderer.domElement,0,0,raw.canvas.width,raw.canvas.height);
-      } finally { if(nativeRoomLease.isOwner())repaintNativeRoom(); }
-    });
+    if (!nativeFrameCache?.validFrame(frame) || !raw || revision===(overview?nativeOverviewMaterialized:nativeInspectionMaterialized)) return null;
+    // Only the immediately preceding new capture in this synchronous CSS
+    // batch is reusable. Public 2D exports may have been edited by consumers,
+    // so their retained canvases never supply a later independent export.
+    const sourceFrame=captured?.overview?nativeOverviewExportFrame:nativeInspectionExportFrame;
+    const sourceContext=captured?.overview?inspectionOverviewContext:inspectionContext;
+    const sourceRevision=captured?.overview?nativeOverviewRevision:nativeInspectionRevision;
+    const sourceMaterialized=captured?.overview?nativeOverviewMaterialized:nativeInspectionMaterialized;
+    const shared=captured && captured.overview!==overview && captured.frame===frame && sourceFrame===frame &&
+      captured.context===sourceContext && sourceContext!==raw && captured.revision===sourceRevision &&
+      sourceMaterialized===sourceRevision && captured.width===frame.width*frame.ratio && captured.height===frame.height*frame.ratio &&
+      raw.canvas.width===captured.width && raw.canvas.height===captured.height &&
+      sourceContext.canvas.width===captured.width && sourceContext.canvas.height===captured.height;
+    if (shared) {
+      raw.clearRect(0,0,raw.canvas.width,raw.canvas.height);
+      raw.drawImage(sourceContext.canvas,0,0);
+    } else {
+      withRendererPresentation(renderer,nativeRoomLease,()=>{
+        try {
+          nativeFrameCache.repaint(frame);
+          raw.clearRect(0,0,raw.canvas.width,raw.canvas.height);
+          raw.drawImage(renderer.domElement,0,0,raw.canvas.width,raw.canvas.height);
+        } finally { if(nativeRoomLease.isOwner())repaintNativeRoom(); }
+      });
+    }
     if(overview)nativeOverviewMaterialized=revision;else nativeInspectionMaterialized=revision;
+    return {overview,frame,context:raw,revision,width:raw.canvas.width,height:raw.canvas.height};
   }
   if (nativeRoomLease) {
     bindNativeSnapshot(canvas,()=>nativeRoomLease.capture());
@@ -1961,8 +1979,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // must not resize and restore a native room that is about to be hidden.
       nativeRoomLease?.release({snapshot:false});
       try {
-        if (overview?.covers) captureNativeInspection(true);
-        if (inspectionSnapshot) captureNativeInspection();
+        const capturedOverview=overview?.covers ? captureNativeInspection(true) : null;
+        if (inspectionSnapshot) captureNativeInspection(false,capturedOverview);
       } catch (error) {
         // No CSS display changed yet; recover the old complete native frame.
         if (wasNativeOwner) restoreNativeRoom();

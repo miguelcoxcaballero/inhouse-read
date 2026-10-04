@@ -1,4 +1,15 @@
-# Verificación del WIP — rendimiento de web 1.7.50 y Android 1.1.4
+# Verificación del WIP — rendimiento de web 1.7.51 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.51
+
+El inicio del gesto comparte una captura nueva entre las vistas fine y overview
+sólo si el frame, contexto, revisiones y dimensiones coinciden. Los exports
+externos conservan su independencia. Pasan ocho pares RGBA/PNG exactos y la
+batería local de 2.865 unitarias en 211 archivos, build y 75 pruebas Python.
+Pasan los siete recorridos originales locales al primer intento: el gesto
+mantiene veinte composiciones y cero nuevos renders de escena. CI y publicación
+se documentan al terminar
+en [Rendimiento de 1.7.51](performance-1751.md).
 
 ## Cambios de rendimiento de 1.7.50
 
@@ -6,7 +17,9 @@ La devolución agrupa la pintura final y el layout pendiente antes de liberar
 el libro. El tamaño y DPR del framebuffer nativo se asignan juntos cuando
 cambian ambos; se conservan dimensiones finales, CSS y las rutas de respaldo.
 La fuente final pasa 2.857 unitarias en 210 archivos, build y 75 comprobaciones
-Python; los 524 E2E sólo están enumerados hasta completar sus ejecuciones.
+Python. La web publicada pasa 18 recorridos PDF y tres de editor/regreso nativo,
+todos al primer intento; pasan HTTP, APK descargado y loader. Los 524 E2E de
+la CI original siguen ejecutándose y se conservan como un ámbito distinto.
 Controles, resultados pendientes y límites están en
 [Rendimiento de 1.7.50](performance-1750.md). Los fallos originales anteriores
 conservan su estado propio.
