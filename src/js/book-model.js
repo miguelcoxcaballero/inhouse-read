@@ -7,6 +7,8 @@ import { applyBookReflectionSurface } from './book-reflection-surface.js';
 import { keepProgramsAlive } from './gpu-programs.js';
 import { buildReliefMaps, composeMaterialMap, coverReliefLayers, normalizeCoverRelief, updateReliefMapStrengths } from './cover-relief.js';
 import { runInSlices } from './cover-appearance.js';
+import { registerCanvasSnapshot as registerLazySnapshot, createNativeRendererPresentation,
+  withRendererPresentation } from './native-renderer-presentation.js';
 
 // Procedural micro-detail shared by every book: generated once, uploaded once.
 // Models receive clones (same Source, own repeat); three.js keeps the GPU
@@ -1663,29 +1665,7 @@ export function projectBookBoardBounds(model,camera,viewportWidth,viewportHeight
 // Shelf snapshots share one context. One additional persistent context presents
 // the active flyout; both use the same meshes, textures and studio lighting.
 let presentationOwner = null;
-const lazySnapshots = new WeakMap();
-let snapshotCopyHookInstalled = false;
-function registerLazySnapshot(canvas, capture) {
-  lazySnapshots.set(canvas,capture);
-  if (!snapshotCopyHookInstalled && globalThis.CanvasRenderingContext2D) {
-    const prototype=CanvasRenderingContext2D.prototype, drawImage=prototype.drawImage, getImageData=prototype.getImageData;
-    // drawImage reads a source canvas without calling its getContext. Export
-    // consumers must see the displayed frame just as getImageData/toBlob do.
-    prototype.drawImage=function(source,...args) {
-      lazySnapshots.get(source)?.();
-      return drawImage.call(this,source,...args);
-    };
-    // A caller may retain the 2D context while the live book keeps moving.
-    // Reading it later must materialize the latest frame as well.
-    prototype.getImageData=function(...args) {
-      lazySnapshots.get(this.canvas)?.();
-      return getImageData.apply(this,args);
-    };
-    snapshotCopyHookInstalled=true;
-  }
-  return () => lazySnapshots.delete(canvas);
-}
-export function bookView(host, book, style, { width, height, thickness, viewportWidth, viewportHeight, centerX, centerY, coverUrl, shelf = false, shelfView = 'spine', initialPose, deferDraw = false, compactReturnFrame = false, directPresentation = true }) {
+export function bookView(host, book, style, { width, height, thickness, viewportWidth, viewportHeight, centerX, centerY, coverUrl, shelf = false, shelfView = 'spine', initialPose, deferDraw = false, compactReturnFrame = false, directPresentation = true, adaptiveNativeFrame = false }) {
   const shared = getBookRenderer(); if (!shared) return null;
   const directCapable = directPresentation && !shelf && typeof shared.getContext === 'function';
   const gpu = directCapable ? getPresentationBookRenderer() || shared : shared;
@@ -1714,6 +1694,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   const compactHeight = Math.min(viewportHeight, Math.ceil((height * 1.45 + 64) / 64) * 64);
   let copiedRectangle = null;
   let displayedFrame = null, snapshotDirty = false, live = false, suspendedHost = null;
+  let externalPresentation = null;
   const outputContext = canvas.getContext.bind(canvas);
   const outputURL = canvas.toDataURL.bind(canvas), outputBlob = canvas.toBlob.bind(canvas);
   let unregisterSnapshot;
@@ -1792,11 +1773,63 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     }
   };
   function captureSnapshot() {
+    if (externalPresentation?.lease) { externalPresentation.lease.capture(); return; }
     if (!snapshotDirty || !displayedFrame || disposed) return;
     const other=presentationOwner;
-    if (!live || other !== owner) { configureFrame(displayedFrame); gpu.render(scene,displayedFrame.camera); }
-    copyFrame(displayedFrame,true);
+    withRendererPresentation(gpu,null,() => {
+      if (!live || other !== owner) { configureFrame(displayedFrame); gpu.render(scene,displayedFrame.camera); }
+      copyFrame(displayedFrame,true);
+    });
     if (other && other !== owner) other.repaint();
+  }
+  // A shelf insertion owns its exact cached RGBA after its first successful
+  // two-pass paint. Until then the existing closed flyout stays on screen.
+  // The bridge never exposes a general-purpose bypass of book snapshots.
+  function handoffToShelfInsertion(start) {
+    if (disposed || externalPresentation || !directEnabled || !live ||
+      presentationOwner !== owner || !displayedFrame || !canvas.isConnected || !context ||
+      typeof start !== 'function') return null;
+    const transaction = { lease:null, candidate:null, committed:false };
+    externalPresentation = transaction;
+    const bridge = {
+      canvas, context,
+      createLease(callbacks) {
+        if (disposed || externalPresentation !== transaction || transaction.candidate) return null;
+        transaction.candidate = createNativeRendererPresentation(shared, { ...callbacks, canvas, context });
+        return transaction.candidate;
+      },
+      commit(lease) {
+        if (disposed || externalPresentation !== transaction || transaction.candidate !== lease || !lease?.isOwner()) return false;
+        transaction.lease = lease; transaction.committed = true;
+        if (presentationOwner === owner) { gpu.domElement.remove(); presentationOwner = null; }
+        canvas.style.opacity = '0'; live = false; directEnabled = false;
+        return true;
+      },
+      cancel() {
+        if (externalPresentation !== transaction) return;
+        const stillOwnsFrame = transaction.candidate?.isOwner();
+        transaction.candidate?.dispose({ snapshot:false });
+        externalPresentation = null;
+        // A failed first paint retains the existing native book. A later
+        // cancellation explicitly restores that closed frame before fallback.
+        if (transaction.committed && stillOwnsFrame && !disposed && (!presentationOwner || presentationOwner===owner)) {
+          directEnabled = true;
+          // A late appearance replacement may have been prepared, but never
+          // drawn. Reapply the preserved closed pose before restoring it.
+          draw(current);
+        }
+      },
+      fallback() {
+        bridge.cancel();
+        if (!disposed) releaseToSnapshot();
+        return context;
+      }
+    };
+    try {
+      const handle = start(bridge);
+      if (!handle) { bridge.cancel(); return null; }
+      return handle;
+    } catch (error) { bridge.cancel(); throw error; }
   }
   function releaseToSnapshot({ resume = false } = {}) {
     captureSnapshot();
@@ -1807,39 +1840,63 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   }
   function returnFrame(pose) {
     const full = { x:0, y:0, width:viewportWidth, height:viewportHeight, camera };
-    // Keep the full page during zoom. Closed and open books each use a fixed
-    // smaller buffer, translating the camera window rather than resizing it
-    // for every pose. Bounds that do not fit retain the full original frame.
-    if (!compactReturnFrame || pose.scale > 1.05 || !Number.isInteger(pixelRatio)
+    // Legacy zoom keeps the full viewport. Native compact windows preserve
+    // pixel resolution; optional adaptive mode selects padded 64px buckets
+    // from every visible mesh. Geometry that cannot fit keeps the full frame.
+    if (!compactReturnFrame || (pose.scale > 1.05 && !directEnabled) || !Number.isInteger(pixelRatio)
       || !Number.isInteger(viewportWidth) || !Number.isInteger(viewportHeight)) return full;
     model.updateMatrixWorld(true); camera.updateMatrixWorld(true);
-    compactBox.setFromObject(model);
     let left=Infinity, top=Infinity, right=-Infinity, bottom=-Infinity;
-    for (const x of [compactBox.min.x, compactBox.max.x])
-      for (const y of [compactBox.min.y, compactBox.max.y])
-        for (const z of [compactBox.min.z, compactBox.max.z]) {
-          compactPoint.set(x,y,z).project(camera);
+    const adaptive = adaptiveNativeFrame && directEnabled;
+    if (adaptive) {
+      // Project each visible mesh before forming the screen bounds. A world
+      // axis-aligned box includes hidden pages and the withdrawn ribbon, and
+      // can keep most of a native framebuffer empty throughout the flight.
+      model.traverseVisible(mesh => {
+        const material=mesh.material;
+        if (!mesh.isMesh || !mesh.geometry || !material || (Array.isArray(material)
+          ? !material.some(each=>each && each.visible !== false) : material.visible === false)) return;
+        if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+        const bounds = mesh.geometry.boundingBox;
+        if (!bounds) { left=top=NaN; return; }
+        for (let xi=0;xi<2;xi++) for (let yi=0;yi<2;yi++) for (let zi=0;zi<2;zi++) {
+          compactPoint.set(xi?bounds.max.x:bounds.min.x,yi?bounds.max.y:bounds.min.y,zi?bounds.max.z:bounds.min.z)
+            .applyMatrix4(mesh.matrixWorld).project(camera);
           const px=(compactPoint.x+1)*viewportWidth/2, py=(1-compactPoint.y)*viewportHeight/2;
           left=Math.min(left,px); right=Math.max(right,px); top=Math.min(top,py); bottom=Math.max(bottom,py);
         }
+      });
+    } else {
+      compactBox.setFromObject(model);
+      for (const x of [compactBox.min.x, compactBox.max.x])
+        for (const y of [compactBox.min.y, compactBox.max.y])
+          for (const z of [compactBox.min.z, compactBox.max.z]) {
+            compactPoint.set(x,y,z).project(camera);
+            const px=(compactPoint.x+1)*viewportWidth/2, py=(1-compactPoint.y)*viewportHeight/2;
+            left=Math.min(left,px); right=Math.max(right,px); top=Math.min(top,py); bottom=Math.max(bottom,py);
+          }
+    }
     // Include every board, page edge and ribbon, with room for displaced relief.
     // Unusual poses use the full buffer instead of clipping any part of the book.
     if (![left,top,right,bottom].every(Number.isFinite)) return full;
     // Geometry outside the viewport is already clipped by the full frame.
     left=Math.max(0,left); top=Math.max(0,top); right=Math.min(viewportWidth,right); bottom=Math.min(viewportHeight,bottom);
-    const frameWidth = current.coverOpen === 0 ? closedCompactWidth : compactWidth;
+    const frameWidth = adaptive ? Math.min(viewportWidth,Math.ceil((right-left+48)/64)*64)
+      : current.coverOpen === 0 ? closedCompactWidth : compactWidth;
+    const frameHeight = adaptive ? Math.min(viewportHeight,Math.ceil((bottom-top+48)/64)*64) : compactHeight;
+    if (adaptive && frameWidth===viewportWidth && frameHeight===viewportHeight) return full;
     if (right<left || bottom<top
       || frameWidth<viewportWidth && right-left+48>frameWidth
-      || compactHeight<viewportHeight && bottom-top+48>compactHeight) return full;
+      || frameHeight<viewportHeight && bottom-top+48>frameHeight) return full;
     const x=frameWidth===viewportWidth ? 0 : Math.round((left+right-frameWidth)/2);
-    const y=compactHeight===viewportHeight ? 0 : Math.round((top+bottom-compactHeight)/2);
+    const y=frameHeight===viewportHeight ? 0 : Math.round((top+bottom-frameHeight)/2);
     compactCamera.copy(camera);
-    compactCamera.setViewOffset(viewportWidth,viewportHeight,x,y,frameWidth,compactHeight);
-    return { x,y,width:frameWidth,height:compactHeight,camera:compactCamera };
+    compactCamera.setViewOffset(viewportWidth,viewportHeight,x,y,frameWidth,frameHeight);
+    return { x,y,width:frameWidth,height:frameHeight,camera:compactCamera };
   }
 
   function draw(pose, { redraw = true } = {}) {
-    if (disposed) return;
+    if (disposed || externalPresentation) return;
     if (!redraw && snapshotDirty) captureSnapshot();
     if (pose.pageTheme != null) pageTheme = Math.max(0, Math.min(1, Number(pose.pageTheme) || 0));
     current = { ...pose, coverOpen:Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0)),
@@ -1869,10 +1926,13 @@ export function bookView(host, book, style, { width, height, thickness, viewport
         }
       }
     });
-    gpu.render(scene, frame.camera);
-    displayedFrame=frame; snapshotDirty=true;
-    if (present) positionPresentation(frame);
-    else { copyFrame(frame); canvas.style.opacity=''; live=false; if (previousOwner && previousOwner !== owner) previousOwner.repaint(); }
+    withRendererPresentation(gpu,null,() => {
+      gpu.render(scene, frame.camera);
+      displayedFrame=frame; snapshotDirty=true;
+      if (present) positionPresentation(frame);
+      else { copyFrame(frame); canvas.style.opacity=''; live=false; }
+    });
+    if (!present && previousOwner && previousOwner !== owner) previousOwner.repaint();
     canvas.dataset.angle = String(pose.angle); canvas.dataset.renderer = 'three-mesh';
     canvas.dataset.coverOpen = String(current.coverOpen);
     canvas.dataset.pageTheme = String(pageTheme);
@@ -2087,7 +2147,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     raf = requestAnimationFrame(tick); return animation;
   }
   return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
-    deferDrawing() { if (!disposed) waitingForFirstDraw = true; }, releaseToSnapshot,
+    deferDrawing() { if (!disposed) waitingForFirstDraw = true; }, releaseToSnapshot, handoffToShelfInsertion,
     setCompactReturnFrame(enabled) { compactReturnFrame = Boolean(enabled); },
     updateAppearance, updateSpineAppearance, updateCoverAppearance, prepareCoverRelief, setCoverRelief, updateEdgeAppearance, updateBookmark,
     setPageSnapshot, pageTextures, uploadPageTexture, compilePage, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
@@ -2097,8 +2157,9 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     animate:animateMotion,
     dispose(removeCanvas = true) { cancel(); if (!removeCanvas) captureSnapshot();
       unregisterSnapshot?.();
+      externalPresentation?.candidate?.dispose({ snapshot:false }); externalPresentation = null;
       if (presentationOwner === owner) { gpu.domElement.remove(); presentationOwner=null; }
-      canvas.style.opacity=''; live=false; disposed = true;
+      if (!removeCanvas) canvas.style.opacity=''; live=false; disposed = true;
       pendingModel?.userData.dispose(); model.userData.dispose(); if (removeCanvas) canvas.remove(); } };
 }
 

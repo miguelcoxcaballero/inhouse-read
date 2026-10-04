@@ -68,7 +68,8 @@
  *    La textura del título sigue los UV del lomo. La apertura añade 10° de
  *    inclinación para mostrar su sección superior y el volumen de la encuadernación.
  *
- * 6. Un contexto WebGL compartido dibuja la estantería y el libro abierto.
+ * 6. Un contexto WebGL compartido dibuja la estantería y la inserción del libro.
+ *    El libro extraído utiliza su renderizador dedicado durante el giro y la apertura.
  *    Sólo se redibuja al cambiar algo o durante una animación. Los libros
  *    alejados del área visible liberan sus modelos; los botones DOM mantienen
  *    foco y accesibilidad en las posiciones proyectadas de los libros.
@@ -2104,7 +2105,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const view = bookView(bookNode, book, style, {
       width: coverW, height: coverH, thickness,
       viewportWidth: vw, viewportHeight: vh, centerX, centerY, coverUrl,
-      deferDraw:true, compactReturnFrame:true,
+      deferDraw:true, compactReturnFrame:true, adaptiveNativeFrame:true,
       initialPose:{ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch, roll:sourceRoll }
     });
     if (view) {
@@ -3346,8 +3347,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       });
       await waitForMotion(back, approachDuration);
       if (dockingPose && !state.destroyed && state.session === session) {
-        view.releaseToSnapshot?.();
-        const insertion = state.shelfScene?.returnBook(spineEl, { duration:returnDuration - approachDuration, overlayCanvas:view.canvas });
+        let insertion = view.handoffToShelfInsertion?.(nativePresentation => state.shelfScene?.returnBook(spineEl,
+          { duration:returnDuration - approachDuration, overlayCanvas:view.canvas, nativePresentation }));
+        if (!insertion) {
+          view.releaseToSnapshot?.();
+          insertion = state.shelfScene?.returnBook(spineEl, { duration:returnDuration - approachDuration, overlayCanvas:view.canvas });
+        }
         session.insertion = insertion;
         if (insertion) {
           // The shelf scene owns the mesh and depth buffer for insertion. Its
@@ -3690,6 +3695,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       centerX, centerY, coverUrl,
       deferDraw:Boolean(pageSnapshot?.source),
       compactReturnFrame:Boolean(pageSnapshot?.source),
+      adaptiveNativeFrame:true,
       initialPose:{ x:0, y:0, scale:1, angle:0, pitch:0, coverOpen:pageSnapshot ? 1 : 0, bookmarkWithdraw:pageSnapshot ? 1 : 0 }
     });
     if (view) {
@@ -3724,6 +3730,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       const current = [...root.querySelectorAll('.ihr-spine')]
         .find(node => node.dataset.bookId === String(bookId)) || spine
       current.classList.remove('is-away')
+      // A queued record refresh rebuilds the resting spine before the caller's
+      // final cleanup. Release this return's marker with its actual landing so
+      // that rebuilt DOM cannot briefly hide the already inserted book again.
+      if (state.returningBookId === String(bookId)) {
+        state.returningBookId = null
+        state.shelfScene?.setPaintHeld?.(false)
+      }
       state.shelfScene?.flush();
       return current
     }
@@ -3815,8 +3828,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       await waitForMotion(animation, approachDuration);
       if (state.returnMotion === motion && view && dockingPose && !state.destroyed) {
         flyout.dataset.returnPhase = 'inserting';
-        view.releaseToSnapshot?.();
-        insertion = state.shelfScene?.returnBook(spine, { duration:duration - approachDuration, overlayCanvas:view.canvas });
+        insertion = view.handoffToShelfInsertion?.(nativePresentation => state.shelfScene?.returnBook(spine,
+          { duration:duration - approachDuration, overlayCanvas:view.canvas, nativePresentation }));
+        if (!insertion) {
+          view.releaseToSnapshot?.();
+          insertion = state.shelfScene?.returnBook(spine, { duration:duration - approachDuration, overlayCanvas:view.canvas });
+        }
         if (insertion) {
           await waitForMotion(insertion, duration - approachDuration);
         }

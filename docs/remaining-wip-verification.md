@@ -1,4 +1,20 @@
-# Verificación del WIP — web 1.7.42 y Android 1.1.4 publicados
+# Verificación del WIP — rendimiento de web 1.7.46 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.46
+
+La selección y devolución mantienen el canvas WebGL y conservan las imágenes
+resueltas en la GPU. La estantería y la inserción comparten su renderer; los
+consumidores 2D materializan una captura sólo cuando la solicitan. Los modelos
+pendientes idénticos se conservan y reciben el progreso reciente sin recrearse.
+El DPR, las texturas, los materiales, la iluminación y los relojes permanecen.
+
+La comprobación de imágenes, los contratos de devolución, los fallos originales
+y el costo adicional de memoria tienen su alcance en
+[Rendimiento de 1.7.46](performance-1746.md). El reloj pesado de SwiftShader sigue
+superando ocho segundos: este cambio no acredita fluidez, batería ni temperatura
+en un teléfono físico. La web y la CI de esta fuente se verifican después del
+push; las verificaciones completas anteriores conservan sus resultados propios.
+La APK 1.1.4 continúa cargando la web publicada mediante su loader.
 
 ## Publicación verificada de 1.7.42: PDF adaptable
 
