@@ -1752,13 +1752,31 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   const insertionBox = new THREE.Box3(), insertionPoint = new THREE.Vector3();
   const previousInsertionViewport = new THREE.Vector4();
+  function hasNativeInsertionFrame(insertion) {
+    if (!nativeFrameCache.validFrame(insertion.nativeFrame)) return false;
+    const replay = insertion.nativeLegacyReplay;
+    if (!replay) return nativeFrameCache.validFrame(insertion.nativeCombinedFrame);
+    const { output, layer, pixelWidth, pixelHeight, revision } = replay;
+    return insertion.nativeLegacyBackground === true && !insertion.nativeCombinedFrame &&
+      revision === insertion.nativeFrameRevision && layer.frame === insertion.nativeFrame &&
+      layer.x === insertion.nativeFrame.x && layer.y === insertion.nativeFrame.y && layer.scale === 1 &&
+      output.x === 0 && output.y === 0 && output.ratio === insertion.nativeFrame.ratio &&
+      output.width * output.ratio === pixelWidth && output.height * output.ratio === pixelHeight &&
+      (nativeFrameCache.exactFrame?.(output) ?? true);
+  }
+  function repaintNativeInsertion(insertion) {
+    if (!hasNativeInsertionFrame(insertion)) return false;
+    const replay = insertion.nativeLegacyReplay;
+    return replay ? nativeFrameCache.compose(replay.output, [replay.layer])
+      : nativeFrameCache.repaint(insertion.nativeCombinedFrame);
+  }
   function createNativeInsertionLease(insertion) {
     const bridge = insertion.nativePresentation, overlay = insertion.overlayCanvas;
     if (!bridge || !nativeFrameCache || !getInsertionRoomBackground()) return null;
     insertion.nativeSlot = {}; insertion.nativeCombinedSlot = {};
     const lease = bridge.createLease({
       capture(rawContext) {
-        if (!nativeFrameCache.validFrame(insertion.nativeFrame) || !nativeFrameCache.validFrame(insertion.nativeCombinedFrame)) return;
+        if (!hasNativeInsertionFrame(insertion)) return;
         try {
           nativeFrameCache.repaint(insertion.nativeFrame);
           rawContext.clearRect(0,0,overlay.width,overlay.height);
@@ -1767,10 +1785,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         } finally {
           // The export is book-only. Its currently displayed owner is the
           // full room plus book, and a settled frame may have no future RAF.
-          if (insertion.nativeLease?.isOwner()) nativeFrameCache.repaint(insertion.nativeCombinedFrame);
+          if (insertion.nativeLease?.isOwner()) repaintNativeInsertion(insertion);
         }
       },
-      repaint:() => insertion.nativeCombinedFrame && nativeFrameCache.repaint(insertion.nativeCombinedFrame),
+      repaint:() => repaintNativeInsertion(insertion),
       position(node) {
         // The native output belongs to the same book host as its lazy export.
         // Offset against that host to retain the exact full-screen origin.
@@ -1791,7 +1809,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         completedLegacyInsertionLeases.delete(lease);
         nativeFrameCache.releaseSlot(insertion.nativeSlot);
         nativeFrameCache.releaseSlot(insertion.nativeCombinedSlot);
-        insertion.nativeFrame = insertion.nativeCombinedFrame = null;
+        insertion.nativeFrame = insertion.nativeCombinedFrame = insertion.nativeLegacyReplay = null;
       }
     });
     if (lease) Object.defineProperty(lease,'role',{value:'shelf-insertion'});
@@ -1809,10 +1827,23 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const layers=background.mode==='legacy'?[bookLayer]:[background,bookLayer];
     if (!nativeFrameCache.compose(outputFrame,layers))
       throw new Error('Native insertion cannot preserve its room underlay');
-    const combined = nativeFrameCache.capture(insertion.nativeCombinedSlot,outputFrame);
-    if (!combined) throw new Error('Native insertion output cannot be retained');
+    // The legacy room remains in its actual 2D canvas. This one retained book
+    // layer is enough to replay its exact transparent native presentation.
+    // Aligned room textures can change during a foreign paint, so that path
+    // keeps its original complete retained composition.
+    const legacyReplay = background.mode === 'legacy' && nativeFrameCache.validFrame(bookFrame) &&
+      outputFrame.width * ratio === insertion.overlayCanvas.width &&
+      outputFrame.height * ratio === insertion.overlayCanvas.height &&
+      (nativeFrameCache.exactFrame?.(outputFrame) ?? true);
+    const combined = legacyReplay ? null : nativeFrameCache.capture(insertion.nativeCombinedSlot,outputFrame);
+    if (!legacyReplay && !combined) throw new Error('Native insertion output cannot be retained');
+    const revision = (insertion.nativeFrameRevision || 0) + 1;
     insertion.nativeFrame=bookFrame; insertion.nativeCombinedFrame=combined;
+    insertion.nativeFrameRevision=revision;
     insertion.nativeLegacyBackground=background.mode==='legacy';
+    insertion.nativeLegacyReplay=legacyReplay ? Object.freeze({ output:Object.freeze(outputFrame),
+      layer:Object.freeze(bookLayer),pixelWidth:insertion.overlayCanvas.width,
+      pixelHeight:insertion.overlayCanvas.height,revision }) : null;
     insertion.nativeLease.markDirty();
     const owner = currentNativeRendererPresentation(renderer);
     const presented = owner===insertion.nativeLease ? insertion.nativeLease.present()

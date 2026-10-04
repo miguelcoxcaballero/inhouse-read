@@ -1,4 +1,23 @@
-# Verificación del WIP — preparación de web 1.7.55 y Android 1.1.4
+# Verificación del WIP — web publicada 1.7.55 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.56
+
+Incorporada, pendiente de publicación y verificación pública: la devolución del
+libro sobre la estantería legada evita una segunda copia de pantalla por
+fotograma compatible. Pasan los 59 casos aislados del candidato y 26 pares
+gráficos exactos en ambas densidades; las seis poses compatibles de cada
+densidad pasan de doce copias a seis. No cambia la calidad visual ni los
+plazos. La fuente final pasa 2.989 unitarias en 220 archivos, build y 75
+comprobaciones Python; conserva las 524 identidades del censo original y
+497 hechos de fuente. El listado no cuenta como ejecución de navegador.
+Los siete recorridos locales originales pasan al primer intento, cero
+retries, flaky u omisiones. Cierres alineado y legacy: 4.286,3 y 6.134,5 ms
+con los plazos originales intactos; veinte composiciones del gesto sin
+nuevos renders de sala y seis lomos de 1.024 px.
+Se conservan separados los fallos del wrapper CPU y del primer
+método gráfico. No es una medición de fluidez en teléfono ni una solución
+acreditada para los timeouts de apertura de CI55.
+Detalle en [Rendimiento de 1.7.56](performance-1756.md).
 
 ## Cambios de rendimiento de 1.7.55
 
@@ -8,7 +27,17 @@ antes de actualizar el marcapáginas. Pasan 130 casos funcionales aislados y
 unitarias en 219 archivos, build y 75 comprobaciones Python. El censo original
 mantiene 524 E2E; el listado no se cuenta como ejecución. Los siete recorridos
 locales originales pasan al primer intento; cierres 4.369,5 y 6.109,5 ms dentro
-de los plazos originales. Pendiente la comprobación de publicación real y CI.
+de los plazos originales. La web publicada pasa los 21 recorridos públicos
+originales al primer intento, HTTP, APK recién descargada y loader. El primer
+pin de propagación del HTML conserva FAILED en un namespace separado.
+La CI original de la fuente `636aecb`, run `37236962479`, termina FAILED:
+522 expected y dos unexpected entre 524 identidades, 526 intentos, cuatro
+fallidos y dos retries, cero flaky u omisiones. Se conservan sus doce logs
+y once ZIP. Los contratos nativos fallan durante apertura antes de Back;
+tres fallos de selección consumen su espera completa de ocho segundos.
+El reintento alineado pasa selección y falla durante apertura del PDF,
+con último snapshot en zooming. No se mide ningún plazo de cierre en esas
+trazas, ni se sustituye el fallo por los pases locales o públicos.
 Los fallos de métodos y versiones anteriores conservan su propio estado.
 Detalle en [Rendimiento de 1.7.55](performance-1755.md).
 
@@ -24,8 +53,10 @@ Publicada: 1.7.54, con HTTP, APK/loader y 18 recorridos PDF públicos PASS.
 Los tres recorridos públicos de editor/regreso conservan FAILED: editor pasa,
 alineado termina el cierre dentro de ocho segundos pero agota el global de
 treinta segundos después, y legacy incumple el plazo completo de cierre.
-La CI original UI3 conserva cuatro fallos durante apertura antes de Back;
-la colección completa de los demás jobs sigue pendiente. Estos ámbitos
+La CI original conserva FAILED: 522 expected y dos unexpected entre 524
+identidades, 526 intentos, cuatro fallidos y dos retries, sin flaky u
+omisiones. UI3 conserva cuatro fallos durante apertura antes de Back;
+los doce logs y once ZIP originales se conservan. Estos ámbitos
 permanecen separados de los siete recorridos locales PASS.
 Ámbitos y controles en [Rendimiento de 1.7.54](performance-1754.md).
 

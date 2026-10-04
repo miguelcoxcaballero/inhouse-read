@@ -101,7 +101,7 @@ Los originales, trazas, cuerpos HTTP y tiempos backend están sellados en
 `f8ddfa222d1a845dbc08eff5c1cef90b4be790c60e561fa6d381c2d5e4a7b30a`.
 Los pases HTTP, APK y PDF no convierten estos dos fallos en pases.
 
-## CI54 original: evidencia temprana y colección pendiente
+## CI54 original: FAILED y colección completa
 
 El run original `37235346810`, attempt 1, conserva fuente y conteos de 1.7.54.
 UI3 termina FAILED: 40 casos, 42 intentos, 38 pases y dos casos inesperados;
@@ -120,6 +120,40 @@ La revisión de llamadas originales queda en `native-call-review-attempt1/review
 SHA `3c251a563a3c6e51389f46222b85dc43dc173021870ae2dbbc12a738b2dc20e3`.
 No se atribuyen costes GPU o de funciones internas a esos intervalos del trace.
 
-Sigue pendiente la colección completa de CI54: los doce logs y once ZIPs,
-censo de todas las identidades y conservación de cualquier otro fallo o retry.
-CI53 y los resultados posteriores de 1.7.55 conservan evidencias distintas.
+El primer snapshot parcial conserva nueve logs y nueve ZIPs autenticados:
+2.972/217 unitarias pasan; 265 casos E2E dan 267 intentos, con sólo los dos
+fallos conocidos de UI3, cuatro intentos fallidos y dos retries. UI1, UI2, UI4,
+UI5 y los tres grupos neuronales pasan sin flaky, skips ni retries. En ese
+snapshot faltan los 39 casos de UI6 y los 220 de Supertonic. Resumen
+`ci-05db048-failed-original-collector-attempt1/snapshot-001/summary.json`, SHA
+`e77d5b671449b47814f7ef799dedec3f9b02f337c1b86137b9828464760b7b7e`.
+La copia de los originales tempranos UI3 se documenta en un recibo separado;
+no se descargan de nuevo ni se cambia el estado del primer snapshot.
+
+El run original termina **FAILED**: UI3 y el agregador `test` fallan, y los
+otros diez jobs terminan con SUCCESS. El watcher cierra con exit 1, conserva
+sus 29 polls y no invoca el auditor reservado a runs exitosos. Metadata y
+métodos se sellan en `original-watch-history-attempt1.json`, SHA
+`32a3299deb627056a7798d8aa48795dbe37d9c8d156499bf9d53541f2c3551f0`.
+El SUCCESS de un job no sustituye la revisión de sus intentos originales.
+
+La colección final conserva los doce logs y once ZIPs autenticados, sus
+miembros originales y los reportes extraídos. Pasan las 2.972 unitarias en
+217 archivos. El censo completo tiene 524 identidades E2E únicas: 522 pases y
+los dos fallos de UI3 ya descritos. Son 526 intentos, cuatro timeouts y dos
+retries, con cero flaky, skips o errores globales. UI1/2/4/5/6 pasan sus
+45/38/50/29/39 casos; neural engine/reading/languages y Supertonic pasan
+9/14/40/220, sin retries ni intentos fallidos.
+
+El snapshot final no reemplaza el parcial ni los originales tempranos. La
+colección reutiliza sus nueve ZIPs validados y añade UI6, Supertonic y los
+tres logs restantes. Resumen `snapshot-002/summary.json`, SHA
+`c187c257ebe345325aed3b1ed4f5439da8ee61bda12c196a1ab2faa10ffee0a7`;
+certificado `snapshot-002/certification.json`, SHA
+`e1e1bf49eea3687f117e2c8b8a6d5f84028c7a41db289c548cec920d993be6e4`,
+bajo `ci-05db048-failed-original-collector-attempt1`. Se verifican los digests
+autenticados, bytes de los ZIPs, miembros y métodos antes de sellar.
+
+El alcance es el censo de manifests originales subidos por CI; esta colección
+no ejecuta un nuevo listado local ni pruebas y conserva **FAILED**. CI53 y los
+resultados posteriores de 1.7.55 conservan evidencias distintas.
