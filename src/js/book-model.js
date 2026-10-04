@@ -1889,6 +1889,9 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     angle:shelf ? (shelfView === 'isometric' ? 76 : 90) : 0,
     pitch:shelf && shelfView === 'isometric' ? 9 : 0
   }, { redraw:!deferDraw });
+  // Appearance completion can arrive while the opening book is still detached.
+  // Apply its current pose, retaining the first explicit framebuffer commit.
+  const drawUpdatedAppearance = () => current && draw(current, { redraw:!waitingForFirstDraw });
   function updateAppearance(nextStyle) {
     if (disposed) return false;
     const revision = ++appearanceRevision;
@@ -1903,7 +1906,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
       scene.add(model);
       model.userData.invalidate = () => current && !waitingForFirstDraw && draw(current);
       if (currentSnapshot) model.userData.setPageSnapshot(currentSnapshot);
-      if (current) draw(current);
+      drawUpdatedAppearance();
       previous.userData.dispose();
     };
     if (replacement.userData.coverLoaded) replace();
@@ -1915,7 +1918,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     currentBook = { ...currentBook, ...nextBook };
     pendingModel?.userData.updateSpineAppearance?.(nextBook, nextStyle);
     model.userData.updateSpineAppearance?.(nextBook, nextStyle);
-    if (current) draw(current);
+    drawUpdatedAppearance();
     return true;
   }
   function updateCoverAppearance(nextBook) {
@@ -1923,7 +1926,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     currentBook = { ...currentBook, ...nextBook };
     pendingModel?.userData.updateCoverAppearance?.(nextBook);
     model.userData.updateCoverAppearance?.(nextBook);
-    if (current) draw(current);
+    drawUpdatedAppearance();
     return true;
   }
   /** Compile and draw the neutral relief material before offering choices.
@@ -1937,7 +1940,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
       reliefPrepared = true;
       pendingModel?.userData.prepareCoverRelief?.();
       gpu.compile(scene, camera);
-      if (current) draw(current);
+      drawUpdatedAppearance();
       return true;
     }).catch(error => { reliefPreparation = null; throw error; });
     return reliefPreparation;
@@ -1948,7 +1951,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (disposed) return false;
     currentBook = { ...currentBook, coverRelief: normalizeCoverRelief(relief) };
     const results = await Promise.all([pendingModel?.userData.setCoverRelief?.(relief), model.userData.setCoverRelief?.(relief)]);
-    if (!disposed && current) draw(current);
+    if (!disposed) drawUpdatedAppearance();
     return results.some(Boolean);
   }
   function updateEdgeAppearance(nextBook) {
@@ -1956,7 +1959,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     currentBook = { ...currentBook, ...nextBook };
     pendingModel?.userData.updateEdgeAppearance?.(nextBook);
     model.userData.updateEdgeAppearance?.(nextBook);
-    if (current) draw(current);
+    drawUpdatedAppearance();
     return true;
   }
   function updateBookmark(nextBook) {

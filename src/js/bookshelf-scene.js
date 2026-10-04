@@ -537,13 +537,23 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const plantKeys = entry => JSON.stringify([entry.width, entry.height, entry.variant, entry.catalogId, entry.potId, entry.potColorId, entry.seed]);
   const lampKeys = entry => JSON.stringify([entry.lampId, entry.width, entry.height, entry.depth, entry.mount]);
 
+  // A selected book's slot is already painted empty. Its decoded lettering,
+  // jacket and final ribbon can change while reading without changing that
+  // image or its shadow casters. The live class matters: flags may still
+  // describe the previous frame when a returning book is restored.
+  const hiddenBookMaterial = entry => entry.kind !== 'plant' && entry.kind !== 'lamp' &&
+    !entry.insertion && !entry.trashDrop && Boolean(entry.node?.classList.contains('is-away'));
+  const invalidateBookMaterial = entry => {
+    if (!hiddenBookMaterial(entry)) invalidate(true, true);
+  };
+
   function makeModel(entry) {
     const model = entry.kind === 'plant' ? createShelfPlant(entry)
       : entry.kind === 'lamp' ? createShelfLamp({ lampId:entry.lampId, width:entry.width, height:entry.height, quality:'high', isOn:entry.isOn !== false })
       : createBookModel(entry.book, entry.style, entry.width, entry.height, entry.thickness, entry.coverUrl, { shelf:true, overview:entry.overview, inspectionResolution:entry.inspectionResolution });
     // Texture/font decode notifications improve the same artwork. Explicit
     // record/material changes separately invalidate the retained room below.
-    model.userData.invalidate = () => invalidate(true, true);
+    model.userData.invalidate = () => invalidateBookMaterial(entry);
     model.traverse(object => {
       for (const material of Array.isArray(object.material) ? object.material : object.material ? [object.material] : [])
         for (const key of ['map','normalMap','bumpMap','roughnessMap'])
@@ -889,10 +899,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Saving metadata or completing an equivalent analysis does not alter
     // the painted room. Retain the latest record without shading and copying
     // that same room again; real shape, position and material changes redraw.
-    return Boolean(entry.replacement) || oldDimensions.some((value,index) =>
+    const geometryChanged = oldDimensions.some((value,index) =>
       value !== [entry.width, entry.height, entry.thickness][index]) || oldPosition.some((value,index) =>
-      value !== [entry.x, entry.y, entry.depthInset, entry.shelf][index]) ||
-      Object.keys(nextKeys).some(key => previousKeys[key] !== nextKeys[key]);
+      value !== [entry.x, entry.y, entry.depthInset, entry.shelf][index]);
+    // Shape and slot changes still invalidate while hidden; they change the
+    // docking projection. A pending replacement keeps its existing lifecycle.
+    return geometryChanged || Boolean(entry.replacement) || (!hiddenBookMaterial(entry) &&
+      Object.keys(nextKeys).some(key => previousKeys[key] !== nextKeys[key]));
   }
 
   // Both shelves keep their real, fixed depth: nothing grows the furniture.

@@ -17,7 +17,7 @@ for (const proto of [globalThis.WebGL2RenderingContext?.prototype, globalThis.We
   proto.linkProgram = function (program) { links++; return original.call(this, program); };
 }
 import { Vector3 } from 'three';
-import { bookView, getBookRenderer } from '/inhouse-read/src/js/book-model.js';
+import { bookView, getBookRenderer, getPresentationBookRenderer } from '/inhouse-read/src/js/book-model.js';
 import { analyzeCoverRelief, buildReliefMaps } from '/inhouse-read/src/js/cover-relief.js';
 import { LibraryStore } from '/inhouse-read/src/js/library-store.js';
 import { drawCoverCorpus, prepareCoverCorpusFonts, loadCoverCorpus, loadColourMaskCorpus } from '/inhouse-read/tests/e2e/helpers/cover-corpus.js';
@@ -44,10 +44,15 @@ async function open(name, finish = 'satin', relief = null, shelf = false) {
   view.draw({ x:0, y:0, scale:1.15, angle:0, pitch:0 });
   return true;
 }
-const gpu = getBookRenderer();
-let renderedScene, renderedCamera;
-const renderOriginal = gpu.render;
-gpu.render = function(scene,camera) { renderedScene=scene;renderedCamera=camera;return renderOriginal.call(this,scene,camera); };
+const renderers = new Set([getBookRenderer(), getPresentationBookRenderer()].filter(Boolean));
+let renderedScene, renderedCamera, renderedRenderer;
+for (const gpu of renderers) {
+  const renderOriginal = gpu.render;
+  gpu.render = function(scene,camera) {
+    renderedScene=scene; renderedCamera=camera; renderedRenderer=this;
+    return renderOriginal.call(this,scene,camera);
+  };
+}
 const coverMaterial = () => renderedScene.getObjectByName('front-cover').material[0];
 function sourceState() {
   const material=coverMaterial(),c=material.map.image,g=c.getContext('2d');
@@ -187,7 +192,7 @@ async function persistRelief(profile) {
   const reopened=new LibraryStore(dbName),saved=await reopened.get(id);await reopened.close();
   return saved.coverRelief;
 }
-const counters = () => ({ links, calls:gpu.info.render.calls, programs:gpu.info.programs.length, textures:gpu.info.memory.textures, triangles:gpu.info.render.triangles });
+const counters = () => ({ links, calls:renderedRenderer.info.render.calls, programs:renderedRenderer.info.programs.length, textures:renderedRenderer.info.memory.textures, triangles:renderedRenderer.info.render.triangles });
 const pose = (yaw, pitch) => view.draw({ x:0, y:0, scale:1.15, angle:yaw, pitch });
 const shot = () => view.canvas.toDataURL('image/png').split(',')[1];
 const pixels = () => { const c = view.canvas; return c.getContext('2d').getImageData(0, 0, c.width, c.height).data; };

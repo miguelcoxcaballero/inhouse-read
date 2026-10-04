@@ -8,10 +8,15 @@ vi.mock('../../src/js/book-model.js',() => ({
   bookView(host,_book,_style,dimensions) {
     const canvas = document.createElement('canvas'); host.append(canvas);
     let pose = { ...dimensions.initialPose,pageTheme:1 }, snapshot;
+    const paints = [];
     const done = () => ({ finished:Promise.resolve(),cancel() {} });
     const view = {
-      canvas,ready:Promise.resolve(),dimensions,
-      draw:vi.fn(next => { pose = { ...pose,...next }; }),
+      canvas,ready:Promise.resolve(),dimensions,paints,
+      draw:vi.fn((next,options) => {
+        paints.push({ connected:canvas.isConnected,redraw:options?.redraw !== false,
+          restingBookAway:document.querySelector('.ihr-spine')?.classList.contains('is-away') });
+        pose = { ...pose,...next };
+      }),
       getPose:() => ({ ...pose }),getPageTheme:() => pose.pageTheme,
       setPageTheme:value => { pose.pageTheme = value; },
       hasPageSnapshot:next => snapshot === next,
@@ -54,6 +59,18 @@ beforeEach(() => {
 afterEach(() => { shelf.destroy(); document.body.replaceChildren(); vi.unstubAllGlobals(); });
 
 describe('reader close reuses its exact lifted book',() => {
+  it('prepares detached opening poses without painting and draws the ready book before hiding its resting spine',async () => {
+    stubSpine().click();
+    await vi.waitFor(() => expect(document.querySelector('.ihr-flyout__cover-target.is-ready')).not.toBeNull());
+    const original = lifted()[0];
+    expect(original.dimensions.deferDraw).toBe(true);
+    const detached = original.paints.filter(paint => !paint.connected);
+    expect(detached.length).toBeGreaterThan(0);
+    expect(detached.every(paint => !paint.redraw)).toBe(true);
+    const firstPaint = original.paints.find(paint => paint.redraw);
+    expect(firstPaint).toEqual({ connected:true,redraw:true,restingBookAway:false });
+    expect(stubSpine().classList.contains('is-away')).toBe(true);
+  });
   it('retains one ready view at handoff, refreshes final bookmark and paints the saved themed page before flight',async () => {
     await openReader();
     const original = lifted()[0], closingPage = snapshot();

@@ -2104,13 +2104,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const view = bookView(bookNode, book, style, {
       width: coverW, height: coverH, thickness,
       viewportWidth: vw, viewportHeight: vh, centerX, centerY, coverUrl,
+      deferDraw:true,
       initialPose:{ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch, roll:sourceRoll }
     });
     if (view) {
       // Keep an inspectable cue on the lifted canvas too; the ribbon itself
       // is geometry inside the model, so no DOM ribbon needs to be re-created.
       view.canvas.dataset.bookmark3d = String(Boolean(bookmarkFor(book)));
-      view.draw({ x: dx, y: dy, scale: startScale, angle: sourceAngle, pitch: sourcePitch, roll:sourceRoll });
+      view.draw({ x: dx, y: dy, scale: startScale, angle: sourceAngle, pitch: sourcePitch, roll:sourceRoll }, { redraw:false });
       bookNode.classList.add('ihr-flyout__book--webgl');
       bookNode.style.position = 'absolute';
       bookNode.style.inset = '0';
@@ -3247,9 +3248,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       sourceAngle = handoffPose.angle;
       sourcePitch = handoffPose.pitch;
       sourceRoll = handoffPose.roll ?? 0;
-      view.draw({ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch, roll:sourceRoll });
+      view.draw({ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch, roll:sourceRoll }, { redraw:false });
     }
     document.body.append(flyout);
+    // The cover is ready and the final shelf pose is known. Paint once in its
+    // connected stage before replacing the resting book; detached setup needs
+    // no GPU draw or full-screen readback.
+    view?.draw({ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch, roll:sourceRoll });
     spineEl.classList.add('is-away');
     state.shelfScene?.flush();
     flyout.focus?.();

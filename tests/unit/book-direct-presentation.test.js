@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const gpu = vi.hoisted(() => ({ renderers:[], renders:[], failPresentation:false }));
+const gpu = vi.hoisted(() => ({ renderers:[], renders:[], imageLoads:[], failPresentation:false }));
 vi.mock('three', async importOriginal => {
   const THREE = await importOriginal();
   class Renderer {
@@ -38,7 +38,14 @@ vi.mock('three', async importOriginal => {
     }
     dispose() {}
   }
-  return { ...THREE, WebGLRenderer:Renderer, PMREMGenerator:PMREM };
+  class TextureLoader {
+    load(url, onLoad, _onProgress, onError) {
+      const texture = new THREE.Texture();
+      gpu.imageLoads.push({ url, texture, onLoad, onError });
+      return texture;
+    }
+  }
+  return { ...THREE, WebGLRenderer:Renderer, PMREMGenerator:PMREM, TextureLoader };
 });
 
 let contexts, views, bookView;
@@ -62,7 +69,7 @@ class Context {
 
 beforeEach(async () => {
   vi.resetModules(); contexts = new WeakMap(); views = [];
-  gpu.renderers.length = 0; gpu.renders.length = 0; gpu.failPresentation = false;
+  gpu.renderers.length = 0; gpu.renders.length = 0; gpu.imageLoads.length = 0; gpu.failPresentation = false;
   vi.stubGlobal('WebGLRenderingContext', function WebGLRenderingContext() {});
   vi.stubGlobal('devicePixelRatio', 2);
   // Each test gets a fresh native method before the production source-aware
@@ -169,6 +176,51 @@ describe('direct book presentation and actual lazy snapshots', () => {
     view.draw({ ...pose, angle:73 });
     expect(presentation().domElement.frame.angle).toBeCloseTo(73);
     expect(JSON.parse(view.canvas.toDataURL()).angle).toBeCloseTo(73);
+  });
+
+  it('applies an asynchronous appearance replacement at the current pose without painting before the first explicit draw', async () => {
+    const { view, host, stage } = make({ coverUrl:'blob:deferred-cover' }); host.remove();
+    const originalReady = view.ready;
+    view.draw({ ...pose, angle:46, x:12, y:9, scale:.7 }, { redraw:false });
+    expect(view.updateAppearance({ color:'#243c5d', shade:'#172e4a', ink:'#ffffff', coverRatio:.66 })).toBe(true);
+    const replacementReady = view.ready;
+    expect(gpu.imageLoads).toHaveLength(1);
+    const load = gpu.imageLoads[0];
+    load.texture.image = Object.assign(document.createElement('canvas'), { width:144, height:218 });
+    load.onLoad(load.texture);
+    await Promise.all([originalReady, replacementReady]); await Promise.resolve();
+    expect(gpu.renders).toHaveLength(0); expect(copies(view)).toHaveLength(0);
+    expect(view.getPose()).toMatchObject({ angle:46, x:12, y:9, scale:.7 });
+    stage.append(host); view.draw(view.getPose());
+    expect(gpu.renders).toHaveLength(1); expect(presentation().domElement.frame.angle).toBeCloseTo(46);
+    expect(presentation().domElement.frame.scale).toBeCloseTo(.7);
+    expect(presentation().domElement.frame.position).toEqual([12, 63, 0]);
+  });
+
+  it('defers implicit spine, cover, edge, bookmark and relief updates until the first explicit draw', async () => {
+    const { view } = make();
+    expect(view.updateSpineAppearance({ title:'Updated spine' },
+      { color:'#243c5d', shade:'#172e4a', ink:'#ffffff', coverRatio:.66 })).toBe(true);
+    expect(view.updateCoverAppearance({ coverFinish:'glossy' })).toBe(true);
+    expect(view.updateEdgeAppearance({ pageEdgeFinish:'glossy' })).toBe(true);
+    expect(view.updateBookmark({ progressFraction:.25 })).toBe(true);
+    expect(await view.prepareCoverRelief()).toBe(true);
+    expect(await view.setCoverRelief(null)).toBe(true);
+    expect(gpu.renders).toHaveLength(0); expect(copies(view)).toHaveLength(0);
+    view.draw(view.getPose());
+    expect(gpu.renders).toHaveLength(1); expect(presentation().domElement.frame.angle).toBeCloseTo(0);
+  });
+
+  it('retains the actual displayed frame while a deferred appearance update prepares a later pose', () => {
+    const { view } = make(); view.draw({ ...pose, angle:17 });
+    const displayed = structuredClone(presentation().domElement.frame);
+    view.deferDrawing(); view.draw({ ...pose, angle:73 }, { redraw:false });
+    expect(view.updateAppearance({ color:'#243c5d', shade:'#172e4a', ink:'#ffffff', coverRatio:.66 })).toBe(true);
+    view.updateCoverAppearance({ coverFinish:'matte' }); view.updateEdgeAppearance({ pageEdgeFinish:'matte' });
+    expect(gpu.renders).toHaveLength(1); expect(JSON.parse(view.canvas.toDataURL())).toEqual(displayed);
+    expect(presentation().domElement.frame).toEqual(displayed); expect(view.getPose().angle).toBe(73);
+    view.draw(view.getPose());
+    expect(gpu.renders).toHaveLength(2); expect(JSON.parse(view.canvas.toDataURL()).angle).toBeCloseTo(73);
   });
 
   it('draws unchanged opaque paper and stock before physical cases while retaining page projection and blending', () => {
