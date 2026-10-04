@@ -1,8 +1,28 @@
-# Verificación del WIP — web publicada 1.7.55 y Android 1.1.4
+# Verificación del WIP — 1.7.57 preparada y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.57
+
+Integrada y verificada localmente; publicación y CI original pendientes.
+Las confirmaciones de metadatos conservan el árbol de la estantería cuando
+todos los datos visibles son idénticos. La cola real pasa de una pintura
+de sala/base/snapshot a cero, con referencias actuales y los mismos modelos.
+Pasan 75 casos aislados, 32 pares PNG nativos y 100 pares RGBA/exportPNG
+exactos en cuatro perfiles, sin cambiar calidad ni plazos. La fuente final
+pasa 3.004 unitarias en 223 archivos, build y 75 comprobaciones Python;
+conserva 501 hechos de fuente y las 524 identidades E2E originales.
+Los siete recorridos locales originales pasan al primer intento, sin
+retries, flaky ni omisiones. Cierres: 7.034,4 ms alineado y 6.140,6 ms legado,
+con ocho segundos originales y global de treinta segundos intactos.
+El primer full root conserva FAILED antes de ejecutar comandos por el JSON
+de versión del auxiliar; su reparación sólo restaura la comilla faltante.
+La batería completa PASS corresponde al intento 2. Los fallos aislados
+anteriores conservan sus propios recibos. No hay medición de FPS en teléfono
+ni causa demostrada del timeout de apertura o del clic perdido de CI56.
+Detalle en [Rendimiento de 1.7.57](performance-1757.md).
 
 ## Cambios de rendimiento de 1.7.56
 
-Incorporada, pendiente de publicación y verificación pública: la devolución del
+Publicada, con CI original completa FAILED: la devolución del
 libro sobre la estantería legada evita una segunda copia de pantalla por
 fotograma compatible. Pasan los 59 casos aislados del candidato y 26 pares
 gráficos exactos en ambas densidades; las seis poses compatibles de cada
@@ -14,6 +34,17 @@ Los siete recorridos locales originales pasan al primer intento, cero
 retries, flaky u omisiones. Cierres alineado y legacy: 4.286,3 y 6.134,5 ms
 con los plazos originales intactos; veinte composiciones del gesto sin
 nuevos renders de sala y seis lomos de 1.024 px.
+La web publicada pasa HTTP y los 21 recorridos originales de editor,
+regreso y PDF al primer intento, cero retries, flaky u omisiones. APK recién
+descargada y loader PASS. El primer pin HTTP de propagación permanece FAILED.
+La CI original de fuente `b07aa6c`, run `37239526267`, termina FAILED:
+524 identidades, 521 expected, dos unexpected y un flaky; 527 intentos,
+cinco timedOut y tres retries, cero omisiones. Se conservan doce logs y
+once ZIP completos. Los cuatro intentos de UI3 fallan durante apertura PDF
+antes de Back, con último snapshot en zooming; no acreditan un fallo del
+plazo de cierre. UI6 conserva el primer timeout global de 90.626 ms
+esperando Editar y su retry PASS de 32.679 ms como flaky, sin causa del clic
+perdido demostrada. Los pases locales y públicos no sustituyen esos fallos.
 Se conservan separados los fallos del wrapper CPU y del primer
 método gráfico. No es una medición de fluidez en teléfono ni una solución
 acreditada para los timeouts de apertura de CI55.

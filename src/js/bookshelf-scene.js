@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { configureNativeRendererSize } from './native-renderer-size.js';
 import { createBookModel, getBookRenderer, lightBookScene } from './book-model.js';
 import { bookmarkFor } from './bookshelf-layout.js';
+import { canAdoptShelfMetadata } from './shelf-metadata-records.js';
 import { shelfBookSlot, shelfBookInsertion, projectShelfBookPose } from './bookshelf-return.js';
 import { createShelfFurniture, createShelfOcclusion } from './shelf-furniture.js';
 import { createShelfPlant } from './shelf-plants.js';
@@ -2678,6 +2679,33 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         changed = previewOffset(entry, x, y, now) || changed;
       }
       if (changed) invalidate();
+    },
+    adoptMetadataRecords(previous, records) {
+      if (disposed || !canPresent() || paintHeld || inspectionMoving || hasOngoingMotion() ||
+          drawPending || raf || programsPoll || inspectionQualityDirty || inspectionEntryUpdates.size || unpainted.length)
+        return false;
+      if (renderer.getContext?.()?.isContextLost?.()) return false;
+      // Deliver existing observer work without consuming a real invalidation.
+      // Projection's own style writes may be pending but do not change state.
+      observeEntryChanges(mutations.takeRecords());
+      if (themeChanges.takeRecords().length) { updateWoodTheme(); invalidate(true, false, 'theme'); return false; }
+      if (drawPending || viewportChanged()) return false;
+      const owner = currentNativeRendererPresentation(renderer);
+      if (owner && owner !== nativeRoomLease) return false;
+      const books = bookEntries.filter(entry => entry.kind !== 'plant' && entry.kind !== 'lamp');
+      if (!Array.isArray(records) || records.length !== books.length ||
+          bookEntries.some(entry => entry.replacement || entry.plantQuality || entry.insertion || entry.trashDrop || entry.preview.active || entry.landing))
+        return false;
+      const byId = new Map(books.map(entry => [String(entry.book?.id), entry]));
+      if (byId.size !== books.length || !canAdoptShelfMetadata(previous, records)) return false;
+      for (const book of previous) {
+        const entry = byId.get(String(book.id));
+        if (!entry || entry.book !== book || !entry.node?.isConnected || byNode.get(entry.node) !== entry || stateFor(entry) !== entry.state)
+          return false;
+      }
+      // Validation of the entire batch precedes every reference assignment.
+      for (const book of records) byId.get(String(book.id)).book = book;
+      return true;
     },
     updateEntry(node, book, style, coverUrl) {
       const entry = byNode.get(node);

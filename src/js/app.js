@@ -241,6 +241,8 @@ async function performShelfRefresh({ immediate = false } = {}) {
       onBookDismiss: dismissPreparedPage,
       sections: false,
       sort: 'none',
+      // These production providers depend on visual/content fields, not sync acknowledgements/history.
+      adoptMetadata: true,
       minimumShelves: 3,
       getBookPreparation: book => preparedBooks.get(book.id),
       getBookGeometryState: book => wordCountQueue.geometryState(book),
@@ -1302,7 +1304,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.7.56'
+els.appVersion.textContent = 'Inhouse Read · v1.7.57'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')

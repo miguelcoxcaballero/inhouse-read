@@ -97,6 +97,7 @@
  */
 
 import { planBookshelf, bookmarkFor, withDefaults, DEFAULT_LAYOUT } from './bookshelf-layout.js';
+import { canAdoptShelfMetadata } from './shelf-metadata-records.js';
 import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from './cover-appearance.js';
 import { bookColorOptions, spineColorStyle, spineFinish, surfaceFinish, METAL_COLORS } from './book-colors.js';
 import { normalizeBookAuthor } from './book-title.js';
@@ -344,6 +345,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   const state = {
     books: Array.isArray(books) ? books.slice() : [],
     shelfWidth: 0,
+    metadataContext: null,
     shelfType:options.shelfType ? normalizeShelfType(options.shelfType) : storedShelfType(),
     busy: false,
     session: null,
@@ -1399,14 +1401,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         pointerId:event.pointerId, ...start, cancelled:false,
         valid:!state.shelfScene || state.shelfScene.getBookAtPoint(event.clientX, event.clientY) === node
       } : null;
-      state.pressedBookId = String(book.id ?? book.path ?? book.title ?? 'book');
+      state.pressedBookId = String(item.book.id ?? item.book.path ?? item.book.title ?? 'book');
       node.classList.add('is-pressed');
-      warmCover(book);
+      warmCover(item.book);
     });
     const release = () => {
       start = null;
       node.classList.remove('is-pressed');
-      const id = String(book.id ?? book.path ?? book.title ?? 'book');
+      const id = String(item.book.id ?? item.book.path ?? item.book.title ?? 'book');
       if (state.pressedBookId === id) {
         state.pressedBookId = null;
         setTimeout(maybeRefreshAppearanceStyles, 0);
@@ -1870,6 +1872,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         .find(node => node.dataset.bookId === focusedBookId)
         ?.focus({ preventScroll: true });
     }
+    state.metadataContext = metadataContext();
     for (const book of state.books) resolveCoverAppearance(book);
   }
 
@@ -3591,6 +3594,44 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (!state.destroyed && !state.session) scheduleRender();
   });
 
+  function metadataContext() {
+    return JSON.stringify([window.innerWidth, window.innerHeight, window.devicePixelRatio || 1,
+      state.shelfType, state.viewMode, scroller.clientHeight]);
+  }
+
+  function adoptMetadataRecords(nextBooks) {
+    if (options.adoptMetadata !== true || options.texts || opts.sections !== false || opts.sort !== 'none' || !state.useScene || !state.shelfScene ||
+        !state.presentationActive || state.destroyed || state.busy || state.session || state.pendingSelection ||
+        state.returnMotion || state.dragSession || state.reorderTimer || state.trashRemoval || state.arranging ||
+        state.returningBookId !== null || state.pressedBookId !== null || state.pendingRemovals.size ||
+        state.queuedBooks || state.frame || state.renderQueued || state.appearanceRefreshPending ||
+        !state.appearancesReady || state.appearanceTasks.size ||
+        state.metadataContext !== metadataContext() || measure() !== state.shelfWidth ||
+        !canAdoptShelfMetadata(state.books, nextBooks)) return false;
+    if (state.itemsById.size !== state.books.length) return false;
+    for (const book of state.books) {
+      if (state.itemsById.get(String(book.id))?.book !== book || bookGeometryState(book) !== 'ready') return false;
+    }
+    for (const book of nextBooks) {
+      if (bookGeometryState(book) !== 'ready' || !state.itemsById.has(String(book.id))) return false;
+    }
+    const byId = new Map(nextBooks.map(book => [String(book.id), book]));
+    for (const item of state.placementObjects) {
+      if (item.kind === 'book' && !byId.has(String(item.book.id))) return false;
+    }
+    if (!state.shelfScene.adoptMetadataRecords?.(state.books, nextBooks)) return false;
+    state.books = nextBooks.slice();
+    for (const book of nextBooks) state.itemsById.get(String(book.id)).book = book;
+    for (const item of state.placementObjects) {
+      if (item.kind === 'book') item.book = byId.get(String(item.book.id));
+    }
+    if (state.lastOpened) {
+      const latest = nextBooks.find(book => book.id === state.lastOpened.book.id);
+      if (latest) state.lastOpened.book = latest;
+    }
+    return true;
+  }
+
   /** Sustituye la biblioteca y vuelve a pintar, conservando el scroll. */
   function refresh(nextBooks, { defer = false } = {}) {
     if (state.destroyed) return;
@@ -3599,6 +3640,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (defer) scheduleRender();
       return;
     }
+    if (adoptMetadataRecords(nextBooks)) return;
     state.queuedBooks = null;
     const top = scroller.scrollTop;
     // A removal still being written must not let an older record list put its book back.

@@ -66,4 +66,75 @@ y seis lomos de 1.024 px. Fuente, build y métodos permanecen estables.
 Son medidas del navegador de escritorio, no del teléfono físico.
 Evidencia `local-browser-attempt1/summary.json`.
 
-La verificación del artefacto publicado y la CI completa siguen pendientes.
+## Artefacto publicado
+
+Fuente `b07aa6c14d64f77b5cdbfefae10aba70653e58a1`, Pages
+`3cbd017b68f1da8f55f8c100f0e403da343a8a17`, deploy original
+`37239526266` SUCCESS. El primer pin conserva FAILED al recibir el HTML
+anterior durante la propagación de Pages. El segundo namespace contrasta
+los bytes actuales: 23 módulos y 44 recursos offline coinciden exactamente.
+Main real `main-B90_hcG4.js`, 1.450.138 bytes, SHA
+`5663776aefe33caf120cd46c9b8d77ffc928c8643c77388549f158373adacc58`.
+Certificado HTTP SHA
+`63de96bad4e88f5f677aa34dd01359b715e882cf24a6fb35af48d1788ab64d40`.
+
+Los tres recorridos públicos originales de editor y regreso pasan al primer
+intento: 50 cuerpos HTTP contrastados y cero retries, flaky u omisiones.
+Certificado SHA
+`893bea4bf94c03d41f139995ec4fb2182238a43c9010981ca150c61347329fc1`.
+Los 18 recorridos PDF públicos pasan al primer intento, con 309 cuerpos
+HTTP contrastados, 15 capturas y cero retries, flaky u omisiones. SHA
+`a5590db882079355975492d2f98ba543ea30b3f1b9abfd5c72aae2bbb9bbd31b`.
+Los casos de narración usan un motor controlado para comprobar posiciones;
+las voces con pesos reales conservan su batería original en CI.
+
+La APK descargada de nuevo mantiene 1.1.4, código 17, 78.515.243 bytes y SHA
+`feafaaa762b35344ac8b19418f9f6eb6cb1f725fba22b1ef3d3f273bd32a6191`.
+Contiene únicamente el loader público de 2.089 bytes y dos stubs vacíos.
+El loader coincide con Git, SHA
+`8e03c3a6c8f840d9e9cf66637babe2d63742d2948d852534b865db0086aa9f34`.
+La corrección web se entrega mediante ese loader; no hay una nueva captura
+de Android físico ni cambios nativos que requieran otro wrapper.
+
+## CI original completa
+
+La CI original de esta fuente, run `37239526267`, attempt 1, termina FAILED.
+Se conservan los doce logs y once ZIP autenticados, sus bytes, digests,
+miembros y manifiestos originales. Pasan las 2.989 unitarias de 220 archivos.
+El censo completo contiene 524 identidades E2E: 521 expected, dos unexpected
+y un flaky; 527 intentos, 522 passed y cinco timedOut, tres retries, cero
+omisiones, casos sin ejecutar o errores globales del informe. Los ocho
+restantes grupos E2E pasan, incluidas las 220 voces Supertonic.
+
+UI3 conserva los cuatro intentos fallidos de los dos contratos nativos.
+Todos pasan selección de portada y preparación; fallan la visibilidad de
+`.pdf-page-canvas` durante apertura, antes de Back. Las cuatro esperas
+backend registran 8.006,757, 8.012,130, 8.009,839 y 8.006,667 ms; los informes
+conservan el timeout global original de treinta segundos. Los últimos
+snapshots muestran `zooming`, lector preparado y BODY en apertura/lectura.
+No hay un timestamp DOM de clic ni fin de fase, y no se mide el cierre de
+ocho segundos en esos intentos. La primera espera de portada figura PASS
+aunque su llamada backend dura 9.217,847 ms: se conserva ese resultado sin
+reinterpretar el reloj del producto ni el mecanismo de polling.
+
+UI6 conserva el caso `spine-materials.spec.mjs`, «lomo nítido: tintas,
+metales y grabado persistentes en móvil», como flaky: primer intento
+90.626 ms timedOut esperando Editar, reintento PASS de 32.679 ms. Después
+de Back se usa el clic normal original del lomo. El punto registrado está
+dentro de su rectángulo y su geometría permanece igual entre los snapshots
+de acción y después; cambian la apariencia y los contadores de layout/render.
+No aparece un flyout en esas capturas. Las referencias delta se han resuelto
+con el algoritmo de Playwright; no demuestran identidad del nodo, estado
+busy, resultado del raycast ni causa del clic perdido. No hay trace del
+reintento exitoso. El primer fallo y el flaky no se reclasifican como PASS.
+
+Certificado completo
+`ci-b07aa6c-failed-original-collector-attempt1/snapshot-001/certification.json`,
+SHA `a45a7a681e371f7d2dca3934a0d8f9ec1ad4ae41dc7a93563d4f4399866ce088`.
+El censo de esta recogida contrasta los diez manifiestos originales subidos;
+no ejecuta un nuevo `--list` local. UI3 y UI6 reutilizan únicamente sus ZIP
+y logs originales ya autenticados, con receipts separados y revalidación
+completa del collector. Las entradas de los métodos tempranos se comprueban
+antes y después. No se repiten CI, tests ni retries ni se cambian plazos o
+assertions. Los pases locales y públicos y los fallos anteriores conservan
+sus estados separados.
