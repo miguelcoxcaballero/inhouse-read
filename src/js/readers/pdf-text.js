@@ -204,11 +204,14 @@ export function extractPDFText(content, viewport) {
   const rtlWeight = entries.filter(entry => entry.item.dir === 'rtl').reduce((sum, entry) => sum + entry.item.str.length, 0)
   const rtl = rtlWeight > entries.reduce((sum, entry) => sum + entry.item.str.length, 0) / 2
   const lines = orderLines(segmentRows(makeRows(entries), rtl), rtl)
+  // Fail closed to the complete stream if a future layout rule loses or
+  // duplicates an item. Reordering is never permission to discard a phrase.
+  const orderedIndices = lines.flatMap(line => line.entries.map(entry => entry.rawIndex))
+  if (orderedIndices.length !== raw.length || new Set(orderedIndices).size !== raw.length) return fallback(content)
   const leadingByColumn = new Map()
   for (let index = 1; index < lines.length; index++) {
     const a = lines[index - 1], b = lines[index], delta = b.y - a.y
-    if (a.column !== b.column || delta <= 0 || Math.max(a.height, b.height) / Math.min(a.height, b.height) > 1.3
-      || delta > Math.max(a.height, b.height) * 2.6) continue
+    if (a.column !== b.column || delta <= 0 || delta > Math.max(a.height, b.height) * 2.6) continue
     const values = leadingByColumn.get(b.column) || []
     values.push(delta); leadingByColumn.set(b.column, values)
   }
@@ -240,7 +243,6 @@ export function extractPDFText(content, viewport) {
       const delta = line.y - previous.y
       const breakParagraph = line.column !== previous.column || delta < 0
         || delta > normal + Math.max(2, Math.min(previous.height, line.height) * .3)
-        || Math.max(previous.height, line.height) / Math.min(previous.height, line.height) > 1.35
         || listStart(line.text)
       if (breakParagraph) { closeParagraph(); text += '\n\n'; paragraphStart = text.length }
       else if (!/\s$/.test(text) && !/^\s/.test(line.entries[0].item.str)) {

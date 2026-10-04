@@ -16,7 +16,8 @@ import { attachSwipeNavigation } from '../gestures.js'
 import { DEFAULT_READING_PREFERENCES, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES, normalizeReadingPreferences } from './reading-preferences.js'
 import { hasUntrackedPDFImages, paintPDFTheme } from './pdf-page-theme.js'
 import { renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from './page-snapshot.js'
-import { mapTextLayer, mapTextNode } from './speech-map.js'
+import { mapTextLayer, mapTextNodes } from './speech-map.js'
+import { clearPDFReflow, pdfImageRects, populatePDFReflow } from './pdf-reflow.js'
 import { extractPDFText, mapPDFTextLayer } from './pdf-text.js'
 import { SPEECH_SPAN_CLASS, clearSpeechRange, installSpeechStyle, paintSpeechRange } from './speech-highlight.js'
 
@@ -176,31 +177,28 @@ export class PdfReader {
   }
 
   #visibleTextOffset() {
-    const node = this.#reflow?.firstChild, doc = node?.ownerDocument
-    if (this.#preferences.pdfMode !== 'text' || !node?.nodeValue || !doc?.createRange) return this.#textOffset
+    const map = mapTextNodes(this.#reflow), doc = this.#reflow?.ownerDocument
+    if (this.#preferences.pdfMode !== 'text' || !map.text || !doc?.createRange) return this.#textOffset
     const edge = this.#container.getBoundingClientRect().top
     const range = doc.createRange()
     if (typeof range.getClientRects !== 'function') return this.#textOffset
-    let low = 0, high = node.nodeValue.length
+    let low = 0, high = map.text.length
     while (low < high) {
       const middle = (low + high) >>> 1
-      range.setStart(node, middle); range.setEnd(node, middle + 1)
-      const rect = range.getClientRects()[0]
+      const rect = map.rangeFor(middle,middle + 1)?.getClientRects()[0]
       if (!rect || rect.bottom <= edge + 1) low = middle + 1
       else high = middle
     }
-    return Math.min(node.nodeValue.length, low)
+    return Math.min(map.text.length, low)
   }
 
   #restoreTextOffset(offset) {
     if (this.#preferences.pdfMode !== 'text') return
-    const node = this.#reflow?.firstChild
-    this.#textOffset = Math.min(node?.nodeValue?.length || 0, Math.max(0, Math.trunc(Number(offset) || 0)))
-    if (!node?.nodeValue || !this.#textOffset) return
-    const range = node.ownerDocument.createRange()
-    range.setStart(node, Math.min(this.#textOffset, node.nodeValue.length - 1))
-    range.setEnd(node, Math.min(this.#textOffset + 1, node.nodeValue.length))
-    const rect = range.getClientRects?.()[0]
+    const map = mapTextNodes(this.#reflow)
+    this.#textOffset = Math.min(map.text.length, Math.max(0, Math.trunc(Number(offset) || 0)))
+    if (!map.text || !this.#textOffset) return
+    const range = map.rangeFor(Math.min(this.#textOffset,map.text.length - 1),Math.min(this.#textOffset + 1,map.text.length))
+    const rect = range?.getClientRects?.()[0]
     if (rect) this.#container.scrollTo({ top:this.#container.scrollTop + rect.top - this.#container.getBoundingClientRect().top, behavior:'instant' })
   }
 
@@ -373,6 +371,7 @@ export class PdfReader {
     this.#invalidateStagedSpeech()
     this.#cancelRender(this.#renderState)
     this.#releaseOriginal(this.#renderState)
+    clearPDFReflow(this.#reflow)
     const state = this.#renderState = {
       pageWrap:this.#pageWrap, canvas:this.#canvas, textLayerEl:this.#textLayerEl, reflow:this.#reflow, key
     }
@@ -422,9 +421,39 @@ export class PdfReader {
     if (textMode) {
       content ??= await page.getTextContent()
       if (!valid()) return false
-      state.textLayout = extractPDFText(content, page.getViewport({ scale:1 }))
+      const viewport = page.getViewport({ scale:1 })
+      state.textLayout = extractPDFText(content, viewport)
       state.pageText = state.textLayout.text
-      reflow.textContent = state.pageText || 'Esta página es una imagen. Cambia a Página original para verla.'
+      // An EOL in a stream with unusable geometry is a physical line, not
+      // evidence of a paragraph. The offsets remain verbatim for narration.
+      reflow.style.whiteSpace = state.textLayout.geometric ? 'pre-wrap' : 'normal'
+      const operators = await page.getOperatorList?.()
+      if (!valid()) return false
+      const imageOps = new Set(['paintImageXObject','paintInlineImageXObject','paintImageXObjectRepeat',
+        'paintInlineImageXObjectGroup','paintImageMaskXObject','paintImageMaskXObjectRepeat',
+        'paintImageMaskXObjectGroup','paintSolidColorImageMask'].map(name=>pdfjsLib.OPS?.[name]).filter(Number.isFinite))
+      const hasImages = operators?.fnArray?.some(op=>imageOps.has(op))
+      if (hasImages || !state.pageText.trim()) {
+        const source = document.createElement('canvas')
+        // Bound the temporary page buffer, keeping original composite pixels
+        // at mobile DPR without retaining another full page after cropping.
+        const width = Math.min(1600,Math.max(1,this.#containerWidth())*Math.min(2,window.devicePixelRatio || 1))
+        const scale = Math.min(width/viewport.width,Math.sqrt(4_000_000/(viewport.width*viewport.height)))
+        const renderedViewport = page.getViewport({scale})
+        source.width = Math.max(1,Math.ceil(renderedViewport.width));source.height = Math.max(1,Math.ceil(renderedViewport.height))
+        try {
+          state.renderTask = page.render({canvasContext:source.getContext('2d'),viewport:renderedViewport,recordImages:true})
+          await state.renderTask.promise
+          if (!valid()) return false
+          let rects = pdfImageRects(page.imageCoordinates || [],source.width,source.height)
+          if (!state.pageText.trim() || hasUntrackedPDFImages(operators,pdfjsLib.OPS) || !rects.length)
+            rects = [{x0:0,y0:0,x1:source.width,y1:source.height}]
+          populatePDFReflow(reflow,state.textLayout,source,rects,viewport)
+        } catch(error) {
+          if (!valid() || error.name === 'RenderingCancelledException') return false
+          throw error
+        } finally { source.width = source.height = 0 }
+      } else populatePDFReflow(reflow,state.textLayout)
       state.zoomed = false
       state.layoutWidth = this.#containerWidth()
       this.#textHeight = this.#container.clientHeight
@@ -528,7 +557,7 @@ export class PdfReader {
   }
   #speechMap() {
     return this.#preferences.pdfMode === 'text'
-      ? mapTextNode(this.#pageText ? this.#reflow.firstChild : null)
+      ? mapTextNodes(this.#reflow)
       : mapPDFTextLayer(this.#textLayerEl, this.#renderState?.textLayout) || mapTextLayer(this.#textLayerEl)
   }
 
@@ -571,7 +600,7 @@ export class PdfReader {
       // Geometric paragraphs are real body text, including repeated dialogue.
       // No marginal header is confirmed by page-local layout alone: preserve
       // those paragraphs even when the legacy header-skipping option is on.
-      ...(textLayout?.geometric ? { headerRanges:Object.freeze([]) } : {}),
+      ...(textLayout?.geometric || this.#preferences.pdfMode === 'text' ? { headerRanges:Object.freeze([]) } : {}),
       highlight:(start, end) => {
         const live = current(), range = live?.rangeFor(start, end)
         clear()
@@ -613,7 +642,7 @@ export class PdfReader {
     this.#releaseOriginal(staged)
     staged.canvas.width = staged.canvas.height = 0
     staged.pageWrap.replaceChildren()
-    staged.reflow.replaceChildren()
+    clearPDFReflow(staged.reflow)
   }
 
   /**
@@ -652,7 +681,7 @@ export class PdfReader {
         }
         if (!await this.#drawPage(page, staged, staged.valid, content)) throw speechCancelled()
         const first = preferences.pdfMode === 'text'
-          ? mapTextNode(staged.reflow.firstChild)
+          ? mapTextNodes(staged.reflow)
           : mapPDFTextLayer(staged.textLayerEl, staged.textLayout) || mapTextLayer(staged.textLayerEl)
         if (!first.text.trim()) throw new Error('No se pudo preparar el texto de la página siguiente.')
         const { source, current } = this.#makeSpeechSource(number, first, staged.textLayout)
@@ -665,6 +694,7 @@ export class PdfReader {
           this.#stagedSpeech = null
           this.#cancelRender(this.#renderState)
           this.#releaseOriginal(this.#renderState)
+          clearPDFReflow(this.#reflow)
           ++this.#renderToken
           const oldCanvas = this.#canvas
           this.#pageWrap.replaceWith(staged.pageWrap)
@@ -834,6 +864,7 @@ export class PdfReader {
     this.#invalidateStagedSpeech()
     this.#cancelRender(this.#renderState)
     this.#releaseOriginal(this.#renderState)
+    if (this.#reflow) clearPDFReflow(this.#reflow)
     this.#renderState = null
     this.#renderRequest = null
     this.#detachGestures()

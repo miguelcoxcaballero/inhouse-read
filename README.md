@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.41
+
+- La vista adaptable del PDF incorpora las fotografías, incluidas las giradas, conservando sus colores en todos los temas. Las páginas escaneadas muestran su imagen original.
+- Los cambios de tipografía entre líneas ya no rompen un párrafo continuo. El texto completo mantiene sus posiciones al intercalar fotos, navegar, resaltar y narrar.
+- [Implementación y verificación](docs/pdf-adaptive-content-1741.md).
+
 ### Actualización web · 1.7.40
 
 - La vuelta del lector prepara su hueco sin repintar la habitación bajo la página. Los shaders de profundidad se preparan con la estantería y se reutiliza su imagen mientras el libro entra en su hueco.

@@ -73,6 +73,20 @@ export function mapTextNode(node) {
   return { text:node?.nodeValue || '', spans, ...locators(node?.ownerDocument, spans) }
 }
 
+/** Exact PDF reflow offsets across text nodes interleaved with illustrations.
+ * Images contribute no synthetic separators or spoken alternative text. */
+export function mapTextNodes(root) {
+  if (!root) return mapTextNode(null)
+  const walker = root.ownerDocument.createTreeWalker(root, SHOW_TEXT), spans = []
+  let text = ''
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!node.nodeValue) continue
+    spans.push({ node, start:text.length, end:text.length + node.nodeValue.length })
+    text += node.nodeValue
+  }
+  return { text, spans, ...locators(root.ownerDocument, spans) }
+}
+
 function locators(doc, spans) {
   // Last span whose start is <= offset (spans are sorted and disjoint).
   const spanAt = offset => {

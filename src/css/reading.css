@@ -41,6 +41,7 @@ body.is-reading .reader-heading { display:flex; width:100%; height:48px; gap:4px
    original pixels. Filtering the whole canvas also recoloured every image. */
 .pdf-page-canvas { filter:none; }
 .pdf-reflow-page { width:100%; max-width:800px; margin:0 auto; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--reading-ink); background:var(--reading-paper); }
+.pdf-reflow-image { display:block; max-width:100%; height:auto; margin:1em auto; filter:none; }
 .pdf-reflow-page[hidden], .pdf-page-wrap[hidden] { display:none; }
 .pdf-page-wrap { flex:none; }
 .pdf-page-canvas { display:block; }
