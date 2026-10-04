@@ -85,6 +85,55 @@ dos escrituras de buffer y recursos estables: 74 geometrías, 52 texturas,
 de escritorio; no se atribuyen a un teléfono. Evidencia
 `local-browser-attempt1/summary.json`.
 
-Pendientes: CI original completa y comprobación de web/APK publicados. Los controles
-anteriores de 1.7.50 y 1.7.51 conservan sus fallos originales y no quedan
-sustituidos por estas unitarias. No hay medición de un teléfono físico.
+## Publicación
+
+Fuente `3ea46e65450b8dbbfa103e56587f1cc7816b7722`, Pages
+`7121d349c6a8c8a7e48a592c0e4b74f9091cce23`, deploy `37231921635` SUCCESS.
+Los dos primeros pins HTTP se conservan FAILED: el HTML público todavía
+apuntaba a 1.7.51 mientras Pages construía la rama nueva. El tercer namespace
+conserva el primer pin que coincide con los bytes reales de 1.7.52, sin cambiar
+asserts ni reescribir las peticiones anteriores. `main-DiuzbetX.js` tiene
+1.448.213 bytes, SHA
+`2e86b10559b9872e042e6f87dfc2548df2d975d1cb76ca6322048e087eb6e9fe`.
+Pasan los 23 módulos y 44 recursos offline, certificado HTTP SHA
+`c95570b5a64bf25473c771df28cc00676324942eb74549489abb09247e02b9b4`.
+
+La APK descargada de nuevo pasa su hash y la comprobación de loader. Sigue
+siendo la firmada 1.1.4, código 17, con 78.515.243 bytes y SHA
+`feafaaa762b35344ac8b19418f9f6eb6cb1f725fba22b1ef3d3f273bd32a6191`.
+El loader de 2.089 bytes coincide exactamente con la fuente, SHA
+`8e03c3a6c8f840d9e9cf66637babe2d63742d2948d852534b865db0086aa9f34`.
+Sólo existen ese loader y dos stubs vacíos en assets/public. No se atribuye
+un nuevo build nativo ni una captura de teléfono.
+
+Pasan al primer intento los tres recorridos publicados de editor/regreso y
+los 18 PDF originales, sin retries, flaky ni omisiones. Se contrastan 50 + 310
+cuerpos HTTP de aplicación con Pages y se conservan quince capturas PDF.
+Certificados `03d67d4a8eb9324645fb130a7f9fd61fe5dd00662a591a3bf489092dc78f7262`
+y `c215d9ebf1585179309811a5bff520f5117d15f84707e425ad662f62841aaa4a`.
+Los casos de narración PDF utilizan explícitamente el motor controlado para
+comprobar posiciones; las voces naturales conservan sus pruebas de CI separadas.
+
+La CI original `37231921628`, attempt 1, conserva FAILED en UI3. Sus 40 casos
+contienen 38 expected y dos unexpected, cero flaky u omisiones; 42 intentos,
+cuatro fallos y dos retries. Son los dos contratos nativos, sin cambios de
+asserts o plazos respecto de 1.7.51. Tres intentos pulsan la portada y agotan
+la espera original de PDF visible: 8.007,489 / 8.006,544 / 8.010,139 ms en
+el reloj backend. El PDF preparado está oculto; el snapshot posterior conserva
+la fase `zooming`. Ninguno alcanza `reader-back`, por lo que no hay medición
+del cierre. El otro retry agota 8.008,487 ms esperando una portada que el
+call log ve oculta; su snapshot posterior ya la muestra lista. Ese estado
+tardío no atribuye un fin anterior al fallo ni convierte la espera en PASS.
+Evidencia `failure-ui3-3ea46e6-first-early/` y `retry-selection-facts.json`.
+
+La CI original completa termina FAILED. Sus 2.889 unitarias en 212 archivos
+pasan; de 524 E2E únicos hay 522 expected y dos unexpected, cero flaky o
+skip. Los 526 intentos incluyen cuatro fallidos y dos retries. Los otros
+diez jobs de prueba pasan, incluido Supertonic con 220 casos. Se conservan
+doce logs y once ZIP autenticados, con digests y miembros verificados,
+en `ci-3ea46e6-failed-original-collector-attempt1/snapshot-001/`;
+certificado SHA
+`4e17a21f3caace59c351df21af0a7cd06da990394239bf1a15cac5a24356e37f`.
+Los controles anteriores de 1.7.50 y 1.7.51 conservan sus fallos originales;
+los pases locales y públicos no sustituyen estos fallos. No hay medición
+de un teléfono físico.

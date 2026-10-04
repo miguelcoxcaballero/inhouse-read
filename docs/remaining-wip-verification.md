@@ -1,4 +1,17 @@
-# Verificación del WIP — rendimiento de web 1.7.52 y Android 1.1.4
+# Verificación del WIP — rendimiento local de web 1.7.53 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.53
+
+La apertura reutiliza la página ya pintada sólo con pose, snapshot, revisión,
+owner y contexto vigentes. Los estados que necesitan actualizarse mantienen
+el render original. Pasan 189 casos funcionales aislados y 30 pares gráficos
+exactos en ambas densidades, con 30 → 20 draws en el oráculo. La fuente ya está
+incorporada y pasa 2.910 unitarias en 214 archivos, build y 75 comprobaciones
+Python y siete recorridos locales originales al primer intento. Sus cierres
+nativos registran 4.638,7 y 6.147,8 ms con los plazos originales intactos.
+Publicada actualmente: 1.7.52; 1.7.53 preparada para publicar.
+Los errores de método y las CI fallidas anteriores conservan su estado propio.
+Detalle en [Rendimiento de 1.7.53](performance-1753.md).
 
 ## Cambios de rendimiento de 1.7.52
 
@@ -8,7 +21,12 @@ Se conserva el resultado en 86 pares RGBA/PNG exactos: 44 → 30 dibujos por
 perfil de calidad. La fuente final pasa 2.889 unitarias en 212 archivos,
 build y 75 comprobaciones Python. Los siete recorridos locales originales
 pasan al primer intento, incluidos los cierres nativos de 5.309,4 y 5.362 ms.
-La publicación se registrará al concluir. Se conserva el primer método GPU FAILED y
+La web publicada pasa los tres recorridos de editor/regreso y los 18 PDF
+originales al primer intento, además de HTTP, APK descargado y loader. La CI
+original conserva FAILED en UI3: dos contratos nativos, cuatro fallos y dos
+retries durante apertura. Ninguno llega a Back. El run completo termina
+FAILED con 522/524 E2E expected y los otros diez jobs de prueba SUCCESS.
+Se conserva el primer método GPU FAILED y
 los fallos de CI anteriores, sin relajar assertions o plazos.
 Ámbitos y límites en [Rendimiento de 1.7.52](performance-1752.md).
 

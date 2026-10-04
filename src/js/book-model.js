@@ -2111,18 +2111,34 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   // With no ribbon, only its logical withdrawal changes. Keep the motion's
   // clock and state, but retain the identical already presented native frame.
   const bookmarkPoseKeys = ['x','y','scale','angle','pitch','roll','coverOpen','pageTheme'];
+  // A retained native frame is usable only while its model, exact painted
+  // pose and context still belong to this view. Unknown states redraw.
+  function hasCurrentNativeFrame(pose, keys) {
+    if (disposed || externalPresentation || waitingForFirstDraw || !displayedFrame || pendingModel ||
+      displayedRevision !== visualRevision || pageTheme !== (pose.pageTheme ?? pageTheme) ||
+      !directEnabled || !live || presentationOwner !== owner || !gpu.domElement.isConnected || !canvas.isConnected ||
+      keys.some(key => (pose[key] ?? current?.[key] ?? 0) !== (current?.[key] ?? 0) ||
+        (pose[key] ?? 0) !== (displayedPose?.[key] ?? 0))) return false;
+    try { const context = gpu.getContext?.(); if (!context || context.isContextLost?.()) return false; }
+    catch { return false; }
+    return true;
+  }
+  /** Commit an already painted page before opening. False keeps the caller's
+   * original draw, including interrupted warm-up and mutable legacy output. */
+  function commitPreparedPage(snapshot, { pageTheme:targetTheme = pageTheme } = {}) {
+    if (!snapshot || currentSnapshot !== snapshot || !current) return false;
+    const pose = { ...current, pageTheme:targetTheme };
+    if (!hasCurrentNativeFrame(pose, [...bookmarkPoseKeys, 'bookmarkWithdraw'])) return false;
+    // A consumer may have painted the export canvas since its last capture.
+    // Retain native pixels now and materialize those pixels on the next export.
+    snapshotDirty = true;
+    positionPresentation(displayedFrame);
+    return true;
+  }
   function updateBookmarkFrame(pose) {
     const absent = target => target?.userData.hasBookmark === false &&
       typeof target.getObjectByName === 'function' && !target.getObjectByName('reading-bookmark');
-    if (disposed || externalPresentation || waitingForFirstDraw || !displayedFrame || pendingModel ||
-      !absent(model) || displayedRevision !== visualRevision || pageTheme !== (pose.pageTheme ?? pageTheme) ||
-      !directEnabled || !live || presentationOwner !== owner || !gpu.domElement.isConnected || !canvas.isConnected ||
-      bookmarkPoseKeys.some(key => (pose[key] ?? current?.[key] ?? 0) !== (current?.[key] ?? 0) ||
-        (pose[key] ?? 0) !== (displayedPose?.[key] ?? 0))) return false;
-    if (directEnabled) {
-      try { const context = gpu.getContext?.(); if (!context || context.isContextLost?.()) return false; }
-      catch { return false; }
-    }
+    if (!absent(model) || !hasCurrentNativeFrame(pose, bookmarkPoseKeys)) return false;
     const amount = Math.max(0, Math.min(1, Number(pose.bookmarkWithdraw) || 0));
     current = { ...current, bookmarkWithdraw:amount };
     model.userData.setBookmarkWithdraw?.(amount);
@@ -2239,7 +2255,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     deferDrawing() { if (!disposed) waitingForFirstDraw = true; }, releaseToSnapshot, handoffToShelfInsertion,
     setCompactReturnFrame(enabled) { compactReturnFrame = Boolean(enabled); },
     updateAppearance, prepareReturnAppearance, updateSpineAppearance, updateCoverAppearance, prepareCoverRelief, setCoverRelief, updateEdgeAppearance, updateBookmark,
-    setPageSnapshot, pageTextures, uploadPageTexture, compilePage, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
+    setPageSnapshot, commitPreparedPage, pageTextures, uploadPageTexture, compilePage, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
     setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
     getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,
     animateCoverOpen, animateCoverClose, animateBookmark, alignToPage, animateToPage,

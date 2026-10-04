@@ -3396,7 +3396,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         if (!view.hasPageSnapshot(snapshot)) return view.setPageSnapshot(snapshot, { ...(snapshot.paper ? { pageTheme:0 } : {}), redraw });
         // A tap may interrupt the idle warm-up after installation but before its
         // final draw. Commit the white page before announcing the opening phase.
-        if (redraw) view.draw({ ...view.getPose(), ...(snapshot.paper ? { pageTheme:0 } : {}) });
+        const theme = snapshot.paper ? { pageTheme:0 } : {};
+        if (redraw && !view.commitPreparedPage?.(snapshot, theme)) view.draw({ ...view.getPose(), ...theme });
         return true;
       }
       const pages = bookNode.querySelector('.ihr-flyout__fallback-pages');
