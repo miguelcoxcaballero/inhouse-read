@@ -1,9 +1,9 @@
 {
-  "version": "1.1.3",
-  "versionCode": 16,
+  "version": "1.1.4",
+  "versionCode": 17,
   "required": true,
-  "apkSizeBytes": 3174689,
-  "apkSha256": "67a52bdebff36c889c81061c488d002f4ac881404e9d1a5f6ad49e909ce267f7",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.3/inhouse-read-release-v1.1.3.apk",
-  "releaseNotes": "El lector mantiene la pantalla encendida y oculta la barra de estado. Voces naturales sin fallback al dispositivo y avance al tramo leído de la página siguiente."
+  "apkSizeBytes": 78515243,
+  "apkSha256": "feafaaa762b35344ac8b19418f9f6eb6cb1f725fba22b1ef3d3f273bd32a6191",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.4/inhouse-read-release-v1.1.4.apk",
+  "releaseNotes": "Audiolibro natural con reproducción PCM nativa, controles multimedia y continuidad con la pantalla bloqueada."
 }
