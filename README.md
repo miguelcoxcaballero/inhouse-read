@@ -6,6 +6,8 @@ La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal 
 
 ### Actualización web · 1.7.41
 
+**Complemento 1.7.42:** conserva la página anterior durante la preparación de la siguiente y sólo libera sus fotos cuando el contenido nuevo está listo. Evita un intervalo vacío al cargar páginas ilustradas; [verificación](docs/pdf-adaptive-content-1741.md).
+
 - La vista adaptable del PDF incorpora las fotografías, incluidas las giradas, conservando sus colores en todos los temas. Las páginas escaneadas muestran su imagen original.
 - Los cambios de tipografía entre líneas ya no rompen un párrafo continuo. El texto completo mantiene sus posiciones al intercalar fotos, navegar, resaltar y narrar.
 - [Implementación y verificación](docs/pdf-adaptive-content-1741.md).

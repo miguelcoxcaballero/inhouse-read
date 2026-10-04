@@ -1,5 +1,11 @@
 # PDF adaptable — 1.7.41
 
+## Complemento 1.7.42
+
+La revisión final reproduce un intervalo vacío mientras la página siguiente carga texto e ilustraciones. Una nueva regresión falla en `cadd938`: el texto de la página anterior pasa a estar vacío antes de resolver la carga. La corrección mantiene sus nodos y fotos durante la espera y sólo los libera al presentar la página nueva; al cambiar a vista original también se liberan después de preparar su contenido. Este complemento tiene batería y publicación propias, separadas de 1.7.41.
+
+La batería local de 1.7.42 pasa **2.657 unitarias en 175 archivos**, incluida esa regresión. El build final pasa. La CI completa y la comprobación pública de este complemento tienen sus propios resultados.
+
 ## Cambios
 
 La vista de texto sólo extraía los caracteres de PDF.js. Ahora también consulta los operadores de imagen, renderiza la página original una vez y recorta sus ilustraciones compuestas. Conserva rotación, recorte, transparencia y colores originales: no aplica el tema de lectura a las fotografías. Las capas solapadas forman una sola ilustración; las fotografías separadas se conservan por separado.
@@ -8,7 +14,7 @@ Las figuras se colocan junto al texto de su columna. El texto antes y después m
 
 Los párrafos se delimitan por la separación entre líneas, las columnas y las listas. Un cambio de tamaño de letra dentro de líneas con interlineado normal no crea párrafos nuevos. Para texto sin geometría fiable, los finales físicos de línea se presentan como espacios y no se omiten frases repetidas al narrar la vista adaptable. La extracción incluye una comprobación de que todos los elementos fuente se conservan exactamente una vez.
 
-La página temporal tiene un máximo de cuatro millones de píxeles y se libera al copiar las figuras. Los canvas de las ilustraciones también se liberan al navegar, cerrar o cancelar la preparación. Cambiar de tema reutiliza sus píxeles originales.
+La página temporal se limita a unos cuatro millones de píxeles y se libera al copiar las figuras. Los canvas de las ilustraciones también se liberan al navegar, cerrar o cancelar la preparación. Cambiar de tema reutiliza sus píxeles originales.
 
 ## Verificación local
 

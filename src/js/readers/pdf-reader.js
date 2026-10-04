@@ -371,7 +371,6 @@ export class PdfReader {
     this.#invalidateStagedSpeech()
     this.#cancelRender(this.#renderState)
     this.#releaseOriginal(this.#renderState)
-    clearPDFReflow(this.#reflow)
     const state = this.#renderState = {
       pageWrap:this.#pageWrap, canvas:this.#canvas, textLayerEl:this.#textLayerEl, reflow:this.#reflow, key
     }
@@ -512,7 +511,9 @@ export class PdfReader {
     textLayerEl.style.width = `${viewport.width / dpr}px`
     textLayerEl.style.height = `${viewport.height / dpr}px`
     try { await textLayer.render() } catch (error) { if (!valid()) return false; throw error }
-    return valid()
+    if (!valid()) return false
+    clearPDFReflow(reflow)
+    return true
   }
 
   async #paintTheme(state, theme, valid) {

@@ -36,6 +36,17 @@ describe('PDF reader reflow and original illustrations',()=>{
     expect(planSpeech(source.text).map(s=>s.text)).toEqual(['Before.','After.'])
     expect(state.pages[0].render).toHaveBeenCalledTimes(1)
   })
+  it('keeps the complete previous page visible until the next illustrated page is ready',async()=>{
+    await open();const root=container.querySelector('.pdf-reflow-page'),old=root.querySelector('canvas')
+    let finish
+    state.pages[1].getTextContent=()=>new Promise(resolve=>{finish=resolve})
+    const request=reader.goToPage(2)
+    await vi.waitFor(()=>expect(finish).toBeTypeOf('function'))
+    expect(root.textContent).toBe('Before. After.\n')
+    expect(root.querySelector('canvas')).toBe(old);expect(old.width).toBeGreaterThan(0)
+    finish({items:[{str:'Next. Complete.',hasEOL:true}]});await request
+    expect(root.textContent).toBe('Next. Complete.\n');expect(old.width).toBe(0)
+  })
   it('keeps a scan visible even if PDF.js cannot extract any text',async()=>{
     state.pages[0]=page('');await open()
     expect(container.querySelector('.pdf-reflow-page').textContent).toBe('')
