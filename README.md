@@ -8,7 +8,7 @@ La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal 
 
 - El cierre prepara la página y el encuadre del libro antes de pintar, y elimina las copias GPU redundantes. Conserva resolución, materiales y animaciones.
 - Las nuevas APK conservan la propiedad del lector durante el bloqueo: Android aplica su lifecycle sin que un cambio de visibilidad tardío vuelva a ocultar las notificaciones al despertar. Las APK anteriores mantienen su puente compatible.
-- La APK 1.1.4 sigue pendiente de completar sus pruebas originales antes de publicarse. [Verificación y pendientes](docs/remaining-wip-verification.md).
+- [APK 1.1.4 publicada](https://miguelcoxcaballero.github.io/inhouse-read/download-android.html), código 17: pasa más de seis minutos de audio bloqueado, controles de notificación y PDF bloqueado. Descarga, firma V2 y loader contrastados con el build real. La web pasa 2.628 unitarias y 514 E2E, sin omisiones ni reintentos. [Verificación y pendientes](docs/remaining-wip-verification.md).
 
 ### Actualización web · 1.7.38
 

@@ -29,7 +29,7 @@ interrumpen las animaciones del libro.
 
 `setReaderOwnership` recibe el estado del libro, independientemente de los cambios de visibilidad del WebView. La Activity combina ese estado con su lifecycle y el origen confiable. Al bloquearse libera KEEP_SCREEN_ON y restaura las barras; al regresar aplica la política de lectura una vez. Un evento web de visibilidad tardío ya no introduce otro cambio que pueda cerrar las notificaciones del sistema. Al cerrar el libro, abandonar la página o disponer el controlador se libera la propiedad.
 
-El Wake Lock del navegador conserva su política de primer plano. Las APK sin el puente nuevo siguen usando setReadingMode con el comportamiento anterior. Los siete casos nuevos pasan junto con los diez originales; la comprobación del APK real permanece pendiente.
+El Wake Lock del navegador conserva su política de primer plano. Las APK sin el puente nuevo siguen usando setReadingMode con el comportamiento anterior. Los siete casos nuevos pasan junto con los diez originales; la APK real 1.1.4 / código 17 pasa los nueve estados originales de pantalla y las acciones de la notificación después de despertar. [Resultados completos](remaining-wip-verification.md).
 
 ## Comprobaciones
 
@@ -126,3 +126,9 @@ La verificación independiente 37097625702 descargó e instaló de nuevo el mism
 El producto observado es b48a9928b9f2520e3ff3a3b299010b9bc7c0fd2f; el helper de observación del workflow es 38f04260bb1c6a6d53035202e0cd01c5749b1bb6, con runtime y APK idénticos. El ensayo anterior 37096554823 se detuvo en la importación antes del lector y se conserva por separado. Los observadores adicionales son de sólo lectura y añadieron 1,143524 segundos: 0,343294 antes del intent y 0,800230 después de la primera captura, antes de la recuperación; el resultado posterior no identifica por sí solo la causa del primer fallo. El PNG de entrada muestra el lector sin iconos; el PNG de regreso mantiene un encuadre transitorio, y el XML y los volcados posteriores acreditan el estado final. No se observó dentro del emulador la URL exacta del bundle; sus bytes se comprueban por HTTP independientemente.
 
 La batería completa corresponde a 506f7ef08c3e7dddaddc4e5ce6a63313756710e5. Sólo tres archivos E2E cambian respecto al producto observado; Git y la comparación del despliegue acreditan runtime idéntico.
+
+## Android 1.1.4 publicado
+
+El build original `37167745832`, sobre el producto `8602135708e520c35ae52483fbfd5e19a2c54203`, pasa nueve estados de pantalla y el ensayo completo de audio bloqueado, controles de notificación, cleanup y dos páginas PDF bloqueadas. El método setReaderOwnership está presente en el DEX público; la APK descargada coincide con su build autenticado y conserva firma V2 y el certificado anterior.
+
+La captura fría del lector muestra el PDF sin hora ni iconos Android. La captura PNG intermedia de Detener PDF está vacía: el resultado del control se acredita por su XML original, acción, callbacks y volcados posteriores. No se utiliza esa imagen como prueba visual de la notificación. Instala [APK 1.1.4 / código 17](https://miguelcoxcaballero.github.io/inhouse-read/download-android.html) para disponer del nuevo puente nativo; la comprobación de emulador no acredita un teléfono físico.

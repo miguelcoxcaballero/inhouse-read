@@ -1,10 +1,26 @@
-# Verificación del WIP — web 1.7.38 publicada; 1.7.39 en preparación; Android 1.1.4 pendiente
+# Verificación del WIP — web 1.7.39 y Android 1.1.4 publicados
 
-## Candidata 1.7.39
+## Publicación verificada de 1.7.39 y Android 1.1.4
+
+Fuente de producto `8602135708e520c35ae52483fbfd5e19a2c54203`. La [CI original 37167629565](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37167629565) pasa **2.628 unitarias en 171 archivos y 514 E2E**, sin omisiones, reintentos ni flaky. Sus doce jobs y once ZIP originales tienen un censo independiente; certificado `61d7cbda81e9b321e4c11e14aee4ab1aad9c8c57037b40651d4103daf7ed5f5a`. Los 20 casos locales originales de apertura/temas y las 75 verificaciones Python también pasan.
+
+La primera publicación web pasa seis casos sobre sus archivos reales, con 132 cuerpos HTTP y cuatro capturas revisadas; certificado `2d73a806b7059923e5951033b39ea0b9fb8cf8ce3e0d0cc716f944f9d9ab53ad`. Tras publicar la APK, sólo cambia el manifiesto Android en `43f1c103f0f3c4f6db4541d2598145e2136064fe`, Pages `e60b10bb907ea3c17cfbfd0ed79994fa8c453238`. Una comprobación HTTP nueva contrasta los 23 módulos, 44 recursos offline y módulos antiguos conservados. El entry continúa idéntico: `main-ChTFJ3tE.js`, SHA `0674c21c0b3d9b95d2d666641298d66f50f7d940622990d0d8bf011072e2db92`; certificado `62b9c4f289a0f5822fd68a0dcb8f0a24a3de1df9dc35172229a1bd01f9ec9c82`.
+
+El [build Android original 37167745832](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37167745832) supera los nueve estados de pantalla y todos los gates originales de audio: **367.887 ms bloqueado**, capítulos 0–22, 136 starts/135 dones hasta el corte bloqueado, **30,822 segundos de PCM real en los últimos 30 segundos**, pausa/reanudación/Detener de la notificación y limpieza al cerrar pausado. El PDF avanza por sus páginas físicas 0 y 1, reproduce 50,565 segundos de PCM real bloqueado y Detener funciona después de despertar. Al parar se liberan servicio, audio pendiente y Wake Lock. No se usa recuperación al despertar, audio artificial ni voces del dispositivo. Certificado final de revisión `5039dbda12cec7f47ba6daf517ac9282d57eb3f6fbb09145a9a93bd70c756ffe`.
+
+La captura fría muestra el PDF sin hora ni iconos del sistema. La PNG de Detener PDF es una captura intermedia beige y no se usa como prueba visual del botón: el XML original contiene «Detener», y la acción original, callbacks y volcados finales acreditan el Stop y cleanup. El primer auditor pasivo confundía los dos starts posteriores al corte bloqueado con su resumen; se conserva fallido y la revisión final contrasta callbacks y eventos hasta el mismo corte original, también para PDF. No se cambian tests, plazos ni resultados nativos.
+
+La [APK pública 1.1.4, código 17](https://github.com/miguelcoxcaballero/inhouse-read/releases/tag/android-v1.1.4) se descargó de nuevo: **78.515.243 bytes**, SHA `feafaaa762b35344ac8b19418f9f6eb6cb1f725fba22b1ef3d3f273bd32a6191`, idéntica al build autenticado y al manifiesto servido. Firma V2 comprobada criptográficamente con el mismo certificado de 1.1.3. Mantiene el loader exacto de **2.089 bytes**, junto a dos stubs Capacitor vacíos; no incorpora una copia de la web, modelos ONNX ni WASM. Incluye las bibliotecas nativas ONNX de las cuatro arquitecturas. Certificado público `73b9a5b6cceece924748b443f9937e0421bced40d20a4223bb69800002b9d69a`.
+
+Se conservan los verificadores públicos fallidos anteriores: uno imponía el antiguo límite arbitrario de 64 MB y otro contaba los dos stubs de cero bytes como una app empaquetada. La revisión final exige el tamaño exacto autenticado y el inventario exacto de tres archivos públicos. El nuevo tamaño corresponde al motor ONNX nativo; las voces siguen siendo descargas opcionales. La página real de descarga muestra 1.1.4 y 74,9 MiB.
+
+Estos ensayos de emulador y navegador no acreditan calidad acústica, temperatura, batería, FPS ni reproducción indefinida en un teléfono físico. Continúan pendientes el cierre dentro de ocho segundos en el perfil local DPR 2 y la autenticación/subida real de Google sin una sesión disponible.
+
+## Cambios de 1.7.39
 
 El bookView prepara modelo, snapshot y pose sin pintar hasta el encuadre final, incluyendo vistas reutilizadas. El setter conserva su contrato de un argumento y realiza una sola copia cuando corresponde. Pasan 2.621 unitarias de la candidata aislada y 20 casos originales de apertura/temas en el primer candidato. El ensayo DPR 2 de ese primer candidato conserva FAILED: 9.123 ms frente al límite original de ocho segundos. No se reducen resolución, materiales ni presupuestos de animación. La fuente final pasa 2.628 unitarias en 171 archivos, 20 casos originales de apertura y temas sin reintentos, build y 75 verificaciones Python.
 
-El puente nuevo setReaderOwnership conserva la propiedad del libro al cambiar la visibilidad del WebView; el lifecycle de la Activity decide la política de pantalla. Las APK anteriores siguen usando setReadingMode. Se añaden cinco casos de bloqueo, cierre, disposal, BFCache y animaciones y dos contratos Java/Kotlin. Pasan 29 focales, incluidos los originales. Requiere una nueva captura Android.
+El puente nuevo setReaderOwnership conserva la propiedad del libro al cambiar la visibilidad del WebView; el lifecycle de la Activity decide la política de pantalla. Las APK anteriores siguen usando setReadingMode. Se añaden cinco casos de bloqueo, cierre, disposal, BFCache y animaciones y dos contratos Java/Kotlin. Pasan 29 focales, incluidos los originales. La nueva captura Android 37167745832 está aprobada según la sección actual; los fallos históricos se conservan.
 
 ## Verificación de 1.7.38
 
@@ -267,11 +283,10 @@ El observador software de interrupción usa **2.200 ms en CI**; el límite local
 
 ## Pendientes y límites
 
-- **Android 1.1.4 sigue PENDIENTE.** El ensayo original `37166006039` supera continuidad EPUB bloqueada, controles de pausa/reanudación/Detener, cleanup y dos páginas físicas PDF bloqueadas. Falla Detener en la notificación después del regreso al PDF. Captura `ab851805acde12af8ddcc2d29e43e02078f85829338b06a009c7cac64ee3f924`; fallo sellado `cf2e2cfca58d5b9fbc23337f9287e25e7bc378979dec6e6502a093a1d48b7007`. No se publica esa APK. El siguiente ensayo conserva los 75 tests, acciones, límites y gates originales.
-- **Rendimiento del cierre:** el primer candidato elimina copias redundantes, pero su perfil DPR 2 tarda 9.123 ms frente al plazo original de ocho segundos. Se conserva FAILED. La fuente final se valida por separado sin bajar resolución ni cambiar materiales.
-- **Fuente final 1.7.39:** pasan 2.628 unitarias en 171 archivos, build y 75 verificaciones Python; pasan 20 casos originales de apertura y temas sin omisiones ni reintentos. La web 1.7.38 tiene HTTP y seis casos públicos aprobados. CI original se audita por separado.
+- **Rendimiento del cierre:** la preparación publicada elimina copias redundantes. Los candidatos aislados posteriores conservan sus fallos del plazo original de ocho segundos; no se publican como correcciones aprobadas. La resolución, materiales y relojes originales se conservan.
 - **Cuenta Google real:** falta una sesión autenticada disponible para comprobar login y subida reales. Las pruebas de Drive con respuestas controladas y el preflight público no sustituyen esa comprobación.
-- No se añade OCR ni se garantiza el orden perfecto de cualquier PDF. Los ensayos web no acreditan una APK nueva, audio en un teléfono físico, FPS, temperatura, batería ni reproducción indefinida. La evidencia histórica mantiene su alcance original.
+- **Prueba en teléfono físico:** Android 1.1.4 sí pasa continuidad y controles en el emulador original. Sigue sin acreditarse su calidad acústica, FPS, temperatura, batería ni reproducción indefinida en un teléfono físico.
+- No se añade OCR ni se garantiza el orden perfecto de cualquier PDF. La evidencia histórica mantiene sus propios resultados y alcance.
 
 El [informe de 1.7.19](pdf-reading-continuity-1719.md) y los históricos siguientes conservan sus resultados; sus cifras no se suman a la batería actual.
 
