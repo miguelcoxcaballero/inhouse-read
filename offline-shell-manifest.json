@@ -1,6 +1,6 @@
 {
   "base": "/inhouse-read/",
-  "version": "85f73ddf990e41f29a9764367d65237363dc463b5310f7db42aeb13a4e34c1cc",
+  "version": "80513ce9f42259b6382de4cc183dc35229c17d5a519154dbf0ccd2e3072255d8",
   "entries": [
     {
       "path": "assets/androidDownload-BC4lIftu.css",
@@ -28,14 +28,14 @@
       "sha256": "4d68ea9d661ba99a652528667ec37aa1d12511c49931f9c9656637acbb62e956"
     },
     {
-      "path": "assets/engine-ClrdQ-Ty.js",
+      "path": "assets/engine-D0_DE30E.js",
       "bytes": 65049,
-      "sha256": "9b09f62bfc7555fed440181cffe57223ddb937ec7da1573a34e762f2b91e2908"
+      "sha256": "13d9ee8b66fa0a7c4c1d059721dab52cf1abb17917784d1abfd981451b7cb8d5"
     },
     {
-      "path": "assets/epub-BomgAnf9.js",
+      "path": "assets/epub-BK6MHS07.js",
       "bytes": 21870,
-      "sha256": "060b8440da09ca4e8b016739be2a2d1aee0f363e13b72af2b76e796eb56bd08b"
+      "sha256": "da5cd3943dc21d29bcf0466ad7b85acda3f97f0e34c7fb4af02740e29e5d4ea2"
     },
     {
       "path": "assets/fb2-BI95Dv4-.js",
@@ -53,24 +53,24 @@
       "sha256": "f0a9ecd5fdd32c410729aad3b2cd4b67505b3643e4dc5290b031f0431caa21e7"
     },
     {
-      "path": "assets/foliate-reader-BKyy3ZRx.js",
+      "path": "assets/foliate-reader-B-K1uKmZ.js",
       "bytes": 15446,
-      "sha256": "fd9d3dde044c314415483a884bbdde40f834a3347a199328390ba0d702ff23b8"
+      "sha256": "a11ea946c11901474d8827a3a2a2733d47dcf6cfcf0def5937a84b3a073eefaa"
     },
     {
-      "path": "assets/index-DT3TgBsa.js",
+      "path": "assets/index-BMlOQsnj.js",
       "bytes": 3095,
-      "sha256": "fa5e3d39177d8c8545497b2e26ee129e2e8e2612f3990d22b4f7919c420e3110"
-    },
-    {
-      "path": "assets/main-ChTFJ3tE.js",
-      "bytes": 1415729,
-      "sha256": "0674c21c0b3d9b95d2d666641298d66f50f7d940622990d0d8bf011072e2db92"
+      "sha256": "c5834134aa8d89d350753f7a70e876f051cf46778c41597eab5a1fa569461cbd"
     },
     {
       "path": "assets/main-D2GkB9B3.css",
       "bytes": 121927,
       "sha256": "89ab9648aac1b793144f3176bafcbf0f78a2858224adce27f3690459ed12e558"
+    },
+    {
+      "path": "assets/main-r6wn8ozD.js",
+      "bytes": 1418752,
+      "sha256": "4f165f565dd55b3e099d407126fc18238eabde5ebb068400c1040fe88f0f1d43"
     },
     {
       "path": "assets/mobi-Du_U6_-5.js",
@@ -88,14 +88,14 @@
       "sha256": "98e67325f4dc980bbec42d12cf2ad17dcf3a472e8661edc4b8ab4ce3aa275d32"
     },
     {
-      "path": "assets/pdf-reader-D_4SMp5n.js",
+      "path": "assets/pdf-reader-aPjsyzqW.js",
       "bytes": 19536,
-      "sha256": "aab8658f3f9090c1086a0af49312119bb0dfd83cc3b528323cc6361e55b4fccf"
+      "sha256": "cb2fc93153a142811ded7469f27c23e9844dda8583b6577181e2a6e775270ed1"
     },
     {
       "path": "assets/pdf-reader-F60yyvDC.js",
       "bytes": 53,
-      "sha256": "ec2a234abb6a2b7cd5b18d5ab82402add9b5c906aee544e6abd169bd0e706d7c"
+      "sha256": "77eb3d2d2f360c9ed77d60ef174f6b95bd8f473fbaf70d7a99d0adad7c7c3c1c"
     },
     {
       "path": "assets/pdf.worker.min-BmVo14Nb.mjs",
@@ -113,9 +113,9 @@
       "sha256": "204560e2f2fc28311b33003e351def170928994aad62656935c528782ce10578"
     },
     {
-      "path": "assets/speech-highlight-HoJHvhqa.js",
+      "path": "assets/speech-highlight-FmG-IxwY.js",
       "bytes": 15546,
-      "sha256": "317c0ea46f0291fe48d3885fb57be9a4804845685111fdf67005c5ccf7caa3f2"
+      "sha256": "8b579931752d3e8694ff7cab083418d6dbead29502cb1c0f034ffd90efcb4fb2"
     },
     {
       "path": "assets/task-yield-Br56LF4z.js",
@@ -128,9 +128,9 @@
       "sha256": "9d5cdcb2b1b255dedef1ec9a1025fd75c32a062532be22506bd79a46d7adca48"
     },
     {
-      "path": "assets/view-CoraVgL3.js",
+      "path": "assets/view-Clxfrr6N.js",
       "bytes": 26120,
-      "sha256": "2f344d5bfc7959c104849a4a1d1fdf1446029e8bd40cdf4df4be9160c9075b6c"
+      "sha256": "4632779d5a85e2838fae9f8460818a812bd4677adfbf70e9edfcd4c47a82cb02"
     },
     {
       "path": "assets/walnut-Bvq0D-tr.webp",
@@ -170,7 +170,7 @@
     {
       "path": "index.html",
       "bytes": 10833,
-      "sha256": "d1d4b40819d76448c9466e7072ae4a8500ccbf4f4ac51eed32da9f7fbda48434"
+      "sha256": "4d038e0eb5c1f2d81f5b5d49ebb372304669c64f1e01f442ac726ada4ba3d870"
     },
     {
       "path": "licenses/piper-extra-voices.txt",
