@@ -50,7 +50,7 @@ export function createPlantCatalogPreview(host) {
     renderer?.dispose(); renderer = null; environment?.dispose(); environment = null;
     unavailable();
   }
-  let selectionKey;
+  let selectionKey, shapeKey;
   return {
     setActive(value) {
       if (disposed) return;
@@ -67,7 +67,14 @@ export function createPlantCatalogPreview(host) {
       host.dataset.potId = selection.potId;
       host.dataset.potColorId = selection.potColorId;
       if (!renderer || disposed || key === selectionKey) return;
+      const nextShapeKey = JSON.stringify(Object.fromEntries(Object.entries(selection).filter(([name]) => name !== 'potColorId')));
+      if (model && nextShapeKey === shapeKey && model.userData.updatePotColor?.(selection.potColorId)) {
+        selectionKey = key;
+        invalidate();
+        return;
+      }
       selectionKey = key;
+      shapeKey = nextShapeKey;
       if (model) { scene.remove(model); model.userData.dispose(); }
       modelSize = null;
       model = createShelfPlant({ ...selection,seed:`catalog:${selection.catalogId}` });

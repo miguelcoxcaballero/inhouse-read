@@ -683,6 +683,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   const plantKeys = entry => JSON.stringify([entry.width, entry.height, entry.variant, entry.catalogId, entry.potId, entry.potColorId, entry.seed]);
+  const plantShapeKeys = entry => JSON.stringify([entry.width, entry.height, entry.variant, entry.catalogId, entry.potId, entry.seed]);
   const lampKeys = entry => JSON.stringify([entry.lampId, entry.width, entry.height, entry.depth, entry.mount]);
 
   // A selected book's slot is already painted empty. Its decoded lettering,
@@ -2728,8 +2729,20 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
           if (entry.node !== data.node && entry.node?.classList.contains('is-away')) data.node?.classList.add('is-away');
           if (data.kind === 'plant' || data.kind === 'lamp') {
             const changed = data.kind === 'lamp' ? lampKeys(entry) !== lampKeys(data) : plantKeys(entry) !== plantKeys(data);
-            if (changed) releaseEntry(entry);
-            else if (entry.node !== data.node) {
+            let retainModel = !changed;
+            if (changed) {
+              const recolored = data.kind === 'plant' && plantShapeKeys(entry) === plantShapeKeys(data) &&
+                entry.model?.userData.updatePotColor?.(data.potColorId);
+              if (!recolored) releaseEntry(entry);
+              else {
+                // The model cancelled maps painted with the former color.
+                // Clear the scene's handle too, so detail still required by
+                // the current inspection can be prepared again this draw.
+                entry.plantQuality?.plan.dispose(); entry.plantQuality = null;
+                entry.model.userData.shelfPlantKeys = plantKeys(data); retainModel = true;
+              }
+            }
+            if (retainModel && entry.node !== data.node) {
               const native = semanticFoliage.get(entry.node);
               if (native && data.node) {
                 semanticFoliage.delete(entry.node);

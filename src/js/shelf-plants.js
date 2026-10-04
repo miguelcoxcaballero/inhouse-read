@@ -746,10 +746,14 @@ export function createShelfPlant(entry) {
   const soilFraction = POT_SOIL_FRACTION, soilY = potHeight * soilFraction, sink = width * .012, above = real.foliageHeight * unit;
   const growthHeight = real.referenceHeight * unit;
   const clays = ['#a97958', '#b18b6c', '#bcad94', '#826d60'];
-  const potColor = getPotColor(potId,entry.potColorId);
+  let potColor = getPotColor(potId,entry.potColorId);
   const clayColor = potId ? potColor.hex : clays[Math.floor(random() * clays.length)];
   const finish = POT_FINISHES[potModelId] ?? { painter:() => terracottaPainter(clayColor, 53), material:{ bumpScale:.4 } };
-  const potSurface = (level, notify) => surface(`pot:${potId}:${clayColor}:${level}`, [128 * level, 256 * level], true, finish.painter(potColor.hex), notify);
+  const potSurface = (level, notify, color = potColor) => {
+    const pigment = potId ? color.hex : clayColor;
+    const painter = POT_FINISHES[potModelId]?.painter(color.hex) ?? terracottaPainter(pigment, 53);
+    return surface(`pot:${potId}:${pigment}:${level}`, [128 * level, 256 * level], true, painter, notify);
+  };
   const potMaps = own(potSurface(quality, refresh));
   // Texels stay roughly square on the outer wall, whatever the pot proportions.
   potMaps.map.repeat.x = potMaps.data.repeat.x = Math.max(1, Math.round(Math.PI * 4 * radius * (RIM - FOOT) / potHeight));
@@ -1086,6 +1090,37 @@ export function createShelfPlant(entry) {
   const surfaceBindings = [{ material:clay, create:potSurface }, { material:soil, create:soilSurface }];
   if (leafMaps && materials.has(leafMaterial)) surfaceBindings.push({ material:leafMaterial, create:leafSurface });
   let pendingQuality = null;
+  const replaceSurfaceMaps = (material, maps) => {
+    const previous = { map:material.map, data:material.bumpMap };
+    for (const key of ['map','data']) {
+      const before = previous[key], after = maps[key];
+      // UV placement, filtering and anisotropy belong to the existing
+      // model/renderer, not the procedural surface's shared source.
+      after.offset.copy(before.offset); after.repeat.copy(before.repeat); after.center.copy(before.center);
+      after.rotation = before.rotation; after.matrixAutoUpdate = before.matrixAutoUpdate; after.matrix.copy(before.matrix);
+      for (const property of ['wrapS','wrapT','magFilter','minFilter','anisotropy','channel','flipY','premultiplyAlpha','unpackAlignment'])
+        after[property] = before[property];
+      textures.add(after);
+    }
+    material.map = maps.map; material.bumpMap = material.roughnessMap = maps.data;
+    for (const map of Object.values(previous)) { textures.delete(map); map.dispose(); }
+  };
+  // A palette change paints the same pot. Its meshes, soil and foliage do not
+  // depend on the pigment; preserve the exact painter pair and current detail.
+  group.userData.updatePotColor = colorId => {
+    if (disposed || !potId) return false;
+    const next = getPotColor(potId, colorId);
+    if (next.id === potColor.id) return true;
+    const maps = potSurface(group.userData.inspectionResolution ? 2 : 1, refresh, next);
+    // A queued inspection prepared maps of the former color. It must not
+    // install those maps after this palette change has been committed.
+    pendingQuality?.dispose();
+    replaceSurfaceMaps(clay, maps);
+    potColor = next;
+    group.userData.potColorId = next.id;
+    refresh();
+    return true;
+  };
   // Inspection changes pigment/detail map resolution only. Keep the exact
   // meshes, baked leaf geometry and material programs; prepare maps offscreen
   // and let the scene commit them after the gesture has settled.
@@ -1104,21 +1139,7 @@ export function createShelfPlant(entry) {
       ready:null,
       apply() {
         if (disposed || released || !ready || pendingQuality !== plan) return false;
-        for (const { material, maps } of prepared) {
-          const previous = { map:material.map, data:material.bumpMap };
-          for (const key of ['map','data']) {
-            const before = previous[key], after = maps[key];
-            // UV placement, filtering and anisotropy belong to the existing
-            // model/renderer, not the procedural surface's shared source.
-            after.offset.copy(before.offset); after.repeat.copy(before.repeat); after.center.copy(before.center);
-            after.rotation = before.rotation; after.matrixAutoUpdate = before.matrixAutoUpdate; after.matrix.copy(before.matrix);
-            for (const property of ['wrapS','wrapT','magFilter','minFilter','anisotropy','channel','flipY','premultiplyAlpha','unpackAlignment'])
-              after[property] = before[property];
-            textures.add(after);
-          }
-          material.map = maps.map; material.bumpMap = material.roughnessMap = maps.data;
-          for (const map of Object.values(previous)) { textures.delete(map); map.dispose(); }
-        }
+        for (const { material, maps } of prepared) replaceSurfaceMaps(material, maps);
         group.userData.inspectionResolution = resolution || 0;
         released = true; pendingQuality = null;
         return true;

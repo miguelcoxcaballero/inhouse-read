@@ -93,5 +93,44 @@ dos escrituras de buffer y recursos estables: 74 geometrías, 52 texturas y
 sin atribuir rendimiento a un teléfono. Evidencia
 `local-browser-attempt1/summary.json`.
 
-Pendientes: CI original y comprobación de la web y APK publicados.
-Los fallos anteriores conservan su estado propio.
+## Publicación
+
+Fuente `22cf96b4306b460299f198cefb24dad07ad6c775`, Pages
+`1c024d68d132bc8bffaeb3e8b25a20d4baf2ab99`, deploy `37234373475` SUCCESS.
+El primer pin público conserva FAILED: el HTML todavía apunta a 1.7.52.
+El segundo namespace coincide con los bytes de 1.7.53; no reescribe las
+peticiones anteriores. `main-CtFCesdB.js` tiene 1.448.490 bytes, SHA
+`2e1a3d50774633699fefc24323a8effa3a7dc0cb09ed5ebafe9eee8f3bc49e29`.
+Pasan los 23 módulos y 44 recursos offline; certificado HTTP SHA
+`9a811e4fdf628550e5123fc90380c2847e3b36d0e58589f9bef48e9d555e583f`.
+
+La APK descargada de nuevo coincide con la firmada 1.1.4, código 17,
+78.515.243 bytes, SHA `feafaaa762b35344ac8b19418f9f6eb6cb1f725fba22b1ef3d3f273bd32a6191`.
+Su loader de 2.089 bytes coincide con la fuente, SHA
+`8e03c3a6c8f840d9e9cf66637babe2d63742d2948d852534b865db0086aa9f34`;
+assets/public sólo contiene el loader y dos stubs vacíos. No es un nuevo
+build nativo ni una prueba en teléfono.
+
+Pasan los tres recorridos publicados de editor/regreso y los 18 PDF originales
+al primer intento, cero retries, flaky u omisiones. Se verifican 50 + 310
+cuerpos HTTP de aplicación contra Pages y quince capturas PDF. Certificados
+SHA `e0cfa7fbcabfb9d834f45a2ecc7ac4fed153890d5c7b13088c9730662403b6cb`
+y `108f8225b4ffcf95a983711a6573a4ee0addd215a5bc8cbca86ea5797997f06d`.
+La narración PDF usa el motor controlado para comprobar posiciones;
+las voces naturales mantienen sus pruebas originales de CI separadas.
+
+La CI original `37234373476`, attempt 1, conserva FAILED en UI3. Sus 40 casos
+contienen 38 expected y dos unexpected; 42 intentos con cuatro fallidos y dos
+retries, cero flaky o skip. En los cuatro nativos pasan selección y apertura;
+el PDF visible se espera 4.897,605 / 4.795,854 / 4.679,182 / 4.794,884 ms.
+Los cuatro fallan el cierre de ocho segundos completo: backend de expect
+8.003,594 / 8.002,643 / 8.015,706 / 8.002,379 ms, sin truncado global de treinta
+segundos. El snapshot posterior al fallo, 300–553 ms después del expectend,
+ya muestra la sala restaurada; no acredita classEnd antes del fallo. No se
+evaluaron los relojes internos ni se capturaron fases intermedias del regreso.
+Ambos contratos Git 1.7.52 → 1.7.53 tienen diff vacío. Evidencia
+`failure-ui3-22cf96b-first-early/`.
+
+La recogida completa de los demás jobs sigue pendiente. Sus resultados no se
+sustituyen por los pases locales o públicos. Los fallos anteriores conservan
+su estado propio.

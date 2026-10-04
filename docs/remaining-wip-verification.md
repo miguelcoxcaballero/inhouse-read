@@ -1,4 +1,15 @@
-# Verificación del WIP — rendimiento local de web 1.7.53 y Android 1.1.4
+# Verificación del WIP — rendimiento local de web 1.7.54 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.54
+
+El cambio de color de maceta conserva el modelo, geometrías, materiales y
+encuadre tanto en estantería como catálogo. Pasan 107 casos funcionales y 160
+pares gráficos exactos en ambas densidades. La fuente está incorporada y su
+batería final pasa 2.972 unitarias en 217 archivos, build y 75 comprobaciones
+Python y siete recorridos locales originales al primer intento. Sus cierres
+nativos registran 4.925,6 y 6.133,1 ms con los plazos originales intactos.
+Publicada actualmente: 1.7.53; 1.7.54 preparada para publicar.
+Ámbitos y controles en [Rendimiento de 1.7.54](performance-1754.md).
 
 ## Cambios de rendimiento de 1.7.53
 
@@ -9,7 +20,10 @@ exactos en ambas densidades, con 30 → 20 draws en el oráculo. La fuente ya es
 incorporada y pasa 2.910 unitarias en 214 archivos, build y 75 comprobaciones
 Python y siete recorridos locales originales al primer intento. Sus cierres
 nativos registran 4.638,7 y 6.147,8 ms con los plazos originales intactos.
-Publicada actualmente: 1.7.52; 1.7.53 preparada para publicar.
+La web publicada pasa HTTP, APK recién descargada, loader y los 21 recorridos
+originales al primer intento. La CI original conserva FAILED en UI3: cuatro
+fallos del cierre8 completo; pasan selección y apertura, sin truncado global30.
+La recogida de los demás jobs sigue en marcha.
 Los errores de método y las CI fallidas anteriores conservan su estado propio.
 Detalle en [Rendimiento de 1.7.53](performance-1753.md).
 
