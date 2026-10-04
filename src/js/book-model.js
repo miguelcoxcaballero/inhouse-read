@@ -1632,7 +1632,7 @@ export function projectBookBoardBounds(model,camera,viewportWidth,viewportHeight
 
 // One shared GPU context; individual canvases receive snapshots. No per-book
 // contexts, and the flyout uses exactly the same mesh builder as the shelf.
-export function bookView(host, book, style, { width, height, thickness, viewportWidth, viewportHeight, centerX, centerY, coverUrl, shelf = false, shelfView = 'spine', initialPose, deferDraw = false }) {
+export function bookView(host, book, style, { width, height, thickness, viewportWidth, viewportHeight, centerX, centerY, coverUrl, shelf = false, shelfView = 'spine', initialPose, deferDraw = false, compactReturnFrame = false }) {
   const gpu = getBookRenderer(); if (!gpu) return null;
   // Shelf books are static snapshots. Keep their framebuffer modest on phones
   // so a long library does not retain a pile of high-DPI canvases in memory.
@@ -1652,6 +1652,40 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   let reliefPrepared = false, reliefPreparation = null;
   let currentBook = book, currentSnapshot = null, pageTheme = 1;
   let waitingForFirstDraw = deferDraw;
+  const compactCamera = camera.clone(), compactBox = new THREE.Box3(), compactPoint = new THREE.Vector3();
+  const compactWidth = Math.min(viewportWidth, Math.ceil(((width * 2 + thickness) * 1.25 + 64) / 64) * 64);
+  const compactHeight = Math.min(viewportHeight, Math.ceil((height * 1.45 + 64) / 64) * 64);
+  function returnFrame(pose) {
+    const full = { x:0, y:0, width:viewportWidth, height:viewportHeight, camera };
+    // Keep the full page during zoom. Afterwards use one fixed smaller buffer,
+    // translating the camera window rather than resizing for every pose.
+    if (!compactReturnFrame || pose.scale > 1.05 || !Number.isInteger(pixelRatio)
+      || !Number.isInteger(viewportWidth) || !Number.isInteger(viewportHeight)) return full;
+    model.updateMatrixWorld(true); camera.updateMatrixWorld(true);
+    compactBox.setFromObject(model);
+    let left=Infinity, top=Infinity, right=-Infinity, bottom=-Infinity;
+    for (const x of [compactBox.min.x, compactBox.max.x])
+      for (const y of [compactBox.min.y, compactBox.max.y])
+        for (const z of [compactBox.min.z, compactBox.max.z]) {
+          compactPoint.set(x,y,z).project(camera);
+          const px=(compactPoint.x+1)*viewportWidth/2, py=(1-compactPoint.y)*viewportHeight/2;
+          left=Math.min(left,px); right=Math.max(right,px); top=Math.min(top,py); bottom=Math.max(bottom,py);
+        }
+    // Include every board, page edge and ribbon, with room for displaced relief.
+    // Unusual poses use the full buffer instead of clipping any part of the book.
+    if (![left,top,right,bottom].every(Number.isFinite)) return full;
+    // Geometry outside the viewport is already clipped by the full frame.
+    left=Math.max(0,left); top=Math.max(0,top); right=Math.min(viewportWidth,right); bottom=Math.min(viewportHeight,bottom);
+    if (right<left || bottom<top
+      || compactWidth<viewportWidth && right-left+48>compactWidth
+      || compactHeight<viewportHeight && bottom-top+48>compactHeight) return full;
+    const x=compactWidth===viewportWidth ? 0 : Math.round((left+right-compactWidth)/2);
+    const y=compactHeight===viewportHeight ? 0 : Math.round((top+bottom-compactHeight)/2);
+    compactCamera.copy(camera);
+    compactCamera.setViewOffset(viewportWidth,viewportHeight,x,y,compactWidth,compactHeight);
+    return { x,y,width:compactWidth,height:compactHeight,camera:compactCamera };
+  }
+
   function draw(pose, { redraw = true } = {}) {
     if (disposed) return;
     if (pose.pageTheme != null) pageTheme = Math.max(0, Math.min(1, Number(pose.pageTheme) || 0));
@@ -1667,8 +1701,9 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (!redraw) return;
     waitingForFirstDraw = false;
     if (gpu.getPixelRatio() !== pixelRatio) gpu.setPixelRatio(pixelRatio);
+    const frame = returnFrame(pose);
     gpu.getSize(rendererSize);
-    if (rendererSize.x !== viewportWidth || rendererSize.y !== viewportHeight) gpu.setSize(viewportWidth, viewportHeight, false);
+    if (rendererSize.x !== frame.width || rendererSize.y !== frame.height) gpu.setSize(frame.width, frame.height, false);
     model.traverse(object => {
       for (const material of [].concat(object.material || [])) {
         for (const key of ['map', 'roughnessMap', 'metalnessMap', 'bumpMap']) {
@@ -1677,8 +1712,10 @@ export function bookView(host, book, style, { width, height, thickness, viewport
         }
       }
     });
-    gpu.render(scene, camera);
-    context.clearRect(0, 0, canvas.width, canvas.height); context.drawImage(gpu.domElement, 0, 0, canvas.width, canvas.height);
+    gpu.render(scene, frame.camera);
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    if (frame.camera === camera) context.drawImage(gpu.domElement, 0, 0, canvas.width, canvas.height);
+    else context.drawImage(gpu.domElement, frame.x * pixelRatio, frame.y * pixelRatio);
     canvas.dataset.angle = String(pose.angle); canvas.dataset.renderer = 'three-mesh';
     canvas.dataset.coverOpen = String(current.coverOpen);
     canvas.dataset.pageTheme = String(pageTheme);
@@ -1891,6 +1928,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   }
   return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
     deferDrawing() { if (!disposed) waitingForFirstDraw = true; },
+    setCompactReturnFrame(enabled) { compactReturnFrame = Boolean(enabled); },
     updateAppearance, updateSpineAppearance, updateCoverAppearance, prepareCoverRelief, setCoverRelief, updateEdgeAppearance, updateBookmark,
     setPageSnapshot, pageTextures, uploadPageTexture, compilePage, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
     setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,

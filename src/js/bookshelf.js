@@ -376,6 +376,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     appearanceGeneration: 0,
     shelfScene: null,
     presentationActive: true,
+    returningBookId: null,
     useScene: Boolean((globalThis.WebGLRenderingContext || globalThis.WebGL2RenderingContext) && getBookRenderer()),
     viewMode: Object.values(SHELF_VIEW_MODES).includes(options.viewMode)
       ? options.viewMode
@@ -1324,6 +1325,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         spineStyleVars(style) +
         (item.tilt ? `--ihr-spine-tilt:${item.tilt}deg;` : '')
     });
+    if (state.returningBookId === String(book.id)) node.classList.add('is-away');
     if (item.tilt) node.classList.add('is-tilted');
     // En un lomo estrecho el autor no cabe sin pisar al título.
     if (style.width < 32) node.classList.add('ihr-spine--slim');
@@ -3677,6 +3679,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       width:coverW, height:coverH, thickness, viewportWidth:vw, viewportHeight:vh,
       centerX, centerY, coverUrl,
       deferDraw:Boolean(pageSnapshot?.source),
+      compactReturnFrame:Boolean(pageSnapshot?.source),
       initialPose:{ x:0, y:0, scale:1, angle:0, pitch:0, coverOpen:pageSnapshot ? 1 : 0, bookmarkWithdraw:pageSnapshot ? 1 : 0 }
     });
     if (view) {
@@ -3728,10 +3731,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     try {
       if (view) await view.ready;
       if (!active()) return false;
-      if (pageSnapshot?.source && view) view.deferDrawing?.();
+      if (pageSnapshot?.source && view) { view.deferDrawing?.(); view.setCompactReturnFrame?.(true); }
       if (pageSnapshot?.source && view && view.setPageSnapshot(pageSnapshot)) {
         view.draw({ ...readingPose, bookmarkWithdraw:1 },{redraw:false});
         if (!view.alignToPage(pageSnapshot.displayBounds)) throw new Error('No se pudo alinear la página al cerrar el libro.');
+        state.shelfScene?.setPaintHeld?.(false); state.shelfScene?.flush();
         flyout.style.visibility = '';
         onPageReady?.();
         flyout.dataset.returnPhase = 'zooming';
@@ -3770,6 +3774,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         const x = bounds.left + bounds.width/2 - local.left-local.width/2 + (1-scale)*(local.left+local.width/2-bookBounds.left-bookBounds.width/2);
         const y = bounds.top + bounds.height/2 - local.top-local.height/2 + (1-scale)*(local.top+local.height/2-bookBounds.top-bookBounds.height/2);
         bookNode.style.transform = `translate(${x}px,${y}px) scale(${scale})`;
+        state.shelfScene?.setPaintHeld?.(false); state.shelfScene?.flush();
         flyout.style.visibility = ''; onPageReady?.();
         flyout.dataset.returnPhase = 'zooming';
         animation = animate(bookNode,[{ transform:bookNode.style.transform },{ transform:'translate(0,0) scale(1)' }],
@@ -3792,6 +3797,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         fallbackAnimations.push(animation); await waitForMotion(animation, prefersReducedMotion() ? 1 : 580);
         if (!active()) return false;
       }
+      state.shelfScene?.setPaintHeld?.(false); state.shelfScene?.flush();
       flyout.style.visibility = ''; onPageReady?.();
       flyout.dataset.returnPhase = 'returning';
       animate(scrim,[{ opacity:pageSnapshot ? 1 : 0 },{ opacity:0 }],{ duration:approachDuration, fill:'both' });
@@ -3834,6 +3840,15 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     setPresentationActive(value) {
       state.presentationActive = Boolean(value);
       state.shelfScene?.setPresentationActive?.(state.presentationActive);
+    },
+    setReturningBook(bookId) {
+      const next = bookId == null ? null : String(bookId), previous = state.returningBookId;
+      state.returningBookId = next;
+      state.shelfScene?.setPaintHeld?.(next !== null);
+      for (const node of root.querySelectorAll('.ihr-spine')) {
+        if (previous !== next && node.dataset.bookId === previous) node.classList.remove('is-away');
+        if (node.dataset.bookId === next) node.classList.add('is-away');
+      }
     },
     hasReaderOrigin:bookId => state.lastOpened?.book.id === bookId,
 

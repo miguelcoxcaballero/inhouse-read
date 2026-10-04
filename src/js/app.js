@@ -1201,11 +1201,12 @@ els.readerBack.addEventListener('click', async () => {
       Promise.resolve(pendingProgress).then(() => cloudSync.flushProgress(bookId))
         .catch(error => setDriveSyncStatus(`Progreso pendiente: ${error.message}`))
     }
+    const geometryReady = isBookLengthReady(book)
+    if (geometryReady) shelf?.setReturningBook?.(bookId)
     showScreen('home')
     els.readerToolbar.hidden = true
     // Newly imported books have never had a shelf selection. Populate their
     // slot while the current-page overlay masks the home layout.
-    const geometryReady = isBookLengthReady(book)
     if (!shelf?.hasReaderOrigin(bookId) || !geometryReady) await refreshShelf({ immediate:true })
     // The overlay masks shelf layout and cover decoding until the same page
     // is ready on the 3D mesh. Drive sync continues independently of the flight.
@@ -1222,6 +1223,7 @@ els.readerBack.addEventListener('click', async () => {
     reader.close(); currentBookId = null
     readingExperience.reset(); showScreen('home'); els.readerToolbar.hidden = true
   } finally {
+    shelf?.setReturningBook?.(null)
     stillFade?.cancel(); stillPage?.remove()
     document.body.classList.remove('is-closing-reader')
     closingReader = false
@@ -1289,7 +1291,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.7.39'
+els.appVersion.textContent = 'Inhouse Read · v1.7.40'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')

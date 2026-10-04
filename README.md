@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.40
+
+- La vuelta del lector prepara su hueco sin repintar la habitación bajo la página. Los shaders de profundidad se preparan con la estantería y se reutiliza su imagen mientras el libro entra en su hueco.
+- El renderizado del libro y de su inserción usa una ventana menor cuando cabe, con la misma densidad de píxeles, iluminación, materiales y profundidad. El zoom inicial y los casos que no caben conservan el framebuffer completo.
+- El perfil local DPR 2 completa el cierre en 7.063 ms dentro del plazo original de ocho segundos. Pasan 20 casos originales de apertura/temas y cinco comparaciones GPU con cero diferencias de píxeles. La batería completa de esta fuente se contrasta por separado. [Resultados y pendientes](docs/remaining-wip-verification.md).
+
 ### Actualización web · 1.7.39
 
 - El cierre prepara la página y el encuadre del libro antes de pintar, y elimina las copias GPU redundantes. Conserva resolución, materiales y animaciones.

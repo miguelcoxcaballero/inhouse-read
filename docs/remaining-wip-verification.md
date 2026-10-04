@@ -1,5 +1,13 @@
 # Verificación del WIP — web 1.7.39 y Android 1.1.4 publicados
 
+## Preparación de 1.7.40: cierre y profundidad
+
+El retorno marca el hueco antes de reconstruir los nodos del mueble, prepara su proyección bajo la página opaca y entrega un único repintado antes del zoom. Los tres materiales originales de profundidad se enlazan con el primer batch de la estantería, sobre la geometría ya existente del indicador. No añaden objetos visibles ni render passes. Durante la inserción, el libro oculto no invalida la imagen ni las sombras de una habitación que no cambia; los cambios reales pendientes siguen respetándose. Su watchdog observa el reloj original de la inserción.
+
+El framebuffer del libro y el depth pass de inserción usan ventanas de cámara alineadas a píxeles. El canvas final, DPR, materiales, iluminación, geometrías, sombras y relojes de animación permanecen. El primer zoom, un DPR fraccionario y cualquier modelo que no cabe usan el buffer completo. La profundidad continúa recortando el libro detrás de sus vecinos y madera.
+
+El candidato aislado final completa **7.062,9 ms** en el reloj DOM original del móvil 390 × 844 a DPR 2, sin reintentos y con el mismo límite de ocho segundos. Pasan **20 casos originales** de apertura y temas, incluidos giro/cancelación, CBZ, PDF, EPUB, fallback y movimiento reducido. Cinco poses GPU, desde la página ampliada hasta el lomo girado, comparan 5.266.560 componentes RGBA por pose: **cero diferencias**, con portada brillante, lomo dorado, página, texto y marcapáginas. No es una medición de un teléfono físico. Los ensayos anteriores fallidos se conservan: no se publica el candidato que contenía texto mal codificado, aunque su reloj pasaba. La fuente final y CI necesitan su verificación propia.
+
 ## Publicación verificada de 1.7.39 y Android 1.1.4
 
 Fuente de producto `8602135708e520c35ae52483fbfd5e19a2c54203`. La [CI original 37167629565](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37167629565) pasa **2.628 unitarias en 171 archivos y 514 E2E**, sin omisiones, reintentos ni flaky. Sus doce jobs y once ZIP originales tienen un censo independiente; certificado `61d7cbda81e9b321e4c11e14aee4ab1aad9c8c57037b40651d4103daf7ed5f5a`. Los 20 casos locales originales de apertura/temas y las 75 verificaciones Python también pasan.

@@ -359,7 +359,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   rebuildFurniture();
 
   let disposed = false, raf = 0, renderCount = 0, modelCreations = 0, viewportHeight = 1, progress = mode === 'isometric' ? 1 : 0;
-  let presentationActive = true, drawPending = true, paintedViewport = null;
+  let presentationActive = true, drawPending = true, paintedViewport = null, paintHeld = false;
   let shelfSnapshotDirty = true, shelfSnapshotRenders = 0;
   // Every program is linked in parallel before the first frame (see gpu-programs.js).
   let programsReady = null, programsPoll = 0, unpainted = [];
@@ -378,6 +378,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const dropGuide = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 2), dropMaterial);
   const dropFoot = new THREE.Mesh(new THREE.BoxGeometry(12, 2, 4), dropMaterial); dropFoot.position.y = 1;
   dropMarker.add(dropGuide, dropFoot); furniture.add(dropMarker);
+  // Link the return depth variants with the first shelf batch, using the
+  // guide's existing geometry; they never add a visible object or render pass.
+  const depthWriters = depthOnly.map(material => new THREE.Mesh(dropGuide.geometry, material));
   let dropPosition = null;
   let desiredMode = mode === 'isometric' ? 'isometric' : 'spine';
   let inspectionZoom = 1, panX = 0, panY = 0, inspectionMoving = false;
@@ -1524,6 +1527,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (solid) insertionSolids.set(object, material);
   }
 
+  const insertionBox = new THREE.Box3(), insertionPoint = new THREE.Vector3();
   function paintInsertionOverlay(entry) {
     const insertion = entry.insertion, overlay = insertion?.overlayCanvas, model = entry.model;
     if (!overlay || !model) return;
@@ -1536,11 +1540,32 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // The moving book therefore stays visible beyond the scroller's edges.
     insertionCamera.left = -origin.left; insertionCamera.right = vw - origin.left;
     insertionCamera.top = origin.top; insertionCamera.bottom = origin.top - vh;
-    insertionCamera.updateProjectionMatrix();
+    insertionCamera.clearViewOffset(); insertionCamera.updateProjectionMatrix();
     const ratio = overlay.width / vw;
+    let frame = { x:0,y:0,width:vw,height:vh };
+    if (Number.isInteger(ratio) && Number.isInteger(vw) && Number.isInteger(vh)) {
+      model.updateMatrixWorld(true); insertionCamera.updateMatrixWorld(true);
+      insertionBox.setFromObject(model);
+      let left=Infinity,top=Infinity,right=-Infinity,bottom=-Infinity;
+      for (const x of [insertionBox.min.x,insertionBox.max.x])
+        for (const y of [insertionBox.min.y,insertionBox.max.y])
+          for (const z of [insertionBox.min.z,insertionBox.max.z]) {
+            insertionPoint.set(x,y,z).project(insertionCamera);
+            const px=(insertionPoint.x+1)*vw/2,py=(1-insertionPoint.y)*vh/2;
+            left=Math.min(left,px);top=Math.min(top,py);right=Math.max(right,px);bottom=Math.max(bottom,py);
+          }
+      const width=Math.min(vw,256),height=Math.min(vh,384);
+      left=Math.max(0,left);top=Math.max(0,top);right=Math.min(vw,right);bottom=Math.min(vh,bottom);
+      if ([left,top,right,bottom].every(Number.isFinite) && right>=left && bottom>=top
+        && (width===vw || right-left+48<=width) && (height===vh || bottom-top+48<=height)) {
+        frame={x:width===vw ? 0 : Math.round((left+right-width)/2),
+          y:height===vh ? 0 : Math.round((top+bottom-height)/2),width,height};
+        insertionCamera.setViewOffset(vw,vh,frame.x,frame.y,width,height);
+      }
+    }
     if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
     renderer.getSize(rendererSize);
-    if (rendererSize.x !== vw || rendererSize.y !== vh) renderer.setSize(vw, vh, false);
+    if (rendererSize.x !== frame.width || rendererSize.y !== frame.height) renderer.setSize(frame.width, frame.height, false);
     const autoClear = renderer.autoClear, scissorTest = renderer.getScissorTest();
     const previousScissor = renderer.getScissor(previousScissorScratch);
     const writes = insertionWrites, visibility = insertionVisibility, solids = insertionSolids;
@@ -1549,8 +1574,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     for (const object of furniture.children) visibility.set(object, object.visible);
     if (trash) visibility.set(trash, trash.visible);
     const canvasRect = frameLayout.canvas, clip = frameLayout.scroller;
-    const left = Math.max(0, canvasRect.left, clip.left), right = Math.min(vw, canvasRect.right, clip.right);
-    const top = Math.max(0, canvasRect.top, clip.top), bottom = Math.min(vh, canvasRect.bottom, clip.bottom);
+    const left = Math.max(0, frame.x, canvasRect.left, clip.left), right = Math.min(vw, frame.x+frame.width, canvasRect.right, clip.right);
+    const top = Math.max(0, frame.y, canvasRect.top, clip.top), bottom = Math.min(vh, frame.y+frame.height, canvasRect.bottom, clip.bottom);
     try {
       renderer.autoClear = false;
       renderer.setScissorTest(false); renderer.clear(true, true, true);
@@ -1560,7 +1585,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       for (const [mesh, material] of solids) mesh.material = depthOnly[(Array.isArray(material) ? material[0] : material).side] || depthOnly[THREE.FrontSide];
       model.visible = false;
       if (right > left && bottom > top) {
-        renderer.setScissor(left, vh - bottom, right - left, bottom - top);
+        renderer.setScissor(left-frame.x, frame.height-(bottom-frame.y), right-left, bottom-top);
         renderer.setScissorTest(true);
         renderer.render(scene, insertionCamera);
       }
@@ -1573,7 +1598,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       renderer.setScissorTest(false);
       renderer.render(scene, insertionCamera);
       overlayContext.clearRect(0, 0, overlay.width, overlay.height);
-      overlayContext.drawImage(renderer.domElement, 0, 0, overlay.width, overlay.height);
+      if (frame.width===vw && frame.height===vh) overlayContext.drawImage(renderer.domElement, 0, 0, overlay.width, overlay.height);
+      else overlayContext.drawImage(renderer.domElement, frame.x*ratio, frame.y*ratio);
       overlay.dataset.insertionDepth = 'shared-shelf';
       overlay.dataset.returnProgress = canvas.dataset.returnProgress;
     } finally {
@@ -1695,6 +1721,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const { moving, shelfMoving } = updateEntries(scroll, zoom, now, finishedInsertions);
     const finishedDrops = [];
     const trashMoving = updateTrash(scroll, now, finishedDrops);
+    // The opaque reader page masks layout preparation. Retain the dirty
+    // room until its hidden return slot and the same 3D page are both ready.
+    if (paintHeld) {
+      drawPending = true;
+      unpainted.push(...finishedInsertions, ...finishedDrops);
+      return;
+    }
     let casters = trash?.visible ? 1 : 0;
     for (const entry of bookEntries) if (entry.model?.visible) casters = Math.imul(casters, 31) + entry.model.id | 0;
     const contentDirty = shadowDirty || shelfMoving || trashMoving || casters !== shadowCasters;
@@ -1712,7 +1745,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // The models and lamp lights now exist: link their programs in parallel
     // instead of one blocking link per material inside the first render.
     if (programsReady !== true) {
-      programsReady ||= compilePrograms(renderer, scene, camera, [dropGuide]);
+      programsReady ||= compilePrograms(renderer, scene, camera, [dropGuide, ...depthWriters]);
       if (!programsReady()) {
         // Animations that finished on this unpainted frame resolve after the next painted one.
         unpainted.push(...finishedInsertions, ...finishedDrops);
@@ -1858,7 +1891,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (!preserveInspectionOverview) inspectionOverview = null;
     }
     drawPending = true;
-    if (!disposed && !raf && (canPresent() || hasOngoingMotion())) raf = requestAnimationFrame(draw);
+    if (!disposed && !raf && !paintHeld && (canPresent() || hasOngoingMotion())) raf = requestAnimationFrame(draw);
   }
 
   function canPresent() {
@@ -1987,6 +2020,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   return {
     canvas,
+    setPaintHeld(value) {
+      paintHeld = Boolean(value);
+      if (paintHeld) { cancelAnimationFrame(raf); raf = 0; }
+      else if (drawPending) invalidate(false);
+    },
     setPresentationActive(value) {
       presentationActive = Boolean(value);
       presentationChanged();
@@ -2131,10 +2169,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       Object.assign(entry.lift, { value:0, from:0, target:0, started:insertion.started });
       // Paint the same dock position before the caller hides its overlay.
       // Neighbors and wood now occlude the moving book in one depth buffer.
-      shelfSnapshotDirty = shadowDirty = true;
+      // An overlay book does not change the already painted hidden slot or
+      // its shadows. Preserve any actual pending room changes.
+      if (!overlayCanvas) shelfSnapshotDirty = shadowDirty = true;
       cancelAnimationFrame(raf); raf = 0; draw(insertion.started);
       insertion.lastFrame = performance.now();
-      return { finished, cancel() {
+      return { finished, get lastFrameTime() { return insertion.lastFrame; }, cancel() {
         if (entry.insertion !== insertion) return;
         cancelInsertion(entry);
         overlayCanvas?.getContext('2d')?.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
