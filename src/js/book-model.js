@@ -1632,7 +1632,7 @@ export function projectBookBoardBounds(model,camera,viewportWidth,viewportHeight
 
 // One shared GPU context; individual canvases receive snapshots. No per-book
 // contexts, and the flyout uses exactly the same mesh builder as the shelf.
-export function bookView(host, book, style, { width, height, thickness, viewportWidth, viewportHeight, centerX, centerY, coverUrl, shelf = false, shelfView = 'spine', initialPose }) {
+export function bookView(host, book, style, { width, height, thickness, viewportWidth, viewportHeight, centerX, centerY, coverUrl, shelf = false, shelfView = 'spine', initialPose, deferDraw = false }) {
   const gpu = getBookRenderer(); if (!gpu) return null;
   // Shelf books are static snapshots. Keep their framebuffer modest on phones
   // so a long library does not retain a pile of high-DPI canvases in memory.
@@ -1651,7 +1651,8 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   let disposed = false, current, cancel = () => {}, pendingModel = null, appearanceRevision = 0;
   let reliefPrepared = false, reliefPreparation = null;
   let currentBook = book, currentSnapshot = null, pageTheme = 1;
-  function draw(pose) {
+  let waitingForFirstDraw = deferDraw;
+  function draw(pose, { redraw = true } = {}) {
     if (disposed) return;
     if (pose.pageTheme != null) pageTheme = Math.max(0, Math.min(1, Number(pose.pageTheme) || 0));
     current = { ...pose, coverOpen:Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0)),
@@ -1661,6 +1662,10 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     model.userData.setBookmarkWithdraw?.(current.bookmarkWithdraw);
     model.position.set(centerX - viewportWidth / 2 + pose.x, viewportHeight / 2 - centerY - pose.y, 0);
     model.rotation.set((pose.pitch ?? 0) * Math.PI / 180, pose.angle * Math.PI / 180, (pose.roll ?? 0) * Math.PI / 180); model.scale.setScalar(pose.scale);
+    // Hidden setup changes geometry and page projection without copying frames.
+    // The first explicit draw commits the complete, correctly aligned page.
+    if (!redraw) return;
+    waitingForFirstDraw = false;
     if (gpu.getPixelRatio() !== pixelRatio) gpu.setPixelRatio(pixelRatio);
     gpu.getSize(rendererSize);
     if (rendererSize.x !== viewportWidth || rendererSize.y !== viewportHeight) gpu.setSize(viewportWidth, viewportHeight, false);
@@ -1680,7 +1685,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     canvas.dataset.bookmarkWithdraw = String(current.bookmarkWithdraw);
     canvas.dataset.boardBounds = JSON.stringify(projectBookBoardBounds(model,camera,viewportWidth,viewportHeight));
   }
-  model.userData.invalidate = () => current && draw(current);
+  model.userData.invalidate = () => current && !waitingForFirstDraw && draw(current);
   // Lifted books reveal hidden materials mid-motion (the inside of the board,
   // the page). Queue every program now, not in the middle of the opening.
   // three only issues compile/link here and waits for a program on its first
@@ -1692,7 +1697,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     x:0, y:0, scale:1,
     angle:shelf ? (shelfView === 'isometric' ? 76 : 90) : 0,
     pitch:shelf && shelfView === 'isometric' ? 9 : 0
-  });
+  }, { redraw:!deferDraw });
   function updateAppearance(nextStyle) {
     if (disposed) return false;
     const revision = ++appearanceRevision;
@@ -1705,7 +1710,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
       scene.remove(previous); model = replacement; pendingModel = null;
       canvas.dataset.bookmark3d = String(Boolean(model.userData.hasBookmark));
       scene.add(model);
-      model.userData.invalidate = () => current && draw(current);
+      model.userData.invalidate = () => current && !waitingForFirstDraw && draw(current);
       if (currentSnapshot) model.userData.setPageSnapshot(currentSnapshot);
       if (current) draw(current);
       previous.userData.dispose();
@@ -1790,14 +1795,16 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   }
   // `pageTheme` (0 = white stock, 1 = the reader's own theme; default 1) is where the
   // page's colour starts: the book opens and closes on white paper.
-  function setPageSnapshot(snapshot, { pageTheme:initialTheme, redraw = true } = {}) {
+  function setPageSnapshot(snapshot, { pageTheme:initialTheme, redraw = !waitingForFirstDraw } = {}) {
     if (initialTheme != null) {
       pageTheme = Math.max(0, Math.min(1, Number(initialTheme) || 0));
       if (current) current = { ...current, pageTheme };
     }
-    if (disposed || !model.userData.setPageSnapshot(snapshot, { pageTheme, redraw })) return false;
+    // bookView owns its one framebuffer commit. The model's invalidation must
+    // not render the same page again before the explicit draw below.
+    if (disposed || !model.userData.setPageSnapshot(snapshot, { pageTheme, redraw:false })) return false;
     currentSnapshot = snapshot;
-    pendingModel?.userData.setPageSnapshot(snapshot, { pageTheme, redraw });
+    pendingModel?.userData.setPageSnapshot(snapshot, { pageTheme, redraw:false });
     canvas.dataset.pageSource = snapshot.sourceType || snapshot.engine || 'reader-page';
     canvas.dataset.pageLocator = JSON.stringify(snapshot.location?.locator ?? snapshot.location ?? null);
     canvas.dataset.pageText = String(snapshot.text || '').slice(0, 500);
@@ -1883,6 +1890,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     raf = requestAnimationFrame(tick); return animation;
   }
   return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
+    deferDrawing() { if (!disposed) waitingForFirstDraw = true; },
     updateAppearance, updateSpineAppearance, updateCoverAppearance, prepareCoverRelief, setCoverRelief, updateEdgeAppearance, updateBookmark,
     setPageSnapshot, pageTextures, uploadPageTexture, compilePage, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
     setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,

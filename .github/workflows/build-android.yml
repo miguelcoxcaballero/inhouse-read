@@ -69,6 +69,7 @@ jobs:
               dex = b''.join(apk.read(name) for name in apk.namelist() if name.endswith('.dex'))
               assert b'BookImportBridge' in dex and b'InhouseBookImports' in dex, 'Native ebook import bridge missing'
               assert b'setReadingMode' in dex, 'Native reader display policy missing'
+              assert b'setReaderOwnership' in dex, 'Native reader lifecycle ownership missing'
               assert b'ReadAloudBridge' in dex and b'InhouseSpeech' in dex and b'inhouse-tts' in dex, 'Native speech bridge missing'
               assert b'NativePcmService' in dex and b'InhousePcm' in dex and b'InhousePcmState' in dex, 'Natural PCM foreground service missing'
               assert b'NativeInferenceBridge' in dex and b'InhouseInference' in dex, 'Natural voice native inference missing'

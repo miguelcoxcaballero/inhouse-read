@@ -7,11 +7,19 @@ export function initReadingDisplay({ document:doc = document, window:win = windo
   const eligible = () => active && !disposed && visible()
   const release = sentinel => { try { Promise.resolve(sentinel?.release()).catch(() => {}) } catch { /* Already released. */ } }
   const native = enabled => {
-    if (nativeState === enabled) return
+    // New shells own their Activity lifecycle. A delayed WebView visibility
+    // event after unlocking must not hide a notification shade the user opened.
+    const bridge = win.InhouseNative
+    const ownership = typeof bridge?.setReaderOwnership === 'function'
+    const requested = ownership ? reading && pageActive && !disposed : enabled
+    if (nativeState === requested) return
     try {
-      if (typeof win.InhouseNative?.setReadingMode === 'function') {
-        win.InhouseNative.setReadingMode(enabled)
-        nativeState = enabled
+      if (ownership) {
+        bridge.setReaderOwnership(requested)
+        nativeState = requested
+      } else if (typeof bridge?.setReadingMode === 'function') {
+        bridge.setReadingMode(requested)
+        nativeState = requested
       }
     } catch { /* Older shells use the browser wake lock when available. */ }
   }

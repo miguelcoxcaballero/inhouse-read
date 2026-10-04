@@ -25,6 +25,12 @@ interrumpen las animaciones del libro.
   cuando su WebView admite Wake Lock. Ocultar la barra nativa requiere instalar
   [APK 1.1.3 / código 16](https://miguelcoxcaballero.github.io/inhouse-read/download-android.html).
 
+## Propiedad del lector en las APK nuevas
+
+`setReaderOwnership` recibe el estado del libro, independientemente de los cambios de visibilidad del WebView. La Activity combina ese estado con su lifecycle y el origen confiable. Al bloquearse libera KEEP_SCREEN_ON y restaura las barras; al regresar aplica la política de lectura una vez. Un evento web de visibilidad tardío ya no introduce otro cambio que pueda cerrar las notificaciones del sistema. Al cerrar el libro, abandonar la página o disponer el controlador se libera la propiedad.
+
+El Wake Lock del navegador conserva su política de primer plano. Las APK sin el puente nuevo siguen usando setReadingMode con el comportamiento anterior. Los siete casos nuevos pasan junto con los diez originales; la comprobación del APK real permanece pendiente.
+
 ## Comprobaciones
 
 - 26 pruebas unitarias: política web, carreras al adquirir/liberar Wake Lock,

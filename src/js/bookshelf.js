@@ -3676,6 +3676,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const view = cachedView || bookView(bookNode, book, previous.style, {
       width:coverW, height:coverH, thickness, viewportWidth:vw, viewportHeight:vh,
       centerX, centerY, coverUrl,
+      deferDraw:Boolean(pageSnapshot?.source),
       initialPose:{ x:0, y:0, scale:1, angle:0, pitch:0, coverOpen:pageSnapshot ? 1 : 0, bookmarkWithdraw:pageSnapshot ? 1 : 0 }
     });
     if (view) {
@@ -3727,8 +3728,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     try {
       if (view) await view.ready;
       if (!active()) return false;
+      if (pageSnapshot?.source && view) view.deferDrawing?.();
       if (pageSnapshot?.source && view && view.setPageSnapshot(pageSnapshot)) {
-        view.draw({ ...readingPose, bookmarkWithdraw:1 });
+        view.draw({ ...readingPose, bookmarkWithdraw:1 },{redraw:false});
         if (!view.alignToPage(pageSnapshot.displayBounds)) throw new Error('No se pudo alinear la página al cerrar el libro.');
         flyout.style.visibility = '';
         onPageReady?.();

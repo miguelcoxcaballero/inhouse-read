@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.39
+
+- El cierre prepara la página y el encuadre del libro antes de pintar, y elimina las copias GPU redundantes. Conserva resolución, materiales y animaciones.
+- Las nuevas APK conservan la propiedad del lector durante el bloqueo: Android aplica su lifecycle sin que un cambio de visibilidad tardío vuelva a ocultar las notificaciones al despertar. Las APK anteriores mantienen su puente compatible.
+- La APK 1.1.4 sigue pendiente de completar sus pruebas originales antes de publicarse. [Verificación y pendientes](docs/remaining-wip-verification.md).
+
 ### Actualización web · 1.7.38
 
 La sesión multimedia Android recibe el título, la ruta local y el estado antes de publicar su notificación. Detener tiene también una acción de sesión compatible con los controles modernos. El lector conserva su política de barras entre cambios de foco, sin volver a ocultarlas cada vez que se abre el panel del sistema. La APK 1.1.4 requiere una captura completa nueva antes de publicarse.

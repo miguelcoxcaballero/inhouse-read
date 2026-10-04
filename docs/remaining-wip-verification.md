@@ -1,4 +1,18 @@
-# Verificación del WIP — web 1.7.37 publicada; 1.7.38 en preparación; Android 1.1.4 pendiente
+# Verificación del WIP — web 1.7.38 publicada; 1.7.39 en preparación; Android 1.1.4 pendiente
+
+## Candidata 1.7.39
+
+El bookView prepara modelo, snapshot y pose sin pintar hasta el encuadre final, incluyendo vistas reutilizadas. El setter conserva su contrato de un argumento y realiza una sola copia cuando corresponde. Pasan 2.621 unitarias de la candidata aislada y 20 casos originales de apertura/temas en el primer candidato. El ensayo DPR 2 de ese primer candidato conserva FAILED: 9.123 ms frente al límite original de ocho segundos. No se reducen resolución, materiales ni presupuestos de animación. La fuente final pasa 2.628 unitarias en 171 archivos, 20 casos originales de apertura y temas sin reintentos, build y 75 verificaciones Python.
+
+El puente nuevo setReaderOwnership conserva la propiedad del libro al cambiar la visibilidad del WebView; el lifecycle de la Activity decide la política de pantalla. Las APK anteriores siguen usando setReadingMode. Se añaden cinco casos de bloqueo, cierre, disposal, BFCache y animaciones y dos contratos Java/Kotlin. Pasan 29 focales, incluidos los originales. Requiere una nueva captura Android.
+
+## Verificación de 1.7.38
+
+Fuente `937f9e2dd665b9d6e65b56adaa83fc20d32585b8`, Pages `cbeff03c92c690d0fd948389792aa9663f00b5d1`. Coinciden 23 módulos y 44 recursos offline por HTTP; certificado `af4656e9eb6ade70e80a6e2b3472a0c5c337be212b59197c4330700211953c3a`. Seis casos públicos pasan sin omisiones ni reintentos, con 131 cuerpos HTTP y cuatro capturas revisadas; certificado `881e722cb06ecbf42f04509618b92f7f6bb01192359b212fbf95254437fe444c`. Pasan 2.617 unitarias en 169 archivos, dos E2E finales y las 75 comprobaciones Python originales. CI original `37165866474` pasa estrictamente: 2.617 unitarias en 169 archivos y 514 E2E sin omisiones ni reintentos; certificado `9b257196c4726a9d03b7313ec1017420051184b6c15598e7787f2e8fbf25c1c6`.
+
+Android original `37166006039` conserva FAILED. Supera 367.387 ms bloqueado, capítulos 0–22, 138 starts/137 dones y 30,838 segundos PCM en los últimos 30 segundos. Pasan pausa, reanudación, Detener y cierre mientras está pausado mediante los controles reales. El PDF avanza bloqueado por las páginas físicas 0 y 1 con PCM real, pero falla el control Detener de la notificación después de despertar. La captura muestra el lector con la página 2, sin la notificación; no demuestra por sí sola la causa. El ZIP original autenticado contiene 12.408.960 bytes y 151 miembros; certificado de captura `ab851805acde12af8ddcc2d29e43e02078f85829338b06a009c7cac64ee3f924`. No se publicó APK ni se actualizó el manifiesto.
+
+La CI original de 1.7.37 `37164356602` pasa estrictamente: 2.612 unitarias en 168 archivos y 514 E2E, sin omisiones ni reintentos. Certificado `6e3946f23764301ade4adc381ba625afc647b68c90d53f7dbc1b90590d6a4f9d`.
 
 ## Candidata 1.7.38: controles multimedia Android
 
@@ -253,11 +267,11 @@ El observador software de interrupción usa **2.200 ms en CI**; el límite local
 
 ## Pendientes y límites
 
-- **Android 1.1.4 sigue PENDIENTE.** El último ensayo, run `37160573040`, fuente `9a15ab8`, conserva FAILED: 120 starts/dones y 240 callbacks completos, capítulos 0–19, pero cero PCM nuevo en el tramo final de 30 segundos. No se publica esa APK. Captura `77b45ca1e5b9c83c5aebdc470fa9a77e9dfb5c8590eb9e4852e5b663b1169ef6`; fallo independiente `306e576a63d3c598ae89c3b5c7c16a87512aa3176122c391068b8904707480f9`. El siguiente ensayo debe superar continuidad bloqueada, controles de notificación, liberación de servicio/wake y PDF oculto, sin modificar sus umbrales.
-- **Fuente nueva 1.7.36:** codec ZIP original en JavaScript y snapshots de las terminaciones reales que vacían AudioTrack; verificación nueva en curso. La web 1.7.35 conserva comprobación HTTP y cinco casos públicos aprobados.
-- **Cuenta Google real:** falta conexión al navegador autenticado para comprobar login y subida reales. Las 61 pruebas focales y cinco E2E de Drive usan respuestas controladas y no sustituyen esa comprobación.
-- No se añade OCR ni se garantiza el orden perfecto de cualquier PDF. Los ocho casos públicos PDF usan texto y audio controlados para verificar navegación, visibilidad y cancelación; no sustituyen una comprobación de audio natural en un teléfono bloqueado. Drive usa respuestas de prueba y no autentica una cuenta real.
-- La batería web no certifica una APK nueva, audio en un teléfono físico, FPS, temperatura o batería. La evidencia histórica de Android 1.1.3 y la sesión de voz anterior mantienen su alcance original.
+- **Android 1.1.4 sigue PENDIENTE.** El ensayo original `37166006039` supera continuidad EPUB bloqueada, controles de pausa/reanudación/Detener, cleanup y dos páginas físicas PDF bloqueadas. Falla Detener en la notificación después del regreso al PDF. Captura `ab851805acde12af8ddcc2d29e43e02078f85829338b06a009c7cac64ee3f924`; fallo sellado `cf2e2cfca58d5b9fbc23337f9287e25e7bc378979dec6e6502a093a1d48b7007`. No se publica esa APK. El siguiente ensayo conserva los 75 tests, acciones, límites y gates originales.
+- **Rendimiento del cierre:** el primer candidato elimina copias redundantes, pero su perfil DPR 2 tarda 9.123 ms frente al plazo original de ocho segundos. Se conserva FAILED. La fuente final se valida por separado sin bajar resolución ni cambiar materiales.
+- **Fuente final 1.7.39:** pasan 2.628 unitarias en 171 archivos, build y 75 verificaciones Python; pasan 20 casos originales de apertura y temas sin omisiones ni reintentos. La web 1.7.38 tiene HTTP y seis casos públicos aprobados. CI original se audita por separado.
+- **Cuenta Google real:** falta una sesión autenticada disponible para comprobar login y subida reales. Las pruebas de Drive con respuestas controladas y el preflight público no sustituyen esa comprobación.
+- No se añade OCR ni se garantiza el orden perfecto de cualquier PDF. Los ensayos web no acreditan una APK nueva, audio en un teléfono físico, FPS, temperatura, batería ni reproducción indefinida. La evidencia histórica mantiene su alcance original.
 
 El [informe de 1.7.19](pdf-reading-continuity-1719.md) y los históricos siguientes conservan sus resultados; sus cifras no se suman a la batería actual.
 

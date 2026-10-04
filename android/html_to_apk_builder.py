@@ -1805,6 +1805,15 @@ public class MainActivity extends BridgeActivity {{
         private volatile boolean updateDownloadRunning = false;
 
         @JavascriptInterface
+        public void setReaderOwnership(boolean enabled) {{
+            runOnUiThread(() -> {{
+                if (!isTrustedReadPage()) return;
+                readingMode = enabled;
+                applyReadingDisplay();
+            }});
+        }}
+
+        @JavascriptInterface
         public void setReadingMode(boolean enabled) {{
             runOnUiThread(() -> {{
                 if (!isTrustedReadPage()) return;
@@ -2227,6 +2236,15 @@ class MainActivity : BridgeActivity() {{
     inner class InhouseNativeBridge {{
         @Volatile
         private var updateDownloadRunning = false
+
+        @JavascriptInterface
+        fun setReaderOwnership(enabled: Boolean) {{
+            runOnUiThread {{
+                if (!isTrustedReadPage()) return@runOnUiThread
+                readingMode = enabled
+                applyReadingDisplay()
+            }}
+        }}
 
         @JavascriptInterface
         fun setReadingMode(enabled: Boolean) {{
