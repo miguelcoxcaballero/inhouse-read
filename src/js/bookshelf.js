@@ -1101,7 +1101,15 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       applyDeferredShelfUpdates();
       return;
     }
-    if (!drag.active) { applyDeferredShelfUpdates(); return; }
+    if (!drag.active) {
+      // The browser dispatches the compatibility click after pointerup. A
+      // legacy shelf refresh replaces that button, so keep a valid mouse tap
+      // connected until its click has been delivered, then flush real updates.
+      if (!cancelled && !state.shelfScene && drag.pointerType === 'mouse' && node.classList.contains('ihr-spine'))
+        setTimeout(applyDeferredShelfUpdates, 0);
+      else applyDeferredShelfUpdates();
+      return;
+    }
     state.arranging = false;
     root.classList.remove('is-arranging');
     state.suppressOpenBookId = String(node.dataset.bookId || '');

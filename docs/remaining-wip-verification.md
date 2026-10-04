@@ -1,4 +1,18 @@
-# Verificación del WIP — rendimiento de web 1.7.47 y Android 1.1.4
+# Verificación del WIP — rendimiento de web 1.7.48 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.48
+
+La página preparada deja de esperar a regenerar la portada PDF en HD. La
+estantería de respaldo conserva el objetivo de un click mientras aplica los
+refrescos pendientes. Se mantienen los cambios de memoria, modelos y gestos
+de 1.7.47, con las mismas texturas y animaciones. La comprobación de la fuente
+final y sus límites están en [Rendimiento de 1.7.48](performance-1748.md).
+
+La CI original de 1.7.47 conserva FAILED: sus dos casos nuevos de devolución
+alcanzan el límite global de treinta segundos y un caso original de selección
+en el respaldo es flaky. Su reintento no transforma el resultado en aprobado.
+Los logs y artefactos originales quedan preservados; la batería de la nueva
+fuente tiene sus propios resultados.
 
 ## Cambios de rendimiento de 1.7.47
 

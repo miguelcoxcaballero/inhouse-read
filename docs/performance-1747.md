@@ -79,8 +79,9 @@ Los oracles estáticos previos conservan 42 comparaciones RGBA y 21 pares de PNG
 exactos, y cinco poses adicionales con una página PDF real exactas. El oracle
 de composición del prototipo mantiene su **FAIL estricto** por diferencias de
 un nivel RGB en algunos pares de inserción, con alpha idéntico. No se aumentan
-tolerancias ni se convierte ese resultado en PASS. La publicación 1.7.47 aún
-requiere sus propias verificaciones de navegador y publicación.
+tolerancias ni se convierte ese resultado en PASS. La publicación 1.7.47 tiene
+las verificaciones de navegador y publicación indicadas abajo; estos oracles
+previos mantienen su fuente y resultado.
 
 La CI original de 1.7.46 (`37216005998`, fuente
 `77de3f779c53560a564f3094e00b2419da7e0bad`) permanece **FAILED**: 519 de 524
@@ -105,9 +106,32 @@ Los textos de los seis libros vuelven a su resolución de 1.024 px al terminar;
 las luces, las selecciones y el mapa de interacción siguen funcionando.
 Esto prueba reducción de trabajo; no mide FPS ni fluidez de un teléfono.
 
-## Verificación pendiente
+## Publicación y CI original
 
-Los resultados de CI y de la publicación final se incorporarán tras ejecutarse.
-Siguen pendientes la comprobación del teléfono físico y la sesión real de
-Google. La APK 1.1.4 continúa cargando la publicación web mediante su loader;
-las verificaciones anteriores mantienen su fuente y alcance propios.
+Fuente `65103b1828785424b80e90fe49f3e5155f723b2c`, Pages
+`4ea9b9317124ff51d6a1749792ffc648bc73264a`. Los 23 módulos y 44 recursos
+offline coinciden por HTTP con esa publicación. El entry real
+`main-CHz20UWB.js` tiene 1.444.383 bytes y SHA-256
+`a2f5f3ebe052364b56e7fdf4fa5fe87271a114f6ffabb0ca591359cf64ae7808`.
+
+Pasan los 18 casos PDF sobre la web pública, sin reintentos, con 310 cuerpos
+HTTP comprobados y 15 capturas. Los tres casos adicionales del editor y entrega
+nativa también pasan sobre los archivos públicos, conservando sus plazos y
+assertions; se comprueban 50 cuerpos HTTP adicionales. La primera preparación
+del runner público conservaba una URL local incorrecta: se corrigió sólo esa
+navegación antes de ejecutar el navegador, preservando la preparación fallida.
+
+La CI original `37219016807` conserva **FAILED**. Sus dos contratos nuevos de
+devolución llegan al límite global de treinta segundos; esto interrumpe el
+cierre y no acredita un resultado de su assertion de ocho segundos. Un caso
+original de selección en el respaldo falla en su primer intento y pasa al
+reintentar: permanece **flaky**, no aprobado. Los otros jobs de navegador,
+unitarias y voces concluyen con éxito. La colección completa conserva los logs,
+ZIP e intentos originales por separado de las pruebas locales y públicas.
+
+La APK descargada de nuevo sigue siendo 1.1.4, código 17, 78.515.243 bytes,
+SHA-256 `feafaaa762b35344ac8b19418f9f6eb6cb1f725fba22b1ef3d3f273bd32a6191`.
+Su inventario público contiene el loader exacto de 2.089 bytes y dos stubs
+vacíos. Es la misma APK firmada anterior; no constituye una captura Android
+nueva de esta web. Siguen pendientes el teléfono físico y la sesión real de
+Google.

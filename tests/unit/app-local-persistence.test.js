@@ -263,12 +263,19 @@ describe('cover extraction belongs to the reader session', () => {
     let finish
     const close = vi.fn()
     vi.stubGlobal('createImageBitmap', vi.fn(() => new Promise(resolve => { finish = resolve })))
-    const preparing = state.options.onPrepareBook(await state.library.get(book.id), { settled:Promise.resolve() })
+    // HD extraction starts after the real reader transition, not selection.
+    await state.options.onPrepareBook(await state.library.get(book.id), { settled:Promise.resolve() })
+    const preparing = state.options.onBookOpen(await state.library.get(book.id), {
+      close:vi.fn(), finish:vi.fn(async () => true)
+    })
     await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
     const requested = state.reader.getCoverBlob.mock.calls.length
     ++state.reader.epoch
     finish({ width:200, height:300, close })
     await preparing
+    // The upgrade is now background work. Let its resolved size check finish
+    // before inspecting the original epoch guard; opening itself does not await it.
+    await new Promise(resolve => setTimeout(resolve, 0))
     expect(close).toHaveBeenCalledOnce()
     expect(state.reader.getCoverBlob).toHaveBeenCalledTimes(requested)
     expect(await (await state.library.get(book.id)).cover.text()).toBe('small-cover')

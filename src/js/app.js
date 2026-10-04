@@ -734,7 +734,6 @@ function prepareBookOpen(book, { settled } = {}) {
     if (generation !== preparationGeneration) return false
     activePreparedBookId = opened ? book.id : null
     markTiming('engine-opened')
-    if (opened) await extractCoverInBackground(await library.get(book.id) || updated)
     if (opened) await preparePageStage(book.id, generation, gate)
     return opened
   })
@@ -1298,7 +1297,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.7.47'
+els.appVersion.textContent = 'Inhouse Read · v1.7.48'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')
