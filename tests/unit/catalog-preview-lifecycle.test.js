@@ -73,6 +73,27 @@ afterEach(() => {
 });
 
 describe.each(cases)('%s catalog studio suspension',(_name,create,selection) => {
+  it('keeps stationary bounds and backing buffers through repeated draws, while a real resize still reframes',() => {
+    const host = document.createElement('div'); document.body.append(host);
+    let width = 200; host.getBoundingClientRect = () => ({ width,height:300 });
+    const preview = create(host); previews.push(preview); preview.update(selection);
+    const draw = () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(16)); };
+    draw();
+    const renderer = resources.renderers[0];
+    const bounds = vi.spyOn(THREE.Box3.prototype,'setFromObject');
+    for (let index = 0; index < 3; index++) { preview.setActive(false); preview.setActive(true); draw(); }
+    expect(renderer.render).toHaveBeenCalledTimes(4);
+    expect(renderer.setSize).toHaveBeenCalledTimes(1);
+    expect(bounds).not.toHaveBeenCalled();
+    preview.setActive(true);
+    expect(frames.size).toBe(0);
+    width = 240; observers.forEach(notify => notify()); draw();
+    expect(renderer.setSize).toHaveBeenLastCalledWith(240,300,false);
+    expect(renderer.setSize).toHaveBeenCalledTimes(2);
+    expect(renderer.render).toHaveBeenCalledTimes(5);
+    expect(resources.models).toHaveLength(1);
+  });
+
   it('cancels hidden draws and resize/texture notifications, then redraws with the same GPU/model at the new size',() => {
     const host = document.createElement('div'); document.body.append(host);
     let width = 200;
@@ -105,5 +126,25 @@ describe.each(cases)('%s catalog studio suspension',(_name,create,selection) => 
     expect(host.childNodes).toHaveLength(0);
     preview.setActive(true); observers.forEach(notify => notify());
     expect(frames.size).toBe(0);
+  });
+});
+
+describe('stationary lamp catalogue shadows',() => {
+  it('draws its full shadow for a new selection and reuses it while resizing the view',() => {
+    const host = document.createElement('div'); document.body.append(host);
+    host.getBoundingClientRect = () => ({ width:200,height:300 });
+    const preview = createLampCatalogPreview(host); previews.push(preview);
+    preview.update({ lampId:'mittled' });
+    const renderer = resources.renderers[0];
+    expect(renderer.shadowMap.autoUpdate).toBe(false);
+    expect(renderer.shadowMap.needsUpdate).toBe(true);
+    // The actual renderer consumes this flag after the original full pass.
+    renderer.shadowMap.needsUpdate = false;
+    const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(16));
+    observers.forEach(notify => notify());
+    const resize = [...frames.values()]; frames.clear(); resize.forEach(callback => callback(32));
+    expect(renderer.shadowMap.needsUpdate).toBe(false);
+    preview.update({ lampId:'tripod' });
+    expect(renderer.shadowMap.needsUpdate).toBe(true);
   });
 });

@@ -7,6 +7,7 @@ import { createShelfLampLighting } from './shelf-lamp-lighting.js';
 /** The actual shelf lamp, with its own warm light and reflected studio lighting. */
 export function createLampCatalogPreview(host) {
   let renderer, environment, model, observer, fixture, target, filamentLighting, frame = 0, disposed = false, active = true, selected;
+  let paintedWidth = NaN, paintedHeight = NaN;
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-160,160,180,-180,1,5000);
   const display = new THREE.Group(); scene.add(display);
@@ -25,7 +26,10 @@ export function createLampCatalogPreview(host) {
     camera.left = -half * aspect; camera.right = half * aspect;
     camera.top = half; camera.bottom = -half; camera.updateProjectionMatrix();
     filamentLighting?.update([{ kind:'lamp',key:'catalog-filaments',model,width:size.x }]);
-    renderer.setSize(width,height,false); renderer.render(scene,camera);
+    if (width !== paintedWidth || height !== paintedHeight) {
+      renderer.setSize(width,height,false); paintedWidth = width; paintedHeight = height;
+    }
+    renderer.render(scene,camera);
     host.dataset.renderCount = String(Number(host.dataset.renderCount || 0) + 1);
   }
   function invalidate() {
@@ -52,6 +56,8 @@ export function createLampCatalogPreview(host) {
     renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1,2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Main-camera resize and reopening do not move these stationary casters.
+    renderer.shadowMap.autoUpdate = false;
     renderer.domElement.setAttribute('aria-hidden','true');
     renderer.domElement.addEventListener('webglcontextlost',event => {
       event.preventDefault(); if (!disposed) unavailable();
@@ -81,8 +87,10 @@ export function createLampCatalogPreview(host) {
   return {
     setActive(value) {
       if (disposed) return;
-      active = Boolean(value);
-      host.dataset.previewActive = String(active);
+      const next = Boolean(value);
+      host.dataset.previewActive = String(next);
+      if (active === next) return;
+      active = next;
       if (!active) { if (frame) cancelAnimationFrame(frame); frame = 0; }
       else invalidate();
     },
@@ -93,6 +101,7 @@ export function createLampCatalogPreview(host) {
       host.dataset.warmKelvin = String(lamp.warmKelvin);
       if (disposed || !renderer || selected === lamp.id) return;
       selected = lamp.id; removeModel(); display.position.set(0,0,0);
+      renderer.shadowMap.needsUpdate = true;
       model = createShelfLamp({ lampId:lamp.id,width:lamp.dimensions.width,quality:'high' });
       model.userData.invalidate = invalidate;
       model.traverse(object => {

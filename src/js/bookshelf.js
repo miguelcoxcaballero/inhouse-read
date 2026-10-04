@@ -3341,6 +3341,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       });
       await waitForMotion(back, approachDuration);
       if (dockingPose && !state.destroyed && state.session === session) {
+        view.releaseToSnapshot?.();
         const insertion = state.shelfScene?.returnBook(spineEl, { duration:returnDuration - approachDuration, overlayCanvas:view.canvas });
         session.insertion = insertion;
         if (insertion) {
@@ -3480,6 +3481,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       // Whatever ended the zoom, the book hands over in the reader's own colours.
       if (view && view.getPageTheme() < 1) view.setPageTheme(1);
       flyout.dataset.openingPhase = 'handoff';
+      // The handoff fades this host. Commit its last frame once so the live
+      // sibling cannot remain opaque; the retained view resumes GPU presentation
+      // when it is moved into the closing animation's new host.
+      view?.releaseToSnapshot?.({ resume:true });
       const fadeDuration = prefersReducedMotion() ? 1 : 140;
       const fade = animate(bookNode, [{ opacity:1 }, { opacity:0 }], { duration:fadeDuration, easing:'linear', fill:'both' });
       animate(scrim, [{ opacity:1 }, { opacity:0 }], { duration:fadeDuration, easing:'linear', fill:'both' });
@@ -3805,6 +3810,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       await waitForMotion(animation, approachDuration);
       if (state.returnMotion === motion && view && dockingPose && !state.destroyed) {
         flyout.dataset.returnPhase = 'inserting';
+        view.releaseToSnapshot?.();
         insertion = state.shelfScene?.returnBook(spine, { duration:duration - approachDuration, overlayCanvas:view.canvas });
         if (insertion) {
           await waitForMotion(insertion, duration - approachDuration);

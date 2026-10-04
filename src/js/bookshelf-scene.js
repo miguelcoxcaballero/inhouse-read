@@ -859,7 +859,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   }
 
   function updateRecord(entry, book, style, coverUrl, dimensions = null) {
+    const previousKeys = entry.model?.userData.shelfKeys || materialKeys(entry);
     const oldDimensions = [entry.width, entry.height, entry.thickness];
+    const oldPosition = [entry.x, entry.y, entry.depthInset, entry.shelf];
     const baseline = entry.y + entry.height / 2;
     const previousRatio = entry.width / entry.height;
     const baseHeight = entry.height / (Number(entry.style.heightRatio) || 1);
@@ -883,6 +885,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (changedShape || entry.replacement) replaceWhenReady(entry);
       else updateMaterials(entry);
     }
+    const nextKeys = materialKeys(entry);
+    // Saving metadata or completing an equivalent analysis does not alter
+    // the painted room. Retain the latest record without shading and copying
+    // that same room again; real shape, position and material changes redraw.
+    return Boolean(entry.replacement) || oldDimensions.some((value,index) =>
+      value !== [entry.width, entry.height, entry.thickness][index]) || oldPosition.some((value,index) =>
+      value !== [entry.x, entry.y, entry.depthInset, entry.shelf][index]) ||
+      Object.keys(nextKeys).some(key => previousKeys[key] !== nextKeys[key]);
   }
 
   // Both shelves keep their real, fixed depth: nothing grows the furniture.
@@ -993,7 +1003,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     furniture.scale.setScalar(zoom);
     furniture.position.set(baseX*factor + (1-factor)*sceneWidth/2 + panX*progress,
       baseY*factor - (1-factor)*sceneFitHeight/2 - panY*progress,0);
-    furniture.updateMatrixWorld(true);
+    // Only the room's root is needed to project the entries below. Updating
+    // every descendant here computes their previous pose, immediately before
+    // each entry updates its new pose and the renderer walks the scene again.
+    furniture.updateWorldMatrix(false, false);
     // Matrix arithmetic can produce fitHeight + 1e-12; do not round that
     // into a new CSS pixel and recreate a scrollbar in the fitted overview.
     const objectHeight = Math.ceil(bounds.height + padding * 2 - 1e-7);
@@ -1416,11 +1429,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const lamps = bookEntries.filter(entry => entry.kind === 'lamp' && entry.mount === 'undershelf' &&
       entry.node && entry.model?.visible && !entry.flags.away && !entry.flags.dragging && !entry.trashDrop);
     if (!lamps.length) return;
-    furniture.updateMatrixWorld(true); camera.updateMatrixWorld();
+    camera.updateMatrixWorld();
     const origin = frameLayout.stage, bounds = frameLayout.canvas;
     if (!bounds.width || !bounds.height) return;
     const pickable = furniture.children.filter(object => object.visible && !object.userData.dropMarker &&
       !object.userData.entry?.node?.classList.contains('is-away'));
+    // The cache compares root matrices. Descendant matrices are needed only
+    // for a changed projection's raycasts, not for an unchanged lamp fade.
+    for (const object of pickable) object.updateWorldMatrix(false, false);
     // Recompute only when geometry moves or the viewport changes, never for a
     // lamp power fade. BAGGEBO's actual steel strands can cover a diffuser's
     // bounding-box centre even though another part is exposed through a hole.
@@ -1429,6 +1445,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       pickable.map(object => `${object.id}:${object.matrixWorld.elements}`).join('|');
     if (projection === lampTapProjection) return;
     lampTapProjection = projection;
+    furniture.updateMatrixWorld(true);
     const exposed = (entry, x, y) => {
       rayPointer.set((x - bounds.left) / sceneWidth * 2 - 1, 1 - (y - bounds.top) / viewportHeight * 2);
       raycaster.setFromCamera(rayPointer, camera);
@@ -2234,8 +2251,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         canvas.dataset.inspectionPendingEntries = String(inspectionEntryUpdates.size);
         return;
       }
-      updateRecord(entry, book, style, coverUrl);
-      invalidate(true, false, 'entry');
+      if (updateRecord(entry, book, style, coverUrl)) invalidate(true, false, 'entry');
     },
     updateLayout(next) {
       if (disposed) return false;

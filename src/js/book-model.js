@@ -1042,6 +1042,10 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   const pagePaper = new THREE.Mesh(paperGeometry,
     new THREE.MeshBasicMaterial({ color:'#ffffff', toneMapped:false, vertexColors:true }));
   pagePaper.position.set(inset * .3 - inset / 2, 0, pageFront);
+  // Fill depth with the opaque paper before shading the case beneath it.
+  // Materials and geometry are unchanged; hidden physical fragments can now
+  // fail the depth test, especially when the reading page fills the screen.
+  pagePaper.renderOrder = -2;
   pagePaper.visible = false;
   pagePaper.name = 'reading-page-paper'; group.add(pagePaper);
   // Both map and blending variants exist before the first flyout frame.
@@ -1065,6 +1069,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   const stockImage = new THREE.Mesh(new THREE.PlaneGeometry(pageWidth, pageHeight), stockMaterial);
   stockImage.name = 'reading-page-stock';
   stockImage.position.set(inset * .3, 0, pageFront + board * .01);
+  stockImage.renderOrder = -1;
   stockImage.visible = false; group.add(stockImage);
   let pageTheme = 1, themeTone = null, stockTone = null;
   const paperScratch = new THREE.Color();
@@ -1475,17 +1480,18 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   return group;
 }
 
-let renderer, studioEnvironment;
+let renderer, studioEnvironment, presentationRenderer;
+const rendererEnvironments = new WeakMap();
 const rendererSize = new THREE.Vector2();
-export function getBookRenderer() {
+function createStudioRenderer(preserveDrawingBuffer = false) {
+  let renderer, studioEnvironment;
   if (!globalThis.WebGLRenderingContext && !globalThis.WebGL2RenderingContext) return null;
-  if (!renderer) try {
-    // Shelf, reader and insertion snapshots copy the frame synchronously
-    // after render. The GPU need not retain a second framebuffer between
-    // frames; their visible 2D canvases already own the captured pixels.
+  try {
+    // Snapshot consumers copy immediately after rendering. The presentation
+    // canvas preserves its last displayed frame for a later snapshot request.
     // Every consumer (bookView, the shelf and its insertion overlay) sets its
     // own pixel ratio and size before drawing, so no oversized buffer is allocated up front.
-    renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     // Preserve print colours and gently compress real specular highlights.
     // Unmapped studio radiance used to clip RGB channels on bright jackets.
@@ -1532,7 +1538,7 @@ export function getBookRenderer() {
     // Shelf covers face the room's rear-right side after the isometric turn.
     // Give their laminate a broad secondary window to reflect; the existing
     // front-left key still lights the print. This is baked into the shared
-    // environment once, adding no live light or reflection render pass.
+    // environment once per context, adding no live reflection render pass.
     glow(new THREE.PlaneGeometry(4, 6), [1, .98, .95], 2.2, [7, -1, -6.4]);
     glow(new THREE.PlaneGeometry(7, 2.2), [1, .96, .92], .9, [0, 9.4, -1]);
     const pmrem = new THREE.PMREMGenerator(renderer);
@@ -1540,14 +1546,38 @@ export function getBookRenderer() {
     room.traverse(object => { object.geometry?.dispose(); object.material?.dispose(); });
     pmrem.dispose();
     keepProgramsAlive(renderer);
-  } catch { return null; }
+  } catch { renderer?.dispose?.(); return null; }
+  rendererEnvironments.set(renderer, studioEnvironment);
+  return { renderer, environment:studioEnvironment };
+}
+
+export function getBookRenderer() {
+  if (!globalThis.WebGLRenderingContext && !globalThis.WebGL2RenderingContext) return null;
+  if (!renderer) {
+    const studio = createStudioRenderer();
+    if (!studio) return null;
+    renderer = studio.renderer; studioEnvironment = studio.environment;
+  }
   return renderer;
+}
+
+/** One persistent renderer presents the active flying book directly. Its
+ * studio is generated in its own context: a PMREM texture has GPU-only image
+ * data and cannot be uploaded into the shelf renderer's other context. */
+export function getPresentationBookRenderer() {
+  if (!globalThis.WebGLRenderingContext && !globalThis.WebGL2RenderingContext) return null;
+  if (!presentationRenderer) {
+    const studio = createStudioRenderer(true);
+    if (!studio) return null;
+    presentationRenderer = studio.renderer;
+  }
+  return presentationRenderer;
 }
 
 /** One warm reading-room rig for shelf, editor and opening/closing books.
  * The key matches the environment's window; shelf-lighting gives it shadows. */
-export function lightBookScene(scene) {
-  scene.environment = studioEnvironment;
+export function lightBookScene(scene, activeRenderer = renderer) {
+  scene.environment = rendererEnvironments.get(activeRenderer) || studioEnvironment;
   scene.environmentIntensity = .55;
   // Pale ceiling above, a muted bounce from the wooden floor below.
   scene.add(new THREE.HemisphereLight(0xf6f3ee, 0x5e5047, .5));
@@ -1630,10 +1660,36 @@ export function projectBookBoardBounds(model,camera,viewportWidth,viewportHeight
   return {left,top,width:Math.max(...points.map(point=>point.x))-left,height:Math.max(...points.map(point=>point.y))-top};
 }
 
-// One shared GPU context; individual canvases receive snapshots. No per-book
-// contexts, and the flyout uses exactly the same mesh builder as the shelf.
-export function bookView(host, book, style, { width, height, thickness, viewportWidth, viewportHeight, centerX, centerY, coverUrl, shelf = false, shelfView = 'spine', initialPose, deferDraw = false, compactReturnFrame = false }) {
-  const gpu = getBookRenderer(); if (!gpu) return null;
+// Shelf snapshots share one context. One additional persistent context presents
+// the active flyout; both use the same meshes, textures and studio lighting.
+let presentationOwner = null;
+const lazySnapshots = new WeakMap();
+let snapshotCopyHookInstalled = false;
+function registerLazySnapshot(canvas, capture) {
+  lazySnapshots.set(canvas,capture);
+  if (!snapshotCopyHookInstalled && globalThis.CanvasRenderingContext2D) {
+    const prototype=CanvasRenderingContext2D.prototype, drawImage=prototype.drawImage, getImageData=prototype.getImageData;
+    // drawImage reads a source canvas without calling its getContext. Export
+    // consumers must see the displayed frame just as getImageData/toBlob do.
+    prototype.drawImage=function(source,...args) {
+      lazySnapshots.get(source)?.();
+      return drawImage.call(this,source,...args);
+    };
+    // A caller may retain the 2D context while the live book keeps moving.
+    // Reading it later must materialize the latest frame as well.
+    prototype.getImageData=function(...args) {
+      lazySnapshots.get(this.canvas)?.();
+      return getImageData.apply(this,args);
+    };
+    snapshotCopyHookInstalled=true;
+  }
+  return () => lazySnapshots.delete(canvas);
+}
+export function bookView(host, book, style, { width, height, thickness, viewportWidth, viewportHeight, centerX, centerY, coverUrl, shelf = false, shelfView = 'spine', initialPose, deferDraw = false, compactReturnFrame = false, directPresentation = true }) {
+  const shared = getBookRenderer(); if (!shared) return null;
+  const directCapable = directPresentation && !shelf && typeof shared.getContext === 'function';
+  const gpu = directCapable ? getPresentationBookRenderer() || shared : shared;
+  let directEnabled = directCapable && gpu !== shared;
   // Shelf books are static snapshots. Keep their framebuffer modest on phones
   // so a long library does not retain a pile of high-DPI canvases in memory.
   const requestedPixelRatio = typeof devicePixelRatio === 'number' ? devicePixelRatio : 1;
@@ -1643,7 +1699,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   const canvas = document.createElement('canvas'); canvas.className = 'ihr-book-canvas'; canvas.setAttribute('aria-hidden', 'true');
   canvas.width = Math.ceil(viewportWidth * pixelRatio); canvas.height = Math.ceil(viewportHeight * pixelRatio);
   host.append(canvas); const context = canvas.getContext('2d');
-  const scene = lightBookScene(new THREE.Scene());
+  const scene = lightBookScene(new THREE.Scene(), gpu);
   let model = createBookModel(book, style, width, height, thickness, coverUrl, { shelf, eagerRelief:false }); scene.add(model);
   canvas.dataset.bookmark3d = String(Boolean(model.userData.hasBookmark));
   if (shelf) canvas.dataset.shelfView = shelfView;
@@ -1655,6 +1711,99 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   const compactCamera = camera.clone(), compactBox = new THREE.Box3(), compactPoint = new THREE.Vector3();
   const compactWidth = Math.min(viewportWidth, Math.ceil(((width * 2 + thickness) * 1.25 + 64) / 64) * 64);
   const compactHeight = Math.min(viewportHeight, Math.ceil((height * 1.45 + 64) / 64) * 64);
+  let copiedRectangle = null;
+  let displayedFrame = null, snapshotDirty = false, live = false, suspendedHost = null;
+  const outputContext = canvas.getContext.bind(canvas);
+  const outputURL = canvas.toDataURL.bind(canvas), outputBlob = canvas.toBlob.bind(canvas);
+  let unregisterSnapshot;
+  if (directEnabled) {
+    // Keep the full-resolution export/overlay canvas API. Its pixels are
+    // materialized only when a consumer requests them; animation frames go
+    // straight to the compositor, without synchronously reading back the GPU.
+    canvas.getContext = (type,...args) => { if (type === '2d') captureSnapshot(); return outputContext(type,...args); };
+    canvas.toDataURL = (...args) => { captureSnapshot(); return outputURL(...args); };
+    canvas.toBlob = (...args) => { captureSnapshot(); return outputBlob(...args); };
+    unregisterSnapshot=registerLazySnapshot(canvas,captureSnapshot);
+  }
+  function copyRectangle(frame, pose) {
+    const full = { x:0, y:0, width:canvas.width, height:canvas.height, full:true };
+    // Preserve the existing resampling when logical and physical pixels do
+    // not line up. Otherwise copy identical source pixels, without the large
+    // transparent area around a flying book.
+    if (![viewportWidth * pixelRatio, viewportHeight * pixelRatio,
+      frame.x * pixelRatio, frame.y * pixelRatio, frame.width * pixelRatio,
+      frame.height * pixelRatio].every(Number.isInteger)) return full;
+    model.updateMatrixWorld(true); camera.updateMatrixWorld(true);
+    compactBox.setFromObject(model);
+    let left=Infinity, top=Infinity, right=-Infinity, bottom=-Infinity;
+    for (const x of [compactBox.min.x,compactBox.max.x])
+      for (const y of [compactBox.min.y,compactBox.max.y])
+        for (const z of [compactBox.min.z,compactBox.max.z]) {
+          compactPoint.set(x,y,z).project(camera);
+          const px=(compactPoint.x+1)*viewportWidth/2, py=(1-compactPoint.y)*viewportHeight/2;
+          left=Math.min(left,px); right=Math.max(right,px);
+          top=Math.min(top,py); bottom=Math.max(bottom,py);
+        }
+    if (![left,top,right,bottom].every(Number.isFinite)) return full;
+    // Includes displaced cover relief and antialiased edges, at the same
+    // scale as the book. This does not crop the renderer or change its DPR.
+    const margin=Math.max(8,48*Math.abs(pose.scale));
+    const x=Math.max(0,frame.x*pixelRatio,Math.floor((left-margin)*pixelRatio));
+    const y=Math.max(0,frame.y*pixelRatio,Math.floor((top-margin)*pixelRatio));
+    const endX=Math.min(canvas.width,(frame.x+frame.width)*pixelRatio,Math.ceil((right+margin)*pixelRatio));
+    const endY=Math.min(canvas.height,(frame.y+frame.height)*pixelRatio,Math.ceil((bottom+margin)*pixelRatio));
+    return { x,y,width:Math.max(0,endX-x),height:Math.max(0,endY-y) };
+  }
+  function copyFrame(frame, full = false) {
+    const rectangle=full ? {x:0,y:0,width:canvas.width,height:canvas.height,full:true} : copyRectangle(frame,current);
+    if (copiedRectangle) context.clearRect(copiedRectangle.x,copiedRectangle.y,copiedRectangle.width,copiedRectangle.height);
+    if (rectangle.full) {
+      context.clearRect(0,0,canvas.width,canvas.height);
+      if (frame.camera === camera) context.drawImage(gpu.domElement,0,0,canvas.width,canvas.height);
+      else context.drawImage(gpu.domElement,frame.x*pixelRatio,frame.y*pixelRatio);
+    } else if (rectangle.width && rectangle.height) {
+      context.drawImage(gpu.domElement,rectangle.x-frame.x*pixelRatio,rectangle.y-frame.y*pixelRatio,
+        rectangle.width,rectangle.height,rectangle.x,rectangle.y,rectangle.width,rectangle.height);
+    }
+    copiedRectangle=rectangle; snapshotDirty=false;
+  }
+  function configureFrame(frame) {
+    if (gpu.getPixelRatio() !== pixelRatio) gpu.setPixelRatio(pixelRatio);
+    gpu.getSize(rendererSize);
+    if (rendererSize.x !== frame.width || rendererSize.y !== frame.height) gpu.setSize(frame.width,frame.height,false);
+  }
+  function positionPresentation(frame) {
+    const parent=canvas.parentElement?.parentElement;
+    if (!parent) return;
+    if (getComputedStyle(parent).position === 'static') parent.style.position='relative';
+    const parentRect=parent.getBoundingClientRect(), rect=canvas.getBoundingClientRect();
+    const scaleX=rect.width/viewportWidth, scaleY=rect.height/viewportHeight;
+    const node=gpu.domElement;
+    node.className='ihr-book-live-canvas'; node.setAttribute('aria-hidden','true');
+    node.style.cssText=`position:absolute;pointer-events:none;left:${rect.left-parentRect.left+frame.x*scaleX}px;top:${rect.top-parentRect.top+frame.y*scaleY}px;width:${frame.width*scaleX}px;height:${frame.height*scaleY}px`;
+    if (node.parentNode !== parent) parent.append(node);
+    canvas.style.opacity='0'; live=true;
+  }
+  const owner={
+    suspend() { captureSnapshot(); canvas.style.opacity=''; live=false; },
+    repaint() {
+      if (!disposed && displayedFrame && live) { configureFrame(displayedFrame); gpu.render(scene,displayedFrame.camera); positionPresentation(displayedFrame); }
+    }
+  };
+  function captureSnapshot() {
+    if (!snapshotDirty || !displayedFrame || disposed) return;
+    const other=presentationOwner;
+    if (!live || other !== owner) { configureFrame(displayedFrame); gpu.render(scene,displayedFrame.camera); }
+    copyFrame(displayedFrame,true);
+    if (other && other !== owner) other.repaint();
+  }
+  function releaseToSnapshot({ resume = false } = {}) {
+    captureSnapshot();
+    if (presentationOwner === owner) { gpu.domElement.remove(); presentationOwner=null; }
+    canvas.style.opacity=''; live=false;
+    suspendedHost=resume ? canvas.parentElement : null;
+    if (!resume) directEnabled=false;
+  }
   function returnFrame(pose) {
     const full = { x:0, y:0, width:viewportWidth, height:viewportHeight, camera };
     // Keep the full page during zoom. Afterwards use one fixed smaller buffer,
@@ -1688,6 +1837,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
 
   function draw(pose, { redraw = true } = {}) {
     if (disposed) return;
+    if (!redraw && snapshotDirty) captureSnapshot();
     if (pose.pageTheme != null) pageTheme = Math.max(0, Math.min(1, Number(pose.pageTheme) || 0));
     current = { ...pose, coverOpen:Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0)),
       bookmarkWithdraw:Math.max(0, Math.min(1, pose.bookmarkWithdraw ?? current?.bookmarkWithdraw ?? 0)), pageTheme };
@@ -1700,10 +1850,14 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     // The first explicit draw commits the complete, correctly aligned page.
     if (!redraw) return;
     waitingForFirstDraw = false;
-    if (gpu.getPixelRatio() !== pixelRatio) gpu.setPixelRatio(pixelRatio);
     const frame = returnFrame(pose);
-    gpu.getSize(rendererSize);
-    if (rendererSize.x !== frame.width || rendererSize.y !== frame.height) gpu.setSize(frame.width, frame.height, false);
+    const present=directEnabled && canvas.isConnected && canvas.parentElement !== suspendedHost &&
+      [viewportWidth*pixelRatio,viewportHeight*pixelRatio,frame.x*pixelRatio,frame.y*pixelRatio,
+        frame.width*pixelRatio,frame.height*pixelRatio].every(Number.isInteger);
+    if (present && presentationOwner !== owner) { presentationOwner?.suspend(); presentationOwner=owner; }
+    const previousOwner=present ? null : presentationOwner;
+    if (!present && presentationOwner === owner) { owner.suspend(); gpu.domElement.remove(); presentationOwner=null; }
+    configureFrame(frame);
     model.traverse(object => {
       for (const material of [].concat(object.material || [])) {
         for (const key of ['map', 'roughnessMap', 'metalnessMap', 'bumpMap']) {
@@ -1713,9 +1867,9 @@ export function bookView(host, book, style, { width, height, thickness, viewport
       }
     });
     gpu.render(scene, frame.camera);
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    if (frame.camera === camera) context.drawImage(gpu.domElement, 0, 0, canvas.width, canvas.height);
-    else context.drawImage(gpu.domElement, frame.x * pixelRatio, frame.y * pixelRatio);
+    displayedFrame=frame; snapshotDirty=true;
+    if (present) positionPresentation(frame);
+    else { copyFrame(frame); canvas.style.opacity=''; live=false; if (previousOwner && previousOwner !== owner) previousOwner.repaint(); }
     canvas.dataset.angle = String(pose.angle); canvas.dataset.renderer = 'three-mesh';
     canvas.dataset.coverOpen = String(current.coverOpen);
     canvas.dataset.pageTheme = String(pageTheme);
@@ -1927,7 +2081,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     raf = requestAnimationFrame(tick); return animation;
   }
   return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
-    deferDrawing() { if (!disposed) waitingForFirstDraw = true; },
+    deferDrawing() { if (!disposed) waitingForFirstDraw = true; }, releaseToSnapshot,
     setCompactReturnFrame(enabled) { compactReturnFrame = Boolean(enabled); },
     updateAppearance, updateSpineAppearance, updateCoverAppearance, prepareCoverRelief, setCoverRelief, updateEdgeAppearance, updateBookmark,
     setPageSnapshot, pageTextures, uploadPageTexture, compilePage, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
@@ -1935,7 +2089,11 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,
     animateCoverOpen, animateCoverClose, animateBookmark, alignToPage, animateToPage,
     animate:animateMotion,
-    dispose(removeCanvas = true) { cancel(); disposed = true; pendingModel?.userData.dispose(); model.userData.dispose(); if (removeCanvas) canvas.remove(); } };
+    dispose(removeCanvas = true) { cancel(); if (!removeCanvas) captureSnapshot();
+      unregisterSnapshot?.();
+      if (presentationOwner === owner) { gpu.domElement.remove(); presentationOwner=null; }
+      canvas.style.opacity=''; live=false; disposed = true;
+      pendingModel?.userData.dispose(); model.userData.dispose(); if (removeCanvas) canvas.remove(); } };
 }
 
 // Monotone Hermite interpolation: continuous velocity, no unwanted overshoot

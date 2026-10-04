@@ -10,6 +10,7 @@ const WALNUT_SURFACE = new URL('../assets/library/walnut-surface.webp',import.me
 /** The same cabinet geometry as the library, lit and rendered only on demand. */
 export function createShelfCatalogPreview(host) {
   let renderer, environment, model, observer, hemisphere, key, fill, frame = 0, disposed = false, active = true, selected;
+  let modelSize = null, paintedWidth = NaN, paintedHeight = NaN;
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-400,400,640,-640,1,5000);
   camera.position.set(0,0,2500); camera.lookAt(0,0,0);
@@ -22,11 +23,14 @@ export function createShelfCatalogPreview(host) {
     if (disposed || !active || !renderer || !model) return;
     const rect = host.getBoundingClientRect();
     const width = Math.max(1,rect.width), height = Math.max(1,rect.height), aspect = width / height;
-    const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
+    const size = modelSize ||= new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
     const half = Math.max(size.y / 2,size.x / (2 * aspect)) * 1.14;
     camera.left = -half * aspect; camera.right = half * aspect;
     camera.top = half; camera.bottom = -half; camera.updateProjectionMatrix();
-    renderer.setSize(width,height,false); renderer.render(scene,camera);
+    if (width !== paintedWidth || height !== paintedHeight) {
+      renderer.setSize(width,height,false); paintedWidth = width; paintedHeight = height;
+    }
+    renderer.render(scene,camera);
     host.dataset.renderCount = String(Number(host.dataset.renderCount || 0) + 1);
   }
   function invalidate() {
@@ -38,6 +42,7 @@ export function createShelfCatalogPreview(host) {
     if (typeof model.userData.dispose === 'function') model.userData.dispose();
     else model.userData.disposeGeometry?.();
     model = null;
+    modelSize = null;
   }
   let wood, backWood, darkWood;
   function walnutMaterials() {
@@ -88,8 +93,10 @@ export function createShelfCatalogPreview(host) {
   return {
     setActive(value) {
       if (disposed) return;
-      active = Boolean(value);
-      host.dataset.previewActive = String(active);
+      const next = Boolean(value);
+      host.dataset.previewActive = String(next);
+      if (active === next) return;
+      active = next;
       if (!active) { if (frame) cancelAnimationFrame(frame); frame = 0; }
       else invalidate();
     },

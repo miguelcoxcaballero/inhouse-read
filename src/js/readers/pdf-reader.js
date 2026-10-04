@@ -17,7 +17,7 @@ import { DEFAULT_READING_PREFERENCES, PDF_PAGE_FILTERS, READING_FONTS, READING_T
 import { hasUntrackedPDFImages, paintPDFTheme } from './pdf-page-theme.js'
 import { renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from './page-snapshot.js'
 import { mapTextLayer, mapTextNodes } from './speech-map.js'
-import { clearPDFReflow, pdfImageRects, populatePDFReflow } from './pdf-reflow.js'
+import { clearPDFReflow, pdfImageRects, preparePDFReflow } from './pdf-reflow.js'
 import { extractPDFText, mapPDFTextLayer } from './pdf-text.js'
 import { SPEECH_SPAN_CLASS, clearSpeechRange, installSpeechStyle, paintSpeechRange } from './speech-highlight.js'
 
@@ -447,12 +447,12 @@ export class PdfReader {
           let rects = pdfImageRects(page.imageCoordinates || [],source.width,source.height)
           if (!state.pageText.trim() || hasUntrackedPDFImages(operators,pdfjsLib.OPS) || !rects.length)
             rects = [{x0:0,y0:0,x1:source.width,y1:source.height}]
-          populatePDFReflow(reflow,state.textLayout,source,rects,viewport)
+          if (!await preparePDFReflow(reflow,state.textLayout,source,rects,viewport,valid)) return false
         } catch(error) {
           if (!valid() || error.name === 'RenderingCancelledException') return false
           throw error
         } finally { source.width = source.height = 0 }
-      } else populatePDFReflow(reflow,state.textLayout)
+      } else if (!await preparePDFReflow(reflow,state.textLayout,undefined,[],undefined,valid)) return false
       state.zoomed = false
       state.layoutWidth = this.#containerWidth()
       this.#textHeight = this.#container.clientHeight

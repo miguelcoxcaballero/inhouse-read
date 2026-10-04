@@ -14,18 +14,20 @@ const MAX_RETAINED = 160;
 // A driver that never reports completion must not hold the first frame back.
 const LINK_TIMEOUT = 15000;
 const retained = new WeakSet();
-let retainedCount = 0;
+const retainedCounts = new WeakMap();
 
 /** Pin every program the renderer currently holds so disposing the last
  * material that used one no longer deletes it. */
 export function retainPrograms(renderer) {
   const programs = renderer.info.programs;
+  let retainedCount = retainedCounts.get(renderer) || 0;
   for (let index = 0; index < programs.length && retainedCount < MAX_RETAINED; index++) {
     const program = programs[index];
     if (retained.has(program)) continue;
     retained.add(program); retainedCount++;
     program.usedTimes++;
   }
+  retainedCounts.set(renderer,retainedCount);
 }
 
 /** three offers no program-cache hook: pin whatever each render created. */
