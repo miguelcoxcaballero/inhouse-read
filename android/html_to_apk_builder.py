@@ -1611,6 +1611,7 @@ public class MainActivity extends BridgeActivity {{
     private NativeInferenceBridge inferenceBridge;
     private boolean readingMode = false;
     private boolean activityResumed = false;
+    private Boolean appliedReadingDisplay = null;
     @Override public void onDestroy() {{
         if (speechBridge != null) speechBridge.close();
         if (pcmBridge != null) pcmBridge.close();
@@ -1681,8 +1682,13 @@ public class MainActivity extends BridgeActivity {{
         controller.setSystemBarsBehavior(active
             ? WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             : WindowInsetsControllerCompat.BEHAVIOR_DEFAULT);
-        if (active) controller.hide(WindowInsetsCompat.Type.statusBars());
-        else controller.show(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.navigationBars());
+        // Reapplying hide on a focus change can dismiss the system media shade.
+        // Keep the requested policy until the reading/lifecycle mode changes.
+        if (appliedReadingDisplay == null || appliedReadingDisplay != active) {{
+            if (active) controller.hide(WindowInsetsCompat.Type.statusBars());
+            else controller.show(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.navigationBars());
+            appliedReadingDisplay = active;
+        }}
         View root = findViewById(android.R.id.content);
         if (root != null) ViewCompat.requestApplyInsets(root);
     }}
@@ -2053,6 +2059,7 @@ class MainActivity : BridgeActivity() {{
     private var inferenceBridge: NativeInferenceBridge? = null
     private var readingMode = false
     private var activityResumed = false
+    private var appliedReadingDisplay: Boolean? = null
     override fun onDestroy() {{
         speechBridge?.close()
         pcmBridge?.close()
@@ -2112,8 +2119,12 @@ class MainActivity : BridgeActivity() {{
         val controller = WindowInsetsControllerCompat(window, window.decorView)
         controller.systemBarsBehavior = if (active)
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE else WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
-        if (active) controller.hide(WindowInsetsCompat.Type.statusBars())
-        else controller.show(WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars())
+        // Keep focus changes from dismissing the system media shade.
+        if (appliedReadingDisplay != active) {{
+            if (active) controller.hide(WindowInsetsCompat.Type.statusBars())
+            else controller.show(WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars())
+            appliedReadingDisplay = active
+        }}
         findViewById<View>(android.R.id.content)?.let {{ ViewCompat.requestApplyInsets(it) }}
     }}
 

@@ -12,10 +12,12 @@ import android.media.AudioFocusRequest;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
+import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.os.Handler;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.PowerManager;
@@ -68,10 +70,15 @@ public final class NativePcmService extends Service {
         wake.setReferenceCounted(false);
         ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(new NotificationChannel(CHANNEL, "Audiolibro natural", NotificationManager.IMPORTANCE_LOW));
         media = new MediaSession(this, "InhouseReadNatural");
+        media.setPlaybackToLocal(attributes());
+        media.setSessionActivity(launchActivity());
         media.setCallback(new MediaSession.Callback() {
             @Override public void onPlay() { resumeControl(); }
             @Override public void onPause() { if (currentOwner()) pausePlayback(true); }
             @Override public void onStop() { if (currentOwner()) stopPlayback(true); }
+            @Override public void onCustomAction(String action, Bundle extras) {
+                if (STOP.equals(action) && currentOwner()) stopPlayback(true);
+            }
         });
     }
     private boolean currentOwner() {
@@ -107,10 +114,16 @@ public final class NativePcmService extends Service {
         return START_NOT_STICKY;
     }
     private boolean activate() {
+        // System UI reads these from the session, not the notification labels.
+        // Publish a complete session before its first MediaStyle notification.
+        media.setMetadata(new MediaMetadata.Builder()
+            .putString(MediaMetadata.METADATA_KEY_TITLE, title)
+            .putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, title)
+            .putString(MediaMetadata.METADATA_KEY_ARTIST, "Inhouse Read").build());
+        updateMedia(true); media.setActive(true);
         if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION, notification(true), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
         else startForeground(NOTIFICATION, notification(true));
         active = true; if (!wake.isHeld()) wake.acquire();
-        media.setActive(true); updateMedia(true);
         if (focus != null) audio.abandonAudioFocusRequest(focus);
         final long focusToken = ++focusGeneration;
         final String focusSession = session;
@@ -126,12 +139,14 @@ public final class NativePcmService extends Service {
         return true;
     }
     private static AudioAttributes attributes() { return new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build(); }
-    private Notification notification(boolean playing) {
+    private PendingIntent launchActivity() {
         Intent launch = getPackageManager().getLaunchIntentForPackage(getPackageName());
-        PendingIntent content = PendingIntent.getActivity(this, 0, launch, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        return PendingIntent.getActivity(this, 0, launch, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+    private Notification notification(boolean playing) {
         return new Notification.Builder(this, CHANNEL).setSmallIcon(R.mipmap.ic_launcher).setContentTitle(title)
             .setContentText(playing ? "Voz natural · Reproduciendo" : "Voz natural · En pausa")
-            .setContentIntent(content).setOnlyAlertOnce(true).setOngoing(playing)
+            .setContentIntent(launchActivity()).setOnlyAlertOnce(true).setOngoing(playing)
             .setCategory(Notification.CATEGORY_TRANSPORT)
             .addAction(playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play, playing ? "Pausar" : "Continuar", action(playing ? PAUSE : PLAY, 1))
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Detener", action(STOP, 2))
@@ -144,6 +159,7 @@ public final class NativePcmService extends Service {
     }
     private void updateMedia(boolean playing) {
         media.setPlaybackState(new PlaybackState.Builder().setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_STOP | PlaybackState.ACTION_PLAY_PAUSE)
+            .addCustomAction(new PlaybackState.CustomAction.Builder(STOP, "Detener", android.R.drawable.ic_menu_close_clear_cancel).build())
             .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, 0, playing ? 1 : 0).build());
     }
     private void resumeControl() {

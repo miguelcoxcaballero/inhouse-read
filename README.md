@@ -4,11 +4,15 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.38
+
+La sesión multimedia Android recibe el título, la ruta local y el estado antes de publicar su notificación. Detener tiene también una acción de sesión compatible con los controles modernos. El lector conserva su política de barras entre cambios de foco, sin volver a ocultarlas cada vez que se abre el panel del sistema. La APK 1.1.4 requiere una captura completa nueva antes de publicarse.
+
 ### Actualización web · 1.7.37
 
 La nueva APK ejecuta ONNX en un hilo nativo, con los mismos modelos descargados de Piper, Nakdimon y Supertonic y el procesamiento PCM original. Los resultados reales vuelven al lector por el puente de Android; la síntesis deja de depender de la entrega de mensajes a un worker oculto. El navegador y las APK anteriores conservan el worker web. El código no activa voces del dispositivo ni cambia de voz.
 
-La candidata pasa 2.612 unitarias y comprobaciones de ONNX Java real: seis casos Piper (Lessac, neerlandés y Argentina, a 1×/1,25×) y 66 Supertonic (22 idiomas × tres perfiles base). Son pruebas de escritorio, sin acreditar todavía la pantalla apagada Android. La APK 1.1.4 permanece pendiente del gate nativo original.
+La web publicada pasa 2.612 unitarias, 21 E2E locales y seis casos sobre sus archivos HTTP reales. ONNX Java real pasa seis casos Piper (Lessac, neerlandés y Argentina, a 1×/1,25×) y 66 Supertonic (22 idiomas × tres perfiles base). La captura Android original completa 367.915 ms bloqueado, avanza por 23 capítulos y reproduce 30,73 segundos de PCM durante los últimos 30 segundos. El conjunto conserva FAILED porque no encuentra Pausar en la notificación después de despertar. No se ha publicado esa APK; las pruebas de escritorio no acreditan rendimiento ni calidad acústica en un teléfono físico.
 
 ### Actualización web · 1.7.36
 

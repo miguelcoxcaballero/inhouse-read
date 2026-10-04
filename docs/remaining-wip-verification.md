@@ -1,4 +1,18 @@
-# Verificación del WIP — web 1.7.36 publicada; 1.7.37 en preparación; Android 1.1.4 pendiente
+# Verificación del WIP — web 1.7.37 publicada; 1.7.38 en preparación; Android 1.1.4 pendiente
+
+## Candidata 1.7.38: controles multimedia Android
+
+La sesión recibe metadata del libro y estado antes de startForeground, identifica la ruta local y permite abrir la Activity real. La acción Detener también se publica como custom action de PlaybackState, porque los controles modernos se derivan de la sesión. Java y Kotlin sólo cambian la visibilidad de las barras cuando cambia el modo de lectura/lifecycle; los callbacks de foco mantienen su política sin repetir hide sobre el panel del sistema. Estas correcciones requieren una captura nativa nueva con los mismos gates y plazos.
+
+## Verificación de 1.7.37
+
+Fuente `b45a891d8acd6b69afebe7e8b6b00fc80e3edb3b`, Pages `25b2c651445eb1054b315c446e9d9dd3093489c8`. Coinciden por HTTP 23 módulos y 44 recursos offline; certificado `925954ddb5666674ec71d318b6cc99b0a6209be472dddefce594faa09ffa1475`. Seis casos públicos pasan sin omisiones ni reintentos, con 131 cuerpos HTTP y cuatro capturas revisadas; certificado `c69621c7eba4acde91ae7817f13ec9c9748242eb52d58496fa9ad1f1f0fe0baa`. Pasan 2.612 unitarias en 168 archivos, 21 E2E locales finales y las 75 comprobaciones Python originales. La auditoría completa de CI `37164356602` permanece separada.
+
+Android original `37164475709` conserva FAILED, ahora por el control Pausar de la notificación tras despertar. Sí supera el gate original de continuidad: 367.915 ms bloqueado, capítulos 0–22, 135 starts/134 dones y 30,726 segundos de PCM en los últimos 30 segundos. No usa recuperación después de despertar. El ZIP original autenticado contiene 8.528.126 bytes y 109 miembros, SHA `91395bcb548f68a6688bd4aac23de6947323f85b343a6758dba06269bfb4b2dd`; certificado de captura `9543a3e8b0e55eb4143c19788ab2a1c7c19e0a4ade86fa53d234346ba19826db`. No hay release ni manifiesto nuevos. Los gates posteriores de detener, cleanup y PDF no se alcanzan.
+
+El perfil local del cierre a DPR 2 termina en 10.023 ms y falla el plazo original de ocho segundos. La creación del modelo ocupa unos 18 ms; predominan las esperas al copiar el framebuffer GPU. La candidata aislada de framebuffer recortado también falla ese plazo y no se publica como corrección. Las primeras copias aisladas omitían plugins Vite de producción: su error CBZ no se atribuye al lector publicado. Los ensayos posteriores conservan el build fiel y sus fallos.
+
+Google permanece sin sesión autenticada disponible: el preflight público no demuestra permisos, token, subida ni sincronización real.
 
 ## Candidata 1.7.37: inferencia nativa de voces
 
