@@ -1,4 +1,16 @@
-# Verificación del WIP — rendimiento local de web 1.7.54 y Android 1.1.4
+# Verificación del WIP — preparación de web 1.7.55 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.55
+
+La devolución evita dibujar y copiar la página antigua en un host desconectado
+antes de actualizar el marcapáginas. Pasan 130 casos funcionales aislados y
+16 pares RGBA/PNG exactos en ambas densidades. La fuente final pasa 2.980
+unitarias en 219 archivos, build y 75 comprobaciones Python. El censo original
+mantiene 524 E2E; el listado no se cuenta como ejecución. Los siete recorridos
+locales originales pasan al primer intento; cierres 4.369,5 y 6.109,5 ms dentro
+de los plazos originales. Pendiente la comprobación de publicación real y CI.
+Los fallos de métodos y versiones anteriores conservan su propio estado.
+Detalle en [Rendimiento de 1.7.55](performance-1755.md).
 
 ## Cambios de rendimiento de 1.7.54
 
@@ -8,7 +20,13 @@ pares gráficos exactos en ambas densidades. La fuente está incorporada y su
 batería final pasa 2.972 unitarias en 217 archivos, build y 75 comprobaciones
 Python y siete recorridos locales originales al primer intento. Sus cierres
 nativos registran 4.925,6 y 6.133,1 ms con los plazos originales intactos.
-Publicada actualmente: 1.7.53; 1.7.54 preparada para publicar.
+Publicada: 1.7.54, con HTTP, APK/loader y 18 recorridos PDF públicos PASS.
+Los tres recorridos públicos de editor/regreso conservan FAILED: editor pasa,
+alineado termina el cierre dentro de ocho segundos pero agota el global de
+treinta segundos después, y legacy incumple el plazo completo de cierre.
+La CI original UI3 conserva cuatro fallos durante apertura antes de Back;
+la colección completa de los demás jobs sigue pendiente. Estos ámbitos
+permanecen separados de los siete recorridos locales PASS.
 Ámbitos y controles en [Rendimiento de 1.7.54](performance-1754.md).
 
 ## Cambios de rendimiento de 1.7.53
@@ -23,7 +41,11 @@ nativos registran 4.638,7 y 6.147,8 ms con los plazos originales intactos.
 La web publicada pasa HTTP, APK recién descargada, loader y los 21 recorridos
 originales al primer intento. La CI original conserva FAILED en UI3: cuatro
 fallos del cierre8 completo; pasan selección y apertura, sin truncado global30.
-La recogida de los demás jobs sigue en marcha.
+La CI completa conserva FAILED: 521 expected, dos unexpected y un flaky entre
+524 identidades, 527 intentos, cinco fallidos y tres retries. UI1 falla en su
+primer intento de importación Android y pasa en su retry; el snapshot acredita
+una aparición transitoria del cierre, pero no mide su final. Se conservan los
+doce logs y once ZIP originales.
 Los errores de método y las CI fallidas anteriores conservan su estado propio.
 Detalle en [Rendimiento de 1.7.53](performance-1753.md).
 

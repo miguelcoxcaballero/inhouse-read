@@ -71,5 +71,55 @@ veinte composiciones sin nuevos renders de escena, dos escrituras de buffer,
 de escritorio; no se atribuyen a un teléfono. Evidencia
 `local-browser-attempt1/summary.json`.
 
-Pendientes: CI original y comprobación de web y APK publicados.
-Los fallos anteriores conservan su propio estado.
+## Publicación comprobada y fallos públicos originales
+
+La fuente publicada es `05db048f9b4ddb07f4d24ad1d86cb75f2e770635`, con Pages
+`e9532457ab6d16b5b119bf4562e11b35946c1e34`. HTTP pasa contra los objetos Git
+de Pages: 23 módulos del grafo y 44 archivos del shell. El main recibido es
+`main-dVFKszgL.js`, SHA
+`e5c99c95f6bb378b42a51901ecbac59cbc4b2604696d7e5b35faf638d62c82ac`.
+La descarga del APK y su loader pasan: conservan exactamente el APK firmado
+1.1.4 y su loader de 2.089 bytes. Es comprobación de bytes públicos, sin nueva
+captura en dispositivo ni nueva ejecución de verificación de firma.
+
+Los 18 casos PDF originales públicos pasan al primer intento, retries 0,
+contra 308 cuerpos HTTP de la aplicación atribuidos al mismo Pages.
+Certificado `public-05db048-attempt1/browser-attempt1/certification.json`, SHA
+`e4685387ec1755dd22ac91fc6db0465a8b4c6c8bb111517aead065a06a9a72b9`.
+
+Los tres casos públicos de rendimiento conservan **FAILED**: uno pasa y dos
+fallan, con exit 1 tanto del runner como del auditor, retries 0. El cierre
+alineado observado acaba en 6.947 ms y su espera original de ocho segundos
+pasa; el caso falla después por el límite global de treinta segundos al
+exportar, tras los dos RAF y la captura posterior al cierre. La espera backend
+del cierre legado sí agota los ocho segundos: 8.045,350 ms, con error. No hay
+attachment de fin para atribuirle un tiempo DOM exacto de cierre. La captura
+posterior restaurada no cambia el fallo original ni identifica su fase causal.
+
+Los originales, trazas, cuerpos HTTP y tiempos backend están sellados en
+`public-05db048-failure-review-attempt1/certificate.json`, SHA
+`f8ddfa222d1a845dbc08eff5c1cef90b4be790c60e561fa6d381c2d5e4a7b30a`.
+Los pases HTTP, APK y PDF no convierten estos dos fallos en pases.
+
+## CI54 original: evidencia temprana y colección pendiente
+
+El run original `37235346810`, attempt 1, conserva fuente y conteos de 1.7.54.
+UI3 termina FAILED: 40 casos, 42 intentos, 38 pases y dos casos inesperados;
+cuatro intentos fallidos, dos retries, cero flaky, skips o errores globales del
+reporte. Los cuatro intentos nativos fallan **antes de Back**, esperando que
+`.pdf-page-canvas` sea visible; no ejecutan ningún click en `#reader-back`.
+Las esperas backend originales son 8.005,883 y 8.008,089 ms para el alineado,
+y 8.008,046 y 8.006,786 ms para el legado. También consta el límite global de
+treinta segundos. Estos fallos de apertura no son mediciones del cierre.
+
+ZIP original autenticado SHA
+`cce299ead5bd8ecdf992322d3d697cf45f75901a6ccd88450f451a0196fb003f`;
+resumen temprano `failure-ui3-05db048-first-early-method2/summary.json`, SHA
+`4145145280a09396de1494f6cd837c9d7390698c306ed65387fd29fc94b51539`.
+La revisión de llamadas originales queda en `native-call-review-attempt1/review.json`,
+SHA `3c251a563a3c6e51389f46222b85dc43dc173021870ae2dbbc12a738b2dc20e3`.
+No se atribuyen costes GPU o de funciones internas a esos intervalos del trace.
+
+Sigue pendiente la colección completa de CI54: los doce logs y once ZIPs,
+censo de todas las identidades y conservación de cualquier otro fallo o retry.
+CI53 y los resultados posteriores de 1.7.55 conservan evidencias distintas.

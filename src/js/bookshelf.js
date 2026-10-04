@@ -3705,7 +3705,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (state.destroyed || state.lastOpened !== previous || window.innerWidth !== vw || window.innerHeight !== vh) {
       cachedView?.dispose(); return false;
     }
-    if (cachedView) { bookNode.append(cachedView.canvas); cachedView.updateBookmark(book); }
+    if (cachedView) { cachedView.deferDrawing?.(); bookNode.append(cachedView.canvas); cachedView.updateBookmark(book); }
     const view = cachedView || bookView(bookNode, book, previous.style, {
       width:coverW, height:coverH, thickness, viewportWidth:vw, viewportHeight:vh,
       centerX, centerY, coverUrl,

@@ -119,7 +119,26 @@ y `108f8225b4ffcf95a983711a6573a4ee0addd215a5bc8cbca86ea5797997f06d`.
 La narración PDF usa el motor controlado para comprobar posiciones;
 las voces naturales mantienen sus pruebas originales de CI separadas.
 
-La CI original `37234373476`, attempt 1, conserva FAILED en UI3. Sus 40 casos
+## CI original completa
+
+La CI original `37234373476`, fuente
+`22cf96b4306b460299f198cefb24dad07ad6c775`, attempt 1, termina FAILED.
+La recogida completa conserva los doce logs y once ZIP autenticados, con
+digest, tamaño y cada miembro extraído verificados. Las 2.910 unitarias en
+214 archivos pasan sin failed, pending o todo. Los 524 casos E2E únicos
+contienen 521 expected, dos unexpected y un flaky, cero skipped. Los 527
+intentos conservan cinco fallidos y tres retries originales. Sólo UI1 y UI3
+incumplen el gate estricto; los demás grupos pasan, incluidos los 220 casos
+Supertonic. El agregado conserva FAILED.
+
+El censo se deriva de los diez manifiestos y reportes originales subidos.
+Esta recogida no ejecuta un nuevo listado local ni pruebas. Certificado
+`ci-22cf96b-failed-original-collector-attempt1/snapshot-001/certification.json`,
+SHA `52dd7bc1fde2cbfaaae9e0cf34a9eb164d39ad2ccb4e0732ebba54a6bc29d140`.
+
+### UI3: cierre
+
+UI3 conserva FAILED. Sus 40 casos
 contienen 38 expected y dos unexpected; 42 intentos con cuatro fallidos y dos
 retries, cero flaky o skip. En los cuatro nativos pasan selección y apertura;
 el PDF visible se espera 4.897,605 / 4.795,854 / 4.679,182 / 4.794,884 ms.
@@ -131,6 +150,40 @@ evaluaron los relojes internos ni se capturaron fases intermedias del regreso.
 Ambos contratos Git 1.7.52 → 1.7.53 tienen diff vacío. Evidencia
 `failure-ui3-22cf96b-first-early/`.
 
-La recogida completa de los demás jobs sigue pendiente. Sus resultados no se
-sustituyen por los pases locales o públicos. Los fallos anteriores conservan
-su estado propio.
+### UI1: observación del cierre tras importar
+
+El caso `Android Abrir con: importa los bytes exactos con la app cerrada`
+de `android-file-import.spec.mjs` falla en su primer intento, 18.693 ms,
+y pasa el retry original, 29.814 ms. UI1 conserva 44 expected y un flaky:
+46 intentos, un fallo y un retry. El gate estricto conserva FAILED.
+Los bytes importados y las comprobaciones previas del lector pasan; falla
+`body.toHaveClass(/is-closing-reader/)`, línea 43, con plazo nominal de
+8.000 ms. Sus nueve polls registran BODY vacío.
+
+La traza acredita un estado transitorio: el snapshot before del expect,
+timestamp 13.137,910 ms, sí contiene `is-closing-reader`; el after,
+21.148,883 ms, contiene BODY vacío. El click backend dura 4.363,075 ms
+(4.914,364 → 9.277,439), mientras el call de test dura 6.100,384 ms.
+El expect backend dura 10.118,410 ms (11.019,782 → 21.138,192);
+su snapshot before llega 2.118,128 ms después de su inicio. Son tiempos
+de calls y capturas registradas; no determinan el instante de la primera
+consulta, el click DOM ni classEnd. El fallo no demuestra ausencia del
+cierre y no se convierte en PASS por la captura intermedia o el retry.
+El archivo de prueba Git 1.7.52 → 1.7.53 tiene diff vacío. Evidencia
+`failure-ui1-22cf96b-first-early/ui1-trace-facts.json` y su ZIP/log originales.
+
+### Alcance de los pins tempranos
+
+El binder early de UI3 guardó el entry en el campo `method`, separado de
+la lista `methods` que el collector comprobaba antes y al terminar. Los
+helpers sí se comprobaron; el entry coincide en la comprobación posterior
+con el pin original anterior a la ejecución. Se conserva esa limitación
+en `failure-ui3-22cf96b-first-early/early-entry-after-check.json`, junto al
+binder, método y originales intactos. No se atribuye un check continuo al
+entry de esa ejecución temprana. El collector completo incluye su método
+en sus comprobaciones; el nuevo early de UI1 también comprueba entry y
+helpers. La corrección posterior del binder de CI54 se guarda aparte y
+no sustituye la evidencia de CI53.
+
+Los resultados locales y públicos conservan su alcance propio. Los fallos
+originales anteriores y los reintentos de este run permanecen registrados.
