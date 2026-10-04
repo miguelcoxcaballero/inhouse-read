@@ -1330,9 +1330,9 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
       return false;
     }
   };
-  function updateCoverSource(url, nextBook = book, nextStyle = style) {
+  function updateCoverSource(url, nextBook = book, nextStyle = style, { force = false } = {}) {
     if (disposed) return Promise.resolve(false);
-    if (url && url === currentCoverUrl) return group.userData.ready;
+    if (!force && url && url === currentCoverUrl) return group.userData.ready;
     reliefController?.abort(); reliefRevision++;
     if (reliefArmed && reliefMaps) clearRelief();
     resolveCoverReady(false);
@@ -1687,6 +1687,12 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   let disposed = false, current, cancel = () => {}, pendingModel = null, appearanceRevision = 0;
   let reliefPrepared = false, reliefPreparation = null;
   let currentBook = book, currentSnapshot = null, pageTheme = 1;
+  const coverPaintKeyFor = (nextBook, nextStyle) => JSON.stringify([
+    coverUrl,nextBook.id,nextBook.title,nextStyle.color,nextStyle.coverRatio,
+    !coverUrl && [nextBook.author,nextStyle.ink,nextStyle.fontCanvasFamily,nextStyle.fontFamily,
+      nextStyle.fontFallback,nextStyle.fontWeight]
+  ]);
+  let coverPaintKey = coverPaintKeyFor(book,style);
   let waitingForFirstDraw = deferDraw;
   const compactCamera = camera.clone(), compactBox = new THREE.Box3(), compactPoint = new THREE.Vector3();
   const compactWidth = Math.min(viewportWidth, Math.ceil(((width * 2 + thickness) * 1.25 + 64) / 64) * 64);
@@ -1955,8 +1961,27 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   // Appearance completion can arrive while the opening book is still detached.
   // Apply its current pose, retaining the first explicit framebuffer commit.
   const drawUpdatedAppearance = () => current && draw(current, { redraw:!waitingForFirstDraw });
-  function updateAppearance(nextStyle) {
+  function updateAppearance(nextStyle, { reuseModel = false } = {}) {
     if (disposed) return false;
+    // Editor previews already changed the cover/edges. Flush their last spine
+    // choice into the same model; retain page, ribbon and material ownership.
+    // Cold/failed covers and outstanding full replacements keep their original
+    // lifecycle. A decoded image (or generated case) can repaint synchronously.
+    if (reuseModel && !pendingModel && model.userData.coverLoaded === true) {
+      const nextCoverKey = coverPaintKeyFor(currentBook,nextStyle);
+      const invalidate = model.userData.invalidate;
+      model.userData.invalidate = null;
+      try {
+        model.userData.updateSpineAppearance(currentBook,nextStyle);
+        if (nextCoverKey !== coverPaintKey) {
+          model.userData.updateCoverSource(coverUrl,currentBook,nextStyle,{ force:true });
+          if (model.userData.coverLoaded === true) coverPaintKey = nextCoverKey;
+        }
+      } finally { model.userData.invalidate = invalidate; }
+      drawUpdatedAppearance();
+      return true;
+    }
+    const replacementCoverKey = coverPaintKeyFor(currentBook,nextStyle);
     const revision = ++appearanceRevision;
     pendingModel?.userData.dispose();
     const replacement = createBookModel(currentBook, nextStyle, width, height, thickness, coverUrl, { shelf, eagerRelief:reliefPrepared });
@@ -1965,6 +1990,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
       if (disposed || revision !== appearanceRevision) { replacement.userData.dispose(); return; }
       const previous = model;
       scene.remove(previous); model = replacement; pendingModel = null;
+      coverPaintKey = replacementCoverKey;
       canvas.dataset.bookmark3d = String(Boolean(model.userData.hasBookmark));
       scene.add(model);
       model.userData.invalidate = () => current && !waitingForFirstDraw && draw(current);

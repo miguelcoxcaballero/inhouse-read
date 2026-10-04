@@ -103,3 +103,26 @@ evidencia de CI contiene 524 casos de navegador requeridos, sin omisiones; es
 un listado, no 524 pruebas ejecutadas. Los listados previos sin esa configuración
 se conservan separados. La ejecución completa de CI y las verificaciones de la
 publicación tienen resultados posteriores al push.
+
+## Resultado de la publicación y de la CI original
+
+La fuente publicada es `77de3f779c53560a564f3094e00b2419da7e0bad`,
+Pages `60a1721aa5c11e28fd96b9adb7c3190c6d47f715`. El despliegue
+`37216005939` termina correctamente. Los 23 módulos y 44 recursos offline
+coinciden con esos archivos por HTTP. Los 18 casos PDF públicos pasan en su
+primera ejecución, sin omisiones ni reintentos. La APK descargada de nuevo
+mantiene los bytes firmados de 1.1.4 y su loader exacto de 2.089 bytes.
+
+La CI original `37216005998` termina **FAILED**. Pasan 2.762 unitarias y
+519 de los 524 casos E2E; cinco casos fallan también en su reintento.
+Dos fixtures nuevas consumen el plazo global durante su doble arranque;
+dos observadores originales de devolución no encuentran el canvas nativo
+visible dentro del host del libro; el gesto isométrico original detecta
+cuatro escrituras de buffer donde permite dos. Los originales, sus trazas y
+los once ZIP se conservan. No se presentan como una batería aprobada.
+
+La medición independiente con Intel UHD 630 registra 2.760,4 ms en la fuente
+de control y 2.755,2 ms en esta publicación: una diferencia de 5,2 ms no
+demuestra una mejora de velocidad. Sí desaparecen las catorce copias GPU a
+2D observadas durante ese retorno. Estas comprobaciones de escritorio no
+acreditan FPS, temperatura ni fluidez en un teléfono físico.

@@ -1,4 +1,19 @@
-# Verificación del WIP — rendimiento de web 1.7.46 y Android 1.1.4
+# Verificación del WIP — rendimiento de web 1.7.47 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.47
+
+Guardar una edición reutiliza el modelo ya preparado del libro. Los avisos
+consecutivos de cambios se agrupan y las lecturas de la biblioteca no se
+solapan. Las texturas de habitación sin consumidores se liberan; los gestos
+no restauran un buffer que van a ocultar inmediatamente. El canvas nativo
+de inserción pertenece al host del libro hasta su entrega a la estantería.
+Se mantienen texturas, DPR, geometría, materiales y relojes de animación.
+
+Los resultados de esta fuente se incorporan a
+[Rendimiento de 1.7.47](performance-1747.md) tras ejecutarse. La verificación
+del teléfono físico y la sesión real de Google continúan pendientes; las
+pruebas de escritorio no acreditan su fluidez ni temperatura. La APK 1.1.4
+continúa cargando la publicación web con su loader.
 
 ## Cambios de rendimiento de 1.7.46
 
@@ -12,8 +27,9 @@ La comprobación de imágenes, los contratos de devolución, los fallos original
 y el costo adicional de memoria tienen su alcance en
 [Rendimiento de 1.7.46](performance-1746.md). El reloj pesado de SwiftShader sigue
 superando ocho segundos: este cambio no acredita fluidez, batería ni temperatura
-en un teléfono físico. La web y la CI de esta fuente se verifican después del
-push; las verificaciones completas anteriores conservan sus resultados propios.
+en un teléfono físico. La web publicada supera los 18 casos PDF, mientras
+que la CI original conserva cinco fallos de navegador de 524 casos. Las
+verificaciones completas anteriores conservan sus resultados propios.
 La APK 1.1.4 continúa cargando la web publicada mediante su loader.
 
 ## Publicación verificada de 1.7.42: PDF adaptable

@@ -2543,7 +2543,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       spinePreviewFrame = 0;
       const changed = appearanceDirty;
       if (changed && session.phase === 'ready') {
-        if (commit) view?.updateAppearance(item.style);
+        if (commit) view?.updateAppearance(item.style,{ reuseModel:true });
         updateBookStyleVars(bookNode, item.style);
         replaceShelfSpine();
         appearanceDirty = false;

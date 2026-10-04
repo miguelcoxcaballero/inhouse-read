@@ -7,6 +7,7 @@ import {
   getDriveProfile, getRememberedDriveProfile, signOutDrive, cancelDriveConnection
 } from './drive-client.js'
 import { CloudSync } from './cloud-sync.js'
+import { createShelfRefreshQueue } from './shelf-refresh-queue.js'
 import { restoreLegacyBookBytes } from './legacy-book-recovery.js'
 import {
   isFolderApiSupported, getSavedFolderHandle, ensureFolderPermission, readFileFromFolder
@@ -92,6 +93,7 @@ let lengthStatusVersion = 0
 let shelfLengthStatusVersion = -1
 let lengthRefreshTimer = null
 let appDisposed = false
+const shelfRefreshQueue = createShelfRefreshQueue({ perform:performShelfRefresh })
 let driveUploadsInFlight = 0
 const cloudSync = new CloudSync(library, {
   onStatus: setDriveSyncStatus,
@@ -173,6 +175,7 @@ document.addEventListener('visibilitychange', () => {
 addEventListener('pagehide', event => {
   if (event.persisted) return
   appDisposed = true
+  shelfRefreshQueue.dispose()
   clearTimeout(lengthRefreshTimer)
   lengthRefreshTimer = null
   wordCountQueue.dispose()
@@ -186,7 +189,11 @@ function isAndroidShell() {
 // Contrato de renderBookshelf(container, books, options) documentado en el
 // propio src/js/bookshelf.js (cabecera del archivo).
 
-async function refreshShelf({ immediate = false } = {}) {
+function refreshShelf(options) {
+  return shelfRefreshQueue.request(options)
+}
+
+async function performShelfRefresh({ immediate = false } = {}) {
   if (appDisposed) return
   // Re-rendering a shelf closes its current 3D cover. Defer background
   // changes until the reader transition or close has finished.
@@ -1291,11 +1298,11 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.7.46'
+els.appVersion.textContent = 'Inhouse Read · v1.7.47'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')
-refreshShelf()
+refreshShelf({ immediate:true })
 loadDriveAccountProfile().catch(error => console.warn('No se pudo restaurar la cuenta:', error))
 initAndroidUpdateChecks()
 initContentFreshnessChecks()

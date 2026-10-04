@@ -417,6 +417,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let nativeFineSlotIndex = 0, nativeFineFrame = null;
   let nativeRoomDisplay = null, nativeBaseFrame = null, nativeBaseMargin = 0;
   const completedLegacyInsertionLeases = new Set();
+  let nativeInsertionMetadataOwner = null;
   let nativeInspectionExportFrame = null, nativeOverviewExportFrame = null;
   let nativeInspectionRevision = 0, nativeOverviewRevision = 0;
   let nativeInspectionMaterialized = 0, nativeOverviewMaterialized = 0;
@@ -467,6 +468,17 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     bindNativeSnapshot(inspectionCanvas,()=>captureNativeInspection());
     bindNativeSnapshot(inspectionOverviewCanvas,()=>captureNativeInspection(true));
   }
+  function releaseUnusedNativeRoomFrames() {
+    if(!nativeFrameCache?.releaseUnusedSlots)return;
+    // Identity, not descriptor equality: fine and overview may share one
+    // texture while exports or the current presenter still need its pixels.
+    nativeFrameCache.releaseUnusedSlots([nativeRoomSlot,...nativeFineSlots,nativeComposedRoomSlot],[
+      nativeBaseFrame,nativeRoomDisplay?.frame,inspectionSnapshot?.nativeFrame,
+      inspectionOverview?.nativeFrame,nativeInspectionExportFrame,nativeOverviewExportFrame
+    ]);
+    if(!nativeFrameCache.validFrame(nativeFineFrame))nativeFineFrame=null;
+  }
+
   function repaintNativeRoom() {
     if(!nativeRoomDisplay)return false;
     const {frame,margin}=nativeRoomDisplay;
@@ -484,6 +496,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if(![logical.left,logical.top].every(value=>Number.isInteger(value*nativeRoomDisplay.frame.ratio)))return false;
     Object.assign(nativeRoomClip.style,{left:`${logical.left-bounds.left}px`,top:`${logical.top-bounds.top}px`,
       width:`${sceneWidth}px`,height:`${viewportHeight}px`,display:'block'});
+    // This same canvas has become the room, so book-only diagnostics no
+    // longer describe its actual output or its semantic owner.
+    if (nativeInsertionMetadataOwner) {
+      delete node.dataset.insertionDepth; delete node.dataset.returnProgress;
+      nativeInsertionMetadataOwner = null;
+    }
     node.className='ihr-bookshelf-native-room-canvas';node.setAttribute('aria-hidden','true');
     node.style.cssText=`position:absolute;pointer-events:none;left:0px;top:0px;width:${nativeRoomDisplay.frame.width-margin*2}px;height:${nativeRoomDisplay.frame.height-margin*2}px`;
     if(node.parentNode!==nativeRoomClip)nativeRoomClip.append(node);
@@ -1734,7 +1752,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       },
       repaint:() => insertion.nativeCombinedFrame && nativeFrameCache.repaint(insertion.nativeCombinedFrame),
       position(node) {
-        const parent = overlay.parentElement?.parentElement, rect = overlay.getBoundingClientRect();
+        // The native output belongs to the same book host as its lazy export.
+        // Offset against that host to retain the exact full-screen origin.
+        const parent = overlay.parentElement, rect = overlay.getBoundingClientRect();
         const vw = window.innerWidth, vh = window.innerHeight;
         if (!parent || rect.left!==0 || rect.top!==0 || rect.width!==vw || rect.height!==vh) return false;
         const parentRect = parent.getBoundingClientRect();
@@ -1744,6 +1764,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         return true;
       },
       cleanup() {
+        if (nativeInsertionMetadataOwner === lease) {
+          delete renderer.domElement.dataset.insertionDepth; delete renderer.domElement.dataset.returnProgress;
+          nativeInsertionMetadataOwner = null;
+        }
         completedLegacyInsertionLeases.delete(lease);
         nativeFrameCache.releaseSlot(insertion.nativeSlot);
         nativeFrameCache.releaseSlot(insertion.nativeCombinedSlot);
@@ -1863,6 +1887,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       overlay.dataset.insertionDepth = 'shared-shelf';
       overlay.dataset.returnProgress = canvas.dataset.returnProgress;
+      if (native && insertion.nativeLease.isOwner()) {
+        // Stamp only a frame that really committed to this book's lease.
+        nativeInsertionMetadataOwner = insertion.nativeLease;
+        setData(renderer.domElement, 'insertionDepth', 'shared-shelf');
+        setData(renderer.domElement, 'returnProgress', canvas.dataset.returnProgress);
+      }
     } finally {
       for (const [mesh, material] of solids) mesh.material = material;
       for (const [material, value] of writes) material.colorWrite = value;
@@ -1926,23 +1956,32 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         return owner===nativeRoomLease?nativeRoomLease.present():!owner && nativeRoomLease.present();
       });
     }
+    if (!nativeCompositor) {
+      const wasNativeOwner = Boolean(nativeRoomLease?.isOwner());
+      // The original CSS tiles now own this presentation. Materializing them
+      // must not resize and restore a native room that is about to be hidden.
+      nativeRoomLease?.release({snapshot:false});
+      try {
+        if (overview?.covers) captureNativeInspection(true);
+        if (inspectionSnapshot) captureNativeInspection();
+      } catch (error) {
+        // No CSS display changed yet; recover the old complete native frame.
+        if (wasNativeOwner) restoreNativeRoom();
+        throw error;
+      }
+      if (nativeRoomClip) nativeRoomClip.style.display = 'none';
+    }
     // A retained fitted overview supplies anything revealed beyond the high
     // resolution tile. Never block an ordinary pan/pinch on a GPU recapture;
     // its fine tile and full backdrop move together until the settled paint.
     if (!nativeCompositor && overview?.covers) {
-      captureNativeInspection(true);
       inspectionOverviewCanvas.style.transform = `matrix(${overview.scale},0,0,${overview.scale},${overview.left},${overview.top})`;
       inspectionOverviewCanvas.style.display = 'block';
     } else inspectionOverviewCanvas.style.display = 'none';
     if (!nativeCompositor && inspectionSnapshot) {
-      captureNativeInspection();
       inspectionCanvas.style.transform = `matrix(${scale},0,0,${scale},${left},${top})`;
       inspectionCanvas.style.display = 'block';
     } else inspectionCanvas.style.display = 'none';
-    if(!nativeCompositor) {
-      nativeRoomLease?.release({snapshot:false});
-      if(nativeRoomClip)nativeRoomClip.style.display='none';
-    }
     canvas.style.visibility = 'hidden';
     inspectionSnapshotVisible = true;
     setData(canvas, 'inspectionCacheActive', 'true');
@@ -2172,6 +2211,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       } else setData(canvas,'nativeRoomPresentation','false');
       completedLegacyInsertionLeases.clear();
       });
+      releaseUnusedNativeRoomFrames();
       setData(canvas, 'snapshotRenderCount', String(++shelfSnapshotRenders));
       setData(canvas, 'sceneDrawCalls', String(renderer.info?.render.calls || 0));
       shelfSnapshotDirty = false;
@@ -2265,6 +2305,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function presentationChanged() {
     if (disposed) return;
     if (!canPresent() && !hasOngoingMotion()) {
+      releaseUnusedNativeRoomFrames();
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
       if (programsPoll) clearTimeout(programsPoll);

@@ -9,14 +9,8 @@ test.use({ viewport:{ width:390, height:845 }, deviceScaleFactor:2, isMobile:tru
 
 test('el regreso nativo alineado a 390x845 conserva el framebuffer y entrega el mismo canvas a la estantería', async ({ page }) => {
   await page.emulateMedia({ reducedMotion:'no-preference' })
-  await page.goto(process.env.IHR_TEST_URL || '/')
   const bytes = [...await readFile('tests/e2e/fixtures/tiny.pdf')]
-  await page.evaluate(async ({ bytes, id, geometry }) => {
-    const db = await new Promise((resolve, reject) => {
-      const request = indexedDB.open('inhouse-read')
-      request.onsuccess = () => resolve(request.result)
-      request.onerror = () => reject(request.error)
-    })
+  await page.addInitScript(({ bytes, id, geometry }) => {
     const image = document.createElement('canvas')
     // This real one-page fixture has a 300 × 200 page and four actual words.
     // Match that ratio and measured length to avoid synthetic geometry changes.
@@ -26,10 +20,12 @@ test('el regreso nativo alineado a 390x845 conserva el framebuffer y entrega el 
     context.fillStyle = '#e3bc78'; context.fillRect(0, 250, 600, 150)
     context.fillStyle = '#fffaf0'; context.font = 'bold 40px Georgia'
     context.fillText('Inhouse Read test PDF', 30, 110)
-    const cover = await new Promise(resolve => image.toBlob(resolve, 'image/png'))
+    // Encode the same fixture pixels before IndexedDB opens. This keeps the
+    // initial upgrade synchronous, so production's first read waits for the book.
+    const encoded = atob(image.toDataURL('image/png').split(',')[1])
+    const cover = new Blob([Uint8Array.from(encoded, value => value.charCodeAt(0))], { type:'image/png' })
     const title = 'Inhouse Read test PDF'
-    const transaction = db.transaction('books', 'readwrite')
-    transaction.objectStore('books').put({
+    const record = {
       id, title, author:'Autora de prueba', name:'tiny.pdf', ...geometry,
       format:'PDF', mimeType:'application/pdf', sourceType:'local',
       content:new Blob([new Uint8Array(bytes)], { type:'application/pdf' }),
@@ -38,15 +34,39 @@ test('el regreso nativo alineado a 390x845 conserva el framebuffer y entrega el 
         aspectRatio:1.5, fontFamily:'Lora', fontCanvasFamily:'Lora', source:'cover' },
       coverAppearanceKey:`${id}|${title}|${cover.type}|${cover.size}|`,
       spineColorOverride:'#41695d'
+    }
+    window.__nativeShelfFixtureReady = new Promise((resolve, reject) => {
+      // Use the real v2 schema before the app opens the database. The fixture
+      // put is part of the upgrade transaction; no empty room/reload is needed.
+      const request = indexedDB.open('inhouse-read', 2)
+      request.onupgradeneeded = () => {
+        const db = request.result
+        if (!db.objectStoreNames.contains('books')) {
+          const store = db.createObjectStore('books', { keyPath:'id' })
+          store.createIndex('lastOpenedAt', 'lastOpenedAt')
+        }
+        if (!db.objectStoreNames.contains('removed-books')) db.createObjectStore('removed-books', { keyPath:'id' })
+        request.transaction.objectStore('books').put(record)
+      }
+      request.onerror = () => reject(request.error)
+      request.onblocked = () => reject(new Error('Native shelf fixture database upgrade was blocked'))
+      request.onsuccess = () => {
+        const db = request.result
+        db.onversionchange = () => db.close()
+        const read = db.transaction('books', 'readonly').objectStore('books').get(id)
+        read.onerror = () => { db.close(); reject(read.error) }
+        read.onsuccess = () => {
+          const saved = read.result
+          db.close()
+          if (!saved || saved.id !== id || saved.content?.size !== bytes.length || saved.cover?.size !== cover.size) {
+            reject(new Error('Native shelf fixture was not committed before the app started'))
+          } else resolve()
+        }
+      }
     })
-    await new Promise((resolve, reject) => {
-      transaction.oncomplete = resolve
-      transaction.onerror = () => reject(transaction.error)
-      transaction.onabort = () => reject(transaction.error)
-    })
-    db.close()
   }, { bytes, id:BOOK_ID, geometry:settledGeometryLength(4, BOOK_ID) })
-  await page.reload()
+  await page.goto(process.env.IHR_TEST_URL || '/')
+  await page.evaluate(() => window.__nativeShelfFixtureReady)
   // Explicitly choose an aligned viewport rather than assuming every390px room
   // can retain a native framebuffer. The original844px failure is preserved.
   const nativeRoom = page.locator('.ihr-bookshelf-scene')

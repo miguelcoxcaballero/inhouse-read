@@ -8,7 +8,7 @@ const MAX_LAYERS = 3;
 // issues copyTexSubImage2D through Three; it never reads pixels into JavaScript.
 export function createNativeFramebufferCache(renderer,{onRestored}={}) {
   if (typeof renderer?.getContext !== 'function' || typeof renderer.copyFramebufferToTexture !== 'function') return null;
-  const slots = new Map(), size = new THREE.Vector2(), copyOrigin = new THREE.Vector2();
+  const slots = new Map(), liveTextures = new Set(), size = new THREE.Vector2(), copyOrigin = new THREE.Vector2();
   const scissor = new THREE.Vector4(), clearColor = new THREE.Color();
   const transparent = new THREE.DataTexture(new Uint8Array(4), 1, 1);
   transparent.colorSpace = THREE.NoColorSpace; transparent.needsUpdate = true;
@@ -57,7 +57,7 @@ export function createNativeFramebufferCache(renderer,{onRestored}={}) {
   let disposed = false,prepared=false,generation=0;
   function invalidateFrames() {
     generation++;prepared=false;
-    for(const texture of slots.values())texture.dispose();slots.clear();
+    for(const texture of slots.values())texture.dispose();slots.clear();liveTextures.clear();
   }
   const contextLost=()=>invalidateFrames();
   const contextRestored=()=>{invalidateFrames();onRestored?.();};
@@ -75,7 +75,7 @@ export function createNativeFramebufferCache(renderer,{onRestored}={}) {
       && [frame.x??0,frame.y??0].every(Number.isFinite)
       && [frame.width*frame.ratio,frame.height*frame.ratio,(frame.x??0)*frame.ratio,(frame.y??0)*frame.ratio].every(Number.isInteger);
   }
-  function validFrame(frame) { return Boolean(frame?.texture) && frame.generation===generation && exactFrame(frame); }
+  function validFrame(frame) { return liveTextures.has(frame?.texture) && frame.generation===generation && exactFrame(frame); }
 
   function capture(slot, descriptor) {
     if (!exactFrame(descriptor) || renderer.getRenderTarget?.()) return null;
@@ -85,12 +85,12 @@ export function createNativeFramebufferCache(renderer,{onRestored}={}) {
       || sourceX+pixelWidth>renderer.domElement.width || sourceY+pixelHeight>renderer.domElement.height) return null;
     let texture=slots.get(slot);
     if (!texture || texture.image.width!==pixelWidth || texture.image.height!==pixelHeight) {
-      texture?.dispose();
+      if(texture) { texture.dispose();liveTextures.delete(texture); }
       texture=new THREE.FramebufferTexture(pixelWidth,pixelHeight);
       texture.colorSpace=THREE.NoColorSpace;
       texture.flipY=false; texture.premultiplyAlpha=false;
       texture.minFilter=texture.magFilter=THREE.LinearFilter;
-      slots.set(slot,texture);
+      slots.set(slot,texture);liveTextures.add(texture);
     }
     copyOrigin.set(sourceX,sourceY);
     renderer.copyFramebufferToTexture(texture,copyOrigin);
@@ -150,19 +150,31 @@ export function createNativeFramebufferCache(renderer,{onRestored}={}) {
 
   function releaseSlot(slot) {
     const texture=slots.get(slot);
-    if (texture) { texture.dispose();slots.delete(slot); }
+    if (texture) { texture.dispose();slots.delete(slot);liveTextures.delete(texture); }
+  }
+
+  // Only the caller's managed slots are eligible. Insertion leases retain
+  // their own slots until ownership has actually transferred or released.
+  function releaseUnusedSlots(managedSlots, retainedFrames) {
+    const retained = new Set(retainedFrames.filter(frame=>validFrame(frame)).map(frame=>frame.texture));
+    let released = 0;
+    for(const slot of managedSlots) {
+      const texture=slots.get(slot);
+      if(texture && !retained.has(texture)) { releaseSlot(slot);released++; }
+    }
+    return released;
   }
 
   function dispose() {
     if (disposed) return;disposed=true;
     renderer.domElement.removeEventListener?.('webglcontextlost',contextLost);
     renderer.domElement.removeEventListener?.('webglcontextrestored',contextRestored);
-    for(const texture of slots.values())texture.dispose();slots.clear();
+    for(const texture of slots.values())texture.dispose();slots.clear();liveTextures.clear();
     transparent.dispose();geometry.dispose();material.dispose();scene.remove(mesh);
   }
 
   // Link the raw copy before an inspection gesture starts. This does not draw
   // or alter the default framebuffer which remains the original scene output.
   function prepare() { if (!prepared) { renderer.compile(scene,camera); prepared=true; } }
-  return {capture,repaint,compose,releaseSlot,dispose,exactFrame,validFrame,prepare};
+  return {capture,repaint,compose,releaseSlot,releaseUnusedSlots,dispose,exactFrame,validFrame,prepare};
 }
