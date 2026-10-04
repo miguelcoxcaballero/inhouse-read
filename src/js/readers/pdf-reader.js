@@ -828,24 +828,42 @@ export class PdfReader {
   }
 
   /** Miniatura de la página 1 como Blob, para la portada de la estantería. */
-  async getCoverBlob() {
-    if (!this.#doc) return null
-    const page = await this.#doc.getPage(1)
-    const viewport = page.getViewport({ scale: 1 })
-    // La portada se ve a casi tamaño real durante la apertura. 300 px daba
-    // miniaturas blandas en pantallas móviles; renderizamos hasta 1200 px,
-    // con un límite de 1600 px por el lado mayor y sin ampliar el PDF más de 3×.
-    const scale = Math.min(3, 1600 / Math.max(viewport.width, viewport.height), 1200 / viewport.width)
-    const thumbViewport = page.getViewport({ scale })
+  async getCoverBlob({ signal } = {}) {
+    const doc = this.#doc
+    const current = () => Boolean(doc) && this.#doc === doc && !signal?.aborted
+    if (!current()) return null
+    let renderTask
+    const cancel = () => { renderTask?.cancel?.() }
+    try {
+      const page = await doc.getPage(1)
+      if (!current()) return null
+      const viewport = page.getViewport({ scale: 1 })
+      // La portada se ve a casi tamaño real durante la apertura. 300 px daba
+      // miniaturas blandas en pantallas móviles; renderizamos hasta 1200 px,
+      // con un límite de 1600 px por el lado mayor y sin ampliar el PDF más de 3×.
+      const scale = Math.min(3, 1600 / Math.max(viewport.width, viewport.height), 1200 / viewport.width)
+      const thumbViewport = page.getViewport({ scale })
 
-    const canvas = document.createElement('canvas')
-    canvas.width = thumbViewport.width
-    canvas.height = thumbViewport.height
-    await page.render({ canvasContext: canvas.getContext('2d'), viewport: thumbViewport }).promise
-
-    // JPEG: la portada es opaca y su codificación es mucho más rápida que WebP
-    // en el hilo principal (WebP bloqueaba segundos la vuelta a la estantería).
-    return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9))
+      const canvas = document.createElement('canvas')
+      canvas.width = thumbViewport.width
+      canvas.height = thumbViewport.height
+      signal?.addEventListener('abort', cancel, { once:true })
+      if (!current()) return null
+      renderTask = page.render({ canvasContext: canvas.getContext('2d'), viewport: thumbViewport })
+      if (!current()) cancel()
+      await renderTask.promise
+      renderTask = null
+      if (!current()) return null
+      // JPEG keeps the same opaque high quality raster. Once encoding has
+      // started the browser cannot cancel it; an aborted result is discarded.
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9))
+      return current() ? blob : null
+    } catch (error) {
+      if (!current()) return null
+      throw error
+    } finally {
+      signal?.removeEventListener('abort', cancel)
+    }
   }
 
   close() {

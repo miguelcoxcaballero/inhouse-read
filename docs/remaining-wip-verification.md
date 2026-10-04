@@ -1,4 +1,15 @@
-# Verificación del WIP — rendimiento de web 1.7.48 y Android 1.1.4
+# Verificación del WIP — rendimiento de web 1.7.49 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.49
+
+La devolución reutiliza el modelo del lector al actualizar su portada HD y
+su apariencia automática. La comparación admite sólo ruido numérico en la
+clave de dimensiones; conserva los vértices reales, los acabados y el viewport.
+El progreso actualiza el marcapáginas y las hojas antes del primer dibujo.
+Back cancela la portada opcional pendiente e impide guardados o refrescos tardíos.
+La fuente final, sus controles y la comprobación de publicación se registran
+en [Rendimiento de 1.7.49](performance-1749.md). Sus resultados no sustituyen
+los fallos originales de las versiones anteriores.
 
 ## Cambios de rendimiento de 1.7.48
 
@@ -7,6 +18,14 @@ estantería de respaldo conserva el objetivo de un click mientras aplica los
 refrescos pendientes. Se mantienen los cambios de memoria, modelos y gestos
 de 1.7.47, con las mismas texturas y animaciones. La comprobación de la fuente
 final y sus límites están en [Rendimiento de 1.7.48](performance-1748.md).
+
+La CI original de 1.7.48 conserva **FAILED**: pasan 2.802 unitarias en 202
+archivos; de 524 casos E2E, 522 son expected y dos unexpected, sin flaky.
+Los dos contratos nativos incumplen el gate original de ocho segundos en sus
+dos intentos. Se guardan 526 intentos, cuatro fallidos y dos reintentos, además
+de los doce logs y once ZIP originales. La apertura sin WebGL pasa al primer
+intento. La web pública pasa 21 casos sin reintentos y pasan HTTP, APK y loader;
+estos controles no acreditan fluidez ni temperatura en un teléfono físico.
 
 La CI original de 1.7.47 conserva FAILED: sus dos casos nuevos de devolución
 alcanzan el límite global de treinta segundos y un caso original de selección

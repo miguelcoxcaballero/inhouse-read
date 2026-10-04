@@ -43,9 +43,37 @@ El build local produce `main-Cvva8aqt.js`, 1.444.445 bytes, SHA-256
 El resumen original está en
 `.animation.local/performance-1748/full-local-attempt1/summary.json`.
 
-El navegador, la CI original y los archivos públicos de esta fuente se
-incorporarán después de ejecutarse. Ningún resultado previo se considera
-prueba de 1.7.48. La APK 1.1.4 carga la web con su loader; la descarga y el
-inventario del APK se comprobarán de nuevo.
+## CI original y publicación
+
+Fuente `1f8f00e635cff22e721182e3f53adaf126e9f2a2`, Pages
+`5e96fa325d91d84cb002630479b6b0fad322bdfb`. La
+[CI original 37221277939](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/37221277939)
+conserva **FAILED**: pasan 2.802 unitarias en 202 archivos. Sus diez manifiestos
+E2E subidos contienen 524 casos únicos: 522 expected y dos unexpected, sin
+flaky ni omitidos. Se conservan 526 intentos, cuatro fallidos y dos reintentos.
+Los dos contratos nativos de devolución fallan el plazo original de ocho
+segundos en ambos intentos; la apertura sin WebGL pasa al primer intento.
+El instante exacto de fin del cierre no se conserva, porque la assertion
+fallida impide ejecutar la lectura posterior del observer. No se reinterpreta
+el fallo a partir de las capturas posteriores. Los otros nueve grupos E2E
+pasan sus guards estrictos.
+
+Se guardan los doce logs y once ZIP originales autenticados, con tamaño,
+SHA-256, CRC, miembros y censos contrastados. El resumen está en
+`.animation.local/performance-1748/ci-1f8f00e-failed-original-collector-attempt2/snapshot-001/final-summary.json`;
+certificado `e44ae9e5c6fa608a6ad2d2566b9d66fe9dcd0d2f14a433a8bbac4aa65d2b0a46`.
+El watcher fallido y la recogida temprana de UI3 permanecen intactos.
+
+La web pública pasa **21 casos sin reintentos**: los 18 PDF originales y tres
+de edición/devolución nativa. Sus cuerpos HTTP corresponden al artefacto Pages
+fijado, sin sustituir respuestas de la aplicación. Pasan también el grafo HTTP,
+el inventario público, la descarga exacta de la APK firmada 1.1.4 y la igualdad
+de su loader con los bytes Git. Esto no ejecuta ni acredita un teléfono físico.
+Los certificados están en
+`.animation.local/performance-1748/public-1f8f00e-attempt2/`: `browser-attempt1/certification.json`,
+`performance-browser-attempt1/performance-qualification.json`,
+`http-attempt1/artifact-1748-1f8f00e-provenance.json`, `apk-attempt1/public-apk.json`
+y `apk-attempt1/apk-loader.json`. El primer pin que recibió el CDN anterior
+permanece preservado por separado.
 
 No se ha medido fluidez, temperatura ni batería en un teléfono físico.

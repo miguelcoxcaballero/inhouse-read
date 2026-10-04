@@ -98,8 +98,11 @@ export class ReaderController {
   removeQuoteAnnotation(quote) { this.#reader?.removeQuoteAnnotation?.(quote) }
 
   /** Portada como Blob: miniatura de la página 1 en PDF, embebida en EPUB/MOBI. */
-  async getCoverBlob() {
-    return (await this.#reader?.getCoverBlob?.()) ?? null
+  async getCoverBlob(options = {}) {
+    const reader = this.#reader, epoch = this.#epoch
+    if (options.signal?.aborted) return null
+    const blob = await reader?.getCoverBlob?.(options)
+    return !options.signal?.aborted && reader === this.#reader && epoch === this.#epoch ? blob ?? null : null
   }
 
   /** A stale background count cannot be attributed to a subsequently opened book. */

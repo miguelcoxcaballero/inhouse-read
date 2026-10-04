@@ -107,7 +107,7 @@ import { createShelfZoom } from './shelf-zoom.js';
 import { createShelfViewGesture } from './shelf-view-gesture.js';
 import { markTiming, resetTimeline } from './perf-marks.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
-import { bookReturnSignature, createBookReturnCache } from './bookshelf-return.js';
+import { bookReturnSignature, bookReturnCompatibility, createBookReturnCache } from './bookshelf-return.js';
 import { layoutShelfDecorations, moveShelfDecoration } from './shelf-decoration-layout.js';
 import { createPlantCatalog } from './plant-catalog.js';
 import { normalizeShelfType, BAGGEBO_SPEC } from './shelf-types.js';
@@ -3521,7 +3521,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         // Back. Only one view is retained, and incompatible geometry is never
         // reused. The ribbon is refreshed from the reader's final progress.
         if (view?.updateBookmark) returnViews.retain(bookReturnSignature(book,item.style,
-          { width:coverW,height:coverH,thickness,viewportWidth:vw,viewportHeight:vh,centerX,centerY },coverUrl),view);
+          { width:coverW,height:coverH,thickness,viewportWidth:vw,viewportHeight:vh,centerX,centerY },coverUrl),view,
+          bookReturnCompatibility(book,item.style,{ width:coverW,height:coverH,thickness,viewportWidth:vw,viewportHeight:vh,centerX,centerY }));
         else view?.dispose();
         flyout.remove();
         return true;
@@ -3695,8 +3696,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     flyout.dataset.returnPhase = 'preparing';
     const coverUrl = resolveCoverImmediately(book);
     if (state.destroyed || state.lastOpened !== previous || window.innerWidth !== vw || window.innerHeight !== vh) return false;
-    const cachedView = returnViews.take(pageSnapshot?.source ? bookReturnSignature(book,previous.style,
-      { width:coverW,height:coverH,thickness,viewportWidth:vw,viewportHeight:vh,centerX,centerY },coverUrl) : null);
+    const returnGeometry = { width:coverW,height:coverH,thickness,viewportWidth:vw,viewportHeight:vh,centerX,centerY };
+    const cachedView = pageSnapshot?.source ? await returnViews.takeCompatible({
+      signature:bookReturnSignature(book,previous.style,returnGeometry,coverUrl),
+      compatibility:bookReturnCompatibility(book,previous.style,returnGeometry),book,style:previous.style,coverUrl
+    }) : returnViews.take(null);
+    if (state.destroyed || state.lastOpened !== previous || window.innerWidth !== vw || window.innerHeight !== vh) {
+      cachedView?.dispose(); return false;
+    }
     if (cachedView) { bookNode.append(cachedView.canvas); cachedView.updateBookmark(book); }
     const view = cachedView || bookView(bookNode, book, previous.style, {
       width:coverW, height:coverH, thickness, viewportWidth:vw, viewportHeight:vh,

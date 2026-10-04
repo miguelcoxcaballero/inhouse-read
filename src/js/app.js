@@ -1104,10 +1104,12 @@ for (const image of [els.driveProfileAvatar, els.driveProfileAvatarMenu]) {
 
 /** No bloquea la apertura del libro: la portada se guarda para la próxima visita a la estantería. */
 function extractCoverInBackground(record) {
+  if (closingReader || currentBookId !== record.id) return Promise.resolve()
   const epoch = reader.epoch
   const previous = coverUpgrades.get(record.id)
   if (previous?.epoch === epoch) return previous.promise
-  const current = () => reader.epoch === epoch && currentBookId === record.id
+  const controller = new AbortController()
+  const current = () => !controller.signal.aborted && !closingReader && reader.epoch === epoch && currentBookId === record.id
   const coverNeedsUpgrade = async () => {
     if (!record.cover) return true
     if (record.format !== 'PDF' || typeof createImageBitmap !== 'function') return false
@@ -1118,14 +1120,14 @@ function extractCoverInBackground(record) {
       return small
     } catch { return false }
   }
-  const entry = { epoch }
+  const entry = { epoch, controller }
   const task = coverNeedsUpgrade()
-    .then(needsCover => needsCover && current() ? reader.getCoverBlob() : null)
+    .then(needsCover => needsCover && current() ? reader.getCoverBlob({ signal:controller.signal }) : null)
     .then(blob => {
       if (blob?.size > 0 && current()) return library.patch(record.id, { cover:blob, coverUpdatedAt:Date.now() }, { ifCurrent:current })
     })
-    .then(updated => { if (updated) refreshShelf() })
-    .catch(err => console.warn('No se pudo extraer la portada:', err))
+    .then(updated => { if (updated && current()) refreshShelf() })
+    .catch(err => { if (!controller.signal.aborted) console.warn('No se pudo extraer la portada:', err) })
     .finally(() => { if (coverUpgrades.get(record.id) === entry) coverUpgrades.delete(record.id) })
   entry.promise = task
   coverUpgrades.set(record.id, entry)
@@ -1152,6 +1154,9 @@ els.readerBack.addEventListener('click', async () => {
   closingReader = true
   document.body.classList.add('is-closing-reader')
   const bookId = currentBookId
+  // The stored cover remains valid. Stop optional HD work before the current
+  // page snapshot and return animation need the reader's rendering resources.
+  coverUpgrades.get(bookId)?.controller.abort()
   let stillPage = null, stillFade = null, handedOff = false
   const handoff = () => {
     if (handedOff) return
@@ -1297,7 +1302,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.7.48'
+els.appVersion.textContent = 'Inhouse Read · v1.7.49'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')

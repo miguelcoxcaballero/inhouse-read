@@ -13,21 +13,56 @@ export function bookReturnSignature(book, style, geometry, coverUrl) {
   return JSON.stringify([appearance,style,geometry,coverUrl]);
 }
 
+
+const RETURN_PAINT_FIELDS = new Set(['color','shade','ink','fontFamily','fontCanvasFamily',
+  'fontFallback','fontWeight','appearanceSource']);
+const CANONICAL_GEOMETRY_FIELDS = new Set(['width','height','thickness','centerX','centerY']);
+
+/** Explicit reuse key: discard only arithmetic noise in the comparison, never
+ * in the actual geometry. Viewport, cover ratio and structural style stay strict. */
+export function bookReturnCompatibility(book, style, geometry) {
+  if (!bookReturnSignature(book,style,geometry,null)) return null;
+  const dimensions = Object.keys(geometry).sort().map(key => [key,
+    CANONICAL_GEOMETRY_FIELDS.has(key) ? Number(geometry[key].toPrecision(14)) : geometry[key]]);
+  const structure = Object.keys(style || {}).sort().filter(key => !RETURN_PAINT_FIELDS.has(key))
+    .map(key => [key,style[key]]);
+  return JSON.stringify([CASE_FIELDS.map(key => book?.[key]),structure,dimensions]);
+}
+
 /** One already rendered book may wait behind the reader. Ownership transfers
  * once to the close animation; a mismatch, replacement or destroy releases it. */
 export function createBookReturnCache() {
-  let held = null;
-  const clear = () => { const previous = held; held = null; previous?.view.dispose(); };
+  let held = null, taking = null;
+  const release = previous => {
+    if (previous && !previous.released) { previous.released = true; previous.view.dispose(); }
+  };
+  const clear = () => { const previous = held; held = null; release(previous); release(taking); taking = null; };
   return {
-    retain(signature, view) {
+    retain(signature, view, compatibility = null) {
       clear();
       if (!signature || !view) { view?.dispose(); return false; }
-      held = { signature,view }; return true;
+      held = { signature,view,compatibility }; return true;
     },
     take(signature) {
       const previous = held; held = null;
       if (previous && signature && previous.signature === signature) return previous.view;
       previous?.view.dispose(); return null;
+    },
+    async takeCompatible({ signature,compatibility,book,style,coverUrl }) {
+      const previous = held; held = null;
+      if (!previous) return null;
+      if (signature && previous.signature === signature) return previous.view;
+      if (!compatibility || compatibility !== previous.compatibility ||
+          typeof previous.view.prepareReturnAppearance !== 'function') { release(previous); return null; }
+      taking = previous;
+      try {
+        const ready = await previous.view.prepareReturnAppearance(book,style,coverUrl);
+        if (taking !== previous || previous.released) return null;
+        taking = null;
+        if (ready === true) return previous.view;
+      } catch { /* dispose the unpresented model; the caller constructs its original fallback */ }
+      if (taking === previous) taking = null;
+      release(previous); return null;
     },
     clear
   };

@@ -1,3 +1,4 @@
+import { bookReturnCompatibility } from './bookshelf-return.js';
 import * as THREE from 'three';
 import { spineSurface, releaseSurface, seededRandom, textSeed, withStops, paintCloth, paintWeave, spineLayout, drawDevice, lattice } from './spine-surface.js';
 import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from './book-colors.js';
@@ -2002,6 +2003,32 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     else replacement.userData.ready.then(replace);
     return true;
   }
+  /** Upgrade a parked reader model without replacing its page or GPU programs.
+   * This explicit return-only operation never presents a partly decoded cover. */
+  async function prepareReturnAppearance(nextBook,nextStyle,nextCoverUrl) {
+    const geometry = { width,height,thickness,viewportWidth,viewportHeight,centerX,centerY };
+    const compatible = bookReturnCompatibility(currentBook,style,geometry);
+    if (disposed || pendingModel || externalPresentation || model.userData.coverLoaded !== true || !compatible ||
+        compatible !== bookReturnCompatibility(nextBook,nextStyle,geometry)) return false;
+    waitingForFirstDraw = true;
+    updateBookmark(nextBook);
+    const target = model, revision = ++appearanceRevision;
+    const active = () => !disposed && model === target && !pendingModel && revision === appearanceRevision;
+    try {
+      const spineChanged = JSON.stringify(style) !== JSON.stringify(nextStyle);
+      currentBook = { ...currentBook,...nextBook };
+      if (spineChanged) target.userData.updateSpineAppearance(currentBook,nextStyle);
+      coverUrl = nextCoverUrl;
+      const nextCoverKey = coverPaintKeyFor(currentBook,nextStyle);
+      if (nextCoverKey !== coverPaintKey) {
+        if (await target.userData.updateCoverSource(coverUrl,currentBook,nextStyle,{ force:true }) !== true || !active()) return false;
+        if (currentBook.coverRelief && await target.userData.setCoverRelief(currentBook.coverRelief) !== true) return false;
+      }
+      if (!active()) return false;
+      coverPaintKey = nextCoverKey; style = nextStyle;
+      return true;
+    } catch { return false; }
+  }
   function updateSpineAppearance(nextBook, nextStyle) {
     if (disposed) return false;
     currentBook = { ...currentBook, ...nextBook };
@@ -2175,7 +2202,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
     deferDrawing() { if (!disposed) waitingForFirstDraw = true; }, releaseToSnapshot, handoffToShelfInsertion,
     setCompactReturnFrame(enabled) { compactReturnFrame = Boolean(enabled); },
-    updateAppearance, updateSpineAppearance, updateCoverAppearance, prepareCoverRelief, setCoverRelief, updateEdgeAppearance, updateBookmark,
+    updateAppearance, prepareReturnAppearance, updateSpineAppearance, updateCoverAppearance, prepareCoverRelief, setCoverRelief, updateEdgeAppearance, updateBookmark,
     setPageSnapshot, pageTextures, uploadPageTexture, compilePage, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
     setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
     getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,
