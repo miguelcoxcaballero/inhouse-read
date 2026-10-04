@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { configureNativeRendererSize } from './native-renderer-size.js';
 
 const MAX_LAYERS = 3;
 
@@ -98,9 +99,7 @@ export function createNativeFramebufferCache(renderer,{onRestored}={}) {
   }
 
   function configure(frame) {
-    if (renderer.getPixelRatio()!==frame.ratio) renderer.setPixelRatio(frame.ratio);
-    renderer.getSize(size);
-    if (size.x!==frame.width || size.y!==frame.height) renderer.setSize(frame.width,frame.height,false);
+    configureNativeRendererSize(renderer, frame.width, frame.height, frame.ratio, size);
     renderer.setRenderTarget?.(null);
     renderer.setViewport(0,0,frame.width,frame.height);
   }

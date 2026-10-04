@@ -3741,7 +3741,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       { opacity:1, transform:'translate(0,0) scale(1)' },
       { opacity:.85, transform:`translate(${dx}px, ${dy}px) scale(${startScale})` }
     ], { duration, easing:EASE, fill:'both' });
-    const restoreShelfSpine = () => {
+    const restoreShelfSpine = ({ flush = true } = {}) => {
       const current = [...root.querySelectorAll('.ihr-spine')]
         .find(node => node.dataset.bookId === String(bookId)) || spine
       current.classList.remove('is-away')
@@ -3752,7 +3752,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         state.returningBookId = null
         state.shelfScene?.setPaintHeld?.(false)
       }
-      state.shelfScene?.flush();
+      if (flush) state.shelfScene?.flush();
       return current
     }
     let animation = null, insertion = null;
@@ -3857,11 +3857,17 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         state.returnMotion = null;
         animation.cancel?.();
         for (const fallback of fallbackAnimations) fallback.cancel?.();
-        const currentSpine = restoreShelfSpine()
+        // A queued layout paints the landed book itself. Keep the insertion
+        // owner alive until that paint instead of drawing the old room first.
+        restoreShelfSpine({ flush:false })
+        applyDeferredShelfUpdates()
+        // With no queued layout, this flush still paints the restored spine.
+        state.shelfScene?.flush();
         view?.dispose(); flyout.remove();
         state.lastOpened = null;
+        const currentSpine = [...root.querySelectorAll('.ihr-spine')]
+          .find(node => node.dataset.bookId === String(bookId)) || spine
         currentSpine.focus?.({ preventScroll:true });
-        applyDeferredShelfUpdates()
         maybeRefreshAppearanceStyles();
         return true;
       }

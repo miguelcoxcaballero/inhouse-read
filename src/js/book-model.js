@@ -1,5 +1,6 @@
 import { bookReturnCompatibility } from './bookshelf-return.js';
 import * as THREE from 'three';
+import { configureNativeRendererSize } from './native-renderer-size.js';
 import { spineSurface, releaseSurface, seededRandom, textSeed, withStops, paintCloth, paintWeave, spineLayout, drawDevice, lattice } from './spine-surface.js';
 import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from './book-colors.js';
 import { normalizeBookAuthor } from './book-title.js';
@@ -1757,9 +1758,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     copiedRectangle=rectangle; snapshotDirty=false;
   }
   function configureFrame(frame) {
-    if (gpu.getPixelRatio() !== pixelRatio) gpu.setPixelRatio(pixelRatio);
-    gpu.getSize(rendererSize);
-    if (rendererSize.x !== frame.width || rendererSize.y !== frame.height) gpu.setSize(frame.width,frame.height,false);
+    configureNativeRendererSize(gpu, frame.width, frame.height, pixelRatio, rendererSize, directEnabled);
   }
   function positionPresentation(frame) {
     const parent=canvas.parentElement?.parentElement;

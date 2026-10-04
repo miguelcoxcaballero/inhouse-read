@@ -1,4 +1,15 @@
-# Verificación del WIP — rendimiento de web 1.7.49 y Android 1.1.4
+# Verificación del WIP — rendimiento de web 1.7.50 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.50
+
+La devolución agrupa la pintura final y el layout pendiente antes de liberar
+el libro. El tamaño y DPR del framebuffer nativo se asignan juntos cuando
+cambian ambos; se conservan dimensiones finales, CSS y las rutas de respaldo.
+La fuente final pasa 2.857 unitarias en 210 archivos, build y 75 comprobaciones
+Python; los 524 E2E sólo están enumerados hasta completar sus ejecuciones.
+Controles, resultados pendientes y límites están en
+[Rendimiento de 1.7.50](performance-1750.md). Los fallos originales anteriores
+conservan su estado propio.
 
 ## Cambios de rendimiento de 1.7.49
 
@@ -10,6 +21,18 @@ Back cancela la portada opcional pendiente e impide guardados o refrescos tardí
 La fuente final, sus controles y la comprobación de publicación se registran
 en [Rendimiento de 1.7.49](performance-1749.md). Sus resultados no sustituyen
 los fallos originales de las versiones anteriores.
+
+La CI original 1.7.49 (37224970834, fuente 1d47968) conserva **FAILED**:
+2.843 unitarias en 208 archivos pasan; 524 casos E2E contienen 522 expected
+y dos unexpected, cero flaky u omitidos. Sus 526 intentos incluyen cuatro
+fallos y dos retries: los dos contratos nativos vuelven a incumplir el gate
+original de ocho segundos. Se conservan doce logs y once ZIP autenticados;
+los snapshots posteriores no prueban el instante real de fin de cierre.
+
+La comparación de apariencia pasa 30 pares RGBA/PNG exactos contra el
+modelo fresco. La web publicada pasa 18 recorridos PDF y tres de editor y
+regreso nativo, además de HTTP, APK y loader. Son ámbitos distintos del CI
+y no sustituyen su fallo ni acreditan fluidez en un teléfono físico.
 
 ## Cambios de rendimiento de 1.7.48
 

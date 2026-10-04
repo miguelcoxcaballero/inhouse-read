@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { configureNativeRendererSize } from './native-renderer-size.js';
 import { createBookModel, getBookRenderer, lightBookScene } from './book-model.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { shelfBookSlot, shelfBookInsertion, projectShelfBookPose } from './bookshelf-return.js';
@@ -1842,10 +1843,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       restoreNativeRoom(); return paintInsertionOverlay(entry);
     }
     const paint = () => {
-    if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
-    renderer.getSize(rendererSize);
     const outputWidth=native?vw:frame.width, outputHeight=native?vh:frame.height;
-    if (rendererSize.x !== outputWidth || rendererSize.y !== outputHeight) renderer.setSize(outputWidth, outputHeight, false);
+    configureNativeRendererSize(renderer, outputWidth, outputHeight, ratio, rendererSize, native);
     const previousViewport = native && renderer.getViewport(previousInsertionViewport);
     if (native) renderer.setViewport(0,0,frame.width,frame.height);
     const autoClear = renderer.autoClear, scissorTest = renderer.getScissorTest();
@@ -2120,9 +2119,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // Release it only when this transaction really paints the legacy room.
       if(!nativeCaptureAligned)releaseCompletedLegacyInsertions();
       withRendererPresentation(renderer,nativeRoomLease,()=>{
-      if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
-      renderer.getSize(rendererSize);
-      if (rendererSize.x !== renderWidth || rendererSize.y !== renderHeight) renderer.setSize(renderWidth, renderHeight, false);
+      configureNativeRendererSize(renderer, renderWidth, renderHeight, ratio, rendererSize, Boolean(nativeCaptureAligned));
       // Fractional legacy captures keep Three's original viewport rounding.
       // Reassert the retained framebuffer only when it has exact pixel bounds.
       if(nativeCaptureAligned)renderer.setViewport(0,0,renderWidth,renderHeight);

@@ -114,17 +114,77 @@ en sus veinte frames de composición. Fuente, métodos y build permanecen
 idénticos antes y después. Resumen `local-browser-attempt1/summary.json`,
 SHA `03bcae93c06b90a84c28d958cc006aeb79fc043af29a095ca145a8b4980aa1c0`.
 
-La comparación RGBA adicional aún no tiene resultados de imagen: sus dos
-primeros métodos de servidor dev conservan FAIL de carga a 30 segundos,
-con cero poses o componentes comparados. El segundo acota la entrada HTML;
-su caché de dependencias quedó incompleta, sin probar la causa del timeout.
-Son fallos del método, separados de los siete recorridos de la app. Se prepara
-un build de fixture único con los mismos inputs, plazos y assertions.
+## Calidad de la vista reutilizada
 
-Pendientes de incorporar tras ejecutarse: comparación RGBA contra el modelo
-fresco; CI original; HTTP de la web y bytes/loader de la APK publicados.
-Las pruebas locales usan Windows Node 24/Python 3.9; la CI original usa
-Ubuntu Node 22/Python 3.12.
+El tercer método conserva la misma fixture, el bucle de captura y sus
+assertions, y pasa las 30 comparaciones: tres acabados, cinco poses y DPR 2
+y 1.5. Compara la vista retenida de la revisión 2 con un modelo fresco del
+mismo libro y apariencia final sobre el runtime 1.7.48. Usa páginas y portada
+HD de un PdfReader real, fuentes WOFF2 guardadas y el mismo progreso,
+marcapáginas, tema y relieve. Todos los componentes RGBA son idénticos y los
+pares de PNG del compositor tienen los mismos bytes. Se conservan 60 buffers
+RGBA y 120 PNG, con 484 inputs de fuente y 697 hechos fijados sin cambios.
+No es una medida de tiempo de animación.
 
-No se afirma una mejora temporal de 1.7.49 hasta medir esa fuente final. No se
-han medido temperatura, batería ni fluidez en un teléfono físico.
+Los dos métodos anteriores de servidor dev permanecen FAILED por carga a
+30 segundos, con cero poses o componentes comparados. El tercer método
+emplea un único build de la fixture; no amplía los plazos ni cambia los
+oracles. Resumen `return-appearance-quality-attempt3/summary.json`.
+
+## Web y APK publicadas
+
+La fuente publicada es `1d47968071b7b95533ca4bb3bf2c1f4c26bc9d05` y Pages
+`a0f79a74691edc3227d725fa0fedf5f29be775d9`. Se verifican los bytes HTTP del
+grafo de 23 módulos y las 44 entradas offline contra ese artefacto Git. El
+main real es `main-DIIMdC6h.js`, 1.446.556 bytes, SHA-256
+`6df165691abe4703ccb8cbc8dfc2d824d64f7b1d8e3bcba355e95580d6504fdc`.
+
+Los 18 recorridos PDF públicos pasan una vez, con 310 cuerpos HTTP exactos
+y 15 capturas. Los tres recorridos públicos originales de editor y regreso
+nativo también pasan, sin retries y con 50 cuerpos HTTP exactos. Se mantienen
+sus assertions y plazos originales. Una observación pública separada añade
+sólo un MutationObserver y registra `data-return-view="reused"` en el caso
+alineado; no establece qué vista usó el CI ni una mejora de velocidad.
+
+La APK firmada existente Android 1.1.4 se descarga nuevamente: 78.515.243
+bytes, SHA-256
+`feafaaa762b35344ac8b19418f9f6eb6cb1f725fba22b1ef3d3f273bd32a6191`.
+Su loader de 2.089 bytes coincide con la fuente Git; abre la web remota.
+Estas verificaciones no acreditan una captura nueva en un teléfono físico.
+La evidencia permanece en `public-1d47968-attempt1/`: `pins.web-1d47968.json`,
+`http-attempt1`, `apk-attempt1`, `browser-attempt1`,
+`performance-browser-attempt1` y `passive-return-observer-attempt1`.
+
+## CI original
+
+La CI original 37224970834, de la fuente publicada 1d47968, conserva
+**FAILED**. Pasan 2.843 unitarias en 208 archivos. El censo original completo
+incluye 524 casos E2E únicos: 522 expected, dos unexpected, cero flaky y cero
+omitidos. Los 526 intentos conservan 522 pases, cuatro fallos y dos retries.
+Sólo UI3 falla; los otros diez jobs de pruebas pasan y el agregador falla.
+Los dos contratos nativos fallan `not.toHaveClass(/is-closing-reader/)` con
+timeout de 8.000 ms en ambos intentos. Sus assertions y plazos son idénticos
+a los de la fuente 1.7.48; no se ha vuelto a ejecutar el CI.
+
+Se conservan los doce logs y once ZIP originales autenticados, con tamaños,
+SHA-256, CRC y hashes de sus miembros extraídos, junto al guard UI exacto de
+Git 1d47968. Evidencia `ci-1d47968-failed-original-collector-attempt1/snapshot-001/`;
+certificado `certification.json`, SHA-256
+`174014dbd68d8dcf0228d654a9146b7c9e44683ec7f76046b295776f5b8e94a6`.
+El censo de este collector procede de los diez manifests originales
+subidos al CI; no se presenta como un nuevo `--list` de una exportación
+inmutable. El listado local de la revisión 2 sigue separado.
+
+Los cuatro traces sí completan el expect backend de ocho segundos; no son
+los timeouts globales truncados que aparecieron en 1.7.47. Los snapshots
+posteriores ya muestran la estantería restaurada, pero se tomaron después
+del plazo fallido. El observador de la página no se leyó al fallar la primera
+assertion, por lo que no se conocen `clickedAt` ni `endedAt`. Los snapshots
+no incluyen `data-return-view`, fase ni progreso durante la espera. Los
+frames visuales muestreados no permiten asignar límites exactos a las fases
+ni convertir el fallo en PASS. Se conserva el log y ZIP autenticados en
+`failure-ui3-1d47968-first-early/`, sin sustituir el collector final.
+
+No se afirma una mejora temporal de 1.7.49. Los resultados locales y públicos
+no sustituyen el fallo original del CI. No se han medido temperatura,
+batería ni fluidez en un teléfono físico.
