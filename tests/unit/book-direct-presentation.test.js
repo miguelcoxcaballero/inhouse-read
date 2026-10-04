@@ -114,6 +114,35 @@ const presentation = () => gpu.renderers.find(renderer => renderer.options.prese
 const copies = view => output(view).copies.filter(copy => copy.source === presentation()?.domElement);
 
 describe('direct book presentation and actual lazy snapshots', () => {
+  it('uses a fixed smaller pixel-aligned window for a closed desktop book and retains full-size exports', () => {
+    const { view } = make({ viewportWidth:1280, viewportHeight:900, compactReturnFrame:true });
+    vi.mocked(view.canvas.getBoundingClientRect).mockReturnValue({ left:3,top:7,width:1280,height:900,right:1283,bottom:907 });
+    for (const angle of [0,25,65,90]) {
+      view.draw({ ...pose,coverOpen:0,angle });
+      expect(gpu.renders.at(-1).frame.dimensions).toEqual([320,384]);
+      expect(gpu.renders.at(-1).frame.ratio).toBe(2);
+      expect(gpu.renders.at(-1).frame.viewOffset.fullWidth).toBe(1280);
+      expect(gpu.renders.at(-1).frame.viewOffset.fullHeight).toBe(900);
+    }
+    expect(copies(view)).toHaveLength(0);
+    expect(view.canvas.width).toBe(2560); expect(view.canvas.height).toBe(1800);
+    view.canvas.getContext('2d');
+    expect(copies(view)).toHaveLength(1);
+    expect(copies(view)[0].args).toHaveLength(2);
+  });
+
+  it('expands the camera window for the real open cover and uses the original full window during page zoom', () => {
+    const { view } = make({ viewportWidth:1280,viewportHeight:900,compactReturnFrame:true });
+    view.draw({ ...pose,coverOpen:0 });
+    expect(gpu.renders.at(-1).frame.dimensions).toEqual([320,384]);
+    view.draw(pose);
+    expect(gpu.renders.at(-1).frame.dimensions).toEqual([448,384]);
+    view.draw({ ...pose,scale:2 });
+    expect(gpu.renders.at(-1).frame.dimensions).toEqual([1280,900]);
+    expect(gpu.renders.at(-1).frame.viewOffset).toBeNull();
+    expect(copies(view)).toHaveLength(0);
+  });
+
   it('presents successive poses through one live GPU canvas while keeping one export canvas inside the book', () => {
     const { view, host, stage } = make();
     for (const angle of [0, 20, 65]) view.draw({ ...pose, angle });

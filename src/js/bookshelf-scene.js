@@ -778,7 +778,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     cancelReplacement(entry);
     const previous = entry.model, replacement = makeModel(entry);
     entry.replacement = replacement;
-    Promise.resolve(replacement.userData.ready).then(loaded => {
+    const commit = loaded => {
       if (disposed || entry.replacement !== replacement || entry.model !== previous) {
         releaseCandidate(replacement); return;
       }
@@ -792,7 +792,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       furniture.add(replacement);
       if (previous) { furniture.remove(previous); previous.userData.dispose?.(); }
       invalidate();
-    }, () => {
+    };
+    // A fresh model with a decoded cover has already installed its fitted
+    // texture and grain. Commit it before updateLayout paints: waiting for
+    // an already resolved Promise would shade the obsolete shape once more.
+    // Relief keeps its independent bake and later invalidation in either path.
+    if (replacement.userData.coverLoaded === true) commit(true);
+    else Promise.resolve(replacement.userData.ready).then(commit, () => {
       if (entry.replacement === replacement) entry.replacement = null;
       releaseCandidate(replacement);
     });
@@ -2380,6 +2386,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       fullBounds.min.set(-width / 2, -height, -depth - (shelfType === 'baggebo' ? 0 : 4));
       fullBounds.max.set(width / 2, shelfType === 'baggebo' ? 0 : 2, shelfType === 'baggebo' ? 0 : 12);
       canvas.dataset.layoutUpdates = String(Number(canvas.dataset.layoutUpdates || 0) + 1);
+      // Cached replacements can invalidate while records are rebound. This
+      // immediate paint includes them; coalesce their queued duplicate frame.
+      cancelAnimationFrame(raf); raf = 0;
       draw();
       return true;
     },

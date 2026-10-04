@@ -179,7 +179,14 @@ test('EPUB paginated: highlight moves sentence by sentence and the visible page 
     await expect.poll(async () => (await highlightOnScreen(page))?.inside, { timeout:5_000 }).toBe(true)
   }
   expect(await page.evaluate(() => window.__narration.state.stacks)).toEqual([])
-  const entries = await logged(page)
+  // Capture the entire request log atomically after every recorded audible
+  // start. A request awaiting its start stays in the log and must complete.
+  const audibleEntries = await page.waitForFunction(() => {
+    const entries = window.__narration.log.map(entry => ({ ...entry, highlight:entry.atStart ?? '' }))
+    return entries.length && entries.every(entry => entry.atStart !== null) ? entries : null
+  }, null, { polling:'raf', timeout:8_000 })
+  const entries = await audibleEntries.jsonValue()
+  await audibleEntries.dispose()
   expect(entries.every(entry => squash(entry.highlight).includes(unstopped(entry.text)))).toBe(true)
   expect(new Set(entries.map(entry => entry.highlight)).size).toBeGreaterThan(5)
   // The saved position moved with the voice.

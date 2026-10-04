@@ -2104,7 +2104,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const view = bookView(bookNode, book, style, {
       width: coverW, height: coverH, thickness,
       viewportWidth: vw, viewportHeight: vh, centerX, centerY, coverUrl,
-      deferDraw:true,
+      deferDraw:true, compactReturnFrame:true,
       initialPose:{ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch, roll:sourceRoll }
     });
     if (view) {

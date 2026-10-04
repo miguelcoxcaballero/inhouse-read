@@ -360,7 +360,17 @@ test('móvil sin WebGL: la salida conserva la página real durante el cierre y l
   await page.getByRole('button',{name:'Página siguiente',exact:true}).click();
   await expect(page.locator('.pdf-text-layer')).toContainText('Saved blue page. Page 3.');
   await page.getByRole('button',{name:'Volver a la estantería'}).click();
-  await expect(page.locator('.ihr-flyout--return')).toHaveAttribute('data-return-phase','bookmark');
+  // This 360 ms phase can fall between locator polls. Observe it on RAF, with
+  // the original eight-second deadline shared by the attribute assertion.
+  const bookmarkDeadline = performance.now() + 8_000;
+  const bookmarkRemaining = () => {
+    const remaining = bookmarkDeadline - performance.now();
+    if (remaining <= 0) throw new Error('Bookmark phase exceeded the original eight-second deadline');
+    return remaining;
+  };
+  await page.waitForFunction(() => document.querySelector('.ihr-flyout--return')?.dataset.returnPhase === 'bookmark',
+    null, { polling:'raf', timeout:bookmarkRemaining() });
+  await expect(page.locator('.ihr-flyout--return')).toHaveAttribute('data-return-phase','bookmark',{timeout:bookmarkRemaining()});
   const saved=page.locator('.ihr-flyout__saved-page');
   await expect(saved).toHaveAttribute('data-page-locator',JSON.stringify({kind:'pdf-page',value:3}));
   expect(await saved.evaluate(canvas=>canvas.getContext('2d').getImageData(canvas.width/2,canvas.height/2,1,1).data[2])).toBeGreaterThan(100);

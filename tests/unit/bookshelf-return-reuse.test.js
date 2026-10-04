@@ -64,6 +64,7 @@ describe('reader close reuses its exact lifted book',() => {
     await vi.waitFor(() => expect(document.querySelector('.ihr-flyout__cover-target.is-ready')).not.toBeNull());
     const original = lifted()[0];
     expect(original.dimensions.deferDraw).toBe(true);
+    expect(original.dimensions.compactReturnFrame).toBe(true);
     const detached = original.paints.filter(paint => !paint.connected);
     expect(detached.length).toBeGreaterThan(0);
     expect(detached.every(paint => !paint.redraw)).toBe(true);

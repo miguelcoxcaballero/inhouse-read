@@ -1710,6 +1710,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   let waitingForFirstDraw = deferDraw;
   const compactCamera = camera.clone(), compactBox = new THREE.Box3(), compactPoint = new THREE.Vector3();
   const compactWidth = Math.min(viewportWidth, Math.ceil(((width * 2 + thickness) * 1.25 + 64) / 64) * 64);
+  const closedCompactWidth = Math.min(viewportWidth, Math.ceil(((width + thickness) * 1.25 + 64) / 64) * 64);
   const compactHeight = Math.min(viewportHeight, Math.ceil((height * 1.45 + 64) / 64) * 64);
   let copiedRectangle = null;
   let displayedFrame = null, snapshotDirty = false, live = false, suspendedHost = null;
@@ -1806,8 +1807,9 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   }
   function returnFrame(pose) {
     const full = { x:0, y:0, width:viewportWidth, height:viewportHeight, camera };
-    // Keep the full page during zoom. Afterwards use one fixed smaller buffer,
-    // translating the camera window rather than resizing for every pose.
+    // Keep the full page during zoom. Closed and open books each use a fixed
+    // smaller buffer, translating the camera window rather than resizing it
+    // for every pose. Bounds that do not fit retain the full original frame.
     if (!compactReturnFrame || pose.scale > 1.05 || !Number.isInteger(pixelRatio)
       || !Number.isInteger(viewportWidth) || !Number.isInteger(viewportHeight)) return full;
     model.updateMatrixWorld(true); camera.updateMatrixWorld(true);
@@ -1825,14 +1827,15 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (![left,top,right,bottom].every(Number.isFinite)) return full;
     // Geometry outside the viewport is already clipped by the full frame.
     left=Math.max(0,left); top=Math.max(0,top); right=Math.min(viewportWidth,right); bottom=Math.min(viewportHeight,bottom);
+    const frameWidth = current.coverOpen === 0 ? closedCompactWidth : compactWidth;
     if (right<left || bottom<top
-      || compactWidth<viewportWidth && right-left+48>compactWidth
+      || frameWidth<viewportWidth && right-left+48>frameWidth
       || compactHeight<viewportHeight && bottom-top+48>compactHeight) return full;
-    const x=compactWidth===viewportWidth ? 0 : Math.round((left+right-compactWidth)/2);
+    const x=frameWidth===viewportWidth ? 0 : Math.round((left+right-frameWidth)/2);
     const y=compactHeight===viewportHeight ? 0 : Math.round((top+bottom-compactHeight)/2);
     compactCamera.copy(camera);
-    compactCamera.setViewOffset(viewportWidth,viewportHeight,x,y,compactWidth,compactHeight);
-    return { x,y,width:compactWidth,height:compactHeight,camera:compactCamera };
+    compactCamera.setViewOffset(viewportWidth,viewportHeight,x,y,frameWidth,compactHeight);
+    return { x,y,width:frameWidth,height:compactHeight,camera:compactCamera };
   }
 
   function draw(pose, { redraw = true } = {}) {
