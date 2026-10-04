@@ -4,6 +4,12 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.37
+
+La nueva APK ejecuta ONNX en un hilo nativo, con los mismos modelos descargados de Piper, Nakdimon y Supertonic y el procesamiento PCM original. Los resultados reales vuelven al lector por el puente de Android; la síntesis deja de depender de la entrega de mensajes a un worker oculto. El navegador y las APK anteriores conservan el worker web. El código no activa voces del dispositivo ni cambia de voz.
+
+La candidata pasa 2.612 unitarias y comprobaciones de ONNX Java real: seis casos Piper (Lessac, neerlandés y Argentina, a 1×/1,25×) y 66 Supertonic (22 idiomas × tres perfiles base). Son pruebas de escritorio, sin acreditar todavía la pantalla apagada Android. La APK 1.1.4 permanece pendiente del gate nativo original.
+
 ### Actualización web · 1.7.36
 
 Los EPUB usan el descompresor JavaScript original de zip.js sobre los bytes locales del archivo. La extracción conserva los documentos, codificaciones y verificaciones del ZIP, y evita depender de la cola nativa de DecompressionStream. La continuidad Android requiere una captura nueva: 1.7.35 terminó su última síntesis pero dejó de entregar audio después de 120 fragmentos. Los diagnósticos de cola se obtienen de cada final real que vacía AudioTrack, mediante su evaluación original, sin polling ni comandos de reproducción adicionales.

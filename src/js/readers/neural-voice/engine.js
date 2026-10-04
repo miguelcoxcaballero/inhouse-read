@@ -14,6 +14,7 @@ import { NativePcmPlayer } from './native-player.js'
 import { storeError } from './store.js'
 import { NeuralPackageStore } from './package-store.js'
 import { SynthClient } from './client.js'
+import { NativeSynthClient } from './native-client.js'
 import { audioContext, nativeAudio, nativePcmBridge, unlockAudio } from './audio.js'
 
 export const LIMITS = {
@@ -59,6 +60,7 @@ export class FragmentCache {
 
 function defaultCreateClient(store) {
   const base = new URL(`${import.meta.env?.BASE_URL || '/'}neural-voice/`, globalThis.location?.href || 'http://localhost/').href
+  if (globalThis.InhouseInference?.getProtocol?.() === 1) return new NativeSynthClient({store,phonBase:`${base}phon/`})
   return new SynthClient({
     createWorker: () => new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }),
     ortBase: `${base}ort/`,

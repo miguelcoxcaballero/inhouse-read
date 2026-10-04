@@ -1562,7 +1562,7 @@ class ApkBuilderApp(tk.Tk):
         speech_file = main_src_root / "java" / Path(*package_id.split(".")) / "ReadAloudBridge.java"
         speech_file.parent.mkdir(parents=True, exist_ok=True)
         speech_file.write_text(Path(__file__).with_name("ReadAloudBridge.java").read_text(encoding="utf-8").replace("__PACKAGE__", package_id), encoding="utf-8")
-        for name in ("NativePcmBridge.java", "NativePcmService.java"):
+        for name in ("NativePcmBridge.java", "NativePcmService.java", "NativeInferenceBridge.java"):
             (speech_file.parent / name).write_text(Path(__file__).with_name(name).read_text(encoding="utf-8").replace("__PACKAGE__", package_id), encoding="utf-8")
 
         if java_file.exists():
@@ -1608,11 +1608,13 @@ import org.json.JSONObject;
 public class MainActivity extends BridgeActivity {{
     private ReadAloudBridge speechBridge;
     private NativePcmBridge pcmBridge;
+    private NativeInferenceBridge inferenceBridge;
     private boolean readingMode = false;
     private boolean activityResumed = false;
     @Override public void onDestroy() {{
         if (speechBridge != null) speechBridge.close();
         if (pcmBridge != null) pcmBridge.close();
+        if (inferenceBridge != null) inferenceBridge.close();
         super.onDestroy();
     }}
     private String pendingOAuthQuery = null;
@@ -1787,6 +1789,8 @@ public class MainActivity extends BridgeActivity {{
         webView.addJavascriptInterface(speechBridge, "InhouseSpeech");
         pcmBridge = new NativePcmBridge(this, webView);
         webView.addJavascriptInterface(pcmBridge, "InhousePcm");
+        inferenceBridge = new NativeInferenceBridge(this, webView);
+        webView.addJavascriptInterface(inferenceBridge, "InhouseInference");
         webView.addJavascriptInterface(new InhouseNativeBridge(), "InhouseNative");
         handleAppCallback(getIntent());
     }}
@@ -2046,11 +2050,13 @@ import org.json.JSONObject
 class MainActivity : BridgeActivity() {{
     private var speechBridge: ReadAloudBridge? = null
     private var pcmBridge: NativePcmBridge? = null
+    private var inferenceBridge: NativeInferenceBridge? = null
     private var readingMode = false
     private var activityResumed = false
     override fun onDestroy() {{
         speechBridge?.close()
         pcmBridge?.close()
+        inferenceBridge?.close()
         super.onDestroy()
     }}
     private var pendingOAuthQuery: String? = null
@@ -2201,6 +2207,8 @@ class MainActivity : BridgeActivity() {{
         webView.addJavascriptInterface(speechBridge!!, "InhouseSpeech")
         pcmBridge = NativePcmBridge(this, webView)
         webView.addJavascriptInterface(pcmBridge!!, "InhousePcm")
+        inferenceBridge = NativeInferenceBridge(this, webView)
+        webView.addJavascriptInterface(inferenceBridge!!, "InhouseInference")
         webView.addJavascriptInterface(InhouseNativeBridge(), "InhouseNative")
         handleAppCallback(intent)
     }}
@@ -2476,6 +2484,7 @@ class MainActivity : BridgeActivity() {{
             'implementation "androidx.core:core:1.13.1"',
             'implementation "androidx.activity:activity:1.9.3"',
             'implementation "androidx.browser:browser:1.8.0"',
+            'implementation "com.microsoft.onnxruntime:onnxruntime-android:1.22.0"',
         ]
         if "dependencies {" not in text:
             text += "\n\ndependencies {\n" + "\n".join(f"    {dep}" for dep in dependencies) + "\n}\n"

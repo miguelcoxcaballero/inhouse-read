@@ -71,6 +71,10 @@ jobs:
               assert b'setReadingMode' in dex, 'Native reader display policy missing'
               assert b'ReadAloudBridge' in dex and b'InhouseSpeech' in dex and b'inhouse-tts' in dex, 'Native speech bridge missing'
               assert b'NativePcmService' in dex and b'InhousePcm' in dex and b'InhousePcmState' in dex, 'Natural PCM foreground service missing'
+              assert b'NativeInferenceBridge' in dex and b'InhouseInference' in dex, 'Natural voice native inference missing'
+              for abi in ('arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'):
+                  for library in ('libonnxruntime.so', 'libonnxruntime4j_jni.so'):
+                      assert apk.getinfo(f'lib/{abi}/{library}').file_size > 0, f'Native inference library missing: {abi}/{library}'
               print(f'Production loader verified: {len(loader)} bytes')
           PY
 
