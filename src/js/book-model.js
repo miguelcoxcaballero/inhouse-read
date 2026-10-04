@@ -1702,6 +1702,12 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   const compactHeight = Math.min(viewportHeight, Math.ceil((height * 1.45 + 64) / 64) * 64);
   let copiedRectangle = null;
   let displayedFrame = null, snapshotDirty = false, live = false, suspendedHost = null;
+  let displayedPose = null, visualRevision = 0, displayedRevision = -1;
+  const invalidatePresentation = () => { displayedRevision = -1; };
+  if (directEnabled) {
+    gpu.domElement.addEventListener('webglcontextlost', invalidatePresentation);
+    gpu.domElement.addEventListener('webglcontextrestored', invalidatePresentation);
+  }
   let externalPresentation = null;
   const outputContext = canvas.getContext.bind(canvas);
   const outputURL = canvas.toDataURL.bind(canvas), outputBlob = canvas.toBlob.bind(canvas);
@@ -1902,7 +1908,9 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   }
 
   function draw(pose, { redraw = true } = {}) {
-    if (disposed || externalPresentation) return;
+    if (disposed) return;
+    visualRevision++;
+    if (externalPresentation) return;
     if (!redraw && snapshotDirty) captureSnapshot();
     if (pose.pageTheme != null) pageTheme = Math.max(0, Math.min(1, Number(pose.pageTheme) || 0));
     current = { ...pose, coverOpen:Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0)),
@@ -1935,6 +1943,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     withRendererPresentation(gpu,null,() => {
       gpu.render(scene, frame.camera);
       displayedFrame=frame; snapshotDirty=true;
+      displayedPose={ ...current }; displayedRevision=visualRevision;
       if (present) positionPresentation(frame);
       else { copyFrame(frame); canvas.style.opacity=''; live=false; }
     });
@@ -2082,6 +2091,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     const changed = JSON.stringify(bookmarkFor(currentBook)) !== JSON.stringify(bookmarkFor(nextBook));
     currentBook = { ...currentBook, ...nextBook };
     if (changed) {
+      visualRevision++;
       pendingModel?.userData.updateBookmark?.(nextBook);
       model.userData.updateBookmark?.(nextBook);
       canvas.dataset.bookmark3d = String(Boolean(model.userData.hasBookmark));
@@ -2098,9 +2108,34 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     return animateMotion([{ transform:origin }, { transform:{ ...origin, ...targetPose,
       x:targetPose?.x ?? origin.x - offsetX, coverOpen:0, bookmarkWithdraw:0 } }], { duration });
   }
+  // With no ribbon, only its logical withdrawal changes. Keep the motion's
+  // clock and state, but retain the identical already presented native frame.
+  const bookmarkPoseKeys = ['x','y','scale','angle','pitch','roll','coverOpen','pageTheme'];
+  function updateBookmarkFrame(pose) {
+    const absent = target => target?.userData.hasBookmark === false &&
+      typeof target.getObjectByName === 'function' && !target.getObjectByName('reading-bookmark');
+    if (disposed || externalPresentation || waitingForFirstDraw || !displayedFrame || pendingModel ||
+      !absent(model) || displayedRevision !== visualRevision || pageTheme !== (pose.pageTheme ?? pageTheme) ||
+      !directEnabled || !live || presentationOwner !== owner || !gpu.domElement.isConnected || !canvas.isConnected ||
+      bookmarkPoseKeys.some(key => (pose[key] ?? current?.[key] ?? 0) !== (current?.[key] ?? 0) ||
+        (pose[key] ?? 0) !== (displayedPose?.[key] ?? 0))) return false;
+    if (directEnabled) {
+      try { const context = gpu.getContext?.(); if (!context || context.isContextLost?.()) return false; }
+      catch { return false; }
+    }
+    const amount = Math.max(0, Math.min(1, Number(pose.bookmarkWithdraw) || 0));
+    current = { ...current, bookmarkWithdraw:amount };
+    model.userData.setBookmarkWithdraw?.(amount);
+    snapshotDirty = true;
+    const value = String(amount);
+    if (canvas.dataset.bookmarkWithdraw !== value) canvas.dataset.bookmarkWithdraw = value;
+    if (directEnabled) positionPresentation(displayedFrame);
+    return true;
+  }
   function animateBookmark({ withdraw = 1, duration = 360 } = {}) {
     const origin = { ...current };
-    return animateMotion([{ transform:origin }, { transform:{ ...origin, bookmarkWithdraw:withdraw } }], { duration });
+    return animateMotion([{ transform:origin }, { transform:{ ...origin, bookmarkWithdraw:withdraw } }],
+      { duration, onFrame:updateBookmarkFrame });
   }
   // `pageTheme` (0 = white stock, 1 = the reader's own theme; default 1) is where the
   // page's colour starts: the book opens and closes on white paper.
@@ -2112,7 +2147,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     // bookView owns its one framebuffer commit. The model's invalidation must
     // not render the same page again before the explicit draw below.
     if (disposed || !model.userData.setPageSnapshot(snapshot, { pageTheme, redraw:false })) return false;
-    currentSnapshot = snapshot;
+    currentSnapshot = snapshot; visualRevision++;
     pendingModel?.userData.setPageSnapshot(snapshot, { pageTheme, redraw:false });
     canvas.dataset.pageSource = snapshot.sourceType || snapshot.engine || 'reader-page';
     canvas.dataset.pageLocator = JSON.stringify(snapshot.location?.locator ?? snapshot.location ?? null);
@@ -2171,7 +2206,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   function setBookmarkWithdraw(amount) {
     if (current) draw({ ...current, bookmarkWithdraw:amount });
   }
-  function animateMotion(frames, { duration }) {
+  function animateMotion(frames, { duration, onFrame }) {
     cancel();
     if (current) frames = [{ ...frames[0], transform: current }, ...frames.slice(1)];
     let raf, resolve; const finished = new Promise(r => resolve = r);
@@ -2193,7 +2228,9 @@ export function bookView(host, book, style, { width, height, thickness, viewport
       const now = performance.now();
       elapsed += Math.min(started ? maxStep : 48, Math.max(0, now - lastFrame)); lastFrame = now; started = true;
       const t = duration > 0 ? Math.min(1, elapsed / duration) : 1;
-      draw(sampleBookMotion(frames, t)); animation.lastFrameTime = performance.now();
+      const pose = sampleBookMotion(frames, t);
+      if (!onFrame?.(pose)) draw(pose);
+      animation.lastFrameTime = performance.now();
       if (t < 1) raf = requestAnimationFrame(tick); else resolve();
     };
     raf = requestAnimationFrame(tick); return animation;
@@ -2209,6 +2246,8 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     animate:animateMotion,
     dispose(removeCanvas = true) { cancel(); if (!removeCanvas) captureSnapshot();
       unregisterSnapshot?.();
+      gpu.domElement.removeEventListener('webglcontextlost', invalidatePresentation);
+      gpu.domElement.removeEventListener('webglcontextrestored', invalidatePresentation);
       externalPresentation?.candidate?.dispose({ snapshot:false }); externalPresentation = null;
       if (presentationOwner === owner) { gpu.domElement.remove(); presentationOwner=null; }
       if (!removeCanvas) canvas.style.opacity=''; live=false; disposed = true;

@@ -1,4 +1,16 @@
-# Verificación del WIP — rendimiento de web 1.7.51 y Android 1.1.4
+# Verificación del WIP — rendimiento de web 1.7.52 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.52
+
+El libro activo conserva su fotograma nativo si sólo cambia una cinta que
+realmente no existe, con guards de pose exacta, revisiones, owner y contexto.
+Se conserva el resultado en 86 pares RGBA/PNG exactos: 44 → 30 dibujos por
+perfil de calidad. La fuente final pasa 2.889 unitarias en 212 archivos,
+build y 75 comprobaciones Python. Los siete recorridos locales originales
+pasan al primer intento, incluidos los cierres nativos de 5.309,4 y 5.362 ms.
+La publicación se registrará al concluir. Se conserva el primer método GPU FAILED y
+los fallos de CI anteriores, sin relajar assertions o plazos.
+Ámbitos y límites en [Rendimiento de 1.7.52](performance-1752.md).
 
 ## Cambios de rendimiento de 1.7.51
 
@@ -7,8 +19,13 @@ sólo si el frame, contexto, revisiones y dimensiones coinciden. Los exports
 externos conservan su independencia. Pasan ocho pares RGBA/PNG exactos y la
 batería local de 2.865 unitarias en 211 archivos, build y 75 pruebas Python.
 Pasan los siete recorridos originales locales al primer intento: el gesto
-mantiene veinte composiciones y cero nuevos renders de escena. CI y publicación
-se documentan al terminar
+mantiene veinte composiciones y cero nuevos renders de escena. Pasan también
+los 21 recorridos de la web publicada, HTTP, APK descargado y loader. La CI
+original completa conserva FAILED: 524 E2E, 522 expected y dos unexpected,
+cero flaky u omisiones; cuatro timeouts y dos retries. Los dos contratos
+nativos se interrumpen durante el cierre por el límite global de treinta
+segundos, antes de consumir los ocho segundos de su espera de cierre.
+Sus ámbitos se documentan
 en [Rendimiento de 1.7.51](performance-1751.md).
 
 ## Cambios de rendimiento de 1.7.50
@@ -18,9 +35,11 @@ el libro. El tamaño y DPR del framebuffer nativo se asignan juntos cuando
 cambian ambos; se conservan dimensiones finales, CSS y las rutas de respaldo.
 La fuente final pasa 2.857 unitarias en 210 archivos, build y 75 comprobaciones
 Python. La web publicada pasa 18 recorridos PDF y tres de editor/regreso nativo,
-todos al primer intento; pasan HTTP, APK descargado y loader. Los 524 E2E de
-la CI original siguen ejecutándose y se conservan como un ámbito distinto.
-Controles, resultados pendientes y límites están en
+todos al primer intento; pasan HTTP, APK descargado y loader. La CI original
+completa conserva FAILED: de 524 E2E, 522 expected y dos unexpected,
+cero flaky u omisiones; cuatro timeouts y dos retries en la apertura nativa.
+Sus doce logs y once ZIP se conservan como un ámbito distinto.
+Controles, resultados y límites están en
 [Rendimiento de 1.7.50](performance-1750.md). Los fallos originales anteriores
 conservan su estado propio.
 

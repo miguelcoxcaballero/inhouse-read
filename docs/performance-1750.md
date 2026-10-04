@@ -121,6 +121,14 @@ apertura; no se atribuyen al gate del cierre. Assertions y plazos son los
 mismos de 1.7.49. Log y ZIP originales quedan en
 `failure-ui3-bfbd2e3-first-early/` bajo el namespace de esta versión.
 
-Pendiente de incorporar: CI original 37227762667 completa.
+La CI original completa 37227762667 conserva **FAILED**: 2.857 unitarias
+en 210 archivos pasan; los 524 casos E2E originales contienen 522 expected,
+dos unexpected y cero flaky u omisiones. Sus 526 intentos incluyen
+522 passed, cuatro timedOut y dos retries. Los otros diez grupos originales
+pasan; sólo UI3 falla y el aggregate conserva FAILURE. Se contrastan los doce
+logs y once ZIP autenticados, sus digests y miembros, con un censo único de
+las 524 identidades. Certificado
+`ci-bfbd2e3-failed-original-collector-attempt1/snapshot-001/certification.json`,
+SHA `b3d2b9afc6095f529d843385fa5b6bac065a82962e633453ae008ab27159dcab`.
 Ningún resultado local o público sustituye ese control ni los fallos originales
 de 1.7.49. No se ha medido temperatura, batería o fluidez de un teléfono físico.
