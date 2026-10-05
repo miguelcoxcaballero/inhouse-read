@@ -10,6 +10,8 @@
 // Esto SOLO hace algo dentro del WebView empaquetado: en el navegador normal
 // o la PWA, `detectInhouseApp()` da false y el resto del módulo no hace nada.
 
+import { shelfPresented, idleSlice } from './idle-startup.js'
+
 const UPDATE_MANIFEST_PATH = 'android-update.json'
 const INHOUSE_APP_STORAGE_KEY = 'inhouseReadAppMode'
 const LEGACY_ANDROID_APP_VERSION = '1.0.0'
@@ -281,7 +283,8 @@ export function initAndroidUpdateChecks() {
   if (!detectInhouseApp()) return
   document.documentElement.dataset.inhouseApp = 'true'
   globalThis.handleInhouseUpdateResult = handleInhouseUpdateResult
-  checkForUpdate()
+  // The two manifest requests wait for the first live shelf frame.
+  shelfPresented().then(() => idleSlice()).then(checkForUpdate)
   window.addEventListener('focus', checkForUpdate)
   setInterval(checkForUpdate, CHECK_INTERVAL_MS)
 }

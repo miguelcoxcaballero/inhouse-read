@@ -111,7 +111,7 @@ import { createBookshelfScene } from './bookshelf-scene.js';
 import { refreshCanvasFontsAfterPaint } from './canvas-font-readiness.js';
 import { bookReturnSignature, bookReturnCompatibility, createBookReturnCache } from './bookshelf-return.js';
 import { layoutShelfDecorations, moveShelfDecoration } from './shelf-decoration-layout.js';
-import { createPlantCatalog } from './plant-catalog.js';
+import { createLazyPlantCatalog } from './plant-catalog-lazy.js';
 import { normalizeShelfType, BAGGEBO_SPEC } from './shelf-types.js';
 import { shelfModelLayout } from './shelf-model-layout.js';
 import { placeRooftopPlants } from './plant-rooftop-layout.js';
@@ -437,7 +437,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       state.shelfScene?.beginInspectionGesture?.();
     }});
   if (trashStatus) root.append(trashStatus, trashAnnounce);
-  const plantCatalog = createPlantCatalog({ onAdd:addCatalogPlant, onAddLamp:addCatalogLamp, shelfType:state.shelfType,
+  const plantCatalog = createLazyPlantCatalog({ onAdd:addCatalogPlant, onAddLamp:addCatalogLamp, shelfType:state.shelfType,
     onShelfChange:({ shelfType }) => {
       state.shelfType = normalizeShelfType(shelfType);
       try { localStorage.setItem(SHELF_TYPE_STORAGE_KEY, state.shelfType); } catch { /* Local preference only. */ }
