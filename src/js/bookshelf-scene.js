@@ -207,7 +207,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const scene = new THREE.Scene();
   lightBookScene(scene);
   const lighting = createShelfLighting(scene, renderer);
-  const lampLighting = createShelfLampLighting(scene);
+  const lampLighting = createShelfLampLighting(scene, { onAreaLightsReady:() => invalidate(true, false, 'lamp-lights') });
   // Keep the reader's shared renderer unchanged. Shelf fixtures compete with
   // softer room daylight, rather than the full book-reading studio rig.
   const daylight = scene.children.filter(child => child.isLight)

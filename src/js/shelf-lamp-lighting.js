@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { getCatalogLamp } from './lamp-catalog-data.js';
 
 export const MAX_SHELF_LAMP_LIGHTS = 4;
@@ -9,7 +8,20 @@ const localMatrix = new THREE.Matrix4(), inverseRoot = new THREE.Matrix4();
 const stripStart = new THREE.Vector3(), stripEnd = new THREE.Vector3(), stripNormal = new THREE.Vector3();
 const stripX = new THREE.Vector3(), stripY = new THREE.Vector3(), stripZ = new THREE.Vector3();
 const stripBasis = new THREE.Matrix4(), modelRotation = new THREE.Quaternion();
-let areaUniformsReady = false;
+// The area-light lookup tables are ~250 KB of numbers that only the filament
+// lamp needs, so they are a separate chunk loaded when a filament lamp is on the
+// shelf (known from the saved lamps before the scene is built) or when the
+// catalogue opens, never for the rest of the shelves.
+let areaLights = null, areaLightsLoading = null;
+export function ensureAreaLights() {
+  return areaLightsLoading ||= import('three/addons/lights/RectAreaLightUniformsLib.js').then(({ RectAreaLightUniformsLib }) => {
+    RectAreaLightUniformsLib.init(); areaLights = RectAreaLightUniformsLib; return areaLights;
+  }).catch(error => { areaLightsLoading = null; throw error; });
+}
+export function savedLampsNeedAreaLights() {
+  try { return /"lampId"\s*:\s*"tarnaby"/.test(localStorage.getItem('inhouse-read-shelf-lamps') || ''); } catch { return false; }
+}
+if (savedLampsNeedAreaLights()) await ensureAreaLights().catch(() => {});
 
 function emitterPower(emitter) {
   const power = Number(emitter.power ?? 1);
@@ -87,7 +99,7 @@ const byPriority = (a, b) => priority(a) - priority(b) || String(a.key).localeCo
  * keeps its slot until another lamp needs it, so its cached cone shadow is
  * still valid when it is switched on again.
  */
-export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGHTS } = {}) {
+export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGHTS, onAreaLightsReady } = {}) {
   const slots = [], kinds = [], counts = new Map(), quota = new Map(), ranks = new Map();
   let disposed = false, shadowRefresh = false;
   function removeLights(slot) {
@@ -98,11 +110,16 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
   }
   function createSlot(kind, index) {
     const filaments = kind.startsWith('filaments:') ? Number(kind.slice(10)) : 0, spotlight = kind === 'cone';
+    // Not loaded yet (a lamp added in a way the saved list did not announce):
+    // the slot is created on the update after the tables arrive.
+    if (filaments && !areaLights) {
+      ensureAreaLights().then(() => { if (!disposed) onAreaLightsReady?.(); }).catch(error => console.warn('No se pudo cargar la luz de filamentos:', error));
+      return false;
+    }
     const slot = { kind, filaments, spotlight, shadow:spotlight && index < MAX_LAMP_SHADOWS, key:null, entry:null,
       power:0, lit:false, stale:false, hasTransform:false, localMatrix:new THREE.Matrix4(), rootMatrix:new THREE.Matrix4(),
       shadowStamp:new Stamp(12), lightStamp:new Stamp(5), emitterStamp:new Stamp(9), poseStamp:new Stamp(filaments * POSE_VALUES) };
     if (filaments) {
-      if (!areaUniformsReady) { RectAreaLightUniformsLib.init(); areaUniformsReady = true; }
       slot.lights = Array.from({ length:filaments }, (_, strip) => {
         const light = new THREE.RectAreaLight(0xffffff, 0);
         light.userData.filamentIndex = strip;
@@ -155,7 +172,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
     for (const kind of kinds) {
       let have = 0;
       for (const slot of slots) if (slot.kind === kind) have++;
-      for (; have < quota.get(kind); have++) { createSlot(kind, have); changed = true; }
+      for (; have < quota.get(kind); have++) { if (createSlot(kind, have) === false) break; changed = true; }
       for (; have > quota.get(kind); have--) {
         const index = slots.findLastIndex(slot => slot.kind === kind);
         removeLights(slots[index]); slots.splice(index, 1); changed = true;
