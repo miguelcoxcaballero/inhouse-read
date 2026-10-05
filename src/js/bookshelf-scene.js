@@ -730,8 +730,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   };
 
   function makeModel(entry) {
-    const model = entry.kind === 'plant' ? createShelfPlant(entry)
-      : entry.kind === 'lamp' ? createShelfLamp({ lampId:entry.lampId, width:entry.width, height:entry.height, quality:'high', isOn:entry.isOn !== false })
+    const model = entry.kind === 'plant' ? createShelfPlant(entry, { persist:true })
+      : entry.kind === 'lamp' ? createShelfLamp({ lampId:entry.lampId, width:entry.width, height:entry.height, quality:'high', isOn:entry.isOn !== false, persist:true })
       : createBookModel(entry.book, entry.style, entry.width, entry.height, entry.thickness, entry.coverUrl, { shelf:true, overview:entry.overview, inspectionResolution:entry.inspectionResolution });
     // Texture/font decode notifications improve the same artwork. Explicit
     // record/material changes separately invalidate the retained room below.
