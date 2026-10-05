@@ -435,7 +435,7 @@ test('las plantas de una instalación antigua migran a los modelos actuales sin 
   const errors = [], brokenAssets = [];
   page.on('pageerror',error => errors.push(error.message));
   page.on('response',response => { if (response.url().includes('/assets/') && response.status() >= 400) brokenAssets.push(response.url()); });
-  page.on('requestfailed',request => { if (request.url().includes('/assets/')) brokenAssets.push(request.url()); });
+  page.on('requestfailed',request => { if (request.url().includes('/assets/') && request.failure()?.errorText !== 'net::ERR_ABORTED') brokenAssets.push(request.url()); /* a lazy chunk cut off by a reload is not a broken asset */ });
   // These are the original persisted decorations, not catalog records. They
   // have no catalogId, potId or height and must upgrade on application startup.
   const legacy = [

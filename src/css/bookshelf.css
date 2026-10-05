@@ -121,14 +121,12 @@
 
 .ihr-section__header { display:flex; align-items:center; gap:9px; margin:0 4px 8px; }
 .ihr-section__count { display:grid; place-items:center; min-width:22px; height:22px; padding:0 6px; border-radius:7px; background:var(--border); color:var(--text-secondary); font-size:.7rem; }
-.ihr-library-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:4px 4px 28px; }
+/* The library title only stays for assistive technology: no banner above the shelf. */
+.ihr-library-heading { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .ihr-library-heading h1 { margin:0; font:600 1.25rem var(--f-logo); letter-spacing:-.6px; }
 .ihr-library-heading__tools { display:flex; align-items:center; gap:14px; }
 .ihr-library-heading p { margin:0; color:var(--text-secondary); font-size:.8rem; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .ihr-library-heading p:empty { display:none; }
-@media (max-width:599px), (max-height:500px) and (pointer:coarse) {
-  .ihr-library-heading { margin:12px max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left)); }
-}
 .ihr-library-loading {
   min-height: min(48vh, 360px);
   display: flex;

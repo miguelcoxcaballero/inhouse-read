@@ -19,7 +19,9 @@ import { initAndroidFileImports } from './android-file-import.js'
 import { initReadingDisplay } from './reading-display.js'
 import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
 import { normalizeShelfPosition } from './book-colors.js'
-import { ReaderExperience } from './readers/reader-experience.js'
+import { createLazyReaderExperience } from './readers/reader-experience-lazy.js'
+import { runAfterFirstFrame } from './idle-startup.js'
+import { loadPlantCatalogModule } from './plant-catalog-lazy.js'
 import { classifyTapZone, ZONE } from './gestures.js'
 import { markTiming } from './perf-marks.js'
 import { createPreparedPageCache, createStageGate, pageKeyMismatch } from './prepared-page.js'
@@ -127,7 +129,9 @@ async function persistBookState(bookId, fields) {
   progressWrites.set(bookId, write)
   try { await write } finally { if (progressWrites.get(bookId) === write) progressWrites.delete(bookId) }
 }
-const readingExperience = new ReaderExperience(reader, { persist:persistBookState })
+// The reading panel and voice code load after the shelf has settled (see the
+// end of this file); a book never opens before they are in.
+const readingExperience = createLazyReaderExperience(reader, { persist:persistBookState })
 
 // ---- Tema (idéntico al patrón de Inhouse Notes: data-theme + persistido) ----
 
@@ -574,6 +578,9 @@ async function openFile(file, options = {}) {
 }
 
 async function openFileContent(file, { existingRecord, forcedId, folderFileName, transition, preparing = false, restoreRemoved = false, onImportReady, reuseStoredContent = false } = {}) {
+  // Normally prefetched after the first shelf frame, so this is already settled.
+  try { await readingExperience.ready() }
+  catch (error) { throw new Error('No se pudo cargar el lector. Comprueba la conexión e inténtalo de nuevo.', { cause:error }) }
   if (!existingRecord && forcedId) existingRecord = await library.get(forcedId)
   if (transition?.isActive && !transition.isActive()) return false
   if (!preparing) {
@@ -1313,7 +1320,15 @@ refreshShelf({ immediate:true })
 loadDriveAccountProfile().catch(error => console.warn('No se pudo restaurar la cuenta:', error))
 initAndroidUpdateChecks()
 initContentFreshnessChecks()
-registerOfflineShell().catch(error => console.warn('No se pudo guardar la app para abrirla sin conexión:', error))
+// Everything below waits for the first live shelf frame, one task per idle
+// slice: the offline-shell download must not compete with the shelf's own
+// files, and the reader / catalogue chunks are loaded before anyone reaches
+// for them (see idle-startup.js).
+runAfterFirstFrame([
+  () => readingExperience.prefetch(),
+  () => loadPlantCatalogModule().catch(() => {}),
+  () => registerOfflineShell().catch(error => console.warn('No se pudo guardar la app para abrirla sin conexión:', error))
+])
 initReadingDisplay()
 initAndroidFileImports({
   canImport: () => !closingReader && !els.readerScreen.classList.contains('is-preparing'),

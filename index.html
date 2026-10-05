@@ -24,15 +24,32 @@
     // Google Identity Services only serves the web sign-in popup. The Android
     // shell signs in natively (PKCE), so its WebView skips downloading and
     // running the library while the shelf is starting.
+    // It is a third-party script of its own to download and run, so it waits
+    // until the page has loaded and the browser is idle (the Drive button says
+    // "Google está cargando" if somebody is quicker than that).
     if (!/\bInhouseReadApp\/\d/i.test(navigator.userAgent)) {
-      const gsi = document.createElement('script')
-      gsi.src = 'https://accounts.google.com/gsi/client'; gsi.async = true
-      document.head.append(gsi)
+      const loadGsi = () => {
+        const gsi = document.createElement('script')
+        gsi.src = 'https://accounts.google.com/gsi/client'; gsi.async = true
+        document.head.append(gsi)
+      }
+      const whenIdle = () => ('requestIdleCallback' in window ? requestIdleCallback(loadGsi, { timeout: 4000 }) : setTimeout(loadGsi, 1500))
+      if (document.readyState === 'complete') whenIdle()
+      else addEventListener('load', whenIdle, { once: true })
     }
   </script>
 
 </head>
 <body>
+  <script>
+    // Apply the saved theme before the first paint, so the page never flashes the other one.
+    (function () {
+      var theme = null
+      try { theme = localStorage.getItem('inhouse-read-theme') } catch (e) { /* storage blocked */ }
+      if (theme === null) theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+      document.documentElement.setAttribute('data-theme', theme)
+    })()
+  </script>
   <div class="app-shell">
     <header class="app-header">
       <span class="logo">

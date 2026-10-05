@@ -236,7 +236,7 @@ test('voz natural: lista agrupada, voz automática y descarga de otra voz', asyn
 test('la estantería dibuja madera y plantas 3D sin recursos rotos', async ({ page }) => {
   const brokenAssets = []
   page.on('response', response => { if (response.url().includes('/assets/') && response.status() >= 400) brokenAssets.push(response.url()) })
-  page.on('requestfailed', request => { if (request.url().includes('/assets/')) brokenAssets.push(request.url()) })
+  page.on('requestfailed', request => { if (request.url().includes('/assets/') && request.failure()?.errorText !== 'net::ERR_ABORTED') brokenAssets.push(request.url()) /* a lazy chunk cut off by a reload is not a broken asset */ })
   await page.goto(process.env.IHR_TEST_URL || '/')
   await expect(page.locator('.ihr-plant[data-object-id]')).toHaveCount(3)
   await expect(page.locator('.ihr-plant img, .ihr-plant--photo')).toHaveCount(0)

@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createShelfLamp } from './shelf-lamps.js';
 import { getCatalogLamp } from './lamp-catalog-data.js';
-import { createShelfLampLighting } from './shelf-lamp-lighting.js';
+import { createShelfLampLighting, ensureAreaLights } from './shelf-lamp-lighting.js';
+
+// The filament lamp's light needs its lookup tables before the first preview.
+await ensureAreaLights().catch(() => {});
 
 /** The actual shelf lamp, with its own warm light and reflected studio lighting. */
 export function createLampCatalogPreview(host) {

@@ -25,6 +25,12 @@ export default defineConfig({
       input: {
         main: resolvePath('./index.html'),
         androidDownload: resolvePath('./download-android.html')
+      },
+      output: {
+        // three.js (~530 KB) changes only when it is upgraded: its own file
+        // keeps its hash across releases, so an update re-downloads the app
+        // code only, and the browser compiles both files in parallel.
+        manualChunks: id => /node_modules[\\/]three[\\/]build[\\/]/.test(id) ? 'three' : undefined
       }
     }
   },
