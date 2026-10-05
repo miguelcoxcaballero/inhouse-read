@@ -33,7 +33,11 @@ Los tres recorridos públicos conservan editor y alineado PASS y el
 fraccional FAILED por el global30. No se reintenta ni se usa su diagnóstico
 pasivo posterior como aprobación del original. Ese diagnóstico completa el
 cierre en 5.759 ms; no es una medición aislada de FPS. CI68 conserva fallos
-en UI2/UI3; los demás grupos completados pasan y Supertonic sigue en curso.
-No se presenta como batería completa aprobada.
+en UI2/UI3. Su colección completa queda sellada FAILED: 12 jobs, 11 ZIP,
+524 identidades E2E, 527 intentos contando tres retries originales y cinco
+intentos fallidos; 3.213 unitarias/252 archivos. El resto de grupos pasa,
+incluido Supertonic. UI2 necesita un retry de la portada PDF; se conserva
+como flaky y el guard lo rechaza. No se reejecuta el workflow ni se presenta
+como batería completa aprobada.
 
 Evidencia: `.animation.local/performance-1768/`.

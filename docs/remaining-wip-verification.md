@@ -1,4 +1,16 @@
-# Verificación del WIP — web 1.7.68, candidato 1.7.69 y Android 1.1.4
+# Verificación del WIP — web 1.7.70 y Android 1.1.4
+
+## Reserva del encuadre de 1.7.70
+
+Las animaciones reservan su encuadre compacto antes de empezar, evitando
+redimensionar el framebuffer al cruzar cada bucket. Se conservan calidad,
+DPR, modelos, materiales, geometría, sampler y relojes; la reserva puede
+crecer y se libera al cancelar o terminar. Pasan 79 pruebas enfocadas,
+3.235 unitarias/253 archivos, build, 75 Python y los siete recorridos
+originales al primer intento. Cierres completos: 5.555,7/5.339,2 ms dentro
+de sus 8 s. No se afirma una mejora medida de FPS en un teléfono.
+Despliegue y CI completo pendientes. Detalle en
+[Animaciones y rendimiento de 1.7.70](performance-1770.md).
 
 ## Reutilización HDR de 1.7.69
 
@@ -8,7 +20,11 @@ con fallback a la generación original. Pasan 3.232 unitarias/253 archivos,
 build y 75 Python; la prueba gráfica integrada conserva exactamente el HDR
 y todos los píxeles en tres ángulos. Pasan los siete recorridos originales:
 cierres nativos completos de 4.908,1 y 5.303,4 ms, sin retries ni omisiones.
-Publicación pendiente.
+Publicada: HTTP25/offline89 y APK/loader comprobados, tres recorridos
+públicos nativo/editor y 18 PDF PASS, más fuentes offline exactas. Android
+emulado `37293604213` acredita preflight de Google y cinco estados de
+política nativa; su última captura conserva el libro en tránsito y no mide
+el fin visual del cierre. CI69 `37292891253` sigue en curso; UI3 conserva dos timeouts globales de 30 s durante arranque/apertura, sin acreditar un cierre aislado superior a 8 s.
 Detalle en [Iluminación y rendimiento de 1.7.69](performance-1769.md).
 
 ## Fuentes locales de 1.7.68
@@ -20,7 +36,8 @@ Pasan 3.213 unitarias/252 archivos, build, 75 Python y los siete
 recorridos gráficos originales. Fuentes online/offline con raster y cuerpos
 exactos comprobados. Publicada: HTTP25/offline89 y APK/loader reales
 comprobados, más 18 PDF públicos y fuentes offline. El público fraccional
-conserva su fallo global30; CI68 tiene UI2/UI3 FAILED y Supertonic pendiente.
+conserva su fallo global30. CI68 completo queda sellado FAILED: 12 jobs,
+11 ZIP y 524 identidades; UI2/UI3 y el agregado fallan, el resto pasa.
 No se afirma aprobación completa. Detalle en
 [Fuentes y rendimiento de 1.7.68](performance-1768.md).
 

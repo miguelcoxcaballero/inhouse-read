@@ -31,7 +31,34 @@ intento, sin retries ni omisiones, con 613 entradas fuente/build estables.
 Los cierres nativos completos tardan 4.908,1 y 5.303,4 ms dentro de sus
 plazos originales; las capturas conservan el framebuffer y sus píxeles.
 El gesto isométrico conserva seis lomos a resolución 1.024 y no añade
-renders GPU durante el movimiento. Publicación y comprobaciones públicas
-pendientes.
+renders GPU durante el movimiento.
+
+Publicada desde `9603638`, Pages `ee412b1`: el HTML y el main descargados,
+los 25 módulos y las 89 entradas offline coinciden con el artefacto real.
+Los tres recorridos públicos nativo/editor y los 18 PDF pasan al primer
+intento, sin retries ni omisiones; cada caso observa el main publicado.
+También pasan las 93 caras online/offline: 34 cuerpos WOFF2 servidos por
+el Service Worker sin red, con medidas y raster idénticos.
+
+La descarga nueva del APK 1.1.4/code17 tiene 78.515.243 bytes y SHA256
+`feafaaa762b35344ac8b19418f9f6eb6cb1f725fba22b1ef3d3f273bd32a6191`.
+Su loader real tiene 2.089 bytes y sólo hay dos stubs Cordova vacíos;
+no contiene una copia empaquetada de la app. El cambio es web y no requiere
+recompilar el wrapper.
+
+Android emulado `37293604213` pasa con el APK real descargado: el formulario
+real de Google se abre sin error de solicitud y se acreditan estantería,
+lector, segundo plano, el mismo PDF al regresar y estantería. Se reproducen
+las aserciones del verificador original contra sus XML, Window e InsetsSource.
+Lectura: KEEP_SCREEN_ON, barra solicitada y realmente oculta, WebView y=0.
+Estantería: flag liberado, barra visible y WebView y=66 en este emulador.
+El estado final de estantería se observa a los 34,206 s (seis capturas),
+pero su PNG todavía muestra el libro en tránsito. Es evidencia de política
+nativa y UI del home, no de la terminación visual ni de un cierre 3D de
+esa duración. Las capturas originales se conservan. No se introducen
+credenciales: la comprobación de Google es preflight, no login/Drive real.
+La identidad del JavaScript se acredita por HTTP aparte; no se captura
+el SHA del body dentro del emulador. CI69 `37292891253` sigue en curso; UI3 conserva dos timeouts globales de 30 s en arranque/apertura. Los originales y retries quedan registrados como fallo; no prueban un cierre aislado completo superior a 8 s.
+No se afirma todavía aprobación completa ni rendimiento de un móvil físico.
 
 Evidencia: `.animation.local/performance-1769/`.

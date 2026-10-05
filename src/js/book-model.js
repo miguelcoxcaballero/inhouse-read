@@ -1856,7 +1856,15 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     suspendedHost=resume ? canvas.parentElement : null;
     if (!resume) directEnabled=false;
   }
-  function returnFrame(pose) {
+  let motionFrameCapacity = null;
+  function positionModel(pose) {
+    model.userData.setCoverOpen?.(Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0)));
+    model.userData.setBookmarkWithdraw?.(Math.max(0, Math.min(1, pose.bookmarkWithdraw ?? current?.bookmarkWithdraw ?? 0)));
+    model.position.set(centerX - viewportWidth / 2 + pose.x, viewportHeight / 2 - centerY - pose.y, 0);
+    model.rotation.set((pose.pitch ?? 0) * Math.PI / 180, pose.angle * Math.PI / 180, (pose.roll ?? 0) * Math.PI / 180);
+    model.scale.setScalar(pose.scale);
+  }
+  function returnFrame(pose, measureOnly = false) {
     const full = { x:0, y:0, width:viewportWidth, height:viewportHeight, camera };
     // Legacy zoom keeps the full viewport. Native compact windows preserve
     // pixel resolution; optional adaptive mode selects padded 64px buckets
@@ -1899,15 +1907,24 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (![left,top,right,bottom].every(Number.isFinite)) return full;
     // Geometry outside the viewport is already clipped by the full frame.
     left=Math.max(0,left); top=Math.max(0,top); right=Math.min(viewportWidth,right); bottom=Math.min(viewportHeight,bottom);
-    const frameWidth = adaptive ? Math.min(viewportWidth,Math.ceil((right-left+48)/64)*64)
+    let frameWidth = adaptive ? Math.min(viewportWidth,Math.ceil((right-left+48)/64)*64)
       : current.coverOpen === 0 ? closedCompactWidth : compactWidth;
-    const frameHeight = adaptive ? Math.min(viewportHeight,Math.ceil((bottom-top+48)/64)*64) : compactHeight;
+    let frameHeight = adaptive ? Math.min(viewportHeight,Math.ceil((bottom-top+48)/64)*64) : compactHeight;
+    // Reserve the flight's largest compact window once, rather than resetting
+    // the native framebuffer at every 64px boundary. The camera still follows
+    // the exact projected book at its original DPR. Unexpected bounds can grow
+    // this reservation, never clip geometry or reduce resolution.
+    if (adaptive && motionFrameCapacity && !measureOnly) {
+      motionFrameCapacity.width = frameWidth = Math.max(frameWidth, motionFrameCapacity.width);
+      motionFrameCapacity.height = frameHeight = Math.max(frameHeight, motionFrameCapacity.height);
+    }
     if (adaptive && frameWidth===viewportWidth && frameHeight===viewportHeight) return full;
     if (right<left || bottom<top
       || frameWidth<viewportWidth && right-left+48>frameWidth
       || frameHeight<viewportHeight && bottom-top+48>frameHeight) return full;
     const x=frameWidth===viewportWidth ? 0 : Math.round((left+right-frameWidth)/2);
     const y=frameHeight===viewportHeight ? 0 : Math.round((top+bottom-frameHeight)/2);
+    if (measureOnly) return { x,y,width:frameWidth,height:frameHeight };
     compactCamera.copy(camera);
     compactCamera.setViewOffset(viewportWidth,viewportHeight,x,y,frameWidth,frameHeight);
     return { x,y,width:frameWidth,height:frameHeight,camera:compactCamera };
@@ -1921,11 +1938,8 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (pose.pageTheme != null) pageTheme = Math.max(0, Math.min(1, Number(pose.pageTheme) || 0));
     current = { ...pose, coverOpen:Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0)),
       bookmarkWithdraw:Math.max(0, Math.min(1, pose.bookmarkWithdraw ?? current?.bookmarkWithdraw ?? 0)), pageTheme };
-    model.userData.setCoverOpen?.(current.coverOpen);
     model.userData.setPageTheme?.(pageTheme, false);
-    model.userData.setBookmarkWithdraw?.(current.bookmarkWithdraw);
-    model.position.set(centerX - viewportWidth / 2 + pose.x, viewportHeight / 2 - centerY - pose.y, 0);
-    model.rotation.set((pose.pitch ?? 0) * Math.PI / 180, pose.angle * Math.PI / 180, (pose.roll ?? 0) * Math.PI / 180); model.scale.setScalar(pose.scale);
+    positionModel(current);
     // Hidden setup changes geometry and page projection without copying frames.
     // The first explicit draw commits the complete, correctly aligned page.
     if (!redraw) return;
@@ -2253,8 +2267,23 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   function animateMotion(frames, { duration, onFrame }) {
     cancel();
     if (current) frames = [{ ...frames[0], transform: current }, ...frames.slice(1)];
+    if (duration > 0 && !onFrame && directEnabled && compactReturnFrame && adaptiveNativeFrame &&
+        Number.isInteger(pixelRatio) && Number.isInteger(viewportWidth) && Number.isInteger(viewportHeight)) {
+      const capacity = { width:0,height:0 };
+      try {
+        // These are geometry-only probes: no draw, GPU allocation, snapshot or
+        // animation-clock advancement. Actual frames retain the original sampler.
+        for (let i=0;i<=16;i++) {
+          const pose=sampleBookMotion(frames,i/16); positionModel(pose);
+          const frame=returnFrame(pose,true);
+          capacity.width=Math.max(capacity.width,frame.width);
+          capacity.height=Math.max(capacity.height,frame.height);
+        }
+        motionFrameCapacity=capacity;
+      } finally { if (current) positionModel(current); }
+    }
     let raf, resolve; const finished = new Promise(r => resolve = r);
-    cancel = () => { cancelAnimationFrame(raf); resolve(); };
+    cancel = () => { cancelAnimationFrame(raf); motionFrameCapacity=null; resolve(); };
     let lastFrame = performance.now(), elapsed = 0;
     const animation = { finished, cancel, lastFrameTime:lastFrame };
     // Real time, so a slow device finishes each phase on schedule instead of
@@ -2265,7 +2294,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     const maxStep = Math.max(48, Math.min(100, duration / 2));
     let started = false;
     const tick = () => {
-      if (disposed) return resolve();
+      if (disposed) { motionFrameCapacity=null; return resolve(); }
       // RAF's shared frame timestamp can precede a gesture delivered after a
       // slow draw. Measure when this callback actually runs, on the same clock
       // that started the motion, so its first painted pose advances too.
@@ -2275,7 +2304,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
       const pose = sampleBookMotion(frames, t);
       if (!onFrame?.(pose)) draw(pose);
       animation.lastFrameTime = performance.now();
-      if (t < 1) raf = requestAnimationFrame(tick); else resolve();
+      if (t < 1) raf = requestAnimationFrame(tick); else { motionFrameCapacity=null; resolve(); }
     };
     raf = requestAnimationFrame(tick); return animation;
   }

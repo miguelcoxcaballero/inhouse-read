@@ -114,6 +114,66 @@ const presentation = () => gpu.renderers.find(renderer => renderer.options.prese
 const copies = view => output(view).copies.filter(copy => copy.source === presentation()?.domElement);
 
 describe('direct book presentation and actual lazy snapshots', () => {
+  it('reserves one full-resolution compact framebuffer for a native flight without changing poses or export dimensions', async () => {
+    const { view } = make({ compactReturnFrame:true,adaptiveNativeFrame:true });
+    const origin={ ...pose,coverOpen:0,angle:90,scale:.3,x:-100,y:140 };
+    view.draw(origin); gpu.renders.length=0;
+    let clock=1000,serial=0;const scheduled=new Map();
+    vi.spyOn(performance,'now').mockImplementation(()=>clock);
+    vi.stubGlobal('requestAnimationFrame',callback=>{const id=++serial;scheduled.set(id,callback);return id;});
+    vi.stubGlobal('cancelAnimationFrame',id=>scheduled.delete(id));
+    const frames=[{transform:origin},{transform:{...origin,angle:0,scale:1,x:0,y:0}}];
+    const {sampleBookMotion}=await import('../../src/js/book-model.js');
+    const animation=view.animate(frames,{duration:240});
+    expect(gpu.renders).toHaveLength(0); // reservation never paints geometry probes
+    const sizes=[];
+    for(let elapsed=16;elapsed<=240;elapsed+=16) {
+      const [id,callback]=scheduled.entries().next().value;scheduled.delete(id);clock=1000+elapsed;callback(clock);
+      sizes.push(gpu.renders.at(-1).frame.dimensions);
+      const expected=sampleBookMotion(frames,elapsed/240),actual=view.getPose();
+      for(const key of ['x','y','scale','angle','coverOpen','bookmarkWithdraw']) expect(actual[key]).toBeCloseTo(expected[key]);
+      expect(gpu.renders.at(-1).frame.ratio).toBe(2);
+    }
+    await animation.finished;
+    expect(new Set(sizes.map(size=>JSON.stringify(size))).size).toBe(1);
+    expect(sizes[0][0]).toBeLessThan(390);expect(sizes[0][1]).toBeLessThan(844);
+    expect(view.canvas.width).toBe(780);expect(view.canvas.height).toBe(1688);
+    expect(copies(view)).toHaveLength(0);
+    const displayed=structuredClone(presentation().domElement.frame);
+    expect(view.canvas.getContext('2d').frame).toEqual(displayed);
+    expect(copies(view)).toHaveLength(1);
+    view.draw(origin);expect(gpu.renders.at(-1).frame.dimensions).not.toEqual(sizes[0]);
+  });
+
+  it('releases a cancelled flight reservation before a new smaller native motion', async () => {
+    const {view}=make({compactReturnFrame:true,adaptiveNativeFrame:true});
+    const small={...pose,coverOpen:0,angle:90,scale:.3};view.draw(small);
+    let clock=1000,serial=0;const scheduled=new Map();
+    vi.spyOn(performance,'now').mockImplementation(()=>clock);
+    vi.stubGlobal('requestAnimationFrame',callback=>{const id=++serial;scheduled.set(id,callback);return id;});
+    vi.stubGlobal('cancelAnimationFrame',id=>scheduled.delete(id));
+    const large=view.animate([{transform:small},{transform:{...small,scale:8,angle:0}}],{duration:240});
+    const [id,callback]=scheduled.entries().next().value;scheduled.delete(id);clock+=16;callback(clock);
+    expect(gpu.renders.at(-1).frame.dimensions).toEqual([390,844]);
+    large.cancel();await large.finished;expect(scheduled.size).toBe(0);
+    view.draw(small);expect(gpu.renders.at(-1).frame.dimensions[0]).toBeLessThan(390);
+    const next=view.animate([{transform:small},{transform:{...small,angle:75}}],{duration:240});
+    const [nextId,nextCallback]=scheduled.entries().next().value;scheduled.delete(nextId);clock+=16;nextCallback(clock);
+    expect(gpu.renders.at(-1).frame.dimensions[0]).toBeLessThan(390);
+    next.cancel();await next.finished;
+  });
+
+  it('grows a native reservation for asynchronous geometry changes without clipping or reducing DPR', () => {
+    const {view}=make({compactReturnFrame:true,adaptiveNativeFrame:true});
+    const small={...pose,coverOpen:0,angle:90,scale:.2};view.draw(small);
+    const animation=view.animate([{transform:small},{transform:{...small,angle:75}}],{duration:240});
+    view.draw({...small,angle:0,scale:8});
+    expect(gpu.renders.at(-1).frame.dimensions).toEqual([390,844]);
+    expect(gpu.renders.at(-1).frame.ratio).toBe(2);
+    animation.cancel();view.draw(small);
+    expect(gpu.renders.at(-1).frame.dimensions[0]).toBeLessThan(390);
+  });
+
   it('uses a fixed smaller pixel-aligned window for a closed desktop book and retains full-size exports', () => {
     const { view } = make({ viewportWidth:1280, viewportHeight:900, compactReturnFrame:true });
     vi.mocked(view.canvas.getBoundingClientRect).mockReturnValue({ left:3,top:7,width:1280,height:900,right:1283,bottom:907 });
