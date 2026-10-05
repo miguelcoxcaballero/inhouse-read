@@ -2522,8 +2522,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       updateBookStyleVars(bookNode, item.style);
       const shelfNode = shelfSpineNodes().find(node => node.dataset.bookId === String(book.id));
       updateBookStyleVars(shelfNode, item.style);
-      view?.updateCoverAppearance(book);
-      view?.updateEdgeAppearance(book);
+      if (view?.updateEditorAppearance) view.updateEditorAppearance(book);
+      else {
+        view?.updateCoverAppearance(book);
+        view?.updateEdgeAppearance(book);
+      }
       if (state.lastOpened?.book?.id === book.id) state.lastOpened.style = item.style;
       state.appearanceRefreshPending = true;
       updateColorSelection();

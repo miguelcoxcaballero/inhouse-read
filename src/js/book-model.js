@@ -2045,13 +2045,30 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     drawUpdatedAppearance();
     return true;
   }
-  function updateCoverAppearance(nextBook) {
+  function updateMaterialAppearance(nextBook, method, options) {
     if (disposed) return false;
     currentBook = { ...currentBook, ...nextBook };
-    pendingModel?.userData.updateCoverAppearance?.(nextBook);
-    model.userData.updateCoverAppearance?.(nextBook);
-    drawUpdatedAppearance();
+    // Only the editor's explicit batch defers a synchronous paint. Existing
+    // callers, including null or ignored extra arguments, still draw by default.
+    const redraw = options?.redraw !== false;
+    const targets = [pendingModel, model].filter(Boolean);
+    const invalidations = redraw ? [] : targets.map(target => [target, target.userData.invalidate, Object.hasOwn(target.userData, 'invalidate')]);
+    for (const [target] of invalidations) target.userData.invalidate = null;
+    try {
+      for (const target of targets) target.userData[method]?.(nextBook);
+    } finally {
+      // Late cover/relief completion must retain its real callback. Restore
+      // captured targets even if a synchronous mutation throws or disposes us.
+      for (const [target, invalidate, own] of invalidations) {
+        if (own) target.userData.invalidate = invalidate;
+        else delete target.userData.invalidate;
+      }
+    }
+    if (redraw) drawUpdatedAppearance();
     return true;
+  }
+  function updateCoverAppearance(nextBook, options) {
+    return updateMaterialAppearance(nextBook, 'updateCoverAppearance', options);
   }
   /** Compile and draw the neutral relief material before offering choices.
    * The first draw completes any deferred driver compilation and uploads its
@@ -2078,11 +2095,16 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (!disposed) drawUpdatedAppearance();
     return results.some(Boolean);
   }
-  function updateEdgeAppearance(nextBook) {
+  function updateEdgeAppearance(nextBook, options) {
+    return updateMaterialAppearance(nextBook, 'updateEdgeAppearance', options);
+  }
+  function updateEditorAppearance(nextBook) {
     if (disposed) return false;
-    currentBook = { ...currentBook, ...nextBook };
-    pendingModel?.userData.updateEdgeAppearance?.(nextBook);
-    model.userData.updateEdgeAppearance?.(nextBook);
+    // Apply the complete latest record to both materials before presenting it.
+    // One conservative paint also covers changes made outside this editor input.
+    updateCoverAppearance(nextBook, { redraw:false });
+    updateEdgeAppearance(nextBook, { redraw:false });
+    if (disposed) return false;
     drawUpdatedAppearance();
     return true;
   }
@@ -2254,7 +2276,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
     deferDrawing() { if (!disposed) waitingForFirstDraw = true; }, releaseToSnapshot, handoffToShelfInsertion,
     setCompactReturnFrame(enabled) { compactReturnFrame = Boolean(enabled); },
-    updateAppearance, prepareReturnAppearance, updateSpineAppearance, updateCoverAppearance, prepareCoverRelief, setCoverRelief, updateEdgeAppearance, updateBookmark,
+    updateAppearance, prepareReturnAppearance, updateSpineAppearance, updateCoverAppearance, prepareCoverRelief, setCoverRelief, updateEdgeAppearance, updateEditorAppearance, updateBookmark,
     setPageSnapshot, commitPreparedPage, pageTextures, uploadPageTexture, compilePage, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
     setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
     getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,

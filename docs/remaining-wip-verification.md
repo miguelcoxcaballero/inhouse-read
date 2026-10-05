@@ -1,4 +1,20 @@
-# Verificación del WIP — 1.7.59 en verificación y Android 1.1.4
+# Verificación del WIP — 1.7.60 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.60
+
+El editor agrupa la actualización de portada y canto antes de presentar el
+modelo. En 64 operaciones reales pasa de dos repintados síncronos a uno, con
+RGBA completo y PNG nativo/exportado idénticos. No reduce calidad ni altera
+los plazos del editor. CPU aislada: 194 PASS, incluidos 176 originales y 18
+nuevos. El primer fallo de datos de tres fixtures nuevos queda conservado.
+Batería completa: 3.100 unitarias en 233 archivos, build y 75 Python PASS,
+con 513 hechos estables y 524 identidades E2E intactas. El listado no es
+una ejecución. Los siete recorridos locales originales terminan 5 PASS/2 FAIL,
+sin retries, flaky ni omisiones: ambos casos nativos llegaron al lector y
+fallaron durante su cierre. No se atribuye la causa a un callback de portada
+sin medirlo ni se acredita fluidez de un teléfono físico. Publicación y
+verificación de artefactos todavía tienen sus propios recibos pendientes.
+Detalle en [Rendimiento de 1.7.60](performance-1760.md).
 
 ## Cambios de rendimiento de 1.7.59
 
@@ -18,9 +34,13 @@ de 1.024 px. El censo de 524 E2E no cuenta como ejecución.
 La comparación gráfica pasa al primer intento: 64 pares exactos RGBA y
 PNG nativo/exportado. En 32 cambios de una sola dimensión, las dos
 asignaciones originales pasan a una. El navegador y servidor quedan cerrados.
-La publicación, APK y CI original de esta versión tienen verificaciones
-independientes pendientes. Los pases anteriores no acreditan esos resultados
-ni FPS en un teléfono físico. Detalle en
+Publicada desde `ebffb33`, Pages `68f8edf`: HTTP real, APK recién descargada
+y loader de 2.089 bytes PASS. Los 21 recorridos públicos originales pasan
+al primer intento, sin retries, flaky ni omisiones. El primer pin HTTP de
+propagación conserva su fallo y cuerpo de 1.7.58. La CI original `37249480029`
+termina FAILED con dos casos de apertura en UI3 y sus reintentos; la colección
+completa de logs y ZIPs tiene su propio recibo pendiente. Los pases locales
+y públicos no sustituyen ese resultado ni acreditan FPS de un teléfono. Detalle en
 [Rendimiento de 1.7.59](performance-1759.md).
 
 ## Cambios de rendimiento de 1.7.58

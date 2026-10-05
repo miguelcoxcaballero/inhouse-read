@@ -43,9 +43,19 @@ antialiasing y dimensiones; el navegador y servidor terminan cerrados.
 Certificado `report.json`, SHA256
 `a0a06577bc1e320b7c2841a644043e79a0f0eb79280cb4809b1f8d680d399df9`.
 
-La verificación de la publicación y su CI original tienen recibos
-independientes. Hasta que terminen no se acreditan sus resultados.
-No hay medición de FPS ni temperatura de un teléfono físico.
+Publicación desde `ebffb33`, Pages `68f8edf`: HTTP comprueba los 23 módulos
+y 44 archivos offline reales. Los 21 recorridos públicos originales pasan
+al primer intento: tres de editor/regreso y 18 de PDF, sin retries, flaky
+ni omisiones. La APK recién descargada coincide con la firmada 1.1.4/code17;
+su loader de 2.089 bytes coincide con la fuente y no contiene una web antigua.
+El primer pin HTTP conserva FAILED porque la CDN todavía servía 1.7.58;
+la comprobación posterior tiene sus propios cuerpos y certificado.
+
+Su CI original `37249480029` termina FAILED. Los doce trabajos terminaron;
+UI3 conserva dos casos de apertura fallidos, con sus reintentos. La colección
+completa de logs y ZIPs tiene un recibo independiente todavía pendiente.
+Los pases locales y públicos no sustituyen ese resultado. No hay medición
+de FPS ni temperatura de un teléfono físico.
 
 ## Diagnóstico anterior
 
@@ -71,6 +81,8 @@ En `.animation.local/performance-1759/`:
 - `local-browser-attempt1/summary.json`: siete recorridos originales.
 - `opening-profile-attempt2/`: diagnóstico aislado de la fuente 1.7.58.
 - `native-axis-quality-attempt1/`: comparación gráfica independiente.
+- `public-ebffb33-attempt1/`: primer pin HTTP antiguo conservado.
+- `public-ebffb33-attempt2/`: HTTP, APK, loader y 21 recorridos públicos.
 
 Los recibos y resultados anteriores no se sobrescriben ni se cuentan como
 ejecuciones de esta versión.
