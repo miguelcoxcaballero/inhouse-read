@@ -1,4 +1,16 @@
-# Verificación del WIP — web 1.7.72 y Android 1.1.4
+# Verificación del WIP — web 1.7.73 en preparación y Android 1.1.4
+
+## Muestreo de papel de 1.7.73 en preparación
+
+El worker mide el mismo margen de 12×12 píxeles con el mismo algoritmo,
+sin bloquear la interfaz con getImageData. Ocho raster reales de Chromium
+conservan exactamente el RGB o la decisión null del muestreo original;
+no hay readbacks en el hilo principal. Navegación, brillo y cierre durante
+el muestreo invalidan o cancelan el resultado. Se conservan resolución,
+materiales, iluminación, modelos y relojes. Pasan 3.292 unitarias/255
+archivos, build y 75 Python. Pasan siete recorridos gráficos originales
+sin retries u omisiones; cierres completos de 5.179,6/5.217,9 ms.
+La publicación está pendiente. Detalle en [Muestreo de papel de 1.7.73](performance-1773.md).
 
 ## Tono de página de 1.7.72
 
@@ -11,8 +23,10 @@ recorridos gráficos originales sin retries u omisiones. Cierres completos:
 5.721,2/4.738,0 ms, dentro de 8 s. Publicada desde `1c7242e`: HTTP26/offline90,
 APK/loader reales, tres recorridos públicos de editor/nativo y 18 PDF PASS.
 El lector/encoder publicados funcionan offline sin fallback. CI72
-`37302341505` completo sigue en curso; no se afirma PASS global ni FPS
-de un teléfono. Detalle en [Tono de página de 1.7.72](performance-1772.md).
+`37302341505` termina FAILED: 12 jobs y 11 ZIP originales, 524 identidades
+y 526 intentos; sólo UI3 y el agregado fallan. Las trazas conservan
+los dos timeouts de apertura y el cierre truncado del segundo intento
+fraccional. No se afirma PASS global ni FPS de un teléfono. Detalle en [Tono de página de 1.7.72](performance-1772.md).
 
 ## Portadas PDF de 1.7.71
 

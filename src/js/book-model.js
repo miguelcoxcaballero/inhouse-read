@@ -1,3 +1,4 @@
+import { paperToneKey, readPaperTone } from './page-paper-tone.js';
 import { bookReturnCompatibility } from './bookshelf-return.js';
 import * as THREE from 'three';
 import { cachedStudioEnvironment, prepareStudioEnvironmentCache } from './studio-environment-cache.js';
@@ -649,28 +650,10 @@ function satinRibbon(finished, silk, shelf = false) {
 // leaves already read and the margin around the saved page are one stock.
 const paperTones = new WeakMap();
 function paperTone(source, toneKey) {
-  // A reader may identify copied snapshots of the same settled raster. The
-  // opaque token retains only the sampled colour, never another page bitmap.
-  const key = toneKey && (typeof toneKey === 'object' || typeof toneKey === 'function') ? toneKey : source;
+  const key = paperToneKey(source, toneKey);
   if (paperTones.has(key)) return paperTones.get(key);
-  let tone = null;
-  try {
-    const n = 12, canvas = Object.assign(document.createElement('canvas'), { width:n, height:n });
-    const c = canvas.getContext('2d', { willReadFrequently:true });
-    c.drawImage(source, 0, 0, n, n);
-    const data = c.getImageData(0, 0, n, n).data, ring = [];
-    for (let i = 0; i < n - 1; i++) for (const [x, y] of [[i, 0], [n - 1, i], [n - 1 - i, n - 1], [0, n - 1 - i]]) {
-      const k = (y * n + x) * 4;
-      if (data[k + 3] > 200) ring.push(k);
-    }
-    const channels = [0, 1, 2].map(o => ring.map(k => data[k + o]).sort((a, b) => a - b));
-    const quartile = (values, q) => values[Math.floor((values.length - 1) * q)];
-    // Only a margin is paper: a full-bleed photo or comic page keeps the default.
-    if (ring.length >= 16 && channels.every(values => quartile(values, .75) - quartile(values, .25) <= 20)) {
-      const [r, g, b] = channels.map(values => quartile(values, .5) / 255);
-      tone = new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace);
-    }
-  } catch { /* a tainted or unreadable source keeps the default paper */ }
+  const rgb = readPaperTone(source, toneKey);
+  const tone = rgb ? new THREE.Color().setRGB(...rgb.map(value => value / 255), THREE.SRGBColorSpace) : null;
   paperTones.set(key, tone);
   return tone;
 }

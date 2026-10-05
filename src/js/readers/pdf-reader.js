@@ -16,6 +16,7 @@ import { attachSwipeNavigation } from '../gestures.js'
 import { DEFAULT_READING_PREFERENCES, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES, normalizeReadingPreferences } from './reading-preferences.js'
 import { hasUntrackedPDFImages, paintPDFTheme } from './pdf-page-theme.js'
 import { renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from './page-snapshot.js'
+import { prepareSnapshotPaperTones } from '../page-paper-tone.js'
 import { encodePdfCover } from './cover-encode.js'
 import { mapTextLayer, mapTextNodes } from './speech-map.js'
 import { clearPDFReflow, pdfImageRects, preparePDFReflow } from './pdf-reflow.js'
@@ -779,11 +780,23 @@ export class PdfReader {
         this.#canvas.width, this.#canvas.height, original, original.width,
         original.height, canvasFilter]
       if (!this.#snapshotToneState || facts.some((value, i) => value !== this.#snapshotToneState.facts[i])) {
-        this.#snapshotToneState = { facts, theme:Object.freeze({}), paper:Object.freeze({}) }
+        this.#snapshotToneState?.controller.abort()
+        this.#snapshotToneState = { facts, theme:Object.freeze({}), paper:Object.freeze({}), controller:new AbortController() }
       }
       snapshot.toneKey = this.#snapshotToneState.theme
       if (snapshot.paper) snapshot.paper.toneKey = this.#snapshotToneState.paper
-    } else this.#snapshotToneState = undefined
+      const state = this.#snapshotToneState
+      await prepareSnapshotPaperTones(snapshot, { signal:state.controller.signal })
+      if (!this.#doc) return null
+      if (state !== this.#snapshotToneState || pending !== this.#renderReady || page !== this.#pageNum
+        || facts[2] !== this.#renderToken || this.#preferences.pdfMode === 'text'
+        || facts[4] !== this.#canvas.width || facts[5] !== this.#canvas.height
+        || facts[7] !== original.width || facts[8] !== original.height
+        || canvasFilter !== renderedPageFilter(this.#canvas)) return this.getPageSnapshot()
+    } else {
+      this.#snapshotToneState?.controller.abort()
+      this.#snapshotToneState = undefined
+    }
     return { ...snapshot, engine:'pdf', sourceType:textMode ? 'pdf-text' : 'pdf-canvas',
       text:snapshot.text || this.#pageText, label:`Página ${page} de ${this.pageCount}`,
       location:{ fraction:(page - 1) / Math.max(1, this.pageCount - 1), locator:{ kind:'pdf-page', value:page,
@@ -914,6 +927,7 @@ export class PdfReader {
     this.#loadingTask = null
     this.#doc = null
     this.#imageLayouts = new WeakMap()
+    this.#snapshotToneState?.controller.abort()
     this.#snapshotToneState = undefined
     this.#pageText = ''
     if (this.#container) {

@@ -38,11 +38,12 @@ cuerpos HTTP corresponden al artefacto real, sin sustituir respuestas.
 El lector PDF y encoder publicados generan JPEG 800×1600 sin conexión,
 recibiendo sus módulos desde el service worker, sin fallback.
 
-CI72 `37302341505` sigue en curso. La aprobación global y la fluidez física
-de un móvil no se infieren de estas comprobaciones. El detalle de los
-fallos originales previos se conserva en los informes 1.7.70/1.7.71.
-La observación acotada `collect-when-ci-completes.mjs` recogerá únicamente
-los originales de este run al terminar, sin ejecutar ni reintentar tests.
-Su estado se guarda en `ci-completion-watch-attempt1/summary.json`.
+CI72 `37302341505` termina FAILED y se sella con los 12 logs, 11 ZIP
+originales y 524 identidades/526 intentos. Pasan 3.265 unitarias y los
+otros cinco grupos UI, voces reales y Supertonic. UI3 y el agregado fallan.
+Las trazas originales mantienen esperas de apertura de 8 s; el segundo
+intento fraccional llega a cerrar pero agota el presupuesto total original.
+Certificado de originales `518cab6cf0093f65bfc5422d0fdb653add1320960c765fd4ba3ca7b304856e32`.
+No se reintenta ni se reclasifica este run; no se infiere fluidez física.
 
 Evidencia: `.animation.local/performance-1772/`.
