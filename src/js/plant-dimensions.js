@@ -154,6 +154,21 @@ export function padTapRect(rect, minWidth, out = {}) {
   return out;
 }
 
+/** Smallest side, in CSS pixels, of a lamp switch's tappable square: a
+ * finger-sized target (a MITTLED puck is ~44 x 7 px, mostly behind a board). */
+export const MINIMUM_LAMP_TAP_SIZE = 44;
+
+/**
+ * Like `padTapRect`, in both directions: `rect` widened and heightened around
+ * its centre to at least `minSize` square. Larger sides stay as they are.
+ */
+export function padTapSquare(rect, minSize, out = {}) {
+  const extraX = Math.max(0, minSize - rect.width), extraY = Math.max(0, minSize - rect.height);
+  out.left = rect.left - extraX / 2; out.top = rect.top - extraY / 2;
+  out.width = rect.width + extraX; out.height = rect.height + extraY;
+  return out;
+}
+
 /**
  * Nearest-centre picking among padded tap rectangles: of the `targets`
  * ({ left, top, width, height, ...anything }) containing (x, y), the one whose

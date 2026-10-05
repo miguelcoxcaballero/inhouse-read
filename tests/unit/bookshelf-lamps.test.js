@@ -191,6 +191,40 @@ describe('persistent shelf illumination', () => {
     expect(scene.setLampPower).not.toHaveBeenCalled();
   });
 
+  it('ignores a detail-zero touch click after the tap already switched the light', async () => {
+    shelf = renderBookshelf(container, [], { shelfWidth:390 });
+    await catalog.options.onAddLamp({ lampId:'mittled' });
+    const lamp = container.querySelector('.ihr-lamp');
+    pointer(lamp, 'pointerdown'); pointer(lamp, 'pointerup');
+    expect(lamp.getAttribute('aria-pressed')).toBe('false');
+    // Chromium can send the touch's compatibility click with detail 0.
+    const click = new MouseEvent('click', { detail:0, clientX:160, clientY:240, bubbles:true, cancelable:true });
+    Object.defineProperties(click, { pointerId:{ value:1 }, pointerType:{ value:'touch' } });
+    lamp.dispatchEvent(click);
+    expect(lamp.getAttribute('aria-pressed')).toBe('false');
+    expect(savedLamps()[0].isOn).toBe(false);
+    lamp.click(); // keyboard or assistive activation still switches it
+    expect(savedLamps()[0].isOn).toBe(true);
+  });
+
+  it('switches a light whose square was reached through another button, and only on a tap', async () => {
+    vi.stubGlobal('WebGLRenderingContext', function () {});
+    shelf = renderBookshelf(container, [], { shelfWidth:390 });
+    await catalog.options.onAddLamp({ lampId:'mittled' });
+    await catalog.options.onAddLamp({ lampId:'tripod' });
+    const puck = container.querySelector('[data-lamp-id="mittled"]'), tripod = container.querySelector('[data-lamp-id="tripod"]');
+    // The tripod's button is on top, but the 3D hit is the puck's square:
+    // pointer capture sends the release to the puck's own button.
+    scene.getObjectAtPoint.mockReturnValue(puck);
+    pointer(tripod, 'pointerdown'); pointer(puck, 'pointerup');
+    expect(savedLamps().map(record => record.isOn)).toEqual([false, true]);
+    pointer(tripod, 'pointerdown'); pointer(puck, 'pointermove', 160, 270); pointer(puck, 'pointerup', 160, 270);
+    expect(savedLamps().map(record => record.isOn)).toEqual([false, true]);
+    pointer(tripod, 'pointerdown', 160, 240, { pointerType:'mouse' }); pointer(puck, 'pointerup', 160, 240, { pointerType:'mouse' });
+    expect(savedLamps().map(record => record.isOn)).toEqual([false, true]);
+    expect(scene.setLampPower).toHaveBeenCalledOnce();
+  });
+
   it('uses the validated down target if the 3D projection changes before touch release', async () => {
     vi.stubGlobal('WebGLRenderingContext', function () {});
     shelf = renderBookshelf(container, [], { shelfWidth:390 });

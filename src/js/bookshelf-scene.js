@@ -16,7 +16,7 @@ import { createShelfCatalog } from './shelf-catalog.js';
 import { createBaggebo } from './baggebo-model.js';
 import { compilePrograms } from './gpu-programs.js';
 import { BAGGEBO_SPEC, SHELF_SPECS, normalizeShelfType } from './shelf-types.js';
-import { minimumBookTapWidth, nearestTapTarget, padTapRect } from './plant-dimensions.js';
+import { MINIMUM_LAMP_TAP_SIZE, minimumBookTapWidth, nearestTapTarget, padTapRect, padTapSquare } from './plant-dimensions.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createNativeRendererPresentation, currentNativeRendererPresentation, registerCanvasSnapshot, withRendererPresentation } from './native-renderer-presentation.js';
 import { createNativeFramebufferCache } from './native-room-cache.js';
@@ -1479,11 +1479,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         } else corners(fallbackBox(entry, plant, lamp), projectedMatrix, hitRect);
         // The button covers the hit surface, but a real-scale spine is only 5-13 px
         // thick: a book's button is padded to the minimum tap width around the
-        // spine's centre (hitRect keeps the drawn surface). Plants and lamps
-        // are not thin, so their button is the hit surface itself.
-        const tapRect = undershelf && entry.lampTapOffset
-          ? { ...hitRect, left:hitRect.left + entry.lampTapOffset.x, top:hitRect.top + entry.lampTapOffset.y }
-          : plant || lamp ? hitRect : padTapRect(hitRect, minimumBookTapWidth(window.innerWidth), entry.tapRect || (entry.tapRect = {}));
+        // spine's centre (hitRect keeps the drawn surface). A lamp's switch is
+        // padded to a finger-sized square around its light: a MITTLED puck is
+        // a few pixels tall and often sits behind a board. Plants are not thin,
+        // so their button is the hit surface itself.
+        const tapRect = plant ? hitRect : lamp
+          ? padTapSquare(hitRect, MINIMUM_LAMP_TAP_SIZE, entry.tapRect || (entry.tapRect = {}))
+          : padTapRect(hitRect, minimumBookTapWidth(window.innerWidth), entry.tapRect || (entry.tapRect = {}));
         // A frame that moves nothing restyles nothing: only numbers that differ
         // from the last written ones reach the DOM, in the same order as a first write.
         let written = entry.written;
@@ -1537,7 +1539,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Bind native hit surfaces only after all semantic book rectangles are
     // projected, so an overlapping leaf cannot steal a neighboring spine tap.
     for (const entry of bookEntries) if (entry.kind === 'plant' && entry.node) updatePlantFoliage(entry);
-    if (!transition && !inspectionMoving && !moving && !shelfMoving) updateLampTapCentres(scroll);
     // Everything queued since the records were taken above is this frame's own
     // restyling (the loop wrote only left/top/width/height/z-index of observed
     // nodes): it carries no class or drag-variable change to react to.
@@ -1679,62 +1680,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   // Callers use the ray at once and never keep it.
   const rayPointer = new THREE.Vector2(), raycaster = new THREE.Raycaster();
-  let lampTapProjection = '';
-  function updateLampTapCentres(scroll) {
-    const lamps = bookEntries.filter(entry => entry.kind === 'lamp' && entry.mount === 'undershelf' &&
-      entry.node && entry.model?.visible && !entry.flags.away && !entry.flags.dragging && !entry.trashDrop);
-    if (!lamps.length) return;
-    camera.updateMatrixWorld();
-    const origin = frameLayout.stage, bounds = frameLayout.canvas;
-    if (!bounds.width || !bounds.height) return;
-    const pickable = furniture.children.filter(object => object.visible && !object.userData.dropMarker &&
-      !object.userData.entry?.node?.classList.contains('is-away'));
-    // The cache compares root matrices. Descendant matrices are needed only
-    // for a changed projection's raycasts, not for an unchanged lamp fade.
-    for (const object of pickable) object.updateWorldMatrix(false, false);
-    // Recompute only when geometry moves or the viewport changes, never for a
-    // lamp power fade. BAGGEBO's actual steel strands can cover a diffuser's
-    // bounding-box centre even though another part is exposed through a hole.
-    const projection = `${origin.left},${origin.top},${bounds.left},${bounds.top},${scroll},${sceneWidth},${viewportHeight}|` +
-      `${camera.projectionMatrix.elements}|${camera.matrixWorld.elements}|` +
-      pickable.map(object => `${object.id}:${object.matrixWorld.elements}`).join('|');
-    if (projection === lampTapProjection) return;
-    lampTapProjection = projection;
-    furniture.updateMatrixWorld(true);
-    const exposed = (entry, x, y) => {
-      rayPointer.set((x - bounds.left) / sceneWidth * 2 - 1, 1 - (y - bounds.top) / viewportHeight * 2);
-      raycaster.setFromCamera(rayPointer, camera);
-      const hit = raycaster.intersectObjects(pickable, true)[0];
-      let object = hit?.object;
-      while (object && !object.userData.entry) object = object.parent;
-      return object?.userData.entry === entry;
-    };
-    for (const entry of lamps) {
-      const rect = entry.hitRect, centreX = origin.left + rect.left + rect.width / 2;
-      const centreY = origin.top + rect.top + rect.height / 2;
-      let offset = { x:0, y:0 };
-      // Native touch coordinates retain fractions, while the following click
-      // rounds to a CSS pixel. Centre on a physical point visible to both.
-      search: for (const fx of [.5, .3, .7, .1, .9]) for (const fy of [.5, .3, .7, .1, .9]) {
-        const x = Math.round(origin.left + rect.left + rect.width * fx);
-        const y = Math.round(origin.top + rect.top + rect.height * fy);
-        if (exposed(entry,x,y) && exposed(entry,x-.05,y-.05) && exposed(entry,x+.05,y+.05)) {
-          offset = { x:x - centreX, y:y - centreY }; break search;
-        }
-      }
-      entry.lampTapOffset = offset;
-      const written = entry.written, style = entry.node.style;
-      const left = rect.left + offset.x, top = rect.top + offset.y;
-      if (left !== written.left) style.left = `${written.left = left}px`;
-      if (top !== written.top) style.top = `${written.top = top}px`;
-      const cover = semanticCovers.get(entry.node);
-      if (cover) {
-        const coverLeft = entry.rect.left - left, coverTop = entry.rect.top - top;
-        if (coverLeft !== written.coverLeft) cover.style.left = `${written.coverLeft = coverLeft}px`;
-        if (coverTop !== written.coverTop) cover.style.top = `${written.coverTop = coverTop}px`;
-      }
-    }
-  }
   function pointerRay(clientX, clientY) {
     // During a drag, pending style/mutation frames must remain coalesced:
     // casting a ray does not need to shade and read back the whole room.
@@ -1750,15 +1695,17 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // A thin spine's ray often falls between two books (on the back panel) although
   // the finger is on the book's padded button: the book whose padded tap rectangle
   // holds the point, nearest centre first, so overlapping rectangles never steal
-  // each other's taps. Rectangles are in the stage's frame, as the buttons are.
+  // each other's taps. A lamp's finger-sized square takes part too, so wood that
+  // covers a light (a MITTLED under its board) does not block its switch.
+  // Rectangles are in the stage's frame, as the buttons are.
   const tapTargets = [];
-  function bookNearPoint(clientX, clientY) {
+  function tapTargetNear(clientX, clientY) {
     const origin = stage.getBoundingClientRect();
     tapTargets.length = 0;
     for (const entry of bookEntries) {
       const tap = entry.tapRect;
       if (!tap || !entry.node || !entry.model?.visible || entry.flags?.away || entry.flags?.dragging || entry.trashDrop) continue;
-      if (entry.kind === 'plant' || entry.kind === 'lamp' || entry.node.classList.contains('is-away')) continue;
+      if (entry.kind === 'plant' || entry.node.classList.contains('is-away')) continue;
       tapTargets.push({ left:tap.left + origin.left, top:tap.top + origin.top, width:tap.width, height:tap.height, node:entry.node });
     }
     return nearestTapTarget(tapTargets, clientX, clientY)?.node ?? null;
@@ -1773,10 +1720,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       while (object && !object.userData.entry) object = object.parent;
       if (object?.userData.entry?.node && object.visible) return object.userData.entry.node;
       // Solid wood in front blocks the object behind it, but a book's padded tap
-      // rectangle still wins over the panel seen between two thin spines.
-      if (!object?.userData.entry) return bookNearPoint(clientX, clientY);
+      // rectangle or a lamp's square still wins over the wood around them.
+      if (!object?.userData.entry) return tapTargetNear(clientX, clientY);
     }
-    return bookNearPoint(clientX, clientY);
+    return tapTargetNear(clientX, clientY);
   }
 
   const isSolid = (material, side) => material.visible && material.depthWrite && material.depthTest && !material.transparent &&
