@@ -4,7 +4,8 @@
 
 La transferencia de modelos de voz a Android conserva los mismos bloques de
 128 KiB, bytes, orden y protocolo. Cuando quedan datos, devuelve el control
-tras cuatro bloques o cuatro milisegundos mediante una confirmación del
+al comprobar el presupuesto entre bloques, tras cuatro bloques o al alcanzar
+cuatro milisegundos, mediante una confirmación del
 executor nativo existente. El cierre cancela el trabajo pendiente y evita
 finalizar una carga antigua. No cambia los pesos, el audio ni los plazos.
 
@@ -82,9 +83,68 @@ no hay fallos de red inesperados, pageErrors ni consoleErrors. Entradas
 estables y navegador/preview cerrados. Informe SHA-256:
 `c946b0d6fcb492f38134c63dfc0cf093e44debfa3cb76412c32f28e758ed1280`.
 
-Quedan pendientes la publicación HTTP/APK/loader, los tres recorridos
-públicos, los 18 PDF públicos, la inicialización y reproducción real Android
-y la CI65 original. No se declara completa ninguna de estas verificaciones.
+La publicación HTTP, APK y loader se comprobaron contra sus bytes reales.
+Los 18 recorridos PDF publicados y el caso RAW original pasan al primer
+intento. El editor público también pasa, pero los dos recorridos nativos
+de devolución fallan por el plazo global de 30 segundos. Las trazas
+truncadas no acreditan un cierre completo superior a ocho segundos.
+La CI65 completa termina con dos recorridos de apertura fallidos; detalle
+más abajo. El APK publicado supera ambos recorridos de audio bloqueado
+con Lessac y Cori, incluido el modelo mayor. No se declara
+solucionada la fluidez de un teléfono por estos resultados.
+
+## Publicación y diagnóstico posterior
+
+Fuente `accce9b0a39380ef100a7f54a239f382575cc6a4`, Pages
+`ba66ce6b6c3d7905fd1d28406bbb89a5611447e0`. Los 25 módulos y los
+46 recursos del shell offline publicados coinciden con Pages. El primer
+intento HTTP encontró todavía la versión64 del CDN y permanece FAILED;
+el segundo obtuvo65 con sus bytes exactos.
+
+La APK pública sigue siendo1.1.4, versionCode17, 78.515.243 bytes, SHA256
+`feafaaa762b35344ac8b19418f9f6eb6cb1f725fba22b1ef3d3f273bd32a6191`.
+Su loader tiene2.089 bytes y sólo redirige a producción; no incorpora una
+copia antigua de la app. No se hizo un build nativo nuevo para estos cambios
+web. La inspección de esta descarga no se presenta como una nueva
+comprobación criptográfica de la firma.
+
+El diagnóstico pasivo posterior conserva las pruebas originales y sus
+plazos, pero añade observadores, por lo que no sustituye la cualificación.
+El editor y el recorrido legado pasan; el alineado termina por global30.
+En el legado, ocho llamadas del mismo fallback de estantería copian el
+framebuffer589×1174 al canvas590×1175: seis antes del lector (cuatro iniciales y dos de selección) suman9.723,7ms,
+y las dos restantes miden934,8ms y913,7ms. La mayor llamada inicial tarda
+4.199,2ms. Estos tiempos incluyen trabajo del navegador/driver por
+software; no son tiempos GPU aislados ni mediciones de un teléfono.
+El remuestreo de esa ruta debe conservarse al optimizarla.
+Observaciones SHA256:
+`160d7e241e38cfe2373ef072482dc5299ed1bc81ece5726a4ae44acddf909a51`.
+
+La primera cualificación nativa remota, run37260698693, permanece FAILED
+en ambos escenarios. La APK llegó a la estantería, pero el verificador
+reubicado no encontró `register_book_imports`; no comenzó la prueba de
+audio. La nueva rama QA corrige únicamente las rutas de ejecución y sus
+comprobaciones, conservando los verificadores, los plazos, la APK y la
+publicación65. Run37261578368 está en curso. No se acredita todavía la
+transferencia real de Cori ni el audio con la pantalla apagada.
+
+La CI original de65, run37260216704, termina FAILED: 3.175 unitarias en246
+archivos pasan; de524 identidades E2E,522 pasan y dos son unexpected.
+Hay526 intentos, dos retries y cuatro intentos timedOut. No hay omisiones,
+flaky ni errores globales. Los cuatro fallos de los recorridos nativos
+ocurren antes de pulsar Volver, esperando que el canvas PDF sea visible;
+no prueban un cierre superior a ocho segundos. Los otros shards y todos
+los grupos de voces reales pasan. Certificado SHA256:
+`9850fb224644993717488839a94a67ee125c5dc46e5bf73118f7929319155b22`.
+
+Evidencia adicional bajo `performance-1765/`:
+
+- `public-accce9b-attempt2/http-attempt1/artifact-1765-accce9b.json`.
+- `public-accce9b-attempt2/{performance-browser-attempt1,browser-attempt1,raw-cover-browser-attempt1}`.
+- `passive-public-profile-method-attempt1/prepared-attempt1/results.json`.
+- `passive-profile-analysis-attempt1/observations-attempt1.json`.
+- `remote-native-37260698693-{original,largest}-attempt1/`.
+- `qa-git-commit-method-attempt3/commit-attempt1/receipt.json`.
 
 La preparación del helper RAW local método2 queda rechazada sin ejecución:
 recodificó el título UTF-8 y su afirmación de cambio exclusivo de salida era
@@ -97,8 +157,13 @@ los errores de preparación anteriores y el primer resumen nativo FAILED.
 Estos resultados CPU comprueban contratos y ciclos de vida; no miden FPS,
 memoria ni fluidez de un teléfono. La transferencia mantiene sus bytes,
 pero añade confirmaciones cuyo coste en el modelo mayor debe medirse con
-la APK publicada. La inicialización real, cancelación, voz con la pantalla
-apagada y controles del sistema siguen pendientes. No se acredita igualdad
+la APK publicada. El recorrido original en emulador con el APK publicado
+supera inicialización, 368.424 ms bloqueado, continuidad de capítulos,
+pause/resume/stop y cierre pausado. Cori supera 368.100 ms bloqueado,
+367,029 s de PCM y capítulos 0–21. Ambos recorridos conservan PDF oculto,
+progreso, controles y fuente/Pages/APK/loader exactos antes y después.
+Resumen `3d0bfc48…`, run `37261578368`; todos los procesos cerrados.
+No se acredita igualdad
 PCM observada ni tiempo de confirmación nativa. Los fallos originales de
 versiones anteriores permanecen conservados.
 

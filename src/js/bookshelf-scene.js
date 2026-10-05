@@ -1128,7 +1128,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (classes !== entry.classText) {
       const tokens = classes.split(CLASS_SEPARATOR);
       entry.flags = { away:tokens.includes('is-away'), dragging:tokens.includes('is-dragging'),
-        lifted:tokens.includes('is-lifted'), pressed:tokens.includes('is-pressed') };
+        lifted:tokens.includes('is-lifted'), pressed:tokens.includes('is-pressed') && !tokens.includes('is-press-pending') };
       entry.classText = classes;
     }
     entry.dragX = dragX; entry.dragY = dragY;
@@ -2367,7 +2367,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // Every other entry retains its actual lift/drag frames and endpoint.
       if (entry !== selected) {
         const target = entry.node?.matches('.is-dragging, .is-lifted') ? 1
-          : entry.node?.classList.contains('is-pressed') ? .22 : 0;
+          : entry.node?.classList.contains('is-pressed') && !entry.node.classList.contains('is-press-pending') ? .22 : 0;
         if (entry.lift.value !== target) return false;
       }
     }

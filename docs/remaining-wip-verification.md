@@ -1,4 +1,20 @@
-# Verificación del WIP — 1.7.65 y Android 1.1.4
+# Verificación del WIP — 1.7.66 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.66
+
+El toque breve evita el microlift 3D previo y su repintado completo; el
+levantamiento y el arrastre tras mantener pulsado conservan sus 440 ms.
+Las texturas de madera existentes empiezan a descargarse desde el HTML,
+con el mismo CORS y archivos que utiliza Three.js. Modelos, materiales,
+resolución y relojes de animación permanecen iguales.
+
+Los 119 casos enfocados del runtime pasan, pero su primer comando falla al
+coleccionar una nueva prueba de precarga. Corregida sólo esa lectura, las
+dos primeras baterías completas conservan timeouts originales de 5 s.
+El diagnóstico separado de ambos archivos afectados pasa 30/30; el matcher
+de PCM pesa casi cinco segundos y se prepara una batería con menor
+concurrencia. Publicación y verificación de 1.7.66 siguen pendientes.
+Detalle en [Rendimiento de 1.7.66](performance-1766.md).
 
 ## Cambios de rendimiento de 1.7.65
 
@@ -18,8 +34,26 @@ llegan 200 del Service Worker con cuerpos exactos; sin errores inesperados,
 entradas estables y procesos cerrados; informe `c946b0d6…`. Se conserva el
 primer resumen nativo FAILED y su auditoría separada sin nuevas pruebas,
 así como el helper RAW2 rechazado sin ejecución por recodificación UTF-8.
-Publicación HTTP/APK/loader, públicos3+PDF18, Android real y CI65 siguen
-pendientes. No reclasifica los estados originales anteriores. Detalle en
+La publicación HTTP/APK/loader está comprobada; los 18 PDF públicos y el
+RAW original pasan. En los tres públicos, el editor pasa y los dos de
+devolución fallan por global30, sin acreditar un cierre completo superior
+a ocho segundos. El diagnóstico pasivo posterior conserva ese fallo:
+editor y legado pasan; alineado termina por global30. Las copias lentas
+del legado pertenecen al fallback de la estantería, no a la captura PDF.
+Antes de leer hubo cuatro repintados iniciales y dos de selección; también
+hubo dos al cerrar. No se acredita todavía la fluidez del teléfono.
+La primera prueba Android falló en el verificador antes de iniciar audio;
+una nueva ejecución corrige sólo sus rutas. El APK publicado pasa ambos
+recorridos en emulador: Lessac y Cori, más de seis minutos bloqueados,
+continuidad de capítulos, PDF oculto y controles del sistema. Fuente,
+Pages, APK y loader exactos antes y después; resumen `3d0bfc48…`.
+No mide fluidez ni temperatura de un teléfono físico.
+CI65 completa queda FAILED: 522 de524 identidades pasan, dos unexpected,
+526 intentos y cuatro timedOut, sin omisiones ni flaky. Los cuatro fallos
+nativos ocurren antes de Volver, esperando el canvas PDF visible; no
+demuestran un cierre completo superior a ocho segundos. Unitarias y todos
+los grupos de voces reales pasan. Certificado `9850fb22…`.
+No reclasifica los estados originales anteriores. Detalle en
 [Rendimiento de 1.7.65](performance-1765.md).
 
 ## Cambios de rendimiento de 1.7.64
@@ -45,7 +79,10 @@ desde `72a785c`, Pages `2423322`: HTTP24/45 PASS, artefacto `6e286ff4…`; APK
 recién descargada idéntica a la firmada 1.1.4/code17 y loader2.089 bytes PASS.
 Los tres públicos originales y los 18 PDF pasan al primer intento, sin
 retries, flaky u omisiones, con 53 y 326 cuerpos autenticados. Certificados
-`39693f80…` y `a13208dd…`; CI64 sigue pendiente de su evidencia propia.
+`39693f80…` y `a13208dd…`. CI64 completa queda FAILED: 524 identidades,
+528 intentos, siete intentos fallidos y cuatro retries. Conserva los fallos
+del import RAW, los recorridos de devolución y la preparación isométrica
+intermitente; no usa sus retries como aprobación. Certificado `a753ada9…`.
 No acredita FPS o memoria física ni reclasifica fallos originales previos. Detalle en
 [Rendimiento de 1.7.64](performance-1764.md).
 

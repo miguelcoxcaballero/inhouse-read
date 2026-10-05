@@ -424,7 +424,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         finishSpineDrag(event, state.dragSession.node, true);
       }
       state.pressedBookId = null;
-      for (const node of scroller.querySelectorAll('.is-pressed')) node.classList.remove('is-pressed');
+      for (const node of scroller.querySelectorAll('.is-pressed')) node.classList.remove('is-pressed', 'is-press-pending');
     }
   });
   const shelfZoom = createShelfZoom({root,scroller,getScene:()=>state.shelfScene,
@@ -433,7 +433,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     onGestureStart:()=>{
       if (state.dragSession) finishSpineDrag({pointerId:state.dragSession.pointerId},state.dragSession.node,true);
       state.pressedBookId = null;
-      for (const node of scroller.querySelectorAll('.is-pressed')) node.classList.remove('is-pressed');
+      for (const node of scroller.querySelectorAll('.is-pressed')) node.classList.remove('is-pressed', 'is-press-pending');
       state.shelfScene?.beginInspectionGesture?.();
     }});
   if (trashStatus) root.append(trashStatus, trashAnnounce);
@@ -989,7 +989,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (state.shelfScene) {
       const hit = state.shelfScene.getObjectAtPoint(event.clientX, event.clientY);
       backgroundOnly = !hit;
-      if (hit && hit !== node) { node.classList.remove('is-pressed'); state.pressedBookId = null; }
+      if (hit && hit !== node) { node.classList.remove('is-pressed', 'is-press-pending'); state.pressedBookId = null; }
       node = hit || node;
     }
     if (!backgroundOnly && event.pointerType === 'touch' && node.matches('.ihr-plant, .ihr-lamp')) {
@@ -1008,13 +1008,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     try { node.setPointerCapture?.(event.pointerId); } catch { /* el navegador pudo cancelar el puntero */ }
     // Rotated hit rectangles contain some empty space. It must still scroll
     // naturally on touch, without starting a hold on an occluded book.
-    if (backgroundOnly) { node.classList.remove('is-pressed'); return; }
+    if (backgroundOnly) { node.classList.remove('is-pressed', 'is-press-pending'); return; }
     drag.timer = setTimeout(() => {
       if (state.dragSession !== drag || state.destroyed) return;
       drag.active = true;
       state.arranging = true;
       root.classList.add('is-arranging');
-      node.classList.remove('is-pressed');
+      node.classList.remove('is-pressed', 'is-press-pending');
       node.classList.add('is-lifted');
       state.shelfScene?.flush();
     }, REORDER_HOLD_MS);
@@ -1096,7 +1096,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     state.shelfScene?.previewPlacements(null);
     if (!discard) { trashNode?.classList.remove('is-over'); state.shelfScene?.setTrashHover(false); }
     drag.target?.classList.remove('is-drop-target', 'is-drop-before', 'is-drop-after');
-    node.classList.remove('is-dragging', 'is-lifted');
+    node.classList.remove('is-dragging', 'is-lifted', 'is-press-pending');
     node.style.removeProperty('--ihr-drag-x');
     node.style.removeProperty('--ihr-drag-y');
     node.style.pointerEvents = '';
@@ -1406,12 +1406,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         valid:!state.shelfScene || state.shelfScene.getBookAtPoint(event.clientX, event.clientY) === node
       } : null;
       state.pressedBookId = String(item.book.id ?? item.book.path ?? item.book.title ?? 'book');
-      node.classList.add('is-pressed');
+      if (state.shelfScene) node.classList.add('is-pressed', 'is-press-pending');
+      else node.classList.add('is-pressed');
       warmCover(item.book);
     });
     const release = () => {
       start = null;
-      node.classList.remove('is-pressed');
+      node.classList.remove('is-pressed', 'is-press-pending');
       const id = String(item.book.id ?? item.book.path ?? item.book.title ?? 'book');
       if (state.pressedBookId === id) {
         state.pressedBookId = null;
