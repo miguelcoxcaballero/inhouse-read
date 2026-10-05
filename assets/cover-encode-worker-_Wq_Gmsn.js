@@ -1,0 +1,2 @@
+(function(){"use strict";self.onmessage=async({data:s})=>{const t=s?.bitmap;let e;try{e=new OffscreenCanvas(t.width,t.height);const a=e.getContext("2d");if(!a)throw new Error("Cover encoder unavailable");a.drawImage(t,0,0);const n=await e.convertToBlob({type:"image/jpeg",quality:.9});self.postMessage({blob:n})}catch{self.postMessage({unavailable:!0})}finally{t?.close(),e&&(e.width=e.height=0)}}})();
+//# sourceMappingURL=cover-encode-worker-_Wq_Gmsn.js.map

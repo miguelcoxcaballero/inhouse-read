@@ -1,1 +1,1 @@
-export { PdfReader } from './pdf-reader-mttIRwfE.js'
+export { PdfReader } from './pdf-reader-DlFiPpnF.js'
