@@ -116,7 +116,7 @@ test('a poster is never shown after the library, the theme or the viewport chang
   let release = await holdBundle(page)
   await page.reload({ waitUntil: 'commit' })
   await expect(poster).toBeVisible()
-  await page.unroute('**/assets/main-*.js'); release()
+  release()
   await expect(poster).toHaveCount(0, { timeout: 120_000 })
 
   // Theme changed behind the poster's back.
@@ -125,7 +125,7 @@ test('a poster is never shown after the library, the theme or the viewport chang
   await page.reload({ waitUntil: 'commit' })
   await expect(page.locator('html')).toHaveClass(/ihr-boot-skeleton/)
   await expect(poster).toHaveCount(0)
-  await page.unroute('**/assets/main-*.js'); release()
+  release()
   await expect(page.locator('html')).not.toHaveClass(/ihr-boot-skeleton/, { timeout: 120_000 })
   // The new theme gets its own poster once the shelf settles.
   await expect.poll(async () => (await meta(page)).k, { timeout: 120_000 }).not.toBe(null)
@@ -137,7 +137,7 @@ test('a poster is never shown after the library, the theme or the viewport chang
   await page.reload({ waitUntil: 'commit' })
   await expect(poster).toHaveCount(0)
   await expect(page.locator('html')).toHaveClass(/ihr-boot-skeleton/)
-  await page.unroute('**/assets/main-*.js'); release()
+  release()
   await expect(page.locator('html')).not.toHaveClass(/ihr-boot-skeleton/, { timeout: 120_000 })
 })
 
