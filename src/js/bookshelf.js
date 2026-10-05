@@ -591,7 +591,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       const item = state.itemsById.get(id);
       if (item && item.coverKey === key && applyCoverAppearance(item, appearance)) {
         if (String(state.session?.book?.id ?? '') === id) {
-          state.session.view?.updateAppearance(item.style);
+          state.session.view?.updateAppearance(item.style, { reuseModel:true });
           updateBookStyleVars(state.session.bookNode, item.style);
           updateBookStyleVars(state.session.bookNode?.querySelector('.ihr-flyout__face--cover'), item.style);
         }

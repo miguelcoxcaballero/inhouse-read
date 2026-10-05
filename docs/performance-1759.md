@@ -53,7 +53,9 @@ la comprobación posterior tiene sus propios cuerpos y certificado.
 
 Su CI original `37249480029` termina FAILED. Los doce trabajos terminaron;
 UI3 conserva dos casos de apertura fallidos, con sus reintentos. La colección
-completa de logs y ZIPs tiene un recibo independiente todavía pendiente.
+completa conserva los doce logs, once ZIPs autenticados y las 524 identidades
+originales, con 526 intentos, cuatro fallidos y dos retries. Certificado SHA256
+`8abc2f393df21f039866ec4e8e3e5f5ae88f8b85c775edf57b2f42238f054398`.
 Los pases locales y públicos no sustituyen ese resultado. No hay medición
 de FPS ni temperatura de un teléfono físico.
 
@@ -83,6 +85,7 @@ En `.animation.local/performance-1759/`:
 - `native-axis-quality-attempt1/`: comparación gráfica independiente.
 - `public-ebffb33-attempt1/`: primer pin HTTP antiguo conservado.
 - `public-ebffb33-attempt2/`: HTTP, APK, loader y 21 recorridos públicos.
+- `ci-original-37249480029-attempt1/snapshot-001/`: CI original completa FAILED.
 
 Los recibos y resultados anteriores no se sobrescriben ni se cuentan como
 ejecuciones de esta versión.

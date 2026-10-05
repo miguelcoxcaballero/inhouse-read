@@ -1,4 +1,18 @@
-# Verificación del WIP — 1.7.60 y Android 1.1.4
+# Verificación del WIP — 1.7.61 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.61
+
+La terminación del análisis de portada utiliza el modelo ya cargado en vez
+de sustituirlo completo. Los 48 pares gráficos en DPR2 y DPR1,5 conservan
+RGBA completo y PNG nativo/exportado exactamente iguales; en ese punto se
+observa una sustitución del control y ninguna del candidato. CPU aislada:
+20 PASS (11 originales, 9 nuevos); el primer fallo de fixtures y los dos
+fallos esperados del control quedan conservados. Fuente final: 3.109
+unitarias en 235 archivos, build y 75 Python PASS, 515 hechos estables.
+El censo de 524 E2E no se presenta como ejecución. Los siete recorridos
+locales originales pasan al primer intento, sin retries/flaky/skips, con
+cierres de 5.058,1 y 6.003,5 ms. La publicación sigue pendiente. No acredita FPS en un teléfono físico ni reclasifica
+los fallos de 1.7.60. Detalle en [Rendimiento de 1.7.61](performance-1761.md).
 
 ## Cambios de rendimiento de 1.7.60
 
@@ -10,10 +24,18 @@ nuevos. El primer fallo de datos de tres fixtures nuevos queda conservado.
 Batería completa: 3.100 unitarias en 233 archivos, build y 75 Python PASS,
 con 513 hechos estables y 524 identidades E2E intactas. El listado no es
 una ejecución. Los siete recorridos locales originales terminan 5 PASS/2 FAIL,
-sin retries, flaky ni omisiones: ambos casos nativos llegaron al lector y
-fallaron durante su cierre. No se atribuye la causa a un callback de portada
-sin medirlo ni se acredita fluidez de un teléfono físico. Publicación y
-verificación de artefactos todavía tienen sus propios recibos pendientes.
+sin retries, flaky ni omisiones: la carga y apertura consumieron gran parte
+del límite global de treinta segundos. Aunque llegaron al lector y se emitió
+Back, no quedó un presupuesto completo para medir sus cierres de ocho segundos.
+No se atribuye la causa a un callback de portada
+sin medirlo ni se acredita fluidez de un teléfono físico. Publicada desde
+`e86279a`, Pages `937a49a`: HTTP real de 23 módulos/44 offline y APK recién
+descargada/loader PASS. Primer HTML previo de CDN FAILED conservado. Tres
+recorridos públicos originales: 2 PASS/1 FAIL (alineado global30), sin retries,
+flaky ni omisiones; auditor estricto FAILED. Los 18 PDF públicos pasan al primer intento, sin retries ni omisiones,
+con 310 cuerpos autenticados; CI original `37252194562` termina FAILED (UI3/agregador; otros diez jobs PASS).
+UI3 temprano conserva 40 identidades/42 intentos, 38 pases y los dos contratos
+nativos timedOut en sus cuatro intentos. Colección completa pendiente.
 Detalle en [Rendimiento de 1.7.60](performance-1760.md).
 
 ## Cambios de rendimiento de 1.7.59
@@ -38,8 +60,8 @@ Publicada desde `ebffb33`, Pages `68f8edf`: HTTP real, APK recién descargada
 y loader de 2.089 bytes PASS. Los 21 recorridos públicos originales pasan
 al primer intento, sin retries, flaky ni omisiones. El primer pin HTTP de
 propagación conserva su fallo y cuerpo de 1.7.58. La CI original `37249480029`
-termina FAILED con dos casos de apertura en UI3 y sus reintentos; la colección
-completa de logs y ZIPs tiene su propio recibo pendiente. Los pases locales
+termina FAILED con dos casos de apertura en UI3 y sus reintentos; conserva
+doce logs, once ZIPs, 524 identidades y 526 intentos originales. Los pases locales
 y públicos no sustituyen ese resultado ni acreditan FPS de un teléfono. Detalle en
 [Rendimiento de 1.7.59](performance-1759.md).
 
