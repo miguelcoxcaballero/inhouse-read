@@ -1,0 +1,488 @@
+{
+  "distribution": "Google Fonts",
+  "license": "SIL Open Font License 1.1",
+  "licenseCommit": "9710da1eacb3be272583c3224dcb70f9da6eadbb",
+  "originalCss": {
+    "bytes": 41041,
+    "sha256": "d0217f68ee0dbb009c25d037d4cc4c1a4701f386911f526dca90bc1e62173e4c"
+  },
+  "faces": 93,
+  "families": [
+    "Comfortaa",
+    "Cormorant Garamond",
+    "DM Sans",
+    "Lora",
+    "Montserrat",
+    "Oswald",
+    "Playfair Display"
+  ],
+  "fonts": [
+    {
+      "family": "Comfortaa",
+      "subset": "vietnamese",
+      "weights": [
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/comfortaa/v47/1PtCg8LJRfWJmhDAuUsSQamb1W0lwk4S4WjMXL830efAesmwYSFoxBEA_I2udQ.woff2",
+      "file": "comfortaa-vietnamese-c3a1539ae148.woff2",
+      "cssPath": "../assets/fonts/comfortaa-vietnamese-c3a1539ae148.woff2",
+      "bytes": 7636,
+      "sha256": "c3a1539ae148d2665dd4f3f02a3388628ccbbe2fbfaa4ac32e20914e46b09ba6"
+    },
+    {
+      "family": "Comfortaa",
+      "subset": "latin-ext",
+      "weights": [
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/comfortaa/v47/1PtCg8LJRfWJmhDAuUsSQamb1W0lwk4S4WjMXL830efAesmwYSFoxBEB_I2udQ.woff2",
+      "file": "comfortaa-latin-ext-04a638f620eb.woff2",
+      "cssPath": "../assets/fonts/comfortaa-latin-ext-04a638f620eb.woff2",
+      "bytes": 18952,
+      "sha256": "04a638f620eb84c57aecc01f896349f490bd9ac5fe0e3127674daa86c8628ccf"
+    },
+    {
+      "family": "Comfortaa",
+      "subset": "cyrillic-ext",
+      "weights": [
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/comfortaa/v47/1PtCg8LJRfWJmhDAuUsSQamb1W0lwk4S4WjMXL830efAesmwYSFoxBEC_I2udQ.woff2",
+      "file": "comfortaa-cyrillic-ext-55eb01e9760f.woff2",
+      "cssPath": "../assets/fonts/comfortaa-cyrillic-ext-55eb01e9760f.woff2",
+      "bytes": 11420,
+      "sha256": "55eb01e9760f8ccf2c06c451960e23e5bafdf53613e02a45b3ef5f7c0d1f9a37"
+    },
+    {
+      "family": "Comfortaa",
+      "subset": "cyrillic",
+      "weights": [
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/comfortaa/v47/1PtCg8LJRfWJmhDAuUsSQamb1W0lwk4S4WjMXL830efAesmwYSFoxBEL_I2udQ.woff2",
+      "file": "comfortaa-cyrillic-6b45c42465cc.woff2",
+      "cssPath": "../assets/fonts/comfortaa-cyrillic-6b45c42465cc.woff2",
+      "bytes": 13684,
+      "sha256": "6b45c42465ccac4ca027469cbeca91a22250be29aca6b1ce451e1f9f83e33671"
+    },
+    {
+      "family": "Comfortaa",
+      "subset": "greek",
+      "weights": [
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/comfortaa/v47/1PtCg8LJRfWJmhDAuUsSQamb1W0lwk4S4WjMXL830efAesmwYSFoxBEM_I2udQ.woff2",
+      "file": "comfortaa-greek-8842a6d24eab.woff2",
+      "cssPath": "../assets/fonts/comfortaa-greek-8842a6d24eab.woff2",
+      "bytes": 10104,
+      "sha256": "8842a6d24eabfbe8b6f258b31e4e7c3f22845ba1a854eac0886875c5516f0d49"
+    },
+    {
+      "family": "Comfortaa",
+      "subset": "latin",
+      "weights": [
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/comfortaa/v47/1PtCg8LJRfWJmhDAuUsSQamb1W0lwk4S4WjMXL830efAesmwYSFoxBEP_I0.woff2",
+      "file": "comfortaa-latin-6c73b639fbea.woff2",
+      "cssPath": "../assets/fonts/comfortaa-latin-6c73b639fbea.woff2",
+      "bytes": 22984,
+      "sha256": "6c73b639fbea04e658ae383a352904d2ef3b0e0810043c78a04455d0fc3759a5"
+    },
+    {
+      "family": "Cormorant Garamond",
+      "subset": "latin-ext",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/cormorantgaramond/v21/co3bmX5slCNuHLi8bLeY9MK7whWMhyjYp3tKgS4.woff2",
+      "file": "cormorant-garamond-latin-ext-cfa9a397d86f.woff2",
+      "cssPath": "../assets/fonts/cormorant-garamond-latin-ext-cfa9a397d86f.woff2",
+      "bytes": 33736,
+      "sha256": "cfa9a397d86f66c5c51775a2500a712d5f632a04f0c5eca6930dfaf612d4566d"
+    },
+    {
+      "family": "Cormorant Garamond",
+      "subset": "cyrillic-ext",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/cormorantgaramond/v21/co3bmX5slCNuHLi8bLeY9MK7whWMhyjYpHtKgS4.woff2",
+      "file": "cormorant-garamond-cyrillic-ext-a4d7cf345b80.woff2",
+      "cssPath": "../assets/fonts/cormorant-garamond-cyrillic-ext-a4d7cf345b80.woff2",
+      "bytes": 23416,
+      "sha256": "a4d7cf345b8091e1d2c8c5c8fa3bd0f9bb9d00bc8988185471db398ddb5ae4c4"
+    },
+    {
+      "family": "Cormorant Garamond",
+      "subset": "vietnamese",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/cormorantgaramond/v21/co3bmX5slCNuHLi8bLeY9MK7whWMhyjYpntKgS4.woff2",
+      "file": "cormorant-garamond-vietnamese-6252e819a766.woff2",
+      "cssPath": "../assets/fonts/cormorant-garamond-vietnamese-6252e819a766.woff2",
+      "bytes": 11220,
+      "sha256": "6252e819a7665ae512c2d046308a9016ada63c06d0d8f96984c4b29f6c9e1bd2"
+    },
+    {
+      "family": "Cormorant Garamond",
+      "subset": "latin",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/cormorantgaramond/v21/co3bmX5slCNuHLi8bLeY9MK7whWMhyjYqXtK.woff2",
+      "file": "cormorant-garamond-latin-d80df8ff5aec.woff2",
+      "cssPath": "../assets/fonts/cormorant-garamond-latin-d80df8ff5aec.woff2",
+      "bytes": 37640,
+      "sha256": "d80df8ff5aecd299a61549f9e29ab1ed0b9b05f4ea71d50fe978e07d5240b235"
+    },
+    {
+      "family": "Cormorant Garamond",
+      "subset": "cyrillic",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/cormorantgaramond/v21/co3bmX5slCNuHLi8bLeY9MK7whWMhyjYrXtKgS4.woff2",
+      "file": "cormorant-garamond-cyrillic-017fab69b4be.woff2",
+      "cssPath": "../assets/fonts/cormorant-garamond-cyrillic-017fab69b4be.woff2",
+      "bytes": 21168,
+      "sha256": "017fab69b4be8ffc08ca312823327989ade6dc3d948f0afa125e12ec2e5e7ca1"
+    },
+    {
+      "family": "DM Sans",
+      "subset": "latin",
+      "weights": [
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/dmsans/v17/rP2Yp2ywxg089UriI5-g4vlH9VoD8Cmcqbu0-K4.woff2",
+      "file": "dm-sans-latin-9fea608a947e.woff2",
+      "cssPath": "../assets/fonts/dm-sans-latin-9fea608a947e.woff2",
+      "bytes": 36932,
+      "sha256": "9fea608a947e67020c33cad9a6fe3d60c54119dfb8cff87768a8117a15ed7543"
+    },
+    {
+      "family": "DM Sans",
+      "subset": "latin-ext",
+      "weights": [
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/dmsans/v17/rP2Yp2ywxg089UriI5-g4vlH9VoD8Cmcqbu6-K6h9Q.woff2",
+      "file": "dm-sans-latin-ext-a5d38fe99f93.woff2",
+      "cssPath": "../assets/fonts/dm-sans-latin-ext-a5d38fe99f93.woff2",
+      "bytes": 18228,
+      "sha256": "a5d38fe99f930275684999b462c7123faa063d9e44e73b4b241723d884aa0f49"
+    },
+    {
+      "family": "Lora",
+      "subset": "symbols",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/lora/v37/0QIvMX1D_JOuM2T7I-NP.woff2",
+      "file": "lora-symbols-2df52199eac5.woff2",
+      "cssPath": "../assets/fonts/lora-symbols-2df52199eac5.woff2",
+      "bytes": 17248,
+      "sha256": "2df52199eac56e2ec7a735e609bb151bdab79422c3e73948f4b6580c66bb5a50"
+    },
+    {
+      "family": "Lora",
+      "subset": "math",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/lora/v37/0QIvMX1D_JOuM3b7I-NP.woff2",
+      "file": "lora-math-a8c4cb778ab6.woff2",
+      "cssPath": "../assets/fonts/lora-math-a8c4cb778ab6.woff2",
+      "bytes": 29240,
+      "sha256": "a8c4cb778ab6202d22bdea2ccc8d7e7caf802cfe0a7ce37df7b212f82341468f"
+    },
+    {
+      "family": "Lora",
+      "subset": "cyrillic",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/lora/v37/0QIvMX1D_JOuMw77I-NP.woff2",
+      "file": "lora-cyrillic-c57d9ca3bd42.woff2",
+      "cssPath": "../assets/fonts/lora-cyrillic-c57d9ca3bd42.woff2",
+      "bytes": 21232,
+      "sha256": "c57d9ca3bd42e6bc093badc7744dd2059a78f66a3a4dc6ca40574480c870f553"
+    },
+    {
+      "family": "Lora",
+      "subset": "latin-ext",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/lora/v37/0QIvMX1D_JOuMwT7I-NP.woff2",
+      "file": "lora-latin-ext-2a2d9c22c986.woff2",
+      "cssPath": "../assets/fonts/lora-latin-ext-2a2d9c22c986.woff2",
+      "bytes": 20088,
+      "sha256": "2a2d9c22c9863086a23f5013fede1428585321812b25f2662542c39d02967c5e"
+    },
+    {
+      "family": "Lora",
+      "subset": "vietnamese",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/lora/v37/0QIvMX1D_JOuMwX7I-NP.woff2",
+      "file": "lora-vietnamese-98c22de85f6e.woff2",
+      "cssPath": "../assets/fonts/lora-vietnamese-98c22de85f6e.woff2",
+      "bytes": 8992,
+      "sha256": "98c22de85f6e83bcd6ae1a443e12e256fbc8de7142bec4f76b059f8ff9c2797e"
+    },
+    {
+      "family": "Lora",
+      "subset": "cyrillic-ext",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/lora/v37/0QIvMX1D_JOuMwf7I-NP.woff2",
+      "file": "lora-cyrillic-ext-0e523e4bc3c6.woff2",
+      "cssPath": "../assets/fonts/lora-cyrillic-ext-0e523e4bc3c6.woff2",
+      "bytes": 23636,
+      "sha256": "0e523e4bc3c6308f002a3208ea2990cb4f64282d4fbb67c12f5726d13b66eef6"
+    },
+    {
+      "family": "Lora",
+      "subset": "latin",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/lora/v37/0QIvMX1D_JOuMwr7Iw.woff2",
+      "file": "lora-latin-ddb8c6603510.woff2",
+      "cssPath": "../assets/fonts/lora-latin-ddb8c6603510.woff2",
+      "bytes": 37788,
+      "sha256": "ddb8c66035104e233fc024669183aad3738b6daa16deee2ebb1241bd0f98ace1"
+    },
+    {
+      "family": "Montserrat",
+      "subset": "cyrillic",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/montserrat/v31/JTUSjIg1_i6t8kCHKm459W1hyzbi.woff2",
+      "file": "montserrat-cyrillic-a187b077090f.woff2",
+      "cssPath": "../assets/fonts/montserrat-cyrillic-a187b077090f.woff2",
+      "bytes": 23828,
+      "sha256": "a187b077090fe8ae3fd2d7496aabbeae604819c718a282e0afc92df72b450766"
+    },
+    {
+      "family": "Montserrat",
+      "subset": "cyrillic-ext",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/montserrat/v31/JTUSjIg1_i6t8kCHKm459WRhyzbi.woff2",
+      "file": "montserrat-cyrillic-ext-0f7f5f2fbb4e.woff2",
+      "cssPath": "../assets/fonts/montserrat-cyrillic-ext-0f7f5f2fbb4e.woff2",
+      "bytes": 26368,
+      "sha256": "0f7f5f2fbb4eae126790fe6f01659ab3ee0806e8038a941908e893020569f51a"
+    },
+    {
+      "family": "Montserrat",
+      "subset": "vietnamese",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/montserrat/v31/JTUSjIg1_i6t8kCHKm459WZhyzbi.woff2",
+      "file": "montserrat-vietnamese-26b2403f995e.woff2",
+      "cssPath": "../assets/fonts/montserrat-vietnamese-26b2403f995e.woff2",
+      "bytes": 12928,
+      "sha256": "26b2403f995ed65fb49037a6498c074d3ec3c36031a69fc368c4c2180e2c01fa"
+    },
+    {
+      "family": "Montserrat",
+      "subset": "latin-ext",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/montserrat/v31/JTUSjIg1_i6t8kCHKm459Wdhyzbi.woff2",
+      "file": "montserrat-latin-ext-54d9a78b7ff6.woff2",
+      "cssPath": "../assets/fonts/montserrat-latin-ext-54d9a78b7ff6.woff2",
+      "bytes": 70688,
+      "sha256": "54d9a78b7ff60b689ad9f3017ffac8547b5d871afec733f6c1c3ae36577ee504"
+    },
+    {
+      "family": "Montserrat",
+      "subset": "latin",
+      "weights": [
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/montserrat/v31/JTUSjIg1_i6t8kCHKm459Wlhyw.woff2",
+      "file": "montserrat-latin-06b16db7a969.woff2",
+      "cssPath": "../assets/fonts/montserrat-latin-06b16db7a969.woff2",
+      "bytes": 37956,
+      "sha256": "06b16db7a969135d48d38c49183be7fb88d4452e2a3011957c7851941f4e4879"
+    },
+    {
+      "family": "Oswald",
+      "subset": "cyrillic",
+      "weights": [
+        "500",
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/oswald/v57/TK3IWkUHHAIjg75cFRf3bXL8LICs1_Fv40pKlN4NNSeSASz7FmlSHYjedg.woff2",
+      "file": "oswald-cyrillic-95c3d8d1db01.woff2",
+      "cssPath": "../assets/fonts/oswald-cyrillic-95c3d8d1db01.woff2",
+      "bytes": 11748,
+      "sha256": "95c3d8d1db01b5ecd85b0d90aa81d39d24231f74de28c7418cfd8c08261fe929"
+    },
+    {
+      "family": "Oswald",
+      "subset": "latin",
+      "weights": [
+        "500",
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/oswald/v57/TK3IWkUHHAIjg75cFRf3bXL8LICs1_Fv40pKlN4NNSeSASz7FmlWHYg.woff2",
+      "file": "oswald-latin-571f3457dab5.woff2",
+      "cssPath": "../assets/fonts/oswald-latin-571f3457dab5.woff2",
+      "bytes": 21472,
+      "sha256": "571f3457dab507b6f2ce5394d593ca015251b69fea81ab7a546bd2368e9fc3ed"
+    },
+    {
+      "family": "Oswald",
+      "subset": "latin-ext",
+      "weights": [
+        "500",
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/oswald/v57/TK3IWkUHHAIjg75cFRf3bXL8LICs1_Fv40pKlN4NNSeSASz7FmlYHYjedg.woff2",
+      "file": "oswald-latin-ext-99016932b273.woff2",
+      "cssPath": "../assets/fonts/oswald-latin-ext-99016932b273.woff2",
+      "bytes": 19104,
+      "sha256": "99016932b273efa7d55b3a0ae9fe4babc6dbdcd7539f58a742697054f89b1142"
+    },
+    {
+      "family": "Oswald",
+      "subset": "vietnamese",
+      "weights": [
+        "500",
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/oswald/v57/TK3IWkUHHAIjg75cFRf3bXL8LICs1_Fv40pKlN4NNSeSASz7FmlZHYjedg.woff2",
+      "file": "oswald-vietnamese-0e6ae07493c5.woff2",
+      "cssPath": "../assets/fonts/oswald-vietnamese-0e6ae07493c5.woff2",
+      "bytes": 6204,
+      "sha256": "0e6ae07493c5ebae5e815123be8fe99b34f7b13dac4a0907e072e244dd7edcdd"
+    },
+    {
+      "family": "Oswald",
+      "subset": "cyrillic-ext",
+      "weights": [
+        "500",
+        "600",
+        "700"
+      ],
+      "url": "https://fonts.gstatic.com/s/oswald/v57/TK3IWkUHHAIjg75cFRf3bXL8LICs1_Fv40pKlN4NNSeSASz7FmlbHYjedg.woff2",
+      "file": "oswald-cyrillic-ext-fd48ff70d399.woff2",
+      "cssPath": "../assets/fonts/oswald-cyrillic-ext-fd48ff70d399.woff2",
+      "bytes": 13964,
+      "sha256": "fd48ff70d399cc905ec878993b1a72b6c0a4863c46118ec413e01e1fdc3127c3"
+    },
+    {
+      "family": "Playfair Display",
+      "subset": "latin-ext",
+      "weights": [
+        "600",
+        "700",
+        "800"
+      ],
+      "url": "https://fonts.gstatic.com/s/playfairdisplay/v40/nuFiD-vYSZviVYUb_rj3ij__anPXDTLYgFE_.woff2",
+      "file": "playfair-display-latin-ext-42898ad49a6b.woff2",
+      "cssPath": "../assets/fonts/playfair-display-latin-ext-42898ad49a6b.woff2",
+      "bytes": 21140,
+      "sha256": "42898ad49a6b23f32b109243e1df596edf831015ed685f429e4dafbb181d599d"
+    },
+    {
+      "family": "Playfair Display",
+      "subset": "vietnamese",
+      "weights": [
+        "600",
+        "700",
+        "800"
+      ],
+      "url": "https://fonts.gstatic.com/s/playfairdisplay/v40/nuFiD-vYSZviVYUb_rj3ij__anPXDTPYgFE_.woff2",
+      "file": "playfair-display-vietnamese-ef6446229b59.woff2",
+      "cssPath": "../assets/fonts/playfair-display-vietnamese-ef6446229b59.woff2",
+      "bytes": 9112,
+      "sha256": "ef6446229b59773e671021650ef3882cf35806dae723ce047de87c0a6633039a"
+    },
+    {
+      "family": "Playfair Display",
+      "subset": "cyrillic",
+      "weights": [
+        "600",
+        "700",
+        "800"
+      ],
+      "url": "https://fonts.gstatic.com/s/playfairdisplay/v40/nuFiD-vYSZviVYUb_rj3ij__anPXDTjYgFE_.woff2",
+      "file": "playfair-display-cyrillic-c108681cba6a.woff2",
+      "cssPath": "../assets/fonts/playfair-display-cyrillic-c108681cba6a.woff2",
+      "bytes": 21152,
+      "sha256": "c108681cba6a9820bff52f4a1a4a1d9edf356b347bd79b7c61e916028e8a8b54"
+    },
+    {
+      "family": "Playfair Display",
+      "subset": "latin",
+      "weights": [
+        "600",
+        "700",
+        "800"
+      ],
+      "url": "https://fonts.gstatic.com/s/playfairdisplay/v40/nuFiD-vYSZviVYUb_rj3ij__anPXDTzYgA.woff2",
+      "file": "playfair-display-latin-e0c764a8e9e1.woff2",
+      "cssPath": "../assets/fonts/playfair-display-latin-e0c764a8e9e1.woff2",
+      "bytes": 38404,
+      "sha256": "e0c764a8e9e1cce92163c55bac4b2ad6cd4cf8c696ce2289ab5c41565e65b7e2"
+    }
+  ]
+}
