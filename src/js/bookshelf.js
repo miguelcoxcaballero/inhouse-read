@@ -108,6 +108,7 @@ import { createShelfZoom } from './shelf-zoom.js';
 import { createShelfViewGesture } from './shelf-view-gesture.js';
 import { markTiming, resetTimeline } from './perf-marks.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
+import { refreshCanvasFontsAfterPaint } from './canvas-font-readiness.js';
 import { bookReturnSignature, bookReturnCompatibility, createBookReturnCache } from './bookshelf-return.js';
 import { layoutShelfDecorations, moveShelfDecoration } from './shelf-decoration-layout.js';
 import { createPlantCatalog } from './plant-catalog.js';
@@ -372,6 +373,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     suppressOpenBookId: null,
     suppressLampClickKey: null,
     queuedBooks: null,
+    compatibilityTapTimer: 0,
     pendingRemovals: new Set(),
     renderQueued: false,
     reorderTimer: 0,
@@ -552,7 +554,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function maybeRefreshAppearanceStyles() {
-    if (!state.appearanceRefreshPending || state.busy || state.session || state.returnMotion || state.dragSession || state.destroyed) return;
+    if (!state.appearanceRefreshPending || state.busy || state.session || state.returnMotion || state.dragSession || state.compatibilityTapTimer || state.destroyed) return;
     state.appearanceRefreshPending = false;
     scheduleRender();
   }
@@ -596,7 +598,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         if (String(state.lastOpened?.book?.id ?? '') === id) state.lastOpened.style = item.style;
         const existing = [...root.querySelectorAll('.ihr-spine')]
           .find(node => node.dataset.bookId === id);
-        if (existing?.isConnected && !state.busy && !state.session && !state.returnMotion && !state.dragSession && state.pressedBookId !== id) {
+        if (existing?.isConnected && !state.busy && !state.session && !state.returnMotion && !state.dragSession && !state.compatibilityTapTimer && state.pressedBookId !== id) {
           if (state.shelfScene) {
             state.shelfScene.updateEntry(existing, item.book, item.style, resolveCoverImmediately(item.book));
             return appearance;
@@ -981,6 +983,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   function startSpineDrag(event, node) {
     if ((event.button !== undefined && event.button !== 0) || state.dragSession || state.busy || state.session || state.returnMotion) return;
+    clearCompatibilityTapRefresh();
     state.suppressLampClickKey = null;
     let backgroundOnly = false;
     if (state.shelfScene) {
@@ -999,7 +1002,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       node, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
       x: event.clientX, y: event.clientY, scrollTop: scroller.scrollTop,
       pointerType: event.pointerType, target: null, after: false, moved: false,
-      active: false, scrolling: false, cancelled: false, timer: 0
+      active: false, scrolling: false, cancelled: false, timer: 0,
+      bookTapValid: !backgroundOnly && node.classList.contains('ihr-spine')
     };
     try { node.setPointerCapture?.(event.pointerId); } catch { /* el navegador pudo cancelar el puntero */ }
     // Rotated hit rectangles contain some empty space. It must still scroll
@@ -1067,7 +1071,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     target?.classList.add('is-drop-target', drag.after ? 'is-drop-after' : 'is-drop-before');
   }
 
-  function finishSpineDrag(event, node, cancelled = false) {
+  function finishSpineDrag(event, node, cancelled = false, activateTouch = false) {
     const drag = state.dragSession;
     if (!drag || drag.node !== node || drag.pointerId !== event.pointerId) return;
     clearTimeout(drag.timer);
@@ -1104,11 +1108,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       return;
     }
     if (!drag.active) {
-      // The browser dispatches the compatibility click after pointerup. A
-      // legacy shelf refresh replaces that button, so keep a valid mouse tap
-      // connected until its click has been delivered, then flush real updates.
-      if (!cancelled && !state.shelfScene && drag.pointerType === 'mouse' && node.classList.contains('ihr-spine'))
-        setTimeout(applyDeferredShelfUpdates, 0);
+      // Keep the validated semantic hit alive until its compatibility click
+      // or synchronous touch activation. A WebGL refresh replaces it too.
+      if (!cancelled && !drag.cancelled && !drag.moved && drag.bookTapValid &&
+          (drag.pointerType === 'mouse' || activateTouch))
+        deferCompatibilityTapRefresh();
       else applyDeferredShelfUpdates();
       return;
     }
@@ -1465,7 +1469,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         Math.hypot(event.clientX - candidate.x, event.clientY - candidate.y) <= TAP_SLOP &&
         drag?.pointerId === event.pointerId && drag.node === node && !drag.active && !drag.moved &&
         !drag.cancelled && !drag.scrolling && !state.arranging;
-      finishSpineDrag(event, drag?.node || node);
+      finishSpineDrag(event, drag?.node || node, false, activate);
       if (candidate) { touch = null; ignoreTouchClick = true; }
       if (activate && node.isConnected && !state.suppressOpenBookId) {
         discardTouchCompatibilityClick(event);
@@ -1711,7 +1715,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (state.destroyed) return;
     root.dataset.viewMode = state.viewMode;
     root.dataset.shelfType = state.shelfType;
-    if (state.returnMotion || state.busy || state.session || state.dragSession) { state.renderQueued = true; return; }
+    if (state.returnMotion || state.busy || state.session || state.dragSession || state.compatibilityTapTimer) { state.renderQueued = true; return; }
     if (!state.appearancesReady && state.books.length > 0) {
       state.shelfScene?.dispose();
       state.shelfScene = null;
@@ -1921,7 +1925,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   }
 
   function scheduleRender() {
-    if (state.returnMotion || state.reorderTimer || state.busy || state.session || state.dragSession) { state.renderQueued = true; return; }
+    if (state.returnMotion || state.reorderTimer || state.busy || state.session || state.dragSession || state.compatibilityTapTimer) { state.renderQueued = true; return; }
     if (state.frame) return;
     state.frame = requestAnimationFrame(() => {
       state.frame = 0;
@@ -2008,6 +2012,20 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   async function openBook(spineEl, item) {
     if (state.busy || state.session || state.returnMotion || state.destroyed) return;
+    clearCompatibilityTapRefresh();
+    if (state.queuedBooks) {
+      // The validated painted hit selects the ID. Commit the accepted list
+      // through the original path before using its current source/style/pose.
+      const id = String(item.book.id ?? item.book.path ?? item.book.title ?? 'book');
+      applyDeferredShelfUpdates();
+      // A reordering animation can still own the queued list. Keep it intact
+      // and do not open the stale source or geometry from the painted hit.
+      if (state.queuedBooks) return;
+      item = state.itemsById.get(id);
+      spineEl = item && [...root.querySelectorAll('.ihr-spine')]
+        .find(node => node.dataset.bookId === String(item.book.id ?? ''));
+      if (!item || !spineEl?.isConnected || bookGeometryState(item.book) !== 'ready') return;
+    }
     returnViews.clear();
     state.busy = true;
     // True once the lifted book sits still (the pull-out has finished), false if
@@ -2176,6 +2194,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const session = { book, item, cancelled: false, phase: 'revealing', view, bookNode };
 
     function finishClose({ silent = false, instant = false } = {}) {
+      state.shelfScene?.setModalBackgroundDeferred?.(null, { resumeHidden:true });
       spineEl.classList.remove('is-away');
       state.shelfScene?.flush();
       view?.dispose();
@@ -2190,6 +2209,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
     async function close({ silent = false, instant = false } = {}) {
       if (state.session !== session) return;
+      state.shelfScene?.setModalBackgroundDeferred?.(null, { resumeHidden:true });
       if (session.cancelled) {
         if (instant) {
           session.returnAnimation?.cancel();
@@ -3269,6 +3289,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     view?.draw({ x:dx, y:dy, scale:startScale, angle:sourceAngle, pitch:sourcePitch, roll:sourceRoll });
     spineEl.classList.add('is-away');
     state.shelfScene?.flush();
+    state.shelfScene?.setModalBackgroundDeferred?.(spineEl);
     flyout.focus?.();
 
     const reduce = prefersReducedMotion();
@@ -3514,6 +3535,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (state.session === session) {
         flyout.dataset.openingPhase = 'complete';
         session.phase = 'complete';
+        state.shelfScene?.setModalBackgroundDeferred?.(null);
         state.lastOpened = { book, style: item.style, spineEl };
         state.session = null;
         state.busy = false;
@@ -3590,7 +3612,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   prepareInitialAppearances();
   render();
   // Canvas text does not repaint when a web font arrives, unlike DOM text.
-  document.fonts?.ready.then(() => {
+  refreshCanvasFontsAfterPaint(() => {
     if (!state.destroyed && !state.session) scheduleRender();
   });
 
@@ -3602,7 +3624,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function adoptMetadataRecords(nextBooks) {
     if (options.adoptMetadata !== true || options.texts || opts.sections !== false || opts.sort !== 'none' || !state.useScene || !state.shelfScene ||
         !state.presentationActive || state.destroyed || state.busy || state.session || state.pendingSelection ||
-        state.returnMotion || state.dragSession || state.reorderTimer || state.trashRemoval || state.arranging ||
+        state.returnMotion || state.dragSession || state.compatibilityTapTimer || state.reorderTimer || state.trashRemoval || state.arranging ||
         state.returningBookId !== null || state.pressedBookId !== null || state.pendingRemovals.size ||
         state.queuedBooks || state.frame || state.renderQueued || state.appearanceRefreshPending ||
         !state.appearancesReady || state.appearanceTasks.size ||
@@ -3635,7 +3657,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   /** Sustituye la biblioteca y vuelve a pintar, conservando el scroll. */
   function refresh(nextBooks, { defer = false } = {}) {
     if (state.destroyed) return;
-    if (defer || state.returnMotion || state.reorderTimer || state.busy || state.session || state.dragSession) {
+    if (defer || state.returnMotion || state.reorderTimer || state.busy || state.session || state.dragSession || state.compatibilityTapTimer) {
       if (Array.isArray(nextBooks)) state.queuedBooks = nextBooks.filter(book => !state.pendingRemovals.has(String(book.id)));
       if (defer) scheduleRender();
       return;
@@ -3655,8 +3677,21 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     scroller.scrollTop = top;
   }
 
+  function clearCompatibilityTapRefresh() {
+    clearTimeout(state.compatibilityTapTimer);
+    state.compatibilityTapTimer = 0;
+  }
+
+  function deferCompatibilityTapRefresh() {
+    clearCompatibilityTapRefresh();
+    state.compatibilityTapTimer = setTimeout(() => {
+      state.compatibilityTapTimer = 0;
+      applyDeferredShelfUpdates();
+    }, 0);
+  }
+
   function applyDeferredShelfUpdates() {
-    if (state.destroyed || state.returnMotion || state.reorderTimer || state.busy || state.session || state.dragSession) return;
+    if (state.destroyed || state.returnMotion || state.reorderTimer || state.busy || state.session || state.dragSession || state.compatibilityTapTimer) return;
     maybeRefreshAppearanceStyles();
     if (state.queuedBooks) {
       const nextBooks = state.queuedBooks;
@@ -3681,6 +3716,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   /** Cierra el tomo 3D desde el lector y lo devuelve a su hueco. */
   async function returnToShelf(bookId, { pageSnapshot, book:latestBook, onPageReady } = {}) {
+    state.shelfScene?.setModalBackgroundDeferred?.(null, { resumeHidden:true });
     const item = state.itemsById.get(String(bookId));
     const previous = state.lastOpened?.book.id === bookId ? state.lastOpened
       : item ? { book:item.book, style:item.style } : null;
@@ -3934,6 +3970,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       state.shelfScene?.setPresentationActive?.(state.presentationActive);
     },
     setReturningBook(bookId) {
+      state.shelfScene?.setModalBackgroundDeferred?.(null, { resumeHidden:true });
       const next = bookId == null ? null : String(bookId), previous = state.returningBookId;
       state.returningBookId = next;
       state.shelfScene?.setPaintHeld?.(next !== null);
@@ -3958,7 +3995,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     },
 
     destroy() {
+      state.shelfScene?.setModalBackgroundDeferred?.(null, { resumeHidden:true });
       state.destroyed = true;
+      clearCompatibilityTapRefresh();
       returnViews.clear();
       clearOpeningClick?.();
       plantCatalog.destroy(); shelfViewGesture.destroy(); shelfZoom.destroy();

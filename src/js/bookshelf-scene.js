@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { configureNativeRendererSize } from './native-renderer-size.js';
+import { refreshCanvasFontsAfterPaint } from './canvas-font-readiness.js';
 import { createBookModel, getBookRenderer, lightBookScene } from './book-model.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { canAdoptShelfMetadata } from './shelf-metadata-records.js';
@@ -364,6 +365,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   let disposed = false, raf = 0, renderCount = 0, modelCreations = 0, viewportHeight = 1, progress = mode === 'isometric' ? 1 : 0;
   let presentationActive = true, drawPending = true, paintedViewport = null, paintHeld = false;
+  // This separate modal gate never changes home/reader presentation ownership.
+  let modalDeferredEntry = null, inactiveModalEntry = null, paintedModalView = null;
+  const paintedAwayEntries = new Set();
   let shelfSnapshotDirty = true, shelfSnapshotRenders = 0;
   // Every program is linked in parallel before the first frame (see gpu-programs.js).
   let programsReady = null, programsPoll = 0, unpainted = [];
@@ -2053,9 +2057,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (programsReady()) invalidate(false); else programsPoll = setTimeout(pollPrograms, 10);
   }
 
-  function draw(now = performance.now()) {
+  function draw(now = performance.now(), force = false) {
     raf = 0;
     if (disposed) return;
+    if (!force && canDeferModalPaint()) { drawPending = true; return; }
     drawPending = false;
     hideInspectionSnapshot();
     if (!inspectionMoving && inspectionEntryUpdates.size) {
@@ -2263,6 +2268,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       setData(canvas, 'snapshotRenderCount', String(++shelfSnapshotRenders));
       setData(canvas, 'sceneDrawCalls', String(renderer.info?.render.calls || 0));
       shelfSnapshotDirty = false;
+      paintedModalView = { progress, inspectionZoom, panX, panY };
+      // Record only a completed room transaction, after GPU/native/legacy
+      // output succeeded. A flush can return while programs or paint are held.
+      paintedAwayEntries.clear();
+      for (const entry of bookEntries) if (entry.flags.away && entry.model && !entry.model.visible &&
+        !entry.insertion && !entry.trashDrop) paintedAwayEntries.add(entry);
     }
     for (const entry of bookEntries) if (entry.insertion?.overlayCanvas) paintInsertionOverlay(entry);
     setData(canvas, 'renderCount', String(++renderCount));
@@ -2335,7 +2346,44 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (!preserveInspectionOverview) inspectionOverview = null;
     }
     drawPending = true;
-    if (!disposed && !raf && !paintHeld && (canPresent() || hasOngoingMotion())) raf = requestAnimationFrame(draw);
+    if (!disposed && !raf && !paintHeld && (canPresent() || hasOngoingMotion()) && !canDeferModalPaint()) raf = requestAnimationFrame(draw);
+  }
+
+  function canDeferModalPaint() {
+    const selected = modalDeferredEntry || (!canPresent() ? inactiveModalEntry : null);
+    if (!selected || !bookEntries.includes(selected) || !paintedAwayEntries.has(selected) ||
+      !selected.node?.classList.contains('is-away') || !selected.model || selected.model.visible ||
+      selected.insertion || selected.trashDrop || programsReady !== true || paintHeld || unpainted.length ||
+      lighting.settling || transition || reorderTransition || trashTransition || inspectionMoving || dropPosition ||
+      !paintedModalView || paintedModalView.progress !== progress ||
+      paintedModalView.inspectionZoom !== inspectionZoom || paintedModalView.panX !== panX || paintedModalView.panY !== panY ||
+      modalViewportChanged()) return false;
+    const now = performance.now();
+    for (const entry of bookEntries) {
+      if (entry.insertion || entry.trashDrop || entry.landing || entry.preview.active) return false;
+      if (entry.lampPower && (entry.lampPower.value !== entry.lampPower.target ||
+        entry.lampPower.from !== entry.lampPower.target && now < entry.lampPower.started + entry.lampPower.duration)) return false;
+      // Its pressure lift is no longer visible in the already painted slot.
+      // Every other entry retains its actual lift/drag frames and endpoint.
+      if (entry !== selected) {
+        const target = entry.node?.matches('.is-dragging, .is-lifted') ? 1
+          : entry.node?.classList.contains('is-pressed') ? .22 : 0;
+        if (entry.lift.value !== target) return false;
+      }
+    }
+    return true;
+  }
+
+  function modalViewportChanged() {
+    // Home is hidden before its presentation value changes. display:none
+    // collapses its clientHeight, scrollTop and all descendant rectangles;
+    // these are not a new camera window for an inactive stationary modal.
+    // Keep actual window orientation/DPR changes and all visible geometry
+    // authoritative through the original viewport check.
+    if (canPresent() || !scroller.closest('[hidden]')) return viewportChanged();
+    return !paintedViewport || paintedViewport.width !== window.innerWidth ||
+      paintedViewport.height !== window.innerHeight ||
+      paintedViewport.ratio !== (window.devicePixelRatio || 1);
   }
 
   function canPresent() {
@@ -2380,12 +2428,12 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // in the same task, before MutationObserver's asynchronous notification.
     observeEntryChanges(mutations.takeRecords());
     if (themeChanges.takeRecords().length) { updateWoodTheme(); invalidate(true, false, 'theme'); }
-    if (!force && !canPresent() && !hasOngoingMotion()) return false;
+    if (!force && (!canPresent() && !hasOngoingMotion() || canDeferModalPaint())) return false;
     if (!force && !drawPending && viewportChanged()) invalidate(true, false, 'viewport-sync');
     if (!force && !drawPending && !hasOngoingMotion()) return false;
     if (force) { inspectionOverview = null; shelfSnapshotDirty = shadowDirty = true; }
     cancelAnimationFrame(raf); raf = 0;
-    draw();
+    draw(performance.now(), force);
     return true;
   }
   // Repaint the camera's new window; the shadow map is reused.
@@ -2453,9 +2501,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   scroller.addEventListener('scroll', scrolled, { passive:true });
   window.addEventListener('resize', invalidate, { passive:true });
   document.addEventListener('visibilitychange', presentationChanged);
-  document.fonts?.ready.then(() => invalidate(true, false, 'fonts-ready'));
   updateWoodTheme();
   draw();
+  refreshCanvasFontsAfterPaint(() => invalidate(true, false, 'fonts-ready'));
 
   function getInspectionView() {
     const rect=canvas.getBoundingClientRect();
@@ -2466,6 +2514,19 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   return {
     canvas,
     getNativeRoomBackground,
+    setModalBackgroundDeferred(node, { resumeHidden = false } = {}) {
+      const previous = modalDeferredEntry;
+      const entry = node ? byNode.get(node) : null;
+      modalDeferredEntry = entry && entry.kind !== 'plant' && entry.kind !== 'lamp' ? entry : null;
+      // Releasing a flyout after Home became inactive must not revive its
+      // hidden pressure lift as a stationary room render. Back/cancel can
+      // explicitly acquire the pending room before return preparation.
+      if (modalDeferredEntry || resumeHidden) inactiveModalEntry = null;
+      else if (previous) inactiveModalEntry = previous;
+      if (canDeferModalPaint()) {
+        cancelAnimationFrame(raf); raf = 0;
+      } else if (drawPending || viewportChanged()) invalidate(false);
+    },
     setPaintHeld(value) {
       paintHeld = Boolean(value);
       if (paintHeld) { cancelAnimationFrame(raf); raf = 0; }
@@ -2872,7 +2933,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       cancelAnimationFrame(raf); raf = 0; draw(reorderTransition.started);
     },
     dispose() {
-      disposed = true; cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
+      disposed = true; modalDeferredEntry = inactiveModalEntry = paintedModalView = null; paintedAwayEntries.clear();
+      cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       inspectionEntryUpdates.clear();
       scroller.removeEventListener('scroll', scrolled); window.removeEventListener('resize', invalidate);
       document.removeEventListener('visibilitychange', presentationChanged);

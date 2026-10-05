@@ -1,8 +1,29 @@
-# Verificación del WIP — 1.7.57 preparada y Android 1.1.4
+# Verificación del WIP — 1.7.58 preparada y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.58
+
+La estantería pausa sus repintados después de pintar realmente el hueco
+vacío del libro seleccionado. Conserva los cambios pendientes y reanuda
+antes de devolverlo. Fuentes ya cargadas después del primer dibujo no
+provocan otra reconstrucción. Las pulsaciones aceptan la biblioteca actual
+antes de abrir el libro y conservan los gestos originales.
+CPU combinado final: 246 PASS, incluidos 191 originales y 55 nuevos;
+el control pasa los 191 originales y conserva 32 fallos nuevos. Los seis
+casos del helper nuevo sólo se ejecutan en el candidato. La primera CPU
+FAILED por dos expectativas nuevas de timing táctil queda conservada.
+Fuente final: 3.059 unitarias en 230 archivos, build, 75 Python y 509
+hechos estables. Censo original de 524 E2E; listado no ejecutado.
+Los siete recorridos locales originales pasan al primer intento, cero
+retries, flaky u omisiones. Cierres: 5.371,7 y 5.917,5 ms con sus ocho
+segundos originales intactos. Veinte composiciones isométricas sin
+repintar sala, dos escrituras de buffer y seis lomos de 1.024 px.
+Publicación y CI completa pendientes; no se acredita fluidez en teléfono
+ni resolver los timeouts de CI anteriores sólo con estos pases.
+Detalle en [Rendimiento de 1.7.58](performance-1758.md).
 
 ## Cambios de rendimiento de 1.7.57
 
-Integrada y verificada localmente; publicación y CI original pendientes.
+Publicada y verificada localmente y contra la web real; CI original pendiente.
 Las confirmaciones de metadatos conservan el árbol de la estantería cuando
 todos los datos visibles son idénticos. La cola real pasa de una pintura
 de sala/base/snapshot a cero, con referencias actuales y los mismos modelos.
@@ -18,6 +39,9 @@ de versión del auxiliar; su reparación sólo restaura la comilla faltante.
 La batería completa PASS corresponde al intento 2. Los fallos aislados
 anteriores conservan sus propios recibos. No hay medición de FPS en teléfono
 ni causa demostrada del timeout de apertura o del clic perdido de CI56.
+HTTP real, APK recién descargada y loader PASS; los 21 recorridos públicos
+originales pasan al primer intento, sin retries ni flaky. Fuente `4899d86`,
+Pages `f0ca599b`, CI original `37244969983` todavía en curso.
 Detalle en [Rendimiento de 1.7.57](performance-1757.md).
 
 ## Cambios de rendimiento de 1.7.56

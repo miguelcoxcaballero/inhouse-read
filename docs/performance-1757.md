@@ -30,9 +30,12 @@ y campos desconocidos conservan su actualización original.
 - Gesto isométrico: veinte composiciones, cero nuevos renders de sala,
   dos escrituras de buffer y seis lomos de 1.024 px.
 
-La publicación, la comprobación HTTP/APK y los recorridos públicos de esta
-versión están pendientes. También está pendiente su CI original completa;
-los pases anteriores no sustituyen las 524 ejecuciones originales.
+Publicada desde `4899d86`, Pages `f0ca599b`: HTTP comprueba los 23 módulos
+y 44 archivos offline reales. Los 21 recorridos públicos originales pasan
+al primer intento (3 de editor/regreso y 18 de PDF), sin retries ni flaky.
+APK recién descargada y loader de 2.089 bytes PASS; wrapper 1.1.4/code17.
+Su CI original `37244969983` continúa pendiente; estos pases no sustituyen
+las 524 ejecuciones originales.
 
 ## Fallos conservados y alcance
 
@@ -57,4 +60,6 @@ Los modelos, iluminación, sombras, texturas, densidad y plazos no se reducen.
   SHA256 `db89ff05b0f81d62b1b5415a7a20f32fe724174ccc7a193e6ea2f34773b1bd45`.
 - Fuente final: `full-local-attempt2/summary.json`.
 - Navegador local: `local-browser-attempt1/summary.json`.
+- Publicación: `public-4899d86-attempt1/`, HTTP, APK, loader y certificados
+  de los 3 + 18 recorridos públicos.
 - Fallos originales previos: [Rendimiento 1.7.56](performance-1756.md).
