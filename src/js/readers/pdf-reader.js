@@ -17,6 +17,7 @@ import { DEFAULT_READING_PREFERENCES, PDF_PAGE_FILTERS, READING_FONTS, READING_T
 import { hasUntrackedPDFImages, paintPDFTheme } from './pdf-page-theme.js'
 import { renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from './page-snapshot.js'
 import { prepareSnapshotPaperTones } from '../page-paper-tone.js'
+import { registerPageRaster } from '../page-raster.js'
 import { encodePdfCover } from './cover-encode.js'
 import { mapTextLayer, mapTextNodes } from './speech-map.js'
 import { clearPDFReflow, pdfImageRects, preparePDFReflow } from './pdf-reflow.js'
@@ -781,7 +782,7 @@ export class PdfReader {
         original.height, canvasFilter]
       if (!this.#snapshotToneState || facts.some((value, i) => value !== this.#snapshotToneState.facts[i])) {
         this.#snapshotToneState?.controller.abort()
-        this.#snapshotToneState = { facts, theme:Object.freeze({}), paper:Object.freeze({}), controller:new AbortController() }
+        this.#snapshotToneState = { facts, theme:Object.freeze({}), paper:Object.freeze({}), themeRaster:Object.freeze({}), paperRaster:Object.freeze({}), controller:new AbortController() }
       }
       snapshot.toneKey = this.#snapshotToneState.theme
       if (snapshot.paper) snapshot.paper.toneKey = this.#snapshotToneState.paper
@@ -793,6 +794,8 @@ export class PdfReader {
         || facts[4] !== this.#canvas.width || facts[5] !== this.#canvas.height
         || facts[7] !== original.width || facts[8] !== original.height
         || canvasFilter !== renderedPageFilter(this.#canvas)) return this.getPageSnapshot()
+      registerPageRaster(snapshot.source, state.themeRaster)
+      if (snapshot.paper) registerPageRaster(snapshot.paper.source, state.paperRaster)
     } else {
       this.#snapshotToneState?.controller.abort()
       this.#snapshotToneState = undefined

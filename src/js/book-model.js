@@ -6,6 +6,7 @@ import { configureNativeRendererSize } from './native-renderer-size.js';
 import { spineSurface, releaseSurface, seededRandom, textSeed, withStops, paintCloth, paintWeave, spineLayout, drawDevice, lattice } from './spine-surface.js';
 import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from './book-colors.js';
 import { normalizeBookAuthor } from './book-title.js';
+import { pageRaster } from './page-raster.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { applyBookReflectionSurface } from './book-reflection-surface.js';
 import { keepProgramsAlive } from './gpu-programs.js';
@@ -1062,7 +1063,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   stockImage.position.set(inset * .3, 0, pageFront + board * .01);
   stockImage.renderOrder = -1;
   stockImage.visible = false; group.add(stockImage);
-  let pageTheme = 1, themeTone = null, stockTone = null;
+  let pageTheme = 1, themeTone = null, stockTone = null, installedRaster = null;
   const paperScratch = new THREE.Color();
   const applyPageTheme = () => {
     const faded = stockImage.visible;
@@ -1091,6 +1092,22 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     const imageWidth = Number(snapshot.width || snapshot.source.width || snapshot.source.naturalWidth);
     const imageHeight = Number(snapshot.height || snapshot.source.height || snapshot.source.naturalHeight);
     if (!(imageWidth > 0 && imageHeight > 0)) return false;
+    const variant = snapshot.paper?.source ? snapshot.paper : null;
+    const sameSize = variant && Number(variant.width || variant.source.width) === imageWidth
+      && Number(variant.height || variant.source.height) === imageHeight;
+    const themeRaster = pageRaster(snapshot.source), stockRaster = sameSize && pageRaster(variant.source);
+    // Fresh copies of one settled render contain identical pixels. Preserve
+    // the already uploaded textures and geometry; bounds and locator metadata
+    // still come from this new snapshot. DOM/unknown copies always rebuild.
+    if (themeRaster && stockRaster && installedRaster?.theme === themeRaster
+      && installedRaster.stock === stockRaster && installedRaster.width === imageWidth
+      && installedRaster.height === imageHeight) {
+      if (initialTheme != null) pageTheme = Math.max(0, Math.min(1, Number(initialTheme) || 0));
+      applyPageTheme();
+      group.userData.pageSnapshot = snapshot;
+      if (redraw) group.userData.invalidate?.();
+      return true;
+    }
     const fit = fitCoverImage(imageWidth, imageHeight, pageWidth, pageHeight);
     pageImage.geometry.dispose();
     pageImage.geometry = new THREE.PlaneGeometry(fit.width, fit.height);
@@ -1104,9 +1121,6 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     pageMaterial.map?.dispose(); pageMaterial.map = map; pageMaterial.needsUpdate = true;
     pageImage.visible = true;
     // The stock variant must be the same page: same canvas size.
-    const variant = snapshot.paper?.source ? snapshot.paper : null;
-    const sameSize = variant && Number(variant.width || variant.source.width) === imageWidth
-      && Number(variant.height || variant.source.height) === imageHeight;
     stockMaterial.map?.dispose();
     if (sameSize) {
       stockImage.geometry.dispose(); stockImage.geometry = pageImage.geometry.clone();
@@ -1123,6 +1137,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     if (stockImage.visible) applyPageTheme();
     else if (themeTone) { pagePaper.material.color.copy(themeTone); leafPaper?.color.copy(themeTone).multiply(LEAF_LIGHT); }
     group.userData.pageSnapshot = snapshot;
+    installedRaster = themeRaster && stockRaster ? {theme:themeRaster,stock:stockRaster,width:imageWidth,height:imageHeight} : null;
     if (redraw) group.userData.invalidate?.();
     return true;
   };
