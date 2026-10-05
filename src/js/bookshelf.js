@@ -108,6 +108,7 @@ import { createShelfZoom } from './shelf-zoom.js';
 import { createShelfViewGesture } from './shelf-view-gesture.js';
 import { markTiming, resetTimeline } from './perf-marks.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
+import { initBootPoster, recordLibrary } from './boot-poster.js';
 import { refreshCanvasFontsAfterPaint } from './canvas-font-readiness.js';
 import { bookReturnSignature, bookReturnCompatibility, createBookReturnCache } from './bookshelf-return.js';
 import { layoutShelfDecorations, moveShelfDecoration } from './shelf-decoration-layout.js';
@@ -388,6 +389,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       : storedShelfViewMode()
   };
   const returnViews = createBookReturnCache();
+  initBootPoster();
 
   const root = el('div', { class: 'ihr-bookshelf', 'data-ihr-bookshelf': '', role:'region', tabindex:'0',
     'aria-label':'Estantería', 'aria-keyshortcuts':'ArrowLeft ArrowRight',
@@ -1879,6 +1881,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
     state.metadataContext = metadataContext();
     for (const book of state.books) resolveCoverAppearance(book);
+    recordLibrary(state.books);
   }
 
   function readShelfLayout(stage, width) {

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import { fileURLToPath, URL } from 'node:url'
+import { readFileSync } from 'node:fs'
 import { foliateFixedLayoutPatch } from './scripts/foliate-fixed-layout-patch.mjs'
 import { foliateBackgroundPatch } from './scripts/foliate-background-patch.mjs'
 import { foliateArchivePatch } from './scripts/foliate-archive-patch.mjs'
@@ -8,10 +9,17 @@ import { neuralVoiceAssets } from './scripts/neural-voice-assets.mjs'
 
 const resolvePath = p => fileURLToPath(new URL(p, import.meta.url))
 
+// The boot poster in index.html is only valid for the build that drew it.
+const APP_VERSION = JSON.parse(readFileSync(resolvePath('./package.json'), 'utf8')).version
+const bootBuildId = () => ({
+  name: 'boot-build-id',
+  transformIndexHtml: html => html.replaceAll('__BUILD_ID__', APP_VERSION)
+})
+
 // GitHub Pages sirve el proyecto bajo /inhouse-read/, no en la raíz del dominio.
 export default defineConfig({
   base: '/inhouse-read/',
-  plugins:[foliateFixedLayoutPatch(), foliateBackgroundPatch(), foliateArchivePatch(), pdfBackgroundPatch(), neuralVoiceAssets()],
+  plugins:[bootBuildId(), foliateFixedLayoutPatch(), foliateBackgroundPatch(), foliateArchivePatch(), pdfBackgroundPatch(), neuralVoiceAssets()],
   // Keep the same guarded source in development as in production; otherwise
   // dependency prebundling would bypass the fixed-layout transform in dev.
   optimizeDeps:{ exclude:['foliate-js', 'pdfjs-dist/legacy/build/pdf.mjs'] },
