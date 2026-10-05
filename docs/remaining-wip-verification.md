@@ -1,4 +1,14 @@
-# Verificación del WIP — candidato 1.7.67 y Android 1.1.4
+# Verificación del WIP — web 1.7.67, candidato 1.7.68 y Android 1.1.4
+
+## Fuentes locales de 1.7.68
+
+Se conservan los 34 archivos originales, siete familias y 93 caras CSS.
+La tipografía se sirve desde la app y entra en el shell offline junto con
+sus licencias; Playfair se precarga desde el mismo asset CSS.
+Pasan 3.213 unitarias/252 archivos, build, 75 Python y los siete
+recorridos gráficos originales. Fuentes online/offline con raster y cuerpos
+exactos comprobados; publicación y comprobaciones públicas en curso. Detalle en
+[Fuentes y rendimiento de 1.7.68](performance-1768.md).
 
 ## Cambios de rendimiento de 1.7.67
 
@@ -9,7 +19,10 @@ contrato gráfico de 393 px migra explícitamente; sus fixtures y plazos
 30/8 no cambian. Pasan 116 unitarias enfocadas, build y los siete
 recorridos gráficos al primer intento, sin retries u omisiones. Los dos
 cierres completos quedan en 5.699,9/5.226,4 ms; fuente/build estables.
-La batería completa y publicación siguen pendientes. Detalle en
+Batería local completa PASS: 3.208 unitarias/251 archivos, build y 75 Python.
+Web publicada: 21 recorridos PASS; HTTP25/offline46 y APK/loader comprobados.
+CI67 conserva dos fallos de apertura en UI3; los demás grupos siguen
+comprobándose, sin reintentar ni reclasificar el original. Detalle en
 [Rendimiento de 1.7.67](performance-1767.md).
 
 ## Cambios de rendimiento de 1.7.66

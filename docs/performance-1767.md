@@ -12,7 +12,7 @@ y se materializan bajo demanda. La inspección conserva su compositor CSS
 y genera sus tiles al necesitarlos. El fallback por falta de soporte real,
 la pérdida de contexto y la devolución del renderer a su propietario siguen
 implementados. La presentación visible elimina una etapa de interpolación;
-su igualdad gráfica real aún debe comprobarse. No se promete memoria neutra:
+las capturas antes y después del export coinciden en navegador real. No se promete memoria neutra:
 la ruta añade texturas de sala dentro del pool existente, sin elevar el DPR.
 
 El E2E de 393 px migra explícitamente de la sala visible en 2D a la sala
@@ -20,7 +20,7 @@ WebGL real. Su fixture, gestos, plazo total de 30 s, cierre de ocho segundos
 y comparación de capturas permanecen. El original RAW y sus fallos previos
 se conservan en la evidencia.
 
-## Comprobación en curso
+## Comprobaciones realizadas
 
 Pasan 116 unitarias enfocadas: 101 originales y 15 nuevas, más el build.
 El control con los dos módulos originales conserva 101 PASS y presenta
@@ -38,9 +38,16 @@ captura visible antes y después del export bajo demanda. Los gestos
 reutilizan su imagen durante el movimiento y restituyen los seis libros
 con resolución de texto 1.024. No hay reducción de calidad o resolución.
 
-La batería completa, publicación, pruebas públicas y comprobación de la
-APK están pendientes; los tiempos del navegador software no son FPS
-medidos en un móvil físico.
+La batería local completa pasa 3.208 unitarias en 251 archivos, build y
+75 pruebas Python. La web publicada pasa los tres recorridos nativos/editor
+y los 18 de PDF, al primer intento. Se verifican los 25 módulos y 46 entradas
+offline contra Pages, y el APK real conserva el loader de 2.089 bytes.
+CI67 conserva dos fallos de apertura en UI3 (40 casos, 38 PASS, dos
+unexpected, cuatro intentos fallidos contando sus retries originales).
+El alineado falla esperando la portada; el fraccional agota el global de
+30 s antes del regreso. No se atribuyen esos fallos al cierre de ocho segundos.
+El resto de CI sigue en curso; el censo de 524 no se considera ejecución.
+Los tiempos del navegador software no son FPS de un móvil físico.
 Estos resultados no acreditan FPS, consumo o temperatura de un móvil físico.
 
 Evidencia: `.animation.local/performance-1767/`.
