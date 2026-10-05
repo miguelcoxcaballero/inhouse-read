@@ -3,6 +3,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createShelfLamp } from './shelf-lamps.js';
 import { getCatalogLamp } from './lamp-catalog-data.js';
 import { createShelfLampLighting, ensureAreaLights } from './shelf-lamp-lighting.js';
+import { retainPrograms, whenProgramsReady } from './gpu-programs.js';
 
 // The filament lamp's light needs its lookup tables before the first preview.
 await ensureAreaLights().catch(() => {});
@@ -11,6 +12,9 @@ await ensureAreaLights().catch(() => {});
 export function createLampCatalogPreview(host) {
   let renderer, environment, model, observer, fixture, target, filamentLighting, frame = 0, disposed = false, active = true, selected;
   let paintedWidth = NaN, paintedHeight = NaN;
+  // The chosen lamp is built after its button has painted; until its shaders
+  // are linked (in parallel) the canvas keeps showing the previous picture.
+  let pending = null, building = 0, cancelLink = null, shown = false, dirty = true;
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-160,160,180,-180,1,5000);
   const display = new THREE.Group(); scene.add(display);
@@ -22,8 +26,12 @@ export function createLampCatalogPreview(host) {
   };
   function render() {
     frame = 0;
-    if (disposed || !active || !renderer || !model) return;
-    const rect = host.getBoundingClientRect();
+    if (disposed || !active || !renderer) return;
+    if (pending && !building) building = setTimeout(build);
+    if (!model || !shown || !dirty) return;
+    dirty = false;
+    // Layout size: the page may be scaled mid-flight, its drawing buffer not.
+    const rect = host.clientWidth ? { width:host.clientWidth,height:host.clientHeight } : host.getBoundingClientRect();
     const width = Math.max(1,rect.width), height = Math.max(1,rect.height), aspect = width / height;
     const half = Math.max(size.y / 2,size.x / (2 * aspect)) * 1.13;
     camera.left = -half * aspect; camera.right = half * aspect;
@@ -33,11 +41,14 @@ export function createLampCatalogPreview(host) {
       renderer.setSize(width,height,false); paintedWidth = width; paintedHeight = height;
     }
     renderer.render(scene,camera);
+    // Going back to an earlier lamp reuses its linked shaders.
+    if (renderer.info) retainPrograms(renderer);
     host.dataset.renderCount = String(Number(host.dataset.renderCount || 0) + 1);
   }
-  function invalidate() {
+  function request() {
     if (!disposed && active && !frame) frame = requestAnimationFrame(render);
   }
+  function invalidate() { dirty = true; request(); }
   function removeModel() {
     filamentLighting?.dispose(); filamentLighting = null;
     if (model) {
@@ -52,6 +63,66 @@ export function createLampCatalogPreview(host) {
   function surface(geometry,colour) {
     const mesh = new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({ color:colour,roughness:.86 }));
     mesh.receiveShadow = true; surfaces.push(mesh); presentation.add(mesh); return mesh;
+  }
+  function build() {
+    building = 0;
+    if (disposed || !active || !pending) return;
+    const lamp = pending; pending = null;
+    cancelLink?.(); cancelLink = null; shown = false;
+    removeModel(); display.position.set(0,0,0);
+    renderer.shadowMap.needsUpdate = true;
+    model = createShelfLamp({ lampId:lamp.id,width:lamp.dimensions.width,quality:'high' });
+    model.userData.invalidate = invalidate;
+    model.traverse(object => {
+      if (!object.isMesh) return;
+      // Glass keeps the model's transparent shadow behaviour, so the
+      // chimney cannot cast an opaque silhouette over its own LED filament.
+      const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
+      if (objectMaterials.some(material => material.transparent || material.transmission > 0)) object.castShadow = false;
+      for (const material of objectMaterials) {
+        for (const name of ['map','bumpMap','roughnessMap']) {
+          if (material[name]) material[name].anisotropy = Math.min(8,renderer.capabilities.getMaxAnisotropy());
+        }
+      }
+    });
+    display.add(model);
+    const emitter = model.userData.lightEmitter;
+    if (emitter?.filaments) {
+      emitter.intensity *= .4; // Same studio exposure as the former bulb light.
+      filamentLighting = createShelfLampLighting(scene, { maxLights:1 });
+    } else if (emitter) {
+      fixture = emitter.direction
+        ? new THREE.SpotLight(emitter.color,emitter.intensity * .55,emitter.distance,emitter.angle,emitter.penumbra,emitter.decay)
+        : new THREE.PointLight(emitter.color,emitter.intensity * .4,emitter.distance,emitter.decay);
+      fixture.position.fromArray(emitter.position); display.add(fixture);
+      if (emitter.direction) {
+        target = new THREE.Object3D(); target.position.copy(fixture.position).add(new THREE.Vector3().fromArray(emitter.direction));
+        display.add(target); fixture.target = target;
+      }
+    }
+    if (lamp.mount === 'undershelf') {
+      // A short ceiling section makes the mounting and downward warm pool
+      // legible; the fixture geometry itself is shared with the bookshelf.
+      const board = surface(new THREE.BoxGeometry(lamp.dimensions.width * 2.1,4,lamp.dimensions.width * 1.65),'#dbd1bc');
+      board.position.y = 2; board.castShadow = true;
+      const below = surface(new THREE.CircleGeometry(lamp.dimensions.width * .85,64),'#e6dfd0');
+      below.rotation.x = -Math.PI / 2; below.position.y = -lamp.dimensions.width * 1.35;
+      camera.position.set(0,-230,650);
+    } else {
+      const base = surface(new THREE.CircleGeometry(lamp.dimensions.width * .82,64),'#e6dfd3');
+      base.rotation.x = -Math.PI / 2; base.position.y = -.2;
+      camera.position.set(0,75,850);
+    }
+    const bounds = new THREE.Box3().setFromObject(display);
+    size = bounds.getSize(new THREE.Vector3()); display.position.sub(bounds.getCenter(new THREE.Vector3()));
+    camera.lookAt(0,0,0);
+    host.dataset.lightEmitter = emitter ? 'warm-physical' : 'none';
+    // Its light must exist before linking: every lit program depends on it.
+    display.updateMatrixWorld(true);
+    filamentLighting?.update([{ kind:'lamp',key:'catalog-filaments',model,width:size.x }]);
+    cancelLink = whenProgramsReady(renderer,scene,camera,display,() => {
+      cancelLink = null; shown = true; invalidate();
+    });
   }
   try {
     if (typeof WebGLRenderingContext === 'undefined') throw new Error('WebGL unavailable');
@@ -102,62 +173,16 @@ export function createLampCatalogPreview(host) {
       if (!lamp) return;
       host.dataset.lampId = lamp.id; host.dataset.mount = lamp.mount;
       host.dataset.warmKelvin = String(lamp.warmKelvin);
-      if (disposed || !renderer || selected === lamp.id) return;
-      selected = lamp.id; removeModel(); display.position.set(0,0,0);
-      renderer.shadowMap.needsUpdate = true;
-      model = createShelfLamp({ lampId:lamp.id,width:lamp.dimensions.width,quality:'high' });
-      model.userData.invalidate = invalidate;
-      model.traverse(object => {
-        if (!object.isMesh) return;
-        // Glass keeps the model's transparent shadow behaviour, so the
-        // chimney cannot cast an opaque silhouette over its own LED filament.
-        const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
-        if (objectMaterials.some(material => material.transparent || material.transmission > 0)) object.castShadow = false;
-        for (const material of objectMaterials) {
-          for (const name of ['map','bumpMap','roughnessMap']) {
-            if (material[name]) material[name].anisotropy = Math.min(8,renderer.capabilities.getMaxAnisotropy());
-          }
-        }
-      });
-      display.add(model);
-      const emitter = model.userData.lightEmitter;
-      if (emitter?.filaments) {
-        emitter.intensity *= .4; // Same studio exposure as the former bulb light.
-        filamentLighting = createShelfLampLighting(scene, { maxLights:1 });
-      } else if (emitter) {
-        fixture = emitter.direction
-          ? new THREE.SpotLight(emitter.color,emitter.intensity * .55,emitter.distance,emitter.angle,emitter.penumbra,emitter.decay)
-          : new THREE.PointLight(emitter.color,emitter.intensity * .4,emitter.distance,emitter.decay);
-        fixture.position.fromArray(emitter.position); display.add(fixture);
-        if (emitter.direction) {
-          target = new THREE.Object3D(); target.position.copy(fixture.position).add(new THREE.Vector3().fromArray(emitter.direction));
-          display.add(target); fixture.target = target;
-        }
-      }
-      if (lamp.mount === 'undershelf') {
-        // A short ceiling section makes the mounting and downward warm pool
-        // legible; the fixture geometry itself is shared with the bookshelf.
-        const board = surface(new THREE.BoxGeometry(lamp.dimensions.width * 2.1,4,lamp.dimensions.width * 1.65),'#dbd1bc');
-        board.position.y = 2; board.castShadow = true;
-        const below = surface(new THREE.CircleGeometry(lamp.dimensions.width * .85,64),'#e6dfd0');
-        below.rotation.x = -Math.PI / 2; below.position.y = -lamp.dimensions.width * 1.35;
-        camera.position.set(0,-230,650);
-      } else {
-        const base = surface(new THREE.CircleGeometry(lamp.dimensions.width * .82,64),'#e6dfd3');
-        base.rotation.x = -Math.PI / 2; base.position.y = -.2;
-        camera.position.set(0,75,850);
-      }
-      const bounds = new THREE.Box3().setFromObject(display);
-      size = bounds.getSize(new THREE.Vector3()); display.position.sub(bounds.getCenter(new THREE.Vector3()));
-      camera.lookAt(0,0,0);
       host.dataset.material = lamp.id === 'tarnaby' ? 'glass-brass-black-steel' : lamp.id === 'tripod' ? 'linen-oak' : 'aluminium-opal';
-      host.dataset.lightEmitter = emitter ? 'warm-physical' : 'none';
-      invalidate();
+      if (disposed || !renderer || selected === lamp.id) return;
+      selected = lamp.id; pending = lamp;
+      request();
     },
     dispose() {
       if (disposed) return; disposed = true;
       if (frame) cancelAnimationFrame(frame);
-      observer?.disconnect(); removeModel();
+      if (building) clearTimeout(building);
+      cancelLink?.(); observer?.disconnect(); removeModel();
       scene.traverse(object => { if (object.isLight) object.dispose(); });
       environment?.dispose(); renderer?.dispose(); renderer?.forceContextLoss();
       host.replaceChildren();

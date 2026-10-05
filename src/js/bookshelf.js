@@ -445,11 +445,26 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }});
   if (trashStatus) root.append(trashStatus, trashAnnounce);
   const plantCatalog = createLazyPlantCatalog({ onAdd:addCatalogPlant, onAddLamp:addCatalogLamp, shelfType:state.shelfType,
-    onShelfChange:({ shelfType }) => {
+    onShelfChange:({ shelfType }, { whenClosed = run => run() } = {}) => {
       state.shelfType = normalizeShelfType(shelfType);
       try { localStorage.setItem(SHELF_TYPE_STORAGE_KEY, state.shelfType); } catch { /* Local preference only. */ }
-      render();
-    } });
+      whenClosed(() => { if (!state.destroyed) render(); });
+    },
+    // The camera flies from the booklet in the room into the catalogue page.
+    // The room is a scaled picture meanwhile: hold its repaints, whose
+    // measurements would include that scale, until it is back in place.
+    motionTarget:() => root.closest('.screen') || root,
+    onMotion:phase => { state.shelfScene?.setPaintHeld?.(phase === 'start'); } });
+  let catalogPrepare = 0;
+  // The booklet is only reachable in the diagonal view: build the catalogue's
+  // first studio in idle time once the shelf turns there.
+  function prepareCatalogWhenIdle(delay = 0) {
+    if (catalogPrepare || !catalogNodeEnabled() || state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC) return;
+    const run = () => { if (!state.destroyed) plantCatalog.prepare(); };
+    const idle = () => typeof requestIdleCallback === 'function' ? requestIdleCallback(run, { timeout:4000 }) : setTimeout(run, 1500);
+    catalogPrepare = delay ? setTimeout(idle, delay) : idle();
+  }
+  function catalogNodeEnabled() { return !opts.sections; }
   const catalogNode = !opts.sections ? el('button', {
     type:'button', class:'ihr-shelf-catalog', hidden:'', tabindex:'-1',
     'aria-label':'Abrir catálogo IKEA de plantas, estanterías e iluminación', title:'Catálogo · IKEA',
@@ -473,6 +488,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     root.classList.add('ihr-bookshelf--with-actions');
   }
   container.append(root);
+  // Opened straight in the diagonal view: leave the startup work first.
+  prepareCatalogWhenIdle(6000);
 
   /* --------------------------- portadas --------------------------- */
 
@@ -807,7 +824,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     state.shelfScene?.setLampPower(node, next.isOn, { animate:!prefersReducedMotion() });
   }
 
-  async function addCatalogLamp({ lampId }) {
+  async function addCatalogLamp({ lampId }, { whenClosed = run => run() } = {}) {
     if (state.destroyed || state.busy || state.session || state.dragSession || state.returnMotion)
       throw new Error('Espera a que termine la animación.');
     const lamp = getCatalogLamp(lampId);
@@ -822,12 +839,16 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     state.lamps = [...previous, record].map(item => ({ ...item, ...positions.get(item.key) }));
     try { saveLamps({ strict:true }); }
     catch (error) { state.lamps = previous; throw new Error('No se pudo guardar la lámpara. Reintenta.', { cause:error }); }
-    render();
-    state.shelfScene?.animateFromRects(oldRects);
-    root.dataset.lastAddedLamp = key;
+    // Saved now; drawn as soon as the catalogue has closed.
+    whenClosed(() => {
+      if (state.destroyed) return;
+      render();
+      state.shelfScene?.animateFromRects(oldRects);
+      root.dataset.lastAddedLamp = key;
+    });
   }
 
-  async function addCatalogPlant({ catalogId, potId, potColorId }) {
+  async function addCatalogPlant({ catalogId, potId, potColorId }, { whenClosed = run => run() } = {}) {
     if (state.destroyed || state.busy || state.session || state.dragSession || state.returnMotion)
       throw new Error('Espera a que termine la animación.');
     const plant = getCatalogPlant(catalogId), pot = getCatalogPot(potId);
@@ -847,13 +868,17 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     try { savePlants({ strict:true }); }
     catch (error) { state.plants = previous; throw new Error('No se pudo guardar la planta. Vuelve a intentarlo.', { cause:error }); }
     state.plantsInitialized = true;
-    render();
-    state.shelfScene?.animateFromRects(oldRects);
-    root.dataset.lastAddedPlant = key;
-    const added = [...scroller.querySelectorAll('.ihr-plant')].find(node => objectKey(node) === key);
-    if (state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC) {
-      added?.scrollIntoView?.({ block:'nearest', behavior:prefersReducedMotion() ? 'instant' : 'smooth' });
-    }
+    // Saved now; drawn as soon as the catalogue has closed.
+    whenClosed(() => {
+      if (state.destroyed) return;
+      render();
+      state.shelfScene?.animateFromRects(oldRects);
+      root.dataset.lastAddedPlant = key;
+      const added = [...scroller.querySelectorAll('.ihr-plant')].find(node => objectKey(node) === key);
+      if (state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC) {
+        added?.scrollIntoView?.({ block:'nearest', behavior:prefersReducedMotion() ? 'instant' : 'smooth' });
+      }
+    });
   }
 
   function persistObjectPlacement(node, destination, oldRects = objectRects()) {
@@ -1706,6 +1731,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (!Object.values(SHELF_VIEW_MODES).includes(mode) || state.viewMode === mode) return;
     state.viewMode = mode;
     try { localStorage.setItem(SHELF_VIEW_STORAGE_KEY, mode); } catch { /* Preferencias no bloquean la biblioteca. */ }
+    prepareCatalogWhenIdle();
     if (state.shelfScene) {
       root.dataset.viewMode = mode;
       state.shelfScene.setMode(mode); shelfZoom.sync();
