@@ -1,4 +1,26 @@
-# Verificación del WIP — 1.7.64 y Android 1.1.4
+# Verificación del WIP — 1.7.65 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.65
+
+La transferencia nativa de modelos cede mediante el executor existente;
+la captura física PDF evita esperar fuentes ajenas ya rasterizadas; el
+analizador autocontenido conserva el scorer y carga el cliente Worker al
+comenzar. La fuente final pasa 3.175 unitarias/246 archivos, build y 75 Python,
+con 530 hechos estables; 524 identidades E2E son sólo censo, sin ejecución.
+Recibo completo `88975ced…`. Los siete locales y el RAW original pasan al
+primer intento, sin retries, flaky u omisiones, fuente/build estables;
+recibos `c2e0233a…` y `7e570ba6…`. Cierres de 5.357,7 y 6.299,9 ms en software
+con los ocho segundos originales, sin comparación de velocidad física.
+
+El Worker real conserva cuatro comparaciones online/offline, 432 scores y
+bytes de muestras/máscaras/apariencias exactos. Cliente y Worker offline
+llegan 200 del Service Worker con cuerpos exactos; sin errores inesperados,
+entradas estables y procesos cerrados; informe `c946b0d6…`. Se conserva el
+primer resumen nativo FAILED y su auditoría separada sin nuevas pruebas,
+así como el helper RAW2 rechazado sin ejecución por recodificación UTF-8.
+Publicación HTTP/APK/loader, públicos3+PDF18, Android real y CI65 siguen
+pendientes. No reclasifica los estados originales anteriores. Detalle en
+[Rendimiento de 1.7.65](performance-1765.md).
 
 ## Cambios de rendimiento de 1.7.64
 
@@ -18,9 +40,13 @@ build y 75 Python PASS; cinco comandos exit0, 526 hechos estables. Recibo
 `5f4f9d99…`; 524 identidades E2E sólo censo, sin omisiones ni ejecución.
 Los siete locales originales pasan al primer intento, siete intentos y
 cero retries, flaky u omisiones; fuente/build526 estables, recibo `9fc0ef86…`.
-Cierres de 5.349,8 y 6.144,4 ms con los ocho segundos originales. Públicos,
-HTTP/APK y CI64 siguen pendientes. No acredita FPS o memoria física ni
-reclasifica CI61. Detalle en
+Cierres de 5.349,8 y 6.144,4 ms con los ocho segundos originales. Publicada
+desde `72a785c`, Pages `2423322`: HTTP24/45 PASS, artefacto `6e286ff4…`; APK
+recién descargada idéntica a la firmada 1.1.4/code17 y loader2.089 bytes PASS.
+Los tres públicos originales y los 18 PDF pasan al primer intento, sin
+retries, flaky u omisiones, con 53 y 326 cuerpos autenticados. Certificados
+`39693f80…` y `a13208dd…`; CI64 sigue pendiente de su evidencia propia.
+No acredita FPS o memoria física ni reclasifica fallos originales previos. Detalle en
 [Rendimiento de 1.7.64](performance-1764.md).
 
 ## Cambios de rendimiento de 1.7.63
@@ -51,9 +77,19 @@ segundos originales; recibo `f9d6f3b1…`. Publicada desde `f81d3a1`, Pages
 recién descargada idéntica a la firmada 1.1.4/code17 y loader de 2.089 bytes
 PASS. Los tres públicos originales y los 18 PDF pasan al primer intento,
 sin retries, flaky ni omisiones, con 53 y 324 cuerpos autenticados.
-Certificados `1d903624…` y `a384e4a2…`; la auditoría CI63 sigue pendiente.
-No acredita FPS, temperatura, menor tiempo total del matcher ni
-píxeles del modelo 3D. Detalle en
+Certificados `1d903624…` y `a384e4a2…`. La CI original `37256218542`
+termina FAILED y conserva doce logs y once ZIP completos: 524 identidades,
+527 intentos, tres retries y seis fallidos; 521 expected, tres unexpected,
+sin flaky ni omisiones. UI2 falla dos veces por la importación relativa
+`./font-score-core.js` desde `data:`; UI3 conserva cuatro fallos durante el
+cierre. El primer alineado queda truncado por el global30; no todos los
+intentos acreditan una espera backend completa de ocho segundos.
+Certificado `5967c0e9…`. La lectura de render `afd65c7a…` conserva los dos
+legados en `returning`/`reused` en snapshots posteriores al fallo, sin medir
+el fin del cierre. Las últimas respuestas de fuentes terminan más de 18
+segundos antes de Back; no hay causa GPU o de `fonts.ready` demostrada.
+El perfil pasivo sigue HOLD, sin ejecución. No acredita FPS, temperatura,
+menor tiempo total del matcher ni píxeles del modelo 3D. Detalle en
 [Rendimiento de 1.7.63](performance-1763.md).
 
 ## Cambios de rendimiento de 1.7.61

@@ -83,8 +83,8 @@ miden 5.265,9 y 6.056 ms con los mismos presupuestos originales de ocho
 segundos. Fuente y build permanecen estables. El recibo local tiene SHA-256
 `f9d6f3b104be5f25063091227ebed8df4c31b6d3a2e2d1cb84966d8be1c59302`.
 Los 21 recorridos públicos originales también pasan al primer intento, como
-se detalla abajo. La auditoría CI63 sigue pendiente. El CI original de 61
-conserva su colección completa sellada FAILED; estos pases no lo reclasifican.
+se detalla abajo. La CI original de 63 termina FAILED, con su colección
+completa sellada. Los pases locales y públicos conservan su ámbito propio.
 
 ## Publicación HTTP y APK
 
@@ -106,8 +106,37 @@ Los 18 recorridos PDF públicos también pasan al primer intento, sin retries,
 flaky ni omisiones, con 324 cuerpos autenticados. Conservan fotos en todos
 los temas, texto completo, orden y navegación. Su certificado SHA-256 es
 `a384e4a2941878e4b49246633adffdedbf0c8b7b08091953ff5479ec0a8508f1`.
-Se conservan las assertions y los plazos originales. La auditoría CI63
-permanece pendiente; estos pases no cambian los fallos originales de CI61.
+Se conservan las assertions y los plazos originales. Estos pases no cambian
+los fallos originales de CI61 ni el resultado FAILED de CI63.
+
+## CI original y límites del diagnóstico
+
+El run original `37256218542`, fuente `f81d3a1`, termina FAILED. Se conservan
+los doce logs y once ZIP autenticados completos: 524 identidades, 527
+intentos, tres retries y seis intentos fallidos; 521 casos expected y tres
+unexpected, sin flaky ni omisiones. Certificado SHA-256:
+`5967c0e97365b7ca59352c8095bf6889907274b9db991c3a9a8447e251a04d29`.
+
+UI2 conserva dos fallos de la prueba de apariencia de portada: su importación
+desde `data:` no resuelve el nuevo módulo relativo `./font-score-core.js`.
+UI3 conserva cuatro fallos de los contratos nativos durante la espera de
+retirada de `is-closing-reader`. El primer alineado queda truncado por el
+global de treinta segundos; sus 7.849,333 ms de paso no acreditan el plazo
+completo de ocho segundos. El retry registra 8.011,226 ms en `test.trace`,
+sin final backend ni snapshot terminal. Los dos legados agotan esperas
+backend de 8.003,058 y 8.006,057 ms; sus snapshots posteriores todavía
+muestran `returning` y `reused`. No se ha observado el instante de fin del
+cierre ni se reclasifican estos intentos.
+
+La lectura guardada compara fuente de render y contratos nativos idénticos
+entre 63 y 64. Las últimas respuestas de fuentes registradas terminan más de
+18 segundos antes de Back; eso no mide `document.fonts.ready` ni demuestra
+que esa espera causara el fallo. Las trazas no contienen duraciones GPU que
+permitan atribuirlo a sombras, PMREM o copias. El paso de profundidad de la
+sala empieza en `inserting`, después del `returning` observado. No se propone
+un cambio de render sin esa atribución. Observación SHA-256:
+`afd65c7a947e7aa1b6f2128bdecfc43e8c074a63dcd48d952c087112ab8f6c1e`.
+El diseño de perfil pasivo permanece HOLD, sin ejecución.
 
 ## Evidencia
 
@@ -131,3 +160,8 @@ En `.animation.local/performance-1763/`:
 - `public-f81d3a1-attempt1/performance-browser-attempt1/performance-qualification.json`:
   los tres recorridos públicos originales PASS, informe bruto conservado.
 - `public-f81d3a1-attempt1/browser-attempt1/certification.json`: los 18 PDF públicos PASS.
+- `ci-original-37256218542-attempt1/snapshot-001/certification.json`:
+  colección completa original FAILED, incluidos UI2 y UI3.
+- `ci63-render-return-readonly-observations-attempt1.json`: lectura de trazas
+  guardadas y fuente; no es un perfil causal GPU.
+- `ci63-return-profile-design-hold.md`: diseño pasivo HOLD, no ejecutado.

@@ -742,10 +742,13 @@ export class PdfReader {
       await pending
     } while (this.#doc && pending !== this.#renderReady)
     if (!this.#doc) return null
-    await settlePageLayout(this.#container.ownerDocument)
-    if (!this.#doc || pending !== this.#renderReady) return this.getPageSnapshot()
-    const page = this.#pageNum
     const textMode = this.#preferences.pdfMode === 'text'
+    // Physical PDF pixels and their text layer have already finished rendering.
+    // Only DOM text snapshots depend on unrelated document webfonts.
+    await settlePageLayout(this.#container.ownerDocument, { waitForFonts:textMode })
+    if (!this.#doc || pending !== this.#renderReady
+      || textMode !== (this.#preferences.pdfMode === 'text')) return this.getPageSnapshot()
+    const page = this.#pageNum
     if (textMode) { this.#settleTextResize(); this.#rememberTextPosition() }
     // Physical white pages blend into the current reader theme on opening.
     const theme = READING_THEMES[this.#preferences.theme]

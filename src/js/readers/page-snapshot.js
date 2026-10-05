@@ -55,8 +55,8 @@ export function snapshotCanvas(source, { filter = 'none', displayBounds, paper =
   return snapshot
 }
 
-export async function settlePageLayout(doc = document) {
-  await doc.fonts?.ready
+export async function settlePageLayout(doc = document, options) {
+  if (options?.waitForFonts !== false) await doc.fonts?.ready
   // Foliate schedules column expansion and CSS background replacement in rAF.
   // Two paints also let restored offsets settle before geometry is sampled.
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
