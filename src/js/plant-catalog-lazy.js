@@ -21,6 +21,8 @@ export function createLazyPlantCatalog(options = {}) {
     .catch(error => { loading = null; throw error })
   return {
     prefetch() { return load().catch(() => null) },
+    /** Idle-time: also build the first studio so the first open only draws. */
+    prepare() { return load().then(target => { if (!destroyed) target?.prepare?.() }).catch(() => null) },
     async open(from = document.activeElement) {
       let target
       try { target = catalog || await load() } catch (error) { console.warn('No se pudo abrir el catálogo:', error); return }

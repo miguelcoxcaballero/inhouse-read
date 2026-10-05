@@ -20,10 +20,15 @@ vi.mock('../../src/js/shelf-plants.js',async()=>{
     driver.models.push(model);return model;
   })};
 });
+// A new plant is built in a task after the frame and shown once its shaders are
+// linked; here linking is instant, so a draw settles the frame, the build and the next frame.
+vi.mock('../../src/js/gpu-programs.js',()=>({retainPrograms:()=>{},whenProgramsReady:(renderer,scene,camera,object,done)=>{done();return()=>{};}}));
 let preview,frames,host;
 const selection={catalogId:'nephrolepis',potId:'akerbar',potColorId:'zinc'};
-const draw=()=>{const callbacks=[...frames.values()];frames.clear();callbacks.forEach(callback=>callback(16));};
+const frame=()=>{const callbacks=[...frames.values()];frames.clear();callbacks.forEach(callback=>callback(16));};
+const draw=()=>{frame();vi.runOnlyPendingTimers();frame();};
 beforeEach(()=>{
+  vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});
   driver.models=[];driver.renderers=[];driver.accept=true;frames=new Map();let serial=0;
   vi.stubGlobal('WebGLRenderingContext',function(){});
   vi.stubGlobal('requestAnimationFrame',callback=>{const id=++serial;frames.set(id,callback);return id;});
@@ -31,7 +36,7 @@ beforeEach(()=>{
   host=document.createElement('div');host.getBoundingClientRect=()=>({width:200,height:300});document.body.append(host);
   preview=createPlantCatalogPreview(host);preview.update(selection);draw();
 });
-afterEach(()=>{preview.dispose();document.body.replaceChildren();vi.restoreAllMocks();vi.unstubAllGlobals();});
+afterEach(()=>{preview.dispose();document.body.replaceChildren();vi.useRealTimers();vi.restoreAllMocks();vi.unstubAllGlobals();});
 
 describe('catalog color-only updates without re-creating a botanical model',()=>{
   it('keeps the same model, renderer, bounds and backing size for every color preview',()=>{

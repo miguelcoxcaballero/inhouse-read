@@ -117,3 +117,21 @@ export function compilePrograms(renderer, scene, camera, prepared = []) {
     return true;
   };
 }
+
+/** Link the programs of `object` (normally still hidden in `scene`) in
+ * parallel and call `done` once they are ready, polling between frames so a
+ * new catalogue model never stalls the main thread on a synchronous link.
+ * Runs `done` at once when nothing is pending. Returns a cancel function. */
+export function whenProgramsReady(renderer, scene, camera, object, done, { interval = 16 } = {}) {
+  const meshes = [];
+  object.traverse(node => { if ((node.isMesh || node.isPoints || node.isLine) && node.material) meshes.push(node); });
+  let ready, timer = 0, cancelled = false;
+  try { ready = compilePrograms(renderer, scene, camera, meshes); } catch { ready = () => true; }
+  const check = () => {
+    timer = 0;
+    if (cancelled) return;
+    if (ready()) { cancelled = true; done(); } else timer = setTimeout(check, interval);
+  };
+  check();
+  return () => { cancelled = true; if (timer) clearTimeout(timer); timer = 0; };
+}

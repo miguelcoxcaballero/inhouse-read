@@ -40,6 +40,8 @@ const pickPlant = id => dialog().querySelector(`[data-catalog-plant="${id}"]`).c
 const pickPot = id => dialog().querySelector(`[data-catalog-pot="${id}"]`).click();
 const add = () => dialog().querySelector('[data-catalog-add]');
 const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
+// Each application callback can defer its shelf redraw until the page closed.
+const closing = { whenClosed:expect.any(Function) };
 afterEach(() => {
   for (const instance of instances.splice(0)) instance.destroy();
   document.body.replaceChildren();
@@ -99,7 +101,7 @@ describe('IKEA plant instruction booklet',() => {
     const trigger = document.createElement('button'); document.body.append(trigger); trigger.focus();
     const catalog = create({ onAdd,onClose }); catalog.open(trigger);
     pickPlant('monstera'); pickPot('gradvis'); add().click(); add().click();
-    expect(onAdd).toHaveBeenCalledExactlyOnceWith({ catalogId:'monstera',potId:'gradvis',potColorId:'rose' });
+    expect(onAdd).toHaveBeenCalledExactlyOnceWith({ catalogId:'monstera',potId:'gradvis',potColorId:'rose' },closing);
     expect(dialog().getAttribute('aria-busy')).toBe('true');
     expect(add().disabled).toBe(true);
     expect(dialog().hasAttribute('open')).toBe(true);
@@ -120,7 +122,7 @@ describe('IKEA plant instruction booklet',() => {
     pickPot('muskot');
     expect(dialog().querySelector('[data-catalog-color="sage"]').getAttribute('aria-pressed')).toBe('true');
     add().click(); await settle();
-    expect(onAdd).toHaveBeenCalledExactlyOnceWith({catalogId:'sansevieria',potId:'muskot',potColorId:'sage'});
+    expect(onAdd).toHaveBeenCalledExactlyOnceWith({catalogId:'sansevieria',potId:'muskot',potColorId:'sage'},closing);
   });
   it('keeps a failed addition open with a retry and does not show implementation details',async () => {
     const onAdd = vi.fn().mockRejectedValueOnce(new Error('IndexedDB private stack')).mockResolvedValueOnce();
@@ -215,7 +217,7 @@ describe('IKEA plant instruction booklet',() => {
     create({ onAdd,onAddLamp }).open();
     dialog().querySelector('[data-catalog-page="lights"]').click();
     dialog().querySelector('[data-catalog-lamp="tripod"]').click(); add().click(); add().click();
-    expect(onAddLamp).toHaveBeenCalledExactlyOnceWith({ lampId:'tripod' });
+    expect(onAddLamp).toHaveBeenCalledExactlyOnceWith({ lampId:'tripod' },closing);
     expect(onAdd).not.toHaveBeenCalled();
     expect(dialog().querySelector('[data-catalog-page="shelves"]').disabled).toBe(true);
     expect(dialog().querySelector('[data-catalog-lamp="mittled"]').disabled).toBe(true);
@@ -256,7 +258,7 @@ describe('IKEA plant instruction booklet',() => {
     expect(dialog().querySelector('.ihr-plant-catalog__shelf-dimensions').textContent).toBe('60 × 25 × 116 cm');
     expect(dialog().querySelector('[data-catalog-shelf="baggebo"]').getAttribute('aria-pressed')).toBe('true');
     add().click(); add().click();
-    expect(onShelfChange).toHaveBeenCalledExactlyOnceWith({ shelfType:'baggebo' });
+    expect(onShelfChange).toHaveBeenCalledExactlyOnceWith({ shelfType:'baggebo' },closing);
     expect(onAdd).not.toHaveBeenCalled();
     expect(dialog().querySelector('[data-catalog-page="plants"]').disabled).toBe(true);
     expect(dialog().hasAttribute('open')).toBe(true);

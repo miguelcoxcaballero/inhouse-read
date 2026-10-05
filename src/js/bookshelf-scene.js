@@ -442,6 +442,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let shelfSnapshotDirty = true, shelfSnapshotRenders = 0;
   // Every program is linked in parallel before the first frame (see gpu-programs.js).
   let programsReady = null, programsPoll = 0, unpainted = [], catalogPrelinked = false;
+  // A plant or lamp added later brings new material variants (and a lamp new
+  // lights, which every lit program depends on). Link those in parallel too,
+  // keeping the painted room, instead of stalling the frame that adds them.
+  let programsStale = false;
   // A scroll only moves the camera: world-space shadows stay valid unless
   // something in the scene changed (or the lighting's fitted window moved).
   let shadowDirty = true, shadowCasters = 0;
@@ -666,7 +670,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let compositorFrames = 0;
   let trashHover = false, trashOpenness = 0, trashTransition = null;
   let trashRect = null, trashWritten = null, catalogWritten = null;
-  const catalogRect = {}, trashBox = new THREE.Box3(), footPoint = new THREE.Vector3(), floorPoint = new THREE.Vector3();
+  const catalogRect = {}, catalogFaceRect = {}, catalogFace = new THREE.Box3(), trashBox = new THREE.Box3(), footPoint = new THREE.Vector3(), floorPoint = new THREE.Vector3();
   const trashOriginalStates = new Map();
   function rememberTrashNode(node) {
     if (node && !trashOriginalStates.has(node)) trashOriginalStates.set(node, {
@@ -1390,6 +1394,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (targetWidth !== written.width) style.width = `${written.width = targetWidth}px`;
     if (targetHeight !== written.height) style.height = `${written.height = targetHeight}px`;
     if (!written.fixed) style.margin = '0';
+    // The printed cover inside the (clip and edge inclusive) hit box: the
+    // catalogue page flies out of exactly this rectangle.
+    const { width:coverWidth = 76, height:coverHeight = 108, thickness = 3.4 } = catalog.userData;
+    catalogFace.min.set(-coverWidth / 2, -coverHeight / 2, thickness / 2);
+    catalogFace.max.set(coverWidth / 2, coverHeight / 2, thickness / 2);
+    const face = corners(catalogFace, catalog.matrixWorld, catalogFaceRect), half = value => Math.round(value * 2) / 2;
+    setData(catalogNode, 'bookletFace', [face.left - left, face.top - top, face.width, face.height].map(half).join(' '));
     // Isometric object envelopes include empty space behind the side wall.
     // Keep the tangible booklet above those otherwise invisible hit boxes.
     if (height + 1000 !== written.z) style.zIndex = String(written.z = height + 1000);
@@ -1501,6 +1512,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (visible && !entry.model) {
         created = entry.model = makeModel(entry);
         furniture.add(entry.model);
+        if (entry.kind === 'plant' || entry.kind === 'lamp') programsStale = true;
       } else if (!visible && entry.model && !away) {
         releaseEntry(entry);
       }
@@ -2198,6 +2210,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (lampLighting.shadowRefresh) renderer.shadowMap.needsUpdate = true;
     // The models and lamp lights now exist: link their programs in parallel
     // instead of one blocking link per material inside the first render.
+    if (programsStale) { programsStale = false; if (programsReady === true) programsReady = null; }
     if (programsReady !== true) {
       programsReady ||= compilePrograms(renderer, scene, camera);
       if (!programsReady()) {

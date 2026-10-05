@@ -7,6 +7,7 @@ import { lampCatalogIllustration } from './lamp-illustration.js';
 import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot, getPotColors, getPotColor } from './plant-catalog-data.js';
 import { SHELF_TYPES, getShelfType, normalizeShelfType } from './shelf-types.js';
 import { plantSizeLabel } from './plant-dimensions.js';
+import { CATALOG_CAMERA_EASING, CATALOG_CAMERA_MS, IDENTITY, bookletRect, catalogCameraFrames } from './catalog-camera.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 let catalogSequence = 0;
@@ -127,7 +128,14 @@ function element(tag, className, text) {
   return node;
 }
 
-export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, shelfType = 'walnut' } = {}) {
+/**
+ * `motionTarget()` returns the element holding the shelf room; the camera
+ * flies from the booklet the catalogue was opened from into the page and
+ * back. `onMotion('start'|'end')` brackets each flight. `onAdd`, `onAddLamp`
+ * and `onShelfChange` receive `{ whenClosed }` to run their shelf update
+ * once the closing flight has landed.
+ */
+export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, shelfType = 'walnut', motionTarget, onMotion } = {}) {
   const id = `ihr-plant-catalog-${++catalogSequence}`;
   const dialog = element('dialog','ihr-plant-catalog');
   dialog.dataset.testid = 'plant-catalog';
@@ -232,7 +240,9 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
   let preview3d = null, shelfPreview3d = null, lampPreview3d = null;
   let selectedLamp = LAMP_CATALOG[0]?.id;
   let activePage = 'plants', savedShelf = normalizeShelfType(shelfType), selectedShelf = savedShelf;
-  let trigger = null, destroyed = false, busy = false, opening = false;
+  let trigger = null, destroyed = false, busy = false, opening = false, motion = null;
+  const closedWork = [];
+  const whenClosed = work => { if (typeof work === 'function') closedWork.push(work); };
   const plantButtons = new Map(), potButtons = new Map(), shelfButtons = new Map(), lampButtons = new Map();
 
   function disposePreviews() {
@@ -412,21 +422,87 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
     }
   }
 
+  function cameraFrames(from) {
+    const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduced || typeof dialog.animate !== 'function' || !(from instanceof Element) || !from.isConnected || from.hidden) return null;
+    const stage = typeof motionTarget === 'function' ? motionTarget() : null;
+    if (!(stage instanceof Element) || typeof stage.animate !== 'function') return null;
+    const booklet = bookletRect(from);
+    // Only a booklet actually on screen can be flown into.
+    if (booklet.bottom <= 0 || booklet.right <= 0 || booklet.top >= innerHeight || booklet.left >= innerWidth) return null;
+    const frames = catalogCameraFrames(booklet,dialog.getBoundingClientRect(),stage.getBoundingClientRect());
+    return frames && { ...frames,room:stage };
+  }
+  function fly(phase,frames,done) {
+    const inward = phase === 'opening', stage = frames.room;
+    const previous = { origin:stage.style.transformOrigin,willChange:stage.style.willChange };
+    stage.style.transformOrigin = '0 0'; stage.style.willChange = 'transform';
+    dialog.style.transformOrigin = '0 0';
+    dialog.dataset.catalogCamera = phase;
+    paper.inert = !inward;
+    onMotion?.('start');
+    // Transform and opacity only: the compositor runs the flight even while
+    // the main thread prepares the page or the shelf.
+    const timing = { duration:CATALOG_CAMERA_MS,easing:CATALOG_CAMERA_EASING,fill:'both' };
+    const room = stage.animate(inward ? [{ transform:IDENTITY },{ transform:frames.stage }]
+      : [{ transform:frames.stage },{ transform:IDENTITY }],timing);
+    const page = dialog.animate(inward
+      ? [{ transform:frames.page,opacity:0,offset:0 },{ opacity:1,offset:.32 },{ transform:IDENTITY,opacity:1,offset:1 }]
+      : [{ transform:IDENTITY,opacity:1,offset:0 },{ opacity:1,offset:.68 },{ transform:frames.page,opacity:0,offset:1 }],timing);
+    let landed = false, safety = 0;
+    const land = ({ quiet = false } = {}) => {
+      if (landed) return;
+      landed = true; clearTimeout(safety);
+      // The opaque page backdrop already hides the room: reset it unseen.
+      if (inward) dialog.dataset.catalogCamera = 'in';
+      else delete dialog.dataset.catalogCamera;
+      room.cancel(); page.cancel();
+      stage.style.transformOrigin = previous.origin; stage.style.willChange = previous.willChange;
+      dialog.style.transformOrigin = '';
+      paper.inert = false;
+      motion = null;
+      onMotion?.('end');
+      if (!quiet) done();
+    };
+    motion = { phase,land };
+    room.finished.then(() => land(),() => {});
+    // A hidden tab may never finish the animation; never strand the dialog.
+    const guard = () => {
+      if (room.playState === 'running' && document.visibilityState !== 'hidden') safety = setTimeout(guard,250);
+      else land();
+    };
+    safety = setTimeout(guard,CATALOG_CAMERA_MS + 400);
+  }
   function finishClose() {
     if (!opening) return;
+    // Closed from elsewhere mid-flight: just put the room back.
+    motion?.land({ quiet:true });
     opening = false;
+    delete dialog.dataset.catalogCamera;
     suspendPreviews();
     onClose?.();
+    for (const work of closedWork.splice(0)) {
+      try { work(); } catch (error) { console.warn('No se pudo actualizar la estantería:',error); }
+    }
     if (trigger?.isConnected) trigger.focus({ preventScroll:true });
     trigger = null;
   }
-  function close() {
-    if (destroyed || !opening) return;
+  function closeNow() {
     if (typeof dialog.close === 'function' && dialog.open) dialog.close();
     else dialog.removeAttribute('open');
     finishClose();
   }
-  closeButton.addEventListener('click',close);
+  function close({ instant = false } = {}) {
+    if (destroyed || !opening) return;
+    if (motion?.phase === 'closing') { if (instant) motion.land(); return; }
+    motion?.land();
+    const frames = !instant && cameraFrames(trigger);
+    if (!frames) { closeNow(); return; }
+    // Nothing redraws inside the page while it flies back into the booklet.
+    suspendPreviews();
+    fly('closing',frames,closeNow);
+  }
+  closeButton.addEventListener('click',() => close());
   dialog.addEventListener('cancel',event => { event.preventDefault(); close(); });
   dialog.addEventListener('close',finishClose);
   dialog.addEventListener('click',event => {
@@ -449,11 +525,12 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
       : lampPage ? typeof onAddLamp !== 'function' : typeof onAdd !== 'function')) return;
     busy = true; status.textContent = ''; status.removeAttribute('data-error'); update();
     try {
+      // The shelf saves now and redraws once the page has flown back.
       if (shelfPage) {
-        await onShelfChange({ shelfType:selectedShelf });
+        await onShelfChange({ shelfType:selectedShelf },{ whenClosed });
         savedShelf = selectedShelf;
-      } else if (lampPage) await onAddLamp({ lampId:selectedLamp });
-      else await onAdd({ catalogId:selectedPlant, potId:selectedPot,potColorId:selectedColor });
+      } else if (lampPage) await onAddLamp({ lampId:selectedLamp },{ whenClosed });
+      else await onAdd({ catalogId:selectedPlant, potId:selectedPot,potColorId:selectedColor },{ whenClosed });
       if (!destroyed) close();
     } catch {
       if (!destroyed) {
@@ -475,8 +552,22 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
       opening = true; status.textContent = ''; status.removeAttribute('data-error');
       if (typeof dialog.showModal === 'function') dialog.showModal();
       else { dialog.setAttribute('open',''); dialog.setAttribute('aria-modal','true'); }
-      update(); mountPreview(); update();
+      const frames = cameraFrames(trigger);
+      update();
+      // A studio prepared earlier only draws; a first one is created after
+      // the flight so its setup never competes with the camera move.
+      if (!frames || preview3d) mountPreview();
+      update();
       body.scrollTop = 0; closeButton.focus({ preventScroll:true });
+      if (frames) fly('opening',frames,() => { if (opening && !destroyed) { mountPreview(); update(); } });
+    },
+    /** Idle-time preparation: the plant studio and its shaders before the first open. */
+    prepare() {
+      if (destroyed || opening || preview3d) return;
+      preview3d = createPlantCatalogPreview(drawing);
+      preview3d.setActive(false);
+      preview3d.update({ catalogId:selectedPlant,potId:selectedPot,potColorId:selectedColor });
+      preview3d.prepare?.();
     },
     setShelfType(value) {
       savedShelf = normalizeShelfType(value); selectedShelf = savedShelf;
@@ -485,7 +576,7 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
     close,
     destroy() {
       if (destroyed) return;
-      close(); destroyed = true; disposePreviews(); dialog.remove();
+      close({ instant:true }); closedWork.length = 0; destroyed = true; disposePreviews(); dialog.remove();
     }
   };
 }

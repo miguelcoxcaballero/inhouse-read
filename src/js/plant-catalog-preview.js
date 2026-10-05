@@ -1,11 +1,15 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createShelfPlant } from './shelf-plants.js';
+import { retainPrograms, whenProgramsReady } from './gpu-programs.js';
 
-/** One stationary front view. Render only for selection, resize or texture updates. */
+/** One stationary front view. Render only for selection, resize or texture updates.
+ * A new selection is built after the tapped choice has painted and is shown
+ * once its shaders are linked in parallel; the previous plant stays meanwhile. */
 export function createPlantCatalogPreview(host) {
   let renderer, environment, model, observer, frame = 0, disposed = false, active = true;
   let modelSize = null, paintedWidth = NaN, paintedHeight = NaN;
+  let pending = null, building = 0, incoming = null, cancelLink = null, dirty = true;
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-80,80,90,-90,1,1000);
   camera.position.set(0,0,400); camera.lookAt(0,0,0);
@@ -15,8 +19,13 @@ export function createPlantCatalogPreview(host) {
   };
   const render = () => {
     frame = 0;
-    if (disposed || !active || !renderer || !model) return;
-    const rect = host.getBoundingClientRect();
+    if (disposed || !active || !renderer) return;
+    // A task after this frame: the pressed choice paints before the build.
+    if (pending && !building && !incoming) building = setTimeout(build);
+    if (!model || !dirty) return;
+    dirty = false;
+    // Layout size: the page may be scaled mid-flight, its drawing buffer not.
+    const rect = host.clientWidth ? { width:host.clientWidth,height:host.clientHeight } : host.getBoundingClientRect();
     const width = Math.max(1,rect.width), height = Math.max(1,rect.height), aspect = width/height;
     // Texture completion changes the surface, never this stationary geometry.
     const size = modelSize ||= new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
@@ -27,9 +36,26 @@ export function createPlantCatalogPreview(host) {
       renderer.setSize(width,height,false); paintedWidth = width; paintedHeight = height;
     }
     renderer.render(scene,camera);
+    // Going back to an earlier plant reuses its linked shaders.
+    if (renderer.info) retainPrograms(renderer);
     host.dataset.renderCount = String(Number(host.dataset.renderCount || 0) + 1);
   };
-  const invalidate = () => { if (!disposed && active && !frame) frame = requestAnimationFrame(render); };
+  const request = () => { if (!disposed && active && !frame) frame = requestAnimationFrame(render); };
+  const invalidate = () => { dirty = true; request(); };
+  function build(prepare = false) {
+    building = 0;
+    if (disposed || (!active && !prepare) || !pending || incoming || !renderer) return;
+    const selection = pending; pending = null;
+    const next = incoming = createShelfPlant({ ...selection,seed:`catalog:${selection.catalogId}` });
+    next.userData.invalidate = invalidate; next.visible = false; scene.add(next);
+    cancelLink = whenProgramsReady(renderer,scene,camera,next,() => {
+      cancelLink = null; incoming = null;
+      if (model) { scene.remove(model); model.userData.dispose(); }
+      model = next; model.visible = true; modelSize = null;
+      host.dataset.modelCatalogId = selection.catalogId;
+      invalidate();
+    });
+  }
   try {
     if (typeof WebGLRenderingContext === 'undefined') throw new Error('WebGL unavailable');
     renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
@@ -68,21 +94,23 @@ export function createPlantCatalogPreview(host) {
       host.dataset.potColorId = selection.potColorId;
       if (!renderer || disposed || key === selectionKey) return;
       const nextShapeKey = JSON.stringify(Object.fromEntries(Object.entries(selection).filter(([name]) => name !== 'potColorId')));
-      if (model && nextShapeKey === shapeKey && model.userData.updatePotColor?.(selection.potColorId)) {
+      // Only the shown plant can be recoloured; a queued one is built anew.
+      if (model && !pending && !incoming && nextShapeKey === shapeKey && model.userData.updatePotColor?.(selection.potColorId)) {
         selectionKey = key;
         invalidate();
         return;
       }
       selectionKey = key;
       shapeKey = nextShapeKey;
-      if (model) { scene.remove(model); model.userData.dispose(); }
-      modelSize = null;
-      model = createShelfPlant({ ...selection,seed:`catalog:${selection.catalogId}` });
-      model.userData.invalidate = invalidate; scene.add(model); invalidate();
+      pending = selection; request();
     },
+    /** Build the queued plant and link its shaders now, even while hidden. */
+    prepare() { if (building) clearTimeout(building); build(true); },
     dispose() {
       if (disposed) return; disposed = true;
       if (frame) cancelAnimationFrame(frame);
+      if (building) clearTimeout(building);
+      cancelLink?.(); incoming?.userData.dispose();
       observer?.disconnect(); model?.userData.dispose();
       environment?.dispose(); renderer?.dispose(); renderer?.forceContextLoss();
       host.replaceChildren();

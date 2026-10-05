@@ -20,6 +20,12 @@
   color-scheme: light;
 }
 .ihr-plant-catalog::backdrop { background: #0009; }
+/* Flown into from the booklet in the room: the page lies on paper that
+   covers the whole screen, so the room behind can reset unseen. */
+.ihr-plant-catalog[data-catalog-camera]::backdrop { background: #eeece6; }
+.ihr-plant-catalog[data-catalog-camera='opening']::backdrop { animation: ihr-catalog-paper 480ms cubic-bezier(.75,0,.9,.35) both; }
+.ihr-plant-catalog[data-catalog-camera='closing']::backdrop { animation: ihr-catalog-paper 480ms cubic-bezier(.75,0,.9,.35) reverse both; }
+@keyframes ihr-catalog-paper { from { opacity: 0; } to { opacity: 1; } }
 .ihr-plant-catalog *, .ihr-plant-catalog *::before, .ihr-plant-catalog *::after { box-sizing: border-box; }
 .ihr-plant-catalog [hidden] { display: none !important; }
 .ihr-plant-catalog__paper { display: flex; flex-direction: column; height: 100%; min-height: 0; }
@@ -179,7 +185,7 @@
   .ihr-plant-catalog__shelf-note { margin-top: 7px; font-size: 9px; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .ihr-plant-catalog[open] { animation: ihr-plant-catalog-open 180ms ease-out both; }
+  .ihr-plant-catalog[open]:not([data-catalog-camera]) { animation: ihr-plant-catalog-open 180ms ease-out both; }
   @keyframes ihr-plant-catalog-open { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: scale(1); } }
 }
 
