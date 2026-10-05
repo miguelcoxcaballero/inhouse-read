@@ -42,6 +42,11 @@ vi.mock('../../src/js/readers/reader-experience.js', () => ({ ReaderExperience:c
     this.preferences = {}; this.open = vi.fn(); this.reset = vi.fn(); this.relocate = vi.fn(); this.step = vi.fn()
   }
 } }))
+// There is no shelf frame in jsdom: the post-first-frame work (which loads the lazy reader panel) runs at once.
+vi.mock('../../src/js/idle-startup.js', () => ({
+  shelfPresented:async () => {}, idleSlice:async () => {},
+  runAfterFirstFrame:async tasks => { for (const task of tasks) await task() }
+}))
 vi.mock('../../src/js/drive-client.js', () => ({ isDriveConfigured:() => true,
   hasDriveSession:() => state.connected,
   getDriveProfile:vi.fn(async () => ({ id:'account', name:'Reader', email:'reader@example.com' })),
@@ -90,6 +95,7 @@ beforeEach(async () => {
   }
   await import('../../src/js/app.js')
   await vi.waitFor(() => expect(state.options).toBeTruthy())
+  await vi.waitFor(() => expect(state.experience).toBeTruthy())
 })
 afterEach(async () => {
   window.dispatchEvent(new Event('pagehide'))
