@@ -34,8 +34,13 @@ Publicada desde `4899d86`, Pages `f0ca599b`: HTTP comprueba los 23 módulos
 y 44 archivos offline reales. Los 21 recorridos públicos originales pasan
 al primer intento (3 de editor/regreso y 18 de PDF), sin retries ni flaky.
 APK recién descargada y loader de 2.089 bytes PASS; wrapper 1.1.4/code17.
-Su CI original `37244969983` continúa pendiente; estos pases no sustituyen
-las 524 ejecuciones originales.
+Su CI original `37244969983` termina FAILED. Se conservan 12 logs y 11 ZIP
+autenticados: 3.004 unitarias PASS y 524 identidades E2E, 526 intentos,
+dos retries y cuatro intentos fallidos, únicamente en UI3. Alineado inicial
+falla la espera PDF de ocho segundos; su retry alcanza el cierre pero agota
+el global de treinta. Los dos intentos legados fallan la espera PDF de ocho
+segundos. No son cuatro fallos de cierre. Los pases locales y públicos no
+sustituyen esos originales.
 
 ## Fallos conservados y alcance
 
@@ -62,4 +67,6 @@ Los modelos, iluminación, sombras, texturas, densidad y plazos no se reducen.
 - Navegador local: `local-browser-attempt1/summary.json`.
 - Publicación: `public-4899d86-attempt1/`, HTTP, APK, loader y certificados
   de los 3 + 18 recorridos públicos.
+- CI completa: `ci-original-37244969983-attempt1/snapshot-001/certification.json`,
+  SHA256 `99f4c4ae4f98c9f34d2ca24d5c9839eba3baad6e6ba772cf1f41b27c26f95abe`.
 - Fallos originales previos: [Rendimiento 1.7.56](performance-1756.md).

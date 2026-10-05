@@ -1764,7 +1764,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     copiedRectangle=rectangle; snapshotDirty=false;
   }
   function configureFrame(frame) {
-    configureNativeRendererSize(gpu, frame.width, frame.height, pixelRatio, rendererSize, directEnabled);
+    configureNativeRendererSize(gpu, frame.width, frame.height, pixelRatio, rendererSize, directEnabled, true);
   }
   function positionPresentation(frame) {
     const parent=canvas.parentElement?.parentElement;

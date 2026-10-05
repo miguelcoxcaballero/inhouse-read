@@ -35,8 +35,20 @@ navegadores. Los siete recorridos locales originales pasan al primer
 intento, sin retries, flaky ni omisiones. Cierres alineado y legado:
 5.371,7 y 5.917,5 ms, con ocho segundos y global de treinta intactos.
 Veinte composiciones isométricas no generan renders nuevos de sala;
-dos escrituras de buffer y seis lomos de 1.024 px. Publicación y CI
-completa todavía pendientes.
+dos escrituras de buffer y seis lomos de 1.024 px.
+
+Publicada desde `0edc6b1`, Pages `ed614d2`: HTTP comprueba los 23 módulos
+y 44 archivos offline reales. Los 21 recorridos públicos originales pasan
+al primer intento (3 de editor/regreso y 18 de PDF), sin retries ni flaky.
+APK recién descargada y loader de 2.089 bytes PASS; wrapper 1.1.4/code17.
+Su CI original `37246413733` termina FAILED: 524 identidades,
+526 intentos, 522 PASS y dos casos unexpected en UI3; cuatro intentos
+fallidos y dos retries, cero flaky ni omisiones. Pasan las 3.059 unitarias
+y el resto de grupos. Los cuatro fallos esperan la página PDF antes de Back,
+con último estado en zooming; no son fallos del plazo de cierre. Se conservan
+12 logs y 11 ZIP originales autenticados, certificado SHA
+`40180d1df65512544720dffceeb1cac17f4a5098c13be9074445e5edb02eb293`.
+Los pases locales y públicos no sustituyen esos resultados.
 
 El primer CPU combinado conserva FAILED: los 191 casos originales pasan;
 53 de 55 nuevos pasan. Los dos fallos pertenecen a la expectativa nueva de
@@ -54,6 +66,8 @@ terminan sin errores uncaught. No se relabelan ni sobrescriben esos resultados.
   SHA256 `fc7a42b873028fdec6649c4acd669b96c22e47b801bdaefd41a96ad145c5fc96`.
 - Fuente final: `full-local-attempt1/summary.json`.
 - Navegador local: `local-browser-attempt1/summary.json`.
+- Publicación: `public-0edc6b1-attempt1/`, HTTP, APK, loader y certificados
+  de los 3 + 18 recorridos públicos.
 - La comparación aislada selecciona 55 casos nuevos en el candidato y 49
   en el control Git57. Los seis casos del nuevo helper de fuentes sólo existen
   en el candidato; no se presentan como ejecutados en el control.

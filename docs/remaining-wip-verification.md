@@ -1,4 +1,27 @@
-# Verificación del WIP — 1.7.58 preparada y Android 1.1.4
+# Verificación del WIP — 1.7.59 en verificación y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.59
+
+El canvas nativo del libro evita reiniciar una dimensión que ya coincide
+cuando la otra realmente cambia. Three conserva tamaño, densidad y viewport;
+los casos sin las condiciones del camino nativo mantienen su operación
+original. No se reducen modelos, texturas, sombras ni antialiasing.
+
+La fuente final pasa 3.082 unitarias en 231 archivos, build y 75 Python,
+con 511 hechos estables. La CPU aislada final pasa 82 casos: 59 originales
+y 23 nuevos. Su primer fallo de datos de una expectativa nueva se conserva.
+Los siete recorridos originales locales pasan al primer intento, sin retries,
+flaky ni omisiones. Cierres: 5.176,8 y 5.639,3 ms con los plazos originales.
+Veinte composiciones de cámara no repintan la sala y conservan seis lomos
+de 1.024 px. El censo de 524 E2E no cuenta como ejecución.
+
+La comparación gráfica pasa al primer intento: 64 pares exactos RGBA y
+PNG nativo/exportado. En 32 cambios de una sola dimensión, las dos
+asignaciones originales pasan a una. El navegador y servidor quedan cerrados.
+La publicación, APK y CI original de esta versión tienen verificaciones
+independientes pendientes. Los pases anteriores no acreditan esos resultados
+ni FPS en un teléfono físico. Detalle en
+[Rendimiento de 1.7.59](performance-1759.md).
 
 ## Cambios de rendimiento de 1.7.58
 
@@ -17,13 +40,18 @@ Los siete recorridos locales originales pasan al primer intento, cero
 retries, flaky u omisiones. Cierres: 5.371,7 y 5.917,5 ms con sus ocho
 segundos originales intactos. Veinte composiciones isométricas sin
 repintar sala, dos escrituras de buffer y seis lomos de 1.024 px.
-Publicación y CI completa pendientes; no se acredita fluidez en teléfono
-ni resolver los timeouts de CI anteriores sólo con estos pases.
+Publicada desde `0edc6b1`, Pages `ed614d2`: HTTP real, APK recién descargada
+y loader PASS. Los 21 recorridos públicos originales pasan al primer
+intento, sin retries ni flaky. CI original `37246413733` termina FAILED:
+524 identidades, 526 intentos, dos unexpected en UI3 y cuatro intentos
+fallidos antes de Back esperando PDF visible. Dos retries, cero flaky ni
+omisiones; 12 logs y 11 ZIP completos. No se acredita fluidez en teléfono
+ni resolver esos timeouts sólo con los pases locales y públicos.
 Detalle en [Rendimiento de 1.7.58](performance-1758.md).
 
 ## Cambios de rendimiento de 1.7.57
 
-Publicada y verificada localmente y contra la web real; CI original pendiente.
+Publicada y verificada localmente y contra la web real; CI original FAILED.
 Las confirmaciones de metadatos conservan el árbol de la estantería cuando
 todos los datos visibles son idénticos. La cola real pasa de una pintura
 de sala/base/snapshot a cero, con referencias actuales y los mismos modelos.
@@ -41,7 +69,11 @@ anteriores conservan sus propios recibos. No hay medición de FPS en teléfono
 ni causa demostrada del timeout de apertura o del clic perdido de CI56.
 HTTP real, APK recién descargada y loader PASS; los 21 recorridos públicos
 originales pasan al primer intento, sin retries ni flaky. Fuente `4899d86`,
-Pages `f0ca599b`, CI original `37244969983` todavía en curso.
+Pages `f0ca599b`. CI original `37244969983` FAILED: 524 identidades,
+526 intentos, dos retries y cuatro intentos fallidos sólo en UI3;
+12 logs y 11 ZIP completos. Alineado inicial y los dos legados fallan la
+espera PDF de ocho segundos. Alineado retry llega al cierre y agota el
+global de treinta; no se atribuyen los cuatro fallos al cierre.
 Detalle en [Rendimiento de 1.7.57](performance-1757.md).
 
 ## Cambios de rendimiento de 1.7.56
