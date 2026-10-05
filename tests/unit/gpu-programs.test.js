@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
-import { compilePrograms, keepProgramsAlive, retainPrograms } from '../../src/js/gpu-programs.js';
+import { compilePrograms, keepProgramsAlive, prelinkPrograms, retainPrograms } from '../../src/js/gpu-programs.js';
 
 const program = (ready = true) => ({ usedTimes:1, ready, isReady() { return this.ready; } });
 
@@ -136,5 +136,33 @@ describe('compilePrograms', () => {
 
   it('falls back to linking on first draw when the renderer cannot precompile', () => {
     expect(compilePrograms({}, new THREE.Scene(), new THREE.PerspectiveCamera())()).toBe(true);
+  });
+});
+
+describe('prelinkPrograms', () => {
+  it('starts linking the visible meshes of each part against the whole scene, then hands them to the driver', () => {
+    const scene = new THREE.Scene(), part = new THREE.Group(), shown = mesh(new THREE.MeshStandardMaterial());
+    const hidden = mesh(new THREE.MeshStandardMaterial(), false), elsewhere = mesh(new THREE.MeshStandardMaterial());
+    part.add(shown, hidden); scene.add(part, elsewhere, new THREE.DirectionalLight());
+    const renderer = fakeRenderer(), flush = vi.fn();
+    renderer.getContext = () => ({ flush });
+    prelinkPrograms(renderer, scene, new THREE.PerspectiveCamera(), [part]);
+    expect(renderer.calls).toHaveLength(1);
+    expect(renderer.calls[0].meshes).toEqual([shown]);
+    expect(renderer.calls[0].scene).toBe(scene);
+    expect(flush).toHaveBeenCalledTimes(1);
+  });
+
+  it('links nothing for an invisible part, or while another render target is bound', () => {
+    const scene = new THREE.Scene(), part = new THREE.Group();
+    part.add(mesh(new THREE.MeshStandardMaterial())); scene.add(part);
+    const renderer = fakeRenderer(), camera = new THREE.PerspectiveCamera();
+    part.visible = false;
+    prelinkPrograms(renderer, scene, camera, [part]);
+    part.visible = true;
+    renderer.setRenderTarget(new THREE.WebGLRenderTarget(2, 2));
+    prelinkPrograms(renderer, scene, camera, [part]);
+    expect(renderer.calls).toHaveLength(0);
+    expect(() => prelinkPrograms({}, scene, camera, [part])).not.toThrow();
   });
 });

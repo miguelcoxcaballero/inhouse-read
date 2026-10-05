@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import * as THREE from 'three';
 import { bindingGeometry, boardGeometry, bookmarkGeometry, pageBlockGeometry, leafStackGeometry, ribbonSilk, sampleBookMotion, fitCoverImage, createBookModel, projectBookPageBounds, planBookPageZoom, planReadingBookPose } from '../../src/js/book-model.js';
 import { spineLayout, spineSurface, releaseSurface } from '../../src/js/spine-surface.js';
+import { registerPageRaster } from '../../src/js/page-raster.js';
 
 describe('whole reading spread framing',() => {
   for (const viewport of [{width:320,height:568},{width:390,height:844},{width:844,height:390},{width:1280,height:800}]) {
@@ -701,6 +702,31 @@ describe('real shelf book materials', () => {
     model.userData.dispose();
     expect(releaseCurrent).toHaveBeenCalledOnce();
     expect(model.userData.setPageSnapshot(snapshot)).toBe(false);
+  });
+
+  it('keeps exact settled PDF textures for fresh copies, but replaces them when the raster changes', () => {
+    canvasContext();
+    const model = createBookModel(book, style, 132, 200, 40, null);
+    const revision = {}, stockRevision = {};
+    const snapshot = (key = revision, stockKey = stockRevision) => {
+      const source = Object.assign(document.createElement('canvas'), {width:400,height:600});
+      const stock = Object.assign(document.createElement('canvas'), {width:400,height:600});
+      registerPageRaster(source,key); registerPageRaster(stock,stockKey);
+      return {source,width:400,height:600,paper:{source:stock,width:400,height:600}};
+    };
+    model.userData.setPageSnapshot(snapshot());
+    const page=model.getObjectByName('reading-page'), stock=model.getObjectByName('reading-page-stock');
+    const maps=[page.material.map,stock.material.map], geometry=page.geometry;
+    const disposals=maps.map(map=>vi.spyOn(map,'dispose'));
+    const fresh=snapshot();model.userData.setPageSnapshot(fresh,{pageTheme:0});
+    expect(page.material.map).toBe(maps[0]);expect(stock.material.map).toBe(maps[1]);
+    expect(page.geometry).toBe(geometry);expect(model.userData.pageSnapshot).toBe(fresh);
+    expect(page.material.opacity).toBe(0);expect(disposals.every(dispose=>dispose.mock.calls.length===0)).toBe(true);
+    model.userData.setPageSnapshot(snapshot({},stockRevision));
+    expect(page.material.map).not.toBe(maps[0]);expect(disposals[0]).toHaveBeenCalledOnce();
+    const changedMap=page.material.map;
+    model.userData.setPageSnapshot(snapshot({},{}));expect(page.material.map).not.toBe(changedMap);
+    model.userData.dispose();
   });
 
   it('reuses the exact sampled paper colour across fresh copies carrying the same settled-raster token', () => {

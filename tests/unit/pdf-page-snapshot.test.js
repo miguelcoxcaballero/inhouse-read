@@ -9,6 +9,7 @@ vi.mock('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url', () => ({default:'worke
 vi.mock('../../src/js/gestures.js', () => ({attachSwipeNavigation:() => () => {}}))
 import { PdfReader } from '../../src/js/readers/pdf-reader.js'
 import { PDF_PAGE_FILTERS, READING_THEMES } from '../../src/js/readers/reading-preferences.js'
+import { pageRaster } from '../../src/js/page-raster.js'
 
 let container, contexts
 const rect = {left:0,top:64,width:390,height:720,right:390,bottom:784}
@@ -33,6 +34,22 @@ beforeEach(() => {
 afterEach(() => {vi.restoreAllMocks();vi.unstubAllGlobals();document.body.innerHTML=''})
 
 describe('PDF restored-page preview', () => {
+  it('registers fresh copies only while their actual settled pixels remain the same', async () => {
+    const reader = new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    const first = await reader.getPageSnapshot(), second = await reader.getPageSnapshot()
+    expect(first.source).not.toBe(second.source)
+    expect(pageRaster(first.source)).toBeTruthy()
+    expect(pageRaster(first.source)).toBe(pageRaster(second.source))
+    expect(pageRaster(first.paper.source)).toBe(pageRaster(second.paper.source))
+    await reader.goToPage(2)
+    const navigated = await reader.getPageSnapshot()
+    expect(pageRaster(navigated.source)).not.toBe(pageRaster(first.source))
+    await reader.applyPreferences({theme:'night'})
+    const themed = await reader.getPageSnapshot()
+    expect(pageRaster(themed.source)).not.toBe(pageRaster(navigated.source))
+    reader.close()
+  })
   it('changes themes using the same decoded PDF and text layer, without a fresh PDF render', async () => {
     const rendered = vi.fn(() => ({promise:Promise.resolve(),cancel:vi.fn()}))
     getPage.mockImplementation(async number => ({...fakePage(number),render:rendered}))

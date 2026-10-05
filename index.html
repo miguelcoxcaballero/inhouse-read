@@ -6,9 +6,45 @@
   <meta name="theme-color" content="#f5f5f0" />
   <title>Inhouse Read</title>
   <meta name="description" content="Inhouse Read — lector de PDF, ePub y MOBI." />
+  <script>
+    // A launch is answered from the offline shell without the network. The
+    // deployed index.html is asked for right away, so content-freshness.js
+    // often knows of a newer deploy before the shelf is built and opens it
+    // instead of building the old one.
+    try {
+      (function (deployed) {
+        deployed.done = fetch(location.href, { cache: 'no-store' })
+          .then(function (response) { return response.ok ? response.text() : null })
+          .then(function (html) { return deployed.html = html }, function () { return null })
+        window.__inhouseDeployed = deployed
+      })({ html: null })
+    } catch (error) { /* content-freshness.js asks later */ }
+    // The shelf's records are read while the app's code is still loading, so
+    // its first frame does not wait for IndexedDB afterwards. Only an existing
+    // library at the current schema (src/js/library-store.js) is read here;
+    // anything else is left to the store. src/js/shelf-boot.js takes the result.
+    try {
+      (function (open, read) {
+        read.done = new Promise(function (resolve) {
+          open.onupgradeneeded = function () { open.transaction.abort() }
+          open.onerror = function () { resolve(null) }
+          open.onsuccess = function () {
+            var db = open.result
+            try {
+              var request = db.transaction('books', 'readonly').objectStore('books').getAll()
+              request.onsuccess = function () { resolve(read.records = request.result) }
+              request.onerror = function () { resolve(null) }
+            } catch (error) { resolve(null) }
+            db.close()
+          }
+        })
+        window.__inhouseShelfRead = read
+      })(indexedDB.open('inhouse-read', 2), { records: null })
+    } catch (error) { /* no IndexedDB here: the store reports it */ }
+  </script>
 
-  <link rel="preload" as="image" href="/src/assets/library/walnut-pbr.webp" crossorigin="anonymous" />
-  <link rel="preload" as="image" href="/src/assets/library/walnut-surface.webp" crossorigin="anonymous" />
+  <link rel="preload" as="fetch" href="/src/assets/library/walnut-pbr.webp" crossorigin="anonymous" />
+  <link rel="preload" as="fetch" href="/src/assets/library/walnut-surface.webp" crossorigin="anonymous" />
 
   <link rel="preload" as="font" type="font/woff2" href="./src/assets/fonts/playfair-display-latin-e0c764a8e9e1.woff2" crossorigin>
   <link rel="stylesheet" href="./src/css/fonts.css">

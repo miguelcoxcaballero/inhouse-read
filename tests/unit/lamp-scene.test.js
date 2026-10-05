@@ -404,6 +404,22 @@ describe('bounded lamp lighting', () => {
     expect(fixtureLights(scene).some(light => light.userData.entryKey === 'lamp:9')).toBe(true);
     manager.dispose(); expect(fixtureLights(scene)).toHaveLength(0);
   });
+  it('builds the pool from the library before any model exists, exactly as the first update would', () => {
+    const scene = new THREE.Scene(), manager = createShelfLampLighting(scene);
+    manager.prepare([0, 1, 2].map(index => ({ ...source(index), model:null })));
+    const prepared = fixtureLights(scene);
+    expect(prepared).toHaveLength(3);
+    expect(prepared.filter(light => light.castShadow)).toHaveLength(2);
+    expect(litLights(scene)).toHaveLength(0);
+    const built = [0, 1, 2].map(index => source(index));
+    for (const entry of built) scene.add(entry.model);
+    // The models only aim and light the prepared slots; the change is still reported once.
+    expect(manager.update(built, { viewportHeight:600 })).toBe(true);
+    expect(fixtureLights(scene)).toEqual(prepared);
+    expect(manager.activeCount).toBe(3);
+    expect(manager.update(built, { viewportHeight:600 })).toBe(false);
+    manager.dispose();
+  });
   it('reuses stable light resources at rest and excludes lamps away or falling into the bin', () => {
     const scene = new THREE.Scene(), manager = createShelfLampLighting(scene), a = source(0, false), b = source(1);
     scene.add(a.model, b.model);

@@ -2,10 +2,16 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { getCatalogLamp } from './lamp-catalog-data.js';
+import { addShelfBakeSource, savedSurface, scheduleShelfBakeWrite } from './shelf-bake-cache.js';
 
 const UP = new THREE.Vector3(0,1,0);
 const clamp = value => Math.min(1,Math.max(0,value));
 const imageCache = new Map();
+// Surfaces of this session's shelf lamps are saved for the next launch.
+const shelfSurfaces = new Set();
+let building = null;
+addShelfBakeSource({ settled:() => Promise.resolve(), collect:() => ({ surfaces:[...shelfSurfaces]
+  .filter(key => imageCache.has(key)).map(key => [`lamp:${key}`, imageCache.get(key)]) }) });
 
 // Surfaces remain sharp at finger-zoom distances. Only immutable CPU texels
 // are cached: a fixture owns, and releases, all of its GPU textures.
@@ -14,7 +20,9 @@ function surface(kind, quality) {
   const width = kind === 'wood' ? 128 * detail : 256 * detail;
   const height = kind === 'wood' ? 512 * detail : width;
   const key = `${kind}:${detail}`;
+  building?.add(key);
   let bytes = imageCache.get(key);
+  if (!bytes && (bytes = savedSurface(`lamp:${key}`, width, height))) imageCache.set(key, bytes);
   if (!bytes) {
     const pigment = new Uint8Array(width * height * 4), data = new Uint8Array(pigment.length);
     for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
@@ -44,7 +52,7 @@ function surface(kind, quality) {
       pigment[index + 3] = data[index + 3] = 255;
       data[index] = Math.round(clamp(relief) * 255); data[index + 1] = Math.round(clamp(roughness) * 255);
     }
-    bytes = { pigment,data }; imageCache.set(key,bytes);
+    bytes = { width,height,pigment,data }; imageCache.set(key,bytes);
   }
   const texture = (data,colorSpace) => {
     const map = new THREE.DataTexture(data,width,height,THREE.RGBAFormat);
@@ -313,7 +321,7 @@ function tripod(group,quality,segments) {
  * height fit uniformly, preserving the shape instead of stretching it.
  * Emissive meshes belong here; budgeted real lights belong to the scene.
  */
-export function createShelfLamp({lampId='tarnaby',width=null,height=null,quality='high',isOn=true}={}) {
+export function createShelfLamp({lampId='tarnaby',width=null,height=null,quality='high',isOn=true,persist=false}={}) {
   const lamp = getCatalogLamp(lampId) || getCatalogLamp('tarnaby');
   const native = lamp.dimensions;
   const widthScale = Number.isFinite(width) && width > 0 ? width / native.width : 1;
@@ -321,7 +329,11 @@ export function createShelfLamp({lampId='tarnaby',width=null,height=null,quality
   const scale = Math.min(widthScale,heightScale);
   const group = new THREE.Group(); group.name = `shelf-lamp-${lamp.id}`;
   const segments = quality === 'low' ? 40 : 72;
-  const emitter = (lamp.id === 'mittled' ? puck : lamp.id === 'tripod' ? tripod : lantern)(group,quality,segments);
+  const used = building = persist ? new Set() : null;
+  let emitter;
+  try { emitter = (lamp.id === 'mittled' ? puck : lamp.id === 'tripod' ? tripod : lantern)(group,quality,segments); }
+  finally { building = null; }
+  if (used?.size) { for (const key of used) shelfSurfaces.add(key); scheduleShelfBakeWrite(); }
   // Bake the uniform fit into vertices. Emitter metadata is genuinely local
   // to the returned root; localToWorld must not apply the size twice.
   const fittedMaterials = new Set();

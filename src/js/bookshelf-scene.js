@@ -14,7 +14,8 @@ import { createShelfLampLighting } from './shelf-lamp-lighting.js';
 import { createShelfTrash, sampleTrashDrop } from './shelf-trash.js';
 import { createShelfCatalog } from './shelf-catalog.js';
 import { createBaggebo } from './baggebo-model.js';
-import { compilePrograms } from './gpu-programs.js';
+import { compilePrograms, prelinkPrograms } from './gpu-programs.js';
+import { idleSlice } from './idle-startup.js';
 import { BAGGEBO_SPEC, SHELF_SPECS, normalizeShelfType } from './shelf-types.js';
 import { MINIMUM_LAMP_TAP_SIZE, minimumBookTapWidth, nearestTapTarget, padTapRect, padTapSquare } from './plant-dimensions.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -24,7 +25,39 @@ import { createNativeFramebufferCache } from './native-room-cache.js';
 const WALNUT = new URL('../assets/library/walnut-pbr.webp', import.meta.url).href;
 // Packed from the same photograph: R = pore/figure height, G = roughness.
 const WALNUT_SURFACE = new URL('../assets/library/walnut-surface.webp', import.meta.url).href;
+// Where images decode off the main thread, the veneer files are fetched as
+// the app loads (index.html preloads them for exactly this request) and
+// decoded once for every scene. A saved walnut shelf decodes them at once,
+// so the cabinet's first frame already has its wood. The bitmap is flipped
+// exactly as WebGL's UNPACK_FLIP_Y flips an image, unconverted.
+const veneerFiles = new Map(), veneers = new Map();
+const VENEER_BITMAP = { imageOrientation:'flipY', premultiplyAlpha:'none', colorSpaceConversion:'none' };
+const offThreadVeneer = () => typeof createImageBitmap === 'function' && typeof fetch === 'function';
+function veneerFile(url) {
+  let file = veneerFiles.get(url);
+  if (!file) veneerFiles.set(url, file = fetch(url).then(response => {
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.blob();
+  }));
+  return file;
+}
+function veneer(url) {
+  let source = veneers.get(url);
+  if (source) return source;
+  source = { image:undefined, waiting:[] };
+  veneers.set(url, source);
+  const settle = image => { source.image = image; for (const callback of source.waiting.splice(0)) callback(); };
+  veneerFile(url).then(blob => createImageBitmap(blob, VENEER_BITMAP)).then(settle, () => settle(null));
+  return source;
+}
+if (offThreadVeneer()) {
+  veneerFile(WALNUT).catch(() => {}); veneerFile(WALNUT_SURFACE).catch(() => {});
+  try {
+    if (normalizeShelfType(localStorage.getItem('inhouse-read-shelf-type')) === 'walnut') { veneer(WALNUT); veneer(WALNUT_SURFACE); }
+  } catch { /* Without storage the scene decodes the veneer itself. */ }
+}
 const DURATION = 700;
+const VENEER_WAIT = 3000;
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 const ease = t => t * t * t * (t * (t * 6 - 15) + 10);
 const TRASH_PADDING = 7, TRASH_GAP = 12;
@@ -151,15 +184,31 @@ function releaseObject(object) {
   for (const material of materials) material.dispose();
 }
 
+// A missing file must not leave its maps sampling an empty (black) unit:
+// zero roughness would turn the cabinet into a mirror. Flat mean instead.
+function veneerSwatch(map, mean) {
+  const swatch = document.createElement('canvas'), context = swatch.getContext('2d');
+  swatch.width = swatch.height = 1;
+  if (context) { context.fillStyle = mean; context.fillRect(0, 0, 1, 1); }
+  map.image = swatch; map.needsUpdate = true;
+}
+
+/** Give an off-thread `map` its veneer: at once when already decoded
+ * (returns true), else when it arrives, then calling `onLoad`. */
+function loadVeneer(map, url, mean, onLoad) {
+  const source = veneer(url);
+  const apply = () => {
+    if (!source.image) { veneerSwatch(map, mean); return; }
+    map.image = source.image; map.flipY = false; map.needsUpdate = true;
+  };
+  if (source.image !== undefined) { apply(); return true; }
+  source.waiting.push(() => { apply(); onLoad(); });
+  return false;
+}
+
 function walnutTexture(url, renderer, colour, mean, onLoad) {
-  const map = new THREE.TextureLoader().load(url, onLoad, undefined, () => {
-    // A missing file must not leave its maps sampling an empty (black) unit:
-    // zero roughness would turn the cabinet into a mirror. Flat mean instead.
-    const swatch = document.createElement('canvas'), context = swatch.getContext('2d');
-    swatch.width = swatch.height = 1;
-    if (context) { context.fillStyle = mean; context.fillRect(0, 0, 1, 1); }
-    map.image = swatch; map.needsUpdate = true; onLoad();
-  });
+  const map = offThreadVeneer() ? new THREE.Texture()
+    : new THREE.TextureLoader().load(url, onLoad, undefined, () => { veneerSwatch(map, mean); onLoad(); });
   if (colour) map.colorSpace = THREE.SRGBColorSpace;
   map.wrapS = map.wrapT = THREE.RepeatWrapping;
   // Geometry UVs repeat every 160 shelf pixels. The seamless photograph is a
@@ -233,6 +282,18 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   insertionCamera.position.z = 8000;
   const texture = walnutTexture(WALNUT, renderer, true, '#71553f', () => invalidate());
   const grain = walnutTexture(WALNUT_SURFACE, renderer, false, '#759380', () => invalidate());
+  // Only the walnut cabinet draws the veneer; BAGGEBO never loads it. Until it
+  // arrives (or VENEER_WAIT passes) the room is not painted with black boards.
+  let veneerWaits = 0, veneerDeadline = 0, veneerTimer = 0;
+  function useVeneer() {
+    if (!offThreadVeneer()) return;
+    for (const [map, url, mean] of [[texture, WALNUT, '#71553f'], [grain, WALNUT_SURFACE, '#759380']]) {
+      if (map.userData.veneer) continue;
+      map.userData.veneer = true;
+      if (loadVeneer(map, url, mean, () => { veneerWaits--; if (!disposed && shelfType !== 'baggebo') invalidate(); })) continue;
+      veneerWaits++; veneerDeadline = performance.now() + VENEER_WAIT;
+    }
+  }
   // Oiled walnut under a thin satin lacquer: the pores stay open and matte in
   // the base layer while a smooth clearcoat carries the room's reflections.
   // Vertex colours carry each board's own tone, end grain and joint shadow.
@@ -282,6 +343,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   let bookEntries = entries.map(freshEntry);
   const byNode = new Map(bookEntries.filter(entry => entry.node).map(entry => [entry.node, entry]));
   function rebuildFurniture() {
+    if (shelfType !== 'baggebo') useVeneer();
     if (roomKey) roomKey.color.copy(shelfType === 'baggebo' ? new THREE.Color('#ffffff') : roomKeyColor);
     for (const object of [...furniture.children]) if (object.userData.furniture) {
       furniture.remove(object); object.userData.disposeGeometry?.();
@@ -364,7 +426,13 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
     rebuildOcclusion();
   }
+  // Lights and environment are final once the lamps' light pool exists. The
+  // driver links the room's programs while the cabinet, books and plants are
+  // still being built, instead of all of them inside the first render.
+  lampLighting.prepare(bookEntries);
+  prelinkPrograms(renderer, scene, camera, [trash, roomWall].filter(Boolean));
   rebuildFurniture();
+  prelinkPrograms(renderer, scene, camera, furniture.children.filter(child => child !== catalog));
 
   let disposed = false, raf = 0, renderCount = 0, modelCreations = 0, viewportHeight = 1, progress = mode === 'isometric' ? 1 : 0;
   let presentationActive = true, drawPending = true, paintedViewport = null, paintHeld = false;
@@ -373,7 +441,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const paintedAwayEntries = new Set();
   let shelfSnapshotDirty = true, shelfSnapshotRenders = 0;
   // Every program is linked in parallel before the first frame (see gpu-programs.js).
-  let programsReady = null, programsPoll = 0, unpainted = [];
+  let programsReady = null, programsPoll = 0, unpainted = [], catalogPrelinked = false;
   // A scroll only moves the camera: world-space shadows stay valid unless
   // something in the scene changed (or the lighting's fitted window moved).
   let shadowDirty = true, shadowCasters = 0;
@@ -389,8 +457,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const dropGuide = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 2), dropMaterial);
   const dropFoot = new THREE.Mesh(new THREE.BoxGeometry(12, 2, 4), dropMaterial); dropFoot.position.y = 1;
   dropMarker.add(dropGuide, dropFoot); furniture.add(dropMarker);
-  // Link the return depth variants with the first shelf batch, using the
-  // guide's existing geometry; they never add a visible object or render pass.
+  // Link the return depth variants after the first frame, using the guide's
+  // existing geometry; they never add a visible object or render pass.
   const depthWriters = depthOnly.map(material => new THREE.Mesh(dropGuide.geometry, material));
   let dropPosition = null;
   let desiredMode = mode === 'isometric' ? 'isometric' : 'spine';
@@ -733,8 +801,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   };
 
   function makeModel(entry) {
-    const model = entry.kind === 'plant' ? createShelfPlant(entry)
-      : entry.kind === 'lamp' ? createShelfLamp({ lampId:entry.lampId, width:entry.width, height:entry.height, quality:'high', isOn:entry.isOn !== false })
+    const model = entry.kind === 'plant' ? createShelfPlant(entry, { persist:true })
+      : entry.kind === 'lamp' ? createShelfLamp({ lampId:entry.lampId, width:entry.width, height:entry.height, quality:'high', isOn:entry.isOn !== false, persist:true })
       : createBookModel(entry.book, entry.style, entry.width, entry.height, entry.thickness, entry.coverUrl, { shelf:true, overview:entry.overview, inspectionResolution:entry.inspectionResolution });
     // Texture/font decode notifications improve the same artwork. Explicit
     // record/material changes separately invalidate the retained room below.
@@ -1429,8 +1497,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         if (entry.model && !qualityMatches(entry.model,entry)) replaceBookQuality(entry);
         applyBookQuality(entry);
       }
+      let created = null;
       if (visible && !entry.model) {
-        entry.model = makeModel(entry);
+        created = entry.model = makeModel(entry);
         furniture.add(entry.model);
       } else if (!visible && entry.model && !away) {
         releaseEntry(entry);
@@ -1535,6 +1604,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         insertedIds.push(String(entry.book?.id ?? ''));
         overlaying ||= Boolean(entry.insertion.overlayCanvas);
       }
+      // Before the first frame the driver links each new model's programs
+      // while the next models are still being built.
+      if (created?.visible && programsReady !== true) prelinkPrograms(renderer, scene, camera, [created]);
     }
     // Bind native hit surfaces only after all semantic book rectangles are
     // projected, so an overlapping leaf cannot steal a neighboring spine tap.
@@ -2094,6 +2166,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     else if (progress === 1) scroller.scrollTop = 0;
     const { scroll, ratio } = viewport();
     updateCatalog(scroll);
+    // The booklet's visibility depends on the view, known only now.
+    if (catalog && programsReady !== true && !catalogPrelinked) {
+      catalogPrelinked = true;
+      prelinkPrograms(renderer, scene, camera, [catalog]);
+    }
     const finishedInsertions = [];
     const { moving, shelfMoving } = updateEntries(scroll, zoom, now, finishedInsertions);
     const finishedDrops = [];
@@ -2122,7 +2199,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // The models and lamp lights now exist: link their programs in parallel
     // instead of one blocking link per material inside the first render.
     if (programsReady !== true) {
-      programsReady ||= compilePrograms(renderer, scene, camera, [dropGuide, ...depthWriters]);
+      programsReady ||= compilePrograms(renderer, scene, camera);
       if (!programsReady()) {
         // Animations that finished on this unpainted frame resolve after the next painted one.
         unpainted.push(...finishedInsertions, ...finishedDrops);
@@ -2130,6 +2207,16 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         programsPoll ||= setTimeout(pollPrograms, 10); return;
       }
       programsReady = true;
+      // The first frame never draws the drop guide or the return's depth
+      // pass: link them once it is painted, long before a finger needs them.
+      idleSlice().then(() => { if (!disposed) prelinkPrograms(renderer, scene, camera, [dropGuide, ...depthWriters]); });
+    }
+    const veneerWait = veneerWaits && shelfType !== 'baggebo' ? veneerDeadline - performance.now() : 0;
+    if (veneerWait > 0) {
+      unpainted.push(...finishedInsertions, ...finishedDrops);
+      drawPending = true;
+      veneerTimer ||= setTimeout(() => { veneerTimer = 0; invalidate(false); }, veneerWait);
+      return;
     }
     // Fit the key's shadow to the cabinet (and bin) in world space; the
     // lighting clips it to the camera window, so each texel covers less.
@@ -2939,6 +3026,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       scroller.removeEventListener('scroll', scrolled); window.removeEventListener('resize', invalidate);
       document.removeEventListener('visibilitychange', presentationChanged);
       if (programsPoll) clearTimeout(programsPoll);
+      clearTimeout(veneerTimer);
       for (const entry of bookEntries) releaseEntry(entry);
       releaseCompletedLegacyInsertions();
       for(const unbind of nativeSnapshotBindings)unbind();

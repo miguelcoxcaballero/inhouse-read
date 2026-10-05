@@ -115,5 +115,6 @@ export const SUPERTONIC_LICENSE = Object.freeze({name:'OpenRAIL-M',url:SUPERTONI
 export const isSupertonicVoiceId = id => typeof id === 'string' && /^supertonic3:([FM][1-5]):[a-z]{2}$/.test(id);
 export function supertonicVoicesFor(languages) {
   const unique=[...new Set(languages.map(lang => String(lang).split(/[-_]/)[0]))].filter(lang => SUPERTONIC_LANGUAGES.includes(lang));
-  return unique.flatMap(lang => SUPERTONIC_STYLES.map(style => ({id:`supertonic3:${style}:${lang}`, modelId:SUPERTONIC_MODEL_ID, modelKey:SUPERTONIC_MODEL_ID, piperId:SUPERTONIC_MODEL_ID, runtime:'supertonic3', provider:'supertonic',lang,style,name:`Supertonic ${style}`,quality:'natural',sizeMB:Math.ceil(SUPERTONIC_BYTES/1e6),downloadBytes:SUPERTONIC_BYTES,upgradeBytes:SUPERTONIC_BYTES-SUPERTONIC_LEGACY_ASSETS.reduce((sum,a)=>sum+a.bytes,0),licenseUrl:'licenses/supertonic3-OpenRAIL-M.txt',sharedPack:true})));
+  const upgradeBytes=SUPERTONIC_BYTES-SUPERTONIC_LEGACY_ASSETS.reduce((sum,a)=>sum+a.bytes,0);
+  return unique.flatMap(lang => SUPERTONIC_STYLES.map(style => ({id:`supertonic3:${style}:${lang}`, modelId:SUPERTONIC_MODEL_ID, modelKey:SUPERTONIC_MODEL_ID, piperId:SUPERTONIC_MODEL_ID, runtime:'supertonic3', provider:'supertonic',lang,style,name:`Supertonic ${style}`,quality:'natural',sizeMB:Math.ceil(SUPERTONIC_BYTES/1e6),downloadBytes:SUPERTONIC_BYTES,upgradeBytes,licenseUrl:'licenses/supertonic3-OpenRAIL-M.txt',sharedPack:true})));
 }

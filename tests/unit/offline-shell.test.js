@@ -58,13 +58,16 @@ describe('atomic offline app shell',()=>{
   })
   it.each(['http','checksum','size','quota'])('preserves the previous complete shell when a %s install fails',async failure=>{
     const h=harness('old');await h.worker.install()
-    const next=createOfflineShell(h.scope,{...h.manifest,version:'new'})
+    // The deploy changed this chunk, so it has to come from the network.
+    const changed='export const reader=2'
+    const next=createOfflineShell(h.scope,{...h.manifest,version:'new',entries:h.manifest.entries.map(entry=>entry.path==='assets/reader-new.js'?{path:entry.path,bytes:Buffer.byteLength(changed),sha256:hash(changed)}:entry)})
     const original=h.scope.fetch.getMockImplementation()
     h.scope.fetch.mockImplementation(async req=>{
       if(String(req).endsWith('reader-new.js')) {
         if(failure==='http')return new Response('',{status:503})
-        if(failure==='checksum')return new Response('x'.repeat(Buffer.byteLength(source['assets/reader-new.js'])))
+        if(failure==='checksum')return new Response('x'.repeat(Buffer.byteLength(changed)))
         if(failure==='size')return new Response('short')
+        return new Response(changed)
       }
       return original(req)
     })
@@ -91,22 +94,60 @@ describe('atomic offline app shell',()=>{
     expect(await h.scope.caches.keys()).toEqual(expect.arrayContaining([previous.cacheName,current.cacheName,'inhouse-piper-models','inhouse-supertonic3-v1']))
     expect(h.maps.has(h.worker.cacheName)).toBe(false)
   })
-  it('uses fresh online navigation despite a cached index, including cache-busting query strings',async()=>{
+  it('opens a launch from the complete shell without the network, including cache-busting query strings',async()=>{
+    const h=harness();await h.worker.install();h.scope.fetch.mockClear()
+    h.scope.fetch.mockResolvedValue(new Response('new deployment'))
+    for(const path of ['?t=222','?inhouse_app=1&t=333','index.html'])
+      expect(await(await h.worker.handle(request(path,{mode:'navigate'}))).text()).toBe(source['index.html'])
+    expect(h.scope.fetch).not.toHaveBeenCalled()
+  })
+  it.each(['no-cache','reload','no-store'])('revalidates a %s reload against the network and falls back to the shell offline',async cache=>{
     const h=harness();await h.worker.install()
     h.scope.fetch.mockResolvedValue(new Response('new deployment'))
-    expect(await(await h.worker.handle(request('?t=222',{mode:'navigate'}))).text()).toBe('new deployment')
+    expect(await(await h.worker.handle(request('?t=222',{mode:'navigate',cache}))).text()).toBe('new deployment')
     expect(h.scope.fetch).toHaveBeenLastCalledWith(expect.objectContaining({url:url('?t=222')}),{cache:'no-store'})
+    h.scope.fetch.mockRejectedValue(new Error('offline'))
+    expect(await(await h.worker.handle(request('?t=223',{mode:'navigate',cache}))).text()).toBe(source['index.html'])
+  })
+  it('keeps the download page network-first',async()=>{
+    const h=harness('current',{...source,'download-android.html':'download'});await h.worker.install()
+    h.scope.fetch.mockResolvedValue(new Response('download, deployed'))
+    expect(await(await h.worker.handle(request('download-android.html',{mode:'navigate'}))).text()).toBe('download, deployed')
   })
   it('does not downgrade a new online app on a subsequent cold offline navigation, even under the older worker',async()=>{
     const h=harness('previous');await h.worker.install();await new Promise(resolve=>setTimeout(resolve,2))
     const files={'index.html':'latest shell','assets/main-next.js':'next'}
     const next=createOfflineShell(h.scope,{...h.manifest,version:'next',entries:Object.entries(files).map(([path,body])=>({path,bytes:body.length,sha256:hash(body)}))})
     h.scope.fetch.mockImplementation(async req=>new Response(files[new URL(typeof req==='string'?req:req.url).pathname.slice('/inhouse-read/'.length)||'index.html']))
-    expect(await(await h.worker.handle(request('?t=33',{mode:'navigate'}))).text()).toBe('latest shell')
+    expect(await(await h.worker.handle(request('?t=33',{mode:'navigate',cache:'no-cache'}))).text()).toBe('latest shell')
     await next.install()
+    expect(await(await h.worker.handle(request('?t=34',{mode:'navigate'}))).text()).toBe('latest shell')
     h.scope.fetch.mockRejectedValue(new Error('offline'))
     expect(await(await h.worker.handle(request('?t=44',{mode:'navigate'}))).text()).toBe('latest shell')
     expect(await(await h.worker.handle(request('assets/main-next.js'))).text()).toBe('next')
+  })
+  it('downloads only the files a deploy changed and copies the rest from the previous shell',async()=>{
+    const h=harness('previous');await h.worker.install();await new Promise(resolve=>setTimeout(resolve,2))
+    const files={...source,'index.html':'<script src="assets/main-next.js"></script>','assets/main-next.js':'next'}
+    delete files['assets/main-new.js']
+    const next=createOfflineShell(h.scope,{...h.manifest,version:'next',entries:Object.entries(files).map(([path,body])=>({path,bytes:Buffer.byteLength(body),sha256:hash(body)}))})
+    h.scope.fetch.mockClear().mockImplementation(async req=>new Response(files[new URL(typeof req==='string'?req:req.url).pathname.slice('/inhouse-read/'.length)]))
+    await next.install()
+    expect(h.scope.fetch.mock.calls.map(([req])=>String(req)).sort()).toEqual([url('assets/main-next.js'),url('index.html')])
+    await next.activate();h.scope.fetch.mockRejectedValue(new Error('offline'))
+    expect(await next.status()).toMatchObject({ready:true,entries:4})
+    for(const path of ['assets/reader-new.js','neural-voice/ort/ort.wasm.min.mjs','assets/main-next.js'])
+      expect(await(await next.handle(request(path))).text()).toBe(files[path])
+    expect(await(await next.handle(request('',{mode:'navigate'}))).text()).toBe(files['index.html'])
+  })
+  it('re-downloads a file whose copy in the previous shell no longer matches its hash',async()=>{
+    const h=harness('previous');await h.worker.install();await new Promise(resolve=>setTimeout(resolve,2))
+    await (await h.scope.caches.open(h.worker.cacheName)).put(url('assets/reader-new.js'),new Response('export const reader=!0'))
+    const next=createOfflineShell(h.scope,{...h.manifest,version:'next'})
+    h.scope.fetch.mockClear();await next.install()
+    expect(h.scope.fetch.mock.calls.map(([req])=>String(req))).toEqual([url('assets/reader-new.js')])
+    h.scope.fetch.mockRejectedValue(new Error('offline'))
+    expect(await(await next.handle(request('assets/reader-new.js'))).text()).toBe(source['assets/reader-new.js'])
   })
   it('reopens offline root/index with arbitrary query and serves the download page only for its own navigation',async()=>{
     const h=harness('current',{...source,'download-android.html':'download'});await h.worker.install()
