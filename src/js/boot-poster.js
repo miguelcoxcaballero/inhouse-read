@@ -73,9 +73,13 @@ export function bootKey() {
 const isBlob = value => /^\[object (Blob|File)\]$/.test(Object.prototype.toString.call(value))
 
 /** Firma de lo que cambia el dibujo de la estantería (no la sincronización). */
+// Reading moves these on every session: a poster must survive reading a book. Progress only counts as "started or not"
+// (the bookmark ribbon appears once there is progress); its exact length is not worth losing the poster over.
+const READING_FIELDS = new Set(['lastOpenedAt', 'progressFraction'])
 export function librarySignature(books) {
   const text = JSON.stringify((books || []).map(book => Object.fromEntries(Object.entries(book || {})
-    .filter(([key]) => !METADATA_FIELDS.has(key))
+    .filter(([key]) => !METADATA_FIELDS.has(key) && !READING_FIELDS.has(key))
+    .concat([['hasProgress', Number(book?.progressFraction) > 0]])
     .map(([key, value]) => [key, isBlob(value) ? `blob:${value.size}:${value.type}` : value]))),
   (_, value) => isBlob(value) ? `blob:${value.size}:${value.type}` : value)
   return hashString(text) + ':' + (books?.length || 0)

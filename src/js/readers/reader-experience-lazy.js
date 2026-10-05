@@ -1,4 +1,5 @@
 import { normalizeReadingPreferences } from './reading-preferences.js'
+import { reloadOnceAfterChunkFailure } from '../chunk-recovery.js'
 
 const STORAGE_KEY = 'inhouse-read-reading-preferences'
 
@@ -22,7 +23,7 @@ export function createLazyReaderExperience(reader, options) {
   const load = () => loading ||= import('./reader-experience.js').then(({ ReaderExperience }) => {
     experience ||= new ReaderExperience(reader, options)
     return experience
-  }).catch(error => { loading = null; throw error })
+  }).catch(error => { loading = null; reloadOnceAfterChunkFailure(); throw error })
   return {
     ready: load,
     prefetch() { return load().catch(() => null) },

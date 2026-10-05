@@ -83,6 +83,13 @@ describe('library signature', () => {
     expect(librarySignature([])).not.toBe(base)
   })
 
+  it('survives reading a book: progress and last-opened changes keep the poster, starting a book does not', () => {
+    const started = { ...book, progressFraction: 0.2, lastOpenedAt: 10 }
+    const base = librarySignature([started])
+    expect(librarySignature([{ ...started, progressFraction: 0.65, lastOpenedAt: 99 }])).toBe(base)
+    expect(librarySignature([{ ...book, progressFraction: 0, lastOpenedAt: 10 }])).not.toBe(base)
+  })
+
   it('records the signature once and drops a visible poster when it really changed', () => {
     recordLibrary([book])
     const first = localStorage.getItem(LIBRARY_SIG_KEY)

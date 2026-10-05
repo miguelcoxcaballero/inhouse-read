@@ -1,3 +1,5 @@
+import { reloadOnceAfterChunkFailure } from './chunk-recovery.js'
+
 /**
  * The IKEA catalogue (dialog, drawings, three.js previews) is only needed once
  * somebody taps the catalogue button, so its code is a separate chunk that is
@@ -6,7 +8,7 @@
 let modulePromise = null, loadedModule = null
 export function loadPlantCatalogModule() {
   return modulePromise ||= import('./plant-catalog.js').then(module => loadedModule = module)
-    .catch(error => { modulePromise = null; throw error })
+    .catch(error => { modulePromise = null; reloadOnceAfterChunkFailure(); throw error })
 }
 
 export function createLazyPlantCatalog(options = {}) {
