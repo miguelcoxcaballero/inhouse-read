@@ -7,6 +7,27 @@
   <title>Inhouse Read</title>
   <meta name="description" content="Inhouse Read — lector de PDF, ePub y MOBI." />
 
+  <style id="boot-css">
+    /* First-launch skeleton: a CSS-only walnut cabinet under the header, shown
+       until the live shelf paints its first frame (see boot-poster.js). */
+    html.ihr-boot-skeleton #home-screen::before {
+      content: ''; position: absolute; inset: 14px 0 0 0; z-index: 1; pointer-events: none;
+      background:
+        linear-gradient(#6b4a33, #6b4a33) 0 0 / 100% 18px no-repeat,
+        linear-gradient(#6b4a33, #6b4a33) 0 33% / 100% 14px no-repeat,
+        linear-gradient(#6b4a33, #6b4a33) 0 66% / 100% 14px no-repeat,
+        linear-gradient(#6b4a33, #6b4a33) 0 100% / 100% 14px no-repeat,
+        linear-gradient(90deg, #6b4a33 0 16px, transparent 16px calc(100% - 16px), #6b4a33 calc(100% - 16px)),
+        repeating-linear-gradient(90deg, #4a3223 0 24%, #54392a 24% 25%);
+    }
+    html.ihr-boot-skeleton-out #home-screen::before { opacity: 0; transition: opacity .2s ease-out; }
+    #boot-pill {
+      position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 3; transform: translateX(-50%);
+      padding: 8px 14px; border-radius: 999px; background: rgba(28, 28, 28, .88); color: #fff;
+      font: 500 .85rem/1.2 system-ui, sans-serif; pointer-events: none;
+    }
+  </style>
+
   <link rel="preload" as="image" href="/inhouse-read/assets/walnut-pbr-pbhFr_5Z.webp" crossorigin="anonymous" />
   <link rel="preload" as="image" href="/inhouse-read/assets/walnut-surface-Doc91G_f.webp" crossorigin="anonymous" />
 
@@ -16,19 +37,77 @@
     // Google Identity Services only serves the web sign-in popup. The Android
     // shell signs in natively (PKCE), so its WebView skips downloading and
     // running the library while the shelf is starting.
+    // It is a third-party script of its own to download and run, so it waits
+    // until the page has loaded and the browser is idle (the Drive button says
+    // "Google está cargando" if somebody is quicker than that).
     if (!/\bInhouseReadApp\/\d/i.test(navigator.userAgent)) {
-      const gsi = document.createElement('script')
-      gsi.src = 'https://accounts.google.com/gsi/client'; gsi.async = true
-      document.head.append(gsi)
+      const loadGsi = () => {
+        const gsi = document.createElement('script')
+        gsi.src = 'https://accounts.google.com/gsi/client'; gsi.async = true
+        document.head.append(gsi)
+      }
+      const whenIdle = () => ('requestIdleCallback' in window ? requestIdleCallback(loadGsi, { timeout: 4000 }) : setTimeout(loadGsi, 1500))
+      if (document.readyState === 'complete') whenIdle()
+      else addEventListener('load', whenIdle, { once: true })
     }
   </script>
 
-  <script type="module" crossorigin src="/inhouse-read/assets/main-dQzxZSHc.js"></script>
+  <script type="module" crossorigin src="/inhouse-read/assets/main-DwF1Dq7j.js"></script>
   <link rel="modulepreload" crossorigin href="/inhouse-read/assets/base-COVc8yu5.js">
+  <link rel="modulepreload" crossorigin href="/inhouse-read/assets/three-DJwwKMir.js">
   <link rel="stylesheet" crossorigin href="/inhouse-read/assets/base-COHSqPRx.css">
   <link rel="stylesheet" crossorigin href="/inhouse-read/assets/main-B4s2dRvI.css">
 </head>
 <body>
+  <script>
+    // Boot poster (see src/js/boot-poster.js): before any stylesheet-dependent
+    // work or the bundle, apply the saved theme and paint the last settled
+    // shelf. The key below must stay identical to bootKey() in boot-poster.js.
+    (function () {
+      var doc = document, root = doc.documentElement, boot = window.__ihrBoot = { build: '1.7.72', tap: null }
+      function read(name) { try { return localStorage.getItem(name) } catch (e) { return null } }
+      var theme = read('inhouse-read-theme')
+      if (theme === null) theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+      root.setAttribute('data-theme', theme)
+      function hash(text) {
+        var h = 0x811c9dc5
+        for (var i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) }
+        return (h >>> 0).toString(16)
+      }
+      try {
+        var probe = doc.createElement('div')
+        probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)'
+        doc.body.appendChild(probe)
+        var cs = getComputedStyle(probe), insets = [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft].join(',')
+        probe.remove()
+        var key = hash([boot.build, theme, read('inhouse-read-shelf-view'), read('inhouse-read-shelf-type'),
+          read('inhouse-read-shelf-plants'), read('inhouse-read-shelf-lamps'), read('ihr-lib-sig'),
+          window.devicePixelRatio || 1, innerWidth, innerHeight, insets].join('\u0001'))
+        var meta = JSON.parse(read('ihr-poster-meta') || 'null'), src = meta && meta.k === key ? read('ihr-poster-img') : null
+        if (src && src.slice(0, 15) === 'data:image/webp') {
+          var img = doc.createElement('img'), c = meta.c || [0, 0, 0, 0]
+          img.id = 'boot-poster'; img.alt = ''; img.decoding = 'sync'; img.draggable = false
+          img.setAttribute('aria-hidden', 'true')
+          img.style.cssText = 'position:fixed;z-index:1;left:' + meta.x + 'px;top:' + meta.y + 'px;width:' + meta.w + 'px;height:' + meta.h +
+            'px;clip-path:inset(' + c[0] + 'px ' + c[1] + 'px ' + c[2] + 'px ' + c[3] + 'px);transition:opacity .2s ease-out;user-select:none;-webkit-user-drag:none;touch-action:none'
+          img.src = src
+          // Taps before the shelf exists are remembered and replayed once it is live.
+          img.addEventListener('click', function (event) {
+            boot.tap = { x: event.clientX, y: event.clientY, t: Date.now() }
+            if (doc.getElementById('boot-pill')) return
+            var pill = doc.createElement('div')
+            pill.id = 'boot-pill'; pill.setAttribute('role', 'status'); pill.textContent = 'Preparando la estantería…'
+            doc.body.appendChild(pill)
+            setTimeout(function () { pill.remove() }, 2500)
+          })
+          doc.body.appendChild(img)
+          boot.poster = true
+          return
+        }
+      } catch (e) { /* no poster: the skeleton below */ }
+      root.classList.add('ihr-boot-skeleton')
+    })()
+  </script>
   <div class="app-shell">
     <header class="app-header">
       <span class="logo">
