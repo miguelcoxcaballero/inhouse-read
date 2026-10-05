@@ -45,7 +45,10 @@ El diagnóstico separado SwiftShader/CDP conserva alineado FAILED global30
 y fraccional PASS. Las muestras propias del setter bajan de 6.549/5.790 ms
 a 1.879/1.723 ms en esos recorridos; siguen quedando llamadas de codificación
 JPEG y lectura del tono de la página costosas. Son observaciones diagnósticas,
-no FPS de un teléfono ni aprobación de CI. CI70 `37297764955` sigue en curso.
+no FPS de un teléfono ni aprobación de CI. CI70 `37297764955` sigue en curso;
+el artefacto original autenticado de UI3 conserva 40 casos, 42 intentos,
+dos retries y cuatro intentos fallidos en los dos contratos nativos
+(timeout global de 30 s). Los otros 38 casos pasan; no se reclasifica el grupo.
 Las aserciones y plazos originales de las pruebas existentes se conservan.
 
 Evidencia: `.animation.local/performance-1770/`; diagnóstico original y

@@ -1,4 +1,15 @@
-# Verificación del WIP — web 1.7.71 y Android 1.1.4
+# Verificación del WIP — web 1.7.72 y Android 1.1.4
+
+## Tono de página de 1.7.72
+
+El modelo reutiliza sólo la medición del margen para copias del mismo
+raster PDF completado, con dimensiones y filtro idénticos. Se invalida
+al navegar, renderizar, cambiar tema, zoom, brillo, tamaño o cerrar.
+La copia de los píxeles y su calidad permanecen iguales; no se conserva
+otro bitmap. Pasan 3.265 unitarias/254 archivos, build, 75 Python y siete
+recorridos gráficos originales sin retries u omisiones. Cierres completos:
+5.721,2/4.738,0 ms, dentro de 8 s. Publicación y comprobación pública
+pendientes aquí. Detalle en [Tono de página de 1.7.72](performance-1772.md).
 
 ## Portadas PDF de 1.7.71
 
@@ -8,7 +19,10 @@ las dimensiones; hay cancelación y fallback al encoder original. Cuatro
 portadas reales producen exactamente los mismos bytes JPEG en Chromium.
 Pasan 3.252 unitarias/254 archivos, build, 75 Python y los siete recorridos
 gráficos originales sin retries ni omisiones. Cierres: 4.830,6/5.482,3 ms.
-El despliegue y sus verificaciones públicas quedan pendientes aquí.
+Publicada: HTTP26/offline90, APK/loader reales, tres recorridos públicos
+nativo/editor y 18 PDF PASS. El lector PDF genera su portada con el worker
+publicado sin Internet y sin fallback. El diagnóstico SwiftShader/CDP
+mantiene un fallo fraccional de cierre; CI71 completo sigue en curso.
 Detalle en [Portadas PDF y rendimiento de 1.7.71](performance-1771.md).
 
 ## Reserva del encuadre de 1.7.70

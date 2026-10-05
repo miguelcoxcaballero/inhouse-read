@@ -228,6 +228,107 @@ describe('PDF usable viewport', () => {
   })
 })
 
+describe('PDF snapshot tone identities', () => {
+  it('keeps fresh pixel copies and bounds while identifying an unchanged settled raster', async () => {
+    const reader = new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    const first = await reader.getPageSnapshot(), next = await reader.getPageSnapshot()
+    expect(next.source).not.toBe(first.source)
+    expect(next.paper.source).not.toBe(first.paper.source)
+    expect(next.toneKey).toBe(first.toneKey)
+    expect(next.paper.toneKey).toBe(first.paper.toneKey)
+    expect(next.toneKey).not.toBe(next.paper.toneKey)
+    expect(Object.isFrozen(next.toneKey)).toBe(true)
+    expect(Object.keys(next.toneKey)).toEqual([])
+    reader.close()
+  })
+
+  it('invalidates both tone identities when the effective brightness filter changes', async () => {
+    const reader = new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    const first = await reader.getPageSnapshot()
+    container.style.filter = 'brightness(0.6)'
+    const next = await reader.getPageSnapshot()
+    expect(next.toneKey).not.toBe(first.toneKey)
+    expect(next.paper.toneKey).not.toBe(first.paper.toneKey)
+    expect(contexts.get(next.source).filter).toContain('brightness(0.6)')
+    reader.close()
+  })
+
+  it('invalidates after a theme repaint even when PDF page rendering is reused', async () => {
+    const reader = new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    const first = await reader.getPageSnapshot()
+    await reader.applyPreferences({theme:'sepia'})
+    const next = await reader.getPageSnapshot()
+    expect(next.toneKey).not.toBe(first.toneKey)
+    expect(next.paper.toneKey).not.toBe(first.paper.toneKey)
+    reader.close()
+  })
+
+  it('never reuses a tone identity across navigation, including a return to the same page', async () => {
+    const reader = new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    const first = await reader.getPageSnapshot()
+    await reader.goToPage(2)
+    const second = await reader.getPageSnapshot()
+    await reader.goToPage(1)
+    const returned = await reader.getPageSnapshot()
+    expect(second.toneKey).not.toBe(first.toneKey)
+    expect(returned.toneKey).not.toBe(first.toneKey)
+    expect(returned.toneKey).not.toBe(second.toneKey)
+    reader.close()
+  })
+
+  it('invalidates when zoom changes the raster', async () => {
+    const reader = new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    const first = await reader.getPageSnapshot()
+    await reader.applyPreferences({zoom:150})
+    expect((await reader.getPageSnapshot()).toneKey).not.toBe(first.toneKey)
+    reader.close()
+  })
+
+  it('invalidates if the underlying canvas dimensions change without a new render promise', async () => {
+    const reader = new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    const first = await reader.getPageSnapshot()
+    container.querySelector('canvas').width += 1
+    expect((await reader.getPageSnapshot()).toneKey).not.toBe(first.toneKey)
+    reader.close()
+  })
+
+  it('releases its tone identities when closing and reopening the reader', async () => {
+    const reader = new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    const first = await reader.getPageSnapshot()
+    reader.close()
+    await reader.open(container,new ArrayBuffer(0))
+    expect((await reader.getPageSnapshot()).toneKey).not.toBe(first.toneKey)
+    reader.close()
+  })
+
+  it('keeps adaptable DOM snapshots on the existing per-source colour sampling path', async () => {
+    const reader = new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    await reader.applyPreferences({pdfMode:'text'})
+    const rangePrototype = Object.getPrototypeOf(document.createRange())
+    rangePrototype.getClientRects = function () {
+      return [{left:this.startOffset * 10,top:90,width:(this.endOffset-this.startOffset)*10,height:20,
+        right:this.endOffset * 10,bottom:110}]
+    }
+    try {
+      const snapshot = await reader.getPageSnapshot()
+      expect(snapshot.sourceType).toBe('pdf-text')
+      expect(snapshot.toneKey).toBeUndefined()
+      expect(snapshot.paper.toneKey).toBeUndefined()
+    } finally {
+      delete rangePrototype.getClientRects
+      reader.close()
+    }
+  })
+})
+
 describe('PDF search excerpts', () => {
   it('cuts the context at word boundaries and returns the match separately', async () => {
     const long = 'Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore quiet room another chapter et dolore magna aliqua ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo'

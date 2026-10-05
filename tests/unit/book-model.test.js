@@ -703,6 +703,56 @@ describe('real shelf book materials', () => {
     expect(model.userData.setPageSnapshot(snapshot)).toBe(false);
   });
 
+  it('reuses the exact sampled paper colour across fresh copies carrying the same settled-raster token', () => {
+    const context = canvasContext();
+    context.getImageData.mockImplementation((_x, _y, w, h) => ({ data:new Uint8ClampedArray(Array.from({ length:w * h }, () => [220, 210, 195, 255]).flat()) }));
+    const model = createBookModel(book, style, 132, 200, 40, null), toneKey = Object.freeze({});
+    const source = () => Object.assign(document.createElement('canvas'), { width:400, height:600 });
+    model.userData.setPageSnapshot({ source:source(), width:400, height:600, toneKey });
+    const colour = model.getObjectByName('reading-page-paper').material.color.clone();
+    model.userData.setPageSnapshot({ source:source(), width:400, height:600, toneKey });
+    expect(context.getImageData).toHaveBeenCalledOnce();
+    expect(model.getObjectByName('reading-page-paper').material.color).toEqual(colour);
+    expect(colour).toEqual(new THREE.Color().setRGB(220 / 255, 210 / 255, 195 / 255, THREE.SRGBColorSpace));
+    model.userData.dispose();
+  });
+
+  it('keeps reader-theme and physical-stock tone tokens independent', () => {
+    const context = canvasContext(), model = createBookModel(book, style, 132, 200, 40, null);
+    const theme = {}, stock = {}, source = () => Object.assign(document.createElement('canvas'), { width:400, height:600 });
+    const snapshot = () => ({ source:source(), width:400, height:600, toneKey:theme, paper:{ source:source(), width:400, height:600, toneKey:stock } });
+    model.userData.setPageSnapshot(snapshot()); model.userData.setPageSnapshot(snapshot());
+    expect(context.getImageData).toHaveBeenCalledTimes(2);
+    model.userData.dispose();
+  });
+
+  it('samples the new exact margin colour when the settled raster token changes', () => {
+    const context = canvasContext(), model = createBookModel(book, style, 132, 200, 40, null);
+    let rgb = [220, 210, 195];
+    context.getImageData.mockImplementation((_x, _y, w, h) => ({ data:new Uint8ClampedArray(Array.from({ length:w * h }, () => [...rgb, 255]).flat()) }));
+    const source = Object.assign(document.createElement('canvas'), { width:400, height:600 });
+    model.userData.setPageSnapshot({ source, width:400, height:600, toneKey:{} });
+    rgb = [30, 35, 40];
+    model.userData.setPageSnapshot({ source, width:400, height:600, toneKey:{} });
+    expect(context.getImageData).toHaveBeenCalledTimes(2);
+    expect(model.getObjectByName('reading-page-paper').material.color).toEqual(new THREE.Color().setRGB(30 / 255, 35 / 255, 40 / 255, THREE.SRGBColorSpace));
+    model.userData.dispose();
+  });
+
+  it('preserves per-source sampling for snapshots without a valid reader token', () => {
+    const context = canvasContext(), model = createBookModel(book, style, 132, 200, 40, null);
+    for (const toneKey of [undefined, 'invalid', 3]) model.userData.setPageSnapshot({ source:Object.assign(document.createElement('canvas'), { width:400, height:600 }), width:400, height:600, toneKey });
+    expect(context.getImageData).toHaveBeenCalledTimes(3);
+    model.userData.dispose();
+  });
+
+  it('caches a null paper-tone decision without repeating a GPU readback', () => {
+    const context = canvasContext(), model = createBookModel(book, style, 132, 200, 40, null), toneKey = {};
+    for (let i = 0; i < 2; i++) model.userData.setPageSnapshot({ source:Object.assign(document.createElement('canvas'), { width:400, height:600 }), width:400, height:600, toneKey });
+    expect(context.getImageData).toHaveBeenCalledOnce();
+    model.userData.dispose();
+  });
+
   it('projects the fitted saved image bounds instead of the outer cover with its paper margins', () => {
     canvasContext();
     const model = createBookModel(book, style, 132, 200, 40, null);

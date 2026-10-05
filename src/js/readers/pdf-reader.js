@@ -53,6 +53,7 @@ export class PdfReader {
   #resizeTimer
   #layoutWidth = 0
   #imageLayouts = new WeakMap()
+  #snapshotToneState
   #lengthMetadata
   #textOffset = 0
   #textHeight = 0
@@ -753,6 +754,7 @@ export class PdfReader {
     if (textMode) { this.#settleTextResize(); this.#rememberTextPosition() }
     // Physical white pages blend into the current reader theme on opening.
     const theme = READING_THEMES[this.#preferences.theme]
+    const canvasFilter = textMode ? null : renderedPageFilter(this.#canvas)
     const snapshot = textMode
       ? await snapshotDOMPage(this.#reflow, {
         paper:{ background:'#ffffff', color:'#292821', themeColor:theme.color },
@@ -763,10 +765,25 @@ export class PdfReader {
         filter:renderedPageFilter(this.#reflow)
       })
       : snapshotCanvas(this.#canvas, {
-        filter:renderedPageFilter(this.#canvas), displayBounds:this.#canvas.getBoundingClientRect(),
+        filter:canvasFilter, displayBounds:this.#canvas.getBoundingClientRect(),
         paper:true, paperSource:this.#renderState?.originalCanvas || this.#canvas
       })
     if (!snapshot || !this.#doc || page !== this.#pageNum) return null
+    if (!textMode) {
+      // Each snapshot still owns fresh copies of the exact page pixels. Reuse
+      // only its margin-colour measurement while the settled raster, source
+      // dimensions and applied filter remain identical. Navigation, rendering,
+      // zoom, theme or brightness changes invalidate both opaque tokens.
+      const original = this.#renderState?.originalCanvas || this.#canvas
+      const facts = [this.#doc, pending, this.#renderToken, this.#canvas,
+        this.#canvas.width, this.#canvas.height, original, original.width,
+        original.height, canvasFilter]
+      if (!this.#snapshotToneState || facts.some((value, i) => value !== this.#snapshotToneState.facts[i])) {
+        this.#snapshotToneState = { facts, theme:Object.freeze({}), paper:Object.freeze({}) }
+      }
+      snapshot.toneKey = this.#snapshotToneState.theme
+      if (snapshot.paper) snapshot.paper.toneKey = this.#snapshotToneState.paper
+    } else this.#snapshotToneState = undefined
     return { ...snapshot, engine:'pdf', sourceType:textMode ? 'pdf-text' : 'pdf-canvas',
       text:snapshot.text || this.#pageText, label:`Página ${page} de ${this.pageCount}`,
       location:{ fraction:(page - 1) / Math.max(1, this.pageCount - 1), locator:{ kind:'pdf-page', value:page,
@@ -897,6 +914,7 @@ export class PdfReader {
     this.#loadingTask = null
     this.#doc = null
     this.#imageLayouts = new WeakMap()
+    this.#snapshotToneState = undefined
     this.#pageText = ''
     if (this.#container) {
       this.#container.innerHTML = ''

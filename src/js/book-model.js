@@ -648,8 +648,11 @@ function satinRibbon(finished, silk, shelf = false) {
 // The paper the reader shows: the median of the snapshot's outer ring, so the
 // leaves already read and the margin around the saved page are one stock.
 const paperTones = new WeakMap();
-function paperTone(source) {
-  if (paperTones.has(source)) return paperTones.get(source);
+function paperTone(source, toneKey) {
+  // A reader may identify copied snapshots of the same settled raster. The
+  // opaque token retains only the sampled colour, never another page bitmap.
+  const key = toneKey && (typeof toneKey === 'object' || typeof toneKey === 'function') ? toneKey : source;
+  if (paperTones.has(key)) return paperTones.get(key);
   let tone = null;
   try {
     const n = 12, canvas = Object.assign(document.createElement('canvas'), { width:n, height:n });
@@ -668,7 +671,7 @@ function paperTone(source) {
       tone = new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace);
     }
   } catch { /* a tainted or unreadable source keeps the default paper */ }
-  paperTones.set(source, tone);
+  paperTones.set(key, tone);
   return tone;
 }
 // The saved page is unlit; under lightBookScene the fully turned leaf shows
@@ -1132,8 +1135,8 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     }
     if (initialTheme != null) pageTheme = Math.max(0, Math.min(1, Number(initialTheme) || 0));
     // Match the reader's snapshot; ordinary unthemed book paper stays white.
-    themeTone = paperTone(snapshot.source);
-    stockTone = sameSize ? paperTone(variant.source) : null;
+    themeTone = paperTone(snapshot.source, snapshot.toneKey);
+    stockTone = sameSize ? paperTone(variant.source, variant.toneKey) : null;
     if (stockImage.visible) applyPageTheme();
     else if (themeTone) { pagePaper.material.color.copy(themeTone); leafPaper?.color.copy(themeTone).multiply(LEAF_LIGHT); }
     group.userData.pageSnapshot = snapshot;
