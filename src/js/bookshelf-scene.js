@@ -441,8 +441,26 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       try {
         nativeFrameCache.repaint(nativeBaseFrame);
         rawContext.clearRect(0,0,canvas.width,canvas.height);
-        rawContext.drawImage(renderer.domElement,nativeBaseMargin*nativeBaseFrame.ratio,nativeBaseMargin*nativeBaseFrame.ratio,
-          canvas.width,canvas.height,0,0,canvas.width,canvas.height);
+        if (nativeBaseFrame.physical && !nativeBaseMargin) {
+          // Preserve the public ceil-sized export, including the original
+          // floor-to-ceil resample, without performing it on displayed frames.
+          rawContext.drawImage(renderer.domElement,0,0,canvas.width,canvas.height);
+        } else if (nativeBaseFrame.physical) {
+          // The original overscan export first scaled the complete GL source
+          // to its ceil-sized 2D tile, then cropped that tile into the base.
+          const tile=document.createElement('canvas');
+          tile.width=Math.ceil(nativeBaseFrame.width*nativeBaseFrame.ratio);tile.height=Math.ceil(nativeBaseFrame.height*nativeBaseFrame.ratio);
+          try {
+            const tileContext=tile.getContext('2d');
+            if(!tileContext)throw new Error('Native room crop export requires a 2D context');
+            tileContext.drawImage(renderer.domElement,0,0,tile.width,tile.height);
+            rawContext.drawImage(tile,nativeBaseMargin*nativeBaseFrame.ratio,nativeBaseMargin*nativeBaseFrame.ratio,
+              canvas.width,canvas.height,0,0,canvas.width,canvas.height);
+          } finally { tile.width=tile.height=0; }
+        } else {
+          rawContext.drawImage(renderer.domElement,nativeBaseMargin*nativeBaseFrame.ratio,nativeBaseMargin*nativeBaseFrame.ratio,
+            canvas.width,canvas.height,0,0,canvas.width,canvas.height);
+        }
       } finally { if (nativeRoomLease.isOwner()) repaintNativeRoom(); }
     },
     repaint:repaintNativeRoom,
@@ -469,7 +487,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const sourceMaterialized=captured?.overview?nativeOverviewMaterialized:nativeInspectionMaterialized;
     const shared=captured && captured.overview!==overview && captured.frame===frame && sourceFrame===frame &&
       captured.context===sourceContext && sourceContext!==raw && captured.revision===sourceRevision &&
-      sourceMaterialized===sourceRevision && captured.width===frame.width*frame.ratio && captured.height===frame.height*frame.ratio &&
+      sourceMaterialized===sourceRevision && captured.width===Math.ceil(frame.width*frame.ratio) && captured.height===Math.ceil(frame.height*frame.ratio) &&
       raw.canvas.width===captured.width && raw.canvas.height===captured.height &&
       sourceContext.canvas.width===captured.width && sourceContext.canvas.height===captured.height;
     if (shared) {
@@ -506,7 +524,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function repaintNativeRoom() {
     if(!nativeRoomDisplay)return false;
     const {frame,margin}=nativeRoomDisplay;
-    if(!margin)return nativeFrameCache.repaint(frame);
+    if(!margin || frame.physical)return nativeFrameCache.repaint(frame);
     // Keep the overscan texture for pan and exports, but present only the
     // original visible room. The compositor need not retain an oversized
     // default framebuffer hidden behind the identical scroller clip.
@@ -517,7 +535,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function positionNativeRoom(node) {
     if(!nativeRoomDisplay || !frameLayout.canvas || !frameLayout.stage)return false;
     const logical=frameLayout.canvas,bounds=frameLayout.stage,margin=nativeRoomDisplay.margin;
-    if(![logical.left,logical.top].every(value=>Number.isInteger(value*nativeRoomDisplay.frame.ratio)))return false;
+    const frame=nativeRoomDisplay.frame;
+    if(frame.physical && !nativeFrameCache.validFrame(frame))return false;
+    if(![logical.left,logical.top].every(value=>Number.isFinite(value) && (frame.physical || Number.isInteger(value*frame.ratio))))return false;
     Object.assign(nativeRoomClip.style,{left:`${logical.left-bounds.left}px`,top:`${logical.top-bounds.top}px`,
       width:`${sceneWidth}px`,height:`${viewportHeight}px`,display:'block'});
     // This same canvas has become the room, so book-only diagnostics no
@@ -527,9 +547,17 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       nativeInsertionMetadataOwner = null;
     }
     node.className='ihr-bookshelf-native-room-canvas';node.setAttribute('aria-hidden','true');
-    node.style.cssText=`position:absolute;pointer-events:none;left:0px;top:0px;width:${nativeRoomDisplay.frame.width-margin*2}px;height:${nativeRoomDisplay.frame.height-margin*2}px`;
+    // A fractional room retains the original complete framebuffer. Clip its
+    // overscan in CSS instead of introducing a second texture resample.
+    node.style.cssText=frame.physical?
+      `position:absolute;pointer-events:none;left:${-margin}px;top:${-margin}px;width:${frame.width}px;height:${frame.height}px`:
+      `position:absolute;pointer-events:none;left:0px;top:0px;width:${frame.width-margin*2}px;height:${frame.height-margin*2}px`;
     if(node.parentNode!==nativeRoomClip)nativeRoomClip.append(node);
     return true;
+  }
+  function physicalRoomFrame(width,height,ratio) {
+    const frame={x:0,y:0,width,height,ratio,physical:true,pixelWidth:Math.floor(width*ratio),pixelHeight:Math.floor(height*ratio)};
+    return nativeFrameCache?.exactFrame?.(frame)===true?frame:null;
   }
   function getNativeRoomBackground() {
     if(!nativeRoomDisplay || !nativeFrameCache.validFrame(nativeRoomDisplay.frame) || !nativeRoomLease || !frameLayout.canvas || !frameLayout.scroller)return null;
@@ -2000,8 +2028,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const clip={left:0,top:0,right:sceneWidth,bottom:viewportHeight},layers=[];
       if(overview?.covers)layers.push({frame:inspectionOverview.nativeFrame,x:overview.left,y:overview.top,scale:overview.scale,clip});
       if(inspectionSnapshot)layers.push({frame:inspectionSnapshot.nativeFrame,x:left,y:top,scale,clip});
-      const output={x:0,y:0,width:sceneWidth,height:viewportHeight,ratio:Math.max(snapshot.nativeFrame.ratio,window.devicePixelRatio||1)};
+      let output={x:0,y:0,width:sceneWidth,height:viewportHeight,ratio:Math.max(snapshot.nativeFrame.ratio,window.devicePixelRatio||1)};
+      if(snapshot.nativeFrame.physical || !(nativeFrameCache.exactFrame?.(output) ?? true))output=physicalRoomFrame(output.width,output.height,output.ratio);
       nativeCompositor=withRendererPresentation(renderer,nativeRoomLease,()=>{
+        if(!output)return false;
         if(!nativeFrameCache.compose(output,layers))return false;
         const retained=nativeFrameCache.capture(nativeComposedRoomSlot,output);
         if(!retained)return false;
@@ -2171,9 +2201,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const nativeCaptureAligned=nativeRoomLease && pixelAligned &&
         [renderWidth*ratio,renderHeight*ratio].every(Number.isInteger) &&
         (nativeFrameCache.exactFrame?.(descriptor) ?? true);
+      const nativeCapturePhysical=!nativeCaptureAligned && nativeRoomLease && frameLayout.canvas &&
+        [frameLayout.canvas.left,frameLayout.canvas.top].every(Number.isFinite) && physicalRoomFrame(renderWidth,renderHeight,ratio);
       // Keep the last insertion visible across held-paint/program guards.
       // Release it only when this transaction really paints the legacy room.
-      if(!nativeCaptureAligned)releaseCompletedLegacyInsertions();
+      if(!nativeCaptureAligned && !nativeCapturePhysical)releaseCompletedLegacyInsertions();
       withRendererPresentation(renderer,nativeRoomLease,()=>{
       configureNativeRendererSize(renderer, renderWidth, renderHeight, ratio, rendererSize, Boolean(nativeCaptureAligned));
       // Fractional legacy captures keep Three's original viewport rounding.
@@ -2193,7 +2225,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const preserveOverview=cacheInspection && !refreshOverview && nativeFrameCache?.validFrame(nativeOverviewExportFrame) &&
         nativeOverviewExportFrame.texture===nativeFineFrame?.texture;
       const fineSlotIndex=preserveOverview?1-nativeFineSlotIndex:nativeFineSlotIndex;
-      const nativeFrame=nativeCaptureAligned && nativeFrameCache.capture(cacheInspection?nativeFineSlots[fineSlotIndex]:nativeRoomSlot,descriptor);
+      // The render above keeps the original fractional viewport and camera.
+      // Capture its observed resolved buffer; never round it up to the 2D size.
+      const captureDescriptor=nativeCaptureAligned?descriptor:nativeCapturePhysical &&
+        {...nativeCapturePhysical,pixelWidth:renderer.getContext().drawingBufferWidth,pixelHeight:renderer.getContext().drawingBufferHeight};
+      const nativeFrame=captureDescriptor && nativeFrameCache.capture(cacheInspection?nativeFineSlots[fineSlotIndex]:nativeRoomSlot,captureDescriptor);
       if(nativeFrame && cacheInspection) { nativeFineSlotIndex=fineSlotIndex;nativeFineFrame=nativeFrame; }
       if(nativeFrame) {
         nativeFrameCache.prepare();

@@ -38,7 +38,19 @@ envía las mismas dos PCM sin ese matcher y cuesta unos 90 ms. La lectura de
 Vitest confirma que su comparación crea 1,28 millones de pares con
 `Object.entries`. Se prepara una batería con menor concurrencia conservando
 todos los casos, assertions y plazos; los dos intentos fallidos permanecen.
-Las comprobaciones de los artefactos publicados están pendientes.
+La batería completa posterior con un worker pasa las 3.193 unitarias en
+249 archivos, build y 75 Python. Conserva ambos intentos fallidos anteriores
+y todos sus plazos. El censo de 524 E2E es sólo un listado.
+
+Publicada desde `5a08ae2`, Pages `af9abb7`: 25 módulos y 46 recursos offline
+coinciden con el artefacto. La APK descargada coincide con Android 1.1.4,
+code17; su loader sigue teniendo 2.089 bytes. Los 18 PDF públicos pasan.
+Los siete recorridos locales conservan cinco PASS y dos timeouts globales
+de 30 s; en los tres públicos pasa el editor y fallan ambos nativos por
+el mismo plazo global. Los traces no miden un cierre aislado completo de
+ocho segundos: el tiempo se agota antes. No se reintentan ni se amplían
+sus relojes. CI66 `37264323238` termina FAILED en UI3 y en el agregado;
+los demás jobs pasan. Su colección completa queda pendiente.
 El perfil anterior de software muestra copias de la sala
 costosas; no mide los FPS ni la temperatura de un teléfono físico.
 

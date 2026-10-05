@@ -71,19 +71,39 @@ export function createNativeFramebufferCache(renderer,{onRestored}={}) {
   }
 
   function exactFrame(frame) {
-    return !disposed && contextReady() && frame && [frame.width,frame.height,frame.ratio].every(value=>Number.isFinite(value)&&value>0)
+    const logical = !disposed && contextReady() && frame && [frame.width,frame.height,frame.ratio].every(value=>Number.isFinite(value)&&value>0)
       && (frame.generation===undefined || frame.generation===generation)
-      && [frame.x??0,frame.y??0].every(Number.isFinite)
-      && [frame.width*frame.ratio,frame.height*frame.ratio,(frame.x??0)*frame.ratio,(frame.y??0)*frame.ratio].every(Number.isInteger);
+      && [frame.x??0,frame.y??0].every(Number.isFinite);
+    if (!logical) return false;
+    if (frame.physical === true) {
+      // A resolved room may have Three's original floor-sized framebuffer
+      // while occupying fractional CSS pixels. Keep those two sizes explicit;
+      // book crops and aligned callers retain the strict descriptor below.
+      let gl;try { gl=renderer.getContext(); } catch { return false; }
+      return [frame.pixelWidth,frame.pixelHeight,gl?.drawingBufferWidth,gl?.drawingBufferHeight]
+        .every(value=>Number.isInteger(value)&&value>0)
+        && frame.pixelWidth===Math.floor(frame.width*frame.ratio)
+        && frame.pixelHeight===Math.floor(frame.height*frame.ratio)
+        && (!Number.isFinite(renderer.capabilities?.maxTextureSize) ||
+          Math.max(frame.pixelWidth,frame.pixelHeight)<=renderer.capabilities.maxTextureSize);
+    }
+    return frame.physical===undefined &&
+      [frame.width*frame.ratio,frame.height*frame.ratio,(frame.x??0)*frame.ratio,(frame.y??0)*frame.ratio].every(Number.isInteger);
   }
   function validFrame(frame) { return liveTextures.has(frame?.texture) && frame.generation===generation && exactFrame(frame); }
 
   function capture(slot, descriptor) {
     if (!exactFrame(descriptor) || renderer.getRenderTarget?.()) return null;
     const {width,height,ratio,x=0,y=0,sourceX=0,sourceY=0} = descriptor;
-    const pixelWidth=width*ratio,pixelHeight=height*ratio;
+    const physical=descriptor.physical===true;
+    const pixelWidth=physical?descriptor.pixelWidth:width*ratio,pixelHeight=physical?descriptor.pixelHeight:height*ratio;
     if (![sourceX,sourceY].every(Number.isInteger) || sourceX<0 || sourceY<0
       || sourceX+pixelWidth>renderer.domElement.width || sourceY+pixelHeight>renderer.domElement.height) return null;
+    if (physical) {
+      let gl;try { gl=renderer.getContext(); } catch { return null; }
+      if (gl?.drawingBufferWidth!==renderer.domElement.width || gl?.drawingBufferHeight!==renderer.domElement.height ||
+        sourceX+pixelWidth>gl.drawingBufferWidth || sourceY+pixelHeight>gl.drawingBufferHeight) return null;
+    }
     let texture=slots.get(slot);
     if (!texture || texture.image.width!==pixelWidth || texture.image.height!==pixelHeight) {
       if(texture) { texture.dispose();liveTextures.delete(texture); }
@@ -95,13 +115,16 @@ export function createNativeFramebufferCache(renderer,{onRestored}={}) {
     }
     copyOrigin.set(sourceX,sourceY);
     renderer.copyFramebufferToTexture(texture,copyOrigin);
-    return {texture,width,height,ratio,x,y,pixelWidth,pixelHeight,generation};
+    return {texture,width,height,ratio,x,y,pixelWidth,pixelHeight,generation,...(physical?{physical:true}:{})};
   }
 
   function configure(frame) {
     configureNativeRendererSize(renderer, frame.width, frame.height, frame.ratio, size);
     renderer.setRenderTarget?.(null);
-    renderer.setViewport(0,0,frame.width,frame.height);
+    // setViewport rounds its DPR multiplication. A physical room replay must
+    // cover the actual floor-sized buffer, without extending it by one pixel.
+    renderer.setViewport(0,0,frame.physical?frame.pixelWidth/frame.ratio:frame.width,
+      frame.physical?frame.pixelHeight/frame.ratio:frame.height);
   }
 
   function compose(outputFrame, layers) {

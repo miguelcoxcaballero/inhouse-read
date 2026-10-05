@@ -1,4 +1,16 @@
-# Verificación del WIP — 1.7.66 y Android 1.1.4
+# Verificación del WIP — candidato 1.7.67 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.67
+
+La sala de dimensiones fraccionarias permanece en WebGL y evita copiar
+sus píxeles a Canvas2D en cada repintado. Conserva modelos, materiales,
+DPR y animaciones; mantiene exports bajo demanda y fallback real. El
+contrato gráfico de 393 px migra explícitamente; sus fixtures y plazos
+30/8 no cambian. Pasan 116 unitarias enfocadas, build y los siete
+recorridos gráficos al primer intento, sin retries u omisiones. Los dos
+cierres completos quedan en 5.699,9/5.226,4 ms; fuente/build estables.
+La batería completa y publicación siguen pendientes. Detalle en
+[Rendimiento de 1.7.67](performance-1767.md).
 
 ## Cambios de rendimiento de 1.7.66
 
@@ -13,7 +25,13 @@ coleccionar una nueva prueba de precarga. Corregida sólo esa lectura, las
 dos primeras baterías completas conservan timeouts originales de 5 s.
 El diagnóstico separado de ambos archivos afectados pasa 30/30; el matcher
 de PCM pesa casi cinco segundos y se prepara una batería con menor
-concurrencia. Publicación y verificación de 1.7.66 siguen pendientes.
+concurrencia. La batería posterior con un worker pasa 3.193 unitarias,
+build y 75 Python. Publicación HTTP25/offline46 y APK/loader comprobadas;
+18 PDF públicos PASS. Los siete locales conservan cinco PASS/dos timeouts
+global30; los tres públicos conservan editor PASS y ambos nativos FAILED
+por el plazo global. No miden cierres aislados completos de ocho segundos.
+CI66 completa queda FAILED en UI3 y el agregado; los demás jobs pasan.
+La colección completa está pendiente y no se reintenta la ejecución.
 Detalle en [Rendimiento de 1.7.66](performance-1766.md).
 
 ## Cambios de rendimiento de 1.7.65

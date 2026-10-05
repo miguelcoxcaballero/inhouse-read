@@ -7,7 +7,7 @@ const BOOK_ID = 'native-legacy-return:tiny-real-pdf'
 
 test.use({ viewport:{ width:393, height:844 }, deviceScaleFactor:2.75, isMobile:true, hasTouch:true })
 
-test('el regreso nativo conserva la estantería legada a 393px y sólo presenta el libro sobre sus píxeles originales', async ({ page }) => {
+test('el regreso nativo conserva la sala fraccional a 393px con el framebuffer original y exportaciones 2D bajo demanda', async ({ page }) => {
   await page.emulateMedia({ reducedMotion:'no-preference' })
   const bytes = [...await readFile('tests/e2e/fixtures/tiny.pdf')]
   await page.addInitScript(({ bytes, id, geometry }) => {
@@ -69,6 +69,20 @@ test('el regreso nativo conserva la estantería legada a 393px y sólo presenta 
   await page.evaluate(() => window.__nativeShelfFixtureReady)
   const spine = page.locator(`.ihr-spine[data-book-id="${BOOK_ID}"]`)
   await expect(spine).toBeVisible()
+  const initialRoom = await page.evaluate(() => {
+    const shelf = document.querySelector('.ihr-bookshelf-scene')
+    const room = document.querySelector('.ihr-bookshelf-native-room-canvas'), gl = room?.getContext('webgl2')
+    const rect = room?.getBoundingClientRect()
+    return { mode:shelf?.dataset.nativeRoomPresentation, opacity:getComputedStyle(shelf).opacity,
+      ratio:Number(shelf?.dataset.pixelRatio), realGL:gl instanceof WebGL2RenderingContext, lost:Boolean(gl?.isContextLost()),
+      physical:[room?.width, room?.height, gl?.drawingBufferWidth, gl?.drawingBufferHeight],
+      rect:rect && [rect.width, rect.height] }
+  })
+  expect(initialRoom.mode).toBe('true'); expect(initialRoom.opacity).toBe('0')
+  expect(initialRoom.ratio).toBe(1.5); expect(initialRoom.realGL).toBe(true); expect(initialRoom.lost).toBe(false)
+  expect(initialRoom.rect).toEqual([393, 783])
+  expect(initialRoom.physical).toEqual([589, 1174, 589, 1174])
+  await test.info().attach('native-fractional-room-before-selection', { body:JSON.stringify(initialRoom), contentType:'application/json' })
   const bounds = await spine.boundingBox()
   expect(bounds).not.toBeNull()
   await spine.click({ position:await spinePointerPosition(spine, bounds) })
@@ -139,8 +153,11 @@ test('el regreso nativo conserva la estantería legada a 393px y sólo presenta 
           bookCount:document.querySelectorAll('.ihr-book-live-canvas').length,
           flyoutCount:document.querySelectorAll('.ihr-flyout').length,
           returningPageCount:document.querySelectorAll('.ihr-reader-return-page').length,
-          insertionDisconnected:!insertionNode?.isConnected,
-          visible:painted(shelf),retainedShelf:document.querySelector('.ihr-bookshelf-scene') === shelf,
+          sameRoomNode:document.querySelector('.ihr-bookshelf-native-room-canvas') === insertionNode,
+          sameRoomContext:document.querySelector('.ihr-bookshelf-native-room-canvas')?.getContext('webgl2') === insertionContext,
+          roomPhysical:[insertionNode?.width, insertionNode?.height, insertionContext?.drawingBufferWidth, insertionContext?.drawingBufferHeight],
+          roomLost:Boolean(insertionContext?.isContextLost()),
+          visible:painted(document.querySelector('.ihr-bookshelf-native-room-canvas')),retainedShelf:document.querySelector('.ihr-bookshelf-scene') === shelf,
           legacyRoomMode:shelf?.dataset.nativeRoomPresentation,
           opacity:getComputedStyle(shelf).opacity,pixelRatio:Number(shelf?.dataset.pixelRatio),
           away:document.querySelector(`.ihr-spine[data-book-id="${id}"]`)?.classList.contains('is-away')
@@ -164,29 +181,33 @@ test('el regreso nativo conserva la estantería legada a 393px y sólo presenta 
     expect(sample.physical).toEqual([...sample.expectedPhysical, ...sample.expectedPhysical])
     expect(sample.rect).toEqual([0, 0, ...sample.viewport])
     expect(sample.visible && sample.exportHidden && sample.away && sample.closing).toBe(true)
-    expect(sample.legacyRoomVisible).toBe(true); expect(sample.legacyRoomMode).toBe('false')
+    expect(sample.legacyRoomVisible).toBe(false); expect(sample.legacyRoomMode).toBe('true')
     expect(sample.nativeRoomCount).toBe(0)
     expect(sample.insertionCount).toBe(1); expect(sample.oldBookCount).toBe(0)
     expect(sample.progress).toBeGreaterThanOrEqual(0); expect(sample.progress).toBeLessThanOrEqual(1)
   }
-  expect(facts.final.roomCount).toBe(0)
+  expect(facts.final.roomCount).toBe(1)
   expect(facts.final.insertionCount).toBe(0); expect(facts.final.bookCount).toBe(0)
   expect(facts.final.flyoutCount).toBe(0); expect(facts.final.returningPageCount).toBe(0)
-  expect(facts.final.insertionDisconnected && facts.final.visible && facts.final.retainedShelf).toBe(true)
-  expect(facts.final.legacyRoomMode).toBe('false'); expect(facts.final.opacity).toBe('1')
+  expect(facts.final.sameRoomNode && facts.final.sameRoomContext && facts.final.visible && facts.final.retainedShelf).toBe(true)
+  expect(facts.final.roomPhysical).toEqual([589, 1174, 589, 1174]); expect(facts.final.roomLost).toBe(false)
+  expect(facts.final.legacyRoomMode).toBe('true'); expect(facts.final.opacity).toBe('0')
   expect(facts.final.pixelRatio).toBe(1.5); expect(facts.final.away).toBe(false)
 
   // Pixel exports happen only after the unchanged eight-second close budget.
-  // Reading the existing legacy room must leave its already visible pixels unchanged.
+  // Materializing the original 2D export must leave the native room unchanged.
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   const beforeExport = await page.screenshot()
   const exportFacts = await page.evaluate(() => {
     const shelf = document.querySelector('.ihr-bookshelf-scene')
+    const room = document.querySelector('.ihr-bookshelf-native-room-canvas')
     const exported = shelf.getContext('2d').getImageData(0, 0, shelf.width, shelf.height).data
     let exportedPainted = 0
     for (let index = 3; index < exported.length; index += 4) if (exported[index]) exportedPainted++
     return { exportedPainted, sameShelf:document.querySelector('.ihr-bookshelf-scene') === shelf,
-      visible:getComputedStyle(shelf).opacity === '1',nativeRoomCount:document.querySelectorAll('.ihr-bookshelf-native-room-canvas').length,
+      visible:Boolean(room?.isConnected) && getComputedStyle(room).visibility !== 'hidden' && getComputedStyle(shelf).opacity === '0',
+      sameRoom:document.querySelector('.ihr-bookshelf-native-room-canvas') === room,
+      exportPhysical:[shelf.width, shelf.height], nativeRoomCount:document.querySelectorAll('.ihr-bookshelf-native-room-canvas').length,
       insertionCount:document.querySelectorAll('.ihr-shelf-insertion-live-canvas').length }
   })
   const afterExport = await page.screenshot()
@@ -195,7 +216,8 @@ test('el regreso nativo conserva la estantería legada a 393px y sólo presenta 
   await test.info().attach('native-room-lazy-export', { body:JSON.stringify(exportFacts), contentType:'application/json' })
   expect(afterExport.equals(beforeExport)).toBe(true)
   expect(exportFacts.exportedPainted).toBeGreaterThan(0)
-  expect(exportFacts.sameShelf && exportFacts.visible).toBe(true)
-  expect(exportFacts.nativeRoomCount).toBe(0)
+  expect(exportFacts.sameShelf && exportFacts.sameRoom && exportFacts.visible).toBe(true)
+  expect(exportFacts.exportPhysical).toEqual([590, 1175])
+  expect(exportFacts.nativeRoomCount).toBe(1)
   expect(exportFacts.insertionCount).toBe(0)
 })
