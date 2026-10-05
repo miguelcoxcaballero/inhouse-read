@@ -623,7 +623,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     const stopMemory = watchMemory()
     const baseline = summary(await page.evaluate(() => window.__sample(5000)))
 
-    await page.getByRole('heading', { name:'Biblioteca' }).click() // a real tap: the audio context is unlocked inside it
+    await page.mouse.click(200, 300) // a real tap: the audio context is unlocked inside it
     const texts = ['Después de un largo día, Ana volvió a casa y abrió el libro que su abuelo le había regalado.', 'La lluvia golpeaba suavemente los cristales de la vieja biblioteca.', 'Nadie en el pueblo recordaba cuándo había llegado el forastero.', 'Todos coincidían en que traía consigo una maleta de cuero gastada.', 'Ella sonrió, cerró el libro y apagó la lámpara.']
     await page.evaluate(({ texts, voiceId }) => {
       let i = 0
