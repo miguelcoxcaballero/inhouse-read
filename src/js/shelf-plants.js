@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { resolveCatalogPlant } from './plant-records.js';
 import { plantDimensions, POT_SOIL_FRACTION } from './plant-dimensions.js';
+import { addShelfBakeSource, loadedShelfBakes, savedSurface, scheduleShelfBakeWrite } from './shelf-bake-cache.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const clamp01 = value => Math.min(1, Math.max(0, value));
@@ -119,7 +120,13 @@ export const plantSurfacesReady = () => queue.length ? new Promise(resolve => se
  * is released when the last clone is disposed. */
 function surface(key, [width, height], repeat, paint, refresh) {
   let base = surfaces.get(key);
-  if (!base) {
+  const saved = base ? null : savedSurface(key, width, height);
+  if (saved) {
+    // The final painting of an earlier launch: no preview, nothing to repaint.
+    base = { map:dataTexture(saved.pigment, width, height, THREE.SRGBColorSpace, repeat),
+      data:dataTexture(saved.data, width, height, THREE.NoColorSpace, repeat), clones:null, waiting:null };
+    surfaces.set(key, base);
+  } else if (!base) {
     const pigment = new Uint8Array(width * height * 4), data = new Uint8Array(pigment.length), texel = [0, 0, 0, .5, 1];
     const sample = (x, y) => { paint((x + .5) / width, (y + .5) / height, x, y, texel); return texel; };
     const store = (index, value) => {
@@ -704,6 +711,9 @@ function consolidateParts(content, mesh, geometries) {
   return parts;
 }
 
+const cactusMaterial = () => new THREE.MeshStandardMaterial({ color:0xffffff, vertexColors:true, roughness:.8 });
+const needleMaterial = () => new THREE.LineBasicMaterial({ color:'#d9cda9', transparent:true, opacity:.8 });
+
 // Stem colours run from the older, browner base to fresh growth at the tip.
 const STEM_TONES = { stem:['#4b5a2f','#6a8a3c'], woody:['#5a4630','#5d7336'], zz:['#2f4027','#4b6a2b'],
   palm:['#46602a','#627f38'], fern:['#4a5a2a','#6b8a3a'], petiole:['#536d2f','#739449'], vein:['#7f9955','#91a866'],
@@ -713,13 +723,140 @@ const STEM_TONES = { stem:['#4b5a2f','#6a8a3c'], woody:['#5a4630','#5d7336'], zz
 /** Scene units per millimetre of a plant shown without a shelf (the catalogue preview). */
 const PREVIEW_SCALE = .5;
 
+// A bake is the finished plant content as plain data: every object in its
+// creation order (ids decide the draw order of equal sort keys), its parent
+// and place among siblings, transform, material role and geometry arrays.
+const ROLES = ['clay', 'soil', 'leaf', 'stem', 'mineral', 'green', 'needles'];
+const KINDS = ['mesh', 'lines', 'group'];
+
+function bakeGeometry(geometry) {
+  const attributes = {};
+  for (const [name, attribute] of Object.entries(geometry.attributes)) {
+    if (!attribute.isBufferAttribute || attribute.isInterleavedBufferAttribute) return null;
+    attributes[name] = [attribute.array, attribute.itemSize, attribute.normalized];
+  }
+  if (Object.keys(geometry.morphAttributes).length) return null;
+  const box = geometry.boundingBox;
+  return { type:geometry.type, attributes, index:geometry.index?.array ?? null,
+    groups:geometry.groups.map(({ start, count, materialIndex }) => [start, count, materialIndex]),
+    userData:JSON.parse(JSON.stringify(geometry.userData)), box:box ? [...box.min.toArray(), ...box.max.toArray()] : null };
+}
+
+function bakeContent(content, roleOf, parts) {
+  const objects = [];
+  content.traverse(object => { if (object !== content) objects.push(object); });
+  objects.sort((a, b) => a.id - b.id);
+  const order = new Map(objects.map((object, index) => [object, index])), baked = [];
+  for (const object of objects) {
+    const kind = object.isMesh ? 'mesh' : object.isLineSegments ? 'lines' : object.isGroup ? 'group' : null;
+    const role = kind === 'group' ? null : roleOf.get(object.material);
+    const geometry = kind === 'group' ? null : bakeGeometry(object.geometry);
+    if (!kind || (kind !== 'group' && (!role || !geometry))) return null;
+    baked.push({ name:object.name, kind, role, geometry, parent:object.parent === content ? -1 : order.get(object.parent),
+      place:object.parent.children.indexOf(object), position:object.position.toArray(), quaternion:object.quaternion.toArray(),
+      rotation:[object.rotation.x, object.rotation.y, object.rotation.z, object.rotation.order], scale:object.scale.toArray(),
+      castShadow:object.castShadow, receiveShadow:object.receiveShadow, userData:JSON.parse(JSON.stringify(object.userData)) });
+  }
+  return { parts:[...parts], objects:baked };
+}
+
+const isTriple = value => Array.isArray(value) && value.length === 3 && value.every(Number.isFinite);
+// Typed arrays read back from IndexedDB may come from another realm.
+const typeOf = value => Object.prototype.toString.call(value).slice(8, -1);
+function validBake(bake) {
+  if (!bake || !Array.isArray(bake.parts) || !Array.isArray(bake.objects)) return false;
+  return bake.objects.every((object, index, all) => {
+    if (!KINDS.includes(object?.kind) || typeof object.name !== 'string' || !isTriple(object.position) || !isTriple(object.scale) ||
+      !Array.isArray(object.quaternion) || object.quaternion.length !== 4 || !object.quaternion.every(Number.isFinite) ||
+      !Array.isArray(object.rotation) || !isTriple(object.rotation.slice(0, 3)) || !Number.isInteger(object.place)) return false;
+    if (object.parent !== -1 && all[object.parent]?.kind !== 'group') return false;
+    if (object.kind === 'group') return true;
+    const geometry = object.geometry;
+    if (!ROLES.includes(object.role) || !geometry?.attributes?.position) return false;
+    const count = geometry.attributes.position[0]?.length / geometry.attributes.position[1];
+    return Number.isInteger(count) && Object.values(geometry.attributes).every(([array, itemSize]) =>
+      /^(Float32|U?Int(8|16|32))Array$/.test(typeOf(array)) && Number.isInteger(itemSize) && itemSize > 0 && array.length === count * itemSize) &&
+      (geometry.index === null || /^Uint(16|32)Array$/.test(typeOf(geometry.index))) &&
+      Array.isArray(geometry.groups) && (geometry.box === null || Array.isArray(geometry.box) && geometry.box.length === 6);
+  });
+}
+
+function restoreGeometry(baked) {
+  const geometry = new THREE.BufferGeometry();
+  geometry.type = baked.type;
+  for (const [name, [array, itemSize, normalized]] of Object.entries(baked.attributes))
+    geometry.setAttribute(name, new THREE.BufferAttribute(array, itemSize, normalized));
+  if (baked.index) geometry.setIndex(new THREE.BufferAttribute(baked.index, 1));
+  for (const [start, count, materialIndex] of baked.groups) geometry.addGroup(start, count, materialIndex);
+  geometry.userData = JSON.parse(JSON.stringify(baked.userData ?? {}));
+  if (baked.box) geometry.boundingBox = new THREE.Box3(new THREE.Vector3().fromArray(baked.box), new THREE.Vector3().fromArray(baked.box, 3));
+  return geometry;
+}
+
+function restoreContent(bake, content, materialFor, track) {
+  const objects = bake.objects.map(baked => {
+    const object = baked.kind === 'group' ? new THREE.Group() : new (baked.kind === 'lines' ? THREE.LineSegments : THREE.Mesh)(restoreGeometry(baked.geometry), materialFor(baked.role));
+    object.name = baked.name;
+    object.position.fromArray(baked.position); object.scale.fromArray(baked.scale);
+    // Euler and quaternion each follow whichever of them was set last.
+    object.quaternion.fromArray(baked.quaternion);
+    const [x, y, z, rotationOrder] = baked.rotation;
+    if (object.rotation.x !== x || object.rotation.y !== y || object.rotation.z !== z || object.rotation.order !== rotationOrder) object.rotation.set(x, y, z, rotationOrder);
+    object.castShadow = baked.castShadow; object.receiveShadow = baked.receiveShadow;
+    object.userData = JSON.parse(JSON.stringify(baked.userData ?? {}));
+    if (baked.kind !== 'group') track(object);
+    return object;
+  });
+  const children = bake.objects.map((baked, index) => [baked.parent, baked.place, objects[index]]).sort((a, b) => a[1] - b[1]);
+  for (const [parent, , object] of children) (parent === -1 ? content : objects[parent]).add(object);
+  return [...bake.parts];
+}
+
+// Bakes of this session's shelf plants (most recent last) are kept for the
+// next launch together with the final paint of their level-1 surfaces.
+const shelfBakes = new Map(), MAX_SHELF_BAKES = 12;
+let savedModels = null;
+
+function shelfBake(key) {
+  const entry = shelfBakes.get(key);
+  if (entry) return entry;
+  // A record that arrives late still serves the plants made after it.
+  const record = savedModels ? null : loadedShelfBakes();
+  if (record) savedModels = new Map(record.models.map(item => [item[0], item]));
+  const saved = savedModels?.get(key);
+  savedModels?.delete(key);
+  return saved && validBake(saved[1]) ? { bake:saved[1], surfaces:null } : null;
+}
+
+function rememberBake(key, entry) {
+  shelfBakes.delete(key); shelfBakes.set(key, entry);
+  for (const old of shelfBakes.keys()) if (shelfBakes.size > MAX_SHELF_BAKES) shelfBakes.delete(old);
+  scheduleShelfBakeWrite();
+}
+
+/** What the shelf would save now: its plants and their finished surfaces. */
+export function shelfPlantBakeRecord() {
+  const models = [], painted = new Map();
+  for (const [key, { bake, surfaces:keys }] of shelfBakes) {
+    models.push([key, bake, [...keys]]);
+    for (const surfaceKey of keys) {
+      const base = surfaces.get(surfaceKey);
+      if (base && !base.clones && !painted.has(surfaceKey)) painted.set(surfaceKey, { width:base.map.image.width, height:base.map.image.height,
+        pigment:base.map.image.data, data:base.data.image.data });
+    }
+  }
+  return { models, surfaces:[...painted] };
+}
+
+addShelfBakeSource({ collect:shelfPlantBakeRecord, settled:plantSurfacesReady });
+
 /** Every saved plant uses a current catalog mesh, including legacy records.
  * Its own opaque leaf texture covers real geometry; no photo cutout is used.
  * Sizes are the real IKEA ones (plant-dimensions.js): only `entry.height`,
  * the scene's height for that plant, sets the scale, so a width or height
  * saved by an older version cannot distort the pot or the foliage.
  */
-export function createShelfPlant(entry) {
+export function createShelfPlant(entry, { persist = false } = {}) {
   const quality = entry.inspectionResolution ? 2 : 1;
   const catalogPlant = resolveCatalogPlant(entry);
   const variant = variantFor(catalogPlant?.variant || entry.variant), seed = entry.seed ?? entry.key ?? entry.node?.dataset.objectId ?? variant;
@@ -749,10 +886,11 @@ export function createShelfPlant(entry) {
   let potColor = getPotColor(potId,entry.potColorId);
   const clayColor = potId ? potColor.hex : clays[Math.floor(random() * clays.length)];
   const finish = POT_FINISHES[potModelId] ?? { painter:() => terracottaPainter(clayColor, 53), material:{ bumpScale:.4 } };
+  const potKey = (level, color = potColor) => `pot:${potId}:${potId ? color.hex : clayColor}:${level}`;
   const potSurface = (level, notify, color = potColor) => {
     const pigment = potId ? color.hex : clayColor;
     const painter = POT_FINISHES[potModelId]?.painter(color.hex) ?? terracottaPainter(pigment, 53);
-    return surface(`pot:${potId}:${pigment}:${level}`, [128 * level, 256 * level], true, painter, notify);
+    return surface(potKey(level, color), [128 * level, 256 * level], true, painter, notify);
   };
   const potMaps = own(potSurface(quality, refresh));
   // Texels stay roughly square on the outer wall, whatever the pot proportions.
@@ -761,9 +899,13 @@ export function createShelfPlant(entry) {
   const { bumpScale, ...finishOptions } = finish.material;
   const clay = new THREE.MeshPhysicalMaterial({ map:potMaps.map, roughnessMap:potMaps.data, bumpMap:potMaps.data, bumpScale,
     vertexColors:true, roughness:1, metalness:0, clearcoat:0, clearcoatRoughness:.3, ...finishOptions });
-  const pot = potGeometry(potModelId, radius, potHeight, soilFraction);
-  mesh(pot.geometry, clay, 'ceramic-pot');
-  if (potId === 'muskotblomma') {
+  // A shelf plant made earlier (this session or the last) is rebuilt from its
+  // bake: its meshes depend on none of the colours or surface levels.
+  const bakeKey = persist ? JSON.stringify([catalogPlant.id, variant, potId, String(seed), height]) : null;
+  const baked = bakeKey ? shelfBake(bakeKey) : null;
+  const pot = baked ? null : potGeometry(potModelId, radius, potHeight, soilFraction);
+  if (pot) mesh(pot.geometry, clay, 'ceramic-pot');
+  if (pot && potId === 'muskotblomma') {
     const profile = [[0,0],[1.13,0],[1.17,.025],[1.19,.075],[1.18,.14],[1.155,.172],[1.12,.17],[1.09,.12],[1.07,.07],[.9,.067],[.74,.066],[0,.065]];
     const saucer = new THREE.LatheGeometry(profile.map(([r,y]) => new THREE.Vector2(radius * r / 1.19,potHeight * y)),40);
     const uv = saucer.attributes.uv, tones = [];
@@ -777,7 +919,7 @@ export function createShelfPlant(entry) {
     saucer.setAttribute('color', new THREE.Float32BufferAttribute(tones, 3));
     mesh(saucer,clay,'terracotta-saucer');
   }
-  if (potId === 'akerbar') {
+  if (pot && potId === 'akerbar') {
     const seamGeometry = new THREE.CylinderGeometry(width*.0015,width*.0015,potHeight*.87,5);
     seamGeometry.setAttribute('color', new THREE.Float32BufferAttribute(new Array(seamGeometry.attributes.position.count * 3).fill(.86), 3));
     const seam = mesh(seamGeometry,clay,'steel-folded-seam');
@@ -840,8 +982,14 @@ export function createShelfPlant(entry) {
     }
     return leaf;
   };
-  if (variant === 'cactus') {
-    const green = new THREE.MeshStandardMaterial({ color:0xffffff, vertexColors:true, roughness:.8 });
+  let green = null, needles = null;
+  if (baked) {
+    // The generator creates these materials here, in this order.
+    const roles = new Set(baked.bake.objects.map(object => object.role));
+    if (roles.has('green')) green = cactusMaterial();
+    if (roles.has('needles')) needles = needleMaterial();
+  } else if (variant === 'cactus') {
+    green = cactusMaterial();
     const spikes = [], columns = [ {x:0,z:0,length:growthHeight * .71,radius:width * .12},
       {x:-width*.16,z:width*.03,length:growthHeight*.47,radius:width*.085},
       {x:width*.165,z:-width*.055,length:growthHeight*.36,radius:width*.083} ];
@@ -864,9 +1012,9 @@ export function createShelfPlant(entry) {
       }
     }
     const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.Float32BufferAttribute(spikes, 3));
-    const material = new THREE.LineBasicMaterial({ color:'#d9cda9', transparent:true, opacity:.8 });
-    const needles = new THREE.LineSegments(geometry, material); needles.name = 'cactus-areoles'; content.add(needles);
-    geometries.add(geometry); materials.add(material);
+    needles = needleMaterial();
+    const lines = new THREE.LineSegments(geometry, needles); lines.name = 'cactus-areoles'; content.add(lines);
+    geometries.add(geometry); materials.add(needles);
   } else if (variant === 'upright') {
     for (let i = 0; i < 8; i++) {
       const angle = i * 2.39996, spread = width * (.045 + (i % 3) * .028);
@@ -1058,30 +1206,44 @@ export function createShelfPlant(entry) {
   const soilMaps = own(soilSurface(quality, refresh));
   const soil = new THREE.MeshStandardMaterial({ map:soilMaps.map, roughnessMap:soilMaps.data, bumpMap:soilMaps.data,
     bumpScale:soilKind === 'grit' ? 1.4 : 1.1, roughness:1, vertexColors:true });
-  mesh(soilGeometry(pot.soilRadius * .995, soilY, random, roots, soilKind), soil, 'potting-soil');
-  const parts = consolidateParts(content, mesh, geometries);
-  // Only the foliage is fitted to the promised collision envelope: the pot
-  // stays round and true to size, and the ceramic base remains at -height/2.
-  const foliage = new THREE.Group(); foliage.name = 'plant-foliage';
-  for (const object of [...content.children]) if (object.material !== clay && object.material !== soil) foliage.add(object);
-  content.add(foliage); content.updateWorldMatrix(true, false);
-  const leafBounds = new THREE.Box3().setFromObject(foliage);
-  const xExtent = Math.max(Math.abs(leafBounds.min.x), Math.abs(leafBounds.max.x), 1e-6);
-  const zExtent = Math.max(Math.abs(leafBounds.min.z), Math.abs(leafBounds.max.z), 1e-6);
-  // Foliage stretches about the soil line to reach the envelope's top, never
-  // so far that trailing stems would pass below the base of the pot.
-  const top = leafBounds.max.y + height / 2, low = leafBounds.min.y + height / 2;
-  const stretch = Math.min(above / Math.max(1e-6, top - soilY), low < soilY ? soilY / (soilY - low) : Infinity);
-  // Width follows the same factor where the envelope allows, so a small
-  // rosette grows as a plant rather than being pulled into spikes; stems
-  // still have to rise from the soil inside the pot wall.
-  const rooted = pot.soilRadius * .97 / Math.max(1e-6, ...roots.map(([x, z, r]) => Math.hypot(x, z) + r));
-  foliage.scale.set(Math.min(stretch, width / 2 / xExtent, rooted), stretch, Math.min(stretch, width * .35 / zExtent, rooted));
-  foliage.position.y = soilY * (1 - stretch);
-  const bounds = new THREE.Box3().setFromObject(content);
-  // Preserve the measured pot height; never stretch the whole assembly.
-  const correction = (height - soilY) / Math.max(1e-6, bounds.max.y + height / 2 - soilY);
-  foliage.scale.y *= correction; foliage.position.y = soilY * (1 - foliage.scale.y);
+  const roleMaterials = { clay, soil, leaf:leafMaterial, stem:stemMaterial, mineral, green, needles };
+  let parts;
+  if (baked) parts = restoreContent(baked.bake, content, role => roleMaterials[role], object => { geometries.add(object.geometry); materials.add(object.material); });
+  else {
+    mesh(soilGeometry(pot.soilRadius * .995, soilY, random, roots, soilKind), soil, 'potting-soil');
+    parts = consolidateParts(content, mesh, geometries);
+    // Only the foliage is fitted to the promised collision envelope: the pot
+    // stays round and true to size, and the ceramic base remains at -height/2.
+    const foliage = new THREE.Group(); foliage.name = 'plant-foliage';
+    for (const object of [...content.children]) if (object.material !== clay && object.material !== soil) foliage.add(object);
+    content.add(foliage); content.updateWorldMatrix(true, false);
+    const leafBounds = new THREE.Box3().setFromObject(foliage);
+    const xExtent = Math.max(Math.abs(leafBounds.min.x), Math.abs(leafBounds.max.x), 1e-6);
+    const zExtent = Math.max(Math.abs(leafBounds.min.z), Math.abs(leafBounds.max.z), 1e-6);
+    // Foliage stretches about the soil line to reach the envelope's top, never
+    // so far that trailing stems would pass below the base of the pot.
+    const top = leafBounds.max.y + height / 2, low = leafBounds.min.y + height / 2;
+    const stretch = Math.min(above / Math.max(1e-6, top - soilY), low < soilY ? soilY / (soilY - low) : Infinity);
+    // Width follows the same factor where the envelope allows, so a small
+    // rosette grows as a plant rather than being pulled into spikes; stems
+    // still have to rise from the soil inside the pot wall.
+    const rooted = pot.soilRadius * .97 / Math.max(1e-6, ...roots.map(([x, z, r]) => Math.hypot(x, z) + r));
+    foliage.scale.set(Math.min(stretch, width / 2 / xExtent, rooted), stretch, Math.min(stretch, width * .35 / zExtent, rooted));
+    foliage.position.y = soilY * (1 - stretch);
+    const bounds = new THREE.Box3().setFromObject(content);
+    // Preserve the measured pot height; never stretch the whole assembly.
+    const correction = (height - soilY) / Math.max(1e-6, bounds.max.y + height / 2 - soilY);
+    foliage.scale.y *= correction; foliage.position.y = soilY * (1 - foliage.scale.y);
+  }
+  // Each shelf plant keeps its bake and its level-1 surfaces for the next launch.
+  const levelOneSurfaces = () => new Set([potKey(1), ...detailed ? [`leaf:${variant}:1`] : [], `soil:${soilKind}:1`]);
+  let shelfEntry = baked;
+  if (bakeKey && !shelfEntry) {
+    const roleOf = new Map(Object.entries(roleMaterials).filter(([, material]) => material).map(([role, material]) => [material, role]));
+    const bake = bakeContent(content, roleOf, parts);
+    if (bake) shelfEntry = { bake, surfaces:null };
+  }
+  if (shelfEntry) { shelfEntry.surfaces = levelOneSurfaces(); rememberBake(bakeKey, shelfEntry); }
   group.userData.variant = variant; group.userData.seed = String(seed);
   group.userData.catalogId = catalogPlant?.id ?? null; group.userData.potId = potId; group.userData.potColorId = potColor.id;
   group.userData.parts = parts;
@@ -1118,6 +1280,7 @@ export function createShelfPlant(entry) {
     replaceSurfaceMaps(clay, maps);
     potColor = next;
     group.userData.potColorId = next.id;
+    if (shelfEntry && shelfBakes.get(bakeKey) === shelfEntry) { shelfEntry.surfaces = levelOneSurfaces(); scheduleShelfBakeWrite(); }
     refresh();
     return true;
   };

@@ -22,6 +22,7 @@ import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
 import { normalizeShelfPosition } from './book-colors.js'
 import { createLazyReaderExperience } from './readers/reader-experience-lazy.js'
 import { runAfterFirstFrame } from './idle-startup.js'
+import { shelfBakesSettled } from './shelf-bake-cache.js'
 import { loadPlantCatalogModule } from './plant-catalog-lazy.js'
 import { classifyTapZone, ZONE } from './gestures.js'
 import { markTiming } from './perf-marks.js'
@@ -218,6 +219,9 @@ async function performShelfRefresh({ immediate = false } = {}) {
   }
   const accountId = (driveProfile || getRememberedDriveProfile())?.id
   const storedBooks = await (firstRecords ?? library.listAll())
+  // Saved plant meshes and plant/lamp paint are read in parallel. A late read
+  // must not hold the shelf back for long: they are generated instead.
+  await shelfBakesSettled(120)
   // The page is being replaced by a newer deploy: building this shelf would only hold that up.
   if (appDisposed || deployCheck?.reloading()) return
   const normalizedBooks = await Promise.all(storedBooks.map(book => {
