@@ -3,17 +3,20 @@
  * somebody taps the catalogue button, so its code is a separate chunk that is
  * prefetched when the shelf has settled. Same surface as createPlantCatalog.
  */
-let modulePromise = null
+let modulePromise = null, loadedModule = null
 export function loadPlantCatalogModule() {
-  return modulePromise ||= import('./plant-catalog.js').catch(error => { modulePromise = null; throw error })
+  return modulePromise ||= import('./plant-catalog.js').then(module => loadedModule = module)
+    .catch(error => { modulePromise = null; throw error })
 }
 
 export function createLazyPlantCatalog(options = {}) {
   let catalog = null, loading = null, destroyed = false, shelfType = options.shelfType
-  const load = () => loading ||= loadPlantCatalogModule().then(module => {
-    if (!destroyed && !catalog) catalog = module.createPlantCatalog({ ...options, shelfType })
-    return catalog
-  }).catch(error => { loading = null; throw error })
+  const create = module => catalog ||= module.createPlantCatalog({ ...options, shelfType })
+  // Once the chunk is in (prefetched, or opened before) a new shelf gets its
+  // catalogue straight away, exactly as before.
+  if (loadedModule) create(loadedModule)
+  const load = () => loading ||= loadPlantCatalogModule().then(module => destroyed ? null : create(module))
+    .catch(error => { loading = null; throw error })
   return {
     prefetch() { return load().catch(() => null) },
     async open(from = document.activeElement) {

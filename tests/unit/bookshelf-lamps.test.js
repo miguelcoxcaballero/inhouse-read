@@ -1,5 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderBookshelf } from '../../src/js/bookshelf.js';
+import { loadPlantCatalogModule } from '../../src/js/plant-catalog-lazy.js';
+// The catalogue chunk loads on demand; a shelf built after it is in gets its catalogue at once.
+beforeAll(async () => { await loadPlantCatalogModule() });
 
 const catalog = vi.hoisted(() => ({ options:null }));
 const scene = vi.hoisted(() => ({ getObjectAtPoint:vi.fn(), setLampPower:vi.fn() }));

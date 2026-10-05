@@ -1,7 +1,10 @@
-import { describe,expect,it } from 'vitest';
+import { beforeAll,describe,expect,it } from 'vitest';
 import * as THREE from 'three';
 import { createShelfLamp } from '../../src/js/shelf-lamps.js';
-import { createShelfLampLighting,MAX_SHELF_LAMP_LIGHTS } from '../../src/js/shelf-lamp-lighting.js';
+import { createShelfLampLighting,ensureAreaLights,MAX_SHELF_LAMP_LIGHTS } from '../../src/js/shelf-lamp-lighting.js';
+
+// The area-light tables load on demand (see shelf-lamp-lighting.js).
+beforeAll(async () => { await ensureAreaLights(); });
 
 function setup() {
   const scene = new THREE.Scene(), room = new THREE.Group(); scene.add(room);
