@@ -346,3 +346,52 @@ describe('PDF search excerpts', () => {
     reader.close?.()
   })
 })
+
+
+describe('PDF worker sampling lifecycle', () => {
+  function workers() {
+    const jobs = []
+    vi.stubGlobal('OffscreenCanvas',function () {})
+    vi.stubGlobal('createImageBitmap',vi.fn(async () => ({close:vi.fn()})))
+    vi.stubGlobal('Worker',class {
+      constructor() { this.terminate=vi.fn(); jobs.push(this) }
+      postMessage() {}
+    })
+    return jobs
+  }
+  const reply = job => job.onmessage({data:{tones:[[255,255,255],[255,255,255]]}})
+  it('cancels pending sampling when the document closes and does not return a stale page', async () => {
+    const jobs=workers(), reader=new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    const capture=reader.getPageSnapshot()
+    await vi.waitFor(() => expect(jobs).toHaveLength(1))
+    reader.close()
+    expect(await capture).toBeNull()
+    expect(jobs[0].terminate).toHaveBeenCalledOnce()
+  })
+  it('replaces a page that navigated during asynchronous sampling with the current saved page', async () => {
+    const jobs=workers(), reader=new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    const capture=reader.getPageSnapshot()
+    await vi.waitFor(() => expect(jobs).toHaveLength(1))
+    await reader.goToPage(3)
+    reply(jobs[0])
+    await vi.waitFor(() => expect(jobs).toHaveLength(2))
+    reply(jobs[1])
+    expect(await capture).toMatchObject({label:'Página 3 de 4',location:{locator:{kind:'pdf-page',value:3}}})
+    reader.close()
+  })
+  it('replaces the pixel copy and tone token if brightness changes while the worker runs', async () => {
+    const jobs=workers(), reader=new PdfReader()
+    await reader.open(container,new ArrayBuffer(0))
+    const capture=reader.getPageSnapshot()
+    await vi.waitFor(() => expect(jobs).toHaveLength(1))
+    container.style.filter='brightness(0.65)'
+    reply(jobs[0])
+    await vi.waitFor(() => expect(jobs).toHaveLength(2))
+    reply(jobs[1])
+    const snapshot=await capture
+    expect(contexts.get(snapshot.source).filter).toContain('brightness(0.65)')
+    reader.close()
+  })
+})
