@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { createBookshelfScene, projectShelfDropPosition } from '../../src/js/bookshelf-scene.js';
 import { createShelfLampLighting, MAX_SHELF_LAMP_LIGHTS } from '../../src/js/shelf-lamp-lighting.js';
 import { shelfModelLayout } from '../../src/js/shelf-model-layout.js';
+import { MINIMUM_LAMP_TAP_SIZE } from '../../src/js/plant-dimensions.js';
 
 const gpu = vi.hoisted(() => ({ scene:null, realPuck:false }));
 vi.mock('../../src/js/book-model.js', async () => {
@@ -102,18 +103,26 @@ afterEach(() => {
 });
 
 describe('warm lamps in the retained shelf scene', () => {
-  it.each(['baggebo','walnut'])('keeps the real undershelf touch centre exposed on steel and occluded by solid wood (%s)', shelfType => {
+  it.each(['baggebo','walnut'])('gives the real undershelf light a finger-sized switch that reaches through the board (%s)', shelfType => {
     gpu.realPuck = true;
     const initial = layout();
     Object.assign(initial.entries[1], {x:16 + .58 * (390 - 32),width:44.2,height:7.15,depth:44.2});
     const data = shelfModelLayout(initial,shelfType); mount(data);
-    shelf.setMode('isometric', {animate:false}); shelf.flush();
     const node = data.entries[1].node;
+    for (const mode of ['spine', 'isometric']) {
+      shelf.setMode(mode, {animate:false}); shelf.flush();
+      expect(parseFloat(node.style.width)).toBeGreaterThanOrEqual(MINIMUM_LAMP_TAP_SIZE);
+      expect(parseFloat(node.style.height)).toBeGreaterThanOrEqual(MINIMUM_LAMP_TAP_SIZE);
+      const x = parseFloat(node.style.left) + parseFloat(node.style.width) / 2;
+      const y = 60 + parseFloat(node.style.top) + parseFloat(node.style.height) / 2;
+      // The centre, and the wood around it as far as the square reaches, all
+      // switch the light; the solid walnut board in front no longer blocks it.
+      for (const [dx, dy] of [[0,0],[-18,0],[18,0],[0,-18],[0,18],[-.4,.6]])
+        expect(shelf.getObjectAtPoint(x + dx, y + dy), `${mode} ${dx},${dy}`).toBe(node);
+      expect(shelf.getObjectAtPoint(x, y + 40)).not.toBe(node);
+    }
     const x = parseFloat(node.style.left) + parseFloat(node.style.width) / 2;
     const y = 60 + parseFloat(node.style.top) + parseFloat(node.style.height) / 2;
-    const expected = shelfType === 'baggebo' ? node : null;
-    expect(shelf.getObjectAtPoint(x,y)).toBe(expected);
-    expect(shelf.getObjectAtPoint(Math.round(x),Math.round(y))).toBe(expected);
     const cast = vi.spyOn(THREE.Raycaster.prototype, 'intersectObjects');
     shelf.setLampPower(node,false); flushFrames();
     expect(cast).not.toHaveBeenCalled();
@@ -122,11 +131,32 @@ describe('warm lamps in the retained shelf scene', () => {
     shelf.zoomTo(2.2,x,y); shelf.panBy(13,7); shelf.flush();
     const zoomX = parseFloat(node.style.left) + parseFloat(node.style.width) / 2;
     const zoomY = 60 + parseFloat(node.style.top) + parseFloat(node.style.height) / 2;
-    expect(shelf.getObjectAtPoint(zoomX,zoomY)).toBe(expected);
-    expect(shelf.getObjectAtPoint(Math.round(zoomX),Math.round(zoomY))).toBe(expected);
+    expect(shelf.getObjectAtPoint(zoomX,zoomY)).toBe(node);
+    expect(shelf.getObjectAtPoint(zoomX - 15,zoomY + 15)).toBe(node);
     cast.mockClear();
     shelf.setLampPower(node,true); flushFrames();
     expect(cast).not.toHaveBeenCalled();
+  });
+
+  it('keeps a book drawn inside the light\'s square on the book', () => {
+    gpu.realPuck = true;
+    const initial = layout(), puckX = 16 + .58 * (390 - 32);
+    Object.assign(initial.entries[1], {x:puckX,width:44.2,height:7.15,depth:44.2});
+    const book = document.createElement('button'); book.className = 'ihr-spine'; book.dataset.bookId = 'tall'; stage.append(book);
+    // A tall book right under the light: its top reaches into the switch's square.
+    initial.entries.push({ node:book, book:{ id:'tall', title:'Alto' }, style:{ color:'#41694f', width:20, heightRatio:1.6 }, shelf:0,
+      x:puckX, y:initial.rows[0].bottom - 100, width:120, height:200, thickness:20 });
+    const data = shelfModelLayout(initial,'walnut'); mount(data);
+    const node = data.entries[1].node;
+    const lampBox = { left:parseFloat(node.style.left), top:60 + parseFloat(node.style.top),
+      width:parseFloat(node.style.width), height:parseFloat(node.style.height) };
+    const bookTop = 60 + parseFloat(book.style.top), bookX = parseFloat(book.style.left) + parseFloat(book.style.width) / 2;
+    const y = bookTop + 3;
+    expect(y).toBeLessThan(lampBox.top + lampBox.height); // the point is inside both targets
+    expect(y).toBeGreaterThan(lampBox.top);
+    expect(bookX).toBeGreaterThan(lampBox.left); expect(bookX).toBeLessThan(lampBox.left + lampBox.width);
+    expect(shelf.getObjectAtPoint(bookX, y)).toBe(book);
+    expect(shelf.getObjectAtPoint(lampBox.left + lampBox.width / 2, lampBox.top + 6)).toBe(node);
   });
 
   it('mounts a round light under the ceiling and stands the tabletop lamp on the board', () => {

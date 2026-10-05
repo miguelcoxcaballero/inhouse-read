@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createBookshelfScene } from '../../src/js/bookshelf-scene.js';
 import { layoutShelves } from '../../src/js/bookshelf-layout.js';
-import { bookSpineOptions, minimumBookCellWidth, minimumBookTapWidth, nearestTapTarget, padTapRect } from '../../src/js/plant-dimensions.js';
+import { bookSpineOptions, minimumBookCellWidth, minimumBookTapWidth, nearestTapTarget, padTapRect, padTapSquare, MINIMUM_LAMP_TAP_SIZE } from '../../src/js/plant-dimensions.js';
 
 vi.mock('../../src/js/book-model.js', async () => {
   const Three = await import('three');
@@ -82,6 +82,16 @@ beforeEach(() => {
 afterEach(() => {
   shelf?.dispose(); shelf = null; document.body.innerHTML = '';
   vi.restoreAllMocks(); vi.unstubAllGlobals();
+});
+
+describe('padTapSquare', () => {
+  it('pads a thin light to a finger-sized square around its centre and keeps larger sides', () => {
+    expect(MINIMUM_LAMP_TAP_SIZE).toBeGreaterThanOrEqual(44);
+    expect(padTapSquare({ left:100, top:50, width:36, height:1 }, 44)).toEqual({ left:96, top:28.5, width:44, height:44 });
+    expect(padTapSquare({ left:0, top:0, width:90, height:120 }, 44)).toEqual({ left:0, top:0, width:90, height:120 });
+    expect(padTapSquare({ left:10, top:10, width:60, height:20 }, 44)).toEqual({ left:10, top:-2, width:60, height:44 });
+    const out = {}; expect(padTapSquare({ left:0, top:0, width:5, height:9 }, 44, out)).toBe(out);
+  });
 });
 
 describe('padTapRect and nearestTapTarget', () => {

@@ -124,6 +124,10 @@ import { lampCatalogIllustration } from './lamp-illustration.js';
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
 const TAP_SLOP = 12;
+// A click a pointer produced, as opposed to the keyboard or assistive tech.
+// Chromium can deliver a touch's compatibility click with detail 0 (seen on
+// a tap whose pointerup restyled the button), so the pointer type counts too.
+const pointerClick = event => event.detail > 0 || ['touch', 'mouse', 'pen'].includes(event.pointerType);
 const REORDER_HOLD_MS = 440;
 const SHELF_VIEW_STORAGE_KEY = 'inhouse-read-shelf-view';
 const SHELF_PLANTS_STORAGE_KEY = 'inhouse-read-shelf-plants';
@@ -993,6 +997,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     clearCompatibilityTapRefresh();
     state.suppressLampClickKey = null;
     let backgroundOnly = false;
+    const pressed = node;
     if (state.shelfScene) {
       const hit = state.shelfScene.getObjectAtPoint(event.clientX, event.clientY);
       backgroundOnly = !hit;
@@ -1010,7 +1015,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       x: event.clientX, y: event.clientY, scrollTop: scroller.scrollTop,
       pointerType: event.pointerType, target: null, after: false, moved: false,
       active: false, scrolling: false, cancelled: false, timer: 0,
-      bookTapValid: !backgroundOnly && node.classList.contains('ihr-spine')
+      bookTapValid: !backgroundOnly && node.classList.contains('ihr-spine'),
+      // The 3D hit belongs to another button than the one touched (a lamp's
+      // square over a book, or the reverse): pointer capture hands the release
+      // to the hit's own button, which then owns the tap.
+      redirected: !backgroundOnly && node !== pressed
     };
     try { node.setPointerCapture?.(event.pointerId); } catch { /* el navegador pudo cancelar el puntero */ }
     // Rotated hit rectangles contain some empty space. It must still scroll
@@ -1076,6 +1085,17 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     drag.target = target;
     drag.after = Boolean(target && event.clientX > target.getBoundingClientRect().left + target.getBoundingClientRect().width / 2);
     target?.classList.add('is-drop-target', drag.after ? 'is-drop-after' : 'is-drop-before');
+  }
+
+  /** A touch released where it started, on `node`'s own unmoved hold. The
+   * touch is this button's validated contact (`candidate`), or a contact
+   * another button received whose 3D hit was this one (`drag.redirected`). */
+  function isTouchTapRelease(event, drag, node, candidate) {
+    if (event.pointerType !== 'touch' || drag?.pointerId !== event.pointerId || drag.node !== node ||
+      drag.active || drag.moved || drag.cancelled || drag.scrolling || state.arranging) return false;
+    if (candidate) return candidate.valid && !candidate.cancelled &&
+      Math.hypot(event.clientX - candidate.x, event.clientY - candidate.y) <= TAP_SLOP;
+    return drag.redirected && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) <= TAP_SLOP;
   }
 
   function finishSpineDrag(event, node, cancelled = false, activateTouch = false) {
@@ -1294,7 +1314,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (clearOpeningClick === clear) clearOpeningClick = null;
     };
     const discard = event => {
-      if (!event.detail || event.pointerType && event.pointerType !== 'touch') return;
+      if (!pointerClick(event) || event.pointerType && event.pointerType !== 'touch') return;
       if (event.pointerId !== undefined && event.pointerId !== release.pointerId) return;
       if (Math.hypot(event.clientX - release.clientX, event.clientY - release.clientY) > TAP_SLOP) return;
       clear();
@@ -1443,10 +1463,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       // Some Android/Chromium taps after a pan have no compatibility click;
       // others still deliver one. The validated pointerup handles both once.
       // A detail-zero activation belongs to the keyboard or assistive tech.
-      if (event.detail && (ignoreTouchClick || touch)) { ignoreTouchClick = false; touch = null; return; }
+      if (pointerClick(event) && (ignoreTouchClick || touch)) { ignoreTouchClick = false; touch = null; return; }
       if (state.arranging || state.suppressOpenBookId) { state.suppressOpenBookId = null; return; }
-      const hit = event.detail ? state.shelfScene?.getBookAtPoint(event.clientX, event.clientY) : null;
-      if (event.detail && state.shelfScene && !hit) return;
+      const hit = pointerClick(event) ? state.shelfScene?.getBookAtPoint(event.clientX, event.clientY) : null;
+      if (pointerClick(event) && state.shelfScene && !hit) return;
       openBook(hit || node, hit ? state.itemsById.get(hit.dataset.bookId) || item : item);
     });
     node.addEventListener('keydown', event => {
@@ -1473,10 +1493,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     node.addEventListener('pointerup', event => {
       const candidate = touch?.pointerId === event.pointerId ? touch : null;
       const drag = state.dragSession;
-      const activate = candidate?.valid && !candidate.cancelled && event.pointerType === 'touch' &&
-        Math.hypot(event.clientX - candidate.x, event.clientY - candidate.y) <= TAP_SLOP &&
-        drag?.pointerId === event.pointerId && drag.node === node && !drag.active && !drag.moved &&
-        !drag.cancelled && !drag.scrolling && !state.arranging;
+      const activate = isTouchTapRelease(event, drag, node, candidate) && (Boolean(candidate) || drag.bookTapValid);
       finishSpineDrag(event, drag?.node || node, false, activate);
       if (candidate) { touch = null; ignoreTouchClick = true; }
       if (activate && node.isConnected && !state.suppressOpenBookId) {
@@ -1565,10 +1582,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     node.addEventListener('pointerup', event => {
       const candidate = touch?.pointerId === event.pointerId ? touch : null;
       const drag = state.dragSession;
-      const activate = candidate?.valid && !candidate.cancelled && event.pointerType === 'touch' &&
-        Math.hypot(event.clientX-candidate.x, event.clientY-candidate.y) <= TAP_SLOP &&
-        drag?.pointerId === event.pointerId && drag.node === node && !drag.active && !drag.moved &&
-        !drag.cancelled && !drag.scrolling && !state.arranging;
+      const activate = isTouchTapRelease(event, drag, node, candidate);
       finishSpineDrag(event, drag?.node || node);
       if (candidate) { touch = null; ignoreTouchClick = true; }
       if (activate && node.isConnected && state.suppressLampClickKey !== objectKey(node)) {
@@ -1581,10 +1595,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       finishSpineDrag(event, state.dragSession?.node || node, true);
     });
     node.addEventListener('click', event => {
-      if (event.detail && (ignoreTouchClick || touch)) { ignoreTouchClick = false; touch = null; return; }
-      if (event.detail && state.suppressLampClickKey === objectKey(node)) { state.suppressLampClickKey = null; return; }
-      if (!event.detail) state.suppressLampClickKey = null;
-      if (event.detail && state.shelfScene && state.shelfScene.getObjectAtPoint(event.clientX, event.clientY) !== node) return;
+      if (pointerClick(event) && (ignoreTouchClick || touch)) { ignoreTouchClick = false; touch = null; return; }
+      if (pointerClick(event) && state.suppressLampClickKey === objectKey(node)) { state.suppressLampClickKey = null; return; }
+      if (!pointerClick(event)) state.suppressLampClickKey = null;
+      if (pointerClick(event) && state.shelfScene && state.shelfScene.getObjectAtPoint(event.clientX, event.clientY) !== node) return;
       toggleLamp(node);
     });
     node.addEventListener('keydown', event => {
