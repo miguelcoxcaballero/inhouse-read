@@ -41,8 +41,9 @@ navegador ni encoder. La selección posterior usa el grafo actual exacto.
 El diagnóstico separado SwiftShader/CDP conserva alineado PASS y
 fraccional FAILED al superar la espera original de 8 s del cierre; no
 se reclasifica ni representa una medición de FPS del teléfono. CI71
-`37299786543` sigue en curso, con UI3 ya fallido; no se afirma aprobación
-completa. Su UI3 original conserva 40 casos/42 intentos, dos retries y
+`37299786543` queda sellado FAILED: 12 jobs, 11 ZIP autenticados y 524
+identidades/526 intentos. Sólo UI3 y el agregado fallan; el resto pasa.
+No se afirma aprobación completa. Su UI3 original conserva 40 casos/42 intentos, dos retries y
 cuatro intentos fallidos en los dos contratos nativos (límite global30).
 Los traces originales alcanzan el segundo clic y agotan la espera de
 apertura del lector; se preserva el resultado, sin ampliar plazos.

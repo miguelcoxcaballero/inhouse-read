@@ -8,8 +8,11 @@ al navegar, renderizar, cambiar tema, zoom, brillo, tamaño o cerrar.
 La copia de los píxeles y su calidad permanecen iguales; no se conserva
 otro bitmap. Pasan 3.265 unitarias/254 archivos, build, 75 Python y siete
 recorridos gráficos originales sin retries u omisiones. Cierres completos:
-5.721,2/4.738,0 ms, dentro de 8 s. Publicación y comprobación pública
-pendientes aquí. Detalle en [Tono de página de 1.7.72](performance-1772.md).
+5.721,2/4.738,0 ms, dentro de 8 s. Publicada desde `1c7242e`: HTTP26/offline90,
+APK/loader reales, tres recorridos públicos de editor/nativo y 18 PDF PASS.
+El lector/encoder publicados funcionan offline sin fallback. CI72
+`37302341505` completo sigue en curso; no se afirma PASS global ni FPS
+de un teléfono. Detalle en [Tono de página de 1.7.72](performance-1772.md).
 
 ## Portadas PDF de 1.7.71
 
@@ -22,7 +25,8 @@ gráficos originales sin retries ni omisiones. Cierres: 4.830,6/5.482,3 ms.
 Publicada: HTTP26/offline90, APK/loader reales, tres recorridos públicos
 nativo/editor y 18 PDF PASS. El lector PDF genera su portada con el worker
 publicado sin Internet y sin fallback. El diagnóstico SwiftShader/CDP
-mantiene un fallo fraccional de cierre; CI71 completo sigue en curso.
+mantiene un fallo fraccional de cierre; CI71 queda sellado FAILED con
+12 jobs, 11 ZIP y 524 identidades/526 intentos, sólo UI3 y agregado fallidos.
 Detalle en [Portadas PDF y rendimiento de 1.7.71](performance-1771.md).
 
 ## Reserva del encuadre de 1.7.70
@@ -35,8 +39,9 @@ crecer y se libera al cancelar o terminar. Pasan 79 pruebas enfocadas,
 originales al primer intento. Cierres completos: 5.555,7/5.339,2 ms dentro
 de sus 8 s. No se afirma una mejora medida de FPS en un teléfono.
 Publicada: HTTP25/offline89, APK/loader reales, tres recorridos públicos
-nativo/editor y 18 PDF PASS. CI70 completo sigue pendiente, con UI3 ya
-fallido; no se afirma aprobación completa. Detalle en
+nativo/editor y 18 PDF PASS. CI70 completo queda sellado FAILED: 12 jobs,
+11 ZIP y 524 identidades/526 intentos; sólo UI3 y el agregado fallan.
+No se afirma aprobación completa. Detalle en
 [Animaciones y rendimiento de 1.7.70](performance-1770.md).
 
 ## Reutilización HDR de 1.7.69
