@@ -37,8 +37,26 @@ conserva las 524 identidades E2E; no es una ejecución. Los siete recorridos
 originales locales pasan al primer intento, cero retries, flaky y omisiones.
 Los cierres alineado y legado tardan 5.058,1 y 6.003,5 ms con los plazos
 originales. Veinte composiciones de cámara conservan la sala sin repintarla
-y mantienen seis lomos de 1.024 px. La publicación sigue pendiente. Los resultados aislados anteriores
+y mantienen seis lomos de 1.024 px. Los resultados aislados anteriores
 no sustituyen esos recorridos ni corrigen el resultado fallido de 1.7.60.
+
+## Publicación comprobada
+
+Fuente `de672fd`, Pages `8daed16`: los 23 módulos y 44 archivos offline
+servidos coinciden con los bytes publicados. La APK recién descargada conserva
+los bytes de la firmada 1.1.4/code17 y el loader de 2.089 bytes coincide con
+la fuente; no incorpora una web antigua.
+
+Los tres recorridos públicos originales de editor y regreso nativo pasan al
+primer intento, sin retries, flaky ni omisiones. Conservan 50 cuerpos de
+aplicación autenticados y los plazos originales. Su certificado SHA-256 es
+`bd23c269f3a513b42513d4e19dce0e700bec07117d867a1b1465911e45a81aa0`.
+Los dieciocho recorridos PDF públicos también pasan al primer intento, sin
+retries, flaky ni omisiones, con 310 cuerpos autenticados. Conservan fotos
+en todos los temas, texto completo, orden y navegación. Su certificado es
+`e2716e254f8a8b8fd4320eb6598e13ecb660e149251a3b3c91f6ae3a83f9bae6`.
+La auditoría de la CI original `37254356739` sigue pendiente. Estos pases
+locales y públicos no reclasifican el fallo de CI 60.
 
 ## Evidencia
 
@@ -51,3 +69,11 @@ En `.animation.local/performance-1761/`:
 - `appearance-reuse-quality-attempt1/`: fuentes y métodos sellados, build,
   DPR2 y DPR1,5 con sus informes originales y procesos cerrados.
 - `adoption.json`: adopción después de comprobar CPU y GPU reales.
+- `full-local-attempt1/summary.json`: batería completa de la fuente final.
+- `local-browser-attempt1/`: siete recorridos locales originales.
+- `public-de672fd-attempt1/http-attempt1/` y `apk-attempt1/`: HTTP, APK y loader.
+- `public-de672fd-attempt1/performance-browser-attempt1/performance-qualification.json`:
+  los tres recorridos públicos originales.
+- `public-de672fd-attempt1/browser-attempt1/certification.json`: los 18 PDF públicos.
+- `ci-original-37254356739-attempt1/preparation.json`: binding inmutable;
+  el resultado original y su auditoría aún no están calificados aquí.

@@ -1,4 +1,32 @@
-# Verificación del WIP — 1.7.61 y Android 1.1.4
+# Verificación del WIP — 1.7.63 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.63
+
+La puntuación numérica de máscaras de fuentes pasa a un Worker de módulo;
+fuentes, rasterizado, muestreo, color y selección siguen en el hilo principal,
+con el cálculo y fallback originales. CPU aislada final: candidato77 PASS
+(52 originales y 25 nuevos), control52 PASS, identidades originales iguales.
+Los fallos anteriores del reporter y los cuatro fixtures nuevos de realm,
+además del guard de caché, quedan FAILED y conservados.
+
+El Worker construido realmente compara dos portadas online y offline:
+432 puntuaciones exactas, mismos bytes de muestras/máscaras y apariencia
+final. La navegación y el Worker offline llegan 200 desde el Service Worker
+con cuerpos auténticos. El primer método offline conserva FAILED; el método
+fresco sólo clasifica el probe exacto de red de la raíz y exige esas pruebas
+de cuerpos. Cero pageErrors, consoleErrors y fallos de red inesperados;
+navegador/preview cerrados. CPU `51b39203…`, informe real `1b4e9ec6…`.
+
+La fuente final pasa 3.134 unitarias en 239 archivos, compilación y 75
+Python, con los cinco comandos exit0 y 523 hechos estables. Recibo completo
+`79947b70…`. El censo conserva 524 identidades únicas E2E sin omisiones ni
+intentos ejecutados; un listado no cuenta como ejecución. Los siete
+recorridos locales originales pasan al primer intento, sin retries, flaky ni
+omisiones; fuente/build estables. Cierres de 5.265,9 y 6.056 ms con los ocho
+segundos originales; recibo `f9d6f3b1…`. Publicación y recorridos públicos63
+pendientes. No acredita FPS, temperatura, menor tiempo total del matcher ni
+píxeles del modelo 3D. Detalle en
+[Rendimiento de 1.7.63](performance-1763.md).
 
 ## Cambios de rendimiento de 1.7.61
 
@@ -11,8 +39,13 @@ fallos esperados del control quedan conservados. Fuente final: 3.109
 unitarias en 235 archivos, build y 75 Python PASS, 515 hechos estables.
 El censo de 524 E2E no se presenta como ejecución. Los siete recorridos
 locales originales pasan al primer intento, sin retries/flaky/skips, con
-cierres de 5.058,1 y 6.003,5 ms. La publicación sigue pendiente. No acredita FPS en un teléfono físico ni reclasifica
-los fallos de 1.7.60. Detalle en [Rendimiento de 1.7.61](performance-1761.md).
+cierres de 5.058,1 y 6.003,5 ms. Publicada desde `de672fd`, Pages `8daed16`:
+HTTP real de 23 módulos/44 offline y APK recién descargada/loader PASS. Los
+tres recorridos públicos originales y los 18 PDF pasan al primer intento,
+sin retries, flaky ni omisiones, con 50 y 310 cuerpos autenticados. La
+auditoría de la CI original `37254356739` sigue pendiente. No acredita FPS
+en un teléfono físico ni reclasifica los fallos de 1.7.60. Detalle en
+[Rendimiento de 1.7.61](performance-1761.md).
 
 ## Cambios de rendimiento de 1.7.60
 
@@ -35,7 +68,9 @@ recorridos públicos originales: 2 PASS/1 FAIL (alineado global30), sin retries,
 flaky ni omisiones; auditor estricto FAILED. Los 18 PDF públicos pasan al primer intento, sin retries ni omisiones,
 con 310 cuerpos autenticados; CI original `37252194562` termina FAILED (UI3/agregador; otros diez jobs PASS).
 UI3 temprano conserva 40 identidades/42 intentos, 38 pases y los dos contratos
-nativos timedOut en sus cuatro intentos. Colección completa pendiente.
+nativos timedOut en sus cuatro intentos. Colección completa sellada FAILED:
+doce logs, once ZIP autenticados, 524 identidades únicas y 526 intentos,
+incluidos los dos retries y cuatro fallos originales; certificado `adf8e70c…`.
 Detalle en [Rendimiento de 1.7.60](performance-1760.md).
 
 ## Cambios de rendimiento de 1.7.59

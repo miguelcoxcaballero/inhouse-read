@@ -67,7 +67,11 @@ en todos los temas, texto completo, orden y navegación. Su certificado
 SHA-256 es `cd9a7259571a82695c0d864d6b63d64c2572041b0541fef0b9892302303918e9`. La CI original `37252194562` termina FAILED: UI3 y el agregador fallan,
 los otros diez jobs pasan. UI3 temprano conserva 40 identidades/42 intentos,
 38 pases y los dos contratos nativos timedOut en sus cuatro intentos.
-La colección completa de doce logs y once ZIP sigue pendiente.
+La colección completa está sellada: doce logs, once ZIP autenticados y sus
+miembros extraídos coinciden íntegramente. Conserva 524 identidades únicas,
+526 intentos, dos retries y cuatro intentos fallidos originales, sólo en UI3.
+El certificado mantiene FAILED; SHA-256
+`adf8e70c1145364d25d6a3827bf54d37f228d774a0d4d5b930a66b8540f13c7a`.
 
 ## Evidencia
 
@@ -87,3 +91,7 @@ En `.animation.local/performance-1760/`:
 - `local-seven-preparation1-failure.json`: conflicto de preparación conservado;
   ningún test se ejecutó allí. Los métodos finales son idénticos a los anteriores
   salvo versión, namespace y conteos comprobados.
+- `ui3-early-37252194562-attempt1/`: primer log, ZIP y 40 casos UI3 conservados.
+- `ci-watch-37252194562-attempt1/`: 29 consultas y conclusión original FAILED.
+- `ci-original-37252194562-attempt1/snapshot-001/certification.json`:
+  los doce logs, once ZIP y censo completo sellados.
