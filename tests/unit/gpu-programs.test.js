@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
-import { compilePrograms, keepProgramsAlive, prelinkPrograms, retainPrograms } from '../../src/js/gpu-programs.js';
+import { compilePrograms, keepProgramsAlive, prelinkPrograms, retainPrograms, prepareProgramUniforms } from '../../src/js/gpu-programs.js';
 
 const program = (ready = true) => ({ usedTimes:1, ready, isReady() { return this.ready; } });
 
@@ -24,6 +24,63 @@ function fakeRenderer(programsByMaterial = new Map()) {
   };
 }
 const mesh = (material, visible = true) => Object.assign(new THREE.Mesh(new THREE.BufferGeometry(), material), { visible });
+
+describe('idle uniform reflection for hidden opening faces', () => {
+  const setup = (...programs) => {
+    const material = new THREE.MeshBasicMaterial();
+    const renderer = fakeRenderer(new Map([[material, new Map(programs.map((p, i) => [i, p]))]]));
+    return { renderer, materials:new Set([material]) };
+  };
+  it('reflects each exact program after a separate idle slice, without drawing or compiling again', async () => {
+    const events = [], first = { ...program(), getUniforms:vi.fn(() => events.push('first')) };
+    const second = { ...program(), getUniforms:vi.fn(() => events.push('second')) };
+    const { renderer, materials } = setup(first, second);
+    const idle = vi.fn(async () => { events.push('idle'); });
+    expect(await prepareProgramUniforms(renderer, materials, { idle })).toBe(true);
+    expect(events).toEqual(['idle', 'first', 'idle', 'second']);
+    expect(renderer.calls).toEqual([]);
+    expect(await prepareProgramUniforms(renderer, materials, { idle })).toBe(true);
+    expect(idle).toHaveBeenCalledTimes(2);
+    expect(first.getUniforms).toHaveBeenCalledOnce();
+    expect(second.getUniforms).toHaveBeenCalledOnce();
+  });
+  it('waits for the driver without querying uniforms while linking', async () => {
+    const pending = { ...program(false), getUniforms:vi.fn() }, { renderer, materials } = setup(pending);
+    const idle = vi.fn(async () => { expect(pending.getUniforms).not.toHaveBeenCalled(); if (idle.mock.calls.length === 3) pending.ready = true; });
+    expect(await prepareProgramUniforms(renderer, materials, { idle })).toBe(true);
+    expect(idle).toHaveBeenCalledTimes(3);
+    expect(pending.getUniforms).toHaveBeenCalledOnce();
+  });
+  it('does not reflect a disposed or superseded page after yielding', async () => {
+    const p = { ...program(), getUniforms:vi.fn() }, { renderer, materials } = setup(p);
+    let active = true;
+    expect(await prepareProgramUniforms(renderer, materials, { idle:async () => { active = false; }, current:() => active })).toBe(false);
+    expect(p.getUniforms).not.toHaveBeenCalled();
+  });
+  it('leaves a driver that never becomes ready to the original first draw', async () => {
+    const p = { ...program(false), getUniforms:vi.fn() }, { renderer, materials } = setup(p);
+    let now = 0;
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => now);
+    try {
+      expect(await prepareProgramUniforms(renderer, materials, { idle:async () => { now += 8000; } })).toBe(false);
+      expect(p.getUniforms).not.toHaveBeenCalled();
+    } finally { clock.mockRestore(); }
+  });
+  it('does not cache a failed reflection and allows its original recovery', async () => {
+    const p = { ...program(), getUniforms:vi.fn().mockImplementationOnce(() => { throw Error('Lost context'); }).mockReturnValue({}) };
+    const { renderer, materials } = setup(p), options = { idle:async () => {} };
+    await expect(prepareProgramUniforms(renderer, materials, options)).rejects.toThrow('Lost context');
+    expect(await prepareProgramUniforms(renderer, materials, options)).toBe(true);
+    expect(p.getUniforms).toHaveBeenCalledTimes(2);
+  });
+  it('keeps older renderer doubles and unavailable preparation on the original draw path', async () => {
+    const { renderer, materials } = setup(program());
+    expect(await prepareProgramUniforms(renderer, materials, { idle:async () => {} })).toBe(true);
+    expect(await prepareProgramUniforms(renderer, materials)).toBe(false);
+    expect(await prepareProgramUniforms({}, materials, { idle:async () => {} })).toBe(false);
+    expect(renderer.calls).toEqual([]);
+  });
+});
 
 describe('program retention', () => {
   it('pins each program once so disposing its last material cannot delete it', () => {

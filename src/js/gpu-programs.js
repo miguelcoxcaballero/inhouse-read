@@ -15,6 +15,30 @@ const MAX_RETAINED = 160;
 const LINK_TIMEOUT = 15000;
 const retained = new WeakSet();
 const retainedCounts = new WeakMap();
+const preparedUniforms = new WeakSet();
+
+// Linking alone does not reflect a program's uniforms. Three does that lazily
+// on its first draw, including for page/board faces hidden by the closed cover.
+// Prepare those same programs while the cover waits, one per idle slice. This
+// neither draws hidden surfaces nor changes shader variants or their quality.
+export async function prepareProgramUniforms(renderer, materials, { idle, current = () => true } = {}) {
+  if (typeof idle !== 'function' || !materials || !renderer.properties?.get) return false;
+  const programs = new Set();
+  for (const material of materials)
+    renderer.properties.get(material).programs?.forEach(program => programs.add(program));
+  const deadline = performance.now() + LINK_TIMEOUT;
+  for (const program of programs) {
+    if (preparedUniforms.has(program) || typeof program.getUniforms !== 'function') continue;
+    do {
+      await idle();
+      if (!current()) return false;
+      if (performance.now() > deadline) return false;
+    } while (typeof program.isReady === 'function' && !program.isReady());
+    program.getUniforms();
+    preparedUniforms.add(program);
+  }
+  return current();
+}
 
 /** Pin every program the renderer currently holds so disposing the last
  * material that used one no longer deletes it. */
