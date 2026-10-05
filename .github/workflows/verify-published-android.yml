@@ -1,50 +1,66 @@
-name: Verify published Android login and reader
+name: Verify published Android native voice (pinned QA)
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: Published APK version to verify
+        description: Published signed APK version (binding requires 1.1.4)
         required: true
         default: '1.1.4'
       fixture_run_id:
-        description: Android build run containing the intent fixture for reader verification
-        required: false
+        description: Existing signed build run containing the import sender (binding requires 37167745832)
+        required: true
+        default: '37167745832'
 
 permissions:
   contents: read
   actions: read
 
+concurrency:
+  group: published-android-native-qa-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   verify:
+    if: startsWith(github.ref, 'refs/heads/qa/')
+    name: Native APK ${{ matrix.scenario }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Outer runner resource bound only; every original verifier gate is unchanged.
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        scenario: [original, largest]
+    env:
+      VERSION: ${{ inputs.version }}
+      FIXTURE_RUN_ID: ${{ inputs.fixture_run_id }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: 21 }
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
-      - name: Download the public release artifact
-        env:
-          VERSION: ${{ inputs.version }}
-          GH_TOKEN: ${{ github.token }}
+      - name: Download the existing signed release and sender
+        shell: bash
         run: |
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          gh release download "android-v$VERSION" --pattern '*.apk' --output published.apk
-          sha256sum published.apk | tee published-apk.sha256
-          stat -c '%s' published.apk | tee published-apk-size.txt
+          set -euo pipefail
+          test "$VERSION" = '1.1.4'
+          test "$FIXTURE_RUN_ID" = '37167745832'
+          gh release download "android-v$VERSION" --pattern 'inhouse-read-release-v1.1.4.apk' --output published.apk
+          gh run download "$FIXTURE_RUN_ID" --name "inhouse-read-android-intent-fixture-v$VERSION" --dir .
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr
-      - name: Download the reader import fixture from its build
-        if: inputs.fixture_run_id != ''
-        env:
-          FIXTURE_RUN_ID: ${{ inputs.fixture_run_id }}
-          VERSION: ${{ inputs.version }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          [[ "$FIXTURE_RUN_ID" =~ ^[0-9]+$ ]]
-          gh run download "$FIXTURE_RUN_ID" --name "inhouse-read-android-intent-fixture-v$VERSION" --dir .
+          python -m pip install --disable-pip-version-check pillow
+      - name: Pin public source, APK, loader, sender and original verifier bytes
+        run: >-
+          python -u .github/scripts/qualify_published_android_remote.py prepare
+          --scenario ${{ matrix.scenario }} --output remote-apk-qa
+          --apk published.apk --sender intent-fixture-debug.apk
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -56,7 +72,7 @@ jobs:
         run: |
           servers=$(awk '$1 == "nameserver" && $2 ~ /^[0-9]+\./ && $2 !~ /^127\./ { print $2 }' /etc/resolv.conf | head -n 3 | paste -sd, -)
           echo "servers=${servers:+$servers,}1.1.1.1" >> "$GITHUB_OUTPUT"
-      - name: Open the actual APK and Google sign-in
+      - name: Original import and native background assertions on a fresh emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -64,31 +80,20 @@ jobs:
           arch: x86_64
           profile: pixel_4
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server ${{ steps.runner-dns.outputs.servers }}
-          script: python -u .github/scripts/verify_android_app.py published.apk --google-login
-      - name: Verify the published reader display policy
-        if: inputs.fixture_run_id != ''
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_4
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server ${{ steps.runner-dns.outputs.servers }}
-          script: python -u .github/scripts/verify_android_app.py published.apk --reading-display
+          script: >-
+            python -u .github/scripts/qualify_published_android_remote.py run
+            --scenario ${{ matrix.scenario }} --output remote-apk-qa
+            --apk published.apk --sender intent-fixture-debug.apk
+      - name: Preserve original result and verify final public identity
+        if: always()
+        run: >-
+          python -u .github/scripts/qualify_published_android_remote.py finalize
+          --scenario ${{ matrix.scenario }} --output remote-apk-qa
+          --apk published.apk --sender intent-fixture-debug.apk
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: published-android-login
-          path: |
-            published-apk.sha256
-            published-apk-size.txt
-            android-status-bar.png
-            android-ui.xml
-            android-screen-text.txt
-            android-google-login.png
-            android-google-login.xml
-            android-google-login.txt
-            android-logcat.txt
-            android-import-*
-            android-reading-*
-            android-*.capture-errors.json
+          name: published-android-native-${{ matrix.scenario }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: remote-apk-qa/
+          if-no-files-found: warn
+          retention-days: 30
