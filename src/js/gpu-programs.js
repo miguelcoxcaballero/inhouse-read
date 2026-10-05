@@ -15,6 +15,30 @@ const MAX_RETAINED = 160;
 const LINK_TIMEOUT = 15000;
 const retained = new WeakSet();
 const retainedCounts = new WeakMap();
+const preparedUniforms = new WeakSet();
+
+// Linking alone does not reflect a program's uniforms. Three does that lazily
+// on its first draw, including for page/board faces hidden by the closed cover.
+// Prepare those same programs while the cover waits, one per idle slice. This
+// neither draws hidden surfaces nor changes shader variants or their quality.
+export async function prepareProgramUniforms(renderer, materials, { idle, current = () => true } = {}) {
+  if (typeof idle !== 'function' || !materials || !renderer.properties?.get) return false;
+  const programs = new Set();
+  for (const material of materials)
+    renderer.properties.get(material).programs?.forEach(program => programs.add(program));
+  const deadline = performance.now() + LINK_TIMEOUT;
+  for (const program of programs) {
+    if (preparedUniforms.has(program) || typeof program.getUniforms !== 'function') continue;
+    do {
+      await idle();
+      if (!current()) return false;
+      if (performance.now() > deadline) return false;
+    } while (typeof program.isReady === 'function' && !program.isReady());
+    program.getUniforms();
+    preparedUniforms.add(program);
+  }
+  return current();
+}
 
 /** Pin every program the renderer currently holds so disposing the last
  * material that used one no longer deletes it. */
@@ -40,18 +64,32 @@ export function keepProgramsAlive(renderer) {
 }
 
 const materialsOf = object => Array.isArray(object.material) ? object.material : [object.material];
+const drawable = object => (object.isMesh || object.isPoints || object.isLine) && object.material;
 
 // renderer.compile() traverses every node, visible or not (a hidden floor, a
 // culled book). Hand it only the objects the next frame can draw.
 const listing = objects => ({ traverse: callback => objects.forEach(callback), traverseVisible: () => {} });
 
+/** Start linking the programs of the visible meshes under `roots` without
+ * waiting for them. A scene built part by part then links each part while
+ * the next one is still being made. Its lights and environment must already
+ * be final, or the next frame links other variants. */
+export function prelinkPrograms(renderer, scene, camera, roots) {
+  if (typeof renderer.compile !== 'function' || renderer.getRenderTarget() !== null) return;
+  const drawn = [];
+  for (const root of roots) root.traverseVisible(object => { if (drawable(object)) drawn.push(object); });
+  if (!drawn.length) return;
+  renderer.compile(listing(drawn), camera, scene);
+  // Hand the queued compiles to the driver now, not at the next sync point.
+  renderer.getContext?.().flush?.();
+}
+
 /** Start linking every program `scene` draws in parallel. Returns a cheap
  * `ready()` predicate, false while any link is still running (for at most
  * LINK_TIMEOUT, after which the first draw links what is left). The scene's
  * lights and environment must already be configured. `prepared` can include
- * hidden interaction meshes that must be ready before the first gesture.
- * Without the extension, programs report ready at once and link on the
- * first draw as before. */
+ * hidden meshes that must be ready with it. Without the extension, programs
+ * report ready at once and link on the first draw as before. */
 export function compilePrograms(renderer, scene, camera, prepared = []) {
   if (typeof renderer.compile !== 'function') return () => true;
   const programs = new Set();
@@ -60,7 +98,7 @@ export function compilePrograms(renderer, scene, camera, prepared = []) {
       renderer.properties.get(material).programs?.forEach(program => programs.add(program));
   };
   const drawn = [];
-  scene.traverseVisible(object => { if ((object.isMesh || object.isPoints || object.isLine) && object.material) drawn.push(object); });
+  scene.traverseVisible(object => { if (drawable(object)) drawn.push(object); });
   for (const object of prepared) if (!drawn.includes(object)) drawn.push(object);
   compile(drawn);
   // Glass makes three draw the opaque scene a second time into a linear

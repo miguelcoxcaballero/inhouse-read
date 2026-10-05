@@ -1,4 +1,45 @@
-# Verificación del WIP — web 1.7.73 en preparación y Android 1.1.4
+# Verificación del WIP — web 1.7.75 en preparación y Android 1.1.4
+
+## Apertura y contador de programas de 1.7.75
+
+Preparación de uniformes de los mismos shaders mientras espera la portada,
+en turnos idle, y corrección del contador publicado tras la preparación de
+la estantería. Pasan 98 pruebas enfocadas en cinco archivos. Batería completa
+y comprobación de publicación pendientes. [Detalle](performance-1775.md).
+
+## Texturas PDF de 1.7.74
+
+Subida la reutilización de las texturas exactas de un mismo render PDF: no
+se vuelven a generar ni a subir a GPU al cerrar si los píxeles y dimensiones
+siguen siendo los mismos. Cambiar página, tema, brillo, tamaño o documento
+invalida la identidad. Pasan 3.353 unitarias/262 archivos, build, 75 Python,
+siete recorridos locales y 21 públicos sin retries. HTTP32/offline96,
+papel offline en cinco temas, portada offline y APK/loader descargados PASS.
+CI conserva los fallos originales de UI3 y UI4; no se afirma aprobación
+global. [Detalle](performance-1774.md).
+
+## Publicación combinada de 1.7.73
+
+La fuente `2094a19` incorpora los cambios posteriores de arranque y caché de
+plantas, superficies y estudio que ya habían llegado a GitHub. Pasan 3.348
+unitarias/261 archivos, build y 75 Python. HTTP32/offline96 y los tres
+recorridos públicos originales de editor/retorno nativo pasan. El PDF real
+y su worker de papel funcionan offline en cinco temas; portada JPEG
+800×1600 con encoder publicado, sin fallback, también PASS.
+
+La tanda pública PDF conserva 17 PASS y un FAIL de auditoría HTTP: la textura
+walnut cancelada durante navegación devuelve cuerpo vacío. No se cuenta como
+18/18 aprobado aunque las aserciones de texto e imágenes de ese caso hayan
+pasado. CI `37379044119` conserva fallos del retorno nativo y un caso flaky
+de importación EPUB; no se afirma aprobación global. Las comprobaciones
+offline fallidas de la fuente anterior pedían un chunk de `ba0f85f` después
+de que el despliegue fuese sustituido por `2094a19`. Se conservan y se repite
+la comprobación con los bytes y el índice realmente publicados, no con una
+sustitución de respuestas.
+
+Evidencia: `.animation.local/performance-1773-origin/`, subcarpetas separadas
+`public-ba0f85f-attempt1` y `public-2094a19-attempt1`. No se afirma una nueva
+comprobación en teléfono físico ni autenticación real de Google.
 
 ## Muestreo de papel de 1.7.73 en preparación
 

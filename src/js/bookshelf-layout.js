@@ -392,7 +392,11 @@ export const DEFAULT_SECTIONS = Object.freeze({
   sort: 'author' // 'author' | 'title' | 'none'
 });
 
-const collator = new Intl.Collator('es', { sensitivity: 'base', numeric: true });
+// Created on the first sort that needs it: building it at import loads the
+// locale's collation data on the start-up path, and the app's shelf keeps its
+// own order ('none').
+let collator = null;
+const compareText = (a, b) => (collator ??= new Intl.Collator('es', { sensitivity: 'base', numeric: true })).compare(a, b);
 
 function sortBooks(books, mode) {
   const hasManualOrder = book => Number.isFinite(book?.shelfOrder);
@@ -407,9 +411,9 @@ function sortBooks(books, mode) {
   const keyed = books.map((book, index) => ({ book, index }));
   keyed.sort((a, b) => {
     const byAuthor =
-      mode === 'author' ? collator.compare(a.book.author ?? '', b.book.author ?? '') : 0;
+      mode === 'author' ? compareText(a.book.author ?? '', b.book.author ?? '') : 0;
     if (byAuthor !== 0) return byAuthor;
-    const byTitle = collator.compare(a.book.title ?? '', b.book.title ?? '');
+    const byTitle = compareText(a.book.title ?? '', b.book.title ?? '');
     if (byTitle !== 0) return byTitle;
     return a.index - b.index; // orden estable ante empates
   });

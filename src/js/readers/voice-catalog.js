@@ -250,11 +250,18 @@ const WORDS = {
 }
 // The later languages only count words none of the first seven has, so adding them never changes how those are told apart.
 const CORE_LANGUAGES = ['es', 'en', 'fr', 'de', 'it', 'pt', 'ca']
-const CORE_WORDS = new Set(CORE_LANGUAGES.flatMap(lang => WORDS[lang].split(' ')))
-for (const lang of Object.keys(WORDS)) if (!CORE_LANGUAGES.includes(lang)) WORDS[lang] = WORDS[lang].split(' ').filter(word => !CORE_WORDS.has(word)).join(' ')
-const WORD_SETS = Object.fromEntries(Object.entries(WORDS).map(([lang, words]) => [lang, new Set(words.split(' '))]))
-const WORD_LANGS = new Map()
-for (const [lang, set] of Object.entries(WORD_SETS)) for (const word of set) WORD_LANGS.set(word, [...(WORD_LANGS.get(word) || []), lang])
+// Built by the first detection rather than at import: the shelf loads this
+// module at start-up, long before anybody listens to a book.
+let wordTables = null
+function languageWords() {
+  if (wordTables) return wordTables
+  const core = new Set(CORE_LANGUAGES.flatMap(lang => WORDS[lang].split(' ')))
+  for (const lang of Object.keys(WORDS)) if (!CORE_LANGUAGES.includes(lang)) WORDS[lang] = WORDS[lang].split(' ').filter(word => !core.has(word)).join(' ')
+  const sets = Object.fromEntries(Object.entries(WORDS).map(([lang, words]) => [lang, new Set(words.split(' '))]))
+  const langs = new Map()
+  for (const [lang, set] of Object.entries(sets)) for (const word of set) langs.set(word, [...(langs.get(word) || []), lang])
+  return wordTables = { sets, langs }
+}
 // What the book language is worth up front, and how far another language must clearly be ahead to override it.
 const FALLBACK_BONUS = 2
 const HINTS = [
@@ -298,7 +305,7 @@ export function detectLanguage(text, fallback = 'en-US') {
   const sample = String(text || '').toLocaleLowerCase()
   const byScript = detectByScript(sample, fallback)
   if (byScript) return langBase(fallback) === byScript && langRegion(fallback) ? normalizeLang(fallback) : `${byScript}-${DEFAULT_REGION[byScript]}`
-  const scores = {}
+  const scores = {}, { sets:WORD_SETS, langs:WORD_LANGS } = languageWords()
   for (const word of sample.match(/[\p{L}·']+/gu) || []) {
     const langs = WORD_LANGS.get(word)
     if (langs) for (const lang of langs) scores[lang] = (scores[lang] || 0) + (langs.length === 1 ? 1 : 0.5)
