@@ -58,7 +58,14 @@ nativa y UI del home, no de la terminación visual ni de un cierre 3D de
 esa duración. Las capturas originales se conservan. No se introducen
 credenciales: la comprobación de Google es preflight, no login/Drive real.
 La identidad del JavaScript se acredita por HTTP aparte; no se captura
-el SHA del body dentro del emulador. CI69 `37292891253` sigue en curso; UI3 conserva dos timeouts globales de 30 s en arranque/apertura. Los originales y retries quedan registrados como fallo; no prueban un cierre aislado completo superior a 8 s.
+el SHA del body dentro del emulador. CI69 `37292891253` termina FAILED: UI3 conserva dos timeouts globales de
+30 s en arranque/apertura y UI1 se cancela por el límite del job de 45 minutos
+(según la anotación original de GitHub). El agregado falla. El servidor
+reporta diez artefactos y falta UI1, por lo que no hay censo completo de 524
+casos acreditado en esta versión. La descarga inicial de su log devuelve
+HTTP404/BlobNotFound y no se presenta como log validado. Los originales y
+retries de UI3 quedan registrados como fallo; no prueban un cierre aislado
+completo superior a 8 s.
 No se afirma todavía aprobación completa ni rendimiento de un móvil físico.
 
 Evidencia: `.animation.local/performance-1769/`.

@@ -1,4 +1,15 @@
-# Verificación del WIP — web 1.7.70 y Android 1.1.4
+# Verificación del WIP — web 1.7.71 y Android 1.1.4
+
+## Portadas PDF de 1.7.71
+
+La lectura y codificación JPEG de la portada se trasladan a un worker
+cuando el navegador lo admite. Se conserva la calidad .9, el raster y
+las dimensiones; hay cancelación y fallback al encoder original. Cuatro
+portadas reales producen exactamente los mismos bytes JPEG en Chromium.
+Pasan 3.252 unitarias/254 archivos, build, 75 Python y los siete recorridos
+gráficos originales sin retries ni omisiones. Cierres: 4.830,6/5.482,3 ms.
+El despliegue y sus verificaciones públicas quedan pendientes aquí.
+Detalle en [Portadas PDF y rendimiento de 1.7.71](performance-1771.md).
 
 ## Reserva del encuadre de 1.7.70
 
@@ -9,7 +20,9 @@ crecer y se libera al cancelar o terminar. Pasan 79 pruebas enfocadas,
 3.235 unitarias/253 archivos, build, 75 Python y los siete recorridos
 originales al primer intento. Cierres completos: 5.555,7/5.339,2 ms dentro
 de sus 8 s. No se afirma una mejora medida de FPS en un teléfono.
-Despliegue y CI completo pendientes. Detalle en
+Publicada: HTTP25/offline89, APK/loader reales, tres recorridos públicos
+nativo/editor y 18 PDF PASS. CI70 completo sigue pendiente, con UI3 ya
+fallido; no se afirma aprobación completa. Detalle en
 [Animaciones y rendimiento de 1.7.70](performance-1770.md).
 
 ## Reutilización HDR de 1.7.69
@@ -24,7 +37,8 @@ Publicada: HTTP25/offline89 y APK/loader comprobados, tres recorridos
 públicos nativo/editor y 18 PDF PASS, más fuentes offline exactas. Android
 emulado `37293604213` acredita preflight de Google y cinco estados de
 política nativa; su última captura conserva el libro en tránsito y no mide
-el fin visual del cierre. CI69 `37292891253` sigue en curso; UI3 conserva dos timeouts globales de 30 s durante arranque/apertura, sin acreditar un cierre aislado superior a 8 s.
+el fin visual del cierre. CI69 `37292891253` acaba FAILED: UI3 falla y UI1 supera el límite del job
+de 45 minutos, sin artefacto. No hay censo completo de 524 casos acreditado.
 Detalle en [Iluminación y rendimiento de 1.7.69](performance-1769.md).
 
 ## Fuentes locales de 1.7.68

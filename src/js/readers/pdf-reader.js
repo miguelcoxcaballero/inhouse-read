@@ -16,6 +16,7 @@ import { attachSwipeNavigation } from '../gestures.js'
 import { DEFAULT_READING_PREFERENCES, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES, normalizeReadingPreferences } from './reading-preferences.js'
 import { hasUntrackedPDFImages, paintPDFTheme } from './pdf-page-theme.js'
 import { renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from './page-snapshot.js'
+import { encodePdfCover } from './cover-encode.js'
 import { mapTextLayer, mapTextNodes } from './speech-map.js'
 import { clearPDFReflow, pdfImageRects, preparePDFReflow } from './pdf-reflow.js'
 import { extractPDFText, mapPDFTextLayer } from './pdf-text.js'
@@ -857,9 +858,9 @@ export class PdfReader {
       await renderTask.promise
       renderTask = null
       if (!current()) return null
-      // JPEG keeps the same opaque high quality raster. Once encoding has
-      // started the browser cannot cancel it; an aborted result is discarded.
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9))
+      // The worker keeps this exact raster and JPEG quality, while its GPU
+      // readback/encoding leaves the UI thread free for the book animation.
+      const blob = await encodePdfCover(canvas, { signal })
       return current() ? blob : null
     } catch (error) {
       if (!current()) return null
