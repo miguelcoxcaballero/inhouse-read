@@ -1,4 +1,5 @@
-import { LibraryStore, sameBookRecords } from './library-store.js'
+import { library, takeFirstRecords } from './shelf-boot.js'
+import { sameBookRecords } from './library-store.js'
 import { bookCloudState, isBookVisible, storeBookFile } from './book-storage-policy.js'
 import { renderBookshelf } from './bookshelf.js'
 import { ReaderController, UnsupportedFormatError } from './readers/reader-controller.js'
@@ -28,7 +29,6 @@ import { createPreparedPageCache, createStageGate, pageKeyMismatch } from './pre
 import { createBookLengthQueue, isBookLengthReady } from './book-length-queue.js'
 import { persistablePosition, persistableRelocation } from './readers/persistable-position.js'
 
-const library = new LibraryStore()
 const reader = new ReaderController()
 
 const els = {
@@ -95,6 +95,7 @@ let lengthStatusVersion = 0
 let shelfLengthStatusVersion = -1
 let lengthRefreshTimer = null
 let appDisposed = false
+let deployCheck = null
 const shelfRefreshQueue = createShelfRefreshQueue({ perform:performShelfRefresh })
 let driveUploadsInFlight = 0
 const cloudSync = new CloudSync(library, {
@@ -198,6 +199,7 @@ function refreshShelf(options) {
 }
 
 async function performShelfRefresh({ immediate = false } = {}) {
+  const firstRecords = takeFirstRecords()
   if (appDisposed) return
   // Re-rendering a shelf closes its current 3D cover. Defer background
   // changes until the reader transition or close has finished.
@@ -215,8 +217,9 @@ async function performShelfRefresh({ immediate = false } = {}) {
     return
   }
   const accountId = (driveProfile || getRememberedDriveProfile())?.id
-  const storedBooks = await library.listAll()
-  if (appDisposed) return
+  const storedBooks = await (firstRecords ?? library.listAll())
+  // The page is being replaced by a newer deploy: building this shelf would only hold that up.
+  if (appDisposed || deployCheck?.reloading()) return
   const normalizedBooks = await Promise.all(storedBooks.map(book => {
     const title = normalizeBookTitle(book.title || book.name)
     const author = normalizeBookAuthor(book.author)
@@ -1316,10 +1319,13 @@ els.appVersion.textContent = 'Inhouse Read · v1.7.72'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')
+// A newer deploy found at launch reloads only a shelf nobody is using yet.
+deployCheck = initContentFreshnessChecks({ isIdle: () => !closingReader && !driveUploadsInFlight && !shelfRefreshQueued &&
+  !document.querySelector('.ihr-flyout') && els.readerScreen.hidden && els.driveModal.hidden &&
+  document.getElementById('drive-auth-notice').hidden })
 refreshShelf({ immediate:true })
 loadDriveAccountProfile().catch(error => console.warn('No se pudo restaurar la cuenta:', error))
 initAndroidUpdateChecks()
-initContentFreshnessChecks()
 // Everything below waits for the first live shelf frame, one task per idle
 // slice: the offline-shell download must not compete with the shelf's own
 // files, and the reader / catalogue chunks are loaded before anyone reaches

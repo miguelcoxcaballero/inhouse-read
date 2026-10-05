@@ -138,6 +138,11 @@ export function sameBookRecords(previous, next) {
   return previous.length === next.length && previous.every((record, index) => sameValue(record, next[index]))
 }
 
+/** The order listAll() returns: most recently opened first. */
+export function recentFirst(records) {
+  return records.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)
+}
+
 export class LibraryStore {
   #dbPromise
 
@@ -163,10 +168,7 @@ export class LibraryStore {
   /** Lista los libros ordenados por apertura más reciente primero. */
   async listRecents(limit = 50) {
     const store = await this.#store('readonly')
-    const all = await wrap(store.getAll())
-    return all
-      .sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)
-      .slice(0, limit)
+    return recentFirst(await wrap(store.getAll())).slice(0, limit)
   }
 
   async listAll() {
