@@ -40,18 +40,32 @@ export function keepProgramsAlive(renderer) {
 }
 
 const materialsOf = object => Array.isArray(object.material) ? object.material : [object.material];
+const drawable = object => (object.isMesh || object.isPoints || object.isLine) && object.material;
 
 // renderer.compile() traverses every node, visible or not (a hidden floor, a
 // culled book). Hand it only the objects the next frame can draw.
 const listing = objects => ({ traverse: callback => objects.forEach(callback), traverseVisible: () => {} });
 
+/** Start linking the programs of the visible meshes under `roots` without
+ * waiting for them. A scene built part by part then links each part while
+ * the next one is still being made. Its lights and environment must already
+ * be final, or the next frame links other variants. */
+export function prelinkPrograms(renderer, scene, camera, roots) {
+  if (typeof renderer.compile !== 'function' || renderer.getRenderTarget() !== null) return;
+  const drawn = [];
+  for (const root of roots) root.traverseVisible(object => { if (drawable(object)) drawn.push(object); });
+  if (!drawn.length) return;
+  renderer.compile(listing(drawn), camera, scene);
+  // Hand the queued compiles to the driver now, not at the next sync point.
+  renderer.getContext?.().flush?.();
+}
+
 /** Start linking every program `scene` draws in parallel. Returns a cheap
  * `ready()` predicate, false while any link is still running (for at most
  * LINK_TIMEOUT, after which the first draw links what is left). The scene's
  * lights and environment must already be configured. `prepared` can include
- * hidden interaction meshes that must be ready before the first gesture.
- * Without the extension, programs report ready at once and link on the
- * first draw as before. */
+ * hidden meshes that must be ready with it. Without the extension, programs
+ * report ready at once and link on the first draw as before. */
 export function compilePrograms(renderer, scene, camera, prepared = []) {
   if (typeof renderer.compile !== 'function') return () => true;
   const programs = new Set();
@@ -60,7 +74,7 @@ export function compilePrograms(renderer, scene, camera, prepared = []) {
       renderer.properties.get(material).programs?.forEach(program => programs.add(program));
   };
   const drawn = [];
-  scene.traverseVisible(object => { if ((object.isMesh || object.isPoints || object.isLine) && object.material) drawn.push(object); });
+  scene.traverseVisible(object => { if (drawable(object)) drawn.push(object); });
   for (const object of prepared) if (!drawn.includes(object)) drawn.push(object);
   compile(drawn);
   // Glass makes three draw the opaque scene a second time into a linear

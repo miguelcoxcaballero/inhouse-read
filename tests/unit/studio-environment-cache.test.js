@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 
 let cache;
@@ -53,5 +53,56 @@ describe('immutable half-float studio cache', () => {
   it.each([0,-1,1.5,Infinity,NaN,2048])('rejects unsafe width %s before allocating a payload', async width => {
     const source=target();source.width=width;source.height=1024;
     const read=vi.fn();cache.prepareStudioEnvironmentCache({readRenderTargetPixelsAsync:read},source);await settle();expect(read).not.toHaveBeenCalled();expect(cache.cachedStudioEnvironment()).toBeNull();
+  });
+});
+
+describe('studio atlas kept on this device', () => {
+  const deleteDatabase = () => new Promise(resolve => { const request = indexedDB.deleteDatabase('inhouse-read-studio'); request.onsuccess = request.onerror = resolve; });
+  const until = async ready => { for (let step = 0; step < 200 && !ready(); step++) await new Promise(resolve => setTimeout(resolve, 5)); };
+  const pause = () => new Promise(resolve => setTimeout(resolve, 60));
+  const record = () => new Promise(resolve => {
+    const open = indexedDB.open('inhouse-read-studio', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('atlas');
+    open.onsuccess = () => { const get = open.result.transaction('atlas').objectStore('atlas').get('studio'); get.onsuccess = () => { open.result.close(); resolve(get.result); }; };
+  });
+  const start = async () => { vi.resetModules(); return import('../../src/js/studio-environment-cache.js'); };
+  beforeEach(async () => {
+    await deleteDatabase();
+    vi.stubEnv('PROD', true);
+    vi.stubGlobal('requestIdleCallback', callback => setTimeout(callback, 0));
+  });
+  afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+
+  it('stores a baked atlas once, and a later start of the same build uses it instead of baking', async () => {
+    const first = await start(), put = vi.spyOn(IDBObjectStore.prototype, 'put');
+    first.prepareStudioEnvironmentCache({ readRenderTargetPixelsAsync:validRead }, target());
+    await until(() => put.mock.calls.length); await pause();
+    const saved = await record();
+    expect(Array.from(saved.data)).toEqual(Array(64).fill(0x3c00));
+    const later = await start();
+    await until(() => later.cachedStudioEnvironment());
+    const texture = later.cachedStudioEnvironment();
+    expect(Array.from(texture.image.data)).toEqual(Array.from(saved.data));
+    expect(texture.mapping).toBe(THREE.CubeUVReflectionMapping);
+    // Already current: a bake that still happens (the read lost the race) is not written again.
+    later.prepareStudioEnvironmentCache({ readRenderTargetPixelsAsync:validRead }, target());
+    await pause(); await pause();
+    expect(put).toHaveBeenCalledTimes(1);
+  });
+
+  it('bakes again for another build or browser, and never in development', async () => {
+    const first = await start();
+    first.prepareStudioEnvironmentCache({ readRenderTargetPixelsAsync:validRead }, target());
+    await pause(); await pause();
+    expect((await record())?.data).toBeDefined();
+    vi.stubGlobal('navigator', { userAgent:'another browser' });
+    const other = await start();
+    await pause();
+    expect(other.cachedStudioEnvironment()).toBeNull();
+    vi.stubEnv('PROD', false);
+    vi.unstubAllGlobals();
+    const development = await start();
+    await pause();
+    expect(development.cachedStudioEnvironment()).toBeNull();
   });
 });

@@ -101,7 +101,7 @@ const byPriority = (a, b) => priority(a) - priority(b) || String(a.key).localeCo
  */
 export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGHTS, onAreaLightsReady } = {}) {
   const slots = [], kinds = [], counts = new Map(), quota = new Map(), ranks = new Map();
-  let disposed = false, shadowRefresh = false;
+  let disposed = false, shadowRefresh = false, prepared = false;
   function removeLights(slot) {
     for (const light of slot.lights) {
       light.removeFromParent(); light.target?.removeFromParent();
@@ -282,13 +282,19 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
     return (slot.lit || wasLit) && (shadowStamp.changed || lightStamp.changed || emitterChanged || shadowDirty || rootMoved);
   }
   return {
+    /** Build the pool from the library's lamps alone, before their models
+     * exist, so programs linked ahead of the first frame see its final lights. */
+    prepare(entries) {
+      if (!disposed && reconcile(entries)) prepared = true;
+    },
     update(entries, { scroll = 0, viewportHeight = Infinity, shadowDirty = false, transform = null } = {}) {
       if (disposed) return false;
       const rootMatrix = transform && uniformTransform(transform) ? transform : null;
       if (rootMatrix) inverseRoot.copy(rootMatrix).invert();
       middle = Number.isFinite(viewportHeight) ? scroll + viewportHeight / 2 : 0;
       shadowRefresh = false;
-      let changed = reconcile(entries);
+      let changed = reconcile(entries) || prepared;
+      prepared = false;
       candidates.length = 0;
       for (const entry of entries) if (isCandidate(entry)) candidates.push(entry);
       if (candidates.length > 1) candidates.sort(byPriority);

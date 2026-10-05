@@ -6,9 +6,11 @@ const html = readFileSync('index.html', 'utf8')
 const scene = readFileSync('src/js/bookshelf-scene.js', 'utf8')
 
 describe('shelf texture resource hints', () => {
+  // The scene fetches the file itself to decode it off the main thread:
+  // only an as="fetch" hint with fetch()'s CORS mode serves that request.
   it.each(['walnut-pbr.webp', 'walnut-surface.webp'])('starts loading the existing %s image from the HTML', name => {
     const document = new DOMParser().parseFromString(html, 'text/html')
-    const hints = [...document.querySelectorAll('link[rel="preload"][as="image"]')]
+    const hints = [...document.querySelectorAll('link[rel="preload"][as="fetch"]')]
       .filter(link => link.getAttribute('href') === `/src/assets/library/${name}`)
     expect(hints).toHaveLength(1)
     expect(scene).toContain(`new URL('../assets/library/${name}', import.meta.url).href`)
