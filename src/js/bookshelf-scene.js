@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { configureNativeRendererSize } from './native-renderer-size.js';
+import { shelfPixelOffset } from './shelf-pixel-origin.js';
 import { refreshCanvasFontsAfterPaint } from './canvas-font-readiness.js';
 import { createBookModel, getBookRenderer, lightBookScene } from './book-model.js';
 import { bookmarkFor } from './bookshelf-layout.js';
@@ -197,6 +198,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   canvas.setAttribute('aria-hidden', 'true');
   Object.assign(canvas.style, { position:'sticky', top:'0', left:'0', display:'block', pointerEvents:'none', zIndex:'0' });
   let originalHeight = stage.style.height;
+  const originalTop = stage.style.top;
+  let stagePixelOffset = 0;
   let alreadyScene = stage.classList.contains('has-scene');
   const originalStyles = new Map(entries.filter(entry => entry.node).map(entry => [entry.node, entry.node.getAttribute('style')]));
   const semanticCovers = new Map();
@@ -1169,6 +1172,19 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const availableHeight = edgeToEdge && progress === 1 ? sceneFitHeight : scroller.clientHeight || window.innerHeight;
     viewportHeight = Math.max(1, Math.ceil(Math.min(availableHeight, window.innerHeight)));
     const ratio = Math.min(window.devicePixelRatio || 1, inspectionZoom > 1.001 && desiredMode === 'isometric' ? 2.5 : width < 600 ? 1.5 : 2);
+    // Move the whole stage, including its projected hit targets, together.
+    // Use the resting frontal size so switching cameras never changes this
+    // alignment. Its framebuffer dimensions and DPR remain untouched.
+    const stageBounds = stage.getBoundingClientRect();
+    const restingTop = stageBounds.top + scroller.scrollTop - stagePixelOffset;
+    const baseRatio = Math.min(window.devicePixelRatio || 1, width < 600 ? 1.5 : 2);
+    const offset = nativeRoomLease ? shelfPixelOffset(restingTop, sceneWidth,
+      Math.ceil(Math.min(scroller.clientHeight || window.innerHeight, window.innerHeight)), baseRatio) : 0;
+    const settledStageBounds = offset === stagePixelOffset ? stageBounds : null;
+    if (offset !== stagePixelOffset) {
+      stagePixelOffset = offset;
+      stage.style.top = offset ? `${(parseFloat(originalTop) || 0) + offset}px` : originalTop;
+    }
     const pixelWidth = Math.ceil(sceneWidth * ratio), pixelHeight = Math.ceil(viewportHeight * ratio);
     if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
       canvas.width = pixelWidth; canvas.height = pixelHeight; shelfSnapshotDirty = true;
@@ -1181,7 +1197,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Read every rectangle the rest of the frame needs right here, before the
     // semantic nodes are restyled: rereading them afterwards would force a
     // layout of the whole stage. Their absolutely positioned children cannot move them.
-    frameLayout.canvas = canvas.getBoundingClientRect(); frameLayout.stage = stage.getBoundingClientRect();
+    frameLayout.canvas = canvas.getBoundingClientRect(); frameLayout.stage = settledStageBounds || stage.getBoundingClientRect();
     frameLayout.scroller = scroller.getBoundingClientRect();
     // Read the actual sticky position: near the last shelf its bottom is
     // constrained by the stage, so scroller.scrollTop alone would double-shift
@@ -2969,6 +2985,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       cancelAnimationFrame(raf); raf = 0; draw(reorderTransition.started);
     },
     dispose() {
+      stage.style.top = originalTop;
       disposed = true; modalDeferredEntry = inactiveModalEntry = paintedModalView = null; paintedAwayEntries.clear();
       cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       inspectionEntryUpdates.clear();

@@ -10,7 +10,13 @@ el muestreo invalidan o cancelan el resultado. Se conservan resolución,
 materiales, iluminación, modelos y relojes. Pasan 3.292 unitarias/255
 archivos, build y 75 Python. Pasan siete recorridos gráficos originales
 sin retries u omisiones; cierres completos de 5.179,6/5.217,9 ms.
-La publicación está pendiente. Detalle en [Muestreo de papel de 1.7.73](performance-1773.md).
+Se integran cambios nuevos de GitHub (`06f0f5e`) sobre arranque y menús;
+corregido el ciclo de vida del arranque, la fuente combinada pasa 3.303
+unitarias/257 archivos, build y 75 Python sin errores sin capturar. Sus
+siete recorridos conservan 6 PASS y un fallo de alineación al quitar
+el encabezado. Corregido el origen del escenario, pasan ambos contratos
+nativos originales. La batería final y las comprobaciones públicas
+siguen pendientes. Detalle en [Muestreo de papel de 1.7.73](performance-1773.md).
 
 ## Tono de página de 1.7.72
 

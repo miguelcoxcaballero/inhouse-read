@@ -40,3 +40,49 @@ isométrico, con cero frames GPU durante ese movimiento. La publicación
 con comprobaciones web/APK sigue pendiente. No se afirma PASS global.
 
 Evidencia local: `.animation.local/performance-1773/`.
+
+## Integración de cambios publicados en paralelo
+
+El push de `ed11a2b` fue rechazado porque `origin/main` había avanzado a
+`06f0f5e`. Se integra mediante merge, conservando los cambios nuevos de
+arranque por tareas idle, menús diferidos, chunk separado de Three.js y
+recuperación acotada de imports. Las tres modificaciones E2E de origen
+se conservan explícitamente: gesto para audio y distinción de peticiones
+canceladas durante recarga en dos comprobaciones de assets.
+Las pruebas nativas originales de apertura/cierre no cambian.
+
+La primera batería y sus siete PASS acreditan la fuente anterior a este
+merge. La fuente combinada requiere una batería y recorridos nuevos;
+no se reetiquetan los anteriores. Namespace independiente:
+`.animation.local/performance-1773-integrated/`.
+
+La primera batería integrada conserva exit 1: 3.296 assertions pasaron,
+pero hubo dos errores sin capturar de idle-startup tras destruirse el
+contexto. El polling ahora termina si su documento ha desaparecido y las
+tareas vuelven a comprobar la propiedad después de esperar idle. El
+update Android utiliza el mismo scheduler. No se ocultan los errores ni
+se modifican fixtures originales. El nuevo namespace de calificación es
+`.animation.local/performance-1773-integrated-final/`; pasan las pruebas
+focales del arranque y los dos escenarios que emitían esos errores.
+
+La batería corregida integrada pasa: 3.303 unitarias/257 archivos con
+exit 0 y sin errores sin capturar, build y 75 Python; 626 hechos de fuente
+estables. El listado conserva 524 identidades sin ejecutarlas. Se inicia
+una nueva ejecución de los siete contratos gráficos originales sobre
+esa fuente combinada, manteniendo sus assertions y plazos.
+
+## Origen nativo después de ocultar el encabezado
+
+Los siete recorridos integrados conservan 6 PASS y un fallo de precondición:
+el nuevo origen top=61 no cae en píxeles físicos a DPR 1,5. La sala de
+390×784 sigue teniendo el framebuffer correcto de 585×1176. La estantería
+integral se coloca en el origen CSS representable más cercano (62 en ese
+caso); se mueven juntos el escenario y sus controles. No cambia tamaño,
+DPR, modelos, texturas o iluminación. La sala fraccional de 393 px mantiene
+su camino anterior. La posición original se restaura al destruir la escena.
+
+Pasan 9 unitarias del cálculo y ambos contratos gráficos nativos originales
+al primer intento sobre esta corrección, sin cambiar sus fixtures, assertions
+o plazos. Es una ejecución focal, no sustituye el recorrido previo fallido.
+La batería final y los siete recorridos usarán el namespace independiente
+`.animation.local/performance-1773-origin/`.
