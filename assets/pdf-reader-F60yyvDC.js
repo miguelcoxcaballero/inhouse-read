@@ -1,1 +1,1 @@
-export { PdfReader } from './pdf-reader-UISlChej.js'
+export { PdfReader } from './pdf-reader-DhRVdbos.js'
