@@ -93,7 +93,7 @@ export function recordLibrary(books) {
 }
 
 const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches
-const state = { started:false, liveReady:false, lastCapture:0, capturing:false, lastRenderCount:-1, posterShown:false }
+const state = { started:false, liveReady:false, lastCapture:0, capturing:false, lastRenderCount:-1, pendingRender:-1, posterShown:false }
 
 function dismissSkeleton() {
   const root = document.documentElement
@@ -205,12 +205,18 @@ async function capturePoster(canvas) {
 
 function scheduleCapture(canvas, renderCount) {
   if (renderCount === state.lastRenderCount) return
-  const wait = Math.max(0, state.lastCapture + MIN_CAPTURE_GAP_MS - Date.now())
-  const run = () => {
+  state.pendingRender = renderCount
+  // A shelf that settles while a book is still flying home is captured once
+  // the room is quiet again: retry for a while instead of waiting for a redraw.
+  const attempt = tries => {
+    if (!canvas.isConnected || state.pendingRender !== renderCount) return
+    if (!captureEligible(canvas)) { if (tries < 40) setTimeout(() => attempt(tries + 1), 1500); return }
+    const wait = state.lastCapture + MIN_CAPTURE_GAP_MS - Date.now()
+    if (wait > 0) { setTimeout(() => attempt(tries), wait); return }
     const idle = globalThis.requestIdleCallback || (callback => setTimeout(callback, 50))
     idle(() => { state.lastRenderCount = renderCount; capturePoster(canvas).catch(() => {}) }, { timeout:4000 })
   }
-  if (wait) setTimeout(() => { if (canvas.isConnected) run() }, wait); else run()
+  attempt(0)
 }
 
 function onSettled(event) {

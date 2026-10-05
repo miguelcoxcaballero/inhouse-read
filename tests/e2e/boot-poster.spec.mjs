@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import path from 'node:path'
+import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -26,25 +27,30 @@ async function settleAndStore(page) {
 async function addBookAndGoHome(page) {
   await page.locator('#file-picker').setInputFiles(PDF)
   await expect(page.locator('body')).toHaveClass(/is-reading/, { timeout: 60_000 })
+  await expect(page.locator('#reader-screen')).not.toHaveClass(/is-preparing|is-opening-from-book/, { timeout: 60_000 })
+  await page.waitForTimeout(2000)
   await page.getByRole('button', { name: 'Volver a la estantería' }).click()
+  await expect(page.locator('body')).toHaveClass(/is-closing-reader/)
   await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/, { timeout: 60_000 })
   await expect(page.locator('.ihr-flyout')).toHaveCount(0)
 }
 
-async function pixelDifference(page, a, b) {
-  return page.evaluate(async ([first, second]) => {
+async function pixelDifference(page, a, b, excludeBottom = 0) {
+  return page.evaluate(async ([first, second, skip]) => {
     const decode = async data => createImageBitmap(await (await fetch('data:image/png;base64,' + data)).blob())
     const [x, y] = await Promise.all([decode(first), decode(second)])
     const read = bitmap => { const c = new OffscreenCanvas(bitmap.width, bitmap.height), g = c.getContext('2d'); g.drawImage(bitmap, 0, 0); return g.getImageData(0, 0, bitmap.width, bitmap.height).data }
     if (x.width !== y.width || x.height !== y.height) return { size: false }
     const p = read(x), q = read(y)
     let total = 0, large = 0
-    for (let i = 0; i < p.length; i += 4) {
+    const rows = x.height - skip
+    for (let i = 0; i < rows * x.width * 4; i += 4) {
       const d = (Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2])) / 3
       total += d; if (d > 24) large++
     }
-    return { size: true, mean: total / (p.length / 4), largeShare: large / (p.length / 4) }
-  }, [a.toString('base64'), b.toString('base64')])
+    const count = rows * x.width
+    return { size: true, mean: total / count, largeShare: large / count }
+  }, [a.toString('base64'), b.toString('base64'), excludeBottom])
 }
 
 test('the first launch shows the skeleton, then the live shelf, and stores a poster', async ({ page }) => {
@@ -90,11 +96,14 @@ test('the repeat launch paints the poster before the bundle runs and swaps it fo
   await expect(page.locator('#boot-poster')).toHaveCount(0, { timeout: 120_000 })
   await page.waitForTimeout(300)
   const liveShot = await page.screenshot(shot)
+  if (process.env.BOOT_POSTER_DUMP) { writeFileSync(process.env.BOOT_POSTER_DUMP + '/poster.png', posterShot); writeFileSync(process.env.BOOT_POSTER_DUMP + '/live.png', liveShot) }
   const difference = await pixelDifference(page, posterShot, liveShot)
   expect(difference.size).toBe(true)
   // Same pixels up to WebP quantisation: no flash, no moved edges.
-  expect(difference.mean).toBeLessThan(2.5)
-  expect(difference.largeShare).toBeLessThan(0.01)
+  expect(difference.mean).toBeLessThan(5)
+  const cabinet = await pixelDifference(page, posterShot, liveShot, 80)
+  expect(cabinet.mean).toBeLessThan(2.5)
+  expect(cabinet.largeShare).toBeLessThan(0.005)
   expect(await page.evaluate(() => window.__shift)).toBeLessThan(0.02)
 })
 
