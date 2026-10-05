@@ -50,7 +50,10 @@ de 30 s; en los tres públicos pasa el editor y fallan ambos nativos por
 el mismo plazo global. Los traces no miden un cierre aislado completo de
 ocho segundos: el tiempo se agota antes. No se reintentan ni se amplían
 sus relojes. CI66 `37264323238` termina FAILED en UI3 y en el agregado;
-los demás jobs pasan. Su colección completa queda pendiente.
+los demás jobs pasan. Su colección completa queda sellada FAILED: 12 jobs,
+11 ZIP originales, 3.193 unitarias/249 archivos y 524 identidades E2E,
+526 intentos contando dos retries originales y cuatro intentos fallidos.
+No hay omisiones; el original no se reejecuta ni se reclasifica.
 El perfil anterior de software muestra copias de la sala
 costosas; no mide los FPS ni la temperatura de un teléfono físico.
 

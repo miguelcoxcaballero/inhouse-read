@@ -1,4 +1,15 @@
-# Verificación del WIP — web 1.7.67, candidato 1.7.68 y Android 1.1.4
+# Verificación del WIP — web 1.7.68, candidato 1.7.69 y Android 1.1.4
+
+## Reutilización HDR de 1.7.69
+
+El segundo renderer reutiliza el atlas completo del estudio mediante una
+transferencia asíncrona opcional. Mantiene reflejos, resolución y relojes,
+con fallback a la generación original. Pasan 3.232 unitarias/253 archivos,
+build y 75 Python; la prueba gráfica integrada conserva exactamente el HDR
+y todos los píxeles en tres ángulos. Pasan los siete recorridos originales:
+cierres nativos completos de 4.908,1 y 5.303,4 ms, sin retries ni omisiones.
+Publicación pendiente.
+Detalle en [Iluminación y rendimiento de 1.7.69](performance-1769.md).
 
 ## Fuentes locales de 1.7.68
 
@@ -7,7 +18,10 @@ La tipografía se sirve desde la app y entra en el shell offline junto con
 sus licencias; Playfair se precarga desde el mismo asset CSS.
 Pasan 3.213 unitarias/252 archivos, build, 75 Python y los siete
 recorridos gráficos originales. Fuentes online/offline con raster y cuerpos
-exactos comprobados; publicación y comprobaciones públicas en curso. Detalle en
+exactos comprobados. Publicada: HTTP25/offline89 y APK/loader reales
+comprobados, más 18 PDF públicos y fuentes offline. El público fraccional
+conserva su fallo global30; CI68 tiene UI2/UI3 FAILED y Supertonic pendiente.
+No se afirma aprobación completa. Detalle en
 [Fuentes y rendimiento de 1.7.68](performance-1768.md).
 
 ## Cambios de rendimiento de 1.7.67
@@ -21,8 +35,9 @@ recorridos gráficos al primer intento, sin retries u omisiones. Los dos
 cierres completos quedan en 5.699,9/5.226,4 ms; fuente/build estables.
 Batería local completa PASS: 3.208 unitarias/251 archivos, build y 75 Python.
 Web publicada: 21 recorridos PASS; HTTP25/offline46 y APK/loader comprobados.
-CI67 conserva dos fallos de apertura en UI3; los demás grupos siguen
-comprobándose, sin reintentar ni reclasificar el original. Detalle en
+CI67 completo queda sellado FAILED: las 524 identidades están ejecutadas;
+UI3 y el agregado fallan, los demás grupos pasan. Sin reintentar ni
+reclasificar el original. Detalle en
 [Rendimiento de 1.7.67](performance-1767.md).
 
 ## Cambios de rendimiento de 1.7.66
@@ -44,7 +59,8 @@ build y 75 Python. Publicación HTTP25/offline46 y APK/loader comprobadas;
 global30; los tres públicos conservan editor PASS y ambos nativos FAILED
 por el plazo global. No miden cierres aislados completos de ocho segundos.
 CI66 completa queda FAILED en UI3 y el agregado; los demás jobs pasan.
-La colección completa está pendiente y no se reintenta la ejecución.
+La colección de 12 jobs/11 ZIP/524 identidades queda sellada FAILED;
+no se reintenta la ejecución.
 Detalle en [Rendimiento de 1.7.66](performance-1766.md).
 
 ## Cambios de rendimiento de 1.7.65

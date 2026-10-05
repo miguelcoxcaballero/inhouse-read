@@ -46,7 +46,11 @@ CI67 conserva dos fallos de apertura en UI3 (40 casos, 38 PASS, dos
 unexpected, cuatro intentos fallidos contando sus retries originales).
 El alineado falla esperando la portada; el fraccional agota el global de
 30 s antes del regreso. No se atribuyen esos fallos al cierre de ocho segundos.
-El resto de CI sigue en curso; el censo de 524 no se considera ejecución.
+La colección completa de CI67 `37286712848` queda sellada FAILED: 12 jobs,
+11 ZIP originales, 3.208 unitarias/251 archivos y 524 identidades E2E,
+526 intentos contando los dos retries originales y cuatro intentos fallidos.
+Sólo UI3 y el agregado fallan; los demás grupos, incluido Supertonic, pasan.
+No se reejecuta el workflow ni se reclasifican los retries como aprobación.
 Los tiempos del navegador software no son FPS de un móvil físico.
 Estos resultados no acreditan FPS, consumo o temperatura de un móvil físico.
 

@@ -21,6 +21,19 @@ sirven desde el Service Worker con SHA256 exacto. El preload se solicita
 una sola vez antes de esas comprobaciones adicionales. Los siete recorridos
 de animación pasan al primer intento con sus fixtures y plazos originales,
 sin retries ni omisiones; los 611 hechos de fuente/build permanecen estables.
-Publicación y comprobaciones públicas pendientes.
+Publicada desde `7cff7fc`, Pages `2bd9ed0`: HTTP25/offline89 y APK/loader
+reales comprobados. Pasan los 18 PDF públicos y las fuentes reales online y
+offline (93 caras, 34 cuerpos exactos y raster idéntico). El verificador
+suplementario de fuentes conserva dos fallos de espera: una Promise se
+interpretaba como true antes de resolver la instalación del Service Worker.
+Su reparación espera la condición resuelta dentro del mismo plazo; el
+runtime y las pruebas originales no cambian.
+
+Los tres recorridos públicos conservan editor y alineado PASS y el
+fraccional FAILED por el global30. No se reintenta ni se usa su diagnóstico
+pasivo posterior como aprobación del original. Ese diagnóstico completa el
+cierre en 5.759 ms; no es una medición aislada de FPS. CI68 conserva fallos
+en UI2/UI3; los demás grupos completados pasan y Supertonic sigue en curso.
+No se presenta como batería completa aprobada.
 
 Evidencia: `.animation.local/performance-1768/`.
