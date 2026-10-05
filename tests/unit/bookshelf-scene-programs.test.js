@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createBookshelfScene } from '../../src/js/bookshelf-scene.js';
+import { getBookRenderer } from '../../src/js/book-model.js';
 
 // The renderer double links programs "in the background": they report ready
 // only once the test says so, like KHR_parallel_shader_compile's completion.
@@ -75,6 +76,27 @@ function layout() {
 }
 
 describe('first frame of the shelf scene', () => {
+  it('reports the real program cache after background preparation without drawing another frame', async () => {
+    const renderer = getBookRenderer(), previousInfo = renderer.info, originalCompile = renderer.compile;
+    renderer.info = { programs:[], render:{calls:0}, memory:{} };
+    const seen = new Set();
+    vi.spyOn(renderer, 'compile').mockImplementation(function (...args) {
+      const materials = originalCompile.apply(this, args);
+      for (const material of materials) if (material && !seen.has(material)) {
+        seen.add(material); renderer.info.programs.push({usedTimes:1});
+      }
+      return materials;
+    });
+    try {
+      gpu.linked.ready = true; shelf = createBookshelfScene(layout());
+      const before = renderer.info.programs.length, renders = gpu.renders;
+      expect(Number(shelf.canvas.dataset.scenePrograms)).toBe(before);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(renderer.info.programs.length).toBeGreaterThan(before);
+      expect(Number(shelf.canvas.dataset.scenePrograms)).toBe(renderer.info.programs.length);
+      expect(gpu.renders).toBe(renders);
+    } finally { renderer.info = previousInfo; }
+  });
   it('waits for every program to finish linking, without blocking, before it renders', () => {
     shelf = createBookshelfScene(layout());
     shelf.canvas.getBoundingClientRect = () => rect(0, 60, 390, 700);

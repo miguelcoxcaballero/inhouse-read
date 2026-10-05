@@ -9,7 +9,7 @@ import { normalizeBookAuthor } from './book-title.js';
 import { pageRaster } from './page-raster.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { applyBookReflectionSurface } from './book-reflection-surface.js';
-import { keepProgramsAlive } from './gpu-programs.js';
+import { keepProgramsAlive, prepareProgramUniforms } from './gpu-programs.js';
 import { buildReliefMaps, composeMaterialMap, coverReliefLayers, normalizeCoverRelief, updateReliefMapStrengths } from './cover-relief.js';
 import { runInSlices } from './cover-appearance.js';
 import { registerCanvasSnapshot as registerLazySnapshot, createNativeRendererPresentation,
@@ -2222,7 +2222,12 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   const pageTextures = () => (disposed ? [] : model.userData.getPageTextures());
   // Starts linking the programs the now visible page needs; where the driver
   // links in parallel, the draw that follows finds them done.
-  function compilePage() { if (!disposed) try { gpu.compile(scene, camera); } catch { /* linked on first draw */ } }
+  function compilePage() { if (!disposed) try { return gpu.compile(scene, camera); } catch { /* linked on first draw */ } }
+  async function preparePagePrograms(idle, current = () => true) {
+    const materials = compilePage();
+    try { return await prepareProgramUniforms(gpu, materials, { idle, current:() => !disposed && current() }); }
+    catch { return false; /* Drivers without reflection retain the original first draw. */ }
+  }
   function uploadPageTexture(texture) {
     if (disposed || !pageTextures().includes(texture)) return false;
     texture.anisotropy = Math.min(16, gpu.capabilities.getMaxAnisotropy()); // what draw() would set first
@@ -2313,7 +2318,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     deferDrawing() { if (!disposed) waitingForFirstDraw = true; }, releaseToSnapshot, handoffToShelfInsertion,
     setCompactReturnFrame(enabled) { compactReturnFrame = Boolean(enabled); },
     updateAppearance, prepareReturnAppearance, updateSpineAppearance, updateCoverAppearance, prepareCoverRelief, setCoverRelief, updateEdgeAppearance, updateEditorAppearance, updateBookmark,
-    setPageSnapshot, commitPreparedPage, pageTextures, uploadPageTexture, compilePage, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
+    setPageSnapshot, commitPreparedPage, pageTextures, uploadPageTexture, compilePage, preparePagePrograms, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
     setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
     getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,
     animateCoverOpen, animateCoverClose, animateBookmark, alignToPage, animateToPage,

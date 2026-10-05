@@ -3472,7 +3472,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (!view || stale() || !installOpeningPage(snapshot, { redraw:false })) return false;
       await idle();
       if (stale() || !view.hasPageSnapshot(snapshot)) return false;
-      view.compilePage();
+      if (view.preparePagePrograms) await view.preparePagePrograms(idle, () => !stale() && view.hasPageSnapshot(snapshot));
+      else view.compilePage();
+      if (stale() || !view.hasPageSnapshot(snapshot)) return false;
       for (const texture of view.pageTextures()) {
         await idle();
         if (stale() || !view.hasPageSnapshot(snapshot)) return false;

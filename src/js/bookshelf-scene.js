@@ -2209,7 +2209,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       programsReady = true;
       // The first frame never draws the drop guide or the return's depth
       // pass: link them once it is painted, long before a finger needs them.
-      idleSlice().then(() => { if (!disposed) prelinkPrograms(renderer, scene, camera, [dropGuide, ...depthWriters]); });
+      idleSlice().then(() => {
+        if (disposed) return;
+        prelinkPrograms(renderer, scene, camera, [dropGuide, ...depthWriters]);
+        // Compilation changes the real program cache without painting. Report
+        // it now so the next resize/gesture does not appear to create programs
+        // that were already prepared in the background. No extra render.
+        setData(canvas, 'scenePrograms', String(renderer.info?.programs?.length || 0));
+      });
     }
     const veneerWait = veneerWaits && shelfType !== 'baggebo' ? veneerDeadline - performance.now() : 0;
     if (veneerWait > 0) {
