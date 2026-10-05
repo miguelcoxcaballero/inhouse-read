@@ -1171,7 +1171,8 @@ els.readerBack.addEventListener('click', async () => {
     }
   }
   try {
-    readingExperience.voice.stop()
+    if (typeof readingExperience.closeVoice === 'function') readingExperience.closeVoice()
+    else readingExperience.voice.stop()
     readingExperience.panel.close()
     // Copy the CURRENT page before destroying the reader. Keep it on screen
     // until the textured 3D leaf has rendered at exactly the same bounds.
@@ -1304,7 +1305,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.7.63'
+els.appVersion.textContent = 'Inhouse Read · v1.7.64'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')

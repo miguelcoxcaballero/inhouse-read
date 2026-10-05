@@ -4,7 +4,7 @@ import { ReadingVoice } from './reading-voice.js'
 import { declaredLanguage, langBase } from './voice-catalog.js'
 import { SelectMenu } from './select-menu.js'
 import { AUTO, languageOptions, voiceOptions } from './voice-menus.js'
-import { neuralVoiceList } from './neural-runtime.js'
+import { neuralEngine, neuralVoiceList } from './neural-runtime.js'
 import { NeuralVoicePicker } from './neural-picker.js'
 import { clonePlace, cleanPlaces, cleanQuotes } from './reading-state.js'
 import { normalizeBookAuthor } from '../book-title.js'
@@ -196,7 +196,14 @@ export class ReaderExperience {
     this.renderPlaces(); this.renderToc(); await this.applyPreferences(); this.relocate()
     for (const quote of this.quotes) this.reader.addQuoteAnnotation(quote)
   }
+  // Explicit book close only; no await, preload, visibility or pause hook.
+  closeVoice() {
+    this.neuralPicker?.cancelWarm?.()
+    this.voice.stop()
+    try { neuralEngine()?.release?.() } catch { /* playback is already stopped */ }
+  }
   reset() {
+    this.neuralPicker?.cancelWarm?.()
     this.cancelNavigation(); this.voice.stop(); this.keepSearchHits = false; this.endSearch(); this.panel.close(); this.book = null
     this.returnButton.hidden = true; this.syncReturnLayout(); this.screen.classList.remove('reader-kids-mode')
     const kids = this.panel.querySelector('[data-kids]')

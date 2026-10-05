@@ -292,6 +292,17 @@ export class NeuralEngine extends EventTarget {
     this.#armIdle()
   }
 
+  // Release only on an explicit book close. Ordinary stop/pause retain their cache.
+  release() {
+    try { this.#hardStop() } finally {
+      this.#clearIdle()
+      const client = this.client
+      this.client = null
+      this.cache.clear()
+      try { client?.dispose() } catch { /* generation/ownership already invalidated */ }
+    }
+  }
+
   pause() {
     this.#hardStop({ pause:true })
     this.#armIdle()

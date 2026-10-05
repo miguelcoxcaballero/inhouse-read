@@ -51,6 +51,7 @@ export class NeuralVoiceEngine extends EventTarget {
     this.core = null
     this.loading = null
     this.queue = []
+    this.resourceGeneration = 0
   }
 
   get supported() { return NeuralVoiceEngine.isSupported(this.options.env || globalThis) }
@@ -99,7 +100,12 @@ export class NeuralVoiceEngine extends EventTarget {
   /** Deletes a downloaded voice. If it is the one being read, the current id gets an 'error' event with reason 'not-installed' (stop() itself fires none). */
   async remove(id) { return (await this.preload()).remove(id) }
   /** ADDED: loads the worker and the voice's model ahead of the first speak() (cold start 3-6 s). Call it when a book opens with a neural voice selected. Never rejects. */
-  async warmUp(voiceId) { return (await this.preload()).warmUp(voiceId) }
+  async warmUp(voiceId) {
+    const generation = this.resourceGeneration
+    const core = await this.preload()
+    if (generation !== this.resourceGeneration) return false
+    return core.warmUp(voiceId)
+  }
   /** Call synchronously inside a user gesture (the play tap): creates/resumes the AudioContext. */
   unlock({ playback = true } = {}) {
     const env = this.options.env || globalThis
@@ -133,6 +139,13 @@ export class NeuralVoiceEngine extends EventTarget {
     if (this.core) return this.core.stop()
     this.queue.length = 0
     stopNativeAudio()
+  }
+  // Explicit reader close: never load the module/client or wait for native disposal.
+  release() {
+    ++this.resourceGeneration
+    this.queue.length = 0
+    if (this.core) this.core.release()
+    else stopNativeAudio()
   }
   pause() {
     if (this.core) return this.core.pause()

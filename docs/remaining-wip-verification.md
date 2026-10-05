@@ -1,4 +1,27 @@
-# Verificación del WIP — 1.7.63 y Android 1.1.4
+# Verificación del WIP — 1.7.64 y Android 1.1.4
+
+## Cambios de rendimiento de 1.7.64
+
+El cierre cancela el calentamiento pendiente de voces antes de esperar la
+captura de página. Invalida el cliente, su caché PCM y temporizador; Android
+encola la limpieza nativa sin bloquear JavaScript. Una continuación antigua
+no puede iniciar modelos después del cierre ni sustituir una reapertura.
+Pausar, detener y escuchar con la pantalla apagada conservan sus contratos.
+CPU aislada: candidato155 PASS (142 originales y 13 nuevos), control142 PASS,
+mismas identidades originales y cero errores no capturados; recibo `4ceb2156…`.
+
+La adopción original rechazó mixedEOL antes de escribir y la primera batería
+rechazó la versión antes de ejecutar comandos o QA; ambos errores quedan
+conservados. Adopción revisada correcta, diez archivos y QA original intacta.
+Batería completa real en `full-local-attempt2`: 3.147 unitarias/242 archivos,
+build y 75 Python PASS; cinco comandos exit0, 526 hechos estables. Recibo
+`5f4f9d99…`; 524 identidades E2E sólo censo, sin omisiones ni ejecución.
+Los siete locales originales pasan al primer intento, siete intentos y
+cero retries, flaky u omisiones; fuente/build526 estables, recibo `9fc0ef86…`.
+Cierres de 5.349,8 y 6.144,4 ms con los ocho segundos originales. Públicos,
+HTTP/APK y CI64 siguen pendientes. No acredita FPS o memoria física ni
+reclasifica CI61. Detalle en
+[Rendimiento de 1.7.64](performance-1764.md).
 
 ## Cambios de rendimiento de 1.7.63
 
@@ -23,8 +46,13 @@ Python, con los cinco comandos exit0 y 523 hechos estables. Recibo completo
 intentos ejecutados; un listado no cuenta como ejecución. Los siete
 recorridos locales originales pasan al primer intento, sin retries, flaky ni
 omisiones; fuente/build estables. Cierres de 5.265,9 y 6.056 ms con los ocho
-segundos originales; recibo `f9d6f3b1…`. Publicación y recorridos públicos63
-pendientes. No acredita FPS, temperatura, menor tiempo total del matcher ni
+segundos originales; recibo `f9d6f3b1…`. Publicada desde `f81d3a1`, Pages
+`774af05`: HTTP de 24 módulos/45 offline PASS, artefacto `80fe4905…`; APK
+recién descargada idéntica a la firmada 1.1.4/code17 y loader de 2.089 bytes
+PASS. Los tres públicos originales y los 18 PDF pasan al primer intento,
+sin retries, flaky ni omisiones, con 53 y 324 cuerpos autenticados.
+Certificados `1d903624…` y `a384e4a2…`; la auditoría CI63 sigue pendiente.
+No acredita FPS, temperatura, menor tiempo total del matcher ni
 píxeles del modelo 3D. Detalle en
 [Rendimiento de 1.7.63](performance-1763.md).
 
@@ -43,8 +71,14 @@ cierres de 5.058,1 y 6.003,5 ms. Publicada desde `de672fd`, Pages `8daed16`:
 HTTP real de 23 módulos/44 offline y APK recién descargada/loader PASS. Los
 tres recorridos públicos originales y los 18 PDF pasan al primer intento,
 sin retries, flaky ni omisiones, con 50 y 310 cuerpos autenticados. La
-auditoría de la CI original `37254356739` sigue pendiente. No acredita FPS
-en un teléfono físico ni reclasifica los fallos de 1.7.60. Detalle en
+CI original `37254356739` termina FAILED y conserva su colección completa
+sellada: doce logs, once ZIP autenticados, 524 identidades y 526 intentos,
+con dos retries y cuatro fallos originales de UI3; los otros diez grupos
+pasan. El primer alineado agota el plazo interno de ocho segundos esperando
+`is-closing-reader`; su retry y los dos legados agotan el global de treinta
+segundos sin completar la comprobación. Certificado `334e52bf…`. No se
+atribuye la causa al cambio de 61 ni se reclasifican estos fallos o los de
+1.7.60. No acredita FPS en un teléfono físico. Detalle en
 [Rendimiento de 1.7.61](performance-1761.md).
 
 ## Cambios de rendimiento de 1.7.60

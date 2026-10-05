@@ -55,8 +55,18 @@ Los dieciocho recorridos PDF públicos también pasan al primer intento, sin
 retries, flaky ni omisiones, con 310 cuerpos autenticados. Conservan fotos
 en todos los temas, texto completo, orden y navegación. Su certificado es
 `e2716e254f8a8b8fd4320eb6598e13ecb660e149251a3b3c91f6ae3a83f9bae6`.
-La auditoría de la CI original `37254356739` sigue pendiente. Estos pases
-locales y públicos no reclasifican el fallo de CI 60.
+La CI original `37254356739` termina FAILED. Su colección completa queda
+sellada con doce logs, once ZIP autenticados, 524 identidades únicas y 526
+intentos, incluidos los dos retries y cuatro fallos originales de UI3.
+Los otros diez grupos de artefactos pasan, incluidas 3.109 unitarias en 235
+archivos y las comprobaciones de voces y fondos. El primer intento alineado
+agota el plazo interno original de ocho segundos esperando que desaparezca
+`is-closing-reader`; su retry y los dos intentos legados agotan el límite
+global de treinta segundos sin completar esa comprobación de cierre. Se
+conservan los informes y guard estricto FAILED. No se atribuye la causa al
+cambio de reutilización de 61; los pases locales y públicos no reclasifican
+este resultado ni el fallo de CI60. Certificado SHA-256:
+`334e52bfc6081ca867309c0e12a64e34f6abd468d1c73ec5616eddf3b2517d42`.
 
 ## Evidencia
 
@@ -75,5 +85,7 @@ En `.animation.local/performance-1761/`:
 - `public-de672fd-attempt1/performance-browser-attempt1/performance-qualification.json`:
   los tres recorridos públicos originales.
 - `public-de672fd-attempt1/browser-attempt1/certification.json`: los 18 PDF públicos.
-- `ci-original-37254356739-attempt1/preparation.json`: binding inmutable;
-  el resultado original y su auditoría aún no están calificados aquí.
+- `ci-original-37254356739-attempt1/preparation.json`: binding inmutable.
+- `ci-watch-37254356739-attempt1/`: watcher original terminado con exit1 por FAILED.
+- `ci-original-37254356739-attempt1/snapshot-001/certification.json`:
+  colección completa sellada FAILED-originals, doce logs y once ZIP originales.

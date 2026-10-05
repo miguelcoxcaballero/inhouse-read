@@ -61,14 +61,14 @@ Esta comprobación utiliza la shell offline real bajo `/inhouse-read/` en
 un fixture de producción. Compara el analizador y sus datos; no es una
 comparación de píxeles del modelo 3D ni una prueba del teléfono o APK.
 Su control de producto es Git61 `de672fd`; la fuente candidata aislada es la
-adoptada para 63. No acredita todavía la publicación de 63.
+adoptada para 63. La publicación de la fuente final se comprueba aparte.
 
 Informe real SHA-256:
 `1b4e9ec6b35c975143f1a703330f8674cca63d3e9dd57efd183cf8669f84c2e1`.
 Worker offline SHA-256:
 `349532fe6fde651eb325560db3c783379e2f2b96f6976808c17f98291bcadf69`.
 
-## Batería completa y recorridos pendientes
+## Batería completa y recorridos
 
 La fuente final pasa 3.134 unitarias en 239 archivos, compilación y 75
 comprobaciones Python. Los cinco comandos terminan con exit0 y los 523
@@ -82,8 +82,32 @@ intentos, cero retries, flaky y omisiones. Sus cierres alineado y legado
 miden 5.265,9 y 6.056 ms con los mismos presupuestos originales de ocho
 segundos. Fuente y build permanecen estables. El recibo local tiene SHA-256
 `f9d6f3b104be5f25063091227ebed8df4c31b6d3a2e2d1cb84966d8be1c59302`.
-La publicación y los recorridos públicos de 63 quedan pendientes. El CI
-original de 61 conserva su propio resultado y auditoría pendientes aquí.
+Los 21 recorridos públicos originales también pasan al primer intento, como
+se detalla abajo. La auditoría CI63 sigue pendiente. El CI original de 61
+conserva su colección completa sellada FAILED; estos pases no lo reclasifican.
+
+## Publicación HTTP y APK
+
+Fuente `f81d3a1`, Pages `774af05`: los 24 módulos y 45 archivos offline
+servidos coinciden con los bytes de la publicación. El artefacto HTTP tiene
+SHA-256 `80fe4905bb7c17a83bd50eeecb0e090eab1b1f9d3f7fe7e523cf1695ad5dd3fd`.
+La APK recién descargada conserva exactamente los 78.515.243 bytes de la
+firmada previamente 1.1.4/code17; el loader de 2.089 bytes coincide con
+la fuente. No se ha realizado otra captura de dispositivo ni otra invocación
+de comprobación criptográfica de firma.
+
+Los tres recorridos públicos originales de editor y regreso nativo pasan
+al primer intento, sin retries, flaky ni omisiones, con 53 cuerpos de
+aplicación autenticados. Su certificado SHA-256 es
+`1d90362487d94825e0850a19077c429bcf940e88260ecb7ead5ff2283a93fd1e`;
+el informe bruto tiene SHA-256
+`249860864682ff9c0ef0007e5a3c4278a65b91f9f3e7708032ed6dfc4354ebc3`.
+Los 18 recorridos PDF públicos también pasan al primer intento, sin retries,
+flaky ni omisiones, con 324 cuerpos autenticados. Conservan fotos en todos
+los temas, texto completo, orden y navegación. Su certificado SHA-256 es
+`a384e4a2941878e4b49246633adffdedbf0c8b7b08091953ff5479ec0a8508f1`.
+Se conservan las assertions y los plazos originales. La auditoría CI63
+permanece pendiente; estos pases no cambian los fallos originales de CI61.
 
 ## Evidencia
 
@@ -102,3 +126,8 @@ En `.animation.local/performance-1763/`:
 - `release-helper-preparation-attempt2/`: helpers metadata-only, conteos provisionales.
 - `full-local-attempt1/summary.json`: batería completa real PASS y censo no ejecutado.
 - `local-browser-attempt1/summary.json`: siete originales locales PASS, sin retries.
+- `public-f81d3a1-attempt1/http-attempt1/`: artefacto y procedencia HTTP reales.
+- `public-f81d3a1-attempt1/apk-attempt1/`: APK recién descargada y loader.
+- `public-f81d3a1-attempt1/performance-browser-attempt1/performance-qualification.json`:
+  los tres recorridos públicos originales PASS, informe bruto conservado.
+- `public-f81d3a1-attempt1/browser-attempt1/certification.json`: los 18 PDF públicos PASS.

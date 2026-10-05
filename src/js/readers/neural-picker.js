@@ -55,6 +55,7 @@ export class NeuralVoicePicker {
     this.tasks = new Map() // voice id -> AbortController of the download this page started
     this.errors = new Map() // voice id -> message of the last failed download
     this.engine = null; this.signature = ''; this.frame = 0
+    this.warmGeneration = 0; this.warmHandle = null
     const panel = host.panel
     this.block = panel.querySelector('[data-neural]')
     this.offer = panel.querySelector('[data-neural-offer]')
@@ -67,21 +68,29 @@ export class NeuralVoicePicker {
     this.warmed = true
     // The worker (and its ~0.2-0.3 GB) is only started ahead of Play for people who have listened with a neural voice before;
     // for anyone else a book being opened just loads the engine module and the list of installed voices.
-    const run = () => this.refresh({ warm:this.used() })
-    if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout:2500 }); else setTimeout(run, 800)
+    const context = this.warmContext()
+    const run = () => {
+      this.warmHandle = null
+      if (this.isWarmCurrent(context)) this.refresh({ warm:this.used() })
+    }
+    this.warmHandle = typeof requestIdleCallback === 'function'
+      ? { idle:true, id:requestIdleCallback(run, { timeout:2500 }) }
+      : { idle:false, id:setTimeout(run, 800) }
   }
   /** (Re)loads the engine module if it is not there yet and re-reads what is installed. Cheap; called when the audio tab opens. */
   refresh({ warm = true } = {}) {
-    loadNeural().then(() => this.attach(warm), () => {})
+    const context = this.warmContext()
+    loadNeural().then(() => { if (this.isWarmCurrent(context)) this.attach(warm) }, () => {})
   }
   used() { try { return localStorage.getItem(USED_KEY) === '1' } catch { return false } }
   attach(warm = true) {
+    const context = this.warmContext()
     const engine = neuralEngine()
     if (engine && engine !== this.engine) {
       this.engine = engine
       engine.addEventListener('change', () => this.changed())
       engine.addEventListener('status', () => { if (engine.status === 'speaking' && !this.used()) { try { localStorage.setItem(USED_KEY, '1') } catch { /* it just warms up at the audio tab */ } } })
-      Promise.resolve(engine.refresh?.()).catch(() => {}).then(() => warm && this.warmUp())
+      Promise.resolve(engine.refresh?.()).catch(() => {}).then(() => warm && this.isWarmCurrent(context) && this.warmUp())
     } else if (engine && warm) this.warmUp()
     if (!engine) this.engine = null
     this.host.populateVoices()
@@ -90,7 +99,19 @@ export class NeuralVoicePicker {
    * Starts the engine's worker and loads the model of the voice the next Play will use, so the tap does not pay the cold start
    * (3-6 s). The engine tears it down by itself after ~90 s without speech. Does nothing unless that voice is a downloaded neural one.
    */
+  warmContext() { return { generation:this.warmGeneration, book:this.host.book } }
+  isWarmCurrent(context) {
+    return Boolean(context?.book && context.book === this.host.book && context.generation === this.warmGeneration)
+  }
+  cancelWarm() {
+    ++this.warmGeneration; this.warmed = false
+    const handle = this.warmHandle
+    this.warmHandle = null
+    if (handle?.idle) { if (typeof cancelIdleCallback === 'function') cancelIdleCallback(handle.id) }
+    else if (handle) clearTimeout(handle.id)
+  }
   warmUp() {
+    if (!this.isWarmCurrent(this.warmContext())) return
     try {
       const engine = neuralEngine(), { voice } = this.host.voice?.voiceFor?.('') || {}
       if (engine?.warmUp && voice?.neural && voice.installed) Promise.resolve(engine.warmUp(voice.id)).catch(() => {})
