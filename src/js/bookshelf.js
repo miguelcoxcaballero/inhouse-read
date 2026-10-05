@@ -108,7 +108,6 @@ import { createShelfZoom } from './shelf-zoom.js';
 import { createShelfViewGesture } from './shelf-view-gesture.js';
 import { markTiming, resetTimeline } from './perf-marks.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
-import { initBootPoster, recordLibrary } from './boot-poster.js';
 import { refreshCanvasFontsAfterPaint } from './canvas-font-readiness.js';
 import { bookReturnSignature, bookReturnCompatibility, createBookReturnCache } from './bookshelf-return.js';
 import { layoutShelfDecorations, moveShelfDecoration } from './shelf-decoration-layout.js';
@@ -324,6 +323,12 @@ function normalizeArgs(second, third) {
  * Componente
  * ------------------------------------------------------------------ */
 
+// An earlier build kept a ~1 MB picture of the shelf in localStorage; the browser
+// reads all of localStorage at startup, so it is dropped.
+function forgetBootPoster() {
+  try { for (const key of ['ihr-poster-img', 'ihr-poster-meta', 'ihr-lib-sig']) localStorage.removeItem(key); } catch { /* storage blocked */ }
+}
+
 /**
  * Monta la estantería dentro de `container`.
  *
@@ -389,7 +394,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       : storedShelfViewMode()
   };
   const returnViews = createBookReturnCache();
-  initBootPoster();
+  forgetBootPoster();
 
   const root = el('div', { class: 'ihr-bookshelf', 'data-ihr-bookshelf': '', role:'region', tabindex:'0',
     'aria-label':'Estantería', 'aria-keyshortcuts':'ArrowLeft ArrowRight',
@@ -1881,7 +1886,6 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
     state.metadataContext = metadataContext();
     for (const book of state.books) resolveCoverAppearance(book);
-    recordLibrary(state.books);
   }
 
   function readShelfLayout(stage, width) {

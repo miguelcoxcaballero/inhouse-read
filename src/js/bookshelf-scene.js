@@ -2354,8 +2354,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     setData(canvas, 'plantGeometry', 'catalog-3d');
     setData(canvas, 'animating', String(Boolean(transition || reorderTransition || moving || trashMoving || inspectionMoving)));
     lastSceneMoving = Boolean(transition || reorderTransition || moving || trashMoving);
-    announceFrames(Boolean(transition || reorderTransition || moving || trashMoving || inspectionMoving || pending ||
-      lighting.settling || programsReady !== true || inspectionZoom > 1.001));
     paintedViewport = { width:window.innerWidth, height:window.innerHeight,
       ratio:window.devicePixelRatio || 1, clientHeight:scroller.clientHeight, scrollTop:scroller.scrollTop };
     for (const resolve of unpainted.splice(0)) resolve();
@@ -2363,23 +2361,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     for (const resolve of finishedDrops) resolve();
     // One more frame after any motion redraws its cheaper shadow at full quality.
     if (transition || reorderTransition || moving || trashMoving || (lighting.settling && !inspectionMoving)) invalidate(false);
-  }
-
-  // Boot poster hooks (boot-poster.js): the first presented frame, and each
-  // settled frame (no motion, no pending quality work, programs linked).
-  let firstFrameAnnounced = false, settleTimer = 0;
-  function announceFrames(busy) {
-    if (!firstFrameAnnounced) {
-      firstFrameAnnounced = true;
-      canvas.dispatchEvent(new CustomEvent('ihr-scene-first-frame', { bubbles:true }));
-    }
-    clearTimeout(settleTimer); settleTimer = 0;
-    if (busy) return;
-    settleTimer = setTimeout(() => {
-      settleTimer = 0;
-      if (!disposed && !drawPending && !raf && !paintHeld && canPresent())
-        canvas.dispatchEvent(new CustomEvent('ihr-scene-settled', { bubbles:true, detail:{ renderCount } }));
-    }, 350);
   }
 
   function noteInspectionDirty(source) {
@@ -2989,7 +2970,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     },
     dispose() {
       disposed = true; modalDeferredEntry = inactiveModalEntry = paintedModalView = null; paintedAwayEntries.clear();
-      clearTimeout(settleTimer); settleTimer = 0;
       cancelAnimationFrame(raf); mutations.disconnect(); themeChanges.disconnect();
       inspectionEntryUpdates.clear();
       scroller.removeEventListener('scroll', scrolled); window.removeEventListener('resize', invalidate);
