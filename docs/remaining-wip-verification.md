@@ -1,3 +1,15 @@
+# Continuación — web 1.7.96 / Android 1.1.6 preparado
+
+Se integran los cambios EPUB/audiolibro de d2e9295 y 5f43d04. Se corrige
+el retraso de audio Android que podía impedir completar el último fragmento
+y que sobrevivía a un reset/flush. Batería local: 3.499 unitarias/285 archivos,
+build y 91 Python PASS. Censo526 sin skips, todavía no ejecución completa.
+APK1.1.5 real y firma/loader verificados;1.1.6/código19 requiere su build.
+Web/API públicas y CI de la nueva fuente están en comprobación.
+No se declara resuelta toda la lentitud: dos aperturas nativas8s fallan en
+la CI anterior; también se conserva un cierre SwiftShader fallido.
+[Detalle y alcance](performance-1796.md).
+
 # Verificación en curso — web1.7.94 y Android1.1.5 preparado
 
 Se integra la web1.7.93 de GitHub antes del cambio de caché del estudio.

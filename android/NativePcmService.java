@@ -218,7 +218,7 @@ public final class NativePcmService extends Service {
             // A hardware buffer may contain a future fragment. Flush and refill
             // the retained current tail, using the actual rendered frame count.
             if (written > queued && track != null) {
-                track.pause(); track.flush(); headBase = played; written = played; lastHead = headWrap = 0;
+                track.pause(); track.flush(); outputDelay = 0; headBase = played; written = played; lastHead = headWrap = 0;
                 for (Unit u : units) for (Chunk c : u.chunks) c.offset = (int) Math.min(c.pcm.length, Math.max(0, played - c.start));
                 track.play();
             }
@@ -242,7 +242,10 @@ public final class NativePcmService extends Service {
         if (rate <= 0 || !track.getTimestamp(stamp)) return;
         long presented = stamp.framePosition + (System.nanoTime() - stamp.nanoTime) * rate / 1_000_000_000L;
         long delay = head - presented;
-        if (delay < 0 || delay > rate) return;
+        if (delay < -rate || delay > rate) return;
+        // Once the last sample is presented, extrapolation can exceed the
+        // stopped head. Release its delay immediately so the queue drains.
+        if (delay <= 0) { outputDelay = 0; return; }
         outputDelay = outputDelay == 0 ? delay : (outputDelay * 7 + delay) / 8;
     }
     private long heard() { return Math.max(0, played - outputDelay); }
@@ -287,7 +290,7 @@ public final class NativePcmService extends Service {
     private void resetTrack(boolean clear) {
         if (track != null) { try { track.pause(); track.flush(); track.release(); } catch (Exception ignored) {} track = null; }
         if (clear) units.clear();
-        played = written = queued = headBase = lastHead = headWrap = 0; rate = 0; publishState();
+        played = written = queued = headBase = lastHead = headWrap = 0; outputDelay = 0; rate = 0; publishState();
     }
     private void fail(String reason) {
         final String failedSession = session;
