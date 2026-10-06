@@ -1,13 +1,26 @@
-# Verificación del WIP — web 1.7.78 publicada y Android 1.1.4
+# Verificación del WIP — web 1.7.79 publicada y Android 1.1.4
 
-## Captura de PDF de 1.7.79 en preparación
+## Caché de iluminación de 1.7.80 en preparación
+
+La huella automática del código 3D y de Three permite conservar el mismo
+atlas entre actualizaciones del lector o app que no cambien esas entradas.
+Pasan 45 pruebas enfocadas, 3.407 unitarias/269 archivos, build y 75 Python.
+Pasan siete recorridos gráficos, cinco de catálogo y dos regresiones
+adicionales sin retries; publicación y CI completo pendientes.
+Se mantienen píxeles, iluminación y resolución. [Detalle](performance-1780.md).
+
+## Captura de PDF de 1.7.79 publicada
 
 La app reutiliza el diseño sólo para una página física completada e intacta;
 un tamaño nuevo se renderiza primero. Conserva copias, píxeles y el contrato
 DOM, sin cambiar relojes. Pasan 84 pruebas enfocadas, 3.393 unitarias en
 267 archivos, build y 75 Python. Los siete recorridos de animación, cinco de
-catálogo y dos regresiones adicionales pasan sin retries. Publicación y CI
-completo pendientes; censo de 524 casos. [Detalle](performance-1779.md).
+catálogo y dos regresiones adicionales pasan sin retries. HTTP32/offline96,
+APK/loader, 18 PDF y cinco de catálogo publicados PASS. Papel default y
+optimizado offline coinciden píxel a píxel en cinco temas; portada PASS.
+La tanda pública de tres conserva un FAIL de auditoría de textura vacía,
+aunque sus aserciones funcionales pasan. CI completo pendiente, censo de
+524 casos. [Detalle](performance-1779.md).
 
 ## Reserva de la sala de 1.7.78
 
@@ -18,8 +31,9 @@ eliminan tres reservas intermedias. Pasan 3.389 unitarias/266 archivos, build,
 Catálogo conserva cuatro PASS y un FAIL de primer frame de luces tras recarga
 a 8 s. HTTP32/offline96 y APK/loader PASS; 18 PDF, cinco de catálogo y dos
 regresos nativos públicos PASS. Editor conserva un FAIL de auditoría de
-textura vacía. Papel y portada offline PASS. CI global sigue en curso;
-no se afirma aprobación global.
+textura vacía. Papel y portada offline PASS. CI original FAILED en UI3/6:
+cierre nativo a 8 s y dos casos flaky tras recarga. Todas las voces reales
+y restantes UI PASS; no se afirma aprobación global.
 [Detalle](performance-1778.md).
 
 ## Catálogo oculto de 1.7.77

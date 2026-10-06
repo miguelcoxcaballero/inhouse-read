@@ -54,6 +54,13 @@ No se altera ese fixture ni se reintenta para ocultar el fallo.
 Papel real offline en cinco temas PASS, sin readbacks en el hilo principal;
 portada PDF/JPEG offline 800×1600, 150.310 bytes y cero fallback PASS.
 El primer pin público conserva FAIL del índice anterior durante propagación;
-el segundo corresponde a la versión nueva. Batería remota todavía en curso.
+el segundo corresponde a la versión nueva. CI original `37396014605`
+termina FAILED, conservando 11 ZIP y 12 logs autenticados. Su censo completo
+contiene 524 identidades y 528 intentos, cuatro retries y seis intentos
+fallidos. UI3 falla en los cierres nativos originales de 8 s, ambas veces.
+UI6 conserva dos casos flaky: primer frame de lámparas tras recarga y libros
+tras recarga. Las cuatro tandas de voces reales, unitarias y demás UI pasan.
+No se afirma aprobación global. Colección sellada sin incidencias en
+`ci-original-37396014605-attempt1/snapshot-001/summary.json`.
 Evidencia: `.animation.local/performance-1778/` y
 `.animation.local/performance-1777/swiftshader-closing-cpu-attempt1/`.

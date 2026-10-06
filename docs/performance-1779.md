@@ -39,3 +39,29 @@ plantas y luces, sin retries. Pasan las dos regresiones originales adicionales
 de continuidad de canvas y efecto de lámparas. Publicación y CI original
 completo siguen pendientes. Estos tiempos no son un benchmark de
 teléfono ni prueban una mejora frente a otra ejecución en distinta carga.
+
+Publicada desde `9ef03cb` en Pages `de9b42e`; main `main-DzaFVSdW.js`,
+SHA256 `76e5cf894072d1de14bb3ea892e8f4d4be3880605cf9bd1b2bff1b7ea8522b5e`.
+HTTP32/offline96 y APK descargado/loader exacto PASS. Android sigue en
+1.1.4/code17: esta entrega cambia sólo la web. La primera comprobación del
+índice vio la versión anterior durante propagación y se conserva separada.
+
+La tanda pública original de tres conserva 2 PASS y un FAIL de auditoría:
+la textura walnut devuelve status 200 con cuerpo vacío durante una navegación,
+aunque las aserciones funcionales de ambos regresos nativos y del editor
+pasan. No se modifica ni relaja ese fixture, ni se cuenta la tanda como PASS.
+Se conservan log, informe y traza.
+
+Los 18 PDF públicos pasan sin retries, con auditoría de 590 cuerpos y
+15 capturas. Papel offline original PASS en cinco temas. La comparación
+adicional default/reuseSettledLayout produce exactamente los mismos píxeles
+de tema y papel blanco en los cinco temas, dimensiones 393×786, copias
+nuevas y las mismas identidades de raster; cero readbacks en el hilo
+principal. Se ejecuta el PdfReader publicado y su worker real desde el
+service worker, sin sustituir respuestas de la app. Portada publicada
+offline PASS: JPEG 800×1600, 150.310 bytes, cero fallback. Pasan los cinco
+casos públicos de catálogo/plantas/luces, sin retries, con fuente y hash
+publicado idénticos antes y después. CI global original sigue pendiente;
+UI3 ya conserva FAILED: cierres originales a 8 s y un fallo de primer frame
+en el segundo intento de 393 px, además de lámparas flaky. El log original
+de su job se conserva en `ci-original-37398555498-attempt1/`.
