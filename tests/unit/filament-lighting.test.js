@@ -117,16 +117,20 @@ describe('quiet change detection for every lamp type', () => {
 
   it('retains none of the entries it was given and keeps lamps nearest the view centre', () => {
     const scene = new THREE.Scene(), manager = createShelfLampLighting(scene);
-    const entries = Array.from({length:6},(_,index) => ({...entryFor('tripod',`lamp:${index}`),
+    // More lamps than lights: the ones nearest the view centre are lit.
+    const entries = Array.from({length:MAX_SHELF_LAMP_LIGHTS + 2},(_,index) => ({...entryFor('tripod',`lamp:${index}`),
       rect:{top:index * 200,bottom:index * 200 + 100}}));
     entries.forEach(entry => scene.add(entry.model));
     manager.update(entries,{scroll:400,viewportHeight:200});
     const keys = () => scene.children.filter(object => object.userData.shelfLamp).map(light => light.userData.entryKey).sort();
-    expect(keys()).toEqual(['lamp:1','lamp:2','lamp:3','lamp:4']);
-    // The picked lamp keeps its light however far it is from the centre.
-    entries[5].node = {classList:{contains:name => name === 'is-dragging'}};
+    const first = Array.from({length:MAX_SHELF_LAMP_LIGHTS},(_,index) => `lamp:${index}`).sort();
+    expect(keys()).toEqual(first);
+    // The picked lamp keeps its light however far it is from the centre; it
+    // takes the lit lamp furthest from the centre.
+    const last = entries.at(-1);
+    last.node = {classList:{contains:name => name === 'is-dragging'}};
     manager.update(entries,{scroll:400,viewportHeight:200});
-    expect(keys()).toEqual(['lamp:1','lamp:2','lamp:3','lamp:5']);
+    expect(keys()).toEqual([...first.filter(key => key !== `lamp:${MAX_SHELF_LAMP_LIGHTS - 1}`),last.key].sort());
     manager.update([]);
     expect(manager.activeCount).toBe(0); expect(keys()).toEqual([]);
     manager.dispose(); entries.forEach(entry => entry.model.dispose());
