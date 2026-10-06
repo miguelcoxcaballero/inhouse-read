@@ -75,7 +75,8 @@ export function normalizeVoices(list) {
  */
 export function normalizeNeuralVoice(entry, installed = []) {
   if (!entry || typeof entry !== 'object' || !isNeuralId(entry.id)) return null
-  const lang = normalizeLang(entry.lang)
+  // A shared multilingual model names the accent it speaks in `dialect`.
+  const lang = normalizeLang(entry.dialect || entry.lang)
   if (!lang) return null
   const have = installed instanceof Set ? installed : new Set(installed || [])
   return { id:entry.id, name:String(entry.name || entry.piperId || entry.id), lang, base:langBase(lang), region:langRegion(lang), quality:null, latency:null, network:false,
