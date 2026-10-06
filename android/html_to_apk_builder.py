@@ -1583,6 +1583,7 @@ import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import androidx.activity.OnBackPressedCallback;
 
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
@@ -1799,6 +1800,21 @@ public class MainActivity extends BridgeActivity {{
         webView.addJavascriptInterface(inferenceBridge, "InhouseInference");
         webView.addJavascriptInterface(new InhouseNativeBridge(), "InhouseNative");
         handleAppCallback(getIntent());
+        // Back at the shelf leaves the app as Home does: the activity, its
+        // WebView and the loaded shelf stay alive, so reopening shows them at
+        // once instead of loading the site again. A page in the WebView that
+        // is not the app (a Google sign-in step) still goes back.
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {{
+            @Override public void handleOnBackPressed() {{
+                WebView view = getBridge().getWebView();
+                if (!isTrustedReadPage() && view.canGoBack()) view.goBack();
+                else moveTaskToBack(true);
+            }}
+        }});
+        // The page's renderer stays as important as the app in the background,
+        // so Android does not discard the loaded shelf before the app itself.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
     }}
 
     public class InhouseNativeBridge {{
@@ -2047,6 +2063,8 @@ import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
+import android.webkit.WebView
+import androidx.activity.OnBackPressedCallback
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.graphics.Insets
@@ -2231,6 +2249,20 @@ class MainActivity : BridgeActivity() {{
         webView.addJavascriptInterface(inferenceBridge!!, "InhouseInference")
         webView.addJavascriptInterface(InhouseNativeBridge(), "InhouseNative")
         handleAppCallback(intent)
+        // Back at the shelf leaves the app as Home does: the activity, its
+        // WebView and the loaded shelf stay alive, so reopening shows them at
+        // once instead of loading the site again. A page in the WebView that
+        // is not the app (a Google sign-in step) still goes back.
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {{
+            override fun handleOnBackPressed() {{
+                val view = bridge.webView
+                if (!isTrustedReadPage() && view.canGoBack()) view.goBack() else moveTaskToBack(true)
+            }}
+        }})
+        // The page's renderer stays as important as the app in the background,
+        // so Android does not discard the loaded shelf before the app itself.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
     }}
 
     inner class InhouseNativeBridge {{
