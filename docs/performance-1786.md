@@ -86,3 +86,10 @@ el plazo global30; fraccionario falla mostrando PDF en ambos intentos.
 UI4 yUI5, unitarias y tres tandas Piper PASS. Supertonic y otrasUI pendientes.
 No se sustituyen los fallos ni se atribuye causalmente a86 el paso deUI4.
 Evidencia: `ci-original-37422423840-attempt1/snapshot-001/`.
+
+CI86 completa FAILED: 11ZIP/12logs,524 identidades/527 intentos,
+3 retries/5 intentos fallidos; sin omisiones ni errores de recogida. Unitarias
+3442/275, las cuatro tandas de voces yUI1/2/4/5/6 PASS. SóloUI3 falla los
+originales descritos arriba; un retry aprobado de luz1 sigue rechazado como
+flaky. No se declara todo el rendimiento resuelto. Evidencia:
+`ci-original-37422423840-attempt1/snapshot-002/`.

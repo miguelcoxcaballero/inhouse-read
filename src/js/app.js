@@ -1,5 +1,6 @@
 import { library, takeFirstRecords } from './shelf-boot.js'
 import { sameBookRecords } from './library-store.js'
+import { createReadingProgressQueue } from './reading-progress-queue.js'
 import { bookCloudState, isBookVisible, storeBookFile } from './book-storage-policy.js'
 import { renderBookshelf } from './bookshelf.js'
 import { ReaderController, UnsupportedFormatError } from './readers/reader-controller.js'
@@ -88,7 +89,9 @@ let readerPreparationQueue = Promise.resolve()
 const preparedPages = createPreparedPageCache()
 let pageGate = null
 const coverUpgrades = new Map()
-const progressWrites = new Map()
+const progressWrites = createReadingProgressQueue(library, {
+  onSaved: (record, bookId) => { if (record?.driveFileId && hasDriveSession()) cloudSync.scheduleProgress(bookId) }
+})
 let driveProfile = null
 let restoringProgress = false
 let shelfRefreshQueued = false
@@ -124,12 +127,7 @@ const wordCountQueue = createBookLengthQueue(library, {
   onError: error => console.warn('No se pudo contar el texto del libro:', error)
 })
 async function persistBookState(bookId, fields) {
-  const previous = progressWrites.get(bookId) || Promise.resolve()
-  const write = previous.catch(() => {}).then(() => library.patch(bookId, {
-    ...fields, progressUpdatedAt:Date.now(), progressDirty:true
-  })).then(record => { if (record?.driveFileId && hasDriveSession()) cloudSync.scheduleProgress(bookId) })
-  progressWrites.set(bookId, write)
-  try { await write } finally { if (progressWrites.get(bookId) === write) progressWrites.delete(bookId) }
+  await progressWrites.patch(bookId, fields)
 }
 // The reading panel and voice code load after the shelf has settled (see the
 // end of this file); a book never opens before they are in.
@@ -1153,16 +1151,12 @@ function extractCoverInBackground(record) {
 function onReaderRelocate({ fraction, cfi, index, textOffset }) {
   els.readerProgressFill.style.width = `${Math.round((fraction ?? 0) * 100)}%`
   readingExperience.relocate()
-  if (!currentBookId || restoringProgress) return
+  if (!currentBookId || restoringProgress || closingReader) return
   const position = persistableRelocation({ fraction, cfi, index, textOffset }, reader.format?.engine)
   if (!position) return
   const bookId = currentBookId
-  const previous = progressWrites.get(bookId) || Promise.resolve()
-  const write = previous.catch(() => {}).then(() => library.updateProgress(bookId,position.fraction,position.locator))
-    .then(record => { if (record?.driveFileId && hasDriveSession()) cloudSync.scheduleProgress(bookId) })
-  progressWrites.set(bookId, write)
-  write.catch(error => console.warn('No se pudo guardar el progreso:', error))
-    .finally(() => { if (progressWrites.get(bookId) === write) progressWrites.delete(bookId) })
+  progressWrites.updateProgress(bookId,position.fraction,position.locator)
+    .catch(error => console.warn('No se pudo guardar el progreso:', error))
 }
 
 els.readerBack.addEventListener('click', async () => {
@@ -1319,7 +1313,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.7.87'
+els.appVersion.textContent = 'Inhouse Read · v1.7.88'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')

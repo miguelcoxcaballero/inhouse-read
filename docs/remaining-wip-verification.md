@@ -1,14 +1,29 @@
-# Verificación del WIP — web 1.7.86 publicada y Android 1.1.4
+# Verificación del WIP — web1.7.88 en publicación y Android1.1.4
 
-## Recursos del marcapáginas 1.7.87 en publicación
+## Guardado de progreso1.7.88
+
+Se agrupan sólo posiciones pendientes contiguas de cada libro. La escritura
+activa y los ajustes/historial respetan su orden. Cierre y apertura esperan
+la posición final; los bytes siguen locales y Drive se programa tras guardar.
+Siete nuevas y43 relacionadas PASS;3455 unitarias/277 archivos, build y75
+Python PASS. IndexedDB real1/16MB conserva bytes/portada/progreso/ajustes:
+dos commits para una escritura activa y1000 avisos pendientes. Catorce
+recorridos normales, dos SwiftShader originales y reanudación EPUB PASS,
+cero retries y plazos intactos. No mide FPS ni velocidad de teléfono.
+Publicación, comprobación pública y CI nueva pendientes.
+[Detalle](performance-1788.md).
+
 
 Un marcador existente conserva malla, material, alphaMap y buffers al guardar
-progreso. Su geometría, acabado y pose coinciden con una cinta nueva; el primer
-marcador sigue creándose como antes. Seis nuevas y100 relacionadas PASS;
-3448 unitarias/276 archivos, build y75 Python PASS. Dieciocho paresWebGL2
-exactos y14 recorridos normales PASS, sin retries. SwiftShader adicional:
-alineado PASS, fraccionario FAIL por cierre a8s. Fallo original conservado;
-no se da por terminada la lentitud. Público y CI completa pendientes.
+progreso. Geometría, acabado y pose conservados; la primera cinta se crea como
+antes. Seis nuevas y100 relacionadas PASS;3448 unitarias/276 archivos, build
+más75 Python PASS. Dieciocho paresRGBA y14 recorridos normales PASS, cero
+retries. SwiftShader adicional: alineado PASS, fraccionario FAIL por cierre8s.
+Deploy, HTTP32/offline96, nueva descargaAPK/loader y26 recorridos públicos
+con sus auditorías PASS. Papel en cinco temas y portada offline PASS.
+CI completa37425792376 FAILED:524 casos/528 intentos,4 retries/6 fallos en
+UI1/3/6; cuatro tandas reales de voces y las otras tres UI PASS. Fallos
+originales retenidos; no resolución completa de la lentitud.
 [Detalle](performance-1787.md).
 
 ## Composición de sala 1.7.86 publicada
@@ -22,7 +37,8 @@ WebGL2 conservan cada píxel. Los14 recorridos normales, dos cierres originales
 adicionales con SwiftShader y el caso de planta vecina PASS, cero retries.
 Deploy y pin de los bytes públicos PASS; HTTP32/offline96 y nueva descarga
 APK/loader PASS. Los26 recorridos públicos y auditorías PASS, cero retries.
-Papel/portada offline PASS; CI completa en marcha;
+Papel/portada offline PASS; CI completa524 FAILED sóloUI3:527 intentos,
+3 retries y5 fallos. Las cuatro tandas de voces y otras cincoUI PASS;
 no prueba de rendimiento móvil.
 [Detalle](performance-1786.md).
 
