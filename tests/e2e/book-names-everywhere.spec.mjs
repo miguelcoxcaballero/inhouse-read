@@ -1,0 +1,25 @@
+import { expect, test } from '@playwright/test'
+
+test.use({ viewport:{ width:390, height:844 }, hasTouch:true, isMobile:true })
+
+test('el título y el autor escritos en el lomo se ven en la ficha, el lector y Escuchar', async ({ page }) => {
+  test.setTimeout(180_000)
+  await page.emulateMedia({ reducedMotion:'reduce' })
+  await page.goto('/')
+  await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/tiny.pdf')
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible({ timeout:60_000 })
+  await page.getByRole('button', { name:'Volver a la estantería' }).click()
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0, { timeout:30_000 })
+  await page.locator('.ihr-spine').first().click()
+  await page.getByRole('button', { name:'Editar', exact:true }).click()
+  await page.getByRole('textbox', { name:'Texto del lomo' }).fill('Claros del bosque')
+  await page.getByRole('textbox', { name:'Autor del libro' }).fill('María Zambrano')
+  await page.getByRole('button', { name:'Listo', exact:true }).click()
+  await expect(page.locator('.ihr-flyout__title')).toHaveText('Claros del bosque')
+  await expect(page.locator('.ihr-flyout__author')).toHaveText('María Zambrano')
+  await expect(page.locator('.ihr-flyout')).toHaveAttribute('aria-label', 'Claros del bosque')
+  await page.locator('.ihr-flyout__cover-target').click()
+  await expect(page.locator('#reader-top-title')).toHaveText('Claros del bosque', { timeout:30_000 })
+  await expect(page.locator('#reader-top-byline')).toHaveText('María Zambrano')
+  await expect(page.locator('#reading-book-title')).toHaveText('Claros del bosque')
+})

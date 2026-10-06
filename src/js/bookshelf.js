@@ -100,7 +100,7 @@ import { planBookshelf, bookmarkFor, withDefaults, DEFAULT_LAYOUT } from './book
 import { canAdoptShelfMetadata } from './shelf-metadata-records.js';
 import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from './cover-appearance.js';
 import { bookColorOptions, spineColorStyle, spineFinish, surfaceFinish, METAL_COLORS } from './book-colors.js';
-import { normalizeBookAuthor } from './book-title.js';
+import { displayBookTitle, normalizeBookAuthor } from './book-title.js';
 import { bookView, fitCoverImage, getBookRenderer, planReadingBookPose } from './book-model.js';
 import { analyzeCoverRelief, normalizeCoverRelief, coverReliefLayers, COLOR_RELIEF_IDS } from './cover-relief.js';
 import { EDITOR_TABS, coverEditorPose, coverTiltFrames, editorTabId, nextEditorTab } from './cover-editor.js';
@@ -182,11 +182,11 @@ export const DEFAULT_TEXTS = Object.freeze({
   addDrive: 'Drive',
   emptyAction: 'Añadir libro',
   openAction: 'Abrir',
-  tapCover: (book) => `Toca para leer ${book.title ?? 'este libro'}`,
+  tapCover: (book) => `Toca para leer ${displayBookTitle(book) || 'este libro'}`,
   closeAction: 'Cerrar',
   noCover: 'Sin portada',
   openAria: (book) =>
-      book.author ? `Abrir ${book.title}, de ${normalizeBookAuthor(book.author)}` : `Abrir ${book.title}`,
+      book.author ? `Abrir ${displayBookTitle(book)}, de ${normalizeBookAuthor(book.author)}` : `Abrir ${displayBookTitle(book)}`,
   progressAria: (percent) => (percent >= 100 ? 'terminado' : `leído al ${percent} %`)
 });
 
@@ -1278,7 +1278,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         savedCoverUrls.delete(key);
         if (state.objectUrls.delete(url)) URL.revokeObjectURL?.(url);
       }
-      trashAnnounce.textContent = `${item.book.title || 'Libro'} retirado de la estantería`;
+      trashAnnounce.textContent = `${displayBookTitle(item.book) || 'Libro'} retirado de la estantería`;
       root.dataset.lastRemovedBook = id;
       persisted.then(() => { state.pendingRemovals.delete(id); }, error => {
         state.pendingRemovals.delete(id);
@@ -1361,7 +1361,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       const state = bookGeometryState(book);
       const row = el('div', { class:'ihr-library-loading__book' });
       if (state === 'pending') row.append(el('span', { class:'ihr-library-loading__spinner', 'aria-hidden':'true' }));
-      const title = book.title || book.name || 'Libro';
+      const title = displayBookTitle(book) || book.name || 'Libro';
       row.append(el('span', { text:state === 'pending' ? `Preparando ${title}…`
         : state === 'needs-source' ? `${title} · vuelve a seleccionar el archivo`
           : `${title} · no se pudo contar su texto` }));
@@ -2044,7 +2044,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       face.append(
         el('div', { class: 'ihr-cover-placeholder' }, [
           roofMark('ihr-roof ihr-cover-placeholder__roof'),
-          el('span', { class: 'ihr-cover-placeholder__title', text: book.title ?? '' }),
+          el('span', { class: 'ihr-cover-placeholder__title', text: displayBookTitle(book) }),
           normalizeBookAuthor(book.author)
             ? el('span', { class: 'ihr-cover-placeholder__author', text: normalizeBookAuthor(book.author) })
             : null,
@@ -2209,7 +2209,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // Title and author, and how far the reader got: the cover itself says the rest.
     const progress = Math.round(Math.min(1, Math.max(0, Number(book.progressFraction) || 0)) * 100);
     const meta = el('div', { class: 'ihr-flyout__meta' }, [
-      el('p', { class: 'ihr-flyout__title', text: book.title ?? '' }),
+      el('p', { class: 'ihr-flyout__title', text: displayBookTitle(book) }),
       normalizeBookAuthor(book.author) ? el('p', { class: 'ihr-flyout__author', text: normalizeBookAuthor(book.author) }) : null,
       progress > 0 ? el('p', { class: 'ihr-flyout__progress', 'aria-label': `${progress} % leído` }, [
         el('span', { class: 'ihr-flyout__progress-track', 'aria-hidden': 'true' }, [
@@ -2239,7 +2239,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       class: 'ihr-flyout',
       role: 'dialog',
       'aria-modal': 'true',
-      'aria-label': book.title ?? opts.texts.openAction,
+      'aria-label': displayBookTitle(book) || opts.texts.openAction,
       tabindex: '-1'
     });
     flyout.classList.add(view ? 'has-webgl' : 'no-webgl');
@@ -2443,7 +2443,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       view.animate([{ transform: before }, { transform: coverPose }], { duration: prefersReducedMotion() ? 1 : 220 });
     }
     function reliefKey() {
-      return `color-zones-v3-ten|${item.coverKey ?? coverUrl ?? ''}|${book.title ?? ''}|${normalizeBookAuthor(book.author)}`;
+      return `color-zones-v3-ten|${item.coverKey ?? coverUrl ?? ''}|${displayBookTitle(book)}|${normalizeBookAuthor(book.author)}`;
     }
     // Deja de lado todo lo que dependa de la pestaña: balanceo, temporizadores
     // y análisis en curso (cierre del editor o cambio de pestaña).
@@ -2567,9 +2567,27 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (hadFocus) replacement.focus({ preventScroll: true });
       if (state.lastOpened?.book?.id === book.id) state.lastOpened.spineEl = replacement;
     }
+    function refreshBookNames() {
+      const title = displayBookTitle(book), author = normalizeBookAuthor(book.author);
+      const titleNode = meta.querySelector('.ihr-flyout__title');
+      if (titleNode) titleNode.textContent = title;
+      let authorNode = meta.querySelector('.ihr-flyout__author');
+      if (author && !authorNode) { authorNode = el('p', { class:'ihr-flyout__author' }); titleNode?.after(authorNode); }
+      if (authorNode) { if (author) authorNode.textContent = author; else authorNode.remove(); }
+      flyout.setAttribute('aria-label', title || opts.texts.openAction);
+      coverTarget.setAttribute('aria-label', opts.texts.tapCover(book));
+      const shelfNode = shelfSpineNodes().find(node => node.dataset.bookId === String(book.id));
+      if (shelfNode) {
+        const progress = shelfNode.getAttribute('aria-label')?.match(/, (?:leído al \d+ %|terminado)$/)?.[0] || '';
+        shelfNode.setAttribute('aria-label', opts.texts.openAria(book) + progress);
+      }
+    }
     function updateCustomization(fields) {
       Object.assign(book, fields);
       Object.assign(customizationFields, fields);
+      // The title written on the spine and the author are the book's own,
+      // everywhere: this sheet, its labels and the spine's on the shelf.
+      if ('spineTitleOverride' in fields || 'author' in fields) refreshBookNames();
       // El relieve sólo toca la portada y ya lo aplica view.setCoverRelief:
       // ni rehace el modelo al cerrar ni repinta el lomo de la estantería.
       if (Object.keys(fields).every(key => key === 'coverRelief')) { queueCustomizationSave(); return; }

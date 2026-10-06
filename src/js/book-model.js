@@ -5,7 +5,7 @@ import { cachedStudioEnvironment, prepareStudioEnvironmentCache } from './studio
 import { configureNativeRendererSize } from './native-renderer-size.js';
 import { spineSurface, releaseSurface, seededRandom, textSeed, withStops, paintCloth, paintWeave, spineLayout, drawDevice, lattice } from './spine-surface.js';
 import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from './book-colors.js';
-import { normalizeBookAuthor } from './book-title.js';
+import { displayBookTitle, normalizeBookAuthor } from './book-title.js';
 import { pageRaster } from './page-raster.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { applyBookReflectionSurface } from './book-reflection-surface.js';
@@ -759,7 +759,7 @@ function coverTexture(book, style, textureHeight = 2048, maxDimension = Infinity
   const family = `"${style.fontCanvasFamily || style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`;
   c.fillStyle = c.strokeStyle = style.ink; c.textAlign = 'center'; c.textBaseline = 'middle';
   c.font = `${style.fontWeight || 700} ${titleSize}px ${family}`;
-  const words = (book.title || 'Sin título').split(' '); let line = ''; const lines = [];
+  const words = (displayBookTitle(book) || 'Sin título').split(' '); let line = ''; const lines = [];
   for (const word of words) {
     if (c.measureText(line + word).width > titleWidth && line) { lines.push(line.trim()); line = ''; }
     line += word + ' ';

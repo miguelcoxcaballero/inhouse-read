@@ -793,7 +793,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     return {
       spine:JSON.stringify([style, book.spineTitleOverride, book.title, book.author, book.spineFontSize,
         book.spineAuthorFontSize, book.spineFinish, book.spineSurfaceFinish, book.spineTextFinish, book.spineTextColor, book.spineEngraved]),
-      cover:JSON.stringify([coverUrl, style.coverRatio, style.color, !coverUrl && [book.title, book.author, book.format, style.fontFamily]]),
+      cover:JSON.stringify([coverUrl, style.coverRatio, style.color, !coverUrl && [book.spineTitleOverride, book.title, book.author, book.format, style.fontFamily]]),
       coverFinish:book.coverFinish,
       coverRelief:JSON.stringify(book.coverRelief ?? null),
       edgeFinish:book.pageEdgeFinish,

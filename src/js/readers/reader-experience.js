@@ -7,7 +7,7 @@ import { AUTO, languageOptions, voiceOptions } from './voice-menus.js'
 import { neuralEngine, neuralVoiceList } from './neural-runtime.js'
 import { NeuralVoicePicker } from './neural-picker.js'
 import { clonePlace, cleanPlaces, cleanQuotes } from './reading-state.js'
-import { normalizeBookAuthor } from '../book-title.js'
+import { displayBookTitle, normalizeBookAuthor } from '../book-title.js'
 
 const STORAGE_KEY = 'inhouse-read-reading-preferences'
 
@@ -177,17 +177,33 @@ export class ReaderExperience {
     window.addEventListener('resize', resize)
     this.resizePanel = resize
   }
+  /** The title written on the spine or the author changed (in the shelf's
+   * editor, maybe while this book was already prepared): show them here too. */
+  refreshNames(bookId, fields) {
+    if (!this.book || String(this.book.id) !== String(bookId)) return
+    Object.assign(this.book, fields)
+    const title = displayBookTitle(this.book)
+    const author = normalizeBookAuthor(this.book.author) || normalizeBookAuthor(this.book.metadata?.creator)
+    this.panel.querySelector('#reading-book-title').textContent = title
+    document.getElementById('reader-top-title').textContent = title
+    document.getElementById('reader-top-byline').textContent = author
+    this.panel.querySelector('#reading-document-about').textContent = `${title}${author ? ` · ${author}` : ''}
+${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
+    const mini = this.miniPlayer?.querySelector('[data-mini-title]')
+    if (mini) mini.textContent = title
+  }
+
   async open(record) {
     this.cancelNavigation()
     this.book = record
     this.history = cleanPlaces(record.readingHistory)
     this.bookmarks = cleanPlaces(record.bookmarks, 100)
     this.quotes = cleanQuotes(record.quotes)
-    this.panel.querySelector('#reading-book-title').textContent = record.title
-    document.getElementById('reader-top-title').textContent = record.title
+    this.panel.querySelector('#reading-book-title').textContent = displayBookTitle(record)
+    document.getElementById('reader-top-title').textContent = displayBookTitle(record)
     const author = normalizeBookAuthor(record.author) || normalizeBookAuthor(record.metadata?.creator)
     document.getElementById('reader-top-byline').textContent = author
-    this.panel.querySelector('#reading-document-about').textContent = `${record.title}${author ? ` · ${author}` : ''}\n${record.format || 'Documento'} · ${this.formatSize(record.sizeBytes)}`
+    this.panel.querySelector('#reading-document-about').textContent = `${displayBookTitle(record)}${author ? ` · ${author}` : ''}\n${record.format || 'Documento'} · ${this.formatSize(record.sizeBytes)}`
     const pdf = this.reader.format?.engine === 'pdf'
     for (const element of this.panel.querySelectorAll('[data-pdf]')) element.hidden = !pdf
     this.panel.querySelector('[data-epub]').hidden = pdf
@@ -259,7 +275,7 @@ export class ReaderExperience {
     this.screen.classList.toggle('has-reading-audio', active)
     this.miniPlayer.hidden = !active || this.panel.open
     this.screen.classList.toggle('has-reading-mini-player', !this.miniPlayer.hidden)
-    this.miniPlayer.querySelector('[data-mini-title]').textContent = this.book?.title || ''
+    this.miniPlayer.querySelector('[data-mini-title]').textContent = displayBookTitle(this.book)
     this.miniPlayer.querySelector('[data-mini-status]').textContent = message || `${state === 'paused' ? 'En pausa' : state === 'loading' ? 'Preparando…' : 'Leyendo'} · ${rateLabel(this.preferences.rate)}`
     const play = this.miniPlayer.querySelector('[data-mini-play]')
     play.innerHTML = readerIcon(state === 'playing' ? 'pause' : 'play')
@@ -475,7 +491,7 @@ export class ReaderExperience {
     if (!content) { this.error('Archivo original no disponible.'); return }
     const file = new File([content],this.book.fileName || `${this.book.title}.${String(this.book.format||'pdf').toLowerCase()}`,{type:this.book.mimeType || content.type || 'application/octet-stream'})
     try {
-      if (navigator.canShare?.({files:[file]}) && navigator.share) await navigator.share({title:this.book.title,files:[file]})
+      if (navigator.canShare?.({files:[file]}) && navigator.share) await navigator.share({title:displayBookTitle(this.book),files:[file]})
       else { const url = URL.createObjectURL(file), link = document.createElement('a'); link.href=url; link.download=file.name; link.click(); setTimeout(()=>URL.revokeObjectURL(url),30000) }
       this.panel.close()
     } catch (error) { if (error.name !== 'AbortError') this.error('No se pudo compartir.') }

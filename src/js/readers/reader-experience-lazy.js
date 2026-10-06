@@ -36,6 +36,7 @@ export function createLazyReaderExperience(reader, options) {
     relocate() { experience?.relocate() },
     step(direction) { return experience?.step(direction) },
     jump(place, target) { return experience?.jump(place, target) },
+    refreshNames(bookId, fields) { experience?.refreshNames?.(bookId, fields) },
     async open(record) { return (await load()).open(record) }
   }
 }
