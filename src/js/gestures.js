@@ -100,10 +100,10 @@ export function attachSwipeNavigation(el, {
     clearTap()
     settleSurface()
   }
-  function navigate(zone) {
+  function navigate(zone, event) {
     if (zone === ZONE.PREV) return onPrev?.()
     if (zone === ZONE.NEXT) return onNext?.()
-    return onToggleChrome?.()
+    return onToggleChrome?.(event)
   }
 
   const onPointerDown = event => {
@@ -166,7 +166,7 @@ export function attachSwipeNavigation(el, {
     const zone = tapZone?.(event) ?? classifyTapZone(event.clientX - rect.left, rect.width)
     // A page turn on the side edges acts at once. Only the centre waits for a
     // possible second tap (zoom), because that tap would otherwise hide the controls.
-    if (!onToggleZoom || zone !== ZONE.CENTER) { clearTap(); return navigate(zone) }
+    if (!onToggleZoom || zone !== ZONE.CENTER) { clearTap(); return navigate(zone, event) }
     const doubleTap = lastTap && stamp - lastTap.time < DOUBLE_TAP_MAX_DELAY
       && Math.hypot(event.clientX - lastTap.x,event.clientY - lastTap.y) < 30
     if (doubleTap) { clearTap(); return onToggleZoom(event.clientX,event.clientY) }
@@ -174,7 +174,7 @@ export function attachSwipeNavigation(el, {
     lastTap = {time:stamp,x:event.clientX,y:event.clientY}
     // Wait only when double-tap zoom is supported: its first tap must not
     // hide the toolbar before the second finger tap.
-    tapTimer = setTimeout(() => { tapTimer = 0; lastTap = null; if (!detached && !selected()) navigate(zone) }, DOUBLE_TAP_MAX_DELAY)
+    tapTimer = setTimeout(() => { tapTimer = 0; lastTap = null; if (!detached && !selected()) navigate(zone, event) }, DOUBLE_TAP_MAX_DELAY)
   }
   const onCancel = event => {
     // Touch browsers release implicit capture from the tapped child after

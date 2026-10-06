@@ -62,6 +62,7 @@ export class ReadingVoice {
     // The reader measured new page breaks (a relayout, or a chapter read with
     // the screen off now on screen): re-cut what is still to be read there.
     window.addEventListener('inhouse-speech-layout', () => { void this.refreshPageBreaks() })
+    window.addEventListener('inhouse-speech-tap', event => { if (this.jumpToPoint(event.detail)) event.detail.handled = true })
     window.addEventListener('inhouse-audio-control', event => {
       const detail = event.detail
       if (!nativePcmBridge() || !this.nativeSession || detail?.session !== this.nativeSession) return
@@ -329,6 +330,27 @@ export class ReadingVoice {
    * rest of the source is re-cut at the measured breaks, and the engine gets
    * the new upcoming texts (what it already prepared and still matches is kept).
    */
+  /** A tap on a sentence of the page being read: read from that sentence on. */
+  jumpToPoint({ doc, x, y } = {}) {
+    if (this.state !== 'playing' || typeof this.source?.offsetAtPoint !== 'function') return false
+    let at
+    try { at = this.source.offsetAtPoint(doc, x, y) } catch { return false }
+    if (!Number.isFinite(at)) return false
+    const hit = this.items.findIndex(item => item.sentence && at >= item.sentence.start && at < item.sentence.end)
+    if (hit < 0) return false
+    let first = hit
+    while (first > 0 && this.items[first - 1].sentence?.start === this.items[hit].sentence.start) first--
+    this.index = first
+    this.restart()
+    return true
+  }
+  /** The reader turned a page by hand while the audiobook played: go on reading from the page now shown. */
+  async continueFromPage(navigate) {
+    const playing = this.state === 'playing' || this.state === 'loading'
+    this.stop()
+    await navigate?.()
+    if (playing && this.state === 'stopped') return this.play()
+  }
   async refreshPageBreaks() {
     const source = this.source, generation = this.generation, index = this.index
     if (this.state !== 'playing' || typeof source?.measurePageBreaks !== 'function') return false

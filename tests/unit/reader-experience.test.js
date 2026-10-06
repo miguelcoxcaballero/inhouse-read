@@ -5,7 +5,7 @@ import { normalizeNeuralVoice } from '../../src/js/readers/voice-catalog.js'
 import { neuralVoices } from '../../src/js/readers/neural-voice/catalog.js'
 
 vi.mock('../../src/js/readers/reading-voice.js', () => ({
-  ReadingVoice:class { state = 'stopped'; stop = vi.fn() }
+  ReadingVoice:class { state = 'stopped'; stop = vi.fn(); continueFromPage = vi.fn(async navigate => { this.stop(); return navigate?.() }) }
 }))
 const runtime = vi.hoisted(() => ({ voices:[] }))
 // Exercise the real natural-voice menu contracts without starting the synthesis engine.
