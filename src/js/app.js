@@ -1,4 +1,5 @@
 import { library, takeFirstRecords } from './shelf-boot.js'
+import { version as APP_VERSION } from '../../package.json'
 import { sameBookRecords } from './library-store.js'
 import { createReadingProgressQueue } from './reading-progress-queue.js'
 import { bookCloudState, isBookVisible, storeBookFile } from './book-storage-policy.js'
@@ -1326,7 +1327,8 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.7.91'
+// The published version, from package.json: it changes with every release.
+els.appVersion.textContent = `Inhouse Read · v${APP_VERSION}`
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')
