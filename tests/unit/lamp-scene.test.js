@@ -399,10 +399,33 @@ describe('bounded lamp lighting', () => {
     for (const entry of entries) scene.add(entry.model);
     expect(manager.update(entries, { viewportHeight:600 })).toBe(true);
     expect(manager.activeCount).toBe(MAX_SHELF_LAMP_LIGHTS); expect(manager.shadowCount).toBe(2);
-    expect(fixtureLights(scene)).toHaveLength(4);
+    expect(fixtureLights(scene)).toHaveLength(MAX_SHELF_LAMP_LIGHTS);
     entries[9].node.classList.add('is-dragging'); manager.update(entries, { viewportHeight:600 });
     expect(fixtureLights(scene).some(light => light.userData.entryKey === 'lamp:9')).toBe(true);
     manager.dispose(); expect(fixtureLights(scene)).toHaveLength(0);
+  });
+  it('lights every powered lamp, whatever the camera or a dragged lamp does', () => {
+    const scene = new THREE.Scene(), manager = createShelfLampLighting(scene);
+    const entries = Array.from({ length:6 }, (_, index) => source(index, index % 2 === 0));
+    for (const entry of entries) scene.add(entry.model);
+    const lit = () => litLights(scene).map(light => light.userData.entryKey).sort().join();
+    manager.update(entries, { viewportHeight:600 });
+    const all = entries.map(entry => entry.key).sort().join();
+    expect(lit()).toBe(all);
+    for (const scroll of [0, 300, 900, -400]) { manager.update(entries, { scroll, viewportHeight:600 }); expect(lit()).toBe(all); }
+    entries[5].node.classList.add('is-dragging'); entries[5].rect = { top:2000, bottom:2040 };
+    manager.update(entries, { scroll:900, viewportHeight:600 }); expect(lit()).toBe(all);
+    manager.dispose();
+  });
+  it('with more lamps than lights, never moves a light to another lamp on a scroll', () => {
+    const scene = new THREE.Scene(), manager = createShelfLampLighting(scene), entries = Array.from({ length:MAX_SHELF_LAMP_LIGHTS + 3 }, (_, index) => source(index));
+    for (const entry of entries) scene.add(entry.model);
+    const lit = () => litLights(scene).map(light => light.userData.entryKey).sort().join();
+    manager.update(entries, { scroll:0, viewportHeight:600 });
+    const first = lit();
+    expect(litLights(scene)).toHaveLength(MAX_SHELF_LAMP_LIGHTS);
+    for (const scroll of [400, 900, 0]) { manager.update(entries, { scroll, viewportHeight:600 }); expect(lit()).toBe(first); }
+    manager.dispose();
   });
   it('builds the pool from the library before any model exists, exactly as the first update would', () => {
     const scene = new THREE.Scene(), manager = createShelfLampLighting(scene);
@@ -498,7 +521,7 @@ describe('bounded lamp lighting', () => {
     const signature = () => fixtureLights(scene).map(light => `${light.type}:${light.castShadow}`).sort().join();
     manager.update(entries, { viewportHeight:600 });
     const lights = [...fixtureLights(scene)], expected = signature();
-    expect(lights).toHaveLength(MAX_SHELF_LAMP_LIGHTS);
+    expect(lights).toHaveLength(Math.min(entries.length, MAX_SHELF_LAMP_LIGHTS));
     const step = () => {
       manager.update(entries, { viewportHeight:600 });
       expect(signature()).toBe(expected); expect(fixtureLights(scene)).toEqual(lights);

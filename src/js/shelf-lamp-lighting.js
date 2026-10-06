@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { tintColor } from './lamp-kelvin.js';
 import { getCatalogLamp } from './lamp-catalog-data.js';
 
-export const MAX_SHELF_LAMP_LIGHTS = 4;
+// Every lamp a library holds gets its own light up to this many: a lamp
+// that glows lights the room, whatever the camera or the other lamps do.
+export const MAX_SHELF_LAMP_LIGHTS = 8;
 const MAX_LAMP_SHADOWS = 2;
 const position = new THREE.Vector3(), direction = new THREE.Vector3();
 const localMatrix = new THREE.Matrix4(), inverseRoot = new THREE.Matrix4();
@@ -79,10 +81,13 @@ function kindOf(entry) {
 }
 const isCandidate = entry => entry.kind === 'lamp' && entry.model?.visible &&
   entry.model.userData.lightEmitter && !entry.node?.classList.contains('is-away') && !entry.trashDrop;
-// The picked lamp keeps its pool while moving. Others nearest the
-// camera centre have priority, with a stable key resolving equal scores.
+// Only with more lamps than lights: the picked lamp keeps its light while
+// moving, then the lamps already lit keep theirs (a scroll or a drag never
+// moves a light to another lamp), then the ones nearest the camera centre,
+// with a stable key resolving equal scores.
+let litKeys = new Set();
 const priority = entry => entry.node?.classList.contains('is-dragging') ? -Infinity :
-  Math.abs((entry.rect?.top + entry.rect?.bottom) / 2 - middle) || 0;
+  (litKeys.has(entry.key) ? -1e9 : 0) + (Math.abs((entry.rect?.top + entry.rect?.bottom) / 2 - middle) || 0);
 const byPriority = (a, b) => priority(a) - priority(b) || String(a.key).localeCompare(String(b.key));
 
 /** Warm fixtures light the actual shelf materials. A small shared budget avoids
@@ -297,6 +302,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       let changed = reconcile(entries) || prepared;
       prepared = false;
       candidates.length = 0;
+      litKeys = new Set(slots.filter(slot => slot.lit).map(slot => slot.key));
       for (const entry of entries) if (isCandidate(entry)) candidates.push(entry);
       if (candidates.length > 1) candidates.sort(byPriority);
       // The lit lamps are the powered ones nearest the view (or picked up),
