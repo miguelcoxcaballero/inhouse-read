@@ -316,3 +316,36 @@ body.is-reading .app-header, #reader-screen, .reader-viewport, .reader-toolbar, 
 .reading-chips button { min-width:44px; min-height:44px; padding:0 10px; border:0; border-radius:22px; background:none; color:inherit; font:400 13px var(--f-body); opacity:.6; cursor:pointer; }
 .reading-chips button[aria-checked=true] { background:color-mix(in srgb,currentColor 10%,transparent); font-weight:600; opacity:1; }
 @media (prefers-reduced-motion:no-preference) { .select-menu__trigger svg { transition:transform .15s; } }
+
+/* ------------------------------------------------------------------ *
+ * Escuchar, Texto y Contenido con el estilo de la ficha del libro:
+ * títulos en serif, sin cajas ni rellenos negros; lo elegido se marca
+ * con un fondo tenue, los campos con un filete inferior.
+ * ------------------------------------------------------------------ */
+.reading-panel__header h2 { font:500 20px/1.25 var(--f-spine, Georgia, serif); letter-spacing:-.2px; }
+.reading-panel__header .reading-icon-button { opacity:.6; }
+@media (hover:hover) { .reading-panel__header .reading-icon-button:hover { opacity:1; } }
+
+.reading-play { width:64px; height:64px; }
+.reading-play svg { width:26px; height:26px; }
+
+.reading-neural-offer { padding:4px 0; border-radius:0; background:none; }
+.reading-neural-btn { border-color:transparent; }
+.reading-neural-btn.is-primary { background:none; color:inherit; font-weight:600; }
+.reading-neural-btn.is-selected { background:color-mix(in srgb,currentColor 9%,transparent); color:inherit; font-weight:600; }
+.reading-neural-btn.is-quiet { opacity:.6; }
+
+.reading-speed { padding:0; border:0; border-radius:0; }
+.reading-speed__step span { opacity:.6; }
+.reading-speed__step input:checked + span { background:color-mix(in srgb,currentColor 9%,transparent); color:inherit; opacity:1; }
+
+.reading-page-form input { border:0; border-bottom:1px solid color-mix(in srgb,currentColor 22%,transparent); border-radius:0; background:transparent; }
+.reading-search-form input { border:0; border-bottom:1px solid color-mix(in srgb,currentColor 22%,transparent); border-radius:0; background:transparent; padding-inline:2px; }
+.reading-panel .reading-search-form input:focus-visible,
+.reading-panel .reading-page-form input:focus-visible { box-shadow:none; border-color:currentColor; }
+.reading-search-form .reading-text-button,
+.reading-page-form .reading-text-button { padding:0 10px; border-radius:22px; background:none; color:inherit; font-weight:600; }
+@media (hover:hover) {
+  .reading-search-form .reading-text-button:hover,
+  .reading-page-form .reading-text-button:hover { background:color-mix(in srgb,currentColor 6%,transparent); }
+}

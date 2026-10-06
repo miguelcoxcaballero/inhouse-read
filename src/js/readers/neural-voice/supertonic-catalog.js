@@ -113,8 +113,49 @@ export const SUPERTONIC_STYLES = Object.freeze([...SUPERTONIC_LEGACY_STYLES, 'F3
 export const SUPERTONIC_LEGACY_ASSETS = Object.freeze(SUPERTONIC_ASSETS.filter(asset => !asset.path.startsWith('voice_styles/') || SUPERTONIC_LEGACY_STYLES.includes(asset.path.split('/').at(-1).replace('.json', ''))));
 export const SUPERTONIC_LICENSE = Object.freeze({name:'OpenRAIL-M',url:SUPERTONIC_BASE+'LICENSE',attribution:'Copyright (c) 2026 Supertone Inc.'});
 export const isSupertonicVoiceId = id => typeof id === 'string' && /^supertonic3:([FM][1-5]):[a-z]{2}$/.test(id);
+// Each Supertonic profile (F1-F5 women, M1-M5 men) is shown with a name of its
+// language and the standard accent of that language; the voice id and the
+// language code given to the model stay as they were.
+export const SUPERTONIC_VOICE_NAMES = Object.freeze({
+  en:Object.freeze({ dialect:'en-US', F:['Emma','Olivia','Grace','Hannah','Lucy'], M:['James','Daniel','Henry','Samuel','Thomas'] }),
+  ko:Object.freeze({ dialect:'ko-KR', F:['Ji-woo','Seo-yeon','Min-ji','Ha-eun','Soo-ah'], M:['Min-jun','Seo-jun','Do-hyun','Ji-ho','Hyun-woo'] }),
+  ja:Object.freeze({ dialect:'ja-JP', F:['Yui','Haruka','Sakura','Aoi','Mei'], M:['Haruto','Sota','Ren','Yuto','Kaito'] }),
+  ar:Object.freeze({ dialect:'ar-SA', F:['Layla','Mariam','Noor','Salma','Huda'], M:['Omar','Karim','Youssef','Tariq','Samir'] }),
+  bg:Object.freeze({ dialect:'bg-BG', F:['Maria','Elena','Desislava','Ivana','Radka'], M:['Georgi','Ivan','Dimitar','Nikolay','Stoyan'] }),
+  cs:Object.freeze({ dialect:'cs-CZ', F:['Tereza','Eliška','Klára','Jana','Lucie'], M:['Jakub','Tomáš','Ondřej','Petr','Martin'] }),
+  da:Object.freeze({ dialect:'da-DK', F:['Freja','Ida','Clara','Karen','Sofie'], M:['Mads','Frederik','Lars','Emil','Rasmus'] }),
+  de:Object.freeze({ dialect:'de-DE', F:['Anna','Lena','Marie','Sophie','Greta'], M:['Lukas','Jonas','Felix','Paul','Matthias'] }),
+  el:Object.freeze({ dialect:'el-GR', F:['Eleni','Maria','Sofia','Katerina','Anna'], M:['Giorgos','Nikos','Dimitris','Kostas','Yannis'] }),
+  es:Object.freeze({ dialect:'es-ES', F:['Lucía','Carmen','Elena','Sofía','Paula'], M:['Javier','Pablo','Diego','Andrés','Mateo'] }),
+  et:Object.freeze({ dialect:'et-EE', F:['Liis','Kadri','Maarja','Triin','Kristiina'], M:['Martin','Rasmus','Andres','Siim','Karl'] }),
+  fi:Object.freeze({ dialect:'fi-FI', F:['Aino','Helmi','Elina','Saara','Kaisa'], M:['Eino','Mikko','Juhani','Ville','Antti'] }),
+  fr:Object.freeze({ dialect:'fr-FR', F:['Camille','Léa','Chloé','Manon','Juliette'], M:['Louis','Hugo','Julien','Antoine','Mathieu'] }),
+  hi:Object.freeze({ dialect:'hi-IN', F:['Ananya','Priya','Kavya','Meera','Diya'], M:['Arjun','Rohan','Vikram','Aarav','Kabir'] }),
+  hr:Object.freeze({ dialect:'hr-HR', F:['Ana','Petra','Ivana','Lucija','Maja'], M:['Luka','Ivan','Marko','Petar','Josip'] }),
+  hu:Object.freeze({ dialect:'hu-HU', F:['Anna','Eszter','Zsófia','Réka','Katalin'], M:['Bence','Máté','Levente','Gábor','Dániel'] }),
+  id:Object.freeze({ dialect:'id-ID', F:['Putri','Ayu','Dewi','Sari','Nadia'], M:['Budi','Rizky','Adi','Bayu','Dimas'] }),
+  it:Object.freeze({ dialect:'it-IT', F:['Giulia','Chiara','Francesca','Sara','Elena'], M:['Marco','Luca','Matteo','Giovanni','Andrea'] }),
+  lt:Object.freeze({ dialect:'lt-LT', F:['Ieva','Gabija','Austėja','Rūta','Eglė'], M:['Lukas','Jonas','Matas','Tomas','Mantas'] }),
+  lv:Object.freeze({ dialect:'lv-LV', F:['Anna','Laura','Elīza','Marta','Kristīne'], M:['Jānis','Mārtiņš','Roberts','Kārlis','Edgars'] }),
+  nl:Object.freeze({ dialect:'nl-NL', F:['Emma','Sanne','Lotte','Fleur','Anouk'], M:['Daan','Sem','Lucas','Bram','Thijs'] }),
+  pl:Object.freeze({ dialect:'pl-PL', F:['Zofia','Julia','Maja','Hanna','Natalia'], M:['Jakub','Antoni','Szymon','Mateusz','Piotr'] }),
+  pt:Object.freeze({ dialect:'pt-BR', F:['Ana','Beatriz','Mariana','Júlia','Larissa'], M:['João','Pedro','Gabriel','Rafael','Thiago'] }),
+  ro:Object.freeze({ dialect:'ro-RO', F:['Maria','Ioana','Elena','Andreea','Ana'], M:['Andrei','Alexandru','Mihai','Ștefan','Radu'] }),
+  ru:Object.freeze({ dialect:'ru-RU', F:['Anna','Olga','Natalia','Yelena','Irina'], M:['Alexei','Dmitri','Ivan','Sergei','Mikhail'] }),
+  sk:Object.freeze({ dialect:'sk-SK', F:['Zuzana','Lucia','Katarína','Petra','Mária'], M:['Peter','Martin','Tomáš','Jakub','Lukáš'] }),
+  sl:Object.freeze({ dialect:'sl-SI', F:['Nika','Eva','Maja','Ana','Lara'], M:['Luka','Jan','Žiga','Matej','Nejc'] }),
+  sv:Object.freeze({ dialect:'sv-SE', F:['Elsa','Maja','Ebba','Astrid','Linnea'], M:['Erik','Oskar','Lars','Axel','Gustav'] }),
+  tr:Object.freeze({ dialect:'tr-TR', F:['Elif','Zeynep','Ayşe','Defne','Ece'], M:['Mehmet','Emre','Can','Burak','Mert'] }),
+  uk:Object.freeze({ dialect:'uk-UA', F:['Oksana','Olena','Iryna','Sofiia','Kateryna'], M:['Taras','Andrii','Dmytro','Oleksandr','Bohdan'] }),
+  vi:Object.freeze({ dialect:'vi-VN', F:['Linh','Mai','Lan','Hoa','Thảo'], M:['Minh','Anh','Huy','Tuấn','Nam'] }),
+});
+/** 'Lucía' for es F1, 'Javier' for es M1; the profile itself when unknown. */
+export function supertonicVoiceName(lang, style) {
+  const names = SUPERTONIC_VOICE_NAMES[lang], index = Number(String(style).slice(1)) - 1;
+  return names?.[String(style)[0]]?.[index] || `Supertonic ${style}`;
+}
 export function supertonicVoicesFor(languages) {
   const unique=[...new Set(languages.map(lang => String(lang).split(/[-_]/)[0]))].filter(lang => SUPERTONIC_LANGUAGES.includes(lang));
   const upgradeBytes=SUPERTONIC_BYTES-SUPERTONIC_LEGACY_ASSETS.reduce((sum,a)=>sum+a.bytes,0);
-  return unique.flatMap(lang => SUPERTONIC_STYLES.map(style => ({id:`supertonic3:${style}:${lang}`, modelId:SUPERTONIC_MODEL_ID, modelKey:SUPERTONIC_MODEL_ID, piperId:SUPERTONIC_MODEL_ID, runtime:'supertonic3', provider:'supertonic',lang,style,name:`Supertonic ${style}`,quality:'natural',sizeMB:Math.ceil(SUPERTONIC_BYTES/1e6),downloadBytes:SUPERTONIC_BYTES,upgradeBytes,licenseUrl:'licenses/supertonic3-OpenRAIL-M.txt',sharedPack:true})));
+  return unique.flatMap(lang => SUPERTONIC_STYLES.map(style => ({id:`supertonic3:${style}:${lang}`, modelId:SUPERTONIC_MODEL_ID, modelKey:SUPERTONIC_MODEL_ID, piperId:SUPERTONIC_MODEL_ID, runtime:'supertonic3', provider:'supertonic',lang,dialect:SUPERTONIC_VOICE_NAMES[lang]?.dialect,style,name:supertonicVoiceName(lang,style),quality:'natural',sizeMB:Math.ceil(SUPERTONIC_BYTES/1e6),downloadBytes:SUPERTONIC_BYTES,upgradeBytes,licenseUrl:'licenses/supertonic3-OpenRAIL-M.txt',sharedPack:true})));
 }
