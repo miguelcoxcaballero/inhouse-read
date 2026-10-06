@@ -1,11 +1,20 @@
-# Verificación del WIP — web1.7.90 publicada y Android1.1.4
+# Verificación del WIP — web1.7.91 publicada y Android1.1.4
 
-## Reserva por fases1.7.91 calificada localmente
+## Reserva por fases 1.7.91 publicada
 
-3474/280 unitarias, build/75 Python,18 pares RGBA exactos y siete
-recorridos originales PASS sin retries. Libera la reserva grande al
-terminar el zoom; siguientes fases conservan DPR y sus reservas propias.
-Despliegue y comprobacion publica pendientes. [Detalle](performance-1791.md).
+Libera la reserva grande después del zoom de cierre; las siguientes fases
+conservan su DPR y reservas por movimiento. Pasan 3.474 unitarias/280
+archivos, build, 75 Python, 18 pares RGBA, 34 recorridos locales y 26
+recorridos públicos con sus auditorías, sin retries en esas tandas.
+HTTP 32/shell 96, APK/loader descargados, temas y portada offline, bytes
+locales y posición 115 al recargar/reabrir: PASS. Se desbloqueó Pages con
+un único reenvío del árbol idéntico; se conserva la identidad fallida inicial.
+
+CI original completa FAILED: 524 casos/526 intentos; dos casos de apertura
+nativa fallan también en sus retries (cuatro intentos fallidos). El PDF no
+se hace visible para la espera original de ocho segundos. Cinco UI y las
+cuatro tandas de voces reales PASS. La lentitud global sigue pendiente;
+no se afirma FPS móvil ni login real de Google. [Detalle](performance-1791.md).
 
 ## Reducción del framebuffer1.7.90 publicada
 
