@@ -1,11 +1,22 @@
-# Verificación del WIP — web 1.7.77 en preparación y Android 1.1.4
+# Verificación del WIP — web 1.7.78 en preparación y Android 1.1.4
+
+## Reserva de la sala de 1.7.78
+
+El renderer compartido agrupa DPR y tamaño también al capturar la sala e
+insertar el libro. Cinco regresiones nuevas conservan su estado final y
+eliminan tres reservas intermedias. Pasan 3.389 unitarias/266 archivos, build,
+75 Python, ocho comparaciones de píxeles y siete recorridos gráficos originales.
+Catálogo conserva cuatro PASS y un FAIL de primer frame de luces tras recarga
+a 8 s. Publicación pendiente; no se afirma aprobación global.
+[Detalle](performance-1778.md).
 
 ## Catálogo oculto de 1.7.77
 
 La descarga se prepara en idle sin construir su estudio GPU oculto. Pasan
 47 pruebas enfocadas, 3.384 unitarias/265 archivos, build y 75 Python.
 Pasan los siete recorridos de animación y cinco de catálogo/plantas/luces
-sin retries. Publicación y CI global pendientes.
+sin retries. Publicación HTTP32/offline96, APK/loader y 26 recorridos
+públicos PASS; papel y portada offline PASS. CI global sigue en curso.
 [Detalle](performance-1777.md).
 
 ## Reserva nativa del libro de 1.7.76
@@ -16,7 +27,8 @@ relojes. Pasan 55 pruebas enfocadas y ocho comparaciones de píxeles reales.
 Pasan 3.382 unitarias/264 archivos, build, 75 Python y siete recorridos
 gráficos originales sin retries. Publicación HTTP y APK/loader PASS;
 21 recorridos públicos originales PASS sin retries; papel offline en cinco
-temas PASS. CI global sigue en curso. [Detalle](performance-1776.md).
+temas PASS. CI original FAILED en UI2/3; voces y restantes UI PASS.
+[Detalle](performance-1776.md).
 
 ## Apertura y contador de programas de 1.7.75
 

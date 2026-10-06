@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { configureNativeRendererSize } from './native-renderer-size.js';
+import { configureShelfRendererSize } from './shelf-renderer-size.js';
 import { shelfPixelOffset } from './shelf-pixel-origin.js';
 import { refreshCanvasFontsAfterPaint } from './canvas-font-readiness.js';
 import { createBookModel, getBookRenderer, lightBookScene } from './book-model.js';
@@ -1974,7 +1974,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
     const paint = () => {
     const outputWidth=native?vw:frame.width, outputHeight=native?vh:frame.height;
-    configureNativeRendererSize(renderer, outputWidth, outputHeight, ratio, rendererSize, native);
+    configureShelfRendererSize(renderer, outputWidth, outputHeight, ratio, rendererSize);
     const previousViewport = native && renderer.getViewport(previousInsertionViewport);
     if (native) renderer.setViewport(0,0,frame.width,frame.height);
     const autoClear = renderer.autoClear, scissorTest = renderer.getScissorTest();
@@ -2277,7 +2277,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // Release it only when this transaction really paints the legacy room.
       if(!nativeCaptureAligned && !nativeCapturePhysical)releaseCompletedLegacyInsertions();
       withRendererPresentation(renderer,nativeRoomLease,()=>{
-      configureNativeRendererSize(renderer, renderWidth, renderHeight, ratio, rendererSize, Boolean(nativeCaptureAligned));
+      configureShelfRendererSize(renderer, renderWidth, renderHeight, ratio, rendererSize);
       // Fractional legacy captures keep Three's original viewport rounding.
       // Reassert the retained framebuffer only when it has exact pixel bounds.
       if(nativeCaptureAligned)renderer.setViewport(0,0,renderWidth,renderHeight);

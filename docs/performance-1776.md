@@ -56,7 +56,12 @@ la publicación anterior. La segunda comprobó los bytes de la versión nueva.
 Los 21 recorridos públicos originales pasan sin retries: tres de editor/
 retorno nativo y 18 de PDF adaptable. Auditorías HTTP PASS (99 y 593 cuerpos
 de la app); papel PDF offline en cinco temas y portada PDF/JPEG offline
-sin fallback PASS. CI global sigue en curso.
+sin fallback PASS. La batería CI original 37392002991 terminó FAILED: 524 identidades,
+528 intentos, cuatro retries y siete intentos fallidos. UI2 conserva un
+fallo de identidad del canvas (retry aprobado); UI3 falla luces al recargar
+y los dos plazos nativos al cerrar. Los cuatro jobs de voces reales, las
+unitarias y UI1/4/5/6 pasan. Los 11 ZIP y 12 logs originales tienen censo
+independiente, sin errores de colección. No se afirma aprobación global.
 
 Evidencia: `.animation.local/performance-1776/`.
 No se declara aprobación global ni FPS, batería o temperatura de un móvil.
