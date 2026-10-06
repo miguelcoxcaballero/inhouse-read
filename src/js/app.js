@@ -278,7 +278,11 @@ async function performShelfRefresh({ immediate = false } = {}) {
         coverAppearance: appearance,
         coverAppearanceKey: key
       }),
-      onBookCustomizationChange: (book, fields) => persistBookState(book.id, fields),
+      onBookCustomizationChange: (book, fields) => {
+        // A prepared reader already shows this book: its title and author follow the spine.
+        if ('spineTitleOverride' in fields || 'author' in fields) readingExperience.refreshNames(book.id, fields)
+        return persistBookState(book.id, fields)
+      },
       onShelfPlacementChange: ({ books = [] }) => Promise.all(books.map(({ id, shelfPosition }) => {
         const position = normalizeShelfPosition(shelfPosition)
         return id && (position || shelfPosition === null)

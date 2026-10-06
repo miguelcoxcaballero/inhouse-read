@@ -101,3 +101,10 @@ function capitalizeWord(word) {
   if (/[a-z].*[A-Z]/.test(word)) return word
   return word[0].toUpperCase() + word.slice(1).toLowerCase()
 }
+
+/** The title the whole interface shows: the one written on the spine when
+ * the reader edited it, otherwise the book's own. */
+export function displayBookTitle(book) {
+  const written = typeof book?.spineTitleOverride === 'string' ? book.spineTitleOverride.replace(/\s+/g, ' ').trim() : ''
+  return written || String(book?.title ?? '')
+}
