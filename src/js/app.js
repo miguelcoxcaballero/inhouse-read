@@ -815,7 +815,7 @@ async function restoreAndSnapshot(record) {
   try { await reader.goToLocator(record.locator, record.progressFraction || 0) }
   finally { restoringProgress = false }
   markTiming('page-restored')
-  const snapshot = await reader.getPageSnapshot()
+  const snapshot = await reader.getPageSnapshot({ reuseSettledLayout:true })
   markTiming('page-snapshot')
   return snapshot
 }
@@ -1190,7 +1190,7 @@ els.readerBack.addEventListener('click', async () => {
     readingExperience.panel.close()
     // Copy the CURRENT page before destroying the reader. Keep it on screen
     // until the textured 3D leaf has rendered at exactly the same bounds.
-    const pageSnapshot = await reader.getPageSnapshot().catch(error => {
+    const pageSnapshot = await reader.getPageSnapshot({ reuseSettledLayout:true }).catch(error => {
       console.warn('No se pudo preparar la página de cierre:', error)
       return null
     })
@@ -1319,7 +1319,7 @@ async function loadDriveFiles() {
 
 initTheme()
 els.driveThemeToggle.checked = document.documentElement.getAttribute('data-theme') === 'dark'
-els.appVersion.textContent = 'Inhouse Read · v1.7.78'
+els.appVersion.textContent = 'Inhouse Read · v1.7.79'
 els.addDriveBtn.disabled = !isDriveConfigured()
 els.addDriveBtn.title = isDriveConfigured() ? '' : 'Drive no disponible'
 showScreen('home')

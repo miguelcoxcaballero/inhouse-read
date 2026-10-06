@@ -35,6 +35,25 @@ de los 8 s originales. Se guardan informe y traza completos; no se cambia
 el plazo ni se cuenta la tanda como aprobada.
 
 Otros dos recorridos originales de reutilización de canvas y luces tras
-recarga pasan sin retries. Publicación y batería remota pendientes.
+recarga pasan sin retries.
+
+Publicada `a02e5a7`, Pages `b62ff50`, main `main-eiCftkzs.js`, SHA256
+`8ceac43ffb65690a7003e743a5c4e1b9e32c243454d2129f1f10597f5e126e7d`.
+HTTP32/offline96 y APK/loader descargados PASS. El APK conserva 78.515.243
+bytes y el loader exacto de 2.089 bytes, con sólo los dos scripts Cordova;
+no hay código nativo nuevo ni una APK nueva.
+
+Pasan los 18 casos PDF públicos con auditoría de 587 cuerpos y 15 capturas,
+los cinco de catálogo/plantas/luces, y los dos contratos de retorno nativo.
+La tanda pública de tres conserva un FAIL del editor en su auditoría HTTP:
+una respuesta de textura de 209.252 bytes devuelve cuerpo vacío; sus
+aserciones de interfaz pasan, pero no se cuenta la tanda como aprobada.
+Las peticiones directas del artefacto mantienen bytes/hash correctos.
+No se altera ese fixture ni se reintenta para ocultar el fallo.
+
+Papel real offline en cinco temas PASS, sin readbacks en el hilo principal;
+portada PDF/JPEG offline 800×1600, 150.310 bytes y cero fallback PASS.
+El primer pin público conserva FAIL del índice anterior durante propagación;
+el segundo corresponde a la versión nueva. Batería remota todavía en curso.
 Evidencia: `.animation.local/performance-1778/` y
 `.animation.local/performance-1777/swiftshader-closing-cpu-attempt1/`.

@@ -29,7 +29,15 @@ HTTP32/offline96, APK/loader descargados y 26 recorridos públicos originales
 pasan: tres de editor/retorno, 18 PDF y cinco catálogo/plantas/luces. Los
 workers reales de papel en cinco temas y portada PDF/JPEG funcionan offline.
 Otros dos casos originales locales de reutilización de canvas y luces tras
-recargar pasan sin retries. CI global sigue en curso.
+recargar pasan sin retries.
+
+CI original `37393408042` termina FAILED. Se conservan los once ZIP y doce
+logs autenticados y las 524 identidades/528 intentos, con cuatro retries y
+seis intentos fallidos. Unitarias y todos los jobs de voces reales pasan;
+UI1/2/4/5 pasan. UI3 conserva dos contratos nativos que fallan al abrir el
+lector (también en sus retries) y luces tras recarga flaky; UI6 conserva
+el primer frame de luces flaky. No hay casos omitidos. Los retries aprobados
+no convierten la batería original en verde.
 
 La primera comprobación del índice mantuvo FAIL mientras Pages todavía
 servía la versión anterior; la segunda verificó la fuente nueva. El perfil
