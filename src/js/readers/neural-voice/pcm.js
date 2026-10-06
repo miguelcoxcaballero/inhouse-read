@@ -82,6 +82,14 @@ export const PAUSE_MS = { sentence: 240, clause: 140, cut: 60 }
 const SENTENCE_END = /[.!?…。！？]["'”’»›)\]}」』]*\s*$/
 const CLAUSE_END = /[,;:，；：—–-]["'”’»›)\]}」』]*\s*$/
 /** Pause (ms) that follows the spoken `text`. */
+/** How much of the pause after a fragment is kept at `rate`. Slower speech
+ * keeps proportionally longer rests; faster speech shortens them less than its
+ * own speed-up (2x keeps ~70%), so sentences never run into each other. */
+export function restScale(rate) {
+  const speed = Math.min(3, Math.max(0.5, Number(rate) || 1))
+  return speed > 1 ? 1 / Math.sqrt(speed) : 1 / speed
+}
+
 export function pauseAfter(text) {
   const t = String(text || '')
   if (SENTENCE_END.test(t)) return PAUSE_MS.sentence
