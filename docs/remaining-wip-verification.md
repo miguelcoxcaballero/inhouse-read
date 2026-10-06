@@ -1,13 +1,24 @@
-# Verificación del WIP — web1.7.89 publicada y Android1.1.4
+# Verificación del WIP — web1.7.90 publicada y Android1.1.4
 
-## Reducción del framebuffer1.7.90 en publicación
+## Reserva por fases1.7.91 calificada localmente
 
-Reducir ambos ejes conserva los dos resets normales de Three y omite el
-reset intermedio a altura0. Seis nuevas y53 focales PASS;3468/279
-unitarias, build y75 Python PASS;18 pares RGBA exactos y7 recorridos
-originales PASS sin retries. Cierres4848,4/4845,4ms con30/8 intactos.
-La batería completa/publicación y verificaciones públicas siguen separadas.
-[Detalle](performance-1790.md).
+3474/280 unitarias, build/75 Python,18 pares RGBA exactos y siete
+recorridos originales PASS sin retries. Libera la reserva grande al
+terminar el zoom; siguientes fases conservan DPR y sus reservas propias.
+Despliegue y comprobacion publica pendientes. [Detalle](performance-1791.md).
+
+## Reducción del framebuffer1.7.90 publicada
+
+53 focales,3468/279 unitarias, build/75 Python,18 pares RGBA exactos y11
+recorridos locales originales PASS sin retries. HTTP32/offline96, descarga
+APK/loader, PDF/papel/portada en cinco temas e importación/reapertura local
+con bytes y locator115 exactos PASS. Público22/26 estrictos: cuatro fallos
+de cuerpo de textura observado como0; no se sustituyen por sus cuerpos
+funcionales correctos ni por seis diagnósticos separados sin reproducción.
+CI37439363327 completa FAILED:524 casos/527 intentos,3 retries,5 fallos
+en UI3/6. Ambos cierres nativos fallan tambien al repetir; isometrica
+falla primero al arrancar y pasa su retry, aun flaky rechazado. Cuatro
+tandas de voces reales y otras cuatro UI PASS. [Detalle](performance-1790.md).
 
 ## Preparación de página1.7.89 publicada
 

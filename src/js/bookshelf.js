@@ -3922,6 +3922,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           { duration:prefersReducedMotion() ? 1 : 620 });
         await waitForMotion(animation, prefersReducedMotion() ? 1 : 620);
         if (!active()) return false;
+        // The zoom's large framebuffer no longer needs to survive the ribbon,
+        // hinge and flight. Their existing per-motion reservations retain the
+        // exact projected book at the same DPR without keeping empty pixels.
+        releaseFrame?.(); releaseFrame = null;
         // White paper from here on, even if a stalled frame let the zoom's watchdog release it early.
         if (pageSnapshot.paper && view.getPageTheme() > 0) view.setPageTheme(0);
         flyout.dataset.returnPhase = 'bookmark';
