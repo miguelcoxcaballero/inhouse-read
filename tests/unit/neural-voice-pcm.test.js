@@ -139,3 +139,13 @@ describe('lengthScaleFor', () => {
     expect(lengthScaleFor(1, 'x')).toBe(1)
   })
 })
+
+describe('restScale', () => {
+  it('shortens the pause after a sentence less than the speech speeds up', async () => {
+    const { restScale } = await import('../../src/js/readers/neural-voice/pcm.js')
+    expect(restScale(1)).toBe(1)
+    expect(restScale(0.5)).toBe(2)
+    expect(restScale(2)).toBeCloseTo(0.707, 3)
+    expect(restScale(2) * 240).toBeGreaterThan(160)
+  })
+})

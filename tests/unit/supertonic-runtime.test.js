@@ -66,7 +66,8 @@ describe('Supertonic inference lifecycle',()=>{
   });
   it('uses speed in predicted duration and retains the selected style',async()=>{
     const f=fixture(),runtime=await createSupertonicRuntime(f.args);
-    expect((await runtime.synthesize('Hola',{lang:'es',style:'F2',rate:2})).pcm).toHaveLength(400);
+    // 2x keeps a 15% margin so the end of the sentence is not swallowed: 0.1 s / 2 * 1.15, whole frames of 32 samples.
+    expect((await runtime.synthesize('Hola',{lang:'es',style:'F2',rate:2})).pcm).toHaveLength(480);
     expect(f.sessions[0].run.mock.calls[0][0].style_dp).toBe(f.tensors[5]);await runtime.dispose();
   });
   it('uses the verified six-step quality profile when the worker leaves steps unspecified',async()=>{
@@ -97,3 +98,13 @@ describe('Supertonic inference lifecycle',()=>{
     await expect(runtime.synthesize('Hola',{lang:'es'})).rejects.toThrow('Duración');expect(f.sessions[2].run).not.toHaveBeenCalled();await runtime.dispose();
   });
 });
+
+describe('supertonicSeconds', () => {
+  it('divides the predicted duration by the speed, keeping a margin above 1x', async () => {
+    const { supertonicSeconds } = await import('../../src/js/readers/neural-voice/supertonic-runtime.js')
+    expect(supertonicSeconds(2, 1)).toBe(2)
+    expect(supertonicSeconds(2, 0.5)).toBe(4)
+    expect(supertonicSeconds(2, 2)).toBeCloseTo(1.15, 5)
+    expect(supertonicSeconds(2, 1.5)).toBeCloseTo(2 / 1.5 * 1.075, 5)
+  })
+})

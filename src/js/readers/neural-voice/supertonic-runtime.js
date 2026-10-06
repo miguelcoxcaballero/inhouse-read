@@ -9,6 +9,17 @@ import { yieldToMessages as yieldTask } from './task-yield.js';
 // <1 RTF in the recorded single-thread desktop WASM benchmark, unlike FP32/8.
 export const SUPERTONIC_STEPS = 6;
 
+/**
+ * Seconds the model gets for a fragment at `rate`. Speed is the predicted
+ * duration divided by the rate, as in Supertonic's own SDK; but squeezed
+ * below what the words need, the end of the sentence was swallowed and the
+ * next one seemed to start too early (most audible above 1x). Faster rates
+ * keep a margin that grows with them: 2x is read at about 1.75x.
+ */
+export function supertonicSeconds(predicted,rate) {
+  const speed=Math.max(.5,Math.min(2,Number(rate)||1));
+  return predicted/speed*(speed>1?1+.15*(speed-1):1);
+}
 export function normalizeSupertonicText(text,lang) {
   if(!SUPERTONIC_LANGUAGES.includes(lang))throw new Error(`Idioma Supertonic no disponible: ${lang}`);
   let value=String(text||'').normalize('NFKD')
@@ -71,7 +82,7 @@ export async function createSupertonicRuntime({ort,buffers,config,indexer,styles
       const characters=Array.from(normalized),ids=BigInt64Array.from(characters,char=>BigInt(indexer[char.codePointAt(0)]??-1));
       const textIds=own(new ort.Tensor('int64',ids,[1,ids.length])),textMask=own(new ort.Tensor('float32',new Float32Array(ids.length).fill(1),[1,1,ids.length]));
       const selected=styleTensors[style],dp=await run('duration_predictor',{text_ids:textIds,style_dp:selected.dp,text_mask:textMask});
-      const seconds=Number(dp.duration?.data?.[0])/rate;drop(dp.duration);
+      const seconds=supertonicSeconds(Number(dp.duration?.data?.[0]),rate);drop(dp.duration);
       if(!Number.isFinite(seconds)||seconds<=0||seconds>40)throw new Error('Duración de audio fuera de rango');
       await checkpoint();
       const encoded=await run('text_encoder',{text_ids:textIds,style_ttl:selected.ttl,text_mask:textMask});
@@ -89,7 +100,9 @@ export async function createSupertonicRuntime({ort,buffers,config,indexer,styles
       }
       await checkpoint();const output=await run('vocoder',{latent});
       if(!output.wav_tts?.data?.length)throw new Error('El modelo devolvió audio vacío');
-      const pcm=new Float32Array(output.wav_tts.data.slice(0,Math.floor(seconds*sampleRate)));
+      // Every generated frame: cutting at the predicted length clipped the last
+      // syllables, and the quiet tail is trimmed later anyway.
+      const pcm=new Float32Array(output.wav_tts.data.slice(0,frames*chunkSize));
       if(pcm.some(value=>!Number.isFinite(value)))throw new Error('El modelo devolvió audio inválido');
       return pcm;
     } finally{for(const tensor of live)releaseTensor(tensor);}

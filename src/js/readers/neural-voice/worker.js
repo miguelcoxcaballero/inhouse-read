@@ -22,7 +22,7 @@ import { createPhonemizer } from './phonemizer.js'
 import { createHebrewPhonemizer } from './hebrew.js'
 import { createSupertonicRuntime } from './supertonic-runtime.js'
 import { yieldToMessages } from './task-yield.js'
-import { peakNormalize, trimSilence, fadeEdges, silence, concat, pauseAfter, splitSegments, limitIds, lengthScaleFor, PAUSE_MS } from './pcm.js'
+import { peakNormalize, trimSilence, fadeEdges, silence, concat, pauseAfter, restScale, splitSegments, limitIds, lengthScaleFor, PAUSE_MS } from './pcm.js'
 
 let ort = null, phonemizer = null, phonBaseURL = null, hebrewPhonemizer = null, supertonicRuntime = null, session = null, config = null, voice = null, initPromise = null, loadChain = Promise.resolve()
 const cancelled = new Set()
@@ -114,8 +114,7 @@ async function synth({ id, text, rate, speaker, lang, style }) {
     }
     peakNormalize(raw)
     const speech = fadeEdges(trimSilence(raw, sampleRate), sampleRate)
-    const rest = 1 / Math.min(3, Math.max(0.5, Number(rate) || 1))
-    const pcm = concat([speech, silence(sampleRate, pauseAfter(text) * rest)])
+    const pcm = concat([speech, silence(sampleRate, pauseAfter(text) * restScale(rate))])
     post({ type:'chunk', id, index:0, last:true, pcm, sampleRate, ms:performance.now() - t }, [pcm.buffer])
     await yieldToMessages()
     return
@@ -144,7 +143,7 @@ async function synth({ id, text, rate, speaker, lang, style }) {
     const last = index === segments.length - 1
     // Sentences of one fragment are separated by a rest at their start; the rest after the fragment comes with its last one.
     // (the rests shorten with the speaking rate, like the speech does)
-    const rest = 1 / Math.min(3, Math.max(0.5, Number(rate) || 1))
+    const rest = restScale(rate)
     const pcm = concat([index ? silence(sampleRate, PAUSE_MS.sentence * rest) : new Float32Array(0), speech, last ? silence(sampleRate, pauseAfter(text) * rest) : new Float32Array(0)])
     if (cancelled.has(id)) return
     post({ type: 'chunk', id, index, last, pcm, sampleRate, ms }, [pcm.buffer])
