@@ -8,6 +8,9 @@ const lamps = [
   { key:'lamp:switch-retro', lampId:'tarnaby', shelf:1, x:.76 },
   { key:'lamp:switch-tripod', lampId:'tripod', shelf:2, x:.72 }
 ];
+// The page is hidden at once, but the browser can only report it once the main thread
+// is free: the software renderer links a new lamp's shaders in one long task (~8 s).
+const CLOSE_TIMEOUT = { timeout:30_000 };
 test.use({ viewport:{ width:390, height:844 }, hasTouch:true, isMobile:true, deviceScaleFactor:1 });
 const saved = page => page.evaluate(key => JSON.parse(localStorage.getItem(key)), KEY);
 const powerStates = async page => (await saved(page)).map(lamp => lamp.isOn);
@@ -106,7 +109,7 @@ test('un toque controla cada luz, ilumina superficies y conserva el estado al re
   await catalog.getByRole('button', { name:'Estanterías', exact:true }).click();
   await catalog.locator('[data-catalog-shelf="walnut"]').click();
   await catalog.getByRole('button', { name:'Usar', exact:true }).click();
-  await expect(catalog).toBeHidden();
+  await expect(catalog).toBeHidden(CLOSE_TIMEOUT);
   await expect(scene).toHaveAttribute('data-shelf-type', 'walnut');
   expect(await powerStates(page)).toEqual([false, false, false]);
   // The solid walnut ceiling hides this puck from the diagonal camera. A tap

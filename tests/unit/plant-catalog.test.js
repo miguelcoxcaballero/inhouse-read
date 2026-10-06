@@ -195,14 +195,14 @@ describe('IKEA plant instruction booklet',() => {
     expect(dialog().querySelectorAll('[data-catalog-lamp]')).toHaveLength(3);
     expect(dialog().querySelector('.ihr-plant-catalog__body--shelves').hidden).toBe(true);
     expect(dialog().querySelector('.ihr-plant-catalog__body--lights').hidden).toBe(false);
-    expect(dialog().querySelector('.ihr-plant-catalog__lamp-warmth').textContent).toContain('2700 K');
+    expect(dialog().querySelector('[data-catalog-kelvin="2700"]').getAttribute('aria-pressed')).toBe('true');
     expect(dialog().querySelector('.ihr-plant-catalog__lamp-mount').textContent).toContain('Bajo la balda');
     expect(shelfPreview.setActive).toHaveBeenLastCalledWith(false);
     expect(shelfPreview.dispose).not.toHaveBeenCalled();
     const preview = vi.mocked(createLampCatalogPreview).mock.results[0].value;
-    expect(preview.update).toHaveBeenLastCalledWith({ lampId:'mittled' });
+    expect(preview.update).toHaveBeenLastCalledWith({ lampId:'mittled',kelvin:2700 });
     dialog().querySelector('[data-catalog-lamp="tarnaby"]').click();
-    expect(preview.update).toHaveBeenLastCalledWith({ lampId:'tarnaby' });
+    expect(preview.update).toHaveBeenLastCalledWith({ lampId:'tarnaby',kelvin:2700 });
     expect(dialog().querySelector('.ihr-plant-catalog__lamp-mount').textContent).toContain('Sobre la balda');
     expect(dialog().querySelectorAll('[data-catalog-lamp][aria-pressed="true"]')).toHaveLength(1);
     dialog().querySelector('[data-catalog-page="plants"]').click();
@@ -217,7 +217,7 @@ describe('IKEA plant instruction booklet',() => {
     create({ onAdd,onAddLamp }).open();
     dialog().querySelector('[data-catalog-page="lights"]').click();
     dialog().querySelector('[data-catalog-lamp="tripod"]').click(); add().click(); add().click();
-    expect(onAddLamp).toHaveBeenCalledExactlyOnceWith({ lampId:'tripod' },closing);
+    expect(onAddLamp).toHaveBeenCalledExactlyOnceWith({ lampId:'tripod',kelvin:2700 },closing);
     expect(onAdd).not.toHaveBeenCalled();
     expect(dialog().querySelector('[data-catalog-page="shelves"]').disabled).toBe(true);
     expect(dialog().querySelector('[data-catalog-lamp="mittled"]').disabled).toBe(true);

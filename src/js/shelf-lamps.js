@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { getCatalogLamp } from './lamp-catalog-data.js';
+import { lampTint, normalizeLampKelvin, tintColor } from './lamp-kelvin.js';
 import { addShelfBakeSource, savedSurface, scheduleShelfBakeWrite } from './shelf-bake-cache.js';
 
 const UP = new THREE.Vector3(0,1,0);
@@ -321,7 +322,7 @@ function tripod(group,quality,segments) {
  * height fit uniformly, preserving the shape instead of stretching it.
  * Emissive meshes belong here; budgeted real lights belong to the scene.
  */
-export function createShelfLamp({lampId='tarnaby',width=null,height=null,quality='high',isOn=true,persist=false}={}) {
+export function createShelfLamp({lampId='tarnaby',width=null,height=null,quality='high',isOn=true,persist=false,kelvin}={}) {
   const lamp = getCatalogLamp(lampId) || getCatalogLamp('tarnaby');
   const native = lamp.dimensions;
   const widthScale = Number.isFinite(width) && width > 0 ? width / native.width : 1;
@@ -373,6 +374,15 @@ export function createShelfLamp({lampId='tarnaby',width=null,height=null,quality
     return value;
   };
   group.userData.setPower(isOn === false ? 0 : 1);
+  // Colour temperature: the emitting materials' and the light's own colours
+  // are multiplied by a tint (1 at the default). Only uniforms change.
+  const glowing = emittingMaterials.map(({material}) => ({material,base:material.emissive.clone()}));
+  group.userData.setTint = tint => {
+    for (const {material,base} of glowing) tintColor(material.emissive.copy(base),tint);
+    group.userData.lightEmitter.tint = tint[0] === 1 && tint[1] === 1 && tint[2] === 1 ? undefined : [...tint];
+  };
+  group.userData.setKelvin = value => { group.userData.kelvin = normalizeLampKelvin(value); group.userData.setTint(lampTint(value)); };
+  group.userData.setKelvin(kelvin);
   let disposed = false;
   group.dispose = group.userData.dispose = () => {
     if (disposed) return; disposed = true;

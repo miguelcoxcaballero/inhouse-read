@@ -3,6 +3,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createShelfLamp } from './shelf-lamps.js';
 import { getCatalogLamp } from './lamp-catalog-data.js';
 import { createShelfLampLighting, ensureAreaLights } from './shelf-lamp-lighting.js';
+import { DEFAULT_LAMP_KELVIN, createTintTransition, tintColor } from './lamp-kelvin.js';
 import { retainPrograms, whenProgramsReady } from './gpu-programs.js';
 
 // The filament lamp's light needs its lookup tables before the first preview.
@@ -14,6 +15,9 @@ export function createLampCatalogPreview(host) {
   let paintedWidth = NaN, paintedHeight = NaN;
   // The chosen lamp is built after its button has painted; until its shaders
   // are linked (in parallel) the canvas keeps showing the previous picture.
+  // The light's colour temperature eases in ~300 ms; only colours change.
+  const tint = createTintTransition(DEFAULT_LAMP_KELVIN);
+  let shownTint = '';
   let pending = null, building = 0, cancelLink = null, shown = false, dirty = true;
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-160,160,180,-180,1,5000);
@@ -28,6 +32,8 @@ export function createLampCatalogPreview(host) {
     frame = 0;
     if (disposed || !active || !renderer) return;
     if (pending && !building) building = setTimeout(build);
+    const tinting = model && shown ? tint.advance(performance.now()) : false;
+    if (model && shown && tint.state.value.join() !== shownTint) { applyTint(); dirty = true; }
     if (!model || !shown || !dirty) return;
     dirty = false;
     // Layout size: the page may be scaled mid-flight, its drawing buffer not.
@@ -44,6 +50,12 @@ export function createLampCatalogPreview(host) {
     // Going back to an earlier lamp reuses its linked shaders.
     if (renderer.info) retainPrograms(renderer);
     host.dataset.renderCount = String(Number(host.dataset.renderCount || 0) + 1);
+    if (tinting) request();
+  }
+  function applyTint() {
+    shownTint = tint.state.value.join();
+    model.userData.setTint(tint.state.value);
+    if (fixture) tintColor(fixture.color.set(model.userData.lightEmitter.color),tint.state.value);
   }
   function request() {
     if (!disposed && active && !frame) frame = requestAnimationFrame(render);
@@ -71,7 +83,8 @@ export function createLampCatalogPreview(host) {
     cancelLink?.(); cancelLink = null; shown = false;
     removeModel(); display.position.set(0,0,0);
     renderer.shadowMap.needsUpdate = true;
-    model = createShelfLamp({ lampId:lamp.id,width:lamp.dimensions.width,quality:'high' });
+    model = createShelfLamp({ lampId:lamp.id,width:lamp.dimensions.width,quality:'high',kelvin:tint.state.kelvin });
+    shownTint = '';
     model.userData.invalidate = invalidate;
     model.traverse(object => {
       if (!object.isMesh) return;
@@ -119,6 +132,7 @@ export function createLampCatalogPreview(host) {
     host.dataset.lightEmitter = emitter ? 'warm-physical' : 'none';
     // Its light must exist before linking: every lit program depends on it.
     display.updateMatrixWorld(true);
+    applyTint();
     filamentLighting?.update([{ kind:'lamp',key:'catalog-filaments',model,width:size.x }]);
     cancelLink = whenProgramsReady(renderer,scene,camera,display,() => {
       cancelLink = null; shown = true; invalidate();
@@ -168,11 +182,12 @@ export function createLampCatalogPreview(host) {
       if (!active) { if (frame) cancelAnimationFrame(frame); frame = 0; }
       else invalidate();
     },
-    update({ lampId }) {
+    update({ lampId,kelvin = DEFAULT_LAMP_KELVIN }) {
       const lamp = getCatalogLamp(lampId);
       if (!lamp) return;
       host.dataset.lampId = lamp.id; host.dataset.mount = lamp.mount;
-      host.dataset.warmKelvin = String(lamp.warmKelvin);
+      host.dataset.warmKelvin = String(kelvin);
+      if (!disposed && tint.set(kelvin,performance.now(),shown && !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches))) { dirty = true; request(); }
       host.dataset.material = lamp.id === 'tarnaby' ? 'glass-brass-black-steel' : lamp.id === 'tripod' ? 'linen-oak' : 'aluminium-opal';
       if (disposed || !renderer || selected === lamp.id) return;
       selected = lamp.id; pending = lamp;

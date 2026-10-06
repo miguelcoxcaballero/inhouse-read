@@ -2,6 +2,9 @@ import { expect,test } from '@playwright/test';
 
 const SHELF_KEY = 'inhouse-read-shelf-type';
 const PLANTS_KEY = 'inhouse-read-shelf-plants';
+// The page is hidden at once, but the browser can only report it once the main thread
+// is free: the software renderer links a new lamp's shaders in one long task (~8 s).
+const CLOSE_TIMEOUT = { timeout:30_000 };
 test.use({ viewport:{ width:390,height:844 },hasTouch:true,isMobile:true,deviceScaleFactor:1 });
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -89,7 +92,7 @@ test('las dos páginas caben sin scroll en móvil pequeño, móvil y horizontal 
     await expect(plantDrawing).toHaveAttribute('data-preview-active','true');
     await expect(dialog.locator('.ihr-plant-catalog__shelf-drawing')).toHaveAttribute('data-preview-active','false');
     await dialog.getByRole('button',{ name:'Cerrar catálogo' }).click();
-    await expect(dialog).toBeHidden();
+    await expect(dialog).toBeHidden(CLOSE_TIMEOUT);
     await expect(dialog.locator('canvas:visible')).toHaveCount(0);
     await expect(dialog.locator('[data-preview-active="true"]')).toHaveCount(0);
     await assertRetained(dialog,2);
@@ -112,7 +115,7 @@ test('elegir BAGGEBO conserva libros y plantas al recargar y permite recuperar l
   let dialog = await openCatalog(page);
   await dialog.locator('[data-catalog-plant="monstera"]').click();
   await dialog.getByRole('button',{ name:'Añadir', exact:true }).click();
-  await expect(dialog).toBeHidden();
+  await expect(dialog).toBeHidden(CLOSE_TIMEOUT);
   await expect(page.locator('.ihr-plant')).toHaveCount(1);
   const originalPlant = await page.evaluate(key => JSON.parse(localStorage.getItem(key))[0],PLANTS_KEY);
   const originalBookId = await page.locator('.ihr-spine').getAttribute('data-book-id');
@@ -120,7 +123,7 @@ test('elegir BAGGEBO conserva libros y plantas al recargar y permite recuperar l
   await dialog.getByRole('button',{ name:'Estanterías',exact:true }).click();
   await dialog.locator('[data-catalog-shelf="baggebo"]').click();
   await dialog.getByRole('button',{ name:'Usar', exact:true }).click();
-  await expect(dialog).toBeHidden();
+  await expect(dialog).toBeHidden(CLOSE_TIMEOUT);
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-shelf-type','baggebo');
   expect(await page.evaluate(key => localStorage.getItem(key),SHELF_KEY)).toBe('baggebo');
   await expect(page.locator('.ihr-spine')).toHaveCount(1);

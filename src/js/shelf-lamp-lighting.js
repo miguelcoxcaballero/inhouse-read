@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { tintColor } from './lamp-kelvin.js';
 import { getCatalogLamp } from './lamp-catalog-data.js';
 
 export const MAX_SHELF_LAMP_LIGHTS = 4;
@@ -200,7 +201,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
       light.quaternion.setFromRotationMatrix(stripBasis).premultiply(modelRotation);
       light.position.copy(stripStart).add(stripEnd).multiplyScalar(.5).applyMatrix4(model.matrixWorld);
       light.width = strip.width * scale; light.height = length * scale;
-      light.color.set(emitter.color ?? 0xffd19a);
+      tintColor(light.color.set(emitter.color ?? 0xffd19a), emitter.tint);
       // Four outward Lambertian strips retain the old bulb's total
       // luminous flux. Radiance stays constant under uniform room zoom;
       // their physical emitting area supplies the squared scale factor.
@@ -221,7 +222,7 @@ export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGH
     if (rootMatrix) localMatrix.multiplyMatrices(inverseRoot, model.matrixWorld);
     const scale = model.matrixWorld.getMaxScaleOnAxis();
     position.fromArray(emitter.position).applyMatrix4(model.matrixWorld); light.position.copy(position);
-    light.color.set(emitter.color ?? 0xffd19a);
+    tintColor(light.color.set(emitter.color ?? 0xffd19a), emitter.tint);
     light.intensity = Math.max(0, Number(emitter.intensity) || 0) * slot.power * scale * scale;
     light.distance = Math.max(.01, Number(emitter.distance) || entry.width * 6) * scale;
     light.decay = Number(emitter.decay) || 2;
