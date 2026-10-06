@@ -2224,6 +2224,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // The first frame never draws the drop guide or the return's depth
       // pass: link and reflect them in idle slices after the first paint,
       // before the return needs their first real draw.
+      nativeFrameCache?.prepareUniforms?.({ idle:idleSlice, current:() => !disposed })
+        .catch(error => console.warn('No se pudo preparar la composición de la sala:', error));
       prepareInsertionPrograms(renderer, scene, camera, [dropGuide, ...depthWriters], {
         idle:idleSlice, current:() => !disposed, onLinked:() => {
           // Compilation changes the real program cache without painting. Report

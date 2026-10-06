@@ -1,6 +1,18 @@
-# Verificación del WIP — web 1.7.84 publicada y Android 1.1.4
+# Verificación del WIP — web 1.7.85 publicada y Android 1.1.4
 
-## Preparación de la inserción 1.7.85 en comprobación
+## Composición de sala 1.7.86 en publicación
+
+El shader del replay de sala prepara uniforms en intervalos libres después
+de la primera pintura, evitando su preparación inicial dentro del regreso.
+Sin captura, dibujo ni cambios de shaders o resolución; cancelación por
+propietario/contexto/generación/dispose. Seis nuevas y31 enfocadas PASS;
+3442 unitarias/275 archivos, build y75 Python PASS. Tres composiciones
+WebGL2 conservan cada píxel. Los14 recorridos normales, dos cierres originales
+adicionales con SwiftShader y el caso de planta vecina PASS, cero retries.
+Publicación real, APK y CI completa pendientes; no prueba de rendimiento móvil.
+[Detalle](performance-1786.md).
+
+## Preparación de la inserción 1.7.85 publicada
 
 Los mismos programas de profundidad y del indicador preparan también sus
 uniforms, uno por intervalo libre después del primer frame. Sin dibujo,
@@ -8,8 +20,12 @@ cambios de materiales/resolución/relojes ni nuevas variantes. Cancelación
 por dispose y errores mantienen el dibujo normal. Seis nuevas y 30 pruebas
 enfocadas PASS. Pasan 3.436 unitarias/274 archivos, build, 75 Python y
 14 recorridos normales. Los dos cierres adicionales de SwiftShader pasan
-en su primer intento, con plazos originales. Publicación y comprobación
-del artefacto pendientes.
+en su primer intento, con plazos originales. HTTP32/offline96, nueva APK/loader y papel/portada
+offline PASS. Los26 recorridos públicos y auditorías PASS, cero retries.
+CI completa524 FAILED en UI3, UI4 y UI6:528 intentos/4 retries/7 intentos
+fallidos, sin omisiones. Las cuatro tandas reales de voces PASS. El retry
+aprobado de luz3 sigue siendo flaky rechazado por el gate original.
+Aún no se da por terminado.
 [Detalle](performance-1785.md).
 
 ## Diagnósticos de shaders 1.7.84 publicada
