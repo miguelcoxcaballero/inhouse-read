@@ -319,33 +319,84 @@ body.is-reading .app-header, #reader-screen, .reader-viewport, .reader-toolbar, 
 
 /* ------------------------------------------------------------------ *
  * Escuchar, Texto y Contenido con el estilo de la ficha del libro:
- * títulos en serif, sin cajas ni rellenos negros; lo elegido se marca
- * con un fondo tenue, los campos con un filete inferior.
+ * una hoja de papel sobre un cristal esmerilado casi opaco (el texto
+ * de detrás no se lee), títulos en serif, etiquetas pequeñas en
+ * versalitas, sin cajas ni rellenos negros; lo elegido se marca con un
+ * fondo tenue y los campos con un filete inferior.
  * ------------------------------------------------------------------ */
-.reading-panel__header h2 { font:500 20px/1.25 var(--f-spine, Georgia, serif); letter-spacing:-.2px; }
-.reading-panel__header .reading-icon-button { opacity:.6; }
+.reading-panel::backdrop {
+  background:color-mix(in srgb,var(--reading-paper,#faf9f5) 78%,transparent);
+  -webkit-backdrop-filter:blur(26px) saturate(1.15); backdrop-filter:blur(26px) saturate(1.15);
+}
+.reading-panel { padding:10px 24px max(20px,env(safe-area-inset-bottom)); border-radius:22px 22px 0 0;
+  box-shadow:0 -1px 0 color-mix(in srgb,currentColor 7%,transparent), 0 -18px 40px -24px rgb(0 0 0 / .35); }
+.reading-panel::before { content:''; display:block; width:36px; height:4px; margin:0 auto 6px; border-radius:2px; background:color-mix(in srgb,currentColor 16%,transparent); }
+@media (min-width:760px) { .reading-panel { border-radius:16px; } .reading-panel::before { display:none; } }
+.reading-panel__header { padding:0 0 10px; }
+.reading-panel__header h2 { font:500 22px/1.25 var(--f-spine, Georgia, serif); letter-spacing:-.2px; }
+.reading-panel__header .reading-icon-button { opacity:.55; }
 @media (hover:hover) { .reading-panel__header .reading-icon-button:hover { opacity:1; } }
 
-.reading-play { width:64px; height:64px; }
-.reading-play svg { width:26px; height:26px; }
+/* Labels: small caps on the left, the value or control on the right. */
+.reading-row > span:first-child, .select-menu__label, .reading-page-form label, .reading-details summary {
+  font-size:11px; font-weight:500; letter-spacing:.09em; text-transform:uppercase; opacity:.6;
+}
+.reading-details summary { opacity:1; }
+.reading-details summary::after { opacity:.45; }
+.reading-details, .select-menu, #reading-audio .reading-details { border-color:color-mix(in srgb,currentColor 7%,transparent); }
+.reading-row select, .select-menu__value { font-size:15px; }
 
-.reading-neural-offer { padding:4px 0; border-radius:0; background:none; }
+/* Escuchar: the book's own title is the heading, in serif; quiet transport. */
+.reading-panel:has(> #reading-audio:not([hidden])) .reading-panel__header { justify-content:flex-end; margin-bottom:-36px; padding:0; background:none; }
+.reading-panel:has(> #reading-audio:not([hidden])) .reading-panel__header h2 { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.reading-audio-title { margin:10px auto 4px; padding-inline:44px; font:500 24px/1.25 var(--f-spine, Georgia, serif); letter-spacing:-.3px; }
+.reading-audio-where { font-size:12px; opacity:.55; }
+.reading-audio-controls { margin:22px 0 6px; }
+.reading-play { width:64px; height:64px; background:transparent; color:inherit;
+  box-shadow:inset 0 0 0 1.5px color-mix(in srgb,currentColor 70%,transparent); }
+.reading-play svg { width:24px; height:24px; }
+@media (hover:hover) { .reading-play:hover { background:color-mix(in srgb,currentColor 6%,transparent); } }
+.reading-audio-controls > .reading-icon-button { opacity:.55; }
+.reading-audio-status { margin:2px 0 18px; font-size:12px; opacity:.55; }
+
+.reading-neural-offer { margin:0 0 6px; padding:2px 0; border-radius:0; background:none; }
+.reading-neural-offer__title { font-size:13px; }
 .reading-neural-btn { border-color:transparent; }
 .reading-neural-btn.is-primary { background:none; color:inherit; font-weight:600; }
 .reading-neural-btn.is-selected { background:color-mix(in srgb,currentColor 9%,transparent); color:inherit; font-weight:600; }
-.reading-neural-btn.is-quiet { opacity:.6; }
+.reading-neural-btn.is-quiet { opacity:.55; }
 
-.reading-speed { padding:0; border:0; border-radius:0; }
-.reading-speed__step span { opacity:.6; }
+.reading-speed { margin:4px 0 8px; padding:0; border:0; border-radius:0; }
+.reading-speed__step span { font-size:13px; opacity:.55; }
 .reading-speed__step input:checked + span { background:color-mix(in srgb,currentColor 9%,transparent); color:inherit; opacity:1; }
+.reading-chips button { opacity:.55; }
+.reading-chips button[aria-checked=true] { background:color-mix(in srgb,currentColor 9%,transparent); }
 
+/* Texto */
+.reading-themes { padding:14px 0 10px; }
+.reading-themes i { width:40px; height:40px; border-color:color-mix(in srgb,currentColor 14%,transparent); font-size:17px; }
+.reading-themes button { gap:8px; font-size:11px; }
+.reading-themes button span { opacity:.65; }
+.reading-themes [aria-pressed=true] span { opacity:1; }
+.reading-themes [aria-pressed=true] i { outline-width:1px; outline-offset:3px; }
+.reading-panel input[type=range]::-webkit-slider-thumb { width:14px; height:14px; margin-top:-6px; }
+.reading-panel input[type=range]::-moz-range-thumb { width:14px; height:14px; }
+.reading-hint { font-size:11px; opacity:.5; }
+.reading-reset { font-size:12px; opacity:.5; }
+
+/* Contenido */
+.reading-position { font:400 22px/1.25 var(--f-spine, Georgia, serif); letter-spacing:-.3px; font-variant-numeric:lining-nums; }
+.reading-progress-ends { opacity:.45; }
 .reading-page-form input { border:0; border-bottom:1px solid color-mix(in srgb,currentColor 22%,transparent); border-radius:0; background:transparent; }
 .reading-search-form input { border:0; border-bottom:1px solid color-mix(in srgb,currentColor 22%,transparent); border-radius:0; background:transparent; padding-inline:2px; }
 .reading-panel .reading-search-form input:focus-visible,
 .reading-panel .reading-page-form input:focus-visible { box-shadow:none; border-color:currentColor; }
 .reading-search-form .reading-text-button,
-.reading-page-form .reading-text-button { padding:0 10px; border-radius:22px; background:none; color:inherit; font-weight:600; }
+.reading-page-form .reading-text-button { padding:0 12px; border-radius:22px; background:none; color:inherit; font-weight:600; }
 @media (hover:hover) {
   .reading-search-form .reading-text-button:hover,
   .reading-page-form .reading-text-button:hover { background:color-mix(in srgb,currentColor 6%,transparent); }
 }
+.reading-tabs { border-color:color-mix(in srgb,currentColor 7%,transparent); }
+.reading-tabs button { font-size:13px; }
+.reading-list > button, .reading-place { border-color:color-mix(in srgb,currentColor 6%,transparent); }
