@@ -46,3 +46,41 @@ describe('re-cutting the fragments not yet read at freshly measured page breaks'
     expect(voice.items).toBe(items)
   })
 })
+
+describe('following the reader while the audiobook plays', () => {
+  const text = 'Primera frase. Segunda frase algo más larga. Tercera frase.'
+  const setup = () => {
+    const voice = Object.create(ReadingVoice.prototype)
+    const source = { text, start:0, offsetAtPoint:(doc, x) => doc === 'page' ? x : NaN }
+    Object.assign(voice, { state:'playing', generation:1, source, index:0, rate:1, utteranceId:'u1', options:{}, reader:{} })
+    voice.items = planSpeech(text, {}, 0); voice.chunks = voice.items.map(item => item.text)
+    voice.restart = vi.fn()
+    return voice
+  }
+
+  it('a tap on a sentence reads from the start of that sentence', () => {
+    const voice = setup()
+    expect(voice.jumpToPoint({ doc:'page', x:text.indexOf('algo'), y:0 })).toBe(true)
+    expect(voice.items[voice.index].text.startsWith('Segunda frase')).toBe(true)
+    expect(voice.restart).toHaveBeenCalledOnce()
+  })
+
+  it('a tap elsewhere, or with the audiobook paused, keeps the tap for the controls', () => {
+    const voice = setup()
+    expect(voice.jumpToPoint({ doc:'other', x:3, y:0 })).toBe(false)
+    voice.state = 'paused'
+    expect(voice.jumpToPoint({ doc:'page', x:3, y:0 })).toBe(false)
+    expect(voice.restart).not.toHaveBeenCalled()
+  })
+
+  it('a page turned by hand goes on reading from the new page, and only if it was playing', async () => {
+    const voice = setup(), order = []
+    voice.stop = vi.fn(() => { order.push('stop'); voice.state = 'stopped' })
+    voice.play = vi.fn(async () => { order.push('play') })
+    await voice.continueFromPage(async () => { order.push('turn') })
+    expect(order).toEqual(['stop', 'turn', 'play'])
+    order.length = 0; voice.state = 'paused'
+    await voice.continueFromPage(async () => { order.push('turn') })
+    expect(order).toEqual(['stop', 'turn'])
+  })
+})

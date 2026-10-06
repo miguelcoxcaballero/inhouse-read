@@ -130,11 +130,8 @@ test('PDF: the sentence being read is highlighted in the text layer and the page
   expect(squash(resumed.highlight)).toContain(unstopped(paused))
   expect(await highlightOnScreen(page)).toMatchObject({ inside:true })
 
-  // A tap/swipe by the reader is user navigation: it stops the voice and clears the highlight.
-  await page.getByRole('button', { name:'Página siguiente', exact:true }).click()
-  await expect.poll(() => page.evaluate(() => window.__speechHighlight())).toBe('')
-  await expect(page.getByRole('button', { name:'Pausar lectura' })).toHaveCount(0)
-  const evidence = await page.evaluate(() => window.__pdfFollowEvidence)
+  // Every request so far was heard in order, each with its sentence painted.
+  const evidence = await page.evaluate(() => structuredClone(window.__pdfFollowEvidence))
   expect(evidence.requests.map(entry => entry.text)).toEqual([...pageOne, pageOne[0], paused])
   const starts = evidence.events.filter(entry => entry.type === 'start')
   expect(starts.map(entry => entry.id)).toEqual(evidence.requests.map(entry => entry.id))
@@ -143,6 +140,16 @@ test('PDF: the sentence being read is highlighted in the text layer and the page
     expect(squash(entry.after.highlight)).toContain(unstopped(evidence.requests[index].text))
   }
   expect(evidence.events.filter(entry => entry.type === 'done').length).toBe(pageOne.length)
+
+  // A page turned by hand while it plays: the voice does not stop, it goes on
+  // from the page now shown.
+  const requestsBefore = evidence.requests.length
+  await page.getByRole('button', { name:'Página siguiente', exact:true }).click()
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 3 de 4/)
+  await expect(page.getByRole('button', { name:'Pausar lectura' })).toHaveCount(1)
+  await expect.poll(() => page.evaluate(() => window.__pdfFollowEvidence.requests.length)).toBeGreaterThan(requestsBefore)
+  const goingOn = await page.evaluate(index => window.__pdfFollowEvidence.requests[index], requestsBefore)
+  expect(goingOn.location).toMatch(/Página 3 de 4/)
   await testInfo.attach('pdf-follow-request-start-pause', { body:JSON.stringify({ ...evidence, audible, resumed }), contentType:'application/json' })
   expect(errors).toEqual([])
 })

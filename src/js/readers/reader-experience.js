@@ -529,9 +529,7 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
     this.showPlaceTab(list.childElementCount ? 'toc' : 'bookmarks')
   }
   step(direction) {
-    return this.queueNavigation(() => {
-      this.voice.stop()
-      return direction > 0 ? this.reader.next() : this.reader.prev()
-    })
+    // A playing audiobook goes on from the page now shown instead of stopping.
+    return this.queueNavigation(() => this.voice.continueFromPage(() => direction > 0 ? this.reader.next() : this.reader.prev()))
   }
 }

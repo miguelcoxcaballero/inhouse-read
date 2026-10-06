@@ -624,7 +624,13 @@ async function openFileContent(file, { existingRecord, forcedId, folderFileName,
       initialFraction:existingRecord?.progressFraction,
       preferences:readingExperience.preferences,
       onRelocate: onReaderRelocate,
-      onUserNavigation: () => readingExperience.voice.stop(),
+      // A page turned by hand while the audiobook plays: it goes on from the
+      // page now shown (after the turn lands, see onReaderRelocate).
+      onUserNavigation: () => {
+        const voice = readingExperience.voice
+        resumeVoiceAfterTurn = voice.state === 'playing' || voice.state === 'loading'
+        voice.stop()
+      },
       onFollowLink: href => {
         if (!els.readerScreen.classList.contains('reader-kids-mode')) return readingExperience.jump(null, href)
       },
@@ -1166,9 +1172,14 @@ function extractCoverInBackground(record) {
   return task
 }
 
+let resumeVoiceAfterTurn = false
 function onReaderRelocate({ fraction, cfi, index, textOffset }) {
   els.readerProgressFill.style.width = `${Math.round((fraction ?? 0) * 100)}%`
   readingExperience.relocate()
+  if (resumeVoiceAfterTurn) {
+    resumeVoiceAfterTurn = false
+    if (readingExperience.voice.state === 'stopped') void readingExperience.voice.play()
+  }
   if (!currentBookId || restoringProgress || closingReader) return
   const position = persistableRelocation({ fraction, cfi, index, textOffset }, reader.format?.engine)
   if (!position) return

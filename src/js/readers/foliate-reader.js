@@ -119,7 +119,15 @@ export class FoliateReader {
     }
     this.#view.addEventListener('load', event => {
       // Events inside the book iframe do not bubble to the outer viewport.
-      this.#documentGestures.push(attachSwipeNavigation(event.detail.doc.documentElement, { ...gestures, tapZone }))
+      const doc = event.detail.doc
+      // While the audiobook plays, a tap on a sentence reads from that sentence
+      // (see ReadingVoice.jumpToPoint); any other tap still shows the controls.
+      const toggleChrome = tap => {
+        const detail = { doc, x:tap?.clientX, y:tap?.clientY, handled:false }
+        if (Number.isFinite(detail.x)) window.dispatchEvent(new CustomEvent('inhouse-speech-tap', { detail }))
+        if (!detail.handled) onToggleChrome?.()
+      }
+      this.#documentGestures.push(attachSwipeNavigation(doc.documentElement, { ...gestures, onToggleChrome:toggleChrome, tapZone }))
       event.detail.doc.addEventListener('selectionchange', () => {
         const selection = event.detail.doc.defaultView.getSelection()
         if (!selection?.toString().trim() || !selection.rangeCount) return
@@ -299,6 +307,14 @@ export class FoliateReader {
         if (!paintSpeechRange(range)) content.overlayer?.add(SPEECH_HIGHLIGHT, range, Overlayer.highlight, { color:speechOverlayColor(this.#preferences.theme) })
       },
       follow:(start, end) => live() ? this.#followSpeech(doc, map.rangeFor(start, end)) : undefined,
+      // The text offset under a tap on this chapter, for ReadingVoice.jumpToPoint().
+      offsetAtPoint:(tapped, x, y) => {
+        if (tapped !== doc || !live()) return NaN
+        const caret = doc.caretPositionFromPoint?.(x, y)
+        const node = caret ? caret.offsetNode : doc.caretRangeFromPoint?.(x, y)?.startContainer
+        const offset = caret ? caret.offset : doc.caretRangeFromPoint?.(x, y)?.startOffset
+        return node ? map.offsetOf(node, offset) : NaN
+      },
       // Measured again after a relayout: see ReadingVoice.refreshPageBreaks().
       measurePageBreaks:() => live() && !document.hidden ? speechPageBreaks(map, view.renderer, { isCurrent:live }) : Promise.resolve(null)
     }
