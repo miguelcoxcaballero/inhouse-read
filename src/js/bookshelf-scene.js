@@ -803,8 +803,47 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const hiddenBookMaterial = entry => entry.kind !== 'plant' && entry.kind !== 'lamp' &&
     !entry.insertion && !entry.trashDrop && Boolean(entry.node?.classList.contains('is-away'));
   const invalidateBookMaterial = entry => {
-    if (!hiddenBookMaterial(entry)) invalidate(true, true);
+    if (!hiddenBookMaterial(entry)) settledInvalidate(true, 'quality', entry);
   };
+
+  // Start-up: the room paints as soon as it is built. The covers and web fonts
+  // that arrive just after that first frame are committed together in one
+  // more frame, instead of one full render per arrival (they came in three or
+  // four batches). The final pixels are the same; only the renders between go.
+  // A gesture, or the time limit, paints at once.
+  const STARTUP_SETTLE_MS = 700, STARTUP_WINDOW_MS = 8000;
+  let startupSettle = { expires:0, until:0, timer:0, held:false };
+  // Other books still decoding their first cover (the caller has just settled).
+  const coversPending = caller => bookEntries.some(entry => entry !== caller && entry.kind !== 'plant' && entry.kind !== 'lamp' &&
+    entry.model?.visible && entry.model.userData.coverLoaded === undefined);
+  const fontsPending = () => document.fonts?.status === 'loading';
+  function settledInvalidate(preserveInspectionOverview, source, caller = null) {
+    const gate = startupSettle;
+    if (!gate || !shelfSnapshotRenders || inspectionMoving || transition || disposed) {
+      invalidate(true, preserveInspectionOverview, source);
+      return;
+    }
+    // The wait is counted from the first arrival: a slow device can take a
+    // while to decode the first cover after its first frame.
+    gate.until ||= performance.now() + STARTUP_SETTLE_MS;
+    if (performance.now() >= gate.expires || performance.now() >= gate.until || !(coversPending(caller) || fontsPending())) {
+      releaseStartupSettle();
+      invalidate(true, preserveInspectionOverview, source);
+      return;
+    }
+    // Same bookkeeping as invalidate(true), without asking for a frame yet.
+    noteInspectionDirty(source);
+    shelfSnapshotDirty = shadowDirty = true;
+    if (!preserveInspectionOverview) inspectionOverview = null;
+    drawPending = gate.held = true;
+    gate.timer ||= setTimeout(() => { if (startupSettle) startupSettle.timer = 0; releaseStartupSettle(); }, gate.until - performance.now());
+  }
+  function releaseStartupSettle() {
+    const gate = startupSettle;
+    if (!gate) return;
+    startupSettle = null; clearTimeout(gate.timer);
+    if (gate.held && drawPending) invalidate(false);
+  }
 
   function makeModel(entry) {
     const model = entry.kind === 'plant' ? createShelfPlant(entry, { persist:true })
@@ -2386,6 +2425,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       });
       releaseUnusedNativeRoomFrames();
       setData(canvas, 'snapshotRenderCount', String(++shelfSnapshotRenders));
+      if (startupSettle && !startupSettle.expires) startupSettle.expires = performance.now() + STARTUP_WINDOW_MS;
       setData(canvas, 'sceneDrawCalls', String(renderer.info?.render.calls || 0));
       shelfSnapshotDirty = false;
       paintedModalView = { progress, inspectionZoom, panX, panY };
@@ -2624,7 +2664,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   document.addEventListener('visibilitychange', presentationChanged);
   updateWoodTheme();
   draw();
-  refreshCanvasFontsAfterPaint(() => invalidate(true, false, 'fonts-ready'));
+  refreshCanvasFontsAfterPaint(() => settledInvalidate(false, 'fonts-ready'));
 
   function getInspectionView() {
     const rect=canvas.getBoundingClientRect();
