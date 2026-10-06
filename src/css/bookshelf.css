@@ -1781,3 +1781,59 @@ body.is-closing-reader .screen { pointer-events:none; }
 .ihr-flyout__book--fallback .ihr-flyout__face--cover { transform:none; }
 
 .ihr-spine__body:not(:has(canvas)) { background:var(--ihr-spine-base); }
+
+/* ------------------------------------------------------------------ *
+ * Editor del lomo y la portada, con el estilo de la ficha del libro:
+ * sin cajas, pestañas subrayadas, campos de una sola línea y el título
+ * del libro en serif. Solo cambia la presentación.
+ * ------------------------------------------------------------------ */
+.ihr-spine-editor__header { padding:22px 20px 0; border-bottom:0; }
+.ihr-spine-editor__heading { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.ihr-spine-editor__subtitle { margin:0; color:var(--text-primary); font:500 1.15rem/1.3 var(--f-spine, serif); letter-spacing:-.2px; }
+.ihr-spine-editor .ihr-spine-editor__done {
+  min-height:44px; padding:0 4px 0 14px; border-radius:0; background:none; box-shadow:none;
+  color:var(--text-primary); font:600 .9rem var(--f-body, sans-serif);
+}
+@media (hover:hover) { .ihr-spine-editor .ihr-spine-editor__done:hover:not(:disabled) { filter:none; opacity:.7; } }
+.ihr-spine-editor__tabs {
+  display:flex; gap:24px; padding:0; border-radius:0; background:none;
+  box-shadow:inset 0 -1px 0 var(--ihr-ed-rule);
+}
+.ihr-spine-editor__tab {
+  flex:none; height:40px; padding:0; border-radius:0; background:none; box-shadow:none;
+  color:var(--text-secondary); font-weight:500; border-bottom:2px solid transparent;
+}
+.ihr-spine-editor__tab[aria-selected='true'] { background:none; box-shadow:none; color:var(--text-primary); border-bottom-color:var(--text-primary); }
+@media (hover:hover) { .ihr-spine-editor__tab[aria-selected='false']:hover { background:none; } }
+/* Portada: sin título encima, pestañas y "Listo" en una sola fila. */
+.ihr-spine-editor[data-tab='cover'] .ihr-spine-editor__header { flex-wrap:nowrap; align-items:flex-end; gap:12px; padding-block:18px 0; }
+.ihr-spine-editor[data-tab='cover'] .ihr-spine-editor__titles { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.ihr-spine-editor[data-tab='cover'] .ihr-spine-editor__tabs { order:0; flex:1 1 0; min-width:0; }
+.ihr-spine-editor[data-tab='cover'] .ihr-spine-editor__done { order:1; }
+.ihr-spine-editor__section-title { margin-bottom:2px; font-weight:500; letter-spacing:.14em; }
+.ihr-spine-editor__section-title::after { display:none; }
+
+.ihr-spine-editor__input,
+.ihr-spine-editor__select {
+  border:0; border-bottom:1px solid var(--ihr-ed-line); border-radius:0; background:transparent;
+}
+.ihr-spine-editor__input { height:40px; padding:0 2px; }
+.ihr-spine-editor__select { padding-left:2px; }
+@media (hover:hover) { .ihr-spine-editor__input:hover, .ihr-spine-editor__select:hover { background:transparent; border-bottom-color:var(--text-secondary); } }
+.ihr-spine-editor__input:focus,
+.ihr-spine-editor__select:focus-visible { background:transparent; box-shadow:none; border-bottom-color:var(--text-primary); }
+.ihr-spine-editor__select-wrap::after { right:4px; }
+
+.ihr-spine-editor__materials-track { gap:4px; padding:0; border-radius:0; background:none; box-shadow:none; }
+.ihr-spine-editor__material { border-radius:999px; }
+.ihr-spine-editor__material.is-active { background:color-mix(in srgb, var(--text-primary) 7%, transparent); box-shadow:none; font-weight:600; }
+@media (hover:hover) { .ihr-spine-editor__material:not(.is-active):hover { background:color-mix(in srgb, var(--text-primary) 4%, transparent); } }
+
+.ihr-flyout__swatch,
+.ihr-flyout__custom-color,
+.ihr-spine-editor__pipette { width:32px; height:32px; border-radius:50%; }
+.ihr-spine-editor__pipette,
+.ihr-flyout__custom-color:not(.is-selected) { background:transparent; box-shadow:none; color:var(--text-secondary); }
+.ihr-flyout__colors-rule { background:transparent; }
+
+.ihr-relief-card.is-selected { background:none; box-shadow:none; }
