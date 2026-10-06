@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs'
 describe('native synthesis receipts',()=>{
   it('observes each genuine drained completion through its existing done evaluation',()=>{
     const service=readFileSync('android/NativePcmService.java','utf8')
-    const completion=service.slice(service.indexOf('if (u.complete && played >= u.end)'),service.indexOf('if (track != null) outer:'))
+    const completion=service.slice(service.indexOf('if (u.complete && heard >= u.end)'),service.indexOf('if (track != null) outer:'))
     expect(completion).toContain('units.remove(u)')
     expect(completion).toContain('boolean queueEmpty = units.isEmpty();')
     expect(completion).toContain('"done", u.id, null, queueEmpty')

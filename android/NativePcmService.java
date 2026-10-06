@@ -11,6 +11,7 @@ import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioFormat;
 import android.media.AudioManager;
+import android.media.AudioTimestamp;
 import android.media.AudioTrack;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
@@ -228,16 +229,33 @@ public final class NativePcmService extends Service {
         long head = Integer.toUnsignedLong(track.getPlaybackHeadPosition());
         if (head < lastHead) headWrap += 1L << 32;
         lastHead = head; played = headBase + headWrap + head;
+        updateOutputDelay(head);
     }
+    // The head position counts frames handed to the mixer; the speaker (or a
+    // Bluetooth headset) plays them later. A sentence's "start" and "done" are
+    // reported when it is heard, so the highlight and the page turn never run
+    // ahead of the voice. Measured from the track's own presentation
+    // timestamp, smoothed, and only trusted within a sane range.
+    private final AudioTimestamp stamp = new AudioTimestamp();
+    private long outputDelay = 0;
+    private void updateOutputDelay(long head) {
+        if (rate <= 0 || !track.getTimestamp(stamp)) return;
+        long presented = stamp.framePosition + (System.nanoTime() - stamp.nanoTime) * rate / 1_000_000_000L;
+        long delay = head - presented;
+        if (delay < 0 || delay > rate) return;
+        outputDelay = outputDelay == 0 ? delay : (outputDelay * 7 + delay) / 8;
+    }
+    private long heard() { return Math.max(0, played - outputDelay); }
     private final Runnable pump = new Runnable() {
         @Override public void run() {
             if (!active) { publishState(); return; }
             try {
                 String currentSession = session;
                 updateHead();
+                long heard = heard();
                 for (Unit u : new ArrayList<>(units)) {
-                    if (!u.started && played > u.start) { u.started = true; if (owner != null) owner.emit(currentSession, epoch, "start", u.id, null); }
-                    if (u.complete && played >= u.end) {
+                    if (!u.started && heard > u.start) { u.started = true; if (owner != null) owner.emit(currentSession, epoch, "start", u.id, null); }
+                    if (u.complete && heard >= u.end) {
                         units.remove(u);
                         // Snapshot an actual drained completion, including a
                         // later one in the same playback epoch. The original

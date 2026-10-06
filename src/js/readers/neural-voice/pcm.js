@@ -41,7 +41,9 @@ export function peakNormalize(pcm, { target = 0.9, maxGain, floor = 1e-3, model 
  * fragments), keeping a little air on both sides. "Quiet" is relative to the buffer's own peak, with an absolute
  * floor so pure noise does not count as speech. Returns a copy (an all-quiet buffer gives an empty one).
  */
-export function trimSilence(pcm, sampleRate, { relative = 0.02, floor = 0.002, leadMs = 14, tailMs = 40 } = {}) {
+// The tail keeps 110 ms: a soft final consonant or breath falls under the
+// threshold, and cutting it made a sentence sound finished before it was.
+export function trimSilence(pcm, sampleRate, { relative = 0.02, floor = 0.002, leadMs = 14, tailMs = 110 } = {}) {
   const threshold = Math.max(peakOf(pcm) * relative, floor)
   let from = 0, to = pcm.length - 1
   while (from < pcm.length && Math.abs(pcm[from]) < threshold) from++

@@ -24,7 +24,8 @@ export class GaplessPlayer {
   get latency() {
     const ctx = this.getContext()
     const value = Number(ctx?.outputLatency) || Number(ctx?.baseLatency) || 0
-    return Math.min(0.3, Math.max(0, value))
+    // Bluetooth output can lag by more than half a second: compensate all of it.
+    return Math.min(0.8, Math.max(0, value))
   }
   /** Seconds of audio scheduled but not yet played. */
   buffered() { return this.scheduled ? Math.max(0, this.nextTime - this.now) : 0 }
