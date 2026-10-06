@@ -7,6 +7,24 @@
   <title>Inhouse Read</title>
   <meta name="description" content="Inhouse Read — lector de PDF, ePub y MOBI." />
   <script>
+    // The Android app draws this page behind its status bar and reports the
+    // bar's height, the same whether the bar is showing or hidden: the page
+    // keeps that strip free (--ihr-safe-top, tokens.css) before its first
+    // paint, so hiding the bar to read moves nothing. The shell calls
+    // inhouseSetSafeTop again after a rotation or a cutout/window change.
+    // Browsers and older app versions keep env(safe-area-inset-top).
+    (function (root) {
+      window.inhouseSetSafeTop = function (top) {
+        top = Number(top)
+        if (isFinite(top) && top >= 0 && 200 > top) root.style.setProperty('--ihr-safe-top', top + 'px')
+      }
+      try {
+        var shell = window.InhouseNative
+        if (shell && typeof shell.getSafeTopInset === 'function') window.inhouseSetSafeTop(shell.getSafeTopInset())
+      } catch (error) { /* an older shell: env() stays */ }
+    })(document.documentElement)
+  </script>
+  <script>
     // A launch is answered from the offline shell without the network. The
     // deployed index.html is asked for right away, so content-freshness.js
     // often knows of a newer deploy before the shelf is built and opens it
@@ -84,6 +102,11 @@
       try { theme = localStorage.getItem('inhouse-read-theme') } catch (e) { /* storage blocked */ }
       if (theme === null) theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
       document.documentElement.setAttribute('data-theme', theme)
+      // The Android status bar is drawn over this theme's header: matching icons.
+      try {
+        var shell = window.InhouseNative
+        if (shell && typeof shell.setStatusBarAppearance === 'function') shell.setStatusBarAppearance(theme !== 'dark')
+      } catch (e) { /* older shell */ }
     })()
   </script>
   <div class="app-shell">

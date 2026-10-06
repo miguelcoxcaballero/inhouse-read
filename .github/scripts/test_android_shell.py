@@ -99,8 +99,38 @@ class MainActivityTest(unittest.TestCase):
                 for feature in ("handleAppCallback", "handleInhouseNativeOAuth", "openAuthUrl",
                                 "setReadingMode", "setReaderOwnership", "InhouseSpeech", "InhousePcm",
                                 "InhouseInference", "installAppUpdate", "setOnApplyWindowInsetsListener",
-                                "applyHighRefreshRate", "preferredDisplayModeId"):
+                                "applyHighRefreshRate", "preferredDisplayModeId",
+                                "getSafeTopInset", "setStatusBarAppearance"):
                     self.assertIn(feature, source, feature)
+
+    def test_status_bar_overlays_the_page_without_resizing_it(self):
+        # The page reserves the stable inset itself; the native parent pads
+        # only sides and bottom, in reading and on the shelf alike.
+        for language, source in self.sources.items():
+            with self.subTest(language=language):
+                listener = source[source.index("setOnApplyWindowInsetsListener("):source.index(".setInsets(safeTypes, Insets.NONE)")]
+                self.assertNotIn("safeInsets.top", listener)
+                self.assertNotIn("isReadingDisplayActive", listener)
+                self.assertRegex(listener, r"initial(Top|Padding\.top),\n")
+                self.assertIn("updateSafeTopInset(windowInsets)", listener)
+                self.assertIn("getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars())", source)
+                self.assertIn("LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS", source)
+                self.assertRegex(source, r"setStatusBarColor\(Color\.TRANSPARENT\)|statusBarColor = Color\.TRANSPARENT")
+                self.assertRegex(source, r"setNavigationBarColor\(bootColor\)|navigationBarColor = bootColor")
+                self.assertIn("import android.graphics.Color", source)
+
+    def test_page_hooks_are_called_only_for_the_trusted_page(self):
+        for language, source in self.sources.items():
+            with self.subTest(language=language):
+                push = source[source.index("updateSafeTopInset(WindowInsetsCompat") if language == "java"
+                              else source.index("updateSafeTopInset(windowInsets: WindowInsetsCompat"):]
+                push = push[:push.index("evaluateJavascript")]
+                self.assertIn("isTrustedReadPage()", push)
+                setter = source[source.index("setStatusBarAppearance(boolean" if language == "java"
+                                             else "setStatusBarAppearance(lightBackground: Boolean"):]
+                setter = setter[:setter.index("applyStatusBarAppearance()")]
+                self.assertIn("runOnUiThread", setter)
+                self.assertIn("isTrustedReadPage()", setter)
 
     def test_keeps_the_anchors_register_book_imports_rewrites(self):
         anchors = {

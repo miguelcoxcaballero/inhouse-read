@@ -8,11 +8,28 @@ import subprocess
 import time
 from pathlib import Path
 from xml.etree import ElementTree
+from zipfile import ZipFile
 
 
 SCREENSHOT = Path("android-status-bar.png")
 UI_DUMP = Path("android-ui.xml")
 OCR_TEXT = Path("android-screen-text.txt")
+
+# Shells with this bridge method draw the WebView behind the status bar and
+# let the page keep the bar's strip free; older APKs pad the WebView natively
+# on the shelf and remove that padding while reading.
+STABLE_INSET_MARKER = b"getSafeTopInset"
+LAYOUT = {"contract": "legacy", "webViewBounds": None, "statusBarBottom": 0}
+HEADER_CONTROLS = {
+    True: re.compile(r"Volver a la estanter.a"),
+    False: re.compile(r"Elegir archivo del dispositivo|Abrir desde Google Drive|Conectar cuenta de Google|Cuenta de Google"),
+}
+
+
+def apk_layout_contract(apk):
+    with ZipFile(apk) as archive:
+        dex = b"".join(archive.read(name) for name in archive.namelist() if name.endswith(".dex"))
+    return "stable-inset" if STABLE_INSET_MARKER in dex else "legacy"
 
 
 def run(*args):
@@ -161,12 +178,48 @@ def webview_bounds(root):
 def verify_webview_bounds(root, reading=False):
     bounds = webview_bounds(root)
     top = bounds[1]
-    if reading:
+    if LAYOUT["contract"] == "stable-inset":
+        # Shown or hidden, the status bar is drawn over the page; the page
+        # keeps its strip free itself (verify_stable_page_layout).
+        assert top == 0, f"The WebView must extend behind the status bar: {bounds}"
+    elif reading:
         assert top == 0, f"Reader retained a native top inset: {bounds}"
     else:
         assert top > 0, "The WebView overlaps the Android status bar"
     print(f"Android WebView bounds (reading={reading}): {bounds}")
     return bounds
+
+
+def header_control_tops(root, reading):
+    tops = []
+    for node in root.iter("node"):
+        labels = (node.attrib.get("text", "").strip(), node.attrib.get("content-desc", "").strip())
+        if not any(HEADER_CONTROLS[reading].fullmatch(label) for label in labels):
+            continue
+        bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.attrib.get("bounds", ""))
+        if bounds:
+            left, top, right, bottom = map(int, bounds.groups())
+            if right > left and bottom > top:
+                tops.append(top)
+    return tops
+
+
+def verify_stable_page_layout(root, bounds, reading, status_bar_bottom):
+    """Hiding the status bar to read must move nothing: the WebView keeps the
+    bounds of the first settled state in every foreground state, and the page
+    header stays below the bar's strip whether the bar shows (shelf) or not
+    (reader, where only the page's own reserved strip keeps it there)."""
+    reference = LAYOUT["webViewBounds"]
+    if reference is None:
+        LAYOUT["webViewBounds"] = reference = bounds
+    assert bounds == reference, f"Reading mode changed the WebView bounds: {reference} -> {bounds}"
+    LAYOUT["statusBarBottom"] = max(LAYOUT["statusBarBottom"], status_bar_bottom or 0)
+    strip = LAYOUT["statusBarBottom"]
+    assert strip > 0, "The status bar frame was absent from dumpsys"
+    tops = header_control_tops(root, reading)
+    assert tops, "No page header control to compare with the status bar strip"
+    assert min(tops) >= strip, f"The page header is under the status bar strip: top {min(tops)} < {strip}"
+    return {"contract": LAYOUT["contract"], "webViewBounds": list(reference), "statusBarBottom": strip, "headerTop": min(tops)}
 
 
 def android_window_state(windows, displays):
@@ -191,8 +244,11 @@ def android_window_state(windows, displays):
     # in source providers or unrelated windows must never satisfy this check.
     controllers = re.findall(r"WindowInsetsStateController\s+(.*?)\s+Control map:", displays, re.S)
     assert len(controllers) == 1, f"Expected one emulator display inset controller, found {len(controllers)}"
-    status = re.findall(r"InsetsSource[^\r\n]*\btype=statusBars\b[^\r\n]*\bvisible=(true|false)\b", controllers[0])
-    assert len(status) == 1, f"Expected one real status bar inset source, found {len(status)}"
+    sources = re.findall(r"InsetsSource[^\r\n]*\btype=statusBars\b[^\r\n]*\bvisible=(?:true|false)\b[^\r\n]*", controllers[0])
+    assert len(sources) == 1, f"Expected one real status bar inset source, found {len(sources)}"
+    status = re.search(r"\bvisible=(true|false)\b", sources[0]).group(1)
+    # The source keeps the bar's frame while it is hidden.
+    frame = re.search(r"\bframe=\[(\d+),(\d+)\]\[(\d+),(\d+)\]", sources[0])
     focus = re.search(r"\bmCurrentFocus=([^\r\n]+)", windows + "\n" + displays)
     assert focus, "Focused Android window was absent from dumpsys"
     return {
@@ -201,7 +257,8 @@ def android_window_state(windows, displays):
         "keepScreenOn": "KEEP_SCREEN_ON" in flags.group(1).split(),
         "requestedNonDefaultTypes": changed_types,
         "statusBarRequestedVisible": "statusBars" not in changed_types,
-        "statusBarVisible": status[0] == "true",
+        "statusBarVisible": status == "true",
+        "statusBarFrame": list(map(int, frame.groups())) if frame else None,
         "appFocused": bool(re.search(r"com\.inhousesoftware\.read/", focus.group(1))),
     }
 
@@ -261,6 +318,9 @@ def wait_for_reading_display(label, reading, foreground=True, timeout=45, initia
                 assert entry["readerVisible"] == reading, "The real reader/shelf UI has not settled"
                 if initial_import_title is not None:
                     assert re.search(re.escape(initial_import_title), text, re.I), "Initial reader lost the imported document title"
+                if LAYOUT["contract"] == "stable-inset":
+                    state["stableLayout"] = verify_stable_page_layout(
+                        root, state["webViewBounds"], reading, (state["statusBarFrame"] or [0, 0, 0, 0])[3])
             Path(prefix + ".json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
             Path(prefix + "-timeline.json").write_text(json.dumps(timeline, indent=2) + "\n", encoding="utf-8")
             print(f"Android reading display verified ({label}): {json.dumps(state)}", flush=True)
@@ -399,6 +459,8 @@ def main():
     scenario.add_argument("--book-imports", action="store_true")
     scenario.add_argument("--reading-display", action="store_true")
     args = parser.parse_args()
+    LAYOUT["contract"] = apk_layout_contract(args.apk)
+    print(f"Android status bar layout contract: {LAYOUT['contract']}", flush=True)
     run("adb", "install", "-r", args.apk)
     run("adb", "shell", "am", "start", "-n", "com.inhousesoftware.read/.MainActivity")
     time.sleep(25)

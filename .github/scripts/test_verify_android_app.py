@@ -375,6 +375,12 @@ class AndroidReadingDisplayVerifierTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "WebView"):
             verifier.verify_webview_bounds(ElementTree.fromstring('<hierarchy/>'), reading=True)
 
+    def test_window_state_keeps_the_status_bar_frame_even_when_hidden(self):
+        self.assertEqual(verifier.android_window_state(windows(True), displays(False))["statusBarFrame"], [0, 0, 1080, 24])
+        state = verifier.android_window_state(windows(), displays().replace("frame=[0,0][1080,24] ", ""))
+        self.assertIsNone(state["statusBarFrame"])
+        verifier.assert_reading_window_state(state, reading=False)
+
     def test_return_taps_actual_back_control(self):
         with patch.object(verifier, "run") as run:
             verifier.return_to_bookshelf(ui())
@@ -411,6 +417,84 @@ class AndroidReadingDisplayVerifierTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "lost the loaded document"):
                 verifier.verify_loaded_reader_display("different-document", background=True)
         back.assert_not_called()
+
+
+def stable_ui(reading, header_top=40, webview=(0, 0, 1080, 2300)):
+    # Native projection of the page drawn behind the status bar: the WebView
+    # starts at y=0 and the page's own header begins below the bar's strip.
+    label = 'text="Volver a la estantería"' if reading else 'content-desc="Elegir archivo del dispositivo"'
+    left, top, right, bottom = webview
+    return ElementTree.fromstring(
+        f'<hierarchy><node class="android.webkit.WebView" bounds="[{left},{top}][{right},{bottom}]">'
+        f'<node {label} enabled="true" bounds="[10,{header_top}][60,{header_top + 50}]"/>'
+        '<node text="Intent reading"/></node></hierarchy>')
+
+
+class AndroidStableInsetContractTests(unittest.TestCase):
+    def setUp(self):
+        layout = patch.dict(verifier.LAYOUT, {"contract": "stable-inset", "webViewBounds": None, "statusBarBottom": 0})
+        layout.start()
+        self.addCleanup(layout.stop)
+
+    def test_contract_is_read_from_the_apk_bridge(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for dex, contract in ((b"...setReaderOwnership...getSafeTopInset...", "stable-inset"),
+                                  (b"...setReaderOwnership...setReadingMode...", "legacy")):
+                apk = Path(directory) / f"{contract}.apk"
+                with verifier.ZipFile(apk, "w") as archive:
+                    archive.writestr("classes.dex", b"dex\n" + dex)
+                    archive.writestr("classes2.dex", b"dex\n")
+                with self.subTest(contract=contract):
+                    self.assertEqual(verifier.apk_layout_contract(apk), contract)
+
+    def test_webview_extends_behind_the_status_bar_on_the_shelf_too(self):
+        self.assertEqual(verifier.verify_webview_bounds(stable_ui(False), reading=False)[1], 0)
+        with self.assertRaisesRegex(AssertionError, "behind the status bar"):
+            verifier.verify_webview_bounds(stable_ui(False, webview=(0, 24, 1080, 2300)), reading=False)
+        with self.assertRaisesRegex(AssertionError, "behind the status bar"):
+            verifier.verify_webview_bounds(stable_ui(True, webview=(0, 24, 1080, 2300)), reading=True)
+
+    def test_reading_mode_keeps_the_same_webview_bounds_and_page_header(self):
+        shelf = verifier.verify_stable_page_layout(stable_ui(False), (0, 0, 1080, 2300), False, 24)
+        reader = verifier.verify_stable_page_layout(stable_ui(True, 30), (0, 0, 1080, 2300), True, 24)
+        self.assertEqual(shelf["webViewBounds"], reader["webViewBounds"])
+        self.assertEqual((shelf["headerTop"], reader["headerTop"]), (40, 30))
+
+    def test_a_resized_webview_fails(self):
+        verifier.verify_stable_page_layout(stable_ui(False), (0, 0, 1080, 2300), False, 24)
+        with self.assertRaisesRegex(AssertionError, "changed the WebView bounds"):
+            verifier.verify_stable_page_layout(stable_ui(True), (0, 0, 1080, 2340), True, 24)
+
+    def test_reader_header_under_the_hidden_bar_strip_fails(self):
+        # The legacy reader put its header at y=0 once the bar hid.
+        verifier.verify_stable_page_layout(stable_ui(False), (0, 0, 1080, 2300), False, 24)
+        with self.assertRaisesRegex(AssertionError, "under the status bar strip"):
+            verifier.verify_stable_page_layout(stable_ui(True, 2), (0, 0, 1080, 2300), True, 0)
+
+    def test_missing_frame_or_header_control_fails(self):
+        with self.assertRaisesRegex(AssertionError, "frame was absent"):
+            verifier.verify_stable_page_layout(stable_ui(False), (0, 0, 1080, 2300), False, 0)
+        with self.assertRaisesRegex(AssertionError, "No page header control"):
+            verifier.verify_stable_page_layout(stable_ui(False), (0, 0, 1080, 2300), True, 24)
+
+    def test_reader_sampling_records_the_stable_layout(self):
+        samples = iter([stable_ui(False), stable_ui(True, 30)])
+        window_samples = iter([windows(), windows(True)])
+        display_samples = iter([displays(), displays(False)])
+        def run(*args):
+            return SimpleNamespace(stdout=next(window_samples) if args[-1] == "windows" else next(display_samples), stderr="")
+        with patch.object(verifier, "capture", side_effect=lambda *_: next(samples)), patch.object(verifier, "run", side_effect=run), patch.object(verifier.Path, "is_file", return_value=False), patch.object(verifier.Path, "write_text") as write:
+            verifier.wait_for_reading_display("shelf-before", reading=False)
+            verifier.wait_for_reading_display("reading-reader", reading=True)
+        states = [json.loads(call.args[0]) for call in write.call_args_list if call.args[0].startswith("{")]
+        self.assertEqual([state["stableLayout"]["headerTop"] for state in states], [40, 30])
+        self.assertTrue(all(state["stableLayout"]["webViewBounds"] == [0, 0, 1080, 2300] for state in states))
+
+    def test_legacy_contract_keeps_the_published_apk_checks(self):
+        verifier.LAYOUT["contract"] = "legacy"
+        self.assertEqual(verifier.verify_webview_bounds(ui(24, False))[1], 24)
+        with self.assertRaisesRegex(AssertionError, "overlaps"):
+            verifier.verify_webview_bounds(ui(0, False))
 
 
 if __name__ == "__main__":

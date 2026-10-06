@@ -41,14 +41,55 @@ describe('Android reading display bridge', () => {
     })
   }
 
-  it('removes only the top safe inset in reading and restores all shelf safe insets', () => {
-    expect(java).toContain('initialTop + (isReadingDisplayActive() ? 0 : safeInsets.top)')
-    expect(kotlin).toContain('initialPadding.top + (if (isReadingDisplayActive()) 0 else safeInsets.top)')
+  it('never pads the top natively, so the status bar cannot resize the WebView, and keeps the other insets', () => {
+    const listener = template => template.slice(template.indexOf('setOnApplyWindowInsetsListener('), template.indexOf('.setInsets(safeTypes, Insets.NONE)'))
+    expect(listener(java)).toMatch(/initialLeft \+ safeInsets\.left,\s*initialTop,\s*initialRight/)
+    expect(listener(kotlin)).toMatch(/initialPadding\.left \+ safeInsets\.left,\s*initialPadding\.top,\s*initialPadding\.right/)
     for (const template of [java, kotlin]) {
+      expect(listener(template)).not.toContain('safeInsets.top')
+      expect(listener(template)).not.toContain('isReadingDisplayActive')
+      expect(listener(template)).toContain('updateSafeTopInset(windowInsets)')
       expect(template).toContain('safeInsets.left')
       expect(template).toContain('safeInsets.right')
       expect(template).toContain('safeInsets.bottom')
       expect(template).toContain('.setInsets(safeTypes, Insets.NONE)')
     }
   })
+
+  for (const [name, template] of [['Java', java], ['Kotlin', kotlin]]) {
+    it(`${name}: reports a top inset that ignores the bar's visibility, in CSS px, and pushes changes`, () => {
+      const update = template.slice(template.search(/(void|fun) updateSafeTopInset\(/), template.indexOf('// Vote for the panel'))
+      expect(update).toContain('getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars())')
+      expect(update).toContain('getInsets(WindowInsetsCompat.Type.displayCutout())')
+      // Physical pixels to CSS px (dp), rounded like the WebView's own layout.
+      expect(update).toMatch(/displayMetrics\.density|getDisplayMetrics\(\)\.density/)
+      expect(update).toMatch(/topPx \/ density/)
+      expect(update).toContain('isTrustedReadPage()')
+      expect(update).toContain('window.inhouseSetSafeTop && window.inhouseSetSafeTop(')
+      expect(template).toMatch(/@JavascriptInterface\s+(public double getSafeTopInset\(\)|fun getSafeTopInset\(\): Double)/)
+    })
+
+    it(`${name}: lets only the trusted page choose the status icons on the UI thread`, () => {
+      const setter = template.slice(template.indexOf('setStatusBarAppearance('), template.indexOf('getAppVersion('))
+      expect(setter).toContain('runOnUiThread')
+      expect(setter).toContain('if (!isTrustedReadPage())')
+      expect(setter).toContain('lightStatusBar = lightBackground')
+      expect(setter).toContain('applyStatusBarAppearance()')
+      const apply = template.slice(template.indexOf('applyStatusBarAppearance() {'), template.indexOf('updateSafeTopInset('))
+      expect(apply).toMatch(/setAppearanceLightStatusBars\(lightStatusBar\)|isAppearanceLightStatusBars = light/)
+      expect(apply).not.toContain('NavigationBars')
+      // Reapplied with the reading policy (resume, focus, rotation).
+      expect(template.slice(template.indexOf('applyReadingDisplay() {'), template.indexOf('applyStatusBarAppearance() {'))).toContain('applyStatusBarAppearance()')
+    })
+
+    it(`${name}: draws behind a transparent status bar with a stable cutout layout and keeps the navigation bar`, () => {
+      const create = template.slice(template.indexOf('onCreate('), template.indexOf('setOnApplyWindowInsetsListener('))
+      expect(create).toContain('LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS')
+      expect(create).toContain('LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES')
+      expect(create).toMatch(/setStatusBarColor\(Color\.TRANSPARENT\)|statusBarColor = Color\.TRANSPARENT/)
+      expect(create).not.toMatch(/setStatusBarColor\(bootColor\)|statusBarColor = bootColor/)
+      expect(create).toMatch(/setNavigationBarColor\(bootColor\)|navigationBarColor = bootColor/)
+      expect(create).toMatch(/AppearanceLightNavigationBars\(isLightMode\)|isAppearanceLightNavigationBars = isLightMode/)
+    })
+  }
 })

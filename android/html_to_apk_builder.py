@@ -1549,12 +1549,16 @@ class ApkBuilderApp(tk.Tk):
         PKCE callback flow. The updater and status-bar insets are also managed
         here.
 
-        Keeps the shelf inside the system-bar/cutout safe area by padding its
-        native parent. Reading hides the status bar, removes the top inset and
-        keeps the display awake; leaving or pausing restores normal bars.
-        WebView padding does not reliably move its HTML layout viewport away
-        from the status bar. The handled insets are zeroed before dispatch to
-        WebView so it cannot apply the same spacing a second time.
+        The WebView always extends behind the transparent status bar; its
+        native parent pads only the sides and the bottom (navigation bar,
+        cutouts). The page reserves the status bar's height itself from
+        InhouseNative.getSafeTopInset(), a value that ignores the bar's
+        visibility, so hiding the bar while reading (which also keeps the
+        display awake) never moves or resizes the page: the bar fades over it.
+        The page tells the shell whether light or dark status icons contrast
+        with what is under them. WebView padding does not reliably move its
+        HTML layout viewport, and the handled insets are zeroed before
+        dispatch so the WebView cannot apply the same spacing a second time.
         """
         main_src_root = project_dir / "android" / "app" / "src" / "main"
         java_file = main_src_root / "java" / Path(*package_id.split(".")) / "MainActivity.java"
@@ -1571,6 +1575,7 @@ class ApkBuilderApp(tk.Tk):
 
 import android.content.Intent;
 import android.content.res.Configuration;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -1613,6 +1618,9 @@ public class MainActivity extends BridgeActivity {{
     private boolean readingMode = false;
     private boolean activityResumed = false;
     private Boolean appliedReadingDisplay = null;
+    // Status bar height in CSS px, the same whether the bar shows or not.
+    private volatile double safeTopInset = 0;
+    private Boolean lightStatusBar = null;
     @Override public void onDestroy() {{
         if (speechBridge != null) speechBridge.close();
         if (pcmBridge != null) pcmBridge.close();
@@ -1690,8 +1698,36 @@ public class MainActivity extends BridgeActivity {{
             else controller.show(WindowInsetsCompat.Type.statusBars() | WindowInsetsCompat.Type.navigationBars());
             appliedReadingDisplay = active;
         }}
+        applyStatusBarAppearance();
         View root = findViewById(android.R.id.content);
         if (root != null) ViewCompat.requestApplyInsets(root);
+    }}
+
+    // The status bar is drawn over the page, so its icons follow the page
+    // under them (shelf theme or reading paper), as the page reports it.
+    private void applyStatusBarAppearance() {{
+        Window window = getWindow();
+        if (window == null || lightStatusBar == null) return;
+        new WindowInsetsControllerCompat(window, window.getDecorView())
+            .setAppearanceLightStatusBars(lightStatusBar);
+    }}
+
+    // The page keeps the status bar's height free at its top, shown or not.
+    // The value ignores the bar's visibility; rotation, cutouts and
+    // multi-window change it, and the page is told at once.
+    private void updateSafeTopInset(WindowInsetsCompat windowInsets) {{
+        int statusTop = Math.max(
+            windowInsets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars()).top,
+            windowInsets.getInsets(WindowInsetsCompat.Type.statusBars()).top);
+        int topPx = Math.max(statusTop, windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout()).top);
+        float density = getResources().getDisplayMetrics().density;
+        double top = density > 0 ? Math.round(topPx / density * 100) / 100.0 : 0;
+        if (top == safeTopInset) return;
+        safeTopInset = top;
+        WebView webView = getBridge() == null ? null : getBridge().getWebView();
+        if (webView == null || !isTrustedReadPage()) return;
+        webView.evaluateJavascript(
+            "window.inhouseSetSafeTop && window.inhouseSetSafeTop(" + top + ");", null);
     }}
 
     // Vote for the panel's fastest mode at the CURRENT resolution: a WebView app
@@ -1732,9 +1768,11 @@ public class MainActivity extends BridgeActivity {{
     public void onCreate(Bundle savedInstanceState) {{
         super.onCreate(savedInstanceState);
 
-        // Android 15+ forces edge-to-edge for this target SDK. Explicitly
-        // show system bars and inset the WebView so its page cannot cover the
-        // clock/icons or draw beneath the status/navigation controls.
+        // Android 15+ forces edge-to-edge for this target SDK. The WebView
+        // extends behind the transparent status bar on every version and the
+        // page keeps that strip free (getSafeTopInset), so hiding the bar to
+        // read moves nothing. Cutouts are always laid out the same way, or
+        // hiding the bar on Android 9-14 would move the window below them.
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         View decorView = getWindow().getDecorView();
         int hideFlags = View.SYSTEM_UI_FLAG_FULLSCREEN
@@ -1743,12 +1781,20 @@ public class MainActivity extends BridgeActivity {{
             | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
         decorView.setSystemUiVisibility(decorView.getSystemUiVisibility() & ~hideFlags);
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {{
+            WindowManager.LayoutParams attributes = getWindow().getAttributes();
+            attributes.layoutInDisplayCutoutMode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(attributes);
+        }}
 
         WebView webView = getBridge().getWebView();
         View rootView = findViewById(android.R.id.content);
         int bootColor = ContextCompat.getColor(this, R.color.ihr_boot_background);
         rootView.setBackgroundColor(bootColor);
-        getWindow().setStatusBarColor(bootColor);
+        getWindow().setStatusBarColor(Color.TRANSPARENT);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) getWindow().setStatusBarContrastEnforced(false);
         getWindow().setNavigationBarColor(bootColor);
         boolean isLightMode = (getResources().getConfiguration().uiMode
             & Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES;
@@ -1765,9 +1811,12 @@ public class MainActivity extends BridgeActivity {{
         int safeTypes = WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout();
         ViewCompat.setOnApplyWindowInsetsListener(rootView, (view, windowInsets) -> {{
             Insets safeInsets = windowInsets.getInsets(safeTypes);
+            updateSafeTopInset(windowInsets);
+            // No native top inset in any state: showing or hiding the status
+            // bar must never resize the WebView (the page reserves the strip).
             view.setPadding(
                 initialLeft + safeInsets.left,
-                initialTop + (isReadingDisplayActive() ? 0 : safeInsets.top),
+                initialTop,
                 initialRight + safeInsets.right,
                 initialBottom + safeInsets.bottom);
             return new WindowInsetsCompat.Builder(windowInsets)
@@ -1835,6 +1884,23 @@ public class MainActivity extends BridgeActivity {{
                 if (!isTrustedReadPage()) return;
                 readingMode = enabled;
                 applyReadingDisplay();
+            }});
+        }}
+
+        // Read synchronously by an inline script before the first paint. A
+        // layout size, like env(safe-area-inset-top), so no origin is needed.
+        @JavascriptInterface
+        public double getSafeTopInset() {{
+            return safeTopInset;
+        }}
+
+        // true when the page under the status bar is light (dark icons).
+        @JavascriptInterface
+        public void setStatusBarAppearance(boolean lightBackground) {{
+            runOnUiThread(() -> {{
+                if (!isTrustedReadPage()) return;
+                lightStatusBar = lightBackground;
+                applyStatusBarAppearance();
             }});
         }}
 
@@ -2054,6 +2120,7 @@ public class MainActivity extends BridgeActivity {{
 
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -2087,6 +2154,9 @@ class MainActivity : BridgeActivity() {{
     private var readingMode = false
     private var activityResumed = false
     private var appliedReadingDisplay: Boolean? = null
+    // Status bar height in CSS px, the same whether the bar shows or not.
+    @Volatile private var safeTopInset = 0.0
+    private var lightStatusBar: Boolean? = null
     override fun onDestroy() {{
         speechBridge?.close()
         pcmBridge?.close()
@@ -2152,7 +2222,32 @@ class MainActivity : BridgeActivity() {{
             else controller.show(WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars())
             appliedReadingDisplay = active
         }}
+        applyStatusBarAppearance()
         findViewById<View>(android.R.id.content)?.let {{ ViewCompat.requestApplyInsets(it) }}
+    }}
+
+    // The status bar is drawn over the page, so its icons follow the page
+    // under them (shelf theme or reading paper), as the page reports it.
+    private fun applyStatusBarAppearance() {{
+        val light = lightStatusBar ?: return
+        WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = light
+    }}
+
+    // The page keeps the status bar's height free at its top, shown or not.
+    // The value ignores the bar's visibility; rotation, cutouts and
+    // multi-window change it, and the page is told at once.
+    private fun updateSafeTopInset(windowInsets: WindowInsetsCompat) {{
+        val statusTop = maxOf(
+            windowInsets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars()).top,
+            windowInsets.getInsets(WindowInsetsCompat.Type.statusBars()).top)
+        val topPx = maxOf(statusTop, windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout()).top)
+        val density = resources.displayMetrics.density
+        val top = if (density > 0f) Math.round(topPx / density * 100) / 100.0 else 0.0
+        if (top == safeTopInset) return
+        safeTopInset = top
+        val webView = bridge?.webView ?: return
+        if (!isTrustedReadPage()) return
+        webView.evaluateJavascript("window.inhouseSetSafeTop && window.inhouseSetSafeTop($top);", null)
     }}
 
     // Vote for the panel's fastest mode at the CURRENT resolution: a WebView app
@@ -2185,9 +2280,11 @@ class MainActivity : BridgeActivity() {{
     override fun onCreate(savedInstanceState: Bundle?) {{
         super.onCreate(savedInstanceState)
 
-        // Android 15+ forces edge-to-edge for this target SDK. Explicitly
-        // show system bars and inset the WebView so its page cannot cover the
-        // clock/icons or draw beneath the status/navigation controls.
+        // Android 15+ forces edge-to-edge for this target SDK. The WebView
+        // extends behind the transparent status bar on every version and the
+        // page keeps that strip free (getSafeTopInset), so hiding the bar to
+        // read moves nothing. Cutouts are always laid out the same way, or
+        // hiding the bar on Android 9-14 would move the window below them.
         window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
         val hideFlags = (View.SYSTEM_UI_FLAG_FULLSCREEN
             or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
@@ -2195,12 +2292,20 @@ class MainActivity : BridgeActivity() {{
             or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
         window.decorView.systemUiVisibility = window.decorView.systemUiVisibility and hideFlags.inv()
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {{
+            window.attributes = window.attributes.apply {{
+                layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                else WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }}
+        }}
 
         val webView = bridge.webView
         val rootView = findViewById<View>(android.R.id.content)
         val bootColor = ContextCompat.getColor(this, R.color.ihr_boot_background)
         rootView.setBackgroundColor(bootColor)
-        window.statusBarColor = bootColor
+        window.statusBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.isStatusBarContrastEnforced = false
         window.navigationBarColor = bootColor
         val isLightMode = (resources.configuration.uiMode
             and Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES
@@ -2214,9 +2319,12 @@ class MainActivity : BridgeActivity() {{
         val safeTypes = WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
         ViewCompat.setOnApplyWindowInsetsListener(rootView) {{ view, windowInsets ->
             val safeInsets = windowInsets.getInsets(safeTypes)
+            updateSafeTopInset(windowInsets)
+            // No native top inset in any state: showing or hiding the status
+            // bar must never resize the WebView (the page reserves the strip).
             view.setPadding(
                 initialPadding.left + safeInsets.left,
-                initialPadding.top + (if (isReadingDisplayActive()) 0 else safeInsets.top),
+                initialPadding.top,
                 initialPadding.right + safeInsets.right,
                 initialPadding.bottom + safeInsets.bottom)
             WindowInsetsCompat.Builder(windowInsets)
@@ -2284,6 +2392,21 @@ class MainActivity : BridgeActivity() {{
                 if (!isTrustedReadPage()) return@runOnUiThread
                 readingMode = enabled
                 applyReadingDisplay()
+            }}
+        }}
+
+        // Read synchronously by an inline script before the first paint. A
+        // layout size, like env(safe-area-inset-top), so no origin is needed.
+        @JavascriptInterface
+        fun getSafeTopInset(): Double = safeTopInset
+
+        // true when the page under the status bar is light (dark icons).
+        @JavascriptInterface
+        fun setStatusBarAppearance(lightBackground: Boolean) {{
+            runOnUiThread {{
+                if (!isTrustedReadPage()) return@runOnUiThread
+                lightStatusBar = lightBackground
+                applyStatusBarAppearance()
             }}
         }}
 

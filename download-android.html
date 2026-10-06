@@ -18,6 +18,11 @@
       document.documentElement.setAttribute('data-theme', theme)
       if (theme === 'dark') document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#151515')
     } catch { /* Sin almacenamiento, tema claro por defecto. */ }
+    // Dentro de la app Android, la franja de su barra de estado (ver index.html).
+    try {
+      const top = Number(window.InhouseNative?.getSafeTopInset?.())
+      if (isFinite(top) && top >= 0 && top < 200) document.documentElement.style.setProperty('--ihr-safe-top', top + 'px')
+    } catch { /* Navegador o APK anterior: env(). */ }
   </script>
   <link rel="stylesheet" href="/src/css/tokens.css" />
   <link rel="stylesheet" href="/src/css/base.css" />
