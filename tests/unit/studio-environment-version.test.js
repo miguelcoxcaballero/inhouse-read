@@ -11,7 +11,7 @@ function write(name, content) {
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'inhouse-studio-version-'));
   for (const input of [...STUDIO_INPUTS, ...THREE_INPUTS]) write(input, `// ${input}\n`);
-  write('src/js/book-model.js', "import { light } from './light.js'\nexport const renderer = light\n");
+  write('src/js/studio-renderer.js', "import { light } from './light.js'\nexport const renderer = light\n");
   write('src/js/light.js', 'export const light = 1\n');
 });
 afterEach(() => {
@@ -29,11 +29,13 @@ describe('automatic studio environment build revision', () => {
   it('keeps the revision when unrelated entry, PDF or version metadata changes', () => {
     const before = studioEnvironmentHash(root);
     write('src/js/app.js', "export const version = 'different-app-entry'\n");
+    write('src/js/book-model.js', "export const changedBookMotion = true\n");
+    write('src/js/spine-surface.js', 'export const changedTitlePaint = true\n');
     write('src/js/readers/pdf-reader.js', 'export class PdfReader {}\n');
     write('package.json', '{"version":"9.9.9"}\n');
     expect(studioEnvironmentHash(root)).toBe(before);
   });
-  it.each(['src/js/book-model.js', 'src/js/studio-environment-cache.js', 'src/js/light.js'])('invalidates changes to %s', input => {
+  it.each(['src/js/studio-renderer.js', 'src/js/studio-environment-cache.js', 'src/js/light.js'])('invalidates changes to %s', input => {
     const before = studioEnvironmentHash(root);
     write(input, readFileSync(join(root,input),'utf8') + '// changed generator or contract\n');
     expect(studioEnvironmentHash(root)).not.toBe(before);
@@ -49,6 +51,21 @@ describe('automatic studio environment build revision', () => {
       write(input, readFileSync(join(root,input),'utf8').replaceAll('\n','\r\n'));
     }
     expect(studioEnvironmentHash(root)).toBe(before);
+  });
+  it('retains the same room after book motion and surface dependencies change', () => {
+    write('src/js/book-model.js', "import './spine-surface.js'\nexport const motion = 1\n");
+    write('src/js/spine-surface.js', 'export const ink = 1\n');
+    const before = studioEnvironmentHash(root);
+    write('src/js/book-model.js', "import './spine-surface.js'\nexport const motion = 2\n");
+    write('src/js/spine-surface.js', 'export const ink = 2\n');
+    expect(studioEnvironmentHash(root)).toBe(before);
+  });
+  it('invalidates a transitive studio generator input', () => {
+    write('src/js/light.js', "import './window-shape.js'\nexport const light = 1\n");
+    write('src/js/window-shape.js', 'export const windowShape = 1\n');
+    const before = studioEnvironmentHash(root);
+    write('src/js/window-shape.js', 'export const windowShape = 2\n');
+    expect(studioEnvironmentHash(root)).not.toBe(before);
   });
   it('defines the generated revision only for a production build', () => {
     const plugin = studioEnvironmentVersion(root);

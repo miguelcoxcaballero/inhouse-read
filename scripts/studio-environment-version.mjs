@@ -1,12 +1,12 @@
 // Keep an identical half-float studio atlas across unrelated app releases.
-// Include the renderer and all its local dependencies conservatively, plus
+// Include the immutable studio renderer and its local dependencies, plus
 // the actual Three build and the cache contract. Changed inputs bake again.
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 
 export const STUDIO_INPUTS = ['scripts/studio-environment-version.mjs',
-  'src/js/book-model.js', 'src/js/studio-environment-cache.js']
+  'src/js/studio-renderer.js', 'src/js/studio-environment-cache.js']
 export const THREE_INPUTS = ['node_modules/three/package.json',
   'node_modules/three/build/three.core.js', 'node_modules/three/build/three.module.js']
 

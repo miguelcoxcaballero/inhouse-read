@@ -1,3 +1,15 @@
+# Verificación en curso — web1.7.94 y Android1.1.5 preparado
+
+Se integra la web1.7.93 de GitHub antes del cambio de caché del estudio.
+Pasan 3.493 unitarias/284 archivos, build, 84 comprobaciones Python,
+18 pares RGBA exactos, atlas de producción idéntico al recargar y nueve
+recorridos locales principales/regresiones sin retries. La auditoría
+independiente conserva el error original de censo525 y acredita526 casos
+listados: todavía no se ha ejecutado toda la nueva CI. Android1.1.5/código18
+está preparado; el manifiesto conserva1.1.4 hasta que pase y se publique.
+PDF/catálogo, CI completa y web/APK públicas: pendientes.
+[Detalle y límites](performance-1794.md).
+
 # Verificación del WIP — web1.7.91 publicada y Android1.1.4
 
 ## Reserva por fases 1.7.91 publicada

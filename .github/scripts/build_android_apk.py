@@ -23,11 +23,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 BUILDER_PATH = REPO_ROOT / "android" / "html_to_apk_builder.py"
 SOURCE_HTML = REPO_ROOT / ".github" / "android" / "app-loader.html"
 ICON_PATH = REPO_ROOT / "android" / "inhouse-read-logo.png"
-OUTPUT_APK = REPO_ROOT / "inhouse-read-release-v1.1.4.apk"
+OUTPUT_APK = REPO_ROOT / "inhouse-read-release-v1.1.5.apk"
 APP_NAME = "Inhouse Read"
 PACKAGE_ID = "com.inhousesoftware.read"
-ANDROID_VERSION_NAME = "1.1.4"
-ANDROID_VERSION_CODE = 17
+ANDROID_VERSION_NAME = "1.1.5"
+ANDROID_VERSION_CODE = 18
 
 
 class Value:

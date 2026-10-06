@@ -297,7 +297,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await expect(block.getByRole('heading', { name: 'Voces naturales' })).toBeVisible(SLOW)
     // The book is Spanish: its voices come first, the recommended one on top.
     const order = await block.locator('[data-neural-voice]').evaluateAll(items => items.map(item => item.dataset.neuralVoice))
-    expect(order.slice(0, 5)).toEqual([CLAUDE_ID, 'piper:es_AR-daniela-high', DAVEFX_ID, 'piper:es_ES-sharvard-medium', 'piper:es_ES-sharvard-medium#1']) // es_AR (high quality) sorts right after the recommended voice
+    expect(order.slice(0, 5)).toEqual([CLAUDE_ID, 'piper:es_AR-daniela-high', 'supertonic3:M4:es', 'supertonic3:F2:es', DAVEFX_ID]) // High-quality es_AR follows the recommendation; named Spanish profiles then sort with Piper.
     await expect(row(page, CLAUDE_ID)).toContainText('Recomendada')
     expect(mirror.hits).toEqual([]) // opening the picker never downloads
 
