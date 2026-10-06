@@ -1,4 +1,12 @@
-# Verificación del WIP — web 1.7.76 en preparación y Android 1.1.4
+# Verificación del WIP — web 1.7.77 en preparación y Android 1.1.4
+
+## Catálogo oculto de 1.7.77
+
+La descarga se prepara en idle sin construir su estudio GPU oculto. Pasan
+47 pruebas enfocadas, 3.384 unitarias/265 archivos, build y 75 Python.
+Pasan los siete recorridos de animación y cinco de catálogo/plantas/luces
+sin retries. Publicación y CI global pendientes.
+[Detalle](performance-1777.md).
 
 ## Reserva nativa del libro de 1.7.76
 
@@ -6,7 +14,9 @@ La vista 3D evita el framebuffer intermedio de un resize que cambia ambos
 ejes. Mantiene dimensiones finales, DPR, píxeles, modelos, iluminación y
 relojes. Pasan 55 pruebas enfocadas y ocho comparaciones de píxeles reales.
 Pasan 3.382 unitarias/264 archivos, build, 75 Python y siete recorridos
-gráficos originales sin retries. Publicación y CI global pendientes. [Detalle](performance-1776.md).
+gráficos originales sin retries. Publicación HTTP y APK/loader PASS;
+21 recorridos públicos originales PASS sin retries; papel offline en cinco
+temas PASS. CI global sigue en curso. [Detalle](performance-1776.md).
 
 ## Apertura y contador de programas de 1.7.75
 

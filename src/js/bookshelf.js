@@ -460,11 +460,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     motionTarget:() => root.closest('.screen') || root,
     onMotion:phase => { state.shelfScene?.setPaintHeld?.(phase === 'start'); } });
   let catalogPrepare = 0;
-  // The booklet is only reachable in the diagonal view: build the catalogue's
-  // first studio in idle time once the shelf turns there.
+  // Fetch the catalogue when the shelf settles, but leave its GPU studio for
+  // the first open, after the camera flight. Hidden PMREM/shader work competes
+  // with shelf redraws even when scheduled in an idle callback.
   function prepareCatalogWhenIdle(delay = 0) {
     if (catalogPrepare || !catalogNodeEnabled() || state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC) return;
-    const run = () => { if (!state.destroyed) plantCatalog.prepare(); };
+    const run = () => { if (!state.destroyed) plantCatalog.prefetch(); };
     const idle = () => typeof requestIdleCallback === 'function' ? requestIdleCallback(run, { timeout:4000 }) : setTimeout(run, 1500);
     catalogPrepare = delay ? setTimeout(idle, delay) : idle();
   }

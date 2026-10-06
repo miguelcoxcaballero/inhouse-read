@@ -83,7 +83,11 @@ La fuente nueva tiene un namespace separado y se verificó contra el índice
 que realmente sirve la web. La rama Pages ya conserva los chunks antiguos;
 no se añadió un mecanismo duplicado ni se declaró corrupción de caché.
 
-La batería integrada aún requiere su cierre. Sus logs originales disponibles
-conservan timeouts de cierre nativo y un caso flaky de resaltado EPUB al
-reanudar. No se contabilizan como PASS por haber pasado en un retry.
+La comprobación pública integrada pasa los 21 recorridos originales,
+papel PDF offline en cinco temas y portada offline. La batería CI original
+37388119016 terminó FAILED: 524 identidades, 529 intentos, cinco retries y
+ocho intentos fallidos. Fallan UI1, UI3, UI4 y UI6: resaltado EPUB al
+reanudar, cierre nativo, shaders enlazados durante resize Monstera y primer
+dibujo con lámparas. Las unitarias, los cuatro jobs de voces reales y UI2/5
+pasan. Los retries aprobados no convierten esta batería en PASS.
 Evidencia: `.animation.local/performance-1775-catalog/`.

@@ -41,6 +41,22 @@ ocurría ya en el control anterior a la optimización. El helper corregido
 desenlaza temporalmente ese buffer y lo restaura; mantiene el mismo modelo
 y comparación exacta de píxeles. No cambia el código de la app.
 
-Evidencia: `.animation.local/performance-1776/`. Batería completa,
-animaciones originales y comprobación de publicación aún pendientes.
+Pasan 3.382 unitarias/264 archivos, build y 75 Python. Los siete
+recorridos gráficos originales pasan al primer intento, sin retries.
+Los cierres nativos tardan 5.538 y 5.692,3 ms en este navegador local.
+
+Publicado `ff14970` en Pages `a517783`: HTTP32/offline96 PASS, main
+`main-BUveZJon.js`, SHA256
+`2d976a659dba6bcba3d4961dfc6165921f96c2eb16580de1c5f01b19d86b591e`.
+APK descargado: 78.515.243 bytes, SHA256
+`feafaaa762b35344ac8b19418f9f6eb6cb1f725fba22b1ef3d3f273bd32a6191`;
+loader de 2.089 bytes idéntico a Git, sin app obsoleta dentro.
+La primera comprobación del índice conservó FAIL mientras Pages aún servía
+la publicación anterior. La segunda comprobó los bytes de la versión nueva.
+Los 21 recorridos públicos originales pasan sin retries: tres de editor/
+retorno nativo y 18 de PDF adaptable. Auditorías HTTP PASS (99 y 593 cuerpos
+de la app); papel PDF offline en cinco temas y portada PDF/JPEG offline
+sin fallback PASS. CI global sigue en curso.
+
+Evidencia: `.animation.local/performance-1776/`.
 No se declara aprobación global ni FPS, batería o temperatura de un móvil.
