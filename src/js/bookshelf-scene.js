@@ -247,7 +247,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   canvas.setAttribute('aria-hidden', 'true');
   Object.assign(canvas.style, { position:'sticky', top:'0', left:'0', display:'block', pointerEvents:'none', zIndex:'0' });
   let originalHeight = stage.style.height;
-  const originalTop = stage.style.top;
+  let originalTop = stage.style.top;
   let stagePixelOffset = 0;
   let alreadyScene = stage.classList.contains('has-scene');
   const originalStyles = new Map(entries.filter(entry => entry.node).map(entry => [entry.node, entry.node.getAttribute('style')]));
@@ -2898,6 +2898,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // resources remain alive while the replacement semantic tree is bound.
       if (next.stage !== stage) {
         stage.style.height = originalHeight;
+        stage.style.top = originalTop;
         if (!alreadyScene) stage.classList.remove('has-scene');
         for (const [node, style] of originalStyles) {
           if (style === null) node.removeAttribute('style'); else node.setAttribute('style', style);
@@ -2912,6 +2913,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         originalStyles.clear();
         stage = next.stage;
         originalHeight = stage.style.height;
+        // Pixel alignment belongs to the DOM stage that actually received it.
+        // A replacement has not been shifted: subtracting the outgoing offset
+        // would leave its first retained paint at the wrong screen origin.
+        originalTop = stage.style.top;
+        stagePixelOffset = 0;
         alreadyScene = stage.classList.contains('has-scene');
         stage.classList.add('has-scene');
         stage.prepend(canvas);

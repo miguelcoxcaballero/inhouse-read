@@ -65,3 +65,11 @@ publicado idénticos antes y después. CI global original sigue pendiente;
 UI3 ya conserva FAILED: cierres originales a 8 s y un fallo de primer frame
 en el segundo intento de 393 px, además de lámparas flaky. El log original
 de su job se conserva en `ci-original-37398555498-attempt1/`.
+
+La recogida completa posterior conserva CI `37398555498` FAILED: 11 ZIP
+y 12 logs autenticados, 524 identidades/528 intentos, cuatro retries/seis
+intentos fallidos, cero incidencias de recogida. Unitarias y las cuatro
+tandas de voces PASS; UI1/2/4/5 PASS. UI3 conserva cierres a 8 s, un fallo
+distinto de primer frame en el retry de 393 px y lámparas flaky. UI6 conserva
+el primer frame de tres luces fallido y su retry PASS, rechazado por el
+guard original. No se convierte en una aprobación global.

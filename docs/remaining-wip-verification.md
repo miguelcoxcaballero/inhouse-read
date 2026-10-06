@@ -1,13 +1,28 @@
-# Verificación del WIP — web 1.7.79 publicada y Android 1.1.4
+# Verificación del WIP — web 1.7.80 publicada y Android 1.1.4
 
-## Caché de iluminación de 1.7.80 en preparación
+## Origen de la estantería de 1.7.81 en preparación
+
+Cada estructura HTML conserva su propio ajuste de posición. Sustituirla
+restaura la anterior y alinea la primera pintura de la nueva, conservando
+el canvas y renderer. Tres regresiones reproducen el fallo anterior;
+pasan 28 pruebas enfocadas, 3.411 unitarias/270 archivos, build y 75 Python.
+Pasan siete recorridos gráficos, cinco de catálogo/luces y dos regresiones
+adicionales, sin retries; publicación pendiente. [Detalle](performance-1781.md).
+
+## Caché de iluminación de 1.7.80 publicada
 
 La huella automática del código 3D y de Three permite conservar el mismo
 atlas entre actualizaciones del lector o app que no cambien esas entradas.
 Pasan 45 pruebas enfocadas, 3.407 unitarias/269 archivos, build y 75 Python.
 Pasan siete recorridos gráficos, cinco de catálogo y dos regresiones
-adicionales sin retries; publicación y CI completo pendientes.
-Se mantienen píxeles, iluminación y resolución. [Detalle](performance-1780.md).
+adicionales sin retries. HTTP32/offline96 y APK/loader descargados PASS;
+cinco casos públicos de catálogo, papel/portada offline y atlas real al
+recargar PASS. PDF conserva 17 PASS/1 FAIL de auditoría HTTP. La tanda
+gráfica pública conserva 2 PASS/1 FAIL de origen fraccionario y textura vacía.
+CI original FAILED sólo en UI6: primer frame de tres luces tras recarga a
+8 s, dos intentos fallidos; 524 identidades/525 intentos, voces y UI1–5 PASS.
+Se mantienen píxeles, iluminación y resolución.
+[Detalle](performance-1780.md).
 
 ## Captura de PDF de 1.7.79 publicada
 
@@ -19,8 +34,9 @@ catálogo y dos regresiones adicionales pasan sin retries. HTTP32/offline96,
 APK/loader, 18 PDF y cinco de catálogo publicados PASS. Papel default y
 optimizado offline coinciden píxel a píxel en cinco temas; portada PASS.
 La tanda pública de tres conserva un FAIL de auditoría de textura vacía,
-aunque sus aserciones funcionales pasan. CI completo pendiente, censo de
-524 casos. [Detalle](performance-1779.md).
+aunque sus aserciones funcionales pasan. CI original FAILED en UI3/6,
+524 identidades/528 intentos, cuatro retries/seis intentos fallidos;
+unitarias, todas las voces y restantes UI PASS. [Detalle](performance-1779.md).
 
 ## Reserva de la sala de 1.7.78
 
