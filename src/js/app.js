@@ -881,18 +881,22 @@ async function revealPreparedReader() {
 async function handleCoverAction(action, book, button) {
   button.disabled = true
   // The shelf renders a long and a short (narrow screens) label; keep both in
-  // step, each with its own wording so the short one never truncates.
-  const labels = button.querySelectorAll('span').length ? [...button.querySelectorAll('span')] : [button]
+  // step, each with its own wording so the short one never truncates. An
+  // icon-only button keeps its icon and says it in its accessible name.
+  const labels = button.classList.contains('ihr-btn--icon') ? []
+    : button.querySelectorAll('span').length ? [...button.querySelectorAll('span')] : [button]
   const originals = labels.map(label => label.textContent)
   const originalAria = button.getAttribute('aria-label')
   const setLabel = (text, short = text) => {
     labels.forEach(label => { label.textContent = label.classList.contains('ihr-btn__label--short') ? short : text })
     button.setAttribute('aria-label', text)
+    if (button.classList.contains('ihr-btn--icon')) button.title = text
   }
   const restoreLabel = () => {
     labels.forEach((label, index) => { label.textContent = originals[index] })
     if (originalAria) button.setAttribute('aria-label', originalAria)
     else button.removeAttribute('aria-label')
+    if (originalAria && button.classList.contains('ihr-btn--icon')) button.title = originalAria
   }
   let saved = false
   setLabel(action === 'offline' ? 'Descargando…' : 'Guardando…', action === 'offline' ? 'Offline…' : 'Drive…')
@@ -915,10 +919,19 @@ async function handleCoverAction(action, book, button) {
       const updated = await uploadBookToDrive(book)
       if (!updated) return
       Object.assign(book, updated)
+      // The same discreet Drive mark, with a small tick.
       const status = document.createElement('span')
-      status.className = 'ihr-btn ihr-btn--quiet ihr-flyout__cloud-saved'
-      status.textContent = 'Guardado en Google Drive'
+      status.className = 'ihr-btn ihr-btn--quiet ihr-btn--icon ihr-flyout__cloud-saved'
       status.setAttribute('role', 'status')
+      status.setAttribute('aria-label', 'Guardado en Google Drive')
+      status.title = 'Guardado en Google Drive'
+      const icon = button.querySelector('svg')?.cloneNode(true)
+      if (icon) status.append(icon)
+      const check = document.createElement('span')
+      check.className = 'ihr-flyout__cloud-check'
+      check.setAttribute('aria-hidden', 'true')
+      check.innerHTML = '<svg class="ihr-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="m5 12 4 4L19 6"/></svg>'
+      status.append(check)
       button.replaceWith(status)
       saved = true
     }

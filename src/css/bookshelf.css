@@ -806,9 +806,10 @@ body.is-closing-reader .screen { pointer-events:none; }
 }
 
 [data-theme='dark'] .ihr-flyout__scrim { background:rgba(21,21,21,.94); }
-.ihr-flyout__close { position:absolute; top:max(16px, env(safe-area-inset-top)); right:max(16px, env(safe-area-inset-right)); z-index:5; width:44px; padding:0; border-radius:50%; background:color-mix(in srgb, var(--text-primary) 7%, transparent); }
-.ihr-flyout__close .ihr-icon { width:19px; height:19px; }
-.ihr-flyout__close .ihr-icon path { stroke-width:1.8; }
+.ihr-flyout__close { position:absolute; top:max(12px, env(safe-area-inset-top)); right:max(10px, env(safe-area-inset-right)); z-index:5; width:44px; padding:0; border-radius:50%; background:transparent; color:var(--text-secondary); }
+.ihr-flyout__close .ihr-icon { width:20px; height:20px; }
+.ihr-flyout__close .ihr-icon path { stroke-width:1.5; }
+@media (hover:hover) { .ihr-flyout__close:hover:not(:disabled) { filter:none; color:var(--text-primary); background:color-mix(in srgb, var(--text-primary) 6%, transparent); } }
 .ihr-flyout__shadow { position:absolute; left:50%; top:calc(var(--ihr-cover-bottom) + 12px); width:min(55vw, 250px); height:20px; border-radius:50%; background:rgba(30,24,18,.16); filter:blur(12px); transform:translateX(-50%); opacity:0; transition:opacity .3s var(--ease); }
 .ihr-flyout.is-ready .ihr-flyout__shadow { opacity:1; }
 .ihr-flyout.is-expanding .ihr-flyout__shadow { opacity:0; }
@@ -1000,10 +1001,10 @@ body.is-closing-reader .screen { pointer-events:none; }
 .ihr-flyout__title {
   margin: 0;
   text-wrap: balance;
-  font-family: var(--f-body, sans-serif);
-  font-size: 1.05rem;
-  font-weight: 600;
-  letter-spacing: -0.3px;
+  font-family: var(--f-spine, serif);
+  font-size: 1.32rem;
+  font-weight: 500;
+  letter-spacing: -0.2px;
   display:-webkit-box;
   -webkit-line-clamp:2;
   -webkit-box-orient:vertical;
@@ -1012,16 +1013,21 @@ body.is-closing-reader .screen { pointer-events:none; }
 }
 
 .ihr-flyout__author {
-  margin: 0;
+  margin: 2px 0 0;
   font-size: 0.85rem;
-  opacity: 0.72;
+  color: var(--text-secondary);
   max-width:100%;
   white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;
 }
 
-.ihr-flyout__readiness { margin: 5px 0 0; font-size: 0.78rem; opacity: 0.72; }
+.ihr-flyout__progress { display:flex; align-items:center; gap:10px; margin:10px 0 0; color:var(--text-secondary); font-size:.72rem; font-variant-numeric:tabular-nums; }
+.ihr-flyout__progress-track { position:relative; width:72px; height:2px; border-radius:1px; overflow:hidden; background:color-mix(in srgb, var(--text-primary) 14%, transparent); }
+.ihr-flyout__progress-fill { position:absolute; inset:0 auto 0 0; border-radius:inherit; background:var(--text-primary); opacity:.7; }
+/* Only for assistive technology, unless preparing the book failed. */
+.ihr-flyout__readiness:not(.is-error) { position:absolute; width:1px; height:1px; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+.ihr-flyout__readiness.is-error { margin:8px 0 0; font-size:.78rem; color:var(--text-secondary); }
 
 /* Muestras de tela: el color del lomo se elige como en un muestrario de
    encuadernador, con la trama del tejido insinuada sobre el tinte. */
@@ -1109,32 +1115,32 @@ body.is-closing-reader .screen { pointer-events:none; }
 
 .ihr-flyout__actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
+  align-items: center;
+  gap: 4px;
+  margin-top: 18px;
   pointer-events: auto;
-  width: 100%;
   justify-content: center;
 }
 
-/* Jerarquía clara: "Abrir" es la acción; las otras dos, secundarias y sin
-   relleno. Ninguna etiqueta se parte en dos líneas. */
-.ihr-flyout__actions .ihr-btn { flex:1 1 auto; min-width:0; max-width:210px; padding-inline:16px; white-space:nowrap; }
-.ihr-flyout__actions .ihr-btn--primary { flex-grow:1.35; font-weight:600; }
-.ihr-flyout__actions .ihr-btn > span { overflow:hidden; text-overflow:ellipsis; }
+/* Sin cajas: "Abrir" es texto con su icono; editar y Drive, iconos tenues.
+   Tocar la portada también abre el libro. */
+.ihr-flyout__actions .ihr-btn { flex:none; background:transparent; box-shadow:none; border-radius:999px; color:var(--text-secondary); }
+.ihr-flyout__actions .ihr-btn--primary { padding-inline:16px 18px; color:var(--text-primary); font-weight:600; letter-spacing:.01em; }
+.ihr-flyout__actions .ihr-btn--icon { width:44px; padding:0; }
+.ihr-flyout__actions .ihr-btn--icon .ihr-icon { width:19px; height:19px; }
+.ihr-flyout__actions .ihr-flyout__edit-button { order:1; }
 .ihr-flyout__actions .ihr-flyout__cloud-action,
-.ihr-flyout__actions .ihr-flyout__cloud-saved { white-space:normal; max-width:none; }
-.ihr-flyout__actions .ihr-flyout__cloud-saved { cursor:default; font-size:.75rem; }
-.ihr-flyout__actions .ihr-flyout__cloud-action > span,
-.ihr-flyout__actions .ihr-flyout__cloud-saved > span { overflow:visible; text-overflow:clip; }
-.ihr-btn__label--short { display:none; }
-@media (max-width:420px) {
-  .ihr-flyout__actions .ihr-btn { padding-inline:12px; gap:7px; }
-  .ihr-flyout__actions .ihr-btn__label:not(.ihr-btn__label--short) { display:none; }
-  .ihr-flyout__actions .ihr-btn__label--short { display:inline; }
-  .ihr-flyout__actions .ihr-flyout__cloud-action,
-  .ihr-flyout__actions .ihr-flyout__cloud-saved { flex-basis:100%; }
+.ihr-flyout__actions .ihr-flyout__cloud-saved,
+.ihr-flyout__actions > :not(.ihr-btn--primary):not(.ihr-flyout__edit-button) { order:2; }
+.ihr-flyout__actions .ihr-flyout__cloud-saved { position:relative; cursor:default; }
+.ihr-flyout__cloud-check { position:absolute; right:8px; bottom:9px; display:grid; place-items:center; width:13px; height:13px; border-radius:50%; background:var(--accent-read, #2f6b4f); color:#fff; }
+.ihr-flyout__cloud-check .ihr-icon { width:9px !important; height:9px !important; stroke-width:3; }
+@media (hover:hover) {
+  .ihr-flyout__actions .ihr-btn:hover:not(:disabled) { filter:none; color:var(--text-primary); background:color-mix(in srgb, var(--text-primary) 6%, transparent); }
 }
+.ihr-flyout__actions .ihr-btn[aria-busy='true'] .ihr-icon { animation:ihr-flyout-busy 1.1s ease-in-out infinite; }
+@keyframes ihr-flyout-busy { 50% { opacity:.35; } }
+.ihr-btn__label--short { display:none; }
 .ihr-bookshelf:focus-visible { outline:2px solid var(--ihr-accent-legible); outline-offset:-2px; }
 
 .ihr-library-loading--books { min-height:0; padding:12px 0; align-items:stretch; flex-direction:column; gap:8px; }
@@ -1142,10 +1148,9 @@ body.is-closing-reader .screen { pointer-events:none; }
 .ihr-library-loading__book > span:not(.ihr-library-loading__spinner) { flex:1; min-width:0; }
 .ihr-library-loading__book .ihr-library-loading__spinner { flex:0 0 20px; }
 .ihr-library-loading__book .ihr-btn { padding:6px 10px; }
-.ihr-flyout__details { color:var(--text-secondary); font-size:.7rem; font-weight:500; margin:0 0 8px; letter-spacing:.09em; text-transform:uppercase; font-variant-numeric:tabular-nums; }
 .ihr-flyout__meta.is-editing .ihr-flyout__actions { display:none; }
 .ihr-flyout.is-editing-spine .ihr-flyout__shadow { opacity:0; }
-.ihr-flyout.is-editing-spine .ihr-flyout__details,
+.ihr-flyout.is-editing-spine .ihr-flyout__progress,
 .ihr-flyout.is-editing-spine .ihr-flyout__title,
 .ihr-flyout.is-editing-spine .ihr-flyout__author,
 .ihr-flyout.is-editing-spine .ihr-flyout__readiness { display:none; }
@@ -1606,8 +1611,6 @@ body.is-closing-reader .screen { pointer-events:none; }
 }
 @media (max-height:560px) and (min-width:560px) {
   .ihr-flyout__meta { left:50%; right:16px; top:60px; bottom:20px; justify-content:center; }
-  .ihr-flyout__actions { flex-direction:column; align-items:stretch; }
-  .ihr-flyout__actions .ihr-btn { max-width:none; }
   .ihr-flyout__meta.is-editing { left:auto; right:12px; top:max(70px,env(safe-area-inset-top)); bottom:max(12px,env(safe-area-inset-bottom)); width:min(480px,58vw); max-width:none; justify-content:flex-end; }
   .ihr-spine-editor { width:100%; max-height:100%; border-radius:16px; box-shadow:0 20px 50px -24px rgba(0,0,0,.5), 0 0 0 1px var(--ihr-ed-rule); }
   .ihr-flyout.uses-visual-viewport .ihr-spine-editor { max-height:100%; }
@@ -1615,7 +1618,7 @@ body.is-closing-reader .screen { pointer-events:none; }
   .ihr-spine-editor__header { padding:14px 18px 12px; touch-action:auto; }
   .ihr-spine-editor__body { padding:0 18px 18px; }
 }
-@media (max-width:359px) { .ihr-library-heading h1 { font-size:1.1rem; } .ihr-flyout__actions .ihr-btn { padding:10px; gap:6px; font-size:.8rem; } }
+@media (max-width:359px) { .ihr-library-heading h1 { font-size:1.1rem; } }
 @media (max-width:420px) {
   .ihr-library-heading { align-items:center; gap:6px; }
   .ihr-library-heading__tools { gap:7px; }

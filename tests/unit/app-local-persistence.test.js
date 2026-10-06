@@ -160,7 +160,7 @@ describe('app import and optional Drive upload', () => {
     expect(button.isConnected).toBe(false)
     const status = document.querySelector('.ihr-flyout__cloud-saved')
     expect(status.tagName).toBe('SPAN')
-    expect(status.textContent).toBe('Guardado en Google Drive')
+    expect(status.getAttribute('aria-label')).toBe('Guardado en Google Drive')
     expect(document.getElementById('drive-upload-screen').hidden).toBe(true)
     expect((await state.library.get(book.id)).driveFileId).toBe('uploaded')
   })
