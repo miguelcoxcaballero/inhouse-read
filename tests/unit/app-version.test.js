@@ -6,7 +6,11 @@ const packageInfo = JSON.parse(read('../../package.json'))
 
 describe('published application version', () => {
   it('shows the package version in the application', () => {
-    expect(read('../../src/js/app.js')).toContain(`Inhouse Read · v${packageInfo.version}`)
+    // Read from package.json at build time, so every release shows its own number.
+    const app = read('../../src/js/app.js')
+    expect(app).toContain("import { version as APP_VERSION } from '../../package.json'")
+    expect(app).toContain('`Inhouse Read · v${APP_VERSION}`')
+    expect(app).not.toMatch(/Inhouse Read · v\d/)
   })
 
   it('keeps both lockfile version fields aligned with the package', () => {
