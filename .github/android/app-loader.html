@@ -22,9 +22,10 @@
     }
   </style>
   <script>
-    // Igual que en Inhouse Notes: un frame local pintado antes de navegar,
-    // para que Android nunca enseñe una pantalla en blanco mientras carga
-    // el sitio real.
+    // Se navega en el acto, sin esperar a pintar este documento: la ventana
+    // y el WebView nativos ya tienen el color de arranque (MainActivity y el
+    // tema), así que Android no enseña una pantalla en blanco, y el sitio
+    // real empieza a cargar dos fotogramas antes.
     //
     // El "&t=" con la hora actual es a propósito, no decorativo: sin él,
     // esta navegación es una URL fija ("...?inhouse_app=1") y la caché HTTP
@@ -32,15 +33,11 @@
     // esa URL exacta en un arranque en frío (proceso nuevo, WebView nuevo,
     // pero disco de caché persistente entre instalaciones/actualizaciones).
     // Al ir la marca de tiempo en la query string, cada arranque pide una
-    // URL distinta que nunca ha estado en caché, así que esta navegación
-    // concreta siempre golpea la red de verdad.
-    requestAnimationFrame(function () {
-      requestAnimationFrame(function () {
-        window.location.replace(
-          "https://miguelcoxcaballero.github.io/inhouse-read/?inhouse_app=1&t=" + Date.now()
-        );
-      });
-    });
+    // URL distinta que nunca ha estado en caché. Con el service worker
+    // instalado, la navegación se sirve de su copia offline igualmente.
+    window.location.replace(
+      "https://miguelcoxcaballero.github.io/inhouse-read/?inhouse_app=1&t=" + Date.now()
+    );
   </script>
 </head>
 <body>
