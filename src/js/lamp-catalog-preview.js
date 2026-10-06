@@ -103,7 +103,7 @@ export function createLampCatalogPreview(host) {
     const emitter = model.userData.lightEmitter;
     if (emitter?.filaments) {
       emitter.intensity *= .4; // Same studio exposure as the former bulb light.
-      filamentLighting = createShelfLampLighting(scene, { maxLights:1 });
+      filamentLighting = createShelfLampLighting(scene, { maxLights:1, filamentAreas:true });
     } else if (emitter) {
       fixture = emitter.direction
         ? new THREE.SpotLight(emitter.color,emitter.intensity * .55,emitter.distance,emitter.angle,emitter.penumbra,emitter.decay)

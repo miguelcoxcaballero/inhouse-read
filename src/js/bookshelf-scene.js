@@ -607,14 +607,17 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   function repaintNativeRoom() {
     if(!nativeRoomDisplay)return false;
     const {frame,margin}=nativeRoomDisplay;
-    if(!margin || frame.physical)return nativeFrameCache.repaint(frame);
-    // Keep the overscan texture for pan and exports, but present only the
-    // original visible room. The compositor need not retain an oversized
-    // default framebuffer hidden behind the identical scroller clip.
+    // The whole frame, overscan included, is presented and clipped in CSS:
+    // composing only the visible room resized the shared canvas twice per
+    // paint (to the visible size, then back to the overscan size for the next
+    // render), which reallocated its GPU buffer and cost 60-170 ms a paint.
+    if(!margin || frame.physical || wholeFrameAligned(frame,margin))return nativeFrameCache.repaint(frame);
+    // A margin that falls between device pixels keeps the exact composition.
     const output={x:0,y:0,width:frame.width-margin*2,height:frame.height-margin*2,ratio:frame.ratio};
     return nativeFrameCache.compose(output,[{frame,x:-margin,y:-margin,scale:1,
       clip:{left:0,top:0,right:output.width,bottom:output.height}}]);
   }
+  const wholeFrameAligned=(frame,margin)=>Number.isInteger(Math.round(margin*frame.ratio*1e6)/1e6);
   function positionNativeRoom(node) {
     if(!nativeRoomDisplay || !frameLayout.canvas || !frameLayout.stage)return false;
     const logical=frameLayout.canvas,bounds=frameLayout.stage,margin=nativeRoomDisplay.margin;
@@ -632,7 +635,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     node.className='ihr-bookshelf-native-room-canvas';node.setAttribute('aria-hidden','true');
     // A fractional room retains the original complete framebuffer. Clip its
     // overscan in CSS instead of introducing a second texture resample.
-    node.style.cssText=frame.physical?
+    node.style.cssText=frame.physical || margin && wholeFrameAligned(frame,margin)?
       `position:absolute;pointer-events:none;left:${-margin}px;top:${-margin}px;width:${frame.width}px;height:${frame.height}px`:
       `position:absolute;pointer-events:none;left:0px;top:0px;width:${frame.width-margin*2}px;height:${frame.height-margin*2}px`;
     if(node.parentNode!==nativeRoomClip)nativeRoomClip.append(node);
@@ -2321,7 +2324,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // About a finger's width beyond every edge lets an already zoomed view
       // pan for many frames before rebasing. The complete room is still drawn,
       // including the wall and every object that can enter that extra area.
-      const margin = cacheInspection ? Math.min(128, Math.floor(viewportHeight / 4)) : 0;
+      // A multiple of four lands the clipped overscan on whole device pixels
+      // at every usual ratio (1, 1.25, 1.5, 2, 2.5), so it is shown uncomposed.
+      const margin = cacheInspection ? Math.floor(Math.min(128, viewportHeight / 4) / 4) * 4 : 0;
       const renderWidth = sceneWidth + margin * 2, renderHeight = viewportHeight + margin * 2;
       const descriptor={x:0,y:0,width:renderWidth,height:renderHeight,ratio};
       const pixelAligned=frameLayout.canvas && [frameLayout.canvas.left,frameLayout.canvas.top]
