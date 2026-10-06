@@ -1,4 +1,20 @@
-# Verificación del WIP — web1.7.88 en publicación y Android1.1.4
+# Verificación del WIP — web1.7.88 publicada y Android1.1.4
+
+## Preparación de página1.7.89 en comprobación
+
+La página oculta entrega explícitamente su lote de shaders al driver antes
+de los polls. Siete regresiones nuevas,35 relacionadas PASS; el control
+1.7.88 falla exactamente la nueva integración, con cuatro casos existentes
+correctos. Conserva shaders, geometría, textura, DPR y dibujo. Batería final3462/278, build y75 Python PASS; siete recorridos originales
+PASS, cero retries. Catálogo en marcha y publicación pendiente. [Detalle](performance-1789.md).
+
+CI1.7.88 completa FAILED:524 identidades/527 intentos,3 retries y6 fallos
+en UI3/6. Cuatro tandas de voces reales PASS; cuatro UI adicionales PASS.
+Los dos recorridos nativos consumen el plazo global30s durante el cierre;
+la iluminación cálida walnut/BAGGEBO falla en ambos intentos. Originales
+conservados, no resolución completa de rendimiento. La app pública pasa
+importación/reapertura offline con el locator textOffset115 y bytes exactos.
+
 
 ## Guardado de progreso1.7.88
 
@@ -10,7 +26,11 @@ Python PASS. IndexedDB real1/16MB conserva bytes/portada/progreso/ajustes:
 dos commits para una escritura activa y1000 avisos pendientes. Catorce
 recorridos normales, dos SwiftShader originales y reanudación EPUB PASS,
 cero retries y plazos intactos. No mide FPS ni velocidad de teléfono.
-Publicación, comprobación pública y CI nueva pendientes.
+Deploy, pin de los bytes HTTP32/offline96 y nueva descargaAPK/loader PASS.
+Papel en cinco temas y portada offline PASS; catálogo5 PASS. Dos auditorías
+públicas de texturas observadas como0 fallan: principales2/3 yPDF17/18
+aprobados, aunque los cuerpos funcionales pasan. Originales conservados,
+24/26 públicos aprobados,0 retries. CI nueva todavía en marcha.
 [Detalle](performance-1788.md).
 
 

@@ -9,7 +9,7 @@ import { normalizeBookAuthor } from './book-title.js';
 import { pageRaster } from './page-raster.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { applyBookReflectionSurface } from './book-reflection-surface.js';
-import { keepProgramsAlive, prepareProgramUniforms } from './gpu-programs.js';
+import { compilePagePrograms, keepProgramsAlive, prepareProgramUniforms } from './gpu-programs.js';
 import { configureShaderDiagnostics } from './shader-diagnostics.js';
 import { buildReliefMaps, composeMaterialMap, coverReliefLayers, normalizeCoverRelief, updateReliefMapStrengths } from './cover-relief.js';
 import { runInSlices } from './cover-appearance.js';
@@ -2256,7 +2256,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   const pageTextures = () => (disposed ? [] : model.userData.getPageTextures());
   // Starts linking the programs the now visible page needs; where the driver
   // links in parallel, the draw that follows finds them done.
-  function compilePage() { if (!disposed) try { return gpu.compile(scene, camera); } catch { /* linked on first draw */ } }
+  function compilePage() { if (!disposed) try { return compilePagePrograms(gpu, scene, camera); } catch { /* linked on first draw */ } }
   async function preparePagePrograms(idle, current = () => true) {
     const materials = compilePage();
     try { return await prepareProgramUniforms(gpu, materials, { idle, current:() => !disposed && current() }); }
