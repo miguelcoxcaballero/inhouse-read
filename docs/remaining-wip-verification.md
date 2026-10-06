@@ -1,11 +1,23 @@
-# Verificación del WIP — web 1.7.75 en preparación y Android 1.1.4
+# Verificación del WIP — web 1.7.76 en preparación y Android 1.1.4
+
+## Reserva nativa del libro de 1.7.76
+
+La vista 3D evita el framebuffer intermedio de un resize que cambia ambos
+ejes. Mantiene dimensiones finales, DPR, píxeles, modelos, iluminación y
+relojes. Pasan 55 pruebas enfocadas y ocho comparaciones de píxeles reales.
+Pasan 3.382 unitarias/264 archivos, build, 75 Python y siete recorridos
+gráficos originales sin retries. Publicación y CI global pendientes. [Detalle](performance-1776.md).
 
 ## Apertura y contador de programas de 1.7.75
 
 Preparación de uniformes de los mismos shaders mientras espera la portada,
 en turnos idle, y corrección del contador publicado tras la preparación de
-la estantería. Pasan 98 pruebas enfocadas en cinco archivos. Batería completa
-y comprobación de publicación pendientes. [Detalle](performance-1775.md).
+la estantería. Pasan 98 pruebas enfocadas en cinco archivos. Publicada e
+integrada con las correcciones de lámparas y catálogo hasta `1864695`:
+3.373 unitarias/263 archivos, build, 75 Python, siete recorridos locales y
+21 públicos PASS, HTTP32/offline96 y APK/loader reales PASS. Papel y portada
+PDF publicados funcionan offline. CI original mantiene sus fallos nativos;
+no se afirma aprobación global. [Detalle](performance-1775.md).
 
 ## Texturas PDF de 1.7.74
 
