@@ -23,6 +23,7 @@ import { MINIMUM_LAMP_TAP_SIZE, minimumBookTapWidth, nearestTapTarget, padTapRec
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createNativeRendererPresentation, currentNativeRendererPresentation, registerCanvasSnapshot, withRendererPresentation } from './native-renderer-presentation.js';
 import { createNativeFramebufferCache } from './native-room-cache.js';
+import { applyShelfOccluders, clearShelfOccluders, shelfOccluders } from './shelf-light-occlusion.js';
 
 const WALNUT = new URL('../assets/library/walnut-pbr.webp', import.meta.url).href;
 // Packed from the same photograph: R = pore/figure height, G = roughness.
@@ -344,6 +345,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     written:null, seen:0, domDirty:true });
   let bookEntries = entries.map(freshEntry);
   const byNode = new Map(bookEntries.filter(entry => entry.node).map(entry => [entry.node, entry]));
+  let occluderCabinet = null, occluderDescription = null;
+  scene.onBeforeRender = (_renderer, _scene, view) => applyShelfOccluders(occluderCabinet, occluderDescription, view);
+  scene.onAfterRender = clearShelfOccluders;
   function rebuildFurniture() {
     if (shelfType !== 'baggebo') useVeneer();
     if (roomKey) roomKey.color.copy(shelfType === 'baggebo' ? new THREE.Color('#ffffff') : roomKeyColor);
@@ -375,6 +379,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (unitCount === 1) { cabinet = units[0]; cabinet.position.x = 0; cabinet.userData.furniture = true; }
     }
     furniture.add(cabinet);
+    // Its boards and panels stop the lamps' light (shelf-light-occlusion.js).
+    occluderCabinet = cabinet; occluderDescription = shelfOccluders(cabinet);
     // Geometry determines the shared floor: long upright ends or the last
     // shelf board can be the cabinet's lowest physical surface.
     const localBounds = new THREE.Box3();
