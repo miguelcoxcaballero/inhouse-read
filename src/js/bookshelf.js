@@ -120,6 +120,7 @@ import { normalizeShelfPlant, resolveCatalogPlant } from './plant-records.js';
 import { shelfScale, plantDimensions, bookSpineOptions, minimumBookCellWidth } from './plant-dimensions.js';
 import { getCatalogLamp, normalizeShelfLamp } from './lamp-catalog-data.js';
 import { lampCatalogIllustration } from './lamp-illustration.js';
+import { readerBookTiming } from './reader-book-timing.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
@@ -3574,6 +3575,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     async function finishReaderTransition({ pageSnapshot, animatePage } = {}) {
       if (session.cancelled || state.destroyed) return false;
+      const durations = readerBookTiming(prefersReducedMotion()).opening;
       const releaseFrame = view?.holdNativeMotionFrame?.();
       try {
         if (pageSnapshot && !installOpeningPage(pageSnapshot)) throw new Error('No se pudo preparar la página del modelo 3D.');
@@ -3585,7 +3587,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         fadeMeta();
         session.readingPose = planReadingBookPose({ width:coverW, height:coverH, thickness,
           viewportWidth:vw, viewportHeight:vh, centerX, centerY });
-        session.coverOpeningDuration = prefersReducedMotion() ? 1 : 640;
+        session.coverOpeningDuration = durations.cover;
         // The restored page is uploaded BEFORE its cover moves. Starting the
         // hinge while the renderer loaded exposed a blank, generic page block.
         session.coverOpening = view
@@ -3599,13 +3601,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         // moving the camera. Closing performs these same steps in reverse.
         flyout.dataset.openingPhase = 'bookmark';
         if (view) {
-          session.bookmarkMotion = view.animateBookmark({ withdraw:1, duration:prefersReducedMotion() ? 1 : 320 });
-          await waitForMotion(session.bookmarkMotion, prefersReducedMotion() ? 1 : 320);
+          session.bookmarkMotion = view.animateBookmark({ withdraw:1, duration:durations.bookmark });
+          await waitForMotion(session.bookmarkMotion, durations.bookmark);
         }
         if (session.cancelled || state.destroyed) return false;
         if (typeof animatePage === 'function') {
           flyout.dataset.openingPhase = 'zooming';
-          await animatePage({ duration:prefersReducedMotion() ? 1 : 720, pageSnapshot, animateBookToPage,
+          await animatePage({ duration:durations.zoom, pageSnapshot, animateBookToPage,
             isActive:() => !session.cancelled && !state.destroyed && state.session === session });
         }
         if (session.cancelled || state.destroyed) return false;
@@ -3616,7 +3618,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         // sibling cannot remain opaque; the retained view resumes GPU presentation
         // when it is moved into the closing animation's new host.
         view?.releaseToSnapshot?.({ resume:true });
-        const fadeDuration = prefersReducedMotion() ? 1 : 140;
+        const fadeDuration = durations.handoff;
         const fade = animate(bookNode, [{ opacity:1 }, { opacity:0 }], { duration:fadeDuration, easing:'linear', fill:'both' });
         animate(scrim, [{ opacity:1 }, { opacity:0 }], { duration:fadeDuration, easing:'linear', fill:'both' });
         await waitForMotion(fade, fadeDuration);
@@ -3805,6 +3807,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   /** Cierra el tomo 3D desde el lector y lo devuelve a su hueco. */
   async function returnToShelf(bookId, { pageSnapshot, book:latestBook, onPageReady } = {}) {
+    const durations = readerBookTiming(prefersReducedMotion()).closing;
     state.shelfScene?.setModalBackgroundDeferred?.(null, { resumeHidden:true });
     const item = state.itemsById.get(String(bookId));
     const previous = state.lastOpened?.book.id === bookId ? state.lastOpened
@@ -3898,7 +3901,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     spine.classList.add('is-away');
     state.shelfScene?.updateEntry?.(spine, book, previous.style, coverUrl);
     state.shelfScene?.flush();
-    const duration = prefersReducedMotion() ? 1 : 560;
+    const duration = durations.flight;
     const approachDuration = view && dockingPose ? duration * .66 : duration;
     const startFlight = () => view ? view.animate([
       { transform:pose(0,0,1,0,0), offset:0 },
@@ -3951,8 +3954,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         // Back to white paper on the zoom's own clock: the page leaves the reader in
         // its theme (as the still image shows it) and the book closes on white paper.
         animation = view.animate([{ transform:view.getPose() }, { transform:{ ...readingPose, bookmarkWithdraw:1, ...(pageSnapshot.paper ? { pageTheme:0 } : {}) } }],
-          { duration:prefersReducedMotion() ? 1 : 620 });
-        await waitForMotion(animation, prefersReducedMotion() ? 1 : 620);
+          { duration:durations.zoom });
+        await waitForMotion(animation, durations.zoom);
         if (!active()) return false;
         // The zoom's large framebuffer no longer needs to survive the ribbon,
         // hinge and flight. Their existing per-motion reservations retain the
@@ -3961,13 +3964,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         // White paper from here on, even if a stalled frame let the zoom's watchdog release it early.
         if (pageSnapshot.paper && view.getPageTheme() > 0) view.setPageTheme(0);
         flyout.dataset.returnPhase = 'bookmark';
-        animation = view.animateBookmark({ withdraw:0, duration:prefersReducedMotion() ? 1 : 360 });
-        await waitForMotion(animation, prefersReducedMotion() ? 1 : 360);
+        animation = view.animateBookmark({ withdraw:0, duration:durations.bookmark });
+        await waitForMotion(animation, durations.bookmark);
         if (!active()) return false;
         flyout.dataset.returnPhase = 'closing';
-        animation = view.animateCoverClose({ duration:prefersReducedMotion() ? 1 : 580,
+        animation = view.animateCoverClose({ duration:durations.cover,
           targetPose:{ x:0,y:0,scale:1,angle:0,pitch:0,roll:0 } });
-        await waitForMotion(animation, prefersReducedMotion() ? 1 : 580);
+        await waitForMotion(animation, durations.cover);
         if (!active()) return false;
       } else if (pageSnapshot?.source && !view) {
         const pages = bookNode.querySelector('.ihr-flyout__fallback-pages');
@@ -3990,23 +3993,23 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         flyout.style.visibility = ''; onPageReady?.();
         flyout.dataset.returnPhase = 'zooming';
         animation = animate(bookNode,[{ transform:bookNode.style.transform },{ transform:'translate(0,0) scale(1)' }],
-          { duration:prefersReducedMotion() ? 1 : 620, easing:EASE, fill:'both' });
+          { duration:durations.zoom, easing:EASE, fill:'both' });
         fallbackAnimations.push(animation);
         if (pageSnapshot.paper?.source) fallbackAnimations.push(animate(image,[{ opacity:1 },{ opacity:0 }],
-          { duration:prefersReducedMotion() ? 1 : 620, easing:EASE, fill:'both' }));
-        await waitForMotion(animation, prefersReducedMotion() ? 1 : 620);
+          { duration:durations.zoom, easing:EASE, fill:'both' }));
+        await waitForMotion(animation, durations.zoom);
         if (!active()) return false;
         bookNode.style.transform = 'translate(0,0) scale(1)'; animation.cancel?.();
         flyout.dataset.returnPhase = 'bookmark';
         const ribbon = el('div', { class:'ihr-flyout__return-ribbon' }); pages.append(ribbon);
         animation = animate(ribbon,[{ transform:'translateY(-130%)' },{ transform:'translateY(0)' }],
-          { duration:prefersReducedMotion() ? 1 : 360, fill:'both', easing:EASE });
-        fallbackAnimations.push(animation); await waitForMotion(animation, prefersReducedMotion() ? 1 : 360);
+          { duration:durations.bookmark, fill:'both', easing:EASE });
+        fallbackAnimations.push(animation); await waitForMotion(animation, durations.bookmark);
         if (!active()) return false;
         flyout.dataset.returnPhase = 'closing';
         animation = animate(leaf,[{ transform:'rotateY(-169deg)' },{ transform:'rotateY(0deg)' }],
-          { duration:prefersReducedMotion() ? 1 : 580, fill:'both', easing:EASE });
-        fallbackAnimations.push(animation); await waitForMotion(animation, prefersReducedMotion() ? 1 : 580);
+          { duration:durations.cover, fill:'both', easing:EASE });
+        fallbackAnimations.push(animation); await waitForMotion(animation, durations.cover);
         if (!active()) return false;
       }
       state.shelfScene?.setPaintHeld?.(false); state.shelfScene?.flush();

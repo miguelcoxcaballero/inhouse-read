@@ -1,3 +1,14 @@
+# Continuación — web 1.7.97 / Android 1.1.7 en construcción
+
+Se agilizan las fases de apertura y cierre: apertura programada de 1.820 a
+1.380ms y regreso al hueco de 1.929,6 a 1.529,6ms. Batería local:
+3.505 unitarias/286 archivos, build y92 Python PASS. Censo526 sin skips,
+todavía no ejecución completa. Geometría, texturas y límite de pasos
+permanecen idénticos. Android1.1.6 real está verificado;1.1.7/código20
+corrige el final del audio tras una pausa de planificación larga.
+Recorridos originales, web/offline, CI completa y APK20: pendientes.
+[Detalle y alcance](performance-1797.md).
+
 # Continuación — web 1.7.96 / Android 1.1.6 preparado
 
 Se integran los cambios EPUB/audiolibro de d2e9295 y 5f43d04. Se corrige

@@ -38,13 +38,13 @@ de 1.7.94 fall√≥ en un cierre; conserva ese fallo sin repetirlo para darlo
 por aprobado. No se certifican FPS, temperatura o bater√≠a de un tel√©fono
 f√≠sico ni una sesi√≥n autenticada real de Google.
 
-Se integra tambiÈn 5f43d04 (seguir la navegaciÛn manual y pulsar una frase).
-El primer censo local omitiÛ las rutas de pesos y produjo casos `skip`;
-se conserva como fallido. Sus 3.496 unitarias y 91 Python sÌ se ejecutaron,
-pero no certifican la fuente nueva ni la ejecuciÛn E2E. La siguiente tanda
+Se integra tambi√©n 5f43d04 (seguir la navegaci√≥n manual y pulsar una frase).
+El primer censo local omiti√≥ las rutas de pesos y produjo casos `skip`;
+se conserva como fallido. Sus 3.496 unitarias y 91 Python s√≠ se ejecutaron,
+pero no certifican la fuente nueva ni la ejecuci√≥n E2E. La siguiente tanda
 restaura el entorno completo de listado con los pesos reales disponibles.
 
-## BaterÌa local de la fuente integrada
+## Bater√≠a local de la fuente integrada
 
 `performance-1796/full-attempt1`: 3.499/3.499 unitarias en 285 archivos,
 build y 91 comprobaciones Python aprobados. Censo completo: 526 E2E
@@ -54,13 +54,13 @@ Entorno local Windows/Node24, distinto de Ubuntu/Node22 de CI.
 
 APK 1.1.5 descargado: firma v2 y certificado anterior verificados,
 78.531.655 bytes, hash `3d1a63f87c0325e60bd50837c5cfa5a8f3bf042f3ff299d730dd4a45f25e5348`.
-Loader exacto de 2.107 bytes, sÛlo tres archivos en assets/public.
+Loader exacto de 2.107 bytes, s√≥lo tres archivos en assets/public.
 El primer y segundo HTTP del manifiesto recibieron 1.1.4 y se conservan
 fallidos. Tras completar Pages, el control de descarga recibe 1.1.5 correcto.
 El Android15 original 37534926916 conserva 367.765ms bloqueado,
-371,63s de PCM y 23 capÌtulos; PDF contin˙a por dos p·ginas.
-Estas pruebas son de 1.1.5/e060849, no de 1.1.6 ni telÈfono fÌsico.
+371,63s de PCM y 23 cap√≠tulos; PDF contin√∫a por dos p√°ginas.
+Estas pruebas son de 1.1.5/e060849, no de 1.1.6 ni tel√©fono f√≠sico.
 
 CI e060849: dos aperturas PDF nativas fallan en los ocho segundos
-originales tambiÈn al reintentar. La cachÈ no resuelve por sÌ sola ese
+originales tambi√©n al reintentar. La cach√© no resuelve por s√≠ sola ese
 plazo. Originales 37534909667 conservados; no se reinterpreta como PASS.
