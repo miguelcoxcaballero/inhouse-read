@@ -26,5 +26,8 @@ La primera preparacion del espejo fallo antes de ejecutar el navegador
 por una suposicion sobre goto; se conserva, sin contar como test.
 Tres comprobaciones offline PASS: bytes/posicion/fotos sin Drive,
 colores originales en cinco temas y portada800x1600 con el worker real.
-CI original37544390548 sigue en comprobacion; no se declara PASS.
+CI original37544390548 completa:FAIL.11 artefactos originales autentificados,
+censo526/528 intentos, dos retries y cuatro fallos en los dos regresos nativos
+del shard3; otros cinco shards y las cuatro familias de voces PASS. No se
+modifican las esperas originales30s/8s ni se cuentan retries como PASS.
 Android1.1.7/código20 ya descargado y verificado independientemente.

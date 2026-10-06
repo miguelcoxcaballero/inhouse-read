@@ -1,3 +1,4 @@
+import { paddedBookFrameWidth } from './book-frame-padding.js';
 import { paperToneKey, readPaperTone } from './page-paper-tone.js';
 import { bookReturnCompatibility } from './bookshelf-return.js';
 import * as THREE from 'three';
@@ -1704,7 +1705,17 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     copiedRectangle=rectangle; snapshotDirty=false;
   }
   function configureFrame(frame) {
-    configureNativeRendererSize(gpu, frame.width, frame.height, pixelRatio, rendererSize, directEnabled, true, true);
+    gpu.getSize(rendererSize);
+    // A small one-axis crop can retain a few transparent columns instead of
+    // synchronously resetting the native framebuffer. Projection and DPR keep
+    // their original bounds; the extra columns are cleared, never resampled.
+    const paddedWidth = paddedBookFrameWidth(frame, rendererSize, pixelRatio, gpu.domElement,
+      directEnabled && compactReturnFrame && frame.camera !== camera &&
+      typeof gpu.setViewport === 'function' && gpu.getPixelRatio() === pixelRatio);
+    configureNativeRendererSize(gpu, paddedWidth, frame.height, pixelRatio, rendererSize, directEnabled, true, true);
+    // A later full-width frame may need its viewport restored without a resize.
+    gpu.setViewport?.(0, 0, frame.width, frame.height);
+    frame.presentationWidth = paddedWidth;
   }
   function positionPresentation(frame) {
     const parent=canvas.parentElement?.parentElement;
@@ -1714,7 +1725,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     const scaleX=rect.width/viewportWidth, scaleY=rect.height/viewportHeight;
     const node=gpu.domElement;
     node.className='ihr-book-live-canvas'; node.setAttribute('aria-hidden','true');
-    node.style.cssText=`position:absolute;pointer-events:none;left:${rect.left-parentRect.left+frame.x*scaleX}px;top:${rect.top-parentRect.top+frame.y*scaleY}px;width:${frame.width*scaleX}px;height:${frame.height*scaleY}px`;
+    node.style.cssText=`position:absolute;pointer-events:none;left:${rect.left-parentRect.left+frame.x*scaleX}px;top:${rect.top-parentRect.top+frame.y*scaleY}px;width:${(frame.presentationWidth ?? frame.width)*scaleX}px;height:${frame.height*scaleY}px`;
     if (node.parentNode !== parent) parent.append(node);
     canvas.style.opacity='0'; live=true;
   }

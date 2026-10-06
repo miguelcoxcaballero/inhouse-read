@@ -1,3 +1,20 @@
+# Continuacion: web1.7.100 preparada / Android1.1.7 publicado
+
+1.7.100 evita resetear el framebuffer por una reduccion pequena de ancho;
+conserva proyeccion, DPR y escala CSS.60 pares RGBA exactos contra1.7.99
+PASS;41 pruebas enfocadas y bateria3.528/289, build y92 Python PASS.
+Web real, regresos originales integrados y CI100 pendientes.
+Web99 publicada:HTTP32/shell96, titulo/autor, ambos regresos nativos,
+18 PDF, cinco catalogo/plantas/luces y tres offline PASS.27/28 publicos
+estrictos; auditoria walnut0B permaneceFAIL. CI98 completaFAIL en dos
+regresos nativos30s/8s; otros cinco shards y cuatro familias de vocesPASS.
+CI99 conserva tambien una primera importacion Android8s fallida; no se
+ha alterado la espera ni contado el retry como aprobacion. Verificacion
+original completa99 en curso. APK20/firma/loader y mas de6min de audio
+bloqueado/23 capitulos en emulador PASS. No se declara resuelta toda
+la lentitud ni se acredita rendimiento/bateria del movil fisico.
+[1.7.99](performance-1799.md), [1.7.100](performance-1800.md).
+
 # Continuacion: web1.7.99 preparada / Android1.1.7 publicado
 
 Web1.7.98:27/27 publicos estrictos,10 locales originales y tres recorridos
