@@ -102,6 +102,20 @@ class MainActivityTest(unittest.TestCase):
                                 "applyHighRefreshRate", "preferredDisplayModeId"):
                     self.assertIn(feature, source, feature)
 
+    def test_keeps_the_anchors_register_book_imports_rewrites(self):
+        anchors = {
+            "java": ["private ReadAloudBridge speechBridge;", "if (speechBridge != null) speechBridge.close();",
+                     "handleAppCallback(intent);", "handleAppCallback(getIntent());"],
+            "kotlin": ["private var speechBridge: ReadAloudBridge? = null", "speechBridge?.close()",
+                       "setIntent(intent)\n        handleAppCallback(intent)",
+                       'webView.addJavascriptInterface(InhouseNativeBridge(), "InhouseNative")',
+                       "handleAppCallback(intent)\n    }\n\n    inner class"],
+        }
+        for language, source in self.sources.items():
+            for anchor in anchors[language]:
+                with self.subTest(language=language, anchor=anchor):
+                    self.assertIn(anchor, source)
+
     def test_kotlin_and_java_braces_are_balanced(self):
         for language, source in self.sources.items():
             with self.subTest(language=language):
