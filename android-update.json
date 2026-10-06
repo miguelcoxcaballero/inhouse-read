@@ -1,9 +1,9 @@
 {
-  "version": "1.1.4",
-  "versionCode": 17,
+  "version": "1.1.5",
+  "versionCode": 18,
   "required": true,
-  "apkSizeBytes": 78515243,
-  "apkSha256": "feafaaa762b35344ac8b19418f9f6eb6cb1f725fba22b1ef3d3f273bd32a6191",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.4/inhouse-read-release-v1.1.4.apk",
+  "apkSizeBytes": 78531655,
+  "apkSha256": "3d1a63f87c0325e60bd50837c5cfa5a8f3bf042f3ff299d730dd4a45f25e5348",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.5/inhouse-read-release-v1.1.5.apk",
   "releaseNotes": "Audiolibro natural con reproducción PCM nativa, controles multimedia y continuidad con la pantalla bloqueada."
 }
