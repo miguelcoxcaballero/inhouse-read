@@ -17,5 +17,14 @@ Batería local completa:3.508/3.508 unitarias en287 archivos, build y
 El caso original del gesto con SwiftShader PASS, cero retries y límite
 original2.200ms. Se conserva el fallo1.7.97; este resultado pertenece al
 código corregido. Los datos antes/después protegen runtime/config/tests.
-Web real y CI completa de1.7.98: pendientes.
+Web1.7.98 publicada desde a6ff7a222a77b72e47efb77dd6f12896717c85e3;
+Pages0c11e707e27b87c55e4d6aa7f218950c3283d08b. HTTP32/shell96 PASS.
+Diez recorridos locales originales PASS (siete principales, dos regresos
+SwiftShader y el gesto), sin retries. Web real:27/27 estrictos PASS:
+cuatro regreso/editor/gesto,18 PDF y cinco catalogo/plantas/luces.
+La primera preparacion del espejo fallo antes de ejecutar el navegador
+por una suposicion sobre goto; se conserva, sin contar como test.
+Tres comprobaciones offline PASS: bytes/posicion/fotos sin Drive,
+colores originales en cinco temas y portada800x1600 con el worker real.
+CI original37544390548 sigue en comprobacion; no se declara PASS.
 Android1.1.7/código20 ya descargado y verificado independientemente.

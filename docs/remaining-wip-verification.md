@@ -1,3 +1,16 @@
+# Continuacion: web1.7.99 preparada / Android1.1.7 publicado
+
+Web1.7.98:27/27 publicos estrictos,10 locales originales y tres recorridos
+offline PASS. Se conservan todos los fallos anteriores; CI original98
+sigue pendiente. APK1.1.7/codigo20 real, firma y loader2107B verificados;
+audio bloqueado mas de6min y23 capitulos PASS en emuladorAndroid15.
+1.7.99 conserva titulo y autor editados al revelar el lector precargado.
+Reproduccion3PASS/1FAIL antes y4PASS despues; bateria3.512/288, build y
+92 Python PASS. Original E2E/publicacion/verificacion99 pendientes.
+No se declara resuelta toda la lentitud: CI97 conserva tiempos globales
+30s y cierre8s fallidos. Hay que revisar sus trazas originales.
+[1.7.98](performance-1798.md), [1.7.99](performance-1799.md).
+
 # Continuación: web1.7.98 preparada / Android1.1.7 publicado
 
 Web1.7.97 publicada y contrastada con HTTP32/shell96, nueve recorridos

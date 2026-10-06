@@ -3,6 +3,7 @@ import { version as APP_VERSION } from '../../package.json'
 import { sameBookRecords } from './library-store.js'
 import { createReadingProgressQueue } from './reading-progress-queue.js'
 import { bookCloudState, isBookVisible, storeBookFile } from './book-storage-policy.js'
+import { refreshSelectedBookNames } from './selected-book-names.js'
 import { renderBookshelf } from './bookshelf.js'
 import { ReaderController, UnsupportedFormatError } from './readers/reader-controller.js'
 import {
@@ -415,6 +416,9 @@ async function openBookRecord(book, ctx) {
       if (ctx.isActive && !ctx.isActive()) { cancelOpening(); return }
       markOpening()
       try {
+        // Preloading may finish after edits made on the selected cover.
+        // Reconcile their latest names before revealing the existing engine.
+        refreshSelectedBookNames(readingExperience, book)
         await revealPreparedReader()
         markTiming('reveal-done')
         const record = await library.get(book.id) || book
