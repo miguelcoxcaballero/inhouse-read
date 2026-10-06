@@ -1,3 +1,17 @@
+# Continuación: web1.7.98 preparada / Android1.1.7 publicado
+
+Web1.7.97 publicada y contrastada con HTTP32/shell96, nueve recorridos
+locales originales, offline con fotos/bytes/posición115 y portada800x1600.
+Tanda pública24/26 estrictos: dos fallos de auditoría de textura vacía
+quedan conservados. APK1.1.7 descargado, firma/loader2107B y manifiesto20
+verificados; audio bloqueado más de6min/23 capítulos en Android15 PASS.
+CI completa de1.7.97 pendiente. La traza del gesto del editor revela una
+pestaña distinta bajo un encabezado invisible;1.7.98 enlaza el encabezado
+con la pestaña activa visible.49 comprobaciones enfocadas PASS; batería
+completa3.508/287, build y92 Python PASS; gesto original con SwiftShader
+PASS sin retries ni cambios del límite2.200ms. Publicación en curso.
+[1.7.97](performance-1797.md), [1.7.98](performance-1798.md).
+
 # Continuación — web 1.7.97 / Android 1.1.7 en construcción
 
 Se agilizan las fases de apertura y cierre: apertura programada de 1.820 a

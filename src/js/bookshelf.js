@@ -104,6 +104,7 @@ import { displayBookTitle, normalizeBookAuthor } from './book-title.js';
 import { bookView, fitCoverImage, getBookRenderer, planReadingBookPose } from './book-model.js';
 import { analyzeCoverRelief, normalizeCoverRelief, coverReliefLayers, COLOR_RELIEF_IDS } from './cover-relief.js';
 import { EDITOR_TABS, coverEditorPose, coverTiltFrames, editorTabId, nextEditorTab } from './cover-editor.js';
+import { setEditorTabHeading } from './editor-tab-heading.js';
 import { createShelfZoom } from './shelf-zoom.js';
 import { createShelfViewGesture } from './shelf-view-gesture.js';
 import { markTiming, resetTimeline } from './perf-marks.js';
@@ -2510,7 +2511,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       spinePanel.hidden = cover;
       coverPanel.hidden = !cover;
       const label = EDITOR_TABS.find(candidate => candidate.id === editorTab).heading;
-      editorHeading.textContent = label;
+      setEditorTabHeading(editorHeading, editorTabButtons.get(editorTab));
       editorPanel.setAttribute('aria-label', label);
       editorPanel.dataset.tab = editorTab;
       flyout.classList.toggle('is-editing-cover', cover);
