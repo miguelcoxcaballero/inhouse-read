@@ -1,4 +1,13 @@
-# Verificación del WIP — web 1.7.83 en publicación y Android 1.1.4
+# Verificación del WIP — web 1.7.83 publicada y Android 1.1.4
+
+## Diagnósticos de shaders 1.7.84 en comprobación
+
+Producción evita consultas de logs sincrónicos, con diagnósticos conservados
+en desarrollo y ante callbacks personalizados. Seis pruebas nuevas y 30
+enfocadas PASS; 18 pares WebGL2 idénticos y consultas de logs 30→0.
+Batería completa revisada: 3.430 unitarias/273 archivos, build y 75 Python
+PASS; 34 enfocadas tras conservar el contrato del enlazador. Catorce recorridos normales PASS; dos cierres adicionales en
+SwiftShader FAIL a 8 s. Publicación y verificación del artefacto pendientes. [Detalle](performance-1784.md).
 
 ## Reserva compacta de animación 1.7.83
 
@@ -8,8 +17,12 @@ y 18 comparaciones WebGL2 exactas. La propuesta anterior de viewport completo
 se conserva descartada por dos cierres fallidos en software. Ningún plazo
 original se amplía. Batería revisada: 3.424 unitarias/272 archivos, build,
 75 Python y 14 recorridos gráficos PASS sin retries. Software adicional:
-alineado PASS, fraccionario FAIL a 8 s. Publicación en curso; verificación
-pública y batería CI completa pendientes. No se considera terminado.
+alineado PASS, fraccionario FAIL a 8 s. HTTP32/offline96 y nueva descarga APK/loader PASS. PDF18 y catálogo5 públicos
+PASS, papel/portada offline PASS. Tres recorridos públicos: 2 PASS/1 FAIL
+de auditoría por dos texturas con cuerpo0 observado; recorrido funcional
+correcto y HTTP independiente aprobado no sustituyen la auditoría fallida.
+CI completa FAILED: sólo UI3 falla dos aperturas nativas, también en retry.
+Las cuatro tandas reales de voces pasan; no se considera terminado.
 [Detalle](performance-1783.md).
 
 ## Entrega de shaders de 1.7.82 publicada

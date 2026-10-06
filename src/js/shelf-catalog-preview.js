@@ -4,6 +4,7 @@ import { createBaggebo } from './baggebo-model.js';
 import { createShelfFurniture } from './shelf-furniture.js';
 import { normalizeShelfType, WALNUT_SPEC } from './shelf-types.js';
 import { retainPrograms, whenProgramsReady } from './gpu-programs.js';
+import { configureShaderDiagnostics } from './shader-diagnostics.js';
 
 const WALNUT = new URL('../assets/library/walnut-pbr.webp',import.meta.url).href;
 const WALNUT_SURFACE = new URL('../assets/library/walnut-surface.webp',import.meta.url).href;
@@ -107,6 +108,7 @@ export function createShelfCatalogPreview(host) {
   try {
     if (typeof WebGLRenderingContext === 'undefined') throw new Error('WebGL unavailable');
     renderer = new THREE.WebGLRenderer({ antialias:true,alpha:true });
+    configureShaderDiagnostics(renderer);
     renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1,2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = .95;
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;

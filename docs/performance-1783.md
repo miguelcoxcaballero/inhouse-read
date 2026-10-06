@@ -62,3 +62,41 @@ El diagnóstico CPU de luces sobre la propuesta compacta pasó el caso original
 sin ampliar tiempos. Conserva su sobrecarga y alcance diagnóstico; no demuestra
 que el fallo anterior esté corregido. Perfil y fuente fijados en
 `.animation.local/performance-1783/lamp-first-frame-profile-attempt2/`.
+
+
+## Publicación real comprobada
+
+Fuente `16fb165`, Pages `17a2972`, deploy `37412046606` success.
+Entrada real `main-ByqZ7Ftt.js`: 592.125 bytes, SHA256
+`0b2aff57e5a03ca94e87e2a66464f00102f4a2f1838daeb18cfffaff4c55dbdf`.
+HTTP32/offline96 PASS. Nueva descarga del APK 1.1.4/code17 conserva
+78.515.243 bytes y el SHA firmado anterior; loader exacto de 2.089 bytes,
+sólo index y dos scripts Cordova. No se afirma ejecución nueva en teléfono.
+
+Los 18 casos públicos PDF y cinco de catálogo PASS, sin retries. La tanda
+pública de tres conserva 2 PASS/1 FAIL de auditoría: dos texturas de nogal
+fueron registradas con status200 y cuerpo0 por el observador del navegador,
+aunque el cuerpo original del recorrido y la descarga HTTP independiente
+pasaron. Se conserva ese informe fallido y su traza: no acredita una
+aprobación estricta global. Papel offline v4 y default/reuseSettledLayout v5
+PASS en cinco temas con píxeles exactos, copias nuevas e identidades conservadas;
+cero lecturas en el hilo principal. Portada offline PASS, JPEG800×1600,
+150.310 bytes, sin fallback. Caché real:
+`inhouse-read-shell-v1-d6c8a7731bd9ae36f043ba5f85d5f575f45a1221f40bf7fd3ed0b744e7fcc5a4`.
+Originales públicos en `.animation.local/performance-1783-compact/public-16fb165-attempt1/`.
+
+CI completa `37412046498` en marcha. El cierre fraccionario adicional
+SwiftShader y el informe HTTP fallido siguen abiertos; no se declara todo terminado.
+
+
+La primera colección autenticada parcial de CI83 conserva siete ZIP originales,
+182 identidades/184 intentos, dos retries y cuatro intentos fallidos de las dos
+aperturas nativas en UI3. El PDF sigue oculto a sus 8 s y/o se agota el plazo
+original global30 s. No son pruebas de cierre ejecutadas. El run sigue en marcha;
+no se presenta ese censo parcial como las 524 identidades completas. Originales:
+`.animation.local/performance-1783-compact/ci-original-37412046498-attempt1/snapshot-001/`.
+
+La CI83 terminó FAILED: las seis tandas generales finalizaron, con sólo la
+tercera fallida (dos aperturas nativas, primer intento y retry). Las cuatro
+tandas reales de voces y las unitarias pasaron. La colección final de los
+originales sigue separada; no se cambia el resultado por pruebas locales.

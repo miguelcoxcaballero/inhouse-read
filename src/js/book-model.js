@@ -10,6 +10,7 @@ import { pageRaster } from './page-raster.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { applyBookReflectionSurface } from './book-reflection-surface.js';
 import { keepProgramsAlive, prepareProgramUniforms } from './gpu-programs.js';
+import { configureShaderDiagnostics } from './shader-diagnostics.js';
 import { buildReliefMaps, composeMaterialMap, coverReliefLayers, normalizeCoverRelief, updateReliefMapStrengths } from './cover-relief.js';
 import { runInSlices } from './cover-appearance.js';
 import { registerCanvasSnapshot as registerLazySnapshot, createNativeRendererPresentation,
@@ -1498,6 +1499,7 @@ function createStudioRenderer(preserveDrawingBuffer = false) {
     // Every consumer (bookView, the shelf and its insertion overlay) sets its
     // own pixel ratio and size before drawing, so no oversized buffer is allocated up front.
     renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer });
+    configureShaderDiagnostics(renderer);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     // Preserve print colours and gently compress real specular highlights.
     // Unmapped studio radiance used to clip RGB channels on bright jackets.
