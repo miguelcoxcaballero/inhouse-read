@@ -1,20 +1,28 @@
-# Verificación del WIP — web1.7.88 publicada y Android1.1.4
+# Verificación del WIP — web1.7.89 publicada y Android1.1.4
 
-## Preparación de página1.7.89 en comprobación
+## Reducción del framebuffer1.7.90 en publicación
 
-La página oculta entrega explícitamente su lote de shaders al driver antes
-de los polls. Siete regresiones nuevas,35 relacionadas PASS; el control
-1.7.88 falla exactamente la nueva integración, con cuatro casos existentes
-correctos. Conserva shaders, geometría, textura, DPR y dibujo. Batería final3462/278, build y75 Python PASS; siete recorridos originales
-PASS, cero retries. Catálogo en marcha y publicación pendiente. [Detalle](performance-1789.md).
+Reducir ambos ejes conserva los dos resets normales de Three y omite el
+reset intermedio a altura0. Seis nuevas y53 focales PASS;3468/279
+unitarias, build y75 Python PASS;18 pares RGBA exactos y7 recorridos
+originales PASS sin retries. Cierres4848,4/4845,4ms con30/8 intactos.
+La batería completa/publicación y verificaciones públicas siguen separadas.
+[Detalle](performance-1790.md).
 
-CI1.7.88 completa FAILED:524 identidades/527 intentos,3 retries y6 fallos
-en UI3/6. Cuatro tandas de voces reales PASS; cuatro UI adicionales PASS.
-Los dos recorridos nativos consumen el plazo global30s durante el cierre;
-la iluminación cálida walnut/BAGGEBO falla en ambos intentos. Originales
-conservados, no resolución completa de rendimiento. La app pública pasa
-importación/reapertura offline con el locator textOffset115 y bytes exactos.
+## Preparación de página1.7.89 publicada
 
+La página oculta entrega su lote de shaders antes de consultar si está
+preparado. Siete regresiones nuevas,35 enfocadas,3462/278 unitarias,
+build y75 Python PASS. Dieciséis recorridos gráficos locales originales y
+26 de la web publicada con auditorías PASS, sin retries. HTTP32/offline96,
+PDF e imágenes en cinco temas, portada offline, importación y reapertura
+con bytes/locator115 exactos y descarga APK/loader reales PASS.
+
+CI37433923469 completa FAILED:524 casos/527 intentos,3 retries,5 intentos
+fallidos sólo UI3. Regreso alineado supera30s; fraccionario falla al abrir
+PDF8s; luces falla primero y pasa su retry, todavía rechazado como flaky.
+Otras cinco UI y cuatro tandas de voces reales PASS. No se considera toda
+la lentitud resuelta. [Detalle y límites](performance-1789.md).
 
 ## Guardado de progreso1.7.88
 

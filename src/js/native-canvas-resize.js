@@ -33,10 +33,14 @@ export function withNativeCanvasResize(renderer, operation, physical, { avoidInt
           // allocates new-width x OLD-height even though nobody renders it.
           // A zero-height staging buffer avoids that full intermediate
           // allocation; the normal height write creates the exact final frame.
+          // Shrinking both axes already keeps the intermediate frame within
+          // the existing allocation. Avoid an extra zero-size reset there;
+          // native drivers may synchronously drain the displayed frame on it.
           // Opt-in is limited to the book's synchronous sizing operation.
           if (avoidIntermediateAllocation && axis === 'width' &&
               value === physical.width && value !== descriptor.get.call(this) &&
               physical.height !== originalHeight && originalHeight > 0 &&
+              !(physical.width < descriptor.get.call(this) && physical.height < originalHeight) &&
               descriptors[1].get.call(this) === originalHeight) {
             try { descriptors[1].set.call(this, 0); }
             catch { /* A driver rejecting staging keeps its original resize. */ }
