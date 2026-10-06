@@ -1858,6 +1858,23 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (!resume) directEnabled=false;
   }
   let motionFrameCapacity = null;
+  let nativeMotionHolds = 0, nativeMotionCapacity = null;
+  // Keep the largest compact frame across hinge, ribbon and zoom phases.
+  // It grows only when the real book needs more room, never to fill empty
+  // screen space. Tokens do not draw or resize; normal frames apply it.
+  function holdNativeMotionFrame() {
+    if (disposed || !directEnabled || !compactReturnFrame || !adaptiveNativeFrame ||
+        !Number.isInteger(pixelRatio) || !Number.isInteger(viewportWidth) || !Number.isInteger(viewportHeight)) return () => {};
+    if (!nativeMotionHolds) nativeMotionCapacity = { width:displayedFrame?.width || 0, height:displayedFrame?.height || 0 };
+    nativeMotionHolds++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      nativeMotionHolds = Math.max(0, nativeMotionHolds - 1);
+      if (!nativeMotionHolds) nativeMotionCapacity = null;
+    };
+  }
   function positionModel(pose) {
     model.userData.setCoverOpen?.(Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0)));
     model.userData.setBookmarkWithdraw?.(Math.max(0, Math.min(1, pose.bookmarkWithdraw ?? current?.bookmarkWithdraw ?? 0)));
@@ -1918,6 +1935,14 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (adaptive && motionFrameCapacity && !measureOnly) {
       motionFrameCapacity.width = frameWidth = Math.max(frameWidth, motionFrameCapacity.width);
       motionFrameCapacity.height = frameHeight = Math.max(frameHeight, motionFrameCapacity.height);
+    }
+    if (adaptive && nativeMotionCapacity) {
+      frameWidth = Math.max(frameWidth, nativeMotionCapacity.width);
+      frameHeight = Math.max(frameHeight, nativeMotionCapacity.height);
+      if (!measureOnly) {
+        nativeMotionCapacity.width = frameWidth;
+        nativeMotionCapacity.height = frameHeight;
+      }
     }
     if (adaptive && frameWidth===viewportWidth && frameHeight===viewportHeight) return full;
     if (right<left || bottom<top
@@ -2316,14 +2341,14 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   }
   return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
     deferDrawing() { if (!disposed) waitingForFirstDraw = true; }, releaseToSnapshot, handoffToShelfInsertion,
-    setCompactReturnFrame(enabled) { compactReturnFrame = Boolean(enabled); },
+    setCompactReturnFrame(enabled) { compactReturnFrame = Boolean(enabled); }, holdNativeMotionFrame,
     updateAppearance, prepareReturnAppearance, updateSpineAppearance, updateCoverAppearance, prepareCoverRelief, setCoverRelief, updateEdgeAppearance, updateEditorAppearance, updateBookmark,
     setPageSnapshot, commitPreparedPage, pageTextures, uploadPageTexture, compilePage, preparePagePrograms, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
     setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
     getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,
     animateCoverOpen, animateCoverClose, animateBookmark, alignToPage, animateToPage,
     animate:animateMotion,
-    dispose(removeCanvas = true) { cancel(); if (!removeCanvas) captureSnapshot();
+    dispose(removeCanvas = true) { cancel(); nativeMotionHolds = 0; nativeMotionCapacity = null; if (!removeCanvas) captureSnapshot();
       unregisterSnapshot?.();
       gpu.domElement.removeEventListener('webglcontextlost', invalidatePresentation);
       gpu.domElement.removeEventListener('webglcontextrestored', invalidatePresentation);

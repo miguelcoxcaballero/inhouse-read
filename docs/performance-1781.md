@@ -62,5 +62,19 @@ iguales, copias nuevas e identidades de raster conservadas. Portada offline
 PASS: JPEG 800×1600/150.310 bytes, sin fallback. No se sustituye ninguna
 respuesta de la app ni se cambian límites/aserciones/fixtures originales.
 
-CI original `37404429710` sigue en marcha con fallo confirmado en UI3;
-falta el censo completo y no se afirma aprobación global.
+## Batería original de GitHub
+
+CI `37404429710` FAILED, colección autenticada completa: 12 logs/11 ZIP,
+524 identidades/527 intentos, tres retries y seis intentos fallidos. Unitarias
+3.411/270, todas las voces reales y UI1/2/4/5 PASS; UI3/6 FAILED. Los dos
+cierres nativos agotan el global original de 30 s, primer intento y retry;
+la luz de tres lámparas tras recarga agota los 8 s, ambos intentos. No se
+alteran deadlines ni se repiten los originales. `snapshot-001/summary.json`
+con issues vacíos y censo completo; originales conservados.
+
+Un resumen de sólo lectura de las trazas conserva los cuatro ZIP y los
+tiempos de acciones. El recorrido consume tiempo también antes de cerrar:
+arranque, presentación de portada y apertura del PDF. El corte global no
+mide por sí solo un cierre completo ni identifica la causa CPU/GPU. No se
+atribuye a una única fase todo el fallo. Evidencia
+`native-trace-actions-readonly.json`.

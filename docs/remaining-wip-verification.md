@@ -1,13 +1,31 @@
-# Verificación del WIP — web 1.7.81 publicada y Android 1.1.4
+# Verificación del WIP — web 1.7.83 en publicación y Android 1.1.4
 
-## Entrega de shaders de 1.7.82 preparada
+## Reserva compacta de animación 1.7.83
+
+Apertura y cierre nativos mantienen el mayor recorte necesario durante la
+secuencia, creciendo sólo cuando hace falta. Once unitarias enfocadas PASS
+y 18 comparaciones WebGL2 exactas. La propuesta anterior de viewport completo
+se conserva descartada por dos cierres fallidos en software. Ningún plazo
+original se amplía. Batería revisada: 3.424 unitarias/272 archivos, build,
+75 Python y 14 recorridos gráficos PASS sin retries. Software adicional:
+alineado PASS, fraccionario FAIL a 8 s. Publicación en curso; verificación
+pública y batería CI completa pendientes. No se considera terminado.
+[Detalle](performance-1783.md).
+
+## Entrega de shaders de 1.7.82 publicada
 
 El lote completo se entrega al driver antes de consultar su preparación;
 no se espera ni se modifica el renderizado. Cuatro de seis regresiones nuevas
 reproducen la ausencia de entrega anterior. Pasan 24 enfocadas, 3.417
 unitarias/271 archivos, build y 75 Python. Pasan siete recorridos gráficos,
 cinco de catálogo/plantas/luces y dos regresiones adicionales, sin retries
-ni cambios de límites o fuente durante las tandas. Publicación pendiente.
+ni cambios de límites o fuente durante las tandas. HTTP32/offline96, nueva
+descarga APK/loader, tres recorridos públicos, 18 PDF y papel/portada offline
+PASS. Cinco casos públicos de catálogo PASS: 26 recorridos públicos
+aprobados sin retries. CI original FAILED en UI3/6: 524 identidades,
+528 intentos, cuatro retries/ocho fallos. Dos aperturas nativas y primer
+frame de lámparas tras recarga no cumplen los plazos originales;
+unitarias, cuatro trabajos de voces y restantes UI PASS. Originales completos.
 [Detalle](performance-1782.md).
 
 ## Origen de la estantería de 1.7.81 publicada
@@ -20,7 +38,8 @@ Pasan siete recorridos gráficos, cinco de catálogo/luces y dos regresiones
 adicionales, sin retries. HTTP32/offline96, nueva descarga APK/loader y
 conservación exacta del atlas real al actualizar 80→81 PASS. Los 26
 recorridos públicos y papel/portada offline PASS, sin retries. CI original
-sigue en marcha con fallo confirmado en UI3; falta el censo completo.
+FAILED en UI3/6: 524 identidades/527 intentos, tres retries/seis fallos;
+unitarias, todas las voces y restantes UI PASS. Censo y originales completos.
 [Detalle](performance-1781.md).
 
 ## Caché de iluminación de 1.7.80 publicada
