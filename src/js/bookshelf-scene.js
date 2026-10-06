@@ -9,6 +9,7 @@ import { shelfBookSlot, shelfBookInsertion, projectShelfBookPose } from './books
 import { createShelfFurniture, createShelfOcclusion } from './shelf-furniture.js';
 import { createShelfPlant } from './shelf-plants.js';
 import { createShelfLamp } from './shelf-lamps.js';
+import { createTintTransition, lampTint } from './lamp-kelvin.js';
 import { createShelfLighting, widePenumbra } from './shelf-lighting.js';
 import { createShelfLampLighting } from './shelf-lamp-lighting.js';
 import { createShelfTrash, sampleTrashDrop } from './shelf-trash.js';
@@ -807,7 +808,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function makeModel(entry) {
     const model = entry.kind === 'plant' ? createShelfPlant(entry, { persist:true })
-      : entry.kind === 'lamp' ? createShelfLamp({ lampId:entry.lampId, width:entry.width, height:entry.height, quality:'high', isOn:entry.isOn !== false, persist:true })
+      : entry.kind === 'lamp' ? createShelfLamp({ lampId:entry.lampId, width:entry.width, height:entry.height, quality:'high', isOn:entry.isOn !== false, persist:true, kelvin:entry.kelvin })
       : createBookModel(entry.book, entry.style, entry.width, entry.height, entry.thickness, entry.coverUrl, { shelf:true, overview:entry.overview, inspectionResolution:entry.inspectionResolution });
     // Texture/font decode notifications improve the same artwork. Explicit
     // record/material changes separately invalidate the retained room below.
@@ -827,7 +828,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         object.receiveShadow = true;
       }
     });
-    if (entry.kind === 'lamp') model.userData.shelfLampKeys = lampKeys(entry);
+    if (entry.kind === 'lamp') { model.userData.shelfLampKeys = lampKeys(entry); model.userData.shownTint = lampTint(entry.kelvin).join(); }
     else if (entry.kind !== 'plant') model.userData.shelfKeys = materialKeys(entry);
     else {
       model.userData.shelfPlantKeys = plantKeys(entry);
@@ -1422,9 +1423,18 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     power.value = power.from + (power.target - power.from) * ease(t);
     entry.model?.userData.setPower?.(power.value);
     if (entry.node) setData(entry.node, 'lampPower', power.value.toFixed(4));
+    // A change of colour temperature eases over the same frames.
+    const tint = entry.lampTint ||= createTintTransition(entry.kelvin);
+    if (reducedMotion.matches) tint.set(entry.kelvin, now, false);
+    const tinting = tint.advance(now);
+    if (entry.model && entry.model.userData.shownTint !== tint.state.value.join()) {
+      entry.model.userData.shownTint = tint.state.value.join();
+      entry.model.userData.setTint?.(tint.state.value);
+      shelfSnapshotDirty = true;
+    }
     // Changing radiance repaints the image but never invalidates caster depth.
     if (previous !== power.value) shelfSnapshotDirty = true;
-    return t < 1 && power.from !== power.target;
+    return t < 1 && power.from !== power.target || tinting;
   }
 
   function updateEntries(scroll, zoom, now, finishedInsertions) {
@@ -2471,6 +2481,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     const now = performance.now();
     for (const entry of bookEntries) {
       if (entry.insertion || entry.trashDrop || entry.landing || entry.preview.active) return false;
+      if (entry.lampTint?.moving()) return false;
       if (entry.lampPower && (entry.lampPower.value !== entry.lampPower.target ||
         entry.lampPower.from !== entry.lampPower.target && now < entry.lampPower.started + entry.lampPower.duration)) return false;
       // Its pressure lift is no longer visible in the already painted slot.
@@ -2658,6 +2669,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const stationary = bookEntries.every(entry => !entry.insertion && !entry.trashDrop && !entry.landing &&
         !entry.preview.active && !entry.node?.matches('.is-pressed, .is-lifted, .is-dragging') &&
         [entry.lift.value, entry.lift.from, entry.lift.target].every(value => Math.abs(value) <= .220001) &&
+        !entry.lampTint?.moving() &&
         !(entry.lampPower?.duration && entry.lampPower.from !== entry.lampPower.target &&
           now < entry.lampPower.started + entry.lampPower.duration));
       if (!stationary) return;
@@ -2683,6 +2695,16 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       entry.lampPower = { value:previous, from:previous, target, started:performance.now(),
         duration:animate && !reducedMotion.matches ? 220 : 0 };
       shelfSnapshotDirty = true;
+      invalidate(false);
+    },
+    setLampKelvin(node, kelvin, { animate = true } = {}) {
+      const entry = byNode.get(node);
+      if (disposed || entry?.kind !== 'lamp') return;
+      noteInspectionDirty('lamp-kelvin');
+      entry.kelvin = kelvin;
+      const tint = entry.lampTint ||= createTintTransition(entry.kelvin);
+      tint.set(kelvin, performance.now(), animate && !reducedMotion.matches);
+      inspectionOverview = null; shelfSnapshotDirty = true;
       invalidate(false);
     },
     getInspectionView,

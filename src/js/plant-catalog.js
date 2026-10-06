@@ -6,11 +6,14 @@ import { LAMP_CATALOG, getCatalogLamp } from './lamp-catalog-data.js';
 import { lampCatalogIllustration } from './lamp-illustration.js';
 import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot, getPotColors, getPotColor } from './plant-catalog-data.js';
 import { SHELF_TYPES, getShelfType, normalizeShelfType } from './shelf-types.js';
+import { DEFAULT_LAMP_KELVIN, LAMP_KELVINS, kelvinSwatch } from './lamp-kelvin.js';
 import { plantSizeLabel } from './plant-dimensions.js';
 import { CATALOG_CAMERA_EASING, CATALOG_CAMERA_MS, IDENTITY, bookletRect, catalogCameraFrames } from './catalog-camera.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 let catalogSequence = 0;
+// After the next frame has painted: the frame's rAF callbacks run before it, a timer after.
+const afterPaint = work => typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => setTimeout(work,0)) : work();
 
 // Keep closed white silhouettes separate from open detail strokes: filling an
 // open vein or rib makes SVG close it with an unintended diagonal edge.
@@ -214,10 +217,11 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
   const lampDrawing = element('div','ihr-plant-catalog__drawing ihr-plant-catalog__lamp-drawing');
   const lampCaption = element('div','ihr-plant-catalog__caption');
   const lampName = element('h3'), lampSubtitle = element('p');
-  const lampWarmth = element('span','ihr-plant-catalog__lamp-warmth');
   const lampMount = element('p','ihr-plant-catalog__lamp-mount');
-  lampCaption.append(lampName,lampSubtitle,lampWarmth,lampMount);
-  lampPreview.append(lampDrawing,lampCaption);
+  lampCaption.append(lampName,lampSubtitle,lampMount);
+  const kelvinList = element('div','ihr-plant-catalog__kelvins');
+  kelvinList.setAttribute('role','group'); kelvinList.setAttribute('aria-label','Temperatura de color');
+  lampPreview.append(lampDrawing,lampCaption,kelvinList);
   const lampChoices = element('fieldset','ihr-plant-catalog__lamp-choices');
   const lampLegend = element('legend',null,'Lámpara');
   const lampList = element('div','ihr-plant-catalog__lamps');
@@ -238,7 +242,8 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
   let selectedColor = getPotColor(selectedPot).id;
   const rememberedColors = new Map();
   let preview3d = null, shelfPreview3d = null, lampPreview3d = null;
-  let selectedLamp = LAMP_CATALOG[0]?.id;
+  let selectedLamp = LAMP_CATALOG[0]?.id, selectedKelvin = DEFAULT_LAMP_KELVIN;
+  const kelvinButtons = new Map();
   let activePage = 'plants', savedShelf = normalizeShelfType(shelfType), selectedShelf = savedShelf;
   let trigger = null, destroyed = false, busy = false, opening = false, motion = null;
   const closedWork = [];
@@ -294,10 +299,10 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
     }
     if (opening && activePage === 'plants') preview3d?.update({ catalogId:selectedPlant,potId:selectedPot,potColorId:selectedColor });
     if (opening && shelfPage) shelfPreview3d?.update({ shelfType:selectedShelf });
-    if (opening && lampPage) lampPreview3d?.update({ lampId:selectedLamp });
+    if (opening && lampPage) lampPreview3d?.update({ lampId:selectedLamp,kelvin:selectedKelvin });
     lampName.textContent = lamp?.name || '';
     lampSubtitle.textContent = lamp?.subtitle || '';
-    lampWarmth.textContent = `${lamp?.warmKelvin || 2700} K`;
+    for (const [kelvin,button] of kelvinButtons) { button.setAttribute('aria-pressed',String(kelvin === selectedKelvin)); button.disabled = busy; }
     lampMount.textContent = lamp?.mount === 'undershelf' ? 'Bajo la balda' : 'Sobre la balda';
     for (const [lampId,button] of lampButtons) {
       button.setAttribute('aria-pressed',String(lampId === selectedLamp)); button.disabled = busy;
@@ -404,6 +409,19 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
     lampList.append(button); lampButtons.set(lamp.id,button);
   }
 
+  for (const kelvin of LAMP_KELVINS) {
+    const button = element('button','ihr-plant-catalog__kelvin');
+    button.type = 'button'; button.dataset.catalogKelvin = String(kelvin);
+    const swatch = element('span','ihr-plant-catalog__kelvin-swatch');
+    swatch.style.background = kelvinSwatch(kelvin);
+    button.append(swatch,element('span',null,`${kelvin} K`));
+    button.addEventListener('click',() => {
+      if (busy) return;
+      selectedKelvin = kelvin; status.textContent = ''; status.removeAttribute('data-error'); update();
+    });
+    kelvinList.append(button); kelvinButtons.set(kelvin,button);
+  }
+
   function buildColors() {
     colorList.replaceChildren();
     for (const color of getPotColors(selectedPot)) {
@@ -461,8 +479,9 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
       dialog.style.transformOrigin = '';
       paper.inert = false;
       motion = null;
-      onMotion?.('end');
-      if (!quiet) done();
+      // The page closes first: the room's repaint (a new lamp's shaders can
+      // take a while) must never keep the catalogue on screen.
+      try { if (!quiet) done(); } finally { afterPaint(() => onMotion?.('end')); }
     };
     motion = { phase,land };
     room.finished.then(() => land(),() => {});
@@ -481,9 +500,14 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
     delete dialog.dataset.catalogCamera;
     suspendPreviews();
     onClose?.();
-    for (const work of closedWork.splice(0)) {
-      try { work(); } catch (error) { console.warn('No se pudo actualizar la estantería:',error); }
-    }
+    // The closed page paints first; the shelf's own update (a new lamp's
+    // shaders can take long) follows, never holding the page on screen.
+    const works = closedWork.splice(0);
+    if (works.length) afterPaint(() => {
+      for (const work of works) {
+        try { work(); } catch (error) { console.warn('No se pudo actualizar la estantería:',error); }
+      }
+    });
     if (trigger?.isConnected) trigger.focus({ preventScroll:true });
     trigger = null;
   }
@@ -529,7 +553,7 @@ export function createPlantCatalog({ onAdd, onAddLamp, onClose, onShelfChange, s
       if (shelfPage) {
         await onShelfChange({ shelfType:selectedShelf },{ whenClosed });
         savedShelf = selectedShelf;
-      } else if (lampPage) await onAddLamp({ lampId:selectedLamp },{ whenClosed });
+      } else if (lampPage) await onAddLamp({ lampId:selectedLamp,kelvin:selectedKelvin },{ whenClosed });
       else await onAdd({ catalogId:selectedPlant, potId:selectedPot,potColorId:selectedColor },{ whenClosed });
       if (!destroyed) close();
     } catch {

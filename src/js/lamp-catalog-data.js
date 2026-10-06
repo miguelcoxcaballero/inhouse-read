@@ -1,3 +1,5 @@
+import { LAMP_KELVINS } from './lamp-kelvin.js';
+
 /** Millimetres; the tripod is a compact interpretation of the supplied photo.
  * `light` names the lights a fixture needs in the room (see shelf-lamp-lighting),
  * known before its model exists so scrolling never changes the shader. */
@@ -37,6 +39,8 @@ export function normalizeShelfLamp(candidate) {
     key,seed,lampId:lamp.id,isOn:candidate.isOn !== false,
     ...(Number.isFinite(candidate.shelf) && candidate.shelf >= 0
       ? { shelf:Math.min(999,Math.floor(candidate.shelf)) } : {}),
-    ...(Number.isFinite(candidate.x) ? { x:Math.min(1,Math.max(0,candidate.x)) } : {})
+    ...(Number.isFinite(candidate.x) ? { x:Math.min(1,Math.max(0,candidate.x)) } : {}),
+    // Older records carry none: the lamp's own 2700 K.
+    ...(LAMP_KELVINS.includes(candidate.kelvin) ? { kelvin:candidate.kelvin } : {})
   };
 }

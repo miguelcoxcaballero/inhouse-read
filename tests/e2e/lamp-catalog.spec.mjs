@@ -1,6 +1,9 @@
 import { expect,test } from '@playwright/test';
 
 const LAMPS_KEY = 'inhouse-read-shelf-lamps';
+// The page is hidden at once, but the browser can only report it once the main thread
+// is free: the software renderer links a new lamp's shaders in one long task (~8 s).
+const CLOSE_TIMEOUT = { timeout:30_000 };
 test.use({ viewport:{ width:390,height:844 },hasTouch:true,isMobile:true,deviceScaleFactor:1 });
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -88,7 +91,7 @@ test('añadir cada diseño conserva las tres lámparas al recargar y al cambiar 
     const dialog = await openLights(page);
     await dialog.locator(`[data-catalog-lamp="${lampId}"]`).click();
     await dialog.getByRole('button',{ name:'Añadir', exact:true }).click();
-    await expect(dialog).toBeHidden();
+    await expect(dialog).toBeHidden(CLOSE_TIMEOUT);
     await expect(page.locator('.ihr-lamp')).toHaveCount(index + 1);
     await expect(page.locator(`.ihr-lamp[data-lamp-id="${lampId}"]`)).toHaveCount(1);
   }
@@ -105,11 +108,47 @@ test('añadir cada diseño conserva las tres lámparas al recargar y al cambiar 
   await dialog.getByRole('button',{ name:'Estanterías',exact:true }).click();
   await dialog.locator('[data-catalog-shelf="baggebo"]').click();
   await dialog.getByRole('button',{ name:'Usar', exact:true }).click();
-  await expect(dialog).toBeHidden();
+  await expect(dialog).toBeHidden(CLOSE_TIMEOUT);
   await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-shelf-type','baggebo');
   await expect(page.locator('.ihr-lamp')).toHaveCount(3);
   expect((await savedLamps(page)).map(lamp => lamp.lampId)).toEqual(['mittled','tarnaby','tripod']);
   await page.reload();
   await expect(page.locator('.ihr-lamp')).toHaveCount(3);
+  expect(errors).toEqual([]);
+});
+
+test('la temperatura de color se elige en el catálogo, se guarda con la lámpara y las antiguas usan 2700 K',async ({ page },testInfo) => {
+  test.setTimeout(120_000);
+  const errors = []; page.on('pageerror',error => errors.push(error.message));
+  let dialog = await openLights(page);
+  const kelvins = dialog.locator('[data-catalog-kelvin]');
+  await expect(kelvins).toHaveText(['1800 K','2200 K','2700 K','4000 K']);
+  await expect(dialog.locator('[data-catalog-kelvin="2700"]')).toHaveAttribute('aria-pressed','true');
+  const preview = dialog.locator('.ihr-plant-catalog__lamp-drawing');
+  await dialog.locator('[data-catalog-lamp="tripod"]').click();
+  await dialog.locator('[data-catalog-kelvin="1800"]').click();
+  await expect(dialog.locator('[data-catalog-kelvin="1800"]')).toHaveAttribute('aria-pressed','true');
+  await expect(preview).toHaveAttribute('data-warm-kelvin','1800');
+  await assertFits(dialog);
+  await testInfo.attach('catalogo-1800k',{ body:await page.screenshot(),contentType:'image/png' });
+  await dialog.locator('[data-catalog-kelvin="4000"]').click();
+  await page.waitForTimeout(600);
+  await testInfo.attach('catalogo-4000k',{ body:await page.screenshot(),contentType:'image/png' });
+  await dialog.getByRole('button',{ name:'Añadir', exact:true }).click();
+  await expect(dialog).toBeHidden(CLOSE_TIMEOUT);
+  await expect(page.locator('.ihr-lamp')).toHaveCount(1);
+  expect((await savedLamps(page)).map(lamp => lamp.kelvin)).toEqual([4000]);
+  await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating','false');
+  await testInfo.attach('estanteria-4000k',{ body:await page.screenshot(),contentType:'image/png' });
+  await page.reload();
+  await expect(page.locator('.ihr-lamp')).toHaveCount(1);
+  expect((await savedLamps(page)).map(lamp => lamp.kelvin)).toEqual([4000]);
+  // A lamp saved before the option existed keeps its own warm light.
+  await page.evaluate(key => localStorage.setItem(key,JSON.stringify([{ key:'lamp:old',seed:'lamp:old',lampId:'tarnaby',isOn:true,shelf:0,x:.4 }])),LAMPS_KEY);
+  await page.reload();
+  await expect(page.locator('.ihr-lamp')).toHaveCount(1);
+  expect((await savedLamps(page))[0]).not.toHaveProperty('kelvin');
+  dialog = await openLights(page);
+  await expect(dialog.locator('[data-catalog-kelvin="2700"]')).toHaveAttribute('aria-pressed','true');
   expect(errors).toEqual([]);
 });

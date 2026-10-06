@@ -829,13 +829,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     state.shelfScene?.setLampPower(node, next.isOn, { animate:!prefersReducedMotion() });
   }
 
-  async function addCatalogLamp({ lampId }, { whenClosed = run => run() } = {}) {
+  async function addCatalogLamp({ lampId, kelvin }, { whenClosed = run => run() } = {}) {
     if (state.destroyed || state.busy || state.session || state.dragSession || state.returnMotion)
       throw new Error('Espera a que termine la animación.');
     const lamp = getCatalogLamp(lampId);
     if (!lamp) throw new Error('Elige una lámpara.');
     const key = `lamp:${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
-    const record = normalizeShelfLamp({ key, seed:key, lampId:lamp.id, shelf:0,
+    const record = normalizeShelfLamp({ key, seed:key, lampId:lamp.id, shelf:0, kelvin,
       ...(lamp.mount === 'undershelf' ? { x:.5 } : {}) });
     const previous = state.lamps, oldRects = objectRects();
     const arranged = layoutShelfDecorations([...state.placementObjects, lampShelfObject(record)], placementConfig());

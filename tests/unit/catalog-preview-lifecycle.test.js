@@ -36,6 +36,7 @@ async function fakeModel() {
   return function createModel() {
     const group = new three.Group();
     group.add(new three.Mesh(new three.BoxGeometry(60,100,60),new three.MeshStandardMaterial()));
+    group.userData.setTint = vi.fn();
     group.userData.dispose = vi.fn(() => group.traverse(object => {
       object.geometry?.dispose(); object.material?.dispose();
     }));
