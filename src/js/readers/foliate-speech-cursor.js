@@ -3,6 +3,7 @@
 // source text and exact saved position; rendering is only needed on return.
 import { SectionProgress } from 'foliate-js/progress.js'
 import { mapSpeechText } from './speech-map.js'
+import { speechPageBreaks } from './speech-page-breaks.js'
 import { SPEECH_HIGHLIGHT, clearSpeechRange, installSpeechStyle, paintSpeechRange, speechOverlayColor } from './speech-highlight.js'
 import { Overlayer } from 'foliate-js/overlayer.js'
 
@@ -90,6 +91,15 @@ export class FoliateSpeechCursor {
         this.current = state
         return true
       }
+      // Once this chapter is on screen, its pages break where the rendered copy of the same text does.
+      source.measurePageBreaks = async () => {
+        if (!activated || !source.isValid() || this.env.hidden) return null
+        const content = this.view.renderer?.getContents?.().find(item => item.index === state.index)
+        const body = content?.doc?.body
+        if (!body) return null
+        const rendered = mapSpeechText(body)
+        return rendered.text === map.text ? speechPageBreaks(rendered, this.view.renderer) : null
+      }
       source.highlight = (start, end) => { state.sentence = [start, end] }
       source.follow = (start, end) => {
         if (!activated || !source.isValid()) return
@@ -139,7 +149,16 @@ export class FoliateSpeechCursor {
         if (!paintSpeechRange(sentence)) content.overlayer?.add(SPEECH_HIGHLIGHT, sentence, Overlayer.highlight, { color:speechOverlayColor(this.theme()) })
       }
     }
-    const promise = work().finally(() => { if (this.revealing === promise) this.revealing = null })
+    const shown = this.current
+    const promise = work().finally(() => {
+      if (this.revealing === promise) this.revealing = null
+      // A chapter first read with the screen off is now laid out: let the
+      // audiobook cut its remaining fragments at the real page breaks.
+      if (shown?.detached && !shown.measured && this.current === shown && !this.env.hidden) {
+        shown.measured = true
+        window.dispatchEvent(new CustomEvent('inhouse-speech-layout'))
+      }
+    })
     this.revealing = promise
     return promise
   }

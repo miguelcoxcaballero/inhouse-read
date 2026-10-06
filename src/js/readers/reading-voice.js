@@ -59,6 +59,9 @@ export class ReadingVoice {
       if (event.detail.type === 'interrupted') this.pause()
       if (event.detail.type === 'error') this.engineFailed(event.detail)
     })
+    // The reader measured new page breaks (a relayout, or a chapter read with
+    // the screen off now on screen): re-cut what is still to be read there.
+    window.addEventListener('inhouse-speech-layout', () => { void this.refreshPageBreaks() })
     window.addEventListener('inhouse-audio-control', event => {
       const detail = event.detail
       if (!nativePcmBridge() || !this.nativeSession || detail?.session !== this.nativeSession) return
@@ -317,6 +320,39 @@ export class ReadingVoice {
    * page hand over a source (offsets -> DOM) so each sentence can be highlighted
    * and followed; the others keep the plain text path, unhighlighted.
    */
+  /**
+   * Fragments end where pages end, so the next audible fragment turns the page
+   * at the first word of the next page. Those cuts were measured when the
+   * source was built; after a relayout (fonts, a real resize) or for a
+   * chapter first read with the screen off they are stale or missing, and the
+   * page waited for the next sentence. The fragment being heard is kept; the
+   * rest of the source is re-cut at the measured breaks, and the engine gets
+   * the new upcoming texts (what it already prepared and still matches is kept).
+   */
+  async refreshPageBreaks() {
+    const source = this.source, generation = this.generation, index = this.index
+    if (this.state !== 'playing' || typeof source?.measurePageBreaks !== 'function') return false
+    let pageBreaks
+    try { pageBreaks = await source.measurePageBreaks() } catch { return false }
+    if (!Array.isArray(pageBreaks) || this.state !== 'playing' || generation !== this.generation ||
+      this.source !== source || this.index !== index) return false
+    const current = this.items[index]
+    if (!current) return false
+    const known = source.pageBreaks || []
+    if (known.length === pageBreaks.length && known.every((at, i) => at === pageBreaks[i])) return false
+    source.pageBreaks = pageBreaks
+    const rest = (await this.prepare({ ...source, start:current.end })).items
+      .map(item => item.start < current.sentence.end && item.sentence.start >= current.sentence.start ? { ...item, sentence:current.sentence } : item)
+    if (this.state !== 'playing' || generation !== this.generation || this.source !== source || this.index !== index) return false
+    this.items = [...this.items.slice(0, index + 1), ...rest]
+    this.chunks = this.items.map(item => item.text)
+    const { voice } = this.voiceFor(this.chunks[index])
+    if (voice) {
+      const { upcoming, deferAfter } = this.upcomingFor(voice)
+      neuralEngine()?.extendUpcoming?.({ id:this.utteranceId, voiceId:voice.id, rate:this.rate, upcoming, deferAfter })
+    }
+    return true
+  }
   async prepare(source) {
     if (source === undefined) {
       const pending = this.reader.getSpeechSource?.()

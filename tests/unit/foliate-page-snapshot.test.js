@@ -162,6 +162,32 @@ describe('EPUB usable viewport', () => {
     reader.close()
   })
 
+  it('keeps the page box while the status bar, full screen or the mini player change the free height a little', async () => {
+    vi.useFakeTimers()
+    let width = 390, height = 720, resize
+    Object.defineProperties(container, {
+      clientWidth:{ configurable:true, get:() => width },
+      clientHeight:{ configurable:true, get:() => height }
+    })
+    vi.stubGlobal('ResizeObserver', class { constructor(callback) { resize = callback } observe() {} disconnect() {} })
+    const reader = new FoliateReader()
+    try {
+      await reader.open(container, new File(['epub'], 'book.epub'))
+      // Room for the 48 px mini player is kept from the start.
+      expect(view.style.height).toBe('672px')
+      for (const free of [750, 720, 672, 700]) {
+        height = free; resize(); await vi.advanceTimersByTimeAsync(80)
+        expect(view.style.height).toBe('672px')
+      }
+      // A rotation is a real resize: the book is paginated for the new box.
+      width = 844; height = 300; resize(); await vi.advanceTimersByTimeAsync(80)
+      expect(view.style.height).toBe('252px')
+    } finally {
+      reader.close()
+      vi.useRealTimers()
+    }
+  })
+
   it('adapts to the actual resized container without calling navigation or replacing the current CFI', async () => {
     vi.useFakeTimers()
     let width = 390, height = 720, resize

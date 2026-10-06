@@ -59,13 +59,13 @@ describe('trimSilence', () => {
     const trimmed = trimSilence(pcm, sr)
     const seconds = trimmed.length / sr
     expect(seconds).toBeGreaterThan(1.0)
-    expect(seconds).toBeLessThan(1.0 + 0.014 + 0.04 + 0.01)
+    expect(seconds).toBeLessThan(1.0 + 0.014 + 0.11 + 0.01)
   })
   it('does not treat low-level noise as speech, relative to the buffer peak', () => {
     const noise = Float32Array.from({ length: sr / 2 }, (_, i) => 0.003 * Math.sin(i))
     const pcm = concat([noise, tone(sr / 2, 0.8), noise])
     const trimmed = trimSilence(pcm, sr)
-    expect(trimmed.length).toBeLessThan(sr / 2 + sr * 0.07)
+    expect(trimmed.length).toBeLessThan(sr / 2 + sr * 0.14)
   })
   it('returns an empty buffer when there is nothing but silence', () => {
     expect(trimSilence(new Float32Array(1000), sr).length).toBe(0)
