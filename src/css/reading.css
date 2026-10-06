@@ -324,9 +324,17 @@ body.is-reading .app-header, #reader-screen, .reader-viewport, .reader-toolbar, 
  * versalitas, sin cajas ni rellenos negros; lo elegido se marca con un
  * fondo tenue y los campos con un filete inferior.
  * ------------------------------------------------------------------ */
+/* Frosted glass: the page shows through as soft light and colour, not as
+   readable text. Sheet and glass ease in together, briefly. */
 .reading-panel::backdrop {
-  background:color-mix(in srgb,var(--reading-paper,#faf9f5) 78%,transparent);
-  -webkit-backdrop-filter:blur(26px) saturate(1.15); backdrop-filter:blur(26px) saturate(1.15);
+  background:color-mix(in srgb,var(--reading-paper,#faf9f5) 34%,transparent);
+  -webkit-backdrop-filter:blur(16px) saturate(1.3); backdrop-filter:blur(16px) saturate(1.3);
+}
+@media (prefers-reduced-motion:no-preference) {
+  .reading-panel[open] { animation:reading-sheet-rise .26s cubic-bezier(.2,.7,.2,1); }
+  .reading-panel[open]::backdrop { animation:reading-glass-in .26s ease-out; }
+  @keyframes reading-sheet-rise { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+  @keyframes reading-glass-in { from { opacity:0; } to { opacity:1; } }
 }
 .reading-panel { padding:10px 24px max(20px,env(safe-area-inset-bottom)); border-radius:22px 22px 0 0;
   box-shadow:0 -1px 0 color-mix(in srgb,currentColor 7%,transparent), 0 -18px 40px -24px rgb(0 0 0 / .35); }
