@@ -1,13 +1,32 @@
-# Verificación del WIP — web 1.7.83 publicada y Android 1.1.4
+# Verificación del WIP — web 1.7.84 publicada y Android 1.1.4
 
-## Diagnósticos de shaders 1.7.84 en comprobación
+## Preparación de la inserción 1.7.85 en comprobación
 
-Producción evita consultas de logs sincrónicos, con diagnósticos conservados
-en desarrollo y ante callbacks personalizados. Seis pruebas nuevas y 30
-enfocadas PASS; 18 pares WebGL2 idénticos y consultas de logs 30→0.
-Batería completa revisada: 3.430 unitarias/273 archivos, build y 75 Python
-PASS; 34 enfocadas tras conservar el contrato del enlazador. Catorce recorridos normales PASS; dos cierres adicionales en
-SwiftShader FAIL a 8 s. Publicación y verificación del artefacto pendientes. [Detalle](performance-1784.md).
+Los mismos programas de profundidad y del indicador preparan también sus
+uniforms, uno por intervalo libre después del primer frame. Sin dibujo,
+cambios de materiales/resolución/relojes ni nuevas variantes. Cancelación
+por dispose y errores mantienen el dibujo normal. Seis nuevas y 30 pruebas
+enfocadas PASS. Pasan 3.436 unitarias/274 archivos, build, 75 Python y
+14 recorridos normales. Los dos cierres adicionales de SwiftShader pasan
+en su primer intento, con plazos originales. Publicación y comprobación
+del artefacto pendientes.
+[Detalle](performance-1785.md).
+
+## Diagnósticos de shaders 1.7.84 publicada
+
+Producción evita consultas de logs sincrónicos; desarrollo y callbacks
+personalizados conservan los diagnósticos. 34 pruebas enfocadas, 3.430
+unitarias/273 archivos, build y 75 Python PASS. Dieciocho pares de imágenes
+WebGL2 exactos; consultas de logs 30 a cero sin cambiar materiales o resolución.
+Catorce recorridos normales locales PASS; dos cierres adicionales con
+SwiftShader FAIL a 8 s. HTTP32/offline96, descarga nueva APK/loader y papel
+más portada offline PASS. Casos públicos: recorridos 2/3, PDF 17/18 y
+catálogo 5/5; dos fallos de auditoría de una textura observada vacía al
+terminar casos cuyas aserciones funcionales pasaron. Los originales
+fallidos permanecen registrados. CI completa524 FAILED: dos cierres en
+UI3 y recarga del nogal con tres luces en UI6, también en retries. Las
+cuatro tandas reales de voces PASS.
+No se considera resuelta toda la lentitud. [Detalle](performance-1784.md).
 
 ## Reserva compacta de animación 1.7.83
 

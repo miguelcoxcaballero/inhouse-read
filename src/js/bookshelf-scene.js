@@ -15,6 +15,7 @@ import { createShelfTrash, sampleTrashDrop } from './shelf-trash.js';
 import { createShelfCatalog } from './shelf-catalog.js';
 import { createBaggebo } from './baggebo-model.js';
 import { compilePrograms, prelinkPrograms } from './gpu-programs.js';
+import { prepareInsertionPrograms } from './insertion-program-preparation.js';
 import { idleSlice } from './idle-startup.js';
 import { BAGGEBO_SPEC, SHELF_SPECS, normalizeShelfType } from './shelf-types.js';
 import { MINIMUM_LAMP_TAP_SIZE, minimumBookTapWidth, nearestTapTarget, padTapRect, padTapSquare } from './plant-dimensions.js';
@@ -2221,15 +2222,16 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       programsReady = true;
       // The first frame never draws the drop guide or the return's depth
-      // pass: link them once it is painted, long before a finger needs them.
-      idleSlice().then(() => {
-        if (disposed) return;
-        prelinkPrograms(renderer, scene, camera, [dropGuide, ...depthWriters]);
-        // Compilation changes the real program cache without painting. Report
-        // it now so the next resize/gesture does not appear to create programs
-        // that were already prepared in the background. No extra render.
-        setData(canvas, 'scenePrograms', String(renderer.info?.programs?.length || 0));
-      });
+      // pass: link and reflect them in idle slices after the first paint,
+      // before the return needs their first real draw.
+      prepareInsertionPrograms(renderer, scene, camera, [dropGuide, ...depthWriters], {
+        idle:idleSlice, current:() => !disposed, onLinked:() => {
+          // Compilation changes the real program cache without painting. Report
+          // it now so the next resize/gesture does not appear to create programs
+          // that were already prepared in the background. No extra render.
+          setData(canvas, 'scenePrograms', String(renderer.info?.programs?.length || 0));
+        }
+      }).catch(error => console.warn('No se pudo preparar la inserción 3D:', error));
     }
     const veneerWait = veneerWaits && shelfType !== 'baggebo' ? veneerDeadline - performance.now() : 0;
     if (veneerWait > 0) {

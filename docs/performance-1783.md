@@ -100,3 +100,8 @@ La CI83 terminó FAILED: las seis tandas generales finalizaron, con sólo la
 tercera fallida (dos aperturas nativas, primer intento y retry). Las cuatro
 tandas reales de voces y las unitarias pasaron. La colección final de los
 originales sigue separada; no se cambia el resultado por pruebas locales.
+
+Colección final CI83: 11 ZIP/12 logs, 524 casos únicos, 526 intentos, dos
+retries y cuatro intentos fallidos de UI3; issues vacío. Las cuatro tandas
+de voces reales PASS. Evidencia: `ci-original-37412046498-attempt1/snapshot-002/`
+de performance-1783-compact. El resultado completo sigue FAILED.
