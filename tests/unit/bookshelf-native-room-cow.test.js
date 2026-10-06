@@ -108,21 +108,24 @@ describe('native inspection copy-on-write and visible room presentation',()=>{
     outputs().overview.getContext('2d').getImageData();expect(contexts.get(outputs().overview).frame).toEqual(oldPixels);
     expect(original.texture.disposed).not.toBe(true);
   });
-  it('presents only the visible viewport while retaining complete overscan and restores it after exports',()=>{
+  // The whole overscan frame is presented and clipped in CSS: composing only
+  // the visible part resized the shared GPU buffer twice per paint.
+  it('presents the complete overscan frame clipped to the viewport and restores it after exports',()=>{
     fitted();const background=shelf.getNativeRoomBackground(),{fine,overview}=outputs();
     expect(background.frame.width).toBe(646);expect(background.frame.height).toBe(956);
     expect(background.x).toBe(-108);expect(background.y).toBe(-68);expect(background.clip).toEqual({left:20,top:60,right:410,bottom:760});
-    expect(driver.renderer.domElement.width).toBe(585);expect(driver.renderer.domElement.height).toBe(1050);
-    expect(driver.renderer.domElement.style.left).toBe('0px');expect(driver.renderer.domElement.style.top).toBe('0px');
-    expect(driver.renderer.domElement.style.width).toBe('390px');expect(driver.renderer.domElement.style.height).toBe('700px');
+    expect(driver.renderer.domElement.width).toBe(969);expect(driver.renderer.domElement.height).toBe(1434);
+    expect(driver.renderer.domElement.style.left).toBe('-128px');expect(driver.renderer.domElement.style.top).toBe('-128px');
+    expect(driver.renderer.domElement.style.width).toBe('646px');expect(driver.renderer.domElement.style.height).toBe('956px');
     expect(fine.width).toBe(969);expect(fine.height).toBe(1434);expect(overview.width).toBe(969);expect(overview.height).toBe(1434);
     const visible=structuredClone(driver.renderer.domElement.frame);
-    expect(visible.layers[0]).toEqual({pixels:background.frame.pixels,x:-128,y:-128,scale:1,clip:{left:0,top:0,right:390,bottom:700}});
+    // The retained frame itself is replayed, with no second composition.
+    expect(visible).toEqual(background.frame.pixels);
     shelf.canvas.getContext('2d').getImageData();
     expect(contexts.get(shelf.canvas).copies.at(-1).args).toEqual([192,192,585,1050,0,0,585,1050]);
-    expect(driver.renderer.domElement.frame).toEqual(visible);expect(driver.renderer.domElement.width).toBe(585);
+    expect(driver.renderer.domElement.frame).toEqual(visible);expect(driver.renderer.domElement.width).toBe(969);
     fine.getContext('2d').getImageData();overview.getContext('2d').getImageData();
-    expect(driver.renderer.domElement.frame).toEqual(visible);expect(driver.renderer.domElement.height).toBe(1050);
+    expect(driver.renderer.domElement.frame).toEqual(visible);expect(driver.renderer.domElement.height).toBe(1434);
     const foreign=document.createElement('canvas'),output=foreign.getContext('2d');
     withRendererPresentation(driver.renderer,null,()=>{driver.renderer.domElement.frame={foreign:true};output.drawImage(driver.renderer.domElement,0,0);});
     expect(output.frame).toEqual({foreign:true});expect(driver.renderer.domElement.frame).toEqual(visible);

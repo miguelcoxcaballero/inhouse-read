@@ -24,7 +24,8 @@ export function ensureAreaLights() {
 export function savedLampsNeedAreaLights() {
   try { return /"lampId"\s*:\s*"tarnaby"/.test(localStorage.getItem('inhouse-read-shelf-lamps') || ''); } catch { return false; }
 }
-if (savedLampsNeedAreaLights()) await ensureAreaLights().catch(() => {});
+// The shelf lights filament lamps with a point light (see lampKind): only the
+// catalogue's studio needs the area-light tables, and loads them itself.
 
 function emitterPower(emitter) {
   const power = Number(emitter.power ?? 1);
@@ -73,11 +74,16 @@ const FILAMENT_KINDS = [];
 const filamentKind = count => FILAMENT_KINDS[count] ||= `filaments:${count}`;
 // Which lights a lamp needs. A culled model is known from the catalogue, so
 // scrolling a lamp out of the pool's reach never changes the set of lights.
-function kindOf(entry) {
+// On the shelf a filament lamp is one point light of the same flux: its four
+// area emitters (an LTC integral each, per pixel) cost more than every other
+// light of a room together, and a phone could not draw the room at its
+// refresh rate. The catalogue's single studio lamp keeps the four strips.
+function lampKind(entry, filamentAreas = false) {
   const emitter = entry.model?.userData.lightEmitter;
-  if (emitter) return emitter.filaments?.length ? filamentKind(emitter.filaments.length) :
+  if (emitter) return emitter.filaments?.length ? filamentAreas ? filamentKind(emitter.filaments.length) : 'point' :
     Array.isArray(emitter.direction) ? 'cone' : 'point';
-  return getCatalogLamp(entry.lampId)?.light ?? null;
+  const light = getCatalogLamp(entry.lampId)?.light ?? null;
+  return !filamentAreas && light?.startsWith('filaments:') ? 'point' : light;
 }
 const isCandidate = entry => entry.kind === 'lamp' && entry.model?.visible &&
   entry.model.userData.lightEmitter && !entry.node?.classList.contains('is-away') && !entry.trashDrop;
@@ -105,7 +111,8 @@ const byPriority = (a, b) => priority(a) - priority(b) || String(a.key).localeCo
  * keeps its slot until another lamp needs it, so its cached cone shadow is
  * still valid when it is switched on again.
  */
-export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGHTS, onAreaLightsReady } = {}) {
+export function createShelfLampLighting(scene, { maxLights = MAX_SHELF_LAMP_LIGHTS, onAreaLightsReady, filamentAreas = false } = {}) {
+  const kindOf = entry => lampKind(entry, filamentAreas);
   const slots = [], kinds = [], counts = new Map(), quota = new Map(), ranks = new Map();
   let disposed = false, shadowRefresh = false, prepared = false;
   function removeLights(slot) {

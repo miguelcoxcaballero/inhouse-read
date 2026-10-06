@@ -149,20 +149,21 @@ describe('actual native insertion ownership and cached CSS handoff',()=>{
     expect(state.bridge.commit).not.toHaveBeenCalled();expect(shelf.getNativeRoomBackground().lease.isOwner()).toBe(true);
     expect(native.dataset.insertionDepth).toBeUndefined();expect(native.dataset.returnProgress).toBeUndefined();
   });
-  it('releases the obsolete native room before materializing unchanged CSS tiles and assigns only one buffer size',()=>{
+  it('releases the obsolete native room before materializing unchanged CSS tiles without resizing the buffer',()=>{
     shelf.setMode('isometric',{animate:false});shelf.flush();
     const background=shelf.getNativeRoomBackground(),pixels=structuredClone(background.frame.pixels),{fine,overview}=outputs();
     driver.writes=[];driver.copyOwners=[];
     shelf.setInspectionView({zoom:1.1,panX:0,panY:0},{moving:true,renderNow:true});
     expect(driver.copyOwners).toHaveLength(2);expect(driver.copyOwners.every(owner=>owner===null)).toBe(true);
-    expect(driver.writes).toEqual([{width:969,height:1434}]);
+    // The presented room already has the complete overscan size.
+    expect(driver.writes).toEqual([]);
     expect(contexts.get(fine).copies).toHaveLength(1);expect(contexts.get(overview).copies).toHaveLength(1);
     expect(contexts.get(fine).frame).toEqual(pixels);expect(contexts.get(overview).frame).toEqual(pixels);
     expect(fine.style.display).toBe('block');expect(overview.style.display).toBe('block');
     expect(fine.style.transform).toBe(overview.style.transform);expect(shelf.canvas.style.visibility).toBe('hidden');
     expect(background.lease.isOwner()).toBe(false);expect(driver.renderer.domElement.isConnected).toBe(false);
     shelf.setInspectionView({zoom:1.2,panX:10,panY:0},{moving:true,renderNow:true});
-    expect(driver.writes).toHaveLength(1);expect(contexts.get(fine).copies).toHaveLength(1);expect(contexts.get(overview).copies).toHaveLength(1);
+    expect(driver.writes).toHaveLength(0);expect(contexts.get(fine).copies).toHaveLength(1);expect(contexts.get(overview).copies).toHaveLength(1);
     expect(contexts.get(fine).frame).toEqual(pixels);expect(contexts.get(overview).frame).toEqual(pixels);
   });
   it('restores the previous complete native room and leaves CSS tiles hidden when materialization fails',()=>{
@@ -172,7 +173,7 @@ describe('actual native insertion ownership and cached CSS handoff',()=>{
     driver.failCopyClass=fine.className;
     expect(()=>shelf.setInspectionView({zoom:1.1,panX:0,panY:0},{moving:true,renderNow:true})).toThrow('Fixture copy failed');
     expect(background.lease.isOwner()).toBe(true);expect(native.parentElement).toBe(parent);expect(native.isConnected).toBe(true);
-    expect(native.frame).toEqual(pixels);expect(native.width).toBe(585);expect(native.height).toBe(1050);
+    expect(native.frame).toEqual(pixels);expect(native.width).toBe(969);expect(native.height).toBe(1434);
     expect(fine.style.display).toBe('none');expect(overview.style.display).toBe('none');expect(shelf.canvas.style.visibility).toBe('');
     expect(parent.style.display).toBe('block');expect(shelf.canvas.style.opacity).toBe('0');
   });

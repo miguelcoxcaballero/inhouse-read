@@ -10,11 +10,28 @@ function setup() {
   const scene = new THREE.Scene(), room = new THREE.Group(); scene.add(room);
   const model = createShelfLamp({lampId:'tarnaby',width:75}); room.add(model);
   const entry = {kind:'lamp',key:'test-filaments',model,width:75};
-  const manager = createShelfLampLighting(scene);
+  // The four strips light the catalogue's studio lamp; the shelf uses one
+  // point light of the same flux (see the test below).
+  const manager = createShelfLampLighting(scene,{filamentAreas:true});
   return {scene,room,model,entry,manager,lights:() => scene.children.filter(object => object.userData.shelfLamp)};
 }
 
 describe('continuous LED filament illumination', () => {
+  it('lights a filament lamp on the shelf with one point light of the same flux', () => {
+    const scene = new THREE.Scene(), model = createShelfLamp({lampId:'tarnaby',width:75}); scene.add(model);
+    model.updateMatrixWorld(true);
+    const manager = createShelfLampLighting(scene), lights = () => scene.children.filter(object => object.userData.shelfLamp);
+    manager.update([{kind:'lamp',key:'shelf-filaments',model,width:75}]);
+    expect(lights()).toHaveLength(1);
+    const [light] = lights(), emitter = model.userData.lightEmitter;
+    expect(light.isPointLight).toBe(true); expect(light.isRectAreaLight).not.toBe(true); expect(light.castShadow).toBe(false);
+    // Four Lambertian strips of radiance I*4/(n*w*l) emit 4*pi*I in all: a point light of intensity I.
+    expect(light.intensity).toBeCloseTo(emitter.intensity);
+    expect(light.position.distanceTo(new THREE.Vector3(...emitter.position))).toBeLessThan(1e-8);
+    manager.dispose(); model.dispose();
+  });
+
+
   it('emits from four physical strips along the visible fibres, with no central point light', () => {
     const s = setup(); s.manager.update([s.entry]);
     expect(s.manager.activeCount).toBe(1); expect(s.manager.shadowCount).toBe(0);
