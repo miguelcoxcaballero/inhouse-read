@@ -1,0 +1,4 @@
+# El código del juego vive en proyecto/dist (el .gitignore raíz ignora dist/).
+!proyecto/dist/
+outputs/
+work/

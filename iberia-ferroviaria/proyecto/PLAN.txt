@@ -1,0 +1,30 @@
+IBERIA FERROVIARIA — PLAN Y ESTADO V0.2
+6 de octubre de 2026.
+
+1. HISTORIA — IMPLEMENTADA
+Cinco capítulos y decisiones, recuperación de 2022 y legado de 2050. El jugador dirige Renfe. Escasez y cierres en una historia alternativa, separada de hechos documentados.
+2. INVESTIGACIÓN — INTEGRADA CON ALCANCE EXPLÍCITO
+Fuentes primarias de material, contratos, infraestructura, estaciones y horarios. 56 fichas, 15 núcleos, 63 líneas/ramas y 42 muestras con fecha. No es un censo exhaustivo de unidades ni horarios históricos.
+3. MAPA — IMPLEMENTADO
+Cartografía y vías OSM: 114 recorridos continuos de 119 definiciones. Zoom, selección, iluminación y animación. Sin inventar vías para geometrías ausentes. Conexiones futuras conceptuales.
+4. OPERACIÓN — IMPLEMENTADA
+Jornadas desde primera salida hasta última llegada; horarios, flota, frecuencia, tarifa e incidencias. Economía mensual y delegación para llegar a 2050.
+5. FLOTA — IMPLEMENTADA
+Anticipo, fabricación, entrega diferida, lotes, retrasos acotados, reforma y asignación exclusiva. Programas heredados separados de compras; ampliaciones posteriores aparecen durante la campaña.
+6. INFRAESTRUCTURA — SIMULADA
+Adif, proyectos documentados, financiación, etapas y nuevos enlaces. Aportaciones de campaña, no presupuesto íntegro de obra pública.
+7. GTFS — IMPORTADOR IMPLEMENTADO
+Rutas, viajes, paradas, calendarios, excepciones, shapes y frecuencias. Observador separado de campaña, varios archivos y almacenamiento local. Descarga oficial completa bloqueada; no se presenta como incluida.
+8. INTERFAZ Y PRUEBAS — COMPLETADAS
+Estética cálida, ilustración y móvil. Campaña hasta diciembre de 2050 y recorrido de interfaz aprobados. Ver VERIFICACION.txt.
+
+ARCO NARRATIVO
+2022–2024: Volver a conectar. Seis servicios, dos reformas y dos unidades encargadas.
+2024–2028: El viajero puede elegir. Diez servicios, satisfacción del 65% y cuatro entregas propias.
+2028–2035: Unir el Mediterráneo. La Encina y Murcia–Almería, dieciséis servicios y tres mejoras.
+2035–2042: Un país, muchas velocidades. Veinticuatro servicios, cuatro proyectos y un enlace nuevo.
+2042–2050: La red que dejas. Treinta servicios, satisfacción del 75% y solvencia. Epílogo según resultados.
+
+ENTREGA Y ALCANCE FUTURO
+HTML y proyecto editable con fuentes y licencias. Publicación pendiente de conectividad al repositorio; sin despliegue confirmado.
+Matrículas y asignaciones necesitan datos adicionales no publicados en GTFS. Reconstruir 2022 requiere archivos históricos de horarios y red. Terreno, estaciones y obras tridimensionales requieren otra fase. 2027–2050 es simulación, no predicción.

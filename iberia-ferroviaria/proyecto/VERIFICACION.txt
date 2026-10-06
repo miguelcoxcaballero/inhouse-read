@@ -1,0 +1,35 @@
+VERIFICACIÓN V0.2 — 6 DE OCTUBRE DE 2026
+
+RESULTADO
+Pasaron test.mjs, v2-test.mjs y el recorrido ui-v2-test.mjs en Chrome sin interfaz, abriendo el HTML autónomo local.
+
+MOTOR Y CAMPAÑA
+Aislamiento de partidas, ancho/energía, unidades disponibles, reformas, anticipo y saldo, entregas únicas y rechazo de entradas inválidas.
+Una estrategia automatizada con acciones legales cerró el mes 348, diciembre de 2050, completó cinco capítulos y construyó un enlace propio.
+Pedidos heredados, ampliaciones y licitaciones sin duplicados. Licitaciones sin entrega automática. Guardados restaurables y con validación de asignaciones y jornadas.
+
+JORNADAS Y DATOS
+Primera salida, última llegada, medianoche, cierre único, siguiente día y liquidación mensual única. Bloqueo de cambios durante la jornada. Capacidad para ambos sentidos y círculo de Sevilla C4.
+15 núcleos, 63 definiciones de Cercanías, 56 fichas y 114 geometrías continuas. Extremos y puntos de paso resueltos en el catálogo.
+Bilbao C5 antes/después del 6 de mayo de 2026; llegadas ausentes conservadas.
+CSV entre bloques, comillas y saltos de línea, horas superiores a 24:00, calendarios, excepciones, paradas sin hora y frecuencias exactas.
+Dos GTFS con identificadores independientes. Tamaño descomprimido inconsistente rechazado sin reemplazar el archivo en uso.
+
+INTERFAZ
+Inicio, decisión, preparar Madrid C1, flota y horario, mapa diurno/nocturno, pausa, cierre y siguiente jornada.
+Atlas y filtro Civia, La Encina y visita de obra. Muestras Cádiz/Sevilla, seis tiempos publicados por circulación de Sevilla, ZIP, paradas, excepciones, medianoche y varios archivos.
+Exportar/importar campaña, recargar y continuar, delegar mes. HTML de un archivo de prueba mostrado sin ejecutar código.
+Capturas revisadas en escritorio 1.500 × 940 y móvil 390 × 844. Sin desbordamiento horizontal ni excepciones JavaScript durante el recorrido. Controles ocultos excluidos de navegación al abrir otro menú.
+
+LÍMITES
+Los ZIP de prueba son sintéticos: verifican formato y reglas, no todos los horarios oficiales. La descarga binaria oficial completa no estuvo disponible; no se comprobó aquí su importación integral en navegador.
+No certifica matrículas, asignaciones diarias, todos los horarios históricos de 2022 ni todos los contratos y proyectos nacionales.
+No se probó cada decisión posible ni el equilibrio de todas las estrategias. Animaciones y etapas de obra son estratégicas. El mapa de 2026 no reconstruye 2022.
+WebMCP original: contexto simulado en v0.1; sin validación nativa del navegador.
+Publicación bloqueada por conectividad; sin URL publicada confirmada.
+
+TRASLADO AL REPOSITORIO — 6 DE OCTUBRE DE 2026
+Proyecto importado desde Iberia-Ferroviaria-v0.2-Proyecto.zip (SHA256 2a7b30bd…a20c66a) a iberia-ferroviaria/ en inhouse-read. No se incluye el HTML generado: «npm run build» lo reproduce byte a byte (SHA256 a08ddbcd…412bf3).
+test.mjs ya no depende de una carpeta ../work previa: la crea junto al proyecto. Pasan test.mjs y v2-test.mjs con Node 22 en Linux.
+Arranque del HTML autónomo en Chromium sin interfaz a 1.500 × 940 y 390 × 844: sin errores JavaScript ni desbordamiento horizontal. El recorrido completo ui-v2-test.mjs no venía en el ZIP y no se repitió.
+La descarga de los GTFS oficiales de Renfe sigue bloqueada por la red de este entorno (403); su importación completa continúa sin verificar.
