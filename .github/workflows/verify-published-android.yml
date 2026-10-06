@@ -6,7 +6,7 @@ on:
       version:
         description: Published APK version to verify
         required: true
-        default: '1.1.6'
+        default: '1.1.7'
       fixture_run_id:
         description: Android build run containing the intent fixture for reader verification
         required: false

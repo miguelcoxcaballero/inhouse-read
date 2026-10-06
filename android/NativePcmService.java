@@ -242,7 +242,9 @@ public final class NativePcmService extends Service {
         if (rate <= 0 || !track.getTimestamp(stamp)) return;
         long presented = stamp.framePosition + (System.nanoTime() - stamp.nanoTime) * rate / 1_000_000_000L;
         long delay = head - presented;
-        if (delay < -rate || delay > rate) return;
+        // A stopped track can have an old, valid timestamp after a scheduling
+        // gap. Reject impossible frame positions, not elapsed silence.
+        if (stamp.framePosition < 0 || stamp.framePosition > head + rate || delay > rate) return;
         // Once the last sample is presented, extrapolation can exceed the
         // stopped head. Release its delay immediately so the queue drains.
         if (delay <= 0) { outputDelay = 0; return; }
