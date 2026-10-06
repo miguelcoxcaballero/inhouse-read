@@ -1465,15 +1465,22 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   group.userData.updateBookmark = nextBook => {
     if (disposed) return;
     bookmark = bookmarkFor(nextBook);
-    if (ribbonMesh) {
+    if (!bookmark && ribbonMesh) {
       group.remove(ribbonMesh); ribbonMesh.geometry.dispose(); ribbonMaterial.alphaMap?.dispose(); ribbonMaterial.dispose();
+      ribbonMesh = null; ribbonMaterial = null;
     }
-    ribbonMesh = null; ribbonMaterial = null;
     if (bookmark) {
-      ribbonMaterial = satinRibbon(bookmark.finished, silk(), !detail);
-      ribbonMesh = new THREE.Mesh(bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek,
-        { segments:ribbonSegments, seed:ribbonSeed }), ribbonMaterial);
-      ribbonMesh.renderOrder = 4; ribbonMesh.name = 'reading-bookmark'; group.add(ribbonMesh);
+      if (!ribbonMesh) {
+        ribbonMaterial = satinRibbon(bookmark.finished, silk(), !detail);
+        ribbonMesh = new THREE.Mesh(bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek,
+          { segments:ribbonSegments, seed:ribbonSeed }), ribbonMaterial);
+        ribbonMesh.renderOrder = 4; ribbonMesh.name = 'reading-bookmark'; group.add(ribbonMesh);
+      } else {
+        // Progress changes the same silk and bends its existing strip. Keep its
+        // GPU material, alpha texture and buffers through the return animation.
+        ribbonMaterial.metalness = bookmark.finished ? .16 : 0;
+        tintRibbon(ribbonMaterial, silk(), !detail);
+      }
       updateRibbonGeometry();
     }
     if (readLeaves) {
