@@ -9,7 +9,8 @@ import { normalizeBookAuthor } from './book-title.js';
 import { pageRaster } from './page-raster.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { applyBookReflectionSurface } from './book-reflection-surface.js';
-import { keepProgramsAlive, prepareProgramUniforms } from './gpu-programs.js';
+import { compilePagePrograms, keepProgramsAlive, prepareProgramUniforms } from './gpu-programs.js';
+import { configureShaderDiagnostics } from './shader-diagnostics.js';
 import { buildReliefMaps, composeMaterialMap, coverReliefLayers, normalizeCoverRelief, updateReliefMapStrengths } from './cover-relief.js';
 import { runInSlices } from './cover-appearance.js';
 import { registerCanvasSnapshot as registerLazySnapshot, createNativeRendererPresentation,
@@ -1464,15 +1465,22 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   group.userData.updateBookmark = nextBook => {
     if (disposed) return;
     bookmark = bookmarkFor(nextBook);
-    if (ribbonMesh) {
+    if (!bookmark && ribbonMesh) {
       group.remove(ribbonMesh); ribbonMesh.geometry.dispose(); ribbonMaterial.alphaMap?.dispose(); ribbonMaterial.dispose();
+      ribbonMesh = null; ribbonMaterial = null;
     }
-    ribbonMesh = null; ribbonMaterial = null;
     if (bookmark) {
-      ribbonMaterial = satinRibbon(bookmark.finished, silk(), !detail);
-      ribbonMesh = new THREE.Mesh(bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek,
-        { segments:ribbonSegments, seed:ribbonSeed }), ribbonMaterial);
-      ribbonMesh.renderOrder = 4; ribbonMesh.name = 'reading-bookmark'; group.add(ribbonMesh);
+      if (!ribbonMesh) {
+        ribbonMaterial = satinRibbon(bookmark.finished, silk(), !detail);
+        ribbonMesh = new THREE.Mesh(bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek,
+          { segments:ribbonSegments, seed:ribbonSeed }), ribbonMaterial);
+        ribbonMesh.renderOrder = 4; ribbonMesh.name = 'reading-bookmark'; group.add(ribbonMesh);
+      } else {
+        // Progress changes the same silk and bends its existing strip. Keep its
+        // GPU material, alpha texture and buffers through the return animation.
+        ribbonMaterial.metalness = bookmark.finished ? .16 : 0;
+        tintRibbon(ribbonMaterial, silk(), !detail);
+      }
       updateRibbonGeometry();
     }
     if (readLeaves) {
@@ -1498,6 +1506,7 @@ function createStudioRenderer(preserveDrawingBuffer = false) {
     // Every consumer (bookView, the shelf and its insertion overlay) sets its
     // own pixel ratio and size before drawing, so no oversized buffer is allocated up front.
     renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer });
+    configureShaderDiagnostics(renderer);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     // Preserve print colours and gently compress real specular highlights.
     // Unmapped studio radiance used to clip RGB channels on bright jackets.
@@ -1771,7 +1780,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     copiedRectangle=rectangle; snapshotDirty=false;
   }
   function configureFrame(frame) {
-    configureNativeRendererSize(gpu, frame.width, frame.height, pixelRatio, rendererSize, directEnabled, true);
+    configureNativeRendererSize(gpu, frame.width, frame.height, pixelRatio, rendererSize, directEnabled, true, true);
   }
   function positionPresentation(frame) {
     const parent=canvas.parentElement?.parentElement;
@@ -1858,6 +1867,23 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (!resume) directEnabled=false;
   }
   let motionFrameCapacity = null;
+  let nativeMotionHolds = 0, nativeMotionCapacity = null;
+  // Keep the largest compact frame across hinge, ribbon and zoom phases.
+  // It grows only when the real book needs more room, never to fill empty
+  // screen space. Tokens do not draw or resize; normal frames apply it.
+  function holdNativeMotionFrame() {
+    if (disposed || !directEnabled || !compactReturnFrame || !adaptiveNativeFrame ||
+        !Number.isInteger(pixelRatio) || !Number.isInteger(viewportWidth) || !Number.isInteger(viewportHeight)) return () => {};
+    if (!nativeMotionHolds) nativeMotionCapacity = { width:displayedFrame?.width || 0, height:displayedFrame?.height || 0 };
+    nativeMotionHolds++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      nativeMotionHolds = Math.max(0, nativeMotionHolds - 1);
+      if (!nativeMotionHolds) nativeMotionCapacity = null;
+    };
+  }
   function positionModel(pose) {
     model.userData.setCoverOpen?.(Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0)));
     model.userData.setBookmarkWithdraw?.(Math.max(0, Math.min(1, pose.bookmarkWithdraw ?? current?.bookmarkWithdraw ?? 0)));
@@ -1918,6 +1944,14 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     if (adaptive && motionFrameCapacity && !measureOnly) {
       motionFrameCapacity.width = frameWidth = Math.max(frameWidth, motionFrameCapacity.width);
       motionFrameCapacity.height = frameHeight = Math.max(frameHeight, motionFrameCapacity.height);
+    }
+    if (adaptive && nativeMotionCapacity) {
+      frameWidth = Math.max(frameWidth, nativeMotionCapacity.width);
+      frameHeight = Math.max(frameHeight, nativeMotionCapacity.height);
+      if (!measureOnly) {
+        nativeMotionCapacity.width = frameWidth;
+        nativeMotionCapacity.height = frameHeight;
+      }
     }
     if (adaptive && frameWidth===viewportWidth && frameHeight===viewportHeight) return full;
     if (right<left || bottom<top
@@ -2222,7 +2256,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   const pageTextures = () => (disposed ? [] : model.userData.getPageTextures());
   // Starts linking the programs the now visible page needs; where the driver
   // links in parallel, the draw that follows finds them done.
-  function compilePage() { if (!disposed) try { return gpu.compile(scene, camera); } catch { /* linked on first draw */ } }
+  function compilePage() { if (!disposed) try { return compilePagePrograms(gpu, scene, camera); } catch { /* linked on first draw */ } }
   async function preparePagePrograms(idle, current = () => true) {
     const materials = compilePage();
     try { return await prepareProgramUniforms(gpu, materials, { idle, current:() => !disposed && current() }); }
@@ -2316,14 +2350,14 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   }
   return { canvas, get ready() { return (pendingModel || model).userData.ready; }, draw,
     deferDrawing() { if (!disposed) waitingForFirstDraw = true; }, releaseToSnapshot, handoffToShelfInsertion,
-    setCompactReturnFrame(enabled) { compactReturnFrame = Boolean(enabled); },
+    setCompactReturnFrame(enabled) { compactReturnFrame = Boolean(enabled); }, holdNativeMotionFrame,
     updateAppearance, prepareReturnAppearance, updateSpineAppearance, updateCoverAppearance, prepareCoverRelief, setCoverRelief, updateEdgeAppearance, updateEditorAppearance, updateBookmark,
     setPageSnapshot, commitPreparedPage, pageTextures, uploadPageTexture, compilePage, preparePagePrograms, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
     setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
     getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,
     animateCoverOpen, animateCoverClose, animateBookmark, alignToPage, animateToPage,
     animate:animateMotion,
-    dispose(removeCanvas = true) { cancel(); if (!removeCanvas) captureSnapshot();
+    dispose(removeCanvas = true) { cancel(); nativeMotionHolds = 0; nativeMotionCapacity = null; if (!removeCanvas) captureSnapshot();
       unregisterSnapshot?.();
       gpu.domElement.removeEventListener('webglcontextlost', invalidatePresentation);
       gpu.domElement.removeEventListener('webglcontextrestored', invalidatePresentation);

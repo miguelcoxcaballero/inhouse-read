@@ -1,11 +1,238 @@
-# Verificación del WIP — web 1.7.75 en preparación y Android 1.1.4
+# Verificación del WIP — web1.7.90 publicada y Android1.1.4
+
+## Reserva por fases1.7.91 calificada localmente
+
+3474/280 unitarias, build/75 Python,18 pares RGBA exactos y siete
+recorridos originales PASS sin retries. Libera la reserva grande al
+terminar el zoom; siguientes fases conservan DPR y sus reservas propias.
+Despliegue y comprobacion publica pendientes. [Detalle](performance-1791.md).
+
+## Reducción del framebuffer1.7.90 publicada
+
+53 focales,3468/279 unitarias, build/75 Python,18 pares RGBA exactos y11
+recorridos locales originales PASS sin retries. HTTP32/offline96, descarga
+APK/loader, PDF/papel/portada en cinco temas e importación/reapertura local
+con bytes y locator115 exactos PASS. Público22/26 estrictos: cuatro fallos
+de cuerpo de textura observado como0; no se sustituyen por sus cuerpos
+funcionales correctos ni por seis diagnósticos separados sin reproducción.
+CI37439363327 completa FAILED:524 casos/527 intentos,3 retries,5 fallos
+en UI3/6. Ambos cierres nativos fallan tambien al repetir; isometrica
+falla primero al arrancar y pasa su retry, aun flaky rechazado. Cuatro
+tandas de voces reales y otras cuatro UI PASS. [Detalle](performance-1790.md).
+
+## Preparación de página1.7.89 publicada
+
+La página oculta entrega su lote de shaders antes de consultar si está
+preparado. Siete regresiones nuevas,35 enfocadas,3462/278 unitarias,
+build y75 Python PASS. Dieciséis recorridos gráficos locales originales y
+26 de la web publicada con auditorías PASS, sin retries. HTTP32/offline96,
+PDF e imágenes en cinco temas, portada offline, importación y reapertura
+con bytes/locator115 exactos y descarga APK/loader reales PASS.
+
+CI37433923469 completa FAILED:524 casos/527 intentos,3 retries,5 intentos
+fallidos sólo UI3. Regreso alineado supera30s; fraccionario falla al abrir
+PDF8s; luces falla primero y pasa su retry, todavía rechazado como flaky.
+Otras cinco UI y cuatro tandas de voces reales PASS. No se considera toda
+la lentitud resuelta. [Detalle y límites](performance-1789.md).
+
+## Guardado de progreso1.7.88
+
+Se agrupan sólo posiciones pendientes contiguas de cada libro. La escritura
+activa y los ajustes/historial respetan su orden. Cierre y apertura esperan
+la posición final; los bytes siguen locales y Drive se programa tras guardar.
+Siete nuevas y43 relacionadas PASS;3455 unitarias/277 archivos, build y75
+Python PASS. IndexedDB real1/16MB conserva bytes/portada/progreso/ajustes:
+dos commits para una escritura activa y1000 avisos pendientes. Catorce
+recorridos normales, dos SwiftShader originales y reanudación EPUB PASS,
+cero retries y plazos intactos. No mide FPS ni velocidad de teléfono.
+Deploy, pin de los bytes HTTP32/offline96 y nueva descargaAPK/loader PASS.
+Papel en cinco temas y portada offline PASS; catálogo5 PASS. Dos auditorías
+públicas de texturas observadas como0 fallan: principales2/3 yPDF17/18
+aprobados, aunque los cuerpos funcionales pasan. Originales conservados,
+24/26 públicos aprobados,0 retries. CI nueva todavía en marcha.
+[Detalle](performance-1788.md).
+
+
+Un marcador existente conserva malla, material, alphaMap y buffers al guardar
+progreso. Geometría, acabado y pose conservados; la primera cinta se crea como
+antes. Seis nuevas y100 relacionadas PASS;3448 unitarias/276 archivos, build
+más75 Python PASS. Dieciocho paresRGBA y14 recorridos normales PASS, cero
+retries. SwiftShader adicional: alineado PASS, fraccionario FAIL por cierre8s.
+Deploy, HTTP32/offline96, nueva descargaAPK/loader y26 recorridos públicos
+con sus auditorías PASS. Papel en cinco temas y portada offline PASS.
+CI completa37425792376 FAILED:524 casos/528 intentos,4 retries/6 fallos en
+UI1/3/6; cuatro tandas reales de voces y las otras tres UI PASS. Fallos
+originales retenidos; no resolución completa de la lentitud.
+[Detalle](performance-1787.md).
+
+## Composición de sala 1.7.86 publicada
+
+El shader del replay de sala prepara uniforms en intervalos libres después
+de la primera pintura, evitando su preparación inicial dentro del regreso.
+Sin captura, dibujo ni cambios de shaders o resolución; cancelación por
+propietario/contexto/generación/dispose. Seis nuevas y31 enfocadas PASS;
+3442 unitarias/275 archivos, build y75 Python PASS. Tres composiciones
+WebGL2 conservan cada píxel. Los14 recorridos normales, dos cierres originales
+adicionales con SwiftShader y el caso de planta vecina PASS, cero retries.
+Deploy y pin de los bytes públicos PASS; HTTP32/offline96 y nueva descarga
+APK/loader PASS. Los26 recorridos públicos y auditorías PASS, cero retries.
+Papel/portada offline PASS; CI completa524 FAILED sóloUI3:527 intentos,
+3 retries y5 fallos. Las cuatro tandas de voces y otras cincoUI PASS;
+no prueba de rendimiento móvil.
+[Detalle](performance-1786.md).
+
+## Preparación de la inserción 1.7.85 publicada
+
+Los mismos programas de profundidad y del indicador preparan también sus
+uniforms, uno por intervalo libre después del primer frame. Sin dibujo,
+cambios de materiales/resolución/relojes ni nuevas variantes. Cancelación
+por dispose y errores mantienen el dibujo normal. Seis nuevas y 30 pruebas
+enfocadas PASS. Pasan 3.436 unitarias/274 archivos, build, 75 Python y
+14 recorridos normales. Los dos cierres adicionales de SwiftShader pasan
+en su primer intento, con plazos originales. HTTP32/offline96, nueva APK/loader y papel/portada
+offline PASS. Los26 recorridos públicos y auditorías PASS, cero retries.
+CI completa524 FAILED en UI3, UI4 y UI6:528 intentos/4 retries/7 intentos
+fallidos, sin omisiones. Las cuatro tandas reales de voces PASS. El retry
+aprobado de luz3 sigue siendo flaky rechazado por el gate original.
+Aún no se da por terminado.
+[Detalle](performance-1785.md).
+
+## Diagnósticos de shaders 1.7.84 publicada
+
+Producción evita consultas de logs sincrónicos; desarrollo y callbacks
+personalizados conservan los diagnósticos. 34 pruebas enfocadas, 3.430
+unitarias/273 archivos, build y 75 Python PASS. Dieciocho pares de imágenes
+WebGL2 exactos; consultas de logs 30 a cero sin cambiar materiales o resolución.
+Catorce recorridos normales locales PASS; dos cierres adicionales con
+SwiftShader FAIL a 8 s. HTTP32/offline96, descarga nueva APK/loader y papel
+más portada offline PASS. Casos públicos: recorridos 2/3, PDF 17/18 y
+catálogo 5/5; dos fallos de auditoría de una textura observada vacía al
+terminar casos cuyas aserciones funcionales pasaron. Los originales
+fallidos permanecen registrados. CI completa524 FAILED: dos cierres en
+UI3 y recarga del nogal con tres luces en UI6, también en retries. Las
+cuatro tandas reales de voces PASS.
+No se considera resuelta toda la lentitud. [Detalle](performance-1784.md).
+
+## Reserva compacta de animación 1.7.83
+
+Apertura y cierre nativos mantienen el mayor recorte necesario durante la
+secuencia, creciendo sólo cuando hace falta. Once unitarias enfocadas PASS
+y 18 comparaciones WebGL2 exactas. La propuesta anterior de viewport completo
+se conserva descartada por dos cierres fallidos en software. Ningún plazo
+original se amplía. Batería revisada: 3.424 unitarias/272 archivos, build,
+75 Python y 14 recorridos gráficos PASS sin retries. Software adicional:
+alineado PASS, fraccionario FAIL a 8 s. HTTP32/offline96 y nueva descarga APK/loader PASS. PDF18 y catálogo5 públicos
+PASS, papel/portada offline PASS. Tres recorridos públicos: 2 PASS/1 FAIL
+de auditoría por dos texturas con cuerpo0 observado; recorrido funcional
+correcto y HTTP independiente aprobado no sustituyen la auditoría fallida.
+CI completa FAILED: sólo UI3 falla dos aperturas nativas, también en retry.
+Las cuatro tandas reales de voces pasan; no se considera terminado.
+[Detalle](performance-1783.md).
+
+## Entrega de shaders de 1.7.82 publicada
+
+El lote completo se entrega al driver antes de consultar su preparación;
+no se espera ni se modifica el renderizado. Cuatro de seis regresiones nuevas
+reproducen la ausencia de entrega anterior. Pasan 24 enfocadas, 3.417
+unitarias/271 archivos, build y 75 Python. Pasan siete recorridos gráficos,
+cinco de catálogo/plantas/luces y dos regresiones adicionales, sin retries
+ni cambios de límites o fuente durante las tandas. HTTP32/offline96, nueva
+descarga APK/loader, tres recorridos públicos, 18 PDF y papel/portada offline
+PASS. Cinco casos públicos de catálogo PASS: 26 recorridos públicos
+aprobados sin retries. CI original FAILED en UI3/6: 524 identidades,
+528 intentos, cuatro retries/ocho fallos. Dos aperturas nativas y primer
+frame de lámparas tras recarga no cumplen los plazos originales;
+unitarias, cuatro trabajos de voces y restantes UI PASS. Originales completos.
+[Detalle](performance-1782.md).
+
+## Origen de la estantería de 1.7.81 publicada
+
+Cada estructura HTML conserva su propio ajuste de posición. Sustituirla
+restaura la anterior y alinea la primera pintura de la nueva, conservando
+el canvas y renderer. Tres regresiones reproducen el fallo anterior;
+pasan 28 pruebas enfocadas, 3.411 unitarias/270 archivos, build y 75 Python.
+Pasan siete recorridos gráficos, cinco de catálogo/luces y dos regresiones
+adicionales, sin retries. HTTP32/offline96, nueva descarga APK/loader y
+conservación exacta del atlas real al actualizar 80→81 PASS. Los 26
+recorridos públicos y papel/portada offline PASS, sin retries. CI original
+FAILED en UI3/6: 524 identidades/527 intentos, tres retries/seis fallos;
+unitarias, todas las voces y restantes UI PASS. Censo y originales completos.
+[Detalle](performance-1781.md).
+
+## Caché de iluminación de 1.7.80 publicada
+
+La huella automática del código 3D y de Three permite conservar el mismo
+atlas entre actualizaciones del lector o app que no cambien esas entradas.
+Pasan 45 pruebas enfocadas, 3.407 unitarias/269 archivos, build y 75 Python.
+Pasan siete recorridos gráficos, cinco de catálogo y dos regresiones
+adicionales sin retries. HTTP32/offline96 y APK/loader descargados PASS;
+cinco casos públicos de catálogo, papel/portada offline y atlas real al
+recargar PASS. PDF conserva 17 PASS/1 FAIL de auditoría HTTP. La tanda
+gráfica pública conserva 2 PASS/1 FAIL de origen fraccionario y textura vacía.
+CI original FAILED sólo en UI6: primer frame de tres luces tras recarga a
+8 s, dos intentos fallidos; 524 identidades/525 intentos, voces y UI1–5 PASS.
+Se mantienen píxeles, iluminación y resolución.
+[Detalle](performance-1780.md).
+
+## Captura de PDF de 1.7.79 publicada
+
+La app reutiliza el diseño sólo para una página física completada e intacta;
+un tamaño nuevo se renderiza primero. Conserva copias, píxeles y el contrato
+DOM, sin cambiar relojes. Pasan 84 pruebas enfocadas, 3.393 unitarias en
+267 archivos, build y 75 Python. Los siete recorridos de animación, cinco de
+catálogo y dos regresiones adicionales pasan sin retries. HTTP32/offline96,
+APK/loader, 18 PDF y cinco de catálogo publicados PASS. Papel default y
+optimizado offline coinciden píxel a píxel en cinco temas; portada PASS.
+La tanda pública de tres conserva un FAIL de auditoría de textura vacía,
+aunque sus aserciones funcionales pasan. CI original FAILED en UI3/6,
+524 identidades/528 intentos, cuatro retries/seis intentos fallidos;
+unitarias, todas las voces y restantes UI PASS. [Detalle](performance-1779.md).
+
+## Reserva de la sala de 1.7.78
+
+El renderer compartido agrupa DPR y tamaño también al capturar la sala e
+insertar el libro. Cinco regresiones nuevas conservan su estado final y
+eliminan tres reservas intermedias. Pasan 3.389 unitarias/266 archivos, build,
+75 Python, ocho comparaciones de píxeles y siete recorridos gráficos originales.
+Catálogo conserva cuatro PASS y un FAIL de primer frame de luces tras recarga
+a 8 s. HTTP32/offline96 y APK/loader PASS; 18 PDF, cinco de catálogo y dos
+regresos nativos públicos PASS. Editor conserva un FAIL de auditoría de
+textura vacía. Papel y portada offline PASS. CI original FAILED en UI3/6:
+cierre nativo a 8 s y dos casos flaky tras recarga. Todas las voces reales
+y restantes UI PASS; no se afirma aprobación global.
+[Detalle](performance-1778.md).
+
+## Catálogo oculto de 1.7.77
+
+La descarga se prepara en idle sin construir su estudio GPU oculto. Pasan
+47 pruebas enfocadas, 3.384 unitarias/265 archivos, build y 75 Python.
+Pasan los siete recorridos de animación y cinco de catálogo/plantas/luces
+sin retries. Publicación HTTP32/offline96, APK/loader y 26 recorridos
+públicos PASS; papel y portada offline PASS. CI original FAILED en UI3/6:
+apertura nativa y primer frame de luces; todas las voces reales PASS.
+[Detalle](performance-1777.md).
+
+## Reserva nativa del libro de 1.7.76
+
+La vista 3D evita el framebuffer intermedio de un resize que cambia ambos
+ejes. Mantiene dimensiones finales, DPR, píxeles, modelos, iluminación y
+relojes. Pasan 55 pruebas enfocadas y ocho comparaciones de píxeles reales.
+Pasan 3.382 unitarias/264 archivos, build, 75 Python y siete recorridos
+gráficos originales sin retries. Publicación HTTP y APK/loader PASS;
+21 recorridos públicos originales PASS sin retries; papel offline en cinco
+temas PASS. CI original FAILED en UI2/3; voces y restantes UI PASS.
+[Detalle](performance-1776.md).
 
 ## Apertura y contador de programas de 1.7.75
 
 Preparación de uniformes de los mismos shaders mientras espera la portada,
 en turnos idle, y corrección del contador publicado tras la preparación de
-la estantería. Pasan 98 pruebas enfocadas en cinco archivos. Batería completa
-y comprobación de publicación pendientes. [Detalle](performance-1775.md).
+la estantería. Pasan 98 pruebas enfocadas en cinco archivos. Publicada e
+integrada con las correcciones de lámparas y catálogo hasta `1864695`:
+3.373 unitarias/263 archivos, build, 75 Python, siete recorridos locales y
+21 públicos PASS, HTTP32/offline96 y APK/loader reales PASS. Papel y portada
+PDF publicados funcionan offline. CI original mantiene sus fallos nativos;
+no se afirma aprobación global. [Detalle](performance-1775.md).
 
 ## Texturas PDF de 1.7.74
 

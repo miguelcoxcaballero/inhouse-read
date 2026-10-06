@@ -40,6 +40,14 @@ export async function prepareProgramUniforms(renderer, materials, { idle, curren
   return current();
 }
 
+// Page warm-up compiles hidden leaf materials too. Submit that exact batch
+// before the idle readiness checks, without waiting for completion or drawing.
+export function compilePagePrograms(renderer, scene, camera) {
+  const materials = renderer.compile(scene, camera);
+  if (materials?.size) renderer.getContext?.()?.flush?.();
+  return materials;
+}
+
 /** Pin every program the renderer currently holds so disposing the last
  * material that used one no longer deletes it. */
 export function retainPrograms(renderer) {
@@ -110,6 +118,9 @@ export function compilePrograms(renderer, scene, camera, prepared = []) {
     try { compile(drawn.filter(object => materialsOf(object).every(material => !material.transmission && !material.transparent))); }
     finally { renderer.setRenderTarget(previous); target.dispose(); }
   }
+  // Submit the complete batch before polling, just as prelinkPrograms does.
+  // This queues the work without waiting for links or drawing a first frame.
+  if (programs.size) renderer.getContext?.().flush?.();
   const deadline = performance.now() + LINK_TIMEOUT;
   return () => {
     if (performance.now() > deadline) return true;

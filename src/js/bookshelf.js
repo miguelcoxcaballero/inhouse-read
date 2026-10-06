@@ -460,11 +460,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     motionTarget:() => root.closest('.screen') || root,
     onMotion:phase => { state.shelfScene?.setPaintHeld?.(phase === 'start'); } });
   let catalogPrepare = 0;
-  // The booklet is only reachable in the diagonal view: build the catalogue's
-  // first studio in idle time once the shelf turns there.
+  // Fetch the catalogue when the shelf settles, but leave its GPU studio for
+  // the first open, after the camera flight. Hidden PMREM/shader work competes
+  // with shelf redraws even when scheduled in an idle callback.
   function prepareCatalogWhenIdle(delay = 0) {
     if (catalogPrepare || !catalogNodeEnabled() || state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC) return;
-    const run = () => { if (!state.destroyed) plantCatalog.prepare(); };
+    const run = () => { if (!state.destroyed) plantCatalog.prefetch(); };
     const idle = () => typeof requestIdleCallback === 'function' ? requestIdleCallback(run, { timeout:4000 }) : setTimeout(run, 1500);
     catalogPrepare = delay ? setTimeout(idle, delay) : idle();
   }
@@ -3541,72 +3542,75 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     async function finishReaderTransition({ pageSnapshot, animatePage } = {}) {
       if (session.cancelled || state.destroyed) return false;
-      if (pageSnapshot && !installOpeningPage(pageSnapshot)) throw new Error('No se pudo preparar la página del modelo 3D.');
-      markTiming('page-installed');
-      session.phase = 'reading';
-      flyout.dataset.openingPhase = 'opening';
-      flyout.classList.add('is-opening-book');
-      closeButton.hidden = true;
-      fadeMeta();
-      session.readingPose = planReadingBookPose({ width:coverW, height:coverH, thickness,
-        viewportWidth:vw, viewportHeight:vh, centerX, centerY });
-      session.coverOpeningDuration = prefersReducedMotion() ? 1 : 640;
-      // The restored page is uploaded BEFORE its cover moves. Starting the
-      // hinge while the renderer loaded exposed a blank, generic page block.
-      session.coverOpening = view
-        ? view.animateCoverOpen({ duration:session.coverOpeningDuration, targetPose:session.readingPose })
-        : animate(bookNode.querySelector('.ihr-flyout__fallback-leaf'), [
-            { transform:'rotateY(0deg)' }, { transform:'rotateY(-169deg)' }
-          ], { duration:session.coverOpeningDuration, easing:EASE, fill:'both' });
-      await waitForMotion(session.coverOpening, session.coverOpeningDuration);
-      if (session.cancelled || state.destroyed) return false;
-      // Withdraw the fabric while the saved page is still readable, before
-      // moving the camera. Closing performs these same steps in reverse.
-      flyout.dataset.openingPhase = 'bookmark';
-      if (view) {
-        session.bookmarkMotion = view.animateBookmark({ withdraw:1, duration:prefersReducedMotion() ? 1 : 320 });
-        await waitForMotion(session.bookmarkMotion, prefersReducedMotion() ? 1 : 320);
-      }
-      if (session.cancelled || state.destroyed) return false;
-      if (typeof animatePage === 'function') {
-        flyout.dataset.openingPhase = 'zooming';
-        await animatePage({ duration:prefersReducedMotion() ? 1 : 720, pageSnapshot, animateBookToPage,
-          isActive:() => !session.cancelled && !state.destroyed && state.session === session });
-      }
-      if (session.cancelled || state.destroyed) return false;
-      // Whatever ended the zoom, the book hands over in the reader's own colours.
-      if (view && view.getPageTheme() < 1) view.setPageTheme(1);
-      flyout.dataset.openingPhase = 'handoff';
-      // The handoff fades this host. Commit its last frame once so the live
-      // sibling cannot remain opaque; the retained view resumes GPU presentation
-      // when it is moved into the closing animation's new host.
-      view?.releaseToSnapshot?.({ resume:true });
-      const fadeDuration = prefersReducedMotion() ? 1 : 140;
-      const fade = animate(bookNode, [{ opacity:1 }, { opacity:0 }], { duration:fadeDuration, easing:'linear', fill:'both' });
-      animate(scrim, [{ opacity:1 }, { opacity:0 }], { duration:fadeDuration, easing:'linear', fill:'both' });
-      await waitForMotion(fade, fadeDuration);
-      if (state.session === session) {
-        flyout.dataset.openingPhase = 'complete';
-        session.phase = 'complete';
-        state.shelfScene?.setModalBackgroundDeferred?.(null);
-        state.lastOpened = { book, style: item.style, spineEl };
-        state.session = null;
-        state.busy = false;
-        session.cancelled = true;
-        clearInterval(readyCheck);
-        document.removeEventListener('keydown', onKeydown, true);
-        // The close animation uses the same physical book and viewport. Keep
-        // its decoded case and linked programs instead of rebuilding them at
-        // Back. Only one view is retained, and incompatible geometry is never
-        // reused. The ribbon is refreshed from the reader's final progress.
-        if (view?.updateBookmark) returnViews.retain(bookReturnSignature(book,item.style,
-          { width:coverW,height:coverH,thickness,viewportWidth:vw,viewportHeight:vh,centerX,centerY },coverUrl),view,
-          bookReturnCompatibility(book,item.style,{ width:coverW,height:coverH,thickness,viewportWidth:vw,viewportHeight:vh,centerX,centerY }));
-        else view?.dispose();
-        flyout.remove();
-        return true;
-      }
-      return false;
+      const releaseFrame = view?.holdNativeMotionFrame?.();
+      try {
+        if (pageSnapshot && !installOpeningPage(pageSnapshot)) throw new Error('No se pudo preparar la página del modelo 3D.');
+        markTiming('page-installed');
+        session.phase = 'reading';
+        flyout.dataset.openingPhase = 'opening';
+        flyout.classList.add('is-opening-book');
+        closeButton.hidden = true;
+        fadeMeta();
+        session.readingPose = planReadingBookPose({ width:coverW, height:coverH, thickness,
+          viewportWidth:vw, viewportHeight:vh, centerX, centerY });
+        session.coverOpeningDuration = prefersReducedMotion() ? 1 : 640;
+        // The restored page is uploaded BEFORE its cover moves. Starting the
+        // hinge while the renderer loaded exposed a blank, generic page block.
+        session.coverOpening = view
+          ? view.animateCoverOpen({ duration:session.coverOpeningDuration, targetPose:session.readingPose })
+          : animate(bookNode.querySelector('.ihr-flyout__fallback-leaf'), [
+              { transform:'rotateY(0deg)' }, { transform:'rotateY(-169deg)' }
+            ], { duration:session.coverOpeningDuration, easing:EASE, fill:'both' });
+        await waitForMotion(session.coverOpening, session.coverOpeningDuration);
+        if (session.cancelled || state.destroyed) return false;
+        // Withdraw the fabric while the saved page is still readable, before
+        // moving the camera. Closing performs these same steps in reverse.
+        flyout.dataset.openingPhase = 'bookmark';
+        if (view) {
+          session.bookmarkMotion = view.animateBookmark({ withdraw:1, duration:prefersReducedMotion() ? 1 : 320 });
+          await waitForMotion(session.bookmarkMotion, prefersReducedMotion() ? 1 : 320);
+        }
+        if (session.cancelled || state.destroyed) return false;
+        if (typeof animatePage === 'function') {
+          flyout.dataset.openingPhase = 'zooming';
+          await animatePage({ duration:prefersReducedMotion() ? 1 : 720, pageSnapshot, animateBookToPage,
+            isActive:() => !session.cancelled && !state.destroyed && state.session === session });
+        }
+        if (session.cancelled || state.destroyed) return false;
+        // Whatever ended the zoom, the book hands over in the reader's own colours.
+        if (view && view.getPageTheme() < 1) view.setPageTheme(1);
+        flyout.dataset.openingPhase = 'handoff';
+        // The handoff fades this host. Commit its last frame once so the live
+        // sibling cannot remain opaque; the retained view resumes GPU presentation
+        // when it is moved into the closing animation's new host.
+        view?.releaseToSnapshot?.({ resume:true });
+        const fadeDuration = prefersReducedMotion() ? 1 : 140;
+        const fade = animate(bookNode, [{ opacity:1 }, { opacity:0 }], { duration:fadeDuration, easing:'linear', fill:'both' });
+        animate(scrim, [{ opacity:1 }, { opacity:0 }], { duration:fadeDuration, easing:'linear', fill:'both' });
+        await waitForMotion(fade, fadeDuration);
+        if (state.session === session) {
+          flyout.dataset.openingPhase = 'complete';
+          session.phase = 'complete';
+          state.shelfScene?.setModalBackgroundDeferred?.(null);
+          state.lastOpened = { book, style: item.style, spineEl };
+          state.session = null;
+          state.busy = false;
+          session.cancelled = true;
+          clearInterval(readyCheck);
+          document.removeEventListener('keydown', onKeydown, true);
+          // The close animation uses the same physical book and viewport. Keep
+          // its decoded case and linked programs instead of rebuilding them at
+          // Back. Only one view is retained, and incompatible geometry is never
+          // reused. The ribbon is refreshed from the reader's final progress.
+          if (view?.updateBookmark) returnViews.retain(bookReturnSignature(book,item.style,
+            { width:coverW,height:coverH,thickness,viewportWidth:vw,viewportHeight:vh,centerX,centerY },coverUrl),view,
+            bookReturnCompatibility(book,item.style,{ width:coverW,height:coverH,thickness,viewportWidth:vw,viewportHeight:vh,centerX,centerY }));
+          else view?.dispose();
+          flyout.remove();
+          return true;
+        }
+        return false;
+      } finally { releaseFrame?.(); }
     }
 
     async function expandCover() {
@@ -3898,8 +3902,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     } };
     state.returnMotion = motion;
     const active = () => state.returnMotion === motion && !state.destroyed;
+    let releaseFrame;
     try {
       if (view) await view.ready;
+      releaseFrame = view?.holdNativeMotionFrame?.();
       if (!active()) return false;
       if (pageSnapshot?.source && view) { view.deferDrawing?.(); view.setCompactReturnFrame?.(true); }
       if (pageSnapshot?.source && view && view.setPageSnapshot(pageSnapshot)) {
@@ -3916,6 +3922,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           { duration:prefersReducedMotion() ? 1 : 620 });
         await waitForMotion(animation, prefersReducedMotion() ? 1 : 620);
         if (!active()) return false;
+        // The zoom's large framebuffer no longer needs to survive the ribbon,
+        // hinge and flight. Their existing per-motion reservations retain the
+        // exact projected book at the same DPR without keeping empty pixels.
+        releaseFrame?.(); releaseFrame = null;
         // White paper from here on, even if a stalled frame let the zoom's watchdog release it early.
         if (pageSnapshot.paper && view.getPageTheme() > 0) view.setPageTheme(0);
         flyout.dataset.returnPhase = 'bookmark';
@@ -4007,7 +4017,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     } catch (error) {
       motion.cancel();
       throw error;
-    }
+    } finally { releaseFrame?.(); }
   }
 
   return {

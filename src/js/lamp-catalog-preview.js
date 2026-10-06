@@ -5,6 +5,7 @@ import { getCatalogLamp } from './lamp-catalog-data.js';
 import { createShelfLampLighting, ensureAreaLights } from './shelf-lamp-lighting.js';
 import { DEFAULT_LAMP_KELVIN, createTintTransition, tintColor } from './lamp-kelvin.js';
 import { retainPrograms, whenProgramsReady } from './gpu-programs.js';
+import { configureShaderDiagnostics } from './shader-diagnostics.js';
 
 // The filament lamp's light needs its lookup tables before the first preview.
 await ensureAreaLights().catch(() => {});
@@ -141,6 +142,7 @@ export function createLampCatalogPreview(host) {
   try {
     if (typeof WebGLRenderingContext === 'undefined') throw new Error('WebGL unavailable');
     renderer = new THREE.WebGLRenderer({ antialias:true,alpha:true });
+    configureShaderDiagnostics(renderer);
     renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1,2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;

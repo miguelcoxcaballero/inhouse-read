@@ -1,19 +1,19 @@
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {bookView} from '../../src/js/book-model.js';
-const metrics=vi.hoisted(()=>({renders:0}));
+const metrics=vi.hoisted(()=>({renders:0, batch:new Set(), submitted:0}));
 vi.mock('three',async original=>{
  const THREE=await original();
  class Renderer{
   constructor(){this.domElement=document.createElement('canvas');this.shadowMap={};this.info={programs:[]};this.capabilities={getMaxAnisotropy:()=>1};this.size=new THREE.Vector2();this.ratio=1;}
   getSize(target){return target.copy(this.size);}setSize(w,h){this.size.set(w,h);}getPixelRatio(){return this.ratio;}setPixelRatio(v){this.ratio=v;}
-  compile(){}render(){metrics.renders++;}
+  compile(){return metrics.batch;}getContext(){return {flush:()=>metrics.submitted++};}render(){metrics.renders++;}
  }
  class PMREM{fromScene(){return{texture:new THREE.Texture()};}dispose(){}}
  return{...THREE,WebGLRenderer:Renderer,PMREMGenerator:PMREM};
 });
 let view,host,context;
 beforeEach(()=>{
- metrics.renders=0;vi.stubGlobal('WebGLRenderingContext',function(){});
+ metrics.renders=0;metrics.batch=new Set();metrics.submitted=0;vi.stubGlobal('WebGLRenderingContext',function(){});
  context=new Proxy({measureText:t=>({width:String(t).length*16}),createLinearGradient:()=>({addColorStop(){}}),getImageData:(_x,_y,w,h)=>({data:new Uint8ClampedArray(w*h*4)})},{get:(o,k)=>o[k]??(()=>{})});
  vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockReturnValue(context);host=document.createElement('div');document.body.append(host);
 });
@@ -24,6 +24,13 @@ function make(deferDraw=false){return view=bookView(host,{id:'batch',title:'A Bo
  {width:132,height:200,thickness:40,viewportWidth:390,viewportHeight:844,centerX:195,centerY:350,initialPose:pose,deferDraw});}
 function snapshot(){const source=document.createElement('canvas');source.width=132;source.height=200;return{source,width:132,height:200,engine:'pdf',sourceType:'pdf-original',text:'Actual page',location:{locator:3},background:'#ffffff'};}
 describe('book page preparation paints once',()=>{
+ it('submits a hidden page compile without drawing or changing its snapshot',async()=>{
+  make(true);await view.ready;const saved=snapshot();view.setPageSnapshot(saved,{redraw:false});
+  const batch=new Set([{}]);metrics.batch=batch;metrics.submitted=0;const before=metrics.renders;
+  expect(view.compilePage()).toBe(batch);expect(metrics.submitted).toBe(1);
+  expect(metrics.renders).toBe(before);expect(view.hasPageSnapshot(saved)).toBe(true);
+ });
+
  it('prepares the model, snapshot and projection before its first aligned framebuffer',async()=>{
   make(true);await view.ready;expect(metrics.renders).toBe(0);
   expect(view.setPageSnapshot(snapshot(),{redraw:false})).toBe(true);

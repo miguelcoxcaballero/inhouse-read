@@ -1,3 +1,4 @@
+/* global __STUDIO_ENVIRONMENT_VERSION__ */
 import * as THREE from 'three';
 
 // Both persistent renderers use the same immutable studio. Its CubeUV atlas
@@ -10,10 +11,13 @@ let attempted = false, atlas = null;
 
 // The same bytes also persist on this device, so a later start reads them
 // while the app loads instead of baking the room before its first frame.
-// This build and browser key them: new code or a new browser bakes again.
+// Generating code, Three and browser key them. An unrelated app update keeps
+// the exact atlas. Development and isolated builds retain the URL fallback.
 const DB = 'inhouse-read-studio', STORE = 'atlas', RECORD = 'studio';
+const revision = typeof __STUDIO_ENVIRONMENT_VERSION__ === 'string'
+  ? __STUDIO_ENVIRONMENT_VERSION__ : new URL(import.meta.url).pathname;
 const persistKey = import.meta.env.PROD && typeof indexedDB !== 'undefined'
-  ? `${new URL(import.meta.url).pathname}|${globalThis.navigator?.userAgent ?? ''}` : null;
+  ? `${revision}|${globalThis.navigator?.userAgent ?? ''}` : null;
 const usable = ({ data, width, height, settings }) => Object.prototype.toString.call(data) === '[object Uint16Array]' &&
   Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0 && width * height * 8 <= MAX_BYTES &&
   data.length === width * height * 4 && properties.every(key => key in Object(settings));

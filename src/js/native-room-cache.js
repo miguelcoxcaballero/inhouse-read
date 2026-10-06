@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { configureNativeRendererSize } from './native-renderer-size.js';
+import { prepareProgramUniforms } from './gpu-programs.js';
 
 const MAX_LAYERS = 3;
 
@@ -198,5 +199,18 @@ export function createNativeFramebufferCache(renderer,{onRestored}={}) {
   // Link the raw copy before an inspection gesture starts. This does not draw
   // or alter the default framebuffer which remains the original scene output.
   function prepare() { if (!prepared) { renderer.compile(scene,camera); prepared=true; } }
-  return {capture,repaint,compose,releaseSlot,releaseUnusedSlots,dispose,exactFrame,validFrame,prepare};
+  // Uniform reflection is otherwise deferred until the first room replay,
+  // inside the book's return. Prepare the identical raw program in idle slices;
+  // no framebuffer allocation, capture or draw is needed.
+  async function prepareUniforms({ idle, current = () => true } = {}) {
+    if (typeof idle !== 'function') return false;
+    const ownerGeneration = generation;
+    const active = () => !disposed && generation === ownerGeneration && current() && contextReady();
+    await idle();
+    if (!active()) return false;
+    prepare();
+    renderer.getContext().flush?.();
+    return prepareProgramUniforms(renderer, [material], { idle, current:active });
+  }
+  return {capture,repaint,compose,releaseSlot,releaseUnusedSlots,dispose,exactFrame,validFrame,prepare,prepareUniforms};
 }

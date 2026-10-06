@@ -83,9 +83,9 @@ export class ReaderController {
   async getSpeechSource() { return await this.#reader?.getSpeechSource?.() || null }
   /** undefined keeps legacy format navigation; null from a supported reader identifies the actual book end. */
   get getNextSpeechSource() { return this.#reader?.getNextSpeechSource?.bind(this.#reader) }
-  async getPageSnapshot() {
+  async getPageSnapshot(options) {
     const reader = this.#reader
-    const snapshot = await reader?.getPageSnapshot?.()
+    const snapshot = await reader?.getPageSnapshot?.(options)
     // A selection can replace this shared reader while an ebook layout awaits
     // its fonts. Never give the newly selected book a previous book's bitmap.
     if (!snapshot || reader !== this.#reader) return null

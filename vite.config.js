@@ -6,6 +6,7 @@ import { foliateArchivePatch } from './scripts/foliate-archive-patch.mjs'
 import { pdfBackgroundPatch } from './scripts/pdf-background-patch.mjs'
 import { neuralVoiceAssets } from './scripts/neural-voice-assets.mjs'
 import { shelfBakeVersion } from './scripts/shelf-bake-version.mjs'
+import { studioEnvironmentVersion } from './scripts/studio-environment-version.mjs'
 
 const resolvePath = p => fileURLToPath(new URL(p, import.meta.url))
 
@@ -13,7 +14,7 @@ const resolvePath = p => fileURLToPath(new URL(p, import.meta.url))
 export default defineConfig({
   base: '/inhouse-read/',
   plugins:[foliateFixedLayoutPatch(), foliateBackgroundPatch(), foliateArchivePatch(), pdfBackgroundPatch(), neuralVoiceAssets(),
-    shelfBakeVersion(resolvePath('.'))],
+    shelfBakeVersion(resolvePath('.')), studioEnvironmentVersion(resolvePath('.'))],
   // Keep the same guarded source in development as in production; otherwise
   // dependency prebundling would bypass the fixed-layout transform in dev.
   optimizeDeps:{ exclude:['foliate-js', 'pdfjs-dist/legacy/build/pdf.mjs'] },

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { configureNativeRendererSize } from './native-renderer-size.js';
+import { configureShelfRendererSize } from './shelf-renderer-size.js';
 import { shelfPixelOffset } from './shelf-pixel-origin.js';
 import { refreshCanvasFontsAfterPaint } from './canvas-font-readiness.js';
 import { createBookModel, getBookRenderer, lightBookScene } from './book-model.js';
@@ -16,6 +16,7 @@ import { createShelfTrash, sampleTrashDrop } from './shelf-trash.js';
 import { createShelfCatalog } from './shelf-catalog.js';
 import { createBaggebo } from './baggebo-model.js';
 import { compilePrograms, prelinkPrograms } from './gpu-programs.js';
+import { prepareInsertionPrograms } from './insertion-program-preparation.js';
 import { idleSlice } from './idle-startup.js';
 import { BAGGEBO_SPEC, SHELF_SPECS, normalizeShelfType } from './shelf-types.js';
 import { MINIMUM_LAMP_TAP_SIZE, minimumBookTapWidth, nearestTapTarget, padTapRect, padTapSquare } from './plant-dimensions.js';
@@ -248,7 +249,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   canvas.setAttribute('aria-hidden', 'true');
   Object.assign(canvas.style, { position:'sticky', top:'0', left:'0', display:'block', pointerEvents:'none', zIndex:'0' });
   let originalHeight = stage.style.height;
-  const originalTop = stage.style.top;
+  let originalTop = stage.style.top;
   let stagePixelOffset = 0;
   let alreadyScene = stage.classList.contains('has-scene');
   const originalStyles = new Map(entries.filter(entry => entry.node).map(entry => [entry.node, entry.node.getAttribute('style')]));
@@ -1984,7 +1985,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
     const paint = () => {
     const outputWidth=native?vw:frame.width, outputHeight=native?vh:frame.height;
-    configureNativeRendererSize(renderer, outputWidth, outputHeight, ratio, rendererSize, native);
+    configureShelfRendererSize(renderer, outputWidth, outputHeight, ratio, rendererSize);
     const previousViewport = native && renderer.getViewport(previousInsertionViewport);
     if (native) renderer.setViewport(0,0,frame.width,frame.height);
     const autoClear = renderer.autoClear, scissorTest = renderer.getScissorTest();
@@ -2231,15 +2232,18 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       }
       programsReady = true;
       // The first frame never draws the drop guide or the return's depth
-      // pass: link them once it is painted, long before a finger needs them.
-      idleSlice().then(() => {
-        if (disposed) return;
-        prelinkPrograms(renderer, scene, camera, [dropGuide, ...depthWriters]);
-        // Compilation changes the real program cache without painting. Report
-        // it now so the next resize/gesture does not appear to create programs
-        // that were already prepared in the background. No extra render.
-        setData(canvas, 'scenePrograms', String(renderer.info?.programs?.length || 0));
-      });
+      // pass: link and reflect them in idle slices after the first paint,
+      // before the return needs their first real draw.
+      nativeFrameCache?.prepareUniforms?.({ idle:idleSlice, current:() => !disposed })
+        .catch(error => console.warn('No se pudo preparar la composición de la sala:', error));
+      prepareInsertionPrograms(renderer, scene, camera, [dropGuide, ...depthWriters], {
+        idle:idleSlice, current:() => !disposed, onLinked:() => {
+          // Compilation changes the real program cache without painting. Report
+          // it now so the next resize/gesture does not appear to create programs
+          // that were already prepared in the background. No extra render.
+          setData(canvas, 'scenePrograms', String(renderer.info?.programs?.length || 0));
+        }
+      }).catch(error => console.warn('No se pudo preparar la inserción 3D:', error));
     }
     const veneerWait = veneerWaits && shelfType !== 'baggebo' ? veneerDeadline - performance.now() : 0;
     if (veneerWait > 0) {
@@ -2287,7 +2291,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // Release it only when this transaction really paints the legacy room.
       if(!nativeCaptureAligned && !nativeCapturePhysical)releaseCompletedLegacyInsertions();
       withRendererPresentation(renderer,nativeRoomLease,()=>{
-      configureNativeRendererSize(renderer, renderWidth, renderHeight, ratio, rendererSize, Boolean(nativeCaptureAligned));
+      configureShelfRendererSize(renderer, renderWidth, renderHeight, ratio, rendererSize);
       // Fractional legacy captures keep Three's original viewport rounding.
       // Reassert the retained framebuffer only when it has exact pixel bounds.
       if(nativeCaptureAligned)renderer.setViewport(0,0,renderWidth,renderHeight);
@@ -2920,6 +2924,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       // resources remain alive while the replacement semantic tree is bound.
       if (next.stage !== stage) {
         stage.style.height = originalHeight;
+        stage.style.top = originalTop;
         if (!alreadyScene) stage.classList.remove('has-scene');
         for (const [node, style] of originalStyles) {
           if (style === null) node.removeAttribute('style'); else node.setAttribute('style', style);
@@ -2934,6 +2939,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         originalStyles.clear();
         stage = next.stage;
         originalHeight = stage.style.height;
+        // Pixel alignment belongs to the DOM stage that actually received it.
+        // A replacement has not been shifted: subtracting the outgoing offset
+        // would leave its first retained paint at the wrong screen origin.
+        originalTop = stage.style.top;
+        stagePixelOffset = 0;
         alreadyScene = stage.classList.contains('has-scene');
         stage.classList.add('has-scene');
         stage.prepend(canvas);

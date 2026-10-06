@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createShelfPlant } from './shelf-plants.js';
 import { retainPrograms, whenProgramsReady } from './gpu-programs.js';
+import { configureShaderDiagnostics } from './shader-diagnostics.js';
 
 /** One stationary front view. Render only for selection, resize or texture updates.
  * A new selection is built after the tapped choice has painted and is shown
@@ -59,6 +60,7 @@ export function createPlantCatalogPreview(host) {
   try {
     if (typeof WebGLRenderingContext === 'undefined') throw new Error('WebGL unavailable');
     renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+    configureShaderDiagnostics(renderer);
     renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1,2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;

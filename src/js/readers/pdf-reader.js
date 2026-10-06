@@ -738,7 +738,7 @@ export class PdfReader {
   }
 
   /** The restored reading page, copied only after its latest render settles. */
-  async getPageSnapshot() {
+  async getPageSnapshot({ reuseSettledLayout = false } = {}) {
     if (!this.#doc) return null
     let pending
     do {
@@ -747,11 +747,21 @@ export class PdfReader {
     } while (this.#doc && pending !== this.#renderReady)
     if (!this.#doc) return null
     const textMode = this.#preferences.pdfMode === 'text'
-    // Physical PDF pixels and their text layer have already finished rendering.
-    // Only DOM text snapshots depend on unrelated document webfonts.
-    await settlePageLayout(this.#container.ownerDocument, { waitForFonts:textMode })
+    // An explicit snapshot can arrive before ResizeObserver's delayed render.
+    // Finish that exact render first, preserving the page, text and resolution.
+    if (reuseSettledLayout && !textMode && (!this.#sameRenderKey(this.#renderState?.key, this.#renderKey())
+        || !this.#renderIsIntact(this.#renderState))) {
+      this.#cancelResize()
+      await this.#render()
+      return this.getPageSnapshot({ reuseSettledLayout })
+    }
+    // Completed physical pixels need no additional paints when their layout
+    // and text are intact. DOM text still waits for fonts and both frames.
+    const settledPhysical = reuseSettledLayout && !textMode && this.#resizeTimer == null
+      && this.#sameRenderKey(this.#renderState?.key, this.#renderKey()) && this.#renderIsIntact(this.#renderState)
+    if (!settledPhysical) await settlePageLayout(this.#container.ownerDocument, { waitForFonts:textMode })
     if (!this.#doc || pending !== this.#renderReady
-      || textMode !== (this.#preferences.pdfMode === 'text')) return this.getPageSnapshot()
+      || textMode !== (this.#preferences.pdfMode === 'text')) return this.getPageSnapshot({ reuseSettledLayout })
     const page = this.#pageNum
     if (textMode) { this.#settleTextResize(); this.#rememberTextPosition() }
     // Physical white pages blend into the current reader theme on opening.
@@ -793,7 +803,8 @@ export class PdfReader {
         || facts[2] !== this.#renderToken || this.#preferences.pdfMode === 'text'
         || facts[4] !== this.#canvas.width || facts[5] !== this.#canvas.height
         || facts[7] !== original.width || facts[8] !== original.height
-        || canvasFilter !== renderedPageFilter(this.#canvas)) return this.getPageSnapshot()
+        || canvasFilter !== renderedPageFilter(this.#canvas)
+        || settledPhysical && !this.#sameRenderKey(this.#renderState?.key, this.#renderKey())) return this.getPageSnapshot({ reuseSettledLayout })
       registerPageRaster(snapshot.source, state.themeRaster)
       if (snapshot.paper) registerPageRaster(snapshot.paper.source, state.paperRaster)
     } else {
