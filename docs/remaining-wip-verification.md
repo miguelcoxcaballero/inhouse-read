@@ -1,13 +1,27 @@
-# Verificación del WIP — web 1.7.80 publicada y Android 1.1.4
+# Verificación del WIP — web 1.7.81 publicada y Android 1.1.4
 
-## Origen de la estantería de 1.7.81 en preparación
+## Entrega de shaders de 1.7.82 preparada
+
+El lote completo se entrega al driver antes de consultar su preparación;
+no se espera ni se modifica el renderizado. Cuatro de seis regresiones nuevas
+reproducen la ausencia de entrega anterior. Pasan 24 enfocadas, 3.417
+unitarias/271 archivos, build y 75 Python. Pasan siete recorridos gráficos,
+cinco de catálogo/plantas/luces y dos regresiones adicionales, sin retries
+ni cambios de límites o fuente durante las tandas. Publicación pendiente.
+[Detalle](performance-1782.md).
+
+## Origen de la estantería de 1.7.81 publicada
 
 Cada estructura HTML conserva su propio ajuste de posición. Sustituirla
 restaura la anterior y alinea la primera pintura de la nueva, conservando
 el canvas y renderer. Tres regresiones reproducen el fallo anterior;
 pasan 28 pruebas enfocadas, 3.411 unitarias/270 archivos, build y 75 Python.
 Pasan siete recorridos gráficos, cinco de catálogo/luces y dos regresiones
-adicionales, sin retries; publicación pendiente. [Detalle](performance-1781.md).
+adicionales, sin retries. HTTP32/offline96, nueva descarga APK/loader y
+conservación exacta del atlas real al actualizar 80→81 PASS. Los 26
+recorridos públicos y papel/portada offline PASS, sin retries. CI original
+sigue en marcha con fallo confirmado en UI3; falta el censo completo.
+[Detalle](performance-1781.md).
 
 ## Caché de iluminación de 1.7.80 publicada
 

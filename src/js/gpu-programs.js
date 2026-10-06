@@ -110,6 +110,9 @@ export function compilePrograms(renderer, scene, camera, prepared = []) {
     try { compile(drawn.filter(object => materialsOf(object).every(material => !material.transmission && !material.transparent))); }
     finally { renderer.setRenderTarget(previous); target.dispose(); }
   }
+  // Submit the complete batch before polling, just as prelinkPrograms does.
+  // This queues the work without waiting for links or drawing a first frame.
+  if (programs.size) renderer.getContext?.().flush?.();
   const deadline = performance.now() + LINK_TIMEOUT;
   return () => {
     if (performance.now() > deadline) return true;
