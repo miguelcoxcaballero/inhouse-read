@@ -811,8 +811,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   // more frame, instead of one full render per arrival (they came in three or
   // four batches). The final pixels are the same; only the renders between go.
   // A gesture, or the time limit, paints at once.
-  const STARTUP_SETTLE_MS = 700, STARTUP_WINDOW_MS = 8000;
-  let startupSettle = { expires:0, until:0, timer:0, held:false };
+  const STARTUP_SETTLE_MS = 2500;
+  let startupSettle = { until:0, timer:0, held:false };
   // Other books still decoding their first cover (the caller has just settled).
   const coversPending = caller => bookEntries.some(entry => entry !== caller && entry.kind !== 'plant' && entry.kind !== 'lamp' &&
     entry.model?.visible && entry.model.userData.coverLoaded === undefined);
@@ -823,10 +823,10 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       invalidate(true, preserveInspectionOverview, source);
       return;
     }
-    // The wait is counted from the first arrival: a slow device can take a
-    // while to decode the first cover after its first frame.
+    // Only the first batch after the first frame. The wait is counted from
+    // its first arrival: a slow device can take seconds to decode a cover.
     gate.until ||= performance.now() + STARTUP_SETTLE_MS;
-    if (performance.now() >= gate.expires || performance.now() >= gate.until || !(coversPending(caller) || fontsPending())) {
+    if (performance.now() >= gate.until || !(coversPending(caller) || fontsPending())) {
       releaseStartupSettle();
       invalidate(true, preserveInspectionOverview, source);
       return;
@@ -2425,7 +2425,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       });
       releaseUnusedNativeRoomFrames();
       setData(canvas, 'snapshotRenderCount', String(++shelfSnapshotRenders));
-      if (startupSettle && !startupSettle.expires) startupSettle.expires = performance.now() + STARTUP_WINDOW_MS;
       setData(canvas, 'sceneDrawCalls', String(renderer.info?.render.calls || 0));
       shelfSnapshotDirty = false;
       paintedModalView = { progress, inspectionZoom, panX, panY };
