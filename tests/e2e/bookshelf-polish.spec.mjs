@@ -40,7 +40,7 @@ for (const variant of [
       const r = root.querySelector(selector).getBoundingClientRect()
       return { left:r.left, right:r.right, top:r.top, bottom:r.bottom }
     }
-    return { cover:box('.ihr-flyout__cover-target'), meta:box('.ihr-flyout__details'),
+    return { cover:box('.ihr-flyout__cover-target'), meta:box('.ihr-flyout__title'),
       actions:box('.ihr-flyout__actions'), close:box('.ihr-flyout__close') }
   })
   for (const box of Object.values(bounds)) {

@@ -414,7 +414,8 @@ describe('renderBookshelf', () => {
       const button = document.querySelector('button[aria-label="Subir a Google Drive"]')
       expect(button).not.toBeNull(); return button
     })
-    expect(upload.textContent).toBe('Subir a Google Drive')
+    // Icon-only and discreet: the action is its accessible name.
+    expect(upload.getAttribute('aria-label')).toBe('Subir a Google Drive')
     expect(upload.disabled).toBe(false)
     upload.click()
     expect(onBookAction).toHaveBeenCalledExactlyOnceWith('drive',book,upload)
@@ -440,7 +441,7 @@ describe('renderBookshelf', () => {
     })
     expect(status.tagName).toBe('SPAN')
     expect(status.getAttribute('role')).toBe('status')
-    expect(status.textContent).toBe('Guardado en Google Drive')
+    expect(status.getAttribute('aria-label')).toBe('Guardado en Google Drive')
     expect(status.getAttribute('tabindex')).toBeNull()
     expect(document.querySelector('[aria-label="Subir a Google Drive"]')).toBeNull()
     expect(book.content.size).toBe(4)

@@ -100,7 +100,7 @@ test('Android: importa localmente sin subir y guarda en Drive sólo desde la por
   expect(await localBookBytes(page,'tiny.pdf')).toEqual(before)
   finishBookUpload()
   const saved=page.locator('.ihr-flyout__cloud-saved')
-  await expect(saved).toHaveText('Guardado en Google Drive')
+  await expect(saved).toHaveAccessibleName('Guardado en Google Drive')
   await expect(saved).toHaveAttribute('role','status')
   expect(await saved.evaluate(element=>element.tagName)).toBe('SPAN')
   await expect(page.locator('.ihr-flyout__cloud-action')).toHaveCount(0)

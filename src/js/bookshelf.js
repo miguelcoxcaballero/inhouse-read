@@ -2206,11 +2206,19 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const animateBook = (frames, timing) => view
       ? view.animate(frames, timing)
       : animate(bookNode, [{ opacity: 1 }], timing);
+    // Title and author, and how far the reader got: the cover itself says the rest.
+    const progress = Math.round(Math.min(1, Math.max(0, Number(book.progressFraction) || 0)) * 100);
     const meta = el('div', { class: 'ihr-flyout__meta' }, [
-      el('p', { class: 'ihr-flyout__details', text: [book.format, book.progressFraction > 0 ? `${Math.round(book.progressFraction * 100)} % leído` : 'Por empezar'].filter(Boolean).join(' · ') }),
       el('p', { class: 'ihr-flyout__title', text: book.title ?? '' }),
-      normalizeBookAuthor(book.author) ? el('p', { class: 'ihr-flyout__author', text: normalizeBookAuthor(book.author) }) : null
+      normalizeBookAuthor(book.author) ? el('p', { class: 'ihr-flyout__author', text: normalizeBookAuthor(book.author) }) : null,
+      progress > 0 ? el('p', { class: 'ihr-flyout__progress', 'aria-label': `${progress} % leído` }, [
+        el('span', { class: 'ihr-flyout__progress-track', 'aria-hidden': 'true' }, [
+          el('span', { class: 'ihr-flyout__progress-fill', style: `width:${progress}%` })
+        ]),
+        el('span', { class: 'ihr-flyout__progress-value', 'aria-hidden': 'true', text: `${progress} %` })
+      ]) : null
     ]);
+    // Read aloud for assistive technology; shown only when preparing fails.
     const readiness = el('p', { class: 'ihr-flyout__readiness', text: options.getBookPreparation ? 'Preparando…' : 'Toca la portada para leer', 'aria-live': 'polite' });
     meta.append(readiness);
     const coverTarget = el('button', {
@@ -2313,23 +2321,24 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const cloud = options.getBookCloudState?.(book) || { connected:false,saved:Boolean(book.driveFileId) };
     const needsDownload = book.sourceType === 'drive' && !book.content;
     const cloudAction = needsDownload
-      ? el('button', { type:'button',class:'ihr-btn ihr-btn--quiet',title:'Descargar para usar sin conexión',
+      ? el('button', { type:'button',class:'ihr-btn ihr-btn--quiet ihr-btn--icon',title:'Descargar para usar sin conexión',
         'aria-label':'Descargar para usar sin conexión',disabled:!options.onBookAction,
         onClick:event => options.onBookAction?.('offline',book,event.currentTarget) },
-        [svgIcon(ICONS.download,{ className:'ihr-icon' }),el('span',{ text:'Descargar' })])
+        [svgIcon(ICONS.download,{ className:'ihr-icon' })])
       : cloud.saved
-        ? el('span', { class:'ihr-btn ihr-btn--quiet ihr-flyout__cloud-saved',role:'status' },
-          [svgIcon(ICONS.check,{ className:'ihr-icon' }),el('span',{ text:'Guardado en Google Drive' })])
+        ? el('span', { class:'ihr-btn ihr-btn--quiet ihr-btn--icon ihr-flyout__cloud-saved',role:'status',
+          'aria-label':'Guardado en Google Drive',title:'Guardado en Google Drive' },
+          [svgIcon(ICONS.drive,{ className:'ihr-icon' }),el('span',{ class:'ihr-flyout__cloud-check','aria-hidden':'true' },[svgIcon(ICONS.check,{ className:'ihr-icon' })])])
         : cloud.connected && book.content
-          ? el('button', { type:'button',class:'ihr-btn ihr-btn--quiet ihr-flyout__cloud-action',title:'Subir a Google Drive',
+          ? el('button', { type:'button',class:'ihr-btn ihr-btn--quiet ihr-btn--icon ihr-flyout__cloud-action',title:'Subir a Google Drive',
             'aria-label':'Subir a Google Drive',disabled:!options.onBookAction,
             onClick:event => options.onBookAction?.('drive',book,event.currentTarget) },
-            [svgIcon(ICONS.drive,{ className:'ihr-icon' }),el('span',{ text:'Subir a Google Drive' })])
+            [svgIcon(ICONS.drive,{ className:'ihr-icon' })])
           : null;
     const actionButtons = [
       el('button', { type: 'button', class: 'ihr-btn ihr-btn--primary', disabled:true, onClick: () => expandCover() }, [svgIcon(ICONS.read, { className:'ihr-icon' }), el('span', { text: opts.texts.openAction })]),
       cloudAction,
-      el('button', { type: 'button', class: 'ihr-btn ihr-btn--quiet ihr-flyout__edit-button', disabled:true, 'aria-expanded': 'false', onClick: () => editorPanel.hidden ? openEditor() : closeEditor() }, [svgIcon(ICONS.brush, { className:'ihr-icon' }), el('span', { text:'Editar' })])
+      el('button', { type: 'button', class: 'ihr-btn ihr-btn--quiet ihr-btn--icon ihr-flyout__edit-button', disabled:true, 'aria-expanded': 'false', 'aria-label':'Editar', title:'Editar', onClick: () => editorPanel.hidden ? openEditor() : closeEditor() }, [svgIcon(ICONS.brush, { className:'ihr-icon' })])
     ];
 
     const appearanceId = String(book.id ?? book.path ?? book.title ?? 'book');
@@ -3314,8 +3323,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       clearInterval(readyCheck)
       if (!task) { readiness.textContent = 'Toca la portada para leer'; return }
       task.then(ok => {
-        if (state.session === session) readiness.textContent = ok ? 'Listo para leer' : 'No se pudo preparar. Toca para reintentar.'
-      }).catch(() => { if (state.session === session) readiness.textContent = 'No se pudo preparar. Toca para reintentar.' })
+        if (state.session !== session) return
+        readiness.textContent = ok ? 'Listo para leer' : 'No se pudo preparar. Toca para reintentar.'
+        readiness.classList.toggle('is-error', !ok)
+      }).catch(() => {
+        if (state.session !== session) return
+        readiness.textContent = 'No se pudo preparar. Toca para reintentar.'; readiness.classList.add('is-error')
+      })
     }, 250)
     if (!options.getBookPreparation) clearInterval(readyCheck)
 
@@ -3622,7 +3636,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       flyout.classList.add('is-expanding');
       coverTarget.hidden = true;
       actionButtons.forEach(button => { if (button?.tagName === 'BUTTON') button.disabled = true; });
-      readiness.textContent = 'Preparando…';
+      readiness.textContent = 'Preparando…'; readiness.classList.remove('is-error');
       markTiming('open-tap');
       try {
         await onOpen?.(book, {
