@@ -1799,7 +1799,6 @@ public class MainActivity extends BridgeActivity {{
         inferenceBridge = new NativeInferenceBridge(this, webView);
         webView.addJavascriptInterface(inferenceBridge, "InhouseInference");
         webView.addJavascriptInterface(new InhouseNativeBridge(), "InhouseNative");
-        handleAppCallback(getIntent());
         // Back at the shelf leaves the app as Home does: the activity, its
         // WebView and the loaded shelf stay alive, so reopening shows them at
         // once instead of loading the site again. A page in the WebView that
@@ -1815,6 +1814,7 @@ public class MainActivity extends BridgeActivity {{
         // so Android does not discard the loaded shelf before the app itself.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
+        handleAppCallback(getIntent());
     }}
 
     public class InhouseNativeBridge {{
@@ -2248,7 +2248,6 @@ class MainActivity : BridgeActivity() {{
         inferenceBridge = NativeInferenceBridge(this, webView)
         webView.addJavascriptInterface(inferenceBridge!!, "InhouseInference")
         webView.addJavascriptInterface(InhouseNativeBridge(), "InhouseNative")
-        handleAppCallback(intent)
         // Back at the shelf leaves the app as Home does: the activity, its
         // WebView and the loaded shelf stay alive, so reopening shows them at
         // once instead of loading the site again. A page in the WebView that
@@ -2263,6 +2262,7 @@ class MainActivity : BridgeActivity() {{
         // so Android does not discard the loaded shelf before the app itself.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
+        handleAppCallback(intent)
     }}
 
     inner class InhouseNativeBridge {{
