@@ -18,6 +18,7 @@ import { compositePageSnapshots, renderedPageFilter, settlePageLayout, snapshotD
 import { mapSpeechText } from './speech-map.js'
 import { speechPageBreaks } from './speech-page-breaks.js'
 import { FoliateSpeechCursor } from './foliate-speech-cursor.js'
+import { stablePageHeight } from './page-box.js'
 import { measureBookLength } from '../book-length.js'
 import { SPEECH_HIGHLIGHT, clearSpeechRange, installSpeechStyle, paintSpeechRange, speechOverlayColor } from './speech-highlight.js'
 
@@ -28,11 +29,6 @@ export function announceSpeechLayout() {
   clearTimeout(speechLayoutTimer)
   speechLayoutTimer = setTimeout(() => window.dispatchEvent(new CustomEvent('inhouse-speech-layout')), 350)
 }
-
-// Height kept free under a paginated book for the audio mini player (48 px).
-const MINI_PLAYER_RESERVE = 48
-// A change of free height beyond this is a real resize, not chrome.
-const PAGE_BOX_SLACK = 96
 
 // foliate marca las coincidencias de búsqueda con Overlayer.outline (un
 // recuadro rojo de 3px que parecía una capa de depuración). Lo sustituimos una
@@ -445,23 +441,17 @@ export class FoliateReader {
     this.#applyReaderStyles()
   }
 
-  // The page box of a paginated book keeps its height while the free space
-  // changes by a few dozen pixels: Android hiding or showing the status bar,
-  // full-screen reading, the audio mini player or the "return" bar. A new
-  // height re-paginated the chapter, so sentences and paragraphs moved to
-  // other pages under the reader. The box leaves room for the mini player
-  // from the start; a real resize (rotation, split screen) still re-paginates.
-  #pageBox = null
+  // The page box keeps its height while the free space changes by a few dozen
+  // pixels, in this opening and the next ones (see page-box.js): a new height
+  // re-paginated the chapter and moved sentences to other pages.
   #pageBoxChanged = false
-  #stablePageHeight(width, freeHeight) {
+  #stablePageHeight(width, freeHeight, measured) {
     const screen = this.#container.closest?.('#reader-screen')
-    const overlays = screen ? ['--reader-audio-height', '--reader-return-height']
-      .reduce((sum, name) => sum + (parseFloat(getComputedStyle(screen).getPropertyValue(name)) || 0), 0) : 0
-    const target = Math.max(240, Math.floor(freeHeight + overlays - MINI_PLAYER_RESERVE))
-    const box = this.#pageBox
-    if (!box || Math.abs(box.width - width) > 1 || Math.abs(box.target - target) > PAGE_BOX_SLACK || box.height > freeHeight + 0.5)
-      this.#pageBox = { width, target, height:Math.min(target, Math.floor(freeHeight)) }
-    return this.#pageBox.height
+    const style = screen && getComputedStyle(screen)
+    const overlays = style ? ['--reader-audio-height', '--reader-return-height']
+      .reduce((sum, name) => sum + (parseFloat(style.getPropertyValue(name)) || 0), 0) : 0
+    // A container not laid out yet only has fallback sizes: never remember them.
+    return stablePageHeight({ width, space:freeHeight + overlays, free:freeHeight, ...(measured ? {} : { storage:null }) })
   }
 
   #applyReaderLayout() {
@@ -470,9 +460,9 @@ export class FoliateReader {
     const bounds = this.#container.getBoundingClientRect()
     const width = this.#container.clientWidth || bounds.width || this.#view.getBoundingClientRect().width || 360
     const height = this.#container.clientHeight || bounds.height || this.#view.getBoundingClientRect().height || 720
-    if (this.#preferences.flow === 'scrolled') { this.#pageBox = null; this.#view.style.height = '' }
+    if (this.#preferences.flow === 'scrolled') this.#view.style.height = ''
     else {
-      const value = `${this.#stablePageHeight(width, height)}px`
+      const value = `${this.#stablePageHeight(width, height, this.#container.clientWidth > 0 && this.#container.clientHeight > 0)}px`
       if (this.#view.style.height !== value) { this.#view.style.height = value; this.#pageBoxChanged = true }
     }
     const p = this.#preferences

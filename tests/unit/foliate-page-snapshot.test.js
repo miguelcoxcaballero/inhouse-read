@@ -9,6 +9,7 @@ import { Overlayer } from 'foliate-js/overlayer.js'
 const rect = (left,top,width,height) => ({left,top,width,height,right:left+width,bottom:top+height})
 let container, view, doc, contexts, rangePrototype
 beforeEach(() => {
+  localStorage.removeItem('inhouse-read-page-boxes') // Each test starts with no remembered page box.
   document.body.innerHTML = '<main class="reader-viewport" style="filter:brightness(0.9)"></main><iframe></iframe>'
   container = document.querySelector('main')
   const iframe = document.querySelector('iframe')
