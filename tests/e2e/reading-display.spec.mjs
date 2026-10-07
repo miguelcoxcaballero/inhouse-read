@@ -150,6 +150,44 @@ for (const { name, scheme, readingTheme, viewport } of [
     .toEqual([false, true, false, true, false])
 })
 
+// APK 1.1.7 owns the reader display but has no stable inset: its WebView still
+// moves when the bar hides, so the web keeps today's look and today's timing,
+// never during a 3D flight (a resize there cancels it).
+test('Android 1.1.7 (sin inset estable): la barra cambia sólo fuera de las animaciones del libro', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.emulateMedia({ reducedMotion:'reduce' })
+  await page.addInitScript(() => {
+    window.__owner = []
+    window.InhouseNative = {
+      setReaderOwnership(enabled) {
+        window.__owner.push({ enabled, classes:document.body.className })
+        requestAnimationFrame(() => window.dispatchEvent(new Event('resize')))
+      },
+      setReadingMode() { throw new Error('APK 1.1.7 is driven by setReaderOwnership') }
+    }
+  })
+  await page.goto(process.env.IHR_TEST_URL || './')
+  await expect(page.locator('.ihr-bookshelf__scroll')).toBeVisible({ timeout:60_000 })
+  // No native value: the page keeps env(safe-area-inset-top), 0 in that shell.
+  expect(await page.evaluate(() => document.documentElement.style.getPropertyValue('--ihr-safe-top'))).toBe('')
+  expect(await page.evaluate(() => getComputedStyle(document.querySelector('.app-header')).paddingTop)).toBe('10px')
+  await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/tiny.pdf')
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+  await page.locator('#reader-back').click()
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/, { timeout:30_000 })
+  await page.locator('.ihr-spine').first().click()
+  await page.locator('.ihr-flyout__cover-target').click({ timeout:30_000 })
+  await expect(page.locator('.ihr-flyout')).toHaveCount(0, { timeout:30_000 })
+  await expect(page.locator('body')).toHaveClass(/is-reading/)
+  await expect.poll(() => page.evaluate(() => window.__owner.at(-1)?.enabled)).toBe(true)
+  await page.locator('#reader-back').click()
+  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/, { timeout:30_000 })
+  const owner = await page.evaluate(() => window.__owner)
+  expect(owner.map(entry => entry.enabled).filter((value, index, all) => index === 0 || value !== all[index - 1]))
+    .toEqual([false, true, false, true, false])
+  expect(owner.every(entry => !/is-opening-reader|is-closing-reader|is-reader-page-/.test(entry.classes))).toBe(true)
+})
+
 // A centred dialog (the plant catalogue) lies below the strip the page keeps
 // free, not under the status bar drawn over the page; without the shell it
 // keeps its margins (6 px on narrow phones, 8 px otherwise).
