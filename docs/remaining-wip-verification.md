@@ -1,14 +1,30 @@
-# Continuacion: web1.7.106 candidata /105 publicada y verificada parcialmente
+# Estado actual: web 1.7.106 publicada, rendimiento pendiente
 
-106 envia al driver la compilacion inicial mediante el mismo helper de
-la pagina.37 focales PASS, control10534/37; bateria3591/291, build y92
-Python PASS. Originales locales, publicacion y verificacion106 pendientes.
-No cambia shaders, geometria, DPR, luces ni clocks. [Detalle106](performance-1806.md).
+La fuente publicada es `666519c0413a75bf6839e9f9fdc6b15dd5afb433`.
+La mejora envia al driver el lote inicial de compilacion del libro,
+sin cambiar modelos, shaders, luces, DPR ni duraciones.
 
-105:32/32 publicos estrictos, offline4, locales7/SwiftShader2 y APK real
-PASS. CI completa526 casos/529 intentos FAIL: dos nativos30s y una
-captura no atomica de EPUB al reanudar; todos los otros bloques y voces
-reales PASS. Fallos originales conservados. [Detalle105](performance-1805.md).
+- Bateria local: 3591 unitarias en 291 archivos, build y 92 Python PASS.
+- Siete recorridos originales locales y dos SwiftShader PASS, sin retries.
+- Web real: 32 casos funcionales PASS; 31/32 auditorias estrictas PASS.
+  La captura original de una textura walnut devuelve 0 B y conserva FAIL.
+- Cuatro recorridos offline PASS: bytes/progreso, fotos en cinco temas,
+  portada JPEG y cierre inmediato. Drive conserva su subida opcional.
+- APK publico 1.1.7/code20: descarga, SHA, firma y loader de 2107 B PASS.
+  No se publico un APK distinto por este cambio exclusivo de la web.
+- CI106 conserva ambos recorridos nativos FAIL en primer intento y retry.
+  Las trazas llegan a Back a los 26-27 s, casi todo su presupuesto total
+  de 30 s. CI completa: 524/526 casos PASS; ambos fallan también al reintentar.
+  Los otros cinco bloques de interfaz y las cuatro familias de voces PASS.
+- Experimento separado: seis ejecuciones reciben los Blobs de texturas
+  completos. No reproduce ni sustituye el fallo original de captura.
+
+El rendimiento completo NO se considera resuelto. No hay medicion de
+FPS, calor ni bateria de un telefono fisico. El catalogo sigue con 39
+voces Piper y diez personas Supertonic (220 perfiles de idioma), sin
+nuevas voces en esta version. [Evidencia y limites](performance-1806.md).
+
+## Historial de verificacion
 
 # Continuacion: web1.7.105 publicada y verificada / CI completa pendiente
 
