@@ -36,11 +36,14 @@ export function withNativeCanvasResize(renderer, operation, physical, { avoidInt
           // Shrinking both axes already keeps the intermediate frame within
           // the existing allocation. Avoid an extra zero-size reset there;
           // native drivers may synchronously drain the displayed frame on it.
-          // Opt-in is limited to the book's synchronous sizing operation.
+          // Bounded room growth also stays below its required final allocation;
+          // skip the zero-height reset while preserving cross-axis staging.
+          // This opt-in remains inside the synchronous sizing operation.
           if (avoidIntermediateAllocation && axis === 'width' &&
               value === physical.width && value !== descriptor.get.call(this) &&
               physical.height !== originalHeight && originalHeight > 0 &&
               !(physical.width < descriptor.get.call(this) && physical.height < originalHeight) &&
+              !(avoidIntermediateAllocation === 'bounded' && physical.width > descriptor.get.call(this) && physical.height > originalHeight) &&
               descriptors[1].get.call(this) === originalHeight) {
             try { descriptors[1].set.call(this, 0); }
             catch { /* A driver rejecting staging keeps its original resize. */ }

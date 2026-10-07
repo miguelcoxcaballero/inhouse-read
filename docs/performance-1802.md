@@ -48,3 +48,12 @@ APK1.1.7/codigo20 permanece vigente y verificado; este cambio es web.
 Los dos regresos originales pasan: cierre6.468,2ms (390px) y6.324,7ms
 (393px); duracion total25.006/24.875ms. Sigue faltando UI6 y Supertonic
 en este snapshot parcial, no se acredita la bateria completa aun.
+
+## CI original102 completa y estricta
+
+37555630588 SUCCESS:526 casos/526 intentos, cero retries/fallos/skips,
+3.555 unitarias/291 PASS. Los11 ZIP originales y sus digests se revalidan
+en full-success-guard.json. Todas las UI y cuatro familias de voces PASS.
+El colector original etiqueta partial-originals incluso al completar success;
+el guard independiente exige la conclusion real y el censo completo.
+No se modifica ningun informe ni se contabiliza un retry como PASS.

@@ -5,5 +5,5 @@ import { configureNativeRendererSize } from './native-renderer-size.js';
 // avoiding full intermediate buffers. Presentation and viewport rounding
 // remain the caller's existing policy for native and copied shelf images.
 export function configureShelfRendererSize(renderer, width, height, ratio, scratch) {
-  configureNativeRendererSize(renderer, width, height, ratio, scratch, true, true, true);
+  configureNativeRendererSize(renderer, width, height, ratio, scratch, true, true, 'bounded');
 }

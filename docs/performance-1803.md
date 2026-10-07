@@ -36,3 +36,30 @@ Despliegue, comparacion publicada103 y CI103 pendientes.
 real1.1.7/firma/loader PASS.267 casos originales de CI102 disponibles sin
 retries/fallos; ambos cierres6.468,2/6.324,7ms PASS. Falta auditoria completa.
 No hay una medicion de FPS, bateria o temperatura en un telefono fisico.
+
+## Publicacion y primera comprobacion real
+
+Fuente f28233e8aa2304afbb8bac8332074107965f9229, Pages
+164479e977e80233f2b1e892e572641f0fd11ae4. Main610.020B/SHA256
+4556657f9c7107ac5bc742fe74edfef0b870c87de0cf40aa6f2b93e986b4b5a2.
+HTTP32/shell96 PASS. Reproduccion inmediata del fallo102 sobre103 PASS:
+PDF y encoder reales desde el cache del service worker, sin Internet,
+portada800x1600, JPEG150.310B, cero fallbacks. Identidad de recursos
+verificada; no mocks de engine ni sustitucion de respuestas de la app.
+El APK se vuelve a descargar:1.1.7/codigo20,78.531.659B, firma y
+loader2.107B PASS. No cambia el wrapper nativo. Publicos completos yCI103
+aun en curso. CI102 completa:526/526, cero retries/fallos y voces realesPASS.
+
+## Tanda publica completa103
+
+32/32 publicos estrictos PASS, sin retries; auditorias incluidas.
+18 PDF, cinco edicion/animacion, cinco catalogo/plantas/luces y cuatro
+Android Abrir con. Tres recorridos offline originales PASS: bytes3.143,
+locator115 persistido al reabrir, fotos originales, cinco temas exactos y
+encoderJPEG real sin fallback. La primera portada tras cierre inmediato
+agrega una cuarta comprobacion offline PASS, con su fallo102 conservado.
+Quedan los siete locales en ejecucion y la CI103 original completa.
+
+Los siete originales locales PASS sin retries. CI103 conserva un primer
+fallo en cierre393 (8s); retry PASS6882,2ms no borra el fallo.390
+PASS6743,2ms. El resto de la auditoria completa sigue pendiente.

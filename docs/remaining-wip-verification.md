@@ -1,3 +1,16 @@
+# Continuacion: web 1.7.104 preparada / 1.7.103 publicada
+
+1.7.104 reduce resets intermedios del framebuffer de la estanteria.
+68/68 focales, 18 pares RGBA exactos y ambos regresos originales SwiftShader
+PASS. Se conservan plazos originales30s/8s. La bateria completa esta en curso;
+publicacion y comprobacion del artefacto104 pendientes. [Detalle](performance-1804.md).
+
+103 publicada:32/32 publicos estrictos, cuatro offline, siete locales,
+smoke original y APK real1.1.7/firma/loader PASS. Primera portada retenida
+al cerrar rapidamente. Bateria3.567/291, build y92 Python PASS. CI103
+conserva un primer fallo8s en393px; retry no lo borra. CI102 completa
+526/526 sin retries/fallos, incluidas voces reales. [Detalle103](performance-1803.md).
+
 # Continuacion: web1.7.103 preparada /102 publicada y verificada
 
 Primera portada: la captura puede terminar mientras se cierra el lector;
