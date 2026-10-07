@@ -1,6 +1,6 @@
 {
   "base": "/inhouse-read/",
-  "version": "a5fc5194b7938c043f1d1bd51e80f2dd0d51981a04d7b33d2b401ab3048485d3",
+  "version": "c7a9b229714ccb309165ad271e608ec91ea77bb30afe5edddd0417ee290b737c",
   "entries": [
     {
       "path": "assets/androidDownload-BC4lIftu.css",
@@ -98,14 +98,14 @@
       "sha256": "a5d38fe99f930275684999b462c7123faa063d9e44e73b4b241723d884aa0f49"
     },
     {
-      "path": "assets/engine-C1LlUzbL.js",
+      "path": "assets/engine-qlRgGqzy.js",
       "bytes": 65958,
-      "sha256": "5557a11b9ff18575e5f0294cb7ae8a591e8b969e546727efb97bcad360920f90"
+      "sha256": "6efa4578feb78810dad6b9db31ae467c09c8a57fc378b630dca0df3279670ff6"
     },
     {
-      "path": "assets/epub-CV618-jG.js",
+      "path": "assets/epub-D1UKymhQ.js",
       "bytes": 21898,
-      "sha256": "3fb8f6af34e7c31de51b309032d9295248610357076af15bc34fa3e9624099b7"
+      "sha256": "4f0166f4a14af73f7c5dbc44f1c55079eb1ed45538fbd6422b0b866937d79490"
     },
     {
       "path": "assets/fb2-BI95Dv4-.js",
@@ -123,9 +123,9 @@
       "sha256": "f0a9ecd5fdd32c410729aad3b2cd4b67505b3643e4dc5290b031f0431caa21e7"
     },
     {
-      "path": "assets/foliate-reader-xVJqVkKs.js",
+      "path": "assets/foliate-reader-D7Kll7bl.js",
       "bytes": 17279,
-      "sha256": "07988d4777708840841862a79d8d4b372c8d1057dd9636947e33bc91f65108a7"
+      "sha256": "d8049d18b582a17117c4808f62b0d8365adc20884fbb17d655c0f53ebc06a3f2"
     },
     {
       "path": "assets/font-score-client-DVokH2mG.js",
@@ -138,9 +138,9 @@
       "sha256": "5ea916d04cc9395b81105b82e34ad50fb250060c405aa720f2dc3f67b60851a4"
     },
     {
-      "path": "assets/index-CeWPM1lG.js",
+      "path": "assets/index-9Ws5Tzv2.js",
       "bytes": 3488,
-      "sha256": "36d0d66a9e4f2ea586637179efe4da75f4d58075f0411c1c340309b924adff61"
+      "sha256": "ca365f89513a59d65f36767ffcb94aafe0dea2619ac74a7d8b20ec45d6c9faf7"
     },
     {
       "path": "assets/lora-cyrillic-c57d9ca3bd42-UWPuZLjM.woff2",
@@ -178,14 +178,14 @@
       "sha256": "98c22de85f6e83bcd6ae1a443e12e256fbc8de7142bec4f76b059f8ff9c2797e"
     },
     {
+      "path": "assets/main-2N32p7t1.js",
+      "bytes": 610767,
+      "sha256": "fdece46e8add774bfacb76833fe69f07209c39de7d02cfc991386b1c0961783c"
+    },
+    {
       "path": "assets/main-BG5gcPsE.css",
       "bytes": 165607,
       "sha256": "1eaed0ba179a9f45b60e970dccba87a542d9d5d61af1a88d2ab44c6c5d39546c"
-    },
-    {
-      "path": "assets/main-BY6VArxy.js",
-      "bytes": 610099,
-      "sha256": "c962c29dfbcb3f7620b618e7a440b5403f18835a0eccbb3d3625785eab51b686"
     },
     {
       "path": "assets/mobi-Du_U6_-5.js",
@@ -258,14 +258,14 @@
       "sha256": "98e67325f4dc980bbec42d12cf2ad17dcf3a472e8661edc4b8ab4ce3aa275d32"
     },
     {
-      "path": "assets/pdf-reader-D1kigHTs.js",
+      "path": "assets/pdf-reader-4T3-rjjV.js",
       "bytes": 26771,
-      "sha256": "37866c7909ca4ebb76f8a2661567e3a31468a7acd25b8567c43519acd25df7b4"
+      "sha256": "8a58c30ad3fbc61087bd0031becfcc3fceffe9e5b6a593ce2997560f9299ea52"
     },
     {
       "path": "assets/pdf-reader-F60yyvDC.js",
       "bytes": 53,
-      "sha256": "fddca1b1ecb32653cffa1d35fb3f31054eaacbf1c4edaf991652ac5da2a08472"
+      "sha256": "a439bafab17985d24892914cee476c5866d9ca3b784ca979dda3eb9597a3bed3"
     },
     {
       "path": "assets/pdf.worker.min-BmVo14Nb.mjs",
@@ -278,9 +278,9 @@
       "sha256": "454894d5bb9f2c3920202934da609759c1d231b00a2566f291cd29416554e407"
     },
     {
-      "path": "assets/plant-catalog-BNSs3l7C.js",
+      "path": "assets/plant-catalog-Dndcd76y.js",
       "bytes": 36824,
-      "sha256": "e266f7bd2e83375ae2c41917f777de2ee782e9773a06dfccf6f3bf78ce9718d0"
+      "sha256": "ad57b3ad3e75530d8d61b97b7b947b5901df5f4b0e03012bfd6d2be0cab6566f"
     },
     {
       "path": "assets/playfair-display-cyrillic-c108681cba6a-5WvUvBgz.woff2",
@@ -303,9 +303,9 @@
       "sha256": "ef6446229b59773e671021650ef3882cf35806dae723ce047de87c0a6633039a"
     },
     {
-      "path": "assets/reader-experience-l6XIkk3n.js",
+      "path": "assets/reader-experience-C2cVr7yJ.js",
       "bytes": 73414,
-      "sha256": "9832a2cdcf480a9f43a0a338daa69855c0513d8c9124fbca0677bb1539d4750a"
+      "sha256": "ed0836ddffe149f12b06a424fc2e6c97f1d6f80a74f9a4d636e01d46ceaeef63"
     },
     {
       "path": "assets/RectAreaLightUniformsLib-hBb0rsIG.js",
@@ -343,9 +343,9 @@
       "sha256": "9d5cdcb2b1b255dedef1ec9a1025fd75c32a062532be22506bd79a46d7adca48"
     },
     {
-      "path": "assets/view-BAlUPN56.js",
+      "path": "assets/view-zZiTDNby.js",
       "bytes": 26151,
-      "sha256": "685b29c9aa17a1433c0202646542f495b1cc6823987f5937b3407a9a8b55bc86"
+      "sha256": "8d36073c4a303885500aa9a2cd2c5009ff4c4edfb8145288134bde3b8e07def1"
     },
     {
       "path": "assets/walnut-Bvq0D-tr.webp",
@@ -385,7 +385,7 @@
     {
       "path": "index.html",
       "bytes": 13656,
-      "sha256": "ca86e7034fa8b7ca737188eadf9ee5f292f2ac9187760aad5a63db969813406b"
+      "sha256": "c9f1fd25a780d1c41936388f9ee14ecf6aaf1ba76b61be9af97a2a6c5c4532bf"
     },
     {
       "path": "licenses/fonts/comfortaa-OFL.txt",
