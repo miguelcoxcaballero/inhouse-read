@@ -1,3 +1,24 @@
+# Continuacion: web1.7.106 candidata /105 publicada y verificada parcialmente
+
+106 envia al driver la compilacion inicial mediante el mismo helper de
+la pagina.37 focales PASS, control10534/37; bateria3591/291, build y92
+Python PASS. Originales locales, publicacion y verificacion106 pendientes.
+No cambia shaders, geometria, DPR, luces ni clocks. [Detalle106](performance-1806.md).
+
+105:32/32 publicos estrictos, offline4, locales7/SwiftShader2 y APK real
+PASS. CI completa526 casos/529 intentos FAIL: dos nativos30s y una
+captura no atomica de EPUB al reanudar; todos los otros bloques y voces
+reales PASS. Fallos originales conservados. [Detalle105](performance-1805.md).
+
+# Continuacion: web1.7.105 publicada y verificada / CI completa pendiente
+
+105: bateria3587/291, build y92 Python PASS; siete locales y dos
+SwiftShader originales PASS sin retries/deadlines intactos.32/32
+publicos estrictos, offline4 y APK1.1.7 SHA/firma/loader PASS.
+Preparacion del marcapaginas real y de materiales ocultos en idle.
+CI105 completa37563781668 pendiente; no se declara todo terminado
+ni rendimiento medido en telefono fisico. [Detalle105](performance-1805.md).
+
 # Continuacion: web1.7.105 candidata /104 publicada
 
 105 prepara el marcapaginas desde la pagina real y completa shaders

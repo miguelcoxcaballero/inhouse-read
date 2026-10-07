@@ -1953,7 +1953,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   // draw, so hidden ones build in the background (in parallel where
   // KHR_parallel_shader_compile exists). compileAsync adds nothing to that,
   // and its polling throws if the flyout is closed before a program is ready.
-  if (!shelf) try { gpu.compile(scene, camera); } catch { /* compiled lazily on first use */ }
+  if (!shelf) try { compilePagePrograms(gpu, scene, camera); } catch { /* compiled lazily on first use */ }
   draw(initialPose ?? {
     x:0, y:0, scale:1,
     angle:shelf ? (shelfView === 'isometric' ? 76 : 90) : 0,
