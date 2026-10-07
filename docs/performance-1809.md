@@ -48,7 +48,7 @@ antes de que ejecutase ningún navegador.
 Los siete recorridos locales originales y los dos SwiftShader pasan sin
 reintentos; se conservan los límites 30 s/8 s de los regresos nativos.
 La publicación HTTP, los recorridos sobre la web real y la CI de esta
-fuente aún están pendientes al preparar este documento.
+fuente ya se han contrastado; los resultados completos están abajo.
 La CI anterior 108 (`37621752197`, fuente `98a62cd`) conserva ambos
 recorridos nativos FAIL en su primer intento y retry; sus originales
 autenticados se descargaron y se comprobaron contra los digests de GitHub.
@@ -58,3 +58,94 @@ No se afirma que toda la lentitud esté resuelta. No se han medido FPS,
 temperatura o batería de un teléfono físico. No se añadieron voces en este
 cambio: siguen 39 Piper y diez personas Supertonic en 22 idiomas; los 220
 perfiles de idioma no son 220 personas distintas.
+
+## Publicación y comprobaciones completas
+
+- Web 1.7.109 publicada desde
+  `3f2591521aa975b6f432a1990f5f10f235c2296b`.
+  Pages: `279bc58ae811db34e6444c0f2a5638ed0a587949`.
+- Main público: `assets/main-BwPzOK5Y.js`, 612.978 bytes, SHA-256
+  `906b64b8381f490014b0f8a8964ab26347d03688a6c819a13b99706af96ae320`.
+  Los 32 recursos del grafo y las 96 entradas offline coinciden por HTTP
+  con los blobs de la revisión Pages. El primer intento observó aún 108;
+  se conserva y la comprobación definitiva corresponde a 109.
+- CI `37689554099`: **531/533 casos de interfaz pasan**. Los dos regresos
+  nativos 390/393 px agotan el plazo en el intento original y el retry:
+  535 intentos, dos retries y cuatro intentos fallidos. Las 3.620 unitarias
+  de 293 archivos pasan. Ningún resultado local sustituye estos fallos.
+- Se descargaron los once ZIP originales de CI y los doce logs de jobs.
+  Todos los digests coinciden con GitHub, el censo contiene las 533
+  identidades únicas y la fuente de cada artefacto coincide con la publicada.
+  Una segunda auditoría de esos originales conserva los cuatro timeouts.
+- Web real: **30/32 auditorías estrictas pasan**. En el editor y en el PDF
+  escaneado pasan las aserciones funcionales, pero la captura del auditor
+  registra HTTP 200 con 0 B para walnut-surface; el editor también registra
+  0 B para walnut-pbr. Las trazas originales conservan esos resultados y
+  no hay requestFailures. No se atribuye su causa a una cancelación ni se
+  declara toda la tanda aprobada.
+- Las 18 comprobaciones PDF cubren fotografías con RGB original en papel,
+  sepia, noche, AMOLED y salvia, orden del texto, narración de todas las
+  frases, navegación y reapertura. Cinco casos comprueban catálogo,
+  plantas, escala, luces y acabado; cuatro comprueban el puente Android.
+  Ese puente web no equivale a un teléfono físico.
+- Cuatro recorridos offline pasan: bytes/progreso local, imágenes en cinco
+  temas, portada JPEG y portada retenida al cerrar inmediatamente. La
+  importación offline conserva sus 3.143 bytes y el progreso tras recargar;
+  `driveFileId` permanece null. La subida a Drive sigue siendo opcional.
+- Las cuatro familias de voces reales pasan en CI. Supertonic completa los
+  220 perfiles offline con sus pesos reales. No se añaden personas nuevas
+  ni se presenta una variante de velocidad como otra voz.
+
+## APK público y políticas del lector
+
+El APK 1.1.8/code21 arriba identificado se ha comprobado también en una
+ejecución nueva de `verify-published-android.yml`, run `37690088577`, fuente
+`3f25915`. Se descargó el APK público, no un build local. La firma, loader
+y preflight de Google pasan; no aparece `redirect_uri_mismatch`.
+Esto no prueba una sesión humana autenticada de Google Drive.
+
+Los cinco estados originales del emulador pasan: estantería antes/después,
+lector, lector reanudado y aplicación en segundo plano. La barra de estado
+se muestra en la estantería y se oculta en el lector. El lector mantiene la
+pantalla encendida y libera ese bloqueo en segundo plano. Los límites del
+WebView permanecen `[0,0,1080,2214]`; la cabecera de estantería queda por
+debajo de la barra de estado. Se conservan imágenes, XML y dumps originales.
+No se afirma una prueba nueva de autonomía, calor o audio prolongado en un
+teléfono físico. Este cambio web no requiere otro APK.
+
+## Experimentos posteriores descartados
+
+Preparar todos los uniforms antes del primer dibujo del libro seleccionado
+añadió espera. La comparación separada con SwiftShader y trace:on, mismos
+originales y límites, dio 23.551/22.777 ms para 109 y 26.644/25.020 ms para
+el candidato con tareas de 0 ms. La variante con idle de 50 ms tampoco
+demostró una mejora sostenida. Ambos experimentos quedan en
+`.animation.local/performance-1810/` y **no se publican**.
+
+Se restauraron byte por byte el runtime y la prueba unitaria experimental;
+los 695 archivos de entrada coinciden con la batería completa de 109.
+Se reconstruyó 109 para retirar el candidato del dist local.
+
+Una comparación separada con/sin service worker ofrece tiempos similares
+(23.291/23.401 ms frente a 23.390/23.563 ms). No demuestra que la caché
+offline cause la demora y no justifica modificarla.
+
+## Trabajo pendiente y evidencia
+
+El rendimiento del recorrido nativo continúa abierto. Las trazas de CI
+llegan a Back entre 25,3 y 27,1 s; el plazo global de 30 s corta la
+comprobación de cierre. No es una medición independiente de ocho segundos
+de cierre completado. Las capturas de textura de 0 B también conservan FAIL.
+No se considera toda la optimización terminada.
+
+Evidencia en `.animation.local/performance-1809/`:
+
+- `ci-original-attempt1/snapshot-003/`: censo completo y auditoría de los
+  once ZIP originales, incluidos los timeouts y retries.
+- `public-3f25915-attempt2/`, `browser-batch-summary.json`,
+  `failed-original-trace-textures.json`: HTTP, recorridos y fallos originales.
+- `native-public-attempt1/`: APK, políticas originales del emulador,
+  digests del ZIP y log, y `policy-audit.json`.
+- `sw-isolation-attempt1/`: diagnóstico independiente de la caché.
+
+Los originales, aserciones y plazos de las pruebas permanecen intactos.

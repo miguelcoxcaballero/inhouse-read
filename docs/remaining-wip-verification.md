@@ -1,15 +1,32 @@
-# Continuación: web 1.7.109 candidata; 1.7.108 publicada
+# Continuación: web 1.7.109 publicada; rendimiento pendiente
 
 Se prepara el renderer del libro seleccionado durante el reposo de la sala.
 45 focales y los dos recorridos nativos originales pasan. La selección
 instrumentada enlaza cinco programas frente a doce del control; la sala
 conserva su imagen exacta. Las muestras de tiempo no prueban una mejora
 sostenida. Batería: 3.620 unitarias/293 archivos, build y 105 Python PASS.
-Siete originales locales y dos SwiftShader PASS. Publicación y CI109 pendientes.
+Siete originales locales y dos SwiftShader PASS, con límites originales.
+
+Fuente pública `3f2591521aa975b6f432a1990f5f10f235c2296b`; grafo HTTP y
+shell offline coinciden con Pages. CI109 completa: 531/533 casos PASS;
+dos regresos nativos agotan el plazo tanto en el primer intento como en el
+retry. Los once ZIP originales y su censo completo quedan autenticados.
+Web real: 30/32 auditorías estrictas PASS; dos capturas de walnut con
+HTTP 200/0 B conservan FAIL aunque sus aserciones funcionales pasan.
+Cuatro recorridos offline PASS: bytes/progreso y fotografías con su RGB
+original en todos los temas probados. Drive conserva la subida opcional.
 
 APK público actual 1.1.8/code21: descarga, hash, firma y loader de 2.107 B
-verificados de nuevo. CI108 conserva dos nativos FAIL en primer intento y
-retry; 3.612 unitarias PASS. El rendimiento global sigue pendiente.
+verificados de nuevo. Verificación nueva en emulador del APK publicado:
+cinco estados PASS para barra de estado, insets y bloqueo de pantalla.
+El preflight de Google no muestra redirect_uri_mismatch; no acredita una
+sesión humana autenticada. Voces con pesos reales: cuatro familias PASS,
+incluidos 220 perfiles Supertonic; siguen diez personas y 39 voces Piper.
+
+El candidato posterior que esperaba uniforms antes del primer dibujo
+añadió 2–3 s en la comparación y se descartó. Runtime restaurado idéntico
+a 109. El rendimiento global y las dos capturas de textura siguen pendientes;
+no hay medición nueva de FPS, calor o batería de un teléfono físico.
 [Detalle de esta continuación](performance-1809.md).
 
 ## Historial anterior
