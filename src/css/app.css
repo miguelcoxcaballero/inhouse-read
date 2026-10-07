@@ -237,6 +237,23 @@ body.is-opening-reader .app-header {
   display: block;
 }
 
+/* The Android app hides its status bar once a book is open and the reader
+   grows upwards by its height. A page hung from the top jumped up with it;
+   one standing on the bottom stays where it was. The room kept for the mini
+   player stays under the page, so neither the player nor the return bar
+   moves it either. */
+.foliate-reader.is-paginated {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  box-sizing: border-box;
+  padding-bottom: max(0px, calc(48px - var(--reader-audio-height, 0px) - var(--reader-return-height, 0px)));
+}
+
+.foliate-reader.is-paginated > .foliate-view-el {
+  flex: none;
+}
+
 .reader-toolbar {
   position: absolute;
   left: 0;

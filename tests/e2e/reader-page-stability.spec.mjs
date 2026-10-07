@@ -10,6 +10,14 @@ const page_ = page => page.evaluate(() => {
   const view = document.querySelector('foliate-view')
   return { height:view.style.height, cfi:view.lastLocation?.cfi, text:view.lastLocation?.range?.toString() }
 })
+// Where the text is, measured from the bottom of the window: Android grows the
+// WebView upwards when the status bar goes, its bottom does not move.
+const fromBottom = page => page.evaluate(() => {
+  const view = document.querySelector('foliate-view'), range = view.lastLocation.range
+  const frame = range.startContainer.ownerDocument.defaultView.frameElement.getBoundingClientRect()
+  const line = [...range.getClientRects()].find(rect => rect.width && rect.height)
+  return Math.round(innerHeight - (frame.top + line.top))
+})
 
 async function reopen(page) {
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
@@ -34,10 +42,13 @@ test('un EPUB cerrado y reabierto conserva sus páginas aunque cambie la barra d
   const first = await page_(page)
   expect(first.text.length).toBeGreaterThan(40)
 
-  // The status bar goes away while reading: 30 px more.
+  // The status bar goes away while reading: 30 px more, and the text does
+  // not jump with it.
+  const position = await fromBottom(page)
   await page.setViewportSize({width:390,height:874})
   await page.waitForTimeout(500)
   expect(await page_(page)).toEqual(first)
+  expect(await fromBottom(page)).toBe(position)
   await reopen(page)
   expect(await page_(page)).toEqual(first)
 
@@ -48,4 +59,5 @@ test('un EPUB cerrado y reabierto conserva sus páginas aunque cambie la barra d
   await page.setViewportSize({width:390,height:874})
   await reopen(page)
   expect(await page_(page)).toEqual(first)
+  expect(await fromBottom(page)).toBe(position)
 })

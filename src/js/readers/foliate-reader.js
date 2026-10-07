@@ -460,6 +460,8 @@ export class FoliateReader {
     const bounds = this.#container.getBoundingClientRect()
     const width = this.#container.clientWidth || bounds.width || this.#view.getBoundingClientRect().width || 360
     const height = this.#container.clientHeight || bounds.height || this.#view.getBoundingClientRect().height || 720
+    // A paginated page sits on the bottom of the reader (see .is-paginated).
+    this.#container.classList.toggle('is-paginated', this.#preferences.flow !== 'scrolled')
     if (this.#preferences.flow === 'scrolled') this.#view.style.height = ''
     else {
       const value = `${this.#stablePageHeight(width, height, this.#container.clientWidth > 0 && this.#container.clientHeight > 0)}px`
@@ -521,6 +523,6 @@ export class FoliateReader {
     this.#view = null
     this.#diagnosticTurns = { followPending:0, pageTurnPending:0 }
     this.#pageTurn = Promise.resolve()
-    if (this.#container) { this.#container.innerHTML = ''; this.#container.classList.remove('foliate-reader') }
+    if (this.#container) { this.#container.innerHTML = ''; this.#container.classList.remove('foliate-reader', 'is-paginated') }
   }
 }
