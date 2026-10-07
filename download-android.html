@@ -18,11 +18,16 @@
       document.documentElement.setAttribute('data-theme', theme)
       if (theme === 'dark') document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#151515')
     } catch { /* Sin almacenamiento, tema claro por defecto. */ }
+    // Dentro de la app Android, la franja de su barra de estado (ver index.html).
+    try {
+      const top = Number(window.InhouseNative?.getSafeTopInset?.())
+      if (isFinite(top) && top >= 0 && top < 200) document.documentElement.style.setProperty('--ihr-safe-top', top + 'px')
+    } catch { /* Navegador o APK anterior: env(). */ }
   </script>
-  <script type="module" crossorigin src="/inhouse-read/assets/androidDownload-CFBS7vEL.js"></script>
-  <link rel="modulepreload" crossorigin href="/inhouse-read/assets/base-COVc8yu5.js">
-  <link rel="stylesheet" crossorigin href="/inhouse-read/assets/base-COHSqPRx.css">
-  <link rel="stylesheet" crossorigin href="/inhouse-read/assets/androidDownload-BC4lIftu.css">
+  <script type="module" crossorigin src="/inhouse-read/assets/androidDownload-ZYOE64a3.js"></script>
+  <link rel="modulepreload" crossorigin href="/inhouse-read/assets/base-BCHmLlbJ.js">
+  <link rel="stylesheet" crossorigin href="/inhouse-read/assets/base-JwWmTiyy.css">
+  <link rel="stylesheet" crossorigin href="/inhouse-read/assets/androidDownload-D7DwbcZ_.css">
 </head>
 <body>
   <div class="dl-page">
