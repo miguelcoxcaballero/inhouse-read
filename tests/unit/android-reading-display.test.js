@@ -53,14 +53,21 @@ describe('Android reading display bridge', () => {
       expect(template).toContain('safeInsets.right')
       expect(template).toContain('safeInsets.bottom')
       expect(template).toContain('.setInsets(safeTypes, Insets.NONE)')
+      // Capacitor's SystemBars no longer pads the window (it padded the top
+      // by the visible bar on older WebViews and before the first load), so
+      // this listener also keeps the keyboard's room.
+      expect(listener(template)).toContain('isVisible(WindowInsetsCompat.Type.ime())')
+      expect(listener(template)).toMatch(/initial(Bottom|Padding\.bottom) \+ bottomInset\)/)
     }
+    expect(source).toMatch(/"plugins": \{"SystemBars": \{"insetsHandling": "disable"\}\}/)
   })
 
   for (const [name, template] of [['Java', java], ['Kotlin', kotlin]]) {
     it(`${name}: reports a top inset that ignores the bar's visibility, in CSS px, and pushes changes`, () => {
       const update = template.slice(template.search(/(void|fun) updateSafeTopInset\(/), template.indexOf('// Vote for the panel'))
       expect(update).toContain('getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars())')
-      expect(update).toContain('getInsets(WindowInsetsCompat.Type.displayCutout())')
+      // Plus everything the shell padded at the top before (cutout, caption bar).
+      expect(update).toMatch(/getInsets\(WindowInsetsCompat\.Type\.systemBars\(\) (\||or) WindowInsetsCompat\.Type\.displayCutout\(\)\)\.top/)
       // Physical pixels to CSS px (dp), rounded like the WebView's own layout.
       expect(update).toMatch(/displayMetrics\.density|getDisplayMetrics\(\)\.density/)
       expect(update).toMatch(/topPx \/ density/)

@@ -1416,6 +1416,12 @@ class ApkBuilderApp(tk.Tk):
             "appName": app_name,
             "webDir": "www",
             "server": {"androidScheme": "https"},
+            # MainActivity's root insets listener owns the window insets (see
+            # patch_webview_bridge). Capacitor 8's SystemBars would otherwise
+            # pad the whole window by the visible status bar on WebView < 140
+            # and before the first page loads, so the page moved when the bar
+            # hid and the status bar could not overlay it.
+            "plugins": {"SystemBars": {"insetsHandling": "disable"}},
         }
         try:
             html_text = html.read_text(encoding="utf-8", errors="ignore").lower()
@@ -1574,6 +1580,7 @@ class ApkBuilderApp(tk.Tk):
                 f"""package {package_id};
 
 import android.content.Intent;
+import android.content.pm.PackageInfo;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.net.Uri;
@@ -1714,12 +1721,12 @@ public class MainActivity extends BridgeActivity {{
 
     // The page keeps the status bar's height free at its top, shown or not.
     // The value ignores the bar's visibility; rotation, cutouts and
-    // multi-window change it, and the page is told at once.
+    // multi-window change it, and the page is told at once. It covers all
+    // the shell used to pad at the top: status bar, cutout, caption bar.
     private void updateSafeTopInset(WindowInsetsCompat windowInsets) {{
-        int statusTop = Math.max(
+        int topPx = Math.max(
             windowInsets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars()).top,
-            windowInsets.getInsets(WindowInsetsCompat.Type.statusBars()).top);
-        int topPx = Math.max(statusTop, windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout()).top);
+            windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()).top);
         float density = getResources().getDisplayMetrics().density;
         double top = density > 0 ? Math.round(topPx / density * 100) / 100.0 : 0;
         if (top == safeTopInset) return;
@@ -1728,6 +1735,18 @@ public class MainActivity extends BridgeActivity {{
         if (webView == null || !isTrustedReadPage()) return;
         webView.evaluateJavascript(
             "window.inhouseSetSafeTop && window.inhouseSetSafeTop(" + top + ");", null);
+    }}
+
+    // The installed WebView's major version, 0 when Android cannot tell.
+    private static int webViewMajorVersion() {{
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return 0;
+        try {{
+            PackageInfo provider = WebView.getCurrentWebViewPackage();
+            if (provider == null || provider.versionName == null) return 0;
+            return Integer.parseInt(provider.versionName.split("[.]")[0]);
+        }} catch (RuntimeException ignored) {{
+            return 0;
+        }}
     }}
 
     // Vote for the panel's fastest mode at the CURRENT resolution: a WebView app
@@ -1809,8 +1828,20 @@ public class MainActivity extends BridgeActivity {{
         int initialRight = rootView.getPaddingRight();
         int initialBottom = rootView.getPaddingBottom();
         int safeTypes = WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout();
+        // This listener owns the window insets: Capacitor's SystemBars inset
+        // handling is disabled in capacitor.config.json. That plugin padded
+        // the whole window by the visible status bar on WebView < 140 and
+        // until the first page had loaded, so hiding the bar (or the page
+        // loading) still moved the WebView. The keyboard keeps the spacing
+        // the plugin gave it: the keyboard's height, plus the navigation bar
+        // on WebView 144+.
+        boolean keyboardKeepsNavigationInset = webViewMajorVersion() >= 144;
         ViewCompat.setOnApplyWindowInsetsListener(rootView, (view, windowInsets) -> {{
             Insets safeInsets = windowInsets.getInsets(safeTypes);
+            int bottomInset = windowInsets.isVisible(WindowInsetsCompat.Type.ime())
+                ? windowInsets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+                    + (keyboardKeepsNavigationInset ? safeInsets.bottom : 0)
+                : safeInsets.bottom;
             updateSafeTopInset(windowInsets);
             // No native top inset in any state: showing or hiding the status
             // bar must never resize the WebView (the page reserves the strip).
@@ -1818,7 +1849,7 @@ public class MainActivity extends BridgeActivity {{
                 initialLeft + safeInsets.left,
                 initialTop,
                 initialRight + safeInsets.right,
-                initialBottom + safeInsets.bottom);
+                initialBottom + bottomInset);
             return new WindowInsetsCompat.Builder(windowInsets)
                 .setInsets(safeTypes, Insets.NONE)
                 .build();
@@ -2235,12 +2266,12 @@ class MainActivity : BridgeActivity() {{
 
     // The page keeps the status bar's height free at its top, shown or not.
     // The value ignores the bar's visibility; rotation, cutouts and
-    // multi-window change it, and the page is told at once.
+    // multi-window change it, and the page is told at once. It covers all
+    // the shell used to pad at the top: status bar, cutout, caption bar.
     private fun updateSafeTopInset(windowInsets: WindowInsetsCompat) {{
-        val statusTop = maxOf(
+        val topPx = maxOf(
             windowInsets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars()).top,
-            windowInsets.getInsets(WindowInsetsCompat.Type.statusBars()).top)
-        val topPx = maxOf(statusTop, windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout()).top)
+            windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()).top)
         val density = resources.displayMetrics.density
         val top = if (density > 0f) Math.round(topPx / density * 100) / 100.0 else 0.0
         if (top == safeTopInset) return
@@ -2248,6 +2279,16 @@ class MainActivity : BridgeActivity() {{
         val webView = bridge?.webView ?: return
         if (!isTrustedReadPage()) return
         webView.evaluateJavascript("window.inhouseSetSafeTop && window.inhouseSetSafeTop($top);", null)
+    }}
+
+    // The installed WebView's major version, 0 when Android cannot tell.
+    private fun webViewMajorVersion(): Int {{
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return 0
+        return try {{
+            WebView.getCurrentWebViewPackage()?.versionName?.substringBefore('.')?.toIntOrNull() ?: 0
+        }} catch (ignored: RuntimeException) {{
+            0
+        }}
     }}
 
     // Vote for the panel's fastest mode at the CURRENT resolution: a WebView app
@@ -2317,8 +2358,20 @@ class MainActivity : BridgeActivity() {{
         val initialPadding = Insets.of(
             rootView.paddingLeft, rootView.paddingTop, rootView.paddingRight, rootView.paddingBottom)
         val safeTypes = WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+        // This listener owns the window insets: Capacitor's SystemBars inset
+        // handling is disabled in capacitor.config.json. That plugin padded
+        // the whole window by the visible status bar on WebView < 140 and
+        // until the first page had loaded, so hiding the bar (or the page
+        // loading) still moved the WebView. The keyboard keeps the spacing
+        // the plugin gave it: the keyboard's height, plus the navigation bar
+        // on WebView 144+.
+        val keyboardKeepsNavigationInset = webViewMajorVersion() >= 144
         ViewCompat.setOnApplyWindowInsetsListener(rootView) {{ view, windowInsets ->
             val safeInsets = windowInsets.getInsets(safeTypes)
+            val bottomInset = if (windowInsets.isVisible(WindowInsetsCompat.Type.ime()))
+                windowInsets.getInsets(WindowInsetsCompat.Type.ime()).bottom +
+                    (if (keyboardKeepsNavigationInset) safeInsets.bottom else 0)
+            else safeInsets.bottom
             updateSafeTopInset(windowInsets)
             // No native top inset in any state: showing or hiding the status
             // bar must never resize the WebView (the page reserves the strip).
@@ -2326,7 +2379,7 @@ class MainActivity : BridgeActivity() {{
                 initialPadding.left + safeInsets.left,
                 initialPadding.top,
                 initialPadding.right + safeInsets.right,
-                initialPadding.bottom + safeInsets.bottom)
+                initialPadding.bottom + bottomInset)
             WindowInsetsCompat.Builder(windowInsets)
                 .setInsets(safeTypes, Insets.NONE)
                 .build()

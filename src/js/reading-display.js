@@ -48,6 +48,10 @@ export function initReadingDisplay({ document:doc = document, window:win = windo
   const lightUnderStatusBar = () => {
     // The blocking update notice dims the whole screen, the bar's strip too.
     if (doc.getElementById('android-update-gate')) return false
+    // So does the catalogue's backdrop: light paper when flown into from the
+    // booklet (both themes), the dimmed room otherwise.
+    const catalog = doc.querySelector('dialog.ihr-plant-catalog[open]')
+    if (catalog) return catalog.hasAttribute('data-catalog-camera')
     const scheme = reading && pageOwnsDisplay() ? doc.getElementById('reader-screen')?.style.colorScheme : ''
     if (scheme === 'light' || scheme === 'dark') return scheme === 'light'
     return doc.documentElement.getAttribute('data-theme') !== 'dark'
@@ -96,6 +100,9 @@ export function initReadingDisplay({ document:doc = document, window:win = windo
   observer.observe(doc.documentElement, { attributes:true, attributeFilter:['data-theme'] })
   const readerScreen = doc.getElementById('reader-screen')
   if (readerScreen) observer.observe(readerScreen, { attributes:true, attributeFilter:['data-reading-theme'] })
+  // Dialogs opening anywhere (the catalogue covers the status bar's strip).
+  const dialogs = new win.MutationObserver(sync)
+  dialogs.observe(doc.body, { subtree:true, attributes:true, attributeFilter:['open', 'data-catalog-camera'] })
   doc.addEventListener('visibilitychange', sync)
   doc.addEventListener('pointerdown', acquire, { passive:true })
   win.addEventListener('focus', sync)
@@ -105,7 +112,7 @@ export function initReadingDisplay({ document:doc = document, window:win = windo
   return { dispose() {
     if (disposed) return
     disposed = true; active = false; epoch++
-    observer.disconnect()
+    observer.disconnect(); dialogs.disconnect()
     doc.removeEventListener('visibilitychange', sync)
     doc.removeEventListener('pointerdown', acquire)
     win.removeEventListener('focus', sync)

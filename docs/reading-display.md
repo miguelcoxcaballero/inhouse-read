@@ -17,8 +17,16 @@ Ahora ocultar o mostrar la barra no mueve ni redimensiona nada:
   (padding superior nativo 0 en todos los estados; laterales, inferior y
   teclado sin cambios). Las muescas se maquetan igual con la barra visible u
   oculta (`LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS`/`SHORT_EDGES`).
+- El listener de insets de `MainActivity` es el único que los aplica:
+  `capacitor.config.json` desactiva el de Capacitor 8
+  (`plugins.SystemBars.insetsHandling: "disable"`). Ese plugin rellenaba toda
+  la ventana con la barra visible en WebView < 140 (el emulador de CI usa 124)
+  y hasta que cargaba la primera página en cualquier WebView: la página seguía
+  saltando al ocultarse la barra y saltaba también al arrancar. El teclado
+  conserva el hueco que le daba el plugin (su altura, más la barra de
+  navegación con WebView 144+).
 - `InhouseNative.getSafeTopInset()` da en px CSS una altura estable:
-  `max(statusBars ignorando visibilidad, muesca superior)`. Un script en línea
+  `max(statusBars ignorando visibilidad, lo que la shell rellenaba arriba: barra visible, muesca, barra de título de ventana)`. Un script en línea
   de `index.html` la fija en `--ihr-safe-top` antes del primer pintado y la
   shell llama a `window.inhouseSetSafeTop()` si cambia (giro, muesca,
   multiventana). Todo el CSS usa `var(--ihr-safe-top)` en vez de
@@ -29,7 +37,10 @@ Ahora ocultar o mostrar la barra no mueve ni redimensiona nada:
 - `InhouseNative.setStatusBarAppearance(fondoClaro)` (sólo la página de Read,
   en el hilo de UI) elige iconos oscuros o claros: tema de la app en la
   estantería, papel del lector mientras el libro es dueño de la pantalla,
-  oscuro con el aviso de actualización. La barra de navegación no cambia.
+  oscuro con el aviso de actualización y con el catálogo de plantas sin vuelo
+  (fondo atenuado), claro con el catálogo volado desde el folleto (papel). La
+  barra de navegación no cambia. Los diálogos centrados (catálogo) se colocan
+  bajo la franja `--ihr-safe-top`.
 - Como ya no hay redimensionado, `reading-display.js` oculta la barra cuando la
   página empieza su zoom de apertura (`body.is-reader-page-arriving`, puesto
   por `app.js`) y la muestra cuando el libro 3D recoge la página al cerrar

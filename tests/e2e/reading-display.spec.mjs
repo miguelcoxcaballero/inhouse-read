@@ -150,6 +150,31 @@ for (const { name, scheme, readingTheme, viewport } of [
     .toEqual([false, true, false, true, false])
 })
 
+// A centred dialog (the plant catalogue) lies below the strip the page keeps
+// free, not under the status bar drawn over the page; without the shell it
+// keeps its margins (6 px on narrow phones, 8 px otherwise).
+for (const { viewport, gap } of [{ viewport:{ width:390, height:844 }, gap:6 }, { viewport:{ width:844, height:390 }, gap:8 }]) test(`Android con inset estable (${viewport.width}x${viewport.height}): el catálogo centrado no queda bajo la barra de estado`, async ({ page }) => {
+  await page.setViewportSize(viewport)
+  const place = () => page.evaluate(() => {
+    const dialog = document.createElement('dialog')
+    dialog.className = 'ihr-plant-catalog'
+    document.body.append(dialog); dialog.showModal()
+    for (const animation of dialog.getAnimations()) animation.finish() // its open scale
+    const { top, bottom } = dialog.getBoundingClientRect()
+    dialog.close(); dialog.remove()
+    return { top, bottom, height:innerHeight }
+  })
+  await page.goto(process.env.IHR_TEST_URL || './')
+  await expect(page.locator('.ihr-bookshelf__scroll')).toBeVisible({ timeout:60_000 })
+  const browser = await place()
+  expect(browser.top).toBeCloseTo(gap, 0)
+  expect(browser.height - browser.bottom).toBeCloseTo(gap, 0)
+  await page.evaluate(top => window.inhouseSetSafeTop(top), STATUS_BAR)
+  const shell = await place()
+  expect(shell.top).toBeCloseTo(STATUS_BAR + gap, 0)
+  expect(shell.height - shell.bottom).toBeCloseTo(gap, 0)
+})
+
 for (const native of [false, true]) test(`${native ? 'Android' : 'web'}: la pantalla permanece encendida sólo al leer y las transiciones conservan su tamaño`, async ({ page }) => {
   test.setTimeout(120_000)
   await page.emulateMedia({ reducedMotion:'reduce' })

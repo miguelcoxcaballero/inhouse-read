@@ -122,6 +122,30 @@ describe('stable top inset shells', () => {
     expect(icons().at(-1)).toBe(true)
   })
 
+  it('match the icons to the catalogue backdrop over the strip: paper when flown into, dimmed room otherwise', async () => {
+    document.documentElement.setAttribute('data-theme', 'dark')
+    start()
+    expect(icons()).toEqual([false])
+    const catalog = document.createElement('dialog'); catalog.className = 'ihr-plant-catalog'
+    document.body.append(catalog); await settle()
+    expect(icons()).toEqual([false])
+    // showModal and the camera flight start in the same task.
+    catalog.setAttribute('open', ''); catalog.dataset.catalogCamera = 'opening'; await settle()
+    expect(icons()).toEqual([false, true])
+    catalog.dataset.catalogCamera = 'in'; await settle()
+    expect(icons()).toEqual([false, true])
+    delete catalog.dataset.catalogCamera; catalog.removeAttribute('open'); await settle()
+    expect(icons()).toEqual([false, true, false])
+    document.documentElement.setAttribute('data-theme', 'light'); await settle()
+    expect(icons().at(-1)).toBe(true)
+    // Without the flight (reduced motion) the room is dimmed: light icons.
+    catalog.setAttribute('open', ''); await settle()
+    expect(icons().at(-1)).toBe(false)
+    catalog.removeAttribute('open'); await settle()
+    expect(icons().at(-1)).toBe(true)
+    catalog.remove()
+  })
+
   it('use the app theme when the reader has no reading scheme yet', async () => {
     screen.style.colorScheme = ''
     document.documentElement.setAttribute('data-theme', 'dark')
