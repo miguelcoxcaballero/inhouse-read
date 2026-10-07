@@ -55,13 +55,13 @@ jobs:
           INHOUSE_KEY_ALIAS: ${{ secrets.INHOUSE_READ_ANDROID_KEY_ALIAS }}
         run: python .github/scripts/build_android_apk.py
 
-      - run: test -s inhouse-read-release-v1.1.7.apk
+      - run: test -s inhouse-read-release-v1.1.8.apk
 
       - name: Confirm the signed APK contains only the production loader
         run: |
           python - <<'PY'
           from zipfile import ZipFile
-          with ZipFile('inhouse-read-release-v1.1.7.apk') as apk:
+          with ZipFile('inhouse-read-release-v1.1.8.apk') as apk:
               loader = apk.read('assets/public/index.html')
               assert len(loader) < 3000, f'Full app was bundled ({len(loader)} bytes)'
               assert b'miguelcoxcaballero.github.io/inhouse-read/' in loader
@@ -110,7 +110,7 @@ jobs:
           profile: pixel_4
           # El emulador de GitHub Actions no siempre hereda un DNS funcional.
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -dns-server ${{ steps.runner-dns.outputs.servers }}
-          script: python .github/scripts/verify_android_app.py inhouse-read-release-v1.1.7.apk --book-imports && python .github/scripts/verify_android_background.py inhouse-read-release-v1.1.7.apk
+          script: python .github/scripts/verify_android_app.py inhouse-read-release-v1.1.8.apk --book-imports && python .github/scripts/verify_android_background.py inhouse-read-release-v1.1.8.apk
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -130,23 +130,23 @@ jobs:
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4
-        with: { name: inhouse-read-android-v1.1.7, path: inhouse-read-release-v1.1.7.apk, if-no-files-found: error }
+        with: { name: inhouse-read-android-v1.1.8, path: inhouse-read-release-v1.1.8.apk, if-no-files-found: error }
 
       - uses: actions/upload-artifact@v4
-        with: { name: inhouse-read-android-intent-fixture-v1.1.7, path: intent-fixture-debug.apk, if-no-files-found: error }
+        with: { name: inhouse-read-android-intent-fixture-v1.1.8, path: intent-fixture-debug.apk, if-no-files-found: error }
 
       - name: Publish versioned APK download
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view android-v1.1.7 >/dev/null 2>&1; then
-            gh release upload android-v1.1.7 inhouse-read-release-v1.1.7.apk --clobber
+          if gh release view android-v1.1.8 >/dev/null 2>&1; then
+            gh release upload android-v1.1.8 inhouse-read-release-v1.1.8.apk --clobber
           else
-            gh release create android-v1.1.7 inhouse-read-release-v1.1.7.apk \
-              --title "Inhouse Read Android 1.1.7" \
-              --notes "Audiolibro natural con reproducción PCM nativa, controles multimedia y continuidad con la pantalla bloqueada."
+            gh release create android-v1.1.8 inhouse-read-release-v1.1.8.apk \
+              --title "Inhouse Read Android 1.1.8" \
+              --notes "La barra de estado se oculta sobre la página sin moverla al abrir y cerrar un libro."
           fi
-          gh release edit android-v1.1.7 --latest
+          gh release edit android-v1.1.8 --latest
 
       # Fuente unica de verdad para src/js/android-update.js: tamano y
       # sha256 calculados sobre el APK real que se acaba de firmar y
@@ -156,11 +156,11 @@ jobs:
       - name: Actualizar android-update.json con los datos reales de este build
         run: |
           python .github/scripts/update_manifest.py \
-            inhouse-read-release-v1.1.7.apk \
-            1.1.7 \
-            20 \
-            android-v1.1.7 \
-            "Audiolibro natural con reproducción PCM nativa, controles multimedia y continuidad con la pantalla bloqueada."
+            inhouse-read-release-v1.1.8.apk \
+            1.1.8 \
+            21 \
+            android-v1.1.8 \
+            "La barra de estado se oculta sobre la página sin moverla al abrir y cerrar un libro."
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/android-update.json
