@@ -98,6 +98,8 @@ for (const { name, scheme, readingTheme, viewport } of [
   expect(stable(await layout())).toEqual(stable(direct))
   await page.evaluate(() => document.documentElement.setAttribute('data-fake-bar-hidden', ''))
 
+  // The import is saved (the back button needs its record) once the toolbar shows.
+  await expect(page.locator('#reader-toolbar')).toBeVisible()
   await page.locator('#reader-back').click()
   await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/, { timeout:30_000 })
   const closeDirect = await lastOwner()
@@ -173,8 +175,12 @@ test('Android 1.1.7 (sin inset estable): la barra cambia sólo fuera de las anim
   expect(await page.evaluate(() => getComputedStyle(document.querySelector('.app-header')).paddingTop)).toBe('10px')
   await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/tiny.pdf')
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
+  // The import is saved (the back button needs its record) once the toolbar shows.
+  await expect(page.locator('#reader-toolbar')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.__owner.at(-1)?.enabled)).toBe(true)
   await page.locator('#reader-back').click()
   await expect(page.locator('body')).not.toHaveClass(/is-closing-reader|is-reading/, { timeout:30_000 })
+  await expect.poll(() => page.evaluate(() => window.__owner.at(-1)?.enabled)).toBe(false)
   await page.locator('.ihr-spine').first().click()
   await page.locator('.ihr-flyout__cover-target').click({ timeout:30_000 })
   await expect(page.locator('.ihr-flyout')).toHaveCount(0, { timeout:30_000 })
