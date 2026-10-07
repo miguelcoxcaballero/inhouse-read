@@ -1,9 +1,9 @@
 {
-  "version": "1.1.7",
-  "versionCode": 20,
+  "version": "1.1.8",
+  "versionCode": 21,
   "required": true,
-  "apkSizeBytes": 78531659,
-  "apkSha256": "961a3f120490f3898459483bb110938cf0fd979a58f00dec81eb8f57264e14bb",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.7/inhouse-read-release-v1.1.7.apk",
-  "releaseNotes": "Audiolibro natural con reproducción PCM nativa, controles multimedia y continuidad con la pantalla bloqueada."
+  "apkSizeBytes": 78531695,
+  "apkSha256": "5d10e6555c5c05e59925d18d5e0c959a08d8e41761a5aad37832c9d40d8e7eb1",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.8/inhouse-read-release-v1.1.8.apk",
+  "releaseNotes": "La barra de estado se oculta sobre la página sin moverla al abrir y cerrar un libro."
 }
