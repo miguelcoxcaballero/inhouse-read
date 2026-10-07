@@ -122,6 +122,7 @@ import { shelfScale, plantDimensions, bookSpineOptions, minimumBookCellWidth } f
 import { getCatalogLamp, normalizeShelfLamp } from './lamp-catalog-data.js';
 import { lampCatalogIllustration } from './lamp-illustration.js';
 import { readerBookTiming } from './reader-book-timing.js';
+import { persistablePosition } from './readers/persistable-position.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
@@ -3503,6 +3504,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       // white-paper variant starts at pageTheme 0 and fades to the theme on the zoom.
       // A page warmed up while the book waited is already on the model.
       if (view) {
+        // Prepare the real current-page ribbon with the opening page, so its
+        // first material is ready before returning from an unread book.
+        const position = persistablePosition(snapshot.location);
+        if (position) view.updateBookmark?.({ ...book, progressFraction:position.fraction, locator:position.locator }, { redraw:false });
         if (!view.hasPageSnapshot(snapshot)) return view.setPageSnapshot(snapshot, { ...(snapshot.paper ? { pageTheme:0 } : {}), redraw });
         // A tap may interrupt the idle warm-up after installation but before its
         // final draw. Commit the white page before announcing the opening phase.
@@ -3637,9 +3642,19 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           // its decoded case and linked programs instead of rebuilding them at
           // Back. Only one view is retained, and incompatible geometry is never
           // reused. The ribbon is refreshed from the reader's final progress.
-          if (view?.updateBookmark) returnViews.retain(bookReturnSignature(book,item.style,
+          if (view?.updateBookmark) {
+            returnViews.retain(bookReturnSignature(book,item.style,
             { width:coverW,height:coverH,thickness,viewportWidth:vw,viewportHeight:vh,centerX,centerY },coverUrl),view,
             bookReturnCompatibility(book,item.style,{ width:coverW,height:coverH,thickness,viewportWidth:vw,viewportHeight:vh,centerX,centerY }));
+            // An immediate cover tap can interrupt the page's idle preparation.
+            // Finish reflecting its hidden materials while the reader is open,
+            // without drawing, and stop as soon as ownership moves again.
+            const opened = state.lastOpened;
+            const current = () => !state.destroyed && !state.returnMotion && !state.session && state.lastOpened === opened;
+            const idle = () => new Promise(resolve => typeof requestIdleCallback === 'function'
+              ? requestIdleCallback(resolve, { timeout:1000 }) : setTimeout(resolve, 16));
+            void idle().then(() => current() && view.preparePagePrograms?.(idle, current)).catch(() => {});
+          }
           else view?.dispose();
           flyout.remove();
           return true;

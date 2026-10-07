@@ -1,3 +1,15 @@
+# Continuacion: web1.7.105 candidata /104 publicada
+
+105 prepara el marcapaginas desde la pagina real y completa shaders
+ocultos en idle tras una apertura inmediata.44 focales PASS; full en curso.
+Los originales y sus deadlines se conservan. No se afirma una mejora
+sostenida por las muestras aisladas. [Detalle105](performance-1805.md).
+
+104 publicada, bateria3576/291 y92 Python PASS, offline4/locales7 PASS,
+APK1.1.7 firma/loader PASS. CI104 conserva dos cierres nativos FAIL en
+primer intento y retry. PDF18 funcionales PASS,17/18 auditoria estricta
+por una captura HTTP0B; el fallo se conserva. [Detalle104](performance-1804.md).
+
 # Continuacion: web 1.7.104 preparada / 1.7.103 publicada
 
 1.7.104 reduce resets intermedios del framebuffer de la estanteria.

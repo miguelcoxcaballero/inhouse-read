@@ -63,3 +63,8 @@ Quedan los siete locales en ejecucion y la CI103 original completa.
 Los siete originales locales PASS sin retries. CI103 conserva un primer
 fallo en cierre393 (8s); retry PASS6882,2ms no borra el fallo.390
 PASS6743,2ms. El resto de la auditoria completa sigue pendiente.
+
+CI103 original completa37558208853 FAIL:526 casos/527 intentos,11 ZIP
+y12 jobs; un primer cierre3938s falla y su retry pasa. Todos los otros
+shards y cuatro familias de voces reales PASS. Snapshot003 conserva
+los originales y sus digests autenticados; no se acredita todo PASS.

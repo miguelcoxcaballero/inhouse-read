@@ -32,3 +32,28 @@ El diagnostico mas detallado104 sigue pendiente; los tiempos varian.
 Bateria local final PASS:3576 unitarias/291 archivos, build y92 Python.
 Los hashes de fuentes antes/despues coinciden. Censo526 E2E listado
 (no ejecutado por ese comando); la ejecucion completa corresponde a CI104.
+
+Publicado e2c05bb11500be6a761b6364090ecee58b0f30d2; Pages
+9a73343c125aa3c242d6c38066f0279bf9dcddb6. HTTP32/shell96 PASS.
+Main610099B/SHA256c962c29dfbcb3f7620b618e7a440b5403f18835a0eccbb3d3625785eab51b686.
+Primer pin conserva FAIL por HTML CDN anterior; segundo pin104 exactoPASS.
+APK descargado otra vez:1.1.7/codigo20, firma y loader2107B PASS.
+El diagnostico despues conserva7252,9ms, frente5316ms antes: no se
+afirma aceleracion total. El reset altura0 desaparece, cuatro setters
+frente cinco; ambos ejes y los pixeles finales siguen iguales.
+Los cinco originales publicos de edicion/gestos y regreso PASS sin retries.
+Publicos restantes, offline4, locales7 y CI104 aun en ejecucion.
+
+Tanda restante: catalogo5, Android Abrir con4, offline4 y locales7 PASS,
+sin retries. El APK1.1.7 descargado conserva firma, SHA y loader2107B.
+La auditoria estricta PDF conserva17/18: las18 pruebas funcionales pasan,
+pero una captura de respuesta de walnut-surface devuelve0B en teardown.
+Se conserva ese fallo; seis experimentos independientes reciben los bytes
+exactos en Response.blob y pasan, sin sustituir el intento original.
+CI104 conserva ambos cierres nativos FAIL tanto primero como en retry.
+Otros shards completados PASS; UI6 y Supertonic siguen pendientes.
+
+CI104 completa37560738081 FAIL:526 casos/528 intentos, dos retries,
+cuatro intentos fallidos (390 y393, primero y retry).11 ZIP/12 jobs;
+todos los otros shards y cuatro familias de voces reales PASS.
+Snapshot002 preserva metadata original, reportes y digests autenticados.

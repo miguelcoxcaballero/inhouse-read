@@ -2100,14 +2100,23 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     drawUpdatedAppearance();
     return true;
   }
-  function updateBookmark(nextBook) {
+  function updateBookmark(nextBook, options) {
     if (disposed) return false;
     const changed = JSON.stringify(bookmarkFor(currentBook)) !== JSON.stringify(bookmarkFor(nextBook));
     currentBook = { ...currentBook, ...nextBook };
     if (changed) {
       visualRevision++;
-      pendingModel?.userData.updateBookmark?.(nextBook);
-      model.userData.updateBookmark?.(nextBook);
+      const targets = [pendingModel, model].filter(Boolean);
+      const invalidations = options?.redraw === false ? targets.map(target =>
+        [target, target.userData.invalidate, Object.hasOwn(target.userData, 'invalidate')]) : [];
+      for (const [target] of invalidations) target.userData.invalidate = null;
+      try { for (const target of targets) target.userData.updateBookmark?.(nextBook); }
+      finally {
+        for (const [target, invalidate, own] of invalidations) {
+          if (own) target.userData.invalidate = invalidate;
+          else delete target.userData.invalidate;
+        }
+      }
       canvas.dataset.bookmark3d = String(Boolean(model.userData.hasBookmark));
     }
     return true;
