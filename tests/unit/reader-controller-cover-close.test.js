@@ -29,3 +29,21 @@ describe('cover render cancellation through the reader controller', () => {
     expect(await request).toBeNull();
   });
 });
+
+
+describe('explicit initial cover retention in the controller',()=>{
+  it('returns the original retained engine result after closing, with the same options',async()=>{
+    const reader=await open(),blob=new Blob(['initial-cover']); let resolve;
+    state.cover.mockReturnValue(new Promise(done=>{resolve=done;}));
+    const options={retainOnClose:true}; const request=reader.getCoverBlob(options);
+    reader.close(); resolve(blob); expect(await request).toBe(blob);
+    expect(state.cover).toHaveBeenCalledWith(options);
+  });
+  it('rejects a retained result when its explicit signal was aborted',async()=>{
+    const reader=await open(),controller=new AbortController(); let resolve;
+    state.cover.mockReturnValue(new Promise(done=>{resolve=done;}));
+    const request=reader.getCoverBlob({retainOnClose:true,signal:controller.signal});
+    reader.close(); controller.abort(); resolve(new Blob(['cancelled']));
+    expect(await request).toBeNull();
+  });
+});

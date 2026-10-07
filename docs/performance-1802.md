@@ -31,5 +31,20 @@ sin retries y con esperas30s/8s intactas. Diagnostico original independiente:
 cierre5.970,2ms. No se observa ningun reajuste del canvas activo del libro;
 los cinco reajustes restantes pertenecen a otros canvases. Ese tiempo no
 mejora los5.710,2ms del diagnostico100; no se acredita mejora total ni
-rendimiento en un telefono fisico. Publicacion, web real y CI102 pendientes.
+rendimiento en un telefono fisico. Publicada desde56c4beeb35b7aabcd13563aec62c254d0e593206.
+Pages9ef993fc70a8480dc9a96a6926ae0bffa95188cc, main609.735B/SHA256
+fa293695fd4efc1e51de754e483e05a43d606906faec56966459769f314b21c5.
+HTTP32/shell96,32/32 publicos estrictos, tres recorridos offline y los
+siete originales locales PASS, sin retries. Los32 publicos incluyen18 PDF,
+cinco edicion/animacion, cinco catalogo/plantas/luces y cuatro Abrir con.
+Se vuelve a descargar el APK1.1.7:78.531.659B, firma y loader2.107B PASS.
+CI102 original sigue en curso; su grupo de cierres concluye success,
+aun falta auditar sus informes originales para descartar reintentos.
 APK1.1.7/codigo20 permanece vigente y verificado; este cambio es web.
+
+## Primer informe original de CI102
+
+267 casos/267 intentos disponibles, cero retries y cero intentos fallidos.
+Los dos regresos originales pasan: cierre6.468,2ms (390px) y6.324,7ms
+(393px); duracion total25.006/24.875ms. Sigue faltando UI6 y Supertonic
+en este snapshot parcial, no se acredita la bateria completa aun.

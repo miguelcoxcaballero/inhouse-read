@@ -1159,7 +1159,12 @@ function extractCoverInBackground(record) {
   const previous = coverUpgrades.get(record.id)
   if (previous?.epoch === epoch) return previous.promise
   const controller = new AbortController()
-  const current = () => !controller.signal.aborted && !closingReader && reader.epoch === epoch && currentBookId === record.id
+  const firstCover = !record.cover
+  const entry = { epoch, controller, firstCover, retainedOnClose:false }
+  const current = () => !appDisposed && !controller.signal.aborted && (
+    !closingReader && reader.epoch === epoch && currentBookId === record.id ||
+    entry.retainedOnClose && (currentBookId === null || closingReader && currentBookId === record.id)
+  )
   const coverNeedsUpgrade = async () => {
     if (!record.cover) return true
     if (record.format !== 'PDF' || typeof createImageBitmap !== 'function') return false
@@ -1170,11 +1175,10 @@ function extractCoverInBackground(record) {
       return small
     } catch { return false }
   }
-  const entry = { epoch, controller }
   const task = coverNeedsUpgrade()
-    .then(needsCover => needsCover && current() ? reader.getCoverBlob({ signal:controller.signal }) : null)
+    .then(needsCover => needsCover && current() ? reader.getCoverBlob({ signal:controller.signal, ...(firstCover && record.format === 'PDF' ? { retainOnClose:true } : {}) }) : null)
     .then(blob => {
-      if (blob?.size > 0 && current()) return library.patch(record.id, { cover:blob, coverUpdatedAt:Date.now() }, { ifCurrent:current })
+      if (blob?.size > 0 && current()) return library.patch(record.id, { cover:blob, coverUpdatedAt:Date.now() }, { ifCurrent:latest => current() && (!firstCover || !latest.cover && (!record.contentRevision || latest.contentRevision === record.contentRevision)) })
     })
     .then(updated => { if (updated && current()) refreshShelf() })
     .catch(err => { if (!controller.signal.aborted) console.warn('No se pudo extraer la portada:', err) })
@@ -1205,9 +1209,11 @@ els.readerBack.addEventListener('click', async () => {
   closingReader = true
   document.body.classList.add('is-closing-reader')
   const bookId = currentBookId
-  // The stored cover remains valid. Stop optional HD work before the current
-  // page snapshot and return animation need the reader's rendering resources.
-  coverUpgrades.get(bookId)?.controller.abort()
+  // Cancel an optional upgrade; an unfinished first cover must still be saved.
+  // Its detached extraction cannot hold up the page snapshot or the animation.
+  const coverJob = coverUpgrades.get(bookId)
+  if (coverJob?.firstCover) coverJob.retainedOnClose = true
+  else coverJob?.controller.abort()
   let stillPage = null, stillFade = null, handedOff = false
   const handoff = () => {
     if (handedOff) return

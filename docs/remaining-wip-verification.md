@@ -1,3 +1,24 @@
+# Continuacion: web1.7.103 preparada /102 publicada y verificada
+
+Primera portada: la captura puede terminar mientras se cierra el lector;
+las mejoras opcionales de resolucion se cancelan. Se libera el documento
+retenido al terminar y se conservan los controles de sesion/revision.
+41 focales y bateria3.567/291, build y92 Python PASS. Dos regresiones de
+sesion del primer full quedan registradas, corregidas sin alterar sus tests.
+Original smoke/publicacion/web real/CI103 pendientes.102:32/32 publicos,
+offline3, siete locales y APK/firma/loader PASS.267 originales CI102 sin
+retries ni fallos; ambos cierres dentro de8s. [Detalle103](performance-1803.md).
+
+# Continuacion: web1.7.102 publicada y verificada / Android1.1.7 verificado
+
+HTTP32/shell96,32/32 publicos estrictos, offline3 y siete originales locales
+PASS, cero retries. Bateria3.555/291, build y92 Python PASS. Canvas activo
+sin reajustes de altura; geometria/DPR/materiales preservados en90 pares
+RGBA integrados exactos. CI102 pendiente de auditoria completa. CI101
+completaFAIL:526/529, UI3 y una pipeta sin portada en UI6; voces reales PASS.
+Se prepara una correccion para que cerrar rapido no descarte la primera
+portada aun pendiente. [Detalle102](performance-1802.md).
+
 # Continuacion: web1.7.102 preparada / Android1.1.7 verificado
 
 Se evita el reajuste de altura del canvas activo mediante una reserva

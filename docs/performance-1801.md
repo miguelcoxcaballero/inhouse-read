@@ -59,3 +59,12 @@ CI original37551892930 en curso, con resultados independientes.
 La CI1.7.100 conserva dos regresos30s/8s fallidos tambien en sus retries;
 el cierre de8915,6ms observado no se presenta como aprobado.
 El APK1.1.7/codigo20 sigue siendo el binario vigente verificado.
+
+## CI original completa
+
+37551892930 FAIL:526 casos/529 intentos, tres retries y cinco intentos
+fallidos. UI3 conserva ambos regresos30s/8s fallidos tambien en retry;
+UI6 conserva una pipeta sin portada en el primer intento (retry PASS).
+La captura y consola muestran que no habia portada disponible, no un
+fallo demostrado de pointerup. Los otros cuatro shards y cuatro familias
+de voces reales PASS.11 ZIP/digests y todos los intentos conservados.
