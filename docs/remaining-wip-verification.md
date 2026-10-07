@@ -1,3 +1,170 @@
+# Estado actual: web 1.7.106 publicada, rendimiento pendiente
+
+La fuente publicada es `666519c0413a75bf6839e9f9fdc6b15dd5afb433`.
+La mejora envia al driver el lote inicial de compilacion del libro,
+sin cambiar modelos, shaders, luces, DPR ni duraciones.
+
+- Bateria local: 3591 unitarias en 291 archivos, build y 92 Python PASS.
+- Siete recorridos originales locales y dos SwiftShader PASS, sin retries.
+- Web real: 32 casos funcionales PASS; 31/32 auditorias estrictas PASS.
+  La captura original de una textura walnut devuelve 0 B y conserva FAIL.
+- Cuatro recorridos offline PASS: bytes/progreso, fotos en cinco temas,
+  portada JPEG y cierre inmediato. Drive conserva su subida opcional.
+- APK publico 1.1.7/code20: descarga, SHA, firma y loader de 2107 B PASS.
+  No se publico un APK distinto por este cambio exclusivo de la web.
+- CI106 conserva ambos recorridos nativos FAIL en primer intento y retry.
+  Las trazas llegan a Back a los 26-27 s, casi todo su presupuesto total
+  de 30 s. CI completa: 524/526 casos PASS; ambos fallan también al reintentar.
+  Los otros cinco bloques de interfaz y las cuatro familias de voces PASS.
+- Experimento separado: seis ejecuciones reciben los Blobs de texturas
+  completos. No reproduce ni sustituye el fallo original de captura.
+
+El rendimiento completo NO se considera resuelto. No hay medicion de
+FPS, calor ni bateria de un telefono fisico. El catalogo sigue con 39
+voces Piper y diez personas Supertonic (220 perfiles de idioma), sin
+nuevas voces en esta version. [Evidencia y limites](performance-1806.md).
+
+## Historial de verificacion
+
+# Continuacion: web1.7.105 publicada y verificada / CI completa pendiente
+
+105: bateria3587/291, build y92 Python PASS; siete locales y dos
+SwiftShader originales PASS sin retries/deadlines intactos.32/32
+publicos estrictos, offline4 y APK1.1.7 SHA/firma/loader PASS.
+Preparacion del marcapaginas real y de materiales ocultos en idle.
+CI105 completa37563781668 pendiente; no se declara todo terminado
+ni rendimiento medido en telefono fisico. [Detalle105](performance-1805.md).
+
+# Continuacion: web1.7.105 candidata /104 publicada
+
+105 prepara el marcapaginas desde la pagina real y completa shaders
+ocultos en idle tras una apertura inmediata.44 focales PASS; full en curso.
+Los originales y sus deadlines se conservan. No se afirma una mejora
+sostenida por las muestras aisladas. [Detalle105](performance-1805.md).
+
+104 publicada, bateria3576/291 y92 Python PASS, offline4/locales7 PASS,
+APK1.1.7 firma/loader PASS. CI104 conserva dos cierres nativos FAIL en
+primer intento y retry. PDF18 funcionales PASS,17/18 auditoria estricta
+por una captura HTTP0B; el fallo se conserva. [Detalle104](performance-1804.md).
+
+# Continuacion: web 1.7.104 preparada / 1.7.103 publicada
+
+1.7.104 reduce resets intermedios del framebuffer de la estanteria.
+68/68 focales, 18 pares RGBA exactos y ambos regresos originales SwiftShader
+PASS. Se conservan plazos originales30s/8s. La bateria completa esta en curso;
+publicacion y comprobacion del artefacto104 pendientes. [Detalle](performance-1804.md).
+
+103 publicada:32/32 publicos estrictos, cuatro offline, siete locales,
+smoke original y APK real1.1.7/firma/loader PASS. Primera portada retenida
+al cerrar rapidamente. Bateria3.567/291, build y92 Python PASS. CI103
+conserva un primer fallo8s en393px; retry no lo borra. CI102 completa
+526/526 sin retries/fallos, incluidas voces reales. [Detalle103](performance-1803.md).
+
+# Continuacion: web1.7.103 preparada /102 publicada y verificada
+
+Primera portada: la captura puede terminar mientras se cierra el lector;
+las mejoras opcionales de resolucion se cancelan. Se libera el documento
+retenido al terminar y se conservan los controles de sesion/revision.
+41 focales y bateria3.567/291, build y92 Python PASS. Dos regresiones de
+sesion del primer full quedan registradas, corregidas sin alterar sus tests.
+Original smoke/publicacion/web real/CI103 pendientes.102:32/32 publicos,
+offline3, siete locales y APK/firma/loader PASS.267 originales CI102 sin
+retries ni fallos; ambos cierres dentro de8s. [Detalle103](performance-1803.md).
+
+# Continuacion: web1.7.102 publicada y verificada / Android1.1.7 verificado
+
+HTTP32/shell96,32/32 publicos estrictos, offline3 y siete originales locales
+PASS, cero retries. Bateria3.555/291, build y92 Python PASS. Canvas activo
+sin reajustes de altura; geometria/DPR/materiales preservados en90 pares
+RGBA integrados exactos. CI102 pendiente de auditoria completa. CI101
+completaFAIL:526/529, UI3 y una pipeta sin portada en UI6; voces reales PASS.
+Se prepara una correccion para que cerrar rapido no descarte la primera
+portada aun pendiente. [Detalle102](performance-1802.md).
+
+# Continuacion: web1.7.102 preparada / Android1.1.7 verificado
+
+Se evita el reajuste de altura del canvas activo mediante una reserva
+pequena ya existente, conservando DPR, viewport y posicion.180 pares RGBA
+exactos entre prototipo y fuente integrada PASS;35 pruebas enfocadas y
+bateria3.555/291, build y92 Python PASS. Dos regresos originales SwiftShader
+PASS con tiempos30s/8s intactos. Cierre medido5.970,2ms: no acredita mejora
+total frente al diagnostico100. Publicacion/web real/CI102 pendientes.
+CI100 completaFAIL en ambos regresos nativos; todos sus otros grupos PASS.
+[Detalle](performance-1802.md).
+
+# Continuacion: web1.7.101 publicada / Android1.1.7 verificado
+
+Abrir con da prioridad al lector y aplaza la sala3D hasta volver a home.
+Se descarta la lectura inicial antigua para recuperar el libro recien
+guardado. Bateria final3.536 unitarias/290 archivos, build y92 Python PASS.
+Ocho regresiones nuevas; las esperas de los E2E originales siguen intactas.
+Los cuatro Android originales con SwiftShader PASS y los cuatro publicos
+con identidad del main PASS. HTTP32/shell96, offline3 PASS; publico31/32
+estricto: un cuerpo walnut0B/HTTP200 en PDF noche conserva FAIL. Los siete
+locales integrados PASS, cero retries. CI101 sigue en curso. CI100 conserva
+ambos regresos nativos30s/8s FAIL, incluido un cierre de8915,6ms; falta
+la auditoria completa de los ZIP originales (ya terminada:526/528,11 ZIP). Todos sus otros grupos y
+cuatro familias de voces reales concluyen PASS. No se afirma resuelta toda la lentitud ni se
+acreditan FPS/bateria en telefono fisico. [Detalle](performance-1801.md).
+
+# Continuacion: web1.7.100 publicada / Android1.1.7 verificado
+
+1.7.100 evita resetear el framebuffer por una reduccion pequena de ancho;
+conserva proyeccion, DPR y escala CSS.60 pares RGBA exactos contra1.7.99
+PASS;41 pruebas enfocadas y bateria3.528/289, build y92 Python PASS.
+Web real28/28 estrictos, tres recorridos offline y nueve originales locales
+PASS, sin retries. HTTP32/shell96 y descarga nueva del APK/firma/loader PASS.
+CI100 original completa sigue pendiente. No hay medicion del movil fisico.
+Web99 publicada:HTTP32/shell96, titulo/autor, ambos regresos nativos,
+18 PDF, cinco catalogo/plantas/luces y tres offline PASS.27/28 publicos
+estrictos; auditoria walnut0B permaneceFAIL. CI98 completaFAIL en dos
+regresos nativos30s/8s; otros cinco shards y cuatro familias de vocesPASS.
+CI99 conserva tambien una primera importacion Android8s fallida; no se
+ha alterado la espera ni contado el retry como aprobacion. Verificacion
+original completa99 FAIL:526 casos/529 intentos, tres retries y cinco
+intentos fallidos; UI1 yUI3. APK20/firma/loader y mas de6min de audio
+bloqueado/23 capitulos en emulador PASS. No se declara resuelta toda
+la lentitud ni se acredita rendimiento/bateria del movil fisico.
+[1.7.99](performance-1799.md), [1.7.100](performance-1800.md).
+
+# Continuacion: web1.7.99 preparada / Android1.1.7 publicado
+
+Web1.7.98:27/27 publicos estrictos,10 locales originales y tres recorridos
+offline PASS. Se conservan todos los fallos anteriores; CI original98
+sigue pendiente. APK1.1.7/codigo20 real, firma y loader2107B verificados;
+audio bloqueado mas de6min y23 capitulos PASS en emuladorAndroid15.
+1.7.99 conserva titulo y autor editados al revelar el lector precargado.
+Reproduccion3PASS/1FAIL antes y4PASS despues; bateria3.512/288, build y
+92 Python PASS. Original E2E/publicacion/verificacion99 pendientes.
+No se declara resuelta toda la lentitud: CI97 conserva tiempos globales
+30s y cierre8s fallidos. Hay que revisar sus trazas originales.
+[1.7.98](performance-1798.md), [1.7.99](performance-1799.md).
+
+# Continuación: web1.7.98 preparada / Android1.1.7 publicado
+
+Web1.7.97 publicada y contrastada con HTTP32/shell96, nueve recorridos
+locales originales, offline con fotos/bytes/posición115 y portada800x1600.
+Tanda pública24/26 estrictos: dos fallos de auditoría de textura vacía
+quedan conservados. APK1.1.7 descargado, firma/loader2107B y manifiesto20
+verificados; audio bloqueado más de6min/23 capítulos en Android15 PASS.
+CI completa de1.7.97 pendiente. La traza del gesto del editor revela una
+pestaña distinta bajo un encabezado invisible;1.7.98 enlaza el encabezado
+con la pestaña activa visible.49 comprobaciones enfocadas PASS; batería
+completa3.508/287, build y92 Python PASS; gesto original con SwiftShader
+PASS sin retries ni cambios del límite2.200ms. Publicación en curso.
+[1.7.97](performance-1797.md), [1.7.98](performance-1798.md).
+
+# Continuación — web 1.7.97 / Android 1.1.7 en construcción
+
+Se agilizan las fases de apertura y cierre: apertura programada de 1.820 a
+1.380ms y regreso al hueco de 1.929,6 a 1.529,6ms. Batería local:
+3.505 unitarias/286 archivos, build y92 Python PASS. Censo526 sin skips,
+todavía no ejecución completa. Geometría, texturas y límite de pasos
+permanecen idénticos. Android1.1.6 real está verificado;1.1.7/código20
+corrige el final del audio tras una pausa de planificación larga.
+Recorridos originales, web/offline, CI completa y APK20: pendientes.
+[Detalle y alcance](performance-1797.md).
+
 # Continuación — web 1.7.96 / Android 1.1.6 preparado
 
 Se integran los cambios EPUB/audiolibro de d2e9295 y 5f43d04. Se corrige

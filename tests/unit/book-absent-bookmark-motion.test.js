@@ -373,3 +373,64 @@ describe('bookmark motion without a physical ribbon keeps its clock and visible 
     motion.cancel();await motion.finished;
   });
 });
+
+
+describe('preparing the first ribbon without drawing its frame',()=>{
+ it('builds the actual ribbon once while retaining the visible pose and framebuffer',()=>{
+  const {view,model}=start();const initialPose=view.getPose();
+  const record={progressFraction:0,locator:{kind:'pdf-page',value:1}}
+  expect(view.updateBookmark(record,{redraw:false})).toBe(true)
+  expect(model.userData.hasBookmark).toBe(true);expect(view.canvas.dataset.bookmark3d).toBe('true')
+  const mesh=model.getObjectByName('reading-bookmark'),material=mesh.material,geometry=mesh.geometry
+  expect(gpu.renders).toHaveLength(0);expect(output(view).copies).toHaveLength(0)
+  expect(view.getPose()).toEqual(initialPose)
+  view.updateBookmark(record,{redraw:false})
+  expect(model.getObjectByName('reading-bookmark')).toBe(mesh)
+  expect(mesh.material).toBe(material);expect(mesh.geometry).toBe(geometry)
+  expect(gpu.renders).toHaveLength(0)
+  view.draw(view.getPose());expect(gpu.renders).toHaveLength(1)
+  expect(gpu.renders[0].model.getObjectByName('reading-bookmark')).toBe(mesh)
+ })
+ it('restores the material invalidation callback if hidden preparation fails',()=>{
+  const {view,model}=start(),invalidate=model.userData.invalidate,error=new Error('ribbon failure')
+  vi.spyOn(model.userData,'updateBookmark').mockImplementationOnce(()=>{throw error})
+  expect(()=>view.updateBookmark({progressFraction:.3},{redraw:false})).toThrow(error)
+  expect(model.userData.invalidate).toBe(invalidate);expect(gpu.renders).toHaveLength(0)
+  model.userData.invalidate();expect(gpu.renders).toHaveLength(1)
+ })
+ it('keeps the existing visible invalidation after a hidden update',()=>{
+  const {view,model}=start(),invalidate=model.userData.invalidate
+  view.updateBookmark({progressFraction:.3},{redraw:false});expect(gpu.renders).toHaveLength(0)
+  expect(model.userData.invalidate).toBe(invalidate)
+  view.updateBookmark({progressFraction:.4});expect(gpu.renders).toHaveLength(1)
+ })
+})
+
+
+describe('submitting the first flyout compile batch', () => {
+  it.each([true,false])('flushes the actual compile batch without an extra draw: direct %s', async direct => {
+    const module=await import('../../src/js/book-model.js');
+    const renderer=direct?module.getPresentationBookRenderer():module.getBookRenderer();
+    const flush=vi.fn(),finish=vi.fn(),batch=new Set([{}]);
+    vi.spyOn(renderer,'getContext').mockReturnValue({flush,finish});
+    const compile=vi.spyOn(renderer,'compile').mockReturnValue(batch);
+    const {view}=make({directPresentation:direct,deferDraw:true});
+    expect(compile).toHaveBeenCalledOnce();expect(flush).toHaveBeenCalledOnce();
+    expect(finish).not.toHaveBeenCalled();expect(gpu.renders).toHaveLength(0);
+    view.draw(view.getPose());expect(gpu.renders).toHaveLength(1);
+  });
+  it('retains the deferred first draw when submission fails', async () => {
+    const module=await import('../../src/js/book-model.js'),renderer=module.getPresentationBookRenderer();
+    const flush=vi.fn(()=>{throw new Error('lost context during submission')});
+    vi.spyOn(renderer,'getContext').mockReturnValue({flush});vi.spyOn(renderer,'compile').mockReturnValue(new Set([{}]));
+    const {view}=make({deferDraw:true});expect(flush).toHaveBeenCalledOnce();expect(gpu.renders).toHaveLength(0);
+    view.draw(view.getPose());expect(gpu.renders).toHaveLength(1);
+  });
+  it('does not submit a static shelf compile or an empty flyout batch', async () => {
+    const module=await import('../../src/js/book-model.js'),renderer=module.getBookRenderer();
+    const flush=vi.fn();vi.spyOn(renderer,'getContext').mockReturnValue({flush});
+    const compile=vi.spyOn(renderer,'compile').mockReturnValue(new Set());
+    make({shelf:true,deferDraw:true});expect(compile).not.toHaveBeenCalled();expect(flush).not.toHaveBeenCalled();
+    make({directPresentation:false,deferDraw:true});expect(compile).toHaveBeenCalledOnce();expect(flush).not.toHaveBeenCalled();
+  });
+});

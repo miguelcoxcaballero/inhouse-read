@@ -34,6 +34,7 @@ export class PdfReader {
   #container
   #loadingTask
   #doc
+  #retainedCovers = new Map()
   #pageNum = 1
   #baseScale = 1
   #zoomed = false
@@ -876,10 +877,19 @@ export class PdfReader {
   }
 
   /** Miniatura de la página 1 como Blob, para la portada de la estantería. */
-  async getCoverBlob({ signal } = {}) {
+  async getCoverBlob({ signal, retainOnClose = false } = {}) {
     const doc = this.#doc
-    const current = () => Boolean(doc) && this.#doc === doc && !signal?.aborted
-    if (!current()) return null
+    const loading = this.#loadingTask
+    if (!doc || signal?.aborted) return null
+    // A first cover belongs to this captured document, even if its reader UI
+    // closes. Other optional HD jobs keep their original cancellation policy.
+    let retained
+    if (retainOnClose && loading) {
+      retained = this.#retainedCovers.get(loading)
+      if (!retained) this.#retainedCovers.set(loading, retained = { count:0, closing:false })
+      retained.count++
+    }
+    const current = () => !signal?.aborted && (this.#doc === doc || retained?.closing === true)
     let renderTask
     const cancel = () => { renderTask?.cancel?.() }
     try {
@@ -911,6 +921,13 @@ export class PdfReader {
       throw error
     } finally {
       signal?.removeEventListener('abort', cancel)
+      if (retained && --retained.count === 0) {
+        this.#retainedCovers.delete(loading)
+        if (retained.closing) {
+          try { await loading.destroy() }
+          catch (error) { console.warn('No se pudo liberar el PDF de la portada:', error) }
+        }
+      }
     }
   }
 
@@ -937,7 +954,9 @@ export class PdfReader {
     this.#detachGestures()
     // PDFDocumentProxy no expone destroy(): la limpieza vive en el
     // loadingTask (ver pdfjs-dist/build/pdf.mjs, PDFDocumentLoadingTask).
-    this.#loadingTask?.destroy()
+    const loading = this.#loadingTask, retained = this.#retainedCovers.get(loading)
+    if (retained) retained.closing = true
+    else loading?.destroy()
     this.#loadingTask = null
     this.#doc = null
     this.#imageLayouts = new WeakMap()

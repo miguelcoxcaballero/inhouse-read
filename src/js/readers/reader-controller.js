@@ -102,7 +102,7 @@ export class ReaderController {
     const reader = this.#reader, epoch = this.#epoch
     if (options.signal?.aborted) return null
     const blob = await reader?.getCoverBlob?.(options)
-    return !options.signal?.aborted && reader === this.#reader && epoch === this.#epoch ? blob ?? null : null
+    return !options.signal?.aborted && (options.retainOnClose === true || reader === this.#reader && epoch === this.#epoch) ? blob ?? null : null
   }
 
   /** A stale background count cannot be attributed to a subsequently opened book. */

@@ -69,3 +69,59 @@ describe('opening a page whose idle warm-up was interrupted', () => {
 })
 
 function canvasTheme(view) { return Number(view.canvas.dataset.pageTheme) }
+
+
+describe('opening prepares the ribbon at the real page', () => {
+ it.each([
+  ['first PDF page',{fraction:0,locator:{kind:'pdf-page',value:1}},true],
+  ['PDF text position',{fraction:.4,locator:{kind:'pdf-page',value:3,textOffset:115}},true],
+  ['EPUB page',{fraction:.6,locator:{kind:'cfi',value:'epubcfi(/6/2!/4/2:10)'}},true],
+  ['invalid fraction',{fraction:Infinity,locator:{kind:'pdf-page',value:1}},false],
+  ['invalid locator',{fraction:0,locator:{kind:'pdf-page',value:0}},false],
+  ['missing page',undefined,false]
+ ])('prepares %s without a storage write or an extra paint', async (_name,location,valid) => {
+  vi.stubGlobal('matchMedia', query => ({matches:/reduce/.test(query),addEventListener(){},removeEventListener(){}}))
+  const container=document.createElement('div');document.body.append(container)
+  const book={id:'opening-ribbon',title:'A real page',format:'PDF',progressFraction:0}
+  shelf=renderBookshelf(container,[book],{shelfWidth:390,revealDuration:0,holdMs:0,autoOpen:true,onOpenBook:vi.fn()})
+  container.querySelector('.ihr-spine').click()
+  await vi.waitFor(()=>expect(document.querySelector('.ihr-flyout__cover-target.is-ready')).toBeTruthy())
+  const view=views.at(-1);view.updateBookmark=vi.fn();const before={...book}
+  const snapshot={source:document.createElement('canvas'),location}
+  expect(await shelf.prepareOpeningPage(book.id,snapshot,async()=>{})).toBe(true)
+  if(valid)expect(view.updateBookmark).toHaveBeenCalledWith(expect.objectContaining({id:book.id,progressFraction:location.fraction,locator:location.locator}),{redraw:false})
+  else expect(view.updateBookmark).not.toHaveBeenCalled()
+  expect(book).toEqual(before)
+  expect(view.hasPageSnapshot(snapshot)).toBe(true)
+ })
+})
+
+describe('retained reader materials finish preparation after an immediate tap', () => {
+ it.each([false,true])('cancels hidden preparation after destruction: %s', async cancelled => {
+  vi.stubGlobal('matchMedia', query => ({matches:/reduce/.test(query),addEventListener(){},removeEventListener(){}}))
+  const idle=[];vi.stubGlobal('requestIdleCallback',callback=>{idle.push(callback);return idle.length})
+  const container=document.createElement('div');document.body.append(container)
+  const book={id:'retained-ribbon',title:'Real page',format:'PDF'}
+  const snapshot={source:document.createElement('canvas'),location:{fraction:0,locator:{kind:'pdf-page',value:1}}}
+  shelf=renderBookshelf(container,[book],{shelfWidth:390,revealDuration:0,holdMs:0,autoOpen:true,onOpenBook:async(_book,context)=>context.finish({pageSnapshot:snapshot})})
+  container.querySelector('.ihr-spine').click()
+  await vi.waitFor(()=>expect(document.querySelector('.ihr-flyout__cover-target.is-ready')).toBeTruthy())
+  const view=views.at(-1);view.updateBookmark=vi.fn();view.preparePagePrograms=vi.fn(async()=>true)
+  document.querySelector('.ihr-flyout__cover-target').click()
+  await vi.waitFor(()=>expect(document.querySelector('.ihr-flyout')).toBeNull())
+  expect(view.preparePagePrograms).not.toHaveBeenCalled()
+  expect(idle).toHaveLength(1)
+  if(cancelled)shelf.destroy()
+  const paints=view.draw.mock.calls.length;idle.shift()()
+  await Promise.resolve();await Promise.resolve()
+  expect(view.draw).toHaveBeenCalledTimes(paints)
+  if(cancelled)expect(view.preparePagePrograms).not.toHaveBeenCalled()
+  else {
+   expect(view.preparePagePrograms).toHaveBeenCalledTimes(1)
+   const [yieldIdle,current]=view.preparePagePrograms.mock.calls[0]
+   expect(current()).toBe(true)
+   const waiting=yieldIdle();expect(idle).toHaveLength(1);idle.shift()();await waiting
+   shelf.destroy();expect(current()).toBe(false)
+  }
+ })
+})

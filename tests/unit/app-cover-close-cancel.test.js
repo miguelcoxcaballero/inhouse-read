@@ -192,3 +192,52 @@ describe('optional cover extraction yields to closing the reader', () => {
     expect((await state.library.get(book.id)).content.size).toBe(book.content.size);
   });
 });
+
+
+describe('first cover survives close without delaying the return',()=>{
+  async function initialBook(){vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockImplementation(()=>({drawImage:vi.fn()}));const book=await savedBook(),revision='initial-cover-content';return state.library.patch(book.id,{cover:null,wordCount:600,wordCountVersion:2,wordCountComplete:true,contentRevision:revision,wordCountContentRevision:revision});}
+  it('commits the first cover after reader.close while retaining original bytes and progress',async()=>{
+    const book=await initialBook(),cover=deferred(); state.reader.getCoverBlob.mockReturnValue(cover.promise);
+    await openSelected(book); await vi.waitFor(()=>expect(state.reader.getCoverBlob).toHaveBeenCalledOnce());
+    const options=state.reader.getCoverBlob.mock.calls[0][0],returnToShelf=state.shelf.returnToShelf;
+    back(); await vi.waitFor(()=>expect(document.body.classList.contains('is-closing-reader')).toBe(false));
+    expect(state.reader.close).toHaveBeenCalledOnce(); expect(returnToShelf).toHaveBeenCalledOnce();
+    cover.resolve(new NativeBlob(['first-full-quality-cover'],{type:'image/jpeg'}));
+    await new Promise(resolve=>setTimeout(resolve,30));
+    expect(options.signal.aborted).toBe(false); expect(options.retainOnClose).toBe(true);
+    await vi.waitFor(async()=>expect(await (await state.library.get(book.id)).cover?.text()).toBe('first-full-quality-cover'));
+    expect((await state.library.get(book.id)).content.size).toBe(book.content.size);
+  });
+  it('does not replace a cover installed after the first extraction began',async()=>{
+    const book=await initialBook(),cover=deferred(); state.reader.getCoverBlob.mockReturnValue(cover.promise);
+    await openSelected(book); await vi.waitFor(()=>expect(state.reader.getCoverBlob).toHaveBeenCalledOnce());
+    await state.library.patch(book.id,{cover:new NativeBlob(['newer-cover'],{type:'image/jpeg'})});
+    cover.resolve(new NativeBlob(['older-extraction'],{type:'image/jpeg'}));
+    await new Promise(resolve=>setTimeout(resolve,30));
+    expect(await (await state.library.get(book.id)).cover.text()).toBe('newer-cover');
+  });
+  it('never recreates a deleted book when a retained first cover finishes',async()=>{
+    const book=await initialBook(),cover=deferred(); state.reader.getCoverBlob.mockReturnValue(cover.promise);
+    await openSelected(book); await vi.waitFor(()=>expect(state.reader.getCoverBlob).toHaveBeenCalledOnce());
+    back(); await vi.waitFor(()=>expect(document.body.classList.contains('is-closing-reader')).toBe(false));
+    await state.library.remove(book.id); cover.resolve(new NativeBlob(['late-cover'],{type:'image/jpeg'}));
+    await new Promise(resolve=>setTimeout(resolve,30)); expect(await state.library.get(book.id)).toBeNull();
+  });
+});
+
+
+describe('first cover is tied to its original stored bytes',()=>{
+ it('discards the old cover after the same book id receives a different content revision',async()=>{
+  vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockImplementation(()=>({drawImage:vi.fn()}));
+  const source=await savedBook();
+  const book=await state.library.patch(source.id,{cover:null,contentRevision:'cover-source',wordCountContentRevision:'cover-source'});
+  const cover=deferred();state.reader.getCoverBlob.mockReturnValue(cover.promise);
+  await openSelected(book);await vi.waitFor(()=>expect(state.reader.getCoverBlob).toHaveBeenCalledOnce());
+  const replacement=new NativeBlob(['replacement-document'],{type:'application/pdf'});
+  await state.library.patch(book.id,{content:replacement,contentRevision:'replacement-source',cover:null});
+  cover.resolve(new NativeBlob(['wrong-old-cover'],{type:'image/jpeg'}));
+  await new Promise(resolve=>setTimeout(resolve,30));
+  const latest=await state.library.get(book.id);
+  expect(latest.cover).toBeNull();expect(await latest.content.text()).toBe('replacement-document');
+ });
+});

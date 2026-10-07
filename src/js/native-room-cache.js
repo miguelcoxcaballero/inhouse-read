@@ -120,7 +120,7 @@ export function createNativeFramebufferCache(renderer,{onRestored}={}) {
   }
 
   function configure(frame) {
-    configureNativeRendererSize(renderer, frame.width, frame.height, frame.ratio, size);
+    configureNativeRendererSize(renderer, frame.width, frame.height, frame.ratio, size, true, true, 'bounded');
     renderer.setRenderTarget?.(null);
     // setViewport rounds its DPR multiplication. A physical room replay must
     // cover the actual floor-sized buffer, without extending it by one pixel.

@@ -82,3 +82,69 @@ describe('optional PDF cover render cancellation', () => {
     expect(page.render).not.toHaveBeenCalled();expect(encode).not.toHaveBeenCalled();
   });
 });
+
+
+describe('first PDF cover retained through a quick close', () => {
+  it('keeps its own PDF alive through page retrieval and frees it when the cover finishes', async () => {
+    const pending=deferred(); state.getPage.mockReturnValueOnce(pending.promise);
+    const request=reader.getCoverBlob({retainOnClose:true}); reader.close();
+    const earlyDestroy=state.destroy.mock.calls.length;
+    pending.resolve(page); const blob=await request;
+    expect(earlyDestroy).toBe(0); expect(blob?.type).toBe('image/jpeg');
+    expect(state.destroy).toHaveBeenCalledOnce();
+  });
+  it('finishes an initial render after close without holding the reader UI open', async () => {
+    const pending=deferred(); page.render.mockReturnValueOnce({promise:pending.promise,cancel:vi.fn()});
+    const request=reader.getCoverBlob({retainOnClose:true});
+    await vi.waitFor(()=>expect(page.render).toHaveBeenCalledOnce()); reader.close();
+    const earlyDestroy=state.destroy.mock.calls.length;
+    expect(document.querySelector('main').children.length).toBe(0);
+    pending.resolve(); const blob=await request;
+    expect(earlyDestroy).toBe(0); expect(blob?.type).toBe('image/jpeg');
+    expect(state.destroy).toHaveBeenCalledOnce();
+  });
+  it('preserves a finished first-page raster while its JPEG encoder completes', async () => {
+    let complete; encode.mockImplementationOnce(callback=>{complete=callback;});
+    const request=reader.getCoverBlob({retainOnClose:true});
+    await vi.waitFor(()=>expect(complete).toBeTypeOf('function')); reader.close();
+    const earlyDestroy=state.destroy.mock.calls.length;
+    const encoded=new Blob(['initial-cover'],{type:'image/jpeg'}); complete(encoded); const blob=await request;
+    expect(earlyDestroy).toBe(0); expect(blob).toBe(encoded);
+    expect(state.destroy).toHaveBeenCalledOnce();
+  });
+  it('still honours explicit cancellation and releases the detached document exactly once', async () => {
+    const controller=new AbortController(),pending=deferred(),cancel=vi.fn(()=>pending.reject(new Error('cancelled')));
+    page.render.mockReturnValueOnce({promise:pending.promise,cancel});
+    const request=reader.getCoverBlob({signal:controller.signal,retainOnClose:true});
+    await vi.waitFor(()=>expect(page.render).toHaveBeenCalledOnce()); reader.close();
+    const earlyDestroy=state.destroy.mock.calls.length;
+    controller.abort(); expect(await request).toBeNull(); reader.close();
+    expect(earlyDestroy).toBe(0); expect(cancel).toHaveBeenCalledOnce();
+    expect(state.destroy).toHaveBeenCalledOnce(); expect(encode).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('retained first-cover ownership',()=>{
+ it('releases one captured PDF only after its last retained extraction finishes',async()=>{
+  const first=deferred(),second=deferred();
+  state.getPage.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+  const a=reader.getCoverBlob({retainOnClose:true}),b=reader.getCoverBlob({retainOnClose:true});
+  reader.close(); const earlyDestroy=state.destroy.mock.calls.length;
+  first.resolve(page); const coverA=await a; const middleDestroy=state.destroy.mock.calls.length;
+  second.resolve(page); const coverB=await b;
+  expect(earlyDestroy).toBe(0); expect(middleDestroy).toBe(0);
+  expect(coverA?.type).toBe('image/jpeg'); expect(coverB?.type).toBe('image/jpeg');
+  expect(state.destroy).toHaveBeenCalledOnce();
+ });
+ it('does not discard the completed cover if detached PDF cleanup rejects',async()=>{
+  const pending=deferred(); state.getPage.mockReturnValueOnce(pending.promise);
+  state.destroy.mockImplementationOnce(()=>{throw new Error('worker cleanup');});
+  const warning=vi.spyOn(console,'warn').mockImplementation(()=>{});
+  const request=reader.getCoverBlob({retainOnClose:true});let closeError;
+  try { reader.close(); } catch (error) { closeError=error; }
+  pending.resolve(page); const cover=await request;expect(closeError).toBeUndefined();
+  expect(cover?.type).toBe('image/jpeg');expect(state.destroy).toHaveBeenCalledOnce();
+  expect(warning).toHaveBeenCalledWith('No se pudo liberar el PDF de la portada:',expect.any(Error));
+ });
+});

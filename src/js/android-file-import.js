@@ -1,5 +1,5 @@
 /** Consume the Android intent inbox without passing entire books as base64 strings. */
-export function initAndroidFileImports({ onFile, onError, canImport = () => true,
+export function initAndroidFileImports({ onFile, onError, onActivity, canImport = () => true,
   bridge = globalThis.InhouseBookImports, pollMs = 1000 } = {}) {
   if (!bridge?.pending || !bridge?.readChunk || !bridge?.acknowledge) return () => {}
   let busy = false
@@ -8,8 +8,13 @@ export function initAndroidFileImports({ onFile, onError, canImport = () => true
   async function consume() {
     if (stopped || busy || !canImport() || document.visibilityState === 'hidden') return
     busy = true
+    let active = false
     try {
       const entries = JSON.parse(bridge.pending())
+      if (entries.some(entry => !storageFailures.has(entry.id))) {
+        active = true
+        onActivity?.(true)
+      }
       for (const entry of entries) {
         if (stopped || !canImport()) break
         if (storageFailures.has(entry.id)) continue
@@ -39,7 +44,7 @@ export function initAndroidFileImports({ onFile, onError, canImport = () => true
         }
       }
     } catch (error) { await onError?.(error) }
-    finally { busy = false }
+    finally { busy = false; if (active) onActivity?.(false) }
   }
   const timer = setInterval(consume, pollMs)
   const onVisibilityChange = () => {

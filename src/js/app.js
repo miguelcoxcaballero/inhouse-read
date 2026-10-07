@@ -3,6 +3,7 @@ import { version as APP_VERSION } from '../../package.json'
 import { sameBookRecords } from './library-store.js'
 import { createReadingProgressQueue } from './reading-progress-queue.js'
 import { bookCloudState, isBookVisible, storeBookFile } from './book-storage-policy.js'
+import { refreshSelectedBookNames } from './selected-book-names.js'
 import { renderBookshelf } from './bookshelf.js'
 import { ReaderController, UnsupportedFormatError } from './readers/reader-controller.js'
 import {
@@ -19,6 +20,7 @@ import { initAndroidUpdateChecks, offerAvailableAndroidUpdate } from './android-
 import { initContentFreshnessChecks } from './content-freshness.js'
 import { registerOfflineShell } from './offline-shell.js'
 import { initAndroidFileImports } from './android-file-import.js'
+import { createNativeImportShelfGate } from './native-import-shelf-gate.js'
 import { initReadingDisplay } from './reading-display.js'
 import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
 import { normalizeShelfPosition } from './book-colors.js'
@@ -102,6 +104,10 @@ let lengthRefreshTimer = null
 let appDisposed = false
 let deployCheck = null
 const shelfRefreshQueue = createShelfRefreshQueue({ perform:performShelfRefresh })
+const nativeImportShelfGate = createNativeImportShelfGate({
+  isReaderVisible: () => !els.readerScreen.hidden,
+  refresh: () => refreshShelf()
+})
 let driveUploadsInFlight = 0
 const cloudSync = new CloudSync(library, {
   onStatus: setDriveSyncStatus,
@@ -200,7 +206,10 @@ function refreshShelf(options) {
 
 async function performShelfRefresh({ immediate = false } = {}) {
   const firstRecords = takeFirstRecords()
-  if (appDisposed) return
+  // A native import changes the library after the boot snapshot was taken.
+  // Discard that one-shot snapshot even when its room is deferred, so returning
+  // from the reader fetches the newly committed book instead of an empty shelf.
+  if (appDisposed || nativeImportShelfGate.deferRefresh()) return
   // Re-rendering a shelf closes its current 3D cover. Defer background
   // changes until the reader transition or close has finished.
   if (document.querySelector('.ihr-flyout')) {
@@ -222,7 +231,7 @@ async function performShelfRefresh({ immediate = false } = {}) {
   // must not hold the shelf back for long: they are generated instead.
   await shelfBakesSettled(120)
   // The page is being replaced by a newer deploy: building this shelf would only hold that up.
-  if (appDisposed || deployCheck?.reloading()) return
+  if (appDisposed || deployCheck?.reloading() || nativeImportShelfGate.deferRefresh()) return
   const normalizedBooks = await Promise.all(storedBooks.map(book => {
     const title = normalizeBookTitle(book.title || book.name)
     const author = normalizeBookAuthor(book.author)
@@ -232,7 +241,7 @@ async function performShelfRefresh({ immediate = false } = {}) {
     return Object.keys(patch).length ? library.patch(book.id, patch) : book
   }))
   const books = normalizedBooks.filter(book => isBookVisible(book, accountId))
-  if (appDisposed) return
+  if (appDisposed || nativeImportShelfGate.deferRefresh()) return
   // Counting is detached from the active reader and serial, so a home reload,
   // reader close or chapter change never attributes text to another book.
   for (const book of books) wordCountQueue.ensure(book).catch(error => console.warn('Preparación del grosor:', error))
@@ -415,6 +424,9 @@ async function openBookRecord(book, ctx) {
       if (ctx.isActive && !ctx.isActive()) { cancelOpening(); return }
       markOpening()
       try {
+        // Preloading may finish after edits made on the selected cover.
+        // Reconcile their latest names before revealing the existing engine.
+        refreshSelectedBookNames(readingExperience, book)
         await revealPreparedReader()
         markTiming('reveal-done')
         const record = await library.get(book.id) || book
@@ -1147,7 +1159,12 @@ function extractCoverInBackground(record) {
   const previous = coverUpgrades.get(record.id)
   if (previous?.epoch === epoch) return previous.promise
   const controller = new AbortController()
-  const current = () => !controller.signal.aborted && !closingReader && reader.epoch === epoch && currentBookId === record.id
+  const firstCover = !record.cover
+  const entry = { epoch, controller, firstCover, retainedOnClose:false }
+  const current = () => !appDisposed && !controller.signal.aborted && (
+    !closingReader && reader.epoch === epoch && currentBookId === record.id ||
+    entry.retainedOnClose && (currentBookId === null || closingReader && currentBookId === record.id)
+  )
   const coverNeedsUpgrade = async () => {
     if (!record.cover) return true
     if (record.format !== 'PDF' || typeof createImageBitmap !== 'function') return false
@@ -1158,11 +1175,10 @@ function extractCoverInBackground(record) {
       return small
     } catch { return false }
   }
-  const entry = { epoch, controller }
   const task = coverNeedsUpgrade()
-    .then(needsCover => needsCover && current() ? reader.getCoverBlob({ signal:controller.signal }) : null)
+    .then(needsCover => needsCover && current() ? reader.getCoverBlob({ signal:controller.signal, ...(firstCover && record.format === 'PDF' ? { retainOnClose:true } : {}) }) : null)
     .then(blob => {
-      if (blob?.size > 0 && current()) return library.patch(record.id, { cover:blob, coverUpdatedAt:Date.now() }, { ifCurrent:current })
+      if (blob?.size > 0 && current()) return library.patch(record.id, { cover:blob, coverUpdatedAt:Date.now() }, { ifCurrent:latest => current() && (!firstCover || !latest.cover && (!record.contentRevision || latest.contentRevision === record.contentRevision)) })
     })
     .then(updated => { if (updated && current()) refreshShelf() })
     .catch(err => { if (!controller.signal.aborted) console.warn('No se pudo extraer la portada:', err) })
@@ -1193,9 +1209,11 @@ els.readerBack.addEventListener('click', async () => {
   closingReader = true
   document.body.classList.add('is-closing-reader')
   const bookId = currentBookId
-  // The stored cover remains valid. Stop optional HD work before the current
-  // page snapshot and return animation need the reader's rendering resources.
-  coverUpgrades.get(bookId)?.controller.abort()
+  // Cancel an optional upgrade; an unfinished first cover must still be saved.
+  // Its detached extraction cannot hold up the page snapshot or the animation.
+  const coverJob = coverUpgrades.get(bookId)
+  if (coverJob?.firstCover) coverJob.retainedOnClose = true
+  else coverJob?.controller.abort()
   let stillPage = null, stillFade = null, handedOff = false
   const handoff = () => {
     if (handedOff) return
@@ -1365,6 +1383,7 @@ runAfterFirstFrame([
 ])
 initReadingDisplay()
 initAndroidFileImports({
+  onActivity: active => nativeImportShelfGate.setActive(active),
   canImport: () => !closingReader && !els.readerScreen.classList.contains('is-preparing'),
   onFile: async file => {
     await shelf?.close()

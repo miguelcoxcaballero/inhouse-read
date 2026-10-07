@@ -26,7 +26,7 @@ describe('signed Android native natural media integration',()=>{
     for(const permission of ['WAKE_LOCK','FOREGROUND_SERVICE','FOREGROUND_SERVICE_MEDIA_PLAYBACK'])expect(builder).toContain(`android.permission.${permission}`)
     expect(builder).toContain('service.set(f"{ns}exported", "false")')
     expect(builder).toContain('service.set(f"{ns}foregroundServiceType", "mediaPlayback")')
-    expect(workflow).toContain('verify_android_background.py inhouse-read-release-v1.1.6.apk')
+    expect(workflow).toContain('verify_android_background.py inhouse-read-release-v1.1.7.apk')
     expect(workflow).toContain('[skip ci]')
   })
   it('registers/removes the PCM bridge in both Java and Kotlin and resumes only active playback after Activity pause',()=>{

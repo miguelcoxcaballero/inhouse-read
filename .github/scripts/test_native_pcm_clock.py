@@ -76,6 +76,12 @@ public class PcmClockHarness {
     def test_exact_presentation_does_not_keep_a_stale_delay(self):
         self.assertEqual(self.delay(2400, 24000, 24000), 0)
 
+    def test_drained_track_still_completes_after_a_long_scheduling_gap(self):
+        # A valid final timestamp can be old when the handler next gets CPU.
+        # Its position is within this track; extrapolation beyond the stopped
+        # head is not an invalid frame position.
+        self.assertEqual(self.delay(2400, 24000, 24000, -1000000000), 0)
+
     def test_output_still_in_flight_keeps_its_measured_delay(self):
         self.assertEqual(self.delay(2400, 24000, 21600), 2400)
         self.assertEqual(self.delay(0, 24000, 21600), 2400)

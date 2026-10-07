@@ -58,3 +58,17 @@ describe('shared shelf framebuffer sizing', () => {
   expect([r.domElement.width,r.domElement.height]).toEqual([589,1174]);expect(finalAllocations(r)).toBe(2);
  });
 });
+
+
+describe('room to insertion bounded allocation', () => {
+ it.each([[393,783,1.5,393,844,2],[390,784,1.5,390,845,2]])('keeps physical floors and original projection at %s by %s', (w,h,ratio,nextW,nextH,nextRatio) => {
+  const r=driver();r.setDrawingBufferSize(w,h,ratio);r.writes.length=0;
+  configureShelfRendererSize(r,nextW,nextH,nextRatio,new THREE.Vector2());
+  const final=[Math.floor(nextW*nextRatio),Math.floor(nextH*nextRatio)];
+  expect(r.writes.map(v=>[v.axis,v.value])).toEqual([['width',final[0]],['height',final[1]]]);
+  expect(r.writes.every(v=>v.dimensions.every(n=>n>0))).toBe(true);
+  expect(r.writes.every(v=>v.dimensions[0]*v.dimensions[1]<=final[0]*final[1])).toBe(true);
+  expect(state(r)).toMatchObject({physical:final,size:[nextW,nextH],ratio:nextRatio,viewport:[0,0,...final]});
+  expect(Object.hasOwn(r.domElement,'width')).toBe(false);expect(Object.hasOwn(r.domElement,'height')).toBe(false);
+ });
+});
