@@ -170,8 +170,9 @@
 #reader-screen.is-opening-from-book.is-reader-page-ready {
   visibility:visible;
 }
+/* The header's bar stays: during the hand-off it is the page's own paper. Its
+   controls wait until the page has landed (reading.css). */
 body.is-opening-reader .app-header {
-  visibility:hidden;
   pointer-events:none;
 }
 /* reading.css reserves the same controls' space during preparation,
@@ -256,16 +257,6 @@ body.is-opening-reader .app-header {
 .reader-toolbar[hidden] {
   display: flex;
   transform: translateY(100%);
-}
-
-.reader-toolbar.is-rising {
-  transform: translateY(100%);
-  opacity: 0;
-}
-
-.reader-toolbar.is-rising.is-visible {
-  transform: translateY(0);
-  opacity: 1;
 }
 
 .reader-progress {

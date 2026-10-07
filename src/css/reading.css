@@ -214,6 +214,18 @@ body.is-reader-focus .reader-heading, body.is-reader-focus .reader-toolbar > * {
   .reader-heading { transition:opacity .12s linear; }
   .reader-toolbar > * { transition:opacity .12s linear, background-color .15s var(--ease); }
 }
+/* Opening from the shelf: the page lands first and the controls follow it in.
+   Their bars are the page's own paper throughout, so, as in focus mode, only
+   the contents fade (app.js keeps is-reader-arriving for their entrance). */
+body.is-opening-reader .reader-heading, body.is-opening-reader .reader-toolbar > * { visibility:hidden; opacity:0; }
+body.is-reader-arriving .reader-toolbar { transition:none; }
+@media (prefers-reduced-motion:no-preference) {
+  body.is-opening-reader .reader-heading { transform:translateY(-3px); }
+  body.is-opening-reader .reader-toolbar > * { transform:translateY(3px); }
+  body.is-reader-arriving .reader-heading, body.is-reader-arriving .reader-toolbar > * {
+    transition:opacity .26s var(--ease) .04s, transform .32s var(--ease) .04s, visibility 0s .04s;
+  }
+}
 .reader-viewport:focus { outline:none; }
 
 .reader-heading .icon-btn svg, .reader-toolbar .icon-btn svg { stroke:currentColor; }

@@ -1,0 +1,54 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=390"></head>
+<body style="margin:0;background:#f5f5f0;overflow:hidden">
+<div id="host" style="position:fixed;inset:0"></div>
+<script type="module">
+import { bookView, planReadingBookPose } from '/inhouse-read/src/js/book-model.js'
+const params = new URLSearchParams(location.search)
+const vw = 390, vh = 844
+const coverH = 439, ratio = +(params.get('ratio') || .68), coverW = coverH * ratio, thickness = +(params.get('thick') || 28)
+const centerX = vw / 2 + thickness * .19, centerY = vh * .42
+const book = { id:'h1', title:'La Sala de Lectura', author:'Inhouse', format:'EPUB', progressFraction:+(params.get('progress') || .45), locator:{ kind:'cfi', value:'x' } }
+const style = { color:params.get('color') || '#e3d3b6', ink:'#2b2219', coverRatio:ratio }
+const host = document.getElementById('host')
+const bookNode = document.createElement('div'); bookNode.style.cssText = 'position:absolute;inset:0'; host.append(bookNode)
+const view = bookView(bookNode, book, style, { width:coverW, height:coverH, thickness, viewportWidth:vw, viewportHeight:vh, centerX, centerY,
+  deferDraw:true, compactReturnFrame:true, adaptiveNativeFrame:true, initialPose:{ x:0, y:0, scale:1, angle:0, pitch:7 } })
+const page = (bg, ink) => { const c = document.createElement('canvas'); c.width = 780; c.height = 1496; const g = c.getContext('2d')
+  g.fillStyle = bg; g.fillRect(0, 0, c.width, c.height); g.fillStyle = ink; g.font = 'bold 64px Georgia'; g.fillText('El forastero', 32, 150)
+  g.font = '34px Georgia'; for (let i = 0; i < 18; i++) g.fillText('Nadie en el pueblo recordaba cuándo había', 32, 260 + i * 60); return c }
+const snap = { source:page(params.get('paper') || '#faf9f5', '#292821'), width:780, height:1496, paper:{ source:page('#ffffff', '#111111'), width:780, height:1496 },
+  displayBounds:{ left:0, top:48, width:390, height:748 }, text:'El forastero', location:null, sourceType:'epub-page' }
+window.view = view
+window.reading = planReadingBookPose({ width:coverW, height:coverH, thickness, viewportWidth:vw, viewportHeight:vh, centerX, centerY })
+await view.ready
+view.setPageSnapshot(snap, { pageTheme:0, redraw:false })
+window.render = pose => { view.draw(pose); return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))) }
+// A virtual 60 fps clock for the continuous opening: film.step(n) advances n frames.
+window.film = () => {
+  let now = 0, zoomed = false
+  const realRaf = requestAnimationFrame.bind(window), queue = []
+  performance.now = () => now
+  window.requestAnimationFrame = cb => { queue.push(cb); return queue.length }
+  window.cancelAnimationFrame = () => {}
+  view.draw({ x:0, y:0, scale:1, angle:0, pitch:7, pageTheme:0, coverOpen:0, bookmarkWithdraw:0 })
+  const t = window.timing || { cover:520, bookmark:280, bookmarkAt:250, zoom:580, zoomAt:450 }
+  const motion = view.animateOpening({ to:window.reading, cover:t.cover, bookmark:t.bookmark, bookmarkAt:t.bookmarkAt, awaitZoom:true })
+  return {
+    motion,
+    step(n = 1) {
+      for (let i = 0; i < n; i++) {
+        now += 1000 / 60
+        const callbacks = queue.splice(0)
+        for (const cb of callbacks) cb(now)
+        if (!zoomed && motion.elapsed >= t.zoomAt - 40) {
+          zoomed = motion.zoomTo({ left:0, top:48, width:390, height:700, pageTheme:1 }, { at:t.zoomAt, duration:t.zoom })
+        }
+      }
+      const c = view.canvas
+      return new Promise(r => realRaf(() => realRaf(() => r({ elapsed:Math.round(motion.elapsed), co:+c.dataset.coverOpen, bw:+c.dataset.bookmarkWithdraw,
+        pt:+c.dataset.pageTheme, pb:c.dataset.pageBounds, bb:c.dataset.boardBounds }))))
+    }
+  }
+}
+window.ready = true
+</script></body></html>

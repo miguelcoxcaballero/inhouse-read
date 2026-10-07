@@ -12,6 +12,7 @@ import { applyBookReflectionSurface } from './book-reflection-surface.js';
 import { compilePagePrograms, prepareProgramUniforms } from './gpu-programs.js';
 import { buildReliefMaps, composeMaterialMap, coverReliefLayers, normalizeCoverRelief, updateReliefMapStrengths } from './cover-relief.js';
 import { runInSlices } from './cover-appearance.js';
+import { OPENING_EASING, cubicBezier } from './reader-book-timing.js';
 import { registerCanvasSnapshot as registerLazySnapshot, createNativeRendererPresentation,
   withRendererPresentation } from './native-renderer-presentation.js';
 
@@ -658,10 +659,18 @@ function paperTone(source, toneKey) {
   paperTones.set(key, tone);
   return tone;
 }
-// The saved page is unlit; under lightBookScene the fully turned leaf shows
-// about 1.03/.96/.895 of its albedo (the warm key). Compensate so both pages
-// read as the same sheet, the left one a shade quieter.
-const LEAF_LIGHT = new THREE.Color(.96 / 1.03, .96 / .96, .96 / .895);
+// The saved page is unlit, so the leaves already read are too: the scene's
+// directional key left them a flat grey board for most of the hinge and then
+// brightened them all at once as the board landed. They are shaded by the
+// board's own angle instead, a wrapped key over the generous bounce of a room,
+// and land a shade quieter than the saved page: one sheet of paper, lit as one.
+export function leafShade(open) {
+  const angle = Math.PI * .94 * Math.max(0, Math.min(1, Number(open) || 0));
+  // The turned face's normal against the scene's key (lightBookScene).
+  const facing = -.38 * Math.sin(angle) - .83 * Math.cos(angle);
+  const lit = Math.max(0, Math.min(1, (facing + .4) / 1.144));
+  return .96 * (.76 + .24 * lit * lit * (3 - 2 * lit));
+}
 
 /**
  * Cross-fade between the white stock and the reader's own paper, mixed in
@@ -1072,7 +1081,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     // the blend is exactly the opaque result.
     pageMaterial.opacity = faded ? pageTheme : 1;
     const tone = faded ? mixPaperTone(paperScratch, stockTone, themeTone, pageTheme) : themeTone;
-    if (tone) { pagePaper.material.color.copy(tone); leafPaper?.color.copy(tone).multiply(LEAF_LIGHT); }
+    if (tone) { pagePaper.material.color.copy(tone); leafTone.copy(tone); shadeLeaves(); }
   };
   group.userData.setPageTheme = (mix, redraw = true) => {
     if (disposed) return false;
@@ -1135,7 +1144,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     themeTone = paperTone(snapshot.source, snapshot.toneKey);
     stockTone = sameSize ? paperTone(variant.source, variant.toneKey) : null;
     if (stockImage.visible) applyPageTheme();
-    else if (themeTone) { pagePaper.material.color.copy(themeTone); leafPaper?.color.copy(themeTone).multiply(LEAF_LIGHT); }
+    else if (themeTone) { pagePaper.material.color.copy(themeTone); leafTone.copy(themeTone); shadeLeaves(); }
     group.userData.pageSnapshot = snapshot;
     installedRaster = themeRaster && stockRaster ? {theme:themeRaster,stock:stockRaster,width:imageWidth,height:imageHeight} : null;
     if (redraw) group.userData.invalidate?.();
@@ -1160,10 +1169,21 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   // an open book shows paper curling into the gutter, never a bare pastedown.
   const leafDepth = () => (thickness - board * 2.4) * THREE.MathUtils.clamp(bookmark?.progress ?? 0, .025, .5);
   // Text paper: cooler and smoother than the endpaper, the tone of the page.
-  // Like the saved page beside it, it skips tone mapping: the two sheets must
-  // not be graded differently. Matte paper has no highlight to compress.
-  const leafPaper = detail ? new THREE.MeshStandardMaterial({ color:new THREE.Color(0xffffff).multiply(LEAF_LIGHT), roughness:.93, vertexColors:true,
+  // Like the saved page beside it, it is unlit and skips tone mapping: the two
+  // sheets must not be graded differently. Its shade follows the board's angle
+  // (leafShade) and its curl into the joint (the geometry's vertex colours).
+  const leafTone = new THREE.Color(0xffffff);
+  const leafPaper = detail ? new THREE.MeshBasicMaterial({ color:0xffffff, vertexColors:true,
     map:sharedTexture('endpaper', endpaperTexture), toneMapped:false }) : null;
+  shadeLeaves();
+  function shadeLeaves() {
+    if (!leafPaper) return;
+    // Paper turned away from a warm room light falls into a warm shade, never
+    // a grey one; landed, it is the saved page's tone, a shade quieter.
+    const shade = leafShade(coverOpening), shadow = 1 - shade / .96;
+    leafPaper.color.copy(leafTone).multiplyScalar(shade);
+    leafPaper.color.g *= 1 - .08 * shadow; leafPaper.color.b *= 1 - .22 * shadow;
+  }
   // Finer than the endpaper: the fibres shrink into the grain of a book paper.
   leafPaper?.map.repeat.set(6 * width / height, 6);
   const readLeaves = detail
@@ -1445,7 +1465,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     pagePaper.visible = next > 0;
     insideCover.visible = pastedown.visible = next > 0;
     if (readLeaves) readLeaves.visible = next > 0;
-    if (Math.abs(next - coverOpening) > .00001) { coverOpening = next; updateRibbonGeometry(); }
+    if (Math.abs(next - coverOpening) > .00001) { coverOpening = next; updateRibbonGeometry(); shadeLeaves(); }
   };
   function updateRibbonGeometry() {
     if (!ribbonMesh || !bookmark) return;
@@ -1932,6 +1952,10 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     canvas.dataset.pageTheme = String(pageTheme);
     canvas.dataset.bookmarkWithdraw = String(current.bookmarkWithdraw);
     canvas.dataset.boardBounds = JSON.stringify(projectBookBoardBounds(model,camera,viewportWidth,viewportHeight));
+    // Where the saved page itself lies on screen: the opening lands it on the reader's page.
+    const pageBounds = model.userData.pageSurface?.visible && current.coverOpen > 0
+      ? projectBookPageBounds(model.userData.pageSurface, camera, viewportWidth, viewportHeight) : null;
+    if (pageBounds) canvas.dataset.pageBounds = JSON.stringify(pageBounds); else delete canvas.dataset.pageBounds;
   }
   model.userData.invalidate = () => current && !waitingForFirstDraw && draw(current);
   // Lifted books reveal hidden materials mid-motion (the inside of the board,
@@ -2228,6 +2252,127 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   function setBookmarkWithdraw(amount) {
     if (current) draw({ ...current, bookmarkWithdraw:amount });
   }
+  // The page pose for `target` as seen from `origin`, without drawing: the
+  // opening plans its zoom from the open spread it is still travelling to.
+  function pagePoseFrom(origin, { left, top, width:targetWidth, height:targetHeight }) {
+    if (!origin) return null;
+    const position = model.position.clone(), rotation = model.rotation.clone(), scale = model.scale.clone();
+    try {
+      model.position.set(centerX - viewportWidth / 2 + origin.x, viewportHeight / 2 - centerY - origin.y, 0);
+      model.rotation.set((origin.pitch ?? 0) * Math.PI / 180, (origin.angle ?? 0) * Math.PI / 180, (origin.roll ?? 0) * Math.PI / 180);
+      model.scale.setScalar(origin.scale);
+      model.updateMatrixWorld(true);
+      const rect = canvas.getBoundingClientRect();
+      return planBookPageZoom(model, camera, {
+        viewportWidth, viewportHeight, centerX, centerY, origin:{ ...origin }, offset:{ left:rect.left, top:rect.top },
+        target:{ left, top, width:targetWidth, height:targetHeight }
+      });
+    } finally {
+      model.position.copy(position); model.rotation.copy(rotation); model.scale.copy(scale); model.updateMatrixWorld(true);
+    }
+  }
+  // One continuous opening on one clock. Each layer eases over its own window
+  // and adds its change to the pose, so overlapping phases never stop the book
+  // between them: the hinge with the camera's move back to the open spread,
+  // the ribbon, and (joining while the board still moves, once the reader has
+  // measured its page) the lean into the saved page with the page's colour.
+  // Real time with the same capped steps as animateMotion: a stalled frame
+  // delays the book, it never jumps. `when(ms)` resolves on that clock.
+  function animateOpening({ to, cover, bookmark, bookmarkAt = 0, awaitZoom = false } = {}) {
+    cancel();
+    const origin = { ...current }, layers = [], cameraKeys = ['x','y','scale','angle','pitch','roll'];
+    const curves = Object.fromEntries(Object.entries(OPENING_EASING).map(([name, points]) => [name, cubicBezier(points)]));
+    const delta = (from, target, keys) => Object.fromEntries(keys.map(key => [key, (target[key] ?? 0) - (from[key] ?? 0)]));
+    const addLayer = (at, length, ease, change) => layers.push({ at, length:Math.max(0, length), ease, change });
+    // The book settles back a little ahead of its board, so the opening
+    // spread is always whole on screen while the board still swings.
+    addLayer(0, cover * .9, curves.spread, delta(origin, to, cameraKeys));
+    addLayer(0, cover, curves.hinge, { coverOpen:1 - (origin.coverOpen ?? 0) });
+    addLayer(bookmarkAt, bookmark, curves.ribbon, { bookmarkWithdraw:1 - (origin.bookmarkWithdraw ?? 0) });
+    let end = Math.max(...layers.map(layer => layer.at + layer.length)), zoomPending = Boolean(awaitZoom);
+    const sample = time => {
+      const pose = { ...origin };
+      for (const { at, length, ease, change } of layers) {
+        const k = ease(length > 0 ? (time - at) / length : time >= at ? 1 : 0);
+        for (const key in change) pose[key] = (pose[key] ?? 0) + change[key] * k;
+      }
+      return pose;
+    };
+    // The opening ends in a full-screen zoom. Reserve that frame now, while
+    // the book still rests, rather than reallocating it in mid-flight.
+    if (directEnabled && compactReturnFrame && adaptiveNativeFrame && Number.isInteger(pixelRatio) &&
+        Number.isInteger(viewportWidth) && Number.isInteger(viewportHeight)) {
+      if (awaitZoom) motionFrameCapacity = { width:viewportWidth, height:viewportHeight };
+      else {
+        // Geometry-only probes of the whole path, as in animateMotion.
+        const capacity = { width:0, height:0 };
+        try {
+          for (let i = 0; i <= 16; i++) {
+            const pose = sample(end * i / 16); positionModel(pose);
+            const frame = returnFrame(pose, true);
+            capacity.width = Math.max(capacity.width, frame.width); capacity.height = Math.max(capacity.height, frame.height);
+          }
+          motionFrameCapacity = capacity;
+        } finally { if (current) positionModel(current); }
+      }
+    }
+    let raf, resolve, elapsed = 0, lastFrame = performance.now(), started = false, done = false, drawn = null;
+    const finished = new Promise(r => resolve = r), waits = [];
+    const settle = () => {
+      for (const wait of waits.filter(wait => done || elapsed >= wait.at)) {
+        waits.splice(waits.indexOf(wait), 1); wait.resolve(elapsed >= wait.at);
+      }
+    };
+    const finish = () => { if (done) return; done = true; motionFrameCapacity = null; settle(); resolve(); };
+    cancel = () => { cancelAnimationFrame(raf); finish(); };
+    const motion = {
+      finished, cancel, lastFrameTime:lastFrame,
+      get elapsed() { return elapsed; },
+      when(at) { return done || elapsed >= at ? Promise.resolve(elapsed >= at) : new Promise(r => waits.push({ at, resolve:r })); },
+      // The zoom into the saved page, planned from the spread the hinge is
+      // heading for, so its landing is exactly the reader's page rectangle.
+      zoomTo(target, { at = elapsed, duration = 580 } = {}) {
+        if (done || (awaitZoom && !zoomPending)) return false;
+        const destination = pagePoseFrom({ ...to, coverOpen:1, bookmarkWithdraw:1 }, target);
+        if (!destination) return false;
+        const start = Math.max(at, elapsed);
+        addLayer(start, duration, curves.zoom, delta(to, destination, cameraKeys));
+        if (target.pageTheme != null) {
+          // The page reaches the reader's colours a little before it lands.
+          addLayer(start, duration * .85, curves.theme, { pageTheme:target.pageTheme - (origin.pageTheme ?? pageTheme) });
+        }
+        end = Math.max(end, start + duration); zoomPending = false;
+        if (!raf) raf = requestAnimationFrame(tick);
+        return true;
+      },
+      // No zoom will come (the reader could not measure its page): end here.
+      release() { zoomPending = false; if (!raf && !done) raf = requestAnimationFrame(tick); },
+      // Frames stopped (a WebView may suspend them): land where the motion
+      // ends instead of handing over a book frozen in mid-flight.
+      settle() {
+        if (done) return;
+        cancelAnimationFrame(raf); raf = 0;
+        elapsed = Math.max(elapsed, end);
+        if (!disposed) draw(sample(end));
+        finish();
+      }
+    };
+    const tick = () => {
+      raf = 0;
+      if (disposed) return finish();
+      const now = performance.now();
+      elapsed += Math.min(started ? 100 : 48, Math.max(0, now - lastFrame)); lastFrame = now; started = true;
+      const pose = sample(Math.min(elapsed, end));
+      // Waiting at rest for the zoom draws nothing new.
+      if (!drawn || Object.keys(pose).some(key => pose[key] !== drawn[key])) { draw(pose); drawn = pose; }
+      motion.lastFrameTime = performance.now();
+      settle();
+      if (elapsed >= end && !zoomPending) finish();
+      else raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return motion;
+  }
   function animateMotion(frames, { duration, onFrame }) {
     cancel();
     if (current) frames = [{ ...frames[0], transform: current }, ...frames.slice(1)];
@@ -2279,7 +2424,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     setPageSnapshot, commitPreparedPage, pageTextures, uploadPageTexture, compilePage, preparePagePrograms, hasPageSnapshot:snapshot => Boolean(snapshot) && currentSnapshot === snapshot,
     setPageTheme, animatePageTheme, getPageTheme:() => pageTheme,
     getPageBounds, getPose:() => ({ ...current }), setBookmarkWithdraw,
-    animateCoverOpen, animateCoverClose, animateBookmark, alignToPage, animateToPage,
+    animateCoverOpen, animateCoverClose, animateBookmark, alignToPage, animateToPage, animateOpening,
     animate:animateMotion,
     dispose(removeCanvas = true) { cancel(); nativeMotionHolds = 0; nativeMotionCapacity = null; if (!removeCanvas) captureSnapshot();
       unregisterSnapshot?.();

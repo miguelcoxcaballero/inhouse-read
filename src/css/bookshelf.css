@@ -806,6 +806,14 @@ body.is-closing-reader .screen { pointer-events:none; }
 }
 
 [data-theme='dark'] .ihr-flyout__scrim { background:rgba(21,21,21,.94); }
+/* Opening: the frosted room turns into an opaque veil of the same tone (the
+   reader then replaces the shelf beneath it unseen), then into copies of the
+   reader's own surfaces (the app paints them), so the page lands on its paper. */
+.ihr-flyout__veil, .ihr-flyout__surface { position:absolute; inset:0; pointer-events:none; opacity:0; }
+.ihr-flyout__veil { background:rgb(245,245,240); }
+[data-theme='dark'] .ihr-flyout__veil { background:rgb(21,21,21); }
+/* Hidden behind the veil: no backdrop blur is computed during the motion. */
+.ihr-flyout.is-veiled .ihr-flyout__scrim { visibility:hidden; }
 .ihr-flyout__close { position:absolute; top:max(12px, env(safe-area-inset-top)); right:max(10px, env(safe-area-inset-right)); z-index:5; width:44px; padding:0; border-radius:50%; background:transparent; color:var(--text-secondary); }
 .ihr-flyout__close .ihr-icon { width:20px; height:20px; }
 .ihr-flyout__close .ihr-icon path { stroke-width:1.5; }

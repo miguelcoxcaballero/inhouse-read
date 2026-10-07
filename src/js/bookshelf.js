@@ -120,7 +120,7 @@ import { normalizeShelfPlant, resolveCatalogPlant } from './plant-records.js';
 import { shelfScale, plantDimensions, bookSpineOptions, minimumBookCellWidth } from './plant-dimensions.js';
 import { getCatalogLamp, normalizeShelfLamp } from './lamp-catalog-data.js';
 import { lampCatalogIllustration } from './lamp-illustration.js';
-import { readerBookTiming } from './reader-book-timing.js';
+import { readerBookTiming, OPENING_EASING, cssEasing } from './reader-book-timing.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
@@ -3457,6 +3457,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         }
       );
       session.returnAnimation = back;
+      // A cancelled opening: its veil and the reader's paper leave with the scrim.
+      flyout.classList.remove('is-veiled');
+      for (const layer of flyout.querySelectorAll('.ihr-flyout__veil, .ihr-flyout__surface')) {
+        const opacity = getComputedStyle(layer).opacity;
+        layer.getAnimations?.().forEach(animation => animation.cancel());
+        animate(layer, [{ opacity }, { opacity:0 }], { duration:approachDuration * .6, easing:EASE, fill:'both' });
+      }
       animate(scrim, [{ opacity: 1 }, { opacity: 0 }], {
         duration: approachDuration,
         easing: EASE,
@@ -3547,36 +3554,162 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       return true;
     };
 
-    async function animateBookToPage(target) {
-      if (session.cancelled || state.destroyed) return;
-      if (view) {
-        // The pages fade from white paper to the reader's theme with the zoom itself.
-        session.pageZoom = view.animateToPage({ ...target, pageTheme:1 });
-        await waitForMotion(session.pageZoom, target.duration);
-        return;
-      }
+    // The fallback page flies to the reader's page with plain CSS transforms.
+    function fallbackPageZoom(target, delay = 0) {
       const page = bookNode.querySelector('.ihr-flyout__saved-page');
       const bounds = page?.getBoundingClientRect();
-      if (!bounds?.width || !bounds.height) return;
+      if (!bounds?.width || !bounds.height) return null;
+      const timing = { duration:target.duration, delay, easing:cssEasing(OPENING_EASING.zoom), fill:'both' };
       if (bookNode.querySelector('.ihr-flyout__saved-page-stock')) {
-        animate(page, [{ opacity:0 }, { opacity:1 }], { duration:target.duration, easing:'cubic-bezier(.2,.74,.2,1)', fill:'both' });
+        animate(page, [{ opacity:0 }, { opacity:1 }], { ...timing, duration:target.duration * .85, easing:cssEasing(OPENING_EASING.theme) });
       }
       const scale = target.width / bounds.width;
       const bookBounds = bookNode.getBoundingClientRect();
       const imageX = bounds.left + bounds.width/2, imageY = bounds.top + bounds.height/2;
       const dx = target.left + target.width/2 - imageX + (1-scale)*(imageX-bookBounds.left-bookBounds.width/2);
       const dy = target.top + target.height/2 - imageY + (1-scale)*(imageY-bookBounds.top-bookBounds.height/2);
-      session.pageZoom = animate(bookNode, [
+      return animate(bookNode, [
         { transform:'translate(0,0) scale(1)' },
         { transform:`translate(${dx}px,${dy}px) scale(${scale})` }
-      ], { duration:target.duration, easing:'cubic-bezier(.2,.74,.2,1)', fill:'both' });
-      await waitForMotion(session.pageZoom, target.duration);
+      ], timing);
     }
 
-    async function finishReaderTransition({ pageSnapshot, animatePage } = {}) {
+    // The CSS book's opening on the wall clock, with the same overlapping
+    // schedule as the WebGL motion: the zoom joins while the leaf still turns.
+    function fallbackOpening(durations) {
+      const start = performance.now(), parts = [];
+      const leaf = bookNode.querySelector('.ihr-flyout__fallback-leaf');
+      if (leaf) parts.push(animate(leaf, [{ transform:'rotateY(0deg)' }, { transform:'rotateY(-169deg)' }],
+        { duration:durations.cover, easing:cssEasing(OPENING_EASING.hinge), fill:'both' }));
+      let release;
+      const zoomed = new Promise(resolve => { release = resolve; });
+      return {
+        get elapsed() { return performance.now() - start; },
+        get finished() { return Promise.all([zoomed, ...parts.map(part => part.finished?.catch(() => {}))]); },
+        when:at => new Promise(resolve => setTimeout(resolve, Math.max(0, at - (performance.now() - start)), true)),
+        zoomTo(target, { at = 0, duration }) {
+          const zoom = fallbackPageZoom({ ...target, duration }, Math.max(0, at - (performance.now() - start)));
+          if (!zoom) return false;
+          parts.push(zoom); release();
+          return true;
+        },
+        release() { release(); },
+        cancel() { release(); for (const part of parts) part.cancel?.(); }
+      };
+    }
+
+    // A still copy of the reader's own surfaces (made by the app) joins the
+    // flyout for the zoom: first behind the book, so the room becomes the
+    // reader's paper, then over everything but the page's rectangle, so the
+    // board's edges dissolve into that paper as the page lands on its own.
+    function showReaderSurfaces(surface, delay, duration) {
+      const stage = bookNode.parentElement;
+      const layers = [[surface?.backdrop, 0, .55, 'ease-in-out', 'beforebegin'], [surface?.frame, .5, .5, 'ease-out', 'afterend']];
+      for (const [layer, from, length, easing, where] of layers) {
+        if (!layer || !stage) continue;
+        layer.classList.add('ihr-flyout__surface');
+        stage.insertAdjacentElement(where, layer);
+        animate(layer, [{ opacity:0 }, { opacity:1 }], { delay:delay + duration * from, duration:Math.max(1, duration * length), easing, fill:'both' });
+      }
+    }
+
+    async function animateBookToPage(target) {
+      if (session.cancelled || state.destroyed) return;
+      const motion = session.opening;
+      if (motion) {
+        // The continuous opening: the zoom joins the motion already running.
+        const timing = session.openingTiming, start = Math.max(timing.zoomAt, motion.elapsed ?? 0);
+        if (!motion.zoomTo({ ...target, pageTheme:1 }, { at:timing.zoomAt, duration:target.duration })) { motion.release?.(); return; }
+        session.zoomStarted = true;
+        motion.when(start).then(reached => {
+          if (reached && !session.cancelled && state.session === session && session.phase === 'reading') flyout.dataset.openingPhase = 'zooming';
+        });
+        showReaderSurfaces(target.surface, Math.max(0, start - (motion.elapsed ?? 0)), target.duration);
+        // If frames stop, the watchdog lands the book rather than freezing it mid-zoom.
+        const landing = { finished:motion.finished, get lastFrameTime() { return motion.lastFrameTime; },
+          cancel:() => (motion.settle || motion.cancel)?.call(motion) };
+        await waitForMotion(landing, start - (motion.elapsed ?? 0) + target.duration);
+        return;
+      }
+      if (view) {
+        // The pages fade from white paper to the reader's theme with the zoom itself.
+        session.pageZoom = view.animateToPage({ ...target, pageTheme:1 });
+        await waitForMotion(session.pageZoom, target.duration);
+        return;
+      }
+      session.pageZoom = fallbackPageZoom(target);
+      if (session.pageZoom) await waitForMotion(session.pageZoom, target.duration);
+    }
+
+    // Views without the continuous motion keep the original phase by phase opening.
+    async function playSequentialOpening(durations, { pageSnapshot, animatePage, revealReader, active }) {
+      revealReader?.();
+      // The restored page is uploaded BEFORE its cover moves. Starting the
+      // hinge while the renderer loaded exposed a blank, generic page block.
+      session.coverOpening = view.animateCoverOpen({ duration:durations.cover, targetPose:session.readingPose });
+      await waitForMotion(session.coverOpening, durations.cover);
+      if (!active()) return false;
+      // Withdraw the fabric while the saved page is still readable, before
+      // moving the camera. Closing performs these same steps in reverse.
+      flyout.dataset.openingPhase = 'bookmark';
+      session.bookmarkMotion = view.animateBookmark({ withdraw:1, duration:durations.bookmark });
+      await waitForMotion(session.bookmarkMotion, durations.bookmark);
+      if (!active()) return false;
+      if (typeof animatePage === 'function') {
+        flyout.dataset.openingPhase = 'zooming';
+        await animatePage({ duration:durations.zoom, pageSnapshot, animateBookToPage, isActive:active });
+      }
+      return active();
+    }
+
+    // One continuous, physical motion: the board swings open as the book
+    // settles into the open spread, the ribbon slides out while the board
+    // lands, and the camera leans into the saved page as the spread comes to
+    // rest. Phases overlap on one clock (readerBookTiming), and the markers
+    // announce each one as it begins.
+    async function playContinuousOpening(durations, { pageSnapshot, animatePage, revealReader, active }) {
+      const zooming = typeof animatePage === 'function';
+      session.openingTiming = durations;
+      const motion = session.opening = session.coverOpening = view
+        ? view.animateOpening({ to:session.readingPose, cover:durations.cover, bookmark:durations.bookmark,
+          bookmarkAt:durations.bookmarkAt, awaitZoom:zooming })
+        : fallbackOpening(durations);
+      motion.when(durations.bookmarkAt).then(() => {
+        if (active() && flyout.dataset.openingPhase === 'opening') flyout.dataset.openingPhase = 'bookmark';
+      });
+      // The frosted room gives way to an opaque veil of the same tone before
+      // the reader replaces the shelf beneath it: nothing behind the book
+      // jumps at the tap, and the swap itself is never seen.
+      const veil = el('div', { class:'ihr-flyout__veil', 'aria-hidden':'true' });
+      bookNode.parentElement?.before(veil);
+      const veilTime = Math.max(1, Math.min(220, durations.cover * .42));
+      const veiling = animate(veil, [{ opacity:0 }, { opacity:1 }], { duration:veilTime, easing:'ease-out', fill:'both' });
+      // A stalled document timeline must neither hold the opening nor undo the veil.
+      await Promise.race([veiling.finished?.catch(() => {}), wait(veilTime + 1500)]);
+      veil.style.opacity = '1';
+      if (!active()) return false;
+      flyout.classList.add('is-veiled');
+      revealReader?.();
+      if (zooming) {
+        // Measure the reader's page now, while the board still turns: the zoom
+        // is scheduled on the motion's clock and nothing is built when it starts.
+        try {
+          await animatePage({ duration:durations.zoom, pageSnapshot, animateBookToPage, isActive:active });
+        } catch (error) { motion.cancel?.(); throw error; }
+        if (!active()) return false;
+        if (session.zoomStarted) return true;
+      }
+      // No zoom (or the reader could not measure its page): end on the open spread.
+      motion.release?.();
+      await waitForMotion(motion, Math.max(durations.cover, durations.bookmarkAt + durations.bookmark));
+      return active();
+    }
+
+    async function finishReaderTransition({ pageSnapshot, animatePage, revealReader } = {}) {
       if (session.cancelled || state.destroyed) return false;
       const durations = readerBookTiming(prefersReducedMotion()).opening;
       const releaseFrame = view?.holdNativeMotionFrame?.();
+      const active = () => !session.cancelled && !state.destroyed && state.session === session;
       try {
         if (pageSnapshot && !installOpeningPage(pageSnapshot)) throw new Error('No se pudo preparar la página del modelo 3D.');
         markTiming('page-installed');
@@ -3588,29 +3721,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         session.readingPose = planReadingBookPose({ width:coverW, height:coverH, thickness,
           viewportWidth:vw, viewportHeight:vh, centerX, centerY });
         session.coverOpeningDuration = durations.cover;
-        // The restored page is uploaded BEFORE its cover moves. Starting the
-        // hinge while the renderer loaded exposed a blank, generic page block.
-        session.coverOpening = view
-          ? view.animateCoverOpen({ duration:session.coverOpeningDuration, targetPose:session.readingPose })
-          : animate(bookNode.querySelector('.ihr-flyout__fallback-leaf'), [
-              { transform:'rotateY(0deg)' }, { transform:'rotateY(-169deg)' }
-            ], { duration:session.coverOpeningDuration, easing:EASE, fill:'both' });
-        await waitForMotion(session.coverOpening, session.coverOpeningDuration);
-        if (session.cancelled || state.destroyed) return false;
-        // Withdraw the fabric while the saved page is still readable, before
-        // moving the camera. Closing performs these same steps in reverse.
-        flyout.dataset.openingPhase = 'bookmark';
-        if (view) {
-          session.bookmarkMotion = view.animateBookmark({ withdraw:1, duration:durations.bookmark });
-          await waitForMotion(session.bookmarkMotion, durations.bookmark);
-        }
-        if (session.cancelled || state.destroyed) return false;
-        if (typeof animatePage === 'function') {
-          flyout.dataset.openingPhase = 'zooming';
-          await animatePage({ duration:durations.zoom, pageSnapshot, animateBookToPage,
-            isActive:() => !session.cancelled && !state.destroyed && state.session === session });
-        }
-        if (session.cancelled || state.destroyed) return false;
+        const play = view && typeof view.animateOpening !== 'function' ? playSequentialOpening : playContinuousOpening;
+        if (!await play(durations, { pageSnapshot, animatePage, revealReader, active }) || !active()) return false;
         // Whatever ended the zoom, the book hands over in the reader's own colours.
         if (view && view.getPageTheme() < 1) view.setPageTheme(1);
         flyout.dataset.openingPhase = 'handoff';
@@ -3618,9 +3730,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         // sibling cannot remain opaque; the retained view resumes GPU presentation
         // when it is moved into the closing animation's new host.
         view?.releaseToSnapshot?.({ resume:true });
+        // The flyout now shows the reader's own page on the reader's own
+        // paper: dissolving it reveals the same picture underneath.
         const fadeDuration = durations.handoff;
-        const fade = animate(bookNode, [{ opacity:1 }, { opacity:0 }], { duration:fadeDuration, easing:'linear', fill:'both' });
-        animate(scrim, [{ opacity:1 }, { opacity:0 }], { duration:fadeDuration, easing:'linear', fill:'both' });
+        const fade = animate(flyout, [{ opacity:1 }, { opacity:0 }], { duration:fadeDuration, easing:'linear', fill:'both' });
         await waitForMotion(fade, fadeDuration);
         if (state.session === session) {
           flyout.dataset.openingPhase = 'complete';

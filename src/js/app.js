@@ -83,6 +83,7 @@ let preparationGeneration = 0
 let requestedPreparationId = null
 let activePreparedBookId = null
 let activeOpeningContext = null
+let readerArrival = 0
 let closingReader = false
 let readerPreparationQueue = Promise.resolve()
 // The page the open book lands on, prepared while the book is lifted off the
@@ -363,17 +364,73 @@ async function removeBookFromShelf(book) {
   return removal
 }
 
+// Still copies of the reader's own surfaces (the screen's paper and desk, the
+// page viewport with its brightness filter, a PDF sheet's edge and shadow).
+// The opening zoom lands the page on them, so handing over to the live reader
+// changes nothing on screen: one copy fills the room behind the book, the other
+// covers all but the page's rectangle, hiding the book's edges at the landing.
+function readerSurfaces(page, sheet) {
+  const width = innerWidth, height = innerHeight
+  const paint = (node, element) => {
+    const style = getComputedStyle(element)
+    node.style.backgroundColor = style.backgroundColor
+    node.style.backgroundImage = style.backgroundImage
+    return style
+  }
+  const place = (node, rect) => Object.assign(node.style, { position:'absolute', left:`${rect.left}px`, top:`${rect.top}px`,
+    width:`${rect.width}px`, height:`${rect.height}px` })
+  const shadow = sheet && getComputedStyle(sheet).boxShadow
+  const copy = ({ edge = false } = {}) => {
+    const layer = document.createElement('div'), viewport = document.createElement('div')
+    layer.setAttribute('aria-hidden', 'true')
+    paint(layer, els.readerScreen)
+    viewport.style.filter = paint(viewport, els.readerViewport).filter
+    place(viewport, els.readerViewport.getBoundingClientRect())
+    layer.append(viewport)
+    if (edge && shadow && shadow !== 'none') {
+      const sheetEdge = document.createElement('div')
+      place(sheetEdge, sheet.getBoundingClientRect())
+      sheetEdge.style.boxShadow = shadow
+      layer.append(sheetEdge)
+    }
+    return layer
+  }
+  // The frame shows the same copy through four plain rectangles around the
+  // page, overlapping at the corners so no seam lets the book show through.
+  // (A masked layer re-rendered the sheet's blurred shadow on every frame.)
+  const frame = document.createElement('div')
+  frame.setAttribute('aria-hidden', 'true')
+  const { left, top } = page, right = left + page.width, bottom = top + page.height
+  for (const strip of [{ left:0, top:0, width, height:top }, { left:0, top:bottom, width, height:height - bottom },
+    { left:0, top:0, width:left, height }, { left:right, top:0, width:width - right, height }]) {
+    if (!(strip.width > 0 && strip.height > 0)) continue
+    const opening = document.createElement('div'), view = copy({ edge:true })
+    place(opening, strip); opening.style.overflow = 'hidden'
+    place(view, { left:-strip.left, top:-strip.top, width, height })
+    opening.append(view); frame.append(opening)
+  }
+  return { backdrop:copy(), frame }
+}
+
 async function animateReaderPageFromBook({ duration, animateBookToPage, pageSnapshot, isActive }) {
   const screen = els.readerScreen
   if (!screen || screen.hidden || (isActive && !isActive())) return
   const page = pageSnapshot.sourceType === 'pdf-canvas'
     ? screen.querySelector('.pdf-page-wrap:not([hidden]) .pdf-page-canvas') : null
   const measured = page?.getBoundingClientRect()
-  const target = measured?.width && measured?.height ? measured : pageSnapshot.displayBounds
+  let target = measured?.width && measured?.height ? measured : pageSnapshot.displayBounds
   if (!target?.width || !target?.height) throw new Error('La página del lector todavía no está preparada.')
+  // A copied page lies where the reader stood when it was taken. Follow the
+  // reader if it has since moved as a whole (its viewport, not its page).
+  const taken = pageSnapshot.viewportBounds, viewport = els.readerViewport.getBoundingClientRect()
+  if (!measured?.width && taken && viewport.width === taken.width && viewport.height === taken.height) {
+    target = { left:target.left + viewport.left - taken.left, top:target.top + viewport.top - taken.top,
+      width:target.width, height:target.height }
+  }
   // Move the SAME textured leaf into its final position. Scaling the whole
   // reader used to stretch its contents and hide the real page behind paper.
-  await animateBookToPage({ left:target.left, top:target.top, width:target.width, height:target.height, duration })
+  await animateBookToPage({ left:target.left, top:target.top, width:target.width, height:target.height, duration,
+    surface:readerSurfaces(target, page?.closest('.pdf-page-wrap')) })
   if (isActive && !isActive()) return
   screen.classList.add('is-reader-page-ready')
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
@@ -409,26 +466,38 @@ async function openBookRecord(book, ctx) {
   }
   ctx.onCancel?.(cancelOpening)
   const closeOpening = options => { cancelOpening(); return ctx.close(options) }
+  // A prepared reader waits laid out exactly where it will be read (see
+  // reading.css). It replaces the shelf only once the opening book has veiled
+  // the room: swapping them at the tap changed what showed through the scrim.
+  const revealReader = () => {
+    if (!ownsOpening() || !isActive()) return
+    if (!els.readerScreen.hidden && !els.readerScreen.classList.contains('is-preparing')) return
+    revealPreparedReader()
+    markTiming('reveal-done')
+  }
   const transition = {
     isActive,
     onReaderReady: async () => {
       if (ctx.isActive && !ctx.isActive()) { cancelOpening(); return }
       markOpening()
       try {
-        await revealPreparedReader()
-        markTiming('reveal-done')
         const record = await library.get(book.id) || book
         if ((ctx.isActive && !ctx.isActive()) || currentBookId !== book.id) { cancelOpening(); return }
         const pageSnapshot = await openingPageSnapshot(book.id, record)
         if (ctx.isActive && !ctx.isActive()) { cancelOpening(); return }
         if (!pageSnapshot) throw new Error('No se pudo preparar la página guardada del libro.')
-        const completed = await ctx.finish?.({ pageSnapshot, animatePage:animateReaderPageFromBook })
+        const completed = await ctx.finish?.({ pageSnapshot, revealReader,
+          animatePage:options => { revealReader(); return animateReaderPageFromBook(options) } })
         if (completed === false) { cancelOpening(); return }
+        revealReader()
+        // The page has landed on the reader's own; its controls follow it in.
+        document.body.classList.add('is-reader-arriving')
         els.readerToolbar.hidden = false
-        els.readerToolbar.classList.add('is-rising')
-        void els.readerToolbar.offsetWidth
-        requestAnimationFrame(() => els.readerToolbar.classList.add('is-visible'))
-        setTimeout(() => els.readerToolbar.classList.remove('is-rising', 'is-visible'), 500)
+        // The bar was not rendered while hidden: let its controls take their
+        // hidden opening style first, so they fade in like the header's.
+        if (els.readerToolbar.firstElementChild) void getComputedStyle(els.readerToolbar.firstElementChild).opacity
+        clearTimeout(readerArrival)
+        readerArrival = setTimeout(() => document.body.classList.remove('is-reader-arriving'), 600)
       } finally { clearOpening() }
     },
     onReaderError: () => closeOpening()
@@ -857,8 +926,15 @@ async function preparePageStage(bookId, generation, gate) {
 /** The page the opening animation shows: the prepared one while still valid, otherwise computed now. */
 async function openingPageSnapshot(bookId, record) {
   const prepared = preparedPages.take(pageKeyFor(bookId, record))
-  if (prepared) { markTiming('page-reused'); return prepared }
-  return restoreAndSnapshot(record)
+  if (prepared) markTiming('page-reused')
+  const snapshot = prepared || await restoreAndSnapshot(record)
+  // Where the reader stood for this copy (a reused one is rebased to now):
+  // the zoom lands on the live page even if the reader moves once revealed.
+  if (snapshot) {
+    const { left, top, width, height } = els.readerViewport.getBoundingClientRect()
+    snapshot.viewportBounds = { left, top, width, height }
+  }
+  return snapshot
 }
 
 // A resized window or a rotated phone changes the page's pixels and layout.
@@ -884,7 +960,7 @@ if (typeof ResizeObserver === 'function') {
   }).observe(els.readerViewport)
 }
 
-async function revealPreparedReader() {
+function revealPreparedReader() {
   showScreen('reader')
   els.readerScreen.classList.remove('is-preparing')
 }
