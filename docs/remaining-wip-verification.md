@@ -1,12 +1,27 @@
-# Continuacion: web1.7.101 en verificacion / Android1.1.7 verificado
+# Continuacion: web1.7.102 preparada / Android1.1.7 verificado
+
+Se evita el reajuste de altura del canvas activo mediante una reserva
+pequena ya existente, conservando DPR, viewport y posicion.180 pares RGBA
+exactos entre prototipo y fuente integrada PASS;35 pruebas enfocadas y
+bateria3.555/291, build y92 Python PASS. Dos regresos originales SwiftShader
+PASS con tiempos30s/8s intactos. Cierre medido5.970,2ms: no acredita mejora
+total frente al diagnostico100. Publicacion/web real/CI102 pendientes.
+CI100 completaFAIL en ambos regresos nativos; todos sus otros grupos PASS.
+[Detalle](performance-1802.md).
+
+# Continuacion: web1.7.101 publicada / Android1.1.7 verificado
 
 Abrir con da prioridad al lector y aplaza la sala3D hasta volver a home.
 Se descarta la lectura inicial antigua para recuperar el libro recien
 guardado. Bateria final3.536 unitarias/290 archivos, build y92 Python PASS.
 Ocho regresiones nuevas; las esperas de los E2E originales siguen intactas.
-Diagnostico Android original y publicacion101 pendientes. CI100 conserva
-ambos regresos nativos30s/8s FAIL, incluido un cierre de8915,6ms; faltan
-sus dos ultimos grupos. No se afirma resuelta toda la lentitud ni se
+Los cuatro Android originales con SwiftShader PASS y los cuatro publicos
+con identidad del main PASS. HTTP32/shell96, offline3 PASS; publico31/32
+estricto: un cuerpo walnut0B/HTTP200 en PDF noche conserva FAIL. Los siete
+locales integrados PASS, cero retries. CI101 sigue en curso. CI100 conserva
+ambos regresos nativos30s/8s FAIL, incluido un cierre de8915,6ms; falta
+la auditoria completa de los ZIP originales (ya terminada:526/528,11 ZIP). Todos sus otros grupos y
+cuatro familias de voces reales concluyen PASS. No se afirma resuelta toda la lentitud ni se
 acreditan FPS/bateria en telefono fisico. [Detalle](performance-1801.md).
 
 # Continuacion: web1.7.100 publicada / Android1.1.7 verificado

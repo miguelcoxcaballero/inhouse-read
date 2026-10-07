@@ -32,7 +32,30 @@ Los cuatro originales Android con observador diagnostico y SwiftShader PASS,
 cero retries: app cerrada, abierta, OAuth pendiente y worker WebView antiguo.
 Mantienen todos los gestos, fixtures, assertions y esperas originales.
 La vuelta muestra el libro guardado y se verifican sus bytes exactos.
-No es la bateria E2E completa ni un benchmark. Web publicada: pendiente.
+No es la bateria E2E completa ni un benchmark. El titulo del primer documento
+frio aparece a425/479/464ms en los tres diagnosticos correspondientes, sin
+sala construida; los originales anteriores observaban1457/2659/2512ms
+con sala. Son observaciones de este equipo, no un benchmark de telefono.
+
+Web publicada:189a0133e31854bfd5c796b3a53dbdeb6e720b55;
+Pages81f4cad69cbb73faa91fe4aa1471cd6a4a772f2e.
+Main609.453B, SHA256469a4a8d915ba75b25877ed18a641015fdf5cd213f1c206a1efaa4c356e927a1.
+La primera fijacion fallo porque el HTML publico aun correspondia a1.7.100.
+Se conserva ese FAIL. Tras completarse la publicacion de la rama Pages,
+la segunda fijacion y HTTP32/shell96 PASS. No se repitio un test fallido.
+
+Tanda publica:31/32 estrictos PASS. Cinco nombres/editor/regresos, cinco
+catalogo/plantas/luces y cuatro Abrir con PASS; cada caso Android acredita
+el main real recibido. PDF17/18 estricto: el caso noche falla al auditar
+walnut-pbr209.252B recibido como0B/HTTP200. Sus assertions de contenido
+pasan; el resultado completo sigue siendo FAIL y conserva captura/traza.
+No se corrige retroactivamente la auditoria ni se cuenta un retry como PASS.
+
+Tres recorridos offline PASS: archivo3.143B y locator115 al reabrir,
+foto[230,35,50], cinco temas con workers reales y portada800x1600,
+JPEG150.310B, sin fallback. Siete originales locales integrados PASS,
+cero skips/flaky/retries; esperas y assertions originales intactas.
+CI original37551892930 en curso, con resultados independientes.
 La CI1.7.100 conserva dos regresos30s/8s fallidos tambien en sus retries;
 el cierre de8915,6ms observado no se presenta como aprobado.
 El APK1.1.7/codigo20 sigue siendo el binario vigente verificado.

@@ -50,7 +50,12 @@ no toda la bateria E2E ni una medicion del movil fisico.
 El diagnostico independiente del cierre con SwiftShader registra5.710,2ms
 frente a7.004,1ms del diagnostico anterior; ambos son observaciones locales,
 no un benchmark de dispositivo. Todavia se observan resets de altura.
-CI original37549345628 sigue pendiente: no se declara resuelto su limite8s.
+CI original37549345628 completaFAIL:526 casos unicos/528 intentos,
+dos retries y cuatro intentos fallidos. Ambos regresos nativos30s/8s
+fallan en el primer intento y retry; un cierre alcanza8.915,6ms.
+Los otros cinco shards UI y cuatro familias de voces reales PASS.
+Los11 ZIP originales y sus digests permanecen conservados.
+No se declara resuelto su limite8s.
 APK1.1.7/codigo20 independiente sigue verificado y no requiere rebuild por
 este cambio web. Pruebas APK/emulador y alcance en performance-1799.md.
 Se vuelve a descargar el APK real y el manifiesto servido con esta fuente:

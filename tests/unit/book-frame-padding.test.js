@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { paddedBookFrameWidth } from '../../src/js/book-frame-padding.js';
+import { paddedBookFrameWidth, paddedBookFrameSize } from '../../src/js/book-frame-padding.js';
 import { configureNativeRendererSize } from '../../src/js/native-renderer-size.js';
 
 const frame = { width:384, height:320 };
@@ -33,7 +33,7 @@ function productionConfigure() {
   const source = readFileSync('src/js/book-model.js', 'utf8');
   const body = source.match(/function configureFrame\(frame\) \{([\s\S]*?)\n  \}/)[1];
   return new Function('gpu','rendererSize','pixelRatio','directEnabled','compactReturnFrame','camera',
-    'paddedBookFrameWidth','configureNativeRendererSize','frame', body);
+    'paddedBookFrameSize','configureNativeRendererSize','frame', body);
 }
 function driver() {
   const gpu = {
@@ -50,20 +50,20 @@ function driver() {
 describe('production book frame allocation and projection', () => {
   it('omits the native reset while keeping the original cropped viewport', () => {
     const gpu=driver(), requested={...frame,camera:{}}, camera={};
-    productionConfigure()(gpu,{},2,true,true,camera,paddedBookFrameWidth,configureNativeRendererSize,requested);
+    productionConfigure()(gpu,{},2,true,true,camera,paddedBookFrameSize,configureNativeRendererSize,requested);
     expect(gpu.writes).toEqual([]); expect(gpu.domElement).toEqual(physical);
     expect(gpu.viewports).toEqual([[0,0,384,320]]); expect(requested.presentationWidth).toBe(390);
   });
   it('restores the next full-width projection even when no resize is necessary', () => {
     const gpu=driver(), camera={}, configure=productionConfigure();
-    configure(gpu,{},2,true,true,camera,paddedBookFrameWidth,configureNativeRendererSize,{...frame,camera:{}});
-    configure(gpu,{},2,true,true,camera,paddedBookFrameWidth,configureNativeRendererSize,{width:390,height:320,camera});
+    configure(gpu,{},2,true,true,camera,paddedBookFrameSize,configureNativeRendererSize,{...frame,camera:{}});
+    configure(gpu,{},2,true,true,camera,paddedBookFrameSize,configureNativeRendererSize,{width:390,height:320,camera});
     expect(gpu.writes).toEqual([]);
     expect(gpu.viewports).toEqual([[0,0,384,320],[0,0,390,320]]);
   });
   it.each(['legacy','full camera','uncompact'])('retains the original allocation in %s', mode => {
     const gpu=driver(), camera={}, requested={...frame,camera:mode==='full camera'?camera:{}};
-    productionConfigure()(gpu,{},2,mode!=='legacy',mode!=='uncompact',camera,paddedBookFrameWidth,configureNativeRendererSize,requested);
+    productionConfigure()(gpu,{},2,mode!=='legacy',mode!=='uncompact',camera,paddedBookFrameSize,configureNativeRendererSize,requested);
     expect(gpu.writes).toEqual([[384,320]]); expect(gpu.domElement).toEqual({width:768,height:640});
     expect(gpu.viewports.at(-1)).toEqual([0,0,384,320]); expect(requested.presentationWidth).toBe(384);
   });
