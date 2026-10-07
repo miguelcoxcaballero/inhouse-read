@@ -26,12 +26,14 @@ Ahora ocultar o mostrar la barra no mueve ni redimensiona nada:
   conserva el hueco que le daba el plugin (su altura, más la barra de
   navegación con WebView 144+).
 - `InhouseNative.getSafeTopInset()` da en px CSS una altura estable:
-  `max(statusBars ignorando visibilidad, lo que la shell rellenaba arriba: barra visible, muesca, barra de título de ventana)`. Un script en línea
-  de `index.html` la fija en `--ihr-safe-top` antes del primer pintado y la
-  shell llama a `window.inhouseSetSafeTop()` si cambia (giro, muesca,
-  multiventana). Todo el CSS usa `var(--ihr-safe-top)` en vez de
-  `env(safe-area-inset-top)`, que sigue siendo el valor por defecto
-  (`tokens.css`) en navegadores y APK anteriores. El encabezado del lector mide
+  `max(statusBars ignorando visibilidad, lo que la shell rellenaba arriba:
+  barra visible, muesca, barra de título de ventana)`. Un script en línea de
+  `index.html` la fija en `--ihr-safe-top` antes del primer pintado y la shell
+  llama a `window.inhouseSetSafeTop()` si cambia (giro, muesca, multiventana).
+  Todo el CSS usa `var(--ihr-safe-top)` en vez de `env(safe-area-inset-top)`,
+  que sigue siendo el valor por defecto (`tokens.css`) en navegadores y APK
+  anteriores. Los controles del libro volado (cerrar, cuentagotas) suman su
+  margen a la franja, como antes bajo la barra. El encabezado del lector mide
   `48px + --ihr-safe-top` con la barra visible u oculta: sin reflujo, sin
   repaginar el ePub ni redibujar el PDF.
 - `InhouseNative.setStatusBarAppearance(fondoClaro)` (sólo la página de Read,
@@ -39,8 +41,8 @@ Ahora ocultar o mostrar la barra no mueve ni redimensiona nada:
   estantería, papel del lector mientras el libro es dueño de la pantalla,
   oscuro con el aviso de actualización y con el catálogo de plantas sin vuelo
   (fondo atenuado), claro con el catálogo volado desde el folleto (papel). La
-  barra de navegación no cambia. Los diálogos centrados (catálogo) se colocan
-  bajo la franja `--ihr-safe-top`.
+  barra de navegación no cambia. El catálogo de plantas se centra bajo la
+  franja `--ihr-safe-top` (`.ihr-plant-catalog:modal`).
 - Como ya no hay redimensionado, `reading-display.js` oculta la barra cuando la
   página empieza su zoom de apertura (`body.is-reader-page-arriving`, puesto
   por `app.js`) y la muestra cuando el libro 3D recoge la página al cerrar
@@ -53,13 +55,14 @@ Ahora ocultar o mostrar la barra no mueve ni redimensiona nada:
 - `verify_android_app.py` detecta el contrato por el DEX: con la APK nueva exige
   WebView en y=0 con los mismos límites en cada estado en primer plano
   (estantería, lector, regreso desde segundo plano) y los controles del
-  encabezado bajo la franja de la barra, también con la barra oculta. La APK publicada 1.1.7 se sigue verificando con el
-  contrato anterior. Pruebas: `reading-display-stable-inset.test.js`,
-  `android-reading-display.test.js`, `test_android_shell.py`,
-  `test_verify_android_app.py` y los tres casos «inset estable» de
-  `tests/e2e/reading-display.spec.mjs` (claro, oscuro con papel nocturno y
-  horizontal), que comprueban al píxel que nada se mueve al ocultar o mostrar la
-  barra.
+  encabezado bajo la franja de la barra, también con la barra oculta. La APK
+  publicada 1.1.7 se sigue verificando con el contrato anterior. Pruebas:
+  `reading-display-stable-inset.test.js`, `android-reading-display.test.js`,
+  `test_android_shell.py`, `test_verify_android_app.py` y
+  `tests/e2e/reading-display.spec.mjs`: los casos «inset estable» (claro,
+  oscuro con papel nocturno y horizontal) comprueban al píxel que nada se mueve
+  al ocultar o mostrar la barra, y el de la APK 1.1.7 que su barra sólo cambia
+  fuera de los vuelos del libro.
 
 ## Implementación
 
