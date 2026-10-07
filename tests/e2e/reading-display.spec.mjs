@@ -65,6 +65,12 @@ for (const { name, scheme, readingTheme, viewport } of [
   const lastOwner = () => page.evaluate(() => window.__bar.owner.at(-1))
   const lightIcons = () => page.evaluate(() => window.__bar.light.at(-1)?.light)
   const readerLight = () => page.evaluate(() => document.getElementById('reader-screen').style.colorScheme !== 'dark')
+  // The paper is applied while the book opens, after the bar may hide: wait
+  // for the icons that match this test's paper, then check the reader agrees.
+  const readerIcons = async () => {
+    await expect.poll(lightIcons).toBe(readingTheme !== 'night')
+    expect(await readerLight()).toBe(readingTheme !== 'night')
+  }
   const expectReaderTop = reader => {
     // The reader keeps the bar's strip in its header, hidden bar or not.
     expect(reader.header[1]).toBe(0)
@@ -88,7 +94,7 @@ for (const { name, scheme, readingTheme, viewport } of [
   await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/tiny.pdf')
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
   await expect.poll(async () => (await lastOwner()).enabled).toBe(true)
-  await expect.poll(lightIcons).toBe(await readerLight())
+  await readerIcons()
   const direct = await layout()
   expectReaderTop(direct)
   await shot('2-lector-barra-oculta')
@@ -131,7 +137,7 @@ for (const { name, scheme, readingTheme, viewport } of [
   expectReaderTop(opened)
   expect(stable(opening.layout)).toEqual(stable(opened))
   expect(await page.evaluate(() => window.__bar.canvases.at(-1) === window.__bar.pageCanvas())).toBe(true)
-  await expect.poll(lightIcons).toBe(await readerLight())
+  await readerIcons()
   await shot('5-lector-tras-abrir')
 
   await page.locator('#reader-back').click()
