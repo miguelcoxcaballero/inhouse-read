@@ -9,7 +9,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
+  padding: calc(10px + var(--ihr-safe-top)) 16px 10px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
   z-index: 5;
@@ -372,7 +372,7 @@ body.is-opening-reader .app-header {
   inset: 0;
   display: grid;
   place-items: center;
-  padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+  padding: max(24px, var(--ihr-safe-top)) 24px max(24px, env(safe-area-inset-bottom));
   background: var(--bg-primary);
   color: var(--text-primary);
 }

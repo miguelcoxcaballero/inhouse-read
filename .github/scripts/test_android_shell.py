@@ -3,6 +3,7 @@
 the MainActivity the builder writes (Java and Kotlin templates)."""
 
 import importlib.util
+import json
 import re
 import tempfile
 import unittest
@@ -99,8 +100,67 @@ class MainActivityTest(unittest.TestCase):
                 for feature in ("handleAppCallback", "handleInhouseNativeOAuth", "openAuthUrl",
                                 "setReadingMode", "setReaderOwnership", "InhouseSpeech", "InhousePcm",
                                 "InhouseInference", "installAppUpdate", "setOnApplyWindowInsetsListener",
-                                "applyHighRefreshRate", "preferredDisplayModeId"):
+                                "applyHighRefreshRate", "preferredDisplayModeId",
+                                "getSafeTopInset", "setStatusBarAppearance"):
                     self.assertIn(feature, source, feature)
+
+    def test_status_bar_overlays_the_page_without_resizing_it(self):
+        # The page reserves the stable inset itself; the native parent pads
+        # only sides and bottom, in reading and on the shelf alike.
+        for language, source in self.sources.items():
+            with self.subTest(language=language):
+                listener = source[source.index("setOnApplyWindowInsetsListener("):source.index(".setInsets(safeTypes, Insets.NONE)")]
+                self.assertNotIn("safeInsets.top", listener)
+                self.assertNotIn("isReadingDisplayActive", listener)
+                self.assertRegex(listener, r"initial(Top|Padding\.top),\n")
+                self.assertIn("updateSafeTopInset(windowInsets)", listener)
+                self.assertIn("getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars())", source)
+                self.assertIn("LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS", source)
+                self.assertRegex(source, r"setStatusBarColor\(Color\.TRANSPARENT\)|statusBarColor = Color\.TRANSPARENT")
+                self.assertRegex(source, r"setNavigationBarColor\(bootColor\)|navigationBarColor = bootColor")
+                self.assertIn("import android.graphics.Color", source)
+
+    def test_the_root_listener_owns_the_insets_and_keeps_the_keyboard_spacing(self):
+        # Capacitor's SystemBars inset handling is off (capacitor.config.json),
+        # so this listener also gives the keyboard the room the plugin gave it.
+        for language, source in self.sources.items():
+            with self.subTest(language=language):
+                listener = source[source.index("setOnApplyWindowInsetsListener("):source.index(".setInsets(safeTypes, Insets.NONE)")]
+                self.assertIn("isVisible(WindowInsetsCompat.Type.ime())", listener)
+                self.assertIn("getInsets(WindowInsetsCompat.Type.ime()).bottom", listener)
+                self.assertIn("keyboardKeepsNavigationInset", listener)
+                self.assertRegex(listener, r"initial(Bottom|Padding\.bottom) \+ bottomInset\)")
+                self.assertRegex(source, r"keyboardKeepsNavigationInset = webViewMajorVersion\(\) >= 144")
+                self.assertIn("WebView.getCurrentWebViewPackage()", source)
+                update = source[source.index("updateSafeTopInset(WindowInsetsCompat") if language == "java"
+                                else source.index("updateSafeTopInset(windowInsets: WindowInsetsCompat"):]
+                update = update[:update.index("density")]
+                # Status bar ignoring visibility, plus all the top the shell padded before.
+                self.assertIn("getInsetsIgnoringVisibility(WindowInsetsCompat.Type.statusBars()).top", update)
+                self.assertRegex(update, r"getInsets\(WindowInsetsCompat\.Type\.systemBars\(\) (\||or) WindowInsetsCompat\.Type\.displayCutout\(\)\)\.top")
+
+    def test_capacitor_system_bars_do_not_pad_the_window(self):
+        with tempfile.TemporaryDirectory() as temp:
+            project = Path(temp)
+            html = project / "index.html"
+            html.write_text("<script>location.replace('https://miguelcoxcaballero.github.io/inhouse-read/')</script>", encoding="utf-8")
+            builder().write_node_project(project, "Inhouse Read", PACKAGE, html)
+            config = json.loads((project / "capacitor.config.json").read_text(encoding="utf-8"))
+        self.assertEqual(config["plugins"]["SystemBars"]["insetsHandling"], "disable")
+        self.assertIn("miguelcoxcaballero.github.io", config["server"]["allowNavigation"])
+
+    def test_page_hooks_are_called_only_for_the_trusted_page(self):
+        for language, source in self.sources.items():
+            with self.subTest(language=language):
+                push = source[source.index("updateSafeTopInset(WindowInsetsCompat") if language == "java"
+                              else source.index("updateSafeTopInset(windowInsets: WindowInsetsCompat"):]
+                push = push[:push.index("evaluateJavascript")]
+                self.assertIn("isTrustedReadPage()", push)
+                setter = source[source.index("setStatusBarAppearance(boolean" if language == "java"
+                                             else "setStatusBarAppearance(lightBackground: Boolean"):]
+                setter = setter[:setter.index("applyStatusBarAppearance()")]
+                self.assertIn("runOnUiThread", setter)
+                self.assertIn("isTrustedReadPage()", setter)
 
     def test_keeps_the_anchors_register_book_imports_rewrites(self):
         anchors = {

@@ -70,6 +70,11 @@ jobs:
               assert b'BookImportBridge' in dex and b'InhouseBookImports' in dex, 'Native ebook import bridge missing'
               assert b'setReadingMode' in dex, 'Native reader display policy missing'
               assert b'setReaderOwnership' in dex, 'Native reader lifecycle ownership missing'
+              assert b'getSafeTopInset' in dex and b'setStatusBarAppearance' in dex, 'Status bar overlay bridge missing'
+              # MainActivity owns the insets: Capacitor must not pad the window by the status bar.
+              import json
+              system_bars = json.loads(apk.read('assets/capacitor.config.json')).get('plugins', {}).get('SystemBars', {})
+              assert system_bars.get('insetsHandling') == 'disable', 'Capacitor SystemBars still pads the window'
               assert b'moveTaskToBack' in dex and b'OnBackPressedCallback' in dex, 'Back at the shelf must keep the app alive'
               assert b'setRendererPriorityPolicy' in dex, 'WebView renderer priority policy missing'
               assert b'ReadAloudBridge' in dex and b'InhouseSpeech' in dex and b'inhouse-tts' in dex, 'Native speech bridge missing'

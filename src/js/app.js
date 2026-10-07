@@ -380,6 +380,9 @@ async function animateReaderPageFromBook({ duration, animateBookToPage, pageSnap
   const measured = page?.getBoundingClientRect()
   const target = measured?.width && measured?.height ? measured : pageSnapshot.displayBounds
   if (!target?.width || !target?.height) throw new Error('La página del lector todavía no está preparada.')
+  // The page takes over the screen from here (reading-display.js may hide the
+  // Android status bar now, when hiding it cannot resize the page).
+  document.body.classList.add('is-reader-page-arriving')
   // Move the SAME textured leaf into its final position. Scaling the whole
   // reader used to stretch its contents and hide the real page behind paper.
   await animateBookToPage({ left:target.left, top:target.top, width:target.width, height:target.height, duration })
@@ -396,6 +399,7 @@ async function openBookRecord(book, ctx) {
     els.readerScreen.classList.remove('is-reader-page-ready')
     els.readerScreen.dataset.openingBook = book.id
     document.body.classList.add('is-opening-reader')
+    document.body.classList.remove('is-reader-page-arriving')
   }
   markOpening()
   const ownsOpening = () => activeOpeningContext === ctx
@@ -404,7 +408,7 @@ async function openBookRecord(book, ctx) {
     activeOpeningContext = null
     els.readerScreen.classList.remove('is-opening-from-book', 'is-reader-page-ready')
     delete els.readerScreen.dataset.openingBook
-    document.body.classList.remove('is-opening-reader')
+    document.body.classList.remove('is-opening-reader', 'is-reader-page-arriving')
   }
   const cancelOpening = () => {
     if (!ownsOpening()) return
@@ -1218,6 +1222,9 @@ els.readerBack.addEventListener('click', async () => {
   const handoff = () => {
     if (handedOff) return
     handedOff = true
+    // The 3D book now carries the page back (reading-display.js may show the
+    // Android status bar again as the zoom-out starts).
+    document.body.classList.add('is-reader-page-leaving')
     if (stillPage) {
       stillFade = stillPage.animate([{ opacity:1 },{ opacity:0 }], {
         duration:matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 220, fill:'both'
@@ -1294,7 +1301,7 @@ els.readerBack.addEventListener('click', async () => {
   } finally {
     shelf?.setReturningBook?.(null)
     stillFade?.cancel(); stillPage?.remove()
-    document.body.classList.remove('is-closing-reader')
+    document.body.classList.remove('is-closing-reader', 'is-reader-page-leaving')
     closingReader = false
   }
 })
