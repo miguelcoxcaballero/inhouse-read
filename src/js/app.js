@@ -89,6 +89,10 @@ let readerPreparationQueue = Promise.resolve()
 // shelf (see prepared-page.js and the 'Página preparada' block below).
 const preparedPages = createPreparedPageCache()
 let pageGate = null
+// The page Back closes the book on, copied while the reader is idle (see the
+// 'Página de vuelta' block below).
+const returnPages = createPreparedPageCache()
+let returnPageTimer = 0
 const coverUpgrades = new Map()
 const progressWrites = createReadingProgressQueue(library, {
   onSaved: (record, bookId) => { if (record?.driveFileId && hasDriveSession()) cloudSync.scheduleProgress(bookId) }
@@ -794,6 +798,7 @@ function releasePageGate(reason, bookId) {
 function supersedePreparation(reason) {
   preparationGeneration++
   preparedPages.invalidate(reason)
+  invalidateReturnPage(reason)
   releasePageGate(reason)
 }
 
@@ -862,24 +867,28 @@ async function openingPageSnapshot(bookId, record) {
 }
 
 // A resized window or a rotated phone changes the page's pixels and layout.
-globalThis.addEventListener('resize', () => preparedPages.invalidate('resize'))
+globalThis.addEventListener('resize', () => { preparedPages.invalidate('resize'); scheduleReturnPage('resize') })
 // Settings can change while a lifted book still owns the hidden reader.
 document.addEventListener('change', event => {
-  if (event.target.closest?.('.reading-panel [data-pref]')) preparedPages.invalidate('preferences')
+  if (event.target.closest?.('.reading-panel [data-pref]')) {
+    preparedPages.invalidate('preferences')
+    scheduleReturnPage('preferences')
+  }
 })
 document.addEventListener('click', event => {
   if (event.target.closest?.('.reading-panel [data-theme], .reading-panel [data-size-step], .reading-panel [data-reset]')) {
     preparedPages.invalidate('preferences')
+    scheduleReturnPage('preferences')
   }
 })
-new MutationObserver(() => preparedPages.invalidate('theme')).observe(document.documentElement,
+new MutationObserver(() => { preparedPages.invalidate('theme'); scheduleReturnPage('theme') }).observe(document.documentElement,
   { attributes:true, attributeFilter:['data-theme'] })
 if (typeof ResizeObserver === 'function') {
   let viewportBox = null
   new ResizeObserver(() => {
     const box = els.readerViewport.getBoundingClientRect()
     const key = `${box.width}x${box.height}`
-    if (viewportBox !== null && key !== viewportBox) preparedPages.invalidate('viewport')
+    if (viewportBox !== null && key !== viewportBox) { preparedPages.invalidate('viewport'); scheduleReturnPage('viewport') }
     viewportBox = key
   }).observe(els.readerViewport)
 }
@@ -887,6 +896,60 @@ if (typeof ResizeObserver === 'function') {
 async function revealPreparedReader() {
   showScreen('reader')
   els.readerScreen.classList.remove('is-preparing')
+}
+
+// ---- Página de vuelta ----
+// Back must move at the tap. The page it closes on is copied once the reader
+// has been still for a moment (after a turn, a theme, size or font change)
+// and in idle time, and its textures go to the parked 3D book in separate
+// idle slices. Back reuses that copy only while everything it depends on
+// still holds (same key as the opening page); otherwise it copies it then.
+const RETURN_PAGE_SETTLE = 600
+const RETURN_PAGE_RETRY = 1200
+
+const returnPageKey = bookId => pageKeyFor(bookId, null)
+
+/** Whether the page on screen is a settled reading page right now. */
+function returnPageSettled(bookId) {
+  return Boolean(bookId) && bookId === currentBookId && !closingReader && !document.hidden &&
+    !els.readerScreen.hidden && !els.readerScreen.classList.contains('is-preparing') &&
+    !els.readerScreen.classList.contains('is-opening-from-book') &&
+    readingExperience.voice?.state === 'stopped'
+}
+
+function invalidateReturnPage(reason) {
+  clearTimeout(returnPageTimer)
+  returnPageTimer = 0
+  returnPages.invalidate(reason)
+}
+
+function scheduleReturnPage(reason = 'changed', delay = RETURN_PAGE_SETTLE) {
+  invalidateReturnPage(reason)
+  if (!currentBookId || closingReader) return
+  returnPageTimer = setTimeout(() => { returnPageTimer = 0; void prepareReturnPage() }, delay)
+}
+
+async function prepareReturnPage() {
+  const bookId = currentBookId
+  // An opening flight, a playing voice or a hidden page: look again later.
+  if (!returnPageSettled(bookId)) {
+    if (bookId && !closingReader) returnPageTimer = setTimeout(() => { returnPageTimer = 0; void prepareReturnPage() }, RETURN_PAGE_RETRY)
+    return
+  }
+  await idleSlice()
+  if (!returnPageSettled(bookId)) return scheduleReturnPage('busy', RETURN_PAGE_RETRY)
+  const ticket = returnPages.begin(bookId)
+  const key = returnPageKey(bookId)
+  try {
+    const snapshot = await reader.getPageSnapshot({ reuseSettledLayout:true })
+    if (!snapshot || !returnPages.isCurrent(ticket) || !returnPageSettled(bookId)) return
+    if (pageKeyMismatch(returnPageKey(bookId), key)) return
+    if (!returnPages.store(ticket, key, snapshot)) return
+    await shelf?.prepareReturnPage?.(bookId, snapshot, idleSlice)
+  } catch (error) {
+    // Back copies the page itself when nothing usable was prepared.
+    console.warn('No se pudo preparar la página de vuelta:', error)
+  }
 }
 
 async function handleCoverAction(action, book, button) {
@@ -1176,6 +1239,7 @@ let resumeVoiceAfterTurn = false
 function onReaderRelocate({ fraction, cfi, index, textOffset }) {
   els.readerProgressFill.style.width = `${Math.round((fraction ?? 0) * 100)}%`
   readingExperience.relocate()
+  scheduleReturnPage('relocated')
   if (resumeVoiceAfterTurn) {
     resumeVoiceAfterTurn = false
     if (readingExperience.voice.state === 'stopped') void readingExperience.voice.play()
@@ -1188,24 +1252,34 @@ function onReaderRelocate({ fraction, cfi, index, textOffset }) {
     .catch(error => console.warn('No se pudo guardar el progreso:', error))
 }
 
+// Back first fades the reader's own controls (as focus mode does, see
+// reading.css); the page leaves once they are gone. Everything that has to
+// happen before the book can move runs under that fade.
+const READER_CHROME_FADE = 130
+
 els.readerBack.addEventListener('click', async () => {
   if (closingReader || !currentBookId) return
   closingReader = true
-  document.body.classList.add('is-closing-reader')
   const bookId = currentBookId
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches
+  const chromeShown = !document.body.classList.contains('is-reader-focus')
+  document.body.classList.add('is-closing-reader')
+  markTiming('close-tap')
+  const chromeFaded = new Promise(resolve => setTimeout(resolve, reducedMotion || !chromeShown ? 0 : READER_CHROME_FADE))
+  // A copy made ahead of time counts only if it is exactly the page on screen.
+  const preparedPage = returnPages.take(returnPageKey(bookId))
+  invalidateReturnPage('closing')
   // The stored cover remains valid. Stop optional HD work before the current
   // page snapshot and return animation need the reader's rendering resources.
   coverUpgrades.get(bookId)?.controller.abort()
-  let stillPage = null, stillFade = null, handedOff = false
-  const handoff = () => {
-    if (handedOff) return
-    handedOff = true
-    if (stillPage) {
-      stillFade = stillPage.animate([{ opacity:1 },{ opacity:0 }], {
-        duration:matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 220, fill:'both'
-      })
-      stillFade.finished.then(() => stillPage?.remove()).catch(() => {})
-    }
+  // The still page is the reader without its controls. The 3D book takes
+  // over on identical pixels, so it simply goes; only a close without a
+  // book to fly back fades it out over the shelf.
+  let stillPage = null, stillFade = null
+  const handoff = () => { stillPage?.remove(); stillPage = null }
+  const fadeStillPage = () => {
+    stillFade = stillPage?.animate([{ opacity:1 },{ opacity:0 }], { duration:reducedMotion ? 1 : 220, fill:'both' }) || null
+    return stillFade?.finished.catch(() => {})
   }
   try {
     if (typeof readingExperience.closeVoice === 'function') readingExperience.closeVoice()
@@ -1213,10 +1287,11 @@ els.readerBack.addEventListener('click', async () => {
     readingExperience.panel.close()
     // Copy the CURRENT page before destroying the reader. Keep it on screen
     // until the textured 3D leaf has rendered at exactly the same bounds.
-    const pageSnapshot = await reader.getPageSnapshot({ reuseSettledLayout:true }).catch(error => {
+    const pageSnapshot = preparedPage || await reader.getPageSnapshot({ reuseSettledLayout:true }).catch(error => {
       console.warn('No se pudo preparar la página de cierre:', error)
       return null
     })
+    markTiming(preparedPage ? 'close-page-reused' : 'close-page-copied')
     await progressWrites.get(bookId)?.catch(() => {})
     const position = persistablePosition(pageSnapshot?.location)
     if (position) {
@@ -1224,20 +1299,29 @@ els.readerBack.addEventListener('click', async () => {
       if (hasDriveSession()) cloudSync.scheduleProgress(bookId)
     }
     const book = await library.get(bookId)
+    let paper = null
     if (pageSnapshot?.source && pageSnapshot.displayBounds?.width) {
+      // Paper colour plus the PDF desk tone (a translucent image layer) and
+      // the PDF sheet's edge shadow: the surface the book takes over on.
+      const screenStyle = getComputedStyle(els.readerScreen)
+      const sheet = pageSnapshot.sourceType === 'pdf-canvas'
+        ? els.readerScreen.querySelector('.pdf-page-wrap:not([hidden])') : null
+      paper = { color:screenStyle.backgroundColor, image:screenStyle.backgroundImage,
+        shadow:sheet ? getComputedStyle(sheet).boxShadow : 'none' }
       stillPage = document.createElement('div')
       stillPage.className = 'ihr-reader-return-page'
       stillPage.setAttribute('aria-hidden','true')
-      // Paper colour plus the PDF desk tone (a translucent image layer).
-      const screenStyle = getComputedStyle(els.readerScreen)
-      stillPage.style.backgroundColor = screenStyle.backgroundColor
-      stillPage.style.backgroundImage = screenStyle.backgroundImage
+      stillPage.style.backgroundColor = paper.color
+      stillPage.style.backgroundImage = paper.image
       const image = document.createElement('canvas'), bounds = pageSnapshot.displayBounds
       image.width = pageSnapshot.source.width; image.height = pageSnapshot.source.height
       image.getContext('2d').drawImage(pageSnapshot.source,0,0)
       image.style.cssText = `position:absolute;left:${bounds.left}px;top:${bounds.top}px;width:${bounds.width}px;height:${bounds.height}px`
-      stillPage.append(image); document.body.append(stillPage)
+      if (paper.shadow !== 'none') image.style.boxShadow = paper.shadow
+      stillPage.append(image)
     }
+    await chromeFaded
+    if (stillPage) document.body.append(stillPage)
     supersedePreparation('reader-closed')
     requestedPreparationId = null
     activePreparedBookId = null
@@ -1261,13 +1345,12 @@ els.readerBack.addEventListener('click', async () => {
     if (!shelf?.hasReaderOrigin(bookId) || !geometryReady) await refreshShelf({ immediate:true })
     // The overlay masks shelf layout and cover decoding until the same page
     // is ready on the 3D mesh. Drive sync continues independently of the flight.
-    if (geometryReady) await shelf?.returnToShelf(bookId, { pageSnapshot, book, onPageReady:handoff })
+    if (geometryReady) await shelf?.returnToShelf(bookId, { pageSnapshot, book, onPageReady:handoff, paper })
     else {
       // Never invent a physical volume while a long original is still being
       // measured. Close promptly, retain its accessible preparation row, and
       // let the final book appear after the detached job commits.
-      handoff()
-      await stillFade?.finished.catch(() => {})
+      await fadeStillPage()
     }
   } catch (error) {
     console.warn('No se pudo devolver el libro a la estantería:', error)

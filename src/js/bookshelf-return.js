@@ -43,6 +43,8 @@ export function createBookReturnCache() {
       if (!signature || !view) { view?.dispose(); return false; }
       held = { signature,view,compatibility }; return true;
     },
+    /** The parked view, still owned by the cache (for idle preparation only). */
+    peek: () => (held && !held.released ? held.view : null),
     take(signature) {
       const previous = held; held = null;
       if (previous && signature && previous.signature === signature) return previous.view;

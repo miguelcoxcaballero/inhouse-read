@@ -238,13 +238,17 @@ async function observeClosing(page, expected) {
         if (expected.locator && book.dataset.pageLocator !== JSON.stringify(expected.locator))
           state.failures.push({type:'wrong-location',phase,locator:book.dataset.pageLocator});
         if (phase === 'bookmark' && opened < .999) state.failures.push({type:'cover-closed-before-bookmark',opened});
-        if (phase === 'bookmark') {
+        // Closing is one overlapped movement (web 1.7.98): the ribbon starts while
+        // the zoom lands and the board starts as the ribbon settles. The whole
+        // open book is in view by the time the ribbon is half way down ...
+        if (phase === 'bookmark' && withdraw < .5) {
           const bounds=JSON.parse(book.dataset.boardBounds);
           if (bounds.left < -1 || bounds.top < -1 || bounds.left+bounds.width > innerWidth+1 || bounds.top+bounds.height > innerHeight+1)
             state.failures.push({type:'open-book-cropped',bounds});
         }
-        if ((phase === 'closing' || phase === 'returning') && withdraw > .001)
-          state.failures.push({type:'bookmark-not-inserted',phase,withdraw});
+        // ... and the ribbon lies on the page before the board passes upright.
+        if ((phase === 'returning' || phase === 'closing' && opened < .5) && withdraw > .001)
+          state.failures.push({type:'bookmark-not-inserted',phase,withdraw,opened});
         if (phase === 'returning' && opened > .001) state.failures.push({type:'returned-open',opened});
         context.clearRect(0,0,100,216); context.drawImage(book,0,0,100,216);
         const pixels=context.getImageData(0,0,100,216).data;
@@ -272,9 +276,10 @@ async function assertClosing(page,testInfo) {
   expect(result.failures).toEqual([]);
   expect(result.phases.filter(phase=>phase !== 'preparing')).toEqual(['zooming','bookmark','closing','returning','inserting']);
   const marking=result.frames.filter(frame=>frame.phase === 'bookmark');
-  expect(marking.some(frame=>frame.withdraw > .8)).toBe(true);
-  expect(marking.some(frame=>frame.withdraw < .2)).toBe(true);
   const closing=result.frames.filter(frame=>frame.phase === 'closing');
+  expect(marking.some(frame=>frame.withdraw > .8)).toBe(true);
+  // The ribbon settles while the board starts to rise: down before it is half shut.
+  expect([...marking,...closing].some(frame=>frame.withdraw < .2 && frame.opened > .5)).toBe(true);
   expect(closing.some(frame=>frame.opened > .8)).toBe(true);
   expect(closing.some(frame=>frame.opened < .2)).toBe(true);
   await expect(page.locator('.ihr-reader-return-page')).toHaveCount(0);

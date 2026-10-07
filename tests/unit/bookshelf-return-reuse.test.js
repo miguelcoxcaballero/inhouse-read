@@ -86,7 +86,11 @@ describe('reader close reuses its exact lifted book',() => {
     expect(original.setPageSnapshot).toHaveBeenLastCalledWith(closingPage);
     expect(original.alignToPage).toHaveBeenCalledExactlyOnceWith(closingPage.displayBounds);
     expect(observations.every(value => value.canvas === original.canvas && value.reuse === 'reused')).toBe(true);
-    expect(original.animateCoverClose).toHaveBeenCalledOnce();
+    // The ribbon and the board close inside the one overlapped closing movement.
+    const closing = original.animate.mock.calls.find(([,options]) => options?.tracks)?.[1];
+    expect(closing.tracks.bookmarkWithdraw.at(-1).value).toBe(0);
+    expect(closing.tracks.coverOpen.at(-1).value).toBe(0);
+    expect(original.animateCoverClose).not.toHaveBeenCalled();
     expect(original.dispose).toHaveBeenCalledOnce();
     expect(shelf.hasReaderOrigin(book.id)).toBe(false);
     expect(document.querySelector('.ihr-flyout')).toBeNull();

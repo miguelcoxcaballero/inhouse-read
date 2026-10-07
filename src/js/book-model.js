@@ -2228,27 +2228,40 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   function setBookmarkWithdraw(amount) {
     if (current) draw({ ...current, bookmarkWithdraw:amount });
   }
-  function animateMotion(frames, { duration, onFrame }) {
+  // `tracks` plays several overlapping movements on this one clock (see
+  // bookTimeline); keys without a track keep the presented pose. `windows`
+  // splits its framebuffer reservation where the book's size changes a lot,
+  // `onPose(pose, t)` follows every presented frame and `from` resumes a
+  // timeline at that progress.
+  function animateMotion(frames, { duration, onFrame, tracks, windows, onPose, from = 0 }) {
     cancel();
-    if (current) frames = [{ ...frames[0], transform: current }, ...frames.slice(1)];
+    const origin = { ...(current || frames?.[0]?.transform) };
+    const timeline = tracks ? bookTimeline(tracks) : null;
+    if (!timeline && current) frames = [{ ...frames[0], transform: current }, ...frames.slice(1)];
+    const poseAt = t => timeline ? { ...origin, ...timeline(t) } : sampleBookMotion(frames, t);
+    const windowEnds = [...new Set([...(windows || []).filter(end => end > 0 && end < 1), 1])].sort((a, b) => a - b);
+    let capacities = null;
     if (duration > 0 && !onFrame && directEnabled && compactReturnFrame && adaptiveNativeFrame &&
         Number.isInteger(pixelRatio) && Number.isInteger(viewportWidth) && Number.isInteger(viewportHeight)) {
-      const capacity = { width:0,height:0 };
+      capacities = windowEnds.map(() => ({ width:0,height:0 }));
       try {
         // These are geometry-only probes: no draw, GPU allocation, snapshot or
         // animation-clock advancement. Actual frames retain the original sampler.
-        for (let i=0;i<=16;i++) {
-          const pose=sampleBookMotion(frames,i/16); positionModel(pose);
-          const frame=returnFrame(pose,true);
-          capacity.width=Math.max(capacity.width,frame.width);
-          capacity.height=Math.max(capacity.height,frame.height);
-        }
-        motionFrameCapacity=capacity;
+        windowEnds.forEach((end, w) => {
+          const begin = w ? windowEnds[w - 1] : 0, capacity = capacities[w];
+          for (let i=0;i<=16;i++) {
+            const pose=poseAt(begin + (end - begin) * i / 16); positionModel(pose);
+            const frame=returnFrame(pose,true);
+            capacity.width=Math.max(capacity.width,frame.width);
+            capacity.height=Math.max(capacity.height,frame.height);
+          }
+        });
+        motionFrameCapacity=capacities[0];
       } finally { if (current) positionModel(current); }
     }
     let raf, resolve; const finished = new Promise(r => resolve = r);
     cancel = () => { cancelAnimationFrame(raf); motionFrameCapacity=null; resolve(); };
-    let lastFrame = performance.now(), elapsed = 0;
+    let lastFrame = performance.now(), elapsed = timeline ? Math.max(0, Math.min(1, from)) * duration : 0;
     const animation = { finished, cancel, lastFrameTime:lastFrame };
     // Real time, so a slow device finishes each phase on schedule instead of
     // stretching it frame by frame. A stalled frame on a phone GPU may absorb
@@ -2265,8 +2278,11 @@ export function bookView(host, book, style, { width, height, thickness, viewport
       const now = performance.now();
       elapsed += Math.min(started ? maxStep : 48, Math.max(0, now - lastFrame)); lastFrame = now; started = true;
       const t = duration > 0 ? Math.min(1, elapsed / duration) : 1;
-      const pose = sampleBookMotion(frames, t);
+      // Each window keeps its own reservation: one resize where it changes.
+      if (capacities) motionFrameCapacity = capacities[windowEnds.findIndex(end => t <= end)] ?? capacities.at(-1);
+      const pose = poseAt(t);
       if (!onFrame?.(pose)) draw(pose);
+      onPose?.(pose, t);
       animation.lastFrameTime = performance.now();
       if (t < 1) raf = requestAnimationFrame(tick); else { motionFrameCapacity=null; resolve(); }
     };
@@ -2290,6 +2306,34 @@ export function bookView(host, book, style, { width, height, thickness, viewport
       if (!removeCanvas) canvas.style.opacity=''; live=false; disposed = true;
       pendingModel?.userData.dispose(); model.userData.dispose(); if (removeCanvas) canvas.remove(); } };
 }
+
+/** Overlapping movements on one clock. `tracks` gives each pose key its own
+ * waypoints, [{ at, value }] with `at` from 0 to 1 of the whole motion, and
+ * each key follows them with sampleBookMotion's monotone Hermite: a key at
+ * rest eases in and out, and a key whose next waypoint continues its
+ * direction moves through it without stopping. One movement can thus begin
+ * while another settles, instead of each waiting for the last to stop. */
+export function bookTimeline(tracks) {
+  const keys = Object.entries(tracks || {}).map(([key, track]) => {
+    const points = [];
+    for (const point of [...(track || [])].sort((a, b) => a.at - b.at)) {
+      if (!Number.isFinite(point?.at) || !Number.isFinite(point?.value)) continue;
+      const at = Math.max(0, Math.min(1, point.at));
+      if (points.length && at <= points.at(-1).at) points.pop(); // the later waypoint wins
+      points.push({ at, value:point.value });
+    }
+    if (!points.length) return null;
+    if (points[0].at > 0) points.unshift({ at:0, value:points[0].value });
+    if (points.at(-1).at < 1) points.push({ at:1, value:points.at(-1).value });
+    return [key, points.map(point => ({ offset:point.at, transform:{ [key]:point.value } }))];
+  }).filter(Boolean);
+  return progress => {
+    const pose = {};
+    for (const [key, frames] of keys) pose[key] = sampleBookMotion(frames, progress)[key];
+    return pose;
+  };
+}
+export const sampleBookTimeline = (tracks, progress) => bookTimeline(tracks)(progress);
 
 // Monotone Hermite interpolation: continuous velocity, no unwanted overshoot
 // when the book slows down, changes direction or returns to its shelf.

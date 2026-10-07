@@ -120,7 +120,7 @@ import { normalizeShelfPlant, resolveCatalogPlant } from './plant-records.js';
 import { shelfScale, plantDimensions, bookSpineOptions, minimumBookCellWidth } from './plant-dimensions.js';
 import { getCatalogLamp, normalizeShelfLamp } from './lamp-catalog-data.js';
 import { lampCatalogIllustration } from './lamp-illustration.js';
-import { readerBookTiming } from './reader-book-timing.js';
+import { RETURN_APPROACH, readerBookClosingSchedule, readerBookTiming } from './reader-book-timing.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
@@ -315,6 +315,60 @@ async function waitForMotion(motion, duration) {
     if (!completed) motion.cancel?.();
     return completed;
   } finally { clearTimeout(watchdog); }
+}
+
+// The reader's surface (paper colour, PDF desk tone) as a closing layer.
+function returnPaper(className, paper) {
+  const node = el('div', { class:className, 'aria-hidden':'true' });
+  node.style.backgroundColor = paper.color;
+  if (paper.image && paper.image !== 'none') node.style.backgroundImage = paper.image;
+  return node;
+}
+
+// Paper everywhere except the page: four bands around a frame that sits on
+// the page (with the PDF sheet's own edge shadow). Over the book it hides the
+// boards and leaves just outside the page, so the 3D page takes over from the
+// reader without a line appearing.
+function returnMatte(bounds, paper) {
+  const frame = el('div', { class:'ihr-flyout__matte-frame' });
+  frame.style.cssText = `left:${bounds.left}px;top:${bounds.top}px;width:${bounds.width}px;height:${bounds.height}px`;
+  for (const side of ['top', 'right', 'bottom', 'left']) {
+    frame.append(returnPaper(`ihr-flyout__matte-band ihr-flyout__matte-band--${side}`, paper));
+  }
+  if (paper.shadow && paper.shadow !== 'none') {
+    const edge = el('div', { class:'ihr-flyout__matte-edge' });
+    edge.style.boxShadow = paper.shadow;
+    frame.append(edge);
+  }
+  return { node:el('div', { class:'ihr-flyout__matte', 'aria-hidden':'true' }, [frame]), frame };
+}
+
+// What surrounds the closing book, on the book's own clock: the matte and
+// then the reader's paper fade while the page moves away, revealing the
+// blurred room, which comes into focus as the book flies back to it.
+function closingSurfaces({ scrim, paperLayer, matte, schedule, motionEnd }) {
+  const zoom = schedule.zoom.end, flight = schedule.approach.start;
+  const ease = k => { const t = Math.max(0, Math.min(1, k)); return t * t * (3 - 2 * t); };
+  const fadeOut = (ms, from, to) => to > from ? 1 - ease((ms - from) / (to - from)) : ms >= to ? 0 : 1;
+  const shown = new Map();
+  const show = (node, value) => {
+    const opacity = Math.round(value * 1000) / 1000;
+    if (!node || shown.get(node) === opacity) return;
+    shown.set(node, opacity); node.style.opacity = String(opacity);
+    // A faded layer leaves the compositor (the blur behind it included).
+    node.style.visibility = opacity ? '' : 'hidden';
+  };
+  return {
+    follow(ms, page) {
+      const veil = fadeOut(ms, 0, zoom * .48);
+      show(matte?.node, veil);
+      if (matte && page && veil > 0) matte.frame.style.transform = `translate(${page.x}px,${page.y}px) scale(${page.scale})`;
+      show(paperLayer, fadeOut(ms, zoom * .1, zoom * .9));
+      // Without the reader's paper the blurred room fades in with the zoom.
+      const room = paperLayer ? 1 : 1 - fadeOut(ms, 0, Math.min(320, zoom));
+      show(scrim, ms < flight ? room : room * fadeOut(ms, flight, motionEnd));
+    }
+  };
 }
 
 /** Admite `renderBookshelf(c, {books, ...})` y `renderBookshelf(c, books, {...})`. */
@@ -3805,9 +3859,12 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     return [stock, canvas];
   }
 
-  /** Cierra el tomo 3D desde el lector y lo devuelve a su hueco. */
-  async function returnToShelf(bookId, { pageSnapshot, book:latestBook, onPageReady } = {}) {
+  /** Cierra el tomo 3D desde el lector y lo devuelve a su hueco. `paper`
+   * ({ color, image, shadow }) is the reader's own surface around the page:
+   * the book takes over on it, so the first frame is the reader's. */
+  async function returnToShelf(bookId, { pageSnapshot, book:latestBook, onPageReady, paper } = {}) {
     const durations = readerBookTiming(prefersReducedMotion()).closing;
+    const schedule = readerBookClosingSchedule(prefersReducedMotion());
     state.shelfScene?.setModalBackgroundDeferred?.(null, { resumeHidden:true });
     const item = state.itemsById.get(String(bookId));
     const previous = state.lastOpened?.book.id === bookId ? state.lastOpened
@@ -3862,8 +3919,15 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const bookNode = el('div', { class:'ihr-flyout__book', style:
       `left:${(vw-coverW)/2}px;top:${centerY-coverH/2}px;width:${coverW}px;height:${coverH}px` });
     stage.append(bookNode);
-    const scrim = el('div', { class:'ihr-flyout__scrim', style:'opacity:0' });
-    const flyout = el('div', { class:'ihr-flyout ihr-flyout--return', 'aria-hidden':'true', style:'visibility:hidden' }, [scrim, stage]);
+    // The reader's paper under the book and a matte over it, open exactly
+    // where the page is: the first frame is the reader's page, the board and
+    // the room behind appear as it moves away, never by a cut.
+    const withPage = Boolean(pageSnapshot?.source && pageSnapshot.displayBounds?.width && paper?.color);
+    const paperLayer = withPage ? returnPaper('ihr-flyout__return-paper', paper) : null;
+    const matte = withPage ? returnMatte(pageSnapshot.displayBounds, paper) : null;
+    const scrim = el('div', { class:'ihr-flyout__scrim', style:`opacity:${paperLayer ? 1 : 0}` });
+    const flyout = el('div', { class:'ihr-flyout ihr-flyout--return', 'aria-hidden':'true', style:'visibility:hidden' },
+      [scrim, paperLayer, stage, matte?.node]);
     flyout.dataset.returnPhase = 'preparing';
     const coverUrl = resolveCoverImmediately(book);
     if (state.destroyed || state.lastOpened !== previous || window.innerWidth !== vw || window.innerHeight !== vh) return false;
@@ -3902,13 +3966,15 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     state.shelfScene?.updateEntry?.(spine, book, previous.style, coverUrl);
     state.shelfScene?.flush();
     const duration = durations.flight;
-    const approachDuration = view && dockingPose ? duration * .66 : duration;
-    const startFlight = () => view ? view.animate([
-      { transform:pose(0,0,1,0,0), offset:0 },
+    const approachDuration = view && dockingPose ? duration * RETURN_APPROACH : duration;
+    const closed = { ...pose(0,0,1,0,0), roll:0 };
+    const flightFrames = [
+      { transform:closed, offset:0 },
       { transform:pose(-dx*.12,-lift*.5,.94,12,3), offset:.22 },
       { transform:pose(end.x*.38,end.y*.38-lift,startScale+(1-startScale)*.38,end.angle*.7,4), offset:.68 },
       { transform:end, offset:1 }
-    ], { duration:approachDuration }) : animate(bookNode, [
+    ];
+    const startFlight = () => view ? view.animate(flightFrames, { duration:approachDuration }) : animate(bookNode, [
       { opacity:1, transform:'translate(0,0) scale(1)' },
       { opacity:.85, transform:`translate(${dx}px, ${dy}px) scale(${startScale})` }
     ], { duration, easing:EASE, fill:'both' });
@@ -3937,41 +4003,79 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     } };
     state.returnMotion = motion;
     const active = () => state.returnMotion === motion && !state.destroyed;
+    // Shelf paint, layout and the first aligned frame all happen before
+    // anything moves; the motion itself only draws.
+    const reveal = () => {
+      state.shelfScene?.setPaintHeld?.(false); state.shelfScene?.flush();
+      flyout.style.visibility = ''; onPageReady?.();
+    };
+    // The page leaves, the ribbon lies down, the board shuts and the book
+    // sets off as one movement: each step starts while the last one settles.
+    const motionEnd = schedule.approach.start + approachDuration;
+    const phaseAt = ms => ms >= schedule.cover.end ? 'returning' : ms >= schedule.cover.start ? 'closing'
+      : ms >= schedule.bookmark.start ? 'bookmark' : 'zooming';
+    const setPhase = phase => { if (flyout.dataset.returnPhase !== phase) flyout.dataset.returnPhase = phase; };
+    const surfaces = closingSurfaces({ scrim, paperLayer, matte, schedule, motionEnd });
     let releaseFrame;
     try {
       if (view) await view.ready;
       releaseFrame = view?.holdNativeMotionFrame?.();
       if (!active()) return false;
       if (pageSnapshot?.source && view) { view.deferDrawing?.(); view.setCompactReturnFrame?.(true); }
-      if (pageSnapshot?.source && view && view.setPageSnapshot(pageSnapshot)) {
+      // A page parked on this book while the reader was idle keeps its uploaded textures.
+      const parked = Boolean(pageSnapshot?.source && view?.hasPageSnapshot?.(pageSnapshot));
+      if (parked) markTiming('close-page-parked');
+      if (pageSnapshot?.source && view && (parked || view.setPageSnapshot(pageSnapshot))) {
         view.draw({ ...readingPose, bookmarkWithdraw:1 },{redraw:false});
         if (!view.alignToPage(pageSnapshot.displayBounds)) throw new Error('No se pudo alinear la página al cerrar el libro.');
-        state.shelfScene?.setPaintHeld?.(false); state.shelfScene?.flush();
-        flyout.style.visibility = '';
-        onPageReady?.();
-        flyout.dataset.returnPhase = 'zooming';
-        animate(scrim, [{ opacity:0 }, { opacity:1 }], { duration:prefersReducedMotion() ? 1 : 320, fill:'both' });
+        reveal();
+        setPhase('zooming');
+        markTiming('close-motion');
+        const start = view.getPose(), at = ms => ms / motionEnd;
         // Back to white paper on the zoom's own clock: the page leaves the reader in
-        // its theme (as the still image shows it) and the book closes on white paper.
-        animation = view.animate([{ transform:view.getPose() }, { transform:{ ...readingPose, bookmarkWithdraw:1, ...(pageSnapshot.paper ? { pageTheme:0 } : {}) } }],
-          { duration:durations.zoom });
-        await waitForMotion(animation, durations.zoom);
+        // its theme (as the still image shows it) and the ribbon goes in on white paper.
+        const white = pageSnapshot.paper ? { pageTheme:0 } : {};
+        const settled = { ...end, coverOpen:0, bookmarkWithdraw:0, ...white };
+        const waypoints = [[0,start],[schedule.zoom.end,readingPose],[schedule.approach.start,closed],
+          ...flightFrames.slice(1).map(frame => [schedule.approach.start + frame.offset * approachDuration, frame.transform])];
+        const tracks = Object.fromEntries(['x','y','scale','angle','pitch','roll'].map(key =>
+          [key, waypoints.map(([ms, value]) => ({ at:at(ms), value:value[key] ?? 0 }))]));
+        tracks.coverOpen = [{ at:0, value:1 }, { at:at(schedule.cover.start), value:1 }, { at:at(schedule.cover.end), value:0 }];
+        tracks.bookmarkWithdraw = [{ at:0, value:1 }, { at:at(schedule.bookmark.start), value:1 }, { at:at(schedule.bookmark.end), value:0 }];
+        if (pageSnapshot.paper) tracks.pageTheme = [{ at:0, value:start.pageTheme ?? 1 }, { at:at(schedule.bookmark.start), value:0 }];
+        // The matte follows the flat page exactly (an orthographic, unrotated
+        // leaf: only its centre and scale change) until it has faded out.
+        const page = pageSnapshot.displayBounds;
+        const pageX = page.left + page.width / 2 - centerX - start.x, pageY = page.top + page.height / 2 - centerY - start.y;
+        let reached = 0;
+        const play = from => view.animate([{ transform:start }, { transform:settled }], {
+          duration:motionEnd, tracks, from,
+          windows:[at(schedule.zoom.end), at(schedule.approach.start)],
+          onPose(next, t) {
+            const ms = t * motionEnd;
+            reached = t;
+            setPhase(phaseAt(ms));
+            // The page-sized framebuffer is no longer needed once the page has landed in the book.
+            if (ms >= schedule.zoom.end && releaseFrame) { releaseFrame(); releaseFrame = null; }
+            const scale = next.scale / start.scale;
+            surfaces.follow(ms, { x:next.x + scale * pageX - start.x - pageX, y:next.y + scale * pageY - start.y - pageY, scale });
+          }
+        });
+        // One long movement must not be cut short by one slow frame: after a
+        // watchdog release it resumes where it was drawn last, and gives up
+        // only when twice in a row no frame arrives (a suspended surface).
+        for (let from = 0, starved = 0; ;) {
+          animation = play(from);
+          if (await waitForMotion(animation, motionEnd * (1 - from)) || !active()) break;
+          starved = reached > from ? 0 : starved + 1;
+          if (starved > 1) break;
+          from = reached;
+        }
         if (!active()) return false;
-        // The zoom's large framebuffer no longer needs to survive the ribbon,
-        // hinge and flight. Their existing per-motion reservations retain the
-        // exact projected book at the same DPR without keeping empty pixels.
         releaseFrame?.(); releaseFrame = null;
-        // White paper from here on, even if a stalled frame let the zoom's watchdog release it early.
-        if (pageSnapshot.paper && view.getPageTheme() > 0) view.setPageTheme(0);
-        flyout.dataset.returnPhase = 'bookmark';
-        animation = view.animateBookmark({ withdraw:0, duration:durations.bookmark });
-        await waitForMotion(animation, durations.bookmark);
-        if (!active()) return false;
-        flyout.dataset.returnPhase = 'closing';
-        animation = view.animateCoverClose({ duration:durations.cover,
-          targetPose:{ x:0,y:0,scale:1,angle:0,pitch:0,roll:0 } });
-        await waitForMotion(animation, durations.cover);
-        if (!active()) return false;
+        // Whatever ended it, the book leaves closed, marked and on white paper.
+        if (reached < 1) view.draw(settled);
+        setPhase('returning'); surfaces.follow(motionEnd);
       } else if (pageSnapshot?.source && !view) {
         const pages = bookNode.querySelector('.ihr-flyout__fallback-pages');
         const leaf = bookNode.querySelector('.ihr-flyout__fallback-leaf');
@@ -3989,35 +4093,44 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         const x = bounds.left + bounds.width/2 - local.left-local.width/2 + (1-scale)*(local.left+local.width/2-bookBounds.left-bookBounds.width/2);
         const y = bounds.top + bounds.height/2 - local.top-local.height/2 + (1-scale)*(local.top+local.height/2-bookBounds.top-bookBounds.height/2);
         bookNode.style.transform = `translate(${x}px,${y}px) scale(${scale})`;
-        state.shelfScene?.setPaintHeld?.(false); state.shelfScene?.flush();
-        flyout.style.visibility = ''; onPageReady?.();
-        flyout.dataset.returnPhase = 'zooming';
-        animation = animate(bookNode,[{ transform:bookNode.style.transform },{ transform:'translate(0,0) scale(1)' }],
-          { duration:durations.zoom, easing:EASE, fill:'both' });
-        fallbackAnimations.push(animation);
-        if (pageSnapshot.paper?.source) fallbackAnimations.push(animate(image,[{ opacity:1 },{ opacity:0 }],
-          { duration:durations.zoom, easing:EASE, fill:'both' }));
-        await waitForMotion(animation, durations.zoom);
+        const ribbon = el('div', { class:'ihr-flyout__return-ribbon', style:'transform:translateY(-130%)' }); pages.append(ribbon);
+        reveal();
+        setPhase('zooming');
+        // The same overlapped schedule, on the compositor: every element
+        // starts at its offset and the phase markers follow the same clock.
+        const run = (node, frames, from, to, fill = 'both') => {
+          const motion = animate(node, frames, { delay:from, duration:Math.max(1, to - from), easing:EASE, fill });
+          fallbackAnimations.push(motion); return motion;
+        };
+        run(bookNode,[{ transform:bookNode.style.transform },{ transform:'translate(0,0) scale(1)' }],0,schedule.zoom.end);
+        if (pageSnapshot.paper?.source) run(image,[{ opacity:1 },{ opacity:0 }],0,schedule.bookmark.start);
+        run(ribbon,[{ transform:'translateY(-130%)' },{ transform:'translateY(0)' }],schedule.bookmark.start,schedule.bookmark.end);
+        run(leaf,[{ transform:'rotateY(-169deg)' },{ transform:'rotateY(0deg)' }],schedule.cover.start,schedule.cover.end);
+        // The matte's own transform reaches the page's resting place on the zoom's easing.
+        const restX = local.left + local.width/2 - bounds.left - bounds.width/2;
+        const restY = local.top + local.height/2 - bounds.top - bounds.height/2;
+        if (matte) run(matte.frame,[{ transform:'translate(0px,0px) scale(1)' },
+          { transform:`translate(${restX}px,${restY}px) scale(${1/scale})` }],0,schedule.zoom.end);
+        animation = run(bookNode,[{ opacity:1, transform:'translate(0,0) scale(1)' },
+          { opacity:.85, transform:`translate(${dx}px, ${dy}px) scale(${startScale})` }],
+          schedule.approach.start,schedule.approach.start + duration,'forwards');
+        const started = performance.now();
+        const follow = () => {
+          if (!active() || flyout.dataset.returnPhase === 'returning') return;
+          const ms = performance.now() - started;
+          setPhase(phaseAt(ms)); surfaces.follow(ms);
+          requestAnimationFrame(follow);
+        };
+        requestAnimationFrame(follow);
+        await waitForMotion(animation, schedule.approach.start + duration);
         if (!active()) return false;
-        bookNode.style.transform = 'translate(0,0) scale(1)'; animation.cancel?.();
-        flyout.dataset.returnPhase = 'bookmark';
-        const ribbon = el('div', { class:'ihr-flyout__return-ribbon' }); pages.append(ribbon);
-        animation = animate(ribbon,[{ transform:'translateY(-130%)' },{ transform:'translateY(0)' }],
-          { duration:durations.bookmark, fill:'both', easing:EASE });
-        fallbackAnimations.push(animation); await waitForMotion(animation, durations.bookmark);
-        if (!active()) return false;
-        flyout.dataset.returnPhase = 'closing';
-        animation = animate(leaf,[{ transform:'rotateY(-169deg)' },{ transform:'rotateY(0deg)' }],
-          { duration:durations.cover, fill:'both', easing:EASE });
-        fallbackAnimations.push(animation); await waitForMotion(animation, durations.cover);
-        if (!active()) return false;
+        setPhase('returning'); surfaces.follow(motionEnd);
+      } else {
+        reveal();
+        setPhase('returning');
+        animation = startFlight();
+        await waitForMotion(animation, approachDuration);
       }
-      state.shelfScene?.setPaintHeld?.(false); state.shelfScene?.flush();
-      flyout.style.visibility = ''; onPageReady?.();
-      flyout.dataset.returnPhase = 'returning';
-      animate(scrim,[{ opacity:pageSnapshot ? 1 : 0 },{ opacity:0 }],{ duration:approachDuration, fill:'both' });
-      animation = startFlight();
-      await waitForMotion(animation, approachDuration);
       if (state.returnMotion === motion && view && dockingPose && !state.destroyed) {
         flyout.dataset.returnPhase = 'inserting';
         insertion = view.handoffToShelfInsertion?.(nativePresentation => state.shelfScene?.returnBook(spine,
@@ -4084,6 +4197,22 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       const session = state.session;
       if (!session?.warmOpeningPage || session.cancelled || session.book.id !== bookId) return Promise.resolve(false);
       return session.warmOpeningPage(snapshot, idle);
+    },
+
+    /** Parks the reader's current page on the book retained for the return,
+     * uploading its textures in idle slices, so Back only has to move it. */
+    async prepareReturnPage(bookId, snapshot, idle = () => new Promise(resolve => setTimeout(resolve, 0))) {
+      const view = returnViews.peek?.();
+      const current = () => !state.destroyed && !state.returnMotion && returnViews.peek() === view &&
+        state.lastOpened?.book.id === bookId;
+      if (!view?.setPageSnapshot || !view.pageTextures || !snapshot?.source || !current()) return false;
+      if (!view.hasPageSnapshot(snapshot) && !view.setPageSnapshot(snapshot, { redraw:false })) return false;
+      for (const texture of view.pageTextures()) {
+        await idle();
+        if (!current() || !view.hasPageSnapshot(snapshot)) return false;
+        view.uploadPageTexture(texture);
+      }
+      return current() && view.hasPageSnapshot(snapshot);
     },
 
     /** Repliega la portada abierta, si la hay. */

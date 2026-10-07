@@ -213,7 +213,12 @@ body.is-reader-focus .reader-heading, body.is-reader-focus .reader-toolbar > * {
 @media (prefers-reduced-motion:no-preference) {
   .reader-heading { transition:opacity .12s linear; }
   .reader-toolbar > * { transition:opacity .12s linear, background-color .15s var(--ease); }
+  .reading-mini-player, .reader-return { transition:opacity .12s linear; }
 }
+/* Back fades the same controls (and the audio and return bars) the same way;
+   their paper stays, so the page is already alone when the book takes it. */
+body.is-closing-reader .reader-heading, body.is-closing-reader .reader-toolbar > *,
+body.is-closing-reader .reading-mini-player, body.is-closing-reader .reader-return { opacity:0; }
 .reader-viewport:focus { outline:none; }
 
 .reader-heading .icon-btn svg, .reader-toolbar .icon-btn svg { stroke:currentColor; }
