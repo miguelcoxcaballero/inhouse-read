@@ -22,7 +22,14 @@ autor, gesto y ambos regresos PASS;18 PDF y cinco catalogo/plantas/luces PASS.
 Offline:bytes3143, posicion115, colores originales, cinco temas y portada
 800x1600/150310B con workers reales PASS. Dos invocaciones iniciales offline
 no llegaron al navegador por omitir el argumento de artefacto; se conservan.
-CI original37547047713 en comprobacion. Diagnostico independiente del cierre
+CI original37547047713 completa FAIL:11 artefactos originales,526 casos
+unicos/529 intentos, tres retries y cinco intentos fallidos.3512 unitarias
+en288 archivos PASS. Cuatro familias de voces reales y cuatro shards UI
+PASS. UI1 conserva un fallo inicial8s del primer Abrir con mientras muestra
+Abriendo libro; su retry pasa y no se cuenta como aprobacion estricta.
+UI3 conserva ambos regresos nativos30s/8s fallidos tambien al repetir.
+Snapshot002 y ZIPs originales preservados en el directorio de evidencia.
+Diagnostico independiente del cierre
 con SwiftShader:resize del ancho del libro402,6ms; otras dos operaciones
 resize657,3 y410ms. No es una medicion del movil ni garantia de velocidad.
 

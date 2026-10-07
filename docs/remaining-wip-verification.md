@@ -1,16 +1,30 @@
-# Continuacion: web1.7.100 preparada / Android1.1.7 publicado
+# Continuacion: web1.7.101 en verificacion / Android1.1.7 verificado
+
+Abrir con da prioridad al lector y aplaza la sala3D hasta volver a home.
+Se descarta la lectura inicial antigua para recuperar el libro recien
+guardado. Bateria final3.536 unitarias/290 archivos, build y92 Python PASS.
+Ocho regresiones nuevas; las esperas de los E2E originales siguen intactas.
+Diagnostico Android original y publicacion101 pendientes. CI100 conserva
+ambos regresos nativos30s/8s FAIL, incluido un cierre de8915,6ms; faltan
+sus dos ultimos grupos. No se afirma resuelta toda la lentitud ni se
+acreditan FPS/bateria en telefono fisico. [Detalle](performance-1801.md).
+
+# Continuacion: web1.7.100 publicada / Android1.1.7 verificado
 
 1.7.100 evita resetear el framebuffer por una reduccion pequena de ancho;
 conserva proyeccion, DPR y escala CSS.60 pares RGBA exactos contra1.7.99
 PASS;41 pruebas enfocadas y bateria3.528/289, build y92 Python PASS.
-Web real, regresos originales integrados y CI100 pendientes.
+Web real28/28 estrictos, tres recorridos offline y nueve originales locales
+PASS, sin retries. HTTP32/shell96 y descarga nueva del APK/firma/loader PASS.
+CI100 original completa sigue pendiente. No hay medicion del movil fisico.
 Web99 publicada:HTTP32/shell96, titulo/autor, ambos regresos nativos,
 18 PDF, cinco catalogo/plantas/luces y tres offline PASS.27/28 publicos
 estrictos; auditoria walnut0B permaneceFAIL. CI98 completaFAIL en dos
 regresos nativos30s/8s; otros cinco shards y cuatro familias de vocesPASS.
 CI99 conserva tambien una primera importacion Android8s fallida; no se
 ha alterado la espera ni contado el retry como aprobacion. Verificacion
-original completa99 en curso. APK20/firma/loader y mas de6min de audio
+original completa99 FAIL:526 casos/529 intentos, tres retries y cinco
+intentos fallidos; UI1 yUI3. APK20/firma/loader y mas de6min de audio
 bloqueado/23 capitulos en emulador PASS. No se declara resuelta toda
 la lentitud ni se acredita rendimiento/bateria del movil fisico.
 [1.7.99](performance-1799.md), [1.7.100](performance-1800.md).

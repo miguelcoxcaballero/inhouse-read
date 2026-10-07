@@ -20,6 +20,7 @@ import { initAndroidUpdateChecks, offerAvailableAndroidUpdate } from './android-
 import { initContentFreshnessChecks } from './content-freshness.js'
 import { registerOfflineShell } from './offline-shell.js'
 import { initAndroidFileImports } from './android-file-import.js'
+import { createNativeImportShelfGate } from './native-import-shelf-gate.js'
 import { initReadingDisplay } from './reading-display.js'
 import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
 import { normalizeShelfPosition } from './book-colors.js'
@@ -103,6 +104,10 @@ let lengthRefreshTimer = null
 let appDisposed = false
 let deployCheck = null
 const shelfRefreshQueue = createShelfRefreshQueue({ perform:performShelfRefresh })
+const nativeImportShelfGate = createNativeImportShelfGate({
+  isReaderVisible: () => !els.readerScreen.hidden,
+  refresh: () => refreshShelf()
+})
 let driveUploadsInFlight = 0
 const cloudSync = new CloudSync(library, {
   onStatus: setDriveSyncStatus,
@@ -201,7 +206,10 @@ function refreshShelf(options) {
 
 async function performShelfRefresh({ immediate = false } = {}) {
   const firstRecords = takeFirstRecords()
-  if (appDisposed) return
+  // A native import changes the library after the boot snapshot was taken.
+  // Discard that one-shot snapshot even when its room is deferred, so returning
+  // from the reader fetches the newly committed book instead of an empty shelf.
+  if (appDisposed || nativeImportShelfGate.deferRefresh()) return
   // Re-rendering a shelf closes its current 3D cover. Defer background
   // changes until the reader transition or close has finished.
   if (document.querySelector('.ihr-flyout')) {
@@ -223,7 +231,7 @@ async function performShelfRefresh({ immediate = false } = {}) {
   // must not hold the shelf back for long: they are generated instead.
   await shelfBakesSettled(120)
   // The page is being replaced by a newer deploy: building this shelf would only hold that up.
-  if (appDisposed || deployCheck?.reloading()) return
+  if (appDisposed || deployCheck?.reloading() || nativeImportShelfGate.deferRefresh()) return
   const normalizedBooks = await Promise.all(storedBooks.map(book => {
     const title = normalizeBookTitle(book.title || book.name)
     const author = normalizeBookAuthor(book.author)
@@ -233,7 +241,7 @@ async function performShelfRefresh({ immediate = false } = {}) {
     return Object.keys(patch).length ? library.patch(book.id, patch) : book
   }))
   const books = normalizedBooks.filter(book => isBookVisible(book, accountId))
-  if (appDisposed) return
+  if (appDisposed || nativeImportShelfGate.deferRefresh()) return
   // Counting is detached from the active reader and serial, so a home reload,
   // reader close or chapter change never attributes text to another book.
   for (const book of books) wordCountQueue.ensure(book).catch(error => console.warn('Preparación del grosor:', error))
@@ -1369,6 +1377,7 @@ runAfterFirstFrame([
 ])
 initReadingDisplay()
 initAndroidFileImports({
+  onActivity: active => nativeImportShelfGate.setActive(active),
   canImport: () => !closingReader && !els.readerScreen.classList.contains('is-preparing'),
   onFile: async file => {
     await shelf?.close()
