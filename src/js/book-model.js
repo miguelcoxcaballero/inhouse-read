@@ -10,7 +10,7 @@ import { displayBookTitle, normalizeBookAuthor } from './book-title.js';
 import { pageRaster } from './page-raster.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { applyBookReflectionSurface } from './book-reflection-surface.js';
-import { compilePagePrograms, prepareProgramUniforms } from './gpu-programs.js';
+import { compilePagePrograms, prepareProgramUniforms, retainPrograms } from './gpu-programs.js';
 import { buildReliefMaps, composeMaterialMap, coverReliefLayers, normalizeCoverRelief, updateReliefMapStrengths } from './cover-relief.js';
 import { runInSlices } from './cover-appearance.js';
 import { registerCanvasSnapshot as registerLazySnapshot, createNativeRendererPresentation,
@@ -1491,10 +1491,13 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     group.userData.invalidate?.();
   };
   group.userData.updateEdgeAppearance = nextBook => applyPaperFinish(edges, nextBook.pageEdgeFinish);
+  if (shelf && !overview) group.userData.preparePresentation = (idle, current = () => true) =>
+    prepareBookPresentation(group, idle, () => !disposed && current());
   return group;
 }
 
 let renderer, studioEnvironment, presentationRenderer;
+const presentationPreparations = new WeakMap();
 const rendererSize = new THREE.Vector2();
 export function getBookRenderer() {
   if (!globalThis.WebGLRenderingContext && !globalThis.WebGL2RenderingContext) return null;
@@ -1536,6 +1539,41 @@ export function lightBookScene(scene, activeRenderer = renderer) {
   const stripLight = new THREE.DirectionalLight(0xfff8f0, .34);
   stripLight.position.set(3, 1, 2); scene.add(stripLight);
   return scene;
+}
+
+/** Prepare the existing shelf book's exact shader variants in the flyout rig.
+ * Borrow only its mesh/material references: no clone, texture upload, render,
+ * parent change or presentation ownership is needed. Work begins after the
+ * shelf has painted and stops between idle slices when its owner is busy. */
+export async function prepareBookPresentation(model, idle, current = () => true) {
+  if (typeof idle !== 'function' || typeof model?.traverse !== 'function') return false;
+  await idle();
+  if (!current()) return false;
+  const gpu = getPresentationBookRenderer();
+  if (!gpu || typeof gpu.compile !== 'function') return false;
+  const existing = presentationPreparations.get(gpu);
+  if (existing) return existing;
+  const task = (async () => {
+    const scene = lightBookScene(new THREE.Scene(), gpu);
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, .1, 10000);
+    camera.position.z = 3000;
+    const objects = { traverse:callback => model.traverse(callback), traverseVisible() {} };
+    const materials = gpu.compile(objects, camera, scene);
+    if (materials?.size) gpu.getContext?.()?.flush?.();
+    // The borrowed materials can be culled or disposed before selection.
+    // Pin the compiled programs using the renderer's existing bounded policy.
+    if (Array.isArray(gpu.info?.programs)) retainPrograms(gpu);
+    return prepareProgramUniforms(gpu, materials, { idle, current });
+  })();
+  presentationPreparations.set(gpu, task);
+  try {
+    const ready = await task;
+    if (!ready && presentationPreparations.get(gpu) === task) presentationPreparations.delete(gpu);
+    return ready;
+  } catch (error) {
+    if (presentationPreparations.get(gpu) === task) presentationPreparations.delete(gpu);
+    throw error;
+  }
 }
 
 /** Project the actual fitted page image, rather than the book's outer board. */

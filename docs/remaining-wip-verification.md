@@ -1,3 +1,19 @@
+# Continuación: web 1.7.109 candidata; 1.7.108 publicada
+
+Se prepara el renderer del libro seleccionado durante el reposo de la sala.
+45 focales y los dos recorridos nativos originales pasan. La selección
+instrumentada enlaza cinco programas frente a doce del control; la sala
+conserva su imagen exacta. Las muestras de tiempo no prueban una mejora
+sostenida. Batería: 3.620 unitarias/293 archivos, build y 105 Python PASS.
+Siete originales locales y dos SwiftShader PASS. Publicación y CI109 pendientes.
+
+APK público actual 1.1.8/code21: descarga, hash, firma y loader de 2.107 B
+verificados de nuevo. CI108 conserva dos nativos FAIL en primer intento y
+retry; 3.612 unitarias PASS. El rendimiento global sigue pendiente.
+[Detalle de esta continuación](performance-1809.md).
+
+## Historial anterior
+
 # Estado actual: web 1.7.106 publicada, rendimiento pendiente
 
 La fuente publicada es `666519c0413a75bf6839e9f9fdc6b15dd5afb433`.

@@ -443,6 +443,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   prelinkPrograms(renderer, scene, camera, furniture.children.filter(child => child !== catalog));
 
   let disposed = false, raf = 0, renderCount = 0, modelCreations = 0, viewportHeight = 1, progress = mode === 'isometric' ? 1 : 0;
+  let bookPresentationScheduled = false;
   let presentationActive = true, drawPending = true, paintedViewport = null, paintHeld = false;
   // This separate modal gate never changes home/reader presentation ownership.
   let modalDeferredEntry = null, inactiveModalEntry = null, paintedModalView = null;
@@ -2493,6 +2494,21 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     for (const resolve of unpainted.splice(0)) resolve();
     for (const resolve of finishedInsertions) resolve();
     for (const resolve of finishedDrops) resolve();
+    // Prepare one already visible book only after a stable room frame. The
+    // flyout keeps its own persistent renderer; shader work no longer has to
+    // begin with the user's first selection. No scene pixels are repainted.
+    if (!bookPresentationScheduled && canPresent() && !hasOngoingMotion() && !paintHeld) {
+      const entry = bookEntries.find(entry => entry.model?.visible &&
+        typeof entry.model.userData.preparePresentation === 'function');
+      if (entry) {
+        bookPresentationScheduled = true;
+        const model = entry.model;
+        void model.userData.preparePresentation(idleSlice, () => !disposed &&
+          entry.model === model && model.visible && canPresent() && !paintHeld &&
+          !hasOngoingMotion() && !canDeferModalPaint())
+          .catch(error => console.warn('No se pudo preparar el libro en reposo:', error));
+      }
+    }
     // One more frame after any motion redraws its cheaper shadow at full quality.
     if (transition || reorderTransition || moving || trashMoving || (lighting.settling && !inspectionMoving)) invalidate(false);
   }

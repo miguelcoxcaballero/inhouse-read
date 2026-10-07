@@ -434,3 +434,70 @@ describe('submitting the first flyout compile batch', () => {
     make({directPresentation:false,deferDraw:true});expect(compile).toHaveBeenCalledOnce();expect(flush).not.toHaveBeenCalled();
   });
 });
+
+
+describe('idle preparation of actual book presentation programs', () => {
+  async function setup() {
+    const module = await import('../../src/js/book-model.js');
+    const {view} = make({shelf:true,deferDraw:false});
+    const model = gpu.renders.at(-1).model;
+    const renderer = module.getPresentationBookRenderer();
+    const linked = {usedTimes:1,isReady:()=>true,getUniforms:vi.fn()};
+    renderer.info.programs = [linked];
+    renderer.properties = {get:()=>({programs:new Map([['exact',linked]])})};
+    const flush = vi.fn(); vi.spyOn(renderer,'getContext').mockReturnValue({flush});
+    const compile = vi.spyOn(renderer,'compile').mockImplementation((objects,camera,scene) => {
+      const materials = new Set();
+      objects.traverse(node => { if(node.material) for(const material of [].concat(node.material)) materials.add(material); });
+      return materials;
+    });
+    return {module,view,model,renderer,linked,flush,compile};
+  }
+  it('uses borrowed real meshes and the exact flyout rig without rendering, moving or uploading them', async () => {
+    const s = await setup(),parent=s.model.parent,renders=gpu.renders.length;
+    const geometry=s.model.children.map(node=>node.geometry),pose=s.model.matrixWorld.clone();
+    const idle=vi.fn(async()=>{});
+    expect(await s.model.userData.preparePresentation(idle)).toBe(true);
+    expect(s.compile).toHaveBeenCalledOnce();expect(s.flush).toHaveBeenCalledOnce();
+    const [objects,camera,scene]=s.compile.mock.calls[0];
+    const nodes=[];objects.traverse(node=>nodes.push(node));
+    expect(nodes).toContain(s.model);expect(scene.children.some(node=>node===s.model)).toBe(false);
+    expect(scene.children.filter(node=>node.isLight)).toHaveLength(4);
+    expect(scene.environmentIntensity).toBe(.55);expect(camera.isOrthographicCamera).toBe(true);
+    expect(camera.position.z).toBe(3000);expect(s.model.parent).toBe(parent);
+    expect(s.model.children.map(node=>node.geometry)).toEqual(geometry);expect(s.model.matrixWorld).toEqual(pose);
+    expect(gpu.renders).toHaveLength(renders);expect(s.renderer.domElement.isConnected).toBe(false);
+    expect(s.linked.usedTimes).toBe(2);expect(s.linked.getUniforms).toHaveBeenCalledOnce();expect(idle).toHaveBeenCalledTimes(2);
+  });
+  it('keeps one bounded preparation across subsequent shelf models', async () => {
+    const s=await setup(),idle=async()=>{};
+    expect(await s.module.prepareBookPresentation(s.model,idle)).toBe(true);
+    expect(await s.module.prepareBookPresentation(s.model,idle)).toBe(true);
+    expect(s.compile).toHaveBeenCalledOnce();expect(s.linked.usedTimes).toBe(2);
+  });
+  it('does not create a presentation context after the owner becomes busy in the first idle slice', async () => {
+    const module=await import('../../src/js/book-model.js');make({shelf:true,deferDraw:false});
+    const model=gpu.renders.at(-1).model,count=gpu.renderers.length;let active=true;
+    expect(await module.prepareBookPresentation(model,async()=>{active=false},()=>active)).toBe(false);
+    expect(gpu.renderers).toHaveLength(count);
+  });
+  it('cancels uniform reflection after a new selection and permits a later idle attempt', async () => {
+    const s=await setup();let active=true,slices=0;
+    const idle=async()=>{if(++slices===2)active=false;};
+    expect(await s.module.prepareBookPresentation(s.model,idle,()=>active)).toBe(false);
+    expect(s.linked.getUniforms).not.toHaveBeenCalled();active=true;
+    expect(await s.module.prepareBookPresentation(s.model,async()=>{},()=>active)).toBe(true);
+    expect(s.compile).toHaveBeenCalledTimes(2);expect(s.linked.usedTimes).toBe(2);
+  });
+  it('does not prepare a shelf model destroyed during the idle yield', async () => {
+    const s=await setup();
+    expect(await s.model.userData.preparePresentation(async()=>s.view.dispose())).toBe(false);
+    expect(s.compile).not.toHaveBeenCalled();
+  });
+  it('preserves ordinary preparation after a driver compile failure', async () => {
+    const s=await setup();s.compile.mockImplementationOnce(()=>{throw new Error('driver failed')});
+    await expect(s.module.prepareBookPresentation(s.model,async()=>{})).rejects.toThrow('driver failed');
+    expect(await s.module.prepareBookPresentation(s.model,async()=>{})).toBe(true);
+    expect(s.compile).toHaveBeenCalledTimes(2);
+  });
+});

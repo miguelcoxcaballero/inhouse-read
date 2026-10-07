@@ -191,3 +191,25 @@ describe('first frame of the shelf scene', () => {
     expect(gpu.renders).toBeGreaterThan(0);
   });
 });
+
+
+describe('presentation preparation after the actual first room frame', () => {
+  it('borrows one visible book only after paint and never repaints to warm it', async () => {
+    shelf=createBookshelfScene(layout());
+    const model=gpu.scene.getObjectByName('book:book-0');
+    const prepare=vi.fn(async()=>true);model.userData.preparePresentation=prepare;
+    expect(gpu.renders).toBe(0);expect(prepare).not.toHaveBeenCalled();
+    gpu.linked.ready=true;vi.advanceTimersByTime(10);flushFrames();
+    expect(prepare).toHaveBeenCalledOnce();expect(gpu.renders).toBe(1);
+    const [,current]=prepare.mock.calls[0];expect(current()).toBe(true);
+    shelf.setPresentationActive(false);expect(current()).toBe(false);
+    shelf.setPresentationActive(true);flushFrames();expect(prepare).toHaveBeenCalledOnce();
+  });
+  it('invalidates the idle owner when its actual model is disposed', async () => {
+    shelf=createBookshelfScene(layout());const model=gpu.scene.getObjectByName('book:book-0');
+    const prepare=vi.fn(async()=>true);model.userData.preparePresentation=prepare;
+    gpu.linked.ready=true;vi.advanceTimersByTime(10);flushFrames();
+    const [,current]=prepare.mock.calls[0];expect(current()).toBe(true);
+    shelf.dispose();shelf=null;expect(current()).toBe(false);
+  });
+});
