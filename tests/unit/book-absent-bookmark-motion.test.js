@@ -501,3 +501,80 @@ describe('idle preparation of actual book presentation programs', () => {
     expect(s.compile).toHaveBeenCalledTimes(2);
   });
 });
+
+
+describe('idle lifted-model preparation releases its temporary detail resources', () => {
+  async function setupDetail() {
+    const module = await import('../../src/js/book-model.js');
+    const {view} = make({shelf:true,deferDraw:false});
+    const model = gpu.renders.at(-1).model;
+    const renderer = module.getPresentationBookRenderer();
+    const program = {usedTimes:1,isReady:()=>true,getUniforms:vi.fn()};
+    renderer.info.programs = [program];
+    renderer.properties = {get:()=>({programs:new Map([['detail',program]])})};
+    const flush = vi.fn(); vi.spyOn(renderer,'getContext').mockReturnValue({flush});
+    const compiled = [], disposals = [];
+    const compile = vi.spyOn(renderer,'compile').mockImplementation(objects => {
+      const materials = new Set();
+      objects.traverse(node => {
+        compiled.push(node);
+        if(node.material) for(const m of [].concat(node.material)) {
+          if (!materials.has(m)) disposals.push(vi.spyOn(m,'dispose'));materials.add(m);
+        }
+      });
+      return materials;
+    });
+    return {module,view,model,renderer,program,flush,compile,compiled,disposals};
+  }
+  it('compiles real close-up normals, grazing fade and leaves without painting or changing the shelf', async () => {
+    const s=await setupDetail(), parent=s.model.parent, renders=gpu.renders.length;
+    expect(await s.model.userData.prepareDetailPresentation(async()=>{})).toBe(true);
+    expect(s.compile).toHaveBeenCalledOnce();expect(s.flush).toHaveBeenCalledOnce();
+    expect(s.compiled).not.toContain(s.model);
+    const detail=s.compiled.find(node=>node.isGroup && node.userData.detailLevel==='detail');
+    expect(detail).toBeDefined();expect(detail.parent).toBe(null);
+    expect(detail.getObjectByName('binding').material.customProgramCacheKey()).toContain('spine-grazing-fade');
+    expect(detail.getObjectByName('front-cover').material[0].normalMap).toBeTruthy();
+    expect(detail.getObjectByName('read-leaves')).toBeDefined();
+    expect(s.disposals.length).toBeGreaterThan(0);expect(s.disposals.map(fn=>fn.mock.calls.length)).toEqual(s.disposals.map(()=>1));
+    expect(s.model.parent).toBe(parent);expect(gpu.renders).toHaveLength(renders);
+    expect(s.program.usedTimes).toBe(2);expect(s.program.getUniforms).toHaveBeenCalledOnce();
+  });
+  it('builds at most once per renderer after a successful preparation', async () => {
+    const s=await setupDetail(),dispose=vi.fn();
+    const build=vi.fn(()=>({userData:{ready:Promise.resolve(),dispose},traverse(){}}));
+    expect(await s.module.prepareBookDetailPresentation(build,async()=>{})).toBe(true);
+    expect(await s.module.prepareBookDetailPresentation(build,async()=>{})).toBe(true);
+    expect(build).toHaveBeenCalledOnce();expect(dispose).toHaveBeenCalledOnce();
+  });
+  it('does not build after cancellation during the first idle slice', async () => {
+    const s=await setupDetail(),build=vi.fn();let active=true;
+    expect(await s.module.prepareBookDetailPresentation(build,async()=>{active=false},()=>active)).toBe(false);
+    expect(build).not.toHaveBeenCalled();expect(s.compile).not.toHaveBeenCalled();
+  });
+  it('releases a model cancelled while its cover loads and allows a later attempt', async () => {
+    const s=await setupDetail(),dispose=vi.fn();let active=true;
+    const build=vi.fn(()=>({userData:{ready:Promise.resolve().then(()=>{active=false}),dispose},traverse(){}}));
+    expect(await s.module.prepareBookDetailPresentation(build,async()=>{},()=>active)).toBe(false);
+    expect(dispose).toHaveBeenCalledOnce();expect(s.compile).not.toHaveBeenCalled();
+    active=true;
+    const nextDispose=vi.fn(),next=()=>({userData:{ready:Promise.resolve(),dispose:nextDispose},traverse(){}});
+    expect(await s.module.prepareBookDetailPresentation(next,async()=>{},()=>active)).toBe(true);
+    expect(nextDispose).toHaveBeenCalledOnce();
+  });
+  it('releases the model after driver failure and permits normal retry', async () => {
+    const s=await setupDetail(),dispose=vi.fn(),build=()=>({userData:{ready:Promise.resolve(),dispose},traverse(){}});
+    s.compile.mockImplementationOnce(()=>{throw new Error('driver detail failed')});
+    await expect(s.module.prepareBookDetailPresentation(build,async()=>{})).rejects.toThrow('driver detail failed');
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(await s.module.prepareBookDetailPresentation(build,async()=>{})).toBe(true);
+    expect(dispose).toHaveBeenCalledTimes(2);
+  });
+  it('releases a model cancelled between program reflections', async () => {
+    const s=await setupDetail();let active=true,slices=0;
+    expect(await s.model.userData.prepareDetailPresentation(async()=>{if(++slices===2)active=false},()=>active)).toBe(false);
+    expect(s.program.getUniforms).not.toHaveBeenCalled();
+    expect(s.disposals.map(fn=>fn.mock.calls.length)).toEqual(s.disposals.map(()=>1));
+    expect(await s.model.userData.prepareDetailPresentation(async()=>{})).toBe(true);
+  });
+});

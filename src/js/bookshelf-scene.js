@@ -2503,9 +2503,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       if (entry) {
         bookPresentationScheduled = true;
         const model = entry.model;
-        void model.userData.preparePresentation(idleSlice, () => !disposed &&
+        const current = () => !disposed &&
           entry.model === model && model.visible && canPresent() && !paintHeld &&
-          !hasOngoingMotion() && !canDeferModalPaint())
+          !hasOngoingMotion() && !canDeferModalPaint();
+        void model.userData.preparePresentation(idleSlice, current)
+          .then(ready => ready && current() && model.userData.prepareDetailPresentation?.(idleSlice, current))
           .catch(error => console.warn('No se pudo preparar el libro en reposo:', error));
       }
     }

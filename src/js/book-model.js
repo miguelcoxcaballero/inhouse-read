@@ -1493,11 +1493,15 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   group.userData.updateEdgeAppearance = nextBook => applyPaperFinish(edges, nextBook.pageEdgeFinish);
   if (shelf && !overview) group.userData.preparePresentation = (idle, current = () => true) =>
     prepareBookPresentation(group, idle, () => !disposed && current());
+  if (shelf && !overview) group.userData.prepareDetailPresentation = (idle, current = () => true) =>
+    prepareBookDetailPresentation(() => createBookModel(book, style, width, height, thickness,
+      coverUrl, { eagerRelief:false }), idle, () => !disposed && current());
   return group;
 }
 
 let renderer, studioEnvironment, presentationRenderer;
 const presentationPreparations = new WeakMap();
+const detailPresentationPreparations = new WeakMap();
 const rendererSize = new THREE.Vector2();
 export function getBookRenderer() {
   if (!globalThis.WebGLRenderingContext && !globalThis.WebGL2RenderingContext) return null;
@@ -1572,6 +1576,44 @@ export async function prepareBookPresentation(model, idle, current = () => true)
     return ready;
   } catch (error) {
     if (presentationPreparations.get(gpu) === task) presentationPreparations.delete(gpu);
+    throw error;
+  }
+}
+
+/** The lifted model has its own grazing fade, paper normals and read leaves.
+ * Prepare those real detail variants after the resting model, without drawing
+ * or retaining an extra book. One temporary model per presentation context;
+ * cancellation and driver failures release its owned rasters and geometry. */
+export async function prepareBookDetailPresentation(build, idle, current = () => true) {
+  if (typeof build !== 'function' || typeof idle !== 'function') return false;
+  await idle();
+  if (!current()) return false;
+  const gpu = getPresentationBookRenderer();
+  if (!gpu || typeof gpu.compile !== 'function') return false;
+  const existing = detailPresentationPreparations.get(gpu);
+  if (existing) return existing;
+  const task = (async () => {
+    const model = build();
+    try {
+      await model.userData.ready;
+      if (!current()) return false;
+      const scene = lightBookScene(new THREE.Scene(), gpu);
+      const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, .1, 10000);
+      camera.position.z = 3000;
+      const objects = { traverse:callback => model.traverse(callback), traverseVisible() {} };
+      const materials = gpu.compile(objects, camera, scene);
+      if (materials?.size) gpu.getContext?.()?.flush?.();
+      if (Array.isArray(gpu.info?.programs)) retainPrograms(gpu);
+      return await prepareProgramUniforms(gpu, materials, { idle, current });
+    } finally { model.userData.dispose(); }
+  })();
+  detailPresentationPreparations.set(gpu, task);
+  try {
+    const ready = await task;
+    if (!ready && detailPresentationPreparations.get(gpu) === task) detailPresentationPreparations.delete(gpu);
+    return ready;
+  } catch (error) {
+    if (detailPresentationPreparations.get(gpu) === task) detailPresentationPreparations.delete(gpu);
     throw error;
   }
 }

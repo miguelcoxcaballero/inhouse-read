@@ -213,3 +213,29 @@ describe('presentation preparation after the actual first room frame', () => {
     shelf.dispose();shelf=null;expect(current()).toBe(false);
   });
 });
+
+
+describe('detail preparation follows the stable borrowed-material warm-up', () => {
+  function begin() {
+    shelf=createBookshelfScene(layout());
+    const model=gpu.scene.getObjectByName('book:book-0');let complete;
+    const prepare=vi.fn(()=>new Promise(resolve=>{complete=resolve;}));
+    const detail=vi.fn(async()=>true);
+    model.userData.preparePresentation=prepare;model.userData.prepareDetailPresentation=detail;
+    gpu.linked.ready=true;vi.advanceTimersByTime(10);flushFrames();
+    return {prepare,detail,complete};
+  }
+  it('starts detail preparation once, only after a successful resting warm-up', async () => {
+    const s=begin();expect(s.detail).not.toHaveBeenCalled();const renders=gpu.renders;
+    s.complete(true);await Promise.resolve();expect(s.detail).toHaveBeenCalledOnce();
+    expect(s.detail.mock.calls[0][1]()).toBe(true);expect(gpu.renders).toBe(renders);
+    flushFrames();expect(s.detail).toHaveBeenCalledOnce();
+  });
+  it('does not start detail work if the room is hidden before resting preparation completes', async () => {
+    const s=begin();shelf.setPresentationActive(false);s.complete(true);await Promise.resolve();
+    expect(s.detail).not.toHaveBeenCalled();
+  });
+  it('does not start detail work after cancelled resting preparation', async () => {
+    const s=begin();s.complete(false);await Promise.resolve();expect(s.detail).not.toHaveBeenCalled();
+  });
+});

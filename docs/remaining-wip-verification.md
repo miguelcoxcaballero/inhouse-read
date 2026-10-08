@@ -1,4 +1,18 @@
-# Continuación: web 1.7.109 publicada; rendimiento pendiente
+# Continuación: web 1.7.110 preparada; 1.7.109 publicada
+
+El candidato prepara en reposo los materiales reales del libro ampliado
+y libera su modelo temporal. Instrumentación del pointerdown real: un
+enlace de shader después del toque frente a cinco cuando la preparación
+ha terminado. Las muestras de tiempo no prueban una mejora sostenida.
+Batería definitiva: 3.629 unitarias/293 archivos, build y 105 Python PASS;
+siete recorridos originales locales PASS sin retries ni cambios de plazos.
+Publicación, recorridos reales y CI110 pendientes. Las capturas de sala
+difieren sólo en el área de texto del lomo; no se certifican píxeles iguales.
+[Detalle de esta continuación](performance-1810.md).
+
+## Estado publicado anterior
+
+# Web 1.7.109 publicada; rendimiento pendiente
 
 Se prepara el renderer del libro seleccionado durante el reposo de la sala.
 45 focales y los dos recorridos nativos originales pasan. La selección
