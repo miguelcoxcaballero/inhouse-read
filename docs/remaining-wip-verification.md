@@ -1,14 +1,27 @@
-# Continuación: web 1.7.110 preparada; 1.7.109 publicada
+# Web 1.7.110 publicada; rendimiento pendiente
 
-El candidato prepara en reposo los materiales reales del libro ampliado
-y libera su modelo temporal. Instrumentación del pointerdown real: un
-enlace de shader después del toque frente a cinco cuando la preparación
-ha terminado. Las muestras de tiempo no prueban una mejora sostenida.
+Se preparan en reposo los materiales reales del libro ampliado y se libera
+su modelo temporal. Después de completar esa preparación, la selección
+instrumentada enlaza un shader frente a cinco del control. Las muestras de
+tiempo no prueban una mejora sostenida. Las capturas de sala difieren en el
+área del lomo; no se certifican píxeles iguales ni se atribuye su causa.
+
 Batería definitiva: 3.629 unitarias/293 archivos, build y 105 Python PASS;
-siete recorridos originales locales PASS sin retries ni cambios de plazos.
-Publicación, recorridos reales y CI110 pendientes. Las capturas de sala
-difieren sólo en el área de texto del lomo; no se certifican píxeles iguales.
-[Detalle de esta continuación](performance-1810.md).
+siete recorridos originales locales PASS, sin retries ni cambios de plazos.
+Fuente pública `c349ed715258032739dc4cf68c65decb2eedf61c`: grafo (32) y shell (96)
+coinciden con Pages. CI110 completa y autenticada: 531/533 casos PASS,
+dos timeouts nativos en primer intento y retry. Web real: 31/32 auditorías
+estrictas PASS; una captura parcial de textura conserva FAIL. Cuatro offline
+PASS para bytes/progreso y fotos. Drive mantiene la subida manual opcional.
+
+APK 1.1.8/code21 descargado y verificado: firma y loader de 2.107 B correctos.
+Ensayo nuevo del APK público: cinco estados nativos PASS. Preflight Google
+sin error de solicitud; no acredita una cuenta humana conectada. Las cuatro
+familias de voces con pesos reales PASS: siguen 39 Piper y diez personas
+Supertonic (220 perfiles), sin voces nuevas. No hay medición de FPS, calor,
+batería o audio prolongado en teléfono físico. Quedan por resolver los dos
+recorridos lentos de CI y explicar la captura parcial de textura.
+[Resultados y límites de esta continuación](performance-1810.md).
 
 ## Estado publicado anterior
 
