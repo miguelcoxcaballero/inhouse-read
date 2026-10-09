@@ -1,4 +1,5 @@
 import { paddedBookFrameSize } from './book-frame-padding.js';
+import { reuseCoverRaster, releaseCoverRaster } from './cover-raster-cache.js';
 import { paperToneKey, readPaperTone } from './page-paper-tone.js';
 import { bookReturnCompatibility } from './bookshelf-return.js';
 import * as THREE from 'three';
@@ -822,7 +823,7 @@ function acquireCoverImage(url, onImage, onError) {
   }
   const listener = { onImage, onError };
   entry.users++;
-  if (entry.image) onImage(entry.image);
+  if (entry.image) onImage(entry.image, entry);
   else if (entry.failed) onError();
   else entry.listeners.add(listener);
   const fail = () => {
@@ -839,7 +840,7 @@ function acquireCoverImage(url, onImage, onError) {
     clearTimeout(entry.timer);
     if (entry.failed || !entry.users) { map.dispose(); return; }
     entry.image = map.image;
-    for (const waiting of entry.listeners) waiting.onImage(entry.image);
+    for (const waiting of entry.listeners) waiting.onImage(entry.image, entry);
     entry.listeners.clear(); map.dispose();
     }, undefined, fail);
   }
@@ -848,6 +849,7 @@ function acquireCoverImage(url, onImage, onError) {
     if (released) return;
     released = true; entry.listeners.delete(listener); entry.users--;
     if (!entry.users) {
+      releaseCoverRaster(entry);
       clearTimeout(entry.timer);
       if (activeCoverImages.get(url) === entry) activeCoverImages.delete(url);
     }
@@ -1360,22 +1362,30 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
       releaseImage = () => {};
       replaceMap(coverTexture(nextBook, nextStyle, textureHeight, maxTextureDimension, level));
       setCoverGrain('cloth'); settle(true);
-    } else releaseImage = acquireCoverImage(url, image => {
+    } else releaseImage = acquireCoverImage(url, (image, entry) => {
       if (revision !== coverRevision || disposed) return;
       // The previous cover remains on the mesh until every new pixel is ready.
       try {
-        const canvas = document.createElement('canvas');
         const dimensions = coverRasterDimensions(nextStyle.coverRatio, textureHeight, maxTextureDimension);
-        canvas.height = dimensions.height; canvas.width = dimensions.width;
-        const c = canvas.getContext('2d'); c.fillStyle = nextStyle.color; c.fillRect(0, 0, canvas.width, canvas.height);
-        const fit = fitCoverImage(image.width, image.height, canvas.width, canvas.height);
-        c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
-        c.drawImage(image, fit.x, fit.y, fit.width, fit.height);
-        // A printed jacket is still paper over board: joint, edges, corners.
-        const unit = canvas.height / 1024;
-        c.setTransform?.(unit, 0, 0, unit, 0, 0);
-        finishBoard(c, canvas.width / unit, coverSeed(nextBook, nextStyle, 'print'), { wear:level !== 'overview' });
-        const fittedMap = new THREE.CanvasTexture(canvas); fittedMap.colorSpace = THREE.SRGBColorSpace;
+        // The idle detailed model and its flyout print the same jacket. Keep
+        // one bounded raster with the decoded image while shelf copies exist.
+        // Each material owns a texture clone; pixels and Source stay exact.
+        const key = JSON.stringify([dimensions.width, dimensions.height, nextBook.id,
+          nextBook.title, nextStyle.color, level === 'overview']);
+        const { map:fittedMap, bounds:fit } = reuseCoverRaster(level === 'detail' ? entry : null, key, () => {
+          const canvas = document.createElement('canvas');
+          canvas.height = dimensions.height; canvas.width = dimensions.width;
+          const c = canvas.getContext('2d'); c.fillStyle = nextStyle.color; c.fillRect(0, 0, canvas.width, canvas.height);
+          const fit = fitCoverImage(image.width, image.height, canvas.width, canvas.height);
+          c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+          c.drawImage(image, fit.x, fit.y, fit.width, fit.height);
+          // A printed jacket is still paper over board: joint, edges, corners.
+          const unit = canvas.height / 1024;
+          c.setTransform?.(unit, 0, 0, unit, 0, 0);
+          finishBoard(c, canvas.width / unit, coverSeed(nextBook, nextStyle, 'print'), { wear:level !== 'overview' });
+          const fittedMap = new THREE.CanvasTexture(canvas); fittedMap.colorSpace = THREE.SRGBColorSpace;
+          return { map:fittedMap, bounds:fit };
+        });
         replaceMap(fittedMap, fit); setCoverGrain('paper'); settle(true);
       } catch { settle(false); }
     }, () => settle(false));
