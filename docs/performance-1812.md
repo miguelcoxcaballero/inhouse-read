@@ -60,7 +60,22 @@ APK 1.1.8/code21 descargado: 78.531.695 B, SHA, firma, manifest y loader de
 8.920.241 B autenticado y cinco estados nativos analizados PASS. El preflight
 Google acepta la solicitud; no acredita cuenta humana autenticada.
 
-CI completa `37992986160` sigue pendiente en este punto. Piper engine, reading
+CI completa `37992986160` seguía pendiente en este punto. Piper engine, reading
 y languages concluyeron PASS; falta la auditoría completa de los originales.
 Supertonic sigue en curso. Los dos timeouts originales de CI110 y las capturas
 de walnut permanecen registrados. El rendimiento global aún no está resuelto.
+
+## Auditoría completa de CI111
+
+El run original 37992986160 terminó FAIL. Sus once ZIP se descargaron de
+GitHub y coinciden con sus tamaños y SHA autenticados. El censo original
+contiene 3.639 unitarias/295 archivos y 533 casos E2E únicos: 531 PASS y
+dos regresos nativos FAIL, también en su retry (cuatro intentos timedOut).
+Las cuatro familias de voces, incluidos los 220 perfiles Supertonic, PASS.
+Evidencia: ci-original-attempt1/snapshot-001; no se reejecutó el run fallido.
+
+Las cuatro trazas originales sitúan Back a 22,37/24,49 s en 390 px y
+23,14/23,01 s en 393 px desde el primer paso. Conservan el límite global
+de 30 s y la expectativa de cierre de 8 s; no certifican un cierre dentro
+del plazo ni atribuyen el fallo exclusivamente al presupuesto global.
+El rendimiento completo sigue pendiente.

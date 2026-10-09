@@ -1,3 +1,21 @@
+# Continuación: 1.7.113 preparada / 1.7.112 publicada
+
+112 limita los píxeles retenidos de portadas ampliadas a 8 MiB globales.
+3.642 unitarias/295 archivos, build y105 Python PASS. Web32/32 estrictos,
+offline4, HTTP32/shell96 y APK firma/loader PASS. Cinco estados del APK
+público en emulador PASS. El primer lote local conserva un FAIL ENOSPC;
+tras recuperar el entorno, su único caso afectado pasa por separado.
+CI112 completa pendiente. [Informe112](performance-1813.md).
+
+113 evita dos reinicios vacíos del lienzo en cinco poses reales del libro,
+con RGBA, dimensiones y viewport exactos. 83 focales y dos originales
+SwiftShader PASS; batería y publicación pendientes. [Informe113](performance-1814.md).
+CI111 autenticada: 531/533 PASS, dos regresos nativos timedOut también en
+retry. Los tres fallos originales de captura111 permanecen FAIL.
+El rendimiento global sigue pendiente; no hay medición de teléfono físico.
+
+## Historial anterior
+
 # Continuación: 1.7.112 preparada / 1.7.111 publicada
 
 111 reutiliza la impresión detallada de la portada. Batería local 3.639/295,

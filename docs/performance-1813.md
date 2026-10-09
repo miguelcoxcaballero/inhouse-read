@@ -17,6 +17,45 @@ la textura RGBA y los fotogramas de frente, 35° y 90°. Errores GL cero y
 118.391/109.962/32.816 píxeles pintados. Esto acredita calidad en esa muestra,
 no una aceleración sostenida ni FPS, consumo o temperatura de un móvil físico.
 
-La batería completa, publicación y verificación públicas están pendientes.
+## Publicación y verificación de 1.7.112
+
+Fuente `d051c42c2c05b77ab26e1ff7c07e47a31383ed32`, Pages
+`9baba3ddf65b5ff16c49cf29e70ff32e916f472d`. Main `main-DOHSbtMr.js`,
+614.577 B, SHA-256 `e1a7108f8920dee5951907bdf7ca85ba43603d774d976f8f643442d4b1e184ac`.
+HTTP: grafo32, shell96 y módulos históricos coinciden con Git inmutable.
+Batería local: **3.642 unitarias/295 archivos**,
+build y 105 Python PASS; el listado533 es censo, no ejecución E2E local.
+
+Web real: **32/32 auditorías estrictas PASS**, un intento por caso.
+Offline4 PASS para bytes/progreso, fotografías RGB en cinco temas, portada
+JPEG y cierre inmediato. Los 698 archivos guardados coinciden byte a byte.
+El primer lote local conserva 6 PASS y un FAIL de escritura ENOSPC al guardar
+la traza final. Tras recuperar espacio y dependencias, el único caso afectado
+pasa por separado con sus aserciones y plazos originales. Dos preparaciones
+de ese nuevo recorrido fallaron antes de ejecutar: dependencia ausente y
+sintaxis del selector; también se conservan. No se presenta el primer lote
+como siete PASS ni se borran fallos anteriores.
+
+APK público 1.1.8/code21 descargado otra vez, 78.531.695 B, SHA, firma y
+loader de 2.107 B PASS. El primer intento de esa descarga/verificación
+conserva su error de escritura por disco lleno; el nuevo tiene namespace
+independiente. Emulador `37995464703`, ZIP original de 8.861.336 B autenticado:
+cinco estados nativos PASS. Preflight Google aceptado, sin prueba de cuenta
+humana conectada. La CI112 completa `37994794342` sigue pendiente de recoger.
+
+Se trasladó evidencia histórica al disco D y se conservaron rutas mediante
+junctions. El segundo traslado se detuvo al afectar a dependencias compartidas;
+`npm ci` restauró las dependencias del lock vigente. El código de producto y
+los originales de pruebas permanecieron intactos durante las comprobaciones.
+La recuperación de la carpeta de diagnóstico parcialmente trasladada usa copias
+con hash y evita atravesar enlaces; no borra originales ni sobreescribe archivos.
+El primer recorrido de recuperación se detuvo por una diferencia de hash en
+una imagen RGBA histórica. La continuación restauró los archivos faltantes y
+conservó ambas copias diferentes, sin elegir ni reemplazar el original. Ese
+conflicto queda en archive-recovery-v2.json; no acredita una migración idéntica
+de toda la evidencia histórica. La dependencia actual se reinstaló desde el lock.
+
 La verificación 1.7.111 se conserva en [su informe](performance-1812.md);
-sus fallos originales de captura y la CI todavía pendiente no se borran.
+su CI531/533 y tres fallos originales de captura permanecen FAIL. Los nuevos
+PASS de112 no explican ni sustituyen esas capturas. El rendimiento global
+no se considera resuelto y no hay mediciones de teléfono físico.

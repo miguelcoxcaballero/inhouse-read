@@ -1802,7 +1802,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     const paddedFrame = paddedBookFrameSize(frame, rendererSize, pixelRatio, gpu.domElement,
       directEnabled && compactReturnFrame && frame.camera !== camera &&
       typeof gpu.setViewport === 'function' && gpu.getPixelRatio() === pixelRatio);
-    configureNativeRendererSize(gpu, paddedFrame.width, paddedFrame.height, pixelRatio, rendererSize, directEnabled, true, true);
+    configureNativeRendererSize(gpu, paddedFrame.width, paddedFrame.height, pixelRatio, rendererSize, directEnabled, true, 'bounded');
     // A later full-width frame may need its viewport restored without a resize.
     gpu.setViewport?.(0, 0, frame.width, frame.height);
     frame.presentationWidth = paddedFrame.width;
