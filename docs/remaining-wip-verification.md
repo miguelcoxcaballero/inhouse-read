@@ -1,3 +1,19 @@
+# Continuación: 1.7.112 preparada / 1.7.111 publicada
+
+111 reutiliza la impresión detallada de la portada. Batería local 3.639/295,
+build y 105 Python PASS; siete originales locales, HTTP32/shell96, offline4
+y APK 1.1.8 firma/loader PASS. Web real: 29/32 auditorías estrictas PASS;
+tres capturas parciales/vacías de walnut conservan FAIL aunque sus aserciones
+de producto completaron. Emulador nuevo: cinco estados nativos PASS.
+CI111 completa sigue pendiente. [Informe111](performance-1812.md).
+
+112 limita globalmente a 8 MiB RGBA los píxeles retenidos de portadas ampliadas.
+112 focales PASS; la expulsión real conserva textura y tres fotogramas GPU
+exactos. Batería, publicación y comprobación112 pendientes. El rendimiento
+global no se considera resuelto. [Informe112](performance-1813.md).
+
+## Estado publicado anterior
+
 # Web 1.7.110 publicada; rendimiento pendiente
 
 Se preparan en reposo los materiales reales del libro ampliado y se libera

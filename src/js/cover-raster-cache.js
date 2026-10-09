@@ -1,8 +1,9 @@
 // A decoded cover stays alive while its shelf and lifted copies overlap.
-// Keep just one detailed print (at most 8 MiB of RGBA pixels) in that lease.
+// Keep one detailed print per lease, at most 8 MiB of RGBA pixels in total.
 // Finish/relief changes use separate maps; they never mutate these pixels.
 const MAX_PIXELS = 2 * 1024 * 1024;
-const rasters = new WeakMap();
+const rasters = new Map();
+let retainedPixels = 0;
 
 export function reuseCoverRaster(owner, key, build) {
   if (!owner) return build();
@@ -15,7 +16,15 @@ export function reuseCoverRaster(owner, key, build) {
       return result;
     }
     releaseCoverRaster(owner);
-    cached = { ...result, key };
+    const pixels = width * height;
+    // Drop only the cache's least recently used base. A displayed model still
+    // owns its texture clone and exact pixels; eviction never repaints it.
+    while (retainedPixels + pixels > MAX_PIXELS) releaseCoverRaster(rasters.keys().next().value);
+    cached = { ...result, key, pixels };
+    retainedPixels += pixels;
+    rasters.set(owner, cached);
+  } else {
+    rasters.delete(owner);
     rasters.set(owner, cached);
   }
   // Texture.copy flags the shared Source dirty. Restore that version so the
@@ -29,5 +38,6 @@ export function releaseCoverRaster(owner) {
   const cached = rasters.get(owner);
   if (!cached) return;
   rasters.delete(owner);
+  retainedPixels -= cached.pixels;
   cached.map.dispose();
 }

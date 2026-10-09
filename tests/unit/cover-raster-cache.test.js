@@ -65,6 +65,41 @@ describe('bounded decoded jacket raster reuse', () => {
     first.map.dispose(); second.map.dispose();
   });
 
+  it('caps the total retained pixels across decoded covers without disposing their live clones', () => {
+    const owners = [{}, {}, {}], originals = owners.map(() => print(1024, 1024));
+    const disposals = originals.map(item => vi.spyOn(item.map, 'dispose'));
+    const copies = owners.map((owner, i) => reuseCoverRaster(owner, 'same', () => originals[i]));
+    expect(disposals.map(dispose => dispose.mock.calls.length)).toEqual([1, 0, 0]);
+    expect(copies[0].map.image).toBe(originals[0].map.image);
+    const build = vi.fn(() => print(1024, 1024));
+    const replacement = reuseCoverRaster(owners[0], 'same', build);
+    expect(build).toHaveBeenCalledOnce(); expect(disposals[1]).toHaveBeenCalledOnce();
+    for (const copy of [...copies, replacement]) copy.map.dispose();
+    for (const owner of owners) releaseCoverRaster(owner);
+  });
+
+  it('evicts the least recently used print rather than a cover just selected again', () => {
+    const a = {}, b = {}, c = {}, first = print(1024, 1024), second = print(1024, 1024);
+    const disposeFirst = vi.spyOn(first.map, 'dispose'), disposeSecond = vi.spyOn(second.map, 'dispose');
+    const copies = [reuseCoverRaster(a, 'same', () => first), reuseCoverRaster(b, 'same', () => second)];
+    copies.push(reuseCoverRaster(a, 'same', () => { throw Error('Already cached'); }));
+    copies.push(reuseCoverRaster(c, 'same', () => print(1024, 1024)));
+    expect(disposeFirst).not.toHaveBeenCalled(); expect(disposeSecond).toHaveBeenCalledOnce();
+    expect(copies[0].map.source).toBe(copies[2].map.source);
+    for (const copy of copies) copy.map.dispose();
+    for (const owner of [a, b, c]) releaseCoverRaster(owner);
+  });
+
+  it('returns a released budget to other covers and keeps the exact boundary cacheable', () => {
+    const a = {}, b = {}, original = print(1024, 2048), dispose = vi.spyOn(original.map, 'dispose');
+    const first = reuseCoverRaster(a, 'full-budget', () => original);
+    releaseCoverRaster(a); expect(dispose).toHaveBeenCalledOnce();
+    const build = vi.fn(() => print(1024, 2048));
+    const second = reuseCoverRaster(b, 'full-budget', build), third = reuseCoverRaster(b, 'full-budget', build);
+    expect(build).toHaveBeenCalledOnce(); expect(second.map.source).toBe(third.map.source);
+    for (const copy of [first, second, third]) copy.map.dispose(); releaseCoverRaster(b);
+  });
+
   for (const dimensions of [[2048, 2048], [1024.5, 1000], [0, 1000]]) {
     it(`does not retain oversized or invalid ${dimensions.join('×')} prints`, () => {
       const owner = {}, original = print(), dispose = vi.spyOn(original.map, 'dispose');
