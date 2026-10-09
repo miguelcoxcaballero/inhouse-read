@@ -1,3 +1,35 @@
+# Continuación: 1.7.113 publicada; rendimiento general pendiente
+
+Fuente `c52169680895e89fe7970570dc2a4d546332e91c`, Pages
+`b2e0a5fcee4ca249073b8e4bf5a4c885deda384a`. Se reutilizan las portadas
+detalladas con8 MiB de caché global y se evitan reinicios vacíos del lienzo
+cuando ambos ejes crecen. No se rebaja resolución ni calidad de materiales.
+
+3.645 unitarias/296 archivos, build,105 Python y siete originales locales
+PASS. Web32 casos:30 auditorías estrictas PASS, dos capturas HTTP200/0 B
+FAIL aunque las aserciones funcionales terminaron. Cuatro recorridos offline
+PASS. Grafo HTTP32/shell96 exactos. APK1.1.8/code21: firma, hash y loader
+de2.107 B PASS; cinco estados nuevos del APK público en emulador PASS.
+
+CI113 completa y autenticada:531/533 PASS y dos FAIL nativos, también
+fallidos en retry. Once ZIP, doce jobs y535 intentos conservados, sin
+incidencias de colección. Las cuatro familias de voces con pesos reales
+pasan. Las trazas llegan a Back a los24–27 s del recorrido; quedan3–6 s
+del límite global30 s. No acreditan el plazo completo de8 s del cierre
+ni permiten atribuir toda la lentitud a esa fase.
+CI112 autenticada:530 PASS al primer intento, un flaky
+Abrir con y dos FAIL nativos. Esos fallos siguen pendientes, junto con la
+causa de las capturas HTTP vacías. El diagnóstico de nueve cargas reales
+de nogal conserva todos sus blobs completos y no reproduce el fallo.
+
+Voces:39 Piper y diez personas Supertonic/220 perfiles. Sin incorporaciones
+en111–113. Dos nuevas candidatas chinas requieren frontend pinyin/g2pW;
+no se anuncian como compatibles ni se han comprobado con sus pesos.
+Sin medición de teléfono físico ni prueba de cuenta Google humana.
+[Informe actual y límites](performance-1814.md).
+
+## Historial anterior
+
 # Continuación: 1.7.113 preparada / 1.7.112 publicada
 
 112 limita los píxeles retenidos de portadas ampliadas a 8 MiB globales.

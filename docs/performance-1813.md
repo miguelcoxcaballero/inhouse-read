@@ -59,3 +59,26 @@ La verificación 1.7.111 se conserva en [su informe](performance-1812.md);
 su CI531/533 y tres fallos originales de captura permanecen FAIL. Los nuevos
 PASS de112 no explican ni sustituyen esas capturas. El rendimiento global
 no se considera resuelto y no hay mediciones de teléfono físico.
+
+## Auditoría completa de CI112
+
+Run original37994794342 FAIL. Los once ZIP, doce jobs y sus hashes
+autenticados se conservan en ci-original-attempt1/snapshot-001. Censo:
+3.642 unitarias/295 archivos y533 E2E únicos; 530 PASS al primer intento,
+un caso flaky de Android Abrir con y dos regresos nativos FAIL también en
+retry. Son536 intentos, tres retries y cinco intentos fallidos. Las cuatro
+familias de voces con pesos reales PASS. No se reejecutó el run fallido.
+
+La traza del primer Abrir con vuelve a Home apenas0,6 s después de goto,
+aún durante la preparación. La expectativa no llega a observar la clase
+is-closing-reader. El retry pasa, pero no convierte el primer intento en
+PASS; la transición de salida anticipada requiere una comprobación aparte.
+El rendimiento completo sigue pendiente.
+
+La comprobación posterior archive-conflict-receipt-audit.json compara las
+dos copias RGBA con la ficha original quality-report.json: la copia local
+coincide exactamente en tamaño9.881.216 B y SHA256
+`69b21f8e8a9371332b771352a4d1fdb417cfe7d94fa4c2b4df279b597a1baebe`;
+la copia parcial trasladada a D no coincide. Ambas permanecen conservadas.
+Esto resuelve cuál es el original de ese archivo; no acredita la igualdad
+de toda la migración histórica.
