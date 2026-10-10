@@ -1,4 +1,4 @@
-# Continuación: 1.7.115 preparada; 1.7.114 auditada
+# Continuación: 1.7.115 publicada; rendimiento general pendiente
 
 115 retira las esperas por fotograma introducidas en114: la observación
 de GPU registra pausas de1,41–2,9 s en la salida y1,52 s en el zoom.
@@ -6,7 +6,16 @@ Se conservan medición/textura compartidas únicamente para páginas PDF
 probadas idénticas, con píxeles exactos y calidad original.
 3.680 unitarias/300 archivos, build y105 Python PASS; siete recorridos
 originales locales PASS con los mismos plazos y sin retries.
-Comprobaciones de publicación115 pendientes. [Informe115](performance-1816.md).
+Fuente `7eb558a827169fa17b459d934c9c7c503cb3b4c2`; Pages
+`fbde21ba9947c61ef734042956c5d2e815498ee5`. HTTP32/shell96 exactos.
+Web31/32 estrictos: el editor conserva un FAIL de captura vacía de textura
+tras sus aserciones funcionales. Ambos regresos nativos públicos PASS.
+Offline4 PASS; APK firma/hash/loader y cinco estados nuevos en emulador PASS.
+CI completa38090753280 autenticada:531/533 PASS, dos regresos nativos
+timedOut también en retry; once ZIP, doce jobs y535 intentos, sin
+incidencias de colección. Las cuatro familias de voces con pesos reales
+PASS. Variantes regionales adicionales y medición en teléfono físico
+siguen pendientes. [Informe115](performance-1816.md).
 
 CI114 completa autenticada:531/533 PASS, dos regresos nativos FAIL también
 en retry; once ZIP, doce jobs y535 intentos, sin incidencias de colección.
