@@ -3,12 +3,28 @@ import { samplePaperTone } from './page-paper-tone-sample.js';
 // belongs to one settled raster and is replaced by the reader on any change.
 const tones = new WeakMap();
 const pending = new WeakMap();
+const shared = new WeakMap();
 const objectKey = value => value && (typeof value === 'object' || typeof value === 'function');
 export const paperToneKey = (source, token) => objectKey(token) ? token : source;
+const samplingKey = (source, token) => {
+  const key = paperToneKey(source, token);
+  return shared.get(key) || key;
+};
+
+// The reader alone proves equal source/filter/resampling. Keep each copy's
+// public identity separate while sharing this one immutable measurement.
+export function sharePaperTone(target, source) {
+  if (!objectKey(target) || !objectKey(source)) return false;
+  const key = samplingKey(null, source);
+  if (target === key || tones.has(target) || pending.has(target)) return false;
+  if (shared.has(target)) return shared.get(target) === key;
+  shared.set(target, key);
+  return true;
+}
 
 
 export function readPaperTone(source, token) {
-  const key = paperToneKey(source, token);
+  const key = samplingKey(source, token);
   if (tones.has(key)) return tones.get(key);
   let tone = null;
   try {
@@ -60,7 +76,14 @@ async function measureInWorker(entries, signal) {
 export async function prepareSnapshotPaperTones(snapshot, { signal } = {}) {
   if (signal?.aborted || typeof Worker !== 'function' || typeof OffscreenCanvas !== 'function'
     || typeof createImageBitmap !== 'function') return false;
-  const entries = [snapshot, snapshot?.paper].filter(entry => entry?.source && objectKey(entry.toneKey));
+  // A reader may prove that its white and themed copies are the same raster.
+  // Their shared opaque token needs one bitmap/measurement, not two GPU reads.
+  const entries = [...new Map([snapshot, snapshot?.paper]
+    .filter(entry => entry?.source && objectKey(entry.toneKey))
+    .map(entry => {
+      const key = samplingKey(entry.source, entry.toneKey);
+      return [key,{ ...entry, toneKey:key }];
+    })).values()];
   const existing = entries.map(entry => pending.get(entry.toneKey)).filter(Boolean);
   if (existing.length) await Promise.all(existing);
   if (signal?.aborted) return false;

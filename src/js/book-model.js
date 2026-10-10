@@ -9,6 +9,7 @@ import { spineSurface, releaseSurface, seededRandom, textSeed, withStops, paintC
 import { METAL_COLORS, SURFACE_FINISHES, spineFinish, surfaceFinish } from './book-colors.js';
 import { displayBookTitle, normalizeBookAuthor } from './book-title.js';
 import { pageRaster } from './page-raster.js';
+import { animationFrameFence } from './animation-frame-fence.js';
 import { bookmarkFor } from './bookshelf-layout.js';
 import { applyBookReflectionSurface } from './book-reflection-surface.js';
 import { compilePagePrograms, prepareProgramUniforms, retainPrograms } from './gpu-programs.js';
@@ -1089,7 +1090,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   };
   group.userData.getPageTheme = () => pageTheme;
   // `redraw:false` builds the page without rendering it (the caller draws later).
-  group.userData.getPageTextures = () => stockImage.visible ? [pageMaterial.map, stockMaterial.map] : [pageMaterial.map];
+  group.userData.getPageTextures = () => stockImage.visible ? [...new Set([pageMaterial.map, stockMaterial.map])] : [pageMaterial.map];
   group.userData.setPageSnapshot = (snapshot, { pageTheme:initialTheme, redraw = true } = {}) => {
     if (disposed || !snapshot?.source) return false;
     const imageWidth = Number(snapshot.width || snapshot.source.width || snapshot.source.naturalWidth);
@@ -1127,7 +1128,8 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     stockMaterial.map?.dispose();
     if (sameSize) {
       stockImage.geometry.dispose(); stockImage.geometry = pageImage.geometry.clone();
-      stockMaterial.map = pageTexture(variant.source); stockMaterial.needsUpdate = true;
+      stockMaterial.map = themeRaster && themeRaster === stockRaster ? map : pageTexture(variant.source);
+      stockMaterial.needsUpdate = true;
       stockImage.visible = true;
     } else {
       stockMaterial.map = blankPageMap();
@@ -2358,8 +2360,9 @@ export function bookView(host, book, style, { width, height, thickness, viewport
         motionFrameCapacity=capacity;
       } finally { if (current) positionModel(current); }
     }
-    let raf, resolve; const finished = new Promise(r => resolve = r);
-    cancel = () => { cancelAnimationFrame(raf); motionFrameCapacity=null; resolve(); };
+    const fence = animationFrameFence(directEnabled ? gpu.getContext?.() : null);
+    let raf, resolve, finishing = false; const finished = new Promise(r => resolve = r);
+    cancel = () => { cancelAnimationFrame(raf); fence.dispose(); motionFrameCapacity=null; resolve(); };
     let lastFrame = performance.now(), elapsed = 0;
     const animation = { finished, cancel, lastFrameTime:lastFrame };
     // Real time, so a slow device finishes each phase on schedule instead of
@@ -2370,7 +2373,9 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     const maxStep = Math.max(48, Math.min(100, duration / 2));
     let started = false;
     const tick = () => {
-      if (disposed) { motionFrameCapacity=null; return resolve(); }
+      if (disposed) { fence.dispose(); motionFrameCapacity=null; return resolve(); }
+      if (!fence.ready()) { raf = requestAnimationFrame(tick); return; }
+      if (finishing) { fence.dispose(); motionFrameCapacity=null; return resolve(); }
       // RAF's shared frame timestamp can precede a gesture delivered after a
       // slow draw. Measure when this callback actually runs, on the same clock
       // that started the motion, so its first painted pose advances too.
@@ -2379,8 +2384,11 @@ export function bookView(host, book, style, { width, height, thickness, viewport
       const t = duration > 0 ? Math.min(1, elapsed / duration) : 1;
       const pose = sampleBookMotion(frames, t);
       if (!onFrame?.(pose)) draw(pose);
+      fence.submit();
       animation.lastFrameTime = performance.now();
-      if (t < 1) raf = requestAnimationFrame(tick); else { motionFrameCapacity=null; resolve(); }
+      if (t < 1) raf = requestAnimationFrame(tick);
+      else if (!fence.ready()) { finishing = true; raf = requestAnimationFrame(tick); }
+      else { fence.dispose(); motionFrameCapacity=null; resolve(); }
     };
     raf = requestAnimationFrame(tick); return animation;
   }

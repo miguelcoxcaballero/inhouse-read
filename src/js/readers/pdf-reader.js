@@ -16,7 +16,7 @@ import { attachSwipeNavigation } from '../gestures.js'
 import { DEFAULT_READING_PREFERENCES, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES, normalizeReadingPreferences } from './reading-preferences.js'
 import { hasUntrackedPDFImages, paintPDFTheme } from './pdf-page-theme.js'
 import { renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from './page-snapshot.js'
-import { prepareSnapshotPaperTones } from '../page-paper-tone.js'
+import { prepareSnapshotPaperTones, sharePaperTone } from '../page-paper-tone.js'
 import { registerPageRaster } from '../page-raster.js'
 import { encodePdfCover } from './cover-encode.js'
 import { mapTextLayer, mapTextNodes } from './speech-map.js'
@@ -798,6 +798,11 @@ export class PdfReader {
       snapshot.toneKey = this.#snapshotToneState.theme
       if (snapshot.paper) snapshot.paper.toneKey = this.#snapshotToneState.paper
       const state = this.#snapshotToneState
+      // Both copies use the exact same source, filter and resampling when the
+      // physical page is already unfiltered white paper. Share only that proven
+      // raster's tone and texture revision; changed themes retain separate maps.
+      const samePaper = original === this.#canvas && canvasFilter === 'none'
+      if (samePaper && snapshot.paper) sharePaperTone(state.paper, state.theme)
       await prepareSnapshotPaperTones(snapshot, { signal:state.controller.signal })
       if (!this.#doc) return null
       if (state !== this.#snapshotToneState || pending !== this.#renderReady || page !== this.#pageNum
@@ -807,7 +812,7 @@ export class PdfReader {
         || canvasFilter !== renderedPageFilter(this.#canvas)
         || settledPhysical && !this.#sameRenderKey(this.#renderState?.key, this.#renderKey())) return this.getPageSnapshot({ reuseSettledLayout })
       registerPageRaster(snapshot.source, state.themeRaster)
-      if (snapshot.paper) registerPageRaster(snapshot.paper.source, state.paperRaster)
+      if (snapshot.paper) registerPageRaster(snapshot.paper.source, samePaper ? state.themeRaster : state.paperRaster)
     } else {
       this.#snapshotToneState?.controller.abort()
       this.#snapshotToneState = undefined
