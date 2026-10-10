@@ -1,3 +1,39 @@
+# Continuación: 1.7.115 preparada; 1.7.114 auditada
+
+115 retira las esperas por fotograma introducidas en114: la observación
+de GPU registra pausas de1,41–2,9 s en la salida y1,52 s en el zoom.
+Se conservan medición/textura compartidas únicamente para páginas PDF
+probadas idénticas, con píxeles exactos y calidad original.
+3.680 unitarias/300 archivos, build y105 Python PASS; siete recorridos
+originales locales PASS con los mismos plazos y sin retries.
+Comprobaciones de publicación115 pendientes. [Informe115](performance-1816.md).
+
+CI114 completa autenticada:531/533 PASS, dos regresos nativos FAIL también
+en retry; once ZIP, doce jobs y535 intentos, sin incidencias de colección.
+Las cuatro familias de voces con pesos reales PASS. Web real30/32 estrictos:
+dos capturas vacías conservan FAIL. Los blobs reales observados en un
+diagnóstico nuevo son íntegros, pero eso no explica ni sustituye los fallos.
+Offline4 PASS con el contrato de papel compartido; APK público y cinco
+estados nuevos del emulador PASS. El rendimiento general sigue pendiente.
+
+## Historial anterior
+
+# Continuación: 1.7.114 publicada; auditoría completa en curso
+
+Fuente `140a6a3bc59251899db3cce4d0144753c8714a2e`, Pages
+`bed38881fc6fe7f48a78a1dd1b1b48eb9f4e0466`. Se limita la cola GPU de la
+animación y se comparten medición y textura de páginas PDF idénticas.
+Cinco poses con RGBA exacto; no cambian resolución, sampler ni materiales.
+3.680 unitarias/300 archivos, build y105 Python PASS.
+Originales locales:seis PASS, un regreso393px FAIL sin muestras nativas.
+Web real HTTP32/shell96 PASS; APK1.1.8/code21 descargado, firma/hash/
+loader2.107 B PASS. Recorridos publicados, CI completa38088707648 y
+comprobación nueva del APK en emulador38088872659 en curso. Los fallos
+anteriores permanecen conservados; no se declara todo terminado.
+[Informe114](performance-1815.md).
+
+## Historial anterior
+
 # Continuación: 1.7.113 publicada; rendimiento general pendiente
 
 Fuente `c52169680895e89fe7970570dc2a4d546332e91c`, Pages
