@@ -1,4 +1,115 @@
-# 1.7.124 integrada con Inhouse Services Updater; publicación pendiente
+# Seguimiento recibido: integración 1.7.126 del updater
+
+Durante la auditoría de 124 llegan nuevos commits externos hasta `24dd03a`
+(web 1.7.126). Se descargan por fast-forward sin tocar los cambios Rust ya
+publicados ni los artefactos firmados. El runtime publicado procede de
+`bb2bb10a2cca8f9ee27758da84b9d5c5cf149172`, Pages
+`f02fc879d796a49c168508b09bd4bc06d8ed14cc`; el commit 24dd03a sólo precisa
+el selector del slider en un test. El primer intento de fijar Pages a 24dd03a
+es rechazado correctamente por no ser su fuente atribuida; después se fija
+bb2bb10, conservando el intento fallido. No se fuerza una atribución falsa.
+
+Nuevo updater canónico `ac5cef8994ea476af46161bd4189d85adfc5016a`: B por
+defecto, aviso en inglés, aceptación y deslizador para A. Se leen sus normas
+y se contrastan las 20 copias con los blobs Git canónicos, además del lock.
+La copia de referencia anterior conserva cambios de finales de línea que
+impiden cambiar su checkout; se leen los blobs de la nueva revisión sin
+sobrescribirla. No se ha modificado código compartido de forma independiente.
+B permanece sin publicaciones; elegirlo por defecto no autoriza promocionar.
+
+Build 126, 3952/3952 unitarias, 105 Python y cinco recorridos locales del
+updater/descarga aprobados. HTTP126 aprueba 101 respuestas/891 comprobaciones,
+con el WASM idéntico de 178034 bytes. Los **27 recorridos públicos nuevos
+pasan** en 3,8 minutos, con auditoría aprobada de todas sus respuestas main:
+`public126-browser-attempt1/audits/2026-10-11T17-10-35-771395Z-654cd80d`.
+El resultado completo de CI124 que sigue abajo no acredita la nueva CI126.
+
+La otra tarea publica APK **1.1.12/25** en `38157135543`. Se descarga su
+release real de A: 78532469 bytes, SHA256
+`405a3d2698949e1d6f7425b7e666b5ca1f0b42e9cb212852caca3711336dfefd`.
+Firma, paquete y loader de 2107 bytes aprobados. El APK público es idéntico
+byte a byte al del ZIP original de build autenticado. Se autentica también
+el ZIP de capturas y se revisan los JSON/PNG: cold/warm/share conservan la
+política de pantalla; hay 367576 ms bloqueado con 368,78 s de audio real,
+capítulos 0–22 y PDF páginas 0–1. La captura cold final sí muestra el libro
+insertado. No acredita un plazo de ocho segundos ni un teléfono físico;
+tampoco se capturan los cuerpos HTTP del WebView. Son pruebas del build
+previas a publicar, contrastadas contra los bytes públicos descargados.
+Evidencias: `android1112-integrated/summary.json` y
+`android1112-build-originals/audit.json`. No se reconstruye ni sustituye el
+APK ajeno. Se integra su catálogo por fast-forward en `b49cba3`.
+
+CI126 de `24dd03a`: `38157553852`, aún en curso. Revisar sus originales al
+terminar; no reutilizar como aprobado el resultado de CI124 ni repetirla
+sin cambios para ocultar fallos. La migración completa a Rust sigue pendiente.
+
+# 1.7.124 publicada con Inhouse Services Updater; dos fallos nativos pendientes
+
+Los 11 grupos de pruebas de CI `38155579422` han terminado: **3952/3952
+unitarias en 321 archivos y 689/691 E2E**. Hay 693 intentos (dos reintentos
+automáticos), cuatro intentos fallidos, cero casos omitidos o inestables.
+Todos los grupos de voces aprueban. Se autentican los 11 ZIP originales sin
+inconsistencias ni artefactos ausentes: `ci-38155579422/snapshot-008/summary.json`.
+La CI termina **FAILURE**, con sus 12 jobs registrados. La captura anterior
+snapshot-007 conservaba el job agregado esperando runner; no se reemplaza.
+No declarar CI aprobada: los dos contratos nativos fallan.
+
+Web publicada desde `67d46f02095aabc09670caa2e23037704b48d03f`, Pages
+`b9751b406c1f9225e471bbcc70b7d6ae161aaa69`. Se mantiene APK 1.1.11/24 de A,
+sin reemplazar sus bytes ni publicar la 1.1.10 cancelada. B permanece vacío.
+
+La comprobación HTTP final valida 101 respuestas, 99 recursos y 891
+comprobaciones de identidad. El primer intento recibió todavía la web
+anterior mientras Pages desplegaba: se conserva íntegro. Los 27 recorridos
+públicos originales pasan en 3,9 minutos, incluidos cierres nativos con
+sus plazos originales, texto/imágenes PDF y reapertura PDF/EPUB offline.
+Su auditoría verifica los cuerpos del main realmente ejecutados por todos
+los contextos. Además pasan los dos recorridos públicos del editor:
+igualdad de colores, un trabajo Rust inicial y ninguno al reutilizar caché.
+El primer intento de preparar esa copia de pruebas omitió book-length.js;
+se conserva ese fallo de preparación y se corrige sólo la copia externa.
+No se deduce una mejora del tiempo completo del editor de esos dos ensayos.
+
+APK real: workflow `38155780417` aprobado, ZIP original autenticado y
+capturas revisadas. SHA256 y tamaño coinciden con A; la verificación local
+también conserva firma, paquete y loader. Android 35 acredita barra oculta
+y KEEP_SCREEN_ON al leer, restauración al salir y al ir al fondo, estabilidad
+del WebView y formulario Google sin redirect_uri_mismatch. No se introducen
+credenciales ni se acredita aquí la sincronización de una cuenta real.
+La última captura de retorno todavía muestra el libro en vuelo: no demuestra
+la inserción final ni una mejora de latencia. El workflow tampoco captura los
+bytes HTTP del WebView; esa comprobación de web124 tiene evidencia separada.
+
+Evidencia nueva bajo `D:/CodexEvidence/InhouseRead-20261011/rust-migration/`:
+`public-124-2026-10-11T16-30-13-713Z-f7cda760`,
+`public124-browser-attempt1/audits/2026-10-11T16-35-15-509553Z-b7db3f02`,
+`public124-editor-attempt2/audit.json` y `android1111-web124/audit.json`.
+El censo original completo de CI está en `ci-38155579422`.
+Los recorridos públicos aprobados no convierten la batería completa en verde.
+
+Diagnóstico adicional `close124-diagnostic`: se mantiene la prueba nativa
+alineada original a 30/8 s, añadiendo muestreo CPU y observación de fases,
+con SwiftShader explícito. Pasa (27 s totales, cierre 5814,5 ms). Preparación
+hasta zoom: 76,9 ms; marcapáginas 909,2 ms, cierre 1726,2 ms, vuelo
+3456,9 ms, inserción 4769,2 ms desde el clic. La instrumentación y el driver
+explícito hacen que sea un diagnóstico separado, no un reemplazo de CI ni
+una medición de teléfono. No hay cambio de producto derivado de ese ensayo.
+
+`close124-resize-diagnostic` separa los setters width/height posteriores al
+clic, además del perfil: pasa con cierre 4917,7 ms. Cuatro escrituras del
+canvas nativo durante inserción consumen 278,3 + 136,0 + 298,1 + 0,8 ms;
+las demás escrituras observadas pertenecen a preparación y redondean a cero.
+Son dos perfiles instrumentados diferentes, no una comparación antes/después
+ni una corrección publicada. No se cambian tamaños, DPR ni contratos nativos.
+
+CI124 conserva de nuevo los dos fallos nativos originales: aligned agota
+30 s en el primer intento y la expectativa de cierre de 8 s en el reintento;
+legacy mide 8266,5 y 8189,2 ms, además de agotar el plazo global. Evidencia
+original autenticada en `ci-38155579422/originals/playwright-ui-2`, con
+resumen `ui2-failed-cases.json`. No hay aumento de límites ni reejecución
+manual sin cambios. La migración de hojas/paletas no arregla esos fallos.
+
+## Integración y preparación previas
 
 El 11 de octubre a las 18:15 se descarga `origin/main` en `d879237`, con
 web 1.7.123 y APK 1.1.11/24 del canal A. Se preservan los 26 cambios locales

@@ -704,3 +704,61 @@ integración del updater. El APK 1.1.11 publicado se descarga y valida:
 SHA256, tamaño, versión/code, paquete, firma v2 y loader original de 2107
 bytes correctos. La nueva web no necesita reemplazar el instalador firmado;
 su comprobación con la producción nueva queda pendiente del despliegue.
+
+### Publicación y comprobación de 124
+
+Fuente `67d46f02095aabc09670caa2e23037704b48d03f`, Pages
+`b9751b406c1f9225e471bbcc70b7d6ae161aaa69`. HTTP verifica los 99 recursos
+y 101 respuestas, incluido el WASM idéntico al build congelado. El primer
+intento aún recibió la versión anterior durante el despliegue y se conserva.
+Los 27 recorridos públicos originales pasan; la auditoría contrasta los
+cuerpos HTTP ejecutados en todos sus contextos. Dos casos públicos adicionales
+del editor comprueban el kernel real, los mismos colores, liberación y caché.
+La primera copia de ese test omitió una dependencia del fixture: se conserva
+su fallo y se añade esa dependencia a una segunda copia externa.
+
+La APK 1.1.11/24 publicada pasa la comprobación nueva `38155780417` y la
+auditoría del ZIP original. Acredita las políticas de pantalla/estado y abre
+el formulario de Google, sin autenticar una cuenta. Su última captura queda
+en plena devolución; no acredita inserción final o duración del cierre.
+CI de 124: `38155579422`, 3952/3952 unitarias y **689/691 E2E** con
+693 intentos, dos reintentos automáticos y cero casos omitidos/inestables.
+Los 11 ZIP originales están autenticados en `snapshot-007` sin inconsistencias.
+Todos los grupos de voces pasan; los dos contratos de regreso nativo fallan:
+aligned agota el plazo global y la expectativa de cierre; legacy mide
+8266,5/8189,2 ms, por encima de ocho segundos, además del plazo global.
+No se amplían límites ni se reejecuta sin cambios. El job agregado aún esperaba
+runner en snapshot-007; snapshot-008 conserva los 12 jobs y la conclusión
+final FAILURE, con los mismos 691 resultados completos.
+Todos los fallos originales de CI121 permanecen conservados. Los diagnósticos
+locales con SwiftShader de 5814,5/4917,7 ms no sustituyen el fallo de CI.
+
+Recuento reproducible de 124: 1.568 líneas Rust no vacías en 13 archivos y
+34.329 líneas JavaScript propias en 161 archivos: **4,37 %** del conjunto
+Rust+JS. Incluye comentarios y excluye pruebas, dependencias, HTML, CSS y
+código nativo. No es un porcentaje de funcionalidad migrada ni de mejora
+de velocidad. El control de pantallas, persistencia, Drive, voces y lectores
+sigue mayoritariamente en JavaScript; la migración completa no está terminada.
+El updater permanece en su implementación canónica fijada, sin fork local.
+
+### Seguimiento externo 126 y APK 1.1.12
+
+Se incorporan por fast-forward los commits del updater hasta `24dd03a` y el
+catálogo publicado `b49cba3`, conservando intactos los núcleos y puentes Rust.
+La revisión canónica pasa a `ac5cef8994ea476af46161bd4189d85adfc5016a`;
+las 20 copias coinciden con sus blobs Git exactos. B es el canal inicial;
+A exige aceptación y deslizador, sin que ello autorice una publicación B.
+
+Build126, 3952 unitarias, 105 Python, cinco casos updater/descarga y los
+27 recorridos públicos de 126 aprueban. Se auditan sus respuestas contra
+Pages `f02fc879d796a49c168508b09bd4bc06d8ed14cc`, fuente `bb2bb10`;
+24dd03a sólo modifica un selector de prueba y no generó un runtime diferente.
+La comprobación HTTP126 conserva el WASM de 178034 bytes, byte a byte.
+
+Se descarga APK1.1.12/25 de A, se verifica firma/paquete/loader y se compara
+con el APK del build38157135543: idénticos bytes. Sus originales autenticados
+acreditan cold/warm/share, políticas de pantalla y audio real durante 367576ms
+bloqueado, más PDF0–1. Se revisan las capturas; la final cold muestra el libro
+insertado, sin medir su latencia. No hay medición de teléfono ni pin HTTP del
+WebView. CI126 `38157553852` aún está en curso; sus resultados no se atribuyen
+a la CI124, que conserva sus dos fallos nativos. Detalles en el WIP.
