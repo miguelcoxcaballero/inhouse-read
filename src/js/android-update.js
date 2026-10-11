@@ -1,3 +1,4 @@
+// Shared updater: users default to B; A requires warning acknowledgement and slide confirmation. Publish new changes to A; promote B only on explicit user request. Edit canonical inhouse-services-updater and sync all five apps.
 // Inhouse services updater — host adapter, not an independent updater.
 // Edit github.com/miguelcoxcaballero/inhouse-services-updater first, then sync ALL five apps.
 // New versions ALWAYS go to A with a tiny changelog; B requires an explicit user request.
