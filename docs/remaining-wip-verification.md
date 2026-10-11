@@ -1,3 +1,68 @@
+# 1.7.127 — Restauración completa de la biblioteca en Drive
+
+Solicitud posterior del usuario (11 de octubre): guardar todos los datos de la
+biblioteca en Drive al conectar la cuenta. **Sustituye la antigua política de
+subida exclusivamente manual** que aún aparece en notas y recordatorios previos.
+La copia local se conserva. No revertir esta decisión al retomar el WIP anterior.
+
+Runtime publicado: `148ec9ed06d4b4779bb8b7b00bb9fbc2d01d9e6e`; Pages:
+`37b27fb4ac1cf2477db5e094d1c8697cd8370ef8`. El updater compartido, su revisión,
+los canales, paquete y firma no cambian. No hay nueva APK nativa: la 1.1.12/25,
+ya publicada en A, carga la web 1.7.127. B sigue vacío.
+
+Implementación:
+- `LibraryBackup` coordina los originales con `CloudSync` y restaura archivos,
+  portadas binarias, metadatos, aspecto, progreso/historial/marcadores/citas,
+  orden/posiciones y preferencias de estantería, plantas, lámparas y lector.
+- Manifiestos por dispositivo en `.inhouse-read-state`, con registros por campo,
+  aislamiento de cuenta y marcas de retirada. Una instalación vacía no borra la
+  biblioteca remota ni sustituye la decoración por la predeterminada.
+- Los checkpoints van a IndexedDB, las imágenes a ficheros binarios separados;
+  no se serializan Blobs como `{}` ni URLs `blob:` de otro dispositivo. Web Locks
+  serializa sincronizaciones del mismo origen/cuenta en varias pestañas.
+- Ediciones, portadas, importación y decoración disparan sincronización en segundo
+  plano. Se reintenta al reconectar/volver y cada tres minutos si está visible.
+  Una edición durante una transferencia y una portada más reciente se conservan.
+- Los registros antiguos de origen local que tienen ID de Drive pero no bytes
+  recuperan el original remoto al abrir, sin pedir otro archivo local.
+- Para subir libros antiguos nunca copiados, se debe abrir esta versión primero
+  en el dispositivo que conserva sus bytes. Los registros sin original se
+  notifican como pendientes; no se inventa una copia recuperable.
+
+Evidencia local en `D:/CodexEvidence/InhouseRead-20261011/drive-library`:
+- 3963/3963 unitarias (`unit-release-final.json`) y 105 Python con Python 3.12.
+  Se conserva el primer fallo del ejecutor Python 3.9 (no admite `Path | None`).
+- Recorridos locales de restauración PDF/EPUB, subida automática, indicador de
+  portada, retirada/reimportación y updater aprobados, sin ampliar deadlines.
+- Tres recorridos en la web pública pasan (55 s). Dos contextos independientes
+  por formato recuperan bytes originales y portadas exactas, orden y plantas.
+  El recorrido público PDF añade ir a la página 2 y exige reabrir en esa página.
+- Se auditan once cuerpos `Response.body()` de main de esos recorridos contra
+  SHA-256 `43212f0c241414a4dea4033265cceaf02a03552c7bc7bae3b08c8ade26d92c1f`.
+  `public-browser/audit.json` contiene la aprobación y las atribuciones.
+- HTTP público: los 99 recursos coinciden en tamaño/hash con el manifiesto de
+  Pages. El primer auditor intentó catálogos bajo Pages y recibió HTML/404;
+  el segundo usa los catálogos reales de `raw.githubusercontent.com` del updater.
+- APK descargada de nuevo, 78 532 469 bytes, SHA-256
+  `405a3d2698949e1d6f7425b7e666b5ca1f0b42e9cb212852caca3711336dfefd`, firma
+  permanente y loader de 2107 bytes verificados, sin bundle antiguo completo.
+
+Límite de la evidencia: app publicada, lectores y almacenamiento del navegador
+reales, pero endpoints HTTP de Drive controlados por el servidor de pruebas.
+No se ha usado una cuenta Google personal ni un teléfono físico en esta ronda.
+No afirmar que se hayan subido ya los libros privados del usuario.
+
+CI general de esta versión: `38160512287`, aún en ejecución al documentar esta
+entrega. `ci-38160512287/snapshot-001/summary.json` conserva siete artefactos
+originales autenticados y sus hashes: 3963 unitarias y 273 casos E2E aprobados,
+sin reintentos ni omisiones en esos trabajos. Faltan los grupos de lector y
+estantería 1/6, 2/6 y 6/6, y Supertonic. No es una aprobación de la batería
+completa. Al retomar, cerrar esa auditoría con un nuevo snapshot sin sobrescribir
+los originales. Los fallos nativos previos de CI124/126 no se han borrado,
+omitido ni convertido en éxito mediante reintentos locales.
+
+---
+
 # Seguimiento recibido: integración 1.7.126 del updater
 
 Durante la auditoría de 124 llegan nuevos commits externos hasta `24dd03a`
