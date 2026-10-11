@@ -1,5 +1,11 @@
 # inhouse read
 
+## 1.7.134 / Android 1.1.13 — Inhouse services updater
+
+Nuevo panel de descarga y actualización compartido, con versiones A/B y
+recordatorio opcional. Android 1.1.13 se publica en B por petición expresa
+del usuario y llega también a A. Conserva el paquete y la firma originales.
+
 ## 1.7.133 — Arranque del audiolibro
 
 «Leyendo» aparece al comenzar el sonido, sin volver falsamente a preparación.
