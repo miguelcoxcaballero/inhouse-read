@@ -6,6 +6,7 @@ mod font;
 mod bookmark;
 mod binding;
 mod page_mesh;
+mod cover_color;
 mod pdf_layout;
 mod relief;
 

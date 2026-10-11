@@ -34,6 +34,7 @@ import { markTiming } from './perf-marks.js'
 import { createPreparedPageCache, createStageGate, pageKeyMismatch } from './prepared-page.js'
 import { createBookLengthQueue, isBookLengthReady } from './book-length-queue.js'
 import { persistablePosition, persistableRelocation } from './readers/persistable-position.js'
+import { readerReturnCanvas } from './reader-return-canvas.js'
 
 const reader = new ReaderController()
 
@@ -1258,9 +1259,9 @@ els.readerBack.addEventListener('click', async () => {
       const screenStyle = getComputedStyle(els.readerScreen)
       stillPage.style.backgroundColor = screenStyle.backgroundColor
       stillPage.style.backgroundImage = screenStyle.backgroundImage
-      const image = document.createElement('canvas'), bounds = pageSnapshot.displayBounds
-      image.width = pageSnapshot.source.width; image.height = pageSnapshot.source.height
-      image.getContext('2d').drawImage(pageSnapshot.source,0,0)
+      // Each engine returned its own detached page, independent of the live
+      // reader. Keep those exact pixels for both the still layer and WebGL.
+      const image = readerReturnCanvas(pageSnapshot.source, { reuseDetached:true }), bounds = pageSnapshot.displayBounds
       image.style.cssText = `position:absolute;left:${bounds.left}px;top:${bounds.top}px;width:${bounds.width}px;height:${bounds.height}px`
       stillPage.append(image); document.body.append(stillPage)
     }

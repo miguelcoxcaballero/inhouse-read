@@ -241,3 +241,35 @@ describe('first cover is tied to its original stored bytes',()=>{
   expect(latest.cover).toBeNull();expect(await latest.content.text()).toBe('replacement-document');
  });
 });
+
+describe('closing reuses the reader-owned still page', () => {
+  it.each(['complete', 'cancel'])('retains the exact snapshot through reader teardown and %s cleanup', async outcome => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({ drawImage:vi.fn() }));
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width:1200, height:1600, close:vi.fn() })));
+    const book = await savedBook();
+    await openSelected(book);
+    // A real reader creates a fresh, detached current-page snapshot on Back.
+    const source = Object.assign(document.createElement('canvas'), { width:144, height:218 });
+    const closing = { source, width:144, height:218, displayBounds:{ left:8, top:20, width:144, height:218 },
+      location:{ fraction:0, locator:{ kind:'pdf-page', value:1 } } };
+    state.reader.getPageSnapshot.mockResolvedValueOnce(closing);
+    const release = deferred();
+    state.shelf.returnToShelf.mockImplementation(async (_id, { pageSnapshot }) => {
+      expect(state.reader.close).toHaveBeenCalledOnce();
+      expect(pageSnapshot).toBe(closing);
+      expect(document.querySelector('.ihr-reader-return-page > canvas')).toBe(source);
+      expect(source.width).toBe(144); expect(source.height).toBe(218);
+      await release.promise;
+      return outcome === 'complete';
+    });
+    back();
+    await vi.waitFor(() => expect(state.shelf.returnToShelf).toHaveBeenCalledOnce());
+    expect(document.body.classList.contains('is-closing-reader')).toBe(true);
+    expect(source.isConnected).toBe(true);
+    release.resolve();
+    await vi.waitFor(() => expect(document.body.classList.contains('is-closing-reader')).toBe(false));
+    expect(document.querySelector('.ihr-reader-return-page')).toBeNull();
+    expect(source.isConnected).toBe(false);
+    expect(source.width).toBe(144); expect(source.height).toBe(218);
+  });
+});

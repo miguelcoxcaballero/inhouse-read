@@ -237,10 +237,13 @@ SHA256 `e6b3842782f367dd65473802e51ffded09e25eb83108169c3c8032ea3e2a60c3`.
 Mantiene el mismo APK público 1.1.8; la captura final muestra el libro en su
 estante. La política final se confirmó a **41,44 segundos** en ese emulador:
 no acredita fluidez, el contrato de ocho segundos del navegador ni velocidad
-en un teléfono físico. La CI completa 1.7.117 sigue pendiente de cierre; su
-shard 3 ya conserva los dos timeouts de regreso nativo y el shard 1 un caso de
-importación Android que sólo pasa al reintentarse. La batería completa no se
-considera aprobada y sus originales se mantienen separados.
+en un teléfono físico. La CI completa 1.7.117 terminó con **542/545 casos
+estrictos aprobados, dos fallos y uno inestable**: 548 intentos, tres reintentos,
+sin casos omitidos, duplicados ni errores de colección. Se autenticaron los
+once ZIP y las fuentes de doce jobs. Conserva los dos timeouts de regreso
+nativo y un caso de importación Android que sólo pasa al reintentarse. En este
+último, el observador de la aserción llegó después del estado transitorio de
+cierre; el original sigue siendo un fallo estricto. No se han ampliado plazos.
 
 ## Continuación 1.7.118: páginas tridimensionales
 
@@ -289,5 +292,87 @@ Build de producción y batería completa 1.7.118 aprobados: **3.793 pruebas en
 308 archivos**, más 105 comprobaciones Python/Android. Pasan ocho recorridos
 locales al primer intento, sin cambiar plazos ni aserciones: devolución en ambas
 vistas, cancelación por viewport, fuente real tardía, editor móvil, compatibilidad
-sin WebGL, ambos contratos nativos y gesto isométrico. La publicación y
-verificación pública de esta continuación todavía están pendientes.
+sin WebGL, ambos contratos nativos y gesto isométrico. Se publicó después la
+fuente `b57b5ee8aea3890a6dddc4b0d3124c0419809cae`, Pages
+`8beed00129527ef4aeca9a357353dbd3b4f5aa04`. Los **23 recorridos públicos**
+pasaron y sus respuestas reales de entrada fueron auditadas contra el artefacto
+fijado. Las 100 respuestas HTTP guardadas coinciden con Pages y el build118.
+El primer verificador conservó dos fallos porque comparó esos bytes118 con el
+núcleo local119, ya compilado: la auditoría posterior usa los mismos originales
+y el dist118 preservado, con 742 comprobaciones correctas y ninguna nueva
+petición. Ambos informes se conservan; no se reescribe el resultado fallido.
+La comprobación nativa38144600262 aprobó el APK, su cargador de 2.107 bytes,
+los cinco estados de pantalla y el formulario real de Google. La política de
+regreso se observó a 39,555 s, todavía con el libro en plena animación: no prueba
+su inserción final ni fluidez. Se conservan cuatro errores previos de captura.
+CI118 permanece pendiente de auditoría completa; su shard3 ha terminado fallido.
+
+## Continuación 1.7.119: color de portada y página de cierre
+
+El agrupamiento del color dominante pasa a Rust. Se conservan el muestreo por
+filas, el umbral alfa, la elección del primer centro en los empates, las siete
+iteraciones y el redondeo final de JavaScript. Sólo cruza el puente la muestra
+RGBA, con arena limitada a 32.768 candidatos, sin retener la imagen completa.
+El analizador carga el adaptador sin detener la decodificación de la portada;
+la ruta previa permanece disponible mientras el núcleo se prepara.
+
+El cierre usa directamente el canvas independiente que entrega el lector para
+su capa de página inmóvil y para la textura de WebGL. Evita una copia completa
+de píxeles. La alternativa sin WebGL conserva una copia separada porque necesita
+dos propietarios DOM. Se mantienen las dimensiones, la página, las imágenes,
+el tema, el orden de persistencia y los tiempos configurados de las animaciones.
+
+Núcleo preparado: 58.598 bytes, SHA256
+`04438e836e131ca5ca91ea4c2efaa999928c9ff228ced411dce9ec8f98f50ec6`.
+Primera comprobación focal: 48 pruebas en cuatro archivos aprobadas. La batería
+unitaria final aprueba **3.825 pruebas en 310 archivos**, más 105 comprobaciones
+Python/Android. Los ocho recorridos originales locales pasan al primer intento
+con sus plazos y aserciones originales. Las mediciones y recorridos focales se
+detallan abajo; la publicación119 está pendiente. No certifica una reescritura
+completa ni una mejora global de rendimiento.
+
+### Mediciones y propiedad de la página
+
+Las diez comparaciones del segundo ensayo conservan exactamente los RGB.
+Las nueve muestras con píxeles incluidos usan el export Rust real, una llamada,
+una asignación y una liberación por imagen. La muestra cuyos puntos son todos
+transparentes utiliza expresamente la salida previa del host; no se atribuye
+su resultado a Rust. Se añadió además otra muestra con alfa mixto dentro de
+los puntos muestreados.
+
+| Caso | Node JS → nueva ruta (ms) | Chromium CPU ×4, JS → nueva ruta (ms) |
+| --- | ---: | ---: |
+| Color uniforme | 0,6857 → 0,1114 | 2,8375 → 0,5375 |
+| Dos tintas | 0,7056 → 0,1168 | 2,8625 → 0,5313 |
+| Colores fotográficos sintéticos | 0,8274 → 0,1589 | 3,5250 → 0,8188 |
+| Degradado | 0,7227 → 0,1209 | 2,8938 → 0,5625 |
+| Muestra vacía, sin Rust | 0,0041 → 0,0052 | 0,0313 → 0,0562 |
+| Transparencia mixta | 0,4605 → 0,0934 | 2,0063 → 0,4500 |
+| Miniatura | 0,2684 → 0,0441 | 1,2563 → 0,2125 |
+| Límite de muestreo cada píxel | 2,6748 → 0,5476 | 12,5563 → 2,4625 |
+| Muestreo cada dos píxeles | 0,6518 → 0,1229 | 2,7562 → 0,5813 |
+| Portada horizontal | 0,7222 → 0,1199 | 2,9063 → 0,5875 |
+
+Son medianas por portada, incluyendo validación, muestreo, copias y memoria.
+Node usa cuatro calentamientos y quince tandas alternadas de 32 portadas;
+Chromium, tres calentamientos y diez tandas de 16. Se conserva visible el pequeño
+sobrecoste de validación del caso vacío, así como el primer ensayo, donde ese
+caso se enviaba innecesariamente a Rust. El pico temporal medido es de 28.712
+bytes; la imagen habitual de 192×288 utiliza 9.072. No quedan arenas temporales
+vivas, aunque WASM conserva su capacidad de 1.179.648 bytes. Estos ensayos no
+miden decodificación, GPU, autonomía ni fluidez global en un teléfono.
+
+Pasan doce casos Chromium: los diez anteriores y dos que cargan módulos HTTP,
+decodifican PNG reales y exigen llamadas al núcleo durante el análisis de
+producción. El segundo retiene la descarga real del WASM: la portada sigue
+analizándose mientras espera y utiliza Rust al estar disponible. También pasan
+cuatro cierres reales con PDF físico, PDF adaptable ilustrado en sepia, EPUB y
+compatibilidad sin WebGL: comprueban identidad de la fuente, píxeles completos,
+propiedad DOM durante la entrega y retirada de las capas al terminar. Sus
+lecturas de píxeles verifican funcionalidad; no se usan como medida de velocidad.
+
+Evidencia: `cover-color-benchmark-attempt2.json`, `cover-color-browser-attempt2.json`
+y `reader-return-canvas-attempt1.json`. El intento unitario2 se conserva fallido:
+su observador esperaba una copia WASM aun en una muestra vacía. Ahora comprueba
+la ausencia de copia en esa rama y añade un único píxel incluido para comprobar
+el orden completo de entrada al núcleo. El intento3 aprueba las 31 pruebas.

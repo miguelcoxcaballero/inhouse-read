@@ -111,6 +111,7 @@ import { markTiming, resetTimeline } from './perf-marks.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
 import { refreshCanvasFontsAfterPaint } from './canvas-font-readiness.js';
 import { bookReturnSignature, bookReturnCompatibility, createBookReturnCache } from './bookshelf-return.js';
+import { readerReturnCanvas } from './reader-return-canvas.js';
 import { layoutShelfDecorations, moveShelfDecoration } from './shelf-decoration-layout.js';
 import { createLazyPlantCatalog } from './plant-catalog-lazy.js';
 import { normalizeShelfType, BAGGEBO_SPEC } from './shelf-types.js';
@@ -4008,7 +4009,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       } else if (pageSnapshot?.source && !view) {
         const pages = bookNode.querySelector('.ihr-flyout__fallback-pages');
         const leaf = bookNode.querySelector('.ihr-flyout__fallback-leaf');
-        const image = pageSnapshot.source;
+        // The still-page layer owns the snapshot's DOM canvas until handoff.
+        // Only the non-WebGL fallback needs a second DOM copy for its leaf.
+        const image = readerReturnCanvas(pageSnapshot.source);
         image.dataset.pageSource = pageSnapshot.sourceType || pageSnapshot.engine;
         image.dataset.pageLocator = JSON.stringify(pageSnapshot.location?.locator ?? null);
         const pageW = coverW*.92, pageH = coverH*.975;

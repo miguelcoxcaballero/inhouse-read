@@ -25,6 +25,18 @@ async function openFontScoreJob(context) {
   return client ? client.openFontScoreJob(context) : null;
 }
 
+// Keep data-URL imports self-contained and first cover decoding independent of
+// module/network availability. Later calls reuse the loaded numeric core.
+let coverColorCoreTask, coverColorCore;
+function warmCoverColorCore() {
+  if (coverColorCore) { void coverColorCore.load(); return; }
+  coverColorCoreTask ??= Promise.all([import('./cover-color-wasm.js'), import('./rust-core.js')])
+    .then(([bridge, core]) => {
+      coverColorCore = { run:bridge.rustDominantCoverRgb, get:core.getRustCore, load:core.loadRustCore };
+      void core.loadRustCore();
+    }).catch(() => null);
+}
+
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
 /** Return a safe physical cover width/height ratio from decoded image dimensions. */
@@ -88,6 +100,8 @@ function darken(r, g, b, amount = 0.24) {
 }
 
 function dominantRgb(data, width, height) {
+  const accelerated = coverColorCore?.run(coverColorCore.get(), data, width, height);
+  if (accelerated) return accelerated;
   const samples = [];
   const stride = Math.max(1, Math.floor(Math.sqrt((width * height) / 1800)));
   for (let y = 0; y < height; y += stride) {
@@ -475,6 +489,7 @@ function loadCandidateFonts() {
 /** Analyze an already-decodable image URL. Returns null for missing/unsafe images. */
 export async function analyzeCoverAppearance(url, title = '', { matchFont = true } = {}) {
   if (!url || typeof Image === 'undefined' || typeof document === 'undefined') return null;
+  warmCoverColorCore();
   const image = new Image();
   image.decoding = 'async';
   image.src = url;

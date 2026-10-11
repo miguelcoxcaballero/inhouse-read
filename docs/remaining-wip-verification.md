@@ -1,3 +1,35 @@
+# Continuación: 1.7.119 preparada; migración parcial a Rust
+
+119 añade el agrupamiento del color de portada al núcleo Rust, con RGB exactos
+y sin bloquear la decodificación inicial. Los nueve casos con muestra válida
+mejoran en Chromium CPU ×4; la muestra vacía conserva la salida directa del
+host. El cierre reutiliza los píxeles independientes del lector y evita una
+copia completa; el modo sin WebGL mantiene dos propietarios DOM separados.
+
+Build de producción y **3.825 unitarias en 310 archivos** aprobados. Pasan doce
+casos reales del color y cuatro cierres con comprobación de píxeles (PDF,
+adaptable ilustrado en sepia, EPUB y sin WebGL). También pasan las 105
+comprobaciones Python/Android y los ocho recorridos originales locales al
+primer intento con sus plazos originales. Publicación y auditoría pública119
+pendientes.
+
+118 está publicada en main `b57b5ee8aea3890a6dddc4b0d3124c0419809cae`, Pages
+`8beed00129527ef4aeca9a357353dbd3b4f5aa04`: 23 recorridos públicos aprobados,
+100 respuestas guardadas correctas. El primer verificador comparó por error
+el WASM119 local con el publicado118; la auditoría correctiva usa los mismos
+originales y el build118 congelado, sin repetir descargas ni navegador.
+El APK comprobado en38144600262 conserva su cargador y los cinco estados
+nativos. Su captura de regreso a39,555 s está a mitad de animación y no prueba
+la inserción final. CI118 pendiente; shard3 fallido. La CI117 completa termina
+en542/545 estrictos, dos fallos y uno inestable. Todos se mantienen visibles.
+
+**La reescritura completa sigue pendiente.** Interfaz, persistencia, Drive,
+lector/audio y parte de la escena siguen en JavaScript. También falta medir
+fluidez y consumo en un teléfono físico.
+[Alcance, mediciones y trabajo pendiente](rust-migration.md).
+
+## Historial anterior
+
 # Continuación: 1.7.118 preparada; migración parcial a Rust
 
 118 migra a Rust el bloque de páginas y las hojas visibles al abrir el libro,
