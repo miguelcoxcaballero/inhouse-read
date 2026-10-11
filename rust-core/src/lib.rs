@@ -13,6 +13,7 @@ mod relief_palette;
 mod shelf_placement;
 mod pdf_layout;
 mod pdf_rows;
+mod pcm;
 mod relief;
 
 #[no_mangle]

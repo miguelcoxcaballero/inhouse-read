@@ -22,7 +22,8 @@ import { createPhonemizer } from './phonemizer.js'
 import { createHebrewPhonemizer } from './hebrew.js'
 import { createSupertonicRuntime } from './supertonic-runtime.js'
 import { yieldToMessages } from './task-yield.js'
-import { peakNormalize, trimSilence, fadeEdges, silence, concat, pauseAfter, restScale, splitSegments, limitIds, lengthScaleFor, PAUSE_MS } from './pcm.js'
+import { loadRustCore } from '../../rust-core.js'
+import { prepareSpeech, silence, concat, pauseAfter, restScale, splitSegments, limitIds, lengthScaleFor, PAUSE_MS } from './pcm.js'
 
 let ort = null, phonemizer = null, phonBaseURL = null, hebrewPhonemizer = null, supertonicRuntime = null, session = null, config = null, voice = null, initPromise = null, loadChain = Promise.resolve()
 const cancelled = new Set()
@@ -38,6 +39,7 @@ const stage = (domain, stage, id, part = 0) => { if (diagnostics) post({type:'st
 
 async function init({ ortBase, phonBase, runtime }) {
   // ONNX Runtime and the phonemizer are independent: load them side by side (a cold start is the sum of everything serial).
+  void loadRustCore() // optional acceleration loads alongside the voice, never delays it
   phonBaseURL = phonBase
   const [module, phon] = await Promise.all([import(/* @vite-ignore */ ortBase + 'ort.wasm.min.mjs'), runtime === 'supertonic3' ? null : createPhonemizer({ base: phonBase })])
   ort = module
@@ -112,8 +114,7 @@ async function synth({ id, text, rate, speaker, lang, style }) {
       await yieldToMessages()
       return
     }
-    peakNormalize(raw)
-    const speech = fadeEdges(trimSilence(raw, sampleRate), sampleRate)
+    const speech = prepareSpeech(raw, sampleRate)
     const pcm = concat([speech, silence(sampleRate, pauseAfter(text) * restScale(rate))])
     post({ type:'chunk', id, index:0, last:true, pcm, sampleRate, ms:performance.now() - t }, [pcm.buffer])
     await yieldToMessages()
@@ -138,8 +139,7 @@ async function synth({ id, text, rate, speaker, lang, style }) {
     const raw = await runSegment(segments[index], { rate, speaker })
     stage(3,4,id,index)
     const ms = performance.now() - t
-    peakNormalize(raw, { model:voice })
-    const speech = fadeEdges(trimSilence(raw, sampleRate), sampleRate)
+    const speech = prepareSpeech(raw, sampleRate, { model:voice })
     const last = index === segments.length - 1
     // Sentences of one fragment are separated by a rest at their start; the rest after the fragment comes with its last one.
     // (the rests shorten with the speaking rate, like the speech does)

@@ -762,3 +762,85 @@ bloqueado, más PDF0–1. Se revisan las capturas; la final cold muestra el libr
 insertado, sin medir su latencia. No hay medición de teléfono ni pin HTTP del
 WebView. CI126 `38157553852` aún está en curso; sus resultados no se atribuyen
 a la CI124, que conserva sus dos fallos nativos. Detalles en el WIP.
+
+
+## 1.7.129 — Preparación PCM de las voces en Rust
+
+Se mueve al núcleo la normalización de pico (incluido el límite especial NVCC
+con RMS), recorte relativo de silencio y fade de extremos. Los cuatro caminos
+Piper/Supertonic × worker/nativo usan la misma función. No se cambia el modelo,
+la inferencia ONNX, las pausas, la planificación del audio ni la navegación.
+El núcleo se carga en paralelo a la voz; si no está disponible, un fragmento
+pequeño o una entrada fuera de límites usa las funciones JS originales.
+
+Una arena de 4 bytes por muestra + alineación + 32 bytes, hasta 16 MiB, se libera
+antes de entregar el fragmento. No hay memoria retenida por trabajo, views de
+WASM transferidas al reproductor ni copias normalizadas intermedias. La nueva
+API combinada deja intacta su entrada; los cuatro consumidores descartaban el
+raw tras normalizarlo. Los helpers públicos anteriores conservan sus contratos.
+
+La primera implementación conservaba además la mutación del raw mediante otra
+copia y una segunda región completa. El caso largo empeoró 31,26 → 36,12 ms:
+se descarta esa implementación. La versión final calcula en una sola región.
+En Chromium, viewport 390×844, CPU ×4, 3 calentamientos y 9 rondas alternadas
+de 12 fragmentos, incluidas copias, validación, asignación/liberación:
+
+| Caso | JS anterior | Rust final |
+| --- | ---: | ---: |
+| 4096 muestras | 0,150 ms | 0,125 ms |
+| NVCC, 66150 muestras | 1,575 ms | 1,217 ms |
+| Piper, 110250 muestras | 2,283 ms | 1,958 ms |
+| Supertonic, 288000 muestras | 5,858 ms | 4,700 ms |
+| Fragmento largo, 1440000 muestras | 31,483 ms | 29,075 ms |
+
+Es una reducción de ~8–23 % en este bloque, no en la inferencia, el arranque del
+audiolibro o toda la app; no acredita rendimiento térmico en un teléfono real.
+El WASM mide 179860 bytes, SHA256
+`dab359bdfbf395c7435a7efeabdcf09a5cd4c5a56b8ba5046977f9180b320dd6`.
+
+Evidencia: `D:/CodexEvidence/InhouseRead-20261011/rust-pcm`.
+- `focused-1`: un timeout al comparar Buffers de millones de bytes con deep
+  equality. Se conserva el caso completo y plazo; `Buffer.compare` comprueba
+  todos los bytes sin recorrer sus propiedades mediante el runner.
+- `focused-2`: 58/58 antes del cambio de memoria. `browser-1`: cinco casos
+  aprobados, incluido el empeoramiento largo que motivó el cambio.
+- `focused-3`: fallos por una edición interrumpida por la codificación Windows;
+  se completan las modificaciones en UTF-8. `focused-4`: 58/58 aprobadas.
+- `integration-1`: cuatro rutas de síntesis usan el WASM real y conservan cada
+  byte del chunk completo, pausas, sample rate y protocolo. Inferencia simulada.
+- `browser-2`: cinco comparaciones completas por SHA, ejecución real y
+  liberación verificadas, medidas finales de la tabla con todas las muestras.
+
+Batería completa, despliegue y comprobación pública de 129 aún pendientes al
+escribir este apartado. La migración completa de la aplicación sigue pendiente.
+
+
+La batería completa inicial detecta tres fallos en el simulador antiguo del
+worker hebreo: eliminaba los imports sin inyectar el nuevo `loadRustCore`.
+Se añade esa dependencia simulada, conservando las aserciones. Segunda batería:
+**3988/3988 unitarias, 324 archivos**, 100,73 s, y build aprobado (5,82 s,
+99 recursos offline). Las 105 Python pasan. Se conservan ambos resultados.
+
+Se consulta también la CI128 (anterior a esta migración). Su shard6 presenta un
+fallo en smoke: el test buscaba Cambiar tema sin abrir el nuevo menú de perfil.
+Se actualiza ese único paso de acceso, manteniendo la comprobación del tema.
+El caso de papelera/Drive tiene un fallo de boundingBox y pasa al reintentar;
+se conserva como inestable, no como aprobado estricto. Log original completo:
+`ci128-ui6-original.log`. Los otros jobs aún en curso no se dan por aprobados.
+
+
+Los 23 recorridos locales pasan al primer intento (`ui-1.json`, 3,4 min):
+seguimiento del audiolibro y continuidad de capítulos, PDF/EPUB recuperados de
+Drive en otro contexto, cierres nativos aligned/legacy con sus límites originales,
+reapertura offline y menú de perfil. No sustituye los resultados de CI128.
+
+
+La selección local de voces reales también pasa: veinte casos Supertonic,
+diez perfiles en inglés y diez en neerlandés, sin red después de instalar el
+paquete y calentar el worker. `voices-1.json` (2,5 min) y `real-voices` conservan
+métricas, WAV y revisión de pesos. No se presenta esta selección como la matriz
+completa de voces, que ejecuta el workflow completo al publicar.
+
+La corrección de smoke necesitó además usar el checkbox «Modo oscuro» dentro
+del perfil (el antiguo botón permanece oculto por compatibilidad). Se conserva
+el timeout de `smoke-1`; `smoke-2` pasa con la misma aserción y plazo.

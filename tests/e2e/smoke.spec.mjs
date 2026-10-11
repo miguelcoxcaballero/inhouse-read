@@ -155,7 +155,8 @@ test('muestra la estantería 3D vacía con tres baldas y plantas que se pueden m
 test('el botón de tema alterna data-theme en <html>', async ({ page }) => {
   const html = page.locator('html')
   const initial = await html.getAttribute('data-theme')
-  await page.getByRole('button', { name: 'Cambiar tema' }).click()
+  await page.locator('#drive-profile-btn').click()
+  await page.getByRole('checkbox', { name: 'Modo oscuro' }).click()
   await expect(html).not.toHaveAttribute('data-theme', initial ?? '')
 })
 

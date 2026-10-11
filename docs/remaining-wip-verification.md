@@ -1,3 +1,37 @@
+# 1.7.129 — Continuación de Rust: preparación del audiolibro
+
+Se traslada normalización, RMS de NVCC, recorte de silencios y fade a Rust,
+con exactamente los mismos bytes de audio que el código anterior. Está integrado
+en Piper/Supertonic, worker web y cliente Android. Una arena acotada se libera
+por fragmento; no se modifica la UI, los modelos ni las pausas. Revisión canónica
+del updater conservada: `356d1e3fbd4f8c429d2d46d2f6de9ca4e910e573`.
+
+Evidencia: `D:/CodexEvidence/InhouseRead-20261011/rust-pcm`.
+- 3988/3988 unitarias en 324 archivos (`unit-full-2.json`), build aprobado y
+  105 comprobaciones Python. El primer intento falló por el simulador del
+  worker hebreo sin la nueva dependencia; se conserva `unit-full-1.json`.
+- 5 mediciones Chromium, CPU ×4, comparan cada byte y verifican ejecución y
+  liberación real del WASM. Reducción de ~8–23 % en la preparación de los
+  fragmentos ensayados; no es una medición de toda la app ni de teléfono real.
+- 4 integraciones con WASM real e inferencia simulada mantienen cada chunk,
+  pausas, sample rate y protocolo. Detalles e intentos previos en rust-migration.md.
+- 23 recorridos locales de interfaz pasan (`ui-1.json`, 3,4 min): seguimiento
+  del audiolibro, capítulos, Drive en dos dispositivos, regreso nativo con los
+  plazos originales, apertura offline PDF/EPUB y menú de perfil.
+- 20 voces reales Supertonic pasan sin conexión después de instalar y calentar
+  el worker: diez perfiles en inglés y diez en neerlandés (`voices-1.json`,
+  2,5 min). Los pesos reales y las grabaciones quedan en la evidencia.
+- Publicación y comprobación pública: pendientes al escribir este commit.
+
+La CI128 anterior aún no ha terminado: se conserva el log original de su
+shard6. Smoke no abría el menú que ahora contiene Cambiar tema; se actualiza
+ese paso, sin modificar su aserción. Papelera/Drive tuvo un boundingBox nulo
+y pasó al reintentar: sigue siendo inestable, no un aprobado estricto.
+La migración de toda la app sigue incompleta; no se atribuye un porcentaje
+funcional a la proporción de líneas Rust/JS.
+
+---
+
 # 1.7.128 — Actualizaciones dentro del menú de perfil
 
 Solicitud: quitar el icono adicional de actualizaciones de la cabecera y abrir

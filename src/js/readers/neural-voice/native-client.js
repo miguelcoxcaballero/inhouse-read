@@ -5,7 +5,8 @@ import {createNativeOrt} from './native-ort.js'
 import {createPhonemizer} from './phonemizer.js'
 import {createHebrewPhonemizer} from './hebrew.js'
 import {createSupertonicRuntime} from './supertonic-runtime.js'
-import {peakNormalize,trimSilence,fadeEdges,silence,concat,pauseAfter,restScale,splitSegments,limitIds,lengthScaleFor,PAUSE_MS} from './pcm.js'
+import {prepareSpeech,silence,concat,pauseAfter,restScale,splitSegments,limitIds,lengthScaleFor,PAUSE_MS} from './pcm.js'
+import {loadRustCore} from '../../rust-core.js'
 const failure=message=>Object.assign(new Error(message),{code:'init-failed'})
 export class NativeSynthClient {
   constructor({store,phonBase,env=globalThis,createOrt=createNativeOrt,createPhon=createPhonemizer}={}) {
@@ -17,6 +18,7 @@ export class NativeSynthClient {
   prepare(key) {
     if(!this.loading&&this.loaded===key)return Promise.resolve(this.config)
     if(this.loading?.key===key)return this.loading.promise
+    void loadRustCore() // optional; native inference and playback never wait for it
     const generation=this.generation
     const promise=this.preparationChain.then(()=>this.#prepare(key,generation))
     this.preparationChain=promise.catch(()=>{})
@@ -72,8 +74,7 @@ export class NativeSynthClient {
       const {pcm:raw,sampleRate}=await this.supertonic.synthesize(text,{lang,style,rate,isActive:active})
       if(!active())return
       if(!(raw instanceof Float32Array)||raw.some(n=>!Number.isFinite(n)))throw failure('Invalid audio')
-      peakNormalize(raw)
-      const pcm=raw.length?concat([fadeEdges(trimSilence(raw,sampleRate),sampleRate),silence(sampleRate,pauseAfter(text)*restScale(rate))]):silence(sampleRate,120)
+      const pcm=raw.length?concat([prepareSpeech(raw,sampleRate),silence(sampleRate,pauseAfter(text)*restScale(rate))]):silence(sampleRate,120)
       handlers.onChunk({index:0,last:true,pcm,sampleRate,ms:performance.now()-start});return
     }
     const ids=config.phoneme_type==='hebrew'?await this.hebrew.phonemize(text):await this.phon.phonemize(text,config.espeak.voice)
@@ -89,8 +90,7 @@ export class NativeSynthClient {
       const out=await this.session.run(feeds)
       if(!active())return
       const tensor=out[this.session.outputNames[0]],raw=new Float32Array(tensor.data);tensor.dispose?.()
-      peakNormalize(raw,{model:key})
-      const speech=fadeEdges(trimSilence(raw,sampleRate),sampleRate),last=index===segments.length-1,rest=restScale(rate)
+      const speech=prepareSpeech(raw,sampleRate,{model:key}),last=index===segments.length-1,rest=restScale(rate)
       const pcm=concat([index?silence(sampleRate,PAUSE_MS.sentence*rest):new Float32Array(),speech,last?silence(sampleRate,pauseAfter(text)*rest):new Float32Array()])
       handlers.onChunk({index,last,pcm,sampleRate,ms:performance.now()-start})
     }

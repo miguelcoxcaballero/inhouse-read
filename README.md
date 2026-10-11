@@ -1,5 +1,12 @@
 # inhouse read
 
+## 1.7.129 — Preparación de audio en Rust
+
+El ajuste de volumen, recorte de silencios y suavizado de cada fragmento se
+calculan en Rust/WASM, tanto en Android como en el worker web. Conserva las
+mismas muestras de audio, pausas y voces. La carga del núcleo es opcional y
+no retrasa la voz; los fragmentos pequeños mantienen la ruta JavaScript.
+
 ## 1.7.128 — Actualizaciones en el perfil
 
 Las actualizaciones se abren desde la foto de perfil, dentro del mismo menú de
