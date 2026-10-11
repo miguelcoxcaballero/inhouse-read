@@ -33,7 +33,7 @@ const squash = text => String(text).replace(/\s+/g, '')
 // ---- sentence highlight, progress bars and frame cadence; available device APIs are observed to ensure reading never invokes them.
 function instrument({ base }) {
   if (base) window.INHOUSE_NEURAL_VOICE_BASE = base
-  const neu = window.__neu = { audio: [], stops: 0, events: [], progress: [], speak: [], tap: 0, frames: [], longTasks: [] }
+  const neu = window.__neu = { audio: [], stops: 0, events: [], progress: [], speak: [], tap: 0, frames: [], longTasks: [], statuses: [] }
   const read = win => { const highlight = win?.CSS?.highlights?.get('inhouse-speech'); return highlight ? [...highlight].map(range => range.toString()).join('') : '' }
   window.__speechHighlight = () => read(window) || read(document.querySelector('foliate-view')?.renderer?.getContents?.()[0]?.doc?.defaultView)
 
@@ -53,6 +53,7 @@ function instrument({ base }) {
     // The app's own listener ran for this same event (it paints at 'start'); read what is on screen after it.
     if (entry.type === 'start') setTimeout(() => { entry.highlight = window.__speechHighlight() }, 0)
   })
+  new MutationObserver(()=>{const text=document.querySelector('.reading-audio-status')?.textContent;if(text!=null&&text!==neu.statuses.at(-1)?.text)neu.statuses.push({text,at:performance.now()})}).observe(document,{subtree:true,childList:true,characterData:true})
   document.addEventListener('click', event => { if (event.target.closest?.('[data-play], [data-mini-play]')) neu.tap = performance.now() }, true)
   // The picker repaints its rows, so progress is sampled rather than observed on one element.
   setInterval(() => { const bar = document.querySelector('[role="progressbar"]'); if (bar) neu.progress.push(Number(bar.getAttribute('aria-valuenow'))) }, 40)
@@ -428,6 +429,11 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await page.evaluate(() => window.__neuEngine.release())
     await play(page)
     numbers.firstAudio = { coldWorker: await heard() }
+    const statusBeforeAudio=await neu(page,n=>n.statuses.filter(s=>s.at>=n.tap&&s.at<n.events.find(e=>e.type==='start').at))
+    numbers.firstAudio.statusBeforeAudio=statusBeforeAudio
+    expect(statusBeforeAudio.some(s=>s.text.includes('Preparando'))).toBe(true)
+    expect(statusBeforeAudio.some(s=>s.text.includes('Leyendo'))).toBe(false)
+    await expect(page.locator('.reading-audio-status')).toHaveText('Leyendo')
     await stopAndForget()
 
     // B: the person took a few seconds in the panel: the warm-up (worker + model) is done by the tap.

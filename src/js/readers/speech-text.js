@@ -213,7 +213,16 @@ export function planSpeech(raw, options = {}, from = 0) {
   for (const sentence of speechSentences(text.slice(low), breaks.filter(at => at >= low).map(at => at - low))) {
     const whole = rawRange(sentence.start, sentence.end)
     for (const fragment of sentence.fragments) {
-      const cuts = [fragment.start, ...pageCuts.filter(at => at > fragment.start && at < fragment.end), fragment.end]
+      // Start a long opening sentence at its first natural clause. Both parts
+      // retain their original sentence/raw offsets, including page boundaries.
+      // No arbitrary word cuts or punctuation are invented to fake a quick start.
+      const firstClause = options.opening && !items.length && fragment.end - fragment.start > 100
+        ? [...fragment.text.matchAll(/[,;:—–،、，；：](?:\s+|(?=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]))/gu)]
+          .map(m => fragment.start + m.index + m[0].length)
+          .find(at => at - fragment.start >= 24 && at - fragment.start <= 90 && fragment.end - at >= 24)
+        : undefined
+      const cuts = [...new Set([fragment.start, ...pageCuts.filter(at => at > fragment.start && at < fragment.end),
+        ...(firstClause == null ? [] : [firstClause]), fragment.end])].sort((a,b) => a-b)
       for (let index = 1; index < cuts.length; index++) {
         let start = cuts[index - 1], end = cuts[index]
         while (start < end && /\s/.test(text[low + start])) start++

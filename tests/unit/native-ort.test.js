@@ -7,6 +7,24 @@ describe('native ONNX tensor transport',()=>{
     const tensor=decodeTensor({type,dims:[1,3],data:encodeTensor(data)})
     expect(tensor.data).toEqual(data);expect(tensor.dims).toEqual([1,3])
   })
+  it('uses direct byte codecs when available and preserves typed-array subviews',()=>{
+    const to=Object.getOwnPropertyDescriptor(Uint8Array.prototype,'toBase64'),from=Object.getOwnPropertyDescriptor(Uint8Array,'fromBase64')
+    const directEncode=vi.fn(function(){return btoa(String.fromCharCode(...this))})
+    const directDecode=vi.fn(value=>Uint8Array.from(atob(value),c=>c.charCodeAt(0)))
+    Object.defineProperty(Uint8Array.prototype,'toBase64',{configurable:true,value:directEncode})
+    Object.defineProperty(Uint8Array,'fromBase64',{configurable:true,value:directDecode})
+    try {
+      const source=Float32Array.of(99,.25,-.5,3.125,99),view=source.subarray(1,4)
+      const env={btoa:()=>{throw Error('legacy encode used')},atob:()=>{throw Error('legacy decode used')}}
+      const encoded=encodeTensor(view,env)
+      expect(decodeTensor({type:'float32',dims:[3],data:encoded},env).data).toEqual(view)
+      expect(directEncode).toHaveBeenCalledOnce();expect(directDecode).toHaveBeenCalledOnce()
+      expect(()=>decodeTensor({type:'float32',dims:[2],data:encoded},env)).toThrow('length')
+    } finally {
+      if(to)Object.defineProperty(Uint8Array.prototype,'toBase64',to);else delete Uint8Array.prototype.toBase64
+      if(from)Object.defineProperty(Uint8Array,'fromBase64',from);else delete Uint8Array.fromBase64
+    }
+  })
   it('validates dimensions and types',()=>{
     expect(()=>new NativeTensor('float32',Float32Array.of(1),[2])).toThrow()
     expect(()=>new NativeTensor('int64',Float32Array.of(1),[1])).toThrow()

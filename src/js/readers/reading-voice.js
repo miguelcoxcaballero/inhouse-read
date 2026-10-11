@@ -106,10 +106,10 @@ export class ReadingVoice {
     if (this.state === 'playing' || this.state === 'loading') return
     this.retryNeural()
     if (this.state === 'paused' && this.chunks.length && !this.resumeNextPage) {
-      this.state = 'playing'; this.notify(); this.speakCurrent(); return
+      this.state = 'playing'; this.waiting = true; this.notify('Preparando la voz natural…'); this.speakCurrent(); return
     }
     const generation = ++this.generation
-    this.state = 'loading'; this.notify('Preparando la voz…')
+    this.state = 'loading'; this.notify('Preparando la voz natural…')
     try {
       await loadNeural()
       if (generation !== this.generation) return
@@ -129,7 +129,7 @@ export class ReadingVoice {
       this.adopt(plan)
       this.resumeNextPage = false
       if (!this.chunks.length) return this.fail('Esta página no contiene texto legible. Los PDF escaneados necesitan reconocimiento de texto para escucharlos.')
-      this.state = 'playing'; this.notify(); this.speakCurrent()
+      this.state = 'playing'; this.waiting = true; this.notify('Preparando la voz natural…'); this.speakCurrent()
     } catch { if (generation === this.generation) this.fail('No se pudo preparar el texto.') }
   }
   speakCurrent() {
@@ -179,7 +179,7 @@ export class ReadingVoice {
     this.useTransport('neural')
     const { upcoming, deferAfter } = this.upcomingFor(voice)
     clearTimeout(this.waitTimer)
-    this.waitTimer = setTimeout(() => { if (id === this.utteranceId && this.state === 'playing' && this.startedId !== id) { this.waiting = true; this.notify('Preparando la voz natural…') } }, NEURAL_WAIT_MS)
+    this.waitTimer = setTimeout(() => { if (id === this.utteranceId && this.state === 'playing' && this.startedId !== id && !this.waiting) { this.waiting = true; this.notify('Preparando la voz natural…') } }, NEURAL_WAIT_MS)
     try {
       engine.speak({ text, voiceId:voice.id, rate:this.rate, id, upcoming, deferAfter })
       this.nativeSession = nativeAudio()?.session || this.nativeSession
@@ -243,7 +243,7 @@ export class ReadingVoice {
     try { neuralEngine()?.stop() } catch { /* already stopped */ }
     if ((reason === 'synth-failed' || reason === 'init-failed') && this.neuralRetries < NEURAL_RETRIES) {
       // The engine already dropped its dead worker: speaking the same fragment again starts a fresh one.
-      this.neuralRetries++
+      this.neuralRetries++; this.waiting = true
       this.notify('Reiniciando la voz natural…')
       this.speakCurrent()
       return
@@ -377,14 +377,14 @@ export class ReadingVoice {
     }
     return true
   }
-  async prepare(source) {
+  async prepare(source, opening = false) {
     if (source === undefined) {
       const pending = this.reader.getSpeechSource?.()
       source = pending ? await pending : null
     }
-    if (!source) return { source, items:speechChunks(this.prepareText(await this.reader.getSpeechText())).map(text => ({ text })) }
+    if (!source) return { source, items:planSpeech(this.prepareText(await this.reader.getSpeechText()).replace(/\s+/g, ' ').trim(), {opening}).map(({text}) => ({text})) }
     const { footnotes, skipHeaders } = this.options
-    return { source, items:planSpeech(source.text, { footnotes, skipHeaders, pageBreaks:source.pageBreaks, headerRanges:source.headerRanges }, source.start || 0) }
+    return { source, items:planSpeech(source.text, { footnotes, skipHeaders, opening, pageBreaks:source.pageBreaks, headerRanges:source.headerRanges }, source.start || 0) }
   }
   /** Share the page analysis started by voice selection with immediate Play.
    * Voice/rate do not alter offsets; page, layout, text options and Stop do. */
@@ -394,7 +394,7 @@ export class ReadingVoice {
     const key = keyOf()
     let pending = this.openingPlan
     if (!pending || pending.key !== key) {
-      pending = {key, promise:this.prepare()}
+      pending = {key, promise:this.prepare(undefined, true)}
       this.openingPlan = pending
     }
     try {
@@ -402,7 +402,7 @@ export class ReadingVoice {
       if (this.state === 'loading' && generation === this.generation && key !== keyOf()) return this.prepareOpening()
       if (!this.pagePlanValid(plan)) {
         if (this.openingPlan === pending) this.openingPlan = null
-        return this.prepare()
+        return this.prepare(undefined, true)
       }
       return plan
     } catch (error) {
@@ -531,10 +531,9 @@ export class ReadingVoice {
   /** Re-speaks the current fragment, so a new speed or voice is heard now instead of at the next one. */
   restart() {
     if (this.state !== 'playing' || this.index >= this.chunks.length) return
-    const preparing = this.waiting // the 'Preparando la voz natural…' of the old utterance must not outlive it
     this.clearAhead()
     this.cancelUtterance('restart')
-    if (preparing) this.notify()
+    this.waiting = true; this.notify('Preparando la voz natural…')
     this.speakCurrent()
   }
   cancelUtterance(reason = 'stop') {

@@ -1,3 +1,5 @@
+import { planSpeech } from '../../../src/js/readers/speech-text.js'
+import { encodeTensor, decodeTensor } from '../../../src/js/readers/neural-voice/native-ort.js'
 import { getNeuralEngine, neuralVoices, isNeuralVoiceId } from '../../../src/js/readers/neural-voice/index.js'
 
 // The spec drives the engine through window.neural and reads what it recorded.
@@ -46,4 +48,4 @@ function readAll(voiceId, texts, rate = 1, { lookahead = 3, prefix = 'f' } = {})
   })
 }
 
-window.neural = { engine, voices: neuralVoices, isNeuralVoiceId, events, starts, frames, readAll }
+window.neural = { planSpeech, encodeTensor, decodeTensor, engine, voices: neuralVoices, isNeuralVoiceId, events, starts, frames, readAll }

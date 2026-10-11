@@ -73,3 +73,40 @@ describe('spoken fragments', () => {
     expect(speechChunks('Uno.  Dos?\nTres!')).toEqual(['Uno.', 'Dos?', 'Tres!'])
   })
 })
+
+
+describe('opening clause latency without lost text', () => {
+  const raw='Cuando el reloj marcó la medianoche, el viejo bibliotecario cerró el último libro, apagó la lámpara y salió despacio.'
+  it('prepares a complete short clause first and preserves every word and sentence highlight', () => {
+    const original=planSpeech(raw),fast=planSpeech(raw,{opening:true})
+    expect(original).toHaveLength(1)
+    expect(fast).toHaveLength(2)
+    expect(fast[0].text).toBe('Cuando el reloj marcó la medianoche,')
+    expect(fast.map(x=>x.text).join(' ')).toBe(raw)
+    for(const item of fast){expect(raw.slice(item.start,item.end)).toBe(item.text);expect(item.sentence).toEqual(original[0].sentence)}
+  })
+  it('retains normalization mappings and exact page boundaries', () => {
+    const text=raw.replace('medianoche','media-\nnoche').replace('bibliotecario','[17] bibliotecario'),cut=text.indexOf('último')
+    const items=planSpeech(text,{opening:true,footnotes:false,pageBreaks:[cut]})
+    expect(items.map(x=>x.text).join(' ')).toBe(raw)
+    expect(items.some(item=>item.start===cut)).toBe(true)
+    expect(items.some(item=>item.start<cut&&item.end>cut)).toBe(false)
+    expect(items.at(-1).end).toBe(text.length)
+  })
+  it('only changes the first fragment, and never invents a mid-word or mid-clause break', () => {
+    expect(planSpeech('Un título.',{opening:true})).toEqual(planSpeech('Un título.'))
+    const unpunctuated='Los habitantes de aquel pueblo recordaban todas las historias del viejo bibliotecario y escuchaban sus relatos durante muchas horas.'
+    expect(planSpeech(unpunctuated,{opening:true})).toEqual(planSpeech(unpunctuated))
+    expect(planSpeech('Un título. '+raw,{opening:true})).toEqual(planSpeech('Un título. '+raw))
+    const items=planSpeech(raw+' '+raw,{opening:true})
+    expect(items).toHaveLength(3)
+    expect(items[2].text).toBe(raw)
+  })
+  it('respects the saved starting offset', () => {
+    const prefix='Página ya escuchada. ',text=prefix+raw
+    const items=planSpeech(text,{opening:true},prefix.length)
+    expect(items[0].start).toBe(prefix.length)
+    expect(items.map(x=>x.text).join(' ')).toBe(raw)
+    expect(items.every(x=>x.sentence.start===prefix.length)).toBe(true)
+  })
+})

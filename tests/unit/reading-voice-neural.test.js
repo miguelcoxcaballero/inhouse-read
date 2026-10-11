@@ -114,12 +114,45 @@ describe('neural transport', () => {
     device(); engineWith()
     const states = []
     const voice = await reading(SENTENCES, { onState:(state, message) => states.push(message) })
-    states.length = 0
+    expect(states.length).toBeGreaterThan(0)
+    expect(states.every(message => message === 'Preparando la voz natural…')).toBe(true)
+    const preparingCount = states.length
     await vi.advanceTimersByTimeAsync(1000)
-    expect(states).toEqual(['Preparando la voz natural…'])
+    expect(states).toHaveLength(preparingCount) // no false Reading -> Preparing flicker
     tts('start', voice.utteranceId)
     expect(states.at(-1)).toBe('')
     voice.stop()
+  })
+  it('resume and voice changes stay preparing until their own audible start', async () => {
+    vi.useFakeTimers(); engineWith()
+    const states = []
+    const voice = await reading(SENTENCES, {onState:(state,message)=>states.push([state,message])})
+    const first = voice.utteranceId
+    tts('start',first)
+    expect(states.at(-1)).toEqual(['playing',''])
+    voice.pause(); states.length=0
+    await voice.play()
+    expect(states).toEqual([['playing','Preparando la voz natural…']])
+    tts('start',first) // stale callback cannot announce reading
+    expect(states).toHaveLength(1)
+    tts('start',voice.utteranceId)
+    expect(states.at(-1)).toEqual(['playing',''])
+    states.length=0; voice.rate=1.25; voice.restart()
+    expect(states).toEqual([['playing','Preparando la voz natural…']])
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(states).toHaveLength(1)
+    tts('start',voice.utteranceId)
+    expect(states.at(-1)).toEqual(['playing',''])
+  })
+  it('does not flash preparation between prefetched audible fragments', async () => {
+    vi.useFakeTimers(); engineWith()
+    const states=[]
+    const voice=await reading(SENTENCES,{onState:(state,message)=>states.push(message)})
+    tts('start',voice.utteranceId);states.length=0
+    tts('done',voice.utteranceId)
+    tts('start',voice.utteranceId)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(states).toEqual([])
   })
   it('pause stops the engine and stays silent; resume speaks the same fragment again; stop frees the engine', async () => {
     device()
@@ -257,7 +290,7 @@ describe('natural voice failures retain the chosen voice for retry', () => {
     expect(engine.calls.at(-1).text).toBe('Segunda frase.')
     expect(engine.calls.at(-2).text).toBe('Segunda frase.')
     expect(last(engine).voiceId).toBe(DAVEFX)
-    expect(messages).toEqual(['Reiniciando la voz natural…'])
+    expect(messages).toEqual(['Preparando la voz natural…', 'Preparando la voz natural…', 'Reiniciando la voz natural…'])
     expect(voice.neuralOff).toBe('')
     expect(speak).not.toHaveBeenCalled()
     tts('done', last(engine).id)
@@ -364,7 +397,7 @@ describe('review fixes', () => {
     await vi.advanceTimersByTimeAsync(1000)
     expect(states.at(-1)).toBe('Preparando la voz natural…')
     voice.rate = 1.2; voice.restart()
-    expect(states.at(-1)).toBe('') // cleared with the old utterance
+    expect(states.at(-1)).toBe('Preparando la voz natural…') // new utterance is not audible yet
     await vi.advanceTimersByTimeAsync(100)
     tts('start', voice.utteranceId)
     expect(states.at(-1)).toBe('')

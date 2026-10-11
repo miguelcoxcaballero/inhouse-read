@@ -1,5 +1,13 @@
 # inhouse read
 
+## 1.7.133 — Arranque del audiolibro
+
+«Leyendo» aparece al comenzar el sonido, sin volver falsamente a preparación.
+Android prepara el fonemizador y el modelo en paralelo, y usa transferencia
+directa de bytes cuando WebView la admite. Las primeras frases largas pueden
+comenzar por una cláusula completa mientras se prepara el resto, conservando
+todo el texto, los resaltados y los límites de página.
+
 ## 1.7.132 — Liberar voces preparadas inactivas
 
 Volver a elegir la misma voz conserva el plazo de liberación del modelo

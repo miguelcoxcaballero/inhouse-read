@@ -28,6 +28,34 @@ describe('native natural synthesis client',()=>{
     await client.prepare('es_AR-davefx-medium');expect(store.readModel).toHaveBeenCalledOnce()
     client.dispose()
   })
+  it('loads the acoustic model while the cold phonemizer is still initializing',async()=>{
+    const gate=deferred(),{client,phon,store,ort}=fixture()
+    client.createPhon=()=>gate.promise
+    const ready=client.prepare('voice');await flush()
+    expect(store.readModel).toHaveBeenCalledOnce()
+    expect(ort.InferenceSession.create).toHaveBeenCalledOnce()
+    expect(client.loaded).toBe(null)
+    gate.resolve(phon);await ready
+    expect(client.loaded).toBe('voice');client.dispose()
+  })
+  it('drains independent startup work and releases the loaded graph after disposal during phonemizer initialization',async()=>{
+    const gate=deferred(),{client,release,ort}=fixture()
+    client.createPhon=()=>gate.promise
+    const prepared=client.prepare('voice');await flush()
+    expect(ort.InferenceSession.create).toHaveBeenCalledOnce()
+    client.dispose();gate.resolve({destroy:vi.fn()})
+    await expect(prepared).rejects.toThrow('released')
+    expect(release).toHaveBeenCalledOnce()
+  })
+  it('releases a parallel loaded model on phonemizer failure and permits a clean retry',async()=>{
+    const gate=deferred(),{client,release,phon}=fixture()
+    client.createPhon=async()=>{await gate.promise;throw Error('phonemizer failed')}
+    const ready=client.prepare('voice');await flush();gate.resolve()
+    await expect(ready).rejects.toThrow('phonemizer failed')
+    expect(release).toHaveBeenCalledOnce();expect(client.loaded).toBe(null)
+    client.createPhon=async()=>phon
+    await client.prepare('voice');expect(client.loaded).toBe('voice');client.dispose()
+  })
   it('serializes fragments and cancellation never delivers late audio',async()=>{
     const block=deferred(),{client,runs}=fixture({block});await client.prepare('voice')
     const first={onChunk:vi.fn(),onEnd:vi.fn(),onError:vi.fn()},second={onChunk:vi.fn(),onEnd:vi.fn(),onError:vi.fn()}

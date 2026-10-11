@@ -39,17 +39,33 @@ export class NativeSynthClient {
       // Inference itself yields to the native executor. A microtask between
       // lightweight recipe steps adds no frozen MessageChannel dependency.
       this.supertonic=await createSupertonicRuntime({ort:this.ort,buffers,config:config.config,indexer:config.indexer,styles:config.styles,yieldToMessages:()=>Promise.resolve()})
-    } else {
-      if(config.phoneme_type==='hebrew') {
-        const model=await this.store.readPhonemizerModel(key);check()
-        this.hebrew=await createHebrewPhonemizer({ort:this.ort,model,config})
-      } else if(!this.phon) {
-        const phon=await this.createPhon({base:this.phonBase})
-        if(generation!==this.generation){phon.destroy();throw failure('Voice released')}
-        this.phon=phon
-      }
-      check();const model=await this.store.readModel(key);check()
+    } else if(config.phoneme_type==='hebrew') {
+      // Both Hebrew graphs share the single native upload slot.
+      const phonModel=await this.store.readPhonemizerModel(key);check()
+      this.hebrew=await createHebrewPhonemizer({ort:this.ort,model:phonModel,config});check()
+      const model=await this.store.readModel(key);check()
       this.session=await this.ort.InferenceSession.create(new Uint8Array(model))
+    } else {
+      // Reading/uploading the acoustic model and initializing the phonemizer
+      // are independent. In Android they used to run entirely in series.
+      const phonReady=(async()=>{
+        if(!this.phon) {
+          const phon=await this.createPhon({base:this.phonBase})
+          if(generation!==this.generation){phon.destroy();throw failure('Voice released')}
+          this.phon=phon
+        }
+      })()
+      let session
+      const modelReady=(async()=>{
+        const model=await this.store.readModel(key);check()
+        session=await this.ort.InferenceSession.create(new Uint8Array(model));check()
+      })()
+      // Drain both jobs on error: a late job must never install resources into
+      // the next requested voice. The bridge still bounds every upload slice.
+      const outcomes=await Promise.allSettled([phonReady,modelReady])
+      const failed=outcomes.find(result=>result.status==='rejected')
+      if(failed){try{await session?.release()}catch{};throw failed.reason}
+      check();this.session=session
     }
     check();this.config=config;this.loaded=key;return config
   }

@@ -427,4 +427,54 @@ test.describe('neural voice engine (real Piper weights, real ORT + espeak-ng WAS
   })
 
 
+  test('long opening starts at a complete clause with real PCM for every remaining word', async () => {
+    await page.click('#unlock')
+    const result=await page.evaluate(async()=>{
+      const {engine,readAll,planSpeech}=window.neural,voiceId='piper:es_MX-claude-high'
+      await engine.install(voiceId)
+      const text='Cuando el reloj marcó la medianoche, el viejo bibliotecario cerró el último libro, apagó la lámpara y salió despacio.'
+      const full=planSpeech(text).map(x=>x.text),opening=planSpeech(text,{opening:true}).map(x=>x.text),runs=[]
+      // Both cases have a ready model and ZERO PCM. Compare synthesis rather
+      // than a warm preview against a cold model; preserve real completion.
+      for(const [name,fragments] of [['full',full],['opening',opening]]){
+        engine.release();await engine.warmUp(voiceId)
+        window.neural.starts.length=0
+        const log=await readAll(voiceId,fragments,1,{prefix:name})
+        runs.push({name,fragments,log,firstAudioMs:log.find(x=>x.type==='start')?.at,
+          audio:window.neural.starts.map(({when,duration,sampleRate})=>({when,duration,sampleRate}))})
+      }
+      return {text,runs}
+    })
+    numbers.openingClause=result
+    expect(result.runs[1].fragments.join(' ')).toBe(result.text)
+    expect(result.runs[1].fragments[0]).toBe('Cuando el reloj marcó la medianoche,')
+    for(const run of result.runs){
+      expect(run.log.filter(x=>x.type==='done')).toHaveLength(run.fragments.length)
+      expect(run.log.some(x=>x.type==='error')).toBe(false)
+      expect(run.audio.every(x=>x.duration>0&&x.sampleRate>0)).toBe(true)
+    }
+    expect(result.runs[1].firstAudioMs).toBeLessThan(result.runs[0].firstAudioMs)
+  })
+
+  test('native model transfer codec preserves all bytes with less JS copying',async()=>{
+    const result=await page.evaluate(()=>{
+      const {encodeTensor,decodeTensor}=window.neural
+      const legacy=bytes=>{const parts=[];for(let i=0;i<bytes.length;i+=4096)parts.push(String.fromCharCode(...bytes.subarray(i,i+4096)));return btoa(parts.join(''))}
+      const bytes=Uint8Array.from({length:131072},(_,i)=>(i*17+31)%256)
+      const encoded=legacy(bytes),fast=encodeTensor(bytes)
+      const floats=new Float32Array(bytes.buffer),decoded=decodeTensor({type:'float32',dims:[floats.length],data:fast})
+      const sameBytes=new Uint8Array(decoded.data.buffer).every((v,i)=>v===bytes[i])
+      const times={legacy:[],direct:[]};let total=0
+      for(let repeat=0;repeat<3;repeat++)for(const [name,fn] of [['legacy',legacy],['direct',encodeTensor]]){
+        const start=performance.now();for(let i=0;i<512;i++)total+=fn(bytes).length
+        times[name].push(performance.now()-start)
+      }
+      return {supported:typeof bytes.toBase64==='function',identical:fast===encoded&&sameBytes,bytesPerRun:512*bytes.length,times,total}
+    })
+    numbers.nativeCodec=result
+    expect(result.identical).toBe(true)
+    expect(result.total).toBeGreaterThan(0)
+    if(result.supported)expect(Math.min(...result.times.direct)).toBeLessThan(Math.min(...result.times.legacy))
+  })
+
 })

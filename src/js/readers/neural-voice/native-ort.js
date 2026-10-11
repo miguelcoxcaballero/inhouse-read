@@ -5,6 +5,9 @@ const error = message => Object.assign(new Error(message), {code:'init-failed'})
 const constructors = {float32:Float32Array,int64:BigInt64Array}
 export function encodeTensor(data, env = globalThis) {
   const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+  // Recent Android WebViews encode bytes directly in native code. Avoid
+  // copying each 128 KiB upload through a JS character array and a UTF-16 string.
+  if (typeof bytes.toBase64 === 'function') return bytes.toBase64()
   const parts = []
   for (let i=0;i<bytes.length;i+=4096) parts.push(String.fromCharCode(...bytes.subarray(i,i+4096)))
   return env.btoa(parts.join(''))
@@ -12,7 +15,9 @@ export function encodeTensor(data, env = globalThis) {
 export function decodeTensor({type,dims,data}, env = globalThis) {
   const Constructor=constructors[type]
   if (!Constructor || !Array.isArray(dims) || dims.some(n=>!Number.isSafeInteger(n)||n<0)) throw error('Invalid native tensor')
-  const raw=env.atob(data),bytes=Uint8Array.from(raw,char=>char.charCodeAt(0))
+  const bytes=typeof Uint8Array.fromBase64==='function'
+    ? Uint8Array.fromBase64(data)
+    : Uint8Array.from(env.atob(data),char=>char.charCodeAt(0))
   if (bytes.byteLength%Constructor.BYTES_PER_ELEMENT || dims.reduce((a,b)=>a*b,1)*Constructor.BYTES_PER_ELEMENT!==bytes.byteLength) throw error('Invalid native tensor length')
   return new NativeTensor(type,new Constructor(bytes.buffer),dims)
 }
