@@ -472,3 +472,117 @@ SHA256 `eb5d2ff07993ef68bad27d7d94796d4eaf044582d3bd9d6b425905a6f3487776`.
 También pasan las 105 comprobaciones Python/Android y los ocho recorridos
 originales locales al primer intento, conservando sus plazos y aserciones.
 Publicación y CI120 pendientes.
+
+120 publicada: fuente `0e728e6400504a01d0d28e621e3af3bb553c40ee`, Pages
+`b31e57eb1bd337aa0728fb01eac76875fe01de4a`. Las respuestas HTTP reales
+aprueban 101 descargas, 99 recursos y 889 condiciones; núcleo idéntico al
+build120 congelado antes de preparar el siguiente candidato. Navegador
+público, APK y CI completa todavía en curso.
+
+La CI119 completa termina en **567/569 aprobados estrictos**, dos fallos y
+ninguno inestable: 571 intentos, dos reintentos y cuatro timeouts. Los once
+ZIP y doce jobs están autenticados, sin omisiones ni errores de integridad.
+Los dos contratos nativos agotan el plazo global original30s; la traza
+sitúa el clic Atrás entre23,72 y26,50s desde goto. Esto no demuestra que se
+agotaran ocho segundos dentro del cierre. El resto de UI y las cuatro suites
+de voces pasan. Evidencia: `ci-38145574809/snapshot-003/summary.json`.
+
+## Candidato siguiente: colocación de objetos
+
+Se implementó y comprobó el motor completo de posiciones/colisiones en Rust:
+50 unitarias y 15 casos Chromium CPU ×4 conservan el resultado, metadatos y
+orden exactos. **La integración universal no se publica** porque la inspección
+y preparación de objetos cuesta más que el cálculo original en bibliotecas
+pequeñas. En40 objetos, Chromium mide0,206→0,906ms al disponer y0,413→1,031ms
+al mover; en1000,21,5→18,95ms y18,75→19,75ms respectivamente. Se conservan los
+resultados en `placement-benchmark-attempt1.json` y
+`placement-browser-attempt1-extracted.json`. Se prepara un contexto propio por
+arrastre para amortizar la preparación, sin confiar en objetos externos mutables.
+Todavía no tiene beneficio medido ni se considera una función terminada.
+
+Los27 recorridos de la web120 pasan al primer intento (3,8min), con sus
+27 respuestas reales auditadas contra la versión fijada. Incluyen los cuatro
+cierres con comparación de píxeles y PDF/EPUB reabiertos sin conexión.
+Auditoría sin nuevas peticiones: `public120-browser-attempt1/audits/2026-10-11T14-39-15-040158Z-18b7bcde/summary.json`.
+
+### Verificación del APK existente con la web 120
+
+El APK publicado 1.1.8 se verificó contra la web 120, fuente `0e728e6400504a01d0d28e621e3af3bb553c40ee` y Pages `b31e57eb1bd337aa0728fb01eac76875fe01de4a`, en la [ejecución 38147748555](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/38147748555). El APK descargado mantiene 78.531.695 bytes y SHA256 `5d10e6555c5c05e59925d18d5e0c959a08d8e41761a5aad37832c9d40d8e7eb1`; su entrada HTML sigue siendo sólo el cargador de 2107 bytes. No se ha publicado un APK nativo distinto para estos cambios web.
+
+Los cinco estados de Android pasan la política de barra de estado y pantalla encendida. Se conservaron los cuatro muestreos de retorno previos que aún no cumplían esa política. La última captura del retorno muestra el libro todavía delante de la estantería, durante la animación: esta comprobación no certifica la inserción final, su duración ni su fluidez. La captura de Google alcanza la página auténtica de acceso; no incluye autenticación humana. Evidencia: `native-38147748555/policy-audit.json` y `visual-review.json`; ZIP original de 9.708.971 bytes, SHA256 `826cc53c2f0ff0792f33c4a16bf4ad51ae85a80f508c2a6c01bc03586f3bc014`.
+
+La migración sigue siendo parcial. Estos resultados verifican la versión publicada y sus rutas observadas; no equivalen a haber reescrito toda la aplicación en Rust ni a una medición de velocidad en un móvil físico.
+
+## Candidato 121: filas PDF y colocación durante el arrastre
+
+Se traslada a Rust la agrupación completa de fragmentos PDF: líneas, medianas
+ponderadas y separación horizontal. Las cadenas, pesos UTF-16 y transformaciones
+siguen en el host; los resultados conservan todas las referencias, párrafos,
+offsets y metadatos originales. La ruta se activa a partir de 128 fragmentos,
+retiene como máximo 256 KiB de arena y libera las páginas mayores inmediatamente.
+
+Pasan 12 unitarias específicas, 150 casos aleatorios en Node y 100 en Chromium.
+El PDF real de dos páginas conserva sus 192 fragmentos por página, rotación de
+90 grados e ilustraciones con colores originales. Las mediciones comparan también
+la extracción exacta de 120, que ya tenía columnas Rust: en Chromium con CPU ×4,
+128 fragmentos mixtos pasan de 8,075 a 2,075 ms, 512 de 44,1 a 11,6 ms y 4096
+de 685,6 a 140,2 ms. En 128 párrafos sencillos ambos miden 1,925 ms.
+
+El primer intento de navegador encontró un error de sintaxis en el test.
+Corregido, pasan 26 casos. Al añadir la referencia exacta de 120, pasan 25/26:
+el diagnóstico mayor completa y adjunta sus nueve rondas, pero agota el límite
+global de 30 s. Se conserva ese fallo; los nuevos diagnósticos de cinco rutas
+por nueve rondas usan 120 s. Esto calibra el trabajo de medición y no es una
+mejora del producto ni un cambio de los contratos originales de lectura/cierre.
+Evidencia: `pdf-rows-browser-attempt3{,-extracted}.json` y
+`pdf-rows-benchmark-attempt2.json`.
+
+La colocación Rust sólo se usa en las previsualizaciones del arrastre con al
+menos 16 objetos, después de dos movimientos JavaScript. Copia un contexto propio
+y lo descarta al terminar, cancelar, cambiar viewport/metadatos o destruir la
+vista. Las API generales, disposición inicial y guardado final conservan su ruta
+anterior. Pasan 25 escenarios Node y 25 Chromium, incluidos los casos que omiten
+Rust y las liberaciones. En CPU ×4, 40 objetos/120 posiciones pasan de 32 a
+13,7 ms y 200/120 de 180,9 a 59,9 ms por gesto. Para 40/8 hay sobrecoste:
+2,85 a 3,55 ms. No se afirma una mejora en todos los tamaños ni en FPS.
+
+La primera batería completa aprueba 3918/3919 casos: la comprobación nueva de
+8192 objetos agota 5 s porque su aserción de identidad recorrió el input entero
+por cada salida. Se indexan las mismas referencias una vez, conservando todos
+los candidatos de claves repetidas y el plazo original. Su primer ajuste olvidó
+el input no iterable del caso de compatibilidad; corregido, pasan sus 22 casos.
+Los dos intentos fallidos se conservan. La batería completa final, build y
+verificación publicada de 121 siguen pendientes.
+
+Después de corregir únicamente esa aserción, pasan las **3919 pruebas en 317
+archivos** con sus límites originales (98,96 s). El build de producción termina
+en 5,58 s y se congela antes de continuar: núcleo de 135252 bytes, SHA256
+`8d4f64f06e93a661293e4ba9cd97b95d9cc7946b72bbd354498828d1588569ff`,
+99 recursos offline y manifiesto `d7e239b1adf5`.
+
+La CI120 termina en **596/598 E2E estrictos**, dos fallidos, cero inestables;
+600 intentos, dos reintentos y cuatro timeouts. Se autentican los once ZIP y
+doce jobs sin omisiones ni errores de integridad. Los dos fallos corresponden
+a los regresos nativos aligned/legacy; sus cuatro trazas muestran continuidad
+y avance, pero el clic Atrás llega a los 24–27 s del plazo global de 30 s.
+Esto no demuestra que el cierre aislado exceda ocho segundos. Evidencia:
+`ci-38147505693/snapshot-003/summary.json`.
+
+Los ocho recorridos locales originales de 121 pasan, incluidos los dos regresos
+nativos con su límite global de 30 s y cierre de ocho segundos. La regresión de
+importación en frío también pasa y adjunta sus diagnósticos de compilación.
+El primer ensayo nuevo de arrastre apuntó a la segunda estantería física al
+usar una fracción del canvas completo; esperaba la balda 1, pero apuntaba a la
+4. La captura conserva ese fallo. El fixture usa ahora el centro proyectado
+de un libro que está en la balda 1, manteniendo esa misma comprobación y los
+movimientos reales del puntero. No se cambia el cálculo de destino del producto.
+
+Con esa corrección de coordenadas, el recorrido real de arrastre pasa (36,2 s):
+mueve libro y planta, comprueba la balda elegida y conserva las posiciones al
+recargar. También pasan los dos recorridos originales de colocación. Las 105
+comprobaciones Python/Android pasan. Evidencias locales:
+`local121-browser-attempt1`, `local121-integration-attempt1` y
+`local121-drag-attempt2`; se conserva el primer fallo del fixture.
+
+121 está preparada para publicar. Su verificación HTTP, navegador público,
+APK con esta web y CI completa todavía no se han completado.

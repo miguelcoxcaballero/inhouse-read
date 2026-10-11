@@ -3,6 +3,7 @@
 // its source offsets: the same result feeds reflow, speech and the text layer.
 // No OCR, language model, repeated-line removal or guessed missing text.
 import { pdfColumnCut as columnCut } from './pdf-layout-wasm.js'
+import { pdfRowLines } from './pdf-row-layout-wasm.js'
 
 const DEFAULT_VIEW = [1, 0, 0, -1, 0, 0]
 const median = values => {
@@ -10,16 +11,7 @@ const median = values => {
   const sorted = [...values].sort((a, b) => a - b)
   return sorted[Math.floor(sorted.length / 2)]
 }
-const textMedian = (entries, key) => {
-  const sorted = [...entries].sort((a, b) => a[key] - b[key])
-  const total = sorted.reduce((sum, entry) => sum + Math.max(1, entry.item.str.trim().length), 0)
-  let weight = 0
-  for (const entry of sorted) {
-    weight += Math.max(1, entry.item.str.trim().length)
-    if (weight >= total / 2) return entry[key]
-  }
-  return sorted.at(-1)?.[key] || 0
-}
+
 const finite = value => Number.isFinite(Number(value))
 const cjk = char => /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(char || '')
 const listStart = text => /^(?:[•●▪‣⁃]|\d{1,3}[.)]|[a-z][.)])\s/u.test(text.trimStart())
@@ -35,61 +27,6 @@ function fallback(content) {
       .map(item => item.str + (item.hasEOL ? '\n' : ' ')).join('') }
 }
 
-function makeRows(entries) {
-  const rows = [], maxHeight = Math.max(...entries.map(entry => entry.height))
-  for (const entry of [...entries].sort((a, b) => a.top - b.top || a.x0 - b.x0 || a.rawIndex - b.rawIndex)) {
-    let chosen, distance = Infinity
-    for (let index = rows.length - 1; index >= 0; index--) {
-      const row = rows[index]
-      if (row.bottom < entry.top - maxHeight * .5) break
-      const overlap = Math.min(row.bottom, entry.bottom) - Math.max(row.top, entry.top)
-      const delta = Math.abs(row.y - entry.y)
-      if ((delta <= Math.max(row.height, entry.height) * .42
-        || overlap >= Math.min(row.height, entry.height) * .65) && delta < distance) {
-        chosen = row; distance = delta
-      }
-    }
-    if (!chosen) {
-      rows.push({ entries:[entry], y:entry.y, top:entry.top, bottom:entry.bottom, height:entry.height })
-    } else {
-      chosen.entries.push(entry)
-      chosen.top = Math.min(chosen.top, entry.top); chosen.bottom = Math.max(chosen.bottom, entry.bottom)
-      // Superscript note markers and drop caps must not move a whole line's
-      // baseline or pretend that its regular neighbours have a huge leading.
-      chosen.y = textMedian(chosen.entries, 'y')
-      chosen.height = textMedian(chosen.entries, 'height')
-    }
-  }
-  return rows
-}
-
-function segmentRows(rows, rtl) {
-  const lines = []
-  for (const row of rows) {
-    const sorted = [...row.entries].sort((a, b) => a.x0 - b.x0 || a.rawIndex - b.rawIndex)
-    let group = []
-    const finish = () => {
-      if (!group.length) return
-      const rtlWeight = group.filter(entry => entry.item.dir === 'rtl').reduce((sum, entry) => sum + entry.item.str.length, 0)
-      const lineRTL = rtlWeight > group.reduce((sum, entry) => sum + entry.item.str.length, 0) / 2
-      const entries = lineRTL ? [...group].reverse() : group
-      lines.push({ entries, x0:Math.min(...group.map(entry => entry.x0)), x1:Math.max(...group.map(entry => entry.x1)),
-        y:row.y, top:row.top, bottom:row.bottom, height:row.height,
-        text:entries.map(entry => entry.item.str).join(''), rtl:lineRTL })
-      group = []
-    }
-    for (const entry of sorted) {
-      const last = group.at(-1)
-      // A word space stays within a line; a substantial empty gutter can be
-      // a column. The page-level test below requires repeated, coexisting
-      // left and right lines before it treats that gap as a column boundary.
-      if (last && entry.x0 - last.x1 > Math.max(last.height, entry.height) * 2) finish()
-      group.push(entry)
-    }
-    finish()
-  }
-  return lines
-}
 
 function orderLines(lines, rtl, path = '', depth = 0) {
   if (lines.length < 2) return lines.map(line => ({ ...line, column:path }))
@@ -173,7 +110,7 @@ export function extractPDFText(content, viewport) {
   })
   const rtlWeight = entries.filter(entry => entry.item.dir === 'rtl').reduce((sum, entry) => sum + entry.item.str.length, 0)
   const rtl = rtlWeight > entries.reduce((sum, entry) => sum + entry.item.str.length, 0) / 2
-  const lines = orderLines(segmentRows(makeRows(entries), rtl), rtl)
+  const lines = orderLines(pdfRowLines(entries, rtl), rtl)
   // Fail closed to the complete stream if a future layout rule loses or
   // duplicates an item. Reordering is never permission to discard a phrase.
   const orderedIndices = lines.flatMap(line => line.entries.map(entry => entry.rawIndex))
