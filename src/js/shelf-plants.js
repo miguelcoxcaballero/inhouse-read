@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { getRustCore } from './rust-core.js';
+import { rustPlantLeafGeometry } from './plant-leaf-wasm.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { resolveCatalogPlant } from './plant-records.js';
@@ -516,6 +518,9 @@ function leafGeometry({ length, width, variant, curve, twist, random, detailed =
   // Each leaf has its own age: new growth is lighter and yellower, older
   // leaves darker and bluer.
   const tint = random() * .08, hue = (random() - .5) * .1, strip = Math.min(SNAKE_STRIPS - 1, Math.floor(tint / .08 * SNAKE_STRIPS));
+  const core = getRustCore();
+  const accelerated = core && rustPlantLeafGeometry(core, { length, width, variant, curve, twist, tint, hue, detailed });
+  if (accelerated) return accelerated;
   for (let side = 0; side <= Number(thick); side++) for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
     const f = row / rows, u = col / columns * 2 - 1;
     const point = bladePoint(f, u, length, width, variant, curve, twist);

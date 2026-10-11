@@ -1,0 +1,4 @@
+# Shared updater files must retain the exact bytes recorded by its canonical
+# sync tool, including on Windows checkouts with core.autocrlf enabled.
+vendor/inhouse-services-updater/** text eol=lf
+src/vendor/inhouse-services-updater/** text eol=lf

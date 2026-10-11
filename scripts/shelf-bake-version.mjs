@@ -4,7 +4,7 @@
 // 'vite dev' defines null: sources change under a running server, and the bakes are then never read or written.
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { dirname, extname, join, relative, resolve } from 'node:path'
 
 export const SHELF_BAKE_GENERATORS = ['src/js/shelf-plants.js', 'src/js/shelf-lamps.js']
 
@@ -13,9 +13,15 @@ export function shelfBakeHash(root) {
   const visit = file => {
     if (seen.has(file)) return
     seen.add(file)
-    const source = readFileSync(file, 'utf8')
-    digest.update(relative(root, file)).update('\0').update(source).update('\0')
-    for (const [, specifier] of source.matchAll(/\b(?:from|import)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g)) visit(resolve(dirname(file), specifier))
+    const bytes = readFileSync(file)
+    digest.update(relative(root, file)).update('\0').update(bytes).update('\0')
+    // Vite asset imports include ?url/?raw. Hash the exact file bytes, not
+    // a filename containing that query, and never parse binary data as JS.
+    if (!['.js', '.mjs', '.cjs'].includes(extname(file))) return
+    const source = bytes.toString('utf8')
+    for (const [, specifier] of source.matchAll(/\b(?:from|import)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g)) {
+      visit(resolve(dirname(file), specifier.split(/[?#]/, 1)[0]))
+    }
   }
   for (const generator of SHELF_BAKE_GENERATORS) visit(join(root, generator))
   const three = JSON.parse(readFileSync(join(root, 'node_modules/three/package.json'), 'utf8')).version

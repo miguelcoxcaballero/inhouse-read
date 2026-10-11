@@ -21,6 +21,7 @@
 import { runInSlices } from './cover-appearance.js';
 import { getRustCore, loadRustCore } from './rust-core.js';
 import { prepareColorMaskJob } from './cover-color-mask-wasm.js';
+import { rustReliefPalette } from './relief-palette-wasm.js';
 import { canUseReliefWasm, wasmInsideDistance, wasmBoxBlur, wasmHeightToNormals,
   wasmComposeMaterialMap, wasmComposeReliefLayers } from './cover-relief-wasm.js';
 
@@ -1191,8 +1192,10 @@ function* preparedColorMask(image, color, tolerance, prepared) {
 
 export function* analyzePixels(image) {
   validateRaster(image);
-  const { bins, opaque } = yield* colorHistogram(image);
-  const colors = yield* colorCandidates(bins, opaque), chosen = [];
+  const palette = image.width * image.height >= 4096
+    ? yield* rustReliefPalette(getRustCore(), image, rgbToOklab) : null;
+  const { bins, opaque } = palette || (yield* colorHistogram(image));
+  const colors = palette ? palette.colors : yield* colorCandidates(bins, opaque), chosen = [];
   let prepared = null;
   try {
     prepared = yield* prepareColors(image, colors.length);

@@ -1,3 +1,82 @@
+# 1.7.124 integrada con Inhouse Services Updater; publicación pendiente
+
+El 11 de octubre a las 18:15 se descarga `origin/main` en `d879237`, con
+web 1.7.123 y APK 1.1.11/24 del canal A. Se preservan los 26 cambios locales
+en el stash `Rust leaf and relief candidate preserved before shared updater
+integration 2026-10-11`, se avanza por fast-forward y se aplican sin conflictos.
+El stash se conserva como respaldo; no volver a aplicarlo sobre este árbol.
+
+Se cumple la condición de integrar el updater antes de publicar. Su revisión
+`ff20596f137119b98844a03a75836099ac7e146b` permanece intacta. Windows había
+convertido sus archivos a CRLF: se restauran usando el `tools/sync.py` canónico
+de la misma revisión, con sus fuentes extraídas byte a byte del commit y
+Python UTF-8. Se conserva la nota específica de B en UPDATER.md. El lock
+final y las 20 copias son idénticos a main; sólo se añade `.gitattributes`
+para mantener LF en futuras descargas. El prebuild web ejecuta el verificador
+canónico, igual que ya hace el build Android.
+
+Se prepara web 1.7.124: build aprobado, núcleo de 178034 bytes, 3952/3952
+unitarias en 321 archivos y 105 comprobaciones Python aprobadas. El número
+menor de unitarias procede de los tests reemplazados por la integración del
+updater, no de omisiones en esta batería. Se conservan las 3973 anteriores.
+Los recorridos conjuntos del editor, animación, descarga y updater están en
+`local124-integration-attempt1`: 15/15 aprobados en 3,4 minutos, incluidos ambos regresos nativos con sus límites originales.
+
+La APK 1.1.11 real descargada de GitHub coincide con A: 78532469 bytes,
+SHA256 `4f19d71a49186f09c64af9d64e2a81e719fa571ca5aea37dc98decf4f723c23e`,
+firma permanente, paquete correcto y loader de 2107 bytes. Evidencia:
+`android1111-integrated/summary.json`. Falta verificar esta APK con la nueva
+web publicada. No hace falta recompilar ni sobrescribir el APK para estos
+cambios web; el loader sigue apuntando a la producción. B sigue vacío.
+
+El build 124 está congelado en `public124-browser-attempt1/frozen-local-build`.
+Los 27 recorridos públicos y sus scripts de auditoría ya están preparados;
+falta fijar source/Pages con `write-public124-pins.mjs` después del despliegue,
+ejecutar `verify-public-124.mjs`, los recorridos y su auditoría de respuestas.
+La migración completa a Rust sigue pendiente. CI121 conserva dos fallos de
+regreso nativo; no se amplían sus plazos ni se afirma que están resueltos.
+
+## Retención anterior (resuelta al integrar main)
+
+El 11 de octubre el usuario pide esperar el commit de unificación del
+instalador, previsto aproximadamente media hora después de su mensaje.
+**No publicar web, APK ni catálogos antes de descargar e integrar ese commit.**
+La ejecución propia `38151667641` (APK 1.1.10/23) se canceló durante el build,
+antes de publicar el APK o modificar manifiestos. La rama externa
+`feat/inhouse-services-updater` y su prerelease 1.1.9/22 se conservan intactas.
+
+Continuar los cambios y las pruebas localmente. Cuando llegue la integración,
+preservar las migraciones Rust posteriores a su punto de partida, leer sus
+`AGENTS.md`/`UPDATER.md` y las directrices del repositorio canónico. Publicar
+sólo al canal A, con changelog breve, firma existente y versionCode global
+creciente; B requiere petición expresa. Verificar el lock y las copias
+compartidas, sin modificarlas de forma independiente. No lanzar el workflow
+antiguo de publicación estable. Comprobar primero qué versión/código ha
+publicado finalmente el otro trabajo antes de preparar otro APK.
+
+Se ha programado una continuación en esta conversación para las 18:15
+(Europe/Madrid) del 11 de octubre: `integrar-el-updater-de-inhouse-read`.
+En la última consulta `origin/main` seguía en `9b0f88a`; la rama del updater
+ya incorpora esa base, prepara web 1.7.122 y APK 1.1.11/24. Consultar de
+nuevo: no asumir que ese trabajo ni su publicación hayan terminado.
+
+Hay cambios locales de geometría de hojas y paleta de relieve en Rust,
+todavía sin publicar. Pasan 50 pruebas focales de integración con WASM real,
+8 recorridos Chromium de geometría, 16 de paleta/API, 15 del editor real y
+dos comprobaciones de editor en frío/con caché. La batería completa detectó
+un fallo de hash de los modelos ante un import WASM con `?url`; corregido,
+pasan las 14 pruebas focales y el build. La batería posterior termina con
+3973/3973 pruebas en 321 archivos; los ocho recorridos originales locales
+también pasan, incluidos ambos cierres nativos, sin cambiar sus plazos.
+Los resultados están en `unit122-full-attempt2.json` y
+`local122-browser-attempt1/results.json` dentro de la carpeta de evidencias.
+El build anterior al updater está congelado en
+`local-candidate-before-updater-build`; no es una versión publicada y aún
+lleva la etiqueta web 1.7.121. Elegir la versión siguiente después de integrar.
+CI121 terminó con 663/665 E2E, cero omitidos/inestables: sus dos fallos de
+regreso nativo aún deben investigarse sin ampliar los límites originales de
+30 s globales y 8 s de cierre. Legacy midió 8188,5/8110,3 ms de cierre.
+
 # Continuación: 1.7.121 publicada; migración parcial a Rust
 
 121 migra la agrupación de filas PDF y las previsualizaciones de arrastres

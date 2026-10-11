@@ -611,3 +611,96 @@ de JavaScript propio (`rust-core/src` y `src/js`), un 3,45 % de ambos lenguajes.
 Excluye dependencias, pruebas, HTML, CSS y Java nativo. No mide el porcentaje
 de funciones migradas ni el trabajo restante; las rutas JS de compatibilidad
 permanecen. La reescritura completa sigue pendiente.
+
+## Siguiente candidato local: hojas y paleta (publicación retenida)
+
+Por instrucción del usuario del 11 de octubre se espera la integración del
+instalador de Inhouse Services Updater antes de publicar. Se canceló el build
+propio `38151667641` antes del paso de publicación. No se modifica la rama
+externa del updater ni sus APK. Tras la integración se aplican los canales y
+las directrices canónicas, con nuevas versiones en A y B sólo por petición.
+
+El candidato mueve a Rust la geometría completa de hojas y la selección de
+colores de relieve. La primera mantiene posiciones, normales, UV, colores e
+índices idénticos; conserva los dos pasos aleatorios originales y los cálculos
+trascendentes de JS para no cambiar su redondeo. Cinco especies usan el kernel;
+las otras tres conservan sus generadores. Las restauraciones de modelos
+horneados no regeneran hojas ni invocan el kernel.
+
+Pasan 26 unitarias y ocho comparaciones completas de modelos en Chromium con
+CPU ×4. Medianas del modelo completo caliente JS → Rust: sansevieria
+10,45 → 7,05 ms; suculenta 18,05 → 12,10; palmera 30,65 → 24,15;
+helecho 67,90 → 55,95; zamioculca 26,50 → 14,70. No son FPS, mediciones
+en teléfono físico ni mejoras atribuibles a las tres especies sin cambios.
+Evidencia: `plant-geometry-browser-attempt1-extracted.json` y el informe Node
+`plant-geometry-benchmark-attempt1.json`, con todas las observaciones.
+
+La paleta conserva el histograma, colores representativos, agrupación OKLab,
+selección de diez colores y descartes de bordes suavizados; los puntos de
+cesión siguen iguales. Cada análisis libera su trabajo y memoria al acabar,
+fallar o cancelarse. Se mantiene el algoritmo JS para menos de 4096 píxeles
+y núcleos no disponibles/incompatibles. Pasan 14 pruebas del kernel, diez
+de integración completa y 16 recorridos Chromium de paleta/API. La API real
+incluye decodificación, rasterización, máscaras y miniaturas opcionales; todos
+los resultados comparados conservan valores y bytes. CPU ×4, ejemplo de
+foto de la batería de píxeles: 265,4 → 137,7 ms. En la API con foto CC0,
+sin miniaturas: 105,7 → 91,6 ms. La portada pequeña no mejora: 22,8 →
+22,9 ms sin miniaturas y 62,4 → 63,8 con ellas; no se afirma ganancia
+universal. Evidencia: `palette-browser-attempt1-extracted.json` y
+`palette-benchmark-attempt1.json`.
+
+El WASM conjunto mide 178034 bytes, SHA256
+`e8a6f88f95ee543cb507095004b101ae6b86245e587fec96ce2d1db951f1cd34`.
+La primera batería completa pasa 3968/3969: el hash de modelos horneados
+interpretaba `?url` como parte del nombre del WASM, que ahora es dependencia
+transitiva de las plantas. El build reproduce el mismo error. Se corrige el
+recorrido de dependencias: resuelve consultas de Vite, incluye bytes binarios
+exactos y sólo interpreta imports en módulos JS. Pasan las 14 pruebas de
+caché/hash y el segundo build. La nueva versión del hash invalida una vez
+los modelos anteriores. Se conservan ambos fallos originales; la batería
+completa posterior y la integración del editor aún deben terminar.
+
+Después pasan los 15 recorridos originales del editor real (4,7 min) y dos
+nuevos recorridos de primera apertura/reapertura (33,8 s). Comparan el
+algoritmo JS anterior y el kernel Rust con el renderizador y shaders reales:
+idénticos tres colores, un trabajo Rust en frío y ninguno al volver a abrir
+desde la caché. Los tiempos completos quedan adjuntos, pero una observación
+por variante no demuestra una mejora de latencia del editor. Evidencias:
+`editor122-attempt1` y `editor122-palette-attempt1`.
+
+La batería completa posterior al arreglo del hash pasa **3973/3973 pruebas
+en 321 archivos**, y pasan los ocho recorridos originales locales (2,6 min),
+incluidos los dos regresos nativos con sus plazos de siempre. Esto no borra
+los fallos de CI121. Se congela el build local aún sin versión nueva en
+`local-candidate-before-updater-build` y su inventario/hash en el JSON vecino.
+No se ha subido: falta integrar el updater y comprobar la versión resultante.
+
+La CI completa de 121 ha terminado: 3919/3919 unitarias y 663/665 E2E
+estrictos; 667 intentos con dos reintentos, cero omitidos o inestables. Se
+autentican 11 ZIP y 12 jobs sin inconsistencias. Todos los grupos de voces
+pasan. Los dos contratos nativos fallan: aligned agota la expectativa de
+ocho segundos; legacy mide 8188,5 y 8110,3 ms de cierre, además del timeout
+global. Esto sí demuestra superar los ocho segundos, a diferencia de la
+evidencia anterior de 120. No se amplían plazos ni se descartan intentos.
+Evidencia: `ci-38150701915/snapshot-003/summary.json` y
+`ci-38150701915/ui2-original-failure-summary.json`.
+
+## Integración del updater y candidato 1.7.124
+
+Se descarga main `d879237` (web 1.7.123 y APK 1.1.11/24 de A), preservando
+y recuperando el trabajo local mediante stash. No hay conflictos. Las 20
+copias y el lock del updater siguen exactamente en `ff20596f137119b98844a03a75836099ac7e146b`.
+Se añade una regla de checkout LF porque Windows convirtió las copias a CRLF;
+se recuperan con el sincronizador canónico y sus fuentes exactas del commit.
+El primer intento de resincronización también heredó CRLF del clon canónico;
+se detecta al comparar su lock, se restaura el clon desde `git archive` y se
+repite con UTF-8. El lock final vuelve a ser idéntico al original y el
+verificador aprueba. No se ha modificado la implementación compartida.
+
+El build web ahora ejecuta ese verificador antes de compilar. El build 124,
+3952 pruebas unitarias en 321 archivos y 105 verificaciones Python pasan.
+La reducción respecto a 3973 proviene de las pruebas reemplazadas en la
+integración del updater. El APK 1.1.11 publicado se descarga y valida:
+SHA256, tamaño, versión/code, paquete, firma v2 y loader original de 2107
+bytes correctos. La nueva web no necesita reemplazar el instalador firmado;
+su comprobación con la producción nueva queda pendiente del despliegue.

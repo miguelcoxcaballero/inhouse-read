@@ -4,6 +4,13 @@ Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguel
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.
 
+### Actualización web · 1.7.124
+
+Plantas y relieves más rápidos con Rust.
+
+Conserva el instalador común de Inhouse Services Updater: APK 1.1.11,
+canal A. El código compartido mantiene su revisión original verificada.
+
 ### Actualización web · 1.7.42
 
 La página anterior sigue visible hasta que la siguiente termina de prepararse, incluidas sus ilustraciones.
@@ -535,7 +542,7 @@ android/                      wrapper WebView (ver sección Android)
 
 ## Desarrollo local
 
-Requiere Node.js y Rust instalado con `rustup`. `rust-toolchain.toml` fija el
+Requiere Node.js, Python 3 disponible como `python` y Rust instalado con `rustup`. `rust-toolchain.toml` fija el
 compilador y el destino WASM. Los comandos de desarrollo, build y pruebas unitarias
 compilan el núcleo automáticamente. Puede indicarse otro ejecutable mediante
 `CARGO` y otro directorio de compilación mediante `CARGO_TARGET_DIR`.
