@@ -140,11 +140,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view android-v1.1.9 >/dev/null 2>&1; then
-            gh release upload android-v1.1.9 inhouse-read-release-v1.1.9.apk --clobber
+            echo "La versión ya está publicada; incrementa versionName/versionCode antes de generar otra APK."
+            exit 1
           else
             gh release create android-v1.1.9 inhouse-read-release-v1.1.9.apk \
               --title "Inhouse Read Android 1.1.9" \
-              --notes "Canales A/B y recordatorio opcional."
+              --notes "Canales A/B y recordatorio opcional." \
+              --prerelease --latest=false
           fi
           gh release edit android-v1.1.9 --prerelease --latest=false
 

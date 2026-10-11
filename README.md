@@ -574,3 +574,7 @@ Igual que inhouse notes: build de Vite, publicado a la rama `gh-pages` vía `pea
 ## Android
 
 App-shell WebView (Capacitor) que apunta a la URL en vivo de GitHub Pages, con el mismo pipeline de firma automatizado que Inhouse Notes (`.github/workflows/build-android.yml`, disparo manual desde la pestaña Actions). **Descarga**: https://miguelcoxcaballero.github.io/inhouse-read/download-android.html — página real del sitio que consulta en vivo el último release (no un link fijo que se desactualiza). Detalles en `android/README.md`.
+
+## Inhouse services updater
+
+Android usa el [actualizador común](https://github.com/miguelcoxcaballero/inhouse-services-updater). En los ajustes de actualizaciones puedes elegir **A: cambios recientes; B: versiones revisadas** y comprobar manualmente. El aviso es opcional y «Recordármelo más tarde» lo aplaza 14 días. B solo se publica por petición expresa. [Reglas de publicación y sincronización](UPDATER.md).
