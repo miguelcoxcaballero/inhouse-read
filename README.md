@@ -1,5 +1,13 @@
 # inhouse read
 
+## 1.7.130 — Nuevo aviso de actualización
+
+El aviso de actualización se abre como una hoja inferior, con «Later» y
+«Update» lado a lado, novedades breves y el progreso de descarga en el mismo
+lugar que los botones. Se cierra deslizándola hacia abajo. En el menú de
+cuenta, los canales A y B aparecen como una lista. Las reglas de canal, el
+recordatorio de 14 días y la confirmación de A no cambian.
+
 ## 1.7.129 — Preparación de audio en Rust
 
 El ajuste de volumen, recorte de silencios y suavizado de cada fragmento se
