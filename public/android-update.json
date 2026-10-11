@@ -1,9 +1,9 @@
 {
-  "version": "1.1.14",
-  "versionCode": 27,
+  "version": "1.1.15",
+  "versionCode": 28,
   "required": true,
-  "apkSizeBytes": 78532469,
-  "apkSha256": "cdff45853eace1d3316bb6424a30b46e50b8fcc3b938350f40bbbe9ea8d43fb8",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.14/inhouse-read-release-v1.1.14.apk",
-  "releaseNotes": "Neutral updater colors."
+  "apkSizeBytes": 78532517,
+  "apkSha256": "02960e3322bdad2e26041d2ef57b0fd5a02f3528c4b60b876e7955ae941cafb5",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.15/inhouse-read-release-v1.1.15.apk",
+  "releaseNotes": "Reliable Android update results."
 }

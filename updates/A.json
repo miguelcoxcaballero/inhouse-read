@@ -2,15 +2,24 @@
   "schemaVersion": 1,
   "channel": "A",
   "latest": {
-    "version": "1.1.14",
-    "versionCode": 27,
-    "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.14/inhouse-read-release-v1.1.14.apk",
-    "apkSha256": "cdff45853eace1d3316bb6424a30b46e50b8fcc3b938350f40bbbe9ea8d43fb8",
-    "apkSizeBytes": 78532469,
-    "changelog": "Neutral updater colors.",
-    "releasedAt": "2026-10-11T22:11:24+00:00"
+    "version": "1.1.15",
+    "versionCode": 28,
+    "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.15/inhouse-read-release-v1.1.15.apk",
+    "apkSha256": "02960e3322bdad2e26041d2ef57b0fd5a02f3528c4b60b876e7955ae941cafb5",
+    "apkSizeBytes": 78532517,
+    "changelog": "Reliable Android update results.",
+    "releasedAt": "2026-10-11T22:40:06+00:00"
   },
   "releases": [
+    {
+      "version": "1.1.15",
+      "versionCode": 28,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.15/inhouse-read-release-v1.1.15.apk",
+      "apkSha256": "02960e3322bdad2e26041d2ef57b0fd5a02f3528c4b60b876e7955ae941cafb5",
+      "apkSizeBytes": 78532517,
+      "changelog": "Reliable Android update results.",
+      "releasedAt": "2026-10-11T22:40:06+00:00"
+    },
     {
       "version": "1.1.14",
       "versionCode": 27,
