@@ -1,3 +1,21 @@
+# 1.7.133 — Primer audio y estado del lector
+
+Publicado desde `d626d6232184e8e42aa2c669d877b70d6715a78b`. «Leyendo» se
+anuncia al empezar el audio; preparación Piper en paralelo en Android y
+codec de bytes directo cuando está disponible. Una primera frase larga
+puede empezar por una cláusula natural sin perder texto ni offsets.
+
+4024/4024 unitarias; 14/14 pruebas reales de lectura; 3/3 específicas Piper;
+3/3 Supertonic; 1/1 UI pública. Web comprobada con 108/108 controles,
+99 recursos idénticos por tamaño/SHA. APK 1.1.12/25 descargada de nuevo,
+firma y loader de 2107 bytes verificados; recibe la web 1.7.133.
+
+[Detalles, tiempos y límites de las mediciones](audio-first-play-133.md).
+La CI completa `38172275258` permanece en curso: comprobar su resultado
+antes de afirmar que toda la batería está aprobada. No se cambia ni se
+cancela la CI anterior `38170466639`. No se acredita velocidad universal
+instantánea ni rendimiento en teléfono físico.
+
 # 1.7.132 — Plazo de liberación tras reseleccionar voz
 
 Seguimiento de la corrección 1.7.131: warmUp de una preview ya lista borraba
