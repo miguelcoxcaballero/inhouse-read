@@ -1,3 +1,49 @@
+# 1.7.128 — Actualizaciones dentro del menú de perfil
+
+Solicitud: quitar el icono adicional de actualizaciones de la cabecera y abrir
+los ajustes en un menú discreto desde la foto, sin modal. El menú queda anclado
+a la cuenta, con filas verticales, límite de altura móvil y cierre al tocar
+fuera o pulsar Escape. Sin Google también está disponible, con la inicial I;
+iniciar sesión y cambiar tema se hacen en ese menú. Los ajustes Android se
+despliegan dentro de él, sin overlay, aria-modal ni bloqueo de foco.
+
+La API integrada se implementa primero en el actualizador canónico, revisión
+`356d1e3fbd4f8c429d2d46d2f6de9ca4e910e573`: `settings('', {container})`.
+También corrige la respuesta vacía de una comprobación manual que se une a la
+automática del arranque, y descarta resultados de comprobaciones cerradas.
+CI canónica `38162887797` aprobada; 13 pruebas Node y 4 Python locales.
+Canales, consentimiento explícito para A, recordatorio, hashes y firma se
+conservan. No hay promoción a B ni cambio de APK nativa en esta entrega web.
+
+Se usa `tools/sync.py` y se verifica la misma revisión en las cinco apps.
+Read incorpora el lock y las copias en main; las otras cuatro conservan la
+sincronización en `codex/updater-inline-settings`, sin publicar otras APK.
+Clones de trabajo: `D:/InhouseRead-ProfileMenu/{updater,youtube,instagram,notes,photos}`.
+Se fijan los bytes LF de los blobs canónicos, no conversiones CRLF del checkout.
+
+Evidencia en `D:/InhouseRead-ProfileMenu/evidence`:
+- `unit-release.json`: 3963/3963 unitarias, 322 archivos, ejecución secuencial
+  antes del navegador; 105 Python aprobadas en `python.log`.
+- Build aprobado (`build-release.log`). Diez recorridos de cuenta, canales,
+  menú móvil y restauración PDF/EPUB pasan en `ui-release-results.json`;
+  cuatro de Abrir con/OAuth pendiente/WebView antiguo en `android-entry-results.json`.
+- Se conservan los intentos previos: mocks sin el nuevo export en `unit.log`,
+  tres timeouts al ejecutar unitarias y navegador simultáneamente en
+  `unit-final.log`, y recorridos fallidos en `ui.log`/`ui-fixed.log`.
+- Se corrige el cierre erróneo al reemplazar el botón de canal usando la ruta
+  original del evento. Al iniciar login se cierra el menú para dejar visible
+  Reintentar. Los tests abren el perfil para acceder a controles trasladados.
+- El test Drive ahora respeta PLAYWRIGHT_PORT en sus contextos independientes.
+  No se amplían deadlines ni se omiten comprobaciones.
+
+La CI anterior 1.7.127 (`38160512287`) ya terminó: falla en dos contratos de
+regreso nativo de la estantería (`native-aligned-shelf-return-contract` y
+`native-legacy-shelf-return-contract`) por timeout de 30 s. Se conservan sus
+logs originales en `evidence/ci127-failures.log`. Este cambio del menú no
+resuelve esos fallos previos ni acredita toda la batería general.
+
+---
+
 # 1.7.127 — Restauración completa de la biblioteca en Drive
 
 Solicitud posterior del usuario (11 de octubre): guardar todos los datos de la

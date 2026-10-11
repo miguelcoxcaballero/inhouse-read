@@ -24,6 +24,7 @@ test('carga el home con la marca y las acciones de cabecera', async ({ page }) =
   await expect(page.locator('.app-header .logo')).toContainText('inhouse read')
   await expect(page.getByRole('button', { name: 'Elegir archivo del dispositivo' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Abrir desde Google Drive' })).toBeVisible()
+  await page.getByRole('button', { name:'Cuenta y ajustes', exact:true }).click()
   await expect(page.getByRole('button', { name: 'Conectar cuenta de Google' })).toBeVisible()
 })
 
@@ -51,6 +52,7 @@ test('conecta Google sin redirección y muestra la foto en la esquina derecha', 
       ? { files: [{ id: 'root', name: 'inhouse read' }] } : { files: [] })
   }))
   await page.reload()
+  await page.getByRole('button', { name:'Cuenta y ajustes', exact:true }).click()
   await page.getByRole('button', { name: 'Conectar cuenta de Google' }).click()
   const button = page.getByRole('button', { name: 'Cuenta de Google: miguel@example.com' })
   await expect(button).toBeVisible()
@@ -83,10 +85,12 @@ test('un error de Google permite reintentar sin alertas nativas', async ({ page 
     }) } } }
   })
   await page.reload()
+  await page.getByRole('button', { name:'Cuenta y ajustes', exact:true }).click()
   await page.getByRole('button', { name:'Conectar cuenta de Google' }).click()
   await expect(page.locator('#drive-auth-notice')).toContainText('Se cerró la ventana de Google')
   await expect(page.getByRole('button', { name:'Reintentar' })).toBeVisible()
   await page.getByRole('button', { name:'Reintentar' }).click()
+  await page.getByRole('button', { name:'Cuenta y ajustes', exact:true }).click()
   await expect(page.getByRole('button', { name:'Conectar cuenta de Google' })).toBeEnabled()
 })
 
@@ -108,11 +112,11 @@ test('muestra la cuenta de Google con su perfil y acciones de sincronización', 
   await expect(page.locator('#drive-profile-menu')).toBeVisible()
   await expect(page.locator('#drive-profile-name')).toHaveText('Miguel Caballero')
   await expect(page.locator('#drive-profile-email')).toHaveText('miguel@example.com')
-  await expect(page.getByRole('menuitem', { name: 'Sincronizar ahora' })).toBeVisible()
-  await expect(page.getByRole('menuitem', { name: 'Cerrar sesión' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sincronizar ahora' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Cerrar sesión' })).toBeVisible()
 })
 
-test('una sesión caducada vuelve a mostrar Conectar y oculta el perfil', async ({ page }) => {
+test('una sesión caducada ofrece conectar dentro del menú de cuenta', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('ihr_drive_session_v2', JSON.stringify({
     accessToken: 'expired-server-token', expiresAt: Date.now() + 3600_000
   })))
@@ -120,8 +124,10 @@ test('una sesión caducada vuelve a mostrar Conectar y oculta el perfil', async 
     status: 401, contentType: 'application/json', body: JSON.stringify({ error: { message: 'Invalid Credentials' } })
   }))
   await page.reload()
+  await page.getByRole('button', { name:'Cuenta y ajustes', exact:true }).click()
   await expect(page.getByRole('button', { name: 'Conectar cuenta de Google' })).toBeVisible()
-  await expect(page.locator('#drive-profile')).toBeHidden()
+  await expect(page.locator('#drive-profile')).toBeVisible()
+  await expect(page.locator('#drive-profile-avatar')).toBeHidden()
 })
 
 test('muestra la estantería 3D vacía con tres baldas y plantas que se pueden mover', async ({ page }) => {

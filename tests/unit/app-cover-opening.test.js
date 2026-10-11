@@ -64,7 +64,7 @@ vi.mock('../../src/js/local-folder-store.js', () => ({ isFolderApiSupported:() =
   saveFileIntoFolder:vi.fn(), readFileFromFolder:vi.fn()
 }))
 vi.mock('../../src/js/legacy-book-recovery.js', () => ({ restoreLegacyBookBytes:vi.fn() }))
-vi.mock('../../src/js/android-update.js', () => ({ initAndroidUpdateChecks:vi.fn(), offerAvailableAndroidUpdate:vi.fn() }))
+vi.mock('../../src/js/android-update.js', () => ({ initAndroidUpdateChecks:vi.fn(), offerAvailableAndroidUpdate:vi.fn(), closeAndroidUpdateSettings:vi.fn() }))
 vi.mock('../../src/js/content-freshness.js', () => ({ initContentFreshnessChecks:vi.fn() }))
 vi.mock('../../src/js/reading-display.js', () => ({ initReadingDisplay:vi.fn() }))
 vi.mock('../../src/js/android-file-import.js', () => ({ initAndroidFileImports:options => { state.imports = options } }))

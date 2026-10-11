@@ -18,7 +18,7 @@ import { restoreLegacyBookBytes } from './legacy-book-recovery.js'
 import {
   isFolderApiSupported, getSavedFolderHandle, ensureFolderPermission, readFileFromFolder
 } from './local-folder-store.js'
-import { initAndroidUpdateChecks, offerAvailableAndroidUpdate } from './android-update.js'
+import { initAndroidUpdateChecks, offerAvailableAndroidUpdate, closeAndroidUpdateSettings } from './android-update.js'
 import { initContentFreshnessChecks } from './content-freshness.js'
 import { registerOfflineShell } from './offline-shell.js'
 import { initAndroidFileImports } from './android-file-import.js'
@@ -1055,16 +1055,25 @@ async function loadDriveAccountProfile() {
     driveProfile = null
     cloudSync.reset()
     libraryBackup.reset()
-    els.driveProfile.hidden = true
+    els.driveProfile.hidden = false
     els.driveConnectBtn.hidden = false
-    els.themeToggle.hidden = false
-    els.driveProfileMenu.hidden = true
-    els.driveProfileBtn.setAttribute('aria-expanded', 'false')
+    els.themeToggle.hidden = true
+    els.driveSyncBtn.hidden = true
+    els.driveSignOutBtn.hidden = true
+    els.driveSyncStatus.hidden = true
+    els.driveProfileName.textContent = 'Inhouse Read'
+    els.driveProfileEmail.textContent = 'Biblioteca en este dispositivo'
+    els.driveProfileBtn.setAttribute('aria-label', 'Cuenta y ajustes')
+    els.driveProfileBtn.title = 'Cuenta y ajustes'
+    setProfileAvatar({name:'Inhouse Read'})
     return null
   }
   els.driveProfile.hidden = false
   els.driveConnectBtn.hidden = true
   els.themeToggle.hidden = true
+  els.driveSyncBtn.hidden = false
+  els.driveSignOutBtn.hidden = false
+  els.driveSyncStatus.hidden = false
   try {
     driveProfile = await getDriveProfile()
   } catch (error) {
@@ -1114,6 +1123,7 @@ function showAuthNotice(message, { retry = false, pending = false } = {}) {
 }
 
 async function connectGoogleAccount() {
+  closeProfileMenu()
   els.driveConnectBtn.disabled = true
   showAuthNotice('Completa el acceso en Google.', { pending: true })
   try {
@@ -1151,23 +1161,29 @@ els.driveThemeToggle.addEventListener('change', () => {
   notifyCloudSettingsChanged('inhouse-read-theme')
 })
 
+function closeProfileMenu() {
+  closeAndroidUpdateSettings()
+  els.driveProfileMenu.hidden = true
+  els.driveProfileBtn.setAttribute('aria-expanded', 'false')
+}
 els.driveProfileBtn.addEventListener('click', () => {
   const open = els.driveProfileMenu.hidden
+  if (!open) { closeProfileMenu(); return }
   els.driveProfileMenu.hidden = !open
   els.driveProfileBtn.setAttribute('aria-expanded', String(open))
   if (open) els.driveThemeToggle.focus()
 })
 document.addEventListener('click', event => {
-  if (!els.driveProfile.contains(event.target)) {
-    els.driveProfileMenu.hidden = true
-    els.driveProfileBtn.setAttribute('aria-expanded', 'false')
+  // Channel selection replaces its own button while this click bubbles.
+  // Use the original event path so it is not mistaken for an outside tap.
+  if (!event.composedPath().includes(els.driveProfile)) {
+    closeProfileMenu()
   }
 })
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
     const wasOpen = !els.driveProfileMenu.hidden
-    els.driveProfileMenu.hidden = true
-    els.driveProfileBtn.setAttribute('aria-expanded', 'false')
+    closeProfileMenu()
     if (wasOpen) els.driveProfileBtn.focus()
   }
 })
@@ -1182,10 +1198,8 @@ els.driveSignOutBtn.addEventListener('click', () => {
   cloudSync.reset()
   libraryBackup.reset()
   driveProfile = null
-  els.driveProfileMenu.hidden = true
-  els.driveProfile.hidden = true
-  els.driveConnectBtn.hidden = false
-  els.themeToggle.hidden = false
+  closeProfileMenu()
+  loadDriveAccountProfile()
   showAuthNotice('')
   els.driveProfileBtn.setAttribute('aria-expanded', 'false')
   refreshShelf()

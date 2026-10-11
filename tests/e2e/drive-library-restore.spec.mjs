@@ -29,7 +29,7 @@ for (const [name,format] of [['reading-journey.pdf','pdf'],['cloud-cover.epub','
     }
     try {
       const a=await makeDevice()
-      await a.page.goto(process.env.IHR_TEST_URL || 'http://127.0.0.1:4283/inhouse-read/')
+      await a.page.goto(process.env.IHR_TEST_URL || `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT || 4283}/inhouse-read/`)
       const original = format === 'epub' ? imageThemeEPUB({ cover:true }) : readFileSync(`tests/e2e/fixtures/${name}`)
       await a.page.locator('#file-picker').setInputFiles({ name, mimeType:format === 'epub' ? 'application/epub+zip' : 'application/pdf', buffer:original })
       await expect.poll(() => savedBook(a.page)).toMatchObject({ cover:expect.any(Array) })
@@ -55,7 +55,7 @@ for (const [name,format] of [['reading-journey.pdf','pdf'],['cloud-cover.epub','
       await a.context.close()
       const b=await makeDevice()
       const errors=[];b.page.on('pageerror',e=>errors.push(e.message))
-      await b.page.goto(process.env.IHR_TEST_URL || 'http://127.0.0.1:4283/inhouse-read/')
+      await b.page.goto(process.env.IHR_TEST_URL || `http://127.0.0.1:${process.env.PLAYWRIGHT_PORT || 4283}/inhouse-read/`)
       await expect.poll(()=>localBookBytes(b.page,name),{timeout:30000}).toMatchObject({ bytes:original.length,
         sha256:createHash('sha256').update(original).digest('hex'),hasDriveCopy:true })
       await expect.poll(()=>savedBook(b.page)).toMatchObject({title:'Restored Library',cover:source.cover,shelfOrder:9,

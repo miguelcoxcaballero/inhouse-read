@@ -16,12 +16,31 @@ export function getInstalledAndroidAppVersion() {
 export const compareSemanticVersions=(a,b)=>window.InhouseServicesUpdater.compareVersions(a,b)
 let updater
 export function getUpdater() {
-  return updater ||= window.InhouseServicesUpdater.create({appId:'read',appName:'Inhouse Read',repository:'miguelcoxcaballero/inhouse-read',getVersion:getInstalledAndroidAppVersion})
+  return updater ||= window.InhouseServicesUpdater.create({appId:'read',appName:'Inhouse Read',repository:'miguelcoxcaballero/inhouse-read',getVersion:getInstalledAndroidAppVersion,close:hideUpdateSettings})
+}
+function hideUpdateSettings() {
+  const panel = document.getElementById('drive-update-settings')
+  if (panel) panel.hidden = true
+  document.querySelector('[data-inhouse-update-settings]')?.setAttribute('aria-expanded','false')
+}
+export function closeAndroidUpdateSettings() {
+  if (document.querySelector('#drive-update-settings .isu-inline')) updater?.close()
 }
 export function initAndroidUpdateChecks() {
   if(!detectInhouseApp())return
   document.documentElement.dataset.inhouseApp='true'
-  document.querySelectorAll('[data-inhouse-update-settings]').forEach(button=>{button.hidden=false;button.addEventListener('click',()=>getUpdater().settings())})
+  document.querySelectorAll('[data-inhouse-update-settings]').forEach(button=>{
+    button.hidden=false
+    button.addEventListener('click',()=>{
+      const panel = document.getElementById('drive-update-settings')
+      if (!panel) return
+      if (!panel.hidden) { closeAndroidUpdateSettings(); return }
+      getUpdater().settings('',{container:panel})
+      panel.hidden=false
+      button.setAttribute('aria-expanded','true')
+      panel.querySelector('button[aria-pressed="true"]')?.focus()
+    })
+  })
   getUpdater().start()
 }
 export function offerAvailableAndroidUpdate() { return detectInhouseApp()?getUpdater().check({manual:true}):Promise.resolve(false) }

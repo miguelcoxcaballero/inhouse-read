@@ -1,5 +1,13 @@
 # inhouse read
 
+## 1.7.128 — Actualizaciones en el perfil
+
+Las actualizaciones se abren desde la foto de perfil, dentro del mismo menú de
+cuenta. Se elimina el icono adicional de la cabecera y los ajustes manuales ya no
+abren un modal. El menú también permite iniciar sesión y cambiar el tema.
+Sin cuenta de Google, sigue disponible mediante la inicial de Inhouse Read.
+El actualizador conserva los canales y el consentimiento para A.
+
 ## 1.7.127 — Biblioteca completa entre dispositivos
 
 Con una cuenta de Google conectada, los originales se copian automáticamente a

@@ -50,9 +50,10 @@
 }
 .drive-profile-avatar { width:100%; height:100%; object-fit:cover; border-radius:50%; }
 .drive-profile-menu {
-  position:absolute; z-index:2000; top:calc(100% + 10px); right:0; width:min(280px, calc(100vw - 24px));
-  padding:14px; display:flex; flex-direction:column; gap:12px; color:var(--text-primary);
-  background:white; border:1px solid rgba(0,0,0,.08); border-radius:16px; box-shadow:0 18px 40px rgba(0,0,0,.18);
+  position:absolute; z-index:2000; top:calc(100% + 10px); right:0; width:min(300px, calc(100vw - 24px));
+  max-height:calc(100dvh - var(--ihr-safe-top) - 80px); overflow-y:auto; overscroll-behavior:contain;
+  padding:16px; display:flex; flex-direction:column; gap:10px; color:var(--text-primary);
+  background:var(--bg-secondary); border:1px solid var(--border); border-radius:10px; box-shadow:0 4px 18px rgba(0,0,0,.09);
 }
 [data-theme="dark"] .drive-profile-btn, [data-theme="dark"] .drive-profile-menu { background:#1f1f1f; border-color:rgba(255,255,255,.08); }
 .drive-profile-meta { display:flex; align-items:center; gap:12px; min-width:0; }
@@ -62,7 +63,13 @@
 .drive-profile-email { color:var(--text-secondary); font-size:.75rem; overflow-wrap:anywhere; }
 .drive-sync-status { margin:0; color:var(--text-secondary); font-size:.82rem; }
 .drive-sync-status.is-syncing::before { content:''; display:inline-block; width:8px; height:8px; margin-right:7px; border-radius:50%; background:var(--accent-read); animation:drive-sync-pulse 1s ease-in-out infinite alternate; }
-.drive-profile-actions { display:flex; gap:8px; }
+.drive-profile-actions { display:flex; flex-direction:column; gap:0; }
+.drive-profile-menu .drive-menu-btn { flex:none; width:100%; min-height:44px; padding:10px 0; border-radius:0; text-align:left; background:transparent; }
+.drive-profile-menu .drive-menu-btn:hover { background:color-mix(in srgb,currentColor 4%,transparent); }
+.drive-updates-toggle { display:flex; align-items:center; justify-content:space-between; }
+.drive-updates-toggle span { transition:transform .15s ease; }
+.drive-updates-toggle[aria-expanded=true] span { transform:rotate(180deg); }
+#drive-update-settings { padding:12px 0; border-block:1px solid var(--border); }
 /* Tints derive from the ink, so hover works the same in both themes. */
 .drive-menu-btn { flex:1; min-height:40px; padding:10px 12px; border:0; border-radius:var(--radius-md); color:var(--text-primary); background:color-mix(in srgb, currentColor 6%, transparent); font:500 .875rem var(--f-body); cursor:pointer; transition:background .2s ease; }
 @media (hover:hover) { .drive-menu-btn:hover:not(:disabled) { background:color-mix(in srgb, currentColor 11%, transparent); } }

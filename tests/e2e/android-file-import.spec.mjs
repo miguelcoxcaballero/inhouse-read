@@ -99,8 +99,10 @@ test('Android: un acceso a Google pendiente no bloquea el siguiente Abrir con', 
   await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/, {timeout:returnTimeout})
   await expect(page.locator('#home-screen')).toBeVisible()
   const connect = page.getByRole('button', {name:'Conectar cuenta de Google',exact:true})
+  await page.getByRole('button', {name:'Cuenta y ajustes',exact:true}).click()
   await connect.click()
   await page.waitForFunction(() => window.testAuthOpened && window.testAuthUrls.length === 1)
+  await page.getByRole('button', {name:'Cuenta y ajustes',exact:true}).click()
   await expect(connect).toBeDisabled()
   await expect(page.locator('#drive-auth-message')).toHaveText('Completa el acceso en Google.')
   const pendingBefore = await page.evaluate(() => ({
