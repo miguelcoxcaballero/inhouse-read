@@ -1,9 +1,9 @@
 {
-  "version": "1.1.13",
-  "versionCode": 26,
+  "version": "1.1.15",
+  "versionCode": 28,
   "required": true,
-  "apkSizeBytes": 78532469,
-  "apkSha256": "3b01272323158dd4d5c51a20374a9928b4e17a2b9a35b30b68d00056115ba2c5",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.13/inhouse-read-release-v1.1.13.apk",
-  "releaseNotes": "Updated Inhouse services updater."
+  "apkSizeBytes": 78532517,
+  "apkSha256": "02960e3322bdad2e26041d2ef57b0fd5a02f3528c4b60b876e7955ae941cafb5",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.15/inhouse-read-release-v1.1.15.apk",
+  "releaseNotes": "Reliable Android update results."
 }
