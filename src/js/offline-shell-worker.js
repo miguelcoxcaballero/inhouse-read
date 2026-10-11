@@ -98,7 +98,7 @@ export function createOfflineShell(scope, manifest) {
     if (request.mode === 'navigate') return documents.includes(path)
     if (request.cache === 'no-store') return false
     return !documents.includes(path) &&
-      (entries.has(canonical(url.href)) || /^assets\/[\w.-]+-[\w-]+\.(?:js|mjs|css|webp|png|woff2?)$/.test(path))
+      (entries.has(canonical(url.href)) || /^assets\/[\w.-]+-[\w-]+\.(?:js|mjs|css|wasm|webp|png|woff2?)$/.test(path))
   }
   async function handle(request) {
     if (!handles(request)) return null
@@ -130,7 +130,7 @@ export function createOfflineShell(scope, manifest) {
     const key = canonical(url.href)
     // The known shell and old hashed chunks are immutable. Metadata, callback
     // URLs, auth, dictionaries and model downloads deliberately pass through.
-    if (!entries.has(key) && !/^assets\/[\w.-]+-[\w-]+\.(?:js|mjs|css|webp|png|woff2?)$/.test(path)) return null
+    if (!entries.has(key) && !/^assets\/[\w.-]+-[\w-]+\.(?:js|mjs|css|wasm|webp|png|woff2?)$/.test(path)) return null
     if (request.cache === 'no-store') return null
     return await cached(key) || scope.fetch(request)
   }

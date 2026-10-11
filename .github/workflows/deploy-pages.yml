@@ -30,6 +30,8 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Install the pinned Rust WASM toolchain
+        run: rustup show active-toolchain
       - run: npm ci
 
       - name: Build de producción (Vite)

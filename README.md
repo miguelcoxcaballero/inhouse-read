@@ -504,6 +504,11 @@ Esta actualización se entrega desde la web al abrir la app Android. La APK sigu
 
 HTML/CSS/JS vanilla (ES modules) + [Vite](https://vitejs.dev) solo como bundler/dev-server — sin framework de UI, siguiendo el mismo criterio que inhouse notes. Sin backend propio: todo corre en el navegador.
 
+El procesamiento de fuentes de portada, columnas PDF, cinco operaciones de
+relieve y la geometría del marcapáginas incorpora un núcleo Rust compilado a
+WebAssembly. La migración completa
+de la aplicación sigue pendiente; [alcance y comprobaciones](docs/rust-migration.md).
+
 ```
 src/
   css/            tokens.css (paleta/tipografía heredadas de Inhouse), base.css, app.css, bookshelf.css
@@ -528,6 +533,11 @@ android/                      wrapper WebView (ver sección Android)
 ```
 
 ## Desarrollo local
+
+Requiere Node.js y Rust instalado con `rustup`. `rust-toolchain.toml` fija el
+compilador y el destino WASM. Los comandos de desarrollo, build y pruebas unitarias
+compilan el núcleo automáticamente. Puede indicarse otro ejecutable mediante
+`CARGO` y otro directorio de compilación mediante `CARGO_TARGET_DIR`.
 
 ```bash
 npm install

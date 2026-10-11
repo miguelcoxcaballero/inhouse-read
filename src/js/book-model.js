@@ -1,4 +1,6 @@
 import { paddedBookFrameSize } from './book-frame-padding.js';
+import { getRustCore } from './rust-core.js';
+import { rustBookmarkBuffers } from './bookmark-wasm.js';
 import { reuseCoverRaster, releaseCoverRaster } from './cover-raster-cache.js';
 import { paperToneKey, readPaperTone } from './page-paper-tone.js';
 import { bookReturnCompatibility } from './bookshelf-return.js';
@@ -463,6 +465,33 @@ export function boardGeometry(width, height, depth, { shelf = false, overview = 
 /** A real ribbon mesh emerging from the top edge at the saved reading depth. */
 export function bookmarkGeometry(width, height, thickness, progress, peek = 10,
   { open = 0, withdraw = 0, segments = 32, seed = 0, geometry: target } = {}) {
+  const core = getRustCore();
+  if (core) {
+    try {
+      const pixels = rustBookmarkBuffers(core, width, height, thickness, progress, peek, open, withdraw, segments, seed);
+      if (pixels) {
+        const reuse = target?.getAttribute('position')?.count === pixels.positions.length / 3
+          && target.getAttribute('uv')?.count === pixels.uvs.length / 2 && target.index?.count === pixels.indices.length;
+        const geometry = reuse ? target : new THREE.BufferGeometry();
+        if (reuse) {
+          geometry.getAttribute('position').array.set(pixels.positions);
+          geometry.getAttribute('uv').array.set(pixels.uvs);
+          geometry.getAttribute('position').needsUpdate = true;
+          geometry.getAttribute('uv').needsUpdate = true;
+          geometry.boundingBox = geometry.boundingSphere = null;
+        } else {
+          geometry.setAttribute('position', new THREE.Float32BufferAttribute(pixels.positions, 3));
+          geometry.setAttribute('uv', new THREE.Float32BufferAttribute(pixels.uvs, 2));
+          geometry.setIndex(new THREE.Uint16BufferAttribute(pixels.indices, 1));
+        }
+        const normal = geometry.getAttribute('normal');
+        if (normal?.count === pixels.normals.length / 3) normal.array.set(pixels.normals);
+        else geometry.setAttribute('normal', new THREE.Float32BufferAttribute(pixels.normals, 3));
+        geometry.getAttribute('normal').needsUpdate = true;
+        return geometry;
+      }
+    } catch { /* Preserve the original geometry if WASM is unavailable or lost. */ }
+  }
   // Peek values belong to the 200 px shelf book, not the much larger lifted
   // copy. Keep the ribbon's physical proportions identical in both models.
   const ribbonWidth = Math.min(width * .09, Math.max(height * .035, Math.min(height * .055, thickness * .42)));
@@ -1448,6 +1477,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     }
 
   };
+  let ribbonBatch = 0, ribbonDirty = false;
   group.userData.setCoverOpen = amount => {
     const next = Math.max(0, Math.min(1, amount));
     frontCover.rotation.y = -Math.PI * .94 * next;
@@ -1460,6 +1490,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     if (Math.abs(next - coverOpening) > .00001) { coverOpening = next; updateRibbonGeometry(); }
   };
   function updateRibbonGeometry() {
+    if (ribbonBatch) { ribbonDirty = true; return; }
     if (!ribbonMesh || !bookmark) return;
     const previous = ribbonMesh.geometry;
     ribbonMesh.geometry = bookmarkGeometry(width, height, thickness, bookmark.progress, bookmark.peek,
@@ -1471,6 +1502,18 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   group.userData.setBookmarkWithdraw = amount => {
     const next = Math.max(0, Math.min(1, Number(amount) || 0));
     if (Math.abs(next - bookmarkWithdraw) > .00001) { bookmarkWithdraw = next; updateRibbonGeometry(); }
+  };
+  // Both properties describe one displayed pose. Build its ribbon once,
+  // after both values settle, rather than constructing an invisible midpoint.
+  group.userData.setMotionPose = (opening, withdrawal) => {
+    ribbonBatch++;
+    try {
+      group.userData.setCoverOpen(opening);
+      group.userData.setBookmarkWithdraw(withdrawal);
+    } finally {
+      ribbonBatch--;
+      if (!ribbonBatch && ribbonDirty) { ribbonDirty = false; updateRibbonGeometry(); }
+    }
   };
   group.userData.hasBookmark = Boolean(bookmark);
   group.userData.updateBookmark = nextBook => {
@@ -1913,8 +1956,10 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     };
   }
   function positionModel(pose) {
-    model.userData.setCoverOpen?.(Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0)));
-    model.userData.setBookmarkWithdraw?.(Math.max(0, Math.min(1, pose.bookmarkWithdraw ?? current?.bookmarkWithdraw ?? 0)));
+    const opening = Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0));
+    const withdrawal = Math.max(0, Math.min(1, pose.bookmarkWithdraw ?? current?.bookmarkWithdraw ?? 0));
+    if (model.userData.setMotionPose) model.userData.setMotionPose(opening, withdrawal);
+    else { model.userData.setCoverOpen?.(opening); model.userData.setBookmarkWithdraw?.(withdrawal); }
     model.position.set(centerX - viewportWidth / 2 + pose.x, viewportHeight / 2 - centerY - pose.y, 0);
     model.rotation.set((pose.pitch ?? 0) * Math.PI / 180, pose.angle * Math.PI / 180, (pose.roll ?? 0) * Math.PI / 180);
     model.scale.setScalar(pose.scale);

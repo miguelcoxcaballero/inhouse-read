@@ -1,18 +1,23 @@
 {
   "name": "inhouse-read",
   "private": true,
-  "version": "1.7.115",
+  "version": "1.7.116",
   "type": "module",
   "description": "Inhouse Read - lector de PDF, ePub y MOBI, hermano de Inhouse Notes.",
   "scripts": {
+    "build:rust": "node scripts/build-rust-core.mjs",
+    "predev": "npm run build:rust",
     "dev": "vite",
+    "prebuild": "npm run build:rust",
     "build": "vite build && node scripts/restore-legacy-pdf-chunk.mjs && node scripts/generate-offline-shell.mjs",
     "preview": "vite preview",
+    "pretest:unit": "npm run build:rust",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
-    "test": "npm run test:unit && npm run test:e2e"
+    "test": "npm run test:unit && npm run test:e2e",
+    "pretest:unit:watch": "npm run build:rust"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

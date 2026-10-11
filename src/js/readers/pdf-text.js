@@ -2,6 +2,7 @@
 // not be its reading order. This page-local layout keeps every text item and
 // its source offsets: the same result feeds reflow, speech and the text layer.
 // No OCR, language model, repeated-line removal or guessed missing text.
+import { pdfColumnCut as columnCut } from './pdf-layout-wasm.js'
 
 const DEFAULT_VIEW = [1, 0, 0, -1, 0, 0]
 const median = values => {
@@ -88,37 +89,6 @@ function segmentRows(rows, rtl) {
     finish()
   }
   return lines
-}
-
-function columnCut(lines) {
-  if (lines.length < 4) return null
-  const height = median(lines.map(line => line.height))
-  const edges = [...new Set(lines.flatMap(line => [line.x0, line.x1]))].sort((a, b) => a - b)
-  let best, table = false
-  for (let index = 1; index < edges.length; index++) {
-    if (edges[index] - edges[index - 1] < height * .65) continue
-    const at = (edges[index] + edges[index - 1]) / 2
-    const left = [], right = [], crossing = []
-    for (const line of lines) (line.x1 <= at ? left : line.x0 >= at ? right : crossing).push(line)
-    if (left.length < 2 || right.length < 2 || crossing.length > Math.min(left.length, right.length)) continue
-    const overlap = Math.min(Math.max(...left.map(line => line.bottom)), Math.max(...right.map(line => line.bottom)))
-      - Math.max(Math.min(...left.map(line => line.top)), Math.min(...right.map(line => line.top)))
-    if (overlap < height * 1.5) continue
-    const coexisting = left.filter(line => right.some(other => Math.abs(other.y - line.y) < Math.max(line.height, other.height) * 1.6)).length
-    if (coexisting < 2) continue
-    // A tightly aligned matrix of short cells is much more likely a table
-    // than wrapped prose. Keep its row order instead of reading each field's
-    // column from top to bottom. Long prose lines still admit narrow gutters.
-    const cells = [...left, ...right]
-    const aligned = left.filter(line => right.some(other => Math.abs(other.y - line.y) < Math.min(line.height, other.height) * .25)).length
-    if (crossing.length <= 2 && left.length >= 3 && right.length >= 3 && aligned >= left.length * .85
-      && cells.filter(line => line.x1 - line.x0 < line.height * 8).length >= cells.length * .85) { table = true; continue }
-    const gap = Math.min(...right.map(line => line.x0)) - Math.max(...left.map(line => line.x1))
-    if (gap < height * .65) continue
-    const score = coexisting * Math.min(left.length, right.length) * Math.min(gap, height * 8) / (crossing.length + 1)
-    if (!best || score > best.score) best = { at, left, right, crossing, score }
-  }
-  return best || (table ? { table:true } : null)
 }
 
 function orderLines(lines, rtl, path = '', depth = 0) {

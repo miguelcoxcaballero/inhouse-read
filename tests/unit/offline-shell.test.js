@@ -183,6 +183,48 @@ describe('atomic offline app shell',()=>{
     await next.install();await next.activate();h.scope.fetch.mockRejectedValue(new Error('offline'))
     expect(await(await next.handle(request('assets/reader-new.js'))).text()).toBe(source['assets/reader-new.js'])
   })
+  it('serves the previous release hashed WASM to an open page after worker activation while offline',async()=>{
+    // Two valid, different WASM modules: the second adds an inert custom
+    // section. This test checks byte routing, independent of core behavior.
+    const oldCore=Uint8Array.of(0,97,115,109,1,0,0,0)
+    const nextCore=Uint8Array.of(0,97,115,109,1,0,0,0,0,2,1,110)
+    const oldPath=`assets/inhouse_read_core-${hash(oldCore).slice(0,8)}.wasm`
+    const nextPath=`assets/inhouse_read_core-${hash(nextCore).slice(0,8)}.wasm`
+    const h=harness('previous',{...source,[oldPath]:oldCore});await h.worker.install()
+    const files={'index.html':'next','assets/main-next.js':'next',[nextPath]:nextCore}
+    const next=createOfflineShell(h.scope,{...h.manifest,version:'next',entries:Object.entries(files)
+      .map(([path,body])=>({path,bytes:Buffer.byteLength(body),sha256:hash(body)}))})
+    h.scope.fetch.mockImplementation(async req=>new Response(files[new URL(req).pathname.slice('/inhouse-read/'.length)]))
+    await next.install();await next.activate()
+    h.scope.fetch.mockClear().mockRejectedValue(new Error('offline'))
+    // Exercise the actual fetch-event ownership check as well as handle().
+    const event={request:request(oldPath+'?revision=previous'),respondWith:vi.fn()}
+    h.listeners.fetch(event)
+    expect(event.respondWith).toHaveBeenCalledOnce()
+    const oldResponse=await event.respondWith.mock.calls[0][0]
+    expect(new Uint8Array(await oldResponse.arrayBuffer())).toEqual(oldCore)
+    const nextResponse=await next.handle(request(nextPath))
+    expect(new Uint8Array(await nextResponse.arrayBuffer())).toEqual(nextCore)
+    expect(h.scope.fetch).not.toHaveBeenCalled()
+  })
+  it('keeps retained WASM routing limited to same-origin hashed assets and ordinary GET requests',async()=>{
+    const h=harness();await h.worker.install();h.scope.fetch.mockClear()
+    const path='assets/inhouse_read_core-previous.wasm'
+    const excluded=[
+      request(path,{method:'POST'}),request(path,{cache:'no-store'}),
+      request(path,{headers:new Headers({range:'bytes=1-2'})}),
+      {...request(path),url:'https://other.test/inhouse-read/'+path},
+      {...request(path),url:'https://read.test/sister-app/'+path},
+      request('assets/inhouse_read_core.wasm'),request('assets/nested/core-previous.wasm'),
+      request('assets/core-previous.wasm.map'),request('models/voice-previous.wasm'),request('oauth/core-previous.wasm')
+    ]
+    for(const req of excluded) {
+      const event={request:req,respondWith:vi.fn()};h.listeners.fetch(event)
+      expect(event.respondWith).not.toHaveBeenCalled()
+      expect(await h.worker.handle(req)).toBeNull()
+    }
+    expect(h.scope.fetch).not.toHaveBeenCalled()
+  })
   it('returns the real network error response when online but the shell has no complete fallback',async()=>{
     const h=harness();h.scope.fetch.mockResolvedValue(new Response('server error',{status:503}))
     expect((await h.worker.handle(request('',{mode:'navigate'}))).status).toBe(503)

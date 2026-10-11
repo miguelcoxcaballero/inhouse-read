@@ -1,3 +1,24 @@
+# Continuación: 1.7.116 preparada; migración parcial a Rust
+
+Se ha descargado y revisado `origin/main` (`c83add7`) antes de los cambios.
+Rust/WASM ejecuta la puntuación de fuentes, detección de columnas PDF, cinco
+cálculos de relieve y la geometría del marcapáginas. Los datos guardados, las
+pantallas y los motores de lectura conservan sus contratos actuales.
+**La reescritura completa solicitada no está terminada.** UI, estado, Drive,
+lector/audio y la mayor parte de la escena siguen en JavaScript.
+
+Las comparaciones ejecutadas conservan buffers exactos. El ensayo de relieve
+en Chromium con CPU ×4 registra entre 15 % y 46 % menos tiempo; el marcapáginas
+reutilizado pasa de 4,16 a 1,10 ms por tanda en Node. Estas cifras no son medidas
+de fluidez global ni de un teléfono físico. El APK público 1.1.8/code21 se ha
+descargado otra vez: firma/hash y loader de 2.107 bytes correctos.
+Batería final: 3.749 unitarias/306 archivos, 64 comprobaciones del núcleo final,
+105 comprobaciones Python/Android y build aprobados. Despliegue y recorridos
+públicos en curso.
+[Alcance, mediciones y trabajo pendiente](rust-migration.md).
+
+## Historial anterior
+
 # Continuación: 1.7.115 publicada; rendimiento general pendiente
 
 115 retira las esperas por fotograma introducidas en114: la observación

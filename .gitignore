@@ -2,6 +2,8 @@ node_modules/
 __pycache__/
 *.pyc
 dist/
+rust-core/target/
+src/wasm/*.wasm
 config.js
 .DS_Store
 Thumbs.db

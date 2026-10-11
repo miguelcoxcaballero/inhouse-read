@@ -19,6 +19,9 @@
  * the original record is only replaced by an explicit new user selection.
  */
 import { runInSlices } from './cover-appearance.js';
+import { getRustCore, loadRustCore } from './rust-core.js';
+import { canUseReliefWasm, wasmInsideDistance, wasmBoxBlur, wasmHeightToNormals,
+  wasmComposeMaterialMap, wasmComposeReliefLayers } from './cover-relief-wasm.js';
 
 export const COLOR_RELIEF_IDS = Object.freeze(Array.from({ length:10 }, (_, index) => `color-${index + 1}`));
 export const LEGACY_RELIEF_IDS = Object.freeze(['lettering', 'foil', 'frame', 'emblem', 'varnish', 'band', 'grain', 'panel']);
@@ -112,11 +115,20 @@ function abortError() {
 
 /** Wrap a generator so it throws at the first safe point after `signal` aborts. */
 function* abortable(task, signal) {
-  for (let step = task.next(); ; step = task.next()) {
-    if (signal?.aborted) throw abortError();
-    if (step.done) return step.value;
-    yield;
-  }
+  try {
+    for (let step = task.next(); ; step = task.next()) {
+      if (signal?.aborted) throw abortError();
+      if (step.done) return step.value;
+      yield;
+    }
+  } finally { task.return?.(); }
+}
+
+// Cold/unsupported WASM takes the reference path. A rejected numeric pass is
+// discarded before the original implementation starts with fresh outputs.
+function* rustRelief(task) {
+  try { return yield* task; }
+  catch { return null; }
 }
 
 /** Run in main-thread slices; reports the longest slice and the slice count. */
@@ -759,6 +771,11 @@ function* recipeMask(image, recipe, feats = null) {
 
 /** Chamfer distance (in pixels) from every pixel to the nearest outside pixel. */
 function* insideDistance(mask, width, height) {
+  const core = getRustCore();
+  if (canUseReliefWasm(core, width, height)) {
+    const result = yield* rustRelief(wasmInsideDistance(core, mask, width, height));
+    if (result) return result;
+  }
   const big = 1e6, d = new Float32Array(width * height);
   for (let i = 0; i < d.length; i++) d[i] = mask[i] ? big : 0;
   const a = 1, b = 1.4142;
@@ -797,6 +814,11 @@ function* insideDistance(mask, width, height) {
 
 function* boxBlur(field, width, height, radius) {
   if (radius < 1) return field;
+  const core = getRustCore();
+  if (canUseReliefWasm(core, width, height)) {
+    const result = yield* rustRelief(wasmBoxBlur(core, field, width, height, radius));
+    if (result) return result;
+  }
   const middle = new Float32Array(field.length), out = new Float32Array(field.length), size = radius * 2 + 1;
   for (let y = 0; y < height; y++) {
     let sum = 0;
@@ -1235,6 +1257,11 @@ export function* composeReliefLayerPixels(maps, selection) {
     layer.color!==maps.layers[index].color || layer.tolerance!==maps.layers[index].tolerance)) {
     throw new TypeError('Las zonas de relieve han cambiado');
   }
+  const core = getRustCore();
+  if (canUseReliefWasm(core, maps.width, maps.height)) {
+    const result = yield* rustRelief(wasmComposeReliefLayers(core, maps, layers));
+    if (result) return result;
+  }
   const count=maps.width*maps.height;
   const out={ ...maps,layers,heightMap:new Uint8Array(count),mask:new Uint8Array(count),
     gloss:new Uint8Array(count),foil:new Uint8Array(count) };
@@ -1263,8 +1290,13 @@ const MM_FULL_COVER = 200; // a cover is about 20 cm tall
 /** Tangent-space normals (RGBA bytes) from the height map; +x right, +y up the cover. */
 export function* heightToNormals(maps, { gain = 1 } = {}) {
   const { width, height, heightMap } = maps;
-  const out = new Uint8ClampedArray(width * height * 4);
   const mmPerPixel = MM_FULL_COVER / Math.max(width, height), unit = MAX_RELIEF_MM / 255 / (2 * mmPerPixel) * gain;
+  const core = getRustCore();
+  if (canUseReliefWasm(core, width, height)) {
+    const result = yield* rustRelief(wasmHeightToNormals(core, maps, unit));
+    if (result) return result;
+  }
+  const out = new Uint8ClampedArray(width * height * 4);
   const at = (x, y, owner) => {
     const index=clamp(y,0,height-1)*width+clamp(x,0,width-1);
     // Each pigment rises from the board, not from the neighbouring pigment's
@@ -1288,7 +1320,7 @@ export function* heightToNormals(maps, { gain = 1 } = {}) {
  * ratio. Color masks use B=0 and leave the original ink/base finish intact.
  * Generic old map fixtures retain their foil channel and opaque alpha. */
 export function* composeMaterialMap(maps, { clearcoat = 0, roughness = .5, clearcoatRoughness = .18 } = {}) {
-  const { width, height, foil, gloss } = maps, out = new Uint8ClampedArray(width * height * 4);
+  const { width, height, foil, gloss } = maps;
   const base = clamp(clearcoat, 0, 1), foilRoughness = clamp(.3 / Math.max(.05, roughness), .2, 1);
   const glossRoughness = clamp(.05 / Math.max(.01, roughness), 0, 1);
   const glossCoatRoughness = clamp(.05 / Math.max(.01, clearcoatRoughness), 0, 1);
@@ -1297,6 +1329,13 @@ export function* composeMaterialMap(maps, { clearcoat = 0, roughness = .5, clear
     return { roughness:clamp(profile.roughness/Math.max(.01,roughness),0,1),
       clearcoatRoughness:clamp(profile.clearcoatRoughness/Math.max(.01,clearcoatRoughness),0,1) };
   });
+  const core = getRustCore();
+  if (canUseReliefWasm(core, width, height)) {
+    const result = yield* rustRelief(wasmComposeMaterialMap(core, maps,
+      { base, foilRoughness, glossRoughness, glossCoatRoughness, profiles }));
+    if (result) return result;
+  }
+  const out = new Uint8ClampedArray(width * height * 4);
   for (let i = 0; i < width * height; i++) {
     const f = maps.preserveInk ? 0 : foil[i] / 255, g = gloss[i] / 255;
     const profile=profiles?.[maps.owners[i]-1];
@@ -1421,6 +1460,7 @@ async function thumbnailOf(work, maps, run) {
  * image). Returns fewer choices for covers with fewer supported colors. Heavy
  * loops run in main-thread slices; pass `signal` to cancel. */
 export async function analyzeCoverRelief(coverUrl, { title = '', author = '', signal, previews = true } = {}) {
+  void loadRustCore();
   void title; void author; // the picture decides: names never add a claim the pixels do not support
   const stats = { slices: 0, longestSliceMs: 0, ms: 0, durations: [] };
   const drawable = await decode(coverUrl, signal);
@@ -1452,6 +1492,7 @@ export async function analyzeCoverRelief(coverUrl, { title = '', author = '', si
 export async function buildReliefMaps(coverUrl, relief, { maxSize = MAP_SIZE, signal } = {}) {
   const choice = normalizeCoverRelief(relief);
   if (!choice) return null;
+  void loadRustCore();
   const stats = { slices: 0, longestSliceMs: 0, ms: 0 };
   const drawable = await decode(coverUrl, signal);
   const hires = raster(drawable, clamp(maxSize, 64, MAP_SIZE));
@@ -1468,6 +1509,7 @@ export async function buildReliefMaps(coverUrl, relief, { maxSize = MAP_SIZE, si
  * The returned normal/pixels are separate, so a cancelled bake cannot mutate
  * the cover that remains on screen. */
 export async function updateReliefMapStrengths(built, selection, { signal } = {}) {
+  void loadRustCore();
   const pixels=await runSliced(composeReliefLayerPixels(built.pixels,selection),{signal});
   const normal=await runSliced(heightToNormals(pixels),{signal});
   return { ...built,pixels,normal };
@@ -1481,4 +1523,5 @@ function grayToRgba(gray) {
 
 /** Pure classification steps and legacy detector helpers for compatibility tests. */
 export const internals = { rgbToOklab, colorMask, colorHistogram, colorCandidates, colorName, raster,
-  featuresOf, detectLettering, detectFoil, detectFrame, detectBand, detectSubject, detectVarnish, metalMask, recipeMask, mapsFor, suggestedFrame, roundedRect };
+  featuresOf, detectLettering, detectFoil, detectFrame, detectBand, detectSubject, detectVarnish, metalMask, recipeMask, mapsFor, suggestedFrame, roundedRect,
+  insideDistance, boxBlur };

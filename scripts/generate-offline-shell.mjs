@@ -7,7 +7,7 @@ import {createOfflineShell} from '../src/js/offline-shell-worker.js'
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 export function isShellFile(path) {
   return ['index.html', 'download-android.html'].includes(path) ||
-    path.startsWith('assets/') && /\.(?:js|mjs|css|webp|png|jpe?g|svg|woff2?|ttf|otf)$/.test(path) ||
+    path.startsWith('assets/') && /\.(?:js|mjs|css|wasm|webp|png|jpe?g|svg|woff2?|ttf|otf)$/.test(path) ||
     path.startsWith('icons/') || path.startsWith('licenses/') ||
     /^neural-voice\/ort\/(?:ort\.wasm\.min\.mjs|ort-wasm-simd-threaded\.(?:mjs|wasm))$/.test(path) ||
     /^neural-voice\/phon\/piper_phonemize\.(?:mjs|data|wasm)$/.test(path)

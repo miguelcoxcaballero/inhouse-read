@@ -26,6 +26,7 @@ import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
 import { normalizeShelfPosition } from './book-colors.js'
 import { createLazyReaderExperience } from './readers/reader-experience-lazy.js'
 import { runAfterFirstFrame } from './idle-startup.js'
+import { loadRustCore } from './rust-core.js'
 import { shelfBakesSettled } from './shelf-bake-cache.js'
 import { loadPlantCatalogModule } from './plant-catalog-lazy.js'
 import { classifyTapZone, ZONE } from './gestures.js'
@@ -1384,6 +1385,7 @@ initAndroidUpdateChecks()
 // files, and the reader / catalogue chunks are loaded before anyone reaches
 // for them (see idle-startup.js).
 runAfterFirstFrame([
+  () => { void loadRustCore() },
   () => readingExperience.prefetch(),
   () => loadPlantCatalogModule().catch(() => {}),
   () => registerOfflineShell().catch(error => console.warn('No se pudo guardar la app para abrirla sin conexión:', error))
