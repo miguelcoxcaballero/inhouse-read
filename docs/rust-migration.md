@@ -584,5 +584,30 @@ comprobaciones Python/Android pasan. Evidencias locales:
 `local121-browser-attempt1`, `local121-integration-attempt1` y
 `local121-drag-attempt2`; se conserva el primer fallo del fixture.
 
-121 está preparada para publicar. Su verificación HTTP, navegador público,
-APK con esta web y CI completa todavía no se han completado.
+121 se publica en `main` con fuente `d007399d192d5443dfbd24e3834f3835424a7a2d`
+y Pages `017676413bf66218c43ba86ca3ea58dbab8ca3e8`. La primera comprobación
+HTTP conserva 101 respuestas reales, valida los 99 recursos offline y pasa
+891 condiciones, incluido el WASM idéntico al build congelado. Evidencia:
+`public-121-2026-10-11T15-21-12-142Z-1ab89192/summary.json`.
+Los 27 recorridos públicos pasan al primer intento (3,7 min), incluidos los
+dos regresos nativos con sus plazos originales y PDF/EPUB reabiertos offline.
+Las respuestas reales guardadas por cada recorrido coinciden con la versión
+fijada: auditoría de 27 casos, cero incidencias, sin volver a pedir los recursos.
+Evidencia: `public121-browser-attempt1/audits/2026-10-11T15-25-33-209393Z-7c7dc113/summary.json`.
+El recorrido público adicional mueve libro y planta, conserva la balda elegida
+y las posiciones tras recargar: pasa al primer intento (37,4 s). Su auditoría
+separada confirma los archivos recibidos y cero incidencias; no se suma como
+si fuera parte de los 27 recorridos anteriores. Evidencia:
+`public121-drag-attempt1/audits/2026-10-11T15-26-33-867751Z-4c7f7329/summary.json`.
+El APK existente 1.1.8 se verificó con esta web en `38150936761`: archivo
+publicado y loader de 2107 bytes correctos, cinco estados Android comprobados
+de nuevo y formulario auténtico de Google. La captura final muestra aún el
+libro regresando a la estantería, por lo que no acredita la inserción terminada
+ni su fluidez. Evidencia: `native-38150936761/policy-audit.json` y
+`visual-review.json`. La CI completa de 121 sigue en curso.
+
+Recuento reproducible en ese commit: 1.231 líneas no vacías de Rust y 34.406
+de JavaScript propio (`rust-core/src` y `src/js`), un 3,45 % de ambos lenguajes.
+Excluye dependencias, pruebas, HTML, CSS y Java nativo. No mide el porcentaje
+de funciones migradas ni el trabajo restante; las rutas JS de compatibilidad
+permanecen. La reescritura completa sigue pendiente.

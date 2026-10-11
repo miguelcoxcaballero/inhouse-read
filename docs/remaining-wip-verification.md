@@ -1,4 +1,4 @@
-# Continuación: 1.7.121 preparada; migración parcial a Rust
+# Continuación: 1.7.121 publicada; migración parcial a Rust
 
 121 migra la agrupación de filas PDF y las previsualizaciones de arrastres
 prolongados a Rust. Mantiene las rutas anteriores para páginas pequeñas,
@@ -13,7 +13,20 @@ el build y los ocho recorridos originales con sus límites originales.
 También pasan la importación/cierre en frío, los dos recorridos originales
 de colocación y el nuevo arrastre de libro/planta con persistencia. Los
 fallos de los primeros ensayos y sus correcciones se detallan en el informe.
-La verificación publicada de 121 sigue pendiente.
+Publicada en fuente `d007399d192d5443dfbd24e3834f3835424a7a2d`, Pages
+`017676413bf66218c43ba86ca3ea58dbab8ca3e8`: la primera auditoría HTTP conserva
+101 respuestas y pasa 891 condiciones de los 99 recursos offline. Pasan los
+27 recorridos públicos al primer intento y la auditoría de sus respuestas,
+incluidos PDF/EPUB offline. El recorrido público adicional de arrastre de libro
+y planta también pasa al primer intento, con respuestas auditadas. El APK
+1.1.8 real con esta web pasa los cinco estados nativos en `38150936761`;
+su última captura sigue dentro del retorno, no acredita la inserción final.
+La CI completa sigue en curso.
+
+Por petición del usuario se prepara un instalador firmado nuevo 1.1.9,
+versionCode 22. No se cambia el manifiesto de actualización hasta disponer
+del APK real publicado y sus bytes/hash. Pasan 35 pruebas JS focales y las
+105 comprobaciones Python/Android antes de lanzar su compilación.
 
 **La reescritura completa sigue pendiente.** Interfaz, persistencia, Drive,
 lector/audio y parte de la escena siguen en JavaScript. También falta medir
