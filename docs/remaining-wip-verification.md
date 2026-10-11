@@ -1,4 +1,43 @@
-# Estado actual — web 1.7.136 / APK 1.1.13
+# Estado actual — web 1.7.137 / APK A 1.1.14, B 1.1.13
+
+Optimización del libro 3D cerrado: las dos capas de impresión de la página
+quedan fuera del recorrido de dibujo mientras la portada las oculta. Las
+texturas permanecen cargadas; al comenzar a abrir se muestra la página exacta.
+No se cambian geometría, resolución, luces, temas ni tiempos de animación.
+Changelog: «Menos trabajo gráfico al cerrar libros».
+
+- 4031/4031 unitarias, 324 archivos; build y verificador del updater aprobados.
+- 23/23 E2E locales sin retries: apertura PDF/EPUB/CBZ, temas, movimiento
+  reducido, cancelación y ambos contratos de retorno Android (límite 8 s).
+- Comparación GPU: 24 imágenes idénticas byte a byte, ocho ángulos y tres
+  mezclas del tema. Dos llamadas de dibujo menos por fotograma cerrado.
+- Cuatro regresiones nuevas fallaban antes del cambio; 133/133 focales pasan.
+  Primer fixture de píxeles abortado por descubrimiento de dependencias de
+  Vite; se conserva. El fixture acota dependencias y desactiva HMR/watcher.
+- Evidencia: `D:/CodexEvidence/InhouseRead-20261012/closed-print`.
+
+APK pública 1.1.14/27 descargada: 78532469 bytes, SHA
+`cdff45853eace1d3316bb6424a30b46e50b8fcc3b938350f40bbbe9ea8d43fb8`.
+Firma v2 y paquete conservados; loader de 2107 bytes, sólo tres assets public.
+Certificado original del build 38178203663 coincide con ese SHA: 368,70 s de
+PCM EPUB bloqueado, 22 capítulos; PDF 51,30 s y dos páginas; pausa/reanudar/
+parar correctos. Es emulador Android 15, no teléfono físico. Evidencia `apk114`.
+
+Updater compartido aún en revisión `faf925d1d576b98baa8a53b1f8d39e842d18d0a9`.
+La rama ajena `codex/android-install-result` prepara 1.1.15/28; no ha llegado a
+main. Sus dos builds 38178846487 y 38179498822 fallaron; logs conservados.
+No se mezclan parches a medio validar ni se reemplazan sus artefactos.
+Se preserva B=1.1.13, publicado antes por la tarea autorizada para ello.
+
+La CI anterior 38177346962 terminó FAIL: unidades y 291 voces reales pasan;
+UI2 excede 8 s en cierre Linux/software y UI6 tiene cuatro enlaces de shaders
+intermitentes. Los originales se conservan; no se consideran resueltos por
+las pruebas locales. La CI de diagnóstico 38178998894 seguía en curso.
+Faltan completar la migración Rust, reducir el arranque frío de voz y cerrar
+estos fallos de rendimiento. La batería completa y verificación pública de
+1.7.137 se registrarán al terminar; no se afirma CI verde.
+
+## Estado histórico — web 1.7.136 / APK 1.1.13
 
 Integrado por fast-forward `227c3f2`: updater canónico 1.2.1,
 revisión `faf925d1d576b98baa8a53b1f8d39e842d18d0a9`. Verificador de copias

@@ -1117,11 +1117,16 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     map.colorSpace = THREE.SRGBColorSpace; map.minFilter = THREE.LinearFilter;
     map.generateMipmaps = false; map.needsUpdate = true; return map;
   };
+  // The saved rasters remain resident for reopening, but are completely
+  // occluded by the opaque closed board. Hide only their common parent so
+  // snapshot/theme flags and texture uploads keep their existing contracts.
+  const pagePrint = new THREE.Group();
+  pagePrint.name = 'reading-page-print'; pagePrint.visible = false; group.add(pagePrint);
   const pageMaterial = new THREE.MeshBasicMaterial({ color:0xffffff, toneMapped:false, map:blankPageMap(), transparent:true });
   const pageImage = new THREE.Mesh(new THREE.PlaneGeometry(pageWidth, pageHeight), pageMaterial);
   pageImage.name = 'reading-page';
   pageImage.position.set(inset * .3, 0, pageFront + board * .02);
-  pageImage.visible = false; group.add(pageImage);
+  pageImage.visible = false; pagePrint.add(pageImage);
   group.userData.pageSurface = pageImage;
   // The same page on white stock sits just behind the reader's own: the
   // book opens and closes on white paper and the reading theme fades over it
@@ -1132,7 +1137,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   stockImage.name = 'reading-page-stock';
   stockImage.position.set(inset * .3, 0, pageFront + board * .01);
   stockImage.renderOrder = -1;
-  stockImage.visible = false; group.add(stockImage);
+  stockImage.visible = false; pagePrint.add(stockImage);
   let pageTheme = 1, themeTone = null, stockTone = null, installedRaster = null;
   const paperScratch = new THREE.Color();
   const applyPageTheme = () => {
@@ -1525,7 +1530,7 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
     if (overview) frontBoard.material = next > 0 ? frontMaterials : cover;
     // Closed shelf books need neither the occluded paper plane nor the
     // cover's inner material submitted to the GPU on every shelf repaint.
-    pagePaper.visible = next > 0;
+    pagePaper.visible = pagePrint.visible = next > 0;
     insideCover.visible = pastedown.visible = next > 0;
     if (readLeaves) readLeaves.visible = next > 0;
     if (Math.abs(next - coverOpening) > .00001) { coverOpening = next; updateRibbonGeometry(); }
