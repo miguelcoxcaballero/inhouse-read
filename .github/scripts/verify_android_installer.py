@@ -100,8 +100,11 @@ public final class MainActivity extends Activity {
     }
     @Override public void onResume() {
         super.onResume();
-        if (state != null) state.setText("installPermission=" + getPackageManager().canRequestPackageInstalls()
-            + "; " + InstallState.read(this));
+        String result = "fixtureVersion=" + InstallState.actualVersion(this)
+            + "; installPermission=" + getPackageManager().canRequestPackageInstalls()
+            + "; " + InstallState.read(this);
+        android.util.Log.i("UpdaterInstallFixture", "MainActivity resumed: " + result);
+        if (state != null) state.setText(result);
     }
     private void launchUpdate() {
         try {
@@ -197,12 +200,12 @@ def allow_test_source():
     def source_settings():
         try:
             tree = dump_ui()
-            return tree if any(node.get("text", "").strip().casefold() == "allow from this source"
-                               for node in tree.iter("node")) else None
+            return [tree] if any(node.get("text", "").strip().casefold() == "allow from this source"
+                                 for node in tree.iter("node")) else None
         except (subprocess.SubprocessError, ET.ParseError):
             return None
 
-    current = wait_for(source_settings, "Android source-permission settings did not open")
+    current = wait_for(source_settings, "Android source-permission settings did not open")[0]
     if not any(node.get("checkable") == "true" and node.get("checked") == "true"
                for node in current.iter("node")):
         tap({"allow from this source"})
@@ -217,6 +220,33 @@ def allow_test_source():
             return False
 
     wait_for(granted, "Android did not grant installation permission to the fixture")
+
+
+def reopen_installed_app(report, timeout=45):
+    # PackageManager exposes the new version before PackageInstaller finishes
+    # closing the old task. That cleanup can swallow a single immediate start.
+    # Require a real version-2 onResume/UI before testing native reconciliation.
+    run("adb", "shell", "am", "force-stop", PACKAGE)
+    attempts = report["reopenAttempts"] = []
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        attempt = {}
+        attempts.append(attempt)
+        try:
+            result = run("adb", "shell", "am", "start", "-W", "-f", "0x10008000",
+                         "-n", PACKAGE + "/.MainActivity", check=False, timeout=12)
+            attempt["launch"] = result.stdout + result.stderr
+            nodes = list(dump_ui().iter("node"))
+            attempt["visiblePackages"] = sorted({node.get("package", "") for node in nodes})
+            for node in nodes:
+                text = node.get("text", "")
+                if node.get("package") == PACKAGE and text.startswith("fixtureVersion=2;"):
+                    report["reopenedUi"] = text
+                    return
+        except (subprocess.SubprocessError, ET.ParseError) as error:
+            attempt["error"] = str(error)
+        time.sleep(.5)
+    raise AssertionError("Updated fixture MainActivity did not become visible after package replacement")
 
 
 def verify():
@@ -242,17 +272,24 @@ def verify():
         report["cancelledAttempt"] = first
         report["phase"] = "retry-installation"
         tap({"install test update"}, PACKAGE)
+        def new_attempt():
+            attempt = read_attempt()
+            return attempt if attempt.get("id") and attempt["id"] != first["id"] else None
+        retry = wait_for(new_attempt, "Retry did not create a new durable installation attempt")
+        report["retryAttempt"] = retry
         tap({"update", "install"})
         report["phase"] = "wait-for-replacement"
         wait_for(lambda: re.search(r"versionCode=2(?:\s|$)", run("adb", "shell", "dumpsys", "package", PACKAGE).stdout),
                  "Android did not replace the fixture with version 2", timeout=45)
         # The replacement can terminate the caller. Reopening must confirm the
         # package version from durable state even if no success callback survived.
-        run("adb", "shell", "am", "force-stop", PACKAGE)
-        run("adb", "shell", "am", "start", "-n", PACKAGE + "/.MainActivity")
+        report["phase"] = "reopen-installed-app"
+        reopen_installed_app(report)
+        report["phase"] = "reconcile-installation"
         wait_for(lambda: read_attempt().get("status") == "installed", "Installed version was not reconciled on restart")
         final = read_attempt()
         assert final["id"] != first["id"], "Retry reused the cancelled attempt"
+        assert final["id"] == retry["id"], "Installed result did not retain the retry attempt"
         assert final["expectedVersionCode"] == 2 and final["actualVersionCode"] == 2, final
         report["installed"] = True
         report["installedAttempt"] = final
@@ -261,6 +298,10 @@ def verify():
         print("Real Android installer cancellation, retry and self-update passed.", flush=True)
     finally:
         report["finalAttempt"] = read_attempt()
+        try:
+            dump_ui()
+        except (subprocess.SubprocessError, ET.ParseError) as error:
+            report["finalUiError"] = str(error)
         REPORT.write_text(json.dumps(report, indent=2) + "\n")
         logs = run("adb", "logcat", "-d", check=False)
         (ROOT / "android-updater-logcat.txt").write_text(logs.stdout)
