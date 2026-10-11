@@ -1,11 +1,12 @@
 # inhouse read
 
-## 1.7.138 / Android 1.1.15 — Resultado de instalación
+## 1.7.139 / Android 1.1.15 — Resultado de instalación
 
 El actualizador distingue cancelar, reintentar e instalar: abrir el instalador
-Android no confirma una actualización. [APK 1.1.15 publicada en A](https://github.com/miguelcoxcaballero/inhouse-read/releases/tag/android-v1.1.15),
-versionCode 28, con el mismo paquete y certificado que 1.1.14. B conserva
-Android 1.1.13. La [prueba en Android 15](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/38180160799)
+Android no confirma una actualización. [APK 1.1.15 publicada en A y B](https://github.com/miguelcoxcaballero/inhouse-read/releases/tag/android-v1.1.15),
+versionCode 28, con el mismo paquete y certificado que 1.1.14. La promoción a B
+se hizo por petición expresa del usuario, conservando la APK y sus metadatos.
+La [prueba en Android 15](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/38180160799)
 verifica cancelación, reintento y confirmación al reabrir una aplicación de
 prueba actualizada, además de importación y audio de Read. No se ha probado
 esta versión en un teléfono físico.
