@@ -1,5 +1,10 @@
 # inhouse read
 
+## 1.7.132 — Liberar voces preparadas inactivas
+
+Volver a elegir la misma voz conserva el plazo de liberación del modelo
+tras 90 segundos sin lectura. Mantiene la corrección del primer Play de 1.7.131.
+
 ## 1.7.131 — Primer Play tras cambiar de voz
 
 La selección cancela la preparación silenciosa de la voz anterior y empieza

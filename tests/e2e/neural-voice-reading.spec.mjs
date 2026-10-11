@@ -377,7 +377,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
       await page.waitForTimeout(1500)
       expect(await types(page, pausedAt)).toEqual([]) // no event for the cancelled fragment, nothing keeps playing
       expect(await neu(page, n => n.audio.length)).toBe(scheduledAtPause) // and nothing more is queued behind the silence
-      expect((await engineStats(page)).status).toBe('idle')
+      expect(await page.evaluate(()=>window.__neuEngine.core.currentId)).toBeNull() // paused preview cannot own audible playback
       const lastSpoken = (await neu(page, n => n.speak)).at(-1).text
       const startsBeforeResume = (await starts(page)).length
       await page.getByRole('button', { name: 'Continuar lectura' }).click()
@@ -505,7 +505,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await expect.poll(()=>page.evaluate(()=>Boolean(document.querySelector('foliate-view')?.renderer?.getContents?.()[0]?.doc?.body)),SLOW).toBe(true)
     await openAudio(page); await pickVoice(page,CLAUDE_ID); await spyOnEngine(page)
     await expect.poll(()=>page.evaluate(()=>window.__neuEngine.core.client?.loaded || ''),SLOW).toBe(CLAUDE)
-    await page.evaluate(()=>{ const core=window.__neuEngine.core; core.client.dispose(); core.client=null })
+    await page.evaluate(()=>window.__neuEngine.release())
     await openAudioMenu(page,'Voz')
     await play(page)
     await expect.poll(()=>page.evaluate(()=>{

@@ -670,6 +670,16 @@ describe('silent opening audio preparation', () => {
     expect(t.ctx.sources).toHaveLength(0)
     expect(t.events).toEqual([])
   })
+  it('warming the same ready preview retains the idle resource deadline',async()=>{
+    const t=setup({limits:{idleMs:100}})
+    t.engine.prime({text:'Uno.',voiceId:CLAUDE}); await flush()
+    const client=t.clients.last(); feedJob(client.jobs[0],2); await flush()
+    expect(await t.engine.warmUp(CLAUDE)).toBe(true)
+    expect(t.engine.prime({text:'Uno.',voiceId:CLAUDE})).toBe(true)
+    vi.advanceTimersByTime(101)
+    expect(client.disposed).toBe(true); expect(t.engine.run).toBeNull()
+    expect(t.ctx.sources).toHaveLength(0)
+  })
   it('release cancels all silent work and clears its bounded cache',async()=>{
     const t=setup()
     t.engine.prime({text:'Uno.',voiceId:CLAUDE,upcoming:['Dos.']}); await flush()

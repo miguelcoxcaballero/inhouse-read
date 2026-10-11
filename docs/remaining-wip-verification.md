@@ -1,3 +1,13 @@
+# 1.7.132 — Plazo de liberación tras reseleccionar voz
+
+Seguimiento de la corrección 1.7.131: warmUp de una preview ya lista borraba
+el idle timer y no lo reponía porque había run. Ahora rearma el mismo plazo
+para previews, preservando un único modelo y sin interrumpir audio activo.
+Añadida regresión con la misma voz elegida dos veces, cero reproducción y
+liberación al plazo normal. Sin cambio de voz/calidad/velocidad/modelos.
+Unidad final `unit-132`: 4014/4014, 324 archivos. `build-132` aprobado.
+Publicación y comprobación del artefacto nuevo pendientes en este punto.
+
 # 1.7.131 — Selección de voz seguida de Play inmediato
 
 Corrección de alcance de 1.7.130: sus mediciones inferiores a 250 ms esperaban
@@ -34,7 +44,24 @@ por la carrera de microtarea de la fachada; `after-2` y `stages` la corrección.
   exige cero ID de reproducción, cero eventos de inicio y cero buffers sonoros.
   No se cambian plazos, fragmentos, modelos ni criterios de continuidad/latencia.
 Unidad final: `unit-3`, 4013/4013, 324 archivos; build final aprobado.
-Recorridos de lector y publicación en curso; aún no verificados aquí.
+- UI del lector: 29/29, continuidad, pausa, resaltado, descarga y retirada.
+- Runtime en main: `7da605169eb445e68d427795676ead44132bf240`.
+  Deploy `38169653138` y Pages `38169713169` aprobados.
+  Pages `76ca71c4959858fbbeb5b750f5ac13097a38f654`.
+- Primera comprobación pública conservada: Pages aún propagaba el sitio y
+  faltaban módulos nuevos. Segunda: 108/108, 99 archivos iguales en tamaño/SHA.
+  Evidencia `published-1791748347474`; main `main--F5cpi7a.js`, SHA
+  f909e5d3acad36ece032e81367e82110b461e1a7c535e30c6d1a366d39ae146b.
+- APK descargada de A: 1.1.12/25, firma y paquete conservados, loader de
+  2107 bytes, sin app web embebida. No hay cambios nativos ni APK nueva.
+- La primera tanda real local `reading` pasó 6 y se detuvo en otra aserción
+  heredada idle después de Pause: ahora hay preview silenciosa. Se conserva
+  el fallo y se exige ID audible nulo además de cero audio/eventos durante pausa.
+  La liberación privada restante en el test de cambio frío usa release().
+- Segunda tanda real `reading-2`: 14/14, incluyendo pausa, cambio de voces,
+  arranque frío de Daniela, 90 s de reposo, reinicio y lectura sin conexión. CI completa `38169653151` también;
+  la tanda remota de lectura contiene la aserción de pausa antigua. No se
+  afirma CI global verde ni velocidad física Android ni inicio frío instantáneo.
 
 # 1.7.130 — Reducir la espera al comenzar el audiolibro
 

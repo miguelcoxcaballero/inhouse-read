@@ -236,7 +236,7 @@ export class NeuralEngine extends EventTarget {
       client ||= this.client = this.createClient()
       await client.prepare(voice.piperId)
       if (this.client !== client) return false
-      if (!this.run) this.#armIdle()
+      if (!this.run || this.run.preview) this.#armIdle()
       return true
     } catch { if (this.client === client && !this.run) this.#teardown(); return false }
   }
