@@ -1,3 +1,30 @@
+# Estado actual — web 1.7.136 / APK 1.1.13
+
+Integrado por fast-forward `227c3f2`: updater canónico 1.2.1,
+revisión `faf925d1d576b98baa8a53b1f8d39e842d18d0a9`. Verificador de copias
+aprobado. Conserva la optimización 1.7.135; sólo añade el cambio de colores
+del updater y prepara Android 1.1.14 desde su tarea independiente. No se
+publica otra APK ni se modifican los catálogos desde esta revisión.
+
+Web publicada `13f84b7`, fuente `227c3f2`: 109/109 controles HTTP;
+99 recursos iguales por bytes/SHA. Main `assets/main-v7whTgjx.js`, SHA
+`8bc08dede1669bb88db086f0345dc2844f2e1673ae6bac03340974807a5a0641`.
+APK descargada de nuevo: 1.1.13/26, mismo SHA y bytes que el ensayo firmado
+registrado abajo. El remoto `d662f83` ya incluía esa misma APK en B;
+se conserva esa publicación previa, sin promover nada desde aquí.
+Evidencia `published-1791756231858` en el directorio de revisión nocturna.
+
+La nueva CI `38177346962` aún no ha acabado: UI 2 vuelve a fallar en cierre;
+UI 6 conserva una retirada intermitente con cuatro links de shaders.
+Originales descargados en `ci-follow-ui6`; los stacks señalan compilación
+anticipada del renderer de presentación. Falta precisar su relación temporal
+con el gesto; no se descuenta del contador ni se declara arreglado.
+
+Los dos tests de cierre con el diagnóstico adicional pasaron 2/2 localmente
+sin retries (`native-diagnostic`), sobre los bytes construidos de 1.7.135.
+Eso no reemplaza los fallos de Linux. Los ensayos externos de composición
+CSS dieron 7603,9 y 7161,9 ms; no muestran una mejora y no se incorporan.
+
 # 1.7.135 — Interacción con la estantería publicada
 
 Runtime `8869750a36d33543ac8a3c27f577f0b9e475a850`, sobre updater
@@ -11,16 +38,20 @@ conservados. Tres regresiones fallaron antes; 28 controles focales pasan.
 - 15/15 E2E finales sin retries; importación, cierre, lector y updater.
 - 3/3 contra la web pública: ambos regresos nativos y menú de cuenta;
   hash del main ejecutado comprobado. Cierres dentro del mismo límite de 8 s.
-- Deploy `38175754041` y Pages `38175803443` aprobados; Pages `677b5d0`.
+- Deploy `38175754041` y Pages `38175803443` aprobados; Pages inicial `677b5d0`.
 - Web real: 108/108 controles, 99 recursos idénticos por bytes/SHA.
   Main `assets/main-Cm92xAGW.js`, SHA
   `b20ee0de3d1172f13e4385effefdac4ae419f645318f1e8e5b1055f68a19a082`.
-- APK pública 1.1.12/25: descarga, firma, paquete y loader de 2107 bytes
-  verificados de nuevo. Recibe la web publicada; no hay cambio nativo propio.
+- APK pública 1.1.13/26 (A): descarga, firma, paquete y loader de 2107 bytes
+  comprobados. SHA APK
+  `3b01272323158dd4d5c51a20374a9928b4e17a2b9a35b30b68d00056115ba2c5`.
+  Recibe esta web; el APK pertenece a la integración compartida del updater.
 
 Evidencia: `D:/CodexEvidence/InhouseRead-20261011/night-review`.
-`published-1791753781987` es la verificación final. El intento anterior
-`published-1791753630981` conserva fallos mientras Pages aún estaba en cola.
+`published-1791755211663` verifica web y APK 1.1.13; Pages `a66057f`, fuente
+de catálogo `4faffba`. `published-1791753781987` conserva el contraste previo
+con APK 1.1.12. El intento `published-1791753630981` conserva fallos mientras
+Pages aún estaba en cola.
 
 CI 133 `38172275258` conserva FAIL: 5 fallos y 2 flaky entre 707 E2E;
 4024 unitarias y los 291 casos de voces reales pasaron. Once artefactos y
@@ -30,26 +61,46 @@ Se corrigen esas observaciones sin ampliar el límite medido de cierre.
 Importación y eliminación intermitentes originales siguen conservados;
 la eliminación registra stacks y fuentes de cualquier nuevo shader.
 
-CI 135 `38175754110` todavía en curso: unitarias, los tres grupos Piper y
-UI 3/4/5/6 aprobados. UI 1 conserva un flaky en pausa/reanudación EPUB:
-la prueba leía un request sin esperar a start, o incluso el request anterior.
-Un retraso sintético de 450 ms reproduce el fallo. La prueba corregida exige
+CI 135 `38175754110` terminó FAIL: 4027 unitarias y 291 pruebas de voces
+reales aprobadas; UI: 413 aprobadas, dos fallos y una intermitente. Los dos
+regresos nativos exceden el límite de cierre de 8 s en Linux/SwiftShader,
+incluso con los 60 s disponibles para el escenario completo. El screenshot
+posterior muestra el libro ya insertado, pero eso no satisface el plazo.
+No se aumenta el límite ni se considera corregido este rendimiento.
+Once artefactos completos y log original conservados en `ci135-all` y
+`ci135-failed.log`.
+
+La intermitencia EPUB de UI 1 observaba un request antes de su inicio audible.
+Un retraso sintético de 450 ms reprodujo el fallo. La prueba corregida exige
 un ID nuevo, inicio audible, el mismo texto y resaltado visible; pasa 3/3 sin
-retries. No se cambia el lector ni se acorta el escenario. Se conserva
-`ci135-ui1-original.log`, artefacto original y `follow-before`/`follow-after`.
-Esperar el resto de esta CI y la nueva ejecución antes de afirmar CI verde.
+retries. Fuente de esa corrección: `0bd3419`; no cambia el runtime 1.7.135.
+Originales `ci135-ui1-original.log`, `follow-before` y `follow-after`.
+Su batería completa `38177346962` sigue en curso; no se declara CI verde.
 
-APK del updater 1.1.13/26, run `38175283676`: intento 1 falló con salida 255
-de adb logcat durante el PDF. La captura no demuestra la causa del comando.
-Antes registró 370 s PCM EPUB en pantalla bloqueada y 23 capítulos, pero
-NO se acredita el ensayo completo. Logs/artefactos conservados en
-`apk113-failed`. Intento 2 ya iniciado por la tarea del updater; no se
-publicaron ni sobrescribieron artefactos desde esta revisión.
+Diagnóstico local de cierre con SwiftShader: 7715,6 ms sin perfilador;
+7108,8 ms con perfil CPU (fases completas conservadas). La muestra CPU
+registra 6204 ms idle y 848 ms en setters de canvas. No demuestra por sí
+sola el coste total de GPU. Quitar el blur sólo en un ensayo externo dio
+5721,4 ms: cambia la imagen y NO se incorpora a la app. Los tests conservan
+ahora la fase y el contrato aun si el plazo falla, mediante finally. Sin
+cambios de calidad, reloj, resolución ni límite de cierre.
 
-Pendientes: primer uso frío de voz instantáneo, migración completa a Rust,
-variantes regionales adicionales cuando existan modelos adecuados, y
-rendimiento en teléfono físico. Los diez perfiles Supertonic por idioma
-compatible ya existen; no se cuentan como nuevos acentos ni personas.
+APK 1.1.13/26, run `38175283676`: intento 1 falló con salida 255 de adb
+logcat durante el PDF; se conservan `apk113-failed` y el log. No se atribuye
+una causa no demostrada a ese fallo. El intento 2 de la tarea del updater
+terminó correctamente y publicó en A; no se sobrescribió ningún artefacto.
+Certificado `apk113-passed/android-background-certification.json`:
+370,7624 s de PCM EPUB, 23 capítulos y 52,37 s de PCM PDF en dos páginas
+con pantalla apagada, sin errores de voz. Pausa, reanudación y parada
+aprobadas. SHA del APK ensayado igual al descargado públicamente; firma
+criptográfica válida y certificado anterior conservado. Evidencia de
+Android 15 emulado, no una medición en un teléfono físico.
+
+Pendientes: cerrar los fallos de rendimiento de devolución, primer uso frío
+de voz instantáneo, migración completa a Rust, variantes regionales
+adicionales cuando existan modelos adecuados, y rendimiento en teléfono
+físico. Los diez perfiles Supertonic por idioma compatible ya existen; no
+se cuentan como nuevos acentos ni personas.
 
 # 1.7.133 — Primer audio y estado del lector
 

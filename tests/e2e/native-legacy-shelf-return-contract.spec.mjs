@@ -98,7 +98,7 @@ test('el regreso nativo conserva la sala fraccional a 393px con el framebuffer o
   // Observe before the real click. No pixel exports, screenshots or GPU readbacks
   // occur on the close clock; they would add the very waits under investigation.
   await page.evaluate(id => {
-    const result = { clickedAt:null, endedAt:null, closingSeen:false, samples:[], errors:[] }
+    const result = { clickedAt:null, endedAt:null, closingSeen:false, samples:[], phases:[], errors:[] }
     const shelf = document.querySelector('.ihr-bookshelf-scene')
     let insertionNode = null, insertionContext = null, frame = 0, stopped = false
     const painted = node => {
@@ -111,6 +111,8 @@ test('el regreso nativo conserva la sala fraccional a 393px con el framebuffer o
     }
     const sample = () => {
       if (stopped || result.clickedAt == null) return
+      const phase = document.querySelector('.ihr-flyout--return')?.dataset.returnPhase || 'none'
+      if (result.phases.at(-1)?.phase !== phase) result.phases.push({ phase, at:performance.now() })
       const closing = document.body.classList.contains('is-closing-reader')
       if (closing) result.closingSeen = true
       else if (result.closingSeen && result.endedAt == null) result.endedAt = performance.now()
@@ -170,10 +172,14 @@ test('el regreso nativo conserva la sala fraccional a 393px con el framebuffer o
     }
   }, BOOK_ID)
   await page.locator('#reader-back').click()
-  await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/)
-  await expect(page.locator('.ihr-flyout')).toHaveCount(0)
-  const facts = await page.evaluate(() => window.__nativeShelfReturn.finish())
-  await test.info().attach('native-legacy-shelf-return-contract', { body:JSON.stringify(facts), contentType:'application/json' })
+  let facts
+  try {
+    await expect(page.locator('body')).not.toHaveClass(/is-closing-reader/)
+    await expect(page.locator('.ihr-flyout')).toHaveCount(0)
+  } finally {
+    facts = await page.evaluate(() => window.__nativeShelfReturn.finish())
+    await test.info().attach('native-legacy-shelf-return-contract', { body:JSON.stringify(facts), contentType:'application/json' })
+  }
 
   expect(facts.closingSeen).toBe(true)
   expect(facts.clickedAt).not.toBeNull(); expect(facts.endedAt).not.toBeNull()
