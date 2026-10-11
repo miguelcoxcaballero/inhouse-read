@@ -844,3 +844,21 @@ completa de voces, que ejecuta el workflow completo al publicar.
 La corrección de smoke necesitó además usar el checkbox «Modo oscuro» dentro
 del perfil (el antiguo botón permanece oculto por compatibilidad). Se conserva
 el timeout de `smoke-1`; `smoke-2` pasa con la misma aserción y plazo.
+
+
+### Publicación y comprobación de 129
+
+Fuente `495d91670125e4363322fca8362abed8f7bfd356`, Pages
+`7a354fcb4962c0bfa0df6300bd5f98ae46869252`; ambos workflows de despliegue
+38165531753/38165583259 terminan correctamente. El primer sondeo recibe todavía
+la web anterior y se conserva. El segundo valida los 99 recursos y 108 checks,
+cero errores (`published-1791744779970/summary.json`). El WASM real descargado
+conserva el SHA local y pasa 15 comparaciones completas adicionales de audio.
+La prueba del perfil en la URL pública pasa: la respuesta ejecutada del main
+coincide con el hash del manifiesto, no sólo con un número de versión.
+
+APK1.1.12/25 de A descargada otra vez: hash, firma v2, paquete y loader de 2107
+bytes correctos (`apk-summary.json`). Este cambio web no reemplaza la APK ni
+crea una versión B. No se afirma una sesión nueva en teléfono físico.
+La matriz completa de CI129, `38165531750`, sigue en curso; se conserva ese
+estado pendiente. El WIP contiene las rutas y hashes para continuar la auditoría.

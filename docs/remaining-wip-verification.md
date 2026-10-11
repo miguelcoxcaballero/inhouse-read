@@ -21,7 +21,22 @@ Evidencia: `D:/CodexEvidence/InhouseRead-20261011/rust-pcm`.
 - 20 voces reales Supertonic pasan sin conexión después de instalar y calentar
   el worker: diez perfiles en inglés y diez en neerlandés (`voices-1.json`,
   2,5 min). Los pesos reales y las grabaciones quedan en la evidencia.
-- Publicación y comprobación pública: pendientes al escribir este commit.
+- Publicado en main: `495d91670125e4363322fca8362abed8f7bfd356`; Pages
+  `7a354fcb4962c0bfa0df6300bd5f98ae46869252`. Despliegues 38165531753 y
+  38165583259 aprobados. `published-1791744779970/summary.json`: 108 checks,
+  cero errores, los 99 recursos públicos con sus hashes correctos. Se conserva
+  `published-1791744722796`, que aún recibió la web anterior durante el despliegue.
+- WASM público 179860 bytes, SHA256
+  `dab359bdfbf395c7435a7efeabdcf09a5cd4c5a56b8ba5046977f9180b320dd6`;
+  el binario descargado pasa 15 comparaciones completas de PCM. La prueba móvil
+  sobre la URL real pasa y fija el cuerpo del main ejecutado a
+  `ceaa4493bcacca1c85b96fbbe4632b3fd78142757d0cb33aa8dfcfe644eaf75f`.
+- APK real de A 1.1.12/25 descargada de nuevo: hash, paquete, firma v2 y loader
+  de 2107 bytes correctos. No se publica otro wrapper ni se promueve B.
+  No se ha ejercitado un teléfono físico ni autenticado una cuenta real.
+- CI completa nueva: `38165531750`, en curso al cerrar este registro. Se lanzó
+  toda la matriz (seis grupos de UI, Piper y Supertonic), sin excluir pruebas
+  ni ampliar plazos. No se presenta como aprobada antes de su conclusión.
 
 La CI128 anterior aún no ha terminado: se conserva el log original de su
 shard6. Smoke no abría el menú que ahora contiene Cambiar tema; se actualiza
