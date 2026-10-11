@@ -46,8 +46,8 @@ export function initReadingDisplay({ document:doc = document, window:win = windo
   }
   // Whether the surface under the status bar is light (dark icons).
   const lightUnderStatusBar = () => {
-    // The blocking update notice dims the whole screen, the bar's strip too.
-    if (doc.getElementById('android-update-gate')) return false
+    // The optional update notice dims the whole screen, the bar's strip too.
+    if (doc.getElementById('inhouse-services-update')) return false
     // So does the catalogue's backdrop: light paper when flown into from the
     // booklet (both themes), the dimmed room otherwise.
     const catalog = doc.querySelector('dialog.ihr-plant-catalog[open]')

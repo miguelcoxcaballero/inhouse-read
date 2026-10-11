@@ -29,7 +29,7 @@ beforeEach(() => {
 afterEach(async () => {
   policy?.dispose(); policy = null; await settle()
   delete window.InhouseNative; document.body.className = ''
-  document.getElementById('android-update-gate')?.remove(); screen.remove()
+  document.getElementById('inhouse-services-update')?.remove(); screen.remove()
   document.documentElement.removeAttribute('data-theme')
   vi.restoreAllMocks()
 })
@@ -115,7 +115,7 @@ describe('stable top inset shells', () => {
     document.documentElement.setAttribute('data-theme', 'dark'); await settle()
     expect(icons()).toEqual([true, false, true, false])
     document.documentElement.setAttribute('data-theme', 'light'); await settle()
-    const gate = document.createElement('div'); gate.id = 'android-update-gate'
+    const gate = document.createElement('div'); gate.id = 'inhouse-services-update'
     document.body.append(gate); await settle()
     expect(icons()).toEqual([true, false, true, false, true, false])
     gate.remove(); await settle()
