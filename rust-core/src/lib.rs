@@ -8,7 +8,9 @@ mod binding;
 mod page_mesh;
 mod cover_color;
 mod color_mask;
+mod shelf_placement;
 mod pdf_layout;
+mod pdf_rows;
 mod relief;
 
 #[no_mangle]

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { readFile, writeFile, mkdir, mkdtemp } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, mkdtemp, readdir } from 'node:fs/promises';
+import { finished } from 'node:stream/promises';
 import { createWriteStream } from 'node:fs';
 import { fork } from 'node:child_process';
 import { join, resolve } from 'node:path';
@@ -94,16 +95,47 @@ test.beforeAll(async () => {
     })]);
   } finally { clearTimeout(deadline); }
 });
-test.afterAll(async () => {
-  await buildProfile?.stop('interrupted');
-  if (helper && helper.exitCode===null && helper.signalCode===null) {
-    if (helper.connected) helper.send({ type:'shutdown' });
-    let timeout;
-    const exited=await Promise.race([helperExit.then(() => true),new Promise(resolve => { timeout=setTimeout(() => resolve(false),4000); })]);
-    clearTimeout(timeout);
-    if (!exited) { helper.kill('SIGKILL');await helperExit; }
+// RUNNER_TEMP is not uploaded by the CI artifact step. Preserve the small
+// diagnostic files with Playwright even if beforeAll never reached readiness.
+// The production dist stays in its owned temp directory and is not attached.
+async function attachBuildDiagnostics(testInfo, logResults) {
+  const report={ fixtureRoot:fixtureRoot || null, attachments:[], errors:logResults
+    .filter(result => result.status==='rejected').map(result => String(result.reason)) };
+  if (fixtureRoot) {
+    try {
+      const names=(await readdir(fixtureRoot,{ withFileTypes:true }))
+        .filter(entry => entry.isFile() && /^(?:helper-(?:stdout|stderr)\.log|(?:source-fingerprints|helper-started|fixture)\.json|build-(?:complete|failed|timeout|interrupted)(?:\.cpuprofile|-profile-error\.txt))$/.test(entry.name))
+        .map(entry => entry.name).sort();
+      for (const name of names) {
+        try {
+          await testInfo.attach(`cold-return-build-${name}`,{path:join(fixtureRoot,name),
+            contentType:/\.(?:json|cpuprofile)$/.test(name) ? 'application/json' : 'text/plain'});
+          report.attachments.push(name);
+        } catch(error) { report.errors.push(`${name}: ${error.message}`); }
+      }
+    } catch(error) { report.errors.push(`Fixture directory: ${error.message}`); }
   }
-  stdoutLog?.end();stderrLog?.end();
+  await testInfo.attach('cold-return-build-diagnostics.json',{body:JSON.stringify(report),contentType:'application/json'});
+}
+
+test.afterAll(async ({}, testInfo) => {
+  try {
+    await buildProfile?.stop('interrupted');
+    if (helper && helper.exitCode===null && helper.signalCode===null) {
+      if (helper.connected) helper.send({ type:'shutdown' });
+      let timeout;
+      const exited=await Promise.race([helperExit.then(() => true),new Promise(resolve => { timeout=setTimeout(() => resolve(false),4000); })]);
+      clearTimeout(timeout);
+      if (!exited) { helper.kill('SIGKILL');await helperExit; }
+    }
+  } finally {
+    // Child exit can precede the last pipe bytes. Drain owned pipes before
+    // ending their destination logs so the attached copies are complete.
+    const pipeResults=await Promise.allSettled([helper?.stdout,helper?.stderr].filter(Boolean).map(stream => finished(stream)));
+    stdoutLog?.end();stderrLog?.end();
+    const logResults=await Promise.allSettled([stdoutLog,stderrLog].filter(Boolean).map(stream => finished(stream)));
+    await attachBuildDiagnostics(testInfo,[...pipeResults,...logResults]);
+  }
   // Preserve this test-owned build, logs and CPU profile for causal review.
   // No recursive deletion, shared dist mutation or broad process termination.
 });

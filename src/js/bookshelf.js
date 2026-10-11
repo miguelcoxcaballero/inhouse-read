@@ -113,6 +113,8 @@ import { refreshCanvasFontsAfterPaint } from './canvas-font-readiness.js';
 import { bookReturnSignature, bookReturnCompatibility, createBookReturnCache } from './bookshelf-return.js';
 import { readerReturnCanvas } from './reader-return-canvas.js';
 import { layoutShelfDecorations, moveShelfDecoration } from './shelf-decoration-layout.js';
+import { getRustCore } from './rust-core.js';
+import { createShelfPlacementPreview } from './shelf-placement-preview.js';
 import { createLazyPlantCatalog } from './plant-catalog-lazy.js';
 import { normalizeShelfType, BAGGEBO_SPEC } from './shelf-types.js';
 import { shelfModelLayout } from './shelf-model-layout.js';
@@ -957,7 +959,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (drag.destination && !drag.previewFrame) drag.previewFrame = requestAnimationFrame(() => {
       drag.previewFrame = 0;
       if (state.dragSession !== drag || !drag.destination) return;
-      const preview = moveShelfDecoration(state.placementObjects, objectKey(node), drag.destination, placementConfig());
+      const preview = previewObjectPlacement(drag, objectKey(node), drag.destination);
+      if (state.dragSession !== drag || state.destroyed) return;
       state.shelfScene?.previewPlacements(preview.objects, objectKey(node));
     });
   }
@@ -1133,6 +1136,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     const drag = state.dragSession;
     if (!drag || drag.node !== node || drag.pointerId !== event.pointerId) return;
     clearTimeout(drag.timer);
+    clearPlacementPreview(drag);
     cancelAnimationFrame(drag.previewFrame);
     cancelAnimationFrame(drag.scrollFrame);
     const discard = drag.active && drag.moved && !cancelled && !drag.cancelled &&
@@ -1676,6 +1680,32 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   function placementConfig() {
     return { shelfWidth:state.shelfWidth, padding:shelfPadding(), gap:opts.gap,
       minShelves:Math.max(3, Number(opts.minimumShelves) || 3) };
+  }
+
+  function clearPlacementPreview(drag = state.dragSession) {
+    drag?.placementSnapshot?.session?.dispose();
+    if (drag) drag.placementSnapshot = null;
+  }
+
+  function previewObjectPlacement(drag, key, destination) {
+    const cfg = placementConfig(), objects = state.placementObjects, core = getRustCore();
+    if (!core) return moveShelfDecoration(objects, key, destination, cfg);
+    const viewport = window.visualViewport;
+    const width = viewport?.width ?? window.innerWidth, height = viewport?.height ?? window.innerHeight;
+    const scale = viewport?.scale ?? 1, pixelRatio = window.devicePixelRatio || 1;
+    let current = drag.placementSnapshot;
+    if (!current || current.objects !== objects || current.shelfType !== state.shelfType || current.viewMode !== state.viewMode ||
+        current.width !== width || current.height !== height || current.scale !== scale || current.pixelRatio !== pixelRatio ||
+        current.cfg.shelfWidth !== cfg.shelfWidth || current.cfg.padding !== cfg.padding || current.cfg.gap !== cfg.gap ||
+        current.cfg.minShelves !== cfg.minShelves) {
+      clearPlacementPreview(drag);
+      // The session copies its own immutable records. The application's
+      // mutable objects are neither branded nor re-used as trusted inputs.
+      current = drag.placementSnapshot = { objects, cfg, width, height, scale, pixelRatio,
+        shelfType:state.shelfType, viewMode:state.viewMode, session:createShelfPlacementPreview(objects, cfg) };
+    }
+    return current.session?.move(core, key, destination.shelf, destination.x)
+      ?? moveShelfDecoration(objects, key, destination, cfg);
   }
 
   function shelfPadding() {
@@ -3713,7 +3743,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     state.returnMotion?.cancel();
     scheduleRender();
   };
-  const onVisualViewportChange = () => { state.session?.handleViewportResize?.(); };
+  const onVisualViewportChange = () => { clearPlacementPreview(); state.session?.handleViewportResize?.(); };
   window.addEventListener('resize', onViewportResize);
   window.visualViewport?.addEventListener('resize', onVisualViewportChange);
   window.visualViewport?.addEventListener('scroll', onVisualViewportChange);
@@ -3721,7 +3751,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     observer = new ResizeObserver(() => {
       const width = measure();
       // Umbral: evita re-empaquetar por el scrollbar o por 1px de reflow.
-      if (Math.abs(width - state.shelfWidth) >= 8) scheduleRender();
+      if (Math.abs(width - state.shelfWidth) >= 8) { clearPlacementPreview(); scheduleRender(); }
     });
     observer.observe(scroller);
   }
@@ -3772,6 +3802,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (item.kind === 'book' && !byId.has(String(item.book.id))) return false;
     }
     if (!state.shelfScene.adoptMetadataRecords?.(state.books, nextBooks)) return false;
+    clearPlacementPreview();
     state.books = nextBooks.slice();
     for (const book of nextBooks) state.itemsById.get(String(book.id)).book = book;
     for (const item of state.placementObjects) {
