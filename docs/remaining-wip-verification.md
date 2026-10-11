@@ -41,7 +41,28 @@ La CI de 1.7.129 terminó con dos fallos de los plazos de devolución nativa
 Se conservan `previous-ci129.json` y `previous-ci129-ui2.log`; no se modifican
 sus plazos ni se considera aquella matriz totalmente aprobada.
 
-Publicación y batería final: pendientes de registrar al terminar esta entrega.
+Publicado en main `2f626e3a7e876b27272cbf8106646cd5f9797224`, web 1.7.130.
+Pages `02e7327db3ec4d994d71f521aad6d476cc27b121`; despliegues 38167872684 y
+38167926895 aprobados. `public-1.log` / `published-1791746779828/summary.json`:
+108 comprobaciones correctas, cero errores; los 99 recursos públicos coinciden
+con el manifiesto de Pages. Main `assets/main-BdR3eRyd.js` (653173 bytes), SHA
+`2e33802d9e557569edc11cbfbb37448d5f7bade1a7d48aa5a1d6dfa2ece4459b`.
+
+La prueba de UI pública pasa y comprueba el SHA del main ejecutado realmente
+(`public-ui-1`). La APK de A descargada de nuevo conserva 1.1.12/25, paquete,
+firma v2, SHA y loader de 2107 bytes, sin app empaquetada obsoleta. Carga esta
+web; no necesita otro wrapper para el cambio. Canal B sin publicar.
+
+Piper preparado inicia a 115,8 ms (es-MX Claude high) y 117 ms (en-US Lessac
+medium); son medidas locales de Web Audio con modelos reales, no de teléfono.
+El intento adicional de un arnés de voz sobre la URL pública fue rechazado por
+la revisión automática sin motivo específico; no se cuenta como prueba pasada.
+Se verificaron los bytes públicos y el recorrido de interfaz existente como
+alternativa, conservando por separado los cuatro ensayos de audio locales.
+
+La batería completa de CI `38167872701` sigue en curso al registrar la entrega.
+Se lanzan todos los grupos sin exclusiones ni plazos relajados. No se presenta
+la matriz pendiente como un aprobado global.
 
 ---
 
