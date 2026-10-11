@@ -1,5 +1,6 @@
 import { paddedBookFrameSize } from './book-frame-padding.js';
 import { getRustCore } from './rust-core.js';
+import { rustBookSurfacePixels, rustRibbonNotchPixels } from './book-surface-wasm.js';
 import { rustBookmarkBuffers } from './bookmark-wasm.js';
 import { rustBindingBuffers } from './binding-wasm.js';
 import { rustPageBlockBuffers, rustLeafStackBuffers } from './page-mesh-wasm.js';
@@ -33,15 +34,18 @@ function sharedTexture(key, build) {
   copy.source.version = version;
   return copy;
 }
-function tileNormals(size, heightAt, strength) {
-  const field = new Float32Array(size * size), data = new Uint8Array(size * size * 4);
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) field[y * size + x] = heightAt(x, y);
-  const at = (x, y) => field[(y + size) % size * size + (x + size) % size];
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const nx = (at(x - 1, y) - at(x + 1, y)) * strength, ny = (at(x, y - 1) - at(x, y + 1)) * strength;
-    const length = Math.hypot(nx, ny, 1), i = (y * size + x) * 4;
-    data[i] = (nx / length + 1) * 127.5; data[i + 1] = (ny / length + 1) * 127.5;
-    data[i + 2] = (1 / length + 1) * 127.5; data[i + 3] = 255;
+function tileNormals(size, heightAt, strength, kind) {
+  let data = rustBookSurfacePixels(getRustCore(), kind);
+  if (!data) {
+    const field = new Float32Array(size * size); data = new Uint8Array(size * size * 4);
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) field[y * size + x] = heightAt(x, y);
+    const at = (x, y) => field[(y + size) % size * size + (x + size) % size];
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      const nx = (at(x - 1, y) - at(x + 1, y)) * strength, ny = (at(x, y - 1) - at(x, y + 1)) * strength;
+      const length = Math.hypot(nx, ny, 1), i = (y * size + x) * 4;
+      data[i] = (nx / length + 1) * 127.5; data[i + 1] = (ny / length + 1) * 127.5;
+      data[i + 2] = (1 / length + 1) * 127.5; data[i + 3] = 255;
+    }
   }
   const texture = new THREE.DataTexture(data, size, size);
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
@@ -55,7 +59,7 @@ const clothNormals = () => tileNormals(128, (x, y) => {
   const warp = Math.sin(Math.PI * fx) * (.7 + .6 * lattice(i, y >> 5, 1));
   const weft = Math.sin(Math.PI * fy) * (.7 + .6 * lattice(j, x >> 5, 2));
   return (i + j) % 2 ? warp * .85 + weft * .2 : weft * .85 + warp * .2;
-}, 1.1);
+}, 1.1, 'cloth');
 // Printed paper over board: the soft tooth that survives under a laminate.
 const paperNormals = () => tileNormals(128, (x, y) => {
   const octave = (cell, salt) => {
@@ -65,14 +69,18 @@ const paperNormals = () => tileNormals(128, (x, y) => {
     return THREE.MathUtils.lerp(THREE.MathUtils.lerp(v(0, 0), v(1, 0), sx), THREE.MathUtils.lerp(v(0, 1), v(1, 1), sx), sy);
   };
   return octave(32, 5) * .9 + octave(8, 6) * .45 + lattice(x, y, 7) * .08;
-}, 1.4);
+}, 1.4, 'paper');
 // Swallowtail cut, measured in ribbon widths from the tip (v = 0 at the tip):
 // a shallow V, a fifth of the width deep, as scissors leave it.
 const ribbonNotch = () => {
-  const w = 16, h = 64, data = new Uint8Array(w * h * 4);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const across = Math.abs((x + .5) / w * 2 - 1), i = (y * w + x) * 4;
-    data.fill((y + .5) / h > .2 * (1 - across) ? 255 : 0, i, i + 4);
+  const w = 16, h = 64;
+  let data = rustRibbonNotchPixels(getRustCore(), w, h);
+  if (!data) {
+    data = new Uint8Array(w * h * 4);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const across = Math.abs((x + .5) / w * 2 - 1), i = (y * w + x) * 4;
+      data.fill((y + .5) / h > .2 * (1 - across) ? 255 : 0, i, i + 4);
+    }
   }
   const texture = new THREE.DataTexture(data, w, h);
   texture.magFilter = texture.minFilter = THREE.LinearFilter; texture.needsUpdate = true;

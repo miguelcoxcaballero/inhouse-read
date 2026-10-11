@@ -862,3 +862,54 @@ bytes correctos (`apk-summary.json`). Este cambio web no reemplaza la APK ni
 crea una versión B. No se afirma una sesión nueva en teléfono físico.
 La matriz completa de CI129, `38165531750`, sigue en curso; se conserva ese
 estado pendiente. El WIP contiene las rutas y hashes para continuar la auditoría.
+
+
+## Continuación 1.7.141 — Microtexturas de encuadernación
+
+Base integrada: `21e133a`, web 1.7.140 y APK 1.1.15/28. Incluye updater
+canónico 1.2.3, revisión `6621ca1dbb519d171d723f118052e42ef5d5c001`, con
+resultado de instalación y recuperación desde la publicación de GitHub.
+No se modifican las copias compartidas ni se publica/promueve otra APK.
+La promoción anterior a B se conserva tal como llegó de main.
+
+Migrados a `book_surface.rs`: hash de ruido, interpolación de octavas,
+altura de la trama, cálculo de normales periódicas de tela/papel y máscara
+de corte de la cinta. JavaScript suministra sólo ocho senos del navegador
+para conservar sus coeficientes. Rust hace los recorridos completos por píxel.
+Three conserva dimensiones, filtros, mipmaps, Source compartido, escala de
+normales, luces y materiales. La vía anterior sigue disponible si no hay WASM.
+
+Los 65536 bytes de cada normal map y los 4096 bytes del recorte coinciden con
+el algoritmo congelado anterior a esta migración. La comparación del navegador
+comprueba además que el modelo consume las tres imágenes reales y que el
+segundo libro las reutiliza sin regenerarlas. No se retoca la imagen.
+
+La arena temporal máxima de estos kernels es 131136 bytes y se libera antes
+de devolver arrays independientes. Las pruebas incluyen crecimiento de memoria,
+fallo de reserva/kernel, tamaños inválidos y cortes en límites de píxel.
+El marcapáginas conserva su arena anterior de 7896 bytes por core: el fixture
+la libera explícitamente al acabar. La primera prueba asumía erróneamente que
+todas las arenas del modelo eran temporales; su fallo se conserva en `browser`.
+El resultado corregido `browser2` no cambia ese comportamiento de producción.
+
+Medición Chromium, viewport 390×844, DPR2, CPU ×4; tres calentamientos,
+nueve rondas alternadas y treinta generaciones por ronda. Incluye adaptador,
+copia del resultado, asignación/liberación y ocho coeficientes, sin caché:
+
+| Textura | JavaScript anterior | Rust | Reducción del bloque |
+| --- | ---: | ---: | ---: |
+| Tela | 5,307 ms | 2,120 ms | 60 % |
+| Papel | 7,210 ms | 2,837 ms | 61 % |
+| Recorte de cinta | 0,183 ms | 0,030 ms | 84 % |
+
+Son cálculos compartidos que se generan una vez. Estos porcentajes no describen
+la velocidad global, la GPU ni la batería del teléfono. El WASM pasa de
+179860 a 182113 bytes; SHA256
+`001796a2f378996224ce7b1a70e9b42bd54709eae0d825acb921f1345a67e657`.
+
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-book-surfaces`.
+101/101 focales; 4058/4058 unitarias, 325 archivos; build y verificador del
+updater aprobados. El recorrido integrado con CPU ×4 pasa sin retry.
+La batería de interfaz y la publicación se registran en el WIP al finalizar.
+La migración de la lógica de biblioteca, lector, gestos y persistencia sigue
+pendiente; esta entrega no equivale a una reescritura completa de la app.

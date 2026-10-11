@@ -1,4 +1,46 @@
-# Estado actual — web 1.7.137 / APK A 1.1.14, B 1.1.13
+# Estado actual — web 1.7.141 / APK 1.1.15
+
+Migradas a Rust las microtexturas de tela y papel y la máscara del marcapáginas.
+Píxeles exactos, mismos materiales y caché compartida. Los recorridos por píxel
+se ejecutan en Rust; JS conserva ocho coeficientes seno y el adaptador Three.
+Changelog: «Microtexturas de libros más rápidas con Rust».
+
+- 4058/4058 unitarias en 325 archivos; build y verificador del updater aprobados.
+- 24/24 E2E locales sin retries: apertura/cierre, PDF/EPUB/CBZ, temas, metales,
+  grabado, cancelación, ambos contratos nativos y uso real del nuevo núcleo.
+- 101/101 focales; 27 regresiones nuevas de bytes y propiedad de memoria.
+- Chromium CPU ×4: tela 5,307 → 2,120 ms; papel 7,210 → 2,837 ms;
+  cinta 0,183 → 0,030 ms. Son costes de generación compartida, no de toda la app.
+- Arena temporal máxima 131136 bytes, resultados independientes, sin pérdida
+  de memoria. Se preserva la arena anterior del marcapáginas de 7896 bytes.
+- WASM 182113 bytes, SHA
+  `001796a2f378996224ce7b1a70e9b42bd54709eae0d825acb921f1345a67e657`.
+
+Base incorporada por fast-forward `21e133a`: updater 1.2.3,
+revisión `6621ca1dbb519d171d723f118052e42ef5d5c001`. Incluye los parches
+ajenos definitivos y la recuperación por navegador. A y B apuntan a 1.1.15/28;
+la promoción de B ya venía autorizada y publicada desde la otra tarea.
+No se cambian copias del updater ni se publica otra APK desde esta revisión.
+
+APK pública 1.1.15 descargada y verificada: 78532517 bytes, SHA
+`02960e3322bdad2e26041d2ef57b0fd5a02f3528c4b60b876e7955ae941cafb5`.
+Paquete, firma v2 y loader de 2107 bytes conservados. Certificado original
+38180160799: mismo SHA, 369,77 s de audio EPUB y 51,39 s de PDF bloqueados,
+pausa/reanudar/parar correctos en Android 15 emulado, no teléfono físico.
+
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-book-surfaces` y `apk115`.
+El primer browser fixture falló al asumir que la arena compartida de geometría
+se liberaba al destruir cada libro. Se corrige sólo la limpieza de esa prueba;
+se conserva el fallo original y el resultado posterior independiente.
+
+CI 137 `38180085214` terminó FAIL: ambos cierres Linux superan el límite de
+8 s. UI2 original y log descargados; 73 aprobadas y 2 fallidas en ese shard.
+No se afirman resueltos esos cierres por esta migración. Quedan la migración
+completa de lógica de biblioteca/lector/gestos/persistencia y el arranque frío
+de voz. La CI completa y comprobación pública de 141 siguen pendientes hasta
+su publicación; no se afirma éxito global.
+
+## Histórico — web 1.7.137 / APK A 1.1.14, B 1.1.13
 
 Optimización del libro 3D cerrado: las dos capas de impresión de la página
 quedan fuera del recorrido de dibujo mientras la portada las oculta. Las

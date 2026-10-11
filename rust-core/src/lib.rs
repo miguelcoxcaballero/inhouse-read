@@ -14,6 +14,7 @@ mod shelf_placement;
 mod pdf_layout;
 mod pdf_rows;
 mod pcm;
+mod book_surface;
 mod relief;
 
 #[no_mangle]
