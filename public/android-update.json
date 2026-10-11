@@ -1,9 +1,9 @@
 {
-  "version": "1.1.11",
-  "versionCode": 24,
+  "version": "1.1.12",
+  "versionCode": 25,
   "required": true,
   "apkSizeBytes": 78532469,
-  "apkSha256": "4f19d71a49186f09c64af9d64e2a81e719fa571ca5aea37dc98decf4f723c23e",
-  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.11/inhouse-read-release-v1.1.11.apk",
-  "releaseNotes": "Canales A/B y recordatorio opcional."
+  "apkSha256": "405a3d2698949e1d6f7425b7e666b5ca1f0b42e9cb212852caca3711336dfefd",
+  "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.12/inhouse-read-release-v1.1.12.apk",
+  "releaseNotes": "Reviewed default and safer development opt-in."
 }
