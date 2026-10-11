@@ -1,9 +1,8 @@
-// Rellena la tarjeta de descarga consultando en vivo cuál es el último
-// release de GitHub — nada de una versión/URL fija en el HTML que se quede
-// desactualizada en cuanto se publique un nuevo APK.
+// A is the default download channel. B requires explicit publication in the common updater.
+import '../vendor/inhouse-services-updater/updater.js'
 
 const REPO = 'miguelcoxcaballero/inhouse-read'
-const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`
+const API_URL = `https://raw.githubusercontent.com/${REPO}/main/updates/A.json`
 
 const card = document.getElementById('release-card')
 
@@ -36,7 +35,7 @@ function renderRelease(release) {
 
   card.innerHTML = `
     <div class="dl-version">
-      <span class="dl-version-tag">${escapeHtml(release.tag_name)}</span>
+      <span class="dl-version-tag">${escapeHtml(release.tag_name)} · A</span>
       <span class="dl-version-date">${escapeHtml(formatDate(release.published_at))}</span>
     </div>
     <a class="dl-button" href="${escapeAttr(apkAsset.browser_download_url)}">
@@ -73,14 +72,18 @@ function escapeAttr(str) {
 
 async function loadLatestRelease() {
   try {
-    const res = await fetch(API_URL, { headers: { Accept: 'application/vnd.github+json' } })
+    const res = await fetch(API_URL + '?check=' + Date.now(), { cache: 'no-store' })
     if (!res.ok) {
       throw new Error(res.status === 403
         ? 'Límite de GitHub alcanzado. Reintenta en unos minutos.'
         : `GitHub respondió ${res.status}`)
     }
-    const release = await res.json()
-    renderRelease(release)
+    const catalog = window.InhouseServicesUpdater.validateCatalog(await res.json(), 'A', { repository: REPO })
+    const release = catalog.latest
+    if (!release) { renderFallback('Aún no hay versiones A.'); return }
+    const parts = new URL(release.apkUrl).pathname.split('/')
+    renderRelease({ tag_name: decodeURIComponent(parts.at(-2)), published_at: release.releasedAt,
+      assets: [{ name: decodeURIComponent(parts.at(-1)), size: release.apkSizeBytes, browser_download_url: release.apkUrl }] })
   } catch (err) {
     console.error('No se pudo consultar el último release:', err)
     renderFallback('No se pudo consultar la última versión.')
