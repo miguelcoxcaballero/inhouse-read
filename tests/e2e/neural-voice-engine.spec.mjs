@@ -394,4 +394,37 @@ test.describe('neural voice engine (real Piper weights, real ORT + espeak-ng WAS
     })
   }
 
+  test('first Play immediately after changing an in-flight preview to another voice', async () => {
+    await page.click('#unlock')
+    await page.evaluate(async () => {
+      await window.neural.engine.install('piper:es_MX-claude-high')
+      await window.neural.engine.install('piper:en_US-lessac-medium')
+      const {engine} = window.neural
+      engine.release()
+      engine.prime({voiceId:'piper:es_MX-claude-high', text:'Después de un largo día, Ana volvió a casa y abrió el libro que su abuelo le había regalado, mientras la lluvia golpeaba los cristales de la biblioteca.'})
+    })
+    // Only the OLD voice is running. Never wait for the newly selected voice or its PCM.
+    await page.waitForFunction(() => window.neural.engine.getDiagnosticState().synth > 0)
+    const result = await page.evaluate(async () => {
+      const {engine,readAll} = window.neural
+      const selectedAt = performance.now(), stages=[]
+      const core=engine.core, create=core.createClient
+      core.createClient=()=>{
+        const client=create(), prepare=client.prepare.bind(client), synth=client.synth.bind(client)
+        client.prepare=async(...args)=>{stages.push({stage:'load-start',at:performance.now()-selectedAt});const result=await prepare(...args);stages.push({stage:'load-done',at:performance.now()-selectedAt});return result}
+        client.synth=(request,handlers)=>{stages.push({stage:'synth-start',at:performance.now()-selectedAt});return synth(request,{...handlers,onChunk:chunk=>{stages.push({stage:'pcm',at:performance.now()-selectedAt});handlers.onChunk(chunk)}})}
+        return client
+      }
+      const warming = engine.warmUp('piper:en_US-lessac-medium')
+      const log = await readAll('piper:en_US-lessac-medium', ['The rain tapped softly on the windows of the old library.'], 1, {prefix:'selection'})
+      core.createClient=create
+      return {accepted:await warming, selectedAt, stages, log, firstAudioMs:log.find(e=>e.type==='start')?.at}
+    })
+    numbers.immediateSelection = result
+    expect(result.log.some(e=>e.type==='error')).toBe(false)
+    expect(result.firstAudioMs).toBeGreaterThan(0)
+    expect(result.accepted).toBe(true)
+  })
+
+
 })

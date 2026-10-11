@@ -439,6 +439,43 @@ describe('prepare audio before Play',()=>{
     await voice.play()
     expect(last(engine)).toMatchObject({text:'Primera frase.',voiceId:DAVEFX,rate:1.25})
   })
+  it('selection followed immediately by Play shares the pending page analysis',async()=>{
+    const engine=engineWith(); engine.prime=vi.fn(()=>true)
+    let resolve
+    const reader=mappedReader(SENTENCES,{getSpeechSource:vi.fn(()=>new Promise(done=>{resolve=done}))})
+    const voice=new ReadingVoice(reader); activeVoices.add(voice)
+    const preparing=voice.preparePlayback()
+    const playing=voice.play()
+    resolve({text:SENTENCES})
+    await Promise.all([preparing,playing])
+    expect(reader.getSpeechSource).toHaveBeenCalledTimes(1)
+    expect(engine.prime).not.toHaveBeenCalled()
+    expect(last(engine)).toMatchObject({text:'Primera frase.',voiceId:DAVEFX})
+  })
+  it('a relayout during a pending Play rebuilds the plan before adopting its offsets',async()=>{
+    const engine=engineWith(); let resolve
+    const reader=mappedReader(SENTENCES,{getSpeechSource:vi.fn().mockImplementationOnce(()=>new Promise(done=>{resolve=done})).mockResolvedValue({text:'Nueva página.'})})
+    const voice=new ReadingVoice(reader); activeVoices.add(voice)
+    const playing=voice.play()
+    await vi.waitFor(()=>expect(resolve).toBeTypeOf('function'))
+    window.dispatchEvent(new Event('inhouse-speech-layout'))
+    resolve({text:SENTENCES}); await playing
+    expect(reader.getSpeechSource).toHaveBeenCalledTimes(2)
+    expect(last(engine).text).toBe('Nueva página.')
+  })
+  it.each(['page','options','layout','stop'])('invalidates the cached opening plan on %s',async reason=>{
+    const engine=engineWith(); engine.prime=vi.fn(()=>true)
+    const reader=mappedReader(SENTENCES)
+    reader.getSpeechSource=vi.fn(reader.getSpeechSource)
+    const voice=new ReadingVoice(reader); activeVoices.add(voice)
+    await voice.preparePlayback()
+    if(reason==='page') reader.location={fraction:.4}
+    if(reason==='options') voice.options.skipHeaders=true
+    if(reason==='layout') window.dispatchEvent(new Event('inhouse-speech-layout'))
+    if(reason==='stop') voice.stop()
+    await voice.play()
+    expect(reader.getSpeechSource).toHaveBeenCalledTimes(2)
+  })
   it.each(['close','page','rate','voice','play'])('rejects preparation invalidated by %s',async reason=>{
     const engine=engineWith(); engine.prime=vi.fn(()=>true)
     let resolve, active=true

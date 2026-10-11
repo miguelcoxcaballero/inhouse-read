@@ -147,6 +147,23 @@ test.describe('Supertonic 3: 22 app languages × ten real offline profiles',()=>
       await testInfo.attach('supertonic-wav',{path:file,contentType:'audio/wav'});
     });
   }
+  test('selecting a different profile then immediate Play keeps one model and cancels stale preview',async()=>{
+    await page.evaluate(()=>{
+      const {engine}=window.supertonic;engine.stop();engine.core.cache.clear();
+      engine.prime({voiceId:'supertonic3:F1:nl',text:'De regen tikte zachtjes tegen de ramen van de bibliotheek, terwijl de kinderen aandachtig luisterden naar het verhaal van hun grootvader.'});
+    });
+    await page.waitForFunction(()=>window.supertonic.engine.getDiagnosticState().synth>0);
+    const metric=await page.evaluate(async text=>{
+      const s=window.supertonic, selectedAt=performance.now(), workers=s.workers;
+      const warming=s.engine.warmUp('supertonic3:F2:nl');
+      const result=await s.read('supertonic3:F2:nl',text);
+      return {accepted:await warming,latency:result.log[0].at-selectedAt,workersBefore:workers,workersAfter:s.workers,
+        loads:result.requests.filter(r=>r.type==='load').length,events:result.log.map(e=>e.type),samples:result.starts.reduce((n,s)=>n+s.data.length,0)};
+    },SENTENCES.nl);
+    numbers.cases.immediateSelection=metric;
+    expect(metric.accepted).toBe(true);expect(metric.workersAfter).toBe(metric.workersBefore);
+    expect(metric.loads).toBe(0);expect(metric.events).toEqual(['start','done']);expect(metric.samples).toBeGreaterThan(1000);
+  });
   for (const lang of ['en','nl']) test(`${lang}: prepared reader starts immediately with real offline weights`,async({},testInfo)=>{
     const voiceId=`supertonic3:F1:${lang}`;
     const baseline=await page.evaluate(()=>({events:window.supertonic.events.length,starts:window.supertonic.starts.length}));

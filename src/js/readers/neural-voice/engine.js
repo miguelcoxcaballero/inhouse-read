@@ -227,7 +227,8 @@ export class NeuralEngine extends EventTarget {
   async warmUp(voiceId) {
     const voice = findNeuralVoice(voiceId, this.voices)
     if (!voice || !this._installed.has(voice.id) || !this.supported) return false
-    if (this.run) return false // a warm-up must not replace the model a reading is using
+    if (this.run && !this.run.preview) return false // never interrupt audible reading
+    this.#selectPreviewVoice(voice)
     this.#clearIdle()
     this.#refreshStyleSession(voice)
     let client = this.client
@@ -238,6 +239,16 @@ export class NeuralEngine extends EventTarget {
       if (!this.run) this.#armIdle()
       return true
     } catch { if (this.client === client && !this.run) this.#teardown(); return false }
+  }
+
+  // Selecting another model must not queue behind an obsolete silent inference.
+  // Profiles/speakers in the same pack retain the expensive shared session.
+  #selectPreviewVoice(voice) {
+    const previous = this.run?.preview ? this.run.voice : null
+    if (previous && previous.id !== voice.id) this.#hardStop()
+    const model = previous?.piperId || this.preparingModel || this.client?.loaded
+    if (model && model !== voice.piperId) this.#teardown()
+    this.preparingModel = voice.piperId
   }
 
   #emit(type, id, reason) {
@@ -254,7 +265,8 @@ export class NeuralEngine extends EventTarget {
     rate = clampRate(rate)
     const previous = this.run
     if (previous?.voice.id === voice.id && previous.rate === rate && previous.entries[0]?.text === text) return true
-    if (previous) this.#hardStop()
+    this.#selectPreviewVoice(voice)
+    if (this.run) this.#hardStop()
     this.#clearIdle()
     const run = this.run = { voice, rate, preview:true, entries:[], gateOpen:false, buffered:false,
       prepared:null, job:null, heldSince:null, holdTimer:null, pumpTimer:null, feedTimer:null,
@@ -273,6 +285,7 @@ export class NeuralEngine extends EventTarget {
     this.#watch(this.audio.context())
     rate = clampRate(rate)
     const upcomingTexts = (upcoming || []).slice(0, this.limits.maxUpcoming)
+    if (this.run?.preview && this.run.voice.id !== voice.id) this.#selectPreviewVoice(voice)
     let run = this.run
     const head = run && run.voice.id === voice.id && run.rate === rate ? run.entries.find(entry => entry.id == null) : null
     if (head && head.text === text) {
@@ -644,6 +657,7 @@ export class NeuralEngine extends EventTarget {
     this.#clearIdle()
     this.client?.dispose()
     this.client = null
+    this.preparingModel = null
     if (this.run) this.run.prepared = null // the next fragment to synthesise rebuilds the worker
   }
 }

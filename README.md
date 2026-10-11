@@ -1,5 +1,13 @@
 # inhouse read
 
+## 1.7.131 — Primer Play tras cambiar de voz
+
+La selección cancela la preparación silenciosa de la voz anterior y empieza
+a cargar la elegida inmediatamente. Los perfiles de un mismo paquete reutilizan
+el modelo. Play comparte el análisis de página que ya estaba en curso.
+La prueba pulsa Play sin esperar al audio preparado: el arranque frío todavía
+incluye la carga e inferencia del modelo local; no es instantáneo garantizado.
+
 ## 1.7.130 — Audio preparado antes de Play
 
 Al abrir el audio, al cambiar sus ajustes y para quienes ya escuchan al abrir

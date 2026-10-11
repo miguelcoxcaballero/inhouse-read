@@ -1,3 +1,41 @@
+# 1.7.131 — Selección de voz seguida de Play inmediato
+
+Corrección de alcance de 1.7.130: sus mediciones inferiores a 250 ms esperaban
+explícitamente al PCM preparado. No demostraban el caso indicado por el usuario.
+
+Reproducción con pesos Piper reales: voz anterior sintetizando en silencio,
+selección Lessac y Play en la misma tarea, sin esperar al modelo nuevo.
+Original: 4786 ms, warmUp rechazado. Corregido: 3162 ms; repetición instrumentada
+2834 ms (1916 ms modelo, 805 ms primera síntesis). Es Chromium local, no un móvil.
+No se afirma arranque frío instantáneo: sigue pendiente reducir ese coste real.
+
+- warmUp sustituye únicamente previews; nunca corta reproducción audible.
+- Otro modelo elimina el worker obsoleto antes de preparar el nuevo, evitando
+  la cola de inferencia cancelada. Otro perfil del mismo pack conserva sesión.
+- La fachada inicia warmUp sin microtarea intermedia cuando el núcleo existe;
+  Play también descarta una preview de voz distinta si no hubo warmUp.
+- El análisis de página se comparte entre selección y Play incluso pendiente.
+  Cambio de página, opciones de texto, relayout y Stop invalidan la caché.
+- Modelos, calidad, velocidad, muestras, pausas y seguimiento sin cambios.
+
+Evidencia: `D:/CodexEvidence/InhouseRead-20261011/voice-selection`.
+`before` conserva el fallo original; `after` conserva el primer intento fallido
+por la carrera de microtarea de la fachada; `after-2` y `stages` la corrección.
+- Supertonic real: cambio F1→F2 neerlandés seguido de Play sin espera: 2988 ms,
+  mismo worker y cero cargas adicionales. Preparación previa completa sigue
+  dando 107–135 ms, pero esa cifra NO describe el cambio inmediato.
+- Unidad inicial: 4012/4012. Segundo pase: 4012/4013; el nuevo guard de relayout
+  reiniciaba también una preparación silenciosa invalidada por cambio de página.
+  Corregido para recalcular durante Play; los logs originales se conservan.
+- CI anterior 1.7.130, job 114554105446, conservado en prior-ci130-reading-job.log:
+  el test frío destruía un cliente privado dejando su preview en estado ready.
+  Ahora usa release(), que libera worker, preview y PCM: arranque realmente frío.
+  El test que exigía estado idle antes de Play se adapta a la preparación nueva:
+  exige cero ID de reproducción, cero eventos de inicio y cero buffers sonoros.
+  No se cambian plazos, fragmentos, modelos ni criterios de continuidad/latencia.
+Unidad final: `unit-3`, 4013/4013, 324 archivos; build final aprobado.
+Recorridos de lector y publicación en curso; aún no verificados aquí.
+
 # 1.7.130 — Reducir la espera al comenzar el audiolibro
 
 Causa encontrada: warmUp sólo cargaba el modelo; la primera inferencia se
