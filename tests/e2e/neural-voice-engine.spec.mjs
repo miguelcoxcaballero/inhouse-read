@@ -368,4 +368,63 @@ test.describe('neural voice engine (real Piper weights, real ORT + espeak-ng WAS
     expect(result.code).toBe('offline')
     expect(result.downloads).toEqual(['error'])
   })
+  for (const [model,text] of [[ES,'La lluvia caía sobre la biblioteca.'],[EN,'The rain tapped on the library windows.']]) {
+    test(`${model}: cold silent preparation removes inference from Play`,async({},testInfo)=>{
+      await page.evaluate(id=>window.neural.engine.install(id),`piper:${model}`)
+      await page.click('#unlock')
+      const baseline=await page.evaluate(async({voiceId,text})=>{
+        const n=window.neural;n.engine.release();window.__capture=true;
+        const before={starts:n.starts.length,events:n.events.length};
+        await n.engine.prime({voiceId,text});return before;
+      },{voiceId:`piper:${model}`,text})
+      await page.waitForFunction(()=>{const d=window.neural.engine.getDiagnosticState();return d.run&&d.done===1&&!d.job;})
+      expect(await page.evaluate(()=>({starts:window.neural.starts.length,events:window.neural.events.length}))).toEqual(baseline)
+      await page.context().setOffline(true)
+      try {
+        const log=await page.evaluate(({voiceId,text})=>window.neural.readAll(voiceId,[text],1,{prefix:'prepared'}),{voiceId:`piper:${model}`,text})
+        expect(log.map(e=>e.type)).toEqual(['start','done']);expect(log[0].at).toBeLessThan(250)
+        const chunks=await page.evaluate(from=>window.neural.starts.slice(from),baseline.starts)
+        const pcm=Float32Array.from(chunks.flatMap(c=>c.data)),audio=stats(pcm)
+        expect(audio.finite).toBe(true);expect(audio.peak).toBeGreaterThan(.3);expect(audio.rms).toBeGreaterThan(.001)
+        const metric={firstAudioMs:log[0].at,...audio,samples:pcm.length}
+        numbers[`prepared-${model}`]=metric
+        writeFileSync(join(EVIDENCE,`prepared-${model}.wav`),wavOf(pcm,chunks[0].sampleRate))
+        await testInfo.attach('prepared-piper-start',{body:JSON.stringify(metric),contentType:'application/json'})
+      } finally { await page.context().setOffline(false) }
+    })
+  }
+
+  test('first Play immediately after changing an in-flight preview to another voice', async () => {
+    await page.click('#unlock')
+    await page.evaluate(async () => {
+      await window.neural.engine.install('piper:es_MX-claude-high')
+      await window.neural.engine.install('piper:en_US-lessac-medium')
+      const {engine} = window.neural
+      engine.release()
+      engine.prime({voiceId:'piper:es_MX-claude-high', text:'Después de un largo día, Ana volvió a casa y abrió el libro que su abuelo le había regalado, mientras la lluvia golpeaba los cristales de la biblioteca.'})
+    })
+    // Only the OLD voice is running. Never wait for the newly selected voice or its PCM.
+    await page.waitForFunction(() => window.neural.engine.getDiagnosticState().synth > 0)
+    const result = await page.evaluate(async () => {
+      const {engine,readAll} = window.neural
+      const selectedAt = performance.now(), stages=[]
+      const core=engine.core, create=core.createClient
+      core.createClient=()=>{
+        const client=create(), prepare=client.prepare.bind(client), synth=client.synth.bind(client)
+        client.prepare=async(...args)=>{stages.push({stage:'load-start',at:performance.now()-selectedAt});const result=await prepare(...args);stages.push({stage:'load-done',at:performance.now()-selectedAt});return result}
+        client.synth=(request,handlers)=>{stages.push({stage:'synth-start',at:performance.now()-selectedAt});return synth(request,{...handlers,onChunk:chunk=>{stages.push({stage:'pcm',at:performance.now()-selectedAt});handlers.onChunk(chunk)}})}
+        return client
+      }
+      const warming = engine.warmUp('piper:en_US-lessac-medium')
+      const log = await readAll('piper:en_US-lessac-medium', ['The rain tapped softly on the windows of the old library.'], 1, {prefix:'selection'})
+      core.createClient=create
+      return {accepted:await warming, selectedAt, stages, log, firstAudioMs:log.find(e=>e.type==='start')?.at}
+    })
+    numbers.immediateSelection = result
+    expect(result.log.some(e=>e.type==='error')).toBe(false)
+    expect(result.firstAudioMs).toBeGreaterThan(0)
+    expect(result.accepted).toBe(true)
+  })
+
+
 })

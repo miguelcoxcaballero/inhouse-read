@@ -1,3 +1,160 @@
+# 1.7.132 — Plazo de liberación tras reseleccionar voz
+
+Seguimiento de la corrección 1.7.131: warmUp de una preview ya lista borraba
+el idle timer y no lo reponía porque había run. Ahora rearma el mismo plazo
+para previews, preservando un único modelo y sin interrumpir audio activo.
+Añadida regresión con la misma voz elegida dos veces, cero reproducción y
+liberación al plazo normal. Sin cambio de voz/calidad/velocidad/modelos.
+Unidad final `unit-132`: 4014/4014, 324 archivos. `build-132` aprobado.
+Publicado en main `f70903343130895e4fe3a6ddb47c233bf5a48ddd`.
+Deploy 38170466700 y Pages 38170520646 aprobados, rama Pages
+`c9ede0dd00deb328261e795cfaac101348691d8a`.
+
+- `piper-132`: selección seguida de Play en la misma tarea: 2729,6 ms;
+  carga 1838,5 ms, primer PCM 2613,6 ms. Original 4786,4 ms.
+- `supertonic-132`: 3/3. Nuevo perfil neerlandés sin precarga: 3008,2 ms,
+  mismo worker, cero recargas. Los dos casos con PCM preparado se registran
+  por separado y NO se usan para afirmar inicio frío instantáneo.
+- `public-132`: 108/108, 99 recursos públicos iguales al artefacto por bytes/SHA;
+  main-D3UTx5C8.js, SHA 2d88ae95f458895b4ff89369b1e424e894cb53bc7de757c10cb3ffad3d5289d4.
+  Evidencia `published-1791749024460`.
+- APK real descargada: 1.1.12/25, SHA
+  405a3d2698949e1d6f7425b7e666b5ca1f0b42e9cb212852caca3711336dfefd;
+  firma/paquete válidos, loader de 2107 bytes al sitio publicado. Sin cambio
+  nativo ni publicación B. No es una prueba física de velocidad Android.
+- `public-ui`: 1/1 contra la URL real, hash del main ejecutado comprobado.
+- CI completa 38170466639 iniciada para este commit y aún en curso. No se
+  declara toda la CI verde. Las 14 pruebas reales de lectura y las 29 de UI
+  locales preceden al guard final del temporizador; éste tiene su regresión
+  unitaria y se repitieron las pruebas de arranque con pesos reales finales.
+
+Pendiente explícito: el primer uso frío aún necesita ~3 s en estos casos.
+Se han quitado espera por otra voz y análisis duplicado, pero falta reducir
+el coste de carga/inferencia para acercarse al objetivo instantáneo del usuario.
+
+# 1.7.131 — Selección de voz seguida de Play inmediato
+
+Corrección de alcance de 1.7.130: sus mediciones inferiores a 250 ms esperaban
+explícitamente al PCM preparado. No demostraban el caso indicado por el usuario.
+
+Reproducción con pesos Piper reales: voz anterior sintetizando en silencio,
+selección Lessac y Play en la misma tarea, sin esperar al modelo nuevo.
+Original: 4786 ms, warmUp rechazado. Corregido: 3162 ms; repetición instrumentada
+2834 ms (1916 ms modelo, 805 ms primera síntesis). Es Chromium local, no un móvil.
+No se afirma arranque frío instantáneo: sigue pendiente reducir ese coste real.
+
+- warmUp sustituye únicamente previews; nunca corta reproducción audible.
+- Otro modelo elimina el worker obsoleto antes de preparar el nuevo, evitando
+  la cola de inferencia cancelada. Otro perfil del mismo pack conserva sesión.
+- La fachada inicia warmUp sin microtarea intermedia cuando el núcleo existe;
+  Play también descarta una preview de voz distinta si no hubo warmUp.
+- El análisis de página se comparte entre selección y Play incluso pendiente.
+  Cambio de página, opciones de texto, relayout y Stop invalidan la caché.
+- Modelos, calidad, velocidad, muestras, pausas y seguimiento sin cambios.
+
+Evidencia: `D:/CodexEvidence/InhouseRead-20261011/voice-selection`.
+`before` conserva el fallo original; `after` conserva el primer intento fallido
+por la carrera de microtarea de la fachada; `after-2` y `stages` la corrección.
+- Supertonic real: cambio F1→F2 neerlandés seguido de Play sin espera: 2988 ms,
+  mismo worker y cero cargas adicionales. Preparación previa completa sigue
+  dando 107–135 ms, pero esa cifra NO describe el cambio inmediato.
+- Unidad inicial: 4012/4012. Segundo pase: 4012/4013; el nuevo guard de relayout
+  reiniciaba también una preparación silenciosa invalidada por cambio de página.
+  Corregido para recalcular durante Play; los logs originales se conservan.
+- CI anterior 1.7.130, job 114554105446, conservado en prior-ci130-reading-job.log:
+  el test frío destruía un cliente privado dejando su preview en estado ready.
+  Ahora usa release(), que libera worker, preview y PCM: arranque realmente frío.
+  El test que exigía estado idle antes de Play se adapta a la preparación nueva:
+  exige cero ID de reproducción, cero eventos de inicio y cero buffers sonoros.
+  No se cambian plazos, fragmentos, modelos ni criterios de continuidad/latencia.
+Unidad final: `unit-3`, 4013/4013, 324 archivos; build final aprobado.
+- UI del lector: 29/29, continuidad, pausa, resaltado, descarga y retirada.
+- Runtime en main: `7da605169eb445e68d427795676ead44132bf240`.
+  Deploy `38169653138` y Pages `38169713169` aprobados.
+  Pages `76ca71c4959858fbbeb5b750f5ac13097a38f654`.
+- Primera comprobación pública conservada: Pages aún propagaba el sitio y
+  faltaban módulos nuevos. Segunda: 108/108, 99 archivos iguales en tamaño/SHA.
+  Evidencia `published-1791748347474`; main `main--F5cpi7a.js`, SHA
+  f909e5d3acad36ece032e81367e82110b461e1a7c535e30c6d1a366d39ae146b.
+- APK descargada de A: 1.1.12/25, firma y paquete conservados, loader de
+  2107 bytes, sin app web embebida. No hay cambios nativos ni APK nueva.
+- La primera tanda real local `reading` pasó 6 y se detuvo en otra aserción
+  heredada idle después de Pause: ahora hay preview silenciosa. Se conserva
+  el fallo y se exige ID audible nulo además de cero audio/eventos durante pausa.
+  La liberación privada restante en el test de cambio frío usa release().
+- Segunda tanda real `reading-2`: 14/14, incluyendo pausa, cambio de voces,
+  arranque frío de Daniela, 90 s de reposo, reinicio y lectura sin conexión. CI completa `38169653151` también;
+  la tanda remota de lectura contiene la aserción de pausa antigua. No se
+  afirma CI global verde ni velocidad física Android ni inicio frío instantáneo.
+
+# 1.7.130 — Reducir la espera al comenzar el audiolibro
+
+Causa encontrada: warmUp sólo cargaba el modelo; la primera inferencia se
+solicitaba al pulsar Play. Además, el gate podía retener una frase completa
+hasta cinco segundos por la inferencia pendiente de la siguiente.
+
+Se preparan como máximo dos fragmentos, sin AudioContext, reproducción,
+highlight ni avance. Play adopta esa misma ejecución, incluso en curso.
+El gate de una frase completa abre inmediatamente; conserva la protección
+contra cortes dentro de fragmentos incompletos. No se cambian modelos,
+velocidad, muestras PCM ni se oculta el estado de preparación real.
+
+La preparación se conecta a los puntos existentes de calentamiento del lector
+(apertura para usuarios de audio, panel, voz), también cambios de ajustes y
+pausa. Voz/rate/texto deben coincidir; generación y ubicación invalidan una
+preparación del lector. Cerrar libera el worker y el audio; 90 s de inactividad
+liberan también una preparación silenciosa. Los callbacks obsoletos no
+pueden relanzar síntesis de otra lectura.
+
+Evidencia local: `D:/CodexEvidence/InhouseRead-20261011/voice-start`.
+- `focused-1`: motor, integración y cierre pasan.
+- `unit-1`: 4003/4003. `unit-2` y `unit-3`: 4004/4004, 324 archivos;
+  la última tanda corresponde a todo el runtime final.
+- `ui-1`: 29/29 recorridos PDF/EPUB, continuidad entre capítulos, pausa,
+  resaltado, descarga/retirada de voces y errores visibles sin voz del sistema.
+  `build-2` aprobado tras el último guard de pausa.
+- `real-1`: dos casos con pesos Supertonic reales, completamente offline tras
+  instalación/calentar: ReadingVoice, catálogo, planner, worker y Web Audio.
+  Primer evento audible a 135,7 ms (inglés) / 118,6 ms (neerlandés) desde click.
+  Cero síntesis nueva en Play, cero reproducción/eventos antes de pulsarlo.
+  Preparación previa de 2971 / 3291 ms. No son mediciones de un teléfono real;
+  el primer uso frío o pulsar antes de terminar la preparación aún puede esperar.
+- `piper-1`: 2/2, modelos reales Claude high (es-MX) y Lessac medium
+  (en-US); preparación con worker frío sin eventos ni audio, reproducción
+  offline y primer audio por debajo de 250 ms. WAV y medidas en `piper-audio`.
+- `build-1` aprobado; updater canónico 483f516e5324d87d9aa49cc0628609d1984f208c
+  incorporado desde origin/main antes de editar. Sin cambios nativos ni canal B.
+
+La CI de 1.7.129 terminó con dos fallos de los plazos de devolución nativa
+(aligned/legacy), también en sus reintentos. Voces reales y unitarias pasaron.
+Se conservan `previous-ci129.json` y `previous-ci129-ui2.log`; no se modifican
+sus plazos ni se considera aquella matriz totalmente aprobada.
+
+Publicado en main `2f626e3a7e876b27272cbf8106646cd5f9797224`, web 1.7.130.
+Pages `02e7327db3ec4d994d71f521aad6d476cc27b121`; despliegues 38167872684 y
+38167926895 aprobados. `public-1.log` / `published-1791746779828/summary.json`:
+108 comprobaciones correctas, cero errores; los 99 recursos públicos coinciden
+con el manifiesto de Pages. Main `assets/main-BdR3eRyd.js` (653173 bytes), SHA
+`2e33802d9e557569edc11cbfbb37448d5f7bade1a7d48aa5a1d6dfa2ece4459b`.
+
+La prueba de UI pública pasa y comprueba el SHA del main ejecutado realmente
+(`public-ui-1`). La APK de A descargada de nuevo conserva 1.1.12/25, paquete,
+firma v2, SHA y loader de 2107 bytes, sin app empaquetada obsoleta. Carga esta
+web; no necesita otro wrapper para el cambio. Canal B sin publicar.
+
+Piper preparado inicia a 115,8 ms (es-MX Claude high) y 117 ms (en-US Lessac
+medium); son medidas locales de Web Audio con modelos reales, no de teléfono.
+El intento adicional de un arnés de voz sobre la URL pública fue rechazado por
+la revisión automática sin motivo específico; no se cuenta como prueba pasada.
+Se verificaron los bytes públicos y el recorrido de interfaz existente como
+alternativa, conservando por separado los cuatro ensayos de audio locales.
+
+La batería completa de CI `38167872701` sigue en curso al registrar la entrega.
+Se lanzan todos los grupos sin exclusiones ni plazos relajados. No se presenta
+la matriz pendiente como un aprobado global.
+
+---
+
 # 1.7.129 — Continuación de Rust: preparación del audiolibro
 
 Se traslada normalización, RMS de NVCC, recorte de silencios y fade a Rust,

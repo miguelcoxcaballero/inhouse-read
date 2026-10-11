@@ -197,8 +197,7 @@ test('Argentina: Daniela starts cold and continues with real natural audio at ra
       await spyOnEngine(page)
       await expect.poll(()=>page.evaluate(()=>window.__neuEngine.core.client?.loaded || ''),SLOW).toBe(model)
       await page.evaluate(()=>{
-        const core=window.__neuEngine.core
-        core.client.dispose(); core.client=null
+        window.__neuEngine.release() // discard the complete preview too; no cached PCM in this cold-start case
         window.__neu.audio.length=0; window.__neu.events.length=0; window.__neu.speak.length=0
       })
       await play(page)
@@ -328,7 +327,11 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
       await openAudio(page)
       await expect(row(page, CLAUDE_ID).getByRole('button', { name: /Voz en uso Claude/ })).toBeVisible(SLOW) // the voice came back from Cache Storage after the reload
       await spyOnEngine(page)
-      expect(await engineStats(page)).toMatchObject({ status: 'idle', installed: [CLAUDE_ID] })
+      expect(await engineStats(page)).toMatchObject({ installed: [CLAUDE_ID] })
+      // Silent preparation is allowed; playback/navigation must still await the tap.
+      expect(await page.evaluate(()=>window.__neuEngine.core.currentId)).toBeNull()
+      expect(await starts(page)).toEqual([])
+      expect(await neu(page,n=>n.audio)).toEqual([])
       await page.getByRole('radio', { name:'1,25×', exact:true }).check()
 
       // --- Play: the engine speaks (audio scheduled), the system voice stays silent.
@@ -374,7 +377,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
       await page.waitForTimeout(1500)
       expect(await types(page, pausedAt)).toEqual([]) // no event for the cancelled fragment, nothing keeps playing
       expect(await neu(page, n => n.audio.length)).toBe(scheduledAtPause) // and nothing more is queued behind the silence
-      expect((await engineStats(page)).status).toBe('idle')
+      expect(await page.evaluate(()=>window.__neuEngine.core.currentId)).toBeNull() // paused preview cannot own audible playback
       const lastSpoken = (await neu(page, n => n.speak)).at(-1).text
       const startsBeforeResume = (await starts(page)).length
       await page.getByRole('button', { name: 'Continuar lectura' }).click()
@@ -422,7 +425,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await openAudio(page)
     await spyOnEngine(page)
     await expect.poll(() => page.evaluate(() => window.__neuEngine.core?.client?.loaded || ''), SLOW).toBe(CLAUDE)
-    await page.evaluate(() => { const core = window.__neuEngine.core; core.client.dispose(); core.client = null })
+    await page.evaluate(() => window.__neuEngine.release())
     await play(page)
     numbers.firstAudio = { coldWorker: await heard() }
     await stopAndForget()
@@ -502,7 +505,7 @@ test.describe('natural voices, end to end (real picker, download, engine and aud
     await expect.poll(()=>page.evaluate(()=>Boolean(document.querySelector('foliate-view')?.renderer?.getContents?.()[0]?.doc?.body)),SLOW).toBe(true)
     await openAudio(page); await pickVoice(page,CLAUDE_ID); await spyOnEngine(page)
     await expect.poll(()=>page.evaluate(()=>window.__neuEngine.core.client?.loaded || ''),SLOW).toBe(CLAUDE)
-    await page.evaluate(()=>{ const core=window.__neuEngine.core; core.client.dispose(); core.client=null })
+    await page.evaluate(()=>window.__neuEngine.release())
     await openAudioMenu(page,'Voz')
     await play(page)
     await expect.poll(()=>page.evaluate(()=>{

@@ -101,10 +101,17 @@ export class NeuralVoiceEngine extends EventTarget {
   async remove(id) { return (await this.preload()).remove(id) }
   /** ADDED: loads the worker and the voice's model ahead of the first speak() (cold start 3-6 s). Call it when a book opens with a neural voice selected. Never rejects. */
   async warmUp(voiceId) {
+    if (this.core) return this.core.warmUp(voiceId)
     const generation = this.resourceGeneration
     const core = await this.preload()
     if (generation !== this.resourceGeneration) return false
     return core.warmUp(voiceId)
+  }
+  async prime(request) {
+    const generation = this.resourceGeneration
+    const core = await this.preload()
+    if (generation !== this.resourceGeneration) return false
+    return core.prime(request)
   }
   /** Call synchronously inside a user gesture (the play tap): creates/resumes the AudioContext. */
   unlock({ playback = true } = {}) {

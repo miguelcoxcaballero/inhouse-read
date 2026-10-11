@@ -32,6 +32,7 @@ export class ReadingVoice {
     this.onState = onState
     this.state = 'stopped'
     this.generation = 0
+    this.openingLayout = 0
     this.index = 0
     this.chunks = []
     this.items = []
@@ -61,7 +62,7 @@ export class ReadingVoice {
     })
     // The reader measured new page breaks (a relayout, or a chapter read with
     // the screen off now on screen): re-cut what is still to be read there.
-    window.addEventListener('inhouse-speech-layout', () => { void this.refreshPageBreaks() })
+    window.addEventListener('inhouse-speech-layout', () => { ++this.openingLayout; this.openingPlan = null; void this.refreshPageBreaks() })
     window.addEventListener('inhouse-speech-tap', event => { if (this.jumpToPoint(event.detail)) event.detail.handled = true })
     window.addEventListener('inhouse-audio-control', event => {
       const detail = event.detail
@@ -122,7 +123,8 @@ export class ReadingVoice {
       const next = this.resumeNextPage ? await this.prepareNext(generation) : undefined
       if (generation !== this.generation) return
       if (next === null) { this.stop(); this.notify('Final del libro.'); return }
-      const plan = next || await this.prepare()
+      const plan = next || await this.prepareOpening()
+      this.openingPlan = null
       if (generation !== this.generation) return
       this.adopt(plan)
       this.resumeNextPage = false
@@ -384,6 +386,49 @@ export class ReadingVoice {
     const { footnotes, skipHeaders } = this.options
     return { source, items:planSpeech(source.text, { footnotes, skipHeaders, pageBreaks:source.pageBreaks, headerRanges:source.headerRanges }, source.start || 0) }
   }
+  /** Share the page analysis started by voice selection with immediate Play.
+   * Voice/rate do not alter offsets; page, layout, text options and Stop do. */
+  async prepareOpening() {
+    const generation = this.generation
+    const keyOf = () => JSON.stringify([this.reader.location, this.options.footnotes, this.options.skipHeaders, this.openingLayout])
+    const key = keyOf()
+    let pending = this.openingPlan
+    if (!pending || pending.key !== key) {
+      pending = {key, promise:this.prepare()}
+      this.openingPlan = pending
+    }
+    try {
+      const plan = await pending.promise
+      if (this.state === 'loading' && generation === this.generation && key !== keyOf()) return this.prepareOpening()
+      if (!this.pagePlanValid(plan)) {
+        if (this.openingPlan === pending) this.openingPlan = null
+        return this.prepare()
+      }
+      return plan
+    } catch (error) {
+      if (this.openingPlan === pending) this.openingPlan = null
+      throw error
+    }
+  }
+  /** Cache audio without adopting, highlighting or following a page before Play. */
+  async preparePlayback(isActive = () => true) {
+    if (!['stopped', 'paused'].includes(this.state) || this.resumeNextPage) return false
+    const generation = this.generation, location = JSON.stringify(this.reader.location)
+    const settings = JSON.stringify([this.voice, this.rate, this.languageOverride, this.options])
+    const valid = () => isActive() && generation === this.generation &&
+      location === JSON.stringify(this.reader.location) &&
+      settings === JSON.stringify([this.voice, this.rate, this.languageOverride, this.options]) &&
+      ['stopped', 'paused'].includes(this.state)
+    try {
+      const items = this.state === 'paused' && this.chunks.length && !this.resumeNextPage
+        ? this.chunks.slice(this.index).map(text => ({text})) : (await this.prepareOpening()).items
+      if (!valid() || !items.length) return false
+      const { voice } = this.voiceFor(items[0].text)
+      if (!voice?.neural) return false
+      const upcoming = items.slice(1, 2).filter(item => this.voiceFor(item.text).voice?.id === voice.id).map(item => item.text)
+      return await neuralEngine()?.prime?.({ text:items[0].text, voiceId:voice.id, rate:this.rate, upcoming }) || false
+    } catch { return false }
+  }
   /** Optional fixed-page preparation: it must leave the current page visible until an audible start. */
   async prepareNext(generation) {
     if (typeof this.reader.getNextSpeechSource !== 'function') return undefined
@@ -530,6 +575,7 @@ export class ReadingVoice {
     this.notify()
   }
   stop() {
+    this.openingPlan = null
     this.clearAhead()
     this.diagnosticAdvance = null
     ++this.generation; this.state = 'stopped'; this.cancelUtterance(); this.unpaint()

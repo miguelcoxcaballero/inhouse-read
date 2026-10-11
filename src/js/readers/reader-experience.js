@@ -69,6 +69,7 @@ export class ReaderExperience {
       document.getElementById('reader-audio').classList.toggle('is-playing', state === 'playing')
       if (state === 'stopped') this.setSleepChoice(0)
       this.updateMiniPlayer(state, message)
+      if (state === 'paused' && !this.voice.neuralOff) this.neuralPicker?.warmUp()
       this.neuralPicker?.render() // the first-use offer follows the audiobook, the warning follows the neural voice
     })
     this.panel.querySelector('[data-close]').onclick = () => this.panel.close()
@@ -307,7 +308,7 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
     this.preferences = normalizeReadingPreferences({ ...this.preferences, [key]:value }); this.applyPreferences(!audio); notifyCloudSettingsChanged(STORAGE_KEY)
     this.voice.options = {footnotes:this.preferences.footnotes,multilingual:this.preferences.multilingual,skipHeaders:this.preferences.skipHeaders}
     if (key === 'rate' || key === 'voice' || key === 'voiceLang') { this.voice.retryNeural?.(); if (restart) this.voice.restart?.() } // a new speed or choice gives a neural voice another chance
-    if (key === 'voice') this.neuralPicker?.warmUp() // a neural voice is loaded (worker, model) before the tap, not at it
+    if (audio) this.neuralPicker?.warmUp()
   }
   async applyPreferences(updateBook = true) {
     const p = this.preferences

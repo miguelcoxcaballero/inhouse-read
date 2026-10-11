@@ -1,12 +1,32 @@
 # inhouse read
 
-## 1.7.130 — Nuevo aviso de actualización
+## 1.7.133 — Nuevo aviso de actualización
 
-El aviso de actualización se abre como una hoja inferior, con «Later» y
-«Update» lado a lado, novedades breves y el progreso de descarga en el mismo
-lugar que los botones. Se cierra deslizándola hacia abajo. En el menú de
-cuenta, los canales A y B aparecen como una lista. Las reglas de canal, el
-recordatorio de 14 días y la confirmación de A no cambian.
+El aviso de actualización sigue Material Design 3: una hoja inferior plana con
+la versión nueva, su cambio principal y «Later» / «Update». Los cambios
+anteriores y el canal están en «Details». En el menú de cuenta, los canales A y
+B aparecen como una lista. Las reglas de canal, el recordatorio de 14 días y la
+confirmación de A no cambian.
+
+## 1.7.132 — Liberar voces preparadas inactivas
+
+Volver a elegir la misma voz conserva el plazo de liberación del modelo
+tras 90 segundos sin lectura. Mantiene la corrección del primer Play de 1.7.131.
+
+## 1.7.131 — Primer Play tras cambiar de voz
+
+La selección cancela la preparación silenciosa de la voz anterior y empieza
+a cargar la elegida inmediatamente. Los perfiles de un mismo paquete reutilizan
+el modelo. Play comparte el análisis de página que ya estaba en curso.
+La prueba pulsa Play sin esperar al audio preparado: el arranque frío todavía
+incluye la carga e inferencia del modelo local; no es instantáneo garantizado.
+
+## 1.7.130 — Audio preparado antes de Play
+
+Al abrir el audio, al cambiar sus ajustes y para quienes ya escuchan al abrir
+un libro, se preparan dos fragmentos sin reproducirlos. Play reutiliza incluso
+la síntesis en curso. Una frase terminada ya no espera a que se genere la
+siguiente. No cambia el modelo, las muestras ni el seguimiento de página.
 
 ## 1.7.129 — Preparación de audio en Rust
 

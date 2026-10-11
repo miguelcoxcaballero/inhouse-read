@@ -48,3 +48,19 @@ function read(voiceId,text,rate=1) {
   });
 }
 window.supertonic={engine,voices:neuralVoices,read,starts,events,workerRequests,workerMessages,get workers(){return workers;}};
+
+// The real reading integration, including its catalog refresh and text planner.
+import { ReadingVoice } from '../../../src/js/readers/reading-voice.js';
+import { loadNeural } from '../../../src/js/readers/neural-runtime.js';
+const startReading=document.createElement('button');
+startReading.id='play-reading';startReading.textContent='Play prepared reading';document.body.append(startReading);
+let reading;
+startReading.onclick=()=>{window.supertonic.playAt=performance.now();void reading.play();};
+window.supertonic.prepareReading=async(voiceId,text,language)=>{
+  reading?.stop();engine.stop();engine.core?.cache.clear();
+  await loadNeural();
+  reading=new ReadingVoice({language,location:{fraction:0},getSpeechText:async()=>text});
+  reading.voice=voiceId;
+  return reading.preparePlayback();
+};
+window.supertonic.stopReading=()=>reading?.stop();

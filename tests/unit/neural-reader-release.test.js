@@ -92,4 +92,12 @@ describe('explicit reader-close inference release', () => {
     expect(await warm).toBe(false)
     expect(core.warmUp).not.toHaveBeenCalled()
   })
+  it('blocks silent preparation after a book closes during facade loading', async () => {
+    const pending=deferred(), engine=new NeuralVoiceEngine(), core={prime:vi.fn()}
+    vi.spyOn(engine,'preload').mockReturnValue(pending.promise)
+    const prepared=engine.prime({text:'One.',voiceId:VOICE})
+    engine.release();pending.resolve(core)
+    expect(await prepared).toBe(false);expect(core.prime).not.toHaveBeenCalled()
+  })
+
 })
