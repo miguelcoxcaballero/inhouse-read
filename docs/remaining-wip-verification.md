@@ -36,6 +36,20 @@ Evidencia en `D:/InhouseRead-ProfileMenu/evidence`:
 - El test Drive ahora respeta PLAYWRIGHT_PORT en sus contextos independientes.
   No se amplían deadlines ni se omiten comprobaciones.
 
+Publicación comprobada: runtime `58fb1cd5b5f34097e3a2e02989fa6b930a44a53a`,
+Pages `fa1aab0222f4138fba311d5debda26447d304ce4`, despliegues `38163247398`
+y `38163301725` aprobados. Los 99 recursos públicos coinciden en tamaño/hash
+con Pages; 106 comprobaciones HTTP aprobadas. El recorrido móvil contra la
+web pública pasa y su cuerpo main tiene SHA-256
+`93a900cd22b48a6df58c26d6e8d9c8d357974ad9e2319fe818cfd1124fcfba5a`.
+Evidencia: `public-ui-results.json`, `public-ui-audit.json` y
+`published-1791742848110/summary.json`. Los catálogos de ese recorrido son
+controlados; la web/DOM/almacenamiento y bytes del main son los publicados.
+APK A 1.1.12/25 descargada de nuevo, hash, paquete, firma permanente y loader
+de 2107 bytes aprobados (`apk-summary.json`); no hay teléfono físico en esta ronda.
+CI general de 128: `38163247383` en curso; unitarias aprobadas. No afirmar que
+la batería general completa esté verde antes de auditar sus resultados.
+
 La CI anterior 1.7.127 (`38160512287`) ya terminó: falla en dos contratos de
 regreso nativo de la estantería (`native-aligned-shelf-return-contract` y
 `native-legacy-shelf-return-contract`) por timeout de 30 s. Se conservan sus
@@ -98,14 +112,13 @@ reales, pero endpoints HTTP de Drive controlados por el servidor de pruebas.
 No se ha usado una cuenta Google personal ni un teléfono físico en esta ronda.
 No afirmar que se hayan subido ya los libros privados del usuario.
 
-CI general de esta versión: `38160512287`, aún en ejecución al documentar esta
-entrega. `ci-38160512287/snapshot-001/summary.json` conserva siete artefactos
-originales autenticados y sus hashes: 3963 unitarias y 273 casos E2E aprobados,
-sin reintentos ni omisiones en esos trabajos. Faltan los grupos de lector y
-estantería 1/6, 2/6 y 6/6, y Supertonic. No es una aprobación de la batería
-completa. Al retomar, cerrar esa auditoría con un nuevo snapshot sin sobrescribir
-los originales. Los fallos nativos previos de CI124/126 no se han borrado,
-omitido ni convertido en éxito mediante reintentos locales.
+CI general de esta versión: `38160512287`, cerrada con fallo. La auditoría
+`ci-38160512287/snapshot-002/summary.json` conserva los once artefactos originales
+autenticados y sus hashes, sin incidencias de atribución. Censo: 3963 unitarias
+y 693 casos E2E únicos; 695 intentos, dos reintentos de CI y cuatro intentos
+fallidos, correspondientes a los dos contratos de regreso nativo de la
+estantería del grupo 2/6. Los otros grupos y las voces pasan. Los originales
+y las pruebas fallidas no se han borrado, omitido ni transformado en éxito.
 
 ---
 
