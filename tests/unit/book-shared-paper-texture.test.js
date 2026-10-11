@@ -39,3 +39,26 @@ describe('one GPU texture for identical reader-owned page rasters',()=>{
   expect(textures).toHaveLength(2);expect(textures).not.toContain(old);textures.forEach(texture=>expect(texture.image.width).toBe(600));
  });
 });
+
+
+describe('occluded printed pages in a closed 3D book',()=>{
+ const submitted=()=>{const names=[];model.traverseVisible(mesh=>{if(mesh.isMesh)names.push(mesh.name)});return names;};
+ it.each([0,.5,1])('keeps theme %s textures but submits no hidden print until the cover opens',theme=>{
+  model.userData.setPageSnapshot(snapshot(false),{pageTheme:theme});
+  const textures=model.userData.getPageTextures();
+  expect(submitted()).not.toContain('reading-page');expect(submitted()).not.toContain('reading-page-stock');
+  model.userData.setCoverOpen(.0001);
+  expect(submitted()).toContain('reading-page');expect(submitted()).toContain('reading-page-stock');
+  model.userData.setCoverOpen(0);
+  expect(submitted()).not.toContain('reading-page');expect(submitted()).not.toContain('reading-page-stock');
+  expect(model.userData.getPageTextures()).toEqual(textures);
+ });
+ it('can replace a closed snapshot then reopen on its exact current page',()=>{
+  model.userData.setPageSnapshot(snapshot());model.userData.setCoverOpen(1);model.userData.setCoverOpen(0);
+  const current=snapshot(false);model.userData.setPageSnapshot(current);
+  expect(submitted()).not.toContain('reading-page');
+  model.userData.setCoverOpen(1);expect(submitted()).toContain('reading-page');
+  expect(model.userData.pageSnapshot).toBe(current);
+  expect(model.userData.pageSurface.material.map.image).toBe(current.source);
+ });
+});

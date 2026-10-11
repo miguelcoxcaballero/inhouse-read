@@ -2,15 +2,24 @@
   "schemaVersion": 1,
   "channel": "A",
   "latest": {
-    "version": "1.1.13",
-    "versionCode": 26,
-    "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.13/inhouse-read-release-v1.1.13.apk",
-    "apkSha256": "3b01272323158dd4d5c51a20374a9928b4e17a2b9a35b30b68d00056115ba2c5",
+    "version": "1.1.14",
+    "versionCode": 27,
+    "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.14/inhouse-read-release-v1.1.14.apk",
+    "apkSha256": "cdff45853eace1d3316bb6424a30b46e50b8fcc3b938350f40bbbe9ea8d43fb8",
     "apkSizeBytes": 78532469,
-    "changelog": "Updated Inhouse services updater.",
-    "releasedAt": "2026-10-11T21:45:22+00:00"
+    "changelog": "Neutral updater colors.",
+    "releasedAt": "2026-10-11T22:11:24+00:00"
   },
   "releases": [
+    {
+      "version": "1.1.14",
+      "versionCode": 27,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.14/inhouse-read-release-v1.1.14.apk",
+      "apkSha256": "cdff45853eace1d3316bb6424a30b46e50b8fcc3b938350f40bbbe9ea8d43fb8",
+      "apkSizeBytes": 78532469,
+      "changelog": "Neutral updater colors.",
+      "releasedAt": "2026-10-11T22:11:24+00:00"
+    },
     {
       "version": "1.1.13",
       "versionCode": 26,
