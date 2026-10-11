@@ -114,7 +114,11 @@ export class NeuralVoicePicker {
     if (!this.isWarmCurrent(this.warmContext())) return
     try {
       const engine = neuralEngine(), { voice } = this.host.voice?.voiceFor?.('') || {}
-      if (engine?.warmUp && voice?.neural && voice.installed) Promise.resolve(engine.warmUp(voice.id)).catch(() => {})
+      if (engine?.warmUp && voice?.neural && voice.installed) {
+        const context = this.warmContext()
+        Promise.resolve(engine.warmUp(voice.id)).catch(() => {})
+        Promise.resolve(this.host.voice?.preparePlayback?.(() => this.isWarmCurrent(context))).catch(() => {})
+      }
     } catch { /* the first speak() starts the worker as before */ }
   }
   /** Installed set changes rebuild the voice select too; download progress only repaints this block. */

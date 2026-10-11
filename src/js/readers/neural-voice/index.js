@@ -106,6 +106,12 @@ export class NeuralVoiceEngine extends EventTarget {
     if (generation !== this.resourceGeneration) return false
     return core.warmUp(voiceId)
   }
+  async prime(request) {
+    const generation = this.resourceGeneration
+    const core = await this.preload()
+    if (generation !== this.resourceGeneration) return false
+    return core.prime(request)
+  }
   /** Call synchronously inside a user gesture (the play tap): creates/resumes the AudioContext. */
   unlock({ playback = true } = {}) {
     const env = this.options.env || globalThis

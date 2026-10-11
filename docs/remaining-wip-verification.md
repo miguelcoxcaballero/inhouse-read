@@ -1,3 +1,50 @@
+# 1.7.130 — Reducir la espera al comenzar el audiolibro
+
+Causa encontrada: warmUp sólo cargaba el modelo; la primera inferencia se
+solicitaba al pulsar Play. Además, el gate podía retener una frase completa
+hasta cinco segundos por la inferencia pendiente de la siguiente.
+
+Se preparan como máximo dos fragmentos, sin AudioContext, reproducción,
+highlight ni avance. Play adopta esa misma ejecución, incluso en curso.
+El gate de una frase completa abre inmediatamente; conserva la protección
+contra cortes dentro de fragmentos incompletos. No se cambian modelos,
+velocidad, muestras PCM ni se oculta el estado de preparación real.
+
+La preparación se conecta a los puntos existentes de calentamiento del lector
+(apertura para usuarios de audio, panel, voz), también cambios de ajustes y
+pausa. Voz/rate/texto deben coincidir; generación y ubicación invalidan una
+preparación del lector. Cerrar libera el worker y el audio; 90 s de inactividad
+liberan también una preparación silenciosa. Los callbacks obsoletos no
+pueden relanzar síntesis de otra lectura.
+
+Evidencia local: `D:/CodexEvidence/InhouseRead-20261011/voice-start`.
+- `focused-1`: motor, integración y cierre pasan.
+- `unit-1`: 4003/4003. `unit-2` y `unit-3`: 4004/4004, 324 archivos;
+  la última tanda corresponde a todo el runtime final.
+- `ui-1`: 29/29 recorridos PDF/EPUB, continuidad entre capítulos, pausa,
+  resaltado, descarga/retirada de voces y errores visibles sin voz del sistema.
+  `build-2` aprobado tras el último guard de pausa.
+- `real-1`: dos casos con pesos Supertonic reales, completamente offline tras
+  instalación/calentar: ReadingVoice, catálogo, planner, worker y Web Audio.
+  Primer evento audible a 135,7 ms (inglés) / 118,6 ms (neerlandés) desde click.
+  Cero síntesis nueva en Play, cero reproducción/eventos antes de pulsarlo.
+  Preparación previa de 2971 / 3291 ms. No son mediciones de un teléfono real;
+  el primer uso frío o pulsar antes de terminar la preparación aún puede esperar.
+- `piper-1`: 2/2, modelos reales Claude high (es-MX) y Lessac medium
+  (en-US); preparación con worker frío sin eventos ni audio, reproducción
+  offline y primer audio por debajo de 250 ms. WAV y medidas en `piper-audio`.
+- `build-1` aprobado; updater canónico 483f516e5324d87d9aa49cc0628609d1984f208c
+  incorporado desde origin/main antes de editar. Sin cambios nativos ni canal B.
+
+La CI de 1.7.129 terminó con dos fallos de los plazos de devolución nativa
+(aligned/legacy), también en sus reintentos. Voces reales y unitarias pasaron.
+Se conservan `previous-ci129.json` y `previous-ci129-ui2.log`; no se modifican
+sus plazos ni se considera aquella matriz totalmente aprobada.
+
+Publicación y batería final: pendientes de registrar al terminar esta entrega.
+
+---
+
 # 1.7.129 — Continuación de Rust: preparación del audiolibro
 
 Se traslada normalización, RMS de NVCC, recorte de silencios y fade a Rust,

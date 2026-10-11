@@ -368,4 +368,30 @@ test.describe('neural voice engine (real Piper weights, real ORT + espeak-ng WAS
     expect(result.code).toBe('offline')
     expect(result.downloads).toEqual(['error'])
   })
+  for (const [model,text] of [[ES,'La lluvia caía sobre la biblioteca.'],[EN,'The rain tapped on the library windows.']]) {
+    test(`${model}: cold silent preparation removes inference from Play`,async({},testInfo)=>{
+      await page.evaluate(id=>window.neural.engine.install(id),`piper:${model}`)
+      await page.click('#unlock')
+      const baseline=await page.evaluate(async({voiceId,text})=>{
+        const n=window.neural;n.engine.release();window.__capture=true;
+        const before={starts:n.starts.length,events:n.events.length};
+        await n.engine.prime({voiceId,text});return before;
+      },{voiceId:`piper:${model}`,text})
+      await page.waitForFunction(()=>{const d=window.neural.engine.getDiagnosticState();return d.run&&d.done===1&&!d.job;})
+      expect(await page.evaluate(()=>({starts:window.neural.starts.length,events:window.neural.events.length}))).toEqual(baseline)
+      await page.context().setOffline(true)
+      try {
+        const log=await page.evaluate(({voiceId,text})=>window.neural.readAll(voiceId,[text],1,{prefix:'prepared'}),{voiceId:`piper:${model}`,text})
+        expect(log.map(e=>e.type)).toEqual(['start','done']);expect(log[0].at).toBeLessThan(250)
+        const chunks=await page.evaluate(from=>window.neural.starts.slice(from),baseline.starts)
+        const pcm=Float32Array.from(chunks.flatMap(c=>c.data)),audio=stats(pcm)
+        expect(audio.finite).toBe(true);expect(audio.peak).toBeGreaterThan(.3);expect(audio.rms).toBeGreaterThan(.001)
+        const metric={firstAudioMs:log[0].at,...audio,samples:pcm.length}
+        numbers[`prepared-${model}`]=metric
+        writeFileSync(join(EVIDENCE,`prepared-${model}.wav`),wavOf(pcm,chunks[0].sampleRate))
+        await testInfo.attach('prepared-piper-start',{body:JSON.stringify(metric),contentType:'application/json'})
+      } finally { await page.context().setOffline(false) }
+    })
+  }
+
 })

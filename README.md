@@ -1,5 +1,12 @@
 # inhouse read
 
+## 1.7.130 — Audio preparado antes de Play
+
+Al abrir el audio, al cambiar sus ajustes y para quienes ya escuchan al abrir
+un libro, se preparan dos fragmentos sin reproducirlos. Play reutiliza incluso
+la síntesis en curso. Una frase terminada ya no espera a que se genere la
+siguiente. No cambia el modelo, las muestras ni el seguimiento de página.
+
 ## 1.7.129 — Preparación de audio en Rust
 
 El ajuste de volumen, recorte de silencios y suavizado de cada fragmento se

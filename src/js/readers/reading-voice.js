@@ -384,6 +384,25 @@ export class ReadingVoice {
     const { footnotes, skipHeaders } = this.options
     return { source, items:planSpeech(source.text, { footnotes, skipHeaders, pageBreaks:source.pageBreaks, headerRanges:source.headerRanges }, source.start || 0) }
   }
+  /** Cache audio without adopting, highlighting or following a page before Play. */
+  async preparePlayback(isActive = () => true) {
+    if (!['stopped', 'paused'].includes(this.state) || this.resumeNextPage) return false
+    const generation = this.generation, location = JSON.stringify(this.reader.location)
+    const settings = JSON.stringify([this.voice, this.rate, this.languageOverride, this.options])
+    const valid = () => isActive() && generation === this.generation &&
+      location === JSON.stringify(this.reader.location) &&
+      settings === JSON.stringify([this.voice, this.rate, this.languageOverride, this.options]) &&
+      ['stopped', 'paused'].includes(this.state)
+    try {
+      const items = this.state === 'paused' && this.chunks.length && !this.resumeNextPage
+        ? this.chunks.slice(this.index).map(text => ({text})) : (await this.prepare()).items
+      if (!valid() || !items.length) return false
+      const { voice } = this.voiceFor(items[0].text)
+      if (!voice?.neural) return false
+      const upcoming = items.slice(1, 2).filter(item => this.voiceFor(item.text).voice?.id === voice.id).map(item => item.text)
+      return await neuralEngine()?.prime?.({ text:items[0].text, voiceId:voice.id, rate:this.rate, upcoming }) || false
+    } catch { return false }
+  }
   /** Optional fixed-page preparation: it must leave the current page visible until an audible start. */
   async prepareNext(generation) {
     if (typeof this.reader.getNextSpeechSource !== 'function') return undefined

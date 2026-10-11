@@ -246,6 +246,25 @@ export class NeuralEngine extends EventTarget {
     queueMicrotask(() => this.env.dispatchEvent?.(new CustomEvent('inhouse-tts', { detail })))
   }
 
+  /** Prepare two opening fragments silently; Play adopts even in-flight synthesis. */
+  prime({ text, voiceId, rate = 1, upcoming = [] }) {
+    const voice = findNeuralVoice(voiceId, this.voices)
+    if (!text || !voice || !this._installed.has(voice.id) || !this.supported) return false
+    if (this.run && !this.run.preview) return false
+    rate = clampRate(rate)
+    const previous = this.run
+    if (previous?.voice.id === voice.id && previous.rate === rate && previous.entries[0]?.text === text) return true
+    if (previous) this.#hardStop()
+    this.#clearIdle()
+    const run = this.run = { voice, rate, preview:true, entries:[], gateOpen:false, buffered:false,
+      prepared:null, job:null, heldSince:null, holdTimer:null, pumpTimer:null, feedTimer:null,
+      rtf:0, rtfN:0, spi:0, t0:now(), firstAudio:false }
+    for (const value of [text, ...upcoming.slice(0, 1)]) this.#entry(run, value, true)
+    this.#armIdle()
+    this.#pump()
+    return true
+  }
+
   speak({ text, voiceId, rate = 1, id, upcoming = [], deferAfter = Infinity }) {
     this.#clearIdle()
     const voice = findNeuralVoice(voiceId, this.voices)
@@ -257,6 +276,7 @@ export class NeuralEngine extends EventTarget {
     let run = this.run
     const head = run && run.voice.id === voice.id && run.rate === rate ? run.entries.find(entry => entry.id == null) : null
     if (head && head.text === text) {
+      if (run.preview) { run.preview = false; run.t0 = now() }
       this.#adopt(run, head, id, upcomingTexts, false, deferAfter)
     } else {
       // A page read to its end hands over to a fresh run (the reader asks for the next page's first fragment): the hiccup it
@@ -408,8 +428,8 @@ export class NeuralEngine extends EventTarget {
     run.job = this.client.synth({ text: entry.text, rate, speaker, ...(run.voice.runtime === 'supertonic3' ? { lang:run.voice.lang, style:run.voice.style } : {}) }, {
       onPlan: counts => { entry.counts = counts; entry.total = counts.length },
       onChunk: chunk => this.#chunk(run, entry, chunk),
-      onEnd: () => { run.job = null; this.#finish(run, entry); this.#pump() },
-      onError: error => { run.job = null; this.#failEntry(run, entry, error.code === 'init-failed' ? 'init-failed' : 'synth-failed') }
+      onEnd: () => { if (this.run !== run) return; run.job = null; this.#finish(run, entry); this.#pump() },
+      onError: error => { if (this.run !== run) return; run.job = null; this.#failEntry(run, entry, error.code === 'init-failed' ? 'init-failed' : 'synth-failed') }
     })
   }
 
@@ -432,6 +452,7 @@ export class NeuralEngine extends EventTarget {
     }
     if (this.run !== run) return
     run.prepared = 'ready'
+    if (run.preview && this.idleTimer == null) this.#armIdle()
     this.#setStatus('buffering')
     this.#pump()
   }
@@ -501,6 +522,9 @@ export class NeuralEngine extends EventTarget {
 
   /** May we start (or restart after a stall) playing what is in hand? See safeToStart(). */
   #gateOpens(run) {
+    // Future inference must not hold an already complete current fragment.
+    const head = run.entries.find(entry => !entry.ended && entry.scheduled < entry.chunks.length)
+    if (head?.state === 'done' && !head.deferred) return true
     const ready = [], pending = []
     let incomplete = null
     for (const entry of run.entries) {
@@ -611,6 +635,7 @@ export class NeuralEngine extends EventTarget {
     this.#clearIdle()
     this.idleTimer = this.setTimer(() => {
       this.idleTimer = null
+      if (this.run?.preview) this.#hardStop()
       if (this.run && !this.run.entries.every(e => e.ended)) return this.#armIdle()
       this.#teardown()
     }, this.limits.idleMs)

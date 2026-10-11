@@ -425,3 +425,32 @@ describe('review fixes', () => {
     voice.stop()
   })
 })
+
+
+describe('prepare audio before Play',()=>{
+  it('uses the same speech plan, language and rate without navigating or highlighting',async()=>{
+    const engine=engineWith(); engine.prime=vi.fn(()=>true)
+    const reader=mappedReader(SENTENCES), voice=new ReadingVoice(reader)
+    activeVoices.add(voice); voice.rate=1.25
+    expect(await voice.preparePlayback()).toBe(true)
+    expect(engine.prime).toHaveBeenCalledWith({text:'Primera frase.',voiceId:DAVEFX,rate:1.25,upcoming:['Segunda frase.']})
+    expect(reader.calls).toEqual([]); expect(reader.next).not.toHaveBeenCalled()
+    expect(voice.state).toBe('stopped'); expect(voice.chunks).toEqual([])
+    await voice.play()
+    expect(last(engine)).toMatchObject({text:'Primera frase.',voiceId:DAVEFX,rate:1.25})
+  })
+  it.each(['close','page','rate','voice','play'])('rejects preparation invalidated by %s',async reason=>{
+    const engine=engineWith(); engine.prime=vi.fn(()=>true)
+    let resolve, active=true
+    const reader=mappedReader(SENTENCES,{getSpeechSource:()=>new Promise(done=>{resolve=done})})
+    const voice=new ReadingVoice(reader); activeVoices.add(voice)
+    const pending=voice.preparePlayback(()=>active)
+    if(reason==='close') active=false
+    if(reason==='page') reader.location={fraction:.5}
+    if(reason==='rate') voice.rate=1.5
+    if(reason==='voice') voice.voice=LESSAC
+    if(reason==='play') voice.state='playing'
+    resolve({text:SENTENCES})
+    expect(await pending).toBe(false); expect(engine.prime).not.toHaveBeenCalled()
+  })
+})

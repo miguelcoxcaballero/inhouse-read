@@ -147,4 +147,29 @@ test.describe('Supertonic 3: 22 app languages × ten real offline profiles',()=>
       await testInfo.attach('supertonic-wav',{path:file,contentType:'audio/wav'});
     });
   }
+  for (const lang of ['en','nl']) test(`${lang}: prepared reader starts immediately with real offline weights`,async({},testInfo)=>{
+    const voiceId=`supertonic3:F1:${lang}`;
+    const baseline=await page.evaluate(()=>({events:window.supertonic.events.length,starts:window.supertonic.starts.length}));
+    const preparedAt=Date.now();
+    expect(await page.evaluate(({voiceId,text,lang})=>window.supertonic.prepareReading(voiceId,text,lang),{voiceId,text:SENTENCES[lang],lang})).toBe(true);
+    await page.waitForFunction(()=>{const d=window.supertonic.engine.getDiagnosticState();return d.run&&d.done===d.entryCount&&d.entryCount>0&&!d.job;});
+    const prepared=await page.evaluate(()=>({events:window.supertonic.events.length,starts:window.supertonic.starts.length,requests:window.supertonic.workerRequests.length}));
+    expect(prepared.events).toBe(baseline.events);expect(prepared.starts).toBe(baseline.starts);
+    const preparationMs=Date.now()-preparedAt;
+    await page.click('#play-reading');
+    await page.waitForFunction(from=>window.supertonic.events.slice(from).some(e=>e.type==='start'),baseline.events);
+    const result=await page.evaluate(({events,starts,requests})=>({
+      latency:window.supertonic.events.slice(events).find(e=>e.type==='start').at-window.supertonic.playAt,
+      synth:window.supertonic.workerRequests.slice(requests).filter(r=>r.type==='synth'),
+      samples:window.supertonic.starts.slice(starts).reduce((n,s)=>n+s.data.length,0),
+      errors:window.supertonic.events.slice(events).filter(e=>e.type==='error')
+    }),{...baseline,requests:prepared.requests});
+    expect(result.latency).toBeLessThan(250);
+    expect(result.synth).toEqual([]);expect(result.samples).toBeGreaterThan(1000);expect(result.errors).toEqual([]);
+    expect(hits).toHaveLength(installedHits);expect(outside).toEqual([]);expect(pageErrors).toEqual([]);
+    numbers.cases[`prepared-${lang}`]={...result,preparationMs};
+    await testInfo.attach('prepared-reader-start',{body:JSON.stringify({...result,preparationMs}),contentType:'application/json'});
+    await page.evaluate(()=>window.supertonic.stopReading());
+  });
+
 });
