@@ -65,3 +65,35 @@ pub unsafe extern "C" fn book_ribbon_notch(width: usize, height: usize, output: 
     } }
     1
 }
+
+
+/// Both visible and packed PBR weave tiles, sharing the original f32 field.
+/// Four browser sine coefficients retain the exact Canvas raster input.
+#[no_mangle]
+pub unsafe extern "C" fn book_weave_pixels(coefficients: *const f64,
+    field: *mut f32, output: *mut u8) -> u32 {
+    let sine = std::slice::from_raw_parts(coefficients, 4);
+    let shade = std::slice::from_raw_parts_mut(field, 64 * 64);
+    let pixels = std::slice::from_raw_parts_mut(output, 128 * 128 * 8);
+    for y in (0..128usize).step_by(2) { for x in (0..128usize).step_by(2) {
+        let i = x >> 3; let j = y >> 3; let warp = (i + j) % 2 != 0;
+        let lift = sine[if warp { (x % 8) / 2 } else { (y % 8) / 2 }];
+        let yarn = if warp { lattice(i as u32, (y >> 4) as u32, 3) }
+            else { lattice(j as u32, (x >> 4) as u32, 4) };
+        shade[(y >> 1) * 64 + (x >> 1)] = ((lift - 0.62) * (0.6 + yarn * 0.8)
+            + (lattice(i as u32, j as u32, 5) - 0.5) * 0.25) as f32;
+    } }
+    for p in 0..128 * 128 {
+        let s = shade[(p >> 8) * 64 + ((p & 127) >> 1)] as f64;
+        let at = p * 4;
+        // Math.round followed by Uint8ClampedArray, all inputs nonnegative.
+        let byte = |v: f64| v.round() as u8;
+        let color = if s > 0.0 { [255, 248, 236, byte(s * 0.035 * 255.0)] }
+            else { [0, 0, 0, byte(-s * 0.075 * 255.0)] };
+        pixels[at..at + 4].copy_from_slice(&color);
+        pixels[65536 + at..65536 + at + 4].copy_from_slice(&[
+            byte(255.0 * (1.0 - (-s).max(0.0) * 0.16)),
+            byte(255.0 * (1.0 - s.max(0.0) * 0.2)), 255, 255]);
+    }
+    1
+}

@@ -26,3 +26,14 @@ export function rustRibbonNotchPixels(core, width = 16, height = 64) {
   if (!available(core, 'book_ribbon_notch') || ![width, height].every(n => Number.isInteger(n) && n > 0 && n <= 512)) return null;
   return raster(core, width * height * 4, 0, pointer => core.book_ribbon_notch(width, height, pointer));
 }
+
+export function rustBookWeavePixels(core) {
+  if (!available(core, 'book_weave_pixels')) return null;
+  const fieldOffset = 4 * 8, outputOffset = fieldOffset + 64 * 64 * 4;
+  const data = raster(core, 128 * 128 * 8, outputOffset, pointer => {
+    const sine = new Float64Array(core.memory.buffer, pointer, 4);
+    for (let i = 0; i < 4; i++) sine[i] = Math.sin(Math.PI * (i * 2 + 1) / 8);
+    return core.book_weave_pixels(pointer, pointer + fieldOffset, pointer + outputOffset);
+  });
+  return data && { color:data.subarray(0, 65536), channels:data.subarray(65536) };
+}

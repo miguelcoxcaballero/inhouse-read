@@ -924,3 +924,29 @@ del WASM compilado localmente. 113 controles HTTP y 99 recursos exactos.
 La APK 1.1.15 conserva su firma/loader y recibe esta web. No se recompila
 el wrapper. La matriz completa 38183041199 continúa; el WIP conserva el
 fallo previo de cierre Linux de 137, sin presentarlo como resuelto.
+
+
+## Continuación 1.7.142 — Trama visible del lomo (local)
+
+Rust genera las dos teselas de tejido: color RGBA y canales físicos de
+altura/rugosidad/metal. Se comparten el campo f32, los materiales, la caché
+y el filtrado anteriores; JS aporta cuatro coeficientes seno del navegador.
+Los 131072 bytes coinciden exactamente con la referencia congelada de 141.
+El ensayo integrado compara también ambos resultados tras la conversión
+premultiplicada de Canvas. El primer fixture comparaba esa lectura con RGB
+sin premultiplicar y falló; se conserva como `browser` y se corrige en `browser2`.
+
+Chromium 390×844 DPR2 CPU×4, nueve rondas alternadas de treinta generaciones:
+mediana JS 7,340 ms, Rust 1,973 ms (incluidos reserva/copia/liberación y la
+concatenación de medida). Es coste de generación compartida, no de toda la app.
+Arena temporal máxima 147488 bytes, liberada al devolver ambos arrays.
+WASM 183009 bytes, SHA256
+`20f097846a04facfbf9a0e061d90fb0229a9a7f6add962abfceded6bb3f38fdd`.
+
+4067/4067 unitarias; build aprobado. E2E local: 34 aprobadas, sin retry,
+y seis capturas opcionales omitidas porque no se activó su variable de salida.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-spine-weave`.
+No publicado todavía: el usuario priorizó la estabilidad de la paginación y
+la continuidad de una frase entre páginas antes de continuar migrando.
+CI141 UI3 conserva un fallo de primera importación EPUB (lector ausente
+tras 8 s), aprobado sólo al reintentar; originales en `ci141-ui3`.

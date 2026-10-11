@@ -3,15 +3,18 @@ import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
-import {rustBookSurfacePixels,rustRibbonNotchPixels} from '/inhouse-read/src/js/book-surface-wasm.js';
+import {rustBookSurfacePixels,rustRibbonNotchPixels,rustBookWeavePixels} from '/inhouse-read/src/js/book-surface-wasm.js';
 import {clothNormals,paperNormals,ribbonNotch} from '/inhouse-read/tests/unit/helpers/reference-book-surfaces.js';
+import {bookWeave} from '/inhouse-read/tests/unit/helpers/reference-book-weave.js';
+import {paintWeave} from '/inhouse-read/src/js/spine-surface.js';
 import {createBookModel} from '/inhouse-read/src/js/book-model.js';
 import {releaseRustBookmarkBuffers} from '/inhouse-read/src/js/bookmark-wasm.js';
 const core=await loadRustCore();if(!core?.book_surface_pixels)throw new Error('Compiled surface kernel required');
 const stats=window.surfaceStats;
 const hash=async bytes=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(n=>n.toString(16).padStart(2,'0')).join('');
-const refs={cloth:clothNormals,paper:paperNormals,ribbon:ribbonNotch};
-const make=kind=>kind==='ribbon'?rustRibbonNotchPixels(core):rustBookSurfacePixels(core,kind);
+const join=tiles=>{const out=new Uint8Array(131072);out.set(tiles.color);out.set(tiles.channels,65536);return out;};
+const refs={cloth:clothNormals,paper:paperNormals,ribbon:ribbonNotch,weave:()=>join(bookWeave())};
+const make=kind=>kind==='weave'?join(rustBookWeavePixels(core)):kind==='ribbon'?rustRibbonNotchPixels(core):rustBookSurfacePixels(core,kind);
 window.surfaceWork={
  async measure(kind){
   const before=performance.now(),first=make(kind),coldMs=performance.now()-before;
@@ -25,6 +28,26 @@ window.surfaceWork={
   const median=a=>[...a].sort((a,b)=>a-b)[Math.floor(a.length/2)];
   return {kind,coldMs,bytes:first.length,same,sha256:await hash(first),rounds,
     medianMs:{js:median(rounds.js),rust:median(rounds.rust)},memory:{...stats}};
+ },
+ async weaveIntegration(){
+  const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');
+  const tiles=[],createPattern=ctx.createPattern;
+  ctx.createPattern=function(tile,...args){
+   const pixels=tile.getContext('2d').getImageData(0,0,128,128).data;
+   tiles.push(pixels);return createPattern.call(this,tile,...args);
+  };
+  const before={...stats};paintWeave(ctx,200);paintWeave(ctx,200,{channels:true});
+  const after={...stats};paintWeave(ctx,140);paintWeave(ctx,140,{channels:true});
+  const expected=bookWeave();
+  // Canvas stores premultiplied colors: transparent RGB is quantized on readback.
+  // Compare both algorithms after the same real browser upload/readback.
+  for(const name of ['color','channels']){
+   const ref=document.createElement('canvas');ref.width=128;ref.height=128;
+   const rc=ref.getContext('2d');rc.putImageData(new ImageData(expected[name],128,128),0,0);
+   expected[name]=rc.getImageData(0,0,128,128).data;
+  }
+  return {before,after,cached:{...stats},same:tiles.every((p,i)=>p.every((v,j)=>v===expected[i%2?'channels':'color'][j])),
+   expectedSha256:await hash(join(expected)),sha256:await hash(join({color:tiles[0],channels:tiles[1]}))};
  },
  async integration(){
   const c=document.createElement('canvas');c.width=200;c.height=300;const ctx=c.getContext('2d');
@@ -60,12 +83,13 @@ test.use({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasT
 test('compiled book surfaces retain exact pixels, shared textures and bounded memory',async({page},info)=>{
  test.setTimeout(120_000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.addInitScript(()=>{
-  const stats=window.surfaceStats={surfaces:0,ribbons:0,allocations:0,releases:0,live:0,peak:0};
+  const stats=window.surfaceStats={surfaces:0,ribbons:0,weaves:0,allocations:0,releases:0,live:0,peak:0};
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){
    const original=WebAssembly[name];WebAssembly[name]=async function(...args){
     const result=await original.apply(WebAssembly,args),instance=result.instance||result,core=instance.exports;
     if(!core.book_surface_pixels)return result;
     const exports={...core,
+     book_weave_pixels(...args){stats.weaves++;return core.book_weave_pixels(...args);},
      alloc_f64(n){const p=core.alloc_f64(n);if(p){stats.allocations++;stats.live+=n*8;stats.peak=Math.max(stats.peak,stats.live);}return p;},
      free_f64(p,n){stats.releases++;stats.live-=n*8;core.free_f64(p,n);},
      book_surface_pixels(...args){stats.surfaces++;return core.book_surface_pixels(...args);},
@@ -77,14 +101,18 @@ test('compiled book surfaces retain exact pixels, shared textures and bounded me
  });
  const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
  await page.goto(url);await page.waitForFunction(()=>window.surfaceWork);
- const results=[];for(const kind of ['cloth','paper','ribbon'])results.push(await page.evaluate(kind=>window.surfaceWork.measure(kind),kind));
+ const results=[];for(const kind of ['cloth','paper','ribbon','weave'])results.push(await page.evaluate(kind=>window.surfaceWork.measure(kind),kind));
+ const woven=await page.evaluate(()=>window.surfaceWork.weaveIntegration());
  const integrated=await page.evaluate(()=>window.surfaceWork.integration());
- await info.attach('rust-book-surface-measurements',{body:JSON.stringify({results,integrated},null,2),contentType:'application/json'});
+ await info.attach('rust-book-surface-measurements',{body:JSON.stringify({results,woven,integrated},null,2),contentType:'application/json'});
  for(const r of results){expect(r.same).toBe(true);expect(r.memory.live).toBe(0);expect(r.memory.allocations).toBe(r.memory.releases);}
+ expect(woven.same).toBe(true);expect(woven.sha256).toBe(woven.expectedSha256);
+ expect(woven.after.weaves-woven.before.weaves).toBe(1);expect(woven.cached.weaves).toBe(woven.after.weaves);
+ expect(woven.cached.live).toBe(0);expect(integrated.cached.weaves).toBe(woven.cached.weaves);
  expect(integrated.after.surfaces-integrated.before.surfaces).toBe(2);
  expect(integrated.after.ribbons-integrated.before.ribbons).toBe(1);
  expect(integrated.cached.surfaces).toBe(integrated.after.surfaces);expect(integrated.cached.ribbons).toBe(integrated.after.ribbons);
- for(const r of results)expect(integrated.rasters.map(t=>t.sha256)).toContain(r.sha256);
+ for(const r of results.filter(r=>r.kind!=='weave'))expect(integrated.rasters.map(t=>t.sha256)).toContain(r.sha256);
  expect(integrated.retainedBookmarkScratch.live).toBe(7896);
  expect(integrated.memory.live).toBe(0);expect(integrated.memory.allocations).toBe(integrated.memory.releases);expect(errors).toEqual([]);
 });

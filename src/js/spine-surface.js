@@ -1,3 +1,5 @@
+import { getRustCore } from './rust-core.js'
+import { rustBookWeavePixels } from './book-surface-wasm.js'
 import * as THREE from 'three'
 import { spineFinish, surfaceFinish, SURFACE_FINISHES } from './book-colors.js'
 import { normalizeBookAuthor } from './book-title.js'
@@ -125,8 +127,9 @@ let weaveTiles = null
 function weaveTile(kind) {
   if (!weaveTiles) {
     weaveTiles = {}
-    const shade = new Float32Array(64 * 64)
-    for (let y = 0; y < 128; y += 2) for (let x = 0; x < 128; x += 2) {
+    const pixels = rustBookWeavePixels(getRustCore())
+    const shade = pixels ? null : new Float32Array(64 * 64)
+    if (!pixels) for (let y = 0; y < 128; y += 2) for (let x = 0; x < 128; x += 2) {
       const i = x >> 3, j = y >> 3, warp = (i + j) % 2
       const lift = warp ? Math.sin(Math.PI * (x % 8 + 1) / 8) : Math.sin(Math.PI * (y % 8 + 1) / 8)
       const yarn = warp ? lattice(i, y >> 4, 3) : lattice(j, x >> 4, 4)
@@ -136,7 +139,8 @@ function weaveTile(kind) {
       const canvas = Object.assign(document.createElement('canvas'), { width:128, height:128 })
       const t = canvas.getContext('2d'), image = t?.createImageData?.(128, 128), data = image?.data
       if (data) {
-        for (let p = 0; p < 128 * 128; p++) {
+        if (pixels) data.set(pixels[name])
+        else for (let p = 0; p < 128 * 128; p++) {
           const s = shade[(p >> 8) * 64 + ((p & 127) >> 1)], k = p * 4
           if (name === 'color') {
             // Shadowed gaps carry the weave; a bright dot at every crossing
