@@ -1,6 +1,6 @@
 # inhouse read
 
-## 1.7.139 / Android 1.1.15 — Resultado de instalación
+## 1.7.140 / Android 1.1.15 — Resultado de instalación
 
 El actualizador distingue cancelar, reintentar e instalar: abrir el instalador
 Android no confirma una actualización. [APK 1.1.15 publicada en A y B](https://github.com/miguelcoxcaballero/inhouse-read/releases/tag/android-v1.1.15),
@@ -11,9 +11,10 @@ verifica cancelación, reintento y confirmación al reabrir una aplicación de
 prueba actualizada, además de importación y audio de Read. No se ha probado
 esta versión en un teléfono físico.
 
-Las APK antiguas ofrecen «Download APK» desde el aviso para descargar la
-actualización con el navegador y abrirla desde Descargas si su instalador no
-responde. Esta recuperación llega a través de la web al recargar la aplicación.
+Las APK antiguas ofrecen un enlace a la página de esa versión en GitHub desde
+el aviso. Desde allí se puede descargar la APK y abrirla desde Descargas si el
+instalador de la aplicación no responde. Esta recuperación llega a través de
+la web al recargar la aplicación.
 
 ## 1.7.136 / Android 1.1.14 — Colores del actualizador
 
