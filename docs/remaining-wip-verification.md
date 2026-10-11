@@ -6,7 +6,31 @@ para previews, preservando un único modelo y sin interrumpir audio activo.
 Añadida regresión con la misma voz elegida dos veces, cero reproducción y
 liberación al plazo normal. Sin cambio de voz/calidad/velocidad/modelos.
 Unidad final `unit-132`: 4014/4014, 324 archivos. `build-132` aprobado.
-Publicación y comprobación del artefacto nuevo pendientes en este punto.
+Publicado en main `f70903343130895e4fe3a6ddb47c233bf5a48ddd`.
+Deploy 38170466700 y Pages 38170520646 aprobados, rama Pages
+`c9ede0dd00deb328261e795cfaac101348691d8a`.
+
+- `piper-132`: selección seguida de Play en la misma tarea: 2729,6 ms;
+  carga 1838,5 ms, primer PCM 2613,6 ms. Original 4786,4 ms.
+- `supertonic-132`: 3/3. Nuevo perfil neerlandés sin precarga: 3008,2 ms,
+  mismo worker, cero recargas. Los dos casos con PCM preparado se registran
+  por separado y NO se usan para afirmar inicio frío instantáneo.
+- `public-132`: 108/108, 99 recursos públicos iguales al artefacto por bytes/SHA;
+  main-D3UTx5C8.js, SHA 2d88ae95f458895b4ff89369b1e424e894cb53bc7de757c10cb3ffad3d5289d4.
+  Evidencia `published-1791749024460`.
+- APK real descargada: 1.1.12/25, SHA
+  405a3d2698949e1d6f7425b7e666b5ca1f0b42e9cb212852caca3711336dfefd;
+  firma/paquete válidos, loader de 2107 bytes al sitio publicado. Sin cambio
+  nativo ni publicación B. No es una prueba física de velocidad Android.
+- `public-ui`: 1/1 contra la URL real, hash del main ejecutado comprobado.
+- CI completa 38170466639 iniciada para este commit y aún en curso. No se
+  declara toda la CI verde. Las 14 pruebas reales de lectura y las 29 de UI
+  locales preceden al guard final del temporizador; éste tiene su regresión
+  unitaria y se repitieron las pruebas de arranque con pesos reales finales.
+
+Pendiente explícito: el primer uso frío aún necesita ~3 s en estos casos.
+Se han quitado espera por otra voz y análisis duplicado, pero falta reducir
+el coste de carga/inferencia para acercarse al objetivo instantáneo del usuario.
 
 # 1.7.131 — Selección de voz seguida de Play inmediato
 
