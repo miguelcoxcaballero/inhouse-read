@@ -1,6 +1,24 @@
 {
   "schemaVersion": 1,
   "channel": "A",
-  "latest": null,
-  "releases": []
+  "latest": {
+    "version": "1.1.9",
+    "versionCode": 22,
+    "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.9/inhouse-read-release-v1.1.9.apk",
+    "apkSha256": "7759021d21c3068320c0a8c519978261c03d683432b10cf3071d0ae0321a3ff3",
+    "apkSizeBytes": 78532473,
+    "changelog": "Canales A/B y recordatorio opcional.",
+    "releasedAt": "2026-10-11T15:42:08+00:00"
+  },
+  "releases": [
+    {
+      "version": "1.1.9",
+      "versionCode": 22,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.9/inhouse-read-release-v1.1.9.apk",
+      "apkSha256": "7759021d21c3068320c0a8c519978261c03d683432b10cf3071d0ae0321a3ff3",
+      "apkSizeBytes": 78532473,
+      "changelog": "Canales A/B y recordatorio opcional.",
+      "releasedAt": "2026-10-11T15:42:08+00:00"
+    }
+  ]
 }
