@@ -1,3 +1,30 @@
+# Continuación: 1.7.118 preparada; migración parcial a Rust
+
+118 migra a Rust el bloque de páginas y las hojas visibles al abrir el libro,
+manteniendo exactamente geometría, colores, índices y grupos de materiales.
+101 pruebas focales y ocho casos reales de geometría en Chromium aprobados.
+En Chromium CPU ×4, el bloque detallado tarda 0,0953 ms frente a 0,2453 ms;
+son costes pequeños, no una medida de FPS de la aplicación completa.
+También se conserva el filtrado de las texturas al regenerar el texto del lomo.
+Build de producción, **3.793 unitarias en 308 archivos** y 105 comprobaciones
+Python/Android aprobados. Los ocho recorridos locales pasan al primer intento
+con sus plazos originales. Publicación118 pendiente.
+
+117 está publicada: fuente `e137376068b82bc7051e85754c755b8334b3916d`, Pages
+`bd5e3531b702e265d0169ff48f14a8eccbc88b26`. 3.774 unitarias/307 archivos,
+105 comprobaciones Python, 100 respuestas HTTP/871 condiciones y **23 recorridos
+sobre la web pública** aprobados. Su APK pasó los cinco estados nativos del
+run38143049356. El regreso se confirmó a41,44 s en el emulador: la política
+correcta no demuestra fluidez. CI117 todavía en ejecución; ya conserva dos
+timeouts de regreso y un caso de importación que sólo pasó al reintentarse.
+No se considera una batería completa aprobada.
+
+**La reescritura completa sigue pendiente.** Interfaz, persistencia, Drive,
+lector/audio y parte de la escena siguen en JavaScript.
+[Alcance, mediciones y trabajo pendiente](rust-migration.md).
+
+## Historial anterior
+
 # Continuación: 1.7.117 preparada; migración parcial a Rust
 
 117 añade la malla completa del lomo curvo y sus normales de grabado al núcleo

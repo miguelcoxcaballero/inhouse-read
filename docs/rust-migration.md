@@ -1,4 +1,4 @@
-# Migración a Rust: primera integración, 1.7.116
+# Migración a Rust: implementación y comprobaciones
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout
 local limpio. La aplicación contiene 146 módulos JavaScript propios y unas
@@ -221,5 +221,73 @@ Para 1.7.117 pasan las 82 pruebas focales de geometría e integración, las
 19 de recuperación de preparación, los ocho casos de geometría en Chromium,
 la regresión real de fuentes, los siete recorridos originales locales y las
 105 comprobaciones Python/Android. La batería unitaria completa de 1.7.117
-está en ejecución; su publicación y comprobación HTTP todavía no se registran
-como realizadas en este apartado.
+aprobó **3.774 pruebas en 307 archivos**. Se publicó la fuente
+`e137376068b82bc7051e85754c755b8334b3916d`, Pages
+`bd5e3531b702e265d0169ff48f14a8eccbc88b26`: 100 respuestas HTTP,
+98 recursos y 871 condiciones correctas. Sus **23 recorridos públicos** pasan
+sin omisiones ni reintentos, incluidas fuentes tardías, ambos regresos nativos,
+contenido PDF adaptable y funcionamiento sin conexión. El auditor inicial
+rechazó adjuntos JSON con cuerpos base64 por esperar rutas de archivo; la
+segunda versión audita esos mismos originales, sin repetir el navegador ni
+sustituir los bytes. Ambos informes se conservan.
+
+El [APK sobre la web 1.7.117](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/38143049356)
+también aprobó sus cinco estados nativos. ZIP original de 8.942.303 bytes,
+SHA256 `e6b3842782f367dd65473802e51ffded09e25eb83108169c3c8032ea3e2a60c3`.
+Mantiene el mismo APK público 1.1.8; la captura final muestra el libro en su
+estante. La política final se confirmó a **41,44 segundos** en ese emulador:
+no acredita fluidez, el contrato de ocho segundos del navegador ni velocidad
+en un teléfono físico. La CI completa 1.7.117 sigue pendiente de cierre; su
+shard 3 ya conserva los dos timeouts de regreso nativo y el shard 1 un caso de
+importación Android que sólo pasa al reintentarse. La batería completa no se
+considera aprobada y sus originales se mantienen separados.
+
+## Continuación 1.7.118: páginas tridimensionales
+
+Rust construye ahora el bloque de páginas cerrado y las hojas que se ven
+durante la apertura. Conserva posiciones, normales, UV, colores por vértice,
+índices, grupos de materiales y versiones de los atributos. Las resoluciones
+originales no se reducen. El host conserva `Math.pow` y `Math.hypot` para
+mantener sus redondeos; Rust escribe el resto de los atributos e índices.
+La memoria temporal se libera en `finally`; las salidas tienen buffers propios.
+
+WASM: **57.210 bytes**, SHA256
+`98cbdc0ffce776f0ee8b02340b1ca6913e50a94f1908c2bc84d749d99d709ffe`.
+Las 101 comprobaciones focales pasan: 15 de páginas, 12 de lomo curvo y
+74 de integración de modelos. Incluyen dimensiones deterministas aleatorias,
+grupos, ceros con signo, crecimiento de memoria, operaciones anidadas y fallo
+de asignación. Ocho casos en Chromium ejercitan el export WASM real, el puente
+y la ruta de producción, con igualdad exacta frente al código previo congelado.
+
+| Malla | Node JS → Rust (ms) | Chromium CPU ×4, JS → Rust (ms) |
+| --- | ---: | ---: |
+| Bloque de estantería | 0,0285 → 0,0089 | 0,1188 → 0,0516 |
+| Bloque detallado | 0,0427 → 0,0125 | 0,2453 → 0,0953 |
+| Bloque fino | 0,0454 → 0,0123 | 0,2625 → 0,0969 |
+| Bloque ancho | 0,0477 → 0,0123 | 0,2844 → 0,1016 |
+| Hojas en la primera página | 0,0248 → 0,0076 | 0,1297 → 0,0516 |
+| Hojas a mitad del libro | 0,0270 → 0,0075 | 0,1188 → 0,0484 |
+| Hojas finas | 0,0198 → 0,0063 | 0,1031 → 0,0391 |
+| Hojas anchas | 0,0329 → 0,0102 | 0,2094 → 0,1000 |
+
+Medianas por geometría, incluyendo coeficientes, asignaciones, copias y creación
+y liberación de la geometría de Three. Node usa cinco calentamientos y quince
+tandas alternadas de 128 geometrías; Chromium, tres calentamientos y diez tandas
+de 64. El máximo temporal es de 15.304 bytes, una asignación y liberación por
+caso, sin asignaciones temporales vivas al terminar. La capacidad WASM permanece
+en 1.179.648 bytes y los arrays de salida siguen vivos mientras los usa Three.
+Son cálculos pequeños: **no demuestran una mejora equivalente en FPS ni una
+reescritura completa de la aplicación**. Evidencia: `page-mesh-benchmark-attempt1.json`
+y `page-mesh-browser-attempt1.json`.
+
+También se conserva el filtrado anisotrópico de las texturas al regenerar el
+texto del lomo. Antes la sustitución restablecía el valor a uno, perdiendo nitidez
+en ángulo. Cuatro regresiones con modelos reales comprueban valores independientes
+del color y del mapa de materiales, propiedad de los buffers y disposición única.
+
+Build de producción y batería completa 1.7.118 aprobados: **3.793 pruebas en
+308 archivos**, más 105 comprobaciones Python/Android. Pasan ocho recorridos
+locales al primer intento, sin cambiar plazos ni aserciones: devolución en ambas
+vistas, cancelación por viewport, fuente real tardía, editor móvil, compatibilidad
+sin WebGL, ambos contratos nativos y gesto isométrico. La publicación y
+verificación pública de esta continuación todavía están pendientes.

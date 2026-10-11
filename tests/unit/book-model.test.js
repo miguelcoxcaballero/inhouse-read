@@ -374,6 +374,37 @@ describe('real shelf book materials', () => {
     return context;
   }
 
+  it.each([
+    ['overview', { shelf:true, overview:true }], ['shelf', { shelf:true }],
+    ['inspection', { shelf:true, inspectionResolution:1024 }], ['lifted', {}]
+  ])('preserves each current texture anisotropy when repainting %s spine lettering', (_name, options) => {
+    canvasContext();
+    const model = createBookModel(book, style, 132, 200, 40, null, options);
+    const binding = model.getObjectByName('binding'), material = binding.material;
+    const positions = binding.geometry.attributes.position.array.slice();
+    const first = [material.map, material.roughnessMap], released = first.map(map => vi.spyOn(map, 'dispose'));
+    first[0].anisotropy = 16; first[1].anisotropy = 8;
+    model.userData.updateSpineAppearance({ ...book, spineTitleOverride:'New lettering' }, style);
+    const next = [material.map, material.roughnessMap];
+    expect(next[0]).not.toBe(first[0]); expect(next[1]).not.toBe(first[1]);
+    expect(next.map(map => map.anisotropy)).toEqual([16, 8]);
+    expect(material.metalnessMap).toBe(next[1]);
+    if (material.bumpMap) expect(material.bumpMap).toBe(next[1]);
+    expect(binding.material).toBe(material); expect(binding.geometry.attributes.position.array).toEqual(positions);
+    expect(released.every(dispose => dispose.mock.calls.length === 1)).toBe(true);
+    // A renderer may change the quality before the next paint. Preserve those
+    // exact current values independently; never hardcode a shared maximum.
+    next[0].anisotropy = 4; next[1].anisotropy = 2;
+    const releasedNext = next.map(map => vi.spyOn(map, 'dispose'));
+    model.userData.updateSpineAppearance({ ...book, author:'Another author' }, style);
+    expect([material.map.anisotropy, material.roughnessMap.anisotropy]).toEqual([4, 2]);
+    expect(releasedNext.every(dispose => dispose.mock.calls.length === 1)).toBe(true);
+    const finalMaps = [material.map, material.roughnessMap].map(map => vi.spyOn(map, 'dispose'));
+    model.userData.dispose();
+    expect(finalMaps.every(dispose => dispose.mock.calls.length === 1)).toBe(true);
+    expect(released.every(dispose => dispose.mock.calls.length === 1)).toBe(true);
+  });
+
   it('keeps glossy lamp reflections sharp, satin broad and matte uncoated at every shelf detail level', () => {
     canvasContext();
     for (const options of [{ shelf:true, overview:true }, { shelf:true }, { shelf:true, inspectionResolution:1024 }, {}]) {

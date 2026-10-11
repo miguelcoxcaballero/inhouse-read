@@ -2,6 +2,7 @@ import { paddedBookFrameSize } from './book-frame-padding.js';
 import { getRustCore } from './rust-core.js';
 import { rustBookmarkBuffers } from './bookmark-wasm.js';
 import { rustBindingBuffers } from './binding-wasm.js';
+import { rustPageBlockBuffers, rustLeafStackBuffers } from './page-mesh-wasm.js';
 import { reuseCoverRaster, releaseCoverRaster } from './cover-raster-cache.js';
 import { paperToneKey, readPaperTone } from './page-paper-tone.js';
 import { bookReturnCompatibility } from './bookshelf-return.js';
@@ -157,9 +158,27 @@ function endpaperTexture() {
   return texture;
 }
 
+// Numeric Rust meshes own their arrays; install them without another copy.
+function paperMeshGeometry(buffers) {
+  if (!buffers) return null;
+  const geometry = new THREE.BufferGeometry();
+  for (const [name, array, size] of [['position', buffers.positions, 3], ['normal', buffers.normals, 3],
+    ['uv', buffers.uvs, 2], ['color', buffers.colors, 3]]) {
+    geometry.setAttribute(name, new THREE.BufferAttribute(array, size));
+  }
+  geometry.setIndex(new THREE.BufferAttribute(buffers.indices, 1));
+  for (const group of buffers.groups) geometry.addGroup(group.start, group.count, group.materialIndex);
+  return geometry;
+}
+
 /** Text block of a rounded-and-backed binding: its back follows the round
  * inside the case, the fore-edge is concave, both ends are one crescent. */
 export function pageBlockGeometry(width, height, thickness, { board = height * .007, inset = height * .009, detail = false } = {}) {
+  const core = getRustCore();
+  if (core) {
+    const geometry = paperMeshGeometry(rustPageBlockBuffers(core, width, height, thickness, { board, inset, detail }));
+    if (geometry) return geometry;
+  }
   const half = (thickness - board * 2.4) / 2, top = height / 2 - inset;
   const rim = board * 1.1, back = Math.max(0, thickness * .38 - rim - board * .15), zBack = thickness / 2 - rim;
   const bend = Math.min(thickness * .09, width * .025), fore = width / 2 - inset * .7;
@@ -213,6 +232,11 @@ export function pageBlockGeometry(width, height, thickness, { board = height * .
  * Hinge coordinates (joint at x = 0, board centred on z = 0); the open face
  * looks toward -z until the board turns over. Only lifted copies build it. */
 export function leafStackGeometry(width, height, depth, { board = height * .007, inset = height * .009, columns = 14 } = {}) {
+  const core = getRustCore();
+  if (core) {
+    const geometry = paperMeshGeometry(rustLeafStackBuffers(core, width, height, depth, { board, inset, columns }));
+    if (geometry) return geometry;
+  }
   // A hair inside the text block, so closed its ends never fight the head,
   // tail or fore-edge they came from.
   const top = height / 2 - inset - height * .0012, fore = width - inset * .7 - height * .0015;
@@ -1461,6 +1485,9 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
   group.userData.updateSpineAppearance = (nextBook, nextStyle) => {
     const previous = surface;
     surface = shelfSpineSurface(nextBook, nextStyle, height, thickness, shelf, overview, inspectionResolution);
+    // Font arrival/editor changes replace pixels, not the renderer's sampling quality.
+    surface.map.anisotropy = previous.map.anisotropy;
+    surface.channels.anisotropy = previous.channels.anisotropy;
     Object.assign(binding, surface.material); updateSpineFade?.(nextBook, nextStyle);
     binding.needsUpdate = true;
     releaseSurface(previous);
