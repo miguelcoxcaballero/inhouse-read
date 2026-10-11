@@ -1,4 +1,5 @@
-// A is the default download channel. B requires explicit publication in the common updater.
+// This download page uses A: all A+B releases, highest global versionCode first.
+// B publication requires an explicit user request; the common publisher includes it in A.
 import '../vendor/inhouse-services-updater/updater.js'
 
 const REPO = 'miguelcoxcaballero/inhouse-read'

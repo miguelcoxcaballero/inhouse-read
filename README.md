@@ -620,6 +620,6 @@ App-shell WebView (Capacitor) que apunta a la URL en vivo de GitHub Pages, con e
 
 ## Inhouse services updater
 
-Android usa el [actualizador común](https://github.com/miguelcoxcaballero/inhouse-services-updater). En los ajustes de actualizaciones puedes elegir **A: cambios recientes; B: versiones revisadas** y comprobar manualmente. El aviso es opcional y «Recordármelo más tarde» lo aplaza 14 días. B solo se publica por petición expresa. [Reglas de publicación y sincronización](UPDATER.md).
+Android usa el [actualizador común](https://github.com/miguelcoxcaballero/inhouse-services-updater). En los ajustes de actualizaciones puedes elegir **A: cambios recientes; B: versiones revisadas** y comprobar manualmente. El aviso es opcional y «Recordármelo más tarde» lo aplaza 14 días. B solo se publica por petición expresa. A incluye todas las versiones A y B y ofrece la de mayor `versionCode`; B recibe solo versiones B. [Reglas de publicación y sincronización](UPDATER.md).
 
 La integración se publica en **Android 1.1.11 · A** y web **1.7.123**, conservando las mejoras de lectura incorporadas en paralelo. [APK firmado](https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.11/inhouse-read-release-v1.1.11.apk) · [Pruebas de Android 15](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/38152535152).

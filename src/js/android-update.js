@@ -1,7 +1,10 @@
-// Shared updater: users default to B; A requires warning acknowledgement and slide confirmation. Publish new changes to A; promote B only on explicit user request. Edit canonical inhouse-services-updater and sync all five apps.
+// Shared updater: users default to B; A requires warning acknowledgement and slide confirmation.
+// Automatic releases go to A; B publication or promotion requires an explicit user request.
+// A includes A+B and offers the highest global versionCode; B includes only B.
+// Edit canonical inhouse-services-updater and sync all five apps.
 // Inhouse services updater — host adapter, not an independent updater.
 // Edit github.com/miguelcoxcaballero/inhouse-services-updater first, then sync ALL five apps.
-// New versions ALWAYS go to A with a tiny changelog; B requires an explicit user request.
+// Every release needs a tiny changelog. The publisher mirrors authorized B releases into A.
 import '../vendor/inhouse-services-updater/updater.js'
 
 export function detectInhouseApp() {
