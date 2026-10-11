@@ -1,6 +1,7 @@
 import { paddedBookFrameSize } from './book-frame-padding.js';
 import { getRustCore } from './rust-core.js';
 import { rustBookmarkBuffers } from './bookmark-wasm.js';
+import { rustBindingBuffers } from './binding-wasm.js';
 import { reuseCoverRaster, releaseCoverRaster } from './cover-raster-cache.js';
 import { paperToneKey, readPaperTone } from './page-paper-tone.js';
 import { bookReturnCompatibility } from './bookshelf-return.js';
@@ -407,6 +408,19 @@ function applySpineCapFinish(material, book) {
 // A half-ellipse extruded along the binding. Shared vertices give the entire
 // binding continuous normals, including the silhouette seen beside the cover.
 export function bindingGeometry(width, height, thickness, segments = 96, relief = null, reliefRows = 384) {
+  const core = getRustCore();
+  if (core) {
+    const buffers = rustBindingBuffers(core, width, height, thickness, segments, relief, reliefRows);
+    if (buffers) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(buffers.positions, 3));
+      geometry.setAttribute('normal', new THREE.BufferAttribute(buffers.normals, 3));
+      geometry.setAttribute('uv', new THREE.BufferAttribute(buffers.uvs, 2));
+      geometry.setIndex(new THREE.BufferAttribute(buffers.indices, 1));
+      if (buffers.normalVersion) geometry.getAttribute('normal').needsUpdate = true;
+      return geometry;
+    }
+  }
   const positions = [], normals = [], uv = [], indices = [];
   const bulge = thickness * 0.38;
   const rows = relief ? reliefRows : 1;

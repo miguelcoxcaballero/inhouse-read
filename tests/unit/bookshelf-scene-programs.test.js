@@ -216,14 +216,20 @@ describe('presentation preparation after the actual first room frame', () => {
 
 
 describe('detail preparation follows the stable borrowed-material warm-up', () => {
-  function begin() {
+  function deferred() {
+    let resolve, reject;
+    const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});
+    return {promise,resolve,reject};
+  }
+  async function settle() { for(let turn=0;turn<4;turn++)await Promise.resolve(); }
+  function backgroundActivity() { return {frames:frames.size,timers:vi.getTimerCount(),renders:gpu.renders}; }
+  function begin(detail=vi.fn(async()=>true)) {
     shelf=createBookshelfScene(layout());
-    const model=gpu.scene.getObjectByName('book:book-0');let complete;
-    const prepare=vi.fn(()=>new Promise(resolve=>{complete=resolve;}));
-    const detail=vi.fn(async()=>true);
+    const model=gpu.scene.getObjectByName('book:book-0'),resting=deferred();
+    const prepare=vi.fn(()=>resting.promise);
     model.userData.preparePresentation=prepare;model.userData.prepareDetailPresentation=detail;
     gpu.linked.ready=true;vi.advanceTimersByTime(10);flushFrames();
-    return {prepare,detail,complete};
+    return {prepare,detail,complete:resting.resolve,reject:resting.reject,model};
   }
   it('starts detail preparation once, only after a successful resting warm-up', async () => {
     const s=begin();expect(s.detail).not.toHaveBeenCalled();const renders=gpu.renders;
@@ -237,5 +243,64 @@ describe('detail preparation follows the stable borrowed-material warm-up', () =
   });
   it('does not start detail work after cancelled resting preparation', async () => {
     const s=begin();s.complete(false);await Promise.resolve();expect(s.detail).not.toHaveBeenCalled();
+  });
+  it.each(['cancellation','rejection'])('retries resting %s only on a later required stable paint', async failure => {
+    vi.spyOn(console,'warn').mockImplementation(()=>{});
+    const s=begin();
+    // More real paints while the original work is pending never duplicate it.
+    shelf.flush({force:true});shelf.flush({force:true});
+    expect(s.prepare).toHaveBeenCalledOnce();
+    const before=backgroundActivity();
+    if(failure==='rejection')s.reject(new Error('resting compile failed'));else s.complete(false);
+    await settle();
+    expect(backgroundActivity()).toEqual(before);expect(s.detail).not.toHaveBeenCalled();
+    s.prepare.mockResolvedValue(true);
+    shelf.flush({force:true});await settle();
+    expect(s.prepare).toHaveBeenCalledTimes(2);expect(s.detail).toHaveBeenCalledOnce();
+    const prepared=backgroundActivity();await settle();expect(backgroundActivity()).toEqual(prepared);
+    shelf.flush({force:true});await settle();
+    expect(s.prepare).toHaveBeenCalledTimes(2);expect(s.detail).toHaveBeenCalledOnce();
+  });
+  it('retries a hidden owner after it returns, without starting detail preparation while hidden', async () => {
+    const s=begin();shelf.setPresentationActive(false);const before=backgroundActivity();
+    s.complete(true);await settle();
+    expect(backgroundActivity()).toEqual(before);expect(s.detail).not.toHaveBeenCalled();
+    shelf.setPresentationActive(true);shelf.flush({force:true});await settle();
+    expect(s.prepare).toHaveBeenCalledTimes(2);expect(s.detail).toHaveBeenCalledOnce();
+  });
+  it.each(['cancellation','rejection'])('retries detail %s without scheduling a background paint or duplicating pending work', async failure => {
+    vi.spyOn(console,'warn').mockImplementation(()=>{});
+    const detailed=deferred(),detail=vi.fn(()=>detailed.promise),s=begin(detail);
+    s.complete(true);await settle();expect(detail).toHaveBeenCalledOnce();
+    shelf.flush({force:true});shelf.flush({force:true});
+    expect(s.prepare).toHaveBeenCalledOnce();expect(detail).toHaveBeenCalledOnce();
+    const before=backgroundActivity();
+    if(failure==='rejection')detailed.reject(new Error('detail compile failed'));else detailed.resolve(false);
+    await settle();expect(backgroundActivity()).toEqual(before);
+    detail.mockResolvedValue(true);
+    shelf.flush({force:true});await settle();
+    expect(s.prepare).toHaveBeenCalledTimes(2);expect(detail).toHaveBeenCalledTimes(2);
+    shelf.flush({force:true});await settle();
+    expect(s.prepare).toHaveBeenCalledTimes(2);expect(detail).toHaveBeenCalledTimes(2);
+  });
+  it.each(['resting','detail'])('never revives a disposed room when pending %s preparation rejects', async phase => {
+    vi.spyOn(console,'warn').mockImplementation(()=>{});
+    const detailed=deferred(),detail=vi.fn(()=>detailed.promise),s=begin(detail);
+    if(phase==='detail'){s.complete(true);await settle();expect(detail).toHaveBeenCalledOnce();}
+    const disposedShelf=shelf;shelf.dispose();shelf=null;
+    const before=backgroundActivity();
+    if(phase==='detail')detailed.reject(new Error('disposed detail'));else s.reject(new Error('disposed resting'));
+    await settle();
+    expect(backgroundActivity()).toEqual(before);expect(disposedShelf.flush({force:true})).toBe(false);
+    expect(s.prepare).toHaveBeenCalledOnce();expect(detail).toHaveBeenCalledTimes(phase==='detail'?1:0);
+  });
+  it('recovers from a synchronous preparation exception on a later stable paint', async () => {
+    vi.spyOn(console,'warn').mockImplementation(()=>{});
+    const s=begin();s.complete(false);await settle();
+    s.prepare.mockImplementation(()=>{throw new Error('synchronous driver failure');});
+    shelf.flush({force:true});const before=backgroundActivity();await settle();
+    expect(backgroundActivity()).toEqual(before);expect(s.detail).not.toHaveBeenCalled();
+    s.prepare.mockResolvedValue(true);shelf.flush({force:true});await settle();
+    expect(s.prepare).toHaveBeenCalledTimes(3);expect(s.detail).toHaveBeenCalledOnce();
   });
 });

@@ -118,3 +118,108 @@ se cancela o falla la preparación diferida de los programas. El arreglo debe
 permitir reintentar en el siguiente repintado estable ya requerido, sin crear
 bucles de repintado ni temporizadores. No se ha modificado en esta entrega ni
 se ha demostrado que explique los timeouts anteriores de CI.
+
+## Continuación 1.7.117: lomo curvo y recuperación de preparaciones
+
+**La migración sigue siendo parcial.** Esta continuación añade la generación
+de posiciones, normales, UV e índices del lomo curvo a Rust; no sustituye las
+pantallas, Drive, persistencia, lector, audio ni el resto de la escena. Conserva
+la resolución de las mallas, materiales, cámaras y tiempos configurados. La
+igualdad comprobada corresponde a los buffers y contratos ensayados; no es una
+garantía absoluta sobre todos los píxeles o dispositivos.
+
+El host conserva la trigonometría y el muestreo del relieve en el mismo orden.
+Rust calcula la malla y las normales del grabado. El adaptador devuelve arrays
+propios, libera la memoria temporal y los entrega directamente a los atributos
+de Three. Se comprueba también el salto a índices de 32 bits cuando el índice
+65.535 requiere reservar el valor de reinicio de primitivas.
+
+### Mediciones del lomo
+
+WASM de esta continuación: **49.932 bytes**, SHA256
+`53cec33c06a184b510e2706cc387ad212e5ffc5c0ed86b672715be7f941ec3ee`.
+Los ocho adjuntos de navegador, el benchmark Node y el archivo compilado local
+coinciden en tamaño y hash. Los 32 hashes de posiciones, normales, UV e índices
+coinciden entre el original, el puente Rust directo y la ruta de producción;
+también coinciden entre Node y Chromium en estos ocho casos.
+
+Cada comparación usa cinco calentamientos y quince tandas con orden alternado.
+Incluye asignación y liberación, funciones del host, muestreo del relieve,
+copias de entrada/salida, instalación de atributos e índices y disposición de
+la geometría. No impone un umbral de velocidad para aprobar. Los casos pequeños
+agrupan 64 o 128 geometrías por tanda; el grabado de estantería agrupa cuatro.
+La tabla divide la mediana de cada tanda por ese número y muestra **milisegundos
+por geometría**.
+
+| Caso | Node JS → Rust | Chromium CPU ×4, JS → Rust |
+| --- | ---: | ---: |
+| Lomo sin grabado, 96 segmentos | 0,0231 → 0,0131 | 0,1375 → 0,1047 |
+| Estantería sin grabado, 32 segmentos | 0,0097 → 0,0063 | 0,0633 → 0,0508 |
+| Vista general sin grabado, 16 segmentos | 0,0069 → 0,0050 | 0,0383 → 0,0320 |
+| Compatibilidad sin grabado, 12 segmentos | 0,0057 → 0,0050 | 0,0336 → 0,0305 |
+| Grabado de estantería, 32 × 96 | 0,9698 → 0,2644 | 3,5500 → 1,3000 |
+| Grabado detallado, 96 × 384 | 12,1270 → 2,8104 | 34,6000 → 11,8000 |
+| Relieve suave detallado, 96 × 384 | 14,3926 → 4,6688 | 39,8000 → 17,8000 |
+| Límite de índices de 32 bits, 255 × 255 | 25,3979 → 5,2575 | 73,7000 → 21,5000 |
+
+Node 24.13.0 ejecuta en Windows con i5-10600K. Chromium usa viewport
+390 × 844, DPR 2, entrada táctil y ralentización CPU ×4 en escritorio. Los
+patrones son una máscara binaria determinista y un relieve trigonométrico
+cuantizado. No se mide dibujo GPU, una sesión completa de la aplicación,
+temperatura, batería ni rendimiento en un teléfono físico.
+
+El puente directo llama al export real una vez por caso: ocho llamadas,
+ocho asignaciones y ocho liberaciones comprobadas; quedan **0 bytes temporales
+asignados** después de cada llamada. El pico temporal del grabado detallado es
+2.382.424 bytes y el caso adicional de índices de 32 bits alcanza 4.192.280.
+Esto no significa consumo total cero: los arrays de salida pertenecen a Three
+y la capacidad de la memoria WASM puede conservar su máximo. La ejecución
+Node completa termina con capacidad de 8.060.928 bytes; los contextos Chromium
+independientes llegan hasta 5.308.416 bytes. Inicialización Node medida aparte:
+0,555 ms para compilar/instanciar y 0,891 ms para la primera geometría.
+
+Fuentes: `binding-benchmark-attempt1.json` y los ocho adjuntos
+`rust-binding-browser-observation.json` de `binding-browser-attempt1.json`,
+en el directorio de evidencias indicado arriba. Se conservan todas las muestras,
+medianas, percentiles 95 y totales, incluidos los casos con ahorro pequeño.
+
+### Fuentes tardías y preparación cancelada
+
+La llegada de una fuente renueva las texturas de texto de los modelos retenidos
+sin sustituir los botones, su foco ni la geometría de la estantería. La ruta de
+canvas anterior actualiza únicamente su imagen. La regresión con un WOFF2 real
+falla contra la web 1.7.116 publicada porque desconecta el botón enfocado y
+sustituye los nodos; el mismo caso pasa con el build local 1.7.117. Se conservan
+ambas ejecuciones en `font-public116-regression.json` y
+`font-browser-attempt1.json`.
+
+También se corrige el caso de preparación diferida descrito al final del
+apartado 1.7.116: una cancelación o error vuelve a permitir el intento en el
+siguiente repintado estable ya necesario. Completar o cancelar esa preparación
+no crea temporizadores ni repintados adicionales. No se atribuyen a este cambio
+los timeouts de CI sin una observación que demuestre esa relación.
+
+### Estado de verificación
+
+1.7.116 sí se publicó posteriormente: fuente
+`dbd6205ed7580c1b5717638533e3aff27ed5536b`, Pages
+`0f586bb1c6234306e26ebc6db1f977093fdc083f`. Se comprobaron 100 respuestas HTTP,
+98 recursos sin conexión y 866 condiciones. Sus recorridos públicos quedaron
+en **21/22**, con el fallo anterior al toque que motivó la corrección de fuentes.
+La CI completa de 1.7.116 conserva dos timeouts de regreso nativo distintos de
+ese fallo; no se han relajado los plazos ni convertido esos resultados en PASS.
+
+La [verificación del APK público](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/38141440469)
+aprobó los cinco estados nativos. Se auditaron el ZIP original y las capturas,
+la política de barras/pantalla encendida y el APK 1.1.8 de 78.531.695 bytes con
+SHA256 `5d10e6555c5c05e59925d18d5e0c959a08d8e41761a5aad37832c9d40d8e7eb1`.
+Google muestra el formulario real de acceso; no se autenticó una cuenta humana.
+La política de regreso se confirmó en la tercera muestra a 22,256 s, lo que no
+acredita un cierre fluido ni el contrato separado de ocho segundos del navegador.
+
+Para 1.7.117 pasan las 82 pruebas focales de geometría e integración, las
+19 de recuperación de preparación, los ocho casos de geometría en Chromium,
+la regresión real de fuentes, los siete recorridos originales locales y las
+105 comprobaciones Python/Android. La batería unitaria completa de 1.7.117
+está en ejecución; su publicación y comprobación HTTP todavía no se registran
+como realizadas en este apartado.

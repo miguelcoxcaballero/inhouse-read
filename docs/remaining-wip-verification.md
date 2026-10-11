@@ -1,3 +1,33 @@
+# Continuación: 1.7.117 preparada; migración parcial a Rust
+
+117 añade la malla completa del lomo curvo y sus normales de grabado al núcleo
+Rust/WASM. Las posiciones, UV, normales, índices y versiones de atributos
+coinciden exactamente con el original. En Chromium con CPU ×4, el caso detallado
+grabado pasa de 34,6 a 11,8 ms, incluyendo muestreo, copias y creación de geometría;
+no es una medida de fluidez global ni de un teléfono físico.
+
+La llegada de las fuentes conserva ahora botones, foco y geometría de la
+estantería mientras renueva sus texturas. La regresión con el WOFF2 real falla
+contra la web116 por sustitución de esos nodos y pasa en el build117.
+La preparación de programas cancelada o fallida se puede reintentar en un
+repintado ya necesario, sin temporizadores ni repintados de fondo adicionales.
+Ocho casos reales de geometría en Chromium y 105 comprobaciones Python/Android
+aprobados. Batería completa y publicación117 en curso.
+
+116 sí se publicó: fuente `dbd6205ed7580c1b5717638533e3aff27ed5536b`, Pages
+`0f586bb1c6234306e26ebc6db1f977093fdc083f`; 100 respuestas HTTP, 98 recursos del
+shell y 866 comprobaciones correctas. Web publicada21/22: el fallo previo al
+toque motivó la corrección de fuentes117. APK pública1.1.8 y sus cinco estados
+nuevos en emulador aprobados en38141440469. CI116 conserva dos timeouts de
+regreso nativo, distintos del fallo de fuentes; el cierre empieza muy cerca
+del plazo total de30 s y no se han ampliado sus límites.
+
+**La reescritura completa solicitada sigue sin terminar.** La interfaz, la
+persistencia, Drive, lector/audio y buena parte de la escena siguen en JS.
+[Alcance, mediciones y trabajo pendiente](rust-migration.md).
+
+## Historial anterior
+
 # Continuación: 1.7.116 preparada; migración parcial a Rust
 
 Se ha descargado y revisado `origin/main` (`c83add7`) antes de los cambios.

@@ -4,6 +4,7 @@
 
 mod font;
 mod bookmark;
+mod binding;
 mod pdf_layout;
 mod relief;
 

@@ -855,6 +855,27 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (gate.held && drawPending) invalidate(false);
   }
 
+  function refreshBookFonts() {
+    if (disposed) return;
+    // Loading a font changes canvas pixels without changing material keys.
+    // Repaint the retained models, including a quality replacement awaiting
+    // its cover, without replacing the projected buttons or the room layout.
+    for (const entry of bookEntries) {
+      if (entry.kind === 'plant' || entry.kind === 'lamp') continue;
+      for (const model of new Set([entry.model, entry.replacement])) {
+        if (!model) continue;
+        const redraw = model.userData.invalidate;
+        model.userData.invalidate = null;
+        try {
+          model.userData.updateSpineAppearance?.(entry.book, entry.style);
+          // Printed cover images have no generated lettering to refresh.
+          if (!entry.coverUrl) model.userData.updateCoverSource?.(null, entry.book, entry.style);
+        } finally { model.userData.invalidate = redraw; }
+      }
+    }
+    settledInvalidate(false, 'fonts-ready');
+  }
+
   function makeModel(entry) {
     const model = entry.kind === 'plant' ? createShelfPlant(entry, { persist:true })
       : entry.kind === 'lamp' ? createShelfLamp({ lampId:entry.lampId, width:entry.width, height:entry.height, quality:'high', isOn:entry.isOn !== false, persist:true, kelvin:entry.kelvin })
@@ -2506,9 +2527,21 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         const current = () => !disposed &&
           entry.model === model && model.visible && canPresent() && !paintHeld &&
           !hasOngoingMotion() && !canDeferModalPaint();
-        void model.userData.preparePresentation(idleSlice, current)
-          .then(ready => ready && current() && model.userData.prepareDetailPresentation?.(idleSlice, current))
-          .catch(error => console.warn('No se pudo preparar el libro en reposo:', error));
+        void (async () => {
+          let prepared = false;
+          try {
+            if (!await model.userData.preparePresentation(idleSlice, current) || !current()) return;
+            prepared = typeof model.userData.prepareDetailPresentation !== 'function' ||
+              await model.userData.prepareDetailPresentation(idleSlice, current);
+          } catch (error) {
+            console.warn('No se pudo preparar el libro en reposo:', error);
+          } finally {
+            // A busy/hidden owner or failed driver can cancel either phase.
+            // Permit another already-required stable paint to retry; settling
+            // background preparation must never schedule a frame of its own.
+            if (!prepared && !disposed) bookPresentationScheduled = false;
+          }
+        })();
       }
     }
     // One more frame after any motion redraws its cheaper shadow at full quality.
@@ -2692,7 +2725,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   document.addEventListener('visibilitychange', presentationChanged);
   updateWoodTheme();
   draw();
-  refreshCanvasFontsAfterPaint(() => settledInvalidate(false, 'fonts-ready'));
+  refreshCanvasFontsAfterPaint(refreshBookFonts);
 
   function getInspectionView() {
     const rect=canvas.getBoundingClientRect();

@@ -1376,6 +1376,18 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     return status;
   }
 
+  function spineBodyView(body, item) {
+    const { book, style } = item;
+    const height = (window.innerWidth >= 600 ? 200 : 172) * style.heightRatio;
+    return bookView(body, book, style, {
+      width: height * coverRatioFor(style), height, thickness: style.width,
+      viewportWidth: item.displayWidth ?? style.width, viewportHeight: height,
+      centerX: (item.displayWidth ?? style.width) / 2, centerY: height / 2,
+      shelf: true,
+      shelfView: state.viewMode
+    });
+  }
+
   function buildSpine(item) {
     const { book, style } = item;
     state.itemsById.set(String(book.id ?? book.path ?? book.title ?? 'book'), item);
@@ -1402,15 +1414,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (style.width < 32) node.classList.add('ihr-spine--slim');
 
     const body = el('span', { class: 'ihr-spine__body', 'aria-hidden': 'true' });
-    const height = (window.innerWidth >= 600 ? 200 : 172) * style.heightRatio;
-    const coverRatio = coverRatioFor(style);
-    const view = state.useScene ? null : bookView(body, book, style, {
-      width: height * coverRatio, height, thickness: style.width,
-      viewportWidth: item.displayWidth ?? style.width, viewportHeight: height,
-      centerX: (item.displayWidth ?? style.width) / 2, centerY: height / 2,
-      shelf: true,
-      shelfView: state.viewMode
-    });
+    const view = state.useScene ? null : spineBodyView(body, item);
     if (view) view.dispose(false); // retain the rendered snapshot, free mesh/textures
     else if (!state.useScene) body.append(el('span', { class: 'ihr-spine__label' }, [
       el('span', { class: 'ihr-spine__title', text: book.spineTitleOverride || book.title || 'Sin título' }),
@@ -3718,9 +3722,22 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   prepareInitialAppearances();
   render();
-  // Canvas text does not repaint when a web font arrives, unlike DOM text.
+  // The shared scene refreshes its own text textures when fonts arrive. Keep
+  // its semantic buttons: rebuilding them here can detach a visible spine
+  // between pointerdown/measurement and the following event. The legacy
+  // canvas snapshots need only new artwork; DOM lettering reflows itself.
   refreshCanvasFontsAfterPaint(() => {
-    if (!state.destroyed && !state.session) scheduleRender();
+    if (state.destroyed || state.session || state.useScene) return;
+    for (const node of scroller.querySelectorAll('.ihr-spine')) {
+      const body = node.querySelector('.ihr-spine__body');
+      const item = state.itemsById.get(node.dataset.bookId);
+      if (!item || !body?.querySelector('canvas')) continue;
+      const replacement = el('span', { class:'ihr-spine__body', 'aria-hidden':'true' });
+      const view = spineBodyView(replacement, item);
+      if (!view) continue;
+      view.dispose(false);
+      body.replaceWith(replacement);
+    }
   });
 
   function metadataContext() {
