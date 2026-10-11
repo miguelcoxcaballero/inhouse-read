@@ -9,11 +9,13 @@ Mismo patrón que **inhouse notes**: la app Android es un **WebView-shell** (Cap
 - `android/html_to_apk_builder.py` — el builder (Capacitor + manifest/gradle/iconos), con autorización nativa de Drive por Google Play Services y el instalador de auto-actualización.
 - El keystore de firma (`inhouse-read-release.jks`, válido hasta 2054) se generó una vez con `keytool` y vive únicamente como secrets del repo (`INHOUSE_READ_ANDROID_KEYSTORE_BASE64`, `_PASSWORD`, `_KEY_ALIAS`) y en una copia local fuera de este repositorio — nunca en el código ni en este README.
 
-## Auto-actualización dentro de la app
+## Actualizaciones dentro de la app
 
-Mismo mecanismo que inhouse notes/photos (revisado en `app-v5.js::checkForRequiredAndroidUpdate` antes de portarlo, no reinventado): al arrancar dentro del WebView, `src/js/android-update.js` consulta `public/android-update.json` (servido junto al resto del sitio) y, si hay una versión más nueva, muestra un aviso a pantalla completa con el botón "Instalar actualización". Al pulsarlo, delega en el puente nativo `InhouseNative.installAppUpdate(url, sha256)` (`patch_webview_bridge` en `html_to_apk_builder.py`), que descarga el APK, **verifica su SHA-256** contra el del manifiesto (aborta si no coincide — no está en Notes, es un plus de integridad que añadimos aquí) y lanza el instalador del sistema.
+Read usa el [Inhouse services updater común](https://github.com/miguelcoxcaballero/inhouse-services-updater), sincronizado desde su repositorio canónico. El aviso es opcional, B es el canal predeterminado y A requiere aceptar su advertencia de desarrollo. «Later» aplaza el aviso 14 días y la comprobación manual sigue disponible en ajustes. El código compartido no se modifica en este repositorio.
 
-`public/android-update.json` se actualiza solo: el último paso de `build-android.yml` calcula el tamaño y el sha256 reales del APK recién firmado (`update_manifest.py`) y comitea/empuja el cambio a `main` — nunca hay que editarlo a mano ni acordarse de hacerlo en el próximo release. Si algún día se compila el APK por otra vía (fuera de este workflow), hay que correr ese script a mano antes de publicar, o el checker in-app seguirá ofreciendo la versión anterior.
+La versión preparada Android 1.1.15 (versionCode 28), junto con la web 1.7.137, corrige el resultado de instalación: abrir el instalador no acredita que la actualización haya terminado. No se ha probado esta versión en un teléfono físico.
+
+El workflow verifica el paquete `com.inhousesoftware.read`, la versión y la continuidad de firma frente a Android 1.1.13 antes de publicar. Conserva las pruebas del loader, importación de libros y audio en segundo plano en Android 15. Tras publicar vuelve a descargar la APK, compara sus bytes y verifica su identidad y firma antes de generar los metadatos reales de `public/android-update.json` y el catálogo A. B no cambia. Nunca se editan tamaño o SHA-256 a mano ni se anuncia una APK antes de su publicación y verificación.
 
 ## Google Drive en Android
 

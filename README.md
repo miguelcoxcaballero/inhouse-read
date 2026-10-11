@@ -1,5 +1,13 @@
 # inhouse read
 
+## 1.7.137 / Android 1.1.15 — Resultado de instalación
+
+Preparación de la corrección compartida del actualizador: abrir el instalador
+Android no confirma que la actualización se haya instalado. La nueva APK usa
+versionCode 28 y conserva el paquete y la firma. Se publicará en A después de
+las comprobaciones de la APK; B conserva Android 1.1.13. No se ha probado esta
+versión en un teléfono físico.
+
 ## 1.7.135 — Interacción con la estantería
 
 La preparación gráfica de segundo plano cede inmediatamente al pulsar o

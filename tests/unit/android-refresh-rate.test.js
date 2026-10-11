@@ -87,11 +87,23 @@ describe('Android version strings', () => {
     expect(workflow).toContain(`android-v${name}`)
     expect(workflow).toContain(`Inhouse Read Android ${name}`)
     expect(workflow).toMatch(new RegExp(`inhouse-read-release-v${name.replaceAll('.', '\\.')}\\.apk \\\\\\n\\s+${name.replaceAll('.', '\\.')} \\\\\\n\\s+${code} \\\\\\n\\s+android-v${name.replaceAll('.', '\\.')} \\\\`))
-    // No other APK version may remain (1.1.1.1 is the DNS server, not a version).
+    // The previous public APK is retained only to prove signing continuity.
     const names = new Set([...workflow.matchAll(/inhouse-read-release-v([\d.]+)\.apk/g)].map(match => match[1]))
     const tags = new Set([...workflow.matchAll(/android-v([\d.]+)/g)].map(match => match[1]))
-    expect([...names]).toEqual([name])
-    expect([...tags]).toEqual([name])
+    expect([...names].sort()).toEqual(['1.1.13', name].sort())
+    expect([...tags].sort()).toEqual(['1.1.13', name].sort())
+    const verifier = read('.github/scripts/verify_release_apk.py')
+    expect(verifier).toContain(`VERSION_NAME = "${name}"`)
+    expect(verifier).toContain(`VERSION_CODE = ${code}`)
+    const verifySigned = workflow.indexOf('- name: Verify APK identity and signing continuity')
+    const publishApk = workflow.indexOf('- name: Publish versioned APK download')
+    const verifyPublic = workflow.indexOf('- name: Verify public APK before its catalog')
+    const publishCatalog = workflow.indexOf('- name: Actualizar android-update.json')
+    expect(verifySigned).toBeGreaterThanOrEqual(0)
+    expect(verifySigned).toBeLessThan(publishApk)
+    expect(publishApk).toBeLessThan(verifyPublic)
+    expect(verifyPublic).toBeLessThan(publishCatalog)
+    expect(workflow).toContain('catalog.py --channel A')
   })
 
   it('is newer than the version the installed 1.1.1 app reports', () => {
