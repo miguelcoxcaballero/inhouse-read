@@ -1,5 +1,10 @@
 # inhouse read
 
+## 1.7.136 / Android 1.1.14 — Colores del actualizador
+
+El actualizador compartido usa tonos neutros en los temas claro y oscuro.
+Android 1.1.14 se publica únicamente en A; B conserva Android 1.1.13.
+
 ## 1.7.135 — Interacción con la estantería
 
 La preparación gráfica de segundo plano cede inmediatamente al pulsar o
