@@ -13,7 +13,7 @@ Mismo patrón que **inhouse notes**: la app Android es un **WebView-shell** (Cap
 
 Read usa el [Inhouse services updater común](https://github.com/miguelcoxcaballero/inhouse-services-updater), sincronizado desde su repositorio canónico. El aviso es opcional, B es el canal predeterminado y A requiere aceptar su advertencia de desarrollo. «Later» aplaza el aviso 14 días y la comprobación manual sigue disponible en ajustes. El código compartido no se modifica en este repositorio.
 
-La versión preparada Android 1.1.15 (versionCode 28), junto con la web 1.7.137, corrige el resultado de instalación: abrir el instalador no acredita que la actualización haya terminado. No se ha probado esta versión en un teléfono físico.
+La versión preparada Android 1.1.15 (versionCode 28), junto con la web 1.7.138, corrige el resultado de instalación: abrir el instalador no acredita que la actualización haya terminado. Las APK antiguas muestran «Download APK» desde la oferta para descargar con el navegador y abrir la actualización desde Descargas cuando su instalador no responde. La recuperación web llega al recargar, sin depender de instalar primero la nueva APK. No se ha probado esta versión en un teléfono físico.
 
 El workflow verifica el paquete `com.inhousesoftware.read`, la versión y la continuidad de firma frente a Android 1.1.13 antes de publicar. Conserva las pruebas del loader, importación de libros y audio en segundo plano en Android 15. Tras publicar vuelve a descargar la APK, compara sus bytes y verifica su identidad y firma antes de generar los metadatos reales de `public/android-update.json` y el catálogo A. B no cambia. Nunca se editan tamaño o SHA-256 a mano ni se anuncia una APK antes de su publicación y verificación.
 
