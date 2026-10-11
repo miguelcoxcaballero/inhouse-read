@@ -53,7 +53,7 @@ export class CloudSync {
   }
 
   /** Forget the app's copy, without deleting or trashing the Drive file. */
-  async removeFromShelf(book) {
+  async removeFromShelf(book, options) {
     if (!book?.id) return null
     this.#bookGenerations.set(book.id, this.#bookGeneration(book.id) + 1)
     clearTimeout(this.#progressTimers.get(book.id))
@@ -61,7 +61,7 @@ export class CloudSync {
     this.#uploads.delete(book.id)
     this.#downloads.delete(book.id)
     this.#progressSyncs.delete(book.id)
-    return this.#library.removeFromShelf(book)
+    return this.#library.removeFromShelf(book, options)
   }
 
   reset() {
@@ -110,7 +110,7 @@ export class CloudSync {
         driveContentChecksum:uploaded.md5Checksum || null, contentDriveChecksum:uploaded.md5Checksum || null,
         cloudAccountId: accountId, sourceType: 'local'
       })
-      if (updated) this.#onChange()
+      if (updated) this.#onChange(updated)
       return updated
     })()
     this.#uploads.set(book.id, task)
@@ -228,7 +228,7 @@ export class CloudSync {
         progressUpdatedAt: remoteUpdatedAt, progressDirty: false,
         progressStateFileId: remote.stateFileId
       }, { ifCurrent:current => this.#isCurrent(id, bookGeneration, generation) && sameProgress(current, record) })
-      if (updated) this.#onChange()
+      if (updated) this.#onChange(updated)
       else if (this.#isCurrent(id, bookGeneration, generation)) this.scheduleProgress(id)
       // Length is content metadata, independent of which device's locator won.
       // Preserve the winning remote progress while publishing a local count.

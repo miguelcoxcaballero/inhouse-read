@@ -175,6 +175,11 @@ export class LibraryStore {
     return this.listRecents(Infinity)
   }
 
+  async listRemoved() {
+    const db = await this.#dbPromise
+    return wrap(db.transaction(REMOVED_STORE, 'readonly').objectStore(REMOVED_STORE).getAll())
+  }
+
   async get(id) {
     const store = await this.#store('readonly')
     return (await wrap(store.get(id))) ?? null
@@ -246,7 +251,7 @@ export class LibraryStore {
    * in Drive / the user's device untouched. A tiny identity marker prevents
    * subsequent background syncs from silently importing it again.
    */
-  async removeFromShelf(bookOrId) {
+  async removeFromShelf(bookOrId, { removedAt } = {}) {
     const id = typeof bookOrId === 'string' ? bookOrId : bookOrId?.id
     if (!id) return null
     const db = await this.#dbPromise
@@ -258,6 +263,7 @@ export class LibraryStore {
     const previous = await wrap(removedStore.get(id))
     const source = { ...(typeof bookOrId === 'object' ? bookOrId : {}), ...record, id }
     const removal = removalIdentity(source, previous)
+    if (Number.isFinite(removedAt) && removedAt > 0) removal.removedAt = removedAt
     removedStore.put(removal)
     store.delete(id)
     await completion

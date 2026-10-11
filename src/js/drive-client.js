@@ -422,6 +422,44 @@ async function getOrCreateStateFolder() {
   return result
 }
 
+// Each installation owns one manifest. Devices never PATCH another device's
+// snapshot, so simultaneous saves cannot erase an entire library.
+export async function readDriveLibrarySnapshots() {
+  const generation = authGeneration
+  const root = await findFolder(FOLDER_NAME, undefined, generation)
+  if (!root) return []
+  const folder = await findFolder(STATE_FOLDER_NAME, root, generation)
+  if (!folder) return []
+  const snapshots = []
+  let pageToken
+  do {
+    const page = await listFolder(folder, { pageToken }, generation)
+    for (const file of page.files || []) {
+      if (!/^library-v1-[\w-]+\.json$/.test(file.name)) continue
+      const data = await (await driveFetch(`${DRIVE_FILES_URL}/${encodeURIComponent(file.id)}?alt=media`, {}, generation)).json()
+      if (data?.schemaVersion !== 1 || !data.deviceId || !Array.isArray(data.books)) {
+        throw new Error('La copia de la biblioteca en Drive no es válida. No se ha sobrescrito.')
+      }
+      snapshots.push({ ...data, stateFileId:file.id })
+    }
+    pageToken = page.nextPageToken
+  } while (pageToken)
+  return snapshots
+}
+
+export async function writeDriveLibrarySnapshot(snapshot, stateFileId) {
+  const generation = authGeneration
+  const parentId = stateFileId ? undefined : await getOrCreateStateFolder()
+  const file = new File([JSON.stringify(snapshot)], `library-v1-${snapshot.deviceId}.json`, { type:'application/json' })
+  return uploadDriveFile(file, { driveFileId:stateFileId, parentId }, generation)
+}
+
+export async function uploadDriveCover(cover, name) {
+  const generation = authGeneration
+  const parentId = await getOrCreateStateFolder()
+  return uploadDriveFile(new File([cover], name, { type:cover.type || 'image/jpeg' }), { parentId }, generation)
+}
+
 async function listFolder(folderId, { pageToken, pageSize = 100, fields = 'id,name,mimeType,size,modifiedTime,md5Checksum' } = {}, generation = authGeneration) {
   const params = new URLSearchParams({
     q: `'${folderId}' in parents and trashed = false`,

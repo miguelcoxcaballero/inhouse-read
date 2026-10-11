@@ -1,3 +1,5 @@
+import { notifyCloudSettingsChanged } from './cloud-settings.js';
+import { needsDriveDownload } from './book-storage-policy.js';
 /**
  * bookshelf.js — home screen de Inhouse Read: una estantería con plantas.
  * =============================================================================
@@ -458,7 +460,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   const plantCatalog = createLazyPlantCatalog({ onAdd:addCatalogPlant, onAddLamp:addCatalogLamp, shelfType:state.shelfType,
     onShelfChange:({ shelfType }, { whenClosed = run => run() } = {}) => {
       state.shelfType = normalizeShelfType(shelfType);
-      try { localStorage.setItem(SHELF_TYPE_STORAGE_KEY, state.shelfType); } catch { /* Local preference only. */ }
+      try { localStorage.setItem(SHELF_TYPE_STORAGE_KEY, state.shelfType); notifyCloudSettingsChanged(SHELF_TYPE_STORAGE_KEY); } catch { /* Local preference only. */ }
       whenClosed(() => { if (!state.destroyed) render(); });
     },
     // The camera flies from the booklet in the room into the catalogue page.
@@ -782,13 +784,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   const objectRects = () => new Map([...scroller.querySelectorAll('.ihr-spine, .ihr-plant, .ihr-lamp')]
     .map(node => [objectKey(node), node.getBoundingClientRect()]));
 
-  function savePlants({ strict = false } = {}) {
-    try { localStorage.setItem(SHELF_PLANTS_STORAGE_KEY, JSON.stringify(state.plants)); }
+  function savePlants({ strict = false, initial = false } = {}) {
+    try { localStorage.setItem(SHELF_PLANTS_STORAGE_KEY, JSON.stringify(state.plants)); if (!initial) notifyCloudSettingsChanged(SHELF_PLANTS_STORAGE_KEY); }
     catch (error) { if (strict) throw error; }
   }
 
   function saveLamps({ strict = false } = {}) {
-    try { localStorage.setItem(SHELF_LAMPS_STORAGE_KEY, JSON.stringify(state.lamps)); }
+    try { localStorage.setItem(SHELF_LAMPS_STORAGE_KEY, JSON.stringify(state.lamps)); notifyCloudSettingsChanged(SHELF_LAMPS_STORAGE_KEY); }
     catch (error) { if (strict) throw error; }
   }
 
@@ -1733,7 +1735,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       state.plants = initialPlants.map(({ key, seed, variant, shelf, x }) =>
         normalizeShelfPlant({ key, seed, variant, shelf, x,potId:resolveCatalogPlant({ variant })?.defaultPotId }));
       state.plantsInitialized = true;
-      savePlants();
+      savePlants({ initial:true });
     }
     const scale = plantScale();
     objects.push(...state.plants.map(plant => plantShelfObject(plant, scale)));
@@ -1784,7 +1786,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     if (state.trashRemoval) return;
     if (!Object.values(SHELF_VIEW_MODES).includes(mode) || state.viewMode === mode) return;
     state.viewMode = mode;
-    try { localStorage.setItem(SHELF_VIEW_STORAGE_KEY, mode); } catch { /* Preferencias no bloquean la biblioteca. */ }
+    try { localStorage.setItem(SHELF_VIEW_STORAGE_KEY, mode); notifyCloudSettingsChanged(SHELF_VIEW_STORAGE_KEY); } catch { /* Preferencias no bloquean la biblioteca. */ }
     prepareCatalogWhenIdle();
     if (state.shelfScene) {
       root.dataset.viewMode = mode;
@@ -2361,7 +2363,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     finishPendingSelection();
 
     const cloud = options.getBookCloudState?.(book) || { connected:false,saved:Boolean(book.driveFileId) };
-    const needsDownload = book.sourceType === 'drive' && !book.content;
+    const needsDownload = needsDriveDownload(book);
     const cloudAction = needsDownload
       ? el('button', { type:'button',class:'ihr-btn ihr-btn--quiet ihr-btn--icon',title:'Descargar para usar sin conexión',
         'aria-label':'Descargar para usar sin conexión',disabled:!options.onBookAction,
@@ -2377,6 +2379,14 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
             onClick:event => options.onBookAction?.('drive',book,event.currentTarget) },
             [svgIcon(ICONS.drive,{ className:'ihr-icon' })])
           : null;
+    session.updateCloudRecord = record => {
+      if (!record.driveFileId || !cloudAction?.isConnected || !cloudAction.classList.contains('ihr-flyout__cloud-action')) return;
+      book.driveFileId = record.driveFileId;
+      book.cloudAccountId = record.cloudAccountId;
+      cloudAction.replaceWith(el('span', { class:'ihr-btn ihr-btn--quiet ihr-btn--icon ihr-flyout__cloud-saved', role:'status',
+        'aria-label':'Guardado en Google Drive', title:'Guardado en Google Drive' },
+        [svgIcon(ICONS.drive,{ className:'ihr-icon' }),el('span',{ class:'ihr-flyout__cloud-check','aria-hidden':'true' },[svgIcon(ICONS.check,{ className:'ihr-icon' })])]));
+    };
     const actionButtons = [
       el('button', { type: 'button', class: 'ihr-btn ihr-btn--primary', disabled:true, onClick: () => expandCover() }, [svgIcon(ICONS.read, { className:'ihr-icon' }), el('span', { text: opts.texts.openAction })]),
       cloudAction,
@@ -4191,6 +4201,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     queueRefresh:nextBooks => refresh(nextBooks, { defer:true }),
     update: refresh,
     returnToShelf,
+    updateCloudRecord(record) { if (state.session?.book.id === record.id) state.session.updateCloudRecord?.(record); },
     setPresentationActive(value) {
       state.presentationActive = Boolean(value);
       state.shelfScene?.setPresentationActive?.(state.presentationActive);

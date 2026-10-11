@@ -28,6 +28,7 @@ export function createLazyReaderExperience(reader, options) {
     ready: load,
     prefetch() { return load().catch(() => null) },
     get loaded() { return Boolean(experience) },
+    reloadPreferences() { if (experience) experience.preferences = storedPreferences() },
     get preferences() { return experience ? experience.preferences : storedPreferences() },
     get panel() { return experience?.panel ?? idlePanel },
     get voice() { return experience?.voice ?? idleVoice },

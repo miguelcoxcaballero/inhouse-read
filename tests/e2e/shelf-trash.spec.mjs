@@ -531,6 +531,12 @@ test('un libro retirado sigue en Drive y la sincronización automática no lo vu
     expect(url.searchParams.get('uploadType')).toBe('multipart')
     const boundary = request.headers()['content-type']?.match(/boundary=([^;]+)/)?.[1]
     expect(boundary).toBeTruthy()
+    const multipart = request.postDataBuffer().toString('utf8').split(`--${boundary}`)
+    const firstPart = multipart.find(part => part.includes('Content-Type:'))
+    const assetMetadata = JSON.parse(firstPart.slice(firstPart.indexOf('\r\n\r\n') + 4).trim())
+    if (/^(cover-|library-v1-)/.test(assetMetadata.name)) {
+      return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ id:`backup-${assetMetadata.name}`, name:assetMetadata.name }) })
+    }
     const parts = request.postDataBuffer().toString('utf8').split(`--${boundary}`)
       .filter(part => part.includes('Content-Type:'))
       .map(part => JSON.parse(part.slice(part.indexOf('\r\n\r\n') + 4).trim()))

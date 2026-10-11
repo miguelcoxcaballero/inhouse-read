@@ -11,6 +11,10 @@ export function bookCloudState(book, { connected = false } = {}) {
   return { connected:Boolean(connected), saved:Boolean(book?.driveFileId) }
 }
 
+/** A linked local import can lose its cached bytes too. Its original remains
+ * downloadable regardless of which device/source created the record. */
+export function needsDriveDownload(book) { return Boolean(book?.driveFileId && !book.content) }
+
 /** Resolve only after the original bytes have committed to IndexedDB. */
 export async function storeBookFile(library, file, fields, { restoreRemoved = false, reuseStoredContent = false } = {}) {
   try {

@@ -2,6 +2,7 @@ import './helpers/empty-update-channels.mjs'
 import { test, expect } from '@playwright/test'
 import {readFileSync} from 'node:fs'
 import {createHash} from 'node:crypto'
+import { driveServer } from './helpers/drive-server.mjs'
 import {localBookBytes} from './helpers/offline-shell.mjs'
 
 const PDF_FIXTURE = 'tests/e2e/fixtures/tiny.pdf'
@@ -23,96 +24,40 @@ test.beforeEach(async ({ page }) => {
   await page.goto(process.env.IHR_TEST_URL || '/')
 })
 
-test('Android: importa localmente sin subir y guarda en Drive sólo desde la portada elegida', async ({ page }) => {
+test('Android keeps local bytes while automatically backing up a connected library', async ({ page }) => {
   test.setTimeout(120_000)
+  let finishUpload, uploadStarted = false
+  const held = new Promise(resolve => { finishUpload = resolve })
+  const drive = driveServer({ beforeUpload:async metadata => {
+    if (metadata.name === 'tiny.pdf') { uploadStarted = true; await held }
+  } })
+  await drive.connect(page.context())
+  await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', {
+    value:`${navigator.userAgent} InhouseReadApp/1.1.12`, configurable:true
+  }))
   await page.setViewportSize({ width:390, height:844 })
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'userAgent', {
-      value: `${navigator.userAgent} InhouseReadApp/1.0.17`, configurable: true
-    })
-    localStorage.setItem('ihr_drive_session_v2', JSON.stringify({
-      accessToken:'test-drive-token', expiresAt:Date.now() + 3600_000
-    }))
-  })
-  // This test exercises Drive upload, not the public release feed. A newly
-  // published APK must not put an unrelated upgrade modal over this fixture.
-  await page.route('**/android-update.json?**', route => route.fulfill({
-    status:200, contentType:'application/json', body:JSON.stringify({
-      version:'1.0.17', required:false, apkUrl:'https://github.com/miguelcoxcaballero/inhouse-read/releases/download/test/app.apk'
-    })
-  }))
-  await page.route('https://api.github.com/repos/miguelcoxcaballero/inhouse-read/releases/latest',
-    route => route.fulfill({status:404,body:'No update in this fixture'}))
-  let finishBookUpload
-  let startedBookUpload
-  const bookUploadStarted = new Promise(resolve => { startedBookUpload = resolve })
-  const holdBookUpload = new Promise(resolve => { finishBookUpload = resolve })
-  let uploadCount = 0
-
-  await page.route('https://www.googleapis.com/drive/v3/about?**', route => route.fulfill({
-    status:200, contentType:'application/json',
-    body:JSON.stringify({ user:{ permissionId:'account-1', displayName:'Miguel', emailAddress:'miguel@example.com' } })
-  }))
-  await page.route('https://www.googleapis.com/drive/v3/files**', async route => {
-    if (route.request().method() === 'GET') {
-      return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({ files:[] }) })
-    }
-    const body = JSON.parse(route.request().postData() || '{}')
-    return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({
-      id:body.name === '.inhouse-read-state' ? 'state-folder' : 'read-folder', name:body.name
-    }) })
-  })
-  await page.route('https://www.googleapis.com/upload/drive/v3/files?**', async route => {
-    uploadCount += 1
-    if (uploadCount === 1) {
-      startedBookUpload()
-      await holdBookUpload
-      return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({
-        id:'drive-book', name:'tiny.pdf', mimeType:'application/pdf', size:'445'
-      }) })
-    }
-    return route.fulfill({ status:200, contentType:'application/json', body:JSON.stringify({
-      id:'drive-progress', name:'progress-drive-book.json', mimeType:'application/json', size:'100'
-    }) })
-  })
-
   await page.reload()
   await page.locator('#file-picker').setInputFiles(PDF_FIXTURE)
   await expect(page.locator('.pdf-page-canvas')).toBeVisible()
-  const original=readFileSync(PDF_FIXTURE)
-  await expect.poll(()=>localBookBytes(page,'tiny.pdf')).toMatchObject({bytes:original.length,sha256:createHash('sha256').update(original).digest('hex'),hasDriveCopy:false})
-  const before=await localBookBytes(page,'tiny.pdf')
-  expect(before).toMatchObject({bytes:original.length,sha256:createHash('sha256').update(original).digest('hex'),hasDriveCopy:false})
-  expect(uploadCount).toBe(0)
-  const uploadScreen = page.locator('#drive-upload-screen')
-  await expect(uploadScreen).toBeHidden()
+  const original = readFileSync(PDF_FIXTURE)
+  await expect.poll(() => uploadStarted).toBe(true)
+  await expect.poll(() => localBookBytes(page,'tiny.pdf')).toMatchObject({
+    bytes:original.length, sha256:createHash('sha256').update(original).digest('hex'), hasDriveCopy:false
+  })
   await page.getByRole('button', { name:'Volver a la estantería' }).click()
   await expectReturnComplete(page)
-  const spine=page.getByRole('button', { name:/Abrir tiny/i })
-  await expect(spine).toBeVisible();await spine.click()
-  const upload=page.locator('.ihr-flyout__cloud-action')
-  await expect(upload).toBeVisible()
-  await expect(upload).toHaveAccessibleName('Subir a Google Drive')
-  expect(uploadCount).toBe(0) // connected login, import and close never upload bytes
-  await upload.click();await bookUploadStarted
-  await expect(upload).toHaveAttribute('aria-busy','true')
-  await expect(upload).toHaveAccessibleName('Guardando…')
-  await expect(uploadScreen).toBeHidden() // the selected cover remains usable
-  expect(await localBookBytes(page,'tiny.pdf')).toEqual(before)
-  finishBookUpload()
-  const saved=page.locator('.ihr-flyout__cloud-saved')
-  await expect(saved).toHaveAccessibleName('Guardado en Google Drive')
-  await expect(saved).toHaveAttribute('role','status')
-  expect(await saved.evaluate(element=>element.tagName)).toBe('SPAN')
+  const spine = page.locator('.ihr-spine').first()
+  await expect(spine).toBeVisible(); await spine.focus(); await page.keyboard.press('Enter')
+  await expect(page.locator('.ihr-flyout__cloud-action')).toBeVisible()
+  finishUpload()
+  await expect(page.locator('.ihr-flyout__cloud-saved')).toHaveAccessibleName('Guardado en Google Drive')
   await expect(page.locator('.ihr-flyout__cloud-action')).toHaveCount(0)
-  const after=await localBookBytes(page,'tiny.pdf')
-  expect(after).toEqual({...before,hasDriveCopy:true})
-  const driveId=await page.evaluate(async()=>{
-    const db=await new Promise(resolve=>{const request=indexedDB.open('inhouse-read');request.onsuccess=()=>resolve(request.result)})
-    const books=await new Promise(resolve=>{const request=db.transaction('books').objectStore('books').getAll();request.onsuccess=()=>resolve(request.result)})
-    db.close();return books.find(book=>book.name==='tiny.pdf')?.driveFileId
+  await expect.poll(() => localBookBytes(page,'tiny.pdf'), { timeout:30_000 }).toMatchObject({
+    bytes:original.length, sha256:createHash('sha256').update(original).digest('hex'), hasDriveCopy:true
   })
-  expect(driveId).toBe('drive-book')
+  await expect(page.locator('#drive-upload-screen')).toBeHidden()
+  await expect.poll(() => drive.manifests().some(state => state.books.length === 1), { timeout:30_000 }).toBe(true)
+  expect([...drive.files.values()].filter(file => file.name === 'tiny.pdf')).toHaveLength(1)
 })
 
 test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recargar', async ({ page }) => {

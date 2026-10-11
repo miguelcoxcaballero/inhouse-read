@@ -17,7 +17,7 @@ function colourPNG() {
 }
 
 /** Real EPUB/PNG resources, with no Foliate, image or theme doubles. */
-export function imageThemeEPUB() {
+export function imageThemeEPUB({ cover = false } = {}) {
   const entries=[
     ['mimetype','application/epub+zip'],
     ['META-INF/container.xml','<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>'],
@@ -27,7 +27,8 @@ export function imageThemeEPUB() {
     ['colours.png',colourPNG()]
   ]
   const locals=[],central=[];let offset=0
-  for(const [path,data] of entries) {
+  for(let [path,data] of entries) {
+    if (cover && path === 'book.opf') data = data.replace('id="photo"', 'id="photo" properties="cover-image"')
     const name=Buffer.from(path),bytes=Buffer.isBuffer(data)?data:Buffer.from(data),crc=crc32(bytes)
     const header=Buffer.alloc(30);header.writeUInt32LE(0x04034b50);header.writeUInt16LE(20,4)
     header.writeUInt32LE(crc,14);header.writeUInt32LE(bytes.length,18);header.writeUInt32LE(bytes.length,22);header.writeUInt16LE(name.length,26)

@@ -1,3 +1,4 @@
+import { notifyCloudSettingsChanged } from '../cloud-settings.js'
 import { readerPanelMarkup, readerIcon } from './reader-interface.js'
 import { normalizeReadingPreferences, rateLabel, READING_THEMES } from './reading-preferences.js'
 import { ReadingVoice } from './reading-voice.js'
@@ -303,7 +304,7 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
   setPreference(key, value, { restart = true } = {}) {
     const audio = ['rate','voice','voiceLang','footnotes','multilingual','skipHeaders'].includes(key)
     if (!audio) this.voice.stop()
-    this.preferences = normalizeReadingPreferences({ ...this.preferences, [key]:value }); this.applyPreferences(!audio)
+    this.preferences = normalizeReadingPreferences({ ...this.preferences, [key]:value }); this.applyPreferences(!audio); notifyCloudSettingsChanged(STORAGE_KEY)
     this.voice.options = {footnotes:this.preferences.footnotes,multilingual:this.preferences.multilingual,skipHeaders:this.preferences.skipHeaders}
     if (key === 'rate' || key === 'voice' || key === 'voiceLang') { this.voice.retryNeural?.(); if (restart) this.voice.restart?.() } // a new speed or choice gives a neural voice another chance
     if (key === 'voice') this.neuralPicker?.warmUp() // a neural voice is loaded (worker, model) before the tap, not at it

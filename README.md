@@ -1,5 +1,24 @@
 # inhouse read
 
+## 1.7.127 — Biblioteca completa entre dispositivos
+
+Con una cuenta de Google conectada, los originales se copian automáticamente a
+`inhouse read` y se conservan también en este dispositivo. Drive guarda portadas,
+progreso, marcadores, citas, personalización, orden y posiciones de los libros,
+plantas, lámparas y preferencias. Una instalación vacía recupera esa biblioteca
+sin reemplazarla por sus valores iniciales. Los cambios pendientes se reintentan
+al reconectar; el cierre del lector no espera a la red.
+
+Para migrar libros que nunca se subieron, abre primero la versión actual en el
+dispositivo que conserva los originales y espera a «Biblioteca y estantería
+guardadas en Google Drive». Después conecta la misma cuenta en el otro. Los
+registros antiguos sin bytes no pueden reconstruir un archivo ausente: se
+muestran como pendientes hasta reimportar el original.
+
+Esta política sustituye la subida exclusivamente manual descrita en versiones
+anteriores. Las claves OAuth y tokens no se incluyen en las copias de biblioteca.
+
+
 Lector de PDF, EPUB y MOBI. Hermano de [inhouse notes](https://github.com/miguelcoxcaballero/inhousenotes): misma paleta, misma tipografía (Comfortaa + DM Sans), mismo patrón de despliegue a GitHub Pages.
 
 La biblioteca permite elegir una estantería 3D de nogal o una BAGGEBO de metal blanco, con libros y plantas con volumen. Al tocar un libro, sale de la balda y gira hasta enseñar la portada antes de abrirse.

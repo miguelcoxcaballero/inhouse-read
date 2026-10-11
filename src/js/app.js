@@ -2,7 +2,7 @@ import { library, takeFirstRecords } from './shelf-boot.js'
 import { version as APP_VERSION } from '../../package.json'
 import { sameBookRecords } from './library-store.js'
 import { createReadingProgressQueue } from './reading-progress-queue.js'
-import { bookCloudState, isBookVisible, storeBookFile } from './book-storage-policy.js'
+import { bookCloudState, isBookVisible, storeBookFile, needsDriveDownload } from './book-storage-policy.js'
 import { refreshSelectedBookNames } from './selected-book-names.js'
 import { renderBookshelf } from './bookshelf.js'
 import { ReaderController, UnsupportedFormatError } from './readers/reader-controller.js'
@@ -11,6 +11,8 @@ import {
   getDriveProfile, getRememberedDriveProfile, signOutDrive, cancelDriveConnection
 } from './drive-client.js'
 import { CloudSync } from './cloud-sync.js'
+import { LibraryBackup } from './library-backup.js'
+import { notifyCloudSettingsChanged } from './cloud-settings.js'
 import { createShelfRefreshQueue } from './shelf-refresh-queue.js'
 import { restoreLegacyBookBytes } from './legacy-book-recovery.js'
 import {
@@ -95,7 +97,10 @@ const preparedPages = createPreparedPageCache()
 let pageGate = null
 const coverUpgrades = new Map()
 const progressWrites = createReadingProgressQueue(library, {
-  onSaved: (record, bookId) => { if (record?.driveFileId && hasDriveSession()) cloudSync.scheduleProgress(bookId) }
+  onSaved: (record, bookId) => {
+    if (record?.driveFileId && hasDriveSession()) cloudSync.scheduleProgress(bookId)
+    scheduleLibraryBackup()
+  }
 })
 let driveProfile = null
 let restoringProgress = false
@@ -113,8 +118,29 @@ const nativeImportShelfGate = createNativeImportShelfGate({
 let driveUploadsInFlight = 0
 const cloudSync = new CloudSync(library, {
   onStatus: setDriveSyncStatus,
-  onChange: refreshShelf
+  onChange: record => { if (record) shelf?.updateCloudRecord?.(record); return refreshShelf() }
 })
+let cloudRoomChanged = false
+let backupTimer = null
+const libraryBackup = new LibraryBackup(library, cloudSync, {
+  onStatus:setDriveSyncStatus,
+  onChange:refreshShelf,
+  onSettings:() => {
+    cloudRoomChanged = true
+    initTheme()
+    readingExperience.reloadPreferences()
+    refreshShelf()
+  }
+})
+function scheduleLibraryBackup() {
+  clearTimeout(backupTimer)
+  if (!hasDriveSession() && !getRememberedDriveProfile()) return
+  backupTimer = setTimeout(() => {
+    backupTimer = null
+    syncLibraryToDrive({ silent:true }).catch(error => setDriveSyncStatus(`Sincronización pendiente: ${error.message}`))
+  }, 2200)
+}
+globalThis.addEventListener('inhouse-library-changed', scheduleLibraryBackup)
 function scheduleLengthRefresh() {
   if (appDisposed || document.hidden || !els.readerScreen.hidden || lengthRefreshTimer != null) return
   lengthRefreshTimer = setTimeout(() => {
@@ -137,6 +163,7 @@ const wordCountQueue = createBookLengthQueue(library, {
 })
 async function persistBookState(bookId, fields) {
   await progressWrites.patch(bookId, fields)
+  scheduleLibraryBackup()
 }
 // The reading panel and voice code load after the shelf has settled (see the
 // end of this file); a book never opens before they are in.
@@ -161,6 +188,7 @@ els.themeToggle.addEventListener('click', () => {
   document.documentElement.setAttribute('data-theme', next)
   syncThemeColor(next)
   localStorage.setItem('inhouse-read-theme', next)
+  notifyCloudSettingsChanged('inhouse-read-theme')
   if (els.driveThemeToggle) els.driveThemeToggle.checked = next === 'dark'
 })
 
@@ -192,6 +220,8 @@ addEventListener('pagehide', event => {
   clearTimeout(lengthRefreshTimer)
   lengthRefreshTimer = null
   wordCountQueue.dispose()
+  clearTimeout(backupTimer)
+  clearInterval(backupPoll)
 })
 
 function isAndroidShell() {
@@ -244,6 +274,10 @@ async function performShelfRefresh({ immediate = false } = {}) {
   }))
   const books = normalizedBooks.filter(book => isBookVisible(book, accountId))
   if (appDisposed || nativeImportShelfGate.deferRefresh()) return
+  if (cloudRoomChanged && els.readerScreen.hidden && !closingReader) {
+    shelf?.destroy(); shelf = null; shelfRecords = null
+    cloudRoomChanged = false
+  }
   // Counting is detached from the active reader and serial, so a home reload,
   // reader close or chapter change never attributes text to another book.
   for (const book of books) wordCountQueue.ensure(book).catch(error => console.warn('Preparación del grosor:', error))
@@ -288,7 +322,7 @@ async function performShelfRefresh({ immediate = false } = {}) {
       onCoverAppearance: (book, appearance, key) => library.patch(book.id, {
         coverAppearance: appearance,
         coverAppearanceKey: key
-      }),
+      }).then(record => { scheduleLibraryBackup(); return record }),
       onBookCustomizationChange: (book, fields) => {
         // A prepared reader already shows this book: its title and author follow the spine.
         if ('spineTitleOverride' in fields || 'author' in fields) readingExperience.refreshNames(book.id, fields)
@@ -299,7 +333,7 @@ async function performShelfRefresh({ immediate = false } = {}) {
         return id && (position || shelfPosition === null)
           ? persistBookState(id, { shelfPosition:position }) : Promise.resolve()
       })),
-      onBookOrderChange: order => Promise.all(order.map(({ id, shelfOrder }) => library.patch(id, { shelfOrder })))
+      onBookOrderChange: order => Promise.all(order.map(({ id, shelfOrder }) => persistBookState(id, { shelfOrder })))
     })
   } else {
     if (!immediate && shelf.queueRefresh) shelf.queueRefresh(books)
@@ -353,6 +387,7 @@ async function removeBookFromShelf(book) {
   coverUpgrades.delete(book.id)
   const preparingTask = readerPreparationQueue
   const removal = await cloudSync.removeFromShelf(book)
+  scheduleLibraryBackup()
   // A selected book may already have a reader engine preloaded in memory.
   // Release it once it settles, without keeping the shelf drop waiting for
   // a file download. A newer selection owns its own reader generation.
@@ -472,7 +507,7 @@ async function openBookRecord(book, ctx) {
     }
   }
   if (!isActive()) return
-  if (book.sourceType === 'local') {
+  if (book.sourceType === 'local' && !needsDriveDownload(book)) {
     // Vía principal: el propio libro se guardó en IndexedDB al importarlo
     // (ver openFile), así que reabrirlo no depende de ninguna API de
     // carpetas ni de volver a pedir el archivo — funciona igual en Android
@@ -539,7 +574,7 @@ async function openBookRecord(book, ctx) {
     }, { once: true })
     return
   }
-  if (book.sourceType === 'drive') {
+  if (book.driveFileId) {
     try {
       const file = await cloudSync.downloadForOffline(book)
       if (!isActive()) return
@@ -710,6 +745,7 @@ async function openFileContent(file, { existingRecord, forcedId, folderFileName,
   if (!record) return false
   if (transition?.isActive && !transition.isActive()) return false
   currentBookId = record.id
+  scheduleLibraryBackup()
   // Original bytes have already committed and reading can begin immediately.
   // Geometry waits for the complete detached count, never a provisional size.
   wordCountQueue.ensure(record).catch(error => console.warn('No se pudo medir el libro:', error))
@@ -756,7 +792,7 @@ function prepareBookOpen(book, { settled } = {}) {
     ? Promise.resolve(new File([book.content], book.name || book.title || 'libro', {
       type: book.mimeType || book.content.type || ''
     }))
-    : book.sourceType === 'drive' && hasDriveSession()
+    : needsDriveDownload(book) && hasDriveSession()
       ? cloudSync.downloadForOffline(book) : null
   if (!fileTask) return
   // A locally cached book opens immediately from its saved position. Remote
@@ -938,7 +974,7 @@ async function handleCoverAction(action, book, button) {
         return
       }
       if (!hasDriveSession()) await requestDriveAccess()
-      if (book.sourceType === 'drive') {
+      if (book.driveFileId) {
         await cloudSync.downloadForOffline(book)
       } else throw new Error('Este libro ya tiene su copia en el dispositivo.')
       setLabel('Disponible offline', 'Offline')
@@ -1018,6 +1054,7 @@ async function loadDriveAccountProfile() {
   if (!hasDriveSession()) {
     driveProfile = null
     cloudSync.reset()
+    libraryBackup.reset()
     els.driveProfile.hidden = true
     els.driveConnectBtn.hidden = false
     els.themeToggle.hidden = false
@@ -1062,7 +1099,7 @@ async function syncLibraryToDrive({ silent = false } = {}) {
   }
   try { await restoreLegacyBookBytes(library) }
   catch (error) { console.warn('No se pudieron recuperar libros antiguos de la carpeta local:', error) }
-  return cloudSync.sync()
+  return libraryBackup.sync(profile.id)
 }
 
 const authNotice = document.getElementById('drive-auth-notice')
@@ -1111,6 +1148,7 @@ els.driveThemeToggle.addEventListener('change', () => {
   document.documentElement.setAttribute('data-theme', theme)
   syncThemeColor(theme)
   localStorage.setItem('inhouse-read-theme', theme)
+  notifyCloudSettingsChanged('inhouse-read-theme')
 })
 
 els.driveProfileBtn.addEventListener('click', () => {
@@ -1142,6 +1180,7 @@ els.driveSyncBtn.addEventListener('click', async () => {
 els.driveSignOutBtn.addEventListener('click', () => {
   signOutDrive()
   cloudSync.reset()
+  libraryBackup.reset()
   driveProfile = null
   els.driveProfileMenu.hidden = true
   els.driveProfile.hidden = true
@@ -1188,7 +1227,7 @@ function extractCoverInBackground(record) {
     })
     .then(updated => { if (updated && current()) refreshShelf() })
     .catch(err => { if (!controller.signal.aborted) console.warn('No se pudo extraer la portada:', err) })
-    .finally(() => { if (coverUpgrades.get(record.id) === entry) coverUpgrades.delete(record.id) })
+    .finally(() => { if (coverUpgrades.get(record.id) === entry) coverUpgrades.delete(record.id); scheduleLibraryBackup() })
   entry.promise = task
   coverUpgrades.set(record.id, entry)
   return task
@@ -1305,6 +1344,7 @@ els.readerBack.addEventListener('click', async () => {
     stillFade?.cancel(); stillPage?.remove()
     document.body.classList.remove('is-closing-reader', 'is-reader-page-leaving')
     closingReader = false
+    if (cloudRoomChanged) refreshShelf().catch(error => console.warn('Estantería pendiente:', error))
   }
 })
 els.readerPrev.addEventListener('click', () => readingExperience.step(-1))
@@ -1412,6 +1452,9 @@ function resumeDriveSync() {
   syncLibraryToDrive({ silent: true }).catch(error => setDriveSyncStatus(`Sincronización pendiente: ${error.message}`))
 }
 globalThis.addEventListener('online', resumeDriveSync)
+const backupPoll = setInterval(() => {
+  if (!document.hidden && !libraryBackup.task) resumeDriveSync()
+}, 180_000)
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') resumeDriveSync()
 })

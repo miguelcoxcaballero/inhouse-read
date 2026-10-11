@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { Blob as NativeBlob, File as NativeFile } from 'node:buffer'
 import { LibraryStore } from '../../src/js/library-store.js'
-import { isBookVisible, bookCloudState, storeBookFile } from '../../src/js/book-storage-policy.js'
+import { isBookVisible, bookCloudState, storeBookFile, needsDriveDownload } from '../../src/js/book-storage-policy.js'
 
 const stores = []
 let serial = 0
@@ -10,6 +10,11 @@ beforeEach(() => { vi.stubGlobal('Blob', NativeBlob); vi.stubGlobal('File', Nati
 afterEach(async () => { for (const store of stores.splice(0)) await store.close(); vi.unstubAllGlobals() })
 
 describe('local original book bytes', () => {
+  it.each(['local','drive'])('recovers a %s record from Drive when local bytes are missing', sourceType => {
+    expect(needsDriveDownload({sourceType,driveFileId:'original'})).toBe(true)
+    expect(needsDriveDownload({sourceType,driveFileId:'original',content:new Blob(['file'])})).toBe(false)
+    expect(needsDriveDownload({sourceType})).toBe(false)
+  })
   it.each(['local', 'drive'])('commits exact %s bytes and progress for an offline cold reopen', async sourceType => {
     const store = library()
     const bytes = new Uint8Array([0, 255, 37, 80, 68, 70, 0, 128])
