@@ -23,8 +23,11 @@ y planta también pasa al primer intento, con respuestas auditadas. El APK
 su última captura sigue dentro del retorno, no acredita la inserción final.
 La CI completa sigue en curso.
 
-Por petición del usuario se prepara un instalador firmado nuevo 1.1.9,
-versionCode 22. No se cambia el manifiesto de actualización hasta disponer
+Por petición del usuario se prepara un instalador firmado nuevo 1.1.10,
+versionCode 23. La compilación propia 38151541175 se canceló estando en cola
+al detectar que otra rama prepara una prerelease 1.1.9/22 (38151206425);
+esa compilación y su rama no se modifican ni se sobrescriben. No se cambia
+el manifiesto de actualización hasta disponer
 del APK real publicado y sus bytes/hash. Pasan 35 pruebas JS focales y las
 105 comprobaciones Python/Android antes de lanzar su compilación.
 
