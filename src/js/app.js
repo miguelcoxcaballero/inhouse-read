@@ -1288,11 +1288,11 @@ els.readerBack.addEventListener('click', async () => {
     if (!shelf?.hasReaderOrigin(bookId) || !geometryReady) await refreshShelf({ immediate:true })
     // The overlay masks shelf layout and cover decoding until the same page
     // is ready on the 3D mesh. Drive sync continues independently of the flight.
-    if (geometryReady) await shelf?.returnToShelf(bookId, { pageSnapshot, book, onPageReady:handoff })
-    else {
-      // Never invent a physical volume while a long original is still being
-      // measured. Close promptly, retain its accessible preparation row, and
-      // let the final book appear after the detached job commits.
+    const returned = geometryReady && await shelf?.returnToShelf(bookId, { pageSnapshot, book, onPageReady:handoff })
+    if (!returned) {
+      // Unmeasured books keep their accessible preparation row. A cancelled
+      // or unavailable return destination also closes through the existing
+      // still-page fade, without dropping those pixels in a single frame.
       handoff()
       await stillFade?.finished.catch(() => {})
     }

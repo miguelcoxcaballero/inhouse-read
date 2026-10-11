@@ -396,6 +396,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     shelfScene: null,
     presentationActive: true,
     returningBookId: null,
+    returnSlotWaiter: null,
     useScene: Boolean((globalThis.WebGLRenderingContext || globalThis.WebGL2RenderingContext) && getBookRenderer()),
     viewMode: Object.values(SHELF_VIEW_MODES).includes(options.viewMode)
       ? options.viewMode
@@ -1792,6 +1793,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // reader flies home in its final cloth instead of changing after landing.
     if (width <= 0 && state.books.length > 0) {
       for (const book of state.books) resolveCoverAppearance(book);
+      settleReturnSlot();
       return;
     }
     if (state.books.length === 0 && opts.sections) {
@@ -1800,9 +1802,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       state.shelfScene = null;
       scroller.textContent = '';
       scroller.append(buildEmptyState());
+      settleReturnSlot();
       return;
     }
-    if (width <= 0) return; // aún sin layout: el ResizeObserver volverá a llamar
+    if (width <= 0) { settleReturnSlot(); return; } // el ResizeObserver volverá a llamar
     // This synchronous paint includes every appearance change already in
     // memory. Consume earlier deferred/RAF requests only after the guards:
     // a hidden or busy shelf still needs them when it can render again.
@@ -1935,6 +1938,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
     state.metadataContext = metadataContext();
     for (const book of state.books) resolveCoverAppearance(book);
+    settleReturnSlot();
   }
 
   function readShelfLayout(stage, width) {
@@ -3699,6 +3703,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
   let observer = null;
   const onViewportResize = () => {
+    finishReturnSlot(false);
     returnViews.clear();
     cancelTrashRemoval();
     if (state.session?.handleViewportResize?.()) return;
@@ -3798,6 +3803,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       prepareInitialAppearances();
     }
     state.shelfWidth = 0; // fuerza el re-empaquetado
+    settleReturnSlot({ beforeRender:true });
     render();
     scroller.scrollTop = top;
   }
@@ -3839,9 +3845,64 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     return [stock, canvas];
   }
 
+  function setReturningBook(bookId) {
+    const next = bookId == null ? null : String(bookId);
+    if (state.returnSlotWaiter && state.returnSlotWaiter.bookId !== next) finishReturnSlot(false);
+    state.shelfScene?.setModalBackgroundDeferred?.(null, { resumeHidden:true });
+    const previous = state.returningBookId;
+    state.returningBookId = next;
+    state.shelfScene?.setPaintHeld?.(next !== null);
+    for (const node of root.querySelectorAll('.ihr-spine')) {
+      if (previous !== next && node.dataset.bookId === previous) node.classList.remove('is-away');
+      if (node.dataset.bookId === next) node.classList.add('is-away');
+    }
+  }
+
+  function finishReturnSlot(ready) {
+    const pending = state.returnSlotWaiter;
+    if (!pending) return;
+    state.returnSlotWaiter = null;
+    if (!ready && state.returningBookId === pending.bookId) setReturningBook(null);
+    pending.resolve(ready);
+  }
+
+  function settleReturnSlot({ beforeRender = false } = {}) {
+    const pending = state.returnSlotWaiter;
+    if (!pending) return;
+    const book = state.books.find(record => String(record.id) === pending.bookId);
+    if (state.destroyed || !root.isConnected || !book || bookGeometryState(book) !== 'ready'
+        || window.innerWidth !== pending.width || window.innerHeight !== pending.height) {
+      finishReturnSlot(false); return;
+    }
+    // Initial analysis owns the next render; waiting for just its promise is
+    // insufficient, because its RAF has not constructed the semantic slot yet.
+    // Full font matching is independent and never keeps this gate waiting.
+    if (!state.appearancesReady || beforeRender) return;
+    const spine = [...root.querySelectorAll('.ihr-spine')]
+      .find(node => node.dataset.bookId === pending.bookId);
+    finishReturnSlot(Boolean(measure() > 0 && state.itemsById.has(pending.bookId) && spine?.isConnected));
+  }
+
+  function waitForReturnSlot(bookId) {
+    const held = state.returningBookId === String(bookId);
+    finishReturnSlot(false);
+    if (held) setReturningBook(bookId);
+    return new Promise(resolve => {
+      state.returnSlotWaiter = { bookId:String(bookId), resolve,
+        width:window.innerWidth, height:window.innerHeight };
+      settleReturnSlot();
+    });
+  }
+
   /** Cierra el tomo 3D desde el lector y lo devuelve a su hueco. */
   async function returnToShelf(bookId, { pageSnapshot, book:latestBook, onPageReady } = {}) {
     const durations = readerBookTiming(prefersReducedMotion()).closing;
+    const record = state.books.find(book => String(book.id) === String(bookId));
+    if (!record || bookGeometryState(record) !== 'ready') {
+      if (state.returningBookId === String(bookId)) setReturningBook(null);
+      return false;
+    }
+    if ((!state.appearancesReady || !state.itemsById.has(String(bookId))) && !await waitForReturnSlot(bookId)) return false;
     state.shelfScene?.setModalBackgroundDeferred?.(null, { resumeHidden:true });
     const item = state.itemsById.get(String(bookId));
     const previous = state.lastOpened?.book.id === bookId ? state.lastOpened
@@ -4103,16 +4164,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       state.presentationActive = Boolean(value);
       state.shelfScene?.setPresentationActive?.(state.presentationActive);
     },
-    setReturningBook(bookId) {
-      state.shelfScene?.setModalBackgroundDeferred?.(null, { resumeHidden:true });
-      const next = bookId == null ? null : String(bookId), previous = state.returningBookId;
-      state.returningBookId = next;
-      state.shelfScene?.setPaintHeld?.(next !== null);
-      for (const node of root.querySelectorAll('.ihr-spine')) {
-        if (previous !== next && node.dataset.bookId === previous) node.classList.remove('is-away');
-        if (node.dataset.bookId === next) node.classList.add('is-away');
-      }
-    },
+    setReturningBook,
     hasReaderOrigin:bookId => state.lastOpened?.book.id === bookId,
 
     /** Hands the page a lifted book will open on to its 3D model ahead of the tap. */
@@ -4124,6 +4176,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     /** Repliega la portada abierta, si la hay. */
     close() {
+      finishReturnSlot(false);
       state.pendingSelection?.cancel();
       return state.session?.close() ?? Promise.resolve();
     },
@@ -4131,6 +4184,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     destroy() {
       state.shelfScene?.setModalBackgroundDeferred?.(null, { resumeHidden:true });
       state.destroyed = true;
+      finishReturnSlot(false);
       clearCompatibilityTapRefresh();
       returnViews.clear();
       clearOpeningClick?.();

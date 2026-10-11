@@ -20,6 +20,7 @@
  */
 import { runInSlices } from './cover-appearance.js';
 import { getRustCore, loadRustCore } from './rust-core.js';
+import { prepareColorMaskJob } from './cover-color-mask-wasm.js';
 import { canUseReliefWasm, wasmInsideDistance, wasmBoxBlur, wasmHeightToNormals,
   wasmComposeMaterialMap, wasmComposeReliefLayers } from './cover-relief-wasm.js';
 
@@ -1173,22 +1174,41 @@ function* colorMask(image, color, tolerance) {
 /** Up to ten distinct supported colors, never fabricated family suggestions.
  * Radii are less than half every inter-center distance, so all generated
  * choices remain disjoint even when recreated independently from persistence. */
+// Measured with the complete bridge: small/one-/two-colour jobs keep their
+// direct path; repeated classifications amortize the shared OKLab preparation.
+const PREPARED_COLOR_MIN_LAYERS = 3, PREPARED_COLOR_MIN_PIXELS = 16384;
+function* prepareColors(image, layers) {
+  if (layers < PREPARED_COLOR_MIN_LAYERS || image.width * image.height < PREPARED_COLOR_MIN_PIXELS) return null;
+  return yield* prepareColorMaskJob(getRustCore(), image, rgbToOklab);
+}
+function* preparedColorMask(image, color, tolerance, prepared) {
+  if (prepared) {
+    const result = yield* prepared.mask(rgbToOklab(...rgbOf(color)), tolerance);
+    if (result) return result;
+  }
+  return yield* colorMask(image, color, tolerance);
+}
+
 export function* analyzePixels(image) {
   validateRaster(image);
   const { bins, opaque } = yield* colorHistogram(image);
   const colors = yield* colorCandidates(bins, opaque), chosen = [];
-  for (let index = 0; index < colors.length; index++) {
-    const color = colors[index], nearest = Math.min(...colors.filter(other => other !== color).map(other => Math.sqrt(distance2(color.lab, other.lab))));
-    const tolerance = Math.floor(Math.min(DEFAULT_COLOR_TOLERANCE, nearest * .45) * 100) / 100;
-    const hex = hexOf(color.rgb), mask = yield* colorMask(image, hex, tolerance);
-    let pixels = 0;
-    for (let i = 0; i < mask.length; i++) { if (mask[i] > 0) pixels++; if ((i & 4095) === 4095) yield; }
-    chosen.push({ id:COLOR_RELIEF_IDS[index], color:hex, tolerance, strength:DEFAULT_RELIEF_STRENGTH,
-      detected:true, confidence:1, recipe:{ kind:'color', color:hex, tolerance }, mask,
-      facts:{ color:hex, coverage:pixels / Math.max(1, opaque), pixels } });
-  }
-  return { chosen, candidates:chosen, seed:seedOf(image), feats:{ photo:false, busy:0, strokeFraction:0 },
-    colorSpace:'oklab-100', opaquePixels:opaque };
+  let prepared = null;
+  try {
+    prepared = yield* prepareColors(image, colors.length);
+    for (let index = 0; index < colors.length; index++) {
+      const color = colors[index], nearest = Math.min(...colors.filter(other => other !== color).map(other => Math.sqrt(distance2(color.lab, other.lab))));
+      const tolerance = Math.floor(Math.min(DEFAULT_COLOR_TOLERANCE, nearest * .45) * 100) / 100;
+      const hex = hexOf(color.rgb), mask = yield* preparedColorMask(image, hex, tolerance, prepared);
+      let pixels = 0;
+      for (let i = 0; i < mask.length; i++) { if (mask[i] > 0) pixels++; if ((i & 4095) === 4095) yield; }
+      chosen.push({ id:COLOR_RELIEF_IDS[index], color:hex, tolerance, strength:DEFAULT_RELIEF_STRENGTH,
+        detected:true, confidence:1, recipe:{ kind:'color', color:hex, tolerance }, mask,
+        facts:{ color:hex, coverage:pixels / Math.max(1, opaque), pixels } });
+    }
+    return { chosen, candidates:chosen, seed:seedOf(image), feats:{ photo:false, busy:0, strokeFraction:0 },
+      colorSpace:'oklab-100', opaquePixels:opaque };
+  } finally { prepared?.dispose(); }
 }
 
 export function* buildMapsFromPixels(work, hires, selection) {
@@ -1228,24 +1248,30 @@ function* buildColorLayerMaps(image, selection) {
   // the per-colour strength would round two distinct coatings to one height.
   const owners = new Uint8Array(count), baseMask = new Uint8Array(count), baseHeight = new Float32Array(count);
   const bevel = Math.max(1.2, Math.max(width, height) * .003);
-  for (let index = 0; index < layers.length; index++) {
-    const layer = layers[index], membership = yield* colorMask(image, layer.color, layer.tolerance);
-    const hard = new Uint8Array(count), profile = colorReliefProfile(layer);
-    for (let i=0;i<count;i++) { hard[i]=membership[i]>0?1:0;if((i&4095)===4095)yield; }
-    const distance = yield* insideDistance(hard,width,height);
-    for (let i=0;i<count;i++) {
-      const amount=toByte(membership[i]);
-      // A pixel belongs to exactly one selected pigment; contributions cannot
-      // add brightness/height or spill into another pigment on overlap.
-      if (amount>baseMask[i]) {
-        owners[i]=index+1;baseMask[i]=amount;
-        baseHeight[i]=membership[i]*smoothstep(0,bevel,distance[i]-.5)*profile.heightMM/MAX_RELIEF_MM*255;
+  let prepared = null;
+  try {
+    prepared = yield* prepareColors(image, layers.length);
+    for (let index = 0; index < layers.length; index++) {
+      const layer = layers[index], membership = yield* preparedColorMask(image, layer.color, layer.tolerance, prepared);
+      const hard = new Uint8Array(count), profile = colorReliefProfile(layer);
+      for (let i=0;i<count;i++) { hard[i]=membership[i]>0?1:0;if((i&4095)===4095)yield; }
+      const distance = yield* insideDistance(hard,width,height);
+      for (let i=0;i<count;i++) {
+        const amount=toByte(membership[i]);
+        // A pixel belongs to exactly one selected pigment; contributions cannot
+        // add brightness/height or spill into another pigment on overlap.
+        if (amount>baseMask[i]) {
+          owners[i]=index+1;baseMask[i]=amount;
+          baseHeight[i]=membership[i]*smoothstep(0,bevel,distance[i]-.5)*profile.heightMM/MAX_RELIEF_MM*255;
+        }
+        if((i&1023)===1023)yield;
       }
-      if((i&1023)===1023)yield;
     }
-  }
-  return yield* composeReliefLayerPixels({ width,height,preserveInk:true,foilColor:null,
-    owners,baseMask,baseHeight,layers }, selection);
+    // Classification is complete; composition needs only owned maps.
+    prepared?.dispose(); prepared = null;
+    return yield* composeReliefLayerPixels({ width,height,preserveInk:true,foilColor:null,
+      owners,baseMask,baseHeight,layers }, selection);
+  } finally { prepared?.dispose(); }
 }
 
 /** Reuse the classified colour ownership while adjusting a layer's intensity.

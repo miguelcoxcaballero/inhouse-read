@@ -1,3 +1,35 @@
+# Continuación: 1.7.120 en verificación; migración parcial a Rust
+
+120 migra la clasificación de varios colores del relieve a Rust, manteniendo
+los mapas exactos. La ruta se activa para tres o más colores y al menos 16.384
+píxeles. Pasan 28 unitarias con el WASM real y 28 casos Chromium con CPU ×4.
+Para diez colores a 341×512, la construcción de mapas pasa de 916,7 a 284,8 ms;
+no representa FPS ni una medición de un teléfono físico.
+
+También corrige el regreso de una importación en frío: conserva los píxeles
+del lector hasta que el análisis inicial y el render de la estantería entregan
+un hueco válido. La prueba funcional reproduce la desaparición en el control
+anterior y pasa con el cambio, recorriendo todas las fases de inserción. Los
+29 casos focales del cierre pasan. El build, las 3.863 unitarias (312 archivos),
+105 comprobaciones Python/Android y los ocho recorridos originales locales
+pasan al primer intento. Publicación y CI completa120 pendientes.
+
+119 está publicada en main `110d70ed8aba44d6ce8e3a0119578c4caef5a2bb`, Pages
+`afba86d6aea4ac4fe2f1f30c65b90cedd9a594cb`: 27 recorridos públicos aprobados,
+101 respuestas HTTP y 889 condiciones correctas. El APK38145829318 conserva
+su cargador y pasa los cinco estados nativos; la captura final muestra el
+libro colocado. Se observó a 34,939 s, sin acreditar una mejora global de
+velocidad. CI119 conserva los dos fallos originales de regreso nativo; el
+censo completo está pendiente. CI118 terminó en 550/553 estrictos, dos fallos
+y uno inestable. No se han ampliado los plazos originales de regreso nativo.
+
+**La reescritura completa sigue pendiente.** Interfaz, persistencia, Drive,
+lector/audio y parte de la escena siguen en JavaScript. También falta medir
+fluidez y consumo en un teléfono físico.
+[Alcance, mediciones y trabajo pendiente](rust-migration.md).
+
+## Historial anterior
+
 # Continuación: 1.7.119 preparada; migración parcial a Rust
 
 119 añade el agrupamiento del color de portada al núcleo Rust, con RGB exactos

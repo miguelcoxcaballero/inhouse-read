@@ -18,7 +18,7 @@ vi.mock('../../src/js/library-store.js', async importOriginal => {
 vi.mock('../../src/js/bookshelf.js', () => ({ renderBookshelf:vi.fn((container, books, options) => {
   state.options = options; state.books = books
   state.shelf = { close:vi.fn(), hasReaderOrigin:vi.fn(() => true),
-    update:vi.fn(next => { state.books = next }), prepareOpeningPage:vi.fn(), returnToShelf:vi.fn() }
+    update:vi.fn(next => { state.books = next }), prepareOpeningPage:vi.fn(), returnToShelf:vi.fn(async () => true) }
   return state.shelf
 }) }))
 vi.mock('../../src/js/readers/reader-controller.js', () => ({ UnsupportedFormatError:class extends Error {},
@@ -70,8 +70,16 @@ vi.mock('../../src/js/reading-display.js', () => ({ initReadingDisplay:vi.fn() }
 vi.mock('../../src/js/android-file-import.js', () => ({ initAndroidFileImports:options => { state.imports = options } }))
 
 let listeners = []
+let originalAnimate
 beforeEach(async () => {
   vi.resetModules(); vi.clearAllMocks(); state.connected = false
+  originalAnimate = Object.getOwnPropertyDescriptor(Element.prototype, 'animate')
+  state.fades = []
+  Object.defineProperty(Element.prototype, 'animate', { configurable:true, value:vi.fn(() => {
+    const animation = { finished:Promise.resolve(), cancel:vi.fn() }
+    state.fades.push(animation)
+    return animation
+  }) })
   state.measureFileLength = vi.fn(async () => ({ wordCount:600, wordCountVersion:2,
     wordCountComplete:true, estimatedPageCount:2, lengthSource:'text' }))
   vi.stubGlobal('Blob', NativeBlob); vi.stubGlobal('File', NativeFile)
@@ -96,6 +104,8 @@ afterEach(async () => {
   await state.library?.close()
   for (const [target, type, callback, options] of listeners.splice(0)) target.removeEventListener(type, callback, options)
   vi.restoreAllMocks(); vi.unstubAllGlobals(); document.body.innerHTML = ''
+  if (originalAnimate) Object.defineProperty(Element.prototype, 'animate', originalAnimate)
+  else delete Element.prototype.animate
   state.options = null
 })
 const file = () => new NativeFile([new Uint8Array([0, 255, 37, 80, 68, 70, 0, 128])], 'original.pdf', { type:'application/pdf' })
@@ -271,5 +281,8 @@ describe('closing reuses the reader-owned still page', () => {
     expect(document.querySelector('.ihr-reader-return-page')).toBeNull();
     expect(source.isConnected).toBe(false);
     expect(source.width).toBe(144); expect(source.height).toBe(218);
+    expect(state.reader.close).toHaveBeenCalledOnce();
+    expect(state.fades).toHaveLength(outcome === 'cancel' ? 1 : 0);
+    if (outcome === 'cancel') expect(state.fades[0].cancel).toHaveBeenCalledOnce();
   });
 });

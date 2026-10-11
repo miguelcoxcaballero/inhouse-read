@@ -7,6 +7,7 @@ mod bookmark;
 mod binding;
 mod page_mesh;
 mod cover_color;
+mod color_mask;
 mod pdf_layout;
 mod relief;
 

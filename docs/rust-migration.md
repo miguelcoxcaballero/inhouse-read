@@ -305,7 +305,10 @@ La comprobación nativa38144600262 aprobó el APK, su cargador de 2.107 bytes,
 los cinco estados de pantalla y el formulario real de Google. La política de
 regreso se observó a 39,555 s, todavía con el libro en plena animación: no prueba
 su inserción final ni fluidez. Se conservan cuatro errores previos de captura.
-CI118 permanece pendiente de auditoría completa; su shard3 ha terminado fallido.
+La CI118 completa conserva **550/553 aprobados estrictos, dos fallos y uno
+inestable**: 556 intentos y tres reintentos. Once ZIP autenticados, doce jobs,
+sin omisiones, duplicados ni errores de colección. Son los dos regresos nativos
+y la importación Android ya descritos; las cuatro suites de voces pasan.
 
 ## Continuación 1.7.119: color de portada y página de cierre
 
@@ -328,7 +331,7 @@ Primera comprobación focal: 48 pruebas en cuatro archivos aprobadas. La baterí
 unitaria final aprueba **3.825 pruebas en 310 archivos**, más 105 comprobaciones
 Python/Android. Los ocho recorridos originales locales pasan al primer intento
 con sus plazos y aserciones originales. Las mediciones y recorridos focales se
-detallan abajo; la publicación119 está pendiente. No certifica una reescritura
+detallan abajo junto a la publicación119. No certifica una reescritura
 completa ni una mejora global de rendimiento.
 
 ### Mediciones y propiedad de la página
@@ -376,3 +379,96 @@ y `reader-return-canvas-attempt1.json`. El intento unitario2 se conserva fallido
 su observador esperaba una copia WASM aun en una muestra vacía. Ahora comprueba
 la ausencia de copia en esa rama y añade un único píxel incluido para comprobar
 el orden completo de entrada al núcleo. El intento3 aprueba las 31 pruebas.
+
+119 se subió a main `110d70ed8aba44d6ce8e3a0119578c4caef5a2bb`, Pages
+`afba86d6aea4ac4fe2f1f30c65b90cedd9a594cb`. El verificador de las respuestas
+reales aprueba **101 descargas, 99 recursos del shell y 889 condiciones**.
+Esta vez el build local119 se congeló antes de compilar el siguiente núcleo;
+su identidad no depende del estado posterior del checkout. CI119 todavía está
+en curso. Los **27 recorridos públicos** pasan al primer intento,
+con 27 respuestas de entrada reales auditadas contra el artefacto publicado.
+El APK38145829318 mantiene firma, tamaño y cargador; sus cinco estados nativos
+pasan y la captura final muestra el libro en su hueco. La política final se
+confirmó a 34,939 s en la sexta muestra, conservando cinco errores anteriores:
+no prueba una mejora de velocidad ni comportamiento en un teléfono físico.
+
+## Preparación 1.7.120: clasificación de varios colores
+
+La clasificación de las zonas del relieve prepara una vez los valores OKLab
+de la imagen y usa Rust para calcular las pertenencias a cada color. Conserva
+los umbrales alfa, los radios, los empates y el orden de los cálculos. El host
+mantiene `Math.cbrt` para conservar sus redondeos exactos. Una arena por trabajo,
+limitada a 512×512 píxeles, se libera antes de componer los mapas; otra tarea
+concurrente usa inmediatamente la ruta previa. No se guarda una imagen extra
+por libro. El WASM puede conservar la capacidad de memoria tras liberarla.
+
+El candidato sólo prepara esa arena para tres o más colores y al menos 16.384
+píxeles. Las imágenes pequeñas, uno o dos colores y el cambio de intensidad de
+un relieve ya clasificado mantienen su ruta previa. El máximo temporal es de
+6.557.696 bytes; una portada de 341×512 usa 4.368.896. Hay cancelación entre bloques
+de 1.024 píxeles. Las vistas se recuperan tras crecer la memoria, también cuando
+lo provoca el conversor del host; se rechazan entradas que compartan esa memoria.
+
+Las primeras **28 pruebas unitarias** pasan con el WASM real y comparan máscaras,
+propietarios, alturas físicas, brillo, metal, normales y materiales completos.
+El ensayo Node conserva las salidas de catorce casos y registra, incluyendo
+preparación, copias y liberación, 76,87→12,93 ms para diez colores en 341×512.
+Un solo color pasa de 7,61 a 8,05 ms al forzar el candidato: por eso no se activa
+en esa rama.
+
+Los **28 casos Chromium CPU ×4** pasan con igualdad completa de mapas y uso
+real del export. El proceso completo de mapas (tres tandas alternadas después
+del calentamiento, incluyendo preparación y copias) registra estas medianas:
+
+| Portada / capas | Ruta anterior (ms) | Nueva ruta (ms) |
+| --- | ---: | ---: |
+| Estantería / 3 | 70,9 | 42,5 |
+| 341×512 / 3 | 280,8 | 154,0 |
+| 341×512 / 10 | 916,7 | 284,8 |
+| Fotográfica sintética 512×512 / 10 | 1.522,1 | 400,4 |
+| Alfa disperso 341×512 / 10 | 658,8 | 233,8 |
+
+Las ramas excluidas no llaman al clasificador Rust en producción: un color
+89,6→90,5 ms, dos colores 182,5→190,1 ms y miniatura 35,7→38,1 ms en esta
+muestra corta. No se presentan esas variaciones como mejoras. El mayor buffer
+WASM retenido observado alcanza 9.109.504 bytes; cero arenas temporales vivas
+al finalizar. Las comparaciones completas incluyen normales y materiales; los
+tiempos de la tabla miden la construcción de mapas, sin decodificar imágenes,
+pintar WebGL ni medir un teléfono. Batería final y publicación pendientes.
+
+### Cierre en frío: reproducción y corrección
+
+El primer regreso de un libro importado podía recibir un controlador de
+estantería antes de que el análisis inicial creara su hueco. `returnToShelf`
+resolvía false y el finally quitaba la página, sin recorrer la animación.
+Ahora espera al análisis y al render semántico posterior. La espera se cancela
+al cerrar o destruir el controlador, cambiar el viewport o marcador, borrar
+el libro o perder su geometría; no añade sondeos ni espera el ajuste de fuentes.
+Si el destino deja de estar disponible, se usa el fundido existente una sola
+vez en lugar de retirar la página abruptamente.
+
+La prueba usa una importación Android real del fixture PDF y una pausa explícita
+en el análisis inicial. Un build de control sin la corrección falla: la página
+ya no está conectada y el cierre terminó antes de liberar el análisis. El build
+corregido pasa: los mismos píxeles permanecen visibles, se recorren zoom,
+marcapáginas, cierre, regreso e inserción, y no quedan capas ni canvas sobrantes.
+Se mantienen los bytes originales. No se cambiaron los plazos de los tests
+nativos originales. El caso funcional nuevo no acredita velocidad ni FPS.
+
+Evidencia: `cold-return-negative-browser-attempt3.json` y
+`cold-return-fixed-browser-attempt1.json`. Dos intentos previos del servidor
+de desarrollo quedaron interrumpidos antes de cargar app.js; se conservan,
+pero no son evidencia del fallo de regreso. El fixture final compila con Vite
+en un proceso Node separado y sirve ese build; conserva logs y perfil CPU.
+La primera comprobación unitaria corregida encontró tres expectativas/mocks
+inexactos: el contrato anterior llama onPageReady dos veces (el host es
+idempotente) y returnToShelf devuelve booleano. Corregidos esos mocks, pasan
+29 casos, incluyendo una sola retirada por cancelación y un solo reader.close.
+
+La batería completa120 aprueba **3.863 pruebas en 312 archivos** al primer
+intento; el build de producción termina correctamente. Núcleo de 59.215 bytes,
+SHA256 `eb5d2ff07993ef68bad27d7d94796d4eaf044582d3bd9d6b425905a6f3487776`.
+
+También pasan las 105 comprobaciones Python/Android y los ocho recorridos
+originales locales al primer intento, conservando sus plazos y aserciones.
+Publicación y CI120 pendientes.
