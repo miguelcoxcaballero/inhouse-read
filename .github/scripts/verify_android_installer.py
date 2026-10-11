@@ -100,7 +100,8 @@ public final class MainActivity extends Activity {
     }
     @Override public void onResume() {
         super.onResume();
-        if (state != null) state.setText(InstallState.read(this));
+        if (state != null) state.setText("installPermission=" + getPackageManager().canRequestPackageInstalls()
+            + "; " + InstallState.read(this));
     }
     private void launchUpdate() {
         try {
@@ -149,7 +150,7 @@ def dump_ui():
     return ET.fromstring(result.stdout)
 
 
-def tap(labels, package=None, timeout=30):
+def tap(labels, package=None, timeout=30, click=True):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
@@ -160,7 +161,8 @@ def tap(labels, package=None, timeout=30):
                     continue
                 bounds = list(map(int, re.findall(r"\d+", node.get("bounds", ""))))
                 if len(bounds) == 4:
-                    run("adb", "shell", "input", "tap", str((bounds[0] + bounds[2]) // 2), str((bounds[1] + bounds[3]) // 2))
+                    if click:
+                        run("adb", "shell", "input", "tap", str((bounds[0] + bounds[2]) // 2), str((bounds[1] + bounds[3]) // 2))
                     return
         except (subprocess.SubprocessError, ET.ParseError):
             pass
@@ -187,23 +189,61 @@ def wait_for(predicate, description, timeout=30):
     raise AssertionError(description)
 
 
+def allow_test_source():
+    # A shell appops write can be superseded by Android's source-install
+    # policy. Exercise the user-visible grant and verify the app's own API.
+    run("adb", "shell", "am", "start", "-a", "android.settings.MANAGE_UNKNOWN_APP_SOURCES",
+        "-d", "package:" + PACKAGE)
+    def source_settings():
+        try:
+            tree = dump_ui()
+            return tree if any(node.get("text", "").strip().casefold() == "allow from this source"
+                               for node in tree.iter("node")) else None
+        except (subprocess.SubprocessError, ET.ParseError):
+            return None
+
+    current = wait_for(source_settings, "Android source-permission settings did not open")
+    if not any(node.get("checkable") == "true" and node.get("checked") == "true"
+               for node in current.iter("node")):
+        tap({"allow from this source"})
+    run("adb", "shell", "input", "keyevent", "KEYCODE_BACK")
+    run("adb", "shell", "am", "start", "-n", PACKAGE + "/.MainActivity")
+
+    def granted():
+        try:
+            return any(node.get("package") == PACKAGE and "installPermission=true" in node.get("text", "")
+                       for node in dump_ui().iter("node"))
+        except (subprocess.SubprocessError, ET.ParseError):
+            return False
+
+    wait_for(granted, "Android did not grant installation permission to the fixture")
+
+
 def verify():
     report = {"package": PACKAGE, "cancelled": False, "installed": False}
     try:
         assert APK.is_file(), "Build the updater debug fixture first"
+        run("adb", "logcat", "-c")
         run("adb", "uninstall", PACKAGE, check=False)
         run("adb", "install", str(APK))
-        run("adb", "shell", "appops", "set", PACKAGE, "REQUEST_INSTALL_PACKAGES", "allow")
-        run("adb", "shell", "am", "start", "-n", PACKAGE + "/.MainActivity")
+        report["phase"] = "allow-source"
+        allow_test_source()
+        report["installPermission"] = True
+        report["phase"] = "cancel-installation"
         tap({"install test update"}, PACKAGE)
+        # Cancellation must occur on the actual installation confirmation,
+        # not an unknown-source permission warning that also has Cancel.
+        tap({"update", "install"}, click=False)
         tap({"cancel"})
         cancelled = wait_for(lambda: read_attempt().get("status") == "cancelled", "Installer cancellation was not retained")
         assert cancelled
         first = read_attempt()
         report["cancelled"] = True
         report["cancelledAttempt"] = first
+        report["phase"] = "retry-installation"
         tap({"install test update"}, PACKAGE)
         tap({"update", "install"})
+        report["phase"] = "wait-for-replacement"
         wait_for(lambda: re.search(r"versionCode=2(?:\s|$)", run("adb", "shell", "dumpsys", "package", PACKAGE).stdout),
                  "Android did not replace the fixture with version 2", timeout=45)
         # The replacement can terminate the caller. Reopening must confirm the
@@ -216,12 +256,17 @@ def verify():
         assert final["expectedVersionCode"] == 2 and final["actualVersionCode"] == 2, final
         report["installed"] = True
         report["installedAttempt"] = final
+        report["phase"] = "passed"
         dump_ui()
         print("Real Android installer cancellation, retry and self-update passed.", flush=True)
     finally:
+        report["finalAttempt"] = read_attempt()
         REPORT.write_text(json.dumps(report, indent=2) + "\n")
-        logs = run("adb", "logcat", "-d", "-t", "1200", check=False)
+        logs = run("adb", "logcat", "-d", check=False)
         (ROOT / "android-updater-logcat.txt").write_text(logs.stdout)
+        if not report["installed"]:
+            run("adb", "shell", "screencap", "-p", "/sdcard/updater-install.png", check=False)
+            run("adb", "pull", "/sdcard/updater-install.png", str(ROOT / "android-updater-failure.png"), check=False)
         run("adb", "uninstall", PACKAGE, check=False)
 
 
