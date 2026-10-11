@@ -69,6 +69,19 @@ test('el regreso nativo alineado a 390x845 conserva el framebuffer y entrega el 
       }
     })
   }, { bytes, id:BOOK_ID, geometry:settledGeometryLength(4, BOOK_ID) })
+  // The public native URL can offer a real optional APK update. Defer it
+  // through its visible control so it cannot intercept the book gesture.
+  // Local fixtures keep their existing setup; no catalog or runtime is changed.
+  if (process.env.IHR_TEST_URL) {
+    const update = page.locator('#inhouse-services-update')
+    await page.addLocatorHandler(update, async () => {
+      await update.getByRole('button', { name:'Later', exact:true }).click()
+      await expect(update).toBeHidden()
+      await test.info().attach('optional-update-deferred', {
+        body:'Public updater deferred through Later before the book interaction.', contentType:'text/plain'
+      })
+    })
+  }
   await page.goto(process.env.IHR_TEST_URL || '/')
   await page.evaluate(() => window.__nativeShelfFixtureReady)
   // Explicitly choose an aligned viewport rather than assuming every390px room

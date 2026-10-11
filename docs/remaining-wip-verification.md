@@ -37,6 +37,34 @@ Faltan completar la migración Rust, reducir el arranque frío de voz y cerrar
 estos fallos de rendimiento. La batería completa y verificación pública de
 1.7.137 se registrarán al terminar; no se afirma CI verde.
 
+## Publicación comprobada de 1.7.137
+
+Runtime `c0958f39b5915a59e91172f7cf6dd0a0098d259a`; Pages
+`950b829514acb195aafc8292a78e8b7c93c4edb6`. Deploy 38180085213 y
+Pages 38180142167 aprobados. Segundo sondeo: 109/109 controles HTTP,
+99 recursos idénticos por bytes/SHA, WASM compilado intacto y APK14 correcta.
+Main `assets/main-CQxeDyaN.js`, SHA
+`929653b903b1db43114abf9ee1dc27729a17802338fb58cc3a6dd7ec9274bc38`.
+Evidencia `published-1791757443263`; el sondeo anterior se conserva porque
+Pages todavía estaba en cola y devolvía parte de los recursos anteriores.
+
+Dos cierres locales SwiftShader pasan sin retries: 7340,9 y 5155,3 ms.
+Los locales normales midieron 4570,1 y 3968,9 ms. No son una comparación
+estadística ni acreditan corregida la intermitencia de Linux. UI2 de la CI
+anterior 38178998894 pasó esta vez 74/74; cierres 6334 y 6334,5 ms.
+
+El primer recorrido público falló en dos clics de libro interceptados por el
+aviso opcional del updater; el perfil pasó. Se conservan log y trazas en
+`public-ui`. Los fixtures públicos pulsan ahora Later mediante locator handler,
+con los mismos límites y aserciones. Nueva tanda `public-ui-defer`: 3/3 pasan,
+43,9 s, sin retries; contrato de cierre y menú de perfil comprobados. El perfil
+verifica el SHA del main ejecutado. No cambian catálogos ni runtime.
+
+La CI completa del runtime 1.7.137 es 38180085214 y sigue en curso. Unidades,
+Piper engine y UI5 ya terminaron aprobados; no se afirma éxito global.
+El tercer build ajeno del updater, 38180160799, usa `02f6bda` y continúa
+verificando Android 15. No hay aún integración de ese parche en main.
+
 ## Estado histórico — web 1.7.136 / APK 1.1.13
 
 Integrado por fast-forward `227c3f2`: updater canónico 1.2.1,
