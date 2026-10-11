@@ -1,6 +1,24 @@
 {
   "schemaVersion": 1,
   "channel": "B",
-  "latest": null,
-  "releases": []
+  "latest": {
+    "version": "1.1.13",
+    "versionCode": 26,
+    "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.13/inhouse-read-release-v1.1.13.apk",
+    "apkSha256": "3b01272323158dd4d5c51a20374a9928b4e17a2b9a35b30b68d00056115ba2c5",
+    "apkSizeBytes": 78532469,
+    "changelog": "Updated Inhouse services updater.",
+    "releasedAt": "2026-10-11T21:45:22+00:00"
+  },
+  "releases": [
+    {
+      "version": "1.1.13",
+      "versionCode": 26,
+      "apkUrl": "https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.1.13/inhouse-read-release-v1.1.13.apk",
+      "apkSha256": "3b01272323158dd4d5c51a20374a9928b4e17a2b9a35b30b68d00056115ba2c5",
+      "apkSizeBytes": 78532469,
+      "changelog": "Updated Inhouse services updater.",
+      "releasedAt": "2026-10-11T21:45:22+00:00"
+    }
+  ]
 }
