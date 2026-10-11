@@ -1,40 +1,55 @@
-# 1.7.135 — Revisión nocturna de interacción y CI
+# 1.7.135 — Interacción con la estantería publicada
 
-Se reproduce y corrige la preparación gráfica que seguía vigente tras un
-pointerdown, antes de que el siguiente frame actualizase las banderas de
-movimiento. Pulsar, sostener, arrastrar e inspeccionar aplazan el trabajo
-opcional. No cambia geometría, materiales, DPR ni duración de animaciones.
-Las tres regresiones fallaron primero con el runtime original; 28 controles
-focales pasan después. Originales en `D:/CodexEvidence/InhouseRead-20261011/night-review`.
+Runtime `8869750a36d33543ac8a3c27f577f0b9e475a850`, sobre updater
+`4c053f2` / revisión canónica `53c7b0a6d01bbbc7cee1663c5a5bbac145f896d8`.
+La preparación gráfica opcional cede ante pulsación, arrastre e inspección,
+incluso antes del siguiente frame. Geometría, texturas, DPR y animaciones
+conservados. Tres regresiones fallaron antes; 28 controles focales pasan.
 
-CI 133 `38172275258`: unitarias y todos los grupos de voces reales aprobados;
-UI con tres expectativas antiguas de audio simulado, dos timeouts globales
-al cerrar y dos fallos intermitentes (importación Android y cuatro enlaces
-de shader al eliminar). Logs y once artefactos originales descargados.
-Las pruebas de audio ahora emiten el inicio real del doble antes de exigir
-«Leyendo». Los cierres conservan OCHO segundos desde el click y la misma
-comparación de píxeles; el escenario dispone de tiempo adicional para la
-carga/apertura previa y las exportaciones posteriores. La traza anterior
-consumía 24 segundos antes del click sobre el presupuesto global de 30.
+- 4027/4027 unitarias en 324 archivos, repetidas tras integrar el updater.
+- Build aprobado, verificador de copias compartidas aprobado.
+- 15/15 E2E finales sin retries; importación, cierre, lector y updater.
+- 3/3 contra la web pública: ambos regresos nativos y menú de cuenta;
+  hash del main ejecutado comprobado. Cierres dentro del mismo límite de 8 s.
+- Deploy `38175754041` y Pages `38175803443` aprobados; Pages `677b5d0`.
+- Web real: 108/108 controles, 99 recursos idénticos por bytes/SHA.
+  Main `assets/main-Cm92xAGW.js`, SHA
+  `b20ee0de3d1172f13e4385effefdac4ae419f645318f1e8e5b1055f68a19a082`.
+- APK pública 1.1.12/25: descarga, firma, paquete y loader de 2107 bytes
+  verificados de nuevo. Recibe la web publicada; no hay cambio nativo propio.
 
-Comprobación inicial local: 6/6 importación y cierres; eliminación 3/3 sin
-reintentos, cero programas nuevos. Esto NO resuelve por sí solo los dos
-fallos intermitentes originales. La prueba de eliminación conserva ahora
-fuentes de shaders y stacks si reaparecen. Verificación final y publicación
-135 pendientes de completar en esta revisión.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261011/night-review`.
+`published-1791753781987` es la verificación final. El intento anterior
+`published-1791753630981` conserva fallos mientras Pages aún estaba en cola.
 
-Siguen abiertos el inicio frío de voz verdaderamente inmediato, la migración
-completa a Rust y la medición de rendimiento en teléfono físico. Las voces
-existentes ya incluyen diez perfiles Supertonic por idioma compatible;
-no se añaden duplicados ni se afirma que sean acentos regionales nuevos.
+CI 133 `38172275258` conserva FAIL: 5 fallos y 2 flaky entre 707 E2E;
+4024 unitarias y los 291 casos de voces reales pasaron. Once artefactos y
+logs originales descargados. Tres pruebas de lector no emitían inicio de
+voz; dos cierres agotaban el presupuesto global durante la apertura previa.
+Se corrigen esas observaciones sin ampliar el límite medido de cierre.
+Importación y eliminación intermitentes originales siguen conservados;
+la eliminación registra stacks y fuentes de cualquier nuevo shader.
 
-Base integrada: `4c053f2`, updater 1.2.0 fijado a
-`53c7b0a6d01bbbc7cee1663c5a5bbac145f896d8`; verificador compartido PASS.
-La tarea del updater está preparando APK 1.1.13/26 en `38175283676`;
-esta revisión no modifica ni vuelve a publicar sus artefactos.
-Tras integrar: 4027/4027 unitarias, 324 archivos; build de 99 recursos PASS.
-Antes de integrar: 11/11 E2E sin retries; cierres 4290,7 y 4682,0 ms.
-Se repiten los recorridos con la nueva base y se lanza toda la CI.
+CI 135 `38175754110` todavía en curso: unitarias, los tres grupos Piper y
+UI 3/4/5/6 aprobados. UI 1 conserva un flaky en pausa/reanudación EPUB:
+la prueba leía un request sin esperar a start, o incluso el request anterior.
+Un retraso sintético de 450 ms reproduce el fallo. La prueba corregida exige
+un ID nuevo, inicio audible, el mismo texto y resaltado visible; pasa 3/3 sin
+retries. No se cambia el lector ni se acorta el escenario. Se conserva
+`ci135-ui1-original.log`, artefacto original y `follow-before`/`follow-after`.
+Esperar el resto de esta CI y la nueva ejecución antes de afirmar CI verde.
+
+APK del updater 1.1.13/26, run `38175283676`: intento 1 falló con salida 255
+de adb logcat durante el PDF. La captura no demuestra la causa del comando.
+Antes registró 370 s PCM EPUB en pantalla bloqueada y 23 capítulos, pero
+NO se acredita el ensayo completo. Logs/artefactos conservados en
+`apk113-failed`. Intento 2 ya iniciado por la tarea del updater; no se
+publicaron ni sobrescribieron artefactos desde esta revisión.
+
+Pendientes: primer uso frío de voz instantáneo, migración completa a Rust,
+variantes regionales adicionales cuando existan modelos adecuados, y
+rendimiento en teléfono físico. Los diez perfiles Supertonic por idioma
+compatible ya existen; no se cuentan como nuevos acentos ni personas.
 
 # 1.7.133 — Primer audio y estado del lector
 

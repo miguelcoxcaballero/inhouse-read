@@ -201,12 +201,26 @@ test('EPUB paginated: highlight moves sentence by sentence and the visible page 
 
   await page.getByRole('button', { name:'Pausar lectura' }).click()
   await expect.poll(() => page.evaluate(() => window.__speechHighlight())).toBe('')
-  const pausedAt = (await logged(page)).at(-1)
+  const pausedEntries = await logged(page), pausedAt = pausedEntries.at(-1)
+  // A nonempty last request can still be the paused request, or the new
+  // synthesis before audio starts. Hold the resumed fragment and observe its
+  // actual start atomically, including an intentional nonzero preparation.
+  await page.evaluate(count => {
+    window.__narration.state.startDelay = 450
+    window.__narration.state.hold = count + 1
+  }, pausedEntries.length)
   await page.getByRole('button', { name:'Continuar lectura' }).click()
-  await expect.poll(async () => (await logged(page)).at(-1).text).toBeTruthy()
-  const resumed = (await logged(page))[(await logged(page)).length - 1]
+  const resumedHandle = await page.waitForFunction(index => {
+    const entry = window.__narration.log[index]
+    return entry && entry.atStart !== null ? { ...entry, highlight:entry.atStart } : null
+  }, pausedEntries.length, { timeout:8_000 })
+  const resumed = await resumedHandle.jsonValue()
+  await resumedHandle.dispose()
+  expect((await logged(page)).length).toBe(pausedEntries.length + 1)
+  expect(resumed.id).not.toBe(pausedAt.id)
   expect(resumed.text).toBe(pausedAt.text)
   expect(squash(resumed.highlight)).toContain(unstopped(pausedAt.text))
+  expect(await highlightOnScreen(page)).toMatchObject({ inside:true })
   expect(errors).toEqual([])
 })
 
