@@ -1,3 +1,4 @@
+import './helpers/empty-update-channels.mjs'
 import { test, expect } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 

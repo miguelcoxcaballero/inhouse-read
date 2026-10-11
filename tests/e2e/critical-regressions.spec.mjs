@@ -1,3 +1,4 @@
+import './helpers/empty-update-channels.mjs'
 import { test, expect } from '@playwright/test'
 import {readFileSync} from 'node:fs'
 import {createHash} from 'node:crypto'
@@ -257,57 +258,50 @@ test('el lomo tiene profundidad curva 3D y un libro local se reabre tras recarga
   await expect(page.locator('.ihr-spine').first()).not.toHaveClass(/is-away/)
 })
 
-test('el actualizador usa el manifiesto y entrega URL y hash al puente Android', async ({ page }) => {
+test('el actualizador común entrega la URL y el hash del canal A al puente Android', async ({ page }) => {
+  const manifest = JSON.parse(readFileSync('public/android-update.json', 'utf8'))
+  const release = { ...manifest, changelog: 'Aviso mejorado.' }
+  const catalog = { schemaVersion: 1, channel: 'A', latest: release, releases: [release] }
+  await page.route('https://raw.githubusercontent.com/**/updates/A.json?**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(catalog) }))
   await page.addInitScript(() => {
-    window.InhouseNative = {
-      getAppVersion: () => '1.0.4',
-      installAppUpdate: (url, sha256) => { window.__capturedUpdate = { url, sha256 } }
-    }
+    window.InhouseNative = { getAppVersion: () => '1.0.4', installInhouseUpdate: (url, sha256) => { window.__capturedUpdate = { url, sha256 } } }
   })
-  await page.goto('/?inhouse_app=1')
-
-  const manifest = await page.evaluate(async () => {
-    const response = await fetch(`android-update.json?test=${Date.now()}`, { cache: 'no-store' })
-    if (!response.ok) throw new Error(`Manifiesto no disponible: ${response.status}`)
-    return response.json()
-  })
-  const gate = page.locator('#android-update-gate')
-  await expect(gate).toBeVisible()
-  await expect(page.locator('[data-update-message]')).toContainText(manifest.version)
-  await page.locator('[data-update-install]').click()
-  await expect.poll(() => page.evaluate(() => window.__capturedUpdate ?? null)).toEqual({
-    url: manifest.apkUrl,
-    sha256: manifest.apkSha256
-  })
+  await page.goto('./?inhouse_app=1')
+  await expect(page.locator('#inhouse-services-update')).toBeVisible()
+  await expect(page.locator('.isu-versions')).toContainText(manifest.version)
+  await page.getByRole('button', { name: 'Actualizar', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.__capturedUpdate ?? null)).toEqual({ url: manifest.apkUrl, sha256: manifest.apkSha256 })
 })
 
-test('si Pages conserva el manifiesto viejo, ofrece la APK nueva desde GitHub Releases', async ({ page }) => {
-  const sha = 'a'.repeat(64)
-  const apkUrl = 'https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.12/inhouse-read-release-v1.0.12.apk'
+test('el actualizador recupera el mismo canal y permite aplazar o cambiar a B', async ({ page }) => {
+  const release = { version: '1.1.12', versionCode: 25, apkUrl: 'https://github.com/miguelcoxcaballero/inhouse-read/releases/download/test/app.apk', apkSha256: 'a'.repeat(64), apkSizeBytes: 3500000, changelog: 'Descarga mejorada.' }
+  const catalog = { schemaVersion: 1, channel: 'A', latest: release, releases: [release] }
   await page.addInitScript(() => {
     window.InhouseNative = {
-      getAppVersion: () => '1.0.8',
-      installAppUpdate: (url, digest) => { window.__capturedUpdate = { url, digest } }
+      getAppVersion: () => '1.1.11', getAppVersionCode: () => 24,
+      getUpdateState: () => localStorage.getItem('test-native-updates') || '{"channel":"A","snooze":{}}',
+      saveUpdateState: value => localStorage.setItem('test-native-updates', value),
     }
   })
-  await page.route('**/android-update.json?**', route => route.fulfill({
-    status: 200, contentType: 'application/json',
-    body: JSON.stringify({ version: '1.0.8', apkUrl: 'https://github.com/miguelcoxcaballero/inhouse-read/releases/download/android-v1.0.8/inhouse-read-release-v1.0.8.apk' })
-  }))
-  await page.route('https://api.github.com/repos/miguelcoxcaballero/inhouse-read/releases/latest', route => route.fulfill({
-    status: 200, contentType: 'application/json',
-    body: JSON.stringify({ tag_name: 'android-v1.0.12', assets: [{
-      name: 'inhouse-read-release-v1.0.12.apk', browser_download_url: apkUrl,
-      digest: `sha256:${sha}`, size: 3500000
-    }] })
-  }))
-  await page.goto('/?inhouse_app=1')
-  await expect(page.locator('#android-update-gate')).toBeVisible()
-  await expect(page.locator('[data-update-message]')).toContainText('1.0.12')
-  await page.locator('[data-update-install]').click()
-  await expect.poll(() => page.evaluate(() => window.__capturedUpdate)).toEqual({ url: apkUrl, digest: sha })
+  await page.route('https://api.github.com/**/updates/A.json?**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ content: Buffer.from(JSON.stringify(catalog)).toString('base64') }) }))
+  await page.goto('./?inhouse_app=1')
+  await expect(page.locator('.isu-versions')).toHaveText('1.1.11 → 1.1.12 A')
+  await page.getByRole('button', { name: 'Recordármelo más tarde', exact: true }).click()
+  const deadline = await page.evaluate(() => JSON.parse(localStorage.getItem('test-native-updates')).snooze.A)
+  expect(deadline - Date.now()).toBeGreaterThan(13 * 86400000)
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Actualizaciones A/B', exact: true })).toBeVisible()
+  await expect(page.locator('#inhouse-services-update')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Actualizaciones A/B', exact: true }).click()
+  await page.getByRole('button', { name: 'Versión B', exact: true }).click()
+  await expect(page.getByText('Aún no hay versiones B.')).toBeVisible()
+  await page.reload()
+  await page.getByRole('button', { name: 'Actualizaciones A/B', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Versión B', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'Versión A', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Actualizar', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('test-native-updates')).snooze.A)).toBe(deadline)
 })
-
 
 test('móvil: el modelo se dibuja, se cancela durante el giro y vuelve a abrir', async ({ page }) => {
   // CI spent 20–23 seconds returning the imported book before the two opens.
