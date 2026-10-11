@@ -2,11 +2,13 @@
 
 ## 1.7.138 / Android 1.1.15 — Resultado de instalación
 
-Preparación de la corrección compartida del actualizador: abrir el instalador
-Android no confirma que la actualización se haya instalado. La nueva APK usa
-versionCode 28 y conserva el paquete y la firma. Se publicará en A después de
-las comprobaciones de la APK; B conserva Android 1.1.13. No se ha probado esta
-versión en un teléfono físico.
+El actualizador distingue cancelar, reintentar e instalar: abrir el instalador
+Android no confirma una actualización. [APK 1.1.15 publicada en A](https://github.com/miguelcoxcaballero/inhouse-read/releases/tag/android-v1.1.15),
+versionCode 28, con el mismo paquete y certificado que 1.1.14. B conserva
+Android 1.1.13. La [prueba en Android 15](https://github.com/miguelcoxcaballero/inhouse-read/actions/runs/38180160799)
+verifica cancelación, reintento y confirmación al reabrir una aplicación de
+prueba actualizada, además de importación y audio de Read. No se ha probado
+esta versión en un teléfono físico.
 
 Las APK antiguas ofrecen «Download APK» desde el aviso para descargar la
 actualización con el navegador y abrirla desde Descargas si su instalador no
