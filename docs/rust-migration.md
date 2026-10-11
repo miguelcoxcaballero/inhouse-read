@@ -913,3 +913,14 @@ updater aprobados. El recorrido integrado con CPU ×4 pasa sin retry.
 La batería de interfaz y la publicación se registran en el WIP al finalizar.
 La migración de la lógica de biblioteca, lector, gestos y persistencia sigue
 pendiente; esta entrega no equivale a una reescritura completa de la app.
+
+
+### Publicación comprobada de 141
+
+Fuente `7ca8e6d32dc3d328682c3aa707cb32edf2e0b269`, Pages `8c73771`.
+24/24 E2E locales y 3/3 públicos pasan sin retries. El artefacto descargado
+conserva exactamente los 135168 bytes de las tres texturas, además del SHA
+del WASM compilado localmente. 113 controles HTTP y 99 recursos exactos.
+La APK 1.1.15 conserva su firma/loader y recibe esta web. No se recompila
+el wrapper. La matriz completa 38183041199 continúa; el WIP conserva el
+fallo previo de cierre Linux de 137, sin presentarlo como resuelto.

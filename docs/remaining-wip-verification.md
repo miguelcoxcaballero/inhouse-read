@@ -1,5 +1,21 @@
 # Estado actual — web 1.7.141 / APK 1.1.15
 
+Publicación comprobada: fuente `7ca8e6d32dc3d328682c3aa707cb32edf2e0b269`,
+Pages `8c73771d5446e36be7901cdf961f1cddb43f65ca`. Deploy 38183041174 y
+Pages 38183092785 aprobados. 113/113 controles HTTP y 99 recursos iguales
+por tamaño/SHA. Main `assets/main-TAlAp3Pe.js`, SHA
+`aadb8b0c2d64217d321b5034a5769cf1d4c599ed107eb1523d4475c80a9385db`.
+El WASM público ejecuta las tres nuevas rutas y conserva todos los bytes de
+las texturas de referencia. Evidencia `published-1791760461407` y su
+`published-surface-kernels.json`; el sondeo anterior se conserva fallido porque
+Pages seguía en cola y devolvió HTML 404 para el recurso WASM nuevo.
+
+Los tres recorridos contra la web pública pasan sin retries (45,8 s): ambos
+retornos nativos y menú de perfil. El SHA del main ejecutado queda comprobado.
+Evidencia `rust-book-surfaces/public-ui.json` y trazas del mismo directorio.
+CI completa 38183041199 en curso: unidades, Piper reading y UI4 aprobados;
+resto pendiente. No se afirma éxito global ni que la migración esté terminada.
+
 Migradas a Rust las microtexturas de tela y papel y la máscara del marcapáginas.
 Píxeles exactos, mismos materiales y caché compartida. Los recorridos por píxel
 se ejecutan en Rust; JS conserva ocho coeficientes seno y el adaptador Three.
@@ -37,8 +53,7 @@ CI 137 `38180085214` terminó FAIL: ambos cierres Linux superan el límite de
 8 s. UI2 original y log descargados; 73 aprobadas y 2 fallidas en ese shard.
 No se afirman resueltos esos cierres por esta migración. Quedan la migración
 completa de lógica de biblioteca/lector/gestos/persistencia y el arranque frío
-de voz. La CI completa y comprobación pública de 141 siguen pendientes hasta
-su publicación; no se afirma éxito global.
+de voz. La comprobación pública de 141 consta arriba; su CI completa aún sigue en curso.
 
 ## Histórico — web 1.7.137 / APK A 1.1.14, B 1.1.13
 
