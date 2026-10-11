@@ -1,5 +1,11 @@
 # inhouse read
 
+## 1.7.135 — Interacción con la estantería
+
+La preparación gráfica de segundo plano cede inmediatamente al pulsar o
+arrastrar un libro y durante los gestos de inspección. Conserva las texturas,
+los modelos y la resolución. Integra el updater compartido 1.2.0.
+
 ## 1.7.134 / Android 1.1.13 — Inhouse services updater
 
 Nuevo panel de descarga y actualización compartido, con versiones A/B y

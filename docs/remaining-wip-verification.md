@@ -1,3 +1,41 @@
+# 1.7.135 — Revisión nocturna de interacción y CI
+
+Se reproduce y corrige la preparación gráfica que seguía vigente tras un
+pointerdown, antes de que el siguiente frame actualizase las banderas de
+movimiento. Pulsar, sostener, arrastrar e inspeccionar aplazan el trabajo
+opcional. No cambia geometría, materiales, DPR ni duración de animaciones.
+Las tres regresiones fallaron primero con el runtime original; 28 controles
+focales pasan después. Originales en `D:/CodexEvidence/InhouseRead-20261011/night-review`.
+
+CI 133 `38172275258`: unitarias y todos los grupos de voces reales aprobados;
+UI con tres expectativas antiguas de audio simulado, dos timeouts globales
+al cerrar y dos fallos intermitentes (importación Android y cuatro enlaces
+de shader al eliminar). Logs y once artefactos originales descargados.
+Las pruebas de audio ahora emiten el inicio real del doble antes de exigir
+«Leyendo». Los cierres conservan OCHO segundos desde el click y la misma
+comparación de píxeles; el escenario dispone de tiempo adicional para la
+carga/apertura previa y las exportaciones posteriores. La traza anterior
+consumía 24 segundos antes del click sobre el presupuesto global de 30.
+
+Comprobación inicial local: 6/6 importación y cierres; eliminación 3/3 sin
+reintentos, cero programas nuevos. Esto NO resuelve por sí solo los dos
+fallos intermitentes originales. La prueba de eliminación conserva ahora
+fuentes de shaders y stacks si reaparecen. Verificación final y publicación
+135 pendientes de completar en esta revisión.
+
+Siguen abiertos el inicio frío de voz verdaderamente inmediato, la migración
+completa a Rust y la medición de rendimiento en teléfono físico. Las voces
+existentes ya incluyen diez perfiles Supertonic por idioma compatible;
+no se añaden duplicados ni se afirma que sean acentos regionales nuevos.
+
+Base integrada: `4c053f2`, updater 1.2.0 fijado a
+`53c7b0a6d01bbbc7cee1663c5a5bbac145f896d8`; verificador compartido PASS.
+La tarea del updater está preparando APK 1.1.13/26 en `38175283676`;
+esta revisión no modifica ni vuelve a publicar sus artefactos.
+Tras integrar: 4027/4027 unitarias, 324 archivos; build de 99 recursos PASS.
+Antes de integrar: 11/11 E2E sin retries; cierres 4290,7 y 4682,0 ms.
+Se repiten los recorridos con la nueva base y se lanza toda la CI.
+
 # 1.7.133 — Primer audio y estado del lector
 
 Publicado desde `d626d6232184e8e42aa2c669d877b70d6715a78b`. «Leyendo» se
@@ -11,8 +49,9 @@ puede empezar por una cláusula natural sin perder texto ni offsets.
 firma y loader de 2107 bytes verificados; recibe la web 1.7.133.
 
 [Detalles, tiempos y límites de las mediciones](audio-first-play-133.md).
-La CI completa `38172275258` permanece en curso: comprobar su resultado
-antes de afirmar que toda la batería está aprobada. No se cambia ni se
+La CI completa `38172275258` terminó con fallos en los shards de UI 1/2/3/6.
+Las unitarias y los cuatro grupos de voces reales pasaron. Se conservan los
+logs y trazas originales; véase la revisión nocturna 1.7.135 al principio. No se cambia ni se
 cancela la CI anterior `38170466639`. No se acredita velocidad universal
 instantánea ni rendimiento en teléfono físico.
 

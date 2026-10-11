@@ -8,6 +8,10 @@ const BOOK_ID = 'native-return:tiny-real-pdf'
 test.use({ viewport:{ width:390, height:845 }, deviceScaleFactor:2, isMobile:true, hasTouch:true })
 
 test('el regreso nativo alineado a 390x845 conserva el framebuffer y entrega el mismo canvas a la estantería', async ({ page }) => {
+  // CI 38172275258 spent 24 s loading and opening the real 3D book.
+  // Keep the close assertion AND measured click-to-finish limit at 8 s;
+  // the scenario also needs time for setup and the post-close pixel exports.
+  test.setTimeout(60_000)
   await page.emulateMedia({ reducedMotion:'no-preference' })
   const bytes = [...await readFile('tests/e2e/fixtures/tiny.pdf')]
   await page.addInitScript(({ bytes, id, geometry }) => {

@@ -2518,15 +2518,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     // Prepare one already visible book only after a stable room frame. The
     // flyout keeps its own persistent renderer; shader work no longer has to
     // begin with the user's first selection. No scene pixels are repainted.
-    if (!bookPresentationScheduled && canPresent() && !hasOngoingMotion() && !paintHeld) {
+    if (!bookPresentationScheduled && canPreparePresentation()) {
       const entry = bookEntries.find(entry => entry.model?.visible &&
         typeof entry.model.userData.preparePresentation === 'function');
       if (entry) {
         bookPresentationScheduled = true;
         const model = entry.model;
         const current = () => !disposed &&
-          entry.model === model && model.visible && canPresent() && !paintHeld &&
-          !hasOngoingMotion() && !canDeferModalPaint();
+          entry.model === model && model.visible && canPreparePresentation();
         void (async () => {
           let prepared = false;
           try {
@@ -2610,6 +2609,15 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
 
   function canPresent() {
     return presentationActive && document.visibilityState !== 'hidden';
+  }
+
+  function canPreparePresentation() {
+    // Pointer classes change before the next scene frame updates its motion
+    // flags. Idle work must yield immediately, including a held book that has
+    // finished lifting and a compositor-only inspection gesture.
+    return !disposed && canPresent() && !paintHeld && !inspectionMoving && !dropPosition &&
+      !hasOngoingMotion() && !canDeferModalPaint() &&
+      !bookEntries.some(entry => entry.node?.matches('.is-pressed, .is-lifted, .is-dragging'));
   }
 
   // Do not interrupt an owner's actual flight, insertion or camera turn when

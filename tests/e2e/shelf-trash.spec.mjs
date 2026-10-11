@@ -436,10 +436,16 @@ test('retirar un libro no muestra aviso, no enlaza shaders y no reconstruye la e
   // must reuse the programs the shelf already holds.
   await page.addInitScript(() => {
     window.__programLinks = 0
+    window.__programLinkDetails = null
     for (const Context of [window.WebGL2RenderingContext, window.WebGLRenderingContext]) {
       if (!Context) continue
       const link = Context.prototype.linkProgram
-      Context.prototype.linkProgram = function (...args) { window.__programLinks++; return link.apply(this, args) }
+      Context.prototype.linkProgram = function (...args) {
+        window.__programLinks++
+        window.__programLinkDetails?.push({ at:performance.now(), stack:new Error().stack,
+          shaders:this.getAttachedShaders(args[0]).map(shader => this.getShaderSource(shader)) })
+        return link.apply(this, args)
+      }
     }
   })
   const seed = await seedShelf(page)
@@ -451,6 +457,7 @@ test('retirar un libro no muestra aviso, no enlaza shaders y no reconstruye la e
     const canvas = document.querySelector('.ihr-bookshelf-scene')
     canvas.dataset.sameSceneProbe = 'kept'
     window.__programLinks = 0
+    window.__programLinkDetails = []
     return { activeBooks:Number(canvas.dataset.activeBooks), spines:document.querySelectorAll('.ihr-spine').length,
       layoutUpdates:Number(canvas.dataset.layoutUpdates || 0) }
   })
@@ -473,6 +480,9 @@ test('retirar un libro no muestra aviso, no enlaza shaders y no reconstruye la e
   expect(after.same).toBe('kept')
   expect(after.activeBooks).toBe(before.activeBooks - 1)
   expect(after.layoutUpdates - before.layoutUpdates).toBeLessThanOrEqual(1)
+  await testInfo.attach('removal-shader-links', {
+    body:JSON.stringify(await page.evaluate(() => window.__programLinkDetails)), contentType:'application/json'
+  })
   expect(after.links).toBe(0)
   // No visible 'retirado' pill; the announcement stays in a hidden live region.
   expect(after.visibleStatus).toBe('')

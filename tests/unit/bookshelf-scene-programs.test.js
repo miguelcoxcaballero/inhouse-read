@@ -205,6 +205,17 @@ describe('presentation preparation after the actual first room frame', () => {
     shelf.setPresentationActive(false);expect(current()).toBe(false);
     shelf.setPresentationActive(true);flushFrames();expect(prepare).toHaveBeenCalledOnce();
   });
+  it.each(['is-pressed','is-lifted','is-dragging'])('defers presentation work as soon as another book is %s, before its next frame', async flag => {
+    const data=layout();shelf=createBookshelfScene(data);
+    const model=gpu.scene.getObjectByName('book:book-0');
+    const prepare=vi.fn(async()=>true);model.userData.preparePresentation=prepare;
+    gpu.linked.ready=true;vi.advanceTimersByTime(10);flushFrames();
+    const [,current]=prepare.mock.calls[0];expect(current()).toBe(true);
+    data.entries[1].node.classList.add(flag);
+    // A pending idle callback can run before MutationObserver/RAF sees input.
+    expect(current()).toBe(false);
+    data.entries[1].node.classList.remove(flag);expect(current()).toBe(true);
+  });
   it('invalidates the idle owner when its actual model is disposed', async () => {
     shelf=createBookshelfScene(layout());const model=gpu.scene.getObjectByName('book:book-0');
     const prepare=vi.fn(async()=>true);model.userData.preparePresentation=prepare;
