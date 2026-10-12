@@ -1413,3 +1413,12 @@ CI15938201985254 conserva los dos fallos de cierre nativo deUI2 yel
 reintento de la barra de estado deUI3. Originales en rust-motion/ci159-ui2
 yci159-ui3. La captura deUI3 muestra un aviso real del updater; la causa
 de su entrada en esa prueba se investiga sin modificar los plazos.
+
+## 1.7.163: mallas de madera
+
+El núcleo crea tableros biselados y perfiles redondeados con los mismos
+132 vértices y atributos exactos. Se preserva la triangulación de Three,
+la escala física de las vetas, las normales y el sombreado de la madera.
+Pruebas y mediciones completas en `remaining-wip-verification.md`.
+La migración sigue siendo parcial: UI, estado, persistencia y otros módulos
+aún dependen del navegador y de JavaScript.

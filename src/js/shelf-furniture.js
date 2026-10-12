@@ -1,3 +1,4 @@
+import {rustChamferedTimber,rustShelfLip} from './timber-wasm.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -80,6 +81,8 @@ function geometryBuilder(grainAxis, seed, tone = boardTone(seed)) {
 
 /** Six broad faces, twelve actual bevel faces and eight cut corners. */
 function chamferedTimber(width, height, depth, bevel, grainAxis, seed, tone) {
+  const native=rustChamferedTimber(width,height,depth,bevel,grainAxis,textureOffset(seed),tone===undefined?boardTone(seed):tone);
+  if(native)return native;
   const half = [width / 2, height / 2, depth / 2];
   const radius = Math.max(0.01, Math.min(bevel, ...half.map(value => value * 0.45)));
   const core = half.map(value => value - radius);
@@ -120,6 +123,8 @@ function chamferedTimber(width, height, depth, bevel, grainAxis, seed, tone) {
 
 /** A solid-wood edge band: flat front, softly rounded top and bottom arrises. */
 function shelfLip(width, seed) {
+  const native=rustShelfLip(width,textureOffset(seed),boardTone(seed));
+  if(native)return native;
   // Cross section [z, y], with its top exactly at the book's baseline.
   const section = [
     [6.0, 0], [9.0, 0], [10.25, -.3], [11.1, -1.0], [11.55, -2.0], [11.7, -3.2],

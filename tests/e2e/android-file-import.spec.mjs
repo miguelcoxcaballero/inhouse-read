@@ -1,4 +1,5 @@
-import './helpers/empty-update-channels.mjs'
+import {installEmptyUpdateChannels} from './helpers/empty-update-channels.mjs'
+installEmptyUpdateChannels()
 import { test, expect } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 

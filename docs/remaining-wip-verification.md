@@ -1,3 +1,45 @@
+# Migración 1.7.163 — madera de la estantería en Rust
+
+Changelog: «Geometría de madera en Rust». Se trasladan al núcleo las caras,
+biseles, esquinas, normales, UV, veta y color por vértice de los tableros, y el
+perfil redondeado de las lejas. Three conserva los mismos atributos, límites,
+materiales y combinaciones de mallas. Cada geometría posee sus buffers; ninguna
+vista apunta a memoria liberada. La triangulación del contorno se conserva.
+
+13 pruebas nuevas comparan cada bit, incluido cero negativo: 200 tableros,
+cinco anchuras de leja y armarios completos de 3/8/100 alturas en tres escalas.
+También crecimiento de memoria, liberación, errores y vía anterior. 26/26
+focalizadas (incluidas dos de aislamiento del updater). Build aprobado.
+WASM 369143 bytes, SHA
+`5bbe07d73fad9cb06b1101091b1971b8875d1c0b22873a47a634d6c85b4a48aa`.
+10/10 E2E sin reintentos: perfil, ocho de aspecto/lectura y comparación de
+armarios completos con núcleo real. CPU ×4, nueve rondas alternadas, incluyendo
+objetos Three, copia, límites, combinación y liberación: 3 lejas JS6,78/Rust4,48ms;
+12:14,41/9,50ms; 100:84,05/57,05ms. Todos los atributos idénticos (121968,
+278784 y1812096 bytes), capacidad estable. Es coste CPU de creación, no FPS
+ni una medición en un teléfono físico. 4632/4632 unitarias,350 archivos,284,15s.
+4/4 E2E adicionales de vuelta nativa, plantas y cambio de estantería, sin
+reintentos ni omisiones. Publicación pendiente.
+
+Aislamiento del updater en pruebas: su helper registraba beforeEach al importar.
+El módulo se reutiliza entre archivos del mismo worker, pero el hook sólo queda
+en el primero. Un segundo archivo consultaba el catálogo real y mostraba una
+actualización, oscureciendo el lector. Reproducción original: 1/2; corrección:
+2/2. Cada archivo instala explícitamente su hook. Sólo cambia el entorno de
+pruebas, sin cambios en vendor, aplicación, aserciones ni límites. Los originales
+se conservan en updater-test-isolation. No resuelve los fallos independientes
+de duración al cerrar en CI; sus informes originales siguen conservados.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-timber`.
+
+Publicación162: fuente `85cf78561a10b0c852710808ecf04f4994879e65`, Pages
+`1398aa48e2cd578a5d9a099183e9a75ff6c6860e`, deploy38204660560 y Pages38204712318
+aprobados.99 recursos, HTML y precarga comprobados. Núcleo descargado:200
+páginas,31966 fragmentos y343081 caracteres idénticos. APK actual1.1.15/code28
+conservado; no hay cambios nativos. Evidencia: published-1791780177543.
+Publicación161:10/10 E2E públicas sin reintentos y main/WASM exactos en dos
+navegadores limpios. CI159 falla en dos cierres y presenta una repetición por
+el updater ya reproducido arriba; originales ci159-ui2 yci159-ui3 preservados.
+
 # Migración 1.7.162 — párrafos y posiciones PDF en Rust
 
 Changelog: «Párrafos PDF más rápidos en Rust». El núcleo calcula el espaciado

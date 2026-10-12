@@ -1,4 +1,5 @@
-import './helpers/empty-update-channels.mjs'
+import {installEmptyUpdateChannels} from './helpers/empty-update-channels.mjs'
+installEmptyUpdateChannels()
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
