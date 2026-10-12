@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import {readFileSync} from 'node:fs'
+import * as rustUI from '../../src/wasm/ui/inhouse_read_ui.js'
 import { ReaderExperience } from '../../src/js/readers/reader-experience.js'
 import { DEFAULT_READING_PREFERENCES, RATE_STEPS, READING_THEMES, nearestRate, rateLabel, normalizeReadingPreferences, readingCSS } from '../../src/js/readers/reading-preferences.js'
 import { normalizeNeuralVoice } from '../../src/js/readers/voice-catalog.js'
@@ -7,7 +9,9 @@ import { neuralVoices } from '../../src/js/readers/neural-voice/catalog.js'
 vi.mock('../../src/js/readers/reading-voice.js', () => ({
   ReadingVoice:class { state = 'stopped'; stop = vi.fn(); browse = vi.fn(); continueFromPage = vi.fn(async navigate => navigate?.()) }
 }))
-const runtime = vi.hoisted(() => ({ voices:[] }))
+const runtime = vi.hoisted(() => ({ voices:[], ui:null }))
+vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
+beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
 // Exercise the real natural-voice menu contracts without starting the synthesis engine.
 vi.mock('../../src/js/readers/neural-runtime.js', () => ({
   loadNeural:async () => null, neuralEngine:() => null, neuralVoiceList:() => runtime.voices
@@ -26,7 +30,9 @@ function deferred() {
   return { promise, resolve }
 }
 
+describe.each(['legacy','rust'])('reader view %s',engine=>{
 beforeEach(() => {
+  runtime.ui = engine === 'rust' ? rustUI : null
   localStorage.clear()
   runtime.voices = []
   // Finish the idle warm-up inside the test, before its DOM is removed.
@@ -50,6 +56,7 @@ async function setup(persist = vi.fn(async () => {})) {
     next:vi.fn(async () => {}), prev:vi.fn(async () => {})
   }
   const experience = new ReaderExperience(reader, { persist })
+  if(engine==='rust') expect(experience.view).toBeInstanceOf(rustUI.RustReaderView)
   experience.panel.close = vi.fn()
   reader.goToLocator = vi.fn(async (locator, fraction) => {
     reader.location = { locator, fraction }
@@ -553,3 +560,5 @@ it('keeps the audio player and return destination in the bottom dock', async () 
   expect(experience.miniPlayer.parentElement).toBe(experience.audioHost);
   expect(experience.returnButton.parentElement).toBe(experience.audioHost);
 });
+
+})

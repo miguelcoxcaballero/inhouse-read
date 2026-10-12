@@ -1,3 +1,32 @@
+# 1.7.184 — paneles del lector en Rust
+
+Changelog: «Paneles del lector en Rust».
+RustReaderView actualiza pestañas, temas, controles de preferencias, marcador,
+retorno y minirreproductor sobre el DOM existente. No modifica paginación ni
+cursores de audio. Reutiliza nodos y grupos estáticos; evita escrituras de
+preferencias que no han cambiado, restaurando el tema de la cabecera compartida
+al reabrir. Sólo interna cadenas finitas de API/plantilla, nunca texto del libro.
+Los setters del host propagan errores sin dejar prestada la instancia Rust.
+Bindings generados excluidos del inventario; alternativa JS ante fallo de carga.
+
+138/138 focales. 200 estados DOM exactos; cuatro regresiones de preferencias,
+formato, liberación y excepción del navegador. Prueba de 230 diálogos completos
+sin crecimiento de memoria: el primer recorrido completo agotó sus 5 s bajo
+carga concurrente (4967/4968 aprobadas); se conserva ese fallo y los 230 ciclos,
+con límite de 15 s sólo para ese estrés de liberación, no de latencia de UI.
+E2E: cinco nuevos aprobados, más 30 regresiones y seis omisiones originales.
+CPU limitada 4×, 100 cambios: incremental JS 26,5 / Rust 18,5 ms; cambiando
+cada ajuste JS 30,0 / Rust 34,6 ms. Mejora el caso incremental; no se afirma
+aceleración universal. Memoria WASM estable en 393216 bytes. Intentos previos
+y fallos de desarrollo conservados en rust-reader-panel-prototype.
+
+Inventario: 3914 Rust / 36776 JavaScript, 9,62 % de líneas propias, no funciones.
+WASM UI local 140174 bytes, SHA256
+a4fc5160911c6cbf2dda0d51b8ea88416594cbb05fb997629e8b7c6cda888d9c.
+Batería final: 4968/4968, 374 archivos, 318,85 s (dos workers).
+App/decor y APK/updater sin cambios. Verificación pública pendiente.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-reader-panel-prototype.
+
 # 1.7.183 — menús del lector en Rust
 
 Changelog: «Menús del lector en Rust».
@@ -41,7 +70,9 @@ casos PCM/marcas y APK 1.1.15/28 real con loader de 2107 bytes. Módulo UI de
 Linux: 39681 bytes, SHA aee789f1cd8d3205ea5b0fa91a24b15250aec2d2b0773007d4913d4b620f05b1.
 Evidencia: published-1791807254326 y rust-ui-prototype/public-*.log. El intento
 anterior antes de terminar Pages conserva sus 404 en published-1791807170443.
-APK/updater sin cambios. CI183 completa todavía en curso.
+APK/updater sin cambios. CI183 terminó con fallo: cinco de seis grupos UI,
+unitarias y los cuatro grupos de voces aprobados; grupo UI2 conserva los tres
+fallos originales de cierre/resaltado descritos arriba. Log original preservado.
 
 Siguiente bloque en rust-reader-panel-prototype: pestañas, minirreproductor,
 temas, marcadores y retorno del lector. Compila y pasa 100 comparaciones

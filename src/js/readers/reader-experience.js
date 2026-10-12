@@ -4,6 +4,7 @@ import { normalizeReadingPreferences, rateLabel, READING_THEMES } from './readin
 import { ReadingVoice } from './reading-voice.js'
 import { declaredLanguage, langBase } from './voice-catalog.js'
 import { SelectMenu } from './select-menu.js'
+import { ReaderView } from './reader-view.js'
 import { AUTO, languageOptions, voiceOptions } from './voice-menus.js'
 import { neuralEngine, neuralVoiceList } from './neural-runtime.js'
 import { NeuralVoicePicker } from './neural-picker.js'
@@ -47,6 +48,7 @@ export class ReaderExperience {
     this.miniPlayer.className = 'reading-mini-player'; this.miniPlayer.hidden = true
     this.miniPlayer.innerHTML = `<button type="button" data-mini-open><span data-mini-title></span><small data-mini-status></small></button><button type="button" class="reading-icon-button" data-mini-play aria-label="Pausar lectura">${readerIcon('pause')}</button><button type="button" class="reading-icon-button" data-mini-stop aria-label="Detener lectura">${readerIcon('stop')}</button>`
     this.audioHost.append(this.miniPlayer)
+    this.view = new ReaderView(this.screen,this.panel,this.miniPlayer,this.returnButton)
     if (typeof ResizeObserver === 'function') {
       this.miniPlayerResizeObserver = new ResizeObserver(() => this.syncMiniPlayerLayout())
       this.miniPlayerResizeObserver.observe(this.miniPlayer)
@@ -259,52 +261,24 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
   }
   showTab(name) {
     if (name !== 'search') this.endSearch()
-    for (const section of ['appearance','navigation','audio','search','more']) this.panel.querySelector(`#reading-${section}`).hidden = section !== name
-    this.panel.querySelector('#reading-about').hidden = name !== 'about'
-    const title = {appearance:'Texto',navigation:'Contenido',audio:'Escuchar',search:'Buscar',more:'Más opciones',about:'Documento'}[name]
-    this.panel.querySelector('#reading-panel-title').textContent = title
-    this.panel.dataset.view = name
-    this.panel.scrollTop = 0
-    for (const [id,tab] of [['reader-settings','appearance'],['reader-location','navigation'],['reader-audio','audio']]) document.getElementById(id).setAttribute('aria-expanded',String(tab === name))
+    this.view.showTab(name)
   }
   showPlaceTab(name) {
     this.placeTab = name
-    for (const button of this.panel.querySelectorAll('[data-place-tab]')) {
-      if (button.hidden) continue
-      const selected = button.dataset.placeTab === name
-      button.setAttribute('aria-selected',String(selected)); button.tabIndex = selected ? 0 : -1
-      this.panel.querySelector(`[data-places="${button.dataset.placeTab}"]`).hidden = !selected
-    }
+    this.view.showPlaceTab(name)
   }
   updateMiniPlayer(state = this.voice?.state, message = '') {
-    const active = Boolean(this.book) && ['playing','paused','loading'].includes(state)
-    this.screen.classList.toggle('has-reading-audio', active)
-    this.miniPlayer.hidden = !active || this.panel.open
-    this.screen.classList.toggle('has-reading-mini-player', !this.miniPlayer.hidden)
-    this.miniPlayer.querySelector('[data-mini-title]').textContent = displayBookTitle(this.book)
-    this.miniPlayer.querySelector('[data-mini-status]').textContent = message || `${state === 'paused' ? 'En pausa' : state === 'loading' ? 'Preparando…' : 'Leyendo'} · ${rateLabel(this.preferences.rate)}`
-    const play = this.miniPlayer.querySelector('[data-mini-play]')
-    play.innerHTML = readerIcon(state === 'playing' ? 'pause' : 'play')
-    play.setAttribute('aria-label',state === 'playing' ? 'Pausar lectura' : 'Continuar lectura')
-    play.disabled = state === 'loading'
-    this.syncMiniPlayerLayout()
+    this.view.updateMiniPlayer(state || '',message,displayBookTitle(this.book),rateLabel(this.preferences.rate),Boolean(this.book),readerIcon(state === 'playing' ? 'pause' : 'play'))
   }
   syncMiniPlayerLayout() {
-    const height = this.miniPlayer.hidden ? 0 : Math.ceil(this.miniPlayer.getBoundingClientRect().height)
-    this.screen.style.setProperty('--reader-audio-height', `${height}px`)
+    this.view.syncMiniPlayerLayout()
   }
   syncReturnLayout() {
-    const height = this.returnButton.hidden ? 0 : Math.ceil(this.returnButton.getBoundingClientRect().height)
-    this.screen.style.setProperty('--reader-return-height', `${height}px`)
+    this.view.syncReturnLayout()
   }
   updateBookmarkButton() {
     const marked = this.bookmarks.some(x => JSON.stringify(x.locator) === JSON.stringify(this.location.locator) && Math.abs(x.fraction-this.location.fraction)<.0001)
-    const button = this.panel.querySelector('[data-bookmark]')
-    button.setAttribute('aria-pressed',String(marked))
-    button.setAttribute('aria-label',marked ? 'Quitar marcador de esta página' : 'Marcar esta página')
-    button.title = button.getAttribute('aria-label')
-    const quick = document.getElementById('reader-save-bookmark')
-    quick.setAttribute('aria-pressed',String(marked)); quick.setAttribute('aria-label',marked ? 'Quitar marcador rápido' : 'Guardar marcador rápido')
+    this.view.updateBookmarkButton(marked)
   }
   setPreference(key, value, { restart = true } = {}) {
     const audio = ['rate','voice','voiceLang','footnotes','multilingual','skipHeaders'].includes(key)
@@ -318,27 +292,7 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
     const p = this.preferences
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(p)) } catch { /* reading still works without storage */ }
     const theme = READING_THEMES[p.theme]
-    for (const surface of [this.screen,this.panel,document.querySelector('.app-header')].filter(Boolean)) {
-      surface.dataset.readingTheme = p.theme
-      surface.style.colorScheme = theme.scheme
-    }
-    // 100% is the identity: leave the filter off so the viewport is not a filter surface during reader animations.
-    this.screen.style.setProperty('--reader-brightness-filter',p.brightness === 100 ? 'none' : `brightness(${p.brightness}%)`)
-    for (const surface of [this.screen,this.screen.parentElement,this.panel]) {
-      surface.style.setProperty('--reading-paper', theme.background)
-      surface.style.setProperty('--reading-ink', theme.color)
-    }
-    this.panel.querySelector('[data-size-step="-1"]').disabled = p.fontSize <= 14
-    this.panel.querySelector('[data-size-step="1"]').disabled = p.fontSize >= 36
-    for (const field of this.panel.querySelectorAll('[data-pref]')) field.value = String(p[field.dataset.pref])
-    for (const radio of this.panel.querySelectorAll('[data-rate]')) radio.checked = Number(radio.value) === p.rate
-    for (const field of this.panel.querySelectorAll('[data-voice-option]')) field.checked = Boolean(p[field.dataset.voiceOption])
-    for (const output of this.panel.querySelectorAll('[data-output]')) output.textContent = `${p[output.dataset.output]}${output.dataset.output === 'rate' ? '×' : ['zoom','brightness'].includes(output.dataset.output) ? '%' : ['fontSize','margin'].includes(output.dataset.output) ? ' px' : ''}`
-    for (const button of this.panel.querySelectorAll('[data-theme]')) button.setAttribute('aria-pressed', String(button.dataset.theme === p.theme))
-    const originalPdf = this.reader.format?.engine === 'pdf' && p.pdfMode === 'original'
-    this.panel.querySelector('[data-typography]').hidden = originalPdf
-    this.panel.querySelector('[data-pdf-hint]').hidden = !originalPdf
-    this.panel.querySelector('[data-pdf-zoom]').hidden = !originalPdf
+    this.view.applyPreferences(p,theme,this.reader.format?.engine === 'pdf')
     this.voice.rate = p.rate; this.voice.voice = p.voice; this.voice.languageOverride = p.voiceLang
     this.neuralPicker?.render()
     this.voice.options = {footnotes:p.footnotes,multilingual:p.multilingual,skipHeaders:p.skipHeaders}
@@ -352,7 +306,7 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
     return bookLang || navigator.language || ''
   }
   setSleepChoice(minutes) {
-    for (const chip of this.panel.querySelectorAll('[data-sleep-value]')) chip.setAttribute('aria-checked', String(Number(chip.dataset.sleepValue) === minutes))
+    this.view.setSleepChoice(minutes)
   }
   /** Picking a language: the voice goes back to Automática unless the one in use already speaks it. */
   chooseLanguage(value) {
@@ -538,8 +492,6 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
   }
   updateReturnButton() {
     const audio = this.voice?.browsing
-    this.returnButton.hidden = !audio && !this.history.length
-    this.returnButton.textContent = audio ? '↶ Volver al audio' : this.history.length ? `↶ Volver a ${this.history[0].label || this.label(this.history[0])}` : ''
-    this.syncReturnLayout()
+    this.view.updateReturnButton(Boolean(audio),Boolean(this.history.length),this.history.length ? this.history[0].label || this.label(this.history[0]) : '')
   }
 }

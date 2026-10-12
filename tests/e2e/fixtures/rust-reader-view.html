@@ -1,0 +1,37 @@
+<!doctype html><html><body><script type="module">
+import init,{RustReaderView} from '/inhouse-read/src/wasm/ui/inhouse_read_ui.js';
+import {LegacyReaderView} from '/inhouse-read/src/js/readers/reader-view-legacy.js';
+import {readerPanelMarkup,readerIcon} from '/inhouse-read/src/js/readers/reader-interface.js';
+const core=await init();
+window.run=(rust,snapshot=true,incremental=false)=>{
+ document.body.innerHTML='<header class="app-header"></header><main><div id="reader-screen"></div></main><button id="reader-settings"></button><button id="reader-location"></button><button id="reader-audio"></button><button id="reader-save-bookmark"></button>';
+ const panel=document.createElement('dialog');panel.innerHTML=readerPanelMarkup;document.body.append(panel);
+ const mini=document.createElement('div');mini.innerHTML='<button data-mini-open><span data-mini-title></span><small data-mini-status></small></button><button data-mini-play></button><button data-mini-stop></button>';mini.style.height='53.4px';
+ const back=document.createElement('button');back.style.height='27.4px';const screen=document.querySelector('#reader-screen');screen.append(mini,back);
+ const view=rust?new RustReaderView(screen,panel,mini,back):new LegacyReaderView(screen,panel,mini,back),log=[];
+ const snap=name=>snapshot&&log.push({name,html:document.body.outerHTML,controls:[...panel.querySelectorAll('input,select')].map(n=>({value:n.value,checked:n.checked,disabled:n.disabled}))});
+ for(const name of ['appearance','navigation','audio','search','more','about','missing']){view.showTab(name);snap('tab '+name);}
+ for(const name of ['toc','bookmarks','quotes','history']){view.showPlaceTab(name);snap('place '+name);}
+ panel.querySelector('[data-place-tab=toc]').hidden=true;view.showPlaceTab('bookmarks');snap('hidden tab');
+ for(const state of ['stopped','playing','paused','loading'])for(const open of [true,false])for(const book of [false,true]){
+  panel.open=open;view.updateMiniPlayer(state,'','Título','1,5×',book,readerIcon(state==='playing'?'pause':'play'));snap('mini '+state+open+book);
+ }
+ view.updateMiniPlayer('playing','Una frase','Título','2×',true,readerIcon('pause'));snap('status');
+ for(const marked of [true,false]){view.updateBookmarkButton(marked);snap('bookmark '+marked);}
+ for(const time of [0,15,30,60,75]){view.setSleepChoice(time);snap('sleep '+time);}
+ for(const audio of [true,false])for(const history of [true,false]){view.updateReturnButton(audio,history,'Página 2');snap('return '+audio+history);}
+ const themes={paper:{background:'#faf9f5',color:'#292821',scheme:'light'},sepia:{background:'#eee0c4',color:'#483825',scheme:'light'},night:{background:'#191c1a',color:'#d4d8cc',scheme:'dark'},amoled:{background:'#000000',color:'#c6c6c6',scheme:'dark'},sage:{background:'#dce5d8',color:'#2c3a30',scheme:'light'}};
+ let previous;
+ for(let i=0;i<60;i++){
+  const theme=Object.keys(themes)[i%5];let p={theme,font:['book','classic','sans','mono'][i%4],fontSize:14+i%23,brightness:[50,100,120][i%3],fontWeight:[400,500,600][i%3],lineHeight:1.2+i%12/10,margin:i%17*4,zoom:70+i%14*10,rate:[.75,1,1.25,1.5,2][i%5],pdfMode:i%2?'text':'original',flow:i%2?'scrolled':'paginated',align:i%2?'start':'justify',footnotes:!!(i%2),multilingual:!!(i%3),skipHeaders:!!(i%4)};
+  if(incremental&&previous){p={...previous,...[{}, {fontSize:14+i%23},{rate:[.75,1,1.25,1.5,2][i%5]}][i%3]};}previous=p;
+  view.applyPreferences(p,themes[p.theme],incremental?false:!!(i%3));snap('preferences '+i);
+ }
+ if(rust)view.free();return log;
+};
+window.benchmark=(incremental=false)=>{
+ for(let i=0;i<3;i++){window.run(false,false,incremental);window.run(true,false,incremental);}
+ const memoryBefore=core.memory.buffer.byteLength,times={js:[],rust:[]};
+ for(let i=0;i<9;i++)for(const rust of i%2?[true,false]:[false,true]){const start=performance.now();window.run(rust,false,incremental);times[rust?'rust':'js'].push(performance.now()-start);}
+ const median=list=>[...list].sort((a,b)=>a-b)[4];return {js:median(times.js),rust:median(times.rust),times,memoryBefore,memoryAfter:core.memory.buffer.byteLength};
+};</script></body></html>

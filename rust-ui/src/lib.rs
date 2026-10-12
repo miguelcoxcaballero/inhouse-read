@@ -2,6 +2,7 @@ use std::{cell::{Cell, RefCell}, rc::{Rc, Weak}};
 use wasm_bindgen::{prelude::*, JsCast};
 use js_sys::{Array, Function, Reflect};
 use web_sys::{Document, Element, Event, HtmlElement, KeyboardEvent};
+mod reader_view;
 
 #[wasm_bindgen]
 pub fn ui_abi_version() -> u32 { 1 }

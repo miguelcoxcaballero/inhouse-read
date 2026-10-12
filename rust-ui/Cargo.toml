@@ -8,12 +8,12 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-wasm-bindgen = "=0.2.104"
+wasm-bindgen = { version = "=0.2.104", features = ["enable-interning"] }
 js-sys = "=0.3.81"
-web-sys = { version = "=0.3.81", features = ["Window", "Document", "Element", "Node", "HtmlElement", "HtmlButtonElement", "Event", "EventTarget", "KeyboardEvent", "DomTokenList", "HtmlCollection", "FocusOptions", "ScrollIntoViewOptions"] }
+web-sys = { version = "=0.3.81", features = ["Window", "Document", "Element", "Node", "HtmlElement", "HtmlButtonElement", "Event", "EventTarget", "KeyboardEvent", "DomTokenList", "HtmlCollection", "FocusOptions", "ScrollIntoViewOptions", "CssStyleDeclaration", "DomRect", "NodeList"] }
 
 [profile.release]
-opt-level = "s"
+opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"

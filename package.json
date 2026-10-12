@@ -1,7 +1,7 @@
 {
   "name": "inhouse-read",
   "private": true,
-  "version": "1.7.183",
+  "version": "1.7.184",
   "type": "module",
   "description": "Inhouse Read - lector de PDF, ePub y MOBI, hermano de Inhouse Notes.",
   "scripts": {
