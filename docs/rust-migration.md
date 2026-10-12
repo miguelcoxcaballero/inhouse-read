@@ -1462,3 +1462,10 @@ Rust remuestrea los mapas y calcula las normales y reflejos de cada píxel.
 Se conservan los ocho renglones por fragmento, la cancelación y todos los
 canales RGBA del cálculo anterior. Véanse comparaciones exactas, tiempos y
 límites en remaining-wip-verification.md.
+
+## 1.7.169: conversión de mapas de relieve
+
+Una llamada Rust convierte los tres planos de material a RGBA. Los resultados
+son independientes y el generador mantiene sus ImageData y materiales. El
+umbral evita llamadas pequeñas; datos y errores tienen una ruta compatible.
+Véanse pruebas y mediciones en remaining-wip-verification.md.

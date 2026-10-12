@@ -143,3 +143,23 @@ export function* wasmShadePreview(core,image,maps,k){
   return heap.view(6).slice();
  }finally{heap.free();}
 }
+
+/** Convert all preview planes together; callers retain independent owned arrays. */
+export function wasmReliefRgbaPlanes(core, maps) {
+  const { width, height, heightMap, foil, gloss } = maps;
+  const count = width * height;
+  if (typeof core?.relief_rgba_planes !== 'function' || !validShape(width, height)
+    || ![heightMap, foil, gloss].every(plane => bytes(plane, count))) return null;
+  let heap;
+  try {
+    heap = arena(core, [[Uint8Array, count * 3], [Uint8ClampedArray, count * 12]]);
+    // Pack all three planes contiguously, including odd pixel counts.
+    const input = new Uint8Array(core.memory.buffer, heap.at(0), count * 3);
+    input.set(heightMap); input.set(foil, count); input.set(gloss, count * 2);
+    checked(core.relief_rgba_planes(heap.at(0), heap.at(1), count));
+    const output = heap.view(1);
+    return { height: output.slice(0, count * 4), foil: output.slice(count * 4, count * 8),
+      gloss: output.slice(count * 8) };
+  } catch { return null; }
+  finally { heap?.free(); }
+}

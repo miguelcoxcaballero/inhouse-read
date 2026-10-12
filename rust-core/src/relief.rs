@@ -248,3 +248,23 @@ pub unsafe extern "C" fn relief_preview_rows(image:*const u8,height_map:*const u
  }
  1
 }
+
+/// Expand three grayscale relief planes in a single transfer. Channel values
+/// and opaque alpha are exact; no color-space conversion is performed.
+/// # Safety
+/// Input contains count*3 bytes and output count*12 writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn relief_rgba_planes(input: *const u8, output: *mut u8, count: u32) -> u32 {
+    if count == 0 || count > 1_048_576 { return 0; }
+    let n = count as usize;
+    let source = slice::from_raw_parts(input, n * 3);
+    let target = slice::from_raw_parts_mut(output, n * 12);
+    for plane in 0..3 {
+        for i in 0..n {
+            let gray = source[plane * n + i];
+            let at = (plane * n + i) * 4;
+            target[at..at + 4].copy_from_slice(&[gray, gray, gray, 255]);
+        }
+    }
+    1
+}

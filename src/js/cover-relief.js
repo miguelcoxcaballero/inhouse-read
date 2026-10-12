@@ -23,7 +23,7 @@ import { getRustCore, loadRustCore } from './rust-core.js';
 import { prepareColorMaskJob } from './cover-color-mask-wasm.js';
 import { rustReliefPalette } from './relief-palette-wasm.js';
 import { canUseReliefWasm, wasmInsideDistance, wasmBoxBlur, wasmHeightToNormals,
-  wasmComposeMaterialMap, wasmComposeReliefLayers, wasmShadePreview } from './cover-relief-wasm.js';
+  wasmComposeMaterialMap, wasmComposeReliefLayers, wasmShadePreview, wasmReliefRgbaPlanes } from './cover-relief-wasm.js';
 
 export const COLOR_RELIEF_IDS = Object.freeze(Array.from({ length:10 }, (_, index) => `color-${index + 1}`));
 export const LEGACY_RELIEF_IDS = Object.freeze(['lettering', 'foil', 'frame', 'emblem', 'varnish', 'band', 'grain', 'panel']);
@@ -1533,8 +1533,9 @@ export async function buildReliefMaps(coverUrl, relief, { maxSize = MAP_SIZE, si
   const work = choice.layers || COLOR_RELIEF_IDS.includes(choice.id) ? hires : raster(drawable, WORK_SIZE, { sampleColors:true });
   const maps = await runSliced(buildMapsFromPixels(work, hires, choice), { signal, stats });
   const normal = await runSliced(heightToNormals(maps), { signal, stats });
-  return { height: new ImageData(grayToRgba(maps.heightMap), maps.width, maps.height),
-    foil: new ImageData(grayToRgba(maps.foil), maps.width, maps.height), gloss: new ImageData(grayToRgba(maps.gloss), maps.width, maps.height),
+  const planes = reliefPlanesToRgba(maps);
+  return { height: new ImageData(planes.height, maps.width, maps.height),
+    foil: new ImageData(planes.foil, maps.width, maps.height), gloss: new ImageData(planes.gloss, maps.width, maps.height),
     normal, pixels: maps, size: { width: maps.width, height: maps.height }, foilColor: maps.foilColor,
     stats: { ms: Math.round(stats.ms), longestSliceMs: stats.longestSliceMs, slices: stats.slices } };
 }
@@ -1547,6 +1548,12 @@ export async function updateReliefMapStrengths(built, selection, { signal } = {}
   const pixels=await runSliced(composeReliefLayerPixels(built.pixels,selection),{signal});
   const normal=await runSliced(heightToNormals(pixels),{signal});
   return { ...built,pixels,normal };
+}
+
+/** Convert the three material planes together without changing their pixel data. */
+export function reliefPlanesToRgba(maps) {
+  const native = maps.width * maps.height >= 4096 ? wasmReliefRgbaPlanes(getRustCore(), maps) : null;
+  return native || { height: grayToRgba(maps.heightMap), foil: grayToRgba(maps.foil), gloss: grayToRgba(maps.gloss) };
 }
 
 function grayToRgba(gray) {

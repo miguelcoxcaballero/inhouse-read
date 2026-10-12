@@ -1,3 +1,40 @@
+# Migración 1.7.169 — planos de relieve en Rust
+
+Changelog: «Mapas de relieve en Rust». Una única llamada convierte altura,
+metal y brillo a RGBA. Cada salida conserva un buffer propio; alfa255 y
+pigmentos exactos, sin conversión de espacio de color. Sólo se activa desde
+4096píxeles (mínimo64×64 del generador); las entradas pequeñas y la carga
+inicial conservan su alternativa. La reserva se libera también al fallar.
+
+49/49 focalizadas (11nuevas),3,84s. Bordes/tamaños impares,1024²,generador
+real,mutación de entradas,memoria creciente,trap y rechazo de datos.
+La comparación profunda de un millón de bytes de entrada se sustituyó por
+un bucle que compara cada byte, sin cambiar el resultado ni los límites.
+1/1 E2E con núcleo real,15,2s,todos los bytes exactos. CPU×4,nueve rondas
+alternadas de10 operaciones,asignación/transferencias/liberación incluidas:
+-128²:JS0,87/Rust0,62ms.
+-288×384:5,02/2,88ms.
+-512²:11,53/6,99ms.
+El caso1024² (fuera del máximo512 de producción) también coincide y pasa de
+47,45 a31,51ms. Capacidad estable tras calentar; no es una medida de FPS.
+Build aprobado. WASM393978bytes,SHA
+`4d01755bbf5f754719433329156100f014bf9c5fbe906800c6ff5c90e1e3f970`.
+4714/4714 unitarias,356 archivos,288,84s,sin omisiones.
+3/3 E2E del editor real,1,3min,sin reintentos ni omisiones.
+Publicación pendiente. Evidencia:
+`D:/CodexEvidence/InhouseRead-20261012/rust-relief-planes`.
+
+La167 también cargó main/WASM exactos en dos perfiles limpios (móvil y escritorio).
+
+Publicación168: fuente `76a78ea2eae6e1303943f83c7957752d07da3889`, Pages
+`851805e578a790aa87a69d312779255b1728f2c2`, deploy38209185494 yPages38209240741
+aprobados.99recursos/HTML/precarga exactos; núcleo público30casos,
+8956704bytes idénticos. APK1.1.15/code28,hash yloader2107 verificados.
+Evidencia:published-1791784147145.3/3 E2E públicas del editor real,1,4min,
+sin reintentos ni omisiones. Main/WASM exactos en dos perfiles limpios.
+CI166 UI2:66aprobadas,2fallos previos de cierre por duración,0flaky/omitidas.
+Originales rust-metal-sheet/ci166-ui2, sin modificar sus límites.
+
 # Migración 1.7.168 — previsualización de relieves en Rust
 
 Changelog: «Previsualización de relieves en Rust». Se trasladan el remuestreo,
