@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {rustExpandedMetal} from './metal-sheet-wasm.js';
 import {rustCompactGeometry} from './mesh-compact-wasm.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -83,7 +84,11 @@ function cloneTemplateGeometry(template) {
 /** Actual expanded sheet. Adjacent hexagons share each strand; two shallow
  * facets give it a pressed ridge and visible thickness without opaque planes
  * across the apertures. A single batched mesh keeps all four shelves cheap. */
-function expandedMetal(uMin, uMax, vMin, vMax, toPosition) {
+function expandedMetal(uMin, uMax, vMin, vMax, toPosition, kind = null, z = 0) {
+  if (kind !== null) {
+    const native = rustExpandedMetal(uMin,uMax,vMin,vMax,kind,z,BAGGEBO_SPEC.meshPitch.width,PERIOD_Y,STRAND_WIDTH,SHEET_THICKNESS);
+    if (native) return native;
+  }
   const pitch = BAGGEBO_SPEC.meshPitch.width, halfHeight = PERIOD_Y / 2;
   const outer = pitch * .6, shoulder = pitch * .4;
   const corners = [[-outer, 0], [-shoulder, -halfHeight], [shoulder, -halfHeight],
@@ -180,13 +185,13 @@ function panelGeometry(key, create) {
 
 function horizontalMesh(width, depth, y, front) {
   return panelGeometry(`shelf:${width}:${depth}:${front}`, () => expandedMetal(-width / 2, width / 2, -front, depth - front,
-    (u, v, normal) => [u, normal, -v])).translate(0, y, 0);
+    (u, v, normal) => [u, normal, -v], 0)).translate(0, y, 0);
 }
 
 function rearMesh(width, height, top, z) {
   // The brace is cut from the same expanded sheet, turned a quarter turn.
   return panelGeometry(`brace:${width}:${height}:${top}:${z}`, () => expandedMetal(top, top + height, -width / 2, width / 2,
-    (u, v, normal) => [v, -u, z + normal]));
+    (u, v, normal) => [v, -u, z + normal], 1, z));
 }
 
 /** Powder-coat grain stays sub-millimetre on both short rails and long posts. */

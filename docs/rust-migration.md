@@ -1440,3 +1440,10 @@ Rust compara atributos completos, conserva costuras y genera los índices
 y atributos compactos exactamente como antes. Reserva de entrada reutilizada
 para salida; geometrías independientes y límites calculados por Three.
 Pruebas y mediciones en remaining-wip-verification.md.
+
+## 1.7.166: metal expandido de BAGGEBO
+
+Rust genera los bordes compartidos, recortes, facetas, UV y normales exactas
+de la rejilla. Se mantiene la geometría física de sus aperturas y la misma
+compactación; no se sustituye por una textura. Cada modelo preparado se libera
+tras copiar sus atributos. Ver evidencia en remaining-wip-verification.md.

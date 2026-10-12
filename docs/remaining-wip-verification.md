@@ -1,3 +1,39 @@
+# Migración 1.7.166 — rejilla metálica real en Rust
+
+Changelog: «Rejillas metálicas generadas en Rust». Se trasladan la generación
+de los hexágonos, unión de bordes compartidos, recorte contra los límites,
+caras inclinadas, UV físicos y normales. Se mantiene el orden de inserción
+y sustitución de segmentos. Las normales respetan el redondeo intermedio f32
+de Three antes de normalizar; sus valores y los agujeros reales no cambian.
+Modelo preparado con propiedad explícita y liberación de todos sus buffers.
+
+35/35 focalizadas (14 nuevas),3,98s: ambos planos, paneles de tamaño real,
+recortes mínimos/fraccionales,100 casos aleatorios, crecimiento de memoria,
+límites, errores y mueble completo. 1/1 E2E con núcleo real (5,4s), todos
+los atributos idénticos, incluidas normales y cero negativo. CPU×4,nueve
+rondas alternadas, generación/transferencia/objetos Three/liberación incluidos:
+- Panel horizontal567,5×220,40614vértices:JS37,7/Rust9,7ms.
+- Panel vertical1116×200,70512vértices:60,7/18,7ms.
+Capacidad estable tras calentar (máximo5439488bytes en el ensayo). No es un
+resultado de FPS ni tiempo total de abrir el catálogo en un teléfono físico.
+Build aprobado; WASM383977bytes, SHA
+`be0aed3e4ffd231617ebd61c8f1fc5e290d789f06add8680cab008f26e151c4c`.
+4670/4670 unitarias,353 archivos,286,87s,sin omisiones.
+4/4 E2E locales de regreso nativo, catálogo y cambios de estantería (1,3min),
+sin reintentos ni omisiones. Publicación pendiente. Evidencia:
+`D:/CodexEvidence/InhouseRead-20261012/rust-metal-sheet`.
+
+Publicación165 subida: fuente `e44db1a6fa464e5efbff424a3cf8fc7e20c8aa70`;
+Pages `1cbc6c9014fed2097208bbaff646a618b8b3c010`, deploy38206881822 y
+Pages38206933028 aprobados.99 recursos/HTML/precarga exactos; núcleo público:
+7 casos/3399468bytes idénticos. APK1.1.15/code28 yloader2107 verificados.
+Evidencia:published-1791782068932. UI pendiente. Publicación164:2/2 E2E públicas de luces y
+gestos, sin reintentos; main yWASM coinciden en dos perfiles nuevos.
+CI163 UI3:79correctas,0fallos,0reintentos,0omitidas. El aislamiento del
+updater ya pasa también en CI; evidencia rust-timber/ci163-ui3. La batería
+completa sigue pendiente. CI162 conserva los dos fallos de cierre yel
+reintento del updater anteriores: rust-pdf-stream/ci162-ui2 yci162-ui3.
+
 # Migración 1.7.165 — índices de mallas BAGGEBO en Rust
 
 Changelog: «Compactación de mallas en Rust». El núcleo compara todos los
