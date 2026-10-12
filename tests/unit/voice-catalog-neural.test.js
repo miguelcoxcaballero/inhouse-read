@@ -1,4 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
+import {readFileSync} from 'node:fs'
+import * as rustUI from '../../src/wasm/ui/inhouse_read_ui.js'
 import {
   NEURAL_ID_PREFIX, isNeuralId, normalizeNeuralVoice, normalizeVoices, scoreVoice, isHighQuality, isNatural, bestVoiceFor, needsBetterVoice, voiceLabel,
   buildVoiceGroups, orderNeuralVoices, recommendedNeuralFor, resolveVoice, rankedVoicesFor
@@ -10,6 +12,13 @@ const android = (voiceURI, lang, quality, extra = {}) => ({ voiceURI, name:`${la
 const SYSTEM = normalizeVoices([android('es-es-x-eed-local', 'es-ES', 500), android('es-es-x-net', 'es-ES', 500, { network:true }), android('en-us-x-iom-local', 'en-US', 500), android('pt-br-x-afs-local', 'pt-BR', 400)])
 const neural = (installed = []) => FAKE_CATALOG.map(entry => normalizeNeuralVoice(entry, installed))
 
+const runtime=vi.hoisted(()=>({ui:null}));let orders=0,recommendations=0
+vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
+const observedUI={...rustUI,voice_order:(...args)=>{orders++;return rustUI.voice_order(...args)},voice_recommended:(...args)=>{recommendations++;return rustUI.voice_recommended(...args)}}
+beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
+afterAll(()=>{expect(orders).toBeGreaterThan(0);expect(recommendations).toBeGreaterThan(0)})
+describe.each(['legacy','rust'])('catalogue ordering through %s',engine=>{
+beforeEach(()=>{runtime.ui=engine==='rust'?observedUI:null})
 describe('neural voices in the catalogue', () => {
   it('uses the same id prefix as the engine contract', () => {
     expect(NEURAL_ID_PREFIX).toBe(NEURAL_PREFIX)
@@ -113,4 +122,6 @@ describe('picker groups with neural voices', () => {
     expect(recommendedNeuralFor(neural(), 'en-GB').id).toBe('piper:en_GB-alba-medium')
     expect(recommendedNeuralFor(neural(), 'ja-JP')).toBeNull()
   })
+})
+
 })

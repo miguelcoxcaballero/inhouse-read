@@ -1,3 +1,47 @@
+# 1.7.217 — ordenación del catálogo en Rust
+
+Changelog: «Catálogo y recomendaciones más ágiles».
+Rust prepara una vez las claves de ordenación por idioma y región, conserva
+los nombres visibles calculados por el navegador y mantiene las referencias
+originales a las voces. Recomendar una voz selecciona el mejor candidato sin
+ordenar todo el catálogo. La comparación de nombres mantiene localeCompare
+del navegador, incluida la diferencia entre nombres en español e identificadores.
+Registros ajenos al catálogo normalizado conservan su ruta de compatibilidad.
+
+1718 escenarios comparados y otros 1718 ciclos, incluidos el catálogo completo
+publicado y su orden inverso en cada idioma/región. 7 referencias vivas y
+1179648 bytes de capacidad estable. 701 pruebas focalizadas,
+5786 unitarias completas y 30 E2E aprobados. Las pruebas originales del
+catálogo se ejecutan en ambos modos, y el PDF de prueba observa
+ambas funciones compiladas junto a las assertions de PCM y cambio de página.
+
+CI216/115012122231 detectó una instrumentación antigua de rust-neural-view:
+las filas y el foco eran correctos, pero esperaba llamadas exportadas que
+ahora son internas al renderizador Rust. ci216-ui4-original.log y
+ci216-ui4-artifact conservan ambos fallos. La prueba observa configurePicker
+y renderPicker; mantiene sus assertions de filas, descarga, foco y errores,
+además de la paridad DOM de 79 estados. La preparación del módulo compilado
+se comparte con el PDF; la prueba de descarga WASM tardía sigue separada.
+No se aumenta ningún plazo ni se cuenta un reintento como aprobado.
+CI215/115005329671 vuelve a registrar el límite de 8 s al devolver libros
+a la estantería, en las rutas alineada y compatible. Continúa pendiente;
+ci215-ui2-original.log y ci215-ui2-artifact conservan las ejecuciones originales
+en rust-language-detect-prototype. Esta entrega no se presenta como una
+corrección de ese problema ni como una CI completa aprobada.
+
+65 catálogos por tanda, 13 rondas alternadas de tres tandas en Chromium
+390×844 con CPU de escritorio ×4: ordenación JS 99,23/Rust 38,63 ms;
+recomendación JS 100,47/Rust 15,73 ms. Incluye conversión de registros y
+comparación de nombres. No mide la app completa ni un móvil físico.
+Se conservan también las mediciones anteriores a ampliar las comprobaciones
+de registros y metadatos: browser-benchmark-before-guard.json y
+browser-benchmark-before-metadata.json.
+
+Inventario: 6488 líneas Rust/37483 JavaScript = 14.76%, no funcional.
+UI local 718131 bytes, SHA256 961180de290fde29406b72cb4b79ba0102f3b001672a4864f1253b688db507fa.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-voice-order-prototype.
+
 # 1.7.216 — menú de voces con estado Rust
 
 Changelog: «Renderizado del menú de voces en Rust».
@@ -26,7 +70,20 @@ más lento (browser-benchmark-first.json), el primer fallo de compilación
 
 Inventario: 6420 líneas Rust/37467 JavaScript = 14.63%, no funcional.
 UI local 699888 bytes, SHA256 826ecb0c630268eb3c56724fe83aac2e6daca57b46b7c19bc86f58c1a0c4225b.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada: 457f3cb09b82bab61dfe56c1f5faf94e7a090b99.
+Deploy 38309694339/Pages 38309810069 completos; Pages c823ea67b7b0b1eb5268ea67d40837d05f7b70e0.
+UI pública 699856 bytes, SHA256 84f1923a98e91573ce869ed9ebba9f6b855331872b467dfd90cedb7fcdb29c67.
+published-1791840030319: recursos HTTP/tamaño/SHA, dos perfiles,
+contador positivo 480→498→480, 1000 preparaciones/100 menús, 30 casos PCM/tempo
+y APK real loader 2107 bytes correctos. Dos E2E públicos PDF/Davefx aprobados.
+El primer verificador de navegador arrancó antes de recibir la ruta del
+artefacto y falló con undefined/summary.json; public-browser-premature.log
+conserva ese error de invocación. public-browser-ready.log comprueba el
+artefacto terminado. No fue un fallo de descarga de la aplicación.
+APK 1.1.15/28 muestra web 216: Lessac 2×, 11.83s,
+8 finales/9 inicios, PID 21046 estable y sin FATAL.
+CI 38309694357 se registra aparte; no se presupone aprobado.
+Updater sin modificaciones.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-picker-owned-render-prototype.
 
 # 1.7.215 — detección de idiomas en Rust

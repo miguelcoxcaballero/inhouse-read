@@ -1,9 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.216: menú de voces con estado Rust.
-5585 unitarias completas, 104 focalizadas y 28 E2E aprobados.
-Inventario: 6420 líneas Rust/37467 JS, **14.63%**; no mide funciones terminadas.
-1.7.215 pública y APK real verificados; CI se registra por separado.
+Última entrega 1.7.217: ordenación del catálogo en Rust.
+5786 unitarias completas, 701 focalizadas y 30 E2E aprobados.
+Inventario: 6488 líneas Rust/37483 JS, **14.76%**; no mide funciones terminadas.
+1.7.216 pública y APK real verificados; CI se registra por separado.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout

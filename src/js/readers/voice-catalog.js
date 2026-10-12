@@ -1,3 +1,5 @@
+import {orderNeuralVoices} from './voice-order.js'
+export {orderNeuralVoices,recommendedNeuralFor} from './voice-order.js'
 // Pure helpers that rank the voices the device already has (Android TextToSpeech through
 // window.InhouseSpeech, or the browser's speechSynthesis) and the on-device neural voices (Piper, see neural-voice/).
 // Nothing here calls a cloud TTS: "free and unlimited" means we only choose among on-device voices, preferring them
@@ -160,16 +162,9 @@ export function voiceLabel(voice) {
  * The neural voices in the order the picker lists them: the book's language first (its own region first, the recommended
  * voice first), then the device language, then es/en/fr/de/it/pt/ca, then the rest alphabetically. Installed or not.
  */
-export function orderNeuralVoices(neuralVoices, { bookLang = '', deviceLang = '' } = {}) {
-  const bookBase = langBase(bookLang), deviceBase = langBase(deviceLang), bookRegion = langRegion(bookLang)
-  const rank = voice => voice.base === bookBase ? 0 : voice.base === deviceBase ? 1 : 2 + (PRIORITY_LANGUAGES.includes(voice.base) ? PRIORITY_LANGUAGES.indexOf(voice.base) : PRIORITY_LANGUAGES.length)
-  const near = voice => voice.base === bookBase && bookRegion && voice.region === bookRegion ? 0 : 1
-  return [...(neuralVoices || [])].filter(voice => voice?.neural).sort((a, b) => rank(a) - rank(b)
-    || (rank(a) > 2 ? languageName(a.base).localeCompare(languageName(b.base), 'es') : 0)
-    || near(a) - near(b) || Number(b.recommended) - Number(a.recommended) || Number(b.tier === 'high') - Number(a.tier === 'high') || a.name.localeCompare(b.name, 'es') || a.id.localeCompare(b.id))
-}
+
 /** The neural voice to offer first for a language (own region first, then the catalogue's recommended one); null when there is none. */
-export const recommendedNeuralFor = (neuralVoices, lang, deviceLang = '') => orderNeuralVoices(neuralVoices, { bookLang:lang, deviceLang }).find(voice => voice.base === langBase(lang)) || null
+
 
 /**
  * Groups for the picker: a curated 'Recomendadas (naturales)' (best 1-2 per language, book language first, then the

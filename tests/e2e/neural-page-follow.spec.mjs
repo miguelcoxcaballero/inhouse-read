@@ -1,3 +1,4 @@
+import {openCompiledReaderApp} from './helpers/compiled-reader.mjs'
 import { test, expect } from '@playwright/test'
 import { startHuggingFaceMirror, haveVoice } from './helpers/hf-mirror.mjs'
 import { openAudioMenu } from './helpers/audio-menus.mjs'
@@ -16,29 +17,6 @@ async function fixtureBase(page,mirror){
     await route.fulfill({response})
   })
   return base
-}
-
-// This case observes every compiled operation, including one-time session
-// initialization. A separate delayed-WASM case covers the startup fallback.
-// Hold only app bootstrap while initializing its exact published UI module;
-// app startup then adopts that same module instead of racing a second instance.
-async function openCompiledReaderApp(page){
-  let release
-  const gate=new Promise(resolve=>{release=resolve})
-  const pattern=/\/assets\/main-[\w-]+\.js$/
-  const hold=async route=>{await gate;await route.continue()}
-  await page.route(pattern,hold)
-  try{
-    await page.goto(process.env.IHR_TEST_URL||'./',{waitUntil:'commit'})
-    await page.evaluate(async()=>{
-      const manifest=await(await fetch(new URL('offline-shell-manifest.json',location.href))).json()
-      const entry=manifest.entries.find(entry=>/^assets\/inhouse_read_ui-[\w-]+\.js$/.test(entry.path))
-      if(!entry)throw Error('Published Rust UI module missing')
-      const ui=await import(new URL(entry.path,location.href).href);await ui.default()
-    })
-  }finally{release()}
-  await page.waitForLoadState('domcontentloaded')
-  await page.unroute(pattern,hold)
 }
 
 // A deterministic, two-page PDF. Its one sentence crosses the physical page
@@ -160,13 +138,13 @@ for(const multilingual of [false,true])test('PDF mantiene la página anterior du
       window.INHOUSE_NEURAL_VOICE_BASE = base
       localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({voice:id,voiceLang:'es',multilingual}))
       const evidence = window.__pdfSpeech = {requests:[],events:[],frames:[],pcm:[],jobs:[],previews:[],device:0}
-      evidence.rustJoin={available:false,calls:0,preparations:0,presentations:0,adoptions:0,starts:0,plans:0,opening:0,dispatches:0,synthesis:0,advances:0,sessions:0,sessionEvents:0,textPlans:0,warmContexts:0,attachments:0,warmUps:0,installStarts:0,installCompletions:0,pickerClicks:0,availability:0,offers:0,languages:0,pickerRenders:0}
+      evidence.rustJoin={available:false,calls:0,preparations:0,presentations:0,adoptions:0,starts:0,plans:0,opening:0,dispatches:0,synthesis:0,advances:0,sessions:0,sessionEvents:0,textPlans:0,warmContexts:0,attachments:0,warmUps:0,installStarts:0,installCompletions:0,pickerClicks:0,availability:0,offers:0,languages:0,pickerRenders:0,voiceOrders:0,voiceRecommendations:0}
       const observe=result=>{
         const instance=result.instance||result,actual=instance.exports
         if(!actual.voice_join_sentence)return result
         evidence.rustJoin.available=true
         const exports={...actual,voice_join_sentence:(...args)=>{evidence.rustJoin.calls++;return actual.voice_join_sentence(...args)}}
-        for(const [name,key] of [['voice_prepare_ahead','preparations'],['voice_adopt_plan','adoptions'],['voice_present','presentations'],['voice_engine_started','starts'],['voice_prepare','plans'],['voice_prepare_opening','opening'],['voice_speak_current','dispatches'],['voice_speak_neural','synthesis'],['voice_advance','advances'],['voice_initialize','sessions'],['voice_event','sessionEvents'],['voice_prepare_text','textPlans'],['picker_warm_context','warmContexts'],['picker_attach','attachments'],['picker_warm_up','warmUps'],['picker_install_begin','installStarts'],['picker_install_done','installCompletions'],['picker_click','pickerClicks'],['picker_state','availability'],['picker_offer_for','offers'],['detect_voice_language','languages'],['rustneuralview_renderPicker','pickerRenders']]){
+        for(const [name,key] of [['voice_prepare_ahead','preparations'],['voice_adopt_plan','adoptions'],['voice_present','presentations'],['voice_engine_started','starts'],['voice_prepare','plans'],['voice_prepare_opening','opening'],['voice_speak_current','dispatches'],['voice_speak_neural','synthesis'],['voice_advance','advances'],['voice_initialize','sessions'],['voice_event','sessionEvents'],['voice_prepare_text','textPlans'],['picker_warm_context','warmContexts'],['picker_attach','attachments'],['picker_warm_up','warmUps'],['picker_install_begin','installStarts'],['picker_install_done','installCompletions'],['picker_click','pickerClicks'],['picker_state','availability'],['picker_offer_for','offers'],['detect_voice_language','languages'],['rustneuralview_renderPicker','pickerRenders'],['voice_order','voiceOrders'],['voice_recommended','voiceRecommendations']]){
           if(actual[name])exports[name]=(...args)=>{evidence.rustJoin[key]++;return actual[name](...args)}
         }
         const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}})
@@ -299,6 +277,8 @@ for(const multilingual of [false,true])test('PDF mantiene la página anterior du
     // Availability and offers are now direct Rust calls owned by the view;
     // observe its public entrypoint instead of requiring nested JS round trips.
     expect(evidence.rustJoin.pickerRenders).toBeGreaterThan(0)
+    expect(evidence.rustJoin.voiceOrders).toBeGreaterThan(0)
+    expect(evidence.rustJoin.voiceRecommendations).toBeGreaterThan(0)
     if(multilingual)expect(evidence.rustJoin.languages).toBeGreaterThan(0)
     // PDF's prepared speech items retain their original offsets and bypass the
     // plain-text cleaner. Its compiled path is checked by the text parity suite.
