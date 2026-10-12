@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {rustCompactGeometry} from './mesh-compact-wasm.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BAGGEBO_SPEC } from './shelf-types.js';
@@ -14,6 +15,8 @@ let modelTemplate;
  * normals stay separate, so this changes storage and vertex work, not facets,
  * apertures, UVs or triangle coverage. No global vertex hashes are needed. */
 function compactGeometry(source) {
+  const native = rustCompactGeometry(source);
+  if (native) return native;
   const attributes = Object.entries(source.attributes);
   const words = attributes.map(([name, attribute]) => {
     if (name === 'normal' || name === 'color') {

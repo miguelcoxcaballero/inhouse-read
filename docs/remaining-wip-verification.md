@@ -1,3 +1,41 @@
+# Migración 1.7.165 — índices de mallas BAGGEBO en Rust
+
+Changelog: «Compactación de mallas en Rust». El núcleo compara todos los
+atributos dentro de cada par de triángulos y conserva el orden de índices,
+las uniones separadas y el formato de normales/colores existente. Se reutiliza
+la reserva de entrada para la salida, después de copiar las palabras a comparar;
+no se modifica la geometría original. Los atributos de Three poseen sus copias.
+
+21/21 focalizadas (12 nuevas),3,96s: hasta120000 esquinas, índices16/32bits,
+redondeos negativos, cero negativo, costuras, colores, tamaños incompletos,
+100 variaciones, memoria creciente, errores y mueble completo en tres escalas.
+1/1 E2E del núcleo real (5,3s): rejillas originales de234/14706/40746 vértices,
+4732/322428/802836 bytes finales idénticos. CPU×4,nueve rondas alternadas,
+incluyendo transferencias, atributos, límites y liberación:
+- Rejilla200×220:JS34,5/Rust5,3ms.
+- Rejilla567,5×220:54,3/10,7ms.
+La capacidad se estabiliza (hasta4259840bytes en este ensayo). No se reduce
+ningún triángulo ni detalle respecto al algoritmo anterior. Cifras de la
+compactación, no del tiempo total de crear la estantería ni de un móvil físico.
+Build aprobado. WASM373470bytes, SHA
+`3492980a6dbbf31af62901429f305eea2d4a76804eae0bcdfa93b255f1dfa642`.
+4656/4656 unitarias en352 archivos (285,86s), sin omisiones.
+4/4 E2E locales: vueltas nativas, catálogo en tres tamaños y cambio de
+estantería conservando objetos. Sin reintentos ni omisiones. Publicación
+pendiente. Evidencia:
+`D:/CodexEvidence/InhouseRead-20261012/rust-mesh-compact`.
+
+Publicación164 subida: fuente `8f915849ae47644edebfe679c672c94f44b03662`.
+Pages `61f05f2cc54c35a73b0264539aa37c7db288e3c6`, deploy38206248072 y
+Pages38206306565 aprobados.99 recursos/HTML/precarga exactos. Núcleo público:
+21 mapas/8170752bytes idénticos. APK1.1.15/code28 yloader2107 comprobados;
+sin modificaciones nativas. Evidencia:published-1791781527446. UI pendiente.
+Publicación163:4/4 E2E públicas, sin omisiones
+ni reintentos; main yWASM exactos en dos perfiles limpios. CI161 repite los
+mismos dos cierres fuera del límite8s y el reintento del fixture del updater;
+originales preservados en rust-pdf-figures/ci161-ui2 yci161-ui3. No se han
+modificado sus aserciones ni sus límites.
+
 # Migración 1.7.164 — texturas de lámparas en Rust
 
 Changelog: «Texturas de lámparas más rápidas». Pigmento, relieve y rugosidad

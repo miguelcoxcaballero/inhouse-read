@@ -59,3 +59,5 @@ mod pdf_stream;
 mod timber;
 
 mod lamp_surface;
+
+mod mesh_compact;

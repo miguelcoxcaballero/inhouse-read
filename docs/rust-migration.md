@@ -1433,3 +1433,10 @@ Recuento 1.7.164: 2898 líneas no vacías en35 fuentes Rust frente a36111
 en194 módulos JS propios:7,43% del total Rust+JS. Incluye comentarios,
 excluye pruebas, dependencias, CSS/HTML y código Android; no mide porcentaje
 funcional migrado. La conservación temporal de fallbacks añade código JS.
+
+## 1.7.165: compactación de mallas BAGGEBO
+
+Rust compara atributos completos, conserva costuras y genera los índices
+y atributos compactos exactamente como antes. Reserva de entrada reutilizada
+para salida; geometrías independientes y límites calculados por Three.
+Pruebas y mediciones en remaining-wip-verification.md.
