@@ -34,7 +34,14 @@ la comprobación pública validará contra los bytes construidos en Pages.
 Núcleos app/decor sin cambios. Inventario: 3778 líneas Rust / 36731 JS,
 9,33 % del código propio contado; no porcentaje funcional. Evidencia:
 D:/CodexEvidence/InhouseRead-20261012/rust-ui-prototype.
-Publicación y comprobación pública pendientes; APK/updater sin cambios.
+Publicado en main a5ec582; deploy 38247444840 y Pages 38247549716 aprobados.
+Pages cc060d1. Verificación pública: 171 comprobaciones correctas, dos perfiles
+nuevos con bytes exactos, menú Rust real en la web móvil (1/1, 7,6 s), 30/30
+casos PCM/marcas y APK 1.1.15/28 real con loader de 2107 bytes. Módulo UI de
+Linux: 39681 bytes, SHA aee789f1cd8d3205ea5b0fa91a24b15250aec2d2b0773007d4913d4b620f05b1.
+Evidencia: published-1791807254326 y rust-ui-prototype/public-*.log. El intento
+anterior antes de terminar Pages conserva sus 404 en published-1791807170443.
+APK/updater sin cambios. CI183 completa todavía en curso.
 
 Siguiente bloque en rust-reader-panel-prototype: pestañas, minirreproductor,
 temas, marcadores y retorno del lector. Compila y pasa 100 comparaciones
