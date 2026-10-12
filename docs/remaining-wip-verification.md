@@ -1,3 +1,25 @@
+# 1.7.207 — resaltado audible en Rust
+
+Changelog: «Resaltado y seguimiento de voz en Rust».
+Rust procesa inicio/fin audible, resalta la frase completa, sigue las
+marcas internas y limpia el resaltado. Solo activa la página separada
+al llegar el PCM correspondiente; mantiene fuentes y offsets originales.
+Los callbacks nativos obsoletos se descartan y los errores visuales
+no interrumpen el audio, igual que en la implementación anterior.
+
+1000 escenarios comparados con el original,2000 ciclos sin crecimiento
+de WASM ni referencias JS retenidas.123 focalizadas y 5315 unitarias
+completas aprobadas.14 E2E aprobados, incluidos PDF/EPUB con Davefx real,
+navegación manual y pulsación larga. El PDF comprueba llamadas compiladas
+a inicio/presentación, una única onda y cambio de página en la marca audible.
+
+Inventario:5498 líneas Rust/37227 JavaScript=12,87%, no funcional.
+UI local488146bytes,SHA256
+543723fdd9750d3815dd08568b2939c487c8086e211dc63af3458f8d7a95c624.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+La migración completa sigue pendiente; no se declara totalmente verde el CI.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-presentation-prototype.
+
 # 1.7.206 — preparación anticipada de páginas en Rust
 
 Changelog: «Páginas en Rust y memoria liberada».
@@ -26,7 +48,26 @@ en la marca audible. También conserva navegación manual y pulsación larga.
 Inventario:5420 líneas Rust/37210 JavaScript=12,71%, no funcional.
 UI local475803bytes,SHA256
 2e651b4f06695152c33abe9b16d1c550768d66df13ada48991d1dc862ebc5de3.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada:488088ec4b6b7c83ad5a4ee9d5e9c186825ef641.
+Deploy38288121682/Pages38288258360 completos; Pages
+b28bbc9f28634071b57c9cf19b2548d522d60b86. UI pública475763bytes,SHA256
+9ab2a3c6fc9596d093798da2afdebb55e5867f9b2a616215672027b7dda13857.
+published-1791828493738: todos los recursos HTTP/tamaño/SHA, dos perfiles,
+30 casos PCM/tempo y APK real con loader2107bytes correctos.
+La comprobación pública de memoria mantiene cero referencias tras1000
+preparaciones y100 ciclos de menú, una instancia, en390 y1280px.
+Se conservan dos fallos del montaje de esa comprobación: el primero
+contaba respuestas HTTP(2), no instancias; el segundo utilizaba un sondeo
+asíncrono sin inicializar el módulo. El montaje final inicializa una vez
+y cuenta instancias reales(1), comprueba cada descarga por SHA y conserva
+las igualdades exactas de memoria. No prueba un segundo motor paralelo.
+E2E público PDF con Davefx1/1(22,4s). APK1.1.15/28 muestra web1.7.206:
+Lessac2×,11.06s,8finales/9inicios,PID15290estable y sinFATAL.
+CI38288121665:unitarias114941278868 y voces reales aprobadas. UI5
+114941278918 conserva el fallo original en ci206-ui5-original.log:
+ReaderControls se queda en JS si WASM llega después del plazo inicial;
+su reintento pasa y el guard estricto lo rechaza como flaky. Pendiente
+adoptar el módulo tardío sin duplicar listeners. Otros jobs sin concluir.
 La migración completa sigue pendiente; no se declara totalmente verde el CI.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-ahead-prototype.
 Arreglo y pruebas finales:rust-ui-closure-lifetime.

@@ -1,11 +1,11 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.206: preparación y adopción de páginas del audiolibro en Rust.
-5310 unitarias completas y 14 E2E aprobados, incluidas voces reales PDF/EPUB.
-Inventario: 5420 líneas Rust / 37210 JS, **12,71 %**; no mide funciones terminadas.
-La página anticipada se valida sin desplazar la página visible ni la escucha.
-Actualización a wasm-bindgen0.2.105 para liberar callbacks asíncronos y de menús.
-CI completo aún tiene incidencias documentadas; no se declara totalmente verde.
+Última entrega1.7.207: resaltado y seguimiento audible en Rust.
+5315 unitarias completas y14 E2E aprobados, incluidas voces reales PDF/EPUB.
+Inventario:5498 líneas Rust/37227JS, **12,87 %**; no mide funciones terminadas.
+Se conserva una única onda entre páginas y se sigue su marca audible.
+1.7.206 pública verificada, incluida memoria estable y APK real.
+CI aún tiene incidencias documentadas, incluida adopción tardía de controles.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout
