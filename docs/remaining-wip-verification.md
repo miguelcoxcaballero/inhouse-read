@@ -1,3 +1,30 @@
+# 1.7.200 — controles y teclado del lector en Rust
+
+Changelog: «Controles del lector en Rust».
+Rust crea los mismos nodos del lector, refleja el estado del audiolibro y
+calcula los límites del panel y el desplazamiento del campo enfocado ante
+el teclado. Iconos, textos, orden de efectos y controles inferiores idénticos.
+No cambia paginación, síntesis, selección de voces ni temas. Las funciones
+adoptan un módulo tardío sin recrear el lector ni perder el campo enfocado.
+
+Diez comparaciones de DOM completo,200secuencias de estados y200escenarios
+de viewport/teclado contra el original;4000actualizaciones mantienen WASM
+estable.119focales aprobados. Primer prototipo de entorno no encontraba el
+documento en Vitest; se pasa explícitamente el documento desde el adaptador.
+Los registros anteriores se conservan, no se declaran aprobados.
+
+Once E2E originales aprobados, incluidas voces reales Davefx PDF/EPUB.
+El nuevo caso falló por solicitar una voz medium ausente en su catálogo
+simulado high. Se le proporcionó el registro y la instalación explícitos;
+mismo plazo/aserciones,1/1aprobado en7,3s. Originales e2e.log conservados.
+Batería completa5187/5187,389archivos,320,87s, dos workers.
+
+Inventario4995Rust/37111JS=11,86% de líneas propias, no funcional.
+UI local395831bytes,SHA256
+a1f6ded7dd3e060c52784ed112e9280f008f261f5b26a771753f26822d667228.
+App/decor, APK y updater sin cambios. Publicación pendiente.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-reader-chrome-prototype.
+
 # 1.7.199 — apertura y cierre del lector en Rust
 
 Changelog: «Apertura del lector en Rust».
@@ -15,14 +42,22 @@ título editado y voces reales Davefx PDF/EPUB. Memoria WASM estable tras200cicl
 Inventario4925Rust/37087JS=11,72% de líneas propias, no porcentaje funcional.
 UI local384556bytes,SHA256
 69aa60fe4253d5a26f5d8ff24dec86d939aabd8aae0a6c12742f6a05d7677448.
-App/decor, APK y updater sin cambios. Publicación pendiente.
+App/decor, APK y updater sin cambios. Publicado7ea48ce,deploy38276929328 y
+Pages38277079605 aprobados,Pagesef007b5. Recursos reales HTTP/bytes/SHA,
+dos perfiles, treinta casosPCM/marcas y APK/loader aprobados. E2E público1/1,
+13,6s. UI público384516bytes,SHA256
+82a00bc414949aa9dd379ab6995a28b7fa5f47c34fd6ea3507ab0d0fffcc899b.
+AndroidAPI36 confirma web199/APK1.1.15/28; Lessac2×10,18s, ocho fragmentos
+terminados/nueve iniciados, proceso11349 estable y sinFATAL.
+Evidencia published-1791822346739 y native-ui199.json.
 
 CI198 volvió a superar5s en la comparación de ubicaciones:5174/5175,
 original ci198-unit-original.log conservado en rust-voice-flow-prototype.
 La configuración de Vitest limita ahora también en CI la concurrencia a dos
 workers, igual que la batería completa local. No se cambian casos, aserciones
 ni plazos; se evita ejecutar simultáneamente más fixtures DOM/WASM pesados.
-Su efecto en CI queda pendiente de la ejecución remota; no se declara verde.
+CI199(job114904568275) completó las unitarias con éxito. Esto no acredita
+el resto de jobs ni borra las incidencias E2E históricas.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-reader-lifecycle-prototype.
 
 # 1.7.198 — idiomas y selección de voces en Rust

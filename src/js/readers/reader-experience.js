@@ -1,7 +1,8 @@
+import {ReaderChrome} from './reader-chrome.js'
 import {ReaderLifecycle,closeReaderVoice} from './reader-lifecycle.js'
 import {VoiceFlow} from './voice-flow.js'
 import {PreferenceFlow} from './preference-flow.js'
-import { readerPanelMarkup, readerIcon } from './reader-interface.js'
+import { readerIcon } from './reader-interface.js'
 import { normalizeReadingPreferences, rateLabel } from './reading-preferences.js'
 import { ReadingVoice } from './reading-voice.js'
 import { SelectMenu } from './select-menu.js'
@@ -18,6 +19,7 @@ import { displayBookTitle } from '../book-title.js'
 const STORAGE_KEY = 'inhouse-read-reading-preferences'
 
 export class ReaderExperience {
+  chrome = new ReaderChrome(this)
   lifecycle = new ReaderLifecycle(this)
   voiceFlow = new VoiceFlow(this)
   preferenceFlow = new PreferenceFlow(this)
@@ -31,31 +33,7 @@ export class ReaderExperience {
     this.history = []; this.bookmarks = []; this.quotes = []; this.location = { fraction:0, locator:null }
     try { this.preferences = normalizeReadingPreferences(JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')) }
     catch { this.preferences = normalizeReadingPreferences() }
-    this.screen = document.getElementById('reader-screen')
-    this.toolbar = document.getElementById('reader-toolbar')
-    this.locationButton = document.getElementById('reader-location')
-    this.returnButton = document.createElement('button')
-    this.returnButton.type = 'button'
-    this.returnButton.className = 'reader-return'
-    this.returnButton.hidden = true
-    this.returnButton.addEventListener('click', () => this.voice.browsing ? this.voice.returnToAudio() : this.returnToReading())
-    this.audioHost = document.createElement('div')
-    this.audioHost.className = 'reader-audio-dock'
-    this.screen.append(this.audioHost)
-    this.audioHost.append(this.returnButton)
-    this.panel = document.createElement('dialog')
-    this.panel.className = 'reading-panel'
-    this.panel.id = 'reading-controls'
-    for (const id of ['reader-settings','reader-location','reader-audio']) {
-      const button = document.getElementById(id)
-      button.setAttribute('aria-haspopup','dialog'); button.setAttribute('aria-controls','reading-controls'); button.setAttribute('aria-expanded','false')
-    }
-    this.panel.innerHTML = readerPanelMarkup
-    this.panel.setAttribute('aria-labelledby', 'reading-panel-title')
-    this.miniPlayer = document.createElement('div')
-    this.miniPlayer.className = 'reading-mini-player'; this.miniPlayer.hidden = true
-    this.miniPlayer.innerHTML = `<button type="button" data-mini-open><span data-mini-title></span><small data-mini-status></small></button><button type="button" class="reading-icon-button" data-mini-play aria-label="Pausar lectura">${readerIcon('pause')}</button><button type="button" class="reading-icon-button" data-mini-stop aria-label="Detener lectura">${readerIcon('stop')}</button>`
-    this.audioHost.append(this.miniPlayer)
+    this.chrome.create()
     this.view = new ReaderView(this.screen,this.panel,this.miniPlayer,this.returnButton)
     this.lists = new ReaderLists(this.panel)
     if (typeof ResizeObserver === 'function') {
@@ -74,19 +52,7 @@ export class ReaderExperience {
       rememberSelection(typeof selection === 'string' ? {text:selection,locator:this.reader.location.locator} : selection)
     })
     window.addEventListener('inhouse-reader-selection',event => rememberSelection(event.detail))
-    this.voice = new ReadingVoice(reader, (state, message) => {
-      const label = state === 'playing' ? 'Pausar' : state === 'paused' ? 'Continuar' : state === 'loading' ? 'Preparando…' : 'Reproducir'
-      this.panel.querySelector('[data-play]').setAttribute('aria-label', label)
-      this.panel.querySelector('[data-play]').innerHTML = readerIcon(state === 'playing' ? 'pause' : 'play')
-      this.panel.querySelector('[data-play]').disabled = state === 'loading'
-      this.panel.querySelector('.reading-audio-status').textContent = message || (state === 'playing' ? 'Leyendo' : state === 'paused' ? 'En pausa' : 'Detenido')
-      document.getElementById('reader-audio').classList.toggle('is-playing', state === 'playing')
-      if (state === 'stopped') this.setSleepChoice(0)
-      this.updateMiniPlayer(state, message)
-      this.updateReturnButton()
-      if (state === 'paused' && !this.voice.neuralOff) this.neuralPicker?.warmUp()
-      this.neuralPicker?.render() // the first-use offer follows the audiobook, the warning follows the neural voice
-    })
+    this.voice = new ReadingVoice(reader, (state,message) => this.chrome.voiceState(state,message))
     this.controls = new ReaderControls(this)
     // Idioma first, then the voices of that language. Both are the app's own dropdowns (no operating-system <select>);
     // the downloadable natural voices of the chosen language live at the end of the voice list.
@@ -95,22 +61,7 @@ export class ReaderExperience {
     this.panel.querySelector('[data-voice-menus]').append(this.languageMenu.root, this.voiceMenu.root)
     this.neuralPicker = new NeuralVoicePicker(this)
     this.populateVoices()
-    const resize = () => {
-      if (!this.panel.open) return
-      const viewport = window.visualViewport
-      const visibleHeight = viewport?.height || innerHeight
-      const keyboardInset = Math.max(0, innerHeight - visibleHeight - (viewport?.offsetTop || 0))
-      const anchor = !keyboardInset && innerWidth >= 760 ? this.toolbar.getBoundingClientRect().height + 12 : 0
-      this.panel.style.maxHeight = `${Math.max(0, Math.min(visibleHeight - anchor - 16, innerHeight * .82))}px`
-      this.panel.style.bottom = `${keyboardInset + anchor}px`
-      requestAnimationFrame(() => {
-        const active = document.activeElement
-        if (!this.panel.open || !this.panel.contains(active) || !active.matches('input,select')) return
-        const field = active.getBoundingClientRect(), panel = this.panel.getBoundingClientRect()
-        if (field.bottom > panel.bottom-16) this.panel.scrollTop += field.bottom-panel.bottom+16
-        else if (field.top < panel.top+60) this.panel.scrollTop -= panel.top+60-field.top
-      })
-    }
+    const resize = () => this.chrome.resize()
     window.visualViewport?.addEventListener('resize', resize)
     window.visualViewport?.addEventListener('scroll', resize)
     window.addEventListener('resize', resize)
