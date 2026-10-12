@@ -1,3 +1,31 @@
+# 1.7.185 — índice y listas del lector en Rust
+
+Changelog: «Índice y marcadores en Rust».
+RustReaderLists construye índice, historial, marcadores, citas y resultados de
+búsqueda. Conserva referencias originales en las pulsaciones y elimina cada
+listener al renovar/liberar su lista, incluso cuando un clic la reemplaza.
+Navegación, anotaciones y persistencia mantienen su orden en ReaderExperience.
+Alternativa JS conservada cuando el módulo UI no está disponible.
+
+4973/4973 unitarias en 375 archivos, 392,60 s, dos workers. Focales 121/121;
+17 comparaciones exactas DOM/eventos, profundidad del índice, búsqueda con
+caracteres especiales y valores nulos, referencias y liberación de eventos.
+1000 renovaciones de las listas sin crecer la memoria WASM. E2E: siete focales
+aprobadas (cinco del panel, dos de listas), 30 regresiones y seis omisiones
+originales. El primer recorrido focal conserva un fallo del selector nuevo:
+una tilde se escribió en Windows-1252; corregido a UTF-8, dos casos pasan en
+7,3 s. No cambió la app para resolver ese fallo de la prueba.
+
+Inventario: 3999 Rust / 36765 JavaScript, 9,81 % del código propio contado.
+WASM UI local: 162854 bytes, SHA256
+c5234273df52b6ea56d7d7164f5cef0c5bc5499a84aec9ca8525673bd4053abd.
+App/decor, APK y updater sin cambios. Verificación pública pendiente.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-reader-lists-prototype.
+CI184: unitarias y primeras pruebas de voces aprobadas. UI4 ha registrado un
+error al importar FB2: Foliate setStyles recibe un elemento null. El original
+se conserva en rust-reader-panel-prototype/ci184-ui4-original.log; pendiente
+investigar junto con los tres fallos originales de cierre/resaltado CI183.
+
 # 1.7.184 — paneles del lector en Rust
 
 Changelog: «Paneles del lector en Rust».

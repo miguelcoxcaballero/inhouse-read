@@ -5,6 +5,7 @@ import { ReadingVoice } from './reading-voice.js'
 import { declaredLanguage, langBase } from './voice-catalog.js'
 import { SelectMenu } from './select-menu.js'
 import { ReaderView } from './reader-view.js'
+import { ReaderLists } from './reader-lists.js'
 import { AUTO, languageOptions, voiceOptions } from './voice-menus.js'
 import { neuralEngine, neuralVoiceList } from './neural-runtime.js'
 import { NeuralVoicePicker } from './neural-picker.js'
@@ -49,6 +50,7 @@ export class ReaderExperience {
     this.miniPlayer.innerHTML = `<button type="button" data-mini-open><span data-mini-title></span><small data-mini-status></small></button><button type="button" class="reading-icon-button" data-mini-play aria-label="Pausar lectura">${readerIcon('pause')}</button><button type="button" class="reading-icon-button" data-mini-stop aria-label="Detener lectura">${readerIcon('stop')}</button>`
     this.audioHost.append(this.miniPlayer)
     this.view = new ReaderView(this.screen,this.panel,this.miniPlayer,this.returnButton)
+    this.lists = new ReaderLists(this.panel)
     if (typeof ResizeObserver === 'function') {
       this.miniPlayerResizeObserver = new ResizeObserver(() => this.syncMiniPlayerLayout())
       this.miniPlayerResizeObserver.observe(this.miniPlayer)
@@ -419,32 +421,19 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
     await this.savePlaces(); this.renderPlaces(); this.showPlaceTab('quotes')
   }
   async search(query) {
-    const status = this.panel.querySelector('[data-search-status]'), list = this.panel.querySelector('[data-search-results]')
-    list.replaceChildren(); status.textContent = 'Buscando…'
+    this.lists.clearSearch('Buscando…')
     try {
       const results = await this.reader.search(query)
       this.searchActive = results.length > 0
-      status.textContent = results.length ? `${results.length} ${results.length === 1 ? 'resultado' : 'resultados'}` : 'Sin resultados'
-      for (const result of results) {
-        // Where (chapter/page) above, the excerpt below with the match marked.
-        const button = document.createElement('button'); button.type = 'button'; button.className = 'reading-search-hit'
-        if (result.label) { const where = document.createElement('small'); where.textContent = result.label; button.append(where) }
-        const line = document.createElement('span'), { pre = result.excerpt || '', match = '', post = '' } = result.parts || {}
-        if (match) { const mark = document.createElement('mark'); mark.textContent = match; line.append(pre, mark, post) }
-        else line.textContent = pre
-        button.append(line)
-        button.onclick = () => { this.keepSearchHits = true; this.jump({fraction:result.fraction ?? this.location.fraction,locator:result.locator}) }
-        list.append(button)
-      }
-    } catch { status.textContent = 'No se pudo buscar.' }
+      this.lists.renderSearch(results,result => { this.keepSearchHits = true; this.jump({fraction:result.fraction ?? this.location.fraction,locator:result.locator}) })
+    } catch { this.panel.querySelector('[data-search-status]').textContent = 'No se pudo buscar.' }
   }
   // Clears the on-page hit marks together with the result list they belong to.
   endSearch() {
     if (!this.searchActive) return
     this.searchActive = false; this.keepSearchHits = false
     this.reader.clearSearch?.()
-    this.panel.querySelector('[data-search-results]').replaceChildren()
-    this.panel.querySelector('[data-search-status]').textContent = ''
+    this.lists.clearSearch('')
   }
   async shareBook() {
     const content = this.book?.content
@@ -461,30 +450,14 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
     this.updateBookmarkButton()
     this.updateReturnButton()
     for (const [name, places] of [['history',this.history],['bookmarks',this.bookmarks],['quotes',this.quotes]]) {
-      const list = this.panel.querySelector(`[data-${name}]`)
-      list.replaceChildren()
-      if (!places.length) { const empty = document.createElement('p'); empty.className = 'reading-hint'; empty.textContent = name === 'history' ? 'Sin recientes' : name === 'quotes' ? 'Sin citas' : 'Sin marcadores'; list.append(empty) }
-      places.forEach((place,index) => {
-        const row = document.createElement('div'); row.className = 'reading-place'
-        const button = document.createElement('button'); button.type = 'button'; button.textContent = name === 'quotes' ? `“${place.text}” · ${place.label || this.label(place)}` : place.label || this.label(place)
-        button.onclick = () => name === 'history' ? this.returnToReading(index) : this.jump(place)
-        const remove = document.createElement('button'); remove.type = 'button'; remove.innerHTML = readerIcon('close'); remove.setAttribute('aria-label', `Eliminar ${place.label || this.label(place)}`)
-        remove.onclick = async () => { const [removed] = places.splice(index,1); if (name === 'quotes') this.reader.removeQuoteAnnotation(removed); await this.savePlaces(); this.renderPlaces() }
-        row.append(button,remove); list.append(row)
-      })
+      this.lists.renderPlaces(name,places,places.map(place => place.label || this.label(place)),
+        (index,place) => name === 'history' ? this.returnToReading(index) : this.jump(place),
+        async index => { const [removed] = places.splice(index,1); if (name === 'quotes') this.reader.removeQuoteAnnotation(removed); await this.savePlaces(); this.renderPlaces() },readerIcon('close'))
     }
   }
   renderToc() {
-    const list = this.panel.querySelector('[data-toc]'); list.replaceChildren()
-    const add = (items, depth = 0) => {
-      for (const item of items || []) {
-        if (item.href != null) { const button = document.createElement('button'); button.type = 'button'; button.textContent = item.label || 'Capítulo'; button.style.paddingInlineStart = `${12 + Math.min(4,depth) * 12}px`; button.onclick = () => this.jump(null,item.href); list.append(button) }
-        if (depth < 8) add(item.subitems,depth+1)
-      }
-    }
-    add(this.reader.toc)
-    this.panel.querySelector('[data-place-tab="toc"]').hidden = !list.childElementCount
-    this.showPlaceTab(list.childElementCount ? 'toc' : 'bookmarks')
+    const available = this.lists.renderToc(this.reader.toc,href => this.jump(null,href))
+    this.showPlaceTab(available ? 'toc' : 'bookmarks')
   }
   step(direction) {
     // Consult another page without moving the independent audible cursor.

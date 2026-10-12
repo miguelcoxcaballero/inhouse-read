@@ -1,0 +1,23 @@
+<!doctype html><html><body><script type="module">
+import init,{RustReaderLists} from '/inhouse-read/src/wasm/ui/inhouse_read_ui.js';
+import {LegacyReaderLists} from '/inhouse-read/src/js/readers/reader-lists-legacy.js';
+const core=await init();
+window.run=rust=>{
+ document.body.innerHTML='<div id="panel"><button data-place-tab="toc"></button><div data-toc></div><div data-history></div><div data-bookmarks></div><div data-quotes></div><p data-search-status></p><div data-search-results></div></div>';
+ const panel=document.querySelector('#panel'),view=rust?new RustReaderLists(panel):new LegacyReaderLists(panel),log=[],calls=[];
+ const snap=name=>log.push({name,html:panel.outerHTML,calls:structuredClone(calls)}),callback=(...args)=>calls.push(args),icon='<svg><path d="M0 0"/></svg>';
+ const nested=depth=>[{label:'Level '+depth,href:depth,subitems:depth<12?nested(depth+1):[]}];
+ for(const toc of [[],[{href:'a',label:'Chapter <1>'},{label:'Group',subitems:[{href:'b'}]}],nested(0)]){const available=view.renderToc(toc,callback);calls.push(['available',available]);for(const b of panel.querySelectorAll('[data-toc] button'))b.click();snap('toc')}
+ const places=[{text:'A <b> quote',locator:{kind:'cfi',value:'one'}},{text:'Segundo & último',fraction:0.5}];
+ for(const name of ['history','bookmarks','quotes']){view.renderPlaces(name,[],[],callback,callback,icon);snap(name+' empty');view.renderPlaces(name,places,['Página 2','Capítulo 3'],callback,callback,icon);for(const b of panel.querySelectorAll('[data-'+name+'] button'))b.click();snap(name)}
+ const results=[{label:'Chapter <1>',parts:{pre:'Before <x>',match:'Rust &',post:' after'},fraction:0.2},{excerpt:'no match'}, {parts:{pre:null,match:'yes',post:null}}, {parts:{pre:undefined,match:'',post:'ignored'},excerpt:'fallback'}];
+ for(const rows of [results,[results[0]],[]]){view.clearSearch('Buscando…');snap('loading');view.renderSearch(rows,callback);for(const b of panel.querySelectorAll('[data-search-results] button'))b.click();snap('search')}
+ view.clearSearch('');snap('clear');
+ view.renderToc([{href:'reentrant',label:'Replace'}],()=>view.renderToc([],callback));panel.querySelector('[data-toc] button').click();snap('reentrant');
+ if(rust){
+  for(let i=0;i<20;i++){view.renderToc(nested(0),callback);view.renderPlaces('history',places,['A','B'],callback,callback,icon);view.renderSearch(results,callback)}
+  const before=core.memory.buffer.byteLength;for(let i=0;i<1000;i++){view.renderToc(nested(0),callback);view.renderPlaces('history',places,['A'+i,'B'+i],callback,callback,icon);view.renderSearch(results,callback)}
+  window.memory={before,after:core.memory.buffer.byteLength};view.free();
+ }
+ return log;
+};</script></body></html>

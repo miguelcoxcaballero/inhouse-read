@@ -1,3 +1,4 @@
+mod reader_lists;
 use std::{cell::{Cell, RefCell}, rc::{Rc, Weak}};
 use wasm_bindgen::{prelude::*, JsCast};
 use js_sys::{Array, Function, Reflect};

@@ -1,12 +1,11 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.184: menús y paneles DOM del lector en Rust.
-RustReaderView conserva exactamente 200 estados DOM, actualiza sólo preferencias
-modificadas y conserva paginación/audio en el host. Bindings wasm-bindgen fijados;
-alternativa JS ante fallos de carga, que no se contabiliza como Rust.
-Inventario actual: 3914 líneas Rust y 36776 JS, 9,62 %; excluye dependencias,
+Última entrega 1.7.185: menús, paneles, índice y listas del lector en Rust.
+RustReaderLists conserva DOM, búsqueda, citas y referencias de los clics;
+elimina listeners al reemplazar cada lista. 4973 unitarias aprobadas.
+Inventario actual: 3999 líneas Rust y 36765 JS, 9,81 %; excluye dependencias,
 bindings generados, pruebas, CSS/HTML y Android. No mide funciones terminadas.
-Detalle de pruebas, límites de rendimiento y publicación: remaining-wip-verification.md.
+Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout
 local limpio. La aplicación contiene 146 módulos JavaScript propios y unas
