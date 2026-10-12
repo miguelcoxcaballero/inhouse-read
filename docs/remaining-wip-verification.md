@@ -1,3 +1,38 @@
+Publicación146 verificada: fuente `7bb1e4db653b49362cdab3408d742db760a3b2ae`,
+Pages `675a15bb359d499c07d99c84d23a6be59adb8b4a`. Deploy38191111248 y
+Pages38191222564 aprobados. 118 controles HTTP/99 recursos exactos. El WASM
+público pasa27 casos de fragmentación y todos los65536 code units de limpieza;
+APK/code28 idéntica y loader2107 verificado. Seis recorridos públicos de
+voz/navegación/paginación aprobados sin omisiones ni reintentos,1,2 min.
+Evidencia published-1791767970560 y rust-speech-fragments/public-reader.
+La matriz global146 está pendiente; estos resultados no acreditan todo el CI.
+# Migración 1.7.147 — texturas iniciales de plantas
+
+Comprobación local: 4297/4297 unitarias y 11/11 E2E, sin omisiones ni reintentos; build aprobado. Publicación pendiente. Changelog: «Texturas de plantas en Rust».
+Rust expande la cuadrícula f32 del pintor original a las texturas de pigmento,
+relieve y rugosidad. Conserva interpolación, redondeo, color, resolución,
+mipmaps, caché, repintado progresivo y propiedad de los materiales.
+Una operación por textura; sin motor continuo ni buffers retenidos.
+
+16/16 unitarias focalizadas; 8 superficies reales de MONSTERA, SANSEVIERIA y
+cactus coinciden byte por byte con la referencia. La comparación intercepta
+las llamadas reales y cuenta 8 verificaciones, cero diferencias y cero bytes
+retenidos. Máximo temporal1091480 bytes con la textura256×512.
+Chromium390×844 CPU×4, nueve rondas alternadas de diez expansiones:
+128×128 JS/Rust4,42/2,39 ms; 128×2568,39/4,44; 256×51232,68/17,97.
+Incluye entrada y copia a los arrays finales. El primer ensayo browser conserva
+el redondeo inicial más lento; browser2 usa conversión acotada y comparación
+de fracción, sin cambiar el redondeo de ningún píxel. No mide la generación
+completa ni el rendimiento de la app en un teléfono físico.
+WASM191983 bytes, SHA `e26538efc7fd971fd81995c152e3f13a2e83350ad141b88932fc3296ff670819`.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-preview`.
+Próximo bloque preparado: pintado final de la cerámica en lotes de cuatro filas.
+
+CI143 terminó: 4091 unitarias; 713 E2E aprobados y tres fallidos, sin flaky/skips.
+Piper15/40/14 y Supertonic224 aprobados. UI2 conserva dos retornos nativos
+que sobrepasan8 s, igual que141/142. UI3 conserva el recorrido antiguo del
+botónDetener corregido en145. Originales íntegros en reader-continuity/ci143-final.
+No se considera resuelto el retorno nativo ni se afirma aprobación global.
 Publicación 145 verificada: fuente `1afd3b89728afefd8a7320b95f1a46a15deaad25`,
 Pages `bddc7672e7a7c1f0b7e1718f2ee7f825d057d473`. Deploy38190559366 y
 Pages38190605711 aprobados. 117 controles HTTP; 99 recursos exactos; todos

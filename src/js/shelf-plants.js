@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { getRustCore } from './rust-core.js';
 import { rustPlantLeafGeometry } from './plant-leaf-wasm.js';
+import { rustPlantPreview } from './plant-preview-wasm.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { resolveCatalogPlant } from './plant-records.js';
@@ -144,16 +145,18 @@ function surface(key, [width, height], repeat, paint, refresh) {
       const x = i * PREVIEW >= width ? repeat ? 0 : width - 1 : i * PREVIEW;
       lattice.set(sample(x, Math.min(height - 1, j * PREVIEW)), (j * columns + i) * 5);
     }
-    const mixed = [0, 0, 0, 0, 0];
-    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-      const i = Math.min(columns - 2, Math.floor(x / PREVIEW)), j = Math.min(rows - 2, Math.floor(y / PREVIEW));
-      const fx = Math.min(1, (x - i * PREVIEW) / PREVIEW), fy = Math.min(1, (y - j * PREVIEW) / PREVIEW);
-      const a = (j * columns + i) * 5, b = a + 5, c = a + columns * 5, d = c + 5;
-      for (let k = 0; k < 5; k++) {
-        const top = lattice[a + k] + (lattice[b + k] - lattice[a + k]) * fx, bottom = lattice[c + k] + (lattice[d + k] - lattice[c + k]) * fx;
-        mixed[k] = top + (bottom - top) * fy;
+    if (!rustPlantPreview(getRustCore(), width, height, columns, rows, lattice, pigment, data)) {
+      const mixed = [0, 0, 0, 0, 0];
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const i = Math.min(columns - 2, Math.floor(x / PREVIEW)), j = Math.min(rows - 2, Math.floor(y / PREVIEW));
+        const fx = Math.min(1, (x - i * PREVIEW) / PREVIEW), fy = Math.min(1, (y - j * PREVIEW) / PREVIEW);
+        const a = (j * columns + i) * 5, b = a + 5, c = a + columns * 5, d = c + 5;
+        for (let k = 0; k < 5; k++) {
+          const top = lattice[a + k] + (lattice[b + k] - lattice[a + k]) * fx, bottom = lattice[c + k] + (lattice[d + k] - lattice[c + k]) * fx;
+          mixed[k] = top + (bottom - top) * fy;
+        }
+        store(y * width + x, mixed);
       }
-      store(y * width + x, mixed);
     }
     base = { map:dataTexture(pigment, width, height, THREE.SRGBColorSpace, repeat), data:dataTexture(data, width, height, THREE.NoColorSpace, repeat),
       clones:[], waiting:[] };

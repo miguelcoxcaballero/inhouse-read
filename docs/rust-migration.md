@@ -1031,3 +1031,31 @@ WASM190162 bytes, SHA `b6086c92be65ffa186b939df161da90019a08441cf73140e1c8b027e6
 Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-speech-fragments`.
 Siguiente bloque: expansión de las texturas de las plantas, conservando cada
 byte de pigmento, relieve y rugosidad y la preparación progresiva actual.
+
+# Migración 1.7.147 — texturas iniciales de plantas
+
+En comprobación completa; sin publicar todavía. Changelog: «Texturas de plantas en Rust».
+Rust expande la cuadrícula f32 del pintor original a las texturas de pigmento,
+relieve y rugosidad. Conserva interpolación, redondeo, color, resolución,
+mipmaps, caché, repintado progresivo y propiedad de los materiales.
+Una operación por textura; sin motor continuo ni buffers retenidos.
+
+16/16 unitarias focalizadas; 8 superficies reales de MONSTERA, SANSEVIERIA y
+cactus coinciden byte por byte con la referencia. La comparación intercepta
+las llamadas reales y cuenta 8 verificaciones, cero diferencias y cero bytes
+retenidos. Máximo temporal1091480 bytes con la textura256×512.
+Chromium390×844 CPU×4, nueve rondas alternadas de diez expansiones:
+128×128 JS/Rust4,42/2,39 ms; 128×2568,39/4,44; 256×51232,68/17,97.
+Incluye entrada y copia a los arrays finales. El primer ensayo browser conserva
+el redondeo inicial más lento; browser2 usa conversión acotada y comparación
+de fracción, sin cambiar el redondeo de ningún píxel. No mide la generación
+completa ni el rendimiento de la app en un teléfono físico.
+WASM191983 bytes, SHA `e26538efc7fd971fd81995c152e3f13a2e83350ad141b88932fc3296ff670819`.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-preview`.
+Próximo bloque preparado: pintado final de la cerámica en lotes de cuatro filas.
+
+CI143 terminó: 4091 unitarias; 713 E2E aprobados y tres fallidos, sin flaky/skips.
+Piper15/40/14 y Supertonic224 aprobados. UI2 conserva dos retornos nativos
+que sobrepasan8 s, igual que141/142. UI3 conserva el recorrido antiguo del
+botónDetener corregido en145. Originales íntegros en reader-continuity/ci143-final.
+No se considera resuelto el retorno nativo ni se afirma aprobación global.
