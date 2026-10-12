@@ -1,3 +1,5 @@
+import {advanceVoice} from './voice-advance.js'
+import {dispatchVoice,dispatchNeuralVoice,failedVoiceEngine,removedVoice,sleepVoice} from './voice-dispatch.js'
 import {refreshVoiceBreaks,prepareVoice,prepareVoiceOpening,prepareVoicePlayback,prepareNextVoice} from './voice-preparation.js'
 import {startVoicePresentation,endVoicePresentation,presentVoice,unpaintVoice} from './voice-presentation.js'
 import {prepareVoiceAhead,clearVoiceAhead,voicePageValid,revalidateVoiceNext,adoptVoicePlan} from './voice-ahead.js'
@@ -6,30 +8,12 @@ import {joinVoiceSentence} from './voice-join.js'
 import {selectReadingVoice,upcomingVoiceItems,voiceAudioItem,voiceNeedsJoin} from './voice-selection.js'
 import {pauseReadingVoice,stopReadingVoice,restartReadingVoice,cancelReadingVoice,retryReadingVoice,failReadingVoice} from './voice-stop.js'
 import {restartVisibleVoice,playReadingVoice} from './voice-start.js'
-import { detectLanguage, isNeuralId, langBase } from './voice-catalog.js'
-import { neuralEngine, neuralVoiceList } from './neural-runtime.js'
+import { detectLanguage } from './voice-catalog.js'
+import { neuralEngine } from './neural-runtime.js'
 import { speechChunks } from './speech-text.js'
 import { nativeAudio, nativePcmBridge } from './neural-voice/audio.js'
 
 export { speechChunks }
-// Blank or image-only pages passed over, one page turn at a time, before giving up.
-const MAX_EMPTY_PAGES = 12
-// foliate ignores a page turn while another one animates (the voice's own follow turn included): next() is retried
-// this many times, this far apart, before an unchanged location is taken as the end of the book.
-const END_RETRIES = 2, END_RETRY_MS = 200
-const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
-// A neural voice always reports its 'start' (it is our own engine), so it has no fallback timer: it is waited for, and
-// the status says so after NEURAL_WAIT_MS. It reads this many fragments ahead (same voice and speed) to stay gapless.
-const NEURAL_WAIT_MS = 900
-// A neural worker that dies mid-reading (a phone's WebView short of memory) is rebuilt and the fragment spoken again, this many
-// times in a row, before the voice is given up on. A fragment that is heard to the end clears the count, so a worker that
-// only dies now and then never ends the neural reading.
-const NEURAL_RETRIES = 3
-const NEURAL_ERRORS = {
-  'not-installed':'La voz natural seleccionada no está instalada. Descárgala de nuevo.',
-  default:'No se pudo iniciar la voz natural. Pulsa Reintentar para volver a usarla.'
-}
-
 /** One short utterance at a time also avoids Android/browser long-speech timeouts. */
 export class ReadingVoice {
   constructor(reader, onState = () => {}) {
@@ -112,34 +96,7 @@ export class ReadingVoice {
   notify(message = '') { this.onState(this.state, message) }
   restartFromVisiblePage() { return restartVisibleVoice(this) }
   play() { return playReadingVoice(this) }
-  speakCurrent() {
-    if (this.state !== 'playing') return
-    const current = this.items[this.index]
-    if (this.needsPageJoin(current,this.index) && !current.joinChecked) {
-      this.prepareAhead()
-      if (this.aheadPage?.promise) {
-        const generation = this.generation, index = this.index
-        void this.aheadPage.promise.then(() => {
-          if (generation !== this.generation || this.state !== 'playing' || index !== this.index) return
-          this.joinPageSentence()
-          this.items[index].joinChecked = true
-          this.speakCurrent()
-        })
-        return
-      }
-      current.joinChecked = true
-    }
-    const id = `${this.generation}-${this.index}-${Date.now()}-${this.spoken = (this.spoken || 0) + 1}`
-    this.utteranceId = id
-    const text = this.chunks[this.index]
-    const { language, voice } = this.voiceFor(text)
-    this.spokenWith = voice
-    if (voice?.neural) { this.speakNeural(id, text, voice); return }
-    this.neuralOff = 'not-installed'
-    const available = neuralVoiceList().some(candidate => candidate.base === langBase(language))
-    this.fail(this.voice && isNeuralId(this.voice) ? NEURAL_ERRORS['not-installed'] : available
-      ? 'Descarga una voz natural para este idioma.' : 'No hay voz natural para este idioma. Elige uno de los idiomas disponibles.')
-  }
+  speakCurrent() { return dispatchVoice(this) }
   /**
    * Voice and language for one chunk; the ranking (best natural voice, per-chunk language) lives in voice-catalog.js.
    * Automatic selection ranks installed natural voices. An explicit selection stays selected when its files are missing,
@@ -153,21 +110,7 @@ export class ReadingVoice {
    * Hands the fragment to the neural engine, with the next few fragments (same voice and speed) so it can synthesise them while
    * this one plays. A missing engine leaves a visible error for a manual retry.
    */
-  speakNeural(id, text, voice) {
-    const engine = neuralEngine()
-    if (!engine) { this.neuralOff = 'init-failed'; this.fail(NEURAL_ERRORS.default); return false }
-    clearTimeout(this.presentTimer)
-    this.useTransport('neural')
-    const { upcoming, deferAfter } = this.upcomingFor(voice)
-    clearTimeout(this.waitTimer)
-    this.waitTimer = setTimeout(() => { if (id === this.utteranceId && this.state === 'playing' && this.startedId !== id && !this.waiting) { this.waiting = true; this.notify('Preparando la voz natural…') } }, NEURAL_WAIT_MS)
-    try {
-      const marks = this.items[this.index]?.marks?.map(mark => mark.offset) || []
-      engine.speak({ text, voiceId:voice.id, rate:this.rate, id, upcoming, deferAfter, ...(marks.length ? {marks} : {}) })
-      this.nativeSession = nativeAudio()?.session || this.nativeSession
-    } catch { queueMicrotask(() => this.engineFailed({ id, reason:'synth-failed' })) }
-    return true
-  }
+  speakNeural(id,text,voice) { return dispatchNeuralVoice(this,id,text,voice) }
   upcomingFor(voice) { return upcomingVoiceItems(this,voice) }
   audioItem(item) { return voiceAudioItem(item) }
   needsPageJoin(item,index) { return voiceNeedsJoin(this,item,index) }
@@ -177,88 +120,12 @@ export class ReadingVoice {
   prepareAhead() { return prepareVoiceAhead(this) }
   clearAhead() { return clearVoiceAhead(this) }
   /** Retry a failed worker with the same natural voice, then expose the error for a manual retry. */
-  engineFailed(detail) {
-    if (detail.id !== this.utteranceId || this.state !== 'playing' || this.transport !== 'neural') return
-    const reason = detail.reason
-    clearTimeout(this.waitTimer); this.waiting = false
-    try { neuralEngine()?.stop() } catch { /* already stopped */ }
-    if ((reason === 'synth-failed' || reason === 'init-failed') && this.neuralRetries < NEURAL_RETRIES) {
-      // The engine already dropped its dead worker: speaking the same fragment again starts a fresh one.
-      this.neuralRetries++; this.waiting = true
-      this.notify('Reiniciando la voz natural…')
-      this.speakCurrent()
-      return
-    }
-    this.neuralOff = reason || 'synth-failed'
-    if (reason === 'not-installed') { this.missing.add(this.spokenWith?.id); Promise.resolve(neuralEngine()?.refresh?.()).catch(() => {}) }
-    this.pause()
-    this.notify(NEURAL_ERRORS[reason] || NEURAL_ERRORS.default)
-  }
+  engineFailed(detail) { return failedVoiceEngine(this,detail) }
   /** Lets the neural voice try again after it was given up on (the person changed the voice or the speed). */
   retryNeural() { return retryReadingVoice(this) }
   /** A neural voice was removed (the person tapped Quitar): the reading in progress stops using it now, not when its files are gone. */
-  voiceRemoved(id) {
-    this.missing.add(id)
-    if (this.state === 'playing' && this.spokenWith?.id === id) { this.pause(); this.notify('Voz natural quitada. Elige otra voz natural para continuar.') }
-  }
-  async advance() {
-    if (this.state !== 'playing') return
-    if (++this.index < this.chunks.length) return this.speakCurrent()
-    const generation = this.generation
-    const diagnostic = this.diagnosticAdvance = { generation, stage:'prepare-next' }
-    // The sentence just read stays painted while the page turns: the next one replaces it the moment it is heard (see present()).
-    try {
-      if (typeof this.reader.getNextSpeechSource === 'function') {
-        const ahead = this.aheadPage
-        let next
-        if (ahead) {
-          this.aheadPage = null
-          const request = { generation }; this.preparingPage = request
-          try {
-            next = await ahead.promise
-            if (ahead.error) {
-              if (ahead.error.name !== 'AbortError' || generation !== this.generation || this.state !== 'playing') throw ahead.error
-              next = await this.prepareNext(generation)
-            }
-          }
-          finally { if (this.preparingPage === request) this.preparingPage = null }
-          if (next === undefined && generation === this.generation && this.state === 'playing') next = await this.prepareNext(generation)
-        } else next = await this.prepareNext(generation)
-        if (generation !== this.generation || this.state !== 'playing') { next?.source?.clear?.(); return }
-        if (!this.pagePlanValid(next)) next = await this.revalidateNext(next, generation)
-        if (generation !== this.generation || this.state !== 'playing') { next?.source?.clear?.(); return }
-        if (next === null) { this.stop(); this.notify('Final del libro.'); return }
-        if (next !== undefined) {
-          this.adopt(next)
-          if (!this.chunks.length) { this.index = -1; return this.advance() }
-          return this.speakCurrent()
-        }
-      }
-      const isActive = () => generation === this.generation && this.state === 'playing'
-      for (let blank = 0; blank < MAX_EMPTY_PAGES; blank++) {
-        const previous = JSON.stringify(this.reader.location)
-        diagnostic.stage = 'next-turn'
-        await this.reader.next({ source:true, isActive })
-        if (generation !== this.generation || this.state !== 'playing') return
-        for (let retry = 0; retry < END_RETRIES && JSON.stringify(this.reader.location) === previous; retry++) {
-          diagnostic.stage = 'retry-wait'
-          await wait(END_RETRY_MS)
-          if (generation !== this.generation || this.state !== 'playing') return
-          diagnostic.stage = 'retry-turn'
-          await this.reader.next({ source:true, isActive })
-          if (generation !== this.generation || this.state !== 'playing') return
-        }
-        if (JSON.stringify(this.reader.location) === previous) { this.stop(); this.notify('Final del libro.'); return }
-        diagnostic.stage = 'prepare-source'
-        const plan = await this.prepare()
-        if (generation !== this.generation || this.state !== 'playing') return
-        this.adopt(plan)
-        if (this.chunks.length) return this.speakCurrent()
-      }
-      this.fail('Página siguiente sin texto legible.')
-    } catch { if (generation === this.generation) this.fail('No se pudo pasar de página.') }
-    finally { if (this.diagnosticAdvance === diagnostic) this.diagnosticAdvance = null }
-  }
+  voiceRemoved(id) { return removedVoice(this,id) }
+  advance() { return advanceVoice(this) }
   /** Explicit seek helper; page gestures use seekToPoint after a long hold. */
   jumpToPoint(point = {}) { return jumpVoicePoint(this,point) }
   continueFromPage(navigate) { return continueVoicePage(this,navigate) }
@@ -299,8 +166,6 @@ export class ReadingVoice {
   pause() { return pauseReadingVoice(this) }
   stop() { return stopReadingVoice(this) }
   fail(message) { return failReadingVoice(this,message) }
-  setSleep(minutes) {
-    clearTimeout(this.sleepTimer)
-    if (minutes > 0) this.sleepTimer = setTimeout(() => { this.stop(); this.notify('Temporizador terminado.') }, minutes * 60000)
-  }
+  setSleep(minutes) { return sleepVoice(this,minutes) }
+
 }

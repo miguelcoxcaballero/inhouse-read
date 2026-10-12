@@ -1,3 +1,31 @@
+# 1.7.209 — envío de audio y avance automático en Rust
+
+Changelog: «Avance de audiolibro en Rust».
+Rust coordina el envío al motor, la espera de una frase entre páginas,
+los reintentos del motor y el temporizador. Mantiene el cambio de página
+ligado al PCM audible, sin alterar los fragmentos ni la velocidad del audio.
+El avance conserva las fuentes preparadas, las generaciones de cancelación,
+los reintentos de una página en transición y el final del libro.
+Callbacks de temporizadores y promesas siguen siendo propiedad del host.
+
+1500 escenarios de envío y1200 de avance comparados con el original,
+incluidos errores síncronos y navegación manual.2000 ciclos de envío y1000
+avances conservan memoria y referencias con el contador validado en208.
+125 focalizadas y 5364 unitarias completas aprobadas. Los originales de
+las comparaciones fallidas del prototipo permanecen en sus carpetas;
+el orden de los errores síncronos se corrigió sin cambiar las comparaciones.
+24 E2E aprobados, incluidos PDF/EPUB con Davefx real, FB2, controles y listas.
+El PDF comprueba envío, síntesis y avance compilados, una sola onda y su marca
+audible al cambiar de página. Publicación pendiente; compilar no la verifica.
+
+Inventario:5849 líneas Rust/37261JavaScript=13,57%, no funcional.
+UI local572514bytes,SHA256
+d2119432d9c0e6128a2dd5064c82bf0d503e09233584c48595af2ef18ea80caa.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+La migración completa sigue pendiente. Se conservan los fallos de CI previos.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-dispatch-prototype
+y rust-voice-advance-prototype.
+
 # 1.7.208 — preparación del texto y primer audio en Rust
 
 Changelog: «Preparación de voz en Rust».
@@ -45,7 +73,22 @@ positivos. Evidencia adicional:rust-ui-closure-lifetime/rust-ui-legacy-abi.
 Inventario:5667 líneas Rust/37245 JavaScript=13,21%, no funcional.
 UI local533502bytes,SHA256
 27e3bf710c628a2cfcfdf43562031b0ed64dfd9d1bf370a43501b6c864249a40.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada:556d7ef61aa70426229d98490a57a2b897d5233c.
+Deploy38294964455/Pages38295105920 completos; Pages
+47613e7d8f6b3b85170893483ff0d95ee79d553f. UI pública533470bytes,SHA256
+3720b5689f4bf03d99f541fb56281a895f0f7fe1c0a09946cb41925480864d68.
+published-1791831998995: recursos HTTP/tamaño/SHA, dos perfiles,30 casos
+PCM/tempo y APK descargado con loader2107bytes correctos. Controles positivos
+de referencias en390px/1280px:25→43 al retener un menú→25 al liberarlo;
+1000 preparaciones y100 menús mantienen25, una sola instancia del módulo.
+E2E público PDF/Davefx y FB2 aprobados sin reintentos.
+APK1.1.15/28 muestra web1.7.208:Lessac2×,10.08s,
+8finales/9inicios,PID16496estable y sinFATAL.
+CI38294964433:unitarias114963723877 y UI3/114963724033 aprobadas.
+UI5/114963724116 rechaza una primera ejecución de ReaderLists que quedó
+en el fallback tras la descarga tardía de UI. Original en
+rust-voice-preparation-prototype/ci208-ui5-original.log; no se usa su
+reintento como aprobación. La adopción tardía de listas queda pendiente.
 La migración completa sigue pendiente; no se declara totalmente verde el CI.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-preparation-prototype.
 
