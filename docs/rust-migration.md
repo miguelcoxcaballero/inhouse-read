@@ -1,9 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.220: preparación completa de voz en Rust.
-6076 unitarias completas, 337 focalizadas y 30 E2E aprobados.
-Inventario: 6699 líneas Rust/37550 JS, **15.14%**; no mide funciones terminadas.
-1.7.219 pública y APK real verificados; CI se registra por separado.
+Última entrega 1.7.221: encuadre de los libros 3D en Rust.
+6107 unitarias completas, 91 focalizadas y 34 E2E aprobados.
+Inventario: 6731 líneas Rust/37581 JS, **15.19%**; no mide funciones terminadas.
+1.7.220 pública y APK real verificados; CI se registra por separado.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout

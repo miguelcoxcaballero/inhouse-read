@@ -26,7 +26,14 @@ window.warmCoverCore = async()=>{
   const core=await loadRustCore();
   if(!core?.cover_dominant_rgb)throw new Error('Real cover-color WASM kernel unavailable');
   // Import caching is real production module loading, not a substituted adapter.
-  await import('/inhouse-read/src/js/cover-color-wasm.js');
+  // The analyzer adopts all three numeric helpers together. Wait for that
+  // same dependency set before asserting a ready-kernel call; a slow glyph
+  // module otherwise keeps the correct compatibility result in this case.
+  await Promise.all([
+    import('/inhouse-read/src/js/cover-color-wasm.js'),
+    import('/inhouse-read/src/js/rust-core.js'),
+    import('/inhouse-read/src/js/font-glyph-wasm.js')
+  ]);
 };
 window.exerciseColdCover = async()=>{
   const item=await sample('split');
@@ -117,6 +124,22 @@ test('real URL cover analyzer invokes the actual Rust kernel and preserves decod
   const result=await page.evaluate(()=>window.exerciseReadyCover());
   await info.attach('production-cover-rust-proof.json',{contentType:'application/json',body:Buffer.from(JSON.stringify(result,null,2))});
   assertReady(result);expect(errors).toEqual([]);
+});
+test('a pending glyph helper preserves cover extraction and ready calls adopt every numeric helper',async({page},info)=>{
+  let release,started,prepared;
+  const held=new Promise(resolve=>{release=resolve}),requested=new Promise(resolve=>{started=resolve});
+  await page.route('**/src/js/font-glyph-wasm.js*',async route=>{started();await held;await route.continue()});
+  try{
+    await page.goto(url);await page.waitForFunction(()=>window.coverIntegrationReady);
+    prepared=page.evaluate(()=>window.warmCoverCore());
+    await requested;
+    const pending=await page.evaluate(()=>window.exerciseColdCover());
+    expect(pending.actual).toEqual(pending.expected);expect(pending.coreAvailable).toBe(true);expect(pending.calls).toBe(0);
+    release();await prepared;
+    const ready=await page.evaluate(()=>window.exerciseReadyCover());
+    await info.attach('delayed-cover-glyph-proof.json',{contentType:'application/json',body:Buffer.from(JSON.stringify({pending,ready},null,2))});
+    assertReady(ready);
+  }finally{release();await prepared?.catch(()=>{});}
 });
 test('pending WASM download never blocks cover extraction and later ready calls use the real kernel',async({page},info)=>{
   let release, started;

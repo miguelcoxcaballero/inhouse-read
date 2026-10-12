@@ -1,3 +1,4 @@
+import {createBookProjectionPacket,projectVisibleBookBounds} from './book-projection.js';
 import {createBookMotionSampler} from './book-motion.js';
 import { paddedBookFrameSize } from './book-frame-padding.js';
 import { getRustCore } from './rust-core.js';
@@ -1827,6 +1828,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   let coverPaintKey = coverPaintKeyFor(book,style);
   let waitingForFirstDraw = deferDraw;
   const compactCamera = camera.clone(), compactBox = new THREE.Box3(), compactPoint = new THREE.Vector3();
+  const projectionPacket = createBookProjectionPacket();
   const compactWidth = Math.min(viewportWidth, Math.ceil(((width * 2 + thickness) * 1.25 + 64) / 64) * 64);
   const closedCompactWidth = Math.min(viewportWidth, Math.ceil(((width + thickness) * 1.25 + 64) / 64) * 64);
   const compactHeight = Math.min(viewportHeight, Math.ceil((height * 1.45 + 64) / 64) * 64);
@@ -2033,20 +2035,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
       // Project each visible mesh before forming the screen bounds. A world
       // axis-aligned box includes hidden pages and the withdrawn ribbon, and
       // can keep most of a native framebuffer empty throughout the flight.
-      model.traverseVisible(mesh => {
-        const material=mesh.material;
-        if (!mesh.isMesh || !mesh.geometry || !material || (Array.isArray(material)
-          ? !material.some(each=>each && each.visible !== false) : material.visible === false)) return;
-        if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
-        const bounds = mesh.geometry.boundingBox;
-        if (!bounds) { left=top=NaN; return; }
-        for (let xi=0;xi<2;xi++) for (let yi=0;yi<2;yi++) for (let zi=0;zi<2;zi++) {
-          compactPoint.set(xi?bounds.max.x:bounds.min.x,yi?bounds.max.y:bounds.min.y,zi?bounds.max.z:bounds.min.z)
-            .applyMatrix4(mesh.matrixWorld).project(camera);
-          const px=(compactPoint.x+1)*viewportWidth/2, py=(1-compactPoint.y)*viewportHeight/2;
-          left=Math.min(left,px); right=Math.max(right,px); top=Math.min(top,py); bottom=Math.max(bottom,py);
-        }
-      });
+      [left,top,right,bottom] = projectVisibleBookBounds(model,camera,viewportWidth,viewportHeight,compactPoint,projectionPacket);
     } else {
       compactBox.setFromObject(model);
       for (const x of [compactBox.min.x, compactBox.max.x])

@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {readFileSync} from 'node:fs';
+import * as projectionUI from '../../src/wasm/ui/inhouse_read_ui.js';
+import { afterEach, beforeEach, describe, expect, it, vi, beforeAll, afterAll } from 'vitest';
+
+const projectionRuntime=vi.hoisted(()=>({ui:null}));let projections=0;
+vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>projectionRuntime.ui}));
+const observedProjectionUI={...projectionUI,book_projection_bounds:(...args)=>{projections++;return projectionUI.book_projection_bounds(...args)}};
+beforeAll(()=>projectionUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}));
+afterAll(()=>expect(projections).toBeGreaterThan(0));
 
 const gpu = vi.hoisted(() => ({ renderers:[], renders:[], imageLoads:[], failPresentation:false }));
 vi.mock('three', async importOriginal => {
@@ -116,6 +124,8 @@ const copies = view => output(view).copies.filter(copy => copy.source === presen
 
 const smallPose={...pose,scale:.55};
 const realBook={width:176,height:420,thickness:40,compactReturnFrame:true};
+describe.each(['legacy','rust'])('projection engine %s',engine=>{
+ beforeEach(()=>{projectionRuntime.ui=engine==='rust'?observedProjectionUI:null});
 describe('growing compact reservation across a complete book motion', () => {
   it('keeps the compact frame and grows only when the book needs more space', () => {
     const {view}=make({...realBook,adaptiveNativeFrame:true});view.draw(smallPose);
@@ -164,4 +174,6 @@ describe('growing compact reservation across a complete book motion', () => {
     const {view}=make(realBook);view.draw(smallPose);
     expect(gpu.renders.at(-1).frame.dimensions).toEqual([390,704]);expect(gpu.renders.at(-1).frame.ratio).toBe(2);
   });
+});
+
 });

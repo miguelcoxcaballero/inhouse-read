@@ -1,3 +1,4 @@
+mod book_projection;
 mod speech_mask;
 mod speech_pipeline;
 #[path="../../rust-core/src/speech_normalize.rs"]

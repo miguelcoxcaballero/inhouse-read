@@ -1,3 +1,39 @@
+# 1.7.221 — encuadre de los libros 3D en Rust
+
+Changelog: «Encuadre de libros 3D en Rust».
+book_projection_bounds transforma las ocho esquinas de cada caja visible,
+con el mismo orden de operaciones de Three.Vector3. Se mantienen NaN,
+infinitos y ceros con signo. El host conserva visibilidad, actualización de
+cajas, cámara, redondeo, DPR, reservas y dibujo. El paquete por libro reutiliza
+su capacidad y limita la entrada a 1024 mallas; el módulo frío o una entrada
+no compatible conservan el proyector original congelado.
+
+806 escenarios y 1612 ciclos exactos; control positivo
+0→4→0, 0 referencias retenidas,
+1310720 bytes estables y paquete máximo 90112 bytes.
+91 pruebas focalizadas, 6107 unitarias completas y 34 E2E aprobados
+en dos tandas independientes. Las pruebas originales de frame adaptativo y
+reserva se ejecutan tanto con JavaScript como con el WASM realmente compilado.
+La nueva comparación WebGL exige igualdad de todos los píxeles, SHA,
+dimensiones y límites en seis poses, con página guardada, oro y plata.
+
+Chromium 390×844, CPU de escritorio ×4, copias y preparación incluidas,
+dibujo/GPU excluidos: 8 mallas 0.0135→0.0110 ms; 24 mallas 0.0385→0.0275 ms; 160 mallas 0.2435→0.1770 ms.
+Es una mejora pequeña del cálculo; no acredita rendimiento en un teléfono.
+
+CI218 UI1 conserva el fallo original de color no observado. El harness
+esperaba dos helpers, mientras la adopción real espera tres. La espera del
+harness ahora incluye font-glyph; un caso adicional retiene ese helper y exige
+los colores originales antes de liberarlo y la llamada Rust después. Las
+assertions, los plazos y el runtime de color no se han debilitado ni cambiado.
+CI219/38315888837 terminó aprobada; ese resultado no elimina los fallos de
+cierre y shaders de otras revisiones. CI220 se registra aparte.
+
+Inventario: 6731 líneas Rust/37581 JavaScript = 15.19%, no funcional.
+UI local 763449 bytes, SHA256 d284a590b016692a47561287201410b82f5d083482371aea022e95c5a10cd6c7.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-book-projection-prototype.
+
 # 1.7.220 — preparación completa de voz en Rust
 
 Changelog: «Menos copias al preparar la voz».
@@ -47,7 +83,17 @@ de capas CSS. Son diagnósticos independientes; esa variante de CSS no se ha
 integrado y los resultados locales no acreditan que la CI esté corregida.
 Inventario: 6699 líneas Rust/37550 JavaScript = 15.14%, no funcional.
 UI local 760825 bytes, SHA256 199524825655bebb59dd3c697d1b65061690c9fd617ec8ea07a5ee41710ef6b7.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada: 7e8d96559e473f66dd8e7bbd78919a36adedbb7d.
+Deploy 38318276693/Pages 38318380917 completos; Pages 422a81e122b91ff25c73228661074e5fdd6b1a5d.
+UI pública 760793 bytes, SHA256 7d4c9f33a9ff34c6ab9980c3e3eb18214c06bb1f7ab7a7c7a4625614ed8d1993.
+published-1791845203108: recursos HTTP/tamaño/SHA, dos perfiles,
+1000 preparaciones/100 menús con control positivo y sin fugas,
+30 casos PCM/tempo y APK real loader 2107 bytes correctos.
+Dos E2E públicos PDF/Davefx aprobados, sin reintentos.
+APK 1.1.15/28 muestra web 220: Lessac 2×, 10.12s,
+8 finales/9 inicios, PID 23587 estable y sin FATAL.
+CI 38318276574 se registra aparte; no se presupone aprobado.
+Updater sin modificaciones.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-speech-pipeline-prototype.
 
 # 1.7.219 — planificación conjunta del audiolibro en Rust
@@ -101,7 +147,7 @@ published-1791843737581: recursos HTTP/tamaño/SHA, dos perfiles,
 Dos E2E públicos PDF/Davefx aprobados, sin reintentos.
 APK 1.1.15/28 muestra web 219: Lessac 2×, 11.79s,
 8 finales/9 inicios, PID 23012 estable y sin FATAL.
-CI 38315888837 se registra aparte; no se presupone aprobado.
+CI 38315888837 completa y aprobada, incluidos todos los jobs de voz y UI. Los fallos originales de otras revisiones se conservan.
 Updater sin modificaciones.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-speech-plan-prototype.
 
