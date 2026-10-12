@@ -1,3 +1,4 @@
+import {createBookMotionSampler} from './book-motion.js';
 import { paddedBookFrameSize } from './book-frame-padding.js';
 import { getRustCore } from './rust-core.js';
 import { rustBookSurfacePixels, rustRibbonNotchPixels } from './book-surface-wasm.js';
@@ -2443,6 +2444,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   function animateMotion(frames, { duration, onFrame }) {
     cancel();
     if (current) frames = [{ ...frames[0], transform: current }, ...frames.slice(1)];
+    const sampler=createBookMotionSampler(frames);
     if (duration > 0 && !onFrame && directEnabled && compactReturnFrame && adaptiveNativeFrame &&
         Number.isInteger(pixelRatio) && Number.isInteger(viewportWidth) && Number.isInteger(viewportHeight)) {
       const capacity = { width:0,height:0 };
@@ -2450,16 +2452,17 @@ export function bookView(host, book, style, { width, height, thickness, viewport
         // These are geometry-only probes: no draw, GPU allocation, snapshot or
         // animation-clock advancement. Actual frames retain the original sampler.
         for (let i=0;i<=16;i++) {
-          const pose=sampleBookMotion(frames,i/16); positionModel(pose);
+          const pose=sampler.sample(i/16); positionModel(pose);
           const frame=returnFrame(pose,true);
           capacity.width=Math.max(capacity.width,frame.width);
           capacity.height=Math.max(capacity.height,frame.height);
         }
         motionFrameCapacity=capacity;
-      } finally { if (current) positionModel(current); }
+      } catch(error) { sampler.dispose(); throw error; }
+      finally { if (current) positionModel(current); }
     }
     let raf, resolve; const finished = new Promise(r => resolve = r);
-    cancel = () => { cancelAnimationFrame(raf); motionFrameCapacity=null; resolve(); };
+    cancel = () => { cancelAnimationFrame(raf); sampler.dispose(); motionFrameCapacity=null; resolve(); };
     let lastFrame = performance.now(), elapsed = 0;
     const animation = { finished, cancel, lastFrameTime:lastFrame };
     // Real time, so a slow device finishes each phase on schedule instead of
@@ -2470,17 +2473,17 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     const maxStep = Math.max(48, Math.min(100, duration / 2));
     let started = false;
     const tick = () => {
-      if (disposed) { motionFrameCapacity=null; return resolve(); }
+      if (disposed) { sampler.dispose(); motionFrameCapacity=null; return resolve(); }
       // RAF's shared frame timestamp can precede a gesture delivered after a
       // slow draw. Measure when this callback actually runs, on the same clock
       // that started the motion, so its first painted pose advances too.
       const now = performance.now();
       elapsed += Math.min(started ? maxStep : 48, Math.max(0, now - lastFrame)); lastFrame = now; started = true;
       const t = duration > 0 ? Math.min(1, elapsed / duration) : 1;
-      const pose = sampleBookMotion(frames, t);
+      const pose = sampler.sample(t);
       if (!onFrame?.(pose)) draw(pose);
       animation.lastFrameTime = performance.now();
-      if (t < 1) raf = requestAnimationFrame(tick); else { motionFrameCapacity=null; resolve(); }
+      if (t < 1) raf = requestAnimationFrame(tick); else { sampler.dispose(); motionFrameCapacity=null; resolve(); }
     };
     raf = requestAnimationFrame(tick); return animation;
   }
@@ -2505,27 +2508,4 @@ export function bookView(host, book, style, { width, height, thickness, viewport
 
 // Monotone Hermite interpolation: continuous velocity, no unwanted overshoot
 // when the book slows down, changes direction or returns to its shelf.
-export function sampleBookMotion(frames, progress) {
-  const times = frames.map((frame, i) => frame.offset ?? i / (frames.length - 1));
-  const t = Math.max(0, Math.min(1, progress));
-  let index = 0;
-  while (index < frames.length - 2 && t > times[index + 1]) index++;
-  const span = times[index + 1] - times[index], k = (t - times[index]) / span;
-  const k2 = k * k, k3 = k2 * k, pose = {};
-  for (const key of ['x', 'y', 'scale', 'angle', 'pitch', 'roll', 'coverOpen', 'bookmarkWithdraw', 'pageTheme']) {
-    // The page's stock/theme mix only moves when every frame says where it goes.
-    if (key === 'pageTheme' && frames.some(frame => frame.transform.pageTheme == null)) continue;
-    const value = i => frames[i].transform[key] ?? 0;
-    const tangent = i => {
-      if (i === 0 || i === frames.length - 1) return 0;
-      const dt0 = times[i] - times[i - 1], dt1 = times[i + 1] - times[i];
-      const a = (value(i) - value(i - 1)) / dt0, b = (value(i + 1) - value(i)) / dt1;
-      if (a * b <= 0) return 0;
-      const w0 = 2 * dt1 + dt0, w1 = dt1 + 2 * dt0;
-      return (w0 + w1) / (w0 / a + w1 / b);
-    };
-    pose[key] = (2 * k3 - 3 * k2 + 1) * value(index) + (k3 - 2 * k2 + k) * span * tangent(index)
-      + (-2 * k3 + 3 * k2) * value(index + 1) + (k3 - k2) * span * tangent(index + 1);
-  }
-  return pose;
-}
+export { sampleBookMotion } from './book-motion.js';

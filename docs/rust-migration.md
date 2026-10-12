@@ -1264,3 +1264,29 @@ SHA `337ea3baa4e5603f6e6804b93955239863cf6cf259f2c7aaf6e1740c6805968b`.
 (13 lectura PDF,2 PDF real/Unicode,2 con pesos reales Davefx), sin omisiones
 ni reintentos. Publicación158 pendiente.
 Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-pdf-order`.
+
+# Migración 1.7.159 — poses de animación preparadas en Rust
+
+Changelog: «Poses de animación en Rust». La curva Hermite monótona prepara
+sus tangentes una sola vez por animación. Cada fotograma y cada sonda de
+encuadre usan el núcleo compilado; planificador, duraciones y calidad GPU
+permanecen iguales. La implementación anterior sirve de recuperación.
+Cada movimiento libera su propia reserva al finalizar, cancelar, reemplazar
+o destruir la vista. Ninguna vista WASM sobrevive entre llamadas; los objetos
+pose entregados al renderizador son independientes de su memoria.
+120/120 focalizadas iniciales, incluidos cinco recorridos del bookView real
+con núcleo compilado y sólo el driver GPU sustituido. Dos casos adicionales
+cubren offsets implícitos/-0 e inmutabilidad.4555/4555 unitarias en344 archivos
+(281,77s), sin omisiones ni reintentos.23/23 E2E (310,04s), sin omisiones
+ni reintentos: PDF/EPUB/CBZ, cancelación, WebGL/fallback y ambos contratos
+nativos de retorno. Cierre local4111,5/4565,3ms, bajo el límite original8s;
+no demuestra resuelto el fallo previo del runner CI.
+Build aprobado; WASM321536 bytes, SHA
+`2888b7f941a069285e0df55f65cdadfb7d509517191d7527c393fb96989a4413`.
+Primer ensayo Chromium CPU×4:2 poses0,00305/0,00135ms y4 poses
+0,00715/0,00130ms por muestra JS/Rust. Excluye preparación de tangentes;
+El ensayo final incluye crear/liberar y47 muestras por movimiento:
+2 poses:0,108/0,062ms;4 poses:0,327/0,070ms;8 poses:0,403/0,075ms.
+Nueve tandas alternadas de100 movimientos; misma capacidad tras calentamiento.
+Son costes del cálculo, no tiempo GPU ni una mejora de FPS acreditada.
+Publicación159 pendiente. Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-motion`.

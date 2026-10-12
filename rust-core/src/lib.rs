@@ -50,3 +50,5 @@ pub unsafe extern "C" fn free_f64(pointer: *mut f64, length: usize) {
         drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(pointer, length)));
     }
 }
+
+mod book_motion;
