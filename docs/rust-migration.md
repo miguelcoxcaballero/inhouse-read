@@ -975,3 +975,35 @@ Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-physical-layout`.
 APK, firma, canales y revisión del updater permanecen iguales. No hay cambio
 nativo que requiera una nueva APK. Siguiente bloque: preparación de texto y
 mapas de posiciones del audiolibro. La migración total todavía no ha terminado.
+# Migración 1.7.145 — limpieza del texto del audiolibro
+
+En verificación local. Rust recoge el texto normalizado, colapsa espacios y
+conserva los índices UTF-16 y las fronteras de bloques. La identificación de
+cabeceras, notas y guiones de línea sigue usando las mismas reglas Unicode
+del navegador. El plan de frases y sus marcas de página es idéntico al anterior.
+No cambia voces, audio, paginación ni la interacción del lector.
+
+63/63 pruebas focalizadas iniciales (47 nuevas): todos los 65536 code units,
+surrogates aislados, notas/cabeceras, eliminaciones aleatorias, crecimiento de
+memoria y liberación de arenas. Chromium 390×844 CPU×4, nueve rondas alternadas:
+1000 caracteres JS/Rust 0,313/0,125 ms; 16000: 3,813/1,188; 128000: 29,112/8,862.
+Incluye copia de entrada y salida. El primer adaptador sin mejora queda en
+browser; el definitivo evita iteradores por carácter y está en browser2.
+No significa que el arranque completo del audiolibro se reduzca en esa proporción.
+WASM 188086 bytes, SHA `64d113c5e8980d34df3d8833acb1c7605f0ea487a4c9398b7b5bc78e0aacf159`.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-speech-normalize`.
+
+CI143 UI3: 67 aprobados y un fallo original conservado en reader-continuity/ci143.
+reader-interface compact intentaba pulsar el botón Detener oculto a 320 px.
+Se corrige su recorrido: comprueba que está oculto, abre el panel y pulsa
+Detener allí, verificando el estado y cierre posteriores. No cambia el producto,
+no se elimina la aserción de parada y no se aumenta el timeout.
+
+Publicación 144 confirmada: fuente `5c2a5708523cb026d3c0a9ae9e69b2d4fed4deb4`,
+Pages `30038706ef61ef7e342cf52f03ac600c1891a70d`. Deploy38190101753 y
+Pages38190146341 aprobados. 116 controles HTTP y 99 recursos exactos;
+60 casos de coordenadas con el WASM descargado aprobado. APK 1.1.15/code28
+idéntica, loader2107 bytes, tres assets. Evidencia published-1791766892079.
+La primera consulta durante despliegue devolvió aún la versión anterior y 404
+para recursos nuevos; se conserva en published-1791766820055. No se usa como
+aprobación. La matriz CI144 continúa; no se afirma éxito global.

@@ -65,7 +65,14 @@ for (const layout of [
   })
   await expect(mini).toContainText('Leyendo')
   await page.screenshot({path:`test-results/reader-mini-${layout.name}.png`})
-  await page.getByRole('button',{name:'Detener lectura',exact:true}).click()
+  if (layout.width === 320) {
+    // The compact header reserves a full touch target for pause/return.
+    // Stop remains reachable in its audio panel at this width.
+    await expect(page.getByRole('button',{name:'Detener lectura',exact:true})).toBeHidden()
+    await mini.locator('[data-mini-open]').click()
+    await page.getByRole('button',{name:'Detener',exact:true}).click()
+    await page.getByRole('button',{name:'Cerrar opciones de lectura'}).click()
+  } else await page.getByRole('button',{name:'Detener lectura',exact:true}).click()
   await expect(mini).toBeHidden()
   await expect(page.locator('#reader-screen')).not.toHaveClass(/has-reading-audio/)
   await page.getByRole('button',{name:'Volver a la estantería'}).click()

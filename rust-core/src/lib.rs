@@ -12,6 +12,7 @@ mod color_mask;
 mod relief_palette;
 mod shelf_placement;
 mod shelf_model;
+mod speech_normalize;
 mod pdf_layout;
 mod pdf_rows;
 mod pcm;

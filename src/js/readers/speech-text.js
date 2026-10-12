@@ -1,3 +1,6 @@
+import { getRustCore } from '../rust-core.js'
+import { rustNormalizeSpeech } from './speech-normalize-wasm.js'
+
 // Pure text side of the audiobook: turn the raw text a reader exposes into
 // sentences and spoken fragments WITHOUT losing where each one came from. The
 // reading highlight needs "sentence 7 is raw[1203, 1290)", so every cleanup
@@ -51,6 +54,8 @@ export function normalizeSpeech(raw, { footnotes = true, skipHeaders = false, he
   }
   // "informa-\ntion": a line-end hyphen between letters is typesetting, not speech.
   for (const m of raw.matchAll(/(?<=\p{L})[-‐]\n(?=\p{Ll})/gu)) remove(m.index, m.index + 2)
+  const native = rustNormalizeSpeech(getRustCore(), raw, removed)
+  if (native) return native
   // Characters are collected in arrays: books are long and string surgery per break would be quadratic.
   const chars = [], map = [], breaks = []
   for (let i = 0; i < raw.length; i++) {
