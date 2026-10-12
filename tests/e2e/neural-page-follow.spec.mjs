@@ -18,6 +18,29 @@ async function fixtureBase(page,mirror){
   return base
 }
 
+// This case observes every compiled operation, including one-time session
+// initialization. A separate delayed-WASM case covers the startup fallback.
+// Hold only app bootstrap while initializing its exact published UI module;
+// app startup then adopts that same module instead of racing a second instance.
+async function openCompiledReaderApp(page){
+  let release
+  const gate=new Promise(resolve=>{release=resolve})
+  const pattern=/\/assets\/main-[\w-]+\.js$/
+  const hold=async route=>{await gate;await route.continue()}
+  await page.route(pattern,hold)
+  try{
+    await page.goto(process.env.IHR_TEST_URL||'./',{waitUntil:'commit'})
+    await page.evaluate(async()=>{
+      const manifest=await(await fetch(new URL('offline-shell-manifest.json',location.href))).json()
+      const entry=manifest.entries.find(entry=>/^assets\/inhouse_read_ui-[\w-]+\.js$/.test(entry.path))
+      if(!entry)throw Error('Published Rust UI module missing')
+      const ui=await import(new URL(entry.path,location.href).href);await ui.default()
+    })
+  }finally{release()}
+  await page.waitForLoadState('domcontentloaded')
+  await page.unroute(pattern,hold)
+}
+
 // A deterministic, two-page PDF. Its one sentence crosses the physical page
 // boundary; there are no headers or hidden duplicate text to read around it.
 const PDF_PARTS = [
@@ -124,7 +147,7 @@ test('una frase entre páginas avanza al inicio audible de su continuación natu
   } finally { await mirror.close() }
 })
 
-test('PDF mantiene la página anterior durante la preparación y cambia al PCM audible de la continuación', async ({page}, testInfo) => {
+for(const multilingual of [false,true])test('PDF mantiene la página anterior durante la preparación y cambia al PCM audible de la continuación'+(multilingual?' con detección de idioma Rust':''), async ({page}, testInfo) => {
   test.setTimeout(180_000)
   expect(haveVoice(MODEL), 'real Davefx model must be available').toBe(true)
   const mirror = await startHuggingFaceMirror({voices:[MODEL], sliceMs:0})
@@ -133,17 +156,17 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
     const base=await fixtureBase(page,mirror)
     await page.setViewportSize({width:390,height:844})
     await page.emulateMedia({reducedMotion:'reduce'})
-    await page.addInitScript(({base, id}) => {
+    await page.addInitScript(({base, id, multilingual}) => {
       window.INHOUSE_NEURAL_VOICE_BASE = base
-      localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({voice:id,voiceLang:'es'}))
+      localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({voice:id,voiceLang:'es',multilingual}))
       const evidence = window.__pdfSpeech = {requests:[],events:[],frames:[],pcm:[],jobs:[],previews:[],device:0}
-      evidence.rustJoin={available:false,calls:0,preparations:0,presentations:0,adoptions:0,starts:0,plans:0,opening:0,dispatches:0,synthesis:0,advances:0,sessions:0,sessionEvents:0,textPlans:0,warmContexts:0,attachments:0,warmUps:0,installStarts:0,installCompletions:0,pickerClicks:0,availability:0,offers:0}
+      evidence.rustJoin={available:false,calls:0,preparations:0,presentations:0,adoptions:0,starts:0,plans:0,opening:0,dispatches:0,synthesis:0,advances:0,sessions:0,sessionEvents:0,textPlans:0,warmContexts:0,attachments:0,warmUps:0,installStarts:0,installCompletions:0,pickerClicks:0,availability:0,offers:0,languages:0}
       const observe=result=>{
         const instance=result.instance||result,actual=instance.exports
         if(!actual.voice_join_sentence)return result
         evidence.rustJoin.available=true
         const exports={...actual,voice_join_sentence:(...args)=>{evidence.rustJoin.calls++;return actual.voice_join_sentence(...args)}}
-        for(const [name,key] of [['voice_prepare_ahead','preparations'],['voice_adopt_plan','adoptions'],['voice_present','presentations'],['voice_engine_started','starts'],['voice_prepare','plans'],['voice_prepare_opening','opening'],['voice_speak_current','dispatches'],['voice_speak_neural','synthesis'],['voice_advance','advances'],['voice_initialize','sessions'],['voice_event','sessionEvents'],['voice_prepare_text','textPlans'],['picker_warm_context','warmContexts'],['picker_attach','attachments'],['picker_warm_up','warmUps'],['picker_install_begin','installStarts'],['picker_install_done','installCompletions'],['picker_click','pickerClicks'],['picker_state','availability'],['picker_offer_for','offers']]){
+        for(const [name,key] of [['voice_prepare_ahead','preparations'],['voice_adopt_plan','adoptions'],['voice_present','presentations'],['voice_engine_started','starts'],['voice_prepare','plans'],['voice_prepare_opening','opening'],['voice_speak_current','dispatches'],['voice_speak_neural','synthesis'],['voice_advance','advances'],['voice_initialize','sessions'],['voice_event','sessionEvents'],['voice_prepare_text','textPlans'],['picker_warm_context','warmContexts'],['picker_attach','attachments'],['picker_warm_up','warmUps'],['picker_install_begin','installStarts'],['picker_install_done','installCompletions'],['picker_click','pickerClicks'],['picker_state','availability'],['picker_offer_for','offers'],['detect_voice_language','languages']]){
           if(actual[name])exports[name]=(...args)=>{evidence.rustJoin[key]++;return actual[name](...args)}
         }
         const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}})
@@ -200,8 +223,8 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
       }
       Object.defineProperty(window,'speechSynthesis',{configurable:true,value:{getVoices:()=>[],speak:()=>evidence.device++,cancel(){}}})
       window.InhouseSpeech={getVoices:()=> '[]',speak:()=>evidence.device++,stop(){}}
-    },{base,id:ID})
-    await page.goto(process.env.IHR_TEST_URL || './')
+    },{base,id:ID,multilingual})
+    await openCompiledReaderApp(page)
     await page.locator('#file-picker').setInputFiles({name:'speech-page-boundary.pdf',mimeType:'application/pdf',buffer:boundaryPDF()})
     await expect(page.locator('.pdf-text-layer')).toHaveText(PDF_PARTS[0])
     await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 1 de 2/)
@@ -275,6 +298,7 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
     expect(evidence.rustJoin.pickerClicks).toBeGreaterThan(0)
     expect(evidence.rustJoin.availability).toBeGreaterThan(0)
     expect(evidence.rustJoin.offers).toBeGreaterThan(0)
+    if(multilingual)expect(evidence.rustJoin.languages).toBeGreaterThan(0)
     // PDF's prepared speech items retain their original offsets and bypass the
     // plain-text cleaner. Its compiled path is checked by the text parity suite.
     const [first]=evidence.requests

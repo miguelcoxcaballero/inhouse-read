@@ -1,3 +1,40 @@
+# 1.7.215 — detección de idiomas en Rust
+
+Changelog: «Detección de idiomas en Rust».
+Rust conserva sus diccionarios, puntúa las palabras y los indicios del idioma,
+resuelve alfabetos y mantiene las regiones. Las reglas Unicode y de minúsculas
+del navegador siguen siendo las mismas. Los 27 recorridos de indicios se
+sustituyen por un solo recorrido nativo, manteniendo las parejas finlandesas
+sin solapamientos. La clasificación de alfabetos se omite para texto ASCII.
+
+6366 casos comparados con el original, otros 6366 ciclos, 17 referencias vivas
+y capacidad estable tras el calentamiento. Incluye cadenas Unicode dañadas,
+texto mixto, distintos dialectos y metadatos malformados. 419 focalizadas,
+5546 unitarias completas y 28 E2E aprobados. El PDF repite su comprobación
+de continuidad con modo multilingüe y observa el detector Rust realmente
+compilado; las comprobaciones anteriores de PCM y cambio de página se conservan.
+
+CI214/114996626725 registró una inicialización de sesión fuera de Rust cuando
+su descarga superó el plazo de arranque. El reintento pasó y el control estricto
+lo rechazó: ci214-reading-original.log y ci214-reading-artifact conservan el fallo.
+La prueba de operaciones compiladas ahora inicializa el módulo publicado antes
+de liberar el bootstrap, manteniendo todas sus assertions. Una prueba nueva
+retiene deliberadamente la descarga WASM: la sesión ya creada conserva la
+página elegida y adopta Play en Rust sin volver a inicializarla ni reiniciarse.
+No se cambia el plazo de la aplicación ni se interpreta el reintento como limpio.
+
+200 fragmentos por tanda, 13 rondas alternadas y copias/interoperabilidad incluidas:
+Node Windows JS 8.14 ms/Rust 6.74 ms;
+Chromium 390×844 con CPU de escritorio ×4: JS 39.34 ms,
+Rust 35.12 ms. Es una medida del detector, no de un teléfono
+físico ni de la velocidad completa de la app. Se conservan también las medidas
+del primer prototipo (benchmark.log), anterior al recorrido único de indicios.
+
+Inventario: 6300 líneas Rust/37435 JavaScript = 14.4%, no funcional.
+UI local 680732 bytes, SHA256 d0d68fa2d99fc296f9151e43558bebf76d1ba1ff4cdbbe3c88f220724fb2cef0.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-language-detect-prototype.
+
 # 1.7.214 — disponibilidad y recomendaciones de voces en Rust
 
 Changelog: «Recomendaciones de voces en Rust».
@@ -20,7 +57,19 @@ cruces de fronteras antes de volver a evaluarlo con DOM real.
 
 Inventario: 6157 líneas Rust/37425 JavaScript = 14.13%, no funcional.
 UI local 633337 bytes, SHA256 96a819991b12ec677e54192504858ec98cecfb6371b121244c439268f336f26e.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada: fe82e10590d8bd16b01419b9077beb8495d07f59.
+Deploy 38304956050/Pages 38305093736 completos; Pages 8639437f78d81b0043ab5923f8f60d16d4d2aefb.
+UI pública 633305 bytes, SHA256 a683028f484f6fceb982fa79de37539689c9b226b3b58aa309e25bb2414fa0b5.
+published-1791837400883: recursos HTTP/tamaño/SHA, dos perfiles,
+contador positivo con 1000 preparaciones/100 menús, 30 casos PCM/tempo
+y APK real loader 2107 bytes correctos. E2E público PDF/Davefx aprobado.
+La consulta anterior a la finalización de Pages vio la versión previa y
+chunks nuevos aún inexistentes: public-artifact.log conserva ese fallo.
+public-artifact-pages-ready.log comprueba el despliegue ya terminado.
+APK 1.1.15/28 muestra web 214: Lessac 2×, 10.12s,
+7 finales/8 inicios, PID 19875 estable y sin FATAL.
+CI 38304956053 se registra aparte; no se presupone aprobado.
+Updater sin modificaciones.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-picker-policy-prototype.
 
 # 1.7.213 — acciones de las voces naturales en Rust

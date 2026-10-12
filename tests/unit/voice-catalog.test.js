@@ -1,8 +1,16 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
+import {readFileSync} from 'node:fs'
+import * as rustUI from '../../src/wasm/ui/inhouse_read_ui.js'
 import {
   normalizeLang, normalizeVoice, normalizeVoices, scoreVoice, isHighQuality, rankedVoicesFor, bestVoiceFor, needsBetterVoice,
   languageName, voiceLabel, buildVoiceGroups, resolveVoice, readSystemVoices, detectLanguage, langBase
 } from '../../src/js/readers/voice-catalog.js'
+
+const runtime=vi.hoisted(()=>({ui:null}));let detections=0
+vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
+const observedUI={...rustUI,detect_voice_language:(...args)=>{detections++;return rustUI.detect_voice_language(...args)}}
+beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
+afterAll(()=>expect(detections).toBeGreaterThan(0))
 
 // Shapes the Android bridge sends: quality 100..500, latency, network flag, installed flag.
 const android = (voiceURI, lang, quality, extra = {}) => ({ voiceURI, name:`${lang} voice`, lang, quality, latency:200, network:false, installed:true, features:[], ...extra })
@@ -23,6 +31,8 @@ const DEVICE = [
 ]
 const voices = normalizeVoices(DEVICE)
 
+describe.each(['legacy','rust'])('catalogue through %s',engine=>{
+beforeEach(()=>{runtime.ui=engine==='rust'?observedUI:null})
 describe('voice normalization', () => {
   it('normalizes language tags from Android, browsers and ISO 639-2 codes', () => {
     expect(normalizeLang('es_ES')).toBe('es-ES')
@@ -242,4 +252,5 @@ describe('language detection', () => {
     expect(detectLanguage('', 'de-DE')).toBe('de-DE')
     expect(detectLanguage('12345 ...', undefined)).toBe('en-US')
   })
+})
 })
