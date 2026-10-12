@@ -1,9 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega1.7.202: pausa y detención del audiolibro en Rust.
-5233unitarias completas y13E2E aprobados, incluidas voces reales PDF/EPUB.
-Inventario5120líneas Rust/37148JS,12,11%; no mide funciones terminadas.
-Conserva orden de cancelación, frase original y página pendiente al pausar.
+Última entrega1.7.203: elección de voz y preparación anticipada en Rust.
+5287unitarias completas y15E2E aprobados, incluidas voces reales PDF/EPUB.
+Inventario5196líneas Rust/37167JS,12,27%; no mide funciones terminadas.
+Conserva idiomas regionales, referencias y marcas de audio entre páginas.
 CI completo aún tiene incidencias documentadas; no se declara totalmente verde.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 

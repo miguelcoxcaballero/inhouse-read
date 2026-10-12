@@ -1,7 +1,8 @@
+import {selectReadingVoice,upcomingVoiceItems,voiceAudioItem,voiceNeedsJoin} from './voice-selection.js'
 import {pauseReadingVoice,stopReadingVoice,restartReadingVoice,cancelReadingVoice,retryReadingVoice,failReadingVoice} from './voice-stop.js'
 import {restartVisibleVoice,playReadingVoice} from './voice-start.js'
-import { declaredLanguage, detectLanguage, isNeuralId, langBase, resolveVoice } from './voice-catalog.js'
-import { loadNeural, neuralEngine, neuralVoiceList, unlockNeural } from './neural-runtime.js'
+import { detectLanguage, isNeuralId, langBase } from './voice-catalog.js'
+import { neuralEngine, neuralVoiceList } from './neural-runtime.js'
 import { firstCompleteSentenceOffset, planSpeech, speechChunks } from './speech-text.js'
 import { nativeAudio, nativePcmBridge } from './neural-voice/audio.js'
 
@@ -142,21 +143,7 @@ export class ReadingVoice {
    * Automatic selection ranks installed natural voices. An explicit selection stays selected when its files are missing,
    * so the reader can explain which voice needs to be downloaded again.
    */
-  voiceFor(text) {
-    const language = this.options.multilingual ? this.detectLanguage(text) : this.languageOverride || this.reader.language || navigator.language || 'es-ES'
-    const voices = neuralVoiceList().filter(voice => voice.installed && !this.missing.has(voice.id))
-    let voiceId = isNeuralId(this.voice) ? this.voice : ''
-    // A neural voice speaks one language (its phonemiser is the language's): a saved choice for another language than the one the
-    // book DECLARES would garble it, so an English book read after picking a Spanish voice gets the automatic pick for English
-    // instead. A book that declares nothing (a PDF) keeps the person's choice: the device language says nothing about it.
-    const declared = declaredLanguage(this.reader)
-    if (isNeuralId(voiceId) && !this.options.multilingual && declared && !this.languageOverride) {
-      const chosen = voices.find(voice => voice.id === voiceId)
-      if (chosen && chosen.base !== langBase(declared)) voiceId = ''
-    }
-    if (voiceId && !voices.some(voice => voice.id === voiceId)) return { voice:null, voiceId, language }
-    return resolveVoice(voices, { voiceId, language, multilingual:this.options.multilingual, deviceLang:navigator.language })
-  }
+  voiceFor(text) { return selectReadingVoice(this,text) }
   useTransport(name) {
     this.transport = name
   }
@@ -179,27 +166,9 @@ export class ReadingVoice {
     } catch { queueMicrotask(() => this.engineFailed({ id, reason:'synth-failed' })) }
     return true
   }
-  upcomingFor(voice) {
-    const upcoming = []
-    for (let next = this.index + 1; next < this.chunks.length && upcoming.length < NEURAL_LOOKAHEAD; next++) {
-      if (this.needsPageJoin(this.items[next],next) && !this.items[next].joinChecked) break
-      if (this.options.multilingual && this.voiceFor(this.chunks[next]).voice?.id !== voice.id) break // another language: another voice, not prefetched
-      upcoming.push(this.audioItem(this.items[next] || {text:this.chunks[next]}))
-    }
-    const deferAfter = upcoming.length
-    const plan = this.aheadPage?.plan
-    if (this.index + 1 + upcoming.length === this.chunks.length && plan?.items) {
-      for (const item of plan.items.slice(0, NEURAL_LOOKAHEAD)) {
-        if (this.voiceFor(item.text).voice?.id !== voice.id) break
-        upcoming.push(this.audioItem(item))
-      }
-    }
-    return { upcoming, deferAfter }
-  }
-  audioItem(item) { return item.marks?.length ? {text:item.text,marks:item.marks.map(mark=>mark.offset)} : item.text }
-  needsPageJoin(item,index) {
-    return this.source?.physicalPage && index === this.items.length - 1 && item?.text && !/[.!?。！？…]["'”’»›)\]}]*\s*$/.test(item.text)
-  }
+  upcomingFor(voice) { return upcomingVoiceItems(this,voice) }
+  audioItem(item) { return voiceAudioItem(item) }
+  needsPageJoin(item,index) { return voiceNeedsJoin(this,item,index) }
   joinPageSentence() {
     const index = this.items.length - 1, tail = this.items[index], plan = this.aheadPage?.plan
     if (!this.needsPageJoin(tail,index) || tail.joinChecked || !plan?.items?.length || !this.pagePlanValid(plan)) return

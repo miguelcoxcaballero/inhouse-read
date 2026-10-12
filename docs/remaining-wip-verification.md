@@ -1,3 +1,29 @@
+# 1.7.203 — elección de voz y preparación anticipada en Rust
+
+Changelog: «Preparación de voz en Rust».
+Rust aplica voz instalada/ausente, idioma explícito/declarado, selección
+multilingüe, límites de anticipación y paquetes con marcas de página. Conserva
+identidad de registros, idiomas regionales, orden y consulta diferida del
+idioma del dispositivo. Los helpers existentes de normalización/detección y
+ranking conservan su adaptador; no se declara migrado todo el catálogo.
+La comprobación de final de frase usa el conjunto de espacios de ECMAScript
+y puntuación original, sin crear una expresión regular por consulta.
+
+500escenarios de selección/anticipación y1210combinaciones de puntuación,
+incluidos BOM, NEL, comillas y Unicode. Marcas dispersas, texto UTF-16 exacto,
+errores de getters y adopción tardía cubiertos.2000ciclos con WASM estable.
+431focales aprobados:149del catálogo,112del lector y las pruebas originales
+de voz(34) y voces naturales(48) ejecutadas tanto con JavaScript como Rust.
+Los contadores confirman los caminos compilados.15E2E aprobados en1,8min,
+incluidas voces reales Davefx PDF/EPUB, idiomas, voces, pausa y velocidad.
+Batería completa5287/5287,394archivos,330,41s, dos workers.
+
+Inventario5196Rust/37167JS=12,27% de líneas propias, no funcional.
+UI local434113bytes,SHA256
+192af7ac0797a5573c800d41dbf136bbaef549148891e50c7d783cbc7180ed07.
+App/decor, APK y updater sin cambios. Publicación pendiente.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-selection-prototype.
+
 # 1.7.202 — pausa y detención del audiolibro en Rust
 
 Changelog: «Pausa del audiolibro en Rust».
@@ -19,7 +45,15 @@ Batería completa5233/5233,392archivos,323,70s, dos workers.
 Inventario5120Rust/37148JS=12,11% de líneas propias, no funcional.
 UI local419920bytes,SHA256
 8cf34c9311107b58f08a3aa97bd589cbbb4b734daee14cfd4552c2fad87733b3.
-App/decor, APK y updater sin cambios. Publicación pendiente.
+App/decor, APK y updater sin cambios. Publicado d9eaa8b,deploy38281226845
+y Pages38281374199 aprobados,Pages e1735b54. UI público419888bytes,SHA256
+b6ed895695a0517c143c2c802884fe572e1aa15c8d0c9b84a27032415ff594cf.
+Recursos reales HTTP/bytes/SHA, dos perfiles, treinta casosPCM/marcas y
+APK/loader aprobados. E2E público1/1,9,7s. AndroidAPI36 confirma web202 y
+APK1.1.15/28; Lessac2×11,06s, ocho fragmentos terminados/nueve iniciados,
+proceso13049 estable y sinFATAL. Evidencia published-1791824599619 y
+native-ui202.json. CI202 unitarias(job114918728843) aprobado; no acredita
+los jobs restantes.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-stop-prototype.
 
 # 1.7.201 — arranque del audiolibro en Rust
