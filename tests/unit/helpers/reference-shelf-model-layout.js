@@ -1,0 +1,54 @@
+// Frozen physical layout from 1.7.143. Do not update to match a new kernel.
+import { SHELF_SPECS, normalizeShelfType } from '../../../src/js/shelf-types.js';
+import { BOOK_REFERENCE_MM } from '../../../src/js/plant-dimensions.js';
+
+/** Keep every shelf (BAGGEBO or the wooden one, both 600 x 250 x 1160 mm) at
+ * its real proportions. Overflow uses another unit, rather than adding
+ * shelves or stretching the original piece of furniture. */
+export function shelfModelLayout(layout, type = layout.shelfType) {
+  const shelfType = normalizeShelfType(type), BAGGEBO_SPEC = SHELF_SPECS[shelfType];
+  const unitWidth = layout.width;
+  const scale = unitWidth / BAGGEBO_SPEC.width;
+  const unitGap = 24 * scale;
+  const shelvesPerUnit = BAGGEBO_SPEC.shelfBottoms.length;
+  const unitCount = Math.max(1, Math.ceil(layout.rows.length / shelvesPerUnit));
+  const rows = Array.from({ length:unitCount * shelvesPerUnit }, (_, index) => {
+    const slot = index % shelvesPerUnit, unit = Math.floor(index / shelvesPerUnit);
+    const left = unit * (unitWidth + unitGap);
+    return { left, right:left + unitWidth, unit,
+      padding:Math.max(16, (BAGGEBO_SPEC.postSize + 4) * scale),
+      top:(slot ? BAGGEBO_SPEC.shelfBottoms[slot - 1] + BAGGEBO_SPEC.shelfRimHeight : BAGGEBO_SPEC.postSize) * scale,
+      ceiling:(slot ? BAGGEBO_SPEC.shelfBottoms[slot - 1] + BAGGEBO_SPEC.ceilingOffset : BAGGEBO_SPEC.ceilingOffset) * scale,
+      bottom:BAGGEBO_SPEC.shelfBottoms[slot] * scale };
+  });
+  const entries = layout.entries.map(entry => {
+    const index = Math.max(0, Math.min(rows.length - 1, entry.shelf ?? 0));
+    const row = rows[index];
+    if (entry.kind === 'lamp') {
+      const fit = Math.min(1, (row.bottom - row.top - 4 * scale) / entry.height,
+        BAGGEBO_SPEC.usableDepth * scale / entry.depth);
+      return { ...entry, x:row.left + entry.x, height:entry.height * fit, width:entry.width * fit,
+        depth:entry.depth * fit, y:entry.mount === 'undershelf' ? row.ceiling : row.bottom - entry.height * fit / 2,
+        depthInset:15 * scale };
+    }
+    // A book's depth is its cover width. Preserve its aspect ratio when a
+    // landscape cover or tall plant would exceed the actual usable space.
+    const height = entry.kind === 'plant' ? entry.height : BOOK_REFERENCE_MM * scale * entry.style.heightRatio;
+    const width = entry.kind === 'plant' ? entry.width : height * entry.width / entry.height;
+    // Plants retain physical dimensions; tall ones use the open roof.
+    // Canopies may overhang, while pots fit the usable board depth.
+    const plant = entry.kind === 'plant';
+    const rooftop = plant && height > row.bottom - row.top - 4 * scale;
+    const fit = plant ? 1 : Math.min(1, (row.bottom - row.top - 4 * scale) / height,
+      BAGGEBO_SPEC.usableDepth * scale / width);
+    return { ...entry, ...(entry.kind === 'plant' && entry.depth ? { depth:entry.depth * fit } : {}),
+      x:row.left + entry.x, height:height * fit, width:width * fit,
+      y:(rooftop ? 0 : row.bottom) - height * fit / 2, rooftop, depthInset:15 * scale };
+  });
+  return { ...layout, entries, rows, shelfType, unitWidth, unitCount,
+    width:unitWidth * unitCount + unitGap * (unitCount - 1),
+    height:BAGGEBO_SPEC.height * scale, depth:BAGGEBO_SPEC.depth * scale };
+}
+
+/** Kept under its first name: the BAGGEBO is the reference piece. */
+export const baggeboLayout = layout => shelfModelLayout(layout, 'baggebo');

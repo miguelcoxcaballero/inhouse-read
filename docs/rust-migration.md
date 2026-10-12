@@ -952,3 +952,26 @@ El WASM público conserva los mismos bytes y ejecuta las cinco texturas exactas;
 aprobados. Ver el WIP para CI global y los límites de las pruebas de audio.
 CI141 UI3 conserva un fallo de primera importación EPUB (lector ausente
 tras 8 s), aprobado sólo al reintentar; originales en `ci141-ui3`.
+# Migración 1.7.144 — dimensiones físicas de la estantería (12 octubre)
+
+En verificación local; aún no publicada. Changelog: «Geometría de estantería en Rust».
+Rust calcula las dimensiones de las lejas y ajusta libros, plantas y luces en
+una operación. La colocación de plantas sobre el techo usa también el núcleo
+Rust existente. El navegador conserva los mismos objetos, materiales y nodos.
+La vía de medición interna evita inspecciones repetidas de propiedades; la
+vía pública conserva validación y fallback. Arena liberada al terminar.
+
+Comparación exacta de coordenadas y metadatos con la referencia de 143,
+ambos muebles y múltiples tamaños; comparación integrada de techo y lejas.
+Chromium móvil 390×844, CPU×4, nueve rondas alternadas de 50 operaciones:
+12 objetos JS/Rust 0,032/0,042 ms; 50: 0,110/0,118 ms; 300: 0,590/0,536 ms.
+Son tiempos de este cálculo, no de la aplicación completa. Se conservan los
+ensayos iniciales más lentos del adaptador en browser/browser2 y el final
+browser3. No se atribuye una aceleración universal a esta migración.
+
+WASM 186407 bytes, SHA256
+`41bbd4fcde3df834d31ba0b9c5370a7141b349edae8b427401c8e59086196b50`.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-physical-layout`.
+APK, firma, canales y revisión del updater permanecen iguales. No hay cambio
+nativo que requiera una nueva APK. Siguiente bloque: preparación de texto y
+mapas de posiciones del audiolibro. La migración total todavía no ha terminado.

@@ -119,7 +119,7 @@ import { getRustCore } from './rust-core.js';
 import { createShelfPlacementPreview } from './shelf-placement-preview.js';
 import { createLazyPlantCatalog } from './plant-catalog-lazy.js';
 import { normalizeShelfType, BAGGEBO_SPEC } from './shelf-types.js';
-import { shelfModelLayout } from './shelf-model-layout.js';
+import { measuredShelfModelLayout as shelfModelLayout } from './shelf-model-layout.js';
 import { placeRooftopPlants } from './plant-rooftop-layout.js';
 import { getCatalogPlant, getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { normalizeShelfPlant, resolveCatalogPlant } from './plant-records.js';

@@ -11,6 +11,7 @@ mod cover_color;
 mod color_mask;
 mod relief_palette;
 mod shelf_placement;
+mod shelf_model;
 mod pdf_layout;
 mod pdf_rows;
 mod pcm;

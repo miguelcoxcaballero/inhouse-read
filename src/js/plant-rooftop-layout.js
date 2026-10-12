@@ -1,4 +1,6 @@
 import { layoutShelvedObjects } from './shelf-placement.js';
+import { getRustCore } from './rust-core.js';
+import { rustShelfPlacement } from './shelf-placement-wasm.js';
 
 /** Tall plants keep their scale and saved bay preference. A roof is an open
  * surface; its independent packing prevents plants from different bays from
@@ -16,7 +18,8 @@ export function placeRooftopPlants(layout) {
     return { ...entry, key:`roof:${index}`, shelf:unit,
       x:(entry.x - unit * (unitWidth + gap) - 16) / (unitWidth - 32) };
   });
-  const rows = layoutShelvedObjects(objects, { shelfWidth:unitWidth, padding:16, gap:3, minShelves:1 });
+  const options = { shelfWidth:unitWidth, padding:16, gap:3, minShelves:1 };
+  const rows = rustShelfPlacement(getRustCore(), objects, options) ?? layoutShelvedObjects(objects, options);
   // Extra roofs correspond to complete units, never unsupported plants in air.
   const unitCount = Math.max(layout.unitCount || 1, rows.length);
   for (const row of rows) for (const item of row.items) {
