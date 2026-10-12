@@ -16,7 +16,24 @@ WASM 351121 bytes, SHA256
 0a5165f43b2d3ac27eca3e544e9183630856e80d24c2dd5c60f1b696ccbe0eb9.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-book-format.
 Batería completa: 4885/4885, 370 archivos, 291,43 s. Build aprobado.
-Publicación y comprobación de artefactos reales pendientes al escribir esto.
+Publicado en main 7c4deeb; deploy 38240695323 y Pages 38240783675 aprobados,
+rama Pages 163328a. Verificación pública: 157 comprobaciones correctas de
+HTTP/tamaño/SHA/exportaciones/catálogos/APK, dos perfiles nuevos móvil y
+escritorio cargando el JS y ambos WASM exactos sin errores, FB2 importado
+y leído en la web pública (1/1 E2E, 8,7 s). El WASM público conserva 30/30
+comparaciones exactas de PCM y marcas. APK real descargada y loader de
+2107 bytes comprobado otra vez. Evidencia published-1791803451805.
+La primera consulta durante el despliegue recibió archivos antiguos/404;
+se conserva en published-1791803373381 y public-before-pages-completed.log.
+La consulta final se hizo después de completarse Pages, sin reemplazarla.
+CI181 38240695019 sigue en curso. CI180 UI2 terminó con tres fallos:
+native-aligned-shelf-return-contract y native-legacy-shelf-return-contract
+siguen is-closing-reader al vencer 8 s; pdf-reflow-navigation encuentra
+rectángulos de resaltado fuera de la caja visible. Se conserva el log entero
+en audio-rate/ci-180-ui2-original.log, incluidos ambos intentos originales.
+Estos fallos de cierre/resaltado quedan pendientes; ni el tempo ni este port
+se presentan como una corrección de ellos. Las suites reales engine,
+reading y languages de CI180 sí aprobaron; el resto no se da por verde.
 Audio, decoración, APK, firma, updater y catálogos sin modificaciones.
 
 # 1.7.180 — frases completas a velocidades altas
