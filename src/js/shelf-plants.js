@@ -4,6 +4,7 @@ import { rustPlantLeafGeometry } from './plant-leaf-wasm.js';
 import { rustPlantPreview } from './plant-preview-wasm.js';
 import { rustPlantGlazeRows } from './plant-glaze-wasm.js';
 import { rustPlantPotteryRows } from './plant-pottery-wasm.js';
+import { rustPlantSoilRows } from './plant-soil-wasm.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { resolveCatalogPlant } from './plant-records.js';
@@ -101,7 +102,9 @@ function pump(deadline) {
     const accelerated = (job.glaze && rustPlantGlazeRows(getRustCore(), job.width, job.height, job.row,
       end - job.row, job.glaze, job.pigment, job.data)) ||
       (job.pottery && rustPlantPotteryRows(getRustCore(), job.pottery.kind, job.width, job.height, job.row,
-        end - job.row, job.pottery.config, job.pigment, job.data));
+        end - job.row, job.pottery.config, job.pigment, job.data)) ||
+      (job.soil !== undefined && rustPlantSoilRows(getRustCore(), job.soil, job.width, job.height, job.row,
+        end - job.row, job.pigment, job.data));
     if (accelerated) job.row = end;
     else for (; job.row < end; job.row++)
       for (let x = 0; x < job.width; x++) job.store(job.row * job.width + x, job.sample(x, job.row));
@@ -169,7 +172,7 @@ function surface(key, [width, height], repeat, paint, refresh) {
     base = { map:dataTexture(pigment, width, height, THREE.SRGBColorSpace, repeat), data:dataTexture(data, width, height, THREE.NoColorSpace, repeat),
       clones:[], waiting:[] };
     surfaces.set(key, base);
-    queue.push({ base, width, height, row:0, sample, store, glaze:paint.rustGlaze, pottery:paint.rustPottery, pigment, data });
+    queue.push({ base, width, height, row:0, sample, store, glaze:paint.rustGlaze, pottery:paint.rustPottery, soil:paint.rustSoil, pigment, data });
     if (queue.length === 1) idle(pump);
   }
   // Texture.copy() raises the shared Source's version, which would re-upload
@@ -427,7 +430,7 @@ function potGeometry(potId, radius, height, soilFraction) {
 function soilPainter(kind) {
   const peat = srgb('#3b2b1f'), bark = srgb('#5e3d29'), perlite = srgb('#d9d6cc'), damp = srgb('#271c14');
   const stones = ['#a39c90','#bdb099','#7e6c5b','#d8d4cb','#8f8a82'].map(srgb);
-  return (u, v, x, y, texel) => {
+  const paint = (u, v, x, y, texel) => {
     const grain = hash(x, y, 7);
     if (Math.hypot(u - .5, v - .5) > .54) {
       // Neutral corner, only sampled by pebbles, bark chips and perlite.
@@ -452,6 +455,8 @@ function soilPainter(kind) {
     texel[3] = .3 + clump * .3 + (crumbs - .5) * .4 + (grain - .5) * .12 + speck * .3 + woody * .16;
     texel[4] = .97 - wet * .12 - speck * .1 - woody * .05;
   };
+  paint.rustSoil = kind === 'grit' ? 1 : 0;
+  return paint;
 }
 
 function soilGeometry(radius, y, random, roots, kind) {

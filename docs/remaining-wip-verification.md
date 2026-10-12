@@ -1,3 +1,36 @@
+# Migración 1.7.150 — tierra y grava
+
+Verificación local: 4339/4339 unitarias y 11/11 E2E sin omisiones ni reintentos. Build aprobado. Publicación pendiente. Changelog: «Sustratos de plantas en Rust».
+Rust calcula tierra, corteza, perlita, humedad y grava, con los mismos pigmentos,
+altura y rugosidad. El ruido compartido admite campos sin repetición, conservando
+los campos periódicos de las macetas. Se mantiene el lote de cuatro filas.
+42/42 pruebas focalizadas (10 nuevas) y ensayo de modelos reales aprobado:
+compara todos los lotes, verifica ambos sustratos y conserva cada byte sin
+memoria temporal retenida. Chromium390×844 CPU×4, nueve rondas alternadas de
+tres pinturas completas (incluye reserva/copia/liberación): tierra128² JS/Rust
+41,50/22,73ms;256²165,60/86,73. Grava128²16,63/11,33;256²74,67/49,70.
+Son costes de este cálculo; no equivalen a fluidez total ni a móvil físico.
+WASM221677 bytes, SHA `f60f749a7488df886ff11f33415c0fae277c859d85ce159668295242fa71c401`.
+Batería completa aprobada, ejecutada sin navegador simultáneo (290,39s).
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-soil`.
+Próximo bloque preparado, todavía sin integrar: pigmento y nervaduras de hojas.
+Publicación149 verificada: fuente `ea6fd2f149b20a199d45cd5dd0eaef0bd3af491a`,
+Pages `02cea4ad06093b395e622d7d49c7b8a76e826519`. Deploy38193105161 y
+Pages38193157275 aprobados. Recursos públicos exactos y12 casos del WASM
+real,5245344 bytes idénticos. Dos recorridos públicos aprobados sin omisiones
+ni reintentos. APK1.1.15/code28 y loader2107 verificados. Evidencia:
+published-1791769655939 y rust-plant-pottery/public-ui.
+
+Recuento publicado149 (`ea6fd2f`):2078 líneas no vacías Rust en21 archivos y
+35511 JS propias en174 archivos;5,53% del conjunto. Incluye comentarios y
+excluye pruebas, dependencias, HTML, CSS y Java. No mide funciones migradas,
+velocidad ni trabajo restante. Evidencia rust-plant-pottery/code-share.json.
+
+CI14638191111252 ha terminado con todos los grupos aprobados: unitarias,
+seis grupos de interfaz y todas las voces reales Piper/Supertonic.
+Esto no demuestra corregido el retorno nativo intermitente de CI143/145;
+sus fallos y artefactos originales se conservan.
+
 # Migración 1.7.149 — terracota y zinc
 
 Verificación local: 4329/4329 unitarias (repetición aislada) y 11/11 E2E; build aprobado. Publicación pendiente. Changelog: «Terracota y zinc en Rust».

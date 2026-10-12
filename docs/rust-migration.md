@@ -1098,3 +1098,25 @@ locales en curso; estas cifras no representan un móvil físico ni toda la UI.
 WASM211294 bytes, SHA `42ea9ded02bc053159fd046393b8e76afabc1a5a9bdd7d4af0fe7eb3daf61f86`.
 Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-pottery`.
 Siguiente bloque preparado: texturas de sustrato y grava; todavía sin integrar.
+
+# Migración 1.7.150 — tierra y grava
+
+Verificación local: 4339/4339 unitarias y 11/11 E2E sin omisiones ni reintentos. Build aprobado. Publicación pendiente. Changelog: «Sustratos de plantas en Rust».
+Rust calcula tierra, corteza, perlita, humedad y grava, con los mismos pigmentos,
+altura y rugosidad. El ruido compartido admite campos sin repetición, conservando
+los campos periódicos de las macetas. Se mantiene el lote de cuatro filas.
+42/42 pruebas focalizadas (10 nuevas) y ensayo de modelos reales aprobado:
+compara todos los lotes, verifica ambos sustratos y conserva cada byte sin
+memoria temporal retenida. Chromium390×844 CPU×4, nueve rondas alternadas de
+tres pinturas completas (incluye reserva/copia/liberación): tierra128² JS/Rust
+41,50/22,73ms;256²165,60/86,73. Grava128²16,63/11,33;256²74,67/49,70.
+Son costes de este cálculo; no equivalen a fluidez total ni a móvil físico.
+WASM221677 bytes, SHA `f60f749a7488df886ff11f33415c0fae277c859d85ce159668295242fa71c401`.
+Batería completa aprobada, ejecutada sin navegador simultáneo (290,39s).
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-soil`.
+Próximo bloque preparado, todavía sin integrar: pigmento y nervaduras de hojas.
+
+CI14638191111252 ha terminado con todos los grupos aprobados: unitarias,
+seis grupos de interfaz y todas las voces reales Piper/Supertonic.
+Esto no demuestra corregido el retorno nativo intermitente de CI143/145;
+sus fallos y artefactos originales se conservan.

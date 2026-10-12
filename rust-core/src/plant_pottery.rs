@@ -2,7 +2,7 @@
 use crate::plant_glaze::{hash, noise};
 use crate::plant_preview::byte;
 fn smooth(a: f64, b: f64, v: f64) -> f64 { let t = ((v-a)/(b-a)).clamp(0.0,1.0); t*t*(3.0-2.0*t) }
-fn fbm(x: f64, y: f64, period: i32, seed: u32, octaves: u32) -> f64 {
+pub(crate) fn fbm(x: f64, y: f64, period: i32, seed: u32, octaves: u32) -> f64 {
     let (mut sum,mut amplitude,mut total)=(0.0,0.5,0.0);
     for octave in 0..octaves {
         let scale=1<<octave;
@@ -11,12 +11,12 @@ fn fbm(x: f64, y: f64, period: i32, seed: u32, octaves: u32) -> f64 {
     }
     sum/total
 }
-struct Cell { f1:f64, f2:f64, id:f64, dx:f64, dy:f64 }
-fn cell(x:f64,y:f64,period:i32,seed:u32)->Cell {
+pub(crate) struct Cell { pub f1:f64, pub f2:f64, pub id:f64, pub dx:f64, pub dy:f64 }
+pub(crate) fn cell(x:f64,y:f64,period:i32,seed:u32)->Cell {
     let xi=x.floor() as i32;let yi=y.floor() as i32;
     let mut c=Cell{f1:9.0,f2:9.0,id:0.0,dx:0.0,dy:0.0};
     for j in -1..=1 {for i in -1..=1 {
-        let cy=yi+j;let h=hash(((xi+i)%period+period)%period,cy,seed);
+        let cy=yi+j;let h=hash(if period==0{xi+i}else{((xi+i)%period+period)%period},cy,seed);
         let dx=(xi+i)as f64+h-x;let dy=cy as f64+h*4099.0%1.0-y;let d=dx*dx+dy*dy;
         if d<c.f1 {c.f2=c.f1;c.f1=d;c.id=h*65537.0%1.0;c.dx=dx;c.dy=dy;}else if d<c.f2 {c.f2=d;}
     }}

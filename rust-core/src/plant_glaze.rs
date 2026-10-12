@@ -6,7 +6,7 @@ pub(crate) fn hash(x: i32, y: i32, seed: u32) -> f64 {
     h = (h ^ (h >> 13)).wrapping_mul(0xc2b2ae35);
     (h ^ (h >> 16)) as f64 / 4294967296.0
 }
-fn wrap(value: i32, period: i32) -> i32 { (value % period + period) % period }
+fn wrap(value: i32, period: i32) -> i32 { if period == 0 { value } else { (value % period + period) % period } }
 pub(crate) fn noise(x: f64, y: f64, period: i32, seed: u32) -> f64 {
     let xi = x.floor() as i32; let yi = y.floor() as i32;
     let fx = x - xi as f64; let fy = y - yi as f64;
