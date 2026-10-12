@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test'
-test('compiled mobile reader controls dispatch each action once through Rust',async({page},info)=>{
+for(const delayed of [false,true])test('compiled mobile reader controls dispatch each action once through Rust'+(delayed?' after a delayed WASM download':''),async({page},info)=>{
  test.setTimeout(60000);await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce'})
  await page.addInitScript(()=>{
   window.readerControlsProof={available:false,calls:{}}
@@ -10,9 +10,19 @@ test('compiled mobile reader controls dispatch each action once through Rust',as
   }
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))}}
  })
+ let release
+ if(delayed){const gate=new Promise(resolve=>{release=resolve});await page.route(/inhouse_read_ui_bg-.*\.wasm$/,async route=>{await gate;await route.continue()})}
  const errors=[];page.on('pageerror',error=>errors.push(error.message))
  await page.goto(process.env.IHR_TEST_URL||'./');await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/reading-journey.pdf')
  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 1 de 4/)
+ if(delayed){
+  expect((await page.evaluate(()=>window.readerControlsProof)).calls.rustreadercontrols_new).toBeUndefined()
+  await page.locator('#reader-location').click();await page.locator('[data-bookmark]').click();await expect(page.locator('[data-bookmark]')).toHaveAttribute('aria-pressed','true')
+  await page.locator('[data-bookmark]').click();await expect(page.locator('[data-bookmark]')).toHaveAttribute('aria-pressed','false')
+  await page.locator('[data-close]').click();release()
+  await expect.poll(()=>page.evaluate(()=>window.readerControlsProof.calls.rustreadercontrols_new)).toBeGreaterThan(0)
+ }
+
  await page.locator('#reader-location').click();await page.getByRole('button',{name:'Marcar esta página',exact:true}).click();await expect(page.locator('[data-bookmark]')).toHaveAttribute('aria-pressed','true')
  await page.locator('[data-bookmark]').click();await expect(page.locator('[data-bookmark]')).toHaveAttribute('aria-pressed','false')
  await page.locator('[data-bookmark]').click();await expect(page.locator('[data-bookmark]')).toHaveAttribute('aria-pressed','true')

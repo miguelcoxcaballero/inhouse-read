@@ -41,3 +41,19 @@ it('does not expose an incompatible late result and can retry after it fails',as
  await vi.advanceTimersByTimeAsync(30001);expect((await loadRustUI()).RustSelectMenu).toBe(mock.Menu)
  expect(mock.init).toHaveBeenCalledTimes(2)
 })
+
+it('notifies late components once after the startup deadline and skips disposed listeners',async()=>{
+ let finish;mock.init.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}))
+ const {loadRustUI}=await import('../../src/js/rust-ui.js')
+ const {onRustUIReady}=await import('../../src/js/rust-ui-readiness.js')
+ const loaded=vi.fn(),disposed=vi.fn();onRustUIReady(loaded);const cancel=onRustUIReady(disposed);cancel()
+ const pending=loadRustUI();await vi.advanceTimersByTimeAsync(2000);expect(await pending).toBeNull();expect(loaded).not.toHaveBeenCalled()
+ finish({});await vi.advanceTimersByTimeAsync(0);expect(loaded).toHaveBeenCalledOnce();expect(disposed).not.toHaveBeenCalled()
+ await loadRustUI();expect(loaded).toHaveBeenCalledOnce()
+})
+it('does not lose other components or reject a valid module when one readiness listener throws',async()=>{
+ const {loadRustUI}=await import('../../src/js/rust-ui.js')
+ const {onRustUIReady}=await import('../../src/js/rust-ui-readiness.js')
+ const ready=vi.fn();onRustUIReady(()=>{throw Error('component')});onRustUIReady(ready)
+ expect(await loadRustUI()).not.toBeNull();expect(ready).toHaveBeenCalledOnce()
+})

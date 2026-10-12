@@ -1,3 +1,35 @@
+# 1.7.210 — adopción de Rust tras una descarga tardía
+
+Changelog: «Controles Rust tras descarga tardía».
+El lector mantiene su plazo de arranque. Cuando WASM termina después,
+los controles pasan a Rust sin sustituir los nodos: se retiran solamente
+los handlers que pertenecían al fallback. Un lector desmontado no adopta
+los atajos de otro libro; free cancela el registro y libera ambos caminos.
+Un error parcial restaura los handlers anteriores sin duplicarlos.
+
+Las listas adoptan Rust en su siguiente actualización solicitada. Las demás
+filas conservan identidad, foco, scroll y callbacks hasta ser reemplazadas.
+Cada lista libera sus antiguos onclick cuando se reemplaza, y free libera
+tanto los listeners nativos como los del fallback que aún estaban visibles.
+No se reproduce ninguna acción pasada ni se repagina el texto del libro.
+
+Se conservan los fallos originales206/114941278918 y208/114963724116.
+El test de listas anterior asumía Rust para acciones que podían ocurrir antes
+de terminar la descarga. Ahora su caso compilado inicializa el mismo módulo
+real antes de importar el libro y conserva todos los asserts de sus cuatro
+renders. Un segundo caso retiene la descarga hasta abrir el EPUB y comprueba
+la adopción posterior en marcadores y búsqueda. No amplía los plazos. El test
+de controles conserva sus acciones/aserciones y también añade descarga tardía.
+
+32 focalizadas y 5376 unitarias completas aprobadas.26 E2E aprobados,
+incluidos ambos escenarios tardíos y voces reales PDF/EPUB. Los ciclos
+de adopción/free conservan referencias con el contador validado en208.
+Inventario:5849 líneas Rust/37334JavaScript=13,54%, no funcional. El cambio
+añade adaptadores de disponibilidad; no añade lógica Rust nueva al binario.
+WASM UI y núcleos idénticos a209. Publicación pendiente.
+APK1.1.15/28 y updater sin modificaciones; migración completa pendiente.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-controls-adoption.
+
 # 1.7.209 — envío de audio y avance automático en Rust
 
 Changelog: «Avance de audiolibro en Rust».
@@ -21,7 +53,17 @@ audible al cambiar de página. Publicación pendiente; compilar no la verifica.
 Inventario:5849 líneas Rust/37261JavaScript=13,57%, no funcional.
 UI local572514bytes,SHA256
 d2119432d9c0e6128a2dd5064c82bf0d503e09233584c48595af2ef18ea80caa.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada:9791b0cc8ad72961cfe04cad7a4824f096d59b63.
+Deploy38296463443/Pages38296602456 completos; Pages
+1d34654aef0d6f319cea6300f05ffa2f7eaf6d40. UI pública572482bytes,SHA256
+f70ae672173609e6efdc2e67652cb37ceefcd5d51ded7c53251e8b5e17077a37.
+published-1791832755454: recursos HTTP/tamaño/SHA, dos perfiles,30 casos
+PCM/tempo y APK real con loader2107bytes correctos. La prueba de referencias
+incluye retención/liberación positiva y1000 preparaciones/100 menús por perfil.
+E2E público PDF/Davefx aprobado sin reintentos.
+APK1.1.15/28 muestra web1.7.209:Lessac2×,10.15s,
+8finales/9inicios,PID17162estable y sinFATAL.
+CI38296463589 se registra por separado; no se presupone aprobado.
 La migración completa sigue pendiente. Se conservan los fallos de CI previos.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-dispatch-prototype
 y rust-voice-advance-prototype.

@@ -23,7 +23,7 @@ test('Rust reader lists preserve DOM, object values, callbacks and bounded memor
  }
  expect(results[0]).toHaveLength(17);expect(results[1]).toEqual(results[0]);await info.attach('list-parity',{body:JSON.stringify(results),contentType:'application/json'})
 })
-test('compiled mobile reader renders bookmarks, chapters and search results through Rust',async({page},info)=>{
+for(const delayed of [false,true])test('compiled mobile reader renders bookmarks, chapters and search results through Rust'+(delayed?' after a delayed WASM download':''),async({page},info)=>{
  test.setTimeout(60000);await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce'})
  const errors=[];page.on('pageerror',e=>errors.push(e.message))
  await page.addInitScript(()=>{
@@ -35,12 +35,24 @@ test('compiled mobile reader renders bookmarks, chapters and search results thro
   }
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))}}
  })
- await page.goto(process.env.IHR_TEST_URL||'./');await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/reading-journey.epub');await expect(page.locator('foliate-view')).toBeVisible({timeout:45000})
+ let release
+ if(delayed){const gate=new Promise(resolve=>{release=resolve});await page.route(/inhouse_read_ui_bg-.*\.wasm$/,async route=>{await gate;await route.continue()})}
+ await page.goto(process.env.IHR_TEST_URL||'./')
+ if(!delayed)await page.evaluate(async()=>{
+  // This case verifies every compiled render operation. The separate delayed
+  // case exercises the real startup fallback and subsequent adoption.
+  const manifest=await(await fetch(new URL('offline-shell-manifest.json',location.href))).json()
+  const entry=manifest.entries.find(entry=>/^assets\/inhouse_read_ui-[\w-]+\.js$/.test(entry.path))
+  if(!entry)throw Error('Published Rust UI module is missing')
+  const ui=await import(new URL(entry.path,location.href).href);await ui.default()
+ })
+ await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/reading-journey.epub');await expect(page.locator('foliate-view')).toBeVisible({timeout:45000})
+ if(delayed){expect(await page.evaluate(()=>window.listsProof.available)).toBe(false);release();await expect.poll(()=>page.evaluate(()=>window.listsProof.available)).toBe(true)}
  await page.locator('#reader-location').click();await page.getByRole('button',{name:'Marcar esta página',exact:true}).click();await expect(page.locator('[data-bookmark]')).toHaveAttribute('aria-pressed','true')
  await page.getByRole('button',{name:'Cerrar opciones de lectura'}).click();await page.getByRole('button',{name:'Buscar en el libro',exact:true}).click()
  await page.getByRole('searchbox',{name:'Buscar en el libro'}).fill('the');await page.getByRole('button',{name:'Buscar',exact:true}).click()
  await expect(page.locator('[data-search-results] button').first()).toBeVisible();await expect(page.locator('[data-search-results] mark').first()).toBeVisible()
  const proof=await page.evaluate(()=>window.listsProof);expect(proof.available).toBe(true);expect(proof.calls.rustreaderlists_new).toBe(1)
- for(const name of ['renderToc','renderPlaces','clearSearch','renderSearch'])expect(proof.calls['rustreaderlists_'+name]).toBeGreaterThan(0)
+ for(const name of delayed?['renderPlaces','clearSearch','renderSearch']:['renderToc','renderPlaces','clearSearch','renderSearch'])expect(proof.calls['rustreaderlists_'+name]).toBeGreaterThan(0)
  expect(errors).toEqual([]);await info.attach('compiled-reader-lists',{body:JSON.stringify(proof),contentType:'application/json'})
 })

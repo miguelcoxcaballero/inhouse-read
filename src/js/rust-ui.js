@@ -1,3 +1,4 @@
+import {notifyRustUIReady} from './rust-ui-readiness.js'
 let ui = null, loading = null, initializing = null, retryAfter = 0
 export const getRustUI = () => ui
 
@@ -14,7 +15,7 @@ export function loadRustUI() {
     // The deadline only releases the reader. A valid late result remains useful
     // to subsequent operations; never start a second WASM instance while this
     // one is pending, which could invalidate live component handles.
-    ui = module; retryAfter = 0
+    ui = module; retryAfter = 0; notifyRustUIReady(ui)
     return ui
   }).finally(() => { initializing = null })
   loading = Promise.race([initialize, new Promise((_, reject) => {
