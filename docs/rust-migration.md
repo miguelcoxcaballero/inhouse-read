@@ -1447,3 +1447,11 @@ Rust genera los bordes compartidos, recortes, facetas, UV y normales exactas
 de la rejilla. Se mantiene la geometría física de sus aperturas y la misma
 compactación; no se sustituye por una textura. Cada modelo preparado se libera
 tras copiar sus atributos. Ver evidencia en remaining-wip-verification.md.
+
+## 1.7.167: pintura y postes BAGGEBO
+
+Los UV de todas las piezas de pintura se transfieren juntos al núcleo,
+evitando una llamada por raíl. Rust también suaviza las paredes redondeadas
+sin alterar las tapas. Los atributos siguen siendo los mismos objetos de Three.
+El primer ensayo individual fue más lento y está conservado; ver resultados
+y limitaciones en remaining-wip-verification.md.

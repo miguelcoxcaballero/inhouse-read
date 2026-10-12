@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {rustFinishMesh,rustPaintMeshes} from './mesh-finish-wasm.js';
 import {rustExpandedMetal} from './metal-sheet-wasm.js';
 import {rustCompactGeometry} from './mesh-compact-wasm.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
@@ -241,6 +242,7 @@ function triangularUpright(points, side, front, depth, height) {
   const outerZ = front > 0 ? 0 : -depth;
   const outline = points.map(point => [side * (300 - point.x), outerZ - front * point.y]);
   const geometry = extrudedSheet(outline, [], height, 0);
+  if (rustFinishMesh(geometry,1)) return geometry;
   // Average only the long wall normals. Caps stay separate and flat while
   // small rounded corners catch continuous highlights at close zoom.
   const positions = geometry.getAttribute('position'), normals = geometry.getAttribute('normal');
@@ -315,7 +317,7 @@ export function createBaggebo({ width = 600 } = {}) {
           const y = positions.getY(index);
           if (y > 0 && y < 1e-6) positions.setY(index, 0);
         }
-        physicalPaintUVs(geometry);
+        // Paint UVs are applied together immediately before the batch merge.
       }
       geometry.computeBoundingBox();
       group.userData.parts.push({ name, bounds:geometry.boundingBox.clone(), ...metadata });
@@ -417,6 +419,9 @@ export function createBaggebo({ width = 600 } = {}) {
 
     const batchTemplates = [];
     for (const [material, sources] of batches) {
+      if (material === paint && !rustPaintMeshes(sources)) {
+        for (const source of sources) physicalPaintUVs(source);
+      }
       const merged = mergeGeometries(sources, false);
       for (const source of sources) source.dispose();
       // Sheet templates are already indexed; the other assembly batches still

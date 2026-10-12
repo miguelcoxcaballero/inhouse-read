@@ -1,3 +1,40 @@
+# Migración 1.7.167 — acabado de las piezas BAGGEBO en Rust
+
+Changelog: «Acabado de mallas en Rust». Se calculan las coordenadas físicas de
+pintura y las normales suaves de los postes, dejando las tapas separadas.
+Se mantienen los atributos de Three y sus versiones; el núcleo entrega los
+mismos bits y libera su reserva. Un fallo no modifica parcialmente el mueble.
+
+El primer ensayo mostró una regresión al copiar cada raíl de324vértices:
+JS0,015/Rust0,025ms. Se conserva browser.*. La producción agrupa TODAS las
+piezas de pintura en una única transferencia antes de combinar las mallas,
+cuando sus límites/posiciones/normales ya están fijados. Resultado final
+CPU×4,nueve tandas alternadas de20 ejecuciones, copias incluidas:
+-20 piezas,6480vértices:JS0,250/Rust0,225ms.
+-Normales de un poste,456vértices:0,290/0,105ms.
+Capacidad estable. La mejora del lote de pintura es pequeña; no se presenta
+como mejora de FPS o del arranque completo. Se conserva la prueba individual
+más lenta, pero esa ruta ya no se utiliza pieza a pieza en la aplicación.
+
+36/36 focalizadas (13 nuevas),4,08s. Mueble completo con una llamada de pintura
+y cuatro de normales,100 variaciones, negativo/cero, tapas, atributo conservado,
+errores, memoria creciente y lote atómico.2/2 E2E con núcleo real (5,6s),
+todos los atributos exactos. Build aprobado. WASM388126bytes, SHA
+`5efb52a06a7d5b23122a90a7d722fd0200c1be8197a4913deb15aea1636b9461`.
+4683/4683 unitarias,354 archivos,286,00s,sin omisiones.4/4 E2E de
+regreso nativo, catálogo y cambio de mueble (1,3min), sin reintentos.
+Publicación pendiente. Evidencia:
+`D:/CodexEvidence/InhouseRead-20261012/rust-mesh-finish`.
+
+Publicación166: fuente `cf704cadaa5441bc5cd0aa9c4a029d23c3c6cceb`, Pages
+`01b0b63103ad1d7dbdbb3e210110f54fc9ba3bba`, deploy38207528611 yPages38207577035
+aprobados.99 recursos/HTML/precarga exactos, núcleo público100rejillas,
+174042vértices/5569344bytes exactos. APK1.1.15/code28 yloader2107 verificados.
+Evidencia:published-1791782690691. UI pendiente. Publicación165:2/2 E2E
+públicas de catálogo/cambio, sin reintentos; main/WASM idénticos en dos perfiles
+limpios. CI163 UI2 mantiene los dos fallos de duración de cierre anteriores;
+originales rust-timber/ci163-ui2, sin cambiar sus límites de8s.
+
 # Migración 1.7.166 — rejilla metálica real en Rust
 
 Changelog: «Rejillas metálicas generadas en Rust». Se trasladan la generación

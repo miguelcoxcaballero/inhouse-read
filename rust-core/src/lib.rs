@@ -63,3 +63,5 @@ mod lamp_surface;
 mod mesh_compact;
 
 mod metal_sheet;
+
+mod mesh_finish;

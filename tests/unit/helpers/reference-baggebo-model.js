@@ -450,3 +450,5 @@ export function createBaggebo({ width = 600 } = {}) {
 }
 
 export {expandedMetal};
+
+export {uprightProfile,extrudedSheet};
