@@ -1,5 +1,6 @@
 import { isNeuralVoiceId, neuralVoices } from './neural-voice/catalog.js'
 import { langBase } from './voice-catalog.js'
+import {rustNearestRate,rustReadingNumbers,rustReadingCSS} from './reading-preferences-wasm.js'
 
 export const READING_THEMES = {
   paper: { background:'#faf9f5', color:'#292821', scheme:'light' },
@@ -28,6 +29,8 @@ export const RATE_STEPS = Object.freeze([0.75, 1, 1.25, 1.5, 2])
 export const nearestRate = value => {
   const rate = Number(value)
   if (!Number.isFinite(rate) || value === '' || value == null) return 1
+  const normalized=rustNearestRate(rate)
+  if(normalized!==undefined)return normalized
   return RATE_STEPS.reduce((best, step) => Math.abs(step - rate) < Math.abs(best - rate) ? step : best)
 }
 export const rateLabel = rate => `${String(rate).replace('.', ',')}×`
@@ -39,6 +42,7 @@ export const DEFAULT_READING_PREFERENCES = Object.freeze({
 export function normalizeReadingPreferences(input = {}) {
   if (!input || typeof input !== 'object') input = {}
   const voice = String(input.voice || ''), voiceLang = langBase(input.voiceLang)
+  const numbers=rustReadingNumbers(input)
   const number = (key, min, max) => {
     const value = input[key] == null || input[key] === '' ? NaN : Number(input[key])
     return Math.min(max, Math.max(min, Number.isFinite(value) ? value : DEFAULT_READING_PREFERENCES[key]))
@@ -46,20 +50,22 @@ export function normalizeReadingPreferences(input = {}) {
   return {
     theme: Object.hasOwn(READING_THEMES,input.theme) ? input.theme : 'paper',
     font: Object.hasOwn(READING_FONTS,input.font) ? input.font : 'book',
-    fontSize:number('fontSize',14,36), lineHeight:number('lineHeight',1.2,2.4),
-    margin:number('margin',0,64),
+    fontSize:numbers?.[0]??number('fontSize',14,36), lineHeight:numbers?.[1]??number('lineHeight',1.2,2.4),
+    margin:numbers?.[2]??number('margin',0,64),
     align:input.align === 'justify' ? 'justify' : 'start',
     flow:input.flow === 'scrolled' ? 'scrolled' : 'paginated',
     pdfMode:input.pdfMode === 'text' ? 'text' : 'original',
-    zoom:number('zoom',70,200), rate:nearestRate(input.rate),
+    zoom:numbers?.[3]??number('zoom',70,200), rate:numbers?.[4]??nearestRate(input.rate),
     voice:isNeuralVoiceId(voice) && neuralVoices.some(entry => entry.id === voice) ? voice : '',
     voiceLang:voiceLang && neuralVoices.some(entry => langBase(entry.lang) === voiceLang) ? voiceLang : '',
-    brightness:number('brightness',50,120), fontWeight:[400,500,600].includes(Number(input.fontWeight)) ? Number(input.fontWeight) : 400,
+    brightness:numbers?.[5]??number('brightness',50,120), fontWeight:numbers?.[6]??([400,500,600].includes(Number(input.fontWeight)) ? Number(input.fontWeight) : 400),
     footnotes:Boolean(input.footnotes), multilingual:Boolean(input.multilingual), skipHeaders:Boolean(input.skipHeaders)
   }
 }
 export function readingCSS(preferences) {
   const p = normalizeReadingPreferences(preferences)
+  const css=rustReadingCSS(p)
+  if(css!==null)return css
   const theme = READING_THEMES[p.theme]
   // --theme-bg-color lets foliate repaint its page backdrop when the theme
   // changes; otherwise it kept the first section's colour (a paper frame

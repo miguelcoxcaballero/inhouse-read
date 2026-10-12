@@ -1619,3 +1619,28 @@ MOBI 1,58→0,56 µs, FB2 4,92→0,70 µs, desconocido 29,78→1,40 µs.
 PDF/ZIP mantienen el mismo camino y quedan en el suelo de medición (~0,08 µs).
 Son tiempos de clasificación de cabecera, no tiempos de apertura de libros.
 WASM app 351121 bytes; decoración y audio sin modificaciones.
+
+## 1.7.182 — preferencias y estilo del lector
+
+`reader_preferences` normaliza tamaños, interlineado, márgenes, zoom, brillo,
+peso y velocidad. `reader_nearest_rate` mantiene las cinco velocidades y sus
+empates. `reader_css` construye el estilo de papel, sepia, noche, AMOLED y
+salvia, con las cuatro familias tipográficas y ambas alineaciones. El host
+conserva coerciones de valores de JavaScript, objetos de voces instaladas,
+DOM y persistencia. No se migró todo ReaderExperience por este cambio.
+Los estilos decodificados se reutilizan en el puente con un límite de 64,
+identidad de módulo y todos los campos que afectan al CSS en su clave.
+Las alternativas anteriores siguen disponibles si el núcleo no está listo.
+
+Se comparan exactamente 1000 combinaciones CSS, coerciones, límites y tasas.
+La primera medida completa de estilo y layout CPU×4 detectó sobrecoste
+(0,3275 ms JS frente a 0,3850 ms Rust). Se conserva como benchmark-idle.log.
+Tras reutilizar estilos: 0,3925/0,3775 ms; la dispersión impide atribuir una
+aceleración significativa. La caché sí elimina formatos/copias repetidos:
+1001 solicitudes del caso unitario generan 24 estilos, con memoria estable.
+WASM app 378694 bytes; la diferencia incluye formato decimal de Rust.
+
+Inventario reproducible: `node scripts/rust-migration-status.mjs`. Antes de
+esta entrega, 3528 líneas Rust y 36636 JS = 8,78 %. Se cuentan líneas no
+vacías, incluidos comentarios y alternativas; se excluyen dependencias,
+pruebas, HTML/CSS y Android nativo. No es porcentaje funcional ni cobertura.

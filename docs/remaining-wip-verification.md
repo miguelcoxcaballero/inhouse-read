@@ -1,3 +1,37 @@
+# 1.7.182 — preferencias y CSS de lectura en Rust
+
+Changelog: «Preferencias del lector en Rust».
+Normalización de valores numéricos, velocidades y generación del estilo en
+reader_preferences/reader_nearest_rate/reader_css. Se mantienen DOM, selección
+de voces y persistencia en el host. Estilos decodificados reutilizados, límite
+de 64 por instancia del núcleo, sin conservar documentos ni nodos del libro.
+1000 combinaciones de CSS comparadas carácter a carácter con el original;
+límites, coerciones, valores inválidos, empates de velocidad y arena estable.
+69 pruebas focales (68 iniciales más una de expulsión de caché).
+Batería anterior a la caché: 4890/4890. Final: 4891/4891, 371 archivos,
+349,46 s; logs y JSON de ambas conservados. E2E finales: 30 aprobadas,
+seis omisiones propias de las condiciones de los casos, cero fallos (3,6 min).
+Incluyen temas, texto adaptable, audio, pausas, navegación independiente,
+controles inferiores, persistencia y comparación de párrafos/estilos del
+EPUB compilado en perfiles móvil originales frente a Rust.
+La primera medida detectó sobrecoste (JS 0,3275 ms / Rust 0,3850 ms, CPU×4).
+Tras reutilizar estilos: 0,3925/0,3775 ms. La dispersión no permite afirmar
+aceleración significativa; sí se eliminan formatos/copias repetidos (1001
+solicitudes, 24 CSS generados en la prueba de reutilización).
+WASM app 378694 bytes, SHA256
+7b1433e2787d7449efa460af8fd1a89e362350e57f97fc22b91332d333d03436.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-reader-preferences.
+Publicación y comprobación pública pendientes. APK, firma, updater y voces
+no cambian. Los tres fallos de CI180 de cierre/resaltado siguen pendientes.
+
+Siguiente bloque ya prototipado fuera del repo: rust-ui-prototype contiene
+SelectMenu completo en Rust con wasm-bindgen/web-sys, misma estructura DOM,
+teclado, foco, eventos, cambio reentrante y 1000 creaciones/liberaciones con
+memoria estable. No está integrado ni publicado aún. CLI wasm-bindgen
+0.2.104 y dependencias fijadas en Cargo.lock; Windows requiere host GNU
+(instalado en D:/InhouseRead-Rust), porque no hay linker MSVC. Hay logs
+originales del fallo MSVC y de dos errores de tipos corregidos del prototipo.
+
 # 1.7.181 — cabeceras de libros en Rust
 
 Changelog: «Reconocimiento de archivos en Rust».
