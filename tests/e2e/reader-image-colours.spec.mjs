@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { imageThemePDF } from './fixtures/image-theme-pdf.mjs'
 import { imageThemeEPUB } from './fixtures/image-theme-epub.mjs'
-import { PDF_PAGE_FILTERS } from '../../src/js/readers/reading-preferences.js'
+import { PDF_PAGE_FILTERS } from '../../src/js/readers/reading-palette.js'
 
 test.use({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:1})
 for (const theme of Object.keys(PDF_PAGE_FILTERS)) {

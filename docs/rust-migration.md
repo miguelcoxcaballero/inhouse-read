@@ -1,5 +1,14 @@
 # Migración a Rust: implementación y comprobaciones
 
+Última entrega 1.7.183: además del núcleo de cálculos, rust-ui ya ejecuta
+los menús DOM del lector (estado, opciones, accesibilidad, teclado y eventos).
+Bindings generados por wasm-bindgen 0.2.104 y dependencias fijadas. Se conserva
+una alternativa durante fallos de carga; no se contabiliza como código Rust.
+Inventario actual: 3778 líneas Rust y 36731 JS, 9,33 %; excluye dependencias,
+bindings generados, pruebas, CSS/HTML y Android. No mide funciones terminadas.
+4908 unitarias aprobadas; 30 recorridos de lector y seis omisiones originales.
+Detalle, fallos conservados y publicación: remaining-wip-verification.md.
+
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout
 local limpio. La aplicación contiene 146 módulos JavaScript propios y unas
 33.000 líneas no vacías. Esta integración migra cálculos concretos; **no es la

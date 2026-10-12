@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { mkdir, writeFile } from 'node:fs/promises'
-import { PDF_PAGE_FILTERS, READING_THEMES } from '../../src/js/readers/reading-preferences.js'
+import { PDF_PAGE_FILTERS, READING_THEMES } from '../../src/js/readers/reading-palette.js'
 
 // The 3D book always opens and closes on white paper; while the camera zooms into the
 // reader (and out of it) the pages cross-fade to / from the reading theme the

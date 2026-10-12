@@ -1,17 +1,25 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { SelectMenu } from '../../src/js/readers/select-menu.js'
+import { initSync, RustSelectMenu } from '../../src/wasm/ui/inhouse_read_ui.js'
+
+beforeAll(() => initSync({ module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm') }))
+let Implementation = SelectMenu
 
 const OPTIONS = [{ value:'', label:'Automática' }, { value:'es', label:'Español', hint:'3 voces' }, { value:'en', label:'Inglés' }, { value:'fr', label:'Francés', disabled:true }]
 let menus = []
 function make(onChange = () => {}, label = 'Idioma') {
-  const menu = new SelectMenu({ label, onChange }); menu.setOptions(OPTIONS, '')
+  const menu = new Implementation({ label, onChange }); menu.setOptions(OPTIONS, '')
   document.body.append(menu.root); menus.push(menu)
   return menu
 }
 const press = (target, key) => target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles:true, cancelable:true }))
-afterEach(() => { for (const menu of menus) menu.close(); menus = []; document.body.innerHTML = '' })
+afterEach(() => { for (const menu of menus) { menu.close(); menu.free?.() } menus = []; document.body.innerHTML = '' })
 
-describe('SelectMenu (the own dropdown of the app)', () => {
+describe.each(['legacy', 'rust'])('SelectMenu (%s)', engine => {
+  beforeAll(() => { Implementation = engine === 'legacy' ? SelectMenu : class {
+    constructor({label,extra=null,onChange=()=>{}}) { return new RustSelectMenu(label,extra,onChange) }
+  } })
   it('is a button that opens a listbox of options, with the current choice on the row', () => {
     const menu = make()
     expect(menu.trigger.getAttribute('aria-haspopup')).toBe('listbox')
@@ -80,7 +88,7 @@ describe('SelectMenu (the own dropdown of the app)', () => {
   })
   it('can host extra content under the options', () => {
     const extra = document.createElement('p'); extra.textContent = 'Voces naturales'
-    const menu = new SelectMenu({ label:'Voz', extra }); document.body.append(menu.root); menus.push(menu)
+    const menu = new Implementation({ label:'Voz', extra }); document.body.append(menu.root); menus.push(menu)
     expect(menu.panel.contains(extra)).toBe(true)
     expect(menu.root.classList.contains('select-menu--catalog')).toBe(true)
   })

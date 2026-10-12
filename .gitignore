@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 dist/
 rust-core/target/
+rust-ui/target/
+src/wasm/ui/
 src/wasm/*.wasm
 config.js
 .DS_Store

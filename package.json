@@ -1,11 +1,11 @@
 {
   "name": "inhouse-read",
   "private": true,
-  "version": "1.7.182",
+  "version": "1.7.183",
   "type": "module",
   "description": "Inhouse Read - lector de PDF, ePub y MOBI, hermano de Inhouse Notes.",
   "scripts": {
-    "build:rust": "node scripts/build-rust-core.mjs",
+    "build:rust": "node scripts/build-rust-core.mjs && node scripts/build-rust-ui.mjs",
     "predev": "npm run build:rust",
     "dev": "vite",
     "prebuild": "python vendor/inhouse-services-updater/verify.py . && npm run build:rust",

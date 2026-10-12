@@ -77,6 +77,9 @@ vi.mock('../../src/js/android-file-import.js', () => ({ initAndroidFileImports:o
 let listeners = []
 beforeEach(async () => {
   vi.resetModules(); vi.clearAllMocks(); state.connected = false
+  // Wait for this test's asynchronously constructed reader, not the instance
+  // retained from the previous test while its next module is still loading.
+  state.experience = null
   state.measureFileLength = vi.fn(async () => ({ wordCount:600, wordCountVersion:2,
     wordCountComplete:true, estimatedPageCount:2, lengthSource:'text' }))
   vi.stubGlobal('Blob', NativeBlob); vi.stubGlobal('File', NativeFile)

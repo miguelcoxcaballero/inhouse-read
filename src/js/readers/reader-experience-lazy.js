@@ -1,5 +1,6 @@
 import { normalizeReadingPreferences } from './reading-preferences.js'
 import { reloadOnceAfterChunkFailure } from '../chunk-recovery.js'
+import { loadRustUI } from '../rust-ui.js'
 
 const STORAGE_KEY = 'inhouse-read-reading-preferences'
 
@@ -20,7 +21,7 @@ export function createLazyReaderExperience(reader, options) {
   let experience = null, loading = null
   const idlePanel = { open:false, close() {} }
   const idleVoice = { stop() {} }
-  const load = () => loading ||= import('./reader-experience.js').then(({ ReaderExperience }) => {
+  const load = () => loading ||= Promise.all([import('./reader-experience.js'), loadRustUI()]).then(([{ ReaderExperience }]) => {
     experience ||= new ReaderExperience(reader, options)
     return experience
   }).catch(error => { loading = null; reloadOnceAfterChunkFailure(); throw error })

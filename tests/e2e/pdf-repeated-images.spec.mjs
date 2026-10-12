@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {manyImagesPDF} from './fixtures/pdf-many-images.mjs';
-import {PDF_PAGE_FILTERS} from '../../src/js/readers/reading-preferences.js';
+import {PDF_PAGE_FILTERS} from '../../src/js/readers/reading-palette.js';
 test.use({viewport:{width:390,height:844},deviceScaleFactor:1,isMobile:true,hasTouch:true});
 for(const mode of ['text','original'])test(`32 repeated PDF photos survive every theme in ${mode} view`,async({page},testInfo)=>{
  test.setTimeout(90_000);await page.emulateMedia({reducedMotion:'reduce'});

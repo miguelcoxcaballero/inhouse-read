@@ -1,3 +1,45 @@
+# 1.7.183 — menús del lector en Rust
+
+Changelog: «Menús del lector en Rust».
+SelectMenu ejecuta creación DOM, estado, selección, teclado, foco, ARIA y
+eventos dentro de rust-ui con wasm-bindgen/web-sys. Una sola implementación
+por sesión evita registros de menús e identificadores mezclados. El host
+carga el módulo con el lector; ante error/espera mayor de 2 s conserva los
+controles anteriores. Los listeners se eliminan al liberar cada componente.
+Bindings generados fuera del inventario, dependencias y CLI fijados; descarga
+de la CLI comprobada por tamaño/SHA. Licencias incluidas en la web offline.
+
+4908/4908 unitarias, 373 archivos, 292,81 s, dos workers. Primer recorrido:
+4906/4908; conserva ambos fallos. Uno mostró que la fixture de persistencia
+esperaba la instancia del test anterior: ahora reinicia esa referencia antes
+de esperar al nuevo lector. Otro agotó 5 s bajo carga concurrente en el caso
+grande del relieve: se conserva el límite; 44/44 focales y batería completa
+posterior pasan. No se atribuye ese timeout a una causa única sin perfilado.
+E2E compilados: 30 aprobadas y seis omisiones originales (4,3 min), con
+igualdad exacta DOM/foco/ARIA/eventos, cambio reentrante y 1000 ciclos sin
+crecimiento de memoria. La app móvil compilada acredita dos menús reales
+creados y actualizados mediante exports Rust.
+
+CI182: sus seis grupos UI fallaron antes de ejecutarse porque los imports de
+la paleta llegaban al WASM aún no compilado durante --list. Originales en
+rust-reader-preferences/ci-job-*-original.log. Paleta estática separada sin
+cambiar valores ni exports públicos; una copia limpia sin WASM descubre las
+486 pruebas. No se omiten casos ni se rebajan aserciones. Los tres fallos de
+cierre/resaltado de CI180 permanecen pendientes.
+
+WASM UI local: 39693 bytes; SHA256
+cacac2f04c9dc324c751adfddd43f2f9b4fa6cead4d35db12a5d9b166b36951b.
+Los paths de panic de las dependencias pueden cambiar entre plataformas;
+la comprobación pública validará contra los bytes construidos en Pages.
+Núcleos app/decor sin cambios. Inventario: 3778 líneas Rust / 36731 JS,
+9,33 % del código propio contado; no porcentaje funcional. Evidencia:
+D:/CodexEvidence/InhouseRead-20261012/rust-ui-prototype.
+Publicación y comprobación pública pendientes; APK/updater sin cambios.
+
+Siguiente bloque en rust-reader-panel-prototype: pestañas, minirreproductor,
+temas, marcadores y retorno del lector. Compila y pasa 100 comparaciones
+exactas DOM/estado frente al original; todavía fuera de producción.
+
 # 1.7.182 — preferencias y CSS de lectura en Rust
 
 Changelog: «Preferencias del lector en Rust».

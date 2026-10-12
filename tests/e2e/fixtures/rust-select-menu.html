@@ -1,0 +1,34 @@
+<!doctype html><html><body><script type="module">
+import init,{RustSelectMenu} from '/ui.js';
+import {LegacySelectMenu as SelectMenu} from '/reference.js';
+const core=await init();
+window.run=rust=>{
+ const log=[],changes=[],OPTIONS=[{value:'',label:'AutomÃ¡tica'},{value:'es',label:'EspaÃ±ol',hint:'3 voces'},{value:'en',label:'InglÃ©s'},{value:'fr',label:'FrancÃ©s',disabled:true}];
+ const create=(label,callback)=>rust?new RustSelectMenu(label,null,callback):new SelectMenu({label,onChange:callback});
+ const menu=create('Idioma',(value,option)=>{changes.push([value,option.label]);});menu.setOptions(OPTIONS,'');document.body.append(menu.root);
+ const snapshot=label=>log.push({label,html:menu.root.outerHTML,open:menu.isOpen,value:menu.value,focus:document.activeElement?.id,changes:structuredClone(changes)});
+ const key=(node,key)=>node.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));
+ snapshot('initial');menu.trigger.click();snapshot('opened');
+ for(const k of ['ArrowDown','ArrowDown','ArrowDown','End','Home','e','Enter']){key(document.activeElement,k);snapshot(k)}
+ menu.open();key(document.activeElement,'Escape');snapshot('escape');
+ menu.open('last');key(document.activeElement,'Tab');snapshot('tab');
+ menu.setValue('en');menu.setValueText('Natural Â· Lessac');snapshot('override');
+ menu.setValue('unknown');menu.setValueText('');snapshot('unknown');
+ menu.open();menu.list.querySelector('[data-value=fr]').click();snapshot('disabled option');
+ menu.setDisabled(true);snapshot('disabled menu');menu.setDisabled(false);
+ menu.setOptions([]);menu.open();for(const k of ['ArrowUp','ArrowDown','Home','End','Enter','x','Escape'])key(menu.list,k);snapshot('empty');
+ menu.setOptions(OPTIONS,'es');menu.open();document.body.click();snapshot('outside');
+ const second=create('Voz',()=>{});second.setOptions(OPTIONS,'en');document.body.append(second.root);menu.open();second.open();snapshot('other opens');second.close();
+ menu.root.remove();second.root.remove();if(rust){menu.free();second.free();}
+ // The callback can synchronously replace the menu while choose() is active.
+ let nested; nested=create('Reentrant',()=>nested.setOptions([{value:'z',label:'Refreshed'}],'z'));nested.setOptions(OPTIONS,'');document.body.append(nested.root);nested.open();nested.choose('es');
+ log.push({label:'reentrant',value:nested.value,text:nested.valueNode.textContent,open:nested.isOpen});nested.root.remove();if(rust)nested.free();
+ return log;
+};
+window.memory=()=>{
+ for(let i=0;i<20;i++){const m=new RustSelectMenu('Voice',null,()=>{});m.setOptions([{value:'a',label:'Ana'}],'a');m.free();}
+ const before=core.memory.buffer.byteLength;
+ for(let i=0;i<1000;i++){const m=new RustSelectMenu('Voice',null,()=>{});m.setOptions([{value:'a',label:'Ana'}],'a');document.body.append(m.root);m.open();m.close();m.root.remove();m.free();}
+ return{before,after:core.memory.buffer.byteLength};
+};
+</script></body></html>

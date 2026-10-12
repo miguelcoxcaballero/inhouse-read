@@ -1,0 +1,4 @@
+The Rust DOM module uses wasm-bindgen 0.2.104, js-sys 0.3.81 and web-sys
+0.3.81 from https://github.com/wasm-bindgen/wasm-bindgen, under either
+the MIT or Apache-2.0 license. Both license texts accompany this notice.
+Bindings are generated from the pinned Cargo.lock and wasm-bindgen CLI.
