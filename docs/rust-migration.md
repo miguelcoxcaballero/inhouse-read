@@ -1,10 +1,10 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.190: resaltado y cálculo del seguimiento de voz en Rust.
-El seguimiento considera todas las líneas y el módulo sigue disponible si
-su inicialización termina después del plazo de apertura. 5081 unitarias;
-siete E2E de PDF más cinco de voz, mapas y carga tardía, aprobados.
-Inventario: 4336 líneas Rust / 36867 JS, 10,52 %; excluye dependencias, bindings
+Última entrega 1.7.191: comparación/alternancia de marcadores y adición al
+historial en Rust. Conserva referencias y límites; serializa una sola vez
+el destino. 5085 unitarias y 13 E2E de lectura, voz, citas, historial,
+reapertura y exports reales aprobados. La normalización sigue en JavaScript.
+Inventario: 4377 líneas Rust / 36884 JS, 10,61 %; excluye dependencias, bindings
 generados, pruebas, CSS/HTML y Android. No mide funciones terminadas.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 

@@ -10,6 +10,7 @@ import { AUTO, languageOptions, voiceOptions } from './voice-menus.js'
 import { neuralEngine, neuralVoiceList } from './neural-runtime.js'
 import { NeuralVoicePicker } from './neural-picker.js'
 import { clonePlace, cleanPlaces, cleanQuotes } from './reading-state.js'
+import { isBookmarked, toggleBookmark, prependHistory } from './reading-places.js'
 import { displayBookTitle, normalizeBookAuthor } from '../book-title.js'
 
 const STORAGE_KEY = 'inhouse-read-reading-preferences'
@@ -279,7 +280,7 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
     this.view.syncReturnLayout()
   }
   updateBookmarkButton() {
-    const marked = this.bookmarks.some(x => JSON.stringify(x.locator) === JSON.stringify(this.location.locator) && Math.abs(x.fraction-this.location.fraction)<.0001)
+    const marked = isBookmarked(this.bookmarks,this.location)
     this.view.updateBookmarkButton(marked)
   }
   setPreference(key, value, { restart = true } = {}) {
@@ -375,7 +376,7 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
     return this.queueNavigation(async isCurrent => {
       this.voice.browse(); this.error('')
       const origin = { ...clonePlace(this.location), label:this.label(this.location), createdAt:Date.now() }
-      this.history = [origin, ...this.history].slice(0,20)
+      this.history = prependHistory(this.history,origin)
       await this.savePlaces()
       if (!isCurrent()) return
       this.renderPlaces()
@@ -404,10 +405,7 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
     })
   }
   async addBookmark() {
-    const duplicate = this.bookmarks.some(x => JSON.stringify(x.locator) === JSON.stringify(this.location.locator) && Math.abs(x.fraction - this.location.fraction) < .0001)
-    if (duplicate) this.bookmarks = this.bookmarks.filter(x => !(JSON.stringify(x.locator) === JSON.stringify(this.location.locator) && Math.abs(x.fraction-this.location.fraction)<.0001))
-    else this.bookmarks.unshift({ ...clonePlace(this.location), label:this.label(this.location), createdAt:Date.now() })
-    this.bookmarks = this.bookmarks.slice(0,100)
+    this.bookmarks = toggleBookmark(this.bookmarks,this.location,()=>({ ...clonePlace(this.location), label:this.label(this.location), createdAt:Date.now() }))
     await this.savePlaces(); this.renderPlaces(); this.showPlaceTab('bookmarks')
   }
   async addQuote() {

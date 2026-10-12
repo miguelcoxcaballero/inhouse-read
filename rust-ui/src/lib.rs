@@ -1,3 +1,4 @@
+mod reading_places;
 mod speech_highlight;
 mod speech_map;
 mod speech_pages;

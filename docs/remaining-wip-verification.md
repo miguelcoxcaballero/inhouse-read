@@ -1,3 +1,28 @@
+# 1.7.191 — marcadores e historial en Rust
+
+Changelog: «Marcadores e historial en Rust».
+Rust comprueba y alterna marcadores, retira todos los duplicados y limita el
+historial a veinte entradas. Conserva referencias de registros, mutación de
+la lista al insertar, límites de cien marcadores, tolerancia y semántica JSON
+de los localizadores. La creación de etiquetas/fechas y la normalización de
+registros guardados permanecen en el host. No se integra el prototipo lento
+de normalización anterior. Alternativa JS disponible si falta el módulo.
+
+5085/5085 unitarias, 380 archivos, 349,05 s. 2000 operaciones comparan las
+tres funciones, referencias, llamadas al constructor y mutaciones. Errores
+de creación/JSON no dejan estado retenido; 1000 ciclos sin crecimiento WASM.
+13 E2E aprobados en 2 min: saltos, regreso, citas, marcadores, reapertura,
+temas, página estable, controles de voz, listas y exports reales compilados.
+Benchmark Chromium CPU×4 sobre cien marcadores: mediana JS/Rust 0,146/0,141 ms
+con localizadores cortos; 0,492/0,331 ms con localizadores largos. Nueve rondas;
+la diferencia corta está en el ruido. No son tiempos de navegación completa.
+
+Inventario: 4377 Rust / 36884 JavaScript, 10,61 % de líneas propias.
+WASM UI local 281945 bytes, SHA256
+246d2e37803d55e823be124d11e3e023b746f11d9831a8ed07bf72cc5f9cab8a.
+App/decor y APK/updater sin cambios. Verificación pública pendiente.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-reading-places-prototype.
+
 # 1.7.190 — resaltado, seguimiento y carga tardía de Rust
 
 Changelog: «Resaltado Rust y recuperación de carga».
@@ -27,7 +52,15 @@ Se mantienen verificación ABI y cooldown tras un error real.
 Inventario: 4336 Rust / 36867 JavaScript, 10,52 % de líneas propias.
 WASM UI local 278816 bytes, SHA256
 221cd1b9d1c15f0457d3449aeb7bcee828118d1f20bd1cc7d5de44ac2f6dfcb4.
-App/decor y APK/updater sin cambios. Verificación pública pendiente.
+App/decor y APK/updater sin cambios. Publicado fdd2398; deploy 38260168821
+y Pages 38260313827 aprobados, Pages 669f46c. 205 comprobaciones públicas,
+dos perfiles con bytes exactos, 30 casos PCM/marcas, APK y loader reales.
+UI público 278800 bytes, SHA256
+bc2431cfd622befa4b95a4cc16561c4a6761254ecb3935f0a6de7388390ae1d9.
+Pruebas públicas de mapa, resaltado y carga retenida: 3/3, 18 s. Android API36
+ejecuta web1.7.190 con APK1.1.15/28: Lessac a 2×, 10,29 s, siete unidades
+terminadas, proceso5957 estable, sin FATAL EXCEPTION. No es un móvil físico.
+Evidencia publicada: published-1791814028573, public-*.log y native-ui190.json.
 CI187 PDF original y traza pública189 fallida se conservan; el caso de Linux
 todavía necesita el resultado de CI190. No se alteran sus aserciones ni plazos.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-speech-highlight-prototype.
