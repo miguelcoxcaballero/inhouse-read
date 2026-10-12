@@ -1,3 +1,30 @@
+# 1.7.199 — apertura y cierre del lector en Rust
+
+Changelog: «Apertura del lector en Rust».
+Rust coordina preparación, actualización de título/autor, apertura del panel,
+cierre explícito de la voz y reinicio del lector. Conserva registros y bytes
+por referencia y el orden síncrono anterior al primer await. Las anotaciones
+se aplican después de preferencias; la liberación del motor sólo sucede al
+cerrar explícitamente la voz. El helper conserva llamadas con un host parcial.
+
+200secuencias comparan efectos síncronos/finales, errores y DOM con el original.
+Identificadores UTF-16, asignación parcial fallida y liberación están cubiertos.
+119focales y5180/5180unitarias completas,388archivos,326,65s,dos workers.
+12E2E aprobados en1,7min: página guardada, marcadores, punto de regreso,
+título editado y voces reales Davefx PDF/EPUB. Memoria WASM estable tras200ciclos.
+Inventario4925Rust/37087JS=11,72% de líneas propias, no porcentaje funcional.
+UI local384556bytes,SHA256
+69aa60fe4253d5a26f5d8ff24dec86d939aabd8aae0a6c12742f6a05d7677448.
+App/decor, APK y updater sin cambios. Publicación pendiente.
+
+CI198 volvió a superar5s en la comparación de ubicaciones:5174/5175,
+original ci198-unit-original.log conservado en rust-voice-flow-prototype.
+La configuración de Vitest limita ahora también en CI la concurrencia a dos
+workers, igual que la batería completa local. No se cambian casos, aserciones
+ni plazos; se evita ejecutar simultáneamente más fixtures DOM/WASM pesados.
+Su efecto en CI queda pendiente de la ejecución remota; no se declara verde.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-reader-lifecycle-prototype.
+
 # 1.7.198 — idiomas y selección de voces en Rust
 
 Changelog: «Idiomas y voces en Rust».
@@ -26,7 +53,14 @@ de pruebas, no acredita aceleración del producto. CI196/197 originales guardado
 Inventario4851Rust/37058JS,11,58% de líneas propias, no funcional.
 WASM UI local374033bytes,SHA256
 084d433b8ea8434366deb51bf827e977bfc044494af5f08acec0953b52b7ead8.
-App/decor, APK y updater sin cambios. Publicación pendiente. CI completo aún
+App/decor, APK y updater sin cambios. Publicado2fe18ed,deploy38275195952 y
+Pages38275336332 aprobados, Pages5d963c1. Recursos HTTP/bytes/SHA, dos perfiles,
+treinta casosPCM/marcas y APK/loader reales aprobados. UI público373993bytes,
+SHA256 1c1ee314941ff77d31358c7a0db07ff68b6e6c9f533b7179e011aca2ae76d18d.
+E2E público1/1 aprobado en8,1s. Android API36 confirma web198/APK1.1.15/28,
+Lessac2×11,06s, ocho fragmentos terminados y nueve iniciados, proceso10823
+estable, sin FATAL. Evidencia published-1791821487616 y native-ui198.json.
+CI completo aún
 tiene las incidencias documentadas más abajo; no se declara totalmente verde.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-flow-prototype.
 

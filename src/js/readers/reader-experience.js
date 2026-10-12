@@ -1,3 +1,4 @@
+import {ReaderLifecycle,closeReaderVoice} from './reader-lifecycle.js'
 import {VoiceFlow} from './voice-flow.js'
 import {PreferenceFlow} from './preference-flow.js'
 import { readerPanelMarkup, readerIcon } from './reader-interface.js'
@@ -6,18 +7,18 @@ import { ReadingVoice } from './reading-voice.js'
 import { SelectMenu } from './select-menu.js'
 import { ReaderView } from './reader-view.js'
 import { ReaderLists } from './reader-lists.js'
-import { neuralEngine } from './neural-runtime.js'
 import { NeuralVoicePicker } from './neural-picker.js'
-import { clonePlace, cleanPlaces, cleanQuotes } from './reading-state.js'
+import { clonePlace } from './reading-state.js'
 import { isBookmarked } from './reading-places.js'
 import { ReaderNavigation } from './reader-navigation.js'
 import { ReaderActions } from './reader-actions.js'
 import { ReaderControls } from './reader-controls.js'
-import { displayBookTitle, normalizeBookAuthor } from '../book-title.js'
+import { displayBookTitle } from '../book-title.js'
 
 const STORAGE_KEY = 'inhouse-read-reading-preferences'
 
 export class ReaderExperience {
+  lifecycle = new ReaderLifecycle(this)
   voiceFlow = new VoiceFlow(this)
   preferenceFlow = new PreferenceFlow(this)
   actions = new ReaderActions(this)
@@ -127,42 +128,10 @@ export class ReaderExperience {
   }
   /** The title written on the spine or the author changed (in the shelf's
    * editor, maybe while this book was already prepared): show them here too. */
-  refreshNames(bookId, fields) {
-    if (!this.book || String(this.book.id) !== String(bookId)) return
-    Object.assign(this.book, fields)
-    const title = displayBookTitle(this.book)
-    const author = normalizeBookAuthor(this.book.author) || normalizeBookAuthor(this.book.metadata?.creator)
-    this.view.setDocumentInfo(title,author,`${title}${author ? ` · ${author}` : ''}
-${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`,true)
-  }
-
-  async open(record) {
-    this.cancelNavigation()
-    this.book = record
-    this.history = cleanPlaces(record.readingHistory)
-    this.bookmarks = cleanPlaces(record.bookmarks, 100)
-    this.quotes = cleanQuotes(record.quotes)
-    const title = displayBookTitle(record)
-    const author = normalizeBookAuthor(record.author) || normalizeBookAuthor(record.metadata?.creator)
-    this.view.setDocumentInfo(title,author,`${title}${author ? ` · ${author}` : ''}\n${record.format || 'Documento'} · ${this.formatSize(record.sizeBytes)}`,false)
-    this.view.configureFormat(this.reader.format?.engine === 'pdf',this.reader.pageCount || 1)
-    this.neuralPicker.warm() // the engine module (needed synchronously at the first Play tap) loads while the book settles
-    this.renderPlaces(); this.renderToc(); await this.applyPreferences(); this.relocate()
-    for (const quote of this.quotes) this.reader.addQuoteAnnotation(quote)
-  }
-  // Explicit book close only; no await, preload, visibility or pause hook.
-  closeVoice() {
-    this.neuralPicker?.cancelWarm?.()
-    this.voice.stop()
-    try { neuralEngine()?.release?.() } catch { /* playback is already stopped */ }
-  }
-  reset() {
-    this.neuralPicker?.cancelWarm?.()
-    this.cancelNavigation(); this.voice.stop(); this.keepSearchHits = false; this.endSearch(); this.panel.close(); this.book = null
-    this.returnButton.hidden = true; this.syncReturnLayout(); this.screen.classList.remove('reader-kids-mode')
-    const kids = this.panel.querySelector('[data-kids]')
-    kids.setAttribute('aria-pressed','false'); kids.setAttribute('aria-label','Activar modo infantil')
-  }
+  refreshNames(bookId,fields) { return this.lifecycle.refreshNames(bookId,fields) }
+  open(record) { return this.lifecycle.open(record) }
+  closeVoice() { return closeReaderVoice(this) }
+  reset() { return this.lifecycle.reset() }
   relocate() {
     this.location = {...clonePlace(this.reader.location),section:this.reader.location.section || '',page:this.reader.location.page || ''}
     const label = this.label(this.location)
@@ -174,14 +143,7 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`,t
     this.updateBookmarkButton()
   }
   label(place) { return place.locator?.kind === 'pdf-page' ? `Página ${place.locator.value}${this.reader.pageCount ? ` de ${this.reader.pageCount}` : ''}` : place.section ? `${place.section}${place.page ? ` · Página ${place.page}` : ''}` : `${Math.round(place.fraction * 100)} % del libro` }
-  show(tab) {
-    if (this.screen.getAttribute('aria-busy') === 'true') return
-    this.showTab(tab)
-    if (tab === 'audio') { this.populateVoices(); this.neuralPicker.refresh() }
-    if (!this.panel.open) this.panel.showModal()
-    this.updateMiniPlayer(); this.resizePanel()
-    this.panel.querySelector('[data-close]').focus({preventScroll:true})
-  }
+  show(tab) { return this.lifecycle.show(tab) }
   showTab(name) {
     if (name !== 'search') this.endSearch()
     this.view.showTab(name)

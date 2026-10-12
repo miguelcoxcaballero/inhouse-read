@@ -1,3 +1,4 @@
+mod reader_lifecycle;
 mod voice_flow;
 mod preference_flow;
 mod reader_controls;
