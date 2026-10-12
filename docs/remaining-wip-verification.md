@@ -39,8 +39,26 @@ Decoración, paquete Android, firma, updater y modelos sin cambios.
 Primera batería: 4879 aprobadas, un fallo en el arnés VM hebreo: eliminaba
 los imports y no inyectaba las nuevas funciones de tempo. Se añaden las
 funciones reales al arnés; se conserva unit-full.log/json sin reemplazarlo.
-Batería final y verificación pública pendientes. Los fallos anteriores de CI
-178 (UI2/UI3) siguen conservados; no se presentan como corregidos por este audio.
+Batería final: 4880/4880, 369 archivos, 313,95 s. Publicación 36b814c;
+Pages 21ac2a5, deploy 38238360348 y Pages 38238444241 completados.
+156 comprobaciones de HTTP/tamaño/SHA correctas sobre el despliegue real,
+dos perfiles nuevos móvil/escritorio sin errores y 30 comparaciones de PCM
+y marcas contra el WASM público. Evidencia: published-1791802112806.
+APK descargada 1.1.15/28, SHA256
+02960e3322bdad2e26041d2ef57b0fd5a02f3528c4b60b876e7955ae941cafb5:
+loader de 2107 bytes, paquete/firma y catálogos sin cambios.
+La APK real mostró v1.7.180 y reprodujo Lessac en Android API36 a
+1,25/1,5/2×: 11,88/11,17/10,35 segundos acumulados observados, 5/5/7
+frases completas, mismo proceso 4685, sin FATAL EXCEPTION; capturas
+confirman la velocidad seleccionada. native-rate.json/log y logcat íntegro.
+Se conservan intentos fallidos: dos cierres del proceso QEMU con SwiftShader
+(0xc0000005), arranque UI/decodificación del arnés y una condición del arnés
+que exigía 10 segundos en un solo epoch aunque al cambiar página se reinicia
+ese contador. La prueba final suma máximos por epoch de la misma sesión.
+El emulador con GPU host/Vulkan desactivado completó las tres velocidades.
+CI 38238360303 todavía en curso: unitarias, neural engine/reading/languages
+y UI4/5 aprobadas a la consulta; no se declara toda la CI verde. Los fallos
+anteriores de CI178 (UI2/UI3) siguen conservados.
 
 # 1.7.179 — sombras de contacto en Rust
 
