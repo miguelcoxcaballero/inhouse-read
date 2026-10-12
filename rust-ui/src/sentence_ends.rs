@@ -21,7 +21,7 @@ fn list_number(text:&[u16])->bool{
  valid&&text[a..b].iter().all(|c|matches!(c,46|41|93))
 }
 struct Candidate{end:usize,start:usize,run_end:usize,hard:bool}
-struct Scan<'a>{text:&'a[u16],properties:Function,lower:Function,cache:HashMap<u32,u8>}
+struct Scan<'a>{text:&'a[u16],base:usize,properties:Function,lower:Function,cache:HashMap<u32,u8>}
 impl Scan<'_>{
  fn flags(&mut self,code:u32)->Result<u8,JsValue>{
   if code<128{return Ok(match code{48..=57=>3,65..=90=>9,97..=122=>5,_=>0})}
@@ -44,7 +44,7 @@ impl Scan<'_>{
   let mut lead=n;while lead<text.len()&&opener(text[lead]){lead+=1}
   let next=if lead<text.len(){self.flags(text[lead]as u32)?}else{0};
   let word_start=self.word_start(from,c.start)?;let length=c.start-word_start;
-  let lower=self.lower.call2(&JsValue::UNDEFINED,&(word_start as u32).into(),&(c.start as u32).into())?.as_string().unwrap_or_default();
+  let lower=self.lower.call2(&JsValue::UNDEFINED,&((self.base+word_start)as u32).into(),&((self.base+c.start)as u32).into())?.as_string().unwrap_or_default();
   let abbreviation=ABBREVIATIONS.contains(lower.as_str());let period=run==[46];
   if next&4!=0{
    if end>c.run_end||dash(text[n])||run.windows(2).any(|v|v==[46,46])||run.contains(&0x2026){return Ok(false)}
@@ -61,8 +61,13 @@ impl Scan<'_>{
 #[wasm_bindgen]
 pub fn speech_sentence_ends(text:&[u16],breaks:JsValue,properties:Function,lower:Function)->Result<JsValue,JsValue>{
  if !Array::is_array(&breaks){return Ok(JsValue::UNDEFINED)}
- let mut candidates=Vec::new();
- for value in Array::from(&breaks).iter(){let Some(end)=value.as_f64()else{return Ok(JsValue::UNDEFINED)};if !end.is_finite()||end<0.0||end.fract()!=0.0||end>text.len()as f64{return Ok(JsValue::UNDEFINED)}candidates.push(Candidate{end:end as usize,start:0,run_end:0,hard:true});}
+ let mut typed=Vec::new();
+ for value in Array::from(&breaks).iter(){let Some(end)=value.as_f64()else{return Ok(JsValue::UNDEFINED)};if !end.is_finite()||end<0.0||end.fract()!=0.0||end>text.len()as f64{return Ok(JsValue::UNDEFINED)}typed.push(end as u32);}
+ let result=sentence_ends_native(text,&typed,properties,lower,0)?;
+ let values=Array::new();for end in result{values.push(&end.into());}Ok(values.into())
+}
+pub(crate) fn sentence_ends_native(text:&[u16],breaks:&[u32],properties:Function,lower:Function,base:usize)->Result<Vec<u32>,JsValue>{
+ let mut candidates:Vec<Candidate>=breaks.iter().map(|end|Candidate{end:*end as usize,start:0,run_end:0,hard:true}).collect();
  let mut at=0;while at<text.len(){
   if !terminator(text[at]){at+=1;continue}
   let start=at;while at<text.len()&&terminator(text[at]){at+=1}let run_end=at;let mut end=at;
@@ -70,7 +75,7 @@ pub fn speech_sentence_ends(text:&[u16],breaks:JsValue,properties:Function,lower
   candidates.push(Candidate{end,start,run_end,hard:false});
  }
  candidates.sort_by_key(|v|v.end);
- let mut scan=Scan{text,properties,lower,cache:HashMap::new()};let mut from=0;let ends=Array::new();
- for candidate in candidates{if candidate.end<=from{continue}if candidate.hard||scan.ends(from,&candidate)?{ends.push(&(candidate.end as u32).into());from=candidate.end}}
- if from<text.len(){ends.push(&(text.len()as u32).into());}Ok(ends.into())
+ let mut scan=Scan{text,base,properties,lower,cache:HashMap::new()};let mut from=0;let mut ends=Vec::new();
+ for candidate in candidates{if candidate.end<=from{continue}if candidate.hard||scan.ends(from,&candidate)?{ends.push(candidate.end as u32);from=candidate.end}}
+ if from<text.len(){ends.push(text.len()as u32);}Ok(ends)
 }

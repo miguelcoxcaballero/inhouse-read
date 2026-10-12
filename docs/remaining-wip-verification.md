@@ -1,3 +1,48 @@
+# 1.7.219 — planificación conjunta del audiolibro en Rust
+
+Changelog: «Planificación de voz con menos copias».
+Rust mantiene el texto normalizado en un único buffer durante la separación
+de frases, la división por cláusulas y el cálculo de marcas de página.
+Reutiliza exactamente speech_fragments y speech_normalize del núcleo,
+compilados desde sus fuentes originales, sin modificar el núcleo publicado.
+Los callbacks Unicode/minúsculas siguen usando el navegador. Los registros
+de salida conservan texto, offsets, marcas e identidad compartida de frase.
+Los metadatos incompatibles mantienen el camino anterior.
+
+2593 escenarios y otros 2593 ciclos comparados, incluyendo reanudación,
+decimales, Unicode incompleto, inicio por cláusula y cruces de varias páginas.
+Paridad completa adicional con es-ES, tr-TR y lt-LT. Control positivo 0→4→0;
+0 referencias y 1376256 bytes de capacidad estable tras los ciclos.
+191 focalizadas, 5930 unitarias completas y 30 E2E aprobados.
+La observación PDF exige speech_plan; sentence_ends se ejecuta internamente,
+y su export conserva las 74 regresiones directas. Se mantienen todos los
+textos, PCM, marcas y plazos de las pruebas de lectura.
+
+Chromium 390×844 con CPU de escritorio ×4, 13 rondas alternadas de tres tandas:
+plan de capítulo JS/orquestación anterior 6.43, Rust 3.50 ms;
+100 entradas mixtas 7.13/7.27 ms, sin mejora significativa.
+Incluye normalización nativa publicada, callbacks, copias y objetos finales.
+No mide un teléfono físico ni el arranque completo de voz. El primer ensayo
+se conserva en browser-benchmark-first.json.
+
+El prototipo separado rust-speech-mask-prototype permanece sin integrar:
+sus rutas generales eran más lentas. Se conservan los ensayos first,
+line-locale, cached-lower, filled-input, scratch y flat-ranges. La variante
+de minúsculas agrupadas cambió resultados con lt-LT; locale-diagnostic.log
+conserva el fallo. La corrección por línea pasó 3801 casos en tres locales,
+pero no resuelve el coste general. No se presenta ese prototipo como publicado.
+
+CI217/38311271291 vuelve a fallar al cerrar libros, en UI2/115017313968,
+tanto en la ruta alineada como en la compatible. Los fallos iniciales y
+reintentos se conservan en rust-voice-order-prototype/ci217-ui2-original.log
+y ci217-ui2-artifact. Continúa pendiente; no se amplían sus límites de 8 s.
+Esta entrega no acredita la CI completa ni una corrección de esos cierres.
+
+Inventario: 6610 líneas Rust/37525 JavaScript = 14.98%, no funcional.
+UI local 744862 bytes, SHA256 e5cb627b2ee90230c254c74e67e60f2fbbb3d0c2a43ccd0b6df6f7557aaec988.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-speech-plan-prototype.
+
 # 1.7.218 — límites de frase en Rust
 
 Changelog: «Separación de frases en Rust».
@@ -29,7 +74,17 @@ rust-speech-mask-prototype/browser-benchmark-first.json.
 
 Inventario: 6565 líneas Rust/37497 JavaScript = 14.9%, no funcional.
 UI local 735654 bytes, SHA256 33b1e16d2bb1e3c01043d6cbec70034abdb6c830ee9eb2b873a6f6bfa1298227.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada: e99d28c1a5fde203d60f28505de41ccdf12b9324.
+Deploy 38313579618/Pages 38313687200 completos; Pages ddf9dc2d837a169242f656baf5587b40e2f5efdd.
+UI pública 735622 bytes, SHA256 7af96401736b97f49cc7aba0cfe4a48257dc07f840e9c0a4d6e6051831cd64e4.
+published-1791842396151: recursos HTTP/tamaño/SHA, dos perfiles,
+contador positivo 480→498→480 con 1000 preparaciones/100 menús,
+30 casos PCM/tempo y APK real loader 2107 bytes correctos.
+Dos E2E públicos PDF/Davefx aprobados, sin reintentos.
+APK 1.1.15/28 muestra web 218: Lessac 2×, 12.05s,
+8 finales/9 inicios, PID 22438 estable y sin FATAL.
+CI 38313579661 se registra aparte; no se presupone aprobado.
+Updater sin modificaciones.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-sentence-ends-prototype.
 
 # 1.7.217 — ordenación del catálogo en Rust

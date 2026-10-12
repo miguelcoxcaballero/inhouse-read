@@ -1,9 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.218: límites de frase en Rust.
-5876 unitarias completas, 137 focalizadas y 30 E2E aprobados.
-Inventario: 6565 líneas Rust/37497 JS, **14.9%**; no mide funciones terminadas.
-1.7.217 pública y APK real verificados; CI se registra por separado.
+Última entrega 1.7.219: planificación conjunta de voz en Rust.
+5930 unitarias completas, 191 focalizadas y 30 E2E aprobados.
+Inventario: 6610 líneas Rust/37525 JS, **14.98%**; no mide funciones terminadas.
+1.7.218 pública y APK real verificados; CI se registra por separado.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout

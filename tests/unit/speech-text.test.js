@@ -5,11 +5,11 @@ import { normalizeSpeech, planSpeech, speechChunks, speechSentences } from '../.
 
 const split = text => speechSentences(text).map(sentence => text.slice(sentence.start, sentence.end))
 
-const runtime=vi.hoisted(()=>({ui:null}));let boundaries=0
+const runtime=vi.hoisted(()=>({ui:null}));let boundaries=0,plans=0
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
-const observedUI={...rustUI,speech_sentence_ends:(...args)=>{boundaries++;return rustUI.speech_sentence_ends(...args)}}
+const observedUI={...rustUI,speech_plan:(...args)=>{plans++;return rustUI.speech_plan(...args)},speech_sentence_ends:(...args)=>{boundaries++;return rustUI.speech_sentence_ends(...args)}}
 beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
-afterAll(()=>expect(boundaries).toBeGreaterThan(0))
+afterAll(()=>{expect(boundaries).toBeGreaterThan(0);expect(plans).toBeGreaterThan(0)})
 describe.each(['legacy','rust'])('speech text through %s',engine=>{
 beforeEach(()=>{runtime.ui=engine==='rust'?observedUI:null})
 describe('sentence boundaries', () => {

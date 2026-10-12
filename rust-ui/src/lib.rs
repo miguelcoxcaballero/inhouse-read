@@ -1,3 +1,8 @@
+#[path="../../rust-core/src/speech_normalize.rs"]
+mod speech_normalize;
+#[path="../../rust-core/src/speech_fragments.rs"]
+mod speech_fragments_core;
+mod speech_plan;
 mod sentence_ends;
 mod voice_order;
 mod picker_owned;
