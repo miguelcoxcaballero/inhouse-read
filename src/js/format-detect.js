@@ -5,6 +5,7 @@
 // El motor de lectura solo necesita distinguir dos rutas: 'pdf' (PDF.js) o
 // 'foliate' (foliate-js, que ya hace su propia detección interna de
 // epub/mobi/azw3/fb2/cbz). Exponemos además una `label` legible para la UI.
+import { rustBookFormat } from './book-format-wasm.js'
 
 export const ENGINE = {
   PDF: 'pdf',
@@ -51,6 +52,14 @@ export function sniffBytes(bytes) {
   if (view[0] === 0x50 && view[1] === 0x4b && view[2] === 0x03 && view[3] === 0x04) {
     return { engine: ENGINE.FOLIATE, label: 'EPUB', confidence: 'medium' }
   }
+
+  // The two fixed prefixes above are cheaper than crossing the WASM boundary.
+  // Rust scans all remaining headers without constructing binary strings or
+  // allocating slices for PalmDOC and raw FB2. Cold cores retain the fallback.
+  const code = rustBookFormat(view)
+  if (code === 0) return { engine: ENGINE.UNKNOWN, label: null, confidence: 'none' }
+  if (code === 3) return { engine: ENGINE.FOLIATE, label: 'MOBI', confidence: 'high' }
+  if (code === 4) return { engine: ENGINE.FOLIATE, label: 'FB2', confidence: 'medium' }
 
   // PalmDOC/MOBI: identificador de tipo en el offset 60 del header PDB.
   if (view.length >= 68) {

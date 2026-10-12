@@ -1,6 +1,8 @@
 //! Independent numeric kernels. Host owns all bounded allocations.
 mod abi;
 #[cfg(feature = "app")]
+mod book_format;
+#[cfg(feature = "app")]
 mod speech_tempo;
 #[cfg(feature = "app")]
 mod font;

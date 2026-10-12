@@ -1603,3 +1603,19 @@ transferibles y libera el arena. Fallback JS equivalente para núcleo frío/anti
 WASM app 350219 bytes; decoración idéntica. Ver evidencia y límites de las
 mediciones en remaining-wip-verification.md. UI y motores ONNX no se han
 migrado por este cambio; no se afirma que toda la aplicación sea Rust.
+
+## 1.7.181 — reconocimiento de cabeceras
+
+`sniff_book_format` clasifica PalmDOC/MOBI y FB2 sin construir strings binarios.
+El host lee y copia como máximo 200 bytes. PDF y ZIP conservan sus comprobaciones
+directas en JS: cruzar la frontera WASM para esos prefijos era más lento.
+Se conservan las prioridades de extensión, firma y motor; fallback original
+cuando el núcleo está frío o es antiguo. No hay heap dentro del kernel.
+18 pruebas focales comparan 4000 entradas generadas, firmas truncadas, vistas
+con offset, límites, lecturas Blob y memoria. La app compilada importa un FB2
+real y muestra sus párrafos utilizando el kernel instrumentado.
+Medianas de nueve rondas, navegador con CPU×4, copia/puente/objeto incluidos:
+MOBI 1,58→0,56 µs, FB2 4,92→0,70 µs, desconocido 29,78→1,40 µs.
+PDF/ZIP mantienen el mismo camino y quedan en el suelo de medición (~0,08 µs).
+Son tiempos de clasificación de cabecera, no tiempos de apertura de libros.
+WASM app 351121 bytes; decoración y audio sin modificaciones.

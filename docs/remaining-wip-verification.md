@@ -1,3 +1,24 @@
+# 1.7.181 — cabeceras de libros en Rust
+
+Changelog: «Reconocimiento de archivos en Rust».
+Se integra sniff_book_format para PalmDOC/MOBI, FB2 y cabeceras desconocidas,
+con lectura/copia máxima de 200 bytes. Se conservan extensión, prioridad,
+motor y fallback original. Los prefijos PDF/ZIP mantienen su camino directo,
+más barato que cruzar a WASM. Sin asignaciones internas en el kernel.
+18/18 focales; 4000 cabeceras generadas comparadas con el original congelado,
+firmas parciales, vistas desplazadas, memoria estable y lectura limitada Blob.
+2/2 E2E: benchmark completo CPU×4 y FB2 importado en la app compilada móvil,
+con ambos párrafos visibles y uso del kernel comprobado. Nueve rondas:
+MOBI 1,58→0,56 µs, FB2 4,92→0,70 µs, desconocido 29,78→1,40 µs.
+PDF/ZIP ~0,08 µs; memoria estable. No implica acelerar por esos factores
+la apertura del libro: solo la clasificación de la cabecera.
+WASM 351121 bytes, SHA256
+0a5165f43b2d3ac27eca3e544e9183630856e80d24c2dd5c60f1b696ccbe0eb9.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-book-format.
+Batería completa: 4885/4885, 370 archivos, 291,43 s. Build aprobado.
+Publicación y comprobación de artefactos reales pendientes al escribir esto.
+Audio, decoración, APK, firma, updater y catálogos sin modificaciones.
+
 # 1.7.180 — frases completas a velocidades altas
 
 Changelog: «Evita palabras omitidas al acelerar voces».
