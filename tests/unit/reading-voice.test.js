@@ -366,3 +366,22 @@ describe('reading voice selection',()=>{
     expect(say(speak)[3]).toBe(ES);expect(browserSpeak).not.toHaveBeenCalled();voice.stop()
   })
 })
+
+describe('Play after browsing while paused or stopped',()=>{
+ for(const action of ['pause','stop']) it(action+' starts at the first complete visible sentence',async()=>{
+  const speak=vi.fn();transport(speak);let moved=false;
+  const text='Esta frase venía de la página anterior. Primera frase completa. Otra frase.';
+  const getSpeechSource=vi.fn(async()=>moved?{text,start:text.indexOf('venía')}:{text:'Posición antigua. Otra.',start:0});
+  const reader={location:{page:1},getSpeechSource,stopSpeech:vi.fn(),browseSpeech:vi.fn()};
+  const voice=new ReadingVoice(reader);await voice.play();voice[action]();
+  await voice.continueFromPage(async()=>{moved=true;reader.location={page:2}});
+  await voice.play();expect(say(speak)[0]).toBe('Primera frase completa.');
+  expect(getSpeechSource).toHaveBeenLastCalledWith({visible:true,completeSentences:true});
+  expect(voice.browsing).toBe(false);voice.stop();
+ });
+ it('pause without changing page resumes the same sentence',async()=>{
+  const speak=vi.fn();transport(speak);const reader={location:{page:1},getSpeechSource:vi.fn(async()=>({text:'Primera. Segunda.',start:0}))};
+  const voice=new ReadingVoice(reader);await voice.play();voice.index=1;voice.pause();await voice.play();
+  expect(say(speak)[0]).toBe('Segunda.');expect(reader.getSpeechSource).toHaveBeenCalledOnce();voice.stop();
+ });
+});

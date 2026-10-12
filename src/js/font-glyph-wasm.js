@@ -15,3 +15,18 @@ export function rustGlyphMask(core,raw,width,rows,stride=width){
   return{width:w,height:h,area,mask:new Uint8Array(core.memory.buffer,pointer+maskOffset,w*h).slice(),perimeter:points.slice(0,np),foreground:points.slice(np,np+nf),background:points.slice(np+nf)};
  }catch{return undefined;}finally{if(pointer)core.free_f64(pointer,length);}
 }
+
+/** Prepare font-matching planes together. Callers keep the original image. */
+export function rustPrepareCoverPixels(core,raw,width,height,includeEdges=true){
+ if(typeof core?.font_prepare_pixels!=='function'||!core.memory||typeof core.alloc_f64!=='function'||typeof core.free_f64!=='function'
+  ||!(raw instanceof Uint8Array||raw instanceof Uint8ClampedArray)||![width,height].every(Number.isSafeInteger)
+  ||width<1||height<1||width>2048||height>2048||width*height>1048576||raw.length<width*height*4)return null;
+ const n=width*height,grayOffset=n*4,nearOffset=Math.ceil(n*5/4)*4,length=Math.ceil((nearOffset+(includeEdges?n*4:0))/8);let pointer=0;
+ try{
+  pointer=core.alloc_f64(length);if(!pointer)return null;
+  new Uint8Array(core.memory.buffer,pointer,n*4).set(raw.subarray(0,n*4));
+  const status=core.font_prepare_pixels(pointer,width,height,includeEdges?1:0,pointer+grayOffset,pointer+nearOffset);
+  if(status!==1&&status!==2)return null;
+  return {gray:new Uint8Array(core.memory.buffer,pointer+grayOffset,n).slice(),near:includeEdges?new Float32Array(core.memory.buffer,pointer+nearOffset,n).slice():null,busy:status===2};
+ }catch{return null;}finally{if(pointer)core.free_f64(pointer,length);}
+}

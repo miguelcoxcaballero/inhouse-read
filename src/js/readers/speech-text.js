@@ -248,3 +248,13 @@ export function planSpeech(raw, options = {}, from = 0) {
   }
   return items
 }
+
+/** First complete sentence beginning on the visible page, in original offsets.
+ * Previous physical-page text distinguishes a continuation from a new sentence. */
+export function firstCompleteSentenceOffset(raw, from = 0, previousText = '', options = {}) {
+  const prefix = previousText ? String(previousText).trimEnd() + ' ' : '';
+  const start = prefix.length + Math.max(0, Number(from) || 0);
+  const item = planSpeech(prefix + raw, {footnotes:options.footnotes}, 0)
+    .find(item => item.sentence.start >= start);
+  return item ? item.sentence.start - prefix.length : String(raw).length;
+}

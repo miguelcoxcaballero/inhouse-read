@@ -32,7 +32,7 @@ function warmCoverColorCore() {
   if (coverColorCore) { void coverColorCore.load(); return; }
   coverColorCoreTask ??= Promise.all([import('./cover-color-wasm.js'), import('./rust-core.js'), import('./font-glyph-wasm.js')])
     .then(([bridge, core, glyph]) => {
-      coverColorCore = { run:bridge.rustDominantCoverRgb, glyph:glyph.rustGlyphMask, get:core.getRustCore, load:core.loadRustCore };
+      coverColorCore = { run:bridge.rustDominantCoverRgb, glyph:glyph.rustGlyphMask, prepare:glyph.rustPrepareCoverPixels, get:core.getRustCore, load:core.loadRustCore };
       void core.loadRustCore();
     }).catch(() => null);
 }
@@ -422,14 +422,14 @@ async function runRemoteFamily(task, scoreMask) {
   return step.value;
 }
 
-async function matchTitleFont(gray, width, height, title) {
+async function matchTitleFont(gray, width, height, title, preparedNear) {
   if (!title || String(title).trim().length < 3 || typeof document === 'undefined') return null;
   const scoreByFamily = [];
   const work = document.createElement('canvas');
   work.width = width; work.height = Math.floor(height * 0.82);
   const context = work.getContext('2d');
   if (!context || width < 48 || work.height < 48) return null;
-  const near = nearEdgeMap(edgeMap(gray, width, height), width);
+  const near = preparedNear ?? nearEdgeMap(edgeMap(gray, width, height), width);
   let workerJob = await openFontScoreJob({ gray, near, width, height, rows:work.height });
   const remote = Boolean(workerJob);
   const scoreMask = async mask => {
@@ -532,15 +532,17 @@ export async function analyzeCoverAppearance(url, title = '', { matchFont = true
     }
     const color = coverColorFromPixels(pixels, width, height);
     if (!matchFont) return { ...color, aspectRatio, source: 'cover' };
-    const gray = new Uint8Array(width * height);
-    for (let index = 0; index < gray.length; index += 1) {
+    const includeEdges = Boolean(title) && String(title).trim().length >= 3 && width >= 48 && Math.floor(height * .82) >= 48;
+    const prepared = width * height >= 4096 && coverColorCore?.prepare(coverColorCore.get(), pixels, width, height, includeEdges);
+    const gray = prepared?.gray ?? new Uint8Array(width * height);
+    if (!prepared) for (let index = 0; index < gray.length; index += 1) {
       const at = index * 4;
       gray[index] = Math.round(pixels[at] * .299 + pixels[at + 1] * .587 + pixels[at + 2] * .114);
     }
     await loadCandidateFonts();
-    const turn = matcherTurn.then(() => matchTitleFont(gray, width, height, title));
+    const turn = matcherTurn.then(() => matchTitleFont(gray, width, height, title, prepared?.near));
     matcherTurn = turn.catch(() => {});
-    const font = await turn || visualFallback(gray, width, height);
+    const font = await turn || (prepared ? FONT_CANDIDATES[prepared.busy ? 3 : 0] : visualFallback(gray, width, height));
     return {
       ...color,
       fontFamily: font.family,

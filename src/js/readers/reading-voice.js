@@ -1,6 +1,6 @@
 import { declaredLanguage, detectLanguage, isNeuralId, langBase, resolveVoice } from './voice-catalog.js'
 import { loadNeural, neuralEngine, neuralVoiceList, unlockNeural } from './neural-runtime.js'
-import { planSpeech, speechChunks } from './speech-text.js'
+import { firstCompleteSentenceOffset, planSpeech, speechChunks } from './speech-text.js'
 import { nativeAudio, nativePcmBridge } from './neural-voice/audio.js'
 
 export { speechChunks }
@@ -105,11 +105,16 @@ export class ReadingVoice {
   }
   get supported() { return Boolean(neuralEngine()) }
   notify(message = '') { this.onState(this.state, message) }
+  restartFromVisiblePage() {
+    const saved = this.state === 'paused' ? this.pausedLocation : this.stoppedLocation
+    return ['paused','stopped'].includes(this.state) && (this.browsing || saved !== undefined && saved !== JSON.stringify(this.reader.location))
+  }
   async play() {
     unlockNeural() // synchronously, inside the tap: the browser only lets the page start audio from a user gesture
     this.nativeSession = nativeAudio()?.session || null
     if (this.state === 'playing' || this.state === 'loading') return
     this.retryNeural()
+    if (this.restartFromVisiblePage()) { this.stop(); this.completeOpening = true }
     if (this.state === 'paused' && this.chunks.length && !this.resumeNextPage) {
       this.state = 'playing'; this.waiting = true; this.notify('Preparando la voz natural…'); this.speakCurrent(); return
     }
@@ -132,7 +137,10 @@ export class ReadingVoice {
       this.openingPlan = null
       if (generation !== this.generation) return
       this.adopt(plan)
+      const completeOpening = this.completeOpening
+      this.completeOpening = false
       this.resumeNextPage = false
+      if (!this.chunks.length && completeOpening && plan.source?.text?.trim()) return this.fail('No empieza ninguna frase completa en esta página. Cambia de página para continuar.')
       if (!this.chunks.length) return this.fail('Esta página no contiene texto legible. Los PDF escaneados necesitan reconocimiento de texto para escucharlos.')
       this.state = 'playing'; this.waiting = true; this.notify('Preparando la voz natural…'); this.speakCurrent()
     } catch { if (generation === this.generation) this.fail('No se pudo preparar el texto.') }
@@ -447,18 +455,19 @@ export class ReadingVoice {
   }
   async prepare(source, opening = false) {
     if (source === undefined) {
-      const pending = this.reader.getSpeechSource?.()
+      const pending = this.reader.getSpeechSource?.(this.completeOpening && opening ? {visible:true, completeSentences:true} : undefined)
       source = pending ? await pending : null
     }
     if (!source) return { source, items:planSpeech(this.prepareText(await this.reader.getSpeechText()).replace(/\s+/g, ' ').trim(), {opening}).map(({text}) => ({text})) }
     const { footnotes, skipHeaders } = this.options
-    return { source, items:planSpeech(source.text, { footnotes, skipHeaders, opening, pageBreaks:source.pageBreaks, headerRanges:source.headerRanges }, source.start || 0) }
+    const from = this.completeOpening && opening ? firstCompleteSentenceOffset(source.text, source.start, source.previousText, this.options) : source.start || 0
+    return { source, items:planSpeech(source.text, { footnotes, skipHeaders, opening, pageBreaks:source.pageBreaks, headerRanges:source.headerRanges }, from) }
   }
   /** Share the page analysis started by voice selection with immediate Play.
    * Voice/rate do not alter offsets; page, layout, text options and Stop do. */
   async prepareOpening() {
     const generation = this.generation
-    const keyOf = () => JSON.stringify([this.reader.location, this.options.footnotes, this.options.skipHeaders, this.openingLayout])
+    const keyOf = () => JSON.stringify([this.reader.location, this.options.footnotes, this.options.skipHeaders, this.openingLayout, Boolean(this.completeOpening)])
     const key = keyOf()
     let pending = this.openingPlan
     if (!pending || pending.key !== key) {
@@ -480,7 +489,7 @@ export class ReadingVoice {
   }
   /** Cache audio without adopting, highlighting or following a page before Play. */
   async preparePlayback(isActive = () => true) {
-    if (!['stopped', 'paused'].includes(this.state) || this.resumeNextPage) return false
+    if (!['stopped', 'paused'].includes(this.state) || this.resumeNextPage || this.restartFromVisiblePage()) return false
     const generation = this.generation, location = JSON.stringify(this.reader.location)
     const settings = JSON.stringify([this.voice, this.rate, this.languageOverride, this.options])
     const valid = () => isActive() && generation === this.generation &&
@@ -648,12 +657,15 @@ export class ReadingVoice {
     if (pendingPage) this.resumeNextPage = true
     this.clearAhead()
     this.diagnosticAdvance = null
+    this.pausedLocation = JSON.stringify(this.reader.location)
     ++this.generation; this.state = 'paused'; this.cancelUtterance('pause'); this.unpaint()
     if (pendingPage) { this.chunks = []; this.items = []; this.source = null; this.index = 0; this.deferredPage = null }
     if (this.index >= this.chunks.length) this.chunks = []
     this.notify()
   }
   stop() {
+    this.stoppedLocation = JSON.stringify(this.reader.location)
+    this.completeOpening = false
     this.openingPlan = null
     this.clearAhead()
     this.diagnosticAdvance = null

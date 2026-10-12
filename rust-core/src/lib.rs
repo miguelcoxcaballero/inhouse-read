@@ -79,3 +79,6 @@ mod book_cloth;
 
 #[cfg(feature = "app")]
 mod font_glyph;
+
+#[cfg(feature = "app")]
+mod font_prepare;

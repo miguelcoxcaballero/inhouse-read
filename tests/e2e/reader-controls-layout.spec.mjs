@@ -280,8 +280,9 @@ test('volver al audio se lee completo y no tapa pausa en móviles estrechos', as
    const button=document.querySelector('.reader-return'),b=button.getBoundingClientRect()
    const range=document.createRange();range.selectNodeContents(button)
    const p=document.querySelector('[data-mini-play]').getBoundingClientRect()
-   return {fits:[...range.getClientRects()].every(r=>r.left>=b.left && r.right<=b.right && r.top>=b.top && r.bottom<=b.bottom),right:b.right,play:p.left,pauseWidth:p.width,buttonHeight:b.height}
+   return {fits:[...range.getClientRects()].every(r=>r.left>=b.left && r.right<=b.right && r.top>=b.top && r.bottom<=b.bottom),right:b.right,play:p.left,pauseWidth:p.width,buttonHeight:b.height,top:b.top,bottom:b.bottom,pauseTop:p.top,toolbarTop:document.querySelector('#reader-toolbar').getBoundingClientRect().top,viewportBottom:document.querySelector('#reader-viewport').getBoundingClientRect().bottom,titleVisible:getComputedStyle(document.querySelector('#reader-top-title')).visibility}
   })
+  expect(layout.top).toBeGreaterThan(600);expect(layout.bottom).toBeLessThanOrEqual(layout.toolbarTop);expect(layout.top).toBeGreaterThanOrEqual(layout.viewportBottom);expect(layout.pauseTop).toBe(layout.top);expect(layout.titleVisible).toBe('visible');
   expect(layout.fits).toBe(true);expect(layout.right).toBeLessThanOrEqual(layout.play)
   expect(layout.pauseWidth).toBeGreaterThanOrEqual(44);expect(layout.buttonHeight).toBeGreaterThanOrEqual(44)
   await testInfo.attach(`return-audio-${width}`,{body:await page.screenshot(),contentType:'image/png'})
@@ -421,3 +422,21 @@ for(const format of ['epub','pdf'])test(`paginación inmóvil con audio y retorn
   expect(await fingerprint()).toEqual(before)
  }
 })
+
+for (const format of ['epub','pdf']) for (const action of ['pause','stop']) test(`pausar, cambiar página y Play empieza por una frase completa visible: ${format} ${action}`,async({page})=>{
+ await open(page,format,format==='pdf'?{pdfMode:'text'}:{});
+ await page.locator('#reader-audio').click();await page.locator('[data-play]').click();await page.locator('.reading-panel [data-close]').click();
+ await page.evaluate(()=>{const e=window.__inhouseNeuralTest.engine;e.emit('start',e.current.id);e.emit('done',e.current.id)});
+ await expect.poll(()=>page.evaluate(()=>window.__inhouseNeuralTest.engine.calls.length)).toBe(2);
+ await page.evaluate(()=>{const e=window.__inhouseNeuralTest.engine;e.emit('start',e.current.id)});
+ if(action==='pause'){await page.locator('[data-mini-play]').click();await expect(page.locator('[data-mini-play]')).toHaveAttribute('aria-label','Continuar lectura');}
+ else await page.locator('[data-mini-stop]').click();
+ await page.locator('#reader-next').click();
+ let expected;
+ if(format==='pdf') expected='Reading journey.';
+ else expected=await page.evaluate(()=>{const text=document.querySelector('foliate-view').lastLocation.range.toString();const sentences=text.match(/[^.!?]+[.!?]/g).map(s=>s.trim());const complete=/^(?:Paragraph \d+|The afternoon|A book|Reading gives)/;return complete.test(sentences[0])?sentences[0]:sentences[1]});
+ if(action==='pause') await page.locator('[data-mini-play]').click();
+ else {await page.locator('#reader-audio').click();await page.locator('[data-play]').click();await page.locator('.reading-panel [data-close]').click();}
+ await expect.poll(()=>page.evaluate(()=>window.__inhouseNeuralTest.engine.calls.at(-1)?.text)).toBe(expected);
+ await page.locator('[data-mini-stop]').click();
+});

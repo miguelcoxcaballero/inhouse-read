@@ -464,3 +464,11 @@ describe('PDF continuation prepared without an early page turn', () => {
     expect(renders.map(value => value.number)).toEqual([1,3])
   })
 })
+
+it('complete-sentence opening supplies previous physical-page context without moving the visible page',async()=>{
+ page(1,[{str:'The sentence continued to',hasEOL:true}]);page(2,[{str:'Madrid. A new sentence.',hasEOL:true}]);
+ await open();await reader.goToPage(2);const count=renders.length;
+ const source=await reader.getSpeechSource({visible:true,completeSentences:true});
+ expect(source.previousText.trim()).toBe('The sentence continued to');expect(source.text).toContain('Madrid. A new sentence.');
+ expect(source.start).toBe(0);expect(renders.length).toBe(count);expect(relocate.mock.calls.at(-1)[0].index).toBe(1);
+});

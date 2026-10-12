@@ -1,5 +1,5 @@
 /* Reader chrome follows the page. One surface, with direct, quiet controls. */
-#reader-screen { --reader-header-height:calc(48px + var(--ihr-safe-top)); --reader-bar-height:calc(48px + env(safe-area-inset-bottom,0px)); --reader-audio-height:0px; --reader-return-height:0px; background:var(--reading-paper,#faf9f5); color:var(--reading-ink,#292821); }
+#reader-screen { --reader-header-height:calc(48px + var(--ihr-safe-top)); --reader-bar-height:calc(48px + env(safe-area-inset-bottom,0px)); --reader-dock-height:44px; --reader-audio-height:0px; --reader-return-height:0px; background:var(--reading-paper,#faf9f5); color:var(--reading-ink,#292821); }
 .reader-loading { position:absolute; inset:45% 16px auto; z-index:4; margin:0; text-align:center; color:var(--reading-ink,#292821); font:400 14px var(--f-body); }
 .reader-loading[hidden] { display:none; }
 .reader-heading { display:none; min-width:0; align-items:center; gap:8px; }
@@ -7,7 +7,6 @@ body.is-reading .app-header { height:calc(48px + var(--ihr-safe-top)); min-heigh
 body.is-reading .app-header > .logo, body.is-reading .app-header > .header-actions { display:none; }
 body.is-reading .reader-heading { display:flex; width:100%; height:48px; gap:4px; }
 .reader-heading-copy { display:flex; flex:1; flex-direction:column; justify-content:center; position:relative; min-width:0; height:44px; gap:2px; }
-.reader-heading-copy:has(.reading-mini-player:not([hidden]),.reader-return:not([hidden])) > :is(#reader-top-title,#reader-top-byline) { visibility:hidden; }
 #reader-top-title { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:14px; line-height:1.3; font-weight:500; }
 #reader-top-byline { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:11px; line-height:1.3; opacity:.62; }
 #reader-top-byline:empty { display:none; }
@@ -17,7 +16,7 @@ body.is-reading .reader-heading { display:flex; width:100%; height:48px; gap:4px
 .reader-heading .icon-btn { flex:none; width:44px; height:44px; color:inherit; border-radius:10px; }
 /* The screen is already below the app header. Only the hidden, fixed preloader
    reserves that header here, so the opening snapshot and final page agree. */
-.reader-viewport { top:0; bottom:var(--reader-bar-height); background:var(--reading-paper,#faf9f5); isolation:isolate; filter:var(--reader-brightness-filter,none); }
+.reader-viewport { top:0; bottom:calc(var(--reader-bar-height) + var(--reader-dock-height)); background:var(--reading-paper,#faf9f5); isolation:isolate; filter:var(--reader-brightness-filter,none); }
 #reader-screen.is-preparing .reader-viewport { top:var(--reader-header-height); }
 .reader-toolbar { display:grid; grid-template-columns:44px minmax(0,1fr) repeat(4,44px); gap:0; height:var(--reader-bar-height); min-height:0; padding:0 8px env(safe-area-inset-bottom,0px); z-index:3; border:0; box-shadow:none; backdrop-filter:none; background:var(--reading-paper,#faf9f5); color:var(--reading-ink,#292821); }
 .reader-toolbar .icon-btn { width:44px; height:44px; padding:10px; color:inherit; border-radius:10px; }
@@ -210,7 +209,7 @@ body.is-reading:has(#reader-screen.reader-kids-mode) .reader-heading-actions but
 
 /* Focus keeps both page margins. Hidden contents are immediately removed
    from hit testing, keyboard navigation and the accessibility tree. */
-body.is-reader-focus .reader-heading, body.is-reader-focus .reader-toolbar > * { visibility:hidden; opacity:0; }
+body.is-reader-focus .reader-heading, body.is-reader-focus .reader-audio-dock, body.is-reader-focus .reader-toolbar > * { visibility:hidden; opacity:0; }
 @media (prefers-reduced-motion:no-preference) {
   .reader-heading { transition:opacity .12s linear; }
   .reader-toolbar > * { transition:opacity .12s linear, background-color .15s var(--ease); }
@@ -421,17 +420,10 @@ body.is-reading .app-header, #reader-screen, .reader-viewport, .reader-toolbar, 
 .reading-tabs button { font-size:13px; }
 .reading-list > button, .reading-place { border-color:color-mix(in srgb,currentColor 6%,transparent); }
 
-/* Audio uses the existing heading. No empty footer row and no page reflow.
-   Return shares its title space; pause and stop retain full touch targets. */
-.reader-heading-copy:has(.reading-mini-player:not([hidden])) .reader-return:not([hidden]) {
-  right:88px; width:auto; z-index:4; white-space:normal; line-height:17px; padding-block:4px;
-}
-.reader-heading-copy:has(.reader-return:not([hidden])) .reading-mini-player [data-mini-open] {
-  visibility:hidden;
-}
-/* On narrow phones stop remains in the audio panel. Preserve a readable
-   two-line Return label and a 44px pause target in the existing header. */
-@media (max-width:360px) {
-  .reader-heading-copy .reading-mini-player [data-mini-stop] { display:none; }
-  .reader-heading-copy:has(.reading-mini-player:not([hidden])) .reader-return:not([hidden]) { right:44px; }
-}
+/* One stable footer row: showing audio or a return destination never changes
+   the available page height or its line breaks. Both keep full touch targets. */
+.reader-audio-dock { position:absolute; z-index:3; bottom:var(--reader-bar-height); height:var(--reader-dock-height); left:max(env(safe-area-inset-left,0px),var(--reader-chrome-inset)); right:max(env(safe-area-inset-right,0px),var(--reader-chrome-inset)); }
+.reader-audio-dock:has(.reading-mini-player:not([hidden])) .reader-return:not([hidden]) { right:88px; width:auto; z-index:4; }
+.reader-audio-dock:has(.reader-return:not([hidden])) .reading-mini-player [data-mini-open] { visibility:hidden; }
+.reader-audio-dock .reading-mini-player > .reading-icon-button { width:44px; height:44px; flex:none; }
+.reader-kids-mode .reader-audio-dock { visibility:hidden; }

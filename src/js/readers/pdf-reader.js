@@ -580,12 +580,23 @@ export class PdfReader {
   }
 
   /** The page's text as the audiobook reads it, mapped onto the rendered text layer (or the reflow text) it is highlighted in. */
-  async getSpeechSource() {
+  async getSpeechSource({ completeSentences = false } = {}) {
     if (!this.#doc) return null
     let pending
     do { pending = this.#renderReady; await pending } while (this.#doc && pending !== this.#renderReady)
     if (!this.#doc) return null
-    return this.#makeSpeechSource(this.#pageNum, this.#speechMap(), this.#renderState?.textLayout).source
+    const pdf = this.#doc, pageNumber = this.#pageNum
+    const source = this.#makeSpeechSource(pageNumber, this.#speechMap(), this.#renderState?.textLayout).source
+    if (completeSentences) {
+      source.start = this.#preferences.pdfMode === 'text' ? this.#visibleTextOffset() : 0
+      if (pageNumber > 1 && source.start === 0) {
+        const previous = await pdf.getPage(pageNumber - 1)
+        const content = await previous.getTextContent()
+        if (pdf !== this.#doc || pageNumber !== this.#pageNum) throw speechCancelled()
+        source.previousText = extractPDFText(content, previous.getViewport({scale:1})).text
+      }
+    }
+    return source
   }
 
   #makeSpeechSource(page, first, textLayout) {

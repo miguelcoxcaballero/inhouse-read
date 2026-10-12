@@ -545,3 +545,11 @@ describe('voice picker', () => {
     expect(experience.panel.querySelector('#reading-audio select')).toBeNull() // no operating-system dropdown left in the audio panel
   })
 })
+
+it('keeps the audio player and return destination in the bottom dock', async () => {
+  const { experience } = await setup();
+  expect(experience.audioHost.className).toBe('reader-audio-dock');
+  expect(experience.audioHost.parentElement).toBe(experience.screen);
+  expect(experience.miniPlayer.parentElement).toBe(experience.audioHost);
+  expect(experience.returnButton.parentElement).toBe(experience.audioHost);
+});

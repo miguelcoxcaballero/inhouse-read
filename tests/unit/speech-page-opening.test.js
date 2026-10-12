@@ -1,0 +1,6 @@
+import {expect,it} from 'vitest';
+import {firstCompleteSentenceOffset} from '../../src/js/readers/speech-text.js';
+it('skips only the sentence crossing a visible page boundary',()=>{const text='La primera frase continúa aquí. Nueva frase completa. Otra.';expect(firstCompleteSentenceOffset(text,text.indexOf('continúa'))).toBe(text.indexOf('Nueva'));expect(firstCompleteSentenceOffset(text,text.indexOf('Nueva'))).toBe(text.indexOf('Nueva'));expect(firstCompleteSentenceOffset(text,0)).toBe(0);});
+it('uses the previous PDF page instead of guessing from capitals',()=>{const text='Madrid para terminarla. Ahora empieza otra.';expect(firstCompleteSentenceOffset(text,0,'La frase empezó en')).toBe(text.indexOf('Ahora'));expect(firstCompleteSentenceOffset(text,0,'La anterior termina.')).toBe(0);});
+it('keeps abbreviation and decimal rules, and skips every fragment of the partial sentence',()=>{const text='Sr. García consultó 3.5 documentos '+ 'largos '.repeat(80) + '. Primera completa.';expect(firstCompleteSentenceOffset(text,0,'Hablaron con el')).toBe(text.indexOf('Primera'));});
+it('does not invent a sentence when the entire page is a continuation',()=>{const text='que todavía no termina';expect(firstCompleteSentenceOffset(text,0,'Una frase')).toBe(text.length);});

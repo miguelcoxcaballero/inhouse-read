@@ -1519,3 +1519,12 @@ El nuevo módulo de app conserva exactamente la caché/WASM de decoración172.
 El primer fallo de la fixture CSS y su corrección están documentados en WIP.
 
 173:4783/4783 unitarias y11/11 UI, incluida la apariencia guardada desde la estantería compilada.
+
+## 1.7.174 — preparación de imagen del título
+
+Escala de grises, plano de tolerancia de bordes y clasificación de textura en
+font_prepare_pixels. Una asignación de entrada/salida; salida propia; conserva
+la ruta JS para menos de 4096 píxeles y ante indisponibilidad de WASM. 15 pruebas
+comparan todos los RGB y planos exactos. CPU×4:192×288 con bordes 6,937→4,287ms,
+transferencias incluidas. Sin bordes no se aprecia mejora. Decoración conserva
+sus bytes y caché. Estado de publicación y controles inferiores en WIP.

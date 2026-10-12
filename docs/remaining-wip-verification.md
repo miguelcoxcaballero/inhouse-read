@@ -1,3 +1,53 @@
+# Versión 1.7.174 — controles abajo y preparación de portadas en Rust
+
+Changelog: «Controles abajo; análisis de portada optimizado».
+El minirreproductor y el retorno al audio o capítulo comparten una fila inferior,
+encima de la navegación. El título permanece visible arriba. Pausa y detener
+conservan objetivos de 44px incluso a 320px. La fila tiene una altura estable de
+44px también sin audio: iniciar/detener o mostrar retorno no repagina el libro.
+El modo de lectura sin controles oculta también esta fila.
+
+Pausa/Stop y cambio de página: Play reconstruye el inicio desde la página
+visible, omitiendo la frase empezada en la anterior. Sin cambio de página,
+Pausa conserva la frase. La navegación con el audio activo mantiene su cursor
+independiente. PDF consulta el texto anterior sólo en esa apertura para reconocer
+una continuación; EPUB conserva los offsets del capítulo. Una página sin ningún
+inicio de frase se explica sin atribuirlo a un fallo de OCR.
+102/102 pruebas focalizadas de voz/texto/páginas diferidas aprobadas; siete
+nuevas más una comprobación del contexto entre páginas PDF. 16/16 UI de
+controles/estabilidad aprobadas en2,3min; las seis capturas optativas no activadas
+constan como omitidas.4/4 UI adicionales,21,5s:reanudar PDF/EPUB,pantalla320/390
+y análisis completo de portada invocando ambos kernels Rust. Captura320 revisada.
+
+
+Rust prepara la escala de grises, tolerancia de bordes y clasificación visual
+sin cambiar los colores de portada ni la fuente elegida. La imagen original
+permanece intacta; los dos planos devueltos son independientes de memoria WASM.
+Se mantienen las alternativas anteriores ante fallos del núcleo y para imágenes
+menores de 4096 píxeles, donde la transferencia cuesta más que el cálculo.
+96/96 pruebas focalizadas aprobadas, incluidas 15 nuevas de preparación y una
+de ubicación del reproductor. Se compararon los 16777216 colores RGB posibles,
+NaN de los bordes, clasificación, memoria, errores y liberación.
+
+Benchmark CPU×4, nueve rondas alternadas, transferencias incluidas, 1/1 aprobado:
+80×66 JS 0,693 → Rust 0,440ms; 128×192 3,027 → 1,907ms;
+192×288 6,937 → 4,287ms. Sin bordes 192×288: 2,723 → 2,717ms.
+512² (fuera del tamaño de producción): 31,907 → 20,100ms.
+Los casos 1×1 y 12×12 empeoraban, por eso el host conserva su ruta anterior.
+No se presentan estas cifras como tiempos completos de apertura o FPS.
+App325789bytes,SHA c81386001ac06a2c567234fd4af3c19cf80f87467d68da98748f4e8bbfdd92cd.
+Decor92543bytes,idéntico a172/173. Evidencia:rust-cover-preparation y reader-bottom-controls.
+Build y pin del updater aprobados.4807/4807 unitarias,364archivos,290,44s. 11/11 UI finales,41,2s,sin omisiones ni reintentos:reanudar después de Pausa y Stop en PDF/EPUB,retorno inferior,análisis de portada real yarranque/fallo de ambos núcleos. Publicación174 pendiente.
+
+Verificación pública173 completada: fuente071466961bad85b00883a47d35432a70a84027c9,
+Pagesb14ea58618d94e7aa013680adc490fc55a9e42b1; deploy38215284711 y Pages38215360915 aprobados.
+101recursos,HTML y ambas precargas exactos. Núcleo real:42casos/7394144bytes.
+1/1 análisis de portada en la web publicada,9s,misma apariencia que el original.
+Dos perfiles limpios descargaron los bytes exactos de main y ambos WASM.
+APK1.1.15/code28 descargado,hash y loader2107bytes verificados.
+Evidencia:published-1791788873423. Siguen sin declararse resueltos los fallos
+previos de cierre nativo de CI; no se cambian sus plazos ni aserciones.
+
 # Migración 1.7.173 — recorte de letras de portada en Rust
 
 Changelog: «Máscaras de tipografía en Rust». Rust recorta el alfa del título,

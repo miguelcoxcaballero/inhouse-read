@@ -30,7 +30,9 @@ export class ReaderExperience {
     this.returnButton.className = 'reader-return'
     this.returnButton.hidden = true
     this.returnButton.addEventListener('click', () => this.voice.browsing ? this.voice.returnToAudio() : this.returnToReading())
-    this.audioHost = document.querySelector('.reader-heading-copy') || this.screen
+    this.audioHost = document.createElement('div')
+    this.audioHost.className = 'reader-audio-dock'
+    this.screen.append(this.audioHost)
     this.audioHost.append(this.returnButton)
     this.panel = document.createElement('dialog')
     this.panel.className = 'reading-panel'
