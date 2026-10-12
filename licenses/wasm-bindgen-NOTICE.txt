@@ -1,5 +1,5 @@
-The Rust DOM module uses wasm-bindgen 0.2.104, js-sys 0.3.81, web-sys
-0.3.81 and wasm-bindgen-futures 0.4.54 from
+The Rust DOM module uses wasm-bindgen 0.2.105, js-sys 0.3.82, web-sys
+0.3.82 and wasm-bindgen-futures 0.4.55 from
 https://github.com/wasm-bindgen/wasm-bindgen, under either
 the MIT or Apache-2.0 license. Both license texts accompany this notice.
 Bindings are generated from the pinned Cargo.lock and wasm-bindgen CLI.
