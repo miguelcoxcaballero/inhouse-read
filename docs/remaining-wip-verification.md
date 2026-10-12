@@ -1,3 +1,23 @@
+# Verificación pública 1.7.176 completada
+
+Fuente:67c46715a02b6a0297ec97aa97a5d319b9b2c077.
+Pages:56213352d885906995703146b952e7c74e81547c.
+Deploy38227760138 y Pages38227884822 aprobados. 151comprobaciones públicas
+correctas:101recursos con sus hashes, HTML, main, ambos WASM y precargas.
+Núcleo descargado:112casos/22591616bytes iguales a la referencia JS congelada.
+Dos perfiles limpios reciben main y ambos WASM exactos, sin errores de página.
+2/2 escenarios de editor público en43,7s, sin reintentos ni omisiones, usando
+el kernel seleccionado real y comparando sus bytes con el empaquetado anterior.
+APK del catálogo descargada:78532517bytes, code28, SHA
+02960e3322bdad2e26041d2ef57b0fd5a02f3528c4b60b876e7955ae941cafb5.
+Loader exclusivo de2107bytes hacia producción; no se crea otra APK sin cambios
+nativos. Se conservan identidad, firma, canal y revisión compartida del updater.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/published-1791796168559
+y rust-normal-selection/public-ui.log/json/results.
+El CI completo de esta fuente38227760199 sigue en curso. Los fallos de175 se
+conservan y detallan abajo; no se declara CI verde ni la migración total terminada.
+La actualización documental no modifica el código de producción verificado.
+
 # Versión 1.7.176 — normales del relieve con selección en Rust
 
 4819/4819 unitarias en366archivos,305,63s. Núcleo compilado:112casos,
@@ -5,7 +25,7 @@
 2/2 escenarios en41,2s; compara cada bloque real y abre con selección fría/cacheada.
 8/8 pruebas visuales finales (1,6min), sin reintentos ni omisiones: relieves
 independientes, estantería, dieciocho portadas, color y tres acabados, coste GPU
-y editor real. La publicación y comprobación pública siguen pendientes.
+y editor real. Publicación y comprobación pública completadas abajo.
 
 Changelog: «Relieves en Rust con menos copias».
 La selección alfa se integra en el cálculo de normales. El modelo consume la
