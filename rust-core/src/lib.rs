@@ -57,3 +57,5 @@ mod pdf_images;
 mod pdf_figures;
 mod pdf_stream;
 mod timber;
+
+mod lamp_surface;

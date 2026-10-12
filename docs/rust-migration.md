@@ -1422,3 +1422,14 @@ la escala física de las vetas, las normales y el sombreado de la madera.
 Pruebas y mediciones completas en `remaining-wip-verification.md`.
 La migración sigue siendo parcial: UI, estado, persistencia y otros módulos
 aún dependen del navegador y de JavaScript.
+
+## 1.7.164: superficies de las lámparas
+
+Pigmento, relieve y rugosidad de madera, lino y metal se generan en Rust
+por lotes acotados, conservando cada píxel y los materiales de Three.
+Mediciones completas y fallos originales en remaining-wip-verification.md.
+
+Recuento 1.7.164: 2898 líneas no vacías en35 fuentes Rust frente a36111
+en194 módulos JS propios:7,43% del total Rust+JS. Incluye comentarios,
+excluye pruebas, dependencias, CSS/HTML y código Android; no mide porcentaje
+funcional migrado. La conservación temporal de fallbacks añade código JS.

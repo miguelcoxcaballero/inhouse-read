@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {rustLampSurface} from './lamp-surface-wasm.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { getCatalogLamp } from './lamp-catalog-data.js';
@@ -24,6 +25,7 @@ function surface(kind, quality) {
   building?.add(key);
   let bytes = imageCache.get(key);
   if (!bytes && (bytes = savedSurface(`lamp:${key}`, width, height))) imageCache.set(key, bytes);
+  if (!bytes && (bytes = rustLampSurface(kind,width,height))) imageCache.set(key,bytes);
   if (!bytes) {
     const pigment = new Uint8Array(width * height * 4), data = new Uint8Array(pigment.length);
     for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {

@@ -1,3 +1,43 @@
+# Migración 1.7.164 — texturas de lámparas en Rust
+
+Changelog: «Texturas de lámparas más rápidas». Pigmento, relieve y rugosidad
+de madera, lino y metal negro se calculan por lotes de hasta16 filas. Se
+conservan resoluciones, mipmaps, filtrado, anisotropía, espacio de color, cachés
+y propiedad de texturas. Los buffers se copian y liberan, incluso si crece la
+memoria entre filas. La vía anterior sigue disponible si falla el núcleo.
+
+39/39 focalizadas (12 nuevas),1,89s. Comparación exacta de las seis texturas
+reales, tamaños impares y los tres modelos completos en ambas calidades,
+incluidos atributos y parámetros de material. Primeras dos ejecuciones:
+38/39 por el coste del comparador de identidad de Vitest con arrays grandes.
+Ahora se compara la identidad como booleano y cada vértice como bits; no se
+cambia el límite de5s ni se elimina ninguna comparación. Originales
+focused.* yfocused-final.* conservados; final:focused-exact.*.
+
+1/1 E2E con WASM real, CPU×4,nueve rondas alternadas, creación completa y
+copias incluidas. Todos los píxeles idénticos, capacidad estable:
+- Madera128×512:JS56,0/Rust30,2ms;256×1024:230,8/119,6ms.
+- Lino256²:54,6/16,0ms;512²:215,4/68,0ms.
+- Metal256²:23,7/11,6ms;512²:93,5/46,8ms.
+Estas cifras corresponden a texturas sin caché; no son FPS ni tiempos de
+apertura en un móvil físico. Build aprobado. WASM371650bytes, SHA
+`340c940a16d0af172a83c75c8783382b9ffe603bf946ad4d24d97662234ee7e3`.
+4644/4644 unitarias en351 archivos (285,80s), sin omisiones.
+4/4 E2E de interruptores/gestos, cambio de mueble y ambas vueltas nativas
+aprobadas (1,8min), sin reintentos ni omisiones. Publicación pendiente. Evidencia:
+`D:/CodexEvidence/InhouseRead-20261012/rust-lamp-surface`.
+
+Publicación163: fuente `38b1ce56e89684e80941d8a2877d02a93cff566d`, Pages
+`696c14f10b7d75bb31476a1faff7b8c97f5a91e6`, deploy38205492117 yPages38205548662
+aprobados.99 recursos/HTML/precarga exactos, núcleo público200 tableros/5lejas
+(1190640bytes) exactos. APK actual1.1.15/code28 yloader2107bytes comprobados.
+El primer sondeo fue durante el despliegue y falló; se conserva su informe en
+published-1791780820591. Verificación final:published-1791780886578.
+Publicación162:14/14 E2E públicas, sin omisiones ni reintentos; main yWASM
+comprobados por respuestas reales en dos perfiles limpios.
+CI160:60correctas/2fallos de cierre en UI2;78correctas/1repetición del updater
+en UI3. Originales conservados en rust-pdf-images/ci160-ui2 yci160-ui3.
+
 # Migración 1.7.163 — madera de la estantería en Rust
 
 Changelog: «Geometría de madera en Rust». Se trasladan al núcleo las caras,
