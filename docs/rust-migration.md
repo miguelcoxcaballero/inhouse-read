@@ -1182,3 +1182,19 @@ SHA `1a777b9348a26959d8d191743f3da4e2ac4e074235f6c7a9654fa1d1e2f2cbe2`.
 11/11 recorridos visuales aprobados en3,8min sin omisiones ni reintentos.
 Publicación pendiente.
 Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-pot`.
+
+## 1.7.154: malla de hiedra
+
+Changelog: «Hiedra más rápida en Rust». Malla de cinco lóbulos, curvatura,
+colores, UV, índices y normales en Rust. Se conservan las tres muestras del
+PRNG, también al rechazar o fallar el núcleo, y los senos originales del host.
+78/78 focalizadas aprobadas,22 nuevas. El navegador compara toda la planta
+HEDERA con108 llamadas reales al núcleo: atributos e índices exactos, sin
+reservas temporales retenidas. Chromium390×844 CPU×4, nueve rondas alternadas
+de500 hojas, incluyendo PRNG, reserva, copia, atributos y liberación:
+JS0,0544ms / Rust0,0256ms. No equivale a la velocidad total de la app.
+Build aprobado. WASM239898 bytes,
+SHA `9a38fe01fd5c44a8678f349a02ca9ed72d897de8a254127ed991af00bf2e87df`.
+4457/4457 unitarias en337 archivos (281,55s) y11/11 E2E (3,6min),
+sin omisiones ni reintentos. Publicación pendiente.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-ivy`.

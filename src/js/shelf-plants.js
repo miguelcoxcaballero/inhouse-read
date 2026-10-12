@@ -3,6 +3,7 @@ import { getRustCore } from './rust-core.js';
 import { rustPlantLeafGeometry } from './plant-leaf-wasm.js';
 import { rustPlantCactusGeometry } from './plant-cactus-wasm.js';
 import { rustPlantPotSurface } from './plant-pot-wasm.js';
+import { rustPlantIvyGeometry } from './plant-ivy-wasm.js';
 import { rustPlantPreview } from './plant-preview-wasm.js';
 import { rustPlantGlazeRows } from './plant-glaze-wasm.js';
 import { rustPlantPotteryRows } from './plant-pottery-wasm.js';
@@ -591,6 +592,14 @@ function leafGeometry({ length, width, variant, curve, twist, random, detailed =
 }
 
 function ivyLeafGeometry(length,width,curve,random) {
+  const core = getRustCore();
+  if (typeof core?.plant_ivy_mesh === 'function') {
+    const samples = [random(), random(), random()];
+    const accelerated = rustPlantIvyGeometry(core, { length, width, curve, tint:samples[0]*.045, asymmetry:(samples[1]-.5)*.12, hue:(samples[2]-.5)*.08 });
+    if (accelerated) return accelerated;
+    let next = 0;
+    random = () => samples[next++];
+  }
   // Five broad lobes with shallow sinuses and a notched, cordate base form the
   // real silhouette rather than an alpha card. A centre fan and one middle
   // ring cup the thin blade; it is a single double-sided sheet, which reads

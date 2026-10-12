@@ -1,3 +1,38 @@
+# Migración 1.7.154 — geometría de hiedra
+
+Changelog: «Hiedra más rápida en Rust». Malla de cinco lóbulos, curvatura,
+colores, UV, índices y normales en Rust. Se conservan las tres muestras del
+PRNG, también al rechazar o fallar el núcleo, y los senos originales del host.
+78/78 focalizadas aprobadas,22 nuevas. El navegador compara toda la planta
+HEDERA con108 llamadas reales al núcleo: atributos e índices exactos, sin
+reservas temporales retenidas. Chromium390×844 CPU×4, nueve rondas alternadas
+de500 hojas, incluyendo PRNG, reserva, copia, atributos y liberación:
+JS0,0544ms / Rust0,0256ms. No equivale a la velocidad total de la app.
+Build aprobado. WASM239898 bytes,
+SHA `9a38fe01fd5c44a8678f349a02ca9ed72d897de8a254127ed991af00bf2e87df`.
+4457/4457 unitarias en337 archivos (281,55s) y11/11 E2E (3,6min),
+sin omisiones ni reintentos. Publicación pendiente.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-ivy`.
+
+Fuente153 `715266b59c21e837948e1e90499d443359a157f5` subida a main.
+Deploy38196289026 y Pages38196337453 aprobados; Pages
+`c5fd729d0ad8091558b36e1cf8afce13686d12d4`. El manifiesto y los recursos
+públicos coinciden con el build; el WASM descargado tiene el SHA esperado.
+20 casos del núcleo descargado y1096048 bytes de atributos exactos.
+APK1.1.15/code28 con tamaño, SHA y loader2107 comprobados; UI pública153
+aprobada2/2 en36,6s, sin omisiones ni reintentos (rust-plant-pot/public-ui).
+Evidencia: published-1791772591324. CI38196289014 pendiente.
+Código propio publicado153:2342 líneas Rust/25 archivos y35662 líneas JS/178
+archivos,6,16% Rust sobre líneas no vacías Rust+JS, incluidos comentarios.
+Excluye pruebas, dependencias, HTML/CSS y Java. No mide funcionalidades
+migradas ni esfuerzo restante. Medición: rust-plant-pot/code-share.json.
+ El caso adicional de retirada sin compilar shaders
+pasa localmente1/1 (39,7s), con su plazo original; el fallo deCI150 sigue
+pendiente de causa. Evidencia: rust-plant-pot/shader-removal. No se toma ese
+pase como prueba de corrección. CI151 también conserva los dos regresos
+nativos fallidos enUI2 (71 aprobadas); originales en rust-plant-foliage/ci151-ui2. El siguiente bloque se prepara fuera del
+repositorio: subdivisión de hojas grandes, preservando el orden de vértices.
+
 # Migración 1.7.153 — superficies de macetas
 
 Changelog: «Geometría de macetas en Rust». Rust calcula las coordenadas
