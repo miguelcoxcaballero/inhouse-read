@@ -1,9 +1,10 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega1.7.198: idiomas y selección de voces en Rust.
-5175unitarias y12E2E aprobados, sin omisiones ni reintentos.
-Inventario4851líneas Rust/37058JS,11,58%; no mide funciones terminadas.
-Conserva variantes regionales, voces instaladas y selección automática.
+Última entrega1.7.201: arranque y reanudación del audiolibro en Rust.
+5227unitarias completas aprobadas; once E2E originales y un caso nuevo
+aprobado tras corregir su observación de la primera frase del PDF.
+Inventario5062líneas Rust/37126JS,12,00%; no mide funciones terminadas.
+Conserva el orden de la sesión Android, cancelación y página visible.
 CI completo aún tiene incidencias documentadas; no se declara totalmente verde.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 

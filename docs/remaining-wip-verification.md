@@ -1,3 +1,31 @@
+# 1.7.201 — arranque del audiolibro en Rust
+
+Changelog: «Arranque del audiolibro en Rust».
+Rust coordina Play, reanudación, preparación inicial y cambio de página tras
+pausa. Conserva el cierre de la sesión retirada antes del desbloqueo nativo,
+los efectos síncronos del toque, la voz elegida, los mensajes y la invalidación
+por generación. Una preparación antigua no reactiva el audio tras detenerlo.
+No cambia motor, pesos, audio PCM, velocidad ni paginación. No se atribuye
+a este cambio una mejora de latencia de síntesis.
+
+500escenarios comparan fases síncronas/finales, errores y cancelación con el
+original;36decisiones de reinicio y2000ciclos con memoria WASM estable.
+186focales aprobados:112del lector,34de voz originales repetidos sin cambios
+también con Rust, y seis del nuevo módulo (incluidas cancelación durante la
+actualización del motor, ubicación cíclica y adopción tardía del módulo).
+Once E2E originales aprobados, incluidas dos voces reales Davefx PDF/EPUB.
+El nuevo caso esperaba «Page1» en la primera frase, que es «Reading journey.»;
+se comprueba ahora la primera frase exacta y la siguiente preparación de
+«Page1»/«Page3», sin restos de la primera página tras el salto en pausa.
+Mismo plazo,1/1aprobado en7,1s; e2e.log original preservado.
+Batería completa5227/5227,391archivos,325,20s, dos workers.
+
+Inventario5062Rust/37126JS=12,00% de líneas propias, no funcional.
+UI local408393bytes,SHA256
+4f8c2e7f07e3cef9d1c79dc7bca3fe0fcacc8d6dcae30fac49f0785bd22a6e6b.
+App/decor, APK y updater sin cambios. Publicación pendiente.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-start-prototype.
+
 # 1.7.200 — controles y teclado del lector en Rust
 
 Changelog: «Controles del lector en Rust».
@@ -22,7 +50,18 @@ Batería completa5187/5187,389archivos,320,87s, dos workers.
 Inventario4995Rust/37111JS=11,86% de líneas propias, no funcional.
 UI local395831bytes,SHA256
 a1f6ded7dd3e060c52784ed112e9280f008f261f5b26a771753f26822d667228.
-App/decor, APK y updater sin cambios. Publicación pendiente.
+App/decor, APK y updater sin cambios. Publicado37d3544,deploy38278317497 y
+Pages38278469093 aprobados, Pagescf206fb9. UI público395791bytes,SHA256
+c2313a4f4f6751a700adc2b2eb4da6511244c631fd85585981c2685af6fe5db5.
+Recursos HTTP/bytes/SHA, dos perfiles, treinta casosPCM/marcas y APK/loader
+aprobados. E2E público1/1,14s. AndroidAPI36 confirma web200/APK1.1.15/28,
+Lessac2×11,94s, ocho fragmentos terminados/nueve iniciados, proceso11940
+estable, sinFATAL. CI200 unitarias(job114909127944) aprobado; no acredita
+los jobs restantes. Evidencia published-1791823079998 y native-ui200.json.
+La primera consulta pública se adelantó al Pages aún en cola y conserva su
+fallo. La segunda terminó correctamente; tres verificadores lanzados antes
+de que escribiera su informe no recibieron ruta. Logs originales preservados,
+verificaciones con ruta confirmada separadas como public-*-final.log.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-reader-chrome-prototype.
 
 # 1.7.199 — apertura y cierre del lector en Rust
