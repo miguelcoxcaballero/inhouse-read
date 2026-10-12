@@ -7,7 +7,7 @@ fn smoothstep(a: f64, b: f64, value: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
-fn indexed_normals(positions: &[f32], normals: &mut [f32], indices: &[u16]) {
+pub(crate) fn indexed_normals(positions: &[f32], normals: &mut [f32], indices: &[u16]) {
     normals.fill(0.0);
     for triangle in indices.chunks_exact(3) {
         let a = triangle[0] as usize * 3;

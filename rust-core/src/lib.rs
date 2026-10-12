@@ -19,6 +19,7 @@ mod plant_glaze;
 mod plant_pottery;
 mod plant_soil;
 mod plant_foliage;
+mod plant_cactus;
 mod pdf_layout;
 mod pdf_rows;
 mod pcm;

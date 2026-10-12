@@ -1,3 +1,33 @@
+# Migración 1.7.152 — geometría de cactus
+
+Changelog: «Cactus más rápidos en Rust». Se migran la malla completa,
+las crestas, el estrechamiento de la punta, los pigmentos, UV y normales.
+Se conservan el PRNG y sus muestras incluso si falla la aceleración.
+Los coeficientes trigonométricos del navegador mantienen sus redondeos.
+48/48 pruebas focalizadas. El navegador compara los tres cactus reales,
+cada atributo e índice, sin diferencias ni reservas temporales retenidas.
+Chromium390×844 CPU×4, nueve rondas alternadas de40 mallas completas:
+JS1,155ms / Rust0,393ms de mediana, incluyendo PRNG, atributos y liberación.
+No equivale a una medición de toda la app ni de un móvil físico.
+WASM232362 bytes, SHA
+`7c7ee4685d6b28ebecb9acaaf57057bbfe71d1cf0884ce6eb818bb09adcf6f41`.
+Build aprobado; 4405/4405 unitarias en335 archivos (277,30s) y11/11 E2E
+(3,5min), sin omisiones ni reintentos. Publicación pendiente.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-cactus`.
+
+La publicación151 corresponde a `06d513b5bae83428cea9e10731183d3c08bab4f7`,
+Pages `6d4e5ac409a651a71c87ff5df9ac2658ee1812bb`.
+Deploy38194827863 y Pages38194871134 aprobados. Recursos públicos exactos,
+40 casos de follaje del WASM descargado y15733568 bytes idénticos.
+APK1.1.15/code28, SHA y loader2107 comprobados; 2/2 recorridos
+públicos aprobados sin omisiones ni reintentos (rust-plant-foliage/public-ui).
+Evidencia: published-1791771244849. CI151 aún pendiente.
+CI14938193105243 conserva los dos fallos del regreso nativo enUI2
+(71 aprobadas) y una prueba inestable enUI6: el libro retirado deDrive
+no estaba visible al iniciar el arrastre; pasó al reintentar. Los originales
+se conservan en rust-plant-pottery/ci149-failed. No se debilitan los plazos.
+
+
 # Migración 1.7.151 — follaje
 
 Verificación local: 4383/4383 unitarias y 11/11 E2E sin omisiones ni reintentos; build aprobado. Publicación pendiente. Changelog: «Texturas de hojas en Rust».

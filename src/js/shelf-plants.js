@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { getRustCore } from './rust-core.js';
 import { rustPlantLeafGeometry } from './plant-leaf-wasm.js';
+import { rustPlantCactusGeometry } from './plant-cactus-wasm.js';
 import { rustPlantPreview } from './plant-preview-wasm.js';
 import { rustPlantGlazeRows } from './plant-glaze-wasm.js';
 import { rustPlantPotteryRows } from './plant-pottery-wasm.js';
@@ -696,6 +697,14 @@ function cactusCap(f) {
 }
 
 function cactusGeometry(length, radius, bend, random) {
+  const core = getRustCore();
+  if (typeof core?.plant_cactus_mesh === 'function') {
+    const samples = Float64Array.from({ length:627 }, () => random());
+    const accelerated = rustPlantCactusGeometry(core, { length, radius, bend, samples });
+    if (accelerated) return accelerated;
+    let next = 0;
+    random = () => samples[next++];
+  }
   const positions = [], colors = [], uv = [], indices = [], rows = 18, columns = 32;
   for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
     const f = row / rows, angle = col / columns * Math.PI * 2;

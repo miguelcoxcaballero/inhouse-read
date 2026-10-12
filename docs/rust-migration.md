@@ -1140,3 +1140,20 @@ SHA `4e5e8beecc5aff28890b1f07dae1551db6b62cc9ff454a463095d39de08e2d85`.
 Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-foliage`.
 Próximo bloque preparado fuera del repositorio: geometría completa de cactus,
 con muestras del PRNG preservadas incluso cuando falle la aceleración.
+
+## 1.7.152: malla de cactus
+
+Changelog: «Cactus más rápidos en Rust». Se migran la malla completa,
+las crestas, el estrechamiento de la punta, los pigmentos, UV y normales.
+Se conservan el PRNG y sus muestras incluso si falla la aceleración.
+Los coeficientes trigonométricos del navegador mantienen sus redondeos.
+48/48 pruebas focalizadas. El navegador compara los tres cactus reales,
+cada atributo e índice, sin diferencias ni reservas temporales retenidas.
+Chromium390×844 CPU×4, nueve rondas alternadas de40 mallas completas:
+JS1,155ms / Rust0,393ms de mediana, incluyendo PRNG, atributos y liberación.
+No equivale a una medición de toda la app ni de un móvil físico.
+WASM232362 bytes, SHA
+`7c7ee4685d6b28ebecb9acaaf57057bbfe71d1cf0884ce6eb818bb09adcf6f41`.
+Build aprobado; 4405/4405 unitarias en335 archivos (277,30s) y11/11 E2E
+(3,5min), sin omisiones ni reintentos. Publicación pendiente.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-cactus`.
