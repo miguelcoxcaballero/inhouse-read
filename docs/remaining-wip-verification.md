@@ -1,3 +1,54 @@
+# 1.7.208 — preparación del texto y primer audio en Rust
+
+Changelog: «Preparación de voz en Rust».
+Rust crea el plan de lectura, comparte el análisis inicial entre seleccionar
+voz y pulsar Play, prepara el primer audio, reintenta páginas separadas y
+actualiza sus marcas después de un cambio real del diseño. Conserva fuentes,
+UTF-16, texto, cancelaciones y el estado visible mientras prepara el siguiente.
+Los callbacks retenidos por el formato se crean en el adaptador JavaScript.
+
+1200 escenarios comparados con el original, incluidos errores y orden
+síncrono antes del primer await;1000 ciclos con memoria WASM y referencias
+estables. El primer prototipo difería al reintentar un AbortError síncrono;
+se conserva check.log y se corrige el orden, sin modificar la comparación.
+La primera batería focal pasó151 pruebas, pero el contador añadido a la
+suite básica esperaba dos operaciones que esta no ejercitaba. Se conserva
+unit-focused.log. Se ejecutan también las suites originales de motor,
+preparación separada y cambios de diseño sobre WASM, con contadores propios:
+231 focalizadas y5353 unitarias completas aprobadas antes del arreglo FB2.
+El paginador exterior continuaba a scrollToAnchor aunque View.render
+hubiera rechazado el cuerpo provisional. También se protege afterScroll
+frente a eventos tardíos: conserva el rango/ancla anterior y reanuda tras
+el load real. Se conservan el fallo reproducido con los métodos exactos
+(frame-navigation-original.log) y su ejecución corregida sin cambiar las
+comprobaciones.77 focalizadas de preparación/navegación y 5356 unitarias
+completas finales aprobadas. No se modifican los archivos de node_modules:
+la transformación revisada rechaza versiones inesperadas de Foliate.
+24 E2E aprobados, incluidos controles, listas, FB2 y PDF/EPUB con Davefx real. El PDF comprueba
+plan inicial y preparación compilados, una onda y la marca audible de página.
+
+Corrección de la evidencia de memoria206/207: ui_live_handles devolvía cero
+porque strip=symbols eliminaba target_features, mientras rustc habilitaba
+reference-types y el puente generado usaba el heap JS. El control positivo
+crea un menú retenido y exige crecimiento, seguido de liberación exacta:
+counter-positive-original.log reproduce el fallo. No se consideran válidas
+las comparaciones anteriores basadas solamente en ese cero. Las mediciones
+independientes del heap JS con el observador de206/207 siguen separadas.
+Preservar metadata activaba también multivalue; unit-reference-abi.log
+detecta65 entradas no liberadas en1000 preparaciones con errores. Se mantiene
+el ABI anterior fijando -reference-types,-multivalue al compilar Rust,
+antes de eliminar metadata. No se editan bindings generados ni el allocator.
+123 focalizadas pasan con contador válido;1000 preparaciones mantienen68
+referencias. Se repite la batería completa y la prueba pública con controles
+positivos. Evidencia adicional:rust-ui-closure-lifetime/rust-ui-legacy-abi.
+
+Inventario:5667 líneas Rust/37245 JavaScript=13,21%, no funcional.
+UI local533502bytes,SHA256
+27e3bf710c628a2cfcfdf43562031b0ed64dfd9d1bf370a43501b6c864249a40.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+La migración completa sigue pendiente; no se declara totalmente verde el CI.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-preparation-prototype.
+
 # 1.7.207 — resaltado audible en Rust
 
 Changelog: «Resaltado y seguimiento de voz en Rust».
@@ -16,7 +67,24 @@ a inicio/presentación, una única onda y cambio de página en la marca audible.
 Inventario:5498 líneas Rust/37227 JavaScript=12,87%, no funcional.
 UI local488146bytes,SHA256
 543723fdd9750d3815dd08568b2939c487c8086e211dc63af3458f8d7a95c624.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada:d1f038352dee35a05d3314cbfc9e768031b70ad6.
+Deploy38289901932/Pages38290021855 completos; Pages
+3481762085f1d85dadfdbb24687396146c37a27f. UI pública488106bytes,SHA256
+fdae72ec4de12adbee1a53065cd556225d46e248424f655ed6e6e9fd61050e5a.
+published-1791829294556: todos los recursos HTTP/tamaño/SHA, dos perfiles,
+30 casos PCM/tempo y APK real con loader2107bytes correctos.
+Una instancia tanto en390px como1280px. La prueba de referencias públicas
+se invalida: el contador de206/207 leía un slab sin uso y siempre daba cero.
+La prueba HTTP y el E2E público PDF/Davefx1/1(21,9s) siguen siendo válidos.
+APK1.1.15/28 muestra web1.7.207:Lessac2×,10.09s,
+8finales/9inicios,PID15860estable y sinFATAL.
+CI38289901961:unitarias114947201063, voces reales y UI5 aprobadas.
+UI3/114947201629 falla al abrir FB2, también en su reintento. Se conservan
+ci207-ui3-original.log y ci207-ui3-artifact: createTreeWalker recibe un
+cuerpo ausente desde Paginator.render/afterScroll. Corregido en1.7.208;
+UI2/114947201773 también falla en las dos devoluciones nativas, en ambos
+intentos; original en ci207-ui2-original.log. Los restantes jobs pasan;
+el resultado global del run es failure.
 La migración completa sigue pendiente; no se declara totalmente verde el CI.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-presentation-prototype.
 

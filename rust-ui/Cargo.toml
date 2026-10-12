@@ -18,4 +18,6 @@ opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
+# The build script explicitly selects the legacy reference/call ABI before
+# stripping feature metadata. Rust and the generated JS must agree on ownership.
 strip = "symbols"

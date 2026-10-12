@@ -1,0 +1,9 @@
+import {afterAll,expect,vi} from 'vitest'
+import {readFileSync} from 'node:fs'
+import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
+const fixture=vi.hoisted(()=>({ui:null,calls:0}))
+vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
+import './reading-voice-deferred-pages.test.js'
+ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
+fixture.ui={...ui,voice_prepare_next:(...args)=>{fixture.calls++;return ui.voice_prepare_next(...args)}}
+afterAll(()=>expect(fixture.calls,'compiled detached preparation').toBeGreaterThan(0))

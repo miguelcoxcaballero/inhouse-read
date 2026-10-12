@@ -1,10 +1,12 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega1.7.207: resaltado y seguimiento audible en Rust.
-5315 unitarias completas y14 E2E aprobados, incluidas voces reales PDF/EPUB.
-Inventario:5498 líneas Rust/37227JS, **12,87 %**; no mide funciones terminadas.
-Se conserva una única onda entre páginas y se sigue su marca audible.
-1.7.206 pública verificada, incluida memoria estable y APK real.
+Última entrega1.7.208: preparación de texto y primer audio en Rust.
+5356 unitarias completas y24 E2E aprobados, incluidos FB2 y voces reales PDF/EPUB.
+Inventario:5667 líneas Rust/37245JS, **13,21 %**; no mide funciones terminadas.
+Seleccionar voz y Play comparten la preparación de la misma página.
+Corregido el cálculo del rango visible durante la navegación provisional de FB2.
+1.7.207 pública y APK real verificados. Se corrige la medición de referencias:
+el contador anterior siempre devolvía cero;208 exige controles positivos.
 CI aún tiene incidencias documentadas, incluida adopción tardía de controles.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 

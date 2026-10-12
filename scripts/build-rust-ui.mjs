@@ -57,11 +57,15 @@ if(process.platform==='win32'&&toolchain?.endsWith('windows-gnu')){
 // Only the UI module uses this smaller stack. Numeric/voice kernels retain
 // their own independently built memories and stack requirements.
 const inherited=env.CARGO_ENCODED_RUSTFLAGS?.split('\x1f')??env.RUSTFLAGS?.split(/\s+/).filter(Boolean)??[]
-env.CARGO_ENCODED_RUSTFLAGS=[...inherited,'-C','link-arg=-zstack-size=262144',
+// Keep the established JS-heap ABI on both sides. With stripped metadata,
+// rustc's default reference-types would make the live counter read an unused
+// WASM slab. Enabling automatic multivalue also leaks result slots on errors
+// in the pinned bindgen version. Positive lifetime controls cover this choice.
+env.CARGO_ENCODED_RUSTFLAGS=[...inherited,'-C','target-feature=-reference-types,-multivalue','-C','link-arg=-zstack-size=262144',
  '--remap-path-prefix=src\\lib.rs=lib.rs','--remap-path-prefix=src/lib.rs=lib.rs'].join('\x1f')
 run(cargo,[...args,'build','--manifest-path',resolve(root,'rust-ui/Cargo.toml'),'--release','--target','wasm32-unknown-unknown','--locked'],{env,stdio:'inherit'})
 const output=resolve(root,'src/wasm/ui')
 await mkdir(output,{recursive:true})
-run(cli,['--target','web','--out-dir',output,join(target,'wasm32-unknown-unknown/release/inhouse_read_ui.wasm')],{stdio:'inherit'})
+run(cli,['--target','web','--remove-name-section','--out-dir',output,join(target,'wasm32-unknown-unknown/release/inhouse_read_ui.wasm')],{stdio:'inherit'})
 const bytes=await readFile(join(output,'inhouse_read_ui_bg.wasm'))
 console.log(`Rust UI: ${bytes.length} bytes; SHA256 ${createHash('sha256').update(bytes).digest('hex')}`)

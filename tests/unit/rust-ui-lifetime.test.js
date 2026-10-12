@@ -4,6 +4,15 @@ import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 afterEach(()=>{document.body.replaceChildren()})
 
+it('counts retained menu references and observes their release',()=>{
+ // A constant-zero counter must never certify the lifetime tests below.
+ const warm=new ui.RustSelectMenu('Warm',null,()=>{});warm.free()
+ const baseline=ui.ui_live_handles()
+ const menu=new ui.RustSelectMenu('Retained',null,()=>{})
+ try{expect(ui.ui_live_handles()).toBeGreaterThan(baseline)}finally{menu.free()}
+ expect(ui.ui_live_handles()).toBe(baseline)
+})
+
 it('releases both JavaScript callbacks and Rust page tasks after repeated preparation',async()=>{
  const prepare=async()=>{
   const source={physicalPage:1},next={clear(){},isValid(){return true}}

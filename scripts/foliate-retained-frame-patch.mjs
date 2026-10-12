@@ -10,6 +10,8 @@ const destroy = `    destroy() {
     }`
 const load = /    async load\(src, afterLoad, beforeRender\) \{[\s\S]*?\n    \}\n(?=    render\(layout\))/g
 const renderGuard = '        if (!layout || !this.document) return'
+const paginatorRender = '    render() {\n        if (!this.#view) return'
+const afterScroll = '    #afterScroll(reason) {\n        const range = this.#getVisibleRange()'
 const expandDocument = '        const { documentElement } = this.document'
 const turn = /    async #turnPage\(dir, distance\) \{[\s\S]*?\n    \}\n(?=    async prev\(distance\))/g
 const replacement = `    async load(src, afterLoad, beforeRender) {
@@ -102,7 +104,8 @@ export function patchFoliateRetainedFrame(input) {
   const matches = [...source.matchAll(load)]
   if (source.split(create).length !== 2 || source.split(destroy).length !== 2 || matches.length !== 1 || [...source.matchAll(turn)].length !== 1 ||
       !matches[0][0].includes("this.#iframe.style.opacity = '1'") || source.includes('#loadAbort') ||
-      source.split(renderGuard).length !== 2 || source.split(expandDocument).length !== 2) {
+      source.split(renderGuard).length !== 2 || source.split(expandDocument).length !== 2 ||
+      source.split(paginatorRender).length !== 2 || source.split(afterScroll).length !== 2) {
     throw new Error('Unexpected foliate-js chapter frame: review retained navigation before building.')
   }
   source = source.replace('    #overlayer\n', '    #loadAbort\n    #overlayer\n')
@@ -117,6 +120,13 @@ export function patchFoliateRetainedFrame(input) {
     // ResizeObserver may fire while the retained iframe is navigating. Its
     // Document exists before the HTML root/body do; layout resumes on load.
     .replace(renderGuard, '        if (!layout || !this.document?.documentElement || !this.document.body) return')
+    // The outer renderer would otherwise continue to scrollToAnchor after the
+    // view declined layout. Late scroll events can arrive in this interval too.
+    // Keep the last valid range; the actual load/render publishes the new one.
+    .replace(paginatorRender, '    render() {\n        if (!this.#view?.document?.documentElement || !this.#view.document.body) return')
+    .replace(afterScroll, `    #afterScroll(reason) {
+        if (!this.#view?.document?.documentElement || !this.#view.document.body) return
+        const range = this.#getVisibleRange()`)
     .replace(expandDocument, `        const doc = this.document
         if (!doc?.documentElement || !doc.body) return
         const { documentElement } = doc`)
