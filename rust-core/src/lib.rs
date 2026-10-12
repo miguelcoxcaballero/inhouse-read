@@ -20,6 +20,7 @@ mod plant_pottery;
 mod plant_soil;
 mod plant_foliage;
 mod plant_cactus;
+mod plant_pot;
 mod pdf_layout;
 mod pdf_rows;
 mod pcm;

@@ -1157,3 +1157,28 @@ WASM232362 bytes, SHA
 Build aprobado; 4405/4405 unitarias en335 archivos (277,30s) y11/11 E2E
 (3,5min), sin omisiones ni reintentos. Publicación pendiente.
 Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-cactus`.
+
+## 1.7.153: superficies de macetas
+
+Changelog: «Geometría de macetas en Rust». Rust calcula las coordenadas
+por longitud de arco, el sombreado interior, las acanaladuras GRADVIS,
+las normales y su unión en la costura. Se conservan LatheGeometry y los
+coeficientes trigonométricos del navegador; no se afirma migrado ese constructor.
+78/78 pruebas focalizadas,30 nuevas. El primer ensayo de navegador incluyó una entrada «terracotta» que usa
+la maceta por defecto; el recorrido final usa el ID real «muskotblomma».
+La comparación directa del perfil de terracota sí corresponde al original.
+Reserva viva al terminar: cero. Chromium390×844 CPU×4, nueve rondas
+alternadas de30 macetas (incluye el constructor, copias y liberación):
+MUSKOT JS/Rust1,037/0,780ms; GRADVIS2,213/1,187;
+AKERBAR0,493/0,367; terracota0,523/0,380.
+El ensayo final del recorrido UI usa MUSKOTBLOMMA y compara los cuatro
+modelos reales completos, sin diferencias. Medianas JS/Rust de ese pase:
+MUSKOT1,090/0,637; GRADVIS2,277/1,260; ÅKERBÄR0,503/0,360;
+MUSKOTBLOMMA0,477/0,357ms. El primer ensayo se conserva íntegro.
+Son cálculos aislados, no una medición de toda la app ni de móvil físico.
+Build aprobado. WASM237663 bytes,
+SHA `1a777b9348a26959d8d191743f3da4e2ac4e074235f6c7a9654fa1d1e2f2cbe2`.
+4435/4435 unitarias en336 archivos (278,92s), sin omisiones.
+11/11 recorridos visuales aprobados en3,8min sin omisiones ni reintentos.
+Publicación pendiente.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-pot`.

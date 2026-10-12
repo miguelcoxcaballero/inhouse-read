@@ -1,3 +1,48 @@
+# Migración 1.7.153 — superficies de macetas
+
+Changelog: «Geometría de macetas en Rust». Rust calcula las coordenadas
+por longitud de arco, el sombreado interior, las acanaladuras GRADVIS,
+las normales y su unión en la costura. Se conservan LatheGeometry y los
+coeficientes trigonométricos del navegador; no se afirma migrado ese constructor.
+78/78 pruebas focalizadas,30 nuevas. El primer ensayo de navegador conserva atributos en cuatro entradas; la
+entrada «terracotta» usaba la maceta por defecto. El recorrido final usa
+el ID real «muskotblomma» para comprobar las cuatro variantes distintas.
+El ensayo del cálculo directo sí usaba el perfil de terracota.
+Reserva viva al terminar: cero. Chromium390×844 CPU×4, nueve rondas
+alternadas de30 macetas (incluye el constructor, copias y liberación):
+MUSKOT JS/Rust1,037/0,780ms; GRADVIS2,213/1,187;
+AKERBAR0,493/0,367; terracota0,523/0,380.
+El ensayo final del recorrido UI usa MUSKOTBLOMMA y compara los cuatro
+modelos reales completos, sin diferencias. Medianas JS/Rust de ese pase:
+MUSKOT1,090/0,637; GRADVIS2,277/1,260; ÅKERBÄR0,503/0,360;
+MUSKOTBLOMMA0,477/0,357ms. El primer ensayo se conserva íntegro.
+Son cálculos aislados, no una medición de toda la app ni de móvil físico.
+Build aprobado. WASM237663 bytes,
+SHA `1a777b9348a26959d8d191743f3da4e2ac4e074235f6c7a9654fa1d1e2f2cbe2`.
+4435/4435 unitarias en336 archivos (278,92s), sin omisiones.
+11/11 recorridos visuales aprobados en3,8min sin omisiones ni reintentos.
+Publicación pendiente.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-pot`.
+
+La fuente152 `c261bc8fb26846483ca7c235d9ebe3fc92284426` está subida.
+Deploy38195567312 y Pages38195610343 aprobados; Pages
+`48ef202924edd546c29e53c3388b0b1a9b3ec7c4`. Recursos públicos exactos,
+80 casos del WASM descargado y2760000 bytes de atributos idénticos.
+APK1.1.15/code28 con tamaño, SHA y loader2107 comprobados.
+Evidencia: published-1791771910383. UI pública152:2/2 aprobados
+sin omisiones ni reintentos (37,8s), en rust-plant-cactus/public-ui.
+CI38195567348 sigue pendiente; no se afirma aprobación global.
+La publicación151 ya tiene verificación del WASM público, recursos, APK
+y2 recorridos reales.
+CI150 conserva los dos regresos nativos fallidos enUI2 (71 aprobadas)
+y un fallo enUI6 (57 aprobadas): retirar un libro enlaza4 shaders cuando
+el contrato exige0, tanto en el primer intento como en el reintento.
+Originales: rust-plant-soil/ci150-failed. Debe investigarse; no se atribuye
+a la migración ni se declara anterior sin una comparación de referencia.
+
+El siguiente bloque se prepara fuera del repositorio: la hoja de hiedra,
+preservando los tres valores originales del PRNG.
+
 # Migración 1.7.152 — geometría de cactus
 
 Changelog: «Cactus más rápidos en Rust». Se migran la malla completa,

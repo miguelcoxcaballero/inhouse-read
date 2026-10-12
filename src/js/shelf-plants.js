@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { getRustCore } from './rust-core.js';
 import { rustPlantLeafGeometry } from './plant-leaf-wasm.js';
 import { rustPlantCactusGeometry } from './plant-cactus-wasm.js';
+import { rustPlantPotSurface } from './plant-pot-wasm.js';
 import { rustPlantPreview } from './plant-preview-wasm.js';
 import { rustPlantGlazeRows } from './plant-glaze-wasm.js';
 import { rustPlantPotteryRows } from './plant-pottery-wasm.js';
@@ -381,6 +382,8 @@ function potGeometry(potId, radius, height, soilFraction) {
   radius /= Math.max(...profile.map(([r]) => r)) + (fluted ? .018 : 0);
   const segments = fluted ? 96 : potId === 'muskot' ? 40 : 48;
   const geometry = new THREE.LatheGeometry(profile.map(([r,y]) => new THREE.Vector2(r * radius, y * height)), segments);
+  const acceleratedSoil = rustPlantPotSurface(getRustCore(), geometry, potId, profile, segments, radius, height, soilFraction);
+  if (acceleratedSoil !== null) return { geometry, soilRadius:acceleratedSoil, radius };
   const s = [0];
   for (let j = 1; j < n; j++) s.push(s[j - 1] + Math.hypot((profile[j][0] - profile[j - 1][0]) * radius, (profile[j][1] - profile[j - 1][1]) * height));
   let top = 0;
