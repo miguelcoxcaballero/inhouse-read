@@ -1290,3 +1290,41 @@ El ensayo final incluye crear/liberar y47 muestras por movimiento:
 Nueve tandas alternadas de100 movimientos; misma capacidad tras calentamiento.
 Son costes del cálculo, no tiempo GPU ni una mejora de FPS acreditada.
 Publicación159 pendiente. Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-motion`.
+
+# Migración 1.7.160 — imágenes PDF compuestas en Rust
+
+Changelog: «Imágenes PDF completas y más rápidas». Límites de recorte,
+orden geométrico y unión de capas solapadas migrados al núcleo. Mismos
+objetos de salida y píxeles de PDF.js; páginas con menos de8 imágenes
+conservan la ruta anterior. Incluye rotación, bordes de página, entradas
+inválidas, recomposición transitiva y200 páginas aleatorias de comparación.
+16 pruebas nuevas del núcleo y6 del registro de grupos.51/51 focalizadas
+tras el parche;41/41 adicionales de temas/tracker y2/2 pruebas del núcleo
+en navegador.10/10 UI: texto, imágenes y32 fotografías repetidas en ambas
+vistas y todos los temas, sin omisiones ni reintentos.
+
+El ensayo real detectó un fallo anterior: PDF.js6.3.289 registraba sólo una
+colocación al dibujar32 usos de una imagen. El lector entonces recurría a
+una captura completa de la página para esos operadores. Se añade un parche
+Vite acotado/versionado que registra cada colocación con su transformación
+y recorte reales. No cambia ningún dibujo; un cambio de la dependencia
+incompatible detiene el build. Se retira sólo el fallback de grupos/repetidas;
+las máscaras de plantilla no registradas conservan su protección original.
+Ahora32 imágenes/32 recortes/32 canvases y377136 bytes originales idénticos.
+La primera comprobación de paleta ideal falló por interpolación del renderer
+y redondeo de sus coordenadas Float16; se conserva. La comprobación final
+compara TODOS los píxeles originales compuestos, además de sus posiciones.
+No se modifica la interpolación del PDF ni se aumenta una tolerancia.
+Originales: browser.*, diagnostic.*, browser-fixed.*, color-diagnostic.*.
+
+Ensayo Chromium CPU×4, nueve rondas alternadas de20 llamadas con copias:
+32 imágenes JS0,045ms/Rust0,015ms;512 imágenes0,245/0,090ms;
+2000 imágenes1,145/0,355ms. Capacidad estable tras calentamiento.
+Build aprobado; WASM331507 bytes, SHA
+`c57b918b7443796a6e73a0561f1e3a588303e6101addd73d5fd4a934b8c72cc8`.
+Batería completa y publicación160 en curso. Evidencia:
+`D:/CodexEvidence/InhouseRead-20261012/rust-pdf-images`.
+
+Validación160 final local:4577/4577 unitarias (346 archivos),16/16 E2E
+adicionales de imágenes, orden y núcleo, además de10/10 anteriores de
+temas y32 imágenes repetidas. Publicación y artefactos en comprobación.

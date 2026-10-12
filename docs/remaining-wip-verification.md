@@ -1,3 +1,48 @@
+# Migración 1.7.160 — imágenes PDF compuestas en Rust
+
+Changelog: «Imágenes PDF completas y más rápidas». Límites de recorte,
+orden geométrico y unión de capas solapadas migrados al núcleo. Mismos
+objetos de salida y píxeles de PDF.js; páginas con menos de8 imágenes
+conservan la ruta anterior. Incluye rotación, bordes de página, entradas
+inválidas, recomposición transitiva y200 páginas aleatorias de comparación.
+16 pruebas nuevas del núcleo y6 del registro de grupos.51/51 focalizadas
+tras el parche;41/41 adicionales de temas/tracker y2/2 pruebas del núcleo
+en navegador.10/10 UI: texto, imágenes y32 fotografías repetidas en ambas
+vistas y todos los temas, sin omisiones ni reintentos.
+
+El ensayo real detectó un fallo anterior: PDF.js6.3.289 registraba sólo una
+colocación al dibujar32 usos de una imagen. El lector entonces recurría a
+una captura completa de la página para esos operadores. Se añade un parche
+Vite acotado/versionado que registra cada colocación con su transformación
+y recorte reales. No cambia ningún dibujo; un cambio de la dependencia
+incompatible detiene el build. Se retira sólo el fallback de grupos/repetidas;
+las máscaras de plantilla no registradas conservan su protección original.
+Ahora32 imágenes/32 recortes/32 canvases y377136 bytes originales idénticos.
+La primera comprobación de paleta ideal falló por interpolación del renderer
+y redondeo de sus coordenadas Float16; se conserva. La comprobación final
+compara TODOS los píxeles originales compuestos, además de sus posiciones.
+No se modifica la interpolación del PDF ni se aumenta una tolerancia.
+Originales: browser.*, diagnostic.*, browser-fixed.*, color-diagnostic.*.
+
+Ensayo Chromium CPU×4, nueve rondas alternadas de20 llamadas con copias:
+32 imágenes JS0,045ms/Rust0,015ms;512 imágenes0,245/0,090ms;
+2000 imágenes1,145/0,355ms. Capacidad estable tras calentamiento.
+Build aprobado; WASM331507 bytes, SHA
+`c57b918b7443796a6e73a0561f1e3a588303e6101addd73d5fd4a934b8c72cc8`.
+4577/4577 unitarias en346 archivos (282,17s), sin omisiones.16/16 E2E
+(55,5s) de imágenes, orden y núcleo real; sin fallos ni reintentos.
+Publicación160 en curso. Evidencia:
+`D:/CodexEvidence/InhouseRead-20261012/rust-pdf-images`.
+
+Publicación159: fuente `b938b4c885b62bc6e69cc246298837ebfb9f70ba`,
+Pages `6606d58c9a138f3fd8a0387030531d634e17e137`, deploy38201985214 y
+Pages38202043944 aprobados.99 recursos públicos/HTML/precarga exactos.
+200 movimientos/22375 muestras exactas del WASM descargado. APK1.1.15/code28,
+SHA/tamaño/loader2107 verificados. Evidencia: published-1791777807853.
+UI pública159:4/4 (77s), incluidos ambos regresos nativos y catálogo;
+sin fallos ni reintentos. CI157 falla sólo en los contratos nativos deUI2;
+originales conservados en rust-startup/ci157-ui2. No se considera corregido.
+
 # Migración 1.7.159 — poses de animación preparadas en Rust
 
 Changelog: «Poses de animación en Rust». La curva Hermite monótona prepara

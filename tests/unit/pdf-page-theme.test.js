@@ -44,10 +44,11 @@ describe('PDF images keep their original colours', () => {
     paintPDFTheme(source,target,'invert(1)',[0,0,0,1,1,0])
     expect(ctx.getImageData).not.toHaveBeenCalled()
   })
-  it('preserves complex batched/masked image layouts instead of guessing their bounds', () => {
+  it('uses recorded repeated images but preserves untracked stencil masks', () => {
     const ops = {paintInlineImageXObjectGroup:87,paintImageXObjectRepeat:88,paintImageMaskXObject:83}
-    expect(hasUntrackedPDFImages({fnArray:[1,87]},ops)).toBe(true)
-    expect(hasUntrackedPDFImages({fnArray:[88]},ops)).toBe(true)
+    expect(hasUntrackedPDFImages({fnArray:[1,87]},ops)).toBe(false)
+    expect(hasUntrackedPDFImages({fnArray:[88]},ops)).toBe(false)
+    expect(hasUntrackedPDFImages({fnArray:[87,88,83]},ops)).toBe(true)
     expect(hasUntrackedPDFImages({fnArray:[83]},ops)).toBe(true)
     expect(hasUntrackedPDFImages({fnArray:[1,85]},ops)).toBe(false)
     expect(hasUntrackedPDFImages({fnArray:[undefined]},{})).toBe(false)

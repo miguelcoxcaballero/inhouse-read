@@ -52,3 +52,5 @@ pub unsafe extern "C" fn free_f64(pointer: *mut f64, length: usize) {
 }
 
 mod book_motion;
+
+mod pdf_images;

@@ -29,12 +29,11 @@ export function paintPDFTheme(source, target, filter, coordinates = []) {
   ctx.restore()
 }
 
-// These batched operators bypass PDF.js's image-footprint tracker. Preserve
-// the original printed page for such layouts rather than recolour an image
-// using guessed bounds. Ordinary XObjects and inline images are tracked.
+// Stencil masks still bypass PDF.js's image-footprint tracker. Preserve their
+// original printed page rather than guess bounds. The guarded Vite patch now
+// records grouped/repeated ordinary images at every actual draw transform.
 export function hasUntrackedPDFImages(operatorList, ops) {
-  const names = ['paintInlineImageXObjectGroup', 'paintImageXObjectRepeat',
-    'paintImageMaskXObject', 'paintImageMaskXObjectGroup', 'paintImageMaskXObjectRepeat', 'paintSolidColorImageMask']
+  const names = ['paintImageMaskXObject', 'paintImageMaskXObjectGroup', 'paintImageMaskXObjectRepeat', 'paintSolidColorImageMask']
   const untracked = new Set(names.map(name => ops?.[name]).filter(Number.isFinite))
   return operatorList?.fnArray?.some(op => untracked.has(op)) || false
 }
