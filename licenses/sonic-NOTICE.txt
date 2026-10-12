@@ -1,0 +1,11 @@
+Inhouse Read uses an adaptation of Sonic's speech speed-up algorithm.
+Copyright 2010 Bill Cox. Licensed under Apache License 2.0 (adjacent file).
+Source: https://github.com/waywardgeek/sonic
+Reviewed revision: b93885dcb70aae50c6f76b0fe4e0868f029a077e
+
+Modified for Inhouse Read, 2026-10-12:
+Rust/WebAssembly and JavaScript implementations, mono Float32 input/output,
+bounded caller-owned memory, speed-up only, speech-page marker mapping,
+unaltered final tail instead of padding and trimming to an estimated duration.
+Pitch shifting, resampling, multichannel, spectrogram and streaming APIs are
+not included. Models and voice licences are unchanged.
