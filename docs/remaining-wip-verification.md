@@ -1,3 +1,47 @@
+# 1.7.180 — frases completas a velocidades altas
+
+Changelog: «Evita palabras omitidas al acelerar voces».
+Reproducción con pesos reales: Supertonic F1/M1, español y neerlandés,
+a 1/1,25/1,5/2×. Los 16 casos anteriores consumían todo su PCM antes de
+emitir done, pero a 2× las grabaciones omitían palabras. Ejemplo F1 español:
+«debajo de la mesa» y «con su hermano pequeño» desaparecían. No era un
+reloj de reproducción que avanzase antes: la generación comprimida ya
+producía una frase incompleta. Se conservan las WAV originales.
+
+Supertonic conserva ahora todos los frames de la predicción normal. Piper
+conserva el length_scale normal por encima de 1×. Después se acelera el PCM
+completo mediante speech_tempo, adaptación Rust de Sonic/PICOLA (Apache-2.0),
+sin resampling ni cambio de tono. Los límites de página se transforman con
+las operaciones reales de audio. La cola continúa usando muestras reproducidas;
+no hay temporizadores basados en texto ni una segunda división por velocidad.
+A 1× y velocidades lentas se conserva la ruta anterior. El fallback JS aplica
+el mismo algoritmo cuando el núcleo está frío o es antiguo. Scratch acotado,
+un arena liberada por fragmento y sin asignaciones dentro del kernel.
+
+71/71 pruebas focales; comparación exacta Rust/JS de todos los samples y
+marcas, pitch con cruces por cero, ruido, silencio, consonante final, crecimiento
+de memoria y argumentos inválidos. 16/16 pruebas reales Supertonic (4,8 min),
+6/6 Piper español/inglés con dos frases consecutivas (1,5 min), 16/16 recorridos
+de seguimiento PDF/EPUB y continuidad entre capítulos (1,9 min).
+La transcripción independiente local con Whisper small de las cuatro voces a
+2× pasa de errores 45/5/40/30% a 0/0/0/0% respecto al texto esperado. Es una
+comprobación automática de estas frases, no una certificación de cada voz/texto.
+Audio y JSON íntegros: D:/CodexEvidence/InhouseRead-20261012/audio-rate.
+
+Medida CPU de esta máquina, siete rondas alternadas, copias incluidas: 5 s de
+PCM a 2×, 11,80→4,64 ms; 30 s, 79,95→32,66 ms. No es latencia de generación
+ni una medida del teléfono. La generación a velocidad normal puede necesitar
+más cálculo que la anterior generación comprimida, que perdía palabras.
+App WASM 350219 bytes, SHA256
+6527f60788f7dd00baec576b7d7fe7ec5121d08bd31a5716895699930ab9f001.
+Decoración, paquete Android, firma, updater y modelos sin cambios.
+
+Primera batería: 4879 aprobadas, un fallo en el arnés VM hebreo: eliminaba
+los imports y no inyectaba las nuevas funciones de tempo. Se añaden las
+funciones reales al arnés; se conserva unit-full.log/json sin reemplazarlo.
+Batería final y verificación pública pendientes. Los fallos anteriores de CI
+178 (UI2/UI3) siguen conservados; no se presentan como corregidos por este audio.
+
 # 1.7.179 — sombras de contacto en Rust
 
 Changelog: «Acelera sombras de la estantería».
@@ -23,7 +67,9 @@ Primera batería completa:4844 aprobadas y un timeout en la comparación de
 150casos de la prueba nueva. Se conserva unit.log/json. La aserción hacía una
 comparación profunda de cada propiedad de Buffer; ahora Buffer.equals compara
 los mismos bytes completos, sin ampliar plazos ni retirar casos. Batería
-completa final: 4845/4845 aprobadas, 368 archivos, 291,76 s. Verificación pública pendiente.
+completa final: 4845/4845 aprobadas, 368 archivos, 291,76 s. Publicación 179 verificada: 153 comprobaciones HTTP/tamaño/SHA, dos perfiles nuevos de navegador, 2/2 pruebas visuales contra el WASM publicado y APK real descargada con loader de 2107 bytes.
+Commit 0ba2385; Deploy 38236168477 y Pages 38236244623 completados.
+Evidencia pública: D:/CodexEvidence/InhouseRead-20261012/published-1791800893734.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-shelf-occlusion.
 El CI177 conserva seis fallos del grupo UI3, reproducidos localmente sin
 cambiar código: las pruebas aún exigían audio/retorno arriba y ocultaban Stop

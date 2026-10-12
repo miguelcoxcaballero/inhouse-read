@@ -8,6 +8,7 @@ import {createHebrewPhonemizer} from './hebrew.js'
 import {createSupertonicRuntime} from './supertonic-runtime.js'
 import {prepareSpeech,silence,concat,pauseAfter,restScale,splitSegments,limitIds,lengthScaleFor,PAUSE_MS} from './pcm.js'
 import {loadRustCore} from '../../rust-core.js'
+import {synthesisRate,speedUpSpeech} from './speech-tempo.js'
 const failure=message=>Object.assign(new Error(message),{code:'init-failed'})
 export class NativeSynthClient {
   constructor({store,phonBase,env=globalThis,createOrt=createNativeOrt,createPhon=createPhonemizer}={}) {
@@ -108,7 +109,7 @@ export class NativeSynthClient {
     for(let index=0;index<segments.length;index++) {
       if(!active())return
       const part=segments[index],start=performance.now(),inference=config.inference||{}
-      const feeds={input:new ort.Tensor('int64',BigInt64Array.from(part,BigInt),[1,part.length]),input_lengths:new ort.Tensor('int64',BigInt64Array.of(BigInt(part.length)),[1]),scales:new ort.Tensor('float32',Float32Array.of(inference.noise_scale??.667,lengthScaleFor(inference.length_scale??1,rate),inference.noise_w??.8),[3])}
+      const feeds={input:new ort.Tensor('int64',BigInt64Array.from(part,BigInt),[1,part.length]),input_lengths:new ort.Tensor('int64',BigInt64Array.of(BigInt(part.length)),[1]),scales:new ort.Tensor('float32',Float32Array.of(inference.noise_scale??.667,lengthScaleFor(inference.length_scale??1,synthesisRate(rate)),inference.noise_w??.8),[3])}
       if(this.session.inputNames.includes('sid'))feeds.sid=new ort.Tensor('int64',BigInt64Array.of(BigInt(speaker||0)),[1])
       const out=await this.session.run(feeds)
       const tensor=out[this.session.outputNames[0]],raw=new Float32Array(tensor.data)
@@ -117,10 +118,12 @@ export class NativeSynthClient {
       for(const value of Object.values(feeds))value.dispose?.()
       if(!active())return
       const {pcm:speech,from}=prepareSpeech(raw,sampleRate,{model:key,timing:true}),last=index===segments.length-1,rest=restScale(rate)
-      const pcm=concat([index?silence(sampleRate,PAUSE_MS.sentence*rest):new Float32Array(),speech,last?silence(sampleRate,pauseAfter(text)*rest):new Float32Array()])
       const timeline=durationMarks(points,durations,{base:segments.slice(0,index).reduce((n,p)=>n+p.length,0),count:part.length,
-        samples:raw.length,trim:from,lead:index?Math.round(sampleRate*PAUSE_MS.sentence*rest/1000):0,length:pcm.length})
-      handlers.onChunk({index,last,pcm,sampleRate,ms:performance.now()-start,marks:timeline})
+        samples:raw.length,trim:from,lead:0,length:speech.length})
+      const fast=speedUpSpeech(speech,sampleRate,rate,timeline)
+      const lead=index?silence(sampleRate,PAUSE_MS.sentence*rest):new Float32Array()
+      const pcm=concat([lead,fast.pcm,last?silence(sampleRate,pauseAfter(text)*rest):new Float32Array()])
+      handlers.onChunk({index,last,pcm,sampleRate,ms:performance.now()-start,marks:fast.marks.map(mark=>({...mark,sample:mark.sample+lead.length}))})
     }
   }
   dispose() {

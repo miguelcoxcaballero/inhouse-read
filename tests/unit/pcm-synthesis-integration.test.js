@@ -12,6 +12,7 @@ import { NativeSynthClient } from '../../src/js/readers/neural-voice/native-clie
 import { NativeTensor } from '../../src/js/readers/neural-voice/native-ort.js';
 import { peakNormalize,trimSilence,fadeEdges,silence,concat,pauseAfter,restScale } from './helpers/reference-pcm.js';
 import { makePCM } from '../helpers/pcm-cases.mjs';
+import { speechTempoJS } from '../../src/js/readers/neural-voice/speech-tempo.js';
 beforeAll(async()=>{
   const {instance}=await WebAssembly.instantiate(readFileSync(new URL('../../src/wasm/inhouse_read_core.wasm',import.meta.url)));
   const core=instance.exports;expect(typeof core.pcm_prepare).toBe('function');
@@ -53,7 +54,11 @@ it(`executes compiled Rust in ${route}/${runtime}, retaining full chunk bytes, t
     expect(messages.filter(m=>m.type==='error')).toEqual([]);expect(state.calls).toBe(1);
     const chunks=messages.filter(m=>m.type==='chunk');expect(chunks).toHaveLength(1);
     const sr=runtime==='piper'?22050:24000,raw=state.raw.slice();peakNormalize(raw,{model:runtime==='piper'?key:''});
-    const expected=concat([fadeEdges(trimSilence(raw,sr),sr),silence(sr,pauseAfter(text)*restScale(rate))]);
+    const normal=fadeEdges(trimSilence(raw,sr),sr);
+    // The Supertonic mock already represents its runtime's speed-processed
+    // result. Piper now generates normal speech and applies tempo afterward.
+    const speech=runtime==='piper'?speechTempoJS(normal,sr,rate).pcm:normal;
+    const expected=concat([speech,silence(sr,pauseAfter(text)*restScale(rate))]);
     const actual=chunks[0].pcm;
     expect(Buffer.compare(Buffer.from(actual.buffer,actual.byteOffset,actual.byteLength),Buffer.from(expected.buffer))).toBe(0);
     expect(chunks[0]).toMatchObject({index:0,last:true,sampleRate:sr});expect(Number.isFinite(chunks[0].ms)).toBe(true);

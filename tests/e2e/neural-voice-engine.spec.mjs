@@ -508,4 +508,26 @@ test.describe('neural voice engine (real Piper weights, real ORT + espeak-ng WAS
   })
 
 
+  for(const voice of [ES,EN])for(const rate of [1.25,1.5,2])
+  test(`fast complete sentences ${voice} ${rate}x wait for their last sample`,async()=>{
+    await page.evaluate(id=>window.neural.engine.install('piper:'+id),voice)
+    await page.click('#unlock')
+    const texts=voice===ES
+      ? ['La niña encontró las llaves debajo de la mesa y regresó a casa con su hermano pequeño.','Después cerró la puerta y comenzó a preparar la cena.']
+      : ['The girl found the keys under the table and returned home with her younger brother.','Then she closed the door and began to prepare dinner.']
+    const result=await page.evaluate(async({voice,rate,texts})=>{
+      const s=window.neural;s.engine.stop();s.starts.length=0;window.__capture=true
+      const log=await s.readAll('piper:'+voice,texts,rate,{prefix:'speed-'})
+      window.__capture=false;return {log,starts:s.starts.splice(0)}
+    },{voice,rate,texts})
+    expect(result.log.filter(e=>e.type==='error')).toEqual([])
+    expect(result.starts).toHaveLength(2)
+    for(let i=0;i<2;i++) {
+      const done=result.log.find(e=>e.type==='done'&&e.id===`speed-${i}`),source=result.starts[i]
+      expect(done.ctxTime-done.latency).toBeGreaterThanOrEqual(source.when+source.duration-.01)
+      if(i)expect(source.when).toBeGreaterThanOrEqual(result.starts[i-1].when+result.starts[i-1].duration-.0001)
+      writeFileSync(join(EVIDENCE,`${voice.slice(0,2)}-${voice}-${rate}-${i}.wav`),wavOf(source.data,source.sampleRate))
+    }
+    numbers[`complete-${voice}-${rate}`]={texts,log:result.log,starts:result.starts.map(({data,...s})=>s)}
+  })
 })

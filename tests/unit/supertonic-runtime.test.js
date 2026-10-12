@@ -64,10 +64,11 @@ describe('Supertonic inference lifecycle',()=>{
     expect(f.tensors.filter(t=>!t.dispose.mock.calls.length)).toHaveLength(SUPERTONIC_STYLES.length*2);
     await runtime.dispose();await runtime.dispose();expect(f.tensors.every(t=>t.dispose.mock.calls.length===1)).toBe(true);expect(f.sessions.every(s=>s.release.mock.calls.length===1)).toBe(true);
   });
-  it('uses speed in predicted duration and retains the selected style',async()=>{
+  it('generates every normal-speed latent before accelerating PCM and retains the selected style',async()=>{
     const f=fixture(),runtime=await createSupertonicRuntime(f.args);
-    // 2x keeps a 15% margin so the end of the sentence is not swallowed: 0.1 s / 2 * 1.15, whole frames of 32 samples.
-    expect((await runtime.synthesize('Hola',{lang:'es',style:'F2',rate:2})).pcm).toHaveLength(480);
+    const result=await runtime.synthesize('Hola',{lang:'es',style:'F2',rate:2});
+    expect(f.sessions[2].run.mock.calls[0][0].noisy_latent.dims.at(-1)).toBe(25); // all 800 normal-speed samples
+    expect(result.pcm.length).toBeLessThan(800);expect(result.pcm.length).toBeGreaterThanOrEqual(400);
     expect(f.sessions[0].run.mock.calls[0][0].style_dp).toBe(f.tensors[5]);await runtime.dispose();
   });
   it('uses the verified six-step quality profile when the worker leaves steps unspecified',async()=>{
@@ -100,11 +101,10 @@ describe('Supertonic inference lifecycle',()=>{
 });
 
 describe('supertonicSeconds', () => {
-  it('divides the predicted duration by the speed, keeping a margin above 1x', async () => {
+  it('never shortens the model duration above 1x; tempo changes only after inference', async () => {
     const { supertonicSeconds } = await import('../../src/js/readers/neural-voice/supertonic-runtime.js')
     expect(supertonicSeconds(2, 1)).toBe(2)
     expect(supertonicSeconds(2, 0.5)).toBe(4)
-    expect(supertonicSeconds(2, 2)).toBeCloseTo(1.15, 5)
-    expect(supertonicSeconds(2, 1.5)).toBeCloseTo(2 / 1.5 * 1.075, 5)
+    for(const rate of [1.25,1.5,2])expect(supertonicSeconds(2,rate)).toBe(2)
   })
 })

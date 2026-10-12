@@ -2,6 +2,7 @@
 // Copyright (c) 2025 Supertone Inc. See /licenses/supertonic-sdk-MIT.txt.
 // The model weights have the separate OpenRAIL-M licence.
 import { SUPERTONIC_LANGUAGES, SUPERTONIC_STYLES, SUPERTONIC_LEGACY_STYLES } from './supertonic-catalog.js';
+import { synthesisRate, speedUpSpeech } from './speech-tempo.js';
 
 const cancelled = () => Object.assign(new Error('Lectura cancelada'),{name:'AbortError',code:'aborted'});
 import { yieldToMessages as yieldTask } from './task-yield.js';
@@ -10,15 +11,12 @@ import { yieldToMessages as yieldTask } from './task-yield.js';
 export const SUPERTONIC_STEPS = 6;
 
 /**
- * Seconds the model gets for a fragment at `rate`. Speed is the predicted
- * duration divided by the rate, as in Supertonic's own SDK; but squeezed
- * below what the words need, the end of the sentence was swallowed and the
- * next one seemed to start too early (most audible above 1x). Faster rates
- * keep a margin that grows with them: 2x is read at about 1.75x.
+ * Never squeeze the model's latent below its normal predicted duration.
+ * Faster playback is applied to complete speech, with pitch-preserving tempo
+ * processing, after inference. A percentage margin still lost words at 2x.
  */
 export function supertonicSeconds(predicted,rate) {
-  const speed=Math.max(.5,Math.min(2,Number(rate)||1));
-  return predicted/speed*(speed>1?1+.15*(speed-1):1);
+  return predicted/synthesisRate(rate);
 }
 export function normalizeSupertonicText(text,lang) {
   if(!SUPERTONIC_LANGUAGES.includes(lang))throw new Error(`Idioma Supertonic no disponible: ${lang}`);
@@ -144,7 +142,8 @@ export async function createSupertonicRuntime({ort,buffers,config,indexer,styles
           timeline.push(...chunkMarks.map(mark=>({...mark,offset:mark.offset+start,sample:mark.sample+length})))
           parts.push(pcm);length+=pcm.length;
         }
-        if(disposed||!isActive())throw cancelled();const pcm=new Float32Array(length);let offset=0;for(const part of parts){pcm.set(part,offset);offset+=part.length;}return{pcm,sampleRate,marks:timeline};
+        if(disposed||!isActive())throw cancelled();const pcm=new Float32Array(length);let offset=0;for(const part of parts){pcm.set(part,offset);offset+=part.length;}
+        return {...speedUpSpeech(pcm,sampleRate,rate,timeline),sampleRate};
       })();running=job;job.finally(()=>{if(running===job)running=null;}).catch(()=>{});return job;
     },
     async dispose(){if(disposed)return;disposed=true;await running?.catch(()=>{});await releaseAll();}

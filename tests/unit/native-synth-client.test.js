@@ -20,11 +20,12 @@ describe('native natural synthesis client',()=>{
     const handlers={onPlan:vi.fn(),onChunk:vi.fn(),onEnd:vi.fn(),onError:vi.fn()}
     client.synth({text:'Hola, Argentina.',rate:1.25,speaker:3},handlers);await flush()
     expect(phon.phonemize).toHaveBeenCalledWith('Hola, Argentina.','es-419')
-    expect(runs[0].sid.data).toEqual(BigInt64Array.of(3n));expect(runs[0].scales.data[1]).toBeCloseTo(.8)
+    expect(runs[0].sid.data).toEqual(BigInt64Array.of(3n));expect(runs[0].scales.data[1]).toBe(1)
     expect(handlers.onError).not.toHaveBeenCalled();expect(handlers.onEnd).toHaveBeenCalledOnce()
     const chunk=handlers.onChunk.mock.calls[0][0]
     expect(chunk.pcm).toBeInstanceOf(Float32Array);expect(chunk.pcm.some(n=>Math.abs(n)>.05)).toBe(true)
     expect(chunk.last).toBe(true);expect(chunk.sampleRate).toBe(22050)
+    expect(chunk.pcm.length).toBeLessThan(6000+Math.round(22050*.24/Math.sqrt(1.25)))
     await client.prepare('es_AR-davefx-medium');expect(store.readModel).toHaveBeenCalledOnce()
     client.dispose()
   })

@@ -24,6 +24,7 @@ import { createHebrewPhonemizer } from './hebrew.js'
 import { createSupertonicRuntime } from './supertonic-runtime.js'
 import { yieldToMessages } from './task-yield.js'
 import { loadRustCore } from '../../rust-core.js'
+import { synthesisRate, speedUpSpeech } from './speech-tempo.js'
 import { prepareSpeech, silence, concat, pauseAfter, restScale, splitSegments, limitIds, lengthScaleFor, PAUSE_MS } from './pcm.js'
 
 let ort = null, phonemizer = null, phonBaseURL = null, hebrewPhonemizer = null, supertonicRuntime = null, session = null, config = null, voice = null, initPromise = null, loadChain = Promise.resolve()
@@ -145,7 +146,7 @@ async function synth({ id, text, rate, speaker, lang, style, marks = [] }) {
     if (cancelled.has(id)) return
     const t = performance.now()
     stage(3,3,id,index)
-    const {pcm:raw,durations} = await runSegment(segments[index], { rate, speaker })
+    const {pcm:raw,durations} = await runSegment(segments[index], { rate:synthesisRate(rate), speaker })
     stage(3,4,id,index)
     const ms = performance.now() - t
     const {pcm:speech,from} = prepareSpeech(raw, sampleRate, { model:voice, timing:true })
@@ -153,11 +154,14 @@ async function synth({ id, text, rate, speaker, lang, style, marks = [] }) {
     // Sentences of one fragment are separated by a rest at their start; the rest after the fragment comes with its last one.
     // (the rests shorten with the speaking rate, like the speech does)
     const rest = restScale(rate)
-    const pcm = concat([index ? silence(sampleRate, PAUSE_MS.sentence * rest) : new Float32Array(0), speech, last ? silence(sampleRate, pauseAfter(text) * rest) : new Float32Array(0)])
-    if (cancelled.has(id)) return
     const timeline = durationMarks(points,durations,{base:segments.slice(0,index).reduce((n,p)=>n+p.length,0),count:segments[index].length,
-      samples:raw.length,trim:from,lead:index ? Math.round(sampleRate * PAUSE_MS.sentence * rest / 1000) : 0,length:pcm.length})
-    post({ type: 'chunk', id, index, last, pcm, sampleRate, ms, marks:timeline }, [pcm.buffer])
+      samples:raw.length,trim:from,lead:0,length:speech.length})
+    const fast = speedUpSpeech(speech,sampleRate,rate,timeline)
+    const lead = index ? silence(sampleRate,PAUSE_MS.sentence*rest) : new Float32Array(0)
+    const pcm = concat([lead,fast.pcm,last ? silence(sampleRate,pauseAfter(text)*rest) : new Float32Array(0)])
+    if (cancelled.has(id)) return
+    post({ type: 'chunk', id, index, last, pcm, sampleRate, ms:performance.now()-t,
+      marks:fast.marks.map(mark=>({...mark,sample:mark.sample+lead.length})) }, [pcm.buffer])
     stage(3,5,id,index)
     await yieldToMessages()
     stage(3,6,id,index)

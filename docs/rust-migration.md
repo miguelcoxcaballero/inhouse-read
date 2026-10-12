@@ -1590,3 +1590,16 @@ frente a un perfil que usa el generador anterior. La mejora medida CPU×4 de
 1,235→0,485ms para tres baldas iluminadas incluye copias, atributos y cálculo
 de límites, no renderizado GPU. App WASM347129bytes; decoración sin cambios.
 Estado de pruebas y publicación en remaining-wip-verification.md.
+
+## 1.7.180 — tempo de voz en Rust
+
+`speech_tempo` adapta AMDF/PICOLA de Sonic (Apache-2.0) a mono Float32,
+velocidades 1–3× y marcas de página. Generación normal antes de acelerar:
+las pruebas reales reprodujeron omisiones de palabras con latentes comprimidos.
+Arena acotada, scratch fijo, sin asignación dentro del kernel; se conserva el
+final de la onda y se mapean las marcas con cada tramo. El host copia los arrays
+transferibles y libera el arena. Fallback JS equivalente para núcleo frío/antiguo.
+35 pruebas nuevas comparan bytes, tono, marcas, límites y memoria.
+WASM app 350219 bytes; decoración idéntica. Ver evidencia y límites de las
+mediciones en remaining-wip-verification.md. UI y motores ONNX no se han
+migrado por este cambio; no se afirma que toda la aplicación sea Rust.
