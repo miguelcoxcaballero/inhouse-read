@@ -1328,3 +1328,40 @@ Batería completa y publicación160 en curso. Evidencia:
 Validación160 final local:4577/4577 unitarias (346 archivos),16/16 E2E
 adicionales de imágenes, orden y núcleo, además de10/10 anteriores de
 temas y32 imágenes repetidas. Publicación y artefactos en comprobación.
+
+# Migración 1.7.161 — colocación de ilustraciones en Rust
+
+Changelog: «Ilustraciones entre párrafos en Rust». El núcleo proyecta las
+cuatro esquinas de cada imagen, construye los límites de columnas y ordena
+las ilustraciones por su posición en el texto. Conserva offsets UTF-16,
+referencias originales, orden estable, rotación y escalas no uniformes.
+La orientación trigonométrica se calcula en el navegador para mantener sus
+redondeos. Menos de ocho imágenes siguen la ruta anterior.
+17 pruebas nuevas; 56/56 focalizadas de preparación, navegación y lector.
+200 páginas aleatorias, 2000 imágenes, Unicode, memoria creciente y errores
+nativos. 4/4 E2E (22,9s): núcleo real y PDF con 32 usos de una fotografía,
+en texto/original y cinco temas. 377136 bytes de imagen originales exactos.
+Ensayo Chromium CPU×4, nueve tandas alternadas de20 llamadas, con copias:
+8 imágenes JS0,070ms/Rust0,050ms;32 imágenes0,260/0,100ms;
+128 imágenes0,905/0,310ms;512 imágenes2,490/0,845ms;
+2000 imágenes11,290/3,460ms. Memoria estable tras calentamiento.
+Estos tiempos son del cálculo, no de abrir un libro en un móvil físico.
+Build aprobado; WASM346703 bytes, SHA
+`34a884dff58b8780b4044a2999ce9b87cc212c9f7f4dcd2eecd65dffda6f3a5e`.
+4594/4594 unitarias (347 archivos,283,61s), sin omisiones.
+26/26 E2E locales:4 del núcleo/imágenes,8 de lectura/voz Davefx real y
+14 de adaptación/navegación; todos sin omisiones ni reintentos.
+Publicación161 pendiente. Evidencia:
+`D:/CodexEvidence/InhouseRead-20261012/rust-pdf-figures`.
+
+Publicación160: fuente `3737d6540f0ace149a5f35dab4e4ab4a6420a327`,
+Pages `f8199486ba5b98fecaba9b64d92f9d91d30ca217`, deploy38202984265 y
+Pages38203042445 aprobados.99 recursos/HTML/precarga exactos; núcleo
+público200 páginas/15000 imágenes,1432 recortes idénticos. APK1.1.15/code28,
+SHA/tamaño/loader2107 verificados. Evidencia: published-1791778620973.
+UI pública160:6/6 (37,8s), orden y32 imágenes repetidas, sin reintentos.
+La comprobación del navegador limpio y la UI adaptable adicional siguen pendientes.
+Publicación159: respuesta real de main/WASM idéntica en dos perfiles frescos.
+CI15838201058813: fallan ambos contratos de cierre nativo; luces y barra de
+estado pasan sólo al reintentar. Se conservan los originales completos en
+rust-pdf-order/ci158-ui2 yci158-ui3. No se consideran resueltos.
