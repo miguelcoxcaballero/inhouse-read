@@ -1,7 +1,52 @@
-# Prioridad actual — estabilidad del texto y audio continuo (12 octubre)
+# Revisión 1.7.143 — controles sin hueco inferior (12 octubre)
 
-Preparado para web **1.7.142**, todavía SIN publicar. Rust está preservado en
-`d448533`; la corrección del lector tiene prioridad sobre más migraciones.
+Verificación local aprobada; publicación en preparación. Changelog:
+«Navegación libre durante la narración». Conserva los gestos y el cursor
+independiente de 142. Audio y retorno ocupan la cabecera existente: desaparece
+la reserva inferior de 52 px sin variar la caja de lectura al reproducir.
+Caché de altura v3 para descartar las páginas más cortas de 142. En teléfonos
+de 320 px el retorno se lee en dos líneas y Detener permanece en el panel de
+audio, con Pausa de 44 px en la cabecera.
+
+CI 142 `38186967268`: UI3 rechazado, siete casos originales conservados en
+`D:/CodexEvidence/InhouseRead-20261012/reader-continuity/ci142/playwright-ui-3`.
+Cuatro detectaron la reserva inferior, uno un resaltado PDF fuera del área,
+otro esperaba que deslizar detuviera la voz (contrario a la petición actual)
+y otro esperaba un retorno separado encima del mini reproductor. Se corrige
+el espacio y se actualizan las comprobaciones espaciales a la cabecera y el
+gesto a reproducción ininterrumpida, conservando límites de área útil,
+ausencia de solapamiento y objetivos táctiles.
+
+El ensayo `unit143` conservó 4090 aprobados y un timeout a 5403 ms en la
+comparación de 640 KB de PCM. El mismo caso aislado pasó (2102 ms). Ahora
+`Buffer.equals` compara TODOS los bytes sin recorrer cientos de miles de
+propiedades con el comparador genérico; no se cambia el audio ni el plazo.
+El original y su repetición aislada `cached-order143` permanecen guardados.
+La batería completa se repite sobre los bytes finales.
+
+`layout143` original: 27 aprobados, cuatro expectativas antiguas de mini
+reproductor inferior rechazadas y seis capturas omitidas por faltar la ruta.
+`layout143-final` ejecuta también esas seis capturas y el nuevo caso 320/390 px.
+
+Resultado final local: `layout143-final` **38/38**, sin omisiones ni reintentos,
+5,4 minutos, con capturas revisadas en 320/390 px. `unit143-bounded` **4091/4091**
+en 326 archivos, 228 s, cuatro workers y los mismos plazos y aserciones. El
+ensayo completo previo `unit143-final` tuvo un timeout de 5 s en la comparación
+de mapas de portada large-cover/10 bajo carga concurrente; se conserva íntegro.
+No se cambia ese test ni su plazo: se limita la concurrencia del ejecutor local.
+
+CI 142 también conserva dos fallos de retorno nativo dentro de 8 s en UI2,
+iguales a los registrados en 141. UI1/4/5/6, las unitarias y los tres grupos
+Piper aprobaron; Supertonic todavía en curso al preparar esta publicación.
+No se afirma aprobación global ni resolución del rendimiento de retorno.
+
+## Publicación anterior — estabilidad del texto y audio continuo
+
+Publicado y comprobado: web **1.7.142**, fuente
+`ccf94d555a29c668e9d07eb1d5de56d5a88f8392`, Pages
+`2c3119bb85be4b9d5b5c875f40613558741321f1`. Incluye Rust `d448533`.
+Deploy `38186967248` y Pages `38187014344` aprobados. CI global
+`38186967268` sigue en curso: no se afirma aún aprobación completa.
 
 Implementado:
 - La geometría del texto reserva una franja constante para audio/retorno;
@@ -32,7 +77,21 @@ Evidencia local `D:/CodexEvidence/InhouseRead-20261012/reader-continuity`:
   `latest-focused`: 84/84, pausa de PDF unido, pan y puente PCM nativo.
   `real-supertonic`: 1/1 offline con pesos reales, un buffer de 4,452 s,
   marca interna y ninguna solicitud externa; la temporización es estimada.
-  Verificación pública y CI global: pendientes tras publicar.
+- `engine-final`: 15/15 casos reales Piper sin omisiones ni retries.
+- `public-ui2`: 6/6 en la URL pública, voz real continua PDF/EPUB, glifos estables,
+  navegación independiente y hold de 650 ms. `public-ui` original conserva dos
+  fallos al instalar modelos: Chrome denegó el servidor fixture loopback desde
+  HTTPS. La repetición sólo concede local-network-access al contexto de prueba;
+  no cambia la app ni desactiva seguridad general. Los otros cuatro ya pasaban.
+- Artefacto real `published-1791763958575`: 115/115 controles HTTP, 99 recursos
+  iguales por tamaño y SHA. Main `assets/main-BP4-P9sK.js` (655517 bytes), SHA
+  `019f1f573dec0cc9d2d561d83004e57bee6584f070ae48f48e8043135ea66602`.
+  WASM 183009 bytes, SHA `20f097846a04facfbf9a0e061d90fb0229a9a7f6add962abfceded6bb3f38fdd`;
+  las cinco salidas de texturas públicas conservan sus bytes exactos.
+- APK real descargada: 1.1.15/code28, SHA
+  `02960e3322bdad2e26041d2ef57b0fd5a02f3528c4b60b876e7955ae941cafb5`,
+  cargador 2107 bytes, sólo tres assets/public y URL de producción correcta.
+  No hay cambios nativos ni nueva APK: el wrapper recibe esta web.
 - Contrato Android comprobado con doble del puente y PCM exacto, no se presenta
   como ensayo de sonido en un móvil físico. APK pública sigue 1.1.15/code28.
 

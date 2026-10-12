@@ -60,7 +60,8 @@ describe('cached speech stays in reading order without depending on background t
     Object.assign(t.clock,{session:nativeAudio().session,epoch:engine.player.epoch,playedSeconds:12})
     t.event('start',unit);await flush()
     expect(t.bridge.enqueue).toHaveBeenCalledTimes(2)
-    expect(Buffer.from(t.bridge.enqueue.mock.calls[0][3],'base64')).toEqual(Buffer.from(original.buffer))
+    // Compare every PCM byte without traversing 640k indexed properties.
+    expect(Buffer.from(t.bridge.enqueue.mock.calls[0][3],'base64').equals(Buffer.from(original.buffer))).toBe(true)
     expect(engine.player.buffered()).toBe(28)
     expect(t.clients.made).toHaveLength(0)
   })

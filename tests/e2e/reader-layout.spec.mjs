@@ -128,13 +128,19 @@ for (const item of [
   await expect.poll(async () => {
     const view = await page.locator('#reader-viewport').boundingBox()
     const audio = await mini.boundingBox()
-    return Math.abs(view.y + view.height - audio.y)
-  }).toBeLessThanOrEqual(1)
-  const audio = await mini.boundingBox(), toolbar = await page.locator('#reader-toolbar').boundingBox()
-  expect(audio.y + audio.height).toBeLessThanOrEqual(toolbar.y + 1)
+    return audio.y + audio.height - view.y
+  }).toBeLessThanOrEqual(0)
+  const audio = await mini.boundingBox(), header = await page.locator('.app-header').boundingBox()
+  expect(audio.y).toBeGreaterThanOrEqual(header.y)
+  expect(audio.height).toBeGreaterThanOrEqual(44)
+  expect(audio.y + audio.height).toBeGreaterThanOrEqual(header.y + header.height - 4)
   expect(await mini.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
   await page.screenshot({path:`test-results/reader-layout-audio-${item.format}-${item.size.width}.png`})
-  await page.getByRole('button',{name:'Detener lectura',exact:true}).click()
+  if (item.size.width <= 360) {
+    await page.getByRole('button',{name:'Escuchar el libro'}).click()
+    await page.locator('.reading-panel [data-stop]').click()
+    await page.getByRole('button',{name:'Cerrar opciones de lectura'}).click()
+  } else await page.getByRole('button',{name:'Detener lectura',exact:true}).click()
   await expectUsefulPage(page)
   // Hiding the controls keeps their margins: the page box must not grow (reader-controls-layout.spec.mjs
   // measures the text itself). Only the buttons disappear; the bars stay as blank page margins.
@@ -199,13 +205,16 @@ async function expectReturnOutsidePage(page) {
   await expect.poll(async () => {
     const viewport = await page.locator('#reader-viewport').boundingBox()
     const button = await back.boundingBox()
-    return viewport.y + viewport.height - button.y
+    return button.y + button.height - viewport.y
   }).toBeLessThanOrEqual(1)
   const button = await back.boundingBox()
-  const lower = await page.locator('.reading-mini-player').isVisible()
-    ? await page.locator('.reading-mini-player').boundingBox()
-    : await page.locator('#reader-toolbar').boundingBox()
-  expect(button.y + button.height).toBeLessThanOrEqual(lower.y + 1)
+  const header = await page.locator('.app-header').boundingBox()
+  expect(button.y).toBeGreaterThanOrEqual(header.y)
+  expect(button.height).toBeGreaterThanOrEqual(44)
+  if (await page.locator('.reading-mini-player').isVisible()) {
+    const play = await page.locator('[data-mini-play]').boundingBox()
+    expect(button.x + button.width).toBeLessThanOrEqual(play.x + 1)
+  }
   const text = await back.evaluate(element => {
     const range = document.createRange(); range.selectNodeContents(element)
     const rect = range.getBoundingClientRect()
@@ -213,7 +222,6 @@ async function expectReturnOutsidePage(page) {
   })
   expect(text.top).toBeGreaterThanOrEqual(button.y)
   expect(text.bottom).toBeLessThanOrEqual(button.y + button.height)
-  expect(text.bottom).toBeLessThanOrEqual(lower.y)
 }
 
 test('AMOLED real en PDF original y adaptable, guardado al reabrir', async ({page}) => {

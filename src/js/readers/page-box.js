@@ -9,8 +9,9 @@
 // smallest of those states and every later opening reuses it. A real resize
 // (rotation, split screen, the keyboard) is a different box, kept beside it.
 
-const KEY = 'inhouse-read-page-boxes-v2'
-// Height kept free under a paginated book for the audio shared audio/return row (52 px).
+const KEY = 'inhouse-read-page-boxes-v3'
+// Legacy budget used by callers to express the same available page height.
+// Audio now lives in the header; Foliate adds this back before calling us.
 export const MINI_PLAYER_RESERVE = 52
 // A change of free height beyond this is a real resize, not chrome.
 export const PAGE_BOX_SLACK = 96
@@ -44,7 +45,7 @@ export function stablePageHeight({ width, space, free, storage = globalThis.loca
     box.height = target
     save(storage, boxes)
   }
-  // The accessory row is permanently reserved; its visibility cannot resize
-  // the page. Only a genuinely smaller viewport can reduce this bound.
+  // Audio and return controls occupy the existing header; their visibility
+  // cannot resize the page. Only a smaller viewport can reduce this bound.
   return Math.max(1, Math.min(box.height, Math.floor(free)))
 }

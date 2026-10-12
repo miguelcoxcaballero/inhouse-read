@@ -114,7 +114,9 @@ test('EPUB: native touch drag advances once and enables smooth snapping', async 
   await drag(cdp,bounds.x+bounds.width*.8,bounds.y+bounds.height*.55,-180)
   await expect.poll(() => page.evaluate(() => document.querySelector('foliate-view').renderer.containerPosition)).toBeGreaterThan(initial+50)
   expect(await page.evaluate(() => window.__readerNextCalls)).toBe(0)
-  expect(await page.evaluate(() => window.__inhouseNeuralTest.engine.stops-window.__readerVoiceStopsBeforeDrag)).toBe(1)
+  expect(await page.evaluate(() => window.__inhouseNeuralTest.engine.stops-window.__readerVoiceStopsBeforeDrag)).toBe(0)
+  expect(await page.evaluate(() => window.__inhouseNeuralTest.engine.calls.length)).toBe(1)
+  await expect(page.locator('.reader-return')).toHaveText('↶ Volver al audio')
 })
 
 test('EPUB: reduced motion retains direct page navigation without animated snapping', async ({page}) => {

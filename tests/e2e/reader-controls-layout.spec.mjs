@@ -268,6 +268,25 @@ test('modo infantil: tampoco cambia la página al ocultar la cabecera', async ({
 })
 
 const evidenceDir = process.env.IHR_CONTROLS_EVIDENCE_DIR
+test('volver al audio se lee completo y no tapa pausa en móviles estrechos', async ({page}, testInfo) => {
+ await open(page,'pdf',{pdfMode:'text'})
+ await page.locator('#reader-audio').click();await page.locator('[data-play]').click()
+ await page.locator('.reading-panel [data-close]').click()
+ await page.locator('#reader-next').click()
+ await expect(page.locator('.reader-return')).toHaveText('↶ Volver al audio')
+ for (const width of [320,390]) {
+  await page.setViewportSize({width,height:844});await settled(page)
+  const layout=await page.evaluate(()=>{
+   const button=document.querySelector('.reader-return'),b=button.getBoundingClientRect()
+   const range=document.createRange();range.selectNodeContents(button)
+   const p=document.querySelector('[data-mini-play]').getBoundingClientRect()
+   return {fits:[...range.getClientRects()].every(r=>r.left>=b.left && r.right<=b.right && r.top>=b.top && r.bottom<=b.bottom),right:b.right,play:p.left,pauseWidth:p.width,buttonHeight:b.height}
+  })
+  expect(layout.fits).toBe(true);expect(layout.right).toBeLessThanOrEqual(layout.play)
+  expect(layout.pauseWidth).toBeGreaterThanOrEqual(44);expect(layout.buttonHeight).toBeGreaterThanOrEqual(44)
+  await testInfo.attach(`return-audio-${width}`,{body:await page.screenshot(),contentType:'image/png'})
+ }
+})
 test('safe-area y panel abierto conservan la caja; ocultar retira los controles inmediatamente', async ({page, context}) => {
   test.setTimeout(120_000)
   const client = await context.newCDPSession(page)

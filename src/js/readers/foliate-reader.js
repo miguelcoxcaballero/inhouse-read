@@ -446,8 +446,8 @@ export class FoliateReader {
   // re-paginated the chapter and moved sentences to other pages.
   #pageBoxChanged = false
   #stablePageHeight(width, freeHeight, measured) {
-    // The outer viewport always reserves one shared accessory row. Opening
-    // audio, hiding chrome or showing Return never changes its dimensions.
+    // Audio shares the existing header. Opening audio, hiding chrome or
+    // showing Return never changes the viewport's dimensions.
     return stablePageHeight({ width, space:freeHeight + MINI_PLAYER_RESERVE, free:freeHeight,
       ...(measured ? {} : { storage:null }) })
   }

@@ -926,7 +926,7 @@ el wrapper. La matriz completa 38183041199 continúa; el WIP conserva el
 fallo previo de cierre Linux de 137, sin presentarlo como resuelto.
 
 
-## Continuación 1.7.142 — Trama visible del lomo (local)
+## Continuación 1.7.142 — Trama visible del lomo
 
 Rust genera las dos teselas de tejido: color RGBA y canales físicos de
 altura/rugosidad/metal. Se comparten el campo f32, los materiales, la caché
@@ -946,7 +946,9 @@ WASM 183009 bytes, SHA256
 4067/4067 unitarias; build aprobado. E2E local: 34 aprobadas, sin retry,
 y seis capturas opcionales omitidas porque no se activó su variable de salida.
 Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-spine-weave`.
-No publicado todavía: el usuario priorizó la estabilidad de la paginación y
-la continuidad de una frase entre páginas antes de continuar migrando.
+Publicado junto a la corrección prioritaria del lector en `ccf94d5`.
+El WASM público conserva los mismos bytes y ejecuta las cinco texturas exactas;
+115 controles HTTP correctos, APK loader verificado y seis recorridos públicos
+aprobados. Ver el WIP para CI global y los límites de las pruebas de audio.
 CI141 UI3 conserva un fallo de primera importación EPUB (lector ausente
 tras 8 s), aprobado sólo al reintentar; originales en `ci141-ui3`.

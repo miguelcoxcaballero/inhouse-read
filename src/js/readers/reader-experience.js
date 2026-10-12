@@ -30,7 +30,8 @@ export class ReaderExperience {
     this.returnButton.className = 'reader-return'
     this.returnButton.hidden = true
     this.returnButton.addEventListener('click', () => this.voice.browsing ? this.voice.returnToAudio() : this.returnToReading())
-    this.screen.append(this.returnButton)
+    this.audioHost = document.querySelector('.reader-heading-copy') || this.screen
+    this.audioHost.append(this.returnButton)
     this.panel = document.createElement('dialog')
     this.panel.className = 'reading-panel'
     this.panel.id = 'reading-controls'
@@ -43,7 +44,7 @@ export class ReaderExperience {
     this.miniPlayer = document.createElement('div')
     this.miniPlayer.className = 'reading-mini-player'; this.miniPlayer.hidden = true
     this.miniPlayer.innerHTML = `<button type="button" data-mini-open><span data-mini-title></span><small data-mini-status></small></button><button type="button" class="reading-icon-button" data-mini-play aria-label="Pausar lectura">${readerIcon('pause')}</button><button type="button" class="reading-icon-button" data-mini-stop aria-label="Detener lectura">${readerIcon('stop')}</button>`
-    this.screen.append(this.miniPlayer)
+    this.audioHost.append(this.miniPlayer)
     if (typeof ResizeObserver === 'function') {
       this.miniPlayerResizeObserver = new ResizeObserver(() => this.syncMiniPlayerLayout())
       this.miniPlayerResizeObserver.observe(this.miniPlayer)
