@@ -53,34 +53,34 @@ describe('speech cuts at actual laid-out pages', () => {
 })
 
 describe('page-aware spoken fragments', () => {
-  it('cuts a short sentence at the page while preserving one sentence highlight', () => {
+  it('retains a single utterance with page markers inside its sentence', () => {
     const raw = 'Esta frase empieza aquí y continúa en la página siguiente.'
     const cut = raw.indexOf('continúa')
     const items = planSpeech(raw, {pageBreaks:[cut]})
-    expect(items.map(item => item.text)).toEqual(['Esta frase empieza aquí y', 'continúa en la página siguiente.'])
-    expect(items.map(item => item.sentence)).toEqual([{start:0,end:raw.length}, {start:0,end:raw.length}])
-    expect(items[1].start).toBe(cut)
+    expect(items.map(item => item.text)).toEqual([raw])
+    expect(items[0].sentence).toEqual({start:0,end:raw.length})
+    expect(items[0].marks).toEqual([{offset:cut,start:cut}])
   })
   it('maps page offsets through footnotes, invisible characters and collapsed spaces', () => {
     const raw = 'Lee [12] esta\n\n información y con\u00adtinúa aquí.'
     const cut = raw.indexOf('y con')
     const items = planSpeech(raw, {footnotes:false, pageBreaks:[cut, cut, -1, NaN, 9999]})
-    expect(items.map(item => item.text)).toEqual(['Lee esta información', 'y continúa aquí.'])
-    expect(items[1].start).toBe(cut)
-    expect(items[0].sentence).toEqual(items[1].sentence)
+    expect(items.map(item => item.text)).toEqual(['Lee esta información y continúa aquí.'])
+    expect(items[0].marks).toEqual([{offset:21,start:cut}])
   })
   it('resumes inside the current page without repeating previous text', () => {
     const raw = 'Una frase que sigue aquí y acaba allá.'
     const from = raw.indexOf('sigue'), cut = raw.indexOf('acaba')
     const items = planSpeech(raw, {pageBreaks:[0, cut]}, from)
-    expect(items.map(item => item.text)).toEqual(['sigue aquí y', 'acaba allá.'])
+    expect(items.map(item => item.text)).toEqual(['sigue aquí y acaba allá.'])
     expect(items[0].start).toBe(from)
+    expect(items[0].marks).toEqual([{offset:cut-from,start:cut}])
   })
   it('retains every character across multiple pages in scripts without spaces', () => {
     const raw = 'これは長い文章の最初の部分から次のページまで続いています。'
     const items = planSpeech(raw, {pageBreaks:[8, 17]})
     expect(items.map(item => item.text).join('')).toBe(raw)
-    expect(items.map(item => item.start)).toEqual([0, 8, 17])
+    expect(items[0].marks).toEqual([{offset:8,start:8},{offset:17,start:17}])
     expect(items.every(item => item.sentence.start === 0 && item.sentence.end === raw.length)).toBe(true)
   })
 })

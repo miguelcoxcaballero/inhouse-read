@@ -3,6 +3,7 @@
 // events. Only the small text/phoneme operations run in the page.
 import {createNativeOrt} from './native-ort.js'
 import {createPhonemizer} from './phonemizer.js'
+import {exposePiperDurations,phonemeMarks,durationMarks} from './piper-alignment.js'
 import {createHebrewPhonemizer} from './hebrew.js'
 import {createSupertonicRuntime} from './supertonic-runtime.js'
 import {prepareSpeech,silence,concat,pauseAfter,restScale,splitSegments,limitIds,lengthScaleFor,PAUSE_MS} from './pcm.js'
@@ -44,7 +45,8 @@ export class NativeSynthClient {
       const phonModel=await this.store.readPhonemizerModel(key);check()
       this.hebrew=await createHebrewPhonemizer({ort:this.ort,model:phonModel,config});check()
       const model=await this.store.readModel(key);check()
-      this.session=await this.ort.InferenceSession.create(new Uint8Array(model))
+      const aligned=exposePiperDurations(new Uint8Array(model));this.durationOutput=aligned.name
+      this.session=await this.ort.InferenceSession.create(aligned.bytes)
     } else {
       // Reading/uploading the acoustic model and initializing the phonemizer
       // are independent. In Android they used to run entirely in series.
@@ -58,7 +60,8 @@ export class NativeSynthClient {
       let session
       const modelReady=(async()=>{
         const model=await this.store.readModel(key);check()
-        session=await this.ort.InferenceSession.create(new Uint8Array(model));check()
+        const aligned=exposePiperDurations(new Uint8Array(model));this.durationOutput=aligned.name
+        session=await this.ort.InferenceSession.create(aligned.bytes);check()
       })()
       // Drain both jobs on error: a late job must never install resources into
       // the next requested voice. The bridge still bounds every upload slice.
@@ -81,19 +84,23 @@ export class NativeSynthClient {
     this.chain=work.catch(()=>{})
     return {id,cancel:()=>{this.jobs.delete(id)}}
   }
-  async #synth({text,rate,speaker,lang,style},handlers,active) {
+  async #synth({text,rate,speaker,lang,style,marks=[]},handlers,active) {
     const config=this.config,ort=this.ort,key=this.loaded
     if(!config||!ort)throw failure('No voice loaded')
     if(this.supertonic) {
       handlers.onPlan?.([Math.max(1,[...text].length)])
       const start=performance.now()
-      const {pcm:raw,sampleRate}=await this.supertonic.synthesize(text,{lang,style,rate,isActive:active})
+      const {pcm:raw,sampleRate,marks:timeline=[]}=await this.supertonic.synthesize(text,{lang,style,rate,marks,isActive:active})
       if(!active())return
       if(!(raw instanceof Float32Array)||raw.some(n=>!Number.isFinite(n)))throw failure('Invalid audio')
-      const pcm=raw.length?concat([prepareSpeech(raw,sampleRate),silence(sampleRate,pauseAfter(text)*restScale(rate))]):silence(sampleRate,120)
-      handlers.onChunk({index:0,last:true,pcm,sampleRate,ms:performance.now()-start});return
+      const {pcm:speech,from}=prepareSpeech(raw,sampleRate,{timing:true})
+      const pcm=raw.length?concat([speech,silence(sampleRate,pauseAfter(text)*restScale(rate))]):silence(sampleRate,120)
+      handlers.onChunk({index:0,last:true,pcm,sampleRate,ms:performance.now()-start,
+        marks:timeline.map(mark=>({...mark,sample:Math.max(0,Math.min(speech.length-1,mark.sample-from))}))});return
     }
-    const ids=config.phoneme_type==='hebrew'?await this.hebrew.phonemize(text):await this.phon.phonemize(text,config.espeak.voice)
+    const phonemize=async value=>limitIds(config.phoneme_type==='hebrew'?await this.hebrew.phonemize(value):await this.phon.phonemize(value,config.espeak.voice),config.num_symbols)
+    const ids=await phonemize(text)
+    const points=this.durationOutput?await phonemeMarks(text,marks,ids,phonemize):[]
     if(!active())return
     const segments=splitSegments(limitIds(ids,config.num_symbols)),sampleRate=config.audio.sample_rate
     handlers.onPlan?.(segments.length?segments.map(part=>part.length):[0])
@@ -104,11 +111,16 @@ export class NativeSynthClient {
       const feeds={input:new ort.Tensor('int64',BigInt64Array.from(part,BigInt),[1,part.length]),input_lengths:new ort.Tensor('int64',BigInt64Array.of(BigInt(part.length)),[1]),scales:new ort.Tensor('float32',Float32Array.of(inference.noise_scale??.667,lengthScaleFor(inference.length_scale??1,rate),inference.noise_w??.8),[3])}
       if(this.session.inputNames.includes('sid'))feeds.sid=new ort.Tensor('int64',BigInt64Array.of(BigInt(speaker||0)),[1])
       const out=await this.session.run(feeds)
+      const tensor=out[this.session.outputNames[0]],raw=new Float32Array(tensor.data)
+      const durations=this.durationOutput&&out[this.durationOutput]?new Float32Array(out[this.durationOutput].data):null
+      for(const value of Object.values(out))value.dispose?.()
+      for(const value of Object.values(feeds))value.dispose?.()
       if(!active())return
-      const tensor=out[this.session.outputNames[0]],raw=new Float32Array(tensor.data);tensor.dispose?.()
-      const speech=prepareSpeech(raw,sampleRate,{model:key}),last=index===segments.length-1,rest=restScale(rate)
+      const {pcm:speech,from}=prepareSpeech(raw,sampleRate,{model:key,timing:true}),last=index===segments.length-1,rest=restScale(rate)
       const pcm=concat([index?silence(sampleRate,PAUSE_MS.sentence*rest):new Float32Array(),speech,last?silence(sampleRate,pauseAfter(text)*rest):new Float32Array()])
-      handlers.onChunk({index,last,pcm,sampleRate,ms:performance.now()-start})
+      const timeline=durationMarks(points,durations,{base:segments.slice(0,index).reduce((n,p)=>n+p.length,0),count:part.length,
+        samples:raw.length,trim:from,lead:index?Math.round(sampleRate*PAUSE_MS.sentence*rest/1000):0,length:pcm.length})
+      handlers.onChunk({index,last,pcm,sampleRate,ms:performance.now()-start,marks:timeline})
     }
   }
   dispose() {

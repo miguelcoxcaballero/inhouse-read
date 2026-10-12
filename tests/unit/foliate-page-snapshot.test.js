@@ -9,7 +9,7 @@ import { Overlayer } from 'foliate-js/overlayer.js'
 const rect = (left,top,width,height) => ({left,top,width,height,right:left+width,bottom:top+height})
 let container, view, doc, contexts, rangePrototype
 beforeEach(() => {
-  localStorage.removeItem('inhouse-read-page-boxes') // Each test starts with no remembered page box.
+  localStorage.removeItem('inhouse-read-page-boxes-v2') // Each test starts with no remembered page box.
   document.body.innerHTML = '<main class="reader-viewport" style="filter:brightness(0.9)"></main><iframe></iframe>'
   container = document.querySelector('main')
   const iframe = document.querySelector('iframe')
@@ -174,19 +174,34 @@ describe('EPUB usable viewport', () => {
     const reader = new FoliateReader()
     try {
       await reader.open(container, new File(['epub'], 'book.epub'))
-      // Room for the 48 px mini player is kept from the start.
-      expect(view.style.height).toBe('672px')
-      for (const free of [750, 720, 672, 700]) {
+      // CSS already reserved the one accessory row outside this viewport.
+      expect(view.style.height).toBe('720px')
+      for (const free of [750, 720, 750, 720]) {
         height = free; resize(); await vi.advanceTimersByTimeAsync(80)
-        expect(view.style.height).toBe('672px')
+        expect(view.style.height).toBe('720px')
       }
-      // A rotation is a real resize: the book is paginated for the new box.
+      // The visible audio/return controls no longer change the viewport height.
+      container.style.setProperty('--reader-audio-height','49px')
+      container.style.setProperty('--reader-return-height','44px')
+      resize();await vi.advanceTimersByTimeAsync(80);expect(view.style.height).toBe('720px')
+      // A real smaller viewport converges before audio starts, then stays put.
+      height=700;resize();await vi.advanceTimersByTimeAsync(80);expect(view.style.height).toBe('700px')
+      height=720;resize();await vi.advanceTimersByTimeAsync(80);expect(view.style.height).toBe('700px')
       width = 844; height = 300; resize(); await vi.advanceTimersByTimeAsync(80)
-      expect(view.style.height).toBe('252px')
+      expect(view.style.height).toBe('300px')
     } finally {
       reader.close()
       vi.useRealTimers()
     }
+  })
+
+  it('does not reinstall identical typography when preferences are replayed',async()=>{
+    const reader=new FoliateReader();await reader.open(container,new File(['epub'],'book.epub'))
+    const before=view.renderer.setStyles.mock.calls.length
+    await reader.applyPreferences({});await reader.applyPreferences({rate:1.5})
+    expect(view.renderer.setStyles).toHaveBeenCalledTimes(before)
+    await reader.applyPreferences({fontSize:24})
+    expect(view.renderer.setStyles).toHaveBeenCalledTimes(before+1);reader.close()
   })
 
   it('adapts to the actual resized container without calling navigation or replacing the current CFI', async () => {

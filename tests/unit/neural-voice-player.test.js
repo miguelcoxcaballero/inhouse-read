@@ -13,6 +13,16 @@ describe('GaplessPlayer', () => {
     player = new GaplessPlayer({ context: () => ctx, onStart: n => starts.push([n, ctx.currentTime]), onEnd: n => ends.push([n, ctx.currentTime]) })
   })
   afterEach(() => vi.useRealTimers())
+  it('emits internal page marks on the audible clock without splitting or stopping the waveform',()=>{
+    const marks=[];player.onMark=(unit,offset)=>marks.push([unit,offset,ctx.currentTime])
+    ctx.outputLatency=.12
+    player.schedule(1,pcm(2),22050,{last:true,marks:[{sample:22050,offset:24}]})
+    expect(ctx.sources).toHaveLength(1)
+    advance(ctx,1.1);expect(marks).toEqual([])
+    advance(ctx,.1);expect(marks.map(m=>m.slice(0,2))).toEqual([[1,24]])
+    expect(ends).toEqual([]);expect(ctx.sources[0].stopped).toBeFalsy()
+    player.stopAll();advance(ctx,4);expect(marks).toHaveLength(1)
+  })
 
   it('schedules chunks back to back on the audio clock, with no gap and no overlap', () => {
     const a = player.schedule(1, pcm(2), 22050)

@@ -307,3 +307,98 @@ test.describe('evidence screenshots', () => {
       await page.screenshot({path:`${evidenceDir}/${size.tag}-${theme}-hidden.png`})
     })
 })
+
+// Keep the real glyph boxes, not only the viewport, identical around audio UI.
+for(const format of ['epub','pdf'])test(`consultar páginas sin cambiar audio y mantener pulsado para buscar: ${format}`,async({page,context})=>{
+ test.setTimeout(120_000)
+ await open(page,format,format==='pdf'?{pdfMode:'text'}:{})
+ await page.locator('#reader-audio').click();await page.locator('[data-play]').click()
+ await page.locator('.reading-panel [data-close]').click()
+ await expect.poll(()=>page.evaluate(()=>window.__inhouseNeuralTest.engine.calls.length)).toBe(1)
+ await page.evaluate(()=>{const e=window.__inhouseNeuralTest.engine;e.emit('start',e.current.id)})
+ const initial=await page.evaluate(()=>({stops:window.__inhouseNeuralTest.engine.stops,text:window.__inhouseNeuralTest.engine.current.text}))
+ // Navigate through the actual page/TOC control, not the speech cursor.
+ await page.locator('#reader-location').click()
+ if(format==='pdf'){
+  await page.locator('.reading-page-form input[type="number"]').fill('3')
+  await page.locator('.reading-page-form').evaluate(form=>form.requestSubmit())
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 3 de 4/)
+ }else{
+  await page.locator('[data-place-tab="toc"]').click()
+  await page.locator('[data-toc] button').nth(1).click()
+ }
+ await expect(page.locator('.reading-panel')).not.toBeVisible()
+ await expect(page.locator('.reader-return')).toHaveText('↶ Volver al audio')
+ if(evidenceDir){fs.mkdirSync(evidenceDir,{recursive:true});await page.screenshot({path:`${evidenceDir}/${format}-browse-audio.png`})}
+ expect(await page.evaluate(()=>({calls:window.__inhouseNeuralTest.engine.calls.length,stops:window.__inhouseNeuralTest.engine.stops}))).toEqual({calls:1,stops:initial.stops})
+ // The next audible sentence still comes from the original page/chapter.
+ await page.evaluate(()=>{const e=window.__inhouseNeuralTest.engine;e.emit('done',e.current.id)})
+ await expect.poll(()=>page.evaluate(()=>window.__inhouseNeuralTest.engine.calls.length)).toBe(2)
+ await page.evaluate(()=>{const e=window.__inhouseNeuralTest.engine;e.emit('start',e.current.id)})
+ await page.locator('.reader-return').click()
+ await expect(page.locator('.reader-return')).not.toHaveText('↶ Volver al audio')
+ if(format==='pdf')await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 1 de 4/)
+ expect(await page.evaluate(()=>window.__inhouseNeuralTest.engine.stops)).toBe(initial.stops)
+ // Hold an actual visible word. Releasing it must not also toggle chrome.
+ const point=await page.evaluate(()=>{
+  const content=document.querySelector('foliate-view')?.renderer.getContents()[0]
+  const doc=content?.doc||document,root=content?.doc.body||document.querySelector('.pdf-reflow-page')
+  const frame=content?.doc.defaultView.frameElement.getBoundingClientRect()||{x:0,y:0}
+  const viewport=document.querySelector('#reader-viewport').getBoundingClientRect()
+  const walker=doc.createTreeWalker(root,NodeFilter.SHOW_TEXT)
+  const points=[]
+  for(let node=walker.nextNode();node;node=walker.nextNode()){
+   if(!node.textContent.trim())continue
+   const range=doc.createRange();range.setStart(node,0);range.setEnd(node,Math.min(4,node.length))
+   const r=range.getBoundingClientRect(),x=frame.x+r.x+r.width/2,y=frame.y+r.y+r.height/2
+   if(r.width&&x>viewport.left+8&&x<viewport.right-8&&y>viewport.top+8&&y<viewport.bottom-8)points.push({x,y})
+  }
+  return points.at(-1)
+ })
+ expect(point).toBeTruthy()
+ const before=await chromeHidden(page),client=await context.newCDPSession(page)
+ await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]})
+ await page.waitForTimeout(650)
+ await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]})
+ await expect.poll(()=>page.evaluate(()=>window.__inhouseNeuralTest.engine.calls.length)).toBe(3)
+ expect(await chromeHidden(page)).toBe(before)
+ await page.locator('[data-mini-stop]').click()
+})
+
+for(const format of ['epub','pdf'])test(`paginación inmóvil con audio y retorno: ${format}`,async({page})=>{
+ test.setTimeout(120_000)
+ await open(page,format,format==='pdf'?{pdfMode:'text'}:{})
+ const fingerprint=()=>page.evaluate(()=>{
+  const view=document.querySelector('foliate-view'),content=view?.renderer?.getContents?.()[0]
+  const root=content?.doc?.body||document.querySelector('.pdf-reflow-page'),doc=root.ownerDocument
+  const nodes=[],walker=doc.createTreeWalker(root,NodeFilter.SHOW_TEXT)
+  for(let node=walker.nextNode();node;node=walker.nextNode()){
+   if(!node.textContent.trim())continue
+   const range=doc.createRange();range.selectNodeContents(node)
+   nodes.push({text:node.textContent,rects:[...range.getClientRects()].map(r=>[r.x,r.y,r.width,r.height].map(n=>Math.round(n*100)/100))})
+  }
+  const el=view||root,rect=el.getBoundingClientRect()
+  return {nodes,box:[rect.x,rect.y,rect.width,rect.height].map(n=>Math.round(n*100)/100),pages:view?.renderer?.pages}
+ })
+ await settled(page);const before=await fingerprint()
+ // Real Play opens the mini player (the fake engine holds its audio request).
+ await page.locator('#reader-audio').click();await page.locator('[data-play]').click()
+ await page.locator('.reading-panel [data-close]').click()
+ await expect(page.locator('.reading-mini-player')).toBeVisible()
+ await settled(page);expect(await fingerprint()).toEqual(before)
+ await page.evaluate(()=>{const b=document.querySelector('.reader-return');b.textContent='Volver a donde estabas leyendo';b.hidden=false})
+ await settled(page);expect(await fingerprint()).toEqual(before)
+ const boxes=await page.evaluate(()=>{
+  const b=document.querySelector('.reader-return').getBoundingClientRect(),p=document.querySelector('[data-mini-play]').getBoundingClientRect()
+  return {right:b.right,play:p.left,returnHeight:b.height,playHeight:p.height}
+ })
+ expect(boxes.right).toBeLessThanOrEqual(boxes.play);expect(boxes.playHeight).toBeGreaterThanOrEqual(44)
+ await page.locator('[data-mini-stop]').click();await settled(page);expect(await fingerprint()).toEqual(before)
+ await page.evaluate(()=>document.querySelector('.reader-return').hidden=true)
+ await settled(page);expect(await fingerprint()).toEqual(before)
+ if(format==='epub'){
+  await page.evaluate(()=>document.querySelector('foliate-view').next());await settled(page)
+  await page.evaluate(()=>document.querySelector('foliate-view').prev());await settled(page)
+  expect(await fingerprint()).toEqual(before)
+ }
+})

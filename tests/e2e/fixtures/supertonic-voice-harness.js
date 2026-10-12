@@ -33,7 +33,7 @@ if(window.speechSynthesis)window.speechSynthesis.speak=()=>{deviceCalls++;throw 
 window.InhouseSpeech={ speak:()=>{deviceCalls++;throw new Error('Android system voice called');} };
 document.querySelector('#unlock').addEventListener('click',()=>engine.unlock());
 
-function read(voiceId,text,rate=1) {
+function read(voiceId,text,rate=1,marks=[]) {
   const id=`supertonic-${voiceId}-${events.length}`;
   const from=events.length,first=starts.length,requests=workerRequests.length,messages=workerMessages.length;
   activeId=id;
@@ -44,7 +44,7 @@ function read(voiceId,text,rate=1) {
       resolve({ id,log:events.slice(from),starts:starts.slice(first),requests:workerRequests.slice(requests),messages:workerMessages.slice(messages),workers,deviceCalls,stats:{...engine.stats},audioState:context?.state });
     };
     window.addEventListener('inhouse-tts',handle);
-    engine.speak({voiceId,text,rate,id});
+    engine.speak({voiceId,text,rate,id,marks});
   });
 }
 window.supertonic={engine,voices:neuralVoices,read,starts,events,workerRequests,workerMessages,get workers(){return workers;}};

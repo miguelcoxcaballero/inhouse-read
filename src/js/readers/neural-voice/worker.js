@@ -19,6 +19,7 @@
 //     {type:'end',   id}                                      synth finished
 //     {type:'error', id, error}                               anything that failed (the worker stays usable)
 import { createPhonemizer } from './phonemizer.js'
+import { exposePiperDurations, phonemeMarks, durationMarks } from './piper-alignment.js'
 import { createHebrewPhonemizer } from './hebrew.js'
 import { createSupertonicRuntime } from './supertonic-runtime.js'
 import { yieldToMessages } from './task-yield.js'
@@ -29,6 +30,7 @@ let ort = null, phonemizer = null, phonBaseURL = null, hebrewPhonemizer = null, 
 const cancelled = new Set()
 const queue = []
 let draining = false, current = null, drainDone = Promise.resolve()
+let durationOutput = null
 let diagnostics = false
 
 const post = (message, transfer = []) => self.postMessage(message, transfer)
@@ -72,7 +74,9 @@ async function load({ voice: key, config: cfg, model, phonemizerModel, buffers }
     }
     if (!phonemizer && cfg.phoneme_type !== 'hebrew') phonemizer = await createPhonemizer({ base:phonBaseURL })
     if (cfg.phoneme_type === 'hebrew') hebrewPhonemizer = await createHebrewPhonemizer({ ort, model: phonemizerModel, config: cfg })
-    session = await ort.InferenceSession.create(new Uint8Array(model), { executionProviders: ['wasm'], graphOptimizationLevel: 'all', enableCpuMemArena: false, enableMemPattern: false })
+    const aligned = exposePiperDurations(new Uint8Array(model))
+    durationOutput = aligned.name
+    session = await ort.InferenceSession.create(aligned.bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all', enableCpuMemArena: false, enableMemPattern: false })
   } catch (error) {
     await releaseVoice()
     throw error
@@ -93,16 +97,18 @@ async function runSegment(ids, { rate, speaker }) {
   const out = await session.run(feeds)
   const tensor = out[session.outputNames[0]]
   const pcm = new Float32Array(tensor.data) // a copy: the tensor's buffer lives in the wasm heap
-  tensor.dispose?.()
-  return pcm
+  const durations = durationOutput && out[durationOutput] ? new Float32Array(out[durationOutput].data) : null
+  for (const value of Object.values(out)) value.dispose?.()
+  for (const value of Object.values(feeds)) value.dispose?.()
+  return {pcm,durations}
 }
 
-async function synth({ id, text, rate, speaker, lang, style }) {
+async function synth({ id, text, rate, speaker, lang, style, marks = [] }) {
   if (supertonicRuntime) {
     post({ type:'plan', id, counts:[Math.max(1, [...text].length)] })
     const t = performance.now()
     stage(3,3,id)
-    const { pcm:raw, sampleRate } = await supertonicRuntime.synthesize(text, { lang, style, rate, isActive:() => !cancelled.has(id) })
+    const { pcm:raw, sampleRate, marks:timeline = [] } = await supertonicRuntime.synthesize(text, { lang, style, rate, marks, isActive:() => !cancelled.has(id) })
     stage(3,4,id)
     if (cancelled.has(id)) return
     if (!(raw instanceof Float32Array) || !raw.every(Number.isFinite) || !(sampleRate > 0)) throw new Error('invalid Supertonic audio')
@@ -114,15 +120,18 @@ async function synth({ id, text, rate, speaker, lang, style }) {
       await yieldToMessages()
       return
     }
-    const speech = prepareSpeech(raw, sampleRate)
+    const {pcm:speech,from} = prepareSpeech(raw, sampleRate,{timing:true})
     const pcm = concat([speech, silence(sampleRate, pauseAfter(text) * restScale(rate))])
-    post({ type:'chunk', id, index:0, last:true, pcm, sampleRate, ms:performance.now() - t }, [pcm.buffer])
+    post({ type:'chunk', id, index:0, last:true, pcm, sampleRate, ms:performance.now() - t,
+      marks:timeline.map(mark=>({...mark,sample:Math.max(0,Math.min(speech.length-1,mark.sample-from))})) }, [pcm.buffer])
     await yieldToMessages()
     return
   }
   const sampleRate = config.audio.sample_rate
   stage(3,1,id)
-  const ids = config.phoneme_type === 'hebrew' ? await hebrewPhonemizer.phonemize(text) : await phonemizer.phonemize(text, config.espeak.voice)
+  const phonemize = async value => limitIds(config.phoneme_type === 'hebrew' ? await hebrewPhonemizer.phonemize(value) : await phonemizer.phonemize(value, config.espeak.voice),config.num_symbols)
+  const ids = await phonemize(text)
+  const points = durationOutput ? await phonemeMarks(text,marks,ids,phonemize) : []
   stage(3,2,id)
   const segments = splitSegments(limitIds(ids, config.num_symbols))
   if (!segments.length) { // nothing speakable ("...", an ornament): a short rest keeps the reading flowing
@@ -136,17 +145,19 @@ async function synth({ id, text, rate, speaker, lang, style }) {
     if (cancelled.has(id)) return
     const t = performance.now()
     stage(3,3,id,index)
-    const raw = await runSegment(segments[index], { rate, speaker })
+    const {pcm:raw,durations} = await runSegment(segments[index], { rate, speaker })
     stage(3,4,id,index)
     const ms = performance.now() - t
-    const speech = prepareSpeech(raw, sampleRate, { model:voice })
+    const {pcm:speech,from} = prepareSpeech(raw, sampleRate, { model:voice, timing:true })
     const last = index === segments.length - 1
     // Sentences of one fragment are separated by a rest at their start; the rest after the fragment comes with its last one.
     // (the rests shorten with the speaking rate, like the speech does)
     const rest = restScale(rate)
     const pcm = concat([index ? silence(sampleRate, PAUSE_MS.sentence * rest) : new Float32Array(0), speech, last ? silence(sampleRate, pauseAfter(text) * rest) : new Float32Array(0)])
     if (cancelled.has(id)) return
-    post({ type: 'chunk', id, index, last, pcm, sampleRate, ms }, [pcm.buffer])
+    const timeline = durationMarks(points,durations,{base:segments.slice(0,index).reduce((n,p)=>n+p.length,0),count:segments[index].length,
+      samples:raw.length,trim:from,lead:index ? Math.round(sampleRate * PAUSE_MS.sentence * rest / 1000) : 0,length:pcm.length})
+    post({ type: 'chunk', id, index, last, pcm, sampleRate, ms, marks:timeline }, [pcm.buffer])
     stage(3,5,id,index)
     await yieldToMessages()
     stage(3,6,id,index)

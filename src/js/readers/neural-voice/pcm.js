@@ -6,14 +6,17 @@ import { PCM_MIN_SAMPLES, rustPrepareSpeech } from './pcm-wasm.js'
 /** Same cleanup on Android and the synthesis worker. A cold/older core, tiny
  * fragment, or rejected arena uses the original pipeline immediately. This
  * combined API leaves the source intact; synthesis callers discard it. */
-export function prepareSpeech(pcm, sampleRate, { model = '' } = {}) {
+export function prepareSpeech(pcm, sampleRate, { model = '', timing = false } = {}) {
   if (pcm.length >= PCM_MIN_SAMPLES) {
-    const speech = rustPrepareSpeech(getRustCore(), pcm, sampleRate, model)
+    const speech = rustPrepareSpeech(getRustCore(), pcm, sampleRate, model, timing)
     if (speech !== null) return speech
   }
   const samples = pcm.slice()
   peakNormalize(samples, { model })
-  return fadeEdges(trimSilence(samples, sampleRate), sampleRate)
+  if (!timing) return fadeEdges(trimSilence(samples, sampleRate), sampleRate)
+  const result = trimSilence(samples, sampleRate, {timing:true})
+  fadeEdges(result.pcm,sampleRate)
+  return result
 }
 
 /** Piper's phoneme id markers: '^' begins a sentence, '$' ends it and '_' is the pad between phonemes. */
@@ -58,15 +61,16 @@ export function peakNormalize(pcm, { target = 0.9, maxGain, floor = 1e-3, model 
  */
 // The tail keeps 110 ms: a soft final consonant or breath falls under the
 // threshold, and cutting it made a sentence sound finished before it was.
-export function trimSilence(pcm, sampleRate, { relative = 0.02, floor = 0.002, leadMs = 14, tailMs = 110 } = {}) {
+export function trimSilence(pcm, sampleRate, { relative = 0.02, floor = 0.002, leadMs = 14, tailMs = 110, timing = false } = {}) {
   const threshold = Math.max(peakOf(pcm) * relative, floor)
   let from = 0, to = pcm.length - 1
   while (from < pcm.length && Math.abs(pcm[from]) < threshold) from++
-  if (from >= pcm.length) return new Float32Array(0)
+  if (from >= pcm.length) return timing ? {pcm:new Float32Array(0),from:0} : new Float32Array(0)
   while (to > from && Math.abs(pcm[to]) < threshold) to--
   from = Math.max(0, from - Math.round(sampleRate * leadMs / 1000))
   to = Math.min(pcm.length - 1, to + Math.round(sampleRate * tailMs / 1000))
-  return pcm.slice(from, to + 1)
+  const result = pcm.slice(from, to + 1)
+  return timing ? {pcm:result,from} : result
 }
 
 /** Linear fade in/out of the first/last `ms`, so a cut never clicks. In place. */

@@ -86,6 +86,28 @@ describe('reader gesture ownership and motion', () => {
   })
   afterEach(() => {detach?.();vi.restoreAllMocks();vi.unstubAllGlobals();vi.useRealTimers();document.body.innerHTML=''})
 
+  it.each([30,200,370])('a narration hold at x=%s has only its hold action, never a page turn or chrome toggle', x => {
+    const hold=vi.fn(); connect({canLongPress:()=>true,onLongPress:hold})
+    pointer('pointerdown',x,200,0); vi.advanceTimersByTime(500)
+    expect(hold).toHaveBeenCalledOnce()
+    pointer('pointerup',x,200,700); vi.runOnlyPendingTimers()
+    expect(next).not.toHaveBeenCalled();expect(prev).not.toHaveBeenCalled();expect(chrome).not.toHaveBeenCalled()
+    expect(element.style.userSelect).not.toBe('none')
+  })
+  it('a short tap during narration retains its usual action, and a drag cancels the hold', () => {
+    const hold=vi.fn();connect({canLongPress:()=>true,onLongPress:hold})
+    pointer('pointerdown',200,200,0);pointer('pointerup',200,200,100)
+    expect(chrome).toHaveBeenCalledOnce();vi.advanceTimersByTime(600);expect(hold).not.toHaveBeenCalled()
+    pointer('pointerdown',200,200,1000);pointer('pointermove',200,240,1100)
+    vi.advanceTimersByTime(600);pointer('pointerup',200,240,1700);expect(hold).not.toHaveBeenCalled()
+  })
+  it('outside narration long presses keep native selection and no seek timer', () => {
+    const hold=vi.fn();connect({canLongPress:()=>false,onLongPress:hold})
+    pointer('pointerdown',200,200,0);vi.advanceTimersByTime(800)
+    expect(element.style.userSelect).not.toBe('none');expect(hold).not.toHaveBeenCalled()
+    pointer('pointerup',200,200,800);expect(chrome).not.toHaveBeenCalled()
+  })
+
   it('batches horizontal page updates and restores the original styles after a damped spring', () => {
     surface.style.transform = 'scale(1)'
     surface.style.willChange = 'opacity'
@@ -257,5 +279,16 @@ describe('reader gesture ownership and motion', () => {
     expect(next).toHaveBeenCalledOnce()
     expect(surface.style.transform).toBe('')
     expect(frames.size).toBe(0)
+  })
+  it('reports a deliberate vertical pan once without turning a page or activating a hold', () => {
+    const pan=vi.fn(),hold=vi.fn()
+    connect({onManualPan:pan,canLongPress:()=>true,onLongPress:hold})
+    pointer('pointerdown',200,200)
+    pointer('pointermove',201,160,30)
+    pointer('pointermove',202,120,60)
+    vi.advanceTimersByTime(600)
+    pointer('pointerup',202,120,700)
+    expect(pan).toHaveBeenCalledOnce()
+    expect(hold).not.toHaveBeenCalled();expect(next).not.toHaveBeenCalled();expect(chrome).not.toHaveBeenCalled()
   })
 })

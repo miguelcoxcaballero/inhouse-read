@@ -29,7 +29,7 @@ export class ReaderExperience {
     this.returnButton.type = 'button'
     this.returnButton.className = 'reader-return'
     this.returnButton.hidden = true
-    this.returnButton.addEventListener('click', () => this.returnToReading())
+    this.returnButton.addEventListener('click', () => this.voice.browsing ? this.voice.returnToAudio() : this.returnToReading())
     this.screen.append(this.returnButton)
     this.panel = document.createElement('dialog')
     this.panel.className = 'reading-panel'
@@ -69,6 +69,7 @@ export class ReaderExperience {
       document.getElementById('reader-audio').classList.toggle('is-playing', state === 'playing')
       if (state === 'stopped') this.setSleepChoice(0)
       this.updateMiniPlayer(state, message)
+      this.updateReturnButton()
       if (state === 'paused' && !this.voice.neuralOff) this.neuralPicker?.warmUp()
       this.neuralPicker?.render() // the first-use offer follows the audiobook, the warning follows the neural voice
     })
@@ -413,7 +414,7 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
   }
   jump(place, target) {
     return this.queueNavigation(async isCurrent => {
-      this.voice.stop(); this.error('')
+      this.voice.browse(); this.error('')
       const origin = { ...clonePlace(this.location), label:this.label(this.location), createdAt:Date.now() }
       this.history = [origin, ...this.history].slice(0,20)
       await this.savePlaces()
@@ -432,7 +433,7 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
     if (!place) return Promise.resolve()
     return this.queueNavigation(async isCurrent => {
       if (!this.history.includes(place)) return
-      this.voice.stop()
+      this.voice.browse()
       try {
         await this.reader.goToLocator(place.locator, place.fraction)
         if (!isCurrent()) return
@@ -501,9 +502,7 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
   formatSize(bytes = 0) { return bytes >= 1048576 ? `${(bytes/1048576).toFixed(1)} MB` : `${Math.max(1,Math.round(bytes/1024))} KB` }
   renderPlaces() {
     this.updateBookmarkButton()
-    this.returnButton.hidden = !this.history.length
-    this.returnButton.textContent = this.history.length ? `↶ Volver a ${this.history[0].label || this.label(this.history[0])}` : ''
-    this.syncReturnLayout()
+    this.updateReturnButton()
     for (const [name, places] of [['history',this.history],['bookmarks',this.bookmarks],['quotes',this.quotes]]) {
       const list = this.panel.querySelector(`[data-${name}]`)
       list.replaceChildren()
@@ -531,7 +530,13 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
     this.showPlaceTab(list.childElementCount ? 'toc' : 'bookmarks')
   }
   step(direction) {
-    // A playing audiobook goes on from the page now shown instead of stopping.
+    // Consult another page without moving the independent audible cursor.
     return this.queueNavigation(() => this.voice.continueFromPage(() => direction > 0 ? this.reader.next() : this.reader.prev()))
+  }
+  updateReturnButton() {
+    const audio = this.voice?.browsing
+    this.returnButton.hidden = !audio && !this.history.length
+    this.returnButton.textContent = audio ? '↶ Volver al audio' : this.history.length ? `↶ Volver a ${this.history[0].label || this.label(this.history[0])}` : ''
+    this.syncReturnLayout()
   }
 }

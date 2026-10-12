@@ -254,7 +254,7 @@ body.is-opening-reader .app-header {
   flex-direction: column;
   justify-content: flex-end;
   box-sizing: border-box;
-  padding-bottom: max(0px, calc(48px - var(--reader-audio-height, 0px) - var(--reader-return-height, 0px)));
+  padding-bottom: 0;
 }
 
 .foliate-reader.is-paginated > .foliate-view-el {

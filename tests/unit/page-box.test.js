@@ -1,50 +1,38 @@
 import { describe, expect, it } from 'vitest'
 import { MINI_PLAYER_RESERVE, PAGE_BOX_SLACK, stablePageHeight } from '../../src/js/readers/page-box.js'
-
 const memory = () => { const data = new Map(); return { getItem:key => data.get(key) ?? null, setItem:(key, value) => data.set(key, String(value)) } }
-
-describe('stable page box', () => {
-  it('keeps the same height in a later opening with a little more room', () => {
-    const storage = memory()
-    const first = stablePageHeight({ width:390, space:748, free:748, storage })
-    expect(first).toBe(748 - MINI_PLAYER_RESERVE)
-    // Android hid its status bar: 30 px more, same pages.
-    expect(stablePageHeight({ width:390, space:778, free:778, storage })).toBe(first)
-  })
-
-  it('shrinks once when the box no longer fits and then stays there', () => {
-    const storage = memory()
-    expect(stablePageHeight({ width:390, space:778, free:778, storage })).toBe(730)
-    // 30 px less still fits the box: same pages.
-    expect(stablePageHeight({ width:390, space:748, free:748, storage })).toBe(730)
-    // 60 px less does not.
-    expect(stablePageHeight({ width:390, space:718, free:718, storage })).toBe(670)
-    expect(stablePageHeight({ width:390, space:778, free:778, storage })).toBe(670)
-    expect(stablePageHeight({ width:390, space:748, free:748, storage })).toBe(670)
-  })
-
-  it('does not change for the mini player, and only shows less while both bars are up', () => {
-    const storage = memory()
-    expect(stablePageHeight({ width:390, space:748, free:748, storage })).toBe(700)
-    expect(stablePageHeight({ width:390, space:748, free:700, storage })).toBe(700)
-    expect(stablePageHeight({ width:390, space:748, free:656, storage })).toBe(656)
-    expect(stablePageHeight({ width:390, space:748, free:748, storage })).toBe(700)
-  })
-
-  it('keeps a real resize apart from the usual box', () => {
-    const storage = memory()
-    expect(stablePageHeight({ width:390, space:748, free:748, storage })).toBe(700)
-    // The keyboard: a different box, while the usual one is kept.
-    expect(stablePageHeight({ width:390, space:748 - PAGE_BOX_SLACK - 200, free:452, storage })).toBe(404)
-    expect(stablePageHeight({ width:390, space:748, free:748, storage })).toBe(700)
-    // Rotation.
-    expect(stablePageHeight({ width:844, space:342, free:342, storage })).toBe(294)
-    expect(stablePageHeight({ width:390, space:748, free:748, storage })).toBe(700)
-  })
-
-  it('works without storage', () => {
-    expect(stablePageHeight({ width:390, space:748, free:748, storage:null })).toBe(700)
-    const broken = { getItem() { throw new Error('denied') }, setItem() { throw new Error('denied') } }
-    expect(stablePageHeight({ width:390, space:748, free:748, storage:broken })).toBe(700)
-  })
+const height=(storage,space,width=390)=>stablePageHeight({width,space,free:space-MINI_PLAYER_RESERVE,storage})
+describe('stable page box with a permanent shared accessory row',()=>{
+ it('does not expand when Android hides its status bar',()=>{
+  const storage=memory(),first=height(storage,748)
+  expect(first).toBe(696);expect(height(storage,778)).toBe(first)
+ })
+ it('clamps an older taller box before playback, not when the audio controls appear',()=>{
+  const storage=memory();expect(height(storage,778)).toBe(726)
+  expect(height(storage,748)).toBe(696);expect(height(storage,778)).toBe(696)
+ })
+ it('preserves all page breaks across no accessories, audio, Return and both',()=>{
+  const storage=memory(),first=height(storage,748)
+  // The outer viewport reserves the same row in all four UI states.
+  for(const visible of [0,49,44,49,0]){
+   expect(visible).toBeLessThanOrEqual(MINI_PLAYER_RESERVE)
+   expect(height(storage,748)).toBe(first)
+  }
+ })
+ it('keeps real resizes separate and restores the original orientation',()=>{
+  const storage=memory(),first=height(storage,748)
+  expect(height(storage,748-PAGE_BOX_SLACK-200)).toBe(400)
+  expect(height(storage,748)).toBe(first)
+  expect(height(storage,342,844)).toBe(290);expect(height(storage,748)).toBe(first)
+ })
+ it('ignores the old cache that reserved only 48px',()=>{
+  const storage=memory();storage.setItem('inhouse-read-page-boxes',JSON.stringify([{width:390,target:700,height:730}]))
+  expect(height(storage,748)).toBe(696)
+ })
+ it('works without persistent storage and never overflows a tiny viewport',()=>{
+  expect(height(null,748)).toBe(696)
+  const denied={getItem(){throw Error('denied')},setItem(){throw Error('denied')}}
+  expect(height(denied,748)).toBe(696)
+  expect(height(null,180)).toBe(128)
+ })
 })

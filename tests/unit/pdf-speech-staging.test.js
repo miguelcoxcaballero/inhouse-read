@@ -23,6 +23,8 @@ vi.mock('../../src/js/gestures.js', () => ({attachSwipeNavigation:() => () => {}
 import { PdfReader } from '../../src/js/readers/pdf-reader.js'
 
 let reader, container, relocate, width, height, resize, pages, renders
+const originalRangeRects = Object.getOwnPropertyDescriptor(Range.prototype,'getClientRects')
+afterEach(()=>{if(originalRangeRects)Object.defineProperty(Range.prototype,'getClientRects',originalRangeRects);else delete Range.prototype.getClientRects})
 const deferred = () => {
   let resolve, reject
   const promise = new Promise((yes,no) => { resolve = yes; reject = no })
@@ -67,6 +69,35 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockImplementation(function () {return {canvas:this,clearRect:vi.fn(),drawImage:vi.fn()}})
 })
 afterEach(() => { reader?.close(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); document.body.innerHTML='' })
+
+it('keeps a PDF audiobook on its own page sequence while browsing and returns without recreating audio',async()=>{
+  Object.defineProperty(Range.prototype,'getClientRects',{configurable:true,value:()=>[]})
+  await open()
+  const first=await reader.getSpeechSource();first.follow(0,6);reader.browseSpeech()
+  await reader.goToPage(4)
+  const renderCount=renders.length
+  const second=await reader.getNextSpeechSource();expect(second.text).toContain('Page 2.')
+  expect(second.activate()).toBe(true);second.follow(0,6)
+  expect(renders.length).toBe(renderCount)
+  expect(relocate.mock.calls.at(-1)[0].index).toBe(3)
+  const third=await reader.getNextSpeechSource();expect(third.text).toContain('Page 3.')
+  await reader.returnToSpeech()
+  expect(relocate.mock.calls.at(-1)[0].index).toBe(1)
+  expect(third.activate()).toBe(true);third.follow(0,6)
+  await vi.waitFor(()=>expect(relocate.mock.calls.at(-1)[0].index).toBe(2))
+})
+it('a sentence already prepared across pages survives browsing away before its internal audio mark',async()=>{
+  Object.defineProperty(Range.prototype,'getClientRects',{configurable:true,value:()=>[]})
+  await open()
+  const first=await reader.getSpeechSource();first.follow(0,6)
+  const prepared=await reader.getNextSpeechSource()
+  reader.browseSpeech();await reader.goToPage(4)
+  expect(prepared.isValid()).toBe(true);expect(prepared.activate()).toBe(true)
+  prepared.follow(0,6);expect(reader.currentPage).toBe(4)
+  await reader.returnToSpeech();expect(reader.currentPage).toBe(2)
+  expect(prepared.activate()).toBe(true)
+  reader.close();expect(prepared.isValid()).toBe(false)
+})
 
 describe('PDF continuation prepared without an early page turn', () => {
   it('exposes strict candidate validity before activation when the mini-player changes viewport height', async () => {

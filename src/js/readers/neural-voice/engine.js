@@ -92,7 +92,7 @@ export class NeuralEngine extends EventTarget {
     this.setTimer = setTimer; this.clearTimer = clearTimer
     this.limits = { ...LIMITS, ...limits }
     this.cache = new FragmentCache(this.limits.lruEntries, this.limits.lruSamples)
-    const playback = { onStart:n => this.#unitStarted(n), onEnd:n => this.#unitEnded(n) }
+    const playback = { onStart:n => this.#unitStarted(n), onEnd:n => this.#unitEnded(n), onMark:(n,offset) => this.#unitMark(n,offset) }
     this.player = !audio && nativePcmBridge(env)
       ? new NativePcmPlayer({ env, ...playback, onError:reason => {
         const id = this.currentId
@@ -251,33 +251,34 @@ export class NeuralEngine extends EventTarget {
     this.preparingModel = voice.piperId
   }
 
-  #emit(type, id, reason) {
+  #emit(type, id, reason, offset) {
     if (id == null) return
     const detail = reason ? { type, id, reason } : { type, id }
+    if (Number.isInteger(offset)) detail.offset = offset
     queueMicrotask(() => this.env.dispatchEvent?.(new CustomEvent('inhouse-tts', { detail })))
   }
 
   /** Prepare two opening fragments silently; Play adopts even in-flight synthesis. */
-  prime({ text, voiceId, rate = 1, upcoming = [] }) {
+  prime({ text, voiceId, rate = 1, upcoming = [], marks = [] }) {
     const voice = findNeuralVoice(voiceId, this.voices)
     if (!text || !voice || !this._installed.has(voice.id) || !this.supported) return false
     if (this.run && !this.run.preview) return false
     rate = clampRate(rate)
     const previous = this.run
-    if (previous?.voice.id === voice.id && previous.rate === rate && previous.entries[0]?.text === text) return true
+    if (previous?.voice.id === voice.id && previous.rate === rate && this.#matches(previous.entries[0],{text,marks})) return true
     this.#selectPreviewVoice(voice)
     if (this.run) this.#hardStop()
     this.#clearIdle()
     const run = this.run = { voice, rate, preview:true, entries:[], gateOpen:false, buffered:false,
       prepared:null, job:null, heldSince:null, holdTimer:null, pumpTimer:null, feedTimer:null,
       rtf:0, rtfN:0, spi:0, t0:now(), firstAudio:false }
-    for (const value of [text, ...upcoming.slice(0, 1)]) this.#entry(run, value, true)
+    for (const value of [{text,marks}, ...upcoming.slice(0, 1)]) this.#entry(run, value, true)
     this.#armIdle()
     this.#pump()
     return true
   }
 
-  speak({ text, voiceId, rate = 1, id, upcoming = [], deferAfter = Infinity }) {
+  speak({ text, voiceId, rate = 1, id, upcoming = [], deferAfter = Infinity, marks = [] }) {
     this.#clearIdle()
     const voice = findNeuralVoice(voiceId, this.voices)
     if (!voice || !this._installed.has(voice.id)) { this.#hardStop(); this.#emit('error', id, 'not-installed'); return }
@@ -288,7 +289,7 @@ export class NeuralEngine extends EventTarget {
     if (this.run?.preview && this.run.voice.id !== voice.id) this.#selectPreviewVoice(voice)
     let run = this.run
     const head = run && run.voice.id === voice.id && run.rate === rate ? run.entries.find(entry => entry.id == null) : null
-    if (head && head.text === text) {
+    if (head && this.#matches(head,{text,marks})) {
       if (run.preview) { run.preview = false; run.t0 = now() }
       this.#adopt(run, head, id, upcomingTexts, false, deferAfter)
     } else {
@@ -300,7 +301,7 @@ export class NeuralEngine extends EventTarget {
       this.#hardStop({ keepSession:true })
       if (rebuild) this.#teardown() // a running segment cannot be interrupted: when waiting for it costs more than a cold start, start afresh
       run = this.run = { voice, rate, entries: [], gateOpen: false, buffered: false, prepared: null, job: null, heldSince: null, holdTimer: null, pumpTimer: null, feedTimer: null, rtf: 0, rtfN: 0, spi: 0, t0: now(), firstAudio: false }
-      this.#adopt(run, this.#entry(run, text), id, upcomingTexts, true, deferAfter)
+      this.#adopt(run, this.#entry(run, {text,marks}), id, upcomingTexts, true, deferAfter)
       this.#setStatus('buffering')
     }
     this.#feed(run)
@@ -360,9 +361,18 @@ export class NeuralEngine extends EventTarget {
   }
 
   // A run is a continuous stretch of reading with one voice and rate; its entries are the fragments, in reading order.
-  #entry(run, text, deferred = false) {
+  #matches(entry, value) {
+    const text = typeof value === 'string' ? value : value?.text
+    const marks = typeof value === 'string' ? [] : value?.marks || []
+    return entry?.text === text && JSON.stringify(entry.marks || []) === JSON.stringify(marks)
+  }
+  #entry(run, value, deferred = false) {
+    const text = typeof value === 'string' ? value : value.text
+    const marks = typeof value === 'string' ? [] : value.marks || []
     const profile = run.voice.runtime === 'supertonic3' ? `${run.voice.style}:${run.voice.lang}` : run.voice.speaker
     const entry = { n: ++this.unitSeq, text, key: `${run.voice.piperId}#${profile}|${run.rate}|${text}`, deferred, id: null, state: 'queued', chunks: [], scheduled: 0, total: null, counts: null, started: false, ended: false, error: null }
+    entry.marks = marks
+    if (marks.length) entry.key += `|marks:${marks.join(',')}`
     const cached = this.cache.get(entry.key)
     if (cached) { entry.chunks = cached.slice(); entry.total = cached.length; entry.state = 'done'; this.stats.cacheHits++ }
     run.entries.push(entry)
@@ -382,7 +392,7 @@ export class NeuralEngine extends EventTarget {
       const at = run.entries.indexOf(head)
       const after = run.entries.slice(at + 1)
       let keep = 0
-      while (keep < after.length && keep < upcoming.length && after[keep].text === upcoming[keep]) keep++
+      while (keep < after.length && keep < upcoming.length && this.#matches(after[keep],upcoming[keep])) keep++
       for (let index = 0; index < keep; index++) after[index].deferred = index >= deferAfter
       const dropped = after.slice(keep)
       if (dropped.length) {
@@ -397,6 +407,7 @@ export class NeuralEngine extends EventTarget {
     // Whatever already happened to the adopted fragment is reported now, as if it had been live.
     if (head.error) { this.#emit('error', id, head.error); this.#hardStop(); return }
     if (announce && head.started) this.#emit('start', id)
+    if (announce && Number.isInteger(head.mark)) this.#emit('boundary',id,null,head.mark)
     if (announce && head.ended) this.#emit('done', id)
   }
 
@@ -438,7 +449,7 @@ export class NeuralEngine extends EventTarget {
     entry.state = 'synth'
     run.segStart = now()
     const rate = run.rate, speaker = run.voice.speaker
-    run.job = this.client.synth({ text: entry.text, rate, speaker, ...(run.voice.runtime === 'supertonic3' ? { lang:run.voice.lang, style:run.voice.style } : {}) }, {
+    run.job = this.client.synth({ text: entry.text, rate, speaker, ...(entry.marks.length ? {marks:entry.marks} : {}), ...(run.voice.runtime === 'supertonic3' ? { lang:run.voice.lang, style:run.voice.style } : {}) }, {
       onPlan: counts => { entry.counts = counts; entry.total = counts.length },
       onChunk: chunk => this.#chunk(run, entry, chunk),
       onEnd: () => { if (this.run !== run) return; run.job = null; this.#finish(run, entry); this.#pump() },
@@ -493,7 +504,7 @@ export class NeuralEngine extends EventTarget {
     return remaining > (this.coldMs || this.limits.coldStartMs)
   }
 
-  #chunk(run, entry, { index, last, pcm, sampleRate, ms }) {
+  #chunk(run, entry, { index, last, pcm, sampleRate, ms, marks = [] }) {
     if (this.run !== run) return
     run.segStart = now()
     const dur = pcm.length / sampleRate
@@ -505,7 +516,7 @@ export class NeuralEngine extends EventTarget {
       run.rtfN++
       this.stats.rtf = run.rtf
     }
-    entry.chunks.push({ pcm, sampleRate, dur, last })
+    entry.chunks.push({ pcm, sampleRate, dur, last, marks })
     if (last) this.#finish(run, entry)
     if (run.rtfN >= this.limits.minRtfSamples && run.rtf > this.limits.slowRtf) this.#bufferSlow()
     this.#feed(run)
@@ -583,7 +594,7 @@ export class NeuralEngine extends EventTarget {
           this.clearTimer(run.holdTimer); run.holdTimer = null
         }
         const chunk = entry.chunks[entry.scheduled++]
-        try { this.player.schedule(entry.n, chunk.pcm, chunk.sampleRate, { last: !!chunk.last }) }
+        try { this.player.schedule(entry.n, chunk.pcm, chunk.sampleRate, { last: !!chunk.last, marks:chunk.marks }) }
         catch { this.#failEntry(run, entry, 'native-playback-failed'); return }
         if (this.run !== run) return
       }
@@ -618,6 +629,12 @@ export class NeuralEngine extends EventTarget {
   }
 
   #entryOf(n) { return this.run?.entries.find(entry => entry.n === n) }
+  #unitMark(n,offset) {
+    const entry = this.#entryOf(n)
+    if (!entry || !entry.marks.includes(offset)) return
+    entry.mark = offset
+    if (entry.id != null) this.#emit('boundary',entry.id,null,offset)
+  }
   #unitStarted(n) {
     const run = this.run, entry = this.#entryOf(n)
     if (!entry) return

@@ -90,9 +90,9 @@ export function createFakeNeuralEngine(options = {}) {
     async remove(id) { this.removed.push(id); this.set.delete(id); this.map.delete(id); this.emitChange() }
     unlock() { this.unlocks++ }
     emit(type, id, reason) { window.dispatchEvent(new CustomEvent('inhouse-tts', { detail:{ type, id, ...(reason ? { reason } : {}) } })) }
-    speak({ text, voiceId, rate = 1, id, upcoming = [] }) {
+    speak({ text, voiceId, rate = 1, id, upcoming = [], marks = [] }) {
       this.clearSpeech()
-      const call = { text, voiceId, rate, id, upcoming: [...upcoming], atSpeak:highlight(), atStart:null }
+      const call = { text, voiceId, rate, id, upcoming: [...upcoming], marks, atSpeak:highlight(), atStart:null }
       this.calls.push(call)
       this.current = call
       if (config.failNext) { const reason = config.failNext; config.failNext = ''; this.speechTimer = this.later(() => this.emit('error', id, reason), config.startDelay); return }

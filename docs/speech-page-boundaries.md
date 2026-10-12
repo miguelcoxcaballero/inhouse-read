@@ -1,3 +1,25 @@
+# Audio continuo y navegación independiente — 1.7.142
+
+La planificación mantiene la frase completa al cruzar páginas. El corte visual
+se convierte en una marca dentro del mismo PCM. Piper deriva esa marca de las
+duraciones de sus fonemas; Supertonic usa una estimación de su predictor de
+duración (no alineación exacta). PDF enlaza la frase incompleta con su continuación
+antes de sintetizar y conserva las referencias a ambas páginas para resaltarlas.
+
+El evento audible de la marca gira la página; preparar el texto o el audio no lo
+hace. Android usa recibos de AudioTrack de segmentos contiguos, con los mismos
+bytes y sin silencio adicional. Web Audio usa el reloj de reproducción y latencia.
+
+Un toque corto sigue mostrando/ocultando controles o pasando página. Una pulsación
+larga de 500 ms sobre una frase cambia explícitamente el punto de escucha.
+Navegar por el libro conserva el audio y suspende el seguimiento visual hasta
+pulsar «Volver al audio». Pausar/detener siguen siendo acciones explícitas.
+
+Ver [el registro de verificación](remaining-wip-verification.md) para el estado
+de publicación y los límites de las comprobaciones.
+
+## Historial anterior (audio separado al cruzar páginas)
+
 # Audio y frases entre páginas
 
 La fuente EPUB conserva el texto de la sección y sus rangos DOM. Antes de

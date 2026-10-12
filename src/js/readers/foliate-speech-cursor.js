@@ -18,6 +18,7 @@ export class FoliateSpeechCursor {
     this.current = null
     this.revealing = null
     this.closed = false
+    this.browsing = false
     this.progress = new SectionProgress(this.book?.sections || [], 1500, 1600)
     this.onVisibility = () => { if (!env.hidden) void this.reveal().catch(() => {}) }
     env.addEventListener('visibilitychange', this.onVisibility)
@@ -25,32 +26,37 @@ export class FoliateSpeechCursor {
   get detached() { return Boolean(this.current?.detached) }
   get active() { return Boolean(this.current) }
   valid() { return !this.closed && this.view.book === this.book }
-  reset() { ++this.epoch; this.current = null }
+  reset() { ++this.epoch; this.current = null; this.browsing = false }
+  browse() { this.browsing = true }
+  async returnToSpeech() { this.browsing = false; await this.reveal() }
   close() { this.reset(); this.closed = true; this.env.removeEventListener('visibilitychange', this.onVisibility) }
 
   // Attach a precise logical position to the chapter already on screen.
   // Its ordinary page cuts/highlighting remain in use while visible.
   wrap(source, map, index) {
     const highlight = source.highlight, follow = source.follow, clear = source.clear
-    const state = { source, map, index, epoch:this.epoch, detached:false, offset:source.start || 0, sentence:null, cfi:null }
+    // The retained iframe replaces its DOM on chapter changes. Keep an inert
+    // document for the audible cursor, so browsing cannot destroy its ranges.
+    const copy = map.spans[0]?.node?.ownerDocument?.cloneNode(true)
+    const stableMap = copy?.body ? mapSpeechText(copy.body) : map
+    const state = { source, map:stableMap.text === map.text ? stableMap : map, index, epoch:this.epoch, detached:false, offset:source.start || 0, sentence:null, cfi:null }
+    source.adopt = () => { state.epoch = this.epoch }
     source.highlight = (start, end) => {
-      if (this.env.hidden || this.current === state) state.sentence = [start, end]
-      if (!this.env.hidden) highlight?.(start, end)
+      state.sentence = [start, end]
+      if (!this.env.hidden && !this.browsing) highlight?.(start, end)
     }
     source.follow = (start, end) => {
-      if (this.env.hidden || this.current === state) {
-        this.remember(state, start, end)
-        if (!this.env.hidden) return this.reveal()
-        return
-      }
-      return follow?.(start, end)
+      this.remember(state, start, end)
+      if (this.env.hidden || this.browsing) return
+      const rendered = this.view.renderer?.getContents?.().some(item => item.doc === map.spans[0]?.node?.ownerDocument)
+      return rendered ? follow?.(start, end) : this.reveal()
     }
     source.clear = () => { state.sentence = null; clear?.() }
     return source
   }
 
   remember(state, start, end) {
-    if (!this.valid() || state.epoch !== this.epoch) return
+    if (!this.valid() || state.epoch !== this.epoch || !Number.isInteger(state.index) || typeof this.view.getCFI !== 'function') return
     const range = state.map.rangeFor(start, end)
     if (!range) return
     const point = range.cloneRange(); point.collapse(true)
@@ -58,12 +64,12 @@ export class FoliateSpeechCursor {
     state.offset = start
     this.current = state
     const fraction = this.progress.getProgress(state.index, start / Math.max(1, state.map.text.length)).fraction
-    this.onRelocate({ index:state.index, cfi:state.cfi,
+    if (!this.browsing) this.onRelocate({ index:state.index, cfi:state.cfi,
       ...(Number.isFinite(fraction) ? { fraction } : {}), section:'', page:'' })
   }
 
   async next({ isActive = () => true } = {}) {
-    if (!this.env.hidden) return undefined
+    if (!this.env.hidden && !this.browsing && !this.current?.detached) return undefined
     const previous = this.current, epoch = this.epoch
     let index = previous?.index ?? sectionIndex(this.view)
     // Image spreads and unsupported extractors retain the existing reader path.
@@ -127,15 +133,15 @@ export class FoliateSpeechCursor {
   // Only the most recent audible CFI is shown. No timers, page animation or
   // rendering promise is used as a prerequisite for synthesis/playback.
   reveal() {
-    if (!this.valid() || this.env.hidden || !this.current?.cfi) return Promise.resolve()
+    if (!this.valid() || this.env.hidden || this.browsing || !this.current?.cfi) return Promise.resolve()
     if (this.revealing) return this.revealing
     const epoch = this.epoch
     const work = async () => {
       let displayed
-      while (this.valid() && epoch === this.epoch && !this.env.hidden && this.current?.cfi && this.current.cfi !== displayed) {
+      while (this.valid() && epoch === this.epoch && !this.env.hidden && !this.browsing && this.current?.cfi && this.current.cfi !== displayed) {
         const state = this.current, cfi = state.cfi
         await this.view.goTo(cfi)
-        if (!this.valid() || epoch !== this.epoch || this.env.hidden) return
+        if (!this.valid() || epoch !== this.epoch || this.env.hidden || this.browsing) return
         displayed = cfi
         if (this.current !== state || state.cfi !== cfi) continue
         const content = this.view.renderer?.getContents?.().find(item => item.index === state.index)

@@ -72,7 +72,7 @@ export async function createSupertonicRuntime({ort,buffers,config,indexer,styles
     }
   } catch(error){await releaseAll();throw error;}
 
-  async function infer(text,{lang,style,rate,isActive}) {
+  async function infer(text,{lang,style,rate,isActive,marks = [],onMarks = () => {}}) {
     const live=new Set(),own=t=>{live.add(t);return t;},drop=t=>{if(live.delete(t))releaseTensor(t);};
     const check=()=>{if(disposed||!isActive())throw cancelled();};
     const checkpoint=async()=>{await yieldToMessages();check();};
@@ -104,18 +104,47 @@ export async function createSupertonicRuntime({ort,buffers,config,indexer,styles
       // syllables, and the quiet tail is trimmed later anyway.
       const pcm=new Float32Array(output.wav_tts.data.slice(0,frames*chunkSize));
       if(pcm.some(value=>!Number.isFinite(value)))throw new Error('El modelo devolvió audio inválido');
+      // This model exposes total durations, not token alignment. Estimate the
+      // boundary from its own prefix/suffix duration predictor, without running
+      // the acoustic decoder again or splitting the generated waveform.
+      const predict = async value => {
+        const normalized = normalizeSupertonicText(value,lang)
+        if (!normalized) return 0
+        const chars = Array.from(normalized), ids = own(new ort.Tensor('int64',BigInt64Array.from(chars,ch=>BigInt(indexer[ch.codePointAt(0)]??-1)),[1,chars.length]))
+        const mask = own(new ort.Tensor('float32',new Float32Array(chars.length).fill(1),[1,1,chars.length]))
+        const result = await run('duration_predictor',{text_ids:ids,style_dp:selected.dp,text_mask:mask})
+        const duration = Number(result.duration?.data?.[0])
+        drop(ids); drop(mask); drop(result.duration)
+        return Number.isFinite(duration) && duration > 0 ? duration : 0
+      }
+      const timeline = []
+      for (const offset of marks) {
+        const before = await predict(text.slice(0,offset)), after = await predict(text.slice(offset))
+        if (before + after > 0) timeline.push({offset,sample:Math.min(pcm.length-1,Math.round(pcm.length * before / (before + after))),estimated:true})
+      }
+      onMarks(timeline)
       return pcm;
     } finally{for(const tensor of live)releaseTensor(tensor);}
   }
   return {
     sampleRate,
-    synthesize(text,{lang,style='F1',rate=1,isActive=()=>true}={}) {
+    synthesize(text,{lang,style='F1',rate=1,isActive=()=>true,marks=[]}={}) {
       if(disposed)return Promise.reject(cancelled());if(running)return Promise.reject(new Error('Síntesis ya en curso'));
       if(!SUPERTONIC_LANGUAGES.includes(lang)||!styleTensors[style]||!Number.isFinite(rate)||rate<.5||rate>2)return Promise.reject(new Error('Opciones de voz inválidas'));
-      const job=(async()=>{const chunks=supertonicTextChunks(text,lang),parts=[];let length=0;
+      const job=(async()=>{const chunks=supertonicTextChunks(text,lang),parts=[],timeline=[];let length=0,searchFrom=0;
         if(chunks.length>32)throw new Error('Texto de voz demasiado largo');
-        for(const chunk of chunks){const pcm=await infer(chunk,{lang,style,rate,isActive});if(!pcm.length)continue;if(parts.length){const gap=new Float32Array(Math.floor(sampleRate*.15));parts.push(gap);length+=gap.length;}parts.push(pcm);length+=pcm.length;}
-        if(disposed||!isActive())throw cancelled();const pcm=new Float32Array(length);let offset=0;for(const part of parts){pcm.set(part,offset);offset+=part.length;}return{pcm,sampleRate};
+        for(const chunk of chunks){
+          const start=text.indexOf(chunk,searchFrom);searchFrom=start+chunk.length
+          const local=marks.filter(n=>Number.isInteger(n)&&n>start&&n<searchFrom).map(n=>n-start)
+          let chunkMarks=[]
+          const pcm=await infer(chunk,{lang,style,rate,isActive,marks:local,onMarks:values=>{chunkMarks=values}})
+          if(!pcm.length)continue
+          if(parts.length){const gap=new Float32Array(Math.floor(sampleRate*.15));parts.push(gap);length+=gap.length;}
+          if(marks.includes(start))timeline.push({offset:start,sample:length})
+          timeline.push(...chunkMarks.map(mark=>({...mark,offset:mark.offset+start,sample:mark.sample+length})))
+          parts.push(pcm);length+=pcm.length;
+        }
+        if(disposed||!isActive())throw cancelled();const pcm=new Float32Array(length);let offset=0;for(const part of parts){pcm.set(part,offset);offset+=part.length;}return{pcm,sampleRate,marks:timeline};
       })();running=job;job.finally(()=>{if(running===job)running=null;}).catch(()=>{});return job;
     },
     async dispose(){if(disposed)return;disposed=true;await running?.catch(()=>{});await releaseAll();}

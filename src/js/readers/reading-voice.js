@@ -56,6 +56,7 @@ export class ReadingVoice {
     window.addEventListener('inhouse-tts', event => {
       if (event.detail?.id !== this.utteranceId || this.state !== 'playing') return
       if (event.detail.type === 'start') { this.diagnosticStarts++; this.engineStarted(event.detail.id) }
+      if (event.detail.type === 'boundary') this.present(event.detail.id,event.detail.offset)
       if (event.detail.type === 'done') { this.diagnosticDones++; this.engineEnded(event.detail.id); this.advance() }
       if (event.detail.type === 'interrupted') this.pause()
       if (event.detail.type === 'error') this.engineFailed(event.detail)
@@ -63,7 +64,11 @@ export class ReadingVoice {
     // The reader measured new page breaks (a relayout, or a chapter read with
     // the screen off now on screen): re-cut what is still to be read there.
     window.addEventListener('inhouse-speech-layout', () => { ++this.openingLayout; this.openingPlan = null; void this.refreshPageBreaks() })
-    window.addEventListener('inhouse-speech-tap', event => { if (this.jumpToPoint(event.detail)) event.detail.handled = true })
+    window.addEventListener('inhouse-speech-hold', event => {
+      if (this.state !== 'playing') return
+      event.detail.handled = true
+      if (!event.detail.probe) void this.seekToPoint(event.detail)
+    })
     window.addEventListener('inhouse-audio-control', event => {
       const detail = event.detail
       if (!nativePcmBridge() || !this.nativeSession || detail?.session !== this.nativeSession) return
@@ -134,6 +139,21 @@ export class ReadingVoice {
   }
   speakCurrent() {
     if (this.state !== 'playing') return
+    const current = this.items[this.index]
+    if (this.needsPageJoin(current,this.index) && !current.joinChecked) {
+      this.prepareAhead()
+      if (this.aheadPage?.promise) {
+        const generation = this.generation, index = this.index
+        void this.aheadPage.promise.then(() => {
+          if (generation !== this.generation || this.state !== 'playing' || index !== this.index) return
+          this.joinPageSentence()
+          this.items[index].joinChecked = true
+          this.speakCurrent()
+        })
+        return
+      }
+      current.joinChecked = true
+    }
     const id = `${this.generation}-${this.index}-${Date.now()}-${this.spoken = (this.spoken || 0) + 1}`
     this.utteranceId = id
     const text = this.chunks[this.index]
@@ -181,7 +201,8 @@ export class ReadingVoice {
     clearTimeout(this.waitTimer)
     this.waitTimer = setTimeout(() => { if (id === this.utteranceId && this.state === 'playing' && this.startedId !== id && !this.waiting) { this.waiting = true; this.notify('Preparando la voz natural…') } }, NEURAL_WAIT_MS)
     try {
-      engine.speak({ text, voiceId:voice.id, rate:this.rate, id, upcoming, deferAfter })
+      const marks = this.items[this.index]?.marks?.map(mark => mark.offset) || []
+      engine.speak({ text, voiceId:voice.id, rate:this.rate, id, upcoming, deferAfter, ...(marks.length ? {marks} : {}) })
       this.nativeSession = nativeAudio()?.session || this.nativeSession
     } catch { queueMicrotask(() => this.engineFailed({ id, reason:'synth-failed' })) }
     return true
@@ -189,18 +210,48 @@ export class ReadingVoice {
   upcomingFor(voice) {
     const upcoming = []
     for (let next = this.index + 1; next < this.chunks.length && upcoming.length < NEURAL_LOOKAHEAD; next++) {
+      if (this.needsPageJoin(this.items[next],next) && !this.items[next].joinChecked) break
       if (this.options.multilingual && this.voiceFor(this.chunks[next]).voice?.id !== voice.id) break // another language: another voice, not prefetched
-      upcoming.push(this.chunks[next])
+      upcoming.push(this.audioItem(this.items[next] || {text:this.chunks[next]}))
     }
     const deferAfter = upcoming.length
     const plan = this.aheadPage?.plan
     if (this.index + 1 + upcoming.length === this.chunks.length && plan?.items) {
       for (const item of plan.items.slice(0, NEURAL_LOOKAHEAD)) {
         if (this.voiceFor(item.text).voice?.id !== voice.id) break
-        upcoming.push(item.text)
+        upcoming.push(this.audioItem(item))
       }
     }
     return { upcoming, deferAfter }
+  }
+  audioItem(item) { return item.marks?.length ? {text:item.text,marks:item.marks.map(mark=>mark.offset)} : item.text }
+  needsPageJoin(item,index) {
+    return this.source?.physicalPage && index === this.items.length - 1 && item?.text && !/[.!?。！？…]["'”’»›)\]}]*\s*$/.test(item.text)
+  }
+  joinPageSentence() {
+    const index = this.items.length - 1, tail = this.items[index], plan = this.aheadPage?.plan
+    if (!this.needsPageJoin(tail,index) || tail.joinChecked || !plan?.items?.length || !this.pagePlanValid(plan)) return
+    // Only the incomplete sentence crosses the physical sheet. The remainder
+    // of the prepared page keeps its own ordinary utterances and raw offsets.
+    const first = plan.items[0]
+    const continuation = []
+    let length = tail.text.length + 1
+    for (const item of plan.items) {
+      if (item.sentence.start !== first.sentence.start || continuation.length && length + item.text.length > 360) break
+      continuation.push(item); length += item.text.length + 1
+    }
+    const suffix = continuation.map(item=>item.text).join(' ')
+    const prefix = /[-‐]$/.test(tail.text) && /^\p{Ll}/u.test(suffix) ? tail.text.slice(0,-1) : tail.text + ' '
+    const boundary = prefix.length
+    const marks = [...(tail.marks || []),{offset:boundary,start:first.start,source:plan.source,sentence:first.sentence}]
+    let offset = boundary
+    for (const item of continuation) {
+      for (const mark of item.marks || []) marks.push({...mark,offset:offset + mark.offset,source:plan.source,sentence:item.sentence})
+      offset += item.text.length + 1
+    }
+    this.items[index] = {...tail,text:prefix+suffix,marks,joinChecked:true,unjoined:tail}
+    this.chunks[index] = this.items[index].text
+    plan.items = plan.items.slice(continuation.length)
   }
   /** One detached page, prepared only near the current page's end. Never
    * reveal it or let its PCM play until advance adopts its first fragment. */
@@ -216,11 +267,12 @@ export class ReadingVoice {
     request.promise = (async () => {
       let source
       try {
-        source = await this.reader.getNextSpeechSource({ isActive })
+        source = await this.reader.getNextSpeechSource({ isActive, afterPage:this.source?.physicalPage })
         if (!isActive()) { source?.clear?.(); return undefined }
         if (source === undefined && this.aheadPage === request) this.aheadPage = null
         request.plan = source == null ? source : await this.prepare(source)
         if (!isActive()) { source?.clear?.(); request.plan = undefined; return undefined }
+        this.joinPageSentence()
         const { voice } = this.voiceFor(this.chunks[this.index])
         if (voice && this.index < this.chunks.length) {
           const { upcoming, deferAfter } = this.upcomingFor(voice)
@@ -289,7 +341,7 @@ export class ReadingVoice {
         if (next === null) { this.stop(); this.notify('Final del libro.'); return }
         if (next !== undefined) {
           this.adopt(next)
-          if (!this.chunks.length) return this.fail('Página siguiente sin texto legible.')
+          if (!this.chunks.length) { this.index = -1; return this.advance() }
           return this.speakCurrent()
         }
       }
@@ -318,21 +370,7 @@ export class ReadingVoice {
     } catch { if (generation === this.generation) this.fail('No se pudo pasar de página.') }
     finally { if (this.diagnosticAdvance === diagnostic) this.diagnosticAdvance = null }
   }
-  /**
-   * Text to speak from the visible page on. Readers that can map text back to the
-   * page hand over a source (offsets -> DOM) so each sentence can be highlighted
-   * and followed; the others keep the plain text path, unhighlighted.
-   */
-  /**
-   * Fragments end where pages end, so the next audible fragment turns the page
-   * at the first word of the next page. Those cuts were measured when the
-   * source was built; after a relayout (fonts, a real resize) or for a
-   * chapter first read with the screen off they are stale or missing, and the
-   * page waited for the next sentence. The fragment being heard is kept; the
-   * rest of the source is re-cut at the measured breaks, and the engine gets
-   * the new upcoming texts (what it already prepared and still matches is kept).
-   */
-  /** A tap on a sentence of the page being read: read from that sentence on. */
+  /** Explicit seek helper; page gestures use seekToPoint after a long hold. */
   jumpToPoint({ doc, x, y } = {}) {
     if (this.state !== 'playing' || typeof this.source?.offsetAtPoint !== 'function') return false
     let at
@@ -346,12 +384,42 @@ export class ReadingVoice {
     this.restart()
     return true
   }
-  /** The reader turned a page by hand while the audiobook played: go on reading from the page now shown. */
+  /** Manual browsing changes the visible page, keeping the audible cursor intact. */
   async continueFromPage(navigate) {
-    const playing = this.state === 'playing' || this.state === 'loading'
-    this.stop()
+    this.browse()
     await navigate?.()
-    if (playing && this.state === 'stopped') return this.play()
+  }
+  browse() {
+    if (!['playing','paused','loading'].includes(this.state)) return
+    this.browseEpoch = (this.browseEpoch || 0) + 1
+    this.browsing = true
+    this.reader.browseSpeech?.()
+    this.notify()
+  }
+  async returnToAudio() {
+    if (!this.browsing) return
+    const epoch = this.browseEpoch, generation = this.generation
+    await this.reader.returnToSpeech?.()
+    if (epoch !== this.browseEpoch || generation !== this.generation) return
+    this.browsing = false
+    this.notify()
+  }
+  async seekToPoint({doc,x,y}) {
+    const generation = this.generation
+    try {
+      const source = await this.reader.getSpeechSource?.({visible:true})
+      if (generation !== this.generation || this.state !== 'playing') return
+      const offset = source?.offsetAtPoint?.(doc,x,y)
+      if (!Number.isFinite(offset)) return
+      const plan = await this.prepare({...source,start:0})
+      if (generation !== this.generation || this.state !== 'playing') return
+      const hit = plan.items.find(item => offset >= item.sentence.start && offset < item.sentence.end)
+      if (!hit) return
+      this.stop()
+      this.adopt({source,items:plan.items.filter(item => item.start >= hit.sentence.start)})
+      this.state = 'playing'; this.waiting = true
+      this.notify('Preparando la voz natural…'); this.speakCurrent()
+    } catch { /* An obsolete frame or a hold outside text cannot seek. */ }
   }
   async refreshPageBreaks() {
     const source = this.source, generation = this.generation, index = this.index
@@ -399,7 +467,7 @@ export class ReadingVoice {
     }
     try {
       const plan = await pending.promise
-      if (this.state === 'loading' && generation === this.generation && key !== keyOf()) return this.prepareOpening()
+      if (!this.browsing && this.state === 'loading' && generation === this.generation && key !== keyOf()) return this.prepareOpening()
       if (!this.pagePlanValid(plan)) {
         if (this.openingPlan === pending) this.openingPlan = null
         return this.prepare(undefined, true)
@@ -421,12 +489,13 @@ export class ReadingVoice {
       ['stopped', 'paused'].includes(this.state)
     try {
       const items = this.state === 'paused' && this.chunks.length && !this.resumeNextPage
-        ? this.chunks.slice(this.index).map(text => ({text})) : (await this.prepareOpening()).items
+        ? this.chunks.slice(this.index).map((text,index) => this.items[this.index+index] || {text}) : (await this.prepareOpening()).items
       if (!valid() || !items.length) return false
       const { voice } = this.voiceFor(items[0].text)
       if (!voice?.neural) return false
-      const upcoming = items.slice(1, 2).filter(item => this.voiceFor(item.text).voice?.id === voice.id).map(item => item.text)
-      return await neuralEngine()?.prime?.({ text:items[0].text, voiceId:voice.id, rate:this.rate, upcoming }) || false
+      const upcoming = items.slice(1, 2).filter(item => this.voiceFor(item.text).voice?.id === voice.id).map(item => this.audioItem(item))
+      return await neuralEngine()?.prime?.({ text:items[0].text, voiceId:voice.id, rate:this.rate, upcoming,
+        ...(items[0].marks?.length ? {marks:items[0].marks.map(mark=>mark.offset)} : {}) }) || false
     } catch { return false }
   }
   /** Optional fixed-page preparation: it must leave the current page visible until an audible start. */
@@ -467,6 +536,7 @@ export class ReadingVoice {
     return this.prepareNext(generation)
   }
   adopt({ source, items }) {
+    source?.adopt?.()
     this.source = source; this.items = items; this.chunks = items.map(item => item.text); this.index = 0
     this.deferredPage = typeof source?.activate === 'function' ? source : null
   }
@@ -496,10 +566,13 @@ export class ReadingVoice {
    * so there is no blank flash between sentences or at a page turn. A deferred fixed page commits before its highlight;
    * an invalidated page pauses the voice. Highlight and follow failures remain cosmetic.
    */
-  present(id = this.utteranceId) {
+  present(id = this.utteranceId, offset = 0) {
     clearTimeout(this.presentTimer)
     if (id !== this.utteranceId || this.state !== 'playing') return
-    const item = this.items[this.index], source = this.source
+    const item = this.items[this.index]
+    const boundary = offset ? item?.marks?.find(mark=>mark.offset === offset) : null
+    if (offset && !boundary) return
+    const source = boundary?.source || this.source
     if (!source || !item?.sentence) return
     if (source.activate) {
       // A no-start completion may paint a legacy source, but can never reveal a prepared next page.
@@ -509,7 +582,7 @@ export class ReadingVoice {
       if (activated !== true) { this.pause(); this.notify('No se pudo mostrar la página. Pulsa Reintentar para continuar.'); return }
       this.deferredPage = null
     }
-    const { start, end } = item.sentence
+    const { start, end } = boundary?.sentence || item.sentence
     try {
       const shown = this.shown
       if (!shown || shown.source !== source || shown.start !== start || shown.end !== end) {
@@ -517,7 +590,10 @@ export class ReadingVoice {
         this.shown = { source, start, end }
         source.highlight?.(start, end)
       }
-      Promise.resolve(source.follow?.(item.start, item.end)).catch(() => {})
+      const followStart = boundary?.start ?? item.start
+      const next = item.marks?.find(mark=>mark.offset > offset)
+      const followEnd = next && (!next.source || next.source === source) ? next.start : boundary?.sentence?.end ?? item.end
+      Promise.resolve(source.follow?.(followStart, followEnd)).catch(() => {})
     } catch { /* the page may have changed under a paused voice */ }
   }
   /** Removes the highlight (and the one a previous page left behind). */
@@ -565,6 +641,10 @@ export class ReadingVoice {
   pause() {
     if (this.state !== 'playing' && this.state !== 'loading') return
     const pendingPage = this.deferredPage || this.preparingPage?.generation === this.generation
+    // A joined PDF sentence contains an activation tied to this generation.
+    // Rebuild that continuation on Resume instead of reusing a cancelled page.
+    const original = this.items[this.index]?.unjoined
+    if (original) { this.items[this.index] = original; this.chunks[this.index] = original.text }
     if (pendingPage) this.resumeNextPage = true
     this.clearAhead()
     this.diagnosticAdvance = null
@@ -578,6 +658,7 @@ export class ReadingVoice {
     this.clearAhead()
     this.diagnosticAdvance = null
     ++this.generation; this.state = 'stopped'; this.cancelUtterance(); this.unpaint()
+    this.browsing = false; this.reader.stopSpeech?.()
     this.nativeSession = null
     this.preparingPage = null; this.deferredPage = null; this.resumeNextPage = false
     this.chunks = []; this.items = []; this.source = null; this.index = 0; this.missing.clear(); this.spokenWith = null; clearTimeout(this.sleepTimer); this.notify()

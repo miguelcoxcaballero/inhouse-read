@@ -477,4 +477,35 @@ test.describe('neural voice engine (real Piper weights, real ORT + espeak-ng WAS
     if(result.supported)expect(Math.min(...result.times.direct)).toBeLessThan(Math.min(...result.times.legacy))
   })
 
+  test('one real sentence crosses a page on an audible duration mark without a second synthesis or buffer', async () => {
+    await page.evaluate(async()=>{ await window.neural.engine.refresh(); await window.neural.engine.install('piper:es_MX-claude-high') })
+    await page.locator('#unlock').click()
+    const result=await page.evaluate(async()=>{
+      const {engine,events,starts}=window.neural
+      engine.stop();events.length=0;starts.length=0;window.__capture=true
+      const text='La lluvia golpeaba suavemente los cristales de la vieja biblioteca.',offset=text.indexOf('los cristales')
+      const done=new Promise((resolve,reject)=>{
+        const listener=event=>{
+          if(event.detail.id!=='continuous-page')return
+          if(event.detail.type==='done'||event.detail.type==='error'){
+            window.removeEventListener('inhouse-tts',listener)
+            event.detail.type==='done'?resolve():reject(new Error(event.detail.reason))
+          }
+        };window.addEventListener('inhouse-tts',listener)
+      })
+      engine.speak({text,voiceId:'piper:es_MX-claude-high',id:'continuous-page',marks:[offset]})
+      await done;window.__capture=false
+      return {text,offset,events:events.filter(e=>e.id==='continuous-page'),starts}
+    })
+    expect(result.events.map(e=>e.type)).toEqual(['start','boundary','done'])
+    expect(result.events[1].offset).toBe(result.offset)
+    expect(result.events[1].ctxTime).toBeGreaterThan(result.events[0].ctxTime)
+    expect(result.events[1].ctxTime).toBeLessThan(result.events[2].ctxTime)
+    expect(result.starts).toHaveLength(1)
+    const {data,...start}=result.starts[0]
+    writeFileSync(join(EVIDENCE,'continuous-page-pcm.f32'),Buffer.from(new Float32Array(data).buffer))
+    numbers.continuousPage={...result,starts:[start]}
+  })
+
+
 })

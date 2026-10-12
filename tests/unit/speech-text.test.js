@@ -89,8 +89,8 @@ describe('opening clause latency without lost text', () => {
     const text=raw.replace('medianoche','media-\nnoche').replace('bibliotecario','[17] bibliotecario'),cut=text.indexOf('último')
     const items=planSpeech(text,{opening:true,footnotes:false,pageBreaks:[cut]})
     expect(items.map(x=>x.text).join(' ')).toBe(raw)
-    expect(items.some(item=>item.start===cut)).toBe(true)
-    expect(items.some(item=>item.start<cut&&item.end>cut)).toBe(false)
+    expect(items.some(item=>item.marks?.some(mark=>mark.start===cut))).toBe(true)
+    expect(items.some(item=>item.start<cut&&item.end>cut)).toBe(true)
     expect(items.at(-1).end).toBe(text.length)
   })
   it('only changes the first fragment, and never invents a mid-word or mid-clause break', () => {

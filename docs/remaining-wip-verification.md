@@ -1,3 +1,49 @@
+# Prioridad actual — estabilidad del texto y audio continuo (12 octubre)
+
+Preparado para web **1.7.142**, todavía SIN publicar. Rust está preservado en
+`d448533`; la corrección del lector tiene prioridad sobre más migraciones.
+
+Implementado:
+- La geometría del texto reserva una franja constante para audio/retorno;
+  fuentes listas antes de mostrar capítulos, CSS idempotente y caché de altura v2.
+- Toque corto conserva navegación/interfaz; mantener 500 ms sobre una frase
+  cambia el punto de escucha. Arrastrar o cancelar el contacto anula el hold.
+- Navegar páginas/capítulos y desplazar PDF conserva el cursor de escucha.
+  «Volver al audio» recupera la posición sin cancelar la síntesis.
+- Los bordes de página son marcas internas de una síntesis, no nuevos audios.
+  PDF une el final incompleto y el comienzo siguiente, sin volver a leerlos.
+- Piper expone las duraciones de fonemas existentes en ONNX sin alterar pesos
+  ni operadores. Supertonic conserva un PCM y estima las marcas con su predictor
+  de duración; NO se afirma alineación exacta por palabra en Supertonic.
+- Web Audio usa su reloj audible. Android entrega subarrays contiguos del mismo
+  PCM y recibe marcas del AudioTrack existente: ninguna pausa/fade intermedia,
+  ni dependencia del temporizador JS para saber cuándo suena la marca.
+
+Evidencia local `D:/CodexEvidence/InhouseRead-20261012/reader-continuity`:
+- `unit-frozen`: 4091/4091, 326 archivos, con el código estabilizado.
+  `unit-final` anterior falló una aserción añadida durante esa ejecución contra
+  módulos ya cargados; la tanda nueva completa verifica los mismos bytes finales.
+  Los originales unit-first/unit2/unit-final se conservan sin alteraciones.
+- `browse-ui`: 4/4, gestos y huellas completas de glifos PDF/EPUB.
+- `real-piper`: 1/1, una frase, un buffer y marca entre inicio y final audibles.
+- `real-pages2`: 2/2 con Davefx real sobre PDF/EPUB. Original EPUB fallido en
+  `real-pages`: corte sobre espacio antes de palabra; corregido a primer carácter.
+- `reader-ui`: 49/49 sin omisiones ni retries; incluye seis capturas.
+  `latest-focused`: 84/84, pausa de PDF unido, pan y puente PCM nativo.
+  `real-supertonic`: 1/1 offline con pesos reales, un buffer de 4,452 s,
+  marca interna y ninguna solicitud externa; la temporización es estimada.
+  Verificación pública y CI global: pendientes tras publicar.
+- Contrato Android comprobado con doble del puente y PCM exacto, no se presenta
+  como ensayo de sonido en un móvil físico. APK pública sigue 1.1.15/code28.
+
+CI anterior 141 (`38183041199`) terminó rechazado: UI2 falló ambos regresos
+nativos dentro de 8 s; UI3 tuvo importación flaky; UI6 tuvo luces y retirada flaky.
+Unidad, los tres grupos Piper, Supertonic y UI1/4/5 aprobaron. No se presenta
+como batería global aprobada. Originales UI2/6 en `reader-continuity/ci141-original`,
+UI3 en `rust-spine-weave/ci141-ui3`.
+
+## Estado publicado anterior
+
 # Estado actual — web 1.7.141 / APK 1.1.15
 
 Publicación comprobada: fuente `7ca8e6d32dc3d328682c3aa707cb32edf2e0b269`,

@@ -9,9 +9,9 @@
 // smallest of those states and every later opening reuses it. A real resize
 // (rotation, split screen, the keyboard) is a different box, kept beside it.
 
-const KEY = 'inhouse-read-page-boxes'
-// Height kept free under a paginated book for the audio mini player (48 px).
-export const MINI_PLAYER_RESERVE = 48
+const KEY = 'inhouse-read-page-boxes-v2'
+// Height kept free under a paginated book for the audio shared audio/return row (52 px).
+export const MINI_PLAYER_RESERVE = 52
 // A change of free height beyond this is a real resize, not chrome.
 export const PAGE_BOX_SLACK = 96
 const MAX_BOXES = 8
@@ -40,11 +40,11 @@ export function stablePageHeight({ width, space, free, storage = globalThis.loca
     box = { width, target, height:target }
     boxes.push(box)
     save(storage, boxes)
-  } else if (box.height > space + 0.5) {
+  } else if (box.height > target + 0.5) {
     box.height = target
     save(storage, boxes)
   }
-  // Both overlays at once leave less than the reserve: shrink only while they
-  // are shown, without changing the remembered box.
+  // The accessory row is permanently reserved; its visibility cannot resize
+  // the page. Only a genuinely smaller viewport can reduce this bound.
   return Math.max(1, Math.min(box.height, Math.floor(free)))
 }

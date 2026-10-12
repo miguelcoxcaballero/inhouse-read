@@ -218,6 +218,7 @@ function workerHarness({ voiceFailure = false } = {}) {
     .replace(/^import .*$/gm, '')
     .replace("import(/* @vite-ignore */ ortBase + 'ort.wasm.min.mjs')", 'Promise.resolve(__ort)')
   runInNewContext(source, { self, __ort: fake.ort, createPhonemizer: async () => espeak, createHebrewPhonemizer,
+    exposePiperDurations:bytes=>({bytes,name:null}), phonemeMarks:async()=>[], durationMarks:()=>[],
     ...pcm, loadRustCore: async () => null, yieldToMessages, performance, setTimeout, Uint8Array, Float32Array, BigInt64Array, ArrayBuffer })
   let id = 0
   const send = async message => { const request = { ...message, id: ++id }; await self.onmessage({ data: request }); return request.id }

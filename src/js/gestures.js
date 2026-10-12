@@ -8,6 +8,7 @@ const SWIPE_MAX_DURATION = 600
 const DOUBLE_TAP_MAX_DELAY = 300
 const TAP_MAX_MOVEMENT = 10
 const TAP_MAX_DURATION = 450
+const HOLD_DURATION = 500
 
 export function classifyTapZone(x, width) {
   if (width <= 0) return ZONE.CENTER
@@ -29,7 +30,8 @@ export function classifySwipe({ dx, dy, durationMs, velocityX = 0 }) {
 /** Returns a detach function, including pending taps and animation frames. */
 export function attachSwipeNavigation(el, {
   onNext, onPrev, onToggleZoom, onToggleChrome,
-  canSwipe = () => true, nativeTouchSwipes = false, onNativeSwipe, getMotionSurface, tapZone
+  canSwipe = () => true, nativeTouchSwipes = false, onNativeSwipe, getMotionSurface, tapZone,
+  canLongPress = () => false, onLongPress, onManualPan
 } = {}) {
   const doc = el.ownerDocument
   const view = doc?.defaultView || window
@@ -37,11 +39,19 @@ export function attachSwipeNavigation(el, {
   let gesture = null, blocked = false, detached = false
   let nativeTouch = null
   let tapTimer = 0, lastTap = null, frame = 0, motion = null
+  let holdTimer = 0, selectionStyle = null, held = false
   const interactive = target => target?.closest?.('a,button,input,select,textarea,[contenteditable=true]')
   const selected = () => !!doc?.getSelection?.()?.toString()
   const reducedMotion = () => view.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   const now = event => Number.isFinite(event?.timeStamp) ? event.timeStamp : performance.now()
   const clearTap = () => { clearTimeout(tapTimer); tapTimer = 0; lastTap = null }
+  const clearHold = () => { clearTimeout(holdTimer); holdTimer = 0 }
+  const restoreSelection = () => {
+    if (!selectionStyle) return
+    el.style.userSelect = selectionStyle.userSelect
+    el.style.webkitUserSelect = selectionStyle.webkitUserSelect
+    selectionStyle = null
+  }
 
   function restoreSurface() {
     if (!motion) return
@@ -95,6 +105,7 @@ export function attachSwipeNavigation(el, {
     try { if (el.hasPointerCapture?.(id)) el.releasePointerCapture(id) } catch {}
   }
   function abandon() {
+    clearHold(); restoreSelection(); held = false
     if (gesture) releaseCapture(gesture.id)
     gesture = null
     clearTap()
@@ -118,12 +129,26 @@ export function attachSwipeNavigation(el, {
       selecting:event.pointerType === 'mouse' && (el === doc?.documentElement
         || !!event.target?.closest?.('.pdf-text-layer,.pdf-reflow-page')),
       scrollLeft:el.scrollLeft, scrollTop:el.scrollTop }
+    held = false
+    if (onLongPress && canLongPress(event)) {
+      selectionStyle = { userSelect:el.style.userSelect, webkitUserSelect:el.style.webkitUserSelect }
+      el.style.userSelect = el.style.webkitUserSelect = 'none'
+      const candidate = gesture
+      holdTimer = setTimeout(() => {
+        holdTimer = 0
+        if (detached || gesture !== candidate || blocked || candidate.moved > TAP_MAX_MOVEMENT
+          || Math.abs(el.scrollTop - candidate.scrollTop) > 2 || Math.abs(el.scrollLeft - candidate.scrollLeft) > 2) return
+        held = true; clearTap(); stopMotion()
+        onLongPress(event)
+      }, HOLD_DURATION)
+    }
   }
   const onPointerMove = event => {
     if (!gesture || gesture.id !== (event.pointerId ?? 0) || blocked) return
     const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y
     gesture.moved = Math.max(gesture.moved, Math.hypot(dx,dy))
-    if (gesture.moved > TAP_MAX_MOVEMENT) clearTap()
+    if (gesture.moved > TAP_MAX_MOVEMENT) { clearTap(); clearHold(); restoreSelection() }
+    if (held) return
     const stamp = now(event), dt = stamp - gesture.lastT
     if (dt > 0) {
       const sample = Math.max(-3, Math.min(3, (event.clientX - gesture.lastX) / dt))
@@ -131,6 +156,10 @@ export function attachSwipeNavigation(el, {
     }
     gesture.lastX = event.clientX
     gesture.lastT = stamp
+    if (!gesture.reportedPan && gesture.moved > TAP_MAX_MOVEMENT && (Math.abs(dy) > Math.abs(dx) || !canSwipe())) {
+      gesture.reportedPan = true
+      onManualPan?.()
+    }
     if (selected() || gesture.selecting || !canSwipe() || nativeTouchSwipes && gesture.pointerType === 'touch') return
     if (!gesture.axis && gesture.moved > TAP_MAX_MOVEMENT) gesture.axis = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'swipe' : 'scroll'
     if (gesture.axis !== 'swipe') return
@@ -146,7 +175,9 @@ export function attachSwipeNavigation(el, {
     if (!gesture || gesture.id !== id) return
     const ended = gesture
     gesture = null
+    clearHold(); restoreSelection()
     releaseCapture(id)
+    if (held) { held = false; clearTap(); if (event.cancelable) event.preventDefault(); return }
     const dx = event.clientX - ended.x, dy = event.clientY - ended.y
     const durationMs = now(event) - ended.t
     const moved = Math.max(ended.moved, Math.hypot(dx,dy))
@@ -188,6 +219,9 @@ export function attachSwipeNavigation(el, {
   }
   const onBlur = () => { points.clear(); blocked = false; abandon(); stopMotion() }
   const onVisibility = () => { if (doc.hidden) onBlur() }
+  const onContextMenu = event => {
+    if (selectionStyle || held) { event.preventDefault(); event.stopPropagation() }
+  }
   // A browser may cancel PointerEvents while Foliate's native TouchEvents
   // continue. Observe the committed native drag once to stop narration; leave
   // scrolling, velocity and page navigation entirely with the paginator.
@@ -206,6 +240,7 @@ export function attachSwipeNavigation(el, {
   }
   const onNativeTouchEnd = event => { if (!event.touches?.length) nativeTouch = null }
   el.addEventListener('pointerdown', onPointerDown)
+  el.addEventListener('contextmenu', onContextMenu)
   el.addEventListener('pointermove', onPointerMove, {passive:false})
   el.addEventListener('pointerup', onPointerUp)
   el.addEventListener('pointercancel', onCancel)
@@ -223,6 +258,7 @@ export function attachSwipeNavigation(el, {
     detached = true
     onBlur()
     el.removeEventListener('pointerdown', onPointerDown)
+    el.removeEventListener('contextmenu', onContextMenu)
     el.removeEventListener('pointermove', onPointerMove)
     el.removeEventListener('pointerup', onPointerUp)
     el.removeEventListener('pointercancel', onCancel)

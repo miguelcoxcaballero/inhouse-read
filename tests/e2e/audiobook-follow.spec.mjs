@@ -141,15 +141,16 @@ test('PDF: the sentence being read is highlighted in the text layer and the page
   }
   expect(evidence.events.filter(entry => entry.type === 'done').length).toBe(pageOne.length)
 
-  // A page turned by hand while it plays: the voice does not stop, it goes on
-  // from the page now shown.
+  // Browsing is independent: keep the same held utterance while inspecting
+  // page three, then return to the page still being heard without a restart.
   const requestsBefore = evidence.requests.length
   await page.getByRole('button', { name:'Página siguiente', exact:true }).click()
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 3 de 4/)
   await expect(page.getByRole('button', { name:'Pausar lectura' })).toHaveCount(1)
-  await expect.poll(() => page.evaluate(() => window.__pdfFollowEvidence.requests.length)).toBeGreaterThan(requestsBefore)
-  const goingOn = await page.evaluate(index => window.__pdfFollowEvidence.requests[index], requestsBefore)
-  expect(goingOn.location).toMatch(/Página 3 de 4/)
+  expect(await page.evaluate(() => window.__pdfFollowEvidence.requests.length)).toBe(requestsBefore)
+  await page.getByRole('button',{name:'↶ Volver al audio',exact:true}).click()
+  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 2 de 4/)
+  expect(await page.evaluate(() => window.__pdfFollowEvidence.requests.length)).toBe(requestsBefore)
   await testInfo.attach('pdf-follow-request-start-pause', { body:JSON.stringify({ ...evidence, audible, resumed }), contentType:'application/json' })
   expect(errors).toEqual([])
 })

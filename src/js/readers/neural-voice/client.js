@@ -121,11 +121,11 @@ export class SynthClient {
    * Runs a synth job. Handlers: onPlan(counts), onChunk({index,last,pcm,sampleRate,ms}), onEnd(), onError(error).
    * Returns {cancel()}: after it, no handler is called any more.
    */
-  synth({ text, rate, speaker, lang, style }, handlers) {
+  synth({ text, rate, speaker, lang, style, marks }, handlers) {
     if (!this.worker) throw clientError('init-failed', 'worker is not running')
     const id = ++this.seq
     this.jobs.set(id, handlers)
-    this.worker.postMessage({ type: 'synth', id, text, rate, speaker, ...(lang ? { lang } : {}), ...(style ? { style } : {}) })
+    this.worker.postMessage({ type: 'synth', id, text, rate, speaker, ...(lang ? { lang } : {}), ...(style ? { style } : {}), ...(marks?.length ? {marks} : {}) })
     return { id, cancel: () => { if (this.jobs.delete(id)) this.worker?.postMessage({ type: 'cancel', id }) } }
   }
 

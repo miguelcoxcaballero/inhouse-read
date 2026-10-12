@@ -20,6 +20,7 @@ import { prepareSnapshotPaperTones, sharePaperTone } from '../page-paper-tone.js
 import { registerPageRaster } from '../page-raster.js'
 import { encodePdfCover } from './cover-encode.js'
 import { mapTextLayer, mapTextNodes } from './speech-map.js'
+import { speechHold } from './speech-hold.js'
 import { clearPDFReflow, pdfImageRects, preparePDFReflow } from './pdf-reflow.js'
 import { extractPDFText, mapPDFTextLayer } from './pdf-text.js'
 import { SPEECH_SPAN_CLASS, clearSpeechRange, installSpeechStyle, paintSpeechRange } from './speech-highlight.js'
@@ -49,6 +50,10 @@ export class PdfReader {
   #renderState
   #stagedSpeech
   #speechRequest = 0
+  #speechBrowsing = false
+  #speechDetached = false
+  #speechCursor = null
+  #speechReveal = null
   #renderReady = Promise.resolve()
   #renderRequest
   #pageText = ''
@@ -100,11 +105,18 @@ export class PdfReader {
       this.#scrollTimer = setTimeout(() => this.#rememberTextPosition(), 150)
     }
     container.addEventListener('scroll', onScroll, { passive:true })
-    this.#detachScroll = () => container.removeEventListener('scroll', onScroll)
+    const onWheel = event => { if (event.deltaX || event.deltaY) onUserNavigation?.() }
+    container.addEventListener('wheel', onWheel, { passive:true })
+    this.#detachScroll = () => {
+      container.removeEventListener('scroll', onScroll)
+      container.removeEventListener('wheel', onWheel)
+    }
 
     this.#detachGestures = attachSwipeNavigation(container, {
+      ...speechHold(container.ownerDocument),
       onNext: () => { onUserNavigation?.(); return this.next() },
       onPrev: () => { onUserNavigation?.(); return this.prev() },
+      onManualPan: () => onUserNavigation?.(),
       onToggleZoom: (x, y) => this.toggleZoom(x, y),
       onToggleChrome,
       // Enlarged PDFs must pan, rather than accidentally turn a page. Let the
@@ -584,7 +596,7 @@ export class PdfReader {
     const mappedToVisiblePage = () => {
       const node = map.spans[0]?.node
       const root = this.#preferences.pdfMode === 'text' ? this.#reflow : this.#textLayerEl
-      return !node || node.isConnected && root.contains(node)
+      return Boolean(node?.isConnected && root.contains(node))
     }
     // A zoom or view change re-renders the layer under a paused voice: re-map it, but only if it is still this page's text.
     const current = () => {
@@ -602,12 +614,21 @@ export class PdfReader {
       marked = []
     }
     const source = {
-      text:first.text, start:0, clear,
+      text:first.text, start:0, clear, physicalPage:page,
+      offsetAtPoint:(tapped, x, y) => {
+        if (tapped !== doc) return NaN
+        const caret = doc.caretPositionFromPoint?.(x,y)
+        const range = caret ? null : doc.caretRangeFromPoint?.(x,y)
+        const node = caret?.offsetNode || range?.startContainer
+        const live = current()
+        return node && live?.spans.some(span => span.node === node) ? live.offsetOf(node, caret?.offset ?? range.startOffset) : NaN
+      },
       // Geometric paragraphs are real body text, including repeated dialogue.
       // No marginal header is confirmed by page-local layout alone: preserve
       // those paragraphs even when the legacy header-skipping option is on.
       ...(textLayout?.geometric || this.#preferences.pdfMode === 'text' ? { headerRanges:Object.freeze([]) } : {}),
       highlight:(start, end) => {
+        if (this.#speechBrowsing) return
         const live = current(), range = live?.rangeFor(start, end)
         clear()
         if (!range) return
@@ -617,6 +638,9 @@ export class PdfReader {
         for (const element of marked) element.classList.add(SPEECH_SPAN_CLASS)
       },
       follow:(start, end) => {
+        this.#speechCursor = { page, start, end, source }
+        if (this.#speechBrowsing) return
+        if (page !== this.#pageNum) { void this.#revealSpeech().catch(() => {}); return }
         this.#settleTextResize()
         const rect = current()?.rangeFor(start, end)?.getClientRects()[0]
         if (!rect) return
@@ -632,6 +656,48 @@ export class PdfReader {
       }
     }
     return { source, current }
+  }
+
+  browseSpeech() { this.#speechBrowsing = true; this.#speechDetached = true }
+  stopSpeech() { this.#speechBrowsing = false; this.#speechDetached = false; this.#speechCursor = null; this.#invalidateStagedSpeech() }
+  async returnToSpeech() {
+    this.#speechBrowsing = false
+    await this.#revealSpeech()
+  }
+  #revealSpeech() {
+    if (this.#speechReveal) return this.#speechReveal
+    const pdf = this.#doc
+    const work = async () => {
+      while (!this.#speechBrowsing && pdf === this.#doc && this.#speechCursor) {
+        const target = this.#speechCursor
+        if (target.page !== this.#pageNum) await this.goToPage(target.page, { textOffset:target.start })
+        if (pdf !== this.#doc || this.#speechBrowsing) return
+        if (target !== this.#speechCursor && target.page !== this.#speechCursor?.page) continue
+        const current = this.#speechCursor
+        current?.source.highlight?.(current.start,current.end)
+        current?.source.follow?.(current.start,current.end)
+        return
+      }
+    }
+    const task = work().finally(() => { if (this.#speechReveal === task) this.#speechReveal = null })
+    this.#speechReveal = task
+    return task
+  }
+
+  async #nextDetachedSpeech({ isActive, afterPage }) {
+    const pdf = this.#doc, previous = afterPage ?? this.#speechCursor?.page ?? this.#pageNum
+    for (let number = previous + 1; number <= Math.min(pdf.numPages, previous + MAX_EMPTY_SPEECH_PAGES); number++) {
+      const page = await pdf.getPage(number)
+      const content = await page.getTextContent()
+      if (this.#doc !== pdf || !isActive()) throw speechCancelled()
+      const layout = extractPDFText(content, page.getViewport({scale:1}))
+      if (!layout.text.trim()) continue
+      const { source } = this.#makeSpeechSource(number, { text:layout.text, spans:[] }, layout)
+      source.isValid = () => this.#doc === pdf && isActive()
+      source.activate = () => source.isValid()
+      return source
+    }
+    return null
   }
 
   #speechGeometry() {
@@ -656,7 +722,9 @@ export class PdfReader {
    * Only activate(), called on the engine's audible start, commits its pixels and exact
    * text mapping. This avoids showing the next page throughout neural synthesis.
    */
-  async getNextSpeechSource({ isActive = () => true } = {}) {
+  async getNextSpeechSource({ isActive = () => true, afterPage } = {}) {
+    if (this.#doc && (this.#speechDetached || Number.isInteger(afterPage) && afterPage !== this.#pageNum))
+      return this.#nextDetachedSpeech({ isActive, afterPage })
     this.#invalidateStagedSpeech()
     if (!this.#doc || !isActive()) throw speechCancelled()
     const pdf = this.#doc, previousPage = this.#pageNum, token = this.#renderToken, preferences = this.#preferences
@@ -693,9 +761,10 @@ export class PdfReader {
         const { source, current } = this.#makeSpeechSource(number, first, staged.textLayout)
         const clear = source.clear
         let activated = false
-        source.isValid = () => activated ? Boolean(current()) : staged.valid()
+        source.isValid = () => this.#doc === pdf && (this.#speechDetached ? isActive() : activated ? Boolean(current()) : staged.valid())
         source.activate = () => {
-          if (activated) return Boolean(current())
+          if (activated) return source.isValid()
+          if (this.#speechDetached && this.#doc === pdf && isActive()) { activated = true; return true }
           if (!staged.valid()) { source.clear(); return false }
           this.#stagedSpeech = null
           this.#cancelRender(this.#renderState)

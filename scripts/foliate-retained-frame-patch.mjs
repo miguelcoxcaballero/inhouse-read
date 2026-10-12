@@ -18,7 +18,7 @@ const replacement = `    async load(src, afterLoad, beforeRender) {
         this.#element.style.width = this.#element.style.height = '100%'
         const target = new URL(src, document.baseURI).href
         return new Promise((resolve, reject) => {
-            let settled = false
+            let settled = false, rendering = false
             const sourceURL = () => {
                 try { return this.#iframe.contentWindow?.location?.href ?? null }
                 catch { return null }
@@ -48,13 +48,14 @@ const replacement = `    async load(src, afterLoad, beforeRender) {
             }
             const abort = () => fail(new DOMException('Chapter navigation cancelled', 'AbortError'))
             const failed = () => fail(new Error('No se pudo cargar el capítulo del libro.'))
-            const loaded = () => {
-                if (settled) return
+            const loaded = async () => {
+                if (settled || rendering) return
                 report(2)
                 // Initial about:blank and late old-document events cannot
                 // satisfy the new chapter. Keep listening for its real load.
                 const current = sourceURL()
                 if (current !== null && current !== target) return
+                rendering = true
                 try {
                     const doc = this.document
                     if (!doc?.body) throw new Error('El capítulo no contiene un documento legible.')
@@ -73,9 +74,13 @@ const replacement = `    async load(src, afterLoad, beforeRender) {
                     this.#iframe.style.display = 'block'
                     report(4)
                     this.render(layout)
+                    // Shape with the final fonts before exposing this chapter. A
+                    // later expansion used to move paragraphs after audio began.
+                    await doc.fonts?.ready
+                    if (settled || this.document !== doc || sourceURL() !== target) return
+                    this.expand()
                     this.#iframe.style.opacity = '1'
                     this.#observer.observe(doc.body)
-                    doc.fonts.ready.then(() => { if (this.document === doc) this.expand() })
                     settled = true
                     cleanup()
                     report(5)

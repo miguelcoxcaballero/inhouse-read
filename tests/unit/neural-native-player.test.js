@@ -22,6 +22,24 @@ function event(type, unit, extra={}) {
 afterEach(() => { current?.player.dispose(); current=null; resetAudio(); vi.useRealTimers() })
 
 describe('natural Android Float32 PCM sink', () => {
+  it('rejects invalid samples beyond a page mark before queuing partial audio',()=>{
+    const t=setup(),input=new Float32Array(8000);input[7000]=NaN
+    expect(()=>t.player.schedule(1,input,8000,{last:true,marks:[{sample:3000,offset:12}]})).toThrow('invalid PCM')
+    expect(t.bridge.enqueue).not.toHaveBeenCalled();expect(t.player.units.size).toBe(0);expect(t.player.nextTime).toBe(0)
+  })
+  it('page marks use contiguous exact PCM and native receipts with zero JS timer dependence',()=>{
+    vi.useFakeTimers();const t=setup(),mark=vi.fn();t.player.onMark=mark
+    const input=Float32Array.from({length:8000},(_,i)=>Math.sin(i/31)*.3)
+    t.player.schedule(1,input,8000,{last:true,marks:[{sample:3000,offset:17}]})
+    const packets=t.bridge.enqueue.mock.calls
+    expect(packets).toHaveLength(2)
+    expect(Buffer.concat(packets.map(p=>Buffer.from(p[3],'base64')))).toEqual(Buffer.from(input.buffer))
+    vi.advanceTimersByTime(300000);expect(mark).not.toHaveBeenCalled()
+    event('start',packets[0][2]);event('done',packets[0][2])
+    expect(t.end).not.toHaveBeenCalled();expect(t.start).toHaveBeenCalledExactlyOnceWith(1)
+    event('start',packets[1][2]);expect(mark).toHaveBeenCalledExactlyOnceWith(1,17)
+    event('done',packets[1][2]);expect(t.end).toHaveBeenCalledExactlyOnceWith(1)
+  })
   it('transports the exact Float32 samples as little endian without downsampling or quantisation', () => {
     const input = new Float32Array([0, -.2, .125, 1, -.9999])
     const bytes = Buffer.from(encodePcm(input),'base64')

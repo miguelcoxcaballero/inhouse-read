@@ -24,12 +24,9 @@ describe('re-cutting the fragments not yet read at freshly measured page breaks'
     expect(await voice.refreshPageBreaks()).toBe(true)
     expect(voice.items[0]).toBe(heard)
     const texts = voice.items.map(item => item.text)
-    expect(texts).toContain('Esta frase larga empieza en una página y')
-    expect(texts).toContain('termina en la siguiente sin pausa.')
-    const [before, after] = voice.items.filter(item => item.text.startsWith('Esta') || item.text.startsWith('termina'))
-    expect(after.start).toBe(cut)
-    // One highlight for the whole sentence, across the page.
-    expect(after.sentence).toEqual(before.sentence)
+    expect(texts).toContain('Esta frase larga empieza en una página y termina en la siguiente sin pausa.')
+    const item = voice.items.find(item => item.text.startsWith('Esta'))
+    expect(item.marks).toEqual([{offset:cut-item.start,start:cut}])
     expect(voice.chunks).toEqual(voice.items.map(item => item.text))
   })
 
@@ -73,14 +70,17 @@ describe('following the reader while the audiobook plays', () => {
     expect(voice.restart).not.toHaveBeenCalled()
   })
 
-  it('a page turned by hand goes on reading from the new page, and only if it was playing', async () => {
+  it('browsing changes only the visible page, preserving utterance, order, position and playback', async () => {
     const voice = setup(), order = []
+    voice.onState=vi.fn();voice.reader.browseSpeech=vi.fn()
+    const items=voice.items,id=voice.utteranceId
     voice.stop = vi.fn(() => { order.push('stop'); voice.state = 'stopped' })
     voice.play = vi.fn(async () => { order.push('play') })
     await voice.continueFromPage(async () => { order.push('turn') })
-    expect(order).toEqual(['stop', 'turn', 'play'])
+    expect(order).toEqual(['turn']);expect(voice.utteranceId).toBe(id);expect(voice.items).toBe(items)
+    expect(voice.state).toBe('playing');expect(voice.browsing).toBe(true)
     order.length = 0; voice.state = 'paused'
     await voice.continueFromPage(async () => { order.push('turn') })
-    expect(order).toEqual(['stop', 'turn'])
+    expect(order).toEqual(['turn']);expect(voice.state).toBe('paused')
   })
 })

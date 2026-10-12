@@ -122,6 +122,18 @@ test.describe('Supertonic 3: 22 app languages × ten real offline profiles',()=>
     mkdirSync(EVIDENCE,{recursive:true});writeFileSync(join(EVIDENCE,'numbers-supertonic.json'),JSON.stringify(numbers,null,2)+'\n');
     await context?.close();server?.close();
   });
+  test('a page boundary stays inside one continuous offline Supertonic waveform',async()=>{
+    const text='La lluvia golpeaba suavemente los cristales de la vieja biblioteca.',offset=text.indexOf('los cristales');
+    const result=await page.evaluate(({text,offset})=>window.supertonic.read('supertonic3:F1:es',text,1,[offset]),{text,offset});
+    expect(result.log.map(e=>e.type)).toEqual(['start','boundary','done']);
+    expect(result.log[1].offset).toBe(offset);
+    expect(result.log[1].ctxTime).toBeGreaterThan(result.log[0].ctxTime);
+    expect(result.log[1].ctxTime).toBeLessThan(result.log[2].ctxTime);
+    expect(result.requests.filter(r=>r.type==='synth')).toHaveLength(1);
+    expect(result.starts).toHaveLength(1);
+    expect(hits).toHaveLength(installedHits);expect(outside).toEqual([]);expect(pageErrors).toEqual([]);
+    numbers.continuousPage={text,offset,log:result.log,starts:result.starts.map(({data,...rest})=>rest),timing:'estimated from the model duration predictor, not forced word alignment'};
+  });
   for(const [lang,text] of Object.entries(SENTENCES))for(const style of SUPERTONIC_STYLES){
     const voiceId=`supertonic3:${style}:${lang}`;
     test(`${lang} ${style}: real PCM and audible start from the shared offline pack`,async({},testInfo)=>{

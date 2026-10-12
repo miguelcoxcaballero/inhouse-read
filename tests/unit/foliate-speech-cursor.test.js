@@ -32,6 +32,21 @@ async function adopt(cursor) {
 }
 
 describe('detached Foliate chapters use the real file text while the screen is off', () => {
+  it('browses a different chapter visibly without moving the independent audio, then returns to its current CFI', async () => {
+    const h=setup();h.env.hidden=false
+    const map=mapSpeechText(h.live.body),highlight=vi.fn(),follow=vi.fn()
+    const source=h.cursor.wrap({text:map.text,start:0,highlight,follow},map,0)
+    source.follow(0,6);h.cursor.browse()
+    h.live.body.replaceChildren();h.view.lastLocation={section:{current:2}}
+    source.follow(8,11)
+    expect(h.cursor.currentSource().start).toBe(8)
+    const next=await h.cursor.next();expect(next.text).toContain('Chapter two')
+    expect(next.activate()).toBe(true);next.follow(13,29)
+    expect(h.view.goTo).not.toHaveBeenCalled()
+    await h.cursor.returnToSpeech()
+    expect(h.view.goTo).toHaveBeenCalledWith(h.cursor.current.cfi)
+    expect(h.cursor.currentSource().text).toContain('Chapter two')
+  })
   it('prepares a chapter without navigating, rendering, waiting for a load event or allocating any timer', async () => {
     const h = setup(), timer = vi.spyOn(globalThis,'setTimeout')
     const source = await h.cursor.next()

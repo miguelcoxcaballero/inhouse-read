@@ -80,7 +80,10 @@ export class ReaderController {
   async applyPreferences(preferences) { await this.#reader?.applyPreferences?.(preferences) }
   async getSpeechText() { return await this.#reader?.getSpeechText?.() || '' }
   /** Text plus the mapping the audiobook needs to highlight and follow each sentence; null when the engine has none. */
-  async getSpeechSource() { return await this.#reader?.getSpeechSource?.() || null }
+  async getSpeechSource(options) { return await this.#reader?.getSpeechSource?.(options) || null }
+  browseSpeech() { this.#reader?.browseSpeech?.() }
+  returnToSpeech() { return this.#reader?.returnToSpeech?.() }
+  stopSpeech() { this.#reader?.stopSpeech?.() }
   /** undefined keeps legacy format navigation; null from a supported reader identifies the actual book end. */
   get getNextSpeechSource() { return this.#reader?.getNextSpeechSource?.bind(this.#reader) }
   async getPageSnapshot(options) {

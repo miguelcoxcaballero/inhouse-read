@@ -81,12 +81,25 @@ describe('retained Foliate chapter frame',()=>{
     h.loaded('blob:old-load');expect(h.render).not.toHaveBeenCalled()
     h.loaded('blob:new-load');await next;expect(h.render).toHaveBeenCalledOnce()
   })
-  it('does not expand the current chapter when fonts from the previous document finish late',async()=>{
+  it('keeps a chapter hidden until fonts settle and expands before displaying it',async()=>{
+    const h=harness(),view=h.router.create(),done=vi.fn();let finishFonts
+    h.doc.fonts.ready=new Promise(resolve=>{finishFonts=resolve})
+    const pending=view.load('blob:fonts',null,()=>({})).then(done)
+    h.loaded('blob:fonts');await Promise.resolve()
+    expect(h.frame.style.opacity).toBe('0');expect(done).not.toHaveBeenCalled()
+    expect(h.render).toHaveBeenCalledOnce();expect(h.expand).not.toHaveBeenCalled()
+    // A duplicate event cannot start a second render while font loading is pending.
+    h.loaded('blob:fonts');expect(h.render).toHaveBeenCalledOnce()
+    finishFonts();await pending
+    expect(h.expand).toHaveBeenCalledOnce();expect(h.frame.style.opacity).toBe('1');expect(done).toHaveBeenCalledOnce()
+  })
+  it('cancels font preparation without letting the old chapter alter the new one',async()=>{
     const h=harness(),view=h.router.create();let finishOldFonts
     h.doc.fonts.ready=new Promise(resolve=>{finishOldFonts=resolve})
-    const first=view.load('blob:first',null,()=>({}));h.loaded('blob:first');await first
-    h.router.create();const newDoc=bookDocument()
-    const second=view.load('blob:second',null,()=>({}));h.loaded('blob:second',newDoc);await second
+    const first=view.load('blob:first',null,()=>({})),cancelled=expect(first).rejects.toMatchObject({name:'AbortError'})
+    h.loaded('blob:first');h.router.create();await cancelled
+    const newDoc=bookDocument(),second=view.load('blob:second',null,()=>({}))
+    h.loaded('blob:second',newDoc);await second
     expect(h.expand).toHaveBeenCalledOnce()
     finishOldFonts();await Promise.resolve();expect(h.expand).toHaveBeenCalledOnce()
   })

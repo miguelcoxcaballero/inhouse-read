@@ -12,8 +12,8 @@ export class GaplessPlayer {
    * @param {{context:()=>BaseAudioContext|null, onStart?:(unit:number)=>void, onEnd?:(unit:number)=>void,
    *          setTimer?:typeof setTimeout, clearTimer?:typeof clearTimeout}} options
    */
-  constructor({ context, onStart = () => {}, onEnd = () => {}, setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = id => clearTimeout(id) }) {
-    Object.assign(this, { getContext: context, onStart, onEnd, setTimer, clearTimer })
+  constructor({ context, onStart = () => {}, onEnd = () => {}, onMark = () => {}, setTimer = (fn, ms) => setTimeout(fn, ms), clearTimer = id => clearTimeout(id) }) {
+    Object.assign(this, { getContext: context, onStart, onEnd, onMark, setTimer, clearTimer })
     this.units = new Map()   // unit -> { sources:[{source,start,end}], start, end, complete, started, ended, timers:Set }
     this.nextTime = 0        // audio-clock end of everything scheduled
     this.scheduled = false   // something was scheduled since the last stopAll()
@@ -41,7 +41,7 @@ export class GaplessPlayer {
    * Queues a chunk of unit `unit` right after what is already scheduled. `last` marks the unit's final chunk (its
    * 'done' is armed then). Returns the audio-clock time the chunk starts at.
    */
-  schedule(unit, pcm, sampleRate, { last = false } = {}) {
+  schedule(unit, pcm, sampleRate, { last = false, marks = [] } = {}) {
     const ctx = this.getContext()
     if (!ctx) throw new Error('no AudioContext')
     const buffer = ctx.createBuffer(1, Math.max(1, pcm.length), sampleRate)
@@ -59,6 +59,8 @@ export class GaplessPlayer {
     if (!u) { u = { sources: [], start, end, complete: false, started: false, ended: false, timers: new Set() }; this.units.set(unit, u); this.#when(u, start, () => { u.started = true; this.onStart(unit) }) }
     u.sources.push({ source, start, end })
     u.end = end
+    for (const mark of marks) if (Number.isInteger(mark.sample) && mark.sample >= 0 && mark.sample < pcm.length)
+      this.#when(u,start + mark.sample / sampleRate,() => this.onMark(unit,mark.offset))
     if (last) { u.complete = true; this.#when(u, end, () => { u.ended = true; this.units.delete(unit); this.onEnd(unit) }) }
     return start
   }

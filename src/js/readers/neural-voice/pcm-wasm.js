@@ -3,7 +3,7 @@
 export const PCM_MIN_SAMPLES = 4096;
 export const PCM_MAX_SAMPLES = 4_194_304;
 
-export function rustPrepareSpeech(core, pcm, sampleRate, model = '') {
+export function rustPrepareSpeech(core, pcm, sampleRate, model = '', timing = false) {
   if (!(pcm instanceof Float32Array) || !pcm.length || pcm.length > PCM_MAX_SAMPLES
     || !Number.isFinite(sampleRate) || sampleRate <= 0 || sampleRate > 384_000
     || typeof core?.pcm_prepare !== 'function' || !core.memory
@@ -23,7 +23,8 @@ export function rustPrepareSpeech(core, pcm, sampleRate, model = '') {
     if (!Number.isFinite(gain) || gain < 0 || gain > 12 || !Number.isInteger(from)
       || !Number.isInteger(to) || from < 0 || to < from || to > count
       || !Number.isInteger(faded) || faded < 0 || faded > (to - from) / 2) return null;
-    return new Float32Array(core.memory.buffer, pointer + from * 4, to - from).slice();
+    const speech = new Float32Array(core.memory.buffer, pointer + from * 4, to - from).slice();
+    return timing ? {pcm:speech,from} : speech;
   } catch { return null; }
   finally { if (pointer) core.free_f64(pointer, length); }
 }

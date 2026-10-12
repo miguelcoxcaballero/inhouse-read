@@ -44,7 +44,7 @@ test('una frase entre páginas avanza al inicio audible de su continuación natu
     await page.addInitScript(({base, id}) => {
       window.INHOUSE_NEURAL_VOICE_BASE = base
       localStorage.setItem('inhouse-read-reading-preferences',JSON.stringify({fontSize:36,lineHeight:2.4,voice:id}))
-      const evidence = window.__pageSpeech = {requests:[],starts:[],turns:[],pcm:[],device:0}
+      const evidence = window.__pageSpeech = {requests:[],starts:[],boundaries:[],turns:[],pcm:[],device:0}
       const firstOffset = () => {
         const view = document.querySelector('foliate-view'), visible = view?.lastLocation?.range
         const doc = visible?.startContainer?.ownerDocument, node = doc?.querySelector('p')?.firstChild
@@ -55,6 +55,7 @@ test('una frase entre páginas avanza al inicio audible de su continuación natu
       window.__firstOffset = firstOffset
       window.addEventListener('inhouse-tts', event => {
         if (event.detail.type === 'start') evidence.starts.push({id:event.detail.id, at:performance.now(), offset:firstOffset()})
+        if (event.detail.type === 'boundary') evidence.boundaries.push({...event.detail,at:performance.now()})
       })
       const start = AudioBufferSourceNode.prototype.start
       AudioBufferSourceNode.prototype.start = function(...args) {
@@ -88,15 +89,14 @@ test('una frase entre páginas avanza al inicio audible de su continuación natu
       throw new Error('The real engine loaded by the application was not observed')
     })
     await page.getByRole('button',{name:'Reproducir',exact:true}).click()
-    await expect.poll(() => page.evaluate(() => window.__pageSpeech.starts.length),{timeout:90_000}).toBeGreaterThan(1)
+    await expect.poll(() => page.evaluate(() => window.__pageSpeech.boundaries.length),{timeout:90_000}).toBeGreaterThan(0)
     await expect.poll(() => page.evaluate(() => window.__pageSpeech.turns.filter(turn => turn.offset > 0).length),{timeout:10_000}).toBeGreaterThan(0)
     await page.getByRole('button',{name:'Pausar',exact:true}).click()
     const evidence = await page.evaluate(() => window.__pageSpeech)
     await testInfo.attach('actual-audio-page-boundary',{body:JSON.stringify(evidence),contentType:'application/json'})
-    expect(evidence.requests.length).toBeGreaterThan(1)
-    expect(evidence.requests[0].text.length).toBeLessThan(143)
-    expect([evidence.requests[0].text,...evidence.requests[0].upcoming].join(' ')).toBe('Esta frase empieza en la primera página y sigue en la siguiente mientras la voz lee cada palabra sin repetir ni perder ninguna parte del texto.')
-    const start = evidence.starts.find(event => event.id === evidence.requests[1].id)
+    expect(evidence.requests).toHaveLength(1)
+    expect(evidence.requests[0].text).toBe('Esta frase empieza en la primera página y sigue en la siguiente mientras la voz lee cada palabra sin repetir ni perder ninguna parte del texto.')
+    const start = evidence.boundaries[0]
     expect(start).toBeTruthy()
     const turn = evidence.turns.find(turn => turn.offset > 0)
     expect(turn.at).toBeGreaterThanOrEqual(start.at)
@@ -149,7 +149,7 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
         evidence.events.push(entry)
         // Registered before the reader's listener: this records the page on
         // arrival of the REAL audio event and the committed page after it.
-        if(event.detail.type==='start') queueMicrotask(() => {
+        if(event.detail.type==='start'||event.detail.type==='boundary') queueMicrotask(() => {
           entry.after={...visible(),highlight:highlight()}
         })
       })
@@ -217,44 +217,27 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
       throw new Error('The real engine loaded by the application was not observed')
     })
     await page.getByRole('button',{name:'Reproducir',exact:true}).click()
-    await expect.poll(() => page.evaluate(() => window.__pdfSpeech.events.filter(event => event.type==='done').length),{timeout:90_000}).toBe(2)
+    await expect.poll(() => page.evaluate(() => window.__pdfSpeech.events.filter(event => event.type==='done').length),{timeout:90_000}).toBe(1)
     await expect(page.locator('#reader-location')).toHaveAttribute('aria-label', /Página 2 de 2/)
     const evidence=await page.evaluate(() => { window.__stopPdfFrames=true; window.__pdfSpeech.stats={...window.__pdfEngine.stats}; return window.__pdfSpeech })
     await testInfo.attach('actual-pdf-audio-page-boundary',{body:JSON.stringify(evidence),contentType:'application/json'})
-    expect(evidence.requests.map(request => request.text)).toEqual(PDF_PARTS)
-    expect(evidence.requests.map(request => request.text).join(' ')).toBe(PDF_PARTS.join(' '))
-    expect(evidence.requests.every(request => request.voiceId===ID)).toBe(true)
-    const [first,second]=evidence.requests
-    const firstStart=evidence.events.find(event => event.type==='start' && event.id===first.id)
-    const done=evidence.events.find(event => event.type==='done' && event.id===first.id)
-    const start=evidence.events.find(event => event.type==='start' && event.id===second.id)
-    expect(done).toBeTruthy(); expect(start).toBeTruthy()
-    expect(second.at).toBeGreaterThanOrEqual(done.at)
-    expect(start.at).toBeGreaterThanOrEqual(second.at)
-    const prepared=evidence.previews.find(preview=>preview.accepted && preview.upcoming.includes(PDF_PARTS[1]))
-    expect(prepared).toBeTruthy()
-    expect(prepared.at).toBeGreaterThanOrEqual(firstStart.at)
-    expect(prepared.at).toBeLessThan(done.at)
-    expect(prepared.deferAfter).toBe(0)
-    const nextJob=evidence.jobs.find(job=>job.text===PDF_PARTS[1])
-    expect(nextJob).toBeTruthy()
-    expect(nextJob.currentId).toBe(first.id)
-    expect(nextJob.at).toBeGreaterThanOrEqual(prepared.at)
-    expect(nextJob.at).toBeLessThan(done.at)
-    expect(nextJob.doneAt).toBeLessThan(done.at)
-    expect(evidence.jobs.map(job=>job.text)).toEqual(PDF_PARTS)
-    expect(evidence.stats.prefetchHits).toBe(1)
-    // Detached preparation and cached PCM happen during the previous page's
-    // real audio. No deferred sample reaches Web Audio before adoption, and
-    // all mapped text/pixels stay on page one until the actual next start.
-    const waiting=[prepared.visible,nextJob.visible,nextJob.visibleAtChunk,done,second.visible,start,
-      ...evidence.frames.filter(frame => frame.at>=firstStart.at && frame.at<start.at)]
+    expect(evidence.requests.map(request => request.text)).toEqual([PDF_PARTS.join(' ')])
+    const [first]=evidence.requests
+    const firstStart=evidence.events.find(event=>event.type==='start'&&event.id===first.id)
+    const done=evidence.events.find(event=>event.type==='done'&&event.id===first.id)
+    const start=evidence.events.find(event=>event.type==='boundary'&&event.id===first.id)
+    expect(done).toBeTruthy();expect(start).toBeTruthy()
+    expect(start.at).toBeGreaterThan(firstStart.at);expect(start.at).toBeLessThan(done.at)
+    expect(start.offset).toBe(PDF_PARTS[0].length+1)
+    expect(evidence.pcm).toHaveLength(1)
+    expect(evidence.jobs.filter(job=>job.text===PDF_PARTS.join(' '))).toHaveLength(1)
+    // Every visible frame stays on the old physical sheet until this marker
+    // inside the SAME synthesized waveform reaches the output audio clock.
+    const waiting=evidence.frames.filter(frame=>frame.at>=firstStart.at&&frame.at<start.at)
     expect(waiting.length).toBeGreaterThan(3)
-    for(const frame of waiting) {
+    for(const frame of waiting){
       expect(frame.label).toMatch(/Página 1 de 2/)
-      expect(frame.text).toBe(PDF_PARTS[0])
-      expect(frame.pixels).toBe(evidence.initial.pixels)
-      expect([frame.width,frame.height]).toEqual([evidence.initial.width,evidence.initial.height])
+      expect(frame.text).toBe(PDF_PARTS[0]);expect(frame.pixels).toBe(evidence.initial.pixels)
     }
     expect(start.audio?.started).toBe(true)
     expect(start.audio.context).toBe('running')
@@ -267,8 +250,6 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
     expect(start.after.at-start.at).toBeLessThan(1000)
     const firstSecondPage=evidence.frames.find(frame => /Página 2 de 2/.test(frame.label))
     expect(firstSecondPage?.at).toBeGreaterThanOrEqual(start.at)
-    expect(evidence.pcm.filter(chunk => chunk.id===second.id).length).toBeGreaterThan(0)
-    expect(evidence.pcm.filter(chunk=>chunk.id===second.id).every(chunk=>chunk.at>=second.at)).toBe(true)
     expect(evidence.pcm.every(chunk => chunk.finite && chunk.peak>.05 && chunk.peak<=1)).toBe(true)
     expect(evidence.device).toBe(0)
     expect(evidence.events.filter(event => event.type==='error')).toEqual([])

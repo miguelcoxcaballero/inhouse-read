@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 // different length and onnxruntime keeps the buffers of each new shape.
 describe('neural worker memory', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/js/readers/neural-voice/worker.js'), 'utf8')
-  const create = source.match(/InferenceSession\.create\(new Uint8Array\(model\), \{[^}]*\}/)?.[0] || ''
+  const create = source.match(/InferenceSession\.create\(aligned\.bytes, \{[^}]*\}/)?.[0] || ''
   it('creates the session without the memory arena and the memory-pattern planner', () => {
     expect(create).toContain('enableCpuMemArena: false')
     expect(create).toContain('enableMemPattern: false')
