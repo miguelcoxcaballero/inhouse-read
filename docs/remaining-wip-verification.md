@@ -24,7 +24,17 @@ Inventario: 3914 Rust / 36776 JavaScript, 9,62 % de líneas propias, no funcione
 WASM UI local 140174 bytes, SHA256
 a4fc5160911c6cbf2dda0d51b8ea88416594cbb05fb997629e8b7c6cda888d9c.
 Batería final: 4968/4968, 374 archivos, 318,85 s (dos workers).
-App/decor y APK/updater sin cambios. Verificación pública pendiente.
+App/decor y APK/updater sin cambios. Publicado ab55259, deploy 38251050544 y
+Pages 38251187148 aprobados; rama Pages 7e916a1. Verificación real: 178 checks,
+dos perfiles nuevos con bytes exactos, UI móvil compilada 1/1 y 30 casos de
+PCM/marcas correctos. WASM UI público: 140158 bytes,
+SHA256 a11bf5ed188838bfc13ea10553f7ffd08e562d9f70c0c2b71985374b99882a31.
+APK 1.1.15/28 descargado y loader de 2107 bytes comprobado; Android API36 abre
+la web 1.7.184, reproduce Lessac a 2× (10,23 s, siete unidades terminadas),
+mantiene el proceso y no registra FATAL EXCEPTION. Primer intento de captura
+UI encontró la raíz todavía vacía; reintento nativo previsto completó la prueba.
+Evidencia pública published-1791809341382 y public-*.log / native-ui184.json.
+CI184 completa sigue en curso; los tres fallos originales CI183 no se dan por resueltos.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-reader-panel-prototype.
 
 # 1.7.183 — menús del lector en Rust
