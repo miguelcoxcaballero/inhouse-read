@@ -22,6 +22,7 @@ mod plant_foliage;
 mod plant_cactus;
 mod plant_pot;
 mod plant_ivy;
+mod plant_subdivide;
 mod pdf_layout;
 mod pdf_rows;
 mod pcm;

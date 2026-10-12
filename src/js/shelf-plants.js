@@ -4,6 +4,7 @@ import { rustPlantLeafGeometry } from './plant-leaf-wasm.js';
 import { rustPlantCactusGeometry } from './plant-cactus-wasm.js';
 import { rustPlantPotSurface } from './plant-pot-wasm.js';
 import { rustPlantIvyGeometry } from './plant-ivy-wasm.js';
+import { rustPlantSubdivide } from './plant-subdivide-wasm.js';
 import { rustPlantPreview } from './plant-preview-wasm.js';
 import { rustPlantGlazeRows } from './plant-glaze-wasm.js';
 import { rustPlantPotteryRows } from './plant-pottery-wasm.js';
@@ -626,6 +627,7 @@ function ivyLeafGeometry(length,width,curve,random) {
 }
 
 function subdivideSurface(surface) {
+  if (rustPlantSubdivide(getRustCore(), surface)) return surface;
   // Add shared interior vertices before bending: silhouette-only triangulation
   // otherwise leaves large flat facets across the broad Monstera blade.
   const positions = [...surface.attributes.position.array], indices = [], midpoints = new Map();

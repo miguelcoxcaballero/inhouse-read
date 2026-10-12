@@ -1,3 +1,44 @@
+# Migración 1.7.155 — subdivisión de hojas
+
+Changelog: «Subdivisión de hojas en Rust». Los vértices interiores compartidos
+y su topología pasan a Rust, conservando el orden de inserción y cada redondeo.
+Se valida la entrada antes de modificar la geometría y se conserva la salida
+original si el núcleo no está disponible, rechaza datos o falla.
+69/69 focalizadas,17 nuevas. El navegador compara toda la monstera con5
+llamadas reales al núcleo, conservando atributos e índices exactos.
+Chromium390×844 CPU×4, nueve rondas alternadas de30 subdivisiones de una
+rejilla24×24: JS3,307ms / Rust1,240ms, con clones, copias y liberación.
+No equivale a una medida de toda la aplicación ni de un teléfono físico.
+Reservas temporales vivas:0; memoria WASM estable en2228224 bytes después
+del calentamiento y del ensayo. Build aprobado. WASM245416 bytes,
+SHA `75ce8cd4230f0ef28013b2e42af8efc40abb1996113a427c0045159b5975e2e5`.
+4474/4474 unitarias en338 archivos (279,48s) y11/11 E2E (3,5min),
+sin omisiones ni reintentos. Publicación pendiente.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-subdivide`.
+
+Fuente154 `49c42623ca7530fd1ededd464541759c1e6ab1a5` subida.
+Deploy38197033340 y Pages38197087999 aprobados; Pages
+`0819dba5741e946e6fa9224c1f97d7af41789a8c`. Recursos públicos exactos,
+100 casos del WASM descargado y152800 bytes de atributos idénticos.
+APK1.1.15/code28 y loader2107 verificados. UI pública154:2/2 aprobados
+en38,2s, sin reintentos. Dos perfiles nuevos de Chromium (móvil/escritorio)
+cargan realmente el main y WASM publicados con sus bytes y SHA exactos,
+sin errores de página: browser-artifact.json en la evidencia publicada.
+Evidencia: published-1791773277000. CI38197033308 sigue pendiente.
+CI152 repite los dos regresos nativos fallidos enUI2 (71 aprobadas);
+originales en rust-plant-cactus/ci152-ui2. No se consideran corregidos.
+Publicación153 verificada: fuente715266b, Pagesc5fd729d,20 casos del
+núcleo descargado, APK1.1.15/code28 y2 recorridos públicos aprobados.
+El siguiente bloque está preparado fuera del repositorio, sin integrar ni
+verificar todavía: ambas caras y paredes de las hojas perforadas de monstera.
+Conserva los cuatro agujeros y el orden de sus bordes; sus curvas base de
+Three siguen en el host. No se ha integrado caché de superficies base.
+Después conviene medir el arranque del núcleo: app.js1432 lo solicita sólo
+tras el primer fotograma de estantería. Aún no se ha adelantado esa carga.
+Evaluar descarga en paralelo sin await y/o preload del WASM, conservando
+la primera pantalla, errores tolerados y comparando arranque frío y caché.
+No afirmar que las pruebas de modelos precargados aceleran el primer arranque.
+
 # Migración 1.7.154 — geometría de hiedra
 
 Changelog: «Hiedra más rápida en Rust». Malla de cinco lóbulos, curvatura,

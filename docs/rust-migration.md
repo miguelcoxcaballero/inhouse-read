@@ -1198,3 +1198,21 @@ SHA `9a38fe01fd5c44a8678f349a02ca9ed72d897de8a254127ed991af00bf2e87df`.
 4457/4457 unitarias en337 archivos (281,55s) y11/11 E2E (3,6min),
 sin omisiones ni reintentos. Publicación pendiente.
 Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-ivy`.
+
+## 1.7.155: subdivisión de hojas
+
+Changelog: «Subdivisión de hojas en Rust». Los vértices interiores compartidos
+y su topología pasan a Rust, conservando el orden de inserción y cada redondeo.
+Se valida la entrada antes de modificar la geometría y se conserva la salida
+original si el núcleo no está disponible, rechaza datos o falla.
+69/69 focalizadas,17 nuevas. El navegador compara toda la monstera con5
+llamadas reales al núcleo, conservando atributos e índices exactos.
+Chromium390×844 CPU×4, nueve rondas alternadas de30 subdivisiones de una
+rejilla24×24: JS3,307ms / Rust1,240ms, con clones, copias y liberación.
+No equivale a una medida de toda la aplicación ni de un teléfono físico.
+Reservas temporales vivas:0; memoria WASM estable en2228224 bytes después
+del calentamiento y del ensayo. Build aprobado. WASM245416 bytes,
+SHA `75ce8cd4230f0ef28013b2e42af8efc40abb1996113a427c0045159b5975e2e5`.
+4474/4474 unitarias en338 archivos (279,48s) y11/11 E2E (3,5min),
+sin omisiones ni reintentos. Publicación pendiente.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-subdivide`.
