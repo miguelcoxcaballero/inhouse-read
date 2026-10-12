@@ -110,11 +110,14 @@ export class ReadingVoice {
     return ['paused','stopped'].includes(this.state) && (this.browsing || saved !== undefined && saved !== JSON.stringify(this.reader.location))
   }
   async play() {
-    unlockNeural() // synchronously, inside the tap: the browser only lets the page start audio from a user gesture
-    this.nativeSession = nativeAudio()?.session || null
     if (this.state === 'playing' || this.state === 'loading') return
     this.retryNeural()
+    // Retire the old reading position BEFORE opening Android's foreground
+    // session. Starting then stopping it here can race onStartCommand and
+    // Android kills the entire app with ForegroundServiceDidNotStartInTime.
     if (this.restartFromVisiblePage()) { this.stop(); this.completeOpening = true }
+    unlockNeural() // still synchronous inside the tap, before the first await
+    this.nativeSession = nativeAudio()?.session || null
     if (this.state === 'paused' && this.chunks.length && !this.resumeNextPage) {
       this.state = 'playing'; this.waiting = true; this.notify('Preparando la voz natural…'); this.speakCurrent(); return
     }

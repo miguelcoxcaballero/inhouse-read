@@ -1,3 +1,24 @@
+# 1.7.177 — cierre de Android al pulsar Play
+
+Changelog: «Corrige cierre al reanudar audiolibro».
+Reproducido en la APK pública 1.1.15/code28, Android 16, web176:
+reproducir Lessac, detener, cambiar de capítulo, volver a pulsar Play.
+Android mata el proceso con ForegroundServiceDidNotStartInTimeException.
+El log señala NativePcmBridge.begin: ReadingVoice desbloqueaba una sesión
+nativa antes de llamar a Stop para reiniciar desde la página visible.
+Ahora se retira primero la posición anterior y se abre después la sesión,
+todavía dentro de la pulsación y antes del primer await. No cambia la voz,
+la frase inicial ni los controles. Play repetido durante carga no abre servicios.
+
+Las cinco regresiones nuevas fallan contra176 y pasan con el arreglo.
+52/52 pruebas focales aprobadas y build de producción correcto.
+Batería completa, recorridos UI y comprobación de la APK pública pendientes.
+Evidencia original y pruebas: D:/CodexEvidence/InhouseRead-20261012/audio-play-crash.
+La migración PDF pendiente se conserva en rust-pdf-paths/unpublished-migration.patch
+más rust-pdf-paths/pending; no forma parte de este arreglo urgente.
+No se modifica el updater ni la parte nativa. La APK actual carga este arreglo web.
+Los fallos previos de CI indicados abajo siguen pendientes de revisión.
+
 # Verificación pública 1.7.176 completada
 
 Fuente:67c46715a02b6a0297ec97aa97a5d319b9b2c077.

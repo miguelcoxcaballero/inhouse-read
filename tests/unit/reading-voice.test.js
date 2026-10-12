@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest'
+import {nativeAudio,resetAudio,unlockAudio,stopNativeAudio,pauseNativeAudio} from '../../src/js/readers/neural-voice/audio.js'
 import { ReadingVoice } from '../../src/js/readers/reading-voice.js'
 
 import {loadNeural} from '../../src/js/readers/neural-runtime.js'
@@ -7,7 +8,7 @@ import {createFakeNeuralEngine,FAKE_CATALOG} from '../helpers/fake-neural-engine
 let catalogue, activeEngine
 beforeAll(async () => { await loadNeural(); catalogue=[...neuralVoices]; neuralVoices.splice(0,neuralVoices.length,...FAKE_CATALOG) })
 afterAll(() => { neuralVoices.splice(0,neuralVoices.length,...catalogue); setNeuralEngine(null) })
-afterEach(() => { activeEngine?.stop(); vi.unstubAllGlobals(); vi.useRealTimers() })
+afterEach(() => { activeEngine?.stop(); resetAudio(); vi.unstubAllGlobals(); vi.useRealTimers() })
 // These tuple spies observe the natural engine contract; they are not an Android bridge.
 function transport(speak=vi.fn(),stop=vi.fn(),installed=FAKE_CATALOG.map(voice=>voice.id)) {
   const engine=activeEngine=createFakeNeuralEngine({voices:FAKE_CATALOG,installed,hold:true})
@@ -383,5 +384,33 @@ describe('Play after browsing while paused or stopped',()=>{
   const speak=vi.fn();transport(speak);const reader={location:{page:1},getSpeechSource:vi.fn(async()=>({text:'Primera. Segunda.',start:0}))};
   const voice=new ReadingVoice(reader);await voice.play();voice.index=1;voice.pause();await voice.play();
   expect(say(speak)[0]).toBe('Segunda.');expect(reader.getSpeechSource).toHaveBeenCalledOnce();voice.stop();
+ });
+});
+
+
+describe('Android Play after a manual page change',()=>{
+ for(const action of ['pause','stop'])for(const browsing of [false,true])it(`${action}, browsing=${browsing}: retires the old position before opening a native service`,async()=>{
+  const events=[],bridge={getProtocol:()=>1,begin:id=>events.push(['begin',id]),stop:id=>events.push(['stop',id]),pause:id=>events.push(['pause',id])};
+  vi.stubGlobal('InhousePcm',bridge);
+  const engine=transport(),originalStop=engine.stop.bind(engine);
+  engine.unlock=()=>unlockAudio();engine.stop=()=>{stopNativeAudio();originalStop()};
+  engine.pause=()=>{pauseNativeAudio();originalStop()};
+  const reader={location:{page:1},getSpeechSource:async()=>({text:'First sentence. Next sentence.',start:0}),stopSpeech:vi.fn()};
+  const voice=new ReadingVoice(reader);await voice.play();const old=nativeAudio().session;
+  voice[action]();reader.location={page:2};voice.browsing=browsing;events.length=0;
+  const playing=voice.play();
+  // Synchronous portion still unlocks inside the user's gesture, after Stop.
+  expect(events.at(-1)?.[0]).toBe('begin');
+  expect(events.filter(e=>e[0]==='begin')).toHaveLength(1);
+  const current=nativeAudio()?.session;expect(current).toBeTruthy();expect(current).not.toBe(old);
+  await playing;expect(nativeAudio()?.session).toBe(current);expect(voice.nativeSession).toBe(current);
+  expect(events.some(e=>e[0]==='stop'&&e[1]===current)).toBe(false);
+  expect(voice.state).toBe('playing');voice.stop();
+ });
+ it('repeated Play while loading does not open another service',async()=>{
+  const begin=vi.fn();vi.stubGlobal('InhousePcm',{getProtocol:()=>1,begin,stop:vi.fn()});
+  const engine=transport();engine.unlock=()=>unlockAudio();
+  const voice=new ReadingVoice({location:{page:1}});voice.state='loading';
+  await voice.play();expect(begin).not.toHaveBeenCalled();
  });
 });
