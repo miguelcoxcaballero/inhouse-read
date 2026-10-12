@@ -1,6 +1,10 @@
 # Revisión 1.7.143 — controles sin hueco inferior (12 octubre)
 
-Verificación local aprobada; publicación en preparación. Changelog:
+Publicada y comprobada: **web 1.7.143**, fuente
+`ad5113f7c9b372f8404b3083d3ae3e0507c801b9`, Pages
+`a8d803b38ff8ae9d4656b0e13b2faa2155c3a0a8`. Deploy `38189046012` y
+Pages `38189090448` aprobados. CI global `38189046053` en curso, unitarias
+aprobadas; no se afirma aprobación global. Changelog:
 «Navegación libre durante la narración». Conserva los gestos y el cursor
 independiente de 142. Audio y retorno ocupan la cabecera existente: desaparece
 la reserva inferior de 52 px sin variar la caja de lectura al reproducir.
@@ -35,10 +39,29 @@ ensayo completo previo `unit143-final` tuvo un timeout de 5 s en la comparación
 de mapas de portada large-cover/10 bajo carga concurrente; se conserva íntegro.
 No se cambia ese test ni su plazo: se limita la concurrencia del ejecutor local.
 
-CI 142 también conserva dos fallos de retorno nativo dentro de 8 s en UI2,
-iguales a los registrados en 141. UI1/4/5/6, las unitarias y los tres grupos
-Piper aprobaron; Supertonic todavía en curso al preparar esta publicación.
-No se afirma aprobación global ni resolución del rendimiento de retorno.
+CI 142 terminó rechazado. Conserva dos fallos de retorno nativo dentro de
+8 s en UI2, iguales a los registrados en 141, y los siete casos UI3 descritos
+arriba. UI1/4/5/6, las 4091 unitarias, Piper engine 15/15, idiomas 40/40,
+lectura 14/14 y Supertonic 224/224 aprobaron. Los diez artefactos E2E completos
+están en `reader-continuity/ci142`. No se afirma aprobación global ni resolución
+del rendimiento de retorno a la estantería.
+
+Verificación de la publicación 143:
+- `reader-continuity/public143-ui`: **7/7**, sin omisiones ni reintentos, 1,1 min,
+  ejecutados contra la URL pública. PDF/EPUB con Davefx real, un audio y marca
+  interna entre páginas; hold de 650 ms, navegación independiente, glifos sin
+  movimiento y retorno legible a 320/390 px. El contexto de prueba concede
+  local-network-access exclusivamente para servir los pesos fixture reales.
+- `published-1791765864942`: **115/115**, 99 archivos públicos iguales por
+  tamaño/SHA. Main `assets/main-DORlWQLE.js`, 655517 bytes, SHA
+  `b45688a622a701415d1e1400280def54111387d72e90feba5af7a924fc53c4c8`.
+  El WASM conserva el SHA de 142 y las cinco comprobaciones de píxeles exactos.
+- APK pública descargada de nuevo: 1.1.15/code28, SHA
+  `02960e3322bdad2e26041d2ef57b0fd5a02f3528c4b60b876e7955ae941cafb5`.
+  Loader 2107 bytes, tres assets/public, URL de producción y ningún bundle
+  antiguo dentro del APK. Mismos bytes que el APK firmado ya verificado.
+  No se ha publicado APK nuevo ni cambiado updater/canales/firma. No se afirma
+  una prueba física nueva de audio en Android.
 
 ## Publicación anterior — estabilidad del texto y audio continuo
 
