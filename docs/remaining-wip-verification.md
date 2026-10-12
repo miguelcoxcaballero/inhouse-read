@@ -1,3 +1,39 @@
+# Migración 1.7.151 — follaje
+
+Verificación local: 4383/4383 unitarias y 11/11 E2E sin omisiones ni reintentos; build aprobado. Publicación pendiente. Changelog: «Texturas de hojas en Rust».
+Migra pigmento, bandas de sansevieria, nervaduras, altura y rugosidad de las
+hojas. Conserva geometrías, UV, sombreado, caché y lotes de cuatro filas.
+La nervadura central y el seno lateral se reutilizan por columna del lote.
+70/70 pruebas focalizadas iniciales; se amplió el archivo nuevo a44 casos
+para cubrir también las resoluciones cuadradas reales en la batería completa.
+El navegador verifica todos los lotes de monstera, hiedra, suculenta y
+sansevieria, los cuatro tipos de cálculo, cada byte y ninguna reserva retenida.
+Chromium390×844 CPU×4, nueve rondas alternadas de tres pinturas completas:
+monstera128² JS/Rust20,10/11,27ms;256²80,63/41,10.
+Sansevieria128×25651,00/29,80;256×512199,23/115,40.
+Incluye reserva/copia/liberación; no mide toda la aplicación ni un móvil físico.
+Build aprobado. WASM230300 bytes,
+SHA `4e5e8beecc5aff28890b1f07dae1551db6b62cc9ff454a463095d39de08e2d85`.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-foliage`.
+Próximo bloque preparado fuera del repositorio: geometría completa de cactus,
+con muestras del PRNG preservadas incluso cuando falle la aceleración.
+Publicación150 verificada: fuente `4346c84d4e4896c0bed987feb9f722fa099be6ab`,
+Pages `1acc883e93ef73bdfbc7be09b97b3a58a781a482`, deploy38193906856 aprobado.
+Recursos públicos exactos,6 casos del WASM descargado y1311952 bytes idénticos.
+Dos recorridos públicos aprobados sin omisiones/reintentos. APK1.1.15/code28
+con SHA y loader2107 comprobados. Evidencia: published-1791770398584 y
+rust-plant-soil/public-ui. CI150 está pendiente; no se afirma aprobación global.
+
+La batería151 pasa4383/4383 unitarias en334 archivos (341,15s) y11/11 E2E
+(4,4min), sin omisiones ni reintentos. El pase incluye44 casos nuevos de follaje, también a128² y256².
+CI14738191581737 terminó con un fallo del regreso nativo393px enUI2
+(72 aprobadas) y una prueba inestable «screenshots desktop paper» enUI3
+(69 aprobadas y1 que pasó al reintentar: foliate-view ausente tras8s).
+CI14838192199045 falló en los dos regresos nativos deUI2 (71 aprobadas).
+Resto de grupos aprobados. Originales preservados en
+rust-plant-preview/ci147-failed y rust-plant-glaze/ci148-ui2. No se ocultan
+con los pases locales ni se considera corregido el regreso intermitente.
+
 # Migración 1.7.150 — tierra y grava
 
 Verificación local: 4339/4339 unitarias y 11/11 E2E sin omisiones ni reintentos. Build aprobado. Publicación pendiente. Changelog: «Sustratos de plantas en Rust».

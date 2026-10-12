@@ -18,6 +18,7 @@ mod plant_preview;
 mod plant_glaze;
 mod plant_pottery;
 mod plant_soil;
+mod plant_foliage;
 mod pdf_layout;
 mod pdf_rows;
 mod pcm;

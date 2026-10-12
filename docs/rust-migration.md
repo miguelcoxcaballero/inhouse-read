@@ -1120,3 +1120,23 @@ CI14638191111252 ha terminado con todos los grupos aprobados: unitarias,
 seis grupos de interfaz y todas las voces reales Piper/Supertonic.
 Esto no demuestra corregido el retorno nativo intermitente de CI143/145;
 sus fallos y artefactos originales se conservan.
+
+# Migración 1.7.151 — follaje
+
+Verificación local: 4383/4383 unitarias y 11/11 E2E sin omisiones ni reintentos; build aprobado. Publicación pendiente. Changelog: «Texturas de hojas en Rust».
+Migra pigmento, bandas de sansevieria, nervaduras, altura y rugosidad de las
+hojas. Conserva geometrías, UV, sombreado, caché y lotes de cuatro filas.
+La nervadura central y el seno lateral se reutilizan por columna del lote.
+70/70 pruebas focalizadas iniciales; se amplió el archivo nuevo a44 casos
+para cubrir también las resoluciones cuadradas reales en la batería completa.
+El navegador verifica todos los lotes de monstera, hiedra, suculenta y
+sansevieria, los cuatro tipos de cálculo, cada byte y ninguna reserva retenida.
+Chromium390×844 CPU×4, nueve rondas alternadas de tres pinturas completas:
+monstera128² JS/Rust20,10/11,27ms;256²80,63/41,10.
+Sansevieria128×25651,00/29,80;256×512199,23/115,40.
+Incluye reserva/copia/liberación; no mide toda la aplicación ni un móvil físico.
+Build aprobado. WASM230300 bytes,
+SHA `4e5e8beecc5aff28890b1f07dae1551db6b62cc9ff454a463095d39de08e2d85`.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-foliage`.
+Próximo bloque preparado fuera del repositorio: geometría completa de cactus,
+con muestras del PRNG preservadas incluso cuando falle la aceleración.

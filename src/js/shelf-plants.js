@@ -5,6 +5,7 @@ import { rustPlantPreview } from './plant-preview-wasm.js';
 import { rustPlantGlazeRows } from './plant-glaze-wasm.js';
 import { rustPlantPotteryRows } from './plant-pottery-wasm.js';
 import { rustPlantSoilRows } from './plant-soil-wasm.js';
+import { rustPlantFoliageRows } from './plant-foliage-wasm.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { resolveCatalogPlant } from './plant-records.js';
@@ -104,7 +105,9 @@ function pump(deadline) {
       (job.pottery && rustPlantPotteryRows(getRustCore(), job.pottery.kind, job.width, job.height, job.row,
         end - job.row, job.pottery.config, job.pigment, job.data)) ||
       (job.soil !== undefined && rustPlantSoilRows(getRustCore(), job.soil, job.width, job.height, job.row,
-        end - job.row, job.pigment, job.data));
+        end - job.row, job.pigment, job.data)) ||
+      (job.foliage && rustPlantFoliageRows(getRustCore(), job.foliage.kind, job.width, job.height, job.row,
+        end - job.row, job.foliage.config, job.pigment, job.data));
     if (accelerated) job.row = end;
     else for (; job.row < end; job.row++)
       for (let x = 0; x < job.width; x++) job.store(job.row * job.width + x, job.sample(x, job.row));
@@ -172,7 +175,7 @@ function surface(key, [width, height], repeat, paint, refresh) {
     base = { map:dataTexture(pigment, width, height, THREE.SRGBColorSpace, repeat), data:dataTexture(data, width, height, THREE.NoColorSpace, repeat),
       clones:[], waiting:[] };
     surfaces.set(key, base);
-    queue.push({ base, width, height, row:0, sample, store, glaze:paint.rustGlaze, pottery:paint.rustPottery, soil:paint.rustSoil, pigment, data });
+    queue.push({ base, width, height, row:0, sample, store, glaze:paint.rustGlaze, pottery:paint.rustPottery, soil:paint.rustSoil, foliage:paint.rustFoliage, pigment, data });
     if (queue.length === 1) idle(pump);
   }
   // Texture.copy() raises the shared Source's version, which would re-upload
@@ -201,7 +204,7 @@ const SNAKE_STRIPS = 4, SNAKE_INSET = .04;
 
 function sansevieriaTextures(refresh, quality = 1) {
   const deep = srgb('#1d3621'), leaf = srgb('#2f5230'), sage = srgb('#96a88c'), gold = srgb('#b6a85c');
-  return surface(`leaf:upright:${quality}`, [SNAKE_STRIPS * 32 * quality, 256 * quality], false, (u, v, x, y, texel) => {
+  const paint = (u, v, x, y, texel) => {
     const strip = Math.min(SNAKE_STRIPS - 1, Math.floor(u * SNAKE_STRIPS)), s = u * SNAKE_STRIPS - strip;
     const a = Math.abs(s * 2 - 1), seed = 71 + strip * 13;
     // Irregular pale cross bands, about a dozen per blade: shallow chevrons
@@ -224,7 +227,9 @@ function sansevieriaTextures(refresh, quality = 1) {
     }
     texel[3] = .46 + pale * .06 - margin * .03 + speck * .03;
     texel[4] = .6 + pale * .06 + speck * .05;
-  }, refresh);
+  };
+  paint.rustFoliage = { kind:3, config:new Float64Array(5) };
+  return surface(`leaf:upright:${quality}`, [SNAKE_STRIPS * 32 * quality, 256 * quality], false, paint, refresh);
 }
 
 function botanicalTextures(variant, refresh, quality = 1) {
@@ -232,7 +237,7 @@ function botanicalTextures(variant, refresh, quality = 1) {
   // A single surface field drives pigment, relief and wax roughness together.
   const base = srgb({ zz:'#2f5324', fern:'#4a7a2c', succulent:'#6a8a80', ivy:'#2a4c23', palm:'#3d6c2a', monstera:'#2f6128' }[variant] ?? '#36672c');
   const phase = hash(variant.length, 3, 11) * Math.PI * 2, seed = variant.charCodeAt(0);
-  return surface(`leaf:${variant}:${quality}`, [128 * quality, 128 * quality], false, (u, v, x, y, texel) => {
+  const paint = (u, v, x, y, texel) => {
     const signed = u * 2 - 1, a = Math.abs(signed);
     const midrib = Math.exp(-a * 48);
     // Branch veins sweep toward the tip, with finer tertiary venation.
@@ -255,7 +260,9 @@ function botanicalTextures(variant, refresh, quality = 1) {
     texel[2] = base[2] + variation * .65 + bloom * .6;
     texel[3] = .38 + midrib * .30 + lateral * .16 + fine * .06 + cells;
     texel[4] = .62 + veins * 2 + mottling * 3 + cells;
-  }, refresh);
+  };
+  paint.rustFoliage = { kind:variant === 'ivy' ? 1 : variant === 'succulent' ? 2 : 0, config:new Float64Array([...base, phase, seed]) };
+  return surface(`leaf:${variant}:${quality}`, [128 * quality, 128 * quality], false, paint, refresh);
 }
 
 // Texture rows along a pot's profile: foot ring, outer wall, lip, visible
