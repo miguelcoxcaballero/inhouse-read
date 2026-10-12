@@ -1,9 +1,10 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.205: navegación y búsqueda de frase del audiolibro en Rust.
-5301 unitarias completas, 11 E2E originales y la nueva prueba de gestos aprobados.
-Inventario: 5335 líneas Rust / 37191 JS, **12,55 %**; no mide funciones terminadas.
-Navegar conserva el cursor audible; una pulsación larga busca la frase elegida.
+Última entrega 1.7.206: preparación y adopción de páginas del audiolibro en Rust.
+5310 unitarias completas y 14 E2E aprobados, incluidas voces reales PDF/EPUB.
+Inventario: 5420 líneas Rust / 37210 JS, **12,71 %**; no mide funciones terminadas.
+La página anticipada se valida sin desplazar la página visible ni la escucha.
+Actualización a wasm-bindgen0.2.105 para liberar callbacks asíncronos y de menús.
 CI completo aún tiene incidencias documentadas; no se declara totalmente verde.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 

@@ -1,3 +1,37 @@
+# 1.7.206 — preparación anticipada de páginas en Rust
+
+Changelog: «Páginas en Rust y memoria liberada».
+Rust prepara y valida una página física anticipada, descarta las canceladas
+y conserva la página actual hasta la marca audible. Migra adopción, limpieza
+y revalidación del plan manteniendo las referencias y arrays dispersos.
+La creación de callbacks queda en el adaptador JavaScript para evitar ciclos
+de referencias entre el lector y closures retenidas dentro de WASM.
+
+700 escenarios de preparación/cancelación y100 de validación/adopción
+comparados con el original.2000 ciclos mantienen estable la memoria WASM.
+Antes de la corrección de memoria pasaron185 focalizadas,5308 unitarias y
+12 E2E. Una comprobación adicional de referencias, conservada como fallo,
+descubrió acumulación de callbacks cerrados con wasm-bindgen0.2.104:
+4091→6629 referencias entre dos tandas de1000 preparaciones.
+Se actualiza al arreglo oficial0.2.105(#4709), con CLI y crates fijados,
+archivos Windows/Linux verificados por tamaño/SHA256. No se parchean los
+bindings generados. La misma prueba mantiene43 referencias y191 ranuras
+estables con0.2.105. El contador ui_live_handles protege esta regresión.
+Después del arreglo pasan124 focalizadas, incluidas1000 preparaciones y100
+ciclos de menú sin retener callbacks, y 5310 unitarias completas.
+14 E2E aprobados, incluidos PDF/EPUB con Davefx real: los contadores
+comprueban preparación y adopción nativas, un único PCM y cambio de página
+en la marca audible. También conserva navegación manual y pulsación larga.
+
+Inventario:5420 líneas Rust/37210 JavaScript=12,71%, no funcional.
+UI local475803bytes,SHA256
+2e651b4f06695152c33abe9b16d1c550768d66df13ada48991d1dc862ebc5de3.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+La migración completa sigue pendiente; no se declara totalmente verde el CI.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-ahead-prototype.
+Arreglo y pruebas finales:rust-ui-closure-lifetime.
+Fuente:https://github.com/wasm-bindgen/wasm-bindgen/pull/4709.
+
 # 1.7.205 — navegación del audiolibro en Rust
 
 Changelog: «Navegación del audiolibro en Rust».
@@ -17,7 +51,20 @@ del texto exacto, manteniendo el resultado esperado y el plazo originales.
 Inventario:5335 líneas Rust/37191 JavaScript=12,55%, no funcional.
 UI local461247bytes,SHA256
 0cb2a06d1ceafe66306da472207b8922fc75d175dba33ec23613d324fdb0af3d.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada:e2f19a2586fde9aa0e532804dd0b2face26e3eed.
+Deploy38285300873/Pages38285469995 completos, Pages
+2db46d7ea2e536a56284379a9a9007eb2c5bd2f9. UI pública461207bytes,SHA256
+2624d80f8694d3c7eef03c33ade921d33a3bd3ca88d0a58a7823dcbd12271025.
+La primera lectura señaló oswald-OFL.txt; su registro no permite atribuir
+la causa. Se conserva published-1791826829201 y el fallo del verificador de
+navegador que lo rechazó. La lectura directa posterior dio HTTP200 y SHA
+0687c51a3126ae6963389181135a2eaea02f2e88f31230d27409952f28e84da5,
+idéntico a Pages. La nueva revisión completa published-1791826935758 pasa
+HTTP/tamaño/SHA de todos los recursos, dos perfiles,30 casos PCM/tempo y
+APK real con loader2107bytes. No se ha debilitado ninguna comprobación.
+E2E público de gestos1/1(10s). APK1.1.15/28 muestra web1.7.205:
+Lessac2×,10,21s,8finales/9inicios,PID14659 estable y sinFATAL.
+CI38285300743:unitarias114932108052 aprobadas; otros jobs no concluidos.
 La migración completa sigue pendiente; no se declara totalmente verde el CI.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-navigation-prototype.
 

@@ -6,7 +6,7 @@ const fixture=vi.hoisted(()=>({ui:null,calls:{}}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 import './reading-voice.test.js'
 ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
-const observed=['voice_play','voice_pause','voice_stop','voice_cancel','voice_restart','voice_retry','voice_for','voice_upcoming','voice_audio_item','voice_needs_join','voice_browse','voice_continue_page']
+const observed=['voice_play','voice_pause','voice_stop','voice_cancel','voice_restart','voice_retry','voice_for','voice_upcoming','voice_audio_item','voice_needs_join','voice_browse','voice_continue_page','voice_prepare_ahead','voice_clear_ahead','voice_adopt_plan','voice_page_valid']
 fixture.ui={...ui}
 for(const name of observed)fixture.ui[name]=(...args)=>{fixture.calls[name]=(fixture.calls[name]||0)+1;return ui[name](...args)}
 afterAll(()=>{for(const name of observed)expect(fixture.calls[name],name).toBeGreaterThan(0)})

@@ -1,3 +1,4 @@
+import {prepareVoiceAhead,clearVoiceAhead,voicePageValid,revalidateVoiceNext,adoptVoicePlan} from './voice-ahead.js'
 import {jumpVoicePoint,continueVoicePage,browseVoice,returnVoiceAudio,seekVoicePoint} from './voice-navigation.js'
 import {joinVoiceSentence} from './voice-join.js'
 import {selectReadingVoice,upcomingVoiceItems,voiceAudioItem,voiceNeedsJoin} from './voice-selection.js'
@@ -20,7 +21,7 @@ const PAGE_PREPARATION_RETRIES = 2
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 // A neural voice always reports its 'start' (it is our own engine), so it has no fallback timer: it is waited for, and
 // the status says so after NEURAL_WAIT_MS. It reads this many fragments ahead (same voice and speed) to stay gapless.
-const NEURAL_WAIT_MS = 900, NEURAL_LOOKAHEAD = 4
+const NEURAL_WAIT_MS = 900
 // A neural worker that dies mid-reading (a phone's WebView short of memory) is rebuilt and the fragment spoken again, this many
 // times in a row, before the voice is given up on. A fragment that is heard to the end clears the count, so a worker that
 // only dies now and then never ends the neural reading.
@@ -174,38 +175,8 @@ export class ReadingVoice {
   joinPageSentence() { return joinVoiceSentence(this) }
   /** One detached page, prepared only near the current page's end. Never
    * reveal it or let its PCM play until advance adopts its first fragment. */
-  prepareAhead() {
-    if (this.aheadPage?.error?.name === 'AbortError' ||
-      this.aheadPage?.plan && !this.pagePlanValid(this.aheadPage.plan)) this.clearAhead()
-    if (this.state !== 'playing' || this.aheadPage || this.deferredPage ||
-      this.chunks.length - this.index - 1 > NEURAL_LOOKAHEAD || typeof this.reader.getNextSpeechSource !== 'function') return
-    const request = { generation:this.generation, source:this.source, plan:undefined, cancelled:false }
-    this.aheadPage = request
-    const isActive = () => !request.cancelled && request.generation === this.generation &&
-      this.state === 'playing' && (this.source === request.source || this.source === request.plan?.source)
-    request.promise = (async () => {
-      let source
-      try {
-        source = await this.reader.getNextSpeechSource({ isActive, afterPage:this.source?.physicalPage })
-        if (!isActive()) { source?.clear?.(); return undefined }
-        if (source === undefined && this.aheadPage === request) this.aheadPage = null
-        request.plan = source == null ? source : await this.prepare(source)
-        if (!isActive()) { source?.clear?.(); request.plan = undefined; return undefined }
-        this.joinPageSentence()
-        const { voice } = this.voiceFor(this.chunks[this.index])
-        if (voice && this.index < this.chunks.length) {
-          const { upcoming, deferAfter } = this.upcomingFor(voice)
-          neuralEngine()?.extendUpcoming?.({ id:this.utteranceId, voiceId:voice.id, rate:this.rate, upcoming, deferAfter })
-        }
-        return request.plan
-      } catch (error) { source?.clear?.(); request.error = error; return undefined }
-    })()
-  }
-  clearAhead() {
-    const ahead = this.aheadPage
-    this.aheadPage = null
-    if (ahead) { ahead.cancelled = true; ahead.plan?.source?.clear?.() }
-  }
+  prepareAhead() { return prepareVoiceAhead(this) }
+  clearAhead() { return clearVoiceAhead(this) }
   /** Retry a failed worker with the same natural voice, then expose the error for a manual retry. */
   engineFailed(detail) {
     if (detail.id !== this.utteranceId || this.state !== 'playing' || this.transport !== 'neural') return
@@ -400,21 +371,9 @@ export class ReadingVoice {
     } catch (error) { source?.clear?.(); throw error }
     finally { if (this.preparingPage === request) this.preparingPage = null }
   }
-  pagePlanValid(plan) {
-    try { return !plan?.source?.isValid || plan.source.isValid() === true }
-    catch { return false }
-  }
-  async revalidateNext(plan, generation) {
-    if (this.pagePlanValid(plan)) return plan
-    plan?.source?.clear?.()
-    if (generation !== this.generation || this.state !== 'playing') return undefined
-    return this.prepareNext(generation)
-  }
-  adopt({ source, items }) {
-    source?.adopt?.()
-    this.source = source; this.items = items; this.chunks = items.map(item => item.text); this.index = 0
-    this.deferredPage = typeof source?.activate === 'function' ? source : null
-  }
+  pagePlanValid(plan) { return voicePageValid(plan) }
+  revalidateNext(plan,generation) { return revalidateVoiceNext(this,plan,generation) }
+  adopt(plan) { return adoptVoicePlan(this,plan) }
   // --- Highlight timing: what is painted and followed is what is being heard -------------------------------------------
   /** The engine reported the first audible word of utterance `id`. */
   engineStarted(id) {

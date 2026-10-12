@@ -1,3 +1,5 @@
+mod voice_ahead;
+mod lifetime;
 mod voice_navigation;
 mod voice_join;
 mod voice_selection;

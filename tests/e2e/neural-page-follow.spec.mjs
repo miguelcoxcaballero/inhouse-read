@@ -137,12 +137,15 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
       window.INHOUSE_NEURAL_VOICE_BASE = base
       localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({voice:id,voiceLang:'es'}))
       const evidence = window.__pdfSpeech = {requests:[],events:[],frames:[],pcm:[],jobs:[],previews:[],device:0}
-      evidence.rustJoin={available:false,calls:0}
+      evidence.rustJoin={available:false,calls:0,preparations:0,adoptions:0}
       const observe=result=>{
         const instance=result.instance||result,actual=instance.exports
         if(!actual.voice_join_sentence)return result
         evidence.rustJoin.available=true
         const exports={...actual,voice_join_sentence:(...args)=>{evidence.rustJoin.calls++;return actual.voice_join_sentence(...args)}}
+        for(const [name,key] of [['voice_prepare_ahead','preparations'],['voice_adopt_plan','adoptions']]){
+          if(actual[name])exports[name]=(...args)=>{evidence.rustJoin[key]++;return actual[name](...args)}
+        }
         const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}})
         return result.instance?{...result,instance:proxy}:proxy
       }
@@ -253,6 +256,8 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
     expect(evidence.requests.map(request => request.text)).toEqual([PDF_PARTS.join(' ')])
     expect(evidence.rustJoin.available).toBe(true)
     expect(evidence.rustJoin.calls).toBeGreaterThan(0)
+    expect(evidence.rustJoin.preparations).toBeGreaterThan(0)
+    expect(evidence.rustJoin.adoptions).toBeGreaterThan(0)
     const [first]=evidence.requests
     const firstStart=evidence.events.find(event=>event.type==='start'&&event.id===first.id)
     const done=evidence.events.find(event=>event.type==='done'&&event.id===first.id)

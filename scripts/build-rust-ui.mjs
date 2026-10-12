@@ -7,10 +7,11 @@ import {homedir} from 'node:os'
 import {resolve,dirname,join} from 'node:path'
 import {fileURLToPath} from 'node:url'
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..')
-const version='0.2.104',rust='1.99.0'
+// 0.2.105 fixes retained JS handles when Rust closures are dropped (#4709).
+const version='0.2.105',rust='1.99.0'
 const platforms={
- 'win32-x64':{name:'x86_64-pc-windows-msvc',sha:'c6d774793245083ec8b296c7931e89ebe7ed0829199cefeede2a064a7aaef740',bytes:6121375},
- 'linux-x64':{name:'x86_64-unknown-linux-musl',sha:'9553740907c2c1008f9a44bb00ed1f5b39ffc55d9d331581b5aebc891a4b772f',bytes:7724698}
+ 'win32-x64':{name:'x86_64-pc-windows-msvc',sha:'f70f9439437b0bb856367d70ac747e42116cb5a6f8a603656ccc93ce02c40bf8',bytes:7278855},
+ 'linux-x64':{name:'x86_64-unknown-linux-musl',sha:'b391448c4926ac4b11425a6752484d85164e72489d97804461d5e868c643b88a',bytes:8815954}
 }
 const run=(command,args,options={})=>{
  const result=spawnSync(command,args,{cwd:root,windowsHide:true,encoding:'utf8',...options})
