@@ -1,3 +1,46 @@
+# Migración 1.7.173 — recorte de letras de portada en Rust
+
+Changelog: «Máscaras de tipografía en Rust». Rust recorta el alfa del título,
+cuenta el área y conserva exactamente los puntos de perímetro, relleno y fondo.
+Dos recorridos permiten reservar sólo los puntos finales (máximo1280), sin
+los tres buffers completos de candidatos. El host conserva Canvas, carga de
+fuentes y objetos de salida independientes. Vacío válido se distingue de fallo;
+la importación autocontenida por data: conserva su alternativa anterior.
+
+59/59 focalizadas,3,85s;14nuevas. Tamaños degenerados,umbrales99/100,muestreo,
+1024²,stride65535,crecimiento de memoria,liberación y ruta real del analizador.
+El primer E2E falló esperando la fixture:su enlace CSS duplicaba /inhouse-read/
+y recibió HTML en vez de las fuentes. Browser.log/json/traza originales
+conservados. Se corrigió sólo la ruta; no se relajaron aserciones.
+1/1 benchmark corregido,11,6s;18rasters de las seis fuentes reales,3tamaños,
+CPU×4,nueve rondas alternadas de20operaciones,transferencias incluidas.
+Rangos de medianas JS→Rust por máscara:
+-80×66:0,165–0,200→0,100–0,145ms.
+-192×176:0,740–0,940→0,685–0,850ms.
+-384×352:2,530–3,215→2,205–2,910ms.
+Todos los bytes, puntos, área y dimensiones idénticos; memoria estable tras
+calentar. No se atribuyen estos tiempos al arranque entero ni a FPS móviles.
+1/1 análisis completo de PNG,4,4s: invoca el núcleo real y conserva el color
+y la familia tipográfica elegida por la implementación anterior.
+Build/updater aprobados; manifiesto101recursos.4783/4783 unitarias,362archivos,288,71s.11/11 UI,52,2s,sin reintentos ni omisiones:estantería compilada que ejecuta y guarda el análisis real,fuentes tardías,colores,materiales yarranque de ambos núcleos. Publicación173 pendiente.
+App323613bytes,SHA
+`a58bf61a954f4b5ea86e5a57e11c9ad423573a41b561432e7fe864b29d45f1dd`.
+La decoración sigue byte por byte idéntica a172 y conserva bake8733eaf4d8f2a2ba63c0.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-glyph-mask.
+
+Publicación172:fuente957839b84631fa7193ca1191fc05a12983bddb11,
+Pagese5d4b8c44770c20fbb0c79b087742dc412fc458c;deploy38213936141 y
+Pages38214004809 aprobados.100recursos,HTML y ambas precargas exactos.
+Núcleo público de decoración:21casos/2804808bytes idénticos; núcleo app:
+36casos/350784bytes/comandos de trama idénticos. Main y ambos WASM exactos
+en dos perfiles limpios. APK1.1.15/code28,hash yloader2107bytes verificados.
+Evidencia:published-1791787673721.2/2 UI públicas de luces aprobadas.
+Las5pruebas públicas iniciales de arranque abrieron por error la raíz del
+usuario de GitHub en vez de /inhouse-read/ (trazas conservadas). El test ahora
+navega con ./; repetidas5/5,15s,sin cambiar el plazo:un ejemplar por núcleo,
+carga retenida o abortada de cada dominio y primer fotograma sin bloqueo.
+Originales rust-decor-cache/public-ui.*,corregidas public-startup-fixed.*.
+
 # Migración 1.7.172 — núcleo independiente de decoración
 
 Changelog: «Conserva la caché de decoración». Plantas y texturas de lámparas

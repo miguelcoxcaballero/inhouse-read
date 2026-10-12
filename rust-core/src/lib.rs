@@ -76,3 +76,6 @@ mod metal_sheet;
 mod mesh_finish;
 #[cfg(feature = "app")]
 mod book_cloth;
+
+#[cfg(feature = "app")]
+mod font_glyph;

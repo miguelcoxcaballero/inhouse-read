@@ -1507,3 +1507,15 @@ La caché mantiene sus dependencias exactas y conserva los modelos al cambiar
 laboratorio prueban la independencia en ambas direcciones. Añade17060bytes de
 binario y1114112bytes de memoria inicial; no se oculta ese coste ni se reduce
 la calidad. 4769/4769 unitarias. WIP conserva las pruebas y sus límites.
+
+## 1.7.173: máscara de las letras de portada
+
+El recorte del título, su área y sus tres series de puntos se producen en Rust.
+Se conservan orden, umbral de alfa100 y muestreo exactos. La memoria temporal
+sólo reserva los1280 puntos finales; mantiene salidas propias y recuperación.
+En Chromium con CPU×4 mejora el cálculo para las18combinaciones medidas, con
+rasters y resultados idénticos. La elección completa de fuente también coincide.
+El nuevo módulo de app conserva exactamente la caché/WASM de decoración172.
+El primer fallo de la fixture CSS y su corrección están documentados en WIP.
+
+173:4783/4783 unitarias y11/11 UI, incluida la apariencia guardada desde la estantería compilada.

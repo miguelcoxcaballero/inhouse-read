@@ -30,9 +30,9 @@ async function openFontScoreJob(context) {
 let coverColorCoreTask, coverColorCore;
 function warmCoverColorCore() {
   if (coverColorCore) { void coverColorCore.load(); return; }
-  coverColorCoreTask ??= Promise.all([import('./cover-color-wasm.js'), import('./rust-core.js')])
-    .then(([bridge, core]) => {
-      coverColorCore = { run:bridge.rustDominantCoverRgb, get:core.getRustCore, load:core.loadRustCore };
+  coverColorCoreTask ??= Promise.all([import('./cover-color-wasm.js'), import('./rust-core.js'), import('./font-glyph-wasm.js')])
+    .then(([bridge, core, glyph]) => {
+      coverColorCore = { run:bridge.rustDominantCoverRgb, glyph:glyph.rustGlyphMask, get:core.getRustCore, load:core.loadRustCore };
       void core.loadRustCore();
     }).catch(() => null);
 }
@@ -197,6 +197,8 @@ function edgeMap(gray, width, height) {
  * keep the points the matcher scores. Points are stored as `y * stride + x`
  * offsets so a placement only adds one base index per sample. */
 export function glyphMask(raw, maxWidth, rows, stride = maxWidth) {
+  const accelerated = coverColorCore?.glyph(coverColorCore.get(), raw, maxWidth, rows, stride);
+  if (accelerated !== undefined) return accelerated;
   let minX = maxWidth, minY = rows, maxX = -1, maxY = -1;
   for (let y = 0; y < rows; y += 1) {
     for (let x = 0; x < maxWidth; x += 1) {
