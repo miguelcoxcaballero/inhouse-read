@@ -63,11 +63,26 @@
 
   <!-- The tiny core starts downloading/compiling while the app modules load.
        No rendering or reader action waits for it; rust-core.js adopts it once. -->
-  <link id="ihr-rust-core" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_core-CO9sS0gx.wasm" crossorigin="anonymous" />
+  <link id="ihr-rust-core" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_core-DKHhrLjT.wasm" crossorigin="anonymous" />
   <script>
     try {
       if (typeof WebAssembly === 'object') {
         window.__inhouseRustReady = fetch(document.getElementById('ihr-rust-core').href)
+          .then(function (response) {
+            if (!response.ok) throw new Error('Rust core HTTP ' + response.status)
+            if (typeof WebAssembly.instantiateStreaming === 'function' &&
+                response.headers.get('content-type')?.trim().toLowerCase() === 'application/wasm')
+              return WebAssembly.instantiateStreaming(response)
+            return response.arrayBuffer().then(function (bytes) { return WebAssembly.instantiate(bytes) })
+          }).catch(function () { return null })
+      }
+    } catch (error) { /* unsupported host: the optional loader retries later */ }
+  </script>
+  <link id="ihr-rust-decor" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_decor-BszMymI8.wasm" crossorigin="anonymous" />
+  <script>
+    try {
+      if (typeof WebAssembly === 'object') {
+        window.__inhouseDecorReady = fetch(document.getElementById('ihr-rust-decor').href)
           .then(function (response) {
             if (!response.ok) throw new Error('Rust core HTTP ' + response.status)
             if (typeof WebAssembly.instantiateStreaming === 'function' &&
@@ -103,7 +118,7 @@
     }
   </script>
 
-  <script type="module" crossorigin src="/inhouse-read/assets/main-BJXGE_kN.js"></script>
+  <script type="module" crossorigin src="/inhouse-read/assets/main-BOlGAySg.js"></script>
   <link rel="modulepreload" crossorigin href="/inhouse-read/assets/updater-nNprJxya.js">
   <link rel="modulepreload" crossorigin href="/inhouse-read/assets/three-Bu7fYNf2.js">
   <link rel="stylesheet" crossorigin href="/inhouse-read/assets/updater-JwWmTiyy.css">
