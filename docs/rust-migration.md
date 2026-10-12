@@ -1216,3 +1216,16 @@ SHA `75ce8cd4230f0ef28013b2e42af8efc40abb1996113a427c0045159b5975e2e5`.
 4474/4474 unitarias en338 archivos (279,48s) y11/11 E2E (3,5min),
 sin omisiones ni reintentos. Publicación pendiente.
 Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-subdivide`.
+
+## 1.7.156 — extrusión de Monstera
+
+`plant_monstera_mesh` produce ambas caras, sus paredes de contorno, índices,
+colores, UV y normales a partir de la triangulación curva original. Conserva
+la inserción y eliminación ordenadas de aristas del Map anterior y todos los
+redondeos f32. El adaptador devuelve geometrías con buffers propios y libera
+su arena incluso al fallar; el host retiene el fallback original.
+Comparación exacta de la planta completa en Chromium,5 llamadas al núcleo.
+CPU×4:25,280ms JS frente a18,500ms Rust para la creación completa por planta
+(medianas de9 rondas de5), manteniendo los núcleos anteriores en ambos casos.
+La API de Three y la triangulación base no se han migrado. Evidencia y estado
+de regresiones/publicación en `docs/remaining-wip-verification.md`.

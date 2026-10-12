@@ -1,3 +1,39 @@
+# Migración 1.7.156 — hojas perforadas de monstera
+
+Changelog: «Monstera más rápida en Rust». Se migran ambas caras, las paredes
+que delimitan sus agujeros, colores, UV, índices y normales. Las curvas y la
+triangulación inicial de Three siguen en el host. No cambia la secuencia PRNG
+ni se modifica la geometría fuente al rechazar o fallar el núcleo.
+61/61 focalizadas aprobadas,22 nuevas. Chromium390×844 CPU×4 compara toda
+la monstera con5 llamadas reales y todos sus atributos exactos. Nueve rondas
+alternadas de5 plantas completas: JS25,280ms / Rust18,500ms, incluyendo el
+resto de núcleos ya migrados en ambas rutas, creación, copias y liberación.
+No equivale a la velocidad de toda la app ni de un teléfono físico.
+Reservas temporales vivas0; capacidad WASM2228224 bytes antes y después.
+Build aprobado; WASM257936 bytes, SHA
+`bcc9b82d26ab80a9b48df6e2d0754266530091d1a97f74f0cd45a0d141be650c`.
+4496/4496 unitarias en339 archivos (279,53s), sin omisiones ni reintentos.
+11/11 E2E (3,6min), sin omisiones ni reintentos. Publicación pendiente.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-monstera`.
+
+Publicación155: fuente `b6c1922a70dea246ae3bb23eb18d0dfd20a77b96`,
+Pages `5ef582308aadecda00fe64cdb52af2b18782ba7e`.
+Deploy38197758875 y Pages38197806806 aprobados. Manifiesto y99 recursos
+públicos verificados;91 casos del WASM descargado y1273976 bytes exactos.
+APK1.1.15/code28, SHA/tamaño y loader2107 comprobados.
+Evidencia: published-1791774089783. UI pública155:2/2 en36,4s sin
+omisiones ni reintentos. Dos perfiles nuevos de Chromium consumen main y
+WASM reales con bytes/SHA exactos y sin errores de página.
+CI15338196289014 termina fallido enUI2; demás trabajos aprobados.
+Originales preservados en rust-plant-pot/ci153-ui2. CI154/155 sigue en curso.
+Los fallos de regresos nativos y shader de CI anteriores siguen abiertos;
+no se han debilitado plazos ni ocultado resultados originales.
+
+Siguiente: arranque del núcleo en paralelo al código de la aplicación, sin
+espera obligatoria. Baseline156 copiada fuera del repositorio para medir
+con CPU×4, arranque frío/caché y red móvil. No hay código integrado todavía;
+no atribuir a la primera apertura los ensayos de modelos precargados.
+
 # Migración 1.7.155 — subdivisión de hojas
 
 Changelog: «Subdivisión de hojas en Rust». Los vértices interiores compartidos

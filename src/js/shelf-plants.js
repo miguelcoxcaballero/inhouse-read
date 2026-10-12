@@ -5,6 +5,7 @@ import { rustPlantCactusGeometry } from './plant-cactus-wasm.js';
 import { rustPlantPotSurface } from './plant-pot-wasm.js';
 import { rustPlantIvyGeometry } from './plant-ivy-wasm.js';
 import { rustPlantSubdivide } from './plant-subdivide-wasm.js';
+import { rustPlantMonsteraGeometry } from './plant-monstera-wasm.js';
 import { rustPlantPreview } from './plant-preview-wasm.js';
 import { rustPlantGlazeRows } from './plant-glaze-wasm.js';
 import { rustPlantPotteryRows } from './plant-pottery-wasm.js';
@@ -680,7 +681,10 @@ function monsteraLeafGeometry(length,width,curve,random) {
     const hole = new THREE.Path(); hole.absellipse(side*x,y,rx,ry,0,Math.PI*2,true,side*-.30); shape.holes.push(hole);
   }
   const surface = subdivideSurface(new THREE.ShapeGeometry(shape,5)), source = surface.attributes.position, count = source.count;
-  const positions = [], uv = [], colors = [], indices = [], edges = new Map(), tint = random()*.035, twist = (random()-.5)*.16, hue = (random()-.5)*.07;
+  const tint = random()*.035, twist = (random()-.5)*.16, hue = (random()-.5)*.07;
+  const accelerated = rustPlantMonsteraGeometry(getRustCore(), { length, width, curve, tint, twist, hue, surface });
+  if (accelerated) { surface.dispose(); return accelerated; }
+  const positions = [], uv = [], colors = [], indices = [], edges = new Map();
   for (let side = 0; side < 2; side++) for (let i = 0; i < count; i++) {
     const x = source.getX(i), y = source.getY(i);
     positions.push(x*width*(1+twist*Math.sign(x)),(y-.12)*length,Math.sin(y*Math.PI)*length*curve + x*x*width*.15 + x*width*twist*y - side*width*.009);
