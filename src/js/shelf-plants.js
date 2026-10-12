@@ -3,6 +3,7 @@ import { getRustCore } from './rust-core.js';
 import { rustPlantLeafGeometry } from './plant-leaf-wasm.js';
 import { rustPlantPreview } from './plant-preview-wasm.js';
 import { rustPlantGlazeRows } from './plant-glaze-wasm.js';
+import { rustPlantPotteryRows } from './plant-pottery-wasm.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { resolveCatalogPlant } from './plant-records.js';
@@ -97,8 +98,11 @@ function pump(deadline) {
   for (let chunk = 0; queue.length && chunk < 48 && (chunk === 0 || performance.now() < until); chunk++) {
     const job = queue[0];
     const end = Math.min(job.height, job.row + 4);
-    if (job.glaze && rustPlantGlazeRows(getRustCore(), job.width, job.height, job.row,
-      end - job.row, job.glaze, job.pigment, job.data)) job.row = end;
+    const accelerated = (job.glaze && rustPlantGlazeRows(getRustCore(), job.width, job.height, job.row,
+      end - job.row, job.glaze, job.pigment, job.data)) ||
+      (job.pottery && rustPlantPotteryRows(getRustCore(), job.pottery.kind, job.width, job.height, job.row,
+        end - job.row, job.pottery.config, job.pigment, job.data));
+    if (accelerated) job.row = end;
     else for (; job.row < end; job.row++)
       for (let x = 0; x < job.width; x++) job.store(job.row * job.width + x, job.sample(x, job.row));
     if (job.row < job.height) continue;
@@ -165,7 +169,7 @@ function surface(key, [width, height], repeat, paint, refresh) {
     base = { map:dataTexture(pigment, width, height, THREE.SRGBColorSpace, repeat), data:dataTexture(data, width, height, THREE.NoColorSpace, repeat),
       clones:[], waiting:[] };
     surfaces.set(key, base);
-    queue.push({ base, width, height, row:0, sample, store, glaze:paint.rustGlaze, pigment, data });
+    queue.push({ base, width, height, row:0, sample, store, glaze:paint.rustGlaze, pottery:paint.rustPottery, pigment, data });
     if (queue.length === 1) idle(pump);
   }
   // Texture.copy() raises the shared Source's version, which would re-upload
@@ -288,7 +292,7 @@ function glazedPainter({ glaze, body, gloss, speckle, crackle, seed }) {
 
 function terracottaPainter(hex, seed) {
   const C = srgb(hex), salt = srgb('#e3dccf'), wheel = [];
-  return (u, v, x, y, texel) => {
+  const paint = (u, v, x, y, texel) => {
     if (hidden(v, texel)) return;
     // Broad firing clouds, then a warped sandy field: no lattice shows through.
     const mottle = fbm(u * 3, v * 5, 3, seed, 2), warp = fbm(u * 5, v * 9, 5, seed + 9, 2);
@@ -308,11 +312,13 @@ function terracottaPainter(hex, seed) {
     texel[3] = .5 + (fine - .5) * .22 + sand * .1 - pore * .2 + grog * .1 + throwing * 2 + bloom * .1;
     texel[4] = .9 + (fine - .5) * .08 + pore * .06 + bloom * .06;
   };
+  paint.rustPottery = { kind:0, config:new Float64Array([...C, seed]) };
+  return paint;
 }
 
 function galvanizedPainter(seed, hex = '#cfd3d5') {
   const zinc = srgb(hex);
-  return (u, v, x, y, texel) => {
+  const paint = (u, v, x, y, texel) => {
     if (hidden(v, texel)) return;
     // Hot-dip spangle: flakes about a centimetre across, each tilted its own
     // way with fine dendrite ripples, so some catch the light and some stay
@@ -326,6 +332,8 @@ function galvanizedPainter(seed, hex = '#cfd3d5') {
     texel[3] = .5 + tilt * .035 + feather * .02 - (1 - border) * .04;
     texel[4] = .34 + id * .12 + feather * .04 + (1 - border) * .04 + (1 - bead) * .25;
   };
+  paint.rustPottery = { kind:1, config:new Float64Array([...zinc, seed]) };
+  return paint;
 }
 
 const POT_FINISHES = {

@@ -1,3 +1,36 @@
+# Migración 1.7.149 — terracota y zinc
+
+Verificación local: 4329/4329 unitarias (repetición aislada) y 11/11 E2E; build aprobado. Publicación pendiente. Changelog: «Terracota y zinc en Rust».
+Migra las superficies finales de MUSKOTBLOMMA y AKERBAR: pigmento, poros,
+sales, estrías del torno, cristales del zinc, altura y rugosidad. Conserva
+la caché, cuatro filas por lote, repintado final y resolución del material.
+32/32 unitarias focalizadas (16 nuevas). El navegador compara todos los lotes
+reales de dos modelos: igualdad byte por byte, sin buffers retenidos ni
+fallback que oculte diferencias. El primer ensayo Chromium390×844 CPU×4
+mide JS/Rust113,27/59,27 ms en terracota128×256 y490,77/240,27 en256×512;
+zinc59,03/33,40 y211,20/116,67. Nueve rondas alternadas, tres pinturas por
+ronda, incluida la reserva/copia/liberación. Había otras verificaciones
+locales en curso; estas cifras no representan un móvil físico ni toda la UI.
+WASM211294 bytes, SHA `42ea9ded02bc053159fd046393b8e76afabc1a5a9bdd7d4af0fe7eb3daf61f86`.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-pottery`.
+Siguiente bloque preparado: texturas de sustrato y grava; todavía sin integrar.
+El primer pase completo conserva 4327 aprobadas y dos timeouts a5000ms
+(shelf-placement8192 y cover-color-mask/large-cover10), con navegadores
+simultáneos. No hubo diferencia de coordenadas ni de píxeles en esos errores.
+Se repite toda la batería con dos workers y sin Playwright simultáneo;
+originales unit.log/unit.json intactos. No se modifican los límites ni aserciones.
+Resultado de la repetición: 4329/4329,332 archivos aprobados. unit-isolated.json/log.
+
+Publicación148 comprobada: fuente `c05349a0d789f7a4b30d32872025f1b2bdb81c27`,
+Pages `0558b143509744e6dc6c573d683bb4fe6fb7e81b`, deploy38192199081 y
+Pages38192236290 aprobados. Recursos públicos exactos y12 comparaciones del
+WASM descargado,5245344 bytes idénticos. Dos recorridos públicos aprobados,
+sin omisiones/reintentos,1,2min. APK1.1.15/code28 descargada y loader2107
+verificado. Evidencia published-1791768973018 y rust-plant-glaze/public-ui.
+CI14538190559390 terminó con todos los grupos aprobados salvoUI2:
+72 aprobadas y2 fallos del regreso nativo8s ya documentado. Originales
+descargados en rust-speech-normalize/ci145-ui2. No se declara resuelto.
+
 # Migración 1.7.148 — acabado final de cerámica
 
 Comprobación local completa: 4313/4313 unitarias y 11/11 E2E, sin omisiones ni reintentos; build aprobado. Publicación pendiente. Changelog: «Cerámica de macetas en Rust».

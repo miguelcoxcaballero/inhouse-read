@@ -1,13 +1,13 @@
 //! Full-resolution glazed pottery in the same bounded four-row idle slices.
 use crate::plant_preview::byte;
-fn hash(x: i32, y: i32, seed: u32) -> f64 {
+pub(crate) fn hash(x: i32, y: i32, seed: u32) -> f64 {
     let mut h = (x as u32).wrapping_mul(0x27d4eb2d) ^ (y as u32).wrapping_mul(0x165667b1) ^ seed.wrapping_mul(0x9e3779b1);
     h = (h ^ (h >> 15)).wrapping_mul(0x85ebca6b);
     h = (h ^ (h >> 13)).wrapping_mul(0xc2b2ae35);
     (h ^ (h >> 16)) as f64 / 4294967296.0
 }
 fn wrap(value: i32, period: i32) -> i32 { (value % period + period) % period }
-fn noise(x: f64, y: f64, period: i32, seed: u32) -> f64 {
+pub(crate) fn noise(x: f64, y: f64, period: i32, seed: u32) -> f64 {
     let xi = x.floor() as i32; let yi = y.floor() as i32;
     let fx = x - xi as f64; let fy = y - yi as f64;
     let sx = fx * fx * (3.0 - 2.0 * fx); let sy = fy * fy * (3.0 - 2.0 * fy);

@@ -1081,3 +1081,20 @@ una medición del catálogo completo en un móvil físico.
 WASM198093 bytes, SHA `1e58ccf5998e0992f4f2298eb37204f1769c5631c855d00fce39693d5ae1ff2b`.
 Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-glaze`.
 Siguiente bloque preparado pero aún sin integrar: terracota y zinc.
+
+# Migración 1.7.149 — terracota y zinc
+
+Verificación local: 4329/4329 unitarias (repetición aislada) y 11/11 E2E; build aprobado. Publicación pendiente. Changelog: «Terracota y zinc en Rust».
+Migra las superficies finales de MUSKOTBLOMMA y AKERBAR: pigmento, poros,
+sales, estrías del torno, cristales del zinc, altura y rugosidad. Conserva
+la caché, cuatro filas por lote, repintado final y resolución del material.
+32/32 unitarias focalizadas (16 nuevas). El navegador compara todos los lotes
+reales de dos modelos: igualdad byte por byte, sin buffers retenidos ni
+fallback que oculte diferencias. El primer ensayo Chromium390×844 CPU×4
+mide JS/Rust113,27/59,27 ms en terracota128×256 y490,77/240,27 en256×512;
+zinc59,03/33,40 y211,20/116,67. Nueve rondas alternadas, tres pinturas por
+ronda, incluida la reserva/copia/liberación. Había otras verificaciones
+locales en curso; estas cifras no representan un móvil físico ni toda la UI.
+WASM211294 bytes, SHA `42ea9ded02bc053159fd046393b8e76afabc1a5a9bdd7d4af0fe7eb3daf61f86`.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-pottery`.
+Siguiente bloque preparado: texturas de sustrato y grava; todavía sin integrar.
