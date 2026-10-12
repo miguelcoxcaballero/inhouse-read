@@ -1,3 +1,25 @@
+# 1.7.213 — acciones de las voces naturales en Rust
+
+Changelog: «Selección y descarga de voces en Rust».
+Rust resuelve los botones de descargar, cancelar, usar y quitar; mantiene
+las descargas explícitas, los errores, la elección por idioma y la retirada
+conjunta de perfiles de un paquete compartido. Las promesas del motor
+siguen siendo propiedad del host y conservan el mismo orden de efectos.
+
+1500 escenarios comparados con el original, incluidos errores síncronos,
+cancelación y paquetes compartidos.1500 ciclos posteriores mantienen
+memoria y referencias.69 focalizadas y5395 unitarias completas aprobadas.
+Las62 pruebas existentes del menú conservan sus assertions y observan
+las nueve funciones Rust de acciones.26 E2E aprobados; PDF/Davefx observa
+el clic y el inicio/fin de la instalación por la UI en el binario real.
+El build inicial del prototipo falló por dos conversiones Object/JsValue;
+build.log queda conservado y build-fixed.log/check.log prueban la corrección.
+
+Inventario:6097 líneas Rust/37410JavaScript=14.01%, no funcional.
+UI local625003bytes,SHA256895a4fc28476f608e979715d0e818bbb97bc3afb6ea9305dc8457a0f2cad0cf6.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-picker-actions-prototype.
+
 # 1.7.212 — preparación y actualización de voces en Rust
 
 Changelog: «Preparación de voces en Rust».
@@ -22,7 +44,16 @@ rust-controls-adoption/ci210-ui6-original.log. Siguen pendientes de corrección.
 
 Inventario:6017 líneas Rust/37380JavaScript=13.87%, no funcional.
 UI local609516bytes,SHA25604145c90c0f133cdef313fb45dbd164c68f34817d3831fb049f11d9a791baea7.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada:71ef2c4464bfbfb8e4b052a9c8ffc5f2d9d0b16e.
+Deploy38301690794/Pages38301821991 completos; Pages21d4b6a3fcb4fc3c62d296599e7c4e901f9a466e.
+UI pública609484bytes,SHA256358e7cdca495bc501068df0b58e019569c59ee6ba6437d53186fb2c004f4787d.
+published-1791835582370: recursos HTTP/tamaño/SHA, dos perfiles,
+contador positivo con1000 preparaciones/100 menús,30 casos PCM/tempo
+y APK real loader2107bytes correctos. E2E público PDF/Davefx aprobado.
+APK1.1.15/28 muestra web212:Lessac2×,10.13s,
+8finales/9inicios,PID18812estable y sinFATAL.
+CI38301690790 se registra aparte; no se presupone aprobado.
+Updater sin modificaciones.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-picker-warm-prototype.
 
 # 1.7.211 — sesión y eventos del audiolibro en Rust

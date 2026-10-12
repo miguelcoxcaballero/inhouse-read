@@ -11,6 +11,9 @@ import { SUPERTONIC_BYTES } from '../../src/js/readers/neural-voice/supertonic-c
 // The "Voces naturales" picker and the first-use offer, driven by a fake engine (no real ReadingVoice audio).
 const LESSAC = 'piper:en_US-lessac-high', ALBA = 'piper:en_GB-alba-medium', DAVEFX = 'piper:es_ES-davefx-medium'
 const runtime=vi.hoisted(()=>({ui:null}))
+const actionExports=["picker_click","picker_cancel","picker_voice_name","picker_install_begin","picker_install_done","picker_install_error","picker_use","picker_remove_begin","picker_remove_done"],actionCalls={},observedUI={...rustUI}
+for(const name of actionExports)observedUI[name]=(...args)=>{actionCalls[name]=(actionCalls[name]||0)+1;return rustUI[name](...args)}
+afterAll(()=>{for(const name of actionExports)expect(actionCalls[name],name).toBeGreaterThan(0)})
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
 let catalogue
@@ -18,7 +21,7 @@ beforeAll(async () => { await loadNeural(); catalogue = [...neuralVoices]; neura
 afterAll(() => { neuralVoices.splice(0, neuralVoices.length, ...catalogue); setNeuralEngine(null) })
 describe.each(['legacy','rust'])('natural voice view %s',engine=>{
 beforeEach(() => {
-  runtime.ui=engine==='rust'?rustUI:null
+  runtime.ui=engine==='rust'?observedUI:null
   localStorage.clear()
   // Finish the idle warm-up inside the test, before its DOM is removed.
   vi.stubGlobal('requestIdleCallback', callback => { callback(); return 0 })

@@ -137,13 +137,13 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
       window.INHOUSE_NEURAL_VOICE_BASE = base
       localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({voice:id,voiceLang:'es'}))
       const evidence = window.__pdfSpeech = {requests:[],events:[],frames:[],pcm:[],jobs:[],previews:[],device:0}
-      evidence.rustJoin={available:false,calls:0,preparations:0,adoptions:0,presentations:0,starts:0,plans:0,opening:0,dispatches:0,synthesis:0,advances:0,sessions:0,sessionEvents:0,textPlans:0,warmContexts:0,attachments:0,warmUps:0}
+      evidence.rustJoin={available:false,calls:0,preparations:0,adoptions:0,presentations:0,starts:0,plans:0,opening:0,dispatches:0,synthesis:0,advances:0,sessions:0,sessionEvents:0,textPlans:0,warmContexts:0,attachments:0,warmUps:0,installStarts:0,installCompletions:0,pickerClicks:0}
       const observe=result=>{
         const instance=result.instance||result,actual=instance.exports
         if(!actual.voice_join_sentence)return result
         evidence.rustJoin.available=true
         const exports={...actual,voice_join_sentence:(...args)=>{evidence.rustJoin.calls++;return actual.voice_join_sentence(...args)}}
-        for(const [name,key] of [['voice_prepare_ahead','preparations'],['voice_adopt_plan','adoptions'],['voice_present','presentations'],['voice_engine_started','starts'],['voice_prepare','plans'],['voice_prepare_opening','opening'],['voice_speak_current','dispatches'],['voice_speak_neural','synthesis'],['voice_advance','advances'],['voice_initialize','sessions'],['voice_event','sessionEvents'],['voice_prepare_text','textPlans'],['picker_warm_context','warmContexts'],['picker_attach','attachments'],['picker_warm_up','warmUps']]){
+        for(const [name,key] of [['voice_prepare_ahead','preparations'],['voice_adopt_plan','adoptions'],['voice_present','presentations'],['voice_engine_started','starts'],['voice_prepare','plans'],['voice_prepare_opening','opening'],['voice_speak_current','dispatches'],['voice_speak_neural','synthesis'],['voice_advance','advances'],['voice_initialize','sessions'],['voice_event','sessionEvents'],['voice_prepare_text','textPlans'],['picker_warm_context','warmContexts'],['picker_attach','attachments'],['picker_warm_up','warmUps'],['picker_install_begin','installStarts'],['picker_install_done','installCompletions'],['picker_click','pickerClicks']]){
           if(actual[name])exports[name]=(...args)=>{evidence.rustJoin[key]++;return actual[name](...args)}
         }
         const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}})
@@ -270,6 +270,9 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
     expect(evidence.rustJoin.warmContexts).toBeGreaterThan(0)
     expect(evidence.rustJoin.attachments).toBeGreaterThan(0)
     expect(evidence.rustJoin.warmUps).toBeGreaterThan(0)
+    expect(evidence.rustJoin.installStarts).toBeGreaterThan(0)
+    expect(evidence.rustJoin.installCompletions).toBeGreaterThan(0)
+    expect(evidence.rustJoin.pickerClicks).toBeGreaterThan(0)
     // PDF's prepared speech items retain their original offsets and bypass the
     // plain-text cleaner. Its compiled path is checked by the text parity suite.
     const [first]=evidence.requests

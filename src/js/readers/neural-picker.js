@@ -1,3 +1,4 @@
+import {clickPicker,cancelPickerDownload,namePickerVoice,installPickerVoice,usePickerVoice,removePickerVoice} from './picker-actions.js'
 import {warmPicker,refreshPicker,usedPicker,attachPicker,contextPicker,currentPicker,cancelPicker,warmUpPicker,changedPicker,paintPicker} from './picker-warm.js'
 // The "Voces naturales" part of the audio panel: the list of downloadable on-device voices (Descargar /
 // progress and Cancelar / Instalada, Usar and Quitar / error and Reintentar), the warning shown
@@ -5,7 +6,7 @@ import {warmPicker,refreshPicker,usedPicker,attachPicker,contextPicker,currentPi
 // neural-runtime.js, never downloads by itself, and stays hidden where the engine is unsupported or failed to load.
 import { NeuralView } from './neural-view.js'
 import { neuralEngine, neuralVoiceList } from './neural-runtime.js'
-import { declaredLanguage, isNeuralId, langBase, languageName, orderNeuralVoices, recommendedNeuralFor } from './voice-catalog.js'
+import { langBase, languageName, orderNeuralVoices, recommendedNeuralFor } from './voice-catalog.js'
 
 const OFFER_KEY = 'inhouse-read-neural-offer-dismissed'
 const OFFER_SNOOZE_DAYS = 30 // 'Ahora no' means not now: the offer comes back for that language after this long
@@ -111,73 +112,14 @@ export class NeuralVoicePicker {
   }
 
   // --- Actions ------------------------------------------------------------------------------------------------------
-  click(event) {
-    const target = event.target.closest?.('[data-neural-action]')
-    if (!target) return
-    const { neuralAction:action, neuralId:id } = target.dataset
-    if (action === 'install') this.install(id)
-    else if (action === 'cancel') this.cancel(id)
-    else if (action === 'use') this.use(id)
-    else if (action === 'remove') this.remove(id)
-    else if (action === 'dismiss') this.dismiss()
-  }
+  click(event){return clickPicker(this,event)}
   /** Aborts a download. Through the engine when it can (the speakers of one model share a download: the row that did not start it can cancel too). */
-  cancel(id) {
-    this.tasks.get(id)?.abort()
-    try { neuralEngine()?.cancel?.(id) } catch { /* the controller above already did it */ }
-  }
-  voiceName(id) { return neuralVoiceList().find(voice => voice.id === id)?.name || 'natural' }
+  cancel(id){return cancelPickerDownload(this,id)}
+  voiceName(id){return namePickerVoice(id)}
   /** Downloads a voice (only ever called by a tap) and selects it when it is ready. */
-  async install(id) {
-    const engine = neuralEngine()
-    if (!engine || this.tasks.has(id) || !isNeuralId(id)) return
-    try { engine.unlock?.({ playback:false }) } catch { /* the play tap unlocks audio again */ }
-    const controller = new AbortController(), name = this.voiceName(id)
-    this.tasks.set(id, controller); this.errors.delete(id)
-    this.announce(`Descargando ${name}.`)
-    let task
-    try { task = engine.install(id, { signal:controller.signal }) } catch (error) { task = Promise.reject(error) }
-    this.render()
-    try {
-      await task
-      this.tasks.delete(id)
-      // Selected only for the language of the book being read: the saved voice is global, so a Spanish voice picked while
-      // reading a Spanish book must not become the voice of an English one ('Automática' already prefers an installed
-      // neural voice of each book's language, so nothing is lost).
-      const declared = declaredLanguage(this.host.reader) // a book that declares no language (a PDF) takes it: the device language says nothing about it
-      // A language picked in the Idioma dropdown is an explicit choice: its voices are selected whatever the book declares.
-      const base = langBase(neuralVoiceList().find(voice => voice.id === id)?.lang), picked = this.host.preferences.voiceLang
-      const here = picked ? base === picked : !declared || base === langBase(declared)
-      this.announce(here ? `Voz ${name} instalada y seleccionada.` : `Voz ${name} instalada.`)
-      if (here) this.host.setPreference('voice', id, { restart:false }) // the next fragment is already spoken with it
-      this.host.populateVoices()
-    } catch (error) {
-      this.tasks.delete(id)
-      if (error?.code === 'aborted' || controller.signal.aborted) this.announce('Descarga cancelada.')
-      else { const message = DOWNLOAD_ERRORS[error?.code] || DOWNLOAD_ERRORS.default; this.errors.set(id, message); this.announce(`No se pudo descargar ${name}. ${message}`) }
-      this.render()
-    }
-  }
-  use(id) {
-    try { neuralEngine()?.unlock?.({ playback:false }) } catch { /* see install() */ }
-    this.host.setPreference('voice', id)
-    this.announce(`Voz ${this.voiceName(id)} seleccionada.`)
-    this.host.populateVoices()
-  }
-  async remove(id) {
-    const engine = neuralEngine(), name = this.voiceName(id)
-    if (!engine) return
-    const list = neuralVoiceList(), voice = list.find(voice => voice.id === id)
-    const removed = voice?.sharedPack ? list.filter(other => other.modelKey === voice.modelKey).map(other => other.id) : [id]
-    // The saved choice goes first, then the reading in progress is told the voice is gone (it moves on to another voice at once,
-    // also when the voice was only the automatic pick), so nothing keeps using it while its files disappear.
-    if (removed.includes(this.host.preferences.voice)) this.host.setPreference('voice', '', { restart:false })
-    for (const removedId of removed) this.host.voice?.voiceRemoved?.(removedId)
-    try { await engine.remove(id) } catch { /* nothing else to clean up */ }
-    this.errors.delete(id)
-    this.announce(voice?.sharedPack ? 'Paquete compartido Supertonic quitado.' : `Voz ${name} quitada.`)
-    this.host.populateVoices()
-  }
+  install(id){return installPickerVoice(this,id)}
+  use(id){return usePickerVoice(this,id)}
+  remove(id){return removePickerVoice(this,id)}
 
   // --- First-use offer ------------------------------------------------------------------------------------------------
   dismissed() { try { return JSON.parse(localStorage.getItem(OFFER_KEY) || '{}') || {} } catch { return {} } }
