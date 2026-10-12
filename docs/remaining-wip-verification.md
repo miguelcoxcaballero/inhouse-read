@@ -1,3 +1,41 @@
+# Migración 1.7.158 — ordenación completa de líneas PDF
+
+Changelog: «Ordenación PDF completa en Rust». Se migran la recursión por
+columnas y bandas, tablas, títulos transversales, contadores y orden RTL.
+El host conserva texto, metadatos, referencias PDF.js y clasificación regex;
+el núcleo devuelve una permutación y rutas de columna. Validación antes de
+publicar resultados, liberación por llamada y recuperación del algoritmo
+anterior si el núcleo no está disponible. Páginas menores de32 líneas
+conservan la ruta anterior por el coste del cruce de memoria.
+65/65 pruebas focalizadas aprobadas,22 nuevas, y navegador comparativo1/1.
+Cien páginas aleatorias, geometría fraccional, memoria creciente, identidad
+de fuente, fallos nativos y extracción completa conservan los resultados.
+Ensayo Chromium390×844 CPU×4, nueve tandas alternadas de20 llamadas:
+- 128 líneas de una columna: JS0,825ms / Rust0,295ms.
+- 257 líneas de dos columnas: JS1,570ms / Rust0,805ms.
+- 385 líneas de tres columnas: JS2,765ms / Rust1,580ms.
+Incluye copias/objetos/liberación; ambas rutas usan los núcleos anteriores.
+No representa el tiempo de abrir el libro ni una medición en móvil físico.
+Capacidad WASM estable tras calentamiento. Build aprobado,319798 bytes,
+SHA `337ea3baa4e5603f6e6804b93955239863cf6cf259f2c7aaf6e1740c6805968b`.
+4531/4531 unitarias en342 archivos (280,59s) aprobadas.17/17 E2E
+(13 lectura PDF,2 PDF real/Unicode,2 con pesos reales Davefx), sin omisiones
+ni reintentos. Publicación158 pendiente.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-pdf-order`.
+
+Publicación157: fuente `c29ece2ba1fd533a08b207085274579e8152f924`,
+Pages `3cfbfeb08eee55ab046214791d7b14f88623091a`, deploy38200194219 y
+Pages38200242891 aprobados.99 recursos, HTML y precarga WASM exactos.
+APK1.1.15/code28 descargado: SHA/tamaño/loader2107 correctos.
+Evidencia: published-1791776113394. UI pública157:2/2 en37s;
+perfiles nuevos móvil/escritorio cargan los main/WASM exactos publicados
+sin errores de página. CI156 falló sólo enUI2; originales conservados en
+rust-plant-monstera/ci156-ui2.
+CI155 falló en los mismos dos contratos de regreso nativo: cierre10–11s.
+Originales: rust-plant-subdivide/ci155-ui2. CI154: rust-plant-ivy/ci154-ui2.
+Las trazas muestran zoom~4,8s frente a460ms configurados; no se ha corregido
+ni modificado el límite original de8s. Los errores originales se conservan.
+
 # Migración 1.7.157 — núcleo listo durante el arranque
 
 Changelog: «Rust preparado desde el arranque». El HTML precarga y compila el

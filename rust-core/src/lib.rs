@@ -26,6 +26,7 @@ mod plant_subdivide;
 mod plant_monstera;
 mod pdf_layout;
 mod pdf_rows;
+mod pdf_order;
 mod pcm;
 mod book_surface;
 mod relief;
