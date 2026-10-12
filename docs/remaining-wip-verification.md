@@ -1,3 +1,27 @@
+# 1.7.194 — acciones del lector en Rust
+
+Changelog: «Acciones y búsqueda del lector en Rust».
+Rust orquesta saltar, volver al punto previo, guardar lugares, alternar
+marcadores, añadir citas y buscar/retirar resultados. Cada salto conserva
+el validador de la cola y comprueba su vigencia después de las operaciones
+asíncronas. Lectores, persistencia, normalización de registros y creación
+de fechas/identificadores conservan sus fronteras JS. No mueve los controles.
+
+5148/5148unitarias,383archivos,352,27s (dos workers);136focales. Doscientas
+secuencias comparan efectos, errores, historial y referencias con el original.
+Cancelación durante el guardado, regreso fallido, selección recordada, cita
+original para anotación/copia limpia para persistencia y resultados a fracción
+cero cubiertos. Dos mil ciclos liberan los handles sin crecer la memoria WASM.
+12E2E aprobados,2min: comandos Rust compilados, PDF/EPUB, persistencia, búsqueda,
+citas, temas, UI móvil y dos pruebas de continuidad de página con pesos reales
+Davefx. No se cambia el motor de voz ni se atribuye aceleración no medida.
+
+Inventario4570Rust/36958JavaScript,11,00% de líneas propias, no funcional.
+WASM UI local329606bytes,SHA256
+66376ca55cba01f811a555ee790268343cf139b51ac3a8139eddbad0d54cca86.
+App/decor, APK y updater sin cambios. Publicación pendiente.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-reader-actions-prototype.
+
 # 1.7.193 — cola de progreso en Rust
 
 Changelog: «Guardado ordenado del progreso en Rust».
@@ -26,7 +50,16 @@ trabajo nuevo por fotograma. El coste debe vigilarse al migrar persistencia.
 Inventario4480Rust/36928JavaScript,10,82% de líneas propias; no funcional.
 WASM UI local301522bytes,SHA256
 44b3d34d9b7ebcda71b6e227654b41b42fc32df959b0cdc8705dd41f38e1d511.
-App/decor, APK y updater sin cambios. Publicación pendiente.
+App/decor, APK y updater sin cambios. Publicado24946b4, deploy38264858284
+y Pages38264998209 aprobados (Pagesd64d7c2). 215comprobacionesHTTP/bytes/SHA,
+dos perfiles, treinta casosPCM/marcas y APK/loader reales aprobados. E2E
+público de persistencia Rust1/1,7,4s. UI público301482bytes,SHA256
+81e731f580b711a64dc6f81eaf63c62c52ff6e2990432eb79427bcd5dfafcc6e.
+Android API36 confirma web193 con APK1.1.15/28: Lessac2×,11,90s acumulados,
+ocho fragmentos terminados y nueve iniciados, proceso7744 estable sin FATAL.
+Se esperan cuatro segundos sin tocar la pantalla al arrancar para permitir
+la comprobación inicial de publicación antes de abrir el menú de versión.
+Evidencia:published-1791816485244,public-*.log,native-ui193.json.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-progress-queue-prototype.
 
 # 1.7.192 — navegación serializada en Rust

@@ -10,13 +10,15 @@ import { AUTO, languageOptions, voiceOptions } from './voice-menus.js'
 import { neuralEngine, neuralVoiceList } from './neural-runtime.js'
 import { NeuralVoicePicker } from './neural-picker.js'
 import { clonePlace, cleanPlaces, cleanQuotes } from './reading-state.js'
-import { isBookmarked, toggleBookmark, prependHistory } from './reading-places.js'
+import { isBookmarked } from './reading-places.js'
 import { ReaderNavigation } from './reader-navigation.js'
+import { ReaderActions } from './reader-actions.js'
 import { displayBookTitle, normalizeBookAuthor } from '../book-title.js'
 
 const STORAGE_KEY = 'inhouse-read-reading-preferences'
 
 export class ReaderExperience {
+  actions = new ReaderActions(this)
   navigation = new ReaderNavigation()
   get navigating() { return this.navigation.navigating }
 
@@ -348,11 +350,7 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
     this.neuralPicker?.render()
   }
   error(message) { this.panel.querySelector('.reading-error').textContent = message }
-  async savePlaces() {
-    if (!this.book) return
-    try { await this.persist(this.book.id, { readingHistory:cleanPlaces(this.history), bookmarks:cleanPlaces(this.bookmarks, 100), quotes:cleanQuotes(this.quotes) }) }
-    catch { this.error('No se pudieron guardar los marcadores.') }
-  }
+  savePlaces() { return this.actions.savePlaces() }
   cancelNavigation() {
     this.navigation.cancel()
   }
@@ -365,66 +363,17 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
     return this.navigation.enqueue(action,isCurrent)
   }
   jump(place, target) {
-    return this.queueNavigation(async isCurrent => {
-      this.voice.browse(); this.error('')
-      const origin = { ...clonePlace(this.location), label:this.label(this.location), createdAt:Date.now() }
-      this.history = prependHistory(this.history,origin)
-      await this.savePlaces()
-      if (!isCurrent()) return
-      this.renderPlaces()
-      try {
-        if (target !== undefined) await this.reader.goToTarget(target)
-        else await this.reader.goToLocator(place.locator, place.fraction)
-        if (!isCurrent()) return
-        this.relocate(); this.panel.close()
-      } catch { if (isCurrent()) this.error('No se pudo abrir.') }
-    })
+    return this.queueNavigation(current => this.actions.jump(place,target,current))
   }
   returnToReading(index = 0) {
     const place = this.history[index]
     if (!place) return Promise.resolve()
-    return this.queueNavigation(async isCurrent => {
-      if (!this.history.includes(place)) return
-      this.voice.browse()
-      try {
-        await this.reader.goToLocator(place.locator, place.fraction)
-        if (!isCurrent()) return
-        this.history.splice(this.history.indexOf(place),1)
-        await this.savePlaces()
-        if (!isCurrent()) return
-        this.relocate(); this.renderPlaces(); this.panel.close()
-      } catch { if (isCurrent()) this.error('No se pudo volver.') }
-    })
+    return this.queueNavigation(current => this.actions.returnToReading(place,current))
   }
-  async addBookmark() {
-    this.bookmarks = toggleBookmark(this.bookmarks,this.location,()=>({ ...clonePlace(this.location), label:this.label(this.location), createdAt:Date.now() }))
-    await this.savePlaces(); this.renderPlaces(); this.showPlaceTab('bookmarks')
-  }
-  async addQuote() {
-    const selection = this.reader.getSelection() || this.selectedQuoteSelection
-    const text = typeof selection === 'string' ? selection : selection?.text
-    if (!text) { this.error('Selecciona un texto primero.'); return }
-    const locator = typeof selection === 'string' ? this.location.locator : selection.locator
-    const quote = {id:globalThis.crypto?.randomUUID?.() || `${Date.now()}`,text,locator,fraction:this.location.fraction,label:this.label(this.location),color:this.quoteColor,createdAt:Date.now()}
-    this.quotes = cleanQuotes([quote,...this.quotes]); this.reader.addQuoteAnnotation(quote)
-    this.selectedQuoteSelection = null
-    await this.savePlaces(); this.renderPlaces(); this.showPlaceTab('quotes')
-  }
-  async search(query) {
-    this.lists.clearSearch('Buscando…')
-    try {
-      const results = await this.reader.search(query)
-      this.searchActive = results.length > 0
-      this.lists.renderSearch(results,result => { this.keepSearchHits = true; this.jump({fraction:result.fraction ?? this.location.fraction,locator:result.locator}) })
-    } catch { this.panel.querySelector('[data-search-status]').textContent = 'No se pudo buscar.' }
-  }
-  // Clears the on-page hit marks together with the result list they belong to.
-  endSearch() {
-    if (!this.searchActive) return
-    this.searchActive = false; this.keepSearchHits = false
-    this.reader.clearSearch?.()
-    this.lists.clearSearch('')
-  }
+  addBookmark() { return this.actions.addBookmark() }
+  addQuote() { return this.actions.addQuote() }
+  search(query) { return this.actions.search(query) }
+  endSearch() { return this.actions.endSearch() }
   async shareBook() {
     const content = this.book?.content
     if (!content) { this.error('Archivo original no disponible.'); return }

@@ -1,10 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega1.7.193: colas de guardado y fusión de posiciones en Rust.
-5124 unitarias (dos workers) y diez E2E aprobados. Fallo original de timeout
-conservado. Inventario4480líneas Rust/36928JS,10,82%; no mide funciones
-terminadas. El puente asíncrono añade coste medido, documentado más abajo;
-no se afirma que esta entrega acelere IndexedDB. Alternativa JS conservada.
+Última entrega1.7.194: orquestación de acciones del lector en Rust.
+5148unitarias y doceE2E aprobados, incluidas voces reales PDF/EPUB.
+Inventario4570líneas Rust/36958JS,11,00%; no mide funciones terminadas.
+Persistencia y normalización conservan sus fronteras; alternativa JS disponible.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout
