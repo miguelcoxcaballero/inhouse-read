@@ -1,3 +1,55 @@
+# 1.7.220 — preparación completa de voz en Rust
+
+Changelog: «Menos copias al preparar la voz».
+El mismo heap mantiene los caracteres originales, la máscara de notas,
+cabeceras y guiones, el mapa de limpieza, las frases, los fragmentos y sus
+marcas de página. El navegador recibe una sola vez el texto normalizado y
+los registros finales. Las reglas de minúsculas y Unicode permanecen en el
+navegador; los metadatos de cabeceras cruzan como números sin coerciones.
+El texto UTF-16 incompleto usado como clave de cabecera conserva la ruta
+anterior, igual que entradas de más de un millón de unidades.
+
+La normalización independiente conserva su ruta publicada. Esta integración
+se mide como cadena completa: evita las copias intermedias que hacían más
+lento el prototipo aislado documentado en 219. No se impone ese prototipo
+a los consumidores que sólo piden texto normalizado.
+
+6394 escenarios y otros 6394 ciclos comparados;
+80 llamadas en total conservan la ruta de cabeceras con UTF-16
+incompleto. Los mismos escenarios pasan en es-ES, tr-TR y lt-LT.
+Control positivo 0→4→0;
+0 referencias vivas y 2424832 bytes estables.
+337 focalizadas, 6076 unitarias completas y 30 E2E aprobados.
+Los tests de texto se ejecutan en tres modos: legado, plan combinado y
+cadena completa. El PDF observa speech_pipeline realmente compilado;
+las frases, PCM, marcas y plazos mantienen las assertions originales.
+
+Chromium 390×844 con CPU de escritorio ×4, 13 rondas alternadas de tres tandas:
+capítulo 3.33→2.50 ms,
+100 entradas mixtas 6.03→4.87 ms,
+texto con notas y guiones 8.20→6.23 ms.
+La comparación incluye callbacks, copias y construcción de objetos frente
+al plan 219 completo. No mide un teléfono ni el arranque completo de voz.
+browser-benchmark-first.json conserva el primer ensayo, antes de reducir
+las vistas temporales del decodificador de registros. build.log conserva
+la conversión incorrecta de una vista Uint16Array a JsValue; se corrige
+mediante una variable tipada en build-view-conversion.log, sin cambiar ABI.
+
+Los cierres lentos registrados en CI siguen investigándose por separado;
+esta entrega de audiolibro no se presenta como una corrección de ese problema.
+CI218/38313579661 queda rechazada: UI1/115024807053 registra una llamada
+de color Rust no observada, UI6/115024806965 registra cuatro enlaces de
+shaders al retirar un libro, y UI2/115024806983 conserva los dos cierres
+fuera de 8 s. Los reintentos correctos de UI1/UI6 no se cuentan como aprobación.
+Los logs originales y los tres artefactos están en rust-sentence-ends-prototype.
+El perfil local return-profile conserva ambos cierres aprobados y una prueba
+de capas CSS. Son diagnósticos independientes; esa variante de CSS no se ha
+integrado y los resultados locales no acreditan que la CI esté corregida.
+Inventario: 6699 líneas Rust/37550 JavaScript = 15.14%, no funcional.
+UI local 760825 bytes, SHA256 199524825655bebb59dd3c697d1b65061690c9fd617ec8ea07a5ee41710ef6b7.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-speech-pipeline-prototype.
+
 # 1.7.219 — planificación conjunta del audiolibro en Rust
 
 Changelog: «Planificación de voz con menos copias».
@@ -40,7 +92,17 @@ Esta entrega no acredita la CI completa ni una corrección de esos cierres.
 
 Inventario: 6610 líneas Rust/37525 JavaScript = 14.98%, no funcional.
 UI local 744862 bytes, SHA256 e5cb627b2ee90230c254c74e67e60f2fbbb3d0c2a43ccd0b6df6f7557aaec988.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada: dfa31fba0fea22efe01f231d271c55de62ab1a01.
+Deploy 38315888854/Pages 38316014183 completos; Pages 6f0222d579f671ebd42b13f530e3fd51fcd490cd.
+UI pública 744838 bytes, SHA256 b29c5d3ed3408d9a9d8010ac27ad8f6c832d5a708c4c0a4083a58a8103c1db1f.
+published-1791843737581: recursos HTTP/tamaño/SHA, dos perfiles,
+1000 preparaciones/100 menús con control positivo y sin fugas,
+30 casos PCM/tempo y APK real loader 2107 bytes correctos.
+Dos E2E públicos PDF/Davefx aprobados, sin reintentos.
+APK 1.1.15/28 muestra web 219: Lessac 2×, 11.79s,
+8 finales/9 inicios, PID 23012 estable y sin FATAL.
+CI 38315888837 se registra aparte; no se presupone aprobado.
+Updater sin modificaciones.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-speech-plan-prototype.
 
 # 1.7.218 — límites de frase en Rust

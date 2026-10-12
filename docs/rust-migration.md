@@ -1,9 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.219: planificación conjunta de voz en Rust.
-5930 unitarias completas, 191 focalizadas y 30 E2E aprobados.
-Inventario: 6610 líneas Rust/37525 JS, **14.98%**; no mide funciones terminadas.
-1.7.218 pública y APK real verificados; CI se registra por separado.
+Última entrega 1.7.220: preparación completa de voz en Rust.
+6076 unitarias completas, 337 focalizadas y 30 E2E aprobados.
+Inventario: 6699 líneas Rust/37550 JS, **15.14%**; no mide funciones terminadas.
+1.7.219 pública y APK real verificados; CI se registra por separado.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout

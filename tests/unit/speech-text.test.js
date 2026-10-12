@@ -5,13 +5,13 @@ import { normalizeSpeech, planSpeech, speechChunks, speechSentences } from '../.
 
 const split = text => speechSentences(text).map(sentence => text.slice(sentence.start, sentence.end))
 
-const runtime=vi.hoisted(()=>({ui:null}));let boundaries=0,plans=0
+const runtime=vi.hoisted(()=>({ui:null}));let boundaries=0,plans=0,pipelines=0
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
-const observedUI={...rustUI,speech_plan:(...args)=>{plans++;return rustUI.speech_plan(...args)},speech_sentence_ends:(...args)=>{boundaries++;return rustUI.speech_sentence_ends(...args)}}
+const observedUI={...rustUI,speech_pipeline:(...args)=>{pipelines++;return rustUI.speech_pipeline(...args)},speech_plan:(...args)=>{plans++;return rustUI.speech_plan(...args)},speech_sentence_ends:(...args)=>{boundaries++;return rustUI.speech_sentence_ends(...args)}}
 beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
-afterAll(()=>{expect(boundaries).toBeGreaterThan(0);expect(plans).toBeGreaterThan(0)})
-describe.each(['legacy','rust'])('speech text through %s',engine=>{
-beforeEach(()=>{runtime.ui=engine==='rust'?observedUI:null})
+afterAll(()=>{expect(boundaries).toBeGreaterThan(0);expect(plans).toBeGreaterThan(0);expect(pipelines).toBeGreaterThan(0)})
+describe.each(['legacy','rust','pipeline'])('speech text through %s',engine=>{
+beforeEach(()=>{runtime.ui=engine==='pipeline'?observedUI:engine==='rust'?{...observedUI,speech_pipeline:undefined}:null})
 describe('sentence boundaries', () => {
   it('does not split Spanish abbreviations, decimals, initials and "etc."', () => {
     expect(split('El Sr. Gómez llegó a las 3.5 horas, según la Dra. Pérez, etc. Había leído p. ej. sobre las EE. UU. y sobre J. R. R. Tolkien; nadie lo creyó... ¿Cómo iba a hacerlo? ¡Imposible!')).toEqual([

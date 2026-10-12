@@ -9,12 +9,15 @@ fn lower_bound(map:&[u32],offset:f64,from:usize)->usize{
 #[wasm_bindgen]
 pub fn speech_plan(text:&[u16],map:&[u32],breaks:&[u32],pages:&[f64],from:f64,opening:bool,properties:Function,lower:Function,clause:Function)->Result<JsValue,JsValue>{
  if text.len()>1_000_000||map.len()!=text.len()||map.last()==Some(&u32::MAX)||breaks.iter().any(|at|*at as usize>text.len())||map.windows(2).any(|w|w[0]>w[1]){return Ok(JsValue::UNDEFINED)}
+ Ok(speech_plan_records(text,map,breaks,pages,from,opening,properties,lower,clause)?.map(|output|Uint32Array::from(output.as_slice()).into()).unwrap_or(JsValue::UNDEFINED))
+}
+pub(crate) fn speech_plan_records(text:&[u16],map:&[u32],breaks:&[u32],pages:&[f64],from:f64,opening:bool,properties:Function,lower:Function,clause:Function)->Result<Option<Vec<u32>>,JsValue>{
  let low=lower_bound(map,from,0);let source=&text[low..];
  let boundaries:Vec<u32>=breaks.iter().filter(|at|**at as usize>=low).map(|at|*at-low as u32).collect();
  let ends=crate::sentence_ends::sentence_ends_native(source,&boundaries,properties,lower,low)?;
  let capacity=ends.len()+source.len().div_ceil(50);let mut fragments=vec![0u32;capacity*4+1];
  let status=unsafe{crate::speech_fragments_core::speech_fragments(source.as_ptr(),source.len(),ends.as_ptr(),ends.len(),fragments.as_mut_ptr(),capacity)};
- if status!=1{return Ok(JsValue::UNDEFINED)}
+ if status!=1{return Ok(None)}
  let mut cuts=Vec::new();for offset in pages.iter().filter(|value|value.is_finite()){
   let mut at=lower_bound(map,*offset,low);while at<text.len()&&whitespace(text[at]){at+=1}cuts.push(at-low);
  }cuts.sort_unstable();cuts.dedup();
@@ -31,5 +34,5 @@ pub fn speech_plan(text:&[u16],map:&[u32],breaks:&[u32],pages:&[f64],from:f64,op
    for at in &cuts[mark_start..mark_end]{output.extend_from_slice(&[(*at-a)as u32,map[low+*at]])}
   }
  }
- Ok(Uint32Array::from(output.as_slice()).into())
+ Ok(Some(output))
 }

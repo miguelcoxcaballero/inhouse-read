@@ -1,3 +1,5 @@
+mod speech_mask;
+mod speech_pipeline;
 #[path="../../rust-core/src/speech_normalize.rs"]
 mod speech_normalize;
 #[path="../../rust-core/src/speech_fragments.rs"]
