@@ -16,7 +16,16 @@ incluyendo imágenes reflejadas, giradas, superpuestas y entradas inválidas.
 14/14 recorridos UI del build178 aprobados en55,6s, incluyendo cuatro temas
 con el export Rust real frente a la alternativa anterior, en perfiles limpios.
 4836/4836 unitarias en367archivos aprobadas en291,18s, incluyendo las cinco
-regresiones del cierre del audiolibro. Verificación pública pendiente.
+regresiones del cierre del audiolibro. Publicación verificada:
+fuente d8bebbaa66373ef72ec8cb6da33e2cb53f9fb895, Pages
+94c2aa72fbadea6bc246b02508c1a69f5ec9aca3. Deploy38234294188 y
+Pages38234389800 aprobados. 152 comprobaciones públicas correctas; núcleo
+descargado comparado en64casos/19197632bytes sin diferencias. Dos perfiles
+limpios reciben main y ambos WASM exactos. 4/4 escenarios PDF de la web pública
+aprobados en34,6s. APK pública descargada, SHA02960e3322bdad2e26041d2ef57b0fd5a02f3528c4b60b876e7955ae941cafb5,
+loader exclusivo de2107bytes hacia producción; conserva code28 y no requiere
+reinstalar para recibir esta parte web. Evidencia: published-1791799809378.
+CI completo38234294626 en curso: no se declara resuelta toda la batería UI.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-pdf-paths.
 Se conserva íntegro el arreglo177 y los fallos previos de CI siguen registrados.
 
