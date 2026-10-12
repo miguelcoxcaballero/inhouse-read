@@ -26,3 +26,25 @@ export function rustPDFImageRects(coordinates,width,height) {
     return rects;
   }catch{return undefined;}finally{core.free_f64(pointer,length);}
 }
+
+
+/** Ordered image clipping paths; an empty typed array is a valid result. */
+export function rustPDFImagePaths(coordinates, width, height) {
+  const count = Math.floor(coordinates.length / 6), core = getRustCore();
+  if (typeof core?.pdf_image_paths !== 'function' || count > 32768
+    || !Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return undefined;
+  if (!count) return new Float64Array();
+  const length = count * 14, outputOffset = count * 6 * 8;
+  let pointer = 0;
+  try {
+    pointer = core.alloc_f64(length);
+    if (!pointer) return undefined;
+    const input = new Float64Array(core.memory.buffer, pointer, count * 6);
+    if (coordinates instanceof Float32Array || coordinates instanceof Float64Array) input.set(coordinates.subarray(0, count * 6));
+    else for (let i = 0; i < input.length; i++) input[i] = typeof coordinates[i] === 'number' ? coordinates[i] : NaN;
+    const size = core.pdf_image_paths(pointer, count, width, height, pointer + outputOffset);
+    if (!Number.isInteger(size) || size < 0 || size > count) return undefined;
+    return new Float64Array(core.memory.buffer, pointer + outputOffset, size * 8).slice();
+  } catch { return undefined; }
+  finally { if (pointer) core.free_f64(pointer, length); }
+}

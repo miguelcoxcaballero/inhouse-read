@@ -1,3 +1,25 @@
+# 1.7.178 — recortes de imágenes PDF en Rust
+
+Changelog: «Acelera recortes de imágenes PDF».
+Se restaura la migración aplazada para atender el cierre de Android177.
+pdf_image_paths calcula los cuatro vértices y el sentido de cada imagen;
+el navegador conserva sus operaciones Canvas y sus píxeles originales.
+La ruta Rust se usa desde ocho imágenes; páginas pequeñas y núcleos antiguos
+mantienen el algoritmo anterior. No cambia el color, la composición ni el audio.
+No se modifica el updater ni la APK que carga la web de producción.
+
+Comparación CPU×4, nueve rondas alternadas, transferencia y llamadas Canvas
+incluidas (sin medir pintura GPU): 512 imágenes 1,104→0,152ms; 2048 imágenes
+4,428→0,553ms. No son tiempos de apertura ni del lector completo.
+Se comparan coordenadas f64 exactas y 12800000 bytes RGBA sin diferencias,
+incluyendo imágenes reflejadas, giradas, superpuestas y entradas inválidas.
+14/14 recorridos UI del build178 aprobados en55,6s, incluyendo cuatro temas
+con el export Rust real frente a la alternativa anterior, en perfiles limpios.
+4836/4836 unitarias en367archivos aprobadas en291,18s, incluyendo las cinco
+regresiones del cierre del audiolibro. Verificación pública pendiente.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-pdf-paths.
+Se conserva íntegro el arreglo177 y los fallos previos de CI siguen registrados.
+
 # 1.7.177 — cierre de Android al pulsar Play
 
 Changelog: «Corrige cierre al reanudar audiolibro».

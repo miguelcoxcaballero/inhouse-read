@@ -1559,3 +1559,19 @@ cancelación, memoria creciente, entradas inválidas y recuperación sin WASM.
 El editor real compara cada bloque generado con el núcleo de normales anterior
 más el empaquetado JS, comprobando además la invocación del nuevo export.
 Estado final y evidencia de publicación en remaining-wip-verification.md.
+
+## 1.7.178 — recortes de imágenes PDF
+
+`pdf_image_paths` produce los vértices ordenados de cada imagen PDF, conservando
+su sentido incluso con reflexiones y solapamientos. El adaptador hace una sola
+asignación limitada a32768 imágenes y devuelve una copia propia; el navegador
+ejecuta el mismo clip y vuelve a pintar los colores originales. A partir de
+ocho imágenes se elige Rust; las páginas menores mantienen JavaScript.
+Núcleos anteriores, memoria insuficiente o export ausente conservan la ruta JS.
+
+El núcleo de app pasa a326873bytes; decoración no cambia ni pierde su caché.
+Las pruebas usan la implementación previa congelada, resultados f64 exactos,
+comparación RGBA, memoria creciente y la app compilada en cuatro temas.
+CPU×4:512 imágenes 1,104→0,152ms, incluyendo copias y despacho Canvas, sin GPU.
+Esta fase mantiene el arreglo del inicio nativo del audiolibro publicado177.
+Estado de pruebas y publicación en remaining-wip-verification.md.
