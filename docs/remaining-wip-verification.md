@@ -1,3 +1,46 @@
+# Migración 1.7.162 — párrafos y posiciones PDF en Rust
+
+Changelog: «Párrafos PDF más rápidos en Rust». El núcleo calcula el espaciado
+habitual de cada columna, cortes de párrafo, unión de fragmentos, guiones
+opcionales y todos los offsets UTF-16. El navegador conserva su clasificación
+Unicode exacta y entrega los objetos de PDF.js con sus metadatos originales.
+Menos de128 fragmentos usan la implementación anterior. Cachés de clasificación
+limitadas a512 caracteres de inicio/final; reservas nativas liberadas por llamada.
+
+El primer port era más lento en páginas pequeñas: se conserva browser.json.
+La copia sucesiva de toda la cadena al cortar cada línea también hacía crecer
+el coste de las páginas largas. Se construye la cadena una sola vez y se
+obtienen después todos sus fragmentos. Se eliminan objetos temporales de la
+transferencia. La mejora medida combina Rust y esta preparación del navegador;
+no se atribuye exclusivamente al lenguaje ni representa el tiempo de apertura.
+Ensayo final Chromium CPU×4, nueve tandas alternadas de20 llamadas:
+-32 líneas/128 fragmentos/4128 caracteres: JS0,220ms/Rust0,145ms.
+-128 líneas/512 fragmentos/16512 caracteres:1,380/0,415ms.
+-256 líneas/1024 fragmentos/33024 caracteres:4,840/0,885ms.
+-512 líneas/2048 fragmentos/66048 caracteres:38,310/1,950ms.
+Memoria estable tras calentamiento. Originales: browser.*, browser-joined.*,
+browser-bounded.*. No se cambia ninguna regla de orden ni de párrafos.
+23 pruebas nuevas;60/60 focalizadas. Incluyen200 páginas aleatorias, Unicode
+astral, pares sustitutos, clasificación al vaciar cachés, errores y memoria
+creciente. Tres extracciones completas acreditan llamadas al WASM real.
+2/2 E2E adicionales:100 páginas Unicode yPDF real fragmentado/rotado con
+ilustraciones y todas sus fuentes/posiciones exactas. Build aprobado;
+WASM357831 bytes, SHA
+`4a3fc12579fbb9debe78fd0b09b1ab83a76f10723cc8fd05afd0beecf446f599`.
+4617/4617 unitarias en348 archivos (284,97s), sin omisiones.
+22/22 E2E del lector/adaptación/imágenes/navegación yvoz Davefx real (2min),
+sin omisiones ni reintentos, además de2/2 dePDF real/Unicode ynúcleo medido.
+Publicación162 pendiente. Evidencia:
+`D:/CodexEvidence/InhouseRead-20261012/rust-pdf-stream`.
+
+Publicación161: fuente `d181fcfbf55123bbf5e737330d924f92209ce174`,
+Pages `2bc3665bde5d0153906578a5505cf6fec0b221b0`, deploy38203788834 y
+Pages38203840899 aprobados.99 recursos/HTML/precarga exactos, núcleo público
+200 páginas/6140 ilustraciones idénticas. APK1.1.15/code28 yloader2107
+verificados. Evidencia: published-1791779350668. UI pública161 pendiente.
+Publicación160 completada:14/14 E2E públicas (6+8), sin reintentos, yrespuestas
+reales de main/WASM idénticas en dos perfiles de navegador limpios.
+
 # Migración 1.7.161 — colocación de ilustraciones en Rust
 
 Changelog: «Ilustraciones entre párrafos en Rust». El núcleo proyecta las
@@ -3427,3 +3470,8 @@ La política nativa nueva requiere instalar [APK 1.1.3](https://miguelcoxcaballe
 - [Pantalla durante la lectura](reading-display.md)
 - [Frases entre páginas](speech-page-boundaries.md)
 - [Verificación histórica de cambios de voz](voice-switch-verification.md)
+
+CI15938201985254 conserva los dos fallos de cierre nativo deUI2 yel
+reintento de la barra de estado deUI3. Originales en rust-motion/ci159-ui2
+yci159-ui3. La captura deUI3 muestra un aviso real del updater; la causa
+de su entrada en esa prueba se investiga sin modificar los plazos.
