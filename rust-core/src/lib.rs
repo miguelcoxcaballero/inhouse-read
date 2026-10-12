@@ -82,3 +82,6 @@ mod font_glyph;
 
 #[cfg(feature = "app")]
 mod font_prepare;
+
+#[cfg(feature = "app")]
+mod shelf_occlusion;

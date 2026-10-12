@@ -1575,3 +1575,18 @@ comparación RGBA, memoria creciente y la app compilada en cuatro temas.
 CPU×4:512 imágenes 1,104→0,152ms, incluyendo copias y despacho Canvas, sin GPU.
 Esta fase mantiene el arreglo del inicio nativo del audiolibro publicado177.
 Estado de pruebas y publicación en remaining-wip-verification.md.
+
+## 1.7.179 — sombras de contacto de la estantería
+
+`shelf_occlusion` genera las sombras de esquinas, baldas, base y papelera y el
+halo opcional de luz del suelo. El navegador conserva sus80muestras de seno y
+coseno y la normalización de dimensiones; Rust produce directamente posiciones
+f32 y colores RGBA en una asignación limitada, sin listas por triángulo.
+Se conservan orden, valores, límites y la ruta de recuperación JavaScript.
+
+200combinaciones se comparan exactamente con el código original congelado.
+La app compilada compara además la imagen completa, con y sin iluminación,
+frente a un perfil que usa el generador anterior. La mejora medida CPU×4 de
+1,235→0,485ms para tres baldas iluminadas incluye copias, atributos y cálculo
+de límites, no renderizado GPU. App WASM347129bytes; decoración sin cambios.
+Estado de pruebas y publicación en remaining-wip-verification.md.

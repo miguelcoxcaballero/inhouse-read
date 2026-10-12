@@ -1,3 +1,36 @@
+# 1.7.179 — sombras de contacto en Rust
+
+Changelog: «Acelera sombras de la estantería».
+La geometría de las sombras del mueble y la papelera, y del halo de luz del
+suelo, se genera en shelf_occlusion. Conserva exactamente posiciones, RGBA,
+triángulos y límites; la escena, materiales y resolución no cambian.
+El host conserva los80valores trigonométricos originales y entrega arrays
+propios a Three. Una asignación limitada, sin arrays temporales por triángulo;
+ante fallo o núcleo anterior se conserva el generador JavaScript.
+El nuevo WASM de app ocupa347129bytes, SHA384ee25be7d7273e353f5bb6b27117e137f5fdb0e404c1f1c7438e0ff2ea00c5.
+Decoración mantiene sus bytes y caché. Updater y APK sin modificaciones.
+
+34/34 pruebas focales, incluyendo200combinaciones exactas de geometría,
+escalas, dimensiones fraccionarias y entradas inválidas. Pruebas de crecimiento
+de memoria, salidas independientes y recuperación incluidas. Benchmark real
+en Chromium CPU×4, nueve rondas alternadas con copias y límites Three incluidos:
+tres baldas iluminadas1,235→0,485ms; cien baldas iluminadas7,790→3,535ms.
+Capacidad WASM estable después del calentamiento en los seis escenarios.
+No son medidas del render GPU ni una mejora global del teléfono.
+3/3 escenarios del build aprobados en48,1s: imagen completa idéntica con/sin
+el kernel, con/sin lámpara, y luz cálida visible en nogal y BAGGEBO.
+Primera batería completa:4844 aprobadas y un timeout en la comparación de
+150casos de la prueba nueva. Se conserva unit.log/json. La aserción hacía una
+comparación profunda de cada propiedad de Buffer; ahora Buffer.equals compara
+los mismos bytes completos, sin ampliar plazos ni retirar casos. Batería
+completa final: 4845/4845 aprobadas, 368 archivos, 291,76 s. Verificación pública pendiente.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-shelf-occlusion.
+El CI177 conserva seis fallos del grupo UI3, reproducidos localmente sin
+cambiar código: las pruebas aún exigían audio/retorno arriba y ocultaban Stop
+en móvil compacto. Se actualiza ese contrato a la petición del usuario:
+fila inferior de44px, controles táctiles completos y sin solaparse con texto.
+Se conserva before.log/json en reader-bottom-contract. Tras corregir el contrato, 10/10 aprobadas en 1,2 min (after.log/json). No cambia la UI.
+
 # 1.7.178 — recortes de imágenes PDF en Rust
 
 Changelog: «Acelera recortes de imágenes PDF».

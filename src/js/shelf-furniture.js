@@ -1,4 +1,5 @@
 import {rustChamferedTimber,rustShelfLip} from './timber-wasm.js';
+import {rustShelfOcclusion} from './shelf-occlusion-wasm.js';
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -290,6 +291,10 @@ export function createShelfOcclusion({ scale, ...options }) {
 
 function buildShelfOcclusion({ width, height, depth, rows = [], floorY, footprints = [], floorLight = null }) {
   const { w, h, d, side, inner } = cabinetFrame(width, height, depth);
+  const bottoms = shelfBottoms(rows).sort((a, b) => a - b);
+  const ground = (Number.isFinite(floorY) ? floorY : -h) + .25;
+  const native = rustShelfOcclusion({w, h, d, side, inner}, bottoms, ground, footprints, floorLight);
+  if (native) return native;
   const positions = [], colors = [];
   // Pure darkness for every shadow: anything lighter would glow over the
   // dark theme's page. Only the optional floor pool is tinted.
@@ -300,7 +305,6 @@ function buildShelfOcclusion({ width, height, depth, rows = [], floorY, footprin
     for (const [point, alpha] of [[a, dark], [b, dark], [c, clear], [a, dark], [c, clear], [e, clear]]) vertex(point, alpha);
   };
   const back = -d + 2 + .3, left = -inner / 2, right = inner / 2, wallL = -w / 2 + side + .3, wallR = w / 2 - side - .3;
-  const bottoms = shelfBottoms(rows).sort((a, b) => a - b);
   let ceiling = -12;
   for (const bottom of bottoms) {
     const floor = -bottom, top = ceiling, rail = floor + 5, lift = floor + .3;
@@ -324,7 +328,6 @@ function buildShelfOcclusion({ width, height, depth, rows = [], floorY, footprin
     }
     ceiling = floor - BOARD_HEIGHT;
   }
-  const ground = (Number.isFinite(floorY) ? floorY : -h) + .25;
   if (Array.isArray(floorLight) && floorLight.length === 4 && floorLight.every(Number.isFinite)) {
     // Lamp light on the floor, brightest against the carcass and gone most of
     // a cabinet depth out in front of its right half and past the bin. The

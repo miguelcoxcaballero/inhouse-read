@@ -54,6 +54,7 @@ async function layout(page) {
     const header = document.querySelector('.app-header')
     const toolbar = document.querySelector('#reader-toolbar')
     const viewport = document.querySelector('#reader-viewport')
+    const dock = document.querySelector('.reader-audio-dock')
     const buttons = [...toolbar.querySelectorAll('button')].filter(button =>
       getComputedStyle(button).display !== 'none').map(rect)
     const view = document.querySelector('foliate-view')
@@ -61,7 +62,7 @@ async function layout(page) {
     const text = document.querySelector('.pdf-reflow-page')
     const textStyle = text && getComputedStyle(text)
     return { width:innerWidth, height:innerHeight, header:rect(header), toolbar:rect(toolbar),
-      viewport:rect(viewport), buttons, toolbarOverflow:toolbar.scrollWidth > toolbar.clientWidth,
+      viewport:rect(viewport), dock:rect(dock), buttons, toolbarOverflow:toolbar.scrollWidth > toolbar.clientWidth,
       documentOverflow:document.documentElement.scrollWidth > innerWidth,
       epubContainer:container && rect(container),
       textPadding:textStyle && {top:parseFloat(textStyle.paddingTop),bottom:parseFloat(textStyle.paddingBottom)} }
@@ -76,8 +77,12 @@ async function expectUsefulPage(page) {
   const current = await layout(page)
   expect(current.header.height).toBeLessThanOrEqual(50)
   expect(current.toolbar.height).toBeLessThanOrEqual(50)
-  expect(current.viewport.height).toBeGreaterThanOrEqual(current.height - 100)
-  expect(Math.abs(current.viewport.bottom - current.toolbar.y)).toBeLessThanOrEqual(1)
+  // The user's bottom audio/return row keeps 44px in every state so text never
+  // repaginates when playback starts or when a jump creates a return button.
+  expect(current.dock.height).toBe(44)
+  expect(current.viewport.height).toBeGreaterThanOrEqual(current.height - 144)
+  expect(Math.abs(current.viewport.bottom - current.dock.y)).toBeLessThanOrEqual(1)
+  expect(Math.abs(current.dock.bottom - current.toolbar.y)).toBeLessThanOrEqual(1)
   expect(current.toolbarOverflow).toBe(false)
   expect(current.documentOverflow).toBe(false)
   for (let i = 0; i < current.buttons.length; i++) {
@@ -128,12 +133,18 @@ for (const item of [
   await expect.poll(async () => {
     const view = await page.locator('#reader-viewport').boundingBox()
     const audio = await mini.boundingBox()
-    return audio.y + audio.height - view.y
-  }).toBeLessThanOrEqual(0)
-  const audio = await mini.boundingBox(), header = await page.locator('.app-header').boundingBox()
-  expect(audio.y).toBeGreaterThanOrEqual(header.y)
-  expect(audio.height).toBeGreaterThanOrEqual(44)
-  expect(audio.y + audio.height).toBeGreaterThanOrEqual(header.y + header.height - 4)
+    return view.y + view.height - audio.y
+  }).toBeLessThanOrEqual(1)
+  const audio = await mini.boundingBox(), toolbar = await page.locator('#reader-toolbar').boundingBox()
+  expect(audio.height).toBe(44)
+  expect(Math.abs(audio.y + audio.height - toolbar.y)).toBeLessThanOrEqual(1)
+  for (const selector of ['[data-mini-play]','[data-mini-stop]']) {
+    const button = await mini.locator(selector).boundingBox()
+    expect(button.width).toBeGreaterThanOrEqual(44)
+    expect(button.height).toBeGreaterThanOrEqual(44)
+    expect(button.x).toBeGreaterThanOrEqual(audio.x)
+    expect(button.x + button.width).toBeLessThanOrEqual(audio.x + audio.width)
+  }
   expect(await mini.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
   await page.screenshot({path:`test-results/reader-layout-audio-${item.format}-${item.size.width}.png`})
   if (item.size.width <= 360) {
@@ -205,12 +216,12 @@ async function expectReturnOutsidePage(page) {
   await expect.poll(async () => {
     const viewport = await page.locator('#reader-viewport').boundingBox()
     const button = await back.boundingBox()
-    return button.y + button.height - viewport.y
+    return viewport.y + viewport.height - button.y
   }).toBeLessThanOrEqual(1)
   const button = await back.boundingBox()
-  const header = await page.locator('.app-header').boundingBox()
-  expect(button.y).toBeGreaterThanOrEqual(header.y)
-  expect(button.height).toBeGreaterThanOrEqual(44)
+  const toolbar = await page.locator('#reader-toolbar').boundingBox()
+  expect(button.height).toBe(44)
+  expect(Math.abs(button.y + button.height - toolbar.y)).toBeLessThanOrEqual(1)
   if (await page.locator('.reading-mini-player').isVisible()) {
     const play = await page.locator('[data-mini-play]').boundingBox()
     expect(button.x + button.width).toBeLessThanOrEqual(play.x + 1)
