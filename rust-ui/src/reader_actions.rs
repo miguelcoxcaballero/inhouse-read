@@ -5,12 +5,12 @@ use wasm_bindgen_futures::JsFuture;
 use js_sys::{Array,Function,Promise,Reflect};
 use crate::reading_places::{reading_history,reading_toggle};
 fn key(name:&str)->JsValue{JsValue::from_str(intern(name))}
-fn get(value:&JsValue,name:&str)->Result<JsValue,JsValue>{Reflect::get(value,&key(name))}
-fn set(value:&JsValue,name:&str,next:&JsValue)->Result<(),JsValue>{Reflect::set(value,&key(name),next)?;Ok(())}
-fn invoke(value:&JsValue,name:&str,args:&Array)->Result<JsValue,JsValue>{get(value,name)?.dyn_into::<Function>().map_err(|_|JsValue::from(js_sys::TypeError::new("Reader method is not callable")))?.apply(value,args)}
-fn call(value:&JsValue,name:&str)->Result<JsValue,JsValue>{invoke(value,name,&Array::new())}
-fn one(value:&JsValue,name:&str,arg:&JsValue)->Result<JsValue,JsValue>{invoke(value,name,&Array::of1(arg))}
-fn two(value:&JsValue,name:&str,a:&JsValue,b:&JsValue)->Result<JsValue,JsValue>{invoke(value,name,&Array::of2(a,b))}
+pub(crate) fn get(value:&JsValue,name:&str)->Result<JsValue,JsValue>{Reflect::get(value,&key(name))}
+pub(crate) fn set(value:&JsValue,name:&str,next:&JsValue)->Result<(),JsValue>{Reflect::set(value,&key(name),next)?;Ok(())}
+pub(crate) fn invoke(value:&JsValue,name:&str,args:&Array)->Result<JsValue,JsValue>{get(value,name)?.dyn_into::<Function>().map_err(|_|JsValue::from(js_sys::TypeError::new("Reader method is not callable")))?.apply(value,args)}
+pub(crate) fn call(value:&JsValue,name:&str)->Result<JsValue,JsValue>{invoke(value,name,&Array::new())}
+pub(crate) fn one(value:&JsValue,name:&str,arg:&JsValue)->Result<JsValue,JsValue>{invoke(value,name,&Array::of1(arg))}
+pub(crate) fn two(value:&JsValue,name:&str,a:&JsValue,b:&JsValue)->Result<JsValue,JsValue>{invoke(value,name,&Array::of2(a,b))}
 async fn wait(value:Result<JsValue,JsValue>)->Result<JsValue,JsValue>{JsFuture::from(Promise::resolve(&value?)).await}
 fn active(check:&Function)->Result<bool,JsValue>{Ok(check.call0(&JsValue::UNDEFINED)?.is_truthy())}
 fn error(host:&JsValue,message:&str)->Result<(),JsValue>{one(host,"error",&message.into())?;Ok(())}

@@ -1,3 +1,37 @@
+# 1.7.195 — controles del lector en Rust
+
+Changelog: «Controles del lector en Rust».
+Rust administra las pulsaciones, teclado de pestañas, campos de apariencia,
+velocidad, progreso, temporizador, citas, búsqueda y cierre del panel. Conserva
+onclick/onkeydown/onsubmit donde existían y listeners donde se usaban antes.
+Los handlers consultan un WeakRef del controlador, sin un ciclo de propiedad
+JS/WASM; al liberar eliminan sólo sus propios handlers. Si alguien sustituyó
+un onclick, no lo borran. Hosts sin WeakRef conservan la implementación previa.
+Normalización de preferencias y API de orientación conservan sus adaptadores.
+
+Primeras focales detectaron que el binding de Contenido había cambiado de
+onclick a addEventListener; logs unit-focused.log y unit-controls.log preservados.
+Se corrigió el binding, sin cambiar la aserción original. Resultado final:
+120focales;5156/5156unitarias,384archivos,355,16s(dos workers);12E2E,2min,
+incluidas voces reales PDF/EPUB. Comparación de39efectos, etiquetas, foco y
+valores; prueba de llamada directa onclick, sustitución posterior, constructor
+incompleto y host liberado. Doscientas creaciones/liberaciones sin crecer WASM.
+El campo Binding::Event conserva Listener por su destructor RAII; la advertencia
+de campo no leído no significa que se pueda eliminar ese recurso.
+
+Inventario4680Rust/36989JavaScript,11,23% de líneas propias, no funcional.
+WASM UI local351025bytes,SHA256
+65ba7e3a009999d70d715dc017b54be9e8402efc3c6d768acbc6e571191a96a0.
+App/decor, APK y updater sin cambios. Publicación pendiente.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-reader-controls-prototype.
+
+CI192 UI2 pasó, incluidos los dos contratos de devolución antes fallidos; esto
+no borra los originales de CI190. UI6 de CI192 se rechaza: la retirada de un
+libro enlazó cuatro programas frente a cero esperados en su primer intento,
+aunque pasó al reintentar. Original ci192-ui6-original.log, job114858250808,
+run38263065874, prueba shelf-trash:433. Requiere investigar la compilación
+concurrente; no se atribuye aún una causa ni se acepta ese reintento como verde.
+
 # 1.7.194 — acciones del lector en Rust
 
 Changelog: «Acciones y búsqueda del lector en Rust».
@@ -19,7 +53,14 @@ Davefx. No se cambia el motor de voz ni se atribuye aceleración no medida.
 Inventario4570Rust/36958JavaScript,11,00% de líneas propias, no funcional.
 WASM UI local329606bytes,SHA256
 66376ca55cba01f811a555ee790268343cf139b51ac3a8139eddbad0d54cca86.
-App/decor, APK y updater sin cambios. Publicación pendiente.
+App/decor, APK y updater sin cambios. Publicadoe43e529, deploy38266471769
+y Pages38266610954 aprobados (Pagesaf958bf). 222checksHTTP/bytes/SHA, dos
+perfiles, treinta casosPCM/marcas y APK/loader reales aprobados. E2E público
+de acciones1/1,10,1s. UI público329574bytes,SHA256
+7dcb86f894c2a90cb5b10f115e77116c132573edfb1a3daa70a5e249b6c4ab34.
+Android API36 confirma web194 y APK1.1.15/28: Lessac2×,11,10s acumulados,
+ocho fragmentos terminados, nueve iniciados, mismo proceso8325, sin FATAL.
+Evidencia:published-1791817287050,public-*.log,native-ui194.json.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-reader-actions-prototype.
 
 # 1.7.193 — cola de progreso en Rust

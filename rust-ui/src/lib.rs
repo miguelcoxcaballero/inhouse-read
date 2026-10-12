@@ -1,3 +1,4 @@
+mod reader_controls;
 mod reader_actions;
 mod progress_queue;
 mod reader_navigation;

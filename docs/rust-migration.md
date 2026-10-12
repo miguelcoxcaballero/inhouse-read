@@ -1,9 +1,10 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega1.7.194: orquestación de acciones del lector en Rust.
-5148unitarias y doceE2E aprobados, incluidas voces reales PDF/EPUB.
-Inventario4570líneas Rust/36958JS,11,00%; no mide funciones terminadas.
-Persistencia y normalización conservan sus fronteras; alternativa JS disponible.
+Última entrega1.7.195: gestión de controles del lector en Rust.
+5156unitarias y doceE2E aprobados, incluidas voces reales PDF/EPUB.
+Inventario4680líneas Rust/36989JS,11,23%; no mide funciones terminadas.
+Handlers y su limpieza conservan las propiedades DOM originales; alternativa
+JS disponible cuando falta WASM o WeakRef. CI completo aún tiene incidencias.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout
