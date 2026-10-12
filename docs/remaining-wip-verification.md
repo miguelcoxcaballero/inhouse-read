@@ -1,3 +1,37 @@
+# 1.7.218 — límites de frase en Rust
+
+Changelog: «Separación de frases en Rust».
+Rust recorre los signos de puntuación, comillas, abreviaturas, números de
+lista y saltos obligatorios con offsets UTF-16 originales. La clasificación
+Unicode y las minúsculas locales siguen usando las reglas del navegador.
+Las condiciones de idiomas y el texto hablado conservan sus resultados.
+
+3546 escenarios comparados y otros 3546 ciclos, incluidos pares y sustitutos
+Unicode incompletos. El navegador repite todos los casos con es-ES y tr-TR.
+Control positivo de referencias 0→4→0; después de los ciclos 0 referencias
+y 1310720 bytes de capacidad estable. 137 focalizadas,
+5876 unitarias completas y 30 E2E aprobados. Los tests originales de texto
+se ejecutan en ambos modos. El PDF observa speech_sentence_ends realmente
+compilado y mantiene las assertions de contenido, PCM y avance de página.
+
+Chromium 390×844 con CPU de escritorio ×4, 13 rondas alternadas y tres
+tandas: un capítulo de 33200 caracteres, JS 19.23/Rust 9.63 ms;
+200 fragmentos mixtos, JS 10.03/Rust 9.70 ms.
+Incluye las copias UTF-16 y las llamadas Unicode/minúsculas. No mide un
+teléfono físico ni el arranque completo del audiolibro. La primera medición
+se conserva en browser-benchmark-first.json.
+
+El aviso de dependencias se actualiza a las versiones ya fijadas:
+wasm-bindgen 0.2.105, js-sys/web-sys 0.3.82 y wasm-bindgen-futures 0.4.55.
+No cambia el compilador ni la ABI. El prototipo de normalización completa
+todavía no se integra: su primer ensayo fue más lento y se conserva en
+rust-speech-mask-prototype/browser-benchmark-first.json.
+
+Inventario: 6565 líneas Rust/37497 JavaScript = 14.9%, no funcional.
+UI local 735654 bytes, SHA256 33b1e16d2bb1e3c01043d6cbec70034abdb6c830ee9eb2b873a6f6bfa1298227.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-sentence-ends-prototype.
+
 # 1.7.217 — ordenación del catálogo en Rust
 
 Changelog: «Catálogo y recomendaciones más ágiles».
@@ -39,7 +73,22 @@ browser-benchmark-before-metadata.json.
 
 Inventario: 6488 líneas Rust/37483 JavaScript = 14.76%, no funcional.
 UI local 718131 bytes, SHA256 961180de290fde29406b72cb4b79ba0102f3b001672a4864f1253b688db507fa.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada: bd90a769585842db70645cf9f0832f3f21422796.
+Deploy 38311271194/Pages 38311406623 completos; Pages c2c5db870577a5dbdc615be81dc748b268c0a7af.
+UI pública 718099 bytes, SHA256 f60034ad8e8595b78caaabebc9f53ef40f9d98787a8183886b9fc8452036a6bc.
+published-1791841128976: recursos HTTP/tamaño/SHA, dos perfiles,
+contador positivo con 1000 preparaciones/100 menús, 30 casos PCM/tempo
+y APK real loader 2107 bytes correctos. Dos E2E públicos PDF/Davefx aprobados.
+public-artifact.log conserva una discrepancia inicial únicamente en
+licenses/wasm-bindgen-NOTICE.txt. La consulta puntual posterior devolvió 200,
+318 bytes y el SHA esperado (license-check.json); no se conserva el estado
+HTTP del fallo inicial y no se le atribuye una causa no comprobada.
+public-artifact-second.log repite el barrido completo sin modificar la versión
+publicada y comprueba todos los recursos, incluidos esos avisos.
+APK 1.1.15/28 muestra web 217: Lessac 2×, 10.02s,
+7 finales/8 inicios, PID 21627 estable y sin FATAL.
+CI 38311271291 se registra aparte; no se presupone aprobado.
+Updater sin modificaciones.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-voice-order-prototype.
 
 # 1.7.216 — menú de voces con estado Rust

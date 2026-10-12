@@ -1,8 +1,17 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
+import {readFileSync} from 'node:fs'
+import * as rustUI from '../../src/wasm/ui/inhouse_read_ui.js'
 import { normalizeSpeech, planSpeech, speechChunks, speechSentences } from '../../src/js/readers/speech-text.js'
 
 const split = text => speechSentences(text).map(sentence => text.slice(sentence.start, sentence.end))
 
+const runtime=vi.hoisted(()=>({ui:null}));let boundaries=0
+vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
+const observedUI={...rustUI,speech_sentence_ends:(...args)=>{boundaries++;return rustUI.speech_sentence_ends(...args)}}
+beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
+afterAll(()=>expect(boundaries).toBeGreaterThan(0))
+describe.each(['legacy','rust'])('speech text through %s',engine=>{
+beforeEach(()=>{runtime.ui=engine==='rust'?observedUI:null})
 describe('sentence boundaries', () => {
   it('does not split Spanish abbreviations, decimals, initials and "etc."', () => {
     expect(split('El Sr. Gómez llegó a las 3.5 horas, según la Dra. Pérez, etc. Había leído p. ej. sobre las EE. UU. y sobre J. R. R. Tolkien; nadie lo creyó... ¿Cómo iba a hacerlo? ¡Imposible!')).toEqual([
@@ -109,4 +118,6 @@ describe('opening clause latency without lost text', () => {
     expect(items.map(x=>x.text).join(' ')).toBe(raw)
     expect(items.every(x=>x.sentence.start===prefix.length)).toBe(true)
   })
+})
+
 })

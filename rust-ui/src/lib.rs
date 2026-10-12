@@ -1,3 +1,4 @@
+mod sentence_ends;
 mod voice_order;
 mod picker_owned;
 mod language_detect;
