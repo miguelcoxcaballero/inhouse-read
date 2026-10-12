@@ -1,4 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
+import {readFileSync} from 'node:fs'
+import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
+const runtime=vi.hoisted(()=>({ui:null}))
+vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
+beforeAll(()=>ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
+
 import { mapSpeechText, mapTextLayer, mapTextNode } from '../../src/js/readers/speech-map.js'
 import { normalizeSpeech, planSpeech, speechChunks, speechSentences } from '../../src/js/readers/speech-text.js'
 import { installSpeechStyle, paintSpeechRange, clearSpeechRange, SPEECH_HIGHLIGHT, speechCSS } from '../../src/js/readers/speech-highlight.js'
@@ -6,6 +12,8 @@ import { installSpeechStyle, paintSpeechRange, clearSpeechRange, SPEECH_HIGHLIGH
 const html = markup => { const doc = new DOMParser().parseFromString(`<body>${markup}</body>`, 'text/html'); return doc }
 const spoken = (map, start, end) => map.rangeFor(start, end).toString()
 
+describe.each(['legacy','Rust'])('%s text maps',mode=>{
+beforeEach(()=>{runtime.ui=mode==='Rust'?ui:null})
 describe('speech text mapping over the DOM', () => {
   it('maps offsets onto text nodes that span inline elements, without touching them', () => {
     const doc = html('<p>It was <em>the best</em> of times, <b>it</b>was.</p>')
@@ -183,4 +191,6 @@ describe('highlight painting', () => {
     expect(doc.querySelector('style[data-inhouse-speech]').textContent).toBe(speechCSS('night'))
     expect(speechCSS('unknown')).toBe(speechCSS('paper'))
   })
+})
+
 })

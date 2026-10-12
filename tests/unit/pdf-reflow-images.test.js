@@ -1,4 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import {readFileSync} from 'node:fs'
+import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
+const runtime=vi.hoisted(()=>({ui:null}))
+vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
+beforeAll(()=>ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
+
 import { extractPDFText } from '../../src/js/readers/pdf-text.js'
 import { clearPDFReflow, pdfImageRects, populatePDFReflow } from '../../src/js/readers/pdf-reflow.js'
 import { mapTextNodes } from '../../src/js/readers/speech-map.js'
@@ -15,6 +21,8 @@ beforeEach(()=>{
 })
 afterEach(()=>vi.restoreAllMocks())
 
+describe.each(['legacy','Rust'])('%s text maps',mode=>{
+beforeEach(()=>{runtime.ui=mode==='Rust'?ui:null})
 describe('adaptable PDF illustrations retain all text offsets',()=>{
   it('puts an illustration between its preceding and following lines without losing a single character',()=>{
     const value=layout([item('Before the picture.',100),item('After the picture.',340),item('Its continuation.',358)])
@@ -92,4 +100,6 @@ describe('ordinary line leading across PDF typefaces',()=>{
     expect(result.spans.map(s=>result.text.slice(s.start,s.end))).toEqual(items.map(i=>i.str))
     expect(result.paragraphs).toHaveLength(1)
   })
+})
+
 })

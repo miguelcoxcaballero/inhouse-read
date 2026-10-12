@@ -1,3 +1,35 @@
+# 1.7.189 — mapas de texto y rangos en Rust
+
+Changelog: «Mapa de texto del audiolibro en Rust».
+Rust recorre los nodos, conserva las separaciones originales y busca rangos
+y offsets. Los resultados son objetos JS normales con los nodos originales;
+no mantienen handles Rust que requieran finalizador. Fallback JS conservado.
+El recorrido hereda identificadores de bloques y evita consultar padres de
+cada texto; getters tipados, claves API internadas y longitud local evitan
+copias de cadenas y llamadas DOM repetidas. No se internan textos de libros.
+
+5071/5071 unitarias, 378 archivos, 319,37 s. 103 focales en el primer port;
+la batería completa repite los casos con el port optimizado, incluidos XML,
+imágenes PDF, nodos originales, rangos, posición, textos ocultos y ambos motores.
+Prototipo: 72544 comparaciones; 1000 mapas sin crecimiento de memoria WASM.
+E2E: 4/4, 40,4 s, con exports reales y pesos Davefx en EPUB/PDF; además el
+caso de narración completa del PDF adaptable pasa localmente (12,1 s).
+
+Benchmark Chromium móvil CPU×4, 60 párrafos/240 spans, rangos y offsets
+incluidos, mediana de nueve rondas: JS 2,453 ms / Rust 1,927 ms. El primer
+port daba 2,443/6,847 ms; se conserva y no se publicó. Las mediciones son de
+ese trabajo concreto, no de la velocidad total de la app ni de un móvil físico.
+Fallos iniciales de tipos Rust y URL ESM del harness conservados por separado.
+
+Inventario: 4280 Rust / 36840 JavaScript, 10,41 % de líneas propias.
+WASM UI local 271430 bytes, SHA256
+39608269653d706f95056ee65afa4ca4b0a39602626f63486d6bab24eaf98cbd.
+App/decor y APK/updater sin cambios. Verificación pública pendiente.
+CI187 conserva fallo de visibilidad de resaltado en PDF adaptable; original
+ci187-ui2-original.log en rust-voice-options-prototype. Que el caso pase en
+Windows no acredita solucionado el fallo de Linux. No se reducen aserciones.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-speech-map-prototype.
+
 # 1.7.188 — cortes de página del audiolibro en Rust
 
 Changelog: «Cortes de página del audio en Rust».
@@ -18,8 +50,16 @@ de su continuación. No equivale a una prueba en teléfono físico.
 Inventario: 4193 Rust / 36823 JavaScript, 10,22 % de líneas propias.
 WASM UI local 263733 bytes, SHA256
 829a80dd6daee7b554bb39e43200fcf1f81d33aa74251db6a92e3cd4d7e4e197.
-App/decor y APK/updater sin cambios. Verificación pública pendiente.
-Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-speech-pages-prototype.
+App/decor y APK/updater sin cambios. Publicado de3e7af; deploy 38256432549
+y Pages 38256537117 aprobados; Pages 8c6fe77. Los recursos públicos coinciden
+por tamaño/SHA, dos perfiles cargan los bytes exactos; 30 casos PCM/marcas,
+APK y loader reales aprobados. UI público 263717 bytes, SHA256
+2caf48b7c3fa240eaa73507f5aeda874c3be92f4e711a28c5c1ccb9793e137d4.
+Export del scanner ejercitado en web pública: 1/1, 5,3 s. Android API36 con
+web 1.7.188 y APK 1.1.15/28: Lessac a 2×, 10,27 s, ocho unidades terminadas,
+proceso 5266 estable, sin FATAL EXCEPTION. No mide un teléfono físico.
+Evidencia: published-1791812204929 y rust-speech-pages-prototype/public-*.log,
+native-ui188.json, en D:/CodexEvidence/InhouseRead-20261012.
 
 # 1.7.187 — selección de idiomas y voces en Rust
 

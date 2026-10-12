@@ -1,10 +1,10 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.188: medición de cortes de página del audiolibro en Rust,
-por lotes de 64 nodos sin copiar todo el texto. Se conservan rangos, RTL,
-escritura vertical, UTF-16, cancelación y cesiones al navegador. 5032 unitarias
-y tres E2E, incluidos EPUB/PDF con voz real, aprobados.
-Inventario: 4193 líneas Rust / 36823 JS, 10,22 %; excluye dependencias, bindings
+Última entrega 1.7.189: mapas de texto y búsqueda de rangos del audiolibro
+en Rust. Se mantienen nodos originales, UTF-16, ilustraciones, bloques y
+texto oculto. 5071 unitarias y cinco E2E, incluidos EPUB/PDF con voz real,
+aprobados. No cambia la selección ni la paginación.
+Inventario: 4280 líneas Rust / 36840 JS, 10,41 %; excluye dependencias, bindings
 generados, pruebas, CSS/HTML y Android. No mide funciones terminadas.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
