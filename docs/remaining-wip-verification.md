@@ -12,10 +12,28 @@ la frase inicial ni los controles. Play repetido durante carga no abre servicios
 
 Las cinco regresiones nuevas fallan contra176 y pasan con el arreglo.
 52/52 pruebas focales aprobadas y build de producción correcto.
-Batería completa, recorridos UI y comprobación de la APK pública pendientes.
+4824/4824 unitarias en 366 archivos (327,75 s) y 13/13 recorridos UI (1,1 min).
+Publicación verificada: fuente 5ff954b929b4993077fb579199e66cbb65fdde99,
+Pages 11224d6e974e27937a293543c2c1f99358c2342e. Deploy38232699037 y
+Pages38232784123 aprobados. 151 comprobaciones HTTP/tamaño/SHA correctas,
+dos perfiles limpios con main y ambos WASM exactos. APK del catálogo descargada:
+SHA02960e3322bdad2e26041d2ef57b0fd5a02f3528c4b60b876e7955ae941cafb5;
+loader de2107bytes, code28. Evidencia: published-1791798905819.
+
+APK real sin modificar, Android16/API36, WebView133: el menú muestra1.7.177.
+Lessac descargada desde la UI, síntesis nativa real y AudioTrack: inicio,
+Stop→otra página→Play, Pause→otra página→Play y repetición Stop→otra página→Play.
+Las cuatro sesiones reproducen más de8s; el proceso6343 permanece vivo.
+Ningún FATAL ni ForegroundServiceDidNotStartInTimeException en la captura final.
+Se conserva el crash original del proceso2530 en crash-original-full.log.
+Hubo una captura inicial de accesibilidad sin raíz; el helper la repitió y
+continuó, sin reiniciar ni modificar la aplicación. native-regression.json
+registra los cuatro casos. El CI completo38232698933 sigue en curso;
+no se declara resuelto el resto de los fallos de CI anteriores.
 Evidencia original y pruebas: D:/CodexEvidence/InhouseRead-20261012/audio-play-crash.
 La migración PDF pendiente se conserva en rust-pdf-paths/unpublished-migration.patch
-más rust-pdf-paths/pending; no forma parte de este arreglo urgente.
+más rust-pdf-paths/pending. Se restaura localmente tras verificar177;
+no forma parte de este arreglo urgente.
 No se modifica el updater ni la parte nativa. La APK actual carga este arreglo web.
 Los fallos previos de CI indicados abajo siguen pendientes de revisión.
 
