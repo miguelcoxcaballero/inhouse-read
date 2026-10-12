@@ -1,3 +1,38 @@
+# 1.7.197 — preferencias y adopción tardía en Rust
+
+Changelog: «Preferencias del lector en Rust».
+Rust coordina ajustes, guardado local, notificación de nube, opciones de audio,
+reintento/calientamiento de voces y aplicación al motor. La normalización y
+los límites existentes conservan su adaptador. Los cambios de audio no vuelven
+a paginar el libro. Los efectos anteriores al primer await siguen siendo
+síncronos, incluida la notificación de un error inmediato del motor.
+
+El primer prototipo notificaba ese error demasiado tarde; check.log preserva
+la diferencia. Se corrigió antes de integrar;200secuencias comparan el orden
+síncrono y final, éxito, cuota de almacenamiento, error síncrono/asíncrono,
+voces ausentes y restart:false. También normalización fallida, lector sustituido
+por un callback, picker incompleto y2000ciclos con memoria WASM estable.
+
+Una vista creada mientras descarga WASM adopta el módulo válido en su siguiente
+operación. No recrea el lector, cambia su paginación, repite acciones ni mueve
+el campo enfocado. Una vista liberada no resucita. El E2E de descarga detenida
+conserva todas sus comprobaciones previas y ahora demuestra la adopción en el
+mismo EPUB abierto, con un único módulo. La prueba del componente compilado
+espera explícitamente a que esté disponible; el caso frío se cubre por separado.
+No se aumentan los plazos de las pruebas ni el límite de arranque del lector.
+
+125focales;5169/5169unitarias completas,386archivos, dos workers.14E2E
+aprobados:12de preferencias, PDF/EPUB y voces reales Davefx (1,6min), más
+dos de vista compilada/adopción tardía(12,8s). Sin omisiones ni reintentos.
+No se atribuye a este cambio una aceleración del motor de voz.
+
+Inventario4782Rust/37035JS,11,44% de líneas propias, no funcional.
+WASM UI local365227bytes,SHA256
+772411316303e4ad147faf4c392c6e72c6396e19bdd080b525353598d9dc8002.
+App/decor, APK y updater sin cambios. Publicación pendiente. Incidencias CI
+históricas preservadas en las secciones siguientes; no se declara todo verde.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-preference-flow-prototype.
+
 # 1.7.196 — posición y datos del lector en Rust
 
 Changelog: «Posición del lector en Rust».
@@ -24,7 +59,16 @@ reales Davefx PDF/EPUB, paginación, foco del teclado y controles inferiores.
 Inventario4729Rust/36996JS,11,33% de líneas propias, no funcional.
 UI local356926bytes,SHA256
 b4884f727159d3daccce9ea5229cd1e6ddbc478f84deefd4549ea72e76d0e604.
-App/decor, APK y updater sin cambios. Publicación pendiente.
+App/decor, APK y updater sin cambios. Publicadob39839f; deploy38271123127
+y Pages38271260450 aprobados (Pagesb51784b). 226checksHTTP/bytes/SHA,
+dos perfiles, treinta casosPCM/marcas y APK/loader reales aprobados. E2E
+público1/1,7,2s. UI público356894bytes,SHA256
+c59559b7700bc5ca4ca6f2dbfa4de74ba35e00d237008600aecaba852c97a308.
+Android API36 confirma web196 y APK1.1.15/28, Lessac2×11,09s, ocho fragmentos
+terminados/nueve iniciados, mismo proceso9507, sin FATAL. Evidencia:
+published-1791819424818,public-*.log,native-ui196.json.
+Las seis capturas omitidas se ejecutaron después habilitando su directorio:
+6/6aprobadas en33s, e2e-screens.log y control-screens. Total42E2E aprobados.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-reader-location-prototype.
 Incidencias CI anteriores preservadas en las secciones siguientes.
 
@@ -76,6 +120,12 @@ sin retirar ninguna comprobación de UI; prueba corregida1/1,9,2s.
 reader-view tuvo además un intento sin constructor nativo observado (reintento
 aprobado); requiere comprobar la adopción tardía del módulo. Original completo
 ci195-ui5-original.log preservado. CI completo no se considera aprobado.
+
+CI193 completo terminó fallido. UI2 (job114864342412) conserva devolución
+alineada8032,3ms frente a8000 y otro fallo de clase de cierre; legado tuvo
+un reintento. UI5(job114864342403) conserva el constructor Rust no observado
+en el primer intento de reader-view. Originales ci193-ui2-original.log y
+ci193-ui5-original.log en rust-progress-queue-prototype. No se elevan límites.
 
 # 1.7.194 — acciones del lector en Rust
 

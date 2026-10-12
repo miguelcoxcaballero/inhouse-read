@@ -56,3 +56,26 @@ it('keeps WASM memory bounded while changing titles and positions repeatedly',()
   view.free();if(round)expect(core.memory.buffer.byteLength).toBe(before)
  }
 })
+it('adopts a compatible late module once without rewriting the existing document or focused input',()=>{
+ const {screen,panel,mini,back,range}=setup(false)
+ const view=new ReaderView(screen,panel,mini,back)
+ view.setDocumentInfo('Original title','Author','About',true);view.configureFormat(true,4)
+ view.relocate('Page 1','1',0,true,1);range.value='17';range.focus()
+ let creations=0,calls=0
+ class LateView extends ui.RustReaderView{
+  constructor(...args){super(...args);creations++}
+  relocate(...args){calls++;return super.relocate(...args)}
+ }
+ runtime.ui={RustReaderView:LateView}
+ view.relocate('Page 2','2',50,true,2);view.relocate('Page 3','3',75,true,3)
+ expect(creations).toBe(1);expect(calls).toBe(2);expect(range.value).toBe('17')
+ expect(document.querySelector('#reader-top-title').textContent).toBe('Original title')
+ expect(panel.querySelector('input[type="number"]').value).toBe('3')
+ view.free();expect(()=>view.relocate('Page 4','4',100,true,4)).toThrow();expect(creations).toBe(1)
+})
+it('does not adopt an older late module missing a required method',()=>{
+ const {screen,panel,mini,back}=setup(false),view=new ReaderView(screen,panel,mini,back)
+ runtime.ui={RustReaderView:class{constructor(){throw Error('must not instantiate')}}}
+ expect(()=>view.setDocumentInfo('Title','Author','About',false)).not.toThrow()
+ expect(document.querySelector('#reader-top-title').textContent).toBe('Title');view.free()
+})

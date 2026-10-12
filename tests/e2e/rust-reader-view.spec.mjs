@@ -37,7 +37,11 @@ test('compiled mobile reader updates themes, tabs and audio controls through Rus
   }
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))}}
  })
- await page.goto(process.env.IHR_TEST_URL||'./');await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/reading-journey.epub');await expect(page.locator('foliate-view')).toBeVisible({timeout:45000})
+ await page.goto(process.env.IHR_TEST_URL||'./')
+ // This case proves the compiled component. The intentionally stalled-download
+ // case separately proves fallback and adoption on the already-open document.
+ await expect.poll(()=>page.evaluate(()=>window.viewProof.available)).toBe(true)
+ await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/reading-journey.epub');await expect(page.locator('foliate-view')).toBeVisible({timeout:45000})
  await page.getByRole('button',{name:'Aspecto de lectura'}).click();await page.getByRole('button',{name:'AMOLED',exact:true}).click();await expect(page.locator('#reader-screen')).toHaveAttribute('data-reading-theme','amoled')
  await page.getByRole('button',{name:'Cerrar opciones de lectura'}).click();await page.locator('#reader-location').click();await page.getByRole('button',{name:'Marcar esta página',exact:true}).click();await expect(page.locator('[data-bookmark]')).toHaveAttribute('aria-pressed','true')
  await page.getByRole('button',{name:'Cerrar opciones de lectura'}).click();await page.getByRole('button',{name:'Escuchar el libro'}).click();await expect(page.getByRole('button',{name:'Reproducir',exact:true})).toBeVisible()

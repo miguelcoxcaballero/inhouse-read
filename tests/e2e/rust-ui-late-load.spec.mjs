@@ -7,11 +7,13 @@ test('a slow Rust download releases the reader then serves the next operation wi
  await page.addInitScript(fakeEngineScript({installed:['piper:en_US-lessac-high'],holdAfter:1}))
  await page.addInitScript(()=>{
   localStorage.setItem('inhouse-read-reading-preferences',JSON.stringify({pdfMode:'text',voice:'piper:en_US-lessac-high'}))
-  window.lateRust={instances:0,paints:0,maps:0}
+  window.lateRust={instances:0,paints:0,maps:0,views:0,preferences:0}
   const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.speech_paint)return result
    window.lateRust.instances++;const exports={...actual}
    exports.speech_paint=(...args)=>{window.lateRust.paints++;return actual.speech_paint(...args)}
    exports.speech_map=(...args)=>{window.lateRust.maps++;return actual.speech_map(...args)}
+   exports.rustreaderview_new=(...args)=>{window.lateRust.views++;return actual.rustreaderview_new(...args)}
+   exports.rustreaderview_applyPreferences=(...args)=>{window.lateRust.preferences++;return actual.rustreaderview_applyPreferences(...args)}
    const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});return result.instance?{...result,instance:proxy}:proxy
   }
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))}}
@@ -25,7 +27,14 @@ test('a slow Rust download releases the reader then serves the next operation wi
   await expect(page.locator('foliate-view')).toBeVisible({timeout:30000})
   await expect(page.getByRole('button',{name:'Escuchar el libro'})).toBeEnabled()
   expect(await page.evaluate(()=>window.lateRust.instances)).toBe(0);expect(requests).toBe(1)
+  await page.evaluate(()=>{window.lateReader=document.querySelector('foliate-view')})
   release();await expect.poll(()=>page.evaluate(()=>window.lateRust.instances)).toBe(1)
+  await page.getByRole('button',{name:'Aspecto de lectura'}).click();await page.getByRole('button',{name:'AMOLED',exact:true}).click()
+  await expect(page.locator('#reader-screen')).toHaveAttribute('data-reading-theme','amoled')
+  expect(await page.evaluate(()=>window.lateReader===document.querySelector('foliate-view'))).toBe(true)
+  expect(await page.evaluate(()=>window.lateRust.views)).toBe(1)
+  expect(await page.evaluate(()=>window.lateRust.preferences)).toBeGreaterThan(0)
+  await page.getByRole('button',{name:'Cerrar opciones de lectura'}).click()
   await page.locator('#file-picker').setInputFiles({name:'Next Rust PDF.pdf',mimeType:'application/pdf',buffer:longReflowPDF()})
   await expect(page.locator('.pdf-reflow-page')).toBeVisible({timeout:30000})
   await page.getByRole('button',{name:'Escuchar el libro'}).click();await page.getByRole('button',{name:'Reproducir',exact:true}).click()

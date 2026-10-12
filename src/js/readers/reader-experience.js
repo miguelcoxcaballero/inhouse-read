@@ -1,6 +1,6 @@
-import { notifyCloudSettingsChanged } from '../cloud-settings.js'
+import {PreferenceFlow} from './preference-flow.js'
 import { readerPanelMarkup, readerIcon } from './reader-interface.js'
-import { normalizeReadingPreferences, rateLabel, READING_THEMES } from './reading-preferences.js'
+import { normalizeReadingPreferences, rateLabel } from './reading-preferences.js'
 import { ReadingVoice } from './reading-voice.js'
 import { declaredLanguage, langBase } from './voice-catalog.js'
 import { SelectMenu } from './select-menu.js'
@@ -19,6 +19,7 @@ import { displayBookTitle, normalizeBookAuthor } from '../book-title.js'
 const STORAGE_KEY = 'inhouse-read-reading-preferences'
 
 export class ReaderExperience {
+  preferenceFlow = new PreferenceFlow(this)
   actions = new ReaderActions(this)
   navigation = new ReaderNavigation()
   get navigating() { return this.navigation.navigating }
@@ -202,25 +203,8 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`,t
     const marked = isBookmarked(this.bookmarks,this.location)
     this.view.updateBookmarkButton(marked)
   }
-  setPreference(key, value, { restart = true } = {}) {
-    const audio = ['rate','voice','voiceLang','footnotes','multilingual','skipHeaders'].includes(key)
-    if (!audio) this.voice.stop()
-    this.preferences = normalizeReadingPreferences({ ...this.preferences, [key]:value }); this.applyPreferences(!audio); notifyCloudSettingsChanged(STORAGE_KEY)
-    this.voice.options = {footnotes:this.preferences.footnotes,multilingual:this.preferences.multilingual,skipHeaders:this.preferences.skipHeaders}
-    if (key === 'rate' || key === 'voice' || key === 'voiceLang') { this.voice.retryNeural?.(); if (restart) this.voice.restart?.() } // a new speed or choice gives a neural voice another chance
-    if (audio) this.neuralPicker?.warmUp()
-  }
-  async applyPreferences(updateBook = true) {
-    const p = this.preferences
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(p)) } catch { /* reading still works without storage */ }
-    const theme = READING_THEMES[p.theme]
-    this.view.applyPreferences(p,theme,this.reader.format?.engine === 'pdf')
-    this.voice.rate = p.rate; this.voice.voice = p.voice; this.voice.languageOverride = p.voiceLang
-    this.neuralPicker?.render()
-    this.voice.options = {footnotes:p.footnotes,multilingual:p.multilingual,skipHeaders:p.skipHeaders}
-    this.updateMiniPlayer()
-    try { if (updateBook) await this.reader.applyPreferences(p) } catch { this.error('No se pudo aplicar.') }
-  }
+  setPreference(key,value,{restart=true}={}) { return this.preferenceFlow.set(key,value,restart) }
+  applyPreferences(updateBook=true) { return this.preferenceFlow.apply(updateBook) }
   /** The language of the open book (the device's when it has none or no book is open). */
   bookLanguage() {
     let bookLang = ''
