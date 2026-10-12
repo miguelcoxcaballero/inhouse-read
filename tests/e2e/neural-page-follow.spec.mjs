@@ -121,6 +121,19 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
       window.INHOUSE_NEURAL_VOICE_BASE = base
       localStorage.setItem('inhouse-read-reading-preferences', JSON.stringify({voice:id,voiceLang:'es'}))
       const evidence = window.__pdfSpeech = {requests:[],events:[],frames:[],pcm:[],jobs:[],previews:[],device:0}
+      evidence.rustJoin={available:false,calls:0}
+      const observe=result=>{
+        const instance=result.instance||result,actual=instance.exports
+        if(!actual.voice_join_sentence)return result
+        evidence.rustJoin.available=true
+        const exports={...actual,voice_join_sentence:(...args)=>{evidence.rustJoin.calls++;return actual.voice_join_sentence(...args)}}
+        const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}})
+        return result.instance?{...result,instance:proxy}:proxy
+      }
+      for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){
+        const original=WebAssembly[name]
+        WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))}
+      }
       const sample = document.createElement('canvas'); sample.width=32; sample.height=48
       const context = sample.getContext('2d', {willReadFrequently:true})
       const visible = () => {
@@ -222,6 +235,8 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
     const evidence=await page.evaluate(() => { window.__stopPdfFrames=true; window.__pdfSpeech.stats={...window.__pdfEngine.stats}; return window.__pdfSpeech })
     await testInfo.attach('actual-pdf-audio-page-boundary',{body:JSON.stringify(evidence),contentType:'application/json'})
     expect(evidence.requests.map(request => request.text)).toEqual([PDF_PARTS.join(' ')])
+    expect(evidence.rustJoin.available).toBe(true)
+    expect(evidence.rustJoin.calls).toBeGreaterThan(0)
     const [first]=evidence.requests
     const firstStart=evidence.events.find(event=>event.type==='start'&&event.id===first.id)
     const done=evidence.events.find(event=>event.type==='done'&&event.id===first.id)

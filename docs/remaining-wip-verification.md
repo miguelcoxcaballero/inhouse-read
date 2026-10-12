@@ -1,3 +1,24 @@
+# 1.7.204 — continuidad de frases entre páginas en Rust
+
+Changelog: «Frases continuas entre páginas en Rust».
+Rust une la frase que cruza dos páginas físicas. Conserva los offsets UTF-16,
+las marcas de cambio de página, la identidad de cada fuente y el fragmento
+original que se restaura al pausar. Mantiene guiones, categoría Unicode Ll,
+propiedades propias, símbolos y errores de getters sin alterar prototipos.
+
+500 escenarios de unión, combinaciones de guion/Unicode, errores y memoria
+estable en 2000 ciclos. 175 pruebas focalizadas aprobadas y 5296 unitarias
+completas aprobadas. 5 E2E aprobados (44s), incluidos PDF/EPUB con Davefx real:
+un único PCM cruza las dos páginas del PDF; el cambio ocurre en la marca
+audible y se comprueba que ejecuta voice_join_sentence compilado en Rust.
+
+Inventario:5255 líneas Rust/37175 JavaScript=12,39%, no funcional.
+UI local445144bytes,SHA256
+5452a19af88a10ad54b26ca4db4232c59b9b2584ab6f254a3145d54aeeab7bf3.
+Publicación pendiente; APK1.1.15/28 y updater sin modificaciones.
+No se declara completada la migración ni totalmente verde el CI histórico.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-join-prototype.
+
 # 1.7.203 — elección de voz y preparación anticipada en Rust
 
 Changelog: «Preparación de voz en Rust».
@@ -21,7 +42,17 @@ Batería completa5287/5287,394archivos,330,41s, dos workers.
 Inventario5196Rust/37167JS=12,27% de líneas propias, no funcional.
 UI local434113bytes,SHA256
 192af7ac0797a5573c800d41dbf136bbaef549148891e50c7d783cbc7180ed07.
-App/decor, APK y updater sin cambios. Publicación pendiente.
+App/decor, APK y updater sin cambios. Publicación comprobada:
+commit b162a1fbbac9fc40e383b084faec1da98f688027, Deploy38282554351 y
+Pages38282669376 completos. Pages9600312a4e795a88db1d178b6125ae5b6eeeaaa6.
+HTTP/tamaño/SHA de todos los recursos reales, dos perfiles nuevos, 30 casos
+PCM/tempo y APK descargado con loader de2107bytes comprobados.
+UI publicada434081bytes,SHA256
+5b6e7051cbed582c322665e4b0ace7d1c76edf94f8170f79a3e33614ce38cc51.
+E2E público de selección1/1(7,7s). APK1.1.15/28 ejecutando web1.7.203:
+Lessac2×,11,93s,8finales/9inicios,PID13578 estable y sinFATAL.
+Evidencia pública:published-1791825372900 y native-ui203.json.
+CI38282554354: unitarias114923077351 aprobadas; otros jobs aún pendientes.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-selection-prototype.
 
 # 1.7.202 — pausa y detención del audiolibro en Rust

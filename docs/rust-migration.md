@@ -1,9 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega1.7.203: elección de voz y preparación anticipada en Rust.
-5287unitarias completas y15E2E aprobados, incluidas voces reales PDF/EPUB.
-Inventario5196líneas Rust/37167JS,12,27%; no mide funciones terminadas.
-Conserva idiomas regionales, referencias y marcas de audio entre páginas.
+Última entrega 1.7.204: unión de frases entre páginas físicas en Rust.
+5296 unitarias completas y 5 E2E aprobados, incluidas voces reales PDF/EPUB.
+Inventario: 5255 líneas Rust / 37175 JS, **12,39 %**; no mide funciones terminadas.
+Conserva el audio continuo, marcas de página, offsets UTF-16 y pausa.
 CI completo aún tiene incidencias documentadas; no se declara totalmente verde.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
