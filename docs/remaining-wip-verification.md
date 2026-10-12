@@ -21,8 +21,15 @@ solicitudes, 24 CSS generados en la prueba de reutilización).
 WASM app 378694 bytes, SHA256
 7b1433e2787d7449efa460af8fd1a89e362350e57f97fc22b91332d333d03436.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-reader-preferences.
-Publicación y comprobación pública pendientes. APK, firma, updater y voces
-no cambian. Los tres fallos de CI180 de cierre/resaltado siguen pendientes.
+Publicado en main 4a091ef, deploy 38245340679 aprobado y Pages eb3ffa0.
+Verificación pública: 160 comprobaciones correctas de archivos, SHA, exports,
+catálogos y APK; dos perfiles nuevos (móvil y escritorio) cargan los bytes
+exactos sin errores; EPUB público con párrafos y controles idénticos (1/1,
+11,6 s). WASM público: 30/30 comparaciones PCM/marcas. APK real 1.1.15/28
+descargado, SHA validado y loader de 2107 bytes confirmado. Evidencia pública:
+published-1791806090401 y rust-reader-preferences/public-*.log.
+APK, firma, updater y voces no cambian. Los tres fallos de CI180 de
+cierre/resaltado siguen pendientes; esta verificación no los da por resueltos.
 
 Siguiente bloque ya prototipado fuera del repo: rust-ui-prototype contiene
 SelectMenu completo en Rust con wasm-bindgen/web-sys, misma estructura DOM,
