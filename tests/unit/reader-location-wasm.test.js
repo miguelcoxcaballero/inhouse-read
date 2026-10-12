@@ -6,12 +6,12 @@ import {LegacyReaderView} from '../../src/js/readers/reader-view-legacy.js'
 import {ReaderView} from '../../src/js/readers/reader-view.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
-let core
-beforeAll(()=>{core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})})
+let core,panelTemplate
+beforeAll(()=>{core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')});panelTemplate=document.createElement('template');panelTemplate.innerHTML=readerPanelMarkup})
 afterEach(()=>{document.body.innerHTML='';runtime.ui=null})
 function setup(native){
  document.body.innerHTML='<section id="reader-screen"><button id="reader-location"><span class="reader-location-label"></span></button><b id="reader-top-title"></b><i id="reader-top-byline"></i></section>'
- const screen=document.querySelector('section'),panel=document.createElement('dialog'),mini=document.createElement('div'),back=document.createElement('button');panel.innerHTML=readerPanelMarkup;document.body.append(panel);mini.innerHTML='<span data-mini-title></span>';screen.append(mini,back)
+ const screen=document.querySelector('section'),panel=document.createElement('dialog'),mini=document.createElement('div'),back=document.createElement('button');panel.append(panelTemplate.content.cloneNode(true));document.body.append(panel);mini.innerHTML='<span data-mini-title></span>';screen.append(mini,back)
  const view=native?new ui.RustReaderView(screen,panel,mini,back):new LegacyReaderView(screen,panel,mini,back)
  return {view,screen,panel,mini,back,range:panel.querySelector('[data-progress]'),page:panel.querySelector('input[type="number"]')}
 }
@@ -78,4 +78,12 @@ it('does not adopt an older late module missing a required method',()=>{
  runtime.ui={RustReaderView:class{constructor(){throw Error('must not instantiate')}}}
  expect(()=>view.setDocumentInfo('Title','Author','About',false)).not.toThrow()
  expect(document.querySelector('#reader-top-title').textContent).toBe('Title');view.free()
+})
+
+it('cloned panel fixture keeps the original HTML and default control state',()=>{
+ const parsed=document.createElement('dialog'),cloned=document.createElement('dialog')
+ parsed.innerHTML=readerPanelMarkup;cloned.append(panelTemplate.content.cloneNode(true))
+ expect(cloned.innerHTML).toBe(parsed.innerHTML)
+ const values=panel=>[...panel.querySelectorAll('input,select,button,textarea')].map(node=>({tag:node.tagName,type:node.type,value:node.value,checked:node.checked,disabled:node.disabled,selectedIndex:node.selectedIndex}))
+ expect(values(cloned)).toEqual(values(parsed))
 })

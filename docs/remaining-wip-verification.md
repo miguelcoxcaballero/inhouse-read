@@ -1,8 +1,40 @@
+# 1.7.198 — idiomas y selección de voces en Rust
+
+Changelog: «Idiomas y voces en Rust».
+Rust coordina el idioma del libro, la selección de idioma/voz, etiquetas
+automáticas, actualización del catálogo instalado y menús de voces. Conserva
+los registros originales por referencia, las variantes regionales, la voz
+compatible y el reinicio al cambiar a un idioma incompatible. ICU, detección
+de idioma declarada y el catálogo existente mantienen sus adaptadores.
+No añade voces, modifica modelos ni cambia la síntesis.
+
+500escenarios comparan efectos y valores con el original;2000ciclos mantienen
+WASM estable. Se comprueba además la consulta diferida del idioma del equipo,
+la ausencia de libro, selección conservada y limpieza de la voz incompatible.
+116focales y12E2E aprobados(1,6min): idiomas, instalación/selección de otra voz,
+reproducción, PDF/EPUB, preferencias, persistencia y dos voces reales Davefx.
+
+Primera batería completa5173/5173,387archivos. Se conserva como unit-full.
+Tras preparar las plantillas de las pruebas una sola vez,18focales y batería
+completa final5175/5175,387archivos, dos workers. Misma matriz de200casos,
+mismas creaciones/liberaciones y límite de5s; dos pruebas adicionales comprueban
+que la clonación conserva HTML y valores iniciales. No se cambian aserciones
+anteriores ni se eleva el límite. Comparación local parse/clone en el mismo
+ensayo:6,88/4,81ms por panel, incluido serializado. Esto acelera la preparación
+de pruebas, no acredita aceleración del producto. CI196/197 originales guardados.
+
+Inventario4851Rust/37058JS,11,58% de líneas propias, no funcional.
+WASM UI local374033bytes,SHA256
+084d433b8ea8434366deb51bf827e977bfc044494af5f08acec0953b52b7ead8.
+App/decor, APK y updater sin cambios. Publicación pendiente. CI completo aún
+tiene las incidencias documentadas más abajo; no se declara totalmente verde.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-flow-prototype.
+
 # 1.7.197 — preferencias y adopción tardía en Rust
 
 Changelog: «Preferencias del lector en Rust».
 Rust coordina ajustes, guardado local, notificación de nube, opciones de audio,
-reintento/calientamiento de voces y aplicación al motor. La normalización y
+reintento/calentamiento de voces y aplicación al motor. La normalización y
 los límites existentes conservan su adaptador. Los cambios de audio no vuelven
 a paginar el libro. Los efectos anteriores al primer await siguen siendo
 síncronos, incluida la notificación de un error inmediato del motor.
@@ -29,8 +61,21 @@ No se atribuye a este cambio una aceleración del motor de voz.
 Inventario4782Rust/37035JS,11,44% de líneas propias, no funcional.
 WASM UI local365227bytes,SHA256
 772411316303e4ad147faf4c392c6e72c6396e19bdd080b525353598d9dc8002.
-App/decor, APK y updater sin cambios. Publicación pendiente. Incidencias CI
+App/decor, APK y updater sin cambios. Publicado14115ce; deploy38272774777
+y Pages38272913155 aprobados (Pagesdef0e32). 228checksHTTP/bytes/SHA, dos
+perfiles, treinta casosPCM/marcas y APK/loader reales aprobados. Tres E2E
+públicos aprobados en17,9s, incluida descarga detenida y adopción en el mismo
+documento. UI público365187bytes,SHA256
+4d5aa3467372c184f932c37a2a97f503d113f372744eaba91d7947286033eea7.
+Android API36 confirma web197 y APK1.1.15/28; Lessac2×11,17s, ocho fragmentos
+terminados/nueve iniciados, proceso10248 estable, sin FATAL. Evidencia:
+published-1791820284221,public-*.log,native-ui197.json. Incidencias CI
 históricas preservadas en las secciones siguientes; no se declara todo verde.
+
+CI196 unitarias(job114885340715) agotó5s en la comparación de ubicaciones.
+CI197(job114890840614) agotó5s en esa comparación y en creación/liberación
+de controles. Originales ci196-unit-original.log y ci197-unit-original.log
+preservados en sus carpetas de evidencia. No se aumentan los plazos.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-preference-flow-prototype.
 
 # 1.7.196 — posición y datos del lector en Rust

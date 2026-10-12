@@ -1,11 +1,10 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega1.7.197: preferencias y adopción tardía del lector en Rust.
-5169unitarias y14E2E aprobados, sin omisiones ni reintentos.
-Inventario4782líneas Rust/37035JS,11,44%; no mide funciones terminadas.
-Conserva la aplicación síncrona de preferencias y la paginación durante audio.
-La vista adopta un módulo tardío sin reconstruir el libro. CI completo aún
-tiene incidencias documentadas; no se declara totalmente verde.
+Última entrega1.7.198: idiomas y selección de voces en Rust.
+5175unitarias y12E2E aprobados, sin omisiones ni reintentos.
+Inventario4851líneas Rust/37058JS,11,58%; no mide funciones terminadas.
+Conserva variantes regionales, voces instaladas y selección automática.
+CI completo aún tiene incidencias documentadas; no se declara totalmente verde.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout

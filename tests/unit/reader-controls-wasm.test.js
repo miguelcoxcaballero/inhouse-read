@@ -8,13 +8,13 @@ import {readerPanelMarkup} from '../../src/js/readers/reader-interface.js'
 import {normalizeReadingPreferences} from '../../src/js/readers/reading-preferences.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
-let core
-beforeAll(()=>{core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})})
+let core,panelTemplate
+beforeAll(()=>{core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')});panelTemplate=document.createElement('template');panelTemplate.innerHTML=readerPanelMarkup})
 afterEach(()=>{vi.unstubAllGlobals();document.body.innerHTML=''})
 function setup(native){
  document.body.innerHTML='<section id="reader-screen"></section>'
  const screen=document.querySelector('section');for(const id of ['reader-settings','reader-audio','reader-location','reader-save-bookmark','reader-search-shortcut','reader-more-shortcut']){const b=document.createElement('button');b.id=id;screen.append(b)}
- const panel=document.createElement('dialog');panel.innerHTML=readerPanelMarkup;document.body.append(panel)
+ const panel=document.createElement('dialog');panel.append(panelTemplate.content.cloneNode(true));document.body.append(panel)
  const mini=document.createElement('div');mini.innerHTML='<button data-mini-open></button><button data-mini-play></button><button data-mini-stop></button>';screen.append(mini)
  const events=[],host={screen,panel,miniPlayer:mini,locationButton:document.querySelector('#reader-location'),reader:{pageCount:4},preferences:normalizeReadingPreferences(),quoteColor:'yellow',keepSearchHits:false}
  for(const name of ['jump','show','showPlaceTab','addBookmark','step','setSleepChoice','search','endSearch','addQuote','shareBook','updateMiniPlayer','applyPreferences','error'])host[name]=(...args)=>events.push([name,...args])
@@ -88,4 +88,12 @@ it('keeps onclick properties and leaves a later replacement intact on disposal',
  const {controls,find,events}=setup(true),button=find('#reader-toc-shortcut')
  expect(button.onclick).toBeTypeOf('function');button.onclick(new MouseEvent('click'));expect(events).toContainEqual(['show','navigation'])
  const replacement=vi.fn();button.onclick=replacement;controls.free();expect(button.onclick).toBe(replacement);button.click();expect(replacement).toHaveBeenCalledOnce()
+})
+
+it('cloned panel fixture keeps the original HTML and default control state',()=>{
+ const parsed=document.createElement('dialog'),cloned=document.createElement('dialog')
+ parsed.innerHTML=readerPanelMarkup;cloned.append(panelTemplate.content.cloneNode(true))
+ expect(cloned.innerHTML).toBe(parsed.innerHTML)
+ const values=panel=>[...panel.querySelectorAll('input,select,button,textarea')].map(node=>({tag:node.tagName,type:node.type,value:node.value,checked:node.checked,disabled:node.disabled,selectedIndex:node.selectedIndex}))
+ expect(values(cloned)).toEqual(values(parsed))
 })
