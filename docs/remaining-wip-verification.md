@@ -1,3 +1,27 @@
+# 1.7.187 — selección de idiomas y voces en Rust
+
+Changelog: «Idiomas y selección de voces en Rust».
+Rust agrupa idiomas, cuenta voces instaladas y pendientes, ordena por libro,
+dispositivo y prioridades, aplica puntuaciones/regiones a voces naturales y
+numera nombres repetidos. Conserva referencias originales y desempates estables.
+Los nombres localizados y la normalización BCP-47 usan los mismos helpers/ICU;
+no se afirma que esos helpers o el motor de síntesis estén migrados aquí.
+La alternativa JavaScript permanece disponible ante fallo de carga del módulo.
+
+5015/5015 unitarias en 376 archivos, 314,84 s. 191 focales. 3000 comparaciones
+sembradas de menús, UTF-8, regiones, empate, instalación y referencias; acepta
+los mismos iterables en la agrupación. 1000 llamadas adicionales sin crecer la
+memoria WASM. E2E: 16/16, incluidas descargas/cancelación/reintento, teclado,
+PDF/EPUB, FB2 y exports reales de selección en la app compilada. Fallo inicial
+de compilación del prototipo (Object/JsValue) conservado y corregido antes de
+integrar. No cambia el conjunto ni la calidad de voces disponibles.
+
+Inventario: 4132 Rust / 36809 JavaScript, 10,09 % de líneas propias.
+WASM UI local 245556 bytes, SHA256
+b51acb2710711a57e91dfb2c28471822bf9ad43c14179e1be5b2f0786eecc0f0.
+App/decor y APK/updater sin cambios. Verificación pública pendiente.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-voice-options-prototype.
+
 # 1.7.186 — catálogo de voces en Rust y carga FB2
 
 Changelog: «Voces en Rust; apertura FB2».
@@ -24,7 +48,16 @@ Inventario: 4085 Rust / 36788 JavaScript, 9,99 % de líneas propias.
 WASM UI local 186156 bytes, SHA256
 b4bd1cfcf7ffcacec195a9e3eeac6f957ba9a0828d29e63856be1e44611e1f81.
 Batería completa: 5005/5005 unitarias, 375 archivos, 351,20 s, dos workers.
-App/decor y APK/updater sin cambios. Verificación pública pendiente.
+App/decor y APK/updater sin cambios. Publicado dca2386; deploy 38253607607 y
+Pages 38253734544 aprobados; Pages 323a15b. El entorno Pages mantuvo la tarea
+en espera unos cinco minutos y continuó sin modificar políticas ni permisos.
+Verificación pública: 189 checks, dos perfiles con bytes exactos, 30 casos
+PCM/marcas, APK y loader reales. UI público 186140 bytes,
+SHA256 1762b6f18edfd54332d9301a420848dec434edf6e07e8784721051d1559b3d0b.
+Android API36 ejecuta 1.7.186 y Lessac a 2×, 10,23 s, ocho unidades terminadas,
+proceso estable y sin FATAL EXCEPTION. Evidencia published-1791811003222,
+public-*.log y native-ui186.json. FB2 y catálogo Rust en web pública: 2/2
+aprobados, 11,6 s. CI186 completa sigue en curso.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-neural-view-prototype.
 
 # 1.7.185 — índice y listas del lector en Rust

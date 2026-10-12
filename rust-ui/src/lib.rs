@@ -1,3 +1,4 @@
+mod voice_options;
 mod neural_view;
 mod reader_lists;
 use std::{cell::{Cell, RefCell}, rc::{Rc, Weak}};

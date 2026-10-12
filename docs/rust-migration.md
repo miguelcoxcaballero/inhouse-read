@@ -1,9 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.186: menús, paneles, listas y presentación de voces en Rust.
-RustNeuralView conserva botones, progreso, oferta de descarga y foco del teclado.
-5005 unitarias y 24 recorridos del navegador aprobados. Protección de carga FB2.
-Inventario: 4085 líneas Rust / 36788 JS, 9,99 %; excluye dependencias, bindings
+Última entrega 1.7.187: selección de idiomas/voces naturales en Rust, además
+de menús, paneles, listas y presentación del catálogo. Orden regional, prioridades,
+conteos y etiquetas duplicadas conservados. 5015 unitarias y 16 E2E aprobados.
+Inventario: 4132 líneas Rust / 36809 JS, 10,09 %; excluye dependencias, bindings
 generados, pruebas, CSS/HTML y Android. No mide funciones terminadas.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 

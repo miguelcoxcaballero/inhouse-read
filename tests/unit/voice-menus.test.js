@@ -1,10 +1,17 @@
-import { describe, expect, it } from 'vitest'
+import {readFileSync} from 'node:fs'
+import * as rustUI from '../../src/wasm/ui/inhouse_read_ui.js'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { normalizeNeuralVoice, normalizeVoices } from '../../src/js/readers/voice-catalog.js'
 import { languageOptions, orderLanguages, voiceOptions } from '../../src/js/readers/voice-menus.js'
 
 const system = list => normalizeVoices(list.map(([voiceURI, name, lang, quality = 400, extra = {}]) => ({ voiceURI, name, lang, quality, network:false, installed:true, ...extra })))
 const neural = (piperId, lang, name, installed = false, quality = 'medium') => normalizeNeuralVoice({ id:`piper:${piperId}`, piperId, lang, name, quality, sizeMB:63 }, installed ? [`piper:${piperId}`] : [])
 
+const runtime=vi.hoisted(()=>({ui:null}))
+vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
+beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
+describe.each(['legacy','rust'])('voice option engine %s',engine=>{
+beforeEach(()=>{runtime.ui=engine==='rust'?rustUI:null})
 describe('language dropdown', () => {
   it('orders the book language, the device language, the usual ones, then the rest A-Z', () => {
     expect(orderLanguages(['ru', 'fr', 'en', 'es', 'ar', 'de'], { bookLang:'fr-FR', deviceLang:'es-ES' })).toEqual(['fr', 'es', 'en', 'de', 'ar', 'ru'])
@@ -48,4 +55,6 @@ describe('voice dropdown', () => {
     const voices = system([['n', 'Google español', 'es-ES', 400, { network:true }], ['local', 'Device Spanish', 'es-ES', 500]])
     expect(voiceOptions(voices, 'es', { bookLang:'es' })).toEqual([{ value:'', label:'Automática', hint:'Sin voces' }])
   })
+})
+
 })
