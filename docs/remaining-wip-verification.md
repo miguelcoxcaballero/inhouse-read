@@ -1,3 +1,26 @@
+# 1.7.205 — navegación del audiolibro en Rust
+
+Changelog: «Navegación del audiolibro en Rust».
+Rust gestiona explorar páginas, volver a la escucha y buscar una frase.
+El cursor audible se conserva al navegar; solo una pulsación larga cambia
+la frase. Las respuestas tardías se descartan si cambia la generación o
+la sesión de navegación. Se conservan fuente, lector y registros originales.
+
+1000 escenarios comparados con la implementación anterior, incluidos errores
+y cancelaciones; memoria WASM estable en2000 ciclos.82 pruebas focalizadas y
+5301 unitarias completas aprobadas.11 E2E originales aprobados, incluidos
+PDF/EPUB con voz real, y nueva prueba compilada de navegación1/1(7,2s).
+El primer ensayo nuevo pulsaba el centro de toda la línea, no la frase
+«Page2». Se conserva su fallo y traza. La prueba ahora obtiene el rectángulo
+del texto exacto, manteniendo el resultado esperado y el plazo originales.
+
+Inventario:5335 líneas Rust/37191 JavaScript=12,55%, no funcional.
+UI local461247bytes,SHA256
+0cb2a06d1ceafe66306da472207b8922fc75d175dba33ec23613d324fdb0af3d.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+La migración completa sigue pendiente; no se declara totalmente verde el CI.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-navigation-prototype.
+
 # 1.7.204 — continuidad de frases entre páginas en Rust
 
 Changelog: «Frases continuas entre páginas en Rust».
@@ -15,7 +38,18 @@ audible y se comprueba que ejecuta voice_join_sentence compilado en Rust.
 Inventario:5255 líneas Rust/37175 JavaScript=12,39%, no funcional.
 UI local445144bytes,SHA256
 5452a19af88a10ad54b26ca4db4232c59b9b2584ab6f254a3145d54aeeab7bf3.
-Publicación pendiente; APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada:20adeb6a734aa0939fe77a4bc667c8f90b382333.
+Deploy38283915506/Pages38284054996 completos; Pages
+8b142154a9ab0c48090ec3b2d82c1cc4f7a6402f. Todos los recursos HTTP/tamaño/SHA,
+dos perfiles nuevos,30 casos PCM/tempo y APK real con loader2107bytes pasan.
+UI pública445112bytes,SHA256
+74eed0810d1de969e827af5b6ae492e6945b6f7ebe38a527b2e87e2c7750cae3.
+E2E público con Davefx real pasó tras adaptar el transporte de modelos del
+test: Chromium bloqueaba loopback desde HTTPS. Se conservan fallo, traza y
+mensaje CORS originales; mismos ONNX, aserciones y plazos, app/WASM públicos.
+APK1.1.15/28 ejecuta web1.7.204:Lessac2×,10,59s,8finales/9inicios,PID14123
+estable y sinFATAL. Evidencia:published-1791826076444 y native-ui204.json.
+CI38283915476:unitarias114927579260 aprobadas; otros jobs no concluidos.
 No se declara completada la migración ni totalmente verde el CI histórico.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-join-prototype.
 

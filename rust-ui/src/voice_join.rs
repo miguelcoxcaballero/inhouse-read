@@ -18,7 +18,7 @@ fn define(target:&Object,key:&JsValue,value:&JsValue)->Result<(),JsValue>{
  for key in ["enumerable","configurable","writable"]{set(&descriptor,key,&JsValue::TRUE)?;}
  if !Reflect::define_property(target,key,&descriptor)?{return Err(js_sys::TypeError::new("Cannot define fragment property").into());}Ok(())
 }
-fn spread(source:&JsValue)->Result<Object,JsValue>{
+pub(crate) fn spread(source:&JsValue)->Result<Object,JsValue>{
  let target=Object::new();if absent(source){return Ok(target);}let source=boxed(source)?;
  // Define own data properties, including symbols and __proto__, as {...source}
  // does; Object.assign would incorrectly invoke an inherited setter.

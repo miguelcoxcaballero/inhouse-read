@@ -4,6 +4,20 @@ import { openAudioMenu } from './helpers/audio-menus.mjs'
 
 const MODEL = 'es_ES-davefx-medium', ID = `piper:${MODEL}`
 
+// Public HTTPS pages cannot fetch a loopback fixture server under Chromium's
+// local-network policy. Route only model downloads through the test transport;
+// application/WASM bytes still come from the published site, and these remain
+// the same real ONNX weights used by local verification.
+async function fixtureBase(page,mirror){
+  if(!process.env.IHR_TEST_URL)return mirror.base
+  const base='https://huggingface.co/rhasspy/piper-voices/resolve/main/'
+  await page.route(`${base}**`,async route=>{
+    const response=await route.fetch({url:mirror.base+route.request().url().slice(base.length)})
+    await route.fulfill({response})
+  })
+  return base
+}
+
 // A deterministic, two-page PDF. Its one sentence crosses the physical page
 // boundary; there are no headers or hidden duplicate text to read around it.
 const PDF_PARTS = [
@@ -39,6 +53,7 @@ test('una frase entre páginas avanza al inicio audible de su continuación natu
   const mirror = await startHuggingFaceMirror({voices:[MODEL], sliceMs:0})
   const errors = []; page.on('pageerror', error => errors.push(error.message))
   try {
+    const base=await fixtureBase(page,mirror)
     await page.setViewportSize({width:320,height:640})
     await page.emulateMedia({reducedMotion:'reduce'})
     await page.addInitScript(({base, id}) => {
@@ -65,7 +80,7 @@ test('una frase entre páginas avanza al inicio audible de su continuación natu
       }
       Object.defineProperty(window,'speechSynthesis',{configurable:true,value:{getVoices:()=>[],speak:()=>evidence.device++,cancel(){}}})
       window.InhouseSpeech={getVoices:()=> '[]',speak:()=>evidence.device++,stop(){}}
-    },{base:mirror.base,id:ID})
+    },{base,id:ID})
     await page.goto(process.env.IHR_TEST_URL || './')
     await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/speech-page-boundary.epub')
     await expect(page.locator('foliate-view')).toBeVisible()
@@ -115,6 +130,7 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
   const mirror = await startHuggingFaceMirror({voices:[MODEL], sliceMs:0})
   const errors = []; page.on('pageerror', error => errors.push(error.message))
   try {
+    const base=await fixtureBase(page,mirror)
     await page.setViewportSize({width:390,height:844})
     await page.emulateMedia({reducedMotion:'reduce'})
     await page.addInitScript(({base, id}) => {
@@ -181,7 +197,7 @@ test('PDF mantiene la página anterior durante la preparación y cambia al PCM a
       }
       Object.defineProperty(window,'speechSynthesis',{configurable:true,value:{getVoices:()=>[],speak:()=>evidence.device++,cancel(){}}})
       window.InhouseSpeech={getVoices:()=> '[]',speak:()=>evidence.device++,stop(){}}
-    },{base:mirror.base,id:ID})
+    },{base,id:ID})
     await page.goto(process.env.IHR_TEST_URL || './')
     await page.locator('#file-picker').setInputFiles({name:'speech-page-boundary.pdf',mimeType:'application/pdf',buffer:boundaryPDF()})
     await expect(page.locator('.pdf-text-layer')).toHaveText(PDF_PARTS[0])
