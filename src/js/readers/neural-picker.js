@@ -1,12 +1,13 @@
+import {warmPicker,refreshPicker,usedPicker,attachPicker,contextPicker,currentPicker,cancelPicker,warmUpPicker,changedPicker,paintPicker} from './picker-warm.js'
 // The "Voces naturales" part of the audio panel: the list of downloadable on-device voices (Descargar /
 // progress and Cancelar / Instalada, Usar and Quitar / error and Reintentar), the warning shown
 // when the neural voice was given up on, and the first-use offer row. It talks to the engine only through
 // neural-runtime.js, never downloads by itself, and stays hidden where the engine is unsupported or failed to load.
 import { NeuralView } from './neural-view.js'
-import { loadNeural, neuralEngine, neuralVoiceList } from './neural-runtime.js'
+import { neuralEngine, neuralVoiceList } from './neural-runtime.js'
 import { declaredLanguage, isNeuralId, langBase, languageName, orderNeuralVoices, recommendedNeuralFor } from './voice-catalog.js'
 
-const OFFER_KEY = 'inhouse-read-neural-offer-dismissed', USED_KEY = 'inhouse-read-neural-used'
+const OFFER_KEY = 'inhouse-read-neural-offer-dismissed'
 const OFFER_SNOOZE_DAYS = 30 // 'Ahora no' means not now: the offer comes back for that language after this long
 const DOWNLOAD_ERRORS = {
   offline:'Sin conexión.',
@@ -34,81 +35,27 @@ export class NeuralVoicePicker {
     panel.querySelector('[data-neural-retry]').addEventListener('click', () => { host.voice.retryNeural?.(); host.voice.play?.(); this.render() })
   }
   /** Nothing loads at app start: a book being opened schedules the engine module for an idle moment, ready before Play is tapped. */
-  warm() {
-    if (this.warmed) return
-    this.warmed = true
-    // The worker (and its ~0.2-0.3 GB) is only started ahead of Play for people who have listened with a neural voice before;
-    // for anyone else a book being opened just loads the engine module and the list of installed voices.
-    const context = this.warmContext()
-    const run = () => {
-      this.warmHandle = null
-      if (this.isWarmCurrent(context)) this.refresh({ warm:this.used() })
-    }
-    this.warmHandle = typeof requestIdleCallback === 'function'
-      ? { idle:true, id:requestIdleCallback(run, { timeout:2500 }) }
-      : { idle:false, id:setTimeout(run, 800) }
-  }
+  warm(){return warmPicker(this)}
   /** (Re)loads the engine module if it is not there yet and re-reads what is installed. Cheap; called when the audio tab opens. */
-  refresh({ warm = true } = {}) {
-    const context = this.warmContext()
-    loadNeural().then(() => { if (this.isWarmCurrent(context)) this.attach(warm) }, () => {})
-  }
-  used() { try { return localStorage.getItem(USED_KEY) === '1' } catch { return false } }
-  attach(warm = true) {
-    const context = this.warmContext()
-    const engine = neuralEngine()
-    if (engine && engine !== this.engine) {
-      this.engine = engine
-      engine.addEventListener('change', () => this.changed())
-      engine.addEventListener('status', () => { if (engine.status === 'speaking' && !this.used()) { try { localStorage.setItem(USED_KEY, '1') } catch { /* it just warms up at the audio tab */ } } })
-      Promise.resolve(engine.refresh?.()).catch(() => {}).then(() => warm && this.isWarmCurrent(context) && this.warmUp())
-    } else if (engine && warm) this.warmUp()
-    if (!engine) this.engine = null
-    this.host.populateVoices()
-  }
+  refresh({warm=true}={}){return refreshPicker(this,warm)}
+  used(){return usedPicker(this)}
+  attach(warm=true){return attachPicker(this,warm)}
   /**
    * Starts the engine's worker and loads the model of the voice the next Play will use, so the tap does not pay the cold start
    * (3-6 s). The engine tears it down by itself after ~90 s without speech. Does nothing unless that voice is a downloaded neural one.
    */
-  warmContext() { return { generation:this.warmGeneration, book:this.host.book } }
-  isWarmCurrent(context) {
-    return Boolean(context?.book && context.book === this.host.book && context.generation === this.warmGeneration)
-  }
-  cancelWarm() {
-    ++this.warmGeneration; this.warmed = false
-    const handle = this.warmHandle
-    this.warmHandle = null
-    if (handle?.idle) { if (typeof cancelIdleCallback === 'function') cancelIdleCallback(handle.id) }
-    else if (handle) clearTimeout(handle.id)
-  }
-  warmUp() {
-    if (!this.isWarmCurrent(this.warmContext())) return
-    try {
-      const engine = neuralEngine(), { voice } = this.host.voice?.voiceFor?.('') || {}
-      if (engine?.warmUp && voice?.neural && voice.installed) {
-        const context = this.warmContext()
-        Promise.resolve(engine.warmUp(voice.id)).catch(() => {})
-        Promise.resolve(this.host.voice?.preparePlayback?.(() => this.isWarmCurrent(context))).catch(() => {})
-      }
-    } catch { /* the first speak() starts the worker as before */ }
-  }
+  warmContext(){return contextPicker(this)}
+  isWarmCurrent(context){return currentPicker(this,context)}
+  cancelWarm(){return cancelPicker(this)}
+  warmUp(){return warmUpPicker(this)}
   /** Installed set changes rebuild the voice select too; download progress only repaints this block. */
-  changed() {
-    const engine = neuralEngine(), signature = engine ? [...engine.installed].sort().join(',') : ''
-    if (signature !== this.signature) { this.signature = signature; this.host.populateVoices(); return }
-    if (this.frame) return
-    this.frame = requestAnimationFrame(() => { this.frame = 0; this.paint() })
-  }
+  changed(){return changedPicker(this)}
   /**
    * A repaint for a 'change' that did not alter the set of installed voices: while a download advances, only the numbers of
    * its progress bar change, so they are updated in place (rebuilding the rows eight times a second made a press on Cancelar
    * miss when a repaint landed between mouse down and up). Anything else (a state changed) rebuilds as usual.
    */
-  paint() {
-    const engine = neuralEngine()
-    if (engine && this.patchProgress(engine)) return
-    this.render()
-  }
+  paint(){return paintPicker(this)}
   patchProgress(engine) {
     const list = neuralVoiceList(engine)
     if (this.block.hidden || !list.length) return false

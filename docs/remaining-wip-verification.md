@@ -1,3 +1,30 @@
+# 1.7.212 — preparación y actualización de voces en Rust
+
+Changelog: «Preparación de voces en Rust».
+Rust controla el contexto de calentamiento de voces, la cancelación por libro
+y generación, la conexión con el motor y la actualización agrupada del menú.
+Los temporizadores, promesas y listeners siguen perteneciendo al host.
+Conserva los800ms/requestIdleCallback, el precalentamiento para usuarios que
+ya escucharon y la selección instalada; no carga modelos en el arranque vacío.
+
+1600 escenarios comparados con el original y1000 ciclos sin crecimiento de
+memoria ni referencias.73 focalizadas y5394 unitarias completas aprobadas.
+26 E2E aprobados, con PDF/Davefx observando contexto, conexión y warmUp Rust.
+El primer build local falló por un reemplazo AST que aceptaba el constructor
+heredado de Object. Se restauró exactamente el constructor deHEAD y el script
+ahora exige Object.hasOwn. build-production.log conserva el fallo original;
+build-constructor-fixed.log y los tests comprueban el resultado corregido.
+CI210 conserva fallos previos de cierre alineado y legado (8123/8068/8098ms,
+límite8000ms) y cuatro enlaces de shaders al retirar un libro; el reintento
+de shaders pasó, pero el control estricto rechaza el resultado inestable.
+Logs originales:rust-controls-adoption/ci210-ui2-original.log y
+rust-controls-adoption/ci210-ui6-original.log. Siguen pendientes de corrección.
+
+Inventario:6017 líneas Rust/37380JavaScript=13.87%, no funcional.
+UI local609516bytes,SHA25604145c90c0f133cdef313fb45dbd164c68f34817d3831fb049f11d9a791baea7.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-picker-warm-prototype.
+
 # 1.7.211 — sesión y eventos del audiolibro en Rust
 
 Changelog: «Sesión de audiolibro en Rust».
@@ -27,7 +54,22 @@ Estos casos siguen pendientes; las pruebas focalizadas no los sustituyen.
 
 Inventario:5930 líneas Rust/37352JavaScript=13.7%, no funcional.
 UI local596084bytes,SHA256bdc9d4c7bc6ab976f4c40c836cd070a79376ccab90465113e0c975e3d72a0da9.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada:cc7c792483455e6961bbde761afbeacf40b671a0.
+Deploy38300095917/Pages38300235953 completos; Pages264c6c02d0bd04a2a00634846f0952815e8636a8.
+UI pública596052bytes,SHA2562a8d7492aa48423727962633342e0a2cb521c1bd8114e97beb2f337798958815.
+published-1791834776638: recursos HTTP/tamaño/SHA, dos perfiles,30 PCM/tempo
+y APK real con loader2107bytes correctos. La primera comprobación de referencias
+falló al leer una respuesta tras cerrarse la página: public-lifetime.log queda
+conservado. El verificador ahora espera la instancia que inicializa la app
+antes de acceder a default(), evitando iniciar otra él mismo; las promesas
+de respuesta capturan sus errores para conservar el diagnóstico principal.
+Mismas comprobaciones positivas y ciclos:458→476→458,1000 preparaciones,
+100 menús y una instancia por perfil; public-lifetime-app-ready.log aprobado.
+E2E público PDF/Davefx aprobado en22s sin reintentos.
+APK1.1.15/28 muestra web211:Lessac2×,10.16s,
+8finales/9inicios,PID18269estable y sinFATAL.
+CI38300095896 se registra aparte; no se presupone aprobado.
+Updater sin modificaciones.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-session-prototype.
 
 # 1.7.210 — adopción de Rust tras una descarga tardía

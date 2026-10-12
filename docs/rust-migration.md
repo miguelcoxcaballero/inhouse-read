@@ -1,9 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega1.7.211: sesión, eventos y preparación textual del audiolibro.
-5388 unitarias completas,46 focalizadas y26 E2E aprobados.
-Inventario:5930 líneas Rust/37352JS, **13.7%**; no mide funciones terminadas.
-1.7.210 pública y APK real verificados; CI se registra por separado.
+Última entrega1.7.212: preparación, cancelación y actualización de voces.
+5394 unitarias completas,73 focalizadas y26 E2E aprobados.
+Inventario:6017 líneas Rust/37380JS, **13.87%**; no mide funciones terminadas.
+1.7.211 pública y APK real verificados; CI se registra por separado.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout
