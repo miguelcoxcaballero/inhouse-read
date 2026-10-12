@@ -1,3 +1,28 @@
+# 1.7.214 — disponibilidad y recomendaciones de voces en Rust
+
+Changelog: «Recomendaciones de voces en Rust».
+Rust decide la disponibilidad de cada voz, las recomendaciones por idioma
+y el aplazamiento de la oferta durante 30 días. Conserva almacenamiento
+dañado, errores de almacenamiento, prioridad de las descargas y claves
+como __proto__ como propiedades propias, sin cambiar prototipos.
+
+2400 escenarios comparados con el original y 2400 ciclos sin crecimiento
+de memoria ni referencias. 65 focalizadas y 5396 unitarias completas
+aprobadas. Las 62 pruebas originales del menú mantienen sus assertions y
+observan también las seis funciones Rust nuevas. 26 E2E aprobados; el PDF
+con Davefx real observa disponibilidad y recomendaciones compiladas.
+
+El prototipo separado del renderizado del menú se retiene: su ensayo con
+DOM simulado mide más coste de interop (render 0,0389 vs 0,0077 ms).
+No se ha integrado ni se presenta como una mejora de velocidad. Evidencia:
+rust-picker-render-prototype/benchmark.log. Requiere estado propio y menos
+cruces de fronteras antes de volver a evaluarlo con DOM real.
+
+Inventario: 6157 líneas Rust/37425 JavaScript = 14.13%, no funcional.
+UI local 633337 bytes, SHA256 96a819991b12ec677e54192504858ec98cecfb6371b121244c439268f336f26e.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-picker-policy-prototype.
+
 # 1.7.213 — acciones de las voces naturales en Rust
 
 Changelog: «Selección y descarga de voces en Rust».
@@ -17,7 +42,19 @@ build.log queda conservado y build-fixed.log/check.log prueban la corrección.
 
 Inventario:6097 líneas Rust/37410JavaScript=14.01%, no funcional.
 UI local625003bytes,SHA256895a4fc28476f608e979715d0e818bbb97bc3afb6ea9305dc8457a0f2cad0cf6.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada: 6bd2967a51bc339d076f6c679874d827e42e89ee.
+Deploy 38303313918/Pages 38303424607 completos; Pages 7e7f86c09b691036bf4fdc0703c1fad63edf5515.
+UI pública 624971 bytes, SHA256 7ea34989a69b1e6e750a6a6ab14a4a674b70c5157539117b134f64aeb3398669.
+published-1791836474674: recursos HTTP/tamaño/SHA, dos perfiles,
+contador positivo con 1000 preparaciones/100 menús, 30 casos PCM/tempo
+y APK real loader 2107 bytes correctos. E2E público PDF/Davefx aprobado.
+La primera consulta se adelantó al despliegue Pages y obtuvo el manifiesto
+anterior y 404 de chunks nuevos: public-artifact.log conserva ese fallo.
+public-artifact-pages-ready.log confirma todos los recursos tras terminar Pages.
+APK 1.1.15/28 muestra web 213: Lessac 2×, 10.03s,
+7 finales/8 inicios, PID 19339 estable y sin FATAL.
+CI 38303313905 se registra aparte; no se presupone aprobado.
+Updater sin modificaciones.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-picker-actions-prototype.
 
 # 1.7.212 — preparación y actualización de voces en Rust

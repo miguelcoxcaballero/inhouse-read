@@ -1,9 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega1.7.213: descarga, selección y eliminación de voces.
-5395 unitarias completas,69 focalizadas y26 E2E aprobados.
-Inventario:6097 líneas Rust/37410JS, **14.01%**; no mide funciones terminadas.
-1.7.212 pública y APK real verificados; CI se registra por separado.
+Última entrega 1.7.214: disponibilidad y recomendaciones de voces.
+5396 unitarias completas, 65 focalizadas y 26 E2E aprobados.
+Inventario: 6157 líneas Rust/37425 JS, **14.13%**; no mide funciones terminadas.
+1.7.213 pública y APK real verificados; CI se registra por separado.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout

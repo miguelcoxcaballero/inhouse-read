@@ -1,3 +1,4 @@
+import {statePickerVoice,dismissedPickerOffer,snoozedPickerOffer,dismissPickerOffer,offeredPickerVoice,renderPickerOffer} from './picker-policy.js'
 import {clickPicker,cancelPickerDownload,namePickerVoice,installPickerVoice,usePickerVoice,removePickerVoice} from './picker-actions.js'
 import {warmPicker,refreshPicker,usedPicker,attachPicker,contextPicker,currentPicker,cancelPicker,warmUpPicker,changedPicker,paintPicker} from './picker-warm.js'
 // The "Voces naturales" part of the audio panel: the list of downloadable on-device voices (Descargar /
@@ -6,15 +7,11 @@ import {warmPicker,refreshPicker,usedPicker,attachPicker,contextPicker,currentPi
 // neural-runtime.js, never downloads by itself, and stays hidden where the engine is unsupported or failed to load.
 import { NeuralView } from './neural-view.js'
 import { neuralEngine, neuralVoiceList } from './neural-runtime.js'
-import { langBase, languageName, orderNeuralVoices, recommendedNeuralFor } from './voice-catalog.js'
+import { languageName, orderNeuralVoices } from './voice-catalog.js'
 
-const OFFER_KEY = 'inhouse-read-neural-offer-dismissed'
-const OFFER_SNOOZE_DAYS = 30 // 'Ahora no' means not now: the offer comes back for that language after this long
-const DOWNLOAD_ERRORS = {
-  offline:'Sin conexión.',
-  storage:'Sin espacio en el dispositivo.',
-  default:'No se pudo descargar.'
-}
+
+ // 'Ahora no' means not now: the offer comes back for that language after this long
+
 const WARNINGS = {
   'not-installed':'La voz natural seleccionada no está instalada. Descárgala de nuevo.',
   default:'No se pudo iniciar la voz natural. Pulsa Reintentar para volver a usarla.'
@@ -97,13 +94,7 @@ export class NeuralVoicePicker {
     this.renderOffer(engine, list)
     this.restoreFocus(focus)
   }
-  state(engine, voice) {
-    const download = engine.downloads?.get(voice.id)
-    if (engine.installed.has(voice.id)) return { name:'installed' }
-    if (this.tasks.has(voice.id) || download?.state === 'downloading') return { name:'downloading', download }
-    if (this.errors.has(voice.id) || download?.state === 'error') return { name:'error', message:this.errors.get(voice.id) || DOWNLOAD_ERRORS[download?.code] || DOWNLOAD_ERRORS.default }
-    return { name:'idle' }
-  }
+  state(engine,voice){return statePickerVoice(this,engine,voice)}
   row(engine, voice) {
     const expansion = Boolean(voice.sharedPack && voice.upgradeBytes > 0 && [...engine.installed].some(id=>id.startsWith(voice.modelKey+':')))
     const size = expansion ? Math.round(voice.upgradeBytes/1e6) : Math.round(voice.sizeMB)
@@ -122,28 +113,13 @@ export class NeuralVoicePicker {
   remove(id){return removePickerVoice(this,id)}
 
   // --- First-use offer ------------------------------------------------------------------------------------------------
-  dismissed() { try { return JSON.parse(localStorage.getItem(OFFER_KEY) || '{}') || {} } catch { return {} } }
+  dismissed(){return dismissedPickerOffer()}
   /** True while 'Ahora no' still holds for this language (it expires after OFFER_SNOOZE_DAYS). */
-  snoozed(base) {
-    const at = this.dismissed()[base]
-    return at === true || (Number(at) > 0 && Date.now() - Number(at) < OFFER_SNOOZE_DAYS * 864e5)
-  }
-  dismiss() {
-    const base = langBase(this.bookLang)
-    try { localStorage.setItem(OFFER_KEY, JSON.stringify({ ...this.dismissed(), [base]:Date.now() })) } catch { /* it just asks again next time */ }
-    this.render()
-  }
+  snoozed(base){return snoozedPickerOffer(this,base)}
+  dismiss(){return dismissPickerOffer(this)}
   /** Offer a download when no installed natural voice speaks the book's language, including before the first playback. */
-  offerFor(engine, list) {
-    const base = langBase(this.bookLang)
-    if (!engine || !base || !this.host.voice || this.snoozed(base)) return null
-    if (list.some(voice => voice.base === base && engine.installed.has(voice.id))) return null
-    return recommendedNeuralFor(list, this.bookLang, navigator.language)
-  }
-  renderOffer(engine, list) {
-    const voice = this.offerFor(engine, list)
-    this.view.renderOffer(voice,voice ? this.state(engine,voice) : null)
-  }
+  offerFor(engine,list){return offeredPickerVoice(this,engine,list)}
+  renderOffer(engine,list){return renderPickerOffer(this,engine,list)}
 
   // --- Keyboard focus survives a repaint ---------------------------------------------------------------------------------
   focusKey() { return this.view.focusKey() }
