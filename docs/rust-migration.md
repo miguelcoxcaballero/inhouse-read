@@ -1483,3 +1483,13 @@ JavaScript propios:7,93% del total Rust+JS. Incluye comentarios y excluye
 pruebas,dependencias,CSS/HTML y Java Android. No mide porcentaje funcional;
 las rutas de compatibilidad siguen siendo código JS. La migración completa
 continúa pendiente.
+
+## 1.7.171: plan de trama de los libros
+
+Rust genera tinte y comandos de trama con el mismo PRNG, incluido su estado
+posterior. La comparación conserva cada byte de Canvas y cada operación.
+La preparación aislada mejora ligeramente; el dibujo/subida a GPU domina
+el tiempo total y las repeticiones no demuestran una mejora visible.
+4752/4752 unitarias y3/3 UI reales. Detalles y ensayos originales en WIP.
+
+Recuento171:3183 líneas Rust en39 fuentes y36344 JS en197 módulos: 8.05% de Rust/(Rust+JS). Incluye comentarios y alternativas JS; no mide funciones completadas.

@@ -65,3 +65,5 @@ mod mesh_compact;
 mod metal_sheet;
 
 mod mesh_finish;
+
+mod book_cloth;

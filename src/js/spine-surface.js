@@ -1,5 +1,5 @@
 import { getRustCore } from './rust-core.js'
-import { rustBookWeavePixels } from './book-surface-wasm.js'
+import { rustBookWeavePixels, rustBookClothPlan } from './book-surface-wasm.js'
 import * as THREE from 'three'
 import { spineFinish, surfaceFinish, SURFACE_FINISHES } from './book-colors.js'
 import { normalizeBookAuthor } from './book-title.js'
@@ -61,14 +61,17 @@ export function textSeed(text) {
   return h >>> 0
 }
 /** Small deterministic PRNG: the same book always gets the same cloth. */
+const randomStates = new WeakMap()
 export function seededRandom(seed) {
   let s = seed >>> 0 || 1
-  return () => {
+  const random = () => {
     s = s + 0x6D2B79F5 | 0
     let t = Math.imul(s ^ s >>> 15, 1 | s)
     t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t
     return ((t ^ t >>> 14) >>> 0) / 4294967296
   }
+  randomStates.set(random, { get: () => s, set: value => { s = value | 0 } })
+  return random
 }
 
 /** Attach colour stops; tolerant of partial canvas implementations. */
@@ -103,6 +106,13 @@ export function paintField(c, width, height, random, { operation = 'soft-light',
 export function paintCloth(c, designWidth, random, { threads = true, metal = false } = {}) {
   // A thumbnail shows neither dye nor threads: keep its flat colour.
   if (!threads) return
+  const stream = randomStates.get(random)
+  const plan = stream && rustBookClothPlan(getRustCore(), stream.get(), designWidth, metal)
+  if (plan) {
+    stream.set(plan.state)
+    paintClothPlan(c, designWidth, plan)
+    return
+  }
   // Dye variation in real cloth is a few percent at most; more reads as camouflage.
   paintField(c, designWidth, 1024, random, { operation:'soft-light', spread:metal ? 5 : 9,
     cells:[Math.max(4, Math.round(designWidth / 34)), 30] })
@@ -116,6 +126,21 @@ export function paintCloth(c, designWidth, random, { threads = true, metal = fal
     const x = random() * designWidth, y = random() * 900, length = 60 + random() * 380
     c.fillStyle = random() > .5 ? `rgba(255,248,235,${.012 + random() * .025})` : `rgba(0,0,0,${.015 + random() * .03})`
     c.fillRect(x, y, .5 + random() * .7, length)
+  }
+}
+
+// Replay the same Canvas operations after the numeric plan has been copied.
+// No WebAssembly view or live arena is held while Canvas paints the book.
+function paintClothPlan(c, designWidth, plan) {
+  const field = Object.assign(document.createElement('canvas'), { width:plan.fieldWidth, height:30 })
+  const f = field.getContext('2d'), image = f.createImageData?.(plan.fieldWidth, 30)
+  if (image?.data) { image.data.set(plan.pixels); f.putImageData(image, 0, 0) }
+  c.save(); c.globalCompositeOperation = 'soft-light'; c.imageSmoothingEnabled = true
+  c.imageSmoothingQuality = 'high'; c.drawImage(field, 0, 0, designWidth, 1024); c.restore()
+  const commands = plan.commands
+  for (let at = 0; at < commands.length; at += 6) {
+    c.fillStyle = commands[at + 5] ? `rgba(255,248,235,${commands[at + 4]})` : `rgba(0,0,0,${commands[at + 4]})`
+    c.fillRect(commands[at], commands[at + 1], commands[at + 2], commands[at + 3])
   }
 }
 

@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test'
 
+if (process.env.IHR_TEST_URL) test.use({ baseURL: process.env.IHR_TEST_URL })
+
 test('lomo nítido: tintas, metales y grabado persistentes en móvil', async ({ page }) => {
   test.setTimeout(90_000)
   await page.setViewportSize({width:390,height:844})

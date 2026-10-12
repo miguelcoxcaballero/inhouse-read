@@ -1,3 +1,38 @@
+# Migración 1.7.171 — trama de los libros en Rust
+
+Changelog: «Trama de los libros en Rust». Rust prepara el campo de tinte y
+los comandos de trama conservando el estado exacto del generador aleatorio.
+Canvas ejecuta las mismas operaciones. Miniaturas y callbacks ajenos conservan
+su ruta anterior. Salidas propias, memoria liberada y fallback sin consumir
+el PRNG ante rechazo, falta de memoria o trap.
+
+53/53 focalizadas; 17 nuevas. 4752/4752 unitarias en358 archivos,295,61s.
+3/3 E2E de materiales y regreso nativo,59s,sin reintentos ni omisiones.
+Canvas CPU×4: cuatro imágenes de4194304bytes idénticas y los siguientes
+valores del PRNG idénticos. Capacidad estable1179648bytes tras calentar.
+Plan aislado:0,144→0,132/0,143→0,132/0,057→0,056/0,165→0,140ms.
+El dibujo completo tarda67–70ms y NO demuestra mejora perceptible.
+El primer ensayo de carga real a WebGL se conserva, incluido el caso
+83,90→85,74ms. Repetición independiente3/3,1,7min; nueve rondas alternadas
+por caso, con texImage2D y finish, CPU×4:
+-80px:79,54→80,06 /79,22→78,74 /81,12→80,10ms.
+-257px:80,48→81,18 /79,96→79,24 /80,10→80,08ms.
+-257px metal:78,00→79,06 /78,06→79,52 /77,44→77,00ms.
+-512px:79,82→79,60 /79,84→79,06 /79,24→79,46ms.
+Diferencias pequeñas y variables; no se presenta una mejora global de FPS
+ni se ha medido un teléfono físico. Rasterización/subida dominan el coste.
+Build aprobado; WASM397024bytes,SHA
+`d7c1ec44ce9378406f92fc37cc0ad9891774c5d9d1f62e5ef87a39c857a30b35`.
+Publicación171 pendiente. Evidencia:rust-book-cloth en D:/CodexEvidence/InhouseRead-20261012.
+
+Publicación170:fuente36c6c9e7bd7df5c6d05da0453c693588ee2c7f48,
+Pagesdbe4fda8b35cae97b385f822db3915fceaf0e6b2; deploy38210959741 y
+Pages38211020035 aprobados.99recursos/HTML/precarga exactos; núcleo público
+14casos/2965707bytes idénticos.3/3 E2E públicas del editor,1,4min.
+Main/WASM exactos en dos perfiles limpios. APK1.1.15/code28,hash yloader2107
+verificados. Evidencia:published-1791785408840 y rust-relief-pigment/public-*.
+Los fallos anteriores de duración en CI se conservan; no se afirma CI verde.
+
 # Migración 1.7.170 — pigmentos y biseles en Rust
 
 Changelog: «Relieves por pigmento en Rust». Se trasladan la clasificación
