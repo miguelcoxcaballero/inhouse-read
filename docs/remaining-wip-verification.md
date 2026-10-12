@@ -1,3 +1,29 @@
+# Versión 1.7.175 — disponibilidad de Rust al analizar la portada
+
+Changelog: «Aprovecha Rust tras cargar las fuentes».
+La preparación numérica espera ahora en el punto de carga de fuentes que ya
+existía, antes de elegir Rust o su alternativa. No se añade una espera ni se
+bloquea el arranque de la estantería. Mantiene la alternativa si no hay núcleo.
+La comprobación pública174 descubrió que la primera portada aún podía elegir
+JS mientras llegaba la dependencia; la comprobación de invocación falló y se
+conserva en reader-bottom-controls/public-ui.log/json/results. Los cinco casos
+del audiolibro sí pasaron en producción:retorno inferior y Pausa/Stop en PDF/EPUB.
+Los bytes del nuevo núcleo ya eran los correctos,42casos/6850692bytes exactos.
+
+174 desplegada:fuente2b333da52ad2c53fa19aa0b13c8484e5deb70214,
+Pages435412bcfb9c13414a11c1b3ab64629e1e855c30. Deploy38217249421 y
+Pages38217321745 aprobados.101recursos/HTML/ambas precargas exactos,
+150comprobaciones del artefacto. Main+ambos WASM en dos perfiles limpios.
+APK1.1.15/code28 descargado y comprobado,loader2107bytes. No cambio nativo.
+Evidencia:published-1791789818202. La consulta inicial mientras Pages seguía
+desplegando recibió manifiesto anterior/404 y se conserva en
+published-1791789791393; se repitió después de completar Pages, sin esos fallos.
+
+175 no cambia los binarios WASM ni la caché de decoración.6/6 UI locales,32,5s,
+sin reintentos ni omisiones. Prueba nueva1/1:el núcleo llega durante la espera
+de fuentes y se elige después de ella, sin añadir temporizadores. 4807/4807 pruebas de la suite existente,364archivos,289,81s,
+más1/1 nueva focalizada (creada después de iniciar la suite). Publicación pendiente; evidencia:rust-cover-startup. La migración completa sigue pendiente.
+
 # Versión 1.7.174 — controles abajo y preparación de portadas en Rust
 
 Changelog: «Controles abajo; análisis de portada optimizado».

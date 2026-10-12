@@ -532,6 +532,9 @@ export async function analyzeCoverAppearance(url, title = '', { matchFont = true
     }
     const color = coverColorFromPixels(pixels, width, height);
     if (!matchFont) return { ...color, aspectRatio, source: 'cover' };
+    // Font loading is already required. Let the numeric module finish loading
+    // during that wait, before choosing the native or compatibility path.
+    await loadCandidateFonts();
     const includeEdges = Boolean(title) && String(title).trim().length >= 3 && width >= 48 && Math.floor(height * .82) >= 48;
     const prepared = width * height >= 4096 && coverColorCore?.prepare(coverColorCore.get(), pixels, width, height, includeEdges);
     const gray = prepared?.gray ?? new Uint8Array(width * height);
@@ -539,7 +542,6 @@ export async function analyzeCoverAppearance(url, title = '', { matchFont = true
       const at = index * 4;
       gray[index] = Math.round(pixels[at] * .299 + pixels[at + 1] * .587 + pixels[at + 2] * .114);
     }
-    await loadCandidateFonts();
     const turn = matcherTurn.then(() => matchTitleFont(gray, width, height, title, prepared?.near));
     matcherTurn = turn.catch(() => {});
     const font = await turn || (prepared ? FONT_CANDIDATES[prepared.busy ? 3 : 0] : visualFallback(gray, width, height));

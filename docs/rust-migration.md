@@ -1528,3 +1528,12 @@ la ruta JS para menos de 4096 píxeles y ante indisponibilidad de WASM. 15 prueb
 comparan todos los RGB y planos exactos. CPU×4:192×288 con bordes 6,937→4,287ms,
 transferencias incluidas. Sin bordes no se aprecia mejora. Decoración conserva
 sus bytes y caché. Estado de publicación y controles inferiores en WIP.
+
+## 1.7.175 — preparar después de la espera de fuentes
+
+La primera comprobación pública de174 ejecutó la alternativa JavaScript en
+escala de grises antes de que llegara el puente dinámico. Se conserva ese fallo.
+La espera de fuentes existente se mueve antes de elegir la ruta; no se amplía
+el tiempo límite ni se bloquea el primer fotograma. Un test con fuentes retenidas
+comprueba el orden y la elección del núcleo que llega durante esa espera.
+Los binarios WASM y sus cachés no cambian. Verificación pública en WIP.
