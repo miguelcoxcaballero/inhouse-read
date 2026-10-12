@@ -11,13 +11,14 @@ import { neuralEngine, neuralVoiceList } from './neural-runtime.js'
 import { NeuralVoicePicker } from './neural-picker.js'
 import { clonePlace, cleanPlaces, cleanQuotes } from './reading-state.js'
 import { isBookmarked, toggleBookmark, prependHistory } from './reading-places.js'
+import { ReaderNavigation } from './reader-navigation.js'
 import { displayBookTitle, normalizeBookAuthor } from '../book-title.js'
 
 const STORAGE_KEY = 'inhouse-read-reading-preferences'
 
 export class ReaderExperience {
-  navigationGeneration = 0
-  navigationQueue = Promise.resolve()
+  navigation = new ReaderNavigation()
+  get navigating() { return this.navigation.navigating }
 
   constructor(reader, { persist = async () => {} } = {}) {
     this.reader = reader
@@ -353,24 +354,15 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
     catch { this.error('No se pudieron guardar los marcadores.') }
   }
   cancelNavigation() {
-    this.navigationGeneration++
-    this.navigationQueue = Promise.resolve()
-    this.navigating = false
+    this.navigation.cancel()
   }
   queueNavigation(action) {
     if (!this.book) return Promise.resolve()
-    const book = this.book, generation = this.navigationGeneration
-    const isCurrent = () => this.book === book && this.navigationGeneration === generation
+    const book = this.book, generation = this.navigation.generation
+    const isCurrent = () => this.book === book && this.navigation.generation === generation
     // A section becomes visible before its history write finishes. Preserve
     // links tapped in that interval instead of silently dropping the request.
-    const task = this.navigationQueue.catch(() => {}).then(async () => {
-      if (!isCurrent()) return
-      this.navigating = true
-      try { return await action(isCurrent) }
-      finally { if (isCurrent()) this.navigating = false }
-    })
-    this.navigationQueue = task
-    return task
+    return this.navigation.enqueue(action,isCurrent)
   }
   jump(place, target) {
     return this.queueNavigation(async isCurrent => {

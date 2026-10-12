@@ -1,11 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.191: comparación/alternancia de marcadores y adición al
-historial en Rust. Conserva referencias y límites; serializa una sola vez
-el destino. 5085 unitarias y 13 E2E de lectura, voz, citas, historial,
-reapertura y exports reales aprobados. La normalización sigue en JavaScript.
-Inventario: 4377 líneas Rust / 36884 JS, 10,61 %; excluye dependencias, bindings
-generados, pruebas, CSS/HTML y Android. No mide funciones terminadas.
+Última entrega1.7.192: serialización e invalidación de navegación en Rust.
+5100 unitarias y diez E2E aprobados. Inventario4412 líneas Rust/36897 JS,
+10,68 %; excluye dependencias, bindings generados, pruebas, CSS/HTML y
+Android. No mide funciones terminadas. Se conservan alternativas JS.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout

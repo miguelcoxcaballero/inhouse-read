@@ -1,3 +1,24 @@
+# 1.7.192 — navegación serializada en Rust
+
+Changelog: «Navegación del lector en Rust».
+Rust posee la cola de acciones, generación y estado de navegación. Cancelar
+un libro libera inmediatamente la cola del siguiente; la finalización de
+una acción anterior no borra el indicador de la nueva. Conserva resultados,
+errores, validadores retenidos, recuperación tras fallos y reentrada. El host
+conserva las acciones de navegación/guardado y su validación de libro actual.
+wasm-bindgen-futures0.4.54 comparte versiones fijadas y avisos MIT/Apache.
+No se mantiene un préstamo Rust durante callbacks o esperas de JavaScript.
+
+5100/5100 unitarias,381 archivos,326,94 s;137 focales aprobadas. Diez E2E
+aprobados en1,3min: lectura, voces, apariencia, marcadores/saltos/regreso y
+exports Rust reales. Dos mil colas creadas/liberadas sin crecimiento WASM.
+No cambia el motor de audio ni se atribuye una aceleración no medida.
+Inventario:4412 Rust/36897 JavaScript,10,68 % de líneas propias.
+WASM UI local293130bytes,SHA256
+4313b11b5cd2d246f0f3e4418d01367ee1a91c0e4422fa873ac1d944e181cd03.
+App/decor, APK1.1.15/28 y pin del updater sin cambios. Publicación pendiente.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-reader-navigation-prototype.
+
 # 1.7.191 — marcadores e historial en Rust
 
 Changelog: «Marcadores e historial en Rust».
@@ -20,7 +41,13 @@ la diferencia corta está en el ruido. No son tiempos de navegación completa.
 Inventario: 4377 Rust / 36884 JavaScript, 10,61 % de líneas propias.
 WASM UI local 281945 bytes, SHA256
 246d2e37803d55e823be124d11e3e023b746f11d9831a8ed07bf72cc5f9cab8a.
-App/decor y APK/updater sin cambios. Verificación pública pendiente.
+App/decor y APK/updater sin cambios. Publicado d6a8842, deploy38261656216
+ y Pages38261804170 aprobados (Pages d18a2bf). Comprobaciones HTTP/bytes/SHA
+ completas sin errores, dos perfiles, treinta casos PCM/marcas y APK/loader
+ reales. E2E público de marcadores/historial aprobado (6,8 s).
+ UI público281929bytes, SHA256
+ 01af7e3bd559757bed9484a20f91f0fd6ddf2434ca1312d7b95fbc22f3fd6392.
+ Evidencia published-1791815158175 y public-*.log.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-reading-places-prototype.
 
 # 1.7.190 — resaltado, seguimiento y carga tardía de Rust

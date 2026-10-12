@@ -56,7 +56,7 @@ async function setup(persist = vi.fn(async () => {})) {
     next:vi.fn(async () => {}), prev:vi.fn(async () => {})
   }
   const experience = new ReaderExperience(reader, { persist })
-  if(engine==='rust') { expect(experience.view).toBeInstanceOf(rustUI.RustReaderView); expect(experience.lists).toBeInstanceOf(rustUI.RustReaderLists) }
+  if(engine==='rust') { expect(experience.view).toBeInstanceOf(rustUI.RustReaderView); expect(experience.lists).toBeInstanceOf(rustUI.RustReaderLists); expect(experience.navigation).toBeInstanceOf(rustUI.RustReaderNavigation) }
   experience.panel.close = vi.fn()
   reader.goToLocator = vi.fn(async (locator, fraction) => {
     reader.location = { locator, fraction }
