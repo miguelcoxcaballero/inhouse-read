@@ -1,3 +1,4 @@
+mod neural_view;
 mod reader_lists;
 use std::{cell::{Cell, RefCell}, rc::{Rc, Weak}};
 use wasm_bindgen::{prelude::*, JsCast};

@@ -36,12 +36,25 @@ function harness(source=patched()) {
     get view(){return this.#view}
   }`)(View,container)
   const router=new Router()
-  return {router,container,nodes,doc,render,expand,observe,unobserve,range,
+  return {View,router,container,nodes,doc,render,expand,observe,unobserve,range,
     get frame(){return router.view.element.children.find(node=>node.kind==='iframe')},
     loaded(url,document=doc){this.frame.contentDocument=document;this.frame.contentWindow.location.href=url;this.frame.emit('load')},
     overlay(){return new Element('overlay')}}
 }
 describe('retained Foliate chapter frame',()=>{
+  it('defers layout for a navigating document without a root/body and resumes on the loaded document',()=>{
+    const h=harness(),view=h.router.create();h.render.mockRestore();h.expand.mockRestore()
+    const columnize=vi.spyOn(h.View.prototype,'columnize').mockImplementation(()=>{})
+    for(const doc of [null,{}, {documentElement:{}}, {documentElement:{},body:null}, {body:{}}]){
+      h.frame.contentDocument=doc
+      expect(()=>view.render({flow:'paginated'})).not.toThrow()
+      expect(()=>view.expand()).not.toThrow()
+    }
+    expect(columnize).not.toHaveBeenCalled()
+    h.frame.contentDocument={documentElement:{},body:{}}
+    const layout={flow:'paginated'};view.render(layout)
+    expect(columnize).toHaveBeenCalledExactlyOnceWith(layout)
+  })
   it('reproduces upstream allocating a new iframe for each chapter',()=>{
     const h=harness(upstream),first=h.router.create(),second=h.router.create()
     expect(second).not.toBe(first);expect(h.nodes.filter(node=>node.kind==='iframe')).toHaveLength(2)

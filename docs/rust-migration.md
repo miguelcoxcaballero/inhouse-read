@@ -1,10 +1,10 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.185: menús, paneles, índice y listas del lector en Rust.
-RustReaderLists conserva DOM, búsqueda, citas y referencias de los clics;
-elimina listeners al reemplazar cada lista. 4973 unitarias aprobadas.
-Inventario actual: 3999 líneas Rust y 36765 JS, 9,81 %; excluye dependencias,
-bindings generados, pruebas, CSS/HTML y Android. No mide funciones terminadas.
+Última entrega 1.7.186: menús, paneles, listas y presentación de voces en Rust.
+RustNeuralView conserva botones, progreso, oferta de descarga y foco del teclado.
+5005 unitarias y 24 recorridos del navegador aprobados. Protección de carga FB2.
+Inventario: 4085 líneas Rust / 36788 JS, 9,99 %; excluye dependencias, bindings
+generados, pruebas, CSS/HTML y Android. No mide funciones terminadas.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout

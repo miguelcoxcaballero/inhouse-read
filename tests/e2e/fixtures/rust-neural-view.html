@@ -1,0 +1,42 @@
+<!doctype html><html><body><script type="module">
+import init,{RustNeuralView} from '/inhouse-read/src/wasm/ui/inhouse_read_ui.js';
+import {LegacyNeuralView} from '/inhouse-read/src/js/readers/neural-view-legacy.js';
+import {languageName} from '/inhouse-read/src/js/readers/voice-catalog.js';
+const core=await init();
+window.run=rust=>{
+ document.body.innerHTML='<section id="panel"><div data-neural></div><div data-neural-offer></div></section>';
+ const panel=document.querySelector('#panel'),block=panel.querySelector('[data-neural]'),offer=panel.querySelector('[data-neural-offer]');
+ const legacy=new LegacyNeuralView(panel);legacy.host={panel,preferences:{voice:''}};legacy.block=block;legacy.offer=offer;
+ const view=rust?new RustNeuralView(panel):legacy,log=[];
+ const snap=label=>log.push({label,html:panel.outerHTML,focus:document.activeElement?.outerHTML});
+ const voices=[{id:'piper:a',name:'Ana <&>',lang:'es',sizeMB:24.7},{id:'piper:b',name:'Jane',lang:'en-US',sizeMB:61,recommended:true,licenseUrl:'https://example.test/license',licenseName:'MIT'},{id:'supertonic3:F1:es',modelKey:'supertonic3',name:'Lucía',lang:'es-ES',sizeMB:211.4,upgradeBytes:2039325,sharedPack:true,licenseUrl:'licenses/supertonic3-OpenRAIL-M.txt'}];
+ const engine={installed:new Set()};let state,offered;
+ legacy.state=()=>state;legacy.offerFor=()=>offered;
+ const row=voice=>{
+  const expansion=Boolean(voice.sharedPack&&voice.upgradeBytes>0&&[...engine.installed].some(id=>id.startsWith(voice.modelKey+':')));
+  const size=expansion?Math.round(voice.upgradeBytes/1e6):Math.round(voice.sizeMB);
+  const license=voice.licenseUrl?new URL(voice.licenseUrl,new URL('/inhouse-read/',location.href)).href:'';
+  return view.row(voice,state,legacy.host.preferences.voice===voice.id,expansion,languageName(voice.lang),size,license);
+ };
+ for(const voice of voices)for(const name of ['idle','installed','downloading','error'])for(const selected of [false,true])for(const expansion of [false,true]){
+  engine.installed=new Set(expansion?['supertonic3:M1:es']:[]);legacy.host.preferences.voice=selected?voice.id:'';
+  state={name,download:{fraction:.465,total:128e6},message:'Error <&>'};block.replaceChildren(row(voice));offered=voice;
+  if(rust)view.renderOffer(voice,state);else legacy.renderOffer(offered,state);
+  snap(voice.id+name+selected+expansion);
+ }
+ for(const fraction of [undefined,0,.004,.999,1,1.6,-.2,NaN,Infinity])for(const total of [undefined,0,24e6]){
+  const voice=voices[0];state={name:'downloading',download:{fraction,total}};const element=row(voice);block.replaceChildren(element);
+  if(rust)view.paintProgress(element.querySelector('.reading-neural-progress'),state.download,voice);
+  snap('progress '+fraction+' '+total);
+ }
+ offered=null;if(rust)view.renderOffer(null,null);else legacy.renderOffer(offered,state);snap('no offer');
+ state={name:'installed'};block.replaceChildren(row(voices[0]),row(voices[1]));
+ block.querySelector('[data-neural-action=remove]').focus();const key=view.focusKey();log.push({label:'key',key});
+ state={name:'idle'};block.replaceChildren(row(voices[0]),row(voices[1]));view.restoreFocus(key);snap('fallback focus');
+ state={name:'idle'};offered=voices[0];if(rust)view.renderOffer(offered,state);else legacy.renderOffer(offered,state);
+ offer.querySelector('button').focus();const offerKey=view.focusKey();state={name:'downloading',download:{fraction:.5}};
+ if(rust)view.renderOffer(offered,state);else legacy.renderOffer(offered,state);view.restoreFocus(offerKey);snap('offer focus');
+ if(rust){for(let i=0;i<20;i++){row(voices[0]);view.renderOffer(offered,state)}const before=core.memory.buffer.byteLength;for(let i=0;i<1000;i++){row({...voices[0],name:'Unique '+i});view.renderOffer({...offered,name:'Unique '+i},state)}window.memory={before,after:core.memory.buffer.byteLength};view.free()}
+ return log;
+};
+</script></body></html>

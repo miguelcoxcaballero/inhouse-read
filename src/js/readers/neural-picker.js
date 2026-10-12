@@ -2,6 +2,7 @@
 // progress and Cancelar / Instalada, Usar and Quitar / error and Reintentar), the warning shown
 // when the neural voice was given up on, and the first-use offer row. It talks to the engine only through
 // neural-runtime.js, never downloads by itself, and stays hidden where the engine is unsupported or failed to load.
+import { NeuralView } from './neural-view.js'
 import { loadNeural, neuralEngine, neuralVoiceList } from './neural-runtime.js'
 import { declaredLanguage, isNeuralId, langBase, languageName, orderNeuralVoices, recommendedNeuralFor } from './voice-catalog.js'
 
@@ -17,37 +18,6 @@ const WARNINGS = {
   default:'No se pudo iniciar la voz natural. Pulsa Reintentar para volver a usarla.'
 }
 
-const element = (tag, className, text) => {
-  const node = document.createElement(tag)
-  if (className) node.className = className
-  if (text != null) node.textContent = text
-  return node
-}
-function button(label, action, id, className = '', ariaLabel = '') {
-  const node = element('button', `reading-neural-btn ${className}`.trim(), label)
-  node.type = 'button'; node.dataset.neuralAction = action
-  if (id) node.dataset.neuralId = id
-  if (ariaLabel) node.setAttribute('aria-label', ariaLabel)
-  return node
-}
-function progress(label, download, voice) {
-  const wrap = element('div', 'reading-neural-progress')
-  const bar = element('div', 'reading-neural-bar'), fill = element('i')
-  bar.setAttribute('role', 'progressbar'); bar.setAttribute('aria-label', label)
-  bar.setAttribute('aria-valuemin', '0'); bar.setAttribute('aria-valuemax', '100'); bar.append(fill)
-  wrap.append(bar, element('span', 'reading-neural-percent'))
-  paintProgress(wrap, download, voice)
-  return wrap
-}
-/** Sets the numbers of a progress block built by progress() without rebuilding it (a pressed button must stay in the DOM). */
-function paintProgress(wrap, download, voice) {
-  const percent = Math.max(0, Math.min(100, Math.round((download?.fraction || 0) * 100)))
-  const total = download?.total > 0 ? download.total / 1e6 : voice.sizeMB
-  wrap.querySelector('[role="progressbar"]').setAttribute('aria-valuenow', String(percent))
-  wrap.querySelector('i').style.width = `${percent}%`
-  wrap.querySelector('.reading-neural-percent').textContent = `${percent} %${total ? ` · ${Math.round(total * percent / 100)} de ${Math.round(total)} MB` : ''}`
-}
-
 export class NeuralVoicePicker {
   /** `host` is the ReaderExperience: panel, voice (ReadingVoice), preferences, setPreference() and populateVoices(). */
   constructor(host) {
@@ -57,6 +27,7 @@ export class NeuralVoicePicker {
     this.engine = null; this.signature = ''; this.frame = 0
     this.warmGeneration = 0; this.warmHandle = null
     const panel = host.panel
+    this.view = new NeuralView(panel)
     this.block = panel.querySelector('[data-neural]')
     this.offer = panel.querySelector('[data-neural-offer]')
     for (const root of [this.block, this.offer]) root.addEventListener('click', event => this.click(event))
@@ -146,14 +117,14 @@ export class NeuralVoicePicker {
       if (!voice) return false
       const { name, download } = this.state(engine, voice)
       if (name !== item.dataset.state) return false
-      if (name === 'downloading') { const wrap = item.querySelector('.reading-neural-progress'); if (!wrap) return false; paintProgress(wrap, download, voice) }
+      if (name === 'downloading') { const wrap = item.querySelector('.reading-neural-progress'); if (!wrap) return false; this.view.paintProgress(wrap, download, voice) }
     }
     const offered = this.offerFor(engine, list)
     if ((offered?.id || '') !== (this.offer.dataset.voice || '')) return false
     if (offered) {
       const { name, download } = this.state(engine, offered)
       if (name !== this.offer.dataset.state) return false
-      if (name === 'downloading') { const wrap = this.offer.querySelector('.reading-neural-progress'); if (!wrap) return false; paintProgress(wrap, download, offered) }
+      if (name === 'downloading') { const wrap = this.offer.querySelector('.reading-neural-progress'); if (!wrap) return false; this.view.paintProgress(wrap, download, offered) }
     }
     return true
   }
@@ -186,35 +157,10 @@ export class NeuralVoicePicker {
     return { name:'idle' }
   }
   row(engine, voice) {
-    const { name, download, message } = this.state(engine, voice), selected = this.host.preferences.voice === voice.id
-    const item = element('li', 'reading-neural-voice'); item.dataset.neuralVoice = voice.id; item.dataset.state = name
-    const text = element('div', 'reading-neural-voice__text'), title = element('span', 'reading-neural-voice__name', voice.name)
-    if (voice.recommended) title.append(' ', element('small', 'reading-neural-voice__badge', 'Recomendada'))
-    const expansion = voice.sharedPack && voice.upgradeBytes > 0 && [...engine.installed].some(id=>id.startsWith(voice.modelKey+':'))
+    const expansion = Boolean(voice.sharedPack && voice.upgradeBytes > 0 && [...engine.installed].some(id=>id.startsWith(voice.modelKey+':')))
     const size = expansion ? Math.round(voice.upgradeBytes/1e6) : Math.round(voice.sizeMB)
-    const detail = [languageName(voice.lang), name === 'installed' ? 'Instalada' : `${size} MB${expansion?' adicionales':''}`]
-    if (voice.sharedPack) detail.push('Paquete compartido · todos sus idiomas y voces')
-    text.append(title, element('span', 'reading-neural-voice__meta', detail.join(' · ')))
-    if (voice.licenseUrl) {
-      const license = element('a', 'reading-neural-voice__license', `Licencia ${voice.licenseName || 'OpenRAIL-M'}`)
-      license.href = new URL(voice.licenseUrl, new URL(import.meta.env?.BASE_URL || '/', location.href)).href
-      license.target = '_blank'; license.rel = 'noopener noreferrer'
-      text.append(license)
-    }
-    const actions = element('div', 'reading-neural-voice__actions')
-    const where = `${voice.name}, ${languageName(voice.lang)}`
-    if (name === 'idle') actions.append(button(expansion?'Ampliar voces':'Descargar', 'install', voice.id, '', `${expansion?'Ampliar con':'Descargar'} la voz ${where} (${size} MB)`))
-    else if (name === 'downloading') actions.append(button('Cancelar', 'cancel', voice.id, '', `Cancelar la descarga de ${voice.name}`))
-    else if (name === 'error') actions.append(button('Reintentar', 'install', voice.id, '', `Reintentar la descarga de ${voice.name}`))
-    else {
-      const use = button(selected ? 'En uso' : 'Usar', 'use', voice.id, selected ? 'is-selected' : '', `${selected ? 'Voz en uso' : 'Usar la voz'} ${where}`)
-      use.setAttribute('aria-pressed', String(selected))
-      actions.append(use, button('Quitar', 'remove', voice.id, 'is-quiet', voice.sharedPack ? `Quitar el paquete compartido Supertonic del dispositivo` : `Quitar la voz ${where} del dispositivo`))
-    }
-    item.append(text, actions)
-    if (name === 'downloading') item.append(progress(`Descargando ${voice.name}`, download, voice))
-    if (name === 'error') { const note = element('p', 'reading-neural-voice__error', message); note.setAttribute('role', 'alert'); item.append(note) }
-    return item
+    const license = voice.licenseUrl ? new URL(voice.licenseUrl, new URL(import.meta.env?.BASE_URL || '/', location.href)).href : ''
+    return this.view.row(voice,this.state(engine,voice),this.host.preferences.voice === voice.id,expansion,languageName(voice.lang),size,license)
   }
 
   // --- Actions ------------------------------------------------------------------------------------------------------
@@ -307,35 +253,10 @@ export class NeuralVoicePicker {
   }
   renderOffer(engine, list) {
     const voice = this.offerFor(engine, list)
-    this.offer.hidden = !voice
-    if (!voice) { this.offer.replaceChildren(); delete this.offer.dataset.voice; delete this.offer.dataset.state; return }
-    const { name, download, message } = this.state(engine, voice)
-    this.offer.dataset.voice = voice.id; this.offer.dataset.state = name
-    const size = Math.round(voice.sizeMB)
-    const title = element('p', 'reading-neural-offer__title', `Voz natural · ${size} MB`)
-    this.offer.setAttribute('role', 'group'); this.offer.setAttribute('aria-label', 'Voz natural')
-    const head = [title]
-    if (name === 'downloading') head.push(button('Cancelar', 'cancel', voice.id, '', `Cancelar la descarga de ${voice.name}`))
-    else head.push(button(name === 'error' ? 'Reintentar' : 'Descargar', 'install', voice.id, 'is-primary', `${name === 'error' ? 'Reintentar la descarga de' : 'Descargar'} la voz natural ${voice.name} (${size} MB)`), button('Ahora no', 'dismiss', '', 'is-quiet'))
-    const nodes = [element('div', 'reading-neural-offer__row')]
-    nodes[0].append(...head)
-    if (name === 'error') { const note = element('p', 'reading-neural-voice__error', message); note.setAttribute('role', 'alert'); nodes.push(note) }
-    if (name === 'downloading') nodes.push(progress(`Descargando ${voice.name}`, download, voice))
-    this.offer.replaceChildren(...nodes)
+    this.view.renderOffer(voice,voice ? this.state(engine,voice) : null)
   }
 
   // --- Keyboard focus survives a repaint ---------------------------------------------------------------------------------
-  focusKey() {
-    const active = document.activeElement
-    if (!active || !this.host.panel.contains(active) || !active.dataset?.neuralAction) return null
-    return { action:active.dataset.neuralAction, id:active.dataset.neuralId || '', inOffer:this.offer.contains(active) }
-  }
-  restoreFocus(key) {
-    if (!key) return
-    const root = key.inOffer && !this.offer.hidden ? this.offer : this.block
-    const all = [...root.querySelectorAll('[data-neural-action]')]
-    const same = all.find(node => node.dataset.neuralAction === key.action && (node.dataset.neuralId || '') === key.id)
-      || all.find(node => (node.dataset.neuralId || '') === key.id) || all[0]
-    same?.focus({ preventScroll:true })
-  }
+  focusKey() { return this.view.focusKey() }
+  restoreFocus(key) { this.view.restoreFocus(key) }
 }

@@ -1,3 +1,5 @@
+import {readFileSync} from 'node:fs'
+import * as rustUI from '../../src/wasm/ui/inhouse_read_ui.js'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ReaderExperience } from '../../src/js/readers/reader-experience.js'
 import { normalizeReadingPreferences } from '../../src/js/readers/reading-preferences.js'
@@ -8,10 +10,15 @@ import { SUPERTONIC_BYTES } from '../../src/js/readers/neural-voice/supertonic-c
 
 // The "Voces naturales" picker and the first-use offer, driven by a fake engine (no real ReadingVoice audio).
 const LESSAC = 'piper:en_US-lessac-high', ALBA = 'piper:en_GB-alba-medium', DAVEFX = 'piper:es_ES-davefx-medium'
+const runtime=vi.hoisted(()=>({ui:null}))
+vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
+beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
 let catalogue
 beforeAll(async () => { await loadNeural(); catalogue = [...neuralVoices]; neuralVoices.splice(0, neuralVoices.length, ...FAKE_CATALOG) })
 afterAll(() => { neuralVoices.splice(0, neuralVoices.length, ...catalogue); setNeuralEngine(null) })
+describe.each(['legacy','rust'])('natural voice view %s',engine=>{
 beforeEach(() => {
+  runtime.ui=engine==='rust'?rustUI:null
   localStorage.clear()
   // Finish the idle warm-up inside the test, before its DOM is removed.
   vi.stubGlobal('requestIdleCallback', callback => { callback(); return 0 })
@@ -45,6 +52,7 @@ async function setup({ language = 'en', ...engineOptions } = {}) {
   setNeuralEngine(engine)
   const reader = { language, location:{ fraction:0 }, format:{ engine:'foliate' }, toc:[], pageCount:null, applyPreferences:async () => {}, addQuoteAnnotation() {}, getSelection() {}, next:async () => {}, prev:async () => {}, getSpeechText:async () => 'Hello there. Second one.' }
   const experience = new ReaderExperience(reader, { persist:async () => {} })
+  if(runtime.ui) expect(experience.neuralPicker.view).toBeInstanceOf(rustUI.RustNeuralView)
   experience.panel.voiceMenu = experience.voiceMenu
   experience.panel.close = vi.fn()
   await experience.open({ id:'b', title:'Book' })
@@ -427,4 +435,6 @@ describe('review fixes', () => {
     expect(offer(panel).textContent).toBe('Voz natural · 63 MBDescargarAhora no')
     expect(offer(panel).textContent).not.toContain('Suena más natural')
   })
+})
+
 })

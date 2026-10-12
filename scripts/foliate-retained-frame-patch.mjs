@@ -9,6 +9,8 @@ const destroy = `    destroy() {
         if (this.document) this.#observer.unobserve(this.document.body)
     }`
 const load = /    async load\(src, afterLoad, beforeRender\) \{[\s\S]*?\n    \}\n(?=    render\(layout\))/g
+const renderGuard = '        if (!layout || !this.document) return'
+const expandDocument = '        const { documentElement } = this.document'
 const turn = /    async #turnPage\(dir, distance\) \{[\s\S]*?\n    \}\n(?=    async prev\(distance\))/g
 const replacement = `    async load(src, afterLoad, beforeRender) {
         if (typeof src !== 'string') throw new Error(\`\${src} is not string\`)
@@ -99,7 +101,8 @@ export function patchFoliateRetainedFrame(input) {
   let source = input.replaceAll('\r\n','\n')
   const matches = [...source.matchAll(load)]
   if (source.split(create).length !== 2 || source.split(destroy).length !== 2 || matches.length !== 1 || [...source.matchAll(turn)].length !== 1 ||
-      !matches[0][0].includes("this.#iframe.style.opacity = '1'") || source.includes('#loadAbort')) {
+      !matches[0][0].includes("this.#iframe.style.opacity = '1'") || source.includes('#loadAbort') ||
+      source.split(renderGuard).length !== 2 || source.split(expandDocument).length !== 2) {
     throw new Error('Unexpected foliate-js chapter frame: review retained navigation before building.')
   }
   source = source.replace('    #overlayer\n', '    #loadAbort\n    #overlayer\n')
@@ -111,6 +114,12 @@ export function patchFoliateRetainedFrame(input) {
         this.#overlayer = null
     }`)
     .replace(load, replacement)
+    // ResizeObserver may fire while the retained iframe is navigating. Its
+    // Document exists before the HTML root/body do; layout resumes on load.
+    .replace(renderGuard, '        if (!layout || !this.document?.documentElement || !this.document.body) return')
+    .replace(expandDocument, `        const doc = this.document
+        if (!doc?.documentElement || !doc.body) return
+        const { documentElement } = doc`)
     .replace(turn, method => method.replace('        this.#locked = true\n', '        this.#locked = true\n        try {\n')
       .replace(/\n    \}\n$/, `
         } finally {

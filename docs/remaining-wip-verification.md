@@ -1,3 +1,32 @@
+# 1.7.186 — catálogo de voces en Rust y carga FB2
+
+Changelog: «Voces en Rust; apertura FB2».
+RustNeuralView crea las filas, botones, progreso y oferta de descarga de voces;
+conserva el foco al repintar y actualiza el progreso sobre los mismos nodos.
+El motor sigue siendo dueño de síntesis, cancelación y descargas. Referencia
+JavaScript conservada como alternativa; no hay cambios en modelos ni voces.
+79 estados DOM/foco exactos y 1000 renovaciones sin crecimiento de memoria.
+62 pruebas existentes del catálogo ejecutadas con los dos motores de UI;
+188/188 focales. E2E: 24/24 (voces, temas, teclado, cancelación, reintento,
+eliminación, PDF/EPUB e invocación del Rust real de la app compilada), más el
+formato FB2 y su comparación de detección. Fallos del prototipo preservados:
+ruta Vite, conversión Number::from (era cast, no Number de JS); corregidos
+antes de integrar y cubiertos con valores undefined/NaN/límites del progreso.
+
+CI184 UI4 mostró setStylesImportant sobre null durante navegación FB2. La
+protección del iframe retenido exige raíz y cuerpo antes de render/expand;
+no cambia el documento terminado y reanuda el layout desde el load normal.
+Prueba ejecuta métodos reales sobre cinco documentos incompletos y luego
+sobre el completo; FB2 compilado vuelve a pasar, con errores JS vigilados.
+Original CI184 preservado; no se oculta ese fallo ni los de cierre/resaltado.
+
+Inventario: 4085 Rust / 36788 JavaScript, 9,99 % de líneas propias.
+WASM UI local 186156 bytes, SHA256
+b4bd1cfcf7ffcacec195a9e3eeac6f957ba9a0828d29e63856be1e44611e1f81.
+Batería completa: 5005/5005 unitarias, 375 archivos, 351,20 s, dos workers.
+App/decor y APK/updater sin cambios. Verificación pública pendiente.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-neural-view-prototype.
+
 # 1.7.185 — índice y listas del lector en Rust
 
 Changelog: «Índice y marcadores en Rust».
