@@ -1,3 +1,34 @@
+# 1.7.216 — menú de voces con estado Rust
+
+Changelog: «Renderizado del menú de voces en Rust».
+La vista Rust conserva sus servicios y coordina filas, foco, advertencias y
+progreso. Las llamadas entre filas y vista se resuelven dentro de Rust;
+la disponibilidad se representa con estados tipados y el progreso localiza
+las voces con un índice por identificador. La adopción tardía reutiliza el
+DOM y conserva los controles existentes. No modifica el reloj del audio.
+
+240 escenarios DOM y otros 240 ciclos, 44 referencias vivas y capacidad
+estable de 1179648 bytes. 104 pruebas focalizadas, 5585 unitarias completas
+y 28 E2E aprobados. El menú mantiene sus assertions originales en tres modos:
+compatibilidad, Rust desde el arranque y adopción tardía. El E2E observa la
+entrada compilada renderPicker; disponibilidad/oferta ahora se llaman dentro
+del módulo y no necesitan cruzar la frontera JS. Su paridad específica sigue
+cubriendo 2400 casos y 2400 ciclos.
+
+En Chromium 390×844 con CPU de escritorio ×4, 11 rondas alternadas,
+20 operaciones/tanda: progreso de 8 voces JS 0,415/Rust 0,280 ms;
+32 voces 1,510/0,825 ms. Render completo 8 voces 2,375/2,340 ms;
+32 voces 8,480/7,935 ms. Ambas rutas usan la misma vista Rust y la misma
+política; se compara su coordinación con DOM real y catálogo preparado.
+No mide un móvil físico ni toda la app. Se conserva el primer prototipo
+más lento (browser-benchmark-first.json), el primer fallo de compilación
+(build.log) y su corrección de conversión Element→JsValue.
+
+Inventario: 6420 líneas Rust/37467 JavaScript = 14.63%, no funcional.
+UI local 699888 bytes, SHA256 826ecb0c630268eb3c56724fe83aac2e6daca57b46b7c19bc86f58c1a0c4225b.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-picker-owned-render-prototype.
+
 # 1.7.215 — detección de idiomas en Rust
 
 Changelog: «Detección de idiomas en Rust».
@@ -32,7 +63,16 @@ del primer prototipo (benchmark.log), anterior al recorrido único de indicios.
 
 Inventario: 6300 líneas Rust/37435 JavaScript = 14.4%, no funcional.
 UI local 680732 bytes, SHA256 d0d68fa2d99fc296f9151e43558bebf76d1ba1ff4cdbbe3c88f220724fb2cef0.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada: 6c24a319d91895f01ec0686dfe38cf7a3d0d59c4.
+Deploy 38307604398/Pages 38307735784 completos; Pages 97618fca0685c52809761f86242033bc82179ac5.
+UI pública 680700 bytes, SHA256 c5f69d202ae99314c10c22afad1447d5f9a03dddf0ae3b5256d02170221077b8.
+published-1791839097080: recursos HTTP/tamaño/SHA, dos perfiles,
+contador positivo con 1000 preparaciones/100 menús, 30 casos PCM/tempo
+y APK real loader 2107 bytes correctos. Dos E2E públicos PDF/Davefx aprobados.
+APK 1.1.15/28 muestra web 215: Lessac 2×, 11.62s,
+8 finales/9 inicios, PID 20499 estable y sin FATAL.
+CI 38307604279 se registra aparte; no se presupone aprobado.
+Updater sin modificaciones.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-language-detect-prototype.
 
 # 1.7.214 — disponibilidad y recomendaciones de voces en Rust

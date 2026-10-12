@@ -13,7 +13,7 @@ fn shown(node:&Element,visible:bool)->Result<(),JsValue>{if visible{node.remove_
 fn set(object:&Object,key:&str,value:&JsValue)->Result<(),JsValue>{Reflect::set(object,&key.into(),value)?;Ok(())}
 
 #[wasm_bindgen]
-pub struct RustNeuralView{document:Document,panel:Element,block:Element,offer:Element}
+pub struct RustNeuralView{document:Document,panel:Element,pub(crate) block:Element,pub(crate) offer:Element,pub(crate) picker:Option<crate::picker_owned::PickerServices>}
 impl RustNeuralView{
  fn node(&self,tag:&str,class:&str,text:Option<&str>)->Result<Element,JsValue>{
   let node=self.document.create_element(tag)?;if !class.is_empty(){node.set_class_name(class);}if let Some(text)=text{node.set_text_content(Some(text));}Ok(node)
@@ -33,7 +33,7 @@ impl RustNeuralView{
 #[wasm_bindgen]
 impl RustNeuralView{
  #[wasm_bindgen(constructor)]
- pub fn new(panel:Element)->Result<Self,JsValue>{let document=panel.owner_document().ok_or_else(||JsValue::from_str("Document unavailable"))?;let block=Self::query(&panel,"[data-neural]")?;let offer=Self::query(&panel,"[data-neural-offer]")?;Ok(Self{document,panel,block,offer})}
+ pub fn new(panel:Element)->Result<Self,JsValue>{let document=panel.owner_document().ok_or_else(||JsValue::from_str("Document unavailable"))?;let block=Self::query(&panel,"[data-neural]")?;let offer=Self::query(&panel,"[data-neural-offer]")?;Ok(Self{document,panel,block,offer,picker:None})}
  #[wasm_bindgen(js_name=paintProgress)]
  pub fn paint_progress(&self,wrap:Element,download:JsValue,voice:JsValue)->Result<(),JsValue>{
   let fraction=prop(&download,"fraction");let amount=if fraction.is_truthy(){number(fraction)}else{0.0};let percent=Math::round(amount*100.0);let percent=if percent.is_nan(){percent}else{percent.clamp(0.0,100.0)};

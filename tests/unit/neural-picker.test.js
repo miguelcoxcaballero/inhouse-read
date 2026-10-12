@@ -11,17 +11,24 @@ import { SUPERTONIC_BYTES } from '../../src/js/readers/neural-voice/supertonic-c
 // The "Voces naturales" picker and the first-use offer, driven by a fake engine (no real ReadingVoice audio).
 const LESSAC = 'piper:en_US-lessac-high', ALBA = 'piper:en_GB-alba-medium', DAVEFX = 'piper:es_ES-davefx-medium'
 const runtime=vi.hoisted(()=>({ui:null}))
-const actionExports=["picker_click","picker_cancel","picker_voice_name","picker_install_begin","picker_install_done","picker_install_error","picker_use","picker_remove_begin","picker_remove_done","picker_state","picker_dismissed","picker_snoozed","picker_dismiss","picker_offer_for","picker_render_offer"],actionCalls={},observedUI={...rustUI}
+const actionExports=["picker_click","picker_cancel","picker_voice_name","picker_install_begin","picker_install_done","picker_install_error","picker_use","picker_remove_begin","picker_remove_done","picker_dismissed","picker_snoozed","picker_dismiss"],actionCalls={},observedUI={...rustUI},viewCalls={render:0,progress:0}
+// Availability and offer rendering now run inside the Rust view. Observe its
+// actual entry points; the direct policy exports retain their own parity suite.
+observedUI.RustNeuralView=class extends rustUI.RustNeuralView {
+  renderPicker(...args){viewCalls.render++;return super.renderPicker(...args)}
+  patchPickerProgress(...args){viewCalls.progress++;return super.patchPickerProgress(...args)}
+}
 for(const name of actionExports)observedUI[name]=(...args)=>{actionCalls[name]=(actionCalls[name]||0)+1;return rustUI[name](...args)}
 afterAll(()=>{for(const name of actionExports)expect(actionCalls[name],name).toBeGreaterThan(0)})
+afterAll(()=>{expect(viewCalls.render).toBeGreaterThan(0);expect(viewCalls.progress).toBeGreaterThan(0)})
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
 let catalogue
 beforeAll(async () => { await loadNeural(); catalogue = [...neuralVoices]; neuralVoices.splice(0, neuralVoices.length, ...FAKE_CATALOG) })
 afterAll(() => { neuralVoices.splice(0, neuralVoices.length, ...catalogue); setNeuralEngine(null) })
-describe.each(['legacy','rust'])('natural voice view %s',engine=>{
+describe.each(['legacy','rust','late'])('natural voice view %s',mode=>{
 beforeEach(() => {
-  runtime.ui=engine==='rust'?observedUI:null
+  runtime.ui=mode==='rust'?observedUI:null
   localStorage.clear()
   // Finish the idle warm-up inside the test, before its DOM is removed.
   vi.stubGlobal('requestIdleCallback', callback => { callback(); return 0 })
@@ -56,10 +63,12 @@ async function setup({ language = 'en', ...engineOptions } = {}) {
   const reader = { language, location:{ fraction:0 }, format:{ engine:'foliate' }, toc:[], pageCount:null, applyPreferences:async () => {}, addQuoteAnnotation() {}, getSelection() {}, next:async () => {}, prev:async () => {}, getSpeechText:async () => 'Hello there. Second one.' }
   const experience = new ReaderExperience(reader, { persist:async () => {} })
   if(runtime.ui) expect(experience.neuralPicker.view).toBeInstanceOf(rustUI.RustNeuralView)
+  if(mode==='late')runtime.ui=observedUI
   experience.panel.voiceMenu = experience.voiceMenu
   experience.panel.close = vi.fn()
   await experience.open({ id:'b', title:'Book' })
   experience.neuralPicker.refresh(); await loadNeural(); await new Promise(resolve => setTimeout(resolve, 0)) // the picker attaches once the module is there
+  if(runtime.ui) expect(experience.neuralPicker.view).toBeInstanceOf(rustUI.RustNeuralView)
   if (engine.supported) expect(experience.neuralPicker.engine).toBe(engine)
   return { engine, experience, reader, panel:experience.panel }
 }
