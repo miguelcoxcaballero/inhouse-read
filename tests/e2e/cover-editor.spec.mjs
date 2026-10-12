@@ -1,6 +1,8 @@
 import { mkdirSync } from 'node:fs'
 import { test, expect } from '@playwright/test'
 
+if (process.env.IHR_TEST_URL) test.use({ baseURL: process.env.IHR_TEST_URL })
+
 // Editor de la portada con el libro 3D real (WebGL por software). Los tests no
 // usan una portada de tres colores reales: opciones seleccionables y
 // persistentes, sin completar con motivos que no están en la imagen.

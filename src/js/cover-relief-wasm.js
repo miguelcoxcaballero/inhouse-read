@@ -125,3 +125,21 @@ export function* wasmComposeReliefLayers(core, maps, layers) {
       heightMap:output.slice(count * 2), foil:new Uint8Array(count) };
   } finally { heap.free(); }
 }
+
+export function* wasmShadePreview(core,image,maps,k){
+ const {width,height,data}=image,count=width*height,mapCount=maps.width*maps.height;
+ if(typeof core?.relief_preview_rows!=='function'||!validShape(width,height)||!validShape(maps.width,maps.height)||!bytes(data,count*4)
+  ||!bytes(maps.heightMap,mapCount)||!bytes(maps.foil,mapCount)||!bytes(maps.gloss,mapCount)||(maps.preserveInk&&!bytes(maps.mask,mapCount))||!Number.isFinite(k)||Math.abs(k)>1e6)return null;
+ const light=[-.52,.58,.63],lightLength=Math.hypot(...light);for(let i=0;i<3;i++)light[i]/=lightLength;
+ const half=[light[0],light[1],light[2]+1],halfLength=Math.hypot(...half);for(let i=0;i<3;i++)half[i]/=halfLength;
+ const coefficients=Float64Array.from([...light,...half,k]);
+ const heap=arena(core,[[Uint8Array,count*4,data],[Uint8Array,mapCount,maps.heightMap],[Uint8Array,mapCount,maps.foil],
+  [Uint8Array,mapCount,maps.gloss],[Uint8Array,maps.preserveInk?mapCount:0,maps.preserveInk?maps.mask:null],[Float64Array,7,coefficients],[Uint8ClampedArray,count*4]]);
+ try{
+  for(let from=0;from<height;from+=8){
+   checked(core.relief_preview_rows(heap.at(0),heap.at(1),heap.at(2),heap.at(3),heap.at(4),heap.at(5),heap.at(6),width,height,maps.width,maps.height,from,Math.min(height,from+8),maps.preserveInk?1:0));
+   if(from+8<=height)yield;
+  }
+  return heap.view(6).slice();
+ }finally{heap.free();}
+}

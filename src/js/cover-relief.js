@@ -23,7 +23,7 @@ import { getRustCore, loadRustCore } from './rust-core.js';
 import { prepareColorMaskJob } from './cover-color-mask-wasm.js';
 import { rustReliefPalette } from './relief-palette-wasm.js';
 import { canUseReliefWasm, wasmInsideDistance, wasmBoxBlur, wasmHeightToNormals,
-  wasmComposeMaterialMap, wasmComposeReliefLayers } from './cover-relief-wasm.js';
+  wasmComposeMaterialMap, wasmComposeReliefLayers, wasmShadePreview } from './cover-relief-wasm.js';
 
 export const COLOR_RELIEF_IDS = Object.freeze(Array.from({ length:10 }, (_, index) => `color-${index + 1}`));
 export const LEGACY_RELIEF_IDS = Object.freeze(['lettering', 'foil', 'frame', 'emblem', 'varnish', 'band', 'grain', 'panel']);
@@ -1382,6 +1382,11 @@ export function* composeMaterialMap(maps, { clearcoat = 0, roughness = .5, clear
 /** Shaded preview, lit from the top-left, as RGBA bytes (pure; the browser
  * wrapper only turns it into a data URL). Foil zones glint, gloss zones shine. */
 export function* shadePreview(image, maps, { slope = 7 } = {}) {
+  const core = getRustCore();
+  if (canUseReliefWasm(core, image.width, image.height)) {
+    const result = yield* rustRelief(wasmShadePreview(core,image,maps,slope * MAX_RELIEF_MM / 255 * 14));
+    if (result) return result;
+  }
   const { width, height, data } = image, out = new Uint8ClampedArray(width * height * 4);
   const light = [-.52, .58, .63], lightLength = Math.hypot(...light);
   light[0] /= lightLength; light[1] /= lightLength; light[2] /= lightLength;

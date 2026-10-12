@@ -1,3 +1,41 @@
+# Migración 1.7.168 — previsualización de relieves en Rust
+
+Changelog: «Previsualización de relieves en Rust». Se trasladan el remuestreo,
+normales y sombreado de las propuestas, conservando color original, alfa,
+brillo por pigmento y todos los puntos de cancelación de ocho filas. Cada
+trabajo copia sus entradas una vez, tolera crecimiento de memoria entre
+fragmentos y libera su reserva incluso al cancelar o fallar.
+
+58/58 focalizadas (20 nuevas),3,11s: bordes, mapas de distinta resolución,
+tinta transparente, cinco pendientes,100 casos aleatorios, cancelación,
+intercalado de tareas y fallback.1/1 E2E con núcleo real,11,3s; todos los
+canales RGBA exactos. CPU×4,nueve rondas alternadas con transferencias:
+-128×192:JS14,8/Rust14,0ms.
+-288×384,relieve tradicional:78,1/66,1ms.
+-288×384,pigmento conservado:66,6/48,3ms.
+-512×512,pigmento conservado:149,0/108,1ms.
+Capacidad estable tras calentar; no representa FPS ni tiempo total en un
+móvil físico. Build aprobado. WASM393537bytes, SHA
+`a1f5da3f4d2512f86ae7d3eb5cc439b6b1a23657e71c6c48457acc1e328a08c2`.
+4703/4703 unitarias,355 archivos,289,55s,sin omisiones.
+3/3 E2E del editor real: selección/persistencia, cancelación y varios colores
+independientes,1,3min,sin reintentos ni omisiones. Publicación pendiente. Evidencia:
+`D:/CodexEvidence/InhouseRead-20261012/rust-relief-preview`.
+
+CI164 UI2 conserva los dos fallos previos de cierre por duración:60aprobadas,
+2fallidas,0flaky,0omitidas. Resultados originales y reintentos descargados en
+rust-lamp-surface/ci164-ui2; no se han cambiado los límites de8s.
+
+Publicación167:fuente `6335b9a51d1a9894e1178244817da3991bee1e6a`, Pages
+`53bf3f7520cf85af9378c98a7c81a88c0653502b`,deploy38208370618 yPages38208421550
+aprobados.99recursos/HTML/precarga exactos; núcleo público120mallas,
+3373056bytes idénticos. APK1.1.15/code28,hash yloader2107 verificados.
+Evidencia:published-1791783488647.2/2 E2E públicas de catálogo/cambio,
+41,4s,sin reintentos ni omisiones.
+Publicación166:2/2 E2E públicas de catálogo/cambio y main/WASM exactos en
+dos perfiles limpios. CI165 UI2 mantiene los mismos dos fallos de cierre;
+originales rust-mesh-compact/ci165-ui2, sin modificar límites.
+
 # Migración 1.7.167 — acabado de las piezas BAGGEBO en Rust
 
 Changelog: «Acabado de mallas en Rust». Se calculan las coordenadas físicas de

@@ -1455,3 +1455,10 @@ evitando una llamada por raíl. Rust también suaviza las paredes redondeadas
 sin alterar las tapas. Los atributos siguen siendo los mismos objetos de Three.
 El primer ensayo individual fue más lento y está conservado; ver resultados
 y limitaciones en remaining-wip-verification.md.
+
+## 1.7.168: previsualización de relieves
+
+Rust remuestrea los mapas y calcula las normales y reflejos de cada píxel.
+Se conservan los ocho renglones por fragmento, la cancelación y todos los
+canales RGBA del cálculo anterior. Véanse comparaciones exactas, tiempos y
+límites en remaining-wip-verification.md.

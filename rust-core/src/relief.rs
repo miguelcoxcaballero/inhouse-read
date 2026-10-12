@@ -215,3 +215,36 @@ pub unsafe extern "C" fn relief_compose_pixels(owners: *const u8, base_mask: *co
     }
     1
 }
+
+fn preview_coordinate(value:i64,extent:usize,source:usize)->usize{
+ let value=value as f64*extent as f64/source as f64;let base=value.floor();
+ let rounded=base+if value-base>=0.5{1.0}else{0.0};rounded.max(0.0).min((extent-1) as f64) as usize
+}
+/// Bounded cover preview pass with original ink, alpha and specular response.
+/// # Safety
+/// Image/output contain width*height*4 bytes; map planes map_width*map_height.
+/// Seven coefficients: normalized light(3), half-vector(3), physical slope.
+#[no_mangle]
+pub unsafe extern "C" fn relief_preview_rows(image:*const u8,height_map:*const u8,foil:*const u8,gloss:*const u8,mask:*const u8,coefficients:*const f64,output:*mut u8,width:u32,height:u32,map_width:u32,map_height:u32,from:u32,to:u32,preserve:u32)->u32{
+ let Some(count)=extent(width,height,from,to,height) else{return 0;};let Some(map_count)=extent(map_width,map_height,0,map_height,map_height) else{return 0;};if to-from>8{return 0;}
+ let c=slice::from_raw_parts(coefficients,7);if c.iter().any(|v|!v.is_finite())||c[..6].iter().any(|v|v.abs()>2.0)||c[6].abs()>1e6{return 0;}
+ let data=slice::from_raw_parts(image,count*4);let heights=slice::from_raw_parts(height_map,map_count);let foil=slice::from_raw_parts(foil,map_count);let gloss=slice::from_raw_parts(gloss,map_count);
+ let mask=if preserve!=0{Some(slice::from_raw_parts(mask,map_count))}else{None};let out=slice::from_raw_parts_mut(output,count*4);
+ let w=width as usize;let h=height as usize;let mw=map_width as usize;let mh=map_height as usize;
+ for y in from as usize..to as usize{
+  let my=preview_coordinate(y as i64,mh,h);let up=preview_coordinate(y as i64-1,mh,h);let down=preview_coordinate(y as i64+1,mh,h);
+  for x in 0..w{
+   let at=(y*w+x)*4;let mx=preview_coordinate(x as i64,mw,w);let mi=my*mw+mx;
+   if mask.is_some_and(|v|v[mi]==0){out[at..at+4].copy_from_slice(&data[at..at+4]);continue;}
+   let left=preview_coordinate(x as i64-1,mw,w);let right=preview_coordinate(x as i64+1,mw,w);
+   let nx= -(heights[my*mw+right] as f64-heights[my*mw+left] as f64)*c[6];let ny=(heights[down*mw+mx] as f64-heights[up*mw+mx] as f64)*c[6];
+   let length=hypot3(nx,ny,1.0);let n=[nx/length,ny/length,1.0/length];
+   let diffuse=n[0]*c[0]+n[1]*c[1]+n[2]*c[2];let shade=clamp(1.0+(diffuse-c[2])*2.6,0.45,1.55);
+   let spec=(n[0]*c[3]+n[1]*c[4]+n[2]*c[5]).max(0.0).powf(40.0);
+   let f=foil[mi] as f64/255.0;let g=gloss[mi] as f64/255.0;let shine=(spec*(0.35+1.5*f+0.7*g)+g*0.05+f*0.12)*255.0;
+   for channel in 0..3{let base=data[at+channel] as f64*shade;out[at+channel]=clamped_byte(base+if f!=0.0{(255.0-base)*(shine/255.0).min(0.9)*0.9}else{shine*0.6});}
+   out[at+3]=if preserve!=0{data[at+3]}else{255};
+  }
+ }
+ 1
+}
