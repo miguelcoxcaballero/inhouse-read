@@ -1,10 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega1.7.210: controles y listas adoptan Rust tras una descarga tardía.
-5376 unitarias completas,32 focalizadas y26 E2E aprobados.
-Inventario:5849 líneas Rust/37334JS, **13,54 %**; no mide funciones terminadas.
-El binario Rust es idéntico a209; los adaptadores conservan foco y acciones.
-1.7.209 pública y APK real verificados; los resultados de CI se conservan aparte.
+Última entrega1.7.211: sesión, eventos y preparación textual del audiolibro.
+5388 unitarias completas,46 focalizadas y26 E2E aprobados.
+Inventario:5930 líneas Rust/37352JS, **13.7%**; no mide funciones terminadas.
+1.7.210 pública y APK real verificados; CI se registra por separado.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout

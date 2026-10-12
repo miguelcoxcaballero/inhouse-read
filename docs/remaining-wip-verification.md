@@ -1,3 +1,35 @@
+# 1.7.211 — sesión y eventos del audiolibro en Rust
+
+Changelog: «Sesión de audiolibro en Rust».
+Rust inicializa el estado, discrimina eventos de reproducción y mantiene las
+generaciones de página, sesión nativa y pulsación larga. La preparación del
+texto conserva Unicode/UTF16 y las opciones de notas y cabeceras repetidas.
+Los diagnósticos nativos conservan sus campos limitados y el orden de acceso.
+Los callbacks de ventana siguen perteneciendo al host.
+
+1800 escenarios de eventos,1200 diagnósticos y1000 textos comparados con el
+original.2000 ciclos mantienen referencias y memoria; contador positivo validado.
+46 focalizadas y5388 unitarias completas aprobadas.26 E2E aprobados.
+PDF/Davefx observa inicialización y eventos compilados, además
+del avance ligado al PCM audible. No cambia los parámetros de texto, geometría o velocidad.
+Los fallos previos del prototipo siguen guardados: el fixture comparaba
+prototipos distintos; se igualó el host y se mantuvo deepStrictEqual.
+No se reutiliza como evidencia el contador cero anterior a208.
+El primer E2E211 falló en una aserción nueva que exigía el limpiador de texto
+plano dentro de PDF; PDF utiliza items estructurados que conservan offsets.
+Se conserva e2e.log/e2e-first-failure. Sus comprobaciones de audio y página no
+cambian; el limpiador se comprueba en1000 casos de paridad y las suites de voz.
+CI209/114968613243 conserva un fallo del cierre alineado (8008,7ms frente
+al límite8000ms y segundo intento aún cerrando) y un fallo inicial de carga
+EPUB de escritorio. El reintento EPUB pasó, pero no se cuenta como limpio.
+Original:rust-voice-dispatch-prototype/ci209-ui2-original.log.
+Estos casos siguen pendientes; las pruebas focalizadas no los sustituyen.
+
+Inventario:5930 líneas Rust/37352JavaScript=13.7%, no funcional.
+UI local596084bytes,SHA256bdc9d4c7bc6ab976f4c40c836cd070a79376ccab90465113e0c975e3d72a0da9.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-session-prototype.
+
 # 1.7.210 — adopción de Rust tras una descarga tardía
 
 Changelog: «Controles Rust tras descarga tardía».
@@ -26,8 +58,19 @@ incluidos ambos escenarios tardíos y voces reales PDF/EPUB. Los ciclos
 de adopción/free conservan referencias con el contador validado en208.
 Inventario:5849 líneas Rust/37334JavaScript=13,54%, no funcional. El cambio
 añade adaptadores de disponibilidad; no añade lógica Rust nueva al binario.
-WASM UI y núcleos idénticos a209. Publicación pendiente.
-APK1.1.15/28 y updater sin modificaciones; migración completa pendiente.
+Publicación verificada:83100bef4ba2e69538ef8c1f44c674b7ca2ce63f.
+Deploy38298136308/Pages38298267979; Pages8c03506fdeb3fee0bab4ac983124f4250b02f09b.
+UI pública572482bytes,SHA25631fcc8d7593a5c3922216f9731cc4e0ff30748acb0d291e0d6903a0eead849b1.
+published-1791833662229: recursos HTTP/tamaño/SHA, dos perfiles,
+contador positivo y1000 preparaciones/100 menús,30 casos PCM y APK loader válidos.
+El primer verificador conservaba la referencia gh-pages209; falló correctamente
+la atribución de fuente, la versión y la igualdad del HTML. Su evidencia published-1791833621996 queda
+conservada. Tras fetch de gh-pages, la comprobación completa pasó.
+E2E público PDF/Davefx aprobado en19,5s sin reintentos.
+APK1.1.15/28 muestra web210:Lessac2×,10.14s,
+8finales/9inicios,PID17686estable y sinFATAL.
+CI38298136319 se registra aparte; no se presupone aprobado.
+Updater sin modificaciones; migración completa pendiente.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-controls-adoption.
 
 # 1.7.209 — envío de audio y avance automático en Rust

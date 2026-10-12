@@ -1,3 +1,4 @@
+import {initializeVoiceSession,voiceSessionEvent,diagnosticVoice,prepareVoiceText} from './voice-session.js'
 import {advanceVoice} from './voice-advance.js'
 import {dispatchVoice,dispatchNeuralVoice,failedVoiceEngine,removedVoice,sleepVoice} from './voice-dispatch.js'
 import {refreshVoiceBreaks,prepareVoice,prepareVoiceOpening,prepareVoicePlayback,prepareNextVoice} from './voice-preparation.js'
@@ -11,87 +12,18 @@ import {restartVisibleVoice,playReadingVoice} from './voice-start.js'
 import { detectLanguage } from './voice-catalog.js'
 import { neuralEngine } from './neural-runtime.js'
 import { speechChunks } from './speech-text.js'
-import { nativeAudio, nativePcmBridge } from './neural-voice/audio.js'
 
 export { speechChunks }
 /** One short utterance at a time also avoids Android/browser long-speech timeouts. */
 export class ReadingVoice {
-  constructor(reader, onState = () => {}) {
-    this.reader = reader
-    this.onState = onState
-    this.state = 'stopped'
-    this.generation = 0
-    this.openingLayout = 0
-    this.index = 0
-    this.chunks = []
-    this.items = []
-    this.source = null
-    this.preparingPage = null; this.deferredPage = null; this.resumeNextPage = false
-    this.aheadPage = null
-    this.diagnosticAdvance = null
-    this.diagnosticStarts = 0; this.diagnosticDones = 0
-    // The native bridge reads this synchronous, session-gated getter after real callbacks.
-    // This instance is the app's single reader voice; no worker/model is loaded by installation.
-    window.InhouseReadAudioDiagnostics = session => this.getDiagnosticState(session)
-    this.rate = 1
-    this.voice = ''
-    this.languageOverride = '' // 'es', 'en'... chosen in the Idioma dropdown; '' follows the book
-    this.options = {footnotes:false,multilingual:false,skipHeaders:false}
-    // Reading uses only the selected on-device neural engine.
-    this.transport = null
-    // Failure remains visible until the person retries; it never changes the selected voice.
-    this.neuralOff = ''; this.missing = new Set(); this.neuralRetries = 0
-    try { localStorage.removeItem('inhouse-read-neural-slow') } catch { /* obsolete policy is never consulted */ }
-    window.addEventListener('inhouse-tts', event => {
-      if (event.detail?.id !== this.utteranceId || this.state !== 'playing') return
-      if (event.detail.type === 'start') { this.diagnosticStarts++; this.engineStarted(event.detail.id) }
-      if (event.detail.type === 'boundary') this.present(event.detail.id,event.detail.offset)
-      if (event.detail.type === 'done') { this.diagnosticDones++; this.engineEnded(event.detail.id); this.advance() }
-      if (event.detail.type === 'interrupted') this.pause()
-      if (event.detail.type === 'error') this.engineFailed(event.detail)
-    })
-    // The reader measured new page breaks (a relayout, or a chapter read with
-    // the screen off now on screen): re-cut what is still to be read there.
-    window.addEventListener('inhouse-speech-layout', () => { ++this.openingLayout; this.openingPlan = null; void this.refreshPageBreaks() })
-    window.addEventListener('inhouse-speech-hold', event => {
-      if (this.state !== 'playing') return
-      event.detail.handled = true
-      if (!event.detail.probe) void this.seekToPoint(event.detail)
-    })
-    window.addEventListener('inhouse-audio-control', event => {
-      const detail = event.detail
-      if (!nativePcmBridge() || !this.nativeSession || detail?.session !== this.nativeSession) return
-      if (detail.action === 'pause') this.pause()
-      else if (detail.action === 'stop') this.stop()
-      else if (detail.action === 'play' && this.state === 'paused') this.play()
-    })
+  constructor(reader,onState=()=>{}) {
+    initializeVoiceSession(this,reader,onState)
+    window.InhouseReadAudioDiagnostics=session=>this.getDiagnosticState(session)
+    try{localStorage.removeItem('inhouse-read-neural-slow')}catch{/* obsolete preference */}
+    for(const type of ['inhouse-tts','inhouse-speech-layout','inhouse-speech-hold','inhouse-audio-control'])
+      window.addEventListener(type,event=>voiceSessionEvent(this,type,event.detail))
   }
-  getDiagnosticState(session) {
-    if (!this.nativeSession || session !== this.nativeSession) return null
-    const numeric = value => Number.isFinite(value) && value >= 0 ? value : 0
-    const reader = this.reader.speechDiagnosticState
-    const position = this.reader.speechPosition
-    const advance = this.diagnosticAdvance?.generation === this.generation ? this.diagnosticAdvance : null
-    return {
-      schema:1, sessionMatches:true, nativeSessionMatches:nativeAudio()?.session === this.nativeSession,
-      hidden:Boolean(document.hidden), visibility:['visible','hidden','prerender'].includes(document.visibilityState) ? document.visibilityState : 'unknown',
-      state:this.state, generation:this.generation, utteranceSequence:numeric(this.spoken),
-      utterancePresent:Boolean(this.utteranceId), utteranceStarted:Boolean(this.utteranceId && this.startedId === this.utteranceId),
-      index:this.index, chunkCount:this.chunks.length, itemCount:this.items.length,
-      ttsStarts:this.diagnosticStarts, ttsDones:this.diagnosticDones, advanceStage:advance?.stage || 'idle',
-      preparingPage:Boolean(this.preparingPage?.generation === this.generation), deferredPage:Boolean(this.deferredPage), aheadPage:Boolean(this.aheadPage),
-      reader:{ kind:['pdf','foliate'].includes(reader?.kind) ? reader.kind : 'none',
-        index:Number.isInteger(position?.index) && position.index >= 0 ? position.index : null,
-        followPending:numeric(reader?.followPending), pageTurnPending:numeric(reader?.pageTurnPending),
-        ...(reader?.paginator ? { paginator:{
-          turnStage:Number.isInteger(reader.paginator.turnStage) && reader.paginator.turnStage >= 0 && reader.paginator.turnStage <= 3 ? reader.paginator.turnStage : 0,
-          displayStage:Number.isInteger(reader.paginator.displayStage) && reader.paginator.displayStage >= 0 && reader.paginator.displayStage <= 6 ? reader.paginator.displayStage : 0,
-          sectionLoadPending:Boolean(reader.paginator.sectionLoadPending), viewLoadPending:Boolean(reader.paginator.viewLoadPending),
-          viewReady:Number.isInteger(reader.paginator.viewReady) && reader.paginator.viewReady >= 0 && reader.paginator.viewReady <= 3 ? reader.paginator.viewReady : 0,
-        }} : {}) },
-      engine:neuralEngine()?.getDiagnosticState?.() ?? null
-    }
-  }
+  getDiagnosticState(session) { return diagnosticVoice(this,session) }
   get supported() { return Boolean(neuralEngine()) }
   notify(message = '') { this.onState(this.state, message) }
   restartFromVisiblePage() { return restartVisibleVoice(this) }
@@ -149,17 +81,7 @@ export class ReadingVoice {
   /** Re-speaks the current fragment, so a new speed or voice is heard now instead of at the next one. */
   restart() { return restartReadingVoice(this) }
   cancelUtterance(reason = 'stop') { return cancelReadingVoice(this,reason) }
-  prepareText(text) {
-    let value = String(text || '')
-    if (!this.options.footnotes) value = value.replace(/\[(?:\d{1,3}|[*†‡])\]/g,'').replace(/\(\s*(?:note|nota)\s+\d+\s*\)/gi,'')
-    if (this.options.skipHeaders) {
-      const lines = value.split(/\n+/)
-      const counts = new Map()
-      for (const line of lines) { const key=line.trim().toLocaleLowerCase(); if (key.length && key.length<90) counts.set(key,(counts.get(key)||0)+1) }
-      value = lines.filter(line => { const key=line.trim().toLocaleLowerCase(); return !(key.length<90 && counts.get(key)>1) }).join(' ')
-    }
-    return value
-  }
+  prepareText(text) { return prepareVoiceText(this,text) }
   detectLanguage(text) {
     return detectLanguage(text, this.reader.language || navigator.language || 'en-US')
   }
