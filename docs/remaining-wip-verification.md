@@ -1,3 +1,34 @@
+# 1.7.193 — cola de progreso en Rust
+
+Changelog: «Guardado ordenado del progreso en Rust».
+Rust administra colas independientes por libro, fusiona posiciones pendientes,
+conserva barreras de ajustes y espera la notificación posterior al commit.
+El host mantiene IndexedDB, clonación superficial de ajustes y fecha de guardado.
+Las promesas fusionadas conservan identidad y los errores llegan al solicitante.
+Cargar WASM tarde sólo cambia de motor cuando cada cola anterior queda vacía;
+un libro bloqueado no impide guardar otros. Liberar el handle no pierde tareas.
+
+31 focales y10E2E aprobados. Primera batería completa:5123aprobadas/1fallida,
+timeout original de5s en relief-palette-wasm max work square, conservado en
+unit-full.log/json. Sin cambiar fuente, plazos ni aserciones, batería acotada
+a dos workers:5124/5124,382archivos,317,23s. No se borra el resultado anterior.
+El prototipo compara1808condiciones e identidades; tests cubren errores de
+almacenamiento/notificación, reentrada, claves Map y __proto__ propio. Cuatro
+mil libros distintos reutilizan slots sin crecimiento de memoria WASM.
+
+Microbenchmark Chromium CPU×4, nueve rondas, puente/Promise incluidos y DB
+sustituida por un callback inmediato: una escritura JS0,002ms/Rust0,045ms;
+cien posiciones fusionadas JS0,018ms/Rust0,137ms. Esto es sobrecoste de puente,
+no una mejora de velocidad ni tiempo de IndexedDB. Se limita la consulta de
+propietario a una por cola y se evita serializar bytes/libros a WASM. No hay
+trabajo nuevo por fotograma. El coste debe vigilarse al migrar persistencia.
+
+Inventario4480Rust/36928JavaScript,10,82% de líneas propias; no funcional.
+WASM UI local301522bytes,SHA256
+44b3d34d9b7ebcda71b6e227654b41b42fc32df959b0cdc8705dd41f38e1d511.
+App/decor, APK y updater sin cambios. Publicación pendiente.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-progress-queue-prototype.
+
 # 1.7.192 — navegación serializada en Rust
 
 Changelog: «Navegación del lector en Rust».
@@ -16,7 +47,19 @@ No cambia el motor de audio ni se atribuye una aceleración no medida.
 Inventario:4412 Rust/36897 JavaScript,10,68 % de líneas propias.
 WASM UI local293130bytes,SHA256
 4313b11b5cd2d246f0f3e4418d01367ee1a91c0e4422fa873ac1d944e181cd03.
-App/decor, APK1.1.15/28 y pin del updater sin cambios. Publicación pendiente.
+App/decor, APK1.1.15/28 y pin del updater sin cambios. Publicado7d24819,
+deploy38263065855 y Pages38263212976 aprobados (Pages c5415c4). 211checks
+HTTP/bytes/SHA aprobados, dos perfiles, treinta casos PCM/marcas, APK/loader
+reales y E2E público de navegación1/1 (55,3s). UI público293090bytes,SHA256
+72c34d19986a89f2cd84992e7528ffad063a97fdd2abf8fe43a8d2b81d5b9e47.
+Primeras dos observaciones nativas conservadas como fallidas: todavía web191.
+Una consulta posterior desde ese WebView sí obtuvo el bundle192; otro regreso
+al primer plano registró la recarga automática hacia él, sin borrar caché ni
+datos. No se atribuye causa cierta a la demora anterior. Luego el APK ejecutó
+web192, voz real Lessac2×,11,18s acumulados,8fragmentos terminados y9iniciados,
+proceso7153 estable, sin FATAL EXCEPTION. Emulador API36, no teléfono físico.
+Evidencia:published-1791815541331,public-*.log,native-freshness.json,
+native-resume-observed.json,native-ui192-current.json; fallos previos retenidos.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-reader-navigation-prototype.
 
 # 1.7.191 — marcadores e historial en Rust
@@ -88,8 +131,10 @@ Pruebas públicas de mapa, resaltado y carga retenida: 3/3, 18 s. Android API36
 ejecuta web1.7.190 con APK1.1.15/28: Lessac a 2×, 10,29 s, siete unidades
 terminadas, proceso5957 estable, sin FATAL EXCEPTION. No es un móvil físico.
 Evidencia publicada: published-1791814028573, public-*.log y native-ui190.json.
-CI187 PDF original y traza pública189 fallida se conservan; el caso de Linux
-todavía necesita el resultado de CI190. No se alteran sus aserciones ni plazos.
+CI190 UI2 ya completó: el caso PDF antes fallido pasa, pero fallan los dos
+contratos nativos de devolución en ocho segundos. No se presenta CI190 como
+aprobada. Se conservan ci190-ui2-original.log y ci190-ui2-artifact (45archivos),
+con fases y trazas para investigar; no se alteran aserciones ni plazos.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-speech-highlight-prototype.
 
 Siguiente prototipo, todavía fuera de producción: normalización de marcadores

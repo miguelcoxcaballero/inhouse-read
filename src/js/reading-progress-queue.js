@@ -1,52 +1,32 @@
-// Keep the latest pending reading position, rather than building a backlog
-// of obsolete IndexedDB writes. Settings are ordered barriers: a position
-// can replace only the pending position immediately before it.
-export function createReadingProgressQueue(library, { onSaved = () => {} } = {}) {
-  const books = new Map()
+import {getRustUI} from './rust-ui.js'
+import {createLegacyReadingProgressQueue} from './reading-progress-queue-legacy.js'
 
-  async function drain(id, entry) {
-    while (entry.pending.length) {
-      const task = entry.pending.shift()
-      try {
-        const record = task.kind === 'position'
-          ? await library.updateProgress(id, task.fraction, task.locator)
-          : await library.patch(id, { ...task.fields, progressUpdatedAt:Date.now(), progressDirty:true })
-        await onSaved(record, id)
-        task.resolve(record)
-      } catch (error) {
-        task.reject(error)
-      }
-    }
-    if (books.get(id) === entry) books.delete(id)
+// A book keeps its queue until its last write finishes. This permits late WASM
+// adoption without letting a newer position overtake an in-flight local save.
+export function createReadingProgressQueue(library,{onSaved=()=>{}}={}){
+ const legacy=createLegacyReadingProgressQueue(library,{onSaved}),owners=new Map(),observed=new WeakSet()
+ let native
+ const ownerFor=id=>{
+  const owner=owners.get(id)
+  if(owner)return owner
+  const Native=getRustUI()?.RustReadingProgressQueue
+  if(Native&&!native)native=new Native(
+   (id,fraction,locator)=>library.updateProgress(id,fraction,locator),
+   (id,fields)=>library.patch(id,{...fields,progressUpdatedAt:Date.now(),progressDirty:true}),onSaved)
+  const next=native||legacy;owners.set(id,next);return next
+ }
+ const observe=(id,owner,promise)=>{
+  if(!observed.has(promise)){
+   observed.add(promise)
+   const settled=()=>{if(owners.get(id)===owner&&owner.get(id)===undefined)owners.delete(id)}
+   // Observe replaced positions too, retaining the original rejecting Promise.
+   promise.then(settled,settled)
   }
-
-  function enqueue(id, update) {
-    let entry = books.get(id)
-    if (!entry) {
-      entry = { pending:[], latest:null }
-      books.set(id, entry)
-      // Start in this task's microtask, without a timer or debounce delay.
-      Promise.resolve().then(() => drain(id, entry))
-    }
-    const tail = entry.pending.at(-1)
-    if (update.kind === 'position' && tail?.kind === 'position') {
-      tail.fraction = update.fraction
-      tail.locator = update.locator
-      return tail.promise
-    }
-    const task = { ...update }
-    task.promise = new Promise((resolve, reject) => { task.resolve = resolve; task.reject = reject })
-    // The caller still receives a failed commit. A replaced pending position
-    // can have no remaining observer; never leave its rejection unhandled.
-    task.promise.catch(() => {})
-    entry.pending.push(task)
-    entry.latest = task.promise
-    return task.promise
-  }
-
-  return {
-    updateProgress: (id, fraction, locator) => enqueue(id, { kind:'position', fraction, locator }),
-    patch: (id, fields) => enqueue(id, { kind:'settings', fields:{ ...fields } }),
-    get: id => books.get(id)?.latest
-  }
+  return promise
+ }
+ return {
+  updateProgress(id,fraction,locator){const owner=ownerFor(id);return observe(id,owner,owner.updateProgress(id,fraction,locator))},
+  patch(id,fields){const owner=ownerFor(id);return observe(id,owner,owner.patch(id,owner===native?{...fields}:fields))},
+  get(id){const owner=owners.get(id),promise=owner?.get(id);if(promise===undefined)owners.delete(id);return promise}
+ }
 }

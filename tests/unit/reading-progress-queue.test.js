@@ -1,9 +1,16 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import 'fake-indexeddb/auto'
 import { Blob as NativeBlob } from 'node:buffer'
 import { LibraryStore } from '../../src/js/library-store.js'
 import { createReadingProgressQueue } from '../../src/js/reading-progress-queue.js'
 
+import {readFileSync} from 'node:fs'
+import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
+const runtime=vi.hoisted(()=>({ui:null})),handles=[]
+vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
+beforeAll(()=>{ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})})
+const nativeRuntime={RustReadingProgressQueue:class extends ui.RustReadingProgressQueue{constructor(...args){super(...args);handles.push(this)}}}
+afterEach(()=>{for(const handle of handles.splice(0))handle.free()})
 const location = value => ({ kind:'pdf-page', value, textOffset:value * 10 })
 const deferred = () => {
   let resolve, reject
@@ -12,7 +19,8 @@ const deferred = () => {
 }
 const tick = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
-describe('local reading progress queue', () => {
+describe.each(['legacy','Rust'])('%s local reading progress queue', engine => {
+  beforeEach(()=>{runtime.ui=engine==='Rust'?nativeRuntime:null})
   it('commits the latest synchronous position without a debounce timer', async () => {
     const library = { updateProgress:vi.fn(async (id, fraction, locator) => ({ id, fraction, locator })) }
     const queue = createReadingProgressQueue(library), promises = []
@@ -20,6 +28,7 @@ describe('local reading progress queue', () => {
     expect(library.updateProgress).not.toHaveBeenCalled()
     expect(new Set(promises).size).toBe(1)
     expect(queue.get('book')).toBe(promises.at(-1))
+    expect(handles.length).toBe(engine==='Rust'?1:0)
     expect(await promises.at(-1)).toEqual({ id:'book', fraction:1, locator:location(100) })
     expect(library.updateProgress).toHaveBeenCalledExactlyOnceWith('book', 1, location(100))
     expect(queue.get('book')).toBeUndefined()
@@ -106,7 +115,7 @@ describe('local reading progress queue', () => {
   })
 
   it('preserves original local bytes, cover, final locator and settings in IndexedDB', async () => {
-    const library = new LibraryStore('reading-progress-queue-real-store')
+    const library = new LibraryStore('reading-progress-queue-real-store-'+engine)
     const bytes = new NativeBlob(['original book bytes'], { type:'application/pdf' })
     const cover = new NativeBlob(['original image'], { type:'image/jpeg' })
     const book = await library.addOrTouch({ sourceType:'local', name:'Book.pdf', size:bytes.size, content:bytes, cover, title:'Book', format:'PDF' })

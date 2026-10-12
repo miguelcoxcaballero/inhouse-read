@@ -1,3 +1,4 @@
+mod progress_queue;
 mod reader_navigation;
 mod reading_places;
 mod speech_highlight;

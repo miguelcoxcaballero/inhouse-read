@@ -1,9 +1,10 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega1.7.192: serialización e invalidación de navegación en Rust.
-5100 unitarias y diez E2E aprobados. Inventario4412 líneas Rust/36897 JS,
-10,68 %; excluye dependencias, bindings generados, pruebas, CSS/HTML y
-Android. No mide funciones terminadas. Se conservan alternativas JS.
+Última entrega1.7.193: colas de guardado y fusión de posiciones en Rust.
+5124 unitarias (dos workers) y diez E2E aprobados. Fallo original de timeout
+conservado. Inventario4480líneas Rust/36928JS,10,82%; no mide funciones
+terminadas. El puente asíncrono añade coste medido, documentado más abajo;
+no se afirma que esta entrega acelere IndexedDB. Alternativa JS conservada.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout
