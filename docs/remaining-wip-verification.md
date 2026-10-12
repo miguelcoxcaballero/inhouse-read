@@ -19,7 +19,13 @@ una tilde se escribió en Windows-1252; corregido a UTF-8, dos casos pasan en
 Inventario: 3999 Rust / 36765 JavaScript, 9,81 % del código propio contado.
 WASM UI local: 162854 bytes, SHA256
 c5234273df52b6ea56d7d7164f5cef0c5bc5499a84aec9ca8525673bd4053abd.
-App/decor, APK y updater sin cambios. Verificación pública pendiente.
+App/decor, APK y updater sin cambios. Publicado 0c64e4b; deploy 38252080876 y
+Pages 38252244066 aprobados, rama Pages 19ef761. Verificación pública: 183
+comprobaciones correctas, dos perfiles con bytes exactos, índice/marcadores/
+búsqueda Rust reales en móvil 1/1 (7,4 s), PCM/marcas 30/30, APK y loader reales.
+UI público 162838 bytes, SHA256
+f7c6785731e8353d1dc248ef53d8f3a817896f1acc91a774e743b542526df895.
+Evidencia pública: published-1791809937203 y public-*.log. CI185 sigue en curso.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-reader-lists-prototype.
 CI184: unitarias y primeras pruebas de voces aprobadas. UI4 ha registrado un
 error al importar FB2: Foliate setStyles recibe un elemento null. El original
