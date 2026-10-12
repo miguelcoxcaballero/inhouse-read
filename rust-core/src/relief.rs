@@ -268,3 +268,55 @@ pub unsafe extern "C" fn relief_rgba_planes(input: *const u8, output: *mut u8, c
     }
     1
 }
+
+/// Threshold a membership plane without transferring it back to the host.
+/// # Safety
+/// Membership and hard each contain count readable/writable elements.
+#[no_mangle]
+pub unsafe extern "C" fn relief_membership_pixels(membership: *const f32, hard: *mut u8,
+    count: u32, from: u32, to: u32) -> u32 {
+    if count > 1_048_576 || from > to || to > count || to - from > 4096 { return 0; }
+    let source = slice::from_raw_parts(membership, count as usize);
+    let target = slice::from_raw_parts_mut(hard, count as usize);
+    for i in from as usize..to as usize {
+        if !source[i].is_finite() { return 0; }
+        target[i] = u8::from(source[i] > 0.0);
+    }
+    1
+}
+
+/// Resolve a physical pigment bevel and exclusive layer ownership.
+/// Owner zero builds the standalone byte map; 1..10 updates classification.
+/// # Safety
+/// Membership, distance and mask contain count elements. Nonzero owner also
+/// requires owners/heights; zero owner instead requires height_bytes.
+#[no_mangle]
+pub unsafe extern "C" fn relief_pigment_pixels(membership: *const f32, distance: *const f32,
+    owners: *mut u8, mask: *mut u8, heights: *mut f32, height_bytes: *mut u8,
+    count: u32, from: u32, to: u32, bevel: f64, height_mm: f64, owner: u32) -> u32 {
+    if count > 1_048_576 || from > to || to > count || to - from > 1024 || owner > 10
+        || !bevel.is_finite() || bevel <= 0.0 || !height_mm.is_finite() || height_mm < 0.0 { return 0; }
+    let n = count as usize;
+    let membership = slice::from_raw_parts(membership, n);
+    let distance = slice::from_raw_parts(distance, n);
+    let mask = slice::from_raw_parts_mut(mask, n);
+    let mut owners = if owner != 0 { Some(slice::from_raw_parts_mut(owners, n)) } else { None };
+    let mut heights = if owner != 0 { Some(slice::from_raw_parts_mut(heights, n)) } else { None };
+    let mut height_bytes = if owner == 0 { Some(slice::from_raw_parts_mut(height_bytes, n)) } else { None };
+    for i in from as usize..to as usize {
+        let member = membership[i] as f64;
+        let amount = rounded_byte(clamp(member, 0.0, 1.0) * 255.0);
+        let t = clamp((distance[i] as f64 - 0.5) / bevel, 0.0, 1.0);
+        let soft = t * t * (3.0 - 2.0 * t);
+        if owner == 0 {
+            mask[i] = amount;
+            let raised = member * if member > 0.0 { soft } else { 0.0 };
+            height_bytes.as_mut().unwrap()[i] = rounded_byte(clamp(raised * 0.3 / 0.6, 0.0, 1.0) * 255.0);
+        } else if amount > mask[i] {
+            owners.as_mut().unwrap()[i] = owner as u8;
+            mask[i] = amount;
+            heights.as_mut().unwrap()[i] = (member * soft * height_mm / 0.6 * 255.0) as f32;
+        }
+    }
+    1
+}

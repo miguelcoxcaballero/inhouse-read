@@ -1469,3 +1469,17 @@ Una llamada Rust convierte los tres planos de material a RGBA. Los resultados
 son independientes y el generador mantiene sus ImageData y materiales. El
 umbral evita llamadas pequeñas; datos y errores tienen una ruta compatible.
 Véanse pruebas y mediciones en remaining-wip-verification.md.
+
+## 1.7.170: clasificación y bisel de pigmentos
+
+La membresía, distancia y altura física de cada pigmento comparten una
+reserva Rust. Conserva propiedad exclusiva, precisión de altura, puntos de
+cancelación y recuperación de fallos parciales. La distancia ya estaba en
+Rust; el ensayo compara contra esa versión previa, con sus mapas reutilizados.
+Ver remaining-wip-verification.md para resultados y limitaciones.
+
+Recuento1.7.170:3128 líneas no vacías en38 fuentes Rust y36303 en197 módulos
+JavaScript propios:7,93% del total Rust+JS. Incluye comentarios y excluye
+pruebas,dependencias,CSS/HTML y Java Android. No mide porcentaje funcional;
+las rutas de compatibilidad siguen siendo código JS. La migración completa
+continúa pendiente.

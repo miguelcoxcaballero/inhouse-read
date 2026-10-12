@@ -23,7 +23,7 @@ import { getRustCore, loadRustCore } from './rust-core.js';
 import { prepareColorMaskJob } from './cover-color-mask-wasm.js';
 import { rustReliefPalette } from './relief-palette-wasm.js';
 import { canUseReliefWasm, wasmInsideDistance, wasmBoxBlur, wasmHeightToNormals,
-  wasmComposeMaterialMap, wasmComposeReliefLayers, wasmShadePreview, wasmReliefRgbaPlanes } from './cover-relief-wasm.js';
+  wasmComposeMaterialMap, wasmComposeReliefLayers, wasmShadePreview, wasmReliefRgbaPlanes, wasmPigmentMaps } from './cover-relief-wasm.js';
 
 export const COLOR_RELIEF_IDS = Object.freeze(Array.from({ length:10 }, (_, index) => `color-${index + 1}`));
 export const LEGACY_RELIEF_IDS = Object.freeze(['lettering', 'foil', 'frame', 'emblem', 'varnish', 'band', 'grain', 'panel']);
@@ -1227,6 +1227,12 @@ export function* buildMapsFromPixels(work, hires, selection) {
     gloss:new Uint8Array(count), mask:new Uint8Array(count), preserveInk:true, foilColor:null };
   if (!choice) return out;
   const membership = yield* colorMask(hires, choice.color, choice.tolerance);
+  const native = yield* rustRelief(wasmPigmentMaps(getRustCore(), membership, width, height));
+  if (native) {
+    Object.assign(out, native);
+    out.color = choice.color; out.tolerance = choice.tolerance;
+    return out;
+  }
   const hard = new Uint8Array(count);
   for (let i = 0; i < count; i++) { hard[i] = membership[i] > 0 ? 1 : 0; if ((i & 4095) === 4095) yield; }
   const distance = yield* insideDistance(hard, width, height), bevel = Math.max(1.2, Math.max(width, height) * .003);
@@ -1249,14 +1255,21 @@ function* buildColorLayerMaps(image, selection) {
   const layers = coverReliefLayers(selection).sort((a,b) => a.color.localeCompare(b.color));
   // Keep the unscaled physical height in float precision. Quantizing before
   // the per-colour strength would round two distinct coatings to one height.
-  const owners = new Uint8Array(count), baseMask = new Uint8Array(count), baseHeight = new Float32Array(count);
+  let owners = new Uint8Array(count), baseMask = new Uint8Array(count), baseHeight = new Float32Array(count);
   const bevel = Math.max(1.2, Math.max(width, height) * .003);
   let prepared = null;
   try {
     prepared = yield* prepareColors(image, layers.length);
     for (let index = 0; index < layers.length; index++) {
       const layer = layers[index], membership = yield* preparedColorMask(image, layer.color, layer.tolerance, prepared);
-      const hard = new Uint8Array(count), profile = colorReliefProfile(layer);
+      const profile = colorReliefProfile(layer);
+      const native = yield* rustRelief(wasmPigmentMaps(getRustCore(), membership, width, height,
+        { owners, baseMask, baseHeight, owner:index + 1, heightMM:profile.heightMM }));
+      if (native) {
+        ({ owners, baseMask, baseHeight } = native);
+        continue;
+      }
+      const hard = new Uint8Array(count);
       for (let i=0;i<count;i++) { hard[i]=membership[i]>0?1:0;if((i&4095)===4095)yield; }
       const distance = yield* insideDistance(hard,width,height);
       for (let i=0;i<count;i++) {

@@ -1,3 +1,48 @@
+# Migración 1.7.170 — pigmentos y biseles en Rust
+
+Changelog: «Relieves por pigmento en Rust». Se trasladan la clasificación
+binaria y la altura física de cada color. Membresía, distancia y bisel
+comparten una reserva, evitando transferir los mapas intermedios. Se mantienen
+los puntos de cancelación, el orden canónico, la propiedad exclusiva del
+píxel y las alturas independientes en f32. Sólo se reemplazan los mapas
+completos; un fallo parcial usa la clasificación anterior intacta.
+
+Primer intento:82/83 focalizadas; la nueva prueba multicolor omitía los IDs
+obligatorios y fue rechazada por el validador. Registro original focused.*
+conservado. Corregida la fixture:83/83,3,82s. Con la prueba adicional de fallo
+parcial:21/21 específicas,750ms. Incluye tamaño impar,ceros,bordes,redondeos,
+10pigmentos superpuestos,cancelación entre etapas,crecimiento de memoria,
+liberación y generadores reales monocromo/multicolor.
+1/1 E2E con núcleo real,13,9s,bytes y f32 exactos. CPU×4,nueve rondas
+alternadas,transferencias incluidas. El baseline ya calculaba la distancia
+en Rust; la prueba multicolor reutiliza sus mapas como hacía producción:
+-128×192,un pigmento:3,6→2,9ms.
+-288×384,un pigmento:16,3→12,8ms.
+-512²,un pigmento:38,7→29,8ms.
+-288×384,tres pigmentos:45,4→31,5ms.
+-512²,diez pigmentos:355,6→243,2ms.
+Capacidad estable tras calentar,máximo5636096bytes en el ensayo. Estos tiempos
+son del cálculo, no de FPS ni de abrir el editor en un teléfono físico.
+Build aprobado. WASM395164bytes,SHA
+`383c299b991d3bbd4bfa34303aad256d17ce5295c4185d64f60375a33a113c2d`.
+4735/4735 unitarias,357 archivos,294,43s,sin omisiones.
+3/3 E2E del editor real,1,3min,sin reintentos ni omisiones.
+Publicación pendiente. Evidencia:
+`D:/CodexEvidence/InhouseRead-20261012/rust-relief-pigment`.
+
+Publicación169:fuente `80d630dcda54017cbe68dc6be943bdd6ddc28acb`, Pages
+`03e190694209856073052e13205bc099f09304d7`,deploy38209956114 yPages38210020678
+aprobados.99recursos/HTML/precarga exactos; núcleo público7casos,
+17258868bytes idénticos. APK1.1.15/code28,hash yloader2107 verificados.
+Evidencia:published-1791784655794.3/3 E2E públicas del editor real,1,4min,
+sin reintentos ni omisiones. Main/WASM exactos en dos perfiles limpios.
+CI167 UI2 conserva los dos fallos anteriores de duración al cerrar;
+originales rust-mesh-finish/ci167-ui2. No se cambiaron sus límites.
+
+El borrador rust-relief-rank permanece únicamente en D:; NO se integró al
+comprobar que aquella morfología antigua sólo se usaba en pruebas. Se ha
+priorizado la ruta activa de pigmentos; no se cuenta ese borrador como migrado.
+
 # Migración 1.7.169 — planos de relieve en Rust
 
 Changelog: «Mapas de relieve en Rust». Una única llamada convierte altura,

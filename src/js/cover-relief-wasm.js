@@ -163,3 +163,47 @@ export function wasmReliefRgbaPlanes(core, maps) {
   } catch { return null; }
   finally { heap?.free(); }
 }
+
+/** Keep membership, distance and bevel work in one arena for each pigment. */
+export function* wasmPigmentMaps(core, membership, width, height, previous = null) {
+  const count = width * height, owner = previous?.owner || 0;
+  if (typeof core?.relief_membership_pixels !== 'function' || typeof core?.relief_pigment_pixels !== 'function'
+    || !canUseReliefWasm(core, width, height) || !(membership instanceof Float32Array) || membership.length !== count
+    || membership.buffer === core.memory.buffer
+    || !Number.isInteger(owner) || owner < 0 || owner > 10
+    || (previous && (!owner || !bytes(previous.owners, count) || !bytes(previous.baseMask, count)
+      || !(previous.baseHeight instanceof Float32Array) || previous.baseHeight.length !== count
+      || !Number.isFinite(previous.heightMM) || previous.heightMM < 0))) return null;
+  const bevel = Math.max(1.2, Math.max(width, height) * .003);
+  const heap = arena(core, [[Float32Array, count, membership], [Uint8Array, count], [Float32Array, count],
+    [Uint8Array, owner ? count : 0, previous?.owners], [Uint8Array, count, previous?.baseMask],
+    [Float32Array, owner ? count : 0, previous?.baseHeight], [Uint8Array, owner ? 0 : count]]);
+  try {
+    for (let from = 0; from < count; from += 4096) {
+      checked(core.relief_membership_pixels(heap.at(0), heap.at(1), count, from, Math.min(count, from + 4096)));
+      if (from + 4096 <= count) yield;
+    }
+    for (let from = 0; from < count; from += 8192) {
+      checked(core.relief_distance_init(heap.at(1), heap.at(2), count, from, Math.min(count, from + 8192)));
+      if (from + 8192 < count) yield;
+    }
+    for (let from = 0; from < height; from += 16) {
+      checked(core.relief_distance_rows(heap.at(2), width, height, from, Math.min(height, from + 16), 0));
+      if (from + 16 <= height) yield;
+    }
+    for (let end = height; end > 0;) {
+      const from = Math.max(0, Math.floor((end - 16) / 16) * 16 + 15);
+      checked(core.relief_distance_rows(heap.at(2), width, height, from, end, 1));
+      if ((from & 15) === 15) yield;
+      end = from;
+    }
+    for (let from = 0; from < count; from += 1024) {
+      checked(core.relief_pigment_pixels(heap.at(0), heap.at(2), heap.at(3), heap.at(4), heap.at(5), heap.at(6),
+        count, from, Math.min(count, from + 1024), bevel, previous?.heightMM || 0, owner));
+      if (from + 1024 <= count) yield;
+    }
+    if (owner) return { owners: heap.view(3).slice(), baseMask: heap.view(4).slice(), baseHeight: heap.view(5).slice() };
+    const mask = heap.view(4).slice();
+    return { mask, gloss: mask.slice(), heightMap: heap.view(6).slice() };
+  } finally { heap.free(); }
+}
