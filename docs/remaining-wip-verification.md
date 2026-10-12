@@ -1,3 +1,22 @@
+# Verificación pública 1.7.175 completada
+
+Fuente:f814b5b47013494bebb546d77a74087ec4cf76df.
+Pages:cd42333d6a450dea0d30b81845461eb8305d1f81.
+Deploy38218315784 y Pages38218393338 aprobados.150comprobaciones de artefacto:
+101recursos,HTML,main,ambos WASM y precargas coinciden con los bytes publicados.
+42casos/6850692bytes del núcleo descargado iguales a la referencia.
+6/6 UI públicas,33,7s,sin reintentos ni omisiones:el análisis de portada invoca
+los kernels reales y guarda la misma apariencia;retorno inferior a320/390px;
+Play tras Pausa/Stop y cambio de página en PDF/EPUB lee una frase completa visible.
+Main+ambos WASM exactos en dos perfiles limpios. APK1.1.15/code28 descargado,
+hash de catálogo confirmado y loader2107bytes exclusivo hacia producción.
+Sin cambios nativos ni nuevos artefactos de Android; canales/identidad intactos.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/published-1791790506117 y rust-cover-startup.
+4807/4807 suite unitaria existente más1/1 nueva de disponibilidad. El CI completo
+38218315825 sigue ejecutándose; no se afirma que hayan desaparecido los fallos
+anteriores del cierre nativo ni que toda la app esté migrada a Rust.
+Esta actualización documental no cambia los archivos de producción ya verificados.
+
 # Versión 1.7.175 — disponibilidad de Rust al analizar la portada
 
 Changelog: «Aprovecha Rust tras cargar las fuentes».
