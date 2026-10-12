@@ -1,3 +1,43 @@
+# 1.7.190 — resaltado, seguimiento y carga tardía de Rust
+
+Changelog: «Resaltado Rust y recuperación de carga».
+Rust conserva estilos exactos y el registro CSS Highlight del documento del
+rango. Cinco cadenas CSS compartidas, nodos intactos, sin cambiar selección
+ni layout. El cálculo de seguimiento usa todas las líneas del rango: antes
+una primera línea visible podía ocultar las siguientes. Si el rango es más
+alto que la pantalla, conserva su principio cerca del borde superior.
+Alternativas JS conservadas. No cambia el motor ni la velocidad del audio.
+
+107 focales aprobadas; 3000 decisiones geométricas exactas, rangos grandes,
+API ausente, excepción del constructor, un estilo por documento y 1000 ciclos
+sin crecimiento WASM. Batería completa anterior al ajuste del loader:
+5079/5079, 313,85 s; batería definitiva: 5081/5081 en 379 archivos, 315,10 s.
+Siete E2E de PDF adaptable e invocación Rust, 40,8 s; otros cinco, 44,4 s,
+incluyen voces reales EPUB/PDF, mapa/resaltado compilados y descarga retenida.
+
+La prueba pública189 detectó que un módulo terminado después del plazo de
+2 s quedaba descartado hasta otra apertura. La traza registra 2,117 s entre
+la petición del JS y la del WASM (el WASM tardó sólo 60 ms). Se publica el
+resultado válido aunque llegue tarde y se comparte la inicialización pendiente
+al reintentar, evitando dos memorias que invaliden handles. La apertura sigue
+liberándose a los 2 s. Prueba E2E retiene el WASM hasta ver el lector disponible,
+lo libera y comprueba un único módulo usando Rust en el siguiente documento.
+Se mantienen verificación ABI y cooldown tras un error real.
+
+Inventario: 4336 Rust / 36867 JavaScript, 10,52 % de líneas propias.
+WASM UI local 278816 bytes, SHA256
+221cd1b9d1c15f0457d3449aeb7bcee828118d1f20bd1cc7d5de44ac2f6dfcb4.
+App/decor y APK/updater sin cambios. Verificación pública pendiente.
+CI187 PDF original y traza pública189 fallida se conservan; el caso de Linux
+todavía necesita el resultado de CI190. No se alteran sus aserciones ni plazos.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-speech-highlight-prototype.
+
+Siguiente prototipo, todavía fuera de producción: normalización de marcadores
+y citas en Rust. 10000 comparaciones y memoria estable, pero la frontera de
+objetos da 8,094 ms frente a 0,080 ms para 200 citas con CPU×4. No se integra
+ese diseño. Se conserva en rust-reading-state-prototype para revisar propiedad
+y persistencia del estado, sin presentarlo como parte migrada del producto.
+
 # 1.7.189 — mapas de texto y rangos en Rust
 
 Changelog: «Mapa de texto del audiolibro en Rust».
@@ -24,7 +64,15 @@ Fallos iniciales de tipos Rust y URL ESM del harness conservados por separado.
 Inventario: 4280 Rust / 36840 JavaScript, 10,41 % de líneas propias.
 WASM UI local 271430 bytes, SHA256
 39608269653d706f95056ee65afa4ca4b0a39602626f63486d6bab24eaf98cbd.
-App/decor y APK/updater sin cambios. Verificación pública pendiente.
+App/decor y APK/updater sin cambios. Publicado 96dd40e; deploy 38258284416
+y Pages 38258422998 aprobados, Pages d2c76db. Recursos por tamaño/SHA, dos
+perfiles con bytes exactos, 30 casos PCM/marcas, APK y loader reales aprobados.
+UI público 271414 bytes, SHA256
+b0fdc5c0370f5aa52d166227b4ba5fed3f69944d743b7d0a1b68a1dab560ee5f.
+El test de invocación pública Rust falló: inicialización tardía, sin llamadas
+a sus exports aunque había terminado el módulo. Original public-ui.log y
+traza retenidos; corrección incluida en190. No se presenta como test aprobado.
+Evidencia publicada: published-1791813118298 y public-*.log.
 CI187 conserva fallo de visibilidad de resaltado en PDF adaptable; original
 ci187-ui2-original.log en rust-voice-options-prototype. Que el caso pase en
 Windows no acredita solucionado el fallo de Linux. No se reducen aserciones.

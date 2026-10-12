@@ -24,6 +24,7 @@ import { speechHold } from './speech-hold.js'
 import { clearPDFReflow, pdfImageRects, preparePDFReflow } from './pdf-reflow.js'
 import { extractPDFText, mapPDFTextLayer } from './pdf-text.js'
 import { SPEECH_SPAN_CLASS, clearSpeechRange, installSpeechStyle, paintSpeechRange } from './speech-highlight.js'
+import { speechFollowOffset } from './speech-follow.js'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -653,15 +654,12 @@ export class PdfReader {
         if (this.#speechBrowsing) return
         if (page !== this.#pageNum) { void this.#revealSpeech().catch(() => {}); return }
         this.#settleTextResize()
-        const rect = current()?.rangeFor(start, end)?.getClientRects()[0]
-        if (!rect) return
+        const rects = current()?.rangeFor(start, end)?.getClientRects()
         const box = this.#container.getBoundingClientRect()
-        // Zoomed pages and the text view scroll: keep the sentence in view, a third from the top, without jolting while it is already visible.
-        const lower = rect.bottom > box.bottom - 24 || rect.top < box.top + 8
-        const side = rect.right > box.right || rect.left < box.left
-        if (!lower && !side) return
+        const offset = speechFollowOffset(rects,box)
+        if (!offset) return
         this.#container.scrollBy({
-          top:lower ? rect.top - (box.top + box.height * .3) : 0, left:side ? rect.left - (box.left + box.width * .15) : 0,
+          ...offset,
           behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'
         })
       }

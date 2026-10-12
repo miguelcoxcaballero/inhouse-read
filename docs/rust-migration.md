@@ -1,10 +1,10 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.189: mapas de texto y búsqueda de rangos del audiolibro
-en Rust. Se mantienen nodos originales, UTF-16, ilustraciones, bloques y
-texto oculto. 5071 unitarias y cinco E2E, incluidos EPUB/PDF con voz real,
-aprobados. No cambia la selección ni la paginación.
-Inventario: 4280 líneas Rust / 36840 JS, 10,41 %; excluye dependencias, bindings
+Última entrega 1.7.190: resaltado y cálculo del seguimiento de voz en Rust.
+El seguimiento considera todas las líneas y el módulo sigue disponible si
+su inicialización termina después del plazo de apertura. 5081 unitarias;
+siete E2E de PDF más cinco de voz, mapas y carga tardía, aprobados.
+Inventario: 4336 líneas Rust / 36867 JS, 10,52 %; excluye dependencias, bindings
 generados, pruebas, CSS/HTML y Android. No mide funciones terminadas.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 

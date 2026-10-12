@@ -86,6 +86,18 @@ describe('complete navigation through long adaptable PDF pages',()=>{
   await open();const source=await reader.getSpeechSource();source.follow(0,10);expect(container.scrollBy).not.toHaveBeenCalled()
   source.follow(1000,1010);expect(container.scrollBy).toHaveBeenCalled();expect(container.scrollTop).toBeGreaterThan(0)
  })
+ it('reveals the remaining lines when the first line of a spoken sentence is already visible',async()=>{
+  await open();const source=await reader.getSpeechSource()
+  Object.defineProperty(Range.prototype,'getClientRects',{configurable:true,value:()=>[
+   {top:470-container.scrollTop,bottom:495-container.scrollTop,left:16,right:260,width:244,height:25},
+   {top:545-container.scrollTop,bottom:570-container.scrollTop,left:16,right:260,width:244,height:25}
+  ]})
+  source.follow(0,40)
+  expect(container.scrollBy).toHaveBeenCalledTimes(1)
+  const range=document.createRange();range.selectNodeContents(container.querySelector('.pdf-reflow-page'))
+  const box=container.getBoundingClientRect()
+  expect([...range.getClientRects()].every(rect=>rect.top>=box.top&&rect.bottom<=box.bottom)).toBe(true)
+ })
  for(const notifyBeforeScroll of [false,true])it(`preserves the anchor when a font-change scroll debounce reaches a rotated layout ${notifyBeforeScroll?'during':'before'} ResizeObserver restoration`,async()=>{
   vi.useFakeTimers()
   try {

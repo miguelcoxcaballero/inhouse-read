@@ -137,6 +137,7 @@ test('PDF adaptable: narration reads every sentence across long physical pages o
   expect(calls.map(c=>c.text)).toEqual([...PDF_REFLOW_SENTENCES,...pageTwo])
   for(const call of calls)expect(call.atStart.replace(/\s+/g,'')).toContain(call.text.replace(/\s+/g,''))
   const starts=frames.filter((frame,index)=>index===frames.length-1 || frames[index+1].text!==frame.text)
+  await testInfo.attach('narration-frame-diagnostics',{body:JSON.stringify(starts),contentType:'application/json'})
   expect(starts.map(frame=>frame.text.trim())).toEqual([...PDF_REFLOW_SENTENCES,...pageTwo])
   for(const frame of starts){
     expect(frame.rects.length).toBeGreaterThan(0)
