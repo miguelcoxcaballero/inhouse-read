@@ -1,3 +1,26 @@
+# 1.7.188 — cortes de página del audiolibro en Rust
+
+Changelog: «Cortes de página del audio en Rust».
+RustSpeechPages mide los rangos de glifos, busca fronteras y devuelve offsets
+UTF-16 únicos. Lotes de 64 spans con cancelación y cesión entre lotes; no copia
+el texto completo del capítulo. No cambia las frases ni el motor de audio.
+La alternativa JS se conserva ante fallo de carga; finally libera cada scanner.
+
+5032/5032 unitarias, 377 archivos, 308,77 s. 31 focales; 510 comparaciones
+de cortes y consultas exactas, RTL, vertical, espacios, pares sustitutos,
+cancelación, excepciones y 1000 scanners sin crecimiento de memoria. El
+primer harness conservaba una referencia al array de consultas al vaciarlo;
+se corrigió sólo el helper y se conserva unit-focused.log fallido.
+E2E: 3/3 en 35,8 s: export Rust instrumentado en app compilada y continuidad
+EPUB/PDF con los pesos reales de Davefx. La página cambia al inicio audible
+de su continuación. No equivale a una prueba en teléfono físico.
+
+Inventario: 4193 Rust / 36823 JavaScript, 10,22 % de líneas propias.
+WASM UI local 263733 bytes, SHA256
+829a80dd6daee7b554bb39e43200fcf1f81d33aa74251db6a92e3cd4d7e4e197.
+App/decor y APK/updater sin cambios. Verificación pública pendiente.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-speech-pages-prototype.
+
 # 1.7.187 — selección de idiomas y voces en Rust
 
 Changelog: «Idiomas y selección de voces en Rust».
@@ -19,8 +42,14 @@ integrar. No cambia el conjunto ni la calidad de voces disponibles.
 Inventario: 4132 Rust / 36809 JavaScript, 10,09 % de líneas propias.
 WASM UI local 245556 bytes, SHA256
 b51acb2710711a57e91dfb2c28471822bf9ad43c14179e1be5b2f0786eecc0f0.
-App/decor y APK/updater sin cambios. Verificación pública pendiente.
-Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-voice-options-prototype.
+App/decor y APK/updater sin cambios. Publicado 47b4fb6; deploy 38254861281
+y Pages 38255005861 aprobados, Pages 6262a56. Manifiesto y recursos públicos
+verificados por tamaño/SHA, dos perfiles con bytes exactos, 30 casos PCM/marcas,
+APK y loader reales. UI público 245540 bytes, SHA256
+5c392ad3147c9ee20423d49e4bfb28d37b8078c2ba8f6740bb0f36fb98ceaf54.
+La selección Rust se ejercita en la web pública: 1/1 aprobado, 9,3 s.
+Evidencia: published-1791811606469 y rust-voice-options-prototype/public-*.log,
+en D:/CodexEvidence/InhouseRead-20261012. CI completa sigue pendiente.
 
 # 1.7.186 — catálogo de voces en Rust y carga FB2
 

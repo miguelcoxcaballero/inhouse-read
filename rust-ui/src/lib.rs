@@ -1,3 +1,4 @@
+mod speech_pages;
 mod voice_options;
 mod neural_view;
 mod reader_lists;

@@ -1,9 +1,10 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.187: selección de idiomas/voces naturales en Rust, además
-de menús, paneles, listas y presentación del catálogo. Orden regional, prioridades,
-conteos y etiquetas duplicadas conservados. 5015 unitarias y 16 E2E aprobados.
-Inventario: 4132 líneas Rust / 36809 JS, 10,09 %; excluye dependencias, bindings
+Última entrega 1.7.188: medición de cortes de página del audiolibro en Rust,
+por lotes de 64 nodos sin copiar todo el texto. Se conservan rangos, RTL,
+escritura vertical, UTF-16, cancelación y cesiones al navegador. 5032 unitarias
+y tres E2E, incluidos EPUB/PDF con voz real, aprobados.
+Inventario: 4193 líneas Rust / 36823 JS, 10,22 %; excluye dependencias, bindings
 generados, pruebas, CSS/HTML y Android. No mide funciones terminadas.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
