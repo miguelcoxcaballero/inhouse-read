@@ -1,3 +1,48 @@
+# Migración 1.7.157 — núcleo listo durante el arranque
+
+Changelog: «Rust preparado desde el arranque». El HTML precarga y compila el
+WASM con su URL Vite con hash mientras llegan los módulos de la app. El primer
+módulo de biblioteca adopta esa promesa sin esperarla para mostrar libros.
+Una única petición/instancia; validación ABI y recuperación acotada originales.
+Los servidores con MIME genérico o parámetros usan arrayBuffer: el primer
+ensayo conservado detectó que el runtime rechaza parámetros en streaming.
+El pintado final de plantas espera al primer frame de la estantería, con
+presupuesto máximo de1s para superficies que no llegan a dibujar. Las texturas
+preliminares exactas siguen disponibles y la calidad final no se reduce.
+42/42 focalizadas (13 nuevas) y3/3 recorridos iniciales de navegador aprobados.
+4509/4509 unitarias en341 archivos (280,93s), sin omisiones ni reintentos.
+14/14 E2E (3,7min), sin omisiones ni reintentos; incluyen descarga bloqueada
+y fallo de red con el planificador final. Publicación157 pendiente.
+Build aprobado, mismo WASM de156:257936 bytes, SHA
+`bcc9b82d26ab80a9b48df6e2d0754266530091d1a97f74f0cd45a0d141be650c`.
+
+Ensayo emparejado: Chromium390×844 CPU×4, cinco pares alternados por red,
+gzip y caché HTTP real. GSI bloqueado sólo en este ensayo para aislar red
+externa. Antes de la fase caliente se comprueba en IndexedDB que superficies
+y modelos completos se han guardado; su lectura se registra al reabrir.
+Primera imagen, medianas baseline156/candidato157 en milisegundos:
+- Red local fría:1745,0/1778,3; caliente:967,8/974,0.
+- Red10Mbps latencia80ms fría:2733,9/2689,8; caliente:1045,8/1102,5.
+No acredita una mejora general de arranque; se conserva la variabilidad y
+no se extrapola a un teléfono físico. Sí prueba llamadas Rust antes de la
+primera imagen en los20 arranques del candidato. Con caché se restauran los
+modelos, sin volver a invocar sus núcleos. Los ensayos exploratorios previos
+no esperaban correctamente a IndexedDB (waitForFunction recibía una promesa);
+se conservan y NO son la evidencia de arranque con modelos guardados.
+La preparación del siguiente bloque PDF está fuera del repositorio.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-startup`.
+
+Publicación156: fuente `e884fdf2afcbfcd9a9cb7c99c005457cb241475b`,
+Pages `14235f63f0921419eefb145941b3366dcd3028bb`, deploy38198662734 aprobado.
+99 recursos exactos;100 casos del WASM público y5215200 bytes idénticos.
+APK1.1.15/code28, SHA/tamaño y loader2107 verificados.
+Evidencia: published-1791774769450. UI pública156:2/2 en35,9s;
+perfiles nuevos móvil/escritorio consumen los main/WASM exactos publicados
+y no registran errores de página. CI154 también falló sólo enUI2; sus
+originales están en rust-plant-ivy/ci154-ui2.
+CI153 falló en ambos contratos de regreso nativo (69 aprobadas enUI2);
+sus originales están en rust-plant-pot/ci153-ui2. No se considera corregido.
+
 # Migración 1.7.156 — hojas perforadas de monstera
 
 Changelog: «Monstera más rápida en Rust». Se migran ambas caras, las paredes

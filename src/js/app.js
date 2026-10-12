@@ -1429,7 +1429,7 @@ initAndroidUpdateChecks()
 // files, and the reader / catalogue chunks are loaded before anyone reaches
 // for them (see idle-startup.js).
 runAfterFirstFrame([
-  () => { void loadRustCore() },
+  () => { void loadRustCore() }, // reuse early instance, or bounded recovery after a failure
   () => readingExperience.prefetch(),
   () => loadPlantCatalogModule().catch(() => {}),
   () => registerOfflineShell().catch(error => console.warn('No se pudo guardar la app para abrirla sin conexión:', error))

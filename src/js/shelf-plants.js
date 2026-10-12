@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getRustCore } from './rust-core.js';
+import { createPlantPaintGate } from './plant-paint-gate.js';
 import { rustPlantLeafGeometry } from './plant-leaf-wasm.js';
 import { rustPlantCactusGeometry } from './plant-cactus-wasm.js';
 import { rustPlantPotSurface } from './plant-pot-wasm.js';
@@ -97,8 +98,10 @@ const surfaces = new Map(), queue = [], settled = [], redraws = new Set();
 const idle = callback => typeof requestIdleCallback === 'function' ? requestIdleCallback(callback, { timeout:200 })
   : setTimeout(() => callback({ timeRemaining:() => 0 }), 16);
 const PREVIEW = 8;
+const deferPlantPaint = createPlantPaintGate();
 
 function pump(deadline) {
+  if (deferPlantPaint()) { idle(pump); return; }
   // Use the idle period the browser offers (a forced, timed-out slice stays
   // short). Bounded by rows as well, so a frozen clock cannot stall the loop.
   const until = performance.now() + Math.min(16, Math.max(5, deadline.timeRemaining() - 1));

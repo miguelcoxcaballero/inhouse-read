@@ -17,17 +17,24 @@ export function loadRustCore({ bytes, fetcher = globalThis.fetch } = {}) {
   // session. Only a later caller retries, at most once every 30 seconds; no
   // timer, polling or user interaction waits for this recovery.
   if (Date.now() < retryAfter) return Promise.resolve(null)
+  // The page can compile in parallel with the large app modules. Consume its
+  // promise once; workers and explicit byte callers retain their own instance.
+  const early = !bytes && fetcher === globalThis.fetch ? globalThis.__inhouseRustReady : null
+  if (early) delete globalThis.__inhouseRustReady
   loading = (async () => {
     if (typeof WebAssembly !== 'object') return null
     let result
     if (bytes) result = await WebAssembly.instantiate(bytes)
-    else {
+    else if (early) {
+      result = await early
+      if (!result) throw new Error('Early Rust core unavailable')
+    } else {
       const response = await fetcher(coreUrl)
       if (!response.ok) throw new Error(`Rust core HTTP ${response.status}`)
       // Some local servers serve WASM with a generic MIME type. Streaming
       // works on Pages; the byte path keeps those servers functional too.
       if (typeof WebAssembly.instantiateStreaming === 'function'
-          && response.headers.get('content-type')?.split(';')[0].trim() === 'application/wasm') {
+          && response.headers.get('content-type')?.trim().toLowerCase() === 'application/wasm') {
         result = await WebAssembly.instantiateStreaming(response)
       } else result = await WebAssembly.instantiate(await response.arrayBuffer())
     }

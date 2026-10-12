@@ -1229,3 +1229,13 @@ CPU×4:25,280ms JS frente a18,500ms Rust para la creación completa por planta
 (medianas de9 rondas de5), manteniendo los núcleos anteriores en ambos casos.
 La API de Three y la triangulación base no se han migrado. Evidencia y estado
 de regresiones/publicación en `docs/remaining-wip-verification.md`.
+
+## 1.7.157 — disponibilidad del núcleo al abrir
+
+Compilación paralela desde el HTML y adopción sin espera en shelf-boot.
+No añade porcentajes de lógica migrada: habilita los núcleos existentes antes
+del primer frame. La petición y la instancia se comparten; conserva fallbacks,
+ABI y reintento acotado. La pintura final de plantas cede al primer frame con
+un límite de1s. Ensayos reales de descarga bloqueada y fallida mantienen la
+estantería disponible. El ensayo emparejado no demuestra una aceleración
+sistemática del arranque completo; las cifras y límites están en el WIP.
