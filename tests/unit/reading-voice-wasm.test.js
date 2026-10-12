@@ -2,9 +2,11 @@
 import {afterAll,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-const fixture=vi.hoisted(()=>({ui:null,calls:0}))
+const fixture=vi.hoisted(()=>({ui:null,calls:{}}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 import './reading-voice.test.js'
 ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
-fixture.ui={...ui,voice_play:(...args)=>{fixture.calls++;return ui.voice_play(...args)}}
-afterAll(()=>{expect(fixture.calls).toBeGreaterThan(0)})
+const observed=['voice_play','voice_pause','voice_stop','voice_cancel','voice_restart','voice_retry']
+fixture.ui={...ui}
+for(const name of observed)fixture.ui[name]=(...args)=>{fixture.calls[name]=(fixture.calls[name]||0)+1;return ui[name](...args)}
+afterAll(()=>{for(const name of observed)expect(fixture.calls[name],name).toBeGreaterThan(0)})

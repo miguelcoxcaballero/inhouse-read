@@ -1,3 +1,27 @@
+# 1.7.202 — pausa y detención del audiolibro en Rust
+
+Changelog: «Pausa del audiolibro en Rust».
+Rust coordina pausa, detención, cancelación del fragmento, reinicio por cambio
+de velocidad, reintento y notificación del fallo. Conserva orden de timers,
+transporte nativo, generaciones, limpieza y mensajes. Al pausar restaura la
+frase original antes de descartar la preparación cancelada de la página siguiente.
+Temporizador de sueño, PCM, modelos y disposición de controles sin cambios.
+
+500secuencias comparan efectos, valores y errores con el original;2000ciclos
+con memoria WASM estable.192focales aprobados, incluidas las34pruebas de voz
+originales repetidas con Rust y contadores que confirman los seis caminos.
+Se conserva la identidad del fragmento original y se comprueban la página
+pendiente, ubicación cíclica y adopción tardía sin recrear la voz.
+13E2E aprobados en1,7min, incluidas voces reales Davefx PDF/EPUB, reanudación
+en la página visible y cambio de velocidad sin saltarse la frase actual.
+Batería completa5233/5233,392archivos,323,70s, dos workers.
+
+Inventario5120Rust/37148JS=12,11% de líneas propias, no funcional.
+UI local419920bytes,SHA256
+8cf34c9311107b58f08a3aa97bd589cbbb4b734daee14cfd4552c2fad87733b3.
+App/decor, APK y updater sin cambios. Publicación pendiente.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-stop-prototype.
+
 # 1.7.201 — arranque del audiolibro en Rust
 
 Changelog: «Arranque del audiolibro en Rust».
@@ -23,7 +47,15 @@ Batería completa5227/5227,391archivos,325,20s, dos workers.
 Inventario5062Rust/37126JS=12,00% de líneas propias, no funcional.
 UI local408393bytes,SHA256
 4f8c2e7f07e3cef9d1c79dc7bca3fe0fcacc8d6dcae30fac49f0785bd22a6e6b.
-App/decor, APK y updater sin cambios. Publicación pendiente.
+App/decor, APK y updater sin cambios. Publicado21f0f5e,deploy38279755161 y
+Pages38279901551 aprobados, Pages57c4d281. UI público408361bytes,SHA256
+95eff093c0264d12752307c32e2eeb97a5a654d52320e4e8c20204ccb82b6446.
+Recursos reales HTTP/bytes/SHA, dos perfiles, treinta casosPCM/marcas y
+APK/loader aprobados. E2E público1/1,7,3s. AndroidAPI36 confirma web201 y
+APK1.1.15/28; Lessac2×10,21s, ocho fragmentos terminados/nueve iniciados,
+proceso12488 estable y sinFATAL. Evidencia published-1791823890016 y
+native-ui201.json. CI201 unitarias(job114913877128) aprobado; no acredita
+todos los jobs de CI.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-voice-start-prototype.
 
 # 1.7.200 — controles y teclado del lector en Rust

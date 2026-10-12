@@ -1,3 +1,4 @@
+import {pauseReadingVoice,stopReadingVoice,restartReadingVoice,cancelReadingVoice,retryReadingVoice,failReadingVoice} from './voice-stop.js'
 import {restartVisibleVoice,playReadingVoice} from './voice-start.js'
 import { declaredLanguage, detectLanguage, isNeuralId, langBase, resolveVoice } from './voice-catalog.js'
 import { loadNeural, neuralEngine, neuralVoiceList, unlockNeural } from './neural-runtime.js'
@@ -277,7 +278,7 @@ export class ReadingVoice {
     this.notify(NEURAL_ERRORS[reason] || NEURAL_ERRORS.default)
   }
   /** Lets the neural voice try again after it was given up on (the person changed the voice or the speed). */
-  retryNeural() { this.neuralOff = ''; this.neuralRetries = 0; this.missing.clear() }
+  retryNeural() { return retryReadingVoice(this) }
   /** A neural voice was removed (the person tapped Quitar): the reading in progress stops using it now, not when its files are gone. */
   voiceRemoved(id) {
     this.missing.add(id)
@@ -577,25 +578,8 @@ export class ReadingVoice {
     if (this.source !== shown?.source) this.source?.clear?.()
   }
   /** Re-speaks the current fragment, so a new speed or voice is heard now instead of at the next one. */
-  restart() {
-    if (this.state !== 'playing' || this.index >= this.chunks.length) return
-    this.clearAhead()
-    this.cancelUtterance('restart')
-    this.waiting = true; this.notify('Preparando la voz natural…')
-    this.speakCurrent()
-  }
-  cancelUtterance(reason = 'stop') {
-    this.utteranceId = null; clearTimeout(this.presentTimer); clearTimeout(this.waitTimer); this.waiting = false
-    if (this.transport === 'neural' || nativeAudio()) {
-      this.transport = null
-      try {
-        const engine = neuralEngine()
-        if (reason === 'restart' && engine?.cancelCurrent) engine.cancelCurrent()
-        else if (reason === 'pause' && engine?.pause) engine.pause()
-        else engine?.stop()
-      } catch { /* nothing to stop */ }
-    }
-  }
+  restart() { return restartReadingVoice(this) }
+  cancelUtterance(reason = 'stop') { return cancelReadingVoice(this,reason) }
   prepareText(text) {
     let value = String(text || '')
     if (!this.options.footnotes) value = value.replace(/\[(?:\d{1,3}|[*†‡])\]/g,'').replace(/\(\s*(?:note|nota)\s+\d+\s*\)/gi,'')
@@ -610,35 +594,9 @@ export class ReadingVoice {
   detectLanguage(text) {
     return detectLanguage(text, this.reader.language || navigator.language || 'en-US')
   }
-  pause() {
-    if (this.state !== 'playing' && this.state !== 'loading') return
-    const pendingPage = this.deferredPage || this.preparingPage?.generation === this.generation
-    // A joined PDF sentence contains an activation tied to this generation.
-    // Rebuild that continuation on Resume instead of reusing a cancelled page.
-    const original = this.items[this.index]?.unjoined
-    if (original) { this.items[this.index] = original; this.chunks[this.index] = original.text }
-    if (pendingPage) this.resumeNextPage = true
-    this.clearAhead()
-    this.diagnosticAdvance = null
-    this.pausedLocation = JSON.stringify(this.reader.location)
-    ++this.generation; this.state = 'paused'; this.cancelUtterance('pause'); this.unpaint()
-    if (pendingPage) { this.chunks = []; this.items = []; this.source = null; this.index = 0; this.deferredPage = null }
-    if (this.index >= this.chunks.length) this.chunks = []
-    this.notify()
-  }
-  stop() {
-    this.stoppedLocation = JSON.stringify(this.reader.location)
-    this.completeOpening = false
-    this.openingPlan = null
-    this.clearAhead()
-    this.diagnosticAdvance = null
-    ++this.generation; this.state = 'stopped'; this.cancelUtterance(); this.unpaint()
-    this.browsing = false; this.reader.stopSpeech?.()
-    this.nativeSession = null
-    this.preparingPage = null; this.deferredPage = null; this.resumeNextPage = false
-    this.chunks = []; this.items = []; this.source = null; this.index = 0; this.missing.clear(); this.spokenWith = null; clearTimeout(this.sleepTimer); this.notify()
-  }
-  fail(message) { this.stop(); this.notify(message) }
+  pause() { return pauseReadingVoice(this) }
+  stop() { return stopReadingVoice(this) }
+  fail(message) { return failReadingVoice(this,message) }
   setSleep(minutes) {
     clearTimeout(this.sleepTimer)
     if (minutes > 0) this.sleepTimer = setTimeout(() => { this.stop(); this.notify('Temporizador terminado.') }, minutes * 60000)

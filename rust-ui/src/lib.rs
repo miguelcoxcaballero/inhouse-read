@@ -1,3 +1,4 @@
+mod voice_stop;
 mod voice_start;
 mod reader_chrome;
 mod reader_lifecycle;

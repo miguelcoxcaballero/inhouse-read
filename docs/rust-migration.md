@@ -1,10 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega1.7.201: arranque y reanudación del audiolibro en Rust.
-5227unitarias completas aprobadas; once E2E originales y un caso nuevo
-aprobado tras corregir su observación de la primera frase del PDF.
-Inventario5062líneas Rust/37126JS,12,00%; no mide funciones terminadas.
-Conserva el orden de la sesión Android, cancelación y página visible.
+Última entrega1.7.202: pausa y detención del audiolibro en Rust.
+5233unitarias completas y13E2E aprobados, incluidas voces reales PDF/EPUB.
+Inventario5120líneas Rust/37148JS,12,11%; no mide funciones terminadas.
+Conserva orden de cancelación, frase original y página pendiente al pausar.
 CI completo aún tiene incidencias documentadas; no se declara totalmente verde.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
