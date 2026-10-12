@@ -2,11 +2,11 @@ import {test,expect} from '@playwright/test';
 import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
-import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import {loadRustDecorCore} from '/inhouse-read/src/js/rust-decor-core.js';
 import {rustPlantCactusGeometry} from '/inhouse-read/src/js/plant-cactus-wasm.js';
 import {createShelfPlant,plantSurfacesReady} from '/inhouse-read/src/js/shelf-plants.js';
 import {cactusGeometry} from '/inhouse-read/tests/unit/helpers/reference-plant-cactus.js';
-const core=await loadRustCore();if(!core?.plant_cactus_mesh)throw Error('Compiled cactus required');
+const core=await loadRustDecorCore();if(!core?.plant_cactus_mesh)throw Error('Compiled cactus required');
 const bytes=a=>new Uint8Array(a.buffer,a.byteOffset,a.byteLength);
 window.verifyCactus=(length,radius,bend,samples,actual)=>{
  let at=0;const ref=cactusGeometry(length,radius,bend,()=>samples[at++]);

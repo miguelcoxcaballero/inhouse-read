@@ -3,12 +3,12 @@ import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 import {plantModelCases,expectedPlantLeafCalls} from '../helpers/plant-leaf-cases.mjs';
 const html=`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><script type="module">
-import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
-import coreUrl from '/inhouse-read/src/wasm/inhouse_read_core.wasm?url';
+import {loadRustDecorCore} from '/inhouse-read/src/js/rust-decor-core.js';
+import coreUrl from '/inhouse-read/src/wasm/inhouse_read_decor.wasm?url';
 import {createShelfPlant as candidate,plantSurfacesReady as candidateReady} from '/inhouse-read/src/js/shelf-plants.js';
 import {createShelfPlant as original,plantSurfacesReady as originalReady} from '/inhouse-read/tests/unit/helpers/reference-shelf-plants.js';
 import {benchmarkPlantModel} from '/inhouse-read/tests/helpers/plant-geometry-benchmark.mjs';
-const core=await loadRustCore();if(!core?.plant_leaf_mesh)throw new Error('Actual compiled plant geometry core required');
+const core=await loadRustDecorCore();if(!core?.plant_leaf_mesh)throw new Error('Actual compiled plant geometry core required');
 window.benchmarkPlant=async ({entry,expectedCalls})=>{
   const result=await benchmarkPlantModel({original,candidate,originalReady,candidateReady,entry,expectedCalls,stats:window.plantStats});
   const response=await fetch(coreUrl);if(!response.ok)throw new Error('Actual WASM HTTP failed');const bytes=await response.arrayBuffer();

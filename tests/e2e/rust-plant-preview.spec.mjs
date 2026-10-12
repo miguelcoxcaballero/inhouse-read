@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
-import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import {loadRustDecorCore} from '/inhouse-read/src/js/rust-decor-core.js';
 import {rustPlantPreview} from '/inhouse-read/src/js/plant-preview-wasm.js';
 import {createShelfPlant,plantSurfacesReady} from '/inhouse-read/src/js/shelf-plants.js';
 import {plantPreview as reference} from '/inhouse-read/tests/unit/helpers/reference-plant-preview.js';
@@ -10,7 +10,7 @@ window.verifyPlantBytes=(w,h,lattice,pigment,data)=>{
  const expected=reference(w,h,lattice);
  if(pigment.some((v,i)=>v!==expected.pigment[i])||data.some((v,i)=>v!==expected.data[i]))throw Error('Actual plant texture bytes differ');
 };
-const core=await loadRustCore();if(!core?.plant_surface_preview)throw Error('Compiled preview required');
+const core=await loadRustDecorCore();if(!core?.plant_surface_preview)throw Error('Compiled preview required');
 window.checkPlants=async()=>{
  const models=[];
  for(const [catalogId,potId] of [['monstera','muskot'],['sansevieria','gradvis'],['cactus','akerbar']])

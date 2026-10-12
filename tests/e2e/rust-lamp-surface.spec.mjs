@@ -3,10 +3,10 @@ import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 import {pdfImageTrackingPatch} from '../../scripts/pdf-image-tracking-patch.mjs';
 const html=`<!doctype html><script type="module">
-import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import {loadRustDecorCore} from '/inhouse-read/src/js/rust-decor-core.js';
 import {rustLampSurface} from '/inhouse-read/src/js/lamp-surface-wasm.js';
 import {lampSurface as reference} from '/inhouse-read/tests/unit/helpers/reference-lamp-surface.js';
-const core=await loadRustCore();if(!core?.lamp_surface_rows)throw Error('Actual lamp core required');
+const core=await loadRustDecorCore();if(!core?.lamp_surface_rows)throw Error('Actual lamp core required');
 window.checkLamp=()=>{
  const results=[];
  for(const kind of ['wood','linen','black'])for(const detail of [1,2]){

@@ -4,7 +4,7 @@ import {beforeAll,expect,it,vi} from 'vitest';
 import {rustPlantGlazeRows} from '../../src/js/plant-glaze-wasm.js';
 import {glazedPainter} from './helpers/reference-plant-glaze.js';
 let core;
-beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.plant_glaze_rows).toBe('function');});
+beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_decor.wasm'))).instance.exports;expect(typeof core.plant_glaze_rows).toBe('function');});
 const colors=hex=>[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255);
 const configFor=o=>new Float64Array([...colors(o.glaze),...colors(o.body),o.gloss,o.speckle,o.crackle,o.seed]);
 const styles=[

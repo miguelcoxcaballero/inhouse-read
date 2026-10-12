@@ -4,7 +4,7 @@ import {beforeAll,expect,it,vi} from 'vitest';
 import {rustPlantPreview} from '../../src/js/plant-preview-wasm.js';
 import {plantPreview as reference} from './helpers/reference-plant-preview.js';
 let core;
-beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;});
+beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_decor.wasm'))).instance.exports;});
 const fixture=(w,h)=>{
  let seed=63891;const cols=Math.ceil(w/8)+1,rows=Math.ceil(h/8)+1;
  const lattice=Float32Array.from({length:cols*rows*5},()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296*1.4-.2;});

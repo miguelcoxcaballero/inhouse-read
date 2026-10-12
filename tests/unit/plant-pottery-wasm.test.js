@@ -4,7 +4,7 @@ import {beforeAll,expect,it,vi} from 'vitest';
 import {rustPlantPotteryRows} from '../../src/js/plant-pottery-wasm.js';
 import {terracottaPainter,galvanizedPainter} from './helpers/reference-plant-pottery.js';
 let core;
-beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.plant_pottery_rows).toBe('function');});
+beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_decor.wasm'))).instance.exports;expect(typeof core.plant_pottery_rows).toBe('function');});
 const colors=hex=>[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255);
 const configFor=o=>new Float64Array([...colors(o.color),o.seed]);
 const styles=[{kind:0,color:'#a97958',seed:53},{kind:0,color:'#dbb281',seed:53},{kind:1,color:'#cfd3d5',seed:41},{kind:1,color:'#76a89c',seed:41}];

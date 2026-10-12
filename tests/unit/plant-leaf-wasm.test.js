@@ -7,12 +7,12 @@ import { referencePlantLeafGeometry,referencePlantRandom,createShelfPlant as ori
 import { plantLeafCases,plantModelCases,expectedPlantLeafCalls } from '../helpers/plant-leaf-cases.mjs';
 
 const observed = vi.hoisted(()=>({core:null}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>observed.core,loadRustCore:async()=>observed.core}));
+vi.mock('../../src/js/rust-decor-core.js',()=>({getRustDecorCore:()=>observed.core,loadRustDecorCore:async()=>observed.core}));
 import { createShelfPlant,plantSurfacesReady } from '../../src/js/shelf-plants.js';
 
 let core;
 beforeAll(async()=>{
-  core=(await WebAssembly.instantiate(readFileSync(resolve('src/wasm/inhouse_read_core.wasm')))).instance.exports;
+  core=(await WebAssembly.instantiate(readFileSync(resolve('src/wasm/inhouse_read_decor.wasm')))).instance.exports;
   expect(typeof core.plant_leaf_mesh).toBe('function');
 });
 const bytes=array=>Buffer.from(array.buffer,array.byteOffset,array.byteLength);

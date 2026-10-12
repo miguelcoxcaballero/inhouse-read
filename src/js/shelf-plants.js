@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { getRustCore } from './rust-core.js';
+import { getRustDecorCore } from './rust-decor-core.js';
 import { createPlantPaintGate } from './plant-paint-gate.js';
 import { rustPlantLeafGeometry } from './plant-leaf-wasm.js';
 import { rustPlantCactusGeometry } from './plant-cactus-wasm.js';
@@ -108,13 +108,13 @@ function pump(deadline) {
   for (let chunk = 0; queue.length && chunk < 48 && (chunk === 0 || performance.now() < until); chunk++) {
     const job = queue[0];
     const end = Math.min(job.height, job.row + 4);
-    const accelerated = (job.glaze && rustPlantGlazeRows(getRustCore(), job.width, job.height, job.row,
+    const accelerated = (job.glaze && rustPlantGlazeRows(getRustDecorCore(), job.width, job.height, job.row,
       end - job.row, job.glaze, job.pigment, job.data)) ||
-      (job.pottery && rustPlantPotteryRows(getRustCore(), job.pottery.kind, job.width, job.height, job.row,
+      (job.pottery && rustPlantPotteryRows(getRustDecorCore(), job.pottery.kind, job.width, job.height, job.row,
         end - job.row, job.pottery.config, job.pigment, job.data)) ||
-      (job.soil !== undefined && rustPlantSoilRows(getRustCore(), job.soil, job.width, job.height, job.row,
+      (job.soil !== undefined && rustPlantSoilRows(getRustDecorCore(), job.soil, job.width, job.height, job.row,
         end - job.row, job.pigment, job.data)) ||
-      (job.foliage && rustPlantFoliageRows(getRustCore(), job.foliage.kind, job.width, job.height, job.row,
+      (job.foliage && rustPlantFoliageRows(getRustDecorCore(), job.foliage.kind, job.width, job.height, job.row,
         end - job.row, job.foliage.config, job.pigment, job.data));
     if (accelerated) job.row = end;
     else for (; job.row < end; job.row++)
@@ -167,7 +167,7 @@ function surface(key, [width, height], repeat, paint, refresh) {
       const x = i * PREVIEW >= width ? repeat ? 0 : width - 1 : i * PREVIEW;
       lattice.set(sample(x, Math.min(height - 1, j * PREVIEW)), (j * columns + i) * 5);
     }
-    if (!rustPlantPreview(getRustCore(), width, height, columns, rows, lattice, pigment, data)) {
+    if (!rustPlantPreview(getRustDecorCore(), width, height, columns, rows, lattice, pigment, data)) {
       const mixed = [0, 0, 0, 0, 0];
       for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
         const i = Math.min(columns - 2, Math.floor(x / PREVIEW)), j = Math.min(rows - 2, Math.floor(y / PREVIEW));
@@ -388,7 +388,7 @@ function potGeometry(potId, radius, height, soilFraction) {
   radius /= Math.max(...profile.map(([r]) => r)) + (fluted ? .018 : 0);
   const segments = fluted ? 96 : potId === 'muskot' ? 40 : 48;
   const geometry = new THREE.LatheGeometry(profile.map(([r,y]) => new THREE.Vector2(r * radius, y * height)), segments);
-  const acceleratedSoil = rustPlantPotSurface(getRustCore(), geometry, potId, profile, segments, radius, height, soilFraction);
+  const acceleratedSoil = rustPlantPotSurface(getRustDecorCore(), geometry, potId, profile, segments, radius, height, soilFraction);
   if (acceleratedSoil !== null) return { geometry, soilRadius:acceleratedSoil, radius };
   const s = [0];
   for (let j = 1; j < n; j++) s.push(s[j - 1] + Math.hypot((profile[j][0] - profile[j - 1][0]) * radius, (profile[j][1] - profile[j - 1][1]) * height));
@@ -557,7 +557,7 @@ function leafGeometry({ length, width, variant, curve, twist, random, detailed =
   // Each leaf has its own age: new growth is lighter and yellower, older
   // leaves darker and bluer.
   const tint = random() * .08, hue = (random() - .5) * .1, strip = Math.min(SNAKE_STRIPS - 1, Math.floor(tint / .08 * SNAKE_STRIPS));
-  const core = getRustCore();
+  const core = getRustDecorCore();
   const accelerated = core && rustPlantLeafGeometry(core, { length, width, variant, curve, twist, tint, hue, detailed });
   if (accelerated) return accelerated;
   for (let side = 0; side <= Number(thick); side++) for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
@@ -597,7 +597,7 @@ function leafGeometry({ length, width, variant, curve, twist, random, detailed =
 }
 
 function ivyLeafGeometry(length,width,curve,random) {
-  const core = getRustCore();
+  const core = getRustDecorCore();
   if (typeof core?.plant_ivy_mesh === 'function') {
     const samples = [random(), random(), random()];
     const accelerated = rustPlantIvyGeometry(core, { length, width, curve, tint:samples[0]*.045, asymmetry:(samples[1]-.5)*.12, hue:(samples[2]-.5)*.08 });
@@ -631,7 +631,7 @@ function ivyLeafGeometry(length,width,curve,random) {
 }
 
 function subdivideSurface(surface) {
-  if (rustPlantSubdivide(getRustCore(), surface)) return surface;
+  if (rustPlantSubdivide(getRustDecorCore(), surface)) return surface;
   // Add shared interior vertices before bending: silhouette-only triangulation
   // otherwise leaves large flat facets across the broad Monstera blade.
   const positions = [...surface.attributes.position.array], indices = [], midpoints = new Map();
@@ -685,7 +685,7 @@ function monsteraLeafGeometry(length,width,curve,random) {
   }
   const surface = subdivideSurface(new THREE.ShapeGeometry(shape,5)), source = surface.attributes.position, count = source.count;
   const tint = random()*.035, twist = (random()-.5)*.16, hue = (random()-.5)*.07;
-  const accelerated = rustPlantMonsteraGeometry(getRustCore(), { length, width, curve, tint, twist, hue, surface });
+  const accelerated = rustPlantMonsteraGeometry(getRustDecorCore(), { length, width, curve, tint, twist, hue, surface });
   if (accelerated) { surface.dispose(); return accelerated; }
   const positions = [], uv = [], colors = [], indices = [], edges = new Map();
   for (let side = 0; side < 2; side++) for (let i = 0; i < count; i++) {
@@ -718,7 +718,7 @@ function cactusCap(f) {
 }
 
 function cactusGeometry(length, radius, bend, random) {
-  const core = getRustCore();
+  const core = getRustDecorCore();
   if (typeof core?.plant_cactus_mesh === 'function') {
     const samples = Float64Array.from({ length:627 }, () => random());
     const accelerated = rustPlantCactusGeometry(core, { length, radius, bend, samples });

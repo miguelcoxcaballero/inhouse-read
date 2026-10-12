@@ -2,13 +2,13 @@
 import {readFileSync} from 'node:fs';
 import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core}));
+vi.mock('../../src/js/rust-decor-core.js',()=>({getRustDecorCore:()=>state.core}));
 import {rustLampSurface} from '../../src/js/lamp-surface-wasm.js';
 import {createShelfLamp} from '../../src/js/shelf-lamps.js';
 import {createShelfLamp as originalLamp} from './helpers/reference-shelf-lamps.js';
 import {lampSurface as reference} from './helpers/reference-lamp-surface.js';
 let core;
-beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.lamp_surface_rows).toBe('function');state.core=core;});
+beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_decor.wasm'))).instance.exports;expect(typeof core.lamp_surface_rows).toBe('function');state.core=core;});
 afterEach(()=>{state.core=core;});
 function exact(a,b){expect(a).toBeDefined();expect(a.width).toBe(b.width);expect(a.height).toBe(b.height);for(const name of ['pigment','data']){expect(a[name].length).toBe(b[name].length);for(let i=0;i<b[name].length;i++)if(a[name][i]!==b[name][i])throw Error(`${name}[${i}]: ${a[name][i]} / ${b[name][i]}`);}}
 for(const kind of ['wood','linen','black'])for(const detail of [1,2])it(`keeps every ${kind} texel at quality ${detail}`,()=>{

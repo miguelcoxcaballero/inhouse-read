@@ -4,7 +4,7 @@ import {beforeAll,expect,it,vi} from 'vitest';
 import {rustPlantFoliageRows} from '../../src/js/plant-foliage-wasm.js';
 import {botanicalTextures} from './helpers/reference-plant-foliage.js';
 let core;
-beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.plant_foliage_rows).toBe('function');});
+beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_decor.wasm'))).instance.exports;expect(typeof core.plant_foliage_rows).toBe('function');});
 const colors=hex=>[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255);
 function hash(x,y,seed){let h=Math.imul(x|0,0x27d4eb2d)^Math.imul(y|0,0x165667b1)^Math.imul(seed|0,0x9e3779b1);h=Math.imul(h^h>>>15,0x85ebca6b);h=Math.imul(h^h>>>13,0xc2b2ae35);return((h^h>>>16)>>>0)/4294967296;}
 const styles=Object.entries({zz:'#2f5324',fern:'#4a7a2c',succulent:'#6a8a80',ivy:'#2a4c23',palm:'#3d6c2a',monstera:'#2f6128',leafy:'#36672c',upright:'#000000'}).map(([variant,color])=>({variant,color,kind:variant==='upright'?3:variant==='ivy'?1:variant==='succulent'?2:0}));

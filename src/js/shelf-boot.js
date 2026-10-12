@@ -4,10 +4,12 @@
 // could not start it) is requested before the rest of the app is evaluated.
 import { LibraryStore, recentFirst } from './library-store.js'
 import { loadRustCore } from './rust-core.js'
+import { loadRustDecorCore } from './rust-decor-core.js'
 
 // Adopt the page's parallel compilation before the first library read settles.
 // This is optional: never make displaying saved books await a network request.
 void loadRustCore()
+void loadRustDecorCore()
 
 export const library = new LibraryStore()
 const early = globalThis.__inhouseShelfRead

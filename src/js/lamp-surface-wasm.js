@@ -1,6 +1,6 @@
-import {getRustCore} from './rust-core.js';
+import {getRustDecorCore} from './rust-decor-core.js';
 export function rustLampSurface(kind,width,height){
- const core=getRustCore(),type={wood:0,linen:1,black:2}[kind];
+ const core=getRustDecorCore(),type={wood:0,linen:1,black:2}[kind];
  if(typeof core?.lamp_surface_rows!=='function'||type===undefined||!Number.isInteger(width)||!Number.isInteger(height)
   ||width<1||height<1||width>2048||height>2048)return undefined;
  const rows=Math.min(16,height),length=width*rows;let pointer;

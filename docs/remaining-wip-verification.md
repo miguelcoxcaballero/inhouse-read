@@ -1,3 +1,41 @@
+# Migración 1.7.172 — núcleo independiente de decoración
+
+Changelog: «Conserva la caché de decoración». Plantas y texturas de lámparas
+se compilan por separado del lector/libros/audio. El hash de la caché sigue
+recorriendo todos los imports y bytes reales: ya no depende de módulos ajenos.
+No se omitió ningún generador del hash. Memorias, propietarios, carga temprana
+y reintentos independientes; validación de dominio además del ABI.
+
+410/410 focalizadas,17,56s. 4769/4769 unitarias,361archivos,287,25s.
+El laboratorio compiló una modificación real del libro y añadió un módulo:
+cambió el núcleo de app, sin cambiar un byte de decoración. Otra compilación
+modificó una lámpara: cambió decoración y conservó app. El test recorre el
+grafo real, conserva el hash al modificar el núcleo ajeno y lo cambia al
+modificar un byte del WASM de decoración. Resultados y fuentes del laboratorio
+preservados en rust-decor-cache/lab e isolation-*.json.
+
+Coste explícito:397024→414084bytes entre los dos WASM (+17060bytes).
+Memoria lineal inicial:1114112bytes por instancia; ahora se cargan dos.
+No se afirma reducir la memoria inicial ni los FPS. El beneficio es conservar
+los bakes existentes en futuras migraciones ajenas a plantas/lámparas.
+La primera versión con esta separación debe regenerar su caché una vez.
+App321541bytes,SHA
+`5bd44bc160111010f0c5bdb8278d22bdaebcf6d522b39af1ad15e02d8e6af4ad`.
+Decor92543bytes,SHA
+`3859b666df84bf9c8c7962ba4fbbbc3723ca35e5e3484b358a4cd18407d1b5f9`.
+Build/updater aprobados; manifiesto100recursos.13/13 UI,3,1min,sin reintentos ni omisiones:arranque de cada núcleo,fallo/descarga lenta,PDF yEPUB offline,luces,catálogo yregreso nativo. 19/19 comparaciones de modelos y superficies,6,5min,CPU×4,atributos y mapas idénticos,0 asignaciones vivas al terminar. Publicación172 pendiente.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-decor-cache.
+
+Publicación171:fuente487def7f765d22b3260fb555e38b3627cbdc745a,
+Pages5df66ab8ed94551914794dca6b346d4afeb1703b; deploy38212373353 y
+Pages38212437698 aprobados.99recursos/HTML/precarga exactos.36casos y350784
+bytes/comandos de trama idénticos en el núcleo descargado.1/1 UI pública de
+materiales,26,4s; main/WASM exactos en dos perfiles limpios.
+APK1.1.15/code28,hash yloader2107bytes verificados.
+Evidencia:published-1791786449546 y rust-book-cloth/public-*.
+CI169 UI2:66correctas,2fallos previos de cierre,0flaky/omitidas; originales en
+rust-relief-planes/ci169-ui2. No se han alterado plazos ni aserciones visuales.
+
 # Migración 1.7.171 — trama de los libros en Rust
 
 Changelog: «Trama de los libros en Rust». Rust prepara el campo de tinte y

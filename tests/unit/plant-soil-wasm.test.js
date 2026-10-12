@@ -4,7 +4,7 @@ import {beforeAll,expect,it,vi} from 'vitest';
 import {rustPlantSoilRows} from '../../src/js/plant-soil-wasm.js';
 import {soilPainter} from './helpers/reference-plant-soil.js';
 let core;
-beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.plant_soil_rows).toBe('function');});
+beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_decor.wasm'))).instance.exports;expect(typeof core.plant_soil_rows).toBe('function');});
 const styles=[{kind:0},{kind:1}];
 function expected(w,h,style){
  const paint=soilPainter(style.kind===0?'peat':'grit');const pigment=new Uint8Array(w*h*4),data=new Uint8Array(pigment.length),texel=[0,0,0,.5,1];

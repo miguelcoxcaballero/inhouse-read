@@ -1493,3 +1493,17 @@ el tiempo total y las repeticiones no demuestran una mejora visible.
 4752/4752 unitarias y3/3 UI reales. Detalles y ensayos originales en WIP.
 
 Recuento171:3183 líneas Rust en39 fuentes y36344 JS en197 módulos: 8.05% de Rust/(Rust+JS). Incluye comentarios y alternativas JS; no mide funciones completadas.
+
+## 1.7.172: decoración compilada por separado
+
+La geometría de plantas y sus superficies, junto con las texturas de lámparas,
+residen en inhouse_read_decor.wasm. El resto utiliza inhouse_read_core.wasm.
+Ambos comparten fuente del ABI/cargador, pero cada instancia tiene su memoria,
+promesa de arranque y recuperación. El dominio evita aceptar el binario ajeno.
+El build sigue generando y verificando ambos artefactos sin imports del host.
+
+La caché mantiene sus dependencias exactas y conserva los modelos al cambiar
+únicamente Rust del lector o de los libros. Dos recompilaciones reales en un
+laboratorio prueban la independencia en ambas direcciones. Añade17060bytes de
+binario y1114112bytes de memoria inicial; no se oculta ese coste ni se reduce
+la calidad. 4769/4769 unitarias. WIP conserva las pruebas y sus límites.

@@ -2,12 +2,12 @@ import {test,expect} from '@playwright/test';
 import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
-import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import {loadRustDecorCore} from '/inhouse-read/src/js/rust-decor-core.js';
 import {rustPlantIvyGeometry} from '/inhouse-read/src/js/plant-ivy-wasm.js';
 import {createShelfPlant,plantSurfacesReady} from '/inhouse-read/src/js/shelf-plants.js';
 import {createShelfPlant as originalModel,plantSurfacesReady as originalReady} from '/inhouse-read/tests/unit/helpers/reference-shelf-plants.js';
 import {ivyLeafGeometry} from '/inhouse-read/tests/unit/helpers/reference-plant-ivy.js';
-const core=await loadRustCore();if(!core?.plant_ivy_mesh)throw Error('Compiled ivy required');
+const core=await loadRustDecorCore();if(!core?.plant_ivy_mesh)throw Error('Compiled ivy required');
 const bytes=a=>new Uint8Array(a.buffer,a.byteOffset,a.byteLength);
 function compare(a,b){
  const left=[],right=[];a.traverse(o=>{if(o.geometry)left.push(o.geometry)});b.traverse(o=>{if(o.geometry)right.push(o.geometry)});

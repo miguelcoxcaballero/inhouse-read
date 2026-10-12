@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
-import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import {loadRustDecorCore} from '/inhouse-read/src/js/rust-decor-core.js';
 import {rustPlantPotteryRows} from '/inhouse-read/src/js/plant-pottery-wasm.js';
 import {createShelfPlant,plantSurfacesReady} from '/inhouse-read/src/js/shelf-plants.js';
 import {terracottaPainter,galvanizedPainter} from '/inhouse-read/tests/unit/helpers/reference-plant-pottery.js';
@@ -19,7 +19,7 @@ window.verifyPottery=(kind,w,h,row,count,cfg,pigment,data)=>{
  const p=new Uint8Array(pigment.length),d=new Uint8Array(data.length);reference(kind,w,h,row,count,cfg,p,d);
  if(pigment.some((v,i)=>v!==p[i])||data.some((v,i)=>v!==d[i]))throw Error('Actual final pottery differs');
 };
-const core=await loadRustCore();if(!core?.plant_pottery_rows)throw Error('Compiled pottery required');
+const core=await loadRustDecorCore();if(!core?.plant_pottery_rows)throw Error('Compiled pottery required');
 window.checkPottery=async()=>{
  const models=[];
  for(const [catalogId,potId] of [['succulent','muskotblomma'],['cactus','akerbar']])models.push(createShelfPlant({catalogId,potId,seed:'pottery-'+catalogId,height:240,inspectionResolution:1}));

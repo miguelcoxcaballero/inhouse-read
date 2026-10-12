@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
-import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import {loadRustDecorCore} from '/inhouse-read/src/js/rust-decor-core.js';
 import {rustPlantFoliageRows} from '/inhouse-read/src/js/plant-foliage-wasm.js';
 import {createShelfPlant,plantSurfacesReady} from '/inhouse-read/src/js/shelf-plants.js';
 import {botanicalTextures} from '/inhouse-read/tests/unit/helpers/reference-plant-foliage.js';
@@ -18,7 +18,7 @@ window.verifyFoliage=(kind,w,h,row,count,cfg,pigment,data)=>{
  const p=new Uint8Array(pigment.length),d=new Uint8Array(data.length);reference(kind,w,h,row,count,cfg,p,d);
  if(pigment.some((v,i)=>v!==p[i])||data.some((v,i)=>v!==d[i]))throw Error('Actual final foliage differs');
 };
-const core=await loadRustCore();if(!core?.plant_foliage_rows)throw Error('Compiled foliage required');
+const core=await loadRustDecorCore();if(!core?.plant_foliage_rows)throw Error('Compiled foliage required');
 window.checkFoliage=async()=>{
  const models=[];
  for(const [catalogId,potId] of [['monstera','muskot'],['hedera','muskot'],['succulent','muskotblomma'],['sansevieria','gradvis']])models.push(createShelfPlant({catalogId,potId,seed:'foliage-'+catalogId,height:240,inspectionResolution:1}));
