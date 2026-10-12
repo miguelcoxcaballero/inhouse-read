@@ -10,6 +10,10 @@ use crate::{attr,prop,js_string};
 #[wasm_bindgen]
 extern "C" {
  #[wasm_bindgen(extends=Element)] type ValueControl;
+ #[wasm_bindgen(method,structural,setter,catch,js_name=textContent)] fn set_control_text(this:&ValueControl,value:&JsValue)->Result<(),JsValue>;
+ #[wasm_bindgen(method,structural,setter,catch,js_name=title)] fn set_control_title(this:&ValueControl,value:&JsValue)->Result<(),JsValue>;
+ #[wasm_bindgen(method,structural,setter,catch,js_name=max)] fn set_control_max(this:&ValueControl,value:&JsValue)->Result<(),JsValue>;
+ #[wasm_bindgen(method,structural,catch,js_name=setAttribute)] fn set_value_attribute(this:&ValueControl,name:&str,value:&JsValue)->Result<(),JsValue>;
  #[wasm_bindgen(method,structural,setter,catch,js_name=value)] fn set_control_value(this:&ValueControl,value:&JsValue)->Result<(),JsValue>;
  #[wasm_bindgen(method,structural,setter,catch,js_name=checked)] fn set_control_checked(this:&ValueControl,value:bool)->Result<(),JsValue>;
  #[wasm_bindgen(method,structural,setter,catch,js_name=disabled)] fn set_control_disabled(this:&ValueControl,value:bool)->Result<(),JsValue>;
@@ -25,13 +29,14 @@ fn element_style(node:&Element)->CssStyleDeclaration{node.unchecked_ref::<HtmlEl
 fn list(root:&Element,query:&str)->Result<Vec<Element>,JsValue>{let nodes=root.query_selector_all(query)?;Ok((0..nodes.length()).filter_map(|i|nodes.item(i)?.dyn_into().ok()).collect())}
 fn bool_text(value:bool)->&'static str{if value{"true"}else{"false"}}
 
+struct LocationNodes{button:Element,label:Element,position:Element,audio:Element,range:Element,page:Element}
 #[wasm_bindgen]
 pub struct RustReaderView {
  document:Document,screen:Element,panel:Element,mini:Element,return_button:Element,
  screen_style:CssStyleDeclaration,theme_surfaces:Vec<(Element,CssStyleDeclaration)>,paper_surfaces:Vec<CssStyleDeclaration>,
  cache:RefCell<HashMap<String,Element>>,
  groups:RefCell<HashMap<String,Rc<Vec<(Element,String)>>>>,
- preferences:RefCell<Vec<JsValue>>,
+ preferences:RefCell<Vec<JsValue>>,location:RefCell<Option<Rc<LocationNodes>>>,
 }
 impl RustReaderView {
  fn query(&self,selector:&str)->Result<Element,JsValue>{
@@ -48,6 +53,21 @@ impl RustReaderView {
   self.groups.borrow_mut().insert(selector.to_owned(),Rc::clone(&nodes));Ok(nodes)
  }
  fn id(&self,id:&str)->Result<Element,JsValue>{self.document.get_element_by_id(id).ok_or_else(||JsValue::from_str(&format!("Missing reader element: {id}")))}
+ fn cached_id(&self,id:&str)->Result<Element,JsValue>{
+  let key=format!("@id:{id}");if let Some(node)=self.cache.borrow().get(&key){if node.is_connected(){return Ok(node.clone());}}
+  let node=self.id(id)?;self.cache.borrow_mut().insert(key,node.clone());Ok(node)
+ }
+ fn location_label(&self,button:&Element)->Result<Element,JsValue>{
+  if let Some(node)=self.cache.borrow().get("@location-label"){if node.is_connected(){return Ok(node.clone());}}
+  let node=button.query_selector(".reader-location-label")?.ok_or_else(||JsValue::from_str("Missing location label"))?;
+  self.cache.borrow_mut().insert("@location-label".to_owned(),node.clone());Ok(node)
+ }
+ fn location_nodes(&self)->Result<Rc<LocationNodes>,JsValue>{
+  if let Some(nodes)=self.location.borrow().as_ref(){if nodes.button.is_connected(){return Ok(Rc::clone(nodes));}}
+  let button=self.cached_id("reader-location")?;
+  let nodes=Rc::new(LocationNodes{label:self.location_label(&button)?,button,position:self.query(".reading-position")?,audio:self.query("[data-audio-where]")?,range:self.query("[data-progress]")?,page:self.query("input[type=\"number\"]")?});
+  *self.location.borrow_mut()=Some(Rc::clone(&nodes));Ok(nodes)
+ }
  fn mini_query(&self,selector:&str)->Result<Element,JsValue>{self.mini.query_selector(selector)?.ok_or_else(||JsValue::from_str("Missing mini player control"))}
  fn layout(&self,node:&Element,key:&str){let height=if node.has_attribute("hidden"){0.0}else{node.get_bounding_client_rect().height().ceil()};style(&self.screen_style,key,&format!("{height}px"));}
 }
@@ -58,13 +78,42 @@ impl RustReaderView {
   // Only finite template/API strings are interned. Book titles, messages and
   // user text never enter a permanent string cache.
   static STRINGS:Once=Once::new();STRINGS.call_once(||{
-   for key in ["hidden","open","aria-expanded","aria-selected","aria-pressed","aria-label","aria-checked","tabindex","title","data-view","data-reading-theme","disabled","checked","value","true","false","0","-1","theme","scheme","background","color","brightness","fontSize","pdfMode","rate","font","fontWeight","lineHeight","margin","zoom","flow","align","footnotes","multilingual","skipHeaders","color-scheme","--reading-paper","--reading-ink","--reader-brightness-filter","--reader-audio-height","--reader-return-height","paper","sepia","night","amoled","sage","light","dark","none"]{wasm_bindgen::intern(key);}
+   for key in ["Progreso y capítulos, ","hidden","open","aria-expanded","aria-selected","aria-pressed","aria-label","aria-checked","tabindex","title","data-view","data-reading-theme","disabled","checked","value","true","false","0","-1","theme","scheme","background","color","brightness","fontSize","pdfMode","rate","font","fontWeight","lineHeight","margin","zoom","flow","align","footnotes","multilingual","skipHeaders","color-scheme","--reading-paper","--reading-ink","--reader-brightness-filter","--reader-audio-height","--reader-return-height","paper","sepia","night","amoled","sage","light","dark","none"]{wasm_bindgen::intern(key);}
   });
   let document=screen.owner_document().ok_or_else(||JsValue::from_str("Document unavailable"))?;
   let screen_style=element_style(&screen);
   let theme_surfaces=[Some(screen.clone()),Some(panel.clone()),document.query_selector(".app-header")?].into_iter().flatten().map(|node|{let style=element_style(&node);(node,style)}).collect();
   let paper_surfaces=[Some(screen.clone()),screen.parent_element(),Some(panel.clone())].into_iter().flatten().map(|node|element_style(&node)).collect();
-  Ok(Self{document,screen,panel,mini,return_button,screen_style,theme_surfaces,paper_surfaces,cache:RefCell::new(HashMap::new()),groups:RefCell::new(HashMap::new()),preferences:RefCell::new(Vec::new())})
+  Ok(Self{document,screen,panel,mini,return_button,screen_style,theme_surfaces,paper_surfaces,cache:RefCell::new(HashMap::new()),groups:RefCell::new(HashMap::new()),preferences:RefCell::new(Vec::new()),location:RefCell::new(None)})
+ }
+ #[wasm_bindgen(js_name=setDocumentInfo)]
+ pub fn set_document_info(&self,title:JsValue,author:JsValue,about:JsValue,update_mini:bool)->Result<(),JsValue>{
+  self.query("#reading-book-title")?.unchecked_ref::<ValueControl>().set_control_text(&title)?;
+  self.cached_id("reader-top-title")?.unchecked_ref::<ValueControl>().set_control_text(&title)?;
+  self.cached_id("reader-top-byline")?.unchecked_ref::<ValueControl>().set_control_text(&author)?;
+  self.query("#reading-document-about")?.unchecked_ref::<ValueControl>().set_control_text(&about)?;
+  if update_mini{if let Some(node)=self.mini.query_selector("[data-mini-title]")?{node.unchecked_ref::<ValueControl>().set_control_text(&title)?;}}
+  Ok(())
+ }
+ #[wasm_bindgen(js_name=configureFormat)]
+ pub fn configure_format(&self,pdf:bool,page_count:JsValue)->Result<(),JsValue>{
+  for (node,_) in self.group("[data-pdf]")?.iter(){hidden(node,!pdf);}
+  hidden(&self.query("[data-epub]")?,pdf);
+  self.query("input[type=\"number\"]")?.unchecked_ref::<ValueControl>().set_control_max(&page_count)?;Ok(())
+ }
+ #[wasm_bindgen(js_name=relocate)]
+ pub fn relocate(&self,label:js_sys::JsString,compact:JsValue,progress:JsValue,pdf:bool,page:JsValue)->Result<(),JsValue>{
+  let nodes=self.location_nodes()?;
+  nodes.label.unchecked_ref::<ValueControl>().set_control_text(&compact)?;
+  let aria=js_sys::JsString::from("Progreso y capítulos, ").concat(&label);
+  nodes.button.unchecked_ref::<ValueControl>().set_value_attribute("aria-label",&aria)?;
+  nodes.button.unchecked_ref::<ValueControl>().set_control_title(&label)?;
+  nodes.position.unchecked_ref::<ValueControl>().set_control_text(&label)?;
+  nodes.audio.unchecked_ref::<ValueControl>().set_control_text(&label)?;
+  let focused=self.document.active_element();
+  if focused.as_ref()!=Some(&nodes.range){nodes.range.unchecked_ref::<ValueControl>().set_control_value(&progress)?;}
+  if focused.as_ref()!=Some(&nodes.page)&&pdf{nodes.page.unchecked_ref::<ValueControl>().set_control_value(&page)?;}
+  Ok(())
  }
  #[wasm_bindgen(js_name=showTab)]
  pub fn show_tab(&self,name:&str)->Result<(),JsValue>{

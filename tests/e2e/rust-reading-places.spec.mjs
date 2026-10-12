@@ -5,7 +5,9 @@ test('compiled mobile reader toggles bookmarks and preserves jump history throug
   window.placesProof={available:false,calls:{}}
   const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.reading_marked)return result
    window.placesProof.available=true;const exports={...actual}
-   for(const name of ['reading_marked','reading_toggle','reading_history'])exports[name]=(...args)=>{window.placesProof.calls[name]=(window.placesProof.calls[name]||0)+1;return actual[name](...args)}
+   // Toggle/history now run inside the Rust command, without re-entering the
+   // exported JS wrapper. Observe that command boundary and keep every UI check.
+   for(const name of ['reading_marked','reader_bookmark','reader_jump'])exports[name]=(...args)=>{window.placesProof.calls[name]=(window.placesProof.calls[name]||0)+1;return actual[name](...args)}
    const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});return result.instance?{...result,instance:proxy}:proxy
   }
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))}}
@@ -21,6 +23,6 @@ test('compiled mobile reader toggles bookmarks and preserves jump history throug
  await expect(page.locator('.reader-return')).toContainText('Página 1 de 4');await page.locator('.reader-return').click()
  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 1 de 4/)
  const proof=await page.evaluate(()=>window.placesProof);expect(proof.available).toBe(true)
- for(const name of ['reading_marked','reading_toggle','reading_history'])expect(proof.calls[name]).toBeGreaterThan(0)
+ for(const name of ['reading_marked','reader_bookmark','reader_jump'])expect(proof.calls[name]).toBeGreaterThan(0)
  expect(errors).toEqual([]);await info.attach('compiled-reading-places',{body:JSON.stringify(proof),contentType:'application/json'})
 })

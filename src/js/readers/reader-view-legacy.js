@@ -1,5 +1,28 @@
 export class LegacyReaderView {
  constructor(screen,panel,mini,return_button){this.screen=screen;this.panel=panel;this.miniPlayer=mini;this.returnButton=return_button}
+ setDocumentInfo(title,author,about,updateMini){
+  this.panel.querySelector('#reading-book-title').textContent=title
+  document.getElementById('reader-top-title').textContent=title
+  document.getElementById('reader-top-byline').textContent=author
+  this.panel.querySelector('#reading-document-about').textContent=about
+  if(updateMini){const mini=this.miniPlayer?.querySelector('[data-mini-title]');if(mini)mini.textContent=title}
+ }
+ configureFormat(pdf,pageCount){
+  for(const element of this.panel.querySelectorAll('[data-pdf]'))element.hidden=!pdf
+  this.panel.querySelector('[data-epub]').hidden=pdf
+  this.panel.querySelector('input[type="number"]').max=String(pageCount)
+ }
+ relocate(label,compact,progress,pdf,pageValue){
+  const button=document.getElementById('reader-location')
+  button.querySelector('.reader-location-label').textContent=compact
+  button.setAttribute('aria-label',`Progreso y capítulos, ${label}`);button.title=label
+  this.panel.querySelector('.reading-position').textContent=label
+  this.panel.querySelector('[data-audio-where]').textContent=label
+  const range=this.panel.querySelector('[data-progress]')
+  if(document.activeElement!==range)range.value=String(progress)
+  const page=this.panel.querySelector('input[type="number"]')
+  if(document.activeElement!==page&&pdf)page.value=String(pageValue)
+ }
  endSearch(){}
   showTab(name) {
     if (name !== 'search') this.endSearch()

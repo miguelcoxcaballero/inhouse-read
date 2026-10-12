@@ -1,3 +1,33 @@
+# 1.7.196 — posición y datos del lector en Rust
+
+Changelog: «Posición del lector en Rust».
+Rust actualiza título, autor, ficha del documento, controles PDF/EPUB, progreso
+y etiquetas accesibles. Los valores Unicode conservan sus referencias JS y
+los campos de progreso/página que tienen el foco mantienen la edición actual.
+Referencias DOM reutilizadas, sin cambiar paginación ni ubicación del audio.
+Una sustitución del botón de ubicación vuelve a enlazar el nodo conectado.
+
+118focales aprobadas, incluidos200estados completos equivalentes, Unicode,
+campos enfocados, reemplazo del botón, título opcional y módulo antiguo.
+Dos mil ciclos no crecen WASM. Benchmark CPU×4 de nueve rondas alternadas:
+actualización sin forzar layout0,0423ms JS/Rust; con layout0,277/0,281ms.
+No acredita aceleración. Primera medida sin caché de nodos preservada.
+
+Batería completa final5162/5162unitarias,385archivos, dos workers. Primer
+intento conservado:5160aprobadas y dos límites de5s excedidos (controles y
+comparación de ubicaciones), simultáneo a E2E y emulador. Repetición completa
+sin esa carga, mismas aserciones y límites. Logs unit-full y unit-full-isolated.
+E2E35aprobados y seis omitidos por condiciones originales de la suite, más
+la corrección de instrumentación de lugares1/1. Incluye dos pruebas de voces
+reales Davefx PDF/EPUB, paginación, foco del teclado y controles inferiores.
+
+Inventario4729Rust/36996JS,11,33% de líneas propias, no funcional.
+UI local356926bytes,SHA256
+b4884f727159d3daccce9ea5229cd1e6ddbc478f84deefd4549ea72e76d0e604.
+App/decor, APK y updater sin cambios. Publicación pendiente.
+Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-reader-location-prototype.
+Incidencias CI anteriores preservadas en las secciones siguientes.
+
 # 1.7.195 — controles del lector en Rust
 
 Changelog: «Controles del lector en Rust».
@@ -22,7 +52,14 @@ de campo no leído no significa que se pueda eliminar ese recurso.
 Inventario4680Rust/36989JavaScript,11,23% de líneas propias, no funcional.
 WASM UI local351025bytes,SHA256
 65ba7e3a009999d70d715dc017b54be9e8402efc3c6d768acbc6e571191a96a0.
-App/decor, APK y updater sin cambios. Publicación pendiente.
+App/decor, APK y updater sin cambios. Publicado5e6aa8a; deploy38268308810
+y Pages38268437853 aprobados (Pages96ec661). HTTP/bytes/SHA y dos perfiles
+confirman el artefacto real, treinta casos PCM/marcas y APK/loader aprobados.
+E2E público1/1,9,1s. UI público350993bytes,SHA256
+fc14152d550416cf85726220d32da0d1f68cdb6e25cc1d30b6697d2e63e88402.
+Android API36 confirma web195 y APK1.1.15/28, Lessac2×10,44s, ocho fragmentos
+terminados/nueve iniciados, proceso8908 estable, sin FATAL.
+Evidencia:published-1791818034583,public-*.log,native-ui195.json.
 Evidencia:D:/CodexEvidence/InhouseRead-20261012/rust-reader-controls-prototype.
 
 CI192 UI2 pasó, incluidos los dos contratos de devolución antes fallidos; esto
@@ -31,6 +68,14 @@ libro enlazó cuatro programas frente a cero esperados en su primer intento,
 aunque pasó al reintentar. Original ci192-ui6-original.log, job114858250808,
 run38263065874, prueba shelf-trash:433. Requiere investigar la compilación
 concurrente; no se atribuye aún una causa ni se acepta ese reintento como verde.
+
+CI195 UI5 también falla (job114876017917,run38268308776). reading-places
+espera cruces de exports que ahora son llamadas internas desde reader_actions;
+1.7.196 observa reader_bookmark/reader_jump, sus fronteras compiladas actuales,
+sin retirar ninguna comprobación de UI; prueba corregida1/1,9,2s.
+reader-view tuvo además un intento sin constructor nativo observado (reintento
+aprobado); requiere comprobar la adopción tardía del módulo. Original completo
+ci195-ui5-original.log preservado. CI completo no se considera aprobado.
 
 # 1.7.194 — acciones del lector en Rust
 

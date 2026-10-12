@@ -5,7 +5,8 @@ import {LegacyReaderView} from './reader-view-legacy.js'
 // updates its existing DOM, without scheduling book rendering or moving text.
 export class ReaderView {
   constructor(screen,panel,mini,returnButton) {
-    const View=getRustUI()?.RustReaderView || LegacyReaderView
+    const Candidate=getRustUI()?.RustReaderView
+    const View=Candidate&&['setDocumentInfo','configureFormat','relocate'].every(name=>typeof Candidate.prototype[name]==='function')?Candidate:LegacyReaderView
     return new View(screen,panel,mini,returnButton)
   }
 }

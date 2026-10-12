@@ -131,13 +131,8 @@ export class ReaderExperience {
     Object.assign(this.book, fields)
     const title = displayBookTitle(this.book)
     const author = normalizeBookAuthor(this.book.author) || normalizeBookAuthor(this.book.metadata?.creator)
-    this.panel.querySelector('#reading-book-title').textContent = title
-    document.getElementById('reader-top-title').textContent = title
-    document.getElementById('reader-top-byline').textContent = author
-    this.panel.querySelector('#reading-document-about').textContent = `${title}${author ? ` · ${author}` : ''}
-${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
-    const mini = this.miniPlayer?.querySelector('[data-mini-title]')
-    if (mini) mini.textContent = title
+    this.view.setDocumentInfo(title,author,`${title}${author ? ` · ${author}` : ''}
+${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`,true)
   }
 
   async open(record) {
@@ -146,15 +141,10 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
     this.history = cleanPlaces(record.readingHistory)
     this.bookmarks = cleanPlaces(record.bookmarks, 100)
     this.quotes = cleanQuotes(record.quotes)
-    this.panel.querySelector('#reading-book-title').textContent = displayBookTitle(record)
-    document.getElementById('reader-top-title').textContent = displayBookTitle(record)
+    const title = displayBookTitle(record)
     const author = normalizeBookAuthor(record.author) || normalizeBookAuthor(record.metadata?.creator)
-    document.getElementById('reader-top-byline').textContent = author
-    this.panel.querySelector('#reading-document-about').textContent = `${displayBookTitle(record)}${author ? ` · ${author}` : ''}\n${record.format || 'Documento'} · ${this.formatSize(record.sizeBytes)}`
-    const pdf = this.reader.format?.engine === 'pdf'
-    for (const element of this.panel.querySelectorAll('[data-pdf]')) element.hidden = !pdf
-    this.panel.querySelector('[data-epub]').hidden = pdf
-    this.panel.querySelector('input[type="number"]').max = String(this.reader.pageCount || 1)
+    this.view.setDocumentInfo(title,author,`${title}${author ? ` · ${author}` : ''}\n${record.format || 'Documento'} · ${this.formatSize(record.sizeBytes)}`,false)
+    this.view.configureFormat(this.reader.format?.engine === 'pdf',this.reader.pageCount || 1)
     this.neuralPicker.warm() // the engine module (needed synchronously at the first Play tap) loads while the book settles
     this.renderPlaces(); this.renderToc(); await this.applyPreferences(); this.relocate()
     for (const quote of this.quotes) this.reader.addQuoteAnnotation(quote)
@@ -178,15 +168,8 @@ ${this.book.format || 'Documento'} · ${this.formatSize(this.book.sizeBytes)}`
     const compactLabel = this.location.locator?.kind === 'pdf-page'
       ? `${this.location.locator.value}${this.reader.pageCount ? ` / ${this.reader.pageCount}` : ''}`
       : `${Math.round(this.location.fraction * 100)} %`
-    this.locationButton.querySelector('.reader-location-label').textContent = compactLabel
-    this.locationButton.setAttribute('aria-label', `Progreso y capítulos, ${label}`)
-    this.locationButton.title = label
-    this.panel.querySelector('.reading-position').textContent = label
-    this.panel.querySelector('[data-audio-where]').textContent = label
-    const range = this.panel.querySelector('[data-progress]')
-    if (document.activeElement !== range) range.value = String(this.location.fraction * 100)
-    const page = this.panel.querySelector('input[type="number"]')
-    if (document.activeElement !== page && this.location.locator?.kind === 'pdf-page') page.value = String(this.location.locator.value)
+    this.view.relocate(label,compactLabel,this.location.fraction * 100,
+      this.location.locator?.kind === 'pdf-page',this.location.locator?.value)
     this.updateBookmarkButton()
   }
   label(place) { return place.locator?.kind === 'pdf-page' ? `Página ${place.locator.value}${this.reader.pageCount ? ` de ${this.reader.pageCount}` : ''}` : place.section ? `${place.section}${place.page ? ` · Página ${place.page}` : ''}` : `${Math.round(place.fraction * 100)} % del libro` }
