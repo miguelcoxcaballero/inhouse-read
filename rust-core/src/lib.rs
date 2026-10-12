@@ -15,6 +15,7 @@ mod shelf_model;
 mod speech_normalize;
 mod speech_fragments;
 mod plant_preview;
+mod plant_glaze;
 mod pdf_layout;
 mod pdf_rows;
 mod pcm;

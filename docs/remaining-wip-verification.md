@@ -1,3 +1,29 @@
+# Migración 1.7.148 — acabado final de cerámica
+
+Comprobación local completa: 4313/4313 unitarias y 11/11 E2E, sin omisiones ni reintentos; build aprobado. Publicación pendiente. Changelog: «Cerámica de macetas en Rust».
+El pintor de MUSKOT/GRADVIS calcula pigmento, altura y rugosidad en Rust,
+conservando el campo de ruido, moteado, craquelado, borde del esmalte y labio.
+La cola mantiene lotes de cuatro filas, el presupuesto ocioso, el redibujado
+al completar y la propiedad/caché de las texturas. Sin buffers retenidos.
+
+32/32 unitarias focalizadas (16 nuevas): colores, acabados extremos, límites,
+filas parciales, guardas frente a desbordamiento, crecimiento de memoria y
+propiedad. El ensayo de navegador observa y compara CADA lote real de las dos
+macetas; ningún fallback oculta una diferencia. Conserva todas las muestras
+originales byte por byte, incluido el azul físico cero y alfa255.
+Chromium390×844 CPU×4, nueve rondas alternadas de tres pinturas completas:
+MUSKOT128×256 JS/Rust61,80/22,80 ms;256×512243,03/85,07.
+GRADVIS128×25625,87/15,93;256×512102,97/63,47.
+Incluye reserva, copia y liberación de cada lote. Son costes de pintura, no
+una medición del catálogo completo en un móvil físico.
+WASM198093 bytes, SHA `1e58ccf5998e0992f4f2298eb37204f1769c5631c855d00fce39693d5ae1ff2b`.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-glaze`.
+Siguiente bloque preparado pero aún sin integrar: terracota y zinc.
+Publicación147 verificada: fuente `016af9f24491ab22e4e30c897242ab18089cc130`,
+Pages `9167b53949a5954ae882e80e345a33f91a50a376`. Recursos públicos exactos,
+WASM descargado con píxeles idénticos y dos recorridos públicos de plantas y
+mueble aprobados (38,7 s). APK1.1.15/code28 conserva su loader2107 y SHA.
+Evidencia: published-1791768540713 y rust-plant-preview/public-ui.
 Publicación146 verificada: fuente `7bb1e4db653b49362cdab3408d742db760a3b2ae`,
 Pages `675a15bb359d499c07d99c84d23a6be59adb8b4a`. Deploy38191111248 y
 Pages38191222564 aprobados. 118 controles HTTP/99 recursos exactos. El WASM

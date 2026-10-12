@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { getRustCore } from './rust-core.js';
 import { rustPlantLeafGeometry } from './plant-leaf-wasm.js';
 import { rustPlantPreview } from './plant-preview-wasm.js';
+import { rustPlantGlazeRows } from './plant-glaze-wasm.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { resolveCatalogPlant } from './plant-records.js';
@@ -95,7 +96,10 @@ function pump(deadline) {
   const until = performance.now() + Math.min(16, Math.max(5, deadline.timeRemaining() - 1));
   for (let chunk = 0; queue.length && chunk < 48 && (chunk === 0 || performance.now() < until); chunk++) {
     const job = queue[0];
-    for (const end = Math.min(job.height, job.row + 4); job.row < end; job.row++)
+    const end = Math.min(job.height, job.row + 4);
+    if (job.glaze && rustPlantGlazeRows(getRustCore(), job.width, job.height, job.row,
+      end - job.row, job.glaze, job.pigment, job.data)) job.row = end;
+    else for (; job.row < end; job.row++)
       for (let x = 0; x < job.width; x++) job.store(job.row * job.width + x, job.sample(x, job.row));
     if (job.row < job.height) continue;
     queue.shift();
@@ -161,7 +165,7 @@ function surface(key, [width, height], repeat, paint, refresh) {
     base = { map:dataTexture(pigment, width, height, THREE.SRGBColorSpace, repeat), data:dataTexture(data, width, height, THREE.NoColorSpace, repeat),
       clones:[], waiting:[] };
     surfaces.set(key, base);
-    queue.push({ base, width, height, row:0, sample, store });
+    queue.push({ base, width, height, row:0, sample, store, glaze:paint.rustGlaze, pigment, data });
     if (queue.length === 1) idle(pump);
   }
   // Texture.copy() raises the shared Source's version, which would re-upload
@@ -259,7 +263,7 @@ const hidden = (v, texel) => {
 
 function glazedPainter({ glaze, body, gloss, speckle, crackle, seed }) {
   const G = srgb(glaze), B = srgb(body), iron = [.34, .45, .6], edges = [];
-  return (u, v, x, y, texel) => {
+  const paint = (u, v, x, y, texel) => {
     if (hidden(v, texel)) return;
     const cloud = fbm(u * 5, v * 5, 5, seed, 2);
     // A dipped glaze stops above the foot with an uneven edge and short runs.
@@ -278,6 +282,8 @@ function glazedPainter({ glaze, body, gloss, speckle, crackle, seed }) {
     texel[3] = .5 + glazed * (cloud * .06 - speck * .22 - crack * .1) + (1 - glazed) * grain * .35 + bead * .14;
     texel[4] = .84 + grain * .1 + (gloss + cloud * .06 + crack * .1 + speck * .2 - .84 - grain * .1) * glazed;
   };
+  paint.rustGlaze = new Float64Array([...G, ...B, gloss, speckle, crackle, seed]);
+  return paint;
 }
 
 function terracottaPainter(hex, seed) {

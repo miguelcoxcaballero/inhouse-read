@@ -1,7 +1,7 @@
 //! Expand the existing f32 botanical pigment/material lattice without
 //! changing its samples, resolution, color space, mipmaps or idle painting.
 #[inline(always)]
-fn byte(value: f64) -> u8 {
+pub(crate) fn byte(value: f64) -> u8 {
     let scaled = 255.0 * value.clamp(0.0, 1.0);
     // Every sample was validated finite; interpolation in f64 cannot overflow
     // f32 endpoints. Clamping guarantees [0,255], so this conversion is safe.

@@ -1059,3 +1059,25 @@ Piper15/40/14 y Supertonic224 aprobados. UI2 conserva dos retornos nativos
 que sobrepasan8 s, igual que141/142. UI3 conserva el recorrido antiguo del
 botónDetener corregido en145. Originales íntegros en reader-continuity/ci143-final.
 No se considera resuelto el retorno nativo ni se afirma aprobación global.
+
+# Migración 1.7.148 — acabado final de cerámica
+
+Comprobación local completa: 4313/4313 unitarias y 11/11 E2E, sin omisiones ni reintentos; build aprobado. Publicación pendiente. Changelog: «Cerámica de macetas en Rust».
+El pintor de MUSKOT/GRADVIS calcula pigmento, altura y rugosidad en Rust,
+conservando el campo de ruido, moteado, craquelado, borde del esmalte y labio.
+La cola mantiene lotes de cuatro filas, el presupuesto ocioso, el redibujado
+al completar y la propiedad/caché de las texturas. Sin buffers retenidos.
+
+32/32 unitarias focalizadas (16 nuevas): colores, acabados extremos, límites,
+filas parciales, guardas frente a desbordamiento, crecimiento de memoria y
+propiedad. El ensayo de navegador observa y compara CADA lote real de las dos
+macetas; ningún fallback oculta una diferencia. Conserva todas las muestras
+originales byte por byte, incluido el azul físico cero y alfa255.
+Chromium390×844 CPU×4, nueve rondas alternadas de tres pinturas completas:
+MUSKOT128×256 JS/Rust61,80/22,80 ms;256×512243,03/85,07.
+GRADVIS128×25625,87/15,93;256×512102,97/63,47.
+Incluye reserva, copia y liberación de cada lote. Son costes de pintura, no
+una medición del catálogo completo en un móvil físico.
+WASM198093 bytes, SHA `1e58ccf5998e0992f4f2298eb37204f1769c5631c855d00fce39693d5ae1ff2b`.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-plant-glaze`.
+Siguiente bloque preparado pero aún sin integrar: terracota y zinc.
