@@ -1330,12 +1330,12 @@ function sampleInk(image, foil) {
 const MM_FULL_COVER = 200; // a cover is about 20 cm tall
 
 /** Tangent-space normals (RGBA bytes) from the height map; +x right, +y up the cover. */
-export function* heightToNormals(maps, { gain = 1 } = {}) {
+export function* heightToNormals(maps, { gain = 1, selectionAlpha = false } = {}) {
   const { width, height, heightMap } = maps;
   const mmPerPixel = MM_FULL_COVER / Math.max(width, height), unit = MAX_RELIEF_MM / 255 / (2 * mmPerPixel) * gain;
   const core = getRustCore();
   if (canUseReliefWasm(core, width, height)) {
-    const result = yield* rustRelief(wasmHeightToNormals(core, maps, unit));
+    const result = yield* rustRelief(wasmHeightToNormals(core, maps, unit, { selectionAlpha }));
     if (result) return result;
   }
   const out = new Uint8ClampedArray(width * height * 4);
@@ -1352,6 +1352,8 @@ export function* heightToNormals(maps, { gain = 1 } = {}) {
       const length = Math.hypot(nx, ny, 1), i = (y * width + x) * 4;
       if (maps.preserveInk && !maps.mask[y * width + x]) out.set([128, 128, 255, 255], i);
       else { out[i] = (nx / length * .5 + .5) * 255; out[i + 1] = (ny / length * .5 + .5) * 255; out[i + 2] = (1 / length * .5 + .5) * 255; out[i + 3] = 255; }
+      if (selectionAlpha) out[i + 3] = maps.mask?.[y * width + x]
+        ?? Math.max(maps.gloss[y * width + x], maps.foil[y * width + x], heightMap[y * width + x]);
     }
     if ((y & 15) === 15) yield;
   }
@@ -1536,7 +1538,7 @@ export async function analyzeCoverRelief(coverUrl, { title = '', author = '', si
  * plus `normal` (tangent-space RGBA) ready for a texture. A saved HEX/radius is
  * classified directly at map resolution, without re-centering/re-clustering.
  * Legacy ids resolve to the first supported color but do not rewrite data. */
-export async function buildReliefMaps(coverUrl, relief, { maxSize = MAP_SIZE, signal } = {}) {
+export async function buildReliefMaps(coverUrl, relief, { maxSize = MAP_SIZE, signal, selectionAlpha = false } = {}) {
   const choice = normalizeCoverRelief(relief);
   if (!choice) return null;
   void loadRustCore();
@@ -1545,11 +1547,11 @@ export async function buildReliefMaps(coverUrl, relief, { maxSize = MAP_SIZE, si
   const hires = raster(drawable, clamp(maxSize, 64, MAP_SIZE));
   const work = choice.layers || COLOR_RELIEF_IDS.includes(choice.id) ? hires : raster(drawable, WORK_SIZE, { sampleColors:true });
   const maps = await runSliced(buildMapsFromPixels(work, hires, choice), { signal, stats });
-  const normal = await runSliced(heightToNormals(maps), { signal, stats });
+  const normal = await runSliced(heightToNormals(maps, { selectionAlpha }), { signal, stats });
   const planes = reliefPlanesToRgba(maps);
   return { height: new ImageData(planes.height, maps.width, maps.height),
     foil: new ImageData(planes.foil, maps.width, maps.height), gloss: new ImageData(planes.gloss, maps.width, maps.height),
-    normal, pixels: maps, size: { width: maps.width, height: maps.height }, foilColor: maps.foilColor,
+    normal, ...(selectionAlpha ? { normalSelectionAlpha: true } : {}), pixels: maps, size: { width: maps.width, height: maps.height }, foilColor: maps.foilColor,
     stats: { ms: Math.round(stats.ms), longestSliceMs: stats.longestSliceMs, slices: stats.slices } };
 }
 
@@ -1559,7 +1561,7 @@ export async function buildReliefMaps(coverUrl, relief, { maxSize = MAP_SIZE, si
 export async function updateReliefMapStrengths(built, selection, { signal } = {}) {
   void loadRustCore();
   const pixels=await runSliced(composeReliefLayerPixels(built.pixels,selection),{signal});
-  const normal=await runSliced(heightToNormals(pixels),{signal});
+  const normal=await runSliced(heightToNormals(pixels,{selectionAlpha:built.normalSelectionAlpha === true}),{signal});
   return { ...built,pixels,normal };
 }
 

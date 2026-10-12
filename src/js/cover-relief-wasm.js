@@ -69,16 +69,24 @@ export function* wasmBoxBlur(core, field, width, height, radius) {
   } finally { heap.free(); }
 }
 
-export function* wasmHeightToNormals(core, maps, unit) {
+export function* wasmHeightToNormals(core, maps, unit, { selectionAlpha = false } = {}) {
   const { width, height, heightMap, owners, mask } = maps, count = width * height;
   if (!canUseReliefWasm(core, width, height) || !bytes(heightMap, count)
     || (owners && !bytes(owners, count)) || (maps.preserveInk && !bytes(mask, count)) || !Number.isFinite(unit)) return null;
+  if (selectionAlpha && (typeof core.relief_normal_selected_rows !== 'function'
+    || (mask ? !bytes(mask, count) : !bytes(maps.foil, count) || !bytes(maps.gloss, count)))) return null;
+  const useMask = maps.preserveInk || (selectionAlpha && mask);
+  const extraPlanes = selectionAlpha && !mask;
   const heap = arena(core, [[Uint8Array, count, heightMap], [Uint8Array, owners ? count : 0, owners],
-    [Uint8Array, maps.preserveInk ? count : 0, maps.preserveInk ? mask : null], [Uint8ClampedArray, count * 4]]);
+    [Uint8Array, useMask ? count : 0, useMask ? mask : null], [Uint8ClampedArray, count * 4],
+    [Uint8Array, extraPlanes ? count : 0, extraPlanes ? maps.foil : null],
+    [Uint8Array, extraPlanes ? count : 0, extraPlanes ? maps.gloss : null]]);
   try {
     for (let from = 0; from < height; from += 16) {
-      checked(core.relief_normal_rows(heap.at(0), heap.at(1), heap.at(2), heap.at(3), width, height,
-        from, Math.min(height, from + 16), owners ? 1 : 0, maps.preserveInk ? 1 : 0, unit));
+      const kernel = selectionAlpha ? core.relief_normal_selected_rows : core.relief_normal_rows;
+      checked(kernel(heap.at(0), heap.at(1), heap.at(2), heap.at(3), width, height,
+        from, Math.min(height, from + 16), owners ? 1 : 0, maps.preserveInk ? 1 : 0, unit,
+        mask ? 1 : 0, heap.at(4), heap.at(5)));
       if (from + 16 <= height) yield;
     }
     return heap.view(3).slice();

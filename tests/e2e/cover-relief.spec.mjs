@@ -215,7 +215,8 @@ window.reliefFixture = { maskOracle, sourceState, localized, names:Object.keys(c
 let server, httpServer, fixtureUrl;
 test.beforeAll(async () => {
   server = await createServer({ configFile:false, root:process.cwd(), base:'/inhouse-read/',
-    server:{ middlewareMode:true, hmr:false },
+    optimizeDeps:{noDiscovery:true},
+    server:{ middlewareMode:true, hmr:false, watch:null },
     plugins:[{ name:'real-cover-relief-fixture', configureServer(vite) {
       vite.middlewares.use(async (request, response, next) => {
         if (request.url?.split('?')[0] !== '/inhouse-read/__cover-relief') return next();

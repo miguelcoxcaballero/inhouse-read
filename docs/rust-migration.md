@@ -1537,3 +1537,25 @@ La espera de fuentes existente se mueve antes de elegir la ruta; no se amplía
 el tiempo límite ni se bloquea el primer fotograma. Un test con fuentes retenidas
 comprueba el orden y la elección del núcleo que llega durante esa espera.
 Los binarios WASM y sus cachés no cambian. Verificación pública en WIP.
+
+
+## 1.7.176 — selección del relieve integrada en sus normales
+
+`relief_normal_selected_rows` calcula los mismos RGB de iluminación y empaqueta
+la selección en alfa durante el mismo recorrido en Rust. El modelo 3D consume
+esa salida directamente: desaparecen su copia RGBA y su recorrido JS por píxel.
+Se mantiene la alternativa JS, el contrato de normales opacas por defecto, los
+puntos de cesión cada 16 filas y salidas propias para trabajos cancelables.
+La recomposición de intensidades conserva el formato seleccionado.
+
+Comparación en Chromium, CPU×4, nueve rondas alternadas y transferencias incluidas:
+128² con máscara 3,20→2,32ms; 256² 11,78→9,18ms; 512² 45,32→35,66ms.
+Sin máscara 512² 70,80→46,56ms. Es la mejora del cálculo medido, no del lector entero.
+Ahorra una asignación RGBA de 1048576 bytes a 512². Los ocho escenarios mantienen
+estable la capacidad de memoria tras calentamiento. App WASM 326337 bytes;
+decoración permanece exactamente igual, sin invalidar sus modelos guardados.
+Las pruebas comparan todos los canales contra algoritmos previos y ejercitan
+cancelación, memoria creciente, entradas inválidas y recuperación sin WASM.
+El editor real compara cada bloque generado con el núcleo de normales anterior
+más el empaquetado JS, comprobando además la invocación del nuevo export.
+Estado final y evidencia de publicación en remaining-wip-verification.md.

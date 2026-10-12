@@ -1396,11 +1396,11 @@ export function createBookModel(book, style, width, height, thickness, coverUrl,
       const source = reliefSource();
       if (!source) return false;
       built = cached ? await updateReliefMapStrengths(reliefMaps,next,{signal:controller.signal})
-        : await buildReliefMaps(source, next, { maxSize: overview ? 128 : shelf && !inspectionResolution ? 256 : 512, signal: controller.signal });
+        : await buildReliefMaps(source, next, { maxSize: overview ? 128 : shelf && !inspectionResolution ? 256 : 512, selectionAlpha: true, signal: controller.signal });
       if (!built || revision !== reliefRevision || disposed || controller.signal.aborted) return false;
       const { width, height } = built.size;
-      const normals = built.normal.slice();
-      for (let i = 0; i < width * height; i++) {
+      const normals = built.normalSelectionAlpha ? built.normal : built.normal.slice();
+      for (let i = 0; !built.normalSelectionAlpha && i < width * height; i++) {
         // Alpha is not used by a normal map. Keep the selection there so the
         // shader restores exact base-finish floats outside it (no byte-rounding
         // drift), without another texture, mesh, draw or shader variant.

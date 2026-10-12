@@ -11,14 +11,28 @@ for (const enabled of [false,true]) test(`real relief editor cold and cached: ${
   await page.emulateMedia({reducedMotion:'no-preference'});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(enabled=>{
-    window.paletteProof={jobs:0,live:0,available:false};
+    window.paletteProof={jobs:0,live:0,available:false,normalCalls:0,normalBytes:0};
     const observe=result=>{
       const instance=result.instance||result,actual=instance.exports;
       if(typeof actual?.relief_palette_new!=='function')return result;
       const proof=window.paletteProof;proof.available=true;
       // Hide only this export for the pre-migration algorithm. Every other
       // compiled kernel, actual renderer, image and shader remains identical.
-      const exports={...actual,relief_palette_new:enabled?n=>{
+      const exports={...actual,relief_normal_selected_rows(...args){
+        const status=actual.relief_normal_selected_rows(...args);
+        if(status!==1)throw Error('Selected normals rejected');
+        const [height,owners,mask,out,width,,from,to,, , ,hasMask,foil,gloss]=args;
+        const offset=from*width*4,length=(to-from)*width*4;
+        const selected=new Uint8Array(actual.memory.buffer,out+offset,length).slice();
+        actual.relief_normal_rows(...args.slice(0,11));
+        const view=new Uint8Array(actual.memory.buffer),legacy=view.subarray(out+offset,out+offset+length);
+        for(let i=0;i<length;i++){
+          const pixel=from*width+(i>>2);
+          const expected=i%4===3?(hasMask?view[mask+pixel]:Math.max(view[height+pixel],view[foil+pixel],view[gloss+pixel])):legacy[i];
+          if(selected[i]!==expected)throw Error('Selected normal differs at '+i);
+        }
+        legacy.set(selected);proof.normalCalls++;proof.normalBytes+=length;return status;
+      },relief_palette_new:enabled?n=>{
         const p=actual.relief_palette_new(n);if(p){proof.jobs++;proof.live++;}return p;
       }:undefined,relief_palette_free(p){actual.relief_palette_free(p);proof.live--;}};
       const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target);}});
@@ -64,6 +78,10 @@ for (const enabled of [false,true]) test(`real relief editor cold and cached: ${
     expect(after.live).toBe(0);expect(after.jobs-before.jobs).toBe(enabled&&stage==='cold'?1:0);
     expect(await page.locator('.ihr-flyout__book canvas').evaluate(canvas=>canvas instanceof HTMLCanvasElement&&canvas.width>0&&canvas.height>0)).toBe(true);
     observations.push({stage,ms:after.at-before.at,jobs:after.jobs-before.jobs,colors:selected});
+    await page.locator('.ihr-relief-card').nth(stage==='cold'?0:1).click();
+    await expect.poll(()=>page.evaluate(()=>window.paletteProof.normalCalls),{timeout:30000}).toBeGreaterThan(before.normalCalls);
+    expect(await page.evaluate(()=>window.paletteProof.normalBytes)).toBeGreaterThan(0);
+
     await page.getByRole('button',{name:'Listo',exact:true}).click();
     await page.getByRole('button',{name:'Cerrar',exact:true}).click();
     await expect(page.locator('.ihr-flyout')).toHaveCount(0,{timeout:30000});

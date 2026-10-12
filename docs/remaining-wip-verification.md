@@ -1,3 +1,41 @@
+# Versión 1.7.176 — normales del relieve con selección en Rust
+
+4819/4819 unitarias en366archivos,305,63s. Núcleo compilado:112casos,
+22591616bytes iguales a la referencia independiente. El editor compilado pasa
+2/2 escenarios en41,2s; compara cada bloque real y abre con selección fría/cacheada.
+8/8 pruebas visuales finales (1,6min), sin reintentos ni omisiones: relieves
+independientes, estantería, dieciocho portadas, color y tres acabados, coste GPU
+y editor real. La publicación y comprobación pública siguen pendientes.
+
+Changelog: «Relieves en Rust con menos copias».
+La selección alfa se integra en el cálculo de normales. El modelo consume la
+salida directamente, conservando colores, reflejos, resolución y cesión por filas.
+App WASM 326337 bytes, SHA 33480e1224dd709007491dd2c48a046570e4e434c9bda9d8bea3a470839eb7c3.
+Decoración conserva SHA 3859b666df84bf9c8c7962ba4fbbbc3723ca35e5e3484b358a4cd18407d1b5f9.
+Sin cambios de Android ni del updater; APK vigente 1.1.15/code28.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-normal-selection.
+Medición CPU×4: 512² con máscara 45,32→35,66ms, sin máscara 70,80→46,56ms.
+Una copia RGBA menos (1MiB a 512²); no se extrapola al rendimiento global.
+
+El CI completo175 ya terminó con fallos (38218315825). Se conservan
+ci175-jobs.json y ci175-failed.log sin cancelar ni sobrescribir los originales.
+Unitarias, cuatro suites de voces reales y UI1/4/5 aprobaron. UI3: seis fallos
+entre reader-interface compacto, cuatro reader-layout y AMOLED. UI2: regresos
+nativos alineado/legacy y continuidad PDF; además lamp-switches fue inestable.
+UI6: la retirada de libro detectó enlaces de shader. No se declara CI verde ni
+se atribuyen todos estos fallos a la infraestructura. Requieren revisión aparte.
+El primer intento de la nueva prueba de editor pulsa el input cubierto por su
+preview y agota120s. Se conserva ui.log/json/results; se corrige para pulsar
+la tarjeta visible y añadir un segundo color en la reapertura.
+La prueba visual amplia también quedó bloqueada durante la navegación con el
+servidor Vite explorando/optimizando dependencias (node del worker con CPU y
+memoria crecientes). Se conserva ui-final.log y su timeout de180s con traza;
+se terminó la ejecución repetida para corregir la fixture. Ahora desactiva la
+exploración automática y la observación del disco, como las fixtures de Rust.
+La prueba aislada de brillo en estantería pasa en6,2s sin cambiar sus aserciones.
+La suite visual completa se repite en visual-final.log/json/results.
+
+
 # Verificación pública 1.7.175 completada
 
 Fuente:f814b5b47013494bebb546d77a74087ec4cf76df.

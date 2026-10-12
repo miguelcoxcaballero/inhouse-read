@@ -133,10 +133,32 @@ fn hypot3(x: f64, y: f64, z: f64) -> f64 {
 pub unsafe extern "C" fn relief_normal_rows(height_map: *const u8, owners: *const u8,
     mask: *const u8, output: *mut u8, width: u32, height: u32, from: u32, to: u32,
     has_owners: u32, preserve_ink: u32, unit: f64) -> u32 {
+    normal_rows(height_map, owners, mask, output, width, height, from, to, has_owners,
+        preserve_ink, unit, false, 0, std::ptr::null(), std::ptr::null())
+}
+
+// Pack the selection into the unused normal alpha while computing the normals.
+// This avoids another RGBA allocation and JavaScript pixel pass in the 3D model.
+#[no_mangle]
+pub unsafe extern "C" fn relief_normal_selected_rows(height_map: *const u8, owners: *const u8,
+    mask: *const u8, output: *mut u8, width: u32, height: u32, from: u32, to: u32,
+    has_owners: u32, preserve_ink: u32, unit: f64, has_mask: u32, foil: *const u8, gloss: *const u8) -> u32 {
+    if has_owners > 1 || preserve_ink > 1 || has_mask > 1 || !unit.is_finite()
+        || (preserve_ink != 0 && has_mask == 0) { return 0; }
+    normal_rows(height_map, owners, mask, output, width, height, from, to, has_owners,
+        preserve_ink, unit, true, has_mask, foil, gloss)
+}
+
+unsafe fn normal_rows(height_map: *const u8, owners: *const u8, mask: *const u8,
+    output: *mut u8, width: u32, height: u32, from: u32, to: u32,
+    has_owners: u32, preserve_ink: u32, unit: f64, selection_alpha: bool,
+    has_mask: u32, foil: *const u8, gloss: *const u8) -> u32 {
     let Some(count) = extent(width, height, from, to, height) else { return 0; };
     let heights = slice::from_raw_parts(height_map, count);
     let owners = if has_owners != 0 { Some(slice::from_raw_parts(owners, count)) } else { None };
-    let mask = if preserve_ink != 0 { Some(slice::from_raw_parts(mask, count)) } else { None };
+    let mask = if preserve_ink != 0 || has_mask != 0 { Some(slice::from_raw_parts(mask, count)) } else { None };
+    let foil = if selection_alpha && has_mask == 0 { Some(slice::from_raw_parts(foil, count)) } else { None };
+    let gloss = if selection_alpha && has_mask == 0 { Some(slice::from_raw_parts(gloss, count)) } else { None };
     let out = slice::from_raw_parts_mut(output, count * 4);
     let w = width as usize;
     let h = height as usize;
@@ -144,8 +166,10 @@ pub unsafe extern "C" fn relief_normal_rows(height_map: *const u8, owners: *cons
         for x in 0..w {
             let pixel = y * w + x;
             let at = pixel * 4;
-            if mask.is_some_and(|mask| mask[pixel] == 0) {
-                out[at..at + 4].copy_from_slice(&[128, 128, 255, 255]);
+            let alpha = if !selection_alpha { 255 } else if has_mask != 0 { mask.unwrap()[pixel] }
+                else { heights[pixel].max(foil.unwrap()[pixel]).max(gloss.unwrap()[pixel]) };
+            if preserve_ink != 0 && mask.is_some_and(|mask| mask[pixel] == 0) {
+                out[at..at + 4].copy_from_slice(&[128, 128, 255, alpha]);
                 continue;
             }
             let sample = |sx: i64, sy: i64| {
@@ -159,7 +183,7 @@ pub unsafe extern "C" fn relief_normal_rows(height_map: *const u8, owners: *cons
             out[at] = clamped_byte((nx / length * 0.5 + 0.5) * 255.0);
             out[at + 1] = clamped_byte((ny / length * 0.5 + 0.5) * 255.0);
             out[at + 2] = clamped_byte((1.0 / length * 0.5 + 0.5) * 255.0);
-            out[at + 3] = 255;
+            out[at + 3] = alpha;
         }
     }
     1
