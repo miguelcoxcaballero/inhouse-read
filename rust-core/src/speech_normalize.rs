@@ -1,7 +1,7 @@
 //! UTF-16 cleanup and exact source offsets for narration. Unicode/locale
 //! header classification remains with the browser's existing Unicode engine.
 fn invisible(c: u16) -> bool { matches!(c, 0x00ad | 0x200b | 0x2060 | 0xfeff) }
-fn whitespace(c: u16) -> bool {
+pub(crate) fn whitespace(c: u16) -> bool {
     matches!(c, 9..=13 | 32 | 0xa0 | 0x1680 | 0x2000..=0x200a | 0x2028 | 0x2029 | 0x202f | 0x205f | 0x3000 | 0xfeff)
 }
 fn terminator(c: u16) -> bool { matches!(c, 33 | 46 | 63 | 0x3002 | 0xff01 | 0xff1f | 0x2026 | 58 | 59) }

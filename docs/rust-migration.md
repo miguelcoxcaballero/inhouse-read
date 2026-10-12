@@ -1007,3 +1007,27 @@ idéntica, loader2107 bytes, tres assets. Evidencia published-1791766892079.
 La primera consulta durante despliegue devolvió aún la versión anterior y 404
 para recursos nuevos; se conserva en published-1791766820055. No se usa como
 aprobación. La matriz CI144 continúa; no se afirma éxito global.
+
+# Migración 1.7.146 — fragmentos de voz en Rust
+
+Verificación local: 4281/4281 unitarias y 7/7 E2E, sin omisiones ni reintentos;
+build aprobado. Changelog: «Fragmentación de voz en Rust». Pendiente de subir
+hasta comprobar la publicación real de 145, actualmente en cola de GitHub Pages.
+Rust recorta márgenes y decide TODOS los cortes de las frases largas de un
+capítulo en una llamada. El navegador conserva la clasificación lingüística
+de finales de frase y la creación de objetos de texto. Se conserva el límite
+180, las preferencias por cláusulas, los empates, los offsets UTF-16 y cada
+marca interna de página. No se altera el PCM ni el gesto del lector.
+
+130/130 casos focalizados con el módulo de normalización; 67 nuevos: tamaños
+límite, CJK, árabe, surrogates, signos, espacios, planes completos y liberación.
+Chromium390×844 CPU×4, nueve rondas alternadas, incluye entrada/salida:
+frases largas de 1000/16000/128000 caracteres: JS0,150/2,350/19,112 ms frente a
+Rust0,063/1,013/7,888. Con frases cortas domina la clasificación lingüística:
+0,650/9,175/72,625 frente a0,638/9,237/74,125. No se afirma mejora en ese caso.
+Los siete E2E incluyen PDF/EPUB con voz real, hold, navegación independiente,
+paginación estable y comparación integral de frases/mapas con la referencia.
+WASM190162 bytes, SHA `b6086c92be65ffa186b939df161da90019a08441cf73140e1c8b027e649b8042`.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-speech-fragments`.
+Siguiente bloque: expansión de las texturas de las plantas, conservando cada
+byte de pigmento, relieve y rugosidad y la preparación progresiva actual.

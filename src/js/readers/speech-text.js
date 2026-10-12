@@ -1,5 +1,6 @@
 import { getRustCore } from '../rust-core.js'
 import { rustNormalizeSpeech } from './speech-normalize-wasm.js'
+import { rustSpeechFragments } from './speech-fragments-wasm.js'
 
 // Pure text side of the audiobook: turn the raw text a reader exposes into
 // sentences and spoken fragments WITHOUT losing where each one came from. The
@@ -182,9 +183,12 @@ function cutFragments(text, from, to) {
  */
 export function speechSentences(text, breaks = []) {
   text = String(text)
+  const ends = sentenceEnds(text, breaks)
+  const native = rustSpeechFragments(getRustCore(), text, ends)
+  if (native) return native
   const sentences = []
   let from = 0
-  for (const end of sentenceEnds(text, breaks)) {
+  for (const end of ends) {
     let start = from
     from = end
     while (start < end && /\s/.test(text[start])) start++

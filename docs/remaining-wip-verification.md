@@ -1,3 +1,34 @@
+Publicación 145 verificada: fuente `1afd3b89728afefd8a7320b95f1a46a15deaad25`,
+Pages `bddc7672e7a7c1f0b7e1718f2ee7f825d057d473`. Deploy38190559366 y
+Pages38190605711 aprobados. 117 controles HTTP; 99 recursos exactos; todos
+los code units UTF-16 conservados al ejecutar el WASM descargado; APK/code28
+con los mismos bytes y loader2107. Seis recorridos públicos de voz/paginación
+sin omisiones ni reintentos, 59,7 s. Evidencia published-1791767566845 y
+rust-speech-normalize/public-reader. La matriz global continúa; no se afirma
+aprobación global ni verificación física nueva de Android.
+# Migración 1.7.146 — fragmentos de voz en Rust
+
+Verificación local: 4281/4281 unitarias y 7/7 E2E, sin omisiones ni reintentos;
+build aprobado. Changelog: «Fragmentación de voz en Rust». Lista para publicar
+tras verificar los artefactos reales y seis recorridos públicos de 145.
+Rust recorta márgenes y decide TODOS los cortes de las frases largas de un
+capítulo en una llamada. El navegador conserva la clasificación lingüística
+de finales de frase y la creación de objetos de texto. Se conserva el límite
+180, las preferencias por cláusulas, los empates, los offsets UTF-16 y cada
+marca interna de página. No se altera el PCM ni el gesto del lector.
+
+130/130 casos focalizados con el módulo de normalización; 67 nuevos: tamaños
+límite, CJK, árabe, surrogates, signos, espacios, planes completos y liberación.
+Chromium390×844 CPU×4, nueve rondas alternadas, incluye entrada/salida:
+frases largas de 1000/16000/128000 caracteres: JS0,150/2,350/19,112 ms frente a
+Rust0,063/1,013/7,888. Con frases cortas domina la clasificación lingüística:
+0,650/9,175/72,625 frente a0,638/9,237/74,125. No se afirma mejora en ese caso.
+Los siete E2E incluyen PDF/EPUB con voz real, hold, navegación independiente,
+paginación estable y comparación integral de frases/mapas con la referencia.
+WASM190162 bytes, SHA `b6086c92be65ffa186b939df161da90019a08441cf73140e1c8b027e649b8042`.
+Evidencia: `D:/CodexEvidence/InhouseRead-20261012/rust-speech-fragments`.
+Siguiente bloque: expansión de las texturas de las plantas, conservando cada
+byte de pigmento, relieve y rugosidad y la preparación progresiva actual.
 # Migración 1.7.145 — limpieza del texto del audiolibro
 
 Verificación final: 4214/4214 unitarias; 18 E2E del lector y 9 de controles/capturas aprobados. Las seis capturas omitidas en la primera tanda se ejecutaron en la segunda. Build aprobado. Publicación pendiente. Rust recoge el texto normalizado, colapsa espacios y
