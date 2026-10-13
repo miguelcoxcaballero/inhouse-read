@@ -1,4 +1,41 @@
-# 1.7.231 — espera de selección en Rust (local)
+# 1.7.232 — importación de Android coordinada en Rust (local)
+
+Changelog: «Importación de Android coordinada en Rust».
+RustImportShelfGate conserva las señales active/pending y aplaza la
+construcción de la estantería durante la transferencia y la lectura.
+Si Rust llega tarde, adopta los dos valores actuales sin ejecutar callbacks
+ni reiniciar la importación. Se conservan los errores, su identidad, el orden
+de llamadas y los resultados de coerción. El host libera el gate al salir.
+Los bytes y el progreso siguen en IndexedDB; el cambio no copia archivos,
+no modifica las operaciones de Drive ni el APK o el updater compartido.
+
+35 pruebas focalizadas/3 archivos/3.00 s aprobadas: 8 originales, 8 en la
+fixture del port y 19 de adopción/coerciones/errores/reentrada/liberación.
+De la fixture de 8, cuatro prueban directamente el gate Rust y cuatro
+conservan el inbox y el contrato de arranque originales; no se atribuyen
+los ocho a lógica nueva de Rust. 200 ciclos liberan las referencias.
+6505 unitarias/435 archivos aprobadas en 369.83 s.
+Dos E2E nuevos/16.6 s comprueban los bytes exactos de dos PDF importados
+desde el inbox, apertura/retorno, una sola instancia UI y llamadas reales
+a los exports de Rust. Incluyen el módulo retrasado y una importación
+iniciada antes de su carga. La tanda final de 68 E2E pasó sin reintentos,
+incluidos Abrir con, lector, voces reales, catálogos, perfil y cierre 8 s.
+Los casos web usan un bridge controlado; no sustituyen el APK real.
+
+Inventario: 7431 líneas Rust/38132 JS = 16.31 %, 98/290 archivos propios.
+Incluye comentarios y alternativas; no mide porcentaje funcional.
+UI local: 928738 bytes, SHA256 8099e4bcfc7307769fdaabe7ab039fcdceed5eb02cbbe17f3b1badfa92c0a2b1.
+App, decoración y voz conservan sus bytes. No se atribuye una aceleración
+global a este gate. APK 1.1.15/28 y A/B se conservan sin cambios.
+Pendientes: publicación y comprobación de la web y del APK reales de 232.
+CI 231 falló en shelf-light-effect: el atributo de iluminación de nogal
+no apareció dentro de 8 s. El reintento pasó, pero se rechaza como flaky.
+Unitarias, demás UI y cuatro tandas de voces reales pasaron. Originales
+conservados en rust-stage-prototype/ci231-ui6-original-artifact.
+No se afirma la corrección de ese fallo intermitente con este port.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-import-gate-prototype.
+
+# 1.7.231 — espera de selección en Rust
 
 Changelog: «Apertura y cancelación coordinadas en Rust».
 RustStageGate conserva settlement→idle y la carrera con abrir/cancelar.
@@ -29,7 +66,26 @@ UI local927386 bytes, SHAc5ad1ba048acd05872b4422cae45361df4dbae2e932924b79a46b13
 App/decor/voice y los modelos/renderizadores mantienen sus bytes de230.
 No se atribuye una mejora global de velocidad a la coordinación del gate.
 62 E2E finales/10.9m aprobados sin reintentos, incluidos los contratos de
-cierre8s. Pendiente: publicación y comprobación real de231.
+cierre8s. Publicación231 comprobada:
+main68e8d7532677ab380cdaa0e0d893e25c4131e009,
+Deploy38384051846/Pages38384207527 aprobados,
+Pages1732325a1adc8eb3b5deef856e830ed2b536c8d2.
+109 archivos públicos coinciden HTTP/tamaño/SHA/atribución.
+UI pública927354 bytes, SHA3c84f634aa14a6deb36eccbda38243f0ae9cd0fbdbb15074a065f31a252c9306;
+local Windows927386. Se comprueban bytes/exports públicos sin presumir
+igualdad con el binario local. Dos perfiles exactos,una instancia UI,
+referencias estables tras1000 preparaciones/100 menús y30 PCM aprobados.
+2 PDF/42.0s,12 escena/importación/apertura/cancelación/1.9m y3 perfil/updater
+/14.1s públicos aprobados. APK real descargado: bytes/firma/loader2107
+aprobados. Android muestra231/PID31728: content URI real,
+Lessac2×10.1210430839s,8done/9start,mismo proceso y sin FATAL.
+APK1.1.15/28 y B intactos. CI231/38384051939 terminó con fallo en UI6/115251299058:
+shelf-light-effect esperaba data-active-lamp-lights="3" después de recargar
+nogal y observó el atributo ausente durante el plazo original de 8 s.
+Su reintento pasó, pero se rechaza como flaky. Unitarias, demás UI y las
+cuatro tandas de voces reales aprobadas. No se afirma aprobación global.
+Log, captura, trace y reporte originales conservados en
+rust-stage-prototype/ci231-ui6-original-artifact; también el agregador fallido.
 APK1.1.15/28, A/B y revisión compartida del updater intactos.
 CI230 falla sólo en UI2/115234622203; los fallos y logs originales de229/230
 se conservan. No se afirma su corrección.

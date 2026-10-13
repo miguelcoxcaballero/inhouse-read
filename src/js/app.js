@@ -220,6 +220,7 @@ addEventListener('pagehide', event => {
   if (event.persisted) return
   appDisposed = true
   profileView.destroy()
+  nativeImportShelfGate.destroy()
   shelfRefreshQueue.dispose()
   clearTimeout(lengthRefreshTimer)
   lengthRefreshTimer = null
