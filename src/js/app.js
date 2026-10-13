@@ -38,8 +38,10 @@ import { createPreparedPageCache, createStageGate, pageKeyMismatch } from './pre
 import { createBookLengthQueue, isBookLengthReady } from './book-length-queue.js'
 import { persistablePosition, persistableRelocation } from './readers/persistable-position.js'
 import { readerReturnCanvas } from './reader-return-canvas.js'
+import { createProfileView } from './profile-view.js'
 
 const reader = new ReaderController()
+const profileView = createProfileView(document)
 
 const els = {
   homeScreen: document.getElementById('home-screen'),
@@ -217,6 +219,7 @@ document.addEventListener('visibilitychange', () => {
 addEventListener('pagehide', event => {
   if (event.persisted) return
   appDisposed = true
+  profileView.destroy()
   shelfRefreshQueue.dispose()
   clearTimeout(lengthRefreshTimer)
   lengthRefreshTimer = null
@@ -1025,24 +1028,7 @@ async function uploadBookToDrive(book) {
 }
 
 function setDriveSyncStatus(message, syncing = false) {
-  els.driveSyncStatus.textContent = message
-  els.driveSyncStatus.classList.toggle('is-syncing', syncing)
-}
-
-function setProfileAvatar(profile) {
-  const initial = (profile.name || profile.email || 'G').trim().charAt(0).toUpperCase() || 'G'
-  for (const node of [els.driveProfileInitial, els.driveProfileInitialMenu]) node.textContent = initial
-  for (const image of [els.driveProfileAvatar, els.driveProfileAvatarMenu]) {
-    if (profile.photo) {
-      image.src = profile.photo
-      image.hidden = false
-      image.previousElementSibling.hidden = true
-    } else {
-      image.removeAttribute('src')
-      image.hidden = true
-      image.previousElementSibling.hidden = false
-    }
-  }
+  profileView.syncStatus(message, syncing)
 }
 
 async function loadDriveAccountProfile() {
@@ -1050,25 +1036,11 @@ async function loadDriveAccountProfile() {
     driveProfile = null
     cloudSync.reset()
     libraryBackup.reset()
-    els.driveProfile.hidden = false
-    els.driveConnectBtn.hidden = false
-    els.themeToggle.hidden = true
-    els.driveSyncBtn.hidden = true
-    els.driveSignOutBtn.hidden = true
-    els.driveSyncStatus.hidden = true
-    els.driveProfileName.textContent = 'Inhouse Read'
-    els.driveProfileEmail.textContent = 'Biblioteca en este dispositivo'
-    els.driveProfileBtn.setAttribute('aria-label', 'Cuenta y ajustes')
-    els.driveProfileBtn.title = 'Cuenta y ajustes'
-    setProfileAvatar({name:'Inhouse Read'})
+    profileView.visibility(false)
+    profileView.localAccount()
     return null
   }
-  els.driveProfile.hidden = false
-  els.driveConnectBtn.hidden = true
-  els.themeToggle.hidden = true
-  els.driveSyncBtn.hidden = false
-  els.driveSignOutBtn.hidden = false
-  els.driveSyncStatus.hidden = false
+  profileView.visibility(true)
   try {
     driveProfile = await getDriveProfile()
   } catch (error) {
@@ -1079,11 +1051,7 @@ async function loadDriveAccountProfile() {
     setDriveSyncStatus(`Perfil guardado · ${error.message}`)
   }
   cloudSync.setProfile(driveProfile)
-  els.driveProfileName.textContent = driveProfile.name
-  els.driveProfileEmail.textContent = driveProfile.email
-  els.driveProfileBtn.setAttribute('aria-label', driveProfile.email ? `Cuenta de Google: ${driveProfile.email}` : 'Cuenta de Google')
-  els.driveProfileBtn.title = driveProfile.name
-  setProfileAvatar(driveProfile)
+  profileView.account(driveProfile)
   return driveProfile
 }
 
@@ -1157,31 +1125,9 @@ els.driveThemeToggle.addEventListener('change', () => {
 })
 
 function closeProfileMenu() {
-  closeAndroidUpdateSettings()
-  els.driveProfileMenu.hidden = true
-  els.driveProfileBtn.setAttribute('aria-expanded', 'false')
+  profileView.closeMenu()
 }
-els.driveProfileBtn.addEventListener('click', () => {
-  const open = els.driveProfileMenu.hidden
-  if (!open) { closeProfileMenu(); return }
-  els.driveProfileMenu.hidden = !open
-  els.driveProfileBtn.setAttribute('aria-expanded', String(open))
-  if (open) els.driveThemeToggle.focus()
-})
-document.addEventListener('click', event => {
-  // Channel selection replaces its own button while this click bubbles.
-  // Use the original event path so it is not mistaken for an outside tap.
-  if (!event.composedPath().includes(els.driveProfile)) {
-    closeProfileMenu()
-  }
-})
-document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') {
-    const wasOpen = !els.driveProfileMenu.hidden
-    closeProfileMenu()
-    if (wasOpen) els.driveProfileBtn.focus()
-  }
-})
+profileView.connect(closeAndroidUpdateSettings, els.driveThemeToggle)
 els.driveSyncBtn.addEventListener('click', async () => {
   els.driveSyncBtn.disabled = true
   try { await syncLibraryToDrive() }
@@ -1199,13 +1145,6 @@ els.driveSignOutBtn.addEventListener('click', () => {
   els.driveProfileBtn.setAttribute('aria-expanded', 'false')
   refreshShelf()
 })
-for (const image of [els.driveProfileAvatar, els.driveProfileAvatarMenu]) {
-  image.addEventListener('error', () => {
-    image.hidden = true
-    image.previousElementSibling.hidden = false
-  })
-}
-
 /** No bloquea la apertura del libro: la portada se guarda para la próxima visita a la estantería. */
 function extractCoverInBackground(record) {
   if (closingReader || currentBookId !== record.id) return Promise.resolve()
@@ -1430,7 +1369,7 @@ initAndroidUpdateChecks()
 // files, and the reader / catalogue chunks are loaded before anyone reaches
 // for them (see idle-startup.js).
 runAfterFirstFrame([
-  () => { void loadRustCore(); void loadRustDecorCore() }, // reuse early instance, or bounded recovery after a failure
+  () => { void loadRustCore(); void loadRustDecorCore(); profileView.warm() }, // reuse early instance, or bounded recovery after a failure
   () => readingExperience.prefetch(),
   () => loadPlantCatalogModule().catch(() => {}),
   () => registerOfflineShell().catch(error => console.warn('No se pudo guardar la app para abrirla sin conexión:', error))

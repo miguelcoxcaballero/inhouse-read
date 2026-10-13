@@ -1,3 +1,4 @@
+mod profile_view;
 mod catalog_art;
 mod catalog_view;
 mod book_projection;

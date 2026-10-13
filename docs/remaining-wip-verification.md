@@ -42,7 +42,21 @@ un reintento correcto rechazado, con originales en rust-book-projection-prototyp
 
 Inventario: 6919 líneas Rust/37915 JavaScript = 15.43%, no funcional.
 UI local 885881 bytes, SHA256 24af3a29a63e0ca3307c90216c04ca84373fa8e9525cbeebc9137496a47c733e.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada: 57e0cc1ff0c84940a1108980d81c432a0b2e9602.
+Deploy 38330363754/Pages 38330469444 completos; Pages 216991e51af0373665f015e8462669ccdd1d030f.
+UI pública 885849 bytes, SHA256 fc13cbbedd0475791fde2f73aba902e240be3b29f5b51c0f3baf8d51b6b28b48.
+published-1791853726061: recursos HTTP/tamaño/SHA, dos perfiles,
+1000 preparaciones/100 menús con control positivo y sin fugas,
+30 casos PCM/tempo y APK real loader 2107 bytes correctos.
+Dos E2E públicos PDF y dos del catálogo aprobados sin reintentos.
+APK 1.1.15/28 muestra web 223: Lessac 2×, 10.90s,
+8 finales/9 inicios, PID 25587 estable y sin FATAL.
+CI223/38330363770 conserva ambos cierres nativos fuera de 8 s en
+UI2/115078497117, con fallos originales y artefactos separados en
+rust-catalog-art-prototype/ci223-ui2-original.log y ci223-ui2-artifact.
+Los restantes jobs de UI, unitarias y voces reales terminaron correctamente.
+El resultado global queda rechazado; no se usan reintentos como aprobación.
+Updater sin modificaciones.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-catalog-art-prototype.
 
 # 1.7.222 — vista y controles del catálogo IKEA en Rust
