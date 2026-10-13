@@ -44,6 +44,7 @@ const stage = (domain, stage, id, part = 0) => { if (diagnostics) post({type:'st
 async function init({ ortBase, phonBase, runtime }) {
   // ONNX Runtime and the phonemizer are independent: load them side by side (a cold start is the sum of everything serial).
   void loadRustCore() // optional acceleration loads alongside the voice, never delays it
+  void loadRustVoiceCore()
   phonBaseURL = phonBase
   const [module, phon] = await Promise.all([import(/* @vite-ignore */ ortBase + 'ort.wasm.min.mjs'), runtime === 'supertonic3' ? null : createPhonemizer({ base: phonBase })])
   ort = module
@@ -76,7 +77,6 @@ async function load({ voice: key, config: cfg, model, phonemizerModel, buffers }
     }
     if (!phonemizer && cfg.phoneme_type !== 'hebrew') phonemizer = await createPhonemizer({ base:phonBaseURL })
     if (cfg.phoneme_type === 'hebrew') {
-      void loadRustVoiceCore()
       hebrewPhonemizer = await createHebrewPhonemizer({ ort, model: phonemizerModel, config: cfg })
     }
     const aligned = exposePiperDurations(new Uint8Array(model))

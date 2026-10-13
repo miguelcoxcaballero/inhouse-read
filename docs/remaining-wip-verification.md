@@ -1,4 +1,35 @@
-# 1.7.227 — fonemas de hebreo en Rust (local)
+# 1.7.228 — sincronización de audio en Rust (local)
+
+Changelog: «Sincronización de páginas más rápida».
+El módulo voice calcula una sola vez las sumas de duraciones VITS y las
+reutiliza para todos los límites de texto. Mantiene el orden f64, redondeo
+y clamp originales, offsets e identidades. No cambia la síntesis, velocidad,
+audio ni el momento configurado para cambiar de página. Su carga opcional
+empieza al preparar cualquier voz; nunca bloquea Play.
+Paquetes incompatibles, pequeños, inválidos o módulo pendiente usan el
+algoritmo anterior. Arena retenida limitada a64KiB; las grandes se liberan.
+Voice25375 bytes, SHAb35db296b006124581cf5f71b8a58f061d508749486a5c9f261c9920f7d24067.
+App/decor conservan exactamente sus hashes. Inventario:7233 Rust/38040 JS,
+15.98%,94/287 archivos propios no vacíos; no mide funciones terminadas.
+10000 comparaciones exactas de paquetes,200 ciclos, capacidad196608 estable.
+81 focalizadas/4 archivos,6356 unitarias/427 archivos/362.35s y56 E2E/9.9m
+aprobados, sin reintentos; se mantienen los contratos de cierre8s.
+Benchmark del puente completo, Chromium escritorio390x844/CPU×4:
+128 duraciones/1 límite .020→.00667ms;128/8 .070→.00667ms;
+480/4 .12667→.01333ms;1000/16 .690→.02667ms.
+No mide el teléfono, GPU, ORT o la latencia completa del botón Play.
+El primer import externo Node falló por la URL Vite; se conserva el log y
+la comparación usa la fuente anterior congelada. La primera prueba E2E
+multilingüe no vio el espía porque el worker llegó desde la caché SW.
+Su traza original se conserva; el contrato multilingüe mantiene sus asserts
+originales y la prueba de ejecución nativa se observa en el caso de red.
+2 E2E corregidos/36.4s y los56 finales aprobados, sin cambiar plazos.
+Pendiente: publicación y comprobación de los bytes reales de228.
+La CI227 fallida sigue conservada; estas pruebas no demuestran su solución.
+APK1.1.15/28 y canales A/B intactos; updater fijado6621ca1 sin cambios.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-duration-prototype.
+
+# 1.7.227 — fonemas de hebreo en Rust
 
 Changelog: «Preparación de fonemas más rápida».
 Módulo voice independiente (dominio2), sin dependencias ni imports del host.
@@ -52,7 +83,23 @@ líneas no vacías, incluyendo comentarios y fallback; no funcional.
 56 E2E/9.9m aprobados sin reintentos: los 54 de lectura/audio/UI y los
 dos contratos nativos de regreso conservan su assert de cierre8s.
 Esto no prueba una solución a los fallos intermitentes originales de CI226.
-Publicación pendiente.
+Publicación 1.7.227 comprobada: main6902132831630e1f9c7e4b86733311fb5eed0201;
+Deploy38355983588/Pages38356108256 aprobados;
+Pagesb0f7bc18b5160eb710ed4926460ffd62b6092870.
+109 archivos públicos coinciden en tamaño/SHA/HTTP y atribución.
+Voice23993 bytes, SHA49bbdb7acea80a8f7e6fc50b6614afade60bc8a041ec25cb1efcfc22105925bc;
+58 controles IPA sobre esos bytes publicados, 200 ciclos, memoria327680 estable.
+Dos perfiles de navegador exactos; 1000 preparaciones/100 menús por perfil,
+una instancia UI y referencias estables; 30 controles PCM aprobados.
+2 PDF/41.6s, 6 escena/52.6s y 3 perfil/updater/14.4s públicos aprobados.
+APK A real descargado: bytes, firma y loader2107 aprobados; B sin cambios.
+Android muestra227/PID28597: content URI real, Lessac2×10.0373242630s,
+8done/9start, mismo proceso y sin FATAL. No se reemplaza APK1.1.15/28.
+CI227/38355983616 fallida: UI2 conserva los dos cierres de8s; UI6
+registra cuatro enlaces de shaders al retirar un libro (esperaba0).
+Su reintento pasó, pero CI rechaza el caso inestable. Logs y artefactos
+ci227-ui2-original y ci227-ui6-original conservados sin modificar.
+La CI226 fallida y sus trazas originales siguen conservadas.
 APK1.1.15/28, catálogos A/B, firma y updater sin cambios.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-hebrew-prototype.
 

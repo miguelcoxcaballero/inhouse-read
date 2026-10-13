@@ -1,4 +1,5 @@
 import {openCompiledReaderApp} from './helpers/compiled-reader.mjs'
+import {observeDurationKernel,durationKernelProof} from './helpers/duration-kernel-proof.mjs'
 import { test, expect } from '@playwright/test'
 import { startHuggingFaceMirror, haveVoice } from './helpers/hf-mirror.mjs'
 import { openAudioMenu } from './helpers/audio-menus.mjs'
@@ -130,6 +131,10 @@ for(const multilingual of [false,true])test('PDF mantiene la página anterior du
   expect(haveVoice(MODEL), 'real Davefx model must be available').toBe(true)
   const mirror = await startHuggingFaceMirror({voices:[MODEL], sliceMs:0})
   const errors = []; page.on('pageerror', error => errors.push(error.message))
+  // This first variant observes the compiled worker over the network. The
+  // multilingual variant retains the original service-worker/cache path;
+  // Chromium can serve its worker outside Playwright routing (trace retained).
+  if(!multilingual)await observeDurationKernel(page)
   try {
     const base=await fixtureBase(page,mirror)
     await page.setViewportSize({width:390,height:844})
@@ -310,6 +315,8 @@ for(const multilingual of [false,true])test('PDF mantiene la página anterior du
     expect(start.after.pixels).not.toBe(evidence.initial.pixels)
     expect(start.after.highlight.replace(/\s+/g,'')).toBe(PDF_PARTS[1].replace(/\s+/g,''))
     expect(start.after.at-start.at).toBeLessThan(1000)
+    if(!multilingual){const durations=await durationKernelProof(page);expect(durations).toBeTruthy();expect(durations.instances).toBe(1);expect(durations.calls).toBeGreaterThan(0)
+      await testInfo.attach('compiled-duration-marks',{body:JSON.stringify(durations),contentType:'application/json'})}
     const firstSecondPage=evidence.frames.find(frame => /Página 2 de 2/.test(frame.label))
     expect(firstSecondPage?.at).toBeGreaterThanOrEqual(start.at)
     expect(evidence.pcm.every(chunk => chunk.finite && chunk.peak>.05 && chunk.peak<=1)).toBe(true)

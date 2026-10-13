@@ -1,10 +1,11 @@
 # Migración a Rust: implementación y comprobaciones
 
-Entrega local 1.7.227: fonemas hebreos en el worker/cliente nativo.
-Inventario: 7206 Rust/38004 JS, **15.94%**; no mide funciones terminadas.
-6344 unitarias completas, 156 focalizadas, 56 E2E de lectura/escena y
-3 E2E con Saspeech/Nakdimon reales aprobadas; publicación pendiente. 1.7.226 pública/APK verificados,
-CI226 fallida en dos cierres de estantería8s; originales preservados.
+Entrega local 1.7.228: límites de audio calculados con las duraciones VITS.
+Inventario:7233 Rust/38040 JS, **15.98%**; no mide funciones terminadas.
+6356 unitarias completas,81 focalizadas y56 E2E aprobados sin reintentos.
+Publicación228 y comprobación pública pendientes. La versión227 y su APK
+real están verificados; CI227 falla en cierres8s y enlaces de shaders.
+Sus logs y artefactos originales se conservan; no se afirma su corrección.
 Detalle de pruebas, benchmarks y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout

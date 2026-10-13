@@ -1,3 +1,5 @@
+import {getRustVoiceCore} from '../../rust-voice-core.js'
+import {rustDurationMarks} from './duration-marks-wasm.js'
 // Expose VITS' existing phoneme durations as a second ONNX output. Weights,
 // operators and the audio output are untouched. Unknown graphs stay untouched.
 const decode = new TextDecoder(), encode = new TextEncoder()
@@ -73,6 +75,8 @@ export async function phonemeMarks(text, marks, ids, phonemize) {
 }
 
 export function durationMarks(marks, durations, {base = 0, count, samples, trim = 0, lead = 0, length}) {
+  const native=rustDurationMarks(getRustVoiceCore(),marks,durations,{base,count,samples,trim,lead,length})
+  if(native!==undefined)return native
   if (!durations || durations.length !== count || !durations.every(n => Number.isFinite(n) && n >= 0)) return []
   const sum = durations.reduce((a,b) => a+b,0)
   if (!(sum > 0)) return []

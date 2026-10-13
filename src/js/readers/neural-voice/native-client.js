@@ -22,6 +22,7 @@ export class NativeSynthClient {
     if(!this.loading&&this.loaded===key)return Promise.resolve(this.config)
     if(this.loading?.key===key)return this.loading.promise
     void loadRustCore() // optional; native inference and playback never wait for it
+    void loadRustVoiceCore()
     const generation=this.generation
     const promise=this.preparationChain.then(()=>this.#prepare(key,generation))
     this.preparationChain=promise.catch(()=>{})
@@ -43,7 +44,6 @@ export class NativeSynthClient {
       // lightweight recipe steps adds no frozen MessageChannel dependency.
       this.supertonic=await createSupertonicRuntime({ort:this.ort,buffers,config:config.config,indexer:config.indexer,styles:config.styles,yieldToMessages:()=>Promise.resolve()})
     } else if(config.phoneme_type==='hebrew') {
-      void loadRustVoiceCore()
       // Both Hebrew graphs share the single native upload slot.
       const phonModel=await this.store.readPhonemizerModel(key);check()
       this.hebrew=await createHebrewPhonemizer({ort:this.ort,model:phonModel,config});check()

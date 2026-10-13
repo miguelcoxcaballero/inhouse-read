@@ -2,6 +2,8 @@
 mod abi;
 #[cfg(feature = "voice")]
 mod hebrew;
+#[cfg(feature = "voice")]
+mod duration_marks;
 #[cfg(feature = "app")]
 mod reader_preferences;
 #[cfg(feature = "app")]
