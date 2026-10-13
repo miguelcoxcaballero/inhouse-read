@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {readFileSync} from 'node:fs';
+import * as catalogueUI from '../../src/wasm/ui/inhouse_read_ui.js';
+import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { createPlantCatalog, plantCatalogIllustration } from '../../src/js/plant-catalog.js';
 import { PLANT_CATALOG, POT_CATALOG } from '../../src/js/plant-catalog-data.js';
 import { createShelfCatalogPreview } from '../../src/js/shelf-catalog-preview.js';
@@ -29,10 +31,23 @@ vi.mock('../../src/js/lamp-catalog-preview.js',() => ({
   }))
 }));
 
+const runtime=vi.hoisted(()=>({ui:null,mode:'legacy',roots:new Set(),views:new Set(),renderCalls:0,connections:0}));
+vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui,loadRustUI:()=>Promise.resolve(runtime.ui)}));
+const observedUI={...catalogueUI,
+ catalog_build(...args){const dialog=catalogueUI.catalog_build(...args);runtime.roots.add(dialog);return dialog;},
+ RustCatalogView:class extends catalogueUI.RustCatalogView{
+  constructor(dialog){super(dialog);runtime.views.add(dialog);}
+  render(...args){runtime.renderCalls++;return super.render(...args);}
+  connect(...args){runtime.connections++;return super.connect(...args);}
+ }
+};
+beforeAll(()=>{catalogueUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')});});
 const instances = [];
 function create(options) {
   const catalog = createPlantCatalog(options);
   instances.push(catalog);
+  if(runtime.mode==='rust')expect(runtime.roots.has(dialog())).toBe(true);
+  if(runtime.mode==='late')runtime.ui=observedUI;
   return catalog;
 }
 const dialog = () => document.querySelector('.ihr-plant-catalog');
@@ -44,6 +59,7 @@ const settle = async () => { await Promise.resolve(); await Promise.resolve(); }
 const closing = { whenClosed:expect.any(Function) };
 afterEach(() => {
   for (const instance of instances.splice(0)) instance.destroy();
+  expect(catalogueUI.ui_live_handles()).toBe(0);
   document.body.replaceChildren();
   vi.mocked(createShelfCatalogPreview).mockClear();
   vi.mocked(createLampCatalogPreview).mockClear();
@@ -51,7 +67,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('IKEA plant instruction booklet',() => {
+describe.each(['legacy','rust','late'])('IKEA plant instruction booklet (%s)',mode => {
+  beforeEach(()=>{runtime.mode=mode;runtime.ui=mode==='rust'?observedUI:null;runtime.roots.clear();runtime.views.clear();runtime.renderCalls=0;runtime.connections=0;});
+  afterEach(()=>{if(instances.length&&mode!=='legacy')expect(runtime.renderCalls).toBeGreaterThan(0);});
   it('provides the eight botanical references and five explicit pot-size choices without external image assets',() => {
     create({ onAdd:vi.fn() }).open();
     expect(dialog().querySelectorAll('[data-catalog-plant]')).toHaveLength(8);

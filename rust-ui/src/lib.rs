@@ -1,3 +1,4 @@
+mod catalog_view;
 mod book_projection;
 mod speech_mask;
 mod speech_pipeline;

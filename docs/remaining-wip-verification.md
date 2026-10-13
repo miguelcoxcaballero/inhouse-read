@@ -1,3 +1,62 @@
+# 1.7.222 — vista y controles del catálogo IKEA en Rust
+
+Changelog: «Controles del catálogo IKEA en Rust».
+Rust construye el árbol del catálogo y sus filas, normaliza los estilos de
+las muestras con el mismo CSSOM del navegador, conserva sus nodos y actualiza
+sólo los textos y estados que cambian. Una única escucha delegada resuelve
+los botones desde sus SVG, textos o activación por teclado y llama al
+controlador existente. Se conservan nombres, IDs, orden, foco, palettes,
+tamaños, cámara, estudios 3D y callbacks de almacenamiento. Las ilustraciones,
+la selección y el vuelo siguen con sus implementaciones originales.
+
+El constructor recibe el documento del host: evita crear referencias globales
+adicionales. Los paquetes de opciones son acotados y se construyen agrupados;
+el texto se escapa como en textContent/setAttribute. Los catálogos creados
+antes de que llegue WASM conservan todos sus controles y adoptan sólo la
+actualización Rust en su siguiente operación, sin reconstruir el diálogo ni
+duplicar escuchas. Destroy libera tanto la vista como su escucha.
+
+681 comparaciones exactas del DOM, 40 ciclos y
+1000 actualizaciones; control positivo 0→53→0.
+El prototipo conserva 720896 bytes y cero referencias retenidas.
+103 focalizadas, 6154 unitarias completas y 45 E2E aprobados.
+Los 21 casos originales del catálogo se ejecutan en legado, Rust y adopción
+tardía. Las pruebas nuevas observan los seis exports reales en la app
+compilada y retienen la descarga de WASM para comprobar la recuperación;
+también prueban límites, escape, escucha única y destrucción desde la escucha.
+
+Chromium 390×844, CPU de escritorio ×4, sin estudios 3D/GPU:
+actualización 0.1110→0.0450 ms;
+constructor completo y liberación, con opciones ya preparadas,
+8.47→8.25 ms.
+La dispersión del constructor no permite atribuir una aceleración significativa.
+La primera generación de opciones permanece fuera de esa última medida;
+se conserva el paquete estático después de crear el primer catálogo.
+browser-benchmark-builder-css.log conserva el constructor inicial más lento
+(8.24/13.20 ms); los ensayos de HTML, paquete y caché permanecen separados.
+No se afirma una mejora de GPU ni de rendimiento en un teléfono físico.
+
+Los intentos originales se conservan: build.log documenta una redirección de
+log sobre sí misma; build-cargo.log, una declaración incorrecta; check-builder-
+retention.log, dos referencias retenidas evitadas al recibir el documento;
+browser-benchmark-html.log, el orden de atributos CSSOM corregido. El primer
+E2E esperaba CACTUS en vez del nombre real FEJKA y un color inexistente,
+y liberaba un route antes de su continuación. Su spec, log y artefactos
+quedan en new-e2e-original-artifact/e2e-before-fixture-fix.mjs; la corrección
+usa las opciones reales y espera las rutas activas, sin ampliar los plazos.
+
+CI220/38318276574 queda rechazada: UI2/115040032458 conserva ambos cierres
+fuera de 8 s; UI6/115040032412 conserva cuatro enlaces de shaders y un
+reintento correcto, que no se cuenta como aprobación. Logs y artefactos
+originales en rust-speech-pipeline-prototype/ci220-ui2 y ci220-ui6.
+CI221 conserva el fallo de UI6 y se registra aparte; este catálogo no se
+presenta como la corrección de los cierres o shaders de otras revisiones.
+
+Inventario: 6856 líneas Rust/37897 JavaScript = 15.32%, no funcional.
+UI local 799148 bytes, SHA256 ea55481c1810f964c25896c1b3a8bf95e49279afc070245be827fc70a0a71859.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-catalog-view-prototype.
+
 # 1.7.221 — encuadre de los libros 3D en Rust
 
 Changelog: «Encuadre de libros 3D en Rust».
@@ -31,7 +90,17 @@ cierre y shaders de otras revisiones. CI220 se registra aparte.
 
 Inventario: 6731 líneas Rust/37581 JavaScript = 15.19%, no funcional.
 UI local 763449 bytes, SHA256 d284a590b016692a47561287201410b82f5d083482371aea022e95c5a10cd6c7.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada: f09e1996c0c0100b629bad0cd76e773cdcd5f0b9.
+Deploy 38321026322/Pages 38321113591 completos; Pages 9a94fb32d50111445f44deb4516eed7aad5c148e.
+UI pública 763417 bytes, SHA256 d3d2712c67a16ae9267773ee30b2a96eead0be8080d5160207d304e55c43e01b.
+published-1791847009585: recursos HTTP/tamaño/SHA, dos perfiles,
+1000 preparaciones/100 menús con control positivo y sin fugas,
+30 casos PCM/tempo y APK real loader 2107 bytes correctos.
+Dos E2E públicos PDF/Davefx aprobados, sin reintentos.
+APK 1.1.15/28 muestra web 221: Lessac 2×, 10.10s,
+7 finales/8 inicios, PID 24205 estable y sin FATAL.
+CI 38321026325 se registra aparte; no se presupone aprobado.
+Updater sin modificaciones.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-book-projection-prototype.
 
 # 1.7.220 — preparación completa de voz en Rust
