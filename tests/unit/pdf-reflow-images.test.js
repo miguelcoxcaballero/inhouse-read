@@ -21,7 +21,7 @@ beforeEach(()=>{
 })
 afterEach(()=>vi.restoreAllMocks())
 
-describe.each(['legacy','Rust'])('%s text maps',mode=>{
+describe.each(['Rust'])('%s text maps',mode=>{
 beforeEach(()=>{runtime.ui=mode==='Rust'?ui:null})
 describe('adaptable PDF illustrations retain all text offsets',()=>{
   it('puts an illustration between its preceding and following lines without losing a single character',()=>{

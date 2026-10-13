@@ -3,7 +3,7 @@ import {createServer} from 'node:http'
 import {readFile} from 'node:fs/promises'
 let server,url
 test.beforeAll(async()=>{
- const paths={'/':'tests/e2e/fixtures/rust-select-menu.html','/ui.js':'src/wasm/ui/inhouse_read_ui.js','/inhouse_read_ui_bg.wasm':'src/wasm/ui/inhouse_read_ui_bg.wasm','/reference.js':'src/js/readers/select-menu-legacy.js'}
+ const paths={'/':'tests/e2e/fixtures/rust-select-menu.html','/ui.js':'src/wasm/ui/inhouse_read_ui.js','/inhouse_read_ui_bg.wasm':'src/wasm/ui/inhouse_read_ui_bg.wasm','/reference.js':'tests/unit/helpers/reference-select-menu.js'}
  server=createServer(async(req,res)=>{try{const file=paths[req.url];if(!file){res.writeHead(404);return res.end()}
   res.setHeader('Content-Type',file.endsWith('.wasm')?'application/wasm':file.endsWith('.html')?'text/html; charset=utf-8':'text/javascript; charset=utf-8');res.end(await readFile(file))
  }catch(error){res.writeHead(500);res.end(String(error))}})

@@ -1,6 +1,6 @@
 <!doctype html><html><body><script type="module">
 import init,{RustNeuralView} from '/inhouse-read/src/wasm/ui/inhouse_read_ui.js';
-import {LegacyNeuralView} from '/inhouse-read/src/js/readers/neural-view-legacy.js';
+import {LegacyNeuralView} from '/inhouse-read/tests/unit/helpers/reference-neural-view.js';
 import {languageName} from '/inhouse-read/src/js/readers/voice-catalog.js';
 const core=await init();
 window.run=rust=>{
