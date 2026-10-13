@@ -1,3 +1,4 @@
+// Frozen reference of the pre-Rust prepared-page cache, key comparison and stage gate (removed from src in 1.7.237). Tests only.
 // The page a book opens on, prepared while the book is still being lifted off
 // the shelf. The expensive part of opening (restore the saved place, lay the
 // page out, rasterise it) is done ahead of the tap and kept here, together with

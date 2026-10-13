@@ -1,7 +1,7 @@
 import {beforeAll,afterEach,it,expect} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {createStageGate as original} from '../../src/js/prepared-page-legacy.js'
+import {createStageGate as original} from './helpers/reference-prepared-page.js'
 const gates=[];beforeAll(()=>ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}));afterEach(()=>{for(const gate of gates.splice(0))gate.free()});
 const native=(settled,options)=>{const gate=new ui.RustStageGate(settled,options.idle);gates.push(gate);return gate};
 async function trace(factory,{settled=true,idleValue=undefined,releaseTurn=-1,reason='open'}={}){

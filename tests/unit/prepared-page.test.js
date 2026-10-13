@@ -1,5 +1,22 @@
-import { describe, expect, it } from 'vitest'
-import { createPreparedPageCache, createStageGate, pageKeyMismatch } from '../../src/js/prepared-page.js'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
+import * as shipped from '../../src/js/prepared-page.js'
+import * as reference from './helpers/reference-prepared-page.js'
+
+// One behaviour suite, two subjects: the frozen JavaScript reference and the shipped module backed by the real Rust UI.
+const runtime = vi.hoisted(() => ({ ui:null }))
+vi.mock('../../src/js/rust-ui.js', () => ({ getRustUI:() => runtime.ui, loadRustUI:() => Promise.resolve(runtime.ui) }))
+let createPreparedPageCache, createStageGate, pageKeyMismatch
+const owned = []
+beforeAll(() => { ui.initSync({ module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm') }) })
+// A stage gate hands its promise handlers to the host for good (the shipped Rust behaviour); caches must release everything.
+let gates = 0
+const baseline = () => ui.ui_live_handles()
+let before = 0
+beforeEach(() => { gates = 0; before = baseline() })
+afterEach(() => { for (const item of owned.splice(0)) item.destroy?.(); runtime.ui = null; if (!gates) expect(ui.ui_live_handles()).toBe(before) })
+const track = (factory, gate = false) => (...args) => { if (gate) gates++; const item = factory(...args); owned.push(item); return item }
 
 const key = (overrides = {}) => ({
   bookId:'book-1', epoch:3,
@@ -12,6 +29,15 @@ const key = (overrides = {}) => ({
 const snapshot = name => ({ source:{ name }, width:780, height:1464,
   displayBounds:{ left:8, top:72, width:374, height:561 } })
 
+describe.each(['reference', 'rust'])('prepared page behaviour (%s)', mode => {
+  beforeEach(() => {
+    if (mode === 'rust') {
+      runtime.ui = ui
+      createPreparedPageCache = track(shipped.createPreparedPageCache); createStageGate = track(shipped.createStageGate, true); pageKeyMismatch = shipped.pageKeyMismatch
+    } else {
+      createPreparedPageCache = reference.createLegacyPreparedPageCache; createStageGate = reference.createStageGate; pageKeyMismatch = reference.legacyPageKeyMismatch
+    }
+  })
 describe('pageKeyMismatch', () => {
   it('accepts the same conditions, ignoring sub-pixel layout noise', () => {
     expect(pageKeyMismatch(key(), key())).toBeNull()
@@ -282,4 +308,6 @@ describe('createStageGate', () => {
   it('treats a failing settled signal as a cancelled selection', async () => {
     expect(await createStageGate(Promise.reject(new Error('x')), { idle:() => Promise.resolve() }).wait()).toBe(false)
   })
+})
+
 })
