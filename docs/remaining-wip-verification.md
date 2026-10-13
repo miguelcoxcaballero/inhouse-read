@@ -1,3 +1,59 @@
+# 1.7.226 — proyección de las hojas en Rust
+
+Changelog: «Zona táctil de plantas más rápida».
+Rust transforma los vértices Float32 de cada malla con el mismo orden f64
+ de Three y selecciona sus triángulos frontales. Se conservan modelos,
+matrices, umbral y orden del camino. El navegador conserva toFixed(2),
+incluidos redondeos y signo; reutiliza el rótulo de cada vértice compartido.
+Los atributos personalizados, normalizados/intercalados, módulos fríos y
+paquetes no compatibles mantienen la proyección anterior. Un índice vacío
+sigue distinto de una malla sin índices. Se limita a 100000 vértices/450000
+índices por malla; no se guardan objetos de escena en Rust.
+
+74 controles geométricos exactos y 200 ciclos, memoria
+524288 bytes estable, 0 referencias retenidas.
+Ocho modelos reales en seis poses: 48 comparaciones exactas adicionales.
+78 focalizadas, 6256 unitarias completas/425 archivos y
+54 E2E aprobados sin reintentos. Los dos nuevos casos comparan el camino SVG
+real antes/después de girar la cámara y observan el export Rust, también
+tras una descarga pendiente. Se comprueban huecos, controles personalizados,
+fallback, tipos, índices vacíos, paquetes inválidos y memoria.
+
+Chromium 390×844, escritorio CPU×4, mallas cerradas sintéticas, camino entero:
+160 triángulos 0.545→0.360 ms;
+1056 triángulos 3.470→1.555 ms;
+4416 triángulos 13.385→5.280 ms.
+Incluye transformación, copias, selección, formato y concatenación. Excluye
+DOM, parseo nativo del hit-test y GPU; no mide plantas reales en un teléfono.
+Las cadenas de los tres casos coinciden exactamente con el código original.
+El benchmark y controles se repitieron con el módulo/puente compilados finales.
+
+Los errores iniciales del harness externo (ruta cruzada entre discos y URL
+virtual de Vitest) quedan en real-models*.log; ocho casos reales pasaron tras
+corregir la ruta. unit-focused-original.log conserva un control de memoria
+con la etiqueta «leaf», que el regex original no selecciona. Se corrigió a
+«leaf-0», manteniendo el assert de 201 llamadas Rust y los demás controles.
+También se corrigieron dos controles de índices y memoria del prototipo.
+La normalización de finales de línea de la escena se reconstruyó desde bytes
+originales; no se reescribe todo el archivo. El runtime sólo cambia la import
+ de la proyección y su función.
+
+La primera tanda E2E conserva 53 aprobados/1 fallido y su traza original.
+La prueba de listas inicializaba WASM manualmente durante el arranque de la
+app: la traza acredita varias peticiones simultáneas del mismo módulo y
+cinco traps desde callbacks del documento. El spec usa ahora el helper de
+arranque compilado compartido, manteniendo acciones/asserts/plazos y el caso
+ de descarga retrasada, y añade un assert de una sola instancia. Tres casos
+focales y la tanda completa de 54 pasan. El runtime de inicialización no cambia.
+
+CI225/38341619187 terminó correctamente en todos los jobs. Los fallos
+originales de otras revisiones siguen registrados, sin atribuírseles solución.
+Inventario: 7101 líneas Rust/
+37954 JS = 15.76%, no funcional.
+UI local 904778 bytes, SHA256 556cfeadc45acdc82c9100ab528a41fbe67ef3f3c21f54954865860abc534939.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-foliage-prototype.
+
 # 1.7.225 — estilos físicos de los lomos en Rust
 
 Changelog: «Preparación de lomos más rápida».
@@ -39,7 +95,17 @@ Esta entrega no se atribuye la solución de esos fallos.
 Inventario: 7070 líneas Rust/
 37929 JS = 15.71%, no funcional.
 UI local 902039 bytes, SHA256 445cdc46beff136df8b71cce1275f54ab5ac642434e91f8de549697a279ae6d8.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada: 91efdb19d46dba2eb16c5c90d4fb820c927bdeda.
+Deploy 38341619134/Pages 38341727067; Pages 59cc0aec610d6597554eca44699a99f1dfb398d7.
+UI pública 902007 bytes, SHA256 d64a2da484fd24550c6845e049f989d6be34755e8d5fbe9a13805ce93a5f3b62.
+published-1791862195493: HTTP/tamaño/SHA, dos perfiles,
+515→533→515 referencias, 1000 preparaciones/100 menús y una sola instancia,
+30 casos PCM/tempo y APK real/loader 2107 bytes correctos.
+Dos PDF públicos, cuatro del catálogo/lomos y tres del perfil aprobados.
+APK 1.1.15/28 muestra web 225: Lessac 2×, 10.27s,
+8 finales/9 inicios, PID 26908 estable, sin FATAL.
+CI 38341619187 se registra aparte: no se presupone aprobado.
+Updater sin modificaciones.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-shelf-styles-prototype.
 
 # 1.7.224 — menú de cuenta en Rust

@@ -1,3 +1,4 @@
+mod foliage;
 mod shelf_styles;
 mod profile_view;
 mod catalog_art;

@@ -1,9 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.225: estilos físicos de los lomos en Rust.
-6227 unitarias completas, 97 focalizadas y 52 E2E aprobados.
-Inventario: 7070 líneas Rust/37929 JS, **15.71%**; no mide funciones terminadas.
-1.7.224 pública y APK real verificados; CI se registra por separado.
+Última entrega 1.7.226: proyección táctil de plantas en Rust.
+6256 unitarias completas, 78 focalizadas y 54 E2E aprobados.
+Inventario: 7101 líneas Rust/37954 JS, **15.76%**; no mide funciones terminadas.
+1.7.225 pública y APK real verificados; CI225 completa aprobada.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout
