@@ -1,4 +1,41 @@
-# 1.7.229 — cola de biblioteca en Rust (local)
+# 1.7.230 — página preparada en Rust (local)
+
+Changelog: «Página preparada gestionada en Rust».
+RustPreparedPageCache conserva generación, ticket, clave y bitmap originales,
+sin copiar píxeles/texturas ni iniciar otra preparación. La incorporación
+tardía transfiere estos mismos objetos y su estado, luego libera las
+referencias de la cola anterior. No espera la descarga de WASM.
+Rust valida la prioridad original de libro/motor/posición/viewport/tema,
+JSON y coerciones, invalida trabajo antiguo y consume la página una sola vez.
+Un desplazamiento rígido rebasa sólo su destino. La expansión del objeto
+de bounds conserva propiedades adicionales y símbolos en el host.
+invalidateBook sigue delegando mediante this.invalidate, incluso si se
+observa/sustituye ese método. La espera de animación (StageGate) sigue JS.
+7373 Rust/38104 JS =16.21%,96/289 archivos propios no vacíos; incluye
+comentarios/fallback, no es porcentaje de funciones terminadas.
+47 pruebas de caché/clave por cada implementación +6 StageGate JS por lado:
+106 del prototipo aprobadas.137 focalizadas/5 archivos/5.30s aprobadas;
+6446 unitarias completas/431 archivos/362.38s aprobadas.
+200 vidas nativas completas liberan todas sus referencias.
+2 E2E nuevos/18.5s consumen una página real con fuente y dimensiones
+positivas usando la caché nativa, tanto preparada como con módulo pendiente.
+El espía queda sólo en los tests; una instancia UI y una caché por caso.
+La primera ejecución focal tenía una llave ausente en el test nuevo:
+unit-focused-syntax-original.log se conserva; corregida sin cambiar asserts.
+El primer E2E esperaba dataset.phase, inexistente. Se conservan new-e2e.log
+y trazas; se usa la clase real is-ready, manteniendo el plazo90s.
+Store nativo se exige en el caso preparado; el tardío puede transferir
+un store anterior JS. Ambos exigen Take nativo y bitmap real no nulo.
+UI local925030 bytes, SHA11eddc086d675944971d52760f34d9c644cd1f998cad5197f196aa5a8475356a;
+app/decor/voice mantienen exactamente los hashes de229.
+Esta migración conserva la coordinación; no se atribuye velocidad global.
+60 E2E finales/10.4m aprobados sin reintentos, incluidos los contratos
+de cierre8s. Pendiente: publicación y comprobación real de230.
+APK1.1.15/28, A/B y revisión compartida del updater sin cambios.
+La CI229 fallida se conserva; no se afirma corrección a sus cierres.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-prepared-prototype.
+
+# 1.7.229 — cola de biblioteca en Rust
 
 Changelog: «Biblioteca coordinada en Rust».
 RustShelfRefreshQueue gestiona la agrupación, espera80ms, barreras inmediatas,
@@ -21,7 +58,25 @@ App/decor/voice mantienen exactamente los hashes de228. No se cambia el
 tiempo del lector, los motores, la paginación ni la síntesis. Este bloque
 migra coordinación; no se atribuye una mejora global de velocidad.
 58 E2E finales/10.4m aprobados sin reintentos, incluidos ambos contratos
-de cierre8s. Pendiente: publicación y comprobación real de229.
+de cierre8s. Publicación229 comprobada:
+main8444200c69b92a53be7a861bf48cf49cb86e7979,
+Deploy38372897094/Pages38373057742 aprobados,
+Pagesc18dee41a99cf3326b5da11b42c7908809a2d7e9.
+109 archivos públicos coinciden HTTP/tamaño/SHA/atribución.
+UI pública911810 bytes, SHAe843030d0382589a8c23c42230759fb6e9bbfbb4fd6a58a65182c474ad92f04a;
+la compilación local Windows mide911842. Se comprueban los bytes reales
+publicados y sus exports; no se presupone identidad con el binario local.
+Dos perfiles exactos,una instancia UI,referencias estables tras1000
+preparaciones/100 menús;30 controles PCM aprobados.100 colas públicas,
+200 peticiones/lecturas,referencias501→501,una instancia.
+2 PDF/42.3s,8 escena/importación/1.1m y3 perfil/updater/13.7s aprobados.
+APK real descargado: bytes/firma/loader2107 aprobados. Android muestra229,
+PID30218,content URI real,Lessac2×11.0667120181s,7done/8start,mismo proceso
+y sin FATAL. No se reemplaza el APK1.1.15/28 ni se modifica B.
+CI229/38372897088 fallida sólo en UI2/115214011214: los contratos alineado
+y legado de cierre8s fallan, también en sus reintentos. Todos los otros
+trabajos de producción aprobaron. Logs/artefactos ci229-ui2-original
+conservados íntegros; no se afirma corrección a esos cierres.
 Los prototipos de gesto y UV de cubierta no se incluyen ni se cuentan:
 94 pruebas de gesto aprobadas, pero el puente añade coste (.095→.170ms
 por gesto de un movimiento, .91→1.165ms por60, escritorioCPU×4).

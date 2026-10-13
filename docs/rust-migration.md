@@ -1,11 +1,11 @@
 # Migración a Rust: implementación y comprobaciones
 
-Entrega local1.7.229: cola de notificaciones de biblioteca en Rust.
-Inventario:7303 Rust/38068 JS, **16.10%**; no mide funciones terminadas.
-6383 unitarias,39 focalizadas,2 nuevos E2E y58 E2E finales aprobados.
-Publicación229 y comprobación pública pendientes. La web228 y APK real están comprobados;
-CI228 falla en cierres8s y una posición de arrastre de un libro con Drive.
-Logs y artefactos originales conservados; no se afirma su corrección.
+Entrega local1.7.230: caché y validación de páginas preparadas en Rust.
+Inventario:7373 Rust/38104 JS, **16.21%**; no mide funciones terminadas.
+6446 unitarias,137 focalizadas,2 nuevos E2E y60 E2E finales aprobados.
+Publicación230 y comprobación pública pendientes. La web229 y su APK real están comprobados;
+CI229 falla sólo en los dos contratos de cierre8s, con originales conservados.
+No se afirma corrección a esos fallos. La espera StageGate sigue JS.
 Detalle de pruebas, límites y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout
