@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs'
 import assert from 'node:assert/strict'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import * as maps from '../../src/js/readers/speech-map.js'
-import * as reference from '../../src/js/readers/speech-map-legacy.js'
+import * as reference from './helpers/reference-speech-map.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 let core

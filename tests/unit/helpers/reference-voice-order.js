@@ -1,4 +1,4 @@
-import {PRIORITY_LANGUAGES,langBase,normalizeLang,languageName} from './voice-catalog.js'
+import {PRIORITY_LANGUAGES,langBase,normalizeLang,languageName} from '../../../src/js/readers/voice-catalog.js'
 const langRegion=tag=>normalizeLang(tag).split('-')[1]||''
 export function orderNeuralVoices(neuralVoices, { bookLang = '', deviceLang = '' } = {}) {
   const bookBase = langBase(bookLang), deviceBase = langBase(deviceLang), bookRegion = langRegion(bookLang)

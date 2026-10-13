@@ -1,5 +1,5 @@
-import {neuralEngine} from './neural-runtime.js'
-import {planSpeech,firstCompleteSentenceOffset} from './speech-text.js'
+import {neuralEngine} from '../../../src/js/readers/neural-runtime.js'
+import {planSpeech,firstCompleteSentenceOffset} from '../../../src/js/readers/speech-text.js'
 const PAGE_PREPARATION_RETRIES=2
 export class LegacyPreparation {
   async refreshPageBreaks() {

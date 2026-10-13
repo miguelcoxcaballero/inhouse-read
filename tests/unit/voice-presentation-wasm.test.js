@@ -8,7 +8,7 @@ vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 vi.mock('../../src/js/readers/neural-voice/audio.js',()=>({nativeAudio:()=>fixture.native}))
 const setNative=value=>{fixture.native=value}
 afterEach(()=>{fixture.ui=null;fixture.native=null;globalThis.clearTimeout=originalClear})
-import {LegacyVoicePresentation} from '../../src/js/readers/voice-presentation-legacy.js'
+import {LegacyVoicePresentation} from './helpers/reference-voice-presentation.js'
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 const originalClear=globalThis.clearTimeout,ignore=value=>Promise.resolve(value).catch(()=>{})
 function setup(native,trial){

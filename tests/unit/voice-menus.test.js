@@ -10,7 +10,7 @@ const neural = (piperId, lang, name, installed = false, quality = 'medium') => n
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
-describe.each(['legacy','rust'])('voice option engine %s',engine=>{
+describe.each(['rust'])('voice option engine %s',engine=>{
 beforeEach(()=>{runtime.ui=engine==='rust'?rustUI:null})
 describe('language dropdown', () => {
   it('orders the book language, the device language, the usual ones, then the rest A-Z', () => {

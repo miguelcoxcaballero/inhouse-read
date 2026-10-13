@@ -1,4 +1,4 @@
-import {normalizeReadingPreferences} from './reading-preferences.js'
+import {normalizeReadingPreferences} from '../../../src/js/readers/reading-preferences.js'
 export class LegacyReaderControls {
  constructor(host){
   this.listeners=[];this.properties=[]

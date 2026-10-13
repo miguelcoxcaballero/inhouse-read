@@ -12,7 +12,7 @@ import { installSpeechStyle, paintSpeechRange, clearSpeechRange, SPEECH_HIGHLIGH
 const html = markup => { const doc = new DOMParser().parseFromString(`<body>${markup}</body>`, 'text/html'); return doc }
 const spoken = (map, start, end) => map.rangeFor(start, end).toString()
 
-describe.each(['legacy','Rust'])('%s text maps',mode=>{
+describe.each(['Rust'])('%s text maps',mode=>{
 beforeEach(()=>{runtime.ui=mode==='Rust'?ui:null})
 describe('speech text mapping over the DOM', () => {
   it('maps offsets onto text nodes that span inline elements, without touching them', () => {

@@ -1,4 +1,4 @@
-import {normalizeLang,langBase} from './voice-catalog.js'
+import {normalizeLang,langBase} from '../../../src/js/readers/voice-catalog.js'
 const langRegion=tag=>normalizeLang(tag).split('-')[1]||''
 // --- Language detection: stop-word scoring per language, with a few script/diacritic hints. ---
 // Words that several languages share ("la", "de", "en"...) are listed in each of them but count half, so they can never

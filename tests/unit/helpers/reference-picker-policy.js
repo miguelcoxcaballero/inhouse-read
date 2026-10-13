@@ -1,4 +1,4 @@
-import {langBase,recommendedNeuralFor} from './voice-catalog.js'
+import {langBase,recommendedNeuralFor} from '../../../src/js/readers/voice-catalog.js'
 const OFFER_KEY='inhouse-read-neural-offer-dismissed',OFFER_SNOOZE_DAYS=30
 export const DOWNLOAD_ERRORS={offline:'Sin conexión.',storage:'Sin espacio en el dispositivo.',default:'No se pudo descargar.'}
 export class LegacyPolicy {state(engine, voice) {

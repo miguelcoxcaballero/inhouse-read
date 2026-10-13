@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as CFI from 'foliate-js/epubcfi.js'
 import { FoliateSpeechCursor } from '../../src/js/readers/foliate-speech-cursor.js'

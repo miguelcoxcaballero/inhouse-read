@@ -1,7 +1,7 @@
 // Page cuts come from laid-out glyphs, not an estimate of words or audio time.
 // Most text nodes occupy one page: only nodes spanning a page need binary
 // searches. This keeps chapter preparation cheap on a phone.
-import { yieldToMessages } from './neural-voice/task-yield.js'
+import { yieldToMessages } from '../../../src/js/readers/neural-voice/task-yield.js'
 export async function speechPageBreaks(map, renderer, { isCurrent = () => true } = {}) {
   const size = Number(renderer?.size)
   if (renderer?.scrolled || !(size > 0) || !Number.isFinite(size)) return []

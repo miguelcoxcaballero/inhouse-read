@@ -1,5 +1,5 @@
-import {neuralEngine,neuralVoiceList} from './neural-runtime.js'
-import {declaredLanguage,langBase,isNeuralId} from './voice-catalog.js'
+import {neuralEngine,neuralVoiceList} from '../../../src/js/readers/neural-runtime.js'
+import {declaredLanguage,langBase,isNeuralId} from '../../../src/js/readers/voice-catalog.js'
 export const DOWNLOAD_ERRORS={offline:'Sin conexión.',storage:'Sin espacio en el dispositivo.',default:'No se pudo descargar.'}
 export class LegacyActions {click(event) {
     const target = event.target.closest?.('[data-neural-action]')

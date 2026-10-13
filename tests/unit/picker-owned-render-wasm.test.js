@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {it,vi} from 'vitest'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {LegacyPickerRender as LegacyRender,WARNINGS} from '../../src/js/readers/picker-render-legacy.js'
-import {LegacyPolicy,DOWNLOAD_ERRORS} from '../../src/js/readers/picker-policy-legacy.js'
-import {LegacyNeuralView} from '../../src/js/readers/neural-view-legacy.js'
+import {LegacyPickerRender as LegacyRender,WARNINGS} from './helpers/reference-picker-render.js'
+import {LegacyPolicy,DOWNLOAD_ERRORS} from './helpers/reference-picker-policy.js'
+import {LegacyNeuralView} from './helpers/reference-neural-view.js'
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 let engine,list;const base=x=>(x||'').split('-')[0],recommend=(list,lang)=>list.find(v=>v.base===base(lang))||null
 const getEngine=()=>engine,getList=()=>list,order=(voices)=>[...voices].reverse(),language=x=>'Language '+x

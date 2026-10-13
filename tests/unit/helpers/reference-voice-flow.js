@@ -1,6 +1,6 @@
-import {declaredLanguage,langBase} from './voice-catalog.js'
-import {AUTO,languageOptions,voiceOptions} from './voice-menus.js'
-import {neuralVoiceList} from './neural-runtime.js'
+import {declaredLanguage,langBase} from '../../../src/js/readers/voice-catalog.js'
+import {AUTO,languageOptions,voiceOptions} from './reference-voice-menus.js'
+import {neuralVoiceList} from '../../../src/js/readers/neural-runtime.js'
 export class LegacyVoiceFlow{
   bookLanguage() {
     let bookLang = ''

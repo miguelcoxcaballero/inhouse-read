@@ -1,7 +1,7 @@
 import {beforeAll,afterEach,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import * as reference from '../../src/js/readers/speech-highlight-legacy.js'
+import * as reference from './helpers/reference-speech-highlight.js'
 import * as highlight from '../../src/js/readers/speech-highlight.js'
 import {speechFollowOffset,speechFollowOffsetLegacy} from '../../src/js/readers/speech-follow.js'
 const runtime=vi.hoisted(()=>({ui:null}))

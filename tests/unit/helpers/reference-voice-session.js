@@ -1,5 +1,5 @@
-import {neuralEngine} from './neural-runtime.js'
-import {nativeAudio,nativePcmBridge} from './neural-voice/audio.js'
+import {neuralEngine} from '../../../src/js/readers/neural-runtime.js'
+import {nativeAudio,nativePcmBridge} from '../../../src/js/readers/neural-voice/audio.js'
 export function initializeLegacyVoice(reader,onState){this.reader = reader
 this.onState = onState
 this.state = 'stopped'

@@ -1,5 +1,5 @@
-import {neuralEngine} from './neural-runtime.js'
-import {nativeAudio} from './neural-voice/audio.js'
+import {neuralEngine} from '../../../src/js/readers/neural-runtime.js'
+import {nativeAudio} from '../../../src/js/readers/neural-voice/audio.js'
 export class LegacyVoiceStop{
   restart() {
     if (this.state !== 'playing' || this.index >= this.chunks.length) return

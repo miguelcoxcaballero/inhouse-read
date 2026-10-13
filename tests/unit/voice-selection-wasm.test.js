@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {it,expect,vi,afterEach} from 'vitest'
 import {readFileSync} from 'node:fs'
-import {LegacyVoiceSelection} from '../../src/js/readers/voice-selection-legacy.js'
+import {LegacyVoiceSelection} from './helpers/reference-voice-selection.js'
 import {selectReadingVoice} from '../../src/js/readers/voice-selection.js'
 import {declaredLanguage,isNeuralId,langBase,resolveVoice} from '../../src/js/readers/voice-catalog.js'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'

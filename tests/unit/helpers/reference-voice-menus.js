@@ -1,6 +1,6 @@
 // What the two dropdowns of the audio panel list: first the language, then the voices of that language.
 // Pure functions over the normalised voices of voice-catalog.js (system voices + the neural catalogue, installed or not).
-import { PRIORITY_LANGUAGES, baseLanguageName, langBase, rankedVoicesFor, regionName, voiceTitle } from './voice-catalog.js'
+import { PRIORITY_LANGUAGES, baseLanguageName, langBase, rankedVoicesFor, regionName, voiceTitle } from '../../../src/js/readers/voice-catalog.js'
 
 /** Value of the "follow the book" choice in both dropdowns. */
 export const AUTO = ''

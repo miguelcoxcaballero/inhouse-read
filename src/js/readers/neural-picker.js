@@ -6,7 +6,7 @@ import {warmPicker,refreshPicker,usedPicker,attachPicker,contextPicker,currentPi
 // progress and Cancelar / Instalada, Usar and Quitar / error and Reintentar), the warning shown
 // when the neural voice was given up on, and the first-use offer row. It talks to the engine only through
 // neural-runtime.js, never downloads by itself, and stays hidden where the engine is unsupported or failed to load.
-import { NeuralView } from './neural-view.js'
+import { readerUI } from './rust-ui-required.js'
 
 
 
@@ -24,7 +24,7 @@ export class NeuralVoicePicker {
     this.engine = null; this.signature = ''; this.frame = 0
     this.warmGeneration = 0; this.warmHandle = null
     const panel = host.panel
-    this.view = new NeuralView(panel)
+    this.view = new (readerUI().RustNeuralView)(panel)
     this.block = panel.querySelector('[data-neural]')
     this.offer = panel.querySelector('[data-neural-offer]')
     for (const root of [this.block, this.offer]) root.addEventListener('click', event => this.click(event))

@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { SelectMenu } from '../../src/js/readers/select-menu.js'

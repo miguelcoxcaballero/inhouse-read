@@ -1,4 +1,4 @@
-import {neuralEngine} from './neural-runtime.js'
+import {neuralEngine} from '../../../src/js/readers/neural-runtime.js'
 const NEURAL_LOOKAHEAD=4
 export class LegacyVoiceAhead{
   prepareAhead() {

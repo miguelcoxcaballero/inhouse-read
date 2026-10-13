@@ -1,5 +1,5 @@
-import {declaredLanguage,isNeuralId,langBase,resolveVoice} from './voice-catalog.js'
-import {neuralVoiceList} from './neural-runtime.js'
+import {declaredLanguage,isNeuralId,langBase,resolveVoice} from '../../../src/js/readers/voice-catalog.js'
+import {neuralVoiceList} from '../../../src/js/readers/neural-runtime.js'
 const NEURAL_LOOKAHEAD=4
 export class LegacyVoiceSelection{
   voiceFor(text) {

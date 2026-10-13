@@ -6,7 +6,7 @@ import {browseVoice,returnVoiceAudio,seekVoicePoint} from '../../src/js/readers/
 const fixture=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 afterEach(()=>{fixture.ui=null})
-import {LegacyVoiceNavigation} from '../../src/js/readers/voice-navigation-legacy.js'
+import {LegacyVoiceNavigation} from './helpers/reference-voice-navigation.js'
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 const add=(a,b)=>a+b
 function setup(native,trial){

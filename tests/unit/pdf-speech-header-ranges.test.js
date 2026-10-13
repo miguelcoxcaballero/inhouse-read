@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { describe, expect, it } from 'vitest'
 import { ReadingVoice } from '../../src/js/readers/reading-voice.js'
 import { normalizeSpeech, planSpeech } from '../../src/js/readers/speech-text.js'

@@ -1,5 +1,5 @@
-import {loadNeural,neuralEngine,unlockNeural} from './neural-runtime.js'
-import {nativeAudio} from './neural-voice/audio.js'
+import {loadNeural,neuralEngine,unlockNeural} from '../../../src/js/readers/neural-runtime.js'
+import {nativeAudio} from '../../../src/js/readers/neural-voice/audio.js'
 const NEURAL_ERRORS={default:'No se pudo iniciar la voz natural. Pulsa Reintentar para volver a usarla.'}
 export class LegacyVoiceStart{
   restartFromVisiblePage() {

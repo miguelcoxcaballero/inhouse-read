@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { beforeAll, afterAll, afterEach, it, expect, vi } from 'vitest'
 import { ReadingVoice } from '../../src/js/readers/reading-voice.js'
 import { loadNeural } from '../../src/js/readers/neural-runtime.js'

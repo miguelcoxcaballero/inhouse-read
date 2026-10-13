@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest'
 import {nativeAudio,resetAudio,unlockAudio,stopNativeAudio,pauseNativeAudio} from '../../src/js/readers/neural-voice/audio.js'
 import { ReadingVoice } from '../../src/js/readers/reading-voice.js'

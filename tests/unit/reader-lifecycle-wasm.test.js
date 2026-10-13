@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs'
 import {displayBookTitle,normalizeBookAuthor} from '../../src/js/book-title.js'
 import {cleanPlaces,cleanQuotes} from '../../src/js/readers/reading-state.js'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {LegacyReaderLifecycle} from '../../src/js/readers/reader-lifecycle-legacy.js'
+import {LegacyReaderLifecycle} from './helpers/reference-reader-lifecycle.js'
 const fixture=vi.hoisted(()=>({engine:null}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralEngine:()=>fixture.engine}))
 afterEach(()=>{document.body.innerHTML=''})

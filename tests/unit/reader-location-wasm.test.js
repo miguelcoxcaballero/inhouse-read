@@ -2,7 +2,7 @@ import {afterEach,beforeAll,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {readerPanelMarkup} from '../../src/js/readers/reader-interface.js'
-import {LegacyReaderView} from '../../src/js/readers/reader-view-legacy.js'
+import {LegacyReaderView} from './helpers/reference-reader-view.js'
 import {ReaderView} from '../../src/js/readers/reader-view.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))

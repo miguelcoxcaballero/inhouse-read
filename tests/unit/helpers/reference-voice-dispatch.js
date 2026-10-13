@@ -1,6 +1,6 @@
-import {neuralEngine,neuralVoiceList} from './neural-runtime.js'
-import {nativeAudio} from './neural-voice/audio.js'
-import {langBase,isNeuralId} from './voice-catalog.js'
+import {neuralEngine,neuralVoiceList} from '../../../src/js/readers/neural-runtime.js'
+import {nativeAudio} from '../../../src/js/readers/neural-voice/audio.js'
+import {langBase,isNeuralId} from '../../../src/js/readers/voice-catalog.js'
 const NEURAL_WAIT_MS=900,NEURAL_RETRIES=3
 const NEURAL_ERRORS={'not-installed':'La voz natural seleccionada no está instalada. Descárgala de nuevo.',default:'No se pudo iniciar la voz natural. Pulsa Reintentar para volver a usarla.'}
 export class LegacyDispatch {

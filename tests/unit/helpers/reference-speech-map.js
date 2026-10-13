@@ -3,7 +3,7 @@
 // nodes plus ONE synthetic "\n" where a block ends or a <br> sits, so raw
 // offsets map back to (node, offset) without guessing and no node is touched.
 
-import { HARD_BREAK } from './speech-text.js'
+import { HARD_BREAK } from '../../../src/js/readers/speech-text.js'
 
 const SHOW_ELEMENT = 1, SHOW_TEXT = 4, REJECT = 2
 const SKIPPED = new Set(['script', 'style', 'noscript', 'template', 'head', 'title', 'rt', 'rp', 'svg', 'math'])

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import {afterEach,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import {readerPanelMarkup,readerIcon} from '../../src/js/readers/reader-interface.js'
-import {LegacyReaderChrome} from '../../src/js/readers/reader-chrome-legacy.js'
+import {LegacyReaderChrome} from './helpers/reference-reader-chrome.js'
 import {ReaderChrome} from '../../src/js/readers/reader-chrome.js'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 const runtime=vi.hoisted(()=>({ui:null}))

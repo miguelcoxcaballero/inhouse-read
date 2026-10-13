@@ -1,5 +1,5 @@
-import {notifyCloudSettingsChanged} from '../cloud-settings.js'
-import {normalizeReadingPreferences,READING_THEMES} from './reading-preferences.js'
+import {notifyCloudSettingsChanged} from '../../../src/js/cloud-settings.js'
+import {normalizeReadingPreferences,READING_THEMES} from '../../../src/js/readers/reading-preferences.js'
 const STORAGE_KEY='inhouse-read-reading-preferences'
 export const legacyPreferenceFlow={
   setPreference(key, value, { restart = true } = {}) {

@@ -1,11 +1,11 @@
 // DOM maps keep their original JavaScript nodes. Rust owns traversal and lookup;
 // no persistent WASM handle needs a finalizer when a chapter is discarded.
-import {getRustUI} from '../rust-ui.js'
-import * as legacy from './speech-map-legacy.js'
-const names=['mapSpeechText','mapTextLayer','mapTextNode','mapTextNodes']
+import {readerUI} from './rust-ui-required.js'
 function map(root,mode){
- const ui=getRustUI()
- if(!ui?.speech_map||!ui.speech_range||!ui.speech_offset||(!root&&mode<2))return legacy[names[mode]](root)
+ const ui=readerUI()
+ // A missing document or layer is a caller error: read the same property the
+ // original traversal read first, so it fails with the same TypeError.
+ if(!root&&mode<2)void root.ownerDocument
  const {text,spans,doc}=ui.speech_map(root,mode)
  return {text,spans,
   rangeFor:(start,end)=>ui.speech_range(doc,spans,start,end),

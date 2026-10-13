@@ -10,7 +10,7 @@ let planner,complete
 function dependencies(engine,plan,first){fixture.engine=engine;planner=plan;complete=first}
 vi.mock('../../src/js/readers/speech-text.js',()=>({planSpeech:(...args)=>planner(...args),firstCompleteSentenceOffset:(...args)=>complete(...args)}))
 afterEach(()=>{fixture.ui=null;fixture.engine=null})
-import {LegacyPreparation} from '../../src/js/readers/voice-preparation-legacy.js'
+import {LegacyPreparation} from './helpers/reference-voice-preparation.js'
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 function snapshot(value){
  if(typeof value==='function')return 'function'

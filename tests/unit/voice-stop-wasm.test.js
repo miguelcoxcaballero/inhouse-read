@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {it,expect,vi,afterEach} from 'vitest'
 import {readFileSync} from 'node:fs'
-import {LegacyVoiceStop} from '../../src/js/readers/voice-stop-legacy.js'
+import {LegacyVoiceStop} from './helpers/reference-voice-stop.js'
 import {pauseReadingVoice} from '../../src/js/readers/voice-stop.js'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 const fixture=vi.hoisted(()=>({deps:{},ui:null}))

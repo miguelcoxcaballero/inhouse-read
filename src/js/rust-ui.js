@@ -24,3 +24,20 @@ export function loadRustUI() {
     .finally(() => { clearTimeout(timer); loading = null })
   return loading
 }
+
+// The reader has no JavaScript twin of its controls and voice session, so it
+// needs the module itself. Other callers keep the 2 s release above. When that
+// deadline passed with the download still running, wait for the same
+// initialization (never start a second instance) for a bounded extra time.
+const LATE_DOWNLOAD_MS = 30_000
+export async function requireRustUI() {
+  const loaded = await loadRustUI()
+  if (loaded) return loaded
+  const pending = initializing
+  if (!pending) return null
+  let timer
+  try {
+    return await Promise.race([pending, new Promise(resolve => { timer = setTimeout(() => resolve(null), LATE_DOWNLOAD_MS) })])
+  } catch { return null }
+  finally { clearTimeout(timer) }
+}

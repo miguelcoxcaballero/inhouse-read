@@ -2,7 +2,7 @@ import {beforeAll,beforeEach,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {speechPageBreaks} from '../../src/js/readers/speech-page-breaks.js'
-import {speechPageBreaks as reference} from '../../src/js/readers/speech-page-breaks-legacy.js'
+import {speechPageBreaks as reference} from './helpers/reference-speech-page-breaks.js'
 import {layout} from '../helpers/speech-page-layout.js'
 const runtime=vi.hoisted(()=>({ui:null,yielded:()=>{}}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))

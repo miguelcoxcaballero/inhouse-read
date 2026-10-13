@@ -1,5 +1,5 @@
-import {neuralEngine,neuralVoiceList} from './neural-runtime.js'
-import {languageName,orderNeuralVoices} from './voice-catalog.js'
+import {neuralEngine,neuralVoiceList} from '../../../src/js/readers/neural-runtime.js'
+import {languageName,orderNeuralVoices} from '../../../src/js/readers/voice-catalog.js'
 export const WARNINGS = {
   'not-installed':'La voz natural seleccionada no está instalada. Descárgala de nuevo.',
   default:'No se pudo iniciar la voz natural. Pulsa Reintentar para volver a usarla.'

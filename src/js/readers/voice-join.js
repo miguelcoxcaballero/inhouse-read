@@ -1,4 +1,3 @@
-import {getRustUI} from '../rust-ui.js'
-import {LegacyVoiceJoin} from './voice-join-legacy.js'
+import {readerUI} from './rust-ui-required.js'
 const add=(left,right)=>left+right
-export function joinVoiceSentence(host){const ui=getRustUI();return ui?.voice_join_sentence?ui.voice_join_sentence(host,add):LegacyVoiceJoin.prototype.joinPageSentence.call(host)}
+export function joinVoiceSentence(host){return readerUI().voice_join_sentence(host,add)}

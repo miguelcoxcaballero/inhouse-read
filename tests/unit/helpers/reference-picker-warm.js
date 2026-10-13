@@ -1,4 +1,4 @@
-import {neuralEngine,loadNeural} from './neural-runtime.js'
+import {neuralEngine,loadNeural} from '../../../src/js/readers/neural-runtime.js'
 const USED_KEY='inhouse-read-neural-used'
 export class LegacyWarm {warm() {
     if (this.warmed) return

@@ -24,7 +24,7 @@ const renderer = { size:100, pages:10, scrolled:false }
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
-describe.each(['legacy','rust'])('speech page engine %s',engine=>{
+describe.each(['rust'])('speech page engine %s',engine=>{
 beforeEach(()=>{runtime.ui=engine==='rust'?rustUI:null})
 describe('speech cuts at actual laid-out pages', () => {
   it.each([{}, {rtl:true}, {vertical:true}])('finds exact glyph boundaries in %j', async options => {

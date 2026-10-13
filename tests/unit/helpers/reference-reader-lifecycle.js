@@ -1,6 +1,6 @@
-import {displayBookTitle,normalizeBookAuthor} from '../book-title.js'
-import {cleanPlaces,cleanQuotes} from './reading-state.js'
-import {neuralEngine} from './neural-runtime.js'
+import {displayBookTitle,normalizeBookAuthor} from '../../../src/js/book-title.js'
+import {cleanPlaces,cleanQuotes} from '../../../src/js/readers/reading-state.js'
+import {neuralEngine} from '../../../src/js/readers/neural-runtime.js'
 export class LegacyReaderLifecycle{
   refreshNames(bookId, fields) {
     if (!this.book || String(this.book.id) !== String(bookId)) return

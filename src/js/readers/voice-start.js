@@ -1,7 +1,5 @@
-import {getRustUI} from '../rust-ui.js'
+import {readerUI} from './rust-ui-required.js'
 import {loadNeural,neuralEngine,unlockNeural} from './neural-runtime.js'
 import {nativeAudio} from './neural-voice/audio.js'
-import {LegacyVoiceStart} from './voice-start-legacy.js'
-const legacy=LegacyVoiceStart.prototype
-export function restartVisibleVoice(host){const ui=getRustUI();return ui?.voice_restart_visible?ui.voice_restart_visible(host):legacy.restartFromVisiblePage.call(host)}
-export async function playReadingVoice(host){const ui=getRustUI();return ui?.voice_play?ui.voice_play(host,loadNeural,neuralEngine,unlockNeural,nativeAudio):legacy.play.call(host)}
+export function restartVisibleVoice(host){return readerUI().voice_restart_visible(host)}
+export async function playReadingVoice(host){return readerUI().voice_play(host,loadNeural,neuralEngine,unlockNeural,nativeAudio)}
