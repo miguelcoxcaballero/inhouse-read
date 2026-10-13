@@ -1,3 +1,50 @@
+# 1.7.223 — ilustraciones del catálogo en Rust
+
+Changelog: «Ilustraciones del catálogo en Rust».
+Rust compone los trazos originales de ocho plantas y cuatro estructuras de
+maceta, en sus modos normal, compacto y sólo maceta. Los SVG fijos mantienen
+sus cadenas originales. Para palmeras y helechos, Rust conserva las fracciones,
+coeficientes, caminos y plantillas; el navegador calcula seno/potencia y
+formatea los números como antes. Se intercambian como máximo 10 tamaños y
+90 coordenadas por especie. Una pasada sustituye todos los caminos repetidos;
+el módulo frío o incompleto conserva la implementación original.
+
+1560 escenarios exactos, 4680 ciclos; 0
+referencias retenidas y 1376256 bytes estables en el prototipo.
+Control positivo 0→4→0.
+216 comparaciones exactas adicionales en Chromium.
+104 focalizadas, 6185 unitarias completas y 47 E2E aprobados.
+La app compilada observa los cuatro nuevos exports realmente ejecutados.
+Se comprueban defaults, getters, límites, inputs no finitos y fallback.
+
+Chromium 390×844 con CPU de escritorio ×4:
+216 SVG completos, copias incluidas, 7.77→5.40 ms;
+12 iconos con creación/inserción DOM, 5.00→4.90 ms.
+La medida DOM no acredita una aceleración significativa; se excluyen estudios
+3D y GPU. No se afirma rendimiento en un teléfono físico.
+browser-diagnostic.log conserva la diferencia decimal entre Node y Chromium
+en un helecho; se corrige conservando Math y String del navegador.
+browser-benchmark-before-scan.json conserva el ensamblador de múltiples
+sustituciones más lento; la pasada única conserva toda la cadena SVG.
+
+CI222/38326294878 queda rechazada: UI2/115065642651 conserva el cierre alineado
+fuera de 8 s; UI5/115065642880 no observó la construcción del navegador Rust;
+UI6/115065642815 tomó una página adaptable vacía como referencia antes del
+render y la comparó con el texto completo tras narrar. Logs completos y
+artefactos originales en rust-catalog-view-prototype/ci222-ui2/ui5/ui6.
+El harness de navegación ahora usa el arranque compilado compartido; el de
+resaltado espera el último marcador de la página antes de tomar su baseline.
+Se conservan las acciones, los asserts finales, las esperas y los plazos.
+Los specs anteriores se conservan fuera del repo. Los cierres y shaders de
+otras revisiones siguen pendientes; esta entrega no se atribuye su corrección.
+CI221/38321026325 conserva cuatro enlaces de shaders en UI6/115048891217 y
+un reintento correcto rechazado, con originales en rust-book-projection-prototype.
+
+Inventario: 6919 líneas Rust/37915 JavaScript = 15.43%, no funcional.
+UI local 885881 bytes, SHA256 24af3a29a63e0ca3307c90216c04ca84373fa8e9525cbeebc9137496a47c733e.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-catalog-art-prototype.
+
 # 1.7.222 — vista y controles del catálogo IKEA en Rust
 
 Changelog: «Controles del catálogo IKEA en Rust».
@@ -54,7 +101,17 @@ presenta como la corrección de los cierres o shaders de otras revisiones.
 
 Inventario: 6856 líneas Rust/37897 JavaScript = 15.32%, no funcional.
 UI local 799148 bytes, SHA256 ea55481c1810f964c25896c1b3a8bf95e49279afc070245be827fc70a0a71859.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación verificada: 298478278c021bd3dfc30b0d510e53b01ec1682a.
+Deploy 38326294872/Pages 38326410806 completos; Pages 93a999de65b62d34703a160427d6f0ffc34842cc.
+UI pública 799116 bytes, SHA256 952ec200383c9632c30023dd9e0c3e5699072f850f5d14d04c48172fdbe819ad.
+published-1791850803759: recursos HTTP/tamaño/SHA, dos perfiles,
+1000 preparaciones/100 menús con control positivo y sin fugas,
+30 casos PCM/tempo y APK real loader 2107 bytes correctos.
+Dos E2E públicos PDF/Davefx y dos del catálogo aprobados sin reintentos.
+APK 1.1.15/28 muestra web 222: Lessac 2×, 10.10s,
+8 finales/9 inicios, PID 24906 estable y sin FATAL.
+CI 38326294878 se registra aparte; no se presupone aprobado.
+Updater sin modificaciones.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-catalog-view-prototype.
 
 # 1.7.221 — encuadre de los libros 3D en Rust

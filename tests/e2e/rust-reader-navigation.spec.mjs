@@ -1,3 +1,4 @@
+import {openCompiledReaderApp} from './helpers/compiled-reader.mjs'
 import {test,expect} from '@playwright/test'
 test('compiled mobile reader serializes navigation and return history through Rust',async({page},info)=>{
  test.setTimeout(60000);await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce'})
@@ -11,7 +12,7 @@ test('compiled mobile reader serializes navigation and return history through Ru
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))}}
  })
  const errors=[];page.on('pageerror',error=>errors.push(error.message))
- await page.goto(process.env.IHR_TEST_URL||'./');await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/reading-journey.pdf')
+ await openCompiledReaderApp(page);await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/reading-journey.pdf')
  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 1 de 4/)
  await page.locator('#reader-location').click();await page.getByRole('button',{name:'Marcar esta página',exact:true}).click();await expect(page.locator('[data-bookmark]')).toHaveAttribute('aria-pressed','true')
  await page.locator('[data-bookmark]').click();await expect(page.locator('[data-bookmark]')).toHaveAttribute('aria-pressed','false')

@@ -1,7 +1,7 @@
 import {getRustUI,loadRustUI} from './rust-ui.js'
 import {createPlantCatalogLegacy} from './plant-catalog-legacy.js'
 import {createPlantCatalogNative} from './plant-catalog-native.js'
-export {plantCatalogIllustration} from './plant-catalog-legacy.js'
+export {plantCatalogIllustration} from './plant-catalog-art.js'
 let sequence=0
 export function createPlantCatalog(options={}){
  void loadRustUI()

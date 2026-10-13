@@ -8,7 +8,7 @@ for(const delayed of [false,true])test('compiled IKEA catalogue preserves select
  await page.addInitScript(()=>{
   localStorage.setItem('inhouse-read-shelf-plants','[]');window.catalogueProof={available:false,calls:{}}
   const observe=result=>{const instance=result.instance||result,actual=instance.exports;if(!actual.rustcatalogview_new)return result;window.catalogueProof.available=true;const exports={...actual};
-   for(const name of ['catalog_build','catalog_colors','rustcatalogview_new','rustcatalogview_render','rustcatalogview_connect','rustcatalogview_syncColors'])exports[name]=(...args)=>{window.catalogueProof.calls[name]=(window.catalogueProof.calls[name]||0)+1;return actual[name](...args)}
+   for(const name of ['catalog_build','catalog_colors','rustcatalogview_new','rustcatalogview_render','rustcatalogview_connect','rustcatalogview_syncColors','catalog_illustration','catalog_frond_fractions','catalog_frond_numbers','catalog_frond_illustration'])if(actual[name])exports[name]=(...args)=>{window.catalogueProof.calls[name]=(window.catalogueProof.calls[name]||0)+1;return actual[name](...args)}
    const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target)}});return result.instance?{...result,instance:proxy}:proxy}
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){const original=WebAssembly[name];WebAssembly[name]=async function(...args){return observe(await Reflect.apply(original,WebAssembly,args))}}
  })
@@ -30,7 +30,7 @@ for(const delayed of [false,true])test('compiled IKEA catalogue preserves select
   await dialog.locator('[data-catalog-page="lights"]').click();await expect(dialog.locator('h2')).toHaveText('ILUMINACIÓN');await dialog.locator('[data-catalog-kelvin="4000"]').click();await expect(dialog.locator('[data-catalog-kelvin="4000"]')).toHaveAttribute('aria-pressed','true')
   expect(await page.evaluate(()=>window.catalogueRoot===document.querySelector('[data-testid="plant-catalog"]'))).toBe(true)
   const proof=await page.evaluate(()=>window.catalogueProof);expect(proof.calls.rustcatalogview_new).toBeGreaterThan(0);expect(proof.calls.rustcatalogview_render).toBeGreaterThan(0);expect(proof.calls.rustcatalogview_syncColors||proof.calls.catalog_colors).toBeGreaterThan(0)
-  if(!delayed){expect(proof.calls.catalog_build).toBeGreaterThan(0);expect(proof.calls.rustcatalogview_connect).toBeGreaterThan(0)}
+  if(!delayed){expect(proof.calls.catalog_build).toBeGreaterThan(0);expect(proof.calls.rustcatalogview_connect).toBeGreaterThan(0);for(const name of ['catalog_illustration','catalog_frond_fractions','catalog_frond_numbers','catalog_frond_illustration'])expect(proof.calls[name]).toBeGreaterThan(0)}
   await info.attach('compiled-catalogue-kernels',{body:JSON.stringify(proof,null,2),contentType:'application/json'});await dialog.getByRole('button',{name:'Cerrar catálogo'}).click();await expect(dialog).not.toBeVisible();expect(errors).toEqual([])
  }finally{release();await Promise.allSettled([...active]);if(delayed&&!page.isClosed())await page.unroute(pattern,hold)}
 })

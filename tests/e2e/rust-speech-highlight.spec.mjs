@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test'
 import {fakeEngineScript} from '../helpers/fake-neural-engine.js'
-import {longReflowPDF} from './fixtures/pdf-reflow-navigation.mjs'
+import {longReflowPDF,PDF_REFLOW_SENTENCES} from './fixtures/pdf-reflow-navigation.mjs'
 
 test('compiled PDF narration paints and follows original text through Rust',async({page},info)=>{
  test.setTimeout(60000)
@@ -19,6 +19,7 @@ test('compiled PDF narration paints and follows original text through Rust',asyn
  const errors=[];page.on('pageerror',error=>errors.push(error.message))
  await page.goto(process.env.IHR_TEST_URL||'./');await page.locator('#file-picker').setInputFiles({name:'Rust narration.pdf',mimeType:'application/pdf',buffer:longReflowPDF()})
  await expect(page.locator('.pdf-reflow-page')).toBeVisible({timeout:45000})
+ await expect(page.locator('.pdf-reflow-page')).toContainText(PDF_REFLOW_SENTENCES.at(-1))
  const before=await page.locator('.pdf-reflow-page').textContent()
  await page.getByRole('button',{name:'Escuchar el libro'}).click();await page.getByRole('button',{name:'Reproducir',exact:true}).click()
  await expect.poll(()=>page.evaluate(()=>window.highlightProof.calls.speech_paint||0)).toBeGreaterThan(0)

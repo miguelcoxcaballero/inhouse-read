@@ -1,9 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.222: vista y controles del catálogo IKEA en Rust.
-6154 unitarias completas, 103 focalizadas y 45 E2E aprobados.
-Inventario: 6856 líneas Rust/37897 JS, **15.32%**; no mide funciones terminadas.
-1.7.221 pública y APK real verificados; CI se registra por separado.
+Última entrega 1.7.223: ilustraciones del catálogo en Rust.
+6185 unitarias completas, 104 focalizadas y 47 E2E aprobados.
+Inventario: 6919 líneas Rust/37915 JS, **15.43%**; no mide funciones terminadas.
+1.7.222 pública y APK real verificados; CI se registra por separado.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout

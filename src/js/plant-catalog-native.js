@@ -21,7 +21,7 @@ import { DEFAULT_LAMP_KELVIN, LAMP_KELVINS, kelvinSwatch } from './lamp-kelvin.j
 import { plantSizeLabel } from './plant-dimensions.js';
 import { CATALOG_CAMERA_EASING, CATALOG_CAMERA_MS, IDENTITY, bookletRect, catalogCameraFrames } from './catalog-camera.js';
 
-import {plantCatalogIllustration} from './plant-catalog-legacy.js';
+import {plantCatalogIllustration} from './plant-catalog-art.js';
 let catalogSequence=0;
 const afterPaint=work=>typeof requestAnimationFrame==='function'?requestAnimationFrame(()=>setTimeout(work,0)):work();
 // Soft hyphens at the compound seams of the longest names: on a narrow phone
