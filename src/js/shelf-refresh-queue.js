@@ -1,52 +1,28 @@
-/** Coalesce background notifications without overlapping library reads.
- * Requests arriving during a read own a trailing batch, so they never inherit
- * a snapshot captured before their change. Immediate callers flush that batch.
- */
-export function createShelfRefreshQueue({ perform, delay = 80,
-  setTimer = (callback, ms) => setTimeout(callback, ms), clearTimer = id => clearTimeout(id) } = {}) {
-  if (typeof perform !== 'function') throw new TypeError('Shelf refresh needs a perform callback');
-  let timer = null, running = false, disposed = false, ready = false, immediate = false, pending = [];
+import {getRustUI} from './rust-ui.js'
+import {createLegacyShelfRefreshQueue} from './shelf-refresh-queue-legacy.js'
+const setDefaultTimer=(callback,ms)=>setTimeout(callback,ms)
+const clearDefaultTimer=id=>clearTimeout(id)
 
-  function finish(batch, result, error, failed = false) {
-    running = false;
-    for (const waiter of batch) failed ? waiter.reject(error) : waiter.resolve(result);
-    start();
-  }
-
-  function start() {
-    if (disposed || running || !ready || !pending.length) return;
-    const batch = pending, options = { immediate };
-    pending = []; ready = false; immediate = false; running = true;
-    Promise.resolve().then(() => disposed ? undefined : perform(options)).then(
-      result => finish(batch, result), error => finish(batch, undefined, error, true));
-  }
-
-  return {
-    request({ immediate: urgent = false } = {}) {
-      if (disposed) return Promise.resolve();
-      const promise = new Promise((resolve, reject) => pending.push({ resolve, reject }));
-      // Notifications such as CloudSync.onChange need not await this promise.
-      // Callers which do await it still receive the original read failure.
-      promise.catch(() => {});
-      if (urgent) {
-        immediate = true; ready = true;
-        if (timer !== null) clearTimer(timer);
-        timer = null;
-      } else if (!ready && timer === null) {
-        timer = setTimer(() => { timer = null; ready = true; start(); }, delay);
-      }
-      start();
-      return promise;
-    },
-    dispose() {
-      if (disposed) return;
-      disposed = true;
-      if (timer !== null) clearTimer(timer);
-      timer = null; ready = false; immediate = false;
-      for (const waiter of pending) waiter.resolve();
-      pending = [];
-      // An already running read retains its promise/error result. The app's
-      // existing disposed guards prevent it from rendering a departing page.
+// An in-flight read keeps its owner until its trailing batch drains. Native
+// adoption never waits for WASM or lets a newer change join an older snapshot.
+export function createShelfRefreshQueue({perform,delay=80,setTimer=setDefaultTimer,clearTimer=clearDefaultTimer}={}){
+ if(typeof perform!=='function')throw new TypeError('Shelf refresh needs a perform callback')
+ const legacy=createLegacyShelfRefreshQueue({perform,delay,setTimer,clearTimer})
+ let native=null,disposed=false
+ const eligible=setTimer===setDefaultTimer&&clearTimer===clearDefaultTimer
+ return{
+  request({immediate:urgent=false}={}){
+   if(disposed)return Promise.resolve()
+   if(!native&&eligible&&legacy.idle()){
+    const Native=getRustUI()?.RustShelfRefreshQueue
+    if(Native&&['request','dispose','idle'].every(key=>typeof Native.prototype[key]==='function')){
+     try{native=new Native(perform,delay,setTimer,clearTimer)}catch{}
+     if(native)legacy.dispose()
     }
-  };
+   }
+   if(!native)return legacy.request({immediate:urgent})
+   const promise=native.request(!!urgent);promise.catch(()=>{});return promise
+  },
+  dispose(){if(disposed)return;disposed=true;if(native){native.dispose();native.free();native=null}else legacy.dispose()}
+ }
 }

@@ -1,12 +1,12 @@
 # Migración a Rust: implementación y comprobaciones
 
-Entrega local 1.7.228: límites de audio calculados con las duraciones VITS.
-Inventario:7233 Rust/38040 JS, **15.98%**; no mide funciones terminadas.
-6356 unitarias completas,81 focalizadas y56 E2E aprobados sin reintentos.
-Publicación228 y comprobación pública pendientes. La versión227 y su APK
-real están verificados; CI227 falla en cierres8s y enlaces de shaders.
-Sus logs y artefactos originales se conservan; no se afirma su corrección.
-Detalle de pruebas, benchmarks y publicación: remaining-wip-verification.md.
+Entrega local1.7.229: cola de notificaciones de biblioteca en Rust.
+Inventario:7303 Rust/38068 JS, **16.10%**; no mide funciones terminadas.
+6383 unitarias,39 focalizadas,2 nuevos E2E y58 E2E finales aprobados.
+Publicación229 y comprobación pública pendientes. La web228 y APK real están comprobados;
+CI228 falla en cierres8s y una posición de arrastre de un libro con Drive.
+Logs y artefactos originales conservados; no se afirma su corrección.
+Detalle de pruebas, límites y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout
 local limpio. La aplicación contiene 146 módulos JavaScript propios y unas

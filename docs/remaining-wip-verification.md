@@ -1,4 +1,40 @@
-# 1.7.228 — sincronización de audio en Rust (local)
+# 1.7.229 — cola de biblioteca en Rust (local)
+
+Changelog: «Biblioteca coordinada en Rust».
+RustShelfRefreshQueue gestiona la agrupación, espera80ms, barreras inmediatas,
+lecturas en curso y lotes posteriores. La lectura de IndexedDB conserva el
+cliente original y sus objetos/bytes. Los Promise.then conservan el orden
+de los dos microturnos originales; errores falsy conservan su identidad.
+Cancelar resuelve el lote pendiente y mantiene el resultado del ya iniciado.
+La cola anterior se mantiene durante lecturas o plazos en curso; Rust se
+incorpora a la siguiente petición inactiva, sin esperar el módulo. Timers
+inyectados, módulos incompletos o constructores fallidos conservan la cola JS.
+Al cerrar el host se liberan callbacks/temporizador; los callbacks del lote
+activo sobreviven sólo hasta que termina.100 colas completas dejan0 referencias.
+Inventario:7303 Rust/38068 JS =16.10%,95/288 archivos propios no vacíos,
+incluyendo comentarios y fallback; no es porcentaje de funciones terminadas.
+39 focalizadas/3 archivos aprobadas;6383 unitarias completas/429 archivos,
+370.97s aprobadas.2 nuevos E2E/19.3s comprueban bytes reales de dos PDF,
+una instancia UI y una cola nativa, también con descarga pendiente.
+UI911842 bytes, SHA7378659c87f5ed3573343df76bcedcf55d9538203700e3cea46c22763dcf0f6c.
+App/decor/voice mantienen exactamente los hashes de228. No se cambia el
+tiempo del lector, los motores, la paginación ni la síntesis. Este bloque
+migra coordinación; no se atribuye una mejora global de velocidad.
+58 E2E finales/10.4m aprobados sin reintentos, incluidos ambos contratos
+de cierre8s. Pendiente: publicación y comprobación real de229.
+Los prototipos de gesto y UV de cubierta no se incluyen ni se cuentan:
+94 pruebas de gesto aprobadas, pero el puente añade coste (.095→.170ms
+por gesto de un movimiento, .91→1.165ms por60, escritorioCPU×4).
+108 cubiertas UV exactas; copiar buffers pequeños también añade coste.
+Sus fuentes, mediciones y fallos originales quedan fuera del repo en
+rust-gesture-prototype y rust-board-prototype. El fixture inicial de UV
+borraba también las caras que la función no modifica; se conserva el fallo
+y se compara el buffer completo contra la misma entrada del original.
+La CI228 fallida y sus artefactos se conservan; no se afirma su corrección.
+APK1.1.15/28, canales A/B y revisión compartida del updater sin cambios.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-refresh-prototype.
+
+# 1.7.228 — sincronización de audio en Rust
 
 Changelog: «Sincronización de páginas más rápida».
 El módulo voice calcula una sola vez las sumas de duraciones VITS y las
@@ -24,7 +60,27 @@ multilingüe no vio el espía porque el worker llegó desde la caché SW.
 Su traza original se conserva; el contrato multilingüe mantiene sus asserts
 originales y la prueba de ejecución nativa se observa en el caso de red.
 2 E2E corregidos/36.4s y los56 finales aprobados, sin cambiar plazos.
-Pendiente: publicación y comprobación de los bytes reales de228.
+Publicación228 verificada: main16561930c5bba01fea3dd0e35598f468dcb5cd98,
+Deploy38361488122/Pages38361591520 aprobados,
+Pages7d72bac1d0e90bb77defab53d6cdb0346ed662b3.
+109 archivos reales coinciden HTTP/tamaño/SHA/atribución;10000 paquetes de
+duraciones nativos exactos sobre el WASM público,200 ciclos196608 estable.
+Dos perfiles de navegador exactos,una instancia UI,referencias estables
+tras1000 preparaciones/100 menús;30 controles PCM aprobados.
+2 PDF/41.4s,6 escena/53.5s y3 perfil/updater/14.3s públicos aprobados.
+El primer intento de artefactos usó el fetch fuera del repo: la referencia
+Pages era antigua; se conserva public-artifact.log y se repite con el fetch
+correcto. El primer intento PDF señaló una carpeta de pesos inexistente;
+se conservan log/trazas y se repite con los mismos pesos reales de Davefx.
+APK real descargado: bytes/firma/loader2107 aprobados. Android muestra228,
+PID29279,content URI real,Lessac2×10.1786848073s,8done/9start,mismo proceso
+y sin FATAL. APK1.1.15/28 inmutable, B sin cambios.
+CI228/38361488174 fallida. UI2/115176487868 conserva los dos contratos de
+cierre8s; el cierre legado del reintento midió9272.7ms. UI6/115176487867
+falló al encontrar la posición para arrastrar un libro con Drive (línea574,
+null) y pasó en el reintento, rechazado como inestable. El resto de trabajos
+de producción aprobó. Logs y artefactos ci228-ui2-original y
+ci228-ui6-original se conservan íntegros; no se afirma solución a esos fallos.
 La CI227 fallida sigue conservada; estas pruebas no demuestran su solución.
 APK1.1.15/28 y canales A/B intactos; updater fijado6621ca1 sin cambios.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-duration-prototype.
