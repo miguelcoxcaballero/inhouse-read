@@ -1,3 +1,24 @@
+# 1.7.236 — estilo del lomo en Rust
+
+Changelog: «Estilo de lomo en Rust».
+spine_style_numbers calcula el hash FNV-1a de las unidades UTF-16 de
+`${semilla}::${sal}` y devuelve el color, el acabado y la altura del lomo.
+spineStyleFor lo usa si el módulo está cargado; si falta, falla o responde
+fuera de rango sigue el hash JS. Mismos colores, acabados y alturas.
+4 pruebas nuevas comparan ~8000 semillas (vacía, unicode, sustitutos
+sueltos, 5000 caracteres, ids reales) con el cálculo original, estilos
+completos con y sin Rust, trampas, rangos, alineación y memoria sin fugas.
+Build, las 6553 unitarias (4 bloques, 439+1 archivos), smoke 13/13.
+Micro-medida en Node: 20000 spineStyleFor, JS 26.6–28.2 ms / Rust
+15.2–22.0 ms; no es una mejora perceptible ni una medida de teléfono.
+Inventario 7527 Rust/38223 JS = 16.45 %; no es porcentaje funcional.
+Investigado sin cambios: los contratos de cierre nativo (8 s) fallan aquí con
+GPU por software (10.2 s). Cada fase dura 3–9× lo configurado porque el reloj
+de book-model.js limita cada paso a 100 ms y los fotogramas cuestan 0.5–1.5 s.
+Dejar el reloj en tiempo real tras fotogramas lentos baja a 7.4 s, pero rompe
+book-opening (no se ven poses intermedias) y el contrato legacy sigue en 11.8 s:
+revertido, las pruebas no se tocan. En un móvil con GPU real no ocurre.
+
 # 1.7.235 — semilla de portada en Rust
 
 Changelog propuesto: «Semilla de portada en Rust».

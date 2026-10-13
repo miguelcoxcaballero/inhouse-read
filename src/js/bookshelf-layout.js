@@ -1,4 +1,5 @@
 import { printedPageCount } from './book-length.js';
+import { rustSpineNumbers } from './spine-seed-wasm.js';
 
 /**
  * bookshelf-layout.js — lógica pura de la estantería del home de Inhouse Read.
@@ -210,7 +211,9 @@ function sqrtScale(value, from, to) {
 export function spineStyleFor(book, options = {}) {
   const cfg = withDefaults(DEFAULT_SPINE, options);
   const seed = seedFor(book);
-  const palette = pick(SPINE_PALETTE, seed, 'palette');
+  // Compiled hash of the same UTF-16 stream; without it the JS hash below runs.
+  const compiled = rustSpineNumbers(seed);
+  const palette = compiled ? SPINE_PALETTE[compiled.palette] : pick(SPINE_PALETTE, seed, 'palette');
   const span = cfg.maxWidth - cfg.minWidth;
 
   const ratio = sqrtScale(printedPageCount(book), 40, 900) ?? 0;
@@ -226,7 +229,7 @@ export function spineStyleFor(book, options = {}) {
 
   const heightRatio =
     cfg.minHeightRatio +
-    (cfg.maxHeightRatio - cfg.minHeightRatio) * unit(seed, 'height');
+    (cfg.maxHeightRatio - cfg.minHeightRatio) * (compiled ? compiled.height : unit(seed, 'height'));
 
   return {
     seed,
@@ -237,7 +240,7 @@ export function spineStyleFor(book, options = {}) {
     width: cfg.pageThickness ? Math.round(clamp(width, cfg.minWidth, cfg.maxWidth) * 100) / 100
       : Math.round(clamp(width, cfg.minWidth, cfg.maxWidth)),
     heightRatio: Math.round(heightRatio * 1000) / 1000,
-    texture: pick(SPINE_TEXTURES, seed, 'texture')
+    texture: compiled ? SPINE_TEXTURES[compiled.texture] : pick(SPINE_TEXTURES, seed, 'texture')
   };
 }
 

@@ -1,5 +1,8 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.236: estilo del lomo en Rust. Inventario 7527 Rust/38223 JS,
+**16.45 %**; no mide funciones terminadas. Detalle en remaining-wip-verification.md.
+
 Entrega publicada 1.7.234: clasificación y cobertura de colores en una pasada.
 Inventario: 7478 Rust/38189 JS, **16.38 %**; no mide funciones terminadas.
 6537 unitarias y una tanda de 72 E2E aprobadas sin reintentos.

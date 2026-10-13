@@ -29,6 +29,8 @@ mod relief_palette;
 #[cfg(feature = "app")]
 mod shelf_placement;
 #[cfg(feature = "app")]
+mod spine_seed;
+#[cfg(feature = "app")]
 mod shelf_model;
 #[cfg(feature = "app")]
 mod speech_normalize;
