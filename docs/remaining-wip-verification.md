@@ -1,4 +1,52 @@
-# 1.7.234 — cobertura de colores en la misma pasada Rust (local)
+# 1.7.235 — semilla de portada en Rust (local, verificación pendiente)
+
+Changelog propuesto: «Semilla de portada en Rust».
+relief_cover_seed calcula la misma FNV-1a cuantizada sobre los bytes RGBA
+que ya pertenecen a la paleta. No hace otra copia ni otra asignación.
+El resultado es opcional: las llamadas genéricas conservan su forma y
+el análisis del raster privado pide la semilla preparada. Export ausente,
+trampa o resultado inválido mantienen la semilla JS sin descartar la paleta.
+La función anterior sigue disponible; no cambia el diseño o los colores.
+
+Build de producción aprobado. 50 pruebas focalizadas/4 archivos/11.39 s
+aprobadas, incluyendo 3831 formas/desalineación, límites, buffers originales,
+paletas/propuestas completas, pausas, fallbacks, memoria y cancelación.
+El prototipo se comprobó aparte con 3831 formas y 5 entradas rechazadas.
+Medición aislada Chromium CPU×4: tiempos de semilla similares a JS,
+aproximadamente 0.011→0.010 ms a 216×288. Usa el arena ya copiado por la
+paleta; excluye esa copia/asignación, clasificación, decodificación y GPU.
+No se afirma una aceleración material o global por esta migración.
+7497 Rust/38198 JS = 16.41 %, 100/292 archivos; no es porcentaje funcional.
+App local 380110 bytes, SHA256
+0401148b80cd43e8ce67e87a264a448912ce330c55faf044815dc9f2990035e1.
+UI local 928738 bytes, SHA256
+a82ef2c7882676834212da49ebe858c3eeac9d2de376b26be059e123f967e42f.
+Voz/decoración y updater conservan sus bytes/revisión. APK y canales intactos.
+E2E del editor actualizado aprobado: 2 pruebas/43.1 s, incluyendo semilla
+compilada, contraste con el cálculo original y caché sin recálculo.
+La batería completa de 235 se interrumpió a petición del usuario para el
+relevo de agente el 13/10 a las 18:57 Europe/Madrid. No terminó y no se
+cuenta como aprobada. Log conservado: unit-full-interrupted-at-handoff.log.
+No hay tanda E2E general de 235 terminada. Pendientes: unitarias completas,
+tanda de regresiones, publicación y comprobación de web/APK reales. Main sigue en
+9c6e432/1.7.234 publicada. CI 234 fallida conservada abajo.
+Evidencia: D:/CodexEvidence/InhouseRead-20261013/rust-cover-seed-prototype.
+
+Prototipos externos no integrados ni contados:
+rust-length-queue-host-prototype conserva 35 pruebas y GC de 1000 completos
++ 1000 cancelados con contadores a cero. Sigue más lento; reutilizar la
+referencia del host no elimina su coste. Las variantes IO/task que desplazan
+la creación de File/Promise a JS tampoco aceleran el banco simulado. El banco
+IO/IndexedDB real con el contador Intl (sin extracción PDF/EPUB) mide
+3×4000 palabras: 22.10→25.10 ms y 3×20000: 73.20→79.40 ms CPU×4.
+No se cuentan como migraciones terminadas. La variante reference-types con
+metadata conservada tampoco acelera y falla el control positivo de errores:
+una referencia retenida tras error de constructor. Se mantiene el ABI original;
+lifetime-control-original.log conserva la detección. No usar esa variante.
+
+Relevo: docs/agent-handoff-2026-10-13.md contiene el estado y los comandos.
+
+# 1.7.234 — cobertura de colores en la misma pasada Rust
 
 Changelog: «Análisis de relieves más rápido».
 La clasificación preparada puede obtener el número de píxeles positivos
@@ -35,8 +83,30 @@ App WASM 379547 bytes, SHA256 959706ea8ba4df391b8ef0b90c4be20f1e22d43fc263c993cc
 UI local 928738 bytes, SHA256 530e9a30bd14a057958a6331f37551abbf01d0610d1b26958c79ea029783ce67.
 Voz y decoración conservan sus bytes; APK 1.1.15/28 y canales intactos.
 Updater fijado al canónico 6621ca1dbb519d171d723f118052e42ef5d5c001,
-comprobado remoto, sin editar copias. Publicación y prueba pública de 234
-pendientes; no se afirma la corrección del cierre fallido en CI 233.
+comprobado remoto, sin editar copias. Publicación 234 comprobada:
+main 9c6e4325d1073357bc215ae29d69809836c40b91; Deploy 38427723866 y Pages 38427883697 aprobados,
+Pages 322feebc5affc8104115567bb48932d1b38120c5. Los 109 recursos coinciden por HTTP, tamaño,
+SHA y atribución. App WASM público 379547 bytes, SHA256
+959706ea8ba4df391b8ef0b90c4be20f1e22d43fc263c993cced341b60517652, igual al compilado local. UI público
+928706 bytes, SHA256 14ce638b508680dc51692d609cf604da20ba7d6ff2eb9ab32da4732f150c014c; se compara con
+Pages sin presumir igualdad entre Linux y Windows. Dos perfiles exactos,
+una instancia UI y referencias 515→533→515 estables tras 1000 preparaciones
+y 100 menús; 30 PCM aprobados. 2 PDF/42.5 s, 18 escena/editor/3.6 min
+y 3 perfil/updater/15.1 s públicos aprobados. El editor público exige las
+llamadas Rust nuevas, su recuento exacto y la caché sin recálculo.
+APK descargado por bytes, SHA, tamaño, firma, paquete y manifiesto;
+loader 2107 bytes/3 assets. Android mostró 234/PID 3829, importó
+content URI real y reprodujo Lessac 2× durante 11.9440362812 s acumulados,
+8 done/9 start, mismo proceso y sin FATAL. No sustituye un teléfono físico.
+CI 234/38427723850 terminó con fallo. UI2/115401419824 conserva los dos
+contratos de cierre fallidos, originales y reintentos. Además la captura
+desktop paper de reader-controls-layout falló inicialmente al esperar
+foliate-view 8 s y pasó al reintentarse; el agregador rechaza ese flaky.
+Unitarias, otros cinco shards UI y las cuatro tandas de voces reales
+pasaron. El agregador/test 115418486958 falló como corresponde.
+Originales completos: ci234-ui2-original.log y ci234-ui2-original-artifact,
+con reporte, capturas y traces. No se afirma aprobación global ni
+corrección universal del cierre fallido de CI 233.
 
 Prototipo de cola de longitud conservado fuera de producción y sin contar:
 35 pruebas de estados/orden/adopción y 1000 completos + 1000 cancelados
@@ -44,7 +114,9 @@ con contadores de memoria a cero tras GC. Aunque conserva los resultados,
 100 trabajos con I/O simulado CPU×4 cuestan 45 ms frente a 22 ms sin
 consultas extra; con 1000 consultas por trabajo, 44.8 frente a 31.6 ms.
 Se retiene para optimizar el puente, sin publicar una regresión ni afirmar
-que represente el coste del parser o IndexedDB reales.
+que represente el coste del parser o IndexedDB reales. El guard aislado
+tampoco mejora: 100 trabajos/1000 consultas, 4.60→4.90 ms CPU×4, incluyendo
+construcción/cancelación/liberación. Benchmark separado sin I/O; no se integra.
 Evidencia: D:/CodexEvidence/InhouseRead-20261013/rust-mask-coverage.
 
 # 1.7.233 — revisión de iluminación en Rust

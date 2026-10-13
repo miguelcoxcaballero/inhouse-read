@@ -98,3 +98,5 @@ mod shelf_occlusion;
 
 #[cfg(feature="app")]
 mod studio_scan;
+#[cfg(feature="app")]
+mod cover_seed;

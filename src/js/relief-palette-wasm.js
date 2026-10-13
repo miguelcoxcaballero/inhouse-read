@@ -4,7 +4,7 @@ const LIMIT = 512 * 512, PIXELS = 1024, BINS = 256, NEIGHBORS = 32, SUPPORT = 51
 const NAMES = ['new','free','count','pixels','bins','labs','cells','neighbors','sort','next','support','accept','finish'];
 const aligned = bytes => Math.ceil(bytes / 8) * 8;
 
-export function* rustReliefPalette(core, image, rgbToOklab) {
+export function* rustReliefPalette(core, image, rgbToOklab, withSeed = false) {
   const {width,height,data}=image || {};
   if (!core?.memory || typeof core.alloc_f64!=='function' || typeof core.free_f64!=='function'
     || NAMES.some(name=>typeof core[`relief_palette_${name}`]!=='function')
@@ -69,7 +69,16 @@ export function* rustReliefPalette(core, image, rgbToOklab) {
       if(!Number.isInteger(index)||index<0||index>=count||!Number.isInteger(supported)||supported<1||supported>opaque)return null;
       colors.push({...bins[index],supported});
     }
-    return {bins,opaque,colors};
+    const result={bins,opaque,colors};
+    // Private decoded rasters are immutable throughout analysis. Reuse their
+    // existing RGBA arena; generic callers retain the original result shape.
+    if(withSeed && typeof core.relief_cover_seed==='function') {
+      try {
+        const seed=core.relief_cover_seed(pointer,width,height);
+        if(Number.isInteger(seed) && seed>=0 && seed<=0xffffffff) result.seed=seed;
+      } catch { /* The completed palette stays useful; the caller hashes in JS. */ }
+    }
+    return result;
   } catch { return null; }
   finally {
     try { if(pointer)core.free_f64(pointer,length); }
