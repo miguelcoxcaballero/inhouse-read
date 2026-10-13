@@ -8,6 +8,7 @@ import {createHebrewPhonemizer} from './hebrew.js'
 import {createSupertonicRuntime} from './supertonic-runtime.js'
 import {prepareSpeech,silence,concat,pauseAfter,restScale,splitSegments,limitIds,lengthScaleFor,PAUSE_MS} from './pcm.js'
 import {loadRustCore} from '../../rust-core.js'
+import {loadRustVoiceCore} from '../../rust-voice-core.js'
 import {synthesisRate,speedUpSpeech} from './speech-tempo.js'
 const failure=message=>Object.assign(new Error(message),{code:'init-failed'})
 export class NativeSynthClient {
@@ -42,6 +43,7 @@ export class NativeSynthClient {
       // lightweight recipe steps adds no frozen MessageChannel dependency.
       this.supertonic=await createSupertonicRuntime({ort:this.ort,buffers,config:config.config,indexer:config.indexer,styles:config.styles,yieldToMessages:()=>Promise.resolve()})
     } else if(config.phoneme_type==='hebrew') {
+      void loadRustVoiceCore()
       // Both Hebrew graphs share the single native upload slot.
       const phonModel=await this.store.readPhonemizerModel(key);check()
       this.hebrew=await createHebrewPhonemizer({ort:this.ort,model:phonModel,config});check()

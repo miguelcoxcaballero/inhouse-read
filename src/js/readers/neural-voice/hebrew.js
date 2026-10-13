@@ -3,6 +3,8 @@
 // src/piper/hebrew/{__init__,hebrew_ipa}.py and src/piper/phonemize_hebrew.py.
 // The Nakdimon tables/merge are MIT, Copyright 2022 Elazar Gershuni; see public/neural-voice/hebrew-NOTICE.txt.
 // The Piper IPA converter is distributed under Piper's GPL-3.0 licence (public/neural-voice/phon/COPYING).
+import {getRustVoiceCore} from '../../rust-voice-core.js'
+import {rustHebrewToIpa} from './hebrew-wasm.js'
 
 const RAFE = '\u05BF', DAGESH = '\u05BC', SHIN_DOT = '\u05C1', SIN_DOT = '\u05C2'
 const SHEVA = '\u05B0', HATAF_SEGOL = '\u05B1', HATAF_PATAH = '\u05B2', HATAF_QAMATS = '\u05B3'
@@ -197,7 +199,11 @@ export function hebrewWordToIpa(word) {
 }
 
 export function hebrewToIpa(text) {
-  return String(text).replace(TAAMIM_PATTERN, '').normalize('NFC').split(PYTHON_WHITESPACE).filter(Boolean).map(hebrewWordToIpa).join(' ')
+  text=String(text)
+  // One packet per fragment, rather than one boundary crossing per word.
+  // The tiny worker module loads alongside Nakdimon, never on the Play path.
+  if(text.length>=96){const native=rustHebrewToIpa(getRustVoiceCore(),text,glyphsOf);if(native!==undefined)return native}
+  return text.replace(TAAMIM_PATTERN, '').normalize('NFC').split(PYTHON_WHITESPACE).filter(Boolean).map(hebrewWordToIpa).join(' ')
 }
 
 /** IPA code points use the voice's table, not the fixed table in the espeak WASM program. */

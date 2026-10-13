@@ -25,10 +25,13 @@ const inheritedFlags = encoded !== undefined ? (encoded === '' ? [] : encoded.sp
   : (process.env.RUSTFLAGS ?? process.env.CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS
     ?? process.env.CARGO_BUILD_RUSTFLAGS ?? '').split(/\s+/).filter(Boolean)
 const rustFlags = [...inheritedFlags, ...remapFlags].join('\x1f')
-for (const domain of ['app', 'decor']) {
+for (const domain of ['app', 'decor', 'voice']) {
+  // The voice converter has no recursion or large stack arrays. Its buffers
+  // live in bounded heap arenas; avoid another 1 MiB stack on mobile workers.
+  const domainFlags=domain==='voice' ? [rustFlags,'-C','link-arg=-zstack-size=65536'].join('\x1f') : rustFlags
   const built = spawnSync(cargo, ['build', '--manifest-path', resolve(root, 'rust-core/Cargo.toml'),
     '--release', '--target', 'wasm32-unknown-unknown', '--locked', '--no-default-features', '--features', domain], {
-    cwd:root, stdio:'inherit', env:{ ...process.env, CARGO_TARGET_DIR:target, CARGO_ENCODED_RUSTFLAGS:rustFlags }
+    cwd:root, stdio:'inherit', env:{ ...process.env, CARGO_TARGET_DIR:target, CARGO_ENCODED_RUSTFLAGS:domainFlags }
   })
   if (built.error) throw new Error('Rust is required: install rustup and the toolchain in rust-toolchain.toml.', { cause:built.error })
   if (built.status !== 0) process.exit(built.status || 1)
@@ -37,8 +40,8 @@ for (const domain of ['app', 'decor']) {
   if (WebAssembly.Module.imports(module).length) throw new Error('Rust core must not import host functions')
   const { exports } = await WebAssembly.instantiate(module)
   if (exports.core_abi_version?.() !== 1) throw new Error('Unexpected Rust core ABI')
-  if (exports.core_domain?.() !== (domain === 'decor' ? 1 : 0)) throw new Error('Wrong Rust domain')
-  const output = resolve(root, `src/wasm/inhouse_read_${domain === 'app' ? 'core' : 'decor'}.wasm`)
+  if (exports.core_domain?.() !== ({app:0,decor:1,voice:2}[domain])) throw new Error('Wrong Rust domain')
+  const output = resolve(root, `src/wasm/inhouse_read_${domain === 'app' ? 'core' : domain}.wasm`)
   await mkdir(dirname(output), { recursive:true })
   // Avoid touching an unchanged binary so Vite does not restart live sessions.
   const previous = await readFile(output).catch(() => null)

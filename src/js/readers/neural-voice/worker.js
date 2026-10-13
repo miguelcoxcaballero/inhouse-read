@@ -24,6 +24,7 @@ import { createHebrewPhonemizer } from './hebrew.js'
 import { createSupertonicRuntime } from './supertonic-runtime.js'
 import { yieldToMessages } from './task-yield.js'
 import { loadRustCore } from '../../rust-core.js'
+import { loadRustVoiceCore } from '../../rust-voice-core.js'
 import { synthesisRate, speedUpSpeech } from './speech-tempo.js'
 import { prepareSpeech, silence, concat, pauseAfter, restScale, splitSegments, limitIds, lengthScaleFor, PAUSE_MS } from './pcm.js'
 
@@ -74,7 +75,10 @@ async function load({ voice: key, config: cfg, model, phonemizerModel, buffers }
       return { createMs:performance.now() - t }
     }
     if (!phonemizer && cfg.phoneme_type !== 'hebrew') phonemizer = await createPhonemizer({ base:phonBaseURL })
-    if (cfg.phoneme_type === 'hebrew') hebrewPhonemizer = await createHebrewPhonemizer({ ort, model: phonemizerModel, config: cfg })
+    if (cfg.phoneme_type === 'hebrew') {
+      void loadRustVoiceCore()
+      hebrewPhonemizer = await createHebrewPhonemizer({ ort, model: phonemizerModel, config: cfg })
+    }
     const aligned = exposePiperDurations(new Uint8Array(model))
     durationOutput = aligned.name
     session = await ort.InferenceSession.create(aligned.bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all', enableCpuMemArena: false, enableMemPattern: false })

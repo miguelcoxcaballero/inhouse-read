@@ -19,4 +19,4 @@ pub unsafe extern "C" fn free_f64(pointer: *mut f64, length: usize) {
 }
 
 #[no_mangle]
-pub extern "C" fn core_domain() -> u32 { if cfg!(feature="decor") { 1 } else { 0 } }
+pub extern "C" fn core_domain() -> u32 { if cfg!(feature="decor") { 1 } else if cfg!(feature="voice") { 2 } else { 0 } }

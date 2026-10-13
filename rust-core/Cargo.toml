@@ -18,3 +18,4 @@ strip = "symbols"
 default = ["app"]
 app = []
 decor = []
+voice = []

@@ -1,10 +1,11 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.226: proyección táctil de plantas en Rust.
-6256 unitarias completas, 78 focalizadas y 54 E2E aprobados.
-Inventario: 7101 líneas Rust/37954 JS, **15.76%**; no mide funciones terminadas.
-1.7.225 pública y APK real verificados; CI225 completa aprobada.
-Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
+Entrega local 1.7.227: fonemas hebreos en el worker/cliente nativo.
+Inventario: 7206 Rust/38004 JS, **15.94%**; no mide funciones terminadas.
+6344 unitarias completas, 156 focalizadas, 56 E2E de lectura/escena y
+3 E2E con Saspeech/Nakdimon reales aprobadas; publicación pendiente. 1.7.226 pública/APK verificados,
+CI226 fallida en dos cierres de estantería8s; originales preservados.
+Detalle de pruebas, benchmarks y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout
 local limpio. La aplicación contiene 146 módulos JavaScript propios y unas

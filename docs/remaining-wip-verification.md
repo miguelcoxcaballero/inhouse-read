@@ -1,3 +1,61 @@
+# 1.7.227 — fonemas de hebreo en Rust (local)
+
+Changelog: «Preparación de fonemas más rápida».
+Módulo voice independiente (dominio2), sin dependencias ni imports del host.
+Reglas de Piper efffbfb226bfb511ebbcf55d0cecd8b35a89743d/GPL3;
+NFC y clases combinantes siguen en el navegador para conservar su Unicode.
+Un paquete por fragmento contiene glifos/marcas/separadores de palabras.
+Rust agrupa consonantes/vocales/sheva y acento, conserva vacíos y glotales.
+Los textos pequeños (<96 UTF16), módulos pendientes/incompletos, paquetes
+grandes o UTF16 no emparejado conservan las mismas reglas anteriores.
+Carga opcional al preparar una voz hebrea, junto a Nakdimon, en el worker
+y en NativeSynthClient. Play nunca espera la descarga de este módulo.
+Arena retenida como máximo64KiB; los paquetes grandes liberan su arena.
+Stack64KiB sólo para voice; app/decor conservan hashes/tamaños originales.
+Voice23993 bytes; 10029 comparaciones directas, 200 ciclos, memoria196608
+estable. 10000 entradas adicionales comparadas en el adaptador, con8052
+llamadas nativas exactas según el umbral medido; los demás casos son cortos.
+156 pruebas focalizadas/4 archivos aprobadas con los bytes finales.
+La primera prueba esperaba >9000 llamadas sin calcular los casos elegibles:
+se conserva unit-focused-threshold-original.log; el assert ahora exige8052,
+el número exacto de textos >=96, y mantiene todas las comparaciones de salida.
+
+Benchmark final, Chromium escritorio 390x844/CPU×4, paquete/copias/formato:
+124 UTF16: 0.260→0.160ms; 372: 0.600→0.440ms;
+1240: 1.900→1.300ms; 6200: 9.180→6.040ms.
+No mide teléfonos ni latencia total de Play, inferencia ORT o descarga.
+La voz Saspeech63,221,984 bytes y Nakdimon21,312,753 bytes se verificaron
+contra el catálogo/MD5 y SHA fijado de Nakdimon; pesos/config/URLs/hashes
+en weights.json. El primer import Node usó una ruta C:/ sin file://;
+weights-path-original.log conserva ese fallo, corregido antes de descargar.
+3 E2E reales finales/32.6s: IPA nativo1 llamada, instancia única,
+PCM11.7207256236s/22050Hz finito, peak0.9/rms0.136, sin red de modelos
+durante la lectura larga; WAV/JSON en real-voice-final. No se añaden voces.
+La instrumentación está sólo en el spec y observa el worker compilado.
+Se mantienen los asserts previos del catálogo y se añade un caso largo.
+
+Prototipos retenidos y excluidos de producción/inventario:
+- biblioteca IndexedDB: 600 comparaciones, 78 focalizadas; el controlador
+  añadía1–1.5ms por cuatro operaciones en Chromium/CPU×4, aun con métodos
+  y propiedades directos. Los bytes fuente y fallos originales quedan en
+  library-store-prototype. Los fixtures jsdom Blob no clonables se corrigieron
+  a Blob nativo, manteniendo los asserts; la prueba inicial tras reload
+  esperaba listAll, pero el arranque lee mediante shelf-boot. Sus trazas
+  originales se conservan. No se publica este controlador más lento.
+- argmax y merge de Nakdimon: los cruces/copias eran más lentos que JS;
+  browser-benchmark-root/merge/merge-fast y fuentes *held conservan resultados.
+  Ni estos exports ni sus puentes se incluyen en voice publicado.
+
+Inventario local: 7206 Rust/38004 JS =15.94% (93/286 archivos propios),
+líneas no vacías, incluyendo comentarios y fallback; no funcional.
+6344 unitarias completas/426 archivos aprobadas, 361.03s.
+56 E2E/9.9m aprobados sin reintentos: los 54 de lectura/audio/UI y los
+dos contratos nativos de regreso conservan su assert de cierre8s.
+Esto no prueba una solución a los fallos intermitentes originales de CI226.
+Publicación pendiente.
+APK1.1.15/28, catálogos A/B, firma y updater sin cambios.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-hebrew-prototype.
+
 # 1.7.226 — proyección de las hojas en Rust
 
 Changelog: «Zona táctil de plantas más rápida».
@@ -51,7 +109,27 @@ originales de otras revisiones siguen registrados, sin atribuírseles solución.
 Inventario: 7101 líneas Rust/
 37954 JS = 15.76%, no funcional.
 UI local 904778 bytes, SHA256 556cfeadc45acdc82c9100ab528a41fbe67ef3f3c21f54954865860abc534939.
-Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Publicación 1.7.226 comprobada: main 39f78f8182ce4d81b309a342d87da11cfea5dd88;
+Deploy38349194617 y Pages38349310725 aprobados;
+Pages16724cd18600c3a63e68370d0a808c12f9a341fb.
+Los 108 recursos públicos coinciden en tamaño/SHA/HTTP y atribución.
+UI904746 bytes, SHA a9f279d7ae36dd6507303bf4da8e5b6b6e8693737e183bdb68f4e4d263587283.
+Dos perfiles de navegador exactos; 1000 preparaciones/100 menús por perfil:
+515→533→515 referencias, una instancia; 30 controles PCM públicos aprobados.
+2 PDF/42.0s, 6 escena/53.7s, 3 perfil/updater/14.6s públicos aprobados.
+APK A real descargado, firma/bytes y loader2107 comprobados; B sin cambios.
+Android: versión visible226, PID27894, importación content URI real,
+Lessac2×12.0291609977s, 8done/9start, mismo proceso y sin FATAL.
+CI226/38349194909 falló: UI2/115137468952 conserva 104 aprobados y
+2 contratos de regreso fallidos, tanto el primer intento como el reintento:
+native-aligned-shelf-return y native-legacy-shelf-return, cierre8s.
+Logs y artefacto11791371080 se conservan en ci226-ui2-original*.
+Los demás jobs de producción pasaron; el job agregador informa fallo.
+No se atribuye una solución a estos fallos ni se cambia el plazo.
+public-artifact.log conserva una atribución fallida contra origin/gh-pages
+local obsoleto: git fetch se lanzó fuera del repo. Tras fetch en el repo,
+public-artifact-current.log verifica la revisión correcta sin omitir controles.
+APK1.1.15/28 y updater sin modificaciones.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-foliage-prototype.
 
 # 1.7.225 — estilos físicos de los lomos en Rust
