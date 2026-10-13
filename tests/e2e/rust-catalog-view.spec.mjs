@@ -19,10 +19,12 @@ for(const delayed of [false,true])test('compiled IKEA catalogue preserves select
    await openCompiledReaderApp(page);await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/tiny.pdf');await expect(page.locator('.pdf-page-canvas')).toBeVisible();await waitForFinalBookGeometry(page,'tiny.pdf');await page.getByRole('button',{name:'Volver a la estantería'}).click();await expect(page.locator('.ihr-flyout')).toHaveCount(0)
   }
   await expect(page.locator('.ihr-bookshelf-scene')).toBeVisible();await switchShelfView(page,'isometric');await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating','false',{timeout:30_000})
-  await page.getByRole('button',{name:'Abrir catálogo IKEA de plantas, estanterías e iluminación'}).click();const dialog=page.getByTestId('plant-catalog');await expect(dialog).toBeVisible()
+  await page.getByRole('button',{name:'Abrir catálogo IKEA de plantas, estanterías e iluminación'}).click();const dialog=page.getByTestId('plant-catalog')
+  // The catalogue has no JavaScript twin: a tap during a pending download waits for the module instead of opening a different dialog.
+  if(delayed){await page.waitForTimeout(1500);expect(await page.evaluate(()=>window.catalogueProof.available)).toBe(false);await expect(dialog).toHaveCount(0);release();await page.waitForFunction(()=>window.catalogueProof.available)}
+  await expect(dialog).toBeVisible()
   await page.evaluate(()=>{window.catalogueRoot=document.querySelector('[data-testid="plant-catalog"]')})
   await dialog.locator('[data-catalog-pot="gradvis"]').click();await expect(dialog.locator('[data-catalog-pot="gradvis"]')).toHaveAttribute('aria-pressed','true');await expect(dialog.locator('.ihr-plant-catalog__pot-name')).toHaveText('GRADVIS')
-  if(delayed){expect(await page.evaluate(()=>window.catalogueProof.available)).toBe(false);release();await page.waitForFunction(()=>window.catalogueProof.available)}
   await dialog.locator('[data-catalog-plant="cactus"]').click();await expect(dialog.locator('[data-catalog-plant="cactus"]')).toHaveAttribute('aria-pressed','true');await expect(dialog.locator('.ihr-plant-catalog__caption h3').first()).toHaveText('FEJKA')
   await dialog.locator('[data-catalog-color="slate"]').click();await expect(dialog.locator('[data-catalog-color="slate"]')).toHaveAttribute('aria-pressed','true')
   await dialog.locator('[data-catalog-pot="muskot"]').click();await dialog.locator('[data-catalog-pot="gradvis"]').click();await expect(dialog.locator('[data-catalog-color="slate"]')).toHaveAttribute('aria-pressed','true')
@@ -30,7 +32,7 @@ for(const delayed of [false,true])test('compiled IKEA catalogue preserves select
   await dialog.locator('[data-catalog-page="lights"]').click();await expect(dialog.locator('h2')).toHaveText('ILUMINACIÓN');await dialog.locator('[data-catalog-kelvin="4000"]').click();await expect(dialog.locator('[data-catalog-kelvin="4000"]')).toHaveAttribute('aria-pressed','true')
   expect(await page.evaluate(()=>window.catalogueRoot===document.querySelector('[data-testid="plant-catalog"]'))).toBe(true)
   const proof=await page.evaluate(()=>window.catalogueProof);expect(proof.calls.rustcatalogview_new).toBeGreaterThan(0);expect(proof.calls.rustcatalogview_render).toBeGreaterThan(0);expect(proof.calls.rustcatalogview_syncColors||proof.calls.catalog_colors).toBeGreaterThan(0)
-  if(!delayed){expect(proof.calls.catalog_build).toBeGreaterThan(0);expect(proof.calls.rustcatalogview_connect).toBeGreaterThan(0);for(const name of ['catalog_illustration','catalog_frond_fractions','catalog_frond_numbers','catalog_frond_illustration'])expect(proof.calls[name]).toBeGreaterThan(0)}
+  {expect(proof.calls.catalog_build).toBeGreaterThan(0);expect(proof.calls.rustcatalogview_connect).toBeGreaterThan(0);for(const name of ['catalog_illustration','catalog_frond_fractions','catalog_frond_numbers','catalog_frond_illustration'])expect(proof.calls[name]).toBeGreaterThan(0)}
   await info.attach('compiled-catalogue-kernels',{body:JSON.stringify(proof,null,2),contentType:'application/json'});await dialog.getByRole('button',{name:'Cerrar catálogo'}).click();await expect(dialog).not.toBeVisible();expect(errors).toEqual([])
  }finally{release();await Promise.allSettled([...active]);if(delayed&&!page.isClosed())await page.unroute(pattern,hold)}
 })

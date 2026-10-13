@@ -1,18 +1,20 @@
-import {getRustUI} from './rust-ui.js';
-import ikeaLogo from '../assets/ikea-logo.svg?raw';
-import { createPlantCatalogPreview } from './plant-catalog-preview.js';
-import { createShelfCatalogPreview } from './shelf-catalog-preview.js';
-import { createLampCatalogPreview } from './lamp-catalog-preview.js';
-import { LAMP_CATALOG, getCatalogLamp } from './lamp-catalog-data.js';
-import { lampCatalogIllustration } from './lamp-illustration.js';
-import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot, getPotColors, getPotColor } from './plant-catalog-data.js';
-import { SHELF_TYPES, getShelfType, normalizeShelfType } from './shelf-types.js';
-import { DEFAULT_LAMP_KELVIN, LAMP_KELVINS, kelvinSwatch } from './lamp-kelvin.js';
-import { plantSizeLabel } from './plant-dimensions.js';
-import { CATALOG_CAMERA_EASING, CATALOG_CAMERA_MS, IDENTITY, bookletRect, catalogCameraFrames } from './catalog-camera.js';
+// Frozen reference of the pre-Rust IKEA catalogue DOM builder (removed from src in 1.7.237).
+// Tests only: it defines the DOM, ids, labels and behaviour the Rust view must reproduce.
+import {getRustUI} from '../../../src/js/rust-ui.js';
+import ikeaLogo from '../../../src/assets/ikea-logo.svg?raw';
+import { createPlantCatalogPreview } from '../../../src/js/plant-catalog-preview.js';
+import { createShelfCatalogPreview } from '../../../src/js/shelf-catalog-preview.js';
+import { createLampCatalogPreview } from '../../../src/js/lamp-catalog-preview.js';
+import { LAMP_CATALOG, getCatalogLamp } from '../../../src/js/lamp-catalog-data.js';
+import { lampCatalogIllustration } from '../../../src/js/lamp-illustration.js';
+import { PLANT_CATALOG, POT_CATALOG, getCatalogPlant, getCatalogPot, getPotColors, getPotColor } from '../../../src/js/plant-catalog-data.js';
+import { SHELF_TYPES, getShelfType, normalizeShelfType } from '../../../src/js/shelf-types.js';
+import { DEFAULT_LAMP_KELVIN, LAMP_KELVINS, kelvinSwatch } from '../../../src/js/lamp-kelvin.js';
+import { plantSizeLabel } from '../../../src/js/plant-dimensions.js';
+import { CATALOG_CAMERA_EASING, CATALOG_CAMERA_MS, IDENTITY, bookletRect, catalogCameraFrames } from '../../../src/js/catalog-camera.js';
 
-import {plantCatalogIllustration} from './plant-catalog-art.js';
-export {plantCatalogIllustration} from './plant-catalog-art.js';
+import {plantCatalogIllustration} from './reference-plant-catalog-art.js';
+export {plantCatalogIllustration} from './reference-plant-catalog-art.js';
 let catalogSequence=0;
 const afterPaint=work=>typeof requestAnimationFrame==='function'?requestAnimationFrame(()=>setTimeout(work,0)):work();
 // Soft hyphens at the compound seams of the longest names: on a narrow phone

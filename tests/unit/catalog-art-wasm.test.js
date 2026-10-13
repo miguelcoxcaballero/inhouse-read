@@ -2,7 +2,7 @@
 import {beforeAll,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {plantCatalogIllustration as original} from '../../src/js/plant-catalog-art-legacy.js'
+import {plantCatalogIllustration as original} from './helpers/reference-plant-catalog-art.js'
 import {nativeIllustration,plantCatalogIllustration} from '../../src/js/plant-catalog-art.js'
 const runtime=vi.hoisted(()=>({ui:null}));vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 const plants=['sansevieria','monstera','chamaedorea','nephrolepis','hedera','zamioculcas','succulent','cactus','unknown',undefined,null,0,{}],pots=['muskot','muskot9','akerbar','muskotblomma','gradvis','unknown',undefined,null,0,{}],cases=[]
@@ -27,8 +27,14 @@ it('rejects nonfinite, excessive and malformed leaf packets',()=>{
 })
 it.each([false,true])('preserves getter order and default parameters with Rust=%s',rust=>{
  runtime.ui=rust?ui:null;const seen=[],options={get potOnly(){seen.push('potOnly');return false},get compact(){seen.push('compact');return true}}
- expect(plantCatalogIllustration('nephrolepis',undefined,options)).toBe(original('nephrolepis',undefined,{potOnly:false,compact:true}));expect(seen).toEqual(['potOnly','compact']);runtime.ui=null
+ // The frozen JS art is the oracle; a cold module has no JS twin any more and fails after reading the options in order.
+ if(rust)expect(plantCatalogIllustration('nephrolepis',undefined,options)).toBe(original('nephrolepis',undefined,{potOnly:false,compact:true}));
+ else expect(()=>plantCatalogIllustration('nephrolepis',undefined,options)).toThrow('módulo Rust');
+ expect(seen).toEqual(['potOnly','compact']);runtime.ui=null
 })
-it('keeps exact fallback output for a cold or incomplete module',()=>{
- for(const candidate of [null,{}, {catalog_illustration:()=>null}]){runtime.ui=candidate;for(const value of cases.slice(0,120))expect(plantCatalogIllustration(value.plant,value.pot,value.options)).toBe(original(value.plant,value.pot,value.options))}runtime.ui=null
+it('fails with a clear error, never with different art, for a cold or incomplete module',()=>{
+ for(const candidate of [null,{}, {catalog_illustration:()=>null}]){runtime.ui=candidate;for(const value of cases.slice(0,120))expect(()=>plantCatalogIllustration(value.plant,value.pot,value.options)).toThrow('módulo Rust')}runtime.ui=null
+})
+it('rejects a module whose drawing is not a string instead of returning it',()=>{
+ runtime.ui={...ui,catalog_illustration:()=>undefined};expect(()=>plantCatalogIllustration('monstera','muskot',{})).toThrow('no pudo dibujar');runtime.ui=null
 })

@@ -3,6 +3,8 @@ import { renderBookshelf } from '../../src/js/bookshelf.js';
 import { loadPlantCatalogModule } from '../../src/js/plant-catalog-lazy.js';
 
 const studio = vi.hoisted(() => ({ prepare:vi.fn(), open:vi.fn(), destroy:vi.fn() }));
+// The catalogue chunk now also waits for the Rust UI module; this suite replaces the catalogue itself.
+vi.mock('../../src/js/rust-ui.js', () => ({ getRustUI:() => null, loadRustUI:() => Promise.resolve(null), waitForRustUI:() => Promise.resolve({}) }));
 vi.mock('../../src/js/plant-catalog.js', () => ({ createPlantCatalog:() => ({
   ...studio, setShelfType:vi.fn()
 }) }));

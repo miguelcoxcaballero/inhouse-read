@@ -1,3 +1,44 @@
+# 1.7.237 — catálogo y página preparada solo en Rust
+
+Changelog: «Catálogo y página preparada solo en Rust».
+Unidad legacy-app, bloque 1. El catálogo IKEA (diálogo, ilustraciones,
+miniaturas) ya no tiene gemelo JavaScript: `plant-catalog-legacy.js` (514
+líneas) y `plant-catalog-art-legacy.js` (100) pasan a
+`tests/unit/helpers/reference-plant-catalog*.js`. El chunk del catálogo espera
+al módulo Rust (`waitForRustUI`, sin el plazo de 2 s del lector; un fallo del
+módulo no recarga la página) y un módulo ausente es un error claro, no otro
+diálogo. Cambio observable: tocar el catálogo mientras el módulo aún se
+descarga espera a que llegue (antes abría un diálogo JS distinto).
+La página preparada tampoco: `prepared-page-legacy.js` (131 líneas) pasa a
+`tests/unit/helpers/reference-prepared-page.js`. La caché adopta el módulo en
+cuanto llega; antes de eso no se preparó nada, así que consultas e
+invalidaciones están vacías. `preparePageStage` espera al módulo bajo el
+mismo plazo del lector y, si no llega, deja la página al toque (mismos píxeles,
+sin preparación previa). Puerta de etapa: perezosa, con `release` recordado.
+Pruebas nuevas/movidas: `catalog-reference-parity` compara el DOM del
+catálogo Rust con la referencia JS congelada tras 55 estados reales
+(planta, maceta, color, páginas, ocupado, fallo); `plant-catalog` ejecuta las
+mismas 63 comprobaciones con la referencia y con la vista Rust;
+`prepared-page` (106) y `prepared-page-adoption` (20) igual; `catalog-art-wasm`
+pasa de «salida de respaldo» a «error claro». Las suites de estantería que
+sustituyen el catálogo simulan ahora también `rust-ui.js`, y
+`app-cover-opening` le da el módulo real; no se relajó ninguna aserción.
+E2E `rust-catalog-view` (retraso de descarga): ahora comprueba que el toque
+espera y que el diálogo abre al llegar el módulo.
+Build, las 6616 unitarias (4 bloques, 441 archivos: 1747+1330+1511+2028).
+E2E: rust-catalog-view 2/2, rust-prepared-page 1/1 y rust-stage-gate 1/1 (las
+dos variantes cada una), book-open-prepared 6/6, lamp-catalog 3/3,
+shelf-types 2/2, smoke 13/13, profile-updates 1/1, plant-catalog 6/8: «instalación
+antigua migran…» falla igual en origin/main (build propio), y «un gesto táctil
+desde las hojas…» pasa sola (43.5 s) y falló una vez bajo carga.
+Sin mediciones de velocidad: no se afirma ninguna mejora. Inventario
+7527 Rust/37521 JS = 16.71 %; no es porcentaje funcional.
+Se conservan en JS, con motivo: perfil, cola de refresco, puerta de importación
+nativa (arranque: el primer refresco de la estantería no puede esperar a 928 KB),
+cola de progreso (persistencia: no debe depender de una descarga) y
+proyecciones de libro/follaje (se llaman en cada fotograma antes de que el
+módulo pueda estar).
+
 # 1.7.236 — estilo del lomo en Rust
 
 Changelog: «Estilo de lomo en Rust».

@@ -1,13 +1,12 @@
-import {getRustUI,loadRustUI} from './rust-ui.js'
-import {createPlantCatalogLegacy} from './plant-catalog-legacy.js'
+import {getRustUI} from './rust-ui.js'
 import {createPlantCatalogNative} from './plant-catalog-native.js'
 export {plantCatalogIllustration} from './plant-catalog-art.js'
 let sequence=0
+// The catalogue is built by the Rust view only. plant-catalog-lazy.js waits for
+// the module before it creates one, so a missing module is a real failure.
 export function createPlantCatalog(options={}){
- void loadRustUI()
- const ui=getRustUI(),id='ihr-plant-catalog-'+(++sequence),View=ui?.RustCatalogView
- if(View&&['render','connect','syncColors'].every(name=>typeof View.prototype[name]==='function')&&typeof ui.catalog_build==='function'&&typeof ui.catalog_colors==='function'){
-  try{return createPlantCatalogNative(options,id,ui)}catch{/* A failed constructor has no mounted DOM or retained view. */}
- }
- return createPlantCatalogLegacy(options,id)
+ const ui=getRustUI(),View=ui?.RustCatalogView
+ if(!View||!['render','connect','syncColors'].every(name=>typeof View.prototype[name]==='function')||typeof ui.catalog_build!=='function'||typeof ui.catalog_colors!=='function')
+  throw new Error('El catálogo necesita el módulo Rust de interfaz')
+ return createPlantCatalogNative(options,'ihr-plant-catalog-'+(++sequence),ui)
 }

@@ -2,6 +2,8 @@ import {readFileSync} from 'node:fs';
 import * as catalogueUI from '../../src/wasm/ui/inhouse_read_ui.js';
 import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { createPlantCatalog, plantCatalogIllustration } from '../../src/js/plant-catalog.js';
+// The frozen pre-Rust catalogue (tests only). 'legacy' and 'late' run it; 'rust' runs the shipped view.
+import { createPlantCatalogLegacy, plantCatalogIllustration as referenceIllustration } from './helpers/reference-plant-catalog.js';
 import { PLANT_CATALOG, POT_CATALOG } from '../../src/js/plant-catalog-data.js';
 import { createShelfCatalogPreview } from '../../src/js/shelf-catalog-preview.js';
 import { createLampCatalogPreview } from '../../src/js/lamp-catalog-preview.js';
@@ -44,12 +46,13 @@ const observedUI={...catalogueUI,
 beforeAll(()=>{catalogueUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')});});
 const instances = [];
 function create(options) {
-  const catalog = createPlantCatalog(options);
+  const catalog = runtime.mode==='rust' ? createPlantCatalog(options) : createPlantCatalogLegacy(options);
   instances.push(catalog);
   if(runtime.mode==='rust')expect(runtime.roots.has(dialog())).toBe(true);
   if(runtime.mode==='late')runtime.ui=observedUI;
   return catalog;
 }
+const illustration = (...args) => runtime.mode==='rust' ? plantCatalogIllustration(...args) : referenceIllustration(...args);
 const dialog = () => document.querySelector('.ihr-plant-catalog');
 const pickPlant = id => dialog().querySelector(`[data-catalog-plant="${id}"]`).click();
 const pickPot = id => dialog().querySelector(`[data-catalog-pot="${id}"]`).click();
@@ -80,14 +83,14 @@ describe.each(['legacy','rust','late'])('IKEA plant instruction booklet (%s)',mo
     expect(dialog().getAttribute('aria-describedby')).toBe(dialog().querySelector('.ihr-plant-catalog__description').id);
   });
   it('draws distinct detailed species and identifiable pot structures as original vectors',() => {
-    const drawings = PLANT_CATALOG.map(plant => plantCatalogIllustration(plant.id));
+    const drawings = PLANT_CATALOG.map(plant => illustration(plant.id));
     expect(new Set(drawings).size).toBe(8);
     for (const drawing of drawings) {
       expect(drawing).toContain('viewBox="0 0 160 200"');
       expect(drawing).toContain('<path');
       expect(drawing).not.toContain('<image');
     }
-    const pots = POT_CATALOG.map(pot => plantCatalogIllustration('monstera',pot.id,{ potOnly:true }));
+    const pots = POT_CATALOG.map(pot => illustration('monstera',pot.id,{ potOnly:true }));
     expect(new Set(pots).size).toBe(4); // two sizes share the same MUSKOT material/model
     expect(pots.every(drawing => drawing.includes('viewBox="42 136 76 62"'))).toBe(true);
   });

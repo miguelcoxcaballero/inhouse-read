@@ -2,6 +2,17 @@ import {notifyRustUIReady} from './rust-ui-readiness.js'
 let ui = null, loading = null, initializing = null, retryAfter = 0
 export const getRustUI = () => ui
 
+// For a surface the person asked for (the catalogue) that has no JavaScript
+// twin: wait for the one real initialisation instead of the reader's 2 s
+// deadline, never starting a second instance. Rejects if the module is broken.
+export async function waitForRustUI() {
+  const ready = await loadRustUI()
+  if (ready) return ready
+  if (ui) return ui
+  if (initializing) return initializing
+  throw new Error('Rust UI unavailable')
+}
+
 // Loaded with the reader chunk, away from the shelf's first frame. A broken or
 // unavailable module retains the existing controls and can be retried later.
 export function loadRustUI() {

@@ -6,6 +6,13 @@ const state = vi.hoisted(() => ({ connected:false, serial:0 }))
 // These tests deliberately import invalid eight-byte PDF fixtures to check
 // original-byte persistence. Text extraction is covered with real documents
 // separately; this new background dependency must not parse those fixtures.
+// The prepared page needs the Rust UI module (the cache has no JavaScript twin): give the app the real one.
+vi.mock('../../src/js/rust-ui.js', async () => {
+  const ui = await import('../../src/wasm/ui/inhouse_read_ui.js')
+  const { readFileSync: read } = await import('node:fs')
+  ui.initSync({ module:read('src/wasm/ui/inhouse_read_ui_bg.wasm') })
+  return { getRustUI:() => ui, loadRustUI:() => Promise.resolve(ui), waitForRustUI:() => Promise.resolve(ui) }
+})
 vi.mock('../../src/js/file-book-length.js', () => ({
   measureFileBookLength:vi.fn((...args) => state.measureFileLength(...args))
 }))

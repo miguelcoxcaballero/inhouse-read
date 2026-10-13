@@ -887,6 +887,9 @@ async function preparePageStage(bookId, generation, gate) {
     if (!await gate.wait()) return false
     const current = () => generation === preparationGeneration && activePreparedBookId === bookId && currentBookId === bookId
     if (!current()) return false
+    // Without the Rust module (still downloading past the reader's deadline, or
+    // unusable) nothing is prepared ahead: the tap computes the page itself.
+    if (!preparedPages.isReady() && !await preparedPages.whenReady()) return false
     const record = await library.get(bookId)
     if (!record || !current()) return false
     const ticket = preparedPages.begin(bookId)

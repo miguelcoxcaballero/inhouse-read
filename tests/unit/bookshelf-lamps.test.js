@@ -12,6 +12,8 @@ vi.mock('../../src/js/bookshelf-scene.js', () => ({ createBookshelfScene:() => (
   getInspectionZoom:() => 1, getInspectionView:() => ({ zoom:1, panX:0, panY:0, width:390, height:844 }),
   setInspectionView:view => view, setDropPosition:vi.fn(), previewPlacements:vi.fn(), setTrashHover:vi.fn()
 }) }));
+// The catalogue chunk now also waits for the Rust UI module; this suite replaces the catalogue itself.
+vi.mock('../../src/js/rust-ui.js', () => ({ getRustUI:() => null, loadRustUI:() => Promise.resolve(null), waitForRustUI:() => Promise.resolve({}) }));
 vi.mock('../../src/js/plant-catalog.js', () => ({ createPlantCatalog(options) {
   catalog.options = options;
   return { open:vi.fn(), close:vi.fn(), destroy:vi.fn(), setShelfType:vi.fn() };

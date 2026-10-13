@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {createLegacyPreparedPageCache as createPreparedPageCache,legacyPageKeyMismatch as pageKeyMismatch} from '../../src/js/prepared-page-legacy.js'
+import {createLegacyPreparedPageCache as createPreparedPageCache,legacyPageKeyMismatch as pageKeyMismatch} from './helpers/reference-prepared-page.js'
 const gates=[]
 beforeAll(()=>ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
 afterEach(()=>{for(const gate of gates.splice(0))gate.free()})
