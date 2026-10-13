@@ -1,12 +1,13 @@
 # Migración a Rust: implementación y comprobaciones
 
-Entrega local 1.7.234: clasificación y cobertura de colores en una pasada.
+Entrega publicada 1.7.234: clasificación y cobertura de colores en una pasada.
 Inventario: 7478 Rust/38189 JS, **16.38 %**; no mide funciones terminadas.
 6537 unitarias y una tanda de 72 E2E aprobadas sin reintentos.
 Máscaras, colores y pausas iguales. Trabajo preparado CPU×4/10 colores:
 50.70→40.40 ms; no mide velocidad global ni un teléfono físico.
-Publicación y comprobación pública de 234 pendientes. Web 233 y APK real
-verificados; CI 233 falla en cierres de 8 s. CI completa 232 aprobada.
+Web 234 y APK real verificados: 109 recursos, 2 PDF, 18 escena/editor,
+3 perfil y audio Android 2×. CI 234 falla en cierres de 8 s y una captura
+del lector inestable; todos los pesos reales pasaron. CI 232 aprobada.
 Los fallos originales y los prototipos más lentos se conservan.
 Detalle de pruebas, límites y publicación: remaining-wip-verification.md.
 

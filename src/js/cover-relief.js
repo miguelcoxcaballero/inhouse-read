@@ -1190,10 +1190,10 @@ function* preparedColorMask(image, color, tolerance, prepared, countCoverage = f
   return yield* colorMask(image, color, tolerance);
 }
 
-export function* analyzePixels(image) {
+export function* analyzePixels(image, withSeed = false) {
   validateRaster(image);
   const palette = image.width * image.height >= 4096
-    ? yield* rustReliefPalette(getRustCore(), image, rgbToOklab) : null;
+    ? yield* rustReliefPalette(getRustCore(), image, rgbToOklab, withSeed) : null;
   const { bins, opaque } = palette || (yield* colorHistogram(image));
   const colors = palette ? palette.colors : yield* colorCandidates(bins, opaque), chosen = [];
   let prepared = null;
@@ -1208,7 +1208,7 @@ export function* analyzePixels(image) {
         detected:true, confidence:1, recipe:{ kind:'color', color:hex, tolerance }, mask,
         facts:{ color:hex, coverage:pixels / Math.max(1, opaque), pixels } });
     }
-    return { chosen, candidates:chosen, seed:seedOf(image), feats:{ photo:false, busy:0, strokeFraction:0 },
+    return { chosen, candidates:chosen, seed:palette?.seed ?? seedOf(image), feats:{ photo:false, busy:0, strokeFraction:0 },
       colorSpace:'oklab-100', opaquePixels:opaque };
   } finally { prepared?.dispose(); }
 }
@@ -1513,7 +1513,7 @@ export async function analyzeCoverRelief(coverUrl, { title = '', author = '', si
   const stats = { slices: 0, longestSliceMs: 0, ms: 0, durations: [] };
   const drawable = await decode(coverUrl, signal);
   const work = raster(drawable, WORK_SIZE, { sampleColors:true });
-  const found = await runSliced(analyzePixels(work), { signal, stats });
+  const found = await runSliced(analyzePixels(work,true), { signal, stats });
   // Ten choices must not multiply full-size map construction. The small
   // thumbnails only illustrate the selected ink; the model independently
   // rebuilds its physical mask at the appropriate rendering resolution.
