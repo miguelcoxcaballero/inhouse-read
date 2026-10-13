@@ -1,3 +1,73 @@
+# 1.7.238 — lector sin gemelos JavaScript (bloque 1)
+
+Changelog: «Lector solo en Rust, sin copias JS».
+Unidad legacy-readers, bloque 1. 31 de los 33 `*-legacy.js` de
+`src/js/readers` (1957 líneas: voice-advance … voice-stop, picker-*,
+preference-flow, reader-actions/chrome/controls/lifecycle/lists/view,
+select-menu, speech-highlight/map/page-breaks, language-detect, neural-view)
+pasan a `tests/unit/helpers/reference-*.js`: siguen siendo el oráculo de las
+pruebas diferenciales, ya no se envían. Los despachadores pierden el
+`ui?.f ? ui.f(…) : legacy…` y llaman a `readerUI()` (error claro
+«Rust UI is not loaded» si faltara el módulo); `neural-view.js` desaparece,
+`reader-controls.js` pasa de 48 a 9 líneas (sin adopción tardía),
+`reader-view.js` de 30 a 5, `reader-lists.js` de 27 a 5. Los textos de
+descarga/aviso del selector viven en `picker-messages.js`.
+Cambio observable, el único: el lector ya no se construye sin el módulo Rust.
+`createLazyReaderExperience` espera `requireRustUI()` (nuevo en rust-ui.js:
+el mismo plazo de 2 s de siempre y, si la descarga sigue en curso, hasta 30 s
+más sobre la misma inicialización, nunca una segunda instancia). Si no llega,
+el error es el de siempre («No se pudo cargar el lector. Comprueba la
+conexión…»); la precarga ociosa nunca recarga la página por esto. Antes, con
+una descarga lenta, el libro abría a los 2 s con controles JS y adoptaba Rust
+después. En uso normal el módulo ya está cargado: la precarga empieza cuando la
+estantería se asienta. Fuera del arranque; banco de arranque (mismo bundle
+principal, 4×CPU, 6 libros) base/este bloque, dos pasadas alternas:
+shelfContainer 3719,5 / 3872,0 y 3830,9 / 3614,8 ms, firstDraw 618,9 / 628,0 y
+602,3 / 610,8 ms: ruido, sin cambio.
+`voice-order`: un registro de voz que Rust no acepta (no normalizado) lanza
+TypeError en vez de usar la ruta permisiva; en producción todos los registros
+salen de normalizeNeuralVoice. Se conservan `speech-plan-legacy.js` y
+`sentence-ends-legacy.js` (112 líneas): los kernels Rust declinan entradas de
+más de 1 000 000 de unidades UTF-16 y la ruta JS sigue cubriéndolas; no es un
+fallback de disponibilidad. Siguen también `speech-follow`, `reader-navigation`
+y `reading-places` con su copia en línea (siguiente bloque).
+Pruebas: los 33 oráculos mantienen sus pruebas diferenciales
+(`voice-*-wasm`, `picker-*-wasm`, `reader-*-wasm`, `speech-*-wasm`,
+`language-detect-wasm`, `voice-options/order`, `reader-lists-wasm`…) con las
+mismas aserciones. Las suites de doble motor (`describe.each(['legacy','rust'])`,
+`late`) ya no tienen motor «legacy» que ejecutar por la ruta de producción:
+voice-menus, voice-catalog(-languages/-neural), speech-map, speech-page-breaks,
+pdf-reflow-images, neural-picker y reader-experience quedan solo con Rust;
+reader-actions-wasm y reader-controls-wasm conservan ambas mitades llamando a
+la referencia congelada. Las pruebas de adopción tardía (`reader-lists-late`
+→ `reader-lists-owner`, reader-location/chrome/controls, speech-map,
+voice-start/selection) cambian a «delega en Rust» y «falla con error claro sin
+módulo». Las seis suites de integración de voz que se ejecutaban dos veces
+(sin y con Rust) pasan a `tests/unit/helpers/suite-*.js` y se ejecutan una vez
+desde su envoltorio `*-wasm`. Nuevas: `reader-experience-lazy-core` (5) y 4 de
+`requireRustUI` en rust-ui-loader. Los entornos que montan el lector cargan el
+módulo real con `tests/unit/helpers/rust-ui-ready.js`.
+Build, las 6062 unitarias (4 bloques, 435 archivos: 1654+1251+1425+1732; antes
+6616/441: −554 por las mitades «legacy» retiradas de las suites de doble motor).
+E2E (cada una con su build): rust-ui-late-load, rust-voice-session-readiness,
+rust-reader-controls y rust-reader-lists (variantes con descarga retenida
+ahora comprueban que el libro espera 3 s sin abrir, abre al llegar el módulo y
+usa una sola instancia) 7/7; rust-reader-actions/chrome/lifecycle/location/
+preference-flow 10/10 con controls/lists; select-menu/reader-view/neural-view/
+voice-*/speech-* 18/18; reader-interface, reader-controls-layout,
+audiobook-follow, reading-display, reader-loading 46 aprobadas + 6 omitidas
+por la propia prueba; book-opening, book-open-prepared, offline-shell 22/22;
+reading-experience, natural-voice-rate, neural-page-follow,
+audiobook-chapter-continuity: 14 aprobadas, 2 fallan, 15 no se ejecutan (serie
+tras el fallo de natural-voice-rate). Fallan en este equipo y también en
+un build de 51607ee: neural-page-follow «PDF mantiene la página anterior…»
+(la prueba de duración no ve el worker compilado), neural-voice-reading
+«offline: …Hugging Face unreachable»; natural-voice-rate necesita los pesos
+Supertonic que no están aquí. neural-voice-reading (grupo «end to end»): 6
+aprobadas, 1 falla (la de «offline», igual en la base), 1 omitida, 1 sin ejecutar.
+Rust 7527 / JS 35498 = 17.49 % (antes de este bloque 16.71 %); no es
+porcentaje funcional. Sin medida de velocidad: no se afirma ninguna mejora.
+
 # 1.7.237 — catálogo y página preparada solo en Rust
 
 Changelog: «Catálogo y página preparada solo en Rust».
