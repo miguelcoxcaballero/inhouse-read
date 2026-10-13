@@ -4,7 +4,7 @@ import {neuralVoices} from '../../src/js/readers/neural-voice/catalog.js'
 import {pickVoice} from './helpers/audio-menus.mjs'
 const LESSAC='piper:en_US-lessac-medium'
 
-test('a delayed Rust download preserves the existing voice session and adopts later playback without reinitializing it',async({page},info)=>{
+test('a delayed Rust download holds the book until it arrives, then one voice session plays without reinitializing',async({page},info)=>{
  test.setTimeout(60000)
  await page.setViewportSize({width:390,height:844});await page.emulateMedia({reducedMotion:'reduce'})
  await page.addInitScript(fakeEngineScript({voices:neuralVoices.filter(voice=>voice.id===LESSAC),installed:[LESSAC],holdAfter:1}))
@@ -25,11 +25,14 @@ test('a delayed Rust download preserves the existing voice session and adopts la
  try{
   await page.goto(process.env.IHR_TEST_URL||'./')
   await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/reading-journey.pdf')
-  await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 1 de 4/)
+  // The voice session is a Rust component with no JavaScript twin: the book opens when the download arrives.
+  await page.waitForTimeout(3000)
+  await expect(page.locator('#reader-screen')).toBeHidden()
   expect(await page.evaluate(()=>window.voiceSessionProof)).toEqual({available:false,initializations:0,plays:0})
+  release();await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 1 de 4/)
+  await expect.poll(()=>page.evaluate(()=>window.voiceSessionProof.available)).toBe(true)
   await page.locator('#reader-location').click();await page.getByRole('spinbutton',{name:'Ir a la página'}).fill('3');await page.getByRole('button',{name:'Ir',exact:true}).click()
   await expect(page.locator('#reader-location')).toHaveAttribute('aria-label',/Página 3 de 4/)
-  release();await expect.poll(()=>page.evaluate(()=>window.voiceSessionProof.available)).toBe(true)
   await page.getByRole('button',{name:'Escuchar el libro'}).click();await pickVoice(page,LESSAC)
   await page.getByRole('button',{name:'Reproducir',exact:true}).click()
   await expect.poll(()=>page.evaluate(()=>window.__inhouseNeuralTest.engine.calls.length)).toBe(1)
@@ -37,7 +40,7 @@ test('a delayed Rust download preserves the existing voice session and adopts la
   expect(first.text).toBe('Reading journey.')
   expect(first.upcoming.map(item=>typeof item==='string'?item:item.text).join(' ')).toContain('Page 3')
   const proof=await page.evaluate(()=>window.voiceSessionProof)
-  expect(proof.initializations).toBe(0);expect(proof.plays).toBe(1)
+  expect(proof.initializations).toBe(1);expect(proof.plays).toBe(1)
   expect(errors).toEqual([]);await info.attach('late-voice-session',{body:JSON.stringify(proof),contentType:'application/json'})
  }finally{release()}
 })
