@@ -7,6 +7,7 @@ mod shelf_styles;
 mod profile_view;
 mod catalog_art;
 mod catalog_view;
+mod catalog_controller;
 mod book_projection;
 mod speech_mask;
 mod speech_pipeline;
