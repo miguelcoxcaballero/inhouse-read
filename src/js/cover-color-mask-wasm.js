@@ -3,6 +3,25 @@
 const PIXEL_LIMIT = 512 * 512, CHUNK = 1024;
 const align8 = bytes => Math.ceil(bytes / 8) * 8;
 let currentLease = null;
+// Only complete, privately prepared masks reach proposal analysis. Weak keys
+// retain neither the image nor a mask after its analysis is discarded.
+const coverage = new WeakMap();
+
+export function* countPreparedMaskPixels(mask) {
+  const saved = coverage.get(mask);
+  // Consume once, before the caller can expose or edit the returned mask.
+  coverage.delete(mask);
+  if (saved !== undefined) {
+    for (let end = 4096; end <= mask.length; end += 4096) yield;
+    return saved;
+  }
+  let pixels = 0;
+  for (let i = 0; i < mask.length; i++) {
+    if (mask[i] > 0) pixels++;
+    if ((i & 4095) === 4095) yield;
+  }
+  return pixels;
+}
 
 export function* prepareColorMaskJob(core, image, rgbToOklab) {
   const { width, height, data } = image || {};
@@ -48,21 +67,27 @@ export function* prepareColorMaskJob(core, image, rgbToOklab) {
       if (from + CHUNK <= count) yield;
     }
     const job = { dispose,
-      *mask(target, tolerance) {
+      *mask(target, tolerance, countCoverage = false) {
         if (disposed || !target || target.length !== 3 || !Array.from(target).every(Number.isFinite)
           || !Number.isFinite(tolerance) || tolerance <= 0 || tolerance > 12) return null;
         let completed = false;
         try {
           const out = new Float32Array(count);
+          const counted = countCoverage && typeof core.relief_color_mask_count === 'function';
+          const kernel = counted ? core.relief_color_mask_count : core.relief_color_mask_pixels;
+          let pixels = 0;
           for (let from = 0; from < count; from += CHUNK) {
             if (disposed) return null;
             const end = Math.min(count, from + CHUNK);
-            if (core.relief_color_mask_pixels(pointer, pointer + alphaOffset, pointer + outputOffset,
-              count, from, end, target[0], target[1], target[2], tolerance) !== 1) return null;
+            const result = kernel.call(core, pointer, pointer + alphaOffset, pointer + outputOffset,
+              count, from, end, target[0], target[1], target[2], tolerance);
+            if (counted ? !Number.isInteger(result) || result < 1 || result > end - from + 1 : result !== 1) return null;
+            if (counted) pixels += result - 1;
             out.set(new Float32Array(core.memory.buffer, pointer + outputOffset, end - from), from);
             if (from + CHUNK <= count) yield;
           }
           completed = true;
+          if (counted) coverage.set(out, pixels);
           return out;
         } catch { return null; }
         finally { if (!completed) dispose(); }

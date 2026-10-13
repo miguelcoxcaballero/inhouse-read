@@ -10,6 +10,27 @@ pub unsafe extern "C" fn relief_color_mask_pixels(
     count: usize, start: usize, end: usize,
     target_l: f64, target_a: f64, target_b: f64, tolerance: f64,
 ) -> u32 {
+    classify::<false>(lab, alpha, output, count, start, end, target_l, target_a, target_b, tolerance)
+}
+
+/// The same f32 membership, plus one and the number of positive output pixels.
+/// Zero still means rejection. Count after f32 rounding, including underflow.
+/// # Safety
+/// Identical live, disjoint ranges to relief_color_mask_pixels.
+#[no_mangle]
+pub unsafe extern "C" fn relief_color_mask_count(
+    lab: *const f64, alpha: *const u8, output: *mut f32,
+    count: usize, start: usize, end: usize,
+    target_l: f64, target_a: f64, target_b: f64, tolerance: f64,
+) -> u32 {
+    classify::<true>(lab, alpha, output, count, start, end, target_l, target_a, target_b, tolerance)
+}
+
+unsafe fn classify<const COVERAGE: bool>(
+    lab: *const f64, alpha: *const u8, output: *mut f32,
+    count: usize, start: usize, end: usize,
+    target_l: f64, target_a: f64, target_b: f64, tolerance: f64,
+) -> u32 {
     if count == 0 || count > 262144 || start > end || end > count || end - start > 1024
         || !target_l.is_finite() || !target_a.is_finite() || !target_b.is_finite()
         || !tolerance.is_finite() || tolerance <= 0.0 || tolerance > 12.0 { return 0; }
@@ -17,6 +38,7 @@ pub unsafe extern "C" fn relief_color_mask_pixels(
     let alpha = std::slice::from_raw_parts(alpha, count);
     let out = std::slice::from_raw_parts_mut(output, end - start);
     let square = tolerance * tolerance;
+    let mut positive = 0;
     for i in start..end {
         let mut amount = 0.0;
         if alpha[i] >= 128 {
@@ -32,7 +54,9 @@ pub unsafe extern "C" fn relief_color_mask_pixels(
                 amount = (1.0 - smooth) * alpha[i] as f64 / 255.0;
             }
         }
-        out[i - start] = amount as f32;
+        let rounded = amount as f32;
+        out[i - start] = rounded;
+        if COVERAGE && rounded > 0.0 { positive += 1; }
     }
-    1
+    1 + positive
 }

@@ -30,6 +30,7 @@ function trackedCore(overrides={}) {
     alloc_f64(length){const pointer=core.alloc_f64(length);if(pointer){stats.allocations.push([pointer,length]);stats.live+=length*8;stats.peak=Math.max(stats.peak,stats.live);}return pointer;},
     free_f64(pointer,length){core.free_f64(pointer,length);stats.releases.push([pointer,length]);stats.live-=length*8;},
     relief_color_mask_pixels(...args){stats.classify++;return core.relief_color_mask_pixels(...args);},
+    relief_color_mask_count(...args){stats.classify++;return core.relief_color_mask_count(...args);},
     relief_distance_rows(...args){stats.distance++;return core.relief_distance_rows(...args);},
     ...overrides};
 }

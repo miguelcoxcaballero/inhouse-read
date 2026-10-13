@@ -11,14 +11,20 @@ for (const enabled of [false,true]) test(`real relief editor cold and cached: ${
   await page.emulateMedia({reducedMotion:'no-preference'});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(enabled=>{
-    window.paletteProof={jobs:0,live:0,available:false,normalCalls:0,normalBytes:0};
+    window.paletteProof={jobs:0,live:0,available:false,normalCalls:0,normalBytes:0,countCalls:0,countedPixels:0};
     const observe=result=>{
       const instance=result.instance||result,actual=instance.exports;
       if(typeof actual?.relief_palette_new!=='function')return result;
       const proof=window.paletteProof;proof.available=true;
       // Hide only this export for the pre-migration algorithm. Every other
       // compiled kernel, actual renderer, image and shader remains identical.
-      const exports={...actual,relief_normal_selected_rows(...args){
+      const exports={...actual,relief_color_mask_count(...args){
+        const result=actual.relief_color_mask_count(...args),length=args[5]-args[4];
+        const mask=new Float32Array(actual.memory.buffer,args[2],length);
+        let positive=0;for(const amount of mask)if(amount>0)positive++;
+        if(result!==positive+1)throw Error('Compiled mask count differs from original f32 mask');
+        proof.countCalls++;proof.countedPixels+=length;return result;
+      },relief_normal_selected_rows(...args){
         const status=actual.relief_normal_selected_rows(...args);
         if(status!==1)throw Error('Selected normals rejected');
         const [height,owners,mask,out,width,,from,to,, , ,hasMask,foil,gloss]=args;
@@ -76,8 +82,10 @@ for (const enabled of [false,true]) test(`real relief editor cold and cached: ${
     const selected=await cards.evaluateAll(nodes=>nodes.map(node=>node.closest('.ihr-relief-card').dataset.reliefColor));
     expect([...selected].sort()).toEqual([...colors].sort());
     expect(after.live).toBe(0);expect(after.jobs-before.jobs).toBe(enabled&&stage==='cold'?1:0);
+    expect(after.countCalls-before.countCalls).toBe(stage==='cold'?Math.ceil(288*192/1024)*3:0);
+    expect(after.countedPixels-before.countedPixels).toBe(stage==='cold'?288*192*3:0);
     expect(await page.locator('.ihr-flyout__book canvas').evaluate(canvas=>canvas instanceof HTMLCanvasElement&&canvas.width>0&&canvas.height>0)).toBe(true);
-    observations.push({stage,ms:after.at-before.at,jobs:after.jobs-before.jobs,colors:selected});
+    observations.push({stage,ms:after.at-before.at,jobs:after.jobs-before.jobs,countCalls:after.countCalls-before.countCalls,countedPixels:after.countedPixels-before.countedPixels,colors:selected});
     await page.locator('.ihr-relief-card').nth(stage==='cold'?0:1).click();
     await expect.poll(()=>page.evaluate(()=>window.paletteProof.normalCalls),{timeout:30000}).toBeGreaterThan(before.normalCalls);
     expect(await page.evaluate(()=>window.paletteProof.normalBytes)).toBeGreaterThan(0);

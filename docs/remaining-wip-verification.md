@@ -1,4 +1,53 @@
-# 1.7.233 — revisión de iluminación en Rust (local)
+# 1.7.234 — cobertura de colores en la misma pasada Rust (local)
+
+Changelog: «Análisis de relieves más rápido».
+La clasificación preparada puede obtener el número de píxeles positivos
+en su misma pasada Rust. Cuenta después de redondear cada pertenencia a
+f32. No recolorea ni cambia máscaras, tolerancias, intensidades o acabados.
+Se conserva la API anterior y su resultado 1; el export nuevo devuelve
+1 + cobertura y 0 ante rechazo. El puente comprueba su rango por bloque.
+Solo el análisis de propuestas pide cobertura; los mapas siguen su ruta
+anterior. Un WeakMap entrega el recuento una sola vez antes de exponer la
+máscara; conserva los mismos yields cada 4096 píxeles y no retiene imágenes.
+La ausencia del export mantiene el recorrido anterior; ante errores se
+libera la preparación y se calcula la máscara completa con la ruta original.
+
+96 pruebas focalizadas/4 archivos/11.10 s, y 2 E2E reales del editor/41.8 s
+aprobados. Comprueban máscaras y recuentos completos, pausas, alfa, no
+finitos, propiedad de buffers, crecimiento de memoria, cancelación,
+export ausente, trampas y códigos rechazados. La primera ejecución focal
+se interrumpió por el coste del comparador de Buffer; unit-original.log
+se conserva. La comparación posterior verifica todos los bytes mediante
+Buffer.compare, sin cambiar plazos ni omitir datos.
+La batería de 6537 unitarias/438 archivos pasó. Tanda de 72 E2E pasó
+sin reintentos, incluyendo editor, lector, voces, importación, luces y los
+contratos originales de cierre de 8 s. No equivale por sí sola a toda la
+matriz CI; la CI publicada ejecuta además todos sus shards y pesos reales.
+
+Chromium CPU×4, 9 rondas alternadas, datos sintéticos. Incluye preparación
+OKLab JS, asignación, puente, copias, máscaras, cobertura y liberación;
+excluye decodificación, clustering, esperas cooperativas, GPU y teléfono.
+216×288/10 colores: 50.70→40.40 ms; 512×512/10: 206.40→165.40 ms.
+No acredita aceleración global ni lectura/apertura más rápida.
+Inventario 7478 Rust/38189 JS = 16.38 %, 99/292 archivos; no es porcentaje
+funcional ni incluye dependencias, generados, HTML/CSS o Android Java.
+App WASM 379547 bytes, SHA256 959706ea8ba4df391b8ef0b90c4be20f1e22d43fc263c993cced341b60517652.
+UI local 928738 bytes, SHA256 530e9a30bd14a057958a6331f37551abbf01d0610d1b26958c79ea029783ce67.
+Voz y decoración conservan sus bytes; APK 1.1.15/28 y canales intactos.
+Updater fijado al canónico 6621ca1dbb519d171d723f118052e42ef5d5c001,
+comprobado remoto, sin editar copias. Publicación y prueba pública de 234
+pendientes; no se afirma la corrección del cierre fallido en CI 233.
+
+Prototipo de cola de longitud conservado fuera de producción y sin contar:
+35 pruebas de estados/orden/adopción y 1000 completos + 1000 cancelados
+con contadores de memoria a cero tras GC. Aunque conserva los resultados,
+100 trabajos con I/O simulado CPU×4 cuestan 45 ms frente a 22 ms sin
+consultas extra; con 1000 consultas por trabajo, 44.8 frente a 31.6 ms.
+Se retiene para optimizar el puente, sin publicar una regresión ni afirmar
+que represente el coste del parser o IndexedDB reales.
+Evidencia: D:/CodexEvidence/InhouseRead-20261013/rust-mask-coverage.
+
+# 1.7.233 — revisión de iluminación en Rust
 
 Changelog: «Escaneo de iluminación más rápido».
 studio_half_scan valida los mismos valores de 16 bits del atlas de estudio.
@@ -48,7 +97,31 @@ Incluye comentarios y alternativas; no mide funciones terminadas.
 App WASM 379035 bytes, SHA256 eaccdb0c22f00819e753a64241e868365d9e0d23c8b068a9d46825467a081305.
 UI local 928738 bytes, SHA256 54debe2c83d38343342e716a28553ebdd75b89000dd50041bbbe0d9692714d06.
 Decoración y voz conservan sus bytes. APK 1.1.15/28, A/B y updater intactos.
-Pendientes: publicación y comprobación de la web y del APK reales de 233.
+Publicación 233 comprobada:
+main 1dea57ace60458f794525439bb0b5ce6dd180142; Deploy 38394833360 y Pages 38394994776 aprobados,
+Pages dbe2827e37f6f457f957112cb16b8e4d6138fc3b. 109 archivos públicos coinciden por HTTP/tamaño/SHA
+y atribución a ese commit. App WASM público 379035 bytes,
+SHA256 eaccdb0c22f00819e753a64241e868365d9e0d23c8b068a9d46825467a081305, coincide con el compilado local.
+UI público 928706 bytes, SHA256 56bb65a41af4845e4bdb6482df771e36b3ff7b212d09adcf0c8048c6e93fddfc; se
+verifica el binario publicado de Linux sin presumir igualdad con Windows.
+Dos perfiles exactos, una instancia UI, referencias estables tras 1000
+preparaciones/100 menús y 30 PCM aprobados. 2 PDF/41.3 s, 16 escena/2.8 min
+y 3 perfil/updater/14.7 s públicos aprobados. El escáner público también
+comprueba los datos reales de GPU y su reutilización al recargar.
+APK público descargado/verificado por bytes, firma, manifiesto y loader
+2107 bytes. Android mostró 233/PID 1281, importó content URI real,
+Lessac 2× durante 12.0390476190 s acumulados, 8 done/9 start,
+mismo proceso y sin FATAL. No sustituye una prueba en teléfono físico.
+CI 233/38394833362 terminó con fallo en UI2/115287286549: los dos
+contratos de cierre nativo superan 8 s, tanto el original como el reintento.
+Unitarias, demás UI y cuatro tandas de voces reales pasaron. El agregador
+falló, como corresponde; no se afirma aprobación global. Originales completos
+en ci233-ui2-original-artifact (log, reporte, capturas y traces).
+La lectura de sus attachments se conserva en ci233-close-facts.jsonl:
+zoom previsto de 460 ms tardó aproximadamente 4.8 s; el cierre terminó
+alrededor de 10.3 s en tres intentos. El primer intento aún estaba
+regresando al capturar el estado tras agotar el plazo. No se cambia el
+plazo ni se afirma que el escáner resuelva ese problema.
 La CI completa de 232 terminó aprobada. Se conservan los fallos originales
 de 231 y revisiones anteriores; no se afirma su corrección universal.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-studio-scan-prototype.

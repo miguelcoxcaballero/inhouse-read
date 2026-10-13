@@ -20,7 +20,7 @@
  */
 import { runInSlices } from './cover-appearance.js';
 import { getRustCore, loadRustCore } from './rust-core.js';
-import { prepareColorMaskJob } from './cover-color-mask-wasm.js';
+import { prepareColorMaskJob, countPreparedMaskPixels } from './cover-color-mask-wasm.js';
 import { rustReliefPalette } from './relief-palette-wasm.js';
 import { canUseReliefWasm, wasmInsideDistance, wasmBoxBlur, wasmHeightToNormals,
   wasmComposeMaterialMap, wasmComposeReliefLayers, wasmShadePreview, wasmReliefRgbaPlanes, wasmPigmentMaps } from './cover-relief-wasm.js';
@@ -1182,9 +1182,9 @@ function* prepareColors(image, layers) {
   if (layers < PREPARED_COLOR_MIN_LAYERS || image.width * image.height < PREPARED_COLOR_MIN_PIXELS) return null;
   return yield* prepareColorMaskJob(getRustCore(), image, rgbToOklab);
 }
-function* preparedColorMask(image, color, tolerance, prepared) {
+function* preparedColorMask(image, color, tolerance, prepared, countCoverage = false) {
   if (prepared) {
-    const result = yield* prepared.mask(rgbToOklab(...rgbOf(color)), tolerance);
+    const result = yield* prepared.mask(rgbToOklab(...rgbOf(color)), tolerance, countCoverage);
     if (result) return result;
   }
   return yield* colorMask(image, color, tolerance);
@@ -1202,9 +1202,8 @@ export function* analyzePixels(image) {
     for (let index = 0; index < colors.length; index++) {
       const color = colors[index], nearest = Math.min(...colors.filter(other => other !== color).map(other => Math.sqrt(distance2(color.lab, other.lab))));
       const tolerance = Math.floor(Math.min(DEFAULT_COLOR_TOLERANCE, nearest * .45) * 100) / 100;
-      const hex = hexOf(color.rgb), mask = yield* preparedColorMask(image, hex, tolerance, prepared);
-      let pixels = 0;
-      for (let i = 0; i < mask.length; i++) { if (mask[i] > 0) pixels++; if ((i & 4095) === 4095) yield; }
+      const hex = hexOf(color.rgb), mask = yield* preparedColorMask(image, hex, tolerance, prepared, true);
+      const pixels = yield* countPreparedMaskPixels(mask);
       chosen.push({ id:COLOR_RELIEF_IDS[index], color:hex, tolerance, strength:DEFAULT_RELIEF_STRENGTH,
         detected:true, confidence:1, recipe:{ kind:'color', color:hex, tolerance }, mask,
         facts:{ color:hex, coverage:pixels / Math.max(1, opaque), pixels } });
