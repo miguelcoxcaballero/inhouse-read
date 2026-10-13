@@ -1,3 +1,4 @@
+// Frozen reference of the pre-Rust catalogue illustrations (removed from src in 1.7.237). Tests only.
 const SVG_NS = 'http://www.w3.org/2000/svg';
 // After the next frame has painted: the frame's rAF callbacks run before it, a timer after.
 

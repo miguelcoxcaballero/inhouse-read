@@ -1,5 +1,4 @@
 import {getRustUI} from './rust-ui.js'
-import {plantCatalogIllustration as legacy} from './plant-catalog-art-legacy.js'
 const plants=new Set(['sansevieria','monstera','chamaedorea','nephrolepis','hedera','zamioculcas','succulent','cactus']),pots=new Set(['muskot','akerbar','muskotblomma','gradvis'])
 export function nativeIllustration(ui,plant,pot,options={}){
  plant=plants.has(plant)?plant:'monstera';pot=pots.has(pot)?pot:'muskot';const compact=!!options.compact,potOnly=!!options.potOnly
@@ -10,8 +9,11 @@ export function nativeIllustration(ui,plant,pot,options={}){
  return ui.catalog_illustration(plant,pot,potOnly,compact)
 }
 
+// Only the catalogue (which exists once the Rust module is loaded) draws these.
 export function plantCatalogIllustration(plant,pot='muskot',{potOnly=false,compact=false}={}){
- const ui=getRustUI(),options={potOnly,compact}
- if(ui&&['catalog_illustration','catalog_frond_fractions','catalog_frond_numbers','catalog_frond_illustration'].every(name=>typeof ui[name]==='function'))try{const result=nativeIllustration(ui,plant,pot,options);if(typeof result==='string')return result}catch{/* Keep the original art if the module cannot render this input. */}
- return legacy(plant,pot,options)
+ const ui=getRustUI()
+ if(!ui||!['catalog_illustration','catalog_frond_fractions','catalog_frond_numbers','catalog_frond_illustration'].every(name=>typeof ui[name]==='function'))throw new Error('Las ilustraciones del catálogo necesitan el módulo Rust de interfaz')
+ const result=nativeIllustration(ui,plant,pot,{potOnly,compact})
+ if(typeof result!=='string')throw new Error('El módulo Rust de interfaz no pudo dibujar la ilustración del catálogo')
+ return result
 }

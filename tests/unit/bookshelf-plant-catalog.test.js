@@ -5,6 +5,8 @@ import { loadPlantCatalogModule } from '../../src/js/plant-catalog-lazy.js'
 beforeAll(async () => { await loadPlantCatalogModule() })
 
 const catalog = vi.hoisted(() => ({ options:null, open:vi.fn(), destroy:vi.fn(), setShelfType:vi.fn() }))
+// The catalogue chunk now also waits for the Rust UI module; this suite replaces the catalogue itself.
+vi.mock('../../src/js/rust-ui.js', () => ({ getRustUI:() => null, loadRustUI:() => Promise.resolve(null), waitForRustUI:() => Promise.resolve({}) }));
 vi.mock('../../src/js/plant-catalog.js', () => ({ createPlantCatalog(options) {
   catalog.options = options
   return { open:catalog.open, close:vi.fn(), destroy:catalog.destroy, setShelfType:catalog.setShelfType }
