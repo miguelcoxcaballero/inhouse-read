@@ -67,10 +67,10 @@ it('matches 3000 complete-range visibility decisions and scroll offsets exactly'
  }
  for(const rects of [null,undefined,[],[{}]])for(const viewport of [null,{},box,{...box,width:0}])expect(speechFollowOffset(rects,viewport)).toEqual(speechFollowOffsetLegacy(rects,viewport))
 })
-it('retains the first line of oversized sentences and falls back without Rust',()=>{
+it('retains the first line of oversized sentences; the highlight has no fallback without Rust',()=>{
  const rects=[{top:70,bottom:1050,left:10,right:360}]
  expect(speechFollowOffset(rects,box).top).toBe(12)
  runtime.ui=null
  expect(speechFollowOffset(rects,box)).toEqual(speechFollowOffsetLegacy(rects,box))
- expect(highlight.speechCSS('sepia')).toBe(reference.speechCSS('sepia'))
+ expect(()=>highlight.speechCSS('sepia')).toThrow('Rust UI is not loaded')
 })

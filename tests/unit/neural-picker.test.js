@@ -26,7 +26,7 @@ beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_
 let catalogue
 beforeAll(async () => { await loadNeural(); catalogue = [...neuralVoices]; neuralVoices.splice(0, neuralVoices.length, ...FAKE_CATALOG) })
 afterAll(() => { neuralVoices.splice(0, neuralVoices.length, ...catalogue); setNeuralEngine(null) })
-describe.each(['legacy','rust','late'])('natural voice view %s',mode=>{
+describe.each(['rust'])('natural voice view %s',mode=>{
 beforeEach(() => {
   runtime.ui=mode==='rust'?observedUI:null
   localStorage.clear()
@@ -63,7 +63,6 @@ async function setup({ language = 'en', ...engineOptions } = {}) {
   const reader = { language, location:{ fraction:0 }, format:{ engine:'foliate' }, toc:[], pageCount:null, applyPreferences:async () => {}, addQuoteAnnotation() {}, getSelection() {}, next:async () => {}, prev:async () => {}, getSpeechText:async () => 'Hello there. Second one.' }
   const experience = new ReaderExperience(reader, { persist:async () => {} })
   if(runtime.ui) expect(experience.neuralPicker.view).toBeInstanceOf(rustUI.RustNeuralView)
-  if(mode==='late')runtime.ui=observedUI
   experience.panel.voiceMenu = experience.voiceMenu
   experience.panel.close = vi.fn()
   await experience.open({ id:'b', title:'Book' })

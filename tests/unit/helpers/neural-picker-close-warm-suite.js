@@ -1,11 +1,10 @@
-import './helpers/rust-ui-ready.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({ engine:null, load:null }))
-vi.mock('../../src/js/readers/neural-runtime.js', () => ({
+vi.mock('../../../src/js/readers/neural-runtime.js', () => ({
   loadNeural:() => state.load(), neuralEngine:() => state.engine, neuralVoiceList:() => []
 }))
-import { NeuralVoicePicker } from '../../src/js/readers/neural-picker.js'
+import { NeuralVoicePicker } from '../../../src/js/readers/neural-picker.js'
 
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
 function setup() {

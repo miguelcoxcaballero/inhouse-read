@@ -44,10 +44,10 @@ it('allows an absent mini title and does not overwrite it during initial documen
  const {view,mini}=setup(true);view.setDocumentInfo('Initial','Author','About',false);expect(mini.textContent).toBe('')
  mini.innerHTML='';expect(()=>view.setDocumentInfo('Updated','Author','About',true)).not.toThrow();view.free()
 })
-it('uses the compatible view when an older module lacks the new methods',()=>{
- const {view,screen,panel,mini,back}=setup(false)
- runtime.ui={RustReaderView:class OldView{}};expect(new ReaderView(screen,panel,mini,back)).toBeInstanceOf(LegacyReaderView)
+it('is the Rust view of the loaded core and fails clearly without it',()=>{
+ const {screen,panel,mini,back}=setup(false)
  runtime.ui=ui;const next=new ReaderView(screen,panel,mini,back);expect(next).toBeInstanceOf(ui.RustReaderView);next.free()
+ runtime.ui=null;expect(()=>new ReaderView(screen,panel,mini,back)).toThrow('Rust UI is not loaded')
 })
 it('keeps WASM memory bounded while changing titles and positions repeatedly',()=>{
  for(let round=0;round<2;round++){
@@ -56,30 +56,6 @@ it('keeps WASM memory bounded while changing titles and positions repeatedly',()
   view.free();if(round)expect(core.memory.buffer.byteLength).toBe(before)
  }
 })
-it('adopts a compatible late module once without rewriting the existing document or focused input',()=>{
- const {screen,panel,mini,back,range}=setup(false)
- const view=new ReaderView(screen,panel,mini,back)
- view.setDocumentInfo('Original title','Author','About',true);view.configureFormat(true,4)
- view.relocate('Page 1','1',0,true,1);range.value='17';range.focus()
- let creations=0,calls=0
- class LateView extends ui.RustReaderView{
-  constructor(...args){super(...args);creations++}
-  relocate(...args){calls++;return super.relocate(...args)}
- }
- runtime.ui={RustReaderView:LateView}
- view.relocate('Page 2','2',50,true,2);view.relocate('Page 3','3',75,true,3)
- expect(creations).toBe(1);expect(calls).toBe(2);expect(range.value).toBe('17')
- expect(document.querySelector('#reader-top-title').textContent).toBe('Original title')
- expect(panel.querySelector('input[type="number"]').value).toBe('3')
- view.free();expect(()=>view.relocate('Page 4','4',100,true,4)).toThrow();expect(creations).toBe(1)
-})
-it('does not adopt an older late module missing a required method',()=>{
- const {screen,panel,mini,back}=setup(false),view=new ReaderView(screen,panel,mini,back)
- runtime.ui={RustReaderView:class{constructor(){throw Error('must not instantiate')}}}
- expect(()=>view.setDocumentInfo('Title','Author','About',false)).not.toThrow()
- expect(document.querySelector('#reader-top-title').textContent).toBe('Title');view.free()
-})
-
 it('cloned panel fixture keeps the original HTML and default control state',()=>{
  const parsed=document.createElement('dialog'),cloned=document.createElement('dialog')
  parsed.innerHTML=readerPanelMarkup;cloned.append(panelTemplate.content.cloneNode(true))

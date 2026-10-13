@@ -1,7 +1,6 @@
-import './helpers/rust-ui-ready.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ReadingVoice } from '../../src/js/readers/reading-voice.js'
-import { planSpeech } from '../../src/js/readers/speech-text.js'
+import { ReadingVoice } from '../../../src/js/readers/reading-voice.js'
+import { planSpeech } from '../../../src/js/readers/speech-text.js'
 
 afterEach(() => vi.restoreAllMocks())
 

@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 const fixture=vi.hoisted(()=>({ui:null,calls:{}}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
-import './audio-diagnostic-state.test.js'
+import './helpers/suite-audio-diagnostic-state.js'
 ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 const observed=['voice_initialize','voice_event','voice_diagnostic','voice_prepare_text']
 fixture.ui={...ui}

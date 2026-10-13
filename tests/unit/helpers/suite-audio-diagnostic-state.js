@@ -1,15 +1,15 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('foliate-js/view.js',()=>({}))
 vi.mock('foliate-js/overlayer.js',()=>({Overlayer:{}}))
-vi.mock('../../src/js/gestures.js',()=>({attachSwipeNavigation:()=>()=>{}}))
-import { ReadingVoice } from '../../src/js/readers/reading-voice.js'
-import { FoliateReader } from '../../src/js/readers/foliate-reader.js'
-import { NeuralEngine } from '../../src/js/readers/neural-voice/engine.js'
-import { NeuralVoiceEngine, neuralVoices, setNeuralEngine } from '../../src/js/readers/neural-voice/index.js'
-import { loadNeural } from '../../src/js/readers/neural-runtime.js'
-import { resetAudio, stopNativeAudio, unlockAudio } from '../../src/js/readers/neural-voice/audio.js'
-import { fakeAudioContext, fakeClients, flush } from './neural-fakes.js'
-import { FAKE_CATALOG, createFakeNeuralEngine } from '../helpers/fake-neural-engine.js'
+vi.mock('../../../src/js/gestures.js',()=>({attachSwipeNavigation:()=>()=>{}}))
+import { ReadingVoice } from '../../../src/js/readers/reading-voice.js'
+import { FoliateReader } from '../../../src/js/readers/foliate-reader.js'
+import { NeuralEngine } from '../../../src/js/readers/neural-voice/engine.js'
+import { NeuralVoiceEngine, neuralVoices, setNeuralEngine } from '../../../src/js/readers/neural-voice/index.js'
+import { loadNeural } from '../../../src/js/readers/neural-runtime.js'
+import { resetAudio, stopNativeAudio, unlockAudio } from '../../../src/js/readers/neural-voice/audio.js'
+import { fakeAudioContext, fakeClients, flush } from '../neural-fakes.js'
+import { FAKE_CATALOG, createFakeNeuralEngine } from '../../helpers/fake-neural-engine.js'
 
 let voice, engine, reader, catalogue
 beforeAll(async()=>{await loadNeural();catalogue=[...neuralVoices];neuralVoices.splice(0,neuralVoices.length,...FAKE_CATALOG)})

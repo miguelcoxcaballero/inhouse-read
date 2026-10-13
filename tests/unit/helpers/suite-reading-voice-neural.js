@@ -1,9 +1,8 @@
-import './helpers/rust-ui-ready.js'
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from 'vitest'
-import { ReadingVoice } from '../../src/js/readers/reading-voice.js'
-import { loadNeural } from '../../src/js/readers/neural-runtime.js'
-import { neuralVoices, setNeuralEngine } from '../../src/js/readers/neural-voice/index.js'
-import { createFakeNeuralEngine, FAKE_CATALOG } from '../helpers/fake-neural-engine.js'
+import { ReadingVoice } from '../../../src/js/readers/reading-voice.js'
+import { loadNeural } from '../../../src/js/readers/neural-runtime.js'
+import { neuralVoices, setNeuralEngine } from '../../../src/js/readers/neural-voice/index.js'
+import { createFakeNeuralEngine, FAKE_CATALOG } from '../../helpers/fake-neural-engine.js'
 
 // The reading voice driving the neural engine through the contract (a fake engine, see tests/helpers).
 const DAVEFX = 'piper:es_ES-davefx-medium', LESSAC = 'piper:en_US-lessac-high'

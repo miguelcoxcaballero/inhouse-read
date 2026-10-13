@@ -1,9 +1,8 @@
-import './helpers/rust-ui-ready.js'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ReadingVoice } from '../../src/js/readers/reading-voice.js'
-import { loadNeural } from '../../src/js/readers/neural-runtime.js'
-import { neuralVoices, setNeuralEngine } from '../../src/js/readers/neural-voice/index.js'
-import { createFakeNeuralEngine, FAKE_CATALOG } from '../helpers/fake-neural-engine.js'
+import { ReadingVoice } from '../../../src/js/readers/reading-voice.js'
+import { loadNeural } from '../../../src/js/readers/neural-runtime.js'
+import { neuralVoices, setNeuralEngine } from '../../../src/js/readers/neural-voice/index.js'
+import { createFakeNeuralEngine, FAKE_CATALOG } from '../../helpers/fake-neural-engine.js'
 
 const VOICE = 'piper:es_ES-davefx-medium', SECOND = 'piper:es_MX-claude-high'
 let savedCatalogue

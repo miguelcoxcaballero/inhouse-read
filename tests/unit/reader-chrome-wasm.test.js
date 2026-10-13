@@ -72,11 +72,11 @@ for(let round=0;round<2;round++){const before=core.memory.buffer.byteLength;for(
 
 })
 
-it('adopts late chrome functions without recreating the open reader',()=>{
+it('delegates every voice state to the Rust function without recreating the open reader',()=>{
  const {host}=setup(false,1),chrome=new ReaderChrome(host),panel=host.panel
- const native={reader_voice_state:vi.fn(ui.reader_voice_state)}
- chrome.voiceState('playing','First');runtime.ui=native;chrome.voiceState('paused','Second')
- expect(native.reader_voice_state).toHaveBeenCalledOnce();expect(host.panel).toBe(panel)
+ const native={reader_voice_state:vi.fn(ui.reader_voice_state)};runtime.ui=native
+ chrome.voiceState('playing','First');chrome.voiceState('paused','Second')
+ expect(native.reader_voice_state).toHaveBeenCalledTimes(2);expect(host.panel).toBe(panel)
  expect(panel.querySelector('.reading-audio-status').textContent).toBe('Second')
 })
 it('schedules no focus scrolling for closed panels and ignores closure before a pending frame',()=>{
@@ -90,4 +90,8 @@ it('does not hide callback errors or skip the remaining state notifications',()=
  const {host,events}=setup(true,1),error=Error('warm failed');host.neuralPicker.warmUp=()=>{throw error}
  expect(()=>host.voiceState('paused','Paused')).toThrow(error)
  expect(events).toEqual([['mini','paused','Paused'],['back']]);expect(host.panel.querySelector('[data-play]').getAttribute('aria-label')).toBe('Continuar')
+})
+it('fails with a clear error instead of working around a missing core',()=>{
+ const {host}=setup(false,1),chrome=new ReaderChrome(host);runtime.ui=null
+ expect(()=>chrome.voiceState('playing','x')).toThrow('Rust UI is not loaded')
 })
