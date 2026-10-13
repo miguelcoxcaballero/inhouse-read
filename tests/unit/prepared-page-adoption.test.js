@@ -41,3 +41,6 @@ it('preserves mismatch priority, coercion and JSON errors across the actual modu
 it('releases native key, snapshot and callback references after repeated complete lifetimes',()=>{
  runtime.ui=native;for(let i=0;i<200;i++){const cache=create(),snapshot=page(),ticket=cache.begin('book');cache.store(ticket,key(),snapshot);expect(cache.take(key())).toBe(snapshot);cache.destroy();expect(ui.ui_live_handles()).toBe(0)}expect(runtime.native).toBe(200)
 });
+it.each(['frozen','getter-only'])('keeps the original assignment error for a %s snapshot',kind=>{
+ for(const mode of ['legacy','rust']){runtime.ui=mode==='rust'?native:null;const cache=create(),snapshot=page();if(kind==='frozen')Object.freeze(snapshot);else{const bounds=snapshot.displayBounds;Object.defineProperty(snapshot,'displayBounds',{get:()=>bounds})}cache.store(cache.begin('book'),key(),snapshot);expect(()=>cache.take(key({viewport:{left:30,top:15,width:390,height:800}}))).toThrow(TypeError);expect(cache.peek()).toBeNull()}
+});

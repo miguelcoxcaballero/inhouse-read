@@ -1,6 +1,14 @@
 import {getRustUI} from './rust-ui.js'
-import {createLegacyPreparedPageCache,legacyPageKeyMismatch} from './prepared-page-legacy.js'
-export {createStageGate} from './prepared-page-legacy.js'
+import {createLegacyPreparedPageCache,legacyPageKeyMismatch,createStageGate as createLegacyStageGate} from './prepared-page-legacy.js'
+// Keep promises/idle callbacks from the existing selection. No extra task
+// or download is scheduled when this native controller is not available.
+export function createStageGate(settled,{idle=()=>new Promise(resolve=>setTimeout(resolve,0))}={}){
+ const Native=getRustUI()?.RustStageGate
+ if(!Native||!['wait','release'].every(key=>typeof Native.prototype?.[key]==='function'))return createLegacyStageGate(settled,{idle})
+ let view
+ try{view=new Native(settled,idle)}catch{return createLegacyStageGate(settled,{idle})}
+ return{wait:()=>view.wait(),release:reason=>view.release(reason),destroy(){view?.free();view=null}}
+}
 
 export function pageKeyMismatch(prepared,wanted,{allowViewportTranslation=false}={}){
  const ui=getRustUI()
@@ -17,7 +25,7 @@ export function createPreparedPageCache(){
   const Native=getRustUI()?.RustPreparedPageCache
   if(!Native||!['begin','isCurrent','store','take','has','peek','invalidate','ownsBook'].every(key=>typeof Native.prototype?.[key]==='function'))return owner
   let next
-  try{next=new Native(legacy.transferState(),(bounds,left,top)=>({...bounds,left,top}))}catch{next?.free();return owner}
+  try{next=new Native(legacy.transferState(),(snapshot,bounds,left,top)=>{snapshot.displayBounds={...bounds,left,top}})}catch{next?.free();return owner}
   legacy.releaseOwnedState();owner=next;return owner
  }
  return{

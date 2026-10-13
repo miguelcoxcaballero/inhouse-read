@@ -1,4 +1,41 @@
-# 1.7.230 — página preparada en Rust (local)
+# 1.7.231 — espera de selección en Rust (local)
+
+Changelog: «Apertura y cancelación coordinadas en Rust».
+RustStageGate conserva settlement→idle y la carrera con abrir/cancelar.
+Si el módulo no está listo, la selección actual mantiene su gate anterior;
+una selección nueva usa Rust cuando está disponible. No se reinicia ni
+se retrasa la selección. Rust no retiene píxeles ni objetos del libro.
+Se conserva el orden exacto de microturnos, los motivos estrictos de release,
+errores de idle y la posibilidad original de idle tras una cancelación.
+Los handlers pertenecen a las promesas JS; sus finalizadores liberan las
+capturas de Rust al recogerlas, incluidas señales que nunca se resuelven.
+6 casos originales de gate y24 nuevos de turnos/carreras aprobados.
+La prueba focal del prototipo seleccionó esos6; los otros47 de caché del
+archivo quedaron sin ejecutar y no se cuentan como aprobación nativa.
+169 focalizadas/7 archivos/6.70s y6478 completas/433 archivos/364.57s
+aprobadas.2 E2E finales nuevos/26.3s verifican abrir y cancelar una selección
+real, una instancia UI y los exports de gate; también con módulo pendiente.
+2000 ciclos terminados y2000 adicionales (1000 terminados/1000 cancelados)
+en Chromium vuelven a0 referencias después de dos recogidas forzadas por lote.
+No se afirma liberación inmediata antes de GC ni ausencia de cualquier fuga.
+Se corrige un desajuste de la caché al rebajar el destino de una imagen
+readonly: Reflect.set(false) no reproducía el TypeError original. Dos tests
+reprodujeron ese error y su log cache-readonly-original.log se conserva.
+El host ejecuta la misma asignación estricta/spread original; Rust decide
+cuándo y las coordenadas. Los dos casos readonly y todos los anteriores pasan.
+7407 Rust/38112 JS =16.27%,97/289 archivos propios no vacíos, incluyendo
+comentarios/fallback; no es porcentaje de funciones terminadas.
+UI local927386 bytes, SHAc5ad1ba048acd05872b4422cae45361df4dbae2e932924b79a46b136df40d563.
+App/decor/voice y los modelos/renderizadores mantienen sus bytes de230.
+No se atribuye una mejora global de velocidad a la coordinación del gate.
+62 E2E finales/10.9m aprobados sin reintentos, incluidos los contratos de
+cierre8s. Pendiente: publicación y comprobación real de231.
+APK1.1.15/28, A/B y revisión compartida del updater intactos.
+CI230 falla sólo en UI2/115234622203; los fallos y logs originales de229/230
+se conservan. No se afirma su corrección.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-stage-prototype.
+
+# 1.7.230 — página preparada en Rust
 
 Changelog: «Página preparada gestionada en Rust».
 RustPreparedPageCache conserva generación, ticket, clave y bitmap originales,
@@ -30,7 +67,23 @@ UI local925030 bytes, SHA11eddc086d675944971d52760f34d9c644cd1f998cad5197f196aa5
 app/decor/voice mantienen exactamente los hashes de229.
 Esta migración conserva la coordinación; no se atribuye velocidad global.
 60 E2E finales/10.4m aprobados sin reintentos, incluidos los contratos
-de cierre8s. Pendiente: publicación y comprobación real de230.
+de cierre8s. Publicación230 comprobada:
+main4f98dc2fa88860c6a84bc7de4795b84fe961176a,
+Deploy38379054377/Pages38379223722 aprobados,
+Pages9ac0dbcf66a7a0a0250d11492352f837b85aeadc.
+109 archivos reales coinciden HTTP/tamaño/SHA/atribución.
+UI pública925006 bytes, SHAf37d19b8b38cd49858cf7eb6b595ad36f8d71d686b24534a53695ee3e48e2b44;
+local Windows925030. Se comprueban los exports y bytes públicos; no se
+presupone igualdad con el binario local. Dos perfiles exactos,una instancia
+UI,referencias estables tras1000 preparaciones/100 menús;30 PCM aprobados.
+2 PDF/42.2s,10 escena/importación/apertura/1.5m y3 perfil/updater/14.5s
+aprobados. Ambos casos públicos consumen el bitmap real mediante Rust.
+APK real descargado: bytes/firma/loader2107 aprobados. Android muestra230,
+PID31026,content URI real,Lessac2×10.8341043084s,8done/9start,mismo proceso
+y sin FATAL. APK1.1.15/28 y B intactos.
+CI230/38379054732 fallida sólo en UI2/115234622203: ambos contratos de
+cierre8s fallan también en reintentos; todos los otros trabajos aprobaron.
+ci230-ui2-original.log y su artefacto se conservan íntegros.
 APK1.1.15/28, A/B y revisión compartida del updater sin cambios.
 La CI229 fallida se conserva; no se afirma corrección a sus cierres.
 Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-prepared-prototype.

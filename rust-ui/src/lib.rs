@@ -1,3 +1,4 @@
+mod stage_gate;
 mod prepared_page;
 mod refresh_queue;
 mod foliage;

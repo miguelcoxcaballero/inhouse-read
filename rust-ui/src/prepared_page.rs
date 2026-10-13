@@ -54,7 +54,7 @@ impl RustPreparedPageCache{
   let dy=numeric(&prop(&prop(&key,"viewport")?,"top")?)?-numeric(&prop(&prop(&held_key,"viewport")?,"top")?)?;
   let valid=if !bounds.is_truthy(){false}else{let mut valid=true;for edge in ["left","top","width","height"]{if finite(prop(&bounds,edge)?).is_none(){valid=false;break}}valid};
   if !valid||!(numeric(&prop(&bounds,"width")?)?>0.0&&numeric(&prop(&bounds,"height")?)?>0.0)||!(numeric(&prop(&bounds,"left")?)?+dx).is_finite()||!(numeric(&prop(&bounds,"top")?)?+dy).is_finite(){*self.last_discard.borrow_mut()=reason("viewport");return Ok(JsValue::NULL)}
-  if dx!=0.0||dy!=0.0{let destination=self.rebase.call3(&JsValue::UNDEFINED,&bounds,&JsValue::from_f64(numeric(&prop(&bounds,"left")?)?+dx),&JsValue::from_f64(numeric(&prop(&bounds,"top")?)?+dy))?;Reflect::set(&boxed(&snapshot)?,&"displayBounds".into(),&destination)?;}
+  if dx!=0.0||dy!=0.0{self.rebase.call4(&JsValue::UNDEFINED,&snapshot,&bounds,&JsValue::from_f64(numeric(&prop(&bounds,"left")?)?+dx),&JsValue::from_f64(numeric(&prop(&bounds,"top")?)?+dy))?;}
   Ok(snapshot)
  }
  pub fn has(&self,book:JsValue)->Result<bool,JsValue>{let entry=self.entry.borrow().clone();Ok(prop(&prop(&entry,"key")?,"bookId")?==book)}

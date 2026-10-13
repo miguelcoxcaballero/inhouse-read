@@ -1,11 +1,11 @@
 # Migración a Rust: implementación y comprobaciones
 
-Entrega local1.7.230: caché y validación de páginas preparadas en Rust.
-Inventario:7373 Rust/38104 JS, **16.21%**; no mide funciones terminadas.
-6446 unitarias,137 focalizadas,2 nuevos E2E y60 E2E finales aprobados.
-Publicación230 y comprobación pública pendientes. La web229 y su APK real están comprobados;
-CI229 falla sólo en los dos contratos de cierre8s, con originales conservados.
-No se afirma corrección a esos fallos. La espera StageGate sigue JS.
+Entrega local1.7.231: espera de selección/apertura en Rust.
+Inventario:7407 Rust/38112 JS, **16.27%**; no mide funciones terminadas.
+6478 unitarias,169 focalizadas,2 nuevos E2E y62 E2E finales aprobados.
+Publicación231 y comprobación pública pendientes. Web230 y APK real comprobados;CI230 falla sólo en los dos cierres8s.
+Se conserva el orden asíncrono y se corrige la asignación de destinos readonly.
+Los fallos originales de CI229 están conservados; no se afirma su corrección.
 Detalle de pruebas, límites y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout
