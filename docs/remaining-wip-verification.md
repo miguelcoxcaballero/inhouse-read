@@ -1,3 +1,102 @@
+# 1.7.225 — estilos físicos de los lomos en Rust
+
+Changelog: «Preparación de lomos más rápida».
+Una llamada por sección calcula hashes UTF-16, paleta, textura, altura y grosor
+físico según palabras, con el mismo orden f64 y redondeo. El host conserva la
+normalización del libro, identidad de paletas y objetos de la escena. El layout
+recibe los estilos preparados; sus posiciones, plantas, orden, espaciado y
+callbacks conservan la implementación existente. La llamada habitual sin
+preparación mantiene su orden original de evaluación.
+Los módulos fríos, antiguos o fallidos conservan el cálculo anterior, igual
+que valores no compatibles, NUL y surrogates sin pareja. Los paquetes se
+limitan a 4096 libros/1 MiB y los resultados se validan antes de usarlos.
+
+3503 comparaciones exactas con el módulo compilado real;
+3500 adicionales en Chromium. 200 ciclos, 0
+referencias retenidas y 655360 bytes estables.
+97 focalizadas, 6227 unitarias completas/424 archivos y
+52 E2E aprobados sin reintentos. Los dos nuevos casos observan el kernel real
+sobre bytes importados y palabra total calculada por la app, tanto listo como
+tras una descarga pendiente. Incluyen fallback, memoria, referencias, planos
+completos y rechazo de paquetes/vectores inválidos.
+
+Chromium 390×844, CPU de escritorio ×4, preparación/copias/objetos incluidas:
+20 libros 0.097→0.065 ms;
+100 libros 0.410→0.232 ms;
+700 libros 2.820→1.093 ms.
+Se excluyen DOM, layout y GPU. No demuestra ese ahorro en el renderizado entero
+ni rendimiento/temperatura de un teléfono físico. El benchmark y comparaciones
+se repitieron con el WASM y puente definitivos, incluidos sus validadores.
+El primer script externo de integración conserva un error de comillas;
+se corrigió antes de ejecutarse, sin cambios parciales en el runtime.
+
+CI224/38337212120 queda rechazada: UI2/115099896750 conserva ambos cierres
+fuera de 8 s; lectura/115099896830 conserva el primer cambio de voces que no
+encontró PCM activo con margen >3 s en 90 s. El reintento aprobado no se toma
+como aprobación. Logs y artefactos originales en rust-profile-view-prototype.
+Esta entrega no se atribuye la solución de esos fallos.
+
+Inventario: 7070 líneas Rust/
+37929 JS = 15.71%, no funcional.
+UI local 902039 bytes, SHA256 445cdc46beff136df8b71cce1275f54ab5ac642434e91f8de549697a279ae6d8.
+Publicación pendiente. APK1.1.15/28 y updater sin modificaciones.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-shelf-styles-prototype.
+
+# 1.7.224 — menú de cuenta en Rust
+
+Changelog: «Menú de cuenta en Rust».
+Rust posee las referencias, foto, iniciales, etiquetas, visibilidad y estado
+ del perfil, y gestiona sus eventos y foco. Los setters reciben JsValue:
+conservan UTF-16, coerciones DOM y URLs. Se reutilizan valores primitivos;
+los objetos se convierten cada vez y las imágenes fallidas se reintentan.
+El updater se cierra mediante su callback anterior. La ruta compuesta protege
+los botones reemplazados durante una pulsación.
+La carga espera el primer frame. La adopción conserva el DOM y el menú abierto,
+con un solo conjunto de listeners, liberado al descartar la página. Bfcache se
+conserva. OAuth, Drive y sincronización siguen en sus clientes existentes.
+
+6464 comparaciones DOM y 101 ciclos; control
+0→21→0, 1310720 bytes estables.
+59 focalizadas, 6213 unitarias completas/423 archivos y 50 E2E aprobados.
+Los nuevos casos observan construcción/conexión Rust, descarga pendiente,
+foco, Escape, actualización inline, foto fallida y 1000 actualizaciones.
+Chromium 390×844, escritorio CPU×4, ciclo DOM/puente con datos repetidos:
+0.0130 ms JS/0.0115 ms Rust. No acredita aceleración
+significativa global; se excluyen red, imágenes, OAuth y GPU. Los prototipos
+más lentos Reflect/setters separados se mantienen fuera del runtime.
+
+Se conserva unit-focused-original.log (sintaxis de la prueba nueva corregida).
+new-e2e.log y su artefacto conservan el caso sin query Android que esperaba
+una entrada Android en modo web. El helper ahora permite una URL de arranque;
+ambos casos usan inhouse_app=1, sin alterar asserts ni plazos.
+El primer generador del informe falló al leer JSON UTF-8 como cp1252. El código
+verificado se publicó como 00282c71fc0b9243b5257178db3ab68b62200a93; este informe
+se corrige después, sin cambiar ese runtime. CI223 mantiene los cierres
+originales fuera de 8 s; no se atribuye su corrección a esta entrega.
+
+Inventario: 7027 líneas Rust/37908 JS = 15.64%, no funcional.
+UI local 897586 bytes, SHA256 ff5325aa0cbb34b026f7f300ca99763f96f11edb6cdbf54571495e6b2ddf7f88.
+Publicación verificada: 00282c71fc0b9243b5257178db3ab68b62200a93.
+Deploy 38337211985/Pages 38337320827; Pages b141471db95553d66d39dc9f50239d0831e39b32.
+UI pública 897554 bytes, SHA256 dac62117fb8b61164438b6fc96d80dfab3974da4aa0ca5166fd40435017a5534.
+published-1791858891560: HTTP/tamaño/SHA, dos perfiles exactos,
+1000 preparaciones/100 menús, 515→533→515 referencias y una sola instancia,
+30 pruebas PCM y APK real con loader 2107 bytes correctos.
+Dos PDF públicos, tres del perfil/updater y dos del catálogo aprobados.
+Los PDF iniciales con query Android conservaron un aviso real del updater
+interceptando las pulsaciones. El segundo intento con URL habitual conserva
+un error de archivo de traza eliminado por otro proceso Playwright que
+compartía outputDir. La comprobación final usa carpeta exclusiva y conserva
+los asserts: dos PDF aprobados (39.3 s). Los originales quedan separados.
+APK 1.1.15/28 muestra web 224: Lessac 2×, 10.23s,
+8 finales/9 inicios, PID 26299 estable, sin FATAL.
+CI224/38337212120 conserva UI de voces reales/115099896830: el primer cambio
+entre voces no encontró PCM activo con más de 3 s de margen en 90 s.
+El reintento completo aprobado no convierte el job original en aprobado.
+Log y artefacto original en rust-profile-view-prototype/ci224-reading.
+El estado de los restantes jobs se registra aparte; updater sin modificaciones.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-profile-view-prototype.
+
 # 1.7.223 — ilustraciones del catálogo en Rust
 
 Changelog: «Ilustraciones del catálogo en Rust».

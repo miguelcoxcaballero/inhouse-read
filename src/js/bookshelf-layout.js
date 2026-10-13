@@ -286,7 +286,7 @@ function createShelf(index) {
  * @param {object} [options] ver DEFAULT_LAYOUT
  * @returns {Array<{index:number, items:object[], usedWidth:number, freeWidth:number, width:number}>}
  */
-export function layoutShelves(books, options = {}) {
+export function layoutShelves(books, options = {}, preparedStyles) {
   const cfg = withDefaults(DEFAULT_LAYOUT, options);
   const available = cfg.shelfWidth - cfg.padding * 2;
   if (!Array.isArray(books) || books.length === 0) return [];
@@ -351,8 +351,9 @@ export function layoutShelves(books, options = {}) {
     shelves.push(shelf);
   };
 
+  let styleIndex = 0;
   for (const book of books) {
-    const style = spineStyleFor(book, cfg.spine);
+    const style = preparedStyles?.[styleIndex++] ?? spineStyleFor(book, cfg.spine);
     const requestedWidth = typeof cfg.displayWidthFor === 'function'
       ? Number(cfg.displayWidthFor(book, style))
       : NaN;
@@ -482,11 +483,11 @@ export function buildSections(books, options = {}) {
  * @param {object} [options] mezcla de DEFAULT_SECTIONS y DEFAULT_LAYOUT
  * @returns {Array<{id:string, title:string, count:number, shelves:object[]}>}
  */
-export function planBookshelf(books, options = {}) {
+export function planBookshelf(books, options = {}, prepareStyles) {
   return buildSections(books, options).map((section) => ({
     id: section.id,
     title: section.title,
     count: section.books.length,
-    shelves: layoutShelves(section.books, options)
+    shelves: layoutShelves(section.books, options, typeof prepareStyles === "function" ? prepareStyles(section.books, options?.spine) : undefined)
   }));
 }

@@ -1,9 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
-Última entrega 1.7.223: ilustraciones del catálogo en Rust.
-6185 unitarias completas, 104 focalizadas y 47 E2E aprobados.
-Inventario: 6919 líneas Rust/37915 JS, **15.43%**; no mide funciones terminadas.
-1.7.222 pública y APK real verificados; CI se registra por separado.
+Última entrega 1.7.225: estilos físicos de los lomos en Rust.
+6227 unitarias completas, 97 focalizadas y 52 E2E aprobados.
+Inventario: 7070 líneas Rust/37929 JS, **15.71%**; no mide funciones terminadas.
+1.7.224 pública y APK real verificados; CI se registra por separado.
 Detalle de pruebas, fallos originales y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout

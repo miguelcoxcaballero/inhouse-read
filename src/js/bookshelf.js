@@ -98,6 +98,7 @@ import { needsDriveDownload } from './book-storage-policy.js';
  * hay que abrir uno.
  */
 
+import { batchSpineStyles } from './spine-styles.js';
 import { planBookshelf, bookmarkFor, withDefaults, DEFAULT_LAYOUT } from './bookshelf-layout.js';
 import { canAdoptShelfMetadata } from './shelf-metadata-records.js';
 import { analyzeCoverAppearance, coverAspectRatio, readCoverAspectRatio, withCoverAppearance } from './cover-appearance.js';
@@ -1864,7 +1865,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       plantWidthFor: plantSlotWidth,
       // Sin secciones, 0 recientes: todo cae en una estantería continua.
       recentLimit: opts.sections ? opts.recentLimit : 0
-    });
+    }, batchSpineStyles);
     if (!opts.sections && !plan.length) plan.push({ id:'library', title:'', count:0, shelves:[] });
     if (!opts.sections && plan.length === 1) {
       const minimum = Math.max(1, Math.floor(Number(opts.minimumShelves) || 1));
