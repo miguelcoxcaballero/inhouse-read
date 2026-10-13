@@ -1,5 +1,7 @@
 /* global __STUDIO_ENVIRONMENT_VERSION__ */
 import * as THREE from 'three';
+import {getStudioScanCore} from './studio-scan-state.js';
+import {rustStudioHalfScan,legacyStudioHalfScan} from './studio-scan-wasm.js';
 
 // Both persistent renderers use the same immutable studio. Its CubeUV atlas
 // contains every roughness level already, so a bit-exact half-float transfer
@@ -68,13 +70,9 @@ export function prepareStudioEnvironmentCache(renderer, target) {
     Promise.resolve(renderer.readRenderTargetPixelsAsync(target,0,0,width,height,data))
       .then(result => {
         if (result !== data) return;
-        // One plain pass over the 3M halves: callbacks cost a long task.
-        let lit = false;
-        for (let index = 0; index < data.length; index++) {
-          const value = data[index];
-          if ((value & 0x7c00) === 0x7c00) return;
-          if (value !== 0) lit = true;
-        }
+        // Scan the exact half words with one bounded scratch chunk. The
+        // original data remains the texture/persistence payload, never a copy.
+        const lit = rustStudioHalfScan(getStudioScanCore(),data) ?? legacyStudioHalfScan(data);
         if (!lit) return;
         atlas = {data,width,height,settings};
         persist(atlas);

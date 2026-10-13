@@ -1,4 +1,59 @@
-# 1.7.232 — importación de Android coordinada en Rust (local)
+# 1.7.233 — revisión de iluminación en Rust (local)
+
+Changelog: «Escaneo de iluminación más rápido».
+studio_half_scan valida los mismos valores de 16 bits del atlas de estudio.
+Lee cuatro valores por operación i64 de WebAssembly básico; no requiere
+SIMD ni convierte los colores. Conserva cero con signo y rechaza NaN/infinito.
+El host copia bloques de 128 KiB y los libera al terminar; conserva el
+buffer original para la textura y su persistencia. Entradas pequeñas,
+compartidas o de tipo especial, módulo frío y errores retienen el algoritmo
+anterior, sin esperar Rust. No se modifica la escena, el acabado ni el lector.
+
+La notificación opcional del loader entrega la misma instancia y no cambia
+la identidad de su promesa. Se separa la referencia del escáner para evitar
+que la caché de iluminación dependa de todo el WASM de la aplicación.
+El cálculo de revisión incluye el Rust concreto del escáner. Sigue
+invalidando cambios del generador, sus dependencias, el motor y el contrato;
+una actualización ajena del núcleo no fuerza otra generación del estudio.
+El primer build falló al tratar wasm?url como un archivo: se conserva
+build-original-hash-query.log; no se ignoró la comprobación de revisión.
+Esta revisión nueva invalida una vez el atlas anterior; el E2E comprueba
+que la siguiente recarga reutiliza los mismos valores y no vuelve a escanear.
+
+60 pruebas focalizadas/6 archivos/5.45 s aprobadas. Comprueban las 65536
+codificaciones por separado y las 262144 combinaciones de posición/valor
+del bloque de cuatro, accesos desalineados, finales parciales, conservación
+de entradas, fallback, liberación, 200 ciclos y el cache con Rust real.
+No todas las pruebas históricas de cache con buffers pequeños ejecutan
+Rust; los casos nuevos exigen sus llamadas. 6522 unitarias/437 archivos
+aprobadas en 369.12 s. La tanda de 6520 anterior a la optimización está
+conservada aparte, no se usa como prueba del kernel final.
+Un E2E focal/5.5 s comprobó el escáner inicial. El E2E de la tanda final
+comprueba el kernel definitivo sobre los valores reales leídos de la GPU,
+su huella completa, el registro persistido, una instancia y la recarga
+sin nueva lectura. La tanda final de 70 E2E pasó sin reintentos, con los
+contratos originales de cierre 8 s, voces, lector, importación e iluminación.
+
+Medianas de 9 rondas en Chromium con CPU×4; incluyen asignación, copias,
+puente, resultado y liberación. Excluyen lectura de GPU y renderizado:
+- 65536 valores: 0.28 → 0.11 ms.
+- 262144 valores: 1.00 → 0.30 ms.
+- 1048576 valores: 8.49 → 1.34 ms.
+- 3145728 valores: 12.63 → 4.47 ms.
+No acreditan velocidad global ni tiempos de un teléfono físico. Las medidas
+del prototipo y del puente simple anteriores permanecen separadas.
+
+Inventario: 7456 Rust/38166 JS = 16.34 %, 99/292 archivos propios.
+Incluye comentarios y alternativas; no mide funciones terminadas.
+App WASM 379035 bytes, SHA256 eaccdb0c22f00819e753a64241e868365d9e0d23c8b068a9d46825467a081305.
+UI local 928738 bytes, SHA256 54debe2c83d38343342e716a28553ebdd75b89000dd50041bbbe0d9692714d06.
+Decoración y voz conservan sus bytes. APK 1.1.15/28, A/B y updater intactos.
+Pendientes: publicación y comprobación de la web y del APK reales de 233.
+La CI completa de 232 terminó aprobada. Se conservan los fallos originales
+de 231 y revisiones anteriores; no se afirma su corrección universal.
+Evidencia: D:/CodexEvidence/InhouseRead-20261012/rust-studio-scan-prototype.
+
+# 1.7.232 — importación de Android coordinada en Rust
 
 Changelog: «Importación de Android coordinada en Rust».
 RustImportShelfGate conserva las señales active/pending y aplaza la
@@ -27,7 +82,25 @@ Incluye comentarios y alternativas; no mide porcentaje funcional.
 UI local: 928738 bytes, SHA256 8099e4bcfc7307769fdaabe7ab039fcdceed5eb02cbbe17f3b1badfa92c0a2b1.
 App, decoración y voz conservan sus bytes. No se atribuye una aceleración
 global a este gate. APK 1.1.15/28 y A/B se conservan sin cambios.
-Pendientes: publicación y comprobación de la web y del APK reales de 232.
+Publicación 232 comprobada:
+main 5e7389511d7393f40685409c88c34489a703db21; Deploy 38388598745 y Pages 38388730035 aprobados,
+Pages a9a366cdcc2e0ac49b77b28565ed26323273f320. Los 109 archivos públicos coinciden por HTTP,
+tamaño y SHA-256 con el artefacto atribuido a ese commit.
+UI pública 928706 bytes, SHA256 2ff652963ca788e6f25bf53f81ac07132d3e06495a14916863a6f4a6bc7cd261.
+La compilación de Linux se comprueba por sus propios bytes publicados.
+Primer intento: Three respondió HTTP 503; respuesta y cabeceras conservadas
+en published-1791890143160 y public-artifact-original-503.log.
+La segunda comprobación completa pasó, sin modificar aserciones.
+Dos perfiles exactos, una instancia UI, referencias estables y 30 PCM
+aprobados. 2 PDF/42.0 s, 15 escena/importación/iluminación/2.8 min y
+3 perfil/updater/14.3 s públicos aprobados. No acreditan un teléfono físico.
+APK público descargado y verificado por bytes, firma, manifiesto y loader
+de 2107 bytes. Android mostró 232/PID 32461, importó el content URI
+real y reprodujo Lessac a 2× durante 10.7867120181 s acumulados, con
+8 fragmentos terminados/9 iniciados, mismo proceso y sin FATAL.
+CI 232/38388598741 terminó aprobada: unitarias, seis grupos completos
+de UI, cuatro tandas de voces reales y agregador. Los verificadores
+exigen todos los casos listados, sin omisiones ni reintentos aprobatorios.
 CI 231 falló en shelf-light-effect: el atributo de iluminación de nogal
 no apareció dentro de 8 s. El reintento pasó, pero se rechaza como flaky.
 Unitarias, demás UI y cuatro tandas de voces reales pasaron. Originales

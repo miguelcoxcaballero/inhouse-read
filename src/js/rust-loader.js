@@ -1,5 +1,5 @@
 // A separate owner and memory for each independently versioned Rust module.
-export function createRustLoader(coreUrl, earlyKey, domain) {
+export function createRustLoader(coreUrl, earlyKey, domain, onReady) {
   let core = null
   let loading = null
   let retryAfter = 0
@@ -44,6 +44,9 @@ export function createRustLoader(coreUrl, earlyKey, domain) {
         throw new Error('Incompatible Rust core')
       }
       core = exports
+      // Optional owners adopt the same compiled instance synchronously. An
+      // observer cannot invalidate compilation or introduce another Promise.
+      try { onReady?.(core) } catch {}
       retryAfter = 0
       return core
     })().catch(() => {

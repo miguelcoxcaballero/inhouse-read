@@ -95,3 +95,6 @@ mod font_prepare;
 
 #[cfg(feature = "app")]
 mod shelf_occlusion;
+
+#[cfg(feature="app")]
+mod studio_scan;

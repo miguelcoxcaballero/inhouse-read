@@ -1,12 +1,13 @@
 # Migración a Rust: implementación y comprobaciones
 
-Entrega local 1.7.232: coordinación de importación de Android en Rust.
-Inventario: 7431 Rust/38132 JS, **16.31 %**; no mide funciones terminadas.
-6505 unitarias, 35 focalizadas, 2 nuevos E2E y 68 E2E finales aprobados.
-Publicación y comprobación pública de 232 pendientes. Web 231 y APK real
-comprobados; CI 231 falló en la iluminación de nogal. Los fallos originales
-permanecen conservados. El port adopta una importación pendiente sin
-reiniciarla ni construir la estantería antes de regresar al inicio.
+Entrega local 1.7.233: escaneo del atlas de iluminación en Rust.
+Inventario: 7456 Rust/38166 JS, **16.34 %**; no mide funciones terminadas.
+6522 unitarias, 60 focalizadas y 70 E2E finales aprobados sin reintentos.
+El kernel valida los valores originales por bloques de 128 KiB y conserva
+los datos, los acabados y la caché. Escaneo grande CPU×4: 12.63→4.47 ms,
+incluyendo puente y copias; no mide renderizado ni velocidad global.
+Publicación y comprobación pública de 233 pendientes. Web 232, APK real y
+CI completa de 232 aprobados. Los fallos originales anteriores se conservan.
 Detalle de pruebas, límites y publicación: remaining-wip-verification.md.
 
 Base descargada con `git fetch origin --prune`: `c83add7`, igual que el checkout

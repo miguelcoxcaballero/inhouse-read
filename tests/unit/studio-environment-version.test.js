@@ -33,9 +33,10 @@ describe('automatic studio environment build revision', () => {
     write('src/js/spine-surface.js', 'export const changedTitlePaint = true\n');
     write('src/js/readers/pdf-reader.js', 'export class PdfReader {}\n');
     write('package.json', '{"version":"9.9.9"}\n');
+    write('src/wasm/inhouse_read_core.wasm', 'unrelated compiled kernel change');
     expect(studioEnvironmentHash(root)).toBe(before);
   });
-  it.each(['src/js/studio-renderer.js', 'src/js/studio-environment-cache.js', 'src/js/light.js'])('invalidates changes to %s', input => {
+  it.each(['src/js/studio-renderer.js', 'src/js/studio-environment-cache.js', 'src/js/light.js', 'rust-core/src/studio_scan.rs'])('invalidates changes to %s', input => {
     const before = studioEnvironmentHash(root);
     write(input, readFileSync(join(root,input),'utf8') + '// changed generator or contract\n');
     expect(studioEnvironmentHash(root)).not.toBe(before);
