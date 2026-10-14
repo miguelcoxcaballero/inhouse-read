@@ -1,3 +1,93 @@
+# 1.7.243 — Drive, copia de la biblioteca, carpeta local e importación Android en Rust
+
+Changelog: «Sincronización con Drive, copia de la biblioteca y carpeta local en Rust».
+Unidad cloud-library, bloque 1. La lógica pasa al módulo `ui` (`rust-ui`); en
+JavaScript quedan las llamadas de plataforma que Rust invoca (`fetch`, `crypto.subtle`,
+`localStorage`, IndexedDB, Google Identity Services, los puentes de Android, `navigator.locks`
+y los temporizadores). Ningún formato persistido cambia.
+
+Pasa a Rust (líneas no vacías JS antes → ahora):
+- `drive-client.js` 549 → 125 (`drive_client.rs`: inicio de sesión web, flujo de código de
+  autorización y PKCE de Android con su transacción persistida, guarda de cuenta en cada
+  petición, carpeta «inhouse read», manifiestos por dispositivo, estado de lectura, subidas
+  reanudables). Se queda en JS la sesión guardada (la lee la estantería antes de que ningún
+  módulo pueda cargar) y los adaptadores de `fetch`/`crypto`/GIS/puente.
+- `cloud-sync.js` 324 → 65 (`cloud_sync.rs`: conciliación de IndexedDB con Drive, cola de
+  progreso con sus temporizadores, subida y descarga de libros) y `library-backup.js`
+  204 → 37 (`library_backup.rs`: registros de último escritor por campo, manifiesto por
+  dispositivo, fusión, comprobación de formato). Los controladores del anfitrión (biblioteca,
+  almacenes, cierres con `navigator.locks`) siguen en JS.
+- `local-folder-store.js` 123 → 93 (`folder_store.rs`: nombre sin colisión, copia, lectura
+  de vuelta y permiso; la limpieza del nombre es `file_name.rs` en el núcleo; el asa del
+  directorio sigue en IndexedDB y el selector es del navegador).
+- `android-file-import.js` 57 → 27 (`android_import.rs`: máquina del buzón de intents,
+  lectura por trozos, confirmación, reintentos y visibilidad).
+- `legacy-book-recovery.js` 27 → 14 (`legacy_recovery.rs`).
+- `content-freshness.js`: la lectura de las etiquetas `script`/`link` de `index.html` es
+  `rust-core/src/shell_signature.rs` (el núcleo numérico, que la página ya compila; no se
+  pide el módulo `ui` en el arranque). Sube 125 → 145 líneas porque el original usaba una
+  expresión regular y ahora hay un puente de memoria; el cálculo está en Rust y el original
+  congelado es la referencia de la prueba.
+- Nuevo `cloud-native.js` (25 líneas): entrega el módulo `ui` ya cargado, o lo pide una vez
+  que el primer fotograma vivo de la estantería se ha dibujado (o tras el plazo de 8 s de
+  `shelfPresented`); nada de esto compite con el primer fotograma.
+- Total de la unidad: JS 1409 → 531 líneas, Rust 377 → 2243. Inventario tras esta entrega:
+  13159 Rust / 32717 JS, **28,68 %** (main 1.7.242: 11293 / 33595, 25,16 %).
+
+No hay copia JavaScript de reserva: el original congelado vive en
+`tests/unit/helpers/reference-{cloud-sync,library-backup,drive-client,local-folder-store,
+android-file-import,legacy-book-recovery,content-freshness}.js` y solo lo usan las pruebas.
+Se pueden borrar las copias porque la nube es trabajo de fondo: ningún camino visible
+la espera. Antes de que el módulo esté en memoria, las llamadas que ya existían se
+comportan así: quitar un libro de la estantería no espera al módulo (el gesto de la
+papelera es visible), cerrar sesión y cancelar borran el estado guardado en el acto, la
+devolución de llamada OAuth de Android se responde al instante y se procesa cuando llega
+el módulo (la transacción PKCE sobrevive en `localStorage`), y la sincronización y el
+progreso esperan al módulo. Un módulo que no carga produce el error existente («No se
+pudo cargar la sincronización…») en lugar de fallar en silencio.
+
+Pruebas nuevas (diferenciales contra el original congelado): `cloud-differential`
+(70 escenarios con semilla de CloudSync y LibraryBackup: mismo estado, mismo tráfico a Drive,
+mismos resultados), `drive-client-differential` (120 escenarios: mismas peticiones, resultados,
+almacenamiento y eventos), `android-file-import-differential` (300 buzones),
+`local-folder-store-differential` (30 000 nombres, 1500 directorios, permisos con rechazo
+que lanza), `legacy-book-recovery-wasm` (600 escenarios), `shell-signature-core` (20 000
+documentos), `cloud-compat-fixtures` (manifiestos y archivo de estado escritos por versiones
+anteriores: mezcla idéntica y bytes idénticos), `cloud-progress-timers`, `cloud-bridge-preload`
+(el comportamiento antes de que el módulo esté en memoria) y `cloud-native`; el e2e
+`rust-cloud-startup` (con una sesión de Drive guardada, el módulo no se pide antes del
+primer fotograma vivo y la sincronización termina). Pruebas existentes modificadas, sin
+relajar aserciones: las suites que reinician módulos cargan el módulo `ui` real
+(`helpers/rust-ui-real.js`), `drive-session-race` hace una primera llamada antes de medir
+la renovación (el cliente se crea en la primera llamada) y `native-import-shelf-gate-rust`
+compara los asas vivos con una línea base medida tras una llamada asíncrona (el ejecutor de
+futuros del módulo conserva cuatro asas una vez que corre cualquier Rust asíncrono).
+
+Medidas (no son de teléfono). Núcleo 484 708 → 490 139 bytes (+5431), `ui` wasm
+1 020 297 → 1 323 815 (+303 518; se carga después del primer fotograma), `shelf` y `decor`
+sin cambio de tamaño. Arranque (`boot.mjs`, 6 libros, CPU ×4, dpr 3; 8 pares alternos base
+1.7.242 / mío): primer render de escena, mediana 3559 ms (rango 3394–3984) frente a
+3647 ms (3345–4479): no se detecta una diferencia fiable con la máquina compartida
+(±500 ms entre ejecuciones) y no se afirma ni mejora ni empeoramiento. No se mide la
+velocidad de la sincronización ni de Drive.
+
+Verificación (versión 1.7.243). Build correcto. Unitarias en 4 bloques: 117+117+117+114
+archivos, 1687+1297+1452+1738 = 6174 pruebas, todas pasan. E2E sobre mi build (puerto
+propio, una especificación cada vez): rust-cloud-startup 1/1, drive-library-restore 2/2,
+offline-shell 2/2, android-file-import 4/4, download-android 3/3, profile-updates 1/1,
+smoke 13/13, critical-regressions 6/6. No cambia ningún píxel (ningún estilo, texto ni
+vista): no se ejecutó el arnés visual.
+
+Límites: un fallo de carga del módulo `ui` hace que la sincronización con Drive, la copia de
+la biblioteca y la importación Android informen del error en lugar de usar una copia JS; el
+inicio de sesión guardado y la cancelación sí funcionan sin el módulo. Quedan en JS (con
+motivo): `cloud-backup-state.js`/`cloud-settings.js` (IndexedDB y `localStorage`, ya mínimos),
+`idle-startup.js` (es lo que espera el primer fotograma antes de cargar el módulo),
+`chunk-recovery.js` (la recuperación cuando falla una importación dinámica, que puede ser la
+del propio módulo `ui`), `offline-shell.js`, `rust-loader.js` (instancia el wasm),
+`library-store.js`, `offline-shell-worker.js`, `download-android.js` y `android-update.js`
+(siguientes bloques).
+
 # 1.7.242 — estantería: gestos, zoom, luz, colocación, papelera y retorno en Rust
 
 Changelog: «Gestos, zoom, luz, colocación y retorno de la estantería en Rust».

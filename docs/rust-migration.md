@@ -1,5 +1,10 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.243: Drive, copia de la biblioteca, carpeta local e importación Android en
+Rust (cliente de Drive con PKCE, conciliación y cola de progreso, registros por campo, buzón
+de intents, firma del documento desplegado). Inventario 13159 Rust/32717 JS, **28,68 %**;
+no mide funciones terminadas. Detalle en remaining-wip-verification.md.
+
 Entrega 1.7.242: estantería (gestos, zoom, luz, ajuste de baldas, papelera,
 retorno del libro y política del arrastre) en Rust, con un módulo `shelf` que carga
 la cabecera de la página. Inventario 11293 Rust/33595 JS, **25,16 %**; no mide
