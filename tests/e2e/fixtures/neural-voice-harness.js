@@ -1,6 +1,10 @@
 import { planSpeech } from '../../../src/js/readers/speech-text.js'
 import { encodeTensor, decodeTensor } from '../../../src/js/readers/neural-voice/native-ort.js'
 import { getNeuralEngine, neuralVoices, isNeuralVoiceId } from '../../../src/js/readers/neural-voice/index.js'
+import { requireRustUI } from '../../../src/js/rust-ui.js'
+
+// The reader never builds an engine before its Rust UI module is in (the engine's decisions live there).
+if (!await requireRustUI()) throw new Error('Rust UI is unavailable')
 
 // The spec drives the engine through window.neural and reads what it recorded.
 const engine = getNeuralEngine()

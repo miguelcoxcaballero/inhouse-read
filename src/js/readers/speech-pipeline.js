@@ -1,4 +1,4 @@
-function ranges(value){
+export function ranges(value){
  if(value===undefined)return undefined
  if(!Array.isArray(value))return new Float64Array(0)
  const result=new Float64Array(value.length*2);let index=0
@@ -6,11 +6,12 @@ function ranges(value){
  return result
 }
 import {units,properties,clause} from './speech-plan.js'
-const letters=code=>{const ch=String.fromCodePoint(code);return(/^\p{L}$/u.test(ch)?1:0)|(/^\p{Ll}$/u.test(ch)?2:0)}
+export const letters=code=>{const ch=String.fromCodePoint(code);return(/^\p{L}$/u.test(ch)?1:0)|(/^\p{Ll}$/u.test(ch)?2:0)}
+export function decodeUnits(chars){const chunks=[];for(let i=0;i<chars.length;i+=16384)chunks.push(String.fromCharCode.apply(null,chars.subarray(i,i+16384)));return chunks.join('')}
 export function rustSpeechPipeline(ui,raw,{footnotes=true,skipHeaders=false,headerRanges,pageBreaks,opening}={},from=0){
- raw=String(raw||'');if(raw.length>1_000_000)return undefined;let text
- const expose=chars=>{const chunks=[];for(let i=0;i<chars.length;i+=16384)chunks.push(String.fromCharCode.apply(null,chars.subarray(i,i+16384)));text=chunks.join('')}
- const packed=ui.speech_pipeline(units(raw),Boolean(footnotes),Boolean(skipHeaders),skipHeaders?ranges(headerRanges):undefined,Float64Array.from((pageBreaks||[]).filter(Number.isFinite)),from,Boolean(opening),(a,b)=>raw.slice(a,b).toLocaleLowerCase(),letters,expose,properties,(a,b)=>text.slice(a,b).toLocaleLowerCase(),(a,b)=>clause(text,a,b))
+ raw=String(raw||'');let text
+ const expose=chars=>{text=decodeUnits(chars)}
+ const packed=ui.speech_pipeline(units(raw),Boolean(footnotes),Boolean(skipHeaders),skipHeaders?ranges(headerRanges):undefined,Float64Array.from((pageBreaks||[]).filter(Number.isFinite)),from,Boolean(opening),(a,b)=>units(raw.slice(a,b).toLocaleLowerCase()),letters,expose,properties,(a,b)=>text.slice(a,b).toLocaleLowerCase(),(a,b)=>clause(text,a,b))
  if(packed===undefined)return undefined
  const items=[];let previous=0,sentence
  for(let at=0;at<packed.length;){

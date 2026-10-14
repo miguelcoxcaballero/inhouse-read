@@ -1,15 +1,17 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as rustUI from '../../src/wasm/ui/inhouse_read_ui.js'
-import {
-  normalizeLang, normalizeVoice, normalizeVoices, scoreVoice, isHighQuality, rankedVoicesFor, bestVoiceFor, needsBetterVoice,
-  languageName, voiceLabel, buildVoiceGroups, resolveVoice, readSystemVoices, detectLanguage, langBase
-} from '../../src/js/readers/voice-catalog.js'
+import { normalizeLang, languageName, detectLanguage, langBase } from '../../src/js/readers/voice-catalog.js'
+// The ranking against the device's own voices is no longer part of the product (the reader only speaks with the on-device
+// neural voices): the frozen original holds it.
+import { normalizeVoice, normalizeVoices, scoreVoice, isHighQuality, rankedVoicesFor, bestVoiceFor, needsBetterVoice, voiceLabel, buildVoiceGroups, resolveVoice, readSystemVoices } from './helpers/reference-voice-catalog.js'
 
 const runtime=vi.hoisted(()=>({ui:null}));let detections=0
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 const observedUI={...rustUI,detect_voice_language:(...args)=>{detections++;return rustUI.detect_voice_language(...args)}}
-beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
+rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
+// Module-level fixtures build voice records, which the Rust UI module makes: it is in before anything runs.
+runtime.ui=observedUI
 afterAll(()=>expect(detections).toBeGreaterThan(0))
 
 // Shapes the Android bridge sends: quality 100..500, latency, network flag, installed flag.

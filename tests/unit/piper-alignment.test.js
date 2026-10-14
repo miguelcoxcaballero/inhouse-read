@@ -1,6 +1,10 @@
 // @vitest-environment node
 import {describe,it,expect} from 'vitest'
-import {exposePiperDurations,phonemeMarks,durationMarks} from '../../src/js/readers/neural-voice/piper-alignment.js'
+import {readFileSync} from 'node:fs'
+import {exposePiperDurations,phonemeMarks} from '../../src/js/readers/neural-voice/piper-alignment.js'
+import {kernelDurationMarks} from './helpers/voice-kernels.js'
+const core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_voice.wasm'))).instance.exports
+const durationMarks=(marks,durations,cfg)=>kernelDurationMarks(core,marks,durations,cfg)
 const encode=new TextEncoder()
 const field=(n,bytes)=>[n*8+2,bytes.length,...bytes]
 const str=(n,s)=>field(n,encode.encode(s))
@@ -29,6 +33,6 @@ describe('Piper durations without modifying acoustic weights',()=>{
     const marks=[{offset:5,phoneme:3},{offset:11,phoneme:7}]
     const result=durationMarks(marks,Float32Array.of(2,3,1,4),{base:1,count:4,samples:2560,trim:100,lead:20,length:2480})
     expect(result).toEqual([{offset:5,sample:1200}])
-    expect(durationMarks(marks,[NaN],{count:1})).toEqual([])
+    expect(durationMarks(marks,[NaN],{count:1,samples:1,length:1})).toEqual([])
   })
 })

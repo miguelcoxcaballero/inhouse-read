@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { Blob, File } from 'node:buffer'
 import { LibraryStore } from '../../src/js/library-store.js'
 import { CloudSync } from '../../src/js/cloud-sync.js'
+import './helpers/rust-ui-ready.js'
 import { LibraryBackup } from '../../src/js/library-backup.js'
 
 vi.mock('../../src/js/drive-client.js', () => ({

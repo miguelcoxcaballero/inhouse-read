@@ -3,7 +3,7 @@ import './helpers/rust-ui-ready.js'
 import {readFileSync} from 'node:fs';
 import {beforeAll,expect,it,vi} from 'vitest';
 import {loadRustCore} from '../../src/js/rust-core.js';
-import {rustSpeechFragments} from '../../src/js/readers/speech-fragments-wasm.js';
+import {rustSpeechFragments} from './helpers/speech-kernels.js';
 import {speechSentences,planSpeech} from '../../src/js/readers/speech-text.js';
 import * as reference from './helpers/reference-speech-text.js';
 let core;

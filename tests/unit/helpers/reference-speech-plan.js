@@ -1,4 +1,4 @@
-import {normalizeSpeech,speechSentences} from '../../../src/js/readers/speech-text.js'
+import {normalizeSpeech,speechSentences} from './reference-speech-text.js'
 export function planSpeech(raw, options = {}, from = 0) {
   const { text, map, breaks } = normalizeSpeech(raw, options)
   let low = 0, high = map.length

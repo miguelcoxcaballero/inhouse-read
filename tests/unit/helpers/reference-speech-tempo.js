@@ -2,31 +2,9 @@
 // Apache-2.0; public/licenses/sonic-Apache-2.0.txt). The model generates a
 // complete normal-speed sentence, then PICOLA shortens periods without
 // changing pitch. Playback completion still uses the resulting sample clock.
-import { getRustCore } from '../../rust-core.js'
+// Frozen from f5abb75: the JavaScript tempo (Sonic/PICOLA adaptation) before the Rust core became the only one.
 
 export const synthesisRate = rate => Math.min(1, Math.max(.5, Number(rate) || 1))
-
-export function rustSpeechTempo(core, pcm, sampleRate, speed, positions = []) {
-  if (!core?.speech_tempo || !core.memory || !core.alloc_f64 || !core.free_f64
-    || !(pcm instanceof Float32Array) || !pcm.length || pcm.length > 4194304
-    || pcm.buffer === core.memory.buffer || !Number.isInteger(sampleRate) || sampleRate < 8000 || sampleRate > 96000
-    || !Number.isFinite(speed) || speed < 1 || speed > 3 || positions.length > 128) return null
-  const slots = Math.ceil(pcm.length / 2), length = slots * 2 + positions.length
-  let pointer = 0
-  try {
-    pointer = core.alloc_f64(length)
-    if (!pointer) return null
-    const output = pointer + slots * 8, marks = output + slots * 8
-    new Float32Array(core.memory.buffer, pointer, pcm.length).set(pcm)
-    new Float64Array(core.memory.buffer, marks, positions.length).set(positions)
-    const count = core.speech_tempo(pointer, output, pcm.length, sampleRate, speed, marks, positions.length)
-    if (!Number.isInteger(count) || count < 1 || count > pcm.length) return null
-    const mapped = Array.from(new Float64Array(core.memory.buffer, marks, positions.length))
-    if (mapped.some((n,i) => !Number.isInteger(n) || n < 0 || n >= count || (i && n < mapped[i-1]))) return null
-    return {pcm:new Float32Array(core.memory.buffer, output, count).slice(),positions:mapped}
-  } catch { return null }
-  finally { if (pointer) core.free_f64(pointer, length) }
-}
 
 // Exact cold/older-core fallback, also the independent reference for the WASM
 // tests. O(utterance), fixed search window, bounded scratch, no audio objects.
@@ -78,6 +56,6 @@ export function speedUpSpeech(pcm,sampleRate,rate,marks=[]) {
   const sorted=marks.filter(m=>Number.isInteger(m.sample)&&m.sample>=0&&m.sample<pcm.length).sort((a,b)=>a.sample-b.sample)
   if(sorted.length>128)throw new Error('Too many speech boundaries')
   const positions=sorted.map(m=>m.sample)
-  const result=rustSpeechTempo(getRustCore(),pcm,sampleRate,speed,positions) || speechTempoJS(pcm,sampleRate,speed,positions)
+  const result=speechTempoJS(pcm,sampleRate,speed,positions)
   return {pcm:result.pcm,marks:sorted.map((m,i)=>({...m,sample:result.positions[i]}))}
 }

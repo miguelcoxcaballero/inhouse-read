@@ -1,8 +1,16 @@
 import {afterEach, beforeAll, describe, it, expect, vi} from 'vitest';
+import './helpers/rust-ui-ready.js'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 const gates=[]
-beforeAll(()=>ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
-afterEach(()=>{for(const gate of gates.splice(0))gate.free();expect(ui.ui_live_handles()).toBe(0)})
+// The futures executor of the module keeps four handles for good once any asynchronous Rust has run
+// (the Android inbox runs on it now), so the gates must leave none beyond that baseline.
+let baseline=0
+beforeAll(async()=>{
+  ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
+  await ui.restoreLegacyBookBytes({},{supported:()=>true,getHandle:async()=>null})
+  baseline=ui.ui_live_handles()
+})
+afterEach(()=>{for(const gate of gates.splice(0))gate.free();expect(ui.ui_live_handles()).toBe(baseline)})
 function createNativeImportShelfGate({isReaderVisible,refresh}){const gate=new ui.RustImportShelfGate(false,false,isReaderVisible,refresh);gates.push(gate);return gate}
 import {initAndroidFileImports} from '../../src/js/android-file-import.js';
 import {readFileSync} from 'node:fs';

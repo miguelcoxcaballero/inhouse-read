@@ -1,137 +1,45 @@
-import {rustSpeechPipeline} from './speech-pipeline.js'
+import {rustSpeechPipeline,ranges,letters,decodeUnits} from './speech-pipeline.js'
 import {readerUI} from './rust-ui-required.js'
-import {rustSpeechPlan} from './speech-plan.js'
-import {sentenceEnds} from './sentence-ends.js'
-import { getRustCore } from '../rust-core.js'
-import { rustNormalizeSpeech } from './speech-normalize-wasm.js'
-import { rustSpeechFragments } from './speech-fragments-wasm.js'
+import {units,properties} from './speech-plan.js'
 
 // Pure text side of the audiobook: turn the raw text a reader exposes into
 // sentences and spoken fragments WITHOUT losing where each one came from. The
 // reading highlight needs "sentence 7 is raw[1203, 1290)", so every cleanup
 // (footnote markers, collapsed whitespace, soft hyphens, repeated headers)
 // keeps an index map from the cleaned text back to the raw text.
+// All of it is rust-ui (speech_mask.rs, speech_normalize, sentence_ends.rs, speech_fragments, speech_plan.rs); the frozen
+// JavaScript original is tests/unit/helpers/reference-speech-text.js. Locale-dependent case folding and Unicode properties
+// are the browser's and come in as callbacks.
 
-const FOOTNOTE_MARKERS = [/\[(?:\d{1,3}|[*†‡])\]/g, /\(\s*(?:note|nota)\s+\d+\s*\)/gi]
-const INVISIBLE = /[­​⁠﻿]/
-// Repeated short lines are running headers only when they sit close together;
-// over a whole chapter a repeated "Yes." or "* * *" is real content.
-const HEADER_WINDOW = 40
 // speech-map.js puts this between blocks that must not run into each other (see HARD_BLOCKS there).
-export const HARD_BREAK = '\u2029'
-const TERMINATORS = /[.!?。！？…:;]/
-const CLOSERS = /["'”’»›)\]}」』]/
+export const HARD_BREAK = String.fromCharCode(0x2029)
 
-// A reader can confirm marginal header ranges without treating repeated body
-// paragraphs as headers. Ignore damaged metadata rather than clamping a range
-// into legitimate text. Confirmed ranges cover one complete short line only.
-function validHeaderRange(raw, range) {
-  const start = range?.start, end = range?.end
-  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > raw.length || end <= start) return false
-  const value = raw.slice(start, end)
-  if (!value.trim() || value.trim().length >= 90 || /[\r\n\u2028\u2029]/.test(value)) return false
-  const before = Math.max(...['\r', '\n', '\u2028', '\u2029'].map(separator => raw.lastIndexOf(separator, start - 1))) + 1
-  const next = raw.slice(end).search(/[\r\n\u2028\u2029]/), after = next < 0 ? raw.length : end + next
-  return !raw.slice(before, start).trim() && !raw.slice(end, after).trim()
-}
-
-/** Drops what must not be read, keeping raw offsets: returns { text, map } with map[i] = raw offset of text[i]. */
+/** Drops what must not be read, keeping raw offsets: returns { text, map, breaks } with map[i] = raw offset of text[i]. */
 export function normalizeSpeech(raw, { footnotes = true, skipHeaders = false, headerRanges } = {}) {
   raw = String(raw || '')
-  const removed = new Uint8Array(raw.length)
-  const remove = (from, to) => removed.fill(1, from, to)
-  if (!footnotes) for (const pattern of FOOTNOTE_MARKERS) for (const m of raw.matchAll(pattern)) remove(m.index, m.index + m[0].length)
-  if (skipHeaders) {
-    if (headerRanges !== undefined) {
-      // [] means the reader confirmed no headers; malformed supplied metadata
-      // is also not permission to discard repeated genuine paragraphs.
-      if (Array.isArray(headerRanges)) for (const range of headerRanges) if (validHeaderRange(raw, range)) remove(range.start, range.end)
-    } else {
-      const lines = [...raw.matchAll(/[^\n\u2029]+/g)].map(m => ({ from:m.index, to:m.index + m[0].length, key:m[0].trim().toLocaleLowerCase() }))
-      const nearby = new Map()
-      lines.forEach((line, i) => { if (line.key && line.key.length < 90) (nearby.get(line.key) || nearby.set(line.key, []).get(line.key)).push(i) })
-      for (const places of nearby.values()) {
-        for (let i = 0; i < places.length; i++) {
-          if ((i > 0 && places[i] - places[i - 1] <= HEADER_WINDOW) || (i + 1 < places.length && places[i + 1] - places[i] <= HEADER_WINDOW)) remove(lines[places[i]].from, lines[places[i]].to)
-        }
-      }
-    }
-  }
-  // "informa-\ntion": a line-end hyphen between letters is typesetting, not speech.
-  for (const m of raw.matchAll(/(?<=\p{L})[-‐]\n(?=\p{Ll})/gu)) remove(m.index, m.index + 2)
-  const native = rustNormalizeSpeech(getRustCore(), raw, removed)
-  if (native) return native
-  // Characters are collected in arrays: books are long and string surgery per break would be quadratic.
-  const chars = [], map = [], breaks = []
-  for (let i = 0; i < raw.length; i++) {
-    if (removed[i]) continue
-    const ch = raw[i]
-    if (INVISIBLE.test(ch)) continue
-    if (ch === HARD_BREAK) {
-      // End of a heading, list item or table cell: it is its own sentence even without a full stop, so it is read and highlighted alone.
-      if (chars.at(-1) === ' ') { chars.pop(); map.pop() }
-      // Not after 'Dijo: "Voy."' either: a terminator followed by closing quotes/brackets already ends the sentence.
-      let last = chars.length - 1
-      while (last >= 0 && CLOSERS.test(chars[last])) last--
-      if (chars.length && !TERMINATORS.test(chars[Math.max(last, 0)]) && !TERMINATORS.test(chars.at(-1))) { chars.push('.'); map.push(i) }
-      if (chars.length) breaks.push(chars.length) // the space pushed below: a sentence ends here whatever the punctuation (so "A." and "B." cells are not initials)
-    }
-    if (/\s/.test(ch)) {
-      if (chars.length && chars.at(-1) !== ' ') { chars.push(' '); map.push(i) }
-    } else { chars.push(ch); map.push(i) }
-  }
-  if (chars.at(-1) === ' ') { chars.pop(); map.pop() }
-  const text = chars.join('')
-  return { text, map, breaks:breaks.filter(at => at < text.length) }
-}
-
-const MAX_FRAGMENT = 180
-const CLAUSE = /[,;:—–،、，；：]/
-
-/** Cuts [from, to) into spoken fragments of at most MAX_FRAGMENT characters: evenly sized, at a clause mark when there is one near the middle, never an orphan word. */
-function cutFragments(text, from, to) {
-  const cuts = []
-  let pos = from
-  while (to - pos > MAX_FRAGMENT) {
-    const ideal = Math.round((to - pos) / Math.ceil((to - pos) / MAX_FRAGMENT))
-    let best = -1, bestScore = Infinity
-    for (let at = pos + Math.ceil(ideal * .6); at <= Math.min(pos + MAX_FRAGMENT, to - 1); at++) {
-      const space = /\s/.test(text[at]) && !/\s/.test(text[at - 1]), cjk = /[、，；：]/.test(text[at - 1]) && !/\s/.test(text[at])
-      if (!space && !cjk) continue
-      const score = Math.abs(at - pos - ideal) + (CLAUSE.test(text[at - 1]) ? 0 : ideal)
-      if (score < bestScore) { best = at; bestScore = score }
-    }
-    const cut = best > 0 ? best : pos + MAX_FRAGMENT // text with no spaces at all: hard cut
-    cuts.push([pos, cut])
-    pos = cut
-    while (pos < to && /\s/.test(text[pos])) pos++
-  }
-  cuts.push([pos, to])
-  return cuts
+  let text
+  const packed = readerUI().speech_normalized(units(raw), Boolean(footnotes), Boolean(skipHeaders), skipHeaders ? ranges(headerRanges) : undefined,
+    (a, b) => units(raw.slice(a, b).toLocaleLowerCase()), letters, chars => { text = decodeUnits(chars) })
+  if (packed === undefined) throw new TypeError('Unsupported speech text')
+  const size = packed[0]
+  return { text, map: Array.from(packed.subarray(1, 1 + size)), breaks: Array.from(packed.subarray(1 + size)) }
 }
 
 /**
  * Sentences of an already normalised text; long ones also carry their <=180 character spoken fragments.
  * `breaks` are the places where a heading, list item or cell ends (normalizeSpeech reports them).
  * Evaluated against Intl.Segmenter: ICU does not know "Sr." or "J. K." either, glues "¡Imposible! —Hola —dijo Ana—." together and
- * splits « Bonjour ! » dit-il, so the splitter stays this one, with the abbreviation/initial/number rules above.
+ * splits « Bonjour ! » dit-il, so the splitter stays this one, with the abbreviation/initial/number rules in Rust.
  */
 export function speechSentences(text, breaks = []) {
   text = String(text)
-  const ends = sentenceEnds(text, breaks)
-  const native = rustSpeechFragments(getRustCore(), text, ends)
-  if (native) return native
+  const packed = readerUI().speech_sentences(units(text), breaks, properties, (a, b) => text.slice(a, b).toLocaleLowerCase())
+  if (packed === undefined) throw new TypeError('Unsupported sentence boundaries')
   const sentences = []
-  let from = 0
-  for (const end of ends) {
-    let start = from
-    from = end
-    while (start < end && /\s/.test(text[start])) start++
-    let stop = end
-    while (stop > start && /\s/.test(text[stop - 1])) stop--
-    if (stop <= start) continue
-    const fragments = cutFragments(text, start, stop).map(([a, b]) => ({ start:a, end:b, text:text.slice(a, b) }))
-    sentences.push({ start, end:stop, fragments })
+  let sentence
+  for (let at = 0; at < packed.length; at += 4) {
+    if (!sentence || sentence.start !== packed[at]) sentences.push(sentence = { start: packed[at], end: packed[at + 1], fragments: [] })
+    sentence.fragments.push({ start: packed[at + 2], end: packed[at + 3], text: text.slice(packed[at + 2], packed[at + 3]) })
   }
   return sentences
 }
@@ -144,13 +52,9 @@ export const speechChunks = text => speechSentences(String(text || '').replace(/
  * (what gets highlighted while its fragments are spoken).
  */
 export function planSpeech(raw,options={},from=0){
- const ui=readerUI()
- from=Number(from)
- if(ui.speech_pipeline){const prepared=rustSpeechPipeline(ui,raw,options,from);if(prepared!==undefined)return prepared}
- // Rust answers any length; it leaves a normalized map it cannot trust unanswered (never produced here).
- const result=rustSpeechPlan(ui,normalizeSpeech(raw,options),options,from)
- if(result===undefined)throw new TypeError('Unsupported speech text')
- return result
+ const prepared=rustSpeechPipeline(readerUI(),raw,options,Number(from))
+ if(prepared===undefined)throw new TypeError('Unsupported speech text')
+ return prepared
 }
 
 /** First complete sentence beginning on the visible page, in original offsets.

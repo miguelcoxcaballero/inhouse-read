@@ -1,4 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
+import './helpers/rust-ui-engine.js';
 import {webcrypto} from 'node:crypto';
 import {SupertonicStore} from '../../src/js/readers/neural-voice/supertonic-store.js';
 import {SUPERTONIC_BASE,supertonicAssetUrl} from '../../src/js/readers/neural-voice/supertonic-catalog.js';

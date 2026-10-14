@@ -1,4 +1,5 @@
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest'
+vi.mock('../../src/js/rust-ui.js', async () => (await import('./helpers/rust-ui-real.js')).rustUiMock())
 let drive
 const scope='https://www.googleapis.com/auth/drive.file'
 const response=(body,status=200)=>new Response(JSON.stringify(body),{status})

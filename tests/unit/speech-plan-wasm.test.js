@@ -5,11 +5,11 @@ import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {normalizeSpeech} from '../../src/js/readers/speech-text.js'
 import {planSpeech} from './helpers/reference-speech-plan.js'
 import {makeCases,invoke,properties} from '../helpers/speech-plan-cases.js'
-vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>null}))
-// The frozen JavaScript boundaries stand in for the production ones, so the oracle stays independent of Rust.
-vi.mock('../../src/js/readers/sentence-ends.js',async()=>({sentenceEnds:(await import('./helpers/reference-sentence-ends.js')).sentenceEnds}))
+// The oracle is the frozen JavaScript (reference-speech-plan.js over reference-speech-text.js), independent of Rust.
+const runtime=vi.hoisted(()=>({ui:null}))
+vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 const cases=makeCases(),blocks=Math.ceil(cases.length/100);let core,retained,capacity
-beforeAll(()=>{core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})})
+beforeAll(()=>{core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')});runtime.ui=ui})
 function compare([raw,options,from]){
  const expected=planSpeech(raw,options,from),actual=invoke(ui,normalizeSpeech(raw,options),options,from)
  expect(actual).toEqual(expected)

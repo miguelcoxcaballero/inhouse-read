@@ -1,4 +1,5 @@
 import {describe, it, expect, vi} from 'vitest';
+import './helpers/rust-ui-ready.js'
 import {createNativeImportShelfGate} from '../../src/js/native-import-shelf-gate.js';
 import {initAndroidFileImports} from '../../src/js/android-file-import.js';
 import {readFileSync} from 'node:fs';

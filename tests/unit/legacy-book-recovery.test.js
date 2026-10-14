@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import './helpers/rust-ui-ready.js'
 import { restoreLegacyBookBytes } from '../../src/js/legacy-book-recovery.js'
 
 describe('restoreLegacyBookBytes', () => {

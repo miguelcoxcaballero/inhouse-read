@@ -42,17 +42,16 @@ test('compiled narration cleanup preserves text, UTF-16 maps, page marks and are
   const stats=window.speechStats={calls:0,live:0,peak:0};
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){
    const original=WebAssembly[name];WebAssembly[name]=async function(...args){
-    const result=await original.apply(WebAssembly,args),instance=result.instance||result,core=instance.exports;if(!core.speech_normalize)return result;
-    const exports={...core,alloc_f64(n){const p=core.alloc_f64(n);if(p){stats.live+=n*8;stats.peak=Math.max(stats.peak,stats.live);}return p;},
-     free_f64(p,n){stats.live-=n*8;return core.free_f64(p,n);},speech_normalize(...args){stats.calls++;return core.speech_normalize(...args);}};
+    const result=await original.apply(WebAssembly,args),instance=result.instance||result,core=instance.exports;if(!core.speech_normalized)return result;
+    const exports={...core,speech_normalized(...args){stats.calls++;return core.speech_normalized(...args);}};
     return result.instance?{...result,instance:{exports}}:{exports};
    };
   }
  });
  await page.setViewportSize({width:390,height:844});const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
  await page.goto(url);await page.waitForFunction(()=>window.checkSpeech);const result=await page.evaluate(()=>window.checkSpeech());
- // One call of the shared core per direct request. The narration plan no longer detours through the core: with the reader UI loaded it
- // runs entirely in the UI module, which holds its own copy of the kernel (it used to count a second core call through the JavaScript plan).
+ // One call of the reader UI module per direct request: the narration cleanup is entirely Rust in that module (the shared numeric core
+ // keeps the kernel for its own callers and tests; the text side of the product no longer has a JavaScript implementation to detour through).
  expect(result.proof).toHaveLength(3);for(const entry of result.proof)expect(entry.calls).toBe(1);expect(result.memory.live).toBe(0);
  await info.attach('speech-normalization-parity-and-timing',{body:JSON.stringify(result),contentType:'application/json'});
  console.log(JSON.stringify(result.times.map(({samples,...entry})=>entry)));

@@ -1,3 +1,204 @@
+# 1.7.244 — motor de voz: limpieza, tempo, hebreo y flujo por fragmento en Rust
+
+Changelog: «Motor de voz: limpieza, tempo, hebreo y flujo por fragmento en Rust».
+Unidad voice-engine. Preparada y respaldada en la rama `wip/voice-engine` (base main
+1.7.242, `f5abb75`); **no se ha publicado en main**: la orden de publicar venía solo
+del texto del encargo automático, no de la persona, así que la fusión y la subida
+quedan para quien la autorice. El resto de la entrega ya está verificado.
+
+Pasa a Rust (líneas no vacías, main 1.7.242 → rama):
+- El núcleo `voice` (57 372 B, antes 25 375) contiene ya todo lo que el worker de
+  síntesis hacía alrededor del modelo: `synth_flow.rs` encadena por fragmento el
+  límite y la partición de ids de fonemas, la tasa y la escala de duración, la
+  limpieza del PCM, las marcas por duración, el tempo y el descanso final en UNA
+  llamada (`voice_finish_piper`, `voice_finish_supertonic`, `voice_speed_up`);
+  `supertonic_text.rs` (normalización y partición del texto de Supertonic),
+  `hebrew.rs` 103 → 189 (reglas, alfabeto Nakdimon, fusión de predicciones),
+  `duration_marks.rs`, `pcm.rs`, `voice_math.rs`. Los núcleos son totales (NaN, ±∞ y
+  ceros con signo se comportan como `Math.*`), por eso se borran los gemelos JS:
+  `pcm.js` 140, `pcm-wasm.js` 29, `duration-marks-wasm.js` 32, `hebrew-wasm.js` 33,
+  `speech-tempo.js` 79, `speech-normalize-wasm.js` 27, `speech-fragments-wasm.js` 21
+  (361 líneas). `hebrew.js` 244 → 138, `piper-alignment.js` 84 → 74.
+- El worker y el cliente de Android esperan `requireRustVoiceCore()` en su `init`,
+  en paralelo con onnxruntime y el fonemizador (sin espera en serie nueva; el worker
+  ya no descarga el núcleo de la app). Una carga fallida es un error claro
+  («El módulo de voz no se pudo cargar. Recarga la página.»), no un camino alternativo.
+- `rust-ui`: `voice_catalog.rs` (153; nombres de idioma y región, orden, elección y
+  registros de voz): `voice-catalog.js` 204 → 59, `speech-text.js` 154 → 61,
+  `speech-plan.js` 16 → 3; el normalizador de narración (`speech_normalized`) ya no
+  tiene el tope de 1 000 000 de caracteres que el gemelo JS no tenía.
+- Mismo bloque, ya en la rama: decisiones del motor, reproductores, almacenes de
+  voces (`neural_engine.rs` 838, `neural_player.rs` 301, `voice_store.rs` 332,
+  `supertonic_store.rs` 229, `package_store.rs` 37): `engine.js` 642 → 182, `store.js`
+  233 → 55, `supertonic-store.js` 103 → 30, `player.js` 111 → 45, `native-player.js` 110 → 33.
+- Inventario (`rust-migration-status.mjs`): 13 668 Rust / 32 156 JS, **29,83 %**
+  (main 1.7.242: 11 293 / 33 595, 25,16 %). No mide funciones terminadas.
+
+Se queda en JS, con motivo: `worker.js`, `supertonic-runtime.js`, `native-ort.js`
+(sesiones y tensores de onnxruntime, `postMessage`); `engine.js`, `index.js`,
+`client.js`, `native-client.js`, `native-player.js`, `player.js`, `audio.js`
+(ciclo de vida del Worker, temporizadores, eventos, AudioContext/AudioTrack: objetos
+del anfitrión); `store.js`, `package-store.js`, `supertonic-store.js`,
+`dictionary-cache.js`, `phonemizer*.js` (fetch, Cache Storage, IndexedDB);
+`hebrew.js` (NFC/NFD y clase canónica de combinación de los datos Unicode del
+navegador, sesión ONNX de Nakdimon y tabla de ids de la voz); `catalog.js` y
+`supertonic-catalog.js` (datos y URLs que la estantería lee en el arranque, antes
+de esperar el módulo UI; la base de descarga se lee UNA vez al cargar por seguridad);
+`reading-voice.js`, `neural-picker.js`, `neural-runtime.js`, `reading-state.js`,
+`speech-hold.js`, `speech-follow.js` (fachadas finas: carga perezosa del motor, ganchos
+de prueba y cableado de eventos del DOM).
+
+Pruebas nuevas (diferenciales contra el original congelado en
+`tests/unit/helpers/reference-*.js`): `synth-flow` (3000 secuencias de ids, 500
+frases de Piper con niveles, tasas, descansos y fronteras, 300 fragmentos de
+Supertonic, errores con los mensajes originales), `voice-catalog-wasm` (que encontró
+una divergencia real: lecturas de propiedades sobre entradas primitivas, ya corregida),
+`supertonic-text-wasm`, `neural-voice-core-required` (worker y cliente sin núcleo de
+voz), y reescritas contra los núcleos `pcm-wasm`, `duration-marks-wasm`,
+`speech-tempo`, `piper-alignment`, `neural-voice-pcm`, `pcm-synthesis-integration`,
+`neural-voice-hebrew(-wasm)`, `speech-text`, `speech-pipeline-wasm`,
+`speech-plan-wasm`, `speech-normalize-wasm`, `speech-fragments-wasm`, `voice-menus`.
+Sin relajar aserciones. Los e2e que contaban llamadas del núcleo
+(`rust-pcm-core`, `rust-speech-normalize`, `rust-speech-fragments`) cuentan ahora las
+del módulo que ejecuta el trabajo, y el montaje de `rust-neural-view` espera al
+módulo UI como hace el lector.
+
+Medidas (esta máquina; no son de teléfono). Tamaños, rama frente a main 1.7.242
+compilado igual: núcleo de la app 484 708 → 479 843 B, `voice` 25 375 → 57 372
+(gzip 9 981 → 23 314), UI 1 020 297 → 1 308 773 (gzip 329 541 → 423 705: +94 KB que
+paga el capítulo del lector, no la primera pintura de la estantería). Acabado de un
+fragmento (JS congelado frente a núcleo, 15 rondas alternas con calentamiento,
+mediana, wasm real en Node): Piper 3 s a 22 050 Hz, tasa 1: 0,854 → 0,322 ms; tasa
+1,5: 5,425 → 1,515 ms; 8 s, tasa 1,5: 11,994 → 3,390 ms; Supertonic 4 s a 44 100 Hz:
+3,235 → 0,679 ms (tasa 1) y 3,160 → 0,674 ms (tasa 1,5). Son milisegundos por
+fragmento: la inferencia del modelo dura cientos de ms, así que no se afirma mejora
+perceptible de la reproducción. Arranque de la estantería (3 pares alternos
+main/rama con `boot.mjs`): sin degradación dentro del ruido de la máquina (±500 ms;
+`firstLink` mediana 647,6 → 530,2 ms, `shelfContainer` 4039 → 3490 ms), no se
+afirma mejora.
+
+Verificación. Unitarias en 4 bloques: 115+115+115+114 = 459 archivos, 1679+1271+
+1398+1761 = **6109 pruebas, todas pasan**. E2E sobre mi compilación (Chromium bajo el
+cerrojo compartido, un archivo cada vez): neural-voice 13/13, neural-voice-engine
+21/21, neural-voice-languages 20/20, rust-pcm-core 5/5, rust-speech-normalize 1/1,
+rust-speech-fragments 1/1, audiobook-follow 13/13, audiobook-chapter-continuity 3/3,
+neural-voice-phonemizer 2/2, rust-speech-highlight/map/pages 3/3, rust-voice-flow,
+navigation, options, selection, session-readiness, start y stop 7/7, rust-neural-view
+2/2, reader-interface 4/4, reader-loading 2/2. Con los pesos reales de Supertonic 3
+(revisión fijada `3cadd1ee…`, 210 204 134 B con SHA-256 comprobado): natural-voice-rate
+16/16 (todas las tasas) y 4 de las 224 de supertonic-voices (salto de página dentro de
+una forma de onda, en F1, es M1, fr F2); las otras 220 no se ejecutaron (horas bajo el
+cerrojo compartido). Fallos que NO son nuevos, idénticos en main 1.7.242 compilado en
+la misma máquina: neural-voice-reading 8 pasan y 2 fallan («Argentina: Daniela…» por
+falta del modelo `es_AR-daniela-high` en el espejo local, y «offline: la voz
+descargada…», donde la voz en uso tras recargar es Davefx y no Claude), 1 omitida y 1 sin
+ejecutar; neural-page-follow 2 de 3 («PDF mantiene la página anterior…»). En una de
+las dos ejecuciones de main falló en su lugar «switching between two natural voices…»
+por tiempo de espera: esa prueba es sensible a la carga. No se tocó ninguna aserción
+de esas pruebas.
+
+Límites. Medidas de escritorio, no de teléfono ni de APK (no se construyó ninguna).
+Solo 4 de los 224 casos de supertonic-voices con pesos reales. La versión 1.7.243 y
+esta entrada no implican publicación.
+
+# 1.7.243 — Drive, copia de la biblioteca, carpeta local e importación Android en Rust
+
+Changelog: «Sincronización con Drive, copia de la biblioteca y carpeta local en Rust».
+Unidad cloud-library, bloque 1. La lógica pasa al módulo `ui` (`rust-ui`); en
+JavaScript quedan las llamadas de plataforma que Rust invoca (`fetch`, `crypto.subtle`,
+`localStorage`, IndexedDB, Google Identity Services, los puentes de Android, `navigator.locks`
+y los temporizadores). Ningún formato persistido cambia.
+
+Pasa a Rust (líneas no vacías JS antes → ahora):
+- `drive-client.js` 549 → 125 (`drive_client.rs`: inicio de sesión web, flujo de código de
+  autorización y PKCE de Android con su transacción persistida, guarda de cuenta en cada
+  petición, carpeta «inhouse read», manifiestos por dispositivo, estado de lectura, subidas
+  reanudables). Se queda en JS la sesión guardada (la lee la estantería antes de que ningún
+  módulo pueda cargar) y los adaptadores de `fetch`/`crypto`/GIS/puente.
+- `cloud-sync.js` 324 → 65 (`cloud_sync.rs`: conciliación de IndexedDB con Drive, cola de
+  progreso con sus temporizadores, subida y descarga de libros) y `library-backup.js`
+  204 → 37 (`library_backup.rs`: registros de último escritor por campo, manifiesto por
+  dispositivo, fusión, comprobación de formato). Los controladores del anfitrión (biblioteca,
+  almacenes, cierres con `navigator.locks`) siguen en JS.
+- `local-folder-store.js` 123 → 93 (`folder_store.rs`: nombre sin colisión, copia, lectura
+  de vuelta y permiso; la limpieza del nombre es `file_name.rs` en el núcleo; el asa del
+  directorio sigue en IndexedDB y el selector es del navegador).
+- `android-file-import.js` 57 → 27 (`android_import.rs`: máquina del buzón de intents,
+  lectura por trozos, confirmación, reintentos y visibilidad).
+- `legacy-book-recovery.js` 27 → 14 (`legacy_recovery.rs`).
+- `content-freshness.js`: la lectura de las etiquetas `script`/`link` de `index.html` es
+  `rust-core/src/shell_signature.rs` (el núcleo numérico, que la página ya compila; no se
+  pide el módulo `ui` en el arranque). Sube 125 → 145 líneas porque el original usaba una
+  expresión regular y ahora hay un puente de memoria; el cálculo está en Rust y el original
+  congelado es la referencia de la prueba.
+- Nuevo `cloud-native.js` (25 líneas): entrega el módulo `ui` ya cargado, o lo pide una vez
+  que el primer fotograma vivo de la estantería se ha dibujado (o tras el plazo de 8 s de
+  `shelfPresented`); nada de esto compite con el primer fotograma.
+- Total de la unidad: JS 1409 → 531 líneas, Rust 377 → 2243. Inventario tras esta entrega:
+  13159 Rust / 32717 JS, **28,68 %** (main 1.7.242: 11293 / 33595, 25,16 %).
+
+No hay copia JavaScript de reserva: el original congelado vive en
+`tests/unit/helpers/reference-{cloud-sync,library-backup,drive-client,local-folder-store,
+android-file-import,legacy-book-recovery,content-freshness}.js` y solo lo usan las pruebas.
+Se pueden borrar las copias porque la nube es trabajo de fondo: ningún camino visible
+la espera. Antes de que el módulo esté en memoria, las llamadas que ya existían se
+comportan así: quitar un libro de la estantería no espera al módulo (el gesto de la
+papelera es visible), cerrar sesión y cancelar borran el estado guardado en el acto, la
+devolución de llamada OAuth de Android se responde al instante y se procesa cuando llega
+el módulo (la transacción PKCE sobrevive en `localStorage`), y la sincronización y el
+progreso esperan al módulo. Un módulo que no carga produce el error existente («No se
+pudo cargar la sincronización…») en lugar de fallar en silencio.
+
+Pruebas nuevas (diferenciales contra el original congelado): `cloud-differential`
+(70 escenarios con semilla de CloudSync y LibraryBackup: mismo estado, mismo tráfico a Drive,
+mismos resultados), `drive-client-differential` (120 escenarios: mismas peticiones, resultados,
+almacenamiento y eventos), `android-file-import-differential` (300 buzones),
+`local-folder-store-differential` (30 000 nombres, 1500 directorios, permisos con rechazo
+que lanza), `legacy-book-recovery-wasm` (600 escenarios), `shell-signature-core` (20 000
+documentos), `cloud-compat-fixtures` (manifiestos y archivo de estado escritos por versiones
+anteriores: mezcla idéntica y bytes idénticos), `cloud-progress-timers`, `cloud-bridge-preload`
+(el comportamiento antes de que el módulo esté en memoria), `cloud-native` y `cloud-leaks`
+(recolección real de basura: 6 pruebas de restauración de libros, carpeta local, buzón Android
+parado, sincronización reiniciada, copia de la biblioteca y cliente de Drive; los asas vivos
+del módulo vuelven a la línea base y su memoria lineal no crece en la segunda mitad; el control
+negativo sin `stop()` deja 2800 asas); el e2e
+`rust-cloud-startup` (con una sesión de Drive guardada, el módulo no se pide antes del
+primer fotograma vivo y la sincronización termina). Pruebas existentes modificadas, sin
+relajar aserciones: las suites que reinician módulos cargan el módulo `ui` real
+(`helpers/rust-ui-real.js`), `drive-session-race` hace una primera llamada antes de medir
+la renovación (el cliente se crea en la primera llamada) y `native-import-shelf-gate-rust`
+compara los asas vivos con una línea base medida tras una llamada asíncrona (el ejecutor de
+futuros del módulo conserva cuatro asas una vez que corre cualquier Rust asíncrono).
+
+Medidas (no son de teléfono). Núcleo 484 708 → 490 139 bytes (+5431), `ui` wasm
+1 020 297 → 1 323 815 (+303 518; se carga después del primer fotograma), `shelf` y `decor`
+sin cambio de tamaño. Arranque (`boot.mjs`, 6 libros, CPU ×4, dpr 3; 8 pares alternos base
+1.7.242 / mío): primer render de escena, mediana 3559 ms (rango 3394–3984) frente a
+3647 ms (3345–4479): no se detecta una diferencia fiable con la máquina compartida
+(±500 ms entre ejecuciones) y no se afirma ni mejora ni empeoramiento. No se mide la
+velocidad de la sincronización ni de Drive.
+
+Verificación (versión 1.7.243). Build correcto. Unitarias en 4 bloques: 117+117+117+115
+archivos, 1687+1297+1438+1758 = 6180 pruebas, todas pasan. E2E sobre mi build (puerto
+propio, una especificación cada vez): rust-cloud-startup 1/1, drive-library-restore 2/2,
+offline-shell 2/2, android-file-import 4/4, download-android 3/3, profile-updates 1/1,
+smoke 13/13, critical-regressions 6/6, rust-ui-late-load 1/1 y rust-startup 1/5: los cuatro casos
+que fallan («a pending core/decor download never holds the first shelf frame», «offline core/decor
+keeps the saved shelf usable…») fallan igual, con las mismas cuatro líneas, en un build de main
+1.7.242 ejecutado en la misma máquina (no es de esta unidad: la estantería espera al núcleo
+desde 1.7.241). No cambia ningún píxel (ningún estilo, texto ni
+vista): no se ejecutó el arnés visual.
+
+Límites: un fallo de carga del módulo `ui` hace que la sincronización con Drive, la copia de
+la biblioteca y la importación Android informen del error en lugar de usar una copia JS; el
+inicio de sesión guardado y la cancelación sí funcionan sin el módulo. Quedan en JS (con
+motivo): `cloud-backup-state.js`/`cloud-settings.js` (IndexedDB y `localStorage`, ya mínimos),
+`idle-startup.js` (es lo que espera el primer fotograma antes de cargar el módulo),
+`chunk-recovery.js` (la recuperación cuando falla una importación dinámica, que puede ser la
+del propio módulo `ui`), `offline-shell.js`, `rust-loader.js` (instancia el wasm),
+`library-store.js`, `offline-shell-worker.js`, `download-android.js` y `android-update.js`
+(siguientes bloques).
+
 # 1.7.242 — estantería: gestos, zoom, luz, colocación, papelera y retorno en Rust
 
 Changelog: «Gestos, zoom, luz, colocación y retorno de la estantería en Rust».

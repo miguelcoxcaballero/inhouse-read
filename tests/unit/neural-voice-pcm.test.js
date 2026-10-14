@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { peakOf, rmsOf, peakNormalize, trimSilence, fadeEdges, silence, concat, pauseAfter, PAUSE_MS, splitSegments, limitIds, lengthScaleFor } from '../../src/js/readers/neural-voice/pcm.js'
+// The contract of the audio helpers. The cleaning (peakNormalize, trimSilence, fadeEdges), the rests and restScale are now the
+// voice core's (rust-core/src/pcm.rs and synth_flow.rs): their assertions hold the frozen JavaScript original, which
+// pcm-wasm.test.js and synth-flow.test.js hold the core to byte for byte. The phoneme-id helpers and length_scale run the same
+// assertions against the original and against the voice core.
+import { peakOf, rmsOf, peakNormalize, trimSilence, fadeEdges, silence, concat, pauseAfter, PAUSE_MS, splitSegments as originalSplit, limitIds as originalLimit, lengthScaleFor as originalScale } from './helpers/reference-pcm.js'
+import * as voiceCore from '../../src/js/readers/neural-voice/synth-flow.js'
 
 const tone = (n, amp = 0.5) => Float32Array.from({ length: n }, (_, i) => amp * Math.sin(i / 5))
 
@@ -109,7 +114,7 @@ describe('pauseAfter', () => {
   })
 })
 
-describe('splitSegments', () => {
+describe.each([['the original', { splitSegments: originalSplit }], ['the voice core', voiceCore]])('splitSegments (%s)', (_, { splitSegments }) => {
   it('splits the concatenated "^...$" sentences of piper_phonemize and drops the empty ones', () => {
     const ids = [1, 0, 17, 0, 18, 0, 2, 1, 0, 2, 1, 0, 31, 0, 28, 0, 2]
     expect(splitSegments(ids)).toEqual([[1, 0, 17, 0, 18, 0, 2], [1, 0, 31, 0, 28, 0, 2]])
@@ -121,7 +126,7 @@ describe('splitSegments', () => {
   })
 })
 
-describe('limitIds', () => {
+describe.each([['the original', { limitIds: originalLimit }], ['the voice core', voiceCore]])('limitIds (%s)', (_, { limitIds }) => {
   it('drops phoneme ids a voice does not know (152 symbols) together with their pad', () => {
     expect(limitIds([1, 0, 10, 0, 152, 0, 11, 0, 2], 152)).toEqual([1, 0, 10, 0, 11, 0, 2])
   })
@@ -130,7 +135,7 @@ describe('limitIds', () => {
   })
 })
 
-describe('lengthScaleFor', () => {
+describe.each([['the original', { lengthScaleFor: originalScale }], ['the voice core', voiceCore]])('lengthScaleFor (%s)', (_, { lengthScaleFor }) => {
   it('speaks faster with a smaller length scale (rate 2 halves it) within sane bounds', () => {
     expect(lengthScaleFor(1, 2)).toBe(0.5)
     expect(lengthScaleFor(1, 1)).toBe(1)
@@ -142,7 +147,7 @@ describe('lengthScaleFor', () => {
 
 describe('restScale', () => {
   it('shortens the pause after a sentence less than the speech speeds up', async () => {
-    const { restScale } = await import('../../src/js/readers/neural-voice/pcm.js')
+    const { restScale } = await import('./helpers/reference-pcm.js')
     expect(restScale(1)).toBe(1)
     expect(restScale(0.5)).toBe(2)
     expect(restScale(2)).toBeCloseTo(0.707, 3)

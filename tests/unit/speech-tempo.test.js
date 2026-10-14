@@ -1,13 +1,14 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs'
 import { beforeAll, it, expect, vi } from 'vitest'
-const state=vi.hoisted(()=>({core:null}))
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core}))
-import { rustSpeechTempo, speechTempoJS, speedUpSpeech, synthesisRate } from '../../src/js/readers/neural-voice/speech-tempo.js'
+import { speechTempoJS, speedUpSpeech as referenceSpeedUp } from './helpers/reference-speech-tempo.js'
+import { speedUpSpeech, synthesisRate } from '../../src/js/readers/neural-voice/synth-flow.js'
+import { kernelTempo as rustSpeechTempo } from './helpers/voice-kernels.js'
+// The tempo (speech_tempo in the voice core, finished into chunks by synth_flow.rs) against the frozen JavaScript it replaced.
 let core
 beforeAll(async()=>{
-  core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports
-  expect(typeof core.speech_tempo).toBe('function');state.core=core
+  core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_voice.wasm'))).instance.exports
+  expect(typeof core.speech_tempo).toBe('function')
 })
 const tone=(rate,seconds,hz=180)=>Float32Array.from({length:Math.round(rate*seconds)},(_,i)=>.6*Math.sin(2*Math.PI*hz*i/rate))
 const bytes=a=>Buffer.from(a.buffer,a.byteOffset,a.byteLength)
@@ -45,11 +46,10 @@ it('preserves distinct final consonant bursts, silence and nonperiodic speech wi
   for(let i=0;i<80;i++)rustSpeechTempo(core,pcm,24000,2)
   expect(core.memory.buffer.byteLength).toBe(memory);expect(bytes(first.pcm).equals(bytes(copy))).toBe(true)
 })
-it('remaps page marks through the actual tempo operations and uses the cold-core fallback',()=>{
+it('remaps page marks through the actual tempo operations, like the original',()=>{
   const pcm=tone(24000,1),marks=[{sample:23999,offset:92},{sample:12000,offset:41,estimated:true}]
-  const call=vi.fn(core.speech_tempo);state.core={...core,speech_tempo:call}
-  const a=speedUpSpeech(pcm,24000,1.5,marks);expect(call).toHaveBeenCalledOnce()
-  state.core=null;const b=speedUpSpeech(pcm,24000,1.5,marks);state.core=core
+  const a=speedUpSpeech(pcm,24000,1.5,marks)
+  const b=referenceSpeedUp(pcm,24000,1.5,marks)
   expect(bytes(a.pcm).equals(bytes(b.pcm))).toBe(true);expect(a.marks).toEqual(b.marks)
   expect(a.marks.map(m=>m.offset)).toEqual([41,92]);expect(a.marks[0].estimated).toBe(true)
   expect(a.marks.at(-1).sample).toBe(a.pcm.length-1);expect(marks[0].sample).toBe(23999)
