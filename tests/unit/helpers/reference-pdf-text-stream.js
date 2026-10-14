@@ -2,8 +2,8 @@
 // not be its reading order. This page-local layout keeps every text item and
 // its source offsets: the same result feeds reflow, speech and the text layer.
 // No OCR, language model, repeated-line removal or guessed missing text.
-import { pdfOrderLines as orderLines } from '../../../src/js/readers/pdf-order-lines.js'
-import { pdfRowLines } from '../../../src/js/readers/pdf-row-layout-wasm.js'
+import { orderLines } from './reference-pdf-order.js'
+import { legacyPDFRowLines as pdfRowLines } from './reference-pdf-pipeline.js'
 
 const DEFAULT_VIEW = [1, 0, 0, -1, 0, 0]
 const median = values => {

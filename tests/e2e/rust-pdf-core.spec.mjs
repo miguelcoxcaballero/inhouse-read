@@ -7,7 +7,8 @@ import { createServer as createHttpServer } from 'node:http'
 const fixtureHtml = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body><script type="module">
 import { loadRustCore } from '/inhouse-read/src/js/rust-core.js';
-import { pdfColumnCut, rustPDFColumnCut, legacyPDFColumnCut } from '/inhouse-read/src/js/readers/pdf-layout-wasm.js';
+import { pdfColumnCut, rustPDFColumnCut } from '/inhouse-read/tests/unit/helpers/pdf-column-cut-bridge.js';
+import { legacyPDFColumnCut } from '/inhouse-read/tests/unit/helpers/reference-pdf-pipeline.js';
 const started = performance.now();
 const core = await loadRustCore();
 if (!core?.pdf_column_cut) throw new Error('The compiled PDF kernel did not load');

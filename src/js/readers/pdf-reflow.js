@@ -1,5 +1,5 @@
-import {pdfPlaceFigures} from './pdf-figure-placement.js';
-export {pdfFigureOffset} from './pdf-figure-placement.js';
+import {pdfPlaceFigures} from './pdf-figures-wasm.js';
+export {pdfFigureOffset} from './pdf-figures-wasm.js';
 // Render illustrations from PDF.js's original composite pixels: transforms,
 // transparency, clipping and colour profiles remain the renderer's job.
 // Text stays in its exact source-offset stream even when a picture splits it.
@@ -8,7 +8,7 @@ export function clearPDFReflow(root) {
   root.replaceChildren()
 }
 
-export {pdfImageRects} from './pdf-image-bounds.js';
+export {pdfImageRects} from './pdf-images-wasm.js';
 
 
 function* reflowNodes(doc, layout, source, rects, viewport) {

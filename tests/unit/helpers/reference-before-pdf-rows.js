@@ -2,7 +2,7 @@
 // not be its reading order. This page-local layout keeps every text item and
 // its source offsets: the same result feeds reflow, speech and the text layer.
 // No OCR, language model, repeated-line removal or guessed missing text.
-import { pdfColumnCut as columnCut } from '../../../src/js/readers/pdf-layout-wasm.js'
+import { legacyPDFColumnCut as columnCut } from './reference-pdf-pipeline.js'
 
 const DEFAULT_VIEW = [1, 0, 0, -1, 0, 0]
 const median = values => {

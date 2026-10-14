@@ -3,9 +3,9 @@ import {readFileSync} from 'node:fs';
 import {beforeAll,expect,it,vi} from 'vitest';
 const observed=vi.hoisted(()=>({core:null}));
 vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>observed.core}));
-import {rustPDFOrderLines} from '../../src/js/readers/pdf-order-wasm.js';
-import {pdfOrderLines,legacyPDFOrderLines} from '../../src/js/readers/pdf-order-lines.js';
+import {rustPDFOrderLines,pdfOrderLines} from '../../src/js/readers/pdf-order-wasm.js';
 import {orderLines as reference} from './helpers/reference-pdf-order.js';
+import {extractPDFText as referenceExtraction} from './helpers/reference-pdf-text.js';
 import {extractPDFText} from '../../src/js/readers/pdf-text.js';
 let core;beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.pdf_order_lines).toBe('function');observed.core=core;});
 const line=(x,y,width=180,height=12,text='A complete ordinary line of prose')=>({x0:x,x1:x+width,y,height,top:y-height,bottom:y,text,items:[{str:text}],marker:{x,y}});
@@ -34,12 +34,12 @@ it('recreates output views after memory growth and never retains references into
  const free=vi.fn(core.free_f64);observed.core={...core,free_f64:free,pdf_order_lines(...args){core.memory.grow(1);return core.pdf_order_lines(...args);}};
  try{const input=Array.from({length:80},(_,i)=>line(i%2*260,Math.floor(i/2)*17));const result=compare(input);expect(free).toHaveBeenCalledOnce();const saved=result.map(l=>l.column);core.memory.grow(1);expect(result.map(l=>l.column)).toEqual(saved);}finally{observed.core=core;}
 });
-it('keeps cold, rejected and throwing kernels on the original path without dropping text',()=>{
- const input=Array.from({length:80},(_,i)=>line(i%2*260,Math.floor(i/2)*17));
+it('reports cold, rejected and throwing kernels as errors instead of dropping or reordering text',()=>{
+ const input=Array.from({length:80},(_,i)=>line(i%2*260,Math.floor(i/2)*17)),copy=structuredClone(input);
  for(const engine of [null,{...core,alloc_f64:()=>0},{...core,pdf_order_lines:()=>0},{...core,pdf_order_lines:()=>{throw Error('kernel');}}]){
-  observed.core=engine;expect(pdfOrderLines(input,false)).toEqual(reference(input,false));
+  observed.core=engine;expect(()=>pdfOrderLines(input,false)).toThrow(engine?'No se pudo calcular la página del PDF':'El módulo numérico no se pudo cargar');expect(input).toEqual(copy);
  }
- observed.core=core;
+ observed.core=core;expect(pdfOrderLines(input,false)).toEqual(reference(input,false));
 });
 it('rejects invalid geometry and native permutations without publishing partial output',()=>{
  const input=Array.from({length:40},(_,i)=>line(i%2*260,Math.floor(i/2)*17));
@@ -49,6 +49,6 @@ it('rejects invalid geometry and native permutations without publishing partial 
 });
 it('preserves the complete PDF extraction, paragraphs and source spans',()=>{
  const items=Array.from({length:220},(_,i)=>({str:`Sentence ${i} with its original words.`,width:190,height:12,dir:'ltr',hasEOL:true,transform:[12,0,0,12,i%2*240,760-Math.floor(i/2)*6]}));
- const content={items};observed.core=null;const expected=extractPDFText(content),calls=vi.fn(core.pdf_order_lines);observed.core={...core,pdf_order_lines:calls};
- try{expect(expected.geometric).toBe(true);expect(extractPDFText(content)).toEqual(expected);expect(calls).toHaveBeenCalled();expect(legacyPDFOrderLines([],false)).toEqual([]);}finally{observed.core=core;}
+ const content={items},expected=referenceExtraction(content),calls=vi.fn(core.pdf_order_lines);observed.core={...core,pdf_order_lines:calls};
+ try{expect(expected.geometric).toBe(true);expect(extractPDFText(content)).toEqual(expected);expect(calls).toHaveBeenCalled();expect(reference([],false)).toEqual([]);}finally{observed.core=core;}
 });

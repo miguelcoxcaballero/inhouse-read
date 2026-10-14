@@ -1,8 +1,11 @@
 import {getRustCore} from '../rust-core.js';
+import {coreRequired} from './core-required.js';
 
 export function rustPDFPlaceFigures(rects,layout,source,viewport) {
-  const core=getRustCore(),lines=layout?.lines,count=lines?.length,images=rects.length;
-  if(typeof core?.pdf_place_figures!=='function'||!layout?.geometric||!count||count>32768||images>32768)return undefined;
+  const core=getRustCore(),images=rects.length;
+  // A layout without geometry (the plain stream) has no lines: the kernel puts every figure after all the text.
+  const geometric=Boolean(layout?.geometric&&layout.lines?.length),lines=geometric?layout.lines:[],count=lines.length;
+  if(typeof core?.pdf_place_figures!=='function'||!layout||count>32768||images>32768)return undefined;
   if(!images)return [];
   let dominant;
   try {
@@ -10,10 +13,13 @@ export function rustPDFPlaceFigures(rects,layout,source,viewport) {
       if(typeof entry.item.str!=='string')return undefined;
       if(!dominant||entry.item.str.length>dominant.item.str.length)dominant=entry;
     }
-    if(!dominant)return undefined;
-    const transform=viewport.transform||[1,0,0,-1,0,viewport.height],t=dominant.item.transform;
-    const angle=Math.atan2(transform[1]*t[0]+transform[3]*t[1],transform[0]*t[0]+transform[2]*t[1]);
-    const params=[Math.cos(angle),Math.sin(angle),viewport.width/source.width,viewport.height/source.height,layout.text.length];
+    if(geometric&&!dominant)return undefined;
+    let params=[1,0,1,1,layout.text.length];
+    if(geometric){
+      const transform=viewport.transform||[1,0,0,-1,0,viewport.height],t=dominant.item.transform;
+      const angle=Math.atan2(transform[1]*t[0]+transform[3]*t[1],transform[0]*t[0]+transform[2]*t[1]);
+      params=[Math.cos(angle),Math.sin(angle),viewport.width/source.width,viewport.height/source.height,layout.text.length];
+    }
     if(!params.every(Number.isFinite)||params[2]<=0||params[3]<=0)return undefined;
     const columns=new Map(),rectOffset=count*6,paramOffset=rectOffset+images*4,outOffset=paramOffset+5,length=outOffset+images*2;
     let pointer;try{pointer=core.alloc_f64(length);}catch{return undefined;}if(!pointer)return undefined;
@@ -41,3 +47,7 @@ export function rustPDFPlaceFigures(rects,layout,source,viewport) {
     }catch{return undefined;}finally{core.free_f64(pointer,length);}
   }catch{return undefined;}
 }
+
+/** Illustrations with the UTF-16 offset of the text they precede, in reading order. */
+export const pdfPlaceFigures=(rects,layout,source,viewport)=>coreRequired(rustPDFPlaceFigures(rects,layout,source,viewport));
+export const pdfFigureOffset=(rect,layout,source,viewport)=>pdfPlaceFigures([rect],layout,source,viewport)[0].offset;

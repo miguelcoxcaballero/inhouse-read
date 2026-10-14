@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 const runtime = vi.hoisted(() => ({ core:null }))
 vi.mock('../../src/js/rust-core.js', () => ({ getRustCore:() => runtime.core }))
-import { rustPDFRowLines, legacyPDFRowLines, pdfRowLines, PDF_ROW_MIN_ITEMS } from '../../src/js/readers/pdf-row-layout-wasm.js'
+import { rustPDFRowLines, pdfRowLines } from '../../src/js/readers/pdf-row-layout-wasm.js'
+import { legacyPDFRowLines } from './helpers/reference-pdf-pipeline.js'
 import { extractPDFText, mapPDFTextLayer } from '../../src/js/readers/pdf-text.js'
 import { extractPDFText as referencePDFText } from './helpers/reference-pdf-text.js'
 import { makePDFRowEntries, pdfContentFromEntries, PDF_ROW_VIEWPORT, assertExactPDFValue,
@@ -87,13 +88,13 @@ describe('actual Rust PDF row grouping and gutter segmentation',()=>{
       assertExactPDFValue(extractPDFText(source,PDF_ROW_VIEWPORT),referencePDFText(source,PDF_ROW_VIEWPORT))
     }
   })
-  it('runs one ABI call for a complete eligible page and none for the small-page fallback',()=>{
+  it('runs one ABI call for every page, whatever its size, now that no JavaScript twin remains',()=>{
     let calls=0
     runtime.core={...compiled,pdf_row_lines(...args){calls++;return compiled.pdf_row_lines(...args)}}
-    const small=makePDFRowEntries('mixed',PDF_ROW_MIN_ITEMS-1)
-    assertPDFRowIdentities(pdfRowLines(small,false),legacyPDFRowLines(small,false));expect(calls).toBe(0)
-    const large=makePDFRowEntries('mixed',PDF_ROW_MIN_ITEMS)
-    assertPDFRowIdentities(pdfRowLines(large,false),legacyPDFRowLines(large,false));expect(calls).toBe(1)
+    const small=makePDFRowEntries('mixed',127)
+    assertPDFRowIdentities(pdfRowLines(small),legacyPDFRowLines(small,false));expect(calls).toBe(1)
+    const large=makePDFRowEntries('mixed',128)
+    assertPDFRowIdentities(pdfRowLines(large),legacyPDFRowLines(large,false));expect(calls).toBe(2)
   })
   it('reacquires output views after kernel memory growth and owns its resulting objects',()=>{
     runtime.core={...compiled,pdf_row_lines(...args){compiled.memory.grow(1);return compiled.pdf_row_lines(...args)}}
@@ -101,18 +102,19 @@ describe('actual Rust PDF row grouping and gutter segmentation',()=>{
     compiled.memory.grow(1);assertExactPDFValue(result,before)
     parity(makePDFRowEntries('columns',256))
   })
-  it('keeps original behavior when unavailable, over the bound or given unsupported numeric records',()=>{
+  it('reports a clear error when unavailable, over the bound or given unsupported numeric records',()=>{
     const entries=makePDFRowEntries('mixed',128)
     runtime.core=null;expect(rustPDFRowLines(entries)).toBeUndefined()
-    assertPDFRowIdentities(pdfRowLines(entries,false),legacyPDFRowLines(entries,false))
+    expect(()=>pdfRowLines(entries)).toThrow('El módulo numérico no se pudo cargar')
     runtime.core=compiled
     for(const mutate of [row=>{row.y=NaN},row=>{row.height=Infinity},row=>{row.rawIndex=-1},row=>{row.x1=row.x0-1}]) {
       const unsupported=structuredClone(entries);mutate(unsupported[0]);expect(rustPDFRowLines(unsupported)).toBeUndefined()
     }
     expect(rustPDFRowLines({length:32769})).toBeUndefined()
+    expect(()=>pdfRowLines({length:32769})).toThrow('No se pudo calcular la página del PDF')
   })
-  it('discards a failed arena and falls back after rejection, trap or corrupt output metadata',()=>{
-    const entries=makePDFRowEntries('mixed',128),expected=legacyPDFRowLines(entries,false)
+  it('discards a failed arena and reports an error after rejection, trap or corrupt output metadata',()=>{
+    const entries=makePDFRowEntries('mixed',128)
     for(const failure of ['reject','trap','duplicate','nonfinite']) {
       let releases=0
       runtime.core={...compiled,free_f64(...args){releases++;compiled.free_f64(...args)},pdf_row_lines(...args){
@@ -123,7 +125,7 @@ describe('actual Rust PDF row grouping and gutter segmentation',()=>{
         if(failure==='nonfinite')new Float64Array(compiled.memory.buffer,args[3],result*9)[2]=NaN
         return result
       }}
-      assertPDFRowIdentities(pdfRowLines(entries,false),expected);expect(releases).toBe(1)
+      expect(()=>pdfRowLines(entries)).toThrow('No se pudo calcular la página del PDF');expect(releases).toBe(1)
     }
     runtime.core=compiled;parity(entries)
   })

@@ -1,4 +1,5 @@
 import {getRustCore} from '../rust-core.js';
+import {coreRequired} from './core-required.js';
 const decoder=new TextDecoder(),STRIDE=7,MAX_LINES=32768,PATH_BYTES=80;
 const counter=text=>/^\s*(?:\d{1,5}|[ivxlcdm]{1,7})\s*$/i.test(text);
 /** The kernel returns a permutation and ASCII column paths. All text,
@@ -30,3 +31,6 @@ export function rustPDFOrderLines(lines,rtl){
   return Array.from({length:count},(_,i)=>({...lines[records[i*3]],column:paths.slice(records[i*3+1],records[i*3+1]+records[i*3+2])}));
  }catch{return undefined;}finally{core.free_f64(pointer,length);}
 }
+
+/** The lines of a page in reading order, each with its column path. */
+export const pdfOrderLines=(lines,rtl)=>coreRequired(rustPDFOrderLines(lines,rtl));

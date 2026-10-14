@@ -3,8 +3,7 @@ import {readFileSync} from 'node:fs';
 import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
 vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core}));
-import {rustPDFPlaceFigures} from '../../src/js/readers/pdf-figures-wasm.js';
-import {pdfPlaceFigures} from '../../src/js/readers/pdf-figure-placement.js';
+import {rustPDFPlaceFigures,pdfPlaceFigures} from '../../src/js/readers/pdf-figures-wasm.js';
 import {placeFigures as reference} from './helpers/reference-pdf-figures.js';
 let core;
 beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.pdf_place_figures).toBe('function');state.core=core;});
@@ -50,17 +49,20 @@ it('matches two hundred randomized reading streams, viewports and source rectang
  }
 });
 it('supports two thousand illustrations without truncating the original text offsets',()=>{compare(Array.from({length:2000},(_,i)=>({...rects[i%32]})),fixture(400,4));});
-it('keeps small pages and nongeometric layouts on the original route',()=>{
+it('answers small pages and layouts without geometry in the kernel as well',()=>{
  const call=vi.fn(core.pdf_place_figures);state.core={...core,pdf_place_figures:call};
- expect(pdfPlaceFigures(rects.slice(0,7),fixture(),source,viewport)).toEqual(reference(rects.slice(0,7),fixture(),source,viewport));expect(call).not.toHaveBeenCalled();
+ expect(pdfPlaceFigures(rects.slice(0,7),fixture(),source,viewport)).toEqual(reference(rects.slice(0,7),fixture(),source,viewport));expect(call).toHaveBeenCalledTimes(1);
  for(const layout of [{...fixture(),geometric:false},{text:'Full text 🦊',lines:[],geometric:true}]){
-  expect(rustPDFPlaceFigures(rects,layout,source,viewport)).toBeUndefined();expect(pdfPlaceFigures(rects,layout,source,viewport)).toEqual(reference(rects,layout,source,viewport));
+  const expected=reference(rects,layout,source,viewport);
+  expect(rustPDFPlaceFigures(rects,layout,source,viewport)).toEqual(expected);expect(pdfPlaceFigures(rects,layout,source,viewport)).toEqual(expected);
+  expect(pdfPlaceFigures(rects,layout,undefined,undefined)).toEqual(expected);
+  expect(expected.every(({offset})=>offset===layout.text.length)).toBe(true);
  }
  expect(rustPDFPlaceFigures([],fixture(),source,viewport)).toEqual([]);
 });
-it('recovers from absent, old, allocation-failing and trapping cores',()=>{
+it('reports absent, old, allocation-failing and trapping cores as errors',()=>{
  for(const value of [null,{}, {...core,alloc_f64:()=>0},{...core,pdf_place_figures:()=>0},{...core,pdf_place_figures:()=>{throw Error('trap');}}]){
-  state.core=value;expect(pdfPlaceFigures(rects,fixture(),source,viewport)).toEqual(reference(rects,fixture(),source,viewport));
+  state.core=value;expect(()=>pdfPlaceFigures(rects,fixture(),source,viewport)).toThrow(value?'No se pudo calcular la página del PDF':'El módulo numérico no se pudo cargar');
  }
 });
 it('frees memory on invalid line values, native failures and malformed output permutations',()=>{

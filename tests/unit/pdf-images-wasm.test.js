@@ -3,8 +3,7 @@ import {readFileSync} from 'node:fs';
 import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
 vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core}));
-import {rustPDFImageRects} from '../../src/js/readers/pdf-images-wasm.js';
-import {pdfImageRects} from '../../src/js/readers/pdf-image-bounds.js';
+import {rustPDFImageRects,pdfImageRects} from '../../src/js/readers/pdf-images-wasm.js';
 import {pdfImageRects as reference} from './helpers/reference-pdf-images.js';
 let core;
 beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.pdf_image_rects).toBe('function');state.core=core;});
@@ -38,7 +37,7 @@ it('keeps two thousand disconnected photos in physical reading order',()=>{
  const input=Array.from({length:2000},(_,i)=>box(0,i/2000,.5,.5/2000)).reverse().flat();
  const rects=rustPDFImageRects(input,100,4000);expect(rects).toEqual(reference(input,100,4000));expect(rects).toHaveLength(2000);
 });
-it('handles empty pages and unsupported dimensions through the original implementation',()=>{
+it('handles empty pages and unsupported dimensions exactly like the original implementation',()=>{
  expect(rustPDFImageRects([],100,200)).toEqual([]);
  for(const dims of [[0,1],[-1,1],[1,NaN],[Infinity,1]]){
   expect(rustPDFImageRects(fixtures.touching,...dims)).toBeUndefined();expect(pdfImageRects(fixtures.touching,...dims)).toEqual(reference(fixtures.touching,...dims));
@@ -48,10 +47,15 @@ it('returns owned objects even when memory grows during and after the native cal
  const free=vi.fn(core.free_f64);state.core={...core,free_f64:free,pdf_image_rects(...args){core.memory.grow(1);return core.pdf_image_rects(...args);}};
  const value=rustPDFImageRects(fixtures.overlapping,400,800);core.memory.grow(1);expect(value).toEqual(reference(fixtures.overlapping,400,800));expect(free).toHaveBeenCalledOnce();
 });
-it('keeps missing, old and failing cores on the original algorithm',()=>{
+it('reports missing, old and failing cores as errors instead of guessing bounds',()=>{
  for(const engine of [null,{}, {...core,alloc_f64:()=>0},{...core,pdf_image_rects:()=>0xffffffff},{...core,pdf_image_rects:()=>{throw Error('trap');}}]){
-  state.core=engine;expect(pdfImageRects(fixtures.overlapping,100,200)).toEqual(reference(fixtures.overlapping,100,200));
+  state.core=engine;expect(()=>pdfImageRects(fixtures.overlapping,100,200)).toThrow(engine?'No se pudo calcular la página del PDF':'El módulo numérico no se pudo cargar');
  }
+});
+it('answers pages of tens of thousands of tiles in one native call',()=>{
+ const tiles=Array.from({length:40000},(_,i)=>box(i%200/200,Math.floor(i/200)/200,.005,.005)).flat();
+ expect(rustPDFImageRects(tiles,2000,2000)).toEqual(reference(tiles,2000,2000));
+ expect(pdfImageRects(tiles,2000,2000)).toEqual(reference(tiles,2000,2000));
 });
 it('rejects malformed native bounds and always frees the temporary allocation',()=>{
  const free=vi.fn(core.free_f64);state.core={...core,free_f64:free,pdf_image_rects(_p,_n,_w,_h,out){new Float64Array(core.memory.buffer,out,4).set([0,0,Infinity,20]);return 1;}};

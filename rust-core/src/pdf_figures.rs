@@ -4,9 +4,10 @@ const LINE:usize=6;
 /// Lines: count*6 f64 [x0,x1,y,height,UTF16 start,column id]. Rectangles:
 /// images*4 f64 [x0,y0,x1,y1]. Parameters: [cos,sin,scaleX,scaleY,text length].
 /// Output: images*2 f64 [rectangle index, UTF16 offset], sorted for reading. Disjoint aligned buffers are required.
+/// A layout without geometry (count 0, columns 0) puts every figure after the whole text.
 #[no_mangle]
 pub unsafe extern "C" fn pdf_place_figures(lines:*const f64,count:usize,columns:usize,rects:*const f64,images:usize,params:*const f64,output:*mut f64)->u32 {
-    if count==0||count>32768||columns==0||columns>count||images>32768{return 0;}
+    if count>32768||(count==0)!=(columns==0)||columns>count||images>32768{return 0;}
     let lines=std::slice::from_raw_parts(lines,count*LINE);
     let rects=std::slice::from_raw_parts(rects,images*4);
     let params=std::slice::from_raw_parts(params,5);

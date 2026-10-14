@@ -9,9 +9,10 @@ fn compare(a:&Rect,b:&Rect)->Ordering {
 /// # Safety
 /// Input is count*6 f64 corner coordinates; output has space for count*4 f64.
 /// Returns the number of composites, or usize::MAX for unsupported dimensions.
+/// Pages assembled from tiles can carry many thousands of picture draws.
 #[no_mangle]
 pub unsafe extern "C" fn pdf_image_rects(input:*const f64,count:usize,width:f64,height:f64,output:*mut f64)->usize {
-    if count>32768 || !width.is_finite() || !height.is_finite() || width<=0.0 || height<=0.0 {return usize::MAX;}
+    if count>1_000_000 || !width.is_finite() || !height.is_finite() || width<=0.0 || height<=0.0 {return usize::MAX;}
     if count==0{return 0;}
     let source=std::slice::from_raw_parts(input,count*6);
     let mut rects=Vec::with_capacity(count);
