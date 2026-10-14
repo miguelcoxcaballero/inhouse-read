@@ -31,6 +31,8 @@ mod jsmath;
 #[cfg(feature = "app")]
 mod shelf_lighting;
 #[cfg(feature = "app")]
+mod shelf_occluder;
+#[cfg(feature = "app")]
 mod shelf_pixel;
 #[cfg(feature = "app")]
 mod shelf_placement;

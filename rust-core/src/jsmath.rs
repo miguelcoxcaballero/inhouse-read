@@ -123,6 +123,35 @@ impl Mat4 {
         te[2] = x[2]; te[6] = y[2]; te[10] = z[2];
     }
     pub fn set_position(&mut self, p: Vec3) { self.0[12] = p[0]; self.0[13] = p[1]; self.0[14] = p[2]; }
+    /// `Vector3#transformDirection`: the upper 3x3 applied, then normalised.
+    pub fn transform_direction(&self, d: Vec3) -> Vec3 {
+        let e = &self.0;
+        normalize([e[0] * d[0] + e[4] * d[1] + e[8] * d[2], e[1] * d[0] + e[5] * d[1] + e[9] * d[2], e[2] * d[0] + e[6] * d[1] + e[10] * d[2]])
+    }
+    /// `Vector3#setFromMatrixScale`: the length of each basis column.
+    pub fn scale(&self) -> Vec3 {
+        let e = &self.0;
+        [length([e[0], e[1], e[2]]), length([e[4], e[5], e[6]]), length([e[8], e[9], e[10]])]
+    }
+}
+
+/// `+x.toFixed(digits)`: the number written with that many decimals (round half up on the exact
+/// binary value, magnitude first, so a tiny negative stays `-0`), read back. From 1e21 on
+/// `toFixed` is `ToString(x)`, which reads back as `x`. `digits` is at most 3 here.
+pub fn fixed_value(x: f64, digits: u32) -> f64 {
+    if x.is_nan() || x.abs() >= 1e21 { return x; }
+    let magnitude = x.abs();
+    let bits = magnitude.to_bits();
+    let (exponent, fraction) = (((bits >> 52) & 0x7ff) as i32, bits & ((1u64 << 52) - 1));
+    let (mantissa, shift) = if exponent == 0 { (fraction, -1074) } else { (fraction | (1u64 << 52), exponent - 1075) };
+    let scale = 10u128.pow(digits);
+    let product = mantissa as u128 * scale;
+    let rounded: u128 = if shift >= 0 { product << shift }
+        else if shift <= -128 { 0 }
+        else { let right = (-shift) as u32; (product + (1u128 << (right - 1))) >> right };
+    let value = if rounded < (1u128 << 53) { rounded as f64 / scale as f64 }
+        else { format!("{}.{:0width$}", rounded / scale, rounded % scale, width = digits as usize).parse().unwrap_or(f64::NAN) };
+    if x < 0.0 { -value } else { value }
 }
 
 #[derive(Clone, Copy)]
