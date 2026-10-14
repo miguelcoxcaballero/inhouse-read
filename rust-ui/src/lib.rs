@@ -1,3 +1,5 @@
+mod host;
+mod legacy_recovery;
 mod import_gate;
 mod stage_gate;
 mod prepared_page;
