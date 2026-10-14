@@ -9,6 +9,7 @@ mod bookshelf_return;
 mod animation_fence;
 mod placement_preview;
 mod occlusion_table;
+mod spine_surface;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
