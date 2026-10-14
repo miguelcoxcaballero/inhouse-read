@@ -1,3 +1,35 @@
+# 1.7.239 — lector sin gemelos JavaScript (bloque 2)
+
+Changelog: «Frases y plan de voz solo en Rust».
+Unidad legacy-readers, bloque 2. Los dos `*-legacy.js` que quedaban
+(`sentence-ends-legacy.js`, `speech-plan-legacy.js`, 112 líneas) y las copias en
+línea de `reader-navigation`, `reading-places` y `speech-follow` pasan a
+`tests/unit/helpers/reference-*.js`; los módulos llaman a `readerUI()`.
+Ya no hay límite de 1 000 000 de unidades UTF-16: `speech_plan` (rust-ui) deja
+de rechazarlas y el núcleo compartido `speech_fragments` cambia su guarda de
+1 000 000 a `u32::MAX` (las posiciones son u32); el envoltorio `rust-core`
+sigue limitando a 1 000 000 en JS, así que ese camino no cambia. `sentenceEnds`
+no tiene límite de longitud y `planSpeech` ya no vuelve a JS. Una lista de
+cortes que Rust no acepta (no enteros dentro del texto, nunca producida por el
+normalizador) lanza TypeError en lugar de usar la ruta permisiva.
+Prueba nueva `speech-large-text` (6): textos de 1,3 y 2,3 millones de unidades
+(frases, abreviaturas, CJK, pares sustitutos, cortes duros, marcas de página,
+`opening`, `skipHeaders`) dan las mismas frases, desplazamientos y fragmentos que
+las referencias JS congeladas, también por la entrada de producción, sin
+manejadores vivos. Medición en Node (mediana de 5, equipo compartido): fin de
+frase 1,3 M JS 55 ms / Rust 28 ms, 2,3 M 79 / 46 ms; plan completo 1,3 M
+285 / 210 ms, 2,3 M 479 / 427 ms (domina `normalizeSpeech`, que sigue en JS con
+núcleo): no es una mejora de velocidad relevante, solo deja de haber otra
+implementación. `speech-text` ejecuta ahora sus aserciones con `rust` y
+`pipeline` (la mitad `legacy` ya no existe en producción). Los fixtures E2E de
+fragmentos y limpieza cargan el módulo UI y cuentan una llamada al núcleo por
+petición directa (antes 2: el plan pasaba por el núcleo desde JS).
+Build, las 6052 unitarias (4 bloques, 436 archivos: 1654+1253+1423+1722).
+E2E: rust-speech-*, rust-voice-*, rust-reader-actions 11/11; audiobook-follow,
+reading-experience, neural-page-follow, audiobook-chapter-continuity 27/28 (la
+que falla, «PDF mantiene la página anterior…», falla igual en 51607ee).
+Rust 7527 / JS 35343 = 17.56 % (bloque 1: 17.49 %); no es porcentaje funcional.
+
 # 1.7.238 — lector sin gemelos JavaScript (bloque 1)
 
 Changelog: «Lector solo en Rust, sin copias JS».

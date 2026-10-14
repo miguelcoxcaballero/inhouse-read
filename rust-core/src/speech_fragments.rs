@@ -8,7 +8,7 @@ fn cjk(c: u16) -> bool { matches!(c, 0x3001 | 0xff0c | 0xff1b | 0xff1a) }
 #[no_mangle]
 pub unsafe extern "C" fn speech_fragments(input: *const u16, len: usize,
     ends: *const u32, count: usize, output: *mut u32, capacity: usize) -> u32 {
-    if len > 1_000_000 || count > len { return 0; }
+    if len > u32::MAX as usize || count > len { return 0; }
     let text = std::slice::from_raw_parts(input, len);
     let ends = std::slice::from_raw_parts(ends, count);
     let mut previous = 0;

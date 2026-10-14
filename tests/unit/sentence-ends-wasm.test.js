@@ -2,7 +2,7 @@
 import {it,expect,beforeAll} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {sentenceEnds} from '../../src/js/readers/sentence-ends-legacy.js'
+import {sentenceEnds} from './helpers/reference-sentence-ends.js'
 import {makeCases,invoke} from '../helpers/sentence-ends-cases.js'
 const cases=makeCases(),blocks=Math.ceil(cases.length/100);let core,retained,capacity
 beforeAll(()=>{core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})})

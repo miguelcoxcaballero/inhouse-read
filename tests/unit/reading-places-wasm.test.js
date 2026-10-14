@@ -1,7 +1,8 @@
 import {beforeAll,afterEach,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {isBookmarked,toggleBookmark,prependHistory,isBookmarkedLegacy,toggleBookmarkLegacy} from '../../src/js/readers/reading-places.js'
+import {isBookmarked,toggleBookmark,prependHistory} from '../../src/js/readers/reading-places.js'
+import {isBookmarkedLegacy,toggleBookmarkLegacy,prependHistoryLegacy} from './helpers/reference-reading-places.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 let core
@@ -17,7 +18,7 @@ it('matches 2000 bookmark/history operations with the same record references and
   const expected=toggleBookmarkLegacy(left,location,()=>{a++;return place}),actual=toggleBookmark(right,location,()=>{b++;return place})
   expect(actual).toEqual(expected);expect(right).toEqual(left);expect(a).toBe(b)
   for(let j=0;j<actual.length;j++)expect(actual[j]).toBe(expected[j])
-  const history=prependHistory(records,place),old=[place,...records].slice(0,20)
+  const history=prependHistory(records,place),old=prependHistoryLegacy(records,place)
   expect(history).toEqual(old);for(let j=0;j<history.length;j++)expect(history[j]).toBe(old[j])
  }
 },15000)
@@ -36,11 +37,11 @@ it('serializes the requested locator once and propagates errors without retainin
  expect(()=>isBookmarked([{fraction:0,locator:circular}],{fraction:0,locator:null})).toThrow()
  expect(isBookmarked([{fraction:0,locator:null}],{fraction:0,locator:null})).toBe(true)
 })
-it('keeps memory bounded and retains the original fallback when Rust is absent',()=>{
+it('keeps memory bounded and fails clearly instead of falling back when Rust is absent',()=>{
  const before=core.memory.buffer.byteLength
  for(let i=0;i<1000;i++){isBookmarked([{fraction:0,locator:null}],{fraction:1,locator:null});toggleBookmark([],{fraction:1,locator:null},()=>({fraction:1,locator:null}))}
  expect(core.memory.buffer.byteLength).toBe(before)
  runtime.ui=null;const location={fraction:0,locator:null},create=()=>location
- expect(toggleBookmark([],location,create)).toEqual([location]);expect(isBookmarked([location],location)).toBe(true)
- expect(prependHistory([],location)).toEqual([location])
+ expect(()=>toggleBookmark([],location,create)).toThrow('Rust UI is not loaded');expect(()=>isBookmarked([location],location)).toThrow('Rust UI is not loaded')
+ expect(()=>prependHistory([],location)).toThrow('Rust UI is not loaded')
 })

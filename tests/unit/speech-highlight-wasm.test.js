@@ -3,7 +3,8 @@ import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import * as reference from './helpers/reference-speech-highlight.js'
 import * as highlight from '../../src/js/readers/speech-highlight.js'
-import {speechFollowOffset,speechFollowOffsetLegacy} from '../../src/js/readers/speech-follow.js'
+import {speechFollowOffset} from '../../src/js/readers/speech-follow.js'
+import {speechFollowOffsetLegacy} from './helpers/reference-speech-follow.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 let core
@@ -70,7 +71,8 @@ it('matches 3000 complete-range visibility decisions and scroll offsets exactly'
 it('retains the first line of oversized sentences; the highlight has no fallback without Rust',()=>{
  const rects=[{top:70,bottom:1050,left:10,right:360}]
  expect(speechFollowOffset(rects,box).top).toBe(12)
- runtime.ui=null
  expect(speechFollowOffset(rects,box)).toEqual(speechFollowOffsetLegacy(rects,box))
+ runtime.ui=null
+ expect(()=>speechFollowOffset(rects,box)).toThrow('Rust UI is not loaded')
  expect(()=>highlight.speechCSS('sepia')).toThrow('Rust UI is not loaded')
 })
