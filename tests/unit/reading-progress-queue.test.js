@@ -2,7 +2,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import 'fake-indexeddb/auto'
 import { Blob as NativeBlob } from 'node:buffer'
 import { LibraryStore } from '../../src/js/library-store.js'
-import { createReadingProgressQueue } from '../../src/js/reading-progress-queue.js'
+import { createReadingProgressQueue as shippedQueue } from '../../src/js/reading-progress-queue.js'
+import { createLegacyReadingProgressQueue } from './helpers/reference-reading-progress-queue.js'
 
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
@@ -19,8 +20,10 @@ const deferred = () => {
 }
 const tick = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 
+// 'legacy' is the frozen JavaScript reference; 'Rust' is the shipped queue.
+let createReadingProgressQueue
 describe.each(['legacy','Rust'])('%s local reading progress queue', engine => {
-  beforeEach(()=>{runtime.ui=engine==='Rust'?nativeRuntime:null})
+  beforeEach(()=>{runtime.ui=engine==='Rust'?nativeRuntime:null;createReadingProgressQueue=engine==='Rust'?shippedQueue:createLegacyReadingProgressQueue})
   it('commits the latest synchronous position without a debounce timer', async () => {
     const library = { updateProgress:vi.fn(async (id, fraction, locator) => ({ id, fraction, locator })) }
     const queue = createReadingProgressQueue(library), promises = []

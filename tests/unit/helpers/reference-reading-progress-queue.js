@@ -1,3 +1,4 @@
+// Frozen reference of the pre-Rust reading-progress queue (removed from src in 1.7.239). Tests only.
 // Keep the latest pending reading position, rather than building a backlog
 // of obsolete IndexedDB writes. Settings are ordered barriers: a position
 // can replace only the pending position immediately before it.

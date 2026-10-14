@@ -35,7 +35,8 @@ vi.mock('../../src/js/readers/reader-controller.js', () => ({ UnsupportedFormatE
   }
 }))
 // The experience is a stand-in here; the lazy loader only needs the Rust core to exist.
-vi.mock('../../src/js/rust-ui.js', async importOriginal => ({ ...await importOriginal(), requireRustUI:async () => ({}) }))
+// The reader, the prepared page and the progress queue have no JavaScript twin: give the app the real Rust UI module.
+vi.mock('../../src/js/rust-ui.js', async () => (await import('./helpers/rust-ui-real.js')).rustUiMock())
 vi.mock('../../src/js/readers/reader-experience.js', () => ({ ReaderExperience:class {
   constructor(reader, options) {
     state.experience = this
