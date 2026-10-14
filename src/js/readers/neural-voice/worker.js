@@ -19,14 +19,12 @@
 //     {type:'end',   id}                                      synth finished
 //     {type:'error', id, error}                               anything that failed (the worker stays usable)
 import { createPhonemizer } from './phonemizer.js'
-import { exposePiperDurations, phonemeMarks, durationMarks } from './piper-alignment.js'
+import { exposePiperDurations, phonemeMarks } from './piper-alignment.js'
 import { createHebrewPhonemizer } from './hebrew.js'
 import { createSupertonicRuntime } from './supertonic-runtime.js'
 import { yieldToMessages } from './task-yield.js'
-import { loadRustCore } from '../../rust-core.js'
-import { loadRustVoiceCore } from '../../rust-voice-core.js'
-import { synthesisRate, speedUpSpeech } from './speech-tempo.js'
-import { prepareSpeech, silence, concat, pauseAfter, restScale, splitSegments, limitIds, lengthScaleFor, PAUSE_MS } from './pcm.js'
+import { requireRustVoiceCore } from '../../rust-voice-core.js'
+import { silence, limitIds, splitSegments, finishPiper, finishSupertonic, lengthScaleFor, synthesisRate } from './synth-flow.js'
 
 let ort = null, phonemizer = null, phonBaseURL = null, hebrewPhonemizer = null, supertonicRuntime = null, session = null, config = null, voice = null, initPromise = null, loadChain = Promise.resolve()
 const cancelled = new Set()
@@ -42,11 +40,10 @@ const stage = (domain, stage, id, part = 0) => { if (diagnostics) post({type:'st
 // A segment of compute blocks this thread; yielding between segments lets 'cancel'/'load' messages in before the next one.
 
 async function init({ ortBase, phonBase, runtime }) {
-  // ONNX Runtime and the phonemizer are independent: load them side by side (a cold start is the sum of everything serial).
-  void loadRustCore() // optional acceleration loads alongside the voice, never delays it
-  void loadRustVoiceCore()
+  // ONNX Runtime, the phonemizer and the Rust voice core (a few KB: the rules, the cleaning and the tempo of the audio, which
+  // have no other implementation) are independent: load them side by side (a cold start is the sum of everything serial).
   phonBaseURL = phonBase
-  const [module, phon] = await Promise.all([import(/* @vite-ignore */ ortBase + 'ort.wasm.min.mjs'), runtime === 'supertonic3' ? null : createPhonemizer({ base: phonBase })])
+  const [module, phon] = await Promise.all([import(/* @vite-ignore */ ortBase + 'ort.wasm.min.mjs'), runtime === 'supertonic3' ? null : createPhonemizer({ base: phonBase }), requireRustVoiceCore()])
   ort = module
   ort.env.wasm.wasmPaths = ortBase       // ort-wasm-simd-threaded.{mjs,wasm}: our own copy, never a CDN
   ort.env.wasm.numThreads = 1            // 1 => never needs SharedArrayBuffer / COOP+COEP
@@ -116,7 +113,7 @@ async function synth({ id, text, rate, speaker, lang, style, marks = [] }) {
     const { pcm:raw, sampleRate, marks:timeline = [] } = await supertonicRuntime.synthesize(text, { lang, style, rate, marks, isActive:() => !cancelled.has(id) })
     stage(3,4,id)
     if (cancelled.has(id)) return
-    if (!(raw instanceof Float32Array) || !raw.every(Number.isFinite) || !(sampleRate > 0)) throw new Error('invalid Supertonic audio')
+    if (!(raw instanceof Float32Array) || !(sampleRate > 0)) throw new Error('invalid Supertonic audio')
     // The SDK deliberately returns no samples when normalization removes all
     // speakable text (for example an ornament). Keep Piper's short-rest policy.
     if (!raw.length) {
@@ -125,10 +122,9 @@ async function synth({ id, text, rate, speaker, lang, style, marks = [] }) {
       await yieldToMessages()
       return
     }
-    const {pcm:speech,from} = prepareSpeech(raw, sampleRate,{timing:true})
-    const pcm = concat([speech, silence(sampleRate, pauseAfter(text) * restScale(rate))])
-    post({ type:'chunk', id, index:0, last:true, pcm, sampleRate, ms:performance.now() - t,
-      marks:timeline.map(mark=>({...mark,sample:Math.max(0,Math.min(speech.length-1,mark.sample-from))})) }, [pcm.buffer])
+    const done = finishSupertonic(raw, text, timeline, { sampleRate, rate })
+    if (!done) throw new Error('invalid Supertonic audio') // a sample that is not a number
+    post({ type:'chunk', id, index:0, last:true, pcm:done.pcm, sampleRate, ms:performance.now() - t, marks:done.marks }, [done.pcm.buffer])
     await yieldToMessages()
     return
   }
@@ -138,7 +134,7 @@ async function synth({ id, text, rate, speaker, lang, style, marks = [] }) {
   const ids = await phonemize(text)
   const points = durationOutput ? await phonemeMarks(text,marks,ids,phonemize) : []
   stage(3,2,id)
-  const segments = splitSegments(limitIds(ids, config.num_symbols))
+  const segments = splitSegments(ids)
   if (!segments.length) { // nothing speakable ("...", an ornament): a short rest keeps the reading flowing
     post({ type: 'plan', id, counts: [0] })
     const pcm = silence(sampleRate, 120)
@@ -152,20 +148,13 @@ async function synth({ id, text, rate, speaker, lang, style, marks = [] }) {
     stage(3,3,id,index)
     const {pcm:raw,durations} = await runSegment(segments[index], { rate:synthesisRate(rate), speaker })
     stage(3,4,id,index)
-    const ms = performance.now() - t
-    const {pcm:speech,from} = prepareSpeech(raw, sampleRate, { model:voice, timing:true })
     const last = index === segments.length - 1
-    // Sentences of one fragment are separated by a rest at their start; the rest after the fragment comes with its last one.
-    // (the rests shorten with the speaking rate, like the speech does)
-    const rest = restScale(rate)
-    const timeline = durationMarks(points,durations,{base:segments.slice(0,index).reduce((n,p)=>n+p.length,0),count:segments[index].length,
-      samples:raw.length,trim:from,lead:0,length:speech.length})
-    const fast = speedUpSpeech(speech,sampleRate,rate,timeline)
-    const lead = index ? silence(sampleRate,PAUSE_MS.sentence*rest) : new Float32Array(0)
-    const pcm = concat([lead,fast.pcm,last ? silence(sampleRate,pauseAfter(text)*rest) : new Float32Array(0)])
+    // Cleaned, its page boundaries placed, sped up, and with its rests: sentences of one fragment are separated by a rest at
+    // their start; the rest after the fragment comes with its last one (both shorten with the speaking rate, like the speech).
+    const done = finishPiper(raw, durations, points, text, { sampleRate, model:voice, rate, last, first:index === 0,
+      base:segments.slice(0,index).reduce((n,p)=>n+p.length,0), count:segments[index].length })
     if (cancelled.has(id)) return
-    post({ type: 'chunk', id, index, last, pcm, sampleRate, ms:performance.now()-t,
-      marks:fast.marks.map(mark=>({...mark,sample:mark.sample+lead.length})) }, [pcm.buffer])
+    post({ type: 'chunk', id, index, last, pcm:done.pcm, sampleRate, ms:performance.now()-t, marks:done.marks }, [done.pcm.buffer])
     stage(3,5,id,index)
     await yieldToMessages()
     stage(3,6,id,index)

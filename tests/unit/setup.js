@@ -5,6 +5,7 @@ import { beforeEach, vi } from 'vitest'
 // awaits both), so every test of the shelf starts from the same state.
 import './helpers/rust-shelf-ready.js'
 import './helpers/rust-core-ready.js'
+import './helpers/rust-voice-ready.js'
 
 // La versión de jsdom usada por este entorno de test no implementa
 // Blob/File.prototype.arrayBuffer() (sí existe en todos los navegadores
@@ -35,6 +36,7 @@ if (typeof WebAssembly === 'object') {
   const offer = () => {
     globalThis.__inhouseRustReady = early('__inhouseCoreModule', 'src/wasm/inhouse_read_core.wasm')
     globalThis.__inhouseDecorReady = early('__inhouseDecorModule', 'src/wasm/inhouse_read_decor.wasm')
+    globalThis.__inhouseVoiceReady = early('__inhouseVoiceModule', 'src/wasm/inhouse_read_voice.wasm')
   }
   offer()
   beforeEach(offer)

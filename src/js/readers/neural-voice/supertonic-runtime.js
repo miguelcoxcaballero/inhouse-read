@@ -2,7 +2,7 @@
 // Copyright (c) 2025 Supertone Inc. See /licenses/supertonic-sdk-MIT.txt.
 // The model weights have the separate OpenRAIL-M licence.
 import { SUPERTONIC_LANGUAGES, SUPERTONIC_STYLES, SUPERTONIC_LEGACY_STYLES } from './supertonic-catalog.js';
-import { synthesisRate, speedUpSpeech } from './speech-tempo.js';
+import { synthesisRate, speedUpSpeech } from './synth-flow.js';
 
 const cancelled = () => Object.assign(new Error('Lectura cancelada'),{name:'AbortError',code:'aborted'});
 import { yieldToMessages as yieldTask } from './task-yield.js';
