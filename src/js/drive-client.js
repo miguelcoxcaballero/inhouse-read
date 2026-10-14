@@ -95,7 +95,7 @@ function ready() {
   if (native) return Promise.resolve(native)
   return loading ||= cloudModule().then(ui => native ||= new ui.RustDriveClient(host)).finally(() => { loading = null })
 }
-const later = name => async (...args) => (await ready())[name](...args)
+const later = name => (...args) => native ? native[name](...args) : ready().then(client => client[name](...args))
 
 // MainActivity relays the custom-scheme callback; the persisted transaction survives a recreated WebView,
 // so a callback that arrives before the module is in memory is handled as soon as it is.

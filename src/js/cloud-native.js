@@ -20,3 +20,10 @@ export async function cloudModule() {
 
 /** The module if it is already in memory; callers that need an answer now. */
 export const loadedCloudModule = () => getRustUI()
+
+/** `use(ui)` at once when the module is in memory (a user gesture is still valid, nothing waits),
+ * otherwise as soon as it is. */
+export function withCloudModule(use) {
+  const ui = getRustUI()
+  return ui ? use(ui) : cloudModule().then(use)
+}

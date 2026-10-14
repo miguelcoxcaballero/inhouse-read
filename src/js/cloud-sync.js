@@ -43,19 +43,24 @@ export class CloudSync {
 
   setProfile(profile) { this.#profile = profile; this.#native?.setProfile(profile) }
 
+  #call(name, ...args) {
+    return this.#native ? this.#native[name](...args) : this.#ready().then(native => native[name](...args))
+  }
+
   /** Forget the app's copy, without deleting or trashing the Drive file. */
-  async removeFromShelf(book, options) {
+  removeFromShelf(book, options) {
+    if (this.#native) return this.#native.removeFromShelf(book, options)
     // Nothing of this class is in flight before its Rust object exists, so the book needs no
     // bookkeeping: removing it must not wait for a module download (the trash gesture is visible).
-    if (!this.#native && !this.#loading) return book?.id ? this.#library.removeFromShelf(book, options) : null
-    return (await this.#ready()).removeFromShelf(book, options)
+    if (!this.#loading) return (async () => book?.id ? this.#library.removeFromShelf(book, options) : null)()
+    return this.#ready().then(native => native.removeFromShelf(book, options))
   }
 
   reset() { this.#epoch++; this.#profile = null; this.#native?.reset() }
 
-  async uploadBook(book) { return (await this.#ready()).uploadBook(book) }
+  uploadBook(book) { return this.#call('uploadBook', book) }
 
-  async downloadForOffline(book) { return (await this.#ready()).downloadForOffline(book) }
+  downloadForOffline(book) { return this.#call('downloadForOffline', book) }
 
   scheduleProgress(bookId) {
     if (this.#native) return this.#native.scheduleProgress(bookId)
@@ -65,9 +70,9 @@ export class CloudSync {
       error => this.#host.onStatus(`Progreso pendiente: ${error.message}`))
   }
 
-  async flushProgress(bookId) { return (await this.#ready()).flushProgress(bookId) }
+  flushProgress(bookId) { return this.#call('flushProgress', bookId) }
 
-  async syncBookProgress(bookOrId) { return (await this.#ready()).syncBookProgress(bookOrId) }
+  syncBookProgress(bookOrId) { return this.#call('syncBookProgress', bookOrId) }
 
-  async sync() { return (await this.#ready()).sync() }
+  sync() { return this.#call('sync') }
 }

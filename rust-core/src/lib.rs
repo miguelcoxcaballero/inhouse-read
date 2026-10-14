@@ -123,3 +123,5 @@ mod book_colors;
 mod frame_padding;
 #[cfg(feature="app")]
 mod shell_signature;
+#[cfg(feature="app")]
+mod file_name;

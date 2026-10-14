@@ -37,5 +37,5 @@ export class LibraryBackup {
   get task() { return this.#native?.task ?? null }
   get device() { return this.#native?.device }
   reset() { this.#native?.reset() }
-  async sync(accountId) { return (await this.#ready()).sync(accountId) }
+  sync(accountId) { return this.#native ? this.#native.sync(accountId) : this.#ready().then(native => native.sync(accountId)) }
 }
