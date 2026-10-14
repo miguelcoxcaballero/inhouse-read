@@ -2,7 +2,9 @@
 import init,{RustNeuralView} from '/inhouse-read/src/wasm/ui/inhouse_read_ui.js';
 import {LegacyNeuralView} from '/inhouse-read/tests/unit/helpers/reference-neural-view.js';
 import {languageName} from '/inhouse-read/src/js/readers/voice-catalog.js';
-const core=await init();
+import {requireRustUI} from '/inhouse-read/src/js/rust-ui.js';
+// The reader awaits the Rust UI before it builds a voice row (the language names come from it); the fixture does the same on the one module instance.
+const core=await init();await requireRustUI();
 window.run=rust=>{
  document.body.innerHTML='<section id="panel"><div data-neural></div><div data-neural-offer></div></section>';
  const panel=document.querySelector('#panel'),block=panel.querySelector('[data-neural]'),offer=panel.querySelector('[data-neural-offer]');
