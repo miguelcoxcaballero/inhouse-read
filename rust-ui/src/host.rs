@@ -57,6 +57,12 @@ pub fn method_opt(target:&JsValue,name:&str,args:&[&JsValue])->Result<Option<JsV
  apply(function,target,args).map(Some)
 }
 pub fn global()->JsValue{js_sys::global().into()}
+/// `new globalThis[name](...args)`.
+pub fn construct(name:&str,args:&[&JsValue])->Result<JsValue,JsValue>{
+ let constructor=get(&global(),name).dyn_into::<Function>().map_err(|_|not_a_function(name))?;
+ let list=Array::new();for argument in args{list.push(argument);}
+ Reflect::construct(&constructor,&list)
+}
 fn global_function(name:&str)->Result<Function,JsValue>{get(&global(),name).dyn_into().map_err(|_|not_a_function(name))}
 pub fn set_timeout(callback:&JsValue,delay:f64)->Result<JsValue,JsValue>{global_function("setTimeout")?.call2(&global(),callback,&JsValue::from_f64(delay))}
 pub fn clear_timeout(id:&JsValue)->Result<(),JsValue>{global_function("clearTimeout")?.call1(&global(),id)?;Ok(())}

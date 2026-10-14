@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('foliate-js/view.js', () => ({}))
 vi.mock('foliate-js/overlayer.js', () => ({Overlayer:{highlight:vi.fn()}}))

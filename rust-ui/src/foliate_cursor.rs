@@ -2,17 +2,11 @@
 //! the page on screen. The cursor object, the book, its documents and ranges
 //! keep their JavaScript identity; this module owns every decision about them.
 use std::{cell::RefCell, rc::Rc};
-use wasm_bindgen::{prelude::*, JsCast};
-use wasm_bindgen_futures::{future_to_promise, JsFuture};
-use js_sys::{Array, Function, Object, Promise, Reflect};
-use crate::host::{absent, call_opt, get, get_at, global, jmax, method, method_opt, num, read, set, trimmed, truthy};
+use wasm_bindgen::prelude::*;
+use crate::eager::{eager, settled};
+use js_sys::{Array, Function, Object, Promise};
+use crate::host::{absent, call_opt, construct, get, get_at, global, jmax, method, method_opt, num, read, set, trimmed, truthy};
 
-fn construct(name: &str, args: &[&JsValue]) -> Result<JsValue, JsValue> {
-    let constructor: Function = get(&global(), name).dyn_into().map_err(|_| JsValue::from_str("Missing constructor"))?;
-    let list = Array::new();
-    for argument in args { list.push(argument); }
-    Reflect::construct(&constructor, &list)
-}
 fn cancelled() -> JsValue {
     construct("DOMException", &[&"Speech preparation cancelled".into(), &"AbortError".into()]).unwrap_or_else(|error| error)
 }
@@ -115,13 +109,12 @@ pub fn cursor_remember(host: &JsValue, state: &JsValue, start: &JsValue, end: &J
     Ok(())
 }
 
-async fn settled(value: JsValue) -> Result<JsValue, JsValue> { JsFuture::from(Promise::resolve(&value)).await }
-
 /// Prepare the text of the next chapter from the book file, without rendering it.
 /// Resolves `undefined` where the visible reader must keep going, `null` at the end of
 /// the book, or the new source with the facts its callbacks need.
 #[wasm_bindgen]
-pub async fn cursor_next(host: JsValue, is_active: Function, map_text: Function) -> Result<JsValue, JsValue> {
+pub fn cursor_next(host: JsValue, is_active: Function, map_text: Function) -> Promise {
+  eager(async move {
     let previous = get(&host, "current");
     if !hidden(&host) && !truthy(&get(&host, "browsing")) && !truthy(&get(&previous, "detached")) { return Ok(JsValue::UNDEFINED); }
     let epoch = get(&host, "epoch");
@@ -152,11 +145,13 @@ pub async fn cursor_next(host: JsValue, is_active: Function, map_text: Function)
     }
     if !cursor_check(&host, &epoch, &previous, &is_active)? { return Err(cancelled()); }
     Ok(JsValue::NULL)
+  })
 }
 
 /// The pages of a chapter first read with the screen off, cut where the rendered copy of the same text breaks.
 #[wasm_bindgen]
-pub async fn cursor_measure(host: JsValue, state: JsValue, source: JsValue, activated: bool, map: JsValue, map_text: Function, page_breaks: Function) -> Result<JsValue, JsValue> {
+pub fn cursor_measure(host: JsValue, state: JsValue, source: JsValue, activated: bool, map: JsValue, map_text: Function, page_breaks: Function) -> Promise {
+  eager(async move {
     if !activated || !method(&source, "isValid", &[])?.is_truthy() || hidden(&host) { return Ok(JsValue::NULL); }
     let index = get(&state, "index");
     let found = match contents(&host)? {
@@ -168,6 +163,7 @@ pub async fn cursor_measure(host: JsValue, state: JsValue, source: JsValue, acti
     let rendered = map_text.call1(&JsValue::UNDEFINED, &body)?;
     if get(&rendered, "text") != get(&map, "text") { return Ok(JsValue::NULL); }
     settled(page_breaks.call2(&JsValue::UNDEFINED, &rendered, &get(&get(&host, "view"), "renderer"))?).await
+  })
 }
 
 /// One turn of "show the sentence being spoken": the loop of `reveal`, cut where it waits.
@@ -227,18 +223,15 @@ pub fn cursor_reveal(host: JsValue, highlight: JsValue) -> Result<JsValue, JsVal
     if truthy(&pending) { return Ok(pending); }
     let mut run = Reveal { host: host.clone(), epoch: get(&host, "epoch"), displayed: JsValue::UNDEFINED, highlight };
     // The first navigation starts before this call returns, as the screen must change at once.
-    let work = match run.begin() {
-        Err(error) => Promise::reject(&error),
-        Ok(first) => future_to_promise(async move {
-            let mut next = first;
-            while let Some((state, cfi, moving)) = next {
-                settled(moving).await?;
-                if !run.finish(&state, &cfi)? { break; }
-                next = run.begin()?;
-            }
-            Ok(JsValue::UNDEFINED)
-        }),
-    };
+    let work = eager(async move {
+        let mut next = run.begin()?;
+        while let Some((state, cfi, moving)) = next {
+            settled(moving).await?;
+            if !run.finish(&state, &cfi)? { break; }
+            next = run.begin()?;
+        }
+        Ok(JsValue::UNDEFINED)
+    });
     let shown = current;
     let cell = Rc::new(RefCell::new(JsValue::UNDEFINED));
     let inner = cell.clone();
