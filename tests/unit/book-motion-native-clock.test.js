@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {readFileSync} from 'node:fs';
 const motionCore=vi.hoisted(()=>({core:null,active:new Set(),samples:0}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>motionCore.core}));
+vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>motionCore.core,loadRustCore:async()=>motionCore.core??(await globalThis.__inhouseRustReady).exports}));
 beforeAll(async()=>{
  const core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;
  motionCore.core={...core,

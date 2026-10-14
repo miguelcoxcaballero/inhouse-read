@@ -3,7 +3,8 @@
 // against the frozen JavaScript originals in helpers/reference-*.js. Strict
 // comparisons: same structure, key order, freezing and Object.is on numbers.
 import { describe, expect, it } from 'vitest';
-import { core, tables, scratch, scratchPointer } from '../../src/js/catalogue-core.js';
+import * as app from '../../src/js/catalogue-core.js';
+import * as decor from '../../src/js/decor-catalogue.js';
 import * as shelfTypes from '../../src/js/shelf-types.js';
 import * as dimensions from '../../src/js/plant-dimensions.js';
 import * as plantCatalog from '../../src/js/plant-catalog-data.js';
@@ -193,29 +194,45 @@ describe('lamp colour temperature', () => {
 });
 
 describe('catalogue kernels', () => {
+  /** The JSON export of a core: size without writing, then the bytes. */
+  function exported(core, name, tables) {
+    const size = core[name](0, 0), words = Math.ceil(size / 8) + 1, at = core.alloc_f64(words);
+    try {
+      const bytes = new Uint8Array(core.memory.buffer, at, words * 8);
+      bytes.fill(0x55);
+      expect(core[name](at, size - 1)).toBe(size);
+      expect(bytes.every(byte => byte === 0x55)).toBe(true);
+      expect(core[name](at, size)).toBe(size);
+      expect(JSON.parse(new TextDecoder().decode(bytes.subarray(0, size)))).toStrictEqual(tables);
+    } finally { core.free_f64(at, words); }
+  }
+
   it('reject unusable pointers and report the size without writing', () => {
+    const { core, scratchPointer, scratch } = decor;
     expect(core.kelvin_linear_rgb(2700, .4, .06, .16, 0)).toBe(0);
     expect(core.kelvin_linear_rgb(2700, .4, .06, .16, scratchPointer + 1)).toBe(0);
     expect(core.lamp_tint_finish(0, scratchPointer)).toBe(0);
     expect(core.lamp_tint_finish(scratchPointer, 0)).toBe(0);
     expect(core.tint_mix(0, scratchPointer, .5, scratchPointer)).toBe(0);
     expect(core.book_spine_options(1, 0)).toBe(0);
-    const size = core.catalogue_json(0, 0), words = Math.ceil(size / 8) + 1, at = core.alloc_f64(words);
-    try {
-      const bytes = new Uint8Array(core.memory.buffer, at, words * 8);
-      bytes.fill(0x55);
-      expect(core.catalogue_json(at, size - 1)).toBe(size);
-      expect(bytes.every(byte => byte === 0x55)).toBe(true);
-      expect(core.catalogue_json(at, size)).toBe(size);
-      expect(JSON.parse(new TextDecoder().decode(bytes.subarray(0, size)))).toStrictEqual(tables);
-    } finally { core.free_f64(at, words); }
+    exported(core, 'plant_catalogue_json', decor.tables);
+    exported(app.core, 'catalogue_json', app.tables);
     expect(scratch().length).toBe(16);
+    expect(app.scratch().length).toBe(16);
+  });
+
+  it('keep the two cores apart: the shelf tables are not in the decor core and the plant tables are not in the app core', () => {
+    expect(decor.core.catalogue_json).toBeUndefined();
+    expect(app.core.plant_catalogue_json).toBeUndefined();
+    expect(decor.core.spine_styles).toBeUndefined();
+    expect(app.core.kelvin_clamp).toBeUndefined();
+    expect(decor.core.memory).not.toBe(app.core.memory);
   });
 
   it('keeps memory and the scratch arena stable over many calls', () => {
     for (let n = 0; n < 200; n++) { kelvin.lampTint(1800); kelvin.kelvinToLinearRgb(3000 + n); dimensions.bookSpineOptions(300 + n); }
-    const size = core.memory.buffer.byteLength;
+    const size = decor.core.memory.buffer.byteLength;
     for (let n = 0; n < 50000; n++) { kelvin.kelvinToLinearRgb(2000 + n % 9000); dimensions.bookSpineOptions(300 + n % 400); kelvin.mixTint([0, 0, 0], [1, 1, 1], n / 50000); }
-    expect(core.memory.buffer.byteLength).toBe(size);
+    expect(decor.core.memory.buffer.byteLength).toBe(size);
   });
 });

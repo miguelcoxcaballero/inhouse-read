@@ -1,6 +1,6 @@
 import { getCatalogPlant, getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { plantDimensions, PLANT_REFERENCE_POTS } from './plant-dimensions.js';
-import { tables } from './catalogue-core.js';
+import { tables } from './decor-catalogue.js';
 
 // Records saved by earlier versions name their species differently (Rust table).
 const LEGACY_PLANTS = Object.freeze(tables.legacyPlants);

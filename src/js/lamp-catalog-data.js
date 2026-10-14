@@ -1,5 +1,5 @@
 import { LAMP_KELVINS } from './lamp-kelvin.js';
-import { tables } from './catalogue-core.js';
+import { tables } from './decor-catalogue.js';
 
 /** Millimetres; the tripod is a compact interpretation of the supplied photo.
  * `light` names the lights a fixture needs in the room (see shelf-lamp-lighting),

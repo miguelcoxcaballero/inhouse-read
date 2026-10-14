@@ -1,4 +1,4 @@
-import { core, tables, scratch, scratchPointer } from './catalogue-core.js';
+import { core, tables, scratch, scratchPointer } from './decor-catalogue.js';
 
 /** Colour temperature of a lamp's light. Every option is a tint over the
  * lamp's own warm colours, equal to white at the default 2700 K, so a lamp

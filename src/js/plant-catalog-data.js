@@ -1,4 +1,4 @@
-import { tables } from './catalogue-core.js';
+import { tables } from './decor-catalogue.js';
 
 /** `width` and `height` are the real IKEA size in millimetres (the standard
  * class shown on the shelf); the tables are built by the Rust core. */

@@ -1,4 +1,4 @@
-import { core, tables, scratch, scratchPointer } from './catalogue-core.js';
+import { core, tables, scratch, scratchPointer } from './decor-catalogue.js';
 
 // Canonical IKEA sizes (cm, checked 2026-10-02) and everything derived from
 // them live in the Rust core: the millimetre tables, each species' standard

@@ -26,4 +26,5 @@ pub fn min(a: f64, b: f64) -> f64 {
 }
 
 /// Math.min(high, Math.max(low, value))
+#[cfg(feature="app")]
 pub fn clamp(value: f64, low: f64, high: f64) -> f64 { min(high, max(low, value)) }
