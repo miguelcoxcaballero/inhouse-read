@@ -79,14 +79,21 @@ shelf-trash 6/6, book-opening 11/11, shelf-zoom 1/2 (aislado y sobre el árbol
 fusionado: 6/6).
 Fallos vistos y su causa (ninguno se «arregló» tocando pruebas):
 - plant-catalog «una planta cae como modelo 3D en la papelera…»: la planta
-  sigue en la balda tras soltar sobre la papelera. Mi build 1 de 5 en
-  repeticiones, main (1.7.239) 1 de 6: el mismo fallo en ambas.
-- smoke «edita y conserva el color…»: mi build falló 3 de 14 y main 1 de 11 en
-  repeticiones alternas, siempre en pasos dependientes de la carga (cierre del
-  lector 30 s, o la pipeta). Hay una carrera previa en `app.js`: `currentBookId`
-  se asigna tras `storeBookFile`, pero `.pdf-page-canvas` aparece antes, y el
-  clic en «Volver» antes de eso se descarta (la ventana medida entre el lienzo
-  y la escritura es ≈50–130 ms en ambos builds). main falló en ese mismo paso.
+  sigue en la balda tras soltar sobre la papelera. Mi build falló 2 de 6
+  ejecuciones (pasó en la primera tanda, antes de fusionar), main (1.7.239) 1 de
+  6: el mismo fallo en ambas.
+- smoke «edita y conserva el color…»: en 29 ejecuciones de mi build falló 5
+  (cierre del lector a 30 s, o la pipeta) y en 18 de main 1 (en el cierre del
+  lector). No lo explico del todo: la diferencia (17 % frente a 6 %) no es
+  significativa con esos números, pero tampoco la descarto. Hay una carrera
+  previa en `app.js`: `currentBookId` se asigna tras `storeBookFile`, pero
+  `.pdf-page-canvas` aparece antes, y un clic en «Volver» antes de eso se
+  descarta; la ventana medida entre el lienzo y la escritura en IndexedDB es de
+  ≈50–130 ms en ambos builds (mi build tuvo 3 de 54 medidas de 200–660 ms, main
+  ninguna de 30). Una reproducción mínima (importar el PDF y pulsar «Volver» en
+  cuanto sale el lienzo) descartó 0 de 30 clics en mi build. La pipeta
+  depende de leer `.ihr-book-canvas` mientras corre la animación de 360 ms.
+  Sigue siendo la prueba más sensible a la carga de esta unidad; no se tocó.
 - rust-shelf-refresh «tras un módulo pendiente»: fallaba igual en main 1.7.239
   (el lector espera al módulo retenido desde 1.7.238); lo arregla el
   retargeteo de main 1.7.240, ya incluido: 2/2.
@@ -106,7 +113,24 @@ lomo, lote de 6/50/200/1000 libros: Rust 0,015/0,023/0,048/0,249 ms frente a JS
 copia, no por velocidad: `bookmarkFor` (0,0003 frente a 0,0002 ms),
 `spineColorStyle` (0,0029 frente a 0,0018) y el avance de una transición de
 temperatura (30 pasos: 0,0067 frente a 0,0015 ms).
-@@BOOT@@
+Arranque (banco de arranque habitual: 4×CPU, 6 libros, pasadas alternas bajo
+el cerrojo de Chromium; main 1.7.240 contra este árbol, 11 y 10 pasadas: una
+se perdió esperando el cerrojo). Medianas main / este: domContentLoaded
+448,7 / 490,2 ms, primer dibujo 675,2 / 715,6, contenedor de la estantería
+4060,7 / 4281,7, primer lomo en el DOM 13 378 / 14 158, primera pintura 360 / 344,
+primera petición a IndexedDB 106 / 96. Es decir, este bloque es unos 40 ms más
+lento hasta DCL y el primer dibujo con 4×CPU en este equipo compartido (las 11
+medidas de main de DCL van de 360 a 517 ms; el quinto par de la primera serie
+salió al revés, con este bloque más rápido en todos los hitos). La causa
+conocida: las tablas ya no son literales JS sino JSON que el núcleo escribe, y
+`core-tables.js` lo lee y congela en el hilo principal antes del primer
+fotograma (decoración 26,6 KB, aplicación 4,6 KB: 3–9 ms en Node en frío, ×4 de
+estrangulación); no se espera a la compilación de los núcleos: las promesas
+`__inhouseRustReady`/`__inhouseDecorReady` se resuelven a 117–200 ms (main:
+77–169) y DCL llega a 456–625 ms (main: 361–519). El perfil de CPU de los
+primeros 1,5 s no muestra `core-tables.js` por encima de unos pocos ms. Sin
+afirmar mejora ni empeoramiento fuera de ese margen. No aplicado: leer de forma
+diferida `dimensions` y `sizeLabels` (13,2 KB de los 26,6 KB de decoración).
 Se conservan en JS, con motivo: `book-title.js` (NFKC, `\p{L}\p{N}` y cambio de
 mayúsculas del ICU del navegador: 28 puntos de código cambian de mayúscula y
 6167 de clase respecto a las tablas de Rust, no hay equivalente exacto);
