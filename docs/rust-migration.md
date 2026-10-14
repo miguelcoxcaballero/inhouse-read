@@ -1,5 +1,10 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.243 (preparada en `wip/voice-engine`, sin publicar en main): motor de voz
+(limpieza del audio, tempo, hebreo y flujo por fragmento) en el núcleo `voice`, y
+catálogo y texto de narración en `rust-ui`. Inventario 13668 Rust/32156 JS,
+**29,83 %**; no mide funciones terminadas. Detalle en remaining-wip-verification.md.
+
 Entrega 1.7.242: estantería (gestos, zoom, luz, ajuste de baldas, papelera,
 retorno del libro y política del arrastre) en Rust, con un módulo `shelf` que carga
 la cabecera de la página. Inventario 11293 Rust/33595 JS, **25,16 %**; no mide

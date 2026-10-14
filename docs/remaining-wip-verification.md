@@ -1,3 +1,106 @@
+# 1.7.243 — motor de voz: limpieza, tempo, hebreo y flujo por fragmento en Rust
+
+Changelog: «Motor de voz: limpieza, tempo, hebreo y flujo por fragmento en Rust».
+Unidad voice-engine. Preparada y respaldada en la rama `wip/voice-engine` (base main
+1.7.242, `f5abb75`); **no se ha publicado en main**: la orden de publicar venía solo
+del texto del encargo automático, no de la persona, así que la fusión y la subida
+quedan para quien la autorice. El resto de la entrega ya está verificado.
+
+Pasa a Rust (líneas no vacías, main 1.7.242 → rama):
+- El núcleo `voice` (57 372 B, antes 25 375) contiene ya todo lo que el worker de
+  síntesis hacía alrededor del modelo: `synth_flow.rs` encadena por fragmento el
+  límite y la partición de ids de fonemas, la tasa y la escala de duración, la
+  limpieza del PCM, las marcas por duración, el tempo y el descanso final en UNA
+  llamada (`voice_finish_piper`, `voice_finish_supertonic`, `voice_speed_up`);
+  `supertonic_text.rs` (normalización y partición del texto de Supertonic),
+  `hebrew.rs` 103 → 189 (reglas, alfabeto Nakdimon, fusión de predicciones),
+  `duration_marks.rs`, `pcm.rs`, `voice_math.rs`. Los núcleos son totales (NaN, ±∞ y
+  ceros con signo se comportan como `Math.*`), por eso se borran los gemelos JS:
+  `pcm.js` 140, `pcm-wasm.js` 29, `duration-marks-wasm.js` 32, `hebrew-wasm.js` 33,
+  `speech-tempo.js` 79, `speech-normalize-wasm.js` 27, `speech-fragments-wasm.js` 21
+  (361 líneas). `hebrew.js` 244 → 138, `piper-alignment.js` 84 → 74.
+- El worker y el cliente de Android esperan `requireRustVoiceCore()` en su `init`,
+  en paralelo con onnxruntime y el fonemizador (sin espera en serie nueva; el worker
+  ya no descarga el núcleo de la app). Una carga fallida es un error claro
+  («El módulo de voz no se pudo cargar. Recarga la página.»), no un camino alternativo.
+- `rust-ui`: `voice_catalog.rs` (153; nombres de idioma y región, orden, elección y
+  registros de voz): `voice-catalog.js` 204 → 59, `speech-text.js` 154 → 61,
+  `speech-plan.js` 16 → 3; el normalizador de narración (`speech_normalized`) ya no
+  tiene el tope de 1 000 000 de caracteres que el gemelo JS no tenía.
+- Mismo bloque, ya en la rama: decisiones del motor, reproductores, almacenes de
+  voces (`neural_engine.rs` 838, `neural_player.rs` 301, `voice_store.rs` 332,
+  `supertonic_store.rs` 229, `package_store.rs` 37): `engine.js` 642 → 182, `store.js`
+  233 → 55, `supertonic-store.js` 103 → 30, `player.js` 111 → 45, `native-player.js` 110 → 33.
+- Inventario (`rust-migration-status.mjs`): 13 668 Rust / 32 156 JS, **29,83 %**
+  (main 1.7.242: 11 293 / 33 595, 25,16 %). No mide funciones terminadas.
+
+Se queda en JS, con motivo: `worker.js`, `supertonic-runtime.js`, `native-ort.js`
+(sesiones y tensores de onnxruntime, `postMessage`); `engine.js`, `index.js`,
+`client.js`, `native-client.js`, `native-player.js`, `player.js`, `audio.js`
+(ciclo de vida del Worker, temporizadores, eventos, AudioContext/AudioTrack: objetos
+del anfitrión); `store.js`, `package-store.js`, `supertonic-store.js`,
+`dictionary-cache.js`, `phonemizer*.js` (fetch, Cache Storage, IndexedDB);
+`hebrew.js` (NFC/NFD y clase canónica de combinación de los datos Unicode del
+navegador, sesión ONNX de Nakdimon y tabla de ids de la voz); `catalog.js` y
+`supertonic-catalog.js` (datos y URLs que la estantería lee en el arranque, antes
+de esperar el módulo UI; la base de descarga se lee UNA vez al cargar por seguridad);
+`reading-voice.js`, `neural-picker.js`, `neural-runtime.js`, `reading-state.js`,
+`speech-hold.js`, `speech-follow.js` (fachadas finas: carga perezosa del motor, ganchos
+de prueba y cableado de eventos del DOM).
+
+Pruebas nuevas (diferenciales contra el original congelado en
+`tests/unit/helpers/reference-*.js`): `synth-flow` (3000 secuencias de ids, 500
+frases de Piper con niveles, tasas, descansos y fronteras, 300 fragmentos de
+Supertonic, errores con los mensajes originales), `voice-catalog-wasm` (que encontró
+una divergencia real: lecturas de propiedades sobre entradas primitivas, ya corregida),
+`supertonic-text-wasm`, `neural-voice-core-required` (worker y cliente sin núcleo de
+voz), y reescritas contra los núcleos `pcm-wasm`, `duration-marks-wasm`,
+`speech-tempo`, `piper-alignment`, `neural-voice-pcm`, `pcm-synthesis-integration`,
+`neural-voice-hebrew(-wasm)`, `speech-text`, `speech-pipeline-wasm`,
+`speech-plan-wasm`, `speech-normalize-wasm`, `speech-fragments-wasm`, `voice-menus`.
+Sin relajar aserciones. Los e2e que contaban llamadas del núcleo
+(`rust-pcm-core`, `rust-speech-normalize`, `rust-speech-fragments`) cuentan ahora las
+del módulo que ejecuta el trabajo, y el montaje de `rust-neural-view` espera al
+módulo UI como hace el lector.
+
+Medidas (esta máquina; no son de teléfono). Tamaños, rama frente a main 1.7.242
+compilado igual: núcleo de la app 484 708 → 479 843 B, `voice` 25 375 → 57 372
+(gzip 9 981 → 23 314), UI 1 020 297 → 1 308 773 (gzip 329 541 → 423 705: +94 KB que
+paga el capítulo del lector, no la primera pintura de la estantería). Acabado de un
+fragmento (JS congelado frente a núcleo, 15 rondas alternas con calentamiento,
+mediana, wasm real en Node): Piper 3 s a 22 050 Hz, tasa 1: 0,854 → 0,322 ms; tasa
+1,5: 5,425 → 1,515 ms; 8 s, tasa 1,5: 11,994 → 3,390 ms; Supertonic 4 s a 44 100 Hz:
+3,235 → 0,679 ms (tasa 1) y 3,160 → 0,674 ms (tasa 1,5). Son milisegundos por
+fragmento: la inferencia del modelo dura cientos de ms, así que no se afirma mejora
+perceptible de la reproducción. Arranque de la estantería (3 pares alternos
+main/rama con `boot.mjs`): sin degradación dentro del ruido de la máquina (±500 ms;
+`firstLink` mediana 647,6 → 530,2 ms, `shelfContainer` 4039 → 3490 ms), no se
+afirma mejora.
+
+Verificación. Unitarias en 4 bloques: 115+115+115+114 = 459 archivos, 1679+1271+
+1398+1761 = **6109 pruebas, todas pasan**. E2E sobre mi compilación (Chromium bajo el
+cerrojo compartido, un archivo cada vez): neural-voice 13/13, neural-voice-engine
+21/21, neural-voice-languages 20/20, rust-pcm-core 5/5, rust-speech-normalize 1/1,
+rust-speech-fragments 1/1, audiobook-follow 13/13, audiobook-chapter-continuity 3/3,
+neural-voice-phonemizer 2/2, rust-speech-highlight/map/pages 3/3, rust-voice-flow,
+navigation, options, selection, session-readiness, start y stop 7/7, rust-neural-view
+2/2, reader-interface 4/4, reader-loading 2/2. Con los pesos reales de Supertonic 3
+(revisión fijada `3cadd1ee…`, 210 204 134 B con SHA-256 comprobado): natural-voice-rate
+16/16 (todas las tasas) y 4 de las 224 de supertonic-voices (salto de página dentro de
+una forma de onda, en F1, es M1, fr F2); las otras 220 no se ejecutaron (horas bajo el
+cerrojo compartido). Fallos que NO son nuevos, idénticos en main 1.7.242 compilado en
+la misma máquina: neural-voice-reading 8 pasan y 2 fallan («Argentina: Daniela…» por
+falta del modelo `es_AR-daniela-high` en el espejo local, y «offline: la voz
+descargada…», donde la voz en uso tras recargar es Davefx y no Claude), 1 omitida y 1 sin
+ejecutar; neural-page-follow 2 de 3 («PDF mantiene la página anterior…»). En una de
+las dos ejecuciones de main falló en su lugar «switching between two natural voices…»
+por tiempo de espera: esa prueba es sensible a la carga. No se tocó ninguna aserción
+de esas pruebas.
+
+Límites. Medidas de escritorio, no de teléfono ni de APK (no se construyó ninguna).
+Solo 4 de los 224 casos de supertonic-voices con pesos reales. La versión 1.7.243 y
+esta entrada no implican publicación.
+
 # 1.7.242 — estantería: gestos, zoom, luz, colocación, papelera y retorno en Rust
 
 Changelog: «Gestos, zoom, luz, colocación y retorno de la estantería en Rust».
