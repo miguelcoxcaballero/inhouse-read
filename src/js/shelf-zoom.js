@@ -1,27 +1,19 @@
-import { getRustUI } from './rust-ui.js'
-import { onRustUIReady } from './rust-ui-readiness.js'
+import { getRustShelf } from './rust-shelf.js'
 
 /** Touch navigation is sampled once per display frame; book holds remain native.
  * The recogniser, the pan/zoom maths and the coasting spring run in Rust
- * (rust-ui/src/shelf_zoom.rs). The module is requested once the shelf has drawn
- * its first frame, so a finger that lands before it arrives is simply not a zoom
- * gesture yet; the controller attaches the moment the module is ready. */
+ * (rust-ui/src/shelf_zoom.rs, the `shelf` module the first shelf render awaits). */
 export function createShelfZoom(options) {
-  let native = null, destroyed = false, unsubscribe = null
-  const adopt = ui => {
-    if (destroyed || native) return
-    native = new ui.RustShelfZoom(options)
-  }
-  const ready = getRustUI()
-  if (ready) adopt(ready)
-  else unsubscribe = onRustUIReady(adopt)
+  const shelf = getRustShelf()
+  if (!shelf) throw new Error('El módulo de la estantería no está cargado.')
+  let native = new shelf.RustShelfZoom(options)
   return {
     sync() { native?.sync() },
     destroy() {
-      if (destroyed) return
-      destroyed = true
-      unsubscribe?.()
-      if (native) { try { native.destroy() } finally { native.free(); native = null } }
+      if (!native) return
+      const finished = native
+      native = null
+      try { finished.destroy() } finally { finished.free() }
     }
   }
 }

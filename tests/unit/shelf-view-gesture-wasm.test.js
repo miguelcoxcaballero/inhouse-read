@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { rustUI } from './helpers/rust-ui-ready.js'
+import { rustShelf as rustUI } from './helpers/rust-shelf-ready.js'
 import * as production from '../../src/js/shelf-view-gesture.js'
 import * as frozen from './helpers/reference-shelf-view-gesture.js'
 import { firstDifference } from './helpers/pointer-harness.js'
@@ -17,13 +17,13 @@ describe('compiled shelf view gesture against the frozen JavaScript controller',
       const script = makeViewScript(seed * 15485863, 60)
       const expected = playView(frozen, script)
       reset()
-      const baseline = rustUI.ui_live_handles()
+      const baseline = rustUI.shelf_live_handles()
       const actual = playView(production, script)
       const difference = firstDifference(expected, actual)
       if (difference) throw new Error(`seed ${seed}: ${difference}`)
       lines += expected.length
       for (const line of expected) { const name = /^"(\w+)"/.exec(line)?.[1]; if (name in seen) seen[name]++ }
-      expect(rustUI.ui_live_handles()).toBe(baseline)
+      expect(rustUI.shelf_live_handles()).toBe(baseline)
       reset()
     }
     expect(seen.setMode).toBeGreaterThan(300)
@@ -35,8 +35,8 @@ describe('compiled shelf view gesture against the frozen JavaScript controller',
 
   it('does not accumulate JavaScript handles across create, swipe and destroy cycles', () => {
     for (let seed = 1; seed <= 5; seed++) { playView(production, makeViewScript(seed, 30)); reset() }
-    const baseline = rustUI.ui_live_handles()
+    const baseline = rustUI.shelf_live_handles()
     for (let seed = 6; seed <= 205; seed++) { playView(production, makeViewScript(seed, 30)); reset() }
-    expect(rustUI.ui_live_handles()).toBe(baseline)
+    expect(rustUI.shelf_live_handles()).toBe(baseline)
   })
 })

@@ -7,6 +7,11 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+default = ["ui"]
+ui = []
+shelf = []
+
 [dependencies]
 wasm-bindgen-futures = "=0.4.55"
 wasm-bindgen = { version = "=0.2.105", features = ["enable-interning"] }

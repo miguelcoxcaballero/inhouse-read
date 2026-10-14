@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Browser primitives for pointer state machines: property access, optional calls,
 //! the global timers/frames/clock (looked up at call time, as the bare names were)
 //! and JavaScript's own Math rounding (exp, hypot) which stays in the host.

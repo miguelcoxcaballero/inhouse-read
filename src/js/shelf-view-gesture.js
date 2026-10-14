@@ -1,25 +1,18 @@
-import { getRustUI } from './rust-ui.js'
-import { onRustUIReady } from './rust-ui-readiness.js'
+import { getRustShelf } from './rust-shelf.js'
 
 /** A short horizontal swipe turns the cabinet; holds, scrolling and pinches
  * retain their existing owners. The recogniser runs in Rust
- * (rust-ui/src/shelf_view_gesture.rs). The module is requested once the shelf
- * has drawn its first frame; the controller attaches the moment it is ready. */
+ * (rust-ui/src/shelf_view_gesture.rs, the `shelf` module the first shelf render awaits). */
 export function createShelfViewGesture(options) {
-  let native = null, destroyed = false, unsubscribe = null
-  const adopt = ui => {
-    if (destroyed || native) return
-    native = new ui.RustShelfViewGesture(options)
-  }
-  const ready = getRustUI()
-  if (ready) adopt(ready)
-  else unsubscribe = onRustUIReady(adopt)
+  const shelf = getRustShelf()
+  if (!shelf) throw new Error('El módulo de la estantería no está cargado.')
+  let native = new shelf.RustShelfViewGesture(options)
   return {
     destroy() {
-      if (destroyed) return
-      destroyed = true
-      unsubscribe?.()
-      if (native) { try { native.destroy() } finally { native.free(); native = null } }
+      if (!native) return
+      const finished = native
+      native = null
+      try { finished.destroy() } finally { finished.free() }
     }
   }
 }

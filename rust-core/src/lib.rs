@@ -27,6 +27,10 @@ mod color_mask;
 #[cfg(feature = "app")]
 mod relief_palette;
 #[cfg(feature = "app")]
+mod jsmath;
+#[cfg(feature = "app")]
+mod shelf_lighting;
+#[cfg(feature = "app")]
 mod shelf_placement;
 #[cfg(feature = "app")]
 mod spine_seed;

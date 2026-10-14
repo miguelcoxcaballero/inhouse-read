@@ -5,6 +5,7 @@ dist/
 rust-core/target/
 rust-ui/target/
 src/wasm/ui/
+src/wasm/shelf/
 src/wasm/*.wasm
 config.js
 .DS_Store

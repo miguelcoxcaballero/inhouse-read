@@ -1,4 +1,6 @@
 import 'fake-indexeddb/auto'
+import './helpers/rust-shelf-ready.js'
+import './helpers/rust-core-ready.js'
 
 // La versión de jsdom usada por este entorno de test no implementa
 // Blob/File.prototype.arrayBuffer() (sí existe en todos los navegadores
