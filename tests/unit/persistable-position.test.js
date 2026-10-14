@@ -1,4 +1,5 @@
 // @vitest-environment node
+import './helpers/rust-ui-ready.js'
 import {describe,it,expect} from 'vitest'
 import {readFileSync} from 'node:fs'
 import {persistablePosition,persistableRelocation} from '../../src/js/readers/persistable-position.js'

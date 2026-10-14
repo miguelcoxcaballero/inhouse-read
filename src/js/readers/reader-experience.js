@@ -2,21 +2,23 @@ import {ReaderChrome} from './reader-chrome.js'
 import {ReaderLifecycle,closeReaderVoice} from './reader-lifecycle.js'
 import {VoiceFlow} from './voice-flow.js'
 import {PreferenceFlow} from './preference-flow.js'
-import { readerIcon } from './reader-interface.js'
-import { normalizeReadingPreferences, rateLabel } from './reading-preferences.js'
+import { normalizeReadingPreferences } from './reading-preferences.js'
 import { ReadingVoice } from './reading-voice.js'
 import { SelectMenu } from './select-menu.js'
 import { ReaderView } from './reader-view.js'
 import { ReaderLists } from './reader-lists.js'
 import { NeuralVoicePicker } from './neural-picker.js'
 import { clonePlace } from './reading-state.js'
-import { isBookmarked } from './reading-places.js'
 import { ReaderNavigation } from './reader-navigation.js'
 import { ReaderActions } from './reader-actions.js'
 import { ReaderControls } from './reader-controls.js'
+import { readerUI } from './rust-ui-required.js'
 import { displayBookTitle } from '../book-title.js'
 
-const STORAGE_KEY = 'inhouse-read-reading-preferences'
+// How the experience is put together, how a place is named, what the mini player and the return button show, how
+// the lists are drawn and how a book is shared is Rust (exp_* in rust-ui); this class holds the state and the objects
+// the app and the other components reach through it. The frozen original is tests/unit/helpers/reference-reader-experience.js.
+const kit = { normalize:normalizeReadingPreferences, ReaderView, ReaderLists, ReadingVoice, ReaderControls, SelectMenu, NeuralVoicePicker }
 
 export class ReaderExperience {
   chrome = new ReaderChrome(this)
@@ -26,96 +28,36 @@ export class ReaderExperience {
   actions = new ReaderActions(this)
   navigation = new ReaderNavigation()
   get navigating() { return this.navigation.navigating }
+  // What each list's rows call: the place opened or the row removed (bound to its list by the Rust renderer).
+  #openPlace = (name, index, place) => name === 'history' ? this.returnToReading(index) : this.jump(place)
+  #removePlace = (name, places, index) => readerUI().exp_remove_place(this, name, places, index)
 
   constructor(reader, { persist = async () => {} } = {}) {
     this.reader = reader
     this.persist = persist
-    this.history = []; this.bookmarks = []; this.quotes = []; this.location = { fraction:0, locator:null }
-    try { this.preferences = normalizeReadingPreferences(JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')) }
-    catch { this.preferences = normalizeReadingPreferences() }
-    this.chrome.create()
-    this.view = new ReaderView(this.screen,this.panel,this.miniPlayer,this.returnButton)
-    this.lists = new ReaderLists(this.panel)
-    if (typeof ResizeObserver === 'function') {
-      this.miniPlayerResizeObserver = new ResizeObserver(() => this.syncMiniPlayerLayout())
-      this.miniPlayerResizeObserver.observe(this.miniPlayer)
-      this.returnResizeObserver = new ResizeObserver(() => this.syncReturnLayout())
-      this.returnResizeObserver.observe(this.returnButton)
-    }
-    document.body.append(this.panel)
-    this.selectedQuoteSelection = null
-    this.quoteColor = 'yellow'
-    const rememberSelection = selection => { if (selection?.text) this.selectedQuoteSelection = selection }
-    document.addEventListener('selectionchange', () => {
-      if (!this.screen.contains(document.activeElement) && !this.screen.contains(window.getSelection()?.anchorNode?.parentElement)) return
-      const selection = this.reader.getSelection()
-      rememberSelection(typeof selection === 'string' ? {text:selection,locator:this.reader.location.locator} : selection)
-    })
-    window.addEventListener('inhouse-reader-selection',event => rememberSelection(event.detail))
-    this.voice = new ReadingVoice(reader, (state,message) => this.chrome.voiceState(state,message))
-    this.controls = new ReaderControls(this)
-    // Idioma first, then the voices of that language. Both are the app's own dropdowns (no operating-system <select>);
-    // the downloadable natural voices of the chosen language live at the end of the voice list.
-    this.languageMenu = new SelectMenu({ label:'Idioma', onChange:value => this.chooseLanguage(value) })
-    this.voiceMenu = new SelectMenu({ label:'Voz', extra:this.panel.querySelector('[data-neural]'), onChange:value => this.setPreference('voice', value) })
-    this.panel.querySelector('[data-voice-menus]').append(this.languageMenu.root, this.voiceMenu.root)
-    this.neuralPicker = new NeuralVoicePicker(this)
-    this.populateVoices()
-    const resize = () => this.chrome.resize()
-    window.visualViewport?.addEventListener('resize', resize)
-    window.visualViewport?.addEventListener('scroll', resize)
-    window.addEventListener('resize', resize)
-    this.resizePanel = resize
+    readerUI().exp_build(this, kit)
   }
-  resetAppearance() {
-    this.preferences = normalizeReadingPreferences({ rate:this.preferences.rate, voice:this.preferences.voice, voiceLang:this.preferences.voiceLang })
-    this.applyPreferences()
-  }
-  async rotateReading() {
-    try {
-      if (screen.orientation?.lock) { await screen.orientation.lock(screen.orientation.type.startsWith('portrait') ? 'landscape' : 'portrait'); this.error('') }
-      else this.error('No se puede girar.')
-    } catch { this.error('Gira el dispositivo.') }
-  }
+  resetAppearance() { readerUI().exp_reset_appearance(this, normalizeReadingPreferences) }
+  rotateReading() { return readerUI().exp_rotate(this) }
   /** The title written on the spine or the author changed (in the shelf's
    * editor, maybe while this book was already prepared): show them here too. */
   refreshNames(bookId,fields) { return this.lifecycle.refreshNames(bookId,fields) }
   open(record) { return this.lifecycle.open(record) }
   closeVoice() { return closeReaderVoice(this) }
   reset() { return this.lifecycle.reset() }
-  relocate() {
-    this.location = {...clonePlace(this.reader.location),section:this.reader.location.section || '',page:this.reader.location.page || ''}
-    const label = this.label(this.location)
-    const compactLabel = this.location.locator?.kind === 'pdf-page'
-      ? `${this.location.locator.value}${this.reader.pageCount ? ` / ${this.reader.pageCount}` : ''}`
-      : `${Math.round(this.location.fraction * 100)} %`
-    this.view.relocate(label,compactLabel,this.location.fraction * 100,
-      this.location.locator?.kind === 'pdf-page',this.location.locator?.value)
-    this.updateBookmarkButton()
-  }
-  label(place) { return place.locator?.kind === 'pdf-page' ? `Página ${place.locator.value}${this.reader.pageCount ? ` de ${this.reader.pageCount}` : ''}` : place.section ? `${place.section}${place.page ? ` · Página ${place.page}` : ''}` : `${Math.round(place.fraction * 100)} % del libro` }
+  relocate() { readerUI().exp_relocate(this, clonePlace) }
+  label(place) { return readerUI().exp_label(this, place) }
   show(tab) { return this.lifecycle.show(tab) }
-  showTab(name) {
-    if (name !== 'search') this.endSearch()
-    this.view.showTab(name)
-  }
-  showPlaceTab(name) {
-    this.placeTab = name
-    this.view.showPlaceTab(name)
-  }
-  updateMiniPlayer(state = this.voice?.state, message = '') {
-    this.view.updateMiniPlayer(state || '',message,displayBookTitle(this.book),rateLabel(this.preferences.rate),Boolean(this.book),readerIcon(state === 'playing' ? 'pause' : 'play'))
-  }
+  showTab(name) { readerUI().exp_show_tab(this, name) }
+  showPlaceTab(name) { readerUI().exp_show_place_tab(this, name) }
+  updateMiniPlayer(state = this.voice?.state, message = '') { readerUI().exp_mini(this, state, message, displayBookTitle) }
   syncMiniPlayerLayout() {
     this.view.syncMiniPlayerLayout()
   }
   syncReturnLayout() {
     this.view.syncReturnLayout()
   }
-  updateBookmarkButton() {
-    const marked = isBookmarked(this.bookmarks,this.location)
-    this.view.updateBookmarkButton(marked)
-  }
+  updateBookmarkButton() { readerUI().exp_bookmark_button(this) }
   setPreference(key,value,{restart=true}={}) { return this.preferenceFlow.set(key,value,restart) }
   applyPreferences(updateBook=true) { return this.preferenceFlow.apply(updateBook) }
   /** The language of the open book (the device's when it has none or no book is open). */
@@ -127,7 +69,7 @@ export class ReaderExperience {
   chooseLanguage(value) { return this.voiceFlow.chooseLanguage(value) }
   voiceBase(voices) { return this.voiceFlow.voiceBase(voices) }
   populateVoices() { return this.voiceFlow.populateVoices() }
-  error(message) { this.panel.querySelector('.reading-error').textContent = message }
+  error(message) { readerUI().exp_error(this, message) }
   savePlaces() { return this.actions.savePlaces() }
   cancelNavigation() {
     this.navigation.cancel()
@@ -152,36 +94,13 @@ export class ReaderExperience {
   addQuote() { return this.actions.addQuote() }
   search(query) { return this.actions.search(query) }
   endSearch() { return this.actions.endSearch() }
-  async shareBook() {
-    const content = this.book?.content
-    if (!content) { this.error('Archivo original no disponible.'); return }
-    const file = new File([content],this.book.fileName || `${this.book.title}.${String(this.book.format||'pdf').toLowerCase()}`,{type:this.book.mimeType || content.type || 'application/octet-stream'})
-    try {
-      if (navigator.canShare?.({files:[file]}) && navigator.share) await navigator.share({title:displayBookTitle(this.book),files:[file]})
-      else { const url = URL.createObjectURL(file), link = document.createElement('a'); link.href=url; link.download=file.name; link.click(); setTimeout(()=>URL.revokeObjectURL(url),30000) }
-      this.panel.close()
-    } catch (error) { if (error.name !== 'AbortError') this.error('No se pudo compartir.') }
-  }
-  formatSize(bytes = 0) { return bytes >= 1048576 ? `${(bytes/1048576).toFixed(1)} MB` : `${Math.max(1,Math.round(bytes/1024))} KB` }
-  renderPlaces() {
-    this.updateBookmarkButton()
-    this.updateReturnButton()
-    for (const [name, places] of [['history',this.history],['bookmarks',this.bookmarks],['quotes',this.quotes]]) {
-      this.lists.renderPlaces(name,places,places.map(place => place.label || this.label(place)),
-        (index,place) => name === 'history' ? this.returnToReading(index) : this.jump(place),
-        async index => { const [removed] = places.splice(index,1); if (name === 'quotes') this.reader.removeQuoteAnnotation(removed); await this.savePlaces(); this.renderPlaces() },readerIcon('close'))
-    }
-  }
-  renderToc() {
-    const available = this.lists.renderToc(this.reader.toc,href => this.jump(null,href))
-    this.showPlaceTab(available ? 'toc' : 'bookmarks')
-  }
+  shareBook() { return readerUI().exp_share(this, displayBookTitle) }
+  formatSize(bytes = 0) { return readerUI().exp_format_size(bytes) }
+  renderPlaces() { readerUI().exp_render_places(this, this.#openPlace, this.#removePlace) }
+  renderToc() { readerUI().exp_render_toc(this, href => this.jump(null,href)) }
   step(direction) {
     // Consult another page without moving the independent audible cursor.
     return this.queueNavigation(() => this.voice.continueFromPage(() => direction > 0 ? this.reader.next() : this.reader.prev()))
   }
-  updateReturnButton() {
-    const audio = this.voice?.browsing
-    this.view.updateReturnButton(Boolean(audio),Boolean(this.history.length),this.history.length ? this.history[0].label || this.label(this.history[0]) : '')
-  }
+  updateReturnButton() { readerUI().exp_return_button(this) }
 }
