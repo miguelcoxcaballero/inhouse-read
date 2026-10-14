@@ -108,3 +108,34 @@ describe('catalogue flight against the frozen reference',()=>{
   expect(shipped).toEqual(reference)
  })
 })
+
+// Host callbacks that throw or reject: the status text, the busy state and what still runs afterwards.
+async function failures(make){
+ const events=[];studios.log=events
+ let mode='sync',closeFails=false
+ const options={
+  onAdd:()=>{events.push('onAdd '+mode);if(mode==='sync')throw new Error('private details');return mode==='reject'?Promise.reject(new Error('private details')):Promise.resolve()},
+  onClose:()=>{events.push('onClose');if(closeFails)throw new Error('close failed')}
+ }
+ const catalog=make(options),trigger=document.createElement('button');document.body.append(trigger);trigger.focus()
+ const status=()=>`${dialog().hasAttribute('open')} busy=${dialog().getAttribute('aria-busy')} add=${dialog().querySelector('[data-catalog-add]').disabled} text=${JSON.stringify(dialog().querySelector('[role=status]').textContent)} error=${dialog().querySelector('[role=status]').dataset.error??'-'} focus=${document.activeElement===trigger}`
+ try{
+  catalog.open(trigger);await tick();events.push('open '+status())
+  dialog().querySelector('[data-catalog-add]').click();await tick();events.push('sync throw '+status())
+  mode='reject';dialog().querySelector('[data-catalog-add]').click();events.push('rejecting '+status());await tick();events.push('rejected '+status())
+  mode='close-fails';closeFails=true;dialog().querySelector('[data-catalog-add]').click();await tick();events.push('close throws '+status())
+  closeFails=false;catalog.close();await tick();events.push('closed '+status())
+  catalog.open(trigger);mode='ok';dialog().querySelector('[data-catalog-add]').click();events.push('saving '+status());catalog.destroy();await tick();events.push('destroyed while saving '+String(dialog()))
+ }finally{trigger.remove()}
+ return events
+}
+describe('catalogue failures against the frozen reference',()=>{
+ it('reports a throwing or rejecting host the same way',async()=>{
+  studios.ui=null
+  const reference=await failures(options=>createPlantCatalogLegacy(options,'ihr-plant-catalog-failures'))
+  document.body.replaceChildren();studios.ui=catalogueUI
+  const shipped=await failures(options=>createPlantCatalogNative(options,'ihr-plant-catalog-failures',catalogueUI))
+  expect(reference.some(line=>line.includes('No se pudo añadir. Reintenta.'))).toBe(true)
+  expect(shipped).toEqual(reference)
+ })
+})
