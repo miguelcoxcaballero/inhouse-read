@@ -6,7 +6,7 @@ import {
   plantSvg,
   plantMeta,
   tonesFor
-} from '../../src/js/plants.js'
+} from '../../scripts/lib/plant-svg.mjs'
 
 describe('plantMeta', () => {
   it('describe cada variante con un viewBox usable', () => {

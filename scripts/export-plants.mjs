@@ -1,16 +1,16 @@
 /**
- * Exporta las macetas de `src/js/plants.js` como ficheros .svg sueltos en
+ * Exporta las macetas de `scripts/lib/plant-svg.mjs` como ficheros .svg sueltos en
  * `assets/plants/`, para poder usarlas fuera del componente (splash, README,
  * ilustraciones) sin duplicar los dibujos.
  *
- * La fuente de verdad es siempre plants.js: estos ficheros son un derivado.
+ * La fuente de verdad es siempre plant-svg.mjs: estos ficheros son un derivado.
  * Regenerar con:  node scripts/export-plants.mjs
  */
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { PLANT_VARIANTS, plantSvg } from '../src/js/plants.js'
+import { PLANT_VARIANTS, plantSvg } from './lib/plant-svg.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const outDir = join(here, '..', 'assets', 'plants')

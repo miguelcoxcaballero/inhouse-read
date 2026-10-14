@@ -1,67 +1,29 @@
 import { normalizeBookAuthor } from './book-title.js'
 import { normalizeCoverRelief } from './cover-relief.js'
+import { core, tables, inArena, f64View, writeUnits } from './catalogue-core.js'
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 
-function parseHex(value) {
-  const match = /^#?([\da-f]{3}|[\da-f]{6})$/i.exec(String(value ?? '').trim())
-  if (!match) return null
-  const hex = match[1].length === 3 ? [...match[1]].map(char => char + char).join('') : match[1]
-  return [0, 2, 4].map(index => Number.parseInt(hex.slice(index, index + 2), 16))
+// Hex parsing, the book cloths and the legible ink are the Rust core's
+// (rust-core/src/book_colors.rs): the text goes in as UTF-16, `#rrggbb` comes out.
+function hexes(kernel, value, count) {
+  const text = String(value ?? '')
+  return inArena([3, Math.ceil(text.length / 4)], (pointer, at) => {
+    const length = writeUnits(pointer, at[1], text)
+    if (kernel(pointer + at[1] * 8, length, pointer) !== 1) return null
+    const bytes = new Uint8Array(core.memory.buffer, pointer, count * 7)
+    return Array.from({ length: count }, (_, index) => String.fromCharCode(...bytes.subarray(index * 7, index * 7 + 7)))
+  })
 }
-
-function toHex(values) {
-  return `#${values.map(value => Math.round(clamp(value, 0, 255)).toString(16).padStart(2, '0')).join('')}`
-}
-
-function toHsl([r8, g8, b8]) {
-  const [r, g, b] = [r8, g8, b8].map(value => value / 255)
-  const max = Math.max(r, g, b), min = Math.min(r, g, b)
-  const lightness = (max + min) / 2
-  const delta = max - min
-  let hue = 0, saturation = 0
-  if (delta) {
-    saturation = delta / (1 - Math.abs(2 * lightness - 1))
-    if (max === r) hue = 60 * (((g - b) / delta) % 6)
-    else if (max === g) hue = 60 * ((b - r) / delta + 2)
-    else hue = 60 * ((r - g) / delta + 4)
-  }
-  return { hue: (hue + 360) % 360, saturation, lightness }
-}
-
-// Book cloth, not a UI palette: deep, dyed tones a binder would stock.
-const BOOKCLOTH = [
-  '#6e2a2a', '#9a4a2c', '#9a7432', '#5e6130', '#4f6a2e', '#245439', // oxblood, rust, ochre, olive, moss, bottle green
-  '#1f5359', '#3a5470', '#1f2f52', '#3b3368', '#5a2a50', '#7a2e3e' // peacock, slate, navy, indigo, aubergine, claret
-].map(hex => ({ hex, rgb:parseHex(hex), hue:toHsl(parseHex(hex)).hue }))
-const hueDistance = (a, b) => { const d = Math.abs(((a - b) % 360 + 360) % 360); return Math.min(d, 360 - d) }
-
-/** Cloth nearest a target hue that stays clearly apart from the colours already offered. */
-function clothNear(hue, taken) {
-  const ranked = [...BOOKCLOTH].sort((a, b) => hueDistance(a.hue, hue) - hueDistance(b.hue, hue))
-  return (ranked.find(cloth => taken.every(rgb => Math.hypot(...cloth.rgb.map((v, i) => v - rgb[i])) > 80)) ?? ranked[0]).hex
-}
+const normalizedHex = value => hexes(core.color_hex, value, 1)?.[0] ?? null
 
 /** The cover colour plus two split-complementary cloths; neutral covers get oxblood and navy. */
-export function bookColorOptions(coverColor) {
-  const rgb = parseHex(coverColor) ?? [139, 94, 60]
-  const base = toHex(rgb)
-  const { hue, saturation } = toHsl(rgb)
-  if (saturation < .16) return [base, '#6e2a2a', '#1f2f52']
-  const second = clothNear(hue + 135, [rgb])
-  return [base, second, clothNear(hue + 245, [rgb, parseHex(second)])]
-}
+export const bookColorOptions = coverColor => hexes(core.book_color_options, coverColor, 3)
 
-export const METAL_COLORS = { gold:'#d6ad55', silver:'#d5dce3' }
+export const METAL_COLORS = { ...tables.metalColors }
 export function spineFinish(value) { return ['gold','silver'].includes(value) ? value : 'matte' }
 
-export const SURFACE_FINISHES = Object.freeze({
-  // Laminate thickness changes the specular lobe, never the printed colour.
-  // A soft satin reflection must stay broader than a glossy jacket's bright
-  // window or lamp reflection; matte stock has no smooth outer coating.
-  glossy: Object.freeze({ roughness:.18, clearcoat:1, clearcoatRoughness:.065, envMapIntensity:1.35 }),
-  satin: Object.freeze({ roughness:.48, clearcoat:.35, clearcoatRoughness:.28, envMapIntensity:1.1 }),
-  matte: Object.freeze({ roughness:.94, clearcoat:0, clearcoatRoughness:.6, envMapIntensity:1 })
-})
+export const SURFACE_FINISHES = Object.freeze(Object.fromEntries(Object.entries(tables.surfaceFinishes)
+  .map(([name, finish]) => [name, Object.freeze(finish)])))
 export function surfaceFinish(value, fallback = 'satin') {
   if (typeof value === 'string' && Object.hasOwn(SURFACE_FINISHES, value)) return value
   return typeof fallback === 'string' && Object.hasOwn(SURFACE_FINISHES, fallback) ? fallback : 'satin'
@@ -69,17 +31,8 @@ export function surfaceFinish(value, fallback = 'satin') {
 
 /** Derive spine shading and legible title ink for any user-selected color. */
 export function spineColorStyle(color) {
-  const rgb = parseHex(color) ?? [139, 94, 60]
-  const channels = rgb.map(value => value / 255)
-  const linear = channels.map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
-  const luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
-  const whiteContrast = 1.05 / (luminance + 0.05)
-  const darkContrast = (luminance + 0.05) / 0.057
-  return {
-    color: toHex(rgb),
-    shade: toHex(rgb.map(value => value * 0.76)),
-    ink: whiteContrast >= darkContrast ? '#fffaf0' : '#171512'
-  }
+  const [colour, shade, ink] = hexes(core.spine_color_style, color, 3)
+  return { color: colour, shade, ink }
 }
 
 /** Portable shelf coordinates: shelf index and horizontal fraction of a row. */
@@ -98,7 +51,7 @@ export function spineCustomization(book) {
   }
   for (const key of ['spineColorOverride','spineTextColor']) {
     if (book?.[key] === null) result[key] = null
-    else if (parseHex(book?.[key])) result[key] = toHex(parseHex(book[key]))
+    else if (normalizedHex(book?.[key])) result[key] = normalizedHex(book[key])
   }
   for (const key of ['spineFinish','spineTextFinish']) if (key in (book || {})) result[key] = spineFinish(book[key])
   if ('coverFinish' in (book || {})) result.coverFinish = surfaceFinish(book.coverFinish)

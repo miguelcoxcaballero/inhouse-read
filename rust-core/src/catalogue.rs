@@ -92,6 +92,15 @@ fn catalogue() -> V {
             obj(vec![("id", s("walnut")), ("name", s("Madera")), ("subtitle", s("Nogal")), ("dimensions", cabinet_dimensions())]),
             obj(vec![("id", s("baggebo")), ("name", s("BAGGEBO")), ("subtitle", s("Metal blanco")), ("dimensions", cabinet_dimensions())]),
         ])),
+        // Laminate thickness changes the specular lobe, never the printed colour. A soft
+        // satin reflection must stay broader than a glossy jacket's bright window or lamp
+        // reflection; matte stock has no smooth outer coating.
+        ("surfaceFinishes", obj(vec![
+            ("glossy", obj(vec![("roughness", n(0.18)), ("clearcoat", n(1.0)), ("clearcoatRoughness", n(0.065)), ("envMapIntensity", n(1.35))])),
+            ("satin", obj(vec![("roughness", n(0.48)), ("clearcoat", n(0.35)), ("clearcoatRoughness", n(0.28)), ("envMapIntensity", n(1.1))])),
+            ("matte", obj(vec![("roughness", n(0.94)), ("clearcoat", n(0.0)), ("clearcoatRoughness", n(0.6)), ("envMapIntensity", n(1.0))])),
+        ])),
+        ("metalColors", obj(vec![("gold", s("#d6ad55")), ("silver", s("#d5dce3"))])),
         ("defaults", obj(vec![
             ("spine", obj(vec![("minWidth", n(28.0)), ("maxWidth", n(54.0)), ("minHeightRatio", n(0.80)), ("maxHeightRatio", n(1.0)), ("jitter", n(2.5))])),
             // A pot every five books: with 6-7 spines on a phone shelf that leaves nearly one per shelf.

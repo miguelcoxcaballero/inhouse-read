@@ -117,3 +117,7 @@ mod shelf_layout;
 mod plant_catalogue;
 #[cfg(feature="decor")]
 mod lamp_kelvin;
+#[cfg(feature="app")]
+mod book_colors;
+#[cfg(feature="app")]
+mod frame_padding;

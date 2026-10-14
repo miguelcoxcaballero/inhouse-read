@@ -1,4 +1,4 @@
-import { core, tables, scratch, scratchPointer } from './catalogue-core.js';
+import { core, tables, scratch, scratchPointer, inArena, f64View } from './catalogue-core.js';
 
 /**
  * bookshelf-layout.js — la estantería del home de Inhouse Read.
@@ -68,18 +68,6 @@ export function bookmarkFor(book, options = {}) {
   return { progress, percent, peek, finished: finished === 1 };
 }
 
-/** One arena for a kernel call: `sizes` are f64 counts, `use` gets the base
- * pointer and the offsets (in f64) of each region. Views must be rebuilt after
- * a call, which may grow the memory. */
-function inArena(sizes, use) {
-  const at = [];
-  let length = 0;
-  for (const size of sizes) { at.push(length); length += size; }
-  const pointer = core.alloc_f64(Math.max(length, 1));
-  if (!pointer) throw new RangeError('Shelf layout: too many books');
-  try { return use(pointer, at, length); } finally { core.free_f64(pointer, Math.max(length, 1)); }
-}
-const f64View = (pointer, at, size) => new Float64Array(core.memory.buffer, pointer + at * 8, size);
 const unitWords = total => Math.ceil(total / 4);
 /** Writes `texts` as UTF-16 units into the arena and returns their offsets. */
 function writeSeeds(pointer, at, texts) {

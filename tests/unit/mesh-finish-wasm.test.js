@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
 import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core}));
+vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core??(await globalThis.__inhouseRustReady).exports}));
 import {rustFinishMesh,rustPaintMeshes} from '../../src/js/mesh-finish-wasm.js';
 import {physicalPaintUVs,smoothPostNormals} from './helpers/reference-mesh-finish.js';
 import {createBaggebo} from '../../src/js/baggebo-model.js';
