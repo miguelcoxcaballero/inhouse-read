@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import './helpers/rust-ui-ready.js'
 import { createShelfViewGesture } from '../../src/js/shelf-view-gesture.js'
 
 const controllers = []

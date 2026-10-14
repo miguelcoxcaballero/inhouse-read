@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
+import './helpers/rust-ui-ready.js'
 import { attachSwipeNavigation, classifyTapZone, classifySwipe, ZONE } from '../../src/js/gestures.js'
 
 describe('classifyTapZone', () => {

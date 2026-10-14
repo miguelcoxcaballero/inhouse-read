@@ -79,6 +79,23 @@
       }
     } catch (error) { /* unsupported host: the optional loader retries later */ }
   </script>
+  <!-- The live shelf's pointer controllers (swipe, pinch zoom): a small module compiled with the page
+       head. The first shelf render awaits it; rust-shelf.js adopts the compiled module once. -->
+  <link id="ihr-rust-shelf" rel="preload" as="fetch" type="application/wasm" href="/src/wasm/shelf/inhouse_read_shelf_bg.wasm" crossorigin="anonymous" />
+  <script>
+    try {
+      if (typeof WebAssembly === 'object') {
+        window.__inhouseShelfReady = fetch(document.getElementById('ihr-rust-shelf').href)
+          .then(function (response) {
+            if (!response.ok) throw new Error('Rust shelf HTTP ' + response.status)
+            if (typeof WebAssembly.compileStreaming === 'function' &&
+                response.headers.get('content-type')?.trim().toLowerCase() === 'application/wasm')
+              return WebAssembly.compileStreaming(response)
+            return response.arrayBuffer().then(function (bytes) { return WebAssembly.compile(bytes) })
+          }).catch(function () { return null })
+      }
+    } catch (error) { /* unsupported host: the loader fetches the module itself */ }
+  </script>
   <link id="ihr-rust-decor" rel="preload" as="fetch" type="application/wasm" href="/src/wasm/inhouse_read_decor.wasm" crossorigin="anonymous" />
   <script>
     try {

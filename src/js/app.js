@@ -28,8 +28,9 @@ import { normalizeBookAuthor, normalizeBookTitle } from './book-title.js'
 import { normalizeShelfPosition } from './book-colors.js'
 import { createLazyReaderExperience } from './readers/reader-experience-lazy.js'
 import { runAfterFirstFrame } from './idle-startup.js'
-import { loadRustCore } from './rust-core.js'
+import { loadRustCore, requireRustCore } from './rust-core.js'
 import { loadRustDecorCore } from './rust-decor-core.js'
+import { requireRustShelf } from './rust-shelf.js'
 import { shelfBakesSettled } from './shelf-bake-cache.js'
 import { loadPlantCatalogModule } from './plant-catalog-lazy.js'
 import { classifyTapZone, ZONE } from './gestures.js'
@@ -266,7 +267,10 @@ async function performShelfRefresh({ immediate = false } = {}) {
   const storedBooks = await (firstRecords ?? library.listAll())
   // Saved plant meshes and plant/lamp paint are read in parallel. A late read
   // must not hold the shelf back for long: they are generated instead.
-  await shelfBakesSettled(120)
+  // Layout, lighting and the pointer controllers of the live shelf are Rust-only: the render waits
+  // for their modules, fetched with the page head and already compiled by now in practice,
+  // alongside the baked reads.
+  await Promise.all([shelfBakesSettled(120), requireRustShelf(), requireRustCore()])
   // The page is being replaced by a newer deploy: building this shelf would only hold that up.
   if (appDisposed || deployCheck?.reloading() || nativeImportShelfGate.deferRefresh()) return
   const normalizedBooks = await Promise.all(storedBooks.map(book => {

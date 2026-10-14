@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
+import './helpers/rust-ui-ready.js'
 import { createShelfZoom } from '../../src/js/shelf-zoom.js';
 
 const controllers=[];

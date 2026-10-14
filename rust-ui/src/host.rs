@@ -1,138 +1,116 @@
-//! Plumbing shared by the cloud and library ports: dynamic property access, method calls,
-//! errors with causes, Promise awaiting and the few JavaScript semantics (`Number`, `??`,
-//! `JSON.stringify`) the ported code relies on. Every JavaScript API stays the browser's own.
+#![allow(dead_code)]
+//! Browser primitives for pointer state machines: property access, optional calls,
+//! the global timers/frames/clock (looked up at call time, as the bare names were)
+//! and JavaScript's own Math rounding (exp, hypot) which stays in the host.
+use std::cell::{Cell,RefCell};
 use wasm_bindgen::{prelude::*,JsCast};
-use js_sys::{Array,Function,Object,Promise,Reflect};
-use wasm_bindgen_futures::JsFuture;
+use js_sys::{Array,Function,Object,Reflect};
 
 #[wasm_bindgen]
 extern "C"{
- #[wasm_bindgen(js_name=Number)]fn js_number(value:&JsValue)->f64;
- #[wasm_bindgen(js_name=String)]fn js_string(value:&JsValue)->String;
- #[wasm_bindgen(js_name=Object)]fn js_object(value:&JsValue)->JsValue;
- #[wasm_bindgen(js_name=setTimeout)]fn js_set_timeout(handler:&Function,delay:f64)->JsValue;
- #[wasm_bindgen(js_name=clearTimeout)]fn js_clear_timeout(id:&JsValue);
- #[wasm_bindgen(js_namespace=JSON,js_name=stringify,catch)]fn js_stringify(value:&JsValue)->Result<JsValue,JsValue>;
- #[wasm_bindgen(js_namespace=JSON,js_name=parse,catch)]fn js_parse(value:&JsValue)->Result<JsValue,JsValue>;
+ #[wasm_bindgen(js_name=Number)]fn to_number(value:&JsValue)->f64;
+ /// `Object(value)`: the wrapper object of a primitive.
+ #[wasm_bindgen(js_name=Object)]fn box_primitive(value:&JsValue)->JsValue;
 }
 
-/// `value[key]` for objects and, as in JavaScript, for primitives (`"text".length`).
+/// Primitives have properties too (`"x".length`); Reflect.get wants an object.
+pub fn boxed(value:&JsValue)->JsValue{if value.is_object()||value.is_function(){value.clone()}else{box_primitive(value)}}
+pub fn get(value:&JsValue,key:&str)->JsValue{if absent(value){return JsValue::UNDEFINED;}Reflect::get(&boxed(value),&JsValue::from_str(key)).unwrap_or(JsValue::UNDEFINED)}
+/// `value[key]`, throwing like the engine for null/undefined or a failing getter.
 pub fn read(value:&JsValue,key:&str)->Result<JsValue,JsValue>{
- if nullish(value){return Err(js_sys::TypeError::new(&format!("Cannot read properties of {} (reading '{key}')",if value.is_null(){"null"}else{"undefined"})).into());}
- if value.is_object()||value.is_function(){Reflect::get(value,&key.into())}else{Reflect::get(&js_object(value),&key.into())}
+ if absent(value){return Err(js_sys::TypeError::new(&format!("Cannot read properties of {} (reading '{key}')",if value.is_null(){"null"}else{"undefined"})).into());}
+ Reflect::get(&boxed(value),&JsValue::from_str(key))
 }
-/// `value?.[key]`, `undefined` where the read would throw.
-pub fn get(value:&JsValue,key:&str)->JsValue{read(value,key).unwrap_or(JsValue::UNDEFINED)}
-pub fn set(target:&JsValue,key:&str,value:&JsValue){let _=Reflect::set(target,&key.into(),value);}
-pub fn object(entries:&[(&str,JsValue)])->JsValue{let object=Object::new();for(key,value)in entries{let _=Reflect::set(&object,&(*key).into(),value);}object.into()}
+pub fn get_at(value:&JsValue,index:u32)->JsValue{if absent(value){return JsValue::UNDEFINED;}Reflect::get(&boxed(value),&JsValue::from_f64(f64::from(index))).unwrap_or(JsValue::UNDEFINED)}
+pub fn set(value:&JsValue,key:&str,next:&JsValue)->Result<(),JsValue>{Reflect::set(value,&JsValue::from_str(key),next)?;Ok(())}
+pub fn absent(value:&JsValue)->bool{value.is_null()||value.is_undefined()}
+pub fn truthy(value:&JsValue)->bool{value.is_truthy()}
+/// `Number(value)` without allocating for the ordinary case.
+pub fn num(value:&JsValue)->f64{match value.as_f64(){Some(number)=>number,None=>to_number(value)}}
+pub fn text(value:&JsValue,expected:&str)->bool{value.as_string().is_some_and(|text|text==expected)}
+fn not_a_function(name:&str)->JsValue{js_sys::TypeError::new(&format!("{name} is not a function")).into()}
+/// `value(...args)` with `this` undefined.
+pub fn call(value:&JsValue,name:&str,args:&[&JsValue])->Result<JsValue,JsValue>{
+ let function=value.dyn_ref::<Function>().ok_or_else(||not_a_function(name))?;
+ apply(function,&JsValue::UNDEFINED,args)
+}
+fn apply(function:&Function,this:&JsValue,args:&[&JsValue])->Result<JsValue,JsValue>{
+ match args{
+  []=>function.call0(this),[a]=>function.call1(this,a),[a,b]=>function.call2(this,a,b),
+  _=>{let list=Array::new();for argument in args{list.push(argument);}function.apply(this,&list)}
+ }
+}
+/// `value?.(...args)`: nothing happens for null or undefined, anything else must be callable.
+pub fn call_opt(value:&JsValue,name:&str,args:&[&JsValue])->Result<JsValue,JsValue>{if absent(value){Ok(JsValue::UNDEFINED)}else{call(value,name,args)}}
+/// `target.name(...args)`, failing like a missing method.
+pub fn method(target:&JsValue,name:&str,args:&[&JsValue])->Result<JsValue,JsValue>{
+ let function=read(target,name)?;
+ let function=function.dyn_ref::<Function>().ok_or_else(||not_a_function(name))?;
+ apply(function,target,args)
+}
+/// `target?.name?.(...args)`: absent target or method yield `None`.
+pub fn method_opt(target:&JsValue,name:&str,args:&[&JsValue])->Result<Option<JsValue>,JsValue>{
+ if absent(target){return Ok(None);}
+ let function=read(target,name)?;
+ if absent(&function){return Ok(None);}
+ let function=function.dyn_ref::<Function>().ok_or_else(||not_a_function(name))?;
+ apply(function,target,args).map(Some)
+}
 pub fn global()->JsValue{js_sys::global().into()}
-pub fn nullish(value:&JsValue)->bool{value.is_null()||value.is_undefined()}
-/// `Number(value)`.
-pub fn number(value:&JsValue)->f64{js_number(value)}
-/// `Number(value) || 0`.
-pub fn number_or_zero(value:&JsValue)->f64{let number=js_number(value);if number.is_nan(){0.0}else{number}}
-/// `String(value)`.
-pub fn string(value:&JsValue)->String{js_string(value)}
-/// `JSON.stringify(value ?? null)`.
-pub fn json(value:&JsValue)->Result<String,JsValue>{
- let value=if nullish(value){JsValue::NULL}else{value.clone()};
- Ok(js_stringify(&value)?.as_string().unwrap_or_default())
+fn global_function(name:&str)->Result<Function,JsValue>{get(&global(),name).dyn_into().map_err(|_|not_a_function(name))}
+pub fn set_timeout(callback:&JsValue,delay:f64)->Result<JsValue,JsValue>{global_function("setTimeout")?.call2(&global(),callback,&JsValue::from_f64(delay))}
+pub fn clear_timeout(id:&JsValue)->Result<(),JsValue>{global_function("clearTimeout")?.call1(&global(),id)?;Ok(())}
+pub fn request_frame(callback:&JsValue)->Result<JsValue,JsValue>{global_function("requestAnimationFrame")?.call1(&global(),callback)}
+pub fn cancel_frame(id:&JsValue)->Result<(),JsValue>{global_function("cancelAnimationFrame")?.call1(&global(),id)?;Ok(())}
+pub fn clock()->Result<f64,JsValue>{Ok(num(&method(&get(&global(),"performance"),"now",&[])?))}
+pub fn finite(value:&JsValue)->bool{value.as_f64().is_some_and(f64::is_finite)}
+
+/// `Math.max` / `Math.min` for two numbers: NaN propagates and +0 beats -0.
+pub fn jmax(a:f64,b:f64)->f64{if a.is_nan()||b.is_nan(){f64::NAN}else if a==0.0&&b==0.0{if a.is_sign_negative(){b}else{a}}else if a>b{a}else{b}}
+pub fn jmin(a:f64,b:f64)->f64{if a.is_nan()||b.is_nan(){f64::NAN}else if a==0.0&&b==0.0{if a.is_sign_negative(){a}else{b}}else if a<b{a}else{b}}
+/// `Math.sign`: NaN and both zeros are returned unchanged.
+pub fn jsign(a:f64)->f64{if a.is_nan()||a==0.0{a}else if a>0.0{1.0}else{-1.0}}
+/// `Math.max(lo, Math.min(hi, value))`, the clamp every gesture used.
+pub fn clamp(value:f64,lo:f64,hi:f64)->f64{jmax(lo,jmin(hi,value))}
+pub fn exp(value:f64)->f64{js_sys::Math::exp(value)}
+pub fn hypot(a:f64,b:f64)->f64{js_sys::Math::hypot(a,b)}
+/// `value.toFixed(2)` exactly as the engine prints it.
+pub fn fixed2(value:f64)->Result<String,JsValue>{Ok(js_sys::Number::from(value).to_fixed(2)?.as_string().unwrap_or_default())}
+/// `String(value).trim()`, with JavaScript's own definition of white space.
+pub fn trimmed(text:&str)->String{js_sys::JsString::from(text).trim().as_string().unwrap_or_default()}
+
+/// One registered event listener, removed with the same arguments when dropped.
+pub struct Listener{target:JsValue,kind:&'static str,callback:Closure<dyn FnMut(JsValue)>,capture:bool}
+impl Drop for Listener{fn drop(&mut self){
+ let Some(remove)=get(&self.target,"removeEventListener").dyn_into::<Function>().ok()else{return};
+ let _=if self.capture{remove.call3(&self.target,&self.kind.into(),self.callback.as_ref(),&JsValue::TRUE)}else{remove.call2(&self.target,&self.kind.into(),self.callback.as_ref())};
+}}
+/// `target.addEventListener(kind, callback, {passive})` or `(…, true)` for capture.
+/// A handler that fails throws out of the listener like an uncaught page error.
+pub fn listen(target:&JsValue,kind:&'static str,passive:Option<bool>,capture:bool,mut handler:impl FnMut(JsValue)->Result<(),JsValue>+'static)->Result<Listener,JsValue>{
+ let callback=Closure::wrap(Box::new(move|event:JsValue|{if let Err(error)=handler(event){wasm_bindgen::throw_val(error)}})as Box<dyn FnMut(JsValue)>);
+ let options:JsValue=match(passive,capture){
+  (_,true)=>JsValue::TRUE,
+  (Some(passive),false)=>{let options=Object::new();Reflect::set(&options,&"passive".into(),&passive.into())?;options.into()}
+  (None,false)=>JsValue::UNDEFINED,
+ };
+ let add=get(target,"addEventListener");
+ let add=add.dyn_ref::<Function>().ok_or_else(||not_a_function("addEventListener"))?;
+ if options.is_undefined(){add.call2(target,&kind.into(),callback.as_ref())?}else{add.call3(target,&kind.into(),callback.as_ref(),&options)?};
+ Ok(Listener{target:target.clone(),kind,callback,capture})
 }
-/// `JSON.stringify(value)`, `None` where the result is `undefined`.
-pub fn stringify(value:&JsValue)->Result<Option<String>,JsValue>{Ok(js_stringify(value)?.as_string())}
-pub fn error(message:&str)->JsValue{js_sys::Error::new(message).into()}
-pub fn error_with_cause(message:&str,cause:JsValue)->JsValue{
- let options=Object::new();let _=Reflect::set(&options,&"cause".into(),&cause);js_sys::Error::new_with_options(message,&options).into()
+
+thread_local!{
+ static CALLBACKS:RefCell<Vec<(u64,Closure<dyn FnMut(JsValue)>)>>=const{RefCell::new(Vec::new())};
+ static KEYS:Cell<u64>=const{Cell::new(0)};
 }
-pub fn error_with_code(message:&str,code:&str)->JsValue{let error=js_sys::Error::new(message);let _=Reflect::set(&error,&"code".into(),&code.into());error.into()}
-/// The `message` of a thrown value, as `error.message` reads it.
-pub fn message(error:&JsValue)->String{string(&get(error,"message"))}
-pub fn function(value:&JsValue,name:&str)->Result<Function,JsValue>{value.dyn_ref::<Function>().cloned().ok_or_else(||error(&format!("Missing host function {name}")))}
-/// `target[name](...args)`.
-pub fn call(target:&JsValue,name:&str,args:&[&JsValue])->Result<JsValue,JsValue>{
- let method=function(&read(target,name)?,name)?;let list=Array::new();for argument in args{list.push(argument);}method.apply(target,&list)
-}
-/// `function(...args)` with `this` undefined.
-pub fn invoke(function:&Function,args:&[&JsValue])->Result<JsValue,JsValue>{
- let list=Array::new();for argument in args{list.push(argument);}function.apply(&JsValue::UNDEFINED,&list)
-}
-/// `await value`, whether or not it is a thenable.
-pub async fn settle(value:Result<JsValue,JsValue>)->Result<JsValue,JsValue>{JsFuture::from(Promise::resolve(&value?)).await}
-/// `await target[name](...args)`.
-pub async fn call_async(target:&JsValue,name:&str,args:&[&JsValue])->Result<JsValue,JsValue>{settle(call(target,name,args)).await}
-/// A Promise resolving after the next macrotask-free turn (`await null`).
-pub async fn tick()->Result<(),JsValue>{JsFuture::from(Promise::resolve(&JsValue::UNDEFINED)).await.map(|_|())}
-pub fn to_promise(future:impl std::future::Future<Output=Result<JsValue,JsValue>>+'static)->Promise{wasm_bindgen_futures::future_to_promise(future)}
-/// The Promise of an `async` function: like JavaScript, the body runs synchronously up to its
-/// first `await` and carries on from the microtask queue after that.
-pub fn start(future:impl std::future::Future<Output=Result<JsValue,JsValue>>+'static)->Promise{
- use std::{pin::Pin,task::{Context,Poll,Waker}};
- let mut callbacks=None;let promise=Promise::new(&mut|resolve,reject|{callbacks=Some((resolve,reject));});
- let (resolve,reject)=callbacks.expect("Promise executors run synchronously");
- let settle=move|result:Result<JsValue,JsValue>|{let _=match result{Ok(value)=>resolve.call1(&JsValue::UNDEFINED,&value),Err(error)=>reject.call1(&JsValue::UNDEFINED,&error)};};
- let mut future:Pin<Box<dyn std::future::Future<Output=Result<JsValue,JsValue>>>>=Box::pin(future);
- // A task spawned below is polled once more by the executor, which registers the real waker.
- match future.as_mut().poll(&mut Context::from_waker(Waker::noop())){
-  Poll::Ready(result)=>settle(result),
-  Poll::Pending=>wasm_bindgen_futures::spawn_local(async move{settle(future.await);})
- }
- promise
-}
-/// First truthy of the two, as `a || b`.
-pub fn or(a:JsValue,b:JsValue)->JsValue{if a.is_truthy(){a}else{b}}
-/// Timers whose closures live exactly as long as the timer can still fire; ids are numbers.
-#[derive(Default)]
-pub struct Timers{next:std::cell::Cell<u32>,running:std::cell::Cell<u32>,
- live:std::cell::RefCell<std::collections::HashMap<u32,(JsValue,Closure<dyn FnMut()>)>>,fired:std::cell::RefCell<Vec<Closure<dyn FnMut()>>>}
-impl Timers{
- /// A closure that has fired is released later, never while its own code is on the stack.
- fn release_fired(&self){if self.running.get()==0{let spent=std::mem::take(&mut *self.fired.borrow_mut());drop(spent);}}
- pub fn start(self:&std::rc::Rc<Self>,delay:f64,callback:impl FnOnce()+'static)->u32{
-  self.release_fired();
-  let seq=self.next.get().wrapping_add(1);self.next.set(seq);
-  let owner=self.clone();let mut callback=Some(callback);
-  let closure=Closure::wrap(Box::new(move||{
-   let taken=owner.live.borrow_mut().remove(&seq);
-   if let Some((_,closure))=taken{owner.fired.borrow_mut().push(closure);}
-   owner.running.set(owner.running.get()+1);
-   if let Some(callback)=callback.take(){callback();}
-   owner.running.set(owner.running.get()-1);
-  })as Box<dyn FnMut()>);
-  let id=js_set_timeout(closure.as_ref().unchecked_ref(),delay);
-  self.live.borrow_mut().insert(seq,(id,closure));seq
- }
- pub fn clear(&self,seq:u32){
-  self.release_fired();
-  let taken=self.live.borrow_mut().remove(&seq);
-  if let Some((id,_closure))=taken{js_clear_timeout(&id);}
- }
- pub fn clear_all(&self){
-  self.release_fired();
-  let all:Vec<_>=self.live.borrow_mut().drain().collect();
-  for (_,(id,_closure)) in all{js_clear_timeout(&id);}
- }
-}
-/// `new globalThis[name](...args)`.
-pub fn construct(name:&str,args:&[&JsValue])->Result<JsValue,JsValue>{
- let constructor=function(&read(&global(),name)?,name)?;let list=Array::new();for argument in args{list.push(argument);}
- Reflect::construct(&constructor,&list)
-}
-/// `Object.assign(target, source)` for the one-level spreads of the original code.
-pub fn assign(target:&JsValue,source:&JsValue)->Result<(),JsValue>{
- if nullish(source){return Ok(());}
- let object=target.dyn_ref::<Object>().ok_or_else(||error("assign needs an object"))?;Object::assign(object,&Object::from(source.clone()));Ok(())
-}
-/// `JSON.parse(value)`, the value coerced to text as the original did.
-pub fn parse(value:&JsValue)->Result<JsValue,JsValue>{js_parse(value)}
-/// `Object.entries(value)`, with the keys as text.
-pub fn entries(value:&JsValue)->Vec<(String,JsValue)>{
- let value=if value.is_object()||value.is_function(){value.clone()}else{js_object(value)};
- Object::entries(value.unchecked_ref::<Object>()).iter().map(|pair|{let pair=Array::from(&pair);(string(&pair.get(0)),pair.get(1))}).collect()
-}
-/// `delete target[key]`.
-pub fn delete(target:&JsValue,key:&str){if let Some(object)=target.dyn_ref::<Object>(){let _=Reflect::delete_property(object,&key.into());}}
-/// `Object.hasOwn(target, key)`.
-pub fn has_own(target:&JsValue,key:&str)->bool{
- let value=if target.is_object()||target.is_function(){target.clone()}else{js_object(target)};
- Object::has_own(value.unchecked_ref::<Object>(),&key.into())
-}
+/// One-shot callbacks (timers, frames) are owned here until they run or are cancelled, so a
+/// controller that goes away with a timer still pending leaves a harmless closure the host
+/// can still call (it finds its owner gone) rather than a dropped one that would throw.
+/// wasm-bindgen defers a drop that happens inside the closure itself, so a callback may
+/// release its own entry.
+pub fn next_key()->u64{KEYS.with(|keys|{keys.set(keys.get()+1);keys.get()})}
+pub fn adopt(key:u64,closure:Closure<dyn FnMut(JsValue)>)->JsValue{let function=closure.as_ref().clone();CALLBACKS.with(|live|live.borrow_mut().push((key,closure)));function}
+pub fn release(key:u64){let found=CALLBACKS.with(|live|{let mut live=live.borrow_mut();live.iter().position(|(known,_)|*known==key).map(|index|live.remove(index).1)});drop(found);}
+/// How many callbacks are still waiting for the host (diagnostics).
+pub fn pending_callbacks()->usize{CALLBACKS.with(|live|live.borrow().len())}

@@ -1,6 +1,10 @@
 import 'fake-indexeddb/auto'
 import { readFileSync } from 'node:fs'
 import { beforeEach, vi } from 'vitest'
+// The live shelf is built with the shelf module and the numeric core already in (its first render
+// awaits both), so every test of the shelf starts from the same state.
+import './helpers/rust-shelf-ready.js'
+import './helpers/rust-core-ready.js'
 
 // La versión de jsdom usada por este entorno de test no implementa
 // Blob/File.prototype.arrayBuffer() (sí existe en todos los navegadores

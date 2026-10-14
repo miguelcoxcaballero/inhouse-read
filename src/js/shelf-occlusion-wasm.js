@@ -1,20 +1,10 @@
 import * as THREE from 'three';
 import { getRustCore } from './rust-core.js';
+import { needRustShelf } from './rust-shelf.js';
 
+// cos/sin of the light and foot-ring directions, from the host's Math (rust-ui/src/occlusion_table.rs).
 let trig;
-function angles() {
-  if (!trig) {
-    trig = new Float64Array(80);
-    for (let i = 0; i < 20; i++) {
-      const corner = Math.floor(i / 5), k = i % 5;
-      const light = (corner * 4 + k) * Math.PI / 8;
-      const foot = i / 20 * Math.PI * 2;
-      trig.set([Math.cos(light), Math.sin(light)], i * 2);
-      trig.set([Math.cos(foot), Math.sin(foot)], 40 + i * 2);
-    }
-  }
-  return trig;
-}
+const angles = () => trig ??= needRustShelf().occlusion_angles();
 
 /** Same triangles and linear RGBA as the original contact shadow painter. */
 export function rustShelfOcclusion(frame, bottoms, ground, footprints, floorLight) {

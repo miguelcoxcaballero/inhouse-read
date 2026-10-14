@@ -6,6 +6,13 @@ const hash=async data=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA
 const same=(a,b)=>{if(canonicalPlacement(a)!==canonicalPlacement(b))throw new Error('Complete drag snapshot output differs');};
 const median=values=>[...values].sort((a,b)=>a-b)[Math.floor(values.length/2)];
 const pause=()=>new Promise(resolve=>setTimeout(resolve,0));
+// The placement has no JavaScript twin any more: a direct move runs the kernel too (once for each mounting
+// surface), and the owned session that replaces it from the third move on runs it once per move.
+export const DIRECT_MOVE_KERNEL_CALLS=2;
+export function expectedRouting(input,moves){
+  const directMoves=input.count>=SHELF_PREVIEW_MIN_OBJECTS?Math.min(moves,SHELF_PREVIEW_DIRECT_MOVES):moves,sessionMoves=moves-directMoves;
+  return{directMoves,sessionMoves,expectedCalls:directMoves*DIRECT_MOVE_KERNEL_CALLS+sessionMoves};
+}
 export async function benchmarkShelfPlacementSession(core,input){
   const {fixture,targets}=shelfSessionFixture(input),proof=[],before={...window.placementStats};
   const session=createShelfPlacementPreview(fixture.objects,fixture.options);
@@ -21,7 +28,7 @@ export async function benchmarkShelfPlacementSession(core,input){
     }
   }finally{session.dispose();}
   const actualCalls=window.placementStats.calls-before.calls;
-  const expectedCalls=input.count>=SHELF_PREVIEW_MIN_OBJECTS?Math.max(0,targets.length-SHELF_PREVIEW_DIRECT_MOVES):0;
+  const {directMoves,sessionMoves,expectedCalls}=expectedRouting(input,targets.length);
   if(actualCalls!==expectedCalls)throw new Error('Actual kernel calls disagree with the shared preview policy');
   if(window.placementStats.live!==0||window.placementStats.allocations!==window.placementStats.releases)throw new Error('Session arena leaked');
   const repetitions=input.moves===1&&input.count<=40?16:input.moves<=8&&input.count<=200?2:1;
@@ -50,9 +57,9 @@ export async function benchmarkShelfPlacementSession(core,input){
   return{input,proof,actualCalls,inputSha256:await hash(canonicalPlacement(fixture)),
     methodology:{rounds,warmups,repetitions,movesPerDrag:targets.length,preparationIncluded:true,disposalIncluded:true,publicApisUnchanged:true,
       policy:{minimumObjects:SHELF_PREVIEW_MIN_OBJECTS,initialJavaScriptMoves:SHELF_PREVIEW_DIRECT_MOVES}},
-    proofRouting:{rustCalls:actualCalls,javascriptBypasses:targets.length-actualCalls,contextPrepared:actualCalls>0},
+    proofRouting:{rustCalls:actualCalls,directMoves,sessionMoves,contextPrepared:sessionMoves>0},
     samples,orders,javascriptPerDragMedianMs:median(samples.javascript)/repetitions,rustPerDragMedianMs:median(samples.rust)/repetitions,
     javascriptPerMoveAmortizedMs:median(samples.javascript)/(repetitions*targets.length),
     rustPerMoveAmortizedMs:median(samples.rust)/(repetitions*targets.length),
-    memory:{...window.placementStats,preparedGeometryBytes:actualCalls?fixture.objects.length*7*8:0,wasmCapacityBytes:core.memory.buffer.byteLength}};
+    memory:{...window.placementStats,preparedGeometryBytes:sessionMoves?fixture.objects.length*7*8:0,wasmCapacityBytes:core.memory.buffer.byteLength}};
 }

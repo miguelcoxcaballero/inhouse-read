@@ -8,7 +8,7 @@
 use std::{cell::{Cell,RefCell},rc::Rc};
 use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array,Function,Object,Promise,RegExp,Uint8Array};
-use crate::host::*;
+use crate::cloud_host::*;
 
 #[wasm_bindgen]
 extern "C"{

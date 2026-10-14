@@ -2,7 +2,7 @@
 //! The folder handle, the file reads and the records stay behind host callbacks.
 use wasm_bindgen::prelude::*;
 use js_sys::{Array,Promise};
-use crate::host::*;
+use crate::cloud_host::*;
 
 /// `host`: `{supported, getHandle, readFile, clearBookLength, newContentRevision}`.
 async fn restore(library:JsValue,host:JsValue)->Result<JsValue,JsValue>{

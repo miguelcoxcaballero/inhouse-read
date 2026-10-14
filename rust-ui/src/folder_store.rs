@@ -3,7 +3,7 @@
 //! have revoked meanwhile. Directory handles and the picker stay with the host.
 use wasm_bindgen::prelude::*;
 use js_sys::Promise;
-use crate::host::*;
+use crate::cloud_host::*;
 
 /// A free name for `size` bytes: the same name when a file of that size is already there (the same
 /// book), otherwise the first `name-2.ext`, `name-3.ext`... that is not taken by a different file.

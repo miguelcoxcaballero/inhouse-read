@@ -1,13 +1,11 @@
 import * as THREE from 'three';
+import { getRustCore } from './rust-core.js';
 
 const SHADOW_SIZE = 1024;
-// Soft edge of every shelf shadow, in shelf pixels, whatever window it covers.
-const PENUMBRA = 9;
-// The fitted window reaches this share of a screen beyond each edge, so a
-// scroll of that much reuses the map instead of redrawing and blurring it.
-const SLACK = .25;
-// Nearly square texels keep the blur round on tall, narrow phone screens.
-const MAX_ASPECT = 1.5;
+// Parameter and result lengths of the Rust rig (rust-core/src/shelf_lighting.rs).
+const PARAMS = 47, OUTPUT = 19;
+// The fit itself (penumbra width, slack of a screen beyond each edge, the aspect limit that
+// keeps the blur round on tall phone screens) is decided in the Rust rig.
 const compactScreen = () => Math.min(globalThis.innerWidth || 1024, globalThis.innerHeight || 1024) < 600;
 // three's variance shadows keep a 0.3 light-bleed floor. Books standing a
 // finger's width from the back panel, under a shelf far above them, need a
@@ -74,6 +72,9 @@ export function widePenumbra(material) {
 export function createShelfLighting(scene, renderer) {
   const key = scene.userData.readerLight;
   if (!key) return { update:() => false, settling:false, dispose() {} };
+  const core = getRustCore();
+  if (typeof core?.shelf_light_update !== 'function') throw new Error('Shelf lighting needs the Rust core');
+  if (core.shelf_light_params() !== PARAMS || core.shelf_light_output() !== OUTPUT) throw new Error('Incompatible Rust shelf lighting');
   firmVarianceShadows();
   // The rig's own direction; the light is only moved along it.
   const toLight = key.position.clone().sub(key.target.position).normalize();
@@ -96,141 +97,59 @@ export function createShelfLighting(scene, renderer) {
   key.shadow.intensity = .84;
   key.shadow.autoUpdate = false;
   scene.add(key.target);
-  const want = new THREE.Box3(), fitted = new THREE.Box3(), view = new THREE.Matrix4();
-  const point = new THREE.Vector3(), centre = new THREE.Vector3();
-  const previousTransform = new THREE.Matrix4(), inverseTransform = new THREE.Matrix4(), delta = new THREE.Matrix4();
-  const previousBounds = new THREE.Box3(), transportedBounds = new THREE.Box3();
-  let hasTransform = false;
-  let frame = '';
-  // The layout key is a pure function of these raw numbers: its strings are
-  // only rebuilt when one of them differs from the previous frame's.
-  const layoutInputs = new Float64Array(9);
-  let layoutKey = '', layoutBounded = false;
-  const layoutOf = (width, viewportHeight, depth, bounds) => {
-    let stale = !layoutKey || Boolean(bounds) !== layoutBounded || layoutInputs[0] !== width ||
-      layoutInputs[1] !== viewportHeight || layoutInputs[2] !== depth;
-    if (bounds) for (let axis = 0; axis < 3 && !stale; axis++) {
-      stale = layoutInputs[3 + axis] !== bounds.min.getComponent(axis) || layoutInputs[6 + axis] !== bounds.max.getComponent(axis);
+  // The Rust rig decides when the window is refitted, when a pure similarity of the view
+  // moves the existing map, and the new frustum. Its parameters and results cross as numbers.
+  const rig = core.shelf_light_new(), length = PARAMS + OUTPUT, arena = core.alloc_f64(length);
+  if (!rig || !arena) { if (rig) core.shelf_light_free(rig); throw new Error('Shelf lighting could not allocate'); }
+  let released = false, buffer = null, input = null, output = null;
+  const views = () => {
+    if (buffer !== core.memory.buffer) {
+      buffer = core.memory.buffer;
+      input = new Float64Array(buffer, arena, PARAMS); output = new Float64Array(buffer, arena + PARAMS * 8, OUTPUT);
     }
-    if (stale) {
-      layoutInputs[0] = width; layoutInputs[1] = viewportHeight; layoutInputs[2] = depth;
-      for (let axis = 0; axis < 3 && bounds; axis++) {
-        layoutInputs[3 + axis] = bounds.min.getComponent(axis); layoutInputs[6 + axis] = bounds.max.getComponent(axis);
-      }
-      layoutBounded = Boolean(bounds);
-      layoutKey = [width, viewportHeight, depth, ...(bounds ? [...bounds.min.toArray(), ...bounds.max.toArray()] : [])]
-        .map(value => value.toFixed(2)).join(':');
-    }
-    return layoutKey;
   };
-  // The camera window (plus some slack), clipped to the cabinet's world bounds.
-  const windowBox = (box, { width, viewportHeight, scroll, depth, bounds }, slack) => {
-    box.min.set(0, -scroll - viewportHeight - slack, -depth - 24);
-    box.max.set(width, -scroll + slack, 24);
-    if (bounds && !bounds.isEmpty()) {
-      box.min.set(Math.max(box.min.x, bounds.min.x), Math.max(box.min.y, bounds.min.y), bounds.min.z);
-      box.max.set(Math.min(box.max.x, bounds.max.x), Math.min(box.max.y, bounds.max.y), bounds.max.z);
-      if (box.isEmpty()) box.min.copy(box.max);
-    }
-    return box;
-  };
-  const fit = box => {
-    // A new fit uses the original screen-space contact offset. During a
-    // cached finger zoom it scales with the map, then returns to this value
-    // when the visible window is rendered once at its settled resolution.
-    key.shadow.normalBias = .45;
-    box.getCenter(centre);
-    const reach = box.getSize(point).length() / 2 + 400;
-    key.target.position.copy(centre);
-    key.position.copy(centre).addScaledVector(toLight, reach);
-    key.updateMatrixWorld(); key.target.updateMatrixWorld();
-    // Fit the frustum around the box's eight corners, seen from the light.
-    // Anything between the light and the box (a shelf above the viewport)
-    // still falls inside, because the near plane sits at the light itself.
-    view.lookAt(key.position, centre, THREE.Object3D.DEFAULT_UP).setPosition(key.position).invert();
-    let left = Infinity, right = -Infinity, bottom = Infinity, top = -Infinity, far = 0;
-    for (let corner = 0; corner < 8; corner++) {
-      point.set(corner & 1 ? box.max.x : box.min.x, corner & 2 ? box.max.y : box.min.y, corner & 4 ? box.max.z : box.min.z)
-        .applyMatrix4(view);
-      left = Math.min(left, point.x); right = Math.max(right, point.x);
-      bottom = Math.min(bottom, point.y); top = Math.max(top, point.y); far = Math.max(far, -point.z);
-    }
-    // Widen the narrow side, then leave room at every edge for the blur and
-    // the back panel's wider disk, whose outer taps must stay in the map.
-    const margin = PENUMBRA * (PANEL_REACH + 1) + 8;
-    const width = right - left, height = top - bottom, span = Math.max(width, height) / MAX_ASPECT;
-    const padX = Math.max(0, span - width) / 2 + margin, padY = Math.max(0, span - height) / 2 + margin;
-    const camera = key.shadow.camera;
-    Object.assign(camera, { left:left - padX, right:right + padX, top:top + padY, bottom:bottom - padY,
-      near:1, far:far + 60 });
-    camera.updateProjectionMatrix();
-    // The blur is measured in texels: keep its width constant on the shelf.
-    const texel = Math.max(camera.right - camera.left, camera.top - camera.bottom) / SHADOW_SIZE;
-    key.shadow.radius = THREE.MathUtils.clamp(PENUMBRA / texel, 2, 16);
-  };
+  const camera = key.shadow.camera;
   const update = options => {
+    if (released) return false;
     const { width, viewportHeight, depth, bounds = null, moving = false, transform = null, forceRefit = false } = options;
-    let { dirty = true } = options;
-    windowBox(want, options, 0);
-    // Anything but a scroll (resize, depth, a turning or rebuilt cabinet)
-    // refits at once; a scroll only once the view leaves the fitted slack.
-    const layout = layoutOf(width, viewportHeight, depth, bounds);
-    let transformChanged = false;
-    if (transform && hasTransform) for (let index = 0; index < 16 && !transformChanged; index++) {
-      transformChanged = Math.abs(transform.elements[index] - previousTransform.elements[index]) > 1e-7;
+    const { scroll } = options, dirtyValue = options.dirty === undefined ? true : options.dirty;
+    views();
+    input[0] = width; input[1] = viewportHeight; input[2] = depth; input[3] = scroll;
+    input[4] = bounds ? 1 : 0;
+    if (bounds) input.set([bounds.min.x, bounds.min.y, bounds.min.z, bounds.max.x, bounds.max.y, bounds.max.z], 5);
+    input[11] = transform ? 1 : 0;
+    if (transform) input.set(transform.elements, 12);
+    input[28] = moving ? 1 : 0; input[29] = forceRefit ? 1 : 0; input[30] = dirtyValue ? 1 : 0;
+    input.set([toLight.x, toLight.y, toLight.z, key.position.x, key.position.y, key.position.z,
+      key.target.position.x, key.target.position.y, key.target.position.z, key.shadow.normalBias,
+      camera.left, camera.right, camera.top, camera.bottom, camera.near, camera.far], 31);
+    if (core.shelf_light_update(rig, arena, arena + PARAMS * 8) !== 1) throw new Error('Rust shelf lighting rejected its frame');
+    views();
+    const [dirty, assigned, refit, transported, settling] = output;
+    if (refit || transported) {
+      key.position.set(output[5], output[6], output[7]);
+      key.target.position.set(output[8], output[9], output[10]);
+      key.shadow.normalBias = output[11];
+      Object.assign(camera, { left:output[12], right:output[13], top:output[14], bottom:output[15], near:output[16], far:output[17] });
+      camera.updateProjectionMatrix();
+      key.updateMatrixWorld(); key.target.updateMatrixWorld();
+      // three normally updates this while rendering the map. With a cached
+      // map the new lookup matrix is sufficient; no depth or blur pass runs.
+      if (transported) key.shadow.updateMatrices(key);
+      if (refit) key.shadow.radius = output[18];
     }
-    let transported = false;
-    if (transform && hasTransform && !dirty && !forceRefit && bounds && !previousBounds.isEmpty()) {
-      delta.multiplyMatrices(transform, inverseTransform.copy(previousTransform).invert());
-      const e = delta.elements, scale = e[0], tolerance = Math.max(1, Math.abs(scale)) * 1e-7;
-      // A finger zoom/pan changes every caster, receiver and fixture together.
-      // Moving the existing light camera by that same similarity leaves every
-      // texel and its stored depth identical. A cabinet turn relative to the
-      // daylight does change its shadows, and deliberately takes the fit path.
-      const translationAndScale = Number.isFinite(scale) && scale > 0 &&
-        [e[5] - scale, e[10] - scale, e[1], e[2], e[3], e[4], e[6], e[7], e[8], e[9], e[11], e[15] - 1]
-          .every(value => Math.abs(value) <= tolerance);
-      transportedBounds.copy(previousBounds).applyMatrix4(delta);
-      const unchangedBounds = transportedBounds.min.distanceTo(bounds.min) < 1e-4 &&
-        transportedBounds.max.distanceTo(bounds.max) < 1e-4;
-      const dimensions = [width, viewportHeight, depth].map(value => value.toFixed(2)).join(':');
-      if (translationAndScale && unchangedBounds && frame.startsWith(`${dimensions}:`)) {
-        key.position.applyMatrix4(delta); key.target.position.applyMatrix4(delta);
-        const camera = key.shadow.camera;
-        for (const axis of ['left', 'right', 'top', 'bottom', 'near', 'far']) camera[axis] *= scale;
-        camera.updateProjectionMatrix();
-        key.shadow.normalBias *= scale;
-        fitted.applyMatrix4(delta);
-        key.updateMatrixWorld(); key.target.updateMatrixWorld();
-        // three normally updates this while rendering the map. With a cached
-        // map the new lookup matrix is sufficient; no depth or blur pass runs.
-        key.shadow.updateMatrices(key);
-        transported = true;
-      }
-    }
-    // Transported boundaries accumulate harmless floating-point roundoff.
-    // Treat a fraction of a physical millimetre as the same fitted edge.
-    const covers = !fitted.isEmpty() && fitted.min.x <= want.min.x + 1e-4 && fitted.max.x >= want.max.x - 1e-4 &&
-      fitted.min.y <= want.min.y + 1e-4 && fitted.max.y >= want.max.y - 1e-4 &&
-      fitted.min.z <= want.min.z + 1e-4 && fitted.max.z >= want.max.z - 1e-4;
-    if (forceRefit || (!transported && (layout !== frame || transformChanged)) || !covers) {
-      fit(windowBox(fitted, options, viewportHeight * SLACK));
-      dirty = true;
-    }
-    frame = layout;
-    if (transform) {
-      previousTransform.copy(transform); hasTransform = true;
-      if (bounds) previousBounds.copy(bounds); else previousBounds.makeEmpty();
-    } else hasTransform = false;
-    if (coarse && !moving) dirty = true;
+    coarse = Boolean(settling);
     if (dirty) {
-      coarse = Boolean(moving) && !forceRefit; key.shadow.blurSamples = coarse ? movingSamples : restSamples;
+      key.shadow.blurSamples = coarse ? movingSamples : restSamples;
       key.shadow.needsUpdate = true; renderer.shadowMap.needsUpdate = true;
     }
-    return dirty;
+    return assigned ? true : dirtyValue;
   };
   return { update,
     /** A map drawn in motion still awaits its full-quality redraw. */
     get settling() { return coarse; },
-    dispose() { key.shadow.map?.dispose(); key.shadow.mapPass?.dispose(); } };
+    dispose() {
+      key.shadow.map?.dispose(); key.shadow.mapPass?.dispose();
+      if (!released) { released = true; core.free_f64(arena, length); core.shelf_light_free(rig); }
+    } };
 }

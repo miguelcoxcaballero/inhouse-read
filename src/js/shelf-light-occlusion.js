@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getRustCore } from './rust-core.js';
 
 /**
  * Solid boards and panels stop a shelf lamp's light. Only two cones have a
@@ -90,6 +91,16 @@ export function installShelfLightOcclusion() {
 }
 installShelfLightOcclusion();
 
+// The numbers are the core's (rust-core/src/shelf_occluder.rs); the first shelf render awaits that
+// core. The scene graph, the part-name classification and the uniform arrays stay here.
+const core = () => {
+  const loaded = getRustCore();
+  if (!loaded) throw new Error('El módulo numérico no está cargado. Recarga la página.');
+  return loaded;
+};
+const DESCRIPTION = 19, FRAME_INPUT = 51, FRAME_OUTPUT = 28;
+const partKind = name => /^(shelf-\d+-board|top-cap)$/.test(name) ? 1 : /^(shelf-\d+-mesh|top-mesh)$/.test(name) ? 2 : /^(left|right)-upright$/.test(name) ? 3 : 0;
+
 /** The cabinet's boards, sides and front, from its units' parts, in the
  * cabinet's own units: walnut boards and sides are solid, a BAGGEBO's mesh
  * shelves pass half the light. `root` is one unit, or a group of units. */
@@ -97,51 +108,52 @@ export function shelfOccluders(root) {
   if (!root) return null;
   const units = Array.isArray(root.userData?.parts) ? [[root, new THREE.Matrix4()]]
     : root.children.filter(child => Array.isArray(child.userData?.parts)).map(child => { child.updateMatrix(); return [child, child.matrix]; });
-  const bounds = new THREE.Box3(), box = new THREE.Box3(), heights = new Set(), sides = [];
-  let solid = false, mesh = false;
-  for (const [unit, matrix] of units) {
+  const matrices = [], records = [];
+  units.forEach(([unit, matrix], index) => {
+    matrices.push(...matrix.elements);
     for (const part of unit.userData.parts) {
       if (!part?.bounds) continue;
-      box.copy(part.bounds).applyMatrix4(matrix);
-      bounds.union(box);
-      if (/^(shelf-\d+-board|top-cap)$/.test(part.name)) { heights.add(+((box.min.y + box.max.y) / 2).toFixed(3)); solid = true; }
-      else if (/^(shelf-\d+-mesh|top-mesh)$/.test(part.name)) { heights.add(+((box.min.y + box.max.y) / 2).toFixed(3)); mesh = true; }
-      else if (/^(left|right)-upright$/.test(part.name)) sides.push((box.min.x + box.max.x) / 2);
+      const { min, max } = part.bounds;
+      records.push(index, partKind(part.name), min.x, min.y, min.z, max.x, max.y, max.z);
     }
-  }
-  if (!heights.size) return null;
-  const centre = bounds.getCenter(new THREE.Vector3()), half = bounds.getSize(new THREE.Vector3()).multiplyScalar(.5);
-  return {
-    centre, half,
-    boards:[...heights].sort((a, b) => a - b).slice(0, MAX_SHELF_BOARDS).map(height => height - centre.y),
-    inner:sides.length ? Math.max(...sides.map(x => Math.abs(x - centre.x))) : half.x,
-    front:bounds.max.z - centre.z,
-    solidSides:sides.length > 0,
-    through:solid && !mesh ? 0 : .5
-  };
+  });
+  const wasm = core(), inputLength = matrices.length + records.length, length = inputLength + DESCRIPTION, pointer = wasm.alloc_f64(length);
+  if (!pointer) throw new Error('El módulo numérico no pudo reservar memoria. Recarga la página.');
+  try {
+    const input = new Float64Array(wasm.memory.buffer, pointer, inputLength);
+    input.set(matrices); input.set(records, matrices.length);
+    const count = wasm.shelf_occluders_describe(units.length, records.length / 8, pointer, pointer + inputLength * 8);
+    if (!count) return null;
+    const out = new Float64Array(wasm.memory.buffer, pointer + inputLength * 8, DESCRIPTION);
+    return {
+      centre:new THREE.Vector3(out[1], out[2], out[3]), half:new THREE.Vector3(out[4], out[5], out[6]),
+      boards:Array.from(out.subarray(11, 11 + count)), inner:out[7], front:out[8], solidSides:out[9] === 1, through:out[10]
+    };
+  } finally { wasm.free_f64(pointer, length); }
 }
 
-const point = new THREE.Vector3(), direction = new THREE.Vector3(), scale = new THREE.Vector3();
-const toView = new THREE.Matrix4();
+// One small arena per core serves every render; it is allocated by the first one.
+let frame = null;
 /** Fills the uniforms for one render with `camera`: call from the scene's
  * onBeforeRender, and clear() from its onAfterRender. */
 export function applyShelfOccluders(root, description, camera) {
   if (!root || !description) { clearShelfOccluders(); return; }
   root.updateWorldMatrix(true, false);
-  toView.multiplyMatrices(camera.matrixWorldInverse, root.matrixWorld);
-  scale.setFromMatrixScale(root.matrixWorld);
-  const unit = (scale.x + scale.y + scale.z) / 3;
-  for (let axis = 0; axis < 3; axis++) {
-    direction.set(axis === 0 ? 1 : 0, axis === 1 ? 1 : 0, axis === 2 ? 1 : 0).transformDirection(toView);
-    cabinet[axis * 4] = direction.x; cabinet[axis * 4 + 1] = direction.y; cabinet[axis * 4 + 2] = direction.z;
+  const wasm = core();
+  if (frame?.core !== wasm) {
+    const pointer = wasm.alloc_f64(FRAME_INPUT + FRAME_OUTPUT);
+    if (!pointer) throw new Error('El módulo numérico no pudo reservar memoria. Recarga la página.');
+    if (frame) frame.core.free_f64(frame.pointer, FRAME_INPUT + FRAME_OUTPUT);
+    frame = { core:wasm, pointer };
   }
-  cabinet[3] = 1; cabinet[7] = description.inner * unit; cabinet[11] = description.front * unit;
-  point.copy(description.centre).applyMatrix4(toView);
-  cabinet[12] = point.x; cabinet[13] = point.y; cabinet[14] = point.z; cabinet[15] = description.solidSides ? 1 : 0;
-  cabinet[16] = description.half.x * unit; cabinet[17] = description.half.y * unit; cabinet[18] = description.half.z * unit;
-  cabinet[19] = description.through;
-  boards.fill(FAR);
-  description.boards.forEach((height, index) => { boards[index] = height * unit; });
+  const { centre, half, boards:heights } = description, input = new Float64Array(wasm.memory.buffer, frame.pointer, FRAME_INPUT);
+  input.set(camera.matrixWorldInverse.elements); input.set(root.matrixWorld.elements, 16);
+  input.set([centre.x, centre.y, centre.z, half.x, half.y, half.z, description.inner, description.front, description.solidSides ? 1 : 0, description.through,
+    Math.min(MAX_SHELF_BOARDS, heights.length)], 32);
+  for (let index = 0; index < MAX_SHELF_BOARDS && index < heights.length; index++) input[43 + index] = heights[index];
+  wasm.shelf_occluders_apply(frame.pointer, frame.pointer + FRAME_INPUT * 8);
+  const output = new Float64Array(wasm.memory.buffer, frame.pointer + FRAME_INPUT * 8, FRAME_OUTPUT);
+  cabinet.set(output.subarray(0, 20)); boards.set(output.subarray(20));
 }
 
 export function clearShelfOccluders() { cabinet[3] = 0; }

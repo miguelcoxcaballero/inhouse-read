@@ -7,7 +7,7 @@
 use std::{cell::{Cell,RefCell},rc::Rc};
 use wasm_bindgen::prelude::*;
 use js_sys::{Array,Map,Promise,RegExp,Set};
-use crate::host::*;
+use crate::cloud_host::*;
 
 type Guard=Closure<dyn FnMut(JsValue)->Result<JsValue,JsValue>>;
 
