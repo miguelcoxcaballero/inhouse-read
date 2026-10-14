@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import './helpers/rust-ui-ready.js'
 import {
   isFolderApiSupported, sanitizeFileName, resolveNonCollidingName, saveFileIntoFolder,
   readFileFromFolder, ensureFolderPermission

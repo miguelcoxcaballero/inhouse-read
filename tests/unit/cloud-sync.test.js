@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { LibraryStore } from '../../src/js/library-store.js'
+import './helpers/rust-ui-ready.js'
 import { Blob as NativeBlob, File as NativeFile } from 'node:buffer'
 
 vi.mock('../../src/js/drive-client.js', () => ({

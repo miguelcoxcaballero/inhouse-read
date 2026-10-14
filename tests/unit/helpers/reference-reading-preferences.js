@@ -1,5 +1,5 @@
 import { isNeuralVoiceId, neuralVoices } from '../../../src/js/readers/neural-voice/catalog.js'
-import { langBase } from '../../../src/js/readers/voice-catalog.js'
+import { langBase } from './reference-voice-catalog.js'
 
 export const READING_THEMES = {
   paper: { background:'#faf9f5', color:'#292821', scheme:'light' },

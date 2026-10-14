@@ -1,6 +1,8 @@
 // Fakes shared by the neural-voice unit tests: an AudioContext with a manual clock, a CacheStorage, a fetch with scripted
 // behaviour, and a synthesis client (the worker) the test drives by hand. Nothing here is a test.
 import { vi } from 'vitest'
+// The engine's decisions run in the Rust UI module, which the reader always has loaded before it builds an engine.
+import './helpers/rust-ui-engine.js'
 
 /** AudioContext whose clock only moves when advance() is called (with fake timers, so the player's timers fire too). */
 export function fakeAudioContext({ outputLatency = 0, state = 'running' } = {}) {

@@ -1,7 +1,9 @@
 import {readFileSync} from 'node:fs'
 import * as rustUI from '../../src/wasm/ui/inhouse_read_ui.js'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { normalizeNeuralVoice, normalizeVoices } from '../../src/js/readers/voice-catalog.js'
+import { normalizeNeuralVoice } from '../../src/js/readers/voice-catalog.js'
+// Device voices are not part of the product any more: their normaliser is the frozen original.
+import { normalizeVoices } from './helpers/reference-voice-catalog.js'
 import { languageOptions, orderLanguages, voiceOptions } from '../../src/js/readers/voice-menus.js'
 
 const system = list => normalizeVoices(list.map(([voiceURI, name, lang, quality = 400, extra = {}]) => ({ voiceURI, name, lang, quality, network:false, installed:true, ...extra })))
@@ -9,7 +11,9 @@ const neural = (piperId, lang, name, installed = false, quality = 'medium') => n
 
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
-beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
+rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
+// Module-level fixtures build voice records, which the Rust UI module makes: it is in before anything runs.
+runtime.ui=rustUI
 describe.each(['rust'])('voice option engine %s',engine=>{
 beforeEach(()=>{runtime.ui=engine==='rust'?rustUI:null})
 describe('language dropdown', () => {

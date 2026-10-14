@@ -4,12 +4,22 @@ mod abi;
 mod hebrew;
 #[cfg(feature = "voice")]
 mod duration_marks;
+// The synthesis worker's kernels (cleaning, tempo, boundaries, the per-chunk flow) live in the
+// voice core alone: the worker loads those few KB and not the app core.
+#[cfg(feature = "voice")]
+mod voice_math;
+#[cfg(feature = "voice")]
+mod pcm;
+#[cfg(feature = "voice")]
+mod speech_tempo;
+#[cfg(feature = "voice")]
+mod synth_flow;
+#[cfg(feature = "voice")]
+mod supertonic_text;
 #[cfg(feature = "app")]
 mod reader_preferences;
 #[cfg(feature = "app")]
 mod book_format;
-#[cfg(feature = "app")]
-mod speech_tempo;
 #[cfg(feature = "app")]
 mod font;
 #[cfg(feature = "app")]
@@ -69,8 +79,6 @@ mod pdf_rows;
 #[cfg(feature = "app")]
 mod pdf_order;
 #[cfg(feature = "app")]
-mod pcm;
-#[cfg(feature = "app")]
 mod book_surface;
 #[cfg(feature = "app")]
 mod relief;
@@ -129,3 +137,7 @@ mod lamp_kelvin;
 mod book_colors;
 #[cfg(feature="app")]
 mod frame_padding;
+#[cfg(feature="app")]
+mod shell_signature;
+#[cfg(feature="app")]
+mod file_name;

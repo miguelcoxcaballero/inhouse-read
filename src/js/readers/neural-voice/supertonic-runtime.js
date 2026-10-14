@@ -2,7 +2,9 @@
 // Copyright (c) 2025 Supertone Inc. See /licenses/supertonic-sdk-MIT.txt.
 // The model weights have the separate OpenRAIL-M licence.
 import { SUPERTONIC_LANGUAGES, SUPERTONIC_STYLES, SUPERTONIC_LEGACY_STYLES } from './supertonic-catalog.js';
-import { synthesisRate, speedUpSpeech } from './speech-tempo.js';
+import { synthesisRate, speedUpSpeech } from './synth-flow.js';
+import { getText, layout, putText, withArena } from './core-call.js';
+import { loadedRustVoiceCore } from '../../rust-voice-core.js';
 
 const cancelled = () => Object.assign(new Error('Lectura cancelada'),{name:'AbortError',code:'aborted'});
 import { yieldToMessages as yieldTask } from './task-yield.js';
@@ -18,28 +20,32 @@ export const SUPERTONIC_STEPS = 6;
 export function supertonicSeconds(predicted,rate) {
   return predicted/synthesisRate(rate);
 }
+/** `<es>text.</es>` for the model, or '' when nothing speakable is left. The cleanup is Rust (rust-core supertonic_text.rs, the voice
+ * core); the compatibility decomposition of Unicode is the browser's. */
 export function normalizeSupertonicText(text,lang) {
   if(!SUPERTONIC_LANGUAGES.includes(lang))throw new Error(`Idioma Supertonic no disponible: ${lang}`);
-  let value=String(text||'').normalize('NFKD')
-    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FAFF}\u{2600}-\u{27BF}\u{1F1E6}-\u{1F1FF}]+/gu,'')
-    .replace(/[–‑—]/g,'-').replace(/[_\[\]|\/#→←]/g,' ').replace(/[“”]/g,'"').replace(/[‘’´`]/g,"'").replace(/[♥☆♡©\\]/g,'')
-    .replaceAll('@',' at ').replaceAll('e.g.,','for example, ').replaceAll('i.e.,','that is, ')
-    .replace(/\s+([,.!?;:'])/g,'$1').replace(/"{2,}/g,'"').replace(/'{2,}/g,"'").replace(/\s+/g,' ').trim();
-  if(!value)return '';
-  if(!/[.!?;:,'"')\]}…。」』】〉》›»]$/.test(value))value+='.';
-  return `<${lang}>${value}</${lang}>`;
+  const value=String(text||'').normalize('NFKD'),core=loadedRustVoiceCore(),capacity=value.length*8+64;
+  const {at,cells}=layout(value.length*2,lang.length*2,capacity*2);
+  return withArena(core,cells,pointer=>{
+    putText(core,pointer+at[0],value);putText(core,pointer+at[1],lang);
+    const written=core.supertonic_normalize(pointer+at[0],value.length,pointer+at[1],lang.length,pointer+at[2],capacity);
+    if(written<0)throw new Error('Texto de voz inválido');
+    return getText(core,pointer+at[2],written);
+  });
 }
 
 /** Small chunks bound latent/audio memory. Upstream recommends <=300 chars
  * (120 for Korean/Japanese); the reader usually already supplies one sentence. */
 export function supertonicTextChunks(text,lang) {
-  const chars=Array.from(String(text||'').trim()),limit=['ko','ja'].includes(lang)?120:300,chunks=[];
-  for(let start=0;start<chars.length;) {
-    let end=Math.min(chars.length,start+limit);
-    if(end<chars.length)for(let i=end;i>start+limit/2;i--)if(/[\s.!?;。！？]/u.test(chars[i-1])){end=i;break;}
-    const chunk=chars.slice(start,end).join('').trim();if(chunk)chunks.push(chunk);start=end;
-  }
-  return chunks;
+  const value=String(text||''),core=loadedRustVoiceCore(),capacity=(value.length>>5)+4;
+  const {at,cells}=layout(value.length*2,capacity*8);
+  return withArena(core,cells,pointer=>{
+    putText(core,pointer+at[0],value);
+    const found=core.supertonic_chunks(pointer+at[0],value.length,['ko','ja'].includes(lang)?120:300,pointer+at[1],capacity);
+    if(found<0)throw new Error('Texto de voz inválido');
+    const ranges=new Uint32Array(core.memory.buffer,pointer+at[1],found*2);
+    return Array.from({length:found},(_,i)=>value.slice(ranges[i*2],ranges[i*2+1]));
+  });
 }
 
 /** ONNX Runtime is injected by the existing synthesis worker. Four sessions,

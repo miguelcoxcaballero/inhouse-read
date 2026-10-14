@@ -3,13 +3,11 @@
 // events. Only the small text/phoneme operations run in the page.
 import {createNativeOrt} from './native-ort.js'
 import {createPhonemizer} from './phonemizer.js'
-import {exposePiperDurations,phonemeMarks,durationMarks} from './piper-alignment.js'
+import {exposePiperDurations,phonemeMarks} from './piper-alignment.js'
 import {createHebrewPhonemizer} from './hebrew.js'
 import {createSupertonicRuntime} from './supertonic-runtime.js'
-import {prepareSpeech,silence,concat,pauseAfter,restScale,splitSegments,limitIds,lengthScaleFor,PAUSE_MS} from './pcm.js'
-import {loadRustCore} from '../../rust-core.js'
-import {loadRustVoiceCore} from '../../rust-voice-core.js'
-import {synthesisRate,speedUpSpeech} from './speech-tempo.js'
+import {silence,splitSegments,limitIds,lengthScaleFor,synthesisRate,finishPiper,finishSupertonic} from './synth-flow.js'
+import {requireRustVoiceCore} from '../../rust-voice-core.js'
 const failure=message=>Object.assign(new Error(message),{code:'init-failed'})
 export class NativeSynthClient {
   constructor({store,phonBase,env=globalThis,createOrt=createNativeOrt,createPhon=createPhonemizer}={}) {
@@ -21,8 +19,6 @@ export class NativeSynthClient {
   prepare(key) {
     if(!this.loading&&this.loaded===key)return Promise.resolve(this.config)
     if(this.loading?.key===key)return this.loading.promise
-    void loadRustCore() // optional; native inference and playback never wait for it
-    void loadRustVoiceCore()
     const generation=this.generation
     const promise=this.preparationChain.then(()=>this.#prepare(key,generation))
     this.preparationChain=promise.catch(()=>{})
@@ -32,6 +28,8 @@ export class NativeSynthClient {
   }
   async #prepare(key,generation) {
     const check=()=>{if(generation!==this.generation)throw failure('Voice released')}
+    // The Rust voice core (a few KB, no other implementation) loads while the model is read and uploaded.
+    const voiceCore=requireRustVoiceCore();voiceCore.catch(()=>{})
     check();await this.chain;check()
     if(this.loaded===key)return this.config
     await this.session?.release();await this.hebrew?.destroy();await this.supertonic?.dispose();check()
@@ -73,7 +71,7 @@ export class NativeSynthClient {
       if(failed){try{await session?.release()}catch{};throw failed.reason}
       check();this.session=session
     }
-    check();this.config=config;this.loaded=key;return config
+    await voiceCore;check();this.config=config;this.loaded=key;return config
   }
   synth(request,handlers) {
     const id=++this.seq,generation=this.generation
@@ -95,17 +93,17 @@ export class NativeSynthClient {
       const start=performance.now()
       const {pcm:raw,sampleRate,marks:timeline=[]}=await this.supertonic.synthesize(text,{lang,style,rate,marks,isActive:active})
       if(!active())return
-      if(!(raw instanceof Float32Array)||raw.some(n=>!Number.isFinite(n)))throw failure('Invalid audio')
-      const {pcm:speech,from}=prepareSpeech(raw,sampleRate,{timing:true})
-      const pcm=raw.length?concat([speech,silence(sampleRate,pauseAfter(text)*restScale(rate))]):silence(sampleRate,120)
-      handlers.onChunk({index:0,last:true,pcm,sampleRate,ms:performance.now()-start,
-        marks:timeline.map(mark=>({...mark,sample:Math.max(0,Math.min(speech.length-1,mark.sample-from))}))});return
+      if(!(raw instanceof Float32Array))throw failure('Invalid audio')
+      const done=finishSupertonic(raw,text,timeline,{sampleRate,rate})
+      if(!done)throw failure('Invalid audio') // a sample that is not a number
+      const pcm=raw.length?done.pcm:silence(sampleRate,120)
+      handlers.onChunk({index:0,last:true,pcm,sampleRate,ms:performance.now()-start,marks:done.marks});return
     }
     const phonemize=async value=>limitIds(config.phoneme_type==='hebrew'?await this.hebrew.phonemize(value):await this.phon.phonemize(value,config.espeak.voice),config.num_symbols)
     const ids=await phonemize(text)
     const points=this.durationOutput?await phonemeMarks(text,marks,ids,phonemize):[]
     if(!active())return
-    const segments=splitSegments(limitIds(ids,config.num_symbols)),sampleRate=config.audio.sample_rate
+    const segments=splitSegments(ids),sampleRate=config.audio.sample_rate
     handlers.onPlan?.(segments.length?segments.map(part=>part.length):[0])
     if(!segments.length){handlers.onChunk({index:0,last:true,pcm:silence(sampleRate,120),sampleRate,ms:0});return}
     for(let index=0;index<segments.length;index++) {
@@ -119,13 +117,9 @@ export class NativeSynthClient {
       for(const value of Object.values(out))value.dispose?.()
       for(const value of Object.values(feeds))value.dispose?.()
       if(!active())return
-      const {pcm:speech,from}=prepareSpeech(raw,sampleRate,{model:key,timing:true}),last=index===segments.length-1,rest=restScale(rate)
-      const timeline=durationMarks(points,durations,{base:segments.slice(0,index).reduce((n,p)=>n+p.length,0),count:part.length,
-        samples:raw.length,trim:from,lead:0,length:speech.length})
-      const fast=speedUpSpeech(speech,sampleRate,rate,timeline)
-      const lead=index?silence(sampleRate,PAUSE_MS.sentence*rest):new Float32Array()
-      const pcm=concat([lead,fast.pcm,last?silence(sampleRate,pauseAfter(text)*rest):new Float32Array()])
-      handlers.onChunk({index,last,pcm,sampleRate,ms:performance.now()-start,marks:fast.marks.map(mark=>({...mark,sample:mark.sample+lead.length}))})
+      const last=index===segments.length-1
+      const done=finishPiper(raw,durations,points,text,{sampleRate,model:key,rate,last,first:index===0,base:segments.slice(0,index).reduce((n,p)=>n+p.length,0),count:part.length})
+      handlers.onChunk({index,last,pcm:done.pcm,sampleRate,ms:performance.now()-start,marks:done.marks})
     }
   }
   dispose() {

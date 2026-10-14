@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import './helpers/rust-ui-ready.js'
 import { initAndroidFileImports } from '../../src/js/android-file-import.js'
 
 function inbox(bytes = new Uint8Array([37,80,68,70,45]), overrides = {}) {

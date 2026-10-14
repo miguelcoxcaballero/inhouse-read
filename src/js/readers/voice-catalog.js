@@ -1,28 +1,18 @@
-import {orderNeuralVoices} from './voice-order.js'
+import {readerUI} from './rust-ui-required.js'
 export {orderNeuralVoices,recommendedNeuralFor} from './voice-order.js'
-// Pure helpers that rank the voices the device already has (Android TextToSpeech through
-// window.InhouseSpeech, or the browser's speechSynthesis) and the on-device neural voices (Piper, see neural-voice/).
-// Nothing here calls a cloud TTS: "free and unlimited" means we only choose among on-device voices, preferring them
-// to online ones. Neural voices are ordinary voices flagged `neural`; one that is not downloaded yet has
-// `installed:false`, so it is listed for download but never chosen for speech.
+export {detectLanguage} from './language-detect.js'
+// What the reader knows about the on-device neural voices (Piper and Supertonic, see neural-voice/): language tags, the record of
+// a voice of the picker, which voice speaks a text, and the Spanish names of languages. The record, the choice of voice and the
+// names are Rust (rust-ui voice_catalog.rs); the tags stay here because they are read before the reader (and rust-ui) loads, when the
+// saved preferences are normalised. Nothing calls a cloud TTS: "free and unlimited" means we only choose among on-device voices.
+// The frozen JavaScript original, with the ranking of the device's own voices that the reader stopped using, is
+// tests/unit/helpers/reference-voice-catalog.js.
 
 const ISO3 = { spa:'es', eng:'en', fra:'fr', fre:'fr', deu:'de', ger:'de', ita:'it', por:'pt', cat:'ca', glg:'gl', nld:'nl', dut:'nl', rus:'ru', jpn:'ja', zho:'zh', chi:'zh', kor:'ko', pol:'pl', ukr:'uk', tur:'tr', swe:'sv', dan:'da', nob:'nb', nor:'nb', no:'nb', fin:'fi', ces:'cs', cze:'cs', ell:'el', gre:'el', hun:'hu', ron:'ro', rum:'ro', ara:'ar', vie:'vi', hin:'hi', heb:'he', tha:'th', iw:'he', bul:'bg', srp:'sr' }
-// Languages the curated list always tries to cover, in the order they appear after the book/device language.
-export const PRIORITY_LANGUAGES = ['es','en','fr','de','it','pt','ca']
-const MIN_RECOMMENDED = 240
-
-// Robotic/legacy engines and macOS novelty voices: demoted far below any normal voice.
-const ROBOTIC = /espeak|compact|legacy|robot|festival|flite|mbrola|\bpico\b|\bsam\b/i
-const NOVELTY = /\b(bad news|bahh|bells|boing|bubbles|cellos|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|albert|fred|junior|kathy|ralph|deranged|hysterical)\b/i
-const NEURAL = /neural|natural|wavenet|studio|premium|enhanced|siri|\bhq\b|high.?quality/i
-const MULTILINGUAL = /multilingual|multiling/i
-const GOOGLE_ID = /-x-[a-z0-9]{2,5}-(?:local|network)\b/i
 
 /** Same value as NEURAL_PREFIX in neural-voice/index.js (a test keeps them equal); repeated here so this file stays pure and the engine stays lazily loaded. */
 export const NEURAL_ID_PREFIX = 'piper:'
 export const isNeuralId = id => typeof id === 'string' && (id.startsWith(NEURAL_ID_PREFIX) || /^supertonic3:([FM][1-5]):[a-z]{2}$/.test(id))
-// Above any system voice (Android tops out near 650 with every marker), so an installed neural voice is the default pick.
-const NEURAL_SCORE = 900
 
 /**
  * The language a book itself declares (its metadata), or ''. reader.language falls back to the device's language, which says
@@ -44,181 +34,33 @@ export function normalizeLang(tag) {
 export const langBase = tag => normalizeLang(tag).split('-')[0]
 const langRegion = tag => normalizeLang(tag).split('-')[1] || ''
 
-const asList = value => Array.isArray(value) ? value.map(String) : typeof value === 'string' && value ? value.split(/[,\s]+/).filter(Boolean) : []
-
-/**
- * Accepts the native bridge shape ({voiceURI,name,lang,quality,latency,network,installed,features})
- * and SpeechSynthesisVoice ({voiceURI,name,lang,localService,default}); older bridges only sent
- * name/lang/voiceURI with "· online"/"· dispositivo" in the name, which is still understood.
- */
-export function normalizeVoice(raw) {
-  if (!raw || typeof raw !== 'object') return null
-  const id = String(raw.voiceURI ?? raw.id ?? raw.name ?? '')
-  const lang = normalizeLang(raw.lang)
-  if (!id || !lang) return null
-  const name = String(raw.name || id)
-  const features = asList(raw.features)
-  const tier = raw.quality == null || raw.quality === '' ? NaN : Number(raw.quality)
-  const quality = tier > 0 ? tier : null
-  const network = raw.network === true || raw.networkConnectionRequired === true || raw.localService === false
-    || (raw.network == null && raw.localService == null && (/(?:^|[\s·(])online\b/i.test(name) || /-network$/i.test(id)))
-  const installed = raw.installed !== false && !features.includes('notInstalled')
-  return { id, name, lang, base:langBase(lang), region:langRegion(lang), quality, latency:Number(raw.latency) || null, network, installed, features,
-    isDefault:raw.default === true, native:quality !== null, label:typeof raw.label === 'string' ? raw.label : '' }
-}
-export function normalizeVoices(list) {
-  const seen = new Set()
-  return (Array.isArray(list) ? list : Array.from(list || [])).map(normalizeVoice).filter(voice => voice && !seen.has(voice.id) && seen.add(voice.id))
-}
-
 /**
  * A catalogue entry of neural-voice/index.js ({id,lang,name,quality:'medium'|'high',sizeMB,speaker,recommended}) as a voice.
- * `installed` is a Set (or array) of the ids downloaded so far.
+ * `installed` is a Set (or array) of the ids downloaded so far. Null for anything that is not one of ours.
  */
-export function normalizeNeuralVoice(entry, installed = []) {
-  if (!entry || typeof entry !== 'object' || !isNeuralId(entry.id)) return null
-  // A shared multilingual model names the accent it speaks in `dialect`.
-  const lang = normalizeLang(entry.dialect || entry.lang)
-  if (!lang) return null
-  const have = installed instanceof Set ? installed : new Set(installed || [])
-  return { id:entry.id, name:String(entry.name || entry.piperId || entry.id), lang, base:langBase(lang), region:langRegion(lang), quality:null, latency:null, network:false,
-    installed:have.has(entry.id), features:[], isDefault:false, native:false, label:'',
-    neural:true, tier:entry.quality === 'high' ? 'high' : 'medium', sizeMB:Number(entry.sizeMB) || 0, speaker:Number(entry.speaker) || 0, recommended:entry.recommended === true,
-    sharedPack:entry.sharedPack === true, upgradeBytes:Number(entry.upgradeBytes)||0, modelKey:entry.modelKey || entry.piperId || entry.id, runtime:entry.runtime, licenseUrl:entry.licenseUrl, licenseName:entry.licenseName }
-}
-
-export const isNatural = voice => voice.neural === true || NEURAL.test(`${voice.id} ${voice.name}`)
-/** Higher is more natural. Quality tier first, then on-device over online, then name/id markers. */
-export function scoreVoice(voice) {
-  if (voice.neural) return NEURAL_SCORE + (voice.tier === 'high' ? 10 : 0) + (voice.recommended ? 5 : 0)
-  const text = `${voice.id} ${voice.name}`
-  let score = voice.quality ?? 300 // browsers do not report quality: assume "normal"
-  if (voice.network) score -= voice.quality === null ? 60 : 110 // needs a connection and can stall: an on-device voice wins even one Android tier lower (browsers report no tier and keep their online neural voices competitive)
-  if (ROBOTIC.test(text)) score -= 200
-  if (NOVELTY.test(text)) score -= 250
-  if (NEURAL.test(text)) score += 80
-  if (MULTILINGUAL.test(text)) score += 40
-  if (GOOGLE_ID.test(voice.id)) score += 20 // Google Speech Services ids: neural-quality voices
-  else if (/google/i.test(text)) score += 15
-  if (voice.isDefault) score += 5
-  return score
-}
-/** "High quality" for the download hint: Android's own tier >= HIGH, or a neural marker when no tier is known. */
-export const isHighQuality = voice => voice.neural ? true : voice.quality !== null ? voice.quality >= 400 && !ROBOTIC.test(`${voice.id} ${voice.name}`) : isNatural(voice) && !ROBOTIC.test(voice.name)
-
-const byScore = (a, b) => scoreVoice(b) - scoreVoice(a) || a.id.localeCompare(b.id)
-const usable = voices => voices.filter(voice => voice.installed)
-
-/** Voices that speak `lang`, best first; a matching region (pt-BR vs pt-PT) beats a better-scored other region. */
-export function rankedVoicesFor(voices, lang, deviceLang = '') {
-  const base = langBase(lang), region = langRegion(lang), deviceRegion = langBase(deviceLang) === base ? langRegion(deviceLang) : ''
-  const bonus = voice => (region && voice.region === region ? 150 : !region && deviceRegion && voice.region === deviceRegion ? 25 : 0)
-  return usable(voices).filter(voice => voice.base === base).sort((a, b) => scoreVoice(b) + bonus(b) - scoreVoice(a) - bonus(a) || a.id.localeCompare(b.id))
-}
-export const bestVoiceFor = (voices, lang, deviceLang = '') => rankedVoicesFor(voices, lang, deviceLang)[0] || null
-
-/** True when the best voice for this language is missing or below "high quality": time to offer a download. */
-export function needsBetterVoice(voices, lang, deviceLang = '') {
-  const best = bestVoiceFor(voices, lang, deviceLang)
-  return !best || !isHighQuality(best)
-}
-
-// Names are in Spanish because the UI is; Intl.DisplayNames covers the long tail.
-const LANGUAGES = { es:'Español', en:'Inglés', fr:'Francés', de:'Alemán', it:'Italiano', pt:'Portugués', ca:'Catalán', gl:'Gallego', eu:'Euskera', nl:'Neerlandés', ru:'Ruso', ja:'Japonés', zh:'Chino', ko:'Coreano', pl:'Polaco', uk:'Ucraniano', tr:'Turco', sv:'Sueco', da:'Danés', nb:'Noruego', fi:'Finés', cs:'Checo', el:'Griego', hu:'Húngaro', ro:'Rumano', ar:'Árabe', vi:'Vietnamita', hi:'Hindi', he:'Hebreo', th:'Tailandés' }
-const REGIONS = { ES:'España', US:'EE. UU.', GB:'Reino Unido', MX:'México', AR:'Argentina', CO:'Colombia', CL:'Chile', FR:'Francia', DE:'Alemania', IT:'Italia', PT:'Portugal', BR:'Brasil', CA:'Canadá', AU:'Australia', IN:'India', IE:'Irlanda', CH:'Suiza', AT:'Austria', BE:'Bélgica', CN:'China', JO:'Jordania', SA:'Arabia Saudí', UA:'Ucrania', RU:'Rusia', NL:'Países Bajos', PL:'Polonia', TR:'Turquía', SE:'Suecia', DK:'Dinamarca', NO:'Noruega', FI:'Finlandia', CZ:'Chequia', GR:'Grecia', HU:'Hungría', RO:'Rumanía', VN:'Vietnam' }
-const displayName = (code, type) => {
-  try { const value = new Intl.DisplayNames(['es'], { type }).of(code); return value && value !== code ? value : '' } catch { return '' }
-}
-const capitalize = text => text.charAt(0).toLocaleUpperCase('es') + text.slice(1)
-/** 'Español' for 'es-MX' (the language alone, without the region). */
-export function baseLanguageName(tag) {
-  const base = langBase(tag)
-  return base ? LANGUAGES[base] || capitalize(displayName(base, 'language') || base) : ''
-}
-/** 'México' for 'es-MX'; '' when the tag has no region. */
-export function regionName(tag) {
-  const region = langRegion(tag)
-  return region ? REGIONS[region] || displayName(region, 'region') || region : ''
-}
-export function languageName(tag) {
-  const name = baseLanguageName(tag), where = regionName(tag)
-  if (!name) return ''
-  return where ? `${name} (${where})` : name
-}
-/** The person/brand part of a browser voice name ("Microsoft Helena - Spanish (Spain)" -> "Helena"); empty for technical ids. */
-export function voiceTitle(voice) {
-  if (voice.native || /-x-|^[a-z]{2,3}[-_][a-z0-9]{2,4}\b/i.test(voice.name)) return ''
-  const title = voice.name.replace(/^(?:Microsoft|Google|Apple)\s+/i, '').split(/\s+-\s+/)[0].replace(/\(.*?\)/g, '').replace(/\b(?:Online|Natural)\b/gi, '').replace(/\s+/g, ' ').trim()
-  return title && !title.toLocaleLowerCase('es').startsWith((LANGUAGES[voice.base] || voice.base).toLocaleLowerCase('es')) ? title : ''
-}
-/** e.g. 'Español (España) · Alta calidad · sin conexión'. */
-export function voiceLabel(voice) {
-  if (voice.neural) return [languageName(voice.lang), voice.name].join(' · ')
-  const quality = voice.quality === null ? (isNatural(voice) ? 'Natural' : '') : voice.quality >= 400 ? 'Alta calidad' : voice.quality >= 300 ? 'Calidad normal' : 'Calidad básica'
-  return [languageName(voice.lang), voiceTitle(voice), quality, voice.network ? 'requiere internet' : 'sin conexión'].filter(Boolean).join(' · ')
-}
-
-/**
- * The neural voices in the order the picker lists them: the book's language first (its own region first, the recommended
- * voice first), then the device language, then es/en/fr/de/it/pt/ca, then the rest alphabetically. Installed or not.
- */
-
-/** The neural voice to offer first for a language (own region first, then the catalogue's recommended one); null when there is none. */
-
-
-/**
- * Groups for the picker: a curated 'Recomendadas (naturales)' (best 1-2 per language, book language first, then the
- * device language, then es/en/fr/de/it/pt/ca) and 'Todas las voces', both of system voices; `neural` lists the installed
- * neural voices apart (their own group, same order as the download list). Identical labels get "· voz N" so they can be told apart.
- */
-export function buildVoiceGroups(voices, { bookLang = '', deviceLang = '' } = {}) {
-  const everyone = usable(voices)
-  const all = everyone.filter(voice => !voice.neural)
-  const names = new Map(), count = new Map()
-  for (const voice of [...everyone].sort(byScore)) {
-    const label = voiceLabel(voice)
-    count.set(label, (count.get(label) || 0) + 1)
-    names.set(voice.id, count.get(label) > 1 ? `${label} · voz ${count.get(label)}` : label)
-  }
-  const entry = voice => ({ id:voice.id, lang:voice.lang, label:names.get(voice.id), voice })
-  const bookBase = langBase(bookLang), deviceBase = langBase(deviceLang)
-  const order = [...new Set([bookBase, deviceBase, ...PRIORITY_LANGUAGES].filter(Boolean))]
-  const recommended = []
-  for (const base of order) {
-    const ranked = rankedVoicesFor(all, base === bookBase ? bookLang : base === deviceBase ? deviceLang : base, deviceLang).filter(voice => scoreVoice(voice) >= MIN_RECOMMENDED)
-    if (!ranked.length) continue
-    // The second pick prefers another region (es-ES + es-MX) when it is close enough in quality to be worth offering.
-    const second = ranked.slice(1).find(voice => voice.region !== ranked[0].region && scoreVoice(voice) >= scoreVoice(ranked[0]) - 120)
-      || ranked.slice(1).find(voice => scoreVoice(voice) >= scoreVoice(ranked[0]) - 120)
-    recommended.push(...[ranked[0], second].filter(Boolean).map(entry))
-  }
-  const rank = voice => voice.base === bookBase ? 0 : voice.base === deviceBase ? 1 : 2
-  const everything = [...all].sort((a, b) => rank(a) - rank(b) || languageName(a.base).localeCompare(languageName(b.base), 'es') || byScore(a, b)).map(entry)
-  const neural = orderNeuralVoices(everyone, { bookLang, deviceLang }).map(entry)
-  return { recommended, all:everything, neural, labels:names }
-}
+export const normalizeNeuralVoice = (entry, installed = []) => readerUI().catalog_neural_voice(entry, installed, normalizeLang)
 
 /**
  * The voice and language for one utterance. An explicit choice always wins, except with 'Voz multilingüe' on and a
  * chunk in another language: then that language gets ITS best voice. Without an explicit choice the best natural
  * voice for the language is used. `voiceId` is '' when the system default should decide (no matching voice).
+ * The catalogue only holds records produced by normalizeNeuralVoice: Rust leaves anything else unanswered.
  */
-export function resolveVoice(voices, { voiceId = '', language = '', multilingual = false, deviceLang = '' } = {}) {
-  const list = Array.isArray(voices) ? voices : []
-  const chosen = voiceId && usable(list).find(voice => voice.id === voiceId)
-  if (chosen && (!multilingual || chosen.base === langBase(language))) return { voice:chosen, voiceId:chosen.id, language:chosen.lang }
-  // An id we cannot see in the list (old bridge, list not loaded yet) is still passed through when there is nothing to choose from.
-  if (voiceId && !chosen && !list.length && !multilingual) return { voice:null, voiceId, language }
-  const best = bestVoiceFor(list, language, deviceLang)
-  return best ? { voice:best, voiceId:best.id, language:best.lang } : { voice:null, voiceId:'', language }
+export function resolveVoice(voices, options) {
+  const answer = readerUI().catalog_resolve_voice(voices, options, normalizeLang, (a, b) => a.localeCompare(b))
+  if (answer === undefined) throw new TypeError('Unsupported neural voice record')
+  return answer
 }
 
-/** Reads the device's voices from the native bridge (preferred) or speechSynthesis; `env` is injectable for tests. */
-export function readSystemVoices(env = globalThis) {
-  try {
-    if (typeof env.InhouseSpeech?.speak === 'function') return typeof env.InhouseSpeech.getVoices === 'function' ? normalizeVoices(JSON.parse(env.InhouseSpeech.getVoices())) : []
-    return normalizeVoices(env.speechSynthesis?.getVoices?.() || [])
-  } catch { return [] }
+// Names are in Spanish because the UI is; Intl.DisplayNames covers the long tail (the table is in Rust).
+const hostName = (code, type) => {
+  let name = ''
+  try { const value = new Intl.DisplayNames(['es'], { type }).of(code); name = value && value !== code ? value : '' } catch { name = '' }
+  name ||= code
+  return type === 'language' ? name.charAt(0).toLocaleUpperCase('es') + name.slice(1) : name
 }
-
-export {detectLanguage} from './language-detect.js'
+/** 'Español' for 'es-MX' (the language alone, without the region). */
+export const baseLanguageName = tag => readerUI().catalog_base_language_name(langBase(tag), hostName)
+/** 'México' for 'es-MX'; '' when the tag has no region. */
+export const regionName = tag => readerUI().catalog_region_name(langRegion(tag), hostName)
+export const languageName = tag => readerUI().catalog_language_name(langBase(tag), langRegion(tag), hostName)

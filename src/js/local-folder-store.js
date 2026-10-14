@@ -16,6 +16,14 @@
 // un plugin de Capacitor a medida invocando Storage Access Framework, que no
 // está implementado (ver android/README.md).
 
+import { getRustCore, loadRustCore } from './rust-core.js'
+import { requireCore } from './core-tables.js'
+import { withCloudModule } from './cloud-native.js'
+
+// The names, the copy, the read-back and the permission are rust-ui/src/folder_store.rs and
+// rust-core/src/file_name.rs; the directory handle is stored here, in IndexedDB, and the picker is the browser's.
+const core = await requireCore(getRustCore, loadRustCore, 'sanitize_file_name')
+
 const DB_NAME = 'inhouse-read-folder'
 const DB_VERSION = 1
 const STORE = 'handles'
@@ -63,75 +71,38 @@ export async function chooseFolder() {
   return handle
 }
 
-/**
- * El permiso sobre un directorio persistido puede haber caducado (el
- * navegador lo revoca si no se usa en un tiempo, o el usuario lo revocó a
- * mano). Hay que volver a pedirlo explícitamente antes de leer/escribir.
- */
-export async function ensureFolderPermission(handle) {
-  if (!handle) return false
-  const opts = { mode: 'readwrite' }
-  if ((await handle.queryPermission(opts)) === 'granted') return true
-  try {
-    return (await handle.requestPermission(opts)) === 'granted'
-  } catch {
-    // requestPermission() exige un gesto de usuario reciente; si no lo hay
-    // (p.ej. se llama desde un evento no confiable) lanza en vez de negar.
-    return false
-  }
-}
+/** The permission of a stored directory may have lapsed: it is asked for again before reading or writing. */
+export const ensureFolderPermission = handle => withCloudModule(ui => ui.ensureFolderPermission(handle))
 
 /** Handle ya guardado y con permiso vigente, o pide elegir uno nuevo si hace falta. */
-export async function getOrChooseFolder() {
-  const saved = await getSavedFolderHandle()
-  if (saved && (await ensureFolderPermission(saved))) return saved
-  return chooseFolder()
-}
+export const getOrChooseFolder = () => withCloudModule(ui => ui.getOrChooseFolder(getSavedFolderHandle, chooseFolder))
 
+/** `String(name)` with every run of reserved characters replaced by one underscore, trimmed; "libro" when nothing is left. */
 export function sanitizeFileName(name) {
-  return String(name).replace(/[\\/:*?"<>|]+/g, '_').trim() || 'libro'
-}
-
-/**
- * Evita pisar un archivo distinto que ya exista con el mismo nombre en la
- * carpeta (dos libros distintos que se llamen igual). Si ya existe un
- * archivo con exactamente el mismo tamaño, se asume que es el mismo libro
- * y se reutiliza el nombre en vez de duplicarlo.
- */
-export async function resolveNonCollidingName(handle, name, size) {
-  let candidate = name
-  let attempt = 1
-  const dotIndex = name.lastIndexOf('.')
-  const base = dotIndex === -1 ? name : name.slice(0, dotIndex)
-  const ext = dotIndex === -1 ? '' : name.slice(dotIndex)
-
-  while (true) {
-    const existing = await handle.getFileHandle(candidate).catch(() => null)
-    if (!existing) return candidate
-    const existingFile = await existing.getFile()
-    if (existingFile.size === size) return candidate
-    attempt += 1
-    candidate = `${base}-${attempt}${ext}`
+  const text = String(name)
+  const words = Math.ceil(Math.max(text.length, 5) / 4)
+  const input = core.alloc_f64(words)
+  const output = core.alloc_f64(words)
+  try {
+    if (!input || !output) throw new RangeError('The file name is too long')
+    const units = new Uint16Array(core.memory.buffer, input, text.length)
+    for (let index = 0; index < text.length; index++) units[index] = text.charCodeAt(index)
+    const length = core.sanitize_file_name(input, text.length, output, words * 4)
+    const clean = new Uint16Array(core.memory.buffer, output, length)
+    let result = ''
+    for (let index = 0; index < length; index += 8192) result += String.fromCharCode(...clean.subarray(index, index + 8192))
+    return result
+  } finally {
+    if (input) core.free_f64(input, words)
+    if (output) core.free_f64(output, words)
   }
 }
+
+/** Evita pisar un archivo distinto con el mismo nombre; el mismo tamaño se toma por el mismo libro. */
+export const resolveNonCollidingName = (handle, name, size) => withCloudModule(ui => ui.resolveNonCollidingName(handle, name, size))
 
 /** Copia el archivo dentro de la carpeta elegida. Devuelve el nombre final usado. */
-export async function saveFileIntoFolder(handle, file) {
-  const safeName = sanitizeFileName(file.name)
-  const finalName = await resolveNonCollidingName(handle, safeName, file.size)
-  const fileHandle = await handle.getFileHandle(finalName, { create: true })
-  const writable = await fileHandle.createWritable()
-  await writable.write(file)
-  await writable.close()
-  return finalName
-}
+export const saveFileIntoFolder = (handle, file) => withCloudModule(ui => ui.saveFileIntoFolder(handle, file, sanitizeFileName))
 
 /** Lee de vuelta un libro ya guardado, o null si ya no está (borrado, etc.). */
-export async function readFileFromFolder(handle, name) {
-  try {
-    const fileHandle = await handle.getFileHandle(name)
-    return await fileHandle.getFile()
-  } catch {
-    return null
-  }
-}
+export const readFileFromFolder = (handle, name) => withCloudModule(ui => ui.readFileFromFolder(handle, name))

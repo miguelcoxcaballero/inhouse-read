@@ -4,14 +4,12 @@ import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {planSpeech} from './helpers/reference-speech-plan.js'
 import {makeCases,invoke} from '../helpers/speech-pipeline-cases.js'
-vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>null}))
-// The frozen JavaScript boundaries stand in for the production ones, so the oracle stays independent of Rust.
-vi.mock('../../src/js/readers/sentence-ends.js',async()=>({sentenceEnds:(await import('./helpers/reference-sentence-ends.js')).sentenceEnds}))
+// The oracle is the frozen JavaScript (reference-speech-plan.js over reference-speech-text.js), independent of Rust.
 const cases=makeCases(),blocks=Math.ceil(cases.length/100);let core,retained,capacity,held,expected
 beforeAll(()=>{core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})})
 function compare([raw,options,from]){
  const actual=invoke(ui,raw,options,from)
- if(actual===undefined){expect(Boolean(options?.skipHeaders&&options?.headerRanges===undefined&&!String(raw).isWellFormed())).toBe(true);return}
+ expect(actual).not.toBeUndefined()
  const expected=planSpeech(raw,options,from);expect(actual).toEqual(expected)
  for(let i=1;i<actual.length;i++)expect(actual[i].sentence===actual[i-1].sentence).toBe(expected[i].sentence===expected[i-1].sentence)
 }
@@ -30,4 +28,9 @@ for(let block=0;block<blocks;block++)it('keeps buffers, callbacks and prior plan
  for(const args of cases.slice(block*100,(block+1)*100))compare(args)
  expect(ui.ui_live_handles()).toBe(retained);expect(core.memory.buffer.byteLength).toBe(capacity);expect(held).toEqual(expected)
 })
-it('bounds the native input size',()=>expect(invoke(ui,'a'.repeat(1_000_001))).toBeUndefined())
+it('answers texts beyond a million code units, like the original',()=>{
+ const text=('Una frase de prueba, con una coma; y otra más. '.repeat(24000)).slice(0,1_050_001)
+ expect(text.length).toBeGreaterThan(1_000_000)
+ expect(invoke(ui,text,{footnotes:false},500_000)).toEqual(planSpeech(text,{footnotes:false},500_000))
+ expect(invoke(ui,'a'.repeat(1_000_001))).toEqual(planSpeech('a'.repeat(1_000_001)))
+})
