@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { webcrypto } from 'node:crypto'
+vi.mock('../../src/js/rust-ui.js', async () => (await import('./helpers/rust-ui-real.js')).rustUiMock())
 import { Blob as NativeBlob, File as NativeFile } from 'node:buffer'
 
 let drive
@@ -104,6 +105,9 @@ describe('autorización de Google Drive', () => {
   })
 
   it('cerrar sesión durante la renovación no vuelve a guardar credenciales', async () => {
+    // The Drive client is created by the first call into it (the Rust module loads then); the timing
+    // below concerns a renewal already running, as in the app, so the first call comes before it.
+    await drive.requestDriveAccess({ interactive: false }).catch(() => {})
     globalThis.InhouseNative = { openAuthUrl: vi.fn() }
     localStorage.setItem('ihr_drive_refresh_token_v1', 'old-refresh')
     let complete
