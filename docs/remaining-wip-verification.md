@@ -75,8 +75,8 @@ sin cambio de tamaño. Arranque (`boot.mjs`, 6 libros, CPU ×4, dpr 3; 8 pares a
 (±500 ms entre ejecuciones) y no se afirma ni mejora ni empeoramiento. No se mide la
 velocidad de la sincronización ni de Drive.
 
-Verificación (versión 1.7.243). Build correcto. Unitarias en 4 bloques: 117+117+117+114
-archivos, 1687+1297+1452+1738 = 6174 pruebas, todas pasan. E2E sobre mi build (puerto
+Verificación (versión 1.7.243). Build correcto. Unitarias en 4 bloques: 117+117+117+115
+archivos, 1687+1297+1438+1758 = 6180 pruebas, todas pasan. E2E sobre mi build (puerto
 propio, una especificación cada vez): rust-cloud-startup 1/1, drive-library-restore 2/2,
 offline-shell 2/2, android-file-import 4/4, download-android 3/3, profile-updates 1/1,
 smoke 13/13, critical-regressions 6/6, rust-ui-late-load 1/1 y rust-startup 1/5: los cuatro casos
