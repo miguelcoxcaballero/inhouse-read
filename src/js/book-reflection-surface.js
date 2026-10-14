@@ -1,4 +1,5 @@
 import { ShaderChunk, Vector2, Vector3 } from 'three';
+import { needRustShelf } from './rust-shelf.js';
 
 // A covered board is slightly uneven beneath its laminate. Keep that shape
 // entirely in the reflection layer: neither the printed image, Lambert light,
@@ -6,16 +7,11 @@ import { ShaderChunk, Vector2, Vector3 } from 'three';
 const CACHE_KEY = 'book-reflection-surface-v2';
 const installed = new WeakMap();
 
+// The profile (wave phases and amplitude of a book's identity) is computed in Rust
+// (rust-ui/src/book_reflection.rs, the `shelf` module the first shelf render awaits).
 function reflectionProfile(seed) {
-  const text = String(seed ?? '');
-  let state = 2166136261;
-  for (let i = 0; i < text.length; i++) state = Math.imul(state ^ text.charCodeAt(i), 16777619);
-  const random = () => {
-    state ^= state << 13; state ^= state >>> 17; state ^= state << 5;
-    return (state >>> 0) / 4294967296;
-  };
-  return { phase:new Vector3(random() * Math.PI * 2, random() * Math.PI * 2, random() * Math.PI * 2),
-    amplitude:.88 + random() * .24 };
+  const [x, y, z, amplitude] = needRustShelf().reflection_profile(seed);
+  return { phase:new Vector3(x, y, z), amplitude };
 }
 
 const declarations = /* glsl */`
