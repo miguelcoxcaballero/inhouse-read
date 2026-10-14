@@ -1,5 +1,10 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.242: estantería (gestos, zoom, luz, ajuste de baldas, papelera,
+retorno del libro y política del arrastre) en Rust, con un módulo `shelf` que carga
+la cabecera de la página. Inventario 11293 Rust/33595 JS, **25,16 %**; no mide
+funciones terminadas. Detalle en remaining-wip-verification.md.
+
 Entrega 1.7.241: estantería, medidas y colores de lomo desde Rust (tablas del
 catálogo, paleta, tipos de estantería, lámparas, plantas y macetas, disposición
 en baldas, secciones, marcapáginas, colores y marco). Inventario 8949 Rust/34509

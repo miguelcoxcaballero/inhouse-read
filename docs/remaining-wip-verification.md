@@ -1,3 +1,126 @@
+# 1.7.242 — estantería: gestos, zoom, luz, colocación, papelera y retorno en Rust
+
+Changelog: «Gestos, zoom, luz, colocación y retorno de la estantería en Rust».
+Unidad shelf-core. Un segundo módulo wasm, `shelf` (`rust-ui`, 118 KB), se
+descarga y compila con la cabecera de la página (`__inhouseShelfReady`) y el
+primer render de la estantería lo espera junto con el núcleo numérico
+(`performShelfRefresh`: `Promise.all([bakes, requireRustShelf, requireRustCore])`;
+ambos se piden en paralelo con las lecturas ya existentes, sin espera en serie
+nueva). Así los controladores táctiles de la estantería no tienen una ventana sin
+módulo: la primera versión (módulo `ui` cargado perezosamente) la tenía y
+`smoke` 13 («desliza justo tras el primer fotograma») fallaba; con el módulo
+temprano pasa 13/13. Una carga fallida es un error claro («El módulo de la
+estantería no se pudo cargar. Recarga la página.»), no un camino alternativo.
+
+Pasa a Rust (líneas no vacías JS antes → ahora):
+- `gestures.js` 266 → 21 (`RustSwipeNavigation`, `classifyTapZone/Swipe`: máquina
+  del puntero, pulsación larga, doble toque, resorte de página con `exp` y
+  `toFixed` del host), `shelf-zoom.js` 153 → 17, `shelf-view-gesture.js` 71 → 16.
+- `shelf-placement.js` 213 → 34 y el cuerpo de `shelf-model-layout.js` 58 → 21: el
+  núcleo es la única implementación (gemelos JS borrados; originales congelados
+  en `tests/unit/helpers/reference-*.js`). `shelf_model` es ahora total
+  (semántica de `Math.min/max`, NaN y ceros con signo; una balda que no es un
+  número de fila lanza el mismo `TypeError`); el puente ya no rechaza geometría
+  degenerada (altura 0, NaN) como hacía antes para dejarla al gemelo JS.
+- `shelf-lighting.js` 232 → 151 (ajuste de la ventana de sombra, transporte por
+  similitud, frustum: `shelf_light_*`, con el estado oculto de la matriz `view`),
+  `shelf-pixel-origin.js`, `native-canvas-resize.js` 70 → 9,
+  `native-renderer-size.js`, `native-renderer-presentation.js` 112 → 58
+  (propiedad del lienzo: `NativeLease`; `registerCanvasSnapshot` queda en JS porque
+  sustituye métodos del prototipo que necesitan su propio `this`).
+- `shelf-trash.js` 195 → 169 (vuelo del libro con el `sin` del host, recubrimiento
+  de polvo 64×64, normales inclinadas), `shelf-light-occlusion.js` (descripción del
+  mueble y uniformes por render en el núcleo, `toFixed(3)` exacto en `jsmath.rs`),
+  `bookshelf-return.js` 92 → 43 (claves del caso, caché de la vista en espera, matriz
+  de la balda y pose proyectada con `asin/atan2` del host), `animation-frame-fence.js`
+  30 → 9, `shelf-placement-preview.js` 30 → 14 (política del arrastre), tabla de
+  ángulos de la sombra de contacto.
+- Total de la unidad: 2450 → 1537 líneas JS; +2312 de Rust (inventario tras fusionar con
+  main 1.7.241: 11293 Rust / 33595 JS, **25,16 %**; main estaba en 20,59 %).
+
+Se queda en JS, con motivo: `shelf-placement-wasm.js` (orden y número de lecturas de
+metadatos del anfitrión, observable con accesores, e hidratación de los objetos de
+salida), `shelf-boot.js` (lectura temprana del almacén), `native-room-cache.js` y
+`gpu-programs.js` (objetos three/GL; cada validación lee estado del renderer en un
+orden que fijan diez suites), cadenas GLSL de `shelf-lighting.js` y
+`shelf-light-occlusion.js`, geometría three de `shelf-trash.js`,
+`shelf-renderer-size.js` (paso de 8 líneas).
+
+Hallazgo que cambió el diseño: un `Closure::forget` de wasm-bindgen conserva un
+asa JS por cierre (medido: 4 asas por caché, ~23 por lease) y sujeta todo lo que el
+cierre captura; con callbacks que alcanzan a su propio dueño (un lease cuya
+`capture` cierra sobre la vista que guarda el lease) eso es un ciclo que el
+recolector no ve. Por eso `NativeLease` no retiene nada del anfitrión (el lease
+JS conserva renderer, lienzo y callbacks y los pasa en cada llamada) y
+`BookReturnCache` es una clase exportada cuyas reacciones de promesa viven en el
+envoltorio JS. Las pruebas de fuga recogen basura de verdad (`tests/unit/helpers/collect.js`
+pide `gc` a V8) y exigen volver a la línea base de asas.
+
+Pruebas nuevas (diferenciales contra el original congelado, corpus grandes y
+límites): `gestures-wasm`, `shelf-zoom-wasm`, `shelf-view-gesture-wasm`,
+`shelf-lighting-wasm`, `shelf-pixel-origin-wasm`, `native-resize-wasm`,
+`native-presentation-wasm` (1500 secuencias de lease, +fuga), `shelf-trash-wasm`
+(60000 vuelos, geometría completa de la papelera, normales con NaN/Inf),
+`shelf-light-occlusion-wasm` (20000 mueble/cámaras y 20000 descripciones),
+`bookshelf-return-wasm` (30000 claves, 700 guiones del caché con microtareas
+idénticas, 30000 poses con escala negativa y frontera de gimbal),
+`animation-frame-fence-wasm` (6000 contextos que fallan), `shelf-placement-preview-wasm`
+(8000 guiones con eliminación reentrante), `occlusion-table-wasm`, y en
+`shelf-model-wasm` 6000 gabinetes degenerados. Pruebas existentes modificadas, sin
+relajar aserciones: `bookshelf-placement-preview-ui` (el movimiento directo ya
+usa el núcleo: 2 llamadas por movimiento antes del arranque de la sesión, 1 después),
+16 suites que reinician módulos reciben mocks del módulo de estantería y del núcleo
+reales, `shelf-model-wasm` (las pruebas «declina…» pasan a comparar con el original
+o a lanzar), los e2e `rust-shelf-placement-core` (la API pública ya es el núcleo:
+`publicCalls > 0`) y `rust-shelf-placement-session` (recuentos nuevos), y `setup.js`
+carga el módulo y el núcleo reales. Se añadieron límites de 120 s a los corpus pesados.
+
+Medidas (no son de teléfono). Tamaños en bytes, mi rama antes de fusionar frente a
+main 1.7.240 compilado en la misma máquina: núcleo 380 590 → 423 138 (+42 548), UI
+wasm 981 963 → 1 024 750 (+42 787: gestos del lector y `host.rs`), módulo nuevo
+`shelf` 117 972 (44 130 gzip; su pegamento JS 59 119 sin comprimir), principal
+689 197 → 690 996. Tras fusionar 1.7.241: núcleo 484 708, decor 149 481, UI 1 020 297,
+shelf 117 972, principal 677 199. Arranque (13 pares alternos base/mío, CPU ×4, dpr 3,
+6 libros, `boot.mjs`): diferencia pareada mediana +10,5 ms en `shelfContainer`,
++11,4 ms en el primer render de escena, −4 ms en LCP; más lento en 8 de 13 pares,
+rango −945…+509 ms: no se detecta cambio y no se afirma ni mejora ni empeoramiento
+(las medianas sin emparejar de las 13 ejecuciones sí daban +250 ms, que desaparecen
+al emparejar: el ruido de la máquina compartida es de ±500 ms). No se mide la velocidad
+de gestos, luz ni papelera.
+
+Verificación (tras fusionar main 1.7.241; versión 1.7.242). Build correcto. Unitarias
+en 4 bloques: 114+114+114+113 archivos, 1676+1268+1430+1769 = 6143 pruebas; pasan
+todas salvo 2 que se quedan en el límite de 5 s: `cover-mask-coverage` («frees failed
+counted jobs…») y `foliage-projection-wasm` («writes every decimal…», de otra unidad).
+No es nuevo: medidas alternas con y sin mis precargas de `setup.js` y en el
+checkout base dan 4,6–5,8 s en las tres variantes (medianas 5,0 / 5,1 / 4,9 s), y en
+ejecuciones previas `reader-location-wasm` también supera los 5 s en el base. No se ha
+subido ningún límite. E2E sobre mi build (puerto propio): smoke 13/13 (3 de 4 ejecuciones
+completas; en la restante «aleja y gira…» no entró en `is-closing-reader` durante
+90 s con la máquina cargada y aislada pasa en 1,5 min), shelf-placement 2/2 (una vez
+1/2 por el límite de 120 s del primer caso, que aislado pasa en 2,1 min),
+bookshelf-polish 9/9 (en una ejecución con carga, 2 fallos por el límite de 90 s que
+aislados pasan en 47 s), shelf-zoom 2/2, mobile-shelf-viewport 3/3,
+shelf-motion-performance 1/1, shelf-types 2/2, bookshelf-font-readiness 1/1,
+shelf-light-effect 1/1, rust-shelf-refresh 2/2, rust-shelf-occlusion 1/1,
+rust-shelf-occlusion-production 2/2, shelf-placement-rust-integration 1/1,
+rust-shelf-placement-core 15/15 y rust-shelf-placement-session 25/25 (retargeteados),
+shelf-trash entre 3/6 y 5/6 según la carga: alterné tres rondas con main 1.7.241 sobre
+los mismos tres casos («papelera 3D…», «retirar un libro…», «la estantería larga…»):
+main 2/3, 0/3 y 3/3; mío 2/3, 3/3 y 3/3. Fallan a ambos lados; en dos diagnósticos
+de mi build el último fotograma registrado es el primero que dispara el `toDataURL`
+del observador de la propia prueba, y no se ha averiguado la causa. Sin relación con esta unidad y ya presentes en main:
+`bookshelf-resource-reuse` «el lector no repinta la estantería oculta…» (falla también
+en 1.7.240) y `rust-physical-layout` (`memory.live` 128 B ≠ 0; falla igual en main
+1.7.241, por una asignación persistente del código de la otra unidad).
+
+Límites: máximo de 131072 objetos colocados y 131072 filas/entradas en el modelo de
+cabinas (antes 8192/3000 para el camino Rust y sin límite en el gemelo JS); un `x` que
+no es un número en una entrada del modelo lanza (el original concatenaba cadenas);
+una promesa de mejora de la vista que nunca responde conserva su entrada hasta que
+el caché se libera; la política del arrastre y el caché guardan objetos del
+anfitrión hasta `dispose`/recolección.
+
 # 1.7.241 — estantería, medidas y colores desde Rust
 
 Changelog: «Estantería, medidas y colores de lomo desde Rust».
