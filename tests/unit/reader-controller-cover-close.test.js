@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({ cover:vi.fn() }));
 vi.mock('../../src/js/readers/pdf-reader.js', () => ({ PdfReader:class {

@@ -355,7 +355,7 @@ pub fn pdf_source_activate(s: &JsValue, q: &JsValue) -> Result<JsValue, JsValue>
     let state = get(s, "renderState");
     cancel_render(&state)?;
     release_original(&state)?;
-    invoke(s, "clearPDFReflow", &[&get(s, "reflow")])?;
+    crate::pdf_reflow::clear(&get(s, "reflow"))?;
     set(s, "renderToken", &(num(&get(s, "renderToken")) + 1.0).into())?;
     let old = get(s, "canvas");
     method(&get(s, "pageWrap"), "replaceWith", &[&get(&staged, "pageWrap")])?;

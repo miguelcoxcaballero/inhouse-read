@@ -26,7 +26,8 @@ import { registerPageRaster } from '../page-raster.js'
 import { encodePdfCover } from './cover-encode.js'
 import { mapTextLayer, mapTextNodes } from './speech-map.js'
 import { speechHold } from './speech-hold.js'
-import { clearPDFReflow, pdfImageRects, preparePDFReflow } from './pdf-reflow.js'
+import { pdfPlaceFigures } from './pdf-figures-wasm.js'
+import { pdfImageRects } from './pdf-reflow.js'
 import { extractPDFText, mapPDFTextLayer } from './pdf-text.js'
 import { readerUI } from './rust-ui-required.js'
 
@@ -63,7 +64,7 @@ function detach(s, source, pdf, isActive) {
 const kit = {
   pdfjs:pdfjsLib, get TextLayer() { return TextLayer }, measurePDFBookLength, normalizeReadingPreferences, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES,
   hasUntrackedPDFImages, paintPDFTheme, renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage, prepareSnapshotPaperTones, sharePaperTone,
-  registerPageRaster, encodePdfCover, mapTextLayer, mapTextNodes, clearPDFReflow, pdfImageRects, preparePDFReflow, extractPDFText, mapPDFTextLayer,
+  registerPageRaster, encodePdfCover, mapTextLayer, mapTextNodes, pdfPlaceFigures, pdfImageRects, extractPDFText, mapPDFTextLayer,
   lengthOptions:(s, pdf) => ({ isActive:() => s.doc === pdf }), makeSource, stage, detach
 }
 

@@ -393,7 +393,7 @@ pub(crate) fn invalidate_staged(s: &JsValue) -> Result<(), JsValue> {
     set(&canvas, "height", &0.into())?;
     set(&canvas, "width", &0.into())?;
     method(&get(&staged, "pageWrap"), "replaceChildren", &[])?;
-    invoke(s, "clearPDFReflow", &[&get(&staged, "reflow")])?;
+    crate::pdf_reflow::clear(&get(&staged, "reflow"))?;
     Ok(())
 }
 
@@ -471,8 +471,8 @@ async fn draw_text(s: &JsValue, page: &JsValue, state: &JsValue, valid: &Valid, 
                 rects = Array::of1(&plain(&[("x0", 0.into()), ("y0", 0.into()), ("x1", get(&source, "width")), ("y1", get(&source, "height"))])?).into();
             }
             let isolated = validity(s, valid);
-            let prepared = invoke(s, "preparePDFReflow", &[&reflow, &get(state, "textLayout"), &source, &rects, &viewport, isolated.as_ref()])?;
-            Ok(truthy(&settled(prepared).await?))
+            let prepared = crate::pdf_reflow::reflow_prepare(reflow.clone(), get(state, "textLayout"), source.clone(), rects, viewport.clone(), isolated.as_ref().clone(), dep(s, "pdfPlaceFigures"));
+            Ok(truthy(&settled(prepared.into()).await?))
         }.await;
         let outcome = match attempt {
             Err(error) => match live(s, valid) { Ok(true) if get(&error, "name") != "RenderingCancelledException" => Err(error), Ok(_) => Ok(false), Err(other) => Err(other) },
@@ -483,8 +483,8 @@ async fn draw_text(s: &JsValue, page: &JsValue, state: &JsValue, valid: &Valid, 
         if !outcome? { return Ok(false); }
     } else {
         let isolated = validity(s, valid);
-        let prepared = invoke(s, "preparePDFReflow", &[&reflow, &get(state, "textLayout"), &JsValue::UNDEFINED, &Array::new().into(), &JsValue::UNDEFINED, isolated.as_ref()])?;
-        if !truthy(&settled(prepared).await?) { return Ok(false); }
+        let prepared = crate::pdf_reflow::reflow_prepare(reflow.clone(), get(state, "textLayout"), JsValue::UNDEFINED, Array::new().into(), JsValue::UNDEFINED, isolated.as_ref().clone(), dep(s, "pdfPlaceFigures"));
+        if !truthy(&settled(prepared.into()).await?) { return Ok(false); }
     }
     set(state, "zoomed", &JsValue::FALSE)?;
     set(state, "layoutWidth", &container_width(s)?.into())?;
@@ -564,7 +564,7 @@ async fn draw_canvas(s: &JsValue, page: &JsValue, state: &JsValue, valid: &Valid
         return Err(error);
     }
     if !live(s, valid)? { return Ok(false); }
-    invoke(s, "clearPDFReflow", &[&reflow])?;
+    crate::pdf_reflow::clear(&reflow)?;
     Ok(true)
 }
 
@@ -962,7 +962,7 @@ pub fn pdf_close(s: &JsValue) -> Result<(), JsValue> {
     let state = get(s, "renderState");
     cancel_render(&state)?;
     release_original(&state)?;
-    if truthy(&get(s, "reflow")) { invoke(s, "clearPDFReflow", &[&get(s, "reflow")])?; }
+    if truthy(&get(s, "reflow")) { crate::pdf_reflow::clear(&get(s, "reflow"))?; }
     set(s, "renderState", &JsValue::NULL)?;
     set(s, "renderRequest", &JsValue::NULL)?;
     call(&get(s, "detachGestures"), "detachGestures", &[])?;

@@ -59,6 +59,8 @@ mod promises;
 mod foliate_reader;
 mod pdf_reader;
 mod pdf_speech;
+mod reader_controller;
+mod pdf_reflow;
 use std::{cell::{Cell, RefCell}, rc::{Rc, Weak}};
 use wasm_bindgen::{prelude::*, JsCast};
 use js_sys::{Array, Function, Reflect};

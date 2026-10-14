@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest'
 import {pdfImageRects,preparePDFReflow} from '../../src/js/readers/pdf-reflow.js'
 
