@@ -12,6 +12,7 @@ const configure=catalog=>{fixture.catalog=catalog}
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 afterEach(()=>{fixture.ui=null;fixture.catalog=()=>[];vi.unstubAllGlobals()})
 function setup(native,trial){
+ fixture.ui=ui // the catalogue's own voice records and choice of voice are Rust too
  const host=new LegacyVoiceSelection(),events=[]
  const voices=[['es-ES','davefx'],['en-US','lessac'],['en-GB','alba'],['fr-FR','siwis']].map(([lang,name],i)=>({id:'piper:'+name,name,lang,base:lang.split('-')[0],region:lang.split('-')[1],installed:trial%5!==i,neural:true,tier:'medium',recommended:true}))
  const device=()=>{events.push(['device']);return trial%2?'en-US':''}

@@ -30,7 +30,9 @@ const SPANISH = 'Los niños salieron a jugar con una pelota en el parque.'
 const runtime=vi.hoisted(()=>({ui:null}));let orders=0,recommendations=0
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 const observedUI={...rustUI,voice_order:(...args)=>{orders++;return rustUI.voice_order(...args)},voice_recommended:(...args)=>{recommendations++;return rustUI.voice_recommended(...args)}}
-beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
+rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
+// Module-level fixtures build voice records, which the Rust UI module makes: it is in before anything runs.
+runtime.ui=observedUI
 afterAll(()=>{expect(orders).toBeGreaterThan(0);expect(recommendations).toBeGreaterThan(0)})
 describe.each(['rust'])('catalogue ordering through %s',engine=>{
 beforeEach(()=>{runtime.ui=engine==='rust'?observedUI:null})

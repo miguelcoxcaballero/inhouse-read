@@ -18,6 +18,7 @@ mod speech_fragments_core;
 mod speech_plan;
 mod sentence_ends;
 mod voice_order;
+mod voice_catalog;
 mod picker_owned;
 mod language_detect;
 mod language_data;
