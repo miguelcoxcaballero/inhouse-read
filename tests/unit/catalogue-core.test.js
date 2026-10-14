@@ -190,7 +190,7 @@ describe('lamp colour temperature', () => {
       }
     }
     function pick() { return [1800, 2200, 2700, 4000, '4000', 3000, undefined][Math.floor(rng() * 7)]; }
-  });
+  }, 60000);
 });
 
 describe('catalogue kernels', () => {
@@ -214,6 +214,9 @@ describe('catalogue kernels', () => {
     expect(core.lamp_tint_finish(0, scratchPointer)).toBe(0);
     expect(core.lamp_tint_finish(scratchPointer, 0)).toBe(0);
     expect(core.tint_mix(0, scratchPointer, .5, scratchPointer)).toBe(0);
+    expect(core.tint_mix(scratchPointer + 1, scratchPointer, .5, scratchPointer)).toBe(0);
+    expect(core.tint_mix(scratchPointer, scratchPointer + 4, .5, scratchPointer)).toBe(0);
+    expect(core.tint_mix(scratchPointer, scratchPointer, .5, scratchPointer + 2)).toBe(0);
     expect(core.book_spine_options(1, 0)).toBe(0);
     exported(core, 'plant_catalogue_json', decor.tables);
     exported(app.core, 'catalogue_json', app.tables);

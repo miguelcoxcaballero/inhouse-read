@@ -87,7 +87,7 @@ pub extern "C" fn tint_moment(now: f64, started: f64, duration: f64) -> f64 {
 /// Three f64 values behind each pointer, `out` writable (it may alias `from`).
 #[no_mangle]
 pub unsafe extern "C" fn tint_mix(from: *const f64, to: *const f64, amount: f64, out: *mut f64) -> u32 {
-    if from.is_null() || to.is_null() || out.is_null() { return 0; }
+    if from.is_null() || to.is_null() || out.is_null() || (from as usize) % 8 != 0 || (to as usize) % 8 != 0 || (out as usize) % 8 != 0 { return 0; }
     for channel in 0..3 {
         let (a, b) = (*from.add(channel), *to.add(channel));
         *out.add(channel) = a + (b - a) * amount;

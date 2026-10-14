@@ -140,6 +140,7 @@ export function layoutShelves(books, options = {}, preparedStyles) {
   const variants = cfg.plantVariants;
   const widthOf = variant => cfg.plantWidthFor?.(variant) ?? cfg.plantWidth;
   const keys = variants.map(variant => variants.indexOf(variant));
+  const widths = variants.map(widthOf);
   const absent = variants.length === 0 || variants.length > 1 && new Set(keys).size === 1 ? widthOf(undefined) : cfg.plantWidth;
   const seeds = styles.map(style => String(style.seed));
   const total = seeds.reduce((sum, seed) => sum + seed.length, 0);
@@ -148,7 +149,7 @@ export function layoutShelves(books, options = {}, preparedStyles) {
     (pointer, at) => {
       f64View(pointer, at[0], 9).set([cfg.shelfWidth, cfg.padding, cfg.gap, cfg.plantEvery, cfg.plantWidth, cfg.maxTailPlants,
         cfg.tiltThreshold, cfg.maxTilt, absent]);
-      f64View(pointer, at[1], variants.length).set(variants.map(widthOf));
+      f64View(pointer, at[1], variants.length).set(widths);
       f64View(pointer, at[2], variants.length).set(keys);
       f64View(pointer, at[3], count).set(styles.map(style => style.width));
       f64View(pointer, at[4], count).set(requested);

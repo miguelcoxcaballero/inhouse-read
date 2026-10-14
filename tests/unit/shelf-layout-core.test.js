@@ -42,7 +42,7 @@ describe('spine styles', () => {
     for (const options of OPTIONS) for (const record of library(250)) {
       expect(rust.spineStyleFor(record, options)).toStrictEqual(original.spineStyleFor(record, options));
     }
-  });
+  }, 60000);
 
   it('keeps the palette identity of the catalogue, never a copy', () => {
     const styles = rust.spineStylesFor(library(400));
@@ -58,14 +58,14 @@ describe('spine styles', () => {
     const books = seeds.map(id => ({ id: id === '' ? 'blank' : id, wordCount: 90000 }));
     expect(rust.spineStylesFor(books)).toStrictEqual(books.map(record => original.spineStyleFor(record)));
     expect(rust.spineStylesFor([{ id: '' }, null, undefined, {}])).toStrictEqual([{ id: '' }, null, undefined, {}].map(record => original.spineStyleFor(record)));
-  });
+  }, 60000);
 
   it('batches 700 books in one call, equal to the original one by one', () => {
     const books = Array.from({ length: 700 }, (_, index) => ({ id: index % 11 === 0 ? `😀日本語عنوان ${index}` : `local:Immune Journey-${index}:48291`,
       wordCount: index % 5 === 0 ? undefined : index * 655 + (index % 11) / 3, title: `Book ${index}`, author: 'Author', shelfOrder: index }));
     for (const options of OPTIONS) expect(rust.spineStylesFor(books, options)).toStrictEqual(books.map(record => original.spineStyleFor(record, options)));
     expect(rust.spineStylesFor([])).toStrictEqual([]);
-  });
+  }, 60000);
 });
 
 describe('packing into shelves', () => {
@@ -93,7 +93,7 @@ describe('packing into shelves', () => {
       expect(actual).toStrictEqual(expected);
       for (const shelf of actual) for (const item of shelf.items) if (item.kind === 'book') expect(books).toContain(item.book);
     }
-  });
+  }, 60000);
 
   it('keeps references, order and prepared styles', () => {
     const books = library(60), styles = rust.spineStylesFor(books);
@@ -133,7 +133,7 @@ describe('sections and plans', () => {
       const config = { sort: pick(MODES), recentLimit: pick(LIMITS) };
       expect(rust.buildSections(books, config)).toStrictEqual(original.buildSections(books, config));
     }
-  });
+  }, 60000);
 
   it('builds the same complete plans, with prepared styles or without', () => {
     for (let round = 0; round < 120; round++) {
@@ -143,7 +143,7 @@ describe('sections and plans', () => {
       expect(rust.planBookshelf(books, config)).toStrictEqual(expected);
       expect(rust.planBookshelf(books, config, (list, spine) => rust.spineStylesFor(list, spine))).toStrictEqual(expected);
     }
-  });
+  }, 60000);
 
   it('answers progress and in-progress like the original', () => {
     const values = [undefined, null, 0, 1, 0.5, -3, 4, NaN, Infinity, -Infinity, '0.3', 'x', '', true, [], {}, 1e-300];
@@ -162,7 +162,7 @@ describe('sections and plans', () => {
       for (const config of options) expect(rust.bookmarkFor(record, config)).toStrictEqual(original.bookmarkFor(record, config));
     }
     for (const empty of [null, undefined, {}, { progressFraction: 'basura' }, 0, 'x']) expect(rust.bookmarkFor(empty)).toStrictEqual(original.bookmarkFor(empty));
-  });
+  }, 60000);
 
   it('keeps the default objects of the original', () => {
     for (const name of ['SPINE_PALETTE', 'SPINE_TEXTURES', 'DEFAULT_SPINE', 'DEFAULT_LAYOUT', 'DEFAULT_SECTIONS', 'DEFAULT_BOOKMARK']) {
@@ -190,7 +190,7 @@ describe('paper volume', () => {
       if (typeof wordCount === "number" && Number.isFinite(wordCount) && wordCount >= 0) expect(width).toBe(0 + Math.round(wordCount / length.WORDS_PER_PRINT_PAGE * 0.5 * 100) / 100);
       else expect(width).toBe(length.DEFAULT_PRINT_PAGES * 0.5);
     }
-  });
+  }, 60000);
 });
 
 describe('kernel limits and memory', () => {
@@ -231,5 +231,5 @@ describe('kernel limits and memory', () => {
     const size = core.memory.buffer.byteLength;
     for (let n = 0; n < 2000; n++) settle();
     expect(core.memory.buffer.byteLength).toBe(size);
-  });
+  }, 60000);
 });

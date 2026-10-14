@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core}));
+vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core??(await globalThis.__inhouseRustReady).exports}));
 import {paintCloth,seededRandom} from '../../src/js/spine-surface.js';
 import {rustBookClothPlan} from '../../src/js/book-surface-wasm.js';
 import {paintCloth as reference,seededRandom as referenceRandom} from './helpers/reference-book-cloth.js';
