@@ -11,6 +11,9 @@ extern "C"{
  #[wasm_bindgen(js_name=Number)]fn to_number(value:&JsValue)->f64;
  /// `Object(value)`: the wrapper object of a primitive.
  #[wasm_bindgen(js_name=Object)]fn box_primitive(value:&JsValue)->JsValue;
+ /// `String(value)`.
+ #[wasm_bindgen(js_name=String)]fn string_of(value:&JsValue)->JsValue;
+ #[wasm_bindgen(js_name=parseFloat)]fn parse_float_of(value:&JsValue)->f64;
 }
 
 /// Primitives have properties too (`"x".length`); Reflect.get wants an object.
@@ -78,7 +81,17 @@ pub fn jmin(a:f64,b:f64)->f64{if a.is_nan()||b.is_nan(){f64::NAN}else if a==0.0&
 pub fn jsign(a:f64)->f64{if a.is_nan()||a==0.0{a}else if a>0.0{1.0}else{-1.0}}
 /// `Math.max(lo, Math.min(hi, value))`, the clamp every gesture used.
 pub fn clamp(value:f64,lo:f64,hi:f64)->f64{jmax(lo,jmin(hi,value))}
+/// `String(value)` as a value, with the engine's own conversion.
+pub fn text_value(value:&JsValue)->JsValue{string_of(value)}
+/// `String(value)` as Rust text.
+pub fn text_of(value:&JsValue)->String{string_of(value).as_string().unwrap_or_default()}
+/// `Number.parseFloat(value)`.
+pub fn parse_float(value:&JsValue)->f64{parse_float_of(value)}
 pub fn exp(value:f64)->f64{js_sys::Math::exp(value)}
+/// `Math.round`: halves go up, as the engine rounds them.
+pub fn js_round(value:f64)->f64{js_sys::Math::round(value)}
+/// `String(value)` for a number, exactly as the engine prints it (`1e+21`, `NaN`, `-0` as `0`).
+pub fn number_string(value:f64)->String{js_sys::Number::from(value).to_string(10).ok().and_then(|text|text.as_string()).unwrap_or_default()}
 pub fn hypot(a:f64,b:f64)->f64{js_sys::Math::hypot(a,b)}
 /// `value.toFixed(2)` exactly as the engine prints it.
 pub fn fixed2(value:f64)->Result<String,JsValue>{Ok(js_sys::Number::from(value).to_fixed(2)?.as_string().unwrap_or_default())}

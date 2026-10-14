@@ -8,7 +8,7 @@ use wasm_bindgen::{prelude::*, JsCast};
 use js_sys::{Array, Function, JsString, Map, Object, Promise, RegExp, Reflect};
 use web_sys::Range;
 use crate::eager::{eager, settled};
-use crate::host::{absent, clock, construct, get, get_at, global, jmax, jmin, method, method_opt, num, read, request_frame, set, truthy};
+use crate::host::{absent, clock, construct, get, get_at, global, jmax, jmin, method, method_opt, num, number_string, read, request_frame, set, truthy};
 
 const MAX_EDGE: f64 = 1600.0;
 const DECODE_BUDGET: f64 = 1500.0;
@@ -64,7 +64,6 @@ fn object(entries: &[(&str, JsValue)]) -> Result<JsValue, JsValue> {
     Ok(value.into())
 }
 fn or_else(value: JsValue, otherwise: JsValue) -> JsValue { if truthy(&value) { value } else { otherwise } }
-fn number_string(value: f64) -> String { js_sys::Number::from(value).to_string(10).ok().and_then(|text| text.as_string()).unwrap_or_default() }
 fn document() -> JsValue { get(&global(), "document") }
 fn pixel_ratio() -> f64 {
     let ratio = get(&get(&global(), "window"), "devicePixelRatio");

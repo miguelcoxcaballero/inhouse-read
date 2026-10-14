@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readerReturnCanvas } from '../../src/js/reader-return-canvas.js';
 import { compositePageSnapshots, snapshotCanvas, snapshotDOMPage } from '../../src/js/readers/page-snapshot.js';
