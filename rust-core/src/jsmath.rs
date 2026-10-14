@@ -123,6 +123,8 @@ impl Mat4 {
         te[2] = x[2]; te[6] = y[2]; te[10] = z[2];
     }
     pub fn set_position(&mut self, p: Vec3) { self.0[12] = p[0]; self.0[13] = p[1]; self.0[14] = p[2]; }
+    // determinant, compose, quaternion and decompose serve rust-ui (bookshelf_return.rs includes this file).
+    #[allow(dead_code)]
     /// `Matrix4#determinant`, in three's term order.
     pub fn determinant(&self) -> f64 {
         let te = &self.0;
@@ -135,6 +137,7 @@ impl Mat4 {
             + n43 * (n11 * n24 * n32 - n11 * n22 * n34 - n14 * n21 * n32 + n12 * n21 * n34 + n14 * n22 * n31 - n12 * n24 * n31)
             + n44 * (-n13 * n22 * n31 - n11 * n23 * n32 + n11 * n22 * n33 + n13 * n21 * n32 - n12 * n21 * n33 + n12 * n23 * n31)
     }
+    #[allow(dead_code)]
     /// `Matrix4#compose(position, quaternion [x, y, z, w], scale)`.
     pub fn compose(position: Vec3, q: [f64; 4], scale: Vec3) -> Mat4 {
         let (x, y, z, w) = (q[0], q[1], q[2], q[3]);
@@ -148,6 +151,7 @@ impl Mat4 {
             (xz + wy) * sz, (yz - wx) * sz, (1.0 - (xx + yy)) * sz, 0.0,
             position[0], position[1], position[2], 1.0])
     }
+    #[allow(dead_code)]
     /// `Quaternion#setFromRotationMatrix` as `[x, y, z, w]`; the upper 3x3 is assumed unscaled.
     pub fn quaternion(&self) -> [f64; 4] {
         let te = &self.0;
@@ -167,6 +171,7 @@ impl Mat4 {
             [(m13 + m31) / s, (m23 + m32) / s, 0.25 * s, (m21 - m12) / s]
         }
     }
+    #[allow(dead_code)]
     /// `Matrix4#decompose`: position, quaternion `[x, y, z, w]` and scale. A negative determinant
     /// flips the first scale.
     pub fn decompose(&self) -> (Vec3, [f64; 4], Vec3) {
