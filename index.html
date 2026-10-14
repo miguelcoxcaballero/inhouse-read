@@ -61,9 +61,10 @@
     } catch (error) { /* no IndexedDB here: the store reports it */ }
   </script>
 
-  <!-- The tiny core starts downloading/compiling while the app modules load.
-       No rendering or reader action waits for it; rust-core.js adopts it once. -->
-  <link id="ihr-rust-core" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_core-CJKjrlvz.wasm" crossorigin="anonymous" />
+  <!-- The cores start downloading/compiling while the app modules load.
+       The shelf tables (catalogue-core.js, decor-catalogue.js) wait for them as
+       the modules evaluate; the loaders adopt each promise once. -->
+  <link id="ihr-rust-core" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_core-BqXxDUTR.wasm" crossorigin="anonymous" />
   <script>
     try {
       if (typeof WebAssembly === 'object') {
@@ -78,7 +79,7 @@
       }
     } catch (error) { /* unsupported host: the optional loader retries later */ }
   </script>
-  <link id="ihr-rust-decor" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_decor-BszMymI8.wasm" crossorigin="anonymous" />
+  <link id="ihr-rust-decor" rel="preload" as="fetch" type="application/wasm" href="/inhouse-read/assets/inhouse_read_decor-n657rZgu.wasm" crossorigin="anonymous" />
   <script>
     try {
       if (typeof WebAssembly === 'object') {
@@ -118,7 +119,7 @@
     }
   </script>
 
-  <script type="module" crossorigin src="/inhouse-read/assets/main-Bn4WmOgF.js"></script>
+  <script type="module" crossorigin src="/inhouse-read/assets/main-BFu9fdRj.js"></script>
   <link rel="modulepreload" crossorigin href="/inhouse-read/assets/updater-nNprJxya.js">
   <link rel="modulepreload" crossorigin href="/inhouse-read/assets/three-Bu7fYNf2.js">
   <link rel="stylesheet" crossorigin href="/inhouse-read/assets/updater-JwWmTiyy.css">
