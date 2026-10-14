@@ -2,9 +2,9 @@
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { createHebrewPhonemizer, normalizeNakdimonCharacter, nakdimonInputIds, mergeNiqqud, hebrewToIpa, phonemeIdsFromIpa } from '../../src/js/readers/neural-voice/hebrew.js'
-import * as pcm from '../../src/js/readers/neural-voice/pcm.js'
-import { synthesisRate, speedUpSpeech } from '../../src/js/readers/neural-voice/speech-tempo.js'
+import { createHebrewPhonemizer, nakdimonInputIds, mergeNiqqud, hebrewToIpa, phonemeIdsFromIpa } from '../../src/js/readers/neural-voice/hebrew.js'
+import * as flow from '../../src/js/readers/neural-voice/synth-flow.js'
+import { requireRustVoiceCore } from '../../src/js/rust-voice-core.js'
 import { yieldToMessages } from '../../src/js/readers/neural-voice/task-yield.js'
 import { IPA_ORACLES, NAKDIMON_ORACLE, NON_DECIMAL_DIGIT_RANGES } from './fixtures/hebrew-oracles.js'
 
@@ -13,6 +13,9 @@ const ID_MAP = {
   i: [21], j: [22], k: [23], l: [24], m: [25], n: [26], o: [27], s: [31], t: [32], u: [33],
   v: [34], z: [38], g: [154], χ: [127], ʁ: [94], ʃ: [96], ʔ: [109], 'ˈ': [120]
 }
+// The characters of the trained alphabet, by id: what the model sees for a letter is its place in this list.
+const ALPHABET = ['', 'H', 'O', '5', ' ', '!', '"', "'", '(', ')', ',', '-', '.', ':', ';', '?', ...Array.from({ length: 27 }, (_, index) => String.fromCodePoint(0x05D0 + index))]
+const normalizeNakdimonCharacter = letter => ALPHABET[nakdimonInputIds(letter)[0]]
 const CONFIG = { phoneme_type: 'hebrew', phoneme_id_map: ID_MAP, audio: { sample_rate: 22050 }, espeak: { voice: 'he' }, num_symbols: 256 }
 const active = []
 afterEach(async () => { for (const phonemizer of active.splice(0)) await phonemizer.destroy().catch(() => {}) })
@@ -219,8 +222,8 @@ function workerHarness({ voiceFailure = false } = {}) {
     .replace(/^import .*$/gm, '')
     .replace("import(/* @vite-ignore */ ortBase + 'ort.wasm.min.mjs')", 'Promise.resolve(__ort)')
   runInNewContext(source, { self, __ort: fake.ort, createPhonemizer: async () => espeak, createHebrewPhonemizer,
-    exposePiperDurations:bytes=>({bytes,name:null}), phonemeMarks:async()=>[], durationMarks:()=>[],
-    ...pcm, synthesisRate, speedUpSpeech, loadRustCore: async () => null, loadRustVoiceCore:async()=>null, yieldToMessages, performance, setTimeout, Uint8Array, Float32Array, BigInt64Array, ArrayBuffer })
+    exposePiperDurations:bytes=>({bytes,name:null}), phonemeMarks:async()=>[],
+    ...flow, requireRustVoiceCore, yieldToMessages, performance, setTimeout, Uint8Array, Float32Array, BigInt64Array, ArrayBuffer })
   let id = 0
   const send = async message => { const request = { ...message, id: ++id }; await self.onmessage({ data: request }); return request.id }
   return { ...fake, voiceSession, espeak, messages, send }

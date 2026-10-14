@@ -1,10 +1,9 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as rustUI from '../../src/wasm/ui/inhouse_read_ui.js'
-import {
-  NEURAL_ID_PREFIX, isNeuralId, normalizeNeuralVoice, normalizeVoices, scoreVoice, isHighQuality, isNatural, bestVoiceFor, needsBetterVoice, voiceLabel,
-  buildVoiceGroups, orderNeuralVoices, recommendedNeuralFor, resolveVoice, rankedVoicesFor
-} from '../../src/js/readers/voice-catalog.js'
+import { NEURAL_ID_PREFIX, isNeuralId, normalizeNeuralVoice, orderNeuralVoices, recommendedNeuralFor } from '../../src/js/readers/voice-catalog.js'
+// The ranking against the device's own voices (mixed lists) is no longer part of the product: the frozen original holds it.
+import { normalizeVoices, scoreVoice, isHighQuality, isNatural, bestVoiceFor, needsBetterVoice, voiceLabel, buildVoiceGroups, resolveVoice, rankedVoicesFor } from './helpers/reference-voice-catalog.js'
 import { NEURAL_PREFIX, isNeuralVoiceId } from '../../src/js/readers/neural-voice/index.js'
 import { FAKE_CATALOG } from '../helpers/fake-neural-engine.js'
 
@@ -15,7 +14,9 @@ const neural = (installed = []) => FAKE_CATALOG.map(entry => normalizeNeuralVoic
 const runtime=vi.hoisted(()=>({ui:null}));let orders=0,recommendations=0
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 const observedUI={...rustUI,voice_order:(...args)=>{orders++;return rustUI.voice_order(...args)},voice_recommended:(...args)=>{recommendations++;return rustUI.voice_recommended(...args)}}
-beforeAll(()=>rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')}))
+rustUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
+// Module-level fixtures build voice records, which the Rust UI module makes: it is in before anything runs.
+runtime.ui=observedUI
 afterAll(()=>{expect(orders).toBeGreaterThan(0);expect(recommendations).toBeGreaterThan(0)})
 describe.each(['rust'])('catalogue ordering through %s',engine=>{
 beforeEach(()=>{runtime.ui=engine==='rust'?observedUI:null})

@@ -1,5 +1,10 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.244 (voz sobre la 1.7.243): motor de voz
+(limpieza del audio, tempo, hebreo y flujo por fragmento) en el núcleo `voice`, y
+catálogo y texto de narración en `rust-ui`. Inventario 13668 Rust/32156 JS,
+**29,83 %**; no mide funciones terminadas. Detalle en remaining-wip-verification.md.
+
 Entrega 1.7.243: Drive, copia de la biblioteca, carpeta local e importación Android en
 Rust (cliente de Drive con PKCE, conciliación y cola de progreso, registros por campo, buzón
 de intents, firma del documento desplegado). Inventario 13159 Rust/32717 JS, **28,68 %**;

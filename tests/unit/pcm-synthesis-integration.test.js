@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { beforeAll, afterEach, expect, it, vi } from 'vitest';
 const state=vi.hoisted(()=>({core:null,calls:0,raw:null}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core}));
+vi.mock('../../src/js/rust-voice-core.js',()=>({requireRustVoiceCore:async()=>state.core,loadedRustVoiceCore:()=>state.core,loadRustVoiceCore:async()=>state.core,getRustVoiceCore:()=>state.core}));
 vi.mock('../../src/js/readers/neural-voice/phonemizer.js',()=>({createPhonemizer:async()=>({phonemize:async()=>[1,0,4,0,2],destroy(){}})}));
 vi.mock('../../src/js/readers/neural-voice/supertonic-runtime.js',()=>({createSupertonicRuntime:async()=>({
   synthesize:async()=>({pcm:state.raw.slice(),sampleRate:24000}),dispose(){}})}));
@@ -12,11 +12,13 @@ import { NativeSynthClient } from '../../src/js/readers/neural-voice/native-clie
 import { NativeTensor } from '../../src/js/readers/neural-voice/native-ort.js';
 import { peakNormalize,trimSilence,fadeEdges,silence,concat,pauseAfter,restScale } from './helpers/reference-pcm.js';
 import { makePCM } from '../helpers/pcm-cases.mjs';
-import { speechTempoJS } from '../../src/js/readers/neural-voice/speech-tempo.js';
+import { speechTempoJS } from './helpers/reference-speech-tempo.js';
 beforeAll(async()=>{
-  const {instance}=await WebAssembly.instantiate(readFileSync(new URL('../../src/wasm/inhouse_read_core.wasm',import.meta.url)));
-  const core=instance.exports;expect(typeof core.pcm_prepare).toBe('function');
-  state.core={...core,pcm_prepare(...args){state.calls++;return core.pcm_prepare(...args);}};
+  const {instance}=await WebAssembly.instantiate(readFileSync(new URL('../../src/wasm/inhouse_read_voice.wasm',import.meta.url)));
+  const core=instance.exports;expect(typeof core.voice_finish_piper).toBe('function');
+  // One call finishes a chunk, whichever route and runtime asked for it.
+  state.core={...core,voice_finish_piper(...args){state.calls++;return core.voice_finish_piper(...args);},
+    voice_finish_supertonic(...args){state.calls++;return core.voice_finish_supertonic(...args);}};
 });
 afterEach(()=>vi.unstubAllGlobals());
 for(const runtime of ['piper','supertonic3'])for(const route of ['worker','native'])

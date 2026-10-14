@@ -11,3 +11,10 @@ export async function requireRustCore() {
   if (!core) throw new Error('El módulo numérico no se pudo cargar. Recarga la página.')
   return core
 }
+/** The numeric core of a realm that already awaited requireRustCore(): code with no JavaScript twin reads it here
+ * instead of testing for it. */
+export function loadedRustCore() {
+  const core = loader.get()
+  if (!core) throw new Error('El módulo numérico no está cargado.')
+  return core
+}

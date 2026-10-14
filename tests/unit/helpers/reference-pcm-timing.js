@@ -1,16 +1,8 @@
 // Pure helpers on mono Float32 PCM and on Piper phoneme-id sequences. They run inside the synthesis worker (so the page
 // never touches samples) and are plain functions so they can be unit-tested without any audio stack.
-import { getRustCore } from '../../rust-core.js'
-import { PCM_MIN_SAMPLES, rustPrepareSpeech } from './pcm-wasm.js'
-
-/** Same cleanup on Android and the synthesis worker. A cold/older core, tiny
- * fragment, or rejected arena uses the original pipeline immediately. This
- * combined API leaves the source intact; synthesis callers discard it. */
+// Frozen from f5abb75: the JavaScript pipeline of pcm.js (with the timing option) before the Rust core became the only one.
+/** Same cleanup on Android and the synthesis worker. This combined API leaves the source intact. */
 export function prepareSpeech(pcm, sampleRate, { model = '', timing = false } = {}) {
-  if (pcm.length >= PCM_MIN_SAMPLES) {
-    const speech = rustPrepareSpeech(getRustCore(), pcm, sampleRate, model, timing)
-    if (speech !== null) return speech
-  }
   const samples = pcm.slice()
   peakNormalize(samples, { model })
   if (!timing) return fadeEdges(trimSilence(samples, sampleRate), sampleRate)

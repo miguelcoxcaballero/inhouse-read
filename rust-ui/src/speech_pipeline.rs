@@ -4,7 +4,7 @@ use wasm_bindgen::prelude::*;
 use js_sys::{Function,Uint16Array,Uint32Array};
 #[wasm_bindgen]
 pub fn speech_pipeline(raw:&[u16],footnotes:bool,skip_headers:bool,headers:Option<Vec<f64>>,pages:&[f64],from:f64,opening:bool,raw_lower:Function,letters:Function,expose:Function,properties:Function,lower:Function,clause:Function)->Result<JsValue,JsValue>{
- let n=raw.len();if n>1_000_000{return Ok(JsValue::UNDEFINED)}
+ let n=raw.len();
  let Some(mask)=crate::speech_mask::removal_mask(raw,footnotes,skip_headers,headers,raw_lower,letters)?else{return Ok(JsValue::UNDEFINED)};
  let mut text=vec![0u16;n*2];let mut map=vec![0u32;n*2];let mut breaks=vec![0u32;n];let mut counts=[0u32;2];
  let status=unsafe{crate::speech_normalize::speech_normalize(raw.as_ptr(),mask.as_ptr(),n,text.as_mut_ptr(),map.as_mut_ptr(),breaks.as_mut_ptr(),counts.as_mut_ptr())};
@@ -15,4 +15,19 @@ pub fn speech_pipeline(raw:&[u16],footnotes:bool,skip_headers:bool,headers:Optio
  let view=unsafe{Uint16Array::view(&text[..size])};
  expose.call1(&JsValue::UNDEFINED,&view)?;
  Ok(crate::speech_plan::speech_plan_records(&text[..size],&map[..size],&breaks[..boundary_count],pages,from,opening,properties,lower,clause)?.map(|output|Uint32Array::from(output.as_slice()).into()).unwrap_or(JsValue::UNDEFINED))
+}
+/// The normalized text (handed to `expose` once, as UTF-16), its map back to the raw text and its hard breaks:
+/// `[map length, map..., breaks...]`. The same cleanup as the plan above, for callers that need the text itself.
+#[wasm_bindgen]
+pub fn speech_normalized(raw:&[u16],footnotes:bool,skip_headers:bool,headers:Option<Vec<f64>>,raw_lower:Function,letters:Function,expose:Function)->Result<JsValue,JsValue>{
+ let n=raw.len();
+ let Some(mask)=crate::speech_mask::removal_mask(raw,footnotes,skip_headers,headers,raw_lower,letters)?else{return Ok(JsValue::UNDEFINED)};
+ let mut text=vec![0u16;n*2];let mut map=vec![0u32;n*2];let mut breaks=vec![0u32;n];let mut counts=[0u32;2];
+ let status=unsafe{crate::speech_normalize::speech_normalize(raw.as_ptr(),mask.as_ptr(),n,text.as_mut_ptr(),map.as_mut_ptr(),breaks.as_mut_ptr(),counts.as_mut_ptr())};
+ if status!=1{return Ok(JsValue::UNDEFINED)}
+ let size=counts[0]as usize;let boundary_count=counts[1]as usize;
+ let view=unsafe{Uint16Array::view(&text[..size])};
+ expose.call1(&JsValue::UNDEFINED,&view)?;
+ let mut packed=Vec::with_capacity(1+size+boundary_count);packed.push(size as u32);packed.extend_from_slice(&map[..size]);packed.extend_from_slice(&breaks[..boundary_count]);
+ Ok(Uint32Array::from(packed.as_slice()).into())
 }
