@@ -54,10 +54,20 @@ it('scans only 200 bytes and frees a bounded arena before the next import',()=>{
  for(let i=0;i<200;i++)rustBookFormat(bytes);
  expect(core.memory.buffer.byteLength).toBe(capacity);expect(free).toHaveBeenCalledTimes(201);
 });
-it('falls back on cold/old/invalid cores and retains original argument handling',()=>{
+it('has no JavaScript scanner behind a cold, old or invalid core: it reports a clear error, and keeps its argument handling',()=>{
  for(const value of [null,{}, {...core,sniff_book_format:()=>99}, {...core,alloc_f64:()=>0}, {...core,sniff_book_format:()=>{throw Error('rejected')}}]){
-  state.core=value;for(const bytes of fixtures)expect(sniffBytes(bytes)).toEqual(original(bytes));
+  state.core=value;
+  for(const bytes of fixtures){
+   const expected=original(bytes),prefixed=expected.label==='PDF'||expected.label==='EPUB';
+   if(prefixed){expect(sniffBytes(bytes)).toEqual(expected);continue;}
+   let answer;try{answer=sniffBytes(bytes);}catch(error){answer=error;}
+   // The signatures at offset 0 are answered without the kernel; so is an empty header, once the kernel exists.
+   if(answer instanceof Error)expect(answer.message).toMatch(/formato del libro|módulo numérico/);
+   else expect(answer).toEqual(expected);
+  }
  }
+ state.core=null;expect(()=>sniffBytes(pdb('BOOKMOBI'))).toThrow('módulo numérico');
+ state.core={...core,sniff_book_format:()=>99};expect(()=>sniffBytes(pdb('BOOKMOBI'))).toThrow('formato del libro');
  state.core=core;
  for(const value of [null,undefined,200,[],[70,71],new Uint16Array([400,13,8])])expect(sniffBytes(value)).toEqual(original(value));
  expect(()=>sniffBytes(-1)).toThrow(RangeError);expect(core.sniff_book_format(0,5)).toBe(0);

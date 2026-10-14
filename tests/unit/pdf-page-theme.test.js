@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { describe, expect, it, vi } from 'vitest'
 import { hasUntrackedPDFImages, paintPDFTheme } from '../../src/js/readers/pdf-page-theme.js'
 

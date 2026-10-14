@@ -405,7 +405,7 @@ fn image_layout(s: &JsValue, page: &JsValue) -> Promise {
             let layout = if truthy(&get(&page, "getOperatorList")) {
                 let owner = s.clone();
                 let classify = Closure::once_into_js(move |list: JsValue| -> Result<JsValue, JsValue> {
-                    Ok((!truthy(&invoke(&owner, "hasUntrackedPDFImages", &[&list, &get(&dep(&owner, "pdfjs"), "OPS")])?)).into())
+                    Ok((!crate::pdf_theme::pdf_untracked_images(&list, &get(&dep(&owner, "pdfjs"), "OPS"))?).into())
                 });
                 method(&method(&page, "getOperatorList", &[])?, "then", &[&classify])?
             } else { Promise::resolve(&JsValue::FALSE).into() };
@@ -467,7 +467,7 @@ async fn draw_text(s: &JsValue, page: &JsValue, state: &JsValue, valid: &Valid, 
             let coordinates = get(page, "imageCoordinates");
             let coordinates = if truthy(&coordinates) { coordinates } else { Array::new().into() };
             let mut rects = invoke(s, "pdfImageRects", &[&coordinates, &get(&source, "width"), &get(&source, "height")])?;
-            if blank(state)? || truthy(&invoke(s, "hasUntrackedPDFImages", &[&operators, &ops])?) || !truthy(&get(&rects, "length")) {
+            if blank(state)? || crate::pdf_theme::pdf_untracked_images(&operators, &ops)? || !truthy(&get(&rects, "length")) {
                 rects = Array::of1(&plain(&[("x0", 0.into()), ("y0", 0.into()), ("x1", get(&source, "width")), ("y1", get(&source, "height"))])?).into();
             }
             let isolated = validity(s, valid);
@@ -587,7 +587,7 @@ pub(crate) fn paint_theme(s: &JsValue, state: &JsValue, theme: &JsValue, valid: 
         }
         let coordinates = get(&page, "imageCoordinates");
         let applied = if tracked && !absent(&coordinates) { filter } else { "none".into() };
-        invoke(&s, "paintPDFTheme", &[&get(&state, "originalCanvas"), &canvas, &applied, &if truthy(&coordinates) { coordinates } else { Array::new().into() }])?;
+        crate::pdf_theme::paint(&get(&state, "originalCanvas"), &canvas, &applied, &if truthy(&coordinates) { coordinates } else { Array::new().into() }, &dep(&s, "pdfImagePaths"))?;
         Ok(live(&s, &valid)?.into())
     })
 }

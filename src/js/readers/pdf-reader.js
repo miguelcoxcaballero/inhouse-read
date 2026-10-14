@@ -19,7 +19,7 @@ import { TextLayer } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { measurePDFBookLength } from '../pdf-book-length.js'
 import { attachSwipeNavigation } from '../gestures.js'
 import { DEFAULT_READING_PREFERENCES, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES, normalizeReadingPreferences } from './reading-preferences.js'
-import { hasUntrackedPDFImages, paintPDFTheme } from './pdf-page-theme.js'
+import { pdfImagePaths } from './pdf-images-wasm.js'
 import { renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage } from './page-snapshot.js'
 import { prepareSnapshotPaperTones, sharePaperTone } from '../page-paper-tone.js'
 import { registerPageRaster } from '../page-raster.js'
@@ -63,7 +63,7 @@ function detach(s, source, pdf, isActive) {
 // What the Rust reader calls: PDF.js and the page pipelines, passed in rather than imported there.
 const kit = {
   pdfjs:pdfjsLib, get TextLayer() { return TextLayer }, measurePDFBookLength, normalizeReadingPreferences, PDF_PAGE_FILTERS, READING_FONTS, READING_THEMES,
-  hasUntrackedPDFImages, paintPDFTheme, renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage, prepareSnapshotPaperTones, sharePaperTone,
+  pdfImagePaths, renderedPageFilter, settlePageLayout, snapshotCanvas, snapshotDOMPage, prepareSnapshotPaperTones, sharePaperTone,
   registerPageRaster, encodePdfCover, mapTextLayer, mapTextNodes, pdfPlaceFigures, pdfImageRects, extractPDFText, mapPDFTextLayer,
   lengthOptions:(s, pdf) => ({ isActive:() => s.doc === pdf }), makeSource, stage, detach
 }

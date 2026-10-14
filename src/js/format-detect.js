@@ -6,6 +6,7 @@
 // 'foliate' (foliate-js, que ya hace su propia detección interna de
 // epub/mobi/azw3/fb2/cbz). Exponemos además una `label` legible para la UI.
 import { rustBookFormat } from './book-format-wasm.js'
+import { coreRequired } from './readers/core-required.js'
 
 export const ENGINE = {
   PDF: 'pdf',
@@ -54,27 +55,12 @@ export function sniffBytes(bytes) {
   }
 
   // The two fixed prefixes above are cheaper than crossing the WASM boundary.
-  // Rust scans all remaining headers without constructing binary strings or
-  // allocating slices for PalmDOC and raw FB2. Cold cores retain the fallback.
-  const code = rustBookFormat(view)
-  if (code === 0) return { engine: ENGINE.UNKNOWN, label: null, confidence: 'none' }
+  // Rust scans all remaining headers (PalmDOC and raw FB2) without constructing
+  // binary strings or allocating slices. The core is loaded before any book can
+  // be imported, so a kernel with no answer is an error, not a second scanner.
+  const code = coreRequired(rustBookFormat(view), 'No se pudo reconocer el formato del libro.')
   if (code === 3) return { engine: ENGINE.FOLIATE, label: 'MOBI', confidence: 'high' }
   if (code === 4) return { engine: ENGINE.FOLIATE, label: 'FB2', confidence: 'medium' }
-
-  // PalmDOC/MOBI: identificador de tipo en el offset 60 del header PDB.
-  if (view.length >= 68) {
-    const type = String.fromCharCode(...view.slice(60, 68))
-    if (type === 'BOOKMOBI' || type === 'TEXtREAd') {
-      return { engine: ENGINE.FOLIATE, label: 'MOBI', confidence: 'high' }
-    }
-  }
-
-  // FB2 crudo: XML con <FictionBook.
-  const head = String.fromCharCode(...view.slice(0, 200))
-  if (/<\?xml/i.test(head) && /FictionBook/i.test(head)) {
-    return { engine: ENGINE.FOLIATE, label: 'FB2', confidence: 'medium' }
-  }
-
   return { engine: ENGINE.UNKNOWN, label: null, confidence: 'none' }
 }
 
