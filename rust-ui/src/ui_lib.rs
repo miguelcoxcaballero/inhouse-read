@@ -51,6 +51,7 @@ mod speech_pages;
 mod voice_options;
 mod neural_view;
 mod reader_lists;
+mod foliate_cursor;
 use std::{cell::{Cell, RefCell}, rc::{Rc, Weak}};
 use wasm_bindgen::{prelude::*, JsCast};
 use js_sys::{Array, Function, Reflect};
