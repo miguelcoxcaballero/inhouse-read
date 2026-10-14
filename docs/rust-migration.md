@@ -1,8 +1,13 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.241: estantería, medidas y colores de lomo desde Rust (tablas del
+catálogo, paleta, tipos de estantería, lámparas, plantas y macetas, disposición
+en baldas, secciones, marcapáginas, colores y marco). Inventario 8949 Rust/34509
+JS, **20,59 %** (20,45 % sin contar la reclasificación de `plants.js`); no mide
+funciones terminadas. Detalle en remaining-wip-verification.md.
+
 Entrega 1.7.240: controlador del catálogo y rutas del follaje en Rust. Inventario
-7908 Rust/35190 JS, **18,35 %**; no mide funciones terminadas. Detalle en
-remaining-wip-verification.md.
+7908 Rust/35190 JS, **18,35 %**.
 
 Entrega 1.7.239: lector sin gemelos JavaScript (bloque 2). Inventario 7527
 Rust/35343 JS, **17.56 %**.

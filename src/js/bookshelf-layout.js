@@ -1,179 +1,32 @@
-import { printedPageCount } from './book-length.js';
-import { rustSpineNumbers } from './spine-seed-wasm.js';
+import { core, tables, scratch, scratchPointer, inArena, f64View } from './catalogue-core.js';
 
 /**
- * bookshelf-layout.js — lógica pura de la estantería del home de Inhouse Read.
+ * bookshelf-layout.js — la estantería del home de Inhouse Read.
  *
- * Aquí no se toca el DOM: sólo matemáticas deterministas. El renderizador
- * (`bookshelf.js`) consume estas funciones, y los tests las ejercitan sin
- * navegador.
- *
- * Responsabilidades:
- *   1. Hash determinista de un libro -> geometría y acabado del lomo (grosor,
- *      altura, textura) y un color de reserva si no hay portada. El color y
- *      la tipografía visibles se ajustan después a la imagen de portada.
- *   2. Empaquetado de lomos en baldas de anchura fija, intercalando macetas.
- *   3. Agrupación de la biblioteca en secciones (seguir leyendo / biblioteca).
- *
- * Trabaja sobre el `BookRecord` de `library-store.js` (id, title, author,
- * format, cover, lastOpenedAt, progressFraction...) y tolera campos
- * opcionales que hoy no existen pero abaratan el realismo si algún día se
- * extraen del fichero: `pageCount` y `sizeBytes`.
+ * Sin DOM. Las decisiones (hash determinista, estilo del lomo, empaquetado en
+ * baldas con macetas, secciones de la biblioteca y marcapáginas) las toma el
+ * núcleo Rust (rust-core/src/shelf_layout.rs); aquí sólo se extraen números de
+ * los `BookRecord` de `library-store.js` y se montan los objetos que consume
+ * `bookshelf.js`.
  */
 
-/* ------------------------------------------------------------------ *
- * Hash determinista
- * ------------------------------------------------------------------ */
-
-/**
- * FNV-1a de 32 bits. Rápido, sin dependencias y con buena dispersión para
- * cadenas cortas como títulos de libros.
- * @param {string} value
- * @returns {number} entero sin signo de 32 bits
- */
-export function hashString(value) {
-  const text = String(value ?? '');
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < text.length; i += 1) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash >>> 0;
-}
-
-/**
- * Número en [0, 1) derivado de una semilla y una "sal". Usar sales distintas
- * ("palette", "width"...) da flujos independientes desde la misma semilla,
- * sin arrastrar estado entre llamadas.
- * @param {string|number} seed
- * @param {string} salt
- * @returns {number}
- */
-export function unit(seed, salt) {
-  return hashString(`${seed}::${salt}`) / 0x100000000;
-}
-
-/**
- * Elige un elemento de una lista de forma determinista.
- * @template T
- * @param {readonly T[]} list
- * @param {string|number} seed
- * @param {string} salt
- * @returns {T|undefined}
- */
-export function pick(list, seed, salt) {
-  if (!list || list.length === 0) return undefined;
-  return list[Math.floor(unit(seed, salt) * list.length) % list.length];
-}
-
-/**
- * Semilla estable de un libro. Se prefiere el id del store (`local:name:size`
- * o `drive:fileId`), que sobrevive a renombrados de la entrada de biblioteca.
- * @param {object} book
- * @returns {string}
- */
-export function seedFor(book) {
-  if (!book) return '';
-  if (book.id != null && book.id !== '') return String(book.id);
-  if (book.path) return String(book.path);
-  return `${book.title ?? ''}|${book.author ?? ''}`;
-}
-
-/** Progreso 0..1 del libro, aceptando los dos nombres que circulan. */
-export function progressOf(book) {
-  const value = Number(book?.progressFraction ?? book?.progress);
-  if (!Number.isFinite(value)) return 0;
-  return Math.min(1, Math.max(0, value));
-}
-
-/* ------------------------------------------------------------------ *
- * Marcapáginas
- * ------------------------------------------------------------------ */
-
-/**
- * Cuánto asoma el marcapáginas por encima del lomo, en px. Es una convención
- * de UI, no realismo físico: la LONGITUD visible es el progreso, para que se
- * lea de un vistazo sin abrir el libro. `minPeek` garantiza que un libro
- * recién empezado (1%) ya enseñe algo que se vea y se distinga de "sin
- * empezar"; `maxPeek` debe caber en el hueco que la balda reserva encima de
- * los lomos (`--ihr-bookmark-room` en bookshelf.css), si no un libro de altura
- * máxima terminado se recortaría contra el techo de la balda.
- */
-export const DEFAULT_BOOKMARK = Object.freeze({
-  minPeek: 5,
-  maxPeek: 20
-});
-
-/**
- * Marcapáginas de un libro, o `null` si no hay nada que marcar. Una posición
- * guardada en la primera página también necesita su cinta, aunque avance 0%.
- *
- * @param {object} book
- * @param {object} [options] sobrescribe DEFAULT_BOOKMARK
- * @returns {{progress:number, percent:number, peek:number, finished:boolean}|null}
- */
-export function bookmarkFor(book, options = {}) {
-  const cfg = withDefaults(DEFAULT_BOOKMARK, options);
-  const progress = progressOf(book);
-  if (progress <= 0 && !book?.locator) return null;
-  const peek = cfg.minPeek + (cfg.maxPeek - cfg.minPeek) * progress;
-  // Redondeo hacia abajo: 99,6% no es "terminado" y no debe decir 100 %.
-  const percent = progress >= 1 ? 100 : Math.max(1, Math.floor(progress * 100));
-  return {
-    progress,
-    percent,
-    peek: Math.round(peek * 10) / 10,
-    finished: progress >= 1
-  };
-}
-
-/* ------------------------------------------------------------------ *
- * Paleta de lomos
- * ------------------------------------------------------------------ */
-
-/**
- * Colores de tela de encuadernación. No son colores de marca: la marca es el
- * verde de acento y la madera de la balda. Estos son "los libros de otra
- * gente", por eso conviven tonos que no salen del sistema de Inhouse.
- * `ink` es el color de texto legible sobre `base` (contraste >= 4.5:1).
- */
-export const SPINE_PALETTE = Object.freeze([
-  { name: 'burdeos',       base: '#7A2E38', shade: '#5B1F28', ink: '#F2E6D8' },
-  { name: 'verde-botella', base: '#2F5D4A', shade: '#204237', ink: '#EDE7D6' },
-  { name: 'azul-noche',    base: '#2B3F63', shade: '#1E2C48', ink: '#E8E8EF' },
-  { name: 'ocre',          base: '#B8862F', shade: '#8E6520', ink: '#2A1F0C' },
-  { name: 'terracota',     base: '#A9542F', shade: '#833C20', ink: '#F6E7DC' },
-  { name: 'ciruela',       base: '#5A3555', shade: '#402440', ink: '#EEE2EE' },
-  { name: 'oliva',         base: '#6B7A45', shade: '#4E5B31', ink: '#F3F1E2' },
-  { name: 'arena',         base: '#D6C3A0', shade: '#B9A279', ink: '#3B3022' },
-  { name: 'pizarra',       base: '#46515A', shade: '#323A41', ink: '#E5EAEE' },
-  { name: 'oxido',         base: '#8C4A2F', shade: '#6A3520', ink: '#F4E3D6' },
-  { name: 'crema',         base: '#EDE4D3', shade: '#D3C6AE', ink: '#3A3328' },
-  { name: 'tinta',         base: '#2A2A2E', shade: '#19191C', ink: '#E0DCD2' }
-]);
-
+export const SPINE_PALETTE = Object.freeze(tables.spinePalette);
 /** Acabados del lomo. Cambian sólo la decoración, nunca la geometría. */
-export const SPINE_TEXTURES = Object.freeze(['plain', 'bands', 'panel', 'ribbed']);
-
-export const DEFAULT_SPINE = Object.freeze({
-  minWidth: 28,     // px — mínimo cómodo para el dedo junto al padding de acierto
-  maxWidth: 54,
-  minHeightRatio: 0.80,
-  maxHeightRatio: 1.0,
-  jitter: 2.5       // px de ruido sobre el grosor derivado de páginas/peso
+export const SPINE_TEXTURES = Object.freeze(tables.spineTextures);
+export const DEFAULT_SPINE = Object.freeze(tables.defaults.spine);
+export const DEFAULT_LAYOUT = Object.freeze({
+  ...tables.defaults.layout,
+  spine: undefined,      // opciones para spineStyleFor
+  plantWidthFor: null,   // ancho real de cada especie: (variante) => px
+  displayWidthFor: null  // ancho de celda distinto del grosor físico, si hace falta
 });
-
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+export const DEFAULT_SECTIONS = Object.freeze(tables.defaults.sections);
+export const DEFAULT_BOOKMARK = Object.freeze(tables.defaults.bookmark);
 
 /**
  * Mezcla opciones sobre sus valores por defecto ignorando las que vienen como
- * `undefined`. Con el spread a pelo, `{...DEFAULTS, ...{limite: undefined}}`
- * deja `limite` en undefined y se lleva por delante el valor por defecto:
- * pasa en cuanto alguien reenvía opciones que no ha rellenado.
- * @template T
- * @param {T} defaults
- * @param {object} [options]
- * @returns {T}
+ * `undefined`: con el spread a pelo, `{...DEFAULTS, ...{limite: undefined}}`
+ * borra el valor por defecto en cuanto alguien reenvía opciones sin rellenar.
  */
 export function withDefaults(defaults, options) {
   const merged = { ...defaults };
@@ -185,216 +38,147 @@ export function withDefaults(defaults, options) {
 }
 
 /**
- * Interpola en escala raíz: la diferencia entre 40 y 200 páginas se nota más
- * que entre 700 y 900, igual que al mirar una estantería real.
- * @returns {number|null} 0..1, o null si el dato no sirve
+ * Semilla estable de un libro. Se prefiere el id del store (`local:name:size`
+ * o `drive:fileId`), que sobrevive a renombrados de la entrada de biblioteca.
  */
-function sqrtScale(value, from, to) {
-  if (!Number.isFinite(value) || value <= 0) return null;
-  const a = Math.sqrt(from);
-  const b = Math.sqrt(to);
-  return clamp((Math.sqrt(value) - a) / (b - a), 0, 1);
+export function seedFor(book) {
+  if (!book) return '';
+  if (book.id != null && book.id !== '') return String(book.id);
+  if (book.path) return String(book.path);
+  return `${book.title ?? ''}|${book.author ?? ''}`;
+}
+
+const progressRaw = book => Number(book?.progressFraction ?? book?.progress);
+
+/** Progreso 0..1 del libro, aceptando los dos nombres que circulan. */
+export const progressOf = book => core.progress_of(progressRaw(book));
+
+/** Un libro "en curso" es el que se ha empezado y no se ha terminado. */
+export const isInProgress = book => core.book_in_progress(progressRaw(book), book?.lastOpenedAt != null ? 1 : 0) === 1;
+
+/**
+ * Marcapáginas de un libro, o `null` si no hay nada que marcar. Una posición
+ * guardada en la primera página también necesita su cinta, aunque avance 0%.
+ * @returns {{progress:number, percent:number, peek:number, finished:boolean}|null}
+ */
+export function bookmarkFor(book, options = {}) {
+  const cfg = withDefaults(DEFAULT_BOOKMARK, options);
+  if (core.bookmark_for(progressRaw(book), book?.locator ? 1 : 0, cfg.minPeek, cfg.maxPeek, scratchPointer) !== 1) return null;
+  const [progress, percent, peek, finished] = scratch();
+  return { progress, percent, peek, finished: finished === 1 };
+}
+
+const unitWords = total => Math.ceil(total / 4);
+/** Writes `texts` as UTF-16 units into the arena and returns their offsets. */
+function writeSeeds(pointer, at, texts) {
+  const offsets = new Float64Array(texts.length + 1);
+  let total = 0;
+  for (let i = 0; i < texts.length; i++) { offsets[i] = total; total += texts[i].length; }
+  offsets[texts.length] = total;
+  const units = new Uint16Array(core.memory.buffer, pointer + at * 8, total);
+  let cursor = 0;
+  for (const text of texts) for (let i = 0; i < text.length; i++) units[cursor++] = text.charCodeAt(i);
+  return offsets;
 }
 
 /**
- * Aspecto del lomo de un libro. Determinista respecto a `seedFor(book)`.
- *
- * El grosor usa el total de palabras normalizado a una convención física de
- * papel, sin depender de páginas, compresión, imágenes o ID. La app prepara
- * la geometría antes de mostrar un libro que todavía no se ha contado.
- *
- * @param {object} book
- * @param {object} [options] sobrescribe DEFAULT_SPINE (p.ej. escalado móvil)
- * @returns {{seed:string, palette:object, color:string, shade:string, ink:string,
- *            width:number, heightRatio:number, texture:string}}
+ * Estilo del lomo de cada libro: determinista respecto a `seedFor(book)`. El
+ * grosor usa el total de palabras normalizado a una convención física de
+ * papel, sin depender de páginas, compresión, imágenes o ID.
+ * @returns {Array<{seed:string, palette:object, color:string, shade:string, ink:string,
+ *            width:number, heightRatio:number, texture:string}>}
  */
-export function spineStyleFor(book, options = {}) {
+export function spineStylesFor(books, options = {}) {
   const cfg = withDefaults(DEFAULT_SPINE, options);
-  const seed = seedFor(book);
-  // Compiled hash of the same UTF-16 stream; without it the JS hash below runs.
-  const compiled = rustSpineNumbers(seed);
-  const palette = compiled ? SPINE_PALETTE[compiled.palette] : pick(SPINE_PALETTE, seed, 'palette');
-  const span = cfg.maxWidth - cfg.minWidth;
-
-  const ratio = sqrtScale(printedPageCount(book), 40, 900) ?? 0;
-
-  let width;
-  if (Number.isFinite(cfg.pageThickness) && cfg.pageThickness > 0) {
-    // Shelf geometry follows the amount of paper. Compression, scan resolution
-    // and a book's ID must never make equal-length books differently thick.
-    width = (cfg.bindingThickness || 0) + printedPageCount(book) * cfg.pageThickness;
-  } else {
-    width = cfg.minWidth + span * ratio;
-  }
-
-  const heightRatio =
-    cfg.minHeightRatio +
-    (cfg.maxHeightRatio - cfg.minHeightRatio) * (compiled ? compiled.height : unit(seed, 'height'));
-
-  return {
-    seed,
-    palette,
-    color: palette.base,
-    shade: palette.shade,
-    ink: palette.ink,
-    width: cfg.pageThickness ? Math.round(clamp(width, cfg.minWidth, cfg.maxWidth) * 100) / 100
-      : Math.round(clamp(width, cfg.minWidth, cfg.maxWidth)),
-    heightRatio: Math.round(heightRatio * 1000) / 1000,
-    texture: compiled ? SPINE_TEXTURES[compiled.texture] : pick(SPINE_TEXTURES, seed, 'texture')
-  };
+  const seeds = books.map(seedFor), count = seeds.length;
+  const total = seeds.reduce((sum, seed) => sum + seed.length, 0);
+  return inArena([7, count, count + 1, count * 5, unitWords(total)], (pointer, at) => {
+    f64View(pointer, at[0], 7).set([cfg.minWidth, cfg.maxWidth, cfg.minHeightRatio, cfg.maxHeightRatio,
+      typeof cfg.pageThickness === 'number' ? cfg.pageThickness : NaN, cfg.pageThickness ? 1 : 0, cfg.bindingThickness || 0]);
+    const words = f64View(pointer, at[1], count);
+    books.forEach((book, i) => { words[i] = typeof book?.wordCount === 'number' ? book.wordCount : NaN; });
+    f64View(pointer, at[2], count + 1).set(writeSeeds(pointer, at[4], seeds));
+    if (core.spine_styles(pointer + at[0] * 8, pointer + at[1] * 8, pointer + at[2] * 8, pointer + at[4] * 8, count, total,
+      pointer + at[3] * 8) !== 1) throw new RangeError('Shelf layout: spine styles rejected');
+    const out = f64View(pointer, at[3], count * 5);
+    return seeds.map((seed, i) => {
+      const palette = SPINE_PALETTE[out[i * 5]];
+      return { seed, palette, color: palette.base, shade: palette.shade, ink: palette.ink, width: out[i * 5 + 2],
+        heightRatio: out[i * 5 + 3], texture: SPINE_TEXTURES[out[i * 5 + 1]] };
+    });
+  });
 }
 
-/* ------------------------------------------------------------------ *
- * Empaquetado en baldas
- * ------------------------------------------------------------------ */
-
-export const DEFAULT_LAYOUT = Object.freeze({
-  shelfWidth: 360,   // anchura total de la balda, en px
-  padding: 16,       // margen interior a cada lado (los topes de la balda)
-  gap: 3,            // separación entre lomos
-  plantEvery: 5,     // tras N libros seguidos sin maceta, se cuela una. Con
-                     // baldas de 6-7 lomos en móvil, 5 deja casi una planta
-                     // por balda: menos y parece un vivero, más y las baldas
-                     // llenas se vuelven un muro de lomos iguales
-  plantWidth: 58,    // ancho reservado a una maceta (un tiesto es más ancho
-                     // que un lomo: si se queda en 46 parece de juguete)
-  maxTailPlants: 2,  // macetas de remate en una balda a medias
-  plantVariants: ['monstera', 'sansevieria', 'pothos', 'cactus', 'suculenta'],
-  tiltThreshold: 16, // px de hueco libre necesarios para que un libro se incline
-  maxTilt: 8,        // grados
-  spine: undefined,  // opciones para spineStyleFor
-  plantWidthFor: null, // ancho real de cada especie: (variante) => px
-  displayWidthFor: null // ancho de celda distinto del grosor físico, si hace falta
-});
-
-function createShelf(index) {
-  return { index, items: [], usedWidth: 0, freeWidth: 0, width: 0 };
-}
+/** Aspecto del lomo de un libro; `options` sobrescribe DEFAULT_SPINE (p.ej. escalado móvil). */
+export const spineStyleFor = (book, options = {}) => spineStylesFor([book], options)[0];
 
 /**
- * Empaqueta los libros en baldas de anchura fija, intercalando macetas.
- *
- * Reglas (todas deterministas, sin azar):
- *  - Los libros mantienen el orden recibido; nunca se pierde ni se duplica uno.
- *  - Cada `plantEvery` libros sin maceta se inserta una, siempre que quepan
- *    ella y el libro siguiente (una maceta no deja huérfano al libro que va
- *    detrás, que acabaría solo al principio de la balda siguiente).
- *  - Al cerrar una balda, si sobra sitio para una maceta, se pone de remate.
- *    Como el empaquetado es voraz, el sobrante suele ser menor que una maceta:
- *    el "de vez en cuando" sale solo, sin necesidad de aleatoriedad.
- *  - El último libro de una balda puede inclinarse si queda hueco y no hay
- *    maceta de remate, como un libro real sin sujetalibros.
+ * Empaqueta los libros en baldas de anchura fija, intercalando macetas: los
+ * libros mantienen el orden recibido, una maceta cada `plantEvery` libros si
+ * caben ella y el siguiente, una o dos de remate en la balda a medias, y el
+ * último libro de una balda con hueco se inclina.
  *
  * @param {object[]} books
  * @param {object} [options] ver DEFAULT_LAYOUT
+ * @param {object[]} [preparedStyles] estilos ya calculados, uno por libro
  * @returns {Array<{index:number, items:object[], usedWidth:number, freeWidth:number, width:number}>}
  */
 export function layoutShelves(books, options = {}, preparedStyles) {
   const cfg = withDefaults(DEFAULT_LAYOUT, options);
-  const available = cfg.shelfWidth - cfg.padding * 2;
   if (!Array.isArray(books) || books.length === 0) return [];
-  if (!(available > 0)) return [];
+  if (!(cfg.shelfWidth - cfg.padding * 2 > 0)) return [];
 
-  const shelves = [];
-  let shelf = createShelf(0);
-  let sinceLastPlant = 0;
-
-  /** Coste de añadir un elemento de ancho `w` al estante actual (con su hueco). */
-  const costOf = (w) => (shelf.items.length === 0 ? w : cfg.gap + w);
-
-  const push = (item) => {
-    shelf.usedWidth += costOf(item.width);
-    shelf.items.push(item);
-  };
+  const count = books.length;
+  const styles = [], requested = [];
+  books.forEach((book, i) => {
+    const style = preparedStyles?.[i] ?? spineStyleFor(book, cfg.spine);
+    styles.push(style);
+    requested.push(typeof cfg.displayWidthFor === 'function' ? Number(cfg.displayWidthFor(book, style)) : NaN);
+  });
 
   // Cada especie ocupa su tamaño real (`plantWidthFor`); sin él, un ancho fijo.
-  const variantWidth = (variant) => cfg.plantWidthFor?.(variant) ?? cfg.plantWidth;
-  const plantItem = (salt) => {
-    const seed = `shelf-${shelf.index}-${shelf.items.length}-${salt}`;
-    // Dos macetas pegadas no pueden ser la misma planta: canta a copia-pega.
-    const previous = shelf.items.at(-1);
-    const catalogue =
-      previous?.kind === 'plant' && cfg.plantVariants.length > 1
-        ? cfg.plantVariants.filter((variant) => variant !== previous.variant)
-        : cfg.plantVariants;
-    return {
-      kind: 'plant',
-      variant: pick(catalogue, seed, 'variant'),
-      width: variantWidth(pick(catalogue, seed, 'variant')),
-      seed
-    };
-  };
+  const variants = cfg.plantVariants;
+  const widthOf = variant => cfg.plantWidthFor?.(variant) ?? cfg.plantWidth;
+  const keys = variants.map(variant => variants.indexOf(variant));
+  const widths = variants.map(widthOf);
+  const absent = variants.length === 0 || variants.length > 1 && new Set(keys).size === 1 ? widthOf(undefined) : cfg.plantWidth;
+  const seeds = styles.map(style => String(style.seed));
+  const total = seeds.reduce((sum, seed) => sum + seed.length, 0);
 
-  const closeShelf = () => {
-    if (shelf.items.length === 0) return;
-    const roomLeft = available - shelf.usedWidth;
-    const last = shelf.items[shelf.items.length - 1];
+  const run = capacity => inArena([9, variants.length, variants.length, count, count, count + 1, unitWords(total), capacity],
+    (pointer, at) => {
+      f64View(pointer, at[0], 9).set([cfg.shelfWidth, cfg.padding, cfg.gap, cfg.plantEvery, cfg.plantWidth, cfg.maxTailPlants,
+        cfg.tiltThreshold, cfg.maxTilt, absent]);
+      f64View(pointer, at[1], variants.length).set(widths);
+      f64View(pointer, at[2], variants.length).set(keys);
+      f64View(pointer, at[3], count).set(styles.map(style => style.width));
+      f64View(pointer, at[4], count).set(requested);
+      f64View(pointer, at[5], count + 1).set(writeSeeds(pointer, at[6], seeds));
+      const length = core.layout_shelves(pointer + at[0] * 8, pointer + at[1] * 8, pointer + at[2] * 8, variants.length,
+        pointer + at[3] * 8, pointer + at[4] * 8, pointer + at[5] * 8, pointer + at[6] * 8, count, total,
+        pointer + at[7] * 8, capacity);
+      if (length === 0) throw new RangeError('Shelf layout: request rejected');
+      return length > capacity ? length : Array.from(f64View(pointer, at[7], length));
+    });
+  let plan = run(2 + count * 3 + (count * 2 + 16) * 6);
+  if (typeof plan === 'number') plan = run(plan);
 
-    if (roomLeft >= cfg.plantWidth + cfg.gap) {
-      // Una balda a medias (la última, normalmente) se remata con una o dos
-      // macetas: un hueco pelado de media balda parece un error de pintado.
-      for (let i = 0; i < cfg.maxTailPlants; i += 1) {
-        const tail = plantItem(`tail-${i}`);
-        if (available - shelf.usedWidth < tail.width + cfg.gap) break;
-        push(tail);
-      }
-      sinceLastPlant = 0;
-    } else if (
-      last.kind === 'book' &&
-      roomLeft >= cfg.tiltThreshold &&
-      unit(last.style.seed, 'tilt') > 0.5
-    ) {
-      // Sin nada que lo sujete a la derecha: se vence hacia el hueco.
-      last.tilt =
-        Math.round((2 + unit(last.style.seed, 'tilt-deg') * (cfg.maxTilt - 2)) * 10) / 10;
+  const [shelfCount] = plan;
+  const shelves = [];
+  let item = 2 + shelfCount * 3;
+  for (let index = 0; index < shelfCount; index++) {
+    const [itemCount, usedWidth, freeWidth] = plan.slice(2 + index * 3, 5 + index * 3);
+    const items = [];
+    for (let n = 0; n < itemCount; n++, item += 6) {
+      const [plant, refer, width, tilt, position, salt] = plan.slice(item, item + 6);
+      items.push(plant
+        ? { kind: 'plant', variant: refer < 0 ? undefined : variants[refer], width, seed: `shelf-${index}-${position}-${salt === 0 ? 'mid' : `tail-${salt - 1}`}` }
+        : { kind: 'book', book: books[refer], style: styles[refer], width, displayWidth: width, tilt });
     }
-
-    shelf.width = cfg.shelfWidth;
-    shelf.freeWidth = Math.max(0, available - shelf.usedWidth);
-    shelves.push(shelf);
-  };
-
-  let styleIndex = 0;
-  for (const book of books) {
-    const style = preparedStyles?.[styleIndex++] ?? spineStyleFor(book, cfg.spine);
-    const requestedWidth = typeof cfg.displayWidthFor === 'function'
-      ? Number(cfg.displayWidthFor(book, style))
-      : NaN;
-    const displayWidth = Number.isFinite(requestedWidth)
-      ? Math.max(style.width, Math.round(requestedWidth))
-      : style.width;
-    const item = { kind: 'book', book, style, width: displayWidth, displayWidth, tilt: 0 };
-
-    // ¿Toca maceta intercalada? Sólo si caben la maceta y el libro siguiente.
-    const midPlant = sinceLastPlant >= cfg.plantEvery && shelf.items.length > 0 ? plantItem('mid') : null;
-    if (midPlant && shelf.usedWidth + cfg.gap + midPlant.width + cfg.gap + item.width <= available) {
-      push(midPlant);
-      sinceLastPlant = 0;
-    }
-
-    if (shelf.items.length > 0 && shelf.usedWidth + costOf(item.width) > available) {
-      closeShelf();
-      shelf = createShelf(shelves.length);
-    }
-
-    push(item);
-    sinceLastPlant += 1;
+    shelves.push({ index, items, usedWidth, freeWidth, width: cfg.shelfWidth });
   }
-
-  closeShelf();
   return shelves;
 }
-
-/* ------------------------------------------------------------------ *
- * Secciones de la biblioteca
- * ------------------------------------------------------------------ */
-
-export const DEFAULT_SECTIONS = Object.freeze({
-  recentLimit: 6,
-  recentTitle: 'Seguir leyendo',
-  libraryTitle: 'Biblioteca',
-  sort: 'author' // 'author' | 'title' | 'none'
-});
 
 // Created on the first sort that needs it: building it at import loads the
 // locale's collation data on the start-up path, and the app's shelf keeps its
@@ -402,88 +186,52 @@ export const DEFAULT_SECTIONS = Object.freeze({
 let collator = null;
 const compareText = (a, b) => (collator ??= new Intl.Collator('es', { sensitivity: 'base', numeric: true })).compare(a, b);
 
-function sortBooks(books, mode) {
-  const hasManualOrder = book => Number.isFinite(book?.shelfOrder);
-  if (books.some(hasManualOrder)) {
-    return books.map((book, index) => ({ book, index })).sort((a, b) => {
-      const aOrder = hasManualOrder(a.book) ? a.book.shelfOrder : Infinity;
-      const bOrder = hasManualOrder(b.book) ? b.book.shelfOrder : Infinity;
-      return aOrder - bOrder || a.index - b.index;
-    }).map(entry => entry.book);
-  }
-  if (mode === 'none') return books;
-  const keyed = books.map((book, index) => ({ book, index }));
-  keyed.sort((a, b) => {
-    const byAuthor =
-      mode === 'author' ? compareText(a.book.author ?? '', b.book.author ?? '') : 0;
-    if (byAuthor !== 0) return byAuthor;
-    const byTitle = compareText(a.book.title ?? '', b.book.title ?? '');
-    if (byTitle !== 0) return byTitle;
-    return a.index - b.index; // orden estable ante empates
-  });
-  return keyed.map((entry) => entry.book);
-}
-
-/** Un libro "en curso" es el que se ha empezado y no se ha terminado. */
-export function isInProgress(book) {
-  const raw = Number(book?.progressFraction ?? book?.progress);
-  if (Number.isFinite(raw)) {
-    if (raw > 0 && raw < 1) return true;
-    if (raw === 0) return false; // añadido pero nunca abierto
-    return false;                // terminado: vuelve a la balda general
-  }
-  return book?.lastOpenedAt != null;
-}
-
 /**
- * Parte la biblioteca en secciones. Un libro aparece en una sola sección: una
- * estantería real no tiene el mismo tomo en dos baldas, y duplicarlo haría
- * dudar de si son dos ficheros distintos.
- *
- * @param {object[]} books
- * @param {object} [options] ver DEFAULT_SECTIONS
+ * Parte la biblioteca en secciones ("seguir leyendo" y biblioteca). Un libro
+ * aparece en una sola sección. El orden y la partición los decide el núcleo;
+ * el orden alfabético por autor/título necesita `Intl.Collator`, así que se
+ * le entrega ya como posición de cada libro.
  * @returns {Array<{id:string, title:string, books:object[]}>}
  */
 export function buildSections(books, options = {}) {
   const cfg = withDefaults(DEFAULT_SECTIONS, options);
   const list = Array.isArray(books) ? books.filter(Boolean) : [];
   if (list.length === 0) return [];
-
-  const recent = list
-    .filter(isInProgress)
-    .map((book, index) => ({ book, index }))
-    .sort((a, b) => {
-      const aOrder = Number.isFinite(a.book?.shelfOrder) ? a.book.shelfOrder : Infinity;
-      const bOrder = Number.isFinite(b.book?.shelfOrder) ? b.book.shelfOrder : Infinity;
-      if (aOrder !== bOrder) return aOrder - bOrder;
-      const diff = (Number(b.book.lastOpenedAt) || 0) - (Number(a.book.lastOpenedAt) || 0);
-      return diff !== 0 ? diff : a.index - b.index;
-    })
-    .slice(0, cfg.recentLimit)
-    .map((entry) => entry.book);
-
-  const recentSet = new Set(recent);
-  const rest = sortBooks(list.filter((book) => !recentSet.has(book)), cfg.sort);
+  const count = list.length, mode = cfg.sort === 'none' ? 0 : cfg.sort === 'author' ? 1 : 2;
+  const rank = new Float64Array(count);
+  if (mode) {
+    const order = list.map((_, index) => index).sort((a, b) =>
+      (mode === 1 ? compareText(list[a].author ?? '', list[b].author ?? '') : 0)
+      || compareText(list[a].title ?? '', list[b].title ?? '') || a - b);
+    order.forEach((index, position) => { rank[index] = position; });
+  }
+  const first = new Map();
+  const [recent, rest] = inArena([2, count * 5, count, count + 2], (pointer, at) => {
+    f64View(pointer, at[0], 2).set([Number(cfg.recentLimit), mode]);
+    const data = f64View(pointer, at[1], count * 5), groups = f64View(pointer, at[2], count);
+    list.forEach((book, i) => {
+      if (!first.has(book)) first.set(book, i);
+      groups[i] = first.get(book);
+      data.set([progressRaw(book), book.lastOpenedAt != null ? 1 : 0, Number(book.lastOpenedAt) || 0,
+        Number.isFinite(book.shelfOrder) ? book.shelfOrder : Infinity, rank[i]], i * 5);
+    });
+    const length = core.library_sections(pointer + at[0] * 8, pointer + at[1] * 8, pointer + at[2] * 8, count, pointer + at[3] * 8);
+    if (length === 0) throw new RangeError('Shelf sections: request rejected');
+    const out = f64View(pointer, at[3], length);
+    return [Array.from(out.subarray(2, 2 + out[0]), i => list[i]), Array.from(out.subarray(2 + out[0], length), i => list[i])];
+  });
 
   const sections = [];
-  if (recent.length > 0) {
-    sections.push({ id: 'recent', title: cfg.recentTitle, books: recent });
-  }
+  if (recent.length > 0) sections.push({ id: 'recent', title: cfg.recentTitle, books: recent });
   if (rest.length > 0) {
-    sections.push({
-      id: 'library',
-      // Si es la única balda no hace falta titularla: ya se ve que es todo.
-      title: sections.length === 0 ? '' : cfg.libraryTitle,
-      books: rest
-    });
+    // Si es la única balda no hace falta titularla: ya se ve que es todo.
+    sections.push({ id: 'library', title: sections.length === 0 ? '' : cfg.libraryTitle, books: rest });
   }
   return sections;
 }
 
 /**
  * Atajo: biblioteca completa -> secciones ya empaquetadas en baldas.
- * @param {object[]} books
- * @param {object} [options] mezcla de DEFAULT_SECTIONS y DEFAULT_LAYOUT
  * @returns {Array<{id:string, title:string, count:number, shelves:object[]}>}
  */
 export function planBookshelf(books, options = {}, prepareStyles) {
@@ -491,6 +239,6 @@ export function planBookshelf(books, options = {}, prepareStyles) {
     id: section.id,
     title: section.title,
     count: section.books.length,
-    shelves: layoutShelves(section.books, options, typeof prepareStyles === "function" ? prepareStyles(section.books, options?.spine) : undefined)
+    shelves: layoutShelves(section.books, options, typeof prepareStyles === 'function' ? prepareStyles(section.books, options?.spine) : undefined)
   }));
 }

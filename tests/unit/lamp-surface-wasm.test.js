@@ -2,7 +2,7 @@
 import {readFileSync} from 'node:fs';
 import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
-vi.mock('../../src/js/rust-decor-core.js',()=>({getRustDecorCore:()=>state.core}));
+vi.mock('../../src/js/rust-decor-core.js',()=>({getRustDecorCore:()=>state.core,loadRustDecorCore:async()=>state.core??(await globalThis.__inhouseDecorReady).exports}));
 import {rustLampSurface} from '../../src/js/lamp-surface-wasm.js';
 import {createShelfLamp} from '../../src/js/shelf-lamps.js';
 import {createShelfLamp as originalLamp} from './helpers/reference-shelf-lamps.js';

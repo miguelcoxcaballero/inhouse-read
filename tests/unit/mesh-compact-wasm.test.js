@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import * as THREE from 'three';
 import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core}));
+vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core??(await globalThis.__inhouseRustReady).exports}));
 import {rustCompactGeometry} from '../../src/js/mesh-compact-wasm.js';
 import {compactGeometry as reference} from './helpers/reference-mesh-compact.js';
 import {createBaggebo} from '../../src/js/baggebo-model.js';

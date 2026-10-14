@@ -1,5 +1,5 @@
 /**
- * plants.js — macetas decorativas de la estantería, dibujadas a mano en SVG.
+ * plant-svg.mjs — macetas decorativas de la estantería, dibujadas a mano en SVG.
  *
  * Por qué SVG generado en código y no ficheros de un banco de iconos:
  *   - Licencia limpia: es dibujo propio, path a path, como el resto de la

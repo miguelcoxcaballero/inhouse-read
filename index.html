@@ -61,8 +61,9 @@
     } catch (error) { /* no IndexedDB here: the store reports it */ }
   </script>
 
-  <!-- The tiny core starts downloading/compiling while the app modules load.
-       No rendering or reader action waits for it; rust-core.js adopts it once. -->
+  <!-- The cores start downloading/compiling while the app modules load.
+       The shelf tables (catalogue-core.js, decor-catalogue.js) wait for them as
+       the modules evaluate; the loaders adopt each promise once. -->
   <link id="ihr-rust-core" rel="preload" as="fetch" type="application/wasm" href="/src/wasm/inhouse_read_core.wasm" crossorigin="anonymous" />
   <script>
     try {

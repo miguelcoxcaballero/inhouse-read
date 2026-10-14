@@ -7,7 +7,7 @@ import { referencePlantLeafGeometry,referencePlantRandom,createShelfPlant as ori
 import { plantLeafCases,plantModelCases,expectedPlantLeafCalls } from '../helpers/plant-leaf-cases.mjs';
 
 const observed = vi.hoisted(()=>({core:null}));
-vi.mock('../../src/js/rust-decor-core.js',()=>({getRustDecorCore:()=>observed.core,loadRustDecorCore:async()=>observed.core}));
+vi.mock('../../src/js/rust-decor-core.js',()=>({getRustDecorCore:()=>observed.core,loadRustDecorCore:async()=>observed.core??(await globalThis.__inhouseDecorReady).exports}));
 import { createShelfPlant,plantSurfacesReady } from '../../src/js/shelf-plants.js';
 
 let core;

@@ -1,3 +1,157 @@
+# 1.7.241 — estantería, medidas y colores desde Rust
+
+Changelog: «Estantería, medidas y colores de lomo desde Rust».
+Unidad layout-data, bloque 1. Las tablas y las decisiones de la estantería salen
+de los núcleos Rust, no de JavaScript:
+- Núcleo de la aplicación (`rust-core`, feature `app`): `catalogue.rs`
+  (paleta de 12 telas y texturas, armarios BAGGEBO y de madera, tipos de
+  estantería, valores por defecto de disposición/secciones/marcapáginas,
+  acabados de superficie, metales y la convención de volumen de papel),
+  `shelf_layout.rs` (hash FNV-1a sobre unidades UTF-16, estilo de cada lomo,
+  empaquetado en baldas con macetas de remate e inclinación, secciones de la
+  biblioteca, marcapáginas, progreso), `book_colors.rs` (hex, HSL, las 12
+  telas, `Math.hypot` de V8 con su suma compensada, tinta legible) y
+  `frame_padding.rs`.
+- Núcleo de decoración (feature `decor`): `plant_catalogue.rs` (tablas IKEA en
+  cm y mm, clase estándar de cada especie, dimensiones de cada planta en cada
+  maceta, etiquetas, colores de maceta, alias de plantas antiguas, lámparas) y
+  `lamp_kelvin.rs` (cuerpo negro de Kim et al., mezcla y suavizado). Las tablas
+  de plantas y lámparas viven aquí y no en el núcleo de la aplicación porque los
+  bytes de decoración deciden si los horneados guardados siguen siendo válidos
+  (`rust-domain-isolation` lo sigue comprobando).
+- Comunes: `json.rs` (escritor mínimo; claves en orden, números en su forma más
+  corta), `cabinet.rs` (medidas de los armarios) y `jsnum.rs` (`Math.round`,
+  `min`, `max` y `clamp` con la semántica de JS, incluido -0).
+JavaScript conserva solo la forma de sus objetos. `catalogue-core.js` y
+`decor-catalogue.js` esperan (`await` de nivel superior) al núcleo que
+`index.html` compila desde el principio, leen las tablas una vez como JSON y las
+congelan con la misma profundidad que tenían; `core-tables.js` comparte la
+espera, la lectura y el aviso. Si un núcleo no llega, el error es «No se pudo
+cargar la estantería. Comprueba la conexión e inténtalo de nuevo.» con una nota
+visible, un único reintento por minuto (`chunk-recovery`) y sin copia JS a la
+que recurrir. Los lomos y la disposición ya no esperan al módulo de interfaz:
+desaparecen `spine-seed-wasm.js`, `spine_seed.rs` y `shelf_styles.rs` (rust-ui)
+con sus dos pruebas (`spine-seed-wasm`, `spine-styles-wasm`), cuya cobertura
+pasa a `shelf-layout-core`. `plants.js` (307 líneas, no se envía: solo lo usa
+`scripts/export-plants.mjs` para regenerar `assets/plants`) pasa a
+`scripts/lib/plant-svg.mjs`; es reclasificación, no migración, y se descuenta
+aparte en el inventario.
+Archivos JS que quedan como cola de objetos: `shelf-types`, `plant-dimensions`,
+`plant-catalog-data`, `plant-records`, `lamp-catalog-data`, `lamp-kelvin`,
+`bookshelf-layout` (≈255 líneas: `withDefaults`, `seedFor`, `progressOf`,
+`bookmarkFor`, plan, rango de colación diferido), `spine-styles`, `book-colors`
+y `book-frame-padding`. Las comparaciones se hacen contra copias congeladas
+del código original (`tests/unit/helpers/reference-*.js`).
+Exactitud: orden de acumulación en f64, f32 y Uint8Clamped donde los había, `**`
+del host (Rust `powf` difiere de V8 en el último bit en ≈4,6 % de las
+entradas: el host calcula los cubos y cuadrados y Rust conserva el resto del
+orden), `Math.round` de JS (no el de Rust), `trim` con el conjunto de espacios de
+JS, suma compensada de `Math.hypot` de V8 y un margen para la decisión de tinta
+(mínimo ≈7e-8 sobre los 16,7 M de colores posibles).
+Cambios observables, todos en entradas que el original no manejaba bien: un id
+heredado de `Object.prototype` (`constructor`, `toString`) como planta, maceta
+o lámpara es desconocido, no basura ni un fallo; `layoutShelves` lanza
+`RangeError` ante una cola de macetas sin fin (separación 0, anchura 0,
+`maxTailPlants` enorme: el original no terminaba nunca); `hashString`, `unit` y
+`pick` ya no se exportan desde producción; una opción numérica pasada como
+cadena no se coacciona como la concatenación de JS.
+Pruebas nuevas (47): `catalogue-core` 14, `shelf-layout-core` 17,
+`book-colors-core` 10, `book-frame-padding-core` 3, `core-tables-failure` 3, más
+el `e2e` `rust-spine-styles` retargeteado al núcleo de la aplicación. Cada una
+compara con la referencia congelada con corpus aleatorios grandes (3000 estilos
+de lomo bajo todas las opciones, 1500 bibliotecas completas, 2500 divisiones en
+secciones, 400 000 colores, 200 000 marcos, 60 000 temperaturas, barrido de
+UTF-16 con sustitutos sueltos y NUL, casos del umbral de `hypot`) y, además,
+comprueban rechazo de punteros nulos/desalineados/fuera de rango sin trampa,
+cola desbocada, crecimiento de memoria nulo tras 2000 planes y el fallo del
+núcleo. Sin relajar ninguna aserción, tiempo de espera, reintento ni prueba
+existente; las pruebas pesadas llevan 60 s explícitos.
+Build, las 6097 unitarias en 4 bloques (442 archivos: 1673+1277+1416+1731; main
+1.7.240: 6067 y 439), sobre el árbol ya fusionado con main 1.7.240.
+E2E sobre el mismo árbol (puerto propio, comprobado que `vite preview` de ese
+puerto es el de este árbol): rust-spine-styles 2/2, rust-catalog-view 2/2,
+rust-foliage-projection 2/2, rust-shelf-refresh 2/2, shelf-types 2/2,
+lamp-catalog 3/3, lamp-switches 2/2, rust-core 2/2, offline-shell 2/2,
+bookshelf-polish 9/9, smoke 13/13, critical-regressions 6/6, plant-catalog 7/8.
+Antes de fusionar (1.7.239 + este bloque): cover-editor 15/15,
+book-names-everywhere 1/1, mobile-shelf-viewport 3/3, shelf-placement 2/2,
+shelf-trash 6/6, book-opening 11/11, shelf-zoom 1/2 (aislado y sobre el árbol
+fusionado: 6/6).
+Fallos vistos y su causa (ninguno se «arregló» tocando pruebas):
+- plant-catalog «una planta cae como modelo 3D en la papelera…»: la planta
+  sigue en la balda tras soltar sobre la papelera. Mi build falló 2 de 6
+  ejecuciones (pasó en la primera tanda, antes de fusionar), main (1.7.239) 1 de
+  6: el mismo fallo en ambas.
+- smoke «edita y conserva el color…»: en 29 ejecuciones de mi build falló 5
+  (cierre del lector a 30 s, o la pipeta) y en 18 de main 1 (en el cierre del
+  lector). No lo explico del todo: la diferencia (17 % frente a 6 %) no es
+  significativa con esos números, pero tampoco la descarto. Hay una carrera
+  previa en `app.js`: `currentBookId` se asigna tras `storeBookFile`, pero
+  `.pdf-page-canvas` aparece antes, y un clic en «Volver» antes de eso se
+  descarta; la ventana medida entre el lienzo y la escritura en IndexedDB es de
+  ≈50–130 ms en ambos builds (mi build tuvo 3 de 54 medidas de 200–660 ms, main
+  ninguna de 30). Una reproducción mínima (importar el PDF y pulsar «Volver» en
+  cuanto sale el lienzo) descartó 0 de 30 clics en mi build. La pipeta
+  depende de leer `.ihr-book-canvas` mientras corre la animación de 360 ms.
+  Sigue siendo la prueba más sensible a la carga de esta unidad; no se tocó.
+- rust-shelf-refresh «tras un módulo pendiente»: fallaba igual en main 1.7.239
+  (el lector espera al módulo retenido desde 1.7.238); lo arregla el
+  retargeteo de main 1.7.240, ya incluido: 2/2.
+- shelf-zoom 1 de 2 en la tanda inicial: 6/6 al repetirlo.
+Imagen: comparación visual (build de main 1.7.239 contra este bloque antes de
+fusionar, móvil, 6 estados: dos isométricos con lámpara, uno de madera, frontal
+con y sin lámpara, veinte libros): 5 idénticos al bit y uno con máximo 1/255;
+PASS.
+Tamaños (main 1.7.240 → este): núcleo de aplicación 380 590 → 443 442 B (+62 852),
+decoración 92 543 → 149 481 B (+56 938), UI 981 963 → 977 510 B (−4 453),
+principal 689 197 → 675 398 B (−13 799) crudos; neto en wasm +115 337 B. Sin cambio en
+el módulo de voz.
+Microbancos en Node (mediana, equipo compartido, no es un teléfono): estilos de
+lomo, lote de 6/50/200/1000 libros: Rust 0,015/0,023/0,048/0,249 ms frente a JS
+0,025/0,095/0,259/1,356; plan completo 0,057/0,184/0,354/1,558 frente a
+0,080/0,216/0,418/1,722 ms. Más lento o igual en Rust, y se mantiene por quitar la
+copia, no por velocidad: `bookmarkFor` (0,0003 frente a 0,0002 ms),
+`spineColorStyle` (0,0029 frente a 0,0018) y el avance de una transición de
+temperatura (30 pasos: 0,0067 frente a 0,0015 ms).
+Arranque (banco de arranque habitual: 4×CPU, 6 libros, pasadas alternas bajo
+el cerrojo de Chromium; main 1.7.240 contra este árbol, 11 y 10 pasadas: una
+se perdió esperando el cerrojo). Medianas main / este: domContentLoaded
+448,7 / 490,2 ms, primer dibujo 675,2 / 715,6, contenedor de la estantería
+4060,7 / 4281,7, primer lomo en el DOM 13 378 / 14 158, primera pintura 360 / 344,
+primera petición a IndexedDB 106 / 96. Es decir, este bloque es unos 40 ms más
+lento hasta DCL y el primer dibujo con 4×CPU en este equipo compartido (las 11
+medidas de main de DCL van de 360 a 517 ms; el quinto par de la primera serie
+salió al revés, con este bloque más rápido en todos los hitos). La causa
+conocida: las tablas ya no son literales JS sino JSON que el núcleo escribe, y
+`core-tables.js` lo lee y congela en el hilo principal antes del primer
+fotograma (decoración 26,6 KB, aplicación 4,6 KB: 3–9 ms en Node en frío, ×4 de
+estrangulación); no se espera a la compilación de los núcleos: las promesas
+`__inhouseRustReady`/`__inhouseDecorReady` se resuelven a 117–200 ms (main:
+77–169) y DCL llega a 456–625 ms (main: 361–519). El perfil de CPU de los
+primeros 1,5 s no muestra `core-tables.js` por encima de unos pocos ms. Sin
+afirmar mejora ni empeoramiento fuera de ese margen. No aplicado: leer de forma
+diferida `dimensions` y `sizeLabels` (13,2 KB de los 26,6 KB de decoración).
+Se conservan en JS, con motivo: `book-title.js` (NFKC, `\p{L}\p{N}` y cambio de
+mayúsculas del ICU del navegador: 28 puntos de código cambian de mayúscula y
+6167 de clase respecto a las tablas de Rust, no hay equivalente exacto);
+`book-length.js` (contador con `Intl.Segmenter` y recorrido del DOM; las
+constantes se comprueban contra las de Rust en `shelf-layout-core`),
+`book-length-queue.js`, `book-length-drive.js`, `file-book-length.js`,
+`pdf-book-length.js` y `book-storage-policy.js` (pegamento de IndexedDB, Blob,
+`fetch` y objetos: un prototipo de la cola en Rust fue más lento y retenía
+memoria, y el camino de arranque necesita `geometryState` síncrono),
+`shelf-metadata-records.js`, `selected-book-names.js` y `editor-tab-heading.js`
+(comparan objetos del almacén y del DOM); `shelf-decoration-layout.js` y
+`plant-rooftop-layout.js` (componen `shelf-placement.js`; el adaptador a Rust
+midió entre 1,6 y 4 veces más lento que el JS: colocar 6 libros al mover uno
+0,167 frente a 0,075 ms, disponer 50 libros 0,78 frente a 0,28 ms, disponer 200
+1,31 frente a 0,33 ms, mover uno entre 1000 libros 9,0 frente a 5,5 ms); asas táctiles de `plant-dimensions.js`
+(`padTapRect`, `padTapSquare`, `nearestTapTarget`, objetos del DOM).
+Inventario 8949 Rust/34509 JS = 20,59 % (main 1.7.240: 18,35 %; sin contar la
+reclasificación de `plants.js`: 20,45 %); no es porcentaje funcional.
+Pendiente de la unidad: todo lo anterior que se conserva en JS, y las rutas
+`rust-ui` que aún no usan estas tablas.
+
 # 1.7.240 — controlador del catálogo y rutas del follaje en Rust
 
 Changelog: «Controlador del catálogo y follaje en Rust».

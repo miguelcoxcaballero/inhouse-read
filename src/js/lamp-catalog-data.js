@@ -1,28 +1,12 @@
 import { LAMP_KELVINS } from './lamp-kelvin.js';
+import { tables } from './decor-catalogue.js';
 
 /** Millimetres; the tripod is a compact interpretation of the supplied photo.
  * `light` names the lights a fixture needs in the room (see shelf-lamp-lighting),
- * known before its model exists so scrolling never changes the shader. */
-export const LAMP_CATALOG = Object.freeze([
-  {
-    id:'mittled', name:'MITTLED', title:'Foco bajo balda',
-    subtitle:'Aluminio', mount:'undershelf',
-    dimensions:Object.freeze({ width:68,height:11,depth:68 }), warmKelvin:2700, light:'cone',
-    referenceUrl:'https://www.ikea.com/es/es/search/?q=MITTLED'
-  },
-  {
-    id:'tarnaby', name:'TÄRNABY', title:'Farol retro',
-    subtitle:'Cristal y latón', mount:'standing',
-    dimensions:Object.freeze({ width:150,height:250,depth:150 }), warmKelvin:2700, light:'filaments:4',
-    referenceUrl:'https://www.ikea.com/es/es/search/?q=T%C3%84RNABY'
-  },
-  {
-    id:'tripod', name:'TRÍPODE', title:'Madera y lino',
-    subtitle:'Madera y lino', mount:'standing',
-    dimensions:Object.freeze({ width:180,height:280,depth:180 }), warmKelvin:2700, light:'cone',
-    referenceUrl:'https://www.ikea.com/es/es/search/?q=LAUTERS'
-  }
-].map(Object.freeze));
+ * known before its model exists so scrolling never changes the shader. The
+ * table is built by the Rust core. */
+export const LAMP_CATALOG = Object.freeze(tables.lampCatalog.map(lamp =>
+  Object.freeze({ ...lamp, dimensions:Object.freeze(lamp.dimensions) })));
 
 const byId = new Map(LAMP_CATALOG.map(lamp => [lamp.id,lamp]));
 export const getCatalogLamp = id => byId.get(String(id || '')) ?? null;

@@ -12,9 +12,11 @@ function inputs(seed=1) {
   const mask=glyphMask(raw,24,20,width)
   return {gray,near,width,height,rows,mask}
 }
+// A Worker is a fresh realm: the page's early compilation promises do not exist there.
+const workerRealm=()=>{vi.resetModules();delete globalThis.__inhouseRustReady;delete globalThis.__inhouseDecorReady}
 let scope
 beforeEach(async()=>{
-  vi.resetModules();scope={postMessage:vi.fn()};vi.stubGlobal('self',scope)
+  workerRealm();scope={postMessage:vi.fn()};vi.stubGlobal('self',scope)
   const {loadRustCore}=await import('../../src/js/rust-core.js')
   expect(await loadRustCore({bytes:readFileSync(new URL('../../src/wasm/inhouse_read_core.wasm',import.meta.url))})).not.toBeNull()
   await import('../../src/js/font-score-worker.js')
@@ -62,7 +64,7 @@ describe('real module Worker scorer protocol',()=>{
     expect(await send({type:'score',job:8,request:3,mask})).toEqual({type:'error',job:8,request:3})
   })
   it('keeps the original scorer when the compiled module cannot be loaded',async()=>{
-    vi.resetModules();vi.stubGlobal('fetch',vi.fn(async()=>{throw new Error('Offline first visit')}))
+    workerRealm();vi.stubGlobal('fetch',vi.fn(async()=>{throw new Error('Offline first visit')}))
     await import('../../src/js/font-score-worker.js')
     const {mask,...context}=inputs(7)
     await send({type:'begin',job:9,request:1,...context})
@@ -71,7 +73,7 @@ describe('real module Worker scorer protocol',()=>{
     expect(fetch).toHaveBeenCalledOnce()
   })
   it('accepts, scores and closes a job without waiting for a pending wasm fetch',async()=>{
-    vi.resetModules()
+    workerRealm()
     let finishFetch
     vi.stubGlobal('fetch',vi.fn(()=>new Promise(resolve=>{finishFetch=resolve})))
     await import('../../src/js/font-score-worker.js')

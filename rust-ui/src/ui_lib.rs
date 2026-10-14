@@ -4,7 +4,6 @@ mod stage_gate;
 mod prepared_page;
 mod refresh_queue;
 mod foliage;
-mod shelf_styles;
 mod profile_view;
 mod catalog_art;
 mod catalog_view;

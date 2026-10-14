@@ -1,21 +1,16 @@
 import { getCatalogPlant, getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { plantDimensions, PLANT_REFERENCE_POTS } from './plant-dimensions.js';
+import { tables } from './decor-catalogue.js';
 
-const LEGACY_PLANTS = Object.freeze({
-  upright:'sansevieria', sansevieria:'sansevieria', monstera:'monstera',
-  leafy:'hedera', pothos:'hedera', ivy:'hedera', hedera:'hedera',
-  suculenta:'succulent', succulent:'succulent', cactus:'cactus',
-  palm:'chamaedorea', chamaedorea:'chamaedorea',
-  fern:'nephrolepis', nephrolepis:'nephrolepis',
-  zz:'zamioculcas', zamioculcas:'zamioculcas'
-});
+// Records saved by earlier versions name their species differently (Rust table).
+const LEGACY_PLANTS = Object.freeze(tables.legacyPlants);
 
 /** Every saved generation uses one of the current volumetric plant models. */
 export function resolveCatalogPlant(entry = {}) {
   const explicit = getCatalogPlant(entry.catalogId);
   if (explicit) return explicit;
   const alias = String(entry.variant || entry.catalogId || '').trim().toLowerCase();
-  return getCatalogPlant(LEGACY_PLANTS[alias] || 'monstera');
+  return getCatalogPlant(Object.hasOwn(LEGACY_PLANTS, alias) ? LEGACY_PLANTS[alias] : 'monstera');
 }
 
 /** Complete old records without moving objects or resetting an empty collection.

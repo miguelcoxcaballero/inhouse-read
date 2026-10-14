@@ -5,7 +5,7 @@ import {rustPlantIvyGeometry} from '../../src/js/plant-ivy-wasm.js';
 import {ivyLeafGeometry} from './helpers/reference-plant-ivy.js';
 import {referencePlantRandom,createShelfPlant as originalModel,plantSurfacesReady as originalReady} from './helpers/reference-shelf-plants.js';
 const observed=vi.hoisted(()=>({core:null}));
-vi.mock('../../src/js/rust-decor-core.js',()=>({getRustDecorCore:()=>observed.core,loadRustDecorCore:async()=>observed.core}));
+vi.mock('../../src/js/rust-decor-core.js',()=>({getRustDecorCore:()=>observed.core,loadRustDecorCore:async()=>observed.core??(await globalThis.__inhouseDecorReady).exports}));
 import {createShelfPlant,plantSurfacesReady} from '../../src/js/shelf-plants.js';
 let core;
 beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_decor.wasm'))).instance.exports;expect(typeof core.plant_ivy_mesh).toBe('function');});
