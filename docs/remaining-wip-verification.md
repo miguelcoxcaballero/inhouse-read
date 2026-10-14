@@ -54,7 +54,11 @@ almacenamiento y eventos), `android-file-import-differential` (300 buzones),
 que lanza), `legacy-book-recovery-wasm` (600 escenarios), `shell-signature-core` (20 000
 documentos), `cloud-compat-fixtures` (manifiestos y archivo de estado escritos por versiones
 anteriores: mezcla idéntica y bytes idénticos), `cloud-progress-timers`, `cloud-bridge-preload`
-(el comportamiento antes de que el módulo esté en memoria) y `cloud-native`; el e2e
+(el comportamiento antes de que el módulo esté en memoria), `cloud-native` y `cloud-leaks`
+(recolección real de basura: 6 pruebas de restauración de libros, carpeta local, buzón Android
+parado, sincronización reiniciada, copia de la biblioteca y cliente de Drive; los asas vivos
+del módulo vuelven a la línea base y su memoria lineal no crece en la segunda mitad; el control
+negativo sin `stop()` deja 2800 asas); el e2e
 `rust-cloud-startup` (con una sesión de Drive guardada, el módulo no se pide antes del
 primer fotograma vivo y la sincronización termina). Pruebas existentes modificadas, sin
 relajar aserciones: las suites que reinician módulos cargan el módulo `ui` real
@@ -75,7 +79,11 @@ Verificación (versión 1.7.243). Build correcto. Unitarias en 4 bloques: 117+11
 archivos, 1687+1297+1452+1738 = 6174 pruebas, todas pasan. E2E sobre mi build (puerto
 propio, una especificación cada vez): rust-cloud-startup 1/1, drive-library-restore 2/2,
 offline-shell 2/2, android-file-import 4/4, download-android 3/3, profile-updates 1/1,
-smoke 13/13, critical-regressions 6/6. No cambia ningún píxel (ningún estilo, texto ni
+smoke 13/13, critical-regressions 6/6, rust-ui-late-load 1/1 y rust-startup 1/5: los cuatro casos
+que fallan («a pending core/decor download never holds the first shelf frame», «offline core/decor
+keeps the saved shelf usable…») fallan igual, con las mismas cuatro líneas, en un build de main
+1.7.242 ejecutado en la misma máquina (no es de esta unidad: la estantería espera al núcleo
+desde 1.7.241). No cambia ningún píxel (ningún estilo, texto ni
 vista): no se ejecutó el arnés visual.
 
 Límites: un fallo de carga del módulo `ui` hace que la sincronización con Drive, la copia de
