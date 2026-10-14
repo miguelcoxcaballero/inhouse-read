@@ -33,87 +33,59 @@ const MAX_EMPTY_SPEECH_PAGES = 12
 const speechCancelled = () => new DOMException('La preparación de la página ha cambiado.', 'AbortError')
 
 export class PdfReader {
-  #container
-  #loadingTask
-  #doc
-  #retainedCovers = new Map()
-  #pageNum = 1
-  #baseScale = 1
-  #zoomed = false
-  #canvas
-  #textLayerEl
-  #pageWrap
-  #renderToken = 0
-  #onRelocate = () => {}
-  #detachGestures = () => {}
-  #preferences = { ...DEFAULT_READING_PREFERENCES }
-  #reflow
-  #renderState
-  #stagedSpeech
-  #speechRequest = 0
-  #speechBrowsing = false
-  #speechDetached = false
-  #speechCursor = null
-  #speechReveal = null
-  #renderReady = Promise.resolve()
-  #renderRequest
-  #pageText = ''
-  #resizeObserver
-  #resizeTimer
-  #layoutWidth = 0
-  #imageLayouts = new WeakMap()
-  #snapshotToneState
-  #lengthMetadata
-  #textOffset = 0
-  #textHeight = 0
-  #scrollTimer
-  #detachScroll = () => {}
+  s = {
+    container:undefined, loadingTask:undefined, doc:undefined, retainedCovers:new Map(), pageNum:1, baseScale:1, zoomed:false, canvas:undefined,
+    textLayerEl:undefined, pageWrap:undefined, renderToken:0, onRelocate:() => {}, detachGestures:() => {}, preferences:{ ...DEFAULT_READING_PREFERENCES },
+    reflow:undefined, renderState:undefined, stagedSpeech:undefined, speechRequest:0, speechBrowsing:false, speechDetached:false, speechCursor:null,
+    speechReveal:null, renderReady:Promise.resolve(), renderRequest:undefined, pageText:'', resizeObserver:undefined, resizeTimer:undefined, layoutWidth:0,
+    imageLayouts:new WeakMap(), snapshotToneState:undefined, lengthMetadata:undefined, textOffset:0, textHeight:0, scrollTimer:undefined, detachScroll:() => {}
+  }
 
   async open(container, arrayBuffer, { onRelocate, onToggleChrome, onUserNavigation, initialPage, initialLocator, initialFraction = 0, preferences } = {}) {
-    this.#container = container
-    this.#onRelocate = onRelocate ?? (() => {})
+    this.s.container = container
+    this.s.onRelocate = onRelocate ?? (() => {})
 
-    const loading = this.#loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+    const loading = this.s.loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
     const pdf = await loading.promise
-    if (loading !== this.#loadingTask) return
-    this.#doc = pdf
-    this.#lengthMetadata = null
-    this.#textOffset = 0
-    this.#zoomed = false
-    if (preferences) this.#preferences = normalizeReadingPreferences(preferences)
+    if (loading !== this.s.loadingTask) return
+    this.s.doc = pdf
+    this.s.lengthMetadata = null
+    this.s.textOffset = 0
+    this.s.zoomed = false
+    if (preferences) this.s.preferences = normalizeReadingPreferences(preferences)
 
     container.innerHTML = ''
     container.classList.add('pdf-reader')
     container.classList.remove('foliate-reader')
 
-    this.#pageWrap = document.createElement('div')
-    this.#pageWrap.className = 'pdf-page-wrap'
-    this.#canvas = document.createElement('canvas')
-    this.#canvas.className = 'pdf-page-canvas'
-    this.#textLayerEl = document.createElement('div')
-    this.#textLayerEl.className = 'pdf-text-layer'
+    this.s.pageWrap = document.createElement('div')
+    this.s.pageWrap.className = 'pdf-page-wrap'
+    this.s.canvas = document.createElement('canvas')
+    this.s.canvas.className = 'pdf-page-canvas'
+    this.s.textLayerEl = document.createElement('div')
+    this.s.textLayerEl.className = 'pdf-text-layer'
 
-    this.#pageWrap.append(this.#canvas, this.#textLayerEl)
-    container.append(this.#pageWrap)
-    this.#reflow = document.createElement('article')
-    this.#reflow.className = 'pdf-reflow-page'
-    this.#reflow.hidden = true
-    container.append(this.#reflow)
+    this.s.pageWrap.append(this.s.canvas, this.s.textLayerEl)
+    container.append(this.s.pageWrap)
+    this.s.reflow = document.createElement('article')
+    this.s.reflow.className = 'pdf-reflow-page'
+    this.s.reflow.hidden = true
+    container.append(this.s.reflow)
     this.#applyTextStyles()
     const onScroll = () => {
-      if (!this.#doc || this.#preferences.pdfMode !== 'text') return
-      clearTimeout(this.#scrollTimer)
-      this.#scrollTimer = setTimeout(() => this.#rememberTextPosition(), 150)
+      if (!this.s.doc || this.s.preferences.pdfMode !== 'text') return
+      clearTimeout(this.s.scrollTimer)
+      this.s.scrollTimer = setTimeout(() => this.#rememberTextPosition(), 150)
     }
     container.addEventListener('scroll', onScroll, { passive:true })
     const onWheel = event => { if (event.deltaX || event.deltaY) onUserNavigation?.() }
     container.addEventListener('wheel', onWheel, { passive:true })
-    this.#detachScroll = () => {
+    this.s.detachScroll = () => {
       container.removeEventListener('scroll', onScroll)
       container.removeEventListener('wheel', onWheel)
     }
 
-    this.#detachGestures = attachSwipeNavigation(container, {
+    this.s.detachGestures = attachSwipeNavigation(container, {
       ...speechHold(container.ownerDocument),
       onNext: () => { onUserNavigation?.(); return this.next() },
       onPrev: () => { onUserNavigation?.(); return this.prev() },
@@ -122,84 +94,84 @@ export class PdfReader {
       onToggleChrome,
       // Enlarged PDFs must pan, rather than accidentally turn a page. Let the
       // browser supply its touch momentum and keep long-press selection native.
-      canSwipe: () => this.#preferences.pdfMode === 'text'
-        || !this.#zoomed && this.#preferences.zoom <= 100,
-      getMotionSurface: () => this.#preferences.pdfMode === 'text' ? this.#reflow : this.#pageWrap
+      canSwipe: () => this.s.preferences.pdfMode === 'text'
+        || !this.s.zoomed && this.s.preferences.zoom <= 100,
+      getMotionSurface: () => this.s.preferences.pdfMode === 'text' ? this.s.reflow : this.s.pageWrap
     })
 
     await this.goToPage(initialPage ?? (initialLocator?.kind === 'pdf-page' ? initialLocator.value : undefined)
       ?? Math.round((Number(initialFraction) || 0) * (pdf.numPages - 1)) + 1, { textOffset:initialLocator?.textOffset })
-    if (loading !== this.#loadingTask) return
+    if (loading !== this.s.loadingTask) return
     // The reader lives inside the actual usable viewport. A phone rotation,
     // split view or browser resize must refit both pixels and selection, without
     // treating that layout change as navigation or losing the saved page.
     if (typeof ResizeObserver !== 'undefined') {
-      this.#resizeObserver = new ResizeObserver(() => this.#onResize())
-      this.#resizeObserver.observe(container)
+      this.s.resizeObserver = new ResizeObserver(() => this.#onResize())
+      this.s.resizeObserver.observe(container)
     }
   }
 
   get pageCount() {
-    return this.#doc?.numPages ?? 0
+    return this.s.doc?.numPages ?? 0
   }
 
   get currentPage() {
-    return this.#pageNum
+    return this.s.pageNum
   }
 
   async goToPage(n, { textOffset = 0, edge } = {}) {
-    if (!this.#doc) return
+    if (!this.s.doc) return
     this.#cancelResize()
     this.#invalidateStagedSpeech()
-    const clamped = Math.min(Math.max(1, Math.round(Number(n) || 1)), this.#doc.numPages)
-    this.#pageNum = clamped
+    const clamped = Math.min(Math.max(1, Math.round(Number(n) || 1)), this.s.doc.numPages)
+    this.s.pageNum = clamped
     const rendered = await this.#render()
-    if (!rendered || this.#pageNum !== clamped) return
+    if (!rendered || this.s.pageNum !== clamped) return
     this.#cancelResize()
-    clearTimeout(this.#scrollTimer)
-    this.#container.scrollTop = edge === 'end' && this.#preferences.pdfMode === 'text'
-      ? Math.max(0, this.#container.scrollHeight - this.#container.clientHeight) : 0
-    this.#textOffset = Math.min(this.#pageText.length, Number.isFinite(Number(textOffset)) ? Math.max(0, Math.trunc(Number(textOffset))) : 0)
-    if (edge === 'end') this.#textOffset = this.#visibleTextOffset()
-    else this.#restoreTextOffset(this.#textOffset)
+    clearTimeout(this.s.scrollTimer)
+    this.s.container.scrollTop = edge === 'end' && this.s.preferences.pdfMode === 'text'
+      ? Math.max(0, this.s.container.scrollHeight - this.s.container.clientHeight) : 0
+    this.s.textOffset = Math.min(this.s.pageText.length, Number.isFinite(Number(textOffset)) ? Math.max(0, Math.trunc(Number(textOffset))) : 0)
+    if (edge === 'end') this.s.textOffset = this.#visibleTextOffset()
+    else this.#restoreTextOffset(this.s.textOffset)
     this.#emitLocation()
   }
 
   async next({ source = false, isActive } = {}) {
-    if (!this.#doc || isActive?.() === false) return
+    if (!this.s.doc || isActive?.() === false) return
     // The voice has already read the entire physical page. Manual navigation
     // instead traverses every screen of an adaptable page before leaving it.
     if (!source && this.#moveTextViewport(1)) return
-    if (this.#pageNum < this.pageCount) await this.goToPage(this.#pageNum + 1)
+    if (this.s.pageNum < this.pageCount) await this.goToPage(this.s.pageNum + 1)
   }
 
   async prev() {
-    if (!this.#doc || this.#moveTextViewport(-1)) return
-    if (this.#pageNum > 1) await this.goToPage(this.#pageNum - 1, { edge:'end' })
+    if (!this.s.doc || this.#moveTextViewport(-1)) return
+    if (this.s.pageNum > 1) await this.goToPage(this.s.pageNum - 1, { edge:'end' })
   }
 
   #moveTextViewport(direction) {
-    if (this.#preferences.pdfMode !== 'text') return false
+    if (this.s.preferences.pdfMode !== 'text') return false
     this.#settleTextResize()
-    const height = this.#container.clientHeight
+    const height = this.s.container.clientHeight
     if (!(height > 0)) return false
-    const end = Math.max(0, this.#container.scrollHeight - height)
-    const current = Math.min(end, Math.max(0, this.#container.scrollTop))
+    const end = Math.max(0, this.s.container.scrollHeight - height)
+    const current = Math.min(end, Math.max(0, this.s.container.scrollTop))
     if (direction > 0 ? current >= end - 1 : current <= 1) return false
     // One line of overlap makes words on a viewport boundary readable in full.
-    const line = Math.ceil(this.#preferences.fontSize * this.#preferences.lineHeight)
+    const line = Math.ceil(this.s.preferences.fontSize * this.s.preferences.lineHeight)
     const top = Math.min(end, Math.max(0, current + direction * Math.max(1, height - line)))
-    this.#container.scrollTo({ top, behavior:'instant' })
+    this.s.container.scrollTo({ top, behavior:'instant' })
     this.#rememberTextPosition()
     return true
   }
 
   #visibleTextOffset() {
-    const map = mapTextNodes(this.#reflow), doc = this.#reflow?.ownerDocument
-    if (this.#preferences.pdfMode !== 'text' || !map.text || !doc?.createRange) return this.#textOffset
-    const edge = this.#container.getBoundingClientRect().top
+    const map = mapTextNodes(this.s.reflow), doc = this.s.reflow?.ownerDocument
+    if (this.s.preferences.pdfMode !== 'text' || !map.text || !doc?.createRange) return this.s.textOffset
+    const edge = this.s.container.getBoundingClientRect().top
     const range = doc.createRange()
-    if (typeof range.getClientRects !== 'function') return this.#textOffset
+    if (typeof range.getClientRects !== 'function') return this.s.textOffset
     let low = 0, high = map.text.length
     while (low < high) {
       const middle = (low + high) >>> 1
@@ -211,92 +183,92 @@ export class PdfReader {
   }
 
   #restoreTextOffset(offset) {
-    if (this.#preferences.pdfMode !== 'text') return
-    const map = mapTextNodes(this.#reflow)
-    this.#textOffset = Math.min(map.text.length, Math.max(0, Math.trunc(Number(offset) || 0)))
-    if (!map.text || !this.#textOffset) return
-    const range = map.rangeFor(Math.min(this.#textOffset,map.text.length - 1),Math.min(this.#textOffset + 1,map.text.length))
+    if (this.s.preferences.pdfMode !== 'text') return
+    const map = mapTextNodes(this.s.reflow)
+    this.s.textOffset = Math.min(map.text.length, Math.max(0, Math.trunc(Number(offset) || 0)))
+    if (!map.text || !this.s.textOffset) return
+    const range = map.rangeFor(Math.min(this.s.textOffset,map.text.length - 1),Math.min(this.s.textOffset + 1,map.text.length))
     const rect = range?.getClientRects?.()[0]
-    if (rect) this.#container.scrollTo({ top:this.#container.scrollTop + rect.top - this.#container.getBoundingClientRect().top, behavior:'instant' })
+    if (rect) this.s.container.scrollTo({ top:this.s.container.scrollTop + rect.top - this.s.container.getBoundingClientRect().top, behavior:'instant' })
   }
 
   #rememberTextPosition() {
-    if (!this.#doc || this.#preferences.pdfMode !== 'text' || this.#reflow.hidden) return
+    if (!this.s.doc || this.s.preferences.pdfMode !== 'text' || this.s.reflow.hidden) return
     // A queued scroll event can arrive before ResizeObserver after rotation.
     // Those pixels belong to the new layout, not a new reading position.
-    if (this.#resizeTimer != null) return
+    if (this.s.resizeTimer != null) return
     if (this.#textLayoutChanged()) { this.#onResize(); return }
     const offset = this.#visibleTextOffset()
-    if (offset === this.#textOffset) return
-    this.#textOffset = offset
+    if (offset === this.s.textOffset) return
+    this.s.textOffset = offset
     this.#emitLocation()
   }
 
   #textLayoutChanged() {
-    return Math.abs(this.#containerWidth() - this.#layoutWidth) >= 1 || this.#container.clientHeight !== this.#textHeight
+    return Math.abs(this.#containerWidth() - this.s.layoutWidth) >= 1 || this.s.container.clientHeight !== this.s.textHeight
   }
 
   #cancelResize() {
-    clearTimeout(this.#resizeTimer)
-    this.#resizeTimer = null
+    clearTimeout(this.s.resizeTimer)
+    this.s.resizeTimer = null
   }
 
   #settleTextResize() {
-    if (!this.#doc || this.#preferences.pdfMode !== 'text' || this.#resizeTimer == null && !this.#textLayoutChanged()) return
+    if (!this.s.doc || this.s.preferences.pdfMode !== 'text' || this.s.resizeTimer == null && !this.#textLayoutChanged()) return
     this.#cancelResize()
-    clearTimeout(this.#scrollTimer)
-    this.#layoutWidth = this.#containerWidth(); this.#textHeight = this.#container.clientHeight
-    this.#restoreTextOffset(this.#textOffset)
+    clearTimeout(this.s.scrollTimer)
+    this.s.layoutWidth = this.#containerWidth(); this.s.textHeight = this.s.container.clientHeight
+    this.#restoreTextOffset(this.s.textOffset)
   }
 
   #emitLocation() {
-    if (!this.#doc) return
-    this.#onRelocate({ index:this.#pageNum - 1,
-      fraction:(this.#pageNum - 1) / Math.max(1, this.#doc.numPages - 1),
-      ...(this.#textOffset > 0 ? { textOffset:this.#textOffset } : {}) })
+    if (!this.s.doc) return
+    this.s.onRelocate({ index:this.s.pageNum - 1,
+      fraction:(this.s.pageNum - 1) / Math.max(1, this.s.doc.numPages - 1),
+      ...(this.s.textOffset > 0 ? { textOffset:this.s.textOffset } : {}) })
   }
 
   async getLengthMetadata() {
-    const pdf = this.#doc
+    const pdf = this.s.doc
     if (!pdf) return null
-    if (this.#lengthMetadata?.pdf !== pdf) {
-      this.#lengthMetadata = { pdf, promise:measurePDFBookLength(pdf, { isActive:() => this.#doc === pdf }) }
+    if (this.s.lengthMetadata?.pdf !== pdf) {
+      this.s.lengthMetadata = { pdf, promise:measurePDFBookLength(pdf, { isActive:() => this.s.doc === pdf }) }
     }
-    const result = await this.#lengthMetadata.promise
-    return this.#doc === pdf ? result : null
+    const result = await this.s.lengthMetadata.promise
+    return this.s.doc === pdf ? result : null
   }
 
   async toggleZoom(clientX, clientY) {
-    if (!this.#doc || this.#preferences.pdfMode === 'text') return
+    if (!this.s.doc || this.s.preferences.pdfMode === 'text') return
     this.#invalidateStagedSpeech()
-    const containerRect = this.#container.getBoundingClientRect()
-    const pageRect = this.#canvas.getBoundingClientRect()
+    const containerRect = this.s.container.getBoundingClientRect()
+    const pageRect = this.s.canvas.getBoundingClientRect()
     const x = clientX ?? containerRect.left + containerRect.width / 2
     const y = clientY ?? containerRect.top + containerRect.height / 2
-    const width = pageRect.width || parseFloat(this.#canvas.style.width)
-    const height = pageRect.height || parseFloat(this.#canvas.style.height)
+    const width = pageRect.width || parseFloat(this.s.canvas.style.width)
+    const height = pageRect.height || parseFloat(this.s.canvas.style.height)
     const focalX = Math.max(0, Math.min(1, (x - pageRect.left) / width))
     const focalY = Math.max(0, Math.min(1, (y - pageRect.top) / height))
-    this.#zoomed = !this.#zoomed
-    if (!await this.#render() || !this.#doc) return
+    this.s.zoomed = !this.s.zoomed
+    if (!await this.#render() || !this.s.doc) return
     // Keep the same printed point under the tap, including an already scrolled
     // page and the PDF's desk margins, instead of jumping toward its corner.
-    const updated = this.#canvas.getBoundingClientRect()
-    this.#container.scrollTo({
-      left:this.#container.scrollLeft + updated.left + focalX * (updated.width || parseFloat(this.#canvas.style.width)) - x,
-      top:this.#container.scrollTop + updated.top + focalY * (updated.height || parseFloat(this.#canvas.style.height)) - y,
+    const updated = this.s.canvas.getBoundingClientRect()
+    this.s.container.scrollTo({
+      left:this.s.container.scrollLeft + updated.left + focalX * (updated.width || parseFloat(this.s.canvas.style.width)) - x,
+      top:this.s.container.scrollTop + updated.top + focalY * (updated.height || parseFloat(this.s.canvas.style.height)) - y,
       behavior:'instant'
     })
   }
 
   #renderPreferences() {
-    const p = this.#preferences
-    return JSON.stringify([p.pdfMode, p.zoom, this.#zoomed, p.theme,
+    const p = this.s.preferences
+    return JSON.stringify([p.pdfMode, p.zoom, this.s.zoomed, p.theme,
       ...(p.pdfMode === 'text' ? [p.font, p.fontSize, p.lineHeight, p.fontWeight, p.margin, p.align] : [])])
   }
 
   #renderKey() {
-    return { doc:this.#doc, page:this.#pageNum, geometry:this.#speechGeometry(), preferences:this.#renderPreferences() }
+    return { doc:this.s.doc, page:this.s.pageNum, geometry:this.#speechGeometry(), preferences:this.#renderPreferences() }
   }
 
   #sameRenderKey(a, b) {
@@ -305,9 +277,9 @@ export class PdfReader {
   }
 
   #renderRootsMatch(state) {
-    return state && state.canvas === this.#canvas && state.textLayerEl === this.#textLayerEl
-      && state.pageWrap === this.#pageWrap && state.reflow === this.#reflow
-      && state.pageWrap.parentNode === this.#container && state.reflow.parentNode === this.#container
+    return state && state.canvas === this.s.canvas && state.textLayerEl === this.s.textLayerEl
+      && state.pageWrap === this.s.pageWrap && state.reflow === this.s.reflow
+      && state.pageWrap.parentNode === this.s.container && state.reflow.parentNode === this.s.container
       && state.canvas.parentNode === state.pageWrap && state.textLayerEl.parentNode === state.pageWrap
   }
 
@@ -326,7 +298,7 @@ export class PdfReader {
   #renderIsIntact(state) {
     const saved = state?.painted
     if (!state?.complete || !saved || !this.#renderRootsMatch(state)) return false
-    if (this.#preferences.pdfMode === 'text') {
+    if (this.s.preferences.pdfMode === 'text') {
       return state.reflow.textContent === saved.reflowText && state.reflow.style.cssText === saved.reflowStyle
     }
     return state.layoutWidth === state.key.geometry[0] && state.canvas.width === saved.width && state.canvas.height === saved.height
@@ -338,63 +310,63 @@ export class PdfReader {
   }
 
   #trackRender(promise, key) {
-    const request = this.#renderRequest = { key }
-    this.#renderReady = promise.finally(() => { if (this.#renderRequest === request) this.#renderRequest = null })
-    return this.#renderReady
+    const request = this.s.renderRequest = { key }
+    this.s.renderReady = promise.finally(() => { if (this.s.renderRequest === request) this.s.renderRequest = null })
+    return this.s.renderReady
   }
 
   #render() {
-    const key = this.#renderKey(), state = this.#renderState
+    const key = this.#renderKey(), state = this.s.renderState
     // A restore can arrive while the same page or its theme is still settling.
     // Await that work; only completed, unchanged pixels and text are reusable.
-    if (this.#sameRenderKey(this.#renderRequest?.key, key) && this.#renderRootsMatch(state)) return this.#renderReady
-    if (this.#sameRenderKey(state?.key, key) && this.#renderIsIntact(state)) return this.#renderReady
+    if (this.#sameRenderKey(this.s.renderRequest?.key, key) && this.#renderRootsMatch(state)) return this.s.renderReady
+    if (this.#sameRenderKey(state?.key, key) && this.#renderIsIntact(state)) return this.s.renderReady
     return this.#trackRender(this.#renderPage(key), key)
   }
 
   #containerWidth() {
-    return this.#container.clientWidth || this.#container.getBoundingClientRect().width || 360
+    return this.s.container.clientWidth || this.s.container.getBoundingClientRect().width || 360
   }
 
   #onResize() {
-    if (this.#stagedSpeech && !this.#stagedSpeech.valid()) this.#invalidateStagedSpeech()
-    if (!this.#doc) return
-    if (this.#preferences.pdfMode === 'text') {
+    if (this.s.stagedSpeech && !this.s.stagedSpeech.valid()) this.#invalidateStagedSpeech()
+    if (!this.s.doc) return
+    if (this.s.preferences.pdfMode === 'text') {
       if (!this.#textLayoutChanged()) return
-      const offset = this.#textOffset, pdf = this.#doc, page = this.#pageNum
-      clearTimeout(this.#scrollTimer)
-      this.#layoutWidth = this.#containerWidth(); this.#textHeight = this.#container.clientHeight
+      const offset = this.s.textOffset, pdf = this.s.doc, page = this.s.pageNum
+      clearTimeout(this.s.scrollTimer)
+      this.s.layoutWidth = this.#containerWidth(); this.s.textHeight = this.s.container.clientHeight
       this.#cancelResize()
-      this.#resizeTimer = setTimeout(() => {
-        this.#resizeTimer = null
-        if (this.#doc !== pdf || this.#pageNum !== page || this.#preferences.pdfMode !== 'text') return
+      this.s.resizeTimer = setTimeout(() => {
+        this.s.resizeTimer = null
+        if (this.s.doc !== pdf || this.s.pageNum !== page || this.s.preferences.pdfMode !== 'text') return
         this.#restoreTextOffset(offset)
       }, 80)
       return
     }
-    if (Math.abs(this.#containerWidth() - this.#layoutWidth) < 1) return
-    clearTimeout(this.#resizeTimer)
-    this.#resizeTimer = setTimeout(() => {
-      this.#resizeTimer = null
-      if (!this.#doc) return
+    if (Math.abs(this.#containerWidth() - this.s.layoutWidth) < 1) return
+    clearTimeout(this.s.resizeTimer)
+    this.s.resizeTimer = setTimeout(() => {
+      this.s.resizeTimer = null
+      if (!this.s.doc) return
       this.#render().catch(error => {
-        if (this.#doc) console.warn('No se pudo adaptar la página al nuevo tamaño.', error)
+        if (this.s.doc) console.warn('No se pudo adaptar la página al nuevo tamaño.', error)
       })
     }, 80)
   }
 
   async #renderPage(key) {
-    const token = ++this.#renderToken
-    this.#container.setAttribute('aria-busy', 'true')
+    const token = ++this.s.renderToken
+    this.s.container.setAttribute('aria-busy', 'true')
     this.#invalidateStagedSpeech()
-    this.#cancelRender(this.#renderState)
-    this.#releaseOriginal(this.#renderState)
-    const state = this.#renderState = {
-      pageWrap:this.#pageWrap, canvas:this.#canvas, textLayerEl:this.#textLayerEl, reflow:this.#reflow, key
+    this.#cancelRender(this.s.renderState)
+    this.#releaseOriginal(this.s.renderState)
+    const state = this.s.renderState = {
+      pageWrap:this.s.pageWrap, canvas:this.s.canvas, textLayerEl:this.s.textLayerEl, reflow:this.s.reflow, key
     }
-    const page = await this.#doc.getPage(this.#pageNum)
-    if (token !== this.#renderToken) return false
-    const rendered = await this.#drawPage(page, state, () => token === this.#renderToken && Boolean(this.#doc))
+    const page = await this.s.doc.getPage(this.s.pageNum)
+    if (token !== this.s.renderToken) return false
+    const rendered = await this.#drawPage(page, state, () => token === this.s.renderToken && Boolean(this.s.doc))
     if (!rendered) return false
     this.#useRenderedPage(state)
     return true
@@ -410,20 +382,20 @@ export class PdfReader {
   }
 
   async #imageLayout(page) {
-    if (!this.#imageLayouts.has(page)) {
-      this.#imageLayouts.set(page, page.getOperatorList
+    if (!this.s.imageLayouts.has(page)) {
+      this.s.imageLayouts.set(page, page.getOperatorList
         ? page.getOperatorList().then(list => !hasUntrackedPDFImages(list, pdfjsLib.OPS))
         : Promise.resolve(false))
     }
-    return this.#imageLayouts.get(page)
+    return this.s.imageLayouts.get(page)
   }
 
   #useRenderedPage(state) {
-    this.#pageText = state.pageText
-    this.#baseScale = state.baseScale ?? this.#baseScale
-    this.#layoutWidth = state.layoutWidth ?? this.#layoutWidth
-    this.#container.dataset.readerZoomed = String(state.zoomed)
-    this.#container.setAttribute('aria-busy', 'false')
+    this.s.pageText = state.pageText
+    this.s.baseScale = state.baseScale ?? this.s.baseScale
+    this.s.layoutWidth = state.layoutWidth ?? this.s.layoutWidth
+    this.s.container.dataset.readerZoomed = String(state.zoomed)
+    this.s.container.setAttribute('aria-busy', 'false')
     this.#rememberRenderedPage(state)
   }
 
@@ -432,7 +404,7 @@ export class PdfReader {
   async #drawPage(page, state, valid, content) {
     const { pageWrap, canvas, textLayerEl, reflow } = state
     state.page = page
-    const textMode = this.#preferences.pdfMode === 'text'
+    const textMode = this.s.preferences.pdfMode === 'text'
     pageWrap.hidden = textMode
     reflow.hidden = !textMode
     if (textMode) {
@@ -473,7 +445,7 @@ export class PdfReader {
       } else if (!await preparePDFReflow(reflow,state.textLayout,undefined,[],undefined,valid)) return false
       state.zoomed = false
       state.layoutWidth = this.#containerWidth()
-      this.#textHeight = this.#container.clientHeight
+      this.s.textHeight = this.s.container.clientHeight
       return true
     }
 
@@ -483,8 +455,8 @@ export class PdfReader {
     // ordinary A4 PDFs on narrow phones and made text/selection disagree.
     state.baseScale = containerWidth / unscaledViewport.width
     state.layoutWidth = containerWidth
-    const scale = state.baseScale * (this.#zoomed ? ZOOM_STEP_SCALE : this.#preferences.zoom / 100)
-    state.zoomed = this.#zoomed || this.#preferences.zoom > 100
+    const scale = state.baseScale * (this.s.zoomed ? ZOOM_STEP_SCALE : this.s.preferences.zoom / 100)
+    state.zoomed = this.s.zoomed || this.s.preferences.zoom > 100
 
     const dpr = window.devicePixelRatio || 1
     const viewport = page.getViewport({ scale: scale * dpr })
@@ -494,7 +466,7 @@ export class PdfReader {
     canvas.style.width = `${viewport.width / dpr}px`
     canvas.style.height = `${viewport.height / dpr}px`
 
-    const themeFilter = PDF_PAGE_FILTERS[this.#preferences.theme]
+    const themeFilter = PDF_PAGE_FILTERS[this.s.preferences.theme]
     const original = state.originalCanvas = themeFilter === 'none' ? canvas : document.createElement('canvas')
     original.width = canvas.width; original.height = canvas.height
     original.style.width = canvas.style.width; original.style.height = canvas.style.height
@@ -505,7 +477,7 @@ export class PdfReader {
       throw error
     }
     if (!valid()) return false
-    if (original !== canvas && !await this.#paintTheme(state, this.#preferences.theme, valid)) return false
+    if (original !== canvas && !await this.#paintTheme(state, this.s.preferences.theme, valid)) return false
 
     // Capa de texto seleccionable, alineada 1:1 con el canvas ya renderizado.
     textLayerEl.replaceChildren()
@@ -554,46 +526,46 @@ export class PdfReader {
   // changing the paper colour never clears the visible page for a new render.
   async #retheme(ready, preferences) {
     await ready
-    const state = this.#renderState
-    const valid = () => Boolean(this.#doc) && state === this.#renderState
-      && preferences.theme === this.#preferences.theme && preferences.pdfMode === this.#preferences.pdfMode
-      && preferences.zoom === this.#preferences.zoom
+    const state = this.s.renderState
+    const valid = () => Boolean(this.s.doc) && state === this.s.renderState
+      && preferences.theme === this.s.preferences.theme && preferences.pdfMode === this.s.preferences.pdfMode
+      && preferences.zoom === this.s.preferences.zoom
     if (!valid() || !state?.originalCanvas) return false
     const painted = await this.#paintTheme(state, preferences.theme, valid)
     if (painted) {
       state.key = { ...state.key, preferences:this.#renderPreferences() }
       this.#rememberRenderedPage(state)
-      this.#container.setAttribute('aria-busy', 'false')
+      this.s.container.setAttribute('aria-busy', 'false')
     }
     return painted
   }
 
   async getSpeechText() {
-    if (!this.#doc) return ''
-    const page = await this.#doc.getPage(this.#pageNum)
+    if (!this.s.doc) return ''
+    const page = await this.s.doc.getPage(this.s.pageNum)
     const text = await page.getTextContent()
     return extractPDFText(text, page.getViewport({ scale:1 })).text
   }
   #speechMap() {
-    return this.#preferences.pdfMode === 'text'
-      ? mapTextNodes(this.#reflow)
-      : mapPDFTextLayer(this.#textLayerEl, this.#renderState?.textLayout) || mapTextLayer(this.#textLayerEl)
+    return this.s.preferences.pdfMode === 'text'
+      ? mapTextNodes(this.s.reflow)
+      : mapPDFTextLayer(this.s.textLayerEl, this.s.renderState?.textLayout) || mapTextLayer(this.s.textLayerEl)
   }
 
   /** The page's text as the audiobook reads it, mapped onto the rendered text layer (or the reflow text) it is highlighted in. */
   async getSpeechSource({ completeSentences = false } = {}) {
-    if (!this.#doc) return null
+    if (!this.s.doc) return null
     let pending
-    do { pending = this.#renderReady; await pending } while (this.#doc && pending !== this.#renderReady)
-    if (!this.#doc) return null
-    const pdf = this.#doc, pageNumber = this.#pageNum
-    const source = this.#makeSpeechSource(pageNumber, this.#speechMap(), this.#renderState?.textLayout).source
+    do { pending = this.s.renderReady; await pending } while (this.s.doc && pending !== this.s.renderReady)
+    if (!this.s.doc) return null
+    const pdf = this.s.doc, pageNumber = this.s.pageNum
+    const source = this.#makeSpeechSource(pageNumber, this.#speechMap(), this.s.renderState?.textLayout).source
     if (completeSentences) {
-      source.start = this.#preferences.pdfMode === 'text' ? this.#visibleTextOffset() : 0
+      source.start = this.s.preferences.pdfMode === 'text' ? this.#visibleTextOffset() : 0
       if (pageNumber > 1 && source.start === 0) {
         const previous = await pdf.getPage(pageNumber - 1)
         const content = await previous.getTextContent()
-        if (pdf !== this.#doc || pageNumber !== this.#pageNum) throw speechCancelled()
+        if (pdf !== this.s.doc || pageNumber !== this.s.pageNum) throw speechCancelled()
         source.previousText = extractPDFText(content, previous.getViewport({scale:1})).text
       }
     }
@@ -601,24 +573,24 @@ export class PdfReader {
   }
 
   #makeSpeechSource(page, first, textLayout) {
-    const pdf = this.#doc
-    const doc = this.#container.ownerDocument
-    installSpeechStyle(doc, this.#preferences.theme)
+    const pdf = this.s.doc
+    const doc = this.s.container.ownerDocument
+    installSpeechStyle(doc, this.s.preferences.theme)
     let map = first, marked = []
     const mappedToVisiblePage = () => {
       const node = map.spans[0]?.node
-      const root = this.#preferences.pdfMode === 'text' ? this.#reflow : this.#textLayerEl
+      const root = this.s.preferences.pdfMode === 'text' ? this.s.reflow : this.s.textLayerEl
       return Boolean(node?.isConnected && root.contains(node))
     }
     // A zoom or view change re-renders the layer under a paused voice: re-map it, but only if it is still this page's text.
     const current = () => {
-      if (this.#doc === pdf && page === this.#pageNum && !mappedToVisiblePage()) {
+      if (this.s.doc === pdf && page === this.s.pageNum && !mappedToVisiblePage()) {
         const again = this.#speechMap()
         // TextLayer omits the final item's separator; reflow retains it. Only this
         // trailing whitespace may differ: every spoken character keeps its raw offset.
         if (again.text.trimEnd() === first.text.trimEnd()) map = again
       }
-      return this.#doc === pdf && page === this.#pageNum && mappedToVisiblePage() ? map : null
+      return this.s.doc === pdf && page === this.s.pageNum && mappedToVisiblePage() ? map : null
     }
     const clear = () => {
       clearSpeechRange(doc)
@@ -638,9 +610,9 @@ export class PdfReader {
       // Geometric paragraphs are real body text, including repeated dialogue.
       // No marginal header is confirmed by page-local layout alone: preserve
       // those paragraphs even when the legacy header-skipping option is on.
-      ...(textLayout?.geometric || this.#preferences.pdfMode === 'text' ? { headerRanges:Object.freeze([]) } : {}),
+      ...(textLayout?.geometric || this.s.preferences.pdfMode === 'text' ? { headerRanges:Object.freeze([]) } : {}),
       highlight:(start, end) => {
-        if (this.#speechBrowsing) return
+        if (this.s.speechBrowsing) return
         const live = current(), range = live?.rangeFor(start, end)
         clear()
         if (!range) return
@@ -650,15 +622,15 @@ export class PdfReader {
         for (const element of marked) element.classList.add(SPEECH_SPAN_CLASS)
       },
       follow:(start, end) => {
-        this.#speechCursor = { page, start, end, source }
-        if (this.#speechBrowsing) return
-        if (page !== this.#pageNum) { void this.#revealSpeech().catch(() => {}); return }
+        this.s.speechCursor = { page, start, end, source }
+        if (this.s.speechBrowsing) return
+        if (page !== this.s.pageNum) { void this.#revealSpeech().catch(() => {}); return }
         this.#settleTextResize()
         const rects = current()?.rangeFor(start, end)?.getClientRects()
-        const box = this.#container.getBoundingClientRect()
+        const box = this.s.container.getBoundingClientRect()
         const offset = speechFollowOffset(rects,box)
         if (!offset) return
-        this.#container.scrollBy({
+        this.s.container.scrollBy({
           ...offset,
           behavior:window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'
         })
@@ -667,42 +639,42 @@ export class PdfReader {
     return { source, current }
   }
 
-  browseSpeech() { this.#speechBrowsing = true; this.#speechDetached = true }
-  stopSpeech() { this.#speechBrowsing = false; this.#speechDetached = false; this.#speechCursor = null; this.#invalidateStagedSpeech() }
+  browseSpeech() { this.s.speechBrowsing = true; this.s.speechDetached = true }
+  stopSpeech() { this.s.speechBrowsing = false; this.s.speechDetached = false; this.s.speechCursor = null; this.#invalidateStagedSpeech() }
   async returnToSpeech() {
-    this.#speechBrowsing = false
+    this.s.speechBrowsing = false
     await this.#revealSpeech()
   }
   #revealSpeech() {
-    if (this.#speechReveal) return this.#speechReveal
-    const pdf = this.#doc
+    if (this.s.speechReveal) return this.s.speechReveal
+    const pdf = this.s.doc
     const work = async () => {
-      while (!this.#speechBrowsing && pdf === this.#doc && this.#speechCursor) {
-        const target = this.#speechCursor
-        if (target.page !== this.#pageNum) await this.goToPage(target.page, { textOffset:target.start })
-        if (pdf !== this.#doc || this.#speechBrowsing) return
-        if (target !== this.#speechCursor && target.page !== this.#speechCursor?.page) continue
-        const current = this.#speechCursor
+      while (!this.s.speechBrowsing && pdf === this.s.doc && this.s.speechCursor) {
+        const target = this.s.speechCursor
+        if (target.page !== this.s.pageNum) await this.goToPage(target.page, { textOffset:target.start })
+        if (pdf !== this.s.doc || this.s.speechBrowsing) return
+        if (target !== this.s.speechCursor && target.page !== this.s.speechCursor?.page) continue
+        const current = this.s.speechCursor
         current?.source.highlight?.(current.start,current.end)
         current?.source.follow?.(current.start,current.end)
         return
       }
     }
-    const task = work().finally(() => { if (this.#speechReveal === task) this.#speechReveal = null })
-    this.#speechReveal = task
+    const task = work().finally(() => { if (this.s.speechReveal === task) this.s.speechReveal = null })
+    this.s.speechReveal = task
     return task
   }
 
   async #nextDetachedSpeech({ isActive, afterPage }) {
-    const pdf = this.#doc, previous = afterPage ?? this.#speechCursor?.page ?? this.#pageNum
+    const pdf = this.s.doc, previous = afterPage ?? this.s.speechCursor?.page ?? this.s.pageNum
     for (let number = previous + 1; number <= Math.min(pdf.numPages, previous + MAX_EMPTY_SPEECH_PAGES); number++) {
       const page = await pdf.getPage(number)
       const content = await page.getTextContent()
-      if (this.#doc !== pdf || !isActive()) throw speechCancelled()
+      if (this.s.doc !== pdf || !isActive()) throw speechCancelled()
       const layout = extractPDFText(content, page.getViewport({scale:1}))
       if (!layout.text.trim()) continue
       const { source } = this.#makeSpeechSource(number, { text:layout.text, spans:[] }, layout)
-      source.isValid = () => this.#doc === pdf && isActive()
+      source.isValid = () => this.s.doc === pdf && isActive()
       source.activate = () => source.isValid()
       return source
     }
@@ -710,14 +682,14 @@ export class PdfReader {
   }
 
   #speechGeometry() {
-    const rect = this.#container.getBoundingClientRect()
-    return [this.#containerWidth(), this.#container.clientHeight || rect.height, window.devicePixelRatio || 1]
+    const rect = this.s.container.getBoundingClientRect()
+    return [this.#containerWidth(), this.s.container.clientHeight || rect.height, window.devicePixelRatio || 1]
   }
 
   #invalidateStagedSpeech() {
-    const staged = this.#stagedSpeech
+    const staged = this.s.stagedSpeech
     if (!staged) return
-    this.#stagedSpeech = null
+    this.s.stagedSpeech = null
     staged.invalid = true
     this.#cancelRender(staged)
     this.#releaseOriginal(staged)
@@ -732,26 +704,26 @@ export class PdfReader {
    * text mapping. This avoids showing the next page throughout neural synthesis.
    */
   async getNextSpeechSource({ isActive = () => true, afterPage } = {}) {
-    if (this.#doc && (this.#speechDetached || Number.isInteger(afterPage) && afterPage !== this.#pageNum))
+    if (this.s.doc && (this.s.speechDetached || Number.isInteger(afterPage) && afterPage !== this.s.pageNum))
       return this.#nextDetachedSpeech({ isActive, afterPage })
     this.#invalidateStagedSpeech()
-    if (!this.#doc || !isActive()) throw speechCancelled()
-    const pdf = this.#doc, previousPage = this.#pageNum, token = this.#renderToken, preferences = this.#preferences
-    const request = ++this.#speechRequest, geometry = this.#speechGeometry(), pending = this.#renderReady
-    const unchanged = () => this.#doc === pdf && this.#pageNum === previousPage && this.#renderToken === token
-      && this.#preferences === preferences && request === this.#speechRequest && isActive()
+    if (!this.s.doc || !isActive()) throw speechCancelled()
+    const pdf = this.s.doc, previousPage = this.s.pageNum, token = this.s.renderToken, preferences = this.s.preferences
+    const request = ++this.s.speechRequest, geometry = this.#speechGeometry(), pending = this.s.renderReady
+    const unchanged = () => this.s.doc === pdf && this.s.pageNum === previousPage && this.s.renderToken === token
+      && this.s.preferences === preferences && request === this.s.speechRequest && isActive()
       && geometry.every((value, index) => value === this.#speechGeometry()[index])
     await pending
-    if (!unchanged() || pending !== this.#renderReady) throw speechCancelled()
+    if (!unchanged() || pending !== this.s.renderReady) throw speechCancelled()
     if (previousPage === pdf.numPages) return null
     const staged = {
-      pageWrap:this.#pageWrap.cloneNode(false), canvas:this.#canvas.cloneNode(false),
-      textLayerEl:this.#textLayerEl.cloneNode(false), reflow:this.#reflow.cloneNode(false), invalid:false
+      pageWrap:this.s.pageWrap.cloneNode(false), canvas:this.s.canvas.cloneNode(false),
+      textLayerEl:this.s.textLayerEl.cloneNode(false), reflow:this.s.reflow.cloneNode(false), invalid:false
     }
     staged.reflow.classList.remove(SPEECH_SPAN_CLASS)
     staged.pageWrap.append(staged.canvas, staged.textLayerEl)
-    staged.valid = () => !staged.invalid && this.#stagedSpeech === staged && unchanged()
-    this.#stagedSpeech = staged
+    staged.valid = () => !staged.invalid && this.s.stagedSpeech === staged && unchanged()
+    this.s.stagedSpeech = staged
     try {
       for (let number = previousPage + 1; number <= pdf.numPages && number <= previousPage + MAX_EMPTY_SPEECH_PAGES; number++) {
         const page = await pdf.getPage(number)
@@ -770,30 +742,30 @@ export class PdfReader {
         const { source, current } = this.#makeSpeechSource(number, first, staged.textLayout)
         const clear = source.clear
         let activated = false
-        source.isValid = () => this.#doc === pdf && (this.#speechDetached ? isActive() : activated ? Boolean(current()) : staged.valid())
+        source.isValid = () => this.s.doc === pdf && (this.s.speechDetached ? isActive() : activated ? Boolean(current()) : staged.valid())
         source.activate = () => {
           if (activated) return source.isValid()
-          if (this.#speechDetached && this.#doc === pdf && isActive()) { activated = true; return true }
+          if (this.s.speechDetached && this.s.doc === pdf && isActive()) { activated = true; return true }
           if (!staged.valid()) { source.clear(); return false }
-          this.#stagedSpeech = null
-          this.#cancelRender(this.#renderState)
-          this.#releaseOriginal(this.#renderState)
-          clearPDFReflow(this.#reflow)
-          ++this.#renderToken
-          const oldCanvas = this.#canvas
-          this.#pageWrap.replaceWith(staged.pageWrap)
-          this.#reflow.replaceWith(staged.reflow)
-          this.#pageWrap = staged.pageWrap; this.#canvas = staged.canvas
-          this.#textLayerEl = staged.textLayerEl; this.#reflow = staged.reflow
-          this.#renderState = staged
+          this.s.stagedSpeech = null
+          this.#cancelRender(this.s.renderState)
+          this.#releaseOriginal(this.s.renderState)
+          clearPDFReflow(this.s.reflow)
+          ++this.s.renderToken
+          const oldCanvas = this.s.canvas
+          this.s.pageWrap.replaceWith(staged.pageWrap)
+          this.s.reflow.replaceWith(staged.reflow)
+          this.s.pageWrap = staged.pageWrap; this.s.canvas = staged.canvas
+          this.s.textLayerEl = staged.textLayerEl; this.s.reflow = staged.reflow
+          this.s.renderState = staged
           this.#cancelResize()
-          this.#renderRequest = null
-          this.#renderReady = Promise.resolve(true)
-          this.#pageNum = number
+          this.s.renderRequest = null
+          this.s.renderReady = Promise.resolve(true)
+          this.s.pageNum = number
           this.#useRenderedPage(staged)
-          clearTimeout(this.#scrollTimer)
-          this.#container.scrollTop = 0
-          this.#textOffset = 0
+          clearTimeout(this.s.scrollTimer)
+          this.s.container.scrollTop = 0
+          this.s.textOffset = 0
           oldCanvas.width = oldCanvas.height = 0
           activated = true
           this.#emitLocation()
@@ -802,7 +774,7 @@ export class PdfReader {
         source.clear = () => {
           if (activated) clear()
           else {
-            if (this.#stagedSpeech === staged) this.#invalidateStagedSpeech()
+            if (this.s.stagedSpeech === staged) this.#invalidateStagedSpeech()
             else staged.invalid = true
           }
         }
@@ -811,101 +783,101 @@ export class PdfReader {
       throw new Error('Página siguiente sin texto legible.')
     } catch (error) {
       const cancelled = !staged.valid()
-      if (this.#stagedSpeech === staged) this.#invalidateStagedSpeech()
+      if (this.s.stagedSpeech === staged) this.#invalidateStagedSpeech()
       throw cancelled ? speechCancelled() : error
     }
   }
 
   /** The restored reading page, copied only after its latest render settles. */
   async getPageSnapshot({ reuseSettledLayout = false } = {}) {
-    if (!this.#doc) return null
+    if (!this.s.doc) return null
     let pending
     do {
-      pending = this.#renderReady
+      pending = this.s.renderReady
       await pending
-    } while (this.#doc && pending !== this.#renderReady)
-    if (!this.#doc) return null
-    const textMode = this.#preferences.pdfMode === 'text'
+    } while (this.s.doc && pending !== this.s.renderReady)
+    if (!this.s.doc) return null
+    const textMode = this.s.preferences.pdfMode === 'text'
     // An explicit snapshot can arrive before ResizeObserver's delayed render.
     // Finish that exact render first, preserving the page, text and resolution.
-    if (reuseSettledLayout && !textMode && (!this.#sameRenderKey(this.#renderState?.key, this.#renderKey())
-        || !this.#renderIsIntact(this.#renderState))) {
+    if (reuseSettledLayout && !textMode && (!this.#sameRenderKey(this.s.renderState?.key, this.#renderKey())
+        || !this.#renderIsIntact(this.s.renderState))) {
       this.#cancelResize()
       await this.#render()
       return this.getPageSnapshot({ reuseSettledLayout })
     }
     // Completed physical pixels need no additional paints when their layout
     // and text are intact. DOM text still waits for fonts and both frames.
-    const settledPhysical = reuseSettledLayout && !textMode && this.#resizeTimer == null
-      && this.#sameRenderKey(this.#renderState?.key, this.#renderKey()) && this.#renderIsIntact(this.#renderState)
-    if (!settledPhysical) await settlePageLayout(this.#container.ownerDocument, { waitForFonts:textMode })
-    if (!this.#doc || pending !== this.#renderReady
-      || textMode !== (this.#preferences.pdfMode === 'text')) return this.getPageSnapshot({ reuseSettledLayout })
-    const page = this.#pageNum
+    const settledPhysical = reuseSettledLayout && !textMode && this.s.resizeTimer == null
+      && this.#sameRenderKey(this.s.renderState?.key, this.#renderKey()) && this.#renderIsIntact(this.s.renderState)
+    if (!settledPhysical) await settlePageLayout(this.s.container.ownerDocument, { waitForFonts:textMode })
+    if (!this.s.doc || pending !== this.s.renderReady
+      || textMode !== (this.s.preferences.pdfMode === 'text')) return this.getPageSnapshot({ reuseSettledLayout })
+    const page = this.s.pageNum
     if (textMode) { this.#settleTextResize(); this.#rememberTextPosition() }
     // Physical white pages blend into the current reader theme on opening.
-    const theme = READING_THEMES[this.#preferences.theme]
-    const canvasFilter = textMode ? null : renderedPageFilter(this.#canvas)
+    const theme = READING_THEMES[this.s.preferences.theme]
+    const canvasFilter = textMode ? null : renderedPageFilter(this.s.canvas)
     const snapshot = textMode
-      ? await snapshotDOMPage(this.#reflow, {
+      ? await snapshotDOMPage(this.s.reflow, {
         paper:{ background:'#ffffff', color:'#292821', themeColor:theme.color },
-        viewport:this.#container.getBoundingClientRect(),
-        offsetX:this.#container.getBoundingClientRect().left,
-        offsetY:this.#container.getBoundingClientRect().top,
-        background:getComputedStyle(this.#reflow).backgroundColor,
-        filter:renderedPageFilter(this.#reflow)
+        viewport:this.s.container.getBoundingClientRect(),
+        offsetX:this.s.container.getBoundingClientRect().left,
+        offsetY:this.s.container.getBoundingClientRect().top,
+        background:getComputedStyle(this.s.reflow).backgroundColor,
+        filter:renderedPageFilter(this.s.reflow)
       })
-      : snapshotCanvas(this.#canvas, {
-        filter:canvasFilter, displayBounds:this.#canvas.getBoundingClientRect(),
-        paper:true, paperSource:this.#renderState?.originalCanvas || this.#canvas
+      : snapshotCanvas(this.s.canvas, {
+        filter:canvasFilter, displayBounds:this.s.canvas.getBoundingClientRect(),
+        paper:true, paperSource:this.s.renderState?.originalCanvas || this.s.canvas
       })
-    if (!snapshot || !this.#doc || page !== this.#pageNum) return null
+    if (!snapshot || !this.s.doc || page !== this.s.pageNum) return null
     if (!textMode) {
       // Each snapshot still owns fresh copies of the exact page pixels. Reuse
       // only its margin-colour measurement while the settled raster, source
       // dimensions and applied filter remain identical. Navigation, rendering,
       // zoom, theme or brightness changes invalidate both opaque tokens.
-      const original = this.#renderState?.originalCanvas || this.#canvas
-      const facts = [this.#doc, pending, this.#renderToken, this.#canvas,
-        this.#canvas.width, this.#canvas.height, original, original.width,
+      const original = this.s.renderState?.originalCanvas || this.s.canvas
+      const facts = [this.s.doc, pending, this.s.renderToken, this.s.canvas,
+        this.s.canvas.width, this.s.canvas.height, original, original.width,
         original.height, canvasFilter]
-      if (!this.#snapshotToneState || facts.some((value, i) => value !== this.#snapshotToneState.facts[i])) {
-        this.#snapshotToneState?.controller.abort()
-        this.#snapshotToneState = { facts, theme:Object.freeze({}), paper:Object.freeze({}), themeRaster:Object.freeze({}), paperRaster:Object.freeze({}), controller:new AbortController() }
+      if (!this.s.snapshotToneState || facts.some((value, i) => value !== this.s.snapshotToneState.facts[i])) {
+        this.s.snapshotToneState?.controller.abort()
+        this.s.snapshotToneState = { facts, theme:Object.freeze({}), paper:Object.freeze({}), themeRaster:Object.freeze({}), paperRaster:Object.freeze({}), controller:new AbortController() }
       }
-      snapshot.toneKey = this.#snapshotToneState.theme
-      if (snapshot.paper) snapshot.paper.toneKey = this.#snapshotToneState.paper
-      const state = this.#snapshotToneState
+      snapshot.toneKey = this.s.snapshotToneState.theme
+      if (snapshot.paper) snapshot.paper.toneKey = this.s.snapshotToneState.paper
+      const state = this.s.snapshotToneState
       // Both copies use the exact same source, filter and resampling when the
       // physical page is already unfiltered white paper. Share only that proven
       // raster's tone and texture revision; changed themes retain separate maps.
-      const samePaper = original === this.#canvas && canvasFilter === 'none'
+      const samePaper = original === this.s.canvas && canvasFilter === 'none'
       if (samePaper && snapshot.paper) sharePaperTone(state.paper, state.theme)
       await prepareSnapshotPaperTones(snapshot, { signal:state.controller.signal })
-      if (!this.#doc) return null
-      if (state !== this.#snapshotToneState || pending !== this.#renderReady || page !== this.#pageNum
-        || facts[2] !== this.#renderToken || this.#preferences.pdfMode === 'text'
-        || facts[4] !== this.#canvas.width || facts[5] !== this.#canvas.height
+      if (!this.s.doc) return null
+      if (state !== this.s.snapshotToneState || pending !== this.s.renderReady || page !== this.s.pageNum
+        || facts[2] !== this.s.renderToken || this.s.preferences.pdfMode === 'text'
+        || facts[4] !== this.s.canvas.width || facts[5] !== this.s.canvas.height
         || facts[7] !== original.width || facts[8] !== original.height
-        || canvasFilter !== renderedPageFilter(this.#canvas)
-        || settledPhysical && !this.#sameRenderKey(this.#renderState?.key, this.#renderKey())) return this.getPageSnapshot({ reuseSettledLayout })
+        || canvasFilter !== renderedPageFilter(this.s.canvas)
+        || settledPhysical && !this.#sameRenderKey(this.s.renderState?.key, this.#renderKey())) return this.getPageSnapshot({ reuseSettledLayout })
       registerPageRaster(snapshot.source, state.themeRaster)
       if (snapshot.paper) registerPageRaster(snapshot.paper.source, samePaper ? state.themeRaster : state.paperRaster)
     } else {
-      this.#snapshotToneState?.controller.abort()
-      this.#snapshotToneState = undefined
+      this.s.snapshotToneState?.controller.abort()
+      this.s.snapshotToneState = undefined
     }
     return { ...snapshot, engine:'pdf', sourceType:textMode ? 'pdf-text' : 'pdf-canvas',
-      text:snapshot.text || this.#pageText, label:`Página ${page} de ${this.pageCount}`,
+      text:snapshot.text || this.s.pageText, label:`Página ${page} de ${this.pageCount}`,
       location:{ fraction:(page - 1) / Math.max(1, this.pageCount - 1), locator:{ kind:'pdf-page', value:page,
-        ...(this.#textOffset > 0 ? { textOffset:this.#textOffset } : {}) } } }
+        ...(this.s.textOffset > 0 ? { textOffset:this.s.textOffset } : {}) } } }
   }
   async search(query) {
     const term = String(query || '').trim().toLocaleLowerCase()
-    if (!term || !this.#doc) return []
+    if (!term || !this.s.doc) return []
     const results = []
     for (let pageNumber = 1; pageNumber <= this.pageCount; pageNumber++) {
-      const page = await this.#doc.getPage(pageNumber)
+      const page = await this.s.doc.getPage(pageNumber)
       const content = await page.getTextContent()
       const text = extractPDFText(content, page.getViewport({ scale:1 })).text.replace(/\s+/g,' ').trim()
       const haystack = text.toLocaleLowerCase()
@@ -927,33 +899,33 @@ export class PdfReader {
   getSelection() { return window.getSelection()?.toString()?.trim() || '' }
   async applyPreferences(preferences) {
     this.#invalidateStagedSpeech()
-    const previous = this.#preferences
+    const previous = this.s.preferences
     this.#settleTextResize()
     this.#cancelResize()
-    const offset = previous.pdfMode === 'text' ? this.#visibleTextOffset() : this.#textOffset
-    if (this.#doc && previous.pdfMode === 'text' && offset !== this.#textOffset) {
-      this.#textOffset = offset
+    const offset = previous.pdfMode === 'text' ? this.#visibleTextOffset() : this.s.textOffset
+    if (this.s.doc && previous.pdfMode === 'text' && offset !== this.s.textOffset) {
+      this.s.textOffset = offset
       this.#emitLocation()
     }
-    this.#preferences = normalizeReadingPreferences(preferences)
-    const p = this.#preferences
+    this.s.preferences = normalizeReadingPreferences(preferences)
+    const p = this.s.preferences
     this.#applyTextStyles()
-    if (this.#doc && (previous.pdfMode !== p.pdfMode || previous.zoom !== p.zoom)) await this.#render()
-    else if (this.#doc && p.pdfMode !== 'text' && previous.theme !== p.theme) {
-      this.#container.setAttribute('aria-busy', 'true')
-      const ready = this.#renderReady
+    if (this.s.doc && (previous.pdfMode !== p.pdfMode || previous.zoom !== p.zoom)) await this.#render()
+    else if (this.s.doc && p.pdfMode !== 'text' && previous.theme !== p.theme) {
+      this.s.container.setAttribute('aria-busy', 'true')
+      const ready = this.s.renderReady
       await this.#trackRender(this.#retheme(ready, p), this.#renderKey())
     }
-    this.#textOffset = offset
-    if (this.#doc && p.pdfMode === 'text') {
-      clearTimeout(this.#scrollTimer)
+    this.s.textOffset = offset
+    if (this.s.doc && p.pdfMode === 'text') {
+      clearTimeout(this.s.scrollTimer)
       this.#restoreTextOffset(offset)
     }
   }
 
   #applyTextStyles() {
-    const p = this.#preferences
-    Object.assign(this.#reflow.style, {
+    const p = this.s.preferences
+    Object.assign(this.s.reflow.style, {
       fontFamily:READING_FONTS[p.font], fontSize:`${p.fontSize}px`, lineHeight:String(p.lineHeight),
       fontWeight:String(p.fontWeight), padding:`12px ${p.margin}px`, textAlign:p.align
     })
@@ -961,18 +933,18 @@ export class PdfReader {
 
   /** Miniatura de la página 1 como Blob, para la portada de la estantería. */
   async getCoverBlob({ signal, retainOnClose = false } = {}) {
-    const doc = this.#doc
-    const loading = this.#loadingTask
+    const doc = this.s.doc
+    const loading = this.s.loadingTask
     if (!doc || signal?.aborted) return null
     // A first cover belongs to this captured document, even if its reader UI
     // closes. Other optional HD jobs keep their original cancellation policy.
     let retained
     if (retainOnClose && loading) {
-      retained = this.#retainedCovers.get(loading)
-      if (!retained) this.#retainedCovers.set(loading, retained = { count:0, closing:false })
+      retained = this.s.retainedCovers.get(loading)
+      if (!retained) this.s.retainedCovers.set(loading, retained = { count:0, closing:false })
       retained.count++
     }
-    const current = () => !signal?.aborted && (this.#doc === doc || retained?.closing === true)
+    const current = () => !signal?.aborted && (this.s.doc === doc || retained?.closing === true)
     let renderTask
     const cancel = () => { renderTask?.cancel?.() }
     try {
@@ -1005,7 +977,7 @@ export class PdfReader {
     } finally {
       signal?.removeEventListener('abort', cancel)
       if (retained && --retained.count === 0) {
-        this.#retainedCovers.delete(loading)
+        this.s.retainedCovers.delete(loading)
         if (retained.closing) {
           try { await loading.destroy() }
           catch (error) { console.warn('No se pudo liberar el PDF de la portada:', error) }
@@ -1015,42 +987,42 @@ export class PdfReader {
   }
 
   close() {
-    this.#resizeObserver?.disconnect()
-    this.#resizeObserver = null
-    clearTimeout(this.#resizeTimer)
-    this.#resizeTimer = null
-    clearTimeout(this.#scrollTimer)
-    this.#scrollTimer = null
-    this.#detachScroll()
-    this.#detachScroll = () => {}
-    this.#textOffset = 0
-    this.#textHeight = 0
-    this.#lengthMetadata = null
-    this.#layoutWidth = 0
-    ++this.#renderToken
+    this.s.resizeObserver?.disconnect()
+    this.s.resizeObserver = null
+    clearTimeout(this.s.resizeTimer)
+    this.s.resizeTimer = null
+    clearTimeout(this.s.scrollTimer)
+    this.s.scrollTimer = null
+    this.s.detachScroll()
+    this.s.detachScroll = () => {}
+    this.s.textOffset = 0
+    this.s.textHeight = 0
+    this.s.lengthMetadata = null
+    this.s.layoutWidth = 0
+    ++this.s.renderToken
     this.#invalidateStagedSpeech()
-    this.#cancelRender(this.#renderState)
-    this.#releaseOriginal(this.#renderState)
-    if (this.#reflow) clearPDFReflow(this.#reflow)
-    this.#renderState = null
-    this.#renderRequest = null
-    this.#detachGestures()
+    this.#cancelRender(this.s.renderState)
+    this.#releaseOriginal(this.s.renderState)
+    if (this.s.reflow) clearPDFReflow(this.s.reflow)
+    this.s.renderState = null
+    this.s.renderRequest = null
+    this.s.detachGestures()
     // PDFDocumentProxy no expone destroy(): la limpieza vive en el
     // loadingTask (ver pdfjs-dist/build/pdf.mjs, PDFDocumentLoadingTask).
-    const loading = this.#loadingTask, retained = this.#retainedCovers.get(loading)
+    const loading = this.s.loadingTask, retained = this.s.retainedCovers.get(loading)
     if (retained) retained.closing = true
     else loading?.destroy()
-    this.#loadingTask = null
-    this.#doc = null
-    this.#imageLayouts = new WeakMap()
-    this.#snapshotToneState?.controller.abort()
-    this.#snapshotToneState = undefined
-    this.#pageText = ''
-    if (this.#container) {
-      this.#container.innerHTML = ''
-      this.#container.classList.remove('pdf-reader')
-      this.#container.removeAttribute('aria-busy')
-      delete this.#container.dataset.readerZoomed
+    this.s.loadingTask = null
+    this.s.doc = null
+    this.s.imageLayouts = new WeakMap()
+    this.s.snapshotToneState?.controller.abort()
+    this.s.snapshotToneState = undefined
+    this.s.pageText = ''
+    if (this.s.container) {
+      this.s.container.innerHTML = ''
+      this.s.container.classList.remove('pdf-reader')
+      this.s.container.removeAttribute('aria-busy')
+      delete this.s.container.dataset.readerZoomed
     }
   }
 }
