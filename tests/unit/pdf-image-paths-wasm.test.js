@@ -1,4 +1,5 @@
 // @vitest-environment node
+import './helpers/rust-ui-ready.js';
 import {readFileSync} from 'node:fs';
 import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
