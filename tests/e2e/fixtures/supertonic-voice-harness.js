@@ -1,6 +1,10 @@
 // Only observation is injected. Download, Cache Storage, worker, ORT WASM,
 // Supertonic inference, PCM processing and Web Audio are the production paths.
 import { getNeuralEngine, neuralVoices } from '../../../src/js/readers/neural-voice/index.js';
+import { requireRustUI } from '../../../src/js/rust-ui.js';
+
+// The reader never builds an engine before its Rust UI module is in (the engine's decisions live there).
+if (!await requireRustUI()) throw new Error('Rust UI is unavailable');
 
 const engine = getNeuralEngine(),starts=[],events=[],workerRequests=[],workerMessages=[];
 let context=null,activeId=null;
