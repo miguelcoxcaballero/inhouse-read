@@ -1,8 +1,11 @@
 # Migración a Rust: implementación y comprobaciones
 
-Entrega 1.7.239: lector sin gemelos JavaScript (bloque 2). Inventario 7527
-Rust/35343 JS, **17.56 %**; no mide funciones terminadas. Detalle en
+Entrega 1.7.240: controlador del catálogo y rutas del follaje en Rust. Inventario
+7908 Rust/35190 JS, **18,35 %**; no mide funciones terminadas. Detalle en
 remaining-wip-verification.md.
+
+Entrega 1.7.239: lector sin gemelos JavaScript (bloque 2). Inventario 7527
+Rust/35343 JS, **17.56 %**.
 
 Entrega 1.7.238: lector sin gemelos JavaScript (bloque 1). Inventario 7527
 Rust/35498 JS, **17.49 %**.

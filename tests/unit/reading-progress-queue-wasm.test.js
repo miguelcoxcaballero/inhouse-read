@@ -1,8 +1,7 @@
 import {afterEach,beforeAll,beforeEach,describe,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {createReadingProgressQueue as shippedQueue} from '../../src/js/reading-progress-queue.js'
-import {createLegacyReadingProgressQueue} from './helpers/reference-reading-progress-queue.js'
+import {createReadingProgressQueue} from '../../src/js/reading-progress-queue.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 const handles=[];let core
@@ -11,10 +10,8 @@ beforeAll(()=>{core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_u
 afterEach(()=>{for(const handle of handles.splice(0))handle.free()})
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {resolve,reject,promise}}
 const tick=async()=>{for(let i=0;i<12;i++)await Promise.resolve()}
-// 'legacy' is the frozen JavaScript reference; 'Rust' is the shipped queue.
-let createReadingProgressQueue
 describe.each(['legacy','Rust'])('%s persistence queue boundaries',engine=>{
- beforeEach(()=>{runtime.ui=engine==='Rust'?nativeRuntime:null;createReadingProgressQueue=engine==='Rust'?shippedQueue:createLegacyReadingProgressQueue})
+ beforeEach(()=>{runtime.ui=engine==='Rust'?nativeRuntime:null})
  it('uses original Map key identity for objects, NaN, symbols and zero',async()=>{
   const library={updateProgress:vi.fn(async(id,fraction)=>({id,fraction}))},queue=createReadingProgressQueue(library)
   const keys=[{}, {}, Symbol('a'), Symbol('a'), NaN, -0, null, undefined, 'book']
@@ -46,18 +43,10 @@ describe.each(['legacy','Rust'])('%s persistence queue boundaries',engine=>{
   queue=createReadingProgressQueue(library);expect(await queue.updateProgress('book',1,{})).toBe(1);expect(await next).toBe(2);expect(events).toEqual(['position','settings'])
  })
 })
-it('has no JavaScript queue: a write without the module rejects clearly and writes nothing',async()=>{
- runtime.ui=null;const library={updateProgress:vi.fn(async()=>({})),patch:vi.fn(async()=>({}))},queue=shippedQueue(library)
- await expect(queue.updateProgress('a',1,{})).rejects.toThrow('módulo Rust');await expect(queue.patch('a',{theme:'x'})).rejects.toThrow('módulo Rust')
- expect(queue.get('a')).toBeUndefined();expect(library.updateProgress).not.toHaveBeenCalled();expect(library.patch).not.toHaveBeenCalled();expect(handles).toHaveLength(0)
- runtime.ui={RustReadingProgressQueue:class{constructor(){throw Error('Unavailable')}}}
- await expect(queue.updateProgress('a',1,{})).rejects.toThrow('Unavailable')
-})
-it('builds one native queue on the first write and serialises every book through it',async()=>{
- runtime.ui=nativeRuntime;const gate=deferred(),events=[];let first=true
- const queue=shippedQueue({updateProgress:async(id,fraction)=>{events.push([id,fraction]);if(first){first=false;await gate.promise}return fraction}})
- expect(handles).toHaveLength(0);expect(queue.get('a')).toBeUndefined()
- const old=queue.updateProgress('a',1,{});await tick()
+it('adopts late WASM only after each book finishes its current queue',async()=>{
+ runtime.ui=null;const gate=deferred(),events=[];let first=true
+ const queue=createReadingProgressQueue({updateProgress:async(id,fraction)=>{events.push([id,fraction]);if(first){first=false;await gate.promise}return fraction}})
+ const old=queue.updateProgress('a',1,{});await tick();runtime.ui=nativeRuntime
  const next=queue.updateProgress('a',2,{});expect(await queue.updateProgress('b',3,{})).toBe(3)
  expect(handles).toHaveLength(1);expect(events).toEqual([['a',1],['b',3]])
  gate.resolve();await old;await next;const native=handles[0],update=vi.spyOn(native,'updateProgress')

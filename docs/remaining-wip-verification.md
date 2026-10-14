@@ -1,3 +1,69 @@
+# 1.7.240 — controlador del catálogo y rutas del follaje en Rust
+
+Changelog: «Controlador del catálogo y follaje en Rust».
+Unidad legacy-app, bloque 2. El estado del catálogo IKEA (selección, páginas,
+colores recordados por maceta, botón de añadir con su espera y su error, abrir,
+cerrar, Escape, trampa de tabulador, clic fuera, vida de los estudios 3D) pasa de
+`plant-catalog-native.js` (283 líneas) a `RustCatalogController`
+(`rust-ui/src/catalog_controller.rs`, 329). El host JS (133 líneas) conserva lo
+que no es lógica: las tablas del catálogo, los estudios three.js, el vuelo de
+cámara (Web Animations) y los callbacks de la aplicación. Orden de
+microtareas del flujo de añadir: la continuación corre un turno después de que
+el host resuelve, igual que el `await` original; los manejadores guardan el
+controlador con referencia débil y los de vuelo son suyos hasta soltarlo.
+Follaje: `foliage_path` escribe el texto del trazado SVG con un `toFixed(2)`
+exacto (n entero más cercano sobre el valor binario exacto, el mayor en
+empate; el signo se conserva en -0,004; por encima de 1e21 devuelve `None` y el
+JS conserva su proyección). `foliage-projection.js` solo recorre la escena y
+valida los atributos (22 → 19 líneas); `foliage_plan` queda interno.
+Pruebas nuevas: `catalog-flight-parity` (orden de animaciones, aterrizajes,
+`onClose`, estudios y trabajo de estantería idénticos a la referencia JS en 11
+fases, incluido el temporizador de seguridad y destruir en pleno vuelo; y fallos
+síncronos/rechazados del host con `onClose` que lanza), `foliage-projection-wasm`
+(+3: ~300000 decimales contra `Number#toFixed(2)` con empates, subnormales,
+±0, 1e20/1e21, bits aleatorios; 400 mallas aleatorias con traslaciones de hasta
+1e9 y escalas 1e-3..1e3 idénticas a la proyección original; salida de rango).
+`plant-catalog` ejecuta ahora sus 63 comprobaciones con la vista Rust y con
+el controlador; `catalog-reference-parity` sigue comparando el DOM. Las
+comprobaciones de «cero asas vivas» pasan a ser relativas a una línea base tras
+calentar la cola de tareas de Rust (que conserva unas pocas asas propias),
+como hace `rust-ui-lifetime`. Sin relajar ninguna aserción.
+Cola de progreso: intentada y revertida. El e2e `smoke` «mueve un libro…» falló
+3/3 con la cola solo en Rust (main 3/3 pasa): la propia estantería escribe
+posición, orden y aspecto por esa cola (`persistBookState`, app.js 334-341)
+antes de que exista el módulo. Se mantiene el gemelo JS; se registra aquí para
+que nadie repita el intento por el argumento «solo el lector escribe».
+E2E retargeteados al lector que espera el módulo (cambio del bloque 1.7.238):
+`rust-shelf-refresh`, `rust-native-import-gate`, `rust-prepared-page` y
+`rust-stage-gate` (variantes con módulo retenido: la importación espera, se
+comprueba que el módulo sigue ausente y se libera); `rust-catalog-view` y
+`rust-foliage-projection` siguen los nuevos nombres de exportación.
+Hallazgo de entorno: un `vite preview` huérfano en el puerto 4397 (del otro
+agente, desde las 23:04 UTC) servía su `dist` a cualquier Playwright con
+`reuseExistingServer`; los E2E posteriores a esa hora no eran de mi build. Se
+repitieron todos en el puerto 4398 (4399 para la línea base).
+Tamaños frente a main 1.7.239: UI wasm 928 676 → 981 963 B (+53 287), glue UI
++2 925, trozo del catálogo −3 358, principal −218; neto +52 636 B crudos.
+No se afirma mejora de velocidad del catálogo. Sí se midió el follaje (Node,
+8 modelos reales × 20 repeticiones por tanda, 540 700 triángulos, 15 tandas
+alternas, máquina cargada): mediana 160,8 ms Rust frente a 578,2 ms la
+proyección JS original; no es una medida de teléfono ni de la apertura.
+Build, las 6067 unitarias (4 bloques, 439 archivos: 1656+1257+1429+1725).
+E2E (puerto propio): smoke 13/13, plant-catalog 8/8, lamp-catalog 3/3,
+shelf-types 2/2, rust-catalog-view 2/2, rust-foliage-projection 2/2,
+rust-book-projection 1/1, rust-prepared-page 2/2, rust-stage-gate 2/2,
+rust-shelf-refresh 2/2, rust-native-import-gate 2/2, rust-profile-view 2/2,
+book-open-prepared 9/9, profile-updates 1/1, critical-regressions 6/6 en
+secuencia (en una ejecución con dos trabajadores «el lomo…» falló una vez: su
+`waitForFunction` con predicado asíncrono es una carrera; 8/9 de mis
+repeticiones y 3/3 de main).
+Inventario 7908 Rust/35190 JS = 18,35 %; no es porcentaje funcional.
+Se conservan en JS, con motivo: perfil, cola de refresco, puerta de importación
+nativa y cola de progreso (los tres primeros se usan en el arranque o antes de
+cualquier descarga; la cola también la usa la estantería) y proyecciones de
+libro/follaje (vuelo de selección y superposiciones antes de que el módulo
+pueda estar).
+
 # 1.7.239 — lector sin gemelos JavaScript (bloque 2)
 
 Changelog: «Frases y plan de voz solo en Rust».
