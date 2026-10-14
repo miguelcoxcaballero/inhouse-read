@@ -6,6 +6,7 @@ vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCor
 import {buildMapsFromPixels} from '../../src/js/cover-relief.js';
 import {wasmPigmentMaps} from '../../src/js/cover-relief-wasm.js';
 import {referencePigment} from './helpers/reference-relief-pigment.js';
+import {buildMapsFromPixels as referenceBuild} from './helpers/reference-relief-color.js';
 let core;
 beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.relief_pigment_pixels).toBe('function');state.core=core;});
 afterEach(()=>{state.core=core;});
@@ -43,7 +44,8 @@ it('uses native membership and bevel passes in the whole single and multicolour 
  for(let i=0;i<width*height;i++)data.set([...colors[Math.floor(i/width)%3],255],i*4);
  const image={width,height,data};
  for(const choice of [{id:'color-1',color:'#2350b5',tolerance:6,strength:.7},{layers:[{id:'color-1',color:'#2350b5',tolerance:6,strength:.7},{id:'color-2',color:'#d4a93c',tolerance:5,strength:.4},{id:'color-3',color:'#fffaf0',tolerance:4,strength:1}]}]){
-  state.core={...core,relief_membership_pixels:undefined};const expected=drain(buildMapsFromPixels(image,image,choice));
+  // The frozen original (pure JavaScript pigment passes) is the expected result.
+  const expected=drain(referenceBuild(image,image,choice));
   const call=vi.fn(core.relief_pigment_pixels);state.core={...core,relief_pigment_pixels:call};const actual=drain(buildMapsFromPixels(image,image,choice));exact(actual,expected);expect(call).toHaveBeenCalled();
  }
 });
@@ -66,11 +68,14 @@ it('rejects malformed input before allocation',()=>{
  for(const args of [[new Float32Array(1),0,1],[new Float32Array(4),2,3],[[],2,2],[new Float32Array(4),2,2,{...previous(2,2),owner:11}]])expect(drain(wasmPigmentMaps(engine,...args)).out).toBeNull();expect(alloc).not.toHaveBeenCalled();
 });
 
-it('keeps full multi-colour output when a later layer fails after writing a partial scratch pass',()=>{
+it('releases every arena and reports the error when a later layer fails after writing a partial scratch pass',()=>{
+ // There is no JavaScript recovery path: the failing kernel is a clear error and nothing leaks.
  const width=71,height=113,data=new Uint8ClampedArray(width*height*4),colors=[[35,80,181],[212,169,60],[255,250,240]];
  for(let i=0;i<width*height;i++)data.set([...colors[Math.floor(i/width)%3],255],i*4);
  const image={width,height,data},choice={layers:['#2350b5','#d4a93c','#fffaf0'].map((color,i)=>({id:'color-'+(i+1),color,tolerance:6,strength:.7}))};
- state.core={...core,relief_membership_pixels:undefined};const expected=drain(buildMapsFromPixels(image,image,choice));let failed=false;
- state.core={...core,relief_pigment_pixels:(...args)=>{if(args[11]===2&&args[7]===1024){failed=true;throw Error('partial second layer');}return core.relief_pigment_pixels(...args);}};
- const actual=drain(buildMapsFromPixels(image,image,choice));expect(failed).toBe(true);exact({...actual,yields:0},{...expected,yields:0});
+ const expected=drain(referenceBuild(image,image,choice));let failed=false,live=0;
+ state.core={...core,alloc_f64(n){const p=core.alloc_f64(n);if(p)live+=n;return p;},free_f64(p,n){core.free_f64(p,n);live-=n;},
+  relief_pigment_pixels:(...args)=>{if(args[11]===2&&args[7]===1024){failed=true;throw Error('partial second layer');}return core.relief_pigment_pixels(...args);}};
+ expect(()=>drain(buildMapsFromPixels(image,image,choice))).toThrow('partial second layer');expect(failed).toBe(true);expect(live).toBe(0);
+ state.core=core;exact(drain(buildMapsFromPixels(image,image,choice)),expected);
 });

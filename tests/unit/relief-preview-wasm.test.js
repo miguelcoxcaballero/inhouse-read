@@ -29,9 +29,11 @@ it('frees cancelled generators and copies results across interleaved jobs and gr
  while(results.some(v=>v===null))for(let i=0;i<2;i++)if(results[i]===null){const step=tasks[i].next();if(step.done)results[i]={out:step.value,yields:counts[i]};else{counts[i]++;core.memory.grow(1);}}
  exact(results[0],drain(reference(first.image,first.maps)));exact(results[1],drain(reference(second.image,second.maps)));expect(free).toHaveBeenCalledTimes(2);const saved=results[0].out.slice();drain(shadePreview(second.image,second.maps));exact(results[0],{out:saved,yields:counts[0]});
 });
-it('falls back without leaking scratch space when the native pass is unavailable or rejected',()=>{
- const {image,maps}=fixture(19,17,23,11,true),expected=drain(reference(image,maps));
+it('reports an error without leaking scratch space when the native pass is unavailable or rejected',()=>{
+ // The JavaScript shading pass is gone (frozen in helpers/reference-relief-preview.js): a core that cannot
+ // run is a clear error, and the scratch space of a kernel that did start is released.
+ const {image,maps}=fixture(19,17,23,11,true);
  for(const engine of [null,{}, {...core,alloc_f64:()=>0},{...core,relief_preview_rows:()=>0},{...core,relief_preview_rows:()=>{throw Error('trap');}}]){
-  const free=vi.fn(core.free_f64);state.core=engine?{...engine,free_f64:free}:null;exact(drain(shadePreview(image,maps)),expected);if(engine?.relief_preview_rows&&engine.alloc_f64===core.alloc_f64)expect(free).toHaveBeenCalledOnce();
+  const free=vi.fn(core.free_f64);state.core=engine?{...engine,free_f64:free}:null;expect(()=>drain(shadePreview(image,maps))).toThrow();if(engine?.relief_preview_rows&&engine.alloc_f64===core.alloc_f64)expect(free).toHaveBeenCalledOnce();
  }
 });
