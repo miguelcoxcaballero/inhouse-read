@@ -50,6 +50,7 @@ mod speech_map;
 mod speech_pages;
 mod voice_options;
 mod neural_view;
+mod neural_engine;
 mod reader_lists;
 use std::{cell::{Cell, RefCell}, rc::{Rc, Weak}};
 use wasm_bindgen::{prelude::*, JsCast};
