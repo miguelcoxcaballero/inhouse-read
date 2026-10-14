@@ -102,3 +102,9 @@ mod shelf_occlusion;
 mod studio_scan;
 #[cfg(feature="app")]
 mod cover_seed;
+#[cfg(feature="app")]
+mod jsnum;
+#[cfg(feature="app")]
+mod catalogue;
+#[cfg(feature="app")]
+mod lamp_kelvin;
