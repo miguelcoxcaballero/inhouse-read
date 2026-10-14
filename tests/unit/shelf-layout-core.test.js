@@ -3,9 +3,10 @@
 // helpers/reference-bookshelf-layout.js. Every comparison is strict: same
 // structure, same key order, and Object.is on every number (so -0 counts).
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { core } from '../../src/js/catalogue-core.js';
+import { core, tables } from '../../src/js/catalogue-core.js';
 import * as rust from '../../src/js/bookshelf-layout.js';
 import * as original from './helpers/reference-bookshelf-layout.js';
+import * as length from '../../src/js/book-length.js';
 
 const seeded = seed => () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
 const rng = seeded(20261014);
@@ -173,6 +174,21 @@ describe('sections and plans', () => {
     expect(rust.seedFor({ title: 'T', author: 'A' })).toBe(original.seedFor({ title: 'T', author: 'A' }));
     for (const value of [null, undefined, {}, { id: 0 }, { id: '' , path: 'p' }, { path: 'q' }, { id: 5 }, { title: 1 }]) {
       expect(rust.seedFor(value)).toBe(original.seedFor(value));
+    }
+  });
+});
+
+describe('paper volume', () => {
+  it('draws the thickness from the same convention as book-length.js (300 words a page, 320 without a count)', () => {
+    expect(tables.constants).toMatchObject({ wordsPerPrintPage: length.WORDS_PER_PRINT_PAGE, defaultPrintPages: length.DEFAULT_PRINT_PAGES, wordCountVersion: length.WORD_COUNT_VERSION });
+    const words = [undefined, null, NaN, Infinity, -Infinity, -1, -0, 0, 1, 299, 300, 301, 12000, 1e7, 2 ** 53, "5", true, {}, []];
+    for (let n = 0; n < 3000; n++) words.push(rng() * 1e6, Math.floor(rng() * 1e6));
+    const options = { pageThickness: 0.5, bindingThickness: 0, minWidth: 0, maxWidth: 1e18 };
+    for (const wordCount of words) {
+      const width = rust.spineStyleFor({ id: "volume", wordCount }, options).width;
+      expect(Object.is(width, original.spineStyleFor({ id: "volume", wordCount }, options).width), String(wordCount)).toBe(true);
+      if (typeof wordCount === "number" && Number.isFinite(wordCount) && wordCount >= 0) expect(width).toBe(0 + Math.round(wordCount / length.WORDS_PER_PRINT_PAGE * 0.5 * 100) / 100);
+      else expect(width).toBe(length.DEFAULT_PRINT_PAGES * 0.5);
     }
   });
 });

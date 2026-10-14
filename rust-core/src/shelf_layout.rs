@@ -36,8 +36,14 @@ fn aligned<T>(pointer: *const T) -> bool { !pointer.is_null() && (pointer as usi
 
 // ------------------------------------------------------------------ spine styles
 
-const WORDS_PER_PAGE: f64 = 300.0;
-const DEFAULT_PAGES: f64 = 320.0;
+pub const WORDS_PER_PAGE: f64 = 300.0;
+pub const DEFAULT_PAGES: f64 = 320.0;
+
+/// The equivalent paper volume of a book, not its document's page counter: its
+/// word count over 300 words a printed page, 320 pages when it has none (NaN).
+/// The same convention is written in book-length.js, which also runs where no
+/// WebAssembly is loaded (test fixtures in Node); a unit test keeps them equal.
+fn printed_pages(words: f64) -> f64 { if words.is_finite() && words >= 0.0 { words / WORDS_PER_PAGE } else { DEFAULT_PAGES } }
 const CONFIG: usize = 7;
 const STYLE: usize = 5;
 
@@ -70,7 +76,7 @@ pub unsafe extern "C" fn spine_styles(config: *const f64, words: *const f64, off
         let base = feed(OFFSET, seed.iter().copied());
         let palette = pick_index(unit_of(base, "palette"), PALETTE_COUNT);
         let texture = pick_index(unit_of(base, "texture"), TEXTURE_COUNT);
-        let pages = if words[index].is_finite() && words[index] >= 0.0 { words[index] / WORDS_PER_PAGE } else { DEFAULT_PAGES };
+        let pages = printed_pages(words[index]);
         // Interpolation in root scale: 40 against 200 pages shows more than 700 against 900.
         let ratio = if !pages.is_finite() || pages <= 0.0 { 0.0 } else { jsnum::clamp((pages.sqrt() - low) / (high - low), 0.0, 1.0) };
         let width = if thick { binding + pages * cfg[4] } else { min_width + (max_width - min_width) * ratio };

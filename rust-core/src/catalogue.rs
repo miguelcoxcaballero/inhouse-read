@@ -95,6 +95,8 @@ fn catalogue() -> V {
         // Laminate thickness changes the specular lobe, never the printed colour. A soft
         // satin reflection must stay broader than a glossy jacket's bright window or lamp
         // reflection; matte stock has no smooth outer coating.
+        ("constants", obj(vec![("wordsPerPrintPage", n(crate::shelf_layout::WORDS_PER_PAGE)),
+            ("defaultPrintPages", n(crate::shelf_layout::DEFAULT_PAGES)), ("wordCountVersion", n(2.0))])),
         ("surfaceFinishes", obj(vec![
             ("glossy", obj(vec![("roughness", n(0.18)), ("clearcoat", n(1.0)), ("clearcoatRoughness", n(0.065)), ("envMapIntensity", n(1.35))])),
             ("satin", obj(vec![("roughness", n(0.48)), ("clearcoat", n(0.35)), ("clearcoatRoughness", n(0.28)), ("envMapIntensity", n(1.1))])),
