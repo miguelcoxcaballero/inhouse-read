@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { describe, expect, it } from 'vitest'
 import { extractPDFText, mapPDFTextLayer } from '../../src/js/readers/pdf-text.js'
 import { planSpeech } from '../../src/js/readers/speech-text.js'

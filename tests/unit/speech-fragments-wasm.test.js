@@ -1,4 +1,5 @@
 // @vitest-environment node
+import './helpers/rust-ui-ready.js'
 import {readFileSync} from 'node:fs';
 import {beforeAll,expect,it,vi} from 'vitest';
 import {loadRustCore} from '../../src/js/rust-core.js';

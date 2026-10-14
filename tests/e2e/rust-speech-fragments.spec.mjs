@@ -6,6 +6,7 @@ import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
 import {speechSentences,planSpeech} from '/inhouse-read/src/js/readers/speech-text.js';
 import * as reference from '/inhouse-read/tests/unit/helpers/reference-speech-text.js';
 const core=await loadRustCore();if(!core?.speech_fragments)throw Error('Compiled speech kernel required');
+import {loadRustUI} from '/inhouse-read/src/js/rust-ui.js';if(!await loadRustUI())throw Error('Compiled reader UI required');
 window.checkSpeech=()=>{
  const sample='Título\\u2029Dijo: «Voy.» Un texto con informa-\\ntion, notas [12], espacios  extra y emojis 😀.\\u2029La oración continúa en la página siguiente sin interrumpir el audio.\\n';
  const times=[],proof=[];
@@ -51,7 +52,9 @@ test('compiled narration fragments preserves text, UTF-16 maps, page marks and a
  });
  await page.setViewportSize({width:390,height:844});const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
  await page.goto(url);await page.waitForFunction(()=>window.checkSpeech);const result=await page.evaluate(()=>window.checkSpeech());
- expect(result.proof).toHaveLength(6);for(const entry of result.proof)expect(entry.calls).toBe(2);expect(result.memory.live).toBe(0);
+ // One call of the shared core per direct request. The narration plan no longer detours through the core: with the reader UI loaded it
+ // runs entirely in the UI module, which holds its own copy of the kernel (it used to count a second core call through the JavaScript plan).
+ expect(result.proof).toHaveLength(6);for(const entry of result.proof)expect(entry.calls).toBe(1);expect(result.memory.live).toBe(0);
  await info.attach('speech-fragmentation-parity-and-timing',{body:JSON.stringify(result),contentType:'application/json'});
  console.log(JSON.stringify(result.times.map(({samples,...entry})=>entry)));
 });

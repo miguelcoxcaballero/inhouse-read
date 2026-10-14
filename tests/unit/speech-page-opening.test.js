@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import {expect,it} from 'vitest';
 import {firstCompleteSentenceOffset} from '../../src/js/readers/speech-text.js';
 it('skips only the sentence crossing a visible page boundary',()=>{const text='La primera frase continúa aquí. Nueva frase completa. Otra.';expect(firstCompleteSentenceOffset(text,text.indexOf('continúa'))).toBe(text.indexOf('Nueva'));expect(firstCompleteSentenceOffset(text,text.indexOf('Nueva'))).toBe(text.indexOf('Nueva'));expect(firstCompleteSentenceOffset(text,0)).toBe(0);});

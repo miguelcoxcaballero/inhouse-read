@@ -1,6 +1,5 @@
 import {rustSpeechPipeline} from './speech-pipeline.js'
-import {getRustUI} from '../rust-ui.js'
-import {planSpeech as legacySpeechPlan} from './speech-plan-legacy.js'
+import {readerUI} from './rust-ui-required.js'
 import {rustSpeechPlan} from './speech-plan.js'
 import {sentenceEnds} from './sentence-ends.js'
 import { getRustCore } from '../rust-core.js'
@@ -145,13 +144,13 @@ export const speechChunks = text => speechSentences(String(text || '').replace(/
  * (what gets highlighted while its fragments are spoken).
  */
 export function planSpeech(raw,options={},from=0){
- const ui=getRustUI()
- if(!ui?.speech_plan||typeof from!=='number'||(options.pageBreaks&&!Array.isArray(options.pageBreaks)))return legacySpeechPlan(raw,options,from)
+ const ui=readerUI()
+ from=Number(from)
  if(ui.speech_pipeline){const prepared=rustSpeechPipeline(ui,raw,options,from);if(prepared!==undefined)return prepared}
- const normalized=normalizeSpeech(raw,options)
- if(normalized.text.length>1_000_000)return legacySpeechPlan(raw,options,from)
- const result=rustSpeechPlan(ui,normalized,options,from)
- return result===undefined?legacySpeechPlan(raw,options,from):result
+ // Rust answers any length; it leaves a normalized map it cannot trust unanswered (never produced here).
+ const result=rustSpeechPlan(ui,normalizeSpeech(raw,options),options,from)
+ if(result===undefined)throw new TypeError('Unsupported speech text')
+ return result
 }
 
 /** First complete sentence beginning on the visible page, in original offsets.

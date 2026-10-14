@@ -8,7 +8,7 @@ fn lower_bound(map:&[u32],offset:f64,from:usize)->usize{
 }
 #[wasm_bindgen]
 pub fn speech_plan(text:&[u16],map:&[u32],breaks:&[u32],pages:&[f64],from:f64,opening:bool,properties:Function,lower:Function,clause:Function)->Result<JsValue,JsValue>{
- if text.len()>1_000_000||map.len()!=text.len()||map.last()==Some(&u32::MAX)||breaks.iter().any(|at|*at as usize>text.len())||map.windows(2).any(|w|w[0]>w[1]){return Ok(JsValue::UNDEFINED)}
+ if map.len()!=text.len()||map.last()==Some(&u32::MAX)||breaks.iter().any(|at|*at as usize>text.len())||map.windows(2).any(|w|w[0]>w[1]){return Ok(JsValue::UNDEFINED)}
  Ok(speech_plan_records(text,map,breaks,pages,from,opening,properties,lower,clause)?.map(|output|Uint32Array::from(output.as_slice()).into()).unwrap_or(JsValue::UNDEFINED))
 }
 pub(crate) fn speech_plan_records(text:&[u16],map:&[u32],breaks:&[u32],pages:&[f64],from:f64,opening:bool,properties:Function,lower:Function,clause:Function)->Result<Option<Vec<u32>>,JsValue>{
