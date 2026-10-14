@@ -1,7 +1,7 @@
 import {beforeAll,beforeEach,afterEach,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import {initSync,RustReaderLists} from '../../src/wasm/ui/inhouse_read_ui.js'
-import {LegacyReaderLists} from '../../src/js/readers/reader-lists-legacy.js'
+import {LegacyReaderLists} from './helpers/reference-reader-lists.js'
 
 let panel,view,core
 const markup='<button data-place-tab="toc"></button><div data-toc></div><div data-history></div><div data-bookmarks></div><div data-quotes></div><p data-search-status></p><div data-search-results></div>'

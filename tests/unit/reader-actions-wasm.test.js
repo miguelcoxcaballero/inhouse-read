@@ -2,10 +2,14 @@ import {afterEach,beforeAll,beforeEach,describe,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {ReaderActions} from '../../src/js/readers/reader-actions.js'
+import {legacyReaderActions} from './helpers/reference-reader-actions.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 let core
-beforeAll(()=>{core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})})
+beforeAll(()=>{core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')});runtime.ui=ui})
+// 'legacy' runs the frozen original implementation directly; 'Rust' runs the production class.
+let engine='Rust'
+const original=host=>Object.fromEntries(Object.keys(legacyReaderActions).map(name=>[name,(...args)=>legacyReaderActions[name].call(host,...args)]))
 afterEach(()=>vi.restoreAllMocks())
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return{promise,resolve}}
 const tick=async()=>{for(let i=0;i<12;i++)await Promise.resolve()}
@@ -17,10 +21,10 @@ function setup(){
   reader:{goToTarget:async target=>events.push(['target',target]),goToLocator:async(...args)=>events.push(['locator',...args]),getSelection:()=>null,addQuoteAnnotation:quote=>events.push(['annotation',quote.text,quote.locator]),search:async()=>[],clearSearch:()=>events.push(['clear'])},
   lists:{clearSearch:message=>events.push(['searchStatus',message]),renderSearch:(results,activate)=>{events.push(['results',results]);host.activate=activate}},
   relocate:()=>events.push(['relocate']),renderPlaces:()=>events.push(['render']),showPlaceTab:tab=>events.push(['tab',tab]),jump:place=>events.push(['jump',place])}
- const actions=new ReaderActions(host);host.savePlaces=()=>actions.savePlaces();return{host,actions,events,status}
+ const actions=engine==='legacy'?original(host):new ReaderActions(host);host.savePlaces=()=>actions.savePlaces();return{host,actions,events,status}
 }
-describe.each(['legacy','Rust'])('%s reader actions',engine=>{
- beforeEach(()=>{runtime.ui=engine==='Rust'?ui:null;vi.spyOn(Date,'now').mockReturnValue(1234)})
+describe.each(['legacy','Rust'])('%s reader actions',name=>{
+ beforeEach(()=>{engine=name;vi.spyOn(Date,'now').mockReturnValue(1234)})
  it('retains origin, waits for its commit, and forwards the exact destination',async()=>{
   const {host,actions,events}=setup(),gate=deferred(),destination={locator:{kind:'cfi',value:'target'},fraction:.8}
   host.persist=vi.fn(()=>gate.promise);const pending=actions.jump(destination,undefined,()=>true)
@@ -77,8 +81,8 @@ it('matches two hundred mixed command sequences against the original implementat
  vi.spyOn(Date,'now').mockReturnValue(1234)
  for(let trial=0;trial<200;trial++){
   const outcomes=[]
-  for(const module of [null,ui]){
-   runtime.ui=module;const {host,actions,events,status}=setup(),destination={locator:{kind:'pdf-page',value:trial+5},fraction:.8}
+  for(const name of ['legacy','Rust']){
+   engine=name;const {host,actions,events,status}=setup(),destination={locator:{kind:'pdf-page',value:trial+5},fraction:.8}
    if(trial%4===0)host.persist=async()=>{throw Error('disk')}
    if(trial%4===1)host.reader.goToLocator=async()=>{throw Error('navigation')}
    await actions.jump(destination,trial%3?undefined:'#target',()=>true);await actions.returnToReading(host.history[0],()=>true)
@@ -90,7 +94,7 @@ it('matches two hundred mixed command sequences against the original implementat
  }
 })
 it('releases future handles without increasing WASM memory over repeated commands',async()=>{
- runtime.ui=ui
+ engine='Rust'
  for(let round=0;round<2;round++){
   const before=core.memory.buffer.byteLength
   for(let i=0;i<1000;i++){const {actions}=setup();await actions.addBookmark();await actions.search('x');actions.endSearch()}

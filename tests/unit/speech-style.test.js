@@ -1,5 +1,7 @@
+import './helpers/rust-ui-ready.js'
 import { describe, it, expect } from 'vitest'
-import { SPEECH_COLORS, speechCSS, speechOverlayColor } from '../../src/js/readers/speech-highlight.js'
+import { speechCSS, speechOverlayColor } from '../../src/js/readers/speech-highlight.js'
+import { SPEECH_COLORS } from './helpers/reference-speech-highlight.js'
 import { READING_THEMES } from '../../src/js/readers/reading-preferences.js'
 
 describe('sentence highlight style', () => {

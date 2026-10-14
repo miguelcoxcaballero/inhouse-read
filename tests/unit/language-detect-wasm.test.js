@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import {it} from 'vitest'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {detectLanguage} from '../../src/js/readers/language-detect-legacy.js'
+import {detectLanguage} from './helpers/reference-language-detect.js'
 import {normalizeLang} from '../../src/js/readers/voice-catalog.js'
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 it('preserves language, dialect, Unicode and bounded memory over 6366 excerpts',()=>{

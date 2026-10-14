@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {it,expect,vi,afterEach} from 'vitest'
 import {readFileSync} from 'node:fs'
-import {LegacyVoiceSelection} from '../../src/js/readers/voice-selection-legacy.js'
+import {LegacyVoiceSelection} from './helpers/reference-voice-selection.js'
 import {selectReadingVoice} from '../../src/js/readers/voice-selection.js'
 import {declaredLanguage,isNeuralId,langBase,resolveVoice} from '../../src/js/readers/voice-catalog.js'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
@@ -73,9 +73,12 @@ it('preserves exact UTF-16 packet text and propagates a mark getter error unchan
  const text='\ud800',packet=ui.voice_audio_item({text,marks:[{offset:0}]});expect(packet.text).toBe(text)
  const failure=Error('mark');try{ui.voice_audio_item({text:'Text',marks:[{get offset(){throw failure}}]});throw Error('Expected failure')}catch(error){expect(error).toBe(failure)}
 })
-it('adopts a late selection function while retaining the same installed voice records',()=>{
- const {host,voices}=setup(false,7);const before=selectReadingVoice(host,'Hello')
+it('selects through the Rust function while retaining the same installed voice records',()=>{
+ const {host,voices}=setup(false,7);const before=host.voiceFor('Hello')
  const native={voice_for:vi.fn(ui.voice_for)};fixture.ui=native;const after=selectReadingVoice(host,'Hello')
  expect(native.voice_for).toHaveBeenCalledOnce();expect(after).toEqual(before)
  if(after.voice)expect(voices).toContain(after.voice)
+})
+it('fails clearly without the core instead of choosing a voice another way',()=>{
+ const {host}=setup(false,7);fixture.ui=null;expect(()=>selectReadingVoice(host,'Hello')).toThrow('Rust UI is not loaded')
 })

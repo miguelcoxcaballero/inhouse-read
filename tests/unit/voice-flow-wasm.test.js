@@ -2,11 +2,11 @@ import assert from 'node:assert/strict'
 import {it,vi,expect} from 'vitest'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
-import {LegacyVoiceFlow} from '../../src/js/readers/voice-flow-legacy.js'
+import {LegacyVoiceFlow} from './helpers/reference-voice-flow.js'
 const fixture=vi.hoisted(()=>({voices:[]}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralVoiceList:()=>fixture.voices}))
 import {langBase,declaredLanguage} from '../../src/js/readers/voice-catalog.js'
-import {languageOptions,voiceOptions} from '../../src/js/readers/voice-menus-legacy.js'
+import {languageOptions,voiceOptions} from './helpers/reference-voice-menus.js'
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 const device=()=>navigator.language
 function setup(native,trial){

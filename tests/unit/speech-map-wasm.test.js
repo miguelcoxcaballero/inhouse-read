@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs'
 import assert from 'node:assert/strict'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import * as maps from '../../src/js/readers/speech-map.js'
-import * as reference from '../../src/js/readers/speech-map-legacy.js'
+import * as reference from './helpers/reference-speech-map.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))
 let core
@@ -52,7 +52,12 @@ it('retains ordinary node references without allocating persistent Rust handles'
  }
  expect(core.memory.buffer.byteLength).toBe(before)
 },15000)
-it('keeps the original mapping available when Rust is unavailable',()=>{
- runtime.ui=null;document.body.innerHTML='<h2>Heading</h2><p>Hello <em>world</em>.</p>'
- for(const mode of [0,1,3])compare(document.body,mode)
+it('fails with the same error as the original traversal for a missing document or layer',()=>{
+ for(const name of ['mapSpeechText','mapTextLayer'])for(const root of [null,undefined]){
+  let expected,actual;try{reference[name](root)}catch(error){expected=error.message};try{maps[name](root)}catch(error){actual=error.message}
+  expect(actual).toBeTypeOf('string');expect(actual).toBe(expected)
+ }
+})
+it('fails clearly instead of keeping a second mapping when the core is missing',()=>{
+ runtime.ui=null;expect(()=>maps.mapTextNode(document.body)).toThrow('Rust UI is not loaded')
 })

@@ -1,6 +1,6 @@
 import { normalizeReadingPreferences } from './reading-preferences.js'
 import { reloadOnceAfterChunkFailure } from '../chunk-recovery.js'
-import { loadRustUI } from '../rust-ui.js'
+import { requireRustUI } from '../rust-ui.js'
 
 const STORAGE_KEY = 'inhouse-read-reading-preferences'
 
@@ -21,13 +21,17 @@ export function createLazyReaderExperience(reader, options) {
   let experience = null, loading = null
   const idlePanel = { open:false, close() {} }
   const idleVoice = { stop() {} }
-  const load = () => loading ||= Promise.all([import('./reader-experience.js'), loadRustUI()]).then(([{ ReaderExperience }]) => {
+  // The panel, voice session and lists are Rust components with no JavaScript
+  // twin: the experience is only built once the core is in. The idle prefetch
+  // never reloads the page for a slow download; opening a book does.
+  const load = ({ reload = true } = {}) => loading ||= Promise.all([import('./reader-experience.js'), requireRustUI()]).then(([{ ReaderExperience }, ui]) => {
+    if (!ui) throw new Error('Rust UI is unavailable')
     experience ||= new ReaderExperience(reader, options)
     return experience
-  }).catch(error => { loading = null; reloadOnceAfterChunkFailure(); throw error })
+  }).catch(error => { loading = null; if (reload) reloadOnceAfterChunkFailure(); throw error })
   return {
-    ready: load,
-    prefetch() { return load().catch(() => null) },
+    ready: () => load(),
+    prefetch() { return load({ reload:false }).catch(() => null) },
     get loaded() { return Boolean(experience) },
     reloadPreferences() { if (experience) experience.preferences = storedPreferences() },
     get preferences() { return experience ? experience.preferences : storedPreferences() },

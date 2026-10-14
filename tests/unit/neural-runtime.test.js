@@ -1,14 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import * as rustUI from '../../src/wasm/ui/inhouse_read_ui.js'
+
+// Every test resets the module graph; the reader parts still get the one initialised core.
+rustUI.initSync({ module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm') })
+const RUST_UI = '../../src/js/rust-ui.js'
 
 // The catalogue stays available if the lazy engine fails. Playback reports the
 // failure and never silently substitutes an operating-system voice.
 const ENGINE = '../../src/js/readers/neural-voice/index.js'
 beforeEach(() => {
   vi.resetModules()
+  vi.doMock(RUST_UI, () => ({ getRustUI:() => rustUI, loadRustUI:async () => rustUI, requireRustUI:async () => rustUI }))
   // Finish a reader's scheduled engine lookup before its test DOM is removed.
   vi.stubGlobal('requestIdleCallback', callback => { callback(); return 0 })
 })
-afterEach(() => { vi.doUnmock(ENGINE); vi.unstubAllGlobals(); delete globalThis.__inhouseNeuralTest; document.body.innerHTML = '' })
+afterEach(() => { vi.doUnmock(ENGINE); vi.doUnmock(RUST_UI); vi.unstubAllGlobals(); delete globalThis.__inhouseNeuralTest; document.body.innerHTML = '' })
 
 describe('neural runtime guards', () => {
   it('a module that fails to load keeps the downloadable catalogue but no engine or installed voices', async () => {

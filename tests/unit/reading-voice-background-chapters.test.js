@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { ReadingVoice } from '../../src/js/readers/reading-voice.js'
 import { FoliateSpeechCursor } from '../../src/js/readers/foliate-speech-cursor.js'

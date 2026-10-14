@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {it,vi} from 'vitest'
-import {LegacyWarm} from '../../src/js/readers/picker-warm-legacy.js'
+import {LegacyWarm} from './helpers/reference-picker-warm.js'
 const runtime=vi.hoisted(()=>({engine:null,load:null,list:null}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralEngine:()=>runtime.engine(),loadNeural:()=>runtime.load(),neuralVoiceList:e=>runtime.list(e)}))
 function dependencies(engine,load,list){Object.assign(runtime,{engine,load,list})}

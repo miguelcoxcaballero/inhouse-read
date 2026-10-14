@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest'
 const state=vi.hoisted(()=>({text:null,pages:[],tasks:[],renderGate:null}))
 vi.mock('pdfjs-dist/legacy/build/pdf.mjs',()=>({GlobalWorkerOptions:{},OPS:{paintImageXObject:85},

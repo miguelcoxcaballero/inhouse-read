@@ -1,6 +1,6 @@
 <!doctype html><html><body><script type="module">
 import init,{RustReaderView} from '/inhouse-read/src/wasm/ui/inhouse_read_ui.js';
-import {LegacyReaderView} from '/inhouse-read/src/js/readers/reader-view-legacy.js';
+import {LegacyReaderView} from '/inhouse-read/tests/unit/helpers/reference-reader-view.js';
 import {readerPanelMarkup,readerIcon} from '/inhouse-read/src/js/readers/reader-interface.js';
 const core=await init();
 window.run=(rust,snapshot=true,incremental=false)=>{

@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('foliate-js/view.js', () => ({}))

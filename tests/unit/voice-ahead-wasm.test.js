@@ -8,7 +8,7 @@ vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralEngine:()=>fixture.engine}))
 const setEngine=value=>{fixture.engine=value}
 afterEach(()=>{fixture.ui=null;fixture.engine=null})
-import {LegacyVoiceAhead} from '../../src/js/readers/voice-ahead-legacy.js'
+import {LegacyVoiceAhead} from './helpers/reference-voice-ahead.js'
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 function setup(native,trial){
  const host=new LegacyVoiceAhead(),events=[];let current

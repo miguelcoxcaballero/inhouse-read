@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {it,vi} from 'vitest'
-import {LegacyPolicy,DOWNLOAD_ERRORS} from '../../src/js/readers/picker-policy-legacy.js'
+import {LegacyPolicy,DOWNLOAD_ERRORS} from './helpers/reference-picker-policy.js'
 const runtime=vi.hoisted(()=>({base:null,recommend:null}))
 vi.mock('../../src/js/readers/voice-catalog.js',()=>({langBase:x=>runtime.base(x),recommendedNeuralFor:(...args)=>runtime.recommend(...args)}))
 function dependencies(base,recommend){Object.assign(runtime,{base,recommend})}

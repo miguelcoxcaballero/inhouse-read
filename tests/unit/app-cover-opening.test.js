@@ -11,7 +11,7 @@ vi.mock('../../src/js/rust-ui.js', async () => {
   const ui = await import('../../src/wasm/ui/inhouse_read_ui.js')
   const { readFileSync: read } = await import('node:fs')
   ui.initSync({ module:read('src/wasm/ui/inhouse_read_ui_bg.wasm') })
-  return { getRustUI:() => ui, loadRustUI:() => Promise.resolve(ui), waitForRustUI:() => Promise.resolve(ui) }
+  return { getRustUI:() => ui, loadRustUI:() => Promise.resolve(ui), waitForRustUI:() => Promise.resolve(ui), requireRustUI:() => Promise.resolve(ui) }
 })
 vi.mock('../../src/js/file-book-length.js', () => ({
   measureFileBookLength:vi.fn((...args) => state.measureFileLength(...args))

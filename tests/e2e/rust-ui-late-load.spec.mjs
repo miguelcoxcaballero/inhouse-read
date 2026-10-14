@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test'
 import {fakeEngineScript} from '../helpers/fake-neural-engine.js'
 import {longReflowPDF} from './fixtures/pdf-reflow-navigation.mjs'
 
-test('a slow Rust download releases the reader then serves the next operation without reinitializing',async({page},info)=>{
+test('a slow Rust download holds the reader until it arrives, then every operation uses that one instance',async({page},info)=>{
  test.setTimeout(60000);await page.emulateMedia({reducedMotion:'reduce'})
  await page.addInitScript(fakeEngineScript({installed:['piper:en_US-lessac-high'],holdAfter:1}))
  await page.addInitScript(()=>{
@@ -24,11 +24,14 @@ test('a slow Rust download releases the reader then serves the next operation wi
  try{
   await page.goto(process.env.IHR_TEST_URL||'./')
   await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/speech-page-boundary.epub')
-  await expect(page.locator('foliate-view')).toBeVisible({timeout:30000})
-  await expect(page.getByRole('button',{name:'Escuchar el libro'})).toBeEnabled()
+  // There is no JavaScript twin of the reader components: opening waits for the download, well past the 2 s other callers wait.
+  await page.waitForTimeout(3000)
+  await expect(page.locator('foliate-view')).toBeHidden()
   expect(await page.evaluate(()=>window.lateRust.instances)).toBe(0);expect(requests).toBe(1)
+  release();await expect(page.locator('foliate-view')).toBeVisible({timeout:30000})
+  await expect(page.getByRole('button',{name:'Escuchar el libro'})).toBeEnabled()
+  await expect.poll(()=>page.evaluate(()=>window.lateRust.instances)).toBe(1)
   await page.evaluate(()=>{window.lateReader=document.querySelector('foliate-view')})
-  release();await expect.poll(()=>page.evaluate(()=>window.lateRust.instances)).toBe(1)
   await page.getByRole('button',{name:'Aspecto de lectura'}).click();await page.getByRole('button',{name:'AMOLED',exact:true}).click()
   await expect(page.locator('#reader-screen')).toHaveAttribute('data-reading-theme','amoled')
   expect(await page.evaluate(()=>window.lateReader===document.querySelector('foliate-view'))).toBe(true)

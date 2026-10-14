@@ -1,6 +1,6 @@
 <!doctype html><html><body><script type="module">
 import init,{RustReaderLists} from '/inhouse-read/src/wasm/ui/inhouse_read_ui.js';
-import {LegacyReaderLists} from '/inhouse-read/src/js/readers/reader-lists-legacy.js';
+import {LegacyReaderLists} from '/inhouse-read/tests/unit/helpers/reference-reader-lists.js';
 const core=await init();
 window.run=rust=>{
  document.body.innerHTML='<div id="panel"><button data-place-tab="toc"></button><div data-toc></div><div data-history></div><div data-bookmarks></div><div data-quotes></div><p data-search-status></p><div data-search-results></div></div>';

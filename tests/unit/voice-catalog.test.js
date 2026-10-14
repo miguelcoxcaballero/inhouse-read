@@ -31,7 +31,7 @@ const DEVICE = [
 ]
 const voices = normalizeVoices(DEVICE)
 
-describe.each(['legacy','rust'])('catalogue through %s',engine=>{
+describe.each(['rust'])('catalogue through %s',engine=>{
 beforeEach(()=>{runtime.ui=engine==='rust'?observedUI:null})
 describe('voice normalization', () => {
   it('normalizes language tags from Android, browsers and ISO 639-2 codes', () => {
@@ -132,7 +132,9 @@ describe('labels', () => {
 })
 
 describe('grouped picker', () => {
-  const groups = buildVoiceGroups(voices, { bookLang:'fr-FR', deviceLang:'es-ES' })
+  // Built once the Rust module exists (it used to be built while collecting, before any engine was chosen).
+  let groups
+  beforeAll(() => { runtime.ui = observedUI; groups = buildVoiceGroups(voices, { bookLang:'fr-FR', deviceLang:'es-ES' }) })
   const langs = list => [...new Set(list.map(item => item.voice.base))]
   it('curates the natural voices: book language first, then device language, then the priority languages', () => {
     expect(langs(groups.recommended).slice(0, 3)).toEqual(['fr', 'es', 'en'])

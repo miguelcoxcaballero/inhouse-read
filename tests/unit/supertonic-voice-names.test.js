@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { describe, expect, it } from 'vitest';
 import { SUPERTONIC_LANGUAGES, SUPERTONIC_STYLES, SUPERTONIC_VOICE_NAMES, supertonicVoicesFor } from '../../src/js/readers/neural-voice/supertonic-catalog.js';
 import { neuralVoices } from '../../src/js/readers/neural-voice/catalog.js';

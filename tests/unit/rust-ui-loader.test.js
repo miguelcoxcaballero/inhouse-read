@@ -57,3 +57,27 @@ it('does not lose other components or reject a valid module when one readiness l
  const ready=vi.fn();onRustUIReady(()=>{throw Error('component')});onRustUIReady(ready)
  expect(await loadRustUI()).not.toBeNull();expect(ready).toHaveBeenCalledOnce()
 })
+it('requireRustUI is the loaded module at once and never starts a second initialization',async()=>{
+ const {requireRustUI,loadRustUI}=await import('../../src/js/rust-ui.js')
+ const first=await requireRustUI();expect(first.RustSelectMenu).toBe(mock.Menu);expect(await requireRustUI()).toBe(first);expect(await loadRustUI()).toBe(first);expect(mock.init).toHaveBeenCalledOnce()
+})
+it('requireRustUI keeps waiting for the same download after the 2 s release of other callers',async()=>{
+ let finish;mock.init.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}))
+ const {requireRustUI,loadRustUI,getRustUI}=await import('../../src/js/rust-ui.js')
+ const reader=requireRustUI(),other=loadRustUI()
+ await vi.advanceTimersByTimeAsync(2000);expect(await other).toBeNull();expect(getRustUI()).toBeNull()
+ await vi.advanceTimersByTimeAsync(20_000);expect(getRustUI()).toBeNull()
+ finish({});const ui=await reader;expect(ui.RustSelectMenu).toBe(mock.Menu);expect(getRustUI()).toBe(ui);expect(mock.init).toHaveBeenCalledOnce()
+})
+it('requireRustUI reports a download that never finishes 30 s after the release, without a second instance',async()=>{
+ mock.init.mockImplementationOnce(()=>new Promise(()=>{}))
+ const {requireRustUI,getRustUI}=await import('../../src/js/rust-ui.js')
+ const reader=requireRustUI();await vi.advanceTimersByTimeAsync(2000+30_000)
+ expect(await reader).toBeNull();expect(getRustUI()).toBeNull();expect(mock.init).toHaveBeenCalledOnce()
+})
+it('requireRustUI reports a failed module immediately and retries after the cooldown',async()=>{
+ mock.init.mockRejectedValueOnce(new Error('offline'))
+ const {requireRustUI}=await import('../../src/js/rust-ui.js')
+ expect(await requireRustUI()).toBeNull();expect(await requireRustUI()).toBeNull();expect(mock.init).toHaveBeenCalledOnce()
+ await vi.advanceTimersByTimeAsync(30_001);expect((await requireRustUI()).RustSelectMenu).toBe(mock.Menu);expect(mock.init).toHaveBeenCalledTimes(2)
+})

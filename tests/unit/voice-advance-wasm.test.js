@@ -8,7 +8,7 @@ vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>fixture.ui}))
 afterEach(()=>{fixture.ui=null;globalThis.setTimeout=originalSet})
 const originalSet=globalThis.setTimeout
 function dependencies(sleeper){globalThis.setTimeout=(done,ms)=>{sleeper(ms).then(done);return 1}}
-import {LegacyAdvance} from '../../src/js/readers/voice-advance-legacy.js'
+import {LegacyAdvance} from './helpers/reference-voice-advance.js'
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 function setup(native,trial){
  const host={state:trial%13?'playing':'paused',generation:3,index:trial%4?1:0,chunks:['First.','Last.'],reader:{location:{page:1}},diagnosticAdvance:null},events=[],sources=[]

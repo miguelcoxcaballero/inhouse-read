@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {it,vi} from 'vitest'
-import {LegacyActions,DOWNLOAD_ERRORS} from '../../src/js/readers/picker-actions-legacy.js'
+import {LegacyActions,DOWNLOAD_ERRORS} from './helpers/reference-picker-actions.js'
 const runtime=vi.hoisted(()=>({engine:null,list:null,declared:null,base:null,valid:null}))
 vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralEngine:()=>runtime.engine(),neuralVoiceList:()=>runtime.list()}))
 vi.mock('../../src/js/readers/voice-catalog.js',()=>({declaredLanguage:r=>runtime.declared(r),langBase:s=>runtime.base(s),isNeuralId:s=>runtime.valid(s)}))

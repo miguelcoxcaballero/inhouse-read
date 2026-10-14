@@ -30,7 +30,7 @@ function deferred() {
   return { promise, resolve }
 }
 
-describe.each(['legacy','rust'])('reader view %s',engine=>{
+describe.each(['rust'])('reader view %s',engine=>{
 beforeEach(() => {
   runtime.ui = engine === 'rust' ? rustUI : null
   localStorage.clear()

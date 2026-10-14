@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({ engine:null }))
 vi.mock('../../src/js/readers/neural-runtime.js', async original => ({

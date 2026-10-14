@@ -9,7 +9,7 @@ vi.mock('../../src/js/readers/neural-runtime.js',()=>({neuralEngine:()=>fixture.
 vi.mock('../../src/js/readers/neural-voice/audio.js',()=>({nativeAudio:()=>fixture.native(),nativePcmBridge:()=>fixture.pcm()}))
 function dependencies(n,e,d,p){fixture.native=n;fixture.engine=e;fixture.pcm=p;vi.stubGlobal('document',d)}
 afterEach(()=>{fixture.ui=null;vi.unstubAllGlobals()})
-import {LegacySession,legacyVoiceEvent as legacyEvent} from '../../src/js/readers/voice-session-legacy.js'
+import {LegacySession,legacyVoiceEvent as legacyEvent} from './helpers/reference-voice-session.js'
 const core=ui.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
 const onState=()=>{},reader={};
 it('preserves initial state, 1800 events, 1200 diagnostics and 1000 text cases',()=>{

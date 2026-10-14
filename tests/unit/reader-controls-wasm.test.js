@@ -1,10 +1,9 @@
-import {notifyRustUIReady} from '../../src/js/rust-ui-readiness.js'
 import {afterEach,beforeAll,describe,it,expect,vi} from 'vitest'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {ReaderControls} from '../../src/js/readers/reader-controls.js'
-import {LegacyReaderControls} from '../../src/js/readers/reader-controls-legacy.js'
+import {LegacyReaderControls} from './helpers/reference-reader-controls.js'
 import {readerPanelMarkup} from '../../src/js/readers/reader-interface.js'
 import {normalizeReadingPreferences} from '../../src/js/readers/reading-preferences.js'
 const runtime=vi.hoisted(()=>({ui:null}))
@@ -26,7 +25,7 @@ function setup(native){
  host.rotateReading=async()=>{try{if(globalThis.screen.orientation?.lock){await globalThis.screen.orientation.lock(globalThis.screen.orientation.type.startsWith('portrait')?'landscape':'portrait');host.error('')}else host.error('No se puede girar.')}catch{host.error('Gira el dispositivo.')}}
  panel.close=()=>{events.push(['close']);panel.removeAttribute('open');panel.dispatchEvent(new Event('close'))}
  panel.getBoundingClientRect=()=>({left:10,top:10,right:300,bottom:600})
- runtime.ui=native?ui:null;const controls=new ReaderControls(host)
+ runtime.ui=ui;const controls=native?new ReaderControls(host):new LegacyReaderControls(host)
  const find=q=>document.querySelector(q),click=q=>find(q).click(),change=(q,value,kind='change')=>{const e=find(q);if(e.type==='checkbox'||e.type==='radio')e.checked=value;else e.value=value;e.dispatchEvent(new Event(kind,{bubbles:true}))}
  return{host,panel,events,controls,find,click,change}
 }
@@ -56,9 +55,9 @@ it('ignores an event once its weak host getter no longer resolves',()=>{
  const fixture=setup(true);fixture.controls.free();const native=new ui.RustReaderControls(()=>undefined,fixture.panel,fixture.host.miniPlayer)
  fixture.click('#reader-settings');fixture.click('[data-play]');expect(fixture.events).toEqual([]);native.free()
 })
-it('falls back without retaining a host strongly through an unsupported WeakRef',()=>{
- vi.stubGlobal('WeakRef',undefined);const fixture=setup(true);expect(fixture.controls).toBeInstanceOf(LegacyReaderControls)
- fixture.click('[data-play]');expect(fixture.events).toEqual([['play']])
+it('still builds the Rust controls where WeakRef does not exist',()=>{
+ vi.stubGlobal('WeakRef',undefined);const fixture=setup(true);expect(fixture.controls).toBeInstanceOf(ui.RustReaderControls)
+ fixture.click('[data-play]');expect(fixture.events).toEqual([['play']]);fixture.controls.free()
 })
 it('removes partial listeners if construction fails before reaching the last shortcut',()=>{
  const fixture=setup(true);fixture.controls.free();document.querySelector('#reader-more-shortcut').remove()
@@ -99,35 +98,9 @@ it('cloned panel fixture keeps the original HTML and default control state',()=>
  expect(values(cloned)).toEqual(values(parsed))
 })
 
-it('adopts late Rust controls without replacing nodes, focus or selection or duplicating actions',()=>{
- const {controls,host,panel,find,click,change,events}=setup(false)
- const input=find('[data-search-query]');input.value='Keep this text';input.focus();input.setSelectionRange(2,6)
- runtime.ui=ui;notifyRustUIReady(ui)
- expect(controls.native).toBeInstanceOf(ui.RustReaderControls)
- expect(host.panel).toBe(panel);expect(document.activeElement).toBe(input);expect([input.selectionStart,input.selectionEnd]).toEqual([2,6])
- events.length=0;click('#reader-settings');change('[data-rate][value="1.5"]',true);change('[data-progress]',50)
- expect(events).toEqual([['show','appearance'],['setPreference','rate','1.5'],['jump',{fraction:0.5,locator:null}]])
- controls.free();controls.free();events.length=0;click('#reader-settings');change('[data-rate][value="2"]',true);expect(events).toEqual([])
-})
-it('never resurrects a disposed fallback when the module becomes available',()=>{
- const {controls,events,click,change}=setup(false);controls.free()
- runtime.ui=ui;notifyRustUIReady(ui);expect(controls.native).toBeNull()
- click('[data-play]');change('[data-rate][value="2"]',true);expect(events).toEqual([])
-})
-it('does not let a detached old reader bind shortcuts belonging to a new book',()=>{
- const old=setup(false);const current=setup(true)
- runtime.ui=ui;notifyRustUIReady(ui);current.click('[data-play]')
- expect(old.events).toEqual([]);expect(current.events).toEqual([['play']]);expect(old.controls.native).toBeNull();current.controls.free()
-})
-it('restores working legacy handlers after partial native adoption fails',()=>{
- const {controls,events,click,change,find}=setup(false)
- notifyRustUIReady({RustReaderControls:class{constructor(){find('[data-play]').onclick=()=>{throw Error('partial')};throw Error('unavailable')}}})
- click('[data-play]');change('[data-rate][value="2"]',true)
- expect(events).toEqual([['play'],['setPreference','rate','2']]);controls.free()
-})
-it('releases every native callback after 25 late adoptions and disposals',()=>{
- const first=setup(false);notifyRustUIReady(ui);first.click('[data-play]');first.controls.free()
+it('releases every native callback after 25 creations and disposals',()=>{
+ const first=setup(true);first.click('[data-play]');first.controls.free()
  const baseline=ui.ui_live_handles()
- for(let i=0;i<25;i++){const {controls,click}=setup(false);notifyRustUIReady(ui);click('[data-play]');controls.free()}
+ for(let i=0;i<25;i++){const {controls,click}=setup(true);click('[data-play]');controls.free()}
  expect(ui.ui_live_handles()).toBe(baseline)
 })
