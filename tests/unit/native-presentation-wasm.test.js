@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as production from '../../src/js/native-renderer-presentation.js'
 import * as frozen from './helpers/reference-native-renderer-presentation.js'
 import { prng, show } from './helpers/pointer-harness.js'
+import { collect } from './helpers/collect.js'
+import { rustShelf } from './helpers/rust-shelf-ready.js'
 
 afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks() })
 
@@ -88,6 +90,22 @@ describe('compiled native renderer presentation against the frozen JavaScript', 
     expect(captures).toBeGreaterThan(1000)
     expect(restores).toBeGreaterThan(1500)
   }, 120_000)
+
+  it('retains nothing of the host in Rust: dropped leases, their renderers and canvases are all collected', async () => {
+    await collect()
+    const before = rustShelf.shelf_live_handles()
+    const make = index => {
+      const renderer = { domElement: document.createElement('canvas') }
+      const lease = production.createNativeRendererPresentation(renderer, { canvas: document.createElement('canvas'), context: { index }, capture() {}, repaint() {}, position() {} })
+      if (index % 3 === 0) lease.present()
+      if (index % 5 === 0) lease.dispose()
+      return new WeakRef(lease)
+    }
+    const refs = Array.from({ length: 300 }, (_, index) => make(index))
+    await collect()
+    expect(refs.filter(ref => ref.deref()).length).toBe(0)
+    expect(rustShelf.shelf_live_handles()).toBe(before)
+  }, 60_000)
 
   it('exposes plain, annotatable lease objects whose identity the holders compare', () => {
     const renderer = { domElement: document.createElement('canvas') }

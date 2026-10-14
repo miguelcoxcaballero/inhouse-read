@@ -5,6 +5,7 @@ mod shelf_view_gesture;
 mod native_resize;
 mod native_presentation;
 mod shelf_trash;
+mod bookshelf_return;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]

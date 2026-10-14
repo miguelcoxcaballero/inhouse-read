@@ -2,18 +2,15 @@
 //! their paint AND export before the visible owner restores its frame; no second WebGL context is
 //! created here. A lease is a plain object (`canvas` plus methods) so its holders can compare it by
 //! identity and annotate it, as before.
-use std::{cell::{Cell,RefCell},collections::HashMap,rc::{Rc,Weak}};
+use std::cell::Cell;
 use wasm_bindgen::{prelude::*,JsCast};
-use js_sys::{Array,Object,Reflect,WeakMap,WeakSet};
+use js_sys::{Object,WeakMap,WeakSet};
 use crate::host::*;
 
 thread_local!{
- // renderer -> the lease that owns its canvas; lease -> the id of its state; renderers being restored.
+ // renderer -> the lease that owns its canvas; renderers being restored.
  static OWNERS:WeakMap=WeakMap::new();
- static IDS:WeakMap=WeakMap::new();
  static RESTORING:WeakSet=WeakSet::new();
- static STATES:RefCell<HashMap<u32,Weak<State>>>=RefCell::new(HashMap::new());
- static NEXT:Cell<u32>=const{Cell::new(0)};
 }
 /// WeakMap/WeakSet keys must be objects: lookups of anything else find nothing, stores throw.
 fn key(value:&JsValue)->Option<Object>{if value.is_object()||value.is_function(){Some(value.clone().unchecked_into::<Object>())}else{None}}
@@ -24,9 +21,13 @@ fn map_set(map:&WeakMap,at:&JsValue,value:&JsValue)->Result<(),JsValue>{
 fn map_delete(map:&WeakMap,at:&JsValue){if let Some(object)=key(at){map.delete(&object);}}
 fn owner_of(renderer:&JsValue)->JsValue{OWNERS.with(|owners|map_get(owners,renderer))}
 
-struct State{
- renderer:JsValue,canvas:JsValue,context:JsValue,capture:JsValue,repaint:JsValue,position:JsValue,cleanup:JsValue,
- disposed:Cell<bool>,revision:Cell<f64>,materialized:Cell<f64>,capturing:Cell<bool>,
+/// `{ snapshot = fallback } = {}` as a parameter list reads it: nothing means the fallback, `null`
+/// cannot be destructured, anything else supplies `snapshot` unless that is undefined.
+fn snapshot_option(options:&JsValue,fallback:bool)->Result<bool,JsValue>{
+ if options.is_undefined(){return Ok(fallback);}
+ if options.is_null(){return Err(js_sys::TypeError::new("Cannot destructure property 'snapshot' of 'object null' as it is null.").into());}
+ let value=read(options,"snapshot")?;
+ Ok(if value.is_undefined(){fallback}else{truthy(&value)})
 }
 
 /// Run `position(node)`; anything but `false` keeps the new placement, otherwise (or when it
@@ -72,82 +73,71 @@ pub fn with_renderer_presentation(renderer:JsValue,consumer:JsValue,draw_task:Js
  outcome
 }
 
-/// capture(context) materializes the exact retained displayed frame into the supplied raw output
-/// context. repaint() restores that same GPU frame without advancing a clock or acquiring another
-/// lease. position(node) attaches and styles the renderer's existing canvas, returning false if it
-/// cannot present. Returns `null` when the pieces are missing.
+/// The Rust half of one lease: its flags and its rules. The lease the holders see is a plain
+/// object (see native-renderer-presentation.js) that keeps the renderer, canvas, context and
+/// callbacks itself and hands them over with every call, together with its own identity, so it can
+/// be annotated and compared as before. Nothing host-owned is retained here: callbacks that reach
+/// their own holder cannot make a cycle through this module that the host's collector cannot see.
 #[wasm_bindgen]
-pub fn create_native_renderer_presentation(renderer:JsValue,options:JsValue)->Result<JsValue,JsValue>{
- let canvas=read(&options,"canvas")?;let context=read(&options,"context")?;let capture=read(&options,"capture")?;
- let repaint=read(&options,"repaint")?;let position=read(&options,"position")?;let cleanup=read(&options,"cleanup")?;
- if !truthy(&get(&renderer,"domElement"))||!truthy(&canvas)||!truthy(&context)||!capture.is_function()||!repaint.is_function()||!position.is_function(){return Ok(JsValue::NULL);}
- let state=Rc::new(State{renderer:renderer.clone(),canvas:canvas.clone(),context,capture,repaint,position,cleanup,
-  disposed:Cell::new(false),revision:Cell::new(1.0),materialized:Cell::new(0.0),capturing:Cell::new(false)});
- let lease=Object::new();let lease_value:JsValue=lease.clone().into();
- set(&lease_value,"canvas",&canvas)?;
- let id=NEXT.with(|next|{next.set(next.get()+1);next.get()});
- STATES.with(|states|states.borrow_mut().insert(id,Rc::downgrade(&state)));
- IDS.with(|ids|map_set(ids,&lease_value,&JsValue::from_f64(f64::from(id))))?;
- // A method cannot name its receiver, and holding the lease strongly would pin it forever (lease ->
- // method -> state -> lease), so methods keep a WeakRef. The state is freed with the last method,
- // when the host collects a lease that was dropped without being disposed.
- let weak_lease=Reflect::construct(&get(&global(),"WeakRef").dyn_into::<js_sys::Function>()?,&Array::of1(&lease_value))?;
- let define=|name:&str,body:Box<dyn Fn(&Rc<State>,&JsValue,&[JsValue])->Result<JsValue,JsValue>>|->Result<(),JsValue>{
-  let state=state.clone();let weak_lease=weak_lease.clone();
-  let closure=Closure::wrap(Box::new(move|first:JsValue|{
-   let lease=method(&weak_lease,"deref",&[])?;
-   body(&state,&lease,&[first])
-  })as Box<dyn FnMut(JsValue)->Result<JsValue,JsValue>>);
-  set(&lease_value,name,closure.as_ref())?;
-  closure.forget();Ok(())
- };
- define("isOwner",Box::new(|state,lease,_|Ok(JsValue::from_bool(!state.disposed.get()&&owner_of(&state.renderer)==*lease))))?;
- define("markDirty",Box::new(|state,_,_|{if !state.disposed.get(){state.revision.set(state.revision.get()+1.0);}Ok(JsValue::UNDEFINED)}))?;
- define("present",Box::new(|state,lease,_|{
-  if state.disposed.get(){return Ok(JsValue::FALSE);}
-  let owner=owner_of(&state.renderer);
-  if truthy(&owner)&&owner!=*lease{return Ok(JsValue::FALSE);}
-  if !position_atomically(&read(&state.renderer,"domElement")?,&state.position)?{return Ok(JsValue::FALSE);}
-  OWNERS.with(|owners|map_set(owners,&state.renderer,lease))?;opacity(&state.canvas,"0")?;Ok(JsValue::TRUE)
- }))?;
- define("repaint",Box::new(|state,_,_|{if state.disposed.get(){Ok(JsValue::UNDEFINED)}else{call(&state.repaint,"repaint",&[])}}))?;
- define("capture",Box::new(|state,lease,_|{
-  if state.disposed.get()||state.capturing.get()||state.materialized.get()==state.revision.get(){return Ok(JsValue::UNDEFINED);}
-  let revision=state.revision.get();
-  state.capturing.set(true);
+pub struct NativeLease{disposed:Cell<bool>,revision:Cell<f64>,materialized:Cell<f64>,capturing:Cell<bool>}
+
+#[wasm_bindgen]
+impl NativeLease{
+ #[wasm_bindgen(constructor)]
+ pub fn new()->NativeLease{NativeLease{disposed:Cell::new(false),revision:Cell::new(1.0),materialized:Cell::new(0.0),capturing:Cell::new(false)}}
+ #[wasm_bindgen(js_name=isOwner)]
+ pub fn is_owner(&self,lease:&JsValue,parts:&JsValue)->Result<bool,JsValue>{Ok(!self.disposed.get()&&owner_of(&read(parts,"renderer")?)==*lease)}
+ #[wasm_bindgen(js_name=markDirty)]
+ pub fn mark_dirty(&self){if !self.disposed.get(){self.revision.set(self.revision.get()+1.0);}}
+ pub fn present(&self,lease:&JsValue,parts:&JsValue)->Result<bool,JsValue>{
+  if self.disposed.get(){return Ok(false);}
+  let renderer=read(parts,"renderer")?;
+  let owner=owner_of(&renderer);
+  if truthy(&owner)&&owner!=*lease{return Ok(false);}
+  if !position_atomically(&read(&renderer,"domElement")?,&read(parts,"position")?)?{return Ok(false);}
+  OWNERS.with(|owners|map_set(owners,&renderer,lease))?;opacity(&read(parts,"canvas")?,"0")?;Ok(true)
+ }
+ pub fn repaint(&self,parts:&JsValue)->Result<JsValue,JsValue>{if self.disposed.get(){Ok(JsValue::UNDEFINED)}else{call(&read(parts,"repaint")?,"repaint",&[])}}
+ pub fn capture(&self,lease:&JsValue,parts:&JsValue)->Result<(),JsValue>{
+  if self.disposed.get()||self.capturing.get()||self.materialized.get()==self.revision.get(){return Ok(());}
+  let revision=self.revision.get();
+  self.capturing.set(true);
   let outcome=(||->Result<(),JsValue>{
-   let task={let state=state.clone();Closure::once_into_js(move||call(&state.capture,"capture",&[&state.context]))};
-   with_renderer_presentation(state.renderer.clone(),lease.clone(),task)?;
-   state.materialized.set(revision);Ok(())
+   let (capture,context)=(read(parts,"capture")?,read(parts,"context")?);
+   let task=Closure::once_into_js(move||call(&capture,"capture",&[&context]));
+   with_renderer_presentation(read(parts,"renderer")?,lease.clone(),task)?;
+   self.materialized.set(revision);Ok(())
   })();
-  state.capturing.set(false);outcome?;Ok(JsValue::UNDEFINED)
- }))?;
- define("transferTo",Box::new(|state,lease,args|{
-  let next=&args[0];
-  let target=IDS.with(|ids|map_get(ids,next)).as_f64().and_then(|id|STATES.with(|states|states.borrow().get(&(id as u32)).and_then(Weak::upgrade)));
-  if !truthy(&method(lease,"isOwner",&[])?){return Ok(JsValue::FALSE);}
-  let Some(target)=target else{return Ok(JsValue::FALSE)};
-  if target.disposed.get()||target.renderer!=state.renderer{return Ok(JsValue::FALSE);}
-  if !position_atomically(&read(&state.renderer,"domElement")?,&target.position)?{return Ok(JsValue::FALSE);}
-  OWNERS.with(|owners|map_set(owners,&state.renderer,next))?;opacity(&target.canvas,"0")?;Ok(JsValue::TRUE)
- }))?;
- define("release",Box::new(|state,lease,args|{
-  let snapshot=if args[0].is_undefined()||absent(&args[0]){true}else{let value=get(&args[0],"snapshot");value.is_undefined()||truthy(&value)};
-  if state.disposed.get(){return Ok(JsValue::UNDEFINED);}
+  self.capturing.set(false);outcome
+ }
+ #[wasm_bindgen(getter)]
+ pub fn disposed(&self)->bool{self.disposed.get()}
+ /// `target_live` says whether `next` is a lease that has not been disposed, `target_parts` are its parts.
+ #[wasm_bindgen(js_name=transferTo)]
+ pub fn transfer_to(&self,lease:&JsValue,parts:&JsValue,next:&JsValue,target_live:bool,target_parts:&JsValue)->Result<bool,JsValue>{
+  let renderer=read(parts,"renderer")?;
+  if !truthy(&method(lease,"isOwner",&[])?){return Ok(false);}
+  if !target_live||read(target_parts,"renderer")?!=renderer{return Ok(false);}
+  if !position_atomically(&read(&renderer,"domElement")?,&read(target_parts,"position")?)?{return Ok(false);}
+  OWNERS.with(|owners|map_set(owners,&renderer,next))?;opacity(&read(target_parts,"canvas")?,"0")?;Ok(true)
+ }
+ pub fn release(&self,lease:&JsValue,parts:&JsValue,options:&JsValue)->Result<(),JsValue>{
+  let snapshot=snapshot_option(options,true)?;
+  if self.disposed.get(){return Ok(());}
+  let renderer=read(parts,"renderer")?;
   if snapshot{method(lease,"capture",&[])?;}
-  if owner_of(&state.renderer)==*lease{method(&read(&state.renderer,"domElement")?,"remove",&[])?;OWNERS.with(|owners|map_delete(owners,&state.renderer));}
+  if owner_of(&renderer)==*lease{method(&read(&renderer,"domElement")?,"remove",&[])?;OWNERS.with(|owners|map_delete(owners,&renderer));}
   // A pending or transferred lease never exposes an older 2D snapshot. Only an explicit
   // successful snapshot release presents those pixels.
-  if snapshot{opacity(&state.canvas,"")?;}
-  Ok(JsValue::UNDEFINED)
- }))?;
- define("dispose",Box::new(|state,lease,args|{
-  let snapshot=if absent(&args[0]){false}else{truthy(&get(&args[0],"snapshot"))};
-  if state.disposed.get(){return Ok(JsValue::UNDEFINED);}
+  if snapshot{opacity(&read(parts,"canvas")?,"")?;}
+  Ok(())
+ }
+ pub fn dispose(&self,lease:&JsValue,parts:&JsValue,options:&JsValue)->Result<(),JsValue>{
+  let snapshot=snapshot_option(options,false)?;
+  if self.disposed.get(){return Ok(());}
   let options=Object::new();set(&options,"snapshot",&JsValue::from_bool(snapshot))?;
   method(lease,"release",&[&options])?;
-  state.disposed.set(true);
-  call_opt(&state.cleanup,"cleanup",&[])?;Ok(JsValue::UNDEFINED)
- }))?;
- Ok(lease_value)
+  self.disposed.set(true);
+  call_opt(&read(parts,"cleanup")?,"cleanup",&[])?;Ok(())
+ }
 }

@@ -123,6 +123,65 @@ impl Mat4 {
         te[2] = x[2]; te[6] = y[2]; te[10] = z[2];
     }
     pub fn set_position(&mut self, p: Vec3) { self.0[12] = p[0]; self.0[13] = p[1]; self.0[14] = p[2]; }
+    /// `Matrix4#determinant`, in three's term order.
+    pub fn determinant(&self) -> f64 {
+        let te = &self.0;
+        let (n11, n12, n13, n14) = (te[0], te[4], te[8], te[12]);
+        let (n21, n22, n23, n24) = (te[1], te[5], te[9], te[13]);
+        let (n31, n32, n33, n34) = (te[2], te[6], te[10], te[14]);
+        let (n41, n42, n43, n44) = (te[3], te[7], te[11], te[15]);
+        n41 * (n14 * n23 * n32 - n13 * n24 * n32 - n14 * n22 * n33 + n12 * n24 * n33 + n13 * n22 * n34 - n12 * n23 * n34)
+            + n42 * (n11 * n23 * n34 - n11 * n24 * n33 + n14 * n21 * n33 - n13 * n21 * n34 + n13 * n24 * n31 - n14 * n23 * n31)
+            + n43 * (n11 * n24 * n32 - n11 * n22 * n34 - n14 * n21 * n32 + n12 * n21 * n34 + n14 * n22 * n31 - n12 * n24 * n31)
+            + n44 * (-n13 * n22 * n31 - n11 * n23 * n32 + n11 * n22 * n33 + n13 * n21 * n32 - n12 * n21 * n33 + n12 * n23 * n31)
+    }
+    /// `Matrix4#compose(position, quaternion [x, y, z, w], scale)`.
+    pub fn compose(position: Vec3, q: [f64; 4], scale: Vec3) -> Mat4 {
+        let (x, y, z, w) = (q[0], q[1], q[2], q[3]);
+        let (x2, y2, z2) = (x + x, y + y, z + z);
+        let (xx, xy, xz) = (x * x2, x * y2, x * z2);
+        let (yy, yz, zz) = (y * y2, y * z2, z * z2);
+        let (wx, wy, wz) = (w * x2, w * y2, w * z2);
+        let (sx, sy, sz) = (scale[0], scale[1], scale[2]);
+        Mat4([(1.0 - (yy + zz)) * sx, (xy + wz) * sx, (xz - wy) * sx, 0.0,
+            (xy - wz) * sy, (1.0 - (xx + zz)) * sy, (yz + wx) * sy, 0.0,
+            (xz + wy) * sz, (yz - wx) * sz, (1.0 - (xx + yy)) * sz, 0.0,
+            position[0], position[1], position[2], 1.0])
+    }
+    /// `Quaternion#setFromRotationMatrix` as `[x, y, z, w]`; the upper 3x3 is assumed unscaled.
+    pub fn quaternion(&self) -> [f64; 4] {
+        let te = &self.0;
+        let (m11, m12, m13, m21, m22, m23, m31, m32, m33) = (te[0], te[4], te[8], te[1], te[5], te[9], te[2], te[6], te[10]);
+        let trace = m11 + m22 + m33;
+        if trace > 0.0 {
+            let s = 0.5 / (trace + 1.0).sqrt();
+            [(m32 - m23) * s, (m13 - m31) * s, (m21 - m12) * s, 0.25 / s]
+        } else if m11 > m22 && m11 > m33 {
+            let s = 2.0 * (1.0 + m11 - m22 - m33).sqrt();
+            [0.25 * s, (m12 + m21) / s, (m13 + m31) / s, (m32 - m23) / s]
+        } else if m22 > m33 {
+            let s = 2.0 * (1.0 + m22 - m11 - m33).sqrt();
+            [(m12 + m21) / s, 0.25 * s, (m23 + m32) / s, (m13 - m31) / s]
+        } else {
+            let s = 2.0 * (1.0 + m33 - m11 - m22).sqrt();
+            [(m13 + m31) / s, (m23 + m32) / s, 0.25 * s, (m21 - m12) / s]
+        }
+    }
+    /// `Matrix4#decompose`: position, quaternion `[x, y, z, w]` and scale. A negative determinant
+    /// flips the first scale.
+    pub fn decompose(&self) -> (Vec3, [f64; 4], Vec3) {
+        let te = &self.0;
+        let mut sx = length([te[0], te[1], te[2]]);
+        let sy = length([te[4], te[5], te[6]]);
+        let sz = length([te[8], te[9], te[10]]);
+        if self.determinant() < 0.0 { sx = -sx; }
+        let mut rotation = *self;
+        let (inverse_x, inverse_y, inverse_z) = (1.0 / sx, 1.0 / sy, 1.0 / sz);
+        for (index, inverse) in [(0, inverse_x), (1, inverse_x), (2, inverse_x), (4, inverse_y), (5, inverse_y), (6, inverse_y), (8, inverse_z), (9, inverse_z), (10, inverse_z)] {
+            rotation.0[index] *= inverse;
+        }
+        ([te[12], te[13], te[14]], rotation.quaternion(), [sx, sy, sz])
+    }
     /// `Vector3#transformDirection`: the upper 3x3 applied, then normalised.
     pub fn transform_direction(&self, d: Vec3) -> Vec3 {
         let e = &self.0;
