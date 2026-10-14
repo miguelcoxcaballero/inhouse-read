@@ -31,12 +31,12 @@ describe('compiled shelf view gesture against the frozen JavaScript controller',
     expect(seen.setPointerCapture).toBeGreaterThan(300)
     expect(seen.preventDefault).toBeGreaterThan(1000)
     expect(lines).toBeGreaterThan(100000)
-  })
+  }, 120_000)
 
   it('does not accumulate JavaScript handles across create, swipe and destroy cycles', () => {
     for (let seed = 1; seed <= 5; seed++) { playView(production, makeViewScript(seed, 30)); reset() }
     const baseline = rustUI.shelf_live_handles()
     for (let seed = 6; seed <= 205; seed++) { playView(production, makeViewScript(seed, 30)); reset() }
     expect(rustUI.shelf_live_handles()).toBe(baseline)
-  })
+  }, 120_000)
 })

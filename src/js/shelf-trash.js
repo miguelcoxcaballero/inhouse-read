@@ -1,40 +1,20 @@
 import * as THREE from 'three';
+import { needRustShelf } from './rust-shelf.js';
 
 const clamp = (value, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, Number(value) || 0));
-const smooth = value => value * value * (3 - 2 * value);
 
 /** The book travels above the open rim, then falls into the actual hollow body.
- * All positions use the same world axes as the cabinet and its shared camera. */
+ * All positions use the same world axes as the cabinet and its shared camera. The flight's
+ * arithmetic runs in Rust (rust-ui/src/shelf_trash.rs); only the Vector3 is built here. */
 export function sampleTrashDrop(start, mouth, progress, { height = 200, scale = 1, endScale = .19 } = {}) {
-  const t = clamp(progress), travel = clamp(t / .68), amount = smooth(travel);
-  const arc = Math.min(100, Math.max(28, Math.abs(start.y - mouth.y) * .16 + height * .2));
-  const fall = smooth(clamp((t - .68) / .32));
-  const position = start.clone().lerp(mouth, amount);
-  position.y += Math.sin(travel * Math.PI) * arc - fall * height * endScale * 1.75;
-  position.z += Math.sin(travel * Math.PI) * 36;
-  // Make room for the cover before its broad face turns towards the camera.
-  // Otherwise a book dragged into a narrow right gutter remains full-sized
-  // while rotating and is visibly cut by the edge of the shared canvas.
-  return { position, scale:scale + (endScale - scale) * smooth(clamp(t / .48)),
-    turn:smooth(clamp(t / .76)), fall };
+  const [x, y, z, size, turn, fall] = needRustShelf().sample_trash_drop(start.x, start.y, start.z, mouth.x, mouth.y, mouth.z, progress, height, scale, endScale);
+  return { position:start.clone().set(x, y, z), scale:size, turn, fall };
 }
 
 /** Fine orange-peel texture of a powder coat: R relief, G roughness. A tiny
- * deterministic 64px field, generated once per bin; no downloads or idle work. */
+ * deterministic 64px field, generated once per bin in Rust; no downloads or idle work. */
 function powderCoat() {
-  const size = 64, bytes = new Uint8Array(size * size * 4);
-  const lattice = (x, y) => {
-    let h = Math.imul((x & 15) + 1, 0x27d4eb2d) ^ Math.imul((y & 15) + 1, 0x165667b1);
-    h = Math.imul(h ^ h >>> 15, 0x85ebca6b); return ((h ^ h >>> 13) >>> 0) / 4294967296;
-  };
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-    const u = x / 4, v = y / 4, xi = Math.floor(u), yi = Math.floor(v), fx = smooth(u - xi), fy = smooth(v - yi);
-    const a = lattice(xi, yi), b = lattice(xi + 1, yi), c = lattice(xi, yi + 1), d = lattice(xi + 1, yi + 1);
-    const peel = a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy, i = (y * size + x) * 4;
-    bytes[i] = Math.round(255 * (.35 + peel * .3)); bytes[i + 1] = Math.round(255 * (.82 + peel * .18));
-    bytes[i + 2] = 0; bytes[i + 3] = 255;
-  }
-  const texture = new THREE.DataTexture(bytes, size, size, THREE.RGBAFormat);
+  const size = 64, texture = new THREE.DataTexture(needRustShelf().powder_coat(), size, size, THREE.RGBAFormat);
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping; texture.repeat.set(12, 12);
   texture.magFilter = THREE.LinearFilter; texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.generateMipmaps = true; texture.needsUpdate = true;
@@ -98,13 +78,7 @@ export function createShelfTrash({ radius = 44, height = 140 } = {}) {
   // The shelf camera looks down on the bin, so a true vertical wall mirrors
   // only the dark floor. Leaning the drum's shading normals slightly upwards
   // lets the window and key light sweep a soft vertical sheen across it.
-  const lean = new THREE.Vector3(), leanNormals = (geometry, rows, from, to, amount) => {
-    const normal = geometry.attributes.normal;
-    for (let i = 0; i <= segments; i++) for (let j = from; j <= to; j++) {
-      const k = i * rows + j;
-      lean.fromBufferAttribute(normal, k); lean.y += amount; lean.normalize(); normal.setXYZ(k, lean.x, lean.y, lean.z);
-    }
-  };
+  const leanNormals = (geometry, rows, from, to, amount) => needRustShelf().lean_normals(geometry.attributes.normal.array, segments, rows, from, to, amount);
   leanNormals(wallGeometry, shell.length, 1, outer - 2, .38);
   // One continuous cross-section supplies the outer wall, rolled rim and
   // inner bucket, so a falling book is occluded by real solid surfaces.

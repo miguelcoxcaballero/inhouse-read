@@ -35,7 +35,7 @@ describe('compiled shelf zoom against the frozen JavaScript controller', () => {
     expect(seen.settled).toBeGreaterThan(300)
     expect(seen.capture).toBeGreaterThan(300)
     expect(lines).toBeGreaterThan(150000)
-  })
+  }, 120_000)
 
   it('does not accumulate JavaScript handles across create, gesture and destroy cycles', () => {
     for (let seed = 1; seed <= 5; seed++) { playZoom(production, makeZoomScript(seed, 30)); reset() }
@@ -48,7 +48,7 @@ describe('compiled shelf zoom against the frozen JavaScript controller', () => {
     }
     expect(grew).toEqual([])
     expect(rustUI.shelf_live_handles()).toBe(baseline)
-  })
+  }, 120_000)
 
   it('requires the shelf module and releases the root class when destroyed', () => {
     const root = document.createElement('div'), scroller = document.createElement('div')

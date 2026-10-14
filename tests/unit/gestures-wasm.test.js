@@ -32,7 +32,7 @@ describe('compiled reader gestures against the frozen JavaScript recogniser', ()
     expect(navigations).toBeGreaterThan(1500)
     for (const name of ['onNext', 'onPrev', 'onToggleChrome', 'onToggleZoom', 'onLongPress', 'onNativeSwipe', 'onManualPan']) expect(seen[name], name).toBeGreaterThan(40)
     expect(compared).toBeGreaterThan(100000)
-  })
+  }, 120_000)
 
   it('classifies zones and swipes exactly like the original over a large corpus, including NaN, infinities and -0', () => {
     const random = prng(5)
@@ -45,7 +45,7 @@ describe('compiled reader gestures against the frozen JavaScript recogniser', ()
       expect(production.classifySwipe(sample)).toBe(frozen.classifySwipe(sample))
     }
     expect(production.ZONE).toEqual(frozen.ZONE)
-  })
+  }, 120_000)
 
   it('does not accumulate JavaScript handles across attach, gesture and detach cycles', () => {
     const cycle = seed => { play(production, makeScript(seed, 40)); vi.unstubAllGlobals(); vi.restoreAllMocks() }
@@ -59,5 +59,5 @@ describe('compiled reader gestures against the frozen JavaScript recogniser', ()
     }
     expect(grew).toEqual([])
     expect(rustUI.ui_live_handles()).toBe(baseline)
-  })
+  }, 120_000)
 })

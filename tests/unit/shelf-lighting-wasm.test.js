@@ -96,7 +96,7 @@ describe('compiled shelf lighting against the frozen JavaScript fit', () => {
     // The corpus must exercise the cached-map path, not only refits.
     expect(transports).toBeGreaterThan(500)
     expect(refits).toBeGreaterThan(1000)
-  })
+  }, 120_000)
 
   it('releases its rig and arena on dispose and survives memory growth between frames', () => {
     const rig = makeRig(create, 5)

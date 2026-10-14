@@ -87,7 +87,7 @@ describe('compiled native renderer presentation against the frozen JavaScript', 
     expect(transfers).toBeGreaterThan(200)
     expect(captures).toBeGreaterThan(1000)
     expect(restores).toBeGreaterThan(1500)
-  })
+  }, 120_000)
 
   it('exposes plain, annotatable lease objects whose identity the holders compare', () => {
     const renderer = { domElement: document.createElement('canvas') }

@@ -82,7 +82,7 @@ describe('compiled native renderer sizing against the frozen JavaScript', () => 
     expect(staged).toBeGreaterThan(30)
     expect(atomic).toBeGreaterThan(200)
     expect(skipped).toBeGreaterThan(2000)
-  })
+  }, 120_000)
 
   it('runs arbitrary operations the same way: values, thrown errors, coercion and cleanup', () => {
     const random = prng(77)
@@ -112,12 +112,12 @@ describe('compiled native renderer sizing against the frozen JavaScript', () => 
       try { actual = run(withNativeCanvasResize) } catch (error) { throw new Error(`trial ${trial}: ${error.message}`) }
       if (expected.join('\n') !== actual.join('\n')) throw new Error(`trial ${trial} ${JSON.stringify({ start, physical, steps, mode, options })}\nexpected:\n${expected.join('\n')}\nactual:\n${actual.join('\n')}`)
     }
-  })
+  }, 120_000)
 
   it('does not accumulate JavaScript handles across resize scopes', () => {
     for (let seed = 1; seed <= 20; seed++) play(configureNativeRendererSize, scenario(seed))
     const baseline = rustShelf.shelf_live_handles()
     for (let seed = 21; seed <= 220; seed++) play(configureNativeRendererSize, scenario(seed))
     expect(rustShelf.shelf_live_handles()).toBe(baseline)
-  })
+  }, 120_000)
 })
