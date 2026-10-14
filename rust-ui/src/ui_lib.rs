@@ -71,6 +71,10 @@ mod reader_view;
 #[wasm_bindgen]
 pub fn ui_abi_version() -> u32 { 1 }
 
+/// Timer and frame callbacks the module still owns: zero once everything scheduled has run or been cancelled.
+#[wasm_bindgen]
+pub fn ui_pending_callbacks() -> u32 { crate::host::pending_callbacks() as u32 }
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_name = String)]
