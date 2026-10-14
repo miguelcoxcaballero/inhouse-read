@@ -6,6 +6,7 @@ mod native_resize;
 mod native_presentation;
 mod shelf_trash;
 mod bookshelf_return;
+mod animation_fence;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
