@@ -10,6 +10,7 @@ mod animation_fence;
 mod placement_preview;
 mod occlusion_table;
 mod spine_surface;
+mod cover_editor;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
