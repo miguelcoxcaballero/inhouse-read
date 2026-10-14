@@ -272,14 +272,12 @@ fn underrun(e:&JsValue)->R<()>{
  Ok(())
 }
 /// Is it safe to start talking? Every chunk still being computed must finish (within the slack) before the audio in front of it runs out.
-fn safe_to_start(ready:&[f64],pending:&[f64],rtf:f64,slack:f64)->bool{
+pub(crate) fn safe_to_start(ready:&[f64],pending:&[f64],rtf:f64,slack:f64)->bool{
  let mut have=0.0;for d in ready{have+=d;}
  let mut spent=0.0;
  for d in pending{spent+=rtf*d;if spent>have+slack{return false;}have+=d;}
  true
 }
-#[wasm_bindgen]
-pub fn neural_safe_to_start(ready:Vec<f64>,pending:Vec<f64>,rtf:f64,slack:f64)->bool{safe_to_start(&ready,&pending,rtf,slack)}
 /// May we start (or restart after a stall) playing what is in hand?
 fn gate_opens(e:&JsValue,run:&JsValue)->R<bool>{
  let entries=arr(&read(run,"entries")?);
