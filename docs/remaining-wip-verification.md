@@ -53,10 +53,11 @@ E2E (puerto propio): smoke 13/13, plant-catalog 8/8, lamp-catalog 3/3,
 shelf-types 2/2, rust-catalog-view 2/2, rust-foliage-projection 2/2,
 rust-book-projection 1/1, rust-prepared-page 2/2, rust-stage-gate 2/2,
 rust-shelf-refresh 2/2, rust-native-import-gate 2/2, rust-profile-view 2/2,
-book-open-prepared 9/9, profile-updates 1/1, critical-regressions 6/6 en
-secuencia (en una ejecución con dos trabajadores «el lomo…» falló una vez: su
-`waitForFunction` con predicado asíncrono es una carrera; 8/9 de mis
-repeticiones y 3/3 de main).
+book-open-prepared 9/9, profile-updates 1/1, critical-regressions 4/6 con dos
+trabajadores: «el lomo…» (su `waitForFunction` con predicado asíncrono es una
+carrera) y «móvil: el modelo se dibuja…» fallaron una vez bajo esa carga;
+aislados pasan en mi build (el primero 10 de 11 ejecuciones, el segundo 2/2) y
+en main/base 7/7 el primero. No hay una ejecución de main con la misma carga.
 Inventario 7908 Rust/35190 JS = 18,35 %; no es porcentaje funcional.
 Se conservan en JS, con motivo: perfil, cola de refresco, puerta de importación
 nativa y cola de progreso (los tres primeros se usan en el arranque o antes de
