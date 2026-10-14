@@ -112,12 +112,13 @@ describe('compiled complete shelf placement, movement and mounting surfaces',()=
     compare({...input,objects:[false,null,undefined,...input.objects]},'layout');
     compare({...input,objects:null},'layout');
   });
-  it('keeps the public APIs on their original implementation',()=>{
+  it('runs the public APIs through the compiled core and returns the frozen original result',()=>{
+    // The JavaScript packing is gone: the public layout and move APIs are the core's, one job per surface.
     const input=generatePlacement(77,35);
     for(const api of placementApis){
       const before=stats.calls;
       expect(originalPlacement(production,productionDecoration,input,api)).toEqual(originalPlacement(frozen,frozenDecoration,input,api));
-      expect(stats.calls-before).toBe(0);
+      expect(stats.calls-before).toBe(api.includes('decorations')?2:1);
     }
   });
   it('retains the original accessor order across surfaces before normalizing the next one',()=>{

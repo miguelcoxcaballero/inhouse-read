@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({ connected:false, serial:0 }))
 // separately; this new background dependency must not parse those fixtures.
 // The prepared page and the progress queue have no JavaScript twin: give the app the real Rust UI module.
 vi.mock('../../src/js/rust-ui.js', async () => (await import('./helpers/rust-ui-real.js')).rustUiMock())
+vi.mock('../../src/js/rust-shelf.js', async () => (await import('./helpers/rust-shelf-real.js')).rustShelfMock())
 vi.mock('../../src/js/file-book-length.js', () => ({
   measureFileBookLength:vi.fn((...args) => state.measureFileLength(...args))
 }))

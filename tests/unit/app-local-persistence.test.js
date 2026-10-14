@@ -36,6 +36,7 @@ vi.mock('../../src/js/readers/reader-controller.js', () => ({ UnsupportedFormatE
 }))
 // The experience is a stand-in here; the lazy loader only needs the Rust core to exist.
 vi.mock('../../src/js/rust-ui.js', async importOriginal => ({ ...await importOriginal(), requireRustUI:async () => ({}) }))
+vi.mock('../../src/js/rust-shelf.js', async () => (await import('./helpers/rust-shelf-real.js')).rustShelfMock())
 vi.mock('../../src/js/readers/reader-experience.js', () => ({ ReaderExperience:class {
   constructor(reader, options) {
     state.experience = this

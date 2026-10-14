@@ -1,6 +1,6 @@
 // One complete placement job crosses the boundary. Objects, IDs and metadata
 // stay in JavaScript; the core owns all collision, gap and mounting decisions.
-const MAX_OBJECTS = 8192, INPUT_STRIDE = 7, OUTPUT_STRIDE = 6;
+const MAX_OBJECTS = 8192, MAX_PLACED_OBJECTS = 1 << 17, INPUT_STRIDE = 7, OUTPUT_STRIDE = 6;
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 const isCeiling = object => object.kind === 'lamp' && object.mount === 'undershelf';
@@ -124,12 +124,27 @@ function dataOnlyInputs(objects, options, { move, target, separateMounts }) {
 /** undefined requests the unchanged implementation. An empty layout is a
  * valid result. Input arrays and nested metadata are never copied into WASM.
  * No cached arenas or views survive a call; nested host jobs are independent. */
-export function rustShelfPlacement(core, objects, options = {}, {
-  move = false, movedKey, target, separateMounts = false,
-} = {}) {
-  if (typeof core?.shelf_place !== 'function' || !core.memory
-    || typeof core.alloc_f64 !== 'function' || typeof core.free_f64 !== 'function') return undefined;
-  if (!dataOnlyInputs(objects, options, { move, target, separateMounts })) return undefined;
+export function rustShelfPlacement(core, objects, options = {}, settings = {}) {
+  if (!usable(core)) return undefined;
+  if (!dataOnlyInputs(objects, options, { move:settings.move, target:settings.target, separateMounts:settings.separateMounts })) return undefined;
+  return place(core, objects, options, settings, MAX_OBJECTS);
+}
+
+const usable = core => typeof core?.shelf_place === 'function' && core.memory
+  && typeof core.alloc_f64 === 'function' && typeof core.free_f64 === 'function';
+
+/** The complete layout of one mounting surface, for every caller that has no other
+ * implementation to fall back on. Objects, options and metadata are read in the order the
+ * original layout read them, so accessor-backed records and host errors behave as before;
+ * only the packing runs in the core. A failure of the core itself is an error. */
+export function placeObjects(core, objects, options = {}, { move = false, movedKey, target } = {}) {
+  if (!usable(core)) throw new Error('Shelf placement needs the Rust core');
+  const result = place(core, objects, options, { move, movedKey, target }, MAX_PLACED_OBJECTS);
+  if (result === undefined) throw new Error('Shelf placement was rejected by the Rust core');
+  return result;
+}
+
+function place(core, objects, options, { move = false, movedKey, target, separateMounts = false } = {}, limit) {
   // Host normalization and hydration intentionally live outside the WASM
   // failure boundary. User errors must propagate instead of being retried.
   const cfg = configuration(options), groups = separateMounts ? 2 : 1;
@@ -157,7 +172,7 @@ export function rustShelfPlacement(core, objects, options = {}, {
     records.push(...normalize(objects.filter(isCeiling), cfg, 1));
   } else if (move) movingConfig(objects, 0);
   else records = normalize(objects, cfg, 0);
-  if (records.length > MAX_OBJECTS) return undefined;
+  if (records.length > limit) return undefined;
   const shelves = executePlacement(core, preparePlacement(records, cfg, groups), pin);
   return shelves === undefined ? undefined : move ? snapshot(shelves) : shelves;
 }

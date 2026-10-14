@@ -11,6 +11,12 @@ const FAILED_RETRY_DELAY_MS = 30_000
 
 export const getRustShelf = () => shelf
 
+/** The module of a controller built after the first render, which awaited it. */
+export function needRustShelf() {
+  if (!shelf) throw new Error('El módulo de la estantería no está cargado.')
+  return shelf
+}
+
 /** Load once per JS realm, adopting the head's compiled module when there is one. */
 export function loadRustShelf() {
   if (shelf) return Promise.resolve(shelf)

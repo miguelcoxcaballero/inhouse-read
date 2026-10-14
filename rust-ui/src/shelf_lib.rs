@@ -2,6 +2,7 @@
 // the module is fetched and compiled with the page head and awaited before the shelf is drawn.
 mod shelf_zoom;
 mod shelf_view_gesture;
+mod native_resize;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
