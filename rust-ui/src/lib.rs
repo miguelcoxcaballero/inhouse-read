@@ -1,5 +1,7 @@
 mod host;
 mod gestures;
+mod shelf_zoom;
+mod shelf_view_gesture;
 mod import_gate;
 mod stage_gate;
 mod prepared_page;

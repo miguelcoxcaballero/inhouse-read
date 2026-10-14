@@ -8,13 +8,15 @@ use js_sys::{Array,Function,Object,Reflect};
 #[wasm_bindgen]
 extern "C"{#[wasm_bindgen(js_name=Number)]fn to_number(value:&JsValue)->f64;}
 
-pub fn get(value:&JsValue,key:&str)->JsValue{Reflect::get(value,&JsValue::from_str(key)).unwrap_or(JsValue::UNDEFINED)}
+/// Primitives have properties too (`"x".length`); Reflect.get wants an object.
+fn boxed(value:&JsValue)->JsValue{if value.is_object()||value.is_function(){value.clone()}else{Object::from(value.clone()).into()}}
+pub fn get(value:&JsValue,key:&str)->JsValue{if absent(value){return JsValue::UNDEFINED;}Reflect::get(&boxed(value),&JsValue::from_str(key)).unwrap_or(JsValue::UNDEFINED)}
 /// `value[key]`, throwing like the engine for null/undefined or a failing getter.
 pub fn read(value:&JsValue,key:&str)->Result<JsValue,JsValue>{
  if absent(value){return Err(js_sys::TypeError::new(&format!("Cannot read properties of {} (reading '{key}')",if value.is_null(){"null"}else{"undefined"})).into());}
- Reflect::get(value,&JsValue::from_str(key))
+ Reflect::get(&boxed(value),&JsValue::from_str(key))
 }
-pub fn get_at(value:&JsValue,index:u32)->JsValue{Reflect::get(value,&JsValue::from_f64(f64::from(index))).unwrap_or(JsValue::UNDEFINED)}
+pub fn get_at(value:&JsValue,index:u32)->JsValue{if absent(value){return JsValue::UNDEFINED;}Reflect::get(&boxed(value),&JsValue::from_f64(f64::from(index))).unwrap_or(JsValue::UNDEFINED)}
 pub fn set(value:&JsValue,key:&str,next:&JsValue)->Result<(),JsValue>{Reflect::set(value,&JsValue::from_str(key),next)?;Ok(())}
 pub fn absent(value:&JsValue)->bool{value.is_null()||value.is_undefined()}
 pub fn truthy(value:&JsValue)->bool{value.is_truthy()}
@@ -37,14 +39,14 @@ fn apply(function:&Function,this:&JsValue,args:&[&JsValue])->Result<JsValue,JsVa
 pub fn call_opt(value:&JsValue,name:&str,args:&[&JsValue])->Result<JsValue,JsValue>{if absent(value){Ok(JsValue::UNDEFINED)}else{call(value,name,args)}}
 /// `target.name(...args)`, failing like a missing method.
 pub fn method(target:&JsValue,name:&str,args:&[&JsValue])->Result<JsValue,JsValue>{
- let function=get(target,name);
+ let function=read(target,name)?;
  let function=function.dyn_ref::<Function>().ok_or_else(||not_a_function(name))?;
  apply(function,target,args)
 }
 /// `target?.name?.(...args)`: absent target or method yield `None`.
 pub fn method_opt(target:&JsValue,name:&str,args:&[&JsValue])->Result<Option<JsValue>,JsValue>{
  if absent(target){return Ok(None);}
- let function=get(target,name);
+ let function=read(target,name)?;
  if absent(&function){return Ok(None);}
  let function=function.dyn_ref::<Function>().ok_or_else(||not_a_function(name))?;
  apply(function,target,args).map(Some)
