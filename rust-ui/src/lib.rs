@@ -1,5 +1,7 @@
 mod host;
 mod legacy_recovery;
+mod cloud_sync;
+mod library_backup;
 mod import_gate;
 mod stage_gate;
 mod prepared_page;
