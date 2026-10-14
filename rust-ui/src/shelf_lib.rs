@@ -8,6 +8,7 @@ mod shelf_trash;
 mod bookshelf_return;
 mod animation_fence;
 mod placement_preview;
+mod occlusion_table;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
