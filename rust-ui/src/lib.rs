@@ -3,6 +3,7 @@ mod legacy_recovery;
 mod cloud_sync;
 mod library_backup;
 mod drive_client;
+mod android_import;
 mod import_gate;
 mod stage_gate;
 mod prepared_page;

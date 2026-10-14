@@ -29,26 +29,12 @@
 // in the shell by the next launch. The reload revalidates against the network
 // (a reload navigation is 'no-cache'), so it always lands on the new deploy.
 
+import { getRustCore, loadRustCore } from './rust-core.js'
+import { requireCore } from './core-tables.js'
+
 const CHECK_INTERVAL_MS = 10 * 60 * 1000
 const RELOAD_KEY = 'inhouse-read-fresh-reload'
 const RELOAD_RETRY_MS = 2 * 60 * 1000
-
-/** Exportada aparte para poder testear el parseo sin red ni DOM real. A deploy
- * is told apart by the hashed module scripts and stylesheets its index.html
- * loads (a stylesheet-only deploy keeps the entry module's name). */
-export function extractShellSignature(html, baseUrl) {
-  const files = []
-  // Se buscan las etiquetas una a una (en vez de un único regex con los
-  // atributos en un orden fijo) para no depender del orden en que Vite (o
-  // cualquier otra herramienta, en el futuro) escriba los atributos.
-  for (const tag of html.match(/<(?:script|link)\b[^>]*>/gi) ?? []) {
-    const ref = /^<script/i.test(tag)
-      ? /type=["']module["']/i.test(tag) && tag.match(/\ssrc=["']([^"']+)["']/i)
-      : /rel=["']stylesheet["']/i.test(tag) && tag.match(/\shref=["']([^"']+)["']/i)
-    if (ref) files.push(new URL(ref[1], baseUrl).href)
-  }
-  return files.join(' ')
-}
 
 // Read while the app's modules evaluate, before a lazy chunk can add a
 // stylesheet of its own to the document.
@@ -58,6 +44,43 @@ const startedFrom = typeof document === 'undefined' ? '' : [...document.querySel
 // the answer once it is in.
 const deployedAtLaunch = globalThis.__inhouseDeployed
 delete globalThis.__inhouseDeployed
+
+// The tags of a document are read by rust-core/src/shell_signature.rs, which answers with the
+// span of each file reference; the page's own URL rules resolve them. The app core is awaited
+// like the shelf's tables are: the page compiles it while these modules load.
+const core = await requireCore(getRustCore, loadRustCore, 'shell_file_refs')
+
+function fileReferences(html) {
+  if (typeof html !== 'string') throw new TypeError('html.match is not a function')
+  if (!html.length) return []
+  const words = Math.ceil(html.length / 4)
+  const text = core.alloc_f64(words)
+  if (!text) throw new RangeError('The deployed page is too large to read')
+  try {
+    const units = new Uint16Array(core.memory.buffer, text, html.length)
+    for (let index = 0; index < html.length; index++) units[index] = html.charCodeAt(index)
+    for (let capacity = 8; ;) {
+      const room = capacity * 2
+      const out = core.alloc_f64(room)
+      if (!out) throw new RangeError('The deployed page lists too many files')
+      try {
+        const count = core.shell_file_refs(text, html.length, out, capacity)
+        if (count <= capacity) {
+          const spans = new Float64Array(core.memory.buffer, out, count * 2)
+          return Array.from({ length: count }, (_, index) => html.slice(spans[index * 2], spans[index * 2 + 1]))
+        }
+        capacity = count
+      } finally { core.free_f64(out, room) }
+    }
+  } finally { core.free_f64(text, words) }
+}
+
+/** Exportada aparte para poder testear el parseo sin red ni DOM real. A deploy
+ * is told apart by the hashed module scripts and stylesheets its index.html
+ * loads (a stylesheet-only deploy keeps the entry module's name). */
+export function extractShellSignature(html, baseUrl) {
+  return fileReferences(html).map(reference => new URL(reference, baseUrl).href).join(' ')
+}
 
 async function fetchDeployedHtml(location) {
   const res = await fetch(location.href, { cache: 'no-store' })

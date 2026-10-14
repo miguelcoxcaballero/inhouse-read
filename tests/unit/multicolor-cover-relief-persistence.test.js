@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
+vi.mock('../../src/js/rust-ui.js', async () => (await import('./helpers/rust-ui-real.js')).rustUiMock());
 import { Blob as NativeBlob, File as NativeFile } from 'node:buffer';
 import { LibraryStore } from '../../src/js/library-store.js';
 import { spineCustomization } from '../../src/js/book-colors.js';

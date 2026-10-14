@@ -121,3 +121,5 @@ mod lamp_kelvin;
 mod book_colors;
 #[cfg(feature="app")]
 mod frame_padding;
+#[cfg(feature="app")]
+mod shell_signature;
