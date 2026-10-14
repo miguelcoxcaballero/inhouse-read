@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
 import {ReaderControls} from '../../src/js/readers/reader-controls.js'
 import {LegacyReaderControls} from './helpers/reference-reader-controls.js'
-import {readerPanelMarkup} from '../../src/js/readers/reader-interface.js'
+import {readerPanelMarkup} from './helpers/reference-reader-interface.js'
 import {normalizeReadingPreferences} from '../../src/js/readers/reading-preferences.js'
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui}))

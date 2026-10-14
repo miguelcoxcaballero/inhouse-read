@@ -62,6 +62,7 @@ mod pdf_speech;
 mod reader_controller;
 mod pdf_reflow;
 mod pdf_theme;
+mod reader_markup;
 use std::{cell::{Cell, RefCell}, rc::{Rc, Weak}};
 use wasm_bindgen::{prelude::*, JsCast};
 use js_sys::{Array, Function, Reflect};
