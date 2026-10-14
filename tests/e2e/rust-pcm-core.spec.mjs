@@ -3,26 +3,25 @@ import { createServer } from 'vite';
 import { createServer as createHttpServer } from 'node:http';
 
 const html=`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><script type="module">
-import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
-import coreUrl from '/inhouse-read/src/wasm/inhouse_read_core.wasm?url';
-import {rustPrepareSpeech} from '/inhouse-read/src/js/readers/neural-voice/pcm-wasm.js';
-import {prepareSpeech} from '/inhouse-read/src/js/readers/neural-voice/pcm.js';
+import {loadRustVoiceCore} from '/inhouse-read/src/js/rust-voice-core.js';
+import coreUrl from '/inhouse-read/src/wasm/inhouse_read_voice.wasm?url';
+import {kernelPrepare} from '/inhouse-read/tests/unit/helpers/voice-kernels.js';
 import {peakNormalize,trimSilence,fadeEdges} from '/inhouse-read/tests/unit/helpers/reference-pcm.js';
 import {pcmCases,makePCM} from '/inhouse-read/tests/helpers/pcm-cases.mjs';
-const core=await loadRustCore();
+const core=await loadRustVoiceCore();
 if(typeof core?.pcm_prepare!=='function')throw Error('Actual compiled PCM kernel required');
 const hash=async array=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new Uint8Array(array.buffer,array.byteOffset,array.byteLength))),n=>n.toString(16).padStart(2,'0')).join('');
 const equal=(a,b)=>{if(a!==b)throw Error('PCM byte parity mismatch');};
 window.measurePCM=async name=>{
   const input=pcmCases.find(c=>c.name===name),rate=input.rate||22050,raw=makePCM(input);
   const js=()=>{const a=raw.slice();peakNormalize(a,{model:input.model});return {raw:a,speech:fadeEdges(trimSilence(a,rate),rate)};};
-  const rust=()=>{const a=raw.slice();return {raw:a,speech:prepareSpeech(a,rate,{model:input.model})};};
+  const rust=()=>{const a=raw.slice();return {raw:a,speech:kernelPrepare(core,a,rate,input.model)};};
   const expected=js(),actual=rust();
   equal(await hash(expected.speech),await hash(actual.speech));equal(await hash(actual.raw),await hash(raw));
   let calls=0,live=0,peak=0,allocations=0,releases=0;
   const tracked={...core,alloc_f64(n){const p=core.alloc_f64(n);if(p){allocations++;live+=n*8;peak=Math.max(peak,live);}return p;},
     free_f64(p,n){core.free_f64(p,n);live-=n*8;releases++;},pcm_prepare(...args){calls++;return core.pcm_prepare(...args);}};
-  const observed=rustPrepareSpeech(tracked,raw.slice(),rate,input.model);
+  const observed=kernelPrepare(tracked,raw.slice(),rate,input.model);
   equal(await hash(observed),await hash(expected.speech));equal(calls,1);equal(live,0);equal(allocations,releases);
   if(observed.buffer===core.memory.buffer)throw Error('Arena escaped');
   const repetitions=12,rounds=9,warmups=3,samples={javascript:[],rust:[]},orders=[];

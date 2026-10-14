@@ -20,3 +20,16 @@ export function textOf(codes) {
   for (let i = 0; i < codes.length; i += 4096) parts.push(String.fromCodePoint(...codes.subarray(i, i + 4096)))
   return parts.join('')
 }
+
+/** Writes the UTF-16 code units of `text` at `pointer` (two-byte aligned). */
+export function putText(core, pointer, text) {
+  const units = new Uint16Array(core.memory.buffer, pointer, text.length)
+  for (let i = 0; i < text.length; i++) units[i] = text.charCodeAt(i)
+}
+
+/** The string made of the `count` UTF-16 code units at `pointer`. */
+export function getText(core, pointer, count) {
+  const units = new Uint16Array(core.memory.buffer, pointer, count), parts = []
+  for (let i = 0; i < count; i += 8192) parts.push(String.fromCharCode.apply(null, units.subarray(i, i + 8192)))
+  return parts.join('')
+}

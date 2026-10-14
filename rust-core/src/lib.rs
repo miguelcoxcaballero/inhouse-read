@@ -14,6 +14,8 @@ mod pcm;
 mod speech_tempo;
 #[cfg(feature = "voice")]
 mod synth_flow;
+#[cfg(feature = "voice")]
+mod supertonic_text;
 #[cfg(feature = "app")]
 mod reader_preferences;
 #[cfg(feature = "app")]

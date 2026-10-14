@@ -4,7 +4,7 @@
 // the core's memory and reads the answer back. The caller has awaited requireRustVoiceCore(): there is no second
 // implementation to fall back on. The frozen JavaScript originals are tests/unit/helpers/reference-*.js.
 import { loadedRustVoiceCore } from '../../rust-voice-core.js'
-import { withArena } from './core-call.js'
+import { layout, putText, withArena } from './core-call.js'
 
 // The one voice whose quiet speech is lifted further than the usual six times (rust-core/src/pcm.rs).
 const NVCC = 'no_NO-nvcc-medium'
@@ -12,12 +12,6 @@ const NVCC = 'no_NO-nvcc-medium'
 /** `ms` of silence. */
 export const silence = (sampleRate, ms) => new Float32Array(Math.max(0, Math.round(sampleRate * ms / 1000)))
 
-/** Eight-byte aligned byte offsets of consecutive regions of the given byte sizes, and the number of cells they take. */
-function layout(...sizes) {
-  let end = 0
-  const at = sizes.map(size => { const start = end; end += Math.ceil(size / 8) * 8; return start })
-  return { at, cells: Math.max(1, end / 8) }
-}
 const failures = { '-2': 'Invalid speech tempo input', '-3': 'Too many speech boundaries', '-4': 'Voice core: output too small' }
 const check = status => { if (status !== 1) throw new Error(failures[status] || 'Voice core: invalid call') }
 
@@ -69,8 +63,7 @@ export function finishPiper(raw, durations, points, text, { sampleRate, model, r
     if (frames) new Float32Array(buffer(), pointer + at[1], frames).set(durations)
     const phonemes = new Float64Array(buffer(), pointer + at[2], marks)
     for (let i = 0; i < marks; i++) phonemes[i] = points[i].phoneme
-    const characters = new Uint16Array(buffer(), pointer + at[3], units)
-    for (let i = 0; i < units; i++) characters[i] = text.charCodeAt(i)
+    putText(core, pointer + at[3], text)
     new Float64Array(buffer(), pointer + at[4], 7).set([sampleRate, model === NVCC ? 1 : 0, Number(rate), base, count, last ? 1 : 0, first ? 0 : 1])
     check(core.voice_finish_piper(pointer + at[0], raw.length, pointer + at[1], frames, pointer + at[2], marks, pointer + at[3], units,
       pointer + at[4], pointer + at[5], capacity, pointer + at[6], pointer + at[7]))
@@ -93,8 +86,7 @@ export function finishSupertonic(raw, text, timeline, { sampleRate, rate }) {
   return withArena(core, cells, pointer => {
     const buffer = () => core.memory.buffer
     new Float32Array(buffer(), pointer + at[0], raw.length).set(raw)
-    const characters = new Uint16Array(buffer(), pointer + at[1], units)
-    for (let i = 0; i < units; i++) characters[i] = text.charCodeAt(i)
+    putText(core, pointer + at[1], text)
     const samples = new Float64Array(buffer(), pointer + at[2], marks)
     for (let i = 0; i < marks; i++) samples[i] = timeline[i].sample
     new Float64Array(buffer(), pointer + at[3], 2).set([sampleRate, Number(rate)])
