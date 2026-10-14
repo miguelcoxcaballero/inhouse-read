@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const gpu = vi.hoisted(() => ({ renderers:[], renders:[], imageLoads:[], groups:[], failPresentation:false }));
+vi.mock('../../src/js/rust-shelf.js', async () => (await import('./helpers/rust-shelf-real.js')).rustShelfMock())
+vi.mock('../../src/js/rust-core.js', async () => (await import('./helpers/rust-core-real.js')).rustCoreMock())
 vi.mock('three', async importOriginal => {
   const THREE = await importOriginal();
   class Group extends THREE.Group { constructor() { super(); gpu.groups.push(this); } }

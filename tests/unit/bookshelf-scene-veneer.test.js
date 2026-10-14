@@ -3,6 +3,8 @@ import * as THREE from 'three';
 
 // Programs are always linked here: only the walnut veneer can hold a frame.
 const gpu = vi.hoisted(() => ({ renders:0, scene:null }));
+vi.mock('../../src/js/rust-shelf.js', async () => (await import('./helpers/rust-shelf-real.js')).rustShelfMock())
+vi.mock('../../src/js/rust-core.js', async () => (await import('./helpers/rust-core-real.js')).rustCoreMock())
 vi.mock('../../src/js/book-model.js', async () => {
   const Three = await import('three');
   let ratio = 1, target = null;

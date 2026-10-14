@@ -1,9 +1,22 @@
 //! Physical cabinet dimensions and every fitted book, plant and lamp.
 //! The host keeps DOM/metadata ownership. No drawing quality is changed.
+//!
+//! This is the only implementation of the layout (the JavaScript twin is a frozen test
+//! reference), so it is total: measured geometry of a hidden or collapsed shelf is zero, negative
+//! or NaN, and every such value flows through exactly as the original JavaScript arithmetic
+//! produced it (`Math.min/max` NaN and signed-zero rules, IEEE division, no early rejection).
+use crate::jsmath::{jmax, jmin};
+
 const INPUT: usize = 8;
 const ROW: usize = 7;
 const ENTRY: usize = 7;
+/// Memory guard only: a cabinet this large is already far beyond any library.
+const LIMIT: usize = 1 << 17;
 
+/// Returns 1 when `output` is filled, 2 when an entry's bay is not a whole row number
+/// (the original read a property of `undefined` there), 0 when the arguments are structurally
+/// unusable (limits, a bay count outside 1..=64, an output buffer that is too short).
+///
 /// # Safety
 /// Live, disjoint arenas: spec has 9 + spec[8] values, input count*8,
 /// output output_length. The host owns and releases the enclosing allocation.
@@ -12,24 +25,16 @@ pub unsafe extern "C" fn shelf_model(
     width: f64, source_rows: usize, count: usize, spec: *const f64,
     input: *const f64, output: *mut f64, output_length: usize,
 ) -> u32 {
-    if count > 8192 || source_rows > 3000 || !width.is_finite() || width <= 0.0 { return 0; }
+    if count > LIMIT || source_rows > LIMIT { return 0; }
     let cfg = std::slice::from_raw_parts(spec, 9);
-    if cfg.iter().any(|n| !n.is_finite() || *n <= 0.0)
-        || cfg[8].fract() != 0.0 || cfg[8] > 64.0 { return 0; }
+    if cfg[8].fract() != 0.0 || !(1.0..=64.0).contains(&cfg[8]) { return 0; }
     let slots = cfg[8] as usize;
     let bottoms = std::slice::from_raw_parts(spec.add(9), slots);
-    if bottoms.iter().any(|n| !n.is_finite() || *n <= 0.0) { return 0; }
     let units = source_rows.div_ceil(slots).max(1);
     let rows = units * slots;
     let length = 4 + rows * ROW + count * ENTRY;
     if output_length < length { return 0; }
     let input = std::slice::from_raw_parts(input, count * INPUT);
-    for e in input.chunks_exact(INPUT) {
-        if e.iter().any(|n| !n.is_finite()) || e[0].fract() != 0.0
-            || e[2] <= 0.0 || e[3] <= 0.0 || e[4] < 0.0 || e[5] <= 0.0
-            || ![0.0, 1.0, 2.0].contains(&e[6]) || ![0.0, 1.0].contains(&e[7])
-            || (e[6] == 2.0 && e[4] == 0.0) { return 0; }
-    }
     let scale = width / cfg[0];
     let gap = 24.0 * scale;
     let out = std::slice::from_raw_parts_mut(output, length);
@@ -43,16 +48,18 @@ pub unsafe extern "C" fn shelf_model(
         let ceiling = if slot > 0 { bottoms[slot - 1] + cfg[5] } else { cfg[5] };
         let at = 4 + index * ROW;
         out[at..at + ROW].copy_from_slice(&[left, left + width, unit as f64,
-            16.0_f64.max((cfg[3] + 4.0) * scale), top * scale, ceiling * scale, bottoms[slot] * scale]);
+            jmax(16.0, (cfg[3] + 4.0) * scale), top * scale, ceiling * scale, bottoms[slot] * scale]);
     }
     for (index, e) in input.chunks_exact(INPUT).enumerate() {
-        let row = e[0].max(0.0).min((rows - 1) as f64) as usize;
-        let at = 4 + row * ROW;
+        // Math.max(0, Math.min(rows.length - 1, shelf)): +-Infinity clamps, NaN stays NaN.
+        let at_row = jmax(0.0, jmin((rows - 1) as f64, e[0]));
+        if at_row.fract() != 0.0 || at_row.is_nan() { return 2; }
+        let at = 4 + at_row as usize * ROW;
         let left = out[at]; let top = out[at + 4];
         let ceiling = out[at + 5]; let bottom = out[at + 6];
         let clearance = bottom - top - 4.0 * scale;
         let (height, breadth, depth, y, rooftop) = if e[6] == 2.0 {
-            let fit = 1.0_f64.min(clearance / e[2]).min(cfg[6] * scale / e[4]);
+            let fit = jmin(jmin(1.0, clearance / e[2]), cfg[6] * scale / e[4]);
             (e[2] * fit, e[3] * fit, e[4] * fit,
                 if e[7] == 1.0 { ceiling } else { bottom - e[2] * fit / 2.0 }, false)
         } else {
@@ -60,7 +67,7 @@ pub unsafe extern "C" fn shelf_model(
             let h = if plant { e[2] } else { cfg[7] * scale * e[5] };
             let w = if plant { e[3] } else { h * e[3] / e[2] };
             let roof = plant && h > clearance;
-            let fit = if plant { 1.0 } else { 1.0_f64.min(clearance / h).min(cfg[6] * scale / w) };
+            let fit = if plant { 1.0 } else { jmin(jmin(1.0, clearance / h), cfg[6] * scale / w) };
             (h * fit, w * fit, e[4] * fit,
                 (if roof { 0.0 } else { bottom }) - h * fit / 2.0, roof)
         };
@@ -68,5 +75,5 @@ pub unsafe extern "C" fn shelf_model(
         out[at..at + ENTRY].copy_from_slice(&[left + e[1], height, breadth, depth,
             y, if rooftop { 1.0 } else { 0.0 }, 15.0 * scale]);
     }
-    if out.iter().all(|n| n.is_finite()) { 1 } else { 0 }
+    1
 }

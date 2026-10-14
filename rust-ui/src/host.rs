@@ -7,10 +7,14 @@ use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array,Function,Object,Reflect};
 
 #[wasm_bindgen]
-extern "C"{#[wasm_bindgen(js_name=Number)]fn to_number(value:&JsValue)->f64;}
+extern "C"{
+ #[wasm_bindgen(js_name=Number)]fn to_number(value:&JsValue)->f64;
+ /// `Object(value)`: the wrapper object of a primitive.
+ #[wasm_bindgen(js_name=Object)]fn box_primitive(value:&JsValue)->JsValue;
+}
 
 /// Primitives have properties too (`"x".length`); Reflect.get wants an object.
-fn boxed(value:&JsValue)->JsValue{if value.is_object()||value.is_function(){value.clone()}else{Object::from(value.clone()).into()}}
+fn boxed(value:&JsValue)->JsValue{if value.is_object()||value.is_function(){value.clone()}else{box_primitive(value)}}
 pub fn get(value:&JsValue,key:&str)->JsValue{if absent(value){return JsValue::UNDEFINED;}Reflect::get(&boxed(value),&JsValue::from_str(key)).unwrap_or(JsValue::UNDEFINED)}
 /// `value[key]`, throwing like the engine for null/undefined or a failing getter.
 pub fn read(value:&JsValue,key:&str)->Result<JsValue,JsValue>{

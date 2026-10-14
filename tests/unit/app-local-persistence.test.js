@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({ connected:false, serial:0 }))
 // These tests deliberately import invalid eight-byte PDF fixtures to check
 // original-byte persistence. Text extraction is covered with real documents
 // separately; this new background dependency must not parse those fixtures.
+vi.mock('../../src/js/rust-core.js', async () => (await import('./helpers/rust-core-real.js')).rustCoreMock())
 vi.mock('../../src/js/file-book-length.js', () => ({
   measureFileBookLength:vi.fn((...args) => state.measureFileLength(...args))
 }))

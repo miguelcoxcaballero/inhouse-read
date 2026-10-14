@@ -74,16 +74,22 @@ afterEach(()=>{
 });
 describe('actual bookshelf drag preview session lifecycle',()=>{
   it('reuses one owned session after two direct previews and disposes it on pointer cancellation',async()=>{
-    await begin();move(120);move(140);expect(observed.prepared).toHaveLength(0);expect(observed.calls).toBe(0);
-    move(160);move(180);move(200);expect(observed.prepared).toHaveLength(1);expect(observed.calls).toBe(3);expect(observed.live).toBe(0);
+    // The JavaScript twin of the placement is gone: a direct preview now runs the kernel too (two
+    // calls each, counted from the calls the initial layout already made), and the owned session
+    // that replaces it from the third move on keeps its single call per move.
+    const initial=observed.calls;
+    await begin();move(120);move(140);expect(observed.prepared).toHaveLength(0);expect(observed.calls).toBe(initial+4);
+    move(160);move(180);move(200);expect(observed.prepared).toHaveLength(1);expect(observed.calls).toBe(initial+4+3);expect(observed.live).toBe(0);
     expect(observed.previews).toHaveLength(5);pointer('pointercancel');expect(observed.disposed).toBe(1);
     const calls=observed.calls;frame();expect(observed.calls).toBe(calls);
   });
   it('invalidates on viewport change and starts the policy again before preparing fresh geometry',async()=>{
+    const initial=observed.calls;
     await begin();move(120);move(140);move(160);expect(observed.prepared).toHaveLength(1);
     viewport.width=420;viewport.dispatchEvent(new Event('resize'));expect(observed.disposed).toBe(1);
     move(170);move(180);expect(observed.prepared).toHaveLength(1);move(190);expect(observed.prepared).toHaveLength(2);
-    expect(observed.calls).toBe(2);pointer('pointercancel');expect(observed.disposed).toBe(2);
+    // Two direct previews and one session move before the resize, the same again after it.
+    expect(observed.calls).toBe(initial+2*(2*2+1));pointer('pointercancel');expect(observed.disposed).toBe(2);
   });
   it('uses current metadata references on the next drag after adoption',async()=>{
     await begin();move(120);move(140);move(160);pointer('pointercancel');await vi.advanceTimersByTimeAsync(0);

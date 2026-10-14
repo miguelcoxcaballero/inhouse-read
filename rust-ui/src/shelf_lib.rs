@@ -3,6 +3,7 @@
 mod shelf_zoom;
 mod shelf_view_gesture;
 mod native_resize;
+mod native_presentation;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]

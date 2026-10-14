@@ -7,6 +7,7 @@ export async function rustShelfMock() {
   shelf.initSync({ module: readFileSync('src/wasm/shelf/inhouse_read_shelf_bg.wasm') })
   return {
     getRustShelf: () => shelf,
+    needRustShelf: () => shelf,
     loadRustShelf: () => Promise.resolve(shelf),
     requireRustShelf: () => Promise.resolve(shelf)
   }
