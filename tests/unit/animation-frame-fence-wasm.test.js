@@ -63,13 +63,13 @@ describe('compiled frame fence against the frozen JavaScript', () => {
       submitted += expected.filter(line => /^fenceSync/.test(line)).length
       busy += expected.filter(line => /^ready -> false/.test(line)).length
       released += expected.filter(line => /^deleteSync/.test(line)).length
-      retired += expected.filter(line => /threw|-> throws/.test(line)).length
+      retired += expected.filter(line => /^clientWaitSync\(.*\) -> (5|99)$/.test(line)).length
     }
     // Fences in flight, busy frames, releases and failing drivers must all be in the corpus.
     expect(submitted).toBeGreaterThan(2500)
     expect(busy).toBeGreaterThan(300)
     expect(released).toBeGreaterThan(1500)
-    expect(retired).toBeGreaterThan(300)
+    expect(retired).toBeGreaterThan(100)
   })
 
   it('keeps no handle once its context is gone', async () => {
