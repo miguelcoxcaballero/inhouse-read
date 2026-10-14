@@ -13,7 +13,6 @@ fn closer(c: u16) -> bool { matches!(c, 34 | 39 | 0x201d | 0x2019 | 0xbb | 0x203
 #[no_mangle]
 pub unsafe extern "C" fn speech_normalize(input: *const u16, removed: *const u8,
     len: usize, output: *mut u16, map: *mut u32, breaks: *mut u32, counts: *mut u32) -> u32 {
-    if len > 1_000_000 { return 0; }
     let raw = std::slice::from_raw_parts(input, len);
     let removed = std::slice::from_raw_parts(removed, len);
     let out = std::slice::from_raw_parts_mut(output, len * 2);

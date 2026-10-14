@@ -5,7 +5,7 @@ const letters=code=>{const ch=String.fromCodePoint(code);return(/^\p{L}$/u.test(
 export function invoke(ui,raw,{footnotes=true,skipHeaders=false,headerRanges,pageBreaks,opening}={},from=0){
  raw=String(raw||'');let text
  const expose=chars=>{const chunks=[];for(let i=0;i<chars.length;i+=16384)chunks.push(String.fromCharCode.apply(null,chars.subarray(i,i+16384)));text=chunks.join('')}
- const packed=ui.speech_pipeline(units(raw),Boolean(footnotes),Boolean(skipHeaders),skipHeaders?ranges(headerRanges):undefined,Float64Array.from((pageBreaks||[]).filter(Number.isFinite)),from,Boolean(opening),(a,b)=>raw.slice(a,b).toLocaleLowerCase(),letters,expose,properties,(a,b)=>text.slice(a,b).toLocaleLowerCase(),(a,b)=>clause(text,a,b))
+ const packed=ui.speech_pipeline(units(raw),Boolean(footnotes),Boolean(skipHeaders),skipHeaders?ranges(headerRanges):undefined,Float64Array.from((pageBreaks||[]).filter(Number.isFinite)),from,Boolean(opening),(a,b)=>units(raw.slice(a,b).toLocaleLowerCase()),letters,expose,properties,(a,b)=>text.slice(a,b).toLocaleLowerCase(),(a,b)=>clause(text,a,b))
  if(packed===undefined)return undefined
  const items=[];let previous=0,sentence
  for(let at=0;at<packed.length;){

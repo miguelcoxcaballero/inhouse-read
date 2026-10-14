@@ -66,6 +66,19 @@ pub fn speech_sentence_ends(text:&[u16],breaks:JsValue,properties:Function,lower
  let result=sentence_ends_native(text,&typed,properties,lower,0)?;
  let values=Array::new();for end in result{values.push(&end.into());}Ok(values.into())
 }
+/// Sentences of an already normalized text with the fragments each is spoken in (at most 180 code units, cut at a clause
+/// mark near the middle): `[sentence start, sentence end, fragment start, fragment end]` per fragment.
+#[wasm_bindgen]
+pub fn speech_sentences(text:&[u16],breaks:JsValue,properties:Function,lower:Function)->Result<JsValue,JsValue>{
+ if !Array::is_array(&breaks){return Ok(JsValue::UNDEFINED)}
+ let mut typed=Vec::new();
+ for value in Array::from(&breaks).iter(){let Some(end)=value.as_f64()else{return Ok(JsValue::UNDEFINED)};if !end.is_finite()||end<0.0||end.fract()!=0.0||end>text.len()as f64{return Ok(JsValue::UNDEFINED)}typed.push(end as u32);}
+ let ends=sentence_ends_native(text,&typed,properties,lower,0)?;
+ let capacity=ends.len()+text.len().div_ceil(50);let mut fragments=vec![0u32;capacity*4+1];
+ let status=unsafe{crate::speech_fragments_core::speech_fragments(text.as_ptr(),text.len(),ends.as_ptr(),ends.len(),fragments.as_mut_ptr(),capacity)};
+ if status!=1{return Ok(JsValue::UNDEFINED)}
+ Ok(js_sys::Uint32Array::from(&fragments[1..1+fragments[0]as usize*4]).into())
+}
 pub(crate) fn sentence_ends_native(text:&[u16],breaks:&[u32],properties:Function,lower:Function,base:usize)->Result<Vec<u32>,JsValue>{
  let mut candidates:Vec<Candidate>=breaks.iter().map(|end|Candidate{end:*end as usize,start:0,run_end:0,hard:true}).collect();
  let mut at=0;while at<text.len(){
