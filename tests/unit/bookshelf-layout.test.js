@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
   withDefaults,
-  hashString,
-  unit,
   seedFor,
   spineStyleFor,
   layoutShelves,
@@ -16,6 +14,9 @@ import {
   SPINE_TEXTURES,
   DEFAULT_LAYOUT
 } from '../../src/js/bookshelf-layout.js'
+// The hash stream is owned by the Rust core now; the frozen JavaScript original
+// remains the oracle for what the stream must be (see shelf-layout-core.test.js).
+import { hashString, unit } from './helpers/reference-bookshelf-layout.js'
 
 /** Biblioteca sintética con ids estables. */
 function makeBooks(count, overrides = () => ({})) {

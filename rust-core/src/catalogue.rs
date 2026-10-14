@@ -354,10 +354,10 @@ const POT_COLORS: [(&str, [(&str, &str, &str); 4]); 4] = [
 ];
 
 /// Saved plants written by earlier versions name their species differently.
-const LEGACY_PLANTS: [(&str, &str); 15] = [("upright", "sansevieria"), ("sansevieria", "sansevieria"), ("monstera", "monstera"),
+const LEGACY_PLANTS: [(&str, &str); 16] = [("upright", "sansevieria"), ("sansevieria", "sansevieria"), ("monstera", "monstera"),
     ("leafy", "hedera"), ("pothos", "hedera"), ("ivy", "hedera"), ("hedera", "hedera"), ("suculenta", "succulent"),
     ("succulent", "succulent"), ("cactus", "cactus"), ("palm", "chamaedorea"), ("chamaedorea", "chamaedorea"),
-    ("fern", "nephrolepis"), ("nephrolepis", "nephrolepis"), ("zz", "zamioculcas")];
+    ("fern", "nephrolepis"), ("nephrolepis", "nephrolepis"), ("zz", "zamioculcas"), ("zamioculcas", "zamioculcas")];
 
 // ---------------------------------------------------------------- lamps
 
@@ -458,6 +458,16 @@ pub fn catalogue() -> V {
         ("potColors", obj(POT_COLORS.iter().map(|(pot, colors)| (*pot, V::A(colors.iter().map(|(id, name, hex)|
             obj(vec![("id", s(id)), ("name", s(name)), ("hex", s(hex))])).collect()))).collect())),
         ("legacyPlants", obj(LEGACY_PLANTS.iter().map(|(alias, plant)| (*alias, s(plant))).collect())),
+        ("defaults", obj(vec![
+            ("spine", obj(vec![("minWidth", n(28.0)), ("maxWidth", n(54.0)), ("minHeightRatio", n(0.80)), ("maxHeightRatio", n(1.0)), ("jitter", n(2.5))])),
+            // A pot every five books: with 6-7 spines on a phone shelf that leaves nearly one per shelf.
+            ("layout", obj(vec![("shelfWidth", n(360.0)), ("padding", n(16.0)), ("gap", n(3.0)), ("plantEvery", n(5.0)),
+                ("plantWidth", n(58.0)), ("maxTailPlants", n(2.0)),
+                ("plantVariants", V::A(["monstera", "sansevieria", "pothos", "cactus", "suculenta"].iter().map(|name| s(name)).collect())),
+                ("tiltThreshold", n(16.0)), ("maxTilt", n(8.0))])),
+            ("sections", obj(vec![("recentLimit", n(6.0)), ("recentTitle", s("Seguir leyendo")), ("libraryTitle", s("Biblioteca")), ("sort", s("author"))])),
+            ("bookmark", obj(vec![("minPeek", n(5.0)), ("maxPeek", n(20.0))])),
+        ])),
         ("lampCatalog", lamp_catalog_json()),
         ("lampKelvins", nums(&LAMP_KELVINS)),
         ("constants", obj(vec![
