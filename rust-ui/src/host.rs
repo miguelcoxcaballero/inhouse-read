@@ -112,15 +112,6 @@ impl Timers{
   for (_,(id,_closure)) in all{js_clear_timeout(&id);}
  }
 }
-/// One timer: the closure lives exactly as long as the timer can still fire.
-pub struct Timer{id:JsValue,_callback:Closure<dyn FnMut()>}
-impl Timer{
- pub fn start(delay:f64,callback:impl FnMut()+'static)->Timer{
-  let callback=Closure::wrap(Box::new(callback) as Box<dyn FnMut()>);
-  let id=js_set_timeout(callback.as_ref().unchecked_ref(),delay);Timer{id,_callback:callback}
- }
- pub fn clear(&self){js_clear_timeout(&self.id);}
-}
 /// `new globalThis[name](...args)`.
 pub fn construct(name:&str,args:&[&JsValue])->Result<JsValue,JsValue>{
  let constructor=function(&read(&global(),name)?,name)?;let list=Array::new();for argument in args{list.push(argument);}
