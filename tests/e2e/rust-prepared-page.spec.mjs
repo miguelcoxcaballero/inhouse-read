@@ -13,9 +13,11 @@ for(const delayed of [false,true])test('compiled opening consumes the same prepa
  try{
   const target=process.env.IHR_TEST_URL||'./';if(delayed)await page.goto(target);else await openCompiledReaderApp(page,target);
   await page.evaluate(async()=>{const manifest=await(await fetch(new URL('offline-shell-manifest.json',location.href))).json(),asset=manifest.entries.find(e=>/^assets\/inhouse_read_ui-[\w-]+\.js$/.test(e.path)),ui=await import(new URL(asset.path,location.href));const original=ui.RustPreparedPageCache.prototype.take;ui.RustPreparedPageCache.prototype.take=function(...args){const value=Reflect.apply(original,this,args);if(value)window.preparedProof.taken.push({width:value.width,height:value.height,hasSource:!!value.source});return value}});
-  await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/tiny.pdf');await expect(page.locator('.pdf-page-canvas')).toBeVisible();await waitForFinalBookGeometry(page,'tiny.pdf');await page.getByRole('button',{name:'Volver a la estantería'}).click();await expect(page.locator('.ihr-flyout')).toHaveCount(0);
+  await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/tiny.pdf');
+  // The reader has no JavaScript twin: the import waits for the held module, then everything after it runs on Rust.
+  if(delayed){await page.waitForTimeout(2500);expect(await page.evaluate(()=>window.preparedProof.available)).toBe(false);release();await page.waitForFunction(()=>window.preparedProof.available)}
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible();await waitForFinalBookGeometry(page,'tiny.pdf');await page.getByRole('button',{name:'Volver a la estantería'}).click();await expect(page.locator('.ihr-flyout')).toHaveCount(0);
   await page.locator('.ihr-spine').first().click();const cover=page.locator('.ihr-flyout__cover-target');await expect(cover).toBeVisible();
-  if(delayed){expect(await page.evaluate(()=>window.preparedProof.available)).toBe(false);release();await page.waitForFunction(()=>window.preparedProof.available)}
   // The same preparation proceeds while the cover waits for the user's tap.
   await page.waitForFunction(()=>document.querySelector('.ihr-flyout')?.classList.contains('is-ready'));
   if(!delayed)await page.waitForFunction(()=>window.preparedProof.calls.rustpreparedpagecache_store>0);

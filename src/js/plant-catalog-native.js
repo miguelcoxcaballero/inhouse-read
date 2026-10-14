@@ -37,94 +37,19 @@ const optionName = name => name.replace(/\S+/g, word =>
  * back. `onMotion('start'|'end')` brackets each flight. `onAdd`, `onAddLamp`
  * and `onShelfChange` receive `{ whenClosed }` to run their shelf update
  * once the closing flight has landed.
+ *
+ * The Rust controller owns the state: selection, pages, the add flow, opening,
+ * closing, keyboard and studio lifetimes. This host keeps what is not logic:
+ * the catalogue tables, the three.js studios and the camera flight (Web Animations).
  */
 export function createPlantCatalogNative({ onAdd, onAddLamp, onClose, onShelfChange, shelfType = 'walnut', motionTarget, onMotion } = {}, requestedId, catalogUI) {
   const id = requestedId || `ihr-plant-catalog-${++catalogSequence}`;
-const dialog=catalogUI.catalog_build(document,id,ikeaLogo.replace('<svg ','<svg aria-hidden="true" focusable="false" '),catalogueOptions());
-const paper=dialog.querySelector(".ihr-plant-catalog__paper");
-const closeButton=dialog.querySelector(".ihr-plant-catalog__close");
-const body=dialog.querySelector(".ihr-plant-catalog__body:not(.ihr-plant-catalog__body--shelves):not(.ihr-plant-catalog__body--lights)");
-const drawing=dialog.querySelector(".ihr-plant-catalog__body:not(.ihr-plant-catalog__body--shelves):not(.ihr-plant-catalog__body--lights) .ihr-plant-catalog__drawing");
-const shelfDrawing=dialog.querySelector(".ihr-plant-catalog__drawing.ihr-plant-catalog__shelf-drawing");
-const lampDrawing=dialog.querySelector(".ihr-plant-catalog__drawing.ihr-plant-catalog__lamp-drawing");
-const status=dialog.querySelector(".ihr-plant-catalog__status");
-const add=dialog.querySelector(".ihr-plant-catalog__add");
+  const dialog = catalogUI.catalog_build(document, id, ikeaLogo.replace('<svg ', '<svg aria-hidden="true" focusable="false" '), catalogueOptions());
+  const paper = dialog.querySelector('.ihr-plant-catalog__paper');
+  const drawing = dialog.querySelector('.ihr-plant-catalog__body:not(.ihr-plant-catalog__body--shelves):not(.ihr-plant-catalog__body--lights) .ihr-plant-catalog__drawing');
+  const shelfDrawing = dialog.querySelector('.ihr-plant-catalog__drawing.ihr-plant-catalog__shelf-drawing');
+  const lampDrawing = dialog.querySelector('.ihr-plant-catalog__drawing.ihr-plant-catalog__lamp-drawing');
 
-
-  let selectedPlant = PLANT_CATALOG[0]?.id;
-  let selectedPot = PLANT_CATALOG[0]?.defaultPotId || POT_CATALOG[0]?.id;
-  let selectedColor = getPotColor(selectedPot).id;
-  const rememberedColors = new Map();
-  let preview3d = null, shelfPreview3d = null, lampPreview3d = null;
-  let selectedLamp = LAMP_CATALOG[0]?.id, selectedKelvin = DEFAULT_LAMP_KELVIN;
-  let activePage = 'plants', savedShelf = normalizeShelfType(shelfType), selectedShelf = savedShelf;
-  let trigger = null, destroyed = false, busy = false, opening = false, motion = null;
-  const closedWork = [];
-  const whenClosed = work => { if (typeof work === 'function') closedWork.push(work); };
-
-  function disposePreviews() {
-    preview3d?.dispose(); preview3d = null;
-    shelfPreview3d?.dispose(); shelfPreview3d = null;
-    lampPreview3d?.dispose(); lampPreview3d = null;
-  }
-  function suspendPreviews() {
-    preview3d?.setActive(false);
-    shelfPreview3d?.setActive(false);
-    lampPreview3d?.setActive(false);
-  }
-  function mountPreview() {
-    if (!opening || destroyed) return;
-    // Each page is created on its first visit. Retaining its model/environment
-    // avoids recompiling the same studio when navigating or reopening the book.
-    // Only the visible page can request a draw; destroy releases all three.
-    suspendPreviews();
-    if (activePage === 'plants') {
-      preview3d ||= createPlantCatalogPreview(drawing);
-      preview3d.setActive(true);
-    } else if (activePage === 'shelves') {
-      shelfPreview3d ||= createShelfCatalogPreview(shelfDrawing);
-      shelfPreview3d.setActive(true);
-    } else {
-      lampPreview3d ||= createLampCatalogPreview(lampDrawing);
-      lampPreview3d.setActive(true);
-    }
-  }
-  function switchPage(page) {
-    if (busy || destroyed || activePage === page) return;
-    activePage = page;
-    status.textContent = ''; status.removeAttribute('data-error');
-    update(); mountPreview(); update();
-  }
-
-  let catalogView=null;
-  function update() {
-
-    const plant=getCatalogPlant(selectedPlant),pot=getCatalogPot(selectedPot),type=getShelfType(selectedShelf),lamp=getCatalogLamp(selectedLamp);
-    const shelf=activePage==='shelves',light=activePage==='lights';
-    if(!catalogView){catalogView=new catalogUI.RustCatalogView(dialog);catalogView.connect(select);}
-    catalogView.render([activePage,String(selectedKelvin),selectedLamp,selectedShelf,savedShelf,selectedColor,selectedPlant,selectedPot,
-      lamp?.name||'',lamp?.subtitle||'',lamp?.mount==='undershelf'?'Bajo la balda':'Sobre la balda',type.name,type.subtitle,
-      type.dimensions?type.dimensions.width/10+' × '+type.dimensions.depth/10+' × '+type.dimensions.height/10+' cm':'A medida',
-      plant?.name||'',plant?.subtitle||'',pot?.name||'',getPotColor(selectedPot,selectedColor).name,plantSizeLabel(selectedPlant,selectedPot),busy,
-      shelf?typeof onShelfChange==='function':light?!!lamp&&typeof onAddLamp==='function':!!plant&&!!pot&&typeof onAdd==='function']);
-    if(opening&&activePage==='plants')preview3d?.update({catalogId:selectedPlant,potId:selectedPot,potColorId:selectedColor});
-    if(opening&&shelf)shelfPreview3d?.update({shelfType:selectedShelf});
-    if(opening&&light)lampPreview3d?.update({lampId:selectedLamp,kelvin:selectedKelvin});
-  }
-
-
-  function select(kind,id){
-    if(kind==='page'){switchPage(id);return}if(busy)return;
-    if(kind==='plant')selectedPlant=id;
-    else if(kind==='pot'){rememberedColors.set(selectedPot,selectedColor);selectedPot=id;selectedColor=getPotColor(selectedPot,rememberedColors.get(selectedPot)).id;buildColors();}
-    else if(kind==='shelf')selectedShelf=id;
-    else if(kind==='lamp')selectedLamp=id;
-    else if(kind==='kelvin')selectedKelvin=Number(id);
-    else if(kind==='color'){selectedColor=id;rememberedColors.set(selectedPot,id);}
-    else return;
-    status.textContent='';status.removeAttribute('data-error');update();
-  }
-  function buildColors(){catalogUI.catalog_colors(dialog,getPotColors(selectedPot).flatMap(color=>['color',color.id,'Color '+color.name,'',color.name,'','','',color.hex]).join('\0'));catalogView?.syncColors();}
   function cameraFrames(from) {
     const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduced || typeof dialog.animate !== 'function' || !(from instanceof Element) || !from.isConnected || from.hidden) return null;
@@ -136,7 +61,8 @@ const add=dialog.querySelector(".ihr-plant-catalog__add");
     const frames = catalogCameraFrames(booklet,dialog.getBoundingClientRect(),stage.getBoundingClientRect());
     return frames && { ...frames,room:stage };
   }
-  function fly(phase,frames,done) {
+  /** `ended()` tells the controller the flight no longer owns the dialog; `done()` runs once the page has landed. */
+  function fly(phase,frames,done,ended) {
     const inward = phase === 'opening', stage = frames.room;
     const previous = { origin:stage.style.transformOrigin,willChange:stage.style.willChange };
     stage.style.transformOrigin = '0 0'; stage.style.willChange = 'transform';
@@ -163,12 +89,11 @@ const add=dialog.querySelector(".ihr-plant-catalog__add");
       stage.style.transformOrigin = previous.origin; stage.style.willChange = previous.willChange;
       dialog.style.transformOrigin = '';
       paper.inert = false;
-      motion = null;
+      ended();
       // The page closes first: the room's repaint (a new lamp's shaders can
       // take a while) must never keep the catalogue on screen.
       try { if (!quiet) done(); } finally { afterPaint(() => onMotion?.('end')); }
     };
-    motion = { phase,land };
     room.finished.then(() => land(),() => {});
     // A hidden tab may never finish the animation; never strand the dialog.
     const guard = () => {
@@ -176,117 +101,37 @@ const add=dialog.querySelector(".ihr-plant-catalog__add");
       else land();
     };
     safety = setTimeout(guard,CATALOG_CAMERA_MS + 400);
+    return { phase,land };
   }
-  function finishClose() {
-    if (!opening) return;
-    // Closed from elsewhere mid-flight: just put the room back.
-    motion?.land({ quiet:true });
-    opening = false;
-    delete dialog.dataset.catalogCamera;
-    suspendPreviews();
-    onClose?.();
-    // The closed page paints first; the shelf's own update (a new lamp's
-    // shaders can take long) follows, never holding the page on screen.
-    const works = closedWork.splice(0);
-    if (works.length) afterPaint(() => {
-      for (const work of works) {
-        try { work(); } catch (error) { console.warn('No se pudo actualizar la estantería:',error); }
-      }
-    });
-    if (trigger?.isConnected) trigger.focus({ preventScroll:true });
-    trigger = null;
-  }
-  function closeNow() {
-    if (typeof dialog.close === 'function' && dialog.open) dialog.close();
-    else dialog.removeAttribute('open');
-    finishClose();
-  }
-  function close({ instant = false } = {}) {
-    if (destroyed || !opening) return;
-    if (motion?.phase === 'closing') { if (instant) motion.land(); return; }
-    motion?.land();
-    const frames = !instant && cameraFrames(trigger);
-    if (!frames) { closeNow(); return; }
-    // Nothing redraws inside the page while it flies back into the booklet.
-    suspendPreviews();
-    fly('closing',frames,closeNow);
-  }
-  closeButton.addEventListener('click',() => close());
-  dialog.addEventListener('cancel',event => { event.preventDefault(); close(); });
-  dialog.addEventListener('close',finishClose);
-  dialog.addEventListener('click',event => {
-    if (event.target !== dialog) return;
-    const bounds = paper.getBoundingClientRect();
-    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) close();
-  });
-  dialog.addEventListener('keydown',event => {
-    if (event.key === 'Escape') { event.preventDefault(); close(); return; }
-    // Native <dialog> also traps focus; this keeps the fallback usable.
-    if (event.key !== 'Tab') return;
-    const buttons = [...dialog.querySelectorAll('button:not(:disabled)')].filter(button => !button.closest('[hidden]'));
-    const first = buttons[0], last = buttons.at(-1);
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-  });
-  add.addEventListener('click',async () => {
-    const shelfPage = activePage === 'shelves', lampPage = activePage === 'lights';
-    if (busy || (shelfPage ? typeof onShelfChange !== 'function'
-      : lampPage ? typeof onAddLamp !== 'function' : typeof onAdd !== 'function')) return;
-    busy = true; status.textContent = ''; status.removeAttribute('data-error'); update();
-    try {
-      // The shelf saves now and redraws once the page has flown back.
-      if (shelfPage) {
-        await onShelfChange({ shelfType:selectedShelf },{ whenClosed });
-        savedShelf = selectedShelf;
-      } else if (lampPage) await onAddLamp({ lampId:selectedLamp,kelvin:selectedKelvin },{ whenClosed });
-      else await onAdd({ catalogId:selectedPlant, potId:selectedPot,potColorId:selectedColor },{ whenClosed });
-      if (!destroyed) close();
-    } catch {
-      if (!destroyed) {
-        status.dataset.error = 'true';
-        status.textContent = shelfPage ? 'No se pudo cambiar. Reintenta.' : lampPage
-          ? 'No se pudo añadir. Reintenta.' : 'No se pudo añadir. Reintenta.';
-      }
-    } finally {
-      busy = false;
-      if (!destroyed) update();
-    }
-  });
-  try{buildColors();update();}catch(error){catalogView?.free();disposePreviews();throw error;}
+
+  const firstPlant = PLANT_CATALOG[0]?.id, firstPot = PLANT_CATALOG[0]?.defaultPotId || POT_CATALOG[0]?.id;
+  const controller = new catalogUI.RustCatalogController(dialog, {
+    // Static tables stay in JavaScript: one call answers every label the view paints.
+    describe(plantId,potId,colorId,shelfId,lampId) {
+      const plant = getCatalogPlant(plantId), pot = getCatalogPot(potId), type = getShelfType(shelfId), lamp = getCatalogLamp(lampId);
+      return [lamp?.name || '',lamp?.subtitle || '',lamp?.mount === 'undershelf' ? 'Bajo la balda' : 'Sobre la balda',type.name,type.subtitle,
+        type.dimensions ? type.dimensions.width / 10 + ' × ' + type.dimensions.depth / 10 + ' × ' + type.dimensions.height / 10 + ' cm' : 'A medida',
+        plant?.name || '',plant?.subtitle || '',pot?.name || '',getPotColor(potId,colorId).name,plantSizeLabel(plantId,potId),!!plant,!!pot,!!lamp];
+    },
+    colorId:(potId,remembered) => getPotColor(potId,remembered).id,
+    colorRows:potId => getPotColors(potId).flatMap(color => ['color',color.id,'Color ' + color.name,'',color.name,'','','',color.hex]).join('\0'),
+    normalizeShelf:normalizeShelfType,
+    createPreview:kind => kind === 'plants' ? createPlantCatalogPreview(drawing)
+      : kind === 'shelves' ? createShelfCatalogPreview(shelfDrawing) : createLampCatalogPreview(lampDrawing),
+    frames:cameraFrames, fly, afterPaint, onAdd, onAddLamp, onClose, onShelfChange
+  }, { plant:firstPlant, pot:firstPot, color:getPotColor(firstPot).id, lamp:LAMP_CATALOG[0]?.id, kelvin:DEFAULT_LAMP_KELVIN, shelfType });
   document.body.append(dialog);
+  let live = controller;
   return {
-    open(from = document.activeElement) {
-      if (destroyed || opening) return;
-      trigger = from instanceof HTMLElement ? from : null;
-      selectedShelf = savedShelf; activePage = 'plants';
-      opening = true; status.textContent = ''; status.removeAttribute('data-error');
-      if (typeof dialog.showModal === 'function') dialog.showModal();
-      else { dialog.setAttribute('open',''); dialog.setAttribute('aria-modal','true'); }
-      const frames = cameraFrames(trigger);
-      update();
-      // A studio prepared earlier only draws; a first one is created after
-      // the flight so its setup never competes with the camera move.
-      if (!frames || preview3d) mountPreview();
-      update();
-      body.scrollTop = 0; closeButton.focus({ preventScroll:true });
-      if (frames) fly('opening',frames,() => { if (opening && !destroyed) { mountPreview(); update(); } });
-    },
+    open(from = document.activeElement) { live?.open(from); },
     /** Idle-time preparation: the plant studio and its shaders before the first open. */
-    prepare() {
-      if (destroyed || opening || preview3d) return;
-      preview3d = createPlantCatalogPreview(drawing);
-      preview3d.setActive(false);
-      preview3d.update({ catalogId:selectedPlant,potId:selectedPot,potColorId:selectedColor });
-      preview3d.prepare?.();
-    },
-    setShelfType(value) {
-      savedShelf = normalizeShelfType(value); selectedShelf = savedShelf;
-      if (!destroyed) update();
-    },
-    close,
+    prepare() { live?.prepare(); },
+    setShelfType(value) { live?.setShelfType(value); },
+    close({ instant = false } = {}) { live?.close(Boolean(instant)); },
     destroy() {
-      if (destroyed) return;
-      close({ instant:true }); closedWork.length = 0; destroyed = true; disposePreviews();catalogView?.free();catalogView=null;dialog.remove();
+      if (!live) return;
+      const owner = live; live = null;
+      try { owner.destroy(); } finally { owner.free(); }
     }
   };
 }

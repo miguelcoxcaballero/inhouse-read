@@ -21,8 +21,9 @@ for(const delayed of [false,true])test('Android inbox uses Rust shelf gate'+(del
  if(delayed)await page.route(pattern,hold)
  try{
   if(delayed)await page.goto(process.env.IHR_TEST_URL||'./');else await openCompiledReaderApp(page)
+  // The reader has no JavaScript twin: a cold import waits for the held module while the shelf gate (still JavaScript) keeps its room.
+  if(delayed){await page.waitForTimeout(2500);expect(await page.evaluate(()=>window.importGateProof.instances)).toBe(0);await expect(page.locator('#reader-top-title')).toHaveText('Abriendo libro…');release();await page.waitForFunction(()=>window.importGateProof.instances===1)}
   await expect(page.locator('#reader-top-title')).toHaveText('Gate First');await expect(page.locator('.pdf-page-canvas')).toBeVisible();await page.waitForFunction(()=>window.importAcks.length===1);await waitForFinalBookGeometry(page,'Gate_First.pdf')
-  if(delayed){expect(await page.evaluate(()=>window.importGateProof.instances)).toBe(0);release();await page.waitForFunction(()=>window.importGateProof.instances===1)}
   await page.getByRole('button',{name:'Volver a la estantería'}).click();await expect(page.locator('.ihr-flyout')).toHaveCount(0);await expect(page.locator('.ihr-spine')).toHaveCount(1)
   await page.evaluate(()=>window.deliverGateBook());await expect(page.locator('#reader-top-title')).toHaveText('Gate Second');await page.waitForFunction(()=>window.importAcks.length===2);await waitForFinalBookGeometry(page,'Gate_Second.pdf')
   await page.getByRole('button',{name:'Volver a la estantería'}).click();await expect(page.locator('.ihr-flyout')).toHaveCount(0);await expect(page.locator('.ihr-spine')).toHaveCount(2)

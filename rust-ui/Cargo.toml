@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 wasm-bindgen-futures = "=0.4.55"
 wasm-bindgen = { version = "=0.2.105", features = ["enable-interning"] }
 js-sys = "=0.3.82"
-web-sys = { version = "=0.3.82", features = ["Window", "Document", "Element", "Node", "HtmlElement", "HtmlButtonElement", "Event", "EventTarget", "KeyboardEvent", "DomTokenList", "HtmlCollection", "FocusOptions", "ScrollIntoViewOptions", "CssStyleDeclaration", "DomRect", "NodeList", "Text", "Range"] }
+web-sys = { version = "=0.3.82", features = ["Window", "Document", "Element", "Node", "HtmlElement", "HtmlButtonElement", "Event", "EventTarget", "KeyboardEvent", "DomTokenList", "HtmlCollection", "FocusOptions", "ScrollIntoViewOptions", "CssStyleDeclaration", "DomRect", "NodeList", "Text", "Range", "MouseEvent", "console"] }
 
 [profile.release]
 opt-level = 3

@@ -17,8 +17,14 @@ vi.mock('../../src/js/shelf-catalog-preview.js',()=>({createShelfCatalogPreview:
 vi.mock('../../src/js/lamp-catalog-preview.js',()=>({createLampCatalogPreview:vi.fn(host=>({update:vi.fn(selection=>{host.dataset.lampId=selection.lampId}),setActive:vi.fn(),dispose:vi.fn(()=>host.replaceChildren())}))}))
 const runtime=vi.hoisted(()=>({ui:null}))
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui,loadRustUI:()=>Promise.resolve(runtime.ui),waitForRustUI:()=>Promise.resolve(runtime.ui)}))
-beforeAll(()=>{catalogueUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})})
-afterEach(()=>{document.body.replaceChildren();expect(catalogueUI.ui_live_handles()).toBe(0);runtime.ui=null})
+// The controller's add flow runs on the shared Rust task queue, which keeps a few handles of its own once started.
+let baseline=0
+beforeAll(async()=>{
+ catalogueUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})
+ const warm=new catalogueUI.RustReadingProgressQueue(()=>{},()=>{},()=>{});await warm.updateProgress('warm',0,null);warm.free()
+ baseline=catalogueUI.ui_live_handles()
+})
+afterEach(()=>{document.body.replaceChildren();expect(catalogueUI.ui_live_handles()).toBe(baseline);runtime.ui=null})
 const dialog=()=>document.querySelector('.ihr-plant-catalog')
 const click=selector=>{const node=dialog().querySelector(selector);if(!node)throw new Error('missing '+selector);node.click()}
 const settle=async()=>{for(let i=0;i<6;i++)await Promise.resolve()}

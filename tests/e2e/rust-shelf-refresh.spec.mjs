@@ -12,8 +12,10 @@ for(const delayed of [false,true])test('compiled shelf refresh keeps imported by
  const hold=route=>{const work=(async()=>{await gate;await route.continue()})();active.add(work);work.then(()=>active.delete(work),()=>active.delete(work));return work};if(delayed)await page.route(pattern,hold);
  try{
   const target=process.env.IHR_TEST_URL||'./';if(delayed)await page.goto(target);else await openCompiledReaderApp(page,target);
-  await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/tiny.pdf');await expect(page.locator('.pdf-page-canvas')).toBeVisible();await waitForFinalBookGeometry(page,'tiny.pdf');
-  if(delayed){expect(await page.evaluate(()=>window.refreshProof.available)).toBe(false);release();await page.waitForFunction(()=>window.refreshProof.available)}
+  await page.locator('#file-picker').setInputFiles('tests/e2e/fixtures/tiny.pdf');
+  // The reader has no JavaScript twin: the import waits for the held module (the shelf and its refresh queue are already running on their own).
+  if(delayed){await page.waitForTimeout(2500);expect(await page.evaluate(()=>window.refreshProof.available)).toBe(false);release();await page.waitForFunction(()=>window.refreshProof.available)}
+  await expect(page.locator('.pdf-page-canvas')).toBeVisible();await waitForFinalBookGeometry(page,'tiny.pdf');
   await page.getByRole('button',{name:'Volver a la estantería'}).click();await expect(page.locator('.ihr-flyout')).toHaveCount(0);await expect(page.locator('.ihr-spine')).toHaveCount(1);
   await page.locator('#file-picker').setInputFiles({name:'refresh-second.pdf',mimeType:'application/pdf',buffer:await (await import('node:fs/promises')).readFile('tests/e2e/fixtures/tiny.pdf')});await expect(page.locator('.pdf-page-canvas')).toBeVisible();await waitForFinalBookGeometry(page,'refresh-second.pdf');await page.getByRole('button',{name:'Volver a la estantería'}).click();await expect(page.locator('.ihr-flyout')).toHaveCount(0);await expect(page.locator('.ihr-spine')).toHaveCount(2);
   const records=await page.evaluate(async()=>{const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('inhouse-read');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});try{const books=await new Promise((resolve,reject)=>{const r=db.transaction('books').objectStore('books').getAll();r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});return books.map(b=>({name:b.name,size:b.content?.size,revision:b.contentRevision}))}finally{db.close()}});

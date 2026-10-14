@@ -33,17 +33,25 @@ vi.mock('../../src/js/lamp-catalog-preview.js',() => ({
   }))
 }));
 
-const runtime=vi.hoisted(()=>({ui:null,mode:'legacy',roots:new Set(),views:new Set(),renderCalls:0,connections:0}));
+const runtime=vi.hoisted(()=>({ui:null,mode:'legacy',roots:new Set(),views:new Set(),renderCalls:0,connections:0,controllers:0}));
 vi.mock('../../src/js/rust-ui.js',()=>({getRustUI:()=>runtime.ui,loadRustUI:()=>Promise.resolve(runtime.ui)}));
 const observedUI={...catalogueUI,
  catalog_build(...args){const dialog=catalogueUI.catalog_build(...args);runtime.roots.add(dialog);return dialog;},
+ RustCatalogController:class extends catalogueUI.RustCatalogController{constructor(...args){super(...args);runtime.controllers++;}},
  RustCatalogView:class extends catalogueUI.RustCatalogView{
   constructor(dialog){super(dialog);runtime.views.add(dialog);}
   render(...args){runtime.renderCalls++;return super.render(...args);}
   connect(...args){runtime.connections++;return super.connect(...args);}
  }
 };
-beforeAll(()=>{catalogueUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')});});
+// The controller's add flow runs on the shared Rust task queue, which keeps a few handles of its own once started:
+// warm it up, then every catalogue must give back exactly what it took.
+let baseline=0;
+beforeAll(async()=>{
+  catalogueUI.initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')});
+  const warm=new catalogueUI.RustReadingProgressQueue(()=>{},()=>{},()=>{});await warm.updateProgress('warm',0,null);warm.free();
+  baseline=catalogueUI.ui_live_handles();
+});
 const instances = [];
 function create(options) {
   const catalog = runtime.mode==='rust' ? createPlantCatalog(options) : createPlantCatalogLegacy(options);
@@ -62,7 +70,7 @@ const settle = async () => { await Promise.resolve(); await Promise.resolve(); }
 const closing = { whenClosed:expect.any(Function) };
 afterEach(() => {
   for (const instance of instances.splice(0)) instance.destroy();
-  expect(catalogueUI.ui_live_handles()).toBe(0);
+  expect(catalogueUI.ui_live_handles()).toBe(baseline);
   document.body.replaceChildren();
   vi.mocked(createShelfCatalogPreview).mockClear();
   vi.mocked(createLampCatalogPreview).mockClear();
@@ -71,8 +79,9 @@ afterEach(() => {
 });
 
 describe.each(['legacy','rust','late'])('IKEA plant instruction booklet (%s)',mode => {
-  beforeEach(()=>{runtime.mode=mode;runtime.ui=mode==='rust'?observedUI:null;runtime.roots.clear();runtime.views.clear();runtime.renderCalls=0;runtime.connections=0;});
-  afterEach(()=>{if(instances.length&&mode!=='legacy')expect(runtime.renderCalls).toBeGreaterThan(0);});
+  beforeEach(()=>{runtime.mode=mode;runtime.ui=mode==='rust'?observedUI:null;runtime.roots.clear();runtime.views.clear();runtime.renderCalls=0;runtime.connections=0;runtime.controllers=0;});
+  // 'late' drives the frozen reference through the Rust view's render; 'rust' proves the Rust controller (which renders natively) ran.
+  afterEach(()=>{if(instances.length&&mode==='late')expect(runtime.renderCalls).toBeGreaterThan(0);if(instances.length&&mode==='rust')expect(runtime.controllers).toBeGreaterThan(0);});
   it('provides the eight botanical references and five explicit pot-size choices without external image assets',() => {
     create({ onAdd:vi.fn() }).open();
     expect(dialog().querySelectorAll('[data-catalog-plant]')).toHaveLength(8);

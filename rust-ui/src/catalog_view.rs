@@ -1,6 +1,6 @@
 //! Retained IKEA catalogue view. Selection callbacks, studios and the camera
 //! keep their host ownership; this component updates the existing DOM in place.
-use std::cell::RefCell;
+use std::{cell::RefCell,rc::Rc};
 use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array,Function};
 use web_sys::{Document,Element,Event,HtmlButtonElement,HtmlElement};
@@ -86,17 +86,7 @@ impl RustCatalogView{
   Ok(Self{dialog,bodies,add,state:RefCell::new(State{groups,captions,title,description,page_number,add_text:None,page:None,busy:None,allowed:None}),listener:RefCell::new(None)})
  }
  pub fn connect(&self,select:Function)->Result<(),JsValue>{
-  let handler=Closure::wrap(Box::new(move|event:Event|{
-   let Some(target)=event.target().and_then(|target|{
-    if let Some(element)=target.dyn_ref::<Element>(){Some(element.clone())}else{target.dyn_into::<web_sys::Node>().ok().and_then(|node|node.parent_element())}
-   })else{return};
-   let Ok(Some(button))=target.closest("button")else{return};
-   for kind in ["page","plant","pot","shelf","lamp","kelvin","color"]{if let Some(id)=button.get_attribute(&format!("data-catalog-{kind}")){
-    if let Err(error)=select.call2(&JsValue::UNDEFINED,&kind.into(),&id.into()){wasm_bindgen::throw_val(error);}break;
-   }}
-  })as Box<dyn FnMut(Event)>);
-  let target:web_sys::EventTarget=self.dialog.clone().into();target.add_event_listener_with_callback("click",handler.as_ref().unchecked_ref())?;
-  *self.listener.borrow_mut()=Some(Listener{target,kind:"click",callback:handler,capture:false});Ok(())
+  self.connect_native(Rc::new(move|kind:&str,id:&str|select.call2(&JsValue::UNDEFINED,&kind.into(),&id.into()).map(|_|())))
  }
  #[wasm_bindgen(js_name=syncColors)]
  pub fn sync_colors(&self)->Result<(),JsValue>{self.state.borrow_mut().groups[4]=rows(&self.dialog,"color",false)?;Ok(())}
@@ -105,6 +95,25 @@ impl RustCatalogView{
   let mut values=Vec::with_capacity(19);for i in 0..19{values.push(frame.get(i).as_string().ok_or_else(||JsValue::from_str("Invalid catalogue text"))?);}
   let busy=frame.get(19).as_bool().ok_or_else(||JsValue::from_str("Invalid catalogue busy state"))?;
   let allowed=frame.get(20).as_bool().ok_or_else(||JsValue::from_str("Invalid catalogue action state"))?;
+  self.render_native(&values,busy,allowed)
+ }
+}
+impl RustCatalogView{
+ /// Selection clicks reach `select(kind, id)`; the catalogue controller passes a Rust callback.
+ pub(crate) fn connect_native(&self,select:Rc<dyn Fn(&str,&str)->Result<(),JsValue>>)->Result<(),JsValue>{
+  let handler=Closure::wrap(Box::new(move|event:Event|{
+   let Some(target)=event.target().and_then(|target|{
+    if let Some(element)=target.dyn_ref::<Element>(){Some(element.clone())}else{target.dyn_into::<web_sys::Node>().ok().and_then(|node|node.parent_element())}
+   })else{return};
+   let Ok(Some(button))=target.closest("button")else{return};
+   for kind in ["page","plant","pot","shelf","lamp","kelvin","color"]{if let Some(id)=button.get_attribute(&format!("data-catalog-{kind}")){
+    if let Err(error)=select(kind,&id){wasm_bindgen::throw_val(error);}break;
+   }}
+  })as Box<dyn FnMut(Event)>);
+  let target:web_sys::EventTarget=self.dialog.clone().into();target.add_event_listener_with_callback("click",handler.as_ref().unchecked_ref())?;
+  *self.listener.borrow_mut()=Some(Listener{target,kind:"click",callback:handler,capture:false});Ok(())
+ }
+ pub(crate) fn render_native(&self,values:&[String],busy:bool,allowed:bool)->Result<(),JsValue>{
   let page=&values[0];let shelf=page=="shelves";let lamp=page=="lights";let mut state=self.state.borrow_mut();
   if state.page.as_deref()!=Some(page){
    attr(&self.dialog,"data-catalog-page",page);self.bodies[0].set_hidden(page!="plants");self.bodies[1].set_hidden(!shelf);self.bodies[2].set_hidden(!lamp);
