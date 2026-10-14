@@ -24,7 +24,8 @@ window.benchPlacement=async input=>{
   same(originalPlacement(production,productionDecoration,fixture,input.api,targets[0]),
     originalPlacement(original,originalDecoration,fixture,input.api,targets[0]));
   const publicCalls=window.placementStats.calls-publicCallsBefore;
-  if(publicCalls!==0)throw new Error('Public API unexpectedly took the experimental bridge');
+  // The public API has no JavaScript twin any more: it must be the compiled kernel, and give the frozen original's result.
+  if(publicCalls<1)throw new Error('Public API did not run the compiled kernel');
   const before={...window.placementStats};
   for(const target of targets){
     const expected=originalPlacement(original,originalDecoration,fixture,input.api,target);
@@ -93,7 +94,7 @@ test.beforeEach(async({page})=>{
 });
 for(const input of placementBenchCases)test(`complete shelf placement parity and costs: ${input.name}`,async({page},testInfo)=>{
   const result=await page.evaluate(input=>window.benchPlacement(input),input);
-  expect(result.publicCalls).toBe(0);expect(result.directBridgeCalls).toBe(input.sequence||1);expect(result.memory.live).toBe(0);
+  expect(result.publicCalls).toBeGreaterThan(0);expect(result.directBridgeCalls).toBe(input.sequence||1);expect(result.memory.live).toBe(0);
   expect(result.memory.allocations).toBe(result.memory.releases);
   await testInfo.attach('placement-measurement',{body:JSON.stringify(result,null,2),contentType:'application/json'});
 });

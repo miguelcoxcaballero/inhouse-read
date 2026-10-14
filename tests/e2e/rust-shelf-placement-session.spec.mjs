@@ -4,9 +4,12 @@ import { createServer as createHttpServer } from 'node:http';
 import { shelfSessionCases } from '../helpers/shelf-placement-session-cases.mjs';
 const html=`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import {loadRustShelf} from '/inhouse-read/src/js/rust-shelf.js';
 import coreUrl from '/inhouse-read/src/wasm/inhouse_read_core.wasm?url';
 import {benchmarkShelfPlacementSession} from '/inhouse-read/tests/helpers/shelf-placement-session-browser-benchmark.mjs';
 const core=await loadRustCore();if(!core?.shelf_place)throw new Error('Actual compiled shelf placement core required');
+// The drag policy that owns the session runs in the shelf module, which the app's first render awaits.
+if(!await loadRustShelf())throw new Error('Actual compiled shelf module required');
 window.benchShelfSession=async input=>{
   const result=await benchmarkShelfPlacementSession(core,input);
   const response=await fetch(coreUrl);if(!response.ok)throw new Error('Actual WASM HTTP failed');const bytes=await response.arrayBuffer();
@@ -52,8 +55,10 @@ for(const input of shelfSessionCases)test(`complete owned drag cost: ${input.nam
   // 1,000 objects across nine rounds at CPU x4, including setup every round.
   test.setTimeout(120_000);
   const result=await page.evaluate(input=>window.benchShelfSession(input),input);
-  const expectedCalls=input.count>=16?Math.max(0,input.moves-2):0;
-  expect(result.actualCalls).toBe(expectedCalls);expect(result.proofRouting.javascriptBypasses).toBe(input.moves-expectedCalls);
+  // Direct moves run the kernel twice (no JavaScript twin remains); the session runs it once per move.
+  const directMoves=input.count>=16?Math.min(input.moves,2):input.moves,sessionMoves=input.moves-directMoves;
+  expect(result.actualCalls).toBe(directMoves*2+sessionMoves);
+  expect(result.proofRouting.directMoves).toBe(directMoves);expect(result.proofRouting.sessionMoves).toBe(sessionMoves);
   expect(result.memory.live).toBe(0);
   expect(result.memory.allocations).toBe(result.memory.releases);
   await testInfo.attach('placement-session-measurement',{body:JSON.stringify(result,null,2),contentType:'application/json'});
