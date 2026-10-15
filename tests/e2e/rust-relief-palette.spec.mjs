@@ -6,10 +6,11 @@ const html=`<!doctype html><meta name="viewport" content="width=device-width,ini
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
 import coreUrl from '/inhouse-read/src/wasm/inhouse_read_core.wasm?url';
 import * as original from '/inhouse-read/tests/unit/helpers/reference-relief-palette.js';
+import '/inhouse-read/tests/e2e/helpers/shelf-ready.js';
 import * as production from '/inhouse-read/src/js/cover-relief.js';
 import {observeReliefPalette} from '/inhouse-read/tests/helpers/relief-palette-benchmark.mjs';
 import {loadCoverCorpus,loadColourMaskCorpus} from '/inhouse-read/tests/e2e/helpers/cover-corpus.js';
-const core=await loadRustCore();if(!core?.relief_palette_new)throw new Error('Compiled palette core required');
+const core=await loadRustCore();if(!core?.relief_analysis_new)throw new Error('Compiled relief job core required');
 const hash=async data=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',ArrayBuffer.isView(data)?new Uint8Array(data.buffer,data.byteOffset,data.byteLength):data))].map(n=>n.toString(16).padStart(2,'0')).join('');
 const artifact=async()=>{const response=await fetch(coreUrl);if(!response.ok)throw new Error('WASM HTTP failed');const bytes=await response.arrayBuffer();return {bytes:bytes.byteLength,sha256:await hash(bytes)};};
 const pause=()=>new Promise(resolve=>setTimeout(resolve,0));
@@ -58,10 +59,11 @@ test.beforeEach(async({page})=>{
   await page.addInitScript(()=>{
     window.paletteStats={jobs:0,liveJobs:0,releases:0};
     const observe=result=>{
-      const instance=result.instance||result,actual=instance.exports;if(!actual?.relief_palette_new)return result;
-      const stats=window.paletteStats,exports={...actual,
-        relief_palette_new(n){const p=actual.relief_palette_new(n);if(p){stats.jobs++;stats.liveJobs++;}return p;},
-        relief_palette_free(p){actual.relief_palette_free(p);stats.releases++;stats.liveJobs--;}};
+      const instance=result.instance||result,actual=instance.exports;if(!actual?.relief_analysis_new)return result;
+      // Only the analysis jobs are the palette route (the map jobs of the previews share the free export).
+      const stats=window.paletteStats,analysis=new Set(),exports={...actual,
+        relief_analysis_new(...args){const p=actual.relief_analysis_new(...args);if(p){analysis.add(p);stats.jobs++;stats.liveJobs++;}return p;},
+        relief_job_free(p){actual.relief_job_free(p);if(analysis.delete(p)){stats.releases++;stats.liveJobs--;}}};
       const wrapped=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target);}});
       return result.instance?{...result,instance:wrapped}:wrapped;
     };

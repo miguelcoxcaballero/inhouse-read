@@ -12,6 +12,7 @@ mod occlusion_table;
 mod spine_surface;
 mod cover_editor;
 mod book_reflection;
+mod cover_relief;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]

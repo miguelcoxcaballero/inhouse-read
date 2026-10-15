@@ -19,31 +19,39 @@ function exact(a,b){
     assert.equal(Buffer.compare(Buffer.from(am.buffer,am.byteOffset,am.byteLength),Buffer.from(bm.buffer,bm.byteOffset,bm.byteLength)),0);
   }
 }
+// Jobs of the analysis are counted at the export boundary: one is made, and every one made is freed.
+function tracked(extra={}){
+  const state={jobs:0,live:0,arenas:0,steps:0};
+  state.core={...core,
+    alloc_f64(n){const p=core.alloc_f64(n);if(p)state.arenas+=n;return p;},free_f64(p,n){core.free_f64(p,n);state.arenas-=n;},
+    relief_analysis_new(...args){const job=core.relief_analysis_new(...args);if(job){state.jobs++;state.live++;}return job;},
+    relief_job_free(job){core.relief_job_free(job);if(job)state.live--;},
+    relief_job_step(job){state.steps++;return core.relief_job_step(job);},...extra};
+  return state;
+}
 describe('complete production palette integration',()=>{
   for(const input of reliefPaletteCases)it(input.name,()=>{
-    const image=makeReliefPaletteImage(input),before=image.data.slice(),expected=drainPalette(original(image));let jobs=0;
-    runtime.core={...core,relief_palette_new(n){jobs++;return core.relief_palette_new(n);}};
+    const image=makeReliefPaletteImage(input),before=image.data.slice(),expected=drainPalette(original(image)),state=tracked();
+    runtime.core=state.core;
     exact(drainPalette(analyzePixels(image)),expected);assert.deepStrictEqual(image.data,before);
-    // Every size takes the native palette now (the old small-image JavaScript bypass is gone).
-    expect(jobs).toBe(1);
+    // Every size takes the native analysis (the old small-image JavaScript bypass is gone), and the job is gone after it.
+    expect(state.jobs).toBe(1);expect(state.live).toBe(0);expect(state.arenas).toBe(0);expect(state.steps).toBeGreaterThan(0);
   });
   it('reports a clear error, and leaks nothing, for unavailable, older and trapped cores',()=>{
     const image=makeReliefPaletteImage(reliefPaletteCases[4]);
-    for(const [candidate,message] of [[null,/módulo numérico/],[{...core,relief_palette_new:undefined},/núcleo de relieve/],[{...core,relief_palette_pixels(){throw Error('trap');}},/núcleo de relieve/]]){
-      let live=0,jobs=0;
-      runtime.core=candidate&&{...candidate,alloc_f64(n){const p=core.alloc_f64(n);if(p)live+=n;return p;},free_f64(p,n){core.free_f64(p,n);live-=n;},
-        relief_palette_new(n){const p=(candidate.relief_palette_new??(()=>0))(n);if(p)jobs++;return p;},relief_palette_free(p){core.relief_palette_free(p);jobs--;}};
-      expect(()=>drainPalette(analyzePixels(image))).toThrow(message);expect(live).toBe(0);expect(jobs).toBe(0);
+    for(const [override,message] of [[null,/módulo numérico/],[{relief_analysis_new:undefined},/núcleo de relieve/],
+      [{relief_job_step(){throw Error('trap');}},/trap/],[{relief_job_step(){return -1;}},/núcleo de relieve/]]){
+      const state=tracked(override||{});
+      runtime.core=override?state.core:null;
+      expect(()=>drainPalette(analyzePixels(image))).toThrow(message);expect(state.arenas).toBe(0);expect(state.live).toBe(0);
     }
   });
-  it('closes the palette job when the outer analysis is cancelled at a yield',()=>{
+  it('closes the analysis job when the outer analysis is cancelled at a yield',()=>{
     const image=makeReliefPaletteImage(reliefPaletteCases[5]);
     for(const stop of [1,10,54,60,100,200]){
-      let live=0;
-      runtime.core={...core,relief_palette_new(n){const p=core.relief_palette_new(n);if(p)live++;return p;},
-        relief_palette_free(p){core.relief_palette_free(p);live--;}};
+      const state=tracked();runtime.core=state.core;
       const task=analyzePixels(image);for(let i=0;i<stop;i++)if(task.next().done)break;
-      task.return();expect(live).toBe(0);
+      task.return();expect(state.live).toBe(0);expect(state.arenas).toBe(0);
     }
   });
 });

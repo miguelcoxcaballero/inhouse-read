@@ -25,10 +25,9 @@
  */
 import { runInSlices } from './cover-appearance.js';
 import { getRustCore, loadRustCore } from './rust-core.js';
-import { prepareColorMaskJob, countPreparedMaskPixels } from './cover-color-mask-wasm.js';
-import { rustReliefPalette } from './relief-palette-wasm.js';
-import { wasmInsideDistance, wasmBoxBlur, wasmHeightToNormals, wasmComposeMaterialMap, wasmComposeReliefLayers,
-  wasmShadePreview, wasmReliefRgbaPlanes, wasmPigmentMaps } from './cover-relief-wasm.js';
+import { needRustShelf } from './rust-shelf.js';
+import { wasmHeightToNormals, wasmComposeMaterialMap, wasmComposeReliefLayers, wasmShadePreview, wasmReliefRgbaPlanes,
+  wasmAnalyze, wasmMaps } from './cover-relief-wasm.js';
 
 export const COLOR_RELIEF_IDS = Object.freeze(Array.from({ length:10 }, (_, index) => `color-${index + 1}`));
 export const LEGACY_RELIEF_IDS = Object.freeze(['lettering', 'foil', 'frame', 'emblem', 'varnish', 'band', 'grain', 'panel']);
@@ -41,7 +40,6 @@ export const WORK_SIZE = 288;
 export const MAP_SIZE = 512;
 
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
-const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 
 /** Validate portable color choices and old family records; discard map data. */
 export function normalizeCoverRelief(value) {
@@ -76,18 +74,10 @@ export function coverReliefLayers(value) {
   return normalized && COLOR_RELIEF_IDS.includes(normalized.id) ? [normalized] : [];
 }
 
-// Each detected colour has its own stable printing/varnish depth and finish.
-// These profiles never generate colour, a mask or a metallic pigment.
-export function colorReliefProfile(choice) {
-  // Slot ranks can change after a cover is reanalysed. The actual printed HEX
-  // is the identity; its stable mix yields a bounded physical coating profile.
-  let seed=parseInt(choice.color.slice(1),16);
-  seed=Math.imul(seed^(seed>>>16),0x45d9f3b);
-  seed=Math.imul(seed^(seed>>>16),0x45d9f3b);
-  const fraction=((seed^(seed>>>16))>>>0)/0xffffffff;
-  return { heightMM:.16 + fraction*.14, roughness:.012 + fraction*.018,
-    clearcoatRoughness:.01 + fraction*.018 };
-}
+// Each detected colour has its own stable printing/varnish depth and finish, from its printed HEX (slot ranks
+// can change after a cover is reanalysed). These profiles never generate colour, a mask or a metallic pigment.
+// The mix, the colour names and the material coefficients are rust-ui/src/cover_relief.rs (the `shelf` module).
+export const colorReliefProfile = choice => needRustShelf().color_relief_profile(choice);
 
 // Maps store physical height in units of MAX_RELIEF_MM. New color zones use
 // .30 mm before the renderer's strength multiplier for existing singles;
@@ -154,34 +144,12 @@ export function fitDimensions(width, height, long) {
 }
 
 // ---- actual printed colors --------------------------------------------------
-// OKLab conversion follows Björn Ottosson's public-domain 2021 matrices:
-// https://bottosson.github.io/posts/oklab/ . Distances below use OKLab * 100;
-// they are Euclidean Delta-E OK values, not CIEDE2000 or RGB channel units.
-const LINEAR_RGB = Float64Array.from({ length:256 }, (_, byte) => {
-  const s = byte / 255;
-  return s <= .04045 ? s / 12.92 : ((s + .055) / 1.055) ** 2.4;
-});
-function rgbToOklab(r, g, b) {
-  r = LINEAR_RGB[r]; g = LINEAR_RGB[g]; b = LINEAR_RGB[b];
-  const l = Math.cbrt(.4122214708 * r + .5363325363 * g + .0514459929 * b);
-  const m = Math.cbrt(.2119034982 * r + .6806995451 * g + .1073969566 * b);
-  const s = Math.cbrt(.0883024619 * r + .2817188376 * g + .6299787005 * b);
-  return [100 * (.2104542553 * l + .7936177850 * m - .0040720468 * s),
-    100 * (1.9779984951 * l - 2.4285922050 * m + .4505937099 * s),
-    100 * (.0259040371 * l + .7827717662 * m - .8086757660 * s)];
-}
-const distance2 = (a, b) => (a[0]-b[0]) ** 2 + (a[1]-b[1]) ** 2 + (a[2]-b[2]) ** 2;
+// The core converts to OKLab (Björn Ottosson's public-domain 2021 matrices,
+// https://bottosson.github.io/posts/oklab/), finds the palette, classifies every pixel against the ball of
+// each colour and builds the pigment maps (rust-core/src/cover_relief.rs). Distances are Euclidean OKLab * 100
+// (Delta-E OK), not CIEDE2000 or RGB channel units.
 const hexOf = rgb => '#' + rgb.map(byte => byte.toString(16).padStart(2, '0')).join('');
-const rgbOf = hex => [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16));
-function colorName(hex) {
-  const [l, a, b] = rgbToOklab(...rgbOf(hex)), chroma = Math.hypot(a, b), hue = (Math.atan2(b, a) * 180 / Math.PI + 360) % 360;
-  if (chroma < 3) return l < 20 ? 'Negro' : l > 95 ? 'Blanco' : l > 78 ? 'Gris claro' : l < 45 ? 'Gris oscuro' : 'Gris';
-  if (l > 85 && chroma < 12 && hue >= 65 && hue < 125) return 'Crema';
-  if (hue >= 45 && hue < 105 && l < 65) return 'Marrón';
-  const name = hue < 45 || hue >= 355 ? 'Rojo' : hue < 90 ? 'Naranja' : hue < 125 ? 'Amarillo'
-    : hue < 165 ? 'Verde' : hue < 220 ? 'Turquesa' : hue < 285 ? 'Azul' : hue < 330 ? 'Violeta' : 'Rosa';
-  return name + (l < 42 ? ' oscuro' : l > 80 ? ' claro' : '');
-}
+const colorName = hex => needRustShelf().relief_color_name(hex);
 function validateRaster(image) {
   if (!image || !Number.isSafeInteger(image.width) || !Number.isSafeInteger(image.height)
     || image.width < 1 || image.height < 1 || !image.data || image.data.length !== image.width * image.height * 4) {
@@ -189,61 +157,21 @@ function validateRaster(image) {
   }
 }
 
-/** Membership is recalculated from real pixels at the requested resolution.
- * No dilation/blur can include a pixel whose color is outside the stored ball.
- * Softening falls toward zero inside its radius, never over an adjacent ink. */
-function* colorMask(image, color, tolerance) {
-  const target = rgbToOklab(...rgbOf(color)), out = new Float32Array(image.width * image.height);
-  const square = tolerance ** 2;
-  for (let i = 0; i < out.length; i++) {
-    const at = i * 4;
-    if (image.data[at + 3] >= 128) {
-      const d = distance2(target, rgbToOklab(image.data[at], image.data[at + 1], image.data[at + 2]));
-      if (d < square) out[i] = (1 - smoothstep(tolerance * .72, tolerance, Math.sqrt(d))) * image.data[at + 3] / 255;
-    }
-    if ((i & 1023) === 1023) yield;
-  }
-  return out;
-}
-
-/** Up to ten distinct supported colors, never fabricated family suggestions.
- * Radii are less than half every inter-center distance, so all generated
- * choices remain disjoint even when recreated independently from persistence. */
-// Measured with the complete bridge: small/one-/two-colour jobs keep their
-// direct path; repeated classifications amortize the shared OKLab preparation.
-const PREPARED_COLOR_MIN_LAYERS = 3, PREPARED_COLOR_MIN_PIXELS = 16384;
-function* prepareColors(image, layers) {
-  if (layers < PREPARED_COLOR_MIN_LAYERS || image.width * image.height < PREPARED_COLOR_MIN_PIXELS) return null;
-  return yield* prepareColorMaskJob(rust(), image, rgbToOklab);
-}
-function* preparedColorMask(image, color, tolerance, prepared, countCoverage = false) {
-  if (prepared) {
-    const result = yield* prepared.mask(rgbToOklab(...rgbOf(color)), tolerance, countCoverage);
-    if (result) return result;
-  }
-  return yield* colorMask(image, color, tolerance);
-}
-
+/** Up to ten distinct supported colors, never fabricated family suggestions. Radii are less than half every
+ * inter-center distance, so all generated choices remain disjoint even when recreated independently from
+ * persistence. Membership is recalculated from real pixels (no dilation/blur can include a pixel whose color is
+ * outside the stored ball) and falls toward zero inside its radius, never over an adjacent ink. */
 export function* analyzePixels(image) {
   validateRaster(image);
-  const palette = yield* native(rustReliefPalette(rust(), image, rgbToOklab, true));
-  if (!Number.isInteger(palette.seed)) throw new TypeError('El núcleo de relieve no admite estos datos');
-  const { opaque, colors } = palette, chosen = [];
-  let prepared = null;
-  try {
-    prepared = yield* prepareColors(image, colors.length);
-    for (let index = 0; index < colors.length; index++) {
-      const color = colors[index], nearest = Math.min(...colors.filter(other => other !== color).map(other => Math.sqrt(distance2(color.lab, other.lab))));
-      const tolerance = Math.floor(Math.min(DEFAULT_COLOR_TOLERANCE, nearest * .45) * 100) / 100;
-      const hex = hexOf(color.rgb), mask = yield* preparedColorMask(image, hex, tolerance, prepared, true);
-      const pixels = yield* countPreparedMaskPixels(mask);
-      chosen.push({ id:COLOR_RELIEF_IDS[index], color:hex, tolerance, strength:DEFAULT_RELIEF_STRENGTH,
-        detected:true, confidence:1, recipe:{ kind:'color', color:hex, tolerance }, mask,
-        facts:{ color:hex, coverage:pixels / Math.max(1, opaque), pixels } });
-    }
-    return { chosen, candidates:chosen, seed:palette.seed, feats:{ photo:false, busy:0, strokeFraction:0 },
-      colorSpace:'oklab-100', opaquePixels:opaque };
-  } finally { prepared?.dispose(); }
+  const found = yield* native(wasmAnalyze(rust(), image));
+  const chosen = found.colours.map(({ rgb, tolerance, pixels, mask }, index) => {
+    const hex = hexOf(rgb);
+    return { id:COLOR_RELIEF_IDS[index], color:hex, tolerance, strength:DEFAULT_RELIEF_STRENGTH,
+      detected:true, confidence:1, recipe:{ kind:'color', color:hex, tolerance }, mask,
+      facts:{ color:hex, coverage:pixels / Math.max(1, found.opaque), pixels } };
+  });
+  return { chosen, candidates:chosen, seed:found.seed, feats:{ photo:false, busy:0, strokeFraction:0 },
+    colorSpace:'oklab-100', opaquePixels:found.opaque };
 }
 
 export function* buildMapsFromPixels(work, hires, selection) {
@@ -258,36 +186,24 @@ export function* buildMapsFromPixels(work, hires, selection) {
   const out = { width, height, heightMap:new Uint8Array(count), foil:new Uint8Array(count),
     gloss:new Uint8Array(count), mask:new Uint8Array(count), preserveInk:true, foilColor:null };
   if (!choice) return out;
-  const membership = yield* colorMask(hires, choice.color, choice.tolerance);
-  Object.assign(out, yield* native(wasmPigmentMaps(rust(), membership, width, height)));
+  Object.assign(out, yield* native(wasmMaps(rust(), hires, [{ color:choice.color, tolerance:choice.tolerance }], true)));
   out.color = choice.color; out.tolerance = choice.tolerance;
   return out;
 }
 
 function* buildColorLayerMaps(image, selection) {
-  const { width, height } = image, count = width * height;
+  const { width, height } = image;
   // Canonical order makes overlapping externally supplied tolerances resolve
   // deterministically, independently of the order in which boxes were ticked.
   const layers = coverReliefLayers(selection).sort((a,b) => a.color.localeCompare(b.color));
-  // Keep the unscaled physical height in float precision. Quantizing before
-  // the per-colour strength would round two distinct coatings to one height.
-  let owners = new Uint8Array(count), baseMask = new Uint8Array(count), baseHeight = new Float32Array(count);
-  let prepared = null;
-  try {
-    prepared = yield* prepareColors(image, layers.length);
-    for (let index = 0; index < layers.length; index++) {
-      const layer = layers[index], membership = yield* preparedColorMask(image, layer.color, layer.tolerance, prepared);
-      const profile = colorReliefProfile(layer);
-      // A pixel belongs to exactly one selected pigment; contributions cannot
-      // add brightness/height or spill into another pigment on overlap.
-      ({ owners, baseMask, baseHeight } = yield* native(wasmPigmentMaps(rust(), membership, width, height,
-        { owners, baseMask, baseHeight, owner:index + 1, heightMM:profile.heightMM })));
-    }
-    // Classification is complete; composition needs only owned maps.
-    prepared?.dispose(); prepared = null;
-    return yield* composeReliefLayerPixels({ width,height,preserveInk:true,foilColor:null,
-      owners,baseMask,baseHeight,layers }, selection);
-  } finally { prepared?.dispose(); }
+  // A pixel belongs to exactly one selected pigment; contributions cannot add brightness/height or spill into
+  // another pigment on overlap. The unscaled physical height keeps float precision: quantizing before the
+  // per-colour strength would round two distinct coatings to one height.
+  const { owners, baseMask, baseHeight } = yield* native(wasmMaps(rust(), image, layers.map(layer =>
+    ({ color:layer.color, tolerance:layer.tolerance, heightMM:colorReliefProfile(layer).heightMM })), false));
+  // Classification is complete; composition needs only owned maps.
+  return yield* composeReliefLayerPixels({ width,height,preserveInk:true,foilColor:null,
+    owners,baseMask,baseHeight,layers }, selection);
 }
 
 /** Reuse the classified colour ownership while adjusting a layer's intensity.
@@ -317,16 +233,8 @@ export function* heightToNormals(maps, { gain = 1, selectionAlpha = false } = {}
  * ratio. Color masks use B=0 and leave the original ink/base finish intact.
  * Generic old map fixtures retain their foil channel and opaque alpha. */
 export function* composeMaterialMap(maps, { clearcoat = 0, roughness = .5, clearcoatRoughness = .18 } = {}) {
-  const base = clamp(clearcoat, 0, 1), foilRoughness = clamp(.3 / Math.max(.05, roughness), .2, 1);
-  const glossRoughness = clamp(.05 / Math.max(.01, roughness), 0, 1);
-  const glossCoatRoughness = clamp(.05 / Math.max(.01, clearcoatRoughness), 0, 1);
-  const profiles=maps.layers?.map(layer=>{
-    const profile=colorReliefProfile(layer);
-    return { roughness:clamp(profile.roughness/Math.max(.01,roughness),0,1),
-      clearcoatRoughness:clamp(profile.clearcoatRoughness/Math.max(.01,clearcoatRoughness),0,1) };
-  });
   return yield* native(wasmComposeMaterialMap(rust(), maps,
-    { base, foilRoughness, glossRoughness, glossCoatRoughness, profiles }));
+    needRustShelf().relief_material_options(maps.layers, clearcoat, roughness, clearcoatRoughness)));
 }
 
 /** Shaded preview, lit from the top-left, as RGBA bytes (pure; the browser
@@ -404,9 +312,7 @@ async function thumbnailOf(work, maps, run) {
   return small.toDataURL('image/jpeg', .82);
 }
 
-const pct = value => `${Math.max(1, Math.round(value * 100))}%`;
-const describe = candidate => ({ label:colorName(candidate.color),
-  description:`Zonas de este color (${pct(candidate.facts.coverage)} de la portada), con relieve y brillo` });
+const describe = candidate => needRustShelf().relief_describe(candidate);
 
 /** Find, rank and preview up to ten actual color proposals (URL or decoded
  * image). Returns fewer choices for covers with fewer supported colors. Heavy
@@ -473,8 +379,5 @@ export function reliefPlanesToRgba(maps) {
   return planes;
 }
 
-/** Pure steps the tests reach into: the original colour maths and the two
- * distance/blur kernels. */
-export const internals = { rgbToOklab, colorMask, colorName, raster,
-  *insideDistance(mask, width, height) { return yield* native(wasmInsideDistance(rust(), mask, width, height)); },
-  *boxBlur(field, width, height, radius) { return radius < 1 ? field : yield* native(wasmBoxBlur(rust(), field, width, height, radius)); } };
+/** Pure steps the tests reach into: the colour naming. */
+export const internals = { colorName, raster };

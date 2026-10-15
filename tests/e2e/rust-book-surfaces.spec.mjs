@@ -6,6 +6,7 @@ import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
 import {rustBookSurfacePixels,rustRibbonNotchPixels,rustBookWeavePixels} from '/inhouse-read/src/js/book-surface-wasm.js';
 import {clothNormals,paperNormals,ribbonNotch} from '/inhouse-read/tests/unit/helpers/reference-book-surfaces.js';
 import {bookWeave} from '/inhouse-read/tests/unit/helpers/reference-book-weave.js';
+import '/inhouse-read/tests/e2e/helpers/shelf-ready.js';
 import {paintWeave} from '/inhouse-read/src/js/spine-surface.js';
 import {createBookModel} from '/inhouse-read/src/js/book-model.js';
 import {releaseRustBookmarkBuffers} from '/inhouse-read/src/js/bookmark-wasm.js';

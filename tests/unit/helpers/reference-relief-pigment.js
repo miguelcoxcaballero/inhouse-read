@@ -1,5 +1,5 @@
 // Frozen pre-migration pigment loops; distance already used Rust in 1.7.169.
-import {wasmInsideDistance} from '../../../src/js/cover-relief-wasm.js';
+import {wasmInsideDistance} from './reference-relief-bridge.js';
 const clamp=(x,a,b)=>Math.min(b,Math.max(a,x));
 const smoothstep=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
 const toByte=value=>Math.round(clamp(value,0,1)*255);

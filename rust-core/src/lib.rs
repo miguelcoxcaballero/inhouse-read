@@ -116,6 +116,8 @@ mod shelf_occlusion;
 mod studio_scan;
 #[cfg(feature="app")]
 mod cover_seed;
+#[cfg(feature="app")]
+mod cover_relief;
 // Tables and layout of the shelf. The plant, pot and lamp tables belong to the
 // decor core (its bytes decide whether saved bakes stay valid); the cabinets,
 // the spine palette and the layout kernels belong to the app core.

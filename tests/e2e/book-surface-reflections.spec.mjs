@@ -9,6 +9,7 @@ import { createServer as createHttpServer } from 'node:http';
 const fixtureHtml = `<!doctype html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;background:#eee"><script type="module">
 import * as THREE from 'three';
+import '/inhouse-read/tests/e2e/helpers/shelf-ready.js';
 import { getBookRenderer, createBookModel, lightBookScene } from '/inhouse-read/src/js/book-model.js';
 const W = 640, H = 760, width = 180, height = 260, thickness = 44;
 const renderer = getBookRenderer();

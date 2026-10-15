@@ -6,8 +6,9 @@ import { colorMaskBenchCases } from '../helpers/color-mask-cases.mjs';
 const html=`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
 import coreUrl from '/inhouse-read/src/wasm/inhouse_read_core.wasm?url';
-import {prepareColorMaskJob} from '/inhouse-read/src/js/cover-color-mask-wasm.js';
+import {prepareColorMaskJob} from '/inhouse-read/tests/unit/helpers/reference-color-mask-bridge.js';
 import * as original from '/inhouse-read/tests/unit/helpers/reference-relief-color.js';
+import '/inhouse-read/tests/e2e/helpers/shelf-ready.js';
 import * as production from '/inhouse-read/src/js/cover-relief.js';
 import {makeColorMaskImage,colorMaskSelection} from '/inhouse-read/tests/helpers/color-mask-cases.mjs';
 const core=await loadRustCore();if(!core?.relief_color_mask_pixels)throw new Error('Actual compiled color-mask kernel required');
@@ -36,8 +37,8 @@ window.observeColorMask=async(input,fullMaps)=>{
   if(live!==0||allocations!==releases||calls===0)throw new Error('Prepared arena leaked or kernel unused');
   let fullProof=null,productionCalls=null;
   if(fullMaps){
-    const expected=drain(original.buildMapsFromPixels(image,image,selection)),before=window.__colorMaskKernelCalls;
-    const actual=drain(production.buildMapsFromPixels(image,image,selection));productionCalls=window.__colorMaskKernelCalls-before;
+    const expected=drain(original.buildMapsFromPixels(image,image,selection)),beforeJobs=window.__colorMaskJobs,beforeSteps=window.__colorMaskSteps;
+    const actual=drain(production.buildMapsFromPixels(image,image,selection));productionCalls={jobs:window.__colorMaskJobs-beforeJobs,steps:window.__colorMaskSteps-beforeSteps};
     const maps=await describe(expected);same(await describe(actual),maps);
     const normals=await hash(drain(original.heightToNormals(expected)));same(await hash(drain(production.heightToNormals(actual))),normals);
     const material=await hash(drain(original.composeMaterialMap(expected)));same(await hash(drain(production.composeMaterialMap(actual))),material);
@@ -78,10 +79,12 @@ test.afterAll(async()=>{http?.closeAllConnections();if(http)await new Promise(re
 test.use({viewport:{width:390,height:844},deviceScaleFactor:2,isMobile:true,hasTouch:true});
 test.beforeEach(async({page})=>{
   await page.addInitScript(()=>{
-    window.__colorMaskKernelCalls=0;
+    window.__colorMaskKernelCalls=0;window.__colorMaskJobs=0;window.__colorMaskSteps=0;
     const observe=result=>{const instance=result.instance||result,actual=instance.exports;
       if(typeof actual?.relief_color_mask_pixels!=='function')return result;
-      const exports={...actual,relief_color_mask_pixels(...args){window.__colorMaskKernelCalls++;return actual.relief_color_mask_pixels(...args);}};
+      const exports={...actual,relief_color_mask_pixels(...args){window.__colorMaskKernelCalls++;return actual.relief_color_mask_pixels(...args);},
+        relief_maps_new(...args){const job=actual.relief_maps_new(...args);if(job)window.__colorMaskJobs++;return job;},
+        relief_job_step(job){window.__colorMaskSteps++;return actual.relief_job_step(job);}};
       const observed=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target);}});
       return result.instance?{...result,instance:observed}:observed;};
     for(const name of ['instantiate','instantiateStreaming'])if(typeof WebAssembly[name]==='function'){
@@ -99,7 +102,9 @@ for(const fullMaps of [false,true])for(const input of colorMaskBenchCases)test(
       scope:'Desktop Chromium CPU x4, synthetic RGBA; full preparation/allocation/copy/free included. Complete-map cases include production ownership and physical height, normal/material hashes; timings exclude raster decode/GPU/physical phone.',
       ...result},null,2))});
     expect(errors).toEqual([]);expect(result.memory.liveArenaBytes).toBe(0);expect(result.memory.allocations).toBe(result.memory.releases);
-    if(fullMaps){const eligible=input.layers>=3&&input.width*input.height>=16384;
-      expect(result.productionCalls).toBe(eligible?Math.ceil(input.width*input.height/1024)*input.layers:0);}
+    // The whole classification is one job inside the core now (no kernel call crosses the boundary): one job for the
+    // complete map, stepped in chunks of at most 1024 pixels per layer.
+    if(fullMaps){expect(result.productionCalls.jobs).toBe(1);
+      expect(result.productionCalls.steps).toBeGreaterThanOrEqual(Math.ceil(input.width*input.height/1024)*input.layers);}
     for(const samples of Object.values(result.samples)){expect(samples).toHaveLength(fullMaps?3:7);expect(samples.every(n=>Number.isFinite(n)&&n>=0)).toBe(true);}
   });

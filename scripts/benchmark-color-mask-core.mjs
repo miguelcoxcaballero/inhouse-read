@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { cpus } from 'node:os';
-import { prepareColorMaskJob } from '../src/js/cover-color-mask-wasm.js';
+import { prepareColorMaskJob } from '../tests/unit/helpers/reference-color-mask-bridge.js';
 import { colorMaskBenchCases, makeColorMaskImage, colorMaskSelection } from '../tests/helpers/color-mask-cases.mjs';
 const source=await readFile(new URL('../tests/unit/helpers/reference-relief-color.js',import.meta.url),'utf8');
 const coefficients=source.slice(source.indexOf('const LINEAR_RGB ='),source.indexOf('function colorName('));

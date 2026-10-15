@@ -4,9 +4,9 @@ import {beforeAll,afterEach,it,expect,vi} from 'vitest';
 import assert from 'node:assert/strict';
 const state=vi.hoisted(()=>({core:null}));
 vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core}));
-import {rustReliefPalette} from '../../src/js/relief-palette-wasm.js';
-import {analyzePixels,internals} from '../../src/js/cover-relief.js';
-import {seedOf} from './helpers/reference-relief-color.js';
+import {rustReliefPalette} from './helpers/reference-palette-bridge.js';
+import {analyzePixels} from '../../src/js/cover-relief.js';
+import {seedOf,internals} from './helpers/reference-relief-color.js';
 import {reliefPaletteCases,makeReliefPaletteImage} from '../helpers/relief-palette-cases.mjs';
 let core;
 beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.relief_cover_seed).toBe('function');state.core=core;});
@@ -29,12 +29,13 @@ for(const input of reliefPaletteCases)it('keeps complete palette, proposals and 
  const {seed,...palette}=actual.value;assert.deepStrictEqual({value:palette,yields:actual.yields},expected);expect(seed).toBe(seedOf(image));assert.deepStrictEqual(image.data,before);
  const plain=drain(analyzePixels(image)),seeded=drain(analyzePixels(image,true));assert.deepStrictEqual(seeded,plain);
 });
-it('keeps the generic palette shape and rejects the whole analysis when the seed or palette kernel is unavailable or rejected',()=>{
- // The JavaScript seed fallback is gone: a rejected kernel is a clear error, never a second path.
+it('keeps the generic palette shape; the production analysis carries the seed of its raster and rejects the whole analysis when the job is unavailable or rejected',()=>{
+ // The seed is computed inside the analysis job now. There is no JavaScript seed fallback: a rejected job is a
+ // clear error, never a second path.
  const image=makeReliefPaletteImage(reliefPaletteCases[4]),expected=drain(analyzePixels(image));expect(expected.value.seed).toBe(seedOf(image));
  const call=vi.fn(core.relief_cover_seed);const ordinary=drain(rustReliefPalette({...core,relief_cover_seed:call},image,internals.rgbToOklab));expect(Object.keys(ordinary.value)).toEqual(['bins','opaque','colors']);expect(call).not.toHaveBeenCalled();
- for(const replacement of [undefined,()=>-1,()=>0x100000000,()=>NaN,()=>1.5,()=>{throw new WebAssembly.RuntimeError('seed trap');}]){state.core={...core,relief_cover_seed:replacement};expect(()=>drain(analyzePixels(image,true))).toThrow(/núcleo de relieve/);}
- state.core={...core,relief_palette_new:undefined};expect(()=>drain(analyzePixels(image,true))).toThrow(/núcleo de relieve/);
+ for(const [replacement,message] of [[undefined,/núcleo de relieve/],[()=>-1,/núcleo de relieve/],[()=>{throw new WebAssembly.RuntimeError('job trap');},/job trap/]]){state.core={...core,relief_job_step:replacement};expect(()=>drain(analyzePixels(image,true))).toThrow(message);}
+ state.core={...core,relief_analysis_new:undefined};expect(()=>drain(analyzePixels(image,true))).toThrow(/núcleo de relieve/);
 });
 it('owns no extra allocation and retains arena validity across memory growth and cancellation',()=>{
  const image=makeReliefPaletteImage(reliefPaletteCases[4]);let live=0,jobs=0,seeds=0;
