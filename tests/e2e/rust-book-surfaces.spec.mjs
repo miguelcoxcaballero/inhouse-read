@@ -6,6 +6,7 @@ import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
 import {rustBookSurfacePixels,rustRibbonNotchPixels,rustBookWeavePixels} from '/inhouse-read/src/js/book-surface-wasm.js';
 import {clothNormals,paperNormals,ribbonNotch} from '/inhouse-read/tests/unit/helpers/reference-book-surfaces.js';
 import {bookWeave} from '/inhouse-read/tests/unit/helpers/reference-book-weave.js';
+import '/inhouse-read/tests/e2e/helpers/shelf-ready.js';
 import {paintWeave} from '/inhouse-read/src/js/spine-surface.js';
 import {createBookModel} from '/inhouse-read/src/js/book-model.js';
 import {releaseRustBookmarkBuffers} from '/inhouse-read/src/js/bookmark-wasm.js';
@@ -61,7 +62,8 @@ window.surfaceWork={
   const rasters=[];for(const t of seen.values())rasters.push({...t,data:undefined,sha256:await hash(t.data)});
   const after={...stats},b=createBookModel({...book,id:'second'},style,180,270,40,c.toDataURL(),{eagerRelief:false});await b.userData.ready;
   const cached={...stats};a.userData.dispose();b.userData.dispose();
-  // Existing per-core bookmark geometry scratch survives model disposal by design.
+  // Existing per-core bookmark geometry scratch survives model disposal by design, and so does the one
+  // small arena of the view arithmetic (rust-core/src/book_view.rs), created by the first model.
   const retainedBookmarkScratch={...stats};releaseRustBookmarkBuffers(core);
   return {before,after,cached,rasters,retainedBookmarkScratch,memory:{...stats}};
  }
@@ -113,6 +115,7 @@ test('compiled book surfaces retain exact pixels, shared textures and bounded me
  expect(integrated.after.ribbons-integrated.before.ribbons).toBe(1);
  expect(integrated.cached.surfaces).toBe(integrated.after.surfaces);expect(integrated.cached.ribbons).toBe(integrated.after.ribbons);
  for(const r of results.filter(r=>r.kind!=='weave'))expect(integrated.rasters.map(t=>t.sha256)).toContain(r.sha256);
- expect(integrated.retainedBookmarkScratch.live).toBe(7896);
- expect(integrated.memory.live).toBe(0);expect(integrated.memory.allocations).toBe(integrated.memory.releases);expect(errors).toEqual([]);
+ expect(integrated.retainedBookmarkScratch.live-integrated.before.live).toBe(18016+2432);
+ expect(integrated.memory.live-integrated.before.live).toBe(2432);
+ expect(integrated.memory.allocations-integrated.before.allocations).toBe(integrated.memory.releases-integrated.before.releases+1);expect(errors).toEqual([]);
 });

@@ -9,6 +9,7 @@ const html=`<!doctype html><meta name="viewport" content="width=device-width,ini
 <script type="module">
 import {loadRustUI} from '/inhouse-read/src/js/rust-ui.js';
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import '/inhouse-read/tests/e2e/helpers/shelf-ready.js';
 import {bookView} from '/inhouse-read/src/js/book-model.js';
 import {bookView as referenceBookView} from '/inhouse-read/src/js/book-model.js?referenceProjection';
 const ui=await loadRustUI();await loadRustCore();if(!ui?.book_projection_bounds)throw Error('Compiled projection required');

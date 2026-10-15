@@ -15,14 +15,24 @@ const seeded = seed => () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>
 const rng = seeded(20261015);
 const pick = list => list[Math.floor(rng() * list.length)];
 const integer = (low, high) => low + Math.floor(rng() * (high - low + 1));
-const same = (actual, expected, label) => {
-  if (Array.isArray(expected)) { expect(actual.length, label).toBe(expected.length); expected.forEach((v, i) => same(actual[i], v, `${label}[${i}]`)); return; }
-  if (expected && typeof expected === 'object') {
-    for (const key of Object.keys(expected)) same(actual[key], expected[key], `${label}.${key}`);
-    return;
+// Hot-loop comparison: no assertion object per number, and the message is built only on a difference.
+function firstDifference(actual, expected, path = '') {
+  if (Array.isArray(expected)) {
+    if (!Array.isArray(actual) || actual.length !== expected.length) return `${path} length`;
+    for (let i = 0; i < expected.length; i++) { const difference = firstDifference(actual[i], expected[i], `${path}[${i}]`); if (difference) return difference; }
+    return null;
   }
-  expect(Object.is(actual, expected), `${label}: ${actual} vs ${expected}`).toBe(true);
+  if (expected && typeof expected === 'object') {
+    for (const key of Object.keys(expected)) { const difference = firstDifference(actual?.[key], expected[key], `${path}.${key}`); if (difference) return difference; }
+    return null;
+  }
+  return Object.is(actual, expected) ? null : `${path}: ${actual} vs ${expected}`;
+}
+const same = (actual, expected, label = '') => {
+  const difference = firstDifference(actual, expected);
+  if (difference) throw new Error(`${typeof label === 'function' ? label() : label} ${difference}`);
 };
+const agree = (a, b, label) => { if (!Object.is(a, b)) throw new Error(`${typeof label === 'function' ? label() : label}: ${a} vs ${b}`); };
 const odd = () => pick([NaN, Infinity, -Infinity, -0, 0, 1e300, -1e-300, undefined, null]);
 
 describe('view sizes', () => {
@@ -33,7 +43,7 @@ describe('view sizes', () => {
         viewportHeight: rng() < .1 ? odd() : pick([568, 844, 390, 800, integer(1, 3000), rng() * 900]),
         width: rng() < .1 ? odd() : pick([132, 200, 62.125, rng() * 600]), height: rng() < .1 ? odd() : pick([200, 400, 92.375, rng() * 900]),
         thickness: rng() < .1 ? odd() : pick([8.25, 40, 120, rng() * 150]) };
-      same(planBookView(view), referenceViewSizes(view), JSON.stringify(view));
+      same(planBookView(view), referenceViewSizes(view), () => JSON.stringify(view));
     }
   });
   it('tells whole physical pixels apart', () => {
@@ -81,9 +91,9 @@ describe('return frame', () => {
         scale: pose.scale, ratio: state.pixelRatio, viewportWidth: state.viewportWidth, viewportHeight: state.viewportHeight, coverOpen: state.current.coverOpen,
         closedWidth: state.closedCompactWidth, openWidth: state.compactWidth, height: state.compactHeight, motion: before.motion, native: before.native },
       () => { rustMeasurements++; return measuredBounds; });
-      expect(rustMeasurements, 'measurements').toBe(referenceMeasurements);
+      agree(rustMeasurements, referenceMeasurements, 'measurements');
       const full = reference.camera?.isFull === true;
-      expect(rust === null, JSON.stringify({ state, pose, measureOnly, measuredBounds })).toBe(full);
+      agree(rust === null, full, () => JSON.stringify({ state, pose, measureOnly, measuredBounds }));
       if (!full) same(rust, { x: reference.x, y: reference.y, width: reference.width, height: reference.height }, 'window');
       same(before.motion, state.motionFrameCapacity, 'motion reservation'); same(before.native, state.nativeMotionCapacity, 'native reservation');
       if (full) whole++; else windows++;
@@ -124,9 +134,9 @@ describe('copy rectangle', () => {
       const rust = planCopyRectangle({ viewportWidth: state.viewportWidth, viewportHeight: state.viewportHeight, ratio: state.pixelRatio,
         canvasWidth: state.canvas.width, canvasHeight: state.canvas.height, frame, scale }, () => { b++; return measuredBounds; })
         ?? { x: 0, y: 0, width: state.canvas.width, height: state.canvas.height, full: true };
-      expect(b, 'measurements').toBe(a);
-      same(rust, reference, JSON.stringify({ state, frame, scale, measuredBounds }));
-      expect(Boolean(rust.full)).toBe(Boolean(reference.full));
+      agree(b, a, 'measurements');
+      same(rust, reference, () => JSON.stringify({ state, frame, scale, measuredBounds }));
+      agree(Boolean(rust.full), Boolean(reference.full), 'whole canvas');
       if (reference.full) everything++; else rectangles++;
     }
     expect(rectangles).toBeGreaterThan(5000); expect(everything).toBeGreaterThan(5000);
@@ -149,7 +159,7 @@ describe('pose', () => {
       // A pose without a scale sets undefined (or null) on the model's scale; the core hands over NaN (or 0): the same arithmetic.
       const scaled = value => value === undefined ? NaN : value === null ? 0 : value;
       same([placed.opening, placed.withdrawal, placed.x, placed.y, placed.rotationX, placed.rotationY, placed.rotationZ, placed.scale],
-        [positioned.opening, positioned.withdrawal, ...positioned.position.slice(0, 2), ...positioned.rotation, scaled(positioned.scale)], JSON.stringify({ pose, current: state.current }));
+        [positioned.opening, positioned.withdrawal, ...positioned.position.slice(0, 2), ...positioned.rotation, scaled(positioned.scale)], () => JSON.stringify({ pose, current: state.current }));
       // draw()'s normalisation of the same pose, from the same previous state.
       const drawn = referenceBookView({ ...state, current: rustCurrent && { ...rustCurrent }, pageTheme: rustTheme }, () => []);
       const normalised = drawn.drawPose(pose);
@@ -175,7 +185,7 @@ describe('fit, reading pose', () => {
         viewportWidth: pick([320, 390, 844, 1280, rng() * 1500]), viewportHeight: pick([568, 844, 390, 800, rng() * 1500]),
         centerX: pick([0, 83.2, 195, rng() * 900]), centerY: pick([0, 150, 350, rng() * 900]) };
       if (rng() < .05) input[pick(Object.keys(input))] = odd();
-      same(planReadingBookPose(input), referencePlanReadingBookPose(input), JSON.stringify(input));
+      same(planReadingBookPose(input), referencePlanReadingBookPose(input), () => JSON.stringify(input));
       expect(Object.keys(planReadingBookPose(input))).toEqual(Object.keys(referencePlanReadingBookPose(input)));
     }
   });
