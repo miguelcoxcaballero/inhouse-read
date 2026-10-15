@@ -10,6 +10,7 @@ export async function rustCoreMock() {
   return {
     getRustCore: () => core,
     loadRustCore: () => Promise.resolve(core),
-    requireRustCore: () => Promise.resolve(core)
+    requireRustCore: () => Promise.resolve(core),
+    loadedRustCore: () => core
   }
 }

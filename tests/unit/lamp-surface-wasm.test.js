@@ -22,10 +22,15 @@ it('owns output bytes across row batches, memory growth and later calls',()=>{
  const free=vi.fn(core.free_f64);state.core={...core,free_f64:free,lamp_surface_rows(...args){core.memory.grow(1);return core.lamp_surface_rows(...args);}};
  const result=rustLampSurface('linen',40,35),copy=structuredClone(result);rustLampSurface('wood',41,39);core.memory.grow(1);exact(result,copy);exact(result,reference('linen',40,35));expect(free).toHaveBeenCalledTimes(2);
 });
-it('returns the fallback signal and frees arenas on errors',()=>{
+it('returns the refusal signal and frees arenas on errors',()=>{
  for(const engine of [null,{}, {...core,alloc_f64:()=>0},{...core,lamp_surface_rows:()=>0},{...core,lamp_surface_rows:()=>{throw Error('trap');}}]){
   const free=vi.fn(core.free_f64);state.core=engine?{...engine,free_f64:free}:null;expect(rustLampSurface('wood',8,17)).toBeUndefined();
   if(engine?.lamp_surface_rows&&engine.alloc_f64===core.alloc_f64)expect(free).toHaveBeenCalledOnce();
+ }
+});
+it('reports a lamp whose surfaces the core cannot paint instead of painting them another way',()=>{
+ for(const engine of [null,{}, {...core,alloc_f64:()=>0},{...core,lamp_surface_rows:()=>0},{...core,lamp_surface_rows:()=>{throw Error('trap');}}]){
+  state.core=engine;expect(()=>createShelfLamp({lampId:'tripod',quality:'low'})).toThrow('Las texturas de la lámpara no se pudieron calcular. Recarga la página.');
  }
 });
 it('rejects invalid dimensions and kinds before native access',()=>{

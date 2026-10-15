@@ -97,12 +97,6 @@ mod cabinet_model;
 #[cfg(feature = "decor")]
 mod lamp_surface;
 #[cfg(feature = "app")]
-mod mesh_compact;
-#[cfg(feature = "app")]
-mod metal_sheet;
-#[cfg(feature = "app")]
-mod mesh_finish;
-#[cfg(feature = "app")]
 mod book_cloth;
 
 #[cfg(feature = "app")]

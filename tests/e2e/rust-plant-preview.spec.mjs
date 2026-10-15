@@ -1,35 +1,63 @@
 import {test,expect} from '@playwright/test';
 import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
+// Real Chromium: the decor core draws the coarse first look of every plant surface (its painter on an
+// 8-pixel lattice, spread bilinearly). Actual plants are compared byte for byte with the frozen JavaScript
+// painters, and the lattice call is timed against them (alternating, medians).
 const html=`<!doctype html><script type="module">
 import {loadRustDecorCore} from '/inhouse-read/src/js/rust-decor-core.js';
-import {rustPlantPreview} from '/inhouse-read/src/js/plant-preview-wasm.js';
+import {rustPlantLattice} from '/inhouse-read/src/js/plant-lattice-wasm.js';
 import {createShelfPlant,plantSurfacesReady} from '/inhouse-read/src/js/shelf-plants.js';
+import {createShelfPlant as referencePlant,plantSurfacesReady as referenceReady} from '/inhouse-read/tests/unit/helpers/reference-shelf-plants.js';
 import {plantPreview as reference} from '/inhouse-read/tests/unit/helpers/reference-plant-preview.js';
-window.verifyPlantBytes=(w,h,lattice,pigment,data)=>{
- const expected=reference(w,h,lattice);
- if(pigment.some((v,i)=>v!==expected.pigment[i])||data.some((v,i)=>v!==expected.data[i]))throw Error('Actual plant texture bytes differ');
-};
-const core=await loadRustDecorCore();if(!core?.plant_surface_preview)throw Error('Compiled preview required');
-window.checkPlants=async()=>{
- const models=[];
- for(const [catalogId,potId] of [['monstera','muskot'],['sansevieria','gradvis'],['cactus','akerbar']])
-  models.push(createShelfPlant({catalogId,potId,seed:'rust-'+catalogId,height:240,inspectionResolution:1}));
- const actualCalls=window.plantStats.calls;await plantSurfacesReady();for(const model of models)model.userData.dispose();
- window.plantStats.compare=false;
- const samples=[];
- for(const [width,height] of [[128,128],[128,256],[256,512]]){
-  const columns=Math.ceil(width/8)+1,rows=Math.ceil(height/8)+1;let seed=3267;
-  const lattice=Float32Array.from({length:columns*rows*5},()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;});
-  const pigment=new Uint8Array(width*height*4),data=new Uint8Array(pigment.length);
-  const js=()=>reference(width,height,lattice),rust=()=>rustPlantPreview(core,width,height,columns,rows,lattice,pigment,data),times={js:[],rust:[]};
-  for(let i=0;i<5;i++){js();rust();}window.verifyPlantBytes(width,height,lattice,pigment,data);
-  for(let r=0;r<9;r++)for(const kind of r%2?['rust','js']:['js','rust']){
-   const start=performance.now();for(let i=0;i<10;i++)(kind==='js'?js:rust)();times[kind].push((performance.now()-start)/10);
-  }
-  const median=a=>[...a].sort((a,b)=>a-b)[4];samples.push({width,height,js:median(times.js),rust:median(times.rust),times});
+import {glazedPainter} from '/inhouse-read/tests/unit/helpers/reference-plant-glaze.js';
+import {terracottaPainter,galvanizedPainter} from '/inhouse-read/tests/unit/helpers/reference-plant-pottery.js';
+import {soilPainter} from '/inhouse-read/tests/unit/helpers/reference-plant-soil.js';
+import {botanicalTextures} from '/inhouse-read/tests/unit/helpers/reference-plant-foliage.js';
+const core=await loadRustDecorCore();if(!core?.plant_surface_lattice)throw Error('Compiled lattice painter required');
+const colors=hex=>[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255);
+const maps=model=>{const found=[];model.traverse(object=>{const m=object.material;if(m?.map?.image?.data)found.push(m.map.image.data,m.bumpMap.image.data);});return found;};
+function hash(x,y,seed){let h=Math.imul(x|0,0x27d4eb2d)^Math.imul(y|0,0x165667b1)^Math.imul(seed|0,0x9e3779b1);h=Math.imul(h^h>>>15,0x85ebca6b);h=Math.imul(h^h>>>13,0xc2b2ae35);return((h^h>>>16)>>>0)/4294967296;}
+const same=(a,b)=>a.length===b.length&&a.every((value,i)=>value===b[i]);
+function latticeOf(paint,width,height,repeat){
+ const columns=Math.ceil(width/8)+1,rows=Math.ceil(height/8)+1,lattice=new Float32Array(columns*rows*5),texel=[0,0,0,.5,1];
+ for(let j=0;j<rows;j++)for(let i=0;i<columns;i++){
+  const x=i*8>=width?repeat?0:width-1:i*8,y=Math.min(height-1,j*8);paint((x+.5)/width,(y+.5)/height,x,y,texel);lattice.set(texel,(j*columns+i)*5);
  }
- return {actualCalls,samples,memory:{...window.plantStats}};
+ return reference(width,height,lattice);
+}
+window.checkPlants=async()=>{
+ const models=[],originals=[],entries=[['monstera','muskot'],['sansevieria','gradvis'],['cactus','akerbar'],['fern','terracotta']];
+ for(const [catalogId,potId] of entries){
+  const entry={catalogId,potId,seed:'rust-'+catalogId,height:240,inspectionResolution:1};
+  models.push(createShelfPlant(entry));originals.push(referencePlant(entry));
+ }
+ const calls=window.plantStats.calls;
+ // First look, before any idle slice has run: identical surfaces.
+ let previews=0;
+ for(let i=0;i<models.length;i++){const a=maps(models[i]),b=maps(originals[i]);if(a.length!==b.length||a.some((data,k)=>!same(data,b[k])))throw Error('Actual plant texture bytes differ (first look) '+entries[i]);previews+=a.length;}
+ await Promise.all([plantSurfacesReady(),referenceReady()]);
+ let finals=0;
+ for(let i=0;i<models.length;i++){const a=maps(models[i]),b=maps(originals[i]);if(a.some((data,k)=>!same(data,b[k])))throw Error('Actual plant texture bytes differ (final) '+entries[i]);finals+=a.length;}
+ for(const model of [...models,...originals])model.userData.dispose();
+ const painters=[
+  ['glaze',()=>glazedPainter({glaze:'#76a89c',body:'#cfbea3',gloss:.24,speckle:.0022,crackle:.55,seed:17}),{family:0,kind:0,config:new Float64Array([...colors('#76a89c'),...colors('#cfbea3'),.24,.0022,.55,17])},true],
+  ['terracotta',()=>terracottaPainter('#a97958',53),{family:1,kind:0,config:new Float64Array([...colors('#a97958'),53])},true],
+  ['soil',()=>soilPainter('peat'),{family:2,kind:0},false],
+  ['leaf',()=>botanicalTextures('monstera'),{family:3,kind:0,config:new Float64Array([...colors('#2f6128'),hash('monstera'.length,3,11)*Math.PI*2,'monstera'.charCodeAt(0)])},false]
+ ];
+ const samples=[];
+ for(const [name,make,spec,repeat] of painters)for(const [width,height] of [[128,128],[128,256],[256,512]]){
+  const pigment=new Uint8Array(width*height*4),data=new Uint8Array(pigment.length),times={js:[],rust:[]};
+  const js=()=>latticeOf(make(),width,height,repeat),rust=()=>rustPlantLattice(core,spec,width,height,repeat,pigment,data);
+  const expected=js();rust();
+  if(!same(pigment,expected.pigment)||!same(data,expected.data))throw Error('Lattice bytes differ '+name);
+  for(let r=0;r<9;r++)for(const kind of r%2?['rust','js']:['js','rust']){
+   const start=performance.now();for(let i=0;i<5;i++)(kind==='js'?js:rust)();times[kind].push((performance.now()-start)/5);
+  }
+  const median=a=>[...a].sort((a,b)=>a-b)[4];samples.push({name,width,height,js:median(times.js),rust:median(times.rust)});
+ }
+ return {calls,previews,finals,samples,memory:{...window.plantStats}};
 };
 </script>`;
 let vite,http,url;
@@ -43,30 +71,21 @@ test.beforeAll(async()=>{
 });
 test.afterAll(async()=>{http?.closeAllConnections();if(http)await new Promise(r=>http.close(r));await vite?.close();});
 test('actual plant materials use compiled previews with identical pigment, relief and roughness',async({page},info)=>{
- test.setTimeout(90_000);
+ test.setTimeout(120_000);
  await page.addInitScript(()=>{
-  const stats=window.plantStats={calls:0,live:0,peak:0,compare:true,verified:0,mismatches:0};
+  const stats=window.plantStats={calls:0,live:0,peak:0};
   for(const name of ['instantiate','instantiateStreaming'])if(WebAssembly[name]){
    const original=WebAssembly[name];WebAssembly[name]=async function(...args){
-    const result=await original.apply(WebAssembly,args),instance=result.instance||result,core=instance.exports;if(!core.plant_surface_preview)return result;
+    const result=await original.apply(WebAssembly,args),instance=result.instance||result,core=instance.exports;if(!core.plant_surface_lattice)return result;
     const exports={...core,alloc_f64(n){const p=core.alloc_f64(n);if(p){stats.live+=n*8;stats.peak=Math.max(stats.peak,stats.live);}return p;},
-     free_f64(p,n){stats.live-=n*8;return core.free_f64(p,n);},plant_surface_preview(w,h,cols,rows,input,output){
-      stats.calls++;const lattice=stats.compare?new Float32Array(core.memory.buffer,input,cols*rows*5).slice():null;
-      const ok=core.plant_surface_preview(w,h,cols,rows,input,output);
-      if(stats.compare&&ok===1){
-       try{window.verifyPlantBytes(w,h,lattice,new Uint8Array(core.memory.buffer,output,w*h*4),new Uint8Array(core.memory.buffer,output+w*h*4,w*h*4));stats.verified++;}
-       catch(error){stats.mismatches++;throw error;}
-      }
-      return ok;
-     }};
+     free_f64(p,n){stats.live-=n*8;return core.free_f64(p,n);},plant_surface_lattice(...input){stats.calls++;return core.plant_surface_lattice(...input);}};
     return result.instance?{...result,instance:{exports}}:{exports};
    };
   }
  });
  await page.setViewportSize({width:390,height:844});const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
  await page.goto(url);await page.waitForFunction(()=>window.checkPlants);const result=await page.evaluate(()=>window.checkPlants());
- expect(result.actualCalls).toBeGreaterThanOrEqual(6);expect(result.memory.live).toBe(0);
- expect(result.memory.verified).toBe(result.actualCalls);expect(result.memory.mismatches).toBe(0);
+ expect(result.calls).toBeGreaterThanOrEqual(6);expect(result.memory.live).toBe(0);expect(result.previews).toBeGreaterThanOrEqual(12);expect(result.finals).toBeGreaterThanOrEqual(12);
  await info.attach('actual-plant-textures-and-timing',{body:JSON.stringify(result),contentType:'application/json'});
- console.log(JSON.stringify(result.samples.map(({times,...entry})=>entry)));
+ console.log(JSON.stringify(result.samples));
 });

@@ -4,7 +4,7 @@ use crate::plant_pottery::{cell,fbm};
 use crate::plant_preview::byte;
 fn smooth(a:f64,b:f64,v:f64)->f64 {let t=((v-a)/(b-a)).clamp(0.0,1.0);t*t*(3.0-2.0*t)}
 fn color(hex:u32)->[f64;3] {[(hex>>16&255)as f64/255.0,(hex>>8&255)as f64/255.0,(hex&255)as f64/255.0]}
-fn paint(kind:u32,u:f64,v:f64,x:i32,y:i32)->[f64;5] {
+pub(crate) fn paint(kind:u32,u:f64,v:f64,x:i32,y:i32)->[f64;5] {
     let grain=hash(x,y,7);
     if (u-0.5).hypot(v-0.5)>0.54 {return [0.8+grain*0.14,0.8+grain*0.14,0.8+grain*0.14,0.45+grain*0.2,0.82];}
     let damp=color(0x271c14);let mut out=[0.0;5];

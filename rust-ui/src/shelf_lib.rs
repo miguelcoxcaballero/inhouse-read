@@ -9,6 +9,19 @@ mod bookshelf_return;
 mod animation_fence;
 mod placement_preview;
 mod occlusion_table;
+#[path="../../rust-core/src/jsmath.rs"]
+mod jsmath;
+#[path="../../rust-core/src/cabinet.rs"]
+mod cabinet;
+mod earcut;
+mod three_geo;
+mod three_shape;
+mod metal_sheet;
+mod mesh_finish;
+mod mesh_compact;
+mod geo_packet;
+mod geo_probe;
+mod baggebo_model;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -17,3 +30,11 @@ pub fn shelf_abi_version() -> u32 { 1 }
 /// Diagnostic counter for ownership regressions at the browser/WASM boundary.
 #[wasm_bindgen]
 pub fn shelf_live_handles() -> u32 { wasm_bindgen::externref_heap_live_count() }
+
+/// The BAGGEBO's geometry as a packet (see `baggebo_model::template`).
+#[wasm_bindgen]
+pub fn baggebo_template() -> Vec<u8> { baggebo_model::template() }
+
+/// The 32 x 32 RGBA powder-coat grain texture of the BAGGEBO's paint.
+#[wasm_bindgen]
+pub fn baggebo_paint_texture() -> Vec<u8> { baggebo_model::paint_texture() }
