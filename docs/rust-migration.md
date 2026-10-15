@@ -1,5 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.248: plantas completas, lámparas y la decisión y orientación de sus luces en Rust (sin gemelos JS de la geometría de
+plantas y lámparas ni de los seis kernels decor correspondientes). Inventario 23740 Rust/25382 JS, **48,33 %**; no mide
+funciones terminadas. Detalle en remaining-wip-verification.md.
+
 Entrega 1.7.247: carpintería del armario, BAGGEBO completo y primeras texturas de plantas en Rust (sin gemelos JS de
 armario, BAGGEBO ni pintores de respaldo de plantas y lámparas). Inventario 21940 Rust/26412 JS, **45,38 %**; no mide
 funciones terminadas. Detalle en remaining-wip-verification.md.
