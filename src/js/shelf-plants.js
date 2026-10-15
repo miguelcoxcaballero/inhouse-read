@@ -91,13 +91,16 @@ function pump(deadline) {
     const end = Math.min(job.height, job.row + 4);
     try { paintRows(job, end); job.row = end; }
     catch (error) {
-      // The coarse first look stays as this surface's detail; the plants that wait for it are released.
+      // The coarse first look stays on the plants that already use it and they are released, but the surface is
+      // not final: it is forgotten below, so it is never saved as a finished painting and the next plant of
+      // this kind paints it again.
       console.warn('No se pudo completar el detalle de las texturas de la planta:', error);
-      job.row = job.height;
+      job.row = job.height; job.failed = true;
     }
     if (job.row < job.height) continue;
     queue.shift();
     const { base } = job;
+    if (job.failed && surfaces.get(job.key) === base) surfaces.delete(job.key);
     // One new Source version re-uploads the shared image once; every live
     // clone just needs its own version bumped to look at it again.
     base.map.source.needsUpdate = base.data.source.needsUpdate = true;
@@ -135,7 +138,7 @@ function surface(key, [width, height], repeat, spec, refresh) {
     base = { map:dataTexture(pigment, width, height, THREE.SRGBColorSpace, repeat), data:dataTexture(data, width, height, THREE.NoColorSpace, repeat),
       clones:[], waiting:[] };
     surfaces.set(key, base);
-    queue.push({ base, width, height, row:0, spec, pigment, data });
+    queue.push({ base, key, width, height, row:0, spec, pigment, data });
     if (queue.length === 1) idle(pump);
   }
   // Texture.copy() raises the shared Source's version, which would re-upload
