@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { shelfBakeHash } from '../../scripts/shelf-bake-version.mjs';
+import { shelfBakeHash, SHELF_BAKE_RUST_SOURCES } from '../../scripts/shelf-bake-version.mjs';
 let root;
 const put=(name,value)=>{const file=join(root,name);mkdirSync(dirname(file),{recursive:true});writeFileSync(file,value);};
 beforeEach(()=>{
@@ -34,4 +34,17 @@ it('follows transitive JS changes, ignores queries for file lookup and terminate
 it('still invalidates bakes when Three.js changes',()=>{
   const first=shelfBakeHash(root);put('node_modules/three/package.json',JSON.stringify({version:'0.181.0'}));
   expect(shelfBakeHash(root)).not.toBe(first);
+});
+it('follows the Rust sources of the plant geometry, not the shelf module that is built from them',()=>{
+  put('src/js/shelf-plants.js',"import '../wasm/shelf/glue.js'; import './rust-shelf.js';");
+  put('src/js/rust-shelf.js','export const shelf=1;');put('src/wasm/shelf/glue.js','export const glue=1;');put('src/wasm/shelf/module_bg.wasm',Buffer.from([1,2,3]));
+  const first=shelfBakeHash(root);
+  // the loader, its generated glue and the compiled bytes (which differ between builds of one source) are not inputs
+  put('src/js/rust-shelf.js','export const shelf=2;');put('src/wasm/shelf/glue.js','export const glue=2;');put('src/wasm/shelf/module_bg.wasm',Buffer.from([4,5,6]));
+  expect(shelfBakeHash(root)).toBe(first);
+  for(const source of SHELF_BAKE_RUST_SOURCES){
+    put(source,'fn a() {}');const base=shelfBakeHash(root);
+    expect(base).not.toBe(first);put(source,'fn b() {}');expect(shelfBakeHash(root)).not.toBe(base);put(source,'fn a() {}\n');const lf=shelfBakeHash(root);put(source,'fn a() {}\r\n');expect(shelfBakeHash(root)).toBe(lf);
+    rmSync(join(root,source));expect(shelfBakeHash(root)).toBe(first);
+  }
 });

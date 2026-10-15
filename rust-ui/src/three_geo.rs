@@ -90,6 +90,7 @@ impl Geo {
         } else {
             for i in (0..self.count()).step_by(3) {
                 let cb = face(&self.position, i, i + 1, i + 2);
+                // a triangle soup stores the face normal itself, a negative zero included
                 for v in 0..3 { put(&mut self.normal, i + v, cb); }
             }
         }
@@ -344,3 +345,138 @@ pub fn cylinder(radius_top: f64, radius_bottom: f64, height: f64, radial: usize,
 
 /// The Uint32 rule of `BufferGeometry#setIndex(array)`: any value of 65535 or more.
 pub fn needs_uint32(index: &[u32]) -> bool { index.iter().any(|&i| i >= 65535) }
+
+/// `LatheGeometry(points, segments)` for the full turn (`phiStart` 0, `phiLength` 2 pi). The last point keeps
+/// the previous segment's raw (unnormalised) normal, as three does.
+pub fn lathe(points: &[[f64; 2]], segments: usize) -> Geo {
+    let phi_length = jsmath::clamp(PI * 2.0, 0.0, PI * 2.0);
+    let n = points.len();
+    let inverse_segments = 1.0 / segments as f64;
+    let mut init_normals: Vec<f64> = Vec::with_capacity(n * 3);
+    let mut prev_normal = [0.0f64; 3];
+    for j in 0..n {
+        if j == 0 {
+            let (dx, dy) = (points[1][0] - points[0][0], points[1][1] - points[0][1]);
+            let normal = [dy * 1.0, -dx, dy * 0.0];
+            prev_normal = normal;
+            init_normals.extend(jsmath::normalize(normal));
+        } else if j == n - 1 {
+            init_normals.extend(prev_normal);
+        } else {
+            let (dx, dy) = (points[j + 1][0] - points[j][0], points[j + 1][1] - points[j][1]);
+            let normal = [dy * 1.0, -dx, dy * 0.0];
+            let cur_normal = normal;
+            init_normals.extend(jsmath::normalize([normal[0] + prev_normal[0], normal[1] + prev_normal[1], normal[2] + prev_normal[2]]));
+            prev_normal = cur_normal;
+        }
+    }
+    let (mut vertices, mut normals, mut uvs, mut indices): (Vec<f64>, Vec<f64>, Vec<f64>, Vec<u32>) = (vec![], vec![], vec![], vec![]);
+    for i in 0..=segments {
+        let phi = 0.0 + i as f64 * inverse_segments * phi_length;
+        let (sin, cos) = (Math::sin(phi), Math::cos(phi));
+        for j in 0..n {
+            vertices.extend([points[j][0] * sin, points[j][1], points[j][0] * cos]);
+            uvs.extend([i as f64 / segments as f64, j as f64 / (n - 1) as f64]);
+            normals.extend([init_normals[3 * j] * sin, init_normals[3 * j + 1], init_normals[3 * j] * cos]);
+        }
+    }
+    for i in 0..segments {
+        for j in 0..n - 1 {
+            let base = (j + i * n) as u32;
+            let (a, b, c, d) = (base, base + n as u32, base + n as u32 + 1, base + 1);
+            indices.extend([a, b, d, c, d, b]);
+        }
+    }
+    Geo { position: f32s(&vertices), normal: f32s(&normals), uv: f32s(&uvs), color: Vec::new(), index: Some(indices) }
+}
+
+/// `TorusGeometry(radius, tube, radialSegments, tubularSegments)` for the full turn.
+pub fn torus(radius: f64, tube: f64, radial: usize, tubular: usize) -> Geo {
+    let arc = PI * 2.0;
+    let (mut vertices, mut normals, mut uvs, mut indices): (Vec<f64>, Vec<f64>, Vec<f64>, Vec<u32>) = (vec![], vec![], vec![], vec![]);
+    for j in 0..=radial {
+        for i in 0..=tubular {
+            let u = i as f64 / tubular as f64 * arc;
+            let v = j as f64 / radial as f64 * PI * 2.0;
+            let vertex = [(radius + tube * Math::cos(v)) * Math::cos(u), (radius + tube * Math::cos(v)) * Math::sin(u), tube * Math::sin(v)];
+            vertices.extend(vertex);
+            let center = [radius * Math::cos(u), radius * Math::sin(u), 0.0];
+            normals.extend(jsmath::normalize(jsmath::sub(vertex, center)));
+            uvs.push(i as f64 / tubular as f64);
+            uvs.push(j as f64 / radial as f64);
+        }
+    }
+    for j in 1..=radial {
+        for i in 1..=tubular {
+            let a = ((tubular + 1) * j + i - 1) as u32;
+            let b = ((tubular + 1) * (j - 1) + i - 1) as u32;
+            let c = ((tubular + 1) * (j - 1) + i) as u32;
+            let d = ((tubular + 1) * j + i) as u32;
+            indices.extend([a, b, d, b, c, d]);
+        }
+    }
+    Geo { position: f32s(&vertices), normal: f32s(&normals), uv: f32s(&uvs), color: Vec::new(), index: Some(indices) }
+}
+
+/// `SphereGeometry(radius, widthSegments, heightSegments)` for the whole sphere.
+pub fn sphere(radius: f64, width_segments: usize, height_segments: usize) -> Geo {
+    let width_segments = width_segments.max(3);
+    let height_segments = height_segments.max(2);
+    let (theta_start, theta_length, phi_start, phi_length) = (0.0, PI, 0.0, PI * 2.0);
+    let theta_end = jsmath::jmin(theta_start + theta_length, PI);
+    let (mut vertices, mut normals, mut uvs, mut indices): (Vec<f64>, Vec<f64>, Vec<f64>, Vec<u32>) = (vec![], vec![], vec![], vec![]);
+    let mut index = 0u32;
+    let mut grid: Vec<Vec<u32>> = Vec::new();
+    for iy in 0..=height_segments {
+        let mut row = Vec::new();
+        let v = iy as f64 / height_segments as f64;
+        let mut u_offset = 0.0;
+        if iy == 0 && theta_start == 0.0 { u_offset = 0.5 / width_segments as f64; }
+        else if iy == height_segments && theta_end == PI { u_offset = -0.5 / width_segments as f64; }
+        for ix in 0..=width_segments {
+            let u = ix as f64 / width_segments as f64;
+            let vertex = [-radius * Math::cos(phi_start + u * phi_length) * Math::sin(theta_start + v * theta_length),
+                radius * Math::cos(theta_start + v * theta_length),
+                radius * Math::sin(phi_start + u * phi_length) * Math::sin(theta_start + v * theta_length)];
+            vertices.extend(vertex);
+            normals.extend(jsmath::normalize(vertex));
+            uvs.extend([u + u_offset, 1.0 - v]);
+            row.push(index);
+            index += 1;
+        }
+        grid.push(row);
+    }
+    for iy in 0..height_segments {
+        for ix in 0..width_segments {
+            let (a, b, c, d) = (grid[iy][ix + 1], grid[iy][ix], grid[iy + 1][ix], grid[iy + 1][ix + 1]);
+            if iy != 0 || theta_start > 0.0 { indices.extend([a, b, d]); }
+            if iy != height_segments - 1 || theta_end < PI { indices.extend([b, c, d]); }
+        }
+    }
+    Geo { position: f32s(&vertices), normal: f32s(&normals), uv: f32s(&uvs), color: Vec::new(), index: Some(indices) }
+}
+
+/// `IcosahedronGeometry(radius, 0)` without its UVs (every caller replaces them): non-indexed, flat normals.
+pub fn icosahedron(radius: f64) -> Geo {
+    let t = (1.0 + 5.0f64.sqrt()) / 2.0;
+    let vertices: [f64; 36] = [-1.0, t, 0.0, 1.0, t, 0.0, -1.0, -t, 0.0, 1.0, -t, 0.0, 0.0, -1.0, t, 0.0, 1.0, t, 0.0, -1.0, -t, 0.0, 1.0, -t,
+        t, 0.0, -1.0, t, 0.0, 1.0, -t, 0.0, -1.0, -t, 0.0, 1.0];
+    let indices: [usize; 60] = [0, 11, 5, 0, 5, 1, 0, 1, 7, 0, 7, 10, 0, 10, 11, 1, 5, 9, 5, 11, 4, 11, 10, 2, 10, 7, 6, 7, 1, 8,
+        3, 9, 4, 3, 4, 2, 3, 2, 6, 3, 6, 8, 3, 8, 9, 4, 9, 5, 2, 4, 11, 6, 2, 10, 8, 6, 7, 9, 8, 1];
+    let lerp = |a: Vec3, b: Vec3, alpha: f64| -> Vec3 { [a[0] + (b[0] - a[0]) * alpha, a[1] + (b[1] - a[1]) * alpha, a[2] + (b[2] - a[2]) * alpha] };
+    let mut buffer: Vec<f64> = Vec::with_capacity(180);
+    for face in indices.chunks_exact(3) {
+        let at = |k: usize| -> Vec3 { [vertices[face[k] * 3], vertices[face[k] * 3 + 1], vertices[face[k] * 3 + 2]] };
+        let (a, b, c) = (at(0), at(1), at(2));
+        // subdivideFace(a, b, c, 0): the first triangle of the one-column lattice
+        let aj0 = lerp(a, c, 0.0);
+        let bj0 = lerp(b, c, 0.0);
+        let v00 = lerp(aj0, bj0, 0.0);
+        let v01 = lerp(aj0, bj0, 1.0);
+        let v10 = lerp(a, c, 1.0);
+        for p in [v01, v10, v00] { buffer.extend(jsmath::normalize(p).map(|x| x * radius)); }
+    }
+    let mut geo = Geo { position: f32s(&buffer), normal: Vec::new(), uv: Vec::new(), color: Vec::new(), index: None };
+    geo.compute_vertex_normals();
+    geo
+}

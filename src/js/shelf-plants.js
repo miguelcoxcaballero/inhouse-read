@@ -1,37 +1,25 @@
 import * as THREE from 'three';
 import { getRustDecorCore } from './rust-decor-core.js';
+import { needRustShelf } from './rust-shelf.js';
+import { openPacket } from './geo-packet.js';
 import { createPlantPaintGate } from './plant-paint-gate.js';
-import { rustPlantLeafGeometry } from './plant-leaf-wasm.js';
-import { rustPlantCactusGeometry } from './plant-cactus-wasm.js';
-import { rustPlantPotSurface } from './plant-pot-wasm.js';
-import { rustPlantIvyGeometry } from './plant-ivy-wasm.js';
-import { rustPlantSubdivide } from './plant-subdivide-wasm.js';
-import { rustPlantMonsteraGeometry } from './plant-monstera-wasm.js';
 import { rustPlantLattice } from './plant-lattice-wasm.js';
 import { rustPlantGlazeRows } from './plant-glaze-wasm.js';
 import { rustPlantPotteryRows } from './plant-pottery-wasm.js';
 import { rustPlantSoilRows } from './plant-soil-wasm.js';
 import { rustPlantFoliageRows } from './plant-foliage-wasm.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { getCatalogPot, getPotColor } from './plant-catalog-data.js';
 import { resolveCatalogPlant } from './plant-records.js';
 import { plantDimensions, POT_SOIL_FRACTION } from './plant-dimensions.js';
 import { addShelfBakeSource, loadedShelfBakes, savedSurface, scheduleShelfBakeWrite } from './shelf-bake-cache.js';
 
-const UP = new THREE.Vector3(0, 1, 0);
-const clamp01 = value => Math.min(1, Math.max(0, value));
-const smoothstep = (a, b, value) => { const t = clamp01((value - a) / (b - a)); return t * t * (3 - 2 * t); };
 const srgb = hex => { const n = parseInt(hex.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
 
-function randomFor(seed) {
-  let state = 2166136261;
-  for (const char of String(seed)) state = Math.imul(state ^ char.charCodeAt(0), 16777619);
-  return () => {
-    state += 0x6d2b79f5;
-    let value = Math.imul(state ^ state >>> 15, state | 1);
-    value ^= value + Math.imul(value ^ value >>> 7, value | 61);
-    return ((value ^ value >>> 14) >>> 0) / 4294967296;
-  };
+// The UTF-16 units of a plant's seed: its random numbers are the shelf module's (`plant_random`, `plant_model`).
+function seedUnits(seed) {
+  const text = String(seed), units = new Uint16Array(text.length);
+  for (let index = 0; index < units.length; index++) units[index] = text.charCodeAt(index);
+  return units;
 }
 
 function variantFor(value) {
@@ -160,7 +148,7 @@ function surface(key, [width, height], repeat, spec, refresh) {
 // Sansevieria blades sample one of four narrow strips (32 x 256 texels each):
 // the texel density then matches a sword leaf, so the mip chosen for a blade
 // only a few pixels wide still resolves its cross bands along the length.
-const SNAKE_STRIPS = 4, SNAKE_INSET = .04;
+const SNAKE_STRIPS = 4;
 
 function sansevieriaTextures(refresh, quality = 1) {
   return surface(`leaf:upright:${quality}`, [SNAKE_STRIPS * 32 * quality, 256 * quality], false, { family:3, kind:3, config:new Float64Array(5) }, refresh);
@@ -177,7 +165,7 @@ function botanicalTextures(variant, refresh, quality = 1) {
 
 // Texture rows along a pot's profile: foot ring, outer wall, lip, visible
 // inner wall, then everything hidden below the soil.
-const FOOT = .07, RIM = .6, SOIL = .74;
+const FOOT = .07, RIM = .6;
 
 const glazeSpec = ({ glaze, body, gloss, speckle, crackle, seed }) => ({ family:0, kind:0,
   config:new Float64Array([...srgb(glaze), ...srgb(body), gloss, speckle, crackle, seed]) });
@@ -194,395 +182,10 @@ const POT_FINISHES = {
   akerbar:{ painter:color => galvanizedSpec(41,color), material:{ metalness:.85, bumpScale:.3 } },
 };
 
-function potProfile(potId) {
-  if (potId === 'muskot') {
-    // Broad lower horizontal bands, as on the real white MUSKOT.
-    const profile = [[.76,0],[.80,.025]];
-    for (let i = 0; i <= 20; i++) {
-      const y = .04 + i / 20 * .54;
-      profile.push([.81 + y * .20 + .019 * Math.sin(i * Math.PI / 2), y]);
-    }
-    return [...profile, [.975,.90],[.994,.955],[.998,.984],[.986,.999],[.963,.998],[.949,.979],[.936,.94],[.922,.84],[0,.84]];
-  }
-  if (potId === 'gradvis') return [[.53,0],[.64,.025],[.76,.08],[.86,.16],[.93,.27],[.97,.39],[.99,.54],[1,.95],[.997,.985],[.982,1],[.955,.998],[.942,.975],[.935,.84],[0,.84]];
-  if (potId === 'akerbar') return [[.78,0],[.81,.015],[.81,.035],[.785,.048],[.79,.085],[.97,.95],[1,.971],[1.018,.99],[1,1.011],[.98,1.014],[.96,1],[.957,.983],[.955,.95],[.948,.84],[0,.84]];
-  // Terracotta: tapered body under a thick, rounded collar.
-  return [[.68,0],[.715,.012],[.735,.05],[.895,.785],[.93,.80],[.985,.815],[1.005,.84],[1.012,.90],[1.008,.965],[.992,.992],[.965,1],[.935,.994],[.918,.965],[.912,.9],[.905,.84],[0,.84]];
-}
-
-function potGeometry(potId, radius, height, soilFraction) {
-  const rawProfile = potProfile(potId), fullHeight = Math.max(...rawProfile.map(([,y]) => y));
-  const profile = rawProfile.map(([r,y]) => [r,y/fullHeight]), n = profile.length, fluted = potId === 'gradvis';
-  // `radius` is the pot's real outer radius: its widest point (a rolled rim, or
-  // the crest of a rib) reaches exactly that, whatever the profile's own units.
-  radius /= Math.max(...profile.map(([r]) => r)) + (fluted ? .018 : 0);
-  const segments = fluted ? 96 : potId === 'muskot' ? 40 : 48;
-  const geometry = new THREE.LatheGeometry(profile.map(([r,y]) => new THREE.Vector2(r * radius, y * height)), segments);
-  const acceleratedSoil = rustPlantPotSurface(getRustDecorCore(), geometry, potId, profile, segments, radius, height, soilFraction);
-  if (acceleratedSoil !== null) return { geometry, soilRadius:acceleratedSoil, radius };
-  const s = [0];
-  for (let j = 1; j < n; j++) s.push(s[j - 1] + Math.hypot((profile[j][0] - profile[j - 1][0]) * radius, (profile[j][1] - profile[j - 1][1]) * height));
-  let top = 0;
-  for (let j = 1; j < n; j++) if (profile[j][1] > profile[top][1]) top = j;
-  const cross = (start, end, y) => {
-    for (let j = start; j < end; j++) {
-      const [ra, ya] = profile[j], [rb, yb] = profile[j + 1];
-      if (ya !== yb && (ya - y) * (yb - y) <= 0) { const t = (y - ya) / (yb - ya); return { s:s[j] + (s[j + 1] - s[j]) * t, r:ra + (rb - ra) * t }; }
-    }
-    return { s:s[end], r:profile[end][0] };
-  };
-  // Arc length anchors keep the unglazed foot, lip and soil line in the same
-  // texture rows whatever the pot's proportions.
-  const foot = cross(0, top, .04), soil = cross(top, n - 1, soilFraction);
-  const anchors = [[0,0],[foot.s,FOOT],[s[top],RIM],[soil.s,SOIL],[s[n - 1],1]];
-  const rowFor = value => {
-    for (let k = 1; k < anchors.length; k++) if (value <= anchors[k][0] || k === anchors.length - 1) {
-      const [s0,v0] = anchors[k - 1], [s1,v1] = anchors[k];
-      return v0 + (v1 - v0) * (s1 > s0 ? clamp01((value - s0) / (s1 - s0)) : 0);
-    }
-    return 1;
-  };
-  const uv = geometry.attributes.uv, position = geometry.attributes.position, colors = new Float32Array(position.count * 3).fill(1);
-  const lip = profile[top][1];
-  for (let i = 0; i <= segments; i++) for (let j = 0; j < n; j++) {
-    const index = i * n + j, [r, y] = profile[j];
-    uv.setY(index, rowFor(s[j]));
-    let tone = 1;
-    // The inside of the pot falls into shadow towards the soil.
-    if (j > top) tone = y < soilFraction - .01 ? .42 : 1 - .45 * smoothstep(0, 1, (lip - y) / (lip - soilFraction));
-    else if (potId === 'muskot' && j > 0 && j < top) tone += THREE.MathUtils.clamp((r - (profile[j - 1][0] + profile[j + 1][0]) / 2) * 5, -.09, .02);
-    if (fluted && j < top) {
-      const x = position.getX(index), z = position.getZ(index), px = Math.hypot(x, z), rib = -Math.cos(Math.atan2(x, z) * 32);
-      // Rounded vertical ribs fade into the foot and stop below the rim.
-      const fade = Math.sin(Math.min(1, y * 7) * Math.PI / 2) * THREE.MathUtils.clamp((.97 - y) * 14, 0, 1);
-      const offset = rib * radius * .018 * fade;
-      if (px) position.setXYZ(index, x / px * (px + offset), position.getY(index), z / px * (px + offset));
-      tone *= 1 + Math.min(0, rib) * .07 * fade;
-    }
-    colors[index * 3] = colors[index * 3 + 1] = colors[index * 3 + 2] = tone;
-  }
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  if (fluted) {
-    geometry.computeVertexNormals();
-    // Weld the lathe seam so the first rib is not shaded as a hard edge.
-    const normal = geometry.attributes.normal, a = new THREE.Vector3(), b = new THREE.Vector3();
-    for (let j = 0; j < n; j++) {
-      a.fromBufferAttribute(normal, j).add(b.fromBufferAttribute(normal, segments * n + j)).normalize();
-      normal.setXYZ(j, a.x, a.y, a.z); normal.setXYZ(segments * n + j, a.x, a.y, a.z);
-    }
-  }
-  return { geometry, soilRadius:soil.r * radius, radius };
-}
-
 const soilSpec = kind => ({ family:2, kind:kind === 'grit' ? 1 : 0 });
-
-function soilGeometry(radius, y, random, roots, kind) {
-  // A shallow mound meets the pot wall in a darker moist edge; stems sink into
-  // soft shadowed collars. Pebbles, bark and perlite join the same draw.
-  const segments = 32, rings = 6, positions = [0, y + radius * .035, 0], uv = [.5, .5], indices = [];
-  for (let ring = 1; ring <= rings; ring++) for (let i = 0; i < segments; i++) {
-    const angle = i / segments * Math.PI * 2, f = ring / rings;
-    const lift = ring === rings ? radius * .014 : radius * (.035 * (1 - f * f) + (random() - .5) * .028);
-    positions.push(Math.cos(angle) * radius * f, y + lift, Math.sin(angle) * radius * f);
-    uv.push(.5 + Math.cos(angle) * f / 2, .5 + Math.sin(angle) * f / 2);
-  }
-  for (let i = 0; i < segments; i++) indices.push(0, 1 + (i + 1) % segments, 1 + i);
-  for (let ring = 1; ring < rings; ring++) for (let i = 0; i < segments; i++) {
-    const a = 1 + (ring - 1) * segments + i, b = 1 + (ring - 1) * segments + (i + 1) % segments;
-    indices.push(a, b, b + segments, a, b + segments, a + segments);
-  }
-  const colors = [];
-  for (let k = 0; k < positions.length; k += 3) {
-    const x = positions[k], z = positions[k + 2];
-    let tone = 1 - .5 * smoothstep(.72, 1, Math.hypot(x, z) / radius);
-    for (const [rx, rz, rr] of roots) tone *= 1 - .38 * Math.exp(-((Math.hypot(x - rx, z - rz) / (rr * 2.4 + radius * .06)) ** 2));
-    colors.push(tone, tone, tone);
-  }
-  const bed = new THREE.BufferGeometry();
-  bed.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  bed.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  bed.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  bed.setIndex(indices); bed.computeVertexNormals();
-  const parts = [bed.toNonIndexed()]; bed.dispose();
-  const matrix = new THREE.Matrix4(), rotation = new THREE.Quaternion(), euler = new THREE.Euler(), colour = new THREE.Color();
-  const palette = kind === 'grit' ? ['#a39c90','#c2b59d','#7f6d5c','#dcd8cf'] : null;
-  for (let k = 0, pieces = kind === 'grit' ? 12 : 5; k < pieces; k++) {
-    const chip = !palette && k < 3, perlite = !palette && !chip;
-    const size = radius * (chip ? .085 + random() * .05 : perlite ? .03 + random() * .022 : .055 + random() * .045);
-    const piece = new THREE.IcosahedronGeometry(size, 0);
-    const angle = random() * Math.PI * 2, r = radius * (.22 + .62 * Math.sqrt(random()));
-    euler.set((random() - .5) * .5, random() * Math.PI * 2, (random() - .5) * .5); rotation.setFromEuler(euler);
-    matrix.compose(new THREE.Vector3(Math.cos(angle) * r, y + radius * .035 * (1 - (r / radius) ** 2) + size * (chip ? .04 : .12), Math.sin(angle) * r),
-      rotation, chip ? new THREE.Vector3(1.5, .3, .9) : new THREE.Vector3(1, .62, .85));
-    piece.applyMatrix4(matrix);
-    colour.set(palette ? palette[Math.floor(random() * palette.length)] : chip ? '#6b4630' : '#ebe8e0').multiplyScalar(.82 + random() * .3);
-    const count = piece.attributes.position.count;
-    piece.setAttribute('color', new THREE.Float32BufferAttribute(Array.from({ length:count }, () => [colour.r, colour.g, colour.b]).flat(), 3));
-    piece.setAttribute('uv', new THREE.Float32BufferAttribute(new Array(count * 2).fill(.965), 2));
-    parts.push(piece);
-  }
-  const geometry = mergeGeometries(parts, false);
-  for (const part of parts) part.dispose();
-  return geometry;
-}
-
-function bladePoint(f, u, length, width, variant, curve, twist) {
-  const profile = variant === 'upright' ? Math.pow(Math.max(0, 1 - f * f), .68) * (.72 + .28 * Math.sin(f * Math.PI))
-    // Echeveria leaves are spatulate: narrow at the base, broad high up, then a short point.
-    : variant === 'succulent' ? (f < .74 ? .42 + .58 * Math.sin(f / .74 * Math.PI / 2) : Math.pow(Math.cos((f - .74) / .26 * Math.PI / 2), .55))
-    : Math.pow(Math.max(0,Math.sin(Math.PI * Math.pow(f, variant === 'leafy' || variant === 'ivy' ? .56 : .75))), variant === 'zz' ? .45 : .65);
-  const lobes = variant === 'monstera' ? 1 - .54 * Math.pow(Math.sin(f * Math.PI * 5), 8)
-    : variant === 'ivy' ? .53 + .47 * Math.pow(Math.cos(f * Math.PI * 3.3 - .2),2)
-    : variant === 'fern' ? .92 + .08 * Math.cos(f * Math.PI * 14) : 1;
-  const asymmetry = 1 + .055 * Math.sin(f * 7 + twist * 4) * Math.sign(u);
-  const x = width * .5 * profile * lobes * u * asymmetry;
-  const bow = Math.sin(f * Math.PI * .85) * length * curve;
-  // Sansevieria swords are channelled: a stiff U that flattens toward the tip.
-  const ridge = variant === 'upright' ? width * .15 * (1 - f * .6) * u * u
-    : width * (variant === 'succulent' ? .075 : .065) * Math.pow(Math.abs(u), variant === 'succulent' ? 2 : 1.5);
-  const edgeCurl = variant === 'succulent' || variant === 'upright' ? 0 : width * .022 * Math.pow(Math.abs(u), 3) * Math.sin(f * 19 + twist * 9) * Math.sin(f * Math.PI);
-  const z = bow + ridge + edgeCurl, angle = twist * f;
-  return new THREE.Vector3(x * Math.cos(angle) + z * Math.sin(angle), f * length, z * Math.cos(angle) - x * Math.sin(angle));
-}
-
-function leafGeometry({ length, width, variant, curve, twist, random, detailed = false }) {
-  const rows = variant === 'palm' ? 4 : variant === 'fern' ? 3 : variant === 'zz' ? 6 : variant === 'succulent' && detailed ? 10 : variant === 'ivy' ? 8 : variant === 'upright' ? 16 : variant === 'monstera' ? 14 : 12;
-  const columns = variant === 'palm' || variant === 'fern' ? 2 : variant === 'monstera' ? 10 : variant === 'leafy' || variant === 'upright' || (variant === 'succulent' && detailed) ? 6 : 4;
-  // Small palm and fern leaflets are single sheets: a lit double-sided sheet
-  // reads identically and leaves budget for many more real pinnae.
-  const thick = variant === 'succulent' || (detailed && variant !== 'palm' && variant !== 'fern');
-  const thickness = thick ? width * (variant === 'succulent' ? (detailed ? .15 : .07) : .008) : 0;
-  const positions = [], colors = [], uv = [], indices = [];
-  const inset = .012;
-  // Each leaf has its own age: new growth is lighter and yellower, older
-  // leaves darker and bluer.
-  const tint = random() * .08, hue = (random() - .5) * .1, strip = Math.min(SNAKE_STRIPS - 1, Math.floor(tint / .08 * SNAKE_STRIPS));
-  const core = getRustDecorCore();
-  const accelerated = core && rustPlantLeafGeometry(core, { length, width, variant, curve, twist, tint, hue, detailed });
-  if (accelerated) return accelerated;
-  for (let side = 0; side <= Number(thick); side++) for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
-    const f = row / rows, u = col / columns * 2 - 1;
-    const point = bladePoint(f, u, length, width, variant, curve, twist);
-    const flesh = variant === 'succulent' ? thickness * Math.pow(Math.sin(f * Math.PI), .65) * Math.sqrt(Math.max(0, 1 - u*u)) * (1.25 - f * .45) : thickness;
-    positions.push(point.x, point.y, point.z + (variant === 'succulent' ? (side ? -1 : 1) * flesh : -side * flesh));
-    uv.push(variant === 'upright' ? (strip + SNAKE_INSET + col / columns * (1 - SNAKE_INSET * 2)) / SNAKE_STRIPS : inset + col / columns * (1 - inset * 2), inset + f * (1 - inset * 2));
-    const edge = Math.pow(Math.abs(u), 2), ridge = 1 - Math.abs(u);
-    // Echeveria tips blush pink where the wax is thinnest.
-    const blush = variant === 'succulent' ? smoothstep(.78, 1, f) * (.6 + edge * .4) : 0;
-    if (detailed) colors.push(.78 + ridge * .12 + tint + side * .04 + hue * .8 + blush * .34, .85 + ridge * .10 + tint + side * .025 + hue * .15 - blush * .12,
-      .73 + ridge * .12 + tint + side * .055 - hue * .5 + blush * .04);
-    else colors.push(.23 + ridge * .11 + tint + edge * .04, .36 + ridge * .15 + tint, .16 + ridge * .075 + tint * .5);
-  }
-  const count = (rows + 1) * (columns + 1);
-  for (let row = 0; row < rows; row++) for (let col = 0; col < columns; col++) {
-    const f = (row + .5) / rows, u = Math.abs((col + .5) / columns * 2 - 1);
-    // Genuine gaps between the rib and lobes remain part of the geometry.
-    if (variant === 'monstera' && u > .15 && u < .48 && [ .32, .54, .74 ].some(center => Math.abs(f - center) < .045)) continue;
-    const a = row * (columns + 1) + col, b = a + 1, c = a + columns + 1, d = c + 1;
-    indices.push(a, b, d, a, d, c);
-    if (thick) indices.push(a + count, d + count, b + count, a + count, c + count, d + count);
-  }
-  if (thick) {
-    const edge = (a, b) => indices.push(a, a + count, b + count, a, b + count, b);
-    for (let row = 0; row < rows; row++) { edge(row * (columns + 1), (row + 1) * (columns + 1)); edge((row + 1) * (columns + 1) + columns, row * (columns + 1) + columns); }
-    for (let col = 0; col < columns; col++) { edge(col + 1, col); edge(rows * (columns + 1) + col, rows * (columns + 1) + col + 1); }
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(positions.length).fill(0), 3));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  geometry.setIndex(indices); geometry.computeVertexNormals();
-  return geometry;
-}
-
-function ivyLeafGeometry(length,width,curve,random) {
-  const core = getRustDecorCore();
-  if (typeof core?.plant_ivy_mesh === 'function') {
-    const samples = [random(), random(), random()];
-    const accelerated = rustPlantIvyGeometry(core, { length, width, curve, tint:samples[0]*.045, asymmetry:(samples[1]-.5)*.12, hue:(samples[2]-.5)*.08 });
-    if (accelerated) return accelerated;
-    let next = 0;
-    random = () => samples[next++];
-  }
-  // Five broad lobes with shallow sinuses and a notched, cordate base form the
-  // real silhouette rather than an alpha card. A centre fan and one middle
-  // ring cup the thin blade; it is a single double-sided sheet, which reads
-  // the same on the shelf and leaves budget for a much fuller plant.
-  const outline = [[0,.05],[-.14,-.01],[-.30,.10],[-.50,.30],[-.37,.43],[-.45,.63],[-.19,.66],[0,1],[.19,.66],[.45,.63],[.37,.43],[.50,.30],[.30,.10],[.14,-.01]];
-  const positions = [], uv = [], colors = [], indices = [], segments = outline.length;
-  const center = new THREE.Vector3(0,length*.44,length*curve*.75), tint = random()*.045, asymmetry = (random()-.5)*.12, hue = (random()-.5)*.08;
-  const vertex = (x, y, f) => {
-    const px = x*width*f*(1+asymmetry*Math.sign(x)), py = center.y + (y*length-center.y)*f;
-    positions.push(px,py,center.z + Math.abs(x)*width*.055*f + Math.sin(y*Math.PI)*length*curve*.2*f);
-    uv.push(.5+px/width,Math.max(0,py/length)); colors.push(.86+tint+hue*.8,.92+tint+hue*.15,.83+tint-hue*.5);
-  };
-  vertex(0, .44, 0);
-  for (const f of [.5, 1]) for (const [x,y] of outline) vertex(x, y, f);
-  for (let j = 0; j < segments; j++) {
-    const next = (j+1)%segments, a = 1+j, b = 1+next, c = a+segments, d = b+segments;
-    indices.push(0,b,a, a,b,d, a,d,c);
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-  geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
-  geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
-  geometry.setIndex(indices); geometry.computeVertexNormals(); return geometry;
-}
-
-function subdivideSurface(surface) {
-  if (rustPlantSubdivide(getRustDecorCore(), surface)) return surface;
-  // Add shared interior vertices before bending: silhouette-only triangulation
-  // otherwise leaves large flat facets across the broad Monstera blade.
-  const positions = [...surface.attributes.position.array], indices = [], midpoints = new Map();
-  const midpoint = (a,b) => {
-    const key = a < b ? `${a}:${b}` : `${b}:${a}`;
-    if (!midpoints.has(key)) {
-      midpoints.set(key,positions.length/3);
-      for (let axis = 0; axis < 3; axis++) positions.push((positions[a*3+axis]+positions[b*3+axis])/2);
-    }
-    return midpoints.get(key);
-  };
-  const source = surface.index.array;
-  for (let i = 0; i < source.length; i += 3) {
-    const a = source[i], b = source[i+1], c = source[i+2];
-    const ab = midpoint(a,b), bc = midpoint(b,c), ca = midpoint(c,a);
-    indices.push(a,ab,ca,ab,b,bc,ca,bc,c,ab,bc,ca);
-  }
-  surface.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-  surface.setIndex(indices); return surface;
-}
-
-function monsteraLeafGeometry(length,width,curve,random) {
-  // Cordate base, rounded lobes and deep curved slits. Two pairs of closed
-  // fenestrations are actual holes through both surfaces of the lamina.
-  const shape = new THREE.Shape();
-  shape.moveTo(0,.12);
-  shape.bezierCurveTo(-.14,-.02,-.45,.005,-.50,.19);
-  shape.quadraticCurveTo(-.55,.28,-.50,.37);
-  shape.bezierCurveTo(-.43,.37,-.30,.31,-.22,.33);
-  shape.quadraticCurveTo(-.27,.40,-.46,.45);
-  shape.quadraticCurveTo(-.47,.50,-.42,.57);
-  shape.bezierCurveTo(-.32,.57,-.18,.49,-.13,.53);
-  shape.quadraticCurveTo(-.22,.63,-.35,.66);
-  shape.quadraticCurveTo(-.31,.72,-.27,.78);
-  shape.quadraticCurveTo(-.17,.70,-.10,.66);
-  shape.quadraticCurveTo(-.14,.78,-.22,.85);
-  shape.quadraticCurveTo(-.10,.94,0,1);
-  shape.quadraticCurveTo(.10,.94,.22,.85);
-  shape.quadraticCurveTo(.14,.78,.10,.66);
-  shape.quadraticCurveTo(.17,.70,.27,.78);
-  shape.quadraticCurveTo(.31,.72,.35,.66);
-  shape.quadraticCurveTo(.22,.63,.13,.53);
-  shape.bezierCurveTo(.18,.49,.32,.57,.42,.57);
-  shape.quadraticCurveTo(.47,.50,.46,.45);
-  shape.quadraticCurveTo(.27,.40,.22,.33);
-  shape.bezierCurveTo(.30,.31,.43,.37,.50,.37);
-  shape.quadraticCurveTo(.55,.28,.50,.19);
-  shape.bezierCurveTo(.45,.005,.14,-.02,0,.12);
-  for (const side of [-1,1]) for (const [x,y,rx,ry] of [[.19,.24,.042,.065],[.095,.43,.030,.062]]) {
-    const hole = new THREE.Path(); hole.absellipse(side*x,y,rx,ry,0,Math.PI*2,true,side*-.30); shape.holes.push(hole);
-  }
-  const surface = subdivideSurface(new THREE.ShapeGeometry(shape,5)), source = surface.attributes.position, count = source.count;
-  const tint = random()*.035, twist = (random()-.5)*.16, hue = (random()-.5)*.07;
-  const accelerated = rustPlantMonsteraGeometry(getRustDecorCore(), { length, width, curve, tint, twist, hue, surface });
-  if (accelerated) { surface.dispose(); return accelerated; }
-  const positions = [], uv = [], colors = [], indices = [], edges = new Map();
-  for (let side = 0; side < 2; side++) for (let i = 0; i < count; i++) {
-    const x = source.getX(i), y = source.getY(i);
-    positions.push(x*width*(1+twist*Math.sign(x)),(y-.12)*length,Math.sin(y*Math.PI)*length*curve + x*x*width*.15 + x*width*twist*y - side*width*.009);
-    uv.push(.5+x,y); colors.push(.85+tint+side*.04+hue*.8,.93+tint+side*.025+hue*.15,.81+tint+side*.055-hue*.5);
-  }
-  const edge = (a,b) => {
-    const key = a < b ? `${a}:${b}` : `${b}:${a}`;
-    if (edges.has(key)) edges.delete(key); else edges.set(key,[a,b]);
-  };
-  const src = surface.index.array;
-  for (let i = 0; i < src.length; i += 3) {
-    const a = src[i],b = src[i+1],c = src[i+2];
-    indices.push(a,b,c,a+count,c+count,b+count); edge(a,b); edge(b,c); edge(c,a);
-  }
-  for (const [a,b] of edges.values()) indices.push(a,a+count,b+count,a,b+count,b);
-  surface.dispose();
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-  geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
-  geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
-  geometry.setIndex(indices); geometry.computeVertexNormals(); geometry.userData.fenestrations = 4;
-  return geometry;
-}
-
-function cactusCap(f) {
-  const end = f < .15 ? f / .15 - 1 : f > .85 ? (f - .85) / .15 : 0;
-  return Math.sqrt(Math.max(0, 1 - end * end));
-}
-
-function cactusGeometry(length, radius, bend, random) {
-  const core = getRustDecorCore();
-  if (typeof core?.plant_cactus_mesh === 'function') {
-    const samples = Float64Array.from({ length:627 }, () => random());
-    const accelerated = rustPlantCactusGeometry(core, { length, radius, bend, samples });
-    if (accelerated) return accelerated;
-    let next = 0;
-    random = () => samples[next++];
-  }
-  const positions = [], colors = [], uv = [], indices = [], rows = 18, columns = 32;
-  for (let row = 0; row <= rows; row++) for (let col = 0; col <= columns; col++) {
-    const f = row / rows, angle = col / columns * Math.PI * 2;
-    const cap = f < .15 ? 1 : cactusCap(f);
-    const ridge = .87 + .13 * Math.cos(angle * 8), r = radius * cap * ridge;
-    positions.push(Math.cos(angle) * r + bend * f * f, length * f, Math.sin(angle) * r);
-    // Older tissue near the soil corks slightly; the crown is fresher.
-    const green = .30 + .07 * Math.cos(angle * 8) + random() * .025, cork = smoothstep(.12, 0, f) * .35, fresh = smoothstep(.75, 1, f) * .06;
-    colors.push(green * (.68 + cork * .5) + fresh * .4, green * (1 - cork * .25) + fresh, green * (.60 - cork * .1) + fresh * .2); uv.push(col / columns, f);
-    if (row < rows && col < columns) {
-      const a = row * (columns + 1) + col, b = a + 1, c = a + columns + 1, d = c + 1;
-      indices.push(a, d, b, a, c, d);
-    }
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  geometry.setIndex(indices); geometry.computeVertexNormals();
-  return geometry;
-}
-
-function consolidateParts(content, mesh, geometries) {
-  // Botanical complexity is built as individual parts, then consolidated by
-  // material. Hundreds of fern pinnae still require only a handful of draws.
-  const parts = content.children.map(object => object.name);
-  const batches = new Map();
-  for (const object of [...content.children]) {
-    if (!object.isMesh || object.name === 'ceramic-pot' || object.name === 'leaf-0') continue;
-    const objects = batches.get(object.material) || []; objects.push(object); batches.set(object.material,objects);
-  }
-  for (const [material,objects] of batches) {
-    if (objects.length < 2) continue;
-    // Parts are baked in place: their geometry is discarded after merging.
-    for (const object of objects) {
-      object.updateMatrix(); object.geometry.applyMatrix4(object.matrix);
-      object.position.set(0, 0, 0); object.quaternion.identity(); object.scale.set(1, 1, 1);
-    }
-    const merged = mergeGeometries(objects.map(object => object.geometry),false);
-    if (!merged) continue;
-    for (const object of objects) {
-      object.geometry.dispose(); geometries.delete(object.geometry); content.remove(object);
-    }
-    const batch = mesh(merged,material,`${objects[0].name.split('-')[0]}-batch`);
-    batch.userData.parts = objects.map(object => object.name);
-  }
-  return parts;
-}
 
 const cactusMaterial = () => new THREE.MeshStandardMaterial({ color:0xffffff, vertexColors:true, roughness:.8 });
 const needleMaterial = () => new THREE.LineBasicMaterial({ color:'#d9cda9', transparent:true, opacity:.8 });
-
-// Stem colours run from the older, browner base to fresh growth at the tip.
-const STEM_TONES = { stem:['#4b5a2f','#6a8a3c'], woody:['#5a4630','#5d7336'], zz:['#2f4027','#4b6a2b'],
-  palm:['#46602a','#627f38'], fern:['#4a5a2a','#6b8a3a'], petiole:['#536d2f','#739449'], vein:['#7f9955','#91a866'],
-  // Ivy's wiry stems and petioles stay dark and purplish-green.
-  ivy:['#4a3a2c','#4c5a31'] };
 
 /** Scene units per millimetre of a plant shown without a shelf (the catalogue preview). */
 const PREVIEW_SCALE = .5;
@@ -590,38 +193,16 @@ const PREVIEW_SCALE = .5;
 // A bake is the finished plant content as plain data: every object in its
 // creation order (ids decide the draw order of equal sort keys), its parent
 // and place among siblings, transform, material role and geometry arrays.
+// The Rust shelf module builds it (rust-ui/src/plant_model.rs); a saved one is read back the same way.
 const ROLES = ['clay', 'soil', 'leaf', 'stem', 'mineral', 'green', 'needles'];
 const KINDS = ['mesh', 'lines', 'group'];
 
-function bakeGeometry(geometry) {
-  const attributes = {};
-  for (const [name, attribute] of Object.entries(geometry.attributes)) {
-    if (!attribute.isBufferAttribute || attribute.isInterleavedBufferAttribute) return null;
-    attributes[name] = [attribute.array, attribute.itemSize, attribute.normalized];
-  }
-  if (Object.keys(geometry.morphAttributes).length) return null;
-  const box = geometry.boundingBox;
-  return { type:geometry.type, attributes, index:geometry.index?.array ?? null,
-    groups:geometry.groups.map(({ start, count, materialIndex }) => [start, count, materialIndex]),
-    userData:JSON.parse(JSON.stringify(geometry.userData)), box:box ? [...box.min.toArray(), ...box.max.toArray()] : null };
-}
-
-function bakeContent(content, roleOf, parts) {
-  const objects = [];
-  content.traverse(object => { if (object !== content) objects.push(object); });
-  objects.sort((a, b) => a.id - b.id);
-  const order = new Map(objects.map((object, index) => [object, index])), baked = [];
-  for (const object of objects) {
-    const kind = object.isMesh ? 'mesh' : object.isLineSegments ? 'lines' : object.isGroup ? 'group' : null;
-    const role = kind === 'group' ? null : roleOf.get(object.material);
-    const geometry = kind === 'group' ? null : bakeGeometry(object.geometry);
-    if (!kind || (kind !== 'group' && (!role || !geometry))) return null;
-    baked.push({ name:object.name, kind, role, geometry, parent:object.parent === content ? -1 : order.get(object.parent),
-      place:object.parent.children.indexOf(object), position:object.position.toArray(), quaternion:object.quaternion.toArray(),
-      rotation:[object.rotation.x, object.rotation.y, object.rotation.z, object.rotation.order], scale:object.scale.toArray(),
-      castShadow:object.castShadow, receiveShadow:object.receiveShadow, userData:JSON.parse(JSON.stringify(object.userData)) });
-  }
-  return { parts:[...parts], objects:baked };
+/** The bake of a freshly made plant, from the packet the module returns: arrays are copied out of it. */
+function unpackBake(bytes) {
+  const packet = openPacket(bytes), { parts, objects } = packet.header;
+  return { parts, objects:objects.map(({ geometry, rotation, ...object }) => ({ ...object, rotation:[...rotation, 'XYZ'],
+    geometry:geometry ? { type:geometry.type, attributes:Object.fromEntries(geometry.attributes.map(([name, size, kind, at, length]) => [name, [packet.copy(kind, at, length), size, false]])),
+      index:geometry.index && packet.copy(geometry.index[0], geometry.index[1], geometry.index[2]), groups:geometry.groups, userData:geometry.userData, box:geometry.box } : null })) };
 }
 
 const isTriple = value => Array.isArray(value) && value.length === 3 && value.every(Number.isFinite);
@@ -719,6 +300,9 @@ addShelfBakeSource({ collect:shelfPlantBakeRecord, settled:plantSurfacesReady })
  * Sizes are the real IKEA ones (plant-dimensions.js): only `entry.height`,
  * the scene's height for that plant, sets the scale, so a width or height
  * saved by an older version cannot distort the pot or the foliage.
+ * The plant's geometry (pot, foliage, soil, merged by material and fitted to
+ * its envelope) is drawn by the Rust shelf module as a bake; this function
+ * makes the materials and the objects from it.
  */
 export function createShelfPlant(entry, { persist = false } = {}) {
   const quality = entry.inspectionResolution ? 2 : 1;
@@ -731,24 +315,20 @@ export function createShelfPlant(entry, { persist = false } = {}) {
   // The canopy and the pot share one mm scale, including the pot's outer rim.
   const width = real.canopy * unit;
   const detailed = Boolean(catalogPlant || potId || ['palm','fern','ivy','zz'].includes(variant));
-  const random = randomFor(seed), group = new THREE.Group(), content = new THREE.Group();
+  const group = new THREE.Group(), content = new THREE.Group();
   content.position.y = -height / 2; group.add(content);
-  const textures = new Set(), materials = new Set(), geometries = new Set(), roots = [];
+  const textures = new Set(), materials = new Set(), geometries = new Set();
   let disposed = false;
   // Surfaces still being painted redraw the shelf once their detail is in.
   const refresh = () => { if (!disposed) group.userData.invalidate?.(); };
-  const mesh = (geometry, material, name) => {
-    geometries.add(geometry); materials.add(material);
-    const object = new THREE.Mesh(geometry, material); object.name = name;
-    object.castShadow = true; object.receiveShadow = true; content.add(object); return object;
-  };
   const own = maps => { for (const texture of Object.values(maps)) textures.add(texture); return maps; };
   const radius = real.potDiameter / 2 * unit, potHeight = real.potHeight * unit;
-  const soilFraction = POT_SOIL_FRACTION, soilY = potHeight * soilFraction, sink = width * .012, above = real.foliageHeight * unit;
-  const growthHeight = real.referenceHeight * unit;
+  const soilFraction = POT_SOIL_FRACTION, soilY = potHeight * soilFraction;
   const clays = ['#a97958', '#b18b6c', '#bcad94', '#826d60'];
   let potColor = getPotColor(potId,entry.potColorId);
-  const clayColor = potId ? potColor.hex : clays[Math.floor(random() * clays.length)];
+  // The plant's own random numbers: a plant without a pot picks its clay first, every pot is turned by the next one.
+  const shelf = needRustShelf(), units = seedUnits(seed), drawn = shelf.plant_random(units, potId ? 1 : 2);
+  const clayColor = potId ? potColor.hex : clays[Math.floor(drawn[0] * clays.length)];
   const finish = POT_FINISHES[potModelId] ?? { painter:() => terracottaSpec(clayColor, 53), material:{ bumpScale:.4 } };
   const potKey = (level, color = potColor) => `pot:${potId}:${potId ? color.hex : clayColor}:${level}`;
   const potSurface = (level, notify, color = potColor) => {
@@ -759,7 +339,7 @@ export function createShelfPlant(entry, { persist = false } = {}) {
   const potMaps = own(potSurface(quality, refresh));
   // Texels stay roughly square on the outer wall, whatever the pot proportions.
   potMaps.map.repeat.x = potMaps.data.repeat.x = Math.max(1, Math.round(Math.PI * 4 * radius * (RIM - FOOT) / potHeight));
-  potMaps.map.offset.x = potMaps.data.offset.x = random();
+  potMaps.map.offset.x = potMaps.data.offset.x = drawn[potId ? 0 : 1];
   const { bumpScale, ...finishOptions } = finish.material;
   const clay = new THREE.MeshPhysicalMaterial({ map:potMaps.map, roughnessMap:potMaps.data, bumpMap:potMaps.data, bumpScale,
     vertexColors:true, roughness:1, metalness:0, clearcoat:0, clearcoatRoughness:.3, ...finishOptions });
@@ -767,28 +347,6 @@ export function createShelfPlant(entry, { persist = false } = {}) {
   // bake: its meshes depend on none of the colours or surface levels.
   const bakeKey = persist ? JSON.stringify([catalogPlant.id, variant, potId, String(seed), height]) : null;
   const baked = bakeKey ? shelfBake(bakeKey) : null;
-  const pot = baked ? null : potGeometry(potModelId, radius, potHeight, soilFraction);
-  if (pot) mesh(pot.geometry, clay, 'ceramic-pot');
-  if (pot && potId === 'muskotblomma') {
-    const profile = [[0,0],[1.13,0],[1.17,.025],[1.19,.075],[1.18,.14],[1.155,.172],[1.12,.17],[1.09,.12],[1.07,.07],[.9,.067],[.74,.066],[0,.065]];
-    const saucer = new THREE.LatheGeometry(profile.map(([r,y]) => new THREE.Vector2(radius * r / 1.19,potHeight * y)),40);
-    const uv = saucer.attributes.uv, tones = [];
-    for (let i = 0; i < uv.count; i++) {
-      const j = i % profile.length;
-      uv.setY(i, FOOT + .02 + j / (profile.length - 1) * .3);
-      // Contact shadow where the pot foot stands in the dish.
-      const tone = j >= profile.length - 3 ? [.7, .5, .45][j - profile.length + 3] : 1;
-      tones.push(tone, tone, tone);
-    }
-    saucer.setAttribute('color', new THREE.Float32BufferAttribute(tones, 3));
-    mesh(saucer,clay,'terracotta-saucer');
-  }
-  if (pot && potId === 'akerbar') {
-    const seamGeometry = new THREE.CylinderGeometry(width*.0015,width*.0015,potHeight*.87,5);
-    seamGeometry.setAttribute('color', new THREE.Float32BufferAttribute(new Array(seamGeometry.attributes.position.count * 3).fill(.86), 3));
-    const seam = mesh(seamGeometry,clay,'steel-folded-seam');
-    seam.position.set(0,potHeight*.48,-pot.radius*.878); seam.rotation.x = -.16;
-  }
   const mineral = new THREE.MeshStandardMaterial({ color:'#b7ae9c', roughness:1 });
   const stemMaterial = new THREE.MeshStandardMaterial({ color:0xffffff, vertexColors:true, roughness:.72 });
   const leafSurface = (level, notify) => botanicalTextures(variant, notify, level);
@@ -801,51 +359,6 @@ export function createShelfPlant(entry, { persist = false } = {}) {
     side:THREE.DoubleSide, alphaTest:0, alphaToCoverage:false, specularIntensity:variant === 'ivy' ? .1 : .6,
     roughness:variant === 'zz' ? .55 : variant === 'ivy' ? .66 : variant === 'succulent' ? .88 : .85, metalness:0,
     clearcoat:variant === 'zz' ? .32 : variant === 'ivy' ? .1 : variant === 'succulent' ? .035 : .12, clearcoatRoughness:variant === 'ivy' ? .3 : .48 });
-  const stem = (path, r, name, { tubular = 8, radial = 4, tone = 'stem', taper = [1, 1] } = {}) => {
-    const curve = Array.isArray(path) ? new THREE.CatmullRomCurve3(path) : path;
-    const geometry = new THREE.TubeGeometry(curve, tubular, r, radial, false);
-    const position = geometry.attributes.position, colors = new Float32Array(position.count * 3);
-    const [from, to] = STEM_TONES[tone].map(hex => new THREE.Color(hex)), colour = new THREE.Color(), centre = new THREE.Vector3();
-    for (let i = 0; i <= tubular; i++) {
-      const f = i / tubular, scale = taper[0] + (taper[1] - taper[0]) * f;
-      curve.getPointAt(f, centre); colour.copy(from).lerp(to, Math.min(1, f * 1.6));
-      for (let j = 0; j <= radial; j++) {
-        const k = i * (radial + 1) + j;
-        if (scale !== 1) position.setXYZ(k, centre.x + (position.getX(k) - centre.x) * scale, centre.y + (position.getY(k) - centre.y) * scale, centre.z + (position.getZ(k) - centre.z) * scale);
-        colors[k * 3] = colour.r; colors[k * 3 + 1] = colour.g; colors[k * 3 + 2] = colour.b;
-      }
-    }
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    const first = curve.getPointAt(0);
-    // Only stems that enter the soil root the plant (not petioles on hanging vines).
-    if (first.y <= soilY + 1e-6 && Math.hypot(first.x, first.z) < radius * .9) roots.push([first.x, first.z, r * taper[0]]);
-    return mesh(geometry, stemMaterial, name);
-  };
-  const blade = (position, direction, length, leafWidth, angle, curve, twist, index, facing = null) => {
-    const parameters = { length, width:leafWidth, variant, curve, twist, random, detailed };
-    const geometry = variant === 'ivy' ? ivyLeafGeometry(length,leafWidth,curve,random)
-      : catalogPlant && variant === 'monstera' ? monsteraLeafGeometry(length,leafWidth,curve,random) : leafGeometry(parameters);
-    const leaf = mesh(geometry, leafMaterial, `leaf-${index}`), axis = direction.clone().normalize();
-    leaf.position.copy(position);
-    leaf.quaternion.setFromUnitVectors(UP, axis);
-    let roll = angle;
-    if (facing) {
-      // Turn the lamina about its own midrib until it faces the light.
-      const target = facing.clone().projectOnPlane(axis);
-      if (target.lengthSq() > 1e-8) roll += Math.atan2(target.dot(new THREE.Vector3(1,0,0).applyQuaternion(leaf.quaternion)), target.dot(new THREE.Vector3(0,0,1).applyQuaternion(leaf.quaternion)));
-    }
-    leaf.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(UP, roll));
-    if (position.y <= soilY && Math.hypot(position.x, position.z) < radius * .9) roots.push([position.x, position.z, leafWidth * .3]);
-    if (variant === 'monstera' || variant === 'leafy') {
-      // The raised midrib follows the lamina it sits on, from the notch to
-      // just short of the tip (the catalog Monstera blade has its own shape).
-      const rib = width * .0015, carved = catalogPlant && variant === 'monstera';
-      const along = f => carved ? new THREE.Vector3(0, f * .78 * length, Math.sin((.12 + f * .78) * Math.PI) * length * curve + rib * .5)
-        : bladePoint(f, 0, length, leafWidth, variant, curve, twist);
-      stem([0,.2,.43,.67,.9].map(f => along(f).applyQuaternion(leaf.quaternion).add(position)), rib, `leaf-vein-${index}`, { tubular:6, tone:'vein', taper:[1.3,.5] });
-    }
-    return leaf;
-  };
   let green = null, needles = null;
   if (baked) {
     // The generator creates these materials here, in this order.
@@ -854,216 +367,7 @@ export function createShelfPlant(entry, { persist = false } = {}) {
     if (roles.has('needles')) needles = needleMaterial();
   } else if (variant === 'cactus') {
     green = cactusMaterial();
-    const spikes = [], columns = [ {x:0,z:0,length:growthHeight * .71,radius:width * .12},
-      {x:-width*.16,z:width*.03,length:growthHeight*.47,radius:width*.085},
-      {x:width*.165,z:-width*.055,length:growthHeight*.36,radius:width*.083} ];
-    for (let index = 0; index < columns.length; index++) {
-      const column = columns[index], bend = (random() - .5) * width * .09, base = soilY - column.length * .06;
-      // The column enters the grit at full girth instead of resting on a rounded foot.
-      const trunk = mesh(cactusGeometry(column.length, column.radius, bend, random), green, `cactus-column-${index}`);
-      trunk.position.set(column.x, base, column.z); roots.push([column.x, column.z, column.radius]);
-      for (let row = 1; row < 7; row++) for (let ridge = 0; ridge < 8; ridge++) {
-        const f = row / 8, angle = ridge / 8 * Math.PI * 2, radiusAt = column.radius * cactusCap(f);
-        const p = new THREE.Vector3(column.x + Math.cos(angle) * radiusAt + bend * f * f, base + column.length * f, column.z + Math.sin(angle) * radiusAt);
-        const areoleGeometry = new THREE.SphereGeometry(width*.0065,4,3);
-        const areole = mesh(areoleGeometry.toNonIndexed(),mineral,`cactus-areole-${index}-${row}-${ridge}`);
-        areoleGeometry.dispose();
-        areole.position.copy(p); areole.scale.set(1,.8,1);
-        for (const tilt of [-1,-.45,0,.45,1]) {
-          const tip = p.clone().add(new THREE.Vector3(Math.cos(angle) * width * .023, width * .018 * tilt, Math.sin(angle) * width * .023));
-          spikes.push(...p.toArray(), ...tip.toArray());
-        }
-      }
-    }
-    const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.Float32BufferAttribute(spikes, 3));
     needles = needleMaterial();
-    const lines = new THREE.LineSegments(geometry, needles); lines.name = 'cactus-areoles'; content.add(lines);
-    geometries.add(geometry); materials.add(needles);
-  } else if (variant === 'upright') {
-    for (let i = 0; i < 8; i++) {
-      const angle = i * 2.39996, spread = width * (.045 + (i % 3) * .028);
-      const position = new THREE.Vector3(Math.cos(angle) * spread, soilY - sink, Math.sin(angle) * spread);
-      const direction = new THREE.Vector3(Math.cos(angle) * (.06 + (i % 3) * .035), 1, Math.sin(angle) * .055);
-      blade(position, direction, growthHeight * (i === 0 ? .74 : .50 + random() * .21), width * (catalogPlant ? .29 + random()*.075 : .24 + random() * .055), catalogPlant ? (i%3-1)*.38 : angle * .38,
-        .035 + random() * .03, (random() - .5) * .22, i);
-    }
-  } else if (variant === 'succulent') {
-    const count = catalogPlant ? 27 : 9;
-    // An Echeveria rosette in four tiers, sized to the pot: flat outer leaves
-    // rest over the lip, inner ones close into a tight cone. Only a very tall
-    // envelope lifts it on an aged, woody stem.
-    const leaf = Math.min(radius * 1.55, above * .75, width * .45);
-    const crown = catalogPlant ? soilY + Math.max((potHeight - soilY) * .75, Math.min(above * .4, above - leaf * 1.85)) : soilY;
-    if (catalogPlant) stem([new THREE.Vector3(0, soilY - sink, 0), new THREE.Vector3(width * .012, (soilY + crown) / 2, 0), new THREE.Vector3(0, crown, 0)],
-      width * .034, 'succulent-stem', { tubular:4, radial:6, tone:'woody', taper:[1.15,.85] });
-    for (let i = 0; i < count; i++) {
-      const tier = catalogPlant ? (i < 12 ? 0 : i < 20 ? 1 : i < 25 ? 2 : 3) : 0;
-      const angle = i * 2.39996, ring = catalogPlant ? [.95,.72,.42,.2][tier] : i < 5 ? .55 : .22;
-      const direction = new THREE.Vector3(Math.cos(angle) * ring,catalogPlant ? [.4,.85,1.6,3.2][tier] : .65 + (i % 3) * .10,Math.sin(angle) * ring);
-      const size = catalogPlant ? .92 + random() * .16 : 1;
-      // Each fleshy leaf keeps its concave upper face turned to the sky.
-      blade(new THREE.Vector3(Math.cos(angle)*width*.02,crown + (catalogPlant ? tier*leaf*.1 : 0),Math.sin(angle)*width*.02), direction,
-        catalogPlant ? leaf * [1,.92,.8,.62][tier] * size : growthHeight * (i < 5 ? .58 : .51),
-        catalogPlant ? leaf * [.62,.58,.5,.42][tier] * size : width * (.22 + random()*.035),
-        catalogPlant ? 0 : angle,catalogPlant ? .05 : .09,(random()-.5)*.16,i,catalogPlant ? UP : null);
-    }
-  } else if (variant === 'palm') {
-    const fronds = 10, pairs = 11;
-    let index = 0;
-    for (let i = 0; i < fronds; i++) {
-      const angle = i * 2.39996 + random() * .25;
-      const radial = new THREE.Vector3(Math.cos(angle),0,Math.sin(angle));
-      const lateral = new THREE.Vector3(-radial.z,0,radial.x);
-      const root = radial.clone().multiplyScalar(width * .035); root.y = soilY - sink;
-      const reach = width * .34 * (.72 + random() * .28);
-      const apex = above * (.4 + (i % 4)*.15 + random()*.05);
-      const curve = new THREE.CatmullRomCurve3([
-        root,
-        root.clone().add(radial.clone().multiplyScalar(reach*.16)).add(new THREE.Vector3(0,apex*.61,0)),
-        root.clone().add(radial.clone().multiplyScalar(reach*.57)).add(new THREE.Vector3(0,apex,0)),
-        root.clone().add(radial.clone().multiplyScalar(reach)).add(new THREE.Vector3(0,apex*.59,0)),
-      ]);
-      stem(curve,width*.0042,`palm-rachis-${i}`,{ tubular:12, radial:5, tone:'palm', taper:[1.25,.45] });
-      for (let p = 0; p < pairs; p++) {
-        const f = .21 + p / (pairs-1) * .71;
-        const at = curve.getPoint(f), taper = Math.pow(Math.sin((.14 + p / (pairs-1)*.79)*Math.PI),.60), size = .88 + random() * .24;
-        for (const side of [-1,1]) {
-          const direction = lateral.clone().multiplyScalar(side*.74).add(radial.clone().multiplyScalar(.38));
-          direction.y = -.17 - p / pairs * .27;
-          blade(at,direction,growthHeight * .225 * taper * size,width * .030 * taper,side*.18,.13,(random()-.5)*.12,index++);
-        }
-      }
-      blade(curve.getPoint(.90),curve.getTangent(.92),growthHeight*.075,width*.026,0,.065,0,index++);
-    }
-  } else if (variant === 'fern') {
-    // Nephrolepis: a full crown of arching fronds, the young ones upright in
-    // the centre, each carrying dense alternate pinnae that face the light.
-    const fronds = 18, pairs = 18, sky = new THREE.Vector3(0,1,.35);
-    let index = 0;
-    for (let i = 0; i < fronds; i++) {
-      const young = i < 4, angle = i * 2.39996 + random() * .3;
-      const radial = new THREE.Vector3(Math.cos(angle),0,Math.sin(angle));
-      const root = radial.clone().multiplyScalar(width * .03); root.y = soilY - sink;
-      const reach = width * (young ? .17 : .38) * (.8 + random() * .25);
-      const apex = above * (young ? .78 + random() * .1 : .46 + random() * .2);
-      const drop = young ? apex * .9 : apex * (.25 + random() * .35);
-      const curve = new THREE.CatmullRomCurve3([
-        root,
-        root.clone().add(radial.clone().multiplyScalar(reach * .12)).add(new THREE.Vector3(0,apex * .6,0)),
-        root.clone().add(radial.clone().multiplyScalar(reach * .55)).add(new THREE.Vector3(0,apex,0)),
-        root.clone().add(radial.clone().multiplyScalar(reach)).add(new THREE.Vector3(0,drop,0)),
-      ]);
-      stem(curve,width*.0036,`fern-rachis-${i}`,{ tubular:14, radial:3, tone:'fern', taper:[1.2,.35] });
-      for (let p = 0; p < pairs; p++) {
-        const f = .1 + p / (pairs - 1) * .86, taper = Math.pow(Math.sin((.1 + p / (pairs - 1) * .86) * Math.PI), .55);
-        const tangent = curve.getTangentAt(f), side = new THREE.Vector3().crossVectors(tangent, UP).normalize();
-        if (side.lengthSq() < .5) side.copy(radial).cross(UP).normalize();
-        for (const hand of [-1,1]) {
-          const at = curve.getPointAt(Math.min(1, f + (hand > 0 ? .012 : 0)));
-          const direction = side.clone().multiplyScalar(hand * .88).add(tangent.clone().multiplyScalar(.4)); direction.y -= .05;
-          blade(at,direction,growthHeight * .105 * taper * (.88 + random() * .24),width * .03 * taper,0,.06,(random()-.5)*.2,index++,sky);
-        }
-      }
-      blade(curve.getPointAt(.97),curve.getTangentAt(.97),growthHeight*.05,width*.02,0,.05,0,index++,sky);
-    }
-  } else if (variant === 'zz') {
-    let index = 0;
-    for (let i = 0; i < 6; i++) {
-      const angle = i * 2.39996, radial = new THREE.Vector3(Math.cos(angle),0,Math.sin(angle));
-      const sideAxis = new THREE.Vector3(-radial.z,0,radial.x);
-      const root = radial.clone().multiplyScalar(width*.065); root.y = soilY - sink;
-      const length = growthHeight * (.49 + random() * .22);
-      const endpoint = root.clone().add(radial.clone().multiplyScalar(width*(.08+random()*.12))).add(new THREE.Vector3(0,length,0));
-      const curve = new THREE.CatmullRomCurve3([root,root.clone().lerp(endpoint,.50).add(radial.clone().multiplyScalar(-width*.04)),endpoint]);
-      // Zamioculcas petioles swell into a bulbous base at the soil.
-      stem(curve,width*.011,`zamioculcas-stem-${i}`,{ tubular:12, radial:6, tone:'zz', taper:[1.45,.7] });
-      for (let pair = 0; pair < 5; pair++) for (const side of [-1,1]) {
-        const f = .28 + pair*.135, at = curve.getPoint(f);
-        const axis = sideAxis.clone().multiplyScalar(side*.66).add(radial.clone().multiplyScalar(.24)).add(new THREE.Vector3(0,.61,0));
-        const size = (1 - pair*.07) * (.92 + random() * .16);
-        blade(at,axis,growthHeight*.17*size,width*.15*size,side*.2,.07,(random()-.5)*.15,index++);
-      }
-      blade(curve.getPoint(.94),new THREE.Vector3(radial.x*.3,1,radial.z*.3),growthHeight*.12,width*.12,0,.05,0,index++);
-    }
-  } else if (variant === 'ivy') {
-    // Hedera as it grows in a pot: a dense mound of short arching shoots over
-    // the soil, longer shoots that lean out and nod over at the tip, and vines
-    // spilling over the rim. Leaves alternate on short petioles, broad low on
-    // each shoot and smaller towards the growing tip.
-    const unit = Math.min(width * .26, growthHeight * .12), sky = new THREE.Vector3(0,.5,.55);
-    let index = 0, vine = 0;
-    const shoot = (angle, path, leaves, { size = 1, from = .14 } = {}) => {
-      const radial = new THREE.Vector3(Math.cos(angle),0,Math.sin(angle)), across = new THREE.Vector3(-radial.z,0,radial.x), up = new THREE.Vector3();
-      const root = radial.clone().multiplyScalar(width * .04); root.y = soilY - sink;
-      // [out, growthHeight, sway]: a gentle zigzag from node to node, as ivy grows.
-      const curve = new THREE.CatmullRomCurve3([root, ...path.map(([r, y, sway = 0]) => radial.clone().multiplyScalar(r).addScaledVector(across, sway).add(up.set(0, y, 0)))]);
-      stem(curve,width*.0042,`ivy-vine-${vine++}`,{ tubular:12, radial:4, tone:'ivy', taper:[1.1,.55] });
-      for (let j = 0; j < leaves; j++) {
-        // Internodes shorten towards the tip.
-        const f = from + (1 - from) * Math.pow((j + .35 + random() * .3) / leaves, .85), tangent = curve.getTangentAt(f);
-        const side = new THREE.Vector3().crossVectors(tangent, UP);
-        if (side.lengthSq() < 1e-4) side.copy(radial).cross(UP);
-        side.normalize();
-        const axis = side.multiplyScalar(j % 2 ? .78 : -.78).add(radial.clone().multiplyScalar(.42)).add(up.set(0,.5,0)).normalize();
-        const scale = size * (1.08 - .62 * Math.pow(f, 1.4)) * (.86 + random() * .28);
-        // A short petiole holds each blade clear of the vine.
-        const at = curve.getPointAt(f), base = at.clone().addScaledVector(axis, unit * .38 * scale);
-        stem([at, at.clone().lerp(base, .5).add(up.set(0, unit * .06, 0)), base], width * .0022, `ivy-petiole-${index}`, { tubular:2, radial:3, tone:'ivy' });
-        blade(base,axis,unit*scale,unit*1.08*scale,0,.07,(random()-.5)*.3,index++,radial.clone().multiplyScalar(.8).add(sky));
-      }
-    };
-    const lip = radius * 1.04, turn = random() * Math.PI * 2;
-    // Low mound: short shoots arch up and out over the soil.
-    for (let i = 0; i < 6; i++) {
-      const rise = above * (.16 + random() * .12), out = width * (.2 + random() * .1);
-      shoot(turn + i * 2.39996, [[out * .35, soilY + rise * .8], [out * .75, soilY + rise], [out, soilY + rise * .7]], 5, { size:1.05, from:.2 });
-    }
-    // Longer shoots lean out in every direction and nod over at the tip,
-    // giving an open, rounded crown rather than a single staked column.
-    for (let k = 0; k < 4; k++) {
-      const peak = above * (.97 - k * .11) * (.94 + random() * .08), lean = width * (.2 + random() * .05), sway = width * .035 * (k % 2 ? 1 : -1);
-      shoot(turn + .5 + k * Math.PI / 2 + (random() - .5) * .5, [[lean * .45, soilY + peak * .38, sway], [lean * .85, soilY + peak * .74, -sway],
-        [lean * 1.1, soilY + peak, sway * .6], [lean * 1.4, soilY + peak * .9]], 11 - (k >> 1), { size:1.08 });
-    }
-    // Vines spill over the rim and hang down the pot.
-    for (let i = 0; i < 6; i++) {
-      const drop = potHeight * (.1 + random() * .35);
-      shoot(turn + 1.3 + i * 2.39996, [[width * .1, soilY + growthHeight * .06], [lip + width * .03, potHeight + growthHeight * .03],
-        [lip + width * .07, (potHeight + drop) * .6], [lip + width * (.09 + random() * .06), drop]], 6, { size:.92, from:.22 });
-    }
-  } else if (variant === 'leafy') {
-    // A pothos grows along bent vines. Vary the leaf levels and include two
-    // lower, hanging hearts instead of arranging all leaves as an upright fan.
-    const leaves = [
-      { x:0, z:-.04, y:.33, axis:[.04,1,.04], length:.38, width:.44 },
-      { x:-.16, z:-.08, y:.24, axis:[-.48,.88,.05], length:.35, width:.45 },
-      { x:.16, z:-.07, y:.21, axis:[.50,.85,.07], length:.35, width:.45 },
-      { x:-.17, z:.04, y:.17, axis:[-.70,.62,.10], length:.32, width:.43 },
-      { x:.16, z:.06, y:.15, axis:[.73,.60,.12], length:.31, width:.42 },
-      { x:-.20, z:.12, y:.18, axis:[-.53,-.68,.15], length:.25, width:.38 },
-      { x:.20, z:.10, y:.20, axis:[.52,-.66,.13], length:.26, width:.39 },
-      { x:.025, z:-.13, y:.28, axis:[-.12,.96,-.18], length:.30, width:.34 }
-    ];
-    for (let i = 0; i < leaves.length; i++) {
-      const leaf = leaves[i], endpoint = new THREE.Vector3(leaf.x * width, soilY + leaf.y * growthHeight, leaf.z * width);
-      const root = new THREE.Vector3(leaf.x * width * .13, soilY - sink, leaf.z * width * .13);
-      const middle = new THREE.Vector3(endpoint.x * .42, soilY + growthHeight * (i === 5 || i === 6 ? .26 : leaf.y * .65), endpoint.z * .45);
-      stem([root, middle, endpoint], width * .008, `petiole-${i}`, { tone:'petiole' });
-      blade(endpoint, new THREE.Vector3(...leaf.axis), growthHeight * leaf.length, width * leaf.width,
-        (random() - .5) * .36, .08 + random() * .05, (random() - .5) * .26, i);
-    }
-  } else {
-    const count = variant === 'monstera' ? 5 : 8;
-    for (let i = 0; i < count; i++) {
-      const angle = i * 2.39996 + .30, spread = width * (.10 + random() * .075);
-      const endpoint = new THREE.Vector3(Math.cos(angle) * spread, soilY + growthHeight * (.22 + random() * .14), Math.sin(angle) * spread * .8);
-      const root = new THREE.Vector3(Math.cos(angle) * width * .025, soilY - sink, Math.sin(angle) * width * .025);
-      stem([root, new THREE.Vector3(endpoint.x * .34, soilY + growthHeight * .13, endpoint.z * .34), endpoint], width * (variant === 'monstera' ? .012 : .008), `petiole-${i}`,
-        { tone:'petiole', taper:[1.2,.85] });
-      const direction = new THREE.Vector3(Math.cos(angle) * .35, 1, Math.sin(angle) * .18);
-      blade(endpoint, direction, growthHeight * (variant === 'monstera' ? .38 : .34) * (.94 + random() * .12), width * (variant === 'monstera' ? .43 : .32),
-        Math.sin(angle) * .6, .11 + random() * .045, (random() - .5) * .40, i);
-    }
   }
   const soilKind = variant === 'cactus' || variant === 'succulent' ? 'grit' : 'peat';
   const soilSurface = (level, notify) => surface(`soil:${soilKind}:${level}`, [128 * level, 128 * level], false, soilSpec(soilKind), notify);
@@ -1071,42 +375,13 @@ export function createShelfPlant(entry, { persist = false } = {}) {
   const soil = new THREE.MeshStandardMaterial({ map:soilMaps.map, roughnessMap:soilMaps.data, bumpMap:soilMaps.data,
     bumpScale:soilKind === 'grit' ? 1.4 : 1.1, roughness:1, vertexColors:true });
   const roleMaterials = { clay, soil, leaf:leafMaterial, stem:stemMaterial, mineral, green, needles };
-  let parts;
-  if (baked) parts = restoreContent(baked.bake, content, role => roleMaterials[role], object => { geometries.add(object.geometry); materials.add(object.material); });
-  else {
-    mesh(soilGeometry(pot.soilRadius * .995, soilY, random, roots, soilKind), soil, 'potting-soil');
-    parts = consolidateParts(content, mesh, geometries);
-    // Only the foliage is fitted to the promised collision envelope: the pot
-    // stays round and true to size, and the ceramic base remains at -height/2.
-    const foliage = new THREE.Group(); foliage.name = 'plant-foliage';
-    for (const object of [...content.children]) if (object.material !== clay && object.material !== soil) foliage.add(object);
-    content.add(foliage); content.updateWorldMatrix(true, false);
-    const leafBounds = new THREE.Box3().setFromObject(foliage);
-    const xExtent = Math.max(Math.abs(leafBounds.min.x), Math.abs(leafBounds.max.x), 1e-6);
-    const zExtent = Math.max(Math.abs(leafBounds.min.z), Math.abs(leafBounds.max.z), 1e-6);
-    // Foliage stretches about the soil line to reach the envelope's top, never
-    // so far that trailing stems would pass below the base of the pot.
-    const top = leafBounds.max.y + height / 2, low = leafBounds.min.y + height / 2;
-    const stretch = Math.min(above / Math.max(1e-6, top - soilY), low < soilY ? soilY / (soilY - low) : Infinity);
-    // Width follows the same factor where the envelope allows, so a small
-    // rosette grows as a plant rather than being pulled into spikes; stems
-    // still have to rise from the soil inside the pot wall.
-    const rooted = pot.soilRadius * .97 / Math.max(1e-6, ...roots.map(([x, z, r]) => Math.hypot(x, z) + r));
-    foliage.scale.set(Math.min(stretch, width / 2 / xExtent, rooted), stretch, Math.min(stretch, width * .35 / zExtent, rooted));
-    foliage.position.y = soilY * (1 - stretch);
-    const bounds = new THREE.Box3().setFromObject(content);
-    // Preserve the measured pot height; never stretch the whole assembly.
-    const correction = (height - soilY) / Math.max(1e-6, bounds.max.y + height / 2 - soilY);
-    foliage.scale.y *= correction; foliage.position.y = soilY * (1 - foliage.scale.y);
-  }
+  const bake = baked ? baked.bake : unpackBake(shelf.plant_model(units, potId ? 1 : 2, variant, potId ?? '', potModelId ?? '', Boolean(catalogPlant), detailed,
+    [width, radius, potHeight, soilFraction, real.foliageHeight * unit, real.referenceHeight * unit, height]));
+  const parts = restoreContent(bake, content, role => roleMaterials[role], object => { geometries.add(object.geometry); materials.add(object.material); });
   // Each shelf plant keeps its bake and its level-1 surfaces for the next launch.
   const levelOneSurfaces = () => new Set([potKey(1), ...detailed ? [`leaf:${variant}:1`] : [], `soil:${soilKind}:1`]);
   let shelfEntry = baked;
-  if (bakeKey && !shelfEntry) {
-    const roleOf = new Map(Object.entries(roleMaterials).filter(([, material]) => material).map(([role, material]) => [material, role]));
-    const bake = bakeContent(content, roleOf, parts);
-    if (bake) shelfEntry = { bake, surfaces:null };
-  }
+  if (bakeKey && !shelfEntry) shelfEntry = { bake, surfaces:null };
   if (shelfEntry) { shelfEntry.surfaces = levelOneSurfaces(); rememberBake(bakeKey, shelfEntry); }
   group.userData.variant = variant; group.userData.seed = String(seed);
   group.userData.catalogId = catalogPlant?.id ?? null; group.userData.potId = potId; group.userData.potColorId = potColor.id;

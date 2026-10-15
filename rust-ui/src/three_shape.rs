@@ -9,7 +9,20 @@ pub type P2 = [f64; 2];
 
 pub enum Curve {
     Line(P2, P2),
-    Ellipse { x: f64, y: f64, rx: f64, ry: f64, start: f64, end: f64, clockwise: bool },
+    Ellipse { x: f64, y: f64, rx: f64, ry: f64, start: f64, end: f64, clockwise: bool, rotation: f64 },
+    Quadratic(P2, P2, P2),
+    Cubic(P2, P2, P2, P2),
+}
+
+/// `QuadraticBezier(t, p0, p1, p2)` of `Interpolations`.
+fn quadratic_bezier(t: f64, p0: f64, p1: f64, p2: f64) -> f64 {
+    let k = 1.0 - t;
+    k * k * p0 + 2.0 * (1.0 - t) * t * p1 + t * t * p2
+}
+/// `CubicBezier(t, p0, p1, p2, p3)` of `Interpolations`.
+fn cubic_bezier(t: f64, p0: f64, p1: f64, p2: f64, p3: f64) -> f64 {
+    let k = 1.0 - t;
+    k * k * k * p0 + 3.0 * k * k * t * p1 + 3.0 * (1.0 - t) * t * t * p2 + t * t * t * p3
 }
 
 impl Curve {
@@ -19,7 +32,9 @@ impl Curve {
             Curve::Line(v1, v2) => {
                 if t == 1.0 { *v2 } else { [(v2[0] - v1[0]) * t + v1[0], (v2[1] - v1[1]) * t + v1[1]] }
             }
-            Curve::Ellipse { x, y, rx, ry, start, end, clockwise } => {
+            Curve::Quadratic(v0, v1, v2) => [quadratic_bezier(t, v0[0], v1[0], v2[0]), quadratic_bezier(t, v0[1], v1[1], v2[1])],
+            Curve::Cubic(v0, v1, v2, v3) => [cubic_bezier(t, v0[0], v1[0], v2[0], v3[0]), cubic_bezier(t, v0[1], v1[1], v2[1], v3[1])],
+            Curve::Ellipse { x, y, rx, ry, start, end, clockwise, rotation } => {
                 let two_pi = PI * 2.0;
                 let mut delta = end - start;
                 let same = delta.abs() < f64::EPSILON;
@@ -29,13 +44,21 @@ impl Curve {
                 if delta < f64::EPSILON { delta = if same { 0.0 } else { two_pi }; }
                 if *clockwise && !same { delta = if delta == two_pi { -two_pi } else { delta - two_pi }; }
                 let angle = start + t * delta;
-                [x + rx * Math::cos(angle), y + ry * Math::sin(angle)]
+                let (mut px, mut py) = (x + rx * Math::cos(angle), y + ry * Math::sin(angle));
+                if *rotation != 0.0 {
+                    let (cos, sin) = (Math::cos(*rotation), Math::sin(*rotation));
+                    // rotate the point about the centre of the ellipse
+                    let (tx, ty) = (px - x, py - y);
+                    px = tx * cos - ty * sin + x;
+                    py = tx * sin + ty * cos + y;
+                }
+                [px, py]
             }
         }
     }
     /// `getPoints(divisions)` for this curve type: an ellipse takes twice the divisions, a line one.
     fn sampled(&self, divisions: usize) -> Vec<P2> {
-        let n = match self { Curve::Ellipse { .. } => divisions * 2, Curve::Line(..) => 1 };
+        let n = match self { Curve::Ellipse { .. } => divisions * 2, Curve::Line(..) => 1, Curve::Quadratic(..) | Curve::Cubic(..) => divisions };
         (0..=n).map(|d| self.point(d as f64 / n as f64)).collect()
     }
 }
@@ -56,7 +79,15 @@ impl Path {
     pub fn line_to(&mut self, p: P2) { self.curves.push(Curve::Line(self.current, p)); self.current = p; }
     /// `absarc` / `absellipse` with equal radii.
     pub fn abs_arc(&mut self, x: f64, y: f64, r: f64, start: f64, end: f64, clockwise: bool) {
-        let curve = Curve::Ellipse { x, y, rx: r, ry: r, start, end, clockwise };
+        self.abs_ellipse(x, y, r, r, start, end, clockwise, 0.0);
+    }
+    /// `quadraticCurveTo(cx, cy, x, y)`.
+    pub fn quadratic_to(&mut self, control: P2, p: P2) { self.curves.push(Curve::Quadratic(self.current, control, p)); self.current = p; }
+    /// `bezierCurveTo(c1x, c1y, c2x, c2y, x, y)`.
+    pub fn bezier_to(&mut self, c1: P2, c2: P2, p: P2) { self.curves.push(Curve::Cubic(self.current, c1, c2, p)); self.current = p; }
+    #[allow(clippy::too_many_arguments)]
+    pub fn abs_ellipse(&mut self, x: f64, y: f64, rx: f64, ry: f64, start: f64, end: f64, clockwise: bool, rotation: f64) {
+        let curve = Curve::Ellipse { x, y, rx, ry, start, end, clockwise, rotation };
         if !self.curves.is_empty() {
             // if a previous curve is present, attempt to join
             let first = curve.point(0.0);
@@ -83,6 +114,37 @@ impl Path {
         }
         points
     }
+}
+
+/// `ShapeGeometry(shape, curveSegments)` of a shape and its holes: the flat triangulated face (z = 0, normal +z,
+/// world-space UVs). The outline and each hole lose a repeated end point before the triangulation, as
+/// `ShapeUtils.triangulateShape` does in place.
+pub fn shape_geometry(shape: &Path, holes: &[Path], curve_segments: usize) -> Geo {
+    let mut outline = shape.points(curve_segments);
+    let mut hole_points: Vec<Vec<P2>> = holes.iter().map(|hole| hole.points(curve_segments)).collect();
+    if !is_clockwise(&outline) { outline.reverse(); }
+    for hole in hole_points.iter_mut() { if is_clockwise(hole) { hole.reverse(); } }
+    let drop_duplicate_end = |points: &mut Vec<P2>| {
+        let l = points.len();
+        if l > 2 && points[l - 1][0] == points[0][0] && points[l - 1][1] == points[0][1] { points.pop(); }
+    };
+    drop_duplicate_end(&mut outline);
+    for hole in hole_points.iter_mut() { drop_duplicate_end(hole); }
+    let mut flat: Vec<f64> = outline.iter().flat_map(|p| *p).collect();
+    let mut hole_indices = Vec::new();
+    let mut hole_index = outline.len();
+    for hole in &hole_points {
+        hole_indices.push(hole_index);
+        hole_index += hole.len();
+        flat.extend(hole.iter().flat_map(|p| *p));
+    }
+    let triangles = earcut::triangulate(&flat, &hole_indices);
+    let count = flat.len() / 2;
+    let mut positions = Vec::with_capacity(count * 3);
+    let mut normals = Vec::with_capacity(count * 3);
+    for xy in flat.chunks_exact(2) { positions.extend([xy[0], xy[1], 0.0]); normals.extend([0.0, 0.0, 1.0]); }
+    Geo { position: crate::three_geo::f32s(&positions), normal: crate::three_geo::f32s(&normals), uv: crate::three_geo::f32s(&flat), color: Vec::new(),
+        index: Some(triangles.into_iter().map(|i| i as u32).collect()) }
 }
 
 fn area(contour: &[P2]) -> f64 {

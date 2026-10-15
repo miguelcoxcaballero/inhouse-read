@@ -28,8 +28,6 @@ mod bookmark;
 mod binding;
 #[cfg(feature = "app")]
 mod page_mesh;
-#[cfg(feature = "decor")]
-mod plant_leaf;
 #[cfg(feature = "app")]
 mod cover_color;
 #[cfg(feature = "app")]
@@ -62,16 +60,6 @@ mod plant_pottery;
 mod plant_soil;
 #[cfg(feature = "decor")]
 mod plant_foliage;
-#[cfg(feature = "decor")]
-mod plant_cactus;
-#[cfg(feature = "decor")]
-mod plant_pot;
-#[cfg(feature = "decor")]
-mod plant_ivy;
-#[cfg(feature = "decor")]
-mod plant_subdivide;
-#[cfg(feature = "decor")]
-mod plant_monstera;
 #[cfg(feature = "app")]
 mod pdf_layout;
 #[cfg(feature = "app")]
