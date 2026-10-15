@@ -38,8 +38,9 @@ it('frees rejected or trapped kernels and handles allocation failure',()=>{
  free.mockClear();expect(wasmReliefRgbaPlanes({...core,alloc_f64:()=>0,free_f64:free},maps)).toBeNull();expect(free).not.toHaveBeenCalled();
 });
 
-it('uses one native call for production-sized maps and preserves the startup fallback',()=>{
+it('uses one native call for every map size and reports an unavailable or rejecting core',()=>{
+ // The JavaScript conversion (and its 4096-pixel threshold) is gone: small maps use the kernel too.
  const maps=fixture(64,64),call=vi.fn(core.relief_rgba_planes);state.core={...core,relief_rgba_planes:call};exact(reliefPlanesToRgba(maps),maps);expect(call).toHaveBeenCalledOnce();
- call.mockClear();const small=fixture(17,19);exact(reliefPlanesToRgba(small),small);expect(call).not.toHaveBeenCalled();
- for(const engine of [null,{...core,relief_rgba_planes:()=>0}]){state.core=engine;exact(reliefPlanesToRgba(maps),maps);}
+ call.mockClear();const small=fixture(17,19);exact(reliefPlanesToRgba(small),small);expect(call).toHaveBeenCalledOnce();
+ for(const engine of [null,{...core,relief_rgba_planes:()=>0}]){state.core=engine;expect(()=>reliefPlanesToRgba(maps)).toThrow();}
 });

@@ -9,9 +9,10 @@ import { createServer as createHttpServer } from 'node:http';
 const fixtureHtml = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body><script type="module">
 import { loadRustCore } from '/inhouse-read/src/js/rust-core.js';
-import { wasmInsideDistance, wasmBoxBlur, wasmHeightToNormals, wasmComposeMaterialMap,
-  wasmComposeReliefLayers } from '/inhouse-read/src/js/cover-relief-wasm.js';
-import { heightToNormals, composeMaterialMap, composeReliefLayerPixels, internals } from '/inhouse-read/src/js/cover-relief.js';
+import { wasmHeightToNormals, wasmComposeMaterialMap, wasmComposeReliefLayers } from '/inhouse-read/src/js/cover-relief-wasm.js';
+import { wasmInsideDistance, wasmBoxBlur } from '/inhouse-read/tests/unit/helpers/reference-relief-bridge.js';
+import '/inhouse-read/tests/e2e/helpers/shelf-ready.js';
+import { heightToNormals, composeMaterialMap, composeReliefLayerPixels } from '/inhouse-read/src/js/cover-relief.js';
 import { referenceDistance, referenceBlur, referenceNormals, referenceMaterial, referenceCompose,
   materialCoefficients, layers, mapsFor } from '/inhouse-read/tests/helpers/cover-relief-reference.mjs';
 const started = performance.now();
@@ -34,12 +35,12 @@ window.observeRustRelief = async () => {
   const coefficients = materialCoefficients(maps, options);
   const selection = { layers };
   const jobs = [
+    // No production caller of the distance or the blur remains (the pigment maps run inside the core's jobs), so
+    // they are compared through their frozen bridges alone.
     { name:'distance', js:() => referenceDistance(maps.mask, width, height),
-      rust:() => drain(wasmInsideDistance(core, maps.mask, width, height)),
-      production:() => drain(internals.insideDistance(maps.mask, width, height)) },
+      rust:() => drain(wasmInsideDistance(core, maps.mask, width, height)) },
     { name:'blur', js:() => referenceBlur(maps.baseHeight, width, height, 2),
-      rust:() => drain(wasmBoxBlur(core, maps.baseHeight, width, height, 2)),
-      production:() => drain(internals.boxBlur(maps.baseHeight, width, height, 2)) },
+      rust:() => drain(wasmBoxBlur(core, maps.baseHeight, width, height, 2)) },
     { name:'normals', js:() => referenceNormals(maps),
       rust:() => drain(wasmHeightToNormals(core, maps, unit)),
       production:() => drain(heightToNormals(maps)) },
@@ -57,7 +58,7 @@ window.observeRustRelief = async () => {
     // routing. The direct Rust call cannot quietly fall back to JavaScript.
     const reference = await hashResult(job.js());
     const rust = await hashResult(job.rust());
-    const production = await hashResult(job.production());
+    const production = job.production ? await hashResult(job.production()) : rust;
     if (JSON.stringify(reference) !== JSON.stringify(rust) || JSON.stringify(reference) !== JSON.stringify(production)) {
       throw new Error('Byte parity failed for ' + job.name + ': ' + JSON.stringify({ reference, rust, production }));
     }

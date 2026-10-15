@@ -4,6 +4,7 @@ import {createServer as createHttpServer} from 'node:http';
 
 const fixture=`<!doctype html><html><body><script type="module">
 import * as THREE from 'three';
+import '/inhouse-read/tests/e2e/helpers/shelf-ready.js';
 import {getBookRenderer,createBookModel,lightBookScene} from '/inhouse-read/src/js/book-model.js';
 const renderer=getBookRenderer(),W=390,H=600;
 renderer.setPixelRatio(2);renderer.setSize(W,H);document.body.append(renderer.domElement);

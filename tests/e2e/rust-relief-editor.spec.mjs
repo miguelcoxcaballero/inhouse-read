@@ -3,7 +3,11 @@ import { readFile } from 'node:fs/promises';
 import { settledGeometryLength } from './helpers/settled-geometry-length.mjs';
 import { spinePointerPosition } from './helpers/shelf-pointer.mjs';
 
-for (const enabled of [false,true]) test(`real relief editor cold and cached: ${enabled?'Rust':'original JS palette'}`,async({page},testInfo)=>{
+// The JavaScript palette that this spec used to hide the compiled export from was removed together
+// with its twin (the frozen original lives in tests/unit/helpers/reference-relief-palette.js and the
+// differential unit tests compare it with the core). The core without the analysis job is now the failure
+// case: the editor must report the analysis error instead of silently taking a second path.
+for (const enabled of [false,true]) test(`real relief editor cold and cached: ${enabled?'Rust':'core without the analysis job'}`,async({page},testInfo)=>{
   // New diagnostic includes a cold room and two real flyouts/materials. It
   // does not alter the original reader/native-return timing contracts.
   test.setTimeout(120000);
@@ -11,23 +15,22 @@ for (const enabled of [false,true]) test(`real relief editor cold and cached: ${
   await page.emulateMedia({reducedMotion:'no-preference'});
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(enabled=>{
-    window.paletteProof={jobs:0,live:0,available:false,normalCalls:0,normalBytes:0,countCalls:0,countedPixels:0,seedCalls:0};
+    window.paletteProof={jobs:0,live:0,available:false,normalCalls:0,normalBytes:0,colourCalls:0,countedPixels:0,seedCalls:0};
     const observe=result=>{
       const instance=result.instance||result,actual=instance.exports;
-      if(typeof actual?.relief_palette_new!=='function')return result;
+      if(typeof actual?.relief_analysis_new!=='function')return result;
       const proof=window.paletteProof;proof.available=true;
-      // Hide only this export for the pre-migration algorithm. Every other
-      // compiled kernel, actual renderer, image and shader remains identical.
-      const exports={...actual,relief_cover_seed(pointer,width,height){
-        const data=new Uint8Array(actual.memory.buffer,pointer,width*height*4);let seed=2166136261;
-        for(let y=0;y<height;y+=Math.max(1,Math.floor(height/36)))for(let x=0;x<width;x+=Math.max(1,Math.floor(width/24)))for(let c=0;c<3;c++)seed=Math.imul(seed^(data[(y*width+x)*4+c]>>4),16777619);
-        const result=actual.relief_cover_seed(pointer,width,height);if(result!==(seed>>>0))throw Error('Cover seed differs');proof.seedCalls++;return result;
-      },relief_color_mask_count(...args){
-        const result=actual.relief_color_mask_count(...args),length=args[5]-args[4];
-        const mask=new Float32Array(actual.memory.buffer,args[2],length);
-        let positive=0;for(const amount of mask)if(amount>0)positive++;
-        if(result!==positive+1)throw Error('Compiled mask count differs from original f32 mask');
-        proof.countCalls++;proof.countedPixels+=length;return result;
+      // Hide only the analysis job for the failure case. Every other compiled
+      // kernel, actual renderer, image and shader remains identical. The analysis
+      // is one job: it is observed where the page creates it, reads its seed and its
+      // colours (with the pixels each covers), and frees it.
+      const analysis=new Set();
+      const exports={...actual,relief_analysis_value(job,which){
+        const result=actual.relief_analysis_value(job,which);if(which===0)proof.seedCalls++;return result;
+      },relief_analysis_colour(job,index,out){
+        const result=actual.relief_analysis_colour(job,index,out);
+        if(result===1){proof.colourCalls++;proof.countedPixels+=new Float64Array(actual.memory.buffer,out,5)[4];}
+        return result;
       },relief_normal_selected_rows(...args){
         const status=actual.relief_normal_selected_rows(...args);
         if(status!==1)throw Error('Selected normals rejected');
@@ -42,9 +45,9 @@ for (const enabled of [false,true]) test(`real relief editor cold and cached: ${
           if(selected[i]!==expected)throw Error('Selected normal differs at '+i);
         }
         legacy.set(selected);proof.normalCalls++;proof.normalBytes+=length;return status;
-      },relief_palette_new:enabled?n=>{
-        const p=actual.relief_palette_new(n);if(p){proof.jobs++;proof.live++;}return p;
-      }:undefined,relief_palette_free(p){actual.relief_palette_free(p);proof.live--;}};
+      },relief_analysis_new:enabled?(...args)=>{
+        const p=actual.relief_analysis_new(...args);if(p){analysis.add(p);proof.jobs++;proof.live++;}return p;
+      }:undefined,relief_job_free(p){actual.relief_job_free(p);if(analysis.delete(p))proof.live--;}};
       const proxy=new Proxy(instance,{get(target,key){return key==='exports'?exports:Reflect.get(target,key,target);}});
       return result.instance?{...result,instance:proxy}:proxy;
     };
@@ -73,6 +76,24 @@ for (const enabled of [false,true]) test(`real relief editor cold and cached: ${
   const spine=page.locator('.ihr-spine').first();
   const cards=page.getByRole('group',{name:'Propuestas de relieve'}).getByRole('checkbox');
   const observations=[];
+  if(!enabled){
+    await expect(spine).not.toHaveClass(/is-away/);
+    const bounds=await spine.boundingBox();expect(bounds).not.toBeNull();
+    await spine.click({position:await spinePointerPosition(spine,bounds)});
+    await page.getByRole('button',{name:'Editar',exact:true}).click();
+    await page.getByRole('tab',{name:'Portada',exact:true}).click();
+    await expect(page.getByText('No se pudo analizar la portada')).toBeVisible({timeout:60000});
+    await expect(page.getByRole('button',{name:'Reintentar',exact:true})).toBeVisible();
+    await expect(cards).toHaveCount(0);
+    const proof=await page.evaluate(()=>({...window.paletteProof}));
+    expect(proof.jobs).toBe(0);expect(proof.live).toBe(0);
+    await page.getByRole('button',{name:'Listo',exact:true}).click();
+    await page.getByRole('button',{name:'Cerrar',exact:true}).click();
+    await expect(page.locator('.ihr-flyout')).toHaveCount(0,{timeout:30000});
+    expect(errors).toEqual([]);
+    await testInfo.attach('actual-editor-palette',{body:JSON.stringify({enabled,error:'analysis'}),contentType:'application/json'});
+    return;
+  }
   for(const stage of ['cold','cached']){
     await expect(spine).not.toHaveClass(/is-away/);
     const bounds=await spine.boundingBox();expect(bounds).not.toBeNull();
@@ -87,10 +108,12 @@ for (const enabled of [false,true]) test(`real relief editor cold and cached: ${
     expect([...selected].sort()).toEqual([...colors].sort());
     expect(after.live).toBe(0);expect(after.jobs-before.jobs).toBe(enabled&&stage==='cold'?1:0);
     expect(after.seedCalls-before.seedCalls).toBe(enabled&&stage==='cold'?1:0);
-    expect(after.countCalls-before.countCalls).toBe(stage==='cold'?Math.ceil(288*192/1024)*3:0);
-    expect(after.countedPixels-before.countedPixels).toBe(stage==='cold'?288*192*3:0);
+    // The three stripes are 96 columns each on the 288x192 analysis raster, sampled without blending: every pixel
+    // falls in exactly one colour's ball.
+    expect(after.colourCalls-before.colourCalls).toBe(stage==='cold'?3:0);
+    expect(after.countedPixels-before.countedPixels).toBe(stage==='cold'?288*192:0);
     expect(await page.locator('.ihr-flyout__book canvas').evaluate(canvas=>canvas instanceof HTMLCanvasElement&&canvas.width>0&&canvas.height>0)).toBe(true);
-    observations.push({stage,ms:after.at-before.at,jobs:after.jobs-before.jobs,seedCalls:after.seedCalls-before.seedCalls,countCalls:after.countCalls-before.countCalls,countedPixels:after.countedPixels-before.countedPixels,colors:selected});
+    observations.push({stage,ms:after.at-before.at,jobs:after.jobs-before.jobs,seedCalls:after.seedCalls-before.seedCalls,colourCalls:after.colourCalls-before.colourCalls,countedPixels:after.countedPixels-before.countedPixels,colors:selected});
     await page.locator('.ihr-relief-card').nth(stage==='cold'?0:1).click();
     await expect.poll(()=>page.evaluate(()=>window.paletteProof.normalCalls),{timeout:30000}).toBeGreaterThan(before.normalCalls);
     expect(await page.evaluate(()=>window.paletteProof.normalBytes)).toBeGreaterThan(0);

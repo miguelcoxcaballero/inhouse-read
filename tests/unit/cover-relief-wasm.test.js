@@ -2,9 +2,11 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { loadRustCore, getRustCore } from '../../src/js/rust-core.js';
-import { composeMaterialMap, composeReliefLayerPixels, heightToNormals, internals } from '../../src/js/cover-relief.js';
-import { canUseReliefWasm, wasmInsideDistance, wasmBoxBlur, wasmHeightToNormals,
-  wasmComposeMaterialMap, wasmComposeReliefLayers } from '../../src/js/cover-relief-wasm.js';
+import { composeMaterialMap, composeReliefLayerPixels, heightToNormals } from '../../src/js/cover-relief.js';
+import { wasmHeightToNormals, wasmComposeMaterialMap, wasmComposeReliefLayers } from '../../src/js/cover-relief-wasm.js';
+// The distance and the blur are not called by production code any more (the pigment maps run inside the core's
+// jobs): their bridges are the frozen ones, so the kernels keep their byte comparisons.
+import { canUseReliefWasm, wasmInsideDistance, wasmBoxBlur } from './helpers/reference-relief-bridge.js';
 import { referenceDistance, referenceBlur, referenceNormals, referenceMaterial, referenceCompose,
   materialCoefficients, layers, mapsFor } from '../helpers/cover-relief-reference.mjs';
 
@@ -40,7 +42,6 @@ describe('actual Rust cover-map kernels against frozen JavaScript', () => {
         const mask = Uint8Array.from({ length:count }, pattern), original = mask.slice();
         const expected = referenceDistance(mask, width, height);
         expectBytes(drain(wasmInsideDistance(core, mask, width, height)), expected);
-        expectBytes(drain(internals.insideDistance(mask, width, height)), expected);
         expectBytes(mask, original);
       }
     });
@@ -53,10 +54,8 @@ describe('actual Rust cover-map kernels against frozen JavaScript', () => {
       for (const radius of [1, 2, 7, 19]) {
         const expected = referenceBlur(field, width, height, radius);
         expectBytes(drain(wasmBoxBlur(core, field, width, height, radius)), expected);
-        expectBytes(drain(internals.boxBlur(field, width, height, radius)), expected);
       }
       expectBytes(field, original);
-      expect(drain(internals.boxBlur(field, width, height, 0))).toBe(field);
     });
   }
 

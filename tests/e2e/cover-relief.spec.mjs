@@ -16,6 +16,7 @@ for (const proto of [globalThis.WebGL2RenderingContext?.prototype, globalThis.We
   const original = proto.linkProgram;
   proto.linkProgram = function (program) { links++; return original.call(this, program); };
 }
+import '/inhouse-read/tests/e2e/helpers/shelf-ready.js';
 import { Vector3 } from 'three';
 import { bookView, getBookRenderer, getPresentationBookRenderer } from '/inhouse-read/src/js/book-model.js';
 import { analyzeCoverRelief, buildReliefMaps } from '/inhouse-read/src/js/cover-relief.js';

@@ -3,8 +3,9 @@ import {readFileSync} from 'node:fs';
 import {beforeAll,afterEach,it,expect,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
 vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core}));
-import {prepareColorMaskJob,countPreparedMaskPixels} from '../../src/js/cover-color-mask-wasm.js';
-import {analyzePixels,internals} from '../../src/js/cover-relief.js';
+import {prepareColorMaskJob,countPreparedMaskPixels} from './helpers/reference-color-mask-bridge.js';
+import {analyzePixels} from '../../src/js/cover-relief.js';
+import {analyzePixels as frozenAnalysis,internals} from './helpers/reference-relief-color.js';
 import {colorMaskCases,colorMaskPalette,makeColorMaskImage} from '../helpers/color-mask-cases.mjs';
 let core;
 beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.relief_color_mask_count).toBe('function');state.core=core;});
@@ -24,23 +25,17 @@ for(const input of colorMaskCases)it(`counts exactly the rounded membership for 
  }}finally{job.dispose();}
  expect(counted).toHaveBeenCalled();expect(free).toHaveBeenCalledOnce();
 });
-for(const input of [colorMaskCases[1],colorMaskCases[2],colorMaskCases[4],colorMaskCases[6]])it(`keeps full proposal bytes and all safe points for ${input.name}`,()=>{
- const image=makeColorMaskImage(input);state.core={...core,relief_color_mask_count:undefined};const original=drain(analyzePixels(image));
- const counted=vi.fn(core.relief_color_mask_count);state.core={...core,relief_color_mask_count:counted};const actual=drain(analyzePixels(image));
- expect(actual).toEqual(original);expect(counted).toHaveBeenCalled();
+// The count is taken inside the analysis job now (it has no export of its own to spy on): the production proposals,
+// with every mask and coverage, equal the frozen original's. The safe points are those of the job's own chunks.
+for(const input of [colorMaskCases[1],colorMaskCases[2],colorMaskCases[4],colorMaskCases[6]])it(`keeps full proposal bytes for ${input.name}`,()=>{
+ const image=makeColorMaskImage(input);const original=drain(frozenAnalysis(image));
+ const actual=drain(analyzePixels(image));
+ expect(actual.value).toEqual(original.value);expect(actual.yields).toBeGreaterThanOrEqual(Math.floor(image.width*image.height/1024));
 });
 it('counts plain, short and missing-native masks with the original comparisons and pauses',()=>{
  for(const size of [0,1,4095,4096,4097,8192]){const mask=Float32Array.from({length:size},(_,i)=>[0,-0,NaN,Infinity,-Infinity,-1,1,1e-44][i%8]);const result=drain(countPreparedMaskPixels(mask));expect(result.value).toBe(positive(mask));expect(result.yields).toBe(Math.floor(size/4096));}
  const image=makeColorMaskImage(colorMaskCases[1]),job=drain(prepareColorMaskJob({...core,relief_color_mask_count:undefined},image,internals.rgbToOklab)).value;
  try{const mask=drain(job.mask(lab('#2f6b4f'),6,true)).value;expect(drain(countPreparedMaskPixels(mask)).value).toBe(positive(mask));}finally{job.dispose();}
-});
-it('frees failed counted jobs and falls back to complete proposal analysis',()=>{
- const image=makeColorMaskImage(colorMaskCases[1]);state.core={...core,relief_color_mask_count:undefined};const expected=drain(analyzePixels(image)).value;
- for(const failure of [0,-1,1026,NaN,1.5,'1','throw']){
-  let calls=0,live=0;
-  state.core={...core,alloc_f64(n){const p=core.alloc_f64(n);if(p)live+=n;return p;},free_f64(p,n){core.free_f64(p,n);live-=n;},relief_color_mask_count(...args){if(++calls===2){if(failure==='throw')throw new WebAssembly.RuntimeError('count trap');return failure;}return core.relief_color_mask_count(...args);}};
-  expect(drain(analyzePixels(image)).value).toEqual(expected);expect(calls).toBe(2);expect(live).toBe(0);
- }
 });
 it('survives interleaved growth and cancellation at counted mask and coverage pauses',()=>{
  const image=makeColorMaskImage(colorMaskCases[2]),free=vi.fn(core.free_f64),engine={...core,free_f64:free};

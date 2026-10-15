@@ -4,6 +4,7 @@ import {createServer as createHttpServer} from 'node:http';
 import {pdfImageTrackingPatch} from '../../scripts/pdf-image-tracking-patch.mjs';
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import '/inhouse-read/tests/e2e/helpers/shelf-ready.js';
 import {shadePreview} from '/inhouse-read/src/js/cover-relief.js';
 import {wasmShadePreview} from '/inhouse-read/src/js/cover-relief-wasm.js';
 import {shadePreview as reference} from '/inhouse-read/tests/unit/helpers/reference-relief-preview.js';

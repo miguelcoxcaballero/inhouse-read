@@ -1,3 +1,35 @@
+# 1.7.246 — portadas: lomo, rotulación, editor, reflejo y relieve en Rust
+
+Changelog: «Portadas, lomo y relieve en Rust».
+Unidad cover. El diseño del lomo (reparto, ajuste de la rotulación y pintura
+sobre el canvas) pasa al módulo `shelf` de `rust-ui` como listas de órdenes que
+el pegamento JS solo reproduce; las decisiones del editor de portada (colocación
+y balanceo), el perfil de reflejo de la tapa y los coeficientes de material
+también se deciden en Rust. La canalización de relieve (`cover-relief.js`) ya no
+tiene gemelo JS: el análisis de la portada, los mapas de pigmento, nombres de
+color y perfiles son trabajos del núcleo (`cover_relief.rs`), y los detectores de
+familia viven en el original congelado de `tests/unit/helpers/reference-*.js`,
+contra el que comparan los tests diferenciales. Se eliminan `cover-color-mask-wasm.js`
+y `relief-palette-wasm.js` (absorbidos). Verificado aquí (Linux, Chromium/SwiftShader):
+build:rust y build, 4 bloques de tests unitarios (1699+1329+1388+1796, 121 archivos
+cada uno; en el bloque 2 vitest registra un timeout de RPC del worker bajo carga,
+sin ningún test fallido) y los E2E de portadas, relieve, lomos y smoke: cover-appearance, cover-editor,
+rust-relief-editor, rust-spine-styles, spine-materials, rust-cover-preparation y smoke,
+30 pasan y 5 fallan en la primera ejecución (carga ~9 por otros procesos). Repetidos
+con prioridad de CPU alta y el plazo de la prueba de balanceo ampliado a 3 s
+(COVER_EDITOR_INTERRUPT_TIMEOUT_MS, previsto por la propia prueba para GL por software),
+«pestañas Lomo y Portada» y «un gesto del usuario corta el balanceo» pasan. Siguen
+fallando 3: cover-editor «diseño de la pestaña Portada: escritorio» (claro y oscuro) y
+smoke «el libro abierto reaparece en la estantería al volver», los tres al cerrar el
+lector (el cuerpo se queda en `is-closing-reader`, sin errores de página en la traza
+salvo el certificado de Google). Es la causa ya documentada del cierre en GL por
+software (el paso de animateMotion se limita a 100 ms por fotograma, así que las fases
+se alargan 3–9×) y smoke «el libro abierto reaparece…» ya fallaba igual en main
+(main-smoke del 2-oct, 1.7.242); las dos de escritorio de cover-editor no se han
+comparado contra main y no se ha comprobado en GPU real.
+Inventario 20086 Rust/27342 JS = 42,35 %; no es porcentaje funcional.
+Sin medida de rendimiento ni prueba en móvil físico.
+
 # 1.7.245 — lectores PDF y EPUB, instantáneas de página y controlador del lector en Rust
 
 Changelog: «Lectores PDF y EPUB en Rust».

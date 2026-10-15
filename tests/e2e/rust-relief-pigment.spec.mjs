@@ -4,7 +4,7 @@ import {createServer as createHttpServer} from 'node:http';
 import {pdfImageTrackingPatch} from '../../scripts/pdf-image-tracking-patch.mjs';
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
-import {wasmPigmentMaps} from '/inhouse-read/src/js/cover-relief-wasm.js';
+import {wasmPigmentMaps} from '/inhouse-read/tests/unit/helpers/reference-relief-bridge.js';
 import {referencePigment} from '/inhouse-read/tests/unit/helpers/reference-relief-pigment.js';
 const core=await loadRustCore();if(!core?.relief_pigment_pixels)throw Error('Actual pigment core required');
 function drain(task){let yields=0;for(;;){const step=task.next();if(step.done)return {out:step.value,yields};yields++;}}

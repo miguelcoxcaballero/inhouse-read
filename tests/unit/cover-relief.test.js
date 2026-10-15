@@ -1,6 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { analyzeCoverRelief, analyzePixels, buildMapsFromPixels, composeMaterialMap, drain,
-  fitDimensions, heightToNormals, internals, MAX_RELIEF_MM, normalizeCoverRelief, seedOf } from '../../src/js/cover-relief.js';
+  fitDimensions, heightToNormals, MAX_RELIEF_MM, normalizeCoverRelief } from '../../src/js/cover-relief.js';
+// The family detectors and the JavaScript seed have no production caller any more: these
+// fixtures run the frozen originals (tests/unit/helpers/reference-relief-color.js).
+import { internals, seedOf } from './helpers/reference-relief-color.js';
 
 const image = (width=64,height=96,color=[240,240,240]) => {
   const data=new Uint8ClampedArray(width*height*4);

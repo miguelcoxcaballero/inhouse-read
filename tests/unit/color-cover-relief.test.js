@@ -1,6 +1,10 @@
 import { expect, it } from 'vitest';
 import { analyzePixels, buildMapsFromPixels, composeMaterialMap, drain, heightToNormals, internals,
   MAP_SIZE, normalizeCoverRelief, shadePreview, WORK_SIZE } from '../../src/js/cover-relief.js';
+// The OKLab conversion and the colour membership are the numeric core's now; the membership of the original
+// (and its JavaScript OKLab) is the frozen reference, and the conversion is read back from the core.
+import { internals as frozen } from './helpers/reference-relief-color.js';
+import { coreOklab } from './helpers/core-oklab.js';
 
 function raster(width=60, height=90, colors=[[192,32,48],[24,88,192],[244,224,160]]) {
   const data = new Uint8ClampedArray(width*height*4);
@@ -94,8 +98,8 @@ it('rejects missing or malformed colors and unknown color slots',()=>{
 });
 
 it('uses the published OKLab transform on a scale of 100, including exact black',()=>{
-  expect(internals.rgbToOklab(0,0,0)).toEqual([0,0,0]);
-  const white=internals.rgbToOklab(255,255,255),red=internals.rgbToOklab(255,0,0);
+  expect(coreOklab(0,0,0)).toEqual([0,0,0]);
+  const white=coreOklab(255,255,255),red=coreOklab(255,0,0);
   expect(white[0]).toBeCloseTo(100,5);expect(white[1]).toBeCloseTo(0,4);expect(white[2]).toBeCloseTo(0,4);
   expect(red[0]).toBeCloseTo(62.795536,5);expect(red[1]).toBeCloseTo(22.486306,5);expect(red[2]).toBeCloseTo(12.584630,5);
 });
@@ -103,7 +107,7 @@ it('uses the published OKLab transform on a scale of 100, including exact black'
 it('keeps generated color balls below half the center separation and uses real RGB pixels',()=>{
   const image=raster(),chosen=drain(analyzePixels(image)).chosen;
   for(let i=0;i<chosen.length;i++)for(let j=i+1;j<chosen.length;j++) {
-    const lab=color=>internals.rgbToOklab(...[1,3,5].map(at=>parseInt(color.slice(at,at+2),16)));
+    const lab=color=>coreOklab(...[1,3,5].map(at=>parseInt(color.slice(at,at+2),16)));
     const a=lab(chosen[i].color),b=lab(chosen[j].color),distance=Math.hypot(...a.map((n,k)=>n-b[k]));
     expect(chosen[i].tolerance+chosen[j].tolerance).toBeLessThan(distance);
     expect(chosen[i].tolerance).toBeLessThanOrEqual(distance*.45);
@@ -254,7 +258,7 @@ it('feathers varnish by color membership independently of geometric height and n
     image.data.set([98,98,98,255],(y*60+29)*4);
     image.data.set([110,110,110,255],(y*60+28)*4);
   }
-  const original=image.data.slice(),membership=drain(internals.colorMask(image,'#555555',6));
+  const original=image.data.slice(),membership=drain(frozen.colorMask(image,'#555555',6));
   const maps=drain(buildMapsFromPixels(image,image,{id:'color-1',color:'#555555',tolerance:6,strength:.75}));
   const inside=45*60+30,feather=inside-1,outside=inside-2;
   expect(membership[feather]).toBeGreaterThan(0);expect(membership[feather]).toBeLessThan(1);

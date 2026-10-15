@@ -59,9 +59,13 @@ it('rejects unavailable or invalid selection inputs without allocating',()=>{
  expect(tracked.alloc_f64).not.toHaveBeenCalled();
 });
 
-it('retains selected alpha and normals in the JavaScript recovery path',()=>{
+it('keeps selected alpha and normals for odd shapes, and has no JavaScript recovery path',()=>{
+ // The numeric core is the only implementation: the same maps are compared with the frozen JavaScript
+ // normals, and an unavailable core is a clear error instead of a second path.
+ for(const withMask of [false,true]){const maps=mapsFor(37,43);if(!withMask){delete maps.mask;maps.preserveInk=false;}
+  equal(drain(heightToNormals(maps,{selectionAlpha:true})),selected(maps));}
  const stub=vi.spyOn(rustLoader,'getRustCore').mockReturnValue(null);
  try{for(const withMask of [false,true]){const maps=mapsFor(37,43);if(!withMask){delete maps.mask;maps.preserveInk=false;}
- equal(drain(heightToNormals(maps,{selectionAlpha:true})),selected(maps));}}
+ expect(()=>drain(heightToNormals(maps,{selectionAlpha:true}))).toThrow(/módulo numérico/);}}
  finally{stub.mockRestore();}
 });
