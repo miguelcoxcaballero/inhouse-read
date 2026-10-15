@@ -92,6 +92,8 @@ mod pdf_figures;
 mod pdf_stream;
 #[cfg(feature = "app")]
 mod timber;
+#[cfg(feature = "app")]
+mod cabinet_model;
 #[cfg(feature = "decor")]
 mod lamp_surface;
 #[cfg(feature = "app")]
