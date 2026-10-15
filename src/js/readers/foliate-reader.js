@@ -74,11 +74,7 @@ export class FoliateReader {
     view.addEventListener('link', event => {
       if (onFollowLink) { event.preventDefault(); onFollowLink(event.detail.href) }
     })
-    view.addEventListener('draw-annotation', event => {
-      const { draw, annotation } = event.detail
-      const colors = { green:'#75ad6b66', blue:'#74a6d866', pink:'#df8dad66', yellow:'#f2d35d77' }
-      draw(Overlayer.highlight, { color:colors[annotation.color] || colors.yellow })
-    })
+    view.addEventListener('draw-annotation', event => ui.foliate_draw_annotation(event.detail, Overlayer.highlight))
     view.addEventListener('relocate', event => ui.foliate_relocated(s, event.detail))
 
     await view.open(file)
@@ -104,20 +100,14 @@ export class FoliateReader {
   #styles() { readerUI().foliate_styles(this.s, readingCSS) }
 
   /** Numeric queue state only; no book text, labels, DOM ranges or CFI. */
-  get speechDiagnosticState() {
-    const paginator = this.s.view?.renderer?.inhouseReadTurnDiagnostic
-    return { ...this.s.turns, ...(paginator ? { paginator } : {}) }
-  }
+  get speechDiagnosticState() { return readerUI().foliate_diagnostic(this.s) }
   get metadata() { return this.s.view?.book?.metadata ?? {} }
   get toc() { return this.s.view?.book?.toc ?? [] }
   /** Right-to-left books turn pages from the left edge. */
   get rtl() { return this.s.view?.book?.dir === 'rtl' }
 
   /** Portada embebida del libro (EPUB/MOBI), si el archivo trae una. */
-  async getCoverBlob() {
-    try { return (await this.s.view?.book?.getCover?.()) ?? null }
-    catch { return null } // una portada rota no puede impedir leer el libro
-  }
+  getCoverBlob() { return readerUI().foliate_cover(this.s) } // una portada rota no puede impedir leer el libro
 
   /** Cached physical-length metadata, counted outside the visible paginator. */
   getLengthMetadata() {
@@ -184,23 +174,5 @@ export class FoliateReader {
     this.#styles()
   }
 
-  close() {
-    const s = this.s
-    s.speechCursor?.close()
-    s.speechCursor = null
-    s.lengthMetadata = null
-    s.resizeObserver?.disconnect()
-    s.resizeObserver = null
-    clearTimeout(s.resizeTimer)
-    s.resizeTimer = null
-    s.detachGestures()
-    for (const detach of s.documentGestures) detach()
-    s.documentGestures = []
-    s.view?.close()
-    s.view?.remove()
-    s.view = null
-    s.turns = { followPending:0, pageTurnPending:0 }
-    s.pageTurn = Promise.resolve()
-    if (s.container) { s.container.innerHTML = ''; s.container.classList.remove('foliate-reader', 'is-paginated') }
-  }
+  close() { readerUI().foliate_close(this.s) }
 }

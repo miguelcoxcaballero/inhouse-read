@@ -499,3 +499,71 @@ pub fn foliate_outline(rects: &JsValue, options: &JsValue) -> Result<JsValue, Js
     }
     Ok(group)
 }
+
+/// `target?.name(...args)`: nothing for an absent target, a failure for a target without the method.
+fn optional(target: &JsValue, name: &str, args: &[&JsValue]) -> Result<JsValue, JsValue> {
+    if absent(target) { Ok(JsValue::UNDEFINED) } else { method(target, name, args) }
+}
+
+/// Let go of the book: the speech cursor, the observer and its timer, every gesture, the view and the container.
+#[wasm_bindgen]
+pub fn foliate_close(s: &JsValue) -> Result<(), JsValue> {
+    optional(&get(s, "speechCursor"), "close", &[])?;
+    set(s, "speechCursor", &JsValue::NULL)?;
+    set(s, "lengthMetadata", &JsValue::NULL)?;
+    optional(&get(s, "resizeObserver"), "disconnect", &[])?;
+    set(s, "resizeObserver", &JsValue::NULL)?;
+    crate::host::clear_timeout(&get(s, "resizeTimer"))?;
+    set(s, "resizeTimer", &JsValue::NULL)?;
+    method(s, "detachGestures", &[])?;
+    for detach in Array::from(&get(s, "documentGestures")).iter() { call(&detach, "detach", &[])?; }
+    set(s, "documentGestures", &Array::new())?;
+    optional(&get(s, "view"), "close", &[])?;
+    optional(&get(s, "view"), "remove", &[])?;
+    set(s, "view", &JsValue::NULL)?;
+    set(s, "turns", &plain(&[("followPending", 0.into()), ("pageTurnPending", 0.into())])?)?;
+    set(s, "pageTurn", &Promise::resolve(&JsValue::UNDEFINED))?;
+    let container = get(s, "container");
+    if truthy(&container) {
+        set(&container, "innerHTML", &"".into())?;
+        method(&get(&container, "classList"), "remove", &[&"foliate-reader".into(), &"is-paginated".into()])?;
+    }
+    Ok(())
+}
+
+/// The counters of the turn queues, and the paginator's own diagnostic when it keeps one.
+#[wasm_bindgen]
+pub fn foliate_diagnostic(s: &JsValue) -> Result<JsValue, JsValue> {
+    let view = get(s, "view");
+    let renderer = if absent(&view) { JsValue::UNDEFINED } else { read(&view, "renderer")? };
+    let paginator = if absent(&renderer) { JsValue::UNDEFINED } else { read(&renderer, "inhouseReadTurnDiagnostic")? };
+    let state = Object::assign(&Object::new(), get(s, "turns").unchecked_ref::<Object>());
+    if truthy(&paginator) { set(&state, "paginator", &paginator)?; }
+    Ok(state.into())
+}
+
+/// A quote's highlight is drawn in its own colour, yellow when it has none that is known.
+#[wasm_bindgen]
+pub fn foliate_draw_annotation(detail: &JsValue, highlight: &JsValue) -> Result<(), JsValue> {
+    let draw = read(detail, "draw")?;
+    let annotation = read(detail, "annotation")?;
+    let colors = plain(&[("green", "#75ad6b66".into()), ("blue", "#74a6d866".into()), ("pink", "#df8dad66".into()), ("yellow", "#f2d35d77".into())])?;
+    let chosen = js_sys::Reflect::get(&colors, &read(&annotation, "color")?)?;
+    let color = if truthy(&chosen) { chosen } else { read(&colors, "yellow")? };
+    call(&draw, "draw", &[highlight, &plain(&[("color", color)])?])?;
+    Ok(())
+}
+
+/// The cover embedded in the book, or null: a broken cover cannot stop the book from being read.
+#[wasm_bindgen]
+pub fn foliate_cover(s: JsValue) -> Promise {
+    eager(async move {
+        let found = async {
+            let view = get(&s, "view");
+            let book = if absent(&view) { JsValue::UNDEFINED } else { read(&view, "book")? };
+            let cover = if absent(&book) { JsValue::UNDEFINED } else { method_opt(&book, "getCover", &[])?.unwrap_or(JsValue::UNDEFINED) };
+            settled(cover).await
+        }.await;
+        Ok(match found { Ok(cover) if !absent(&cover) => cover, _ => JsValue::NULL })
+    })
+}
