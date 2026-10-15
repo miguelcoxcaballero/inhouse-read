@@ -23,6 +23,8 @@ mod book_format;
 #[cfg(feature = "app")]
 mod font;
 #[cfg(feature = "app")]
+mod host_math;
+#[cfg(feature = "app")]
 mod bookmark;
 #[cfg(feature = "app")]
 mod binding;
