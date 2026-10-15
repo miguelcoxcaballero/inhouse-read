@@ -27,6 +27,7 @@ function latticeOf(paint,width,height,repeat){
  return reference(width,height,lattice);
 }
 window.checkPlants=async()=>{
+ const baseline=window.plantStats.live; // the one permanent 128-byte scratch arena of decor-catalogue.js is already allocated
  const models=[],originals=[],entries=[['monstera','muskot'],['sansevieria','gradvis'],['cactus','akerbar'],['fern','terracotta']];
  for(const [catalogId,potId] of entries){
   const entry={catalogId,potId,seed:'rust-'+catalogId,height:240,inspectionResolution:1};
@@ -57,7 +58,7 @@ window.checkPlants=async()=>{
   }
   const median=a=>[...a].sort((a,b)=>a-b)[4];samples.push({name,width,height,js:median(times.js),rust:median(times.rust)});
  }
- return {calls,previews,finals,samples,memory:{...window.plantStats}};
+ return {calls,baseline,previews,finals,samples,memory:{...window.plantStats}};
 };
 </script>`;
 let vite,http,url;
@@ -85,7 +86,7 @@ test('actual plant materials use compiled previews with identical pigment, relie
  });
  await page.setViewportSize({width:390,height:844});const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
  await page.goto(url);await page.waitForFunction(()=>window.checkPlants);const result=await page.evaluate(()=>window.checkPlants());
- expect(result.calls).toBeGreaterThanOrEqual(6);expect(result.memory.live).toBe(0);expect(result.previews).toBeGreaterThanOrEqual(12);expect(result.finals).toBeGreaterThanOrEqual(12);
+ expect(result.calls).toBeGreaterThanOrEqual(6);expect(result.baseline).toBeLessThanOrEqual(128);expect(result.memory.live).toBe(result.baseline);expect(result.previews).toBeGreaterThanOrEqual(12);expect(result.finals).toBeGreaterThanOrEqual(12);
  await info.attach('actual-plant-textures-and-timing',{body:JSON.stringify(result),contentType:'application/json'});
  console.log(JSON.stringify(result.samples));
 });

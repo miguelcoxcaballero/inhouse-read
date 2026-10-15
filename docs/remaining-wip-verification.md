@@ -1,3 +1,49 @@
+# 1.7.247 — geometría 3D: carpintería, BAGGEBO y primeras texturas de plantas en Rust
+
+Changelog: «Armario y BAGGEBO en Rust; sin gemelos JS».
+Unidad geometry-3d. El armario de madera (tableros, montantes, zócalo, fondo, molduras y
+la fusión por material) lo dibuja ahora el núcleo numérico (`rust-core/src/cabinet_model.rs`,
+`cabinet_build`) y el marco de la sombra de contacto se deriva dentro de `shelf_occlusion`;
+`shelf-furniture.js` conserva solo el puente y desaparece `timber-wasm.js`. El BAGGEBO completo (postes,
+bandejas, labios, pestañas, tornillos, chapas de metal expandido, tirante, textura de pintura)
+pasa al módulo `shelf` de `rust-ui` (`baggebo_model.rs`) sobre una biblioteca de primitivas
+three.js escrita operación por operación (`three_geo.rs`: caja, caja redondeada, cilindro, matrices,
+normales; `three_shape.rs`: curvas, `ExtrudeGeometry`; `earcut.rs`), con `mesh_compact`,
+`mesh_finish` y `metal_sheet` movidos allí desde el núcleo; el original JS congelado queda en
+`tests/unit/helpers/reference-*.js`. La primera imagen de las texturas de planta (retícula de 8 px del
+mismo pintor) la dibuja `plant_surface_lattice` del núcleo decor y se elimina el pintor JS de respaldo
+de las texturas de planta y de lámpara: si el núcleo no las pinta, se muestra un error («Las texturas
+de la lámpara no se pudieron calcular. Recarga la página.»). Se eliminan `plant-preview-wasm.js`,
+`mesh-compact-wasm.js`, `metal-sheet-wasm.js`, `mesh-finish-wasm.js` y sus pruebas (el tema pasa a
+pruebas diferenciales contra el original congelado). Tests unitarios nuevos: cabinet-wasm (12),
+plant-lattice-wasm (29), three-geo-wasm (6), baggebo-geometry-wasm (6), más la reescritura de
+shelf-occlusion-wasm (10), mesh-compact, mesh-finish y metal-sheet. Verificado aquí (Linux,
+Chromium/SwiftShader): build:rust y build; 4 bloques de tests unitarios (1706+1355+1377+1791 = 6229
+tests, 122+122+122+120 archivos), todos verdes; E2E que pasan: rust-plant-preview, rust-baggebo,
+rust-timber, rust-shelf-occlusion, rust-shelf-occlusion-production (2), rust-lamp-surface,
+shelf-types (2), lamp-catalog (3), plant-catalog (8). Comparación visual contra un build de main
+1.7.246 (estados 01, 02, 08, 10a, 13, 15): 4 idénticos bit a bit y 2 con diferencia máxima de 1/255 en el
+texto de los lomos (08, 13); PASS. El hash de la imagen final del armario (walnut, apagado/encendido) es
+el de la versión anterior con gemelo JS: 1282339058 y 3080439393.
+Mediciones (CPU 4x más lenta, medianas alternando; no son promesas de velocidad): sombras de
+contacto, 3/12/100 baldas: JS 1,02/2,09/17,3 ms frente a 0,23/0,45/2,75 ms en Rust; vigas del
+armario (3 / 12): 19,0 / 37,0 ms frente a 3,8 / 5,3 ms; retícula de una superficie de planta (256x512,
+vidriado): 48,3 ms frente a 24,4 ms; BAGGEBO: primera construcción 950 ms (JS) frente a 411 ms,
+construcciones repetidas 16,3 ms frente a 16,5 ms (no es más rápido). Tamaño: módulo shelf 180.836
+-> 342.953 bytes, núcleo app 500.440 -> 509.768, decor 149.481 -> 150.068. Arranque (banco de arranque,
+3 ejecuciones alternas cada uno, caja compartida con otros procesos): primera escena 5238 ms (main) frente
+a 5670 ms (esta versión), rangos 4586–6230 y 4470–5867: dentro del ruido, sin una diferencia
+demostrable con n=3. Límites: fallan igual en main (comprobado en un build de origen/main 1.7.246)
+rust-plant-glaze, rust-plant-pottery, rust-plant-soil, rust-plant-foliage y rust-plant-geometry
+(8 pruebas): cuentan como fuga el arenero fijo de 128 bytes de decor-catalogue.js; solo se corrigió esa
+contabilidad en rust-plant-preview (una referencia inicial en lugar de 0). Los dos fallos conocidos
+del cierre en GL por software (contrato de retorno de la estantería y «salir coloca el marcapáginas»)
+no se tocaron ni se ejecutaron. rust-shelf-occlusion-production ya no compara con un gemelo JS dentro
+de la página (se eliminó): lo cubren las pruebas diferenciales, rust-shelf-occlusion en Chromium, la
+comparación visual y el hash de arriba. La geometría de plantas (hojas, tallos, tierra, ensamblado)
+y de lámparas sigue en JS en esta entrega.
+Inventario 21940 Rust/26409 JS = 45,38 %; no es porcentaje funcional.
+
 # 1.7.246 — portadas: lomo, rotulación, editor, reflejo y relieve en Rust
 
 Changelog: «Portadas, lomo y relieve en Rust».

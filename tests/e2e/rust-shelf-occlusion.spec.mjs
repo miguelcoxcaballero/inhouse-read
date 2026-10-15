@@ -3,9 +3,11 @@ import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
+import {loadRustShelf} from '/inhouse-read/src/js/rust-shelf.js';
 import {createShelfOcclusion} from '/inhouse-read/src/js/shelf-furniture.js';
 import {createShelfOcclusion as reference} from '/inhouse-read/tests/unit/helpers/reference-shelf-furniture.js';
 const core=await loadRustCore();if(!core?.shelf_occlusion)throw Error('Actual occlusion kernel required');
+if(!await loadRustShelf())throw Error('Actual shelf module (the angle table of the occlusion) required');
 window.checkOcclusion=()=>{
  const results=[];
  for(const count of [3,12,100])for(const lit of [false,true]){
