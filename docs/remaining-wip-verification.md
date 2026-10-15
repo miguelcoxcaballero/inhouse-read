@@ -1,3 +1,25 @@
+# 1.7.245 — lectores PDF y EPUB, instantáneas de página y controlador del lector en Rust
+
+Changelog: «Lectores PDF y EPUB en Rust».
+Unidad readers-docs. El lector PDF (render de página, modo texto, tema, zoom,
+restauración, fuentes de voz, instantánea, búsqueda, portada, cierre), el lector
+EPUB (maquetación, giros, seguimiento, fuente de voz, instantánea, búsqueda),
+el cursor de voz de Foliate, las instantáneas de página (texto, canvas, SVG,
+composición), la detección de formato y el tema de página PDF se deciden en
+Rust. La canalización de texto PDF ya no tiene copia JS. La posición
+persistible se mantiene en JS porque la página de apertura la pide antes de que
+cargue el módulo de interfaz. Los originales congelados están en
+tests/unit/helpers/reference-*.js y los tests diferenciales los comparan
+(PdfReader: 150 sesiones guionizadas en 9 variantes, y pruebas de fugas).
+Verificado en otro equipo (Linux, Rust 1.99.0, Chromium/SwiftShader):
+6170 unitarias/480 archivos en 4 bloques (1694+1299+1395+1782), build,
+E2E smoke + reader-interface + pdf-reflow-navigation 23/23, reader-page-
+stability + reader-loading 3/3, pdf-reading-order + book-page-theme 13/13.
+Inventario 19071 Rust/28927 JS = 39.73 %; no es porcentaje funcional.
+UI wasm 2027122 bytes. Sin medida de rendimiento ni prueba en móvil físico.
+El agente siguió verificando más ejecuciones en su propio árbol; esta es la
+punta ya comprobada (45ad0f2).
+
 # 1.7.244 — motor de voz: limpieza, tempo, hebreo y flujo por fragmento en Rust
 
 Changelog: «Motor de voz: limpieza, tempo, hebreo y flujo por fragmento en Rust».
