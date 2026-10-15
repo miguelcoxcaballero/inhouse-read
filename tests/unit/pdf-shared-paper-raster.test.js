@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const {getPage}=vi.hoisted(()=>({getPage:vi.fn()}))
 vi.mock('pdfjs-dist/legacy/build/pdf.mjs',()=>({

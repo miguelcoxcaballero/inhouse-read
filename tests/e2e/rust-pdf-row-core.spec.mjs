@@ -10,7 +10,8 @@ let server,httpServer,fixtureUrl,artifact
 const html=`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><main id="result"></main><script type="module">
 import { loadRustCore } from '/inhouse-read/src/js/rust-core.js';
 import coreURL from '/inhouse-read/src/wasm/inhouse_read_core.wasm?url';
-import { rustPDFRowLines,legacyPDFRowLines,pdfRowLines } from '/inhouse-read/src/js/readers/pdf-row-layout-wasm.js';
+import { rustPDFRowLines,pdfRowLines } from '/inhouse-read/src/js/readers/pdf-row-layout-wasm.js';
+import { legacyPDFRowLines } from '/inhouse-read/tests/unit/helpers/reference-pdf-pipeline.js';
 import { extractPDFText } from '/inhouse-read/src/js/readers/pdf-text.js';
 import { extractPDFText as referencePDFText } from '/inhouse-read/tests/unit/helpers/reference-pdf-text.js';
 import { extractPDFText as beforeRowsPDFText } from '/inhouse-read/tests/unit/helpers/reference-before-pdf-rows.js';

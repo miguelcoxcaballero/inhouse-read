@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { MINI_PLAYER_RESERVE, PAGE_BOX_SLACK, stablePageHeight } from '../../src/js/readers/page-box.js'
+import { rustUI } from './helpers/rust-ui-ready.js'
+// The page box is a rust-ui function (page_box); these are the constants and the call its reader makes.
+const MINI_PLAYER_RESERVE = 52, PAGE_BOX_SLACK = 96
+const stablePageHeight = ({ width, space, free, storage = globalThis.localStorage, boxes }) => rustUI.page_box_height(width, space, free, storage, boxes)
 const memory = () => { const data = new Map(); return { getItem:key => data.get(key) ?? null, setItem:(key, value) => data.set(key, String(value)) } }
 const height=(storage,space,width=390)=>stablePageHeight({width,space,free:space-MINI_PLAYER_RESERVE,storage})
 describe('stable page box with a permanent shared accessory row',()=>{

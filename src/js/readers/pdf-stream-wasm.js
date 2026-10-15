@@ -1,4 +1,5 @@
 import {getRustCore} from '../rust-core.js';
+import {coreRequired} from './core-required.js';
 const cjk=char=>/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(char||'');
 const listStart=text=>/^(?:[•●▪‣⁃]|\d{1,3}[.)]|[a-z][.)])\s/u.test(text.trimStart());
 // Cache only Unicode classifications of bounded boundary characters. Use the
@@ -68,3 +69,6 @@ export function rustPDFTextStream(lines){
   return {geometric:true,text,items,spans,lines,paragraphs};
  }catch{return undefined;}finally{if(pointer)core.free_f64(pointer,length);}
 }
+
+/** Paragraphs, source spans and the joined reading text of ordered lines. */
+export const assemblePDFLines=lines=>coreRequired(rustPDFTextStream(lines));

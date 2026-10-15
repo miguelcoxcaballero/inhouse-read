@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
 vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core}));
-import {rustPDFTextStream} from '../../src/js/readers/pdf-stream-wasm.js';
+import {rustPDFTextStream,assemblePDFLines} from '../../src/js/readers/pdf-stream-wasm.js';
 import {assemble as reference} from './helpers/reference-pdf-stream.js';
 import {extractPDFText} from '../../src/js/readers/pdf-text.js';
 import {extractPDFText as referenceExtraction} from './helpers/reference-pdf-text-stream.js';
@@ -78,9 +78,20 @@ for(const columns of [1,2,3])it(`routes complete ${columns}-column extraction th
  const native=vi.fn(core.pdf_text_stream);state.core={...core,pdf_text_stream:native};
  expect(extractPDFText(input,viewport)).toEqual(expected);expect(native).toHaveBeenCalledOnce();expect(input).toEqual(before);
 });
-it('keeps complete extraction usable when the stream core is missing',()=>{
- state.core=null;const items=Array.from({length:160},(_,i)=>({str:'A complete line '+i,width:120,height:10,transform:[10,0,0,10,20,2000-i*12]}));
- expect(extractPDFText({items})).toEqual(referenceExtraction({items}));
+it('reports a missing core as an error rather than guessing a reading stream',()=>{
+ const items=Array.from({length:160},(_,i)=>({str:'A complete line '+i,width:120,height:10,transform:[10,0,0,10,20,2000-i*12]}));
+ state.core=core;const expected=referenceExtraction({items});expect(extractPDFText({items})).toEqual(expected);
+ state.core=null;expect(()=>extractPDFText({items})).toThrow('El módulo numérico no se pudo cargar');
+ const lines=linesFor(samples.wraps);expect(()=>assemblePDFLines(lines)).toThrow('El módulo numérico no se pudo cargar');
+ state.core={...core,pdf_text_stream:()=>-1};expect(()=>assemblePDFLines(lines)).toThrow('No se pudo calcular la página del PDF');
+});
+it('answers every size of page in the kernel, small ones included',()=>{
+ const native=vi.fn(core.pdf_text_stream);state.core={...core,pdf_text_stream:native};
+ for(const rows of [1,2,5,40]){
+  const items=Array.from({length:rows},(_,i)=>({str:'Line '+i,width:40,height:10,transform:[10,0,0,10,20,500-i*12]}));
+  expect(extractPDFText({items})).toEqual(referenceExtraction({items}));
+ }
+ expect(native).toHaveBeenCalledTimes(4);
 });
 
 it('keeps Unicode classification exact across bounded cache eviction and astral lowercase',()=>{

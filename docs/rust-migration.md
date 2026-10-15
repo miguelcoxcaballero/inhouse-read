@@ -1,5 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.245: lectores PDF y EPUB, instantáneas de página y controlador del lector
+en Rust. Inventario 19071 Rust/28927 JS, **39,73 %**; no mide funciones terminadas.
+Detalle en remaining-wip-verification.md.
+
 Entrega 1.7.244 (voz sobre la 1.7.243): motor de voz
 (limpieza del audio, tempo, hebreo y flujo por fragmento) en el núcleo `voice`, y
 catálogo y texto de narración en `rust-ui`. Inventario 13668 Rust/32156 JS,

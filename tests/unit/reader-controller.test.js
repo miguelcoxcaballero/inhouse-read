@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const pdfOpen = vi.fn(async () => {})

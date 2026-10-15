@@ -1,3 +1,4 @@
+// Frozen original of src/js/readers/page-box.js before its logic moved to Rust (tests only).
 // The height of a paginated book's page box, kept across openings.
 //
 // The free height under a book changes by a few dozen pixels with things

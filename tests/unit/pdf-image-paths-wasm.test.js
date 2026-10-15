@@ -1,4 +1,5 @@
 // @vitest-environment node
+import './helpers/rust-ui-ready.js';
 import {readFileSync} from 'node:fs';
 import {beforeAll,afterEach,expect,it,vi} from 'vitest';
 const state=vi.hoisted(()=>({core:null}));
@@ -38,10 +39,27 @@ it('frees a rejected, throwing or successful pass exactly once',()=>{
  }
 });
 function recorder(){const calls=[];const c=new Proxy({},{get:(_,key)=>(...args)=>calls.push([key,...args]),set:(_,key,value)=>{calls.push([key,value]);return true;}});return {calls,target:{width:400,height:600,getContext:()=>c}};}
-it('the real theme painter preserves the complete Canvas call sequence including empty masks and recovery',()=>{
- for(const mode of ['native','missing','broken'])for(const input of [coordinates(7),coordinates(8),coordinates(32),Array(48).fill(NaN)])for(const filter of ['none','sepia(.5)','invert(.89) hue-rotate(180deg)']){
-  const kernel=vi.fn(core.pdf_image_paths);state.core=mode==='missing'?null:{...core,pdf_image_paths:mode==='broken'?()=>{throw Error('lost');}:kernel};
+it('the real theme painter preserves the complete Canvas call sequence including empty masks',()=>{
+ for(const input of [coordinates(7),coordinates(8),coordinates(32),Array(48).fill(NaN)])for(const filter of ['none','sepia(.5)','invert(.89) hue-rotate(180deg)']){
+  const kernel=vi.fn(core.pdf_image_paths);state.core={...core,pdf_image_paths:kernel};
   const actual=recorder(),expected=recorder(),source={};paintPDFTheme(source,actual.target,filter,input);referencePaintTheme(source,expected.target,filter,input);expect(actual.calls).toEqual(expected.calls);
-  if(mode==='native')expect(kernel.mock.calls.length).toBe(input.length>=48&&filter!=='none'?1:0);
+  expect(kernel.mock.calls.length).toBe(input.length>0&&filter!=='none'?1:0);
  }
+});
+it('a missing or broken core is an error that leaves the Canvas state balanced',()=>{
+ for(const mode of ['missing','broken'])for(const input of [coordinates(8),coordinates(32)]){
+  state.core=mode==='missing'?null:{...core,pdf_image_paths:()=>{throw Error('lost');}};
+  const actual=recorder(),expected=recorder(),source={};
+  expect(()=>paintPDFTheme(source,actual.target,'sepia(.5)',input)).toThrow(mode==='missing'?'El módulo numérico no se pudo cargar':'No se pudo calcular la página del PDF');
+  referencePaintTheme(source,expected.target,'sepia(.5)',input);
+  // The themed page is already painted; no save() was left without its restore().
+  expect(actual.calls).toEqual(expected.calls.slice(0,actual.calls.length));
+  expect(actual.calls.some(([name])=>name==='save')).toBe(false);
+  state.core=core;
+ }
+});
+it('paints the footprints of more pictures than one native call accepts, in order',()=>{
+ const input=coordinates(40000);state.core=core;
+ const actual=recorder(),expected=recorder(),source={};paintPDFTheme(source,actual.target,'sepia(.5)',input);referencePaintTheme(source,expected.target,'sepia(.5)',input);
+ expect(actual.calls).toEqual(expected.calls);
 });

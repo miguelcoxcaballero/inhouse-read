@@ -4,23 +4,35 @@ import assert from 'node:assert/strict'
 import { readFile, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { cpus } from 'node:os'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { extractPDFText as referencePDFText } from '../tests/unit/helpers/reference-pdf-text.js'
+import { extractPDFText as referenceBeforeRows } from '../tests/unit/helpers/reference-before-pdf-rows.js'
+import { legacyPDFRowLines } from '../tests/unit/helpers/reference-pdf-pipeline.js'
 import { PDF_ROW_BENCH_CASES, makePDFRowEntries, pdfContentFromEntries, PDF_ROW_VIEWPORT,
   assertExactPDFValue, assertPDFRowIdentities, assertPDFSourceIdentities } from '../tests/helpers/pdf-row-cases.mjs'
 const read=path=>readFile(new URL(path,import.meta.url),'utf8')
-const [rowSource,columnSource,textSource,beforeRowsSource]=await Promise.all([
-  read('../src/js/readers/pdf-row-layout-wasm.js'),read('../src/js/readers/pdf-layout-wasm.js'),read('../src/js/readers/pdf-text.js'),read('../tests/unit/helpers/reference-before-pdf-rows.js')])
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex')
 const bytes=await readFile(new URL('../src/wasm/inhouse_read_core.wasm',import.meta.url))
 const started=performance.now(),{instance}=await WebAssembly.instantiate(bytes),compiled=instance.exports,initializationMs=performance.now()-started
 assert.equal(typeof compiled.pdf_row_lines,'function')
 let core=compiled,calls=0
 const tracked={...compiled,pdf_row_lines(...args){calls++;return compiled.pdf_row_lines(...args)}}
-const noImports=source=>source.replace(/^import .*\n/gm,'').replace(/\bexport /g,'')
-const rows=new Function('getRustCore',`${noImports(rowSource)}\nreturn {rustPDFRowLines,pdfRowLines,legacyPDFRowLines};`)(()=>core)
-const columns=new Function('getRustCore',`${noImports(columnSource)}\nreturn {pdfColumnCut};`)(()=>core)
-const extract=new Function('pdfRowLines','columnCut',`${noImports(textSource)}\nreturn extractPDFText;`)(rows.pdfRowLines,columns.pdfColumnCut)
-const beforeRowsExtract=new Function('columnCut',`${noImports(beforeRowsSource)}\nreturn extractPDFText;`)(columns.pdfColumnCut)
+globalThis.__benchmarkCore=()=>core
+// The production modules themselves, with the one getter import (bare Node cannot load ?url) pointed at this core.
+const directory=await mkdtemp(join(tmpdir(),'pdf-row-bench-'))
+const modules=['pdf-text','pdf-row-layout-wasm','pdf-order-wasm','pdf-stream-wasm','core-required']
+const sources=Object.fromEntries(await Promise.all(modules.map(async name=>[name,await read(`../src/js/readers/${name}.js`)])))
+await writeFile(join(directory,'rust-core.js'),'export const getRustCore=()=>globalThis.__benchmarkCore()\n')
+for(const name of modules)await writeFile(join(directory,`${name}.js`),sources[name].replaceAll("'../rust-core.js'","'./rust-core.js'"))
+const {pdfRowLines:_rows,rustPDFRowLines}=await import(pathToFileURL(join(directory,'pdf-row-layout-wasm.js')))
+const {extractPDFText:extract}=await import(pathToFileURL(join(directory,'pdf-text.js')))
+const rows={rustPDFRowLines,legacyPDFRowLines}
+const rowSource=sources['pdf-row-layout-wasm'],columnSource='',textSource=sources['pdf-text']
+const beforeRowsSource=await read('../tests/unit/helpers/reference-before-pdf-rows.js')
+const beforeRowsExtract=referenceBeforeRows
 const median=values=>[...values].sort((a,b)=>a-b)[Math.floor(values.length/2)]
 const observations=[]
 for(const spec of PDF_ROW_BENCH_CASES) {
@@ -49,8 +61,9 @@ for(let sample=0;sample<150;sample++) {
 }
 const report={generatedAt:new Date().toISOString(),scope:'Desktop Node. Actual WASM, full bridge copies/validation/reconstruction and complete extraction. Getter imports injected; no numeric implementation mocked. No physical-phone or GPU claim.',
   environment:{node:process.version,cpu:cpus()[0]?.model,platform:process.platform},artifact:{bytes:bytes.length,sha256:hash(bytes)},
-  sourceHashes:{rows:hash(rowSource),columns:hash(columnSource),pdfText:hash(textSource),beforeRowsPDFText:hash(beforeRowsSource)},initializationMs,
+  sourceHashes:{rows:hash(rowSource),pdfText:hash(textSource),beforeRowsPDFText:hash(beforeRowsSource)},initializationMs,
   proofKernelCalls:calls,fuzzCases:150,methodology:{warmups:2,rounds:9,alternating:true,timingAssertions:false},wasmCapacityBytes:compiled.memory.buffer.byteLength,observations}
+await rm(directory,{recursive:true,force:true})
 const json=JSON.stringify(report,null,2)+'\n'
 if(process.argv[2])await writeFile(process.argv[2],json,{flag:'wx'})
 process.stdout.write(json)

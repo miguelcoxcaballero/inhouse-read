@@ -4,8 +4,10 @@ import { resolve } from 'node:path'
 
 const runtime = vi.hoisted(() => ({ core:null }))
 vi.mock('../../src/js/rust-core.js', () => ({ getRustCore:() => runtime.core }))
-import { legacyPDFColumnCut, rustPDFColumnCut, pdfColumnCut } from '../../src/js/readers/pdf-layout-wasm.js'
+import { rustPDFColumnCut, pdfColumnCut } from './helpers/pdf-column-cut-bridge.js'
+import { legacyPDFColumnCut } from './helpers/reference-pdf-pipeline.js'
 import { extractPDFText } from '../../src/js/readers/pdf-text.js'
+import { extractPDFText as referenceExtraction } from './helpers/reference-pdf-text.js'
 
 let compiled
 beforeAll(async () => {
@@ -172,8 +174,7 @@ describe('compiled Rust PDF gutter detection retains the original geometry contr
     const view = { transform:[1,0,0,-1,0,800] }
     for (const items of inputs) {
       const source = { items:items.slice().reverse() }, original = structuredClone(source)
-      runtime.core = null
-      const expected = extractPDFText(source,view)
+      const expected = referenceExtraction(source,view)
       runtime.core = compiled
       const actual = extractPDFText(source,view)
       expect(actual).toEqual(expected)

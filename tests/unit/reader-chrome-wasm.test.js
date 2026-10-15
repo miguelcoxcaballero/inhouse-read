@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {afterEach,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
-import {readerPanelMarkup,readerIcon} from '../../src/js/readers/reader-interface.js'
+import {readerPanelMarkup,readerIcon} from './helpers/reference-reader-interface.js'
 import {LegacyReaderChrome} from './helpers/reference-reader-chrome.js'
 import {ReaderChrome} from '../../src/js/readers/reader-chrome.js'
 import * as ui from '../../src/wasm/ui/inhouse_read_ui.js'
@@ -19,7 +19,7 @@ function setup(native,trial=0,markup='<button data-play></button><p class="readi
  create();host.voice={neuralOff:trial%3?'':'failed'}
  host.neuralPicker=trial%5?{warmUp:()=>events.push(['warmUp']),render:()=>events.push(['render'])}:null
  host.setSleepChoice=value=>events.push(['sleep',value]);host.updateMiniPlayer=(...args)=>events.push(['mini',...args]);host.updateReturnButton=()=>events.push(['back'])
- host.voiceState=(state,message)=>native?ui.reader_voice_state(host,state,message,readerIcon,document):legacy.voiceState.call(host,state,message,readerIcon)
+ host.voiceState=(state,message)=>native?ui.reader_voice_state(host,state,message,document):legacy.voiceState.call(host,state,message,readerIcon)
  host.resize=()=>native?ui.reader_resize_panel(host,window):Boolean(legacy.resize.call(host))
  host.reveal=()=>native?ui.reader_reveal_field(host,document):legacy.revealField.call(host)
  return {host,events}

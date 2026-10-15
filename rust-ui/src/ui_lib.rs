@@ -64,6 +64,18 @@ mod voice_store;
 mod supertonic_store;
 mod package_store;
 mod reader_lists;
+mod foliate_cursor;
+mod eager;
+mod page_snapshot;
+mod page_box;
+mod promises;
+mod foliate_reader;
+mod pdf_reader;
+mod pdf_speech;
+mod reader_controller;
+mod pdf_reflow;
+mod pdf_theme;
+mod reader_markup;
 use std::{cell::{Cell, RefCell}, rc::{Rc, Weak}};
 use wasm_bindgen::{prelude::*, JsCast};
 use js_sys::{Array, Function, Reflect};
@@ -72,6 +84,10 @@ mod reader_view;
 
 #[wasm_bindgen]
 pub fn ui_abi_version() -> u32 { 1 }
+
+/// Timer and frame callbacks the module still owns: zero once everything scheduled has run or been cancelled.
+#[wasm_bindgen]
+pub fn ui_pending_callbacks() -> u32 { crate::host::pending_callbacks() as u32 }
 
 #[wasm_bindgen]
 extern "C" {

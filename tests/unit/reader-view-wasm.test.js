@@ -1,7 +1,7 @@
 import {beforeAll,afterEach,it,expect,vi} from 'vitest'
 import {readFileSync} from 'node:fs'
 import {initSync,RustReaderView} from '../../src/wasm/ui/inhouse_read_ui.js'
-import {readerPanelMarkup,readerIcon} from '../../src/js/readers/reader-interface.js'
+import {readerPanelMarkup,readerIcon} from './helpers/reference-reader-interface.js'
 import {DEFAULT_READING_PREFERENCES,READING_THEMES} from '../../src/js/readers/reading-preferences.js'
 let core,views=[]
 beforeAll(()=>{core=initSync({module:readFileSync('src/wasm/ui/inhouse_read_ui_bg.wasm')})})

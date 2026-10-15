@@ -1,4 +1,4 @@
-import {legacyPDFColumnCut as columnCut} from '../../../src/js/readers/pdf-layout-wasm.js'
+import {legacyPDFColumnCut as columnCut} from './reference-pdf-pipeline.js'
 const median = values => {
   if (!values.length) return 0
   const sorted = [...values].sort((a, b) => a - b)

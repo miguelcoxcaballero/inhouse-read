@@ -29,11 +29,11 @@ pub fn reader_create_chrome(host:JsValue,panel_markup:String,mini_markup:String,
  mini.set_inner_html(&mini_markup);audio.append_child(&mini)?;Ok(())
 }
 #[wasm_bindgen]
-pub fn reader_voice_state(host:JsValue,state:JsValue,message:JsValue,icon:Function,doc:web_sys::Document)->Result<(),JsValue>{
+pub fn reader_voice_state(host:JsValue,state:JsValue,message:JsValue,doc:web_sys::Document)->Result<(),JsValue>{
  let playing=state==JsValue::from_str("playing");let paused=state==JsValue::from_str("paused");let loading=state==JsValue::from_str("loading");
  let label=if playing{"Pausar"}else if paused{"Continuar"}else if loading{"Preparando…"}else{"Reproducir"};
  query(&node(&host,"panel")?,"[data-play]")?.set_attribute("aria-label",label)?;
- let button=query(&node(&host,"panel")?,"[data-play]")?;set(&button,"innerHTML",&icon.call1(&JsValue::UNDEFINED,&if playing{"pause"}else{"play"}.into())?)?;
+ let button=query(&node(&host,"panel")?,"[data-play]")?;set(&button,"innerHTML",&JsValue::from_str(&crate::reader_markup::icon(if playing{"pause"}else{"play"})))?;
  set(query(&node(&host,"panel")?,"[data-play]")?.as_ref(),"disabled",&loading.into())?;
  let status=query(&node(&host,"panel")?,".reading-audio-status")?;
  set(&status,"textContent",&if message.is_truthy(){message.clone()}else{JsValue::from_str(if playing{"Leyendo"}else if paused{"En pausa"}else{"Detenido"})})?;

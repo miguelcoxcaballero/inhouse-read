@@ -1,3 +1,4 @@
+import './helpers/rust-ui-ready.js'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { readFileSync } from 'node:fs'

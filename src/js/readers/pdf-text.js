@@ -1,10 +1,11 @@
-import {assemblePDFLines} from './pdf-text-stream.js'
 // PDF text items follow the order in which the file paints glyphs, which need
 // not be its reading order. This page-local layout keeps every text item and
 // its source offsets: the same result feeds reflow, speech and the text layer.
 // No OCR, language model, repeated-line removal or guessed missing text.
-import { pdfOrderLines as orderLines } from './pdf-order-lines.js'
-import { pdfRowLines } from './pdf-row-layout-wasm.js'
+import { assemblePDFLines } from './pdf-stream-wasm.js'
+import { pdfOrderLines as orderLines } from './pdf-order-wasm.js'
+import { PDF_TEXT_ITEM_LIMIT, pdfRowLines } from './pdf-row-layout-wasm.js'
+import { readerUI } from './rust-ui-required.js'
 
 const DEFAULT_VIEW = [1, 0, 0, -1, 0, 0]
 const finite = value => Number.isFinite(Number(value))
@@ -26,6 +27,9 @@ export function extractPDFText(content, viewport) {
   const raw = (content?.items || []).map((item, rawIndex) => ({ item, rawIndex }))
     .filter(({ item }) => typeof item.str === 'string' && item.str)
   if (!raw.length) return fallback(content || {})
+  // The kernels order up to this many text items; a page with more keeps the
+  // complete stream in the order the file paints it.
+  if (raw.length > PDF_TEXT_ITEM_LIMIT) return fallback(content)
   const view = Array.isArray(viewport?.transform) && viewport.transform.length === 6 && viewport.transform.every(finite)
     ? viewport.transform : DEFAULT_VIEW
   const positioned = raw.filter(({ item }) => item.transform?.length === 6 && [...item.transform].every(finite)
@@ -47,6 +51,8 @@ export function extractPDFText(content, viewport) {
     const width = Math.max(0, finite(item.width) ? Number(item.width) * scale : item.str.length * height * .5)
     return { item, rawIndex, x0:x, x1:x + width, y, height, top:y - height, bottom:y }
   })
+  // Coordinates that overflowed to infinity cannot be ordered: keep the stream.
+  if (!entries.every(entry => [entry.x0, entry.x1, entry.y, entry.height, entry.top, entry.bottom].every(Number.isFinite))) return fallback(content)
   const rtlWeight = entries.filter(entry => entry.item.dir === 'rtl').reduce((sum, entry) => sum + entry.item.str.length, 0)
   const rtl = rtlWeight > entries.reduce((sum, entry) => sum + entry.item.str.length, 0) / 2
   const lines = orderLines(pdfRowLines(entries, rtl), rtl)
@@ -59,34 +65,8 @@ export function extractPDFText(content, viewport) {
 
 /** Maps the reordered PDF.js spans to the same joined text that reflow speaks. */
 export function mapPDFTextLayer(layer, layout) {
-  if (!layout?.geometric) return null
-  const doc = layer.ownerDocument, walker = doc.createTreeWalker(layer, 4), nodes = []
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) if (node.nodeValue) nodes.push(node)
-  const nonEmptyItems = layout.items.filter(item => item.str)
-  if (nodes.length !== nonEmptyItems.length || nodes.some((node, index) => node.nodeValue !== nonEmptyItems[index].str)) return null
-  const spans = layout.spans.map(span => ({ ...span, node:nodes[span.itemIndex] }))
-  const spanAt = offset => {
-    let lo = 0, hi = spans.length - 1, found = -1
-    while (lo <= hi) { const mid = (lo + hi) >>> 1; if (spans[mid].start <= offset) { found = mid; lo = mid + 1 } else hi = mid - 1 }
-    return found
-  }
-  return {
-    text:layout.text, spans,
-    rangeFor(start, end) {
-      if (!(end > start) || !spans.length) return null
-      let a = spanAt(start), b = spanAt(end - 1)
-      if (a < 0) a = 0
-      else if (start >= spans[a].end) a++
-      if (b < a || b < 0 || a >= spans.length) return null
-      const first = spans[a], last = spans[b], range = doc.createRange()
-      range.setStart(first.node, first.sourceStart + Math.max(0, start - first.start))
-      range.setEnd(last.node, last.sourceStart + Math.min(last.end - last.start, end - last.start))
-      return range
-    },
-    offsetOf(node, offset) {
-      const matching = spans.filter(span => span.node === node)
-      const span = matching.find(value => offset <= value.sourceEnd) || matching.at(-1)
-      return span ? span.start + Math.max(0, Math.min(span.end - span.start, offset - span.sourceStart)) : 0
-    }
-  }
+  const ui = readerUI(), map = ui.pdf_layer_map(layer, layout)
+  return map && { text:map.text, spans:map.spans,
+    rangeFor:(start, end) => ui.pdf_layer_range(map.doc, map.spans, start, end),
+    offsetOf:(node, offset) => ui.pdf_layer_offset(map.spans, node, offset) }
 }

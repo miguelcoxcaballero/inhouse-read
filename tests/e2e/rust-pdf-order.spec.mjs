@@ -4,8 +4,9 @@ import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
 import {rustPDFOrderLines} from '/inhouse-read/src/js/readers/pdf-order-wasm.js';
-import {legacyPDFOrderLines as previous} from '/inhouse-read/src/js/readers/pdf-order-lines.js';
 import {orderLines as reference} from '/inhouse-read/tests/unit/helpers/reference-pdf-order.js';
+// The JavaScript original lives with the frozen references now: it is the one both sides are timed against.
+const previous=reference;
 const core=await loadRustCore();if(!core?.pdf_order_lines)throw Error('Compiled PDF ordering required');
 const line=(x,y,width,height,text)=>({x0:x,x1:x+width,y,height,top:y-height,bottom:y,text,items:[{str:text}]});
 window.checkPDFOrder=()=>{
