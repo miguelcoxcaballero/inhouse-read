@@ -3,7 +3,7 @@
 //! receives one JSON document (`catalogue_json`) and keeps its own object
 //! shapes. The plant, pot and lamp tables live in the decor core
 //! (plant_catalogue.rs), whose bytes decide the validity of saved bakes.
-use crate::cabinet::{BAGGEBO, SHELF_HEIGHTS_FROM_FLOOR, USABLE_DEPTH, WALNUT};
+use crate::cabinet::{BAGGEBO, FOOT_RADIUS, MESH_PITCH, POST_OUTER_CORNER_RADIUS, POST_TIP_RADIUS, REAR_BRACE, SHELF_HEIGHTS_FROM_FLOOR, USABLE_DEPTH, WALNUT};
 use crate::json::{n, nums, obj, s, V};
 
 const SPINE_PALETTE: [(&str, &str, &str, &str); 12] = [
@@ -37,8 +37,8 @@ fn baggebo_spec() -> V {
         ("color", s("Blanco")),
         ("maxShelfLoadKg", n(12.0)),
         ("postSize", n(BAGGEBO.post_size)),
-        ("postProfile", obj(vec![("shape", s("rounded-right-triangle")), ("outerCornerRadius", n(1.2)), ("tipRadius", n(0.8))])),
-        ("footRadius", n(5.6)),
+        ("postProfile", obj(vec![("shape", s("rounded-right-triangle")), ("outerCornerRadius", n(POST_OUTER_CORNER_RADIUS)), ("tipRadius", n(POST_TIP_RADIUS))])),
+        ("footRadius", n(FOOT_RADIUS)),
         ("innerWidth", n(564.0)),
         ("usableDepth", n(USABLE_DEPTH)),
         ("ceilingOffset", n(3.75)),
@@ -47,8 +47,8 @@ fn baggebo_spec() -> V {
         ("shelfHeightsFromFloor", nums(&SHELF_HEIGHTS_FROM_FLOOR)),
         ("topMesh", V::B(true)),
         ("meshSurfaceCount", n(4.0)),
-        ("rearBrace", obj(vec![("width", n(216.0)), ("height", n(320.0)), ("top", n(376.51)), ("bottom", n(696.51))])),
-        ("meshPitch", obj(vec![("width", n(13.2)), ("height", n(7.2))])),
+        ("rearBrace", obj(vec![("width", n(REAR_BRACE[0])), ("height", n(REAR_BRACE[1])), ("top", n(REAR_BRACE[2])), ("bottom", n(REAR_BRACE[3]))])),
+        ("meshPitch", obj(vec![("width", n(MESH_PITCH[0])), ("height", n(MESH_PITCH[1]))])),
         ("provenance", obj(vec![
             ("dimensions", s("Medidas publicadas por IKEA: 60 × 25 × 116 cm.")),
             ("structure", s("Manual AA-2235400-4, páginas 6–9: cuatro montantes, tres baldas interiores, superficie superior de malla, refuerzo trasero y tacos regulables.")),

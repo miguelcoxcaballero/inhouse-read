@@ -33,6 +33,38 @@ fn cells(x: f64, y: f64, seed: u32) -> (f64, f64) {
     } }
     (first.sqrt(), second.sqrt())
 }
+/// The unglazed foot's upper edge: an uneven line with short runs, constant along each column.
+pub(crate) fn edge(u: f64, seed: u32) -> f64 {
+    0.07 + (noise(u * 18.0, 0.0, 18, seed + 4) - 0.5) * 0.018
+        - (noise(u * 36.0, 0.0, 36, seed + 3) - 0.7).max(0.0) * 0.1
+}
+/// Whether a glaze configuration is usable: colours in [0,1], gloss/speckle/crackle in [0,1], an integer seed.
+pub(crate) fn valid(c: &[f64]) -> bool {
+    !(c.iter().any(|v| !v.is_finite()) || c[..9].iter().any(|v| *v < 0.0 || *v > 1.0)
+        || c[9] < 0.0 || c[9] > 1_000_000.0 || c[9].fract() != 0.0)
+}
+/// One texel of glazed pottery: colour, relief and roughness (rows below the soil line are hidden).
+pub(crate) fn texel(c: &[f64], u: f64, v: f64, x: i32, y: i32, edge: f64) -> [f64; 5] {
+    let seed = c[9] as u32;
+    let mut texel = [0.2, 0.2, 0.2, 0.5, 1.0];
+    if v < 0.74 + 0.03 {
+        let cloud = cloud(u * 5.0, v * 5.0, seed);
+        let glazed = smooth(edge - 0.004, edge + 0.004, v);
+        let z = (v - edge) / 0.006; let bead = (-(z * z)).exp();
+        let z = (v - 0.6) / 0.012; let lip = (-(z * z)).exp() * 0.24;
+        let speck = if hash(x, y, seed + 5) > 1.0 - c[7] { 0.4 + hash(x, y, seed + 6) * 0.4 } else { 0.0 };
+        let crack = if c[8] != 0.0 && v > edge { let (a,b) = cells(u * 12.0, v * 17.0, seed + 7); (1.0 - smooth(0.0, 0.03, b - a)) * c[8] } else { 0.0 };
+        let grain = hash(x, y, seed + 8) - 0.5; let cover = glazed * (1.0 - lip);
+        for channel in 0..3 {
+            let glaze = c[channel] * (0.975 + cloud * 0.045) * (1.0 - crack * 0.06) * (1.0 - speck * [0.34,0.45,0.6][channel] * glazed);
+            let body = c[channel + 3] * (0.92 + grain * 0.14);
+            texel[channel] = body + (glaze - body) * cover;
+        }
+        texel[3] = 0.5 + glazed * (cloud * 0.06 - speck * 0.22 - crack * 0.1) + (1.0 - glazed) * grain * 0.35 + bead * 0.14;
+        texel[4] = 0.84 + grain * 0.1 + (c[6] + cloud * 0.06 + crack * 0.1 + speck * 0.2 - 0.84 - grain * 0.1) * glazed;
+    }
+    texel
+}
 /// # Safety
 /// config has 10 finite f64; output has width*count*8 bytes. No retained state.
 #[no_mangle]
@@ -40,34 +72,16 @@ pub unsafe extern "C" fn plant_glaze_rows(width: usize, height: usize, row: usiz
     count: usize, config: *const f64, output: *mut u8) -> u32 {
     if width == 0 || height == 0 || width > 2048 || height > 2048 || count == 0 || count > 4 || row >= height || count > height - row { return 0; }
     let c = std::slice::from_raw_parts(config, 10);
-    if c.iter().any(|v| !v.is_finite()) || c[..9].iter().any(|v| *v < 0.0 || *v > 1.0)
-        || c[9] < 0.0 || c[9] > 1_000_000.0 || c[9].fract() != 0.0 { return 0; }
+    if !valid(c) { return 0; }
     let seed = c[9] as u32; let size = width * count * 4;
     let (pigment, data) = std::slice::from_raw_parts_mut(output, size * 2).split_at_mut(size);
     for x in 0..width {
         let u = (x as f64 + 0.5) / width as f64;
-        let edge = 0.07 + (noise(u * 18.0, 0.0, 18, seed + 4) - 0.5) * 0.018
-            - (noise(u * 36.0, 0.0, 36, seed + 3) - 0.7).max(0.0) * 0.1;
+        let edge = edge(u, seed);
         for offset in 0..count {
             let y = row + offset; let v = (y as f64 + 0.5) / height as f64;
             let at = (offset * width + x) * 4;
-            let mut texel = [0.2, 0.2, 0.2, 0.5, 1.0];
-            if v < 0.74 + 0.03 {
-                let cloud = cloud(u * 5.0, v * 5.0, seed);
-                let glazed = smooth(edge - 0.004, edge + 0.004, v);
-                let z = (v - edge) / 0.006; let bead = (-(z * z)).exp();
-                let z = (v - 0.6) / 0.012; let lip = (-(z * z)).exp() * 0.24;
-                let speck = if hash(x as i32, y as i32, seed + 5) > 1.0 - c[7] { 0.4 + hash(x as i32, y as i32, seed + 6) * 0.4 } else { 0.0 };
-                let crack = if c[8] != 0.0 && v > edge { let (a,b) = cells(u * 12.0, v * 17.0, seed + 7); (1.0 - smooth(0.0, 0.03, b - a)) * c[8] } else { 0.0 };
-                let grain = hash(x as i32, y as i32, seed + 8) - 0.5; let cover = glazed * (1.0 - lip);
-                for channel in 0..3 {
-                    let glaze = c[channel] * (0.975 + cloud * 0.045) * (1.0 - crack * 0.06) * (1.0 - speck * [0.34,0.45,0.6][channel] * glazed);
-                    let body = c[channel + 3] * (0.92 + grain * 0.14);
-                    texel[channel] = body + (glaze - body) * cover;
-                }
-                texel[3] = 0.5 + glazed * (cloud * 0.06 - speck * 0.22 - crack * 0.1) + (1.0 - glazed) * grain * 0.35 + bead * 0.14;
-                texel[4] = 0.84 + grain * 0.1 + (c[6] + cloud * 0.06 + crack * 0.1 + speck * 0.2 - 0.84 - grain * 0.1) * glazed;
-            }
+            let texel = texel(c, u, v, x as i32, y as i32, edge);
             for channel in 0..3 { pigment[at + channel] = byte(texel[channel]); }
             pigment[at + 3] = 255; data[at] = byte(texel[3]); data[at + 1] = byte(texel[4]); data[at + 2] = 0; data[at + 3] = 255;
         }

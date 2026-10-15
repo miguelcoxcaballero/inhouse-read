@@ -20,23 +20,27 @@ impl Mesh<'_> {
 }
 
 /// # Safety
-/// Params has 10 + rows + footprints*3 + 80 f64 values:
-/// w,h,d,side,inner,ground,light RGBA; sorted bottoms; valid footprints; trig.
-/// Output has (rows*78 + 66 + lit*360 + footprints*300)*7 f32 values.
-/// All buffers are disjoint and owned by the host.
+/// Params has 10 + rows + footprints*3 + 80 f64 values: width, height, depth and floorY as given
+/// (the cabinet frame, the ground and the shelf order are derived here), the floor light's RGBA,
+/// the shelf bottoms as given (the finite, non-negative and new ones are kept, ascending), the
+/// valid footprints (x, z, radius) and the host's trigonometry. Output has
+/// (bottoms*78 + 66 + lit*360 + footprints*300)*7 f32 values, `bottoms` being the kept ones; the
+/// return value is the vertex count. All buffers are disjoint and owned by the host.
 #[no_mangle]
 pub unsafe extern "C" fn shelf_occlusion(params: *const f64, rows: usize,
     footprints: usize, lit: u32, output: *mut f32) -> usize {
-    if rows > 1024 || footprints > 1024 || lit > 1 { return 0; }
+    if rows > 100_000 || footprints > 100_000 || lit > 1 { return 0; }
     let p = std::slice::from_raw_parts(params, 90 + rows + footprints * 3);
-    if p.iter().any(|v| !v.is_finite()) || p[..5].iter().any(|&v| v <= 0.0) { return 0; }
-    let bottoms = &p[10..10 + rows];
+    let frame = crate::cabinet_model::frame(p[0], p[1], p[2]);
+    let (w, h, d, side, inner) = (frame.w, frame.h, frame.d, frame.side, frame.inner);
+    let mut kept = crate::cabinet_model::shelf_bottoms(&p[10..10 + rows]);
+    kept.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let bottoms = &kept[..];
     let feet = &p[10 + rows..10 + rows + footprints * 3];
-    if bottoms.iter().any(|&v| v < 0.0) || feet.chunks_exact(3).any(|f| f[2] <= 0.0) { return 0; }
     let trig = &p[10 + rows + footprints * 3..];
-    let vertices = rows * 78 + 66 + lit as usize * 360 + footprints * 300;
+    let vertices = bottoms.len() * 78 + 66 + lit as usize * 360 + footprints * 300;
     let mut m = Mesh { out: std::slice::from_raw_parts_mut(output, vertices * 7), vertices, at: 0, ink: [0.0;3] };
-    let (w,h,d,side,inner,ground) = (p[0],p[1],p[2],p[3],p[4],p[5]);
+    let ground = (if p[3].is_finite() { p[3] } else { -h }) + 0.25;
     let back = -d + 2.0 + 0.3;
     let (left,right,wall_l,wall_r) = (-inner/2.0, inner/2.0, -w/2.0+side+0.3, w/2.0-side-0.3);
     let mut ceiling = -12.0;

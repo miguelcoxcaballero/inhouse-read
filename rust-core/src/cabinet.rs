@@ -10,6 +10,13 @@ pub struct Spec {
 }
 pub const BAGGEBO: Spec = Spec { width: 600.0, depth: 250.0, height: 1160.0, post_size: 18.0,
     shelf_rim_height: 16.5, shelf_bottoms: [360.0, 682.5, 1005.0] };
+// The BAGGEBO's finer measures (mm): the post's corner radii, the adjustable feet, the rear mesh brace and the
+// expanded-metal pitch. Shared by the shelf tables (app core) and the model builder (shelf module).
+pub const POST_OUTER_CORNER_RADIUS: f64 = 1.2;
+pub const POST_TIP_RADIUS: f64 = 0.8;
+pub const FOOT_RADIUS: f64 = 5.6;
+pub const REAR_BRACE: [f64; 4] = [216.0, 320.0, 376.51, 696.51]; // width, height, top, bottom
+pub const MESH_PITCH: [f64; 2] = [13.2, 7.2]; // width, height
 // The wooden cabinet is built to the same outer size and compartments.
 pub const WALNUT: Spec = Spec { width: BAGGEBO.width, depth: BAGGEBO.depth, height: BAGGEBO.height,
     post_size: BAGGEBO.post_size, shelf_rim_height: BAGGEBO.shelf_rim_height, shelf_bottoms: BAGGEBO.shelf_bottoms };

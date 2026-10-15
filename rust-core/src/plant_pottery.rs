@@ -49,20 +49,31 @@ fn galvanized(u:f64,v:f64,color:&[f64],seed:u32)->[f64;5] {
     [color[0]*tone,color[1]*tone,color[2]*tone,0.5+tilt*0.035+feather*0.02-(1.0-border)*0.04,
      0.34+id*0.12+feather*0.04+(1.0-border)*0.04+(1.0-bead)*0.25]
 }
+/// Whether a terracotta/zinc configuration is usable: RGB in [0,1] and an integer seed.
+pub(crate) fn valid(c: &[f64]) -> bool {
+    !(c.iter().any(|v| !v.is_finite()) || c[..3].iter().any(|v| *v < 0.0 || *v > 1.0) || c[3] < 0.0 || c[3] > 1_000_000.0 || c[3].fract() != 0.0)
+}
+/// The throwing rings' phase, constant along a column (terracotta only).
+pub(crate) fn wheel(kind: u32, u: f64, seed: u32) -> f64 { if kind == 0 { noise(u * 6.0, 0.0, 6, seed + 5) * 4.0 } else { 0.0 } }
+/// One texel of terracotta (kind 0) or galvanised zinc (kind 1); rows below the soil line are hidden.
+pub(crate) fn texel(kind: u32, c: &[f64], u: f64, v: f64, x: i32, y: i32, wheel: f64) -> [f64; 5] {
+    let seed = c[3] as u32;
+    if v >= 0.74 + 0.03 { [0.2, 0.2, 0.2, 0.5, 1.0] } else if kind == 0 { terracotta(u, v, x, y, c, seed, wheel) } else { galvanized(u, v, c, seed) }
+}
 /// # Safety
 /// config contains RGB [0,1] and seed; output has width*count*8 bytes.
 #[no_mangle]
 pub unsafe extern "C" fn plant_pottery_rows(kind:u32,width:usize,height:usize,row:usize,count:usize,config:*const f64,output:*mut u8)->u32 {
     if kind>1||width==0||height==0||width>2048||height>2048||count==0||count>4||row>=height||count>height-row{return 0;}
     let c=std::slice::from_raw_parts(config,4);
-    if c.iter().any(|v|!v.is_finite())||c[..3].iter().any(|v|*v<0.0||*v>1.0)||c[3]<0.0||c[3]>1_000_000.0||c[3].fract()!=0.0{return 0;}
+    if !valid(c){return 0;}
     let seed=c[3]as u32;let size=width*count*4;let(pigment,data)=std::slice::from_raw_parts_mut(output,size*2).split_at_mut(size);
     for x in 0..width {
         let u=(x as f64+0.5)/width as f64;
-        let wheel=if kind==0{noise(u*6.0,0.0,6,seed+5)*4.0}else{0.0};
+        let wheel=wheel(kind,u,seed);
         for offset in 0..count {
             let y=row+offset;let v=(y as f64+0.5)/height as f64;
-            let t=if v>=0.74+0.03{[0.2,0.2,0.2,0.5,1.0]}else if kind==0{terracotta(u,v,x as i32,y as i32,c,seed,wheel)}else{galvanized(u,v,c,seed)};
+            let t=texel(kind,c,u,v,x as i32,y as i32,wheel);
             let at=(offset*width+x)*4;for k in 0..3{pigment[at+k]=byte(t[k]);}
             pigment[at+3]=255;data[at]=byte(t[3]);data[at+1]=byte(t[4]);data[at+2]=0;data[at+3]=255;
         }
