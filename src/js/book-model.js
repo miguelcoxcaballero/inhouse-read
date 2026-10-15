@@ -1,7 +1,8 @@
 import {createBookProjectionPacket,projectVisibleBookBounds} from './book-projection.js';
 import {createBookMotionSampler} from './book-motion.js';
 import { paddedBookFrameSize } from './book-frame-padding.js';
-import { getRustCore } from './rust-core.js';
+import { getRustCore, loadedRustCore } from './rust-core.js';
+
 import { rustBookSurfacePixels, rustRibbonNotchPixels } from './book-surface-wasm.js';
 import { rustBookmarkBuffers } from './bookmark-wasm.js';
 import { rustBindingBuffers } from './binding-wasm.js';
@@ -24,6 +25,9 @@ import { runInSlices } from './cover-appearance.js';
 import { registerCanvasSnapshot as registerLazySnapshot, createNativeRendererPresentation,
   withRendererPresentation } from './native-renderer-presentation.js';
 
+// The shelf renders only after requireRustCore() (app.js): every model is built with the core in.
+const rustCore = () => getRustCore() ?? loadedRustCore();
+
 // Procedural micro-detail shared by every book: generated once, uploaded once.
 // Models receive clones (same Source, own repeat); three.js keeps the GPU
 // texture until the last clone is disposed, so every model owns its copy.
@@ -36,54 +40,25 @@ function sharedTexture(key, build) {
   copy.source.version = version;
   return copy;
 }
-function tileNormals(size, heightAt, strength, kind) {
-  let data = rustBookSurfacePixels(getRustCore(), kind);
-  if (!data) {
-    const field = new Float32Array(size * size); data = new Uint8Array(size * size * 4);
-    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) field[y * size + x] = heightAt(x, y);
-    const at = (x, y) => field[(y + size) % size * size + (x + size) % size];
-    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
-      const nx = (at(x - 1, y) - at(x + 1, y)) * strength, ny = (at(x, y - 1) - at(x, y + 1)) * strength;
-      const length = Math.hypot(nx, ny, 1), i = (y * size + x) * 4;
-      data[i] = (nx / length + 1) * 127.5; data[i + 1] = (ny / length + 1) * 127.5;
-      data[i + 2] = (1 / length + 1) * 127.5; data[i + 3] = 255;
-    }
-  }
-  const texture = new THREE.DataTexture(data, size, size);
+// The woven-cloth and printed-paper tooth, and the swallowtail cut, are produced by the numeric core.
+function tileNormals(kind) {
+  const data = rustBookSurfacePixels(rustCore(), kind);
+  if (!data) throw new Error('El módulo numérico no pudo generar la textura del libro.');
+  const texture = new THREE.DataTexture(data, 128, 128);
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.magFilter = THREE.LinearFilter; texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.generateMipmaps = true; texture.needsUpdate = true;
   return texture;
 }
 // Plain-weave book cloth: 16 × 16 threads per tile, with uneven slubs.
-const clothNormals = () => tileNormals(128, (x, y) => {
-  const i = x >> 3, j = y >> 3, fx = (x % 8 + .5) / 8, fy = (y % 8 + .5) / 8;
-  const warp = Math.sin(Math.PI * fx) * (.7 + .6 * lattice(i, y >> 5, 1));
-  const weft = Math.sin(Math.PI * fy) * (.7 + .6 * lattice(j, x >> 5, 2));
-  return (i + j) % 2 ? warp * .85 + weft * .2 : weft * .85 + warp * .2;
-}, 1.1, 'cloth');
+const clothNormals = () => tileNormals('cloth');
 // Printed paper over board: the soft tooth that survives under a laminate.
-const paperNormals = () => tileNormals(128, (x, y) => {
-  const octave = (cell, salt) => {
-    const n = 128 / cell, gx = x / cell, gy = y / cell, i = Math.floor(gx), j = Math.floor(gy);
-    const sx = (gx - i) ** 2 * (3 - 2 * (gx - i)), sy = (gy - j) ** 2 * (3 - 2 * (gy - j));
-    const v = (a, b) => lattice((i + a) % n, (j + b) % n, salt);
-    return THREE.MathUtils.lerp(THREE.MathUtils.lerp(v(0, 0), v(1, 0), sx), THREE.MathUtils.lerp(v(0, 1), v(1, 1), sx), sy);
-  };
-  return octave(32, 5) * .9 + octave(8, 6) * .45 + lattice(x, y, 7) * .08;
-}, 1.4, 'paper');
+const paperNormals = () => tileNormals('paper');
 // Swallowtail cut, measured in ribbon widths from the tip (v = 0 at the tip):
 // a shallow V, a fifth of the width deep, as scissors leave it.
 const ribbonNotch = () => {
-  const w = 16, h = 64;
-  let data = rustRibbonNotchPixels(getRustCore(), w, h);
-  if (!data) {
-    data = new Uint8Array(w * h * 4);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const across = Math.abs((x + .5) / w * 2 - 1), i = (y * w + x) * 4;
-      data.fill((y + .5) / h > .2 * (1 - across) ? 255 : 0, i, i + 4);
-    }
-  }
+  const w = 16, h = 64, data = rustRibbonNotchPixels(rustCore(), w, h);
+  if (!data) throw new Error('El módulo numérico no pudo generar la muesca de la cinta.');
   const texture = new THREE.DataTexture(data, w, h);
   texture.magFilter = texture.minFilter = THREE.LinearFilter; texture.needsUpdate = true;
   return texture;
@@ -184,56 +159,8 @@ function paperMeshGeometry(buffers) {
 /** Text block of a rounded-and-backed binding: its back follows the round
  * inside the case, the fore-edge is concave, both ends are one crescent. */
 export function pageBlockGeometry(width, height, thickness, { board = height * .007, inset = height * .009, detail = false } = {}) {
-  const core = getRustCore();
-  if (core) {
-    const geometry = paperMeshGeometry(rustPageBlockBuffers(core, width, height, thickness, { board, inset, detail }));
-    if (geometry) return geometry;
-  }
-  const half = (thickness - board * 2.4) / 2, top = height / 2 - inset;
-  const rim = board * 1.1, back = Math.max(0, thickness * .38 - rim - board * .15), zBack = thickness / 2 - rim;
-  const bend = Math.min(thickness * .09, width * .025), fore = width / 2 - inset * .7;
-  const columns = detail ? 16 : 8, rows = detail ? 6 : 3, tile = height * .2;
-  const spineX = z => -width / 2 - back * Math.sqrt(Math.max(0, 1 - (z / zBack) ** 2));
-  const foreX = z => fore - bend * (1 - (z / half) ** 2);
-  const positions = [], normals = [], uvs = [], colors = [], indices = [];
-  const vertex = (x, y, z, n, u, v, shade) => {
-    positions.push(x, y, z); normals.push(...n); uvs.push(u, v); colors.push(shade, shade, shade);
-    return positions.length / 3 - 1;
-  };
-  const quad = (a, b, c, d) => indices.push(a, b, d, b, c, d);
-  const across = i => -half + i / columns * half * 2, leafU = z => (z + half) / tile;
-  // Leaves pressed against the boards sit in their shadow.
-  const pressed = z => 1 - .18 * Math.abs(z / half) ** 6;
-  for (const side of [1, -1]) {
-    const start = positions.length / 3;
-    for (let i = 0; i <= columns; i++) for (let k = 0; k <= rows; k++) {
-      const z = across(i), t = (k / rows) ** 1.7;
-      vertex(THREE.MathUtils.lerp(spineX(z), foreX(z), t), side * top, z, [0, side, 0], leafU(z), .98 - .44 * t,
-        pressed(z) * (.82 + .18 * Math.min(1, t * 5)));
-    }
-    for (let i = 0; i < columns; i++) for (let k = 0; k < rows; k++) {
-      const a = start + i * (rows + 1) + k, b = a + rows + 1;
-      if (side > 0) quad(a, b, b + 1, a + 1); else quad(a, a + 1, b + 1, b);
-    }
-  }
-  const start = positions.length / 3;
-  for (let i = 0; i <= columns; i++) {
-    const z = across(i), slope = 2 * bend * z / half ** 2, length = Math.hypot(1, slope);
-    for (const y of [-top, top]) vertex(foreX(z), y, z, [1 / length, 0, -slope / length], leafU(z), .24 + .22 * y / top, pressed(z));
-  }
-  for (let i = 0; i < columns; i++) { const a = start + i * 2; quad(a, a + 1, a + 3, a + 2); }
-  // Thin skins under the boards close the block when the cover opens.
-  for (const side of [1, -1]) {
-    const z = side * half, x0 = spineX(z), x1 = foreX(z), n = [0, 0, side];
-    const p = [[x0, -top], [x1, -top], [x1, top], [x0, top]].map(([x, y]) => vertex(x, y, z, n, .5, .5, 1));
-    if (side > 0) quad(...p); else quad(p[0], p[3], p[2], p[1]);
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  geometry.setIndex(indices); geometry.addGroup(0, indices.length, 0);
+  const geometry = paperMeshGeometry(rustPageBlockBuffers(rustCore(), width, height, thickness, { board, inset, detail }));
+  if (!geometry) throw new RangeError('Medidas de bloque de páginas no válidas.');
   return geometry;
 }
 
@@ -242,59 +169,8 @@ export function pageBlockGeometry(width, height, thickness, { board = height * .
  * Hinge coordinates (joint at x = 0, board centred on z = 0); the open face
  * looks toward -z until the board turns over. Only lifted copies build it. */
 export function leafStackGeometry(width, height, depth, { board = height * .007, inset = height * .009, columns = 14 } = {}) {
-  const core = getRustCore();
-  if (core) {
-    const geometry = paperMeshGeometry(rustLeafStackBuffers(core, width, height, depth, { board, inset, columns }));
-    if (geometry) return geometry;
-  }
-  // A hair inside the text block, so closed its ends never fight the head,
-  // tail or fore-edge they came from.
-  const top = height / 2 - inset - height * .0012, fore = width - inset * .7 - height * .0015;
-  const base = -board / 2 - height * .0003, tile = height * .2;
-  const gutter = Math.min(fore * .2, height * .075), dip = .16;
-  // Share of the gathering's depth at x: the leaves bend down into the joint.
-  const rise = x => { const t = Math.min(1, x / gutter); return dip + (1 - dip) * t * (2 - t); };
-  const riseSlope = x => x < gutter ? (1 - dip) * (2 - 2 * x / gutter) / gutter : 0;
-  const positions = [], normals = [], uvs = [], colors = [], indices = [];
-  const vertex = (x, y, z, n, u, v, shade) => {
-    positions.push(x, y, z); normals.push(...n); uvs.push(u, v); colors.push(shade, shade, shade);
-    return positions.length / 3 - 1;
-  };
-  // Columns crowd toward the gutter, where the leaves curl.
-  const xs = Array.from({ length:columns + 1 }, (_, i) => fore * (i / columns) ** 1.7);
-  const faceZ = x => base - depth * rise(x);
-  // Open face: the joint's shadow, then clean paper.
-  const shade = x => 1 - .34 * Math.max(0, 1 - x / (gutter * 1.7)) ** 2;
-  for (const x of xs) {
-    const slope = -depth * riseSlope(x), length = Math.hypot(slope, 1);
-    for (const y of [-top, top]) vertex(x, y, faceZ(x), [slope / length, 0, -1 / length], x / fore, y / top / 2 + .5, shade(x));
-  }
-  for (let i = 0; i < columns; i++) { const a = i * 2; indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-  const edge = positions.length / 3;
-  // Fore-edge: u runs across the leaves exactly as on the text block.
-  for (const y of [-top, top]) for (const k of [0, 1]) {
-    vertex(fore, y, k ? faceZ(fore) : base, [1, 0, 0], k * depth * rise(fore) / tile, .24 + .22 * y / top, .94);
-  }
-  indices.push(edge, edge + 1, edge + 3, edge, edge + 3, edge + 2);
-  // Head and tail: every leaf converges into the gutter.
-  for (const side of [1, -1]) {
-    const start = positions.length / 3;
-    for (const x of xs) for (const k of [0, 1]) {
-      vertex(x, side * top, k ? faceZ(x) : base, [0, side, 0], k * depth * rise(x) / tile, .98 - .44 * x / fore, .9 * shade(x));
-    }
-    for (let i = 0; i < columns; i++) {
-      const a = start + i * 2, b = a + 1, c = a + 3, d = a + 2;
-      if (side > 0) indices.push(a, d, c, a, c, b); else indices.push(a, c, d, a, b, c);
-    }
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  geometry.setIndex(indices);
-  const faceCount = columns * 6;
-  geometry.addGroup(0, faceCount, 0); geometry.addGroup(faceCount, indices.length - faceCount, 1);
+  const geometry = paperMeshGeometry(rustLeafStackBuffers(rustCore(), width, height, depth, { board, inset, columns }));
+  if (!geometry) throw new RangeError('Medidas de pila de hojas no válidas.');
   return geometry;
 }
 
@@ -442,45 +318,15 @@ function applySpineCapFinish(material, book) {
 // A half-ellipse extruded along the binding. Shared vertices give the entire
 // binding continuous normals, including the silhouette seen beside the cover.
 export function bindingGeometry(width, height, thickness, segments = 96, relief = null, reliefRows = 384) {
-  const core = getRustCore();
-  if (core) {
-    const buffers = rustBindingBuffers(core, width, height, thickness, segments, relief, reliefRows);
-    if (buffers) {
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(buffers.positions, 3));
-      geometry.setAttribute('normal', new THREE.BufferAttribute(buffers.normals, 3));
-      geometry.setAttribute('uv', new THREE.BufferAttribute(buffers.uvs, 2));
-      geometry.setIndex(new THREE.BufferAttribute(buffers.indices, 1));
-      if (buffers.normalVersion) geometry.getAttribute('normal').needsUpdate = true;
-      return geometry;
-    }
-  }
-  const positions = [], normals = [], uv = [], indices = [];
-  const bulge = thickness * 0.38;
-  const rows = relief ? reliefRows : 1;
-  for (let i = 0; i <= segments; i++) {
-    const a = i / segments * Math.PI;
-    const nx = -Math.sin(a) / bulge, nz = -Math.cos(a) / (thickness / 2);
-    const length = Math.hypot(nx, nz);
-    for (let j = 0; j <= rows; j++) {
-      const u = i / segments, v = j / rows;
-      const depth = relief ? relief(u, v) * height * .0007 : 0;
-      positions.push(-width / 2 - bulge * Math.sin(a) - nx / length * depth,
-        (v - .5) * height, -thickness / 2 * Math.cos(a) - nz / length * depth);
-      normals.push(nx / length, 0, nz / length); uv.push(u, v);
-      if (i < segments && j < rows) {
-        const k = i * (rows + 1) + j;
-        indices.push(k, k + rows + 1, k + 1, k + 1, k + rows + 1, k + rows + 2);
-      }
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setIndex(indices);
-  if (relief) g.computeVertexNormals();
-  return g;
+  const buffers = rustBindingBuffers(rustCore(), width, height, thickness, segments, relief, reliefRows);
+  if (!buffers) throw new RangeError('Medidas de lomo no válidas.');
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(buffers.positions, 3));
+  geometry.setAttribute('normal', new THREE.BufferAttribute(buffers.normals, 3));
+  geometry.setAttribute('uv', new THREE.BufferAttribute(buffers.uvs, 2));
+  geometry.setIndex(new THREE.BufferAttribute(buffers.indices, 1));
+  if (buffers.normalVersion) geometry.getAttribute('normal').needsUpdate = true;
+  return geometry;
 }
 
 // Rounded board edges, with front/back UVs in the same coordinates as a cover.
@@ -513,175 +359,29 @@ export function boardGeometry(width, height, depth, { shelf = false, overview = 
 /** A real ribbon mesh emerging from the top edge at the saved reading depth. */
 export function bookmarkGeometry(width, height, thickness, progress, peek = 10,
   { open = 0, withdraw = 0, segments = 32, seed = 0, geometry: target } = {}) {
-  const core = getRustCore();
-  if (core) {
-    try {
-      const pixels = rustBookmarkBuffers(core, width, height, thickness, progress, peek, open, withdraw, segments, seed);
-      if (pixels) {
-        const reuse = target?.getAttribute('position')?.count === pixels.positions.length / 3
-          && target.getAttribute('uv')?.count === pixels.uvs.length / 2 && target.index?.count === pixels.indices.length;
-        const geometry = reuse ? target : new THREE.BufferGeometry();
-        if (reuse) {
-          geometry.getAttribute('position').array.set(pixels.positions);
-          geometry.getAttribute('uv').array.set(pixels.uvs);
-          geometry.getAttribute('position').needsUpdate = true;
-          geometry.getAttribute('uv').needsUpdate = true;
-          geometry.boundingBox = geometry.boundingSphere = null;
-        } else {
-          geometry.setAttribute('position', new THREE.Float32BufferAttribute(pixels.positions, 3));
-          geometry.setAttribute('uv', new THREE.Float32BufferAttribute(pixels.uvs, 2));
-          geometry.setIndex(new THREE.Uint16BufferAttribute(pixels.indices, 1));
-        }
-        const normal = geometry.getAttribute('normal');
-        if (normal?.count === pixels.normals.length / 3) normal.array.set(pixels.normals);
-        else geometry.setAttribute('normal', new THREE.Float32BufferAttribute(pixels.normals, 3));
-        geometry.getAttribute('normal').needsUpdate = true;
-        return geometry;
-      }
-    } catch { /* Preserve the original geometry if WASM is unavailable or lost. */ }
-  }
-  // Peek values belong to the 200 px shelf book, not the much larger lifted
-  // copy. Keep the ribbon's physical proportions identical in both models.
-  const ribbonWidth = Math.min(width * .09, Math.max(height * .035, Math.min(height * .055, thickness * .42)));
-  // Each copy of a book falls the same way; different books do not.
-  const vary = k => seed ? lattice(seed % 65521, k, 17) : .5;
-  const visibleLength = height * Math.max(.09, Math.min(.17, (Number(peek) || 10) / 200 * 1.6))
-    * (1 + (seed ? .12 * vary(1) : 0));
-  const opening = Math.max(0, Math.min(1, open)), { lerp, smoothstep, clamp } = THREE.MathUtils;
-  // Always between two leaves, never on a board: an unread book keeps its
-  // ribbon under the first leaf instead of lying across the front cover.
-  const leaves = Math.max(0, thickness / 2 - height * .0125);
-  const insideDepth = clamp(thickness / 2 - thickness * Math.max(0, Math.min(1, progress)), -leaves, leaves);
-  const pageDepth = thickness / 2 - height * .0083 + height * .002;
-  // The leaves above the saved page lift with the board, so the ribbon is on
-  // the exposed page early in the opening instead of surfacing through it.
-  const depth = lerp(insideDepth, pageDepth, smoothstep(opening, 0, .3));
-  // Lying down (position, roll) settles while the board still covers most of
-  // the page; the end beyond the head folds over it a little later.
-  const lay = smoothstep(opening, .05, .55), flop = smoothstep(opening, .15, .85);
-  // Closed it rises clear of the spine; open it lies beside the gutter, in
-  // the inner margin, instead of across the first words of every line.
-  const x = lerp(-width / 2 + Math.max(thickness * .75, ribbonWidth * 1.5),
-    -width / 2 + height * .012 + ribbonWidth * .5 + width * .006, lay);
-  // Withdrawing slides the silk along its own path: up the page and over the
-  // head, never straight up through the air above the book.
-  const lift = height * 1.25 * Math.max(0, Math.min(1, withdraw));
-  const positions = [], uvs = [], indices = [];
-  const pageTop = height / 2 - height * .009, bend = height * .016;
-  // The fold starts right at the edge of the leaf, so it never curls into it.
-  const head = lerp(height / 2 - height * .012, pageTop - bend * .3, lay);
-  const tail = lerp(height / 2 - height * .64, -height / 2 + height * .03, lay);
-  const upper = visibleLength + height * .012;
-  // Closed: the limp satin leans back over the head (toward the fore-edge)
-  // and drifts a little aside, evenly along its length, never as a hook.
-  const back = visibleLength * (.1 + .16 * vary(2)), drift = visibleLength * (vary(3) - .5) * .36;
-  // Open: past the head it rolls over the edge of the text block (a quarter
-  // turn of radius `bend`) and runs back along the head, out of sight.
-  const arc = bend * Math.PI / 2, reachBack = pageDepth - bend - (-thickness / 2 + height * .0084);
-  const steps = Math.max(4, Math.round((Number(segments) || 32) / 2) * 2), fabricDepth = height * .0018;
-  // Closed, the ribbon turns toward someone looking at the binding, so from
-  // the spine it shows its face; from the front it still shows a third of
-  // it, never a bare thread. The turn is complete inside the text block,
-  // just under its head: seen from above (the flyout looks slightly down on
-  // the head) it leaves the leaves as one even strip, with no flared foot.
-  const twistMax = Math.PI / 2 * (.74 + .08 * vary(4));
-  const turn = s => smoothstep(s, -height * .006, height * .0025);
-  // Turning about its middle would push the edge through a board at the very
-  // first or last leaf: the ribbon moves inward by exactly what it gains.
-  const reach = Math.sin(twistMax) * ribbonWidth / 2;
-  const inward = (clamp(depth, -leaves + reach, leaves - reach) - depth) * (1 - lay);
-  const bodyLength = head - tail, wander = ribbonWidth * (.12 + .1 * vary(6)), splay = ribbonWidth * .3 * vary(7);
-  // `s` is the arc length past the head, negative inside the book or on the
-  // page. Samples are laid on the path, not on the sliding silk: half on the
-  // page, the rest from the head on, a fixed share of them crowded over the
-  // turn and the fold, so no chord ever cuts under the paper while it slides.
-  const start = lift - bodyLength, cut = upper + lift, split = Math.min(cut, Math.max(start, 0));
-  const half = steps / 2, fold = Math.max(1, Math.round(steps * .19)), folded = Math.min(cut, split + arc * 1.1);
-  const along = i => i <= half ? lerp(start, split, i / half)
-    : i - half <= fold ? split + (folded - split) * ((i - half) / fold) ** 1.4
-    : lerp(folded, cut, (i - half - fold) / (half - fold));
-  const centre = [], twists = [], onPage = [], tucks = [];
-  for (let i = 0; i <= steps; i++) {
-    const s = along(i), point = new THREE.Vector3(x, head, depth), turned = twistMax * turn(s);
-    // A sideways shift, kept out of the direction the cross-sections face.
-    tucks.push(inward * Math.sin(turned) / (Math.sin(twistMax) || 1));
-    let twist = turned * (1 - lay);
-    if (s <= 0) {
-      // On an open page it runs the full leaf and never lies ruler-straight.
-      // The wander belongs to the page, so a sliding ribbon meets the head
-      // edge exactly where it rests.
-      const u = -s / bodyLength;
-      point.x += lay * (wander * Math.sin(Math.PI * 1.3 * u) + splay * u * u);
-      point.y += s;
-      point.z += lay * height * .0012 * (1 - Math.cos(u * Math.PI * 4)) / 2;
-      // Satin never lies dead flat: a slow roll turns the sheen on and off.
-      twist += lay * .22 * Math.sin(u * Math.PI * 2.6 + vary(5) * 6) * (1 - (1 - u) ** 3);
-    } else {
-      const k = flop * Math.PI / 2 / arc, bent = Math.min(s, arc);
-      // Past the gathering's depth the rest is tucked under, out of sight.
-      const run = Math.min(s - bent, reachBack + (1 - flop) * height * 4);
-      // A cantilever's sag: nothing at the root, most of it toward the end.
-      const angle = k * bent, fall = smoothstep(Math.min(1, s / upper), 0, 1) * (1 - flop);
-      point.x += back * fall;
-      point.y += (k > 1e-6 ? Math.sin(angle) / k : bent) + run * Math.cos(angle);
-      point.z += (k > 1e-6 ? (Math.cos(angle) - 1) / k : 0) - run * Math.sin(angle) + drift * fall;
-    }
-    centre.push(point); twists.push(twist); onPage.push(s <= 0);
-  }
-  // v measures ribbon widths back from the cut tip, where the swallowtail is.
-  const fromTip = [0];
-  for (let i = steps; i > 0; i--) fromTip.unshift(fromTip[0] + centre[i].distanceTo(centre[i - 1]));
-  // One strip: every cross-section is square to the ribbon's own direction,
-  // so the fold over the head keeps the full width and fabric thickness.
-  const tangent = new THREE.Vector3(), across = new THREE.Vector3(), face = new THREE.Vector3();
-  const side = new THREE.Vector3(), normal = new THREE.Vector3(), X = new THREE.Vector3(1, 0, 0);
-  for (let i = 0; i <= steps; i++) {
-    const point = centre[i], v = fromTip[i] / ribbonWidth, twist = twists[i];
-    tangent.subVectors(centre[Math.min(steps, i + 1)], centre[Math.max(0, i - 1)]);
-    if (tangent.lengthSq() < 1e-12) tangent.set(0, 0, -1); else tangent.normalize();
-    across.copy(X).addScaledVector(tangent, -tangent.x).normalize();
-    face.crossVectors(across, tangent);
-    side.copy(across).multiplyScalar(Math.cos(twist)).addScaledVector(face, Math.sin(twist)).multiplyScalar(ribbonWidth / 2);
-    normal.copy(across).multiplyScalar(-Math.sin(twist)).addScaledVector(face, Math.cos(twist)).multiplyScalar(fabricDepth / 2);
-    // On the page it is raised by its own roll, so neither edge ever sinks
-    // into the paper; between closed leaves it is only tucked clear of the boards.
-    const z = point.z + tucks[i] + (onPage[i] ? lay * Math.abs(side.z) : 0);
-    positions.push(point.x - side.x + normal.x, point.y - side.y + normal.y, z - side.z + normal.z,
-      point.x + side.x + normal.x, point.y + side.y + normal.y, z + side.z + normal.z,
-      point.x - side.x - normal.x, point.y - side.y - normal.y, z - side.z - normal.z,
-      point.x + side.x - normal.x, point.y + side.y - normal.y, z + side.z - normal.z);
-    uvs.push(0, v, 1, v, 0, v, 1, v);
-    if (i < steps) {
-      const k = i * 4, n = k + 4;
-      indices.push(k, k + 1, n, k + 1, n + 1, n,
-        k + 2, n + 2, k + 3, k + 3, n + 2, n + 3,
-        k, n, k + 2, k + 2, n, n + 2,
-        k + 1, k + 3, n + 1, k + 3, n + 3, n + 1);
-    }
-  }
-  indices.push(0, 2, 1, 1, 2, 3);
-  const end = steps * 4;
-  indices.push(end, end + 1, end + 2, end + 1, end + 3, end + 2);
+  const pixels = rustBookmarkBuffers(rustCore(), width, height, thickness, progress, peek, open, withdraw, segments, seed);
+  if (!pixels) throw new RangeError('Medidas de cinta no válidas.');
   // Opening and withdrawing only bend the ribbon; its topology stays fixed.
   // Keep the same GPU buffers during the flight instead of deleting and
-  // uploading a new indexed mesh on every frame. The path and normals are
-  // still calculated at the original resolution.
-  const reuse = target?.getAttribute('position')?.count === positions.length / 3
-    && target.getAttribute('uv')?.count === uvs.length / 2
-    && target.index?.count === indices.length;
+  // uploading a new indexed mesh on every frame.
+  const reuse = target?.getAttribute('position')?.count === pixels.positions.length / 3
+    && target.getAttribute('uv')?.count === pixels.uvs.length / 2 && target.index?.count === pixels.indices.length;
   const geometry = reuse ? target : new THREE.BufferGeometry();
   if (reuse) {
-    geometry.getAttribute('position').array.set(positions);
-    geometry.getAttribute('uv').array.set(uvs);
+    geometry.getAttribute('position').array.set(pixels.positions);
+    geometry.getAttribute('uv').array.set(pixels.uvs);
     geometry.getAttribute('position').needsUpdate = true;
     geometry.getAttribute('uv').needsUpdate = true;
     geometry.boundingBox = geometry.boundingSphere = null;
   } else {
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    geometry.setIndex(indices);
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(pixels.positions, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(pixels.uvs, 2));
+    geometry.setIndex(new THREE.Uint16BufferAttribute(pixels.indices, 1));
   }
-  geometry.computeVertexNormals();
+  const normal = geometry.getAttribute('normal');
+  if (normal?.count === pixels.normals.length / 3) normal.array.set(pixels.normals);
+  else geometry.setAttribute('normal', new THREE.Float32BufferAttribute(pixels.normals, 3));
+  geometry.getAttribute('normal').needsUpdate = true;
   return geometry;
 }
 
@@ -2452,23 +2152,20 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     }
     let raf, resolve; const finished = new Promise(r => resolve = r);
     cancel = () => { cancelAnimationFrame(raf); sampler.dispose(); motionFrameCapacity=null; resolve(); };
-    let lastFrame = performance.now(), elapsed = 0;
+    const lastFrame = performance.now();
     const animation = { finished, cancel, lastFrameTime:lastFrame };
     // Real time, so a slow device finishes each phase on schedule instead of
     // stretching it frame by frame. A stalled frame on a phone GPU may absorb
     // at most 100 ms (a fifth of a hinge opening), never half a phase, so the
     // board and ribbon never visibly jump. The first step only covers the
-    // frame that scheduled the motion.
-    const maxStep = Math.max(48, Math.min(100, duration / 2));
-    let started = false;
+    // frame that scheduled the motion. The clock itself is the core's.
+    sampler.start(duration, lastFrame);
     const tick = () => {
       if (disposed) { sampler.dispose(); motionFrameCapacity=null; return resolve(); }
       // RAF's shared frame timestamp can precede a gesture delivered after a
       // slow draw. Measure when this callback actually runs, on the same clock
       // that started the motion, so its first painted pose advances too.
-      const now = performance.now();
-      elapsed += Math.min(started ? maxStep : 48, Math.max(0, now - lastFrame)); lastFrame = now; started = true;
-      const t = duration > 0 ? Math.min(1, elapsed / duration) : 1;
+      const t = sampler.step(performance.now());
       const pose = sampler.sample(t);
       if (!onFrame?.(pose)) draw(pose);
       animation.lastFrameTime = performance.now();
@@ -2495,6 +2192,4 @@ export function bookView(host, book, style, { width, height, thickness, viewport
       pendingModel?.userData.dispose(); model.userData.dispose(); if (removeCanvas) canvas.remove(); } };
 }
 
-// Monotone Hermite interpolation: continuous velocity, no unwanted overshoot
-// when the book slows down, changes direction or returns to its shelf.
 export { sampleBookMotion } from './book-motion.js';

@@ -22,3 +22,15 @@ export function sampleBookMotion(frames, progress) {
   }
   return pose;
 }
+
+/** The clock of the original animateMotion callback (book-model.js before the core owned it):
+ * real time, a stalled frame absorbs at most 100 ms, and the first step only covers the frame
+ * that scheduled the motion. Returns the callback: now => progress. */
+export function originalClock(duration, startedAt) {
+  let lastFrame = startedAt, elapsed = 0, started = false;
+  const maxStep = Math.max(48, Math.min(100, duration / 2));
+  return now => {
+    elapsed += Math.min(started ? maxStep : 48, Math.max(0, now - lastFrame)); lastFrame = now; started = true;
+    return duration > 0 ? Math.min(1, elapsed / duration) : 1;
+  };
+}
