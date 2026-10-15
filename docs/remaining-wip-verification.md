@@ -1,3 +1,58 @@
+# 1.7.248 — modelo del libro: geometría, texturas y vista en Rust
+
+Changelog: «Libro 3D: geometría, texturas y vista en Rust».
+Unidad book-model (`src/js/book-model.js` y sus puentes). Pasa a Rust, con las mismas cifras y las
+mismas llamadas que antes:
+- Núcleo (`rust-core`): `book_view.rs` (tamaños del lienzo y de las ventanas compactas, ventana del
+  fotograma de vuelta con la reserva que fija un vuelo, rectángulo copiado a la instantánea,
+  colocación y rotación del modelo con su tema de página, límites proyectados de página y tapas,
+  pose del zoom a la página, pose de lectura con el libro abierto, ajuste de imagen); `book_motion.rs`
+  (muestreador monótono total y el reloj en tiempo real: paso máximo entre 48 y 100 ms según la duración, 48 ms el primero, sin
+  tocar ningún tiempo); `bookmark.rs`, `page_mesh.rs`, `binding.rs` y `book_surface.rs` calculan ahora
+  también sus coeficientes (cinta, bloque de páginas, hojas leídas, lomo, tejido) y no solo la malla.
+- `host_math.rs` + `src/js/host-math.js`: el núcleo no calcula seno, coseno, potencia ni hipotenusa
+  (el último bit lo decide el motor de la página: V8 de Chrome y el de Node no coinciden siempre); los
+  pide como tripletas (operación, a, b) y el anfitrión responde con su propio `Math`. Las pruebas
+  lo demuestran con un `Math` alterado en las últimas cifras: original y núcleo siguen iguales.
+- Módulo `shelf` (`rust-ui/src/book_paint.rs`, 132 844 B; antes 117 972): atlas de cantos de página,
+  guarda, páginas de la miniatura, acabado de tapa (junta, bordes, roces, esquinas) y rotulado de la
+  tapa de tela (marco ciego, título en hasta seis líneas, filete, autor, dispositivo). Dibuja en el
+  contexto 2D que recibe con las mismas llamadas, en el mismo orden y con los mismos números.
+- JS que desaparece de `book-model.js` (2500 → 1991 líneas): las copias JS de `pageBlockGeometry`,
+  `leafStackGeometry`, `bindingGeometry`, `bookmarkGeometry`, de las normales de tela y papel y de la
+  muesca de la cinta, el muestreador JS de poses, la aritmética de `bookView` y los pintores de lienzo.
+  Los originales congelados están en `tests/unit/helpers/reference-*.js` (nuevos: `reference-book-view.js`,
+  `reference-book-paint.js`; `reference-book-motion.js` suma el reloj) y las pruebas diferenciales los
+  comparan. Se pueden borrar las copias porque `book-model.js` importa `catalogue-core.js`, que espera
+  al núcleo antes de evaluarse, y la estantería solo se pinta tras `requireRustCore()` y
+  `requireRustShelf()` (app.js): un núcleo que no carga ya es el error claro de siempre.
+Verificado en este equipo (Linux, Rust 1.99.0, Chromium/SwiftShader): 6268 unitarias en 489 archivos y
+4 bloques (1717+1360+1396+1795), todas aprobadas; nuevas: `book-view-wasm` (13: 100 000 vistas, 300 000
+ventanas de vuelta y de copia, 200 000 poses, 5000 escenas con objetos Three reales), `book-paint-wasm`
+(15: registro de cada llamada al lienzo, incluidos títulos con espacios dobles, sustitutos sueltos y
+métricas distintas), 5 de reloj/movimiento total, 3 de `Math` alterado (cinta, páginas, lomo) y un corpus
+aleatorio de 4000 cintas. E2E sin reintentos, también sobre el árbol ya mezclado con la 1.7.247: book-opening 10/10, book-page-theme 9/9, book-open-prepared
+9/9, book-finish-lighting 1/1, book-surface-reflections 1/1, book-closed-print 1/1, cover-relief 6/6,
+rust-book-projection 1/1, rust-book-motion 1/1, rust-page-mesh-core 8/8, rust-binding-core 8/8. Capturas
+de las baldas (01, 02, 08, 10a, 13, 15, móvil) contra un build de main 1.7.245, antes de mezclar la 1.7.247
+(después no se repitió: no hay build de la 1.7.247 para comparar): 3 idénticas bit a bit y 3 con diferencia
+máxima 1/255 (ruido del arnés). `rust-book-surfaces` falla también en main 1.7.245 en su
+primera aserción (queda un arenero de 128 B vivo del catálogo); con una copia temporal tolerante a esos
+128 B pasan todas las demás (píxeles, texturas compartidas, tejido, memoria retenida); la aserción de
+memoria retenida se actualiza a 18 016 B de cinta + 2432 B del arenero de la vista.
+Inventario 22958 Rust/25963 JS = 46,93 % (main 1.7.247: 21940/26412 = 45,38 %; 1.7.245, base de la unidad: 39,73 %);
+no es porcentaje funcional.
+Medición, sin CPU limitada y sin ganar velocidad: construir 24 modelos (mediana de 7 cargas alternas de
+página, main → este árbol): estantería en frío 203 → 235 ms y caliente 105 → 99 ms; detalle en frío
+179 → 187 y caliente 118 → 132 ms (más lento, unos 0,6 ms por modelo); miniatura 51 → 53 y 43,4 → 43,7 ms.
+Arranque en frío (banco de arranque, 30 libros, CPU x4, cinco pares alternos): primer fotograma de la
+escena 8,0/9,6/9,1 s en main y 8,4/9,6/10,0/7,5/4,6 s aquí; el tiempo total de script varió el doble
+entre ejecuciones del mismo árbol en este equipo compartido y no permite concluir nada más.
+Se queda en JS: objetos y materiales de Three, sombreadores, llamadas WebGL y DOM; el ciclo de vida de
+los reemplazos de aspecto y del relieve (promesas y contadores de revisión); `acquireCoverImage`
+(temporizador y carga de imagen); las reglas de validez del fotograma nativo (indicadores de objetos
+del anfitrión); `mixPaperTone` (conversión de color de Three). Sin prueba en móvil físico.
+
 # 1.7.247 — geometría 3D: carpintería, BAGGEBO y primeras texturas de plantas en Rust
 
 Changelog: «Armario y BAGGEBO en Rust; sin gemelos JS».
