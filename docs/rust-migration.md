@@ -1,5 +1,9 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.246: portadas (lomo, rotulación, editor, reflejo y relieve) en Rust.
+Inventario 20086 Rust/27342 JS, **42,35 %**; no mide funciones terminadas. Detalle
+en remaining-wip-verification.md.
+
 Entrega 1.7.245: lectores PDF y EPUB, instantáneas de página y controlador del lector
 en Rust. Inventario 19071 Rust/28927 JS, **39,73 %**; no mide funciones terminadas.
 Detalle en remaining-wip-verification.md.

@@ -1,3 +1,22 @@
+# 1.7.246 — portadas: lomo, rotulación, editor, reflejo y relieve en Rust
+
+Changelog: «Portadas, lomo y relieve en Rust».
+Unidad cover. El diseño del lomo (reparto, ajuste de la rotulación y pintura
+sobre el canvas) pasa al módulo `shelf` de `rust-ui` como listas de órdenes que
+el pegamento JS solo reproduce; las decisiones del editor de portada (colocación
+y balanceo), el perfil de reflejo de la tapa y los coeficientes de material
+también se deciden en Rust. La canalización de relieve (`cover-relief.js`) ya no
+tiene gemelo JS: el análisis de la portada, los mapas de pigmento, nombres de
+color y perfiles son trabajos del núcleo (`cover_relief.rs`), y los detectores de
+familia viven en el original congelado de `tests/unit/helpers/reference-*.js`,
+contra el que comparan los tests diferenciales. Se eliminan `cover-color-mask-wasm.js`
+y `relief-palette-wasm.js` (absorbidos). Verificado aquí (Linux, Chromium/SwiftShader):
+build:rust y build, 4 bloques de tests unitarios (1699+1329+1388+1796, 121 archivos
+cada uno; en el bloque 2 vitest registra un timeout de RPC del worker bajo carga,
+sin ningún test fallido) y los E2E de portadas, relieve, lomos y smoke indicados abajo.
+Inventario 20086 Rust/27342 JS = 42,35 %; no es porcentaje funcional.
+Sin medida de rendimiento ni prueba en móvil físico.
+
 # 1.7.245 — lectores PDF y EPUB, instantáneas de página y controlador del lector en Rust
 
 Changelog: «Lectores PDF y EPUB en Rust».
