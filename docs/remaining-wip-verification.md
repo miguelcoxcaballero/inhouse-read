@@ -42,7 +42,25 @@ no se tocaron ni se ejecutaron. rust-shelf-occlusion-production ya no compara co
 de la página (se eliminó): lo cubren las pruebas diferenciales, rust-shelf-occlusion en Chromium, la
 comparación visual y el hash de arriba. La geometría de plantas (hojas, tallos, tierra, ensamblado)
 y de lámparas sigue en JS en esta entrega.
-Inventario 21940 Rust/26409 JS = 45,38 %; no es porcentaje funcional.
+Revisión independiente antes de publicar (dos revisores de solo lectura, sin ejecutar nada, uno por equivalencia
+con three.js y otro por ciclo de vida y cobertura): ninguna divergencia de comportamiento en la geometría (además
+contrastaron 1300 casos de earcut, 900 de extrusión y 1836 de caja redondeada y cilindro contra three, sin diferencias).
+Hallaron un fallo real, corregido en esta entrega: si el pintado fino de una superficie de planta fallaba, la
+imagen gruesa de 8 px quedaba como definitiva y se guardaba en la caché de la estantería, de modo que no se
+repintaba en los arranques siguientes (antes lo cubría el pintor JS que esta entrega elimina). Ahora esa
+superficie se olvida, no se guarda y la siguiente planta del mismo tipo la vuelve a pintar
+(tests/unit/plant-surface-failure.test.js, que falla sin la corrección). Quedan sin cubrir, y se dejan
+anotados: la fábrica de plantas, lámparas y mobiliario lanza un error si el módulo Rust falla y la escena no lo
+muestra con un aviso visible (el aviso en pantalla solo existe para los núcleos numérico y decor), y el módulo
+shelf no tiene recarga automática como los otros.
+Comprobado aquí en la rama final: E2E de 37, 17 pasan y 20 fallan en la primera ejecución con la caja cargada;
+repetidos a solas y con prioridad alta, lamp-switches «la bombilla se toca directamente…» y plant-catalog «una
+planta cae como modelo 3D…» pasan (eran carga). Los 18 restantes son los rust-plant-* (cactus, ivy, monstera,
+pot, subdivide, glaze, pottery, soil, foliage y geometry): todos acaban por la misma contabilidad de fugas
+(`live` 128 bytes o «Leaf arena leaked»), el arenero fijo de decor-catalogue.js, cuya cadena de importación es
+idéntica en main y en esta rama; el agente comprobó cinco de ellos contra un build de main, los otros cinco
+(cactus, ivy, monstera, pot, subdivide) no se han ejecutado contra main aquí.
+Inventario 21940 Rust/26412 JS = 45,38 %; no es porcentaje funcional.
 
 # 1.7.246 — portadas: lomo, rotulación, editor, reflejo y relieve en Rust
 
