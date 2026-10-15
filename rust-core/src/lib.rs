@@ -96,14 +96,10 @@ mod pdf_figures;
 mod pdf_stream;
 #[cfg(feature = "app")]
 mod timber;
+#[cfg(feature = "app")]
+mod cabinet_model;
 #[cfg(feature = "decor")]
 mod lamp_surface;
-#[cfg(feature = "app")]
-mod mesh_compact;
-#[cfg(feature = "app")]
-mod metal_sheet;
-#[cfg(feature = "app")]
-mod mesh_finish;
 #[cfg(feature = "app")]
 mod book_cloth;
 
@@ -120,6 +116,8 @@ mod shelf_occlusion;
 mod studio_scan;
 #[cfg(feature="app")]
 mod cover_seed;
+#[cfg(feature="app")]
+mod cover_relief;
 // Tables and layout of the shelf. The plant, pot and lamp tables belong to the
 // decor core (its bytes decide whether saved bakes stay valid); the cabinets,
 // the spine palette and the layout kernels belong to the app core.

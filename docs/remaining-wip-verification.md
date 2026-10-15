@@ -1,3 +1,99 @@
+# 1.7.247 — geometría 3D: carpintería, BAGGEBO y primeras texturas de plantas en Rust
+
+Changelog: «Armario y BAGGEBO en Rust; sin gemelos JS».
+Unidad geometry-3d. El armario de madera (tableros, montantes, zócalo, fondo, molduras y
+la fusión por material) lo dibuja ahora el núcleo numérico (`rust-core/src/cabinet_model.rs`,
+`cabinet_build`) y el marco de la sombra de contacto se deriva dentro de `shelf_occlusion`;
+`shelf-furniture.js` conserva solo el puente y desaparece `timber-wasm.js`. El BAGGEBO completo (postes,
+bandejas, labios, pestañas, tornillos, chapas de metal expandido, tirante, textura de pintura)
+pasa al módulo `shelf` de `rust-ui` (`baggebo_model.rs`) sobre una biblioteca de primitivas
+three.js escrita operación por operación (`three_geo.rs`: caja, caja redondeada, cilindro, matrices,
+normales; `three_shape.rs`: curvas, `ExtrudeGeometry`; `earcut.rs`), con `mesh_compact`,
+`mesh_finish` y `metal_sheet` movidos allí desde el núcleo; el original JS congelado queda en
+`tests/unit/helpers/reference-*.js`. La primera imagen de las texturas de planta (retícula de 8 px del
+mismo pintor) la dibuja `plant_surface_lattice` del núcleo decor y se elimina el pintor JS de respaldo
+de las texturas de planta y de lámpara: si el núcleo no las pinta, se muestra un error («Las texturas
+de la lámpara no se pudieron calcular. Recarga la página.»). Se eliminan `plant-preview-wasm.js`,
+`mesh-compact-wasm.js`, `metal-sheet-wasm.js`, `mesh-finish-wasm.js` y sus pruebas (el tema pasa a
+pruebas diferenciales contra el original congelado). Tests unitarios nuevos: cabinet-wasm (12),
+plant-lattice-wasm (29), three-geo-wasm (6), baggebo-geometry-wasm (6), más la reescritura de
+shelf-occlusion-wasm (10), mesh-compact, mesh-finish y metal-sheet. Verificado aquí (Linux,
+Chromium/SwiftShader): build:rust y build; 4 bloques de tests unitarios (1706+1355+1377+1791 = 6229
+tests, 122+122+122+120 archivos), todos verdes; E2E que pasan: rust-plant-preview, rust-baggebo,
+rust-timber, rust-shelf-occlusion, rust-shelf-occlusion-production (2), rust-lamp-surface,
+shelf-types (2), lamp-catalog (3), plant-catalog (8). Comparación visual contra un build de main
+1.7.246 (estados 01, 02, 08, 10a, 13, 15): 4 idénticos bit a bit y 2 con diferencia máxima de 1/255 en el
+texto de los lomos (08, 13); PASS. El hash de la imagen final del armario (walnut, apagado/encendido) es
+el de la versión anterior con gemelo JS: 1282339058 y 3080439393.
+Mediciones (CPU 4x más lenta, medianas alternando; no son promesas de velocidad): sombras de
+contacto, 3/12/100 baldas: JS 1,02/2,09/17,3 ms frente a 0,23/0,45/2,75 ms en Rust; vigas del
+armario (3 / 12): 19,0 / 37,0 ms frente a 3,8 / 5,3 ms; retícula de una superficie de planta (256x512,
+vidriado): 48,3 ms frente a 24,4 ms; BAGGEBO: primera construcción 950 ms (JS) frente a 411 ms,
+construcciones repetidas 16,3 ms frente a 16,5 ms (no es más rápido). Tamaño: módulo shelf 180.836
+-> 342.953 bytes, núcleo app 500.440 -> 509.768, decor 149.481 -> 150.068. Arranque (banco de arranque,
+3 ejecuciones alternas cada uno, caja compartida con otros procesos): primera escena 5238 ms (main) frente
+a 5670 ms (esta versión), rangos 4586–6230 y 4470–5867: dentro del ruido, sin una diferencia
+demostrable con n=3. Límites: fallan igual en main (comprobado en un build de origen/main 1.7.246)
+rust-plant-glaze, rust-plant-pottery, rust-plant-soil, rust-plant-foliage y rust-plant-geometry
+(8 pruebas): cuentan como fuga el arenero fijo de 128 bytes de decor-catalogue.js; solo se corrigió esa
+contabilidad en rust-plant-preview (una referencia inicial en lugar de 0). Los dos fallos conocidos
+del cierre en GL por software (contrato de retorno de la estantería y «salir coloca el marcapáginas»)
+no se tocaron ni se ejecutaron. rust-shelf-occlusion-production ya no compara con un gemelo JS dentro
+de la página (se eliminó): lo cubren las pruebas diferenciales, rust-shelf-occlusion en Chromium, la
+comparación visual y el hash de arriba. La geometría de plantas (hojas, tallos, tierra, ensamblado)
+y de lámparas sigue en JS en esta entrega.
+Revisión independiente antes de publicar (dos revisores de solo lectura, sin ejecutar nada, uno por equivalencia
+con three.js y otro por ciclo de vida y cobertura): ninguna divergencia de comportamiento en la geometría (además
+contrastaron 1300 casos de earcut, 900 de extrusión y 1836 de caja redondeada y cilindro contra three, sin diferencias).
+Hallaron un fallo real, corregido en esta entrega: si el pintado fino de una superficie de planta fallaba, la
+imagen gruesa de 8 px quedaba como definitiva y se guardaba en la caché de la estantería, de modo que no se
+repintaba en los arranques siguientes (antes lo cubría el pintor JS que esta entrega elimina). Ahora esa
+superficie se olvida, no se guarda y la siguiente planta del mismo tipo la vuelve a pintar
+(tests/unit/plant-surface-failure.test.js, que falla sin la corrección). Quedan sin cubrir, y se dejan
+anotados: la fábrica de plantas, lámparas y mobiliario lanza un error si el módulo Rust falla y la escena no lo
+muestra con un aviso visible (el aviso en pantalla solo existe para los núcleos numérico y decor), y el módulo
+shelf no tiene recarga automática como los otros.
+Comprobado aquí en la rama final: E2E de 37, 17 pasan y 20 fallan en la primera ejecución con la caja cargada;
+repetidos a solas y con prioridad alta, lamp-switches «la bombilla se toca directamente…» y plant-catalog «una
+planta cae como modelo 3D…» pasan (eran carga). Los 18 restantes son los rust-plant-* (cactus, ivy, monstera,
+pot, subdivide, glaze, pottery, soil, foliage y geometry): todos acaban por la misma contabilidad de fugas
+(`live` 128 bytes o «Leaf arena leaked»), el arenero fijo de decor-catalogue.js, cuya cadena de importación es
+idéntica en main y en esta rama; el agente comprobó cinco de ellos contra un build de main, los otros cinco
+(cactus, ivy, monstera, pot, subdivide) no se han ejecutado contra main aquí.
+Inventario 21940 Rust/26412 JS = 45,38 %; no es porcentaje funcional.
+
+# 1.7.246 — portadas: lomo, rotulación, editor, reflejo y relieve en Rust
+
+Changelog: «Portadas, lomo y relieve en Rust».
+Unidad cover. El diseño del lomo (reparto, ajuste de la rotulación y pintura
+sobre el canvas) pasa al módulo `shelf` de `rust-ui` como listas de órdenes que
+el pegamento JS solo reproduce; las decisiones del editor de portada (colocación
+y balanceo), el perfil de reflejo de la tapa y los coeficientes de material
+también se deciden en Rust. La canalización de relieve (`cover-relief.js`) ya no
+tiene gemelo JS: el análisis de la portada, los mapas de pigmento, nombres de
+color y perfiles son trabajos del núcleo (`cover_relief.rs`), y los detectores de
+familia viven en el original congelado de `tests/unit/helpers/reference-*.js`,
+contra el que comparan los tests diferenciales. Se eliminan `cover-color-mask-wasm.js`
+y `relief-palette-wasm.js` (absorbidos). Verificado aquí (Linux, Chromium/SwiftShader):
+build:rust y build, 4 bloques de tests unitarios (1699+1329+1388+1796, 121 archivos
+cada uno; en el bloque 2 vitest registra un timeout de RPC del worker bajo carga,
+sin ningún test fallido) y los E2E de portadas, relieve, lomos y smoke: cover-appearance, cover-editor,
+rust-relief-editor, rust-spine-styles, spine-materials, rust-cover-preparation y smoke,
+30 pasan y 5 fallan en la primera ejecución (carga ~9 por otros procesos). Repetidos
+con prioridad de CPU alta y el plazo de la prueba de balanceo ampliado a 3 s
+(COVER_EDITOR_INTERRUPT_TIMEOUT_MS, previsto por la propia prueba para GL por software),
+«pestañas Lomo y Portada» y «un gesto del usuario corta el balanceo» pasan. Siguen
+fallando 3: cover-editor «diseño de la pestaña Portada: escritorio» (claro y oscuro) y
+smoke «el libro abierto reaparece en la estantería al volver», los tres al cerrar el
+lector (el cuerpo se queda en `is-closing-reader`, sin errores de página en la traza
+salvo el certificado de Google). Es la causa ya documentada del cierre en GL por
+software (el paso de animateMotion se limita a 100 ms por fotograma, así que las fases
+se alargan 3–9×) y smoke «el libro abierto reaparece…» ya fallaba igual en main
+(main-smoke del 2-oct, 1.7.242); las dos de escritorio de cover-editor no se han
+comparado contra main y no se ha comprobado en GPU real.
+Inventario 20086 Rust/27342 JS = 42,35 %; no es porcentaje funcional.
+Sin medida de rendimiento ni prueba en móvil físico.
+
 # 1.7.245 — lectores PDF y EPUB, instantáneas de página y controlador del lector en Rust
 
 Changelog: «Lectores PDF y EPUB en Rust».

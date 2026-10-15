@@ -1,8 +1,12 @@
 import {test,expect} from '@playwright/test';
 
-for (const lit of [false,true]) test(`compiled cabinet uses Rust contact shadows with unchanged image, lit=${lit}`,async({browser},testInfo)=>{
+// The compiled cabinet draws its contact shadows with the numeric core: there is no JavaScript twin to switch to, so
+// the image is not compared with one in the page. The shadows' vertices are proven bit for bit against the frozen
+// JavaScript original (unit differential tests; rust-shelf-occlusion.spec.mjs in Chromium), and the whole picture
+// against a build of the previous release (the visual comparison and the hash logged here).
+for (const lit of [false,true]) test(`compiled cabinet uses Rust contact shadows, lit=${lit}`,async({browser},testInfo)=>{
  test.setTimeout(180000);const results=[];
- for(const enabled of [false,true]){
+ for(const enabled of [true]){
   const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:1});
   try{
    const page=await context.newPage();await page.emulateMedia({reducedMotion:'reduce'});
@@ -36,10 +40,10 @@ for (const lit of [false,true]) test(`compiled cabinet uses Rust contact shadows
     return {width:canvas.width,height:canvas.height,bytes:data.length,hash:hash>>>0,proof:window.occlusionProof};
    });
    expect(errors).toEqual([]);expect(result.bytes).toBeGreaterThan(100000);
-   if(enabled)expect(result.proof.calls).toBeGreaterThan(0);else expect(result.proof.calls).toBe(0);
-   results.push(result);await testInfo.attach(`cabinet-${enabled?'rust':'reference'}`,{body:await scene.screenshot(),contentType:'image/png'});
+   expect(result.proof.calls).toBeGreaterThan(0);
+   results.push(result);await testInfo.attach('cabinet-rust',{body:await scene.screenshot(),contentType:'image/png'});
   }finally{await context.close();}
  }
- expect({...results[0],proof:null}).toEqual({...results[1],proof:null});
+ console.log(JSON.stringify({lit,width:results[0].width,height:results[0].height,hash:results[0].hash}));
  await testInfo.attach('compiled-shadow-proof',{body:JSON.stringify({lit,results}),contentType:'application/json'});
 });

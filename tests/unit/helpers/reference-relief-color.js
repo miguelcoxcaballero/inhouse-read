@@ -21,8 +21,8 @@
  */
 import { runInSlices } from '../../../src/js/cover-appearance.js';
 import { getRustCore, loadRustCore } from '../../../src/js/rust-core.js';
-import { canUseReliefWasm, wasmInsideDistance, wasmBoxBlur, wasmHeightToNormals,
-  wasmComposeMaterialMap, wasmComposeReliefLayers } from '../../../src/js/cover-relief-wasm.js';
+import { wasmHeightToNormals, wasmComposeMaterialMap, wasmComposeReliefLayers } from '../../../src/js/cover-relief-wasm.js';
+import { canUseReliefWasm, wasmInsideDistance, wasmBoxBlur } from './reference-relief-bridge.js';
 
 export const COLOR_RELIEF_IDS = Object.freeze(Array.from({ length:10 }, (_, index) => `color-${index + 1}`));
 export const LEGACY_RELIEF_IDS = Object.freeze(['lettering', 'foil', 'frame', 'emblem', 'varnish', 'band', 'grain', 'panel']);

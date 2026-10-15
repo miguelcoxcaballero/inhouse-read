@@ -7,10 +7,8 @@ import * as THREE from '/inhouse-read/node_modules/three/build/three.module.js';
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
 import {createShelfFurniture} from '/inhouse-read/src/js/shelf-furniture.js';
 import {createShelfFurniture as reference} from '/inhouse-read/tests/unit/helpers/reference-shelf-furniture.js';
-import {rustChamferedTimber} from '/inhouse-read/src/js/timber-wasm.js';
-const core=await loadRustCore();if(!core?.timber_mesh)throw Error('Actual timber core required');
+const core=await loadRustCore();if(!core?.cabinet_build)throw Error('Actual cabinet core required');
 window.checkTimber=()=>{
- const direct=rustChamferedTimber(390,15,155,.7,0,[0,0],[1,1,1]);if(!direct)throw Error('Native timber fell back');direct.dispose();
  const results=[],wood=new THREE.MeshStandardMaterial(),backWood=new THREE.MeshStandardMaterial(),darkWood=new THREE.MeshStandardMaterial();
  try{for(const count of [3,12,100]){
   const options={width:390,height:count*210,depth:155,rows:Array.from({length:count},(_,i)=>({bottom:(i+1)*210-20})),wood,backWood,darkWood};

@@ -1,6 +1,10 @@
+import { needRustShelf } from './rust-shelf.js';
+
 // Rust kernels share one aligned allocation per generator. Array inputs are
 // copied once; views are recreated after every yield because another WASM task
 // may grow memory. The finally blocks release cancelled and completed work.
+// The analysis and the pigment maps are jobs inside the core (rust-core/src/cover_relief.rs): the pixels
+// are copied in once, the job owns everything it needs until it is freed and the host only steps it.
 const LIMIT = 1_048_576;
 const validShape = (width, height) => Number.isInteger(width) && Number.isInteger(height)
   && width > 0 && height > 0 && width * height <= LIMIT;
@@ -26,47 +30,6 @@ const checked = result => { if (result !== 1) throw new Error('El núcleo de rel
 
 export function canUseReliefWasm(core, width, height) {
   return Boolean(core?.memory && typeof core.relief_distance_rows === 'function' && validShape(width, height));
-}
-
-export function* wasmInsideDistance(core, mask, width, height) {
-  if (!canUseReliefWasm(core, width, height) || !bytes(mask, width * height)) return null;
-  const count = width * height;
-  const heap = arena(core, [[Uint8Array, count, mask], [Float32Array, count]]);
-  try {
-    for (let from = 0; from < count; from += 8192) {
-      checked(core.relief_distance_init(heap.at(0), heap.at(1), count, from, Math.min(count, from + 8192)));
-      if (from + 8192 < count) yield;
-    }
-    for (let from = 0; from < height; from += 16) {
-      checked(core.relief_distance_rows(heap.at(1), width, height, from, Math.min(height, from + 16), 0));
-      if (from + 16 <= height) yield;
-    }
-    for (let end = height; end > 0;) {
-      // Keep reverse-pass safe points at exactly the original y & 15 rows.
-      const from = Math.max(0, Math.floor((end - 16) / 16) * 16 + 15);
-      checked(core.relief_distance_rows(heap.at(1), width, height, from, end, 1));
-      if ((from & 15) === 15) yield;
-      end = from;
-    }
-    return heap.view(1).slice();
-  } finally { heap.free(); }
-}
-
-export function* wasmBoxBlur(core, field, width, height, radius) {
-  if (!canUseReliefWasm(core, width, height) || !(field instanceof Float32Array) || field.length !== width * height
-    || !Number.isInteger(radius) || radius < 1 || radius > 1024) return null;
-  const count = width * height, heap = arena(core, [[Float32Array, count, field], [Float32Array, count], [Float32Array, count]]);
-  try {
-    for (let from = 0; from < height; from += 16) {
-      checked(core.relief_blur_pass(heap.at(0), heap.at(1), width, height, radius, from, Math.min(height, from + 16), 0));
-      if (from + 16 <= height) yield;
-    }
-    for (let from = 0; from < width; from += 32) {
-      checked(core.relief_blur_pass(heap.at(1), heap.at(2), width, height, radius, from, Math.min(width, from + 32), 1));
-      if (from + 32 <= width) yield;
-    }
-    return heap.view(2).slice();
-  } finally { heap.free(); }
 }
 
 export function* wasmHeightToNormals(core, maps, unit, { selectionAlpha = false } = {}) {
@@ -172,46 +135,100 @@ export function wasmReliefRgbaPlanes(core, maps) {
   finally { heap?.free(); }
 }
 
-/** Keep membership, distance and bevel work in one arena for each pigment. */
-export function* wasmPigmentMaps(core, membership, width, height, previous = null) {
-  const count = width * height, owner = previous?.owner || 0;
-  if (typeof core?.relief_membership_pixels !== 'function' || typeof core?.relief_pigment_pixels !== 'function'
-    || !canUseReliefWasm(core, width, height) || !(membership instanceof Float32Array) || membership.length !== count
-    || membership.buffer === core.memory.buffer
-    || !Number.isInteger(owner) || owner < 0 || owner > 10
-    || (previous && (!owner || !bytes(previous.owners, count) || !bytes(previous.baseMask, count)
-      || !(previous.baseHeight instanceof Float32Array) || previous.baseHeight.length !== count
-      || !Number.isFinite(previous.heightMM) || previous.heightMM < 0))) return null;
-  const bevel = Math.max(1.2, Math.max(width, height) * .003);
-  const heap = arena(core, [[Float32Array, count, membership], [Uint8Array, count], [Float32Array, count],
-    [Uint8Array, owner ? count : 0, previous?.owners], [Uint8Array, count, previous?.baseMask],
-    [Float32Array, owner ? count : 0, previous?.baseHeight], [Uint8Array, owner ? 0 : count]]);
+
+// ---- jobs: palette analysis and pigment maps ------------------------------------------------------
+const JOB_LIMIT = 512 * 512;
+const rgbOf = hex => [1, 3, 5].map(at => parseInt(hex.slice(at, at + 2), 16));
+// The sRGB curve is the host's own (the engine's `**` rounds differently from the core's): the shelf module
+// computes the 256 values and each core instance takes them once, before its first job.
+const tabled = new WeakSet();
+function withLinearTable(core) {
+  if (tabled.has(core.memory)) return true;
+  const pointer = core.alloc_f64(256);
+  if (!pointer) return false;
   try {
-    for (let from = 0; from < count; from += 4096) {
-      checked(core.relief_membership_pixels(heap.at(0), heap.at(1), count, from, Math.min(count, from + 4096)));
-      if (from + 4096 <= count) yield;
+    new Float64Array(core.memory.buffer, pointer, 256).set(needRustShelf().relief_linear_table());
+    if (core.relief_linear_set(pointer) !== 1) return false;
+  } finally { core.free_f64(pointer, 256); }
+  tabled.add(core.memory);
+  return true;
+}
+const jobShape = (core, image, names) => {
+  const { width, height, data } = image || {};
+  return Boolean(core?.memory && typeof core.alloc_f64 === 'function' && typeof core.free_f64 === 'function'
+    && typeof core.relief_job_step === 'function' && typeof core.relief_job_free === 'function'
+    && typeof core.relief_linear_set === 'function' && names.every(name => typeof core[name] === 'function')
+    && Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0 && width * height <= JOB_LIMIT
+    && bytes(data, width * height * 4)
+    // The pixels are copied into a fresh arena; a view into the core's own memory could be detached by it.
+    && data.buffer !== core.memory.buffer && withLinearTable(core));
+};
+
+/** A job over the pixels of `image` (and `extra` f64 values after them): the arena exists only while the
+ * job copies its input. Returns 0 when the core rejects the data. */
+function openJob(core, image, extra, make) {
+  const { data } = image, offset = Math.ceil(data.length / 8) * 8, words = offset / 8 + extra.length;
+  const pointer = core.alloc_f64(Math.max(1, words));
+  if (!pointer) throw new Error('No se pudo reservar memoria para el relieve');
+  try {
+    new Uint8Array(core.memory.buffer, pointer, data.length).set(data);
+    new Float64Array(core.memory.buffer, pointer + offset, extra.length).set(extra);
+    return make(pointer, pointer + offset);
+  } finally { core.free_f64(pointer, Math.max(1, words)); }
+}
+
+/** Step a job to its end: 1 gives the main thread back, 2 carries on, negative is a failed pass. */
+function* stepJob(core, job) {
+  for (;;) {
+    const code = core.relief_job_step(job);
+    if (code === 0) return;
+    if (code < 0) throw new Error('El núcleo de relieve rechazó los datos');
+    if (code === 1) yield;
+  }
+}
+
+/** Colour analysis of a cover raster: seed, opaque pixels and up to ten colours, each with its tolerance, the
+ * pixels its ball covers and its f32 membership plane. */
+export function* wasmAnalyze(core, image) {
+  if (!jobShape(core, image, ['relief_analysis_new', 'relief_analysis_value', 'relief_analysis_colour', 'relief_analysis_mask'])) return null;
+  const { width, height } = image, count = width * height;
+  const job = openJob(core, image, [], pointer => core.relief_analysis_new(pointer, width, height));
+  if (!job) return null;
+  try {
+    yield* stepJob(core, job);
+    const seed = core.relief_analysis_value(job, 0), opaque = core.relief_analysis_value(job, 1);
+    const found = core.relief_analysis_value(job, 2), colours = [];
+    if (!Number.isInteger(seed) || seed < 0 || !Number.isInteger(opaque) || !Number.isInteger(found) || found < 0 || found > 10) return null;
+    const fields = core.alloc_f64(6);
+    if (!fields) throw new Error('No se pudo reservar memoria para el relieve');
+    try {
+      for (let index = 0; index < found; index++) {
+        checked(core.relief_analysis_colour(job, index, fields));
+        const [r, g, b, tolerance, pixels] = new Float64Array(core.memory.buffer, fields, 5);
+        colours.push({ rgb:[r, g, b], tolerance, pixels,
+          mask:new Float32Array(core.memory.buffer, core.relief_analysis_mask(job, index), count).slice() });
+      }
+    } finally { core.free_f64(fields, 6); }
+    return { seed, opaque, colours };
+  } finally { core.relief_job_free(job); }
+}
+
+/** Exclusive pigment maps of `layers` ({ color:'#rrggbb', tolerance, heightMM }) over a raster. One standalone
+ * layer (`single`) yields the byte maps; several yield owners, base mask and base height. */
+export function* wasmMaps(core, image, layers, single = false) {
+  if (!jobShape(core, image, ['relief_maps_new', 'relief_maps_plane']) || !Array.isArray(layers)
+    || layers.length < 1 || layers.length > 10) return null;
+  const { width, height } = image, count = width * height;
+  const fields = layers.flatMap(layer => [...rgbOf(layer.color), layer.tolerance, layer.heightMM ?? 0]);
+  const job = openJob(core, image, fields, (pixels, extra) => core.relief_maps_new(pixels, width, height, extra, layers.length, single ? 1 : 0));
+  if (!job) return null;
+  try {
+    yield* stepJob(core, job);
+    const plane = (which, Type) => new Type(core.memory.buffer, core.relief_maps_plane(job, which), count).slice();
+    if (single) {
+      const mask = plane(1, Uint8Array);
+      return { mask, gloss:mask.slice(), heightMap:plane(3, Uint8Array) };
     }
-    for (let from = 0; from < count; from += 8192) {
-      checked(core.relief_distance_init(heap.at(1), heap.at(2), count, from, Math.min(count, from + 8192)));
-      if (from + 8192 < count) yield;
-    }
-    for (let from = 0; from < height; from += 16) {
-      checked(core.relief_distance_rows(heap.at(2), width, height, from, Math.min(height, from + 16), 0));
-      if (from + 16 <= height) yield;
-    }
-    for (let end = height; end > 0;) {
-      const from = Math.max(0, Math.floor((end - 16) / 16) * 16 + 15);
-      checked(core.relief_distance_rows(heap.at(2), width, height, from, end, 1));
-      if ((from & 15) === 15) yield;
-      end = from;
-    }
-    for (let from = 0; from < count; from += 1024) {
-      checked(core.relief_pigment_pixels(heap.at(0), heap.at(2), heap.at(3), heap.at(4), heap.at(5), heap.at(6),
-        count, from, Math.min(count, from + 1024), bevel, previous?.heightMM || 0, owner));
-      if (from + 1024 <= count) yield;
-    }
-    if (owner) return { owners: heap.view(3).slice(), baseMask: heap.view(4).slice(), baseHeight: heap.view(5).slice() };
-    const mask = heap.view(4).slice();
-    return { mask, gloss: mask.slice(), heightMap: heap.view(6).slice() };
-  } finally { heap.free(); }
+    return { owners:plane(0, Uint8Array), baseMask:plane(1, Uint8Array), baseHeight:plane(2, Float32Array) };
+  } finally { core.relief_job_free(job); }
 }

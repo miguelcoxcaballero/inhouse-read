@@ -7,7 +7,7 @@ import { rustPlantPotSurface } from './plant-pot-wasm.js';
 import { rustPlantIvyGeometry } from './plant-ivy-wasm.js';
 import { rustPlantSubdivide } from './plant-subdivide-wasm.js';
 import { rustPlantMonsteraGeometry } from './plant-monstera-wasm.js';
-import { rustPlantPreview } from './plant-preview-wasm.js';
+import { rustPlantLattice } from './plant-lattice-wasm.js';
 import { rustPlantGlazeRows } from './plant-glaze-wasm.js';
 import { rustPlantPotteryRows } from './plant-pottery-wasm.js';
 import { rustPlantSoilRows } from './plant-soil-wasm.js';
@@ -47,41 +47,11 @@ function variantFor(value) {
   return 'leafy';
 }
 
-// Deterministic lattice noise. The x axis may wrap so fields tile seamlessly
-// around a lathe; nothing here depends on Math.random or on the DOM.
+// The integer hash that seeds each leaf variety's vein phase (the painters live in the decor core).
 function hash(x, y, seed) {
   let h = Math.imul(x | 0, 0x27d4eb2d) ^ Math.imul(y | 0, 0x165667b1) ^ Math.imul(seed | 0, 0x9e3779b1);
   h = Math.imul(h ^ h >>> 15, 0x85ebca6b); h = Math.imul(h ^ h >>> 13, 0xc2b2ae35);
   return ((h ^ h >>> 16) >>> 0) / 4294967296;
-}
-const wrap = (value, period) => period ? (value % period + period) % period : value;
-function noise(x, y, period, seed) {
-  const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi;
-  const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy), x0 = wrap(xi, period), x1 = wrap(xi + 1, period);
-  const a = hash(x0, yi, seed), b = hash(x1, yi, seed), c = hash(x0, yi + 1, seed), d = hash(x1, yi + 1, seed);
-  return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
-}
-function fbm(x, y, period, seed, octaves = 3) {
-  let sum = 0, amplitude = .5, total = 0;
-  for (let octave = 0; octave < octaves; octave++) {
-    const scale = 2 ** octave;
-    sum += amplitude * noise(x * scale, y * scale, period * scale, seed + octave * 31);
-    total += amplitude; amplitude *= .5;
-  }
-  return sum / total;
-}
-const cell = { f1:0, f2:0, id:0, dx:0, dy:0 };
-function voronoi(x, y, period, seed) {
-  // One hash per cell supplies its jitter and identity; dx/dy point from the
-  // sample to the nearest feature, so a grain can be shaded across its face.
-  const xi = Math.floor(x), yi = Math.floor(y); let f1 = 9, f2 = 9, id = 0, nx = 0, ny = 0;
-  for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
-    const cy = yi + j, h = hash(wrap(xi + i, period), cy, seed);
-    const dx = xi + i + h - x, dy = cy + h * 4099 % 1 - y, d = dx * dx + dy * dy;
-    if (d < f1) { f2 = f1; f1 = d; id = h * 65537 % 1; nx = dx; ny = dy; } else if (d < f2) f2 = d;
-  }
-  cell.f1 = Math.sqrt(f1); cell.f2 = Math.sqrt(f2); cell.id = id; cell.dx = nx; cell.dy = ny;
-  return cell;
 }
 
 function dataTexture(bytes, width, height, colorSpace, repeat) {
@@ -97,8 +67,19 @@ function dataTexture(bytes, width, height, colorSpace, repeat) {
 const surfaces = new Map(), queue = [], settled = [], redraws = new Set();
 const idle = callback => typeof requestIdleCallback === 'function' ? requestIdleCallback(callback, { timeout:200 })
   : setTimeout(() => callback({ timeRemaining:() => 0 }), 16);
-const PREVIEW = 8;
+const SURFACE_ERROR = 'Las texturas de la planta no se pudieron calcular. Recarga la página.';
 const deferPlantPaint = createPlantPaintGate();
+
+// A surface is painted by the decor core from its description: `family` 0 glazed pottery, 1 terracotta
+// or zinc, 2 soil, 3 leaves; `kind` the variety within it; `config` the painter's numbers.
+function paintRows(job, end) {
+  const core = getRustDecorCore(), { spec, width, height, row, pigment, data } = job, count = end - row;
+  const painted = spec.family === 0 ? rustPlantGlazeRows(core, width, height, row, count, spec.config, pigment, data)
+    : spec.family === 1 ? rustPlantPotteryRows(core, spec.kind, width, height, row, count, spec.config, pigment, data)
+    : spec.family === 2 ? rustPlantSoilRows(core, spec.kind, width, height, row, count, pigment, data)
+    : rustPlantFoliageRows(core, spec.kind, width, height, row, count, spec.config, pigment, data);
+  if (!painted) throw new Error(SURFACE_ERROR);
+}
 
 function pump(deadline) {
   if (deferPlantPaint()) { idle(pump); return; }
@@ -108,20 +89,18 @@ function pump(deadline) {
   for (let chunk = 0; queue.length && chunk < 48 && (chunk === 0 || performance.now() < until); chunk++) {
     const job = queue[0];
     const end = Math.min(job.height, job.row + 4);
-    const accelerated = (job.glaze && rustPlantGlazeRows(getRustDecorCore(), job.width, job.height, job.row,
-      end - job.row, job.glaze, job.pigment, job.data)) ||
-      (job.pottery && rustPlantPotteryRows(getRustDecorCore(), job.pottery.kind, job.width, job.height, job.row,
-        end - job.row, job.pottery.config, job.pigment, job.data)) ||
-      (job.soil !== undefined && rustPlantSoilRows(getRustDecorCore(), job.soil, job.width, job.height, job.row,
-        end - job.row, job.pigment, job.data)) ||
-      (job.foliage && rustPlantFoliageRows(getRustDecorCore(), job.foliage.kind, job.width, job.height, job.row,
-        end - job.row, job.foliage.config, job.pigment, job.data));
-    if (accelerated) job.row = end;
-    else for (; job.row < end; job.row++)
-      for (let x = 0; x < job.width; x++) job.store(job.row * job.width + x, job.sample(x, job.row));
+    try { paintRows(job, end); job.row = end; }
+    catch (error) {
+      // The coarse first look stays on the plants that already use it and they are released, but the surface is
+      // not final: it is forgotten below, so it is never saved as a finished painting and the next plant of
+      // this kind paints it again.
+      console.warn('No se pudo completar el detalle de las texturas de la planta:', error);
+      job.row = job.height; job.failed = true;
+    }
     if (job.row < job.height) continue;
     queue.shift();
     const { base } = job;
+    if (job.failed && surfaces.get(job.key) === base) surfaces.delete(job.key);
     // One new Source version re-uploads the shared image once; every live
     // clone just needs its own version bumped to look at it again.
     base.map.source.needsUpdate = base.data.source.needsUpdate = true;
@@ -143,7 +122,7 @@ export const plantSurfacesReady = () => queue.length ? new Promise(resolve => se
  * G roughness for roughnessMap) once per surface kind. Every model owns cheap
  * clones: they share the Source, so identical pots share one GPU upload that
  * is released when the last clone is disposed. */
-function surface(key, [width, height], repeat, paint, refresh) {
+function surface(key, [width, height], repeat, spec, refresh) {
   let base = surfaces.get(key);
   const saved = base ? null : savedSurface(key, width, height);
   if (saved) {
@@ -152,38 +131,14 @@ function surface(key, [width, height], repeat, paint, refresh) {
       data:dataTexture(saved.data, width, height, THREE.NoColorSpace, repeat), clones:null, waiting:null };
     surfaces.set(key, base);
   } else if (!base) {
-    const pigment = new Uint8Array(width * height * 4), data = new Uint8Array(pigment.length), texel = [0, 0, 0, .5, 1];
-    const sample = (x, y) => { paint((x + .5) / width, (y + .5) / height, x, y, texel); return texel; };
-    const store = (index, value) => {
-      const i = index * 4;
-      for (let c = 0; c < 3; c++) pigment[i + c] = Math.round(255 * clamp01(value[c]));
-      data[i] = Math.round(255 * clamp01(value[3])); data[i + 1] = Math.round(255 * clamp01(value[4]));
-      pigment[i + 3] = data[i + 3] = 255;
-    };
+    const pigment = new Uint8Array(width * height * 4), data = new Uint8Array(pigment.length);
     // Coarse preview: the same painter on an 8px lattice, spread bilinearly
     // (and wrapped around a lathe), at about 1/64 of the full cost.
-    const columns = Math.ceil(width / PREVIEW) + 1, rows = Math.ceil(height / PREVIEW) + 1, lattice = new Float32Array(columns * rows * 5);
-    for (let j = 0; j < rows; j++) for (let i = 0; i < columns; i++) {
-      const x = i * PREVIEW >= width ? repeat ? 0 : width - 1 : i * PREVIEW;
-      lattice.set(sample(x, Math.min(height - 1, j * PREVIEW)), (j * columns + i) * 5);
-    }
-    if (!rustPlantPreview(getRustDecorCore(), width, height, columns, rows, lattice, pigment, data)) {
-      const mixed = [0, 0, 0, 0, 0];
-      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-        const i = Math.min(columns - 2, Math.floor(x / PREVIEW)), j = Math.min(rows - 2, Math.floor(y / PREVIEW));
-        const fx = Math.min(1, (x - i * PREVIEW) / PREVIEW), fy = Math.min(1, (y - j * PREVIEW) / PREVIEW);
-        const a = (j * columns + i) * 5, b = a + 5, c = a + columns * 5, d = c + 5;
-        for (let k = 0; k < 5; k++) {
-          const top = lattice[a + k] + (lattice[b + k] - lattice[a + k]) * fx, bottom = lattice[c + k] + (lattice[d + k] - lattice[c + k]) * fx;
-          mixed[k] = top + (bottom - top) * fy;
-        }
-        store(y * width + x, mixed);
-      }
-    }
+    if (!rustPlantLattice(getRustDecorCore(), spec, width, height, repeat, pigment, data)) throw new Error(SURFACE_ERROR);
     base = { map:dataTexture(pigment, width, height, THREE.SRGBColorSpace, repeat), data:dataTexture(data, width, height, THREE.NoColorSpace, repeat),
       clones:[], waiting:[] };
     surfaces.set(key, base);
-    queue.push({ base, width, height, row:0, sample, store, glaze:paint.rustGlaze, pottery:paint.rustPottery, soil:paint.rustSoil, foliage:paint.rustFoliage, pigment, data });
+    queue.push({ base, key, width, height, row:0, spec, pigment, data });
     if (queue.length === 1) idle(pump);
   }
   // Texture.copy() raises the shared Source's version, which would re-upload
@@ -211,33 +166,7 @@ function surface(key, [width, height], repeat, paint, refresh) {
 const SNAKE_STRIPS = 4, SNAKE_INSET = .04;
 
 function sansevieriaTextures(refresh, quality = 1) {
-  const deep = srgb('#1d3621'), leaf = srgb('#2f5230'), sage = srgb('#96a88c'), gold = srgb('#b6a85c');
-  const paint = (u, v, x, y, texel) => {
-    const strip = Math.min(SNAKE_STRIPS - 1, Math.floor(u * SNAKE_STRIPS)), s = u * SNAKE_STRIPS - strip;
-    const a = Math.abs(s * 2 - 1), seed = 71 + strip * 13;
-    // Irregular pale cross bands, about a dozen per blade: shallow chevrons
-    // dipping toward the margins, warped, with a jagged edge, a width and a
-    // strength of their own, broken into dashes; they fade toward the tip.
-    const warp = fbm(s * 2, v * 7, 0, seed, 2) - .5, zig = Math.abs((s * 5 + noise(s * 3, v * 40, 0, seed + 4) * .8) % 1 - .5);
-    const phase = v * 12 + strip * .37 - a * a * .55 + warp * 1.5 + zig * .3;
-    const k = Math.floor(phase), p = phase - k, span = .22 + hash(k, strip, seed) * .3;
-    const band = smoothstep(0, .07, p) * (1 - smoothstep(span, span + .07, p)) * (.5 + .5 * hash(k, strip, seed + 5));
-    // A fainter, finer ripple fills the dark ground between the bands.
-    const ripple = Math.pow(Math.max(0, Math.sin((phase * 2.6 + warp) * Math.PI * 2)), 6) * .28;
-    const broken = smoothstep(.2, .55, noise(s * 5, v * 70, 0, seed + 1));
-    const pale = Math.max(band * (.35 + .65 * broken), ripple * broken) * (1 - smoothstep(.84, 1, v)), speck = hash(x, y, seed + 2) - .5;
-    const field = fbm(s * 3, v * 16, 0, seed + 3, 2);
-    // Golden 'Laurentii' margins, with a thin darker seam against the blade.
-    const margin = smoothstep(.82, .87, a), seam = Math.exp(-(((a - .81) / .025) ** 2)) * .3;
-    for (let c = 0; c < 3; c++) {
-      const green = (deep[c] + (leaf[c] - deep[c]) * field) * (1 + speck * .06), banded = (green + (sage[c] - green) * pale * .8) * (1 - seam);
-      texel[c] = banded + (gold[c] * (.94 + speck * .1) - banded) * margin;
-    }
-    texel[3] = .46 + pale * .06 - margin * .03 + speck * .03;
-    texel[4] = .6 + pale * .06 + speck * .05;
-  };
-  paint.rustFoliage = { kind:3, config:new Float64Array(5) };
-  return surface(`leaf:upright:${quality}`, [SNAKE_STRIPS * 32 * quality, 256 * quality], false, paint, refresh);
+  return surface(`leaf:upright:${quality}`, [SNAKE_STRIPS * 32 * quality, 256 * quality], false, { family:3, kind:3, config:new Float64Array(5) }, refresh);
 }
 
 function botanicalTextures(variant, refresh, quality = 1) {
@@ -245,123 +174,27 @@ function botanicalTextures(variant, refresh, quality = 1) {
   // A single surface field drives pigment, relief and wax roughness together.
   const base = srgb({ zz:'#2f5324', fern:'#4a7a2c', succulent:'#6a8a80', ivy:'#2a4c23', palm:'#3d6c2a', monstera:'#2f6128' }[variant] ?? '#36672c');
   const phase = hash(variant.length, 3, 11) * Math.PI * 2, seed = variant.charCodeAt(0);
-  const paint = (u, v, x, y, texel) => {
-    const signed = u * 2 - 1, a = Math.abs(signed);
-    const midrib = Math.exp(-a * 48);
-    // Branch veins sweep toward the tip, with finer tertiary venation.
-    const veinPhase = (v * 9 - a * .95 + .06 * Math.sin(a * 5) + signed * .09) * Math.PI * 2;
-    let lateral = Math.pow(Math.max(0, Math.cos(veinPhase)), 24) * (1 - a);
-    const fine = Math.pow(Math.max(0, Math.cos((v * 37 + a * 12) * Math.PI * 2)), 18) * a * (1 - a);
-    if (variant === 'ivy') {
-      // Hedera is palmately veined: pale rays fan out from the petiole.
-      const angle = Math.atan2(signed * .5, v), reach = Math.hypot(signed * .5, v);
-      lateral = Math.pow(Math.max(0, Math.cos(angle * 11.4)), 46) * smoothstep(.95, .1, reach) * 2.2;
-    }
-    const cells = (hash(x, y, seed) - .5) * .025;
-    const mottling = Math.sin(v * 19 + Math.sin(signed * 11 + phase)) * Math.cos(signed * 17 - v * 7) * .027;
-    const margin = variant === 'ivy' ? Math.pow(a, 5) * .06 : 0;
-    const bloom = variant === 'succulent' ? fbm(u * 6, v * 6, 0, seed + 4) * .05 : 0;
-    const veins = (midrib * .055 + lateral * .035 + fine * .012) * (variant === 'succulent' ? .12 : variant === 'ivy' ? 1.6 : 1);
-    const variation = cells + mottling + margin + veins + bloom;
-    texel[0] = base[0] + variation;
-    texel[1] = base[1] + variation;
-    texel[2] = base[2] + variation * .65 + bloom * .6;
-    texel[3] = .38 + midrib * .30 + lateral * .16 + fine * .06 + cells;
-    texel[4] = .62 + veins * 2 + mottling * 3 + cells;
-  };
-  paint.rustFoliage = { kind:variant === 'ivy' ? 1 : variant === 'succulent' ? 2 : 0, config:new Float64Array([...base, phase, seed]) };
-  return surface(`leaf:${variant}:${quality}`, [128 * quality, 128 * quality], false, paint, refresh);
+  const spec = { family:3, kind:variant === 'ivy' ? 1 : variant === 'succulent' ? 2 : 0, config:new Float64Array([...base, phase, seed]) };
+  return surface(`leaf:${variant}:${quality}`, [128 * quality, 128 * quality], false, spec, refresh);
 }
 
 // Texture rows along a pot's profile: foot ring, outer wall, lip, visible
 // inner wall, then everything hidden below the soil.
 const FOOT = .07, RIM = .6, SOIL = .74;
 
-// Rows below the soil line are never visible.
-const hidden = (v, texel) => {
-  if (v < SOIL + .03) return false;
-  texel[0] = texel[1] = texel[2] = .2; texel[3] = .5; texel[4] = 1; return true;
-};
-
-function glazedPainter({ glaze, body, gloss, speckle, crackle, seed }) {
-  const G = srgb(glaze), B = srgb(body), iron = [.34, .45, .6], edges = [];
-  const paint = (u, v, x, y, texel) => {
-    if (hidden(v, texel)) return;
-    const cloud = fbm(u * 5, v * 5, 5, seed, 2);
-    // A dipped glaze stops above the foot with an uneven edge and short runs.
-    const edge = edges[x] ??= FOOT + (noise(u * 18, 0, 18, seed + 4) - .5) * .018 - Math.max(0, noise(u * 36, 0, 36, seed + 3) - .7) * .1;
-    const glazed = smoothstep(edge - .004, edge + .004, v), bead = Math.exp(-(((v - edge) / .006) ** 2));
-    const lip = Math.exp(-(((v - RIM) / .012) ** 2)) * .24;
-    const speck = hash(x, y, seed + 5) > 1 - speckle ? .4 + hash(x, y, seed + 6) * .4 : 0;
-    let crack = 0;
-    if (crackle && v > edge) { const c = voronoi(u * 12, v * 17, 12, seed + 7); crack = (1 - smoothstep(0, .03, c.f2 - c.f1)) * crackle; }
-    const grain = hash(x, y, seed + 8) - .5, cover = glazed * (1 - lip);
-    for (let c = 0; c < 3; c++) {
-      const glazeTone = G[c] * (.975 + cloud * .045) * (1 - crack * .06) * (1 - speck * iron[c] * glazed);
-      const bodyTone = B[c] * (.92 + grain * .14);
-      texel[c] = bodyTone + (glazeTone - bodyTone) * cover;
-    }
-    texel[3] = .5 + glazed * (cloud * .06 - speck * .22 - crack * .1) + (1 - glazed) * grain * .35 + bead * .14;
-    texel[4] = .84 + grain * .1 + (gloss + cloud * .06 + crack * .1 + speck * .2 - .84 - grain * .1) * glazed;
-  };
-  paint.rustGlaze = new Float64Array([...G, ...B, gloss, speckle, crackle, seed]);
-  return paint;
-}
-
-function terracottaPainter(hex, seed) {
-  const C = srgb(hex), salt = srgb('#e3dccf'), wheel = [];
-  const paint = (u, v, x, y, texel) => {
-    if (hidden(v, texel)) return;
-    // Broad firing clouds, then a warped sandy field: no lattice shows through.
-    const mottle = fbm(u * 3, v * 5, 3, seed, 2), warp = fbm(u * 5, v * 9, 5, seed + 9, 2);
-    const fine = fbm(u * 14 + warp * 1.6, v * 26 + warp * 2, 14, seed + 1, 2), sand = hash(x, y, seed + 2) - .5;
-    // Open pores and grog: small irregular pits, a few pale or dark grains.
-    const pit = voronoi(u * 26, v * 52, 26, seed + 6), pore = pit.id > .84 ? smoothstep(.26, .08, pit.f1 + (fine - .5) * .15) : 0;
-    const grog = pit.id < .03 ? smoothstep(.22, .08, pit.f1) * (pit.id < .012 ? -1 : 1) : 0;
-    // Efflorescence gathers where water evaporates: under the collar and at the foot.
-    const where = Math.max(Math.exp(-(((v - RIM + .06) / .09) ** 2)), Math.exp(-(((v - .02) / .06) ** 2)) * .85);
-    const bloom = where > .02 ? smoothstep(.5, .8, fbm(u * 7, v * 10 + warp, 7, seed + 3)) * where * .3 : 0;
-    // Faint throwing rings a few millimetres apart, wandering round the pot.
-    const throwing = Math.sin(v * 120 + (wheel[x] ??= noise(u * 6, 0, 6, seed + 5) * 4)) * .008;
-    const inner = v > RIM + .012 ? .8 : 1;
-    const tone = (.87 + mottle * .2 + (fine - .5) * .1 + sand * .045 + throwing - pore * .06 + grog * .08) * inner;
-    const warmth = [1 + (mottle - .5) * .08, 1, 1 - (mottle - .5) * .06];
-    for (let c = 0; c < 3; c++) { const clay = C[c] * tone * warmth[c]; texel[c] = clay + (salt[c] - clay) * bloom; }
-    texel[3] = .5 + (fine - .5) * .22 + sand * .1 - pore * .2 + grog * .1 + throwing * 2 + bloom * .1;
-    texel[4] = .9 + (fine - .5) * .08 + pore * .06 + bloom * .06;
-  };
-  paint.rustPottery = { kind:0, config:new Float64Array([...C, seed]) };
-  return paint;
-}
-
-function galvanizedPainter(seed, hex = '#cfd3d5') {
-  const zinc = srgb(hex);
-  const paint = (u, v, x, y, texel) => {
-    if (hidden(v, texel)) return;
-    // Hot-dip spangle: flakes about a centimetre across, each tilted its own
-    // way with fine dendrite ripples, so some catch the light and some stay
-    // frosted instead of reading as flat grey patches.
-    const c = voronoi(u * 12, v * 24, 12, seed), id = c.id, border = smoothstep(0, .05, c.f2 - c.f1);
-    const angle = id * Math.PI * 2, ax = Math.cos(angle), ay = Math.sin(angle), tilt = c.dx * ax + c.dy * ay;
-    const feather = Math.sin((u * 12 * ax + v * 24 * ay) * 11 + id * 40 + noise(u * 40, v * 80, 40, seed + 1) * 2.5) * .5 + .5;
-    const bead = v < FOOT + .015 || Math.abs(v - RIM) < .035 ? .93 : 1, inner = v > RIM + .035 ? .9 : 1;
-    const tone = (.95 + (id - .5) * .035 + tilt * .015 + feather * .012) * (.98 + border * .02) * bead * inner;
-    for (let k = 0; k < 3; k++) texel[k] = zinc[k] * tone;
-    texel[3] = .5 + tilt * .035 + feather * .02 - (1 - border) * .04;
-    texel[4] = .34 + id * .12 + feather * .04 + (1 - border) * .04 + (1 - bead) * .25;
-  };
-  paint.rustPottery = { kind:1, config:new Float64Array([...zinc, seed]) };
-  return paint;
-}
+const glazeSpec = ({ glaze, body, gloss, speckle, crackle, seed }) => ({ family:0, kind:0,
+  config:new Float64Array([...srgb(glaze), ...srgb(body), gloss, speckle, crackle, seed]) });
+const terracottaSpec = (hex, seed) => ({ family:1, kind:0, config:new Float64Array([...srgb(hex), seed]) });
+const galvanizedSpec = (seed, hex = '#cfd3d5') => ({ family:1, kind:1, config:new Float64Array([...srgb(hex), seed]) });
 
 const POT_FINISHES = {
   // Glossy white earthenware with faint crazing and iron specks.
-  muskot:{ painter:color => glazedPainter({ glaze:color, body:'#cfbea3', gloss:.24, speckle:.0022, crackle:.55, seed:17 }),
+  muskot:{ painter:color => glazeSpec({ glaze:color, body:'#cfbea3', gloss:.24, speckle:.0022, crackle:.55, seed:17 }),
     material:{ clearcoat:.42, clearcoatRoughness:.16, bumpScale:.55 } },
   // Satin pink stoneware, freckled by the clay body.
-  gradvis:{ painter:color => glazedPainter({ glaze:color, body:'#c7a291', gloss:.42, speckle:.004, crackle:0, seed:29 }),
+  gradvis:{ painter:color => glazeSpec({ glaze:color, body:'#c7a291', gloss:.42, speckle:.004, crackle:0, seed:29 }),
     material:{ clearcoat:.2, clearcoatRoughness:.42, bumpScale:.45 } },
-  akerbar:{ painter:color => galvanizedPainter(41,color), material:{ metalness:.85, bumpScale:.3 } },
+  akerbar:{ painter:color => galvanizedSpec(41,color), material:{ metalness:.85, bumpScale:.3 } },
 };
 
 function potProfile(potId) {
@@ -444,37 +277,7 @@ function potGeometry(potId, radius, height, soilFraction) {
   return { geometry, soilRadius:soil.r * radius, radius };
 }
 
-function soilPainter(kind) {
-  const peat = srgb('#3b2b1f'), bark = srgb('#5e3d29'), perlite = srgb('#d9d6cc'), damp = srgb('#271c14');
-  const stones = ['#a39c90','#bdb099','#7e6c5b','#d8d4cb','#8f8a82'].map(srgb);
-  const paint = (u, v, x, y, texel) => {
-    const grain = hash(x, y, 7);
-    if (Math.hypot(u - .5, v - .5) > .54) {
-      // Neutral corner, only sampled by pebbles, bark chips and perlite.
-      texel[0] = texel[1] = texel[2] = .8 + grain * .14; texel[3] = .45 + grain * .2; texel[4] = .82; return;
-    }
-    if (kind === 'grit') {
-      const c = voronoi(u * 26, v * 26, 0, 3), gap = 1 - smoothstep(.02, .1, c.f2 - c.f1), dome = 1 - Math.min(1, c.f1 * 1.5);
-      const stone = stones[Math.floor(c.id * stones.length)], tone = .74 + dome * .32 + (grain - .5) * .08;
-      for (let k = 0; k < 3; k++) texel[k] = stone[k] * tone + (damp[k] - stone[k] * tone) * gap;
-      texel[3] = .25 + dome * .55 - gap * .2; texel[4] = .76 + gap * .18; return;
-    }
-    const clump = fbm(u * 9, v * 9, 0, 11), crumbs = fbm(u * 34, v * 34, 0, 12, 2), wet = smoothstep(.4, .72, fbm(u * 3, v * 3, 0, 13, 2));
-    // Sparse rounded perlite grains and a few bark flakes, soft edged and
-    // warped by the crumb field so they never read as square confetti.
-    const grit = voronoi(u * 22, v * 22, 0, 17), speck = grit.id > .93 ? smoothstep(.3, .14, grit.f1 + (crumbs - .5) * .12) : 0;
-    const chip = voronoi(u * 11, v * 11, 0, 19), woody = chip.id > .86 ? smoothstep(.36, .24, chip.f1 * (1 + (clump - .5) * .8)) * (1 - speck) : 0;
-    const tone = .66 + clump * .5 + (crumbs - .5) * .55 + (grain - .5) * .16 - wet * .18;
-    for (let k = 0; k < 3; k++) {
-      const soil = peat[k] * tone, wood = bark[k] * (.75 + crumbs * .35);
-      texel[k] = soil + (wood - soil) * woody + (perlite[k] * (.84 + grain * .12) - soil) * speck;
-    }
-    texel[3] = .3 + clump * .3 + (crumbs - .5) * .4 + (grain - .5) * .12 + speck * .3 + woody * .16;
-    texel[4] = .97 - wet * .12 - speck * .1 - woody * .05;
-  };
-  paint.rustSoil = kind === 'grit' ? 1 : 0;
-  return paint;
-}
+const soilSpec = kind => ({ family:2, kind:kind === 'grit' ? 1 : 0 });
 
 function soilGeometry(radius, y, random, roots, kind) {
   // A shallow mound meets the pot wall in a darker moist edge; stems sink into
@@ -949,11 +752,11 @@ export function createShelfPlant(entry, { persist = false } = {}) {
   const clays = ['#a97958', '#b18b6c', '#bcad94', '#826d60'];
   let potColor = getPotColor(potId,entry.potColorId);
   const clayColor = potId ? potColor.hex : clays[Math.floor(random() * clays.length)];
-  const finish = POT_FINISHES[potModelId] ?? { painter:() => terracottaPainter(clayColor, 53), material:{ bumpScale:.4 } };
+  const finish = POT_FINISHES[potModelId] ?? { painter:() => terracottaSpec(clayColor, 53), material:{ bumpScale:.4 } };
   const potKey = (level, color = potColor) => `pot:${potId}:${potId ? color.hex : clayColor}:${level}`;
   const potSurface = (level, notify, color = potColor) => {
     const pigment = potId ? color.hex : clayColor;
-    const painter = POT_FINISHES[potModelId]?.painter(color.hex) ?? terracottaPainter(pigment, 53);
+    const painter = POT_FINISHES[potModelId]?.painter(color.hex) ?? terracottaSpec(pigment, 53);
     return surface(potKey(level, color), [128 * level, 256 * level], true, painter, notify);
   };
   const potMaps = own(potSurface(quality, refresh));
@@ -1266,7 +1069,7 @@ export function createShelfPlant(entry, { persist = false } = {}) {
     }
   }
   const soilKind = variant === 'cactus' || variant === 'succulent' ? 'grit' : 'peat';
-  const soilSurface = (level, notify) => surface(`soil:${soilKind}:${level}`, [128 * level, 128 * level], false, soilPainter(soilKind), notify);
+  const soilSurface = (level, notify) => surface(`soil:${soilKind}:${level}`, [128 * level, 128 * level], false, soilSpec(soilKind), notify);
   const soilMaps = own(soilSurface(quality, refresh));
   const soil = new THREE.MeshStandardMaterial({ map:soilMaps.map, roughnessMap:soilMaps.data, bumpMap:soilMaps.data,
     bumpScale:soilKind === 'grit' ? 1.4 : 1.1, roughness:1, vertexColors:true });

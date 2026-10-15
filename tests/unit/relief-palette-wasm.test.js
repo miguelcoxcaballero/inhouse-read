@@ -2,7 +2,7 @@
 import {beforeAll,describe,it,expect} from 'vitest';
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {rustReliefPalette} from '../../src/js/relief-palette-wasm.js';
+import {rustReliefPalette} from './helpers/reference-palette-bridge.js';
 
 const original=readFileSync(resolve(process.cwd(),'tests/unit/helpers/reference-relief-palette.js'),'utf8');
 const coefficients=original.slice(original.indexOf('const LINEAR_RGB ='),original.indexOf('function colorName('));

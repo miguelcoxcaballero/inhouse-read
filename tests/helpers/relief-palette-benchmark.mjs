@@ -1,5 +1,5 @@
 import {makeReliefPaletteImage,drainPalette} from './relief-palette-cases.mjs';
-import {rustReliefPalette} from '../../src/js/relief-palette-wasm.js';
+import {rustReliefPalette} from '../unit/helpers/reference-palette-bridge.js';
 const median=values=>[...values].sort((a,b)=>a-b)[Math.floor(values.length/2)];
 const percentile=(values,p)=>[...values].sort((a,b)=>a-b)[Math.min(values.length-1,Math.ceil(values.length*p)-1)];
 const same=(a,b)=>{if(JSON.stringify(a)!==JSON.stringify(b))throw new Error('Relief palette or metadata changed');};
@@ -17,7 +17,8 @@ export async function observeReliefPalette({input,original,production,core,hash,
   const originalFull=drainPalette(original.analyzePixels(image)),callsBefore=stats.jobs;
   const candidateFull=drainPalette(production.analyzePixels(image)),productionJobs=stats.jobs-callsBefore;
   same(await signature(candidateFull),await signature(originalFull));
-  if(productionJobs!==(input.width*input.height>=4096?1:0))throw new Error('Production routing differed');
+  // Every size takes the native analysis (the old small-image bypass is gone).
+  if(productionJobs!==1)throw new Error('Production routing differed');
   const stages={};
   for(const stage of ['palette','full']){
     const run=rust=>stage==='palette'?(rust?candidatePalette():referencePalette()):drainPalette((rust?production:original).analyzePixels(image));

@@ -1,49 +1,52 @@
 // @vitest-environment node
-import {readFileSync} from 'node:fs';
+// Compaction of an expanded sheet or an assembly (the Rust shelf module) against the frozen JavaScript original:
+// attribute order, stored types, every byte and the index width. The module's own copy is called through a probe.
 import * as THREE from 'three';
-import {beforeAll,afterEach,expect,it,vi} from 'vitest';
-const state=vi.hoisted(()=>({core:null}));
-vi.mock('../../src/js/rust-core.js',()=>({getRustCore:()=>state.core,loadRustCore:async()=>state.core??(await globalThis.__inhouseRustReady).exports}));
-import {rustCompactGeometry} from '../../src/js/mesh-compact-wasm.js';
+import {expect,it} from 'vitest';
+import {needRustShelf} from '../../src/js/rust-shelf.js';
 import {compactGeometry as reference} from './helpers/reference-mesh-compact.js';
-import {createBaggebo} from '../../src/js/baggebo-model.js';
-import {createBaggebo as originalBaggebo} from './helpers/reference-baggebo-model.js';
-let core;
-beforeAll(async()=>{core=(await WebAssembly.instantiate(readFileSync('src/wasm/inhouse_read_core.wasm'))).instance.exports;expect(typeof core.mesh_compact).toBe('function');state.core=core;});
-afterEach(()=>{state.core=core;});
-function bytes(a,b){expect(a.constructor).toBe(b.constructor);expect(a.byteLength).toBe(b.byteLength);const x=new Uint8Array(a.buffer,a.byteOffset,a.byteLength),y=new Uint8Array(b.buffer,b.byteOffset,b.byteLength);for(let i=0;i<x.length;i++)if(x[i]!==y[i])throw Error(`byte[${i}]: ${x[i]} / ${y[i]}`);}
-function exact(a,b){expect(a).toBeDefined();expect(Object.keys(a.attributes)).toEqual(Object.keys(b.attributes));for(const name of Object.keys(b.attributes)){const x=a.attributes[name],y=b.attributes[name];expect(x.itemSize).toBe(y.itemSize);expect(x.normalized).toBe(y.normalized);bytes(x.array,y.array);}bytes(a.index.array,b.index.array);expect(a.boundingBox).toEqual(b.boundingBox);expect(a.boundingSphere).toEqual(b.boundingSphere);}
-function fixture(count,colours=true){
+import {readGeometry} from './helpers/geo-packet.js';
+const shelf=needRustShelf();
+const bytes=array=>Buffer.from(array.buffer,array.byteOffset,array.byteLength);
+const ORDERS=['pnuc','punc'];
+// Attribute order as letters: p position, n normal, u uv, c colour (left out when `colours` is false).
+function fixture(count,colours=true,order='pnuc'){
  const g=new THREE.BufferGeometry(),position=new Float32Array(count*3),normal=new Float32Array(count*3),uv=new Float32Array(count*2),color=new Float32Array(count*3);
  for(let i=0;i<count;i++){const corner=[0,1,2,0,2,3][i%6],pair=Math.floor(i/6);position.set([pair*.123+corner,corner%2,i%6===3?-0:0],i*3);normal.set([.123456,.234567,.96789],i*3);uv.set([corner/3,corner/7],i*2);color.set([.5,.73,.999],i*3);}
- g.setAttribute('position',new THREE.BufferAttribute(position,3));g.setAttribute('uv',new THREE.BufferAttribute(uv,2));g.setAttribute('normal',new THREE.BufferAttribute(normal,3));if(colours)g.setAttribute('color',new THREE.BufferAttribute(color,3));return g;
+ const made={p:['position',new THREE.BufferAttribute(position,3)],n:['normal',new THREE.BufferAttribute(normal,3)],u:['uv',new THREE.BufferAttribute(uv,2)],c:['color',new THREE.BufferAttribute(color,3)]};
+ for(const letter of order)if(letter!=='c'||colours)g.setAttribute(...made[letter]);
+ g.userData.order=colours?order:order.replace('c','');return g;
+}
+const compact=g=>shelf.probe_compact(g.userData.order,g.attributes.position.array,g.attributes.normal.array,g.attributes.uv.array,g.attributes.color?.array??new Float32Array(0));
+function exact(packet,expected,label=''){
+ const actual=readGeometry(packet),names=Object.keys(expected.attributes);
+ expect(Object.keys(actual.attributes),label+' attribute order').toEqual(names);
+ for(const name of names){
+  const x=actual.attributes[name],y=expected.attributes[name];
+  expect(x.itemSize,name).toBe(y.itemSize);expect(x.kind==='f32',`${name} stored as float`).toBe(!y.normalized);
+  expect(x.array.constructor,name).toBe(y.array.constructor);expect(bytes(x.array).equals(bytes(y.array)),`${label} ${name} bytes`).toBe(true);
+ }
+ expect(actual.index.constructor,label+' index width').toBe(expected.index.array.constructor);
+ expect(bytes(actual.index).equals(bytes(expected.index.array)),label+' index bytes').toBe(true);
 }
 for(const count of [1,5,6,12,120,600,120000])it(`preserves all attributes, pair boundaries and index width for ${count} corners`,()=>{
- const g=fixture(count),a=rustCompactGeometry(g),b=reference(g);try{exact(a,b);expect(a.index.array.constructor).toBe(count>100000?Uint32Array:Uint16Array);}finally{g.dispose();a?.dispose();b.dispose();}
+ for(const order of ORDERS){const g=fixture(count,true,order);exact(compact(g),reference(g),`${count}/${order}`);}
+ if(count===120000)expect(readGeometry(compact(fixture(count))).index.constructor).toBe(Uint32Array);
 });
 it('keeps rounding ties, negative normalized values, differing seams and attribute orders',()=>{
  for(let trial=0;trial<100;trial++){
-  const g=fixture(12,trial%2===0),n=g.attributes.normal.array;for(let i=0;i<n.length;i++)n[i]=Math.fround(((i%7)-3.5)/32767+trial/1234567);
-  const a=rustCompactGeometry(g),b=reference(g);try{exact(a,b);}finally{g.dispose();a?.dispose();b.dispose();}
+  const g=fixture(12,trial%2===0,ORDERS[trial%2]),n=g.attributes.normal.array;for(let i=0;i<n.length;i++)n[i]=Math.fround(((i%7)-3.5)/32767+trial/1234567);
+  exact(compact(g),reference(g),`trial ${trial}`);
  }
 });
-it('preserves complete BAGGEBO templates and independent copies at every scale',()=>{
- const call=vi.fn(core.mesh_compact);state.core={...core,mesh_compact:call};
- for(const width of [600,390,280]){const a=createBaggebo({width}),b=originalBaggebo({width});try{
-  if(width===600)expect(call.mock.calls.length).toBeGreaterThan(0);else expect(call.mock.calls.length).toBe(0);call.mockClear();
-  expect(a.children.length).toBe(b.children.length);expect(a.userData.parts).toEqual(b.userData.parts);expect(a.scale).toEqual(b.scale);
-  for(let i=0;i<a.children.length;i++){exact(a.children[i].geometry,b.children[i].geometry);expect(a.children[i].material.name).toBe(b.children[i].material.name);}
- }finally{a.userData.dispose();b.userData.dispose();}}
-});
-it('copies outputs before free and supports memory growth during a call',()=>{
- const free=vi.fn(core.free_f64);state.core={...core,free_f64:free,mesh_compact(...args){core.memory.grow(1);return core.mesh_compact(...args);}};
- const g=fixture(120),a=rustCompactGeometry(g),b=reference(g),other=rustCompactGeometry(g);core.memory.grow(1);try{exact(a,b);expect(free).toHaveBeenCalledTimes(2);}finally{g.dispose();a.dispose();b.dispose();other.dispose();}
-});
-it('keeps the fallback available and frees failed arenas',()=>{
- const g=fixture(6);try{for(const engine of [null,{}, {...core,alloc_f64:()=>0},{...core,mesh_compact:()=>0},{...core,mesh_compact:()=>{throw Error('trap');}}]){
-  const free=vi.fn(core.free_f64);state.core=engine?{...engine,free_f64:free}:null;expect(rustCompactGeometry(g)).toBeUndefined();if(engine?.mesh_compact&&engine.alloc_f64===core.alloc_f64)expect(free).toHaveBeenCalledOnce();
- }}finally{g.dispose();}
-});
-it('rejects unsupported attributes and invalid samples safely',()=>{
- const g=fixture(6);g.setIndex([0,1,2]);expect(rustCompactGeometry(g)).toBeUndefined();g.setIndex(null);g.attributes.position.array[0]=Infinity;expect(rustCompactGeometry(g)).toBeUndefined();g.attributes.position.array[0]=0;g.attributes.normal.array[0]=1e20;expect(rustCompactGeometry(g)).toBeUndefined();g.dispose();
+it('keeps matching on pseudo-random attributes, including values far outside the normalised range',()=>{
+ let seed=9731;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+ for(let trial=0;trial<120;trial++){
+  const g=fixture(6*(1+Math.floor(random()*8)),trial%3!==0,ORDERS[trial%2]);
+  for(const name of ['position','normal','uv','color'])if(g.attributes[name]){
+   const a=g.attributes[name].array;for(let i=0;i<a.length;i++){const kind=random();a[i]=Math.fround(kind<.1?(random()-.5)*1e12:kind<.2?0:kind<.3?-0:kind<.4?Math.round(random()*8)/8:(random()-.5)*3);}
+  }
+  const half=g.attributes.position.array;for(let i=0;i+18<=half.length;i+=18)half.copyWithin(i+9,i,i+9); // repeated corners inside a pair
+  exact(compact(g),reference(g),`random ${trial}`);
+ }
 });
