@@ -85,6 +85,8 @@ mod relief;
 #[cfg(feature = "app")]
 mod book_motion;
 #[cfg(feature = "app")]
+mod book_view;
+#[cfg(feature = "app")]
 mod pdf_images;
 #[cfg(feature = "app")]
 mod pdf_figures;

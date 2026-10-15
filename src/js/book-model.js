@@ -1,6 +1,8 @@
 import {createBookProjectionPacket,projectVisibleBookBounds} from './book-projection.js';
 import {createBookMotionSampler} from './book-motion.js';
 import { paddedBookFrameSize } from './book-frame-padding.js';
+import { boxScreenBounds, fitImage, frameAligned, planBookPose, planBookView, planCopyRectangle, planPageBounds,
+  planPageZoom, planReadingPose, planReturnFrame } from './book-view-wasm.js';
 import { getRustCore, loadedRustCore } from './rust-core.js';
 
 import { rustBookSurfacePixels, rustRibbonNotchPixels } from './book-surface-wasm.js';
@@ -460,11 +462,7 @@ export function mixPaperTone(target, stock, theme, mix) {
   return target.setRGB(a.r + (b.r - a.r) * k, a.g + (b.g - a.g) * k, a.b + (b.b - a.b) * k, THREE.SRGBColorSpace);
 }
 
-export function fitCoverImage(imageWidth, imageHeight, width, height) {
-  const scale = Math.min(width / imageWidth, height / imageHeight);
-  const w = imageWidth * scale, h = imageHeight * scale;
-  return { x:(width - w) / 2, y:(height - h) / 2, width:w, height:h };
-}
+export const fitCoverImage = fitImage;
 
 function coverRasterDimensions(ratio, textureHeight, maxDimension = Infinity) {
   const height = textureHeight, width = Math.max(1, Math.round(height * (Number(ratio) || .66)));
@@ -1433,15 +1431,7 @@ export function projectBookPageBounds(page, camera, viewportWidth, viewportHeigh
   if (!page?.visible || !page.geometry?.parameters) return null;
   page.updateWorldMatrix(true, false); camera.updateMatrixWorld();
   const { width, height } = page.geometry.parameters;
-  const points = [[-width / 2, -height / 2], [width / 2, -height / 2],
-    [-width / 2, height / 2], [width / 2, height / 2]].map(([x, y]) => {
-    const projected = new THREE.Vector3(x, y, 0).applyMatrix4(page.matrixWorld).project(camera);
-    return { x:(projected.x + 1) * viewportWidth / 2 + offset.left,
-      y:(1 - projected.y) * viewportHeight / 2 + offset.top };
-  });
-  const left = Math.min(...points.map(point => point.x)), top = Math.min(...points.map(point => point.y));
-  return { left, top, width:Math.max(...points.map(point => point.x)) - left,
-    height:Math.max(...points.map(point => point.y)) - top };
+  return planPageBounds(width, height, viewportWidth, viewportHeight, offset, page.matrixWorld.elements, camera);
 }
 
 /** Plan the handoff in the reader's flat plane without repainting the book. */
@@ -1460,39 +1450,30 @@ export function planBookPageZoom(model, camera, {
   } finally {
     model.rotation.copy(rotation); model.updateMatrixWorld(true);
   }
-  if (!bounds || !(bounds.width > 0 && bounds.height > 0 && target?.width > 0 && target?.height > 0)) return null;
-  const factor = Math.min(target.width / bounds.width, target.height / bounds.height);
-  const imageX = bounds.left + bounds.width / 2, imageY = bounds.top + bounds.height / 2;
-  const modelX = offset.left + centerX + origin.x, modelY = offset.top + centerY + origin.y;
-  return { ...origin,
-    x:origin.x + target.left + target.width / 2 - imageX + (1 - factor) * (imageX - modelX),
-    y:origin.y + target.top + target.height / 2 - imageY + (1 - factor) * (imageY - modelY),
-    scale:origin.scale * factor, angle:0, pitch:0, roll:0, coverOpen:1, bookmarkWithdraw:1 };
+  const zoom = bounds && planPageZoom(bounds, target, offset, centerX, centerY, origin);
+  if (!zoom) return null;
+  return { ...origin, x:zoom.x, y:zoom.y, scale:zoom.scale, angle:0, pitch:0, roll:0, coverOpen:1, bookmarkWithdraw:1 };
 }
 
 /** Fit the whole open spread, rather than cropping its left board on phones. */
 export function planReadingBookPose({ width, height, thickness = 0,
   viewportWidth, viewportHeight, centerX, centerY }) {
-  const scale = Math.min(1,viewportWidth*.86/(width*2+thickness*.8),viewportHeight*.66/height);
-  return { x:viewportWidth/2-centerX+width*scale/2, y:viewportHeight*.44-centerY,
-    scale, angle:0, pitch:0, roll:0, coverOpen:1, bookmarkWithdraw:0 };
+  const { x, y, scale } = planReadingPose(width, height, thickness, viewportWidth, viewportHeight, centerX, centerY);
+  return { x, y, scale, angle:0, pitch:0, roll:0, coverOpen:1, bookmarkWithdraw:0 };
 }
 
 export function projectBookBoardBounds(model,camera,viewportWidth,viewportHeight) {
-  const points=[];
+  const boxes=[];
   model.updateWorldMatrix(true,true); camera.updateMatrixWorld();
   for (const name of ['front-cover','back-cover','binding']) {
     const mesh=model.getObjectByName(name);
     if (!mesh?.geometry) continue;
     if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
     const {min,max}=mesh.geometry.boundingBox;
-    for (const x of [min.x,max.x]) for (const y of [min.y,max.y]) for (const z of [min.z,max.z]) {
-      const point=new THREE.Vector3(x,y,z).applyMatrix4(mesh.matrixWorld).project(camera);
-      points.push({x:(point.x+1)*viewportWidth/2,y:(1-point.y)*viewportHeight/2});
-    }
+    boxes.push({min,max,matrix:mesh.matrixWorld.elements});
   }
-  const left=Math.min(...points.map(point=>point.x)),top=Math.min(...points.map(point=>point.y));
-  return {left,top,width:Math.max(...points.map(point=>point.x))-left,height:Math.max(...points.map(point=>point.y))-top};
+  const [left,top,right,bottom]=boxScreenBounds(boxes,camera,viewportWidth,viewportHeight);
+  return {left,top,width:right-left,height:bottom-top};
 }
 
 // Shelf snapshots share one context. One additional persistent context presents
@@ -1505,12 +1486,11 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   let directEnabled = directCapable && gpu !== shared;
   // Shelf books are static snapshots. Keep their framebuffer modest on phones
   // so a long library does not retain a pile of high-DPI canvases in memory.
-  const requestedPixelRatio = typeof devicePixelRatio === 'number' ? devicePixelRatio : 1;
-  const pixelRatio = shelf
-    ? Math.min(requestedPixelRatio, window.innerWidth < 600 ? 1.5 : 2)
-    : Math.min(requestedPixelRatio, 2);
+  const sizes = planBookView({ shelf, devicePixelRatio: globalThis.devicePixelRatio,
+    innerWidth: window.innerWidth, viewportWidth, viewportHeight, width, height, thickness });
+  const pixelRatio = sizes.pixelRatio;
   const canvas = document.createElement('canvas'); canvas.className = 'ihr-book-canvas'; canvas.setAttribute('aria-hidden', 'true');
-  canvas.width = Math.ceil(viewportWidth * pixelRatio); canvas.height = Math.ceil(viewportHeight * pixelRatio);
+  canvas.width = sizes.canvasWidth; canvas.height = sizes.canvasHeight;
   host.append(canvas); const context = canvas.getContext('2d');
   const scene = lightBookScene(new THREE.Scene(), gpu);
   let model = createBookModel(book, style, width, height, thickness, coverUrl, { shelf, eagerRelief:false }); scene.add(model);
@@ -1529,9 +1509,7 @@ export function bookView(host, book, style, { width, height, thickness, viewport
   let waitingForFirstDraw = deferDraw;
   const compactCamera = camera.clone(), compactBox = new THREE.Box3(), compactPoint = new THREE.Vector3();
   const projectionPacket = createBookProjectionPacket();
-  const compactWidth = Math.min(viewportWidth, Math.ceil(((width * 2 + thickness) * 1.25 + 64) / 64) * 64);
-  const closedCompactWidth = Math.min(viewportWidth, Math.ceil(((width + thickness) * 1.25 + 64) / 64) * 64);
-  const compactHeight = Math.min(viewportHeight, Math.ceil((height * 1.45 + 64) / 64) * 64);
+  const { compactWidth, closedCompactWidth, compactHeight } = sizes;
   let copiedRectangle = null;
   let displayedFrame = null, snapshotDirty = false, live = false, suspendedHost = null;
   let displayedPose = null, visualRevision = 0, displayedRevision = -1;
@@ -1553,34 +1531,19 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     canvas.toBlob = (...args) => { captureSnapshot(); return outputBlob(...args); };
     unregisterSnapshot=registerLazySnapshot(canvas,captureSnapshot);
   }
-  function copyRectangle(frame, pose) {
-    const full = { x:0, y:0, width:canvas.width, height:canvas.height, full:true };
-    // Preserve the existing resampling when logical and physical pixels do
-    // not line up. Otherwise copy identical source pixels, without the large
-    // transparent area around a flying book.
-    if (![viewportWidth * pixelRatio, viewportHeight * pixelRatio,
-      frame.x * pixelRatio, frame.y * pixelRatio, frame.width * pixelRatio,
-      frame.height * pixelRatio].every(Number.isInteger)) return full;
+  // The book's screen bounds from its world box: every board, page edge and ribbon.
+  function compactBounds() {
     model.updateMatrixWorld(true); camera.updateMatrixWorld(true);
     compactBox.setFromObject(model);
-    let left=Infinity, top=Infinity, right=-Infinity, bottom=-Infinity;
-    for (const x of [compactBox.min.x,compactBox.max.x])
-      for (const y of [compactBox.min.y,compactBox.max.y])
-        for (const z of [compactBox.min.z,compactBox.max.z]) {
-          compactPoint.set(x,y,z).project(camera);
-          const px=(compactPoint.x+1)*viewportWidth/2, py=(1-compactPoint.y)*viewportHeight/2;
-          left=Math.min(left,px); right=Math.max(right,px);
-          top=Math.min(top,py); bottom=Math.max(bottom,py);
-        }
-    if (![left,top,right,bottom].every(Number.isFinite)) return full;
-    // Includes displaced cover relief and antialiased edges, at the same
-    // scale as the book. This does not crop the renderer or change its DPR.
-    const margin=Math.max(8,48*Math.abs(pose.scale));
-    const x=Math.max(0,frame.x*pixelRatio,Math.floor((left-margin)*pixelRatio));
-    const y=Math.max(0,frame.y*pixelRatio,Math.floor((top-margin)*pixelRatio));
-    const endX=Math.min(canvas.width,(frame.x+frame.width)*pixelRatio,Math.ceil((right+margin)*pixelRatio));
-    const endY=Math.min(canvas.height,(frame.y+frame.height)*pixelRatio,Math.ceil((bottom+margin)*pixelRatio));
-    return { x,y,width:Math.max(0,endX-x),height:Math.max(0,endY-y) };
+    return boxScreenBounds([{ min:compactBox.min, max:compactBox.max }], camera, viewportWidth, viewportHeight);
+  }
+  // Preserve the existing resampling when logical and physical pixels do not line
+  // up. Otherwise copy identical source pixels, without the large transparent area
+  // around a flying book. The core decides which, margins included.
+  function copyRectangle(frame, pose) {
+    return planCopyRectangle({ viewportWidth, viewportHeight, ratio:pixelRatio, canvasWidth:canvas.width,
+      canvasHeight:canvas.height, frame, scale:pose.scale }, compactBounds)
+      ?? { x:0, y:0, width:canvas.width, height:canvas.height, full:true };
   }
   function copyFrame(frame, full = false) {
     const rectangle=full ? {x:0,y:0,width:canvas.width,height:canvas.height,full:true} : copyRectangle(frame,current);
@@ -1712,74 +1675,37 @@ export function bookView(host, book, style, { width, height, thickness, viewport
       if (!nativeMotionHolds) nativeMotionCapacity = null;
     };
   }
-  function positionModel(pose) {
-    const opening = Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0));
-    const withdrawal = Math.max(0, Math.min(1, pose.bookmarkWithdraw ?? current?.bookmarkWithdraw ?? 0));
-    if (model.userData.setMotionPose) model.userData.setMotionPose(opening, withdrawal);
-    else { model.userData.setCoverOpen?.(opening); model.userData.setBookmarkWithdraw?.(withdrawal); }
-    model.position.set(centerX - viewportWidth / 2 + pose.x, viewportHeight / 2 - centerY - pose.y, 0);
-    model.rotation.set((pose.pitch ?? 0) * Math.PI / 180, pose.angle * Math.PI / 180, (pose.roll ?? 0) * Math.PI / 180);
-    model.scale.setScalar(pose.scale);
+  function placeModel(placed) {
+    if (model.userData.setMotionPose) model.userData.setMotionPose(placed.opening, placed.withdrawal);
+    else { model.userData.setCoverOpen?.(placed.opening); model.userData.setBookmarkWithdraw?.(placed.withdrawal); }
+    model.position.set(placed.x, placed.y, 0);
+    model.rotation.set(placed.rotationX, placed.rotationY, placed.rotationZ);
+    model.scale.setScalar(placed.scale);
   }
+  const positionModel = pose => placeModel(planBookPose(pose, current, centerX, centerY, viewportWidth, viewportHeight, pageTheme));
   function returnFrame(pose, measureOnly = false) {
     const full = { x:0, y:0, width:viewportWidth, height:viewportHeight, camera };
     // Legacy zoom keeps the full viewport. Native compact windows preserve
     // pixel resolution; optional adaptive mode selects padded 64px buckets
     // from every visible mesh. Geometry that cannot fit keeps the full frame.
-    if (!compactReturnFrame || (pose.scale > 1.05 && !directEnabled) || !Number.isInteger(pixelRatio)
-      || !Number.isInteger(viewportWidth) || !Number.isInteger(viewportHeight)) return full;
-    model.updateMatrixWorld(true); camera.updateMatrixWorld(true);
-    let left=Infinity, top=Infinity, right=-Infinity, bottom=-Infinity;
+    // The core decides, and keeps the capacities a flight reserves.
     const adaptive = adaptiveNativeFrame && directEnabled;
-    if (adaptive) {
+    const placement = planReturnFrame({ compact:compactReturnFrame, direct:directEnabled, adaptive:adaptiveNativeFrame, measureOnly,
+      scale:pose.scale, ratio:pixelRatio, viewportWidth, viewportHeight, coverOpen:current?.coverOpen,
+      closedWidth:closedCompactWidth, openWidth:compactWidth, height:compactHeight,
+      motion:motionFrameCapacity, native:nativeMotionCapacity }, () => {
+      if (!adaptive) return compactBounds();
+      model.updateMatrixWorld(true); camera.updateMatrixWorld(true);
       // Project each visible mesh before forming the screen bounds. A world
       // axis-aligned box includes hidden pages and the withdrawn ribbon, and
       // can keep most of a native framebuffer empty throughout the flight.
-      [left,top,right,bottom] = projectVisibleBookBounds(model,camera,viewportWidth,viewportHeight,compactPoint,projectionPacket);
-    } else {
-      compactBox.setFromObject(model);
-      for (const x of [compactBox.min.x, compactBox.max.x])
-        for (const y of [compactBox.min.y, compactBox.max.y])
-          for (const z of [compactBox.min.z, compactBox.max.z]) {
-            compactPoint.set(x,y,z).project(camera);
-            const px=(compactPoint.x+1)*viewportWidth/2, py=(1-compactPoint.y)*viewportHeight/2;
-            left=Math.min(left,px); right=Math.max(right,px); top=Math.min(top,py); bottom=Math.max(bottom,py);
-          }
-    }
-    // Include every board, page edge and ribbon, with room for displaced relief.
-    // Unusual poses use the full buffer instead of clipping any part of the book.
-    if (![left,top,right,bottom].every(Number.isFinite)) return full;
-    // Geometry outside the viewport is already clipped by the full frame.
-    left=Math.max(0,left); top=Math.max(0,top); right=Math.min(viewportWidth,right); bottom=Math.min(viewportHeight,bottom);
-    let frameWidth = adaptive ? Math.min(viewportWidth,Math.ceil((right-left+48)/64)*64)
-      : current.coverOpen === 0 ? closedCompactWidth : compactWidth;
-    let frameHeight = adaptive ? Math.min(viewportHeight,Math.ceil((bottom-top+48)/64)*64) : compactHeight;
-    // Reserve the flight's largest compact window once, rather than resetting
-    // the native framebuffer at every 64px boundary. The camera still follows
-    // the exact projected book at its original DPR. Unexpected bounds can grow
-    // this reservation, never clip geometry or reduce resolution.
-    if (adaptive && motionFrameCapacity && !measureOnly) {
-      motionFrameCapacity.width = frameWidth = Math.max(frameWidth, motionFrameCapacity.width);
-      motionFrameCapacity.height = frameHeight = Math.max(frameHeight, motionFrameCapacity.height);
-    }
-    if (adaptive && nativeMotionCapacity) {
-      frameWidth = Math.max(frameWidth, nativeMotionCapacity.width);
-      frameHeight = Math.max(frameHeight, nativeMotionCapacity.height);
-      if (!measureOnly) {
-        nativeMotionCapacity.width = frameWidth;
-        nativeMotionCapacity.height = frameHeight;
-      }
-    }
-    if (adaptive && frameWidth===viewportWidth && frameHeight===viewportHeight) return full;
-    if (right<left || bottom<top
-      || frameWidth<viewportWidth && right-left+48>frameWidth
-      || frameHeight<viewportHeight && bottom-top+48>frameHeight) return full;
-    const x=frameWidth===viewportWidth ? 0 : Math.round((left+right-frameWidth)/2);
-    const y=frameHeight===viewportHeight ? 0 : Math.round((top+bottom-frameHeight)/2);
-    if (measureOnly) return { x,y,width:frameWidth,height:frameHeight };
+      return projectVisibleBookBounds(model,camera,viewportWidth,viewportHeight,compactPoint,projectionPacket);
+    });
+    if (!placement) return full;
+    if (measureOnly) return placement;
     compactCamera.copy(camera);
-    compactCamera.setViewOffset(viewportWidth,viewportHeight,x,y,frameWidth,frameHeight);
-    return { x,y,width:frameWidth,height:frameHeight,camera:compactCamera };
+    compactCamera.setViewOffset(viewportWidth,viewportHeight,placement.x,placement.y,placement.width,placement.height);
+    return { ...placement, camera:compactCamera };
   }
 
   function draw(pose, { redraw = true } = {}) {
@@ -1787,19 +1713,18 @@ export function bookView(host, book, style, { width, height, thickness, viewport
     visualRevision++;
     if (externalPresentation) return;
     if (!redraw && snapshotDirty) captureSnapshot();
-    if (pose.pageTheme != null) pageTheme = Math.max(0, Math.min(1, Number(pose.pageTheme) || 0));
-    current = { ...pose, coverOpen:Math.max(0, Math.min(1, pose.coverOpen ?? current?.coverOpen ?? 0)),
-      bookmarkWithdraw:Math.max(0, Math.min(1, pose.bookmarkWithdraw ?? current?.bookmarkWithdraw ?? 0)), pageTheme };
+    const placed = planBookPose(pose, current, centerX, centerY, viewportWidth, viewportHeight, pageTheme);
+    pageTheme = placed.pageTheme;
+    current = { ...pose, coverOpen:placed.opening, bookmarkWithdraw:placed.withdrawal, pageTheme };
     model.userData.setPageTheme?.(pageTheme, false);
-    positionModel(current);
+    placeModel(placed);
     // Hidden setup changes geometry and page projection without copying frames.
     // The first explicit draw commits the complete, correctly aligned page.
     if (!redraw) return;
     waitingForFirstDraw = false;
     const frame = returnFrame(pose);
     const present=directEnabled && canvas.isConnected && canvas.parentElement !== suspendedHost &&
-      [viewportWidth*pixelRatio,viewportHeight*pixelRatio,frame.x*pixelRatio,frame.y*pixelRatio,
-        frame.width*pixelRatio,frame.height*pixelRatio].every(Number.isInteger);
+      frameAligned(viewportWidth,viewportHeight,pixelRatio,frame.x,frame.y,frame.width,frame.height);
     if (present && presentationOwner !== owner) { presentationOwner?.suspend(); presentationOwner=owner; }
     const previousOwner=present ? null : presentationOwner;
     if (!present && presentationOwner === owner) { owner.suspend(); gpu.domElement.remove(); presentationOwner=null; }
