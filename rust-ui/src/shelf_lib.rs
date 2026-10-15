@@ -24,6 +24,7 @@ mod geo_probe;
 mod three_curve;
 mod three_math;
 mod lamp_model;
+mod lamp_light;
 mod plant_parts;
 mod plant_model;
 mod baggebo_model;
@@ -69,3 +70,26 @@ pub fn plant_model(seed: &[u16], skip: u32, variant: &str, pot_id: &str, pot_mod
 /// The 32 x 32 RGBA powder-coat grain texture of the BAGGEBO's paint.
 #[wasm_bindgen]
 pub fn baggebo_paint_texture() -> Vec<u8> { baggebo_model::paint_texture() }
+
+/// The room's transform for the lamps' lights: `out[0]` is 1 when lights may follow it, `out[1..17]` its inverse
+/// (see `lamp_light::root`). `false` for a buffer of the wrong size.
+#[wasm_bindgen]
+pub fn lamp_root(transform: &[f64], out: &mut [f64]) -> bool { lamp_light::root(transform, out) }
+
+/// The lights each kind of lamp gets out of `limit` (see `lamp_light::quota`).
+#[wasm_bindgen]
+pub fn lamp_quota(counts: &[f64], limit: f64, out: &mut [f64]) -> bool { lamp_light::quota(counts, limit, out) }
+
+/// Which lamps are lit and which slot each takes (see `lamp_light::plan`).
+#[wasm_bindgen]
+pub fn lamp_plan(candidates: &[f64], slots: &[f64], quota: &[f64], middle: f64, out: &mut [f64]) -> bool {
+    lamp_light::plan(candidates, slots, quota, middle, out)
+}
+
+/// The aim of a point light or (`spot`) a cone (see `lamp_light::light`).
+#[wasm_bindgen]
+pub fn lamp_light(spot: bool, input: &[f64], out: &mut [f64]) -> bool { lamp_light::light(spot, input, out) }
+
+/// The aim of the strips of a filament fixture (see `lamp_light::filaments`).
+#[wasm_bindgen]
+pub fn lamp_filaments(input: &[f64], out: &mut [f64]) -> bool { lamp_light::filaments(input, out) }

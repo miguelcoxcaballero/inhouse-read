@@ -6,6 +6,7 @@ import {createServer as createHttpServer} from 'node:http';
 // painters, and the lattice call is timed against them (alternating, medians).
 const html=`<!doctype html><script type="module">
 import {loadRustDecorCore} from '/inhouse-read/src/js/rust-decor-core.js';
+import {loadRustShelf} from '/inhouse-read/src/js/rust-shelf.js';
 import {rustPlantLattice} from '/inhouse-read/src/js/plant-lattice-wasm.js';
 import {createShelfPlant,plantSurfacesReady} from '/inhouse-read/src/js/shelf-plants.js';
 import {createShelfPlant as referencePlant,plantSurfacesReady as referenceReady} from '/inhouse-read/tests/unit/helpers/reference-shelf-plants.js';
@@ -15,6 +16,8 @@ import {terracottaPainter,galvanizedPainter} from '/inhouse-read/tests/unit/help
 import {soilPainter} from '/inhouse-read/tests/unit/helpers/reference-plant-soil.js';
 import {botanicalTextures} from '/inhouse-read/tests/unit/helpers/reference-plant-foliage.js';
 const core=await loadRustDecorCore();if(!core?.plant_surface_lattice)throw Error('Compiled lattice painter required');
+// The plants' geometry is the shelf module's: the live shelf awaits it before its first render, so does this page.
+if(!await loadRustShelf())throw Error('Rust shelf module required');
 const colors=hex=>[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255);
 const maps=model=>{const found=[];model.traverse(object=>{const m=object.material;if(m?.map?.image?.data)found.push(m.map.image.data,m.bumpMap.image.data);});return found;};
 function hash(x,y,seed){let h=Math.imul(x|0,0x27d4eb2d)^Math.imul(y|0,0x165667b1)^Math.imul(seed|0,0x9e3779b1);h=Math.imul(h^h>>>15,0x85ebca6b);h=Math.imul(h^h>>>13,0xc2b2ae35);return((h^h>>>16)>>>0)/4294967296;}
