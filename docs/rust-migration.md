@@ -1,5 +1,7 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.253: filas y estados de la pantalla, controles de libros/plantas/lámparas y gestión de sus entradas en Rust, con reenvío DOM mínimo y sin retener nodos desde Rust. Inventario 31299 Rust/21292 JS, **59,51 %**; no mide funciones terminadas. 678 pruebas específicas pasan; la batería completa tiene un fallo de tiempo reproducido también en main 1.7.252. Detalle y pendientes en remaining-wip-verification.md.
+
 Entrega 1.7.252: render de la pantalla, medidas, refresco/adopción de metadatos, preparación de portadas y preferencias en Rust; se conservan los receptores de callbacks y la apertura capturada al construir. Inventario 30881 Rust/21744 JS, **58,68 %** (1.7.251: 57,95 %); no mide funciones terminadas. Los builders y controles DOM, app.js y otros módulos siguen pendientes. Detalle y límites en remaining-wip-verification.md.
 
 Entrega 1.7.251: libro extraído, editor, retorno, portadas, objetos, arrastre y papelera de la pantalla de estantería en Rust. Inventario 30436 Rust/22088 JS, **57,95 %** (1.7.250: 50,96 %); no mide funciones terminadas. Los constructores/render/refresco y app.js siguen en JS. Pruebas, equivalencia y límites en remaining-wip-verification.md.

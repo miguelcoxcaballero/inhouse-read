@@ -16,7 +16,7 @@ sale de lo comprobado en esa sesión; lo que no se pudo comprobar está dicho.
 
 ## Estado
 
-- `main` está en **1.7.252**: **58,68 %** de Rust (30881 líneas de Rust, 21744 de JS).
+- `main` está en **1.7.253**: **59,51 %** de Rust (31299 líneas de Rust, 21292 de JS).
   Se mide con `git add -A -n . && node scripts/rust-migration-status.mjs`; es un recuento de líneas de
   `rust-core/src`, `rust-ui/src` y `src/js`, no mide funciones terminadas.
 - Evolución: 16,38 % (1.7.234) → 39,73 % (1.7.245) → 42,35 % (1.7.246 portadas) → 45,38 % (1.7.247 armario y
@@ -25,7 +25,7 @@ sale de lo comprobado en esa sesión; lo que no se pudo comprobar está dicho.
   controlador), voces y audio, biblioteca y nube (Drive, copia, importación), estantería (disposición, luz,
   oclusión, papelera, zoom, gestos, retorno), armario y BAGGEBO, plantas y lámparas (geometría, texturas, luz),
   libros 3D (cinta, páginas, encuadernación, vista, pose, pintura de bordes y tapa), portadas y relieve.
-- Sigue en JS lo grande: `src/js/bookshelf.js` (1157 líneas), `bookshelf-scene.js` (3035), `book-model.js`
+- Sigue en JS lo grande: `src/js/bookshelf.js` (698 líneas), `bookshelf-scene.js` (3035), `book-model.js`
   (~2000, pegamento de three.js), `app.js` (1411), `shelf-plants.js` (475, ensamblado con objetos three.js),
   y una cola larga: `cover-appearance.js` (577), `library-store.js`, `native-room-cache.js`, los previsualizadores
   de catálogo, `book-length.js`, `content-freshness.js`, `gpu-programs.js`, `shelf-trash.js`,
@@ -39,7 +39,7 @@ sale de lo comprobado en esa sesión; lo que no se pudo comprobar está dicho.
 | `origin/wip/scene` (41f8083) | `bookshelf-scene.js`: vista/cámara/impactos y cinemática de las entradas a Rust, con arnés diferencial de escena entera | Integrado y corregido en 1.7.250; queda pegamento Three.js/DOM |
 | `origin/wip/shelf-ui` (9e6d785) | Libro extraído, editor, retorno, portadas, objetos, arrastre y papelera | Integrado en 1.7.251; corregidas identidades UTF-16 y ampliada la prueba de memoria |
 | `origin/wip/shelf-screen` (4996bc3) | Render, planificación, medidas, refresco, metadatos, preparación de portadas, preferencias y argumentos | Integrado en 1.7.252 tras verificar |
-| `gpt/rust-shelf-controls` (local, árbol `/workspace/inhouse-read-shelf-controls`) | Builders de libros/plantas/lámparas y sus entradas, propiedad y limpieza de listeners por nodo | WIP en `screen_nodes.rs`, aún sin compilar ni validar; no está publicado |
+| `gpt/rust-shelf-controls` (local, árbol `/workspace/inhouse-read-shelf-controls`) | Builders de libros/plantas/lámparas y sus entradas, propiedad y limpieza de listeners por nodo | Integrado en 1.7.253: 678 específicas y 35 E2E pasan; detalles y fallo de tiempo reproducido en la base en remaining-wip-verification.md |
 | (sin rama) `tail` | cola larga de ficheros pequeños | No llegó a empezar |
 | `origin/wip/mittled`, `wip/catalog`, `wip/transition-open`, `wip/transition-close` | Peticiones anteriores de la persona (hitbox de la lámpara MITTLED, animación del catálogo y balance de blancos, transición de apertura/cierre del libro) | La persona las continúa en local con `TESTS-LOCAL.md`; no las toques sin que lo pida |
 
@@ -107,3 +107,11 @@ unitarias de 1.7.252 pasan. Los resultados actuales del navegador se documentan 
   más y los E2E se vuelven inservibles (carga 14+).
 - Limpieza: `git worktree list` suele traer cinco o más árboles de agentes; bórralos cuando acaben
   (`git worktree remove --force`), y borra los `rust-*/target` que no uses.
+
+## Prioridades actuales de la persona
+
+Corrección rápida del audiolibro: omitir marcas decorativas como § sin cambiar el texto visible ni sus offsets.
+Después optimizar el zoom isométrico y el repintado conservando la calidad, publicar en main y seguir la migración.
+WIP local sin validar: /workspace/inhouse-read-shelf-lifecycle (inicialización y destrucción; revisar destroy repetido),
+/workspace/inhouse-read-book-length (recuento), /workspace/inhouse-read-zoom-render (zoom prioritario).
+La entrega 1.7.253 tiene 6378/6379 pruebas completas pasando; el caso restante excede 5 s también en main 1.7.252.
