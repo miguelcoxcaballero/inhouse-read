@@ -336,7 +336,7 @@ impl Flyout{
    None=>Ok(promise_resolve(&JsValue::FALSE)),
   }});
   let context=obj(&[("coverUrl",&self.cover_url),("isActive",&is_active),("onCancel",&on_cancel),("close",&close),("finish",&finish)]);
-  let opened=self.ctx.option_or("onOpenBook","onBookOpen");
+  let opened=self.ctx.initial_on_open();
   let outcome=async{
    if !nullish(&opened){settle(call(&opened,"onOpenBook",&[&self.book,&context])?).await?;}
    Ok::<(),JsValue>(())

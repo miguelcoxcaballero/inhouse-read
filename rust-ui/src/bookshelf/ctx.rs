@@ -74,8 +74,8 @@ impl Ctx{
  /// `opts[name]`.
  pub fn opts_get(&self,name:&str)->JsValue{get(&self.opts,name)}
  pub fn legacy_value(&self,name:&str)->JsValue{get(&self.legacy,name)}
- /// `options[first] || options[second]`.
- pub fn option_or(&self,first:&str,second:&str)->JsValue{or(get(&self.options,first),get(&self.options,second))}
+ /// The opening callback captured once by the host constructor, called without a receiver.
+ pub fn initial_on_open(&self)->JsValue{get(&self.parts,"onOpen")}
  /// `env[name](...args)`.
  pub fn env(&self,name:&str,args:&[&JsValue])->R<JsValue>{call(&read(&self.env,name)?,name,args)}
  pub fn env_value(&self,name:&str)->JsValue{get(&self.env,name)}
@@ -95,8 +95,7 @@ impl Ctx{
  pub fn option(&self,name:&str)->JsValue{get(&self.options,name)}
  /// `options[name]?.(...args)`.
  pub fn option_call(&self,name:&str,args:&[&JsValue])->R<JsValue>{
-  let function=get(&self.options,name);
-  if nullish(&function){Ok(undef())}else{call(&function,name,args)}
+  Ok(method_opt(&self.options,name,args)?.unwrap_or(undef()))
  }
  /// `opts.texts[name]`.
  pub fn text_of(&self,name:&str)->JsValue{get(&get(&self.opts,"texts"),name)}

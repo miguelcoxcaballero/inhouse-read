@@ -137,39 +137,11 @@ const TAP_SLOP = 12;
 // a tap whose pointerup restyled the button), so the pointer type counts too.
 const pointerClick = event => event.detail > 0 || ['touch', 'mouse', 'pen'].includes(event.pointerType);
 const SHELF_VIEW_STORAGE_KEY = 'inhouse-read-shelf-view';
-const SHELF_PLANTS_STORAGE_KEY = 'inhouse-read-shelf-plants';
-const SHELF_LAMPS_STORAGE_KEY = 'inhouse-read-shelf-lamps';
 const SHELF_TYPE_STORAGE_KEY = 'inhouse-read-shelf-type';
 
-function storedShelfType() {
-  try { return normalizeShelfType(localStorage.getItem(SHELF_TYPE_STORAGE_KEY)); }
-  catch { return 'walnut'; }
-}
-
-function savedShelfPlants() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(SHELF_PLANTS_STORAGE_KEY) || 'null');
-    if (!Array.isArray(saved)) return null;
-    const plants = saved.map(normalizeShelfPlant).filter(Boolean);
-    if (JSON.stringify(plants) !== JSON.stringify(saved)) {
-      try { localStorage.setItem(SHELF_PLANTS_STORAGE_KEY, JSON.stringify(plants)); }
-      catch { /* The migrated models still work if storage is temporarily unavailable. */ }
-    }
-    return plants;
-  } catch { return null; }
-}
-
-function savedShelfLamps() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(SHELF_LAMPS_STORAGE_KEY) || '[]');
-    if (!Array.isArray(saved)) return [];
-    const keys = new Set();
-    return saved.map(normalizeShelfLamp).filter(record => {
-      if (!record || keys.has(record.key)) return false;
-      keys.add(record.key); return true;
-    });
-  } catch { return []; }
-}
+function storedShelfType() { return needRustShelf().shelf_stored_type(shelfEnv); }
+function savedShelfPlants() { return needRustShelf().shelf_saved_plants(shelfEnv); }
+function savedShelfLamps() { return needRustShelf().shelf_saved_lamps(shelfEnv); }
 const SHELF_VIEW_MODES = Object.freeze({ SPINE:'spine', ISOMETRIC:'isometric' });
 const ICONS = Object.freeze({
   drive: ['M9 3h6l7 12-3 5H5l-3-5L9 3Z', 'm9 3 7 12H2', 'm15 3-7 12 3 5'],
@@ -216,6 +188,13 @@ const DEFAULTS = Object.freeze({
 // replaced after the shelf was built is still the one called).
 const shelfEnv = {
   displayBookTitle: (...args) => displayBookTitle(...args),
+  canAdoptShelfMetadata: (...args) => canAdoptShelfMetadata(...args),
+  planBookshelf: (...args) => planBookshelf(...args),
+  batchSpineStyles: (...args) => batchSpineStyles(...args),
+  bookSpineOptions: (...args) => bookSpineOptions(...args),
+  minimumBookCellWidth: (...args) => minimumBookCellWidth(...args),
+  createBookshelfScene: (...args) => createBookshelfScene(...args),
+  get DEFAULT_LAYOUT() { return DEFAULT_LAYOUT; },
   normalizeBookAuthor: (...args) => normalizeBookAuthor(...args),
   bookColorOptions: (...args) => bookColorOptions(...args),
   spineColorStyle: (...args) => spineColorStyle(...args),
@@ -240,6 +219,10 @@ const shelfEnv = {
   getCatalogLamp: (...args) => getCatalogLamp(...args),
   normalizeShelfLamp: (...args) => normalizeShelfLamp(...args),
   getCatalogPlant: (...args) => getCatalogPlant(...args),
+  resolveCatalogPlant: (...args) => resolveCatalogPlant(...args),
+  normalizeShelfType: (...args) => normalizeShelfType(...args),
+  placeRooftopPlants: (...args) => placeRooftopPlants(...args),
+  shelfModelLayout: (...args) => shelfModelLayout(...args),
   getCatalogPot: (...args) => getCatalogPot(...args),
   getPotColor: (...args) => getPotColor(...args),
   normalizeShelfPlant: (...args) => normalizeShelfPlant(...args),
@@ -314,19 +297,8 @@ function prefersReducedMotion() {
   );
 }
 
-function storedShelfViewMode(fallback = SHELF_VIEW_MODES.SPINE) {
-  try {
-    const value = localStorage.getItem(SHELF_VIEW_STORAGE_KEY);
-    return Object.values(SHELF_VIEW_MODES).includes(value) ? value : fallback;
-  } catch { return fallback; }
-}
-
-/** Admite `renderBookshelf(c, {books, ...})` y `renderBookshelf(c, books, {...})`. */
-function normalizeArgs(second, third) {
-  if (Array.isArray(second)) return { books: second, options: third || {} };
-  const options = second || {};
-  return { books: options.books || [], options };
-}
+function storedShelfViewMode(fallback = SHELF_VIEW_MODES.SPINE) { return needRustShelf().shelf_stored_view(fallback); }
+function normalizeArgs(second, third) { return needRustShelf().shelf_normalize_args(second, third); }
 
 /* ------------------------------------------------------------------ *
  * Componente
@@ -334,9 +306,7 @@ function normalizeArgs(second, third) {
 
 // An earlier build kept a ~1 MB picture of the shelf in localStorage; the browser
 // reads all of localStorage at startup, so it is dropped.
-function forgetBootPoster() {
-  try { for (const key of ['ihr-poster-img', 'ihr-poster-meta', 'ihr-lib-sig']) localStorage.removeItem(key); } catch { /* storage blocked */ }
-}
+function forgetBootPoster() { needRustShelf().shelf_forget_boot_poster(); }
 
 /**
  * Monta la estantería dentro de `container`.
@@ -507,8 +477,18 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   const shelfNative = needRustShelf();
   // `legacy` holds what the shelf module still asks of this closure; it shrinks as those parts move.
   const shelfCtx = new shelfNative.RustShelfCtx({ state, opts, options, env:shelfEnv, root, scroller, container,
-    coverCache, savedCoverUrls, trashNode, trashStatus, trashAnnounce, hasTrash, hasBookTrash, legacy:{
+    onOpen, coverCache, savedCoverUrls, trashNode, trashStatus, trashAnnounce, hasTrash, hasBookTrash, catalogNode, legacy:{
     returnViews,
+    prepareInitialAppearances: () => prepareInitialAppearances(),
+    buildPreparingState: () => buildPreparingState(),
+    buildEmptyState: () => buildEmptyState(),
+    buildGeometryStatus: books => buildGeometryStatus(books),
+    buildLibraryHeading: text => buildLibraryHeading(text),
+    buildLibraryEmpty: () => buildLibraryEmpty(),
+    buildStage: width => buildStage(width),
+    buildSection: (section, count) => buildSection(section, count),
+    buildShelf: shelf => buildShelf(shelf),
+    syncShelfZoom: () => shelfZoom.sync(),
     clearCompatibilityTapRefresh: () => clearCompatibilityTapRefresh(),
     deferCompatibilityTapRefresh: () => deferCompatibilityTapRefresh(),
     applyDeferredShelfUpdates: () => applyDeferredShelfUpdates(),
@@ -941,37 +921,6 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     return unit;
   }
 
-  function freelyPlacedShelves(shelves) {
-    const cfg = placementConfig(), innerWidth = cfg.shelfWidth - cfg.padding * 2;
-    const objects = [], initialPlants = [];
-    for (const shelf of shelves) {
-      let cursor = cfg.padding;
-      for (const item of shelf.items) {
-        const key = item.kind === 'book' ? `book:${item.book.id}` : `plant:${item.seed}`;
-        const x = (cursor + item.width / 2 - cfg.padding) / innerWidth;
-        const newBookInPlacedLibrary = item.kind === 'book' && !item.book.shelfPosition &&
-          state.books.some(book => book.shelfPosition);
-        const object = { ...item, key, shelf:shelf.index, x:newBookInPlacedLibrary ? undefined : x, tilt:0 };
-        if (item.kind === 'book') objects.push(object);
-        else initialPlants.push(object);
-        cursor += item.width + cfg.gap;
-      }
-    }
-    if (!state.plantsInitialized) {
-      state.plants = initialPlants.map(({ key, seed, variant, shelf, x }) =>
-        normalizeShelfPlant({ key, seed, variant, shelf, x,potId:resolveCatalogPlant({ variant })?.defaultPotId }));
-      state.plantsInitialized = true;
-      savePlants({ initial:true });
-    }
-    const scale = plantScale();
-    objects.push(...state.plants.map(plant => plantShelfObject(plant, scale)));
-    objects.push(...state.lamps.map(lampShelfObject));
-    const placements = Object.fromEntries(objects.filter(item => item.kind === 'book' && item.book.shelfPosition)
-      .map(item => [item.key, item.book.shelfPosition]));
-    const result = layoutShelfDecorations(objects, { ...cfg, placements });
-    state.placementObjects = result.flatMap(shelf => shelf.items);
-    return result;
-  }
 
   function buildEmptyState() {
     return el('div', { class: 'ihr-empty' }, [
@@ -997,16 +946,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
    * Ancho útil de balda. `options.shelfWidth` lo fija a mano, para montar la
    * estantería en un contenedor de ancho conocido (o en tests sin layout).
    */
-  function measure() {
-    if (Number.isFinite(options.shelfWidth) && options.shelfWidth > 0) {
-      return Math.round(options.shelfWidth);
-    }
-    const width = scroller.clientWidth || container.clientWidth || 0;
-    return Math.max(0, Math.round(width));
-  }
+  function measure() { return shelfCtx.measure(); }
 
   /** Los lomos tienen su grosor real (15-45 mm) a la escala de la balda. */
-  function spineOptionsFor(width) { return bookSpineOptions(width); }
 
   function setViewMode(mode) {
     if (state.trashRemoval) return;
@@ -1020,280 +962,43 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     } else render();
   }
 
-  function consumeRenderRequests() {
-    if (state.frame) cancelAnimationFrame(state.frame);
-    state.frame = 0;
-    state.renderQueued = false;
-    state.appearanceRefreshPending = false;
-  }
 
-  function render() {
-    if (state.destroyed) return;
-    root.dataset.viewMode = state.viewMode;
-    root.dataset.shelfType = state.shelfType;
-    if (state.returnMotion || state.busy || state.session || state.dragSession || state.compatibilityTapTimer) { state.renderQueued = true; return; }
-    if (!state.appearancesReady && state.books.length > 0) {
-      state.shelfScene?.dispose();
-      state.shelfScene = null;
-      scroller.textContent = '';
-      scroller.append(buildPreparingState());
-      return;
-    }
-    const focusedBookId = document.activeElement?.closest?.('.ihr-spine')?.dataset.bookId;
-    const focusedObjectId = document.activeElement?.closest?.('[data-object-id]')?.dataset.objectId;
-    const width = measure();
-    state.shelfWidth = width;
-    // A refresh can complete while home is hidden behind the reader. Keep the
-    // currently painted DOM in that case: the open book still needs its shelf
-    // spine as the target of the return animation. ResizeObserver re-renders
-    // the updated records when the shelf becomes visible again. Cover analysis
-    // needs no layout: start it now so a book imported straight into the
-    // reader flies home in its final cloth instead of changing after landing.
-    if (width <= 0 && state.books.length > 0) {
-      for (const book of state.books) resolveCoverAppearance(book);
-      settleReturnSlot();
-      return;
-    }
-    if (state.books.length === 0 && opts.sections) {
-      if (width > 0) consumeRenderRequests();
-      state.shelfScene?.dispose();
-      state.shelfScene = null;
-      scroller.textContent = '';
-      scroller.append(buildEmptyState());
-      settleReturnSlot();
-      return;
-    }
-    if (width <= 0) { settleReturnSlot(); return; } // el ResizeObserver volverá a llamar
-    // This synchronous paint includes every appearance change already in
-    // memory. Consume earlier deferred/RAF requests only after the guards:
-    // a hidden or busy shelf still needs them when it can render again.
-    consumeRenderRequests();
-    const retainedScene = state.shelfScene;
-    const previousChildren = retainedScene ? [...scroller.children] : [];
-    if (!retainedScene) scroller.textContent = '';
-
-    const plantSlotWidth = variant => plantShelfObject({ key:'plant', variant }).width;
-    const plantVariants = DEFAULT_LAYOUT.plantVariants;
-    const pendingGeometry = state.books.filter(book => bookGeometryState(book) !== 'ready');
-    const geometryBooks = state.books.filter(book => bookGeometryState(book) === 'ready');
-    const plan = planBookshelf(geometryBooks, {
-      shelfWidth: width,
-      padding: shelfPadding(),
-      gap: opts.gap,
-      plantEvery: opts.plantEvery,
-      sort: opts.sort,
-      spine: spineOptionsFor(width),
-      // Only spaces the books out; the scene pads each thin spine's tap area to
-      // the same minimum width (padTapRect) and picks the nearest centre.
-      displayWidthFor: (_book, style) => Math.max(style.width, minimumBookCellWidth(window.innerWidth)),
-      plantWidth: Math.min(...plantVariants.map(plantSlotWidth)),
-      plantWidthFor: plantSlotWidth,
-      // Sin secciones, 0 recientes: todo cae en una estantería continua.
-      recentLimit: opts.sections ? opts.recentLimit : 0
-    }, batchSpineStyles);
-    if (!opts.sections && !plan.length) plan.push({ id:'library', title:'', count:0, shelves:[] });
-    if (!opts.sections && plan.length === 1) {
-      const minimum = Math.max(1, Math.floor(Number(opts.minimumShelves) || 1));
-      const plants = ['sansevieria', 'pothos', 'suculenta', 'monstera'];
-      while (plan[0].shelves.length < minimum) {
-        const index = plan[0].shelves.length;
-        plan[0].shelves.push({
-          index,
-          items: [{
-            kind: 'plant', variant: plants[index % plants.length],
-            seed: `empty-shelf-${index}`, width: plantSlotWidth(plants[index % plants.length])
-          }]
-        });
-      }
-    }
-
-    for (const section of plan) for (const shelf of section.shelves) for (const item of shelf.items) {
-      if (item.kind !== 'book') continue;
-      item.baseStyle = item.style;
-      item.coverKey = coverKeyFor(item.book);
-      const appearance = state.coverAppearances.get(String(item.book.id ?? item.book.path ?? item.book.title ?? 'book'));
-      applyCoverAppearance(item, appearance?.key === item.coverKey ? appearance.appearance : null);
-    }
-    if (!opts.sections && plan.length === 1) plan[0].shelves = freelyPlacedShelves(plan[0].shelves);
-
-    state.itemsById.clear();
-    const fragment = document.createDocumentFragment();
-    const heading = el('div', { class: 'ihr-library-heading' }, [
-      el('h1', { text: 'Biblioteca' }),
-      el('div', { class:'ihr-library-heading__tools' }, [
-        // An empty shelf already says so below; "0 libros" would only repeat it.
-        el('p', { 'aria-live': 'polite', text: state.books.length ? `${state.books.length} ${state.books.length === 1 ? 'libro' : 'libros'}` : '' })
-      ])
+  // The render transaction is Rust's; these builders only create its DOM subtrees and listeners.
+  function buildLibraryHeading(countText) {
+    return el('div', { class:'ihr-library-heading' }, [
+      el('h1', { text:'Biblioteca' }),
+      el('div', { class:'ihr-library-heading__tools' }, [el('p', { 'aria-live':'polite', text:countText })])
     ]);
-    fragment.append(heading);
-    if (pendingGeometry.length) fragment.append(buildGeometryStatus(pendingGeometry));
-    if (!state.books.length) {
-      const body = opts.texts.emptyText ?? opts.texts.emptyBody;
-      fragment.append(el('div', { class:'ihr-empty ihr-empty--library' }, [
-        el('h2', { class:'ihr-empty__title', text:opts.texts.emptyTitle }),
-        body ? el('p', { class:'ihr-empty__body', text:body }) : null,
-        onPickLocal ? el('button', { type:'button', class:'ihr-btn ihr-btn--primary ihr-empty__action',
-          onClick:() => onPickLocal() }, [svgIcon(['M12 5v14', 'M5 12h14'], { className:'ihr-icon' }), el('span', { text:opts.texts.emptyAction })]) : null
-      ]));
-    }
+  }
+  function buildLibraryEmpty() {
+    const body = opts.texts.emptyText ?? opts.texts.emptyBody;
+    return el('div', { class:'ihr-empty ihr-empty--library' }, [
+      el('h2', { class:'ihr-empty__title', text:opts.texts.emptyTitle }),
+      body ? el('p', { class:'ihr-empty__body', text:body }) : null,
+      onPickLocal ? el('button', { type:'button', class:'ihr-btn ihr-btn--primary ihr-empty__action',
+        onClick:() => onPickLocal() }, [svgIcon(['M12 5v14', 'M5 12h14'], { className:'ihr-icon' }), el('span', { text:opts.texts.emptyAction })]) : null
+    ]);
+  }
+  function buildStage(width) {
     const stage = el('div', { class:'ihr-shelf-stage' });
     for (const type of ['selectstart', 'contextmenu', 'dragstart'])
       stage.addEventListener(type, event => event.preventDefault(), { capture:true });
     stage.style.setProperty('--ihr-cabinet-width', `${width}px`);
-    if (trashNode) {
-      if (!state.useScene) {
-        trashNode.hidden = state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC;
-        trashNode.inert = trashNode.hidden;
-      }
-      stage.append(trashNode);
-    }
-    if (catalogNode) {
-      if (!state.useScene) {
-        catalogNode.hidden = state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC;
-        catalogNode.tabIndex = catalogNode.hidden ? -1 : 0;
-      }
-      stage.append(catalogNode);
-    }
-    for (const section of plan) {
-      const wrapper = el('section', {
-        class: `ihr-section ihr-section--${section.id}`,
-        'aria-label': section.title || opts.texts.shelfLabel
-      });
-      if (section.title) {
-        const count = section.shelves.reduce((sum, shelf) => sum + shelf.items.filter(item => item.kind === 'book').length, 0);
-        wrapper.append(el('div', { class: 'ihr-section__header' }, [
-          el('h2', { class: 'ihr-section__title', text: section.title }),
-          el('span', { class: 'ihr-section__count', text: String(count), 'aria-label': `${count} libros` })
-        ]));
-      }
-      for (const shelf of section.shelves) wrapper.append(buildShelf(shelf));
-      stage.append(wrapper);
-    }
-    fragment.append(stage);
-    if (retainedScene) {
-      // Measure the new semantic layout without moving the painted cabinet.
-      stage.style.cssText = `position:absolute;left:0;top:0;width:${width}px;visibility:hidden;--ihr-cabinet-width:${width}px`;
-      heading.style.cssText = 'position:absolute;visibility:hidden';
-    }
-    scroller.append(fragment);
-    if (state.useScene) {
-      const layout = readShelfLayout(stage, width);
-      stage.style.cssText = `--ihr-cabinet-width:${width}px`;
-      heading.style.cssText = '';
-      for (const previous of previousChildren) previous.remove();
-      if (retainedScene) retainedScene.updateLayout(layout);
-      else state.shelfScene = createBookshelfScene(layout);
-      state.shelfScene?.setPresentationActive?.(state.presentationActive);
-      shelfZoom.sync();
-    }
-    if (focusedObjectId) {
-      [...scroller.querySelectorAll('[data-object-id]')]
-        .find(node => node.dataset.objectId === focusedObjectId)?.focus({ preventScroll:true });
-    } else if (focusedBookId) {
-      [...scroller.querySelectorAll('.ihr-spine')]
-        .find(node => node.dataset.bookId === focusedBookId)
-        ?.focus({ preventScroll: true });
-    }
-    state.metadataContext = metadataContext();
-    for (const book of state.books) resolveCoverAppearance(book);
-    settleReturnSlot();
+    return stage;
   }
+  function buildSection(section, count) {
+    const wrapper = el('section', { class:`ihr-section ihr-section--${section.id}`, 'aria-label':section.title || opts.texts.shelfLabel });
+    if (section.title) wrapper.append(el('div', { class:'ihr-section__header' }, [
+      el('h2', { class:'ihr-section__title', text:section.title }),
+      el('span', { class:'ihr-section__count', text:String(count), 'aria-label':`${count} libros` })
+    ]));
+    return wrapper;
+  }
+  function render() { if (shelfCtxLive) shelfCtx.render(); }
 
-  function readShelfLayout(stage, width) {
-    const origin = stage.getBoundingClientRect();
-    const entries = [];
-    const rows = [];
-    for (const shelf of stage.querySelectorAll('.ihr-shelf')) {
-      // Measure before replacing the DOM drawing with the shared 3D scene.
-      shelf.style.contentVisibility = 'visible';
-      const row = shelf.querySelector('.ihr-shelf__row').getBoundingClientRect();
-      const shelfIndex = rows.length;
-      rows.push({ top:row.top - origin.top, bottom:row.bottom - origin.top,
-        ceiling:shelfIndex ? rows[shelfIndex - 1].bottom + 15 : 12 });
-      for (const node of shelf.querySelectorAll('.ihr-spine, .ihr-plant, .ihr-lamp')) {
-        const rect = node.getBoundingClientRect();
-        const x = rect.left + rect.width / 2 - origin.left;
-        const y = rect.top + rect.height / 2 - origin.top;
-        if (node.classList.contains('ihr-lamp')) {
-          const record = state.lamps.find(item => item.key === node.dataset.objectId);
-          if (!record) continue;
-          const item = lampShelfObject(record);
-          entries.push({ ...item, node, x, y:item.mount === 'undershelf' ? rows[shelfIndex].ceiling : y,
-            shelf:shelfIndex, depthInset:0 });
-          continue;
-        }
-        if (node.classList.contains('ihr-plant')) {
-          const record = state.plants.find(item => item.key === node.dataset.objectId);
-          entries.push({ kind:'plant', key:node.dataset.objectId, node, x, y, shelf:shelfIndex, depthInset:0, width:rect.width, height:rect.height,
-            depth:record ? plantShelfObject(record).depth : rect.width * .7,
-            catalogId:node.dataset.catalogId, potId:node.dataset.potId, potColorId:node.dataset.potColorId,
-            seed:node.dataset.plantSeed, variant:node.dataset.plantVariant });
-          continue;
-        }
-        const item = state.itemsById.get(node.dataset.bookId);
-        if (!item) continue;
-        const height = (window.innerWidth >= 600 ? 200 : 172) * item.style.heightRatio;
-        entries.push({ node, book:item.book, style:item.style, x, y, height, shelf:shelfIndex, depthInset:0,
-          width:height * coverRatioFor(item.style), thickness:item.style.width,
-          coverUrl:resolveCoverImmediately(item.book) });
-      }
-    }
-    const layout = { stage, scroller, entries, rows, width, sceneWidth:width, trashNode, catalogNode,
-      shelfType:state.shelfType, height:stage.getBoundingClientRect().height, mode:state.viewMode };
-    return placeRooftopPlants(shelfModelLayout(layout, state.shelfType));
-  }
+  function scheduleRender() { if (shelfCtxLive) shelfCtx.scheduleRender(); }
 
-  function scheduleRender() {
-    if (state.returnMotion || state.reorderTimer || state.busy || state.session || state.dragSession || state.compatibilityTapTimer) { state.renderQueued = true; return; }
-    if (state.frame) return;
-    state.frame = requestAnimationFrame(() => {
-      state.frame = 0;
-      if (state.queuedBooks) applyDeferredShelfUpdates();
-      else render();
-    });
-  }
-
-  function prepareInitialAppearances() {
-    if (!options.waitForCoverAppearance || state.books.length === 0) return;
-    const pending = [];
-    for (const book of state.books) {
-      const id = String(book?.id ?? book?.path ?? book?.title ?? 'book');
-      const key = coverKeyFor(book);
-      const saved = book.coverAppearance && book.coverAppearanceKey === key
-        ? book.coverAppearance
-        : null;
-      if (saved) {
-        state.coverAppearances.set(id, { key, appearance: saved, complete: true });
-        continue;
-      }
-      if (book.cover ?? book.coverBlob ?? book.coverUrl) pending.push(book);
-    }
-    if (pending.length === 0) return;
-    state.appearancesReady = false;
-    const generation = ++state.appearanceGeneration;
-    Promise.allSettled(pending.map(async book => {
-      const id = String(book?.id ?? book?.path ?? book?.title ?? 'book');
-      const key = coverKeyFor(book);
-      const url = await resolveCover(book);
-      if (!url) {
-        state.coverAppearances.set(id, { key, appearance: null, complete: true });
-        return;
-      }
-      const appearance = await analyzeCoverAppearance(url, book?.title ?? '', { matchFont: false });
-      if (!state.destroyed) {
-        // Color and physical proportions are enough for a stable first frame.
-        // Full title-font matching continues after that frame is visible.
-        state.coverAppearances.set(id, {
-          key, appearance, complete: appearance == null
-        });
-      }
-    }))
-      .then(() => {
-        if (state.destroyed || generation !== state.appearanceGeneration) return;
-        state.appearancesReady = true;
-        scheduleRender();
-      });
-  }
+  function prepareInitialAppearances() { if (shelfCtxLive) shelfCtx.prepareInitialAppearances(); }
 
   /* --------------------------- apertura --------------------------- */
 
@@ -1348,67 +1053,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     }
   });
 
-  function metadataContext() {
-    return JSON.stringify([window.innerWidth, window.innerHeight, window.devicePixelRatio || 1,
-      state.shelfType, state.viewMode, scroller.clientHeight]);
-  }
 
-  function adoptMetadataRecords(nextBooks) {
-    if (options.adoptMetadata !== true || options.texts || opts.sections !== false || opts.sort !== 'none' || !state.useScene || !state.shelfScene ||
-        !state.presentationActive || state.destroyed || state.busy || state.session || state.pendingSelection ||
-        state.returnMotion || state.dragSession || state.compatibilityTapTimer || state.reorderTimer || state.trashRemoval || state.arranging ||
-        state.returningBookId !== null || state.pressedBookId !== null || state.pendingRemovals.size ||
-        state.queuedBooks || state.frame || state.renderQueued || state.appearanceRefreshPending ||
-        !state.appearancesReady || state.appearanceTasks.size ||
-        state.metadataContext !== metadataContext() || measure() !== state.shelfWidth ||
-        !canAdoptShelfMetadata(state.books, nextBooks)) return false;
-    if (state.itemsById.size !== state.books.length) return false;
-    for (const book of state.books) {
-      if (state.itemsById.get(String(book.id))?.book !== book || bookGeometryState(book) !== 'ready') return false;
-    }
-    for (const book of nextBooks) {
-      if (bookGeometryState(book) !== 'ready' || !state.itemsById.has(String(book.id))) return false;
-    }
-    const byId = new Map(nextBooks.map(book => [String(book.id), book]));
-    for (const item of state.placementObjects) {
-      if (item.kind === 'book' && !byId.has(String(item.book.id))) return false;
-    }
-    if (!state.shelfScene.adoptMetadataRecords?.(state.books, nextBooks)) return false;
-    clearPlacementPreview();
-    state.books = nextBooks.slice();
-    for (const book of nextBooks) state.itemsById.get(String(book.id)).book = book;
-    for (const item of state.placementObjects) {
-      if (item.kind === 'book') item.book = byId.get(String(item.book.id));
-    }
-    if (state.lastOpened) {
-      const latest = nextBooks.find(book => book.id === state.lastOpened.book.id);
-      if (latest) state.lastOpened.book = latest;
-    }
-    return true;
-  }
-
-  /** Sustituye la biblioteca y vuelve a pintar, conservando el scroll. */
+  /** Refresh decisions and metadata adoption live in Rust; the host keeps the public option shape. */
   function refresh(nextBooks, { defer = false } = {}) {
-    if (state.destroyed) return;
-    if (defer || state.returnMotion || state.reorderTimer || state.busy || state.session || state.dragSession || state.compatibilityTapTimer) {
-      if (Array.isArray(nextBooks)) state.queuedBooks = nextBooks.filter(book => !state.pendingRemovals.has(String(book.id)));
-      if (defer) scheduleRender();
-      return;
-    }
-    if (adoptMetadataRecords(nextBooks)) return;
-    state.queuedBooks = null;
-    const top = scroller.scrollTop;
-    // A removal still being written must not let an older record list put its book back.
-    state.books = Array.isArray(nextBooks) ? nextBooks.filter(book => !state.pendingRemovals.has(String(book.id))) : state.books;
-    if (!state.appearancesReady && options.waitForCoverAppearance) {
-      state.appearanceGeneration += 1;
-      state.appearancesReady = true;
-      prepareInitialAppearances();
-    }
-    state.shelfWidth = 0; // fuerza el re-empaquetado
-    settleReturnSlot({ beforeRender:true });
-    render();
-    scroller.scrollTop = top;
+    if (shelfCtxLive) shelfCtx.refresh(nextBooks, defer);
   }
 
   function clearCompatibilityTapRefresh() {

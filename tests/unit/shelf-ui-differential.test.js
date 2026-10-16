@@ -238,6 +238,24 @@ describe('the lifted book against the frozen original', () => {
     const log = await same('escape, scrim and close button', () => [book()])
     expect(log.join('\n')).toContain('onBookDismiss')
   }, 60_000)
+  it('keeps the constructor opening callback even when a preparation hook replaces the option', async () => {
+    const initial = function (...args) {
+      state.log.push(`initial open has no receiver ${this === undefined}`)
+      return opening()(...args)
+    }
+    const log = await same('the cover tap hands the book to the reader', () => [book()], {
+      receiverMarker: 'opening-options',
+      onOpenBook: initial,
+      onPrepareBook() {
+        state.log.push(`prepare receiver ${this?.receiverMarker}`)
+        this.onOpenBook = () => { state.log.push('replacement open') }
+      }
+    })
+    expect(log.join('\n')).toContain('initial open has no receiver true')
+    expect(log.join('\n')).toContain('prepare receiver opening-options')
+    expect(log.join('\n')).not.toContain('replacement open')
+  }, 60_000)
+
   it('hands the book to the reader and keeps the case for the way back', async () => {
     const log = await same('the cover tap hands the book to the reader', () => [book()], { onOpenBook: opening() })
     const text = log.join('\n')

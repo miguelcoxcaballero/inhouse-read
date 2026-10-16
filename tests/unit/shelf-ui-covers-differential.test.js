@@ -124,6 +124,19 @@ async function same(script, settings = {}) {
 }
 
 describe('the covers against the frozen original', () => {
+  it('keeps the options receiver while resolving and persisting a cover', async () => {
+    const text = await same(() => [['paint', () => {}]], {
+      config: { analysis: () => APPEARANCE },
+      extra: {
+        receiverMarker: 'cover-options',
+        coverSrcFor() { state.log.push(`source receiver ${this?.receiverMarker}`); return 'blob:receiver' },
+        onCoverAppearance() { state.log.push(`appearance receiver ${this?.receiverMarker}`); return Promise.resolve() }
+      }
+    })
+    expect(text).toContain('source receiver cover-options')
+    expect(text).toContain('appearance receiver cover-options')
+  }, 60_000)
+
   it.each(['\ud800', '\udfff', '\ud800\ud800'])('keeps UTF-16 identity %j distinct in the saved-cover cache', async identity => {
     const replacement = identity.replace(/[\ud800-\udfff]/g, '\ufffd')
     const books = () => [book(`local:${identity}`, { title: 'Mismo título' }), book(`local:${replacement}`, { title: 'Mismo título' })]

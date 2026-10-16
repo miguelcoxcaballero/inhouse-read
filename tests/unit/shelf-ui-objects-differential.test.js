@@ -149,6 +149,20 @@ async function same(script, settings = {}) {
 }
 
 describe('moving things on the shelf against the frozen original', () => {
+  it('keeps the options object as the receiver of placement and removal callbacks', async () => {
+    const extra = {
+      receiverMarker: 'shelf-options',
+      onShelfPlacementChange() { state.log.push(`placement receiver ${this?.receiverMarker}`); return Promise.resolve() },
+      onBookRemove() { state.log.push(`removal receiver ${this?.receiverMarker}`); return Promise.resolve() }
+    }
+    const text = await same(() => [
+      ['move book', async () => { key(spine(0), 'ArrowRight', { shiftKey: true }); await flush(1000) }],
+      ['remove book', async () => { key(spine(0), 'Delete'); await flush(1200) }]
+    ], { extra })
+    expect(text).toContain('placement receiver shelf-options')
+    expect(text).toContain('removal receiver shelf-options')
+  }, 90_000)
+
   it('drags a book, a plant and a lamp to new places on the plain shelf', async () => {
     const script = () => [
       ['add a plant and a lamp', async () => { await add(); await addLamp() }],
