@@ -11,4 +11,5 @@ mod editor_pick;
 mod pieces;
 mod flyout;
 mod flyout_motion;
+mod returning;
 pub use ctx::RustShelfCtx;

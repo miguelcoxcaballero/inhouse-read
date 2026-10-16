@@ -234,6 +234,7 @@ const shelfEnv = {
   persistablePosition: (...args) => persistablePosition(...args),
   bookReturnSignature: (...args) => bookReturnSignature(...args),
   bookReturnCompatibility: (...args) => bookReturnCompatibility(...args),
+  readerReturnCanvas: (...args) => readerReturnCanvas(...args),
   needsDriveDownload: (...args) => needsDriveDownload(...args),
   coverReliefLayers: (...args) => coverReliefLayers(...args),
   normalizeCoverRelief: (...args) => normalizeCoverRelief(...args),
@@ -445,7 +446,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     quickCoverAppearance: (book, url) => quickCoverAppearance(book, url),
     buildSpine: item => buildSpine(item),
     coverRatioFor: (style, fallback) => coverRatioFor(style, fallback),
-    bookGeometryState: book => bookGeometryState(book)
+    bookGeometryState: book => bookGeometryState(book),
+    measure: () => measure(),
+    coverKeyFor: book => coverKeyFor(book),
+    resolveCoverAppearance: book => resolveCoverAppearance(book),
+    resolveCoverImmediately: book => resolveCoverImmediately(book)
   } });
   let shelfCtxLive = true;
   const hasBookTrash = typeof options.onBookRemove === 'function';
@@ -2205,312 +2210,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
   // which fades over it (opacity 0 = white paper, 1 = the reading theme).
   function fallbackPageLayers(canvas, snapshot, opacity) { return shelfNative.shelf_fallback_page_layers(canvas, snapshot, opacity); }
 
-  function setReturningBook(bookId) {
-    const next = bookId == null ? null : String(bookId);
-    if (state.returnSlotWaiter && state.returnSlotWaiter.bookId !== next) finishReturnSlot(false);
-    state.shelfScene?.setModalBackgroundDeferred?.(null, { resumeHidden:true });
-    const previous = state.returningBookId;
-    state.returningBookId = next;
-    state.shelfScene?.setPaintHeld?.(next !== null);
-    for (const node of root.querySelectorAll('.ihr-spine')) {
-      if (previous !== next && node.dataset.bookId === previous) node.classList.remove('is-away');
-      if (node.dataset.bookId === next) node.classList.add('is-away');
-    }
-  }
-
-  function finishReturnSlot(ready) {
-    const pending = state.returnSlotWaiter;
-    if (!pending) return;
-    state.returnSlotWaiter = null;
-    if (!ready && state.returningBookId === pending.bookId) setReturningBook(null);
-    pending.resolve(ready);
-  }
-
-  function settleReturnSlot({ beforeRender = false } = {}) {
-    const pending = state.returnSlotWaiter;
-    if (!pending) return;
-    const book = state.books.find(record => String(record.id) === pending.bookId);
-    if (state.destroyed || !root.isConnected || !book || bookGeometryState(book) !== 'ready'
-        || window.innerWidth !== pending.width || window.innerHeight !== pending.height) {
-      finishReturnSlot(false); return;
-    }
-    // Initial analysis owns the next render; waiting for just its promise is
-    // insufficient, because its RAF has not constructed the semantic slot yet.
-    // Full font matching is independent and never keeps this gate waiting.
-    if (!state.appearancesReady || beforeRender) return;
-    const spine = [...root.querySelectorAll('.ihr-spine')]
-      .find(node => node.dataset.bookId === pending.bookId);
-    finishReturnSlot(Boolean(measure() > 0 && state.itemsById.has(pending.bookId) && spine?.isConnected));
-  }
-
-  function waitForReturnSlot(bookId) {
-    const held = state.returningBookId === String(bookId);
-    finishReturnSlot(false);
-    if (held) setReturningBook(bookId);
-    return new Promise(resolve => {
-      state.returnSlotWaiter = { bookId:String(bookId), resolve,
-        width:window.innerWidth, height:window.innerHeight };
-      settleReturnSlot();
-    });
-  }
-
-  /** Cierra el tomo 3D desde el lector y lo devuelve a su hueco. */
-  async function returnToShelf(bookId, { pageSnapshot, book:latestBook, onPageReady } = {}) {
-    const durations = readerBookTiming(prefersReducedMotion()).closing;
-    const record = state.books.find(book => String(book.id) === String(bookId));
-    if (!record || bookGeometryState(record) !== 'ready') {
-      if (state.returningBookId === String(bookId)) setReturningBook(null);
-      return false;
-    }
-    if ((!state.appearancesReady || !state.itemsById.has(String(bookId))) && !await waitForReturnSlot(bookId)) return false;
-    state.shelfScene?.setModalBackgroundDeferred?.(null, { resumeHidden:true });
-    const item = state.itemsById.get(String(bookId));
-    const previous = state.lastOpened?.book.id === bookId ? state.lastOpened
-      : item ? { book:item.book, style:item.style } : null;
-    if (!previous || previous.book.id !== bookId || state.destroyed) return false;
-    state.returnMotion?.cancel();
-    state.lastOpened = previous;
-    const book = latestBook || state.books.find(candidate => candidate.id === bookId) || previous.book;
-    state.books = state.books.map(record => record.id === bookId ? book : record);
-    if (item) item.book = book;
-    // Normally analysed while the reader was open. If not, wait briefly so
-    // the flight, the landing and the resting spine share one cloth/ribbon.
-    const appearanceKey = coverKeyFor(book);
-    const known = state.coverAppearances.get(String(bookId));
-    if (item && !(known?.key === appearanceKey && known.complete !== false)) {
-      const appearance = await Promise.race([
-        resolveCoverAppearance(book).catch(() => null),
-        new Promise(resolve => setTimeout(resolve, 320, null))
-      ]);
-      if (state.destroyed || state.lastOpened !== previous) return false;
-      if (appearance && applyCoverAppearance(item, appearance)) previous.style = item.style;
-    }
-    const spine = [...root.querySelectorAll('.ihr-spine')].find(node => node.dataset.bookId === String(bookId)) || previous.spineEl;
-    if (!spine?.isConnected) { state.lastOpened = null; return false; }
-
-    if (state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC) spine.scrollIntoView?.({ block:'nearest', behavior:'instant' });
-    state.shelfScene?.flush();
-    const rect = spine.getBoundingClientRect();
-    const sourcePose = state.shelfScene?.getBookPose(spine);
-    if (!rect.width || !rect.height) { state.lastOpened = null; return false; }
-    const vw = window.innerWidth || 390, vh = window.innerHeight || 780;
-    const landscape = vh <= 560 && vw >= 560;
-    const ratio = coverRatioFor(previous.style);
-    const coverH = Math.min(vh * (landscape ? .72 : .54), landscape ? 350 : Math.max(110, vh - 330), 440,
-      (vw * (landscape ? .35 : .78)) / ratio, (vw * .86) / (ratio + (sourcePose ? sourcePose.thickness/sourcePose.height : rect.width/rect.height) * .55));
-    const coverW = coverH * ratio;
-    const startScale = sourcePose ? sourcePose.scale * sourcePose.height / coverH : rect.height / coverH;
-    const thickness = sourcePose ? sourcePose.thickness * coverH / sourcePose.height : Math.max(6, rect.width / startScale);
-    const centerX = vw * (landscape ? .26 : .5) + thickness * .19;
-    const centerY = vh * (landscape ? .5 : .42);
-    const readingPose = planReadingBookPose({ width:coverW, height:coverH, thickness,
-      viewportWidth:vw, viewportHeight:vh, centerX, centerY });
-    const dx = (sourcePose?.centerX ?? rect.left + rect.width / 2) - centerX;
-    const dy = (sourcePose?.centerY ?? rect.top + rect.height / 2) - centerY;
-    const lift = Math.min(40, rect.height * .2);
-    const dockingPose = state.shelfScene?.getReturnPose(spine);
-    const target = dockingPose || sourcePose;
-    const end = { x:(target?.centerX ?? centerX+dx)-centerX, y:(target?.centerY ?? centerY+dy)-centerY,
-      scale:target ? target.scale*target.height/coverH : startScale,
-      angle:target?.angle ?? 90, pitch:target?.pitch ?? 0, roll:target?.roll ?? 0 };
-    const stage = el('div', { class:'ihr-flyout__stage' });
-    const bookNode = el('div', { class:'ihr-flyout__book', style:
-      `left:${(vw-coverW)/2}px;top:${centerY-coverH/2}px;width:${coverW}px;height:${coverH}px` });
-    stage.append(bookNode);
-    const scrim = el('div', { class:'ihr-flyout__scrim', style:'opacity:0' });
-    const flyout = el('div', { class:'ihr-flyout ihr-flyout--return', 'aria-hidden':'true', style:'visibility:hidden' }, [scrim, stage]);
-    flyout.dataset.returnPhase = 'preparing';
-    const coverUrl = resolveCoverImmediately(book);
-    if (state.destroyed || state.lastOpened !== previous || window.innerWidth !== vw || window.innerHeight !== vh) return false;
-    const returnGeometry = { width:coverW,height:coverH,thickness,viewportWidth:vw,viewportHeight:vh,centerX,centerY };
-    const cachedView = pageSnapshot?.source ? await returnViews.takeCompatible({
-      signature:bookReturnSignature(book,previous.style,returnGeometry,coverUrl),
-      compatibility:bookReturnCompatibility(book,previous.style,returnGeometry),book,style:previous.style,coverUrl
-    }) : returnViews.take(null);
-    if (state.destroyed || state.lastOpened !== previous || window.innerWidth !== vw || window.innerHeight !== vh) {
-      cachedView?.dispose(); return false;
-    }
-    if (cachedView) { cachedView.deferDrawing?.(); bookNode.append(cachedView.canvas); cachedView.updateBookmark(book); }
-    const view = cachedView || bookView(bookNode, book, previous.style, {
-      width:coverW, height:coverH, thickness, viewportWidth:vw, viewportHeight:vh,
-      centerX, centerY, coverUrl,
-      deferDraw:Boolean(pageSnapshot?.source),
-      compactReturnFrame:Boolean(pageSnapshot?.source),
-      adaptiveNativeFrame:true,
-      initialPose:{ x:0, y:0, scale:1, angle:0, pitch:0, coverOpen:pageSnapshot ? 1 : 0, bookmarkWithdraw:pageSnapshot ? 1 : 0 }
-    });
-    if (view) {
-      flyout.dataset.returnView = cachedView ? 'reused' : 'created';
-      bookNode.classList.add('ihr-flyout__book--webgl');
-      bookNode.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
-    } else {
-      bookNode.classList.add('ihr-flyout__book--fallback');
-      bookNode.style.cssText = `position:absolute;width:${coverW}px;height:${coverH}px;left:${(vw-coverW)/2}px;top:${centerY-coverH/2}px`;
-      const pages = el('div', { class:'ihr-flyout__fallback-pages' });
-      const leaf = el('div', { class:'ihr-flyout__fallback-leaf' }, [buildCoverFace(book, coverUrl, previous.style),
-        el('div', { class:'ihr-flyout__face ihr-flyout__face--inside' })]);
-      bookNode.append(pages, leaf);
-    }
-    const pose = (x, y, scale, angle, pitch=0) => ({ x,y,scale,angle,pitch });
-    document.body.append(flyout);
-    spine.classList.add('is-away');
-    state.shelfScene?.updateEntry?.(spine, book, previous.style, coverUrl);
-    state.shelfScene?.flush();
-    const duration = durations.flight;
-    const approachDuration = view && dockingPose ? duration * .66 : duration;
-    const startFlight = () => view ? view.animate([
-      { transform:pose(0,0,1,0,0), offset:0 },
-      { transform:pose(-dx*.12,-lift*.5,.94,12,3), offset:.22 },
-      { transform:pose(end.x*.38,end.y*.38-lift,startScale+(1-startScale)*.38,end.angle*.7,4), offset:.68 },
-      { transform:end, offset:1 }
-    ], { duration:approachDuration }) : animate(bookNode, [
-      { opacity:1, transform:'translate(0,0) scale(1)' },
-      { opacity:.85, transform:`translate(${dx}px, ${dy}px) scale(${startScale})` }
-    ], { duration, easing:EASE, fill:'both' });
-    const restoreShelfSpine = ({ flush = true } = {}) => {
-      const current = [...root.querySelectorAll('.ihr-spine')]
-        .find(node => node.dataset.bookId === String(bookId)) || spine
-      current.classList.remove('is-away')
-      // A queued record refresh rebuilds the resting spine before the caller's
-      // final cleanup. Release this return's marker with its actual landing so
-      // that rebuilt DOM cannot briefly hide the already inserted book again.
-      if (state.returningBookId === String(bookId)) {
-        state.returningBookId = null
-        state.shelfScene?.setPaintHeld?.(false)
-      }
-      if (flush) state.shelfScene?.flush();
-      return current
-    }
-    let animation = null, insertion = null;
-    const fallbackAnimations = [];
-    const motion = { cancel() {
-      animation?.cancel?.(); insertion?.cancel();
-      for (const fallback of fallbackAnimations) fallback.cancel?.();
-      restoreShelfSpine(); view?.dispose(); flyout.remove();
-      if (state.returnMotion === motion) state.returnMotion = null;
-      applyDeferredShelfUpdates()
-    } };
-    state.returnMotion = motion;
-    const active = () => state.returnMotion === motion && !state.destroyed;
-    let releaseFrame;
-    try {
-      if (view) await view.ready;
-      releaseFrame = view?.holdNativeMotionFrame?.();
-      if (!active()) return false;
-      if (pageSnapshot?.source && view) { view.deferDrawing?.(); view.setCompactReturnFrame?.(true); }
-      if (pageSnapshot?.source && view && view.setPageSnapshot(pageSnapshot)) {
-        view.draw({ ...readingPose, bookmarkWithdraw:1 },{redraw:false});
-        if (!view.alignToPage(pageSnapshot.displayBounds)) throw new Error('No se pudo alinear la página al cerrar el libro.');
-        state.shelfScene?.setPaintHeld?.(false); state.shelfScene?.flush();
-        flyout.style.visibility = '';
-        onPageReady?.();
-        flyout.dataset.returnPhase = 'zooming';
-        animate(scrim, [{ opacity:0 }, { opacity:1 }], { duration:prefersReducedMotion() ? 1 : 320, fill:'both' });
-        // Back to white paper on the zoom's own clock: the page leaves the reader in
-        // its theme (as the still image shows it) and the book closes on white paper.
-        animation = view.animate([{ transform:view.getPose() }, { transform:{ ...readingPose, bookmarkWithdraw:1, ...(pageSnapshot.paper ? { pageTheme:0 } : {}) } }],
-          { duration:durations.zoom });
-        await waitForMotion(animation, durations.zoom);
-        if (!active()) return false;
-        // The zoom's large framebuffer no longer needs to survive the ribbon,
-        // hinge and flight. Their existing per-motion reservations retain the
-        // exact projected book at the same DPR without keeping empty pixels.
-        releaseFrame?.(); releaseFrame = null;
-        // White paper from here on, even if a stalled frame let the zoom's watchdog release it early.
-        if (pageSnapshot.paper && view.getPageTheme() > 0) view.setPageTheme(0);
-        flyout.dataset.returnPhase = 'bookmark';
-        animation = view.animateBookmark({ withdraw:0, duration:durations.bookmark });
-        await waitForMotion(animation, durations.bookmark);
-        if (!active()) return false;
-        flyout.dataset.returnPhase = 'closing';
-        animation = view.animateCoverClose({ duration:durations.cover,
-          targetPose:{ x:0,y:0,scale:1,angle:0,pitch:0,roll:0 } });
-        await waitForMotion(animation, durations.cover);
-        if (!active()) return false;
-      } else if (pageSnapshot?.source && !view) {
-        const pages = bookNode.querySelector('.ihr-flyout__fallback-pages');
-        const leaf = bookNode.querySelector('.ihr-flyout__fallback-leaf');
-        // The still-page layer owns the snapshot's DOM canvas until handoff.
-        // Only the non-WebGL fallback needs a second DOM copy for its leaf.
-        const image = readerReturnCanvas(pageSnapshot.source);
-        image.dataset.pageSource = pageSnapshot.sourceType || pageSnapshot.engine;
-        image.dataset.pageLocator = JSON.stringify(pageSnapshot.location?.locator ?? null);
-        const pageW = coverW*.92, pageH = coverH*.975;
-        const fit = Math.min(pageW/pageSnapshot.width,pageH/pageSnapshot.height);
-        image.className = 'ihr-flyout__saved-page';
-        image.style.cssText = `position:absolute;width:${pageSnapshot.width*fit}px;height:${pageSnapshot.height*fit}px;left:${(pageW-pageSnapshot.width*fit)/2}px;top:${(pageH-pageSnapshot.height*fit)/2}px`;
-        pages.replaceChildren(...fallbackPageLayers(image, pageSnapshot, 1)); leaf.style.transform = 'rotateY(-169deg)';
-        const bounds = pageSnapshot.displayBounds;
-        const local = image.getBoundingClientRect(), scale = bounds.width/local.width;
-        const bookBounds = bookNode.getBoundingClientRect();
-        const x = bounds.left + bounds.width/2 - local.left-local.width/2 + (1-scale)*(local.left+local.width/2-bookBounds.left-bookBounds.width/2);
-        const y = bounds.top + bounds.height/2 - local.top-local.height/2 + (1-scale)*(local.top+local.height/2-bookBounds.top-bookBounds.height/2);
-        bookNode.style.transform = `translate(${x}px,${y}px) scale(${scale})`;
-        state.shelfScene?.setPaintHeld?.(false); state.shelfScene?.flush();
-        flyout.style.visibility = ''; onPageReady?.();
-        flyout.dataset.returnPhase = 'zooming';
-        animation = animate(bookNode,[{ transform:bookNode.style.transform },{ transform:'translate(0,0) scale(1)' }],
-          { duration:durations.zoom, easing:EASE, fill:'both' });
-        fallbackAnimations.push(animation);
-        if (pageSnapshot.paper?.source) fallbackAnimations.push(animate(image,[{ opacity:1 },{ opacity:0 }],
-          { duration:durations.zoom, easing:EASE, fill:'both' }));
-        await waitForMotion(animation, durations.zoom);
-        if (!active()) return false;
-        bookNode.style.transform = 'translate(0,0) scale(1)'; animation.cancel?.();
-        flyout.dataset.returnPhase = 'bookmark';
-        const ribbon = el('div', { class:'ihr-flyout__return-ribbon' }); pages.append(ribbon);
-        animation = animate(ribbon,[{ transform:'translateY(-130%)' },{ transform:'translateY(0)' }],
-          { duration:durations.bookmark, fill:'both', easing:EASE });
-        fallbackAnimations.push(animation); await waitForMotion(animation, durations.bookmark);
-        if (!active()) return false;
-        flyout.dataset.returnPhase = 'closing';
-        animation = animate(leaf,[{ transform:'rotateY(-169deg)' },{ transform:'rotateY(0deg)' }],
-          { duration:durations.cover, fill:'both', easing:EASE });
-        fallbackAnimations.push(animation); await waitForMotion(animation, durations.cover);
-        if (!active()) return false;
-      }
-      state.shelfScene?.setPaintHeld?.(false); state.shelfScene?.flush();
-      flyout.style.visibility = ''; onPageReady?.();
-      flyout.dataset.returnPhase = 'returning';
-      animate(scrim,[{ opacity:pageSnapshot ? 1 : 0 },{ opacity:0 }],{ duration:approachDuration, fill:'both' });
-      animation = startFlight();
-      await waitForMotion(animation, approachDuration);
-      if (state.returnMotion === motion && view && dockingPose && !state.destroyed) {
-        flyout.dataset.returnPhase = 'inserting';
-        insertion = view.handoffToShelfInsertion?.(nativePresentation => state.shelfScene?.returnBook(spine,
-          { duration:duration - approachDuration, overlayCanvas:view.canvas, nativePresentation }));
-        if (!insertion) {
-          view.releaseToSnapshot?.();
-          insertion = state.shelfScene?.returnBook(spine, { duration:duration - approachDuration, overlayCanvas:view.canvas });
-        }
-        if (insertion) {
-          await waitForMotion(insertion, duration - approachDuration);
-        }
-      }
-      if (state.returnMotion === motion) {
-        state.returnMotion = null;
-        animation.cancel?.();
-        for (const fallback of fallbackAnimations) fallback.cancel?.();
-        // A queued layout paints the landed book itself. Keep the insertion
-        // owner alive until that paint instead of drawing the old room first.
-        restoreShelfSpine({ flush:false })
-        applyDeferredShelfUpdates()
-        // With no queued layout, this flush still paints the restored spine.
-        state.shelfScene?.flush();
-        view?.dispose(); flyout.remove();
-        state.lastOpened = null;
-        const currentSpine = [...root.querySelectorAll('.ihr-spine')]
-          .find(node => node.dataset.bookId === String(bookId)) || spine
-        currentSpine.focus?.({ preventScroll:true });
-        maybeRefreshAppearanceStyles();
-        return true;
-      }
-      return false;
-    } catch (error) {
-      motion.cancel();
-      throw error;
-    } finally { releaseFrame?.(); }
-  }
+  // A destroyed shelf has handed its context back; whatever a late callback asks of it is then moot.
+  function setReturningBook(bookId) { if (shelfCtxLive) shelfCtx.setReturningBook(bookId); }
+  function finishReturnSlot(ready) { if (shelfCtxLive) shelfCtx.finishReturnSlot(Boolean(ready)); }
+  function settleReturnSlot({ beforeRender = false } = {}) { if (shelfCtxLive) shelfCtx.settleReturnSlot(Boolean(beforeRender)); }
 
   return {
     element: root,
@@ -2519,7 +2222,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     // complete list and commit one semantic/GPU layout on the next frame.
     queueRefresh:nextBooks => refresh(nextBooks, { defer:true }),
     update: refresh,
-    returnToShelf,
+    returnToShelf: (bookId, returnOptions) => shelfCtxLive ? shelfCtx.returnToShelf(bookId, returnOptions) : Promise.resolve(false),
     updateCloudRecord(record) { if (state.session?.book.id === record.id) state.session.updateCloudRecord?.(record); },
     setPresentationActive(value) {
       state.presentationActive = Boolean(value);

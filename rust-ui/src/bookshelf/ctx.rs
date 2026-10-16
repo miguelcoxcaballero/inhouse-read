@@ -31,7 +31,11 @@ impl Ctx{
  pub fn st_str(&self,key:&str)->String{text(&get(&self.state,key))}
  /// `state.shelfScene` (null when the scene is not in use).
  pub fn scene(&self)->JsValue{get(&self.state,"shelfScene")}
- /// `options[name]`.
+ /// `state.shelfScene?.name(...args)`: a present scene must have the method, as in the original.
+ pub fn scene_call(&self,name:&str,args:&[&JsValue])->R<JsValue>{
+  let scene=self.scene();
+  if absent(&scene){Ok(undef())}else{method(&scene,name,args)}
+ } /// `options[name]`.
  pub fn option(&self,name:&str)->JsValue{get(&self.options,name)}
  /// `options[name]?.(...args)`.
  pub fn option_call(&self,name:&str,args:&[&JsValue])->R<JsValue>{

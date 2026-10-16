@@ -77,6 +77,53 @@ export function recordingView(log, host, book, style, dimensions, extra = {}) {
   return view
 }
 
+/** A motion that never finishes by itself; cancelling it rejects `finished` like a Web Animation does. */
+export function heldMotion(log, name) {
+  let reject
+  const finished = new Promise((_, fail) => { reject = fail })
+  finished.catch(() => {})
+  return { finished, cancel() { log.push(`${name}.cancel`); reject(new DOMException('The animation was aborted', 'AbortError')) } }
+}
+
+/**
+ * A recording shelf scene: every call is logged with its arguments; the poses it answers and the motion of the
+ * returning book come from `config` (`sourcePose`, `dockingPose`, `hold`, `insertion`).
+ */
+export function recordingScene(log, config = {}) {
+  const answers = {
+    getBookPose: () => config.sourcePose,
+    getReturnPose: () => config.dockingPose,
+    returnBook: () => {
+      if (config.fail) throw new Error('the scene cannot land the book')
+      if (config.insertion === false) return undefined
+      return config.hold ? heldMotion(log, 'scene.returnBook') : { finished: Promise.resolve(), cancel() { log.push('scene.returnBook.cancel') } }
+    }
+  }
+  return new Proxy({}, {
+    get: (_target, name) => {
+      if (typeof name !== 'string' || name === 'then') return undefined
+      return (...args) => {
+        log.push(`scene.${name}(${args.map(arg => show(arg)).join(',')})`)
+        return answers[name]?.(...args)
+      }
+    }
+  })
+}
+
+/** Rectangles for the nodes the return flight measures (jsdom has no layout). */
+export function stubRects() {
+  const original = Element.prototype.getBoundingClientRect
+  const rect = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top })
+  Element.prototype.getBoundingClientRect = function () {
+    const name = String(this.className || '')
+    if (/\bihr-spine\b/.test(name)) return rect(20, 100, 28, 160)
+    if (/ihr-flyout__saved-page/.test(name)) return rect(100, 60, 300, 450)
+    if (/ihr-flyout__book\b/.test(name)) return rect(50, 40, 420, 560)
+    return original.call(this)
+  }
+  return () => { Element.prototype.getBoundingClientRect = original }
+}
+
 export const fire = (node, type, init = {}) => node.dispatchEvent(new Event(type, { bubbles: true, cancelable: true, ...init }))
 export const setValue = (node, value, type = 'input') => { node.value = value; fire(node, type) }
 export const keydown = (node, key, init = {}) => node.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init }))
