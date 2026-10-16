@@ -4,6 +4,9 @@ import { createShelfPlant } from '../../src/js/shelf-plants.js';
 import { plantDimensions } from '../../src/js/plant-dimensions.js';
 import { resolveCatalogPlant } from '../../src/js/plant-records.js';
 
+// A plant draws its geometry with the shelf module, which every fresh copy of the modules below must find loaded.
+vi.mock('../../src/js/rust-shelf.js', async () => (await import('./helpers/rust-shelf-real.js')).rustShelfMock());
+
 function triangleCount(group) {
   let count = 0;
   group.traverse(object => { if (object.isMesh) count += (object.geometry.index?.count ?? object.geometry.attributes.position.count) / 3; });
