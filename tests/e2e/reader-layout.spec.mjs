@@ -311,3 +311,23 @@ test('AMOLED en texto EPUB, navegación y audio sin superficies claras', async (
   await expectReturnOutsidePage(page)
   await page.screenshot({path:'test-results/reader-amoled-epub-landscape.png'})
 })
+
+test('EPUB móvil recupera la altura de una caché antigua y usa márgenes verticales compactos',async({page})=>{
+ await page.addInitScript(()=>localStorage.setItem('inhouse-read-page-boxes-v3',JSON.stringify([{width:390,target:704,height:560}])))
+ await prepare(page,{width:390,height:844})
+ await open(page,'epub')
+ await expect.poll(()=>page.evaluate(()=>document.querySelector('foliate-view')?.renderer?.getAttribute('margin'))).toBe('4px')
+ const measured=await page.evaluate(()=>{
+  const viewport=document.querySelector('#reader-viewport').getBoundingClientRect(),view=document.querySelector('foliate-view')
+  const frame=view.renderer.getContents()[0].doc.defaultView.frameElement
+  const container=frame.getBoundingClientRect(),book=view.getBoundingClientRect()
+  return {free:viewport.height,page:book.height,top:container.top-viewport.top,bottom:viewport.bottom-container.bottom,newCache:localStorage.getItem('inhouse-read-page-boxes-v4'),oldCache:localStorage.getItem('inhouse-read-page-boxes-v3')}
+ })
+ console.log('READER_SPACE '+JSON.stringify(measured))
+ expect(Math.abs(measured.page-measured.free)).toBeLessThanOrEqual(1)
+ expect(measured.top).toBeLessThanOrEqual(5)
+ expect(measured.bottom).toBeLessThanOrEqual(5)
+ expect(measured.newCache).not.toBeNull()
+ expect(JSON.parse(measured.oldCache)[0].height).toBe(560)
+ await page.screenshot({path:'test-results/reader-compact-390.png'})
+})

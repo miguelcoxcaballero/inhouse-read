@@ -140,7 +140,7 @@ describe('EPUB usable viewport', () => {
   it('applies valid compact vertical gutters and real horizontal margins before the first page', async () => {
     const reader = new FoliateReader()
     view.init.mockImplementation(async () => {
-      expect(view.renderer.setAttribute).toHaveBeenCalledWith('margin', '12px')
+      expect(view.renderer.setAttribute).toHaveBeenCalledWith('margin', '4px')
       expect(view.renderer.setAttribute).toHaveBeenCalledWith('gap', `${(16 / 390 * 100).toFixed(4)}%`)
       expect(view.renderer.setStyles).toHaveBeenCalled()
     })

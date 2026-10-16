@@ -57,7 +57,7 @@ body.is-reading .reader-heading { display:flex; width:100%; height:48px; gap:4px
    padding) narrow the width pdf-reader fits the page to, so the sheet lines
    up with the header and toolbar column. */
 .app-shell:has(#reader-viewport > .pdf-page-wrap:not([hidden])) { --reader-desk:linear-gradient(rgb(0 0 0 / .05),rgb(0 0 0 / .05)); }
-.reader-viewport:has(> .pdf-page-wrap:not([hidden])) { padding-block:14px 20px; border:0 solid transparent;
+.reader-viewport:has(> .pdf-page-wrap:not([hidden])) { padding-block:4px; border:0 solid transparent;
   border-inline-start-width:max(0px,calc(var(--reader-chrome-inset) - env(safe-area-inset-left,0px)));
   border-inline-end-width:max(0px,calc(var(--reader-chrome-inset) - env(safe-area-inset-right,0px)));
   scrollbar-width:thin; scrollbar-color:color-mix(in srgb,currentColor 24%,transparent) transparent; }
