@@ -66,8 +66,8 @@ let live = 0, peak = 0, allocations = 0, releases = 0, calls = 0;
 const tracked = { ...core,
   alloc_f64(length) { const pointer = core.alloc_f64(length); if (pointer) { live += length * 8; peak = Math.max(peak, live); allocations++; } return pointer; },
   free_f64(pointer, length) { core.free_f64(pointer, length); live -= length * 8; releases++; },
-  page_block_mesh(...args) { calls++; return core.page_block_mesh(...args); },
-  leaf_stack_mesh(...args) { calls++; return core.leaf_stack_mesh(...args); },
+  page_block_finish(...args) { calls++; return core.page_block_finish(...args); },
+  leaf_stack_finish(...args) { calls++; return core.leaf_stack_finish(...args); },
 };
 for (const input of paperMeshCases) { rust(input, tracked).dispose(); assert.equal(live, 0); }
 assert.equal(calls, paperMeshCases.length); assert.equal(allocations, releases);

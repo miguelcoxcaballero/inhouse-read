@@ -114,7 +114,7 @@ it('is the voice domain: no imports, and the synthesis kernels beside the rules'
   expect(core.core_domain()).toBe(2)
   expect(core.core_abi_version()).toBe(1)
   for (const name of ['hebrew_ipa_words', 'nakdimon_ids', 'nakdimon_argmax', 'nakdimon_assemble', 'pcm_prepare', 'speech_tempo', 'duration_marks', 'voice_finish_piper', 'voice_finish_supertonic', 'voice_speed_up']) expect(typeof core[name]).toBe('function')
-  expect(core.plant_monstera_mesh).toBeUndefined()
+  expect(core.plant_surface_lattice).toBeUndefined()
   expect(core.speech_normalize).toBeUndefined()
   expect(WebAssembly.Module.imports(new WebAssembly.Module(readFileSync('src/wasm/inhouse_read_voice.wasm')))).toEqual([])
 })

@@ -3,6 +3,7 @@ import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
 import {loadRustDecorCore} from '/inhouse-read/src/js/rust-decor-core.js';
+import {loadRustShelf} from '/inhouse-read/src/js/rust-shelf.js';
 import {rustPlantGlazeRows} from '/inhouse-read/src/js/plant-glaze-wasm.js';
 import {createShelfPlant,plantSurfacesReady} from '/inhouse-read/src/js/shelf-plants.js';
 import {glazedPainter} from '/inhouse-read/tests/unit/helpers/reference-plant-glaze.js';
@@ -20,6 +21,8 @@ window.verifyGlaze=(w,h,row,count,cfg,pigment,data)=>{
  if(pigment.some((v,i)=>v!==p[i])||data.some((v,i)=>v!==d[i]))throw Error('Actual final glaze differs');
 };
 const core=await loadRustDecorCore();if(!core?.plant_glaze_rows)throw Error('Compiled glaze required');
+// The plants' geometry is the shelf module's: the live shelf awaits it before its first render, so does this page.
+if(!await loadRustShelf())throw Error('Rust shelf module required');
 window.checkGlaze=async()=>{
  const models=[];
  for(const [catalogId,potId] of [['monstera','muskot'],['sansevieria','gradvis']])models.push(createShelfPlant({catalogId,potId,seed:'glaze-'+catalogId,height:240,inspectionResolution:1}));
@@ -65,6 +68,7 @@ test('actual glazed pots use bounded Rust rows with identical final material pix
  });
  await page.setViewportSize({width:390,height:844});const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
  await page.goto(url);await page.waitForFunction(()=>window.checkGlaze);const result=await page.evaluate(()=>window.checkGlaze());
- expect(result.actualCalls).toBeGreaterThanOrEqual(128);expect(result.memory.verified).toBe(result.actualCalls);expect(result.memory.mismatches).toBe(0);expect(result.memory.live).toBe(0);expect(result.memory.maxRows).toBe(4);
+// 128: the decor catalogue's fixed arena (decor-catalogue.js) stays allocated for the whole page.
+ expect(result.actualCalls).toBeGreaterThanOrEqual(128);expect(result.memory.verified).toBe(result.actualCalls);expect(result.memory.mismatches).toBe(0);expect(result.memory.live).toBe(128);expect(result.memory.maxRows).toBe(4);
  await info.attach('actual-pot-glaze-and-timing',{body:JSON.stringify(result),contentType:'application/json'});console.log(JSON.stringify(result.samples.map(({times,...entry})=>entry)));
 });

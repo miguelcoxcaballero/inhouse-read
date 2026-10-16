@@ -99,20 +99,49 @@ describe('actual compiled Rust preserves the page mesh byte for byte', () => {
   });
   it('reacquires memory after a kernel grows it and supports independent nested operations', () => {
     let nested = false;
-    const wrapped = { ...core, page_block_mesh(...args) {
+    const wrapped = { ...core, page_block_finish(...args) {
       if (!nested) {
         nested = true;
         const inside = rustLeafStackBuffers(core, 264, 400, 37, { columns:31 });
         expect(inside.positions.length).toBe((6 * 32 + 4) * 3);
         core.memory.grow(1);
       }
-      core.page_block_mesh(...args);
+      core.page_block_finish(...args);
     } };
     const reference = referencePageBlockGeometry(132, 200, 40, { detail:true });
     try { compare(rustPageBlockBuffers(wrapped, 132, 200, 40, { detail:true }), reference); }
     finally { reference.dispose(); }
+    expect(nested).toBe(true);
   });
-  it('leaves unavailable kernels, invalid dimensions and exhausted allocation to the original mesh', () => {
+  it('reacquires memory after a plan stage grows it, between the host answers', () => {
+    for (const [run, stages, original] of [[rustPageBlockBuffers, ['page_block_plan_a', 'page_block_plan_b', 'page_block_finish'], referencePageBlockGeometry],
+      [rustLeafStackBuffers, ['leaf_stack_plan_a', 'leaf_stack_plan_b', 'leaf_stack_finish'], referenceLeafStackGeometry]]) {
+      for (const stage of stages) {
+        const grown = { ...core, [stage](...args) { core.memory.grow(1); return core[stage](...args); } };
+        const reference = original(132, 200, 40, run === rustPageBlockBuffers ? { detail:true } : undefined);
+        try { compare(run(grown, 132, 200, 40, run === rustPageBlockBuffers ? { detail:true } : undefined), reference); }
+        finally { reference.dispose(); }
+      }
+    }
+  });
+  it('takes every hypotenuse from the engine\'s own Math, never from the core', () => {
+    // A Math.hypot a hair off in the last bits, as another engine\'s can be: the original and the core
+    // must still agree, which only holds if the core computes none of them itself.
+    const { hypot } = Math;
+    const plain = [referencePageBlockGeometry(132, 200, 40, { detail:true }), referenceLeafStackGeometry(132, 200, 40)]
+      .map(geometry => { const copy = geometry.getAttribute('normal').array.slice(); geometry.dispose(); return copy; });
+    Math.hypot = (...values) => hypot(...values) * (1 + 2 ** -14);
+    try {
+      const block = referencePageBlockGeometry(132, 200, 40, { detail:true }), leaves = referenceLeafStackGeometry(132, 200, 40);
+      try {
+        compare(rustPageBlockBuffers(core, 132, 200, 40, { detail:true }), block);
+        compare(rustLeafStackBuffers(core, 132, 200, 40), leaves);
+        expect(Buffer.compare(Buffer.from(plain[0].buffer), Buffer.from(block.getAttribute('normal').array.buffer)), 'the perturbed Math must move the normals').not.toBe(0);
+        expect(Buffer.compare(Buffer.from(plain[1].buffer), Buffer.from(leaves.getAttribute('normal').array.buffer))).not.toBe(0);
+      } finally { block.dispose(); leaves.dispose(); }
+    } finally { Math.hypot = hypot; }
+  });
+  it('declines unavailable kernels, invalid dimensions and exhausted allocation', () => {
     for (const run of [rustPageBlockBuffers, rustLeafStackBuffers]) {
       expect(run(null, 132, 200, 40)).toBeNull();
       expect(run({ ...core, page_block_mesh:null, leaf_stack_mesh:null }, 132, 200, 40)).toBeNull();
@@ -129,8 +158,9 @@ describe('actual compiled Rust preserves the page mesh byte for byte', () => {
     expect(rustPageBlockBuffers(core, 132, 200, 2)).toBeNull();
     for (const columns of [0, -1, 1.5, 513, NaN]) expect(rustLeafStackBuffers(core, 132, 200, 40, { columns })).toBeNull();
   });
-  it('frees scratch after exceptional pure kernels before returning the original-path signal', () => {
-    for (const [run, name] of [[rustPageBlockBuffers, 'page_block_mesh'], [rustLeafStackBuffers, 'leaf_stack_mesh']]) {
+  it('frees scratch after exceptional pure kernels before declining the mesh', () => {
+    for (const [run, name] of [[rustPageBlockBuffers, 'page_block_finish'], [rustLeafStackBuffers, 'leaf_stack_finish'],
+      [rustPageBlockBuffers, 'page_block_plan_b'], [rustLeafStackBuffers, 'leaf_stack_plan_a']]) {
       const allocations = [], releases = [];
       const tracked = { ...core,
         alloc_f64(length) { const pointer = core.alloc_f64(length); allocations.push([pointer, length]); return pointer; },

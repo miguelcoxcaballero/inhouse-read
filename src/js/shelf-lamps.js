@@ -1,12 +1,11 @@
 import * as THREE from 'three';
 import {rustLampSurface} from './lamp-surface-wasm.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { needRustShelf } from './rust-shelf.js';
+import { geometryOf, openPacket } from './geo-packet.js';
 import { getCatalogLamp } from './lamp-catalog-data.js';
 import { lampTint, normalizeLampKelvin, tintColor } from './lamp-kelvin.js';
 import { addShelfBakeSource, savedSurface, scheduleShelfBakeWrite } from './shelf-bake-cache.js';
 
-const UP = new THREE.Vector3(0,1,0);
 const clamp = value => Math.min(1,Math.max(0,value));
 const imageCache = new Map();
 // Surfaces of this session's shelf lamps are saved for the next launch.
@@ -47,26 +46,24 @@ function materialWithSurface(kind,quality,options) {
     roughnessMap:maps.data,bumpScale:kind === 'wood' ? .16 : kind === 'linen' ? .22 : .045 });
 }
 
-function lathe(profile,segments) {
-  return new THREE.LatheGeometry(profile.map(([radius,y]) => new THREE.Vector2(radius,y)),segments);
+/** The geometry of a lamp. The Rust shelf module draws every part, bakes the parts of one material into one geometry
+ * (the tripod's feet and cord trimmed to the shelf) and fits the lamp by `scale`, so the vertices arrive fitted
+ * (rust-ui/src/lamp_model.rs); the emitter arrives fitted too. The host adds the materials. */
+function lampGeometry(kind,segments,scale) {
+  const packet = openPacket(needRustShelf().lamp_geometry(kind,segments,scale));
+  const geometries = new Map(packet.header.batches.map(batch => {
+    const geometry = geometryOf(packet,batch);
+    if (batch.bounds) geometry.computeBoundingBox();
+    return [batch.name,geometry];
+  }));
+  return { geometries,emitter:packet.header.emitter };
 }
 
-/** Bake transforms and combine parts that use one material into one draw. */
-function addBatch(group,name,material,parts,{castShadow=true,receiveShadow=true}={}) {
-  const geometries = parts.map(({geometry,position=[0,0,0],rotation=[0,0,0]}) => {
-    const matrix = new THREE.Matrix4().compose(new THREE.Vector3(...position),
-      new THREE.Quaternion().setFromEuler(new THREE.Euler(...rotation)),new THREE.Vector3(1,1,1));
-    geometry.applyMatrix4(matrix); return geometry;
-  });
-  const geometry = geometries.length === 1 ? geometries[0] : mergeGeometries(geometries,false);
-  if (geometries.length > 1) for (const source of geometries) source.dispose();
-  const mesh = new THREE.Mesh(geometry,material); mesh.name = name;
+/** One mesh of the lamp: the named geometry with its material. */
+function addBatch(group,name,material,lamp,{castShadow=true,receiveShadow=true}={}) {
+  const mesh = new THREE.Mesh(lamp.geometries.get(name),material); mesh.name = name;
   mesh.castShadow = castShadow; mesh.receiveShadow = receiveShadow;
   group.add(mesh); return mesh;
-}
-
-function tube(points,radius,segments=36,radialSegments=6) {
-  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points.map(point => new THREE.Vector3(...point))),segments,radius,radialSegments,false);
 }
 
 // Clear glass is composited, not refracted. three's transmission re-renders
@@ -102,62 +99,31 @@ function glass(colour,{roughness=.055,clearcoatRoughness=.025,envMapIntensity=1.
   return material;
 }
 
-function puck(group,quality,segments) {
+function puck(group,quality,lamp) {
   const metal = new THREE.MeshPhysicalMaterial({ color:0xc8cbcd,metalness:.91,roughness:.3,
     clearcoat:.15,clearcoatRoughness:.3 });
-  addBatch(group,'lamp-housing',metal,[{geometry:lathe([
-    [0,0],[30.5,0],[32.8,-.6],[34,-2],[34,-8],[33.2,-10.3],[31.8,-11],
-    [28.4,-11],[27.5,-10.1],[27.5,-8.8],[29.2,-8.8],[30,-1.8],[0,-1.8]
-  ],segments)}]);
+  addBatch(group,'lamp-housing',metal,lamp);
   const opal = new THREE.MeshPhysicalMaterial({color:0xffe7ca,roughness:.72,metalness:0,
     emissive:0xffd3a0,emissiveIntensity:2.3,clearcoat:.12,side:THREE.DoubleSide});
-  addBatch(group,'warm-opal-diffuser',opal,[{geometry:lathe([[0,-10.5],[25.8,-10.5],[27.5,-10.1],[27.5,-9.2],[0,-9.2]],segments)}],{castShadow:false});
+  addBatch(group,'warm-opal-diffuser',opal,lamp,{castShadow:false});
   const cable = new THREE.MeshStandardMaterial({color:0xd4d0c7,roughness:.85});
-  addBatch(group,'puck-power-lead',cable,[{geometry:tube([[0,-2,-30],[0,-2,-33],[0,-1.5,-33.2]],.6,8)}]);
-  // The cut-off must extend beyond the adjacent board: Three's smooth
-  // distance window otherwise nearly extinguishes a 440 mm cone before it
-  // reaches a BAGGEBO shelf, even though the diffuser itself looks bright.
-  return {position:[0,-12,0],colour:0xffd3a0,range:700,intensity:392000,
-    direction:[0,-1,0],angle:Math.PI * .38,penumbra:.65};
+  addBatch(group,'puck-power-lead',cable,lamp);
 }
 
-function lantern(group,quality,segments) {
+function lantern(group,quality,lamp) {
   const black = materialWithSurface('black',quality,{color:0xffffff,metalness:.68,roughness:1,
     clearcoat:.28,clearcoatRoughness:.35});
-  addBatch(group,'lamp-base',black,[{geometry:lathe([
-    [0,0],[58,0],[67,1.5],[72,5],[74.5,10],[75,18],[75,43],[74,48],
-    [70,54],[59,61],[43,72],[35,78],[34,84],[34,91],[31,93],[0,93]
-  ],segments)}]);
+  addBatch(group,'lamp-base',black,lamp);
   const brass = new THREE.MeshPhysicalMaterial({color:0xbca170,metalness:1,roughness:.27,
     clearcoat:.2,clearcoatRoughness:.25});
-  const brassParts = [
-    {geometry:lathe([[30,88],[38,88],[40,90],[40,93],[37,95],[30,95],[30,88]],segments)},
-    {geometry:lathe([[0,92],[11,92],[12,94],[12,104],[10.7,106],[0,106]],32)},
-    {geometry:new THREE.CylinderGeometry(3.6,3.6,14,20),position:[20,80,34],rotation:[Math.PI / 2,0,0]},
-    {geometry:new THREE.CylinderGeometry(8.2,8.2,5,40),position:[20,80,42],rotation:[Math.PI / 2,0,0]},
-    {geometry:new THREE.TorusGeometry(7.85,.6,6,48),position:[20,80,44.8]},
-    {geometry:new THREE.CylinderGeometry(1.3,1.3,1,12),position:[20,80,45],rotation:[Math.PI / 2,0,0]}
-  ];
-  for (let notch = 0; notch < 48; notch++) {
-    const angle = notch / 48 * Math.PI * 2;
-    brassParts.push({geometry:new THREE.BoxGeometry(.28,.65,2.9),
-      position:[20 + Math.cos(angle) * 8.16,80 + Math.sin(angle) * 8.16,43],rotation:[0,0,angle]});
-  }
-  addBatch(group,'brass-collar-and-machined-dimmer',brass,brassParts);
-  const chimney = [
-    [37,94],[43,96],[49,103],[52.5,116],[54,135],[54,185],[53,204],[50,215],
-    [43,227],[33,238],[29,243],[29,248],[30,250],[28.2,250],[27.2,248],[27.3,243],
-    [31.3,237],[41.5,226],[48.5,214],[51.3,203],[52.3,185],[52.3,135],
-    [50.8,117],[47.4,104],[41.5,98],[37,96],[37,94]
-  ];
+  addBatch(group,'brass-collar-and-machined-dimmer',brass,lamp);
   // Thin clear walls need slightly more absorption at a grazing angle, where
   // the optical path is longer. This also retains the rolled silhouette on
   // the catalogue's white background without drawing an artificial outline.
   const chimneyMaterial = glass(0xeaf0f1,{grazing:true,key:'shelf-chimney-optical-path'});
-  addBatch(group,'clear-glass-chimney',chimneyMaterial,[{geometry:lathe(chimney,segments)}],{castShadow:false});
+  addBatch(group,'clear-glass-chimney',chimneyMaterial,lamp,{castShadow:false});
   const rimMaterial = glass(0xe2e8e8,{roughness:.03,clearcoatRoughness:0,envMapIntensity:1,key:'shelf-glass-rim'});
-  addBatch(group,'rolled-glass-rim',rimMaterial,[{geometry:new THREE.TorusGeometry(28.7,.9,6,segments),
-    position:[0,249,0],rotation:[Math.PI / 2,0,0]}],{castShadow:false});
+  addBatch(group,'rolled-glass-rim',rimMaterial,lamp,{castShadow:false});
   // A second transmissive volume inside the chimney samples Three's same
   // opaque buffer, which erases the coloured bulb. Composite its thin amber
   // coating after the refractive chimney instead; the front wall keeps real
@@ -165,19 +131,10 @@ function lantern(group,quality,segments) {
   const amber = new THREE.MeshPhysicalMaterial({color:0xc48330,roughness:.095,metalness:0,
     transparent:true,opacity:.3,transmission:0,depthWrite:false,side:THREE.FrontSide,
     clearcoat:.8,clearcoatRoughness:.08,ior:1.46,envMapIntensity:.6});
-  const bulb = addBatch(group,'amber-candle-led-bulb',amber,[{geometry:lathe([
-    [0,105],[9,105],[12,109],[15.5,122],[17,135],[15.7,149],[12.5,166],
-    [8,180],[3.5,188],[0,191]
-  ],48)}],{castShadow:false});
+  const bulb = addBatch(group,'amber-candle-led-bulb',amber,lamp,{castShadow:false});
   bulb.renderOrder = 2;
   const support = new THREE.MeshBasicMaterial({color:0x514b39,toneMapped:true});
-  const supportParts = [{geometry:new THREE.CylinderGeometry(.55,.55,57,6),position:[0,138,0]}];
-  for (let index = 0; index < 4; index++) {
-    const angle = index / 4 * Math.PI * 2 + Math.PI / 8;
-    supportParts.push({geometry:tube([[0,109,0],[Math.cos(angle) * 7,114,Math.sin(angle) * 7],
-      [Math.cos(angle) * 7,161,Math.sin(angle) * 7],[0,163,0]],.3,16,4)});
-  }
-  addBatch(group,'led-filament-support',support,supportParts,{castShadow:false});
+  addBatch(group,'led-filament-support',support,lamp,{castShadow:false});
   const filament = new THREE.MeshStandardMaterial({color:0x71501f,roughness:.78,
     emissive:0xffd6a2,emissiveIntensity:4.5,toneMapped:true});
   // The scene's filament surfaces illuminate the room. They must not
@@ -198,63 +155,17 @@ function lantern(group,quality,segments) {
       reflectedLight.directSpecular = vec3(0.0);`);
   };
   filament.customProgramCacheKey = () => 'shelf-phosphor-filament-core';
-  const filaments = [], emitters = [];
-  for (let index = 0; index < 4; index++) {
-    const angle = index / 4 * Math.PI * 2 + Math.PI / 8;
-    const path = [[Math.cos(angle) * 7,116,Math.sin(angle) * 7],
-      [Math.cos(angle) * 7.8,140,Math.sin(angle) * 7.8],[Math.cos(angle) * 6.8,161,Math.sin(angle) * 6.8]];
-    filaments.push({geometry:tube(path,1.05,16,6)});
-    emitters.push({ start:path[0], end:path[2], width:2.1,
-      normal:[Math.cos(angle),0,Math.sin(angle)] });
-  }
-  addBatch(group,'glowing-retro-led-filaments',filament,filaments,{castShadow:false});
+  addBatch(group,'glowing-retro-led-filaments',filament,lamp,{castShadow:false});
   const cord = new THREE.MeshStandardMaterial({color:0x242626,roughness:.97});
-  addBatch(group,'black-braided-power-cord',cord,[{geometry:tube([[0,10,-68],[0,7,-71],
-    [5,3,-73],[12,1.8,-73.1],[20,1.8,-71]],1.4,24)}]);
-  // These emitting strips occupy the actual phosphor tubes. Their length
-  // supplies continuous illumination and elongated specular reflections,
-  // rather than a bright point floating in the empty centre of the bulb.
-  return {position:[0,143,0],colour:0xffc889,range:700,intensity:196000,filaments:emitters};
+  addBatch(group,'black-braided-power-cord',cord,lamp);
 }
 
-function tripod(group,quality,segments) {
+function tripod(group,quality,lamp) {
   const wood = materialWithSurface('wood',quality,{color:0xffffff,metalness:0,roughness:1,
     clearcoat:.12,clearcoatRoughness:.65});
-  const legParts = [];
-  for (let index = 0; index < 3; index++) {
-    const angle = index / 3 * Math.PI * 2 + Math.PI / 6;
-    const foot = new THREE.Vector3(Math.cos(angle) * 66,4,Math.sin(angle) * 66);
-    const shoulder = new THREE.Vector3(Math.cos(angle) * 22,177,Math.sin(angle) * 22);
-    const geometry = new RoundedBoxGeometry(13,foot.distanceTo(shoulder),9,2,1.1);
-    const orientation = new THREE.Quaternion().setFromUnitVectors(UP,shoulder.clone().sub(foot).normalize());
-    // Width runs tangentially, so each leg reads as a flat plank, as in the photo.
-    orientation.multiply(new THREE.Quaternion().setFromAxisAngle(UP,-angle));
-    geometry.applyQuaternion(orientation); geometry.translate(...foot.clone().add(shoulder).multiplyScalar(.5).toArray());
-    legParts.push({geometry});
-  }
-  legParts.push({geometry:new RoundedBoxGeometry(36,12,36,2,2),position:[0,167,0]});
-  const feet = addBatch(group,'lamp-base',wood,legParts);
-  feet.geometry.computeBoundingBox();
-  // Trim the tiny rounded toe below the support plane, avoiding a floating
-  // lamp or legs that protrude through the thin BAGGEBO mesh shelf.
-  const vertices = feet.geometry.attributes.position;
-  for (let index = 0; index < vertices.count; index++)
-    if (vertices.getY(index) < 0) vertices.setY(index,0);
-  vertices.needsUpdate = true; feet.geometry.computeVertexNormals();
-  feet.geometry.computeBoundingBox();
-  feet.geometry.translate(0,-feet.geometry.boundingBox.min.y,0);
+  addBatch(group,'lamp-base',wood,lamp);
   const fitting = new THREE.MeshStandardMaterial({color:0xd2c9b8,metalness:.65,roughness:.39});
-  const fittingParts = [
-    {geometry:new THREE.CylinderGeometry(8,8,27,20),position:[0,182,0]},
-    {geometry:new THREE.TorusGeometry(87.8,.9,6,segments),position:[0,175,0],rotation:[Math.PI / 2,0,0]},
-    {geometry:new THREE.TorusGeometry(87.8,.9,6,segments),position:[0,279,0],rotation:[Math.PI / 2,0,0]}
-  ];
-  for (let index = 0; index < 3; index++) {
-    const angle = index / 3 * Math.PI * 2;
-    fittingParts.push({geometry:tube([[0,193,0],[Math.cos(angle) * 40,185,Math.sin(angle) * 40],
-      [Math.cos(angle) * 87,177,Math.sin(angle) * 87]],.55,12,4)});
-  }
-  addBatch(group,'shade-support-and-rims',fitting,fittingParts);
+  addBatch(group,'shade-support-and-rims',fitting,lamp);
   const linen = materialWithSurface('linen',quality,{color:0xffffff,roughness:1,metalness:0,
     side:THREE.DoubleSide,emissive:0xffc982,emissiveIntensity:1});
   linen.emissiveMap = linen.map;
@@ -265,31 +176,15 @@ function tripod(group,quality,segments) {
       totalEmissiveRadiance *= .28 + .72 * clothBounce;`);
   };
   linen.customProgramCacheKey = () => 'shelf-linen-warm-centre';
-  addBatch(group,'woven-linen-drum-shade',linen,[{geometry:new THREE.CylinderGeometry(90,90,105,segments,1,true),
-    position:[0,227.5,0]}]);
+  addBatch(group,'woven-linen-drum-shade',linen,lamp);
   const binding = new THREE.MeshStandardMaterial({color:0xded4bf,roughness:.92,
     emissive:0xffd7ac,emissiveIntensity:.12});
-  addBatch(group,'linen-bound-shade-edges',binding,[
-    {geometry:lathe([[88.6,175],[90,175],[90,177],[88.6,177],[88.6,175]],segments)},
-    {geometry:lathe([[88.6,278],[90,278],[90,280],[88.6,280],[88.6,278]],segments)},
-    {geometry:new THREE.CylinderGeometry(87.8,87.8,.5,segments,1,true),position:[0,228,0]}
-  ]);
+  addBatch(group,'linen-bound-shade-edges',binding,lamp);
   const bulb = new THREE.MeshStandardMaterial({color:0xffead2,roughness:.55,
     emissive:0xffd39b,emissiveIntensity:1.8});
-  addBatch(group,'warm-shaded-led-bulb',bulb,[{geometry:lathe([
-    [0,195],[7,195],[7,201],[13,205],[19,215],[21,227],[17,239],[9,246],[0,249]
-  ],32)}],{castShadow:false});
+  addBatch(group,'warm-shaded-led-bulb',bulb,lamp,{castShadow:false});
   const cable = new THREE.MeshStandardMaterial({color:0xe3ddce,roughness:.83});
-  const cord = addBatch(group,'ivory-fabric-power-cord',cable,[{geometry:tube([[0,170,0],[0,150,-6],
-    [8,91,-27],[13,56,-37],[15,34,-48],[21,13,-55],[32,1.4,-53],[44,1.4,-45]],1.1,48)}]);
-  cord.geometry.computeBoundingBox();
-  if (cord.geometry.boundingBox.min.y < 0) cord.geometry.translate(0,.2 - cord.geometry.boundingBox.min.y,0);
-  // Approximate the shade's lower aperture with a virtual downward emitter
-  // below the opaque central support. Putting it at the physical bulb made
-  // the support shadow extinguish the centre of the entire light pool.
-  // The three legs still cast their proper shadows around the warm pool.
-  return {position:[0,158,0],colour:0xffd4a5,range:750,intensity:281250,
-    direction:[0,-1,0],angle:Math.PI * .43,penumbra:.75};
+  addBatch(group,'ivory-fabric-power-cord',cable,lamp);
 }
 
 /**
@@ -305,37 +200,32 @@ export function createShelfLamp({lampId='tarnaby',width=null,height=null,quality
   const heightScale = Number.isFinite(height) && height > 0 ? height / native.height : Infinity;
   const scale = Math.min(widthScale,heightScale);
   const group = new THREE.Group(); group.name = `shelf-lamp-${lamp.id}`;
-  const segments = quality === 'low' ? 40 : 72;
+  const kind = lamp.id === 'mittled' ? 0 : lamp.id === 'tripod' ? 1 : 2;
+  const geometry = lampGeometry(kind,quality === 'low' ? 40 : 72,scale);
   const used = building = persist ? new Set() : null;
-  let emitter;
-  try { emitter = (lamp.id === 'mittled' ? puck : lamp.id === 'tripod' ? tripod : lantern)(group,quality,segments); }
+  try { (kind === 0 ? puck : kind === 1 ? tripod : lantern)(group,quality,geometry); }
   finally { building = null; }
   if (used?.size) { for (const key of used) shelfSurfaces.add(key); scheduleShelfBakeWrite(); }
-  // Bake the uniform fit into vertices. Emitter metadata is genuinely local
-  // to the returned root; localToWorld must not apply the size twice.
+  // The uniform fit is already in the vertices and in the emitter, which is genuinely local to the
+  // returned root: localToWorld must not apply the size twice.
   const fittedMaterials = new Set();
-  group.traverse(object => {
-    if (object.geometry) object.geometry.scale(scale,scale,scale);
-    if (object.material) fittedMaterials.add(object.material);
-  });
+  group.traverse(object => { if (object.material) fittedMaterials.add(object.material); });
   for (const material of fittedMaterials) {
     if (material.bumpScale) material.bumpScale *= scale;
     if (material.thickness) material.thickness *= scale;
     if (Number.isFinite(material.attenuationDistance)) material.attenuationDistance *= scale;
   }
-  const range = emitter.range * scale;
+  const emitter = geometry.emitter;
   group.userData = {
     lampId:lamp.id,mount:lamp.mount,width:native.width * scale,
     height:native.height * scale,depth:native.depth * scale,warmKelvin:lamp.warmKelvin,
-    lightEmitter:{ position:emitter.position.map(value => value * scale),color:emitter.colour,
-      ...(emitter.filaments ? { filaments:emitter.filaments.map(strip => ({
-        start:strip.start.map(value => value * scale), end:strip.end.map(value => value * scale),
-        width:strip.width * scale, normal:strip.normal })) } : {}),
-      // World units are millimetres before fitting. Inverse-square lights
-      // need intensity to follow the same squared fit, preserving their
-      // irradiance on books and boards when the screen or zoom changes.
-      intensity:emitter.intensity * scale * scale,distance:range,decay:2,power:1,
-      ...(emitter.direction ? {direction:emitter.direction,angle:emitter.angle,penumbra:emitter.penumbra} : {}) }
+    // World units are millimetres before fitting. Inverse-square lights
+    // need intensity to follow the same squared fit, preserving their
+    // irradiance on books and boards when the screen or zoom changes.
+    lightEmitter:{ position:emitter.position,color:emitter.color,
+      ...(emitter.filaments ? { filaments:emitter.filaments } : {}),
+      intensity:emitter.intensity,distance:emitter.distance,decay:2,power:1,
+      ...(emitter.direction ? { direction:emitter.direction,angle:emitter.angle,penumbra:emitter.penumbra } : {}) }
   };
   // Store the original radiance once. Animation scales it absolutely rather
   // than multiplying the previous frame, and never allocates GPU resources.

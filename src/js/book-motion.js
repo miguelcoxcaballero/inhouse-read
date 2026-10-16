@@ -1,36 +1,17 @@
 import {createRustBookMotion} from './book-motion-wasm.js';
 
-export function sampleBookMotion(frames, progress) {
-  const times = frames.map((frame, i) => frame.offset ?? i / (frames.length - 1));
-  const t = Math.max(0, Math.min(1, progress));
-  let index = 0;
-  while (index < frames.length - 2 && t > times[index + 1]) index++;
-  const span = times[index + 1] - times[index], k = (t - times[index]) / span;
-  const k2 = k * k, k3 = k2 * k, pose = {};
-  for (const key of ['x', 'y', 'scale', 'angle', 'pitch', 'roll', 'coverOpen', 'bookmarkWithdraw', 'pageTheme']) {
-    // The page's stock/theme mix only moves when every frame says where it goes.
-    if (key === 'pageTheme' && frames.some(frame => frame.transform.pageTheme == null)) continue;
-    const value = i => frames[i].transform[key] ?? 0;
-    const tangent = i => {
-      if (i === 0 || i === frames.length - 1) return 0;
-      const dt0 = times[i] - times[i - 1], dt1 = times[i + 1] - times[i];
-      const a = (value(i) - value(i - 1)) / dt0, b = (value(i + 1) - value(i)) / dt1;
-      if (a * b <= 0) return 0;
-      const w0 = 2 * dt1 + dt0, w1 = dt1 + 2 * dt0;
-      return (w0 + w1) / (w0 / a + w1 / b);
-    };
-    pose[key] = (2 * k3 - 3 * k2 + 1) * value(index) + (k3 - 2 * k2 + k) * span * tangent(index)
-      + (-2 * k3 + 3 * k2) * value(index + 1) + (k3 - k2) * span * tangent(index + 1);
-  }
-  return pose;
+/** Monotone Hermite interpolation: continuous velocity, no unwanted overshoot when the
+ * book slows down, changes direction or returns to its shelf. The numbers come from the
+ * numeric core (rust-core/src/book_motion.rs); the original JavaScript sampler, frozen
+ * in tests/unit/helpers/reference-book-motion.js, is what the tests compare it with.
+ * Scheduling, poses and interruption stay in the renderer. */
+export function createBookMotionSampler(frames) {
+  const native = createRustBookMotion(frames);
+  if (!native) throw new RangeError('El movimiento del libro necesita entre 2 y 1024 fotogramas y el módulo numérico cargado.');
+  return native;
 }
 
-/** Prepared only for internally owned motion frames. Scheduling, poses and
- * interruption stay in the renderer; a failed kernel uses the original sampler. */
-export function createBookMotionSampler(frames) {
-  const native=createRustBookMotion(frames);
-  return {
-    sample:progress=>native?.sample(progress)??sampleBookMotion(frames,progress),
-    dispose:()=>native?.dispose()
-  };
+export function sampleBookMotion(frames, progress) {
+  const sampler = createBookMotionSampler(frames);
+  try { return sampler.sample(progress); } finally { sampler.dispose(); }
 }

@@ -2,7 +2,7 @@
 //! and where it lives) followed by the typed data, `[u32 header length][header][padding][data]`. The host
 //! copies the arrays out of it into three's attributes.
 use crate::mesh_compact::{Attr, Packed};
-use crate::three_geo::needs_uint32;
+use crate::three_geo::{needs_uint32, Geo};
 
 /// Number as JSON text: the shortest digits that read back as the same f64.
 pub fn num(v: f64) -> String { format!("{v}") }
@@ -32,6 +32,29 @@ impl Packet {
         let wide = needs_uint32(&packed.index);
         if wide { for v in &packed.index { self.blob.extend(v.to_le_bytes()); } } else { for v in &packed.index { self.blob.extend((*v as u16).to_le_bytes()); } }
         self.json.push_str(&format!("],\"index\":[\"{}\",{at},{}]", if wide { "u32" } else { "u16" }, packed.index.len()));
+    }
+    /// One geometry as three built it: Float32 attributes in `order` (`position`, `normal`, `uv`, `color`) and
+    /// its index, or `"index":null` when it has none.
+    pub fn plain(&mut self, geo: &Geo, order: &[&str]) {
+        self.json.push_str("\"attributes\":[");
+        for (k, &name) in order.iter().enumerate() {
+            let (size, data) = match name { "position" => (3, &geo.position), "normal" => (3, &geo.normal), "uv" => (2, &geo.uv), _ => (3, &geo.color) };
+            self.align();
+            let at = self.blob.len();
+            for v in data { self.blob.extend(v.to_le_bytes()); }
+            if k > 0 { self.json.push(','); }
+            self.json.push_str(&format!("[\"{name}\",{size},\"f32\",{at},{}]", data.len()));
+        }
+        match &geo.index {
+            None => self.json.push_str("],\"index\":null"),
+            Some(index) => {
+                self.align();
+                let at = self.blob.len();
+                let wide = needs_uint32(index);
+                if wide { for v in index { self.blob.extend(v.to_le_bytes()); } } else { for v in index { self.blob.extend((*v as u16).to_le_bytes()); } }
+                self.json.push_str(&format!("],\"index\":[\"{}\",{at},{}]", if wide { "u32" } else { "u16" }, index.len()));
+            }
+        }
     }
     pub fn seal(self) -> Vec<u8> {
         let mut out = Vec::with_capacity(self.json.len() + self.blob.len() + 8);

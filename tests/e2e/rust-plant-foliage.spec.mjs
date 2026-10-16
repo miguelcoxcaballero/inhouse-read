@@ -3,6 +3,7 @@ import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
 import {loadRustDecorCore} from '/inhouse-read/src/js/rust-decor-core.js';
+import {loadRustShelf} from '/inhouse-read/src/js/rust-shelf.js';
 import {rustPlantFoliageRows} from '/inhouse-read/src/js/plant-foliage-wasm.js';
 import {createShelfPlant,plantSurfacesReady} from '/inhouse-read/src/js/shelf-plants.js';
 import {botanicalTextures} from '/inhouse-read/tests/unit/helpers/reference-plant-foliage.js';
@@ -19,6 +20,8 @@ window.verifyFoliage=(kind,w,h,row,count,cfg,pigment,data)=>{
  if(pigment.some((v,i)=>v!==p[i])||data.some((v,i)=>v!==d[i]))throw Error('Actual final foliage differs');
 };
 const core=await loadRustDecorCore();if(!core?.plant_foliage_rows)throw Error('Compiled foliage required');
+// The plants' geometry is the shelf module's: the live shelf awaits it before its first render, so does this page.
+if(!await loadRustShelf())throw Error('Rust shelf module required');
 window.checkFoliage=async()=>{
  const models=[];
  for(const [catalogId,potId] of [['monstera','muskot'],['hedera','muskot'],['succulent','muskotblomma'],['sansevieria','gradvis']])models.push(createShelfPlant({catalogId,potId,seed:'foliage-'+catalogId,height:240,inspectionResolution:1}));
@@ -64,6 +67,7 @@ test('actual foliage materials use bounded Rust rows with identical final materi
  });
  await page.setViewportSize({width:390,height:844});const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
  await page.goto(url);await page.waitForFunction(()=>window.checkFoliage);const result=await page.evaluate(()=>window.checkFoliage());
- expect(result.actualCalls).toBeGreaterThanOrEqual(128);expect(result.memory.verified).toBe(result.actualCalls);expect(result.memory.mismatches).toBe(0);expect(result.memory.live).toBe(0);expect(result.memory.maxRows).toBe(4);expect(result.memory.kinds.sort()).toEqual([0,1,2,3]);
+// 128: the decor catalogue's fixed arena (decor-catalogue.js) stays allocated for the whole page.
+ expect(result.actualCalls).toBeGreaterThanOrEqual(128);expect(result.memory.verified).toBe(result.actualCalls);expect(result.memory.mismatches).toBe(0);expect(result.memory.live).toBe(128);expect(result.memory.maxRows).toBe(4);expect(result.memory.kinds.sort()).toEqual([0,1,2,3]);
  await info.attach('actual-pot-foliage-and-timing',{body:JSON.stringify(result),contentType:'application/json'});console.log(JSON.stringify(result.samples.map(({times,...entry})=>entry)));
 });

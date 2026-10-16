@@ -1,3 +1,159 @@
+# 1.7.249 — geometría 3D: plantas, lámparas y la decisión de sus luces en Rust
+
+Changelog: «Plantas, lámparas y su luz en Rust; sin gemelos JS».
+Unidad geometry-3d. La planta completa (maceta, follaje, tierra, fusión por material, ajuste al hueco y registro
+«bake» de la escena) la dibuja ahora el módulo `shelf` de `rust-ui` (`plant_parts.rs`, `plant_model.rs`) sobre las
+primitivas three.js ya escritas operación por operación (`three_geo.rs`, `three_shape.rs`) más las nuevas
+(`three_curve.rs`: `CatmullRomCurve3`, `TubeGeometry` y marcos de Frenet; `three_math.rs`: vectores, cuaterniones,
+Euler y color; torus, esfera, icosaedro y lathe en `three_geo.rs`). `shelf-plants.js` solo conserva los materiales,
+las texturas (clones, calidad, color de maceta) y la construcción de objetos a partir del registro, tanto de una planta
+nueva como de una guardada. La geometría de las tres lámparas (disco MITTLED, trípode, farol; `lamp_model.rs`) y su
+emisor de luz también llegan como paquete (`geo-packet.js` lo abre). Se eliminan del núcleo decor los seis kernels de
+geometría de planta (`plant_leaf`, `plant_cactus`, `plant_ivy`, `plant_monstera`, `plant_pot`, `plant_subdivide`), sus seis
+puentes JS (`plant-*-wasm.js`), `benchmark-plant-geometry.mjs` y `tests/helpers/candidate-shelf-plants.js`; el núcleo
+decor pasa de 150.068 a 117.167 bytes. La versión del «bake» guardado (`scripts/shelf-bake-version.mjs`) ahora incluye los
+fuentes Rust del generador (no los bytes del wasm, que wasm-bindgen no produce de forma determinista).
+La decisión de las luces de las lámparas (`lamp_light.rs`, `shelf-lamp-lighting.js`): cuántas luces recibe cada tipo de
+lámpara, qué lámparas están encendidas (la que se arrastra, luego las que ya lo estaban, luego las más cercanas al centro de
+la vista, con el orden de claves del idioma como desempate), qué hueco de luz toma cada una, y todos los números con
+que se orienta cada luz (posición, color con su tinte, intensidad, alcance, cono y cámara de sombra, tiras de los filamentos,
+uniformidad de la transformación de la sala). La escena three.js, los sellos de cambio y el orden de las llamadas siguen
+en JS. El original JS congelado queda en `tests/unit/helpers/reference-shelf-*.js`. Tests unitarios nuevos:
+three-curve-wasm, lamp-geometry-wasm, plant-parts-wasm, plant-model-wasm y lamp-lighting-wasm (9: 400 salas con más de
+17.000 fotogramas y 4,6 millones de datos comparados bit a bit, más cupo, transformación de sala, buffers inválidos y
+fugas); el fixture de rust-plant-preview carga ahora el módulo shelf (la geometría de las plantas es suya); E2E nuevos: rust-plant-model, rust-lamp-geometry, rust-lamp-lighting (Chromium real). Se eliminan los tests
+unitarios y E2E de los seis kernels (el tema pasa a pruebas diferenciales contra el original congelado).
+Verificado aquí (Linux, Chromium/SwiftShader): build:rust y build; 4 bloques de tests unitarios (1760+1345+1371+1741 = 6217
+tests, 122+122+122+120 archivos), todos verdes; E2E que pasan: rust-plant-model, rust-lamp-geometry, rust-lamp-lighting,
+lamp-switches (2), shelf-light-effect, lamp-catalog (3), book-finish-lighting, shelf-types (2), rust-baggebo,
+rust-timber, rust-shelf-occlusion, rust-shelf-occlusion-production (2), rust-lamp-surface, rust-plant-preview, y
+plant-catalog (8; una vez falló «un gesto táctil desde las hojas…» mientras yo compilaba en la misma máquina y pasa sola
+en 46 s). Comparación visual contra un build de main 1.7.246 (estados 01, 02, 08, 10a, 13, 15): 4 idénticos bit a bit y 2
+con diferencia máxima de 1/255 en el texto de los lomos (08, 13); PASS; los cuatro estados con lámpara encendida son
+idénticos.
+Mediciones (CPU 4x más lenta, medianas alternando; no son promesas de velocidad): planta completa
+(monstera / sansevieria / chamaedorea / nephrolepis / hedera / zamioculcas / succulent / cactus), JS frente a Rust: 40,5 / 17,6 /
+40,7 / 85,5 / 68,1 / 29,0 / 20,3 / 36,7 ms frente a 19,2 / 11,1 / 21,5 / 45,4 / 33,7 / 18,2 / 12,6 / 15,8 ms, primera planta
+247 ms frente a 130 ms; lámparas (disco / farol / trípode): 3,4 / 22,0 / 23,9 ms frente a 2,0 / 9,5 / 9,1 ms; la
+decisión y orientación de las luces de una sala con 14 lámparas NO es más rápida: 0,110 ms por fotograma en JS frente a
+0,132 ms en Rust (el paso de datos cuesta más que las cuentas). Tamaño: módulo shelf 342.953 -> 505.073 bytes; decor
+150.068 -> 117.167; núcleo app 509.768 sin cambio (todo 1.7.246 -> ahora: shelf 180.836 -> 505.073, decor 149.481 ->
+117.167, núcleo 500.440 -> 509.768). Arranque (banco de arranque, 6 libros, 3 ejecuciones alternas cada uno, máquina
+compartida): primera escena 4743 ms (main 1.7.246) frente a 4487 ms (esta versión), rangos 4140–4765 y 4208–4706, dentro del
+ruido; DOMContentLoaded 426 ms frente a 496 ms (rangos 425–437 y 464–539, no se solapan: unos 40–100 ms más tarde),
+primer lomo en el DOM 11.872 ms frente a 11.185 ms (rangos solapados). Límites: fallan igual en main
+(comprobado en un build de origen/main 1.7.246) rust-plant-glaze, rust-plant-pottery, rust-plant-soil, rust-plant-foliage
+(cuentan como fuga el arenero fijo de 128 bytes de decor-catalogue.js) y bookshelf-resource-reuse «el lector no repinta
+la estantería oculta al cambiar su viewport» (la página PDF no llega a ajustar su ancho al nuevo viewport antes de que venza el tiempo). Los dos
+fallos conocidos del cierre en GL por software no se tocaron ni se ejecutaron. Las claves de las lámparas se comparan
+con `localeCompare` en JS (depende del idioma del dispositivo) y solo se recalculan cuando cambia el conjunto de lámparas;
+claves NaN y coordenadas infinitas en los rectángulos (el comparador original deja de ser un orden total) no están
+cubiertas: ninguna aparece en la app; dos entradas con el mismo objeto y las lámparas aún sin modelo sí lo están. `emitter.color` debe ser un número, como lo produce el
+módulo. Tras un error en un fotograma (claves repetidas), el original y el nuevo lanzan el mismo TypeError; con claves
+únicas ninguno falla.
+Comprobación independiente antes de publicar (rama final, ya mezclada con la 1.7.248): tres revisores de
+solo lectura (plantas, lámparas y su luz, ciclo de vida y cobertura) no hallaron ninguna divergencia de
+comportamiento en la geometría de las plantas (conteo y orden de las extracciones del generador aleatorio por
+variante, orden de los almacenamientos f32, funciones trascendentes siempre por `js_sys::Math`, y los
+internos de three 0.180 contrastados uno a uno) ni en la geometría y la luz de las lámparas; la corrección
+de 1.7.247 del pintado fino fallido sigue intacta. Observaciones corregidas aquí: cuatro fixtures E2E
+(rust-plant-foliage, glaze, pottery y soil) construían plantas sin cargar el módulo shelf y fallaban antes de sus
+comprobaciones (ahora lo cargan y cuentan el arenero fijo de 128 B del catálogo decor); las pruebas de «sin
+fugas» de plantas y lámparas solo miraban asas de JS y ahora comprueban también que la memoria lineal de WASM
+no crece tras calentar; se borró el ayudante huérfano tests/helpers/plant-geometry-benchmark.mjs y las
+exportaciones muertas de plant-leaf-cases.mjs; plant-catalog-models comprueba que el torno de la maceta
+acanalada tiene 96 segmentos. Tras mezclar con la 1.7.248: build:rust y build; 4 bloques de tests unitarios
+(1766+1347+1377+1765 = 6255, todos verdes) y los tests tocados de nuevo (159, verdes). E2E en la rama mezclada:
+de 52 pruebas, 41 pasan en la primera ejecución con la caja a carga ~14 por otros procesos y 11 fallan; repetidas
+a solas con prioridad alta pasan las cuatro rust-plant-* corregidas, los dos libros móviles de book-opening y
+cinco de las seis de plant-catalog (la sexta, «una planta cae como modelo 3D en la papelera…», pasó a solas en 39 s
+después de fallar dos veces con la caja cargada, igual que en la 1.7.247). No se repitió la comparación visual
+sobre el árbol mezclado: la del agente (contra main 1.7.246, antes de mezclar: 4 de 6 escenas idénticas y 2 a
+±1/255, solo texto de lomos) y la de la 1.7.248 (26 escenas, 17 idénticas y el resto a ±1/255) no cubren el
+árbol final de plantas y lámparas; queda pendiente para quien continúe (tools/visual-harness).
+Inventario 24758 Rust/24933 JS = 49,82 % (la rama sola, antes de mezclar la 1.7.248: 23740/25382 = 48,33 %; main 1.7.248: 22958/25963 = 46,93 %); no es porcentaje funcional.
+
+# 1.7.248 — modelo del libro: geometría, texturas y vista en Rust
+
+Changelog: «Libro 3D: geometría, texturas y vista en Rust».
+Unidad book-model (`src/js/book-model.js` y sus puentes). Pasa a Rust, con las mismas cifras y las
+mismas llamadas que antes:
+- Núcleo (`rust-core`): `book_view.rs` (tamaños del lienzo y de las ventanas compactas, ventana del
+  fotograma de vuelta con la reserva que fija un vuelo, rectángulo copiado a la instantánea,
+  colocación y rotación del modelo con su tema de página, límites proyectados de página y tapas,
+  pose del zoom a la página, pose de lectura con el libro abierto, ajuste de imagen); `book_motion.rs`
+  (muestreador monótono total y el reloj en tiempo real: paso máximo entre 48 y 100 ms según la duración, 48 ms el primero, sin
+  tocar ningún tiempo); `bookmark.rs`, `page_mesh.rs`, `binding.rs` y `book_surface.rs` calculan ahora
+  también sus coeficientes (cinta, bloque de páginas, hojas leídas, lomo, tejido) y no solo la malla.
+- `host_math.rs` + `src/js/host-math.js`: el núcleo no calcula seno, coseno, potencia ni hipotenusa
+  (el último bit lo decide el motor de la página: V8 de Chrome y el de Node no coinciden siempre); los
+  pide como tripletas (operación, a, b) y el anfitrión responde con su propio `Math`. Las pruebas
+  lo demuestran con un `Math` alterado en las últimas cifras: original y núcleo siguen iguales.
+- Módulo `shelf` (`rust-ui/src/book_paint.rs`, 132 844 B; antes 117 972): atlas de cantos de página,
+  guarda, páginas de la miniatura, acabado de tapa (junta, bordes, roces, esquinas) y rotulado de la
+  tapa de tela (marco ciego, título en hasta seis líneas, filete, autor, dispositivo). Dibuja en el
+  contexto 2D que recibe con las mismas llamadas, en el mismo orden y con los mismos números.
+- JS que desaparece de `book-model.js` (2500 → 1991 líneas): las copias JS de `pageBlockGeometry`,
+  `leafStackGeometry`, `bindingGeometry`, `bookmarkGeometry`, de las normales de tela y papel y de la
+  muesca de la cinta, el muestreador JS de poses, la aritmética de `bookView` y los pintores de lienzo.
+  Los originales congelados están en `tests/unit/helpers/reference-*.js` (nuevos: `reference-book-view.js`,
+  `reference-book-paint.js`; `reference-book-motion.js` suma el reloj) y las pruebas diferenciales los
+  comparan. Se pueden borrar las copias porque `book-model.js` importa `catalogue-core.js`, que espera
+  al núcleo antes de evaluarse, y la estantería solo se pinta tras `requireRustCore()` y
+  `requireRustShelf()` (app.js): un núcleo que no carga ya es el error claro de siempre.
+Verificado en este equipo (Linux, Rust 1.99.0, Chromium/SwiftShader): 6268 unitarias en 489 archivos y
+4 bloques (1717+1360+1396+1795), todas aprobadas; nuevas: `book-view-wasm` (13: 100 000 vistas, 300 000
+ventanas de vuelta y de copia, 200 000 poses, 5000 escenas con objetos Three reales), `book-paint-wasm`
+(15: registro de cada llamada al lienzo, incluidos títulos con espacios dobles, sustitutos sueltos y
+métricas distintas), 5 de reloj/movimiento total, 3 de `Math` alterado (cinta, páginas, lomo) y un corpus
+aleatorio de 4000 cintas. E2E sin reintentos, también sobre el árbol ya mezclado con la 1.7.247: book-opening 10/10, book-page-theme 9/9, book-open-prepared
+9/9, book-finish-lighting 1/1, book-surface-reflections 1/1, book-closed-print 1/1, cover-relief 6/6,
+rust-book-projection 1/1, rust-book-motion 1/1, rust-page-mesh-core 8/8, rust-binding-core 8/8. Capturas
+de las baldas (01, 02, 08, 10a, 13, 15, móvil) contra un build de main 1.7.245, antes de mezclar la 1.7.247
+(después no se repitió: no hay build de la 1.7.247 para comparar): 3 idénticas bit a bit y 3 con diferencia
+máxima 1/255 (ruido del arnés). `rust-book-surfaces` falla también en main 1.7.245 en su
+primera aserción (queda un arenero de 128 B vivo del catálogo); con una copia temporal tolerante a esos
+128 B pasan todas las demás (píxeles, texturas compartidas, tejido, memoria retenida); la aserción de
+memoria retenida se actualiza a 18 016 B de cinta + 2432 B del arenero de la vista.
+Comprobación independiente antes de publicar (sobre la rama final, con el árbol mezclado con la 1.7.247):
+tres revisores de solo lectura (equivalencia numérica, orden y resultado de la pintura, ciclo de vida y
+cobertura) no hallaron ningún fallo grave: la numérica no encontró diferencias (ninguna llamada
+trascendente de Rust queda en las rutas del libro; todo pasa por `host_math`; reloj y límite de 100 ms por
+fotograma idénticos); la pintura coincide llamada a llamada con las referencias congeladas. Observaciones
+menores que se dejan anotadas, sin corregir: `book_paint.rs` (`draw` y `with_stops`) traga una excepción del
+anfitrión en vez de propagarla (hoy inalcanzable: `seededRandom` no lanza y las paradas de color son
+constantes); un lanzamiento de `bookView`/`createBookModel` en `openBook` o en `draw` de la escena no se
+captura en el llamador y dejaría `busy` activo o el fotograma abortado (inalcanzable mientras `app.js` espere
+a `requireRustShelf()`); `createRustBookMotion` y `withMesh` descartan la causa original; paintCloth y
+paintWeave siguen con respaldo JS silencioso (fuera de esta rama). Corregido aquí: los dos scripts de
+medición (`benchmark-binding-core`, `benchmark-page-mesh-core`) contaban núcleos que el anfitrión ya no
+llama, y `rust-book-surfaces` ahora cuenta el arenero fijo de 128 B del catálogo decor (comentado) y pasa
+con sus comprobaciones de memoria retenida.
+E2E en la rama final: de 83 pruebas, 73 pasan y 10 fallan en la primera ejecución con la caja cargada;
+`rust-page-mesh-core` (8) y `rust-book-projection` fallan solo por «WebSocket closed without opened» del
+servidor de Vite en la página de pruebas y pasan al repetirlas a solas; `rust-book-surfaces` falla por el
+arenero de 128 B (idéntico en main) y pasa con la contabilidad corregida. book-opening, book-page-theme,
+book-open-prepared, book-finish-lighting, book-surface-reflections, book-closed-print y rust-book-motion
+pasan; smoke pasa salvo el cierre del lector en GL por software ya documentado.
+Comparación visual contra un build de main 1.7.247 (el árbol mezclado, con el arnés de 34 estados; 26
+completan en ambos, las 8 de transición expiran por tiempo en los dos): 17 idénticos bit a bit y 8 dentro
+de ±1/255; la escena 05 (nogal de frente, 1280) salió distinta en la primera captura (media 0,360, máx. 186,
+solo el texto de cuatro lomos) y al recapturarla dos veces por build quedó en ±1/255 entre main y esta rama
+y entre repeticiones del mismo build (captura bajo carga, no un cambio de pintura). Ruido del arnés medido
+con main contra sí mismo en 14 estados: 12 idénticos y 2 en ±1/255.
+Inventario 22958 Rust/25963 JS = 46,93 % (main 1.7.247: 21940/26412 = 45,38 %; 1.7.245, base de la unidad: 39,73 %);
+no es porcentaje funcional.
+Medición, sin CPU limitada y sin ganar velocidad: construir 24 modelos (mediana de 7 cargas alternas de
+página, main → este árbol): estantería en frío 203 → 235 ms y caliente 105 → 99 ms; detalle en frío
+179 → 187 y caliente 118 → 132 ms (más lento, unos 0,6 ms por modelo); miniatura 51 → 53 y 43,4 → 43,7 ms.
+Arranque en frío (banco de arranque, 30 libros, CPU x4, cinco pares alternos): primer fotograma de la
+escena 8,0/9,6/9,1 s en main y 8,4/9,6/10,0/7,5/4,6 s aquí; el tiempo total de script varió el doble
+entre ejecuciones del mismo árbol en este equipo compartido y no permite concluir nada más.
+Se queda en JS: objetos y materiales de Three, sombreadores, llamadas WebGL y DOM; el ciclo de vida de
+los reemplazos de aspecto y del relieve (promesas y contadores de revisión); `acquireCoverImage`
+(temporizador y carga de imagen); las reglas de validez del fotograma nativo (indicadores de objetos
+del anfitrión); `mixPaperTone` (conversión de color de Three). Sin prueba en móvil físico.
+
 # 1.7.247 — geometría 3D: carpintería, BAGGEBO y primeras texturas de plantas en Rust
 
 Changelog: «Armario y BAGGEBO en Rust; sin gemelos JS».

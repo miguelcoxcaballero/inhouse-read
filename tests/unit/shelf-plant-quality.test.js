@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import * as THREE from 'three';
 
+// A plant draws its geometry with the shelf module, which every fresh copy of the modules below must find loaded.
+vi.mock('../../src/js/rust-shelf.js', async () => (await import('./helpers/rust-shelf-real.js')).rustShelfMock());
+
 let createShelfPlant, jobs, models;
 const entry = { catalogId:'nephrolepis', potId:'muskot', height:130, seed:'quality-reuse' };
 const plant = (options = {}) => { const model = createShelfPlant({ ...entry, ...options }); models.push(model); return model; };

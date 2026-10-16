@@ -1,5 +1,7 @@
+import { resolveHostMath } from './host-math.js';
 // Fixed production rasters, unchanged dimensions and filtering. Each result
-// owns its bytes; one bounded arena is released before returning to Three.
+// owns its bytes; one bounded arena is released before returning to Three. The
+// threads' sines are asked of the core and answered with the engine's own Math.
 const available = (core, name) => typeof core?.[name] === 'function'
   && core.memory && typeof core.alloc_f64 === 'function' && typeof core.free_f64 === 'function';
 function raster(core, bytes, offset, generate) {
@@ -14,12 +16,12 @@ function raster(core, bytes, offset, generate) {
   finally { core.free_f64(pointer, count); }
 }
 export function rustBookSurfacePixels(core, kind) {
-  if (!available(core, 'book_surface_pixels') || !['cloth', 'paper'].includes(kind)) return null;
-  const fieldOffset = 8 * 8, outputOffset = fieldOffset + 128 * 128 * 4;
+  if (!available(core, 'book_surface_pixels') || !available(core, 'book_surface_plan') || !['cloth', 'paper'].includes(kind)) return null;
+  const askedOffset = 8 * 8, fieldOffset = askedOffset + 8 * 3 * 8, outputOffset = fieldOffset + 128 * 128 * 4;
   return raster(core, 128 * 128 * 4, outputOffset, pointer => {
-    const sine = new Float64Array(core.memory.buffer, pointer, 8);
-    for (let x = 0; x < 8; x++) sine[x] = Math.sin(Math.PI * ((x + .5) / 8));
-    return core.book_surface_pixels(kind === 'cloth' ? 0 : 1, pointer, pointer + fieldOffset, pointer + outputOffset);
+    const wanted = kind === 'cloth' ? 0 : 1;
+    resolveHostMath(core, pointer + askedOffset, pointer, core.book_surface_plan(wanted, pointer + askedOffset));
+    return core.book_surface_pixels(wanted, pointer, pointer + fieldOffset, pointer + outputOffset);
   });
 }
 export function rustRibbonNotchPixels(core, width = 16, height = 64) {
@@ -28,11 +30,10 @@ export function rustRibbonNotchPixels(core, width = 16, height = 64) {
 }
 
 export function rustBookWeavePixels(core) {
-  if (!available(core, 'book_weave_pixels')) return null;
-  const fieldOffset = 4 * 8, outputOffset = fieldOffset + 64 * 64 * 4;
+  if (!available(core, 'book_weave_pixels') || !available(core, 'book_weave_plan')) return null;
+  const askedOffset = 4 * 8, fieldOffset = askedOffset + 4 * 3 * 8, outputOffset = fieldOffset + 64 * 64 * 4;
   const data = raster(core, 128 * 128 * 8, outputOffset, pointer => {
-    const sine = new Float64Array(core.memory.buffer, pointer, 4);
-    for (let i = 0; i < 4; i++) sine[i] = Math.sin(Math.PI * (i * 2 + 1) / 8);
+    resolveHostMath(core, pointer + askedOffset, pointer, core.book_weave_plan(pointer + askedOffset));
     return core.book_weave_pixels(pointer, pointer + fieldOffset, pointer + outputOffset);
   });
   return data && { color:data.subarray(0, 65536), channels:data.subarray(65536) };
