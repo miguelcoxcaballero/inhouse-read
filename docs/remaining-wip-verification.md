@@ -40,6 +40,32 @@ máxima 1/255 (ruido del arnés). `rust-book-surfaces` falla también en main 1.
 primera aserción (queda un arenero de 128 B vivo del catálogo); con una copia temporal tolerante a esos
 128 B pasan todas las demás (píxeles, texturas compartidas, tejido, memoria retenida); la aserción de
 memoria retenida se actualiza a 18 016 B de cinta + 2432 B del arenero de la vista.
+Comprobación independiente antes de publicar (sobre la rama final, con el árbol mezclado con la 1.7.247):
+tres revisores de solo lectura (equivalencia numérica, orden y resultado de la pintura, ciclo de vida y
+cobertura) no hallaron ningún fallo grave: la numérica no encontró diferencias (ninguna llamada
+trascendente de Rust queda en las rutas del libro; todo pasa por `host_math`; reloj y límite de 100 ms por
+fotograma idénticos); la pintura coincide llamada a llamada con las referencias congeladas. Observaciones
+menores que se dejan anotadas, sin corregir: `book_paint.rs` (`draw` y `with_stops`) traga una excepción del
+anfitrión en vez de propagarla (hoy inalcanzable: `seededRandom` no lanza y las paradas de color son
+constantes); un lanzamiento de `bookView`/`createBookModel` en `openBook` o en `draw` de la escena no se
+captura en el llamador y dejaría `busy` activo o el fotograma abortado (inalcanzable mientras `app.js` espere
+a `requireRustShelf()`); `createRustBookMotion` y `withMesh` descartan la causa original; paintCloth y
+paintWeave siguen con respaldo JS silencioso (fuera de esta rama). Corregido aquí: los dos scripts de
+medición (`benchmark-binding-core`, `benchmark-page-mesh-core`) contaban núcleos que el anfitrión ya no
+llama, y `rust-book-surfaces` ahora cuenta el arenero fijo de 128 B del catálogo decor (comentado) y pasa
+con sus comprobaciones de memoria retenida.
+E2E en la rama final: de 83 pruebas, 73 pasan y 10 fallan en la primera ejecución con la caja cargada;
+`rust-page-mesh-core` (8) y `rust-book-projection` fallan solo por «WebSocket closed without opened» del
+servidor de Vite en la página de pruebas y pasan al repetirlas a solas; `rust-book-surfaces` falla por el
+arenero de 128 B (idéntico en main) y pasa con la contabilidad corregida. book-opening, book-page-theme,
+book-open-prepared, book-finish-lighting, book-surface-reflections, book-closed-print y rust-book-motion
+pasan; smoke pasa salvo el cierre del lector en GL por software ya documentado.
+Comparación visual contra un build de main 1.7.247 (el árbol mezclado, con el arnés de 34 estados; 26
+completan en ambos, las 8 de transición expiran por tiempo en los dos): 17 idénticos bit a bit y 8 dentro
+de ±1/255; la escena 05 (nogal de frente, 1280) salió distinta en la primera captura (media 0,360, máx. 186,
+solo el texto de cuatro lomos) y al recapturarla dos veces por build quedó en ±1/255 entre main y esta rama
+y entre repeticiones del mismo build (captura bajo carga, no un cambio de pintura). Ruido del arnés medido
+con main contra sí mismo en 14 estados: 12 idénticos y 2 en ±1/255.
 Inventario 22958 Rust/25963 JS = 46,93 % (main 1.7.247: 21940/26412 = 45,38 %; 1.7.245, base de la unidad: 39,73 %);
 no es porcentaje funcional.
 Medición, sin CPU limitada y sin ganar velocidad: construir 24 modelos (mediana de 7 cargas alternas de
