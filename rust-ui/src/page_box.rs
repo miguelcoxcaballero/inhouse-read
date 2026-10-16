@@ -12,7 +12,7 @@ use wasm_bindgen::prelude::*;
 use js_sys::{Array, Object, JSON};
 use crate::host::{get, jmax, jmin, method_opt, num, set, truthy};
 
-const KEY: &str = "inhouse-read-page-boxes-v3";
+const KEY: &str = "inhouse-read-page-boxes-v4";
 // Legacy budget used by callers to express the same available page height.
 const MINI_PLAYER_RESERVE: f64 = 52.0;
 // A change of free height beyond this is a real resize, not chrome.

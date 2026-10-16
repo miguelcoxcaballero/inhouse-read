@@ -16,7 +16,7 @@ sale de lo comprobado en esa sesión; lo que no se pudo comprobar está dicho.
 
 ## Estado
 
-- `main` está en **1.7.255**: **59,64 %** de Rust (31465 líneas de Rust, 21292 de JS).
+- `main` está en **1.7.256**: **59,64 %** de Rust (31465 líneas de Rust, 21292 de JS).
   Se mide con `git add -A -n . && node scripts/rust-migration-status.mjs`; es un recuento de líneas de
   `rust-core/src`, `rust-ui/src` y `src/js`, no mide funciones terminadas.
 - Evolución: 16,38 % (1.7.234) → 39,73 % (1.7.245) → 42,35 % (1.7.246 portadas) → 45,38 % (1.7.247 armario y
@@ -124,3 +124,8 @@ la batería general que continúa en /workspace/inhouse-read-speech-numbers, sin
 Primer shard 1800 pasa; timeout ya conocido de cover-relief-job-wasm en segundo shard.
 Después priorizar /workspace/inhouse-read-zoom-render (sin compilar/validar): scene_quality.rs,
 compilación paralela al sustituir calidad y agrupación de repintados. No declarar aceleración sin medir.
+
+1.7.256: parche urgente de márgenes del lector (EPUB4px, PDF4px, caché page-boxes-v4).
+25 pruebas específicas y seis E2E pasan. 1.7.255: batería general termina6397/6398,
+único fallo de tiempo conocido cover-relief200k, 498 archivos; dos E2E finales de voz pasan.
+Se retoma /workspace/inhouse-read-zoom-render para 1.7.257, aún sin compilar ni verificar.

@@ -1,3 +1,30 @@
+# 1.7.256 — lector con menos margen vertical
+
+Changelog: «Más espacio para el texto del lector».
+Parche rápido solicitado: margen interno vertical del EPUB 12 → 4 px y separación vertical exterior del PDF
+14/20 → 4 px. Se renueva exclusivamente la caché de cajas de página (v3 → v4), para que una altura
+antigua menor no siga dejando una franja vacía. No se elimina la caché anterior ni los libros, posiciones o
+preferencias. Tipografía, márgenes laterales, áreas seguras y tamaños táctiles se conservan; audio/retorno
+siguen compartiendo una fila fija para no cambiar las líneas al mostrar u ocultar controles.
+
+Build completo; 25 pruebas específicas pasan en tres archivos, incluidos 200 escenarios del lector congelado,
+6000 pasos de caché y una regresión de altura antigua. Las referencias JS congeladas no cambian; la expectativa
+se adapta únicamente al margen intencional de 4 px y al nombre de la caché. Seis comprobaciones E2E pasan:
+PDF compacto, EPUB móvil/escritorio, normalización del audiolibro, mapa/resaltado y la regresión de caché vieja.
+Las cinco primeras pasan juntas; la última pasa aislada tras corregir el acceso del test al iframe del
+paginador, cuyo shadow root es cerrado, sin relajar ninguna aserción. En 390×844 se midieron 704 px de página
+sobre 704 px disponibles, y exactamente 4 px de margen superior e inferior. Captura móvil inspeccionada.
+La corrección es localizada y urgente: no se repite toda la batería para estas dos constantes y el CSS.
+
+Se cierra además la verificación pendiente de 1.7.255: batería general en cuatro shards, 6397/6398 pruebas
+pasan en 498 archivos. El único fallo es el timeout conocido de cover-relief-job-wasm de 200000 colores,
+6571 ms frente al límite original de 5000 ms, reproducido también en la base y ajeno al audio. La nueva
+prueba de años históricos y límites de siglo (13 casos del archivo) pasa. Los dos E2E de normalización y
+mapa de voz pasan con el código final de audio, incluido en este binario. No se reducen corpus ni límites.
+
+Inventario 31465 Rust / 21292 JS, 59,64 %; recuento de líneas de producción, no funciones terminadas.
+Pendiente prioritario: optimizar zoom y repintado isométrico y continuar la migración completa.
+
 # 1.7.255 — años pronunciables y referencias de notas
 
 Changelog: «Años claros y referencias de notas omitidas».

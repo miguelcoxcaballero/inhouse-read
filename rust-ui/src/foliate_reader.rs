@@ -151,7 +151,7 @@ pub fn foliate_layout(s: &JsValue, announce: &Function) -> Result<(), JsValue> {
     let gap = gutter / (width + if scrolled { gutter } else { 0.0 }) * 100.0;
     let column = if wide { js_round(jmin(580.0, (width - 96.0) / 2.0)) } else { 720.0 };
     let fixed = js_sys::Number::from(gap).to_fixed(4)?.as_string().unwrap_or_default();
-    let attributes = [("flow", get(&preferences, "flow")), ("margin", "12px".into()), ("gap", format!("{fixed}%").into()),
+    let attributes = [("flow", get(&preferences, "flow")), ("margin", "4px".into()), ("gap", format!("{fixed}%").into()),
         ("max-inline-size", format!("{}px", number_string(column)).into()), ("max-block-size", format!("{}px", number_string(jmax(jmax(width, height), 1440.0))).into())];
     let mut changed = false;
     for (name, value) in &attributes {

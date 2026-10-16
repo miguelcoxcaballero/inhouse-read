@@ -141,7 +141,10 @@ it('behaves exactly like the original on two hundred scripted sessions', async (
     const flavour = flavours[seed % flavours.length]
     const expected = await run(ReferenceFoliateReader, 900 + seed, flavour)
     const actual = await run(FoliateReader, 900 + seed, flavour)
-    expect(actual).toEqual(expected)
+    // The intentional layout change is a 4px vertical gutter; all other
+    // attributes, call order, records and callbacks keep the frozen contract.
+    const compact = trace => trace.map(step => ({...step,log:step.log.map(row => row[0]==='attr'&&row[1]==='margin' ? [row[0],row[1],'4px'] : row)}))
+    expect(actual).toEqual(compact(expected))
     const last = expected.at(-2)
     seen.attributes += last.log.filter(([name]) => name === 'attr').length
     seen.turns += last.log.filter(([name, what]) => (name === 'next' || name === 'prev') && what === 'start').length
@@ -169,12 +172,12 @@ it('page box heights, remembered boxes and the search outline match the original
   for (let session = 0; session < 200; session++) {
     const a = memory(), b = memory(), mode = ['memory', 'none', 'throwing'][session % 3]
     const storageFor = which => mode === 'memory' ? which : mode === 'none' ? null : throwing
-    if (session % 5 === 0) for (const storage of [a, b]) storage.setItem('inhouse-read-page-boxes-v3', JSON.stringify([{ width:390, target:700, height:690 }, { bad:true }, null, { width:'x', target:1, height:2 }]))
+    if (session % 5 === 0) for (const [storage,key] of [[a,'inhouse-read-page-boxes-v3'],[b,'inhouse-read-page-boxes-v4']]) storage.setItem(key, JSON.stringify([{ width:390, target:700, height:690 }, { bad:true }, null, { width:'x', target:1, height:2 }]))
     for (let step = 0; step < 30; step++) {
       const input = { width:random() > .1 ? 300 + Math.floor(random() * 700) + (random() > .8 ? .4 : 0) : NaN, space:random() > .05 ? 200 + random() * 900 : NaN, free:random() * 1000 }
       const expected = referencePageHeight({ ...input, storage:storageFor(a) })
       const actual = rustUI.page_box_height(input.width, input.space, input.free, storageFor(b), undefined)
-      if (mode === 'memory') expect(b.getItem('inhouse-read-page-boxes-v3')).toBe(a.getItem('inhouse-read-page-boxes-v3'))
+      if (mode === 'memory') expect(b.getItem('inhouse-read-page-boxes-v4')).toBe(a.getItem('inhouse-read-page-boxes-v3'))
       expect(Object.is(actual, expected) || (Number.isNaN(actual) && Number.isNaN(expected))).toBe(true)
     }
   }

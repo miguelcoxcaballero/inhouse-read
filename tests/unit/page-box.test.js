@@ -32,6 +32,13 @@ describe('stable page box with a permanent shared accessory row',()=>{
   const storage=memory();storage.setItem('inhouse-read-page-boxes',JSON.stringify([{width:390,target:700,height:730}]))
   expect(height(storage,748)).toBe(696)
  })
+ it('ignores previously undersized v3 boxes while preserving the current book and preferences',()=>{
+  const storage=memory(),legacy=JSON.stringify([{width:390,target:696,height:640}])
+  storage.setItem('inhouse-read-page-boxes-v3',legacy)
+  expect(height(storage,748)).toBe(696)
+  expect(storage.getItem('inhouse-read-page-boxes-v3')).toBe(legacy)
+  expect(JSON.parse(storage.getItem('inhouse-read-page-boxes-v4'))[0].height).toBe(696)
+ })
  it('works without persistent storage and never overflows a tiny viewport',()=>{
   expect(height(null,748)).toBe(696)
   const denied={getItem(){throw Error('denied')},setItem(){throw Error('denied')}}
