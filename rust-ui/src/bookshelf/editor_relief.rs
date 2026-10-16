@@ -242,7 +242,7 @@ impl Editor{
   let input=El::new("input").attr("type","checkbox").attr("value",&text(&get(proposal,"id"))).class("ihr-relief__input").done();
   {
    let weak=self.weak();let proposal=proposal.clone();let node=input.clone();
-   let listener=crate::host::listen(&input,"change",None,false,move|_|live!(weak,e=>e.choose_relief(Some(&proposal),truthy(&get(&node,"checked")))))?;
+   let listener=listen(&input,"change",None,false,move|_|live!(weak,e=>e.choose_relief(Some(&proposal),truthy(&get(&node,"checked")))))?;
    self.cards_keep.borrow_mut().push(listener);
   }
   let color=text(&get(proposal,"color"));

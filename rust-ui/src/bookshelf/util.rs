@@ -149,35 +149,42 @@ impl El{
  pub fn children(self,nodes:&[JsValue])->El{for node in nodes{if !absent(node){append(&self.0,node);}}self}
  pub fn done(self)->JsValue{self.0}
 }
+/// One registered event listener, removed with the same arguments when dropped. Handlers are `Fn` (they keep
+/// their state in cells): a handler may be re-entered by an event it dispatches itself, as in the browser.
+pub struct Listener{target:JsValue,kind:&'static str,callback:Closure<dyn Fn(JsValue)>,capture:bool}
+impl Drop for Listener{fn drop(&mut self){
+ if let Some(remove)=get(&self.target,"removeEventListener").dyn_ref::<Function>(){
+  let _=if self.capture{remove.call3(&self.target,&s(self.kind),self.callback.as_ref(),&JsValue::TRUE)}else{remove.call2(&self.target,&s(self.kind),self.callback.as_ref())};
+ }
+}}
 /// Listeners owned by one view, removed when it goes away.
 pub type Keep=Rc<RefCell<Vec<Listener>>>;
 pub fn keep()->Keep{Rc::new(RefCell::new(Vec::new()))}
-pub use crate::host::Listener;
+/// Registers `handler` with the given options (`None`: none at all). An error of the handler is thrown out of
+/// the listener like an uncaught page error.
+pub fn listen(target:&JsValue,kind:&'static str,options:Option<&JsValue>,capture:bool,handler:impl Fn(JsValue)->R+'static)->R<Listener>{
+ let callback=Closure::wrap(Box::new(move|event:JsValue|{if let Err(error)=handler(event){wasm_bindgen::throw_val(error)}})as Box<dyn Fn(JsValue)>);
+ match options{
+  Some(options)=>{method(target,"addEventListener",&[&s(kind),callback.as_ref(),options])?;}
+  None=>{if capture{method(target,"addEventListener",&[&s(kind),callback.as_ref(),&JsValue::TRUE])?;}else{method(target,"addEventListener",&[&s(kind),callback.as_ref()])?;}}
+ }
+ Ok(Listener{target:target.clone(),kind,callback,capture})
+}
 /// `target.addEventListener(kind, handler)` (no options), owned by `keep`.
-pub fn on(keep:&Keep,target:&JsValue,kind:&'static str,handler:impl FnMut(JsValue)->R+'static)->R{
- let listener=crate::host::listen(target,kind,None,false,handler)?;keep.borrow_mut().push(listener);Ok(())
+pub fn on(keep:&Keep,target:&JsValue,kind:&'static str,handler:impl Fn(JsValue)->R+'static)->R{
+ let listener=listen(target,kind,None,false,handler)?;keep.borrow_mut().push(listener);Ok(())
 }
 /// `target.addEventListener(kind, handler, true)`.
-pub fn on_capture(keep:&Keep,target:&JsValue,kind:&'static str,handler:impl FnMut(JsValue)->R+'static)->R{
- let listener=crate::host::listen(target,kind,None,true,handler)?;keep.borrow_mut().push(listener);Ok(())
+pub fn on_capture(keep:&Keep,target:&JsValue,kind:&'static str,handler:impl Fn(JsValue)->R+'static)->R{
+ let listener=listen(target,kind,None,true,handler)?;keep.borrow_mut().push(listener);Ok(())
 }
 /// `target.addEventListener(kind, handler, { passive })`.
-pub fn on_passive(keep:&Keep,target:&JsValue,kind:&'static str,passive:bool,handler:impl FnMut(JsValue)->R+'static)->R{
- let listener=crate::host::listen(target,kind,Some(passive),false,handler)?;keep.borrow_mut().push(listener);Ok(())
+pub fn on_passive(keep:&Keep,target:&JsValue,kind:&'static str,passive:bool,handler:impl Fn(JsValue)->R+'static)->R{
+ let listener=listen(target,kind,Some(&obj(&[("passive",&b(passive))])),false,handler)?;keep.borrow_mut().push(listener);Ok(())
 }
-/// `target.addEventListener(kind, handler, { capture: true, passive: true })`, removed with `{ capture: true }`.
-pub struct CapturedListener{target:JsValue,kind:&'static str,callback:Closure<dyn FnMut(JsValue)>}
-impl Drop for CapturedListener{fn drop(&mut self){
- if let Some(remove)=get(&self.target,"removeEventListener").dyn_ref::<Function>(){
-  let options=obj(&[("capture",&JsValue::TRUE)]);
-  let _=remove.call3(&self.target,&s(self.kind),self.callback.as_ref(),&options);
- }
-}}
-pub fn on_capture_passive(target:&JsValue,kind:&'static str,mut handler:impl FnMut(JsValue)->R+'static)->R<CapturedListener>{
- let callback=Closure::wrap(Box::new(move|event:JsValue|{if let Err(error)=handler(event){wasm_bindgen::throw_val(error)}})as Box<dyn FnMut(JsValue)>);
- let options=obj(&[("capture",&JsValue::TRUE),("passive",&JsValue::TRUE)]);
- method(target,"addEventListener",&[&s(kind),callback.as_ref(),&options])?;
- Ok(CapturedListener{target:target.clone(),kind,callback})
+/// `target.addEventListener(kind, handler, { capture: true, passive: true })`.
+pub fn on_capture_passive(target:&JsValue,kind:&'static str,handler:impl Fn(JsValue)->R+'static)->R<Listener>{
+ listen(target,kind,Some(&obj(&[("capture",&JsValue::TRUE),("passive",&JsValue::TRUE)])),true,handler)
 }
 pub fn prevent_default(event:&JsValue){let _=method(event,"preventDefault",&[]);}
 pub fn stop_propagation(event:&JsValue){let _=method(event,"stopPropagation",&[]);}
@@ -234,9 +241,9 @@ pub fn idle(timeout:f64,fallback:f64,callback:impl FnOnce()->R+'static)->Timer{
  }else{Timer{id:js_set_timeout(function.unchecked_ref(),fallback),key}}
 }
 /// `setInterval(callback, delay)`; the closure lives until `clear_interval`.
-pub struct Interval{pub id:JsValue,callback:Closure<dyn FnMut()>}
-pub fn every(delay:f64,mut callback:impl FnMut()->R+'static)->Interval{
- let callback=Closure::wrap(Box::new(move||{if let Err(error)=callback(){wasm_bindgen::throw_val(error)}})as Box<dyn FnMut()>);
+pub struct Interval{pub id:JsValue,callback:Closure<dyn Fn()>}
+pub fn every(delay:f64,callback:impl Fn()->R+'static)->Interval{
+ let callback=Closure::wrap(Box::new(move||{if let Err(error)=callback(){wasm_bindgen::throw_val(error)}})as Box<dyn Fn()>);
  let id=js_set_interval(callback.as_ref().unchecked_ref(),delay);
  Interval{id,callback}
 }
@@ -279,11 +286,56 @@ pub fn deferred()->(JsValue,Function,Function){
  (promise.into(),resolve,reject)
 }
 /// A function value the host can call, backed by a closure that lives as long as the returned guard.
-pub struct Fun{pub function:JsValue,_closure:Closure<dyn FnMut(JsValue,JsValue)->JsValue>}
-pub fn fun(mut body:impl FnMut(JsValue,JsValue)->R<JsValue>+'static)->Fun{
- let closure=Closure::wrap(Box::new(move|a:JsValue,b:JsValue|match body(a,b){Ok(value)=>value,Err(error)=>wasm_bindgen::throw_val(error)})as Box<dyn FnMut(JsValue,JsValue)->JsValue>);
+pub struct Fun{pub function:JsValue,_closure:Closure<dyn Fn(JsValue,JsValue)->JsValue>}
+pub fn fun(body:impl Fn(JsValue,JsValue)->R<JsValue>+'static)->Fun{
+ let closure=Closure::wrap(Box::new(move|a:JsValue,b:JsValue|match body(a,b){Ok(value)=>value,Err(error)=>wasm_bindgen::throw_val(error)})as Box<dyn Fn(JsValue,JsValue)->JsValue>);
  Fun{function:closure.as_ref().clone(),_closure:closure}
 }
+/// What a callback handed to the host answers once its owner is gone, as the original's stale checks did.
+#[derive(Clone,Copy)]
+pub enum Stale{Undefined,False,Promise,PromiseFalse}
+type Handler=Rc<dyn Fn(JsValue,JsValue)->R<JsValue>>;
+/// One dispatcher for the whole module: the functions handed to host code are plain JavaScript closures over an
+/// id, so they cost no handle in this module and stay callable (answering `Stale`) after their owner is gone.
+struct Dispatch{table:Rc<RefCell<std::collections::HashMap<u32,Handler>>>,next:Cell<u32>,factory:JsValue,_closure:Closure<dyn Fn(f64,f64,JsValue,JsValue)->JsValue>}
+thread_local!{static DISPATCH:Dispatch=Dispatch::new();}
+impl Dispatch{
+ fn new()->Dispatch{
+  let table:Rc<RefCell<std::collections::HashMap<u32,Handler>>>=Rc::new(RefCell::new(std::collections::HashMap::new()));
+  let shared=table.clone();
+  let closure=Closure::wrap(Box::new(move|id:f64,stale:f64,a:JsValue,b:JsValue|->JsValue{
+   let handler=shared.borrow().get(&(id as u32)).cloned();
+   match handler{
+    Some(handler)=>match handler(a,b){Ok(value)=>value,Err(error)=>wasm_bindgen::throw_val(error)},
+    None=>match stale as u32{0=>undef(),1=>JsValue::FALSE,2=>Promise::resolve(&undef()).into(),_=>Promise::resolve(&JsValue::FALSE).into()},
+   }
+  })as Box<dyn Fn(f64,f64,JsValue,JsValue)->JsValue>);
+  let make=Function::new_with_args("dispatch","return function(id, stale){ return function(a, b){ return dispatch(id, stale, a, b); }; }");
+  let factory=make.call1(&undef(),closure.as_ref()).unwrap_or(JsValue::UNDEFINED);
+  Dispatch{table,next:Cell::new(0),factory,_closure:closure}
+ }
+}
+/// The callbacks one owner handed out; they are withdrawn together when it goes.
+#[derive(Default)]
+pub struct Callbacks(RefCell<Vec<u32>>);
+impl Callbacks{
+ pub fn new()->Callbacks{Callbacks(RefCell::new(Vec::new()))}
+ /// A function the host can call; `stale` is what it answers after this owner is dropped or `clear`ed.
+ pub fn make(&self,stale:Stale,body:impl Fn(JsValue,JsValue)->R<JsValue>+'static)->JsValue{
+  DISPATCH.with(|dispatch|{
+   let id=dispatch.next.get().wrapping_add(1);dispatch.next.set(id);
+   dispatch.table.borrow_mut().insert(id,Rc::new(body));
+   self.0.borrow_mut().push(id);
+   let kind=match stale{Stale::Undefined=>0.0,Stale::False=>1.0,Stale::Promise=>2.0,Stale::PromiseFalse=>3.0};
+   call(&dispatch.factory,"factory",&[&f(id as f64),&f(kind)]).unwrap_or(JsValue::UNDEFINED)
+  })
+ }
+ pub fn clear(&self){
+  let ids=std::mem::take(&mut *self.0.borrow_mut());
+  DISPATCH.with(|dispatch|{let mut table=dispatch.table.borrow_mut();for id in ids{table.remove(&id);}});
+ }
+}
+impl Drop for Callbacks{fn drop(&mut self){self.clear();}}
 /// The `Promise` of an `async` body: synchronous up to its first `await` (see `cloud_host::start`).
 pub fn run(body:impl std::future::Future<Output=R<JsValue>>+'static)->JsValue{start(body).into()}
 /// Like `run` for a floating `void asyncFunction()`: a rejection is an unhandled one, as in the original.

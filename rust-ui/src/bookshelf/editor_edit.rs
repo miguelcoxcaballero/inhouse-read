@@ -343,7 +343,7 @@ impl Editor{
   if changed&&self.ready(){
    if commit{self.view_do("updateAppearance",&[&get(&self.item,"style"),&obj(&[("reuseModel",&JsValue::TRUE)])])?;}
    update_book_style_vars(&self.book_node,&get(&self.item,"style"));
-   call(&get(&self.host,"replaceShelfSpine"),"replaceShelfSpine",&[])?;
+   (self.host)()?;
    self.dirty.set(false);
   }
   if commit&&self.ready()&&self.has_view(){
@@ -361,6 +361,9 @@ impl Editor{
   Ok(())
  }
 
+ pub(super) fn panel_node(&self)->JsValue{self.panel.clone()}
+ pub(super) fn is_hidden(&self)->bool{self.hidden()}
+ pub(super) fn disable_controls(&self){for control in qsa(&self.panel,"button, input, select"){putb(&control,"disabled",true);}}
  /// The sheet's work ends with its lifted book: callbacks, timers and listeners are let go.
  pub(super) fn dispose(&self){
   if self.disposed.replace(true){return;}

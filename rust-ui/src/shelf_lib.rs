@@ -37,6 +37,10 @@ pub fn shelf_abi_version() -> u32 { 1 }
 #[wasm_bindgen]
 pub fn shelf_live_handles() -> u32 { wasm_bindgen::externref_heap_live_count() }
 
+/// Timer and frame callbacks the module still owns: zero once everything scheduled has run or been cancelled.
+#[wasm_bindgen]
+pub fn shelf_pending_callbacks() -> u32 { crate::host::pending_callbacks() as u32 }
+
 /// The BAGGEBO's geometry as a packet (see `baggebo_model::template`).
 #[wasm_bindgen]
 pub fn baggebo_template() -> Vec<u8> { baggebo_model::template() }

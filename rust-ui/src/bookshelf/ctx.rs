@@ -10,8 +10,16 @@ use super::util::*;
 pub struct Ctx{
  pub state:JsValue,pub opts:JsValue,pub options:JsValue,pub env:JsValue,pub legacy:JsValue,
  pub root:JsValue,pub scroller:JsValue,pub container:JsValue,pub parts:JsValue,
+ /// Callbacks handed to code that may call them after the part that made them is gone; the latest set is kept.
+ pub keepalive_slot:std::cell::RefCell<Vec<Fun>>,
 }
 impl Ctx{
+ pub fn keepalive(&self,funs:Vec<Fun>){*self.keepalive_slot.borrow_mut()=funs;}
+ /// `opts[name]`.
+ pub fn opts_get(&self,name:&str)->JsValue{get(&self.opts,name)}
+ pub fn legacy_value(&self,name:&str)->JsValue{get(&self.legacy,name)}
+ /// `options[first] || options[second]`.
+ pub fn option_or(&self,first:&str,second:&str)->JsValue{or(get(&self.options,first),get(&self.options,second))}
  /// `env[name](...args)`.
  pub fn env(&self,name:&str,args:&[&JsValue])->R<JsValue>{call(&read(&self.env,name)?,name,args)}
  pub fn env_value(&self,name:&str)->JsValue{get(&self.env,name)}
@@ -41,7 +49,7 @@ impl RustShelfCtx{
  #[wasm_bindgen(constructor)]
  pub fn new(parts:JsValue)->Result<RustShelfCtx,JsValue>{
   let ctx=Rc::new(Ctx{state:read(&parts,"state")?,opts:read(&parts,"opts")?,options:read(&parts,"options")?,env:read(&parts,"env")?,
-   legacy:read(&parts,"legacy")?,root:read(&parts,"root")?,scroller:read(&parts,"scroller")?,container:read(&parts,"container")?,parts});
+   legacy:read(&parts,"legacy")?,root:read(&parts,"root")?,scroller:read(&parts,"scroller")?,container:read(&parts,"container")?,parts,keepalive_slot:std::cell::RefCell::new(Vec::new())});
   Ok(RustShelfCtx{ctx})
  }
 }

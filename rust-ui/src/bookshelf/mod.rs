@@ -8,5 +8,7 @@ mod editor;
 mod editor_edit;
 mod editor_relief;
 mod editor_pick;
+mod pieces;
+mod flyout;
+mod flyout_motion;
 pub use ctx::RustShelfCtx;
-pub use editor::RustFlyoutEditor;

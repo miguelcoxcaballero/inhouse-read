@@ -4,15 +4,23 @@
 //! geometry it was laid out with. Same operations, same order and the same DOM as the original.
 use std::{cell::{Cell,RefCell},rc::{Rc,Weak}};
 use wasm_bindgen::prelude::*;
-use super::{util::*,ctx::{Ctx,RustShelfCtx},style::*};
+use super::{util::*,ctx::Ctx,style::*};
 
 pub(super) struct FinishPicker{pub select:JsValue,pub picker:JsValue,pub samples:Vec<JsValue>}
 pub(super) struct Relief{
  pub status:String,pub proposals:JsValue,pub active_color:JsValue,pub controller:JsValue,pub tilt_timer:Timer,pub tilt_token:u32,
- pub tilt_cleanup:Option<Vec<CapturedListener>>,pub slider_frame:Timer,pub applied:JsValue,
+ pub tilt_cleanup:Option<Vec<Listener>>,pub slider_frame:Timer,pub applied:JsValue,
 }
 pub(super) struct SheetDrag{pub id:JsValue,pub y:f64,pub time:f64,pub dy:f64}
+#[derive(Clone,Copy)]
 pub(super) struct Geometry{pub vw:f64,pub vh:f64,pub landscape:bool,pub cover_w:f64,pub cover_h:f64,pub center_x:f64,pub center_y:f64,pub thickness:f64}
+
+/// What the lifted book hands its editor.
+pub(super) struct EditorParts{
+ pub book:JsValue,pub item:JsValue,pub view:JsValue,pub session:JsValue,pub book_node:JsValue,pub flyout:JsValue,pub meta:JsValue,
+ pub cover_target:JsValue,pub edit_button:JsValue,pub cover_url:JsValue,pub style:JsValue,pub geo:Geometry,
+ pub pick_layer:JsValue,pub pick_message:JsValue,pub pick_cancel:JsValue,pub pick_handle:JsValue,pub host:Rc<dyn Fn()->R>,
+}
 
 pub(super) const FOIL_CHOICES:[(&str,&str);2]=[("gold","Oro"),("silver","Plata")];
 pub(super) const SURFACE_CHOICES:[(&str,&str);3]=[("matte","Mate"),("satin","Satinado"),("glossy","Brillante")];
@@ -25,7 +33,7 @@ pub struct Editor{
  // what the flyout hands over
  pub(super) book:JsValue,pub(super) item:JsValue,pub(super) view:JsValue,pub(super) session:JsValue,pub(super) book_node:JsValue,
  pub(super) flyout:JsValue,pub(super) meta:JsValue,pub(super) cover_target:JsValue,pub(super) edit_button:JsValue,pub(super) cover_url:JsValue,
- pub(super) geo:Geometry,pub(super) host:JsValue,
+ pub(super) geo:Geometry,pub(super) host:Rc<dyn Fn()->R>,
  pub(super) pick_layer:JsValue,pub(super) pick_message:JsValue,pub(super) pick_cancel:JsValue,pub(super) pick_handle:JsValue,
  // the sheet
  pub(super) panel:JsValue,pub(super) subtitle:JsValue,pub(super) preview_title:JsValue,pub(super) preview_author:JsValue,pub(super) preview:JsValue,
@@ -86,15 +94,8 @@ impl Editor{
  }
 
  // ---------------------------------------------------------------- construction
- pub(super) fn build(ctx:&Rc<Ctx>,parts:&JsValue)->R<Rc<Editor>>{
-  let book=read(parts,"book")?;let item=read(parts,"item")?;let view=read(parts,"view")?;let session=read(parts,"session")?;
-  let book_node=read(parts,"bookNode")?;let flyout=read(parts,"flyout")?;let meta=read(parts,"meta")?;let cover_target=read(parts,"coverTarget")?;
-  let edit_button=read(parts,"editButton")?;let cover_url=read(parts,"coverUrl")?;let host=read(parts,"host")?;
-  let style0=read(parts,"style")?;
-  let geo=Geometry{vw:num(&read(parts,"vw")?),vh:num(&read(parts,"vh")?),landscape:truthy(&read(parts,"landscape")?),cover_w:num(&read(parts,"coverW")?),
-   cover_h:num(&read(parts,"coverH")?),center_x:num(&read(parts,"centerX")?),center_y:num(&read(parts,"centerY")?),thickness:num(&read(parts,"thickness")?)};
-  let pick=read(parts,"colorPick")?;
-  let (pick_layer,pick_message,pick_cancel,pick_handle)=(read(&pick,"layer")?,read(&pick,"message")?,read(&pick,"cancel")?,read(&pick,"handle")?);
+ pub(super) fn build(ctx:&Rc<Ctx>,parts:EditorParts)->R<Rc<Editor>>{
+  let EditorParts{book,item,view,session,book_node,flyout,meta,cover_target,edit_button,cover_url,style:style0,geo,pick_layer,pick_message,pick_cancel,pick_handle,host}=parts;
 
   let cached=map_get(&ctx.st("coverAppearances"),&s(&appearance_id(&book)));
   let cached_appearance=if truthy(&cached)&&get(&cached,"key")==get(&item,"coverKey"){get(&cached,"appearance")}else{null()};
@@ -317,27 +318,3 @@ fn material_picker(pickers:&RefCell<Vec<FinishPicker>>,select:&JsValue,part:&str
  picker
 }
 
-#[wasm_bindgen]
-pub struct RustFlyoutEditor{editor:Rc<Editor>}
-#[wasm_bindgen]
-impl RustFlyoutEditor{
- #[wasm_bindgen(constructor)]
- pub fn new(ctx:&RustShelfCtx,parts:JsValue)->Result<RustFlyoutEditor,JsValue>{Ok(RustFlyoutEditor{editor:Editor::build(&ctx.ctx,&parts)?})}
- /// The sheet, for the flyout to place in the metadata block.
- pub fn panel(&self)->JsValue{self.editor.panel.clone()}
- pub fn is_hidden(&self)->bool{self.editor.hidden()}
- #[wasm_bindgen(js_name=openEditor)]
- pub fn open_editor(&self)->Result<(),JsValue>{self.editor.open_editor()}
- /// `closeEditor({ commit, restoreFocus })`.
- #[wasm_bindgen(js_name=closeEditor)]
- pub fn close_editor(&self,commit:bool,restore_focus:bool)->Result<(),JsValue>{self.editor.close_editor(commit,restore_focus)}
- #[wasm_bindgen(js_name=toggleEditor)]
- pub fn toggle_editor(&self)->Result<(),JsValue>{if self.editor.hidden(){self.editor.open_editor()}else{self.editor.close_editor(true,true)}}
- #[wasm_bindgen(js_name=finishColorPick)]
- pub fn finish_color_pick(&self,apply:bool)->JsValue{self.editor.finish_color_pick(apply)}
- /// The part of `fadeMeta` that disables the sheet's controls.
- #[wasm_bindgen(js_name=disableControls)]
- pub fn disable_controls(&self){for control in qsa(&self.editor.panel,"button, input, select"){putb(&control,"disabled",true);}}
- /// Releases the listeners, timers and callbacks; the flyout calls it when its session ends.
- pub fn dispose(&self){self.editor.dispose();}
-}
