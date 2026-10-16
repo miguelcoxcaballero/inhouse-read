@@ -26,6 +26,8 @@ mod spine_surface;
 mod cover_editor;
 mod book_reflection;
 mod cover_relief;
+mod cloud_host;
+mod bookshelf;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]

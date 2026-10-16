@@ -1,5 +1,6 @@
 import {afterEach, describe, expect, it} from 'vitest';
-import {setEditorTabHeading} from '../../src/js/editor-tab-heading.js';
+import {setEditorTabHeading as frozen} from './helpers/reference-editor-tab-heading.js';
+import {rustShelf} from './helpers/rust-shelf-ready.js';
 afterEach(() => document.body.replaceChildren());
 function fixture() {
  const heading=document.createElement('h2');heading.textContent='Portada';
@@ -7,7 +8,9 @@ function fixture() {
  const buttons=['Lomo','Portada'].map(text=>{const button=document.createElement('button');button.textContent=text;button.setAttribute('role','tab');list.append(button);return button;});
  document.body.append(heading,list);return {heading,list,buttons};
 }
-describe('visible active editor heading',()=>{
+// The heading logic moved to the shelf module (rust-ui/src/bookshelf/editor_edit.rs); the original
+// JavaScript is frozen in helpers/reference-editor-tab-heading.js and both answer the same cases.
+describe.each([['frozen JavaScript original',frozen],['Rust shelf module',(heading,button)=>rustShelf.editor_tab_heading(heading,button)]])('visible active editor heading (%s)',(_name,setEditorTabHeading)=>{
  it('uses the actual active tab instead of an invisible unrelated target',()=>{
   const {heading,list,buttons}=fixture();setEditorTabHeading(heading,buttons[1]);
   expect(heading.textContent).toBe('Portada');expect(heading.parentElement).toBe(list);
@@ -27,5 +30,11 @@ describe('visible active editor heading',()=>{
   const input=document.createElement('input');document.body.append(input);input.focus();
   setEditorTabHeading(heading,buttons[0]);expect(document.activeElement).toBe(input);
   setEditorTabHeading(heading,buttons[1]);expect(document.activeElement).toBe(input);
+ });
+ it('ignores a missing heading or button',()=>{
+  const {heading,buttons}=fixture();
+  expect(()=>setEditorTabHeading(null,buttons[0])).not.toThrow();
+  expect(()=>setEditorTabHeading(heading,null)).not.toThrow();
+  expect(buttons[0].closest('h2')).toBeNull();
  });
 });

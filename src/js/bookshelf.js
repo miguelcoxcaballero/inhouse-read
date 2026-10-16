@@ -106,8 +106,6 @@ import { bookColorOptions, spineColorStyle, spineFinish, surfaceFinish, METAL_CO
 import { displayBookTitle, normalizeBookAuthor } from './book-title.js';
 import { bookView, fitCoverImage, getBookRenderer, planReadingBookPose } from './book-model.js';
 import { analyzeCoverRelief, normalizeCoverRelief, coverReliefLayers, COLOR_RELIEF_IDS } from './cover-relief.js';
-import { EDITOR_TABS, coverEditorPose, coverTiltFrames, editorTabId, nextEditorTab } from './cover-editor.js';
-import { setEditorTabHeading } from './editor-tab-heading.js';
 import { createShelfZoom } from './shelf-zoom.js';
 import { createShelfViewGesture } from './shelf-view-gesture.js';
 import { markTiming, resetTimeline } from './perf-marks.js';
@@ -129,6 +127,7 @@ import { getCatalogLamp, normalizeShelfLamp } from './lamp-catalog-data.js';
 import { lampCatalogIllustration } from './lamp-illustration.js';
 import { readerBookTiming } from './reader-book-timing.js';
 import { persistablePosition } from './readers/persistable-position.js';
+import { needRustShelf } from './rust-shelf.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
 const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
@@ -214,14 +213,23 @@ const DEFAULTS = Object.freeze({
   texts: DEFAULT_TEXTS
 });
 
-const SPINE_FONTS = Object.freeze([
-  { family: 'Playfair Display', label: 'Playfair Display', weight: 700, fallback: 'Georgia, serif' },
-  { family: 'Lora', label: 'Lora', weight: 700, fallback: 'Georgia, serif' },
-  { family: 'Cormorant Garamond', label: 'Cormorant Garamond', weight: 700, fallback: 'Georgia, serif' },
-  { family: 'DM Sans', label: 'DM Sans', weight: 600, fallback: 'Arial, sans-serif' },
-  { family: 'Montserrat', label: 'Montserrat', weight: 700, fallback: 'Arial, sans-serif' },
-  { family: 'Oswald', label: 'Oswald', weight: 600, fallback: 'Arial Narrow, sans-serif' }
-]);
+// The functions of other modules the shelf module's parts call, looked up when they are called (a module
+// replaced after the shelf was built is still the one called).
+const shelfEnv = {
+  displayBookTitle: (...args) => displayBookTitle(...args),
+  normalizeBookAuthor: (...args) => normalizeBookAuthor(...args),
+  bookColorOptions: (...args) => bookColorOptions(...args),
+  spineColorStyle: (...args) => spineColorStyle(...args),
+  spineFinish: (...args) => spineFinish(...args),
+  surfaceFinish: (...args) => surfaceFinish(...args),
+  withCoverAppearance: (...args) => withCoverAppearance(...args),
+  fitCoverImage: (...args) => fitCoverImage(...args),
+  coverReliefLayers: (...args) => coverReliefLayers(...args),
+  normalizeCoverRelief: (...args) => normalizeCoverRelief(...args),
+  analyzeCoverRelief: (...args) => analyzeCoverRelief(...args),
+  get METAL_COLORS() { return METAL_COLORS; },
+  get COLOR_RELIEF_IDS() { return COLOR_RELIEF_IDS; }
+};
 
 /* ------------------------------------------------------------------ *
  * Utilidades DOM
@@ -269,7 +277,6 @@ function roofMark(className = 'ihr-roof') {
   return svgIcon(ROOF_PATH, { viewBox: '0 0 40 28', className });
 }
 
-let editorSerial = 0;
 
 function prefersReducedMotion() {
   return (
@@ -414,6 +421,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     'aria-label':'Estantería', 'aria-keyshortcuts':'ArrowLeft ArrowRight',
     'aria-description':'Desliza a la izquierda para ver la estantería de lado y a la derecha para volver a los lomos. También puedes usar las flechas al enfocar la estantería.' });
   const scroller = el('div', { class: 'ihr-bookshelf__scroll' });
+  // The shelf screen's parts that live in the shelf module share this context: the state object, the
+  // options and the functions of other modules they call.
+  const shelfNative = needRustShelf();
+  const shelfCtx = new shelfNative.RustShelfCtx({ state, opts, options, env:shelfEnv, legacy:{}, root, scroller, container });
+  let shelfCtxLive = true;
   const hasBookTrash = typeof options.onBookRemove === 'function';
   const hasTrash = !opts.sections || hasBookTrash;
   const trashNode = hasTrash ? el('div', {
@@ -563,34 +575,10 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     return `${id}|${book?.title ?? ''}|`;
   }
 
-  function applyCoverAppearance(item, appearance) {
-    item.style = appearance
-      ? withCoverAppearance(item.baseStyle || item.style, appearance)
-      : { ...(item.baseStyle || item.style) };
-    if (item.book.spineColorOverride) {
-      item.style = { ...item.style, ...spineColorStyle(item.book.spineColorOverride) };
-    }
-    const finish = spineFinish(item.book.spineFinish);
-    if (finish !== 'matte') item.style = { ...item.style, ...spineColorStyle(METAL_COLORS[finish]) };
-    else item.style.ink = spineColorStyle(item.style.color).ink;
-    const textFinish = spineFinish(item.book.spineTextFinish);
-    if (textFinish !== 'matte') item.style.ink = METAL_COLORS[textFinish];
-    else if (/^#[0-9a-f]{6}$/i.test(item.book.spineTextColor || '')) item.style.ink = item.book.spineTextColor;
-    if (item.book.spineFontFamily) {
-      const font = SPINE_FONTS.find(candidate => candidate.family === item.book.spineFontFamily);
-      if (font) item.style = {
-        ...item.style, fontFamily: font.family, fontCanvasFamily: font.family,
-        fontFallback: font.fallback, fontWeight: font.weight
-      };
-    }
-    if (Number.isFinite(Number(item.book.spineFontSize))) {
-      item.style = { ...item.style, spineFontSize: Math.max(8, Math.min(48, Number(item.book.spineFontSize))) };
-    }
-    if (Number.isFinite(Number(item.book.spineAuthorFontSize))) {
-      item.style = { ...item.style, spineAuthorFontSize: Math.max(6, Math.min(36, Number(item.book.spineAuthorFontSize))) };
-    }
-    return Boolean(appearance);
-  }
+  // The style of a shelf item, the CSS variables of a style and their update on a node are the shelf module's.
+  function applyCoverAppearance(item, appearance) { return shelfNative.shelf_apply_cover_appearance(shelfCtx, item, appearance); }
+  function spineStyleVars(style) { return shelfNative.shelf_spine_style_vars(style); }
+  function updateBookStyleVars(node, style) { shelfNative.shelf_update_book_style_vars(node, style); }
 
   function maybeRefreshAppearanceStyles() {
     if (!state.appearanceRefreshPending || state.busy || state.session || state.returnMotion || state.dragSession || state.compatibilityTapTimer || state.destroyed) return;
@@ -671,32 +659,11 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     });
   }
 
-  function spineStyleVars(style) {
-    const family = style.fontFamily || 'Playfair Display';
-    const fallback = style.fontFallback || 'Georgia, serif';
-    return `--ihr-spine-base:${style.color};` +
-      `--ihr-spine-shade:${style.shade};` +
-      `--ihr-spine-ink:${style.ink};` +
-      `--ihr-spine-font:"${family}", ${fallback};` +
-      `--ihr-spine-font-weight:${style.fontWeight || 700};` +
-      `--ihr-spine-font-size:${Math.max(8, Math.min(48, Number(style.spineFontSize) || 10))}px;` +
-      `--ihr-spine-author-font-size:${Math.max(6, Math.min(36, Number(style.spineAuthorFontSize) || 12))}px;`;
-  }
 
   function coverRatioFor(style, fallback = opts.coverRatio) {
     return coverAspectRatio(style?.coverRatio, 1) || fallback;
   }
 
-  function updateBookStyleVars(node, style) {
-    if (!node || !style) return;
-    node.style.setProperty('--ihr-spine-base', style.color);
-    node.style.setProperty('--ihr-spine-shade', style.shade);
-    node.style.setProperty('--ihr-spine-ink', style.ink);
-    node.style.setProperty('--ihr-spine-font', `"${style.fontFamily || 'Playfair Display'}", ${style.fontFallback || 'Georgia, serif'}`);
-    node.style.setProperty('--ihr-spine-font-weight', String(style.fontWeight || 700));
-    node.style.setProperty('--ihr-spine-font-size', `${Math.max(8, Math.min(48, Number(style.spineFontSize) || 10))}px`);
-    node.style.setProperty('--ihr-spine-author-font-size', `${Math.max(6, Math.min(36, Number(style.spineAuthorFontSize) || 12))}px`);
-  }
 
   // El retorno desde el lector necesita su primer fotograma antes de que el
   // navegador pinte la estantería. La resolución normal usa `await` incluso
@@ -2273,7 +2240,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     });
     const colorPickLayer = el('div', { class:'ihr-color-pick', hidden:true, 'aria-label':'Elegir un color de la portada' });
     const colorPickMessage = el('p', { class:'ihr-color-pick__message', text:'Arrastra sobre la portada' });
-    const colorPickCancel = el('button', { type:'button', class:'ihr-color-pick__cancel', text:'Cancelar', onClick:() => finishColorPick(false) });
+    const colorPickCancel = el('button', { type:'button', class:'ihr-color-pick__cancel', text:'Cancelar' });
     const colorPickHandle = el('button', {
       type:'button', class:'ihr-color-pick__handle', 'aria-label':'Muestra de color: arrastra sobre la portada',
       style:`--ihr-picked-color:${style.color}`
@@ -2294,6 +2261,9 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
 
     let previousFocus = document.activeElement;
     const session = { book, item, cancelled: false, phase: 'revealing', view, bookNode };
+    // The editor of this lifted book (see below); it lives exactly as long as the session.
+    let editor = null;
+    const endEditor = () => { const finished = editor; editor = null; if (finished) { try { finished.dispose(); } finally { finished.free(); } } };
 
     function finishClose({ silent = false, instant = false } = {}) {
       state.shelfScene?.setModalBackgroundDeferred?.(null, { resumeHidden:true });
@@ -2301,6 +2271,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       state.shelfScene?.flush();
       view?.dispose();
       flyout.remove();
+      endEditor();
       if (state.session === session) { state.session = null; state.busy = false; }
       spineEl.classList.remove('is-away');
       if (!silent && !instant && typeof previousFocus?.focus === 'function') {
@@ -2343,15 +2314,15 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         const buttons = [...flyout.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled])')]
           .filter(control => !control.closest('[hidden]'));
         const first = buttons[0], last = buttons.at(-1);
-        const container = document.activeElement === flyout || document.activeElement === editorPanel;
+        const container = document.activeElement === flyout || document.activeElement === editor.panel();
         if (event.shiftKey && (document.activeElement === first || container)) { event.preventDefault(); last?.focus(); }
         else if (!event.shiftKey && (document.activeElement === last || document.activeElement === flyout)) { event.preventDefault(); first?.focus(); }
       }
       if (event.key === 'Escape') {
         event.stopPropagation();
         // Also dismisses the "no se pudo leer esta portada" notice.
-        if (session.colorPicking || !colorPickLayer.hidden) finishColorPick(false);
-        else if (!editorPanel.hidden) closeEditor();
+        if (session.colorPicking || !colorPickLayer.hidden) editor.finishColorPick(false);
+        else if (!editor.is_hidden()) editor.closeEditor(true, true);
         else if (session.phase !== 'reading') close();
       }
     }
@@ -2388,221 +2359,6 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
         'aria-label':'Guardado en Google Drive', title:'Guardado en Google Drive' },
         [svgIcon(ICONS.drive,{ className:'ihr-icon' }),el('span',{ class:'ihr-flyout__cloud-check','aria-hidden':'true' },[svgIcon(ICONS.check,{ className:'ihr-icon' })])]));
     };
-    const actionButtons = [
-      el('button', { type: 'button', class: 'ihr-btn ihr-btn--primary', disabled:true, onClick: () => expandCover() }, [svgIcon(ICONS.read, { className:'ihr-icon' }), el('span', { text: opts.texts.openAction })]),
-      cloudAction,
-      el('button', { type: 'button', class: 'ihr-btn ihr-btn--quiet ihr-btn--icon ihr-flyout__edit-button', disabled:true, 'aria-expanded': 'false', 'aria-label':'Editar', title:'Editar', onClick: () => editorPanel.hidden ? openEditor() : closeEditor() }, [svgIcon(ICONS.brush, { className:'ihr-icon' })])
-    ];
-
-    const appearanceId = String(book.id ?? book.path ?? book.title ?? 'book');
-    const getCachedAppearance = () => {
-      const cached = state.coverAppearances.get(appearanceId);
-      return cached?.key === item.coverKey ? cached.appearance : null;
-    };
-    const cachedAppearance = getCachedAppearance();
-    const coverColor = cachedAppearance?.color
-      ? cachedAppearance.color
-      : item.baseStyle.color;
-    const suggestedColors = bookColorOptions(coverColor);
-    let selectedColor = book.spineColorOverride || style.color;
-    const colorButtons = [];
-    const customizationFields = {};
-    let customizationSaveTimer = 0;
-    let spinePreviewFrame = 0;
-    let appearanceDirty = false;
-    const editorPanel = el('section', {
-      class: 'ihr-spine-editor', hidden: true, role: 'region', 'aria-label': 'Editar el lomo', tabindex: '-1',
-      style: `--ihr-ed-cover:${coverColor}`
-    });
-    // The subtitle repeats the spine text in its chosen face: a legible
-    // specimen of the font, since the 3D spine renders it quite small.
-    const editorSubtitle = el('p', { class: 'ihr-spine-editor__subtitle', 'aria-hidden': 'true' });
-    const editorPreviewTitle = el('span', {
-      class: 'ihr-spine-editor__preview-title',
-      text: book.spineTitleOverride || book.title || 'Sin título'
-    });
-    book.author = normalizeBookAuthor(book.author)
-    const editorPreviewAuthor = el('span', {
-      class: 'ihr-spine-editor__preview-author', text: book.author
-    });
-    const editorPreview = el('div', {
-      class: 'ihr-spine-editor__preview',
-      role: 'img', 'aria-label': 'Vista previa del lomo',
-      style: spineStyleVars(style)
-    }, [
-      el('span', { class: 'ihr-spine-editor__preview-pages', 'aria-hidden': 'true' }),
-      el('div', { class: 'ihr-spine-editor__preview-binding' }, [
-        el('span', { class: 'ihr-spine-editor__preview-ornament', 'aria-hidden': 'true' }),
-        editorPreviewTitle,
-        editorPreviewAuthor
-      ])
-    ]);
-    function refreshEditorPreview() {
-      updateBookStyleVars(editorPreview, item.style);
-      updateBookStyleVars(editorPanel, item.style);
-      editorPreviewTitle.textContent = book.spineTitleOverride || book.title || 'Sin título';
-      editorSubtitle.textContent = editorPreviewTitle.textContent;
-      book.author = normalizeBookAuthor(book.author)
-      editorPreviewAuthor.textContent = book.author;
-      editorPreviewAuthor.hidden = !book.author;
-    }
-    const editorPose = {
-      // centerX already includes the binding's depth compensation so a book
-      // viewed from the cover sits correctly in flight. Cancel that offset
-      // here, where the side-on spine itself is the visual center.
-      x: -thickness * .19,
-      // Positive pose.y moves the model down in camera space. Place the spine
-      // in the clear area above the mobile edit sheet instead of behind it.
-      y: landscape ? 0 : -vh * .15,
-      scale: landscape ? .7 : .58,
-      angle: 90,
-      pitch: 0
-    };
-    // Wide screens float the tray under the spine: grow the preview into the
-    // clear band above it so the cloth and foil read while editing.
-    function fitEditorPose() {
-      if (landscape || vw < 760) return;
-      const top = 28, bottom = editorPanel.getBoundingClientRect().top - 22;
-      // The bookmark ribbon rises about 8 % above the head of the spine.
-      const scale = Math.min(.92, Math.max(.58, (bottom - top) / (coverH * 1.08)));
-      if (!Number.isFinite(scale)) return;
-      editorPose.scale = scale;
-      editorPose.y = bottom - coverH * scale / 2 - centerY;
-    }
-    // ---- Editor de la portada: pestañas, giro del libro y relieve ----------
-    // El editor tiene dos pestañas. 'Lomo' es el editor de siempre (libro de
-    // canto). 'Portada' gira el libro hasta mostrar la portada de frente sobre
-    // la hoja y aloja las funciones de la portada; por ahora, 'Relieve'.
-    const editorUid = `ihr-ed-${++editorSerial}`;
-    let editorTab = 'spine';
-    const coverPose = { x: 0, y: 0, scale: 1, angle: 0, pitch: 0 };
-    const poseForTab = tab => tab === 'cover' ? coverPose : editorPose;
-    const relief = { status: 'idle', proposals: [], activeColor: null, controller: null, tiltTimer: 0, tiltToken: 0, tiltCleanup: null, sliderFrame: 0 };
-    function fitCoverPose() {
-      // La hoja de la pestaña activa ya está maquetada: su borde superior
-      // marca el límite de la franja libre. Sin medida usable, un respaldo.
-      const sheetTop = editorPanel.hidden ? NaN : editorPanel.getBoundingClientRect().top;
-      Object.assign(coverPose, coverEditorPose({
-        viewportWidth: vw, viewportHeight: vh, landscape, coverW, coverH, centerY, thickness, sheetTop
-      }));
-    }
-    // Al llegar las tarjetas la hoja puede cambiar de alto unos píxeles: la
-    // portada se reacomoda con suavidad, salvo que ya se esté balanceando.
-    function refitCoverPose() {
-      if (!view || editorTab !== 'cover' || editorPanel.hidden || session.phase !== 'ready' || relief.tiltCleanup) return;
-      const before = { ...coverPose };
-      fitCoverPose();
-      if (Math.abs(before.y - coverPose.y) < 6 && Math.abs(before.scale - coverPose.scale) < .02) { Object.assign(coverPose, before); return; }
-      view.animate([{ transform: before }, { transform: coverPose }], { duration: prefersReducedMotion() ? 1 : 220 });
-    }
-    function reliefKey() {
-      return `color-zones-v3-ten|${item.coverKey ?? coverUrl ?? ''}|${displayBookTitle(book)}|${normalizeBookAuthor(book.author)}`;
-    }
-    // Deja de lado todo lo que dependa de la pestaña: balanceo, temporizadores
-    // y análisis en curso (cierre del editor o cambio de pestaña).
-    function cancelCoverTilt() {
-      clearTimeout(relief.tiltTimer);
-      relief.tiltTimer = 0;
-      relief.tiltToken++;
-      relief.tiltCleanup?.();
-      relief.tiltCleanup = null;
-    }
-    function stopCoverEditorWork() {
-      cancelCoverTilt();
-      if (relief.sliderFrame) cancelAnimationFrame(relief.sliderFrame);
-      relief.sliderFrame = 0;
-      if (relief.status === 'loading') {
-        relief.controller?.abort();
-        relief.controller = null;
-        relief.status = 'idle';
-        renderReliefCards();
-      }
-    }
-    function startCoverTilt() {
-      relief.tiltTimer = 0;
-      if (!view || editorTab !== 'cover' || editorPanel.hidden || session.phase !== 'ready') return;
-      const token = ++relief.tiltToken;
-      const { frames, duration } = coverTiltFrames(coverPose);
-      const motion = view.animate(frames, { duration });
-      // Cualquier gesto del usuario corta el balanceo y devuelve la portada
-      // a su sitio; no se compite con la mano.
-      const interrupt = () => {
-        if (token !== relief.tiltToken) return;
-        cancelCoverTilt();
-        view.animate([
-          { transform: view.getPose?.() ?? coverPose },
-          { transform: coverPose }
-        ], { duration: 240 });
-      };
-      const events = ['pointerdown', 'keydown', 'wheel', 'touchstart'];
-      for (const type of events) document.addEventListener(type, interrupt, { capture: true, passive: true });
-      relief.tiltCleanup = () => { for (const type of events) document.removeEventListener(type, interrupt, { capture: true }); };
-      motion.finished.then(() => { if (token === relief.tiltToken) cancelCoverTilt(); });
-    }
-    // Tras elegir un relieve el libro se balancea unas veces para que la luz
-    // recorra la superficie. Con movimiento reducido no se balancea: el relieve
-    // se aprecia igual con el sombreado en reposo y un vaivén del libro es
-    // justo el tipo de movimiento que ese ajuste pide evitar.
-    function scheduleCoverTilt() {
-      cancelCoverTilt();
-      if (!view || prefersReducedMotion() || editorTab !== 'cover') return;
-      const token = relief.tiltToken;
-      Promise.resolve(relief.applied ?? true).then(done => {
-        if (done === false || token !== relief.tiltToken || editorTab !== 'cover' || editorPanel.hidden || state.session !== session) return;
-        relief.tiltTimer = setTimeout(startCoverTilt, 140);
-      });
-    }
-    function syncEditorTab(tab) {
-      editorTab = editorTabId(tab);
-      const cover = editorTab === 'cover';
-      for (const [id, button] of editorTabButtons) {
-        button.setAttribute('aria-selected', String(id === editorTab));
-        button.tabIndex = id === editorTab ? 0 : -1;
-      }
-      spinePanel.hidden = cover;
-      coverPanel.hidden = !cover;
-      const label = EDITOR_TABS.find(candidate => candidate.id === editorTab).heading;
-      setEditorTabHeading(editorHeading, editorTabButtons.get(editorTab));
-      editorPanel.setAttribute('aria-label', label);
-      editorPanel.dataset.tab = editorTab;
-      flyout.classList.toggle('is-editing-cover', cover);
-    }
-    function selectEditorTab(next, { focusTab = false } = {}) {
-      next = editorTabId(next);
-      const previous = editorTab;
-      if (focusTab) editorTabButtons.get(next)?.focus({ preventScroll: true });
-      if (next === previous) return;
-      cancelCoverTilt();
-      syncEditorTab(next);
-      editorPanel.scrollTop = 0;
-      let turned = null;
-      if (!editorPanel.hidden && session.phase === 'ready') {
-        if (next === 'cover') fitCoverPose(); else fitEditorPose();
-        if (view) turned = view.animate([
-          { transform: poseForTab(previous) },
-          { transform: poseForTab(next) }
-        ], { duration: prefersReducedMotion() ? 1 : 300 });
-      }
-      // El análisis espera a que el giro termine: no compite con su animación.
-      if (next === 'cover') (turned?.finished ?? Promise.resolve()).then(() => {
-        if (editorTab === 'cover' && !editorPanel.hidden && state.session === session) loadReliefProposals();
-      });
-    }
-    function saveCustomizationNow() {
-      if (customizationSaveTimer) clearTimeout(customizationSaveTimer);
-      customizationSaveTimer = 0;
-      if (Object.keys(customizationFields).length) {
-        const changedFields = { ...customizationFields };
-        for (const key of Object.keys(customizationFields)) delete customizationFields[key];
-        Promise.resolve(options.onBookCustomizationChange?.(book, changedFields)).catch(error => {
-          console.warn('No se pudo guardar el aspecto del lomo:', error);
-        });
-      }
-    }
-    function queueCustomizationSave() {
-      if (customizationSaveTimer) clearTimeout(customizationSaveTimer);
-      customizationSaveTimer = setTimeout(saveCustomizationNow, 180);
-    }
     function replaceShelfSpine() {
       const existingSpine = shelfSpineNodes().find(node => node.dataset.bookId === String(book.id));
       if (!existingSpine) return;
@@ -2620,775 +2376,22 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (hadFocus) replacement.focus({ preventScroll: true });
       if (state.lastOpened?.book?.id === book.id) state.lastOpened.spineEl = replacement;
     }
-    function refreshBookNames() {
-      const title = displayBookTitle(book), author = normalizeBookAuthor(book.author);
-      const titleNode = meta.querySelector('.ihr-flyout__title');
-      if (titleNode) titleNode.textContent = title;
-      let authorNode = meta.querySelector('.ihr-flyout__author');
-      if (author && !authorNode) { authorNode = el('p', { class:'ihr-flyout__author' }); titleNode?.after(authorNode); }
-      if (authorNode) { if (author) authorNode.textContent = author; else authorNode.remove(); }
-      flyout.setAttribute('aria-label', title || opts.texts.openAction);
-      coverTarget.setAttribute('aria-label', opts.texts.tapCover(book));
-      const shelfNode = shelfSpineNodes().find(node => node.dataset.bookId === String(book.id));
-      if (shelfNode) {
-        const progress = shelfNode.getAttribute('aria-label')?.match(/, (?:leído al \d+ %|terminado)$/)?.[0] || '';
-        shelfNode.setAttribute('aria-label', opts.texts.openAria(book) + progress);
-      }
-    }
-    function updateCustomization(fields) {
-      Object.assign(book, fields);
-      Object.assign(customizationFields, fields);
-      // The title written on the spine and the author are the book's own,
-      // everywhere: this sheet, its labels and the spine's on the shelf.
-      if ('spineTitleOverride' in fields || 'author' in fields) refreshBookNames();
-      // El relieve sólo toca la portada y ya lo aplica view.setCoverRelief:
-      // ni rehace el modelo al cerrar ni repinta el lomo de la estantería.
-      if (Object.keys(fields).every(key => key === 'coverRelief')) { queueCustomizationSave(); return; }
-      appearanceDirty = true;
-      applyCoverAppearance(item, getCachedAppearance());
-      style = item.style;
-      refreshEditorPreview();
-      updateBookStyleVars(bookNode, item.style);
-      const shelfNode = shelfSpineNodes().find(node => node.dataset.bookId === String(book.id));
-      updateBookStyleVars(shelfNode, item.style);
-      if (view?.updateEditorAppearance) view.updateEditorAppearance(book);
-      else {
-        view?.updateCoverAppearance(book);
-        view?.updateEdgeAppearance(book);
-      }
-      if (state.lastOpened?.book?.id === book.id) state.lastOpened.style = item.style;
-      state.appearanceRefreshPending = true;
-      updateColorSelection();
-      if (spinePreviewFrame) clearTimeout(spinePreviewFrame);
-      spinePreviewFrame = setTimeout(() => {
-        spinePreviewFrame = 0;
-        if (!editorPanel.hidden && session.phase === 'ready') {
-          view?.updateSpineAppearance(book, item.style);
-        }
-      }, 90);
-      queueCustomizationSave();
-    }
-    function openEditor() {
-      if (session.phase !== 'ready') return;
-      const viewport = visibleViewport();
-      session.editorViewportWidth = viewport.width;
-      session.editorViewportHeight = viewport.height;
-      session.keyboardOpen = false;
-      // Siempre se abre en el lomo; la portada se elige con su pestaña.
-      syncEditorTab('spine');
-      editorPanel.hidden = false;
-      flyout.classList.add('is-editing-spine');
-      meta.classList.add('is-editing');
-      coverTarget.hidden = true;
-      actionButtons[2].setAttribute('aria-expanded', 'true');
-      refreshEditorPreview();
-      fitEditorPose();
-      if (view) view.animate([
-        { transform: { x: 0, y: 0, scale: 1, angle: 0, pitch: 0 } },
-        { transform: editorPose }
-      ], { duration: prefersReducedMotion() ? 1 : 230 });
-      // Focus the sheet itself: keyboard users start at its top without a
-      // focus ring landing on an arbitrary control.
-      editorPanel.scrollTop = 0;
-      editorPanel.focus({ preventScroll: true });
-    }
-    function closeEditor({ commit = true, restoreFocus = true } = {}) {
-      if (editorPanel.hidden) return;
-      const leavingPose = poseForTab(editorTab);
-      stopCoverEditorWork();
-      syncEditorTab('spine');
-      editorPanel.hidden = true;
-      flyout.classList.remove('is-editing-spine');
-      meta.classList.remove('is-editing');
-      coverTarget.hidden = !opts.autoOpen;
-      actionButtons[2].setAttribute('aria-expanded', 'false');
-      if (spinePreviewFrame) clearTimeout(spinePreviewFrame);
-      spinePreviewFrame = 0;
-      const changed = appearanceDirty;
-      if (changed && session.phase === 'ready') {
-        if (commit) view?.updateAppearance(item.style,{ reuseModel:true });
-        updateBookStyleVars(bookNode, item.style);
-        replaceShelfSpine();
-        appearanceDirty = false;
-      }
-      if (commit && session.phase === 'ready' && view) {
-        coverTarget.disabled = true;
-        const returnToCover = view.animate([
-          { transform: leavingPose },
-          { transform: { x: 0, y: 0, scale: 1, angle: 0, pitch: 0 } }
-        ], {
-          duration: prefersReducedMotion() ? 1 : 220
-        });
-        returnToCover.finished.then(() => {
-          if (state.session === session && session.phase === 'ready' && !editorPanel.hidden) return;
-          if (state.session === session && session.phase === 'ready') coverTarget.disabled = false;
-        });
-      }
-      saveCustomizationNow();
-      if (restoreFocus && session.phase === 'ready') actionButtons[2].focus({ preventScroll: true });
-    }
-    let coverSampleCanvas = null;
-    let sampledCoverColor = '';
-    let colorHandleDragging = false;
-    async function prepareCoverSampler() {
-      if (coverSampleCanvas) return coverSampleCanvas;
-      if (!coverUrl) throw new Error('Este libro no tiene portada para muestrear.');
-      const image = new Image();
-      image.decoding = 'async';
-      image.src = coverUrl;
-      if (image.decode) await image.decode();
-      else await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; });
-      const scale = Math.min(1, 1200 / Math.max(image.naturalWidth, image.naturalHeight));
-      const width = Math.max(1, Math.round(image.naturalWidth * scale));
-      const height = Math.max(1, Math.round(image.naturalHeight * scale));
-      const canvas = document.createElement('canvas');
-      canvas.width = width; canvas.height = height;
-      const context = canvas.getContext('2d', { willReadFrequently:true });
-      context.fillStyle = style.color; context.fillRect(0, 0, width, height);
-      const fit = fitCoverImage(image.naturalWidth, image.naturalHeight, width, height);
-      context.drawImage(image, fit.x * scale, fit.y * scale, fit.width * scale, fit.height * scale);
-      // Force a read now so tainted/cross-origin covers fail before the user starts dragging.
-      context.getImageData(0, 0, 1, 1);
-      coverSampleCanvas = canvas;
-      return canvas;
-    }
-    function sampleCoverAt(clientX, clientY) {
-      const rect = { left:centerX-coverW/2, top:centerY-coverH/2, right:centerX+coverW/2, bottom:centerY+coverH/2 };
-      if (!coverSampleCanvas || clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
-        sampledCoverColor = '';
-        colorPickMessage.textContent = 'Arrastra sobre la portada';
-        colorPickHandle.style.removeProperty('--ihr-picked-color');
-        colorPickHandle.removeAttribute('data-color');
-        return false;
-      }
-      const x = Math.min(coverSampleCanvas.width - 1, Math.floor((clientX - rect.left) / coverW * coverSampleCanvas.width));
-      const y = Math.min(coverSampleCanvas.height - 1, Math.floor((clientY - rect.top) / coverH * coverSampleCanvas.height));
-      const [r, g, b] = coverSampleCanvas.getContext('2d', { willReadFrequently:true }).getImageData(x, y, 1, 1).data;
-      sampledCoverColor = `#${[r,g,b].map(value => value.toString(16).padStart(2,'0')).join('')}`;
-      colorPickHandle.style.setProperty('--ihr-picked-color', sampledCoverColor);
-      colorPickHandle.dataset.color = sampledCoverColor;
-      colorPickMessage.textContent = `${sampledCoverColor.toUpperCase()} · Suelta`;
-      return true;
-    }
-    async function beginColorPick() {
-      if (session.phase !== 'ready' || session.colorPicking) return;
-      const button = colorControls.querySelector('.ihr-spine-editor__pipette');
-      button.disabled = true;
-      try {
-        await prepareCoverSampler();
-      } catch (error) {
-        console.warn('No se pudo leer la portada para elegir un color:', error);
-        colorPickMessage.textContent = 'No se pudo leer esta portada';
-        colorPickLayer.hidden = false;
-        flyout.classList.add('is-picking-color');
-        colorPickCancel.textContent = 'Cerrar';
-        button.disabled = false;
-        return;
-      }
-      button.disabled = false;
-      session.colorPicking = true;
-      session.pickingButton = button;
-      editorPanel.hidden = true;
-      flyout.classList.remove('is-editing-spine');
-      meta.classList.remove('is-editing');
-      actionButtons[2].setAttribute('aria-expanded', 'false');
-      colorPickLayer.hidden = false;
-      colorPickCancel.textContent = 'Cancelar';
-      colorPickMessage.textContent = 'Arrastra sobre la portada';
-      colorPickHandle.style.setProperty('--ihr-picked-color', selectedColor);
-      colorPickHandle.style.left = `${centerX}px`;
-      colorPickHandle.style.top = `${Math.min(vh - 76, centerY + coverH / 2 + 44)}px`;
-      flyout.classList.add('is-picking-color');
-      const motion = view
-        ? view.animate([
-          { transform:editorPose },
-          { transform:{ x:0, y:0, scale:1, angle:0, pitch:0 } }
-        ], { duration:prefersReducedMotion() ? 1 : 360 })
-        : animate(bookNode, [{ transform:'scale(.92)' }, { transform:'scale(1)' }], { duration:prefersReducedMotion() ? 1 : 260, easing:EASE });
-      await motion.finished;
-      colorPickHandle.focus({ preventScroll:true });
-    }
-    async function finishColorPick(apply) {
-      if (!session.colorPicking && colorPickLayer.hidden) return;
-      const wasPicking = session.colorPicking;
-      session.colorPicking = false;
-      colorHandleDragging = false;
-      colorPickLayer.hidden = true;
-      colorPickHandle.classList.remove('is-dragging');
-      flyout.classList.remove('is-picking-color');
-      if (apply && sampledCoverColor) selectSpineColor(sampledCoverColor);
-      sampledCoverColor = '';
-      if (session.phase === 'ready' && !editorPanel.hidden) return;
-      editorPanel.hidden = false;
-      flyout.classList.add('is-editing-spine');
-      meta.classList.add('is-editing');
-      actionButtons[2].setAttribute('aria-expanded', 'true');
-      refreshEditorPreview();
-      fitEditorPose();
-      if (wasPicking && session.phase === 'ready') {
-        const motion = view
-          ? view.animate([
-            { transform:{ x:0, y:0, scale:1, angle:0, pitch:0 } },
-            { transform:editorPose }
-          ], { duration:prefersReducedMotion() ? 1 : 320 })
-          : animate(bookNode, [{ transform:'scale(1)' }, { transform:'scale(.92)' }], { duration:prefersReducedMotion() ? 1 : 260, easing:EASE });
-        await motion.finished;
-      }
-      if (session.pickingButton?.isConnected) session.pickingButton.focus({ preventScroll:true });
-      session.pickingButton = null;
-    }
-    colorPickHandle.addEventListener('pointerdown', event => {
-      if (!session.colorPicking) return;
-      event.preventDefault();
-      colorHandleDragging = true;
-      colorPickHandle.classList.add('is-dragging');
-      colorPickHandle.setPointerCapture?.(event.pointerId);
-    });
-    colorPickHandle.addEventListener('pointermove', event => {
-      if (!colorHandleDragging || !session.colorPicking) return;
-      const bounds = flyout.getBoundingClientRect();
-      const x = event.clientX - bounds.left, y = event.clientY - bounds.top;
-      colorPickHandle.style.left = `${x}px`; colorPickHandle.style.top = `${y}px`;
-      sampleCoverAt(x, y);
-    });
-    colorPickHandle.addEventListener('pointerup', event => {
-      if (!colorHandleDragging) return;
-      colorHandleDragging = false;
-      colorPickHandle.classList.remove('is-dragging');
-      const bounds = flyout.getBoundingClientRect();
-      const x = event.clientX - bounds.left, y = event.clientY - bounds.top;
-      colorPickHandle.style.left = `${x}px`; colorPickHandle.style.top = `${y}px`;
-      sampleCoverAt(x, y);
-      if (sampledCoverColor) finishColorPick(true);
-      else colorPickMessage.textContent = 'Suelta sobre la portada';
-    });
-    colorPickHandle.addEventListener('pointercancel', () => {
-      colorHandleDragging = false;
-      colorPickHandle.classList.remove('is-dragging');
-    });
-    const pickerInput = el('input', {
-      type: 'color', value: spineColorStyle(selectedColor).color,
-      'aria-label': 'Elegir otro color para el lomo',
-      onChange: event => selectSpineColor(event.currentTarget.value)
-    });
-    const pipetteButton = el('button', {
-      type:'button', class:'ihr-spine-editor__pipette', 'aria-label':'Elegir color de la portada',
-      title:'Tomar un color de la portada', onClick:beginColorPick
-    }, [svgIcon(ICONS.pipette, { className:'ihr-icon' })]);
-    const colorControls = el('div', { class: 'ihr-flyout__colors', role: 'group', 'aria-label': 'Color del lomo' });
-    const fontSelect = el('select', {
-      class: 'ihr-spine-editor__select', 'aria-label': 'Fuente del lomo',
-      onChange: event => {
-        const font = SPINE_FONTS.find(candidate => candidate.family === event.currentTarget.value);
-        if (!font) return;
-        updateCustomization({ spineFontFamily: font.family });
-      }
-    });
-    // Each face is listed in its own typeface (desktop pickers honour it).
-    for (const font of SPINE_FONTS) fontSelect.append(el('option', {
-      value: font.family, text: font.label,
-      style: `font-family:"${font.family}", ${font.fallback};font-weight:${font.weight}`
-    }));
-    fontSelect.value = book.spineFontFamily || style.fontFamily || SPINE_FONTS[0].family;
-    // The filled part of the track follows the value (CSS reads --ihr-range-fill).
-    const syncRange = input => input.style.setProperty('--ihr-range-fill',
-      `${(Number(input.value) - Number(input.min)) / (Number(input.max) - Number(input.min)) * 100}%`);
-    const fontSizeInput = el('input', {
-      type: 'range', min: '8', max: '48', step: '1', class: 'ihr-spine-editor__slider',
-      value: String(Math.max(8, Math.min(48, Number(book.spineFontSize) || Number(style.spineFontSize) || 10))),
-      'aria-label': 'Tamaño del título del lomo',
-      onInput: event => {
-        const size = Number(event.currentTarget.value);
-        sizeOutput.textContent = `${size} px`;
-        syncRange(event.currentTarget);
-        updateCustomization({ spineFontSize: size });
-      }
-    });
-    const sizeOutput = el('output', { class: 'ihr-spine-editor__size', text: `${fontSizeInput.value} px` });
-    const authorSizeInput = el('input', {
-      type: 'range', min: '6', max: '36', step: '1', class: 'ihr-spine-editor__slider',
-      value: String(Math.max(6, Math.min(36, Number(book.spineAuthorFontSize) || Number(style.spineAuthorFontSize) || 12))),
-      'aria-label': 'Tamaño del autor del lomo',
-      onInput: event => {
-        const size = Number(event.currentTarget.value);
-        authorSizeOutput.textContent = `${size} px`;
-        syncRange(event.currentTarget);
-        updateCustomization({ spineAuthorFontSize: size });
-      }
-    });
-    const authorSizeOutput = el('output', { class: 'ihr-spine-editor__size', text: `${authorSizeInput.value} px` });
-    syncRange(fontSizeInput);
-    syncRange(authorSizeInput);
-    const titleInput = el('input', {
-      type: 'text', maxlength: '120', value: book.spineTitleOverride ?? '',
-      placeholder: book.title || 'Título del libro', class: 'ihr-spine-editor__input',
-      'aria-label': 'Texto del lomo', enterkeyhint: 'done',
-      onInput: event => updateCustomization({ spineTitleOverride: event.currentTarget.value })
-    });
-    const authorInput = el('input', {
-      type: 'text', maxlength: '120', value: normalizeBookAuthor(book.author),
-      placeholder: 'Sin autor', 'aria-label': 'Autor del libro', autocomplete: 'name', class: 'ihr-spine-editor__input',
-      enterkeyhint: 'done',
-      onInput: event => updateCustomization({ author: normalizeBookAuthor(event.currentTarget.value) })
-    });
-    function visibleViewport() {
-      const vv = window.visualViewport;
-      return {
-        width: window.innerWidth || 0,
-        height: Math.min(window.innerHeight || 0, vv?.height || window.innerHeight || 0),
-        top: vv?.offsetTop || 0
-      };
-    }
-    function syncFlyoutViewport() {
-      if (!session.keyboardOpen) {
-        flyout.classList.remove('uses-visual-viewport');
-        flyout.style.removeProperty('--ihr-visible-top');
-        flyout.style.removeProperty('--ihr-visible-height');
-        return;
-      }
-      const viewport = visibleViewport();
-      flyout.style.setProperty('--ihr-visible-top', `${viewport.top}px`);
-      flyout.style.setProperty('--ihr-visible-height', `${viewport.height}px`);
-      flyout.classList.add('uses-visual-viewport');
-    }
-    function keepTitleVisible() {
-      if (editorPanel.hidden || document.activeElement !== titleInput) return;
-      const panelRect = editorPanel.getBoundingClientRect();
-      const fieldRect = titleInput.getBoundingClientRect();
-      // The sticky header covers the top of the scrollport.
-      const top = Math.max(panelRect.top, editorHeader.getBoundingClientRect().bottom);
-      const margin = 14;
-      if (fieldRect.bottom > panelRect.bottom - margin) {
-        editorPanel.scrollTop += fieldRect.bottom - panelRect.bottom + margin;
-      } else if (fieldRect.top < top + margin) {
-        editorPanel.scrollTop -= top + margin - fieldRect.top;
-      }
-    }
-    session.handleViewportResize = () => {
-      if (editorPanel.hidden || !session.editorViewportHeight) return false;
-      const viewport = visibleViewport();
-      if (Math.abs(viewport.width - session.editorViewportWidth) >= 40) return false;
-      const keyboardVisible = viewport.height < session.editorViewportHeight - 100;
-      session.keyboardOpen = keyboardVisible;
-      syncFlyoutViewport();
-      if (keyboardVisible) requestAnimationFrame(() => requestAnimationFrame(keepTitleVisible));
-      return true;
-    };
-    editorPanel.addEventListener('focusin', event => {
-      if (event.target === titleInput || event.target === authorInput) requestAnimationFrame(keepTitleVisible);
-    });
-    function updateColorSelection() {
-      const cloth = spineFinish(book.spineFinish) === 'matte';
-      // With no saved override the spine follows the cover: that is the first sample.
-      const followsCover = !book.spineColorOverride;
-      colorButtons.forEach((button, index) => {
-        const selected = cloth && (followsCover ? index === 0 : button.dataset.color === selectedColor);
-        button.setAttribute('aria-pressed', String(selected));
-        button.classList.toggle('is-selected', selected);
-      });
-      pickerInput.value = spineColorStyle(selectedColor).color;
-      bindingFinish.value = spineFinish(book.spineFinish);
-      inkFinish.value = spineFinish(book.spineTextFinish);
-      coverSurfaceFinish.value = surfaceFinish(book.coverFinish);
-      pageEdgeSurfaceFinish.value = surfaceFinish(book.pageEdgeFinish);
-      spineSurfaceFinish.value = surfaceFinish(book.spineSurfaceFinish, 'matte');
-      inkPicker.value = item.style.ink;
-      engravedInput.checked = book.spineEngraved === true;
-      const customSelected = cloth && !followsCover && !suggestedColors.includes(selectedColor);
-      pickerInput.parentElement?.classList.toggle('is-selected', customSelected);
-      // A chosen custom colour fills its chip, so the choice stays visible.
-      if (customSelected) pickerInput.parentElement?.style.setProperty('--ihr-swatch-color', selectedColor);
-      else pickerInput.parentElement?.style.removeProperty('--ihr-swatch-color');
-      pipetteButton.style.setProperty('--ihr-pipette-color', selectedColor);
-      const font = SPINE_FONTS.find(candidate => candidate.family === fontSelect.value) || SPINE_FONTS[0];
-      fontSelect.style.fontFamily = `"${font.family}", ${font.fallback}`;
-      fontSelect.style.fontWeight = String(font.weight);
-      // Samples paint the real cloth and ink, even while a foil is chosen.
-      editorPanel.style.setProperty('--ihr-ed-cloth', followsCover ? suggestedColors[0] : selectedColor);
-      editorPanel.style.setProperty('--ihr-ed-ink', /^#[0-9a-f]{6}$/i.test(book.spineTextColor || '')
-        ? book.spineTextColor : spineColorStyle(item.style.color).ink);
-      for (const { select, picker, samples } of finishPickers) {
-        picker.dataset.value = select.value;
-        for (const sample of samples) sample.classList.toggle('is-active', sample.dataset.value === select.value);
-      }
-    }
-    function selectSpineColor(color) {
-      selectedColor = spineColorStyle(color).color;
-      book.spineColorOverride = selectedColor;
-      updateCustomization({ spineColorOverride: selectedColor, spineFinish:'matte' });
-    }
-    suggestedColors.forEach((color, index) => {
-      const names = ['Color de la portada', 'Color complementario 1', 'Color complementario 2'];
-      const button = el('button', {
-        type: 'button', class: 'ihr-flyout__swatch',
-        'aria-label': names[index], 'aria-pressed': false,
-        title: names[index], 'data-color': color,
-        style: `--ihr-swatch-color:${color}`,
-        onClick: () => selectSpineColor(color)
-      });
-      colorButtons.push(button);
-    });
-    colorControls.append(
-      el('div', { class: 'ihr-flyout__swatches' }, colorButtons),
-      el('span', { class: 'ihr-flyout__colors-rule', 'aria-hidden': 'true' }),
-      pipetteButton,
-      el('label', { class: 'ihr-flyout__custom-color', title: 'Elegir otro color' }, [
-        pickerInput,
-        el('span', { class: 'ihr-flyout__custom-mark', 'aria-hidden': 'true', text: '+' })
-      ])
-    );
-    // The font select stays a plain native select; its wrapper draws the chevron.
-    const selectWrap = select => el('span', { class:'ihr-spine-editor__select-wrap' }, [select]);
-    // Finishes are chosen from material samples, like a binder's swatch card.
-    // The native <select> is still the real control (Tab, arrow keys, screen
-    // readers, TalkBack) laid transparently over the samples; the samples
-    // themselves only answer the pointer.
-    const finishPickers = [];
-    function materialPicker(select, part, choices) {
-      const samples = choices.map(([value, text]) => el('span', {
-        class:'ihr-spine-editor__material', 'data-value':value, title:text,
-        onClick:() => {
-          if (select.value === value) return;
-          select.value = value;
-          select.dispatchEvent(new Event('change', { bubbles:true }));
-        }
-      }, [el('span', { class:'ihr-spine-editor__specimen' }), el('span', { class:'ihr-spine-editor__material-name', text })]));
-      const picker = el('span', { class:'ihr-spine-editor__materials', 'data-part':part }, [
-        select, el('span', { class:'ihr-spine-editor__materials-track', 'aria-hidden':'true' }, samples)
-      ]);
-      finishPickers.push({ select, picker, samples });
-      return picker;
-    }
-    const FOIL_CHOICES = [['gold','Oro'],['silver','Plata']];
-    const SURFACE_CHOICES = [['matte','Mate'],['satin','Satinado'],['glossy','Brillante']];
-    function finishSelect(label, field) {
-      const select = el('select', { class:'ihr-spine-editor__select ihr-spine-editor__finish', 'aria-label':label,
-        onChange:event => updateCustomization({ [field]:event.currentTarget.value }) });
-      const choices = [['matte', field === 'spineTextFinish' ? 'Tinta' : 'Tela'], ...FOIL_CHOICES];
-      for (const [value,text] of choices) select.append(el('option',{value,text}));
-      select.value = spineFinish(book[field]);
-      return { select, picker:materialPicker(select, field === 'spineTextFinish' ? 'ink' : 'binding', choices) };
-    }
-    const { select:bindingFinish, picker:bindingPicker } = finishSelect('Acabado del lomo', 'spineFinish');
-    function surfaceFinishSelect(label, field, fallback, part) {
-      const select = el('select', {
-        class:'ihr-spine-editor__select ihr-spine-editor__finish',
-        'aria-label':label,
-        onChange:event => updateCustomization({ [field]:surfaceFinish(event.currentTarget.value, fallback) })
-      });
-      for (const [value,text] of SURFACE_CHOICES) select.append(el('option',{value,text}));
-      select.value = surfaceFinish(book[field], fallback);
-      return { select, picker:materialPicker(select, part, SURFACE_CHOICES) };
-    }
-    const { select:coverSurfaceFinish, picker:coverPicker } = surfaceFinishSelect('Brillo de la portada', 'coverFinish', 'satin', 'cover');
-    const { select:pageEdgeSurfaceFinish, picker:pageEdgePicker } = surfaceFinishSelect('Brillo del canto', 'pageEdgeFinish', 'satin', 'edge');
-    const { select:spineSurfaceFinish, picker:spineSurfacePicker } = surfaceFinishSelect('Brillo del lomo', 'spineSurfaceFinish', 'matte', 'spine');
-    const editorLabel = text => el('span', { class:'ihr-spine-editor__label', text });
-    const editorRow = (label, control, extra = '') => el('label', { class:`ihr-spine-editor__row ${extra}`.trim() }, [editorLabel(label), control]);
-    // Rows holding a sample picker are not <label>s: a click on a sample must
-    // not be forwarded to the transparent select.
-    const pickerRow = (label, picker, extra = '') => el('div', { class:`ihr-spine-editor__row ${extra}`.trim() }, [editorLabel(label), picker]);
-    // Gloss reads as a small specimen chart: one row per part, one column per sheen.
-    const surfaceFinishControls = el('div', { class:'ihr-spine-editor__gloss', role:'group', 'aria-label':'Acabados de superficie' }, [
-      el('div', { class:'ihr-spine-editor__row ihr-spine-editor__gloss-head', 'aria-hidden':'true' }, [
-        el('span', { class:'ihr-spine-editor__label' }),
-        el('span', { class:'ihr-spine-editor__gloss-columns' }, SURFACE_CHOICES.map(([, text]) => el('span', { text })))
-      ]),
-      pickerRow('Portada', coverPicker, 'ihr-spine-editor__gloss-row'),
-      pickerRow('Canto', pageEdgePicker, 'ihr-spine-editor__gloss-row'),
-      pickerRow('Lomo', spineSurfacePicker, 'ihr-spine-editor__gloss-row')
-    ]);
-    const { select:inkFinish, picker:inkFinishPicker } = finishSelect('Acabado del texto', 'spineTextFinish');
-    const inkPicker = el('input', {type:'color', value:item.style.ink, 'aria-label':'Color del texto',
-      onChange:event => updateCustomization({spineTextColor:event.currentTarget.value, spineTextFinish:'matte'})});
-    const engravedInput = el('input', {type:'checkbox', role:'switch', 'aria-label':'Texto grabado',
-      onChange:event => updateCustomization({spineEngraved:event.currentTarget.checked})});
-    const inkControls = el('div', {class:'ihr-spine-editor__row ihr-spine-editor__ink'}, [
-      editorLabel('Color'),
-      el('span', { class:'ihr-spine-editor__ink-controls' }, [
-        el('span', { class:'ihr-spine-editor__ink-chip' }, [inkPicker]),
-        el('button', {type:'button', class:'ihr-spine-editor__auto', text:'Auto', title:'Contraste automático',
-          onClick:() => updateCustomization({spineTextColor:null, spineTextFinish:'matte'})})
-      ])
-    ]);
-    const section = (title, modifier, children) => el('div', {
-      class:`ihr-spine-editor__section ihr-spine-editor__section--${modifier}`
-    }, [el('h3', { class:'ihr-spine-editor__section-title', text:title }), ...children]);
-    const sheetGrip = el('span', { class:'ihr-spine-editor__grip', 'aria-hidden':'true' });
-    const editorHeading = el('h2', { class:'ihr-spine-editor__heading', text:'Editar el lomo' });
-    // Pestañas 'Lomo' | 'Portada': lista de pestañas con tabulación móvil
-    // (sólo la activa entra en el orden de Tab; flechas, Inicio y Fin mueven).
-    const editorTabButtons = new Map(EDITOR_TABS.map(tab => [tab.id, el('button', {
-      type:'button', role:'tab', class:'ihr-spine-editor__tab', id:`${editorUid}-tab-${tab.id}`,
-      'aria-selected':String(tab.id === editorTab), 'aria-controls':`${editorUid}-panel-${tab.id}`,
-      tabindex:tab.id === editorTab ? '0' : '-1', text:tab.label,
-      onClick:() => selectEditorTab(tab.id)
-    })]));
-    const editorTabs = el('div', {
-      class:'ihr-spine-editor__tabs', role:'tablist', 'aria-label':'Qué quieres editar',
-      onKeydown:event => {
-        const target = nextEditorTab(editorTab, event.key);
-        if (!target) return;
-        event.preventDefault(); event.stopPropagation();
-        selectEditorTab(target, { focusTab:true });
-      }
-    }, [...editorTabButtons.values()]);
-    const editorHeader = el('header', { class:'ihr-spine-editor__header' }, [
-      sheetGrip,
-      el('div', { class:'ihr-spine-editor__titles' }, [
-        editorHeading,
-        editorSubtitle
-      ]),
-      el('button', { type:'button', class:'ihr-btn ihr-spine-editor__done', text:'Listo', onClick:closeEditor }),
-      editorTabs
-    ]);
-    const spinePanel = el('div', {
-      class:'ihr-spine-editor__body', id:`${editorUid}-panel-spine`, role:'tabpanel',
-      'aria-labelledby':`${editorUid}-tab-spine`
-    }, [
-        section('Rótulo', 'text', [
-          el('label', { class:'ihr-spine-editor__field ihr-spine-editor__field--title' }, [editorLabel('Texto del lomo'), titleInput]),
-          el('label', { class:'ihr-spine-editor__field ihr-spine-editor__field--author' }, [editorLabel('Autor'), authorInput])
-        ]),
-        section('Tipografía', 'type', [
-          editorRow('Fuente', selectWrap(fontSelect), 'ihr-spine-editor__row--font'),
-          editorRow('Título', el('span', { class:'ihr-spine-editor__range' }, [fontSizeInput, sizeOutput]), 'ihr-spine-editor__field--size'),
-          editorRow('Autor', el('span', { class:'ihr-spine-editor__range' }, [authorSizeInput, authorSizeOutput]), 'ihr-spine-editor__field--size')
-        ]),
-        section('Letras', 'ink', [
-          inkControls,
-          pickerRow('Acabado', inkFinishPicker),
-          el('label', { class:'ihr-spine-editor__row ihr-spine-editor__engraving' }, [
-            el('span', { class:'ihr-spine-editor__label', text:'Texto grabado' }), engravedInput
-          ])
-        ]),
-        section('Encuadernación', 'binding', [
-          el('div', { class:'ihr-spine-editor__row ihr-spine-editor__row--swatches' }, [editorLabel('Color'), colorControls]),
-          pickerRow('Acabado', bindingPicker)
-        ]),
-        section('Brillo', 'gloss', [surfaceFinishControls])
-    ]);
+    const actionButtons = [
+      el('button', { type: 'button', class: 'ihr-btn ihr-btn--primary', disabled:true, onClick: () => expandCover() }, [svgIcon(ICONS.read, { className:'ihr-icon' }), el('span', { text: opts.texts.openAction })]),
+      cloudAction,
+      el('button', { type: 'button', class: 'ihr-btn ihr-btn--quiet ihr-btn--icon ihr-flyout__edit-button', disabled:true, 'aria-expanded': 'false', 'aria-label':'Editar', title:'Editar', onClick: () => editor.toggleEditor() }, [svgIcon(ICONS.brush, { className:'ihr-icon' })])
+    ];
 
-    // ---- Pestaña 'Portada' · Relieve ----
-    const reliefStatus = el('p', { class:'ihr-relief__status', role:'status', 'aria-live':'polite' });
-    const reliefRetry = el('button', {
-      type:'button', class:'ihr-spine-editor__auto ihr-relief__retry', text:'Reintentar', hidden:true,
-      onClick:() => { relief.status = 'idle'; loadReliefProposals(); }
+    // The spine / cover editor (colour, typography, finishes, relief, dropper) is built and run by the shelf
+    // module (rust-ui/src/bookshelf/editor*.rs); this flyout hands it its nodes and its geometry.
+    editor = new shelfNative.RustFlyoutEditor(shelfCtx, {
+      book, item, view, session, bookNode, flyout, meta, coverTarget, editButton:actionButtons[2], coverUrl,
+      style, vw, vh, landscape, coverW, coverH, centerX, centerY, thickness,
+      colorPick:{ layer:colorPickLayer, message:colorPickMessage, cancel:colorPickCancel, handle:colorPickHandle },
+      host:{ replaceShelfSpine }
     });
-    const reliefGrid = el('div', { class:'ihr-relief__cards' });
-    const reliefNone = el('button', { type:'button', class:'ihr-relief-none', hidden:true,
-      'aria-pressed':'true', onClick:() => chooseRelief(null)
-    }, [
-      el('span', { class:'ihr-relief-none__mark', 'aria-hidden':'true' }), el('span', { text:'Sin relieve' })
-    ]);
-    const reliefGroup = el('div', { class:'ihr-relief__group', role:'group', 'aria-label':'Propuestas de relieve' }, [reliefGrid, reliefNone]);
-    const reliefColorSelect = el('select', { class:'ihr-relief__color-select', hidden:true,
-      'aria-label':'Color del relieve a ajustar',
-      onChange:event => { relief.activeColor = event.currentTarget.value; syncReliefSelection(); }
-    });
-    const reliefIntensityLabel = editorLabel('Intensidad');
-    const reliefStrengthOutput = el('output', { class:'ihr-spine-editor__size' });
-    const reliefStrength = el('input', {
-      type:'range', min:'10', max:'100', step:'5', class:'ihr-spine-editor__slider', 'aria-label':'Intensidad del relieve',
-      onInput:event => {
-        const percent = Number(event.currentTarget.value);
-        reliefStrengthOutput.textContent = `${percent} %`;
-        syncRange(event.currentTarget);
-        const layers = coverReliefLayers(book.coverRelief);
-        if (!layers.length) return;
-        const next = layers.map(layer => layer.color === relief.activeColor ? { ...layer, strength:percent / 100 } : layer);
-        updateCustomization({ coverRelief:packRelief(next) });
-        // Un empujón a la vista por fotograma como mucho al arrastrar.
-        if (!relief.sliderFrame) relief.sliderFrame = requestAnimationFrame(() => {
-          relief.sliderFrame = 0;
-          pushReliefToView(normalizeCoverRelief(book.coverRelief));
-        });
-      }
-    });
-    const reliefStrengthRow = el('div', { class:'ihr-spine-editor__row ihr-relief__strength' }, [
-      reliefIntensityLabel, reliefColorSelect, el('span', { class:'ihr-spine-editor__range' }, [reliefStrength, reliefStrengthOutput])
-    ]);
-    const coverPanel = el('div', {
-      class:'ihr-spine-editor__cover', id:`${editorUid}-panel-cover`, role:'tabpanel',
-      'aria-labelledby':`${editorUid}-tab-cover`, hidden:true
-    }, [
-      section('Relieve', 'relief', [
-                el('div', { class:'ihr-relief__state' }, [reliefStatus, reliefRetry]),
-        reliefGroup,
-        reliefStrengthRow
-      ])
-    ]);
-    const cleanProposals = list => {
-      const proposals = [], colors = new Set(), ids = new Set();
-      for (const proposal of Array.isArray(list) ? list : []) {
-        const choice = normalizeCoverRelief(proposal);
-        if (!choice?.color || typeof proposal.label !== 'string' || colors.has(choice.color) || ids.has(choice.id)) continue;
-        colors.add(choice.color); ids.add(choice.id);
-        proposals.push({ ...choice, label:proposal.label,
-          description:typeof proposal.description === 'string' ? proposal.description : '',
-          thumbnail:typeof proposal.thumbnail === 'string' && proposal.thumbnail.startsWith('data:image/') ? proposal.thumbnail : '' });
-        if (proposals.length === COLOR_RELIEF_IDS.length) break;
-      }
-      return proposals;
-    };
-    function pushReliefToView(next) {
-      if (view?.setCoverRelief) {
-        relief.applied = Promise.resolve(view.setCoverRelief(next)).catch(error => {
-          console.warn('No se pudo aplicar el relieve:', error); return false;
-        });
-      } else { view?.updateCoverAppearance?.(book); relief.applied = Promise.resolve(true); }
-      return relief.applied;
-    }
-    function applyRelief(next) {
-      updateCustomization({ coverRelief:next });
-      pushReliefToView(next);
-    }
-    function packRelief(layers) {
-      return layers.length > 1 ? normalizeCoverRelief({ layers }) : layers[0] || null;
-    }
-    function syncReliefSelection() {
-      const current = normalizeCoverRelief(book.coverRelief);
-      const layers = coverReliefLayers(current);
-      if (!layers.some(layer => layer.color === relief.activeColor)) relief.activeColor = layers.at(-1)?.color || null;
-      const active = layers.find(layer => layer.color === relief.activeColor);
-      for (const input of reliefGrid.querySelectorAll('input')) {
-        const proposal = relief.proposals.find(item => item.id === input.value);
-        const on = layers.some(layer => proposal?.color === layer.color && proposal.tolerance === layer.tolerance);
-        input.checked = on;
-        input.closest('.ihr-relief-card').classList.toggle('is-selected', on);
-      }
-      reliefNone.setAttribute('aria-pressed', String(!current));
-      reliefNone.classList.toggle('is-selected', !current);
-      reliefNone.hidden = !(relief.status === 'ready' || current);
-      reliefColorSelect.hidden = layers.length < 2;
-      reliefIntensityLabel.hidden = layers.length > 1;
-      reliefColorSelect.replaceChildren(...layers.map(layer => el('option', { value:layer.color,
-        text:relief.proposals.find(proposal => proposal.color === layer.color)?.label || layer.color
-      })));
-      reliefColorSelect.value = relief.activeColor || '';
-      reliefStrength.disabled = !active;
-      const percent = Math.round((active?.strength ?? .7) * 100);
-      reliefStrength.value = String(Math.max(10, percent));
-      reliefStrengthOutput.textContent = active ? `${percent} %` : '—';
-      reliefStrength.setAttribute('aria-description', active ? `Intensidad de ${active.color}` : 'Elige uno o varios colores');
-      syncRange(reliefStrength);
-      reliefStrengthRow.hidden = !(relief.status === 'ready' || current);
-      if (relief.status === 'ready') reliefStatus.textContent = current && !layers.length
-        ? 'Elige un color para actualizar el relieve.' : '';
-    }
-    function chooseRelief(proposal, checked = true) {
-      const choice = proposal ? normalizeCoverRelief(proposal) : null;
-      if (proposal && !choice) return;
-      const layers = coverReliefLayers(book.coverRelief).filter(layer => layer.color !== choice?.color);
-      if (choice && checked) { layers.push(choice); relief.activeColor = choice.color; }
-      const next = proposal ? packRelief(layers) : null;
-      applyRelief(next);
-      syncReliefSelection();
-      if (next) scheduleCoverTilt(); else cancelCoverTilt();
-    }
-    function reliefCard(proposal) {
-      const input = el('input', {
-        type:'checkbox', value:proposal.id, class:'ihr-relief__input',
-        onChange:event => chooseRelief(proposal, event.currentTarget.checked)
-      });
-      return el('label', { class:'ihr-relief-card', 'data-relief-color':proposal.color, title:`${proposal.label} · ${proposal.color}` }, [
-        input,
-        el('span', { class:'ihr-relief-card__preview', style:`background:${proposal.color}`, 'aria-hidden':'true' },
-          proposal.thumbnail ? [el('img', { class:'ihr-relief-card__thumb', src:proposal.thumbnail, alt:'', draggable:'false' })] : []),
-        el('span', { class:'ihr-relief-card__text' }, [
-          el('span', { class:'ihr-relief-card__label' }, [
-            el('span', { class:'ihr-relief-card__swatch', style:`background:${proposal.color}`, 'aria-hidden':'true' }),
-            el('span', { text:proposal.label })
-          ]),
-          proposal.description ? el('span', { class:'ihr-relief-card__description', text:proposal.description }) : null
-        ])
-      ]);
-    }
-    function renderReliefCards() {
-      const { status, proposals } = relief;
-      coverPanel.setAttribute('aria-busy', String(status === 'loading'));
-      reliefGroup.classList.toggle('is-loading', status === 'loading');
-      reliefRetry.hidden = status !== 'error';
-      reliefStatus.textContent = status === 'loading' ? 'Analizando…'
-        : status === 'error' ? 'No se pudo analizar la portada'
-        : status === 'empty' ? (coverUrl ? 'Sin zonas detectadas'
-          : 'Sin portada')
-        : status === 'ready' && normalizeCoverRelief(book.coverRelief) && !coverReliefLayers(book.coverRelief).length
-          ? 'Elige un color para actualizar el relieve.' : '';
-      reliefStatus.classList.toggle('is-busy', status === 'loading');
-      // Reserve the cards before the turn; starting analysis must not grow
-      // the sheet over the cover that was just fitted above it.
-      if (status === 'loading' || status === 'idle') {
-        reliefGrid.replaceChildren(...COLOR_RELIEF_IDS.map(() => el('span', { class:'ihr-relief-card is-skeleton', 'aria-hidden':'true' }, [
-          el('span', { class:'ihr-relief-card__preview' }),
-          el('span', { class:'ihr-relief-card__text' }, [el('span', { class:'ihr-relief-card__label' }), el('span', { class:'ihr-relief-card__description' })])
-        ])));
-      } else reliefGrid.replaceChildren(...(status === 'ready' ? proposals.map(reliefCard) : []));
-      syncReliefSelection();
-    }
-    async function loadReliefProposals() {
-      if (relief.status === 'loading' || relief.status === 'ready') return;
-      if (!coverUrl) { relief.status = 'empty'; renderReliefCards(); refitCoverPose(); return; }
-      const key = reliefKey();
-      const cached = state.reliefProposals.get(key);
-      const controller = new AbortController();
-      relief.controller = controller;
-      relief.status = 'loading';
-      renderReliefCards();
-      try {
-        // Cached proposals still belong to a new flyout/material. Prepare its
-        // shader before any card can be chosen, after the tab's turn has ended.
-        const [result] = await Promise.all([
-          cached ? { proposals:cached } : analyzeCoverRelief(coverUrl, {
-            title:book.title, author:normalizeBookAuthor(book.author), signal:controller.signal, previews:false
-          }),
-          view?.prepareCoverRelief?.()
-        ]);
-        if (relief.controller !== controller || state.session !== session) return;
-        relief.proposals = cleanProposals(result?.proposals);
-        relief.status = relief.proposals.length ? 'ready' : 'empty';
-        if (relief.proposals.length) {
-          state.reliefProposals.set(key, relief.proposals);
-          if (state.reliefProposals.size > 12) state.reliefProposals.delete(state.reliefProposals.keys().next().value);
-        }
-      } catch (error) {
-        if (relief.controller !== controller || controller.signal.aborted) return;
-        console.warn('No se pudo analizar la portada para el relieve:', error);
-        relief.status = 'error';
-      }
-      relief.controller = null;
-      renderReliefCards();
-      refitCoverPose();
-    }
-    editorPanel.append(editorHeader, editorPreview, spinePanel, coverPanel);
-    renderReliefCards();
-    updateColorSelection();
-    // Mobile sheet: dragging the header down dismisses it, like its grabber suggests.
-    let sheetDrag = null;
-    editorHeader.addEventListener('pointerdown', event => {
-      if (event.button !== 0 || !sheetGrip.offsetWidth || event.target.closest('button')) return;
-      sheetDrag = { id:event.pointerId, y:event.clientY, time:performance.now(), dy:0 };
-      editorHeader.setPointerCapture?.(event.pointerId);
-      editorPanel.classList.add('is-dragging');
-    });
-    editorHeader.addEventListener('pointermove', event => {
-      if (sheetDrag?.id !== event.pointerId) return;
-      sheetDrag.dy = Math.max(0, event.clientY - sheetDrag.y);
-      editorPanel.style.transform = sheetDrag.dy ? `translateY(${sheetDrag.dy}px)` : '';
-    });
-    const endSheetDrag = event => {
-      if (sheetDrag?.id !== event.pointerId) return;
-      const { dy, time } = sheetDrag;
-      sheetDrag = null;
-      editorPanel.classList.remove('is-dragging');
-      editorPanel.style.transform = '';
-      const flick = dy > 36 && dy / Math.max(1, performance.now() - time) > .55;
-      if (event.type === 'pointerup' && (dy > 110 || flick)) closeEditor();
-    };
-    editorHeader.addEventListener('pointerup', endSheetDrag);
-    editorHeader.addEventListener('pointercancel', endSheetDrag);
     meta.append(el('div', { class: 'ihr-flyout__actions' }, actionButtons));
-    meta.append(editorPanel);
+    meta.append(editor.panel());
     const readyCheck = setInterval(() => {
       const task = options.getBookPreparation?.(book)
       clearInterval(readyCheck)
@@ -3475,13 +2478,13 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     );
 
     function fadeMeta() {
-      if (!editorPanel.hidden) closeEditor({ commit: false, restoreFocus: false });
+      if (!editor.is_hidden()) editor.closeEditor(false, false);
       const opacity = getComputedStyle(meta).opacity;
       metaEntrance.cancel?.();
       animate(meta, [{ opacity }, { opacity:0 }], { duration:prefersReducedMotion() ? 1 : 160, fill:'both' });
       meta.style.pointerEvents = 'none';
       actionButtons.forEach(button => { if (button?.tagName === 'BUTTON') button.disabled = true; });
-      editorPanel.querySelectorAll('button, input, select').forEach(control => { control.disabled = true; });
+      editor.disableControls();
     }
 
     async function playReturn() {
@@ -3688,6 +2691,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
           session.cancelled = true;
           clearInterval(readyCheck);
           document.removeEventListener('keydown', onKeydown, true);
+          endEditor();
           // The close animation uses the same physical book and viewport. Keep
           // its decoded case and linked programs instead of rebuilding them at
           // Back. Only one view is retained, and incompatible geometry is never
@@ -4250,6 +3254,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       }
       state.objectUrls.clear();
       root.remove();
+      if (shelfCtxLive) { shelfCtxLive = false; shelfCtx.free(); }
     }
   };
 }
