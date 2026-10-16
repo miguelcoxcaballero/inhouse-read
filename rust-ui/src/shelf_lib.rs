@@ -32,6 +32,7 @@ mod spine_surface;
 mod cover_editor;
 mod book_reflection;
 mod cover_relief;
+mod book_paint;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]

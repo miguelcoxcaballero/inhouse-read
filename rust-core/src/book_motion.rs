@@ -1,4 +1,9 @@
-//! Prepared monotone Hermite motion. The host retains frame scheduling and GPU ownership.
+//! Prepared monotone Hermite motion and its real-time clock. The host retains frame
+//! scheduling and GPU ownership. Both kernels are total: any offsets, values and
+//! progress (NaN, infinities, duplicate or reversed offsets) go through the same IEEE
+//! arithmetic the original JavaScript sampler used, so degenerate keyframes give the
+//! same numbers it gave.
+use crate::jsnum::{max, min};
 const KEYS: usize = 9;
 const INPUT: usize = 10;
 const PREPARED: usize = 19;
@@ -10,8 +15,6 @@ const PREPARED: usize = 19;
 pub unsafe extern "C" fn book_motion_prepare(input: *const f64, count: usize, output: *mut f64) -> u32 {
     if !(2..=1024).contains(&count) { return 0; }
     let source = std::slice::from_raw_parts(input, count * INPUT);
-    if source.iter().any(|v| !v.is_finite()) || source.chunks_exact(INPUT)
-        .zip(source.chunks_exact(INPUT).skip(1)).any(|(a,b)| b[0] <= a[0]) { return 0; }
     let result = std::slice::from_raw_parts_mut(output, count * PREPARED);
     for i in 0..count {
         let target = &mut result[i * PREPARED..(i + 1) * PREPARED];
@@ -38,10 +41,10 @@ pub unsafe extern "C" fn book_motion_prepare(input: *const f64, count: usize, ou
 /// `prepared` is count*19 f64 produced by book_motion_prepare; output is 9 f64.
 #[no_mangle]
 pub unsafe extern "C" fn book_motion_sample(prepared: *const f64, count: usize, progress: f64, output: *mut f64) -> u32 {
-    if !(2..=1024).contains(&count) || !progress.is_finite() { return 0; }
+    if !(2..=1024).contains(&count) { return 0; }
     let source = std::slice::from_raw_parts(prepared, count * PREPARED);
-    // JS Math.max(0, Math.min(1, -0)) produces positive zero.
-    let t = if progress <= 0.0 { 0.0 } else if progress >= 1.0 { 1.0 } else { progress };
+    // Math.max(0, Math.min(1, progress)): -0 becomes +0 and NaN stays NaN.
+    let t = max(0.0, min(1.0, progress));
     let mut index = 0;
     while index < count - 2 && t > source[(index + 1) * PREPARED] { index += 1; }
     let a = &source[index * PREPARED..(index + 1) * PREPARED];
@@ -58,4 +61,28 @@ pub unsafe extern "C" fn book_motion_sample(prepared: *const f64, count: usize, 
             + (k3 - k2) * span * b[INPUT + key];
     }
     1
+}
+
+/// Start of a motion's clock: `state` is [longest step, elapsed, last frame, started].
+/// A stalled frame may absorb at most 100 ms (a fifth of a hinge opening), never half a
+/// phase, so the board and ribbon never visibly jump.
+/// # Safety
+/// `state` points to four writable, 8-byte aligned f64 values.
+#[no_mangle]
+pub unsafe extern "C" fn book_motion_clock_start(state: *mut f64, duration: f64, now: f64) {
+    std::slice::from_raw_parts_mut(state, 4).copy_from_slice(&[max(48.0, min(100.0, duration / 2.0)), 0.0, now, 0.0]);
+}
+
+/// One callback of the motion: the time elapsed since the previous callback, capped at
+/// the longest step (48 ms for the first, which only covers the frame that scheduled the
+/// motion), advances the motion; returns its progress 0..1.
+/// # Safety
+/// `state` was written by book_motion_clock_start.
+#[no_mangle]
+pub unsafe extern "C" fn book_motion_clock_step(state: *mut f64, duration: f64, now: f64) -> f64 {
+    let s = std::slice::from_raw_parts_mut(state, 4);
+    s[1] += min(if s[3] != 0.0 { s[0] } else { 48.0 }, max(0.0, now - s[2]));
+    s[2] = now;
+    s[3] = 1.0;
+    if duration > 0.0 { min(1.0, s[1] / duration) } else { 1.0 }
 }

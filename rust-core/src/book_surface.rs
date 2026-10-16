@@ -1,6 +1,8 @@
 //! The existing bookcloth, paper tooth and ribbon mask. All raster outputs
-//! retain their original byte format. The host supplies eight browser sine
-//! coefficients; no per-pixel callback or imported platform function is used.
+//! retain their original byte format. The cloth's eight and the weave's four sines are the
+//! host's own (see host_math.rs); no per-pixel callback or imported platform function is used.
+use crate::host_math::{put, SIN};
+use std::f64::consts::PI;
 
 fn lattice(i: u32, j: u32, salt: u32) -> f64 {
     let mut h = i.wrapping_mul(374761393).wrapping_add(j.wrapping_mul(668265263))
@@ -96,4 +98,26 @@ pub unsafe extern "C" fn book_weave_pixels(coefficients: *const f64,
             byte(255.0 * (1.0 - s.max(0.0) * 0.2)), 255, 255]);
     }
     1
+}
+
+/// The sines the cloth tile's threads use, `sin(PI * ((x + .5) / 8))` for x in 0..8; the paper
+/// tooth needs none. Returns how many requests were written.
+/// # Safety
+/// `requests` has room for 8 triples.
+#[no_mangle]
+pub unsafe extern "C" fn book_surface_plan(kind: u32, requests: *mut f64) -> u32 {
+    if kind != 0 { return 0; }
+    let out = std::slice::from_raw_parts_mut(requests, 8 * 3);
+    for x in 0..8 { put(out, x, SIN, PI * ((x as f64 + 0.5) / 8.0), 0.0); }
+    8
+}
+
+/// The weave's four sines, `sin(PI * (i * 2 + 1) / 8)`.
+/// # Safety
+/// `requests` has room for 4 triples.
+#[no_mangle]
+pub unsafe extern "C" fn book_weave_plan(requests: *mut f64) -> u32 {
+    let out = std::slice::from_raw_parts_mut(requests, 4 * 3);
+    for i in 0..4 { put(out, i, SIN, PI * (i as f64 * 2.0 + 1.0) / 8.0, 0.0); }
+    4
 }
