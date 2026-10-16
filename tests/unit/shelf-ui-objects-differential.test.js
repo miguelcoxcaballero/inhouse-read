@@ -149,6 +149,70 @@ async function same(script, settings = {}) {
 }
 
 describe('moving things on the shelf against the frozen original', () => {
+  it('keeps a captured lamp target usable after removing its neighbouring plant repaints the row', async () => {
+    const text = await same(() => {
+      let targets
+      return [
+        ['add neighbours', async () => { await add(); await addLamp() }],
+        ['capture both targets', () => { targets = [plant(0), lamp(0)] }],
+        ['remove plant and repaint', async () => { key(targets[0], 'Delete'); await flush(1200) }],
+        ['remove the previously captured lamp', async () => {
+          key(targets[1], 'Delete'); await flush(1200)
+          expect(qa('.ihr-lamp')).toHaveLength(0)
+        }]
+      ]
+    }, { config: { scene: true } })
+    expect(text).not.toContain('!!')
+  }, 90_000)
+
+  it('keeps the initial action aliases, disabled Drive and both empty library layouts', async () => {
+    for (const sections of [false, true]) {
+      const settings = { list: () => [], extra: {
+        sections, showActions: true, driveAvailable: false,
+        onPickLocalFile() { state.log.push(`local receiver ${this === undefined}`) },
+        onOpenDrive() { state.log.push(`drive receiver ${this === undefined}`) },
+        texts: { emptyTitle: 'Sin libros \ud800', emptyBody: 'Elige un archivo', emptyAction: 'Elegir', addLocal: 'Local', addDrive: 'Nube' }
+      } }
+      const text = await same(() => [
+        ['empty layout', () => {}],
+        ['empty action', () => q('.ihr-empty__action').click()],
+        ['local action', () => qa('.ihr-actions button')[0].click()],
+        ['disabled Drive', () => qa('.ihr-actions button')[1].click()],
+        ['enabled Drive', () => { const drive = qa('.ihr-actions button')[1]; drive.disabled = false; drive.click() }]
+      ], settings)
+      expect(text).toContain('local receiver true')
+      expect(text).toContain('drive receiver true')
+    }
+  }, 90_000)
+
+  it('keeps geometry status messages and retry/open callback receivers', async () => {
+    const text = await same(() => [
+      ['status messages', () => {}],
+      ['open pending book', () => qa('.ihr-library-loading__book button')[0].click()],
+      ['retry failed book', () => qa('.ihr-library-loading__book button')[1].click()],
+      ['select missing source', () => qa('.ihr-library-loading__book button')[2].click()]
+    ], { extra: {
+      receiverMarker: 'status-options',
+      getBookGeometryState(book) { return { a: 'pending', b: 'failed', c: 'needs-source' }[book.id] },
+      onBookGeometryRetry(book) { state.log.push(`retry ${book.id} receiver ${this?.receiverMarker}`) },
+      onOpenBook(book) { state.log.push(`open ${book.id} receiver ${this === undefined}`) }
+    } })
+    expect(text).toContain('Reintentar')
+    expect(text).toContain('retry b receiver status-options')
+    expect(text).toContain('open a receiver true')
+    expect(text).toContain('open c receiver true')
+  }, 90_000)
+
+  it('calls custom accessible book text with the merged texts object as receiver', async () => {
+    const text = await same(() => [['accessible labels', () => {}]], { extra: { texts: {
+      marker: 'text-options',
+      openAria(book) { state.log.push(`open label receiver ${this?.marker}`); return `Abrir ${book.id} \ud800` },
+      progressAria(percent) { state.log.push(`progress label receiver ${this?.marker}`); return `${percent} %` }
+    } } })
+    expect(text).toContain('open label receiver text-options')
+    expect(text).toContain('progress label receiver text-options')
+  }, 90_000)
+
   it('keeps the options object as the receiver of placement and removal callbacks', async () => {
     const extra = {
       receiverMarker: 'shelf-options',

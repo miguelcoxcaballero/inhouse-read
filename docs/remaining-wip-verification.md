@@ -1,3 +1,50 @@
+# 1.7.253 — filas y controles de entrada de la estantería en Rust
+
+Changelog: «Filas y controles de estantería en Rust».
+Los constructores de filas, libros, plantas y lámparas, sus estados de pulsación/tacto, validación del contacto,
+clic de compatibilidad, teclado, arrastre, apertura y borrado viven en screen_nodes.rs. También los estados
+vacío/de preparación, mensajes de geometría y acciones iniciales. El render y las sustituciones de portada
+llaman directamente a los constructores nativos. Los identificadores, textos accesibles y callbacks conservan
+sus cadenas UTF-16 y receptores; el estado de geometría se consulta en Rust con el mismo fallback.
+
+La prueba de ciclos detectó un problema real del primer port: al borrar una planta se repintaba la fila y se
+retiraban antes de tiempo los listeners del objetivo de lámpara ya capturado. La lámpara no se borraba y el
+número de lámparas reales crecía. Se conserva el comportamiento de esos objetivos: el DOM/GC posee un pequeño
+adaptador que solo entrega eventos a un dispatcher nativo débil compartido; todas las decisiones y cambios de
+estado siguen en Rust. No se retienen nodos por separado desde Rust y al destruir la pantalla se retiran sus
+callbacks. El diagnóstico temporal no forma parte del código publicado.
+
+Cinco nuevas pruebas cubren repintado/destrucción repetida con contadores nativos y capacidad WASM, alias de
+acciones y Drive deshabilitado, ambos vacíos, mensajes de geometría y receptores de retry/apertura, textos
+accesibles con receptor y UTF-16, y el borrado de una lámpara capturada después de borrar la planta vecina.
+Las 678 pruebas específicas en 69 archivos pasan, incluidas las comparaciones con el JavaScript congelado y
+las pruebas de recursos. No se han relajado muestras, aserciones, plazos ni reintentos.
+
+Build final de Rust y web completos. Inventario 31299 Rust / 21292 JS, 59,51 % (1.7.252: 58,68 %); recuento de
+líneas de producción con comentarios, no funciones terminadas. Inicialización, ciclo de vida, catálogo raíz y
+parte de la API pública de la pantalla, app.js y la cola larga siguen pendientes.
+
+Batería completa congelada en cuatro shards: 1800 + 1374 + 1422 + 1782 = 6378 pruebas pasan; una de 6379 falla
+por tiempo, en 497 archivos. Es cover-relief-job-wasm «gives the original profile for 200 000 colours…»:
+6573 ms frente a su límite original de 5000 ms. La función de perfiles no cambia en este port. La misma prueba
+se ha ejecutado por separado con candidato y build/código de main 1.7.252, un worker, y falla por el mismo
+límite en ambos (candidato 6240 ms y main 6381 ms); el resto de sus 38 casos pasa en ambos. Ejecutar solo ese caso también
+excede el límite. Se registra como fallo de tiempo reproducido en la base, sin aumentar el límite ni reducir
+su corpus. La batería de 1.7.252 había pasado antes en este mismo entorno; no se oculta esta variación.
+
+Binarios frente a 1.7.252: shelf 1239810 → 1289562 bytes (+49752); UI general mantiene 2027162 bytes,
+con SHA variable entre construcciones. Core/decor/voice conservan sus bytes, y la firma del bake de modelos
+sigue siendo 47972dc16ce28e84aca9. Revisión propia de equivalencia y propiedad de recursos; no hay una nueva
+revisión independiente de tres revisores ni comprobación en móvil físico/GPU real.
+
+Navegador: 35 E2E pasan (28 escena/pantalla + 7 editor/catálogos), un worker y cero reintentos.
+Seis estados visuales pasan frente a 1.7.252: cinco idénticos y uno (13) con diferencia máxima de 1/255;
+la repetición del mismo estado con la base 1.7.252 reproduce ese máximo de 1/255. Se inspeccionaron las
+capturas de BAGGEBO isométrica y de las lámparas. Arranque, tres pares alternados con Chromium/SwiftShader:
+primera escena mediana 3644,7 → 3907,1 ms (rangos 3452,8–3654,4 / 3539,3–3966); primer lomo
+5754,7 → 5186 ms (5036–8085 / 5047,6–5764,3); DCL 192,7 → 146,2 ms. La primera escena aún no tiene
+libros y el primer lomo no implica calidad asentada. No se declara una aceleración a partir de estas muestras.
+
 # 1.7.252 — render, refresco y preferencias de la pantalla en Rust
 
 Changelog: «Render y refresco de la estantería en Rust».

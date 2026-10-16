@@ -106,10 +106,10 @@ pub fn adopt_metadata_records(ctx:&Rc<Ctx>,next_books:&JsValue)->R<bool>{
  if map_size(&items)!=gn(&books,"length"){return Ok(false);}
  for book in array_of(&books){
   if get(&map_get(&items,&string_value(&get(&book,"id"))),"book")!=book
-   ||ctx.legacy("bookGeometryState",&[&book])?!=s("ready"){return Ok(false);}
+   ||ctx.geometry_state(&book)?!=s("ready"){return Ok(false);}
  }
  for book in array_of(next_books){
-  if ctx.legacy("bookGeometryState",&[&book])?!=s("ready")||!map_has(&items,&string_value(&get(&book,"id"))){return Ok(false);}
+  if ctx.geometry_state(&book)?!=s("ready")||!map_has(&items,&string_value(&get(&book,"id"))){return Ok(false);}
  }
  let by_id=new_map()?;
  for book in array_of(next_books){map_set(&by_id,&string_value(&get(&book,"id")),&book);}

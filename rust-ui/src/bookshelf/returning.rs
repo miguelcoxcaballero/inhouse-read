@@ -48,7 +48,7 @@ pub fn settle_return_slot(ctx:&Rc<Ctx>,before_render:bool)->R{
  let book=array_of(&ctx.st("books")).into_iter().find(|record|string_value(&get(record,"id"))==wanted);
  // `state.destroyed || !root.isConnected || !book || bookGeometryState(book) !== 'ready' || width/height changed`, in that order.
  let gone=if ctx.st_true("destroyed")||!is_connected(&ctx.root){true}else{match &book{
-  Some(book)=>text(&ctx.legacy("bookGeometryState",&[book])?)!="ready",
+  Some(book)=>text(&ctx.geometry_state(book)?)!="ready",
   None=>true,
  }};
  if gone||inner_width()!=gn(&pending,"width")||inner_height()!=gn(&pending,"height"){
@@ -144,7 +144,7 @@ async fn return_to_shelf(ctx:Rc<Ctx>,book_id:JsValue,options:JsValue)->R<JsValue
  let wanted=book_id_text(&book_id);
  let books=array_of(&ctx.st("books"));
  let record=books.iter().find(|book|string_value(&get(book,"id"))==wanted).cloned();
- let ready=match &record{Some(record)=>text(&ctx.legacy("bookGeometryState",&[record])?)=="ready",None=>false};
+ let ready=match &record{Some(record)=>text(&ctx.geometry_state(record)?)=="ready",None=>false};
  if !ready{
   if ctx.st("returningBookId")==wanted{set_returning_book(&ctx,&null())?;}
   return Ok(JsValue::FALSE);

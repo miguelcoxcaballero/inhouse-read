@@ -202,7 +202,7 @@ impl RustShelfCtx{
  }
 }
 
-async fn open(ctx:Rc<Ctx>,mut spine_el:JsValue,mut item:JsValue)->R{
+pub async fn open(ctx:Rc<Ctx>,mut spine_el:JsValue,mut item:JsValue)->R{
  if ctx.st_true("busy")||ctx.st_true("session")||ctx.st_true("returnMotion")||ctx.st_true("destroyed"){return Ok(());}
  ctx.legacy("clearCompatibilityTapRefresh",&[])?;
  if ctx.st_true("queuedBooks"){
@@ -219,7 +219,7 @@ async fn open(ctx:Rc<Ctx>,mut spine_el:JsValue,mut item:JsValue)->R{
    qsa(&ctx.root,".ihr-spine").into_iter().find(|node|data_get(node,"bookId")==wanted)
   }else{None};
   spine_el=found.unwrap_or(undef());
-  if !truthy(&item)||!is_connected(&spine_el)||text(&ctx.legacy("bookGeometryState",&[&get(&item,"book")])?)!="ready"{return Ok(());}
+  if !truthy(&item)||!is_connected(&spine_el)||text(&ctx.geometry_state(&get(&item,"book"))?)!="ready"{return Ok(());}
  }
  method(&ctx.legacy_value("returnViews"),"clear",&[])?;
  ctx.st_set("busy",&JsValue::TRUE);
@@ -274,7 +274,7 @@ async fn open(ctx:Rc<Ctx>,mut spine_el:JsValue,mut item:JsValue)->R{
   if truthy(&ctx.scene()){method(&ctx.scene(),"updateEntry",&[&spine_el,&book,&get(&item,"style"),&cover_url])?;}
   else{
    let had_focus=active_element()==spine_el;
-   let replacement=ctx.legacy("buildSpine",&[&item])?;
+   let replacement=super::screen_nodes::build_spine(&ctx,&item)?;
    replace_with(&spine_el,&replacement);
    spine_el=replacement.clone();
    if had_focus{focus(&replacement);}
@@ -522,7 +522,7 @@ impl Flyout{
   }
   let had_focus=active_element()==existing;
   let was_away=cls_has(&existing,"is-away");
-  let replacement=self.ctx.legacy("buildSpine",&[&self.item])?;
+  let replacement=super::screen_nodes::build_spine(&self.ctx,&self.item)?;
   if was_away{cls_add(&replacement,&["is-away"]);}
   replace_with(&existing,&replacement);
   *self.spine_el.borrow_mut()=replacement.clone();
