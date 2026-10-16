@@ -20,6 +20,7 @@ mod speech_mask;
 mod speech_pipeline;
 #[path="../../rust-core/src/speech_normalize.rs"]
 mod speech_normalize;
+mod speech_numbers;
 #[path="../../rust-core/src/speech_fragments.rs"]
 mod speech_fragments_core;
 mod speech_plan;

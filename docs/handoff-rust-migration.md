@@ -16,7 +16,7 @@ sale de lo comprobado en esa sesión; lo que no se pudo comprobar está dicho.
 
 ## Estado
 
-- `main` está en **1.7.254**: **59,52 %** de Rust (31305 líneas de Rust, 21292 de JS).
+- `main` está en **1.7.255**: **59,64 %** de Rust (31465 líneas de Rust, 21292 de JS).
   Se mide con `git add -A -n . && node scripts/rust-migration-status.mjs`; es un recuento de líneas de
   `rust-core/src`, `rust-ui/src` y `src/js`, no mide funciones terminadas.
 - Evolución: 16,38 % (1.7.234) → 39,73 % (1.7.245) → 42,35 % (1.7.246 portadas) → 45,38 % (1.7.247 armario y
@@ -117,3 +117,10 @@ WIP local sin validar: /workspace/inhouse-read-shelf-lifecycle (inicialización 
 La entrega 1.7.253 tiene 6378/6379 pruebas completas pasando; el caso restante excede 5 s también en main 1.7.252.
 
 Corrección urgente de símbolos del audiolibro publicada en 1.7.254; se continúa ahora con zoom/repintado.
+
+1.7.255 publicada con urgencia explícita: años/enteros en idioma de la voz, referencias de notas omitidas.
+362 pruebas específicas pasan; 18 E2E anteriores a tres ajustes finales; repetir dos E2E y cerrar
+la batería general que continúa en /workspace/inhouse-read-speech-numbers, sin compilar durante Vitest.
+Primer shard 1800 pasa; timeout ya conocido de cover-relief-job-wasm en segundo shard.
+Después priorizar /workspace/inhouse-read-zoom-render (sin compilar/validar): scene_quality.rs,
+compilación paralela al sustituir calidad y agrupación de repintados. No declarar aceleración sin medir.

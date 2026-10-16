@@ -104,6 +104,18 @@ describe('normalising speech without losing offsets', () => {
     expect(text).toBe('One two three')
     expect(text.split('').every((ch, i) => ch === ' ' ? /\s/.test(raw[map[i]]) : raw[map[i]] === ch)).toBe(true)
   })
+  it('omits EPUB note references and backlinks while retaining note prose and mathematical superscripts',()=>{
+    const doc=html('<p>En 1999<a epub:type="noteref" href="#n1">1</a> ocurrió. Luego<sup><a href="notes.xhtml#n2">2</a></sup> seguimos. E = mc<sup>2</sup>.</p><aside epub:type="footnote" id="n1"><a href="#r1">1</a> Texto de la nota.</aside><p>En <a href="#year">2026</a> volvemos.</p>')
+    const map=mapSpeechText(doc.body)
+    expect(map.text).toBe('En 1999 ocurrió. Luego seguimos. E = mc2.\n Texto de la nota.\nEn 2026 volvemos.')
+    const start=map.text.indexOf('2026')
+    expect(map.rangeFor(start,start+4).toString()).toBe('2026')
+  })
+  it('omits explicit asterisk note numbers without removing multiplication or body years',()=>{
+    const raw='En 1999 pasó. *12 Después. x*2 sigue. [3] Final.'
+    expect(normalizeSpeech(raw,{footnotes:false}).text).toBe('En 1999 pasó. Después. x*2 sigue. Final.')
+    expect(normalizeSpeech(raw,{footnotes:true}).text).toContain('*12')
+  })
   it('removes footnote markers in place, like the old text pass, but keeps later offsets right', () => {
     const raw = 'Claim.[12] Next (nota 3) point [*] ends[†].'
     const { text, map } = normalizeSpeech(raw, { footnotes:false })

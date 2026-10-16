@@ -236,8 +236,10 @@ fn pump(e:&JsValue)->R<()>{
  if prepared==st("pending"){return Ok(());}
  set(&entry,"state",&st("synth"))?;set(&run,"segStart",&n(now()))?;
  let voice=read(&run,"voice")?;let request=Object::new();
- set(&request,"text",&read(&entry,"text")?)?;set(&request,"rate",&read(&run,"rate")?)?;set(&request,"speaker",&read(&voice,"speaker")?)?;
- let marks=read(&entry,"marks")?;if t(&read(&marks,"length")?){set(&request,"marks",&marks)?;}
+ let (spoken,marks,pairs)=crate::speech_numbers::prepare(&read(&entry,"text")?,&read(&voice,"lang")?,&read(&entry,"marks")?)?;
+ set(&entry,"speechOffsetPairs",&pairs)?;
+ set(&request,"text",&spoken)?;set(&request,"rate",&read(&run,"rate")?)?;set(&request,"speaker",&read(&voice,"speaker")?)?;
+ if t(&read(&marks,"length")?){set(&request,"marks",&marks)?;}
  if read(&voice,"runtime")?==st("supertonic3"){set(&request,"lang",&read(&voice,"lang")?)?;set(&request,"style",&read(&voice,"style")?)?;}
  let handlers=method(e,"_handlers",&[&run,&entry])?;
  let job=method(&read(e,"client")?,"synth",&[&request,&handlers])?;
@@ -391,6 +393,7 @@ pub fn neural_job_plan(entry:JsValue,counts:JsValue)->R<()>{set(&entry,"counts",
 pub fn neural_job_chunk(e:JsValue,run:JsValue,entry:JsValue,chunk:JsValue)->R<()>{
  let index=read(&chunk,"index")?;let last=read(&chunk,"last")?;let pcm=read(&chunk,"pcm")?;let rate=read(&chunk,"sampleRate")?;let ms=read(&chunk,"ms")?;
  let marks=read(&chunk,"marks")?;let marks=if marks.is_undefined(){Array::new().into()}else{marks};
+ let marks=crate::speech_numbers::restore_marks(&marks,&get(&entry,"speechOffsetPairs"))?;
  if read(&e,"run")?!=run{return Ok(());}
  set(&run,"segStart",&n(now()))?;
  let dur=num(&read(&pcm,"length")?)/num(&rate);

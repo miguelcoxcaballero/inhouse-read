@@ -31,6 +31,37 @@ describe('NeuralEngine reading aloud', () => {
   beforeEach(() => { t = setup() })
   afterEach(() => vi.useRealTimers())
 
+  it('sends spelled years in the voice language and restores page marks on the audible clock', async()=>{
+    const text='En 1999 llegamos. En 2026 volvemos.', offset=text.indexOf('En 2026')
+    t.engine.speak({text,voiceId:CLAUDE,id:'years',marks:[offset],upcoming:['En 2027 seguimos.']})
+    await flush()
+    const client=t.clients.last(), job=client.jobs[0]
+    expect(job.request.text).toBe('En mil novecientos noventa y nueve llegamos. En dos mil veintiséis volvemos.')
+    const mapped=job.request.text.indexOf('En dos mil')
+    expect(job.request.marks).toEqual([mapped])
+    job.handlers.onChunk({index:0,last:true,pcm:new Float32Array(44100).fill(.1),sampleRate:22050,ms:100,marks:[{sample:22050,offset:mapped}]})
+    job.handlers.onEnd()
+    await flush()
+    expect(client.jobs[1].request.text).toBe('En dos mil veintisiete seguimos.')
+    advance(t.ctx,1.2);await flush()
+    expect(t.events.some(event=>event.type==='boundary'&&event.offset===offset)).toBe(true)
+    expect(t.engine.run.entries[0].text).toBe(text)
+  })
+
+  it('restores every raw page mark when a Chinese number contracts to fewer glyphs', async()=>{
+    const voiceId='piper:zh_CN-huayan-medium'
+    t=setup({installed:[voiceId]})
+    t.engine.speak({text:'100000000之后。',voiceId,id:'short-number',marks:[1,2,5,8]})
+    await flush()
+    const job=t.clients.last().jobs[0]
+    expect(job.request.text).toBe('一亿之后。')
+    expect(job.request.marks).toEqual([0,1])
+    job.handlers.onChunk({index:0,last:true,pcm:new Float32Array(44100).fill(.1),sampleRate:22050,ms:100,marks:[{sample:0,offset:0},{sample:11025,offset:1}]})
+    job.handlers.onEnd();await flush()
+    advance(t.ctx,1.2);await flush()
+    expect(t.events.filter(event=>event.type==='boundary').map(event=>event.offset)).toEqual([1,2,5,8])
+  })
+
   it('prepares the worker with the voice, synthesises the text and reports start/done at the audible times', async () => {
     t.engine.speak({ text: 'Hola mundo.', voiceId: CLAUDE, rate: 1.25, id: 'a' })
     await flush()

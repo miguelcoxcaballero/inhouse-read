@@ -22,6 +22,27 @@ fn node_text(node:&Node)->JsValue{node.unchecked_ref::<TextNode>().text()}
 fn prop(value:&JsValue,key:&str)->JsValue{Reflect::get(value,&JsValue::from_str(wasm_bindgen::intern(key))).unwrap_or(JsValue::UNDEFINED)}
 fn set(object:&Object,key:&str,value:&JsValue)->Result<(),JsValue>{Reflect::set(object,&JsValue::from_str(wasm_bindgen::intern(key)),value)?;Ok(())}
 fn skipped(name:&str)->bool{matches!(name,"script"|"style"|"noscript"|"template"|"head"|"title"|"rt"|"rp"|"svg"|"math")}
+// EPUB reference links and backlinks are navigation, not spoken prose. Only
+// semantically identified markers are skipped: ordinary superscript mathematics
+// and numbers in the main text retain their existing map and visible text.
+fn note_marker(element:&Element)->bool{
+ let role=element.get_attribute("role").unwrap_or_default();
+ let kind=element.get_attribute("epub:type").or_else(||element.get_attribute_ns(Some("http://www.idpf.org/2007/ops"),"type")).unwrap_or_default();
+ if role.split_whitespace().any(|s|matches!(s,"doc-noteref"|"doc-backlink"))||kind.split_whitespace().any(|s|matches!(s,"noteref"|"backlink")){return true;}
+ let classes=element.class_list();
+ if classes.contains("noteref")||classes.contains("footnote-ref")||classes.contains("footnote-backref"){return true;}
+ if element.local_name()!="a"||!element.has_attribute("href"){return false;}
+ let label=element.text_content().unwrap_or_default();let label=label.trim();
+ if label.is_empty()||label.len()>24||!label.chars().all(|c|c.is_numeric()||matches!(c,'*'|'†'|'‡'|'['|']'|'('|')'|'.')){return false;}
+ let mut parent=element.parent_element();
+ for _ in 0..5{let Some(node)=parent else{break};
+  if node.local_name()=="sup"{return true;}
+  let role=node.get_attribute("role").unwrap_or_default();let kind=node.get_attribute("epub:type").unwrap_or_default();
+  if role.split_whitespace().any(|s|matches!(s,"doc-footnote"|"doc-endnote"))||kind.split_whitespace().any(|s|matches!(s,"footnote"|"endnote"|"rearnote")){return true;}
+  parent=node.parent_element();
+ }
+ false
+}
 fn is_block(name:&str)->bool{matches!(name,"address"|"article"|"aside"|"blockquote"|"dd"|"details"|"div"|"dl"|"dt"|"fieldset"|"figcaption"|"figure"|"footer"|"form"|"h1"|"h2"|"h3"|"h4"|"h5"|"h6"|"header"|"hr"|"li"|"main"|"nav"|"ol"|"p"|"pre"|"section"|"summary"|"table"|"tbody"|"td"|"tfoot"|"th"|"thead"|"tr"|"ul"|"body"|"html")}
 fn hard(name:&str)->bool{matches!(name,"h1"|"h2"|"h3"|"h4"|"h5"|"h6"|"li"|"dt"|"dd"|"th"|"td"|"caption"|"figcaption"|"summary")}
 fn not_rendered(element:&Element,window:Option<&web_sys::Window>)->bool{
@@ -49,7 +70,7 @@ pub fn speech_map(root:JsValue,mode:u32)->Result<JsValue,JsValue>{
     let kind=item.node_type();let element=if kind==1{Some(item.unchecked_ref::<Element>())}else{None};
     let mut block=frame.block;let mut ancestor_hard=frame.ancestor_hard;let mut block_hard=frame.block_hard;
     if let Some(element)=element{
-     let name=element.local_name();if mode==0&&(skipped(&name)||not_rendered(element,window.as_ref())){continue;}
+     let name=element.local_name();if mode==0&&(skipped(&name)||note_marker(element)||not_rendered(element,window.as_ref())){continue;}
      if name=="br"{if mode==0{pending=true;}else if mode==1{separator="\n";}}
      if mode==0{let id=next_id;next_id+=1;if hard(&name){ancestor_hard=id;}if is_block(&name){block=id;block_hard=ancestor_hard;}}
     }else if kind==3{
