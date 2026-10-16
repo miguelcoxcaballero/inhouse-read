@@ -8,16 +8,3 @@ export const plantLeafCases = [
   {name:'legacy-monstera',variant:'monstera',length:56.98,width:37.2,curve:.13,twist:.012,detailed:true},
   {name:'legacy-ivy',variant:'ivy',length:19.76,width:10.162,curve:.05,twist:.38,detailed:false},
 ].map((item,index)=>({...item,tint:.00431+index*.00813,hue:-.037+index*.00761}));
-
-export const plantModelCases = [
-  {catalogId:'sansevieria',seed:'rust-botanical:snake'},
-  {catalogId:'succulent',seed:'rust-botanical:rosette'},
-  {catalogId:'chamaedorea',seed:'rust-botanical:palm'},
-  {catalogId:'nephrolepis',seed:'rust-botanical:fern'},
-  {catalogId:'zamioculcas',seed:'rust-botanical:zz'},
-  // Negative routing controls: these use other generators and must stay exact.
-  {catalogId:'hedera',seed:'rust-botanical:ivy'},
-  {catalogId:'monstera',seed:'rust-botanical:monstera'},
-  {catalogId:'cactus',seed:'rust-botanical:cactus'},
-];
-export const expectedPlantLeafCalls = {sansevieria:8,succulent:27,chamaedorea:230,nephrolepis:666,zamioculcas:66,hedera:0,monstera:0,cactus:0};

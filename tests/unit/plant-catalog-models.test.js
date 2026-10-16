@@ -139,6 +139,7 @@ describe('IKEA referenced plant catalog', () => {
     const positions = pots[3].geometry.attributes.position;
     // the fluted pot is a lathe of 96 segments: one column of the profile has the vertices of one meridian
     const n = positions.count / (96 + 1), outerRow = 5;
+    expect(Number.isInteger(n), 'the fluted pot is a 96-segment lathe').toBe(true);
     const radius = segment => Math.hypot(positions.getX(segment*n+outerRow),positions.getZ(segment*n+outerRow));
     expect(Math.abs(radius(0)-radius(1))).toBeGreaterThan(.1);
     for (const model of models) model.userData.dispose();

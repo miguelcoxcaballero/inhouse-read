@@ -71,11 +71,12 @@ describe('shelf lamps from the Rust shelf module',()=>{
    try{same(b,d,'after editing');same(c,d,'second lamp');}finally{b.dispose();d.dispose();}
   }finally{a.dispose();c.dispose();}
  });
- it('draws each lamp with one call of the module and keeps no handles or memory for repeated lamps',()=>{
-  const warm=createShelfLamp({lampId:'tarnaby'});warm.dispose();
-  const before=state.calls,handles=module.shelf_live_handles();
+ it('draws each lamp with one call of the module and keeps no handles or memory for repeated lamps',async()=>{
+  const exports=await module.default();
+  for(const lampId of ['mittled','tarnaby','tripod'])for(const quality of ['low','high']){const warm=createShelfLamp({lampId,quality});warm.dispose();}
+  const before=state.calls,handles=module.shelf_live_handles(),capacity=exports.memory.buffer.byteLength;
   for(let i=0;i<30;i++){const lamp=createShelfLamp({lampId:['mittled','tarnaby','tripod'][i%3],quality:i%2?'low':'high'});lamp.dispose();}
-  expect(state.calls-before).toBe(30);expect(module.shelf_live_handles()).toBe(handles);
+  expect(state.calls-before).toBe(30);expect(module.shelf_live_handles()).toBe(handles);expect(exports.memory.buffer.byteLength).toBe(capacity);
  });
  it('reports a shelf module that is not loaded instead of working around it',()=>{
   state.loaded=false;

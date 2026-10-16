@@ -3,6 +3,7 @@ import {createServer} from 'vite';
 import {createServer as createHttpServer} from 'node:http';
 const html=`<!doctype html><script type="module">
 import {loadRustDecorCore} from '/inhouse-read/src/js/rust-decor-core.js';
+import {loadRustShelf} from '/inhouse-read/src/js/rust-shelf.js';
 import {rustPlantSoilRows} from '/inhouse-read/src/js/plant-soil-wasm.js';
 import {createShelfPlant,plantSurfacesReady} from '/inhouse-read/src/js/shelf-plants.js';
 import {soilPainter} from '/inhouse-read/tests/unit/helpers/reference-plant-soil.js';
@@ -19,6 +20,8 @@ window.verifySoil=(kind,w,h,row,count,pigment,data)=>{
  if(pigment.some((v,i)=>v!==p[i])||data.some((v,i)=>v!==d[i]))throw Error('Actual final soil differs');
 };
 const core=await loadRustDecorCore();if(!core?.plant_soil_rows)throw Error('Compiled soil required');
+// The plants' geometry is the shelf module's: the live shelf awaits it before its first render, so does this page.
+if(!await loadRustShelf())throw Error('Rust shelf module required');
 window.checkSoil=async()=>{
  const models=[];
  for(const [catalogId,potId] of [['monstera','muskot'],['cactus','akerbar']])models.push(createShelfPlant({catalogId,potId,seed:'soil-'+catalogId,height:240,inspectionResolution:1}));
@@ -64,6 +67,7 @@ test('actual peat and gravel surfaces use bounded Rust rows with identical final
  });
  await page.setViewportSize({width:390,height:844});const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setCPUThrottlingRate',{rate:4});
  await page.goto(url);await page.waitForFunction(()=>window.checkSoil);const result=await page.evaluate(()=>window.checkSoil());
- expect(result.actualCalls).toBeGreaterThanOrEqual(64);expect(result.memory.verified).toBe(result.actualCalls);expect(result.memory.mismatches).toBe(0);expect(result.memory.live).toBe(0);expect(result.memory.maxRows).toBe(4);expect(result.memory.kinds.sort()).toEqual([0,1]);
+// 128: the decor catalogue's fixed arena (decor-catalogue.js) stays allocated for the whole page.
+ expect(result.actualCalls).toBeGreaterThanOrEqual(64);expect(result.memory.verified).toBe(result.actualCalls);expect(result.memory.mismatches).toBe(0);expect(result.memory.live).toBe(128);expect(result.memory.maxRows).toBe(4);expect(result.memory.kinds.sort()).toEqual([0,1]);
  await info.attach('actual-pot-soil-and-timing',{body:JSON.stringify(result),contentType:'application/json'});console.log(JSON.stringify(result.samples.map(({times,...entry})=>entry)));
 });

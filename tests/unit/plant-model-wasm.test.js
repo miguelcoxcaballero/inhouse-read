@@ -96,11 +96,13 @@ describe('shelf plants from the Rust shelf module',()=>{
    }finally{b.userData.dispose();d.userData.dispose();}
   }finally{a.userData.dispose();c.userData.dispose();}
  });
- it('leaves no handles or memory behind for repeated plants',()=>{
-  const warm=createShelfPlant(fresh(ENTRIES[3]));warm.userData.dispose();
-  const handles=module.shelf_live_handles();
+ it('leaves no handles or memory behind for repeated plants',async()=>{
+  const exports=await module.default();
+  // Warm every variant once so the linear memory has reached its working size, then repeat them.
+  for(const entry of ENTRIES){const warm=createShelfPlant(fresh(entry));warm.userData.dispose();}
+  const handles=module.shelf_live_handles(),capacity=exports.memory.buffer.byteLength;
   for(let i=0;i<20;i++){const plant=createShelfPlant(fresh(ENTRIES[i%ENTRIES.length]));plant.userData.dispose();}
-  expect(module.shelf_live_handles()).toBe(handles);
+  expect(module.shelf_live_handles()).toBe(handles);expect(exports.memory.buffer.byteLength).toBe(capacity);
  });
  it('reports a shelf module that is not loaded instead of working around it',()=>{
   state.loaded=false;
