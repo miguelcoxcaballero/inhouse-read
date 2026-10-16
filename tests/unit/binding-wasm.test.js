@@ -97,7 +97,22 @@ describe('compiled curved binding keeps the exact original surface', () => {
     expect(() => rustBindingBuffers(tracked, 132, 200, 40, 96, () => { count++; throw failure; }, 384)).toThrow(failure);
     expect(count).toBe(1); expect(releases).toEqual(allocations);
   });
-  it('leaves unsupported geometry and unavailable allocation to the original implementation', () => {
+  it('takes every sine, cosine and hypotenuse from the engine\'s own Math, never from the core', () => {
+    // A Math a hair off in the last bits, as another engine\'s can be: the original and the core must
+    // still agree, which only holds if the core computes none of them itself.
+    const { sin, cos, hypot } = Math;
+    const plain = referenceBindingGeometry(132, 200, 40, 12), before = plain.getAttribute('position').array.slice(); plain.dispose();
+    Math.sin = x => sin(x) + Math.abs(sin(x)) * 2 ** -16; Math.cos = x => cos(x) - Math.abs(cos(x)) * 2 ** -17;
+    Math.hypot = (...values) => hypot(...values) * (1 + 2 ** -15);
+    try {
+      const reference = referenceBindingGeometry(132, 200, 40, 12);
+      try {
+        compare(rustBindingBuffers(core, 132, 200, 40, 12), reference);
+        expect(Buffer.compare(bytes(before), bytes(reference.getAttribute('position').array)), 'the perturbed Math must move the profile').not.toBe(0);
+      } finally { reference.dispose(); }
+    } finally { Math.sin = sin; Math.cos = cos; Math.hypot = hypot; }
+  });
+  it('declines unsupported geometry and unavailable allocation', () => {
     expect(rustBindingBuffers(null, 132, 200, 40)).toBeNull();
     for (const args of [[0, 200, 40], [132, 200, NaN], [132, 200, 40, 2.5],
       [132, 200, 40, 1024], [132, 200, 40, 512, () => 0, 1024]]) {

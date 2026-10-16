@@ -124,7 +124,7 @@ let live = 0, peak = 0, allocations = 0, releases = 0, kernelCalls = 0;
 const tracked = { ...core,
   alloc_f64(length) { const pointer = core.alloc_f64(length); if (pointer) { live += length * 8; peak = Math.max(peak, live); allocations++; } return pointer; },
   free_f64(pointer, length) { core.free_f64(pointer, length); live -= length * 8; releases++; },
-  binding_mesh(...args) { kernelCalls++; return core.binding_mesh(...args); },
+  binding_finish(...args) { kernelCalls++; return core.binding_finish(...args); },
 };
 const memoryCases = fixtures.map(fixture => {
   const geometry = rustGeometry(fixture, tracked); geometry.dispose();

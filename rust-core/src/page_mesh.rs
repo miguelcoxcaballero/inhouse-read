@@ -1,6 +1,7 @@
-//! Exact page-block and turned-leaf meshes. The host supplies pow/hypot
-//! coefficients using the same browser Math implementation as the old mesh.
-//! All remaining arithmetic stays f64 until each original Float32 write.
+//! Exact page-block and turned-leaf meshes. The plans ask the host for the pow/hypot values
+//! (see host_math.rs) that the same browser Math implementation gave the old mesh, and derive
+//! the coefficients from them. All remaining arithmetic stays f64 until each original Float32 write.
+use crate::host_math::{put, HYPOT, POW};
 
 struct Mesh<'a> {
     positions: &'a mut [f32], normals: &'a mut [f32], uvs: &'a mut [f32],
@@ -164,4 +165,150 @@ pub unsafe extern "C" fn leaf_stack_mesh(
             else { mesh.triangles([a, c, d, a, b, c]); }
         }
     }
+}
+
+// ---- Plans: what the meshes above need from the browser's Math, and the coefficients they take.
+
+fn positive(value: f64) -> bool { value.is_finite() && value > 0.0 }
+fn nonnegative(value: f64) -> bool { value.is_finite() && value >= 0.0 }
+
+/// The sizes a page block is built from, or None when they cannot make one.
+struct Block { half: f64, bend: f64, columns: usize, rows: usize }
+impl Block {
+    /// `p`: width, height, thickness, board, inset, detail (0/1).
+    fn new(p: &[f64]) -> Option<Block> {
+        let (width, height, thickness, board, inset) = (p[0], p[1], p[2], p[3], p[4]);
+        if !(positive(width) && positive(height) && positive(thickness) && nonnegative(board) && nonnegative(inset)) { return None; }
+        let half = (thickness - board * 2.4) / 2.0;
+        let top = height / 2.0 - inset;
+        let z_back = thickness / 2.0 - board * 1.1;
+        if ![half, top, z_back, height * 0.2, half * half].iter().all(|&v| positive(v)) { return None; }
+        let detail = p[5] != 0.0;
+        Some(Block { half, bend: (thickness * 0.09).min(width * 0.025), columns: if detail { 16 } else { 8 }, rows: if detail { 6 } else { 3 } })
+    }
+    fn z(&self, i: usize) -> f64 { -self.half + i as f64 / self.columns as f64 * self.half * 2.0 }
+}
+
+/// First stage of a page block: slot 0 is `half ** 2`, then `|z / half| ** 6` for each column and
+/// `(row / rows) ** 1.7` for each row. Returns how many requests were written (0: not a block).
+/// # Safety
+/// `params` holds 6 f64; `requests` room for 3 f64 per request.
+#[no_mangle]
+pub unsafe extern "C" fn page_block_plan_a(params: *const f64, requests: *mut f64) -> u32 {
+    let Some(b) = Block::new(std::slice::from_raw_parts(params, 6)) else { return 0 };
+    let count = 1 + (b.columns + 1) + (b.rows + 1);
+    let out = std::slice::from_raw_parts_mut(requests, count * 3);
+    put(out, 0, POW, b.half, 2.0);
+    for i in 0..=b.columns { put(out, 1 + i, POW, (b.z(i) / b.half).abs(), 6.0); }
+    for row in 0..=b.rows { put(out, 2 + b.columns + row, POW, row as f64 / b.rows as f64, 1.7); }
+    count as u32
+}
+
+/// Second stage: the shade of every column pressed against the boards and the slope of its fore
+/// edge (`coefficients`: 3 f64 per column, then the row fractions), and the fore edge's length
+/// (`HYPOT(1, slope)`, one request per column).
+/// # Safety
+/// As `page_block_plan_a`; `results` holds its answers, `coefficients` (columns + 1) * 3 + rows + 1 f64.
+#[no_mangle]
+pub unsafe extern "C" fn page_block_plan_b(params: *const f64, results: *const f64, coefficients: *mut f64, requests: *mut f64) -> u32 {
+    let Some(b) = Block::new(std::slice::from_raw_parts(params, 6)) else { return 0 };
+    let results = std::slice::from_raw_parts(results, 1 + (b.columns + 1) + (b.rows + 1));
+    let data = std::slice::from_raw_parts_mut(coefficients, (b.columns + 1) * 3 + b.rows + 1);
+    let out = std::slice::from_raw_parts_mut(requests, (b.columns + 1) * 3);
+    for i in 0..=b.columns {
+        let slope = 2.0 * b.bend * b.z(i) / results[0];
+        data[i * 3] = 1.0 - 0.18 * results[1 + i];
+        data[i * 3 + 1] = slope;
+        put(out, i, HYPOT, 1.0, slope);
+    }
+    for row in 0..=b.rows { data[(b.columns + 1) * 3 + row] = results[2 + b.columns + row]; }
+    b.columns as u32 + 1
+}
+
+/// Last stage: the fore edge's normals from its lengths, then the mesh.
+/// # Safety
+/// As `page_block_mesh`; `lengths` holds one f64 per column.
+#[no_mangle]
+pub unsafe extern "C" fn page_block_finish(params: *const f64, lengths: *const f64, coefficients: *mut f64,
+    positions: *mut f32, normals: *mut f32, uvs: *mut f32, colors: *mut f32, indices: *mut u16) {
+    let p = std::slice::from_raw_parts(params, 6);
+    let Some(b) = Block::new(p) else { return };
+    let lengths = std::slice::from_raw_parts(lengths, b.columns + 1);
+    let data = std::slice::from_raw_parts_mut(coefficients, (b.columns + 1) * 3 + b.rows + 1);
+    for i in 0..=b.columns {
+        let slope = data[i * 3 + 1];
+        data[i * 3 + 1] = 1.0 / lengths[i];
+        data[i * 3 + 2] = -slope / lengths[i];
+    }
+    let rows_at = (b.columns + 1) * 3;
+    page_block_mesh(coefficients, coefficients.add(rows_at), p[0], p[1], p[2], p[3], p[4], b.columns, b.rows,
+        positions, normals, uvs, colors, indices);
+}
+
+/// The sizes a stack of read leaves is built from.
+struct Stack { fore: f64, gutter: f64, columns: usize }
+impl Stack {
+    /// `p`: width, height, depth, board, inset, columns.
+    fn new(p: &[f64]) -> Option<Stack> {
+        let (width, height, depth, board, inset, columns) = (p[0], p[1], p[2], p[3], p[4], p[5]);
+        if !(positive(width) && positive(height) && nonnegative(depth) && nonnegative(board) && nonnegative(inset)) { return None; }
+        if !(columns.fract() == 0.0 && (1.0..=512.0).contains(&columns)) { return None; }
+        let top = height / 2.0 - inset - height * 0.0012;
+        let fore = width - inset * 0.7 - height * 0.0015;
+        let gutter = (fore * 0.2).min(height * 0.075);
+        if ![top, fore, gutter, height * 0.2].iter().all(|&v| positive(v)) { return None; }
+        Some(Stack { fore, gutter, columns: columns as usize })
+    }
+}
+
+/// First stage of a leaf stack: the crowding power `(i / columns) ** 1.7` of every column.
+/// # Safety
+/// `params` holds 6 f64; `requests` room for 3 f64 per request.
+#[no_mangle]
+pub unsafe extern "C" fn leaf_stack_plan_a(params: *const f64, requests: *mut f64) -> u32 {
+    let Some(s) = Stack::new(std::slice::from_raw_parts(params, 6)) else { return 0 };
+    let out = std::slice::from_raw_parts_mut(requests, (s.columns + 1) * 3);
+    for i in 0..=s.columns { put(out, i, POW, i as f64 / s.columns as f64, 1.7); }
+    (s.columns + 1) as u32
+}
+
+/// Second stage: where each column stands and the slope of the leaves there (`coefficients`: 3 f64
+/// per column), and the length of the slope's normal (`HYPOT(slope, 1)`).
+/// # Safety
+/// As `leaf_stack_plan_a`; `powers` holds its answers, `coefficients` (columns + 1) * 3 f64.
+#[no_mangle]
+pub unsafe extern "C" fn leaf_stack_plan_b(params: *const f64, powers: *const f64, coefficients: *mut f64, requests: *mut f64) -> u32 {
+    let p = std::slice::from_raw_parts(params, 6);
+    let Some(s) = Stack::new(p) else { return 0 };
+    let depth = p[2];
+    let powers = std::slice::from_raw_parts(powers, s.columns + 1);
+    let data = std::slice::from_raw_parts_mut(coefficients, (s.columns + 1) * 3);
+    let out = std::slice::from_raw_parts_mut(requests, (s.columns + 1) * 3);
+    for i in 0..=s.columns {
+        // Columns crowd toward the gutter, where the leaves curl.
+        let x = s.fore * powers[i];
+        let slope = -depth * if x < s.gutter { (1.0 - 0.16) * (2.0 - 2.0 * x / s.gutter) / s.gutter } else { 0.0 };
+        data[i * 3] = x;
+        data[i * 3 + 1] = slope;
+        put(out, i, HYPOT, slope, 1.0);
+    }
+    (s.columns + 1) as u32
+}
+
+/// Last stage: the face normals from their lengths, then the mesh.
+/// # Safety
+/// As `leaf_stack_mesh`; `lengths` holds one f64 per column.
+#[no_mangle]
+pub unsafe extern "C" fn leaf_stack_finish(params: *const f64, lengths: *const f64, coefficients: *mut f64,
+    positions: *mut f32, normals: *mut f32, uvs: *mut f32, colors: *mut f32, indices: *mut u16) {
+    let p = std::slice::from_raw_parts(params, 6);
+    let Some(s) = Stack::new(p) else { return };
+    let lengths = std::slice::from_raw_parts(lengths, s.columns + 1);
+    let data = std::slice::from_raw_parts_mut(coefficients, (s.columns + 1) * 3);
+    for i in 0..=s.columns {
+        let slope = data[i * 3 + 1];
+        data[i * 3 + 1] = slope / lengths[i];
+        data[i * 3 + 2] = -1.0 / lengths[i];
+    }
+    leaf_stack_mesh(coefficients, p[0], p[1], p[2], p[3], p[4], s.columns, positions, normals, uvs, colors, indices);
 }

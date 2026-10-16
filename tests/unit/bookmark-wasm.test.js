@@ -73,7 +73,45 @@ describe('compiled ribbon mesh preserves its original printed and shaded geometr
     releaseRustBookmarkBuffers(tracked);releaseRustBookmarkBuffers(tracked);
     expect(released).toEqual(allocations);
   });
-  it('leaves unavailable or nonproduction inputs to the original geometry builder',()=>{
+  it('equals the original on a large random corpus of books, poses and strips',()=>{
+    let state=7;const random=()=>{state=(Math.imul(state,1664525)+1013904223)>>>0;return state/4294967296};
+    const pick=list=>list[Math.floor(random()*list.length)];
+    for(let n=0;n<4000;n++){
+      const width=pick([62.125,90,132,264,400,random()*500+10]),height=pick([92.375,200,240,400,random()*600+20]);
+      const thickness=pick([8.25,12,15,40,80,120,random()*120+3]);
+      const progress=pick([0,.45,1,random(),-.5,1.5]),peek=pick([0,10,16,20,random()*40,-5]);
+      const open=pick([0,.05,.3,.55,1,random(),-.2,1.3]),withdraw=pick([0,random(),1,1.4,-1]);
+      const segments=pick([4,8,16,32,64,9,6,'32',undefined,0,NaN,2,200]);
+      const seed=pick([0,1,12345,65520,65522,4294967295,-7,random()*1e6,1.5,-0]);
+      const reference=referenceBookmarkGeometry(width,height,thickness,progress,peek,{open,withdraw,segments,seed});
+      try {
+        const actual=rustBookmarkBuffers(core,width,height,thickness,progress,peek,open,withdraw,segments,seed);
+        expect(actual,JSON.stringify({width,height,thickness,progress,peek,open,withdraw,segments,seed})).not.toBeNull();compare(actual,reference);
+      } finally {reference.dispose()}
+    }
+  });
+  it('takes every sine, cosine and hypotenuse from the engine\'s own Math, never from the core',()=>{
+    // A Math that is a hair off in the last bits, as another engine's can be: the original and the
+    // core must still agree, which only holds if the core computes none of them itself.
+    const {sin,cos}=Math;let differs=0;
+    const plain=fixtures.map(f=>{
+      const geometry=referenceBookmarkGeometry(f.width,f.height,f.thickness,.45,f.peek,{open:.6,withdraw:.1,segments:f.segments,seed:f.seed});
+      const copy=geometry.getAttribute('position').array.slice();geometry.dispose();return copy;
+    });
+    Math.sin=x=>sin(x)+Math.abs(sin(x))*2**-16;Math.cos=x=>cos(x)-Math.abs(cos(x))*2**-17;
+    try {
+      fixtures.forEach((f,index)=>{
+        const reference=referenceBookmarkGeometry(f.width,f.height,f.thickness,.45,f.peek,{open:.6,withdraw:.1,segments:f.segments,seed:f.seed});
+        try {
+          const actual=rustBookmarkBuffers(core,f.width,f.height,f.thickness,.45,f.peek,.6,.1,f.segments,f.seed);
+          compare(actual,reference);
+          if(Buffer.compare(bytes(plain[index]),bytes(reference.getAttribute('position').array))!==0)differs++;
+        } finally {reference.dispose()}
+      });
+    } finally {Math.sin=sin;Math.cos=cos}
+    expect(differs,'the perturbed Math must move at least some positions').toBeGreaterThan(0);
+  });
+  it('declines unavailable or nonproduction inputs',()=>{
     expect(rustBookmarkBuffers(null,132,200,40,.45)).toBeNull();
     expect(rustBookmarkBuffers(core,132,200,40,.45,10,0,0,2048)).toBeNull();
     expect(rustBookmarkBuffers(core,132,200,40,.45,NaN)).toBeNull();

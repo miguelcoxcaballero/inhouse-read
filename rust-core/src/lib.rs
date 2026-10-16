@@ -23,6 +23,8 @@ mod book_format;
 #[cfg(feature = "app")]
 mod font;
 #[cfg(feature = "app")]
+mod host_math;
+#[cfg(feature = "app")]
 mod bookmark;
 #[cfg(feature = "app")]
 mod binding;
@@ -84,6 +86,8 @@ mod book_surface;
 mod relief;
 #[cfg(feature = "app")]
 mod book_motion;
+#[cfg(feature = "app")]
+mod book_view;
 #[cfg(feature = "app")]
 mod pdf_images;
 #[cfg(feature = "app")]
