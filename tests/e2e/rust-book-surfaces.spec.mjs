@@ -107,10 +107,13 @@ test('compiled book surfaces retain exact pixels, shared textures and bounded me
  const woven=await page.evaluate(()=>window.surfaceWork.weaveIntegration());
  const integrated=await page.evaluate(()=>window.surfaceWork.integration());
  await info.attach('rust-book-surface-measurements',{body:JSON.stringify({results,woven,integrated},null,2),contentType:'application/json'});
- for(const r of results){expect(r.same).toBe(true);expect(r.memory.live).toBe(0);expect(r.memory.allocations).toBe(r.memory.releases);}
+ // The decor catalogue keeps one fixed 128-byte arena for the whole page (decor-catalogue.js), so the counters
+ // never return to zero: one live arena, one allocation without its release.
+ const CATALOGUE_ARENA=128;
+ for(const r of results){expect(r.same).toBe(true);expect(r.memory.live).toBe(CATALOGUE_ARENA);expect(r.memory.allocations).toBe(r.memory.releases+1);}
  expect(woven.same).toBe(true);expect(woven.sha256).toBe(woven.expectedSha256);
  expect(woven.after.weaves-woven.before.weaves).toBe(1);expect(woven.cached.weaves).toBe(woven.after.weaves);
- expect(woven.cached.live).toBe(0);expect(integrated.cached.weaves).toBe(woven.cached.weaves);
+ expect(woven.cached.live).toBe(CATALOGUE_ARENA);expect(integrated.cached.weaves).toBe(woven.cached.weaves);
  expect(integrated.after.surfaces-integrated.before.surfaces).toBe(2);
  expect(integrated.after.ribbons-integrated.before.ribbons).toBe(1);
  expect(integrated.cached.surfaces).toBe(integrated.after.surfaces);expect(integrated.cached.ribbons).toBe(integrated.after.ribbons);
