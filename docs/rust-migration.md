@@ -1,5 +1,7 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.251: libro extraído, editor, retorno, portadas, objetos, arrastre y papelera de la pantalla de estantería en Rust. Inventario 30436 Rust/22088 JS, **57,95 %** (1.7.250: 50,96 %); no mide funciones terminadas. Los constructores/render/refresco y app.js siguen en JS. Pruebas, equivalencia y límites en remaining-wip-verification.md.
+
 Entrega 1.7.250: cámara, encuadre, zoom y posiciones/cinemática de la escena en Rust; Three.js, WebGL y DOM siguen como host. Inventario 25736 Rust/24771 JS, **50,96 %** (1.7.249: 49,82 %); no mide funciones terminadas. Detalle, pruebas y límites en remaining-wip-verification.md.
 
 Entrega 1.7.249: plantas completas, lámparas y la decisión y orientación de sus luces en Rust (sin gemelos JS de la geometría de

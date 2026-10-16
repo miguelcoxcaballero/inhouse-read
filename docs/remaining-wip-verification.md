@@ -1,3 +1,57 @@
+# 1.7.251 — editor, portadas y movimientos de la estantería en Rust
+
+Changelog: «Editor y movimientos de la estantería en Rust».
+Se integra wip/shelf-ui, mezclada con main 1.7.250. El módulo bookshelf de Rust controla el libro extraído,
+su editor (tipografía, color, materiales, brillo y relieve), apertura/cierre, entrega al lector y retorno,
+resolución y análisis de portadas, plantas y lámparas, arrastre, colocación, interruptores y papelera. Los
+constructores de la pantalla, render/refresco, ResizeObserver, Three.js y app.js siguen en JavaScript:
+esto no termina la migración de la pantalla ni de toda la aplicación.
+
+El original queda congelado en tests/unit/helpers/reference-bookshelf.js. Las pruebas diferenciales comparan
+el documento completo, llamadas y orden de callbacks, errores y temporizadores. Los 56 tests iniciales pasan.
+Al ampliar cobertura se reprodujo una divergencia real de claves: Rust String convertía un sustituto UTF-16
+suelto en U+FFFD y mezclaba las portadas de dos identidades distintas. Las claves e identidades ahora permanecen
+como cadenas JS (JsValue), con concatenación y comparación controladas desde Rust. Una prueba diferencial que
+fallaba antes y cinco casos nuevos de identidad/título y recorrido por retorno, teclado y papelera verifican
+su corrección; las claves de arrastre, colocación y retorno se conservan también como cadenas JS. El conjunto
+específico suma 61 tests; con los contratos de presión, contacto, caché y viewport son 140 tests en 14 archivos, todos verdes.
+Se eliminan las funciones de movimiento JS ya huérfanas (animate, waitForMotion y wait) y sus constantes sin uso.
+El diagnóstico de diferencias ya usa un directorio temporal portable, conservando referencias y aserciones.
+
+Las cinco pruebas de ciclo de vida pasan; además de asas JS y callbacks, ahora comprueban que la memoria lineal
+WASM no crece tras calentar durante los ciclos de editor, entrega/retorno, arrastre y objetos. Se prueba también
+destruir la pantalla durante un arrastre, borrado y análisis. Inventario: 30436 Rust / 22088 JS, 57,95 %
+(frente a 50,96 %); recuento de líneas de producción con comentarios, no porcentaje de funciones terminadas.
+
+El arnés restaura las preferencias y posiciones iniciales entre referencia y candidato, evitando que un guion
+que mueve objetos condicione la segunda ejecución. Los informes diferenciales guardan JSON con los sustitutos
+UTF-16 escapados; un archivo de texto UTF-8 perdía justo la distinción que se estaba comprobando.
+La revisión es propia (equivalencia, orden y ciclo de vida); no se ha realizado una nueva revisión independiente
+de tres revisores. Se conserva toda la cobertura, aserciones y umbrales de la referencia.
+
+Compilación final de Rust 1.99.0 y wasm-bindgen 0.2.105 y build web completos. Batería final congelada:
+1799 + 1374 + 1421 + 1777 = 6371 tests en 497 archivos, todos pasan. El módulo shelf crece de 594313 a
+1179926 bytes (+585613); UI general mantiene 2027162 bytes, y core/decor/voice conservan sus bytes. No hay
+prueba en móvil físico ni una promesa de mejora de velocidad; se midió el arranque y se contrastó la vista
+antes de publicar. La firma del bake de modelos no cambia por el port de los controles.
+
+E2E finales: 28/28 generales en 10,1 min (bookshelf-polish, mobile-shelf-viewport, shelf-motion-performance,
+shelf-placement y smoke) y 7/7 específicos en 3,9 min: pestañas y teclado del editor, relieve/persistencia,
+cierre durante análisis, añadir los tres diseños de lámpara, interruptores y gestos de la bombilla y preview
+3D de la planta con persistencia del acabado. No se cambiaron aserciones, tiempos ni reintentos.
+Comparación visual contra el build de 1.7.250: 6/6 estados 01/02/08/10a/13/15, cinco idénticos píxel a píxel y
+13 con máximo 1/255, ningún píxel difiere más de 2; PASS. Repetición del mismo build 1.7.250 en 13: también
+máximo 1/255. Se inspeccionaron las vistas de BAGGEBO isométrica y las cuatro lámparas frontales.
+
+Arranque Chromium/SwiftShader, móvil 390x844, seis libros sembrados y BAGGEBO/planta/lámpara, tres pares alternos:
+primera escena mediana 3546,6 -> 3575,1 ms, rangos 3314,1–3740,2 y 3433,8–3594,8 (solapados); primer lomo DOM
+6061,9 -> 4835,0 ms, rangos 5133,9–6999,7 y 4785,7–4959,7; DOMContentLoaded 161,1 -> 157,2 ms. La primera
+escena aún no contiene los seis libros; estos son hitos de arranque, no la carga completa de los modelos. Tres
+muestras en software GL no permiten prometer esa mejora del primer lomo en un móvil real. El arranque de la
+primera escena se mantiene dentro del ruido. Core/decor/voice comprobados idénticos byte a byte; UI general
+conserva tamaño pero cambia su hash (artefactos de wasm-bindgen no deterministas); firma del bake conservada:
+47972dc16ce28e84aca9. No se han probado dispositivos físicos.
+
 # 1.7.250 — cámara, encuadre y posiciones de la escena en Rust
 
 Changelog: «Cámara y posiciones de la estantería en Rust».

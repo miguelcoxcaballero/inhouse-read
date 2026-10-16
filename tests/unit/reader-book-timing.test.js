@@ -19,18 +19,24 @@ describe('responsive physical reader transitions', () => {
     expect(Object.values(readerBookTiming(true)).flatMap(Object.values)).toEqual(Array(8).fill(1));
   });
   it('uses the same schedule in the real model and fallback, with matching waits', () => {
-    const source=readFileSync('src/js/bookshelf.js','utf8');
-    const opening=source.slice(source.indexOf('async function finishReaderTransition'),source.indexOf('async function expandCover'));
-    const closing=source.slice(source.indexOf('async function returnToShelf'),source.indexOf('async function returnToShelf')+22000);
-    expect(opening).toContain('readerBookTiming(prefersReducedMotion()).opening');
-    expect(opening).toContain('duration:durations.bookmark');
-    expect(opening).toContain('waitForMotion(session.bookmarkMotion, durations.bookmark)');
-    expect(opening).toContain('duration:durations.zoom');
-    expect(closing).toContain('readerBookTiming(prefersReducedMotion()).closing');
+    // The opening runs in the shelf module (rust-ui/src/bookshelf/flyout_motion.rs), the closing beside it (returning.rs).
+    const rust=readFileSync('rust-ui/src/bookshelf/flyout_motion.rs','utf8');
+    const opening=rust.slice(rust.indexOf('async fn transition_inner'));
+    const returning=readFileSync('rust-ui/src/bookshelf/returning.rs','utf8');
+    const closing=returning.slice(returning.indexOf('async fn return_to_shelf'));
+    expect(rust).toContain('ctx.env("readerBookTiming",&[&b(prefers_reduced_motion())])');
+    expect(rust).toContain('let durations=get(&timing,"opening")');
+    expect(opening).toContain('let bookmark_duration=get(durations,"bookmark")');
+    expect(opening).toContain('("duration",&bookmark_duration)');
+    expect(opening).toContain('wait_for_motion(&motion,num(&bookmark_duration))');
+    expect(opening).toContain('("duration",&get(durations,"zoom"))');
+    expect(opening).toContain('wait_for_motion(&opening,num(&cover_duration))');
+    expect(closing).toContain('ctx.env("readerBookTiming",&[&b(prefers_reduced_motion())])');
+    expect(closing).toContain('let durations=get(&timing,"closing")');
     for (const phase of ['zoom','bookmark','cover']) {
-      expect(closing).toContain(`duration:durations.${phase}`);
-      expect(closing).toContain(`waitForMotion(animation, durations.${phase})`);
+      expect(closing).toContain(`let ${phase}=num(&get(&durations,"${phase}"))`);
+      expect(closing).toContain(`wait_for_motion(&animation,${phase}).await?`);
     }
-    expect(closing).toContain('const duration = durations.flight');
+    expect(closing).toContain('let duration=num(&get(&durations,"flight"))');
   });
 });
