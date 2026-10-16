@@ -1,0 +1,8 @@
+cd <repo>/tools/visual-harness
+CAPTURE: node visual.mjs capture <distDir> <outDir> <port> [--workers 3] [--only <regex on state name>] [--viewport mobile|desktop|both] [--retries 1] [--paranoid] [--list]
+  e.g. node visual.mjs capture /path/to/your/dist cand-1 4321 --workers 3   (starts its own vite preview on 127.0.0.1:<port>, killed on exit; every concurrent run needs its own port; use a port in your own range)
+COMPARE: node visual.mjs compare baseline cand-1 [--out <diffDir>] [--mean 0.35] [--pct8 0.5] [--only regex] [--allow-missing]
+  exit 1 if any state has mean abs diff > 0.35 or > 0.5% px differing by >8/255, or is missing / differently sized. Diff PNGs (x8) go to visual/diff/<A>__vs__<B>/.
+Baseline (pristine commit 1e6b831, 34 PNGs): visual/baseline  (determinism verified: baseline-a vs baseline-b bit-identical except 2 header pixels of 1/255)
+Build your candidate with: npx vite build --outDir <dir>   (repo vite.config.js sets base /inhouse-read/)
+Full capture is ~10 min on a quiet box, much longer under load; use --workers 3 and --only '^(01|09|12)-' to iterate on a subset. Pass relative outDir names (they are created under visual/) or absolute paths.
