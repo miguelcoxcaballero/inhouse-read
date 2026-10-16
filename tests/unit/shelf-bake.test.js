@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { PLANT_CATALOG, POT_CATALOG, getPotColors } from '../../src/js/plant-catalog-data.js';
 
+// A lamp draws its geometry with the shelf module, which every fresh copy of the modules below must find loaded.
+vi.mock('../../src/js/rust-shelf.js', async () => (await import('./helpers/rust-shelf-real.js')).rustShelfMock());
+
 // Everything that reaches the GPU or the scene, in comparable form: objects,
 // transforms, geometry bytes, material settings, texture bytes and the
 // relative creation order of objects and materials (it breaks sort ties).
