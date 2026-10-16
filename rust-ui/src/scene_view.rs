@@ -55,9 +55,13 @@ pub fn scene_disjoint_rects(rects:&[f64],outer:&[f64])->Vec<f64>{
  if outer.len()<4{return Vec::new();}
  let clipped:Vec<[f64;4]>=rects.chunks_exact(4).map(|r|[jmax(r[0],outer[0]),jmin(r[1],outer[1]),jmax(r[2],outer[2]),jmin(r[3],outer[3])])
   .filter(|r|r[1]>r[0]&&r[3]>r[2]).collect();
- // `new Set` keeps the first of equal values (+0 and -0 are one); `sort((a, b) => a - b)` is stable.
+ // `sort((a, b) => a - b)` is stable.
  let mut edges:Vec<f64>=Vec::new();
- for rect in &clipped{for edge in [rect[0],rect[1]]{if !edges.iter().any(|known|*known==edge||(known.is_nan()&&edge.is_nan())){edges.push(edge);}}}
+ // `new Set` stores -0 as +0 and keeps the first of equal values.
+ for rect in &clipped{for edge in [rect[0],rect[1]]{
+  let edge=if edge==0.0{0.0}else{edge};
+  if !edges.iter().any(|known|*known==edge||(known.is_nan()&&edge.is_nan())){edges.push(edge);}
+ }}
  edges.sort_by(|a,b|{let d=a-b;if d<0.0{std::cmp::Ordering::Less}else if d>0.0{std::cmp::Ordering::Greater}else{std::cmp::Ordering::Equal}});
  let mut strips:Vec<f64>=Vec::new();
  for i in 0..edges.len().saturating_sub(1){
