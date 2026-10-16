@@ -16,16 +16,16 @@ sale de lo comprobado en esa sesión; lo que no se pudo comprobar está dicho.
 
 ## Estado
 
-- `main` está en **1.7.249**: **49,82 %** de Rust (24758 líneas de Rust, 24933 de JS).
+- `main` está en **1.7.250**: **50,96 %** de Rust (25736 líneas de Rust, 24771 de JS).
   Se mide con `git add -A -n . && node scripts/rust-migration-status.mjs`; es un recuento de líneas de
   `rust-core/src`, `rust-ui/src` y `src/js`, no mide funciones terminadas.
 - Evolución: 16,38 % (1.7.234) → 39,73 % (1.7.245) → 42,35 % (1.7.246 portadas) → 45,38 % (1.7.247 armario y
-  BAGGEBO) → 46,93 % (1.7.248 modelo del libro) → 49,82 % (1.7.249 plantas, lámparas y su luz).
+  BAGGEBO) → 46,93 % (1.7.248 modelo del libro) → 49,82 % (1.7.249 plantas, lámparas y su luz) → 50,96 % (1.7.250 cámara y posiciones de escena).
 - Lo que corre en Rust ya publicado, por áreas: lectores PDF y EPUB (decisiones, texto, instantáneas,
   controlador), voces y audio, biblioteca y nube (Drive, copia, importación), estantería (disposición, luz,
   oclusión, papelera, zoom, gestos, retorno), armario y BAGGEBO, plantas y lámparas (geometría, texturas, luz),
   libros 3D (cinta, páginas, encuadernación, vista, pose, pintura de bordes y tapa), portadas y relieve.
-- Sigue en JS lo grande: `src/js/bookshelf.js` (4257 líneas), `bookshelf-scene.js` (3199), `book-model.js`
+- Sigue en JS lo grande: `src/js/bookshelf.js` (4257 líneas), `bookshelf-scene.js` (3035), `book-model.js`
   (~2000, pegamento de three.js), `app.js` (1411), `shelf-plants.js` (~1200, ensamblado con objetos three.js),
   y una cola larga: `cover-appearance.js` (577), `library-store.js`, `native-room-cache.js`, los previsualizadores
   de catálogo, `book-length.js`, `content-freshness.js`, `gpu-programs.js`, `shelf-trash.js`,
@@ -36,7 +36,7 @@ sale de lo comprobado en esa sesión; lo que no se pudo comprobar está dicho.
 
 | Rama | Contenido | Estado |
 |---|---|---|
-| `origin/wip/scene` (41f8083) | `bookshelf-scene.js`: marco congelado de referencia con arnés diferencial de escena entera, cálculo de vista/cámara/impactos y cinemática de las entradas a Rust | Trabajo en curso del agente; sin verificar como entrega |
+| `origin/wip/scene` (41f8083) | `bookshelf-scene.js`: vista/cámara/impactos y cinemática de las entradas a Rust, con arnés diferencial de escena entera | Integrado y corregido en 1.7.250; queda pegamento Three.js/DOM |
 | `origin/wip/shelf-ui` (9e6d785) | `bookshelf.js`: módulo `bookshelf` de Rust, editor del volante, sesión del volante (abrir/cerrar/expandir portada), `returnToShelf`, y paso 4 (portadas, objetos, arrastre, papelera). Según el seguimiento de la sesión faltaban los constructores DOM, render/refresco y `app.js` | Trabajo en curso; sin verificar como entrega |
 | (sin rama) `tail` | cola larga de ficheros pequeños | No llegó a empezar |
 | `origin/wip/mittled`, `wip/catalog`, `wip/transition-open`, `wip/transition-close` | Peticiones anteriores de la persona (hitbox de la lámpara MITTLED, animación del catálogo y balance de blancos, transición de apertura/cierre del libro) | La persona las continúa en local con `TESTS-LOCAL.md`; no las toques sin que lo pida |

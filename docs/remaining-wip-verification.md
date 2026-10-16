@@ -1,3 +1,39 @@
+# 1.7.250 — cámara, encuadre y posiciones de la escena en Rust
+
+Changelog: «Cámara y posiciones de la estantería en Rust».
+La unidad scene se integra desde wip/scene después de mezclar main 1.7.249. Los cálculos de cámara,
+transición frontal/isométrica, zoom y desplazamiento de inspección, proyección de cajas y puntos de colocación,
+cinemática y calidad de los libros/plantas/lámparas, tapa y caída a la papelera, catálogo y retorno y planes del
+mueble viven ahora en scene_view.rs, scene_entries.rs, scene_frame.rs y scene_plan.rs. Three.js, WebGL,
+DOM, canvas y la aplicación de estos resultados siguen en bookshelf-scene.js; no se ha migrado toda la escena.
+La referencia JavaScript anterior queda solo en tests/unit/helpers. Se conserva el orden de operaciones f64,
+Math del motor y redondeos. Dos divergencias encontradas antes de publicar quedaron corregidas con pruebas que
+fallaban antes: validación de superficie antes de leer el rayo/filas y el último módulo en cantidades fraccionarias
+de muebles. El bucle Rust queda además limitado al buffer de salida para cantidades enormes.
+
+Inventario: 25736 líneas Rust / 24771 JS, 50,96 % (1.7.249: 49,82 %); cuenta líneas de producción, incluidos
+comentarios, no funciones terminadas. Compilación Rust 1.99.0/wasm-bindgen 0.2.105 y build web completos.
+Cuatro bloques de tests unitarios: 1780 + 1349 + 1408 + 1768 = 6305 tests en 491 archivos, todos pasan.
+E2E: 28/28 en 10,2 minutos, un solo Chromium/SwiftShader: bookshelf-polish (9), mobile-shelf-viewport (3), shelf-motion-performance (1), shelf-placement (2) y smoke (13). En esta ejecución también pasan los contratos de cierre/retorno de este conjunto, aunque el traspaso documenta fallos históricos por tiempo; no se cambió ninguna aserción ni duración.
+Los tests diferenciales de escena incluyen 24 sesiones completas, una sesión fraccionaria, 20.000 proyecciones,
+20.000 uniones de rectángulos y 20.000 impactos; las pruebas de entradas incluyen 100.000 objetivos y llamadas
+repetidas, parámetros inválidos y asas JS. Se mantienen las referencias originales y los umbrales.
+
+Comparación visual Chromium/SwiftShader, móvil 390x844, estados 01/02/08/10a/13/15 contra 1.7.249:
+cinco imágenes idénticas; 13 difiere como máximo 1/255, ningún píxel difiere más de 2. Repetición de referencia
+contra sí misma para 08/13: idéntica y máximo 1/255 respectivamente. También se inspeccionaron las capturas.
+La prueba E2E de movimiento isométrico conserva la caché: 20 fotogramas del compositor, cero fotogramas GPU y cero escrituras de buffers durante el gesto; al soltar recupera seis libros nítidos con texturas de 1024 px. Es un contrato de trabajo evitado, no una medición de fluidez en móvil real.
+La firma del bake guardado sigue siendo 47972dc16ce28e84aca9, evitando invalidar modelos por esta migración.
+El módulo shelf pasa de 519711 a 594313 bytes (+74602); core/decor/voice son idénticos byte a byte. El módulo UI
+general conserva su tamaño (2027162 bytes), pero no su hash: los artefactos de wasm-bindgen no son deterministas.
+
+Arranque, tres pares alternos, Chromium nuevo por contexto, seis libros sembrados, BAGGEBO/una planta/una lámpara,
+SwiftShader sin ralentización artificial: mediana primera escena 3754,7 -> 3614,4 ms; rangos 3167,6–3990,8 y
+3607,4–3706,8. Primer lomo DOM 5299,9 -> 5216,5 ms; rangos 4707,3–7112,8 y 4630,6–5448,1. DOMContentLoaded
+163,1 -> 165,3 ms. La primera escena todavía no contiene los seis libros: son hitos de arranque, no carga completa
+ni una promesa de velocidad. Sin prueba en móvil físico. Revisión propia de equivalencia numérica, orden y ciclo
+de vida; no se ha realizado una nueva revisión independiente de tres revisores.
+
 # 1.7.249 — geometría 3D: plantas, lámparas y la decisión de sus luces en Rust
 
 Changelog: «Plantas, lámparas y su luz en Rust; sin gemelos JS».

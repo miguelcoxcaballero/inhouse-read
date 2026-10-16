@@ -1,5 +1,7 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.250: cámara, encuadre, zoom y posiciones/cinemática de la escena en Rust; Three.js, WebGL y DOM siguen como host. Inventario 25736 Rust/24771 JS, **50,96 %** (1.7.249: 49,82 %); no mide funciones terminadas. Detalle, pruebas y límites en remaining-wip-verification.md.
+
 Entrega 1.7.249: plantas completas, lámparas y la decisión y orientación de sus luces en Rust (sin gemelos JS de la geometría de
 plantas y lámparas ni de los seis kernels decor correspondientes). Inventario 24758 Rust/24933 JS, **49,82 %** (main 1.7.248: 46,93 %); no mide
 funciones terminadas. Detalle en remaining-wip-verification.md.
