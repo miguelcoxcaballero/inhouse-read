@@ -19,9 +19,9 @@ it(`preserves cleanup, raw maps and plans ${i}/${JSON.stringify(options)}`,()=>{
  expect(normalizeSpeech(raw,opts)).toEqual(reference.normalizeSpeech(raw,opts));
  for(const from of [0,3,8,raw.length])expect(planSpeech(raw,opts,from)).toEqual(reference.planSpeech(raw,opts,from));
 });
-it('preserves every UTF-16 code unit and all ECMAScript whitespace classes',()=>{
+it('preserves other UTF-16 units and whitespace, treating narration ornaments as spaces',()=>{
  const pieces=[];for(let i=0;i<65536;i++)pieces.push('A'+String.fromCharCode(i)+'B\u2029');
- const raw=pieces.join(''),actual=normalizeSpeech(raw),expected=reference.normalizeSpeech(raw);
+ const raw=pieces.join(''),actual=normalizeSpeech(raw),expected=reference.normalizeSpeech(raw.replace(/[§¶•‣⁃⁌⁍❦❧�]/g,' '));
  expect(actual.text).toBe(expected.text);
  expect(Buffer.from(Uint32Array.from(actual.map).buffer).equals(Buffer.from(Uint32Array.from(expected.map).buffer))).toBe(true);
  expect(Buffer.from(Uint32Array.from(actual.breaks).buffer).equals(Buffer.from(Uint32Array.from(expected.breaks).buffer))).toBe(true);
@@ -53,4 +53,26 @@ it('refreshes memory after growth and copies results before release',()=>{
 });
 it.each([()=>0,()=>{throw Error('kernel');}])('releases failed kernels',kernel=>{
  const free=vi.fn(core.free_f64);expect(rustNormalizeSpeech({...core,speech_normalize:kernel,free_f64:free},'a',new Uint8Array(1))).toBeNull();expect(free).toHaveBeenCalledOnce();
+});
+
+it('omits paragraph ornaments from narration and keeps raw highlights and page marks',()=>{
+ const raw='Para jóvenes políticos y otros\u2029§ El escalafón es muy importante.\u2029§ No tomes atajos: te pasarán factura.\u2029• Lee, escucha y mira.\u2029❦ Aprende.';
+ const cleaned=normalizeSpeech(raw);
+ expect(cleaned.text).toBe('Para jóvenes políticos y otros. El escalafón es muy importante. No tomes atajos: te pasarán factura. Lee, escucha y mira. Aprende.');
+ for(const word of ['El escalafón','No tomes','Lee,','Aprende']) {
+  const offset=cleaned.text.indexOf(word);
+  expect(cleaned.map[offset]).toBe(raw.indexOf(word));
+ }
+ const plan=planSpeech(raw,{pageBreaks:[raw.indexOf('§ No')]});
+ expect(plan.map(item=>item.text).join(' ')).not.toMatch(/[§•❦]/);
+ expect(plan.some(item=>item.text.includes('El escalafón'))).toBe(true);
+ expect(plan.some(item=>item.text.includes('No tomes atajos'))).toBe(true);
+ expect(plan).toEqual(reference.planSpeech(raw.replace(/[§•❦]/g,' '),{pageBreaks:[raw.indexOf('§ No')]}));
+});
+it('separates words around ornaments, skips symbol-only text and preserves meaningful symbols',()=>{
+ expect(normalizeSpeech('hola§mundo • ¶ ❧ �').text).toBe('hola mundo');
+ expect(planSpeech('§ ¶ • ❦ �')).toEqual([]);
+ const raw='Artículo 12, 25 %, 20 €, x + y = 3, café, niña, 中文, العربية, 😀.';
+ expect(normalizeSpeech(raw)).toEqual(reference.normalizeSpeech(raw));
+ expect(rustNormalizeSpeech(core,'§ Hola. • Adiós.',new Uint8Array('§ Hola. • Adiós.'.length))).toEqual(normalizeSpeech('§ Hola. • Adiós.'));
 });

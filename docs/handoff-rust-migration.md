@@ -16,7 +16,7 @@ sale de lo comprobado en esa sesión; lo que no se pudo comprobar está dicho.
 
 ## Estado
 
-- `main` está en **1.7.253**: **59,51 %** de Rust (31299 líneas de Rust, 21292 de JS).
+- `main` está en **1.7.254**: **59,52 %** de Rust (31305 líneas de Rust, 21292 de JS).
   Se mide con `git add -A -n . && node scripts/rust-migration-status.mjs`; es un recuento de líneas de
   `rust-core/src`, `rust-ui/src` y `src/js`, no mide funciones terminadas.
 - Evolución: 16,38 % (1.7.234) → 39,73 % (1.7.245) → 42,35 % (1.7.246 portadas) → 45,38 % (1.7.247 armario y
@@ -115,3 +115,5 @@ Después optimizar el zoom isométrico y el repintado conservando la calidad, pu
 WIP local sin validar: /workspace/inhouse-read-shelf-lifecycle (inicialización y destrucción; revisar destroy repetido),
 /workspace/inhouse-read-book-length (recuento), /workspace/inhouse-read-zoom-render (zoom prioritario).
 La entrega 1.7.253 tiene 6378/6379 pruebas completas pasando; el caso restante excede 5 s también en main 1.7.252.
+
+Corrección urgente de símbolos del audiolibro publicada en 1.7.254; se continúa ahora con zoom/repintado.

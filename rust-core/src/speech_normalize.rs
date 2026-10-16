@@ -4,6 +4,12 @@ fn invisible(c: u16) -> bool { matches!(c, 0x00ad | 0x200b | 0x2060 | 0xfeff) }
 pub(crate) fn whitespace(c: u16) -> bool {
     matches!(c, 9..=13 | 32 | 0xa0 | 0x1680 | 0x2000..=0x200a | 0x2028 | 0x2029 | 0x202f | 0x205f | 0x3000 | 0xfeff)
 }
+// List/section ornaments and a failed font/extraction glyph are visual markers,
+// not words. Treat them as spaces so adjacent words never run together. The
+// original UTF-16 index is retained by the same whitespace path below.
+fn ornament(c: u16) -> bool {
+    matches!(c, 0x00a7 | 0x00b6 | 0x2022 | 0x2023 | 0x2043 | 0x204c | 0x204d | 0x2766 | 0x2767 | 0xfffd)
+}
 fn terminator(c: u16) -> bool { matches!(c, 33 | 46 | 63 | 0x3002 | 0xff01 | 0xff1f | 0x2026 | 58 | 59) }
 fn closer(c: u16) -> bool { matches!(c, 34 | 39 | 0x201d | 0x2019 | 0xbb | 0x203a | 41 | 93 | 125 | 0x300d | 0x300f) }
 
@@ -30,7 +36,7 @@ pub unsafe extern "C" fn speech_normalize(input: *const u16, removed: *const u8,
             }
             if size > 0 { breaks[boundaries] = size as u32; boundaries += 1; }
         }
-        if whitespace(c) {
+        if whitespace(c) || ornament(c) {
             if size > 0 && out[size - 1] != 32 { out[size] = 32; map[size] = i as u32; size += 1; }
         } else { out[size] = c; map[size] = i as u32; size += 1; }
     }

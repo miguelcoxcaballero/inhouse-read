@@ -23,7 +23,9 @@ window.checkSpeech=()=>{
   }
   const median=a=>[...a].sort((a,b)=>a-b)[4];times.push({length,js:median(samples.js),rust:median(samples.rust),samples});
  }
- return {proof,times,memory:{...window.speechStats}};
+ const ornaments='§ Lee, escucha y mira. • Conviene aprender.';
+ const cleaned=normalizeSpeech(ornaments);
+ return {proof,times,memory:{...window.speechStats},ornaments:{...cleaned,plan:planSpeech(ornaments)}};
 };
 </script>`;
 let vite,http,url;
@@ -53,6 +55,9 @@ test('compiled narration cleanup preserves text, UTF-16 maps, page marks and are
  // One call of the reader UI module per direct request: the narration cleanup is entirely Rust in that module (the shared numeric core
  // keeps the kernel for its own callers and tests; the text side of the product no longer has a JavaScript implementation to detour through).
  expect(result.proof).toHaveLength(3);for(const entry of result.proof)expect(entry.calls).toBe(1);expect(result.memory.live).toBe(0);
+ expect(result.ornaments.text).toBe('Lee, escucha y mira. Conviene aprender.');
+ expect(result.ornaments.map[0]).toBe(2);
+ expect(result.ornaments.plan.map(item=>item.text).join(' ')).toBe(result.ornaments.text);
  await info.attach('speech-normalization-parity-and-timing',{body:JSON.stringify(result),contentType:'application/json'});
  console.log(JSON.stringify(result.times.map(({samples,...entry})=>entry)));
 });
