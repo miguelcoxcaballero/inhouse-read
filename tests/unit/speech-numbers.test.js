@@ -52,3 +52,27 @@ it('expands CJK years without spaces and retains all source marks when a number 
  expect(new Set(prepared.marks).size).toBe(prepared.marks.length)
  expect(prepared.offsetPairs.map(pair=>pair[1])).toEqual([1,2,5,8])
 })
+
+it.each([
+ ['In 1969, we landed.','In nineteen sixty-nine, we landed.'],
+ ['Since 1901.','Since nineteen oh-one.'],
+ ['The year 1900.','The year nineteen hundred.'],
+ ['In 2000.','In two thousand.'],
+ ['In 2001.','In two thousand and one.'],
+ ['In 2026.','In twenty twenty-six.'],
+ ['July 20, 1969.','July twenty, nineteen sixty-nine.'],
+ ['1969 was remarkable.','nineteen sixty-nine was remarkable.'],
+ ['From the year 1969–1972.','From the year nineteen sixty-nine–nineteen seventy-two.'],
+ ['We printed 1969 books.','We printed one thousand, nine hundred and sixty-nine books.'],
+ ['In 1969 books we found it.','In one thousand, nine hundred and sixty-nine books we found it.'],
+ ['It cost $1969.','It cost $one thousand, nine hundred and sixty-nine.'],
+ ['1969','one thousand, nine hundred and sixty-nine'],
+])('distinguishes dates from quantities: %s',(source,expected)=>expect(spoken(source,'en-US')).toBe(expected))
+it('keeps original year offsets while expanding the wire text',()=>{
+ const source='In 1969, we read 1969 books.';
+ const at=source.indexOf('we');
+ const result=ui.speech_synthesis_text(source,'en-GB',[at,source.length]);
+ expect(result.text).toBe('In nineteen sixty-nine, we read one thousand, nine hundred and sixty-nine books.');
+ expect(result.offsetPairs).toEqual([[result.text.indexOf('we'),at],[result.text.length,source.length]]);
+ expect(spoken('En 1969.','es-ES')).toBe('En mil novecientos sesenta y nueve.');
+})
