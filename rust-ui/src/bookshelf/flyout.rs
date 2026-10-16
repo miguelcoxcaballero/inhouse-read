@@ -275,7 +275,7 @@ pub async fn open(ctx:Rc<Ctx>,mut spine_el:JsValue,mut item:JsValue)->R{
   else{
    let had_focus=active_element()==spine_el;
    let replacement=super::screen_nodes::build_spine(&ctx,&item)?;
-   replace_with(&spine_el,&replacement);ctx.prune_view_bindings();
+   replace_with(&spine_el,&replacement);
    spine_el=replacement.clone();
    if had_focus{focus(&replacement);}
   }
@@ -524,7 +524,7 @@ impl Flyout{
   let was_away=cls_has(&existing,"is-away");
   let replacement=super::screen_nodes::build_spine(&self.ctx,&self.item)?;
   if was_away{cls_add(&replacement,&["is-away"]);}
-  replace_with(&existing,&replacement);self.ctx.prune_view_bindings();
+  replace_with(&existing,&replacement);
   *self.spine_el.borrow_mut()=replacement.clone();
   if *self.previous_focus.borrow()==existing{*self.previous_focus.borrow_mut()=replacement.clone();}
   if had_focus{focus(&replacement);}

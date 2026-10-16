@@ -149,6 +149,22 @@ async function same(script, settings = {}) {
 }
 
 describe('moving things on the shelf against the frozen original', () => {
+  it('keeps a captured lamp target usable after removing its neighbouring plant repaints the row', async () => {
+    const text = await same(() => {
+      let targets
+      return [
+        ['add neighbours', async () => { await add(); await addLamp() }],
+        ['capture both targets', () => { targets = [plant(0), lamp(0)] }],
+        ['remove plant and repaint', async () => { key(targets[0], 'Delete'); await flush(1200) }],
+        ['remove the previously captured lamp', async () => {
+          key(targets[1], 'Delete'); await flush(1200)
+          expect(qa('.ihr-lamp')).toHaveLength(0)
+        }]
+      ]
+    }, { config: { scene: true } })
+    expect(text).not.toContain('!!')
+  }, 90_000)
+
   it('keeps the initial action aliases, disabled Drive and both empty library layouts', async () => {
     for (const sections of [false, true]) {
       const settings = { list: () => [], extra: {

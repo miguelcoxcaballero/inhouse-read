@@ -199,7 +199,7 @@ async fn appearance_task(ctx:Rc<Ctx>,book:JsValue,known_url:JsValue,key:JsValue,
    }
    let had_focus=active_element()==existing;
    let replacement=super::screen_nodes::build_spine(&ctx,&item)?;
-   replace_with(&existing,&replacement);ctx.prune_view_bindings();
+   replace_with(&existing,&replacement);
    let last=ctx.st("lastOpened");
    if string_value(&coalesce(get(&get(&last,"book"),"id"),s("")))==id{put(&last,"spineEl",&replacement);}
    if had_focus{method(&replacement,"focus",&[&obj(&[("preventScroll",&JsValue::TRUE)])])?;}

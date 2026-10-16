@@ -1,23 +1,42 @@
 //! Shelf objects and their validated inputs. Bindings belong to the node's lifetime within the shelf;
-//! callbacks borrow the screen weakly and call the existing Rust gesture/placement controllers directly.
-use std::{cell::{Cell,RefCell},rc::Rc};
+//! the DOM owns forwarding callbacks; one weak Rust dispatcher calls the native gesture/placement controllers.
+use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use super::{util::*,ctx::{Ctx,RustShelfCtx},objects,drag,trash,style};
 
-struct Press{start:Cell<Option<(f64,f64)>>,touch:RefCell<JsValue>,ignore:Cell<bool>}
+struct Press(JsValue);
 impl Press{
- fn new()->Rc<Self>{Rc::new(Self{start:Cell::new(None),touch:RefCell::new(null()),ignore:Cell::new(false)})}
- fn touch(&self)->JsValue{self.touch.borrow().clone()}
- fn set_touch(&self,value:JsValue){*self.touch.borrow_mut()=value;}
+ fn new()->Self{Self(obj(&[("start",&null()),("touch",&null()),("ignore",&JsValue::FALSE)]))}
+ fn start(&self)->Option<(f64,f64)>{let start=get(&self.0,"start");if nullish(&start){None}else{Some((gn(&start,"x"),gn(&start,"y")))}}
+ fn set_start(&self,start:Option<(f64,f64)>){put(&self.0,"start",&match start{Some((x,y))=>obj(&[("x",&f(x)),("y",&f(y))]),None=>null()});}
+ fn ignore(&self)->bool{gb(&self.0,"ignore")}
+ fn set_ignore(&self,value:bool){putb(&self.0,"ignore",value);}
+ fn touch(&self)->JsValue{get(&self.0,"touch")}
+ fn set_touch(&self,value:JsValue){put(&self.0,"touch",&value);}
  fn cancel_touch(&self){let touch=self.touch();if truthy(&touch){putb(&touch,"cancelled",true);}}
 }
-fn input(ctx:&Rc<Ctx>,node:&JsValue,bindings:&Keep,kind:&'static str,handler:impl Fn(&Rc<Ctx>,&JsValue,JsValue)->R+'static)->R{
- let weak=Rc::downgrade(ctx);let target=node.clone();
- on(bindings,node,kind,move|event|{
-  let Some(ctx)=weak.upgrade()else{return Ok(())};
-  if ctx.st_true("destroyed"){return Ok(());}
-  handler(&ctx,&target,event)
- })
+// DOM forwarding only; listeners retain their JS data graph and a shared, weak native dispatcher.
+// No per-node Rust root keeps a detached node alive or changes an already captured event target.
+fn input_data(node:&JsValue,item:&JsValue)->JsValue{obj(&[("node",node),("item",item),("press",&Press::new().0)])}
+fn input(ctx:&Rc<Ctx>,node:&JsValue,kind:&str,data:&JsValue,action:&str,capture:bool)->R{
+ let known=ctx.input_dispatcher.borrow().clone();
+ let dispatch=if known.is_undefined(){
+  let weak=Rc::downgrade(ctx);
+  let dispatch=ctx.input_callbacks.make(Stale::Undefined,move|binding,event|{
+   let Some(ctx)=weak.upgrade()else{return Ok(undef())};
+   if ctx.st_true("destroyed"){return Ok(undef());}
+   handle_input(&ctx,&binding,event)?;Ok(undef())
+  });
+  *ctx.input_dispatcher.borrow_mut()=dispatch.clone();dispatch
+ }else{known};
+ let binding=obj(&[("data",data),("action",&s(action))]);
+ let mut bind=get(&ctx.parts,"inputBinder");
+ if bind.is_undefined(){
+  bind=js_sys::Function::new_with_args("node,type,dispatch,binding,capture",
+   "const listener = event => dispatch(binding, event); if (capture) node.addEventListener(type, listener, true); else node.addEventListener(type, listener);").into();
+  put(&ctx.parts,"inputBinder",&bind);
+ }
+ call(&bind,"bind shelf input",&[node,&s(kind),&dispatch,&binding,&b(capture)])?;Ok(())
 }
 fn active_node(ctx:&Ctx,node:&JsValue)->JsValue{or(get(&ctx.st("dragSession"),"node"),node.clone())}
 fn delete_key(ctx:&Rc<Ctx>,node:&JsValue,event:&JsValue,is_book:bool)->R<bool>{
@@ -35,12 +54,12 @@ fn gesture_start(ctx:&Rc<Ctx>,press:&Press,node:&JsValue,event:&JsValue,is_book:
  let button=get(event,"button");if !button.is_undefined()&&button!=f(0.0){return Ok(false);}
  let drag=ctx.st("dragSession");
  if get(event,"isPrimary")==JsValue::FALSE||(truthy(&drag)&&get(&drag,"pointerId")!=get(event,"pointerId")){
-  press.ignore.set(true);press.cancel_touch();
+  press.set_ignore(true);press.cancel_touch();
   if truthy(&drag){putb(&drag,"cancelled",true);ctx.clear_timeout(&get(&drag,"timer"));}
   return Ok(false);
  }
- press.ignore.set(false);
- if is_book{ctx.st_set("suppressOpenBookId",&null());press.start.set(Some((gn(event,"clientX"),gn(event,"clientY"))));}
+ press.set_ignore(false);
+ if is_book{ctx.st_set("suppressOpenBookId",&null());press.set_start(Some((gn(event,"clientX"),gn(event,"clientY"))));}
  let touch=if get(event,"pointerType")==s("touch"){
   let valid=absent(&ctx.scene())||ctx.scene_call(if is_book{"getBookAtPoint"}else{"getObjectAtPoint"},&[&get(event,"clientX"),&get(event,"clientY")])?==*node;
   obj(&[("pointerId",&get(event,"pointerId")),("x",&get(event,"clientX")),("y",&get(event,"clientY")),("cancelled",&JsValue::FALSE),("valid",&b(valid))])
@@ -60,15 +79,13 @@ pub fn build_plant(ctx:&Rc<Ctx>,item:&JsValue)->R<JsValue>{
   .attr("aria-keyshortcuts","Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown Delete")
   .attr("aria-description","Mantén pulsado para mover la planta o llevarla a la papelera. Usa Mayús y las flechas para cambiar su posición o balda, y Suprimir para retirarla.")
   .attr("title","Mantén pulsado para mover").style(&format!("--ihr-plant-w:{}px;--ihr-plant-h:{}px;--ihr-plant-overhang:0px",ns(width),ns(height))).done();
- let keep=keep();
- input(ctx,&node,&keep,"pointerdown",|ctx,node,event|drag::start_spine_drag(ctx,&event,node))?;
- input(ctx,&node,&keep,"pointermove",|ctx,node,event|drag::move_spine_drag(ctx,&event,&active_node(ctx,node)))?;
- input(ctx,&node,&keep,"pointerup",|ctx,node,event|drag::finish_spine_drag(ctx,&event,&active_node(ctx,node),false,false))?;
- input(ctx,&node,&keep,"pointercancel",|ctx,node,event|drag::finish_spine_drag(ctx,&event,&active_node(ctx,node),true,false))?;
- input(ctx,&node,&keep,"keydown",|ctx,node,event|{
-  if !delete_key(ctx,node,&event,false)?{objects::move_object_with_keyboard(ctx,&event,node)?;}Ok(())
- })?;
- ctx.own_node_bindings(&node,keep);Ok(node)
+ let data=input_data(&node,&item);
+ input(ctx,&node,"pointerdown",&data,"build_plant-pointerdown-1",false)?;
+ input(ctx,&node,"pointermove",&data,"build_plant-pointermove-1",false)?;
+ input(ctx,&node,"pointerup",&data,"build_plant-pointerup-1",false)?;
+ input(ctx,&node,"pointercancel",&data,"build_plant-pointercancel-1",false)?;
+ input(ctx,&node,"keydown",&data,"build_plant-keydown-1",false)?;
+ Ok(node)
 }
 
 pub fn build_lamp(ctx:&Rc<Ctx>,item:&JsValue)->R<JsValue>{
@@ -83,46 +100,20 @@ pub fn build_lamp(ctx:&Rc<Ctx>,item:&JsValue)->R<JsValue>{
   put(&node,"innerHTML",&ctx.env("lampCatalogIllustration",&[&get(&lamp,"id")])?);
   method(&qs(&node,"svg"),"setAttribute",&[&s("preserveAspectRatio"),&s("none")])?;
  }
- let press=Press::new();let keep=keep();
- input(ctx,&node,&keep,"pointerdown",{let press=press.clone();move|ctx,node,event|{
-  if gesture_start(ctx,&press,node,&event,false)?{drag::start_spine_drag(ctx,&event,node)?;}Ok(())
- }})?;
- input(ctx,&node,&keep,"pointermove",{let press=press.clone();move|ctx,node,event|{
-  let touch=press.touch();
-  if get(&touch,"pointerId")==get(&event,"pointerId")&&hypot(gn(&event,"clientX")-gn(&touch,"x"),gn(&event,"clientY")-gn(&touch,"y"))>objects::TAP_SLOP{putb(&touch,"cancelled",true);}
-  drag::move_spine_drag(ctx,&event,&active_node(ctx,node))
- }})?;
- input(ctx,&node,&keep,"pointerleave",{let press=press.clone();move|_,_,_|{press.cancel_touch();Ok(())}})?;
- input(ctx,&node,&keep,"pointerup",{let press=press.clone();move|ctx,node,event|{
-  let touch=press.touch();let candidate=if get(&touch,"pointerId")==get(&event,"pointerId"){touch}else{null()};
-  let active=ctx.st("dragSession");let activate=drag::is_touch_tap_release(ctx,&event,&active,node,&candidate);
-  drag::finish_spine_drag(ctx,&event,&or(get(&active,"node"),node.clone()),false,false)?;
-  if truthy(&candidate){press.set_touch(null());press.ignore.set(true);}
-  if activate&&is_connected(node)&&ctx.st("suppressLampClickKey")!=objects::object_key(node){trash::discard_touch_compatibility_click(ctx,&event)?;objects::toggle_lamp(ctx,node)?;}
-  Ok(())
- }})?;
- input(ctx,&node,&keep,"pointercancel",{let press=press.clone();move|ctx,node,event|{
-  if get(&press.touch(),"pointerId")==get(&event,"pointerId"){press.set_touch(null());press.ignore.set(true);}
-  drag::finish_spine_drag(ctx,&event,&active_node(ctx,node),true,false)
- }})?;
- input(ctx,&node,&keep,"click",{let press=press.clone();move|ctx,node,event|{
-  let pointer=trash::pointer_click(&event);
-  if pointer&&(press.ignore.get()||truthy(&press.touch())){press.ignore.set(false);press.set_touch(null());return Ok(());}
-  if pointer&&ctx.st("suppressLampClickKey")==objects::object_key(node){ctx.st_set("suppressLampClickKey",&null());return Ok(());}
-  if !pointer{ctx.st_set("suppressLampClickKey",&null());}
-  if pointer&&!absent(&ctx.scene())&&ctx.scene_call("getObjectAtPoint",&[&get(&event,"clientX"),&get(&event,"clientY")])?!=*node{return Ok(());}
-  objects::toggle_lamp(ctx,node)
- }})?;
- input(ctx,&node,&keep,"keydown",|ctx,node,event|{
-  if get(&event,"key")==s("Enter")||get(&event,"key")==s(" "){ctx.st_set("suppressLampClickKey",&null());}
-  if !delete_key(ctx,node,&event,false)?{objects::move_object_with_keyboard(ctx,&event,node)?;}Ok(())
- })?;
- ctx.own_node_bindings(&node,keep);Ok(node)
+ let data=input_data(&node,item);
+ input(ctx,&node,"pointerdown",&data,"build_lamp-pointerdown-1",false)?;
+ input(ctx,&node,"pointermove",&data,"build_lamp-pointermove-1",false)?;
+ input(ctx,&node,"pointerleave",&data,"build_lamp-pointerleave-1",false)?;
+ input(ctx,&node,"pointerup",&data,"build_lamp-pointerup-1",false)?;
+ input(ctx,&node,"pointercancel",&data,"build_lamp-pointercancel-1",false)?;
+ input(ctx,&node,"click",&data,"build_lamp-click-1",false)?;
+ input(ctx,&node,"keydown",&data,"build_lamp-keydown-1",false)?;
+ Ok(node)
 }
 
 
 fn release_book(ctx:&Rc<Ctx>,press:&Press,node:&JsValue,item:&JsValue){
- press.start.set(None);cls_remove(node,&["is-pressed","is-press-pending"]);
+ press.set_start(None);cls_remove(node,&["is-pressed","is-press-pending"]);
  let id=super::covers::book_id(&get(item,"book"));
  if ctx.st("pressedBookId")==id{
   ctx.st_set("pressedBookId",&null());
@@ -177,59 +168,19 @@ pub fn build_spine(ctx:&Rc<Ctx>,item:&JsValue)->R<JsValue>{
    append(&node,&El::new("span").class("ihr-spine__bookmark").attr("aria-hidden","true").style(&format!("--ihr-bookmark-peek:{}px",text(&get(&bookmark,"peek")))).done());
   }
  }
- let press=Press::new();let keep=keep();
- input(ctx,&node,&keep,"pointerdown",{let press=press.clone();let item=item.clone();move|ctx,node,event|{
-  if !gesture_start(ctx,&press,node,&event,true)?{return Ok(());}
-  ctx.st_set("pressedBookId",&super::covers::book_id(&get(&item,"book")));
-  if !absent(&ctx.scene()){cls_add(node,&["is-pressed","is-press-pending"]);}else{cls_add(node,&["is-pressed"]);}
-  super::covers::warm_cover(ctx,&get(&item,"book"))?;Ok(())
- }})?;
- input(ctx,&node,&keep,"pointerup",{let press=press.clone();let item=item.clone();move|ctx,node,event|{
-  let touch=press.touch();if !truthy(&touch)||get(&touch,"pointerId")==get(&event,"pointerId"){release_book(ctx,&press,node,&item);}Ok(())
- }})?;
- input(ctx,&node,&keep,"pointercancel",{let press=press.clone();let item=item.clone();move|ctx,node,event|{
-  if get(&press.touch(),"pointerId")==get(&event,"pointerId"){press.set_touch(null());press.ignore.set(true);}
-  release_book(ctx,&press,node,&item);Ok(())
- }})?;
- input(ctx,&node,&keep,"pointerleave",{let press=press.clone();let item=item.clone();move|ctx,node,_|{
-  press.cancel_touch();release_book(ctx,&press,node,&item);Ok(())
- }})?;
- input(ctx,&node,&keep,"pointermove",{let press=press.clone();let item=item.clone();move|ctx,node,event|{
-  if let Some((x,y))=press.start.get(){if hypot(gn(&event,"clientX")-x,gn(&event,"clientY")-y)>objects::TAP_SLOP{
-   press.cancel_touch();release_book(ctx,&press,node,&item);
-  }}Ok(())
- }})?;
- input(ctx,&node,&keep,"click",{let press=press.clone();let item=item.clone();move|ctx,node,event|{
-  let pointer=trash::pointer_click(&event);
-  if pointer&&(press.ignore.get()||truthy(&press.touch())){press.ignore.set(false);press.set_touch(null());return Ok(());}
-  if ctx.st_true("arranging")||ctx.st_true("suppressOpenBookId"){ctx.st_set("suppressOpenBookId",&null());return Ok(());}
-  let hit=if pointer{ctx.scene_call("getBookAtPoint",&[&get(&event,"clientX"),&get(&event,"clientY")])?}else{null()};
-  if pointer&&!absent(&ctx.scene())&&!truthy(&hit){return Ok(());}
-  let selected=if truthy(&hit){or(map_get(&ctx.st("itemsById"),&data_get(&hit,"bookId")),item.clone())}else{item.clone()};
-  open_book(ctx,&or(hit,node.clone()),&selected);Ok(())
- }})?;
- input(ctx,&node,&keep,"keydown",|ctx,node,event|{
-  if delete_key(ctx,node,&event,true)?{return Ok(());}
-  if !truthy(&ctx.opts_get("sections")){return objects::move_object_with_keyboard(ctx,&event,node);}
-  let key=get(&event,"key");if !gb(&event,"shiftKey")||(key!=s("ArrowLeft")&&key!=s("ArrowRight")){return Ok(());}
-  method(&event,"preventDefault",&[])?;
-  let siblings=qsa(&closest(node,".ihr-section"),".ihr-spine");let index=siblings.iter().position(|sibling|sibling==node).map(|v|v as isize).unwrap_or(-1);
-  let target=index+if key==s("ArrowLeft"){-1}else{1};
-  if target>=0{if let Some(target)=siblings.get(target as usize){drag::reorder_spine(ctx,node,target,key==s("ArrowRight"))?;}}
-  Ok(())
- })?;
- input(ctx,&node,&keep,"pointerdown",|ctx,node,event|drag::start_spine_drag(ctx,&event,node))?;
- input(ctx,&node,&keep,"pointermove",|ctx,node,event|drag::move_spine_drag(ctx,&event,&active_node(ctx,node)))?;
- input(ctx,&node,&keep,"pointerup",{let press=press.clone();let item=item.clone();move|ctx,node,event|{
-  let touch=press.touch();let candidate=if get(&touch,"pointerId")==get(&event,"pointerId"){touch}else{null()};
-  let active=ctx.st("dragSession");let activate=drag::is_touch_tap_release(ctx,&event,&active,node,&candidate)&&(truthy(&candidate)||gb(&active,"bookTapValid"));
-  drag::finish_spine_drag(ctx,&event,&or(get(&active,"node"),node.clone()),false,activate)?;
-  if truthy(&candidate){press.set_touch(null());press.ignore.set(true);}
-  if activate&&is_connected(node)&&!ctx.st_true("suppressOpenBookId"){trash::discard_touch_compatibility_click(ctx,&event)?;open_book(ctx,node,&item);}
-  Ok(())
- }})?;
- input(ctx,&node,&keep,"pointercancel",|ctx,node,event|drag::finish_spine_drag(ctx,&event,&active_node(ctx,node),true,false))?;
- ctx.own_node_bindings(&node,keep);Ok(node)
+ let data=input_data(&node,item);
+ input(ctx,&node,"pointerdown",&data,"build_spine-pointerdown-1",false)?;
+ input(ctx,&node,"pointerup",&data,"build_spine-pointerup-1",false)?;
+ input(ctx,&node,"pointercancel",&data,"build_spine-pointercancel-1",false)?;
+ input(ctx,&node,"pointerleave",&data,"build_spine-pointerleave-1",false)?;
+ input(ctx,&node,"pointermove",&data,"build_spine-pointermove-1",false)?;
+ input(ctx,&node,"click",&data,"build_spine-click-1",false)?;
+ input(ctx,&node,"keydown",&data,"build_spine-keydown-1",false)?;
+ input(ctx,&node,"pointerdown",&data,"build_spine-pointerdown-2",false)?;
+ input(ctx,&node,"pointermove",&data,"build_spine-pointermove-2",false)?;
+ input(ctx,&node,"pointerup",&data,"build_spine-pointerup-2",false)?;
+ input(ctx,&node,"pointercancel",&data,"build_spine-pointercancel-2",false)?;
+ Ok(node)
 }
 
 
@@ -248,15 +199,10 @@ pub fn build_geometry_status(ctx:&Rc<Ctx>,books:&JsValue)->R<JsValue>{
   let message=if state==s("pending"){join_strings(&[s("Preparando "),string_value(&title),s("…")])}
    else{join_strings(&[string_value(&title),s(if state==s("needs-source"){ " · vuelve a seleccionar el archivo" }else{ " · no se pudo contar su texto" })])};
   append(&row,&El::new("span").text_value(&message).done());
-  let button=El::new("button").attr("type","button").class("ihr-btn ihr-btn--ghost").done();let keep=keep();
-  let failed=state==s("failed");
-  input(ctx,&button,&keep,"click",move|ctx,_,_|{
-   if failed{ctx.option_call("onBookGeometryRetry",&[&book])?;}
-   else{let open=ctx.initial_on_open();if !nullish(&open){call(&open,"onOpenBook",&[&book])?;}}
-   Ok(())
-  })?;
+  let button=El::new("button").attr("type","button").class("ihr-btn ihr-btn--ghost").done();let failed=state==s("failed");let data=obj(&[("node",&button),("book",&book),("failed",&b(failed))]);
+  input(ctx,&button,"click",&data,"build_geometry_status-click-1",false)?;
   append(&button,&El::new("span").text(if failed{"Reintentar"}else{"Abrir"}).done());
-  ctx.own_node_bindings(&button,keep);
+
   append(&row,&button);append(&status,&row);
  }
  Ok(status)
@@ -292,9 +238,9 @@ pub fn build_empty_state(ctx:&Rc<Ctx>)->R<JsValue>{
  if truthy(&ctx.text_of("emptyBody")){append(&copy,&El::new("p").class("ihr-empty__body").text_value(&ctx.text_of("emptyBody")).done());}
  let pick=get(&ctx.parts,"onPickLocal");
  if truthy(&pick){
-  let button=El::new("button").attr("type","button").class("ihr-btn ihr-btn--primary ihr-empty__action").text_value(&ctx.text_of("emptyAction")).done();let keep=keep();
-  input(ctx,&button,&keep,"click",move|_,_,_|{call(&pick,"onPickLocal",&[])?;Ok(())})?;
-  ctx.own_node_bindings(&button,keep);append(&copy,&button);
+  let button=El::new("button").attr("type","button").class("ihr-btn ihr-btn--primary ihr-empty__action").text_value(&ctx.text_of("emptyAction")).done();let data=obj(&[("node",&button),("callback",&pick)]);
+  input(ctx,&button,"click",&data,"build_empty_state-click-1",false)?;
+  append(&copy,&button);
  }
  Ok(El::new("div").class("ihr-empty").child(&copy).done())
 }
@@ -303,20 +249,20 @@ pub fn build_action_bar(ctx:&Rc<Ctx>)->R<JsValue>{
  let bar=El::new("div").class("ihr-actions").attr("role","group").attr("aria-label","Añadir libros").done();
  let pick=get(&ctx.parts,"onPickLocal");let drive=get(&ctx.parts,"onDrive");
  if truthy(&pick){
-  let button=El::new("button").attr("type","button").class("ihr-btn ihr-btn--primary").done();let keep=keep();
-  input(ctx,&button,&keep,"click",move|_,_,_|{call(&pick,"onPickLocal",&[])?;Ok(())})?;
+  let button=El::new("button").attr("type","button").class("ihr-btn ihr-btn--primary").done();let data=obj(&[("node",&button),("callback",&pick)]);
+  input(ctx,&button,"click",&data,"build_action_bar-click-1",false)?;
   append(&button,&svg_icon(&["M12 5v14","M5 12h14"],"0 0 24 24","ihr-icon")?);
   append(&button,&El::new("span").text_value(&ctx.text_of("addLocal")).done());
-  ctx.own_node_bindings(&button,keep);append(&bar,&button);
+  append(&bar,&button);
  }
  if truthy(&drive){
   let disabled=ctx.option("driveAvailable")==JsValue::FALSE;
   let title=if ctx.option("driveAvailable")==JsValue::FALSE{s("Drive no disponible")}else{null()};
-  let button=El::new("button").attr("type","button").class("ihr-btn").attr_value("disabled",&b(disabled)).attr_value("title",&title).done();let keep=keep();
-  input(ctx,&button,&keep,"click",move|_,_,_|{call(&drive,"onDrive",&[])?;Ok(())})?;
+  let button=El::new("button").attr("type","button").class("ihr-btn").attr_value("disabled",&b(disabled)).attr_value("title",&title).done();let data=obj(&[("node",&button),("callback",&drive)]);
+  input(ctx,&button,"click",&data,"build_action_bar-click-2",false)?;
   append(&button,&svg_icon(&super::pieces::DRIVE,"0 0 24 24","ihr-icon")?);
   append(&button,&El::new("span").text_value(&ctx.text_of("addDrive")).done());
-  ctx.own_node_bindings(&button,keep);append(&bar,&button);
+  append(&bar,&button);
  }
  Ok(bar)
 }
@@ -336,18 +282,18 @@ pub fn build_library_empty(ctx:&Rc<Ctx>)->R<JsValue>{
  if truthy(&body){append(&root,&El::new("p").class("ihr-empty__body").text_value(&body).done());}
  let pick=get(&ctx.parts,"onPickLocal");
  if truthy(&pick){
-  let button=El::new("button").attr("type","button").class("ihr-btn ihr-btn--primary ihr-empty__action").done();let keep=keep();
-  input(ctx,&button,&keep,"click",move|_,_,_|{call(&pick,"onPickLocal",&[])?;Ok(())})?;
+  let button=El::new("button").attr("type","button").class("ihr-btn ihr-btn--primary ihr-empty__action").done();let data=obj(&[("node",&button),("callback",&pick)]);
+  input(ctx,&button,"click",&data,"build_library_empty-click-1",false)?;
   append(&button,&svg_icon(&["M12 5v14","M5 12h14"],"0 0 24 24","ihr-icon")?);
   append(&button,&El::new("span").text_value(&ctx.text_of("emptyAction")).done());
-  ctx.own_node_bindings(&button,keep);append(&root,&button);
+  append(&root,&button);
  }
  Ok(root)
 }
 pub fn build_stage(ctx:&Rc<Ctx>,width:f64)->R<JsValue>{
- let stage=El::new("div").class("ihr-shelf-stage").done();let keep=keep();
- for kind in ["selectstart","contextmenu","dragstart"]{on_capture(&keep,&stage,kind,|event|{method(&event,"preventDefault",&[])?;Ok(())})?;}
- style_set(&stage,"--ihr-cabinet-width",&format!("{}px",ns(width)));ctx.own_node_bindings(&stage,keep);Ok(stage)
+ let stage=El::new("div").class("ihr-shelf-stage").done();let data=obj(&[("node",&stage)]);
+ for kind in ["selectstart","contextmenu","dragstart"]{input(ctx,&stage,kind,&data,"prevent-default",true)?;}
+ style_set(&stage,"--ihr-cabinet-width",&format!("{}px",ns(width)));Ok(stage)
 }
 pub fn build_section(ctx:&Ctx,section:&JsValue,count:f64)->JsValue{
  let root=El::new("section").class(&format!("ihr-section ihr-section--{}",text(&get(section,"id")))).attr_value("aria-label",&or(get(section,"title"),ctx.text_of("shelfLabel"))).done();
@@ -355,4 +301,115 @@ pub fn build_section(ctx:&Ctx,section:&JsValue,count:f64)->JsValue{
   append(&root,&El::new("div").class("ihr-section__header").child(&El::new("h2").class("ihr-section__title").text_value(&get(section,"title")).done())
    .child(&El::new("span").class("ihr-section__count").text(&ns(count)).attr("aria-label",&format!("{} libros",ns(count))).done()).done());
  }root
+}
+
+fn handle_input(ctx:&Rc<Ctx>,binding:&JsValue,event:JsValue)->R{
+ let data=get(binding,"data");let node=get(&data,"node");let node=&node;
+ let item=get(&data,"item");let press=Press(get(&data,"press"));
+ let book=get(&data,"book");let failed=gb(&data,"failed");
+ let pick=get(&data,"callback");let drive=pick.clone();
+ match text(&get(binding,"action")).as_str(){
+  "prevent-default"=>{method(&event,"preventDefault",&[])?;Ok(())},
+  "build_plant-pointerdown-1"=>drag::start_spine_drag(ctx,&event,node),
+  "build_plant-pointermove-1"=>drag::move_spine_drag(ctx,&event,&active_node(ctx,node)),
+  "build_plant-pointerup-1"=>drag::finish_spine_drag(ctx,&event,&active_node(ctx,node),false,false),
+  "build_plant-pointercancel-1"=>drag::finish_spine_drag(ctx,&event,&active_node(ctx,node),true,false),
+  "build_plant-keydown-1"=>{
+  if !delete_key(ctx,node,&event,false)?{objects::move_object_with_keyboard(ctx,&event,node)?;}Ok(())
+ },
+  "build_lamp-pointerdown-1"=>{
+  if gesture_start(ctx,&press,node,&event,false)?{drag::start_spine_drag(ctx,&event,node)?;}Ok(())
+ },
+  "build_lamp-pointermove-1"=>{
+  let touch=press.touch();
+  if get(&touch,"pointerId")==get(&event,"pointerId")&&hypot(gn(&event,"clientX")-gn(&touch,"x"),gn(&event,"clientY")-gn(&touch,"y"))>objects::TAP_SLOP{putb(&touch,"cancelled",true);}
+  drag::move_spine_drag(ctx,&event,&active_node(ctx,node))
+ },
+  "build_lamp-pointerleave-1"=>{press.cancel_touch();Ok(())},
+  "build_lamp-pointerup-1"=>{
+  let touch=press.touch();let candidate=if get(&touch,"pointerId")==get(&event,"pointerId"){touch}else{null()};
+  let active=ctx.st("dragSession");let activate=drag::is_touch_tap_release(ctx,&event,&active,node,&candidate);
+  drag::finish_spine_drag(ctx,&event,&or(get(&active,"node"),node.clone()),false,false)?;
+  if truthy(&candidate){press.set_touch(null());press.set_ignore(true);}
+  if activate&&is_connected(node)&&ctx.st("suppressLampClickKey")!=objects::object_key(node){trash::discard_touch_compatibility_click(ctx,&event)?;objects::toggle_lamp(ctx,node)?;}
+  Ok(())
+ },
+  "build_lamp-pointercancel-1"=>{
+  if get(&press.touch(),"pointerId")==get(&event,"pointerId"){press.set_touch(null());press.set_ignore(true);}
+  drag::finish_spine_drag(ctx,&event,&active_node(ctx,node),true,false)
+ },
+  "build_lamp-click-1"=>{
+  let pointer=trash::pointer_click(&event);
+  if pointer&&(press.ignore()||truthy(&press.touch())){press.set_ignore(false);press.set_touch(null());return Ok(());}
+  if pointer&&ctx.st("suppressLampClickKey")==objects::object_key(node){ctx.st_set("suppressLampClickKey",&null());return Ok(());}
+  if !pointer{ctx.st_set("suppressLampClickKey",&null());}
+  if pointer&&!absent(&ctx.scene())&&ctx.scene_call("getObjectAtPoint",&[&get(&event,"clientX"),&get(&event,"clientY")])?!=*node{return Ok(());}
+  objects::toggle_lamp(ctx,node)
+ },
+  "build_lamp-keydown-1"=>{
+  if get(&event,"key")==s("Enter")||get(&event,"key")==s(" "){ctx.st_set("suppressLampClickKey",&null());}
+  if !delete_key(ctx,node,&event,false)?{objects::move_object_with_keyboard(ctx,&event,node)?;}Ok(())
+ },
+  "build_spine-pointerdown-1"=>{
+  if !gesture_start(ctx,&press,node,&event,true)?{return Ok(());}
+  ctx.st_set("pressedBookId",&super::covers::book_id(&get(&item,"book")));
+  if !absent(&ctx.scene()){cls_add(node,&["is-pressed","is-press-pending"]);}else{cls_add(node,&["is-pressed"]);}
+  super::covers::warm_cover(ctx,&get(&item,"book"))?;Ok(())
+ },
+  "build_spine-pointerup-1"=>{
+  let touch=press.touch();if !truthy(&touch)||get(&touch,"pointerId")==get(&event,"pointerId"){release_book(ctx,&press,node,&item);}Ok(())
+ },
+  "build_spine-pointercancel-1"=>{
+  if get(&press.touch(),"pointerId")==get(&event,"pointerId"){press.set_touch(null());press.set_ignore(true);}
+  release_book(ctx,&press,node,&item);Ok(())
+ },
+  "build_spine-pointerleave-1"=>{
+  press.cancel_touch();release_book(ctx,&press,node,&item);Ok(())
+ },
+  "build_spine-pointermove-1"=>{
+  if let Some((x,y))=press.start(){if hypot(gn(&event,"clientX")-x,gn(&event,"clientY")-y)>objects::TAP_SLOP{
+   press.cancel_touch();release_book(ctx,&press,node,&item);
+  }}Ok(())
+ },
+  "build_spine-click-1"=>{
+  let pointer=trash::pointer_click(&event);
+  if pointer&&(press.ignore()||truthy(&press.touch())){press.set_ignore(false);press.set_touch(null());return Ok(());}
+  if ctx.st_true("arranging")||ctx.st_true("suppressOpenBookId"){ctx.st_set("suppressOpenBookId",&null());return Ok(());}
+  let hit=if pointer{ctx.scene_call("getBookAtPoint",&[&get(&event,"clientX"),&get(&event,"clientY")])?}else{null()};
+  if pointer&&!absent(&ctx.scene())&&!truthy(&hit){return Ok(());}
+  let selected=if truthy(&hit){or(map_get(&ctx.st("itemsById"),&data_get(&hit,"bookId")),item.clone())}else{item.clone()};
+  open_book(ctx,&or(hit,node.clone()),&selected);Ok(())
+ },
+  "build_spine-keydown-1"=>{
+  if delete_key(ctx,node,&event,true)?{return Ok(());}
+  if !truthy(&ctx.opts_get("sections")){return objects::move_object_with_keyboard(ctx,&event,node);}
+  let key=get(&event,"key");if !gb(&event,"shiftKey")||(key!=s("ArrowLeft")&&key!=s("ArrowRight")){return Ok(());}
+  method(&event,"preventDefault",&[])?;
+  let siblings=qsa(&closest(node,".ihr-section"),".ihr-spine");let index=siblings.iter().position(|sibling|sibling==node).map(|v|v as isize).unwrap_or(-1);
+  let target=index+if key==s("ArrowLeft"){-1}else{1};
+  if target>=0{if let Some(target)=siblings.get(target as usize){drag::reorder_spine(ctx,node,target,key==s("ArrowRight"))?;}}
+  Ok(())
+ },
+  "build_spine-pointerdown-2"=>drag::start_spine_drag(ctx,&event,node),
+  "build_spine-pointermove-2"=>drag::move_spine_drag(ctx,&event,&active_node(ctx,node)),
+  "build_spine-pointerup-2"=>{
+  let touch=press.touch();let candidate=if get(&touch,"pointerId")==get(&event,"pointerId"){touch}else{null()};
+  let active=ctx.st("dragSession");let activate=drag::is_touch_tap_release(ctx,&event,&active,node,&candidate)&&(truthy(&candidate)||gb(&active,"bookTapValid"));
+  drag::finish_spine_drag(ctx,&event,&or(get(&active,"node"),node.clone()),false,activate)?;
+  if truthy(&candidate){press.set_touch(null());press.set_ignore(true);}
+  if activate&&is_connected(node)&&!ctx.st_true("suppressOpenBookId"){trash::discard_touch_compatibility_click(ctx,&event)?;open_book(ctx,node,&item);}
+  Ok(())
+ },
+  "build_spine-pointercancel-2"=>drag::finish_spine_drag(ctx,&event,&active_node(ctx,node),true,false),
+  "build_geometry_status-click-1"=>{
+   if failed{ctx.option_call("onBookGeometryRetry",&[&book])?;}
+   else{let open=ctx.initial_on_open();if !nullish(&open){call(&open,"onOpenBook",&[&book])?;}}
+   Ok(())
+  },
+  "build_empty_state-click-1"=>{call(&pick,"onPickLocal",&[])?;Ok(())},
+  "build_action_bar-click-1"=>{call(&pick,"onPickLocal",&[])?;Ok(())},
+  "build_action_bar-click-2"=>{call(&drive,"onDrive",&[])?;Ok(())},
+  "build_library_empty-click-1"=>{call(&pick,"onPickLocal",&[])?;Ok(())},
+  _=>Ok(())
+ }
 }

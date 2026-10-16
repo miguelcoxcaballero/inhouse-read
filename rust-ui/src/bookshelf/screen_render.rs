@@ -119,11 +119,7 @@ fn render_inner(ctx:&Rc<Ctx>)->R{
  Ok(())
 }
 
-pub fn render(ctx:&Rc<Ctx>)->R{
- let result=render_inner(ctx);
- // Failed paints may have built unattached nodes; keep only the subtrees the shelf still owns.
- ctx.prune_view_bindings();result
-}
+pub fn render(ctx:&Rc<Ctx>)->R{render_inner(ctx)}
 
 #[wasm_bindgen]
 impl RustShelfCtx{
