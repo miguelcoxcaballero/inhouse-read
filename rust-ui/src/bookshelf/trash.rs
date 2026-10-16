@@ -155,7 +155,7 @@ async fn remove_flight(ctx:&Rc<Ctx>,operation:&JsValue,node:&JsValue,rect_value:
  let id=string_value(&read(&book,"id")?);
  let books=array_of(&ctx.st("books"));
  let index=books.iter().position(|record|string_value(&get(record,"id"))==id);
- let persisted=match call(&ctx.option("onBookRemove"),"onBookRemove",&[&book]).map(|value|promise_resolve(&value)){
+ let persisted=match method(&ctx.options,"onBookRemove",&[&book]).map(|value|promise_resolve(&value)){
   Ok(promise)=>promise,
   Err(error)=>js_sys::Promise::reject(&error).into(),
  };

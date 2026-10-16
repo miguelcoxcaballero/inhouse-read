@@ -82,9 +82,9 @@ pub async fn resolve_cover(ctx:Rc<Ctx>,book:JsValue)->R<JsValue>{
  if truthy(&saved){return Ok(saved);}
  let mut url=null();
  let attempt=async{
-  let source_for=ctx.option("coverSrcFor");
+  let source_for=read(&ctx.options,"coverSrcFor")?;
   if source_for.is_function(){
-   let source=settle(call(&source_for,"coverSrcFor",&[&book])?).await?;
+   let source=settle(method(&ctx.options,"coverSrcFor",&[&book])?).await?;
    url=to_url(&ctx,&source)?;
   }
   if !truthy(&url){url=to_url(&ctx,&stored_cover(&book)?)?;}
@@ -123,8 +123,8 @@ pub fn resolve_cover_immediately(ctx:&Ctx,book:&JsValue)->R<JsValue>{
  let saved=cached_cover(ctx,book)?;
  if truthy(&saved){return Ok(saved);}
  let attempt=||->R<JsValue>{
-  let source_for=ctx.option("coverSrcFor");
-  let source=if source_for.is_function(){call(&source_for,"coverSrcFor",&[book])?}else{stored_cover(book)?};
+  let source_for=read(&ctx.options,"coverSrcFor")?;
+  let source=if source_for.is_function(){method(&ctx.options,"coverSrcFor",&[book])?}else{stored_cover(book)?};
   if truthy(&source)&&is_fn(&get(&source,"then")){return Ok(null());}
   let url=to_url(ctx,&source)?;
   let url=if truthy(&url){url}else{to_url(ctx,&stored_cover(book)?)?};
@@ -171,8 +171,8 @@ async fn appearance_task(ctx:Rc<Ctx>,book:JsValue,known_url:JsValue,key:JsValue,
  map_set(&appearances,&id,&obj(&[("key",&key),("appearance",&appearance),("complete",&JsValue::TRUE)]));
  if !truthy(&appearance){return Ok(null());}
  let saved=async{
-  let callback=ctx.option("onCoverAppearance");
-  if !nullish(&callback){settle(call(&callback,"onCoverAppearance",&[&book,&appearance,&key])?).await?;}
+  // `await options.onCoverAppearance?.(...)`: an absent callback still yields one turn.
+  settle(ctx.option_call("onCoverAppearance",&[&book,&appearance,&key])?).await?;
   Ok::<(),JsValue>(())
  }.await;
  if let Err(error)=saved{warn("No se pudo guardar el aspecto de la portada:",&error);}
