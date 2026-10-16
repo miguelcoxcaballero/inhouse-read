@@ -62,7 +62,7 @@ impl Pending{
 }
 
 /// `String(item.book.id ?? item.book.path ?? item.book.title ?? 'book')` of a shelf item.
-fn item_id(item:&JsValue)->String{super::editor::appearance_id(&get(item,"book"))}
+fn item_id(item:&JsValue)->JsValue{super::editor::appearance_id(&get(item,"book"))}
 
 impl Flyout{
  pub(super) fn me(&self)->Rc<Flyout>{self.me.borrow().upgrade().expect("The lifted book is alive while it runs")}
@@ -213,10 +213,10 @@ async fn open(ctx:Rc<Ctx>,mut spine_el:JsValue,mut item:JsValue)->R{
   // A reordering animation can still own the queued list. Keep it intact and do not open the stale source
   // or geometry from the painted hit.
   if ctx.st_true("queuedBooks"){return Ok(());}
-  item=map_get(&ctx.st("itemsById"),&s(&id));
+  item=map_get(&ctx.st("itemsById"),&id);
   let found=if truthy(&item){
-   let wanted=text(&coalesce(get(&get(&item,"book"),"id"),s("")));
-   qsa(&ctx.root,".ihr-spine").into_iter().find(|node|data_get(node,"bookId").as_string().as_deref()==Some(wanted.as_str()))
+   let wanted=string_value(&coalesce(get(&get(&item,"book"),"id"),s("")));
+   qsa(&ctx.root,".ihr-spine").into_iter().find(|node|data_get(node,"bookId")==wanted)
   }else{None};
   spine_el=found.unwrap_or(undef());
   if !truthy(&item)||!is_connected(&spine_el)||text(&ctx.legacy("bookGeometryState",&[&get(&item,"book")])?)!="ready"{return Ok(());}
@@ -514,8 +514,8 @@ impl Flyout{
 
  /// `replaceShelfSpine`: the resting spine follows the edited style.
  pub(super) fn replace_shelf_spine(&self)->R{
-  let id=text(&get(&self.book,"id"));
-  let existing=qsa(&self.ctx.scroller,".ihr-spine").into_iter().find(|node|data_get(node,"bookId").as_string().as_deref()==Some(id.as_str()));
+  let id=string_value(&get(&self.book,"id"));
+  let existing=qsa(&self.ctx.scroller,".ihr-spine").into_iter().find(|node|data_get(node,"bookId")==id);
   let Some(existing)=existing else{return Ok(())};
   if truthy(&self.scene()){
    method(&self.scene(),"updateEntry",&[&existing,&self.book,&get(&self.item,"style"),&self.cover_url])?;return Ok(());

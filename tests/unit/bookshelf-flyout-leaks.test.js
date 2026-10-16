@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderBookshelf } from '../../src/js/bookshelf.js'
-import { rustShelf } from './helpers/rust-shelf-ready.js'
+import { rustShelf, shelfWasm } from './helpers/rust-shelf-ready.js'
 import { click, fire, heldMotion, keydown, q, qa, recordingView, setValue, stubRects } from './helpers/shelf-differential.js'
 
 const state = vi.hoisted(() => ({ log: [], noView: false, hold: false }))
@@ -75,11 +75,13 @@ describe('the lifted book in the shelf module', () => {
       { shelfWidth: 390, sections: false, revealDuration: 0, holdMs: 0, coverSrcFor: () => 'blob:x', onBookCustomizationChange: async () => {}, getBookPreparation: () => Promise.resolve(true) })
     await vi.advanceTimersByTimeAsync(50)
     for (let index = 0; index < 3; index++) await cycle(index % 2 === 1)
+    const capacity = shelfWasm.memory.buffer.byteLength
     const handles = rustShelf.shelf_live_handles()
     const callbacks = rustShelf.shelf_pending_callbacks()
     for (let index = 0; index < 20; index++) await cycle(index % 2 === 0)
     await vi.advanceTimersByTimeAsync(2000)
     expect(rustShelf.shelf_live_handles()).toBe(handles)
+    expect(shelfWasm.memory.buffer.byteLength).toBe(capacity)
     expect(rustShelf.shelf_pending_callbacks()).toBe(callbacks)
   }, 60_000)
 
@@ -94,11 +96,13 @@ describe('the lifted book in the shelf module', () => {
     await vi.advanceTimersByTimeAsync(50)
     for (let index = 0; index < 3; index++) await readerCycle()
     await vi.advanceTimersByTimeAsync(2000)
+    const capacity = shelfWasm.memory.buffer.byteLength
     const handles = rustShelf.shelf_live_handles()
     const callbacks = rustShelf.shelf_pending_callbacks()
     for (let index = 0; index < 15; index++) await readerCycle()
     await vi.advanceTimersByTimeAsync(2000)
     expect(rustShelf.shelf_live_handles()).toBe(handles)
+    expect(shelfWasm.memory.buffer.byteLength).toBe(capacity)
     expect(rustShelf.shelf_pending_callbacks()).toBe(callbacks)
   }, 60_000)
 
@@ -131,11 +135,13 @@ describe('the lifted book in the shelf module', () => {
     }
     for (let index = 0; index < 4; index++) await cycle(index)
     await vi.advanceTimersByTimeAsync(2000)
+    const capacity = shelfWasm.memory.buffer.byteLength
     const handles = rustShelf.shelf_live_handles()
     const callbacks = rustShelf.shelf_pending_callbacks()
     for (let index = 0; index < 16; index++) await cycle(index)
     await vi.advanceTimersByTimeAsync(20_000)
     expect(rustShelf.shelf_live_handles()).toBe(handles)
+    expect(shelfWasm.memory.buffer.byteLength).toBe(capacity)
     expect(rustShelf.shelf_pending_callbacks()).toBe(callbacks)
   }, 90_000)
 })

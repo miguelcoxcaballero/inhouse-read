@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderBookshelf } from '../../src/js/bookshelf.js'
-import { rustShelf } from './helpers/rust-shelf-ready.js'
+import { rustShelf, shelfWasm } from './helpers/rust-shelf-ready.js'
 import { flush, keydown, qa, recordingScene, recordingView, stubRects } from './helpers/shelf-differential.js'
 import { LAMP_CATALOG } from '../../src/js/lamp-catalog-data.js'
 import { PLANT_CATALOG, POT_CATALOG } from '../../src/js/plant-catalog-data.js'
@@ -96,11 +96,13 @@ describe('moving things on the shelf', () => {
     await flush(50)
     for (let index = 0; index < 4; index++) await cycle(index)
     await flush(5000)
+    const capacity = shelfWasm.memory.buffer.byteLength
     const handles = rustShelf.shelf_live_handles()
     const callbacks = rustShelf.shelf_pending_callbacks()
     for (let index = 0; index < 14; index++) await cycle(index)
     await flush(5000)
     expect(rustShelf.shelf_live_handles()).toBe(handles)
+    expect(shelfWasm.memory.buffer.byteLength).toBe(capacity)
     expect(rustShelf.shelf_pending_callbacks()).toBe(callbacks)
   }, 120_000)
 

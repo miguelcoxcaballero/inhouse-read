@@ -1,3 +1,4 @@
+import { writeShelfDifference } from './helpers/shelf-differential.js'
 /**
  * The covers of the shelf against the frozen JavaScript original (helpers/reference-bookshelf.js): which URL a book's
  * cover gets (and how many object URLs that costs), the analysis of its colour and cloth and what happens when the
@@ -111,12 +112,28 @@ async function same(script, settings = {}) {
   // What the original leaves unhandled (a rejection nobody awaits) is left unhandled by the port, and nothing more.
   expect(await port.stop()).toEqual(leftByOriginal)
   const difference = firstDifference(expected, actual)
-  if (difference) (await import('node:fs')).writeFileSync('/tmp/claude-0/-home-user-inhouse-read/6c70f5ca-de80-5128-bee1-f59b39f4610d/scratchpad/shelf-ui/covers-diff.txt', ['EXPECTED', ...expected, 'ACTUAL', ...actual].join('\n'))
+  if (difference) await writeShelfDifference('covers', expected, actual)
   expect(difference).toBeNull()
   return expected.join('\n')
 }
 
 describe('the covers against the frozen original', () => {
+  it.each(['\ud800', '\udfff', '\ud800\ud800'])('keeps UTF-16 identity %j distinct in the saved-cover cache', async identity => {
+    const replacement = identity.replace(/[\ud800-\udfff]/g, '\ufffd')
+    const books = () => [book(`local:${identity}`, { title: 'Mismo título' }), book(`local:${replacement}`, { title: 'Mismo título' })]
+    const text = await same(() => [['paint', () => {}], ['same records', () => shelf.refresh(books())]], { books })
+    expect(text).toContain('blob:test/2')
+  }, 60_000)
+
+  it('invalidates the saved-cover key for UTF-16 title changes', async () => {
+    const books = () => [book('a', { title: 'Título \ud800' })]
+    const text = await same(() => [
+      ['paint', () => {}],
+      ['different UTF-16 title', () => shelf.refresh([book('a', { title: 'Título \ufffd' })])]
+    ], { books })
+    expect(text).toContain('blob:test/2')
+  }, 60_000)
+
   it('gives each saved cover one object URL, keeps it across refreshes and replaces it with the cover', async () => {
     const script = () => [
       ['first paint', () => {}],
@@ -233,4 +250,3 @@ describe('the covers against the frozen original', () => {
     await same(script, { config: { analysis: () => OTHER } })
   }, 60_000)
 })
-

@@ -183,3 +183,14 @@ export function firstDifference(expected, actual) {
   return null
 }
 export { vi }
+
+/** Preserve failed transcripts in a fresh temporary directory on any checkout. */
+export async function writeShelfDifference(name, expected, actual) {
+  const { mkdtempSync, writeFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const directory = mkdtempSync(join(tmpdir(), 'ihr-shelf-diff-'))
+  const path = join(directory, `${name.replace(/\W+/g, '-')}.txt`)
+  writeFileSync(path, ['EXPECTED', ...expected, 'ACTUAL', ...actual].join('\n'))
+  return path
+}

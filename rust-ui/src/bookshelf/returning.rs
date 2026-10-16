@@ -166,7 +166,7 @@ async fn return_to_shelf(ctx:Rc<Ctx>,book_id:JsValue,options:JsValue)->R<JsValue
  if truthy(&item){put(&item,"book",&book);}
  // Normally analysed while the reader was open. If not, wait briefly so the flight, the landing and the
  // resting spine share one cloth/ribbon.
- let appearance_key=s(&super::covers::cover_key_for(&book));
+ let appearance_key=super::covers::cover_key_for(&book);
  let known=map_get(&ctx.st("coverAppearances"),&s(&wanted));
  if truthy(&item)&&!(get(&known,"key")==appearance_key&&get(&known,"complete")!=JsValue::FALSE){
   let resolving=then_map(&super::covers::resolve_cover_appearance(&ctx,&book,&undef())?,Ok,|_|Ok(null()))?;

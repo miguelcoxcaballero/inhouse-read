@@ -84,12 +84,12 @@ impl Editor{
  /// `shelfSpineNodes()`.
  pub(super) fn shelf_spines(&self)->Vec<JsValue>{qsa(&self.ctx.scroller,".ihr-spine")}
  pub(super) fn shelf_spine_of_book(&self)->Option<JsValue>{
-  let id=text(&get(&self.book,"id"));
-  self.shelf_spines().into_iter().find(|node|data_get(node,"bookId").as_string().as_deref()==Some(id.as_str()))
+  let id=string_value(&get(&self.book,"id"));
+  self.shelf_spines().into_iter().find(|node|data_get(node,"bookId")==id)
  }
  /// `cached?.key === item.coverKey ? cached.appearance : null` for this book.
  pub(super) fn cached_appearance(&self)->JsValue{
-  let cached=map_get(&self.ctx.st("coverAppearances"),&s(&appearance_id(&self.book)));
+  let cached=map_get(&self.ctx.st("coverAppearances"),&appearance_id(&self.book));
   if truthy(&cached)&&get(&cached,"key")==get(&self.item,"coverKey"){get(&cached,"appearance")}else{null()}
  }
 
@@ -97,7 +97,7 @@ impl Editor{
  pub(super) fn build(ctx:&Rc<Ctx>,parts:EditorParts)->R<Rc<Editor>>{
   let EditorParts{book,item,view,session,book_node,flyout,meta,cover_target,edit_button,cover_url,style:style0,geo,pick_layer,pick_message,pick_cancel,pick_handle,host}=parts;
 
-  let cached=map_get(&ctx.st("coverAppearances"),&s(&appearance_id(&book)));
+  let cached=map_get(&ctx.st("coverAppearances"),&appearance_id(&book));
   let cached_appearance=if truthy(&cached)&&get(&cached,"key")==get(&item,"coverKey"){get(&cached,"appearance")}else{null()};
   let cover_color=if truthy(&get(&cached_appearance,"color")){get(&cached_appearance,"color")}else{get(&get(&item,"baseStyle"),"color")};
   let suggested=array_of(&ctx.env("bookColorOptions",&[&cover_color])?);
@@ -276,8 +276,8 @@ impl Editor{
 }
 
 /// `String(book.id ?? book.path ?? book.title ?? 'book')`.
-pub(super) fn appearance_id(book:&JsValue)->String{
- text(&coalesce(coalesce(coalesce(get(book,"id"),get(book,"path")),get(book,"title")),s("book")))
+pub(super) fn appearance_id(book:&JsValue)->JsValue{
+ string_value(&coalesce(coalesce(coalesce(get(book,"id"),get(book,"path")),get(book,"title")),s("book")))
 }
 /// The filled part of a range track follows its value (CSS reads `--ihr-range-fill`).
 pub(super) fn sync_range(input:&JsValue){
@@ -317,4 +317,3 @@ fn material_picker(pickers:&RefCell<Vec<FinishPicker>>,select:&JsValue,part:&str
  pickers.borrow_mut().push(FinishPicker{select:select.clone(),picker:picker.clone(),samples});
  picker
 }
-

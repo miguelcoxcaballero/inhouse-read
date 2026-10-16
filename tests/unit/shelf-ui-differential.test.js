@@ -1,3 +1,4 @@
+import { writeShelfDifference } from './helpers/shelf-differential.js'
 /**
  * The shelf screen against its frozen JavaScript original. Both play the same scripted sessions on the same
  * doubles (book model, relief analysis, cover analysis); every call the screen makes on its host, every callback
@@ -229,7 +230,7 @@ describe('the lifted book against the frozen original', () => {
     state.log.length = 0; state.views.length = 0; document.body.innerHTML = ''; prepare()
     const actual = await session(production, flyoutScripts[name], makeBooks, extra)
     const difference = firstDifference(expected, actual)
-    if (difference) { (await import('node:fs')).writeFileSync('/tmp/claude-0/-home-user-inhouse-read/6c70f5ca-de80-5128-bee1-f59b39f4610d/scratchpad/shelf-ui/diff-' + name.replace(/\W+/g, '-') + '.txt', ['EXPECTED', ...expected, 'ACTUAL', ...actual].join('\n')) }
+    if (difference) await writeShelfDifference('flyout', expected, actual)
     expect(difference).toBeNull()
     return expected
   }

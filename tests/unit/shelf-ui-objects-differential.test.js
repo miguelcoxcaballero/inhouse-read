@@ -1,3 +1,4 @@
+import { writeShelfDifference } from './helpers/shelf-differential.js'
 /**
  * Moving things around the shelf, against the frozen JavaScript original (helpers/reference-bookshelf.js): the hold
  * that lifts a book, plant or lamp, the drag with its preview and its scroll, the release (a new place, a new order,
@@ -141,7 +142,7 @@ async function same(script, settings = {}) {
   // What the original leaves unhandled (a rejection nobody awaits) is left unhandled by the port, and nothing more.
   expect(await port.stop()).toEqual(leftByOriginal)
   const difference = firstDifference(expected, actual)
-  if (difference) (await import('node:fs')).writeFileSync('/tmp/claude-0/-home-user-inhouse-read/6c70f5ca-de80-5128-bee1-f59b39f4610d/scratchpad/shelf-ui/objects-diff.txt', ['EXPECTED', ...expected, 'ACTUAL', ...actual].join('\n'))
+  if (difference) await writeShelfDifference('objects', expected, actual)
   if (process.env.SHELF_DUMP) (await import('node:fs')).writeFileSync(`${process.env.SHELF_DUMP}/objects-${expect.getState().currentTestName.replace(/\W+/g, '-').slice(-80)}-${Date.now() % 100000}.txt`, expected.join('\n'))
   expect(difference).toBeNull()
   return expected.join('\n')

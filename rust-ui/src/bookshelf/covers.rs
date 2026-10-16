@@ -7,8 +7,8 @@ use js_sys::Object;
 use super::{util::*,ctx::{Ctx,RustShelfCtx},style::*};
 
 /// `String(book?.id ?? book?.path ?? book?.title ?? 'book')`.
-pub fn book_id(book:&JsValue)->String{
- text(&coalesce(get(book,"id"),coalesce(get(book,"path"),coalesce(get(book,"title"),s("book")))))
+pub fn book_id(book:&JsValue)->JsValue{
+ string_value(&coalesce(get(book,"id"),coalesce(get(book,"path"),coalesce(get(book,"title"),s("book")))))
 }
 
 /// `typeof Blob !== 'undefined' && value instanceof Blob`.
@@ -20,17 +20,18 @@ fn is_blob(value:&JsValue)->bool{
 }
 
 /// `coverKeyFor(book)`.
-pub fn cover_key_for(book:&JsValue)->String{
+pub fn cover_key_for(book:&JsValue)->JsValue{
  let id=book_id(book);
  let cover=coalesce(get(book,"cover"),coalesce(get(book,"coverBlob"),get(book,"coverUrl")));
- let title=text(&coalesce(get(book,"title"),s("")));
+ let title=string_value(&coalesce(get(book,"title"),s("")));
+ let mut parts=vec![id,s("|"),title,s("|")];
  if is_blob(&cover){
+  parts.extend([string_value(&get(&cover,"type")),s("|"),string_value(&get(&cover,"size")),s("|"),
+   string_value(&coalesce(get(&cover,"lastModified"),s("")))]);
   let updated=get(book,"coverUpdatedAt");
-  return format!("{id}|{title}|{}|{}|{}{}",text(&get(&cover,"type")),text(&get(&cover,"size")),text(&coalesce(get(&cover,"lastModified"),s(""))),
-   if truthy(&updated){format!("|{}",text(&updated))}else{String::new()});
- }
- if cover.is_string(){return format!("{id}|{title}|{}",text(&cover));}
- format!("{id}|{title}|")
+  if truthy(&updated){parts.extend([s("|"),string_value(&updated)]);}
+ }else if cover.is_string(){parts.push(cover);}
+ join_strings(&parts)
 }
 
 impl Ctx{
@@ -55,7 +56,7 @@ fn to_url(ctx:&Ctx,source:&JsValue)->R<JsValue>{
 
 /// `cachedCover(book)`.
 fn cached_cover(ctx:&Ctx,book:&JsValue)->R<JsValue>{
- let saved=method(&ctx.saved_cover_urls(),"get",&[&s(&cover_key_for(book))])?;
+ let saved=method(&ctx.saved_cover_urls(),"get",&[&cover_key_for(book)])?;
  if truthy(&saved){method(&ctx.cover_cache(),"set",&[book,&saved])?;}
  Ok(saved)
 }
@@ -64,7 +65,7 @@ fn cached_cover(ctx:&Ctx,book:&JsValue)->R<JsValue>{
 fn remember_cover(ctx:&Ctx,book:&JsValue,url:&JsValue)->R<JsValue>{
  method(&ctx.cover_cache(),"set",&[book,url])?;
  if truthy(url)&&(truthy(&get(book,"cover"))||truthy(&get(book,"coverBlob"))||truthy(&get(book,"coverUrl"))){
-  method(&ctx.saved_cover_urls(),"set",&[&s(&cover_key_for(book)),url])?;
+  method(&ctx.saved_cover_urls(),"set",&[&cover_key_for(book),url])?;
  }
  Ok(url.clone())
 }
@@ -138,47 +139,47 @@ pub fn resolve_cover_appearance(ctx:&Rc<Ctx>,book:&JsValue,known_url:&JsValue)->
  let key=cover_key_for(book);
  let id=book_id(book);
  let appearances=ctx.st("coverAppearances");
- let cached=map_get(&appearances,&s(&id));
- if get(&cached,"key")==s(&key)&&get(&cached,"complete")!=JsValue::FALSE{return Ok(promise_resolve(&get(&cached,"appearance")));}
+ let cached=map_get(&appearances,&id);
+ if get(&cached,"key")==key&&get(&cached,"complete")!=JsValue::FALSE{return Ok(promise_resolve(&get(&cached,"appearance")));}
  let tasks=ctx.st("appearanceTasks");
- if map_has(&tasks,&s(&key)){return Ok(map_get(&tasks,&s(&key)));}
+ if map_has(&tasks,&key){return Ok(map_get(&tasks,&key));}
  let (task_ctx,task_book,task_url,task_key,task_id)=(ctx.clone(),book.clone(),known_url.clone(),key.clone(),id);
  let task=run(async move{appearance_task(task_ctx,task_book,task_url,task_key,task_id).await});
  // `.finally(() => state.appearanceTasks.delete(key))`
  let finished_ctx=ctx.clone();let finished_key=key.clone();
- let task=finally(&task,move||{map_delete(&finished_ctx.st("appearanceTasks"),&s(&finished_key));Ok(())})?;
- map_set(&tasks,&s(&key),&task);
+ let task=finally(&task,move||{map_delete(&finished_ctx.st("appearanceTasks"),&finished_key);Ok(())})?;
+ map_set(&tasks,&key,&task);
  Ok(task)
 }
 
 /// Whether the record on the shelf has a newer cover than the one being analysed.
-fn is_stale(ctx:&Ctx,id:&str,key:&str)->bool{
- let current=array_of(&ctx.st("books")).into_iter().find(|candidate|book_id(candidate)==id);
- match current{Some(current)=>cover_key_for(&current)!=key,None=>false}
+fn is_stale(ctx:&Ctx,id:&JsValue,key:&JsValue)->bool{
+ let current=array_of(&ctx.st("books")).into_iter().find(|candidate|book_id(candidate)==*id);
+ match current{Some(current)=>cover_key_for(&current)!=*key,None=>false}
 }
 
-async fn appearance_task(ctx:Rc<Ctx>,book:JsValue,known_url:JsValue,key:String,id:String)->R<JsValue>{
+async fn appearance_task(ctx:Rc<Ctx>,book:JsValue,known_url:JsValue,key:JsValue,id:JsValue)->R<JsValue>{
  let appearances=ctx.st("coverAppearances");
  let url=if truthy(&known_url){known_url.clone()}else{settle(resolve_cover_promise(&ctx,&book)).await?};
  if !truthy(&url){
-  if !is_stale(&ctx,&id,&key){map_set(&appearances,&s(&id),&obj(&[("key",&s(&key)),("appearance",&null()),("complete",&JsValue::TRUE)]));}
+  if !is_stale(&ctx,&id,&key){map_set(&appearances,&id,&obj(&[("key",&key),("appearance",&null()),("complete",&JsValue::TRUE)]));}
   return Ok(null());
  }
  let appearance=settle(ctx.env("analyzeCoverAppearance",&[&url,&text_or_empty(&get(&book,"title"))])?).await?;
  if ctx.st_true("destroyed"){return Ok(null());}
  if is_stale(&ctx,&id,&key){return Ok(appearance);}
- map_set(&appearances,&s(&id),&obj(&[("key",&s(&key)),("appearance",&appearance),("complete",&JsValue::TRUE)]));
+ map_set(&appearances,&id,&obj(&[("key",&key),("appearance",&appearance),("complete",&JsValue::TRUE)]));
  if !truthy(&appearance){return Ok(null());}
  let saved=async{
   let callback=ctx.option("onCoverAppearance");
-  if !nullish(&callback){settle(call(&callback,"onCoverAppearance",&[&book,&appearance,&s(&key)])?).await?;}
+  if !nullish(&callback){settle(call(&callback,"onCoverAppearance",&[&book,&appearance,&key])?).await?;}
   Ok::<(),JsValue>(())
  }.await;
  if let Err(error)=saved{warn("No se pudo guardar el aspecto de la portada:",&error);}
- let item=map_get(&ctx.st("itemsById"),&s(&id));
- if truthy(&item)&&get(&item,"coverKey")==s(&key)&&apply_cover_appearance(&ctx,&item,&appearance)?{
+ let item=map_get(&ctx.st("itemsById"),&id);
+ if truthy(&item)&&get(&item,"coverKey")==key&&apply_cover_appearance(&ctx,&item,&appearance)?{
   let session=ctx.st("session");
-  if text(&coalesce(get(&get(&session,"book"),"id"),s("")))==id{
+  if string_value(&coalesce(get(&get(&session,"book"),"id"),s("")))==id{
    let view=get(&session,"view");
    if !absent(&view){method(&view,"updateAppearance",&[&get(&item,"style"),&obj(&[("reuseModel",&JsValue::TRUE)])])?;}
    update_book_style_vars(&get(&session,"bookNode"),&get(&item,"style"));
@@ -187,10 +188,10 @@ async fn appearance_task(ctx:Rc<Ctx>,book:JsValue,known_url:JsValue,key:String,i
    update_book_style_vars(&face,&get(&item,"style"));
   }
   let last=ctx.st("lastOpened");
-  if text(&coalesce(get(&get(&last,"book"),"id"),s("")))==id{put(&last,"style",&get(&item,"style"));}
-  let existing=qsa(&ctx.root,".ihr-spine").into_iter().find(|node|data_get(node,"bookId").as_string().as_deref()==Some(id.as_str()));
+  if string_value(&coalesce(get(&get(&last,"book"),"id"),s("")))==id{put(&last,"style",&get(&item,"style"));}
+  let existing=qsa(&ctx.root,".ihr-spine").into_iter().find(|node|data_get(node,"bookId")==id);
   let pressed=ctx.st("pressedBookId");
-  if let Some(existing)=existing.filter(|node|is_connected(node)&&!ctx.busy_for_refresh()&&pressed!=s(&id)){
+  if let Some(existing)=existing.filter(|node|is_connected(node)&&!ctx.busy_for_refresh()&&pressed!=id){
    if !absent(&ctx.scene()){
     let cover_url=resolve_cover_immediately(&ctx,&get(&item,"book"))?;
     ctx.scene_call("updateEntry",&[&existing,&get(&item,"book"),&get(&item,"style"),&cover_url])?;
@@ -200,7 +201,7 @@ async fn appearance_task(ctx:Rc<Ctx>,book:JsValue,known_url:JsValue,key:String,i
    let replacement=ctx.legacy("buildSpine",&[&item])?;
    replace_with(&existing,&replacement);
    let last=ctx.st("lastOpened");
-   if text(&coalesce(get(&get(&last,"book"),"id"),s("")))==id{put(&last,"spineEl",&replacement);}
+   if string_value(&coalesce(get(&get(&last,"book"),"id"),s("")))==id{put(&last,"spineEl",&replacement);}
    if had_focus{method(&replacement,"focus",&[&obj(&[("preventScroll",&JsValue::TRUE)])])?;}
   }else{
    ctx.st_set("appearanceRefreshPending",&JsValue::TRUE);
@@ -259,7 +260,7 @@ impl RustShelfCtx{
  #[wasm_bindgen(js_name=resolveCover)]
  pub fn resolve_cover(&self,book:JsValue)->JsValue{resolve_cover_promise(&self.ctx,&book)}
  #[wasm_bindgen(js_name=coverKeyFor)]
- pub fn cover_key_for(&self,book:JsValue)->String{cover_key_for(&book)}
+ pub fn cover_key_for(&self,book:JsValue)->JsValue{cover_key_for(&book)}
  #[wasm_bindgen(js_name=coverRatioFor)]
  pub fn cover_ratio_for(&self,style:JsValue,fallback:JsValue)->Result<JsValue,JsValue>{cover_ratio_for(&self.ctx,&style,&fallback)}
  #[wasm_bindgen(js_name=resolveCoverImmediately)]

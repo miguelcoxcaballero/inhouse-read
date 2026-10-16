@@ -1,3 +1,4 @@
+import { writeShelfDifference } from './helpers/shelf-differential.js'
 /**
  * The way back from the reader against the frozen JavaScript original (helpers/reference-bookshelf.js): the slot that
  * waits for the shelf to lay itself out, the closing book (page, ribbon, cover, flight and insertion) with a 3D view
@@ -133,7 +134,7 @@ async function same(script, settings = {}) {
   container?.remove(); document.body.innerHTML = ''
   const actual = await session(production, script, settings)
   const difference = firstDifference(expected, actual)
-  if (difference) (await import('node:fs')).writeFileSync('/tmp/claude-0/-home-user-inhouse-read/6c70f5ca-de80-5128-bee1-f59b39f4610d/scratchpad/shelf-ui/return-diff.txt', ['EXPECTED', ...expected, 'ACTUAL', ...actual].join('\n'))
+  if (difference) await writeShelfDifference('return', expected, actual)
   if (process.env.SHELF_DUMP) (await import('node:fs')).writeFileSync(`${process.env.SHELF_DUMP}/${expect.getState().currentTestName.replace(/\W+/g, '-')}.txt`, expected.join('\n'))
   expect(difference).toBeNull()
   return expected.join('\n')

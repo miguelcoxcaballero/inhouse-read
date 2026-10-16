@@ -14,6 +14,7 @@ pub type R<T=()>=Result<T,JsValue>;
 
 #[wasm_bindgen]
 extern "C"{
+ #[wasm_bindgen(js_name=String)]fn js_string_value(value:&JsValue)->JsValue;
  #[wasm_bindgen(js_name=setInterval)]fn js_set_interval(handler:&Function,delay:f64)->JsValue;
  #[wasm_bindgen(js_name=clearInterval)]fn js_clear_interval(id:&JsValue);
  #[wasm_bindgen(js_name=setTimeout)]fn js_set_timeout(handler:&Function,delay:f64)->JsValue;
@@ -46,6 +47,11 @@ pub fn gb(value:&JsValue,key:&str)->bool{truthy(&get(value,key))}
 pub fn gn(value:&JsValue,key:&str)->f64{num(&get(value,key))}
 /// `String(value)` for any value, as template literals print it.
 pub fn text(value:&JsValue)->String{string(value)}
+/// Keep identity/cache strings in JavaScript: Rust UTF-8 cannot represent unpaired UTF-16 surrogates.
+pub fn string_value(value:&JsValue)->JsValue{js_string_value(value)}
+pub fn join_strings(values:&[JsValue])->JsValue{
+ let array=Array::new();for value in values{array.push(value);}array.join("").into()
+}
 /// `a ?? b`.
 pub fn coalesce(a:JsValue,b:JsValue)->JsValue{if nullish(&a){b}else{a}}
 /// `a || b`.

@@ -131,13 +131,11 @@ import { persistablePosition } from './readers/persistable-position.js';
 import { needRustShelf } from './rust-shelf.js';
 
 const ROOF_PATH = 'M4 24 L20 8 L36 24';
-const EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
 const TAP_SLOP = 12;
 // A click a pointer produced, as opposed to the keyboard or assistive tech.
 // Chromium can deliver a touch's compatibility click with detail 0 (seen on
 // a tap whose pointerup restyled the button), so the pointer type counts too.
 const pointerClick = event => event.detail > 0 || ['touch', 'mouse', 'pen'].includes(event.pointerType);
-const REORDER_HOLD_MS = 440;
 const SHELF_VIEW_STORAGE_KEY = 'inhouse-read-shelf-view';
 const SHELF_PLANTS_STORAGE_KEY = 'inhouse-read-shelf-plants';
 const SHELF_LAMPS_STORAGE_KEY = 'inhouse-read-shelf-lamps';
@@ -321,46 +319,6 @@ function storedShelfViewMode(fallback = SHELF_VIEW_MODES.SPINE) {
     const value = localStorage.getItem(SHELF_VIEW_STORAGE_KEY);
     return Object.values(SHELF_VIEW_MODES).includes(value) ? value : fallback;
   } catch { return fallback; }
-}
-
-/**
- * WAAPI con red de seguridad: en entornos sin `Element.animate` (jsdom en los
- * tests, navegadores antiguos) aplica el fotograma final y resuelve.
- */
-function animate(node, frames, timing) {
-  if (typeof node.animate !== 'function') {
-    const last = frames[frames.length - 1];
-    if (last.transform) node.style.transform = last.transform;
-    if (last.opacity != null) node.style.opacity = String(last.opacity);
-    return { finished: Promise.resolve(), cancel() {}, isFallback: true };
-  }
-  return node.animate(frames, timing);
-}
-
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// A WebView can suspend RAF while changing surfaces. Always release an
-// interrupted movement instead of leaving its slot hidden indefinitely.
-async function waitForMotion(motion, duration) {
-  let watchdog;
-  try {
-    const completed = await Promise.race([
-      motion.finished?.then(value => value !== false, () => true) ?? Promise.resolve(true),
-      new Promise(resolve => {
-        const check = () => {
-          // A capped RAF step keeps the 3D path smooth on slower phones. It
-          // can take longer than its nominal duration, so only time out when
-          // frames have actually stopped instead of cancelling a live fall.
-          if (Number.isFinite(motion.lastFrameTime) && performance.now() - motion.lastFrameTime < 1500) {
-            watchdog = setTimeout(check, 1500);
-          } else resolve(false);
-        };
-        watchdog = setTimeout(check, duration + 1500);
-      })
-    ]);
-    if (!completed) motion.cancel?.();
-    return completed;
-  } finally { clearTimeout(watchdog); }
 }
 
 /** Admite `renderBookshelf(c, {books, ...})` y `renderBookshelf(c, books, {...})`. */
