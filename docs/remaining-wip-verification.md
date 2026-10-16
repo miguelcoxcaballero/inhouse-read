@@ -1,3 +1,45 @@
+# 1.7.252 — render, refresco y preferencias de la pantalla en Rust
+
+Changelog: «Render y refresco de la estantería en Rust».
+El módulo bookshelf toma ahora el render de la pantalla: guardas de visibilidad/animación, planificación,
+colocación inicial, medidas DOM para la escena, conservación del mueble ya pintado y restauración del foco.
+También refresco, adopción de metadatos sin repintar, programación/cancelación de RAF, preparación inicial de
+portadas, argumentos y preferencias guardadas. Los subárboles DOM y los controles de entrada aún se construyen
+en JavaScript; sus llamadas al navegador siguen pasando por los mismos adaptadores. No se ha terminado
+app.js ni la cola larga de módulos de la aplicación.
+
+Revisión de equivalencia: dos nuevas pruebas diferenciales fallaban antes de la corrección porque los callbacks
+de opciones perdían su receptor (`this`): portada, persistencia, colocación y retirada vuelven a invocarse como
+métodos del objeto de opciones. El callback de apertura conserva la selección hecha en el constructor y se llama
+sin receptor, incluso cuando un hook de preparación reemplaza la opción después. Otra prueba diferencial
+comprueba ese caso. El await de un callback opcional de portada ausente conserva su turno. Se mantienen las
+referencias JavaScript congeladas; no se cambiaron umbrales, aserciones, plazos ni reintentos.
+
+Inventario 30881 Rust / 21744 JS, 58,68 % (1.7.251: 57,95 %); cuenta líneas de producción con comentarios, no
+funciones terminadas. Compilación Rust/UI y build web completos. Pruebas específicas: 673 en 69 archivos;
+batería completa final congelada: 1800 + 1375 + 1421 + 1778 = 6374 tests en 497 archivos, todos verdes.
+
+El binario shelf pasa de 1179926 a 1239810 bytes (+59884). UI general mantiene 2027162 bytes; su SHA no es
+determinista en esta construcción. Core (540704), decor (117167) y voice (57372) son idénticos byte a byte;
+la firma del bake de modelos sigue siendo 47972dc16ce28e84aca9. Revisión propia de equivalencia y ciclo de vida;
+no se ha realizado una nueva revisión independiente de tres revisores. Sin prueba en móvil físico ni GPU real.
+
+Navegador final: 28/28 generales en 10,0 min y 7/7 de editor/catálogos en 4,0 min. Se verifican viewport móvil,
+zoom sin repintar durante el gesto, calidad al soltar, colocación, arrastre y retorno, 80 libros en pantalla,
+editor/teclado/relieve y cierre durante análisis, añadir las tres lámparas, sus interruptores y los gestos de
+la bombilla, y preview 3D de plantas con acabado persistente. Mismos tests, aserciones, plazos y reintentos.
+
+Comparación visual contra el build de 1.7.251: 6/6 estados 01/02/08/10a/13/15 PASS con los umbrales originales;
+cuatro idénticos y 10a/13 con máximo 1/255, ningún píxel difiere más de 2. Repetir el mismo build 1.7.251 en
+10a y 13 da también máximo 1/255 (solo esos dos estados). Inspección de las capturas de BAGGEBO isométrica y
+las cuatro lámparas frontales. No se han cambiado las geometrías ni los materiales para conseguir el resultado.
+
+Arranque, tres pares alternados 1.7.251 → 1.7.252, seis libros guardados + BAGGEBO/planta/lámpara, contextos
+nuevos de Chromium/SwiftShader: primera escena mediana 3428,3 → 3574,9 ms (rangos 3188–3619,8 y
+3444,2–3920,4); primer lomo DOM 5591,1 → 5578,3 ms (4568,3–6783,2 y 4711,1–5607,2);
+DOMContentLoaded 171,2 → 179,5 ms. Rangos solapados; no se afirma una aceleración. La primera escena aún
+contiene cero libros y el primer lomo no certifica que todas sus texturas/modelos estén asentados.
+
 # 1.7.251 — editor, portadas y movimientos de la estantería en Rust
 
 Changelog: «Editor y movimientos de la estantería en Rust».
