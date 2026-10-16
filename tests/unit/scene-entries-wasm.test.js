@@ -290,7 +290,29 @@ describe('compiled scene plans against the frozen JavaScript', () => {
     }
   })
 
-  it('keeps no JavaScript handle alive and survives a million calls', () => {
+  it.each([0.1,1.5,2.25])('keeps the original loop semantics for %s furniture units', count => {
+    const scene=new rustShelf.RustScene(700,900,740,250,false,false,0)
+    try {
+      const out=new Float64Array(10+Math.ceil(count))
+      scene.roomPlan(300,600,600,count,-900,out)
+      const expected=ref.roomPlan({width:700,height:900,depth:250,sceneWidth:740,unitWidth:300,specWidth:600,baggeboWidth:600,unitCount:count,floorY:-900})
+      check(expected.centers,out.subarray(10),'fractional units')
+    } finally { scene.free() }
+  })
+
+  it('bounds the furniture loop by the output buffer even for enormous counts', () => {
+    const scene=new rustShelf.RustScene(700,900,740,250,false,false,0)
+    try {
+      for (const count of [Infinity,1e300,NaN,-1]) {
+        const out=new Float64Array(11)
+        scene.roomPlan(300,600,600,count,-900,out)
+        expect([...out.subarray(0,4)]).toEqual([.5,12,910,460])
+        expect(out[10]).toBe(count>0?-200:0)
+      }
+    } finally { scene.free() }
+  })
+
+  it('keeps no JavaScript handle alive and survives 100000 calls', () => {
     const before = rustShelf.shelf_live_handles(), out = new Float64Array(7)
     for (let index = 0; index < 20; index++) {
       const scene = new rustShelf.RustScene(390, 700, 390, 150, false, index % 2 === 0, 0)

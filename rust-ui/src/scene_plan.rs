@@ -154,7 +154,7 @@ impl RustScene{
   let span=jmax(jmax(self.width,self.height),self.scene_width)*24.0;
   put(out,&[scale,gap,self.width+210.0,self.depth+210.0,55.0,floor_y-1.0,-self.depth/2.0+45.0,span,-self.height/2.0,
    -self.depth-28.0*unit_width/baggebo_width]);
-  for index in 0..(units as usize){
+  for index in 0..(units.ceil() as usize).min(out.len().saturating_sub(10)){
    if 10+index<out.len(){out[10+index]=-self.width/2.0+unit_width/2.0+(index as f64)*(unit_width+gap);}
   }
  }

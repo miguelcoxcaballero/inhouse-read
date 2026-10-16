@@ -32,6 +32,12 @@ describe('bookshelf scene against its frozen original', () => {
     expect(first.length).toBeGreaterThan(80)
   }, 120000)
 
+  it('keeps the original furniture loop for a fractional unit count', async () => {
+    const options={units:1.5,steps:8}
+    await runScenario(frozen,3,options)
+    same('fractional units',await runScenario(frozen,3,options),await runScenario(live,3,options))
+  }, 120000)
+
   it.each(Array.from({ length: Number(process.env.SCENE_SEEDS) || 24 }, (_, index) => index + 1))('session %i leaves identical state', async seed => {
     // A session's second run finds what its first one painted already cached (plant surfaces, bakes), which
     // settles asynchronous work sooner. Both scenes are therefore compared from the same warm state.

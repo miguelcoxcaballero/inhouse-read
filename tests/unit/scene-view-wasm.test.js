@@ -44,6 +44,20 @@ const matrix = (g, finite = false) => {
 }
 
 describe('compiled scene geometry against the frozen JavaScript', () => {
+  it('short-circuits an unavailable drop surface before reading the ray or rows', () => {
+    const cases = [
+      {rows:[],width:390},
+      {rows:[null],width:NaN},
+      {rows:[null],width:Infinity},
+      {rows:[null],width:'390'},
+      {rows:[null],width:32},
+    ]
+    for (const {rows,width} of cases) {
+      expect(frozenDrop(null,null,rows,width)).toBeNull()
+      expect(production(null,null,rows,width)).toBeNull()
+    }
+  })
+
   it('projects boxes under matrices exactly (20000 random cases)', () => {
     const g = generator(11), out = new Float64Array(7)
     for (let trial = 0; trial < 20000; trial++) {

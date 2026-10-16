@@ -121,7 +121,7 @@ function snapshot(run) {
 const CLASSES = ['is-away', 'is-pressed', 'is-lifted', 'is-dragging', 'is-press-pending']
 
 /** One reproducible session. `create` is the scene factory under test. Returns the transcript. */
-export async function runScenario(create, seed, { steps = 60 } = {}) {
+export async function runScenario(create, seed, { steps = 60, units } = {}) {
   const random = mulberry32(seed * 7919 + 13)
   const pick = list => list[Math.floor(random() * list.length)]
   const between = (low, high) => low + random() * (high - low)
@@ -163,7 +163,7 @@ export async function runScenario(create, seed, { steps = 60 } = {}) {
     gpu.renderer = gpu.makeRenderer()
 
     const shelfType = pick(['walnut', 'walnut', 'baggebo'])
-    const unitCount = pick([1, 1, 2])
+    const unitCount = units ?? pick([1, 1, 2])
     const unitWidth = whole(300, 400)
     const width = unitCount === 1 ? unitWidth : unitWidth * unitCount + 24 * unitWidth / 600 * (unitCount - 1)
     const sceneWidth = pick([width, width, Math.round(width * 1.2), Math.round(width * .9)])

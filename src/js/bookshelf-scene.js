@@ -113,6 +113,8 @@ export function projectShelfDropPosition(worldRay, furnitureMatrix, rows, width,
   const padding = typeof options === 'number' ? options : options.padding ?? 16;
   const undershelf = typeof options === 'object' && options.mount === 'undershelf';
   const mountingDepth = undershelf ? Math.max(0, Number(options.depth) || 0) / 2 : 0;
+  // Validate the host inputs before packing rows or dereferencing the ray.
+  if (!rows.length || !Number.isFinite(width) || width <= padding * 2) return null;
   const placed = needRustShelf().scene_drop_position([worldRay.origin.x, worldRay.origin.y, worldRay.origin.z,
     worldRay.direction.x, worldRay.direction.y, worldRay.direction.z], furnitureMatrix.elements, packRows(rows), width, padding,
     undershelf, mountingDepth);
@@ -194,9 +196,9 @@ const darkPage = () => document.documentElement.dataset.theme === 'dark';
 export function createBookshelfScene({ stage, scroller, entries, rows, width, height, sceneWidth = width,
   trashNode = null, catalogNode = null, mode = 'spine', shelfType = 'walnut', unitWidth = width, unitCount = 1 }) {
   shelfType = normalizeShelfType(shelfType);
-  const rust = needRustShelf();
   const renderer = getBookRenderer();
   if (!renderer || !width || !height) return null;
+  const rust = needRustShelf();
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
   if (!context) return null;
@@ -287,7 +289,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
   const standOut = new Float64Array(3);
   // The cabinet's units, the floor and the room's wall are laid out in Rust (rust-ui/src/scene_plan.rs).
   const roomPlan = () => {
-    const plan = new Float64Array(10 + Math.max(1, unitCount));
+    const plan = new Float64Array(10 + Math.max(1, Math.ceil(unitCount)));
     sceneView.roomPlan(unitWidth, SHELF_SPECS[shelfType].width, BAGGEBO_SPEC.width, unitCount, floorY, plan);
     return plan;
   };
