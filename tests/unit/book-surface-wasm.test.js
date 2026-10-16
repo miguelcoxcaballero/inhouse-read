@@ -65,7 +65,7 @@ describe('real compiled spine weave',()=>{
   it.each([()=>0,()=>{throw new Error('synthetic kernel failure')}])('frees the arena when the kernel rejects',kernel=>{
     const free=vi.fn(core.free_f64),engine={...core,book_weave_pixels:kernel,free_f64:free};
     expect(rustBookWeavePixels(engine)).toBeNull();expect(free).toHaveBeenCalledTimes(1);
-    expect(free.mock.calls[0][1]*8).toBe(147488);
+    expect(free.mock.calls[0][1]*8).toBe(147584); // 4 sines, their 4 requests, the field and both tiles
   });
   it('survives memory growth and reuse without leaking or changing previous pixels',()=>{
     let live=0,peak=0,allocations=0,releases=0;const engine={...core,
@@ -75,6 +75,6 @@ describe('real compiled spine weave',()=>{
     const first=rustBookWeavePixels(engine),expected=bookWeave();
     for(let i=0;i<16;i++)for(const [name,pixels] of Object.entries(rustBookWeavePixels(engine)))same(pixels,expected[name]);
     for(const name of ['color','channels'])same(first[name],expected[name]);
-    expect(live).toBe(0);expect(peak).toBe(147488);expect(allocations).toBe(releases);
+    expect(live).toBe(0);expect(peak).toBe(147584);expect(allocations).toBe(releases);
   });
 });

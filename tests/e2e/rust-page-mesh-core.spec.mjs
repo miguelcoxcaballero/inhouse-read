@@ -30,8 +30,8 @@ window.observePaperMesh = async input => {
   const tracked={...core,
     alloc_f64(n){const p=core.alloc_f64(n);if(p){live+=n*8;peak=Math.max(peak,live);allocations++;}return p;},
     free_f64(p,n){core.free_f64(p,n);live-=n*8;releases++;},
-    page_block_mesh(...args){calls++;return core.page_block_mesh(...args);},
-    leaf_stack_mesh(...args){calls++;return core.leaf_stack_mesh(...args);}};
+    page_block_finish(...args){calls++;return core.page_block_finish(...args);},
+    leaf_stack_finish(...args){calls++;return core.leaf_stack_finish(...args);}};
   const buffers=(block?rustPageBlockBuffers:rustLeafStackBuffers)(tracked,...args);
   if(!buffers || calls!==1 || live!==0 || allocations!==releases)throw new Error('Actual Rust execution/release required');
   for(const [key,name] of [['positions','position'],['normals','normal'],['uvs','uv'],['colors','color'],['indices','index']]) {

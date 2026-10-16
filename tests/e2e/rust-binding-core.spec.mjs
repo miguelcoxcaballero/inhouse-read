@@ -75,7 +75,7 @@ window.observeRustBinding = async name => {
   const tracked = { ...core,
     alloc_f64(length) { const pointer = core.alloc_f64(length); if (pointer) { live += length * 8; peak = Math.max(peak, live); allocations++; } return pointer; },
     free_f64(pointer, length) { core.free_f64(pointer, length); live -= length * 8; releases++; },
-    binding_mesh(...parameters) { kernelCalls++; return core.binding_mesh(...parameters); },
+    binding_finish(...parameters) { kernelCalls++; return core.binding_finish(...parameters); },
   };
   const expectedGeometry = referenceBindingGeometry(...args), actualGeometry = bindingGeometry(...args);
   let reference, production, direct;

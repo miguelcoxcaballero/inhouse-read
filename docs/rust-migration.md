@@ -1,5 +1,10 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.248: modelo del libro (geometría de cinta, páginas, hojas y lomo, vista y fotogramas,
+pose, movimiento con su reloj y texturas de papel y tapa) en Rust, sin copias JavaScript detrás.
+Inventario 22958 Rust/25963 JS, **46,93 %** (main 1.7.247: 45,38 %); no mide funciones terminadas. Detalle en
+remaining-wip-verification.md.
+
 Entrega 1.7.247: carpintería del armario, BAGGEBO completo y primeras texturas de plantas en Rust (sin gemelos JS de
 armario, BAGGEBO ni pintores de respaldo de plantas y lámparas). Inventario 21940 Rust/26412 JS, **45,38 %**; no mide
 funciones terminadas. Detalle en remaining-wip-verification.md.
