@@ -16,28 +16,29 @@ sale de lo comprobado en esa sesión; lo que no se pudo comprobar está dicho.
 
 ## Estado
 
-- `main` está en **1.7.250**: **50,96 %** de Rust (25736 líneas de Rust, 24771 de JS).
+- `main` está en **1.7.251**: **57,95 %** de Rust (30436 líneas de Rust, 22088 de JS).
   Se mide con `git add -A -n . && node scripts/rust-migration-status.mjs`; es un recuento de líneas de
   `rust-core/src`, `rust-ui/src` y `src/js`, no mide funciones terminadas.
 - Evolución: 16,38 % (1.7.234) → 39,73 % (1.7.245) → 42,35 % (1.7.246 portadas) → 45,38 % (1.7.247 armario y
-  BAGGEBO) → 46,93 % (1.7.248 modelo del libro) → 49,82 % (1.7.249 plantas, lámparas y su luz) → 50,96 % (1.7.250 cámara y posiciones de escena).
+  BAGGEBO) → 46,93 % (1.7.248 modelo del libro) → 49,82 % (1.7.249 plantas, lámparas y su luz) → 50,96 % (1.7.250 cámara y posiciones de escena) → 57,95 % (1.7.251 controles de la pantalla de estantería).
 - Lo que corre en Rust ya publicado, por áreas: lectores PDF y EPUB (decisiones, texto, instantáneas,
   controlador), voces y audio, biblioteca y nube (Drive, copia, importación), estantería (disposición, luz,
   oclusión, papelera, zoom, gestos, retorno), armario y BAGGEBO, plantas y lámparas (geometría, texturas, luz),
   libros 3D (cinta, páginas, encuadernación, vista, pose, pintura de bordes y tapa), portadas y relieve.
-- Sigue en JS lo grande: `src/js/bookshelf.js` (4257 líneas), `bookshelf-scene.js` (3035), `book-model.js`
+- Sigue en JS lo grande: `src/js/bookshelf.js` (1509 líneas), `bookshelf-scene.js` (3035), `book-model.js`
   (~2000, pegamento de three.js), `app.js` (1411), `shelf-plants.js` (~1200, ensamblado con objetos three.js),
   y una cola larga: `cover-appearance.js` (577), `library-store.js`, `native-room-cache.js`, los previsualizadores
   de catálogo, `book-length.js`, `content-freshness.js`, `gpu-programs.js`, `shelf-trash.js`,
   `shelf-light-occlusion.js`, `shelf-lighting.js`, `shelf-bake-cache.js`, `readers/neural-voice/*`, etc.
   Hay una lista por tamaño con `git ls-files 'src/js/*.js' | xargs wc -l | sort -rn`.
 
-## Ramas con trabajo sin publicar (no están en `main`)
+## Ramas y trabajo pendiente
 
 | Rama | Contenido | Estado |
 |---|---|---|
 | `origin/wip/scene` (41f8083) | `bookshelf-scene.js`: vista/cámara/impactos y cinemática de las entradas a Rust, con arnés diferencial de escena entera | Integrado y corregido en 1.7.250; queda pegamento Three.js/DOM |
-| `origin/wip/shelf-ui` (9e6d785) | `bookshelf.js`: módulo `bookshelf` de Rust, editor del volante, sesión del volante (abrir/cerrar/expandir portada), `returnToShelf`, y paso 4 (portadas, objetos, arrastre, papelera). Según el seguimiento de la sesión faltaban los constructores DOM, render/refresco y `app.js` | Trabajo en curso; sin verificar como entrega |
+| `origin/wip/shelf-ui` (9e6d785) | Libro extraído, editor, retorno, portadas, objetos, arrastre y papelera | Integrado en 1.7.251; corregidas identidades UTF-16 y ampliada la prueba de memoria |
+| `gpt/rust-shelf-screen` (local, árbol `/workspace/inhouse-read-shelf-screen`) | Render, planificación, medidas, refresco, metadatos, preparación de portadas, preferencias y argumentos | WIP en `screen_plan.rs`, `screen_render.rs` y `screen_prefs.rs`, aún sin compilar ni validar; no está publicado |
 | (sin rama) `tail` | cola larga de ficheros pequeños | No llegó a empezar |
 | `origin/wip/mittled`, `wip/catalog`, `wip/transition-open`, `wip/transition-close` | Peticiones anteriores de la persona (hitbox de la lámpara MITTLED, animación del catálogo y balance de blancos, transición de apertura/cierre del libro) | La persona las continúa en local con `TESTS-LOCAL.md`; no las toques sin que lo pida |
 
@@ -70,6 +71,8 @@ Las ramas `ready/book-model` y `ready/geometry-3d` y las `wip/*` antiguas ya est
    1.7.247–1.7.249 encontraron fallos reales o huecos de cobertura que se corrigieron.
 8. `git push origin HEAD:main`; después copia el mismo estado a la rama de respaldo
    `ccr-8d2fa5b2-728p5v` (en un `git worktree` aparte para no tocar el árbol en uso).
+   Ese respaldo tiene dos documentos propios (`HANDOFF-PENDING-WORK.md` y `PROMPT-CHATGPT.md`): se mezcló main
+   conservándolos; no hay que forzar su historial para dejarlo idéntico a main.
 
 ## Fallos que ya ocurren en `main` en este equipo (no son de tus cambios)
 
@@ -83,6 +86,12 @@ Las ramas `ready/book-model` y `ready/geometry-3d` y las `wip/*` antiguas ya est
   No hay prueba en móvil físico de nada de esto.
 
 ## Otros
+
+- En esta nube: Chromium está en `/usr/bin/chromium`, las dependencias en `/workspace/inhouse-read/node_modules`
+  y Rust en `/home/agent/.cargo/bin`. `NODE_USE_ENV_PROXY=1` permite las descargas de Node tras el proxy.
+- No recompilar ni reemplazar bindings/wasm durante Vitest: una ejecución mezclada usa un código de
+  funciones/callbacks incompatible y sus resultados no valen. Tampoco compilar ni lanzar la batería unitaria
+  mientras corre un trabajo gráfico. Una sola ejecución Chromium/SwiftShader cada vez.
 
 - Android: 1.1.8 (código 21) publicado; la persona debe probar en el móvil que el salto de la barra de estado
   ya no aparece.
