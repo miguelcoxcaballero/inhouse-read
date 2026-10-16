@@ -151,6 +151,14 @@ impl El{
  /// A `true` prop: the attribute is set empty.
  pub fn flag(self,key:&str)->El{set_attr(&self.0,key,"");self}
  pub fn text(self,value:&str)->El{set_text(&self.0,value);self}
+ /// Original `el` props preserve UTF-16 and skip false/null/undefined.
+ pub fn text_value(self,value:&JsValue)->El{if !nullish(value)&&*value!=JsValue::FALSE{put(&self.0,"textContent",value);}self}
+ pub fn attr_value(self,key:&str,value:&JsValue)->El{
+  if !nullish(value)&&*value!=JsValue::FALSE{
+   let value=if *value==JsValue::TRUE{s("")}else{string_value(value)};
+   let _=method(&self.0,"setAttribute",&[&s(key),&value]);
+  }self
+ }
  pub fn html(self,value:&str)->El{puts(&self.0,"innerHTML",value);self}
  pub fn style(self,value:&str)->El{set_attr(&self.0,"style",value);self}
  pub fn child(self,node:&JsValue)->El{if !absent(node){append(&self.0,node);}self}

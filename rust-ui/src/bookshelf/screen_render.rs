@@ -3,11 +3,11 @@
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use js_sys::Array;
-use super::{util::*,ctx::{Ctx,RustShelfCtx},screen_plan,objects,covers,style,returning};
+use super::{util::*,ctx::{Ctx,RustShelfCtx},screen_plan,objects,covers,style,returning,screen_nodes};
 
-fn geometry_state(ctx:&Ctx,book:&JsValue)->R<JsValue>{ctx.legacy("bookGeometryState",&[book])}
+fn geometry_state(ctx:&Ctx,book:&JsValue)->R<JsValue>{ctx.geometry_state(book)}
 
-pub fn render(ctx:&Rc<Ctx>)->R{
+fn render_inner(ctx:&Rc<Ctx>)->R{
  if ctx.st_true("destroyed"){return Ok(());}
  put(&dataset(&ctx.root),"viewMode",&ctx.st("viewMode"));put(&dataset(&ctx.root),"shelfType",&ctx.st("shelfType"));
  if ["returnMotion","busy","session","dragSession","compatibilityTapTimer"].iter().any(|key|ctx.st_true(key)){
@@ -16,7 +16,7 @@ pub fn render(ctx:&Rc<Ctx>)->R{
  let count=gn(&ctx.st("books"),"length");
  if !ctx.st_true("appearancesReady")&&count>0.0{
   ctx.scene_call("dispose",&[])?;ctx.st_set("shelfScene",&null());set_text(&ctx.scroller,"");
-  append(&ctx.scroller,&ctx.legacy("buildPreparingState",&[])?);return Ok(());
+  append(&ctx.scroller,&screen_nodes::build_preparing_state());return Ok(());
  }
  let focused_book=data_get(&closest(&active_element(),".ihr-spine"),"bookId");
  let focused_object=data_get(&closest(&active_element(),"[data-object-id]"),"objectId");
@@ -29,7 +29,7 @@ pub fn render(ctx:&Rc<Ctx>)->R{
  if count==0.0&&sections{
   if width>0.0{screen_plan::consume_render_requests(ctx);}
   ctx.scene_call("dispose",&[])?;ctx.st_set("shelfScene",&null());set_text(&ctx.scroller,"");
-  append(&ctx.scroller,&ctx.legacy("buildEmptyState",&[])?);returning::settle_return_slot(ctx,false)?;return Ok(());
+  append(&ctx.scroller,&screen_nodes::build_empty_state(ctx)?);returning::settle_return_slot(ctx,false)?;return Ok(());
  }
  if width<=0.0{returning::settle_return_slot(ctx,false)?;return Ok(());}
  screen_plan::consume_render_requests(ctx);
@@ -73,10 +73,10 @@ pub fn render(ctx:&Rc<Ctx>)->R{
  method(&ctx.st("itemsById"),"clear",&[])?;
  let fragment=method(&document(),"createDocumentFragment",&[])?;
  let text=if count>0.0{format!("{} {}",ns(count),if count==1.0{"libro"}else{"libros"})}else{String::new()};
- let heading=ctx.legacy("buildLibraryHeading",&[&s(&text)])?;append(&fragment,&heading);
- if pending.length()>0{append(&fragment,&ctx.legacy("buildGeometryStatus",&[&pending.into()])?);}
- if count==0.0{append(&fragment,&ctx.legacy("buildLibraryEmpty",&[])?);}
- let stage=ctx.legacy("buildStage",&[&f(width)])?;
+ let heading=screen_nodes::build_library_heading(&s(&text));append(&fragment,&heading);
+ if pending.length()>0{append(&fragment,&screen_nodes::build_geometry_status(ctx,&pending.into())?);}
+ if count==0.0{append(&fragment,&screen_nodes::build_library_empty(ctx)?);}
+ let stage=screen_nodes::build_stage(ctx,width)?;
  let trash=get(&ctx.parts,"trashNode");let catalogue=get(&ctx.parts,"catalogNode");
  if truthy(&trash){
   if !ctx.st_true("useScene"){putb(&trash,"hidden",ctx.st("viewMode")!=s("isometric"));put(&trash,"inert",&get(&trash,"hidden"));}
@@ -91,8 +91,8 @@ pub fn render(ctx:&Rc<Ctx>)->R{
   if gb(&section,"title"){
    for shelf in array_of(&get(&section,"shelves")){for item in array_of(&get(&shelf,"items")){if get(&item,"kind")==s("book"){books+=1.0;}}}
   }
-  let wrapper=ctx.legacy("buildSection",&[&section,&f(books)])?;
-  for shelf in array_of(&get(&section,"shelves")){append(&wrapper,&ctx.legacy("buildShelf",&[&shelf])?);}
+  let wrapper=screen_nodes::build_section(ctx,&section,books);
+  for shelf in array_of(&get(&section,"shelves")){append(&wrapper,&screen_nodes::build_shelf(ctx,&shelf)?);}
   append(&stage,&wrapper);
  }
  append(&fragment,&stage);
@@ -117,6 +117,12 @@ pub fn render(ctx:&Rc<Ctx>)->R{
  for book in array_of(&ctx.st("books")){covers::resolve_cover_appearance(ctx,&book,&undef())?;}
  returning::settle_return_slot(ctx,false)?;
  Ok(())
+}
+
+pub fn render(ctx:&Rc<Ctx>)->R{
+ let result=render_inner(ctx);
+ // Failed paints may have built unattached nodes; keep only the subtrees the shelf still owns.
+ ctx.prune_view_bindings();result
 }
 
 #[wasm_bindgen]

@@ -144,4 +144,44 @@ describe('the lifted book in the shelf module', () => {
     expect(shelfWasm.memory.buffer.byteLength).toBe(capacity)
     expect(rustShelf.shelf_pending_callbacks()).toBe(callbacks)
   }, 90_000)
+
+  it('releases native input bindings as rows are repainted and the shelf is destroyed', async () => {
+    localStorage.clear()
+    container = document.createElement('div'); document.body.append(container)
+    const records = generation => Array.from({ length: 4 }, (_, index) => ({
+      id: `input:${generation}:${index}`, title: `Libro ${index}`, format: 'EPUB', addedAt: index
+    }))
+    const mount = () => renderBookshelf(container, records(0), {
+      shelfWidth: 390, sections: false, revealDuration: 0, showActions: true,
+      onPickLocalFile() {}, onOpenDrive() {}, coverSrcFor: () => null
+    })
+    const repaint = async count => {
+      for (let index = 0; index < count; index++) {
+        shelf.refresh(records(index))
+        await vi.advanceTimersByTimeAsync(250)
+        expect(qa('.ihr-spine')).toHaveLength(4)
+      }
+    }
+    shelf = mount(); await vi.advanceTimersByTimeAsync(500)
+    await repaint(4)
+    const handles = rustShelf.shelf_live_handles()
+    const callbacks = rustShelf.shelf_pending_callbacks()
+    const capacity = shelfWasm.memory.buffer.byteLength
+    await repaint(24)
+    expect(rustShelf.shelf_live_handles()).toBe(handles)
+    expect(rustShelf.shelf_pending_callbacks()).toBe(callbacks)
+    expect(shelfWasm.memory.buffer.byteLength).toBe(capacity)
+    shelf.destroy(); shelf = null; await vi.advanceTimersByTimeAsync(2000)
+    const afterDestroy = rustShelf.shelf_live_handles()
+    const afterDestroyCallbacks = rustShelf.shelf_pending_callbacks()
+    for (let index = 0; index < 8; index++) {
+      shelf = mount(); await vi.advanceTimersByTimeAsync(500)
+      await repaint(2)
+      shelf.destroy(); shelf = null; await vi.advanceTimersByTimeAsync(2000)
+      expect(rustShelf.shelf_live_handles()).toBe(afterDestroy)
+      expect(rustShelf.shelf_pending_callbacks()).toBe(afterDestroyCallbacks)
+    }
+    expect(shelfWasm.memory.buffer.byteLength).toBe(capacity)
+  }, 60_000)
+
 })

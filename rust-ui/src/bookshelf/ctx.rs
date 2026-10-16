@@ -19,6 +19,8 @@ pub struct Ctx{
  pub opening_click:RefCell<Vec<Listener>>,
  /// The session that previews where a held object would land, with the drag it belongs to.
  pub preview:RefCell<Option<(JsValue,Rc<crate::placement_preview::ShelfPlacementPreview>)>>,
+ /// Input bindings belong to their semantic node and are released when that node leaves this shelf.
+ pub node_bindings:RefCell<Vec<(JsValue,Keep)>>,
 }
 impl Drop for Ctx{
  fn drop(&mut self){
@@ -30,7 +32,7 @@ impl Ctx{
  pub fn new(parts:JsValue)->Result<Ctx,JsValue>{
   Ok(Ctx{state:read(&parts,"state")?,opts:read(&parts,"opts")?,options:read(&parts,"options")?,env:read(&parts,"env")?,
    legacy:read(&parts,"legacy")?,root:read(&parts,"root")?,scroller:read(&parts,"scroller")?,container:read(&parts,"container")?,parts,
-   keepalive_slot:RefCell::new(Vec::new()),timers:RefCell::new(HashMap::new()),frames:RefCell::new(HashMap::new()),opening_click:RefCell::new(Vec::new()),preview:RefCell::new(None)})
+   keepalive_slot:RefCell::new(Vec::new()),timers:RefCell::new(HashMap::new()),frames:RefCell::new(HashMap::new()),opening_click:RefCell::new(Vec::new()),preview:RefCell::new(None),node_bindings:RefCell::new(Vec::new())})
  }
  /// `setTimeout(job, delay)`: the id for the state; the job runs only while the shelf is alive.
  pub fn set_timeout(self:&Rc<Self>,delay:f64,job:impl FnOnce(&Rc<Ctx>)->R+'static)->JsValue{
@@ -70,6 +72,20 @@ impl Ctx{
   let known=if absent(id){None}else{self.frames.borrow_mut().remove(&num(id).to_bits())};
   match known{Some(timer)=>cancel_frame(&timer),None=>{let _=crate::host::cancel_frame(id);}}
  }
+ pub fn own_node_bindings(&self,node:&JsValue,bindings:Keep){
+  self.node_bindings.borrow_mut().push((node.clone(),bindings));
+ }
+ pub fn prune_view_bindings(&self){
+  let mut removed=Vec::new();
+  {let mut nodes=self.node_bindings.borrow_mut();let mut index=0;
+   while index<nodes.len(){
+    let belongs=method(&self.root,"contains",&[&nodes[index].0]).map(|value|truthy(&value)).unwrap_or(false);
+    if belongs{index+=1;}else{removed.push(nodes.remove(index));}
+   }
+  }
+  drop(removed);
+ }
+ pub fn clear_view_bindings(&self){let bindings=std::mem::take(&mut*self.node_bindings.borrow_mut());drop(bindings);}
  pub fn keepalive(&self,funs:Vec<Fun>){*self.keepalive_slot.borrow_mut()=funs;}
  /// `opts[name]`.
  pub fn opts_get(&self,name:&str)->JsValue{get(&self.opts,name)}
@@ -91,7 +107,10 @@ impl Ctx{
  pub fn scene_call(&self,name:&str,args:&[&JsValue])->R<JsValue>{
   let scene=self.scene();
   if absent(&scene){Ok(undef())}else{method(&scene,name,args)}
- } /// `options[name]`.
+ }
+ /// Geometry callback keeps its options receiver and the original ready fallback.
+ pub fn geometry_state(&self,book:&JsValue)->R<JsValue>{Ok(or(self.option_call("getBookGeometryState",&[book])?,s("ready")))}
+ /// `options[name]`.
  pub fn option(&self,name:&str)->JsValue{get(&self.options,name)}
  /// `options[name]?.(...args)`.
  pub fn option_call(&self,name:&str,args:&[&JsValue])->R<JsValue>{
@@ -115,4 +134,9 @@ impl RustShelfCtx{
  /// `clearTimeout(id)` for an id the shelf module handed to the shared state.
  #[wasm_bindgen(js_name=clearTimer)]
  pub fn clear_timer(&self,id:JsValue){self.ctx.clear_timeout(&id);}
+}
+
+#[wasm_bindgen]
+impl RustShelfCtx{
+ #[wasm_bindgen(js_name=clearViewBindings)]pub fn clear_view_bindings(&self){self.ctx.clear_view_bindings();}
 }
