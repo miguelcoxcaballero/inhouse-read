@@ -1,3 +1,46 @@
+# 1.7.255 — años pronunciables y referencias de notas
+
+Changelog: «Años claros y referencias de notas omitidas».
+Los enteros aislados, incluidos los años, llegan a síntesis escritos en palabras del idioma de la voz.
+La conversión es Rust y usa num2words2-core 0.1.3 (MIT/Apache-2.0), con inicialización perezosa por idioma y
+despacho estático; cubre todos los idiomas actualmente ofrecidos por Piper y Supertonic. Se reconocen cifras
+ASCII, árabes, devanagari y de ancho completo, y años pegados a texto chino/japonés. Las cadenas con ceros
+iniciales se leen dígito a dígito. Identificadores alfanuméricos, decimales, cifras con separadores y enteros
+mayores de 18 dígitos conservan su tratamiento anterior; no se interpreta su significado por adivinación.
+
+El cambio se aplica a la petición de síntesis, también a la preparación anticipada. Las entradas de cola,
+claves de caché, texto del libro y offsets del lector siguen siendo los originales. Se traducen los offsets
+al texto pronunciado y se restauran antes de entregar las marcas al reproductor. Si un número ocupa menos
+caracteres al convertirse, se conservan todas las marcas originales incluso si coinciden en el mismo instante.
+
+El mapa de narración omite referencias EPUB identificadas como noteref/doc-noteref y backlinks, y enlaces
+numéricos en superíndices o cuerpos de notas, incluidos destinos en otros archivos del EPUB. Se conserva
+el texto de las notas, los años y enlaces numéricos ordinarios y los superíndices matemáticos. Con notas
+deshabilitadas, se omiten también referencias acotadas *N; x*2 sigue intacto. No se borra el contenido de
+apartados o anexos por contener números.
+
+Build Rust/web completo y 362 pruebas específicas en 10 archivos pasan, con casos explícitos de todos los
+idiomas del catálogo, coordenadas UTF-16, referencias a notas, superíndices, síntesis anticipada, marcas
+originales en el reloj audible y números chinos que se contraen. JavaScript congelado sin cambios.
+18 E2E del audiolibro pasan (PDF/EPUB, seguimiento de página y capítulo, pausa/cancelación y cuatro temas),
+con un worker y cero reintentos, sobre la compilación anterior a los ajustes finales de texto CJK,
+marcas coincidentes y enlaces relativos de anexos. Esos tres ajustes pasan las 362 pruebas específicas
+con el binario final; la repetición de dos E2E sobre él sigue pendiente al publicar por petición de rapidez.
+
+UI Rust 2810349 bytes (la primera implementación con despacho dinámico ocupaba 4232116 y no se publica).
+El incremento de UI frente a 1.7.254 es aproximadamente 783 KB; este módulo sigue siendo perezoso y no se
+ha añadido al módulo temprano de la estantería. Shelf conserva 1289562 bytes; core/decor/voice no cambian
+frente a 1.7.254. La prueba de síntesis usa un cliente simulado para comprobar el texto y el reloj: no se
+ha descargado cada modelo de voz ni se ha evaluado auditivamente cada idioma.
+
+Publicación adelantada a petición expresa de la persona. La batería general continúa: primer shard
+1800/1800 pasa; el segundo ha reproducido el timeout de cover-relief-job-wasm (200000 colores,
+6571 ms frente a 5000 ms), ya reproducido en main 1.7.252 y documentado en 1.7.253. Esa función del
+módulo shelf no cambia en esta entrega. No se han relajado plazos, muestras, aserciones ni reintentos.
+Inventario 31465 Rust / 21292 JS, **59,64 %**; recuento de producción, no funciones terminadas.
+Se continúa con la verificación pendiente y el zoom isométrico. No se ha realizado una revisión
+independiente nueva ni prueba auditiva de todas las voces.
+
 # 1.7.254 — omitir marcas decorativas en el audiolibro
 
 Changelog: «Narración sin marcas decorativas».

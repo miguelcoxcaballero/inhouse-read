@@ -5,8 +5,9 @@ const html=`<!doctype html><script type="module">
 import {loadRustCore} from '/inhouse-read/src/js/rust-core.js';
 import {normalizeSpeech,planSpeech} from '/inhouse-read/src/js/readers/speech-text.js';
 import * as reference from '/inhouse-read/tests/unit/helpers/reference-speech-text.js';
+import {mapSpeechText} from '/inhouse-read/src/js/readers/speech-map.js';
 const core=await loadRustCore();if(!core?.speech_normalize)throw Error('Compiled speech kernel required');
-import {loadRustUI} from '/inhouse-read/src/js/rust-ui.js';if(!await loadRustUI())throw Error('Compiled reader UI required');
+import {loadRustUI} from '/inhouse-read/src/js/rust-ui.js';const speechUI=await loadRustUI();if(!speechUI)throw Error('Compiled reader UI required');
 window.checkSpeech=()=>{
  const sample='Título\\u2029Dijo: «Voy.» Un texto con informa-\\ntion, notas [12], espacios  extra y emojis 😀.\\u2029La oración continúa en la página siguiente sin interrumpir el audio.\\n';
  const times=[],proof=[];
@@ -25,7 +26,9 @@ window.checkSpeech=()=>{
  }
  const ornaments='§ Lee, escucha y mira. • Conviene aprender.';
  const cleaned=normalizeSpeech(ornaments);
- return {proof,times,memory:{...window.speechStats},ornaments:{...cleaned,plan:planSpeech(ornaments)}};
+ const years={};for(const lang of ['es-ES','en-US','fr-FR','de-DE','it-IT','pt-BR','ca-ES','ar','zh','he'])years[lang]=speechUI.speech_spoken_numbers(Uint16Array.from([50,48,50,54]),lang);
+ const noteDoc=new DOMParser().parseFromString('<p>En 1999<a role="doc-noteref" href="#n1">1</a> ocurrió. E=mc<sup>2</sup>.</p>','text/html');
+ return {proof,times,memory:{...window.speechStats},ornaments:{...cleaned,plan:planSpeech(ornaments)},years,noteText:mapSpeechText(noteDoc.body).text};
 };
 </script>`;
 let vite,http,url;
@@ -58,6 +61,9 @@ test('compiled narration cleanup preserves text, UTF-16 maps, page marks and are
  expect(result.ornaments.text).toBe('Lee, escucha y mira. Conviene aprender.');
  expect(result.ornaments.map[0]).toBe(2);
  expect(result.ornaments.plan.map(item=>item.text).join(' ')).toBe(result.ornaments.text);
+ expect(result.years['es-ES']).toBe('dos mil veintiséis');
+ for(const words of Object.values(result.years))expect(words).not.toMatch(/[0-9]/);
+ expect(result.noteText).toBe('En 1999 ocurrió. E=mc2.');
  await info.attach('speech-normalization-parity-and-timing',{body:JSON.stringify(result),contentType:'application/json'});
  console.log(JSON.stringify(result.times.map(({samples,...entry})=>entry)));
 });

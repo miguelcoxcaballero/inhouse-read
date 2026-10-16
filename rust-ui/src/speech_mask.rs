@@ -39,7 +39,15 @@ fn letter_flags(code:u32,properties:&Function,cache:&mut HashMap<u32,u8>)->Resul
 }
 pub(crate) fn removal_mask(text:&[u16],footnotes:bool,skip_headers:bool,header_ranges:Option<Vec<f64>>,lower:Function,properties:Function)->Result<Option<Vec<u8>>,JsValue>{
  let mut removed=vec![0u8;text.len()];
- if !footnotes{for start in 0..text.len(){if let Some(end)=footnote_end(text,start){removed[start..end].fill(1)}}}
+ if !footnotes{for start in 0..text.len(){
+  if let Some(end)=footnote_end(text,start){removed[start..end].fill(1)}
+  if text[start]==42&&(start==0||space(text[start-1])||matches!(text[start-1],46|44|59|58)){
+   let mut end=start+1;while end<text.len()&&end-start<=3&&digit(text[end]){end+=1;}
+   if end>start+1&&(end==text.len()||space(text[end])||matches!(text[end],46|44|59|58|42)){
+    if text.get(end)==Some(&42){end+=1;}removed[start..end].fill(1);
+   }
+  }
+ }}
  if skip_headers{
   if let Some(ranges)=header_ranges{
    for range in ranges.chunks_exact(2){if let Some((a,b))=confirmed_range(text,range[0],range[1])?{removed[a..b].fill(1)}}
