@@ -163,7 +163,7 @@ const DEFAULTS = Object.freeze({
   sort: 'none',         // conserva el orden guardado y permite organizarlo a mano
   minimumShelves: 3,
   shelfPadding: 16,
-  gap: 3,
+  gap: 0,
   plantEvery: 5,
   coverRatio: 0.66,      // ancho/alto de portada: proporción de libro comercial
   texts: DEFAULT_TEXTS

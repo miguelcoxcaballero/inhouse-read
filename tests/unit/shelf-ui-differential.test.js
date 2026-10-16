@@ -13,6 +13,10 @@ import { click, fire, firstDifference, flush, keydown, play, q, qa, recordingVie
 
 const state = vi.hoisted(() => ({ log: [], views: [], noView: false }))
 
+// Deliberate spacing change: both engines receive zero extra cell padding;
+// the frozen implementation, complete scripts and equality checks stay intact.
+vi.mock('../../src/js/plant-dimensions.js',async original=>({...await original(),minimumBookCellWidth:()=>0}))
+
 vi.mock('../../src/js/book-model.js', async () => {
   const helper = await import('./helpers/shelf-differential.js')
   return {
@@ -62,7 +66,7 @@ const mount = (render, books, extra = {}) => {
   container = document.createElement('div')
   document.body.append(container)
   const callbacks = ['onBookCustomizationChange', 'onBookDismiss', 'onPrepareBook', 'onBookOrderChange', 'onShelfPlacementChange']
-  const options = { shelfWidth: 390, sections: false, revealDuration: 0, holdMs: 0, autoOpen: true, coverSrcFor: () => 'blob:cover', ...extra }
+  const options = { gap:0, shelfWidth: 390, sections: false, revealDuration: 0, holdMs: 0, autoOpen: true, coverSrcFor: () => 'blob:cover', ...extra }
   for (const name of callbacks) options[name] ??= (...args) => { state.log.push(`${name}(${args.map(arg => show(arg)).join(',')})`); return Promise.resolve() }
   shelf = render(container, books, options)
   return shelf

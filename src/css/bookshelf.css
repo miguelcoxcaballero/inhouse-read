@@ -184,7 +184,7 @@
   z-index:2;
   display: flex;
   align-items: flex-end;
-  gap: 3px;
+  gap: 0;
   height: var(--ihr-shelf-height);
   padding: 0 16px;
   /* El scroll vertical manda: los handlers de los lomos no lo bloquean. */

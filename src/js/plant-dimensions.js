@@ -14,7 +14,7 @@ export const PLANT_DEFAULT_POTS = Object.freeze(tables.defaultPots);
 export const POT_SOIL_FRACTION = tables.constants.potSoilFraction;
 /** Free height (mm) between a shelf board and the underside of the one above. */
 export const SHELF_CLEARANCE_MM = Object.freeze(tables.shelfClearance);
-/** Plants above this conservative interior limit use the open roof. */
+/** Plants above this interior limit are fitted uniformly inside their bay. */
 export const PLANT_MAX_HEIGHT_MM = tables.constants.plantMaxHeightMm;
 
 const has = (table, key) => typeof key === 'string' && Object.hasOwn(table, key);

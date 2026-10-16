@@ -66,8 +66,13 @@ pub unsafe extern "C" fn shelf_model(
             let plant = e[6] == 1.0;
             let h = if plant { e[2] } else { cfg[7] * scale * e[5] };
             let w = if plant { e[3] } else { h * e[3] / e[2] };
-            let roof = plant && h > clearance;
-            let fit = if plant { 1.0 } else { jmin(jmin(1.0, clearance / h), cfg[6] * scale / w) };
+            let valid_plant = plant && h.is_finite() && h > 0.0 && clearance.is_finite() && clearance > 0.0;
+            let roof = plant && !valid_plant && h > clearance;
+            // Fit the complete plant uniformly inside its saved bay; foliage and pot
+            // keep their proportions and never jump onto the cabinet roof.
+            let fit = if valid_plant {
+                jmin(1.0, clearance / h)
+            } else if plant { 1.0 } else { jmin(jmin(1.0, clearance / h), cfg[6] * scale / w) };
             (h * fit, w * fit, e[4] * fit,
                 (if roof { 0.0 } else { bottom }) - h * fit / 2.0, roof)
         };

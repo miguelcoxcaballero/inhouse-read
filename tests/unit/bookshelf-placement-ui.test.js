@@ -36,7 +36,7 @@ function assertNoOverlap() {
   })
   for (const row of new Set(objects.map(object => object.shelf))) {
     const rowObjects = objects.filter(object => object.shelf === row).sort((a,b) => a.left - b.left)
-    for (let index = 1; index < rowObjects.length; index++) expect(rowObjects[index].left).toBeGreaterThanOrEqual(rowObjects[index - 1].right + 2.99)
+    for (let index = 1; index < rowObjects.length; index++) expect(rowObjects[index].left).toBeGreaterThanOrEqual(rowObjects[index - 1].right - 0.01)
   }
 }
 

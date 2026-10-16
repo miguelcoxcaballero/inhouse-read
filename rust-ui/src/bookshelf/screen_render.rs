@@ -39,8 +39,7 @@ fn render_inner(ctx:&Rc<Ctx>)->R{
  let ready=Array::new();for book in array_of(&ctx.st("books")){if geometry_state(ctx,&book)?==s("ready"){ready.push(&book);}}
  let plant_ctx=ctx.clone();
  let plant_width=fun(move|variant,_|Ok(get(&objects::plant_shelf_object(&plant_ctx,&obj(&[("key",&s("plant")),("variant",&variant)]),objects::plant_scale(&plant_ctx)?)?,"width")));
- let display_ctx=ctx.clone();
- let display_width=fun(move|_,style|Ok(f(max(gn(&style,"width"),num(&display_ctx.env("minimumBookCellWidth",&[&f(inner_width())])?)))));
+ let display_width=fun(move|_,style|Ok(get(&style,"width")));
  let spine=ctx.env("bookSpineOptions",&[&f(width)])?;
  let variants=get(&ctx.env_value("DEFAULT_LAYOUT"),"plantVariants");let mut minimum_plant=f64::INFINITY;
  for variant in array_of(&variants){minimum_plant=min(minimum_plant,num(&call(&plant_width.function,"plantWidthFor",&[&variant])?));}

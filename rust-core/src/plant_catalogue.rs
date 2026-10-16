@@ -69,7 +69,7 @@ const REFERENCE_POTS: [(&str, &str); 8] = [("sansevieria", "muskot"), ("monstera
     ("nephrolepis", "akerbar"), ("hedera", "muskotblomma"), ("zamioculcas", "gradvis"), ("succulent", "muskotblomma"),
     ("cactus", "akerbar")];
 pub const POT_SOIL_FRACTION: f64 = 0.9;
-/// Plants above this interior limit use the open roof and keep their size.
+/// Plants above this interior limit are fitted uniformly to their saved bay.
 pub const PLANT_MAX_HEIGHT_MM: f64 = 300.0;
 
 fn reference_pot(plant: &str) -> &'static str { REFERENCE_POTS.iter().find(|(id, _)| *id == plant).map(|(_, pot)| *pot).unwrap_or("muskot") }
@@ -121,7 +121,7 @@ fn size_label(plant: &PlantRow, pot_id: Option<&str>) -> String {
     let pot_confidence = pot_id.and_then(pot_mm).map(|pot| pot.confidence);
     let estimated = plant.confidence != "alta" || pot_confidence != Some("alta") || pot_id != Some(reference_pot(plant.id));
     let unverified = plant.confidence == "baja" || pot_confidence == Some("baja");
-    let placement = if size.height > PLANT_MAX_HEIGHT_MM { " · sobre el mueble" } else { "" };
+    let placement = if size.height > PLANT_MAX_HEIGHT_MM { " · se ajusta a la leja" } else { "" };
     format!("Maceta Ø{} × {} cm · planta {} cm{}{}{}", cm(size.pot_diameter), cm(size.pot_height), cm(size.height),
         if estimated { " aprox." } else { "" }, if unverified { " (sin verificar)" } else { "" }, placement)
 }

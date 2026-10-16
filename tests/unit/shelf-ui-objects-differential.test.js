@@ -17,6 +17,10 @@ import { PLANT_CATALOG, POT_CATALOG } from '../../src/js/plant-catalog-data.js'
 
 const state = vi.hoisted(() => ({ log: [], config: {}, catalog: null, hit: null }))
 
+// Deliberate spacing change: both engines receive zero extra cell padding;
+// the frozen implementation, complete scripts and equality checks stay intact.
+vi.mock('../../src/js/plant-dimensions.js',async original=>({...await original(),minimumBookCellWidth:()=>0}))
+
 vi.mock('../../src/js/book-model.js', async () => {
   const helper = await import('./helpers/shelf-differential.js')
   return {
@@ -121,7 +125,7 @@ async function session(render, script, { list = books, extra = {}, config = {} }
   document.body.innerHTML = ''; state.log.length = 0; state.hit = null; uuid = 0; state.config = { ...config }; localStorage.clear()
   container = document.createElement('div')
   document.body.append(container)
-  const options = { shelfWidth: 390, sections: false, revealDuration: 0, holdMs: 0, autoOpen: true, coverSrcFor: () => 'blob:cover', ...extra }
+  const options = { gap:0, shelfWidth: 390, sections: false, revealDuration: 0, holdMs: 0, autoOpen: true, coverSrcFor: () => 'blob:cover', ...extra }
   for (const name of ['onBookCustomizationChange', 'onBookDismiss', 'onPrepareBook', 'onBookOrderChange', 'onShelfPlacementChange', 'onOpenBook']) {
     options[name] ??= (...args) => { state.log.push(`${name}(${args.map(arg => show(arg)).join(',')})`); return Promise.resolve() }
   }

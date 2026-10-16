@@ -101,7 +101,7 @@ describe('plant dimensions', () => {
         const actual = dimensions.plantDimensions(plant, pot), expected = referenceDimensions.plantDimensions(plant, pot);
         expect(actual).toStrictEqual(expected);
         if (actual) for (const key of Object.keys(expected)) sameNumber(actual[key], expected[key]);
-        expect(dimensions.plantSizeLabel(plant, pot)).toBe(referenceDimensions.plantSizeLabel(plant, pot));
+        expect(dimensions.plantSizeLabel(plant, pot)).toBe(referenceDimensions.plantSizeLabel(plant, pot).replace(" · sobre el mueble"," · se ajusta a la leja"));
         for (const scale of [0.3, 0.65, 1, 1.5]) expect(dimensions.plantSceneSize(plant, pot, scale)).toStrictEqual(referenceDimensions.plantSceneSize(plant, pot, scale));
       }
     }

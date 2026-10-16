@@ -584,7 +584,7 @@ test('la preview frontal usa el modelo 3D y el acabado elegido se conserva al a�
   expect(errors).toEqual([]);
 });
 
-test('una MONSTERA de 35 cm conserva su tamaño sobre el mueble en ambos tipos de estantería',async ({page},testInfo) => {
+test('una MONSTERA alta encaja dentro de su leja en ambos tipos de estantería',async ({page},testInfo) => {
   await page.setViewportSize({width:390,height:844});
   await page.goto('./');
   await page.evaluate(({key}) => {
@@ -595,7 +595,7 @@ test('una MONSTERA de 35 cm conserva su tamaño sobre el mueble en ambos tipos d
     await page.evaluate(type=>localStorage.setItem('inhouse-read-shelf-type',type),type);
     await page.reload();
     const plant=page.locator('[data-object-id="plant:real-monstera"]');
-    await expect(plant).toHaveAttribute('data-plant-placement','rooftop');
+    await expect(plant).toHaveAttribute('data-plant-placement','bay');
     await expect(plant).toHaveAttribute('data-scene-projected','true');
     expect((await savedPlants(page))[0]).toMatchObject({seed:'preserved',potColorId:'seafoam',width:260,height:350,shelf:1,x:.5});
     await expect(page.locator('.ihr-bookshelf-scene')).toHaveAttribute('data-animating','false');

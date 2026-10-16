@@ -1,5 +1,7 @@
 # Traspaso: migración a Rust de Inhouse Read
 
+Último bloque: 1.7.258, gravedad/contacto animado en Rust, hueco predeterminado eliminado, plantas altas dentro de su leja. 225 específicas finales y cuatro E2E pasan; un timeout de color preexistente permanece. Inventario 59,70 %. Baseline dist 258 guardado para medir el zoom. Siguiente: cerrar pausas (worktree speech-pauses, corregida referencia CRLF, aún no publicado), luego zoom-render y resto de migración; preservar todos los worktrees.
+
 Último bloque: 1.7.257, años contextuales ingleses en Rust, 146 pruebas y dos E2E pasan. Prioridad siguiente: gravedad/contacto animado, quitar huecos, ajustar plantas altas; después pausas, zoom y migración. WIP de pausas y zoom conservados en sus worktrees; no están publicados.
 
 Escrito el 16-oct-2026 por la sesión que llevaba la migración, para quien la continúe. Todo lo que sigue
