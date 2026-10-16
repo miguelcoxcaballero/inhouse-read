@@ -51,6 +51,26 @@ claves NaN y coordenadas infinitas en los rectángulos (el comparador original d
 cubiertas: ninguna aparece en la app; dos entradas con el mismo objeto y las lámparas aún sin modelo sí lo están. `emitter.color` debe ser un número, como lo produce el
 módulo. Tras un error en un fotograma (claves repetidas), el original y el nuevo lanzan el mismo TypeError; con claves
 únicas ninguno falla.
+Comprobación independiente antes de publicar (rama final, ya mezclada con la 1.7.248): tres revisores de
+solo lectura (plantas, lámparas y su luz, ciclo de vida y cobertura) no hallaron ninguna divergencia de
+comportamiento en la geometría de las plantas (conteo y orden de las extracciones del generador aleatorio por
+variante, orden de los almacenamientos f32, funciones trascendentes siempre por `js_sys::Math`, y los
+internos de three 0.180 contrastados uno a uno) ni en la geometría y la luz de las lámparas; la corrección
+de 1.7.247 del pintado fino fallido sigue intacta. Observaciones corregidas aquí: cuatro fixtures E2E
+(rust-plant-foliage, glaze, pottery y soil) construían plantas sin cargar el módulo shelf y fallaban antes de sus
+comprobaciones (ahora lo cargan y cuentan el arenero fijo de 128 B del catálogo decor); las pruebas de «sin
+fugas» de plantas y lámparas solo miraban asas de JS y ahora comprueban también que la memoria lineal de WASM
+no crece tras calentar; se borró el ayudante huérfano tests/helpers/plant-geometry-benchmark.mjs y las
+exportaciones muertas de plant-leaf-cases.mjs; plant-catalog-models comprueba que el torno de la maceta
+acanalada tiene 96 segmentos. Tras mezclar con la 1.7.248: build:rust y build; 4 bloques de tests unitarios
+(1766+1347+1377+1765 = 6255, todos verdes) y los tests tocados de nuevo (159, verdes). E2E en la rama mezclada:
+de 52 pruebas, 41 pasan en la primera ejecución con la caja a carga ~14 por otros procesos y 11 fallan; repetidas
+a solas con prioridad alta pasan las cuatro rust-plant-* corregidas, los dos libros móviles de book-opening y
+cinco de las seis de plant-catalog (la sexta, «una planta cae como modelo 3D en la papelera…», pasó a solas en 39 s
+después de fallar dos veces con la caja cargada, igual que en la 1.7.247). No se repitió la comparación visual
+sobre el árbol mezclado: la del agente (contra main 1.7.246, antes de mezclar: 4 de 6 escenas idénticas y 2 a
+±1/255, solo texto de lomos) y la de la 1.7.248 (26 escenas, 17 idénticas y el resto a ±1/255) no cubren el
+árbol final de plantas y lámparas; queda pendiente para quien continúe (tools/visual-harness).
 Inventario 24758 Rust/24933 JS = 49,82 % (la rama sola, antes de mezclar la 1.7.248: 23740/25382 = 48,33 %; main 1.7.248: 22958/25963 = 46,93 %); no es porcentaje funcional.
 
 # 1.7.248 — modelo del libro: geometría, texturas y vista en Rust
