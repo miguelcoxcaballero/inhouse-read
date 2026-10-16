@@ -32,7 +32,7 @@ describe('bookshelf scene against its frozen original', () => {
     expect(first.length).toBeGreaterThan(80)
   }, 120000)
 
-  it.each(Array.from({ length: 24 }, (_, index) => index + 1))('session %i leaves identical state', async seed => {
+  it.each(Array.from({ length: Number(process.env.SCENE_SEEDS) || 24 }, (_, index) => index + 1))('session %i leaves identical state', async seed => {
     const original = await runScenario(frozen, seed), current = await runScenario(live, seed)
     same(`seed ${seed}`, original, current)
   }, 180000)

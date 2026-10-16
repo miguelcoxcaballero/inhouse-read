@@ -32,6 +32,14 @@ export function bookModelMock() {
       getPixelRatio: () => ratio,
       setPixelRatio: value => { gpu.log.push(['setPixelRatio', value]); ratio = value },
       getSize: target => target.copy(size),
+      autoClear: true, scissorTest: false, scissor: new THREE.Vector4(), viewport: new THREE.Vector4(),
+      getScissorTest() { return this.scissorTest },
+      setScissorTest(value) { gpu.log.push(['setScissorTest', value]); this.scissorTest = value },
+      getScissor(target) { return target.copy(this.scissor) },
+      setScissor(...values) { gpu.log.push(['setScissor', ...values.map(value => value.isVector4 ? value.toArray() : value)]); if (values[0].isVector4) this.scissor.copy(values[0]); else this.scissor.set(...values) },
+      getViewport(target) { return target.copy(this.viewport) },
+      setViewport(...values) { gpu.log.push(['setViewport', ...values.map(value => value.isVector4 ? value.toArray() : value)]); if (values[0].isVector4) this.viewport.copy(values[0]); else this.viewport.set(...values) },
+      clear(...flags) { gpu.log.push(['clear', ...flags]) },
       setSize: (width, height) => { gpu.log.push(['setSize', width, height]); size.set(width, height) },
       render(scene, camera) {
         gpu.scene = scene; gpu.camera = camera
@@ -298,7 +306,24 @@ export async function runScenario(create, seed, { steps = 60 } = {}) {
         if (animation) animation.finished.then(value => { transcript.push(`trash finished ${value}`) })
         return Boolean(animation)
       },
-      returnBook: async () => {
+      trashThrough: async () => {
+      const animation = run.shelf.animateObjectToTrash(pick(run.nodes), { duration: pick([200, 850]) })
+      if (animation) animation.finished.then(value => { transcript.push(`trash finished ${value}`) })
+      await drain(120); return Boolean(animation)
+    },
+    turnThrough: async () => {
+      run.shelf.setMode(random() < .7 ? 'isometric' : 'spine', { animate: true }); await drain(80); return null
+    },
+    returnOverlay: async () => {
+      const node = pick(bookNodes()); if (!node) return null
+      const ratio = pick([1, 2]), overlay = document.createElement('canvas')
+      overlay.width = window.innerWidth * ratio; overlay.height = window.innerHeight * ratio
+      overlay.className = 'return-overlay'; document.body.append(overlay)
+      const animation = run.shelf.returnBook(node, { duration: pick([0, 90, 180]), overlayCanvas: overlay })
+      if (animation) animation.finished.then(() => { transcript.push('overlay return finished') })
+      return Boolean(animation)
+    },
+    returnBook: async () => {
         const node = pick(bookNodes()); if (!node) return null
         const animation = run.shelf.returnBook(node, { duration: pick([0, 90, 180]) })
         if (animation) animation.finished.then(() => { transcript.push('return finished') })
