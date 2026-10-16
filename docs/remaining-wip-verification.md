@@ -1,3 +1,19 @@
+# 1.7.257 — años según el contexto
+
+Changelog: «Lectura contextual de años en inglés».
+Rust distingue fechas con preposición temporal, año explícito, mes, era o rango fechado de cantidades
+con unidades y monedas. En inglés, «in 1969» se sintetiza «nineteen sixty-nine»; «1969 books» conserva
+la forma cardinal. Los números aislados ambiguos conservan la forma cardinal. La detección es heurística,
+no un analizador semántico completo. Los demás idiomas conservan su conversión cardinal localizada.
+No cambia el texto del lector ni los offsets originales del resaltado; se transforma sólo la petición de voz.
+
+Build completo y rebuild web de versión; 146 pruebas en cinco archivos pasan, incluidos 14 casos nuevos
+y conservación de marcas UTF-16. Dos E2E pasan (mapa del lector móvil y normalización/síntesis numérica
+con fecha y cantidad en la misma frase). No se repite la batería general para esta corrección localizada.
+Inventario 31502 líneas Rust / 21292 JS: 59,67 %, inventario de fuentes, no funciones completadas.
+Revisión propia, sin delegación. Quedan pendientes gravedad/contacto animado, separación de libros,
+plantas altas dentro de las lejas, pausas entre párrafos, optimización de zoom y resto de migración.
+
 # 1.7.256 — lector con menos margen vertical
 
 Changelog: «Más espacio para el texto del lector».

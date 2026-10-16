@@ -1,5 +1,7 @@
 # Traspaso: migración a Rust de Inhouse Read
 
+Último bloque: 1.7.257, años contextuales ingleses en Rust, 146 pruebas y dos E2E pasan. Prioridad siguiente: gravedad/contacto animado, quitar huecos, ajustar plantas altas; después pausas, zoom y migración. WIP de pausas y zoom conservados en sus worktrees; no están publicados.
+
 Escrito el 16-oct-2026 por la sesión que llevaba la migración, para quien la continúe. Todo lo que sigue
 sale de lo comprobado en esa sesión; lo que no se pudo comprobar está dicho.
 

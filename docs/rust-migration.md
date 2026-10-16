@@ -1,5 +1,7 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.257: fechas y cantidades diferenciadas en Rust; años ingleses con lectura por pares según contexto. 146 pruebas específicas y dos E2E pasan. Inventario **59,67 %**, no funciones terminadas.
+
 Entrega 1.7.256: margen vertical de EPUB/PDF reducido y caché de alturas renovada. 25 pruebas específicas y seis comprobaciones de navegador pasan; página móvil ocupa los 704 px disponibles con 4 px interiores arriba y abajo. Se cierra la verificación del audio: 6397/6398 pruebas generales pasan, con un timeout ya conocido ajeno al audio, y dos E2E finales pasan. Inventario **59,64 %** Rust; no mide funciones terminadas.
 
 Entrega 1.7.255: años y enteros escritos en el idioma de la voz antes de síntesis, y referencias de notas omitidas. Conserva texto, cachés, resaltado y marcas de página originales. 362 pruebas específicas pasan con el binario final; 18 E2E pasan antes de los tres ajustes finales, cubiertos por las específicas. Publicación adelantada por petición expresa mientras continúa la batería general; detalle y límites en remaining-wip-verification.md. Inventario 31465 Rust/21292 JS, **59,64 %**; no mide funciones terminadas.
