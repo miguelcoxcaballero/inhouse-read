@@ -11,6 +11,7 @@ mod placement_preview;
 mod scene_view;
 mod scene_frame;
 mod scene_entries;
+mod scene_plan;
 mod occlusion_table;
 #[path="../../rust-core/src/jsmath.rs"]
 mod jsmath;

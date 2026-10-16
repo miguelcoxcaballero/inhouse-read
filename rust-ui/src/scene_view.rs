@@ -133,7 +133,7 @@ struct Transition{from:f64,to:f64,elapsed:f64,last_frame:f64,scroll_from:f64,scr
 /// zoom and pan, the drop guide and the sizes everything is fitted to.
 #[wasm_bindgen]
 pub struct RustScene{
- pub(crate) width:f64,pub(crate) height:f64,pub(crate) scene_width:f64,pub(crate) depth:f64,baggebo:bool,full:Box3,
+ pub(crate) width:f64,pub(crate) height:f64,pub(crate) scene_width:f64,pub(crate) depth:f64,baggebo:bool,pub(crate) full:Box3,
  pub(crate) progress:f64,pub(crate) isometric:bool,frontal_scroll:f64,transition:Option<Transition>,reorder_started:Option<f64>,
  pub(crate) fit_height:f64,edge_to_edge:bool,pub(crate) viewport_height:f64,
  pub(crate) zoom:f64,pan_x:f64,pan_y:f64,moving:bool,shadow_refit:bool,
