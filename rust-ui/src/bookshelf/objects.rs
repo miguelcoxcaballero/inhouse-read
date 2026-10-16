@@ -14,9 +14,9 @@ pub const ISOMETRIC:&str="isometric";
 const BUSY:&str="Espera a que termine la animación.";
 
 /// `objectKey(node)`.
-pub fn object_key(node:&JsValue)->String{
+pub fn object_key(node:&JsValue)->JsValue{
  let id=data_get(node,"objectId");
- if truthy(&id){text(&id)}else{format!("book:{}",text(&data_get(node,"bookId")))}
+ if truthy(&id){id}else{join_strings(&[s("book:"),string_value(&data_get(node,"bookId"))])}
 }
 
 /// `objectRects()`: the box of every book, plant and lamp, by key.
@@ -24,7 +24,7 @@ pub fn object_rects(ctx:&Ctx)->R<JsValue>{
  let map=new_map()?;
  for node in qsa(&ctx.scroller,".ihr-spine, .ihr-plant, .ihr-lamp"){
   let rect=rect(&node)?;
-  map_set(&map,&s(&object_key(&node)),&rect);
+  map_set(&map,&object_key(&node),&rect);
  }
  Ok(map)
 }
@@ -111,11 +111,11 @@ pub fn toggle_lamp(ctx:&Rc<Ctx>,node:&JsValue)->R{
  if ctx.st_true("destroyed")||ctx.st_true("busy")||ctx.st_true("session")||ctx.st_true("dragSession")||ctx.st_true("returnMotion")||ctx.st_true("arranging"){return Ok(());}
  let key=object_key(node);
  let lamps=array_of(&ctx.st("lamps"));
- let Some(record)=lamps.iter().find(|lamp|get(lamp,"key")==s(&key)).cloned() else{return Ok(())};
+ let Some(record)=lamps.iter().find(|lamp|get(lamp,"key")==key).cloned() else{return Ok(())};
  let next=spread(&[&record]);
  putb(&next,"isOn",get(&record,"isOn")==JsValue::FALSE);
  let previous=ctx.st("lamps");
- let replaced:Vec<JsValue>=lamps.iter().map(|lamp|if get(lamp,"key")==s(&key){next.clone()}else{lamp.clone()}).collect();
+ let replaced:Vec<JsValue>=lamps.iter().map(|lamp|if get(lamp,"key")==key{next.clone()}else{lamp.clone()}).collect();
  ctx.st_set("lamps",&arr(&replaced.iter().collect::<Vec<_>>()));
  if save_lamps(ctx,true).is_err(){
   ctx.st_set("lamps",&previous);
@@ -126,7 +126,7 @@ pub fn toggle_lamp(ctx:&Rc<Ctx>,node:&JsValue)->R{
   }
   return Ok(());
  }
- let placed:Vec<JsValue>=array_of(&ctx.st("placementObjects")).into_iter().map(|item|if get(&item,"key")==s(&key){spread(&[&item,&obj(&[("isOn",&get(&next,"isOn"))])])}else{item}).collect();
+ let placed:Vec<JsValue>=array_of(&ctx.st("placementObjects")).into_iter().map(|item|if get(&item,"key")==key{spread(&[&item,&obj(&[("isOn",&get(&next,"isOn"))])])}else{item}).collect();
  ctx.st_set("placementObjects",&arr(&placed.iter().collect::<Vec<_>>()));
  update_lamp_control(ctx,node,&next)?;
  ctx.scene_call("setLampPower",&[node,&get(&next,"isOn"),&obj(&[("animate",&b(!prefers_reduced_motion()))])])?;
@@ -236,7 +236,7 @@ pub async fn add_catalog_plant(ctx:Rc<Ctx>,request:JsValue,options:JsValue)->R<J
   after_ctx.legacy("render",&[])?;
   after_ctx.scene_call("animateFromRects",&[&old_rects])?;
   puts(&dataset(&after_ctx.root),"lastAddedPlant",&key);
-  let added=qsa(&after_ctx.scroller,".ihr-plant").into_iter().find(|node|object_key(node)==key);
+  let added=qsa(&after_ctx.scroller,".ihr-plant").into_iter().find(|node|object_key(node)==s(&key));
   if after_ctx.st_str("viewMode")!=ISOMETRIC{
    if let Some(added)=added{
     method_opt(&added,"scrollIntoView",&[&obj(&[("block",&s("nearest")),("behavior",&s(if prefers_reduced_motion(){"instant"}else{"smooth"}))])])?;
@@ -276,11 +276,11 @@ pub fn clear_placement_preview(ctx:&Ctx,drag:&JsValue)->R{
 }
 
 /// `previewObjectPlacement(drag, key, destination)`: the shelf as it would be with the object there.
-pub fn preview_object_placement(ctx:&Ctx,drag:&JsValue,key:&str,destination:&JsValue)->R<JsValue>{
+pub fn preview_object_placement(ctx:&Ctx,drag:&JsValue,key:&JsValue,destination:&JsValue)->R<JsValue>{
  let cfg=placement_config(ctx)?;
  let objects=ctx.st("placementObjects");
  let core=ctx.env("getRustCore",&[])?;
- if !truthy(&core){return ctx.env("moveShelfDecoration",&[&objects,&s(key),destination,&cfg]);}
+ if !truthy(&core){return ctx.env("moveShelfDecoration",&[&objects,key,destination,&cfg]);}
  let viewport=visual_viewport();
  let width=coalesce(get(&viewport,"width"),f(inner_width()));
  let height=coalesce(get(&viewport,"height"),f(inner_height()));
@@ -308,11 +308,11 @@ pub fn preview_object_placement(ctx:&Ctx,drag:&JsValue,key:&str,destination:&JsV
  let session=get(&current,"session");
  let owned=ctx.preview.borrow().as_ref().filter(|(owner,_)|owner==drag).map(|(_,preview)|preview.clone());
  let moved=match (absent(&session),owned){
-  (false,Some(preview))=>preview.move_to(&core,&s(key),&read(destination,"shelf")?,&read(destination,"x")?)?,
+  (false,Some(preview))=>preview.move_to(&core,key,&read(destination,"shelf")?,&read(destination,"x")?)?,
   _=>undef(),
  };
  if !nullish(&moved){return Ok(moved);}
- ctx.env("moveShelfDecoration",&[&objects,&s(key),destination,&cfg])
+ ctx.env("moveShelfDecoration",&[&objects,key,destination,&cfg])
 }
 
 /// `dropPositionAt(x, y, node)`: the shelf and the position along it a dropped object would take.
@@ -337,18 +337,18 @@ pub fn drop_position_at(ctx:&Ctx,x:f64,y:f64,node:&JsValue)->R<JsValue>{
 pub fn persist_object_placement(ctx:&Rc<Ctx>,node:&JsValue,destination:&JsValue,old_rects:&JsValue)->R{
  let old_rects=if old_rects.is_undefined(){object_rects(ctx)?}else{old_rects.clone()};
  if !truthy(destination)||array_of(&ctx.st("placementObjects")).is_empty(){return Ok(());}
- let result=ctx.env("moveShelfDecoration",&[&ctx.st("placementObjects"),&s(&object_key(node)),destination,&placement_config(ctx)?])?;
+ let result=ctx.env("moveShelfDecoration",&[&ctx.st("placementObjects"),&object_key(node),destination,&placement_config(ctx)?])?;
  let placements=get(&result,"placements");
  let changed=js_sys::Array::new();
  let books:Vec<JsValue>=array_of(&ctx.st("books")).into_iter().map(|book|{
-  let position=get(&placements,&format!("book:{}",text(&get(&book,"id"))));
+  let position=property(&placements,&join_strings(&[s("book:"),string_value(&get(&book,"id"))]));
   if !truthy(&position){return book;}
   if stringify(&get(&book,"shelfPosition"))!=stringify(&position){changed.push(&obj(&[("id",&get(&book,"id")),("shelfPosition",&position)]));}
   spread(&[&book,&obj(&[("shelfPosition",&position)])])
  }).collect();
  ctx.st_set("books",&arr(&books.iter().collect::<Vec<_>>()));
  let placed=|records:JsValue|->JsValue{
-  let list:Vec<JsValue>=array_of(&records).into_iter().map(|record|spread(&[&record,&get(&placements,&text(&get(&record,"key")))])).collect();
+  let list:Vec<JsValue>=array_of(&records).into_iter().map(|record|spread(&[&record,&property(&placements,&get(&record,"key"))])).collect();
   arr(&list.iter().collect::<Vec<_>>())
  };
  ctx.st_set("plants",&placed(ctx.st("plants")));
@@ -356,14 +356,14 @@ pub fn persist_object_placement(ctx:&Rc<Ctx>,node:&JsValue,destination:&JsValue,
  save_plants(ctx,false,false)?;
  save_lamps(ctx,false)?;
  let plants=obj(&[]);
- for plant in array_of(&ctx.st("plants")){put(&plants,&text(&get(&plant,"key")),&obj(&[("shelf",&get(&plant,"shelf")),("x",&get(&plant,"x"))]));}
+ for plant in array_of(&ctx.st("plants")){put_property(&plants,&get(&plant,"key"),&obj(&[("shelf",&get(&plant,"shelf")),("x",&get(&plant,"x"))]));}
  let saved=ctx.option_call("onShelfPlacementChange",&[&obj(&[("books",&changed),("plants",&plants)])]);
  let pending=promise_resolve(&saved?);
  then_map(&pending,Ok,|error|{warn("No se pudo guardar la posición en la estantería:",&error);Ok(undef())})?;
  ctx.clear_timeout(&ctx.st("reorderTimer"));
  ctx.st_set("reorderTimer",&f(-1.0));
  ctx.legacy("render",&[])?;
- ctx.scene_call("animateFromRects",&[&old_rects,&obj(&[("draggedKey",&s(&object_key(node)))])])?;
+ ctx.scene_call("animateFromRects",&[&old_rects,&obj(&[("draggedKey",&object_key(node))])])?;
  let timer=ctx.set_timeout(if prefers_reduced_motion(){0.0}else{560.0},|ctx|{
   ctx.st_set("reorderTimer",&f(0.0));
   ctx.legacy("applyDeferredShelfUpdates",&[])?;
@@ -379,7 +379,7 @@ pub fn move_object_with_keyboard(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
  if !gb(event,"shiftKey")||!["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].contains(&key.as_str()){return Ok(());}
  method(event,"preventDefault",&[])?;
  let wanted=object_key(node);
- let Some(item)=array_of(&ctx.st("placementObjects")).into_iter().find(|item|get(item,"key")==s(&wanted)) else{return Ok(())};
+ let Some(item)=array_of(&ctx.st("placementObjects")).into_iter().find(|item|get(item,"key")==wanted) else{return Ok(())};
  let direction=if key=="ArrowLeft"||key=="ArrowUp"{-1.0}else{1.0};
  let vertical=key=="ArrowUp"||key=="ArrowDown";
  let destination=obj(&[
@@ -387,7 +387,7 @@ pub fn move_object_with_keyboard(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
   ("x",&f(max(0.0,min(1.0,gn(&item,"x")+if vertical{0.0}else{direction*0.08})))),
  ]);
  persist_object_placement(ctx,node,&destination,&undef())?;
- let focus_key=text(&get(&item,"key"));
+ let focus_key=get(&item,"key");
  if let Some(candidate)=qsa(&ctx.scroller,"[data-object-id]").into_iter().find(|candidate|object_key(candidate)==focus_key){
   method_opt(&candidate,"focus",&[&obj(&[("preventScroll",&JsValue::TRUE)])])?;
  }
@@ -397,7 +397,7 @@ pub fn move_object_with_keyboard(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
 #[wasm_bindgen]
 impl RustShelfCtx{
  #[wasm_bindgen(js_name=objectKey)]
- pub fn object_key(&self,node:JsValue)->String{object_key(&node)}
+ pub fn object_key(&self,node:JsValue)->JsValue{object_key(&node)}
  #[wasm_bindgen(js_name=clearPlacementPreview)]
  pub fn clear_placement_preview(&self,drag:JsValue)->Result<(),JsValue>{clear_placement_preview(&self.ctx,&drag)}
  #[wasm_bindgen(js_name=toggleLamp)]

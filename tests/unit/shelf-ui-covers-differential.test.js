@@ -103,10 +103,16 @@ async function session(render, script, { books = () => [book('a'), book('b')], e
 }
 
 async function same(script, settings = {}) {
+  const savedStorage = Array.from({ length: localStorage.length }, (_, index) => {
+    const key = localStorage.key(index); return [key, localStorage.getItem(key)]
+  })
   const original = captureUnhandled()
   const expected = await session(frozen, script, settings)
   const leftByOriginal = await original.stop()
   container?.remove(); document.body.innerHTML = ''
+  // Both implementations must start from the same preferences and placements, including after a script moves objects.
+  localStorage.clear()
+  for (const [key, value] of savedStorage) localStorage.setItem(key, value)
   const port = captureUnhandled()
   const actual = await session(production, script, settings)
   // What the original leaves unhandled (a rejection nobody awaits) is left unhandled by the port, and nothing more.
@@ -123,6 +129,23 @@ describe('the covers against the frozen original', () => {
     const books = () => [book(`local:${identity}`, { title: 'Mismo título' }), book(`local:${replacement}`, { title: 'Mismo título' })]
     const text = await same(() => [['paint', () => {}], ['same records', () => shelf.refresh(books())]], { books })
     expect(text).toContain('blob:test/2')
+  }, 60_000)
+
+  it('holds and removes the requested UTF-16 book without selecting its replacement character twin', async () => {
+    const books = () => [book('local:\ud800', { title: 'Primero' }), book('local:\ufffd', { title: 'Segundo' })]
+    const text = await same(() => [
+      ['paint', () => {}],
+      ['hold first', () => shelf.setReturningBook('local:\ud800')],
+      ['hold second', () => shelf.setReturningBook('local:\ufffd')],
+      ['release', () => shelf.setReturningBook(null)],
+      ['move first', async () => { keydown(q('.ihr-spine'), 'ArrowRight', { shiftKey: true }); await flush(800) }],
+      ['remove first', async () => {
+        const node = [...document.querySelectorAll('.ihr-spine')].find(node => node.dataset.bookId === 'local:\ud800')
+        keydown(node, 'Delete'); await flush(2000)
+      }]
+    ], { books, extra: { onBookRemove: logged('onBookRemove', async () => {}) } })
+    expect(text).toContain('onBookRemove')
+    expect(text).toContain('onShelfPlacementChange')
   }, 60_000)
 
   it('invalidates the saved-cover key for UTF-16 title changes', async () => {

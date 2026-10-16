@@ -33,8 +33,8 @@ pub fn cancel_trash_removal(ctx:&Rc<Ctx>)->R{
 /// `removeBookInTrash(node, { motion, rect, duration })`.
 pub async fn remove_in_trash(ctx:Rc<Ctx>,node:JsValue,motion:JsValue,rect_value:JsValue,duration:f64)->R<JsValue>{
  let key=object_key(&node);
- let plant=if cls_has(&node,"ihr-plant"){array_of(&ctx.st("plants")).into_iter().find(|item|get(item,"key")==s(&key)).unwrap_or(undef())}else{null()};
- let lamp=if cls_has(&node,"ihr-lamp"){array_of(&ctx.st("lamps")).into_iter().find(|item|get(item,"key")==s(&key)).unwrap_or(undef())}else{null()};
+ let plant=if cls_has(&node,"ihr-plant"){array_of(&ctx.st("plants")).into_iter().find(|item|get(item,"key")==key).unwrap_or(undef())}else{null()};
+ let lamp=if cls_has(&node,"ihr-lamp"){array_of(&ctx.st("lamps")).into_iter().find(|item|get(item,"key")==key).unwrap_or(undef())}else{null()};
  let item=if truthy(&plant)||truthy(&lamp){null()}else{map_get(&ctx.st("itemsById"),&data_get(&node,"bookId"))};
  let has_trash=truthy(&get(&ctx.parts,"hasTrash"));
  let has_book_trash=truthy(&get(&ctx.parts,"hasBookTrash"));
@@ -152,41 +152,41 @@ async fn remove_flight(ctx:&Rc<Ctx>,operation:&JsValue,node:&JsValue,rect_value:
  // Waiting for IndexedDB (and the Drive-removed memory) here held the whole page still on a large library. A
  // failed write puts the book back, visibly.
  let book=read(item,"book")?;
- let id=text(&read(&book,"id")?);
+ let id=string_value(&read(&book,"id")?);
  let books=array_of(&ctx.st("books"));
- let index=books.iter().position(|record|text(&get(record,"id"))==id);
+ let index=books.iter().position(|record|string_value(&get(record,"id"))==id);
  let persisted=match call(&ctx.option("onBookRemove"),"onBookRemove",&[&book]).map(|value|promise_resolve(&value)){
   Ok(promise)=>promise,
   Err(error)=>js_sys::Promise::reject(&error).into(),
  };
- method(&ctx.st("pendingRemovals"),"add",&[&s(&id)])?;
- let kept:Vec<JsValue>=books.into_iter().filter(|record|text(&get(record,"id"))!=id).collect();
+ method(&ctx.st("pendingRemovals"),"add",&[&id])?;
+ let kept:Vec<JsValue>=books.into_iter().filter(|record|string_value(&get(record,"id"))!=id).collect();
  ctx.st_set("books",&arr(&kept.iter().collect::<Vec<_>>()));
  let queued=ctx.st("queuedBooks");
  if truthy(&queued){
-  let rest:Vec<JsValue>=array_of(&queued).into_iter().filter(|record|text(&get(record,"id"))!=id).collect();
+  let rest:Vec<JsValue>=array_of(&queued).into_iter().filter(|record|string_value(&get(record,"id"))!=id).collect();
   ctx.st_set("queuedBooks",&arr(&rest.iter().collect::<Vec<_>>()));
  }
  let last=ctx.st("lastOpened");
- if text(&get(&get(&last,"book"),"id"))==id{ctx.st_set("lastOpened",&null());}
- map_delete(&ctx.st("coverAppearances"),&s(&id));
+ if string_value(&get(&get(&last,"book"),"id"))==id{ctx.st_set("lastOpened",&null());}
+ map_delete(&ctx.st("coverAppearances"),&id);
  method(&get(&ctx.parts,"coverCache"),"delete",&[&book])?;
  let saved=get(&ctx.parts,"savedCoverUrls");
  for entry in js_sys::Array::from(&saved).iter(){
   let (cover_key,url)=(get_at(&entry,0),get_at(&entry,1));
-  if text(&cover_key).starts_with(&format!("{id}|")){
+  if truthy(&method(&cover_key,"startsWith",&[&join_strings(&[id.clone(),s("|")])])?){
    map_delete(&saved,&cover_key);
    if map_delete(&ctx.st("objectUrls"),&url){method_opt(&get(&global(),"URL"),"revokeObjectURL",&[&url])?;}
   }
  }
  let title=or(ctx.env("displayBookTitle",&[&book])?,s("Libro"));
  puts(&announce,"textContent",&format!("{} retirado de la estantería",text(&title)));
- puts(&dataset(&ctx.root),"lastRemovedBook",&id);
+ put(&dataset(&ctx.root),"lastRemovedBook",&id);
  let (done_ctx,failed_ctx,done_id,failed_id)=(ctx.clone(),ctx.clone(),id.clone(),id.clone());
  let removed_book=book.clone();
- then(&persisted,move|_|{map_delete(&done_ctx.st("pendingRemovals"),&s(&done_id));Ok(())},move|error|{
+ then(&persisted,move|_|{map_delete(&done_ctx.st("pendingRemovals"),&done_id);Ok(())},move|error|{
   let ctx=failed_ctx;let id=failed_id;
-  map_delete(&ctx.st("pendingRemovals"),&s(&id));
+  map_delete(&ctx.st("pendingRemovals"),&id);
   warn("No se pudo retirar el objeto de la estantería:",&error);
   if ctx.st_true("destroyed"){return Ok(());}
   let announce=trash_announce(&ctx);let status=trash_status(&ctx);
@@ -199,7 +199,7 @@ async fn remove_flight(ctx:&Rc<Ctx>,operation:&JsValue,node:&JsValue,rect_value:
   delete_key(&ctx.root_dataset(),"lastRemovedBook");
   let restore=|list:JsValue|->JsValue{
    let mut records=array_of(&list);
-   if records.iter().any(|record|text(&get(record,"id"))==id){return list;}
+   if records.iter().any(|record|string_value(&get(record,"id"))==id){return list;}
    let at=match index{None=>records.len(),Some(index)=>index.min(records.len())};
    records.insert(at,removed_book.clone());
    arr(&records.iter().collect::<Vec<_>>())

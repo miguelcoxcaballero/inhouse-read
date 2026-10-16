@@ -37,6 +37,8 @@ pub fn ns(number:f64)->String{crate::host::number_string(number)}
 /// Plain object with the given own properties, in order.
 pub fn obj(entries:&[(&str,&JsValue)])->JsValue{let object=Object::new();for(key,value)in entries{let _=Reflect::set(&object,&(*key).into(),value);}object.into()}
 pub fn arr(items:&[&JsValue])->JsValue{let list=Array::new();for item in items{list.push(item);}list.into()}
+pub fn property(target:&JsValue,key:&JsValue)->JsValue{if absent(target){undef()}else{Reflect::get(&boxed(target),key).unwrap_or(undef())}}
+pub fn put_property(target:&JsValue,key:&JsValue,value:&JsValue){let _=Reflect::set(target,key,value);}
 pub fn put(target:&JsValue,key:&str,value:&JsValue){let _=Reflect::set(target,&key.into(),value);}
 pub fn putf(target:&JsValue,key:&str,value:f64){put(target,key,&f(value));}
 pub fn puts(target:&JsValue,key:&str,value:&str){put(target,key,&s(value));}

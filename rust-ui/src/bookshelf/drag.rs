@@ -61,7 +61,7 @@ pub fn update_drop_preview(ctx:&Rc<Ctx>,drag:&JsValue,node:&JsValue)->R{
    if ctx.st("dragSession")!=drag||!truthy(&get(&drag,"destination")){return Ok(());}
    let preview=preview_object_placement(ctx,&drag,&object_key(&node),&get(&drag,"destination"))?;
    if ctx.st("dragSession")!=drag||ctx.st_true("destroyed"){return Ok(());}
-   ctx.scene_call("previewPlacements",&[&get(&preview,"objects"),&s(&object_key(&node))])?;
+   ctx.scene_call("previewPlacements",&[&get(&preview,"objects"),&object_key(&node)])?;
    Ok(())
   }});
   put(&drag,"previewFrame",&id);
@@ -100,9 +100,9 @@ pub fn continue_drag_scroll(ctx:&Rc<Ctx>,drag:&JsValue,node:&JsValue)->R{
 pub fn persist_shelf_dom_order(ctx:&Rc<Ctx>,old_rects:&JsValue)->R{
  let ordered:Vec<JsValue>=shelf_spine_nodes(ctx,&undef()).iter().map(|node|data_get(node,"bookId")).filter(truthy).collect();
  let rank=new_map()?;
- for (index,id) in ordered.iter().enumerate(){map_set(&rank,&s(&text(id)),&f(index as f64));}
+ for (index,id) in ordered.iter().enumerate(){map_set(&rank,&string_value(id),&f(index as f64));}
  let books:Vec<JsValue>=array_of(&ctx.st("books")).into_iter().map(|book|{
-  let position=map_get(&rank,&s(&text(&get(&book,"id"))));
+  let position=map_get(&rank,&string_value(&get(&book,"id")));
   let order=if nullish(&position){f(9007199254740991.0)}else{position};
   super::style::spread(&[&book,&obj(&[("shelfOrder",&order)])])
  }).collect();
@@ -302,7 +302,7 @@ pub fn finish_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue,cancelled:boo
  let old_rects=if active_moved{object_rects(ctx)?}else{null()};
  ctx.st_set("dragSession",&null());
  if cls_has(node,"ihr-lamp")&&(gb(&drag,"active")||gb(&drag,"scrolling")||gb(&drag,"cancelled")||cancelled){
-  ctx.st_set("suppressLampClickKey",&s(&object_key(node)));
+  ctx.st_set("suppressLampClickKey",&object_key(node));
  }
  ctx.scene_call("setDropPosition",&[&null()])?;
  ctx.scene_call("previewPlacements",&[&null()])?;
@@ -320,7 +320,7 @@ pub fn finish_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue,cancelled:boo
  // The capture may be released already.
  let _=method_opt(node,"releasePointerCapture",&[&get(event,"pointerId")]);
  if gb(&drag,"scrolling")||gb(&drag,"cancelled"){
-  ctx.st_set("suppressOpenBookId",&s(&text(&or(data_get(node,"bookId"),s("")))));
+  ctx.st_set("suppressOpenBookId",&string_value(&or(data_get(node,"bookId"),s(""))));
   ctx.set_timeout(0.0,|ctx|{ctx.st_set("suppressOpenBookId",&null());Ok(())});
   ctx.legacy("applyDeferredShelfUpdates",&[])?;
   return Ok(());
@@ -337,7 +337,7 @@ pub fn finish_spine_drag(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue,cancelled:boo
  }
  ctx.st_set("arranging",&JsValue::FALSE);
  cls_remove(&ctx.root,&["is-arranging"]);
- ctx.st_set("suppressOpenBookId",&s(&text(&or(data_get(node,"bookId"),s("")))));
+ ctx.st_set("suppressOpenBookId",&string_value(&or(data_get(node,"bookId"),s(""))));
  ctx.set_timeout(0.0,|ctx|{ctx.st_set("suppressOpenBookId",&null());Ok(())});
  if discard{
   let (task_ctx,task_node)=(ctx.clone(),node.clone());

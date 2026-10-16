@@ -191,6 +191,6 @@ export async function writeShelfDifference(name, expected, actual) {
   const { join } = await import('node:path')
   const directory = mkdtempSync(join(tmpdir(), 'ihr-shelf-diff-'))
   const path = join(directory, `${name.replace(/\W+/g, '-')}.txt`)
-  writeFileSync(path, ['EXPECTED', ...expected, 'ACTUAL', ...actual].join('\n'))
+  writeFileSync(path, JSON.stringify({ expected, actual }, null, 2))
   return path
 }

@@ -8,13 +8,13 @@ use super::{util::*,ctx::{Ctx,RustShelfCtx},style::*,pieces::*};
 
 const SPINE:&str=".ihr-spine";
 
-fn book_id_text(value:&JsValue)->String{text(value)}
+fn book_id_text(value:&JsValue)->JsValue{string_value(value)}
 /// `[...root.querySelectorAll('.ihr-spine')].find(node => node.dataset.bookId === id)`.
-fn spine_of(ctx:&Ctx,id:&str)->Option<JsValue>{qsa(&ctx.root,SPINE).into_iter().find(|node|data_get(node,"bookId").as_string().as_deref()==Some(id))}
+fn spine_of(ctx:&Ctx,id:&JsValue)->Option<JsValue>{qsa(&ctx.root,SPINE).into_iter().find(|node|data_get(node,"bookId")==*id)}
 
 /// `setReturningBook(bookId)`: the book that is away keeps its slot empty and the scene holds its paint.
 pub fn set_returning_book(ctx:&Rc<Ctx>,book_id:&JsValue)->R{
- let next=if nullish(book_id){null()}else{s(&book_id_text(book_id))};
+ let next=if nullish(book_id){null()}else{book_id_text(book_id)};
  let waiter=ctx.st("returnSlotWaiter");
  if truthy(&waiter)&&get(&waiter,"bookId")!=next{finish_return_slot(ctx,false)?;}
  let scene=ctx.scene();
@@ -44,8 +44,8 @@ pub fn finish_return_slot(ctx:&Rc<Ctx>,ready:bool)->R{
 pub fn settle_return_slot(ctx:&Rc<Ctx>,before_render:bool)->R{
  let pending=ctx.st("returnSlotWaiter");
  if !truthy(&pending){return Ok(());}
- let wanted=text(&get(&pending,"bookId"));
- let book=array_of(&ctx.st("books")).into_iter().find(|record|text(&get(record,"id"))==wanted);
+ let wanted=string_value(&get(&pending,"bookId"));
+ let book=array_of(&ctx.st("books")).into_iter().find(|record|string_value(&get(record,"id"))==wanted);
  // `state.destroyed || !root.isConnected || !book || bookGeometryState(book) !== 'ready' || width/height changed`, in that order.
  let gone=if ctx.st_true("destroyed")||!is_connected(&ctx.root){true}else{match &book{
   Some(book)=>text(&ctx.legacy("bookGeometryState",&[book])?)!="ready",
@@ -59,17 +59,17 @@ pub fn settle_return_slot(ctx:&Rc<Ctx>,before_render:bool)->R{
  if !ctx.st_true("appearancesReady")||before_render{return Ok(());}
  let spine=spine_of(ctx,&wanted);
  let measured=num(&ctx.legacy("measure",&[])?)>0.0;
- let known=map_has(&ctx.st("itemsById"),&s(&wanted));
+ let known=map_has(&ctx.st("itemsById"),&wanted);
  finish_return_slot(ctx,measured&&known&&spine.map(|node|is_connected(&node)).unwrap_or(false))
 }
 
 /// `waitForReturnSlot(bookId)`.
 fn wait_for_return_slot(ctx:&Rc<Ctx>,book_id:&JsValue)->R<JsValue>{
- let held=ctx.st("returningBookId")==s(&book_id_text(book_id));
+ let held=ctx.st("returningBookId")==book_id_text(book_id);
  finish_return_slot(ctx,false)?;
  if held{set_returning_book(ctx,book_id)?;}
  let (promise,resolve,_)=deferred();
- ctx.st_set("returnSlotWaiter",&obj(&[("bookId",&s(&book_id_text(book_id))),("resolve",&resolve),("width",&f(inner_width())),("height",&f(inner_height()))]));
+ ctx.st_set("returnSlotWaiter",&obj(&[("bookId",&book_id_text(book_id)),("resolve",&resolve),("width",&f(inner_width())),("height",&f(inner_height()))]));
  settle_return_slot(ctx,false)?;
  Ok(promise)
 }
@@ -104,7 +104,7 @@ impl Closing{
   cls_remove(&current,&["is-away"]);
   // A queued record refresh rebuilds the resting spine before the caller's final cleanup. Release this return's
   // marker with its actual landing so that rebuilt DOM cannot briefly hide the already inserted book again.
-  if self.ctx.st("returningBookId")==s(&id){
+  if self.ctx.st("returningBookId")==id{
    self.ctx.st_set("returningBookId",&null());
    method_opt(&self.ctx.scene(),"setPaintHeld",&[&JsValue::FALSE])?;
   }
@@ -143,15 +143,15 @@ async fn return_to_shelf(ctx:Rc<Ctx>,book_id:JsValue,options:JsValue)->R<JsValue
  let durations=get(&timing,"closing");
  let wanted=book_id_text(&book_id);
  let books=array_of(&ctx.st("books"));
- let record=books.iter().find(|book|text(&get(book,"id"))==wanted).cloned();
+ let record=books.iter().find(|book|string_value(&get(book,"id"))==wanted).cloned();
  let ready=match &record{Some(record)=>text(&ctx.legacy("bookGeometryState",&[record])?)=="ready",None=>false};
  if !ready{
-  if ctx.st("returningBookId")==s(&wanted){set_returning_book(&ctx,&null())?;}
+  if ctx.st("returningBookId")==wanted{set_returning_book(&ctx,&null())?;}
   return Ok(JsValue::FALSE);
  }
- if (!ctx.st_true("appearancesReady")||!map_has(&ctx.st("itemsById"),&s(&wanted)))&&!truthy(&settle(wait_for_return_slot(&ctx,&book_id)?).await?){return Ok(JsValue::FALSE);}
+ if (!ctx.st_true("appearancesReady")||!map_has(&ctx.st("itemsById"),&wanted))&&!truthy(&settle(wait_for_return_slot(&ctx,&book_id)?).await?){return Ok(JsValue::FALSE);}
  method_opt(&ctx.scene(),"setModalBackgroundDeferred",&[&null(),&obj(&[("resumeHidden",&JsValue::TRUE)])])?;
- let item=map_get(&ctx.st("itemsById"),&s(&wanted));
+ let item=map_get(&ctx.st("itemsById"),&wanted);
  let last=ctx.st("lastOpened");
  let previous=if get(&get(&last,"book"),"id")==book_id&&truthy(&last){last.clone()}
   else if truthy(&item){obj(&[("book",&get(&item,"book")),("style",&get(&item,"style"))])}else{null()};
@@ -167,7 +167,7 @@ async fn return_to_shelf(ctx:Rc<Ctx>,book_id:JsValue,options:JsValue)->R<JsValue
  // Normally analysed while the reader was open. If not, wait briefly so the flight, the landing and the
  // resting spine share one cloth/ribbon.
  let appearance_key=super::covers::cover_key_for(&book);
- let known=map_get(&ctx.st("coverAppearances"),&s(&wanted));
+ let known=map_get(&ctx.st("coverAppearances"),&wanted);
  if truthy(&item)&&!(get(&known,"key")==appearance_key&&get(&known,"complete")!=JsValue::FALSE){
   let resolving=then_map(&super::covers::resolve_cover_appearance(&ctx,&book,&undef())?,Ok,|_|Ok(null()))?;
   let (timeout,resolve,_)=deferred();
@@ -283,7 +283,7 @@ async fn return_to_shelf(ctx:Rc<Ctx>,book_id:JsValue,options:JsValue)->R<JsValue
 
 struct PlayInput{
  page_snapshot:JsValue,on_page_ready:JsValue,durations:JsValue,reading_pose:JsValue,scrim:JsValue,book_node:JsValue,cover_w:f64,cover_h:f64,approach:f64,duration:f64,
- docking:JsValue,dx:f64,dy:f64,lift:f64,start_scale:f64,end:JsValue,end_x:f64,end_y:f64,end_angle:f64,spine:JsValue,book_id:String,has_view:bool,
+ docking:JsValue,dx:f64,dy:f64,lift:f64,start_scale:f64,end:JsValue,end_x:f64,end_y:f64,end_angle:f64,spine:JsValue,book_id:JsValue,has_view:bool,
 }
 
 /// The `try` of the original: `Ok(false)` where it returned early.
