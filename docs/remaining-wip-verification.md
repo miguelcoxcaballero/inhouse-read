@@ -1,3 +1,20 @@
+# 1.7.254 — omitir marcas decorativas en el audiolibro
+
+Changelog: «Narración sin marcas decorativas».
+Corrección rápida solicitada antes del zoom: el normalizador compartido en Rust trata §, ¶, viñetas,
+ornamentos florales y el glifo de sustitución como espacios al narrar. No cambia el texto del libro;
+conserva los índices UTF-16, las separaciones de párrafos, los límites de página y el resaltado.
+No elimina monedas, porcentajes, operadores matemáticos, letras de otros idiomas ni emojis.
+
+Build Rust/web completo; 261 pruebas específicas pasan en 6 archivos, incluidos los 65536 códigos UTF-16,
+los planes completos y sus índices. La expectativa diferencial se adapta exclusivamente a las diez marcas
+cuyo comportamiento cambia intencionalmente; el JavaScript congelado no se modifica.
+Dos E2E pasan con Chromium, un worker y sin reintentos: normalización real (incluye § y viñetas) y lector
+móvil con resaltado de nodos originales. Se han conservado límites y corpus. No se ha repetido toda la
+batería de 6379 pruebas para esta corrección localizada; el fallo de tiempo previo consta en 1.7.253.
+Inventario: 31305 líneas Rust / 21292 JS, 59,52 %; recuento de producción, no funciones terminadas.
+Pendientes: optimización del zoom y repintado isométrico, y continuación de la migración.
+
 # 1.7.253 — filas y controles de entrada de la estantería en Rust
 
 Changelog: «Filas y controles de estantería en Rust».
