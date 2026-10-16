@@ -33,6 +33,9 @@ describe('bookshelf scene against its frozen original', () => {
   }, 120000)
 
   it.each(Array.from({ length: Number(process.env.SCENE_SEEDS) || 24 }, (_, index) => index + 1))('session %i leaves identical state', async seed => {
+    // A session's second run finds what its first one painted already cached (plant surfaces, bakes), which
+    // settles asynchronous work sooner. Both scenes are therefore compared from the same warm state.
+    await runScenario(frozen, seed)
     const original = await runScenario(frozen, seed), current = await runScenario(live, seed)
     same(`seed ${seed}`, original, current)
   }, 180000)

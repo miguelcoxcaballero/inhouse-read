@@ -10,6 +10,7 @@ mod animation_fence;
 mod placement_preview;
 mod scene_view;
 mod scene_frame;
+mod scene_entries;
 mod occlusion_table;
 #[path="../../rust-core/src/jsmath.rs"]
 mod jsmath;

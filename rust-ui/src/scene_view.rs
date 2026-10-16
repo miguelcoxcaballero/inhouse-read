@@ -139,6 +139,9 @@ pub struct RustScene{
  pub(crate) zoom:f64,pan_x:f64,pan_y:f64,moving:bool,shadow_refit:bool,
  drop:Option<(f64,f64,bool)>,
  // The bin: whether the pointer is over it, how far its lid is open and the lid's current ease.
+ // The frame's constants for the entries (see `beginEntries`).
+ pub(crate) entry_now:f64,pub(crate) entry_reduced:bool,pub(crate) entry_zoom:f64,pub(crate) entry_q:[f64;4],
+ pub(crate) entry_ratio:f64,pub(crate) entry_window:f64,pub(crate) entry_scroll:f64,pub(crate) entry_lamp_tap:f64,
  pub(crate) trash_hover:bool,pub(crate) trash_openness:f64,pub(crate) trash_transition:Option<(f64,f64,f64)>,
 }
 
@@ -155,6 +158,7 @@ impl RustScene{
   RustScene{width,height,scene_width,depth,baggebo,full:full_bounds(width,height,depth,baggebo),
    progress:if isometric{1.0}else{0.0},isometric,frontal_scroll:if isometric{0.0}else{scroll_top},transition:None,reorder_started:None,
    fit_height:1.0,edge_to_edge:false,viewport_height:1.0,zoom:1.0,pan_x:0.0,pan_y:0.0,moving:false,shadow_refit:false,drop:None,
+   entry_now:0.0,entry_reduced:false,entry_zoom:1.0,entry_q:[0.0,0.0,0.0,1.0],entry_ratio:1.0,entry_window:0.0,entry_scroll:0.0,entry_lamp_tap:44.0,
    trash_hover:false,trash_openness:0.0,trash_transition:None}
  }
  /// A new semantic layout: the sizes and the furniture's bounds change, the view does not.
@@ -173,6 +177,7 @@ impl RustScene{
  #[wasm_bindgen(getter,js_name=sceneWidth)]pub fn scene_width_value(&self)->f64{self.scene_width}
  #[wasm_bindgen(getter,js_name=shadowRefit)]pub fn shadow_refit_value(&self)->bool{self.shadow_refit}
  #[wasm_bindgen(setter,js_name=shadowRefit)]pub fn set_shadow_refit(&mut self,value:bool){self.shadow_refit=value;}
+ pub(crate) fn transition_none(&self)->bool{self.transition.is_none()}
  /// Whether a turn between the views is under way.
  #[wasm_bindgen(getter)]pub fn turning(&self)->bool{self.transition.is_some()}
  #[wasm_bindgen(getter)]pub fn reordering(&self)->bool{self.reorder_started.is_some()}
