@@ -91,6 +91,7 @@ export function heldMotion(log, name) {
  */
 export function recordingScene(log, config = {}) {
   const answers = {
+    ...config.answers,
     getBookPose: () => config.sourcePose,
     getReturnPose: () => config.dockingPose,
     returnBook: () => {
@@ -111,17 +112,46 @@ export function recordingScene(log, config = {}) {
 }
 
 /** Rectangles for the nodes the return flight measures (jsdom has no layout). */
-export function stubRects() {
+export function stubRects({ layout = false } = {}) {
   const original = Element.prototype.getBoundingClientRect
   const rect = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top })
+  const indexOf = (node, selector) => [...document.querySelectorAll(selector)].indexOf(node)
   Element.prototype.getBoundingClientRect = function () {
     const name = String(this.className || '')
+    if (layout) {
+      // A deterministic room: objects side by side along their shelf, shelf rows stacked, the bin at the bottom right.
+      if (/\bihr-(spine|plant|lamp)\b/.test(name)) return rect(20 + 34 * indexOf(this, '.ihr-spine, .ihr-plant, .ihr-lamp'), 100, 28, 160)
+      if (/\bihr-shelf__row\b/.test(name)) return rect(0, 80 + 130 * indexOf(this, '.ihr-shelf__row'), 390, 140)
+      if (/\bihr-shelf-trash\b/.test(name)) return rect(310, 700, 56, 56)
+      if (/\bihr-bookshelf__scroll\b/.test(name)) return rect(0, 0, 390, 780)
+    }
     if (/\bihr-spine\b/.test(name)) return rect(20, 100, 28, 160)
     if (/ihr-flyout__saved-page/.test(name)) return rect(100, 60, 300, 450)
     if (/ihr-flyout__book\b/.test(name)) return rect(50, 40, 420, 560)
     return original.call(this)
   }
   return () => { Element.prototype.getBoundingClientRect = original }
+}
+
+/**
+ * Takes the unhandled rejections over from the test runner while a script plays, so that the ones the original leaves
+ * unhandled (a failing analysis nobody awaits) are counted and compared instead of failing the run. `stop()` waits a
+ * turn for the engine to report them and gives the runner its listeners back.
+ */
+export function captureUnhandled() {
+  const runner = process.listeners('unhandledRejection')
+  const seen = []
+  process.removeAllListeners('unhandledRejection')
+  process.on('unhandledRejection', reason => seen.push(String(reason?.message ?? reason)))
+  return {
+    async stop() {
+      await new Promise(resolve => setImmediate(resolve))
+      await new Promise(resolve => setImmediate(resolve))
+      process.removeAllListeners('unhandledRejection')
+      for (const listener of runner) process.on('unhandledRejection', listener)
+      return seen
+    }
+  }
 }
 
 export const fire = (node, type, init = {}) => node.dispatchEvent(new Event(type, { bubbles: true, cancelable: true, ...init }))

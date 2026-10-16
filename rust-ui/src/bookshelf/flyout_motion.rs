@@ -20,7 +20,7 @@ impl Flyout{
    let roll=get(&target,"roll");
    obj(&[("x",&f(gn(&target,"centerX")-g.center_x)),("y",&f(gn(&target,"centerY")-g.center_y)),("scale",&f(gn(&target,"scale")*gn(&target,"height")/g.cover_h)),
     ("angle",&get(&target,"angle")),("pitch",&get(&target,"pitch")),("roll",&if nullish(&roll){f(0.0)}else{roll})])
-  }else{let start=self.start.get();Flyout::tf(start.dx,start.dy,start.scale,90.0)};
+  }else{let start=self.start.borrow().clone();Flyout::tf(start.dx,start.dy,start.scale,90.0)};
   let approach=if truthy(&docking){return_duration*0.66}else{return_duration};
   let (end_x,end_y,end_angle)=(gn(&end,"x"),gn(&end,"y"),gn(&end,"angle"));
   let frames=arr(&[

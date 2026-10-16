@@ -115,7 +115,8 @@ import { bookReturnSignature, bookReturnCompatibility, createBookReturnCache } f
 import { readerReturnCanvas } from './reader-return-canvas.js';
 import { layoutShelfDecorations, moveShelfDecoration } from './shelf-decoration-layout.js';
 import { getRustCore } from './rust-core.js';
-import { createShelfPlacementPreview } from './shelf-placement-preview.js';
+import { SHELF_PREVIEW_MIN_OBJECTS, SHELF_PREVIEW_DIRECT_MOVES } from './shelf-placement-preview.js';
+import { createShelfPlacementSession } from './shelf-placement-wasm.js';
 import { createLazyPlantCatalog } from './plant-catalog-lazy.js';
 import { normalizeShelfType, BAGGEBO_SPEC } from './shelf-types.js';
 import { measuredShelfModelLayout as shelfModelLayout } from './shelf-model-layout.js';
@@ -235,6 +236,24 @@ const shelfEnv = {
   bookReturnSignature: (...args) => bookReturnSignature(...args),
   bookReturnCompatibility: (...args) => bookReturnCompatibility(...args),
   readerReturnCanvas: (...args) => readerReturnCanvas(...args),
+  coverAspectRatio: (...args) => coverAspectRatio(...args),
+  analyzeCoverAppearance: (...args) => analyzeCoverAppearance(...args),
+  notifyCloudSettingsChanged: (...args) => notifyCloudSettingsChanged(...args),
+  getCatalogLamp: (...args) => getCatalogLamp(...args),
+  normalizeShelfLamp: (...args) => normalizeShelfLamp(...args),
+  getCatalogPlant: (...args) => getCatalogPlant(...args),
+  getCatalogPot: (...args) => getCatalogPot(...args),
+  getPotColor: (...args) => getPotColor(...args),
+  normalizeShelfPlant: (...args) => normalizeShelfPlant(...args),
+  shelfScale: (...args) => shelfScale(...args),
+  plantDimensions: (...args) => plantDimensions(...args),
+  layoutShelfDecorations: (...args) => layoutShelfDecorations(...args),
+  moveShelfDecoration: (...args) => moveShelfDecoration(...args),
+  getRustCore: (...args) => getRustCore(...args),
+  createShelfPlacementSession: (...args) => createShelfPlacementSession(...args),
+  get SHELF_PREVIEW_MIN_OBJECTS() { return SHELF_PREVIEW_MIN_OBJECTS; },
+  get SHELF_PREVIEW_DIRECT_MOVES() { return SHELF_PREVIEW_DIRECT_MOVES; },
+  get BAGGEBO_SPEC() { return BAGGEBO_SPEC; },
   needsDriveDownload: (...args) => needsDriveDownload(...args),
   coverReliefLayers: (...args) => coverReliefLayers(...args),
   normalizeCoverRelief: (...args) => normalizeCoverRelief(...args),
@@ -433,26 +452,6 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     'aria-label':'Estantería', 'aria-keyshortcuts':'ArrowLeft ArrowRight',
     'aria-description':'Desliza a la izquierda para ver la estantería de lado y a la derecha para volver a los lomos. También puedes usar las flechas al enfocar la estantería.' });
   const scroller = el('div', { class: 'ihr-bookshelf__scroll' });
-  // The shelf screen's parts that live in the shelf module share this context: the state object, the
-  // options and the functions of other modules they call.
-  const shelfNative = needRustShelf();
-  // `legacy` holds what the shelf module still asks of this closure; it shrinks as those parts move.
-  const shelfCtx = new shelfNative.RustShelfCtx({ state, opts, options, env:shelfEnv, root, scroller, container, legacy:{
-    returnViews,
-    clearCompatibilityTapRefresh: () => clearCompatibilityTapRefresh(),
-    applyDeferredShelfUpdates: () => applyDeferredShelfUpdates(),
-    maybeRefreshAppearanceStyles: () => maybeRefreshAppearanceStyles(),
-    resolveCover: book => resolveCover(book),
-    quickCoverAppearance: (book, url) => quickCoverAppearance(book, url),
-    buildSpine: item => buildSpine(item),
-    coverRatioFor: (style, fallback) => coverRatioFor(style, fallback),
-    bookGeometryState: book => bookGeometryState(book),
-    measure: () => measure(),
-    coverKeyFor: book => coverKeyFor(book),
-    resolveCoverAppearance: book => resolveCoverAppearance(book),
-    resolveCoverImmediately: book => resolveCoverImmediately(book)
-  } });
-  let shelfCtxLive = true;
   const hasBookTrash = typeof options.onBookRemove === 'function';
   const hasTrash = !opts.sections || hasBookTrash;
   const trashNode = hasTrash ? el('div', {
@@ -541,189 +540,55 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     root.append(buildActionBar());
     root.classList.add('ihr-bookshelf--with-actions');
   }
+  // One URL per saved cover: IndexedDB returns fresh record/Blob objects after every progress write, and the
+  // decoded pixels must survive refreshes. The shelf module owns both tables.
+  const coverCache = new WeakMap();
+  const savedCoverUrls = new Map();
+  // The shelf screen's parts that live in the shelf module share this context: the state object, the
+  // options and the functions of other modules they call.
+  const shelfNative = needRustShelf();
+  // `legacy` holds what the shelf module still asks of this closure; it shrinks as those parts move.
+  const shelfCtx = new shelfNative.RustShelfCtx({ state, opts, options, env:shelfEnv, root, scroller, container,
+    coverCache, savedCoverUrls, trashNode, trashStatus, trashAnnounce, hasTrash, hasBookTrash, legacy:{
+    returnViews,
+    clearCompatibilityTapRefresh: () => clearCompatibilityTapRefresh(),
+    deferCompatibilityTapRefresh: () => deferCompatibilityTapRefresh(),
+    applyDeferredShelfUpdates: () => applyDeferredShelfUpdates(),
+    scheduleRender: () => scheduleRender(),
+    render: () => render(),
+    refresh: books => refresh(books),
+    buildSpine: item => buildSpine(item),
+    bookGeometryState: book => bookGeometryState(book),
+    measure: () => measure()
+  } });
+  let shelfCtxLive = true;
   container.append(root);
   // Opened straight in the diagonal view: leave the startup work first.
   prepareCatalogWhenIdle(6000);
 
   /* --------------------------- portadas --------------------------- */
 
-  function toUrl(source) {
-    if (!source) return null;
-    if (typeof source === 'string') return source;
-    if (typeof Blob !== 'undefined' && source instanceof Blob) {
-      const url = URL.createObjectURL(source);
-      state.objectUrls.add(url);
-      return url;
-    }
-    return null;
-  }
-
-  const coverCache = new WeakMap();
-  // IndexedDB returns fresh record/Blob objects after every progress write.
-  // Keep one URL for the same saved cover so decoded pixels survive refreshes.
-  const savedCoverUrls = new Map();
-
-  function cachedCover(book) {
-    const saved = savedCoverUrls.get(coverKeyFor(book));
-    if (saved) coverCache.set(book, saved);
-    return saved;
-  }
-
-  function rememberCover(book, url) {
-    coverCache.set(book, url);
-    if (url && (book.cover || book.coverBlob || book.coverUrl)) savedCoverUrls.set(coverKeyFor(book), url);
-    return url;
-  }
-
-  async function resolveCover(book) {
-    if (coverCache.has(book)) return coverCache.get(book);
-    const saved = cachedCover(book);
-    if (saved) return saved;
-    let url = null;
-    try {
-      if (typeof options.coverSrcFor === 'function') {
-        url = toUrl(await options.coverSrcFor(book));
-      }
-      if (!url) url = toUrl(book.cover ?? book.coverUrl ?? book.coverBlob);
-    } catch {
-      url = null; // una portada que falla no puede impedir abrir el libro
-    }
-    return rememberCover(book, url);
-  }
-
-  function coverKeyFor(book) {
-    const id = String(book?.id ?? book?.path ?? book?.title ?? 'book');
-    const cover = book?.cover ?? book?.coverBlob ?? book?.coverUrl;
-    if (typeof Blob !== 'undefined' && cover instanceof Blob) {
-      return `${id}|${book?.title ?? ''}|${cover.type}|${cover.size}|${cover.lastModified ?? ''}` +
-        (book.coverUpdatedAt ? `|${book.coverUpdatedAt}` : '');
-    }
-    if (typeof cover === 'string') return `${id}|${book?.title ?? ''}|${cover}`;
-    return `${id}|${book?.title ?? ''}|`;
-  }
+  // Covers (their URLs, the reading of their colour and cloth, the refresh of the spines that show them) are the
+  // shelf module's.
+  function resolveCover(book) { return shelfCtx.resolveCover(book); }
+  function coverKeyFor(book) { return shelfCtx.coverKeyFor(book); }
+  function maybeRefreshAppearanceStyles() { if (shelfCtxLive) shelfCtx.maybeRefreshAppearanceStyles(); }
+  function resolveCoverAppearance(book, knownUrl) { return shelfCtx.resolveCoverAppearance(book, knownUrl); }
+  function coverRatioFor(style, fallback) { return shelfCtx.coverRatioFor(style, fallback); }
+  function resolveCoverImmediately(book) { return shelfCtx.resolveCoverImmediately(book); }
+  function warmCover(book) { if (shelfCtxLive) shelfCtx.warmCover(book); }
 
   // The style of a shelf item, the CSS variables of a style and their update on a node are the shelf module's.
   function applyCoverAppearance(item, appearance) { return shelfNative.shelf_apply_cover_appearance(shelfCtx, item, appearance); }
   function spineStyleVars(style) { return shelfNative.shelf_spine_style_vars(style); }
   function updateBookStyleVars(node, style) { shelfNative.shelf_update_book_style_vars(node, style); }
 
-  function maybeRefreshAppearanceStyles() {
-    if (!state.appearanceRefreshPending || state.busy || state.session || state.returnMotion || state.dragSession || state.compatibilityTapTimer || state.destroyed) return;
-    state.appearanceRefreshPending = false;
-    scheduleRender();
-  }
-
-  function resolveCoverAppearance(book, knownUrl) {
-    const key = coverKeyFor(book);
-    const id = String(book?.id ?? book?.path ?? book?.title ?? 'book');
-    const cached = state.coverAppearances.get(id);
-    if (cached?.key === key && cached.complete !== false) return Promise.resolve(cached.appearance);
-    if (state.appearanceTasks.has(key)) return state.appearanceTasks.get(key);
-
-    // A cover upgraded mid-analysis (PDF imports) must not let the older,
-    // slower result overwrite the entry for the record now on the shelf.
-    const isStale = () => {
-      const current = state.books.find(candidate => String(candidate?.id ?? candidate?.path ?? candidate?.title ?? 'book') === id);
-      return Boolean(current) && coverKeyFor(current) !== key;
-    };
-    const task = (async () => {
-      const url = knownUrl || await resolveCover(book);
-      if (!url) {
-        if (!isStale()) state.coverAppearances.set(id, { key, appearance: null, complete: true });
-        return null;
-      }
-      const appearance = await analyzeCoverAppearance(url, book?.title ?? '');
-      if (state.destroyed) return null;
-      if (isStale()) return appearance;
-      state.coverAppearances.set(id, { key, appearance, complete: true });
-      if (!appearance) return null;
-      try {
-        await options.onCoverAppearance?.(book, appearance, key);
-      } catch (error) {
-        console.warn('No se pudo guardar el aspecto de la portada:', error);
-      }
-      const item = state.itemsById.get(id);
-      if (item && item.coverKey === key && applyCoverAppearance(item, appearance)) {
-        if (String(state.session?.book?.id ?? '') === id) {
-          state.session.view?.updateAppearance(item.style, { reuseModel:true });
-          updateBookStyleVars(state.session.bookNode, item.style);
-          updateBookStyleVars(state.session.bookNode?.querySelector('.ihr-flyout__face--cover'), item.style);
-        }
-        if (String(state.lastOpened?.book?.id ?? '') === id) state.lastOpened.style = item.style;
-        const existing = [...root.querySelectorAll('.ihr-spine')]
-          .find(node => node.dataset.bookId === id);
-        if (existing?.isConnected && !state.busy && !state.session && !state.returnMotion && !state.dragSession && !state.compatibilityTapTimer && state.pressedBookId !== id) {
-          if (state.shelfScene) {
-            state.shelfScene.updateEntry(existing, item.book, item.style, resolveCoverImmediately(item.book));
-            return appearance;
-          }
-          const hadFocus = document.activeElement === existing;
-          const replacement = buildSpine(item);
-          existing.replaceWith(replacement);
-          if (String(state.lastOpened?.book?.id ?? '') === id) state.lastOpened.spineEl = replacement;
-          if (hadFocus) replacement.focus({ preventScroll: true });
-        } else {
-          state.appearanceRefreshPending = true;
-        }
-      }
-      return appearance;
-    })().finally(() => state.appearanceTasks.delete(key));
-    state.appearanceTasks.set(key, task);
-    return task;
-  }
-
-  function quickCoverAppearance(book, url) {
-    if (!url) return Promise.resolve(null);
-    return new Promise(resolve => {
-      const timer = setTimeout(() => resolve(null), 20);
-      resolveCoverAppearance(book, url).then(appearance => {
-        clearTimeout(timer);
-        resolve(appearance);
-      }, () => {
-        clearTimeout(timer);
-        resolve(null);
-      });
-    });
-  }
-
-
-  function coverRatioFor(style, fallback = opts.coverRatio) {
-    return coverAspectRatio(style?.coverRatio, 1) || fallback;
-  }
 
 
   // El retorno desde el lector necesita su primer fotograma antes de que el
   // navegador pinte la estantería. La resolución normal usa `await` incluso
   // cuando la portada ya está en IndexedDB como Blob y deja un fotograma vacío.
-  function resolveCoverImmediately(book) {
-    if (coverCache.has(book)) return coverCache.get(book);
-    const saved = cachedCover(book);
-    if (saved) return saved;
-    try {
-      const source = typeof options.coverSrcFor === 'function'
-        ? options.coverSrcFor(book)
-        : book.cover ?? book.coverUrl ?? book.coverBlob;
-      if (source && typeof source.then === 'function') return null;
-      const url = toUrl(source) || toUrl(book.cover ?? book.coverUrl ?? book.coverBlob);
-      return rememberCover(book, url);
-    } catch {
-      return null;
-    }
-  }
-
   /** Precarga en pointerdown: cuando el giro enseña la cara, ya está pintada. */
-  function warmCover(book) {
-    resolveCover(book).then((url) => {
-      if (!url) return;
-      resolveCoverAppearance(book, url);
-      if (typeof Image !== 'undefined') {
-        const img = new Image();
-        img.decoding = 'async';
-        img.src = url;
-      }
-    });
-  }
-
   /* --------------------------- construcción --------------------------- */
 
   function buildActionBar() {
@@ -771,594 +636,38 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     ]);
   }
 
-  function shelfSpineNodes(section = null) {
-    return [...(section || scroller).querySelectorAll('.ihr-spine')];
+  // The objects on the shelf (lamps, plants), the drag that moves them and the bin are the shelf module's.
+  const objectKey = node => shelfCtx.objectKey(node);
+  function savePlants({ strict = false, initial = false } = {}) { if (shelfCtxLive) shelfCtx.savePlants(strict, initial); }
+  function lampShelfObject(record) { return shelfCtx.lampShelfObject(record); }
+  function plantScale() { return shelfCtx.plantScale(); }
+  function plantShelfObject(record, scale) { return shelfCtx.plantShelfObject(record, scale); }
+  function updateLampControl(node, record) { if (shelfCtxLive) shelfCtx.updateLampControl(node, record); }
+  function toggleLamp(node) { if (shelfCtxLive) shelfCtx.toggleLamp(node); }
+  // The catalogue may answer after the shelf is gone: the original refused then, as busy.
+  function addCatalogLamp(request, catalogOptions) {
+    return shelfCtxLive ? shelfCtx.addCatalogLamp(request, catalogOptions) : Promise.reject(new Error('Espera a que termine la animación.'));
   }
-
-  const objectKey = node => node.dataset.objectId || `book:${node.dataset.bookId}`;
-  const objectRects = () => new Map([...scroller.querySelectorAll('.ihr-spine, .ihr-plant, .ihr-lamp')]
-    .map(node => [objectKey(node), node.getBoundingClientRect()]));
-
-  function savePlants({ strict = false, initial = false } = {}) {
-    try { localStorage.setItem(SHELF_PLANTS_STORAGE_KEY, JSON.stringify(state.plants)); if (!initial) notifyCloudSettingsChanged(SHELF_PLANTS_STORAGE_KEY); }
-    catch (error) { if (strict) throw error; }
+  function addCatalogPlant(request, catalogOptions) {
+    return shelfCtxLive ? shelfCtx.addCatalogPlant(request, catalogOptions) : Promise.reject(new Error('Espera a que termine la animación.'));
   }
-
-  function saveLamps({ strict = false } = {}) {
-    try { localStorage.setItem(SHELF_LAMPS_STORAGE_KEY, JSON.stringify(state.lamps)); notifyCloudSettingsChanged(SHELF_LAMPS_STORAGE_KEY); }
-    catch (error) { if (strict) throw error; }
-  }
-
-  function lampShelfObject(record) {
-    const lamp = getCatalogLamp(record.lampId);
-    const scale = shelfScale({ shelfType:state.shelfType, shelfWidth:state.shelfWidth, viewportWidth:window.innerWidth });
-    return { ...record, kind:'lamp', mount:lamp.mount,
-      width:lamp.dimensions.width * scale, height:lamp.dimensions.height * scale,
-      depth:lamp.dimensions.depth * scale };
-  }
+  function moveObjectWithKeyboard(event, node) { if (shelfCtxLive) shelfCtx.moveObjectWithKeyboard(event, node); }
+  function reorderSpine(source, target, after = false) { if (shelfCtxLive) shelfCtx.reorderSpine(source, target, after); }
+  function startSpineDrag(event, node) { if (shelfCtxLive) shelfCtx.startSpineDrag(event, node); }
+  function moveSpineDrag(event, node) { if (shelfCtxLive) shelfCtx.moveSpineDrag(event, node); }
+  function isTouchTapRelease(event, drag, node, candidate) { return shelfCtx.isTouchTapRelease(event, drag, node, candidate); }
+  function finishSpineDrag(event, node, cancelled = false, activateTouch = false) { if (shelfCtxLive) shelfCtx.finishSpineDrag(event, node, cancelled, activateTouch); }
+  function cancelTrashRemoval() { if (shelfCtxLive) shelfCtx.cancelTrashRemoval(); }
+  function removeBookInTrash(node, trashOptions) { return shelfCtx.removeBookInTrash(node, trashOptions); }
+  function discardTouchCompatibilityClick(release) { if (shelfCtxLive) shelfCtx.discardTouchCompatibilityClick(release); }
+  function placementConfig() { return shelfCtx.placementConfig(); }
+  function clearPlacementPreview(drag) { if (shelfCtxLive) shelfCtx.clearPlacementPreview(drag); }
+  function shelfPadding() { return shelfCtx.shelfPadding(); }
 
   /** Real IKEA sizes are millimetres; scene pixels follow the shelf's scale. */
-  const plantScale = () => shelfScale({ shelfType:state.shelfType, shelfWidth:state.shelfWidth, viewportWidth:window.innerWidth });
-  function plantShelfObject(record, scale = plantScale()) {
-    const size = normalizeShelfPlant({ ...record, key:record.key || 'plant' });
-    const real = plantDimensions(size.catalogId, size.potId);
-    return { ...record, kind:'plant', width:size.width * scale, height:size.height * scale, depth:real.depth * scale };
-  }
-
-  function updateLampControl(node, record) {
-    const lamp = getCatalogLamp(record.lampId), isOn = record.isOn !== false;
-    node.dataset.lampOn = String(isOn);
-    node.setAttribute('aria-pressed', String(isOn));
-    node.setAttribute('aria-label', `${isOn ? 'Apagar' : 'Encender'} lámpara ${lamp.name}`);
-    node.title = `${lamp.name} · ${isOn ? 'Apagar' : 'Encender'}`;
-  }
-
-  function toggleLamp(node) {
-    if (state.destroyed || state.busy || state.session || state.dragSession || state.returnMotion || state.arranging) return;
-    const key = objectKey(node), record = state.lamps.find(lamp => lamp.key === key);
-    if (!record) return;
-    const previous = state.lamps, next = { ...record, isOn:record.isOn === false };
-    state.lamps = previous.map(lamp => lamp.key === key ? next : lamp);
-    try { saveLamps({ strict:true }); }
-    catch {
-      state.lamps = previous;
-      if (trashStatus) {
-        trashStatus.textContent = 'No se pudo guardar la lámpara. Reintenta.';
-        trashStatus.classList.add('is-error');
-      }
-      return;
-    }
-    state.placementObjects = state.placementObjects.map(item => item.key === key ? { ...item, isOn:next.isOn } : item);
-    updateLampControl(node, next);
-    state.shelfScene?.setLampPower(node, next.isOn, { animate:!prefersReducedMotion() });
-  }
-
-  async function addCatalogLamp({ lampId, kelvin }, { whenClosed = run => run() } = {}) {
-    if (state.destroyed || state.busy || state.session || state.dragSession || state.returnMotion)
-      throw new Error('Espera a que termine la animación.');
-    const lamp = getCatalogLamp(lampId);
-    if (!lamp) throw new Error('Elige una lámpara.');
-    const key = `lamp:${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
-    const record = normalizeShelfLamp({ key, seed:key, lampId:lamp.id, shelf:0, kelvin,
-      ...(lamp.mount === 'undershelf' ? { x:.5 } : {}) });
-    const previous = state.lamps, oldRects = objectRects();
-    const arranged = layoutShelfDecorations([...state.placementObjects, lampShelfObject(record)], placementConfig());
-    const positions = new Map(arranged.flatMap(shelf => shelf.items)
-      .map(item => [item.key, { shelf:item.shelf, x:item.x }]));
-    state.lamps = [...previous, record].map(item => ({ ...item, ...positions.get(item.key) }));
-    try { saveLamps({ strict:true }); }
-    catch (error) { state.lamps = previous; throw new Error('No se pudo guardar la lámpara. Reintenta.', { cause:error }); }
-    // Saved now; drawn as soon as the catalogue has closed.
-    whenClosed(() => {
-      if (state.destroyed) return;
-      render();
-      state.shelfScene?.animateFromRects(oldRects);
-      root.dataset.lastAddedLamp = key;
-    });
-  }
-
-  async function addCatalogPlant({ catalogId, potId, potColorId }, { whenClosed = run => run() } = {}) {
-    if (state.destroyed || state.busy || state.session || state.dragSession || state.returnMotion)
-      throw new Error('Espera a que termine la animación.');
-    const plant = getCatalogPlant(catalogId), pot = getCatalogPot(potId);
-    if (!plant || !pot) throw new Error('Elige una planta y una maceta.');
-    const key = `plant:${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
-    const viewport = scroller.getBoundingClientRect();
-    const destination = dropPositionAt(viewport.left + viewport.width * .4,
-      viewport.top + Math.min(viewport.height * .4, 260));
-    let record = { key, seed:key, catalogId:plant.id, variant:plant.variant, potId:pot.id, potColorId:getPotColor(pot.id,potColorId).id,
-      shelf:destination?.shelf ?? 0 };
-    const oldRects = objectRects(), previous = state.plants;
-    record = normalizeShelfPlant(record);
-    const objects = [...state.placementObjects, plantShelfObject(record)];
-    const arranged = layoutShelfDecorations(objects, placementConfig()).flatMap(shelf => shelf.items);
-    const positions = new Map(arranged.map(item => [item.key, { shelf:item.shelf, x:item.x }]));
-    state.plants = [...previous, record].map(item => ({ ...item, ...positions.get(item.key) }));
-    try { savePlants({ strict:true }); }
-    catch (error) { state.plants = previous; throw new Error('No se pudo guardar la planta. Vuelve a intentarlo.', { cause:error }); }
-    state.plantsInitialized = true;
-    // Saved now; drawn as soon as the catalogue has closed.
-    whenClosed(() => {
-      if (state.destroyed) return;
-      render();
-      state.shelfScene?.animateFromRects(oldRects);
-      root.dataset.lastAddedPlant = key;
-      const added = [...scroller.querySelectorAll('.ihr-plant')].find(node => objectKey(node) === key);
-      if (state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC) {
-        added?.scrollIntoView?.({ block:'nearest', behavior:prefersReducedMotion() ? 'instant' : 'smooth' });
-      }
-    });
-  }
-
-  function persistObjectPlacement(node, destination, oldRects = objectRects()) {
-    if (!destination || !state.placementObjects.length) return;
-    const result = moveShelfDecoration(state.placementObjects, objectKey(node), destination, placementConfig());
-    const changed = [];
-    state.books = state.books.map(book => {
-      const shelfPosition = result.placements[`book:${book.id}`];
-      if (!shelfPosition) return book;
-      if (JSON.stringify(book.shelfPosition) !== JSON.stringify(shelfPosition)) changed.push({ id:book.id, shelfPosition });
-      return { ...book, shelfPosition };
-    });
-    state.plants = state.plants.map(plant => ({ ...plant, ...result.placements[plant.key] }));
-    state.lamps = state.lamps.map(lamp => ({ ...lamp, ...result.placements[lamp.key] }));
-    savePlants();
-    saveLamps();
-    Promise.resolve(options.onShelfPlacementChange?.({ books:changed,
-      plants:Object.fromEntries(state.plants.map(plant => [plant.key, { shelf:plant.shelf, x:plant.x }])) }))
-      .catch(error => console.warn('No se pudo guardar la posición en la estantería:', error));
-    clearTimeout(state.reorderTimer);
-    state.reorderTimer = -1;
-    render();
-    state.shelfScene?.animateFromRects(oldRects, { draggedKey:objectKey(node) });
-    state.reorderTimer = setTimeout(() => {
-      state.reorderTimer = 0; applyDeferredShelfUpdates();
-    }, prefersReducedMotion() ? 0 : 560);
-  }
-
-  function moveObjectWithKeyboard(event, node) {
-    if (!event.shiftKey || !['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)) return;
-    event.preventDefault();
-    const item = state.placementObjects.find(item => item.key === objectKey(node));
-    if (!item) return;
-    const direction = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
-    const vertical = event.key === 'ArrowUp' || event.key === 'ArrowDown';
-    persistObjectPlacement(node, { shelf:Math.max(0, item.shelf + (vertical ? direction : 0)),
-      x:Math.max(0, Math.min(1, item.x + (vertical ? 0 : direction * .08))) });
-    [...scroller.querySelectorAll('[data-object-id]')].find(candidate => objectKey(candidate) === item.key)?.focus({ preventScroll:true });
-  }
-
-  function dropPositionAt(x, y, node = null) {
-    if (state.shelfScene) return state.shelfScene.getDropPosition(x, y, node);
-    const rows = [...scroller.querySelectorAll('.ihr-shelf__row')];
-    const nearest = rows.map((row, shelf) => {
-      const bounds = row.getBoundingClientRect();
-      return { shelf, bounds, distance:Math.max(bounds.top-y, 0, y-bounds.bottom) };
-    }).sort((a,b) => a.distance-b.distance)[0];
-    if (!nearest) return null;
-    return { shelf:nearest.shelf, x:Math.max(0, Math.min(1,
-      (x-nearest.bounds.left-shelfPadding())/(state.shelfWidth-shelfPadding()*2))) };
-  }
-
-  function updateDropPreview(drag, node) {
-    drag.overTrash = hitTrash(drag.x, drag.y, node);
-    trashNode?.classList.toggle('is-over', drag.overTrash);
-    state.shelfScene?.setTrashHover(drag.overTrash);
-    if (drag.overTrash) {
-      drag.destination = null;
-      cancelAnimationFrame(drag.previewFrame); drag.previewFrame = 0;
-      state.shelfScene?.setDropPosition(null);
-      state.shelfScene?.previewPlacements(null);
-      return;
-    }
-    drag.destination = dropPositionAt(drag.x, drag.y, node);
-    state.shelfScene?.setDropPosition(drag.destination);
-    if (drag.destination && !drag.previewFrame) drag.previewFrame = requestAnimationFrame(() => {
-      drag.previewFrame = 0;
-      if (state.dragSession !== drag || !drag.destination) return;
-      const preview = previewObjectPlacement(drag, objectKey(node), drag.destination);
-      if (state.dragSession !== drag || state.destroyed) return;
-      state.shelfScene?.previewPlacements(preview.objects, objectKey(node));
-    });
-  }
-
-  function continueDragScroll(drag, node) {
-    if (drag.scrollFrame || state.viewMode === SHELF_VIEW_MODES.ISOMETRIC) return;
-    const tick = () => {
-      drag.scrollFrame = 0;
-      if (state.dragSession !== drag || !drag.active || state.viewMode === SHELF_VIEW_MODES.ISOMETRIC) return;
-      if (drag.overTrash) return;
-      const bounds = scroller.getBoundingClientRect();
-      const delta = drag.y < bounds.top + 40 ? -12 : drag.y > bounds.bottom - 40 ? 12 : 0;
-      if (!delta) return;
-      const previous = scroller.scrollTop;
-      scroller.scrollTop += delta;
-      if (scroller.scrollTop === previous) return;
-      node.style.setProperty('--ihr-drag-y', `${drag.y-drag.startY+scroller.scrollTop-drag.scrollTop}px`);
-      updateDropPreview(drag, node);
-      drag.scrollFrame = requestAnimationFrame(tick);
-    };
-    drag.scrollFrame = requestAnimationFrame(tick);
-  }
-
-  function persistShelfDomOrder(oldRects = null) {
-    const orderedIds = shelfSpineNodes().map(node => node.dataset.bookId).filter(Boolean);
-    const rank = new Map(orderedIds.map((id, index) => [String(id), index]));
-    state.books = state.books.map(book => ({ ...book, shelfOrder: rank.get(String(book.id)) ?? Number.MAX_SAFE_INTEGER }));
-    // Storage notifies once per updated book. Keep the animated scene alive
-    // until its meshes have settled before applying those refreshed records.
-    clearTimeout(state.reorderTimer);
-    state.reorderTimer = -1;
-    cancelAnimationFrame(state.frame);
-    state.frame = 0;
-    Promise.resolve(options.onBookOrderChange?.(state.books.map(book => ({ id: book.id, shelfOrder: book.shelfOrder }))))
-      .catch(error => console.warn('No se pudo guardar el orden de la estantería:', error));
-    render();
-    // Start the quiet period after constructing the scene: on slower phones
-    // its first frame can take a significant part of the animation duration.
-    state.reorderTimer = setTimeout(() => {
-      state.reorderTimer = 0;
-      applyDeferredShelfUpdates();
-    }, prefersReducedMotion() ? 0 : 560);
-    if (!oldRects || prefersReducedMotion()) return;
-    if (state.shelfScene) { state.shelfScene.animateFromRects(oldRects); return; }
-    for (const node of shelfSpineNodes()) {
-      const old = oldRects.get(node.dataset.bookId);
-      if (!old) continue;
-      const rect = node.getBoundingClientRect();
-      const dx = old.left - rect.left, dy = old.top - rect.top;
-      if (Math.abs(dx) + Math.abs(dy) < 1) continue;
-      node.animate([
-        { transform: `translate3d(${dx}px,${dy}px,64px) rotateY(${dx < 0 ? -13 : 13}deg) rotateX(-5deg)` },
-        { transform: 'translate3d(0,0,0) rotateY(0) rotateX(0)' }
-      ], { duration: 520, easing: 'cubic-bezier(.2,.75,.22,1)' });
-    }
-  }
-
-  function reorderSpine(source, target, after = false) {
-    if (!source || !target || source === target || source.closest('.ihr-section') !== target.closest('.ihr-section')) return;
-    const oldRects = new Map(shelfSpineNodes().map(node => [node.dataset.bookId, node.getBoundingClientRect()]));
-    const reference = after ? target.nextSibling : target;
-    target.parentElement.insertBefore(source, reference);
-    persistShelfDomOrder(oldRects);
-  }
-
-  function startSpineDrag(event, node) {
-    if ((event.button !== undefined && event.button !== 0) || state.dragSession || state.busy || state.session || state.returnMotion) return;
-    clearCompatibilityTapRefresh();
-    state.suppressLampClickKey = null;
-    let backgroundOnly = false;
-    const pressed = node;
-    if (state.shelfScene) {
-      const hit = state.shelfScene.getObjectAtPoint(event.clientX, event.clientY);
-      backgroundOnly = !hit;
-      if (hit && hit !== node) { node.classList.remove('is-pressed', 'is-press-pending'); state.pressedBookId = null; }
-      node = hit || node;
-    }
-    if (!backgroundOnly && event.pointerType === 'touch' && node.matches('.ihr-plant, .ihr-lamp')) {
-      event.preventDefault();
-      const stage = node.closest('.ihr-shelf-stage'), selection = window.getSelection?.();
-      if (stage && selection && (stage.contains(selection.anchorNode) || stage.contains(selection.focusNode)))
-        selection.removeAllRanges();
-    }
-    const drag = state.dragSession = {
-      node, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
-      x: event.clientX, y: event.clientY, scrollTop: scroller.scrollTop,
-      pointerType: event.pointerType, target: null, after: false, moved: false,
-      active: false, scrolling: false, cancelled: false, timer: 0,
-      bookTapValid: !backgroundOnly && node.classList.contains('ihr-spine'),
-      // The 3D hit belongs to another button than the one touched (a lamp's
-      // square over a book, or the reverse): pointer capture hands the release
-      // to the hit's own button, which then owns the tap.
-      redirected: !backgroundOnly && node !== pressed
-    };
-    try { node.setPointerCapture?.(event.pointerId); } catch { /* el navegador pudo cancelar el puntero */ }
-    // Rotated hit rectangles contain some empty space. It must still scroll
-    // naturally on touch, without starting a hold on an occluded book.
-    if (backgroundOnly) { node.classList.remove('is-pressed', 'is-press-pending'); return; }
-    drag.timer = setTimeout(() => {
-      if (state.dragSession !== drag || state.destroyed) return;
-      drag.active = true;
-      state.arranging = true;
-      root.classList.add('is-arranging');
-      node.classList.remove('is-pressed', 'is-press-pending');
-      node.classList.add('is-lifted');
-      state.shelfScene?.flush();
-    }, REORDER_HOLD_MS);
-  }
-
-  function moveSpineDrag(event, node) {
-    const drag = state.dragSession;
-    if (!drag || drag.node !== node || drag.pointerId !== event.pointerId) return;
-    if (!drag.active) {
-      if (drag.cancelled) return;
-      if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > TAP_SLOP) {
-        clearTimeout(drag.timer);
-        if (state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC && drag.pointerType === 'touch' && Math.abs(event.clientY - drag.startY) > Math.abs(event.clientX - drag.startX)) {
-          drag.scrolling = true;
-        } else {
-          drag.cancelled = true;
-        }
-      }
-      if (drag.scrolling) {
-        event.preventDefault();
-        scroller.scrollTop = drag.scrollTop + drag.startY - event.clientY;
-      }
-      return;
-    }
-    event.preventDefault();
-    drag.x = event.clientX; drag.y = event.clientY;
-    const dx = drag.x - drag.startX, dy = drag.y - drag.startY + scroller.scrollTop - drag.scrollTop;
-    drag.moved = true;
-    node.classList.remove('is-lifted');
-    node.classList.add('is-dragging');
-    node.style.setProperty('--ihr-drag-x', `${dx}px`);
-    node.style.setProperty('--ihr-drag-y', `${dy}px`);
-    if (!opts.sections) {
-      updateDropPreview(drag, node);
-      continueDragScroll(drag, node);
-      return;
-    }
-    node.style.pointerEvents = 'none';
-    const hit = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('.ihr-spine');
-    node.style.pointerEvents = '';
-    const section = node.closest('.ihr-section');
-    const candidates = [...(section?.querySelectorAll('.ihr-spine') || [])].filter(candidate => candidate !== node);
-    const target = hit && hit !== node && hit.closest('.ihr-section') === section
-      ? hit
-      : candidates.map(candidate => {
-        const rect = candidate.getBoundingClientRect();
-        const dx = Math.max(rect.left - event.clientX, 0, event.clientX - rect.right);
-        const dy = Math.max(rect.top - event.clientY, 0, event.clientY - rect.bottom);
-        return { candidate, distance:Math.hypot(dx, dy) };
-      }).sort((a,b) => a.distance - b.distance)[0]?.candidate;
-    drag.target?.classList.remove('is-drop-target', 'is-drop-before', 'is-drop-after');
-    drag.target = target;
-    drag.after = Boolean(target && event.clientX > target.getBoundingClientRect().left + target.getBoundingClientRect().width / 2);
-    target?.classList.add('is-drop-target', drag.after ? 'is-drop-after' : 'is-drop-before');
-  }
-
   /** A touch released where it started, on `node`'s own unmoved hold. The
    * touch is this button's validated contact (`candidate`), or a contact
    * another button received whose 3D hit was this one (`drag.redirected`). */
-  function isTouchTapRelease(event, drag, node, candidate) {
-    if (event.pointerType !== 'touch' || drag?.pointerId !== event.pointerId || drag.node !== node ||
-      drag.active || drag.moved || drag.cancelled || drag.scrolling || state.arranging) return false;
-    if (candidate) return candidate.valid && !candidate.cancelled &&
-      Math.hypot(event.clientX - candidate.x, event.clientY - candidate.y) <= TAP_SLOP;
-    return drag.redirected && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) <= TAP_SLOP;
-  }
-
-  function finishSpineDrag(event, node, cancelled = false, activateTouch = false) {
-    const drag = state.dragSession;
-    if (!drag || drag.node !== node || drag.pointerId !== event.pointerId) return;
-    clearTimeout(drag.timer);
-    clearPlacementPreview(drag);
-    cancelAnimationFrame(drag.previewFrame);
-    cancelAnimationFrame(drag.scrollFrame);
-    const discard = drag.active && drag.moved && !cancelled && !drag.cancelled &&
-      hitTrash(event.clientX ?? drag.x, event.clientY ?? drag.y, node);
-    const discardDuration = prefersReducedMotion() ? 1 : 820;
-    let discardMotion = null, discardRect = null;
-    if (discard) {
-      // Capture the moving model before resetting its drag offset. The drop
-      // starts at the pointer, with no jump back to its old slot.
-      state.shelfScene?.flush();
-      discardRect = node.getBoundingClientRect();
-      discardMotion = state.shelfScene?.animateObjectToTrash(node, { duration:discardDuration });
-    }
-    const oldRects = drag.active && drag.moved ? objectRects() : null;
-    state.dragSession = null;
-    if (node.classList.contains('ihr-lamp') && (drag.active || drag.scrolling || drag.cancelled || cancelled))
-      state.suppressLampClickKey = objectKey(node);
-    state.shelfScene?.setDropPosition(null);
-    state.shelfScene?.previewPlacements(null);
-    if (!discard) { trashNode?.classList.remove('is-over'); state.shelfScene?.setTrashHover(false); }
-    drag.target?.classList.remove('is-drop-target', 'is-drop-before', 'is-drop-after');
-    node.classList.remove('is-dragging', 'is-lifted', 'is-press-pending');
-    node.style.removeProperty('--ihr-drag-x');
-    node.style.removeProperty('--ihr-drag-y');
-    node.style.pointerEvents = '';
-    try { node.releasePointerCapture?.(event.pointerId); } catch { /* captura ya liberada */ }
-    if (drag.scrolling || drag.cancelled) {
-      state.suppressOpenBookId = String(node.dataset.bookId || '');
-      setTimeout(() => { state.suppressOpenBookId = null; }, 0);
-      applyDeferredShelfUpdates();
-      return;
-    }
-    if (!drag.active) {
-      // Keep the validated semantic hit alive until its compatibility click
-      // or synchronous touch activation. A WebGL refresh replaces it too.
-      if (!cancelled && !drag.cancelled && !drag.moved && drag.bookTapValid &&
-          (drag.pointerType === 'mouse' || activateTouch))
-        deferCompatibilityTapRefresh();
-      else applyDeferredShelfUpdates();
-      return;
-    }
-    state.arranging = false;
-    root.classList.remove('is-arranging');
-    state.suppressOpenBookId = String(node.dataset.bookId || '');
-    setTimeout(() => { state.suppressOpenBookId = null; }, 0);
-    if (discard) { void removeBookInTrash(node, { motion:discardMotion, rect:discardRect, duration:discardDuration }); return; }
-    if (drag.moved && !cancelled && !opts.sections && drag.destination) persistObjectPlacement(node, drag.destination, oldRects);
-    else if (drag.moved && !cancelled && drag.target) reorderSpine(node, drag.target, drag.after);
-    else { state.shelfScene?.flush(); applyDeferredShelfUpdates(); }
-  }
-
-  function hitTrash(x, y, node) {
-    if (!trashNode || state.viewMode !== SHELF_VIEW_MODES.ISOMETRIC ||
-      !(node?.matches('.ihr-plant, .ihr-lamp') || hasBookTrash && node?.classList.contains('ihr-spine'))) return false;
-    // The scene flushes its pending scroll frame before testing the bin. Its
-    // DOM target can still be hidden just as a held object reaches the floor.
-    if (state.shelfScene) return state.shelfScene.hitTrash(x, y);
-    if (trashNode.hidden) return false;
-    const bounds = trashNode.getBoundingClientRect();
-    return bounds.width > 0 && bounds.height > 0 && x >= bounds.left - 8 && x <= bounds.right + 8 &&
-      y >= bounds.top - 12 && y <= bounds.bottom + 8;
-  }
-
-  function cancelTrashRemoval() {
-    const operation = state.trashRemoval;
-    if (!operation || operation.persisting) return;
-    operation.cancelled = true;
-    operation.motion?.cancel?.(); operation.clone?.remove();
-    operation.node.classList.remove('is-away');
-    trashNode?.classList.remove('is-over'); state.shelfScene?.setTrashHover(false);
-    state.trashRemoval = null; state.busy = false;
-    root.classList.remove('is-discarding');
-    state.shelfScene?.flush();
-    applyDeferredShelfUpdates();
-  }
-
-  async function removeBookInTrash(node, { motion, rect, duration = prefersReducedMotion() ? 1 : 820 } = {}) {
-    const plant = node.classList.contains('ihr-plant') ? state.plants.find(item => item.key === objectKey(node)) : null;
-    const lamp = node.classList.contains('ihr-lamp') ? state.lamps.find(item => item.key === objectKey(node)) : null;
-    const item = plant || lamp ? null : state.itemsById.get(node.dataset.bookId);
-    if (!hasTrash || !(plant || lamp || hasBookTrash && item) || state.busy || state.destroyed) { motion?.cancel?.(); return; }
-    const operation = { node, motion, cancelled:false, persisting:false, clone:null };
-    state.trashRemoval = operation; state.busy = true;
-    root.classList.add('is-discarding');
-    clearTimeout(state.trashStatusTimer); trashStatus.textContent = ''; trashStatus.classList.remove('is-error'); trashAnnounce.textContent = '';
-    node.classList.add('is-away');
-    trashNode.classList.add('is-over');
-    try {
-      if (!motion && !trashNode.hidden && state.viewMode === SHELF_VIEW_MODES.ISOMETRIC) {
-        const start = rect || node.getBoundingClientRect(), target = trashNode.getBoundingClientRect();
-        const clone = operation.clone = node.cloneNode(true);
-        clone.classList.remove('is-away','is-dragging','is-lifted');
-        clone.classList.add('ihr-trash-flight');
-        clone.removeAttribute('data-book-id'); clone.setAttribute('aria-hidden','true'); clone.tabIndex = -1;
-        Object.assign(clone.style, { position:'fixed', left:`${start.left}px`, top:`${start.top}px`,
-          width:`${start.width}px`, height:`${start.height}px`, margin:'0', zIndex:'90', pointerEvents:'none' });
-        document.body.append(clone);
-        const dx = target.left + target.width/2 - start.left - start.width/2;
-        const dy = target.top + target.height*.6 - start.top - start.height/2;
-        operation.motion = animate(clone, [
-          { transform:'translate3d(0,0,0) rotateY(0deg) scale(1)', opacity:1 },
-          { transform:`translate3d(${dx*.65}px,${dy*.45-30}px,80px) rotateY(45deg) rotateZ(-18deg) scale(.65)`, opacity:1, offset:.55 },
-          { transform:`translate3d(${dx}px,${dy}px,-10px) rotateY(82deg) rotateZ(-32deg) scale(.12)`, opacity:0 }
-        ], { duration, easing:EASE, fill:'both' });
-      }
-      // Keyboard removal still works in the frontal view without flying to
-      // a hidden bin. Dragging to the visible isometric bin retains its flight.
-      const landed = operation.motion ? await waitForMotion(operation.motion, duration) : true;
-      if (!landed) { operation.cancelled = true; node.classList.remove('is-away'); return; }
-      if (operation.cancelled || state.trashRemoval !== operation || state.destroyed) return;
-      // Delete the app's record only after the model has landed. External
-      // originals are managed by the application callback and stay intact.
-      operation.persisting = true;
-      if (lamp) {
-        const previous = state.lamps;
-        state.lamps = state.lamps.filter(record => record.key !== lamp.key);
-        try { saveLamps({ strict:true }); }
-        catch (error) { state.lamps = previous; throw error; }
-        trashAnnounce.textContent = `${getCatalogLamp(lamp.lampId).name} retirada de la estantería`;
-        root.dataset.lastRemovedLamp = lamp.key;
-        return;
-      }
-      if (plant) {
-        const previous = state.plants;
-        state.plants = state.plants.filter(item => item.key !== plant.key);
-        try { savePlants({ strict:true }); }
-        catch (error) { state.plants = previous; throw error; }
-        state.plantsInitialized = true;
-        trashAnnounce.textContent = `${getCatalogPlant(plant.catalogId)?.name || 'Planta'} retirada de la estantería`;
-        root.dataset.lastRemovedPlant = plant.key;
-        return;
-      }
-      // The book has landed in the bin: take it off the shelf now and let
-      // the stored removal finish in the background. Waiting for IndexedDB
-      // (and the Drive-removed memory) here held the whole page still on a
-      // large library. A failed write puts the book back, visibly.
-      const id = String(item.book.id);
-      const index = state.books.findIndex(book => String(book.id) === id);
-      let persisted;
-      try { persisted = Promise.resolve(options.onBookRemove(item.book)); }
-      catch (error) { persisted = Promise.reject(error); }
-      state.pendingRemovals.add(id);
-      state.books = state.books.filter(book => String(book.id) !== id);
-      if (state.queuedBooks) state.queuedBooks = state.queuedBooks.filter(book => String(book.id) !== id);
-      if (String(state.lastOpened?.book.id) === id) state.lastOpened = null;
-      state.coverAppearances.delete(id); coverCache.delete(item.book);
-      for (const [key,url] of savedCoverUrls) if (key.startsWith(`${id}|`)) {
-        savedCoverUrls.delete(key);
-        if (state.objectUrls.delete(url)) URL.revokeObjectURL?.(url);
-      }
-      trashAnnounce.textContent = `${displayBookTitle(item.book) || 'Libro'} retirado de la estantería`;
-      root.dataset.lastRemovedBook = id;
-      persisted.then(() => { state.pendingRemovals.delete(id); }, error => {
-        state.pendingRemovals.delete(id);
-        console.warn('No se pudo retirar el objeto de la estantería:', error);
-        if (state.destroyed) return;
-        trashAnnounce.textContent = '';
-        trashStatus.textContent = 'No se pudo retirar el libro. Vuelve a intentarlo.';
-        trashStatus.classList.add('is-error');
-        clearTimeout(state.trashStatusTimer);
-        state.trashStatusTimer = setTimeout(() => { trashStatus.textContent = ''; }, 6500);
-        delete root.dataset.lastRemovedBook;
-        const restore = list => {
-          if (list.some(book => String(book.id) === id)) return list;
-          const next = list.slice(); next.splice(index < 0 ? next.length : Math.min(index, next.length), 0, item.book);
-          return next;
-        };
-        // While another removal keeps the shelf busy only the queue is updated: refresh() would replace it with a
-        // list built from state.books, dropping any book a sync queued in the meantime.
-        if (state.queuedBooks) state.queuedBooks = restore(state.queuedBooks);
-        else refresh(restore(state.books));
-      });
-    } catch (error) {
-      operation.motion?.cancel?.(); node.classList.remove('is-away');
-      trashStatus.textContent = `No se pudo retirar ${plant ? 'la planta' : lamp ? 'la lámpara' : 'el libro'}. Reintenta.`;
-      trashStatus.classList.add('is-error');
-      state.trashStatusTimer = setTimeout(() => { trashStatus.textContent = ''; }, 6500);
-      console.warn('No se pudo retirar el objeto de la estantería:', error);
-    } finally {
-      operation.clone?.remove();
-      if (state.trashRemoval === operation) {
-        state.trashRemoval = null; state.busy = false;
-        root.classList.remove('is-discarding'); trashNode.classList.remove('is-over');
-        state.shelfScene?.setTrashHover(false);
-        if (!state.destroyed) {
-          // A sync may have queued newer records during the flight. Paint
-          // that final list once, instead of painting the old list and then
-          // immediately rebuilding its layout when the queue is drained.
-          if (state.queuedBooks) {
-            const nextBooks = state.queuedBooks;
-            state.queuedBooks = null;
-            refresh(nextBooks);
-          } else render();
-          applyDeferredShelfUpdates();
-        }
-      }
-    }
-  }
-
-  let clearOpeningClick = null;
-  function discardTouchCompatibilityClick(release) {
-    clearOpeningClick?.();
-    // A touch handled on pointerup can still click a newly projected surface
-    // or flyout. Consume that contact's click before any surface acts twice.
-    // A new contact or keyboard action ends the guard without a time window.
-    const clear = () => {
-      document.removeEventListener('click', discard, true);
-      document.removeEventListener('pointerdown', clear, true);
-      document.removeEventListener('keydown', clear, true);
-      if (clearOpeningClick === clear) clearOpeningClick = null;
-    };
-    const discard = event => {
-      if (!pointerClick(event) || event.pointerType && event.pointerType !== 'touch') return;
-      if (event.pointerId !== undefined && event.pointerId !== release.pointerId) return;
-      if (Math.hypot(event.clientX - release.clientX, event.clientY - release.clientY) > TAP_SLOP) return;
-      clear();
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    };
-    clearOpeningClick = clear;
-    document.addEventListener('click', discard, true);
-    document.addEventListener('pointerdown', clear, true);
-    document.addEventListener('keydown', clear, true);
-  }
-
   function bookGeometryState(book) { return options.getBookGeometryState?.(book) || 'ready'; }
 
   function buildGeometryStatus(books) {
@@ -1672,42 +981,6 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
     unit.append(row);
     unit.append(el('div', { class: 'ihr-shelf__board', 'aria-hidden': 'true' }));
     return unit;
-  }
-
-  function placementConfig() {
-    return { shelfWidth:state.shelfWidth, padding:shelfPadding(), gap:opts.gap,
-      minShelves:Math.max(3, Number(opts.minimumShelves) || 3) };
-  }
-
-  function clearPlacementPreview(drag = state.dragSession) {
-    drag?.placementSnapshot?.session?.dispose();
-    if (drag) drag.placementSnapshot = null;
-  }
-
-  function previewObjectPlacement(drag, key, destination) {
-    const cfg = placementConfig(), objects = state.placementObjects, core = getRustCore();
-    if (!core) return moveShelfDecoration(objects, key, destination, cfg);
-    const viewport = window.visualViewport;
-    const width = viewport?.width ?? window.innerWidth, height = viewport?.height ?? window.innerHeight;
-    const scale = viewport?.scale ?? 1, pixelRatio = window.devicePixelRatio || 1;
-    let current = drag.placementSnapshot;
-    if (!current || current.objects !== objects || current.shelfType !== state.shelfType || current.viewMode !== state.viewMode ||
-        current.width !== width || current.height !== height || current.scale !== scale || current.pixelRatio !== pixelRatio ||
-        current.cfg.shelfWidth !== cfg.shelfWidth || current.cfg.padding !== cfg.padding || current.cfg.gap !== cfg.gap ||
-        current.cfg.minShelves !== cfg.minShelves) {
-      clearPlacementPreview(drag);
-      // The session copies its own immutable records. The application's
-      // mutable objects are neither branded nor re-used as trusted inputs.
-      current = drag.placementSnapshot = { objects, cfg, width, height, scale, pixelRatio,
-        shelfType:state.shelfType, viewMode:state.viewMode, session:createShelfPlacementPreview(objects, cfg) };
-    }
-    return current.session?.move(core, key, destination.shelf, destination.x)
-      ?? moveShelfDecoration(objects, key, destination, cfg);
-  }
-
-  function shelfPadding() {
-    // Both shelves are 600 mm units: the same side clearance, in millimetres.
-    return Math.max(16, (BAGGEBO_SPEC.postSize + 4) * state.shelfWidth / BAGGEBO_SPEC.width);
   }
 
   function freelyPlacedShelves(shelves) {
@@ -2251,7 +1524,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       finishReturnSlot(false);
       clearCompatibilityTapRefresh();
       returnViews.clear();
-      clearOpeningClick?.();
+      if (shelfCtxLive) shelfCtx.clearOpeningClick();
       plantCatalog.destroy(); shelfViewGesture.destroy(); shelfZoom.destroy();
       cancelTrashRemoval();
       if (state.dragSession) finishSpineDrag({ pointerId:state.dragSession.pointerId }, state.dragSession.node, true);
@@ -2259,8 +1532,7 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       state.returnMotion?.cancel();
       state.session?.close({ instant: true, silent: true });
       if (state.frame) cancelAnimationFrame(state.frame);
-      clearTimeout(state.reorderTimer);
-      clearTimeout(state.trashStatusTimer);
+      if (shelfCtxLive) { shelfCtx.clearTimer(state.reorderTimer); shelfCtx.clearTimer(state.trashStatusTimer); }
       observer?.disconnect();
       state.shelfScene?.dispose();
       window.removeEventListener('resize', onViewportResize);

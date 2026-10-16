@@ -18,16 +18,21 @@ impl<T> Slot<T>{
 }
 
 /// The pose a lifted book starts from, taken from where it sat on the shelf.
-#[derive(Clone,Copy)]
-pub(super) struct Start{pub dx:f64,pub dy:f64,pub scale:f64,pub angle:f64,pub pitch:f64,pub roll:f64}
+#[derive(Clone)]
+pub(super) struct Start{pub dx:f64,pub dy:f64,pub scale:f64,pub angle:f64,pub pitch:f64,pub roll:f64,
+ /// The angle, pitch and roll exactly as the scene gave them (they go on to the view untouched, whatever they are).
+ pub raw:Option<(JsValue,JsValue,JsValue)>}
 impl Start{
- pub(super) fn pose(&self)->JsValue{obj(&[("x",&f(self.dx)),("y",&f(self.dy)),("scale",&f(self.scale)),("angle",&f(self.angle)),("pitch",&f(self.pitch)),("roll",&f(self.roll))])}
+ pub(super) fn pose(&self)->JsValue{
+  let (angle,pitch,roll)=match &self.raw{Some((a,p,r))=>(a.clone(),p.clone(),r.clone()),None=>(f(self.angle),f(self.pitch),f(self.roll))};
+  obj(&[("x",&f(self.dx)),("y",&f(self.dy)),("scale",&f(self.scale)),("angle",&angle),("pitch",&pitch),("roll",&roll)])
+ }
 }
 
 pub struct Flyout{
  pub(super) ctx:Rc<Ctx>,pub(super) me:RefCell<Weak<Flyout>>,pub(super) keep:Keep,
  pub(super) book:JsValue,pub(super) item:JsValue,pub(super) view:JsValue,pub(super) cover_url:JsValue,pub(super) session:JsValue,
- pub(super) spine_el:RefCell<JsValue>,pub(super) previous_focus:RefCell<JsValue>,pub(super) geo:Geometry,pub(super) start:Cell<Start>,pub(super) lift:f64,
+ pub(super) spine_el:RefCell<JsValue>,pub(super) previous_focus:RefCell<JsValue>,pub(super) geo:Geometry,pub(super) start:RefCell<Start>,pub(super) lift:f64,
  pub(super) scrim:JsValue,pub(super) book_node:JsValue,pub(super) meta:JsValue,pub(super) readiness:JsValue,pub(super) cover_target:JsValue,
  pub(super) flyout:JsValue,pub(super) close_button:JsValue,pub(super) action_buttons:RefCell<Vec<JsValue>>,pub(super) cloud_action:RefCell<JsValue>,
  pub(super) slot:Rc<Slot<Flyout>>,pub(super) callbacks:Callbacks,
@@ -79,7 +84,7 @@ impl Flyout{
  pub(super) fn tf(x:f64,y:f64,scale:f64,angle:f64)->JsValue{
   obj(&[("x",&f(x)),("y",&f(y)),("scale",&f(scale)),("angle",&f(angle)),("pitch",&f(max(0.0,(90.0-angle)/90.0)*7.0))])
  }
- pub(super) fn scale_at(&self,t:f64)->f64{let start=self.start.get().scale;start+(1.0-start)*t}
+ pub(super) fn scale_at(&self,t:f64)->f64{let start=self.start.borrow().scale;start+(1.0-start)*t}
  /// `animateBook(frames, timing)`: the view's animation, or a placeholder animation of the DOM book.
  pub(super) fn animate_book(&self,frames:&JsValue,timing:&JsValue)->R<JsValue>{
   if self.has_view(){method(&self.view,"animate",&[frames,timing])}
@@ -103,7 +108,7 @@ impl Flyout{
   if !silent&&!instant&&get(&previous,"focus").is_function(){focus(&previous);}
   // The session is over: nothing keeps the lifted book alive but the code still running on its behalf.
   self.slot.clear();
-  self.ctx.legacy("maybeRefreshAppearanceStyles",&[])?;
+  super::covers::maybe_refresh_appearance_styles(&self.ctx)?;
   self.ctx.legacy("applyDeferredShelfUpdates",&[])?;
   Ok(())
  }
@@ -257,12 +262,12 @@ async fn open(ctx:Rc<Ctx>,mut spine_el:JsValue,mut item:JsValue)->R{
  let _=get(&spine_el,"offsetWidth");
  put(&spine_style,"transition",&previous_transition);
 
- let cover_url=settle_value(ctx.legacy("resolveCover",&[&book])?).await?;
+ let cover_url=settle_value(super::covers::resolve_cover_promise(&ctx,&book)).await?;
  if pending.cancelled.get()||ctx.st_true("destroyed"){pending.finish();return Ok(());}
  let image_ratio=settle_value(ctx.env("readCoverAspectRatio",&[&cover_url])?).await?;
  if pending.cancelled.get()||ctx.st_true("destroyed"){pending.finish();return Ok(());}
  if truthy(&image_ratio){put(&item,"style",&spread(&[&get(&item,"style"),&obj(&[("coverRatio",&image_ratio)])]));}
- let appearance=settle_value(ctx.legacy("quickCoverAppearance",&[&book,&cover_url])?).await?;
+ let appearance=settle_value(super::covers::quick_cover_appearance(&ctx,&book,&cover_url)?).await?;
  if pending.cancelled.get()||ctx.st_true("destroyed"){pending.finish();return Ok(());}
  if truthy(&appearance){apply_cover_appearance(&ctx,&item,&appearance)?;}
  if get(&item,"style")!=initial_style&&is_connected(&spine_el){
@@ -286,7 +291,7 @@ async fn open(ctx:Rc<Ctx>,mut spine_el:JsValue,mut item:JsValue)->R{
  let vw=if width_now.is_nan()||width_now==0.0{390.0}else{width_now};
  let vh=if height_now.is_nan()||height_now==0.0{780.0}else{height_now};
  let landscape=vh<=560.0&&vw>=560.0;
- let ratio=num(&ctx.legacy("coverRatioFor",&[&style_value])?);
+ let ratio=num(&super::covers::cover_ratio_for(&ctx,&style_value,&undef())?);
  // Match the model's physical front board to the image ratio before sizing its reveal. This keeps the same
  // silhouette on the shelf and in flight.
  let has_pose=truthy(&source_pose);
@@ -303,7 +308,8 @@ async fn open(ctx:Rc<Ctx>,mut spine_el:JsValue,mut item:JsValue)->R{
  let start=Start{
   dx:(if has_pose&&!nullish(&get(&source_pose,"centerX")){gn(&source_pose,"centerX")}else{gn(&rect_value,"left")+rect_w/2.0})-center_x,
   dy:(if has_pose&&!nullish(&get(&source_pose,"centerY")){gn(&source_pose,"centerY")}else{gn(&rect_value,"top")+rect_h/2.0})-center_y,
-  scale:start_scale,angle:pose_value("angle",90.0),pitch:pose_value("pitch",0.0),roll:pose_value("roll",0.0)};
+  scale:start_scale,angle:pose_value("angle",90.0),pitch:pose_value("pitch",0.0),roll:pose_value("roll",0.0),
+  raw:if has_pose{Some((coalesce(get(&source_pose,"angle"),f(90.0)),coalesce(get(&source_pose,"pitch"),f(0.0)),coalesce(get(&source_pose,"roll"),f(0.0))))}else{None}};
 
  let scrim=El::new("div").class("ihr-flyout__scrim").done();
  let book_node=El::new("div").class("ihr-flyout__book").style(&format!("width:{}px;height:{}px;left:{}px;top:{}px;--ihr-thickness:{}px;{}",
@@ -377,7 +383,7 @@ async fn open(ctx:Rc<Ctx>,mut spine_el:JsValue,mut item:JsValue)->R{
  let slot=Slot::new();
  let flyout_rc=Rc::new(Flyout{
   ctx:ctx.clone(),me:RefCell::new(Weak::new()),keep:keep(),book:book.clone(),item:item.clone(),view:view.clone(),cover_url:cover_url.clone(),session:session.clone(),
-  spine_el:RefCell::new(spine_el.clone()),previous_focus:RefCell::new(previous_focus),geo,start:Cell::new(start),lift,
+  spine_el:RefCell::new(spine_el.clone()),previous_focus:RefCell::new(previous_focus),geo,start:RefCell::new(start),lift,
   scrim,book_node,meta,readiness,cover_target,flyout,close_button,action_buttons:RefCell::new(Vec::new()),cloud_action:RefCell::new(null()),slot:slot.clone(),callbacks:Callbacks::new(),
   settle:settle_fn.clone(),editor:RefCell::new(None),ready_check:RefCell::new(None),key_listener:RefCell::new(None),meta_entrance:RefCell::new(undef()),
   handlers:RefCell::new(Vec::new()),
@@ -541,19 +547,21 @@ impl Flyout{
   if self.has_view()&&truthy(&handoff){
    let g=self.geo;
    let roll=get(&handoff,"roll");
-   let mut start=self.start.get();
+   let mut start=self.start.borrow().clone();
    start.dx=gn(&handoff,"centerX")-g.center_x;
    start.dy=gn(&handoff,"centerY")-g.center_y;
    start.scale=gn(&handoff,"scale")*gn(&handoff,"height")/g.cover_h;
    start.angle=gn(&handoff,"angle");start.pitch=gn(&handoff,"pitch");
    start.roll=if nullish(&roll){0.0}else{num(&roll)};
-   self.start.set(start);
+   start.raw=Some((get(&handoff,"angle"),get(&handoff,"pitch"),coalesce(roll.clone(),f(0.0))));
+   *self.start.borrow_mut()=start.clone();
    method(&self.view,"draw",&[&start.pose(),&obj(&[("redraw",&JsValue::FALSE)])])?;
   }
   append(&get(&document(),"body"),&self.flyout);
   // The cover is ready and the final shelf pose is known. Paint once in its connected stage before replacing
   // the resting book; detached setup needs no GPU draw or full-screen readback.
-  self.view_do("draw",&[&self.start.get().pose()])?;
+  let pose=self.start.borrow().pose();
+  self.view_do("draw",&[&pose])?;
   cls_add(&self.spine(),&["is-away"]);
   self.scene_do("flush",&[])?;
   self.scene_opt("setModalBackgroundDeferred",&[&self.spine()])?;
@@ -562,7 +570,7 @@ impl Flyout{
   let reduce=prefers_reduced_motion();
   let revealed=num(&self.ctx.opts_get("revealDuration"));
   let duration=if reduce{1.0}else{revealed};
-  let start=self.start.get();
+  let start=self.start.borrow().clone();
   let (dx,dy)=(start.dx,start.dy);
   let frames=arr(&[
    &obj(&[("transform",&start.pose()),("easing",&s("cubic-bezier(0.34, 0, 0.26, 1)"))]),

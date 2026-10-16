@@ -12,4 +12,8 @@ mod pieces;
 mod flyout;
 mod flyout_motion;
 mod returning;
+mod covers;
+mod objects;
+mod drag;
+mod trash;
 pub use ctx::RustShelfCtx;

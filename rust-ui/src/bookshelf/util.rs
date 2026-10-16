@@ -8,7 +8,7 @@ use wasm_bindgen::{prelude::*,JsCast};
 use js_sys::{Array,Function,Object,Promise,Reflect};
 use wasm_bindgen_futures::JsFuture;
 pub use crate::host::{absent,adopt,boxed,call,clear_timeout,get,get_at,global,method,method_opt,next_key,num,read,release,set,text_of,truthy};
-pub use crate::cloud_host::{assign,construct,delete as delete_key,entries,error,has_own,json,nullish,start,string};
+pub use crate::cloud_host::{assign,construct,delete as delete_key,entries,error,error_with_cause,has_own,json,nullish,start,string};
 
 pub type R<T=()>=Result<T,JsValue>;
 
@@ -97,7 +97,7 @@ pub fn set_attr(node:&JsValue,key:&str,value:&str){let _=method(node,"setAttribu
 pub fn get_attr(node:&JsValue,key:&str)->Option<String>{method(node,"getAttribute",&[&s(key)]).ok().and_then(|v|v.as_string())}
 pub fn remove_attr(node:&JsValue,key:&str){let _=method(node,"removeAttribute",&[&s(key)]);}
 pub fn has_attr(node:&JsValue,key:&str)->bool{method(node,"hasAttribute",&[&s(key)]).map(|v|truthy(&v)).unwrap_or(false)}
-fn class_list(node:&JsValue)->JsValue{get(node,"classList")}
+pub fn class_list(node:&JsValue)->JsValue{get(node,"classList")}
 pub fn cls_add(node:&JsValue,names:&[&str]){let list=class_list(node);let args:Vec<JsValue>=names.iter().map(|n|s(n)).collect();let refs:Vec<&JsValue>=args.iter().collect();let _=method(&list,"add",&refs);}
 pub fn cls_remove(node:&JsValue,names:&[&str]){let list=class_list(node);let args:Vec<JsValue>=names.iter().map(|n|s(n)).collect();let refs:Vec<&JsValue>=args.iter().collect();let _=method(&list,"remove",&refs);}
 pub fn cls_toggle(node:&JsValue,name:&str,force:bool){let _=method(&class_list(node),"toggle",&[&s(name),&b(force)]);}
@@ -220,6 +220,10 @@ fn one_shot(callback:impl FnOnce()->R+'static)->(u64,JsValue){
  })as Box<dyn FnMut(JsValue)>);
  (key,adopt(key,closure))
 }
+/// A function that runs `callback` the first time it is called and is released with that call.
+pub fn once(callback:impl FnOnce()->R+'static)->JsValue{one_shot(callback).1}
+/// `Math.hypot(a, b)`.
+pub fn hypot(a:f64,b:f64)->f64{js_sys::Math::hypot(a,b)}
 /// `setTimeout(callback, delay)`.
 pub fn after(delay:f64,callback:impl FnOnce()->R+'static)->Timer{
  let (key,function)=one_shot(callback);
@@ -271,6 +275,20 @@ pub fn then(promise:&JsValue,ok:impl FnOnce(JsValue)->R+'static,err:impl FnOnce(
  })as Box<dyn FnMut(JsValue)>)};
  let derived=method(promise,"then",&[fulfilled.as_ref(),rejected.as_ref()])?;
  *pair.borrow_mut()=Some((fulfilled,rejected));
+ Ok(derived)
+}
+/// `promise.finally(done)`, returning the derived promise.
+pub fn finally(promise:&JsValue,done:impl FnOnce()->R+'static)->R<JsValue>{
+ let slot:Rc<RefCell<Option<Closure<dyn FnMut()->JsValue>>>>=Rc::new(RefCell::new(None));
+ let work=RefCell::new(Some(done));
+ let closure={let slot=slot.clone();Closure::wrap(Box::new(move||->JsValue{
+  let job=work.borrow_mut().take();
+  let result=match job{Some(job)=>job(),None=>Ok(())};
+  let released=slot.borrow_mut().take();drop(released);
+  match result{Ok(())=>JsValue::UNDEFINED,Err(error)=>wasm_bindgen::throw_val(error)}
+ })as Box<dyn FnMut()->JsValue>)};
+ let derived=method(promise,"finally",&[closure.as_ref()])?;
+ *slot.borrow_mut()=Some(closure);
  Ok(derived)
 }
 /// `promise.then(done, done)` for a reaction that does not care about the outcome.

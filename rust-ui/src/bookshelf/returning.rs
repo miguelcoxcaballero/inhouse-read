@@ -166,10 +166,10 @@ async fn return_to_shelf(ctx:Rc<Ctx>,book_id:JsValue,options:JsValue)->R<JsValue
  if truthy(&item){put(&item,"book",&book);}
  // Normally analysed while the reader was open. If not, wait briefly so the flight, the landing and the
  // resting spine share one cloth/ribbon.
- let appearance_key=ctx.legacy("coverKeyFor",&[&book])?;
+ let appearance_key=s(&super::covers::cover_key_for(&book));
  let known=map_get(&ctx.st("coverAppearances"),&s(&wanted));
  if truthy(&item)&&!(get(&known,"key")==appearance_key&&get(&known,"complete")!=JsValue::FALSE){
-  let resolving=then_map(&ctx.legacy("resolveCoverAppearance",&[&book])?,Ok,|_|Ok(null()))?;
+  let resolving=then_map(&super::covers::resolve_cover_appearance(&ctx,&book,&undef())?,Ok,|_|Ok(null()))?;
   let (timeout,resolve,_)=deferred();
   let _timer=after(320.0,move||{let _=resolve.call1(&undef(),&null());Ok(())});
   let appearance=settle(Promise::race(&Array::of2(&resolving,&timeout)).into()).await?;
@@ -189,7 +189,7 @@ async fn return_to_shelf(ctx:Rc<Ctx>,book_id:JsValue,options:JsValue)->R<JsValue
  let or_default=|value:f64,fallback:f64|if value.is_nan()||value==0.0{fallback}else{value};
  let vw=or_default(inner_width(),390.0);let vh=or_default(inner_height(),780.0);
  let landscape=vh<=560.0&&vw>=560.0;
- let ratio=num(&ctx.legacy("coverRatioFor",&[&get(&previous,"style")])?);
+ let ratio=num(&super::covers::cover_ratio_for(&ctx,&get(&previous,"style"),&undef())?);
  let has_pose=truthy(&source_pose);
  let aspect=if has_pose{gn(&source_pose,"thickness")/gn(&source_pose,"height")}else{rect_w/rect_h};
  let cover_h=min(min(min(min(vh*(if landscape{0.72}else{0.54}),if landscape{350.0}else{max(110.0,vh-330.0)}),440.0),(vw*(if landscape{0.35}else{0.78}))/ratio),(vw*0.86)/(ratio+aspect*0.55));
@@ -218,7 +218,7 @@ async fn return_to_shelf(ctx:Rc<Ctx>,book_id:JsValue,options:JsValue)->R<JsValue
  let scrim=El::new("div").class("ihr-flyout__scrim").style("opacity:0").done();
  let flyout=El::new("div").class("ihr-flyout ihr-flyout--return").attr("aria-hidden","true").style("visibility:hidden").child(&scrim).child(&stage).done();
  puts(&dataset(&flyout),"returnPhase","preparing");
- let cover_url=ctx.legacy("resolveCoverImmediately",&[&book])?;
+ let cover_url=super::covers::resolve_cover_immediately(&ctx,&book)?;
  let stale=|ctx:&Ctx|ctx.st_true("destroyed")||ctx.st("lastOpened")!=previous||inner_width()!=vw||inner_height()!=vh;
  if stale(&ctx){return Ok(JsValue::FALSE);}
  let geometry=obj(&[("width",&f(cover_w)),("height",&f(cover_h)),("thickness",&f(thickness)),("viewportWidth",&f(vw)),("viewportHeight",&f(vh)),("centerX",&f(center_x)),("centerY",&f(center_y))]);
@@ -424,7 +424,7 @@ async fn play(ctx:&Rc<Ctx>,closing:&Rc<Closing>,input:PlayInput)->R<JsValue>{
   ctx.st_set("lastOpened",&null());
   let current=spine_of(ctx,&book_id).unwrap_or(spine.clone());
   method_opt(&current,"focus",&[&obj(&[("preventScroll",&JsValue::TRUE)])])?;
-  ctx.legacy("maybeRefreshAppearanceStyles",&[])?;
+  super::covers::maybe_refresh_appearance_styles(ctx)?;
   return Ok(JsValue::TRUE);
  }
  Ok(JsValue::FALSE)
