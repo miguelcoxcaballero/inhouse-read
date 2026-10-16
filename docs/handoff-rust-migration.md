@@ -55,7 +55,7 @@ Las ramas `ready/book-model` y `ready/geometry-3d` y las `wip/*` antiguas ya est
 3. `npm run build:rust` y `npm run build` (en este equipo Rust 1.99.0; wasm-bindgen 0.2.105).
 4. Tests unitarios en 4 bloques: `npx vitest run --shard=N/4 --testTimeout=90000` (N = 1..4). El bloque 2 suele
    registrar «Timeout calling "onTaskUpdate"» del worker bajo carga sin ningún test fallido.
-5. E2E de los ficheros tocados, con la configuración local (copia en `tools/visual-harness/playwright.local.config.mjs`,
+5. E2E de los ficheros tocados, con la configuración local (copia en `tools/visual-harness/playwright.local.config.example.mjs`: cópiala a la raíz como `playwright.local.config.mjs`;
    está en `.git/info/exclude`; usa Chromium de `/opt/pw-browsers` con SwiftShader):
    `flock /tmp/claude-0/visual.lock nice -n -15 npx playwright test -c playwright.local.config.mjs <specs> --workers=2 --reporter=line`.
    Si algo falla con la caja cargada, repítelo a solas (`--workers=1 -g "<título>"`) antes de concluir nada.
