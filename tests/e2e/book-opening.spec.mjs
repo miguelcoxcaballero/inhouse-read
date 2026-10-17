@@ -662,7 +662,7 @@ workerGateTest('móvil: cancelar durante la preparación y reabrir el mismo libr
     })
     db.close()
   }, { bytes:[...colouredPdf()],coverBytes:[...colouredPng([184,20,40])],
-    geometry:settledGeometryLength(1_200, 'opening-preparation-race') })
+    geometry:await settledGeometryLength(1_200, 'opening-preparation-race') })
 
   let workerBlocked = false, releaseWorker
   const workerGate = new Promise(resolve => { releaseWorker = resolve })

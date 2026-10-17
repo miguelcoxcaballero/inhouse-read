@@ -102,7 +102,7 @@ fn render_inner(ctx:&Rc<Ctx>)->R{
  append(&ctx.scroller,&fragment);
  if ctx.st_true("useScene"){
   let layout=screen_plan::read_shelf_layout(ctx,&stage,width)?;
-  putb(&layout,"physicsReady",pending.length()==0);
+  method(&get(&global(),"Object"),"defineProperty",&[&layout,&s("physicsReady"),&obj(&[("value",&b(pending.length()==0))])])?;
   style_prop(&stage,"cssText",&format!("--ihr-cabinet-width:{}px",ns(width)));style_prop(&heading,"cssText","");
   for child in previous{remove(&child);}
   if truthy(&retained){method(&retained,"updateLayout",&[&layout])?;}else{ctx.st_set("shelfScene",&ctx.env("createBookshelfScene",&[&layout])?);}

@@ -66,11 +66,23 @@ fn puck(segments: usize) -> (Vec<Batch>, Emitter) {
         direction: Some(([0.0, -1.0, 0.0], PI * 0.38, 0.65)), filaments: vec![] })
 }
 
+pub(crate) const LANTERN_BASE:&[[f64;2]]=&[
+        [0.0, 0.0], [58.0, 0.0], [67.0, 1.5], [72.0, 5.0], [74.5, 10.0], [75.0, 18.0], [75.0, 43.0], [74.0, 48.0],
+        [70.0, 54.0], [59.0, 61.0], [43.0, 72.0], [35.0, 78.0], [34.0, 84.0], [34.0, 91.0], [31.0, 93.0], [0.0, 93.0]];
+pub(crate) const LANTERN_CHIMNEY:&[[f64;2]]=&[
+        [37.0, 94.0], [43.0, 96.0], [49.0, 103.0], [52.5, 116.0], [54.0, 135.0], [54.0, 185.0], [53.0, 204.0], [50.0, 215.0],
+        [43.0, 227.0], [33.0, 238.0], [29.0, 243.0], [29.0, 248.0], [30.0, 250.0], [28.2, 250.0], [27.2, 248.0], [27.3, 243.0],
+        [31.3, 237.0], [41.5, 226.0], [48.5, 214.0], [51.3, 203.0], [52.3, 185.0], [52.3, 135.0],
+        [50.8, 117.0], [47.4, 104.0], [41.5, 98.0], [37.0, 96.0], [37.0, 94.0]];
+
+pub(crate) fn tripod_leg_points(index:usize)->([f64;3],[f64;3],f64){
+ let angle=index as f64/3.0*PI*2.0+PI/6.0;
+ ([Math::cos(angle)*66.0,4.0,Math::sin(angle)*66.0],[Math::cos(angle)*22.0,177.0,Math::sin(angle)*22.0],angle)
+}
+
 fn lantern(segments: usize) -> (Vec<Batch>, Emitter) {
     let mut out = vec![];
-    out.push(batch("lamp-base", vec![lathe(&[
-        [0.0, 0.0], [58.0, 0.0], [67.0, 1.5], [72.0, 5.0], [74.5, 10.0], [75.0, 18.0], [75.0, 43.0], [74.0, 48.0],
-        [70.0, 54.0], [59.0, 61.0], [43.0, 72.0], [35.0, 78.0], [34.0, 84.0], [34.0, 91.0], [31.0, 93.0], [0.0, 93.0]], segments)]));
+    out.push(batch("lamp-base", vec![lathe(LANTERN_BASE, segments)]));
     let mut brass = vec![
         lathe(&[[30.0, 88.0], [38.0, 88.0], [40.0, 90.0], [40.0, 93.0], [37.0, 95.0], [30.0, 95.0], [30.0, 88.0]], segments),
         lathe(&[[0.0, 92.0], [11.0, 92.0], [12.0, 94.0], [12.0, 104.0], [10.7, 106.0], [0.0, 106.0]], 32),
@@ -85,12 +97,7 @@ fn lantern(segments: usize) -> (Vec<Batch>, Emitter) {
             .at([20.0 + Math::cos(angle) * 8.16, 80.0 + Math::sin(angle) * 8.16, 43.0]).turned([0.0, 0.0, angle]));
     }
     out.push(batch("brass-collar-and-machined-dimmer", brass));
-    let chimney: [[f64; 2]; 27] = [
-        [37.0, 94.0], [43.0, 96.0], [49.0, 103.0], [52.5, 116.0], [54.0, 135.0], [54.0, 185.0], [53.0, 204.0], [50.0, 215.0],
-        [43.0, 227.0], [33.0, 238.0], [29.0, 243.0], [29.0, 248.0], [30.0, 250.0], [28.2, 250.0], [27.2, 248.0], [27.3, 243.0],
-        [31.3, 237.0], [41.5, 226.0], [48.5, 214.0], [51.3, 203.0], [52.3, 185.0], [52.3, 135.0],
-        [50.8, 117.0], [47.4, 104.0], [41.5, 98.0], [37.0, 96.0], [37.0, 94.0]];
-    out.push(batch("clear-glass-chimney", vec![lathe(&chimney, segments)]));
+    out.push(batch("clear-glass-chimney", vec![lathe(LANTERN_CHIMNEY, segments)]));
     out.push(batch("rolled-glass-rim", vec![plain(three_geo::torus(28.7, 0.9, 6, segments), "TorusGeometry").at([0.0, 249.0, 0.0]).turned([PI / 2.0, 0.0, 0.0])]));
     out.push(batch("amber-candle-led-bulb", vec![lathe(&[
         [0.0, 105.0], [9.0, 105.0], [12.0, 109.0], [15.5, 122.0], [17.0, 135.0], [15.7, 149.0], [12.5, 166.0],
@@ -118,9 +125,7 @@ fn tripod(segments: usize) -> (Vec<Batch>, Emitter) {
     let up = [0.0, 1.0, 0.0];
     let mut legs = vec![];
     for index in 0..3 {
-        let angle = index as f64 / 3.0 * PI * 2.0 + PI / 6.0;
-        let foot = [Math::cos(angle) * 66.0, 4.0, Math::sin(angle) * 66.0];
-        let shoulder = [Math::cos(angle) * 22.0, 177.0, Math::sin(angle) * 22.0];
+        let (foot, shoulder, angle) = tripod_leg_points(index);
         let mut geo = three_geo::rounded_box(13.0, jsmath::distance(foot, shoulder), 9.0, 2, 1.1);
         let orientation = three_geo::quaternion_from_unit_vectors(up, jsmath::normalize(jsmath::sub(shoulder, foot)));
         // Width runs tangentially, so each leg reads as a flat plank.

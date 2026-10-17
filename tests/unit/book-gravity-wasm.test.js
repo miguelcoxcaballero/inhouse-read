@@ -1,19 +1,25 @@
 // @vitest-environment node
+import {readFileSync} from 'node:fs'
+import {plantGeometrySpec,lampGeometrySpec} from '../../src/js/decor-geometry-spec.js'
 import {expect,it} from 'vitest'
 import {rustShelf} from './helpers/rust-shelf-ready.js'
-function fixture(rows,metal=false){
+import {readGeometry} from './helpers/geo-packet.js'
+import {openPacket,geometryOf} from '../../src/js/geo-packet.js'
+function fixture(rows,metal=false,animated=false){
  const solver=new rustShelf.RustBookGravity(),scene=new rustShelf.RustScene(600,1200,600,250,metal,false,0);
- let clock=0;
- return {rows,snapshot:()=>solver.snapshot(),restore:value=>solver.restore(value),step(frames=1,reduced=false,frameMs=1000/60){let output;
+ let clock=0;const previous=new Map();
+ return {rows,decoration:(...args)=>solver.decoration(...args),pause:()=>solver.pause(),snapshot:()=>solver.snapshot(),restore:value=>solver.restore(value),step(frames=1,reduced=false,frameMs=1000/60){let output;
   for(let frame=0;frame<frames;frame++){
    scene.beginEntries(clock,reduced,1,new Float64Array([0,0,0,1]),1,600,0,18);
    const states=new Float64Array(rows.length*37),geometry=new Float64Array(rows.length*9);
    rows.forEach((b,i)=>{
     const height=b.height??200,y=(b.floor??300)-height/2;
     states.set([b.kind===3?2:b.kind??0,b.kind===3?1:0,b.flags??0,b.drag??0,b.dragY??0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,b.x,y,150,height,150,0],i*37);
-    geometry.set([b.width??20,b.kind??0,b.shelf??0,1000,0,600,b.floor??300,(b.floor??300)-290+((b.shelf??0)>0?15/.65-10:0),b.grip??0],i*9);
+    if(animated&&previous.has(b.id))states.set(previous.get(b.id).subarray(5,23),i*37+5);
+    geometry.set([b.width??20,b.kind??0,b.shelf??0,1000,0,600,b.floor??300,b.ceiling??((b.floor??300)-290+((b.shelf??0)>0?15/.65-10:0)),b.grip??0],i*9);
    });
    output=new Float64Array(rows.length*4);solver.step(rows.map(b=>b.id),states,geometry,scene,clock,reduced,output);clock+=frameMs;
+   if(animated)rows.forEach((b,i)=>previous.set(b.id,states.slice(i*37,i*37+37)));
   }
   return rows.map((b,i)=>({angle:output[i*4],x:b.x+output[i*4+1],y:(b.floor??300)-(b.height??200)/2-output[i*4+2],active:output[i*4+3]}));
  },free(){solver.free();scene.free()}};
@@ -269,6 +275,31 @@ it('keeps unrelated shelves asleep through pickup, pushing, release and removal'
  rows[0].flags=1;unchanged(f.step());unchanged(f.step(600));f.free();
 });
 
+it('supports books on the rendered pot walls rather than the empty foliage envelope',()=>{
+ for(const pot of ['muskot','gradvis','akerbar','muskotblomma']){
+  const f=fixture([book('hand',100,{flags:2,width:18}),book('plant',210,{kind:1,width:200,height:260})]);
+  f.decoration('plant',1,pot,pot,Float64Array.of(.045,.070,.260,0));f.step(90);
+  f.rows[0].drag=30;f.step(45);Object.assign(f.rows[0],{flags:0,x:130,drag:0});const solved=f.step(600),rest=solved[0];
+  const geometry=readGeometry(rustShelf.probe_plant_part('pot',pot,Float64Array.of(45,70,.84),new Float64Array()));
+  const points=geometry.attributes.position.array;let gap=Infinity;
+  for(let i=0;i<points.length;i+=3){
+   const dx=solved[1].x+points[i]-rest.x,dy=solved[1].y+130-points[i+1]-rest.y,c=Math.cos(rest.angle),s=Math.sin(rest.angle);
+   const x=Math.abs(dx*c-dy*s)-9,y=Math.abs(-dx*s-dy*c)-100;
+   gap=Math.min(gap,Math.hypot(Math.max(0,x),Math.max(0,y))+Math.min(Math.max(x,y),0));
+  }
+  console.info('DECOR_CONTACT',JSON.stringify({pot,rest,gap}));
+  expect(rest.active).toBe(0);expect(Math.abs(rest.angle)).toBeGreaterThan(.25);expect(gap).toBeGreaterThan(-1.5);expect(gap).toBeLessThan(2);
+  f.rows[1].flags=8;expect(f.step(60)[0]).toEqual(rest);
+  f.rows[1].flags=2;const without=f.step(600)[0];expect(Math.abs(without.angle-rest.angle)).toBeGreaterThan(.1);expect(without.active).toBe(0);f.free();
+ }
+});
+it('keeps deliberate book contacts active inside the empty space below a tripod shade',()=>{
+ const f=fixture([book('hand',270,{flags:2,width:18,height:60}),book('lamp',200,{kind:2,width:180,height:280}),book('support',292,{kind:1,width:12,height:80})]);
+ f.decoration('lamp',2,'','',Float64Array.of(0,0,0,.001));f.step(120);
+ for(let frame=1;frame<=60;frame++){f.rows[0].drag=frame;f.step();}
+ const held=f.step(180);expect(held[0].x).toBeLessThan(281);expect(held[0].x).toBeGreaterThan(270);expect(held[2].x).toBeCloseTo(292,3);f.free();
+});
+
 it('a normal deliberate drag pushes neighbours without needing an extremely slow gesture',()=>{
  const f=fixture([book('hand',80,{flags:2,width:16}),...['a','b','c'].map((id,i)=>book(id,135+i*50,{flags:2,width:16}))]);
  f.step(120);for(const b of f.rows.slice(1))b.flags=0;const before=f.step(60);
@@ -329,4 +360,92 @@ it('preserves real upward support on another object instead of forcing every boo
  const f=fixture([book('hand',300,{flags:2,width:20,height:100}),book('slab',300,{kind:1,width:180,height:20})]);
  f.step(90);f.rows[0].dragY=-25;f.step(120);f.rows[0].flags=0;f.rows[0].dragY=0;const rest=f.step(600)[0];
  expect(rest.y+50).toBeGreaterThan(279);expect(rest.y+50).toBeLessThan(281);expect(rest.active).toBe(0);f.free();
+});
+
+it('preserves solid-supported poses on reload and recalculates obsolete envelope supports',()=>{
+ const rows=()=>[book('hand',360,{flags:2,width:18,height:100}),book('plant',300,{kind:1,width:180,height:70})];
+ const legacy=fixture(rows());legacy.step(90);legacy.rows[0].dragY=-90;legacy.step(120);legacy.rows[0].flags=0;legacy.rows[0].dragY=0;
+ const floating=legacy.step(600)[0],old=legacy.snapshot();expect(floating.active).toBe(0);expect(floating.y).toBeLessThan(230);legacy.free();
+ const current=fixture(rows().map(b=>({...b,flags:0})));expect(current.restore(old)).toBe(true);current.decoration('plant',1,'muskot','muskot',Float64Array.of(.02,.07,.07,0));
+ const rest=current.step(600)[0];expect(rest.active).toBe(0);expect(rest.y+50*Math.abs(Math.cos(rest.angle))+9*Math.abs(Math.sin(rest.angle))).toBeGreaterThan(298);
+ const saved=current.snapshot();expect(JSON.parse(saved)[2].find(row=>row[0]==='plant')[8]).toContain('solid-v1:');current.free();
+ const reopened=fixture(rows().map(b=>({...b,flags:0})));reopened.decoration('plant',1,'muskot','muskot',Float64Array.of(.02,.07,.07,0));expect(reopened.restore(saved)).toBe(true);
+ const after=reopened.step()[0];expect(after.active).toBe(0);expect(after.x).toBeCloseTo(rest.x,5);expect(after.y).toBeCloseTo(rest.y,5);expect(after.angle).toBeCloseTo(rest.angle,6);reopened.free();
+});
+
+it('rests against the actual lantern glass and base and releases it when the lamp is lifted',()=>{
+ const f=fixture([book('hand',100,{flags:2,width:18,height:200}),book('lamp',210,{kind:2,width:150,height:250})]);
+ f.decoration('lamp',3,'','',Float64Array.of(0,0,0,.001));f.step(90);
+ for(let frame=1;frame<=60;frame++){f.rows[0].drag=frame/3;f.step();}
+ Object.assign(f.rows[0],{flags:0,x:120,drag:0});const solved=f.step(600),rest=solved[0];expect(rest.active).toBe(0);expect(Math.abs(rest.angle)).toBeGreaterThan(.1);
+ const packet=openPacket(rustShelf.lamp_geometry(2,64,1));let gap=Infinity;
+ for(const batch of packet.header.batches){
+  if(!['lamp-base','clear-glass-chimney','brass-collar-and-machined-dimmer'].includes(batch.name))continue;
+  const geometry=geometryOf(packet,batch),points=geometry.attributes.position.array;
+  for(let i=0;i<points.length;i+=3){const dx=solved[1].x+points[i]-rest.x,dy=solved[1].y+125-points[i+1]-rest.y,c=Math.cos(rest.angle),s=Math.sin(rest.angle);
+   const x=Math.abs(dx*c-dy*s)-9,y=Math.abs(-dx*s-dy*c)-100;
+   gap=Math.min(gap,Math.hypot(Math.max(0,x),Math.max(0,y))+Math.min(Math.max(x,y),0));}
+  geometry.dispose();
+ }
+ expect(gap).toBeGreaterThan(-1.5);expect(gap).toBeLessThan(2);
+ f.rows[1].flags=2;const without=f.step(600)[0];console.info('LANTERN_CONTACT',{rest,without,gap});expect(Math.abs(without.angle-rest.angle)).toBeGreaterThan(.1);expect(without.active).toBe(0);f.free();
+});
+
+it('lands a pot on a fallen book and drops it back to the board when that book is removed',()=>{
+ const f=fixture([book('hand',100,{flags:2,width:20,height:160}),book('plant',360,{kind:1,width:80,height:150})]);
+ f.decoration('plant',1,'muskot','muskot',Float64Array.of(.03,.07,.15,0));f.step(90);
+ f.rows[0].drag=30;f.step(60);Object.assign(f.rows[0],{flags:0,x:130,drag:0});const flat=f.step(600)[0];expect(Math.abs(flat.angle)).toBeGreaterThan(1.5);
+ f.rows[1].flags=2;f.step(60);f.rows[1].x=flat.x;f.rows[1].dragY=-60;f.step(60);f.rows[1].flags=0;f.rows[1].dragY=0;
+ const stack=f.step(600);console.info('POT_ON_COVER',{flat,stack});expect(stack.every(b=>b.active===0)).toBe(true);
+ expect(stack[1].y+75).toBeGreaterThan(278);expect(stack[1].y+75).toBeLessThan(282);expect(Math.abs(stack[0].x-flat.x)).toBeLessThan(3);
+ const saved=f.snapshot();expect(typeof saved).toBe('string');
+ const reopened=fixture(f.rows.map(b=>({...b})));reopened.decoration('plant',1,'muskot','muskot',Float64Array.of(.03,.07,.15,0));expect(reopened.restore(saved)).toBe(true);
+ const after=reopened.step();for(let i=0;i<after.length;i++){expect(after[i].active).toBe(0);expect(after[i].x).toBeCloseTo(stack[i].x,5);expect(after[i].y).toBeCloseTo(stack[i].y,5);expect(after[i].angle).toBeCloseTo(stack[i].angle,6);}expect(reopened.step(180)).toEqual(after);reopened.free();
+ f.rows[0].flags=1;const removed=f.step(600);
+ expect(removed[1].y+75).toBeGreaterThan(299);expect(removed[1].y+75).toBeLessThan(301);expect(removed[1].active).toBe(0);f.free();
+});
+
+it('animated brief plant presses do not move its support or rewrite the settled snapshot',()=>{
+ const f=fixture([book('a',100),book('plant',210,{kind:1,width:120,height:260})],false,true);
+ f.decoration('plant',1,'muskot','muskot',Float64Array.of(.045,.07,.26,0));const rest=f.step(600);expect(rest.every(b=>b.active===0)).toBe(true);expect(typeof f.snapshot()).toBe('string');
+ f.rows[1].flags=8;expect(f.step(60)).toEqual(rest);f.rows[1].flags=0;expect(f.step(60)).toEqual(rest);expect(f.snapshot()).toBeUndefined();f.free();
+});
+
+it('keeps floor-supported pots and lamps asleep while an unrelated shelf is being dragged',()=>{
+ const f=fixture([book('hand',100,{flags:2,shelf:2,floor:900}),book('lamp',210,{kind:2,shelf:1,floor:600,width:150,height:250}),book('plant',400,{kind:1,width:200,height:260})]);
+ f.decoration('lamp',3,'','',Float64Array.of(0,0,0,.001));f.decoration('plant',1,'muskot','muskot',Float64Array.of(.045,.07,.26,0));f.step(600);
+ const woke=[];for(let frame=1;frame<=180;frame++){f.rows[0].drag=10*Math.sin(frame/20);const values=f.step();if(values.slice(1).some(b=>b.active!==0))woke.push({frame,values});}
+ console.info('DECOR_UNRELATED_WAKE',JSON.stringify({count:woke.length,last:woke.at(-1)}));expect(woke).toEqual([]);f.free();
+});
+
+it('puts the complete isometric library with a lantern and pot to sleep without ongoing repaints',()=>{
+ const input=JSON.parse(readFileSync(new URL('./fixtures/decor-startup.json',import.meta.url),'utf8'));
+ const solver=new rustShelf.RustBookGravity(),scene=new rustShelf.RustScene(input.width,input.height,input.sceneWidth,input.depth,true,true,0);
+ const geometry=new Float64Array(input.entries.flatMap(e=>e.geometry)),keys=input.entries.map(e=>e.key),out=new Float64Array(keys.length*4);
+ for(const e of input.entries){const p=e.geometry[3];
+  if(e.state[0]===1){const v=plantGeometrySpec({catalogId:'sansevieria',potId:'muskot',height:e.state[26]});solver.decoration(e.key,1,v.potId,v.potModelId,Float64Array.of(v.real.potDiameter/2*v.unit/p,v.real.potHeight*v.unit/p,v.height/p,0));}
+  if(e.state[0]===2){const v=lampGeometrySpec({lampId:'tarnaby',width:e.state[25],height:e.state[26]});solver.decoration(e.key,3,'','',Float64Array.of(0,0,0,v.scale/p));}
+ }
+ for(let frame=0;frame<1200;frame++){
+  const states=new Float64Array(keys.length*37);input.entries.forEach((e,i)=>states.set(e.state.map(v=>v===null?NaN:v),i*37));
+  scene.beginEntries(frame*1000/60,false,input.zoom,new Float64Array([0,0,0,1]),1,390,0,18);solver.step(keys,states,geometry,scene,frame*1000/60,false,out);
+ }
+ console.info('ISOMETRIC_DECOR_IDLE',JSON.stringify(keys.map((key,i)=>({key,pose:[...out.slice(i*4,i*4+4)]}))));
+ expect(keys.filter((_,i)=>out[i*4+3]!==0)).toEqual([]);solver.free();scene.free();
+});
+
+it('does not raise a metal shelf floor with the ceiling collider of the bay underneath it',()=>{
+ const f=fixture([book('a',300,{flags:2,width:20,height:160}),book('puck',300,{kind:3,shelf:1,floor:600,ceiling:303.75,width:40,height:10})],true);
+ f.step(60);f.rows[0].drag=30;f.step(60);Object.assign(f.rows[0],{flags:0,x:330,drag:0});const rest=f.step(600)[0];
+ const foot=rest.y+80*Math.abs(Math.cos(rest.angle))+10*Math.abs(Math.sin(rest.angle));console.info('METAL_ADJACENT_FLOOR',{rest,foot});
+ expect(rest.active).toBe(0);expect(foot).toBeGreaterThan(298.5);expect(foot).toBeLessThan(300.5);f.free();
+});
+
+it('corrects a saved false metal-floor support once without reseeding the remembered orientation',()=>{
+ const rows=()=>[book('a',330,{width:20,height:160}),book('puck',300,{kind:3,shelf:1,floor:600,ceiling:303.75,width:40,height:10})];
+ const old=fixture(rows(),true),original=old.step(600)[0],saved=JSON.parse(old.snapshot());old.free();expect(saved[1].at(-1)).toBe(1);
+ saved[1].pop();saved[2].find(row=>row[0]==='a')[6]+=.0117;
+ const corrected=fixture(rows(),true);expect(corrected.restore(JSON.stringify(saved))).toBe(true);const pose=corrected.step(600)[0];
+ const foot=pose.y+80*Math.abs(Math.cos(pose.angle))+10*Math.abs(Math.sin(pose.angle));expect(foot).toBeGreaterThan(298.5);expect(foot).toBeLessThan(300.5);expect(pose.angle).toBeCloseTo(original.angle,3);expect(pose.active).toBe(0);
+ const current=corrected.snapshot();corrected.free();const reopened=fixture(rows(),true);expect(reopened.restore(current)).toBe(true);expect(reopened.step()[0]).toEqual(pose);expect(reopened.step(180)[0]).toEqual(pose);reopened.free();
 });

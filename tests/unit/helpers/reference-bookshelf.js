@@ -1047,6 +1047,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       if (stage && selection && (stage.contains(selection.anchorNode) || stage.contains(selection.focusNode)))
         selection.removeAllRanges();
     }
+    // New grip-height contract (1.7.272); all original drag behaviour stays below.
+    if (!backgroundOnly && state.shelfScene) state.shelfScene.setObjectGrip?.(node, event.clientX, event.clientY);
     const drag = state.dragSession = {
       node, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
       x: event.clientX, y: event.clientY, scrollTop: scroller.scrollTop,
@@ -1153,6 +1155,8 @@ export function renderBookshelf(container, booksOrOptions, maybeOptions) {
       discardRect = node.getBoundingClientRect();
       discardMotion = state.shelfScene?.animateObjectToTrash(node, { duration:discardDuration });
     }
+    // Sample the final held pose before clearing pointer offsets (1.7.272).
+    if (drag.active && drag.moved && !discard) state.shelfScene?.flush();
     const oldRects = drag.active && drag.moved ? objectRects() : null;
     state.dragSession = null;
     if (node.classList.contains('ihr-lamp') && (drag.active || drag.scrolling || drag.cancelled || cancelled))

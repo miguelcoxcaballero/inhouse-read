@@ -38,7 +38,7 @@ async function seedShelf(page) {
       { key:'plant:placement-c', seed:'placement-c', variant:'pothos', width:48, shelf:2, x:.2 }
     ]))
     localStorage.setItem('inhouse-read-shelf-view', 'spine')
-  }, { bytes, geometry:settledGeometryLength(30_000, 'shelf-placement') })
+  }, { bytes, geometry:await settledGeometryLength(30_000, 'shelf-placement') })
   await page.reload()
   await expect(page.locator('.ihr-spine')).toHaveCount(4)
   await expect(page.locator('.ihr-bookshelf-scene')).toBeVisible()

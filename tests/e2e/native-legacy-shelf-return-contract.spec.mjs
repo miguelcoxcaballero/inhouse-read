@@ -68,7 +68,7 @@ test('el regreso nativo conserva la sala fraccional a 393px con el framebuffer o
         }
       }
     })
-  }, { bytes, id:BOOK_ID, geometry:settledGeometryLength(4, BOOK_ID) })
+  }, { bytes, id:BOOK_ID, geometry:await settledGeometryLength(4, BOOK_ID) })
   // The public native URL can offer a real optional APK update. Defer it
   // through its visible control so it cannot intercept the book gesture.
   // Local fixtures keep their existing setup; no catalog or runtime is changed.

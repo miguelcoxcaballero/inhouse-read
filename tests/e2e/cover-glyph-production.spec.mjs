@@ -15,7 +15,7 @@ test('published shelf computes and saves the same cover appearance through the r
   const encoded=atob(window.productionGlyphCover.split(',')[1]),cover=new Blob([Uint8Array.from(encoded,c=>c.charCodeAt(0))],{type:'image/png'});
   const book={id:'rust-glyph-public',title:'The Garden',name:'tiny.pdf',author:'Test',...geometry,format:'PDF',mimeType:'application/pdf',sourceType:'local',content:new Blob([new Uint8Array(bytes)],{type:'application/pdf'}),cover,pageCount:1,shelfOrder:0,addedAt:Date.now(),progressFraction:0};
   const request=indexedDB.open('inhouse-read',2);request.onupgradeneeded=()=>{const db=request.result,books=db.createObjectStore('books',{keyPath:'id'});books.createIndex('lastOpenedAt','lastOpenedAt');db.createObjectStore('removed-books',{keyPath:'id'});books.put(book);};request.onsuccess=()=>request.result.close();
- },{bytes,geometry:settledGeometryLength(90000)});
+ },{bytes,geometry:await settledGeometryLength(90000)});
  await page.goto('./');
  await expect.poll(()=>page.evaluate(()=>window.productionGlyphCalls),{timeout:30000}).toBeGreaterThan(0);
  const stored=()=>page.evaluate(()=>new Promise((resolve,reject)=>{const r=indexedDB.open('inhouse-read',2);r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,q=db.transaction('books').objectStore('books').get('rust-glyph-public');q.onsuccess=()=>{resolve(q.result?.coverAppearance??null);db.close();};q.onerror=()=>{reject(q.error);db.close();};};}));

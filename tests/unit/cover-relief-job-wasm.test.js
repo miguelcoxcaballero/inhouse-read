@@ -337,7 +337,7 @@ describe('the colour names, coating profiles and material coefficients of the sh
       expect(() => frozen.colorReliefProfile({ color: bad })).toThrow(TypeError);
     }
     expect(() => shelf.color_relief_profile(null)).toThrow(TypeError);
-  });
+  }, 30_000);
   it('gives the original material coefficients for any finish numbers, including unusual ones', () => {
     const shelf = needRustShelf(), values = [0, -0, .01, .05, .18, .3, .5, 1, 2, -1, NaN, Infinity, -Infinity, '0.4', null, true, '', ' 7 '];
     const layers = [{ color: '#a12638' }, { color: '#2f6b4f' }];

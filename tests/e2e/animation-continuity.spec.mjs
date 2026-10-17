@@ -48,7 +48,7 @@ async function seedCoveredBooks(page) {
     })
     db.close()
   }, { bytes:content, shortBytes:shortContent,
-    geometry:Array.from({ length:8 }, (_, index) => settledGeometryLength((index === 0 ? 1 : 4) * 300, `continuity:${index}`)) })
+    geometry:await Promise.all(Array.from({ length:8 }, (_, index) => settledGeometryLength((index === 0 ? 1 : 4) * 300, `continuity:${index}`))) })
   await page.reload()
   await expect(page.locator('.ihr-spine')).toHaveCount(8)
 }
