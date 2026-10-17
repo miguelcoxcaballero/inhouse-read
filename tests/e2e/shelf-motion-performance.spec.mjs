@@ -477,3 +477,30 @@ test('real pointer releases tip both ways without coasting and the renderer slee
  await testInfo.attach('finger-release-direction',{body:JSON.stringify(samples),contentType:'application/json'});
  await page.screenshot({path:testInfo.outputPath('directional-book-release.png')});
 });
+
+test('mobile room stays idle and suspends active physics while the document is hidden',async({page},testInfo)=>{
+ const scene=await seedShelf(page);
+ const session=await page.context().newCDPSession(page);await session.send('Performance.enable');
+ const counts=()=>scene.evaluate(node=>({frames:Number(node.dataset.renderCount),renders:Number(node.dataset.snapshotRenderCount),textures:node.dataset.sceneTextures,resolutions:node.dataset.bookTextureResolutions}));
+ const cpu=async()=>Object.fromEntries((await session.send('Performance.getMetrics')).metrics.map(m=>[m.name,m.value]));
+ const before=await counts(),first=await cpu();await page.waitForTimeout(2000);const idle=await counts(),second=await cpu();
+ expect(idle.frames).toBe(before.frames);expect(idle.renders).toBe(before.renders);
+ await page.evaluate(()=>{
+  const node=document.querySelector('.ihr-spine');node.classList.add('is-dragging');node.style.setProperty('--ihr-drag-x','12px');
+ });
+ await expect(scene).toHaveAttribute('data-animating','true');
+ await page.evaluate(()=>{
+  window.testVisibility='hidden';Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>window.testVisibility});
+  document.dispatchEvent(new Event('visibilitychange'));
+ });
+ const parked=await counts();await page.evaluate(()=>window.dispatchEvent(new Event('resize')));await page.waitForTimeout(1200);
+ expect(await counts()).toEqual(parked);
+ await page.evaluate(()=>{
+  const node=document.querySelector('.ihr-spine');node.classList.remove('is-dragging');node.style.removeProperty('--ihr-drag-x');
+  window.testVisibility='visible';document.dispatchEvent(new Event('visibilitychange'));
+ });
+ await quietShelf(scene);const resumed=await counts();expect(resumed.resolutions).toBe(before.resolutions);
+ expect(resumed.textures).toBe(before.textures);await expect(scene).toHaveAttribute('data-active-lamp-lights','1');
+ const resting=await counts();await page.waitForTimeout(1000);expect(await counts()).toEqual(resting);
+ await testInfo.attach('mobile-energy-work',{body:JSON.stringify({before,idle,parked,resumed,idleTaskSeconds:second.TaskDuration-first.TaskDuration,idleScriptSeconds:second.ScriptDuration-first.ScriptDuration},null,2),contentType:'application/json'});
+});

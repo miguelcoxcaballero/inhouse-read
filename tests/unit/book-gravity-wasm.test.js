@@ -258,3 +258,13 @@ it('a careful pickup retains a shallow resting contact instead of crossing the a
  expect(Math.abs(after[0].x-before[0].x)).toBeLessThan(2);
  expect(after[1].x).toBe(before[1].x);f.free();
 });
+
+it('keeps unrelated shelves asleep through pickup, pushing, release and removal',()=>{
+ const rows=Array.from({length:12},(_,shelf)=>[80,130,180].map((x,i)=>book(`row:${shelf}:${i}`,x,{shelf,floor:300+shelf*320})) ).flat();
+ const f=fixture(rows);const before=f.step(600);expect(before.every(b=>b.active===0)).toBe(true);
+ const unchanged=output=>{for(let i=3;i<rows.length;i++)expect(output[i]).toEqual(before[i]);};
+ rows[0].flags=2;unchanged(f.step());
+ for(let frame=1;frame<=30;frame++){rows[0].drag=frame*2;rows[0].dragY=-20;unchanged(f.step());}
+ rows[0].flags=0;rows[0].x+=60;rows[0].drag=rows[0].dragY=0;unchanged(f.step());unchanged(f.step(600));
+ rows[0].flags=1;unchanged(f.step());unchanged(f.step(600));f.free();
+});

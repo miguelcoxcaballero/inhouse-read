@@ -1,3 +1,19 @@
+# 1.7.274 — menos trabajo físico y pausa real en segundo plano
+
+Changelog: «Menor consumo sin reducir calidad visual».
+
+La entrega 273 corrigió el rozamiento y un repintado continuo reproducido al recolocar una maceta. Este bloque evita despertar libros de lejas ajenas: recogida, liberación, retirada y cambio de posición/tamaño registran las lejas de origen/destino y despiertan sus apoyos. Un cambio real del mueble sigue reconstruyendo los límites y despertando la escena. El solver, paso de 120 Hz, contactos, materiales, texturas, resolución, antialias, luces y sombras conservan sus parámetros.
+
+Comparación del WASM 273 con 274, 72 libros / 24 lejas, 61 pasos de arrastre, cinco repeticiones por versión sin otros trabajos de CPU/GPU: mediana **32,388 ms → 9,913 ms** de CPU acumulada (**69,4 % menos**). Libros ajenos activos al recoger: **69 → 0**. Son medidas del solver en este entorno, no de batería, temperatura ni FPS del teléfono. El script reproducible es `node scripts/measure-shelf-wake.mjs /ruta/a/bindings/shelf/273`.
+
+La estantería pausa RAF incluso si había física/cámara en marcha al ocultar el documento o recibir `pagehide`; conserva los cambios y vuelve a pintar al mostrarlo. Una pantalla Home inactiva con una animación visible en otro propietario mantiene su contrato anterior. Los tres estudios del catálogo aparcan dibujos y construcciones pendientes al ocultar el documento. Las consultas de shaders dejan de sondear en segundo plano y liberan el listener al cancelar. Las tareas diferidas, incluida la pintura de texturas de plantas, esperan un evento de visibilidad en lugar de sondeos; conservan el deadline real de `requestIdleCallback`. El audio del audiolibro no cambia.
+
+Build completo correcto, seguido de Vite/manifest tras finalizar los adaptadores: UI 2983788 B, Shelf 3387836 B, shell 109 archivos / 31055581 B. Pasan **289 pruebas en 17 archivos**, incluidas las 25 físicas (24 anteriores + aislamiento exacto de otras once lejas durante recogida/empuje/liberación/retirada), 74 del modelo, 43 de marcapáginas/movimiento, suspensión/reanudación durante un giro, `pagehide`, carreras de tareas idle, cancelación de shaders y los tres estudios del catálogo sin recrear modelos ni bajar calidad. Un primer pase detectó que un flush oculto dejaba cambios de tema sin consumir y duplicaba el siguiente dibujo; se corrige conservando la aserción original.
+
+Nueve casos E2E finales pasan sin reintentos en una ejecución: importación fría/caliente, zoom con imagen conservada y portadas nítidas, luces cálidas, apoyo/dominó, barrido rápido, liberaciones reales en ambos sentidos, pausa real de la sala móvil durante física activa y reposo al reanudar, y colocación/persistencia de libro y planta
+
+Inventario: 33355 líneas Rust / 20649 JavaScript = 61,76 %. Cuenta comentarios y adaptadores, no funciones completadas. El cambio físico es Rust; el acceso a RAF, visibilidad, idle y WebGL sigue en adaptadores del navegador. Main 273 ya está publicado y su despliegue Pages finalizó correctamente. Pendiente después de este bloque: colisionadores sólidos de plantas/lámparas y sonidos acogedores según interacción/material, y continuar la migración. No se modifican Android ni el actualizador.
+
 # 1.7.273 — apoyo sin patinar durante la caída
 
 Changelog: «Apoyo firme de libros sobre las lejas».

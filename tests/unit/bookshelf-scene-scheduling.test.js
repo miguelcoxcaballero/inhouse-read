@@ -191,6 +191,31 @@ describe('shelf presentation and synchronous projection scheduling',() => {
     delete document.documentElement.dataset.theme;
   });
 
+  it('parks a moving scene while the document is hidden and resumes the full-quality endpoint',() => {
+    const original = model();
+    shelf.setMode('isometric');
+    expect(frames.size).toBe(1);
+    visibility = 'hidden'; document.dispatchEvent(new Event('visibilitychange'));
+    expect(frames.size).toBe(0);
+    clock += 60_000;
+    shelf.invalidate();
+    expect(shelf.flush({force:true})).toBe(false);
+    expect(frames.size).toBe(0); expect(renders()).toBe(0);
+    visibility = 'visible'; document.dispatchEvent(new Event('visibilitychange'));
+    expect(frames.size).toBe(1); drain();
+    expect(shelf.canvas.dataset.viewProgress).toBe('1');
+    expect(shelf.canvas.dataset.animating).toBe('false');
+    expect(model()).toBe(original); expect(shelf.canvas.dataset.pixelRatio).toBe('1');
+  });
+
+  it('parks pending work across pagehide and resumes it once on pageshow',() => {
+    shelf.invalidate(); window.dispatchEvent(new Event('pagehide'));
+    expect(frames.size).toBe(0); expect(shelf.flush({force:true})).toBe(false);
+    window.dispatchEvent(new Event('pageshow'));
+    expect(frames.size).toBe(1); drain();
+    expect(renders()).toBe(1); expect(shelf.flush()).toBe(false);
+  });
+
   it('rechecks an otherwise clean native viewport when presentation returns',() => {
     shelf.setPresentationActive(false);
     height = 610;

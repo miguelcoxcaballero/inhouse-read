@@ -42,6 +42,13 @@ fn constrain(body:&mut RigidBody,size:[f64;3],bay:[f32;4]){
 pub struct RustBookGravity{world:PhysicsWorld,plane:RigidBodyHandle,books:BTreeMap<Vec<u16>,Book>,walls:Vec<RigidBodyHandle>,layout:Vec<f64>,last:Option<f64>,carry:f64,initialized:bool}
 impl RustBookGravity{
  fn wake(&mut self){for (_,body) in self.world.bodies.iter_mut(){if body.is_dynamic(){body.wake_up(true);}}for b in self.books.values_mut(){b.quiet=None;}}
+ fn wake_rows(&mut self,rows:&BTreeSet<i64>){
+  // Fixed shelves separate contact islands. Picking one book must not wake
+  // hundreds of settled bodies on unrelated boards/cabinets.
+  for b in self.books.values_mut(){if b.kind==0&&rows.contains(&(b.base[2] as i64)){
+   self.world.bodies[b.handle].wake_up(true);b.quiet=None;
+  }}
+ }
  fn cabinet(&mut self,g:&[f64],metal:bool){
   let side=if metal{crate::cabinet::BAGGEBO.post_size/1000.0}else{12.0/0.65/1000.0};
   let board=if metal{crate::cabinet::BAGGEBO.shelf_rim_height/1000.0}else{15.0/0.65/1000.0};
@@ -97,15 +104,15 @@ impl RustBookGravity{
   let names:Vec<Vec<u16>>=keys.iter().map(|k|if k.is_string(){k.unchecked_ref::<JsString>().iter().collect()}else{Vec::new()}).collect();
   let live:BTreeSet<&Vec<u16>>=names.iter().collect();
   let removed:Vec<Vec<u16>>=self.books.keys().filter(|k|!live.contains(k)).cloned().collect();
-  let membership_changed=!removed.is_empty();
-  if membership_changed{for key in removed{let b=self.books.remove(&key).unwrap();self.world.remove_body(b.handle);}self.wake();}
+  let membership_changed=!removed.is_empty();let mut disturbed=BTreeSet::new();
+  if membership_changed{for key in removed{let b=self.books.remove(&key).unwrap();disturbed.insert(b.base[2] as i64);self.world.remove_body(b.handle);}}
   let any_held=states.chunks_exact(37).any(|s|s[2] as u32&HELD!=0)||self.books.values().any(|b|b.held);
-  let mut changed=membership_changed;let mut disturbed=BTreeSet::new();
+  let mut changed=membership_changed;
   for (i,key) in names.iter().enumerate(){
    let s=&states[i*37..i*37+37];let g=&geometry[i*9..i*9+9];
    let p=g[3];let kind=g[1] as u32;let flags=s[2] as u32;let held=flags&HELD!=0;let away=flags&1!=0;
-   if !g[..8].iter().all(|v|v.is_finite())||p<=0.0||!s[23..27].iter().all(|v|v.is_finite())||!g[0].is_finite()||g[0]<=0.0||s[26]<=0.0{if let Some(b)=self.books.remove(key){self.world.remove_body(b.handle);changed=true;}continue;}
-   if kind==3||away{if let Some(b)=self.books.remove(key){self.world.remove_body(b.handle);changed=true;}continue;}
+   if !g[..8].iter().all(|v|v.is_finite())||p<=0.0||!s[23..27].iter().all(|v|v.is_finite())||!g[0].is_finite()||g[0]<=0.0||s[26]<=0.0{if let Some(b)=self.books.remove(key){disturbed.insert(b.base[2] as i64);self.world.remove_body(b.handle);changed=true;}continue;}
+   if kind==3||away{if let Some(b)=self.books.remove(key){disturbed.insert(b.base[2] as i64);self.world.remove_body(b.handle);changed=true;}continue;}
    let base=[s[23]/p,-s[24]/p,g[2],p];
    let h=s[26]/p;let thickness=g[0]/p;let depth=if kind==0||!s[27].is_finite()||s[27]<=0.0{s[25]/p}else{s[27]/p};
    let size=[thickness,h,depth.max(0.005)];
@@ -114,8 +121,9 @@ impl RustBookGravity{
    // using its resting x (not a camera projection) without exposing camera math.
    let target=Vector::new((base[0]+(s[29]-(s[23]-scene.width/2.0))/p) as f32,(s[30]/p) as f32,(s[31]/p) as f32);
    let replace=self.books.get(key).is_some_and(|b|b.kind!=kind||b.size.iter().zip(size).any(|(a,b)|(a-b).abs()>0.0001));
-   if replace{let b=self.books.remove(key).unwrap();self.world.remove_body(b.handle);changed=true;}
+   if replace{let b=self.books.remove(key).unwrap();disturbed.insert(b.base[2] as i64);self.world.remove_body(b.handle);changed=true;}
    if !self.books.contains_key(key){
+    disturbed.insert(g[2] as i64);
     let mut angle=0.0_f64;
     if kind==0&&!held{
      // Tiny, deterministic initial lean only where there is room. This puts
@@ -200,6 +208,7 @@ impl RustBookGravity{
    }else if !any_held&&(b.base[0]-base[0]).abs()>0.0001{
     body.set_translation(body.translation()+Vector::new((base[0]-b.base[0]) as f32,(base[1]-b.base[1]) as f32,0.0),true);changed=true;
    }
+   if b.base!=base || b.held!=held{disturbed.insert(b.base[2] as i64);disturbed.insert(g[2] as i64);}
    b.base=base;b.held=held;b.bay=bay;
   }
   // An accidental overlapping drop must resolve its penetration first,
@@ -220,7 +229,7 @@ impl RustBookGravity{
   for (key,contacting) in contacts{let b=self.books.get_mut(&key).unwrap();b.contacting=contacting;
    self.world.colliders[b.collider].set_collision_groups(InteractionGroups::new(Group::GROUP_1,if contacting{Group::ALL & !Group::GROUP_2}else{Group::empty()},InteractionTestMode::And));
   }
-  if changed{self.wake();}else if !disturbed.is_empty(){for b in self.books.values_mut(){if disturbed.contains(&(b.base[2] as i64)){self.world.bodies[b.handle].wake_up(true);b.quiet=None;}}}
+  if !disturbed.is_empty(){self.wake_rows(&disturbed);}
   let has_books=self.books.values().any(|b|b.kind==0);
   let initial=has_books&&!self.initialized;if has_books{self.initialized=true;}
   // A saved library is already a resting scene at first paint. Solve its

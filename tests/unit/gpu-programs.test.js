@@ -223,3 +223,20 @@ describe('prelinkPrograms', () => {
     expect(() => prelinkPrograms({}, scene, camera, [part])).not.toThrow();
   });
 });
+
+it('parks shader readiness polls while hidden and releases the visibility listener on cancel',async()=>{
+ const {whenProgramsReady}=await import('../../src/js/gpu-programs.js');
+ vi.useFakeTimers();let visibility='visible';const visible=vi.spyOn(document,'visibilityState','get').mockImplementation(()=>visibility);
+ const p=program(false),mat=new THREE.MeshBasicMaterial(),object=mesh(mat),renderer=fakeRenderer(new Map([[mat,new Map([['pending',p]])]]));
+ const done=vi.fn(),remove=vi.spyOn(document,'removeEventListener');
+ try{
+  const cancel=whenProgramsReady(renderer,new THREE.Scene(),new THREE.Camera(),object,done);
+  expect(vi.getTimerCount()).toBe(1);visibility='hidden';await vi.advanceTimersByTimeAsync(16);
+  expect(vi.getTimerCount()).toBe(0);await vi.advanceTimersByTimeAsync(60_000);expect(done).not.toHaveBeenCalled();
+  visibility='visible';p.ready=true;document.dispatchEvent(new Event('visibilitychange'));expect(done).toHaveBeenCalledOnce();
+  cancel();visibility='hidden';p.ready=false;
+  const cancelHidden=whenProgramsReady(renderer,new THREE.Scene(),new THREE.Camera(),object,done);cancelHidden();
+  expect(remove).toHaveBeenCalledWith('visibilitychange',expect.any(Function));
+  visibility='visible';document.dispatchEvent(new Event('visibilitychange'));expect(done).toHaveBeenCalledOnce();
+ }finally{visible.mockRestore();remove.mockRestore();vi.useRealTimers();}
+});

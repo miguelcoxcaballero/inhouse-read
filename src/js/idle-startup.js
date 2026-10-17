@@ -27,11 +27,32 @@ export function shelfPresented() {
   })
 }
 
-export function idleSlice({ timeout = 2000 } = {}) {
-  return new Promise(resolve => {
-    if (typeof requestIdleCallback === 'function') requestIdleCallback(() => resolve(), { timeout })
-    else setTimeout(resolve, 50)
-  })
+export function idleWork(callback, { timeout = 2000, fallbackMs = 50 } = {}) {
+  const owner = globalThis.document
+  const schedule = () => {
+    if (owner && owner.visibilityState === 'hidden') {
+      owner.addEventListener('visibilitychange', resume)
+      return
+    }
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(complete, { timeout })
+    else setTimeout(() => complete({ timeRemaining:() => 0 }), fallbackMs)
+  }
+  const resume = () => {
+    if (owner.visibilityState === 'hidden') return
+    owner.removeEventListener('visibilitychange', resume)
+    schedule()
+  }
+  // A queued slice may race with locking the phone. Park on one event
+  // listener instead of repeatedly waking background timers.
+  const complete = deadline => {
+    if (owner && owner === globalThis.document && owner.visibilityState === 'hidden') schedule()
+    else callback(deadline)
+  }
+  schedule()
+}
+
+export function idleSlice(options) {
+  return new Promise(resolve => idleWork(resolve, options))
 }
 
 /** Runs the tasks one per idle slice after the first live frame; a failing task never stops the rest. */

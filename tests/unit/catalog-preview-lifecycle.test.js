@@ -83,6 +83,24 @@ afterEach(() => {
 });
 
 describe.each(cases)('%s catalog studio suspension',(_name,create,selection) => {
+  it('parks a pending selection while the document is hidden, then keeps the same full-quality model',() => {
+    let visibility='visible';vi.spyOn(document,'visibilityState','get').mockImplementation(()=>visibility);
+    const host=document.createElement('div');document.body.append(host);
+    host.getBoundingClientRect=()=>({width:200,height:300});
+    const preview=create(host);previews.push(preview);preview.update(selection);
+    const callbacks=[...frames.values()];frames.clear();callbacks.forEach(callback=>callback(16));
+    visibility='hidden';document.dispatchEvent(new Event('visibilitychange'));settle();
+    expect(resources.models).toHaveLength(0);expect(resources.renderers[0].render).not.toHaveBeenCalled();
+    expect(frames.size).toBe(0);expect(vi.getTimerCount()).toBe(0);
+    visibility='visible';document.dispatchEvent(new Event('visibilitychange'));settle();
+    expect(resources.models).toHaveLength(1);const model=resources.models[0];
+    expect(resources.renderers[0].render).toHaveBeenCalledOnce();
+    visibility='hidden';document.dispatchEvent(new Event('visibilitychange'));observers.forEach(notify=>notify());settle();
+    expect(frames.size).toBe(0);expect(resources.renderers[0].render).toHaveBeenCalledOnce();
+    visibility='visible';document.dispatchEvent(new Event('visibilitychange'));settle();
+    expect(resources.models).toEqual([model]);expect(resources.renderers[0].render).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps stationary bounds and backing buffers through repeated draws, while a real resize still reframes',() => {
     const host = document.createElement('div'); document.body.append(host);
     let width = 200; host.getBoundingClientRect = () => ({ width,height:300 });
