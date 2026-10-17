@@ -1,5 +1,7 @@
 # Traspaso: migración a Rust de Inhouse Read
 
+Último bloque: 1.7.261, calidad de zoom y silueta táctil de lámparas en Rust. 80 específicas finales pasan; inventario 59,92 %. Conservar batchQuality/settleBooks activados en producción y desactivados solo en la comparación heredada completa. Siguiente lifecycle: WIP en shelf-lifecycle con destroy repetible y recorrido vivo de objectUrls; aún sin compilar. Preservar WIP, stashes y ramas ready.
+
 Último bloque: 1.7.260, Rapier 3D con caídas laterales, agarre dinámico por fuerzas, retirada de apoyos y carga inicial asentada. 39 específicas finales +26 sesiones anteriores de herencia y tres E2E pasan; captura de contactos revisada. Inventario 59,77 %. Congelar dist260 para baseline del zoom. Siguiente: stash WIP zoom-render, merge main260, restaurar; conservar batching de física y su free. Revisar calidad de libros tumbados (usar mayor dimensión proyectada mediante flag32 preservando corpus legado). Después lifecycle/text_length y resto de migración. No borrar WIP ni ramas ready.
 
 Último bloque: 1.7.259, pausas y años multilingües, 348 pruebas específicas y dos E2E pasan. Inventario 59,71 %. Petición actual: cuerpos rígidos Rust con colisiones, arrastre que empuje, dominó, pérdida de apoyo y asentamiento al cargar bibliotecas antiguas. Worktree book-physics recién creado; después zoom y resto de migración. Preservar todos los WIP.

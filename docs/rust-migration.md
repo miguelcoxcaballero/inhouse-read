@@ -1,5 +1,7 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.261: preparación y sustitución de calidad del zoom en Rust, repintados agrupados, portadas tumbadas nítidas y zonas táctiles de lámparas sin esquinas vacías. 80 pruebas específicas pasan. Inventario 59,92 %, no funciones completadas. Detalle en remaining-wip-verification.md. Se continúa con lifecycle y resto de migración.
+
 Entrega 1.7.260: cuerpos rígidos y agarre elástico en Rust, contactos, pilas, pérdida de apoyo y asentamiento al cargar bibliotecas. 39 pruebas finales, 26 sesiones anteriores de herencia y tres E2E pasan. Alcance exacto en remaining-wip-verification.md. Inventario 59,77 %, no funciones completadas. Se retoma zoom y resto de migración.
 
 Entrega 1.7.259: pausas entre párrafos reales, saltos PDF y espacios CSS; años contextuales en más idiomas. 348 pruebas y dos E2E pasan. Inventario 59,71 %, no funciones completadas. Siguiente: física de colisiones en Rust, zoom y migración.
