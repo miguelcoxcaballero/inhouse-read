@@ -13,6 +13,8 @@ mod scene_frame;
 mod scene_entries;
 mod book_gravity;
 mod scene_plan;
+mod scene_quality;
+mod scene_hit_hull;
 mod occlusion_table;
 #[path="../../rust-core/src/jsmath.rs"]
 mod jsmath;

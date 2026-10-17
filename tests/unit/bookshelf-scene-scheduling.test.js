@@ -2,7 +2,7 @@ import { afterEach,beforeEach,describe,expect,it,vi } from 'vitest';
 import * as THREE from 'three';
 import { createBookshelfScene } from '../../src/js/bookshelf-scene.js';
 
-const gpu = vi.hoisted(() => ({ renderer:null,scene:null }));
+const gpu = vi.hoisted(() => ({ renderer:null,scene:null,holdQuality:false,decodes:[] }));
 vi.mock('../../src/js/book-model.js',async () => {
   const Three = await import('three');
   let ratio = 1;
@@ -20,6 +20,7 @@ vi.mock('../../src/js/book-model.js',async () => {
       model.userData.overview = Boolean(options.overview);
       model.userData.inspectionResolution = options.inspectionResolution || 0;
       model.userData.dispose = vi.fn();
+      if (gpu.holdQuality && options.inspectionResolution) model.userData.ready = new Promise(resolve => gpu.decodes.push({resolve,model}));
       return model;
     } };
 });
@@ -40,6 +41,7 @@ const model = () => gpu.scene.getObjectByName('book:one');
 
 beforeEach(async () => {
   clock = scroll = 0; height = 700; visibility = 'visible'; frames = new Map();
+  gpu.holdQuality = false; gpu.decodes = [];
   let serial = 0;
   vi.stubGlobal('requestAnimationFrame',callback => { const id = ++serial; frames.set(id,callback); return id; });
   vi.stubGlobal('cancelAnimationFrame',id => frames.delete(id));
@@ -84,6 +86,31 @@ describe('shelf presentation and synchronous projection scheduling',() => {
     expect(shelf.canvas.dataset.renderCount).toBe(count);
     expect(model()).toBe(original);
   });
+
+  it('coalesces staggered inspection decodes into one sharp repaint without lowering resolution',async()=>{
+    const nodes=Array.from({length:3},(_,i)=>{const button=document.createElement('button');button.className='ihr-spine';button.dataset.bookId=`batch-${i}`;stage.append(button);return button;})
+    const rows=[{top:20,bottom:220},{top:260,bottom:460}]
+    shelf.updateLayout({stage,scroller,width:390,height:500,rows,entries:nodes.map((node,i)=>({node,book:{id:`batch-${i}`,title:'Sharp book'},style:{color:'#41694f',width:28},x:65+i*115,y:130,width:100,height:180,thickness:28}))})
+    shelf.setMode('isometric',{animate:false});shelf.flush();drain();await Promise.resolve();drain()
+    vi.useFakeTimers({toFake:['setTimeout','clearTimeout']})
+    try {
+      gpu.holdQuality=true
+      shelf.setInspectionView({zoom:2.4,panX:0,panY:0},{renderNow:true});drain()
+      expect(gpu.decodes).toHaveLength(3)
+      const before=Number(shelf.canvas.dataset.snapshotRenderCount)
+      gpu.decodes[0].resolve(true);await Promise.resolve();drain()
+      expect(Number(shelf.canvas.dataset.snapshotRenderCount)).toBe(before)
+      clock+=16;vi.advanceTimersByTime(16)
+      gpu.decodes[1].resolve(true);await Promise.resolve();drain()
+      expect(Number(shelf.canvas.dataset.snapshotRenderCount)).toBe(before)
+      gpu.decodes[2].resolve(true);await Promise.resolve();drain()
+      expect(Number(shelf.canvas.dataset.snapshotRenderCount)).toBe(before+1)
+      expect(shelf.canvas.dataset.bookQualityPending).toBe('0')
+      expect(shelf.canvas.dataset.highResolutionBooks).toBe('3')
+      expect(JSON.parse(shelf.canvas.dataset.bookTextureResolutions)).toEqual([1024,1024,1024])
+      expect(gpu.decodes.every(({model})=>model.parent&&model.visible)).toBe(true)
+    }finally{vi.useRealTimers()}
+  })
 
   it('consumes one queued paint once without leaving a second RAF after a synchronous flush',() => {
     shelf.invalidate(); shelf.invalidate(); shelf.invalidate();

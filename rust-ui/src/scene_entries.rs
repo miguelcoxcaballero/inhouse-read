@@ -230,11 +230,14 @@ impl RustScene{
    applies=true;
    // Choose overview quality only after the global view settles, rather than rebuilding
    // repeatedly while the book crosses a size threshold.
+   // A fallen cover can be wider than it is tall. Its longest projected
+   // dimension controls texture detail; unrotated/legacy callers keep height.
+   let pixels=if flags&32!=0{jmax(rect[4],rect[5])}else{rect[5]};
    let stable=self.transition_none()&&(self.progress==0.0||self.progress==1.0);
    if lifted||pressed{overview_out=false;}
-   else if !model&&self.isometric&&rect[5]<90.0{overview_out=true;}
-   else if stable{overview_out=self.progress==1.0&&rect[5]<90.0;}
-   let physical=rect[5]*jmin(or(self.entry_ratio,1.0),2.5);
+   else if !model&&self.isometric&&pixels<90.0{overview_out=true;}
+   else if stable{overview_out=self.progress==1.0&&pixels<90.0;}
+   let physical=pixels*jmin(or(self.entry_ratio,1.0),2.5);
    let inspecting=self.zoom>1.001&&self.progress==1.0&&physical>192.0;
    if inspecting{overview_out=false;}
    resolution=if inspecting{if physical>900.0{2048.0}else{1024.0}}else{0.0};

@@ -5,8 +5,9 @@ import { runScenario } from './helpers/scene-differential.js'
 
 // New settling is enabled in production by default and covered by contact/idle
 // regressions. Keep the complete original scene corpus as an independent check
-// of the optional non-settling API, without changing its frozen reference.
-const live=options=>liveScene({...options,settleBooks:false})
+// of the optional non-settling, immediate-paint API, without changing its frozen
+// reference. Default batching is checked with staggered decodes and real GPU gestures.
+const live=options=>liveScene({...options,settleBooks:false,batchQuality:false})
 
 vi.mock('../../src/js/book-model.js', async () => (await import('./helpers/scene-differential.js')).bookModelMock())
 

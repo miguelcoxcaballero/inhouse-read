@@ -194,7 +194,7 @@ const darkPage = () => document.documentElement.dataset.theme === 'dark';
  * hit targets, projected from the meshes after every camera/group update.
  */
 export function createBookshelfScene({ stage, scroller, entries, rows, width, height, sceneWidth = width,
-  trashNode = null, catalogNode = null, mode = 'spine', shelfType = 'walnut', unitWidth = width, unitCount = 1, settleBooks = true }) {
+  trashNode = null, catalogNode = null, mode = 'spine', shelfType = 'walnut', unitWidth = width, unitCount = 1, settleBooks = true, batchQuality = true }) {
   shelfType = normalizeShelfType(shelfType);
   const renderer = getBookRenderer();
   if (!renderer || !width || !height) return null;
@@ -819,7 +819,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       : createBookModel(entry.book, entry.style, entry.width, entry.height, entry.thickness, entry.coverUrl, { shelf:true, overview:entry.overview, inspectionResolution:entry.inspectionResolution });
     // Texture/font decode notifications improve the same artwork. Explicit
     // record/material changes separately invalidate the retained room below.
-    model.userData.invalidate = () => invalidateBookMaterial(entry);
+    model.userData.invalidate = () => rust.scene_quality_invalidate(entry,model,qualityHost);
     model.traverse(object => {
       for (const material of Array.isArray(object.material) ? object.material : object.material ? [object.material] : [])
         for (const key of ['map','normalMap','bumpMap','roughnessMap'])
@@ -1089,60 +1089,25 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     });
   }
 
-  const qualityMatches = (model,entry) => Boolean(model?.userData.overview) === entry.overview && (model?.userData.inspectionResolution || 0) === entry.inspectionResolution;
-
-  function replaceBookQuality(entry) {
-    if (entry.kind === 'plant' && entry.model?.userData.prepareSurfaceQuality) {
-      if (entry.replacement || entry.plantQuality?.resolution === entry.inspectionResolution) return;
-      entry.plantQuality?.plan.dispose();
-      const model = entry.model, plan = model.userData.prepareSurfaceQuality(entry.inspectionResolution);
-      const pending = { model, plan, resolution:entry.inspectionResolution, ready:false };
-      entry.plantQuality = pending;
-      Promise.resolve(plan.ready).then(loaded => {
-        if (disposed || entry.plantQuality !== pending || entry.model !== model) { plan.dispose(); return; }
-        if (!loaded) { plan.dispose(); entry.plantQuality = null; return; }
-        pending.ready = true; invalidate(true, true);
-      }, () => { plan.dispose(); if (entry.plantQuality === pending) entry.plantQuality = null; });
-      return;
-    }
-    if (entry.qualityReplacement && entry.replacement && !qualityMatches(entry.replacement,entry))
-      cancelReplacement(entry);
-    if (entry.replacement) return;
-    const previous = entry.model, replacement = makeModel(entry);
-    entry.replacement = replacement; entry.qualityReplacement = true;
-    Promise.resolve(replacement.userData.ready).then(loaded => {
-      if (disposed || entry.replacement !== replacement || entry.model !== previous) {
-        releaseCandidate(replacement); return;
-      }
-      if (loaded === false && previous && entry.coverUrl) { cancelReplacement(entry); return; }
-      entry.replacementReady = true; invalidate(true, true);
-    }, () => { if (entry.replacement === replacement) cancelReplacement(entry); });
+  const qualityPaintState = { deadline:0, paintDeadline:0 };
+  let qualityPaintTimer = 0, qualityHoldTimer = 0;
+  function qualityReady() {
+    if (disposed) return;
+    if (!batchQuality) { invalidate(true,true); return; }
+    clearTimeout(qualityPaintTimer); qualityPaintTimer = 0;
+    const delay = rust.scene_quality_delay(bookEntries,qualityPaintState,sceneView.moving,performance.now());
+    if (delay > 0) qualityPaintTimer = setTimeout(qualityReady,delay);
+    else invalidate(true,true);
   }
-
-  function applyBookQuality(entry) {
-    if (entry.plantQuality) {
-      const pending = entry.plantQuality;
-      if (entry.model !== pending.model || pending.resolution !== entry.inspectionResolution) {
-        pending.plan.dispose(); entry.plantQuality = null;
-      } else if (pending.ready && !entry.trashDrop && !entry.insertion &&
-        !entry.node?.classList.contains('is-away') && !entry.node?.classList.contains('is-dragging')) {
-        pending.plan.apply(); pending.plan.dispose(); entry.plantQuality = null;
-      }
-      return;
+  const qualityHost = { makeModel,cancelReplacement,releaseCandidate,furniture,notify:qualityReady,batchQuality,invalidateCurrent:invalidateBookMaterial,
+    programsChanged() { if (batchQuality) programsStale = true; },
+    get disposed() { return disposed; },
+    watch(ready,entry,pending,previous,plant) {
+      Promise.resolve(ready).then(
+        loaded => rust.scene_quality_complete(entry,qualityHost,pending,previous,plant,loaded,false),
+        () => rust.scene_quality_complete(entry,qualityHost,pending,previous,plant,undefined,true));
     }
-    // A late cover decode can finish after the user has reversed the view or
-    // pressed/released this book. Never paint the obsolete quality first.
-    if (entry.qualityReplacement && entry.replacement && !qualityMatches(entry.replacement,entry)) {
-      cancelReplacement(entry); return;
-    }
-    if (!entry.qualityReplacement || !entry.replacementReady || entry.trashDrop || entry.insertion ||
-      entry.node?.classList.contains('is-away') || entry.node?.classList.contains('is-dragging')) return;
-    const previous = entry.model;
-    entry.model = entry.replacement; entry.replacement = null;
-    entry.qualityReplacement = false; entry.replacementReady = false;
-    furniture.add(entry.model);
-    previous?.removeFromParent(); previous?.userData.dispose?.();
-  }
+  };
 
   function updateMaterials(entry) {
     const model = entry.model;
@@ -1478,7 +1443,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       projectedMatrix.multiplyMatrices(furniture.matrixWorld, entry.pose.matrix);
       // Which part of the room it is in, and the quality it is drawn at, are decided in Rust too.
       const trashDrop = entry.trashDrop;
-      projectIo[0] = kind; projectIo[1] = entry.bits | (settleBooks && gravityOutput[entryIndex * 4 + 3] ? 16 : 0); projectIo[2] = trashDrop ? 1 : 0; projectIo[3] = insertion ? 1 : 0;
+      projectIo[0] = kind; projectIo[1] = entry.bits | (settleBooks && gravityOutput[entryIndex * 4 + 3] ? 16 : 0) | (settleBooks && Math.abs(gravityOutput[entryIndex * 4]) > .001 ? 32 : 0); projectIo[2] = trashDrop ? 1 : 0; projectIo[3] = insertion ? 1 : 0;
       projectIo[4] = entry.model ? 1 : 0; projectIo[5] = entry.overview ? 1 : 0; projectIo[6] = trashDrop?.complete ? 1 : 0;
       projectIo[7] = insertion?.overlayCanvas ? 1 : 0;
       projectIo.set(entry.box, 8); projectIo.set(projectedMatrix.elements, 14);
@@ -1488,9 +1453,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       rect.width = projectIo[34]; rect.height = projectIo[35]; rect.closest = projectIo[36];
       const visible = projectIo[37] === 1;
       if (projectIo[38] === 1) {
-        entry.overview = projectIo[39] === 1; entry.inspectionResolution = projectIo[40];
-        if (entry.model && !qualityMatches(entry.model,entry)) replaceBookQuality(entry);
-        applyBookQuality(entry);
+        rust.scene_update_quality(entry,qualityHost,projectIo[39] === 1,projectIo[40]);
       }
       let created = null;
       if (visible && !entry.model) {
@@ -1568,6 +1531,11 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
         let written = entry.written;
         if (written?.node !== node) written = entry.written = entryStyleCache(node);
         const style = node.style;
+        if (settleBooks && lamp && !undershelf && entry.model) {
+          entry.model.updateMatrixWorld(true);
+          const clip = rust.scene_lamp_hit_hull(entry.model,tapLeft,tapTop);
+          if (clip !== written.clip) style.clipPath = written.clip = clip;
+        }
         if (!written.fixed) style.position = 'absolute';
         if (tapLeft !== written.left) style.left = `${written.left = tapLeft}px`;
         if (tapTop !== written.top) style.top = `${written.top = tapTop}px`;
@@ -2100,7 +2068,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     if (disposed) return;
     if (!force && canDeferModalPaint()) { drawPending = true; return; }
     drawPending = false;
-    hideInspectionSnapshot();
+    if (!batchQuality) hideInspectionSnapshot();
     if (!sceneView.moving && inspectionEntryUpdates.size) {
       // Cover analysis and metadata can finish independently for many books.
       // Commit their latest records together before fitting the settled room,
@@ -2165,6 +2133,14 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       shelfSnapshotDirty = true;
     }
     if (lampLighting.shadowRefresh) renderer.shadowMap.needsUpdate = true;
+    const qualityHold = rust.scene_quality_hold(bookEntries,qualityPaintState,sceneView,
+      batchQuality && inspectionSnapshotVisible && !moving && !shelfMoving && !trashMoving,performance.now());
+    if (qualityHold > 0) {
+      drawPending = true; unpainted.push(...finishedInsertions,...finishedDrops);
+      qualityHoldTimer ||= setTimeout(() => { qualityHoldTimer = 0; invalidate(false); },qualityHold);
+      return;
+    }
+    clearTimeout(qualityHoldTimer); qualityHoldTimer = 0;
     // The models and lamp lights now exist: link their programs in parallel
     // instead of one blocking link per material inside the first render.
     if (programsStale) { programsStale = false; if (programsReady === true) programsReady = null; }
@@ -2198,6 +2174,9 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       veneerTimer ||= setTimeout(() => { veneerTimer = 0; invalidate(false); }, veneerWait);
       return;
     }
+    // Keep the last finger frame visible while exact quality shaders link.
+    // Reveal the native room only when this transaction can really paint.
+    if (batchQuality) hideInspectionSnapshot();
     // Fit the key's shadow to the cabinet (and bin) in world space; the
     // lighting clips it to the camera window, so each texel covers less.
     if (trash) {
@@ -3036,7 +3015,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       scroller.removeEventListener('scroll', scrolled); window.removeEventListener('resize', invalidate);
       document.removeEventListener('visibilitychange', presentationChanged);
       if (programsPoll) clearTimeout(programsPoll);
-      clearTimeout(veneerTimer);
+      clearTimeout(veneerTimer); clearTimeout(qualityPaintTimer); clearTimeout(qualityHoldTimer);
       for (const entry of bookEntries) releaseEntry(entry);
       releaseCompletedLegacyInsertions();
       for(const unbind of nativeSnapshotBindings)unbind();

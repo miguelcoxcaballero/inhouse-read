@@ -1,3 +1,18 @@
+# 1.7.261 — zoom y sustitución de calidad en Rust
+
+Changelog: «Zoom más fluido y portadas nítidas».
+Rust decide la preparación, validez, cancelación y sustitución de modelos y mapas de inspección. Las decodificaciones escalonadas se agrupan durante un máximo de 48 ms desde la primera llegada. Al soltar el zoom se conserva la última imagen correcta mientras termina el lote, con una espera acotada de 240 ms; el gesto no espera. La imagen se oculta después de preparar los programas y la madera, evitando un fotograma vacío. Los libros tumbados usan su mayor dimensión proyectada para elegir textura, conservando 1024/2048 según tamaño. No se rebaja geometría, materiales, sombras o resolución del renderizador.
+
+La zona táctil de las lámparas de pie se recorta a su silueta convexa, calculada en Rust, para que sus esquinas vacías no bloqueen libros. Los focos pequeños del techo conservan la zona táctil ampliada. No cambia la imagen de las lámparas.
+
+Build completo y 80 pruebas en siete archivos pasan sobre el binario final: incluyen 26 sesiones completas contra la referencia congelada, preparación/cancelación/rechazo de mapas, presupuesto de espera, geometría de toque, libros caídos, física y reposo. La comparación heredada conserva settleBooks:false y batchQuality:false para mantener la cadencia original; los valores de producción están activados y se prueban por separado. No se modifican referencias congeladas, corpus, aserciones ni tiempos límite.
+
+Tres E2E de Chromium móvil pasan en una ejecución final sin reintentos: pellizco iniciado sobre un libro, portadas nítidas, lámpara encendida/apagada y apertura/cierre del libro; libro soltado que se asienta y deja dormir la GPU; biblioteca antigua y arrastre que mueve cuatro vecinos. Durante los 20 pasos del gesto no hubo repintados WebGL ni reasignaciones del buffer. Las seis portadas recuperaron 1024 px y la luz mantuvo un efecto medible. Una ejecución anterior reutilizó por error el servidor del build 260; se cerró y se repitió el archivo completo contra el build 261. No se presentan aquellos resultados como verificación del candidato.
+
+Medición repetida final: Chromium SwiftShader, 390×844, DPR 1, tres contextos nuevos y cuatro gestos en cada uno. Frente a 260, los repintados de los doce gestos pasan de 27 a 13 (cero durante el movimiento en ambos). La mediana de asentamiento del primer zoom pasa de 1,79 a 1,05 s, aproximadamente un 42 % menos. Las seis portadas alcanzan 1024 px, frente a una en 260. Modelos, sombras de 1024 y DPR 1 se mantienen. Son medidas de esta escena y GPU por software, no FPS garantizados en teléfonos físicos. Se revisaron las capturas del mismo encuadre.
+
+Inventario: 31869 líneas Rust / 21313 JS, **59,92 %**; cuenta fuentes propias incluidas compatibilidad y comentarios, no funciones completadas. No se repite la batería general en este bloque; sigue pendiente el timeout de color preexistente. Siguiente: ciclo de vida de la pantalla y resto de migración.
+
 # 1.7.260 — colisiones y caídas de libros en Rust
 
 Changelog: «Colisiones y caídas de libros en Rust».
