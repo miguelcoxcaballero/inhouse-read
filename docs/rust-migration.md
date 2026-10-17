@@ -1,3 +1,11 @@
+# Entrega 1.7.282: layout estable y sonidos reales
+
+La selección/lectura reserva el cuerpo y la matriz físicos del libro en Rust; regresar no reinicia su inclinación ni restaura una copia antigua de los vecinos. La retirada y el arrastre reales siguen liberando el apoyo. El atlas final de wip/sfx@adede344 incluye 146 clips de 16 kHz / 1861058 B con créditos CC0, alternativas grabadas y síntesis Rust de respaldo. Eventos y contactos por material se deciden en Rust; el transporte Web Audio se suspende en reposo. Se conservan las calidades visuales y los parámetros físicos.
+
+Verificación final e inventario detallados en [remaining-wip-verification.md](remaining-wip-verification.md). Inventario de fuentes: 34771 líneas Rust y 20815 JavaScript, 62,55 %; no representa funciones completadas. La coordinación de apertura/cierre restante y otras partes de app.js siguen pendientes. No se toca Android, el actualizador, vendor ni workflows. Conservar WIP, stashes y ramas de otros agentes; no se sustituye ready/sfx.
+
+---
+
 # Migración a Rust: implementación y comprobaciones
 
 Entrega 1.7.281: coordinación de preparación del lector en Rust: selección, cola compartida, cancelaciones por generación, posición guardada, claves y reutilización de página. Los adaptadores conservan las APIs de File, Promise, DOM e idle. Pasan 426 pruebas específicas en 23 archivos, incluidas 36 nuevas diferenciales y ciclos de recursos. Pasan once E2E con la compilación final, en una sola ejecución y sin reintentos: preparación y reutilización de PDF/EPUB, cambio de posición guardada de Drive, giro, cierre sin lectura, apertura rápida, regreso a la última página, cambios de tema/preferencias y carga normal/retrasada del módulo. Las dos pruebas compiladas verifican además que se ejecutan app_prepare_book, app_run_preparation y app_opening_page_snapshot reales del WASM. Las aperturas preparadas reutilizan una instantánea y no enlazan nuevos shaders. No se declara batería general completa ni medición en teléfono físico.. Inventario 34207 líneas Rust / 20760 JavaScript = 62,23 %, no funciones terminadas; apertura final, cierre y otra coordinación de app.js siguen pendientes. El audio se mantiene para el agente que lo está trabajando; no se cambian sus fuentes. Preservar WIP/stashes/ready.

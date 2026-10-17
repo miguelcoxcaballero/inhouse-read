@@ -1416,7 +1416,8 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       bookGravity.sound_enabled(shelfSoundsEnabled());
       bookGravity.step(gravityKeys, physicsStates, gravityInput, sceneView, now, reducedMotion.matches, gravityOutput);
       const sounds=bookGravity.take_sounds();
-      if(sounds)for(let at=0;at<sounds.length;at+=3)playShelfSound(3,sounds[at],sounds[at+1],sounds[at+2]);
+      // [material, strength, pan, kind]; a module without kinds reports book impacts in threes.
+      if(sounds){const stride=bookGravity.sound_stride?.()||3;for(let at=0;at+2<sounds.length;at+=stride)playShelfSound(stride>3?sounds[at+3]:3,sounds[at],sounds[at+1],sounds[at+2]);}
     }
     for (const [entryIndex,entry] of bookEntries.entries()) {
       const node = entry.node, plant = entry.kind === 'plant', lamp = entry.kind === 'lamp';
@@ -2773,7 +2774,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       const entry = byNode.get(node);
       if (!entry || entry.kind === 'plant' || entry.kind === 'lamp' || disposed) return null;
       flushScene();
-      const dock = shelfBookInsertion(shelfBookSlot(entry, width), entry.width);
+      const dock = shelfBookInsertion(shelfBookSlot(entry, width, settleBooks && physicsStarted ? entry.pose.matrix.elements : null), entry.width);
       return projectShelfBookPose(furniture.matrixWorld, dock, entry, stage.getBoundingClientRect());
     },
     returnBook(node, { duration = 180, overlayCanvas = null, nativePresentation = null } = {}) {
@@ -2785,7 +2786,7 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       cancelInsertion(entry);
       let resolve;
       const finished = new Promise(done => { resolve = done; });
-      const insertion = { slot:shelfBookSlot(entry, width), started:performance.now(),
+      const insertion = { slot:shelfBookSlot(entry, width, settleBooks && physicsStarted ? entry.pose.matrix.elements : null), started:performance.now(),
         duration:reducedMotion.matches ? 0 : Math.max(0, Number(duration) || 0), resolve, complete:false, overlayCanvas,
         elapsed:0, lastFrame:performance.now(), nativePresentation };
       if (nativePresentation) {

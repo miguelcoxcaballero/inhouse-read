@@ -147,7 +147,7 @@ pub fn build_spine(ctx:&Rc<Ctx>,item:&JsValue)->R<JsValue>{
   .attr_value("data-book-id",&coalesce(get(&book,"id"),s(""))).attr_value("aria-label",&aria).attr("title","Mantén pulsado para mover")
   .attr("aria-keyshortcuts","Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown")
   .attr("aria-description","Mantén pulsado para sacar el libro y moverlo. Usa Mayús y las flechas para cambiar su posición o balda.").style(&css).done();
- if ctx.st("returningBookId")==string_value(&get(&book,"id")){cls_add(&node,&["is-away"]);}
+ if ctx.st("returningBookId")==string_value(&get(&book,"id")){cls_add(&node,&["is-away","is-reader-origin"]);}
  if truthy(&tilt){cls_add(&node,&["is-tilted"]);}
  if gn(&style,"width")<32.0{cls_add(&node,&["ihr-spine--slim"]);}
  let body=El::new("span").class("ihr-spine__body").attr("aria-hidden","true").done();

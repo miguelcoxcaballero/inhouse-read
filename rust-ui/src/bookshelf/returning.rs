@@ -24,8 +24,8 @@ pub fn set_returning_book(ctx:&Rc<Ctx>,book_id:&JsValue)->R{
  method_opt(&scene,"setPaintHeld",&[&b(next!=null())])?;
  for node in qsa(&ctx.root,SPINE){
   let id=data_get(&node,"bookId");
-  if previous!=next&&id==previous{cls_remove(&node,&["is-away"]);}
-  if id==next{cls_add(&node,&["is-away"]);}
+  if previous!=next&&id==previous{cls_remove(&node,&["is-away","is-reader-origin"]);}
+  if id==next{cls_add(&node,&["is-away","is-reader-origin"]);}
  }
  Ok(())
 }
@@ -101,7 +101,7 @@ impl Closing{
  fn restore_spine(&self,flush:bool)->R<JsValue>{
   let id=book_id_text(&self.book_id);
   let current=spine_of(&self.ctx,&id).unwrap_or(self.spine.clone());
-  cls_remove(&current,&["is-away"]);
+  cls_remove(&current,&["is-away","is-reader-origin"]);
   // A queued record refresh rebuilds the resting spine before the caller's final cleanup. Release this return's
   // marker with its actual landing so that rebuilt DOM cannot briefly hide the already inserted book again.
   if self.ctx.st("returningBookId")==id{
@@ -258,7 +258,7 @@ async fn return_to_shelf(ctx:Rc<Ctx>,book_id:JsValue,options:JsValue)->R<JsValue
   append_all(&book_node,&[&pages,&leaf]);
  }
  append(&get(&document(),"body"),&flyout);
- cls_add(&spine,&["is-away"]);
+ cls_add(&spine,&["is-away","is-reader-origin"]);
  method_opt(&ctx.scene(),"updateEntry",&[&spine,&book,&get(&previous,"style"),&cover_url])?;
  ctx.scene_call("flush",&[])?;
  let duration=num(&get(&durations,"flight"));
@@ -317,7 +317,7 @@ async fn play(ctx:&Rc<Ctx>,closing:&Rc<Closing>,input:PlayInput)->R<JsValue>{
   closing.release_frame()?;
   // White paper from here on, even if a stalled frame let the zoom's watchdog release it early.
   if truthy(&get(&page_snapshot,"paper"))&&num(&method(&view,"getPageTheme",&[])?)>0.0{method(&view,"setPageTheme",&[&f(0.0)])?;}
-  puts(&dataset(&flyout),"returnPhase","bookmark");
+  puts(&dataset(&flyout),"returnPhase","bookmark");ctx.sound_of(21,0,0.5);
   let animation=method(&view,"animateBookmark",&[&obj(&[("withdraw",&f(0.0)),("duration",&f(bookmark))])])?;
   closing.animation(animation.clone());
   wait_for_motion(&animation,bookmark).await?;
@@ -327,6 +327,7 @@ async fn play(ctx:&Rc<Ctx>,closing:&Rc<Closing>,input:PlayInput)->R<JsValue>{
   closing.animation(animation.clone());
   wait_for_motion(&animation,cover).await?;
   if !closing.active(){return Ok(JsValue::FALSE);}
+  ctx.sound_of(19,0,0.6);
  }else if has_source&&!has_view{
   let pages=qs(&book_node,".ihr-flyout__fallback-pages");
   let leaf=qs(&book_node,".ihr-flyout__fallback-leaf");
@@ -361,7 +362,7 @@ async fn play(ctx:&Rc<Ctx>,closing:&Rc<Closing>,input:PlayInput)->R<JsValue>{
   wait_for_motion(&animation,zoom).await?;
   if !closing.active(){return Ok(JsValue::FALSE);}
   style_prop(&book_node,"transform","translate(0,0) scale(1)");method_opt(&animation,"cancel",&[])?;
-  puts(&dataset(&flyout),"returnPhase","bookmark");
+  puts(&dataset(&flyout),"returnPhase","bookmark");ctx.sound_of(21,0,0.5);
   let ribbon=El::new("div").class("ihr-flyout__return-ribbon").done();append(&pages,&ribbon);
   let animation=animate(&ribbon,&arr(&[&obj(&[("transform",&s("translateY(-130%)"))]),&obj(&[("transform",&s("translateY(0)"))])]),&obj(&[("duration",&f(bookmark)),("fill",&s("both")),("easing",&s(EASE))]))?;
   closing.animation(animation.clone());closing.fallback.borrow_mut().push(animation.clone());wait_for_motion(&animation,bookmark).await?;
@@ -370,6 +371,7 @@ async fn play(ctx:&Rc<Ctx>,closing:&Rc<Closing>,input:PlayInput)->R<JsValue>{
   let animation=animate(&leaf,&arr(&[&obj(&[("transform",&s("rotateY(-169deg)"))]),&obj(&[("transform",&s("rotateY(0deg)"))])]),&obj(&[("duration",&f(cover)),("fill",&s("both")),("easing",&s(EASE))]))?;
   closing.animation(animation.clone());closing.fallback.borrow_mut().push(animation.clone());wait_for_motion(&animation,cover).await?;
   if !closing.active(){return Ok(JsValue::FALSE);}
+  ctx.sound_of(19,0,0.6);
  }
  method_opt(&ctx.scene(),"setPaintHeld",&[&JsValue::FALSE])?;ctx.scene_call("flush",&[])?;
  style_prop(&flyout,"visibility","");
@@ -408,6 +410,7 @@ async fn play(ctx:&Rc<Ctx>,closing:&Rc<Closing>,input:PlayInput)->R<JsValue>{
   }
   *closing.insertion.borrow_mut()=insertion.clone();
   if truthy(&insertion){wait_for_motion(&insertion,remaining).await?;}
+  if closing.ctx.st("returnMotion")==closing.motion{ctx.sound_of(16,1,0.55);}
  }
  if closing.ctx.st("returnMotion")==closing.motion{
   ctx.st_set("returnMotion",&null());

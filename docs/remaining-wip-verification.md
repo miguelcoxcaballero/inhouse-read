@@ -1,3 +1,21 @@
+# 1.7.282 — layout conservado y sonidos grabados
+
+Changelog: «Layout estable y sonidos reales».
+
+La apertura temporal de un libro conserva en Rust su cuerpo físico y su pose exacta como apoyo reservado. Al cerrar la portada o regresar del lector se reutiliza esa misma matriz; no se vuelve a crear un libro vertical en su hueco nominal. Los objetos que ya se movieron antes de abrirlo conservan sus nuevas poses. No se restaura una copia antigua de toda la escena. Arrastrar o retirar realmente un libro sigue liberando su apoyo.
+
+Se integra el atlas final de wip/sfx (adede344eb72366dcef531f912dd2ee32a72ddf4): 146 clips PCM mono de 16 kHz, 1861058 bytes, sin modificar las tomas, con créditos CC0. SHA256 del binario: bc5d3f6f95dcff025da078078ea4860ed4d780977e8738761543e7a3a778697c. Incluye interruptores, extracción/apertura/cierre/devolución de libros, movimiento y suelta de plantas/lámparas e impactos por material. Rust selecciona eventos, material e intensidad; Web Audio reproduce tomas alternas con cuatro voces máximas y suspende el contexto en reposo. El atlas se carga tras un gesto y se guarda en el shell offline; si falta, se usa la síntesis Rust existente.
+
+La integración corrige la prioridad del material cuando un libro golpea el cristal de una lámpara en distinto orden de colisionadores, añade un único sonido a las sueltas suaves con apoyo real y distingue las caídas de decoraciones por descenso efectivo. No se cambian la fricción, la amortiguación, las texturas ni los shaders.
+
+Pasan 227/227 pruebas específicas en 17 archivos, incluyendo las 56 regresiones físicas anteriores, cuatro nuevas de conservación de layout y dos de matriz de regreso, contactos por material en ambos órdenes de colisionadores, sueltas/caídas de decoraciones, los 146 clips y sus rutas, límites de voces, mute, reposo y reanudación retrasada del audio. Se programa el PCM antes de esperar la promesa de reanudación, para que la creación síncrona de una portada no descarte la extracción por antigüedad. Una reanudación rechazada para el sonido programado.
+
+Cinco E2E pasan con el WASM final: layout frontal e isométrico tras cancelar, dos ciclos de lectura y recarga; zoom con cero dibujos GPU durante el gesto y seis portadas de 1024 px; empuje real de vecinos y poses persistentes; colocación de libro y planta. Pasan también los dos E2E finales de audio: los eventos reales de interruptor, arrastre/suelta de planta y lámpara y lectura usan clips grabados de 16 kHz, con contexto suspendido después; con el atlas bloqueado se verifica la síntesis Rust de interruptor, extracción y apertura. Son siete casos aprobados en dos ejecuciones (5 + 2), sin reintentos automáticos. Las pruebas de layout usan portadas ya nítidas para aislar la física de la sustitución deliberada de una portada pequeña por la del PDF de prueba.
+
+Build nativo: UI 3019313 B, SHA256 80c7dc5b5c878a97bbf664a658c648272c7f57456b5f821be1552418b4907319; Shelf 3692127 B, SHA256 eeb839594ff2ee3196368e33dee736f72d3135ff5b9132b2aeaf97ac13d6d15c. Shell final: 111 archivos / 33278406 B, revisión cc2c73c7b463. Inventario: 34771 líneas Rust / 20815 JavaScript = 62,55 %, un recuento de fuentes, no de funciones terminadas. No se declara batería general completa ni validación en teléfono físico. Se conservan todos los WIP y no se modifica Android, actualizador, vendor ni workflows.
+
+---
+
 # 1.7.281 — preparación del lector en Rust
 
 Changelog: «Preparación del lector en Rust».

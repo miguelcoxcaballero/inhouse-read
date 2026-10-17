@@ -25,7 +25,9 @@ impl PhysicsHooks for GentleSideContacts{
 const DT:f32=1.0/120.0;
 // Scene input bits: dragging or lifted; a simple press (8) leaves the library asleep.
 const HELD:u32=2|4;
-struct Book{sound_until:f64,name:JsString,restored:bool,handle:RigidBodyHandle,collider:ColliderHandle,solid:Option<SharedShape>,decor_landing:bool,base:[f64;4],size:[f64;3],held:bool,home:Option<(Pose,[f32;4])>,recovery:Option<Vector>,firm_grip:bool,anchor:Vector,goal:Vector,kind:u32,grip_angle:f32,grip_time:f32,pointer:[f64;2],fast_until:f64,fast_grip:bool,contacting:bool,clearance:f32,bay:[f32;4],grip:f32,motion:f32,direction:f32,release:f32,release_time:f32,quiet:Option<(Vector,f32,f32)>}
+// Only reading reserves a physical origin. Ordinary removal still frees supports.
+const READER_ORIGIN:u32=64;
+struct Book{reader:bool,sound_until:f64,landing_sound:bool,landing_height:f32,name:JsString,restored:bool,handle:RigidBodyHandle,collider:ColliderHandle,solid:Option<SharedShape>,decor_landing:bool,base:[f64;4],size:[f64;3],held:bool,home:Option<(Pose,[f32;4])>,recovery:Option<Vector>,firm_grip:bool,anchor:Vector,goal:Vector,kind:u32,grip_angle:f32,grip_time:f32,pointer:[f64;2],fast_until:f64,fast_grip:bool,contacting:bool,clearance:f32,bay:[f32;4],grip:f32,motion:f32,direction:f32,release:f32,release_time:f32,quiet:Option<(Vector,f32,f32)>}
 fn overlapping(a:&RigidBody,sa:[f64;3],b:&RigidBody,sb:[f64;3],resting:bool)->bool{
  let pa=a.translation();let pb=b.translation();
  if (pa.z-pb.z).abs()>(sa[2]+sb[2]) as f32/2.0{return false;}
@@ -246,7 +248,7 @@ impl RustBookGravity{
  }
  /// A hidden document resumes its existing poses, without simulating the
  /// elapsed time in the background as one expensive catch-up frame.
- pub fn pause(&mut self){self.last=None;self.carry=0.0;self.pending_sounds.clear();self.audio_velocities.clear();}
+ pub fn pause(&mut self){self.last=None;self.carry=0.0;self.pending_sounds.clear();self.audio_velocities.clear();for b in self.books.values_mut(){b.landing_sound=false;}}
  /// One batch across the WASM boundary. States use RustScene.stepEntry's 37
  /// numbers. Geometry: thickness, kind (book/plant/lamp/puck), row, pixels/metre,
  /// row left/right/bottom/ceiling, grip height as a fraction of book height. Output: angle, world dx/dy, active.
@@ -277,7 +279,7 @@ impl RustBookGravity{
     state[35]=1.0;
    }
   }
-  self.snapshot_allowed=!states.chunks_exact(37).any(|s|s[2] as u32&(1|HELD)!=0);
+  self.snapshot_allowed=!states.chunks_exact(37).any(|s|{let flags=s[2] as u32;flags&HELD!=0||flags&1!=0&&flags&READER_ORIGIN==0});
   let was_active=self.books.values().any(|b|self.world.bodies[b.handle].is_dynamic()&&!self.world.bodies[b.handle].is_sleeping());
   self.cabinet(geometry,scene.baggebo);
   let frame_dt=self.last.map_or(1.0/60.0,|t|((now-t)/1000.0).clamp(1.0/240.0,0.1));
@@ -292,9 +294,9 @@ impl RustBookGravity{
   let mut changed=membership_changed;let mut isolated_releases=Vec::new();let mut fresh_books=Vec::new();
   for (i,key) in names.iter().enumerate(){
    let s=&states[i*37..i*37+37];let g=&geometry[i*9..i*9+9];
-   let p=g[3];let kind=g[1] as u32;let flags=s[2] as u32;let held=flags&HELD!=0;let away=flags&1!=0;
+   let p=g[3];let kind=g[1] as u32;let flags=s[2] as u32;let held=flags&HELD!=0;let away=flags&1!=0;let reader=flags&READER_ORIGIN!=0;
    if !g[..8].iter().all(|v|v.is_finite())||p<=0.0||!s[23..27].iter().all(|v|v.is_finite())||!g[0].is_finite()||g[0]<=0.0||s[26]<=0.0{if let Some(b)=self.books.remove(key){disturbed.insert(b.base[2] as i64);self.world.remove_body(b.handle);changed=true;}continue;}
-   if kind==3||away{if let Some(b)=self.books.remove(key){disturbed.insert(b.base[2] as i64);self.world.remove_body(b.handle);changed=true;}continue;}
+   if kind==3||away&&!reader{if let Some(b)=self.books.remove(key){disturbed.insert(b.base[2] as i64);self.world.remove_body(b.handle);changed=true;}continue;}
    let base=[s[23]/p,-s[24]/p,g[2],p];
    let h=s[26]/p;let thickness=g[0]/p;let depth=if kind==0||!s[27].is_finite()||s[27]<=0.0{s[25]/p}else{s[27]/p};
    let size=[thickness,h,depth.max(0.005)];
@@ -352,9 +354,24 @@ impl RustBookGravity{
     }
     let b=&mut self.world.bodies[handle];if kind==0&&!held{constrain(b,size,bay);}b.activation_mut().time_until_sleep=0.4;b.activation_mut().angular_threshold=0.003;b.activation_mut().normalized_linear_threshold=0.005;
     let name=keys.get(i as u32);let name=if name.is_string(){name.unchecked_into::<JsString>()}else{JsString::from("")};
-    self.books.insert(key.clone(),Book{sound_until:0.0,name,restored,handle,collider,solid,decor_landing:false,base,size,held:false,home:None,recovery:None,firm_grip:false,anchor:Vector::ZERO,goal:target,kind,grip_angle:angle as f32,grip_time:0.0,pointer:[s[3],s[4]],fast_until:0.0,fast_grip:false,contacting:false,clearance:0.0,bay,grip:0.0,motion:0.0,direction:0.0,release:0.0,release_time:0.0,quiet:None});changed=true;
+    self.books.insert(key.clone(),Book{reader:false,sound_until:0.0,landing_sound:false,landing_height:0.0,name,restored,handle,collider,solid,decor_landing:false,base,size,held:false,home:None,recovery:None,firm_grip:false,anchor:Vector::ZERO,goal:target,kind,grip_angle:angle as f32,grip_time:0.0,pointer:[s[3],s[4]],fast_until:0.0,fast_grip:false,contacting:false,clearance:0.0,bay,grip:0.0,motion:0.0,direction:0.0,release:0.0,release_time:0.0,quiet:None});changed=true;
    }
    let b=self.books.get_mut(key).unwrap();let body=&mut self.world.bodies[b.handle];
+   if reader&&kind==0{
+    // Keep the original rigid pose and its support while the visual book is
+    // in the reader. No new body, seed angle, placement or neighbour rollback.
+    if !b.reader{
+     body.set_body_type(RigidBodyType::Fixed,false);body.set_linvel(Vector::ZERO,false);body.set_angvel(Vector::ZERO,false);
+     body.reset_forces(false);body.reset_torques(false);b.reader=true;b.held=false;b.release=0.0;b.recovery=None;
+     self.world.colliders[b.collider].set_collision_groups(InteractionGroups::new(Group::GROUP_1,Group::ALL,InteractionTestMode::And));
+     changed=true;
+    }
+    b.restored=true;b.base=base;b.bay=bay;continue;
+   }
+   if b.reader{
+    body.set_body_type(RigidBodyType::Dynamic,false);body.sleep();
+    b.reader=false;b.restored=true;b.held=false;b.release=0.0;b.quiet=None;changed=true;
+   }
    if held{b.restored=false;if !b.held{b.home=Some((*body.position(),b.bay));b.recovery=None;b.firm_grip=false;}}else{b.recovery=None;}
    if !held&&(b.held&&(kind!=0||!b.contacting)||!b.held&&b.base!=base){isolated_releases.push(key.clone());}
    if kind!=0{
@@ -365,6 +382,8 @@ impl RustBookGravity{
      let active_type=if held{RigidBodyType::Fixed}else{RigidBodyType::Dynamic};
      if body.body_type()!=active_type{body.set_body_type(active_type,true);changed=true;}
      if b.held&&!held{
+      // Its first contact after the hand lets go is its landing sound, however gentle.
+      b.landing_sound=self.sounds_enabled;
       // The finger may still hold the pot across the upper board when its
       // chosen slot is on the next bay. Enter that bay before contacts resume;
       // otherwise the ceiling can support it forever on the wrong side.
@@ -375,6 +394,7 @@ impl RustBookGravity{
       position.y=if low<=high{position.y.clamp(low,high)}else{position.y.max(low)};
       // Lift depth belongs to the held presentation, never the saved solid.
       position.z=-(depth/2.0+if s[28].is_finite(){s[28]/p}else{0.0}) as f32;
+      b.landing_height=position.y;
       body.set_translation(position,true);body.set_linvel(Vector::new(0.0,body.linvel().y.clamp(-0.12,0.0),0.0),true);body.set_angvel(Vector::ZERO,true);
      }
      if held{b.pointer=[s[3],s[4]];}
@@ -610,6 +630,7 @@ impl RustBookGravity{
    }}
    if warming&&n%16==15&&js_sys::Date::now()-warm_start>80.0{break;}
   }
+  if self.sounds_enabled&&!warming{self.finish_landing_sounds(now);}
   for (i,key) in names.iter().enumerate(){let Some(b)=self.books.get(key)else{continue;};if b.kind!=0&&b.solid.is_none(){continue;}
    let body=&self.world.bodies[b.handle];let p=b.base[3];let position=body.translation();
    let a=body.rotation().to_scaled_axis().z as f64;
