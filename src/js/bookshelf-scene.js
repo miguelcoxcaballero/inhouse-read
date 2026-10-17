@@ -2836,6 +2836,24 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
       return projectShelfDropPosition(pointerRay(clientX, clientY).ray, furniture.matrixWorld, rows, width,
         entry?.kind === 'lamp' && entry.mount === 'undershelf' ? { mount:'undershelf', depth } : {});
     },
+    resolveDropPosition(position, node) {
+      if (!position || !settleBooks) return position;
+      const entry = byNode.get(node), row = rows[position.shelf];
+      if (!entry) return null;
+      // Keyboard placement can extend the cabinet with a new, empty row.
+      // The planner already validated the index and clamps its horizontal slot.
+      if (!row) return Number.isInteger(position.shelf) && position.shelf >= rows.length ? position : null;
+      if (entry.kind === 'lamp' && entry.mount === 'undershelf') return position;
+      const left = row.left || 0, right = row.right ?? width, padding = row.padding ?? 16;
+      const available = right - left - padding * 2;
+      const pixelsPerMetre = unitWidth / SHELF_SPECS[shelfType].width * 1000;
+      const result = bookGravity.drop_position(entry.key, new Float64Array([
+        position.shelf, left + padding + position.x * available, left, right,
+        row.bottom, row.ceiling ?? row.top, pixelsPerMetre
+      ]));
+      return result.length && available > 0
+        ? { ...position, x:(result[0] - left - padding) / available } : null;
+    },
     setDropPosition(position) {
       if (disposed) return;
       const shelf = Number(position?.shelf), x = Number(position?.x);
@@ -3115,3 +3133,6 @@ export function createBookshelfScene({ stage, scroller, entries, rows, width, he
     }
   };
 }
+
+// Capability is available before the first scene/layout is constructed.
+createBookshelfScene.physicalPlacement = true;

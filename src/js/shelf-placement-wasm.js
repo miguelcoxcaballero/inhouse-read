@@ -85,7 +85,7 @@ function dataOnlyInputs(objects, options, { move, target, separateMounts }) {
   const position = value => { if (value != null) { field(value, 'shelf'); field(value, 'x'); } };
   if (options === null) return false;
   spread(options);
-  for (const key of ['shelfWidth', 'padding', 'gap', 'minShelves']) field(options, key);
+  for (const key of ['shelfWidth', 'padding', 'gap', 'minShelves', 'physicalPlacement']) field(options, key);
   const placements = field(options, 'placements');
   if (move) { spread(placements); position(target); }
   if (!safe) return false;
@@ -180,7 +180,8 @@ function place(core, objects, options, { move = false, movedKey, target, separat
 function preparePlacement(records, cfg, groups) {
   const count = records.length, input = new Float64Array(count * INPUT_STRIDE);
   records.forEach((record, index) => input.set([record.width, record.shelf, record.desiredLeft ?? 0,
-    record.requestedX ?? 0, (record.desiredLeft == null ? 0 : 1) | (record.requestedX == null ? 0 : 2),
+    record.requestedX ?? 0, (record.desiredLeft == null ? 0 : 1) | (record.requestedX == null ? 0 : 2)
+      | (cfg.physicalPlacement === true && !isCeiling(record.object) ? 4 : 0),
     record.order, record.group], index * INPUT_STRIDE));
   const maxRow = Array(groups).fill(-1), counts = Array(groups).fill(0);
   for (const record of records) { counts[record.group]++; maxRow[record.group] = Math.max(maxRow[record.group], record.shelf); }
@@ -211,7 +212,8 @@ function executePlacement(core, job, pin, target = null) {
       input[at + 1] = target.shelf;
       input[at + 2] = center - record.width / 2;
       input[at + 3] = center === requestedCenter ? target.x : 0;
-      input[at + 4] = center === requestedCenter ? 3 : 1;
+      input[at + 4] = (center === requestedCenter ? 3 : 1)
+        | (cfg.physicalPlacement === true && !isCeiling(record.object) ? 4 : 0);
     }
     input.set([cfg.shelfWidth, cfg.padding, cfg.gap, cfg.available, cfg.minShelves, groups, pin], configOffset);
     const outputPointer = pointer + outputOffset * 8;
@@ -255,7 +257,8 @@ export function createShelfPlacementSession(objects, options = {}) {
   const configurationValue = configuration(options);
   if (!(configurationValue.available > 0)) return null;
   const cfg = Object.freeze({ shelfWidth:configurationValue.shelfWidth, padding:configurationValue.padding,
-    gap:configurationValue.gap, available:configurationValue.available, minShelves:configurationValue.minShelves });
+    gap:configurationValue.gap, available:configurationValue.available, minShelves:configurationValue.minShelves,
+    physicalPlacement:configurationValue.physicalPlacement === true });
   const records = [...normalize(objects.filter(object => !isCeiling(object)), configurationValue, 0),
     ...normalize(objects.filter(isCeiling), configurationValue, 1)];
   if (records.length > MAX_OBJECTS) return null;

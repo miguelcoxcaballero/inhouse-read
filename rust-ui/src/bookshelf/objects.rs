@@ -259,7 +259,12 @@ pub fn shelf_padding(ctx:&Ctx)->f64{
 pub fn placement_config(ctx:&Ctx)->R<JsValue>{
  let minimum=num(&ctx.opts_get("minimumShelves"));
  let minimum=if minimum.is_nan()||minimum==0.0{3.0}else{minimum};
- Ok(obj(&[("shelfWidth",&ctx.st("shelfWidth")),("padding",&f(shelf_padding(ctx))),("gap",&ctx.opts_get("gap")),("minShelves",&f(max(3.0,minimum)))]))
+ let cfg=obj(&[("shelfWidth",&ctx.st("shelfWidth")),("padding",&f(shelf_padding(ctx))),("gap",&ctx.opts_get("gap")),("minShelves",&f(max(3.0,minimum)))]);
+ // Physical scenes own their contacts, including tilted books and the empty
+ // space around foliage/legs. Keep explicit centres on first paint too;
+ // running interval packing again on reload would undo a deliberate placement.
+ if ctx.st_true("useScene")&&ctx.env_value("physicalPlacement")==JsValue::TRUE{put(&cfg,"physicalPlacement",&JsValue::TRUE);}
+ Ok(cfg)
 }
 
 /// `clearPlacementPreview(drag)`.
@@ -292,6 +297,7 @@ pub fn preview_object_placement(ctx:&Ctx,drag:&JsValue,key:&JsValue,destination:
  let stale=!truthy(&current)||get(&current,"objects")!=objects||get(&current,"shelfType")!=ctx.st("shelfType")||get(&current,"viewMode")!=ctx.st("viewMode")
   ||get(&current,"width")!=width||get(&current,"height")!=height||get(&current,"scale")!=scale||get(&current,"pixelRatio")!=pixel_ratio
   ||get(&old_cfg,"shelfWidth")!=get(&cfg,"shelfWidth")||get(&old_cfg,"padding")!=get(&cfg,"padding")||get(&old_cfg,"gap")!=get(&cfg,"gap")
+  ||get(&old_cfg,"physicalPlacement")!=get(&cfg,"physicalPlacement")
   ||get(&old_cfg,"minShelves")!=get(&cfg,"minShelves");
  let current=if stale{
   clear_placement_preview(ctx,drag)?;
@@ -322,10 +328,18 @@ pub fn local_drag_destination(ctx:&Ctx,node:&JsValue,destination:JsValue)->R<JsV
  if get(&ctx.scene(),"physicalPlacement")!=JsValue::TRUE||!truthy(&destination){return Ok(destination);}
  let objects=array_of(&ctx.st("placementObjects"));let key=object_key(node);
  let Some(index)=objects.iter().position(|o|get(o,"key")==key)else{return Ok(destination);};
- let values:Vec<f64>=objects.iter().flat_map(|o|[gn(o,"shelf"),gn(o,"left"),gn(o,"width"),if get(o,"mount")==s("undershelf"){1.0}else{0.0}]).collect();
- let cfg=placement_config(ctx)?;let gap=get(&cfg,"gap").as_f64().filter(|v|v.is_finite()).unwrap_or(3.0).max(0.0);
- let target=crate::local_drop::shelf_local_drop(&values,index,gn(&destination,"shelf"),gn(&destination,"x"),gn(&cfg,"shelfWidth"),gn(&cfg,"padding"),gap);
- Ok(if target.len()==2{spread(&[&destination,&obj(&[("shelf",&f(target[0])),("x",&f(target[1]))])])}else{null()})
+ let cfg=placement_config(ctx)?;
+ let physical=get(&cfg,"physicalPlacement")==JsValue::TRUE&&get(&objects[index],"mount")!=s("undershelf");
+ // Bound the selected object to the cabinet. Nominal upright slots must not
+ // block a gentle push or reserve the empty silhouette around a lamp/plant.
+ // Rapier resolves the actual solid shapes at the live release pose.
+ let values:Vec<f64>=objects.iter().enumerate().filter(|(i,_)|!physical||*i==index).flat_map(|(_,o)|[gn(o,"shelf"),gn(o,"left"),gn(o,"width"),if get(o,"mount")==s("undershelf"){1.0}else{0.0}]).collect();
+ let gap=get(&cfg,"gap").as_f64().filter(|v|v.is_finite()).unwrap_or(3.0).max(0.0);
+ let target=crate::local_drop::shelf_local_drop(&values,if physical{0}else{index},gn(&destination,"shelf"),gn(&destination,"x"),gn(&cfg,"shelfWidth"),gn(&cfg,"padding"),gap);
+ if target.len()!=2{return Ok(null());}
+ let target=spread(&[&destination,&obj(&[("shelf",&f(target[0])),("x",&f(target[1]))])]);
+ if physical{return ctx.scene_call("resolveDropPosition",&[&target,node]);}
+ Ok(target)
 }
 
 /// `dropPositionAt(x, y, node)`: the shelf and the position along it a dropped object would take.
@@ -399,6 +413,7 @@ pub fn move_object_with_keyboard(ctx:&Rc<Ctx>,event:&JsValue,node:&JsValue)->R{
   ("shelf",&f(max(0.0,gn(&item,"shelf")+if vertical{direction}else{0.0}))),
   ("x",&f(max(0.0,min(1.0,gn(&item,"x")+if vertical{0.0}else{direction*0.08})))),
  ]);
+ let destination=if ctx.env_value("physicalPlacement")==JsValue::TRUE{local_drag_destination(ctx,node,destination)?}else{destination};
  persist_object_placement(ctx,node,&destination,&undef())?;
  let focus_key=get(&item,"key");
  if let Some(candidate)=qsa(&ctx.scroller,"[data-object-id]").into_iter().find(|candidate|object_key(candidate)==focus_key){
