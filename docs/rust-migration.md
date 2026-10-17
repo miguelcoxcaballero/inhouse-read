@@ -1,5 +1,7 @@
 # Migración a Rust: implementación y comprobaciones
 
+Entrega 1.7.269: coordinación de refresco posterior a la carga en Rust: normalización, guardado, cuenta, recuento y reutilización/actualización de escena. Pasan 71 específicas con 17 sesiones comparadas y 40 ciclos de recursos, y siete E2E finales en una ejecución. La espera paralela y fábrica de opciones se conservan. Inventario 61,59 %, no funciones terminadas. Siguiente: acciones de libros y resto de coordinación de la aplicación; preservar WIP/stashes y ramas ready.
+
 Entrega 1.7.268: títulos, autores y selección del nombre del lomo en Rust compartido por UI/Shelf; se conserva Unicode/UTF-16 con primitivas del navegador. Pasan 197 específicas, una medición temporal y cuatro E2E finales en una ejecución. Mediana de 200 títulos/autores: 6,08 ms nativos frente a 1,57 ms JS, sin afirmar mejora de velocidad. Inventario 61,54 %, no funciones terminadas. Siguiente: coordinación de refresco de la aplicación; preservar WIP/stashes y ramas ready.
 
 Entrega 1.7.267: comparación completa y orden de biblioteca en Rust, con lectura inicial cruda y orden tras la espera paralela existente. Pasan 73 específicas, una medición y cinco E2E finales en una ejecución. El comparador final tarda 5,24 ms/200 libros frente a 0,34 ms de la referencia JS; no se afirma mejora de velocidad. Inventario 61,34 %, no funciones terminadas. Siguiente: coordinación de la aplicación y normalización de títulos/autores; preservar todos los WIP/stashes y ramas ready.

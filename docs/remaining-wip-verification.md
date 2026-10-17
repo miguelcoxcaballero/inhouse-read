@@ -1,3 +1,16 @@
+# 1.7.269 — coordinación de actualización de estantería en Rust
+
+Changelog: «Actualización de estantería coordinada en Rust».
+Después de la espera paralela existente, Rust normaliza los registros con los módulos ya migrados, guarda las correcciones, filtra la cuenta, respeta cierres/importaciones pendientes, renueva una habitación cambiada, lanza la cola de recuento y decide entre conservar, crear, aplazar o actualizar la escena. El caso sin cambios conserva el renderizador. Las llamadas entre normalización, visibilidad y comparación usan directamente sus módulos Rust.
+
+La lectura anticipada, carga paralela, espera acotada de mallas, eventos DOM y construcción de adaptadores de escena conservan su ruta anterior. Los globals compartidos de la aplicación siguen disponibles mediante getters/setters; no se duplica su estado en otra caché. La fábrica de opciones conserva los mismos callbacks y campos. Sus cuerpos y otras decisiones de la aplicación siguen pendientes de migración. No se añade un contexto Rust persistente que retenga la biblioteca.
+
+Build completo correcto y **71 pruebas específicas en nueve archivos pasan**. Se contrastan 17 sesiones enteras frente a la función congelada: normalización/guardado, visibilidad por cuenta y bytes guardados, reutilización, versión de recuento, actualización inmediata o aplazada, cambio de habitación durante lectura/cierre, libro retirado durante el guardado, cancelación y errores. Otros 40 ciclos de éxito/error conservan handles y callbacks nativos. También se comprueban cola de refresco, importación diferida, arranque anticipado, metadatos y nombres seleccionados. No se cambia el corpus, límites o aserciones existentes ni se repite la batería general; el timeout de color preexistente sigue documentado.
+
+Siete E2E finales pasan en una ejecución sin reintentos (2,8 min): PDF/EPUB reales y reapertura, nombres editados en ficha/lector/Escuchar, regreso con el mismo framebuffer/canvas, dos importaciones sucesivas en rutas caliente/fría, colocación real de libro y planta conservada al recargar, y retirada sin shaders nuevos ni reconstrucción de escena. No cambian calidad, materiales o geometrías.
+
+Inventario: 33100 líneas Rust / 20646 JavaScript, **61,59 %**, incluidos comentarios y compatibilidad; no mide funciones terminadas. Siguiente: acciones de los libros y el resto de coordinación de la aplicación. Se conservan WIP, stashes y ramas ready.
+
 # 1.7.268 — títulos y autores en Rust
 
 Changelog: «Títulos y autores en Rust».

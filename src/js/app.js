@@ -1,6 +1,6 @@
 import { library, takeFirstRawRecords } from './shelf-boot.js'
 import { version as APP_VERSION } from '../../package.json'
-import { sameBookRecords, recentFirst } from './library-store.js'
+import { libraryHost, recentFirst } from './library-store.js'
 import { createReadingProgressQueue } from './reading-progress-queue.js'
 import { bookCloudState, isBookVisible, storeBookFile, needsDriveDownload } from './book-storage-policy.js'
 import { refreshSelectedBookNames } from './selected-book-names.js'
@@ -30,7 +30,7 @@ import { createLazyReaderExperience } from './readers/reader-experience-lazy.js'
 import { runAfterFirstFrame } from './idle-startup.js'
 import { loadRustCore, requireRustCore } from './rust-core.js'
 import { loadRustDecorCore } from './rust-decor-core.js'
-import { requireRustShelf } from './rust-shelf.js'
+import { needRustShelf, requireRustShelf } from './rust-shelf.js'
 import { shelfBakesSettled } from './shelf-bake-cache.js'
 import { loadPlantCatalogModule } from './plant-catalog-lazy.js'
 import { classifyTapZone, ZONE } from './gestures.js'
@@ -274,33 +274,11 @@ async function performShelfRefresh({ immediate = false } = {}) {
   if (firstRecords) storedBooks = recentFirst(storedBooks)
   // The page is being replaced by a newer deploy: building this shelf would only hold that up.
   if (appDisposed || deployCheck?.reloading() || nativeImportShelfGate.deferRefresh()) return
-  const normalizedBooks = await Promise.all(storedBooks.map(book => {
-    const title = normalizeBookTitle(book.title || book.name)
-    const author = normalizeBookAuthor(book.author)
-    const patch = {}
-    if (title !== book.title) patch.title = title
-    if (author !== (book.author || '')) patch.author = author || null
-    return Object.keys(patch).length ? library.patch(book.id, patch) : book
-  }))
-  const books = normalizedBooks.filter(book => isBookVisible(book, accountId))
-  if (appDisposed || nativeImportShelfGate.deferRefresh()) return
-  if (cloudRoomChanged && els.readerScreen.hidden && !closingReader) {
-    shelf?.destroy(); shelf = null; shelfRecords = null
-    cloudRoomChanged = false
-  }
-  // Counting is detached from the active reader and serial, so a home reload,
-  // reader close or chapter change never attributes text to another book.
-  for (const book of books) wordCountQueue.ensure(book).catch(error => console.warn('Preparación del grosor:', error))
-  // Background syncs report a change even when every record came back the
-  // same; repainting the whole 3D shelf for them is pure jank.
-  if (shelf && shelfRecords && sameBookRecords(shelfRecords, books)
-      && shelfLengthStatusVersion === lengthStatusVersion) return
-  shelfRecords = books
-  shelfLengthStatusVersion = lengthStatusVersion
-  // A selection can begin while the IndexedDB read is pending. Let the shelf
-  // queue this record set instead of replacing a book already in flight.
-  if (!shelf) {
-    shelf = renderBookshelf(els.bookshelfRoot, books, {
+  return needRustShelf().app_refresh_after_load(shelfRefreshHost, storedBooks, accountId, immediate)
+}
+
+function createShelfForRecords(books) {
+  return renderBookshelf(els.bookshelfRoot, books, {
       onBookOpen: openBookRecord,
       onPrepareBook: prepareBookOpen,
       onBookDismiss: dismissPreparedPage,
@@ -345,9 +323,20 @@ async function performShelfRefresh({ immediate = false } = {}) {
       })),
       onBookOrderChange: order => Promise.all(order.map(({ id, shelfOrder }) => persistBookState(id, { shelfOrder })))
     })
-  } else {
-    if (!immediate && shelf.queueRefresh) shelf.queueRefresh(books)
-    else shelf.update(books)
+}
+
+const shelfRefreshHost = {
+  library, libraryHost, nativeImportShelfGate, els, wordCountQueue,
+  createShelf: createShelfForRecords,
+  warnPreparation: error => console.warn('Preparación del grosor:', error),
+  state: {
+    get appDisposed() { return appDisposed },
+    get closingReader() { return closingReader },
+    get cloudRoomChanged() { return cloudRoomChanged }, set cloudRoomChanged(value) { cloudRoomChanged = value },
+    get shelf() { return shelf }, set shelf(value) { shelf = value },
+    get shelfRecords() { return shelfRecords }, set shelfRecords(value) { shelfRecords = value },
+    get lengthStatusVersion() { return lengthStatusVersion },
+    get shelfLengthStatusVersion() { return shelfLengthStatusVersion }, set shelfLengthStatusVersion(value) { shelfLengthStatusVersion = value }
   }
 }
 
