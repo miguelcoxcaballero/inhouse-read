@@ -8,3 +8,6 @@ mod host;
 include!("ui_lib.rs");
 #[cfg(feature = "shelf")]
 include!("shelf_lib.rs");
+
+#[cfg(any(feature = "ui", feature = "shelf"))]
+mod length_metadata;
