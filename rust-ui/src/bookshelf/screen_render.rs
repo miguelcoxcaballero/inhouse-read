@@ -114,6 +114,7 @@ fn render_inner(ctx:&Rc<Ctx>)->R{
   if let Some(node)=qsa(&ctx.scroller,".ihr-spine").into_iter().find(|node|data_get(node,"bookId")==focused_book){method(&node,"focus",&[&obj(&[("preventScroll",&JsValue::TRUE)])])?;}
  }
  ctx.st_set("metadataContext",&s(&screen_plan::metadata_context(ctx)?));
+ screen_plan::release_initial_covers(ctx);
  for book in array_of(&ctx.st("books")){covers::resolve_cover_appearance(ctx,&book,&undef())?;}
  returning::settle_return_slot(ctx,false)?;
  Ok(())

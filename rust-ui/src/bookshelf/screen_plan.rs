@@ -220,47 +220,61 @@ impl RustShelfCtx{
  #[wasm_bindgen(js_name=readShelfLayout)]pub fn read_shelf_layout(&self,stage:JsValue,width:f64)->Result<JsValue,JsValue>{read_shelf_layout(&self.ctx,&stage,width)}
 }
 
-/// Enough appearance information for the first stable shelf frame; full font matching follows it.
+/// Prepare one final appearance and decoded jacket before the initial scene.
+/// The browser owns images/fonts; Rust owns the transaction and its cancellation.
+pub fn release_initial_covers(ctx:&Ctx){
+ for lease in array_of(&get(&ctx.parts,"firstPaintCovers")){let _=method_opt(&lease,"release",&[]);}
+ put(&ctx.parts,"firstPaintCovers",&Array::new());
+}
 pub fn prepare_initial_appearances(ctx:&Rc<Ctx>)->R{
- if ctx.st_true("destroyed"){return Ok(());}
- if !truthy(&ctx.option("waitForCoverAppearance"))||gn(&ctx.st("books"),"length")==0.0{return Ok(());}
- let pending=Array::new();
+ if ctx.st_true("destroyed")||!truthy(&ctx.option("waitForCoverAppearance"))||gn(&ctx.st("books"),"length")==0.0{return Ok(());}
+ let pending=Array::new();let lettering=Array::new();
  for book in array_of(&ctx.st("books")){
   let id=super::covers::book_id(&book);let key=super::covers::cover_key_for(&book);
   let saved=if gb(&book,"coverAppearance")&&get(&book,"coverAppearanceKey")==key{get(&book,"coverAppearance")}else{null()};
-  if truthy(&saved){map_set(&ctx.st("coverAppearances"),&id,&obj(&[("key",&key),("appearance",&saved),("complete",&JsValue::TRUE)]));continue;}
-  let mut cover=get(&book,"cover");
-  if nullish(&cover){cover=get(&book,"coverBlob");}
-  if nullish(&cover){cover=get(&book,"coverUrl");}
-  if truthy(&cover){pending.push(&book);}
+  if truthy(&saved){map_set(&ctx.st("coverAppearances"),&id,&obj(&[("key",&key),("appearance",&saved),("complete",&JsValue::TRUE)]));}
+  let mut family=or(get(&saved,"fontCanvasFamily"),or(get(&saved,"fontFamily"),s("Playfair Display")));
+  let mut weight=or(get(&saved,"fontWeight"),f(700.0));
+  if let Some(font)=super::style::SPINE_FONTS.iter().find(|font|s(font.family)==get(&book,"spineFontFamily")){
+   family=s(font.family);weight=f(font.weight);
+  }
+  let content=join_strings(&[string_value(&coalesce(get(&book,"title"),s(""))),s(" "),string_value(&coalesce(get(&book,"author"),s(""))),s(" "),string_value(&coalesce(get(&book,"spineTitleOverride"),s("")))]);
+  lettering.push(&obj(&[("font",&s(&format!("{} 20px \"{}\"",text(&weight),text(&family)))),("text",&content)]));
+  let cover=coalesce(get(&book,"cover"),coalesce(get(&book,"coverBlob"),get(&book,"coverUrl")));
+  let author=coalesce(get(&book,"author"),s(""));
+  if truthy(&author){
+   lettering.push(&obj(&[("font",&s("500 20px \"DM Sans\"")),("text",&author)]));
+   if !truthy(&cover){lettering.push(&obj(&[("font",&s(&format!("italic 400 20px \"{}\"",text(&family)))),("text",&author)]));}
+  }
+  if truthy(&cover)&&(!truthy(&saved)||ctx.st_true("useScene")){pending.push(&book);}
  }
- if pending.length()==0{return Ok(());}
+ let fonts=method_opt(&ctx.env,"prepareShelfFonts",&[&lettering.into()])?.unwrap_or(undef());
+ if pending.length()==0&&!truthy(&fonts){return Ok(());}
+ release_initial_covers(ctx);
  ctx.st_set("appearancesReady",&JsValue::FALSE);
  let generation=num(&ctx.st("appearanceGeneration"))+1.0;ctx.st_set("appearanceGeneration",&f(generation));
- let jobs=Array::new();
+ let jobs=Array::new();if truthy(&fonts){jobs.push(&fonts);}
  for book in pending.iter(){
-  let task_ctx=ctx.clone();
-  jobs.push(&run(async move{
-   let id=super::covers::book_id(&book);let key=super::covers::cover_key_for(&book);
+  let task_ctx=ctx.clone();jobs.push(&run(async move{
    let url=settle(super::covers::resolve_cover_promise(&task_ctx,&book)).await?;
-   if !truthy(&url){
-    map_set(&task_ctx.st("coverAppearances"),&id,&obj(&[("key",&key),("appearance",&null()),("complete",&JsValue::TRUE)]));
-    return Ok(undef());
+   if task_ctx.st_true("destroyed")||generation!=num(&task_ctx.st("appearanceGeneration")){return Ok(undef());}
+   if truthy(&url)&&task_ctx.st_true("useScene"){
+    let warm=method_opt(&task_ctx.env,"warmShelfCover",&[&url])?.unwrap_or(undef());
+    let lease=settle(warm).await?;
+    if task_ctx.st_true("destroyed")||generation!=num(&task_ctx.st("appearanceGeneration")){
+     let _=method_opt(&lease,"release",&[]);return Ok(undef());
+    }
+    if truthy(&lease){let held=get(&task_ctx.parts,"firstPaintCovers");method(&held,"push",&[&lease])?;}
    }
-   let appearance=settle(task_ctx.env("analyzeCoverAppearance",&[&url,&coalesce(get(&book,"title"),s("")),&obj(&[("matchFont",&JsValue::FALSE)])])?).await?;
-   if !task_ctx.st_true("destroyed"){
-    map_set(&task_ctx.st("coverAppearances"),&id,&obj(&[("key",&key),("appearance",&appearance),("complete",&b(nullish(&appearance)))]));
-   }
+   settle(super::covers::resolve_cover_appearance(&task_ctx,&book,&url)?).await?;
    Ok(undef())
   }));
  }
  let all=method(&get(&global(),"Promise"),"allSettled",&[&jobs.into()])?;
- let done_ctx=ctx.clone();
- then_map(&all,move|_|{
+ let done_ctx=ctx.clone();then_map(&all,move|_|{
   if done_ctx.st_true("destroyed")||generation!=num(&done_ctx.st("appearanceGeneration")){return Ok(undef());}
   done_ctx.st_set("appearancesReady",&JsValue::TRUE);schedule_render(&done_ctx);Ok(undef())
- },Err)?;
- Ok(())
+ },Err)?;Ok(())
 }
 
 #[wasm_bindgen]

@@ -111,6 +111,8 @@ import { createShelfZoom } from './shelf-zoom.js';
 import { createShelfViewGesture } from './shelf-view-gesture.js';
 import { markTiming, resetTimeline } from './perf-marks.js';
 import { createBookshelfScene } from './bookshelf-scene.js';
+import {warmShelfCover,loadedShelfCover} from './book-cover-images.js';
+import {prepareShelfFonts} from './shelf-startup-resources.js';
 import { refreshCanvasFontsAfterPaint } from './canvas-font-readiness.js';
 import { bookReturnSignature, bookReturnCompatibility, createBookReturnCache } from './bookshelf-return.js';
 import { readerReturnCanvas } from './reader-return-canvas.js';
@@ -197,7 +199,13 @@ const shelfEnv = {
   bookReturnCompatibility: (...args) => bookReturnCompatibility(...args),
   readerReturnCanvas: (...args) => readerReturnCanvas(...args),
   coverAspectRatio: (...args) => coverAspectRatio(...args),
-  analyzeCoverAppearance: (...args) => analyzeCoverAppearance(...args),
+  analyzeCoverAppearance: (url,title,options) => {
+    const image = loadedShelfCover(url);
+    return image ? analyzeCoverAppearance(url,title,{...options,image})
+      : options === undefined ? analyzeCoverAppearance(url,title) : analyzeCoverAppearance(url,title,options);
+  },
+  warmShelfCover,
+  prepareShelfFonts,
   notifyCloudSettingsChanged: (...args) => notifyCloudSettingsChanged(...args),
   getCatalogLamp: (...args) => getCatalogLamp(...args),
   lampCatalogIllustration: (...args) => lampCatalogIllustration(...args),

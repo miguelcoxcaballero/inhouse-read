@@ -1,3 +1,30 @@
+# 1.7.278 — primer fotograma con fuentes y fotos definitivas
+
+Changelog: «Arranque con fuentes y portadas listas».
+
+Rust prepara una sola apariencia completa por clave de portada y espera sus recursos antes de construir la primera escena. Desaparece el análisis inicial de solo color seguido de otro análisis tipográfico: el resultado completo se guarda y se reutiliza en la reapertura. Rust selecciona la familia/peso de cada estilo guardado y de las personalizaciones; el host carga esas caras y sus caracteres, agrupados por fuente. Las candidatas del emparejador se cargan solo cuando se necesita analizar una portada nueva. Se preparan también DM Sans 500 para el autor y, cuando falta la foto, la cursiva 400 de la tapa generada. DM Sans, Comfortaa y Playfair empiezan mientras arrancan WASM y almacenamiento; los preloads conservan los WOFF2 originales.
+
+Las imágenes preparadas comparten el propietario con el modelo. El modelo adopta los píxeles decodificados de forma síncrona y evita rasterizar una tapa provisional, volver a descargar/decodificar la foto y sustituirla después. Rust libera su propietario adicional tras construir la escena, al cambiar de preparación o al destruirla; una tarea antigua libera su imagen al detectar cancelación. Las imágenes remotas atascadas tienen salida acotada y sus texturas tardías se desechan. Se mantienen resoluciones, geometría, materiales, luces, físicas y mecanismos de calidad del zoom.
+
+La pasada general ejecutó 6561 casos en 518 archivos: 6529 pasaron y 32 fallaron en seis archivos. Se restauró el contrato de dos argumentos del análisis cuando no hay imagen preparada, se dobló explícitamente la nueva dependencia de imágenes en las pruebas semánticas de retorno y se conservó el preload original de Playfair en primera posición. Con la selección final de fuentes y el WASM final pasan 140 casos en 18 archivos, que incluyen los 32 fallidos, todas las pruebas de preparación/retorno afectadas y cuatro casos adicionales. Quedan cubiertos 6565 casos distintos en 519 archivos; no se presenta como una segunda pasada general completa del binario final. Las referencias congeladas, las 144/72 máscaras y su orden/puntuación, los bytes de las fuentes y las aserciones de poses, foco y apertura se conservan.
+
+Pasan once casos E2E distintos con el build final y sin reintentos automáticos: siete en la ejecución final y cuatro comprobados antes con el mismo binario. Se retiene el WOFF2 real durante más de un segundo, se comprueba su SHA y se verifica que no se dibujan letras provisionales; después, título y autor usan sus caras reales, la foto se dibuja sin tapa generada y el mismo nodo enfocado abre el PDF. La fixture tiene volumen suficiente para que el autor sea visible. También pasan sesión Drive tras el frame inicial, importación fría/caliente, instancia/request únicos del motor, sonidos nativos, zoom nítido sin nuevas pasadas GPU durante el gesto, luces y targets reales, empuje y recarga de poses, colocación y persistencia de libro/planta, pellizco y flick con interrupción.
+
+Una comprobación adicional antigua, `rust-startup: a pending core download never holds the first shelf frame`, no pasa al retener el WASM obligatorio. Se reproduce con los assets publicados 1.7.277 (timeout de 20 segundos con idéntico bloqueo del primer frame). No se cuenta entre los casos aprobados, no se cambia la referencia para ocultarlo y no se presenta la batería E2E global como aprobada; Production checks del main anterior también estaba en fallo. Las descargas obligatorias siguen necesitando sus bytes.
+
+Medición diagnóstica local, Chromium con viewport móvil 390×845, DPR 1, SwiftShader, mismos datos y equipo, jobs de GPU en serie. Se observa el dibujo real del canvas, las instancias WASM, las portadas provisionales y los frames de la escena; se compara el último frame de la preparación anterior con el primero completo de la nueva (no se llama «listo» al frame anterior sin fotos). Dos pasadas por biblioteca: una inicial y una reapertura. Son muestras pequeñas del entorno de pruebas, no una predicción de segundos o batería para un teléfono.
+
+| Biblioteca | Pasada | Primer frame completo 277 | Primer frame completo 278 |
+| --- | --- | ---: | ---: |
+| 12 libros con aspecto guardado | Inicial | 6231 ms | 5304 ms |
+| 12 libros con aspecto guardado | Reapertura | 4985 ms | 2929 ms |
+| 2 portadas sin aspecto guardado | Inicial | 4841 ms | 3675 ms |
+| Los mismos 2 libros, ya guardados | Reapertura | 3250 ms | 3051 ms |
+
+Con 12 libros, las tapas provisionales pasan de 12 a 0 y las rotulaciones observadas de 37 a 13 en ambas pasadas. Las fotos siguen usando sus píxeles reales. Las cuatro muestras finales tienen cero errores de página y cero tapas provisionales. Las cuatro muestras finales tienen un único frame de escena en esta ventana de observación. Los recursos de materiales pueden invalidarla después; no se afirma que todo cambio posterior de la escena necesite un único frame.
+
+Build final: UI 2983788 B, Shelf 3507033 B; shell 109 archivos / 31181950 B, revisión 6909b9dca48c. Inventario 33761 líneas Rust / 20824 JavaScript = 61,85 %, no porcentaje de funciones terminadas. Continúa pendiente la migración completa; el bloque del arranque queda en Rust y el host mantiene las APIs de fuentes/imágenes del navegador. No cambia Android ni el actualizador. Preservar WIP, stashes y ramas ready.
+
 # 1.7.277 — sonidos suaves de interacción y materiales
 
 Changelog: «Sonidos acogedores y apoyos precisos».
